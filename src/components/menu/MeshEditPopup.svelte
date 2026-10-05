@@ -31,6 +31,8 @@
 		edgeExtrudeDistance,
 		smoothFactor,
 		smoothIterations,
+		edgeSlideFactor,
+		solidifyThickness,
 		mergeDistance,
 		symAxis,
 		symKeep,
@@ -55,6 +57,8 @@
 		beginVertexBevelAdjust,
 		deleteSelectedVerts,
 		smoothSelectedVerts,
+		connectSelectedVerts,
+		dissolveSelectedVerts,
 		proportionalEdit,
 		proportionalRadius,
 		vertexHandleScale,
@@ -100,6 +104,8 @@
 		deleteSelectedEdges,
 		subdivideSelectedEdges,
 		duplicateSelectedFaces,
+		separateSelectedFaces,
+		fillHole,
 		triangulateMesh,
 		trisToQuadsMesh,
 		symmetrizeMesh,
@@ -238,7 +244,9 @@
 		{ op: 'loopcut', label: 'Loop cut', hint: 'C', oneShot: true, param: true, icon: 'loop-cut', desc: 'insert edge loops across the ring this face lies on' },
 		{ op: 'bridge', label: 'Bridge', hint: 'B', oneShot: true, param: true, icon: 'bridge', desc: 'tunnel between two selected pieces' },
 		{ op: 'subdivide', label: 'Subdivide', hint: 'S', oneShot: true, param: true, icon: 'subdivide', desc: 'split each quad into four, once per level' },
+		{ op: 'solidify', label: 'Solidify', hint: '', oneShot: true, param: true, icon: 'solidify', desc: 'give an open surface thickness: a back copy plus a rim joining it' },
 		{ op: 'duplicate', label: 'Duplicate', hint: '', oneShot: true, param: false, icon: 'duplicate-face', desc: 'copy the selected faces in place — coincident until you drag the gizmo' },
+		{ op: 'separate', label: 'Separate', hint: '', oneShot: true, param: false, icon: 'separate', desc: 'move the selected faces into a NEW object of their own (same place, own material)' },
 		{ op: 'flip', label: 'Flip normals', hint: 'F', oneShot: true, param: false, icon: 'flip-normals', desc: 'reverse the winding' },
 		{ op: 'delete', label: 'Delete', hint: 'X', oneShot: true, param: false, icon: 'delete-face', desc: 'remove the selection' }
 	];
@@ -247,7 +255,8 @@
 	// so a button click focuses the pane AND attempts the apply, like Bevel's.
 	const PANE_OPS = [
 		{ op: 'edge-extrude', label: 'Extrude edges', hint: '', oneShot: true, param: true, icon: 'edge-extrude', desc: '' },
-		{ op: 'smooth', label: 'Smooth', hint: '', oneShot: true, param: true, icon: 'smooth', desc: '' }
+		{ op: 'smooth', label: 'Smooth', hint: '', oneShot: true, param: true, icon: 'smooth', desc: '' },
+		{ op: 'edge-slide', label: 'Slide edges', hint: '', oneShot: true, param: true, icon: 'edge-slide', desc: '' }
 	];
 	const OPS = [...TOOL_OPS, ...ACTION_OPS, ...PANE_OPS];
 
@@ -381,6 +390,8 @@
 		if (mode === 'edges') {
 			if (focus === 'bevel' && !$edgeEditSelected.length) return 'Pick an edge first';
 			if (focus === 'edge-extrude' && !$edgeEditSelected.length) return 'Pick a border edge first';
+			if (focus === 'edge-slide' && !$edgeEditSelected.length)
+				return 'Pick an edge first (Loop picks a whole line)';
 			return '';
 		}
 		if (focus === 'extrude' || focus === 'inset') {
@@ -396,6 +407,7 @@
 		}
 		if (focus === 'loopcut') return loopCutReady() ? '' : 'Click a quad to choose the ring';
 		if (focus === 'subdivide') return hasTarget() ? '' : 'Click a face first';
+		if (focus === 'solidify') return hasTarget() ? '' : 'Select the surface to thicken first';
 		if (focus === 'bridge') {
 			if (selInfo.pieces !== 2) return 'Select two separate pieces (Ctrl+click both)';
 			if (!selInfo.loops) return 'Each piece needs one closed boundary';
@@ -486,6 +498,15 @@
 		} else if (op === 'smooth') {
 			// P5b: a plain one-shot — one meshgeo commit per click, never an adjust
 			ok = smoothSelectedVerts($smoothFactor, $smoothIterations);
+		} else if (op === 'edge-slide') {
+			// P6: adjust-engine ops — the engine validates and toasts its refusals
+			ok = beginOpAdjust('edge-slide', { factor: $edgeSlideFactor });
+		} else if (op === 'solidify') {
+			if (!hasTarget()) {
+				showToast('Select the surface to thicken first');
+				return false;
+			}
+			ok = beginOpAdjust('solidify', { thickness: $solidifyThickness });
 		}
 		if (ok) flash(op);
 		return ok;
@@ -502,6 +523,11 @@
 		// its refusal toast)
 		if (op === 'duplicate') {
 			if (duplicateSelectedFaces()) flash(op);
+			return;
+		}
+		// P6: Separate makes a new OBJECT — its own operator, its own toasts
+		if (op === 'separate') {
+			if (separateSelectedFaces()) flash(op);
 			return;
 		}
 		const spec = OPS.find((o) => o.op === op);
@@ -731,6 +757,14 @@
 		} else if (key === 'w') {
 			weld();
 			event.preventDefault();
+		} else if (mode === 'vertices' && key === 'j') {
+			// 19-A P6: J = connect (the Blender key)
+			if (connectSelectedVerts()) flash('vconnect');
+			event.preventDefault();
+		} else if (mode === 'edges' && key === 'f') {
+			// 19-A P6: F = fill the hole the picked rim goes around
+			if (fillHole()) flash('efill');
+			event.preventDefault();
 		}
 	}
 
@@ -766,8 +800,22 @@
 				['Ctrl + / -', 'Grow / shrink the selection']
 			]
 		},
-		{ id: 'edges', title: 'Edges', rows: [['L', 'Edge loop — the chain end to end']] },
-		{ id: 'vertices', title: 'Vertices', rows: [['W', 'Weld the selected vertices']] }
+		{
+			id: 'edges',
+			title: 'Edges',
+			rows: [
+				['L', 'Edge loop — the chain end to end'],
+				['F', 'Fill the hole the picked rim goes around']
+			]
+		},
+		{
+			id: 'vertices',
+			title: 'Vertices',
+			rows: [
+				['W', 'Weld the selected vertices'],
+				['J', 'Connect two corners of a face (cut it in two)']
+			]
+		}
 	];
 </script>
 
@@ -999,6 +1047,16 @@
 				onclick={() => runOp('edge-extrude')}><ToolIcon name="edge-extrude" /></button
 			>
 			<button
+				id="edge-slide"
+				class="tbx-btn {$optionsFocus === 'edge-slide' ? 'tbx-sel' : ''}"
+				class:tbx-flash={flashOp === 'edge-slide'}
+				onanimationend={() => (flashOp = '')}
+				aria-pressed={$optionsFocus === 'edge-slide'}
+				aria-label="Slide edges"
+				title="Slide — move the selected edges along the faces either side of them, keeping the shape (factor below: 0 = where they are, ±1 = onto the neighbouring line). Pick a whole loop with Loop first. A vertex with no single edge to run along stays put."
+				onclick={() => runOp('edge-slide')}><ToolIcon name="edge-slide" /></button
+			>
+			<button
 				id="edge-subdivide"
 				class="tbx-btn"
 				class:tbx-flash={flashOp === 'esubdivide'}
@@ -1008,6 +1066,17 @@
 				onclick={() => {
 					if (subdivideSelectedEdges()) flash('esubdivide');
 				}}><ToolIcon name="edge-subdivide" /></button
+			>
+			<button
+				id="edge-fill"
+				class="tbx-btn"
+				class:tbx-flash={flashOp === 'efill'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Fill the hole"
+				title="Fill — close the hole the selected border edges go around with one new face (pick ONE rim edge to fill its whole hole). The cap is wound to match the faces around it."
+				onclick={() => {
+					if (fillHole()) flash('efill');
+				}}><ToolIcon name="fill-hole" /></button
 			>
 			<button
 				id="edge-dissolve"
@@ -1084,6 +1153,28 @@
 				title="Smooth — relax each selected vertex toward the average of its neighbours (factor and passes below; with a vertex picked the click applies immediately). Evens out lumps; unselected vertices never move."
 				onclick={() => runOp('smooth')}><ToolIcon name="smooth" /></button
 			>
+			<button
+				id="mesh-connect"
+				class="tbx-btn {$vertexSelectionSize === 2 ? '' : 'tbx-disabled'}"
+				class:tbx-flash={flashOp === 'vconnect'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Connect the two selected vertices"
+				title="Connect (J) — cut the face two selected corners share along the line between them, making two faces (Ctrl+click adds the second vertex). They must be corners of ONE face and not already neighbours."
+				onclick={() => {
+					if (connectSelectedVerts()) flash('vconnect');
+				}}><ToolIcon name="connect" /></button
+			>
+			<button
+				id="mesh-dissolve-verts"
+				class="tbx-btn {$vertexSelectionSize >= 1 ? '' : 'tbx-disabled'}"
+				class:tbx-flash={flashOp === 'vdissolve'}
+				onanimationend={() => (flashOp = '')}
+				aria-label="Dissolve the selected vertices"
+				title="Dissolve — remove each selected vertex and merge the faces around it into one (a vertex in the middle of an edge just leaves it). Unlike Delete, the surface stays closed."
+				onclick={() => {
+					if (dissolveSelectedVerts()) flash('vdissolve');
+				}}><ToolIcon name="dissolve-vertex" /></button
+			>
 			{@render proportionalBtn()}
 			<button
 				id="mesh-slide"
@@ -1133,6 +1224,8 @@
 			onApplySubdivide={applySubdivide}
 			onApplyEdgeExtrude={() => applyOp('edge-extrude')}
 			onApplySmooth={() => applyOp('smooth')}
+			onApplyEdgeSlide={() => applyOp('edge-slide')}
+			onApplySolidify={() => applyOp('solidify')}
 			onAdjust={(patch) => reapplyOpAdjust(patch)}
 			onSettle={() => settleOpAdjust()}
 			onRevert={() => cancelOpAdjust()}

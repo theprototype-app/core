@@ -46,6 +46,8 @@
 		edgeExtrudeDistance,
 		smoothFactor,
 		smoothIterations,
+		edgeSlideFactor,
+		solidifyThickness,
 		slideClamp
 	} from '$lib/meshToolParams';
 	import DragRow from '../ui/DragRow.svelte';
@@ -55,6 +57,7 @@
 	 *   onApplyOp: () => void, onApplyBevel: () => void, onApplyLoopCut: () => void,
 	 *   onApplyBridge: () => void, onApplySubdivide?: () => void,
 	 *   onApplyEdgeExtrude?: () => void, onApplySmooth?: () => void,
+	 *   onApplyEdgeSlide?: () => void, onApplySolidify?: () => void,
 	 *   onAdjust?: (patch: any) => void, onSettle?: () => void, onRevert?: () => void }} */
 	let {
 		mode,
@@ -68,6 +71,8 @@
 		onApplySubdivide = () => {},
 		onApplyEdgeExtrude = () => {},
 		onApplySmooth = () => {},
+		onApplyEdgeSlide = () => {},
+		onApplySolidify = () => {},
 		onAdjust = () => {},
 		onSettle = () => {},
 		onRevert = () => {}
@@ -555,6 +560,68 @@
 				class="tbx-primary"
 				title="Extrude the selected border edges into one welded strip"
 				onclick={onApplyEdgeExtrude}>Extrude</button
+			>
+		{/if}
+	</div>
+{:else if focus === 'edge-slide'}
+	<span class="tbx-label">{adjusting ? 'Adjusting edge slide' : 'Edge slide options'}</span>
+	{@render hintLine()}
+	<div id="edge-slide-params" class="tbx-row text-xs text-gray-300">
+		<DragRow
+			id="edge-slide-factor"
+			label="factor"
+			value={$edgeSlideFactor}
+			step={0.01}
+			decimals={2}
+			min={-1}
+			max={1}
+			title="Where the edges sit between their neighbours: 0 = where they are, +1 / -1 = all the way onto the line on either side"
+			onchange={(v) => {
+				edgeSlideFactor.set(v);
+				if (adjusting) adjustChanged({ factor: v });
+			}}
+			onscrubstart={scrubStart}
+			onscrubend={scrubEnd}
+		/>
+		{#if adjusting}
+			{@render revertBtn()}
+		{:else}
+			<button
+				id="edge-slide-apply"
+				class="tbx-primary"
+				title="Slide the selected edges along the faces either side"
+				onclick={onApplyEdgeSlide}>Slide</button
+			>
+		{/if}
+	</div>
+{:else if focus === 'solidify'}
+	<span class="tbx-label">{adjusting ? 'Adjusting solidify' : 'Solidify options'}</span>
+	{@render hintLine()}
+	<div id="solidify-params" class="tbx-row text-xs text-gray-300">
+		<DragRow
+			id="solidify-thickness"
+			label="thickness"
+			value={$solidifyThickness}
+			step={0.005}
+			decimals={3}
+			min={-2}
+			max={2}
+			title="How thick the surface becomes (world units). Positive puts the back copy behind the surface, negative grows it outward."
+			onchange={(v) => {
+				solidifyThickness.set(v);
+				if (adjusting) adjustChanged({ thickness: v });
+			}}
+			onscrubstart={scrubStart}
+			onscrubend={scrubEnd}
+		/>
+		{#if adjusting}
+			{@render revertBtn()}
+		{:else}
+			<button
+				id="solidify-apply"
+				class="tbx-primary"
+				title="Thicken the selected surface — a back copy and a rim joining it"
+				onclick={onApplySolidify}>Solidify</button
 			>
 		{/if}
 	</div>

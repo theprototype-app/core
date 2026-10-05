@@ -34,6 +34,8 @@ import {
 	bevelVertices,
 	deleteVertices,
 	smoothVertices,
+	connectVertices,
+	dissolveVertices,
 	beginOpAdjust
 } from './faceEdit';
 // 19-A P4: the proportional stores/falloff moved to a LEAF (faceEdit needs them
@@ -1051,6 +1053,50 @@ export function smoothSelectedVerts(factor = 0.5, iterations = 1) {
 		return false;
 	}
 	return smoothVertices(edited.uuid, keys, { factor, iterations });
+}
+
+/**
+ * 19-A P6: CONNECT the two selected vertices (J-cut) — split the face they share along
+ * the line between them. The shell/work split of the other vertex operators: welded keys
+ * cross into faceEdit, which owns the soup and the commit. No vertex is created or
+ * removed, but the triangles were re-ordered, so handle INDICES no longer name the same
+ * corners: the selection is dropped and the session rebuilt (the bevel rule).
+ * @returns {boolean}
+ */
+export function connectSelectedVerts() {
+	if (!edited || !handles.length) return false;
+	const ok = connectVertices(edited.uuid, selectedVertexKeys());
+	if (ok) {
+		vertexSelection.clear();
+		syncVertexSelection();
+		setAnchor(-1);
+		refreshVertexEditSession();
+	}
+	return ok;
+}
+
+/**
+ * 19-A P6: DISSOLVE the selected vertices — each one's faces merge into one n-gon (a
+ * two-edge vertex just leaves both faces). The vertices are gone afterwards, so the
+ * selection is dropped and the session rebuilt (the deleteSelectedVerts rule; direct,
+ * never recorded — a selection entry on top would make Ctrl+Z undo the housekeeping).
+ * @returns {boolean}
+ */
+export function dissolveSelectedVerts() {
+	if (!edited || !handles.length) return false;
+	const keys = selectedVertexKeys();
+	if (!keys.length) {
+		showToast('Select a vertex first, then Dissolve');
+		return false;
+	}
+	const ok = dissolveVertices(edited.uuid, keys);
+	if (ok) {
+		vertexSelection.clear();
+		syncVertexSelection();
+		setAnchor(-1);
+		refreshVertexEditSession();
+	}
+	return ok;
 }
 
 /** World-space focus target {center,radius} for the selected vertex, or null (173). */

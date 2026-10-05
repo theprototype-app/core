@@ -6,7 +6,14 @@ import { globalScene, globalCamera, objectsGroup, TControls, lockedObjects, isVR
 // already have), so this closes no cycle
 import { noteEditEnter, noteEditExit, sealEditHistorySession } from './editSession';
 import { peers, showToast, settingsOpen, settingsSection } from '../stores/appStore';
-import { registerHistoryKind, recordEntry, retractEntry } from './history';
+import {
+	registerHistoryKind,
+	recordEntry,
+	retractEntry,
+	recordObjectPresence,
+	beginHistoryBatch,
+	endHistoryBatch
+} from './history';
 // STORED topology (phase 1). meshTopology imports nothing — no cycle to worry about.
 import {
 	readStoredFaces,
@@ -5104,6 +5111,986 @@ export function extrudeSelectedEdges(distance = 0.5) {
 	return beginOpAdjust('edge-extrude', { distance });
 }
 
+// ---- 19-A P6 (36-mesh-ops): the risky operators ---------------------------
+// Edge slide, vertex connect (J-cut), dissolve vertices, fill hole and solidify.
+// Every one reasons about LOGICAL faces, never raw triangles: a rail, a cut or a
+// dissolve that read the soup would walk straight across a quad's diagonal,
+// which is a triangulation artifact and not an edge of the model. So each core
+// takes the partition ("stored else derived") and walks face boundary LOOPS.
+//
+// Orientation rule shared by all five: a new polygon is fanned in the ORDER of
+// a boundary loop the source triangles already wound (`fanLoop`), never by
+// testing each triangle against an averaged normal. On a non-planar loop (a box
+// corner dissolved into a hexagon) the per-triangle normal test can flip one
+// triangle of the fan and leave a seam wound the wrong way; the loop order
+// cannot, because it is the winding the neighbours already agree with.
+
+/** The partition of an arbitrary geometry's triangles — stored if there is one,
+ * derived if not. The session-free twin of `currentPartition`, for the vertex
+ * operators (vertex mode is a meshEdit session; no face session exists).
+ * @param {any} geometry @param {any[]} tris @returns {number[][]} */
+function partitionOfGeometry(geometry, tris) {
+	return readStoredFaces(geometry) ?? derivePartition(tris, pairQuads(tris));
+}
+
+/**
+ * Fan an ordered ring into triangles IN RING ORDER — (r0, ri, ri+1) — with no
+ * normal test: the ring's own order carries the winding (see the section note).
+ * @param {any[]} out appended to @param {{pos: any, uv: number[]}[]} ring
+ * @param {any} mi @param {boolean} textured @param {number} [startAt]
+ * @returns {number[]} the out indices appended
+ */
+function fanLoop(out, ring, mi, textured, startAt = 0) {
+	/** @type {number[]} */
+	const added = [];
+	const n = ring.length;
+	if (n < 3) return added;
+	const at = (/** @type {number} */ i) => ring[(startAt + i) % n];
+	for (let i = 1; i < n - 1; i++) {
+		const a = at(0);
+		const b = at(i);
+		const c = at(i + 1);
+		added.push(out.length);
+		out.push(
+			withSlot([a.pos.clone(), b.pos.clone(), c.pos.clone()], mi, textured ? [a.uv, b.uv, c.uv] : undefined)
+		);
+	}
+	return added;
+}
+
+/**
+ * Fan a ring from its BEST corner. A dissolved region is rarely a convex planar
+ * polygon: a 2x2 grid's centre leaves an octagon whose edge midpoints are
+ * collinear with its corners (a corner start emits zero-area slivers), and a box
+ * corner leaves a hexagon whose far corners are joined by the NEIGHBOURING faces'
+ * diagonals (a spoke along one gives that edge four faces — non-manifold). So
+ * every start is scored: a spoke may not duplicate an edge in `avoid` (the
+ * surviving mesh's edges), and the start whose smallest triangle is largest wins;
+ * ties prefer a corner outside `preferNot` (the removed vertex's neighbours — the
+ * dissolve re-appearance rule), then the lowest index. With no valid start the
+ * ring is fanned from its centroid instead, whose spokes are new by construction.
+ * @param {any[]} out @param {{pos: any, uv: number[]}[]} ring
+ * @param {any} mi @param {boolean} textured @param {Set<string>} avoid welded edge keys
+ * @param {Set<string>} [preferNot] welded vertex keys
+ * @returns {number[]} the out indices appended
+ */
+function fanBest(out, ring, mi, textured, avoid, preferNot = new Set()) {
+	const n = ring.length;
+	if (n < 3) return [];
+	const keys = ring.map((c) => keyOf(c.pos.x, c.pos.y, c.pos.z));
+	let best = -1;
+	let bestArea = -1;
+	let bestPreferred = false;
+	for (let s = 0; s < n; s++) {
+		let valid = true;
+		for (let i = 2; i < n - 1 && valid; i++) if (avoid.has(edgeKey(keys[s], keys[(s + i) % n]))) valid = false;
+		if (!valid) continue;
+		let minArea = Infinity;
+		for (let i = 1; i < n - 1; i++) {
+			const a = ring[s].pos;
+			const b = ring[(s + i) % n].pos;
+			const c = ring[(s + i + 1) % n].pos;
+			const area = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).length();
+			minArea = Math.min(minArea, area);
+		}
+		const preferred = !preferNot.has(keys[s]);
+		const better =
+			minArea > bestArea * (1 + 1e-9) + 1e-12 ||
+			(Math.abs(minArea - bestArea) <= bestArea * 1e-9 + 1e-12 && preferred && !bestPreferred);
+		if (best < 0 || better) {
+			best = s;
+			bestArea = minArea;
+			bestPreferred = preferred;
+		}
+	}
+	if (best >= 0 && bestArea > 1e-12) return fanLoop(out, ring, mi, textured, best);
+	const hub = { pos: new THREE.Vector3(), uv: [0, 0] };
+	for (const c of ring) {
+		hub.pos.add(c.pos);
+		hub.uv[0] += c.uv[0] / n;
+		hub.uv[1] += c.uv[1] / n;
+	}
+	hub.pos.multiplyScalar(1 / n);
+	/** @type {number[]} */
+	const added = [];
+	for (let i = 0; i < n; i++) added.push(...fanLoop(out, [hub, ring[i], ring[(i + 1) % n]], mi, textured, 0));
+	return added;
+}
+
+/** every welded edge of the triangles NOT in `drop` — what a new fan must not
+ * duplicate @param {any[]} tris @param {Set<number>} drop */
+function survivingEdges(tris, drop) {
+	/** @type {Set<string>} */
+	const edges = new Set();
+	tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		if (drop.has(ti)) return;
+		for (let e = 0; e < 3; e++)
+			edges.add(edgeKey(keyOf(t[e].x, t[e].y, t[e].z), keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z)));
+	});
+	return edges;
+}
+
+/**
+ * Rebuild a soup with some FACES dropped and new triangles appended, carrying the
+ * partition: survivors keep their face (reindexed), the added polygons become
+ * the faces `addedFaces` names (indices relative to `added`). The vertex
+ * operators run several keys in a row, and each step must see the previous
+ * step's n-gon as ONE face — so the partition has to travel with the triangles.
+ * @param {any[]} tris @param {number[][]} faces @param {Set<number>} drop
+ * @param {any[]} added @param {number[][]} addedFaces
+ * @returns {{tris: any[], faces: number[][]}}
+ */
+function replaceFaces(tris, faces, drop, added, addedFaces) {
+	const newIndex = new Int32Array(tris.length).fill(-1);
+	/** @type {any[]} */
+	const kept = [];
+	tris.forEach((t, ti) => {
+		if (drop.has(ti)) return;
+		newIndex[ti] = kept.length;
+		kept.push(t);
+	});
+	const base = kept.length;
+	const outFaces = faces
+		.map((face) => face.map((ti) => newIndex[ti]).filter((ti) => ti >= 0))
+		.filter((face) => face.length);
+	for (const face of addedFaces) outFaces.push(face.map((i) => base + i));
+	return { tris: [...kept, ...added], faces: outFaces };
+}
+
+/** a face's boundary as welded keys + positions + per-corner uv, or null when it
+ * is not ONE closed loop (a face with a hole) @param {any[]} tris @param {number[]} face */
+function faceRing(tris, face) {
+	const loop = boundaryLoop(tris, face);
+	if (!loop) return null;
+	const corners = cornerData(tris, face);
+	const keys = loop.map((p) => keyOf(p.x, p.y, p.z));
+	return {
+		keys,
+		ring: loop.map((p, i) => ({ pos: p.clone(), uv: corners.get(keys[i])?.uv ?? [0, 0] }))
+	};
+}
+
+/**
+ * P6 EDGE SLIDE — the pure core. Every vertex of the picked edges slides along
+ * its RAIL: the real edge leaving it across a face that flanks the selection.
+ * `factor` 0 = where it is, +1 = onto side A's rail end, -1 = onto side B's.
+ *
+ * SIDES. The two faces flanking one picked edge are opposite sides. Along a
+ * chain, two (edge, face) halves are the SAME side when they are the same face
+ * (the chain turns a corner inside it) or when they leave a shared vertex along
+ * the same rail (a valence-4 vertex: the rail edge belongs to both quads on that
+ * side). A breadth-first 2-colouring over that relation, seeded from the first
+ * edge in sorted order, makes the labelling deterministic on every peer.
+ *
+ * POLES. A vertex keeps its position when the wanted side offers no rail (a
+ * box corner: the only edge leaving it on that side IS the next picked edge) or
+ * more than one distinct rail (valence 5+: no unambiguous direction). Counted.
+ * @param {any[]} tris @param {number[][]} faces the partition
+ * @param {string[]} edgeKeys picked welded edge keys
+ * @param {{factor?: number}} [options]
+ * @returns {{tris: any[], moved: number, poles: number, newEdgeKeys: string[]}}
+ */
+export function edgeSlideCore(tris, faces, edgeKeys, options = {}) {
+	const factor = Math.min(Math.max(options.factor ?? 0, -1), 1);
+	const wanted = [...new Set(edgeKeys)].sort();
+	const wantedSet = new Set(wanted);
+	/** @type {Set<string>} */
+	const chainKeys = new Set();
+	for (const k of wanted) for (const v of k.split('|')) chainKeys.add(v);
+	// rings of the faces that touch the chain only — the rest cannot carry a rail
+	/** @type {Map<number, {keys: string[], ring: any[]}>} */
+	const rings = new Map();
+	/** @type {Map<string, number[]>} picked edge -> flanking faces */
+	const flank = new Map();
+	faces.forEach((face, fi) => {
+		const touches = face.some((ti) =>
+			tris[ti].some((/** @type {any} */ v) => chainKeys.has(keyOf(v.x, v.y, v.z)))
+		);
+		if (!touches) return;
+		const fr = faceRing(tris, face);
+		if (!fr) return;
+		rings.set(fi, fr);
+		const n = fr.keys.length;
+		for (let i = 0; i < n; i++) {
+			const k = edgeKey(fr.keys[i], fr.keys[(i + 1) % n]);
+			if (!wantedSet.has(k)) continue;
+			let list = flank.get(k);
+			if (!list) flank.set(k, (list = []));
+			list.push(fi);
+		}
+	});
+	/** the rail end leaving `vk` inside face `fi`, away from `otherKey`, or ''
+	 * when that rail is itself a picked edge @param {number} fi @param {string} vk @param {string} otherKey */
+	const railEnd = (fi, vk, otherKey) => {
+		const fr = /** @type {any} */ (rings.get(fi));
+		const n = fr.keys.length;
+		const i = fr.keys.indexOf(vk);
+		if (i < 0) return '';
+		const prev = fr.keys[(i - 1 + n) % n];
+		const next = fr.keys[(i + 1) % n];
+		const end = prev === otherKey ? next : next === otherKey ? prev : '';
+		if (!end || end === otherKey) return '';
+		return wantedSet.has(edgeKey(vk, end)) ? '' : end;
+	};
+	// halves: one per (picked edge, flanking face)
+	/** @type {{edge: string, fi: number, rails: Map<string, string>}[]} */
+	const halves = [];
+	for (const k of wanted) {
+		const [a, b] = k.split('|');
+		for (const fi of flank.get(k) ?? []) {
+			const rails = new Map();
+			const ra = railEnd(fi, a, b);
+			const rb = railEnd(fi, b, a);
+			if (ra) rails.set(a, ra);
+			if (rb) rails.set(b, rb);
+			halves.push({ edge: k, fi, rails });
+		}
+	}
+	// 2-colour the halves
+	const side = new Int8Array(halves.length).fill(-1);
+	/** @param {number} h @param {number} g */
+	const related = (h, g) => {
+		const x = halves[h];
+		const y = halves[g];
+		if (x.edge === y.edge) return x.fi === y.fi ? 0 : -1; // -1 = opposite
+		if (x.fi === y.fi) return 1;
+		for (const [vk, end] of x.rails) if (y.rails.get(vk) === end) return 1;
+		return 0;
+	};
+	for (let seed = 0; seed < halves.length; seed++) {
+		if (side[seed] >= 0) continue;
+		side[seed] = 0;
+		const queue = [seed];
+		while (queue.length) {
+			const h = /** @type {number} */ (queue.shift());
+			for (let g = 0; g < halves.length; g++) {
+				if (side[g] >= 0 || g === h) continue;
+				const r = related(h, g);
+				if (r === 1) side[g] = side[h];
+				else if (r === -1) side[g] = 1 - side[h];
+				else continue;
+				queue.push(g);
+			}
+		}
+	}
+	// per chain vertex: the distinct rail ends on the wanted side
+	const wantSide = factor >= 0 ? 0 : 1;
+	/** @type {Map<string, Set<string>>} */
+	const ends = new Map();
+	halves.forEach((half, h) => {
+		if (side[h] !== wantSide) return;
+		for (const [vk, end] of half.rails) {
+			let set = ends.get(vk);
+			if (!set) ends.set(vk, (set = new Set()));
+			set.add(end);
+		}
+	});
+	/** @type {Map<string, any>} welded key -> position */
+	const pos = new Map();
+	for (const t of tris)
+		for (const v of t) {
+			const k = keyOf(v.x, v.y, v.z);
+			if (!pos.has(k)) pos.set(k, v);
+		}
+	/** @type {Map<string, any>} */
+	const target = new Map();
+	let poles = 0;
+	for (const vk of chainKeys) {
+		const set = ends.get(vk);
+		if (!set || set.size !== 1) {
+			poles++;
+			continue;
+		}
+		const endPos = pos.get([...set][0]);
+		const from = pos.get(vk);
+		if (!endPos || !from) {
+			poles++;
+			continue;
+		}
+		target.set(vk, from.clone().lerp(endPos, Math.abs(factor)));
+	}
+	const out = cloneTris(tris);
+	for (const t of out)
+		t.forEach((/** @type {any} */ v) => {
+			const moved = target.get(keyOf(v.x, v.y, v.z));
+			if (moved) v.copy(moved);
+		});
+	const keyAfter = (/** @type {string} */ k) => {
+		const p = target.get(k);
+		return p ? keyOf(p.x, p.y, p.z) : k;
+	};
+	const newEdgeKeys = wanted.map((k) => {
+		const [a, b] = k.split('|');
+		return edgeKey(keyAfter(a), keyAfter(b));
+	});
+	return { tris: out, moved: target.size, poles, newEdgeKeys };
+}
+
+/**
+ * P6 VERTEX CONNECT (J-cut) — the pure core. Exactly two vertices on ONE logical
+ * face's boundary, not already neighbours: the face is split along the line
+ * between them into TWO faces. No vertex is created, so nothing outside the face
+ * changes and no seam can open; each half is fanned FROM a cut vertex, which is
+ * what guarantees the cut itself is an edge of both halves.
+ * @param {any[]} tris @param {number[][]} faces the partition
+ * @param {string} keyA @param {string} keyB welded keys
+ * @returns {{tris: any[], faces: number[][]} | {error: string}}
+ */
+export function connectVerticesCore(tris, faces, keyA, keyB) {
+	if (keyA === keyB) return { error: 'Connect needs two DIFFERENT vertices' };
+	let sharedEdge = false;
+	for (let fi = 0; fi < faces.length; fi++) {
+		const face = faces[fi];
+		const keysIn = new Set();
+		for (const ti of face) for (const v of tris[ti]) keysIn.add(keyOf(v.x, v.y, v.z));
+		if (!keysIn.has(keyA) || !keysIn.has(keyB)) continue;
+		const fr = faceRing(tris, face);
+		if (!fr) continue;
+		const n = fr.keys.length;
+		const i = fr.keys.indexOf(keyA);
+		const j = fr.keys.indexOf(keyB);
+		if (i < 0 || j < 0) continue; // an interior vertex of the face, not a corner
+		if ((i + 1) % n === j || (j + 1) % n === i) {
+			sharedEdge = true;
+			continue;
+		}
+		const half = (/** @type {number} */ from, /** @type {number} */ to) => {
+			const ring = [];
+			for (let k = from; ; k = (k + 1) % n) {
+				ring.push(fr.ring[k]);
+				if (k === to) break;
+			}
+			return ring;
+		};
+		const mi = tris[face[0]].mi;
+		const textured = !!tris[face[0]].uv;
+		/** @type {any[]} */
+		const added = [];
+		// the cut is a BORDER edge of both halves, so any start keeps it an edge
+		const avoid = survivingEdges(tris, new Set(face));
+		const first = fanBest(added, half(i, j), mi, textured, avoid);
+		const second = fanBest(added, half(j, i), mi, textured, avoid);
+		const next = replaceFaces(tris, faces, new Set(face), added, [first, second]);
+		return { tris: cloneTris(next.tris), faces: next.faces };
+	}
+	return {
+		error: sharedEdge
+			? 'Those two vertices already share an edge — pick two corners of one face that are NOT neighbours'
+			: 'Connect needs both vertices on the SAME face (its corners, not across a fold)'
+	};
+}
+
+/**
+ * P6 DISSOLVE VERTICES — the pure core. Each vertex is removed and the faces
+ * around it become ONE n-gon (the union's boundary loop, fanned from a corner
+ * that was NOT the removed vertex's neighbour — the dissolve rule: no spoke may
+ * retrace a removed edge). A vertex with exactly TWO edges (an edge midpoint, a
+ * leftover T-junction) is instead dropped from each face it sits on, keeping the
+ * faces separate: merging them would fold two non-coplanar sides into one.
+ * A border vertex simply leaves the border loop. Keys run one after another
+ * against the CURRENT soup and partition, so two picks on one face both land.
+ * @param {any[]} tris @param {number[][]} faces @param {string[]} vertexKeys
+ * @returns {{tris: any[], faces: number[][], done: number, skipped: number}}
+ */
+export function dissolveVerticesCore(tris, faces, vertexKeys) {
+	let cur = { tris: cloneTris(tris), faces: faces.map((f) => [...f]) };
+	let done = 0;
+	let skipped = 0;
+	for (const vk of [...new Set(vertexKeys)]) {
+		const at = [];
+		for (let fi = 0; fi < cur.faces.length; fi++)
+			if (
+				cur.faces[fi].some((ti) =>
+					cur.tris[ti].some((/** @type {any} */ v) => keyOf(v.x, v.y, v.z) === vk)
+				)
+			)
+				at.push(fi);
+		if (!at.length) {
+			skipped++;
+			continue;
+		}
+		const rings = at.map((fi) => faceRing(cur.tris, cur.faces[fi]));
+		if (rings.some((r) => !r)) {
+			skipped++;
+			continue;
+		}
+		/** @type {Set<string>} */
+		const neighbours = new Set();
+		for (const fr of /** @type {any[]} */ (rings)) {
+			const n = fr.keys.length;
+			const i = fr.keys.indexOf(vk);
+			if (i < 0) continue;
+			neighbours.add(fr.keys[(i - 1 + n) % n]);
+			neighbours.add(fr.keys[(i + 1) % n]);
+		}
+		/** @type {any[]} */
+		const added = [];
+		/** @type {number[][]} */
+		const addedFaces = [];
+		const drop = new Set(at.flatMap((fi) => cur.faces[fi]));
+		const mi = cur.tris[cur.faces[at[0]][0]].mi;
+		const textured = !!cur.tris[cur.faces[at[0]][0]].uv;
+		let ok = true;
+		const avoid = survivingEdges(cur.tris, drop);
+		if (neighbours.size === 2) {
+			// JOIN the two edges: drop the vertex from every face it is a corner of
+			for (let f = 0; f < at.length; f++) {
+				const fr = /** @type {any} */ (rings[f]);
+				const keep = fr.ring.filter((/** @type {any} */ _, /** @type {number} */ i) => fr.keys[i] !== vk);
+				if (keep.length < 3) {
+					ok = false;
+					break;
+				}
+				const fmi = cur.tris[cur.faces[at[f]][0]].mi;
+				addedFaces.push(fanBest(added, keep, fmi, textured, avoid));
+			}
+		} else {
+			const union = [...drop];
+			const loop = boundaryLoop(cur.tris, union);
+			if (!loop) ok = false;
+			else {
+				const corners = cornerData(cur.tris, union);
+				const ring = [];
+				for (const p of loop) {
+					const k = keyOf(p.x, p.y, p.z);
+					if (k === vk) continue; // a BORDER vertex leaves the border loop
+					ring.push({ key: k, pos: p.clone(), uv: corners.get(k)?.uv ?? [0, 0] });
+				}
+				if (ring.length < 3) ok = false;
+				else {
+					addedFaces.push(fanBest(added, ring, mi, textured, avoid, neighbours));
+				}
+			}
+		}
+		if (!ok) {
+			skipped++;
+			continue;
+		}
+		cur = replaceFaces(cur.tris, cur.faces, drop, added, addedFaces);
+		done++;
+	}
+	return { tris: cur.tris, faces: cur.faces, done, skipped };
+}
+
+/**
+ * P6 FILL HOLE — the pure core. The picked BORDER edges (or the whole border
+ * loop of a single picked border edge) must close ONE loop; the cap goes in as
+ * ONE face. Winding comes from the neighbours, not from a centre heuristic:
+ * every border edge is used by exactly one triangle, in one direction, so the
+ * cap takes each edge the OTHER way round — the manifold rule, right for a
+ * concave mesh where "away from the centre" is not. A convex planar loop is
+ * fanned from a corner (no new vertex: a four-edge hole becomes a real quad);
+ * anything else is fanned from the loop CENTROID, the robust star-shaped case.
+ * @param {any[]} tris @param {string[]} edgeKeys
+ * @returns {{tris: any[], cap: number[], loopKeys: string[], centroid: boolean} | {error: string}}
+ */
+export function fillHoleCore(tris, edgeKeys) {
+	/** @type {Map<string, {ti: number, e: number}[]>} */
+	const uses = new Map();
+	tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+		for (let e = 0; e < 3; e++) {
+			const k = edgeKey(
+				keyOf(t[e].x, t[e].y, t[e].z),
+				keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z)
+			);
+			let list = uses.get(k);
+			if (!list) uses.set(k, (list = []));
+			list.push({ ti, e });
+		}
+	});
+	let picked = [...new Set(edgeKeys)];
+	if (!picked.length) return { error: 'Pick the border edges of the hole first' };
+	if (picked.some((k) => uses.get(k)?.length !== 1))
+		return {
+			error:
+				'Fill needs BORDER edges — a picked edge has faces on both sides (or none). Pick the rim of a hole.'
+		};
+	/** the existing directed border edge: from -> to, as the one triangle using it winds it
+	 * @param {string} k */
+	const directed = (k) => {
+		const { ti, e } = /** @type {any} */ (uses.get(k))[0];
+		const t = tris[ti];
+		const a = t[e];
+		const b = t[(e + 1) % 3];
+		return {
+			from: keyOf(a.x, a.y, a.z),
+			to: keyOf(b.x, b.y, b.z),
+			a,
+			b,
+			uvA: uvAt(t, e),
+			uvB: uvAt(t, (e + 1) % 3),
+			mi: t.mi,
+			textured: !!t.uv
+		};
+	};
+	if (picked.length === 1) {
+		// ONE border edge picked = "fill the hole this edge is on": walk its whole border
+		// loop (every border edge, followed head to tail)
+		/** @type {Map<string, string>} border from -> its edge key */
+		const byFrom = new Map();
+		for (const [k, list] of uses) if (list.length === 1) byFrom.set(directed(k).from, k);
+		const loop = [picked[0]];
+		let at = directed(picked[0]).to;
+		const start = directed(picked[0]).from;
+		while (at !== start && loop.length <= byFrom.size) {
+			const k = byFrom.get(at);
+			if (!k) return { error: 'That border edge does not close a loop — pick the whole rim' };
+			loop.push(k);
+			at = directed(k).to;
+		}
+		if (at !== start) return { error: 'That border edge does not close a loop — pick the whole rim' };
+		picked = loop;
+	}
+	// the cap walks each border edge backwards: capNext(to) = from
+	/** @type {Map<string, any>} */
+	const capNext = new Map();
+	/** @type {Map<string, {pos: any, uv: number[]}>} */
+	const corner = new Map();
+	let mi = 0;
+	let textured = false;
+	for (const k of picked) {
+		const d = directed(k);
+		if (capNext.has(d.to))
+			return { error: 'The picked edges branch at a vertex — they must form ONE simple loop' };
+		capNext.set(d.to, d.from);
+		if (!corner.has(d.from)) corner.set(d.from, { pos: d.a, uv: d.uvA });
+		if (!corner.has(d.to)) corner.set(d.to, { pos: d.b, uv: d.uvB });
+		mi = d.mi;
+		textured = textured || d.textured;
+	}
+	const startKey = /** @type {string} */ (capNext.keys().next().value);
+	/** @type {string[]} */
+	const loopKeys = [];
+	let at = startKey;
+	do {
+		loopKeys.push(at);
+		at = capNext.get(at);
+		if (at === undefined) return { error: 'The picked edges do not close — they must form ONE loop' };
+	} while (at !== startKey && loopKeys.length <= picked.length);
+	if (at !== startKey || loopKeys.length !== picked.length)
+		return {
+			error: 'The picked edges are not ONE closed loop (' + picked.length + ' edges, ' + loopKeys.length + ' in the first loop)'
+		};
+	if (loopKeys.length < 3) return { error: 'A hole needs at least three edges' };
+	const ring = loopKeys.map((k) => {
+		const c = /** @type {any} */ (corner.get(k));
+		return { pos: c.pos.clone(), uv: c.uv };
+	});
+	// Newell normal of the cap ring, in cap winding
+	const normal = new THREE.Vector3();
+	for (let i = 0; i < ring.length; i++) {
+		const p = ring[i].pos;
+		const q = ring[(i + 1) % ring.length].pos;
+		normal.x += (p.y - q.y) * (p.z + q.z);
+		normal.y += (p.z - q.z) * (p.x + q.x);
+		normal.z += (p.x - q.x) * (p.y + q.y);
+	}
+	const centre = new THREE.Vector3();
+	for (const c of ring) centre.add(c.pos);
+	centre.multiplyScalar(1 / ring.length);
+	let convex = normal.lengthSq() > 1e-16;
+	if (convex) {
+		normal.normalize();
+		let size = 0;
+		for (const c of ring) size = Math.max(size, c.pos.distanceTo(centre));
+		for (let i = 0; i < ring.length && convex; i++) {
+			const p = ring[(i - 1 + ring.length) % ring.length].pos;
+			const q = ring[i].pos;
+			const r = ring[(i + 1) % ring.length].pos;
+			const turn = new THREE.Vector3().subVectors(q, p).cross(new THREE.Vector3().subVectors(r, q));
+			if (turn.dot(normal) <= 1e-12) convex = false;
+			if (Math.abs(new THREE.Vector3().subVectors(q, centre).dot(normal)) > size * 1e-3) convex = false;
+		}
+	}
+	const out = cloneTris(tris);
+	/** @type {number[]} */
+	let cap;
+	if (convex) cap = fanBest(out, ring, mi, textured, survivingEdges(tris, new Set()));
+	else {
+		let u = 0;
+		let v = 0;
+		for (const c of ring) {
+			u += c.uv[0];
+			v += c.uv[1];
+		}
+		const hub = { pos: centre, uv: [u / ring.length, v / ring.length] };
+		cap = [];
+		for (let i = 0; i < ring.length; i++)
+			cap.push(...fanLoop(out, [hub, ring[i], ring[(i + 1) % ring.length]], mi, textured, 0));
+	}
+	return { tris: out, cap, loopKeys, centroid: !convex };
+}
+
+/**
+ * P6 SOLIDIFY / SHELL — the pure core. The selected surface gains a back: a copy
+ * offset by `thickness` along each welded vertex's averaged (area-weighted)
+ * normal — positive = INTO the surface — wound the other way, and a rim of quads
+ * along the selection's border edges joining the two. Each rim quad takes the
+ * border edge the opposite way to the triangle that owns it and the back copy's
+ * edge the opposite way to the back triangle, so the result is closed AND
+ * consistently wound by construction (no per-quad normal guess). A closed
+ * selection has no border, so it gets no rim: a hollow shell.
+ * @param {any[]} tris @param {number[]} triIndices the selection
+ * @param {{thickness?: number}} [options]
+ *
+ * REFUSED when the selection's border is shared with UNSELECTED faces (a patch of
+ * a closed box): the rim would make every such edge carry three faces. Thicken
+ * an open surface, the whole piece, or open the mesh first.
+ * @returns {{tris: any[], copyOf: Map<number, number>, rimFrom: number} | {error: string}}
+ *   copyOf = source tri -> its back copy's index; rim quads are pairs from rimFrom
+ */
+export function solidifyCore(tris, triIndices, options = {}) {
+	let thickness = options.thickness ?? 0.1;
+	if (Math.abs(thickness) < 1e-4) thickness = thickness < 0 ? -1e-4 : 1e-4;
+	const sel = [...new Set(triIndices)].filter((ti) => tris[ti]).sort((a, b) => a - b);
+	if (!sel.length) return { error: 'Select a face first, then Solidify' };
+	const border = boundaryEdges(tris, { triIndices: sel });
+	if (border.length) {
+		const selSet = new Set(sel);
+		/** @type {Set<string>} */
+		const outside = new Set();
+		tris.forEach((/** @type {any} */ t, /** @type {number} */ ti) => {
+			if (selSet.has(ti)) return;
+			for (let e = 0; e < 3; e++)
+				outside.add(
+					edgeKey(keyOf(t[e].x, t[e].y, t[e].z), keyOf(t[(e + 1) % 3].x, t[(e + 1) % 3].y, t[(e + 1) % 3].z))
+				);
+		});
+		if (border.some((d) => outside.has(d.ek)))
+			return {
+				error:
+					'Solidify thickens an OPEN surface — this selection’s border is shared with faces you did not pick. Select the whole piece (Shell), or delete a face to open the mesh first.'
+			};
+	}
+	/** @type {Map<string, any>} */
+	const normalAt = new Map();
+	for (const ti of sel) {
+		const t = tris[ti];
+		// un-normalised cross = 2x area along the normal: an area-weighted sum
+		const n = new THREE.Vector3().subVectors(t[1], t[0]).cross(new THREE.Vector3().subVectors(t[2], t[0]));
+		for (const v of t) {
+			const k = keyOf(v.x, v.y, v.z);
+			const sum = normalAt.get(k) ?? new THREE.Vector3();
+			sum.add(n);
+			normalAt.set(k, sum);
+		}
+	}
+	for (const sum of normalAt.values()) {
+		if (sum.lengthSq() < 1e-20) sum.set(0, 1, 0);
+		sum.normalize();
+	}
+	/** @type {Map<string, any>} one offset point per welded key — the weld */
+	const back = new Map();
+	const backOf = (/** @type {any} */ v) => {
+		const k = keyOf(v.x, v.y, v.z);
+		let p = back.get(k);
+		if (!p) back.set(k, (p = v.clone().addScaledVector(normalAt.get(k), -thickness)));
+		return p;
+	};
+	const out = cloneTris(tris);
+	/** @type {Map<number, number>} */
+	const copyOf = new Map();
+	for (const ti of sel) {
+		const t = tris[ti];
+		copyOf.set(ti, out.length);
+		out.push(
+			withSlot(
+				[backOf(t[0]).clone(), backOf(t[2]).clone(), backOf(t[1]).clone()],
+				t.mi,
+				t.uv && [t.uv[0], t.uv[2], t.uv[1]].map((/** @type {number[]} */ q) => [q[0], q[1]])
+			)
+		);
+	}
+	const rimFrom = out.length;
+	for (const d of border) {
+		const t = tris[d.ti];
+		const p0 = d.p0;
+		const p1 = d.p1;
+		const q0 = backOf(p0);
+		const q1 = backOf(p1);
+		const uv0 = uvAt(t, d.c0);
+		const uv1 = uvAt(t, d.c1);
+		const textured = !!t.uv;
+		// p1 -> p0 (the owner has p0 -> p1), p0 -> q0, q0 -> q1 (the back copy has
+		// q1 -> q0), q1 -> p1: every rim edge meets its neighbour the other way round
+		out.push(
+			withSlot([p1.clone(), p0.clone(), q0.clone()], t.mi, textured ? [uv1, uv0, uv0] : undefined),
+			withSlot([p1.clone(), q0.clone(), q1.clone()], t.mi, textured ? [uv1, uv0, uv1] : undefined)
+		);
+	}
+	return { tris: out, copyOf, rimFrom };
+}
+
+/**
+ * The partition after a solidify: the originals keep theirs, every back copy
+ * joins a face mirroring its source's, each rim pair is a quad.
+ * @param {number[][]|null} priorFaces @param {number} origLen
+ * @param {{tris: any[], copyOf: Map<number, number>, rimFrom: number}} r
+ */
+function solidifyFaces(priorFaces, origLen, r) {
+	/** @type {number[][]} */
+	const authored = [];
+	for (const group of priorFaces ?? []) {
+		const members = group
+			.filter((ti) => r.copyOf.has(ti))
+			.map((ti) => /** @type {number} */ (r.copyOf.get(ti)));
+		if (members.length) authored.push(members);
+	}
+	for (let i = r.rimFrom; i + 1 < r.tris.length; i += 2) authored.push([i, i + 1]);
+	return composeFaces(priorFaces, appendOrigin(origLen, r.tris.length), authored);
+}
+
+/** a vertex-mode one-shot's commit: the before/after triple + the composed
+ * partition, through `commitMeshGeoTriple` (one replicated meshgeo entry)
+ * @param {string} uuid @param {any[]} inputTris @param {any} object
+ * @param {any[]} tris @param {number[][]} faces */
+function commitVertexOp(uuid, object, inputTris, tris, faces) {
+	return commitMeshGeoTriple(
+		uuid,
+		{
+			positions: trisToPositions(inputTris),
+			groups: trisToGroups(inputTris),
+			uvs: trisToUVs(inputTris),
+			faces: readStoredFaces(object.geometry)
+		},
+		{
+			positions: trisToPositions(tris),
+			groups: trisToGroups(tris),
+			uvs: trisToUVs(tris),
+			faces
+		}
+	);
+}
+
+/**
+ * P6: CONNECT two selected vertices (vertex mode) — split the face they share.
+ * Keyed by welded position like the other vertex operators; one replicated
+ * meshgeo commit. @param {string} uuid @param {string[]} vertexKeys
+ * @returns {boolean}
+ */
+export function connectVertices(uuid, vertexKeys) {
+	interruptOpAdjust();
+	const object = lookupEditable(uuid);
+	if (!object?.geometry?.attributes?.position) return false;
+	const keys = [...new Set(vertexKeys ?? [])];
+	if (keys.length !== 2) {
+		showToast('Connect needs exactly TWO vertices on one face (Ctrl+click adds the second)');
+		return false;
+	}
+	const inputTris = readTriangles(object.geometry);
+	const r = connectVerticesCore(inputTris, partitionOfGeometry(object.geometry, inputTris), keys[0], keys[1]);
+	if ('error' in r) {
+		showToast(r.error);
+		return false;
+	}
+	if (!commitVertexOp(uuid, object, inputTris, r.tris, r.faces)) return false;
+	showToast('Connected — the face is split in two');
+	return true;
+}
+
+/**
+ * P6: DISSOLVE the selected vertices (vertex mode) — the faces around each merge
+ * into one n-gon (or, for a two-edge vertex, the vertex just leaves both faces).
+ * @param {string} uuid @param {string[]} vertexKeys @returns {boolean}
+ */
+export function dissolveVertices(uuid, vertexKeys) {
+	interruptOpAdjust();
+	const object = lookupEditable(uuid);
+	if (!object?.geometry?.attributes?.position) return false;
+	if (!vertexKeys?.length) {
+		showToast('Select a vertex first, then Dissolve');
+		return false;
+	}
+	const inputTris = readTriangles(object.geometry);
+	const r = dissolveVerticesCore(inputTris, partitionOfGeometry(object.geometry, inputTris), vertexKeys);
+	if (!r.done) {
+		showToast(
+			'Nothing to dissolve — the faces around that vertex do not form one closed outline (a vertex where two separate pieces only touch, or a face with a hole)'
+		);
+		return false;
+	}
+	if (!commitVertexOp(uuid, object, inputTris, r.tris, r.faces)) return false;
+	showToast(
+		'Dissolved ' +
+			r.done +
+			(r.done === 1 ? ' vertex' : ' vertices') +
+			(r.skipped ? ' (' + r.skipped + ' skipped)' : '')
+	);
+	return true;
+}
+
+/**
+ * P6: FILL the hole the picked border edges close (edges mode) — one cap face,
+ * wound with its neighbours. Selects nothing afterwards: the picked rim edges
+ * are interior now. @returns {boolean}
+ */
+export function fillHole() {
+	interruptOpAdjust();
+	if (!faceEdited) return false;
+	const sel = get(edgeEditSelected);
+	if (!sel.length) {
+		showToast('Pick the border edges of a hole first (one border edge fills its whole rim)');
+		return false;
+	}
+	const r = fillHoleCore(workingTris, sel);
+	if ('error' in r) {
+		showToast(r.error);
+		return false;
+	}
+	const positions = trisToPositions(r.tris);
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast(tooLargeMessage(positions.length, 'edit'));
+		return false;
+	}
+	const before = {
+		positions: trisToPositions(workingTris),
+		groups: trisToGroups(workingTris),
+		uvs: trisToUVs(workingTris),
+		faces: readStoredFaces(faceEdited.geometry)
+	};
+	const priorFaces = currentPartition();
+	const origLen = workingTris.length;
+	const groups = trisToGroups(r.tris);
+	const uvs = trisToUVs(r.tris);
+	clearEdgeSelectionInner(); // the rim is interior now — op housekeeping, not a pick
+	faceEditHoverTri.set(-1);
+	applyGeometrySnapshot(
+		positions,
+		groups,
+		uvs,
+		composeFaces(priorFaces, appendOrigin(origLen, r.tris.length), [r.cap])
+	);
+	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
+	recordEntry({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: withFaces({ positions, groups, uvs }) });
+	showToast(
+		'Filled a ' + r.loopKeys.length + '-edge hole' + (r.centroid ? ' (fanned from its centre — the outline is not a flat convex polygon)' : '')
+	);
+	return true;
+}
+
+/**
+ * P6 SEPARATE TO NEW OBJECT — the batch's only REPLICATION surface, and so built
+ * last and only from parts that already replicate:
+ *   (a) a NEW mesh from the selected triangles (their slots, uvs and stored
+ *       faces ride along; same parent and local transform = the same world
+ *       matrix; its own material CLONE), added and announced through the
+ *       existing `object` message — `PeerConnection.send` runs
+ *       gateCreationBroadcast on it, so a viewer's piece stays local exactly like
+ *       any other creation of theirs — and recorded as a 'create';
+ *   (b) the SAME triangles deleted from the source as an ordinary meshgeo commit.
+ * The two entries are wrapped in ONE history batch, so Ctrl+Z inside the session
+ * takes the piece back in one step (two steps would leave the separated copy
+ * floating over a source that has its faces again); at Done the seal sees a
+ * mixed-kind run and keeps it as the composite that replays both.
+ * Late joiners get the new object from the ordinary scene walk; like every
+ * edited mesh its stored faces do not survive that GLTF path (re-derived there).
+ * Refused on a collider proxy (not a scene object — peers never learn its uuid)
+ * and when the selection is the whole mesh (that is just the object).
+ * @returns {string|null} the new object's uuid, or null when refused
+ */
+export function separateSelectedFaces() {
+	interruptOpAdjust();
+	if (!faceEdited) return null;
+	const group = get(objectsGroup);
+	const source = faceEdited;
+	if (!group || !group.getObjectByProperty('uuid', source.uuid)) {
+		showToast('Separate works on scene objects — not inside a collider edit');
+		return null;
+	}
+	const face = opTargetFace();
+	if (!face?.triIndices?.length) {
+		showToast('Select the faces to separate first');
+		return null;
+	}
+	const sel = new Set(face.triIndices.filter((/** @type {number} */ ti) => !!workingTris[ti]));
+	if (sel.size >= workingTris.length) {
+		showToast('That is the whole mesh — select part of it to separate');
+		return null;
+	}
+	const ordered = [...sel].sort((x, y) => x - y);
+	const pieceTris = cloneTris(ordered.map((ti) => workingTris[ti]));
+	const piecePositions = trisToPositions(pieceTris);
+	if (piecePositions.length > MAX_SNAPSHOT) {
+		showToast(tooLargeMessage(piecePositions.length, 'edit'));
+		return null;
+	}
+	const priorFaces = currentPartition();
+	/** @type {Map<number, number>} */
+	const pieceIndex = new Map(ordered.map((ti, i) => [ti, i]));
+	/** @type {number[][]} */
+	const pieceFaces = [];
+	for (const f of priorFaces ?? []) {
+		const members = f.filter((ti) => pieceIndex.has(ti)).map((ti) => /** @type {number} */ (pieceIndex.get(ti)));
+		if (members.length) pieceFaces.push(members);
+	}
+	// (a) the piece
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(piecePositions), 3));
+	const pieceGroups = trisToGroups(pieceTris);
+	for (const g of pieceGroups ?? []) geometry.addGroup(g.start, g.count, g.materialIndex);
+	const pieceUvs = trisToUVs(pieceTris);
+	if (pieceUvs) geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(pieceUvs), 2));
+	geometry.computeVertexNormals();
+	if (source.userData.shading === 'smooth') smoothWeldedNormals(geometry);
+	geometry.computeBoundingSphere();
+	storeFaces(geometry, pieceFaces);
+	const material = Array.isArray(source.material)
+		? pieceGroups
+			? source.material.map((/** @type {any} */ m) => m.clone())
+			: source.material[pieceTris[0]?.mi ?? 0]?.clone() ?? source.material[0].clone()
+		: source.material.clone();
+	const piece = new THREE.Mesh(geometry, material);
+	piece.name = (source.name || 'Mesh') + ' (part)';
+	piece.castShadow = source.castShadow;
+	piece.receiveShadow = source.receiveShadow;
+	if (source.userData.shading) piece.userData.shading = source.userData.shading;
+	piece.userData.faceEdited = true;
+	piece.position.copy(source.position);
+	piece.quaternion.copy(source.quaternion);
+	piece.scale.copy(source.scale);
+	const parent = source.parent ?? group;
+	// (b) the source without them — computed before anything is applied
+	const before = {
+		positions: trisToPositions(workingTris),
+		groups: trisToGroups(workingTris),
+		uvs: trisToUVs(workingTris),
+		faces: readStoredFaces(source.geometry)
+	};
+	const kept = cloneTris(workingTris.filter((/** @type {any} */ _, /** @type {number} */ ti) => !sel.has(ti)));
+	const positions = trisToPositions(kept);
+	const groups = trisToGroups(kept);
+	const uvs = trisToUVs(kept);
+	const keptFaces = composeFaces(priorFaces, survivorOrigin(workingTris.length, sel), []);
+	/** @type {any} */
+	const peer = get(peers);
+	beginHistoryBatch();
+	try {
+		parent.add(piece);
+		piece.updateMatrixWorld();
+		recordObjectPresence('create', piece);
+		if (peer)
+			peer.send({
+				type: 'object',
+				element: piece.toJSON(),
+				groupuuid: parent !== group ? parent.uuid : undefined
+			});
+		// every pick indexes the pre-op soup — clear BEFORE the swap
+		faceEditSelectedTris.set([]);
+		faceEditHighlight.set(-1);
+		faceEditHoverTri.set(-1);
+		clearEdgeSelectionInner();
+		applyGeometrySnapshot(positions, groups, uvs, keptFaces);
+		broadcastMeshGeo(source.uuid, positions, groups, uvs);
+		recordEntry({ kind: 'meshgeo', uuid: source.uuid, before, after: withFaces({ positions, groups, uvs }) });
+	} finally {
+		endHistoryBatch('Separate');
+	}
+	pokeScene();
+	const count = pieceFaces.length || sel.size;
+	showToast('Separated ' + count + (count === 1 ? ' face' : ' faces') + ' into “' + piece.name + '”');
+	return piece.uuid;
+}
+
 // ---- session cancel --------------------------------------------------------
 // `sealEditHistorySession('discard')` drops the undo entries above the barrier
 // but leaves the GEOMETRY edited, so a cancel needs its own snapshot: the state
@@ -7211,6 +8198,12 @@ function mergeAdjustParams(a, patch) {
 	} else if (a.op === 'edge-extrude') {
 		// P5b: world units, signed — negative pulls the strip the other way
 		p.distance = Math.min(Math.max(p.distance ?? 0.5, -5), 5);
+	} else if (a.op === 'edge-slide') {
+		// P6: 0 = where the edges are; ±1 = onto either side's rail ends
+		p.factor = Math.min(Math.max(p.factor ?? 0, -1), 1);
+	} else if (a.op === 'solidify') {
+		// P6: world units, positive = into the surface (the back copy goes behind it)
+		p.thickness = Math.min(Math.max(p.thickness ?? 0.1, -5), 5);
 	}
 	a.params = p;
 }
@@ -7396,6 +8389,31 @@ function runAdjustCore(a) {
 			info: { done: r.done, refusedInterior: r.refusedInterior }
 		};
 	}
+	if (a.op === 'edge-slide') {
+		const r = edgeSlideCore(a.originalTris, a.priorFaces ?? [], a.target, { factor: p.factor });
+		if (!r.moved)
+			return {
+				error:
+					'Nothing to slide: no picked vertex has a single edge to run along on that side (a box corner has none — slide a loop that runs between quads)'
+			};
+		return {
+			tris: r.tris,
+			faces: a.priorFaces, // positions only — every face keeps its triangles
+			select: { kind: 'edges', keys: r.newEdgeKeys },
+			info: { moved: r.moved, poles: r.poles }
+		};
+	}
+	if (a.op === 'solidify') {
+		const r = solidifyCore(a.originalTris, a.target.triIndices, { thickness: p.thickness });
+		if ('error' in r) return { error: r.error };
+		return {
+			tris: r.tris,
+			faces: solidifyFaces(a.priorFaces, origLen, r),
+			// append-only: the source selection's indices are untouched
+			select: { kind: 'set', tris: [...a.target.triIndices] },
+			info: { rim: (r.tris.length - r.rimFrom) / 2 }
+		};
+	}
 	return { error: 'Unknown adjust operation' };
 }
 
@@ -7500,6 +8518,21 @@ function adjustBeginToast(a, result) {
 				(done === 1 ? ' vertex' : ' vertices') +
 				(skipped ? ' (' + skipped + ' skipped: open border)' : '')
 		);
+	} else if (a.op === 'edge-slide' && result.info) {
+		const { moved, poles } = result.info;
+		showToast(
+			'Sliding ' +
+				moved +
+				(moved === 1 ? ' vertex' : ' vertices') +
+				(poles ? ' (' + poles + ' held: no single rail on that side)' : '') +
+				' — scrub the factor'
+		);
+	} else if (a.op === 'solidify' && result.info) {
+		showToast(
+			result.info.rim
+				? 'Solidified — ' + result.info.rim + ' rim quads join the back to the front'
+				: 'Solidified a closed selection — it is a hollow shell now (no border, so no rim)'
+		);
 	} else if (a.op === 'edge-extrude' && result.info) {
 		const { done, refusedInterior } = result.info;
 		showToast(
@@ -7525,7 +8558,7 @@ function adjustStateExtras(a) {
  * recorded at apply, kept on the adjust so settle can update it in place), then
  * leave the engine live for `reapplyOpAdjust` scrubs.
  *
- * @param {'extrude'|'inset'|'bevel'|'loopcut'|'bridge'|'subdivide'|'edge-extrude'} op
+ * @param {'extrude'|'inset'|'bevel'|'loopcut'|'bridge'|'subdivide'|'edge-extrude'|'edge-slide'|'solidify'} op
  * @param {any} params op parameters (distance / width+segments+profile / cuts / levels)
  * @param {{target?: any, record?: 'deferred', kind?: 'faces'|'edges'|'vertices',
  *   uuid?: string, vertexKeys?: string[]}} [opts] `target` = a pre-resolved face
@@ -7655,6 +8688,21 @@ export function beginOpAdjust(op, params, opts = {}) {
 			return false;
 		}
 		a.target = selected;
+	} else if (op === 'edge-slide') {
+		// P6: the picked edge KEYS; the rails are walked by the core on originalTris
+		const selected = get(edgeEditSelected).filter((/** @type {string} */ k) => !!edgeEndpoints(k));
+		if (!selected.length) {
+			showToast('Pick an edge (a loop works best), then Slide');
+			return false;
+		}
+		a.target = selected;
+	} else if (op === 'solidify') {
+		const face = opTargetFace();
+		if (!face?.triIndices?.length) {
+			showToast('Select a face first, then Solidify');
+			return false;
+		}
+		a.target = { triIndices: [...face.triIndices] };
 	} else return false;
 	mergeAdjustParams(a, params ?? {});
 	// the before-triple + stored topology + the selection ✕ restores
@@ -7691,6 +8739,7 @@ export function beginOpAdjust(op, params, opts = {}) {
 		faceEditSelectedTris.set([]);
 		faceEditHighlight.set(-1);
 	}
+	if (op === 'edge-slide') edgeEditSelected.set([]); // re-keyed by the 'edges' select rule
 	if (op === 'bevel' && kind === 'edges') {
 		clearEdgeSelectionInner();
 		faceEditSelectedTris.set([]);

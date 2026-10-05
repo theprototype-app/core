@@ -18,7 +18,12 @@ const fs = require('fs');
 const path = require('path');
 
 const SHOTS = process.env.SHOTS || '';
+// §6 is about MIGRATING a scene authored before the Main graph existed, so it wants an OLD Mini Golf
+// (36-games-graphs re-authors the game with an authored Main graph, which the migration leaves alone —
+// asserted too, when only a new scene is found)
 const GOLF = [
+	process.env.MINIGOLF_OLD_TPSCENE,
+	path.resolve(__dirname, '../../../cloud-lane-30-staging/35-mini-golf/games/mini-golf/scene.tpscene'),
 	process.env.MINIGOLF_TPSCENE,
 	path.resolve(__dirname, '../../../scenes/games/mini-golf/scene.tpscene')
 ].filter(Boolean).find((p) => fs.existsSync(p));
@@ -236,13 +241,26 @@ h.run(async () => {
 				const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 				await s.sessions.applySession(payload, { backup: false });
 			}, bytes);
+		const authored = await A.page.evaluate(async (arr) => {
+			const payload = await window.__stores.sessions.readSessionZip(new Uint8Array(arr).buffer);
+			const graphs = payload?.flow?.graphs ?? payload?.graphs ?? {};
+			const scene = graphs.scene ?? payload?.flow ?? {};
+			return (scene.nodes ?? payload?.nodes ?? []).some((n) => n?.data?.main);
+		}, bytes);
 		await load();
 		const mainIds = (peer) => peer.page.evaluate(() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.filter((n) => n.data?.main).map((n) => n.id); });
+		if (authored) {
+			// a scene authored WITH its Main graph (36-games-graphs): the migration adds nothing
+			await A.page.waitForTimeout(1500);
+			const ids = await mainIds(A);
+			h.check(!ids.includes('main-mod-minigolf') && ids.includes('engine'), `an authored Main graph is left as authored: its own Code link, no migrated one (${ids.join(', ')})`);
+		} else {
 		await h.eventually(() => mainIds(A), (ids) => ids.includes('main-mod-minigolf'), 'loading the old Mini Golf scene adds a Code link to its module on Main', 8000);
 		await h.eventually(() => mainIds(B), (ids) => ids.includes('main-mod-minigolf'), 'the peer receives it with the load', 8000);
 		await load();
 		await A.page.waitForTimeout(1500);
 		h.check((await mainIds(A)).filter((id) => id === 'main-mod-minigolf').length === 1, 'a reload adds nothing twice');
+		}
 		const tree = await A.page.evaluate(() => document.querySelector('#graph-tree-flow-scene')?.textContent ?? '');
 		h.check(/Main/.test(tree), `the Flow list calls the scene graph Main (${tree.trim()})`);
 		if (SHOTS) {

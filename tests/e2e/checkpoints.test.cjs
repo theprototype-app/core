@@ -116,7 +116,7 @@ h.run(async () => {
 	list = await until(() => rows(page), (l) => l.length === 3, 'the scene before it is kept');
 	const before = list.find((r) => /^Before restoring/.test(r.name));
 	h.check(!!before && before.auto && before.count === 4, 'as an automatic "Before restoring" row of 4 objects');
-	h.check(!(await page.locator('#checkpoint-timeline').isVisible()), 'the timeline closes on restore');
+	await h.eventually(() => page.locator('#checkpoint-timeline').isVisible(), (v) => v === false, 'the timeline closes on restore');
 	const sessionsBackups = await page.evaluate(
 		() => new Promise((r) => window.__stores.sessions.sessions.subscribe((l) => r(l.filter((s) => /Backup before/.test(s.name)).length))())
 	);
@@ -131,6 +131,9 @@ h.run(async () => {
 	list = await until(() => rows(page), (l) => l.some((r) => r.name === 'Over the cap'), 'a save over the cap still lands');
 	h.check(!list.some((r) => /^Before restoring/.test(r.name)), 'the AUTOMATIC row went first (it was the youngest older row)');
 	h.check(list.some((r) => r.name === 'With cone') && list.some((r) => r.name === 'Blockout v1'), 'named rows survive while an automatic one can go');
+	// cap at exactly what is stored now, so the next save must evict (smaller scenes than the auto row it replaced)
+	const nowTotal = (await rows(page)).reduce((n, r) => n + r.bytes, 0);
+	await page.evaluate((cap) => window.__stores.checkpoints.checkpointsDebug.capBytes(cap), nowTotal);
 	await page.evaluate(() => window.__stores.checkpoints.saveCheckpoint({ name: 'Over again' }));
 	list = await until(() => rows(page), (l) => l.some((r) => r.name === 'Over again'), 'another save over the cap');
 	h.check(!list.some((r) => r.name === 'With cone'), 'then the oldest UNPINNED named row');
@@ -223,6 +226,9 @@ h.run(async () => {
 	h.check(empty === null, 'an empty scene is not checkpointed');
 
 	// ---- 8. Restore with a peer connected = a proposal ---------------------------------
+	// the reloads above left autosave's Restore/Dismiss offer up on A; it sits where the Approve card lands
+	await page.evaluate(() => window.__stores.autosave.dismissRestore());
+	await page.waitForTimeout(300);
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 	await page.waitForTimeout(800);

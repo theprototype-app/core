@@ -20,6 +20,7 @@ import {
 	setNodeData as sendNodeData
 } from '../nodesHandler';
 import { get } from 'svelte/store';
+import { moduleNodeGroups } from './registries.js'; // 36 (DEVX #10): which node types are this module's
 import { flowRuntimeRef, flowGraphsRef, nodeCatalogRef } from './refs.js';
 
 /** @param {import('./context.js').SdkContext} ctx */
@@ -206,6 +207,31 @@ export function sdkFlow(ctx) {
 				return items.length;
 			},
 			/**
+			 * 36 (DEVX #10): SEED a wired example graph when the module loads — ABSENT-ONLY, so a
+			 * user's graph is never touched: nothing is added when any node in any graph already
+			 * carries this seed's mark (`data.seed = '<moduleId>:<key>'`) or is one of THIS module's
+			 * node types (the scene already uses the module — its graph is the user's, wired their
+			 * way). Otherwise it is `addNodes` (replicated creates, ONE undo entry) with every node
+			 * marked. Call it from `init`; on a joining peer the host's graph arrives with the
+			 * handshake, so call it only where you would author content (e.g. not while
+			 * `api.isJoining?.()` / when the room already has a graph).
+			 * @param {{key?: string, graphId?: string, nodes?: any[], edges?: any[]}} spec
+			 * @returns {string[]} the created node ids ([] = already seeded / in use / not primed)
+			 */
+			seedGraph(spec) {
+				const mark = moduleId + ':' + String(spec?.key ?? 'example');
+				/** @type {Set<string>} */
+				const mine = new Set();
+				for (const group of get(moduleNodeGroups))
+					for (const item of group.items ?? []) if (item.moduleId === moduleId) mine.add(item.type);
+				for (const n of allNodes()) if (n.data?.seed === mark || mine.has(n.type)) return [];
+				return this.addNodes({
+					graphId: spec?.graphId,
+					nodes: (spec?.nodes ?? []).map((/** @type {any} */ n) => ({ ...n, data: { ...(n?.data ?? {}), seed: mark } })),
+					edges: spec?.edges ?? []
+				});
+			},
+			/**
 			 * Create nodes (and edges) the way the editor does: replicated `nodecreate`/
 			 * `edgecreate` per item plus ONE `flownodes` undo entry for the batch — so what a
 			 * module builds can be undone in one step and taken apart afterwards, because it
@@ -306,5 +332,6 @@ sdkFlow.surface = {
 	'flow.triggerStamp': 'read',
 	'flow.setNodeData': 'content',
 	'flow.setNodesData': 'content',
-	'flow.addNodes': 'content'
+	'flow.addNodes': 'content',
+	'flow.seedGraph': 'content' // 36 (DEVX #10): graph content, the addNodes kind
 };

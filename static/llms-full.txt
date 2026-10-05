@@ -365,6 +365,10 @@ api.flow.addNodes({                // replicated, ONE undo entry for the batch
 	nodes: [{ type: 'mytype', x: 60, y: 40, data: {} }, { type: 'objectselector', x: 280, y: 40, data: { selected: uuid } }],
 	edges: [{ from: 0, to: 1 }]     // indices into nodes, or existing node id strings
 });
+api.flow.seedGraph({               // 36 (DEVX #10): the same, ABSENT-ONLY — a wired example
+	key: 'example',                // graph on module load; nothing is added once any node is
+	nodes: [/* … */], edges: []    // marked with this seed or is one of THIS module's types
+});
 
 api.hud.registerDebugLine(() => 'mymod: 3 left');   // a line on the debug HUD pill
 api.hud.registerAction({ key: 'showleft', label: 'Show it', group: 'Data',

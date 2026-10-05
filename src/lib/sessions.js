@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
 import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
+import { ensureMainGraph } from './mainGraph.js'; // 36 (G1): a leaf
 import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
@@ -1483,12 +1484,16 @@ async function applySessionNow(payload, opts, job) {
 	animationsRestore(payload.animations ?? {}, replicate);
 	// H1: new format restores EVERY graph document; legacy payloads carry the
 	// scene graph only. One 'nodes' snapshot replicates the whole map.
-	const graphsPayload =
+	const loadedGraphs =
 		payload.graphs && typeof payload.graphs === 'object'
 			? payload.graphs
 			: payload.nodes?.length || payload.edges?.length
 				? { [SCENE_GRAPH]: { nodes: payload.nodes ?? [], edges: payload.edges ?? [] } }
 				: null;
+	// 36 (G1): an old scene's Main graph gains links to the logic it hides (its modules' code,
+	// its object graphs) — here, before the restore, so the one 'nodes' snapshot below carries
+	// them to the room. A G1-authored or already-migrated scene comes back unchanged.
+	const graphsPayload = ensureMainGraph(loadedGraphs, { modules: payload.modules, sceneKey: SCENE_GRAPH }).graphs;
 	if (graphsPayload) {
 		restoreGraphs(graphsPayload);
 		if (replicate && peer)

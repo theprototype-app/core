@@ -16,7 +16,7 @@
 	export let data;
 
 	const OPS: Record<string, [string, string][]> = {
-		math: [['add', '+'], ['sub', '−'], ['mul', '×'], ['div', '÷'], ['min', 'min'], ['max', 'max'], ['mod', 'mod']],
+		math: [['add', '+'], ['sub', '−'], ['mul', '×'], ['div', '÷'], ['min', 'min'], ['max', 'max'], ['mod', 'mod'], ['pow', 'aᵇ'], ['sin', 'sin'], ['cos', 'cos'], ['abs', '|a|'], ['round', 'round'], ['floor', 'floor'], ['clamp', 'clamp'], ['neg', '−a']],
 		compare: [['gt', '>'], ['lt', '<'], ['eq', '='], ['gte', '≥'], ['lte', '≤'], ['neq', '≠']],
 		gate: [['and', 'AND'], ['or', 'OR'], ['not', 'NOT'], ['xor', 'XOR']]
 	};

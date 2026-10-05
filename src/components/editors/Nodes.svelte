@@ -20,6 +20,10 @@
 	import { get } from 'svelte/store';
 	import Sidebar from './Sidebar.svelte';
 	import GraphTree from './GraphTree.svelte';
+	import NodeProperties from './NodeProperties.svelte'; // 36 (flow-revamp 200)
+	// 36 (G1): Main graph label + code <-> node (double-click / Open code)
+	import { MAIN_GRAPH_LABEL, nodeHasCode, openCodeRequestFor } from '$lib/graphContract.js';
+	import { openCode } from '$lib/codeOpen';
 	import PeerCursors from './PeerCursors.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ColorPickerNode from './nodes/ColorPickerNode.svelte';
@@ -34,6 +38,7 @@
 	import MoveInputNode from './nodes/MoveInputNode.svelte';
 	import ScriptNode from './nodes/ScriptNode.svelte';
 	import BehaviourNode from './nodes/BehaviourNode.svelte';
+	import CodeRefNode from './nodes/CodeRefNode.svelte'; // 36 (G1)
 	import MapRangeNode from './nodes/MapRangeNode.svelte';
 	import SelectNode from './nodes/SelectNode.svelte';
 	import CustomNode from './nodes/CustomNode.svelte';
@@ -130,6 +135,7 @@
 		blink: AnimationNode,
 		script: ScriptNode,
 		behaviour: BehaviourNode, // 34 R3
+		coderef: CodeRefNode, // 36 (G1): a Main-graph link to module/kit code
 		maprange: MapRangeNode,
 		select: SelectNode,
 		customnode: CustomNode,
@@ -702,12 +708,33 @@
 			x: event.clientX,
 			y: event.clientY,
 			items: [
+				// 36 (G1): any node with code opens it (the double-click's menu twin)
+				...(nodeHasCode(node, findNodeSpec(String(node.type))) ? [{ label: 'Open code', action: () => openCode(openCodeRequestFor(node, activeId, findNodeSpec(String(node.type)))) }] : []),
 				{ label: 'Duplicate', action: () => duplicateNode(id) },
 				{ label: 'Disconnect all', action: () => disconnectNode(id) },
 				{ label: 'Delete node', danger: true, action: () => deleteNode(id) }
 			]
 		};
 	};
+
+	/**
+	 * 36 (G1): double-click a node that has code → its code. xyflow has no node double-click
+	 * event, so this listens in CAPTURE on the wrapper: a code node's double-click is consumed
+	 * here (the pane's zoom-on-double-click never sees it); every other double-click — a text
+	 * field inside a card, the bare pane, a node without code — passes through untouched.
+	 */
+	function onNodeDoubleClick(event: MouseEvent) {
+		const target = event.target as HTMLElement | null;
+		if (!target || target.closest('input, textarea, select, [contenteditable="true"], .cm-editor')) return;
+		const el = target.closest('.svelte-flow__node') as HTMLElement | null;
+		const id = el?.dataset?.id;
+		const node = id ? (nodes as any[]).find((n) => n.id === id) : null;
+		const spec = node ? findNodeSpec(node.type) : null;
+		if (!node || !nodeHasCode(node, spec)) return;
+		event.stopPropagation();
+		event.preventDefault();
+		void openCode(openCodeRequestFor(node, activeId, spec));
+	}
 
 	const onEdgeContextMenu = ({ edge, event }: { edge: Edge; event: MouseEvent }) => {
 		event.preventDefault();
@@ -772,6 +799,7 @@
 	<div
 		class="svelteFlow relative h-full grow"
 		style="order: {paletteSide === 'right' ? 1 : 3}"
+		ondblclickcapture={onNodeDoubleClick}
 		onpointerdown={onWrapPointerDown}
 		onpointerup={onWrapPointerUp}
 		onpointermove={onPointerMoveCursor}
@@ -797,7 +825,7 @@
 			<span
 				class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2.5 py-0.5 text-xs text-gray-200 backdrop-blur-sm"
 			>
-				{activeId === SCENE_GRAPH ? 'Scene flow' : activeOwnerName + ' — object flow'}
+				{activeId === SCENE_GRAPH ? MAIN_GRAPH_LABEL + ' graph' : activeOwnerName + ' — object flow'}
 			</span>
 			{#if activeId !== SCENE_GRAPH && hasActiveGraph}
 				<button
@@ -960,7 +988,7 @@
 							<input id="param-number-step" class="ui-input w-16" type="number" min="0" value={selectedNode.data?.step ?? 1}
 								onchange={(e) => setNodeData(selectedNode.id, { step: +e.currentTarget.value || 1 })} /></label>
 					{:else}
-						<p class="text-gray-400">This node's parameters live on its card.</p>
+						<NodeProperties node={selectedNode} /><!-- 36: every node's property schema -->
 					{/if}
 				{:else}
 					<p class="text-gray-400">Select a node to edit its parameters.</p>

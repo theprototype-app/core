@@ -301,7 +301,10 @@ export const DEBUG_HOOKS = [
 	['scriptSockets', () => import('./scriptSockets')],
 	['scriptLint', () => import('./scriptLint')],
 	['aiExtensions', () => import('./ai/aiExtensions')],
-	['graphText', () => import('./graphText')]
+	['graphText', () => import('./graphText')],
+	// 36 (G1): code <-> node (openCode seam, module source, fork) + the Main graph migration
+	['codeOpen', () => import('./codeOpen')],
+	['mainGraph', () => import('./mainGraph.js')]
 ];
 
 /** hooks published at runtime through registerDebugHook @type {Record<string, any>} */

@@ -43,7 +43,7 @@ const V_MARK = '{v}';
  * not see it", "my copies vanished when I stopped the sim". HudNode had hand-rolled
  * exactly this for `hudscreen`; a spec field means the next such node needs no card of
  * its own to say its one important thing.
- * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text', label?: string, min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number }} NodeParam
+ * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text' | 'number' | 'color' | 'vector3' | 'code', label?: string, doc?: string, group?: string, socket?: boolean, min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number }} NodeParam
  * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[], inputLabels?: Record<string, string>, note?: string }} NodeSpec
  */
 
@@ -68,7 +68,16 @@ export const nodeCatalog = [
 				inputs: ['seed', 'reroll'],
 				params: [{ key: 'integer', kind: 'toggle' }]
 			},
-			{ type: 'time', label: 'Time', defaults: { mode: 'sin', rate: 1 } }
+			{
+				type: 'time',
+				label: 'Time',
+				defaults: { mode: 'sin', rate: 1 },
+				// 36 (flow-revamp 201): the ⓘ panel's schema — the card keeps its own widgets
+				params: [
+					{ key: 'mode', kind: 'select', options: ['t', 'sin', 'saw', 'pingpong'] },
+					{ key: 'rate', kind: 'number', step: 0.1 }
+				]
+			}
 		]
 	},
 	{
@@ -643,10 +652,51 @@ export const nodeCatalog = [
 			// loads it; the node has no sockets: it listens to kit events, and Open view shows its
 			// derived live node view)
 			{ type: 'behaviour', label: 'Behaviour', defaults: { name: 'Behaviour', enabled: true, code: BEHAVIOUR_STARTER } },
+			// 36 (G1): a CODE LINK — names a module (or kit) file whose logic runs this game, so the
+			// Main graph shows where every rule lives; double-click opens it read-only. Inert at
+			// runtime (no sockets, no value, no effect).
+			{
+				type: 'coderef',
+				label: 'Code link',
+				defaults: { module: '', file: '', title: '' },
+				params: [
+					{ key: 'title', kind: 'text', placeholder: 'what this code does', maxLength: 80 },
+					{ key: 'module', kind: 'text', placeholder: 'module id', maxLength: 60 },
+					{ key: 'file', kind: 'text', placeholder: 'module.js', maxLength: 120 }
+				]
+			},
 			// 133: pure logic on wired inputs (deterministic, no streaming)
-			{ type: 'math', label: 'Math', defaults: { op: 'add', a: 0, b: 0 } },
-			{ type: 'compare', label: 'Compare', defaults: { op: 'gt', a: 0, b: 0 } },
-			{ type: 'gate', label: 'Gate', defaults: { op: 'and', a: false, b: false } },
+			// 36 (flow-revamp 201): `params` = the ⓘ panel's schema (BinaryNode draws its own card)
+			{
+				type: 'math',
+				label: 'Math',
+				defaults: { op: 'add', a: 0, b: 0 },
+				params: [
+					{ key: 'op', kind: 'select', options: ['add', 'sub', 'mul', 'div', 'min', 'max', 'mod', 'pow', 'sin', 'cos', 'abs', 'round', 'floor', 'clamp', 'neg'] },
+					{ key: 'a', kind: 'number' },
+					{ key: 'b', kind: 'number' }
+				]
+			},
+			{
+				type: 'compare',
+				label: 'Compare',
+				defaults: { op: 'gt', a: 0, b: 0 },
+				params: [
+					{ key: 'op', kind: 'select', options: ['gt', 'lt', 'eq', 'gte', 'lte', 'neq'] },
+					{ key: 'a', kind: 'number' },
+					{ key: 'b', kind: 'number' }
+				]
+			},
+			{
+				type: 'gate',
+				label: 'Gate',
+				defaults: { op: 'and', a: false, b: false },
+				params: [
+					{ key: 'op', kind: 'select', options: ['and', 'or', 'not', 'xor'] },
+					{ key: 'a', kind: 'toggle' },
+					{ key: 'b', kind: 'toggle' }
+				]
+			},
 			// 4.6: loop-closers from the NODES.md audit
 			{ type: 'maprange', label: 'Map Range', defaults: { inMin: 0, inMax: 1, outMin: 0, outMax: 1, clamp: true, a: 0 } },
 			// 4.6 -> 21-E4: Select grew N-WAY. a/b keep their handle ids, so every saved
@@ -722,7 +772,17 @@ export const nodeCatalog = [
 			// logic (Latch/Delay/Sequence/Once) rather than among the event SOURCES.
 			{ type: 'counter', label: 'Counter', defaults: { op: 'up', step: 1 } },
 			// 134: loops, timers, sensors + object actions (all deterministic)
-			{ type: 'loop', label: 'Loop', defaults: { from: 0, to: 1, rate: 1, mode: 'wrap' } },
+			{
+				type: 'loop',
+				label: 'Loop',
+				defaults: { from: 0, to: 1, rate: 1, mode: 'wrap' },
+				params: [
+					{ key: 'mode', kind: 'select', options: ['wrap', 'pingpong'] },
+					{ key: 'from', kind: 'number' },
+					{ key: 'to', kind: 'number' },
+					{ key: 'rate', kind: 'number', step: 0.1 }
+				]
+			},
 			{ type: 'timer', label: 'Timer', defaults: { delay: 1, a: 0 } },
 			{ type: 'distance', label: 'Distance', defaults: {} },
 			{ type: 'proximity', label: 'Proximity', defaults: { radius: 3 } },

@@ -73,11 +73,15 @@ h.run(async () => {
 	const slide = await page.evaluate(async () => {
 		let g; window.__stores.objectsGroup.subscribe((v) => (g = v))();
 		const o = g.getObjectByName('Sky S1 slider');
-		const a = o.position.x;
-		await new Promise((r) => setTimeout(r, 700));
-		return [a, o.position.x];
+		// sample across half its period: two samples 700 ms apart can straddle the sine's turn
+		const xs = [];
+		for (let i = 0; i < 9; i++) {
+			xs.push(o.position.x);
+			await new Promise((r) => setTimeout(r, 250));
+		}
+		return [Math.min(...xs), Math.max(...xs)];
 	});
-	h.check(Math.abs(slide[0] - slide[1]) > 0.05, `the stage 1 slider moves (${slide.map((n) => n.toFixed(2))})`);
+	h.check(slide[1] - slide[0] > 0.2, `the stage 1 slider moves (range ${slide.map((n) => n.toFixed(2))})`);
 
 	console.log('\n=== 2. Play: the menu, the body, the music ===');
 	await page.evaluate(() => window.__stores.isLocked.set(true));
@@ -114,7 +118,8 @@ h.run(async () => {
 	// a moving platform carries a player who stands still on it
 	await page.evaluate(() => window.__skyrun.teleportTo('Sky S1 slider'));
 	await page.waitForTimeout(300);
-	const ride = await page.evaluate(async () => {
+	// a 1.5 s window can sit on the slider's turn (it barely moves there): measure up to three windows
+	const rideOnce = () => page.evaluate(async () => {
 		const s = window.__stores;
 		let cam; s.playerCam.subscribe((v) => (cam = v))();
 		let g; s.objectsGroup.subscribe((v) => (g = v))();
@@ -125,6 +130,8 @@ h.run(async () => {
 		const b = read();
 		return { padMoved: b.pad - a.pad, eyeMoved: b.eye - a.eye, onIt: Math.abs(b.eye - b.pad), y: cam.getWorldPosition(new s.THREE.Vector3()).y };
 	});
+	let ride = await rideOnce();
+	for (let k = 0; k < 2 && Math.abs(ride.padMoved) <= 0.2; k++) ride = await rideOnce();
 	h.check(Math.abs(ride.padMoved) > 0.2 && Math.sign(ride.eyeMoved) === Math.sign(ride.padMoved) && ride.onIt < 1.2 && ride.y > 13.5, `standing still on the slider rides it (${JSON.stringify(ride)})`);
 	// a fall: step off into the sky -> back on the flag
 	await page.evaluate(() => {

@@ -69,7 +69,7 @@ export const NODE_DOCS = {
 	hudinput: "Reads what the player typed into a HUD input element as a value.",
 	hudset: "Writes a value into a HUD input element when a pulse arrives - to prefill, clear or correct it.",
 	script: "Your own JavaScript - an effect that moves its object every frame, or (with declared typed inputs and outputs) a small pure function whose return feeds other nodes. v2 scripts also get `api`: object(uuid or name), raycast(from, dir), and in effects keys() (this device only) and spawn('/create ...') (the host spawns once for everyone).",
-	math: "Combines two numbers (+ − × ÷ min max mod aᵇ) or shapes one: sin/cos (b scales, 0 = 1), |a|, round, floor, clamp to 0..b, −a.",
+	math: "Combines two numbers (+ - * / min max mod pow) or shapes one: sin/cos (b scales them, 0 = 1), abs, round, floor, clamp to 0..b, negate.",
 	compare: "Compares two numbers and outputs true or false.",
 	gate: "Boolean logic on two inputs - AND, OR, NOT, XOR.",
 	maprange: "Remaps a number from one range to another - the glue between free-range sources and bounded parameters.",

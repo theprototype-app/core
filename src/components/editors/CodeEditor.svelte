@@ -18,24 +18,9 @@
 	let lastEmitted = value;
 
 	onMount(async () => {
-		const [{ EditorView, basicSetup }, { javascript }, { EditorState }, { HighlightStyle, syntaxHighlighting }, { tags: t }] = await Promise.all([
+		const [{ EditorView, basicSetup }, { javascript }] = await Promise.all([
 			import('codemirror'),
-			import('@codemirror/lang-javascript'),
-			import('@codemirror/state'),
-			import('@codemirror/language'),
-			import('@lezer/highlight')
-		]);
-		// 36: basicSetup's default highlight style is for a LIGHT editor — identifiers came out dark
-		// blue on this dark one (unreadable in the read-only module source); colours that read on it
-		const darkHighlight = HighlightStyle.define([
-			{ tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword], color: '#c792ea' },
-			{ tag: [t.variableName, t.propertyName, t.attributeName], color: '#e5e7eb' },
-			{ tag: [t.definition(t.variableName), t.function(t.variableName), t.function(t.propertyName)], color: '#82aaff' },
-			{ tag: [t.number, t.bool, t.null, t.atom], color: '#f78c6c' },
-			{ tag: [t.string, t.special(t.string), t.regexp], color: '#c3e88d' },
-			{ tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: '#7c8799', fontStyle: 'italic' },
-			{ tag: [t.typeName, t.className], color: '#ffcb6b' },
-			{ tag: [t.operator, t.punctuation, t.bracket], color: '#9ca3af' }
+			import('@codemirror/lang-javascript')
 		]);
 		view = new EditorView({
 			doc: value,
@@ -43,8 +28,8 @@
 			extensions: [
 				basicSetup,
 				javascript(),
-				syntaxHighlighting(darkHighlight),
-				...(readonly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
+				// 36: a module's source is read, never typed into
+				...(readonly ? [EditorView.editable.of(false)] : []),
 				EditorView.updateListener.of((update) => {
 					if (!update.docChanged) return;
 					lastEmitted = update.state.doc.toString();
@@ -70,6 +55,31 @@
 			]
 		});
 	});
+
+	// 36: basicSetup's default highlight style is for a LIGHT editor — identifiers came out dark
+	// blue on this dark one (unreadable in the read-only module source). Appended once its modules
+	// arrive, so the editor itself appears exactly as fast as before (three more imports in the
+	// critical path were measurable: Flow Code's first paint slipped past 600 ms).
+	$: if (view && !highlighted) {
+		highlighted = true;
+		void Promise.all([import('@codemirror/state'), import('@codemirror/language'), import('@lezer/highlight')]).then(
+			([{ StateEffect }, { HighlightStyle, syntaxHighlighting }, { tags: t }]) => {
+				if (!view) return;
+				const dark = HighlightStyle.define([
+					{ tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword], color: '#c792ea' },
+					{ tag: [t.variableName, t.propertyName, t.attributeName], color: '#e5e7eb' },
+					{ tag: [t.definition(t.variableName), t.function(t.variableName), t.function(t.propertyName)], color: '#82aaff' },
+					{ tag: [t.number, t.bool, t.null, t.atom], color: '#f78c6c' },
+					{ tag: [t.string, t.special(t.string), t.regexp], color: '#c3e88d' },
+					{ tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: '#7c8799', fontStyle: 'italic' },
+					{ tag: [t.typeName, t.className], color: '#ffcb6b' },
+					{ tag: [t.operator, t.punctuation, t.bracket], color: '#9ca3af' }
+				]);
+				view.dispatch({ effects: StateEffect.appendConfig.of(syntaxHighlighting(dark)) });
+			}
+		);
+	}
+	let highlighted = false;
 
 	// 36: put the cursor on `line` (1-based) and scroll it into view, once per line asked for
 	let shownLine = 0;

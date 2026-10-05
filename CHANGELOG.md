@@ -5,6 +5,52 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.23.0 — Game rules you can read and change 🧩
+
+### 🧩 Every game's rules on its Main graph
+
+- 🧩 **Each rebuilt game's rules are one readable node on its Main graph** — Mini Golf, Football, Dungeon Realms, The
+  Alchemist's Escape, Sky Run, Target Toss and Marble Maze — wired to the game's buttons, HUD, sounds and kit nodes.
+  Tune a number in the node's **ⓘ properties** or change its code with **Ctrl+S**: it changes on every player's screen
+  and is saved with the scene. The engine (the ball, putting, the VR putter) stays in the module, read-only behind a
+  **Code** link.
+- 🗺️ **The scene's graph is the Main graph**, pinned first in the Flow list. Opening an older scene adds links to its
+  object graphs and to the code that runs it, so nothing is hidden.
+- ⚙️ **Every node's properties in the side panel** (ⓘ) — Script inputs, Behaviour params, module nodes; a wired input
+  says "wired".
+- 🔗 **Double-click a node to open its code.** Module code opens read-only, with **Make editable copy**.
+- 📜 Script nodes grow the inputs and outputs their code uses; scripts get `api.object`, `raycast`, `keys` and `spawn`.
+- ➗ Math gains sin, cos, pow, abs, round, floor, clamp and negate. Value wires are worked out once per frame, so big
+  graphs stay fast and a loop cannot hang.
+
+### 💻 The code workspace
+
+- 💻 **Code workspace** (bottom dock ▸ Code, or floating): scripts, behaviours, script files, module sources and the
+  graph as JSON, in tabs. **Ctrl+S** checks the code and hot-reloads every node that runs it, on every peer — broken
+  code never applies, and the tab and the node say where it broke.
+- 📁 **Scripts are Explorer files**: Save as file, Use file, Unbind — one file can drive many nodes.
+- 🧾 **Graph JSON**: edit a whole graph as text and apply it back.
+
+### 🕸️ A node editor that knows its keys
+
+- ⌨️ **Keys follow the panel you are in** — C opens chat only from the 3D view. Press **?** for the shortcut sheet.
+- 📦 **Groups** with their own sockets (Ctrl+G; Tab or double-click to go in), **notes and frames** with markdown,
+  right-click menus for the canvas, a node or a selection, mute / collapse / align / nudge, and undo for every node edit.
+- 🧰 **Settings ▸ Node types** hides the types you never use; groups save and load as **.tpnode** files; the Edit Mesh
+  keys are rebindable.
+
+### 🔧 Fixes
+
+- 🔢 HUD Button, On Game State and HUD Timer wired into a number input now give a number.
+- 🕰️ A Mini Golf, Escape, Sky Run, Target Toss or Marble Maze saved before 1.23 says so when it opens and offers the
+  Games tab, where the game opens with its readable rules.
+
+### 🧑‍💻 For module authors
+
+- `api.kit.provide(spec, impl)` lends a game's rules an **engine piece** (`kit.<piece>.<call>`, its events, its values);
+  behaviours gain `inputs`, `outputs` and `this.emit`; `api.flow.seedGraph` seeds a wired example graph once.
+- Football 1.4.0 and Dungeon Realms 2.4.0 keep their match and floor rules on the Main graph.
+
 ## 1.22.0 — Water, a VR welcome, and every VR setting in the headset 🌊
 
 ### 🌊 Water

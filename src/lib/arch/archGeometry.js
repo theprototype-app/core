@@ -486,13 +486,15 @@ const arg = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v : 
  *   Door  width height leaves              (leaves 0 single, 1 double)
  *   Window width height sill opening       (opening 0 fixed, 1 casement)
  *   Staircase shape width steps rise       (shape 0 straight, 1 L, 2 U, 3 spiral)
- * `colliderHint` is stamped at creation (the building blocks' precedent).
- * @type {Record<string, {order: string[], params: ParamSpec[], build: (p: any) => THREE.BufferGeometry, fromArgs: (a: any[]) => Record<string, any>, colliderHint?: string}>}
+ * `colliderHint` is stamped at creation (the building blocks' precedent); `clean` is what an
+ * edit stores, so userData.geometryParams never holds a value the builder would not use.
+ * @type {Record<string, {order: string[], params: ParamSpec[], build: (p: any) => THREE.BufferGeometry, clean: (p: any) => Record<string, any>, fromArgs: (a: any[]) => Record<string, any>, colliderHint?: string}>}
  */
 export const ARCH_SPECS = {
 	Wall: {
 		order: keysOf(WALL_PARAMS),
 		params: WALL_PARAMS,
+		clean: (p) => cleanParams(WALL_PARAMS, p),
 		build: wallGeometry,
 		colliderHint: 'trimesh',
 		fromArgs: (a) => {
@@ -509,6 +511,7 @@ export const ARCH_SPECS = {
 	Door: {
 		order: keysOf(DOOR_PARAMS),
 		params: DOOR_PARAMS,
+		clean: (p) => cleanParams(DOOR_PARAMS, p),
 		build: doorGeometry,
 		fromArgs: (a) =>
 			cleanParams(DOOR_PARAMS, { width: arg(a[0], 1), height: arg(a[1], 2.1), leaves: arg(a[2], 0) === 1 ? 'double' : 'single' })
@@ -516,6 +519,7 @@ export const ARCH_SPECS = {
 	Window: {
 		order: keysOf(WINDOW_PARAMS),
 		params: WINDOW_PARAMS,
+		clean: (p) => cleanParams(WINDOW_PARAMS, p),
 		build: windowGeometry,
 		colliderHint: 'box',
 		fromArgs: (a) =>
@@ -529,6 +533,7 @@ export const ARCH_SPECS = {
 	Staircase: {
 		order: keysOf(STAIR_PARAMS),
 		params: STAIR_PARAMS,
+		clean: (p) => cleanParams(STAIR_PARAMS, p),
 		build: staircaseGeometry,
 		colliderHint: 'trimesh',
 		fromArgs: (a) =>
@@ -540,6 +545,12 @@ export const ARCH_SPECS = {
 			})
 	}
 };
+
+/** a placement point on the 1 m grid (x and z; the height is the surface it landed on)
+ * @param {number[]} point @returns {number[]} */
+export function snapToMetre(point) {
+	return [Math.round(point[0]), point[1], Math.round(point[2])];
+}
 
 /** the clean params of an arch primitive (the parts builder and the tests read them) @param {string} gtype @param {any} raw */
 export function archParams(gtype, raw) {

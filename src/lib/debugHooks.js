@@ -317,6 +317,8 @@ export const DEBUG_HOOKS = [
 	['lodGroupActions', () => import('./lodGroupActions')],
 	['lodLevelEdit', () => import('./lodLevelEdit')],
 	['packBehavior', () => import('./packBehavior')],
+	// 37 R3: parametric architecture parts (archPartsDebug, reconcileArchParts)
+	['arch', () => import('./arch/archParts.js')],
 	['sceneLoader', () => import('./sceneLoader')],
 	['pickCycle', () => import('./pickCycle')],
 	['pickPass', () => import('./pickPass')],

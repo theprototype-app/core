@@ -22,7 +22,7 @@ const TAU = Math.PI * 2;
  * (a door width with no doors, a spiral's column on a straight stair).
  * @typedef {{key: string, label: string, kind: 'slider'|'int'|'angle'|'bool'|'choice', min?: number, max?: number, step?: number, options?: string[], def: number|boolean|string, show?: (params: any) => boolean}} ParamSpec */
 
-/** @type {Record<string, {order: string[], params: ParamSpec[], build?: (params: any) => any, fromArgs?: (args: any[]) => Record<string, any>, colliderHint?: string}>} */
+/** @type {Record<string, {order: string[], params: ParamSpec[], build?: (params: any) => any, fromArgs?: (args: any[]) => Record<string, any>, clean?: (params: any) => Record<string, any>, colliderHint?: string}>} */
 export const GEOMETRY_PARAMS = {
 	Box: {
 		order: ['width', 'height', 'depth', 'widthSegments', 'heightSegments', 'depthSegments'],

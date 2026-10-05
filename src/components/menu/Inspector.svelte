@@ -3329,7 +3329,9 @@
 						{/if}
 					{:else}
 						<div id="inspector-geometry" class="flex flex-col gap-1">
-							{#each geoSpec.params as spec (spec.key)}
+							<!-- 37 R3: a row whose `show` says it does not apply (a door width on a wall
+							     with no doors) is hidden, not disabled -->
+							{#each geoSpec.params.filter((p) => !p.show || p.show(geoParams.params)) as spec (spec.key)}
 								{#if spec.kind === 'bool'}
 									<Checkbox
 										checked={!!geoParams.params[spec.key]}

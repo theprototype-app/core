@@ -35,6 +35,25 @@ export const primitivesCatalog = [
 		]
 	},
 	{
+		// 37 R3: parametric architecture — every number is editable in the Inspector afterwards
+		// (arch/archGeometry.js documents the /create argument codes)
+		group: 'Architecture',
+		items: [
+			{ label: 'Wall', command: '/create Wall 4 2.8 0.2 0' },
+			{ label: 'Wall with door', command: '/create Wall 4 2.8 0.2 1' },
+			{ label: 'Wall with windows', command: '/create Wall 4 2.8 0.2 2' },
+			{ label: 'Wall with door and windows', command: '/create Wall 6 2.8 0.2 3' },
+			{ label: 'Door', command: '/create Door 1 2.1 0' },
+			{ label: 'Double door', command: '/create Door 2 2.1 1' },
+			{ label: 'Window', command: '/create Window 1.2 1.2 0.9 0' },
+			{ label: 'Casement window', command: '/create Window 1.2 1.2 0.9 1' },
+			{ label: 'Stairs (straight)', command: '/create Staircase 0 1 14 0.18' },
+			{ label: 'Stairs (L)', command: '/create Staircase 1 1 14 0.18' },
+			{ label: 'Stairs (U)', command: '/create Staircase 2 1 15 0.18' },
+			{ label: 'Stairs (spiral)', command: '/create Staircase 3 1 16 0.18' }
+		]
+	},
+	{
 		group: 'Ground',
 		items: [{ label: 'Terrain', command: '/create Terrain 24 48' }]
 	},

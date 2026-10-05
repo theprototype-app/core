@@ -85,8 +85,10 @@ export function repairTJunctions(geometry) {
 	let tris = [];
 	const pos = geometry.getAttribute('position');
 	for (let i = 0; i + 2 < pos.count; i += 3) {
+		/** @type {number[][]} */
 		const tri = [];
 		for (let c = 0; c < 3; c++) {
+			/** @type {number[]} */
 			const corner = [];
 			names.forEach((n, k) => {
 				const a = geometry.getAttribute(n);

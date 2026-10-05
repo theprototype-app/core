@@ -57,6 +57,7 @@ h.run(async () => {
 		Explorer: '#recycle-bin',
 		VR: '[data-tour="settings-vr-controls"]', // 1.22 U3
 		Export: '#export-settings-section', // 1.21 U4 (own file)
+		'Node types': '#node-types-section', // 1.23 B7 (own file; no SettingRow rows) — 36-int-124 union
 		Shortcuts: '#shortcut-grid',
 		About: '#about-copy-diagnostics'
 	};

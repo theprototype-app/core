@@ -185,7 +185,9 @@ h.run(async () => {
 	h.check(one.bars.some((t) => /^Loading .+— \d+ \/ \d+ objects/.test(t)), '1.2 the load bar says what loads and how far it is ("' + (one.bars.find((t) => /objects/.test(t)) ?? one.bars[0] ?? 'never shown') + '")');
 	// 36 F20/F21: the job exists from the CLICK — its first samples are the download ('fetching',
 	// nothing to count yet); the count starts once the file is in
-	const counted = one.jobs.filter((j) => j.phase !== 'fetching');
+	// (and the unzip right after it reads 'preparing' with no total yet — count from the first
+	// sample that carries the file's own object count)
+	const counted = one.jobs.filter((j) => j.phase !== 'fetching' && j.total > 0);
 	h.check(one.jobs.length > 0 && one.jobs[0].phase === 'fetching', '1.2b the load is on screen from the click, downloading (' + (one.jobs[0]?.phase ?? 'none') + ')');
 	const dones = [...new Set(counted.map((j) => j.done))];
 	h.check(counted.length > 0 && counted[0].total === pieces && dones.length >= 3 && dones.every((d, i) => i === 0 || d >= dones[i - 1]), '1.3 it counts up over the ' + pieces + ' objects (' + dones.slice(0, 10).join(', ') + ' …)');

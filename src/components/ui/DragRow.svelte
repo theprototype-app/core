@@ -260,7 +260,7 @@
 	}
 </script>
 
-<div class="dn-wrap" class:nodrag class:dn-scrub={scrubbing} class:dn-focus={focused} class:dn-disabled={disabled} use:drag>
+<div class="dn-wrap" class:nodrag class:nopan={nodrag} class:dn-scrub={scrubbing} class:dn-focus={focused} class:dn-disabled={disabled} use:drag>
 	{#if label}
 		<span class={'dn-label ' + accent}>{label}</span>
 	{/if}

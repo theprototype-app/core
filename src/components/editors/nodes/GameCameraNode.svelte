@@ -60,7 +60,7 @@
 		<label class="flex flex-col">
 			<span>camera</span>
 			<select
-				class="nodrag"
+				class="nodrag nopan"
 				value={chosen}
 				on:change={(e) => setNodeData(id, { camera: e.currentTarget.value })}
 			>
@@ -79,7 +79,7 @@
 			<label class="flex flex-col">
 				<span>when state is</span>
 				<select
-					class="nodrag"
+					class="nodrag nopan"
 					value={data.state ?? 'playing'}
 					on:change={(e) => setNodeData(id, { state: e.currentTarget.value })}
 				>
@@ -94,7 +94,7 @@
 			<label class="flex flex-col">
 				<span>look</span>
 				<select
-					class="nodrag"
+					class="nodrag nopan"
 					value={data.on === false ? 'off' : 'on'}
 					on:change={(e) => setNodeData(id, { on: e.currentTarget.value === 'on' })}
 				>
@@ -105,7 +105,7 @@
 			<label class="flex flex-col">
 				<span>look through it too</span>
 				<select
-					class="nodrag"
+					class="nodrag nopan"
 					value={data.activate === false ? 'no' : 'yes'}
 					on:change={(e) => setNodeData(id, { activate: e.currentTarget.value === 'yes' })}
 				>

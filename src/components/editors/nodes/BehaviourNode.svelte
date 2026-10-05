@@ -87,20 +87,20 @@
 		</span>
 		<div class="flex gap-1">
 			<button
-				class="nodrag behaviour-open rounded-sm bg-[#ff4000] px-2 py-0.5 text-white"
+				class="nodrag nopan behaviour-open rounded-sm bg-[#ff4000] px-2 py-0.5 text-white"
 				on:click={() => behaviourViewOpen.set({ id, graphId: $activeGraphId })}
 			>
 				Open view
 			</button>
 			<button
-				class="nodrag behaviour-code rounded-sm bg-gray-600 px-2 py-0.5 text-white"
+				class="nodrag nopan behaviour-code rounded-sm bg-gray-600 px-2 py-0.5 text-white"
 				title="Edit this behaviour's source in the code workspace (Ctrl+S reloads it)"
 				on:click={() => import('$lib/codeWorkspace').then((m) => m.openCode({ source: 'behaviour', ref: { nodeId: id, graphId: $activeGraphId } }))}
 			>
 				Code
 			</button>
 			<button
-				class="nodrag rounded-sm bg-gray-600 px-2 py-0.5 text-white"
+				class="nodrag nopan rounded-sm bg-gray-600 px-2 py-0.5 text-white"
 				title={data.enabled === false ? 'Run this behaviour' : 'Stop this behaviour (its state is kept)'}
 				on:click={() => setNodeData(id, { enabled: data.enabled === false })}
 			>

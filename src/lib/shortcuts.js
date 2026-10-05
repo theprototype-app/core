@@ -67,7 +67,8 @@ import { safeStorage } from './safeStorage';
  *   fixed?: boolean,
  *   fixedReason?: string,
  *   external?: boolean,
- *   scope?: string
+ *   scope?: string,
+ *   alsoScopes?: string[]
  * }} Shortcut
  */
 
@@ -278,6 +279,8 @@ export const shortcuts = [
 		keys: 'F',
 		group: 'Camera',
 		scope: 'viewport',
+		// 36 F2: the Object list is the scene's outliner — its selection keys still act there
+		alsoScopes: ['objects'],
 		label: 'Focus selected object',
 		action: () => focusObject()
 	},
@@ -286,6 +289,8 @@ export const shortcuts = [
 		keys: 'Ctrl+D',
 		group: 'Objects',
 		scope: 'viewport',
+		// 36 F2: the Object list is the scene's outliner — its selection keys still act there
+		alsoScopes: ['objects'],
 		label: 'Duplicate selection (whole set)',
 		action: () => duplicateSelection()
 	},
@@ -297,6 +302,8 @@ export const shortcuts = [
 		keys: 'Ctrl+A',
 		group: 'Objects',
 		scope: 'viewport',
+		// 36 F2: the Object list is the scene's outliner — its selection keys still act there
+		alsoScopes: ['objects'],
 		label: 'Select all objects',
 		action: () => {
 			if (get(editingObject) || get(faceEditObject)) return;
@@ -320,6 +327,8 @@ export const shortcuts = [
 		keys: 'Delete',
 		group: 'Objects',
 		scope: 'viewport',
+		// 36 F2: the Object list is the scene's outliner — its selection keys still act there
+		alsoScopes: ['objects'],
 		label: 'Delete selection (a group asks first)',
 		action: () => deleteFromViewport()
 	},
@@ -328,6 +337,8 @@ export const shortcuts = [
 		keys: 'Backspace',
 		group: 'Objects',
 		scope: 'viewport',
+		// 36 F2: the Object list is the scene's outliner — its selection keys still act there
+		alsoScopes: ['objects'],
 		label: 'Delete selection (Backspace)',
 		action: () => deleteFromViewport()
 	},
@@ -360,6 +371,8 @@ export const shortcuts = [
 		keys: 'O',
 		group: 'Panels',
 		scope: 'viewport',
+		// 36 F2: window management, not the 3D view — it also answers from a panel
+		alsoScopes: ['panel', 'objects'],
 		// the key IS the toolbar button now (one tree in panelToggles): a buried
 		// window is raised first and only closes on the next press
 		label: 'Object list: show / bring to front / hide',
@@ -370,6 +383,8 @@ export const shortcuts = [
 		keys: 'N',
 		group: 'Panels',
 		scope: 'viewport',
+		// 36 F2: window management, not the 3D view — it also answers from a panel
+		alsoScopes: ['panel', 'objects'],
 		label: 'Node editor: show / bring to front / hide',
 		action: () => togglePanel('flow')
 	},
@@ -403,6 +418,8 @@ export const shortcuts = [
 		keys: 'T',
 		group: 'Panels',
 		scope: 'viewport',
+		// 36 F2: window management, not the 3D view — it also answers from a panel
+		alsoScopes: ['panel', 'objects'],
 		// the tool dock: the strip that holds the Node editor, Explorer, Flow Code,
 		// Animation, UV, Shader and HUD tabs. Minimizing leaves every tab open, and
 		// since a minimized dock draws nothing at all, this key is one of the only
@@ -1101,7 +1118,7 @@ function handleKeydown(event) {
 	// match the registry — F would ALSO focus the object mid-edit. Delete
 	// self-guards; 1/2/3 intentionally stay (gizmo mode on the proxy).
 	if (
-		(focused === 'viewport' || focused === 'vr') &&
+		(focused === 'viewport' || focused === 'vr' || focused === 'objects') &&
 		meshEditKeys().includes(combo) &&
 		(get(editingObject) || get(faceEditObject)) &&
 		get(meshEditHotkeys)

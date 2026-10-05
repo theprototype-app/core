@@ -22,7 +22,7 @@
 	<Socket kind="target" nodeType={data.type} position={Position.Left} id="volume" style="top: 74px" />
 	<div class="flex w-full flex-col gap-1">
 		<select
-			class="nodrag"
+			class="nodrag nopan"
 			value={data.hash ?? ''}
 			on:change={(e) => {
 				const hash = e.currentTarget.value || null;
@@ -42,7 +42,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>volume</span><span>{(data.volume ?? 0.8).toFixed(2)}</span></span>
 			<input
-				class="nodrag accent-[#ff4000]"
+				class="nodrag nopan accent-[#ff4000]"
 				type="range"
 				min="0"
 				max="1"
@@ -54,7 +54,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>radius</span><span>{data.radius ?? 5}m</span></span>
 			<input
-				class="nodrag accent-[#ff4000]"
+				class="nodrag nopan accent-[#ff4000]"
 				type="range"
 				min="1"
 				max="60"
@@ -66,7 +66,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>rolloff</span><span>{(data.rolloff ?? 1).toFixed(1)}</span></span>
 			<input
-				class="nodrag accent-[#ff4000]"
+				class="nodrag nopan accent-[#ff4000]"
 				type="range"
 				min="0.5"
 				max="4"
@@ -77,14 +77,14 @@
 		</label>
 		<div class="flex items-center gap-2">
 			<button
-				class="nodrag flex-1 rounded-sm px-1 py-0.5 text-white {data.playing ? 'bg-green-600' : 'bg-[#ff4000]'}"
+				class="nodrag nopan flex-1 rounded-sm px-1 py-0.5 text-white {data.playing ? 'bg-green-600' : 'bg-[#ff4000]'}"
 				on:click={() => setNodeData(id, { playing: !data.playing })}
 			>
 				{data.playing ? '■ Stop' : '▶ Play'}
 			</button>
 			<label class="flex items-center gap-1">
 				<input
-					class="nodrag"
+					class="nodrag nopan"
 					type="checkbox"
 					checked={data.loop !== false}
 					on:change={(e) => setNodeData(id, { loop: e.currentTarget.checked })}

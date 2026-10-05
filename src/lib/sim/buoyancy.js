@@ -151,7 +151,7 @@ function rotate(q, x, y, z, out) {
  * (`kind`, half extents, body-local translation + rotation).
  * @param {{kind: string, he: {x: number, y: number, z: number}, t: number[], q: number[]}[]} parts
  * @param {number} [res]
- * @returns {{points: Float32Array, weights: Float32Array, volume: number, cellH: number}}
+ * @returns {{points: Float32Array, weights: Float32Array, volume: number, cellH: number, span: number}}
  */
 export function bodySamples(parts, res = 3) {
 	/** @type {number[]} */ const pts = [];
@@ -172,7 +172,17 @@ export function bodySamples(parts, res = 3) {
 	}
 	const weights = new Float32Array(vols.length);
 	for (let i = 0; i < vols.length; i++) weights[i] = volume > 0 ? vols[i] / volume : 1 / vols.length;
-	return { points: new Float32Array(pts), weights, volume, cellH: Number.isFinite(cellH) ? cellH : 0.1 };
+	// 36-fb-water F15: the hull's horizontal size (the waves shorter than it average out)
+	let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+	for (const part of parts) {
+		const r = Math.hypot(part.he.x, part.he.z);
+		x0 = Math.min(x0, part.t[0] - r);
+		x1 = Math.max(x1, part.t[0] + r);
+		z0 = Math.min(z0, part.t[2] - r);
+		z1 = Math.max(z1, part.t[2] + r);
+	}
+	const span = parts.length ? Math.max(x1 - x0, z1 - z0) * 0.75 : 0;
+	return { points: new Float32Array(pts), weights, volume, cellH: Number.isFinite(cellH) ? cellH : 0.1, span };
 }
 
 /**
@@ -185,8 +195,8 @@ export function bodySamples(parts, res = 3) {
  * writes the result into `out` (no allocation on the hot path).
  * @param {{pos: number[], quat: number[], com: number[], linvel: number[], angvel: number[],
  *   mass: number, gravity: number, dt: number}} body  rapier state (world frame)
- * @param {{points: Float32Array, weights: Float32Array, volume: number, cellH: number}} samples
- * @param {(x: number, y: number, z: number) => WaterHit | null} query  W1's waterVolumes.query, adapted
+ * @param {{points: Float32Array, weights: Float32Array, volume: number, cellH: number, span?: number}} samples
+ * @param {(x: number, y: number, z: number, span?: number) => WaterHit | null} query  W1's waterVolumes.query, adapted
  * @param {{off: boolean, density: number | 'mass', multiplier: number}} floats normalized
  * @param {{impulse: number[], torque: number[], linvel: number[], angvel: number[],
  *   submerged: number, volume: any, surfaceY: number}} out
@@ -215,7 +225,7 @@ export function buoyancyStep(body, samples, query, floats, out) {
 		// the sample is a slab cellH tall centred on the point: ask about its BOTTOM, so
 		// a slab whose centre is still dry but whose lower half is wet counts (W1's query
 		// answers null above the surface)
-		const hit = query(wx, wy - samples.cellH * 0.5, wz);
+		const hit = query(wx, wy - samples.cellH * 0.5, wz, samples.span ?? 0);
 		if (!hit) continue;
 		const frac = Math.min(1, Math.max(0, (hit.surfaceY - wy) / samples.cellH + 0.5));
 		if (frac <= 0) continue;
@@ -315,8 +325,8 @@ const scratchState = { pos: [0, 0, 0], quat: [0, 0, 0, 1], com: [0, 0, 0], linve
  * linvel/angvel/mass + the setters) — the ONE integration both physics.js and the
  * headless proof call, so the proof measures the shipped path.
  * @param {any} rb rapier RigidBody
- * @param {{points: Float32Array, weights: Float32Array, volume: number, cellH: number}} samples
- * @param {(x: number, y: number, z: number) => WaterHit | null} query
+ * @param {{points: Float32Array, weights: Float32Array, volume: number, cellH: number, span?: number}} samples
+ * @param {(x: number, y: number, z: number, span?: number) => WaterHit | null} query
  * @param {{off: boolean, density: number | 'mass', multiplier: number}} floats
  * @param {number} gravity world gravity Y (negative)
  * @param {number} dt substep seconds

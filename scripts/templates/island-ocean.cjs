@@ -110,15 +110,17 @@ module.exports = {
 			type: 'box',
 			name: 'Boat hull',
 			color: 0xf2efe6,
-			size: [1.3, 0.55, 3.4],
-			bevel: 0.2,
+			// a rowing boat's proportions (beam ~0.43 x length): the first 1.3 x 3.4 dinghy heeled
+			// ~50 degrees on this choppy sea (measured headless, tests/unit/boatWaves.test.js)
+			size: [1.8, 0.6, 4.2],
+			bevel: 0.24,
 			pos: [10.5, 0.1, 9.5],
 			rot: [0, 0.4, 0],
 			roughness: 0.5,
-			physics: { mode: 'dynamic', mass: 120, collider: 'hull', friction: 0.6, floats: { density: 320 } },
+			physics: { mode: 'dynamic', mass: 160, collider: 'hull', friction: 0.6, floats: { density: 320 } },
 			children: [
-				{ type: 'box', name: 'Boat stripe', color: 0x2f6fb0, size: [1.32, 0.12, 3.42], pos: [0, 0.1, 0] },
-				{ type: 'cylinder', name: 'Boat mast', color: 0xd8d2c4, r: 0.05, h: 3, pos: [0, 1.7, 0] }
+				{ type: 'box', name: 'Boat stripe', color: 0x2f6fb0, size: [1.82, 0.12, 4.22], pos: [0, 0.12, 0] },
+				{ type: 'cylinder', name: 'Boat mast', color: 0xd8d2c4, r: 0.06, h: 3, pos: [0, 1.75, 0] }
 			]
 		},
 		{ type: 'box', name: 'Hut', color: 0xc99a62, size: [2.2, 1.6, 2], pos: [-2.6, 1.85, 1.6] },

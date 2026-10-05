@@ -144,7 +144,8 @@ h.run(async () => {
 	const rows = [];
 	/** one control: lo frame, hi frame, the delta @param {any} ctx */
 	async function measure({ uuid, preset, c, shape, tier, clip, pairName }) {
-		const kind = SHAPES[shape].kind === 'cylinder' ? 'cylinder' : SHAPES[shape].kind === 'ocean' ? 'plane' : 'box';
+		const base = SHAPES[shape.replace(/-under$/, '')];
+		const kind = base.kind === 'cylinder' ? 'cylinder' : base.kind === 'ocean' ? 'plane' : 'box';
 		await apply(uuid, preset, c, c[2], kind);
 		await A.page.waitForTimeout(320);
 		const lo = await A.page.screenshot({ clip });

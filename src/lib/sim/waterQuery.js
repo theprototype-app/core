@@ -25,7 +25,7 @@ export function setTankVolumes(list) {
 }
 /** @type {any} */ let lastRoot = null;
 const point = { x: 0, y: 0, z: 0 };
-const opts = { volumes: /** @type {any[]} */ ([]) };
+const opts = { volumes: /** @type {any[]} */ ([]), span: 0 };
 const one = { volumes: /** @type {any[]} */ ([]) };
 /** @type {import('./buoyancy.js').WaterHit} */
 const hitOut = { surfaceY: 0, flow: null, density: 1000, linearDrag: 1.5, angularDrag: 1, heaveDrag: 4, volume: null };
@@ -60,10 +60,12 @@ export function waterActive() {
 /**
  * Buoyancy's query: the W1 hit flattened into what buoyancyStep reads. The returned
  * object is REUSED (read it before the next call).
- * @param {number} x @param {number} y @param {number} z
+ * @param {number} x @param {number} y @param {number} z @param {number} [span] the body's size (m): the
+ *   waves shorter than it average out over its hull (W1 query `span`, 36-fb-water F15)
  * @returns {import('./buoyancy.js').WaterHit | null}
  */
-export function queryWater(x, y, z) {
+export function queryWater(x, y, z, span = 0) {
+	opts.span = span;
 	const hit = frameVolumes.length ? ((point.x = x), (point.y = y), (point.z = z), waterVolumes.query(point, opts)) : null;
 	if (!hit) {
 		for (const t of tankVolumes) {

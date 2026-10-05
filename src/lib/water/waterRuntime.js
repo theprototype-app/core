@@ -851,6 +851,11 @@ const selMaskMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest
 selectedObjects.subscribe((v) => (selectionUuids = [...(/** @type {any} */ (v) ?? [])].filter((u) => typeof u === 'string')));
 lockedObjects.subscribe((v) => (lockedUuids = (/** @type {any[]} */ (v) ?? []).map((r) => r?.[1]).filter((u) => typeof u === 'string')));
 const _clearColor = new THREE.Color();
+let selectionUnrefract = true;
+/** TEST/EVIDENCE: switch the F13b mask off (the counterfactual — the old offset outline) @param {boolean} on */
+export function setSelectionUnrefract(on) {
+	selectionUnrefract = !!on;
+}
 
 /** @param {any} renderer @param {any} scene @param {any} camera @param {number} w @param {number} h */
 function renderSelectionMask(renderer, scene, camera, w, h) {
@@ -861,8 +866,8 @@ function renderSelectionMask(renderer, scene, camera, w, h) {
 			objectsRoot.getObjectByProperty('uuid', uuid)?.traverse((/** @type {any} */ n) => {
 				if (n.isMesh && n.visible && !n.userData?.__waterVisual && !n.userData?.__fluidVisual) meshes.push(n);
 			});
-	shared.uSelActive.value = meshes.length ? 1 : 0;
-	if (!meshes.length) return;
+	shared.uSelActive.value = meshes.length && selectionUnrefract ? 1 : 0;
+	if (!meshes.length || !selectionUnrefract) return;
 	const mw = Math.max(1, w >> 1);
 	const mh = Math.max(1, h >> 1);
 	if (!selMaskTarget || selMaskTarget.width !== mw || selMaskTarget.height !== mh) {

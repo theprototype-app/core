@@ -13,12 +13,14 @@
 	/** @type {{uuid: string}} */
 	let { uuid } = $props();
 
-	/** @param {string} id @param {any} _group */
-	function objectOf(id, _group) {
-		return $objectsGroup?.getObjectByProperty?.('uuid', id) ?? null;
+	/** a FRESH snapshot per objectsGroup poke — the object is the same reference after an edit
+	 * (userData is mutated in place), and a $derived compares with ===
+	 * @param {string} id @param {any} group */
+	function pourOf(id, group) {
+		const o = group?.getObjectByProperty?.('uuid', id);
+		return o?.userData?.pour ? normalizePour(o.userData.pour) : null;
 	}
-	const object = $derived(objectOf(uuid, $objectsGroup));
-	const pour = $derived(object?.userData?.pour ? normalizePour(object.userData.pour) : null);
+	const pour = $derived(pourOf(uuid, $objectsGroup));
 	// the spout direction as two angles (local frame): heading around Y, tilt above the horizon
 	const heading = $derived(pour ? Math.round(((Math.atan2(pour.dir[2], pour.dir[0]) * 180) / Math.PI + 360) % 360) : 0);
 	const tilt = $derived(pour ? Math.round((Math.atan2(pour.dir[1], Math.hypot(pour.dir[0], pour.dir[2])) * 180) / Math.PI) : 0);

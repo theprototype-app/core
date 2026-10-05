@@ -35,18 +35,24 @@
 		return $objectsGroup?.getObjectByProperty?.('uuid', id) ?? null;
 	}
 	const object = $derived(objectOf(uuid, $objectsGroup));
-	// a fresh SNAPSHOT per poke ($derived compares with ===; userData is mutated in place)
-	const water = $derived(object?.userData?.water ? normalizeWater(object.userData.water) : null);
+	// a fresh SNAPSHOT per poke ($derived compares with ===; userData is mutated in place).
+	// 36-fb-water: the snapshots take the store tick as an argument — `object` is the SAME
+	// reference after an edit, so a derived that only read it never re-ran (Add bubble emitter
+	// / a preset applied left the panel showing the old state until it was reopened)
+	/** @param {any} o @param {any} _tick */
+	const userDataOf = (o, _tick) => ({ water: o?.userData?.water ?? null, bubbles: o?.userData?.bubbles ?? null });
+	const ud = $derived(userDataOf(object, $objectsGroup));
+	const water = $derived(ud.water ? normalizeWater(ud.water) : null);
 	const look = $derived(resolveLook(water ?? {}));
 	const waves = $derived(normalizeWaves(water?.waves));
 	const bubbles = $derived(
 		water
 			? resolveBubbles(water.bubbles)
-			: object?.userData?.bubbles
-				? resolveBubbles({ enabled: true, ...object.userData.bubbles })
+			: ud.bubbles
+				? resolveBubbles({ enabled: true, ...ud.bubbles })
 				: null
 	);
-	const standalone = $derived(!water && !!object?.userData?.bubbles);
+	const standalone = $derived(!water && !!ud.bubbles);
 
 	let userPresets = $state(userWaterPresets());
 	let saving = $state(false);

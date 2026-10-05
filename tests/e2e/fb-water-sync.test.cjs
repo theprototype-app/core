@@ -40,7 +40,10 @@ h.run(async () => {
 				}
 				let o;
 				window.__stores.objectsGroup.subscribe((g) => (o = g?.getObjectByProperty('uuid', u)))();
-				const v = k.split('.').reduce((a, p) => (a == null ? a : a[p]), o?.userData);
+				// a fluid block is read NORMALIZED: a tank made before `spill` existed has no key, which
+				// means "on" on every peer (the applier normalizes, the author's own copy does not)
+				const ud = o?.userData?.fluid ? { ...o.userData, fluid: window.__stores.sim.normalizeFluid(o.userData.fluid) } : o?.userData;
+				const v = k.split('.').reduce((a, p) => (a == null ? a : a[p]), ud);
 				return JSON.stringify(v ?? null);
 			},
 			[uuid, key]

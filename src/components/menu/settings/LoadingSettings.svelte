@@ -42,13 +42,13 @@
 		<ThemedSelect
 			id="placeholder-style"
 			items={[
-				{ value: 'boxes', name: 'Colored boxes' },
-				{ value: 'modern', name: 'Modern' }
+				{ value: 'modern', name: 'Modern (default)' },
+				{ value: 'boxes', name: 'Colored boxes' }
 			]}
 			bind:value={$placeholderStyle}
 		/>
 	</svelte:fragment>
-	What a kit piece shows while its file is still loading. Modern = a translucent blue box that fills up as the bytes arrive; both turn amber when stuck and red when the file failed (right-click it to retry or replace it)
+	What a kit piece shows while its file is still loading. Modern (the default) = a translucent blue box that fills up as the bytes arrive; both turn amber when stuck and red when the file failed (right-click it to retry or replace it)
 </SettingRow>
 <SettingRow name="Placeholder grid texture">
 	<svelte:fragment slot="control"><Toggle id="placeholder-grid-on" disabled={!modern} checked={$placeholderGrid.on} onchange={(/** @type {any} */ e) => setGrid({ on: e.currentTarget.checked })} /></svelte:fragment>

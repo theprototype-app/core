@@ -45,7 +45,8 @@ import {
 	faceEditMulti,
 	faceEditHoverTri,
 	toggleFaceSelection,
-	currentTargetFace
+	currentTargetFace,
+	lookupEditable
 } from '../faceEdit';
 import { peers } from '../../stores/appStore';
 import { recordTransform } from '../history';
@@ -69,6 +70,7 @@ import {
 import { controllerRay } from './pointer.js';
 import { stretch } from './tools.js';
 import { perfMark } from '../perf/perfMarks.js';
+import { handOf } from './bindings.js';
 
 /** @type {any[]} per-hand grabs, indexed by controller SLOT: each is { object, index, prevPos,
  * prevQuat, before, ... }. 33 G4: one per hand, so two hands hold two things at once — a single
@@ -419,7 +421,7 @@ export function onSqueezeStart(index) {
 	// face edit mode (122): grip the face under the ray to grab it (rigid
 	// move/rotate; stick reels along the normal + scales). Exits are hub/Back.
 	if (get(faceEditObject)) {
-		const edited = get(objectsGroup)?.getObjectByProperty('uuid', get(faceEditObject));
+		const edited = lookupEditable(get(faceEditObject) ?? '') /* 36 X4: the collider proxy too */;
 		const hit = edited ? controllerRay(index).intersectObject(edited, false)[0] : null;
 		const fi = hit && hit.faceIndex != null ? faceIndexForTriangle(hit.faceIndex) : -1;
 		if (fi >= 0 && beginFaceGrab(fi)) {
@@ -485,7 +487,7 @@ export function onSqueezeStart(index) {
 		// (CO2: not while a divert claims the world — the pan offsets the XR
 		// reference space, which would silently break a colocated alignment)
 		const handedness = renderer.xr.getController(index)?.userData?.handedness ?? null;
-		if (handedness === 'right' && !worldGestureDiverted())
+		if (handedness === handOf('worldPan') && !worldGestureDiverted()) // 36: the drag-the-world binding
 			S.worldPan = { index, prev: renderer.xr.getController(index).getWorldPosition(new THREE.Vector3()), reach: panReach(index) };
 		return;
 	}
@@ -690,7 +692,7 @@ export function onSqueezeEnd(index) {
 		const other = index === 0 ? 1 : 0;
 		if (emptyAirSqueeze[other]) {
 			const handedness = renderer.xr.getController(other)?.userData?.handedness ?? null;
-			if (handedness === 'right' && !worldGestureDiverted())
+			if (handedness === handOf('worldPan') && !worldGestureDiverted())
 				S.worldPan = { index: other, prev: renderer.xr.getController(other).getWorldPosition(new THREE.Vector3()), reach: panReach(other) };
 		}
 		return;

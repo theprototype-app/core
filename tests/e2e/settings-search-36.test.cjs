@@ -40,10 +40,11 @@ h.run(async () => {
 	rows = await visibleRows();
 	h.check(rows.length > 0 && rows.length <= 4, `"shadow" lists the shadow rows, not all of Scene (${rows.length})`);
 
-	// ---- every word must match: "snap comfort" (the Snap turn row's keyword + its label)
+	// ---- every word must match: "snap comfort" (36-vr: Settings ▸ VR ▸ Comfort's snap rows —
+	// Turning (Snap/Smooth/Off) and Snap angle — through their keywords + page name, not every VR row)
 	await search('snap comfort');
 	rows = await visibleRows();
-	h.check(rows.length === 1 && /Snap turn/.test(rows[0]), `"snap comfort" narrows to Snap turn (${JSON.stringify(rows)})`);
+	h.check(rows.length >= 1 && rows.length <= 3 && rows.some((r) => /Snap angle/.test(r)), `"snap comfort" narrows to the Comfort snap rows (${JSON.stringify(rows.map((r) => r.slice(0, 24)))})`);
 
 	// ---- a section-wide word is a FALLBACK: "headset" names no row, so VR's rows answer
 	// the RULE, checked whichever way the word falls: rows that say it are the answer; when none
@@ -100,6 +101,16 @@ h.run(async () => {
 	await search('hologram');
 	rows = await visibleRows();
 	h.check(rows.length > 0 && rows.every((r) => /placeholder|grid|stuck|loading/i.test(r)), `the real Loading section is found by its keywords (${JSON.stringify(rows)})`);
+	// 36-int-122: the 1.22 sections — Water (Settings ▸ Water quality), Tours, VR rows by their own words
+	for (const [q, re, what] of [
+		['caustics', /Water quality/, 'Water'],
+		['tutorial', /VR welcome|Editor tour|Show tours/, 'Tours'],
+		['wheelchair', /Stance/, 'VR ▸ Body ▸ Stance']
+	]) {
+		await search(q);
+		rows = await visibleRows();
+		h.check(rows.length > 0 && rows.length <= 5 && rows.some((r) => re.test(r)), `"${q}" finds the ${what} rows by their keywords (${JSON.stringify(rows.map((r) => r.slice(0, 24)))})`);
+	}
 	await search('itch');
 	rows = await visibleRows();
 	h.check(rows.length > 0, `the real Export section is found by its keywords (${rows.length} rows)`);

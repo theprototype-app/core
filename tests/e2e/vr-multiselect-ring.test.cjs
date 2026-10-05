@@ -108,7 +108,7 @@ h.run(async () => {
 		res.multiLabels.dup === 'Duplicate (2)' &&
 			res.multiLabels.del === 'Delete (2)' &&
 			res.multiLabels.prefab === 'Save prefab (2)' &&
-			res.multiLabels.group === 'Make Group (2)',
+			res.multiLabels.group === 'Group selection (2)', // 36: the desktop object menu's name
 		`multi labels carry the count (${Object.values(res.multiLabels).join(' / ')})`
 	);
 	h.check(

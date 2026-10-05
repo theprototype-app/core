@@ -41,6 +41,7 @@
 	import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from '$lib/moduleSDK';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
+	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
 	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { drawMode, drawTool, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
@@ -67,6 +68,7 @@
 	import { measureMode, measureClick } from '$lib/measure';
 	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
 	import { setParticleRoot } from '$lib/particleRuntime';
+	import WaterLayer from './water/WaterLayer.svelte';
 	import { registerEditResumeSources } from '$lib/editResume';
 	import { sendPing } from '$lib/ping';
 	import { startLightHelpers, updateLightHelpers, lightProxiesGroup } from '$lib/lightHelpers';
@@ -93,6 +95,10 @@
 	import VRSettingsPanel from './play/VRSettingsPanel.svelte';
 	import VRPeerApprove from './play/VRPeerApprove.svelte';
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
+	// 36 U3b: the VR welcome tour's world-space panel
+	import TourVRPanel from './tours/TourVRPanel.svelte';
+	// 36 A2: the headset browser's own "Enter VR" offer — decided by us, not threlte's default
+	import { xrOfferMode } from '$lib/xrOffer';
 	import MeasureOverlay from './MeasureOverlay.svelte';
 	import AnnotationPins from './AnnotationPins.svelte';
 	import PingMarkers from './PingMarkers.svelte';
@@ -103,6 +109,7 @@
 	import { safeStorage } from '$lib/safeStorage';
 	import Outline from './Outline.svelte'
 	import Player from './play/Player.svelte'
+	import { tickStartView } from '$lib/startView'
 	import { Mesh, Vector3 } from 'three'
 
 
@@ -392,6 +399,7 @@
 		updateSpatialAudio(camera.current, scene); // voices follow avatars (throttled)
 		tickAnimatedMixers(); // imported clips run on the synced clock
 		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
+		tickSim($objectsGroup, camera.current, renderer, performance.now()); // 36-sim (after mixers: jiggle rides the posed bones)
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
 		tickEditWireframe(); // ...and the edit wireframe stays parented to it (faceEdit)
@@ -406,6 +414,7 @@
 		updateTinyMarkers(); // R2: a dot to aim at when an object has no size left
 		tickModuleProxy(); // 30 P3: a selected module group's proxy box follows its content
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
+		tickStartView(); // 36 L2: last — a held camera undoes this frame's input before it is drawn
 	});
 
 	// --- undo/redo: record one history entry per gizmo drag ---
@@ -1640,6 +1649,8 @@
 	     sceneObjects — they'd leak into GLTF sync). oncreate passes the ref
 	     DIRECTLY (the { ref } destructure trap, N1). -->
 	<T.Group name="particle-root" oncreate={(ref: any) => setParticleRoot(ref)} />
+	<!-- 36-water: water surfaces/bodies/bubbles (scene root, local) + the render hooks -->
+	<WaterLayer />
 
 	<!-- 30b P5: module viewport content (registered scene-root groups) is re-homed here so
 	     the VR world gestures carry it too — Untangle's dots spin with the world. Not in
@@ -1678,8 +1689,10 @@ position={[0, 2, 3]}
 <VRPeerApprove />
 <VRKeyboard />
 <VRSelectionShell />
+<TourVRPanel />
 
 <XR
+	offerSession={$xrOfferMode}
 	onsessionstart={() => {
 		// passthrough (90): AR sessions blend with the room — drop the local sky
 		const session = renderer.xr.getSession();

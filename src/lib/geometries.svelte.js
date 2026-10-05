@@ -4,6 +4,7 @@ import { toggleExpand, fixLight } from '../stores/appStore.js';
 import { customGeometryBuilders } from '$lib/customGeometries';
 import { stampGeometryParams } from '$lib/geometryEdit';
 import { paletteColorFor } from '$lib/palette';
+import { stampFluidTank } from '$lib/sim/fluidTank.js';
 
 // RectAreaLight renders black on Standard/Physical materials until the
 // uniforms lib initializes — once per session is enough (79)
@@ -120,6 +121,8 @@ export function createGeometry(command, uuid) {
             object.userData.shadow = false;
             object.castShadow = false;
         }
+        // 36-sim U2b: a fluid tank = glass + userData.fluid + a compound collider
+        if (geometry === 'FluidTank') stampFluidTank(object, options[0], options[1], options[2]);
         // PFX-C follow-up: standard primitives are DYNAMIC by default (mass 1) so
         // a fresh cube falls, collides and THROWS the moment a sim runs — fun by
         // default. Explicit allow-list: Terrain + module-registered primitives
@@ -131,7 +134,10 @@ export function createGeometry(command, uuid) {
         // 15-A3: the baked building blocks have no geometryParams to infer a
         // collider from — stamp an explicit hint (rides toJSON/GLTF extras like
         // the terrain flag) so a rename can't flip their inferred hull to a box.
-        if (['Wedge', 'Stairs', 'Arch', 'Corner'].includes(geometry)) object.userData.colliderHint = 'hull';
+        // 36 X2/A6: the concave two (arch opening, inside corner) take the EXACT mesh —
+        // colliderSpec downgrades it to the hull while the block is dynamic
+        if (['Wedge', 'Stairs', 'Arch', 'Corner'].includes(geometry))
+            object.userData.colliderHint = geometry === 'Arch' || geometry === 'Corner' ? 'trimesh' : 'hull';
         sceneObjects.add(object);
         //Trigger reactivity for UI list of objects
         pokeScene();

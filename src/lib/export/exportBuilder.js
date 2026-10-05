@@ -25,7 +25,7 @@ import { objectsGroup, globalRenderer, globalScene, globalCamera } from '../../s
 import { pageUrl } from './exportBoot.js';
 import { validateExport, ITCH_LIMITS } from './exportValidate.js';
 import { APP_VERSION } from '../version.js';
-import { slugify, rewriteIndexHtml, stripHostInjected, makePlayJs, embedSnippet, collectPackRefs, fmtBytes } from './exportCore.js';
+import { slugify, rewriteIndexHtml, stripHostInjected, hostRemovalNotes, makePlayJs, embedSnippet, collectPackRefs, fmtBytes } from './exportCore.js';
 
 export { slugify, rewriteIndexHtml, stripHostInjected, makePlayJs, embedSnippet, collectPackRefs, fmtBytes };
 
@@ -164,7 +164,7 @@ function readmeText({ title, preset, id, cdn }) {
  * @param {ExportOptions} opts
  * @param {(p: ExportProgress) => void} [onProgress]
  * @returns {Promise<{blob: Blob, fileName: string, id: string, report: import('./exportValidate.js').ExportReport,
- *   breakdown: {runtime: number, scene: number, packs: number, modules: number}, warnings: string[]}>}
+ *   breakdown: {runtime: number, scene: number, packs: number, modules: number}, warnings: string[], details: string[]}>}
  */
 export async function buildExport(opts, onProgress = () => {}) {
 	if (opts.preset === 'embed') throw new Error('The Embed preset makes a snippet, not a zip.');
@@ -172,10 +172,16 @@ export async function buildExport(opts, onProgress = () => {}) {
 	const title = String(opts.title || '').trim() || 'Game';
 	/** @type {string[]} */
 	const warnings = [];
-	/** strip what the web host injected into a page it served; every removal is reported @param {string} path @param {string} html */
+	/** 36 L3: what the result keeps out of sight (its Details section) @type {string[]} */
+	const details = [];
+	/** strip what the web host injected into a page it served; every removal is reported — a KNOWN
+	 * host script (the Cloudflare beacon) only in the Details, anything else as a warning
+	 * @param {string} path @param {string} html */
 	const fromHost = (path, html) => {
 		const r = stripHostInjected(html);
-		for (const url of r.removed) warnings.push(`Removed ${url} from ${path}: the web host added it to the page it served, and an export loads nothing from the internet.`);
+		const notes = hostRemovalNotes(path, r);
+		warnings.push(...notes.warnings);
+		details.push(...notes.details);
 		return r.html;
 	};
 	/** @type {Record<string, Uint8Array>} */
@@ -319,7 +325,7 @@ export async function buildExport(opts, onProgress = () => {}) {
 	const zipped = await zipAsync(zipInput);
 	onProgress({ phase: 'Done', done: 1, total: 1 });
 	const blob = new Blob([/** @type {BlobPart} */ (zipped)], { type: 'application/zip' });
-	return { blob, fileName: `${slugify(title)}-${opts.preset === 'itch' ? 'itch' : 'web'}.zip`, id, report, breakdown, warnings };
+	return { blob, fileName: `${slugify(title)}-${opts.preset === 'itch' ? 'itch' : 'web'}.zip`, id, report, breakdown, warnings, details };
 }
 
 /**

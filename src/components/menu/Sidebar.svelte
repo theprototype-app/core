@@ -27,6 +27,9 @@
 	import { sidebarSlot } from '$lib/cloudHooks';
 	import CloudSlot from '../CloudSlot.svelte';
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
+	// 36 I5: own lines (not the shared icon list) so a merge with the menu's other lanes stays a union
+	import { Compass } from '@lucide/svelte';
+	import { startEditorTour } from '$lib/tours/builtin.js';
 	import { safeStorage } from '$lib/safeStorage';
 	import { statsOpen } from '$lib/sceneBudget';
 
@@ -290,6 +293,10 @@
 			<span class="side-ico">✨</span>
 			<span class="flex-1 whitespace-nowrap">What's new</span>
 			<span class="row-dot" class:row-dot-on={$whatsNewUnseen}></span>
+		</button>
+		<!-- 36 I5: the first-run editor tour, again (Settings ▸ Tours has the VR welcome + reset) -->
+		<button id="open-tour" class="side-row" onclick={() => { closeMenu.set(true); startEditorTour(); }}>
+			<span class="side-ico"><Compass size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Tours</span>
 		</button>
 	</nav>
 {/if}

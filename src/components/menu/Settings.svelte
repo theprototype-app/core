@@ -11,11 +11,13 @@
 	// 36-export: the export defaults section (its own file; also the Publish / Export modal's Settings tab)
 	import ExportSettingsSection from './ExportSettingsSection.svelte';
 	import NodeTypesSection from './NodeTypesSection.svelte'; // 36 B7
+	import WaterSettings from '../water/WaterSettings.svelte';
+	import ToursSettings from './settings/ToursSettings.svelte'; // 36 U3b/I5
+	import VRSettingsSection from './VRSettingsSection.svelte';
 	// 30b (vr-play) C5: the two LOCAL game-audio volumes
 	import { gameSoundVolume } from '$lib/gameSfx';
 	import { gameMusicVolume } from '$lib/gameMusic';
-	import { showGrid, vrOverride, vrMenuHand, vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrSleeveEnabled, vrVertexHold, vrFlying, vrPassthrough, vrMenuHold, vrTargetHz, peerHandStyle } from '../../stores/sceneStore.js';
-	import { applyVRFrameRate } from '$lib/vrControls';
+	import { showGrid, vrOverride } from '../../stores/sceneStore.js';
 	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
 	import { lightHelperLength } from '$lib/lightHelpers';
@@ -31,11 +33,9 @@
 	// 27-E: session size. LOCAL, like every other connection preference.
 	import { softPeerCap, HARD_PEER_CAP, SOFT_PEER_CAP_DEFAULT } from '$lib/connectionState';
 	const appVersionString = versionString();
-	import { vrFaceCap, VR_FACE_CAP } from '$lib/faceEdit';
 	import { doubleClickAction, DOUBLE_CLICK_ACTIONS } from '$lib/selectionPrefs';
 	import { shareDuplicatedMaterials } from '$lib/materialSharing';
 	import { lengthUnit, angleUnit, LENGTH_UNIT_KEYS } from '$lib/units';
-	import { vrVertexCap, VR_VERTEX_CAP } from '$lib/meshEdit';
 	import { syncedAnimations } from '../../stores/flowStore';
 	import { spatialVoice } from '$lib/voiceChat';
 	import { shadowQuality } from '$lib/lightParams';
@@ -84,7 +84,6 @@
 	import { duplicateImportMode } from '$lib/importDuplicates';
 	import { viewPrefs, setViewPrefs, resetViewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
-	import { resetWindowPoses } from '$lib/vrWindowPoses';
 	import { probeFindings, probeRunning, probeSupport, runArProbe, clearProbeState } from '$lib/arProbe';
 	import { roomAlignment } from '$lib/colocation';
 	import { roomNudge, nudgeIsZero, NUDGE_MAX_M } from '$lib/colocation';
@@ -296,10 +295,6 @@
 	let inputExpanded = false; // 21-E5: gamepad (the shortcuts-registry precedent: LOCAL prefs)
 
 	// D7: sanitize a cap edit — an empty/garbage field falls back to the default
-	function setCap(store: any, raw: string, fallback: number) {
-		const value = parseInt(raw);
-		store.set(Number.isFinite(value) && value >= 10 ? value : fallback);
-	}
 
 	// AI provider add/edit form state (roadmap #10). Legacy-mode file — plain lets.
 	let aiFormOpen = false;
@@ -908,6 +903,7 @@
 						<svelte:fragment slot="control"><Toggle bind:checked={$toastsInDrawerOnly} /></svelte:fragment>
 						Hide ALL pop-up toasts in the viewport — including connection requests — so they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy
 					</SettingRow>
+					<ToursSettings />
 					<p class="ui-section-label">Windows & chrome</p>
 					{#if $drawerSlot}
 						<SettingRow name="Show Rooms button">
@@ -1187,6 +1183,7 @@
 						<svelte:fragment slot="control"><Checkbox id="kit-instancing" bind:checked={$kitInstancingEnabled} /></svelte:fragment>
 						Every copy of one pack piece (a wall, a floor tile, a battlement) is drawn in one go instead of one by one, which is what keeps a level built from the kits inside a headset's budget. Only on THIS machine; an edited or selected piece is always drawn on its own
 					</SettingRow>
+					<WaterSettings />
 					<SettingRow name="Simulation controls">
 						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>
 						Show the physics transport (play/pause/stop/reset) at bottom-right. Off by default to avoid confusion with the main play button; the P key still starts/stops the simulation
@@ -1631,166 +1628,8 @@
 						</svelte:fragment>
 						Forces normal play even if immersive-vr is enabled
 					</SettingRow>
-					<SettingRow name="VR flying">
-						<svelte:fragment slot="control">
-							<Checkbox
-								checked={$vrFlying}
-								onchange={(e) => {
-									$vrFlying = e.target.checked;
-									safeStorage.setItem('vrFlying', String($vrFlying));
-								}} />
-						</svelte:fragment>
-						Left-stick movement follows where the controller points (fly); off = stay level
-					</SettingRow>
-					<SettingRow name="Passthrough">
-						<svelte:fragment slot="control">
-							<!-- a red SWITCH (98): reads as an armed mode, not a plain option -->
-							<Toggle
-								id="passthrough-toggle"
-								color="red"
-								size="small"
-								checked={$vrPassthrough}
-								onchange={(e: any) => {
-									$vrPassthrough = e.target.checked;
-									safeStorage.setItem('vrPassthrough', String($vrPassthrough));
-									showToast('Passthrough ' + ($vrPassthrough ? 'on' : 'off') + ' — takes effect on the next VR entry');
-								}} />
-						</svelte:fragment>
-						Mixed reality: the next VR entry composites the scene over your room (immersive-ar){arSupport === false ? ' — not supported on this device' : ''}
-					</SettingRow>
-					<SettingRow name="VR menu on left">
-						<svelte:fragment slot="control">
-							<Checkbox
-								checked={$vrMenuHand === 'left'}
-								onclick={() => {
-									const next = $vrMenuHand === 'left' ? 'right' : 'left';
-									$vrMenuHand = next;
-									safeStorage.setItem('vrMenuHand', next);
-								}} />
-						</svelte:fragment>
-						Which controller opens the VR quick-menu (the other hand points)
-					</SettingRow>
-					<SettingRow name="Hold-to-menu">
-						<svelte:fragment slot="control">
-							<Checkbox
-								id="vr-menu-hold"
-								checked={$vrMenuHold}
-								onchange={(e: any) => {
-									$vrMenuHold = e.target.checked;
-									safeStorage.setItem('vrMenuHold', String($vrMenuHold));
-								}} />
-						</svelte:fragment>
-						Hold B/Y to show the radial menu, release over a sector to pick it (off = press toggles)
-					</SettingRow>
-					<SettingRow name="Snap turn">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								items={[
-									{ value: 0, name: 'Off' },
-									{ value: 15, name: '15°' },
-									{ value: 30, name: '30°' },
-									{ value: 45, name: '45°' }
-								]}
-								value={$vrSnapAngle}
-								onchange={(v) => {
-									$vrSnapAngle = parseInt(v);
-									safeStorage.setItem('vrSnapAngle', String($vrSnapAngle));
-								}}
-							/>
-						</svelte:fragment>
-						VR thumbstick flick rotation angle (Off disables it)
-					</SettingRow>
-					<SettingRow name="Mirror snap turn">
-						<svelte:fragment slot="control">
-							<Checkbox
-								id="vr-mirror-snap"
-								checked={$vrMirrorSnapTurn}
-								onchange={(e: any) => {
-									$vrMirrorSnapTurn = e.target.checked;
-									safeStorage.setItem('vrMirrorSnapTurn', String($vrMirrorSnapTurn));
-								}} />
-						</svelte:fragment>
-						Flip the flick direction — left turns right and vice-versa
-					</SettingRow>
-					<SettingRow name="Teleport">
-						<svelte:fragment slot="control">
-							<Checkbox
-								id="vr-teleport"
-								checked={$vrTeleportEnabled}
-								onchange={(e: any) => {
-									$vrTeleportEnabled = e.target.checked;
-									safeStorage.setItem('vrTeleportEnabled', String($vrTeleportEnabled));
-								}} />
-						</svelte:fragment>
-						Right-stick-up teleport arc — off if you navigate only by stick/fly
-					</SettingRow>
-					<SettingRow name="VR sleeve palette">
-						<svelte:fragment slot="control">
-							<Checkbox
-								id="vr-sleeve"
-								checked={$vrSleeveEnabled}
-								onchange={(e: any) => {
-									$vrSleeveEnabled = e.target.checked;
-									safeStorage.setItem('vrSleeveEnabled', String($vrSleeveEnabled));
-								}} />
-						</svelte:fragment>
-						Experimental — a strip of ghost primitives on your forearm: trigger-drag one out to place it (stick scales, wrist rotates). Grip-drop an object onto the strip to keep it as a personal slot
-					</SettingRow>
-					<SettingRow name="Hold to move vertex">
-						<svelte:fragment slot="control">
-							<Checkbox
-								id="vr-vertex-hold"
-								checked={$vrVertexHold}
-								onchange={(e: any) => {
-									$vrVertexHold = e.target.checked;
-									safeStorage.setItem('vrVertexHold', String($vrVertexHold));
-								}} />
-						</svelte:fragment>
-						Hold the trigger to carry a vertex (release drops it); off = press to grab, press again to drop
-					</SettingRow>
-					<SettingRow name="Face edit limit">
-						<svelte:fragment slot="control">
-							<input
-								id="vr-face-cap"
-								type="number"
-								min="10"
-								step="50"
-								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$vrFaceCap}
-								on:change={(e: any) => setCap(vrFaceCap, e.target.value, VR_FACE_CAP)}
-							/>
-						</svelte:fragment>
-						<span class="font-semibold">Mesh edit caps (D7)</span> — max triangles for VR face editing (default {VR_FACE_CAP}; denser meshes get a warning). Imported single meshes under the caps edit fine; Ungroup multi-mesh imports first
-					</SettingRow>
-					<SettingRow name="Vertex edit limit">
-						<svelte:fragment slot="control">
-							<input
-								id="vr-vertex-cap"
-								type="number"
-								min="10"
-								step="50"
-								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$vrVertexCap}
-								on:change={(e: any) => setCap(vrVertexCap, e.target.value, VR_VERTEX_CAP)}
-							/>
-						</svelte:fragment>
-						Max vertices for VR vertex editing (default {VR_VERTEX_CAP}) — very dense handle clouds get unwieldy with controllers
-					</SettingRow>
-					<SettingRow name="Peer hand style">
-						<svelte:fragment slot="control">
-							<select
-								id="peer-hand-style"
-								class="rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$peerHandStyle}
-								on:change={(e: any) => peerHandStyle.set(e.target.value)}
-							>
-								<option value="model">Model</option>
-								<option value="hands">Hands</option>
-								<option value="spheres">Spheres</option>
-							</select>
-						</svelte:fragment>
-						How hand-tracked peers render for you — rounded capsule hands, cuboid bones or joint spheres (local preference)
-					</SettingRow>
+					<!-- 36-vr: every VR setting, from the one table the headset uses (vr/settingsSchema.js) -->
+					<VRSettingsSection {arSupport} />
 					<SettingRow name="My hand model">
 						<svelte:fragment slot="control">
 							<select
@@ -1806,36 +1645,6 @@
 							</select>
 						</svelte:fragment>
 						<span class="font-semibold">Custom hands (identity)</span> — a GLB from your Explorer library that OTHER peers see as your hands in VR (bytes push automatically; renders rigid at the wrist)
-					</SettingRow>
-					<SettingRow name="VR refresh rate">
-						<svelte:fragment slot="control">
-							<select
-								id="vr-target-hz"
-								class="rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$vrTargetHz}
-								on:change={(e: any) => {
-									vrTargetHz.set(e.target.value);
-									applyVRFrameRate();
-								}}
-							>
-								<option value="auto">Max</option>
-								<option value="90">90</option>
-								<option value="120">120</option>
-							</select>
-						</svelte:fragment>
-						Target headset Hz — Max picks the highest the device supports (120 needs the Quest 120Hz system setting); applies on VR entry
-					</SettingRow>
-					<SettingRow name="VR menu positions">
-						<svelte:fragment slot="control">
-							<button
-								id="vr-reset-poses"
-								class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-								on:click={() => {
-									resetWindowPoses();
-									showToast('VR menu positions reset');
-								}}>Reset positions</button>
-						</svelte:fragment>
-						Grabbed VR menus/panels snap back to their default spots on the controllers (111: hold the other grip on one to re-place it)
 					</SettingRow>
 					<SettingRow name="Colocation probe (dev)">
 						<svelte:fragment slot="control">

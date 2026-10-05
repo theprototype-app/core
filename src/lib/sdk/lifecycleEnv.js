@@ -57,6 +57,7 @@ export async function lifecycleEnv() {
 		musicClock,
 		kitRuntime,
 		modelLoader,
+		waterVolumes,
 		coreModuleIndex,
 		touchActions,
 		engines
@@ -99,6 +100,7 @@ export async function lifecycleEnv() {
 		tryLoad(import('../musicClock')),
 		tryLoad(import('../kit/runtime.js')),
 		tryLoad(import('../modelLoader')),
+		tryLoad(import('../water/volumes.js')),
 		// the bundled modules, for the leak suite's load/unload cycles (a .svelte import: browser only)
 		tryLoad(import('../../modules/index.js')),
 		tryLoad(import('../touchActions')),
@@ -151,7 +153,8 @@ export async function lifecycleEnv() {
 			kitRuntime,
 			modelLoader,
 			touchActions,
-			engines
+			engines,
+			waterVolumes
 		}
 	};
 }

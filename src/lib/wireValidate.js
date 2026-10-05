@@ -175,7 +175,9 @@ export const VALIDATORS = {
 	group: (d) => d.uuid !== undefined,
 	duplicate: (d) => isUuid(d.sourceUuid) && isArray(d.uuids),
 	nodes: (d) => isArray(d.nodes) && isArray(d.edges),
-	nodesync: (d) => typeof d.hash === 'string' && typeof d.count === 'number',
+	// 36-sim (found proving B2): graphHash() returns a NUMBER (djb2 >>> 0). Requiring a string
+	// rejected EVERY nodesync since 27-A, so graph drift between peers was never noticed.
+	nodesync: (d) => (typeof d.hash === 'string' || Number.isFinite(d.hash)) && typeof d.count === 'number',
 	nodecreate: (d) => !!d.node && typeof d.node === 'object',
 	nodedata: (d) => typeof d.id === 'string' && !!d.data && typeof d.data === 'object',
 	nodedelete: (d) => isArray(d.ids),
@@ -183,7 +185,11 @@ export const VALIDATORS = {
 	edgedelete: (d) => isArray(d.ids),
 	// 31: a pulse, and (the clap) WHERE it happened — the point is read as a place the moment it
 	// lands, so a non-finite one would plant a star at NaN; absent is every pre-31 trigger
-	nodetrigger: (d) => typeof d.id === 'string' && (d.at === undefined || d.at === null || isVec3(d.at)),
+	nodetrigger: (d) =>
+		typeof d.id === 'string' &&
+		(d.at === undefined || d.at === null || isVec3(d.at)) &&
+		// 36 X6: a contact's OTHER body (a uuid, '' = the ground); older peers ignore it
+		(d.other === undefined || d.other === null || d.other === '' || isUuid(d.other)),
 	nodedefs: (d) => isArray(d.defs),
 	verts: (d) => isUuid(d.uuid) && isArray(d.indices),
 	meshgeo: (d) => isUuid(d.uuid) && d.positions !== undefined,
@@ -290,8 +296,16 @@ export const VALIDATORS = {
 	},
 	// 33: only the `lod` parameter is constrained (every other parameter predates this entry
 	// and keeps "absent means allow"): a block is an object with a levels ARRAY, or null
-	objectParameters: (d) =>
-		d.parameter !== 'lod' || (isUuid(d.uuid) && (d.lod === null || (!!d.lod && typeof d.lod === 'object' && isArray(d.lod.levels))))
+	// 36-water: `water` / `bubbles` are a plain object or null (the appliers spread nothing
+	// else onto userData)
+	objectParameters: (d) => {
+		if (d.parameter === 'lod') return isUuid(d.uuid) && (d.lod === null || (!!d.lod && typeof d.lod === 'object' && isArray(d.lod.levels)));
+		if (d.parameter === 'water' || d.parameter === 'bubbles') {
+			const v = d[d.parameter];
+			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));
+		}
+		return true;
+	}
 };
 
 /**

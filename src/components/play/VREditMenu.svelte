@@ -10,6 +10,7 @@
 	import { faceEditObject, faceEditOp, faceEditGranularity, faceEditMulti, faceEditSelectedTris } from '$lib/faceEdit'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
+	import { colliderEditObject } from '$lib/colliderEdit' // 36 X4
 
 	// VR Edit Mesh side-menu (137, reworked into tabs in 181): a horizontal
 	// Vertices | Faces | Stretch TAB bar with the active tab lit, an ✕ close in
@@ -44,11 +45,13 @@
 	)
 
 	type Row = { action: string; label: string; active?: boolean; danger?: boolean }
-	// the three mode TABS (horizontal bar)
+	// 36 X4: a custom-collider session (the same tools, on a scene-root proxy)
+	let colliderMode = $derived(!!$colliderEditObject)
+	// the three mode TABS (horizontal bar) — no Stretch while editing a collider
 	let modeTabs = $derived<Row[]>([
 		{ action: 'edit:mode:vertices', label: 'Vertices', active: mode === 'vertices' },
 		{ action: 'edit:mode:faces', label: 'Faces', active: mode === 'faces' },
-		{ action: 'edit:mode:stretch', label: 'Stretch', active: mode === 'stretch' }
+		...(colliderMode ? [] : [{ action: 'edit:mode:stretch', label: 'Stretch', active: mode === 'stretch' }])
 	])
 	// the active tab's tools (vertical list below the tab bar)
 	let toolRows = $derived.by(() => {
@@ -72,6 +75,15 @@
 			const label = creating ? (n >= 3 && n <= 4 ? `Build face (${n})` : `Select verts (${n})`) : 'Create face'
 			list.push({ action: 'edit:createface', label, active: creating })
 		}
+		// 36 X4: the desktop collider toolbar's buttons, as rows
+		if (colliderMode)
+			list.push(
+				{ action: 'collider:add:box', label: '+ Box piece' },
+				{ action: 'collider:add:sphere', label: '+ Sphere piece' },
+				{ action: 'collider:decompose', label: 'Decompose (auto)' },
+				{ action: 'collider:done', label: 'Done — save collider', active: true },
+				{ action: 'collider:cancel', label: 'Cancel', danger: true }
+			)
 		return list
 	})
 	// stretch shows 3 sliders in place of tool rows (193)
@@ -105,9 +117,9 @@
 	}
 	// tab bar geometry (horizontal)
 	const TAB_GAP = 0.004
-	let tabW = $derived((WIDTH - TAB_GAP * 2) / 3)
+	let tabW = $derived((WIDTH - TAB_GAP * (modeTabs.length - 1)) / modeTabs.length)
 	function tabX(i: number) {
-		return (i - 1) * (tabW + TAB_GAP)
+		return (i - (modeTabs.length - 1) / 2) * (tabW + TAB_GAP)
 	}
 	let titleY = $derived(panelH / 2 - 0.011)
 	let tabY = $derived(panelH / 2 - 0.026 - TAB_H / 2)
@@ -125,7 +137,7 @@
 
 		<!-- title -->
 		<Text
-			text={'Edit Mesh'}
+			text={colliderMode ? 'Edit Collider' : 'Edit Mesh'}
 			color="#e8ecf2"
 			fontSize={0.01}
 			anchorX="left"

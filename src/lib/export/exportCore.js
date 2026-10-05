@@ -44,11 +44,16 @@ export function rewriteIndexHtml(html, { title }) {
  * src/href is absolute (`http(s)://` or `//` — nothing in export-manifest.json is), any script
  * carrying `data-cf-beacon` or naming cloudflareinsights, and the analytics comments. Every
  * removal is RETURNED, so the builder reports it (never silently); check-export stays strict.
- * PURE. @param {string} html @returns {{html: string, removed: string[]}}
+ * 36 L3: `known` names the removals that are a KNOWN host injection (the Cloudflare beacon) — the
+ * builder lists those in the result's Details only ("Removed …beacon.min.js" means nothing to a
+ * person exporting a game); anything else removed still shows as a warning.
+ * PURE. @param {string} html @returns {{html: string, removed: string[], known: string[]}}
  */
 export function stripHostInjected(html) {
 	/** @type {string[]} */
 	const removed = [];
+	/** @type {string[]} */
+	const known = [];
 	const abs = /^(?:https?:)?\/\//i;
 	const attr = (/** @type {string} */ attrs, /** @type {string} */ name) =>
 		new RegExp('\\b' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s>]+))', 'i').exec(attrs)?.slice(1).find((v) => v !== undefined) || '';
@@ -56,8 +61,10 @@ export function stripHostInjected(html) {
 	out = out.replace(/[ \t]*<script\b([^>]*)>([\s\S]*?)<\/script>[ \t]*\n?/gi, (m, attrs, body) => {
 		const src = attr(attrs, 'src');
 		// (spelled so the engine bundle never carries the two words itself: an export is scanned for them)
-		if (abs.test(src) || /\bdata-cf-(?:beacon)\b/i.test(attrs) || /cloudflare(?:insights)/i.test(body)) {
+		const beacon = /\bdata-cf-(?:beacon)\b/i.test(attrs) || /cloudflare(?:insights)/i.test(src + ' ' + body);
+		if (abs.test(src) || beacon) {
 			removed.push(src || 'an inline host script');
+			if (beacon) known.push(src || 'an inline host script');
 			return '';
 		}
 		return m;
@@ -69,7 +76,21 @@ export function stripHostInjected(html) {
 		return '';
 	});
 	out = out.replace(/[ \t]*<!--\s*Cloudflare Pages Analytics\s*-->[ \t]*\n?/gi, '');
-	return { html: out, removed };
+	return { html: out, removed, known };
+}
+
+/**
+ * 36 L3: how an export reports what `stripHostInjected` removed from one page — a KNOWN host
+ * script (the Cloudflare beacon) goes to the result's Details only, anything else stays a
+ * visible warning. PURE. @param {string} path @param {{removed: string[], known: string[]}} r
+ * @returns {{warnings: string[], details: string[]}}
+ */
+export function hostRemovalNotes(path, r) {
+	/** @type {{warnings: string[], details: string[]}} */
+	const notes = { warnings: [], details: [] };
+	for (const url of r.removed)
+		(r.known.includes(url) ? notes.details : notes.warnings).push(`Removed ${url} from ${path}: the web host added it to the page it served, and an export loads nothing from the internet.`);
+	return notes;
 }
 
 /** play.js's text for a config. PURE. @param {any} config */

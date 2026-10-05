@@ -36,7 +36,9 @@ import {
 	peerHandStyle,
 	pokeScene
 } from '../../stores/sceneStore';
-import { activeRing, findMenuEntry, pushRing, popRing } from '../vrRadialMenu';
+import { activeRing, findMenuEntry, pushRing, popRing, vrMenuPressed } from '../vrRadialMenu';
+import { registerSettingsRings } from './settingsRings.js';
+import { activateVRSetting, vrSettingsPage, openVRSettingsPage, cycleBinding, vrSettingsCursor } from './settingsSchema.js';
 import { perfStatsShown } from '../fpsMeter';
 import {
 	editingObject,
@@ -104,6 +106,10 @@ import {
 } from './panels.js';
 import { controllerRay } from './pointer.js';
 import { boxSelectEnd, beginStretch, commitStretch } from './tools.js';
+// 36 X4: the collider session, PRIMED (colliderEdit reaches faceEdit/history — a static
+// edge from here is the documented cycle family); every use below is null-safe
+/** @type {any} */ let colliderEditRef = null;
+if (typeof window !== 'undefined') import('../colliderEdit').then((m) => (colliderEditRef = m));
 
 /** Raycast the quick-menu tiles @param {number} index @returns {string|null} tile action name */
 export function raycastMenu(index) {
@@ -153,7 +159,22 @@ function spawnPrimitive(command) {
 export function executeVRMenuAction(name) {
 	// D4: a disabled registry entry (greyed sector) never activates, whether
 	// its behavior lives in a registry action or the built-in switch below
-	if (findMenuEntry(name)?.disabled?.()) return;
+	const menuEntry = findMenuEntry(name);
+	if (menuEntry?.disabled?.()) return;
+	// 36 (R11): press feedback — the sector flashes (VRMenu) and the hand ticks (silent in Edit, C4)
+	if (menuEntry || name === 'back' || name === 'close' || name === 'nav:object') {
+		vrMenuPressed.set({ id: name, at: performance.now() });
+		hapticPulse(0.3, 25);
+	}
+	// 36: the in-headset Settings panel (rows from the one settings table)
+	if (name.startsWith('vrset:')) {
+		handleSettingsPanelAction(name.slice('vrset:'.length));
+		return;
+	}
+	if (name.startsWith('vrbind:')) {
+		cycleBinding(name.slice('vrbind:'.length));
+		return;
+	}
 	// ring navigation + close (109: a STACK — Back pops one level)
 	if (name === 'close') {
 		vrMenuOpen.set(false);
@@ -235,7 +256,34 @@ export function executeVRMenuAction(name) {
 		}
 		return;
 	}
+	if (name.startsWith('collider:')) {
+		// 36 X4: the collider session's rows in the edit side-menu
+		const cmd = name.slice('collider:'.length);
+		const ce = colliderEditRef;
+		if (!ce || !get(ce.colliderEditObject)) return;
+		if (cmd === 'add:box' || cmd === 'add:sphere') ce.addColliderPiece(cmd.slice(4));
+		else if (cmd === 'done') {
+			if (ce.commitColliderEdit()) vrEditMenuOpen.set(false); // false = over the cap, stays open
+		} else if (cmd === 'cancel') {
+			ce.exitColliderEdit();
+			vrEditMenuOpen.set(false);
+		} else if (cmd === 'decompose') {
+			// X3 from the headset: leave the hand-edit session, decompose the mesh instead
+			const target = ce.colliderTargetUuid();
+			ce.exitColliderEdit(false);
+			vrEditMenuOpen.set(false);
+			if (target) import('../colliderDecompose').then((m) => m.decomposeCollider(target));
+		}
+		return;
+	}
 	if (name === 'edit:close') {
+		// 36 X4: closing the side-menu during a collider session CANCELS it (the proxy
+		// must not outlive its menu); Done is the explicit save
+		if (colliderEditRef && get(colliderEditRef.colliderEditObject)) {
+			colliderEditRef.exitColliderEdit();
+			vrEditMenuOpen.set(false);
+			return;
+		}
 		// side-menu close = exit mesh edit (137); bake a pending stretch (161)
 		commitStretch();
 		vrFaceCreateMode.set(false);
@@ -248,6 +296,20 @@ export function executeVRMenuAction(name) {
 	if (name.startsWith('edit:mode:')) {
 		// switch Vertices / Faces / Stretch from the side-menu (137/161)
 		const mode = name.slice('edit:mode:'.length);
+		// 36 X4: inside a collider session the tabs drive the PROXY (the real object is
+		// never mesh-edited by it), and Stretch has no meaning there
+		const proxyUuid = colliderEditRef && get(colliderEditRef.colliderEditObject) ? colliderEditRef.colliderProxyUuid() : null;
+		if (proxyUuid) {
+			vrFaceCreateMode.set(false);
+			if (mode === 'vertices') {
+				exitFaceEdit();
+				enterEditMode(proxyUuid);
+			} else if (mode === 'faces') {
+				exitEditMode();
+				enterFaceEdit(proxyUuid);
+			}
+			return;
+		}
 		const object = /** @type {any} */ (get(selectedObject));
 		if (!object?.uuid) return;
 		vrFaceCreateMode.set(false); // leaving/re-entering a mode exits create-face
@@ -633,7 +695,14 @@ export function executeVRMenuAction(name) {
 	} else if (name === 'world') {
 		resetWorldRig(); // back to 1:1 mid-session
 	} else if (name === 'settings') {
-		// 187: System > Settings opens the VR settings panel (passthrough moved inside)
+		// 187: Settings ▸ All settings opens the VR settings panel. 36 (R9): it REPLACES the ring on
+		// screen like every other panel — the ring left open used to own the pointer, so the panel's
+		// rows could not be hovered until B closed the ring
+		vrObjectsPanelOpen.set(false);
+		vrPaletteOpen.set(false);
+		vrPropsPanelOpen.set(false);
+		vrChatPanelOpen.set(false);
+		vrMenuOpen.set(false);
 		vrSettingsPanelOpen.set(true);
 	} else if (name === 'exitvr') {
 		vrMenuOpen.set(false);
@@ -704,3 +773,36 @@ export function pingPointFromRay(ray, group) {
 		? planePoint
 		: null;
 }
+
+/** 36: the Settings panel's own actions — pages, the − / + of a range, back to the ring, close
+ * @param {string} key */
+function handleSettingsPanelAction(key) {
+	if (key === 'close') {
+		vrSettingsPanelOpen.set(false);
+		return;
+	}
+	if (key === 'back') {
+		// Back to the radial's Settings ring — the place the panel is reached from
+		vrSettingsPanelOpen.set(false);
+		vrMenuOpen.set(true);
+		pushRing('settings');
+		return;
+	}
+	if (key.startsWith('page:')) {
+		vrSettingsPage.set(key.slice('page:'.length));
+		vrSettingsCursor.set(0);
+		return;
+	}
+	const minus = key.endsWith(':-');
+	const plus = key.endsWith(':+');
+	const id = minus || plus ? key.slice(0, -2) : key;
+	if (id === 'remap') {
+		openVRSettingsPage('buttons');
+		return;
+	}
+	activateVRSetting(id, minus ? -1 : 1);
+}
+
+// 36: the Settings rings (built from the settings table) — registered here, where the settings' own
+// modules (faceEdit, meshEdit, voiceChat…) are already loaded
+registerSettingsRings();

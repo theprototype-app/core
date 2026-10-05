@@ -112,7 +112,9 @@
 //   origin [x, y, z] (the local pivot a Door preset swings about) · anim '<preset>' | [..]
 //   (door, drawer, elevator, turntable, pulse, fade — key or name; an AUTHORED clip, run it with
 //   a Play Animation node) · particles '<preset>' | {preset, ...overrides} (sparkles, fire,
-//   smoke, dust, confetti, sparks)
+//   smoke, dust, confetti, sparks) · water '<preset>' | {preset, shape?, level?, look?, waves?, bubbles?,
+//   flow?, density?} (36: a water volume, userData.water — pool aquarium ocean lake river lava swamp toxic
+//   ice; a static sensor unless `physics` says otherwise) · bubbles {…} (a standalone bubble emitter)
 // ENV — a custom sky: {preset: 'custom' | '<preset>', base?: '<preset>', exposure,
 //   background: '#hex' | {top, bottom} (a gradient; `background` keeps the bottom colour),
 //   fog: {color, near, far} | null, ground: {color, roughness?} (a solid ground disc that takes
@@ -498,6 +500,10 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 			const blockBuilders = d.objects.some((/** @type {any} */ o) => o.type === 'block')
 				? (await import('/src/lib/customGeometries.js')).customGeometryBuilders
 				: null;
+			// 36-sim: the app's Fluid tank (`/create FluidTank w h d`), fetched only when a def asks
+			const simTank = d.objects.some((/** @type {any} */ o) => o.type === 'fluidtank')
+				? await import('/src/lib/sim/fluidTank.js')
+				: null;
 			/** @param {any} o @param {{mirror?: boolean, prefix?: string, opacity?: number, shadow?: boolean}} [opts] */
 			const build = (o, opts = {}) => {
 				const mirror = !!opts.mirror;
@@ -604,6 +610,8 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 							throw new Error('object "' + o.name + '": unknown block "' + o.shape + '" (Wedge | Arch | Corner | Stairs)');
 						geo = make(...(o.args ?? []));
 					}
+					// 36-sim: a fluid tank — open glass box; userData.fluid + its compound collider below
+					else if (o.type === 'fluidtank') geo = simTank.fluidTankGeometry(...(o.size ?? []));
 					else throw new Error('object "' + o.name + '": unknown type "' + o.type + '"');
 					// 30 author-kit: MeshPhysicalMaterial when a def asks for `physical` or uses any
 					// field only it has; MeshToonMaterial for `toon`. Absent all of those it is the
@@ -647,6 +655,10 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					object.material.transparent = true;
 					object.material.opacity = opts.opacity;
 				}
+				if (o.type === 'fluidtank') {
+					simTank.stampFluidTank(object, ...(o.size ?? []));
+					if (o.fluid) object.userData.fluid = { ...object.userData.fluid, ...o.fluid };
+				}
 				object.name = (opts.prefix ?? '') + o.name;
 				if (pos && o.type !== 'spline') object.position.set(pos[0], pos[1], pos[2]);
 				if (rot) object.rotation.set(rot[0], rot[1], rot[2]);
@@ -670,6 +682,21 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 						if (!base) throw new Error('object "' + o.name + '": no particle preset "' + spec.preset + '"');
 						const { preset: _preset, ...patch } = spec;
 						object.userData.particles = { ...structuredClone(base), ...patch };
+					}
+					// 36-water: a water volume from a preset (`water: 'pool'` or {preset, shape?, level?,
+					// look?, waves?, bubbles?, flow?, ...}) — userData.water, the W1 blob — and a
+					// standalone bubble emitter (`bubbles: {...}` on a dry object, userData.bubbles)
+					if (o.water) {
+						const spec = typeof o.water === 'string' ? { preset: o.water } : o.water;
+						const base = s.waterPresets.waterPreset(spec.preset ?? 'pool', spec.shape ? { shape: spec.shape } : {});
+						if (!base) throw new Error('object "' + o.name + '": no water preset "' + spec.preset + '"');
+						const { preset: _wp, look, waves, bubbles, ...top } = spec;
+						const blob = { ...base, ...top, look: { ...base.look, ...(look ?? {}) }, waves: { ...base.waves, ...(waves ?? {}) }, bubbles: { ...base.bubbles, ...(bubbles ?? {}) } };
+						object.userData.water = s.waterVolumes.normalizeWater(blob);
+						// a pass-through sensor, never a solid wall (Create -> Water does the same)
+						if (!o.physics) object.userData.physics = { mode: 'static', sensor: true };
+					} else if (o.bubbles) {
+						object.userData.bubbles = { ...s.waterPresets.BUBBLE_DEFAULTS, enabled: true, ...o.bubbles };
 					}
 					// animation presets are applied once the object has a uuid in the scene
 					if (o.anim) animQueue.push({ object, anim: o.anim });
@@ -1112,6 +1139,24 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 				// camera markers are chrome, not scenery
 				clone.traverse((/** @type {any} */ n) => {
 					if (n.userData?.camera) n.visible = false;
+					// 36-water: the offscreen card has no water renderer — draw a water volume as a
+					// translucent stand-in in its own colours (an opaque box otherwise hides the tank)
+					if (n.isMesh && n.userData?.water) {
+						const look = n.userData.water.look ?? {};
+						const c = new T.Color(look.shallowColor ?? '#5fd3e6').lerp(new T.Color(look.deepColor ?? '#0b4f6c'), 0.55);
+						const glow = Number(look.emissiveStrength) || 0;
+						n.material = new T.MeshStandardMaterial({
+							color: c,
+							roughness: 0.08,
+							metalness: 0,
+							transparent: (look.opacity ?? 0.85) < 0.99 && !glow,
+							opacity: glow ? 1 : 0.5,
+							depthWrite: false,
+							emissive: glow ? new T.Color(look.emissive ?? '#000000') : new T.Color(0),
+							emissiveIntensity: glow
+						});
+						n.castShadow = false;
+					}
 				});
 				scene.updateMatrixWorld(true);
 				// a spot/directional shines along its -Z (24-E1) — lightHelpers seats its target

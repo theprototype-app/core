@@ -67,6 +67,7 @@
 	import AnimStateNode from './nodes/AnimStateNode.svelte';
 	import OnHitNode from './nodes/OnHitNode.svelte';
 	import OnClapNode from './nodes/OnClapNode.svelte'; // 31 (Stars Room S3)
+	import ContactNode from './nodes/ContactNode.svelte'; // 36 X6
 	import UnknownNode from './nodes/UnknownNode.svelte';
 	// 36 U11 / N1: the editor-only kinds (a group, a note) and the boundary cards inside a group
 	import GroupNode from './nodes/GroupNode.svelte';
@@ -180,6 +181,7 @@
 		pathpatrol: PathPatrolNode,
 		sound: SoundNode,
 		particle: ParticleNode,
+		jiggle: AnimationNode, // 36-sim U2b
 		mass: AnimationNode,
 		bounciness: AnimationNode,
 		friction: AnimationNode,
@@ -210,12 +212,12 @@
 		setuniform: EffectNode,
 		onclick: OnClickNode,
 		ongrab: OnClickNode, // 30b (core-games): the same pulse card
-		onimpact: AnimationNode,
+		onimpact: ContactNode, // 36 X6: filter input + other output
 		// 24-A A2: its own card — the pulse dot PLUS speed/byMe value rows (the MoveInput
 		// shape: several source handles need labelled rows, not one right-edge dot)
 		onhit: OnHitNode,
-		onenter: OnClickNode, // CL-C: same pulse card, sensor copy
-		onexit: OnClickNode,
+		onenter: ContactNode, // CL-C sensor edges; 36 X6: the contact card
+		onexit: ContactNode,
 		collider: ColliderNode, // CL-C
 		velocity: VelocityNode, // CL-C
 		measure: AnimationNode, // B6

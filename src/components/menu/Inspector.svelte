@@ -10,9 +10,13 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import PanelHeader from '../ui/PanelHeader.svelte';
 	import Section from '../ui/Section.svelte';
+	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
 	import LodGroupPanel from './LodGroupPanel.svelte';
 	import LoadStatePanel from './LoadStatePanel.svelte';
+	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
+	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
+	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
 	import DragRow from '../ui/DragRow.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
 	import CustomWrapper from '$lib/ColorWrapper.svelte';
@@ -82,6 +86,8 @@
 	import { showColliders, colliderVizObjects, setColliderViz } from '$lib/colliderHelpers';
 	import { enterColliderEdit } from '$lib/colliderEdit';
 	import { inferredColliderKind } from '$lib/colliderSpec';
+	import PhysicsGroupRow from './PhysicsGroupRow.svelte'; // 36 X5
+	import ColliderDecomposeRow from './ColliderDecomposeRow.svelte'; // 36 X3
 	// 57.5: a spline's record is editable right here — same write path the
 	// viewport handles use (apply + broadcast + one 'spline' undo entry)
 	import {
@@ -1797,7 +1803,8 @@
 
 			<!-- 16-P4: everything about the VIEWPORT camera in one place (it used to be a
 			     "Camera lens" sub-label buried in View): lens, clip planes, orbit feel,
-			     framing shortcuts and the saved views. All LOCAL, never replicated. -->
+			     framing shortcuts and the saved views. All LOCAL, never replicated —
+			     except 36 L2's start-view hold, which is scene data (CameraHoldSetting). -->
 			<Section label="Camera">
 				<div id="lens-presets" class="flex flex-wrap gap-1">
 					{#each LENS_PRESETS as p (p.label)}
@@ -1908,6 +1915,7 @@
 						Reset feel
 					</button>
 				</div>
+				<CameraHoldSetting /><!-- 36 L2: scene data, saved + replicated -->
 				<p class="ui-section-label" data-anchor="Saved views">Saved views</p>
 				<div class="ui-row items-center gap-2">
 					<button id="bookmark-save" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => saveBookmark()}>
@@ -3207,6 +3215,13 @@
 				</Section>
 			{/if}
 
+			{#if !isLight && !multiCount && $selectedObject?.uuid}
+				<!-- 36-water: make any object water (a tank, a pool, an ocean) or a bubble emitter -->
+				<Section label="Water">
+					<WaterPanel uuid={$selectedObject.uuid} />
+				</Section>
+			{/if}
+
 			{#if devPrimary}
 				<Section label="Device">
 					<!-- 23-B4: the device's declared params, fanned over the selection; presets and
@@ -3813,6 +3828,7 @@
 				</Section>
 			{/if}
 
+			{#if $selectedObject.userData?.fluid}<FluidTankSection object={$selectedObject} />{/if}<!-- 36-sim U2b -->
 			{#if !$selectedObject.isLight}
 				<Section label="Physics">
 					{#if multiCount}
@@ -3873,6 +3889,10 @@
 								{ value: 'cylinder', name: 'Cylinder' },
 									{ value: 'cone', name: 'Cone' },
 								{ value: 'hull', name: 'Convex hull' },
+								// 36 X2: exact trimesh — static/kinematic only, so a dynamic body is not offered it
+								...(($selectedObject.userData.physics?.mode ?? 'auto') !== 'dynamic'
+									? [{ value: 'trimesh', name: 'Exact mesh (static)' }]
+									: []),
 							{ value: 'custom', name: 'Custom (edit…)' }
 							]}
 							value={$selectedObject.userData.physics?.collider ?? inferredColliderKind($selectedObject) ?? 'box'}
@@ -3892,6 +3912,7 @@
 							Edit collider…
 						</button>
 					{/if}
+					{#if $selectedObject.isMesh || $selectedObject.children?.length}<ColliderDecomposeRow uuid={$selectedObject.uuid} />{/if}
 					<!-- CL-A A3: sensor = trigger volume; overlaps fire On Enter / On Exit -->
 					<Checkbox
 						id="physics-sensor"
@@ -3899,6 +3920,7 @@
 						onchange={(/** @type {any} */ e) => setPhysics({ sensor: e.currentTarget.checked || null })}
 						>Sensor — no collision, fires On Enter / On Exit</Checkbox
 					>
+					<PhysicsGroupRow physics={$selectedObject.userData.physics} water={$selectedObject.userData.water} onchange={setPhysics} />
 					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
 						<!-- CL-A A5: freeze axes (dynamic bodies only) -->
 						<div id="physics-freeze-rot" class="ui-row items-center gap-2 text-xs text-gray-300">
@@ -3921,6 +3943,7 @@
 								>
 							{/each}
 						</div>
+						<PhysicsFloats object={$selectedObject} {setPhysics} /><!-- 36-sim I1 -->
 					{/if}
 					<!-- CL-A A7: per-object collider preview (local, this device) -->
 					<Checkbox
@@ -4132,6 +4155,32 @@
 							onchange={(v) => setParticles({ speed: v })} />
 						<SliderRow label="Gravity" min={-10} max={10} step={0.1} value={p.gravity ?? 0}
 							onchange={(v) => setParticles({ gravity: v })} />
+						{#if p.shape === 'box'}
+							<!-- 36 B3: a weather area (rain / snow) -->
+							<SliderRow label="Area width" min={0.5} max={60} step={0.5} value={p.area?.[0] ?? 8}
+								onchange={(v) => setParticles({ area: [v, p.area?.[1] ?? 8] })} />
+							<SliderRow label="Area depth" min={0.5} max={60} step={0.5} value={p.area?.[1] ?? 8}
+								onchange={(v) => setParticles({ area: [p.area?.[0] ?? 8, v] })} />
+							<SliderRow label="Wind X" min={-10} max={10} step={0.05} value={p.wind?.[0] ?? 0}
+								onchange={(v) => setParticles({ wind: [v, 0, p.wind?.[2] ?? 0] })} />
+							<SliderRow label="Wind Z" min={-10} max={10} step={0.05} value={p.wind?.[2] ?? 0}
+								onchange={(v) => setParticles({ wind: [p.wind?.[0] ?? 0, 0, v] })} />
+							<SliderRow label="Ground below" min={0} max={40} step={0.1} value={p.fall ?? 0}
+								onchange={(v) => setParticles({ fall: v })} />
+							<div class="ui-row items-center gap-2">
+								<span class="w-20 shrink-0 text-xs text-gray-400">On landing</span>
+								<ThemedSelect
+									id="particles-ground"
+									items={[
+										{ value: 'splash', name: 'Splash (rain)' },
+										{ value: 'settle', name: 'Settle (snow)' },
+										{ value: 'none', name: 'Fall through' }
+									]}
+									value={p.ground ?? 'none'}
+									onchange={(/** @type {any} */ v) => setParticles({ ground: v })}
+								/>
+							</div>
+						{/if}
 						<SliderRow label="Turbulence" min={0} max={1} step={0.05} value={p.turbulence ?? 0.2}
 							onchange={(v) => setParticles({ turbulence: v })} />
 						<SliderRow label="Size start" min={0.01} max={1} step={0.01} value={p.sizeStart ?? 0.1}

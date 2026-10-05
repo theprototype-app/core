@@ -118,6 +118,7 @@ export const NODE_DOCS = {
 	blink: "Flashes the connected object on and off at a steady rate.",
 	sound: "Plays an Explorer audio clip on the connected object when a pulse arrives - spatial, replicated, by content hash.",
 	particle: "Emits a particle effect from the connected object - a preset burst, a stream, a trail.",
+	jiggle: "Makes the connected object jiggle - it lags behind when moved, wobbles like jelly on impact and sways in the wind; skinned models swing their bone chains.",
 	deviceparam: "Writes a number into one parameter of the connected audio device every frame - an LFO on a cutoff, a fader on a level.",
 	devicelevel: "The live output level of the connected audio device (or a wired one) as a number - a meter you can drive anything with.",
 	transportbeat: "The shared music transport as a number - beat, bar, phase, bpm or playing - identical on every peer.",

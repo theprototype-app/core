@@ -142,6 +142,7 @@ h.run(async () => {
 	const badge = await waitFor(() => read(page, 'scriptErrors'), (e) => /unknown key "sped"/.test(e?.body ?? ''), 6000);
 	h.check(!!badge, 'F5: an unknown returned key shows on the node\'s error badge');
 	await S(page, () => window.__stores.history.undo());
+	h.check(!!(await waitFor(() => read(page, 'scriptErrors'), (e) => !e?.body, 6000)), 'F5: undoing the bad code clears the badge (no stale error)');
 	// Engine source: the core file, read-only
 	await S(page, (id) => window.__stores.codeWorkspace.activeCodeTab.set(id), playerTab.id);
 	await page.locator('#code-ws-engine').click();
@@ -369,6 +370,9 @@ h.run(async () => {
 	);
 	h.check(Array.isArray(sel) && sel[0] === 'body', 'F7: clicking it SELECTS the node in the Node editor (' + JSON.stringify(sel) + ')');
 	h.check(await page.locator('.svelte-flow__node[data-id="body"]').isVisible(), 'F7: …entering its group so it is on screen');
+	// going to the node showed the Node editor in the dock; bring the Code tab back
+	await S(page, () => window.__stores.bottomDock.activateDock('code'));
+	await page.waitForTimeout(500);
 	// Find in files: Ctrl+Shift+F, a word from the behaviour, a hit opens at its line
 	await page.locator(`[data-pane="${playerTab.id}"] .cm-content`).click();
 	await page.keyboard.press('Control+Shift+F');

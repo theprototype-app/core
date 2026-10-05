@@ -10,6 +10,8 @@ import { sidebarKey, clampSidebarWidth } from '../../src/lib/codeSidebars.js';
 import { fuzzyScore, rankQuick } from '../../src/lib/codeQuick.js';
 import { quickItems } from '../../src/lib/codeProject.js';
 import { nextIndex } from '../../src/lib/arrowNav.js';
+import { textProblems, checkKindOf } from '../../src/lib/codeProblems.js';
+import { KIT_PIECES } from '../../src/lib/kit/index.js';
 
 // 36-fb-code (F5-F8): the code workspace's sidebars and the Player node's code — the pure halves
 // (tab order, outline, find, the project tree, the reorder slot, the built-in code contract).
@@ -268,5 +270,26 @@ describe('nextIndex (S12 arrow navigation)', () => {
 		expect(nextIndex(3, 1, 'last')).toBe(2);
 		expect(nextIndex(3, -1, 'prev')).toBe(2);
 		expect(nextIndex(0, -1, 'next')).toBe(-1);
+	});
+});
+
+describe('textProblems (F7 Problems)', () => {
+	const specs = KIT_PIECES.map((r) => r.piece.spec);
+	it('a behaviour using a kit event is clean WITH the kit specs (the loader reading)', () => {
+		const src = 'export default behaviour({\n  on: { levelSelected() {} }\n});\n';
+		expect(textProblems(src, 'behaviour', specs).filter((p) => /no such event/.test(p.message))).toEqual([]);
+		expect(textProblems(src, 'behaviour', []).some((p) => /no such event/.test(p.message))).toBe(true);
+	});
+	it('a Library copy of a plain ES module is parsed, not linted as a behaviour', () => {
+		const tab = { kind: 'file', code: "import x from './y.js';\nexport default { a: 1 };\n" };
+		expect(checkKindOf(tab)).toBe('module');
+		expect(textProblems(tab.code, 'module')).toEqual([]);
+		expect(textProblems('export const = ;', 'module')[0]?.from).toBe('parse');
+		expect(checkKindOf({ kind: 'file', code: 'export default behaviour({});' })).toBe('behaviour');
+		expect(checkKindOf({ kind: 'module', readOnly: true, code: 'x' })).toBe(null);
+	});
+	it('a script: parse error, else determinism lint', () => {
+		expect(textProblems('const a = ;', 'script')[0]).toMatchObject({ severity: 'error', from: 'parse' });
+		expect(textProblems('const x = Math.random();', 'script')[0]).toMatchObject({ severity: 'warning', from: 'lint' });
 	});
 });

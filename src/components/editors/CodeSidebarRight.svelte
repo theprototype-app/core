@@ -32,13 +32,18 @@
 	const KIND_MARK = { function: 'ƒ', method: 'ƒ', handler: '⚡', param: '◆', state: '▣', input: '→', output: '←', class: 'C', const: '·', node: '◇' };
 
 	// ---------------------------------------------------------------- Problems
+	// the kit's specs, so a behaviour's kit events resolve (the loader's own reading)
+	let kitSpecs = $state(/** @type {any[]} */ ([]));
+	$effect(() => {
+		import('$lib/kit/index.js').then((m) => (kitSpecs = m.KIT_PIECES.map((/** @type {any} */ r) => r.piece.spec))).catch(() => {});
+	});
 	const problems = $derived.by(() => {
 		void $flowGraphs;
 		/** @type {{tab: any, items: {severity: string, message: string, line: number, from: string}[]}[]} */
 		const out = [];
 		for (const tab of $codeTabs) {
 			const items = [
-				...textProblems(tab.code, checkKindOf(tab)),
+				...textProblems(tab.code, checkKindOf(tab), kitSpecs),
 				...runtimeOf(tab).map((r) => ({ severity: 'error', message: r.message, line: r.line ?? 1, from: 'runtime' }))
 			];
 			if (items.length) out.push({ tab, items });

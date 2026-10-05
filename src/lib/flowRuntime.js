@@ -11,7 +11,7 @@ import { animationTypes } from './nodeCatalog';
 import { isIndexValuedKind } from './hudKinds';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { moduleValueNodes, moduleNodeInputs, evalModuleValueNode } from './moduleNodeIO';
-import { runScript, runScriptValue, runPlayerScript, reportScriptProblems } from './scriptRuntime';
+import { runScript, runScriptValue, runPlayerScript, reportScriptProblems, clearScriptError } from './scriptRuntime';
 import { builtinCodeActive, mergePlayerResult } from './builtinCode.js'; // 36-fb-code (F5): a leaf
 import { scriptInputs, scriptOutputs, isScriptValue, coerceInput } from './scriptIO'; // 34 D3: a leaf
 import { findNodeDef } from './customNodes';
@@ -1764,6 +1764,7 @@ function updateCharNodes(time, ctx) {
 		// peer for THAT peer's own keys (the controller drives each peer's own camera, so the
 		// keys are local by nature — the moveinput rule). No code = the 21-E6 path, untouched.
 		if (builtinCodeActive(winner)) settings = playerCodeSettings(winner, settings, time);
+		else clearScriptError(winner.id);
 		setCharControl({ ...settings, sourceNodeId: winner.id });
 	}
 

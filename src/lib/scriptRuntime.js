@@ -208,6 +208,12 @@ export function runPlayerScript(nodeId, code, settings, input, time) {
 	return timed(nodeId, code, entry, (fn) => fn(settings, input, time, SCRIPT_HELPERS.dist, SCRIPT_HELPERS.lerp, SCRIPT_HELPERS.clamp));
 }
 
+/** a built-in whose code was removed (an undo, a clear): its last badge goes with it
+ * @param {string} nodeId */
+export function clearScriptError(nodeId) {
+	if (get(scriptErrors)[nodeId]) reportError(nodeId, null);
+}
+
 /** report a problem with a built-in's RESULT (a wrong key / type) on its badge, after a clean run
  * @param {string} nodeId @param {string[]} problems */
 export function reportScriptProblems(nodeId, problems) {

@@ -325,6 +325,15 @@
 	const rightShown = $derived(narrow ? narrowSide === 'right' : $codeRightOpen);
 	/** @param {'left' | 'right'} side */
 	function toggleSide(side) {
+		// closing the sidebar that holds the focus would drop it to <body>, where the workspace's
+		// own keys (Ctrl+Alt+B to bring it back) no longer reach — hand it to the editor first
+		const panel = document.getElementById(side === 'left' ? 'code-ws-left' : 'code-ws-right');
+		if (panel?.contains(document.activeElement) && active) {
+			// a read-only source's editor is not focusable (contenteditable=false): its tab in the
+			// strip is, and it is the strip's one tab stop anyway
+			const editor = /** @type {HTMLElement | null} */ (document.querySelector(`[data-pane="${active.id}"] .cm-content[contenteditable="true"]`));
+			(editor ?? /** @type {HTMLElement | null} */ (document.querySelector(`.code-tab[data-tab-id="${active.id}"]`)))?.focus();
+		}
 		if (narrow) narrowSide = narrowSide === side ? null : side;
 		else (side === 'left' ? codeLeftOpen : codeRightOpen).update((v) => !v);
 	}

@@ -394,12 +394,16 @@ h.run(async () => {
 	await page.locator('#code-ws-find-modules').click();
 	await waitFor(() => page.locator('#code-ws-find-summary').getAttribute('data-total').then(Number), (n) => n > without, 8000);
 	await shot(page, '14-after-find-dark.png');
-	await page.locator(`[data-pane="${playerTab.id}"] .cm-content`).click().catch(() => {});
+	// focus stays in the Find box (inside the sidebar being closed) — the hard case
+	await page.locator('#code-ws-find').focus();
 	await page.keyboard.press('Control+Alt+b');
 	await page.waitForTimeout(200);
 	h.check((await page.locator('#code-ws-right').count()) === 0, 'F7: Ctrl+Alt+B collapses the right sidebar');
+	const focusAfter = await page.evaluate(() => (document.activeElement?.closest('#code-ws-dock') ? 'in workspace' : document.activeElement?.tagName));
 	await page.keyboard.press('Control+Alt+b');
-	await page.waitForTimeout(200);
+	await page.waitForTimeout(300);
+	h.check(await page.locator('#code-ws-right').isVisible().catch(() => false), 'F7: …and Ctrl+Alt+B again brings it back (focus: ' + focusAfter + ')');
+	if (!(await page.locator('#code-ws-right').count())) await page.locator('#code-ws-toggle-right').click();
 
 	// ------------------------------------------------------------ 6 S8 undo/redo + peers · S7 guard + quick picks · S12 keys
 	const undoNode = { id: 'cs-undo', type: 'script', position: { x: 4200, y: 4300 }, data: { type: 'script', label: 'Undo me', code: 'object.position.y = 1;' }, class: 'w-[150px]' };
@@ -534,9 +538,9 @@ h.run(async () => {
 	h.check((await page.locator('#code-ws-project [role="treeitem"][aria-level]').count()) > 3, 'S12: tree rows are treeitems with aria-level');
 	await page.locator('#code-ws-right .rs-tab[tabindex="0"]').focus();
 	const p0 = await read(page, 'codeSidebars.codeRightPanel');
-	await page.keyboard.press('ArrowRight');
+	await page.keyboard.press(p0 === 'find' ? 'ArrowLeft' : 'ArrowRight');
 	const p1 = await read(page, 'codeSidebars.codeRightPanel');
-	h.check(p0 !== p1 && (await page.evaluate(() => document.activeElement?.getAttribute('role'))) === 'tab', 'S12: → switches the right sidebar\'s panel (' + p0 + ' -> ' + p1 + ')');
+	h.check(p0 !== p1 && (await page.evaluate(() => document.activeElement?.getAttribute('role'))) === 'tab', 'S12: ←/→ switch the right sidebar\'s panel (' + p0 + ' -> ' + p1 + ')');
 	h.check((await page.locator('#code-ws-rpanel[role="tabpanel"]').count()) === 1, 'S12: the panel is a labelled tabpanel');
 
 	// ------------------------------------------------------------ 5 F9 floating + themes

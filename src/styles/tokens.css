@@ -50,22 +50,28 @@
 	--text-muted: #98a1b3; /* descriptions (>= 4.5:1 on surface-2) */
 	--text-faint: #8b94a7; /* section headers, counts, hints */
 	--accent-soft: #22304a; /* selected nav item / chip fill */
-	--accent-muted: #2a3550; /* secondary button, segmented thumb */
+	--accent-muted: #2a3550; /* secondary button fill */
+	--segment-on: #2b3a58; /* the selected segment's thumb */
 	--accent-soft-text: #e8f0ff; /* text on accent-soft / accent-muted */
 	--accent-text: #7fb0ff; /* links, ghost buttons */
 	--live: #f05a2a; /* ONLY Play, record, live/streaming */
+	--on-live: #ffffff;
 	--warn-text: #f0a07a; /* reset + soft-destructive text actions */
-	--danger: #d43c3c; /* destructive confirm buttons (white on it 4.7:1) */
+	--danger: #d23b3b; /* destructive confirm buttons (white on it 4.8:1) */
 	--on-danger: #ffffff;
 	--badge-bg: #1f2b42; /* scope badges */
 	--badge-text: #9fb8e6;
 	--control-off: #3a4256; /* toggle track when off */
+	--axis-x: #f0625a; /* X / Y / Z axis labels on transform rows (both themes) */
+	--axis-y: #74c655;
+	--axis-z: #5b97f5;
 	--knob: #ffffff; /* toggle knob */
 	--surface-hover: rgb(255 255 255 / 0.06); /* ghost / icon button / row hover */
 	--surface-active: rgb(255 255 255 / 0.1);
 	--scrim: rgb(5 7 12 / 0.55); /* behind a Sheet or a modal */
 	--shadow-window: 0 16px 48px rgb(0 0 0 / 0.45), 0 2px 6px rgb(0 0 0 / 0.3);
 	--shadow-knob: 0 1px 2px rgb(0 0 0 / 0.35);
+	--shadow-thumb: 0 1px 2px rgb(0 0 0 / 0.18); /* the selected segment */
 
 	/* radii (SPEC §1: 6 / 8 / 10 / 12-14 / 999) and --font-ui / --font-ui-mono are in app.css
 	   `@theme static` — one name for the CSS var and the utility (rounded-card, font-ui) */
@@ -124,41 +130,47 @@
 	--border: #262d3b;
 	--surface-2: #1b212d;
 	--accent: #3b7cf0;
+	/* FILLED primary buttons: white on #3b7cf0 is 3.9:1, under SPEC §8's 4.5 — the review
+	   page's answer is #2f6fe0 (4.7:1); #3b7cf0 stays for rings, toggles and sliders */
+	--accent-fill: #2f6fe0;
 }
 
 /* ---- LIGHT ---- */
 :root[data-theme='light'] {
-	--bg-app: #eef0f4;
+	/* the design review page's light values (same roles as dark) */
+	--bg-app: #e8ecf2;
 	--surface-1: #ffffff;
-	--surface-inset: #f0f2f5;
-	--border-strong: #c9cfd9;
-	--border-input: #d3d8e0;
-	--text-muted: #586174;
-	--text-faint: #646d80;
-	--accent-soft: #e3ecfd;
-	--accent-muted: #d6e3fb;
-	--accent-soft-text: #1a3f8f;
-	--accent-text: #1d4ed8;
-	--live: #e2531f;
-	--warn-text: #b4451a;
-	--danger: #c53030;
-	--badge-bg: #e4ecfb;
-	--badge-text: #2b4f8f;
-	--control-off: #c4cad6;
-	--surface-hover: rgb(15 23 42 / 0.05);
-	--surface-active: rgb(15 23 42 / 0.09);
-	--scrim: rgb(15 23 42 / 0.35);
-	--shadow-window: 0 16px 48px rgb(15 23 42 / 0.16), 0 2px 6px rgb(15 23 42 / 0.08);
+	--surface-inset: #edf0f5;
+	--border-strong: #c2c9d5;
+	--border-input: #cfd5df;
+	--text-muted: #566072;
+	--text-faint: #5f6a7c;
+	--accent-soft: #e0eafc;
+	--accent-muted: #dfe8f8;
+	--segment-on: #ffffff;
+	--accent-soft-text: #17305e;
+	--accent-text: #1d55c0;
+	--live: #e4501d;
+	--warn-text: #a5441a;
+	--danger: #c93232;
+	--badge-bg: #e3ebf8;
+	--badge-text: #284a84;
+	--control-off: #c6cdd8;
+	--surface-hover: rgb(20 30 50 / 0.06);
+	--surface-active: rgb(20 30 50 / 0.1);
+	--scrim: rgb(20 26 36 / 0.42);
+	--shadow-window: 0 12px 32px rgb(24 32 48 / 0.18), 0 2px 6px rgb(24 32 48 / 0.1);
 	--shadow-knob: 0 1px 3px rgb(15 23 42 / 0.3);
 }
 /* light's legacy block (theme.css) defines the five for the phase-89 remaps; the redesign
    scope states its own */
 :root[data-theme='light'] .tp-ui {
-	--text: #141a24;
-	--text-2: #2f3747;
-	--border: #e1e5eb;
-	--surface-2: #f7f8fa;
-	--accent: #2563eb;
+	--text: #141922;
+	--text-2: #2b3342;
+	--border: #dde2ea;
+	--surface-2: #f5f7fa;
+	--accent: #2563d9;
+	--accent-fill: #2563d9; /* white on it 5.3:1 */
 }
 
 /* ---- EXOTIC + CUSTOM themes: derive from the legacy tokens they carry ----
@@ -174,6 +186,7 @@
 	--text-faint: var(--muted, #8b94a7);
 	--accent-soft: color-mix(in srgb, var(--accent, #3b7cf0) 24%, var(--surface, #151a24));
 	--accent-muted: color-mix(in srgb, var(--accent, #3b7cf0) 34%, var(--surface, #151a24));
+	--segment-on: color-mix(in srgb, var(--accent, #3b7cf0) 40%, var(--surface, #151a24));
 	--accent-soft-text: var(--text, #e6e9ef);
 	--accent-text: color-mix(in srgb, var(--accent, #3b7cf0) 55%, var(--text, #e6e9ef));
 	--warn-text: var(--ink-warn, #f0a07a);

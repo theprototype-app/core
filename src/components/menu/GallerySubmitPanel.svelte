@@ -140,7 +140,7 @@
 		</div>
 		<span class="gl-label">Thumbnail</span>
 		<div class="gl-thumb-row">
-			{#if thumbUrl}<img id="gallery-thumb" class="gl-thumb" src={thumbUrl} alt="The gallery card picture, from the current view" />{/if}
+			{#if thumbUrl}<img id="gallery-thumb" class="gl-thumb" src={thumbUrl} alt="Gallery card, from the current view" />{/if}
 			<button id="gallery-retake" type="button" class="gl-ghost" onclick={retake}>Retake from this view</button>
 		</div>
 	</div>

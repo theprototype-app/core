@@ -59,7 +59,7 @@ h.run(async () => {
 	// the viewport's right-click menu (opened the way its own suites do)
 	await page.evaluate(() => window.__stores.viewportMenu.set({ x: 200, y: 160, point: { x: 0, y: 0, z: 0 } }));
 	await page.locator('[role="menuitem"]', { hasText: /^\s*Tools/ }).first().hover();
-	await page.locator('[role="menuitem"]', { hasText: 'Recording…' }).first().click();
+	await page.locator('[role="menuitem"]', { hasText: /^\s*Recording…\s*$/ }).first().click();
 	await page.waitForSelector('#recording-dialog', { timeout: 10000 });
 	h.check(true, 'Tools ▸ Recording… opens the Recording dialog');
 	await page.click('#recording-mode-flythrough');

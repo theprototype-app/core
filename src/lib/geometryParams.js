@@ -11,12 +11,18 @@
 // and userData.geometryParams riding toJSON + GLTF extras then all work with no
 // new wire type and no new history kind.
 import { terrainGeometry, TERRAIN_FALLOFFS } from './customGeometries';
+// 37 R3: the parametric architecture primitives (Wall, Door, Window, Staircase) — the same
+// `build`-hook shape as Terrain, plus `fromArgs` (createGeometry maps `/create` numbers to
+// params with it) and the collider hint stamped at creation
+import { ARCH_SPECS } from './arch/archGeometry.js';
 
 const TAU = Math.PI * 2;
 
-/** @typedef {{key: string, label: string, kind: 'slider'|'int'|'angle'|'bool'|'choice', min?: number, max?: number, step?: number, options?: string[], def: number|boolean|string}} ParamSpec */
+/** `show` (37 R3): the Inspector hides the row while it returns false for the current params
+ * (a door width with no doors, a spiral's column on a straight stair).
+ * @typedef {{key: string, label: string, kind: 'slider'|'int'|'angle'|'bool'|'choice', min?: number, max?: number, step?: number, options?: string[], def: number|boolean|string, show?: (params: any) => boolean}} ParamSpec */
 
-/** @type {Record<string, {order: string[], params: ParamSpec[], build?: (params: any) => any}>} */
+/** @type {Record<string, {order: string[], params: ParamSpec[], build?: (params: any) => any, fromArgs?: (args: any[]) => Record<string, any>, colliderHint?: string}>} */
 export const GEOMETRY_PARAMS = {
 	Box: {
 		order: ['width', 'height', 'depth', 'widthSegments', 'heightSegments', 'depthSegments'],
@@ -194,7 +200,8 @@ export const GEOMETRY_PARAMS = {
 			{ key: 'offsetX', label: 'Tile X', kind: 'slider', min: -2000, max: 2000, step: 1, def: 0 },
 			{ key: 'offsetZ', label: 'Tile Z', kind: 'slider', min: -2000, max: 2000, step: 1, def: 0 }
 		]
-	}
+	},
+	...ARCH_SPECS
 };
 
 /** Registry spec for a mesh's geometry, by three type name @param {string} gtype e.g. 'Sphere' */

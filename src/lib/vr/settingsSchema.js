@@ -36,6 +36,7 @@ import { openVRKeyboard } from '../vrKeyboard';
 import { renderer } from './core.js';
 import { applyVRFrameRate } from './input.js';
 import { vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrSnapAngleLast, clampHeight, SMOOTH_SPEEDS, SNAP_ANGLES, HEIGHT_LIMIT } from './prefs.js';
+import { vrHudPlacement, vrHudSize, vrHudHints, setVrHudPlacement, setVrHudSize, setVrHudHints } from '../vrHudPrefs';
 import { vrBindings, resetBindings, mirrorBindings, isLeftHanded, VR_ACTIONS, CONTROLS_FOR, bindingOf, setBinding, actionInfo, controlName } from './bindings.js';
 
 /** @typedef {{value: any, label: string}} Option */
@@ -247,6 +248,39 @@ export const VR_SETTINGS = [
 	},
 	{ id: 'wireframe', page: 'display', label: 'Selection wireframe', icon: 'box', kind: 'toggle', get: () => get(vrWireframeSelection), set: (v) => put(vrWireframeSelection, 'vrWireframe', !!v), keywords: ['outline', 'highlight'], note: 'Draws a wireframe over what you select' },
 	{ id: 'resetPanels', page: 'display', label: 'Reset panel positions', icon: 'layers', kind: 'action', run: () => (resetWindowPoses(), showToast('VR panel positions reset')), keywords: ['windows', 'menus'], note: 'Panels you moved go back to their spots on the controllers' },
+	// 36 B12: the game HUD in the headset (vrHud.js) — where it floats, how big, and the button hints
+	{
+		id: 'gameHud',
+		page: 'display',
+		label: 'Game HUD',
+		icon: 'scan-eye',
+		kind: 'choice',
+		options: [
+			{ value: 'head', label: 'Follow head' },
+			{ value: 'world', label: 'Fixed in world' },
+			{ value: 'wrist', label: 'Wrist only' }
+		],
+		get: () => get(vrHudPlacement),
+		set: (v) => setVrHudPlacement(v),
+		keywords: ['hud', 'score', 'heads-up', 'overlay', 'game', 'strip'],
+		note: 'Where a game’s score and timer show in the headset'
+	},
+	{
+		id: 'gameHudSize',
+		page: 'display',
+		label: 'Game HUD size',
+		icon: 'maximize',
+		kind: 'choice',
+		options: [
+			{ value: 'small', label: 'Small' },
+			{ value: 'medium', label: 'Medium' },
+			{ value: 'large', label: 'Large' }
+		],
+		get: () => get(vrHudSize),
+		set: (v) => setVrHudSize(v),
+		keywords: ['hud', 'text size', 'readable', 'bigger']
+	},
+	{ id: 'gameHudHints', page: 'display', label: 'Button hints', icon: 'gamepad-2', kind: 'toggle', get: () => get(vrHudHints), set: (v) => setVrHudHints(!!v), keywords: ['hud', 'controls', 'buttons', 'help'], note: 'Shows which button jumps, fires or opens the menu in a game' },
 	// ---- Voice
 	{
 		id: 'mic',

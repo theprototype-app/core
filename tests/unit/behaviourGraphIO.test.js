@@ -194,3 +194,35 @@ describe('logic sim — a wired input offered on every peer runs ONCE, state rea
 		expect(emits).toEqual([1, 0, 0]); // only the authority fires the output pulse (it replicates)
 	});
 });
+
+describe('logic sim — a press that lands while the authority is moving', () => {
+	it('is held by the peer that becomes the authority, runs once, and never twice', async () => {
+		const SRC = `export default behaviour({
+			state: { presses: 0 },
+			inputs: ['go'],
+			on: { go() { this.state.presses += 1; } }
+		});`;
+		const sim = createBehaviourSim({ peers: ['a', 'b'] });
+		await sim.load('r', SRC);
+		sim.advance(2500);
+		sim.settle();
+		// the press reaches b first; b is not the authority (a is) — held, not lost
+		sim.initiator = 'b'; // …and the authority moves to b (Play started b's simulation)
+		const stamp = 1234.5;
+		sim.peer('b').bhv.input('r', 'go', {}, stamp);
+		sim.advance(200);
+		sim.settle();
+		expect(JSON.parse(sim.states('r')[1]).presses).toBe(1);
+		// a sees the same stamp later (it is not the authority now): nothing more happens
+		sim.peer('a').bhv.input('r', 'go', {}, stamp);
+		sim.initiator = 'a'; // the authority moves back to a, which saw the document
+		sim.advance(200);
+		sim.settle();
+		expect(sim.states('r')).toEqual([JSON.stringify({ presses: 1 }), JSON.stringify({ presses: 1 })]);
+		// a NEW press runs again
+		sim.peer('a').bhv.input('r', 'go', {}, stamp + 1);
+		sim.settle();
+		expect(JSON.parse(sim.states('r')[0]).presses).toBe(2);
+	});
+});
+

@@ -232,8 +232,13 @@ export const VALIDATORS = {
 	// 34 R3 (D1): a behaviour's replicated document — written by the authority peer only,
 	// latest-wins on (at, rev, by). The state is the behaviour's own JSON (its handlers read it);
 	// the stamps are compared and the timers fired by the next authority, so those are checked
+	// 36 (U10): the id is the behaviour NODE's id — an editor-made node's is a uuid, a game
+	// template's is a short authored name ('rules'), so any short string is accepted
 	bhv: (d) =>
-		isUuid(d.id) &&
+		typeof d.id === 'string' &&
+		d.id.length > 0 &&
+		d.id.length <= 128 &&
+		(d.inputs === undefined || (!!d.inputs && typeof d.inputs === 'object' && !Array.isArray(d.inputs))) &&
 		Number.isFinite(d.rev) &&
 		Number.isFinite(d.at) &&
 		typeof d.by === 'string' &&

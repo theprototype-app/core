@@ -41,6 +41,10 @@ export const GRACE_MS = 2000;
 export const MAX_TIMERS = 64;
 /** the most `fired` rows a document carries */
 const MAX_FIRED = 64;
+/** 36 (U10): a wired input that reaches a peer while it is not (yet) the authority is held this
+ * long (ms) — Play starting a simulation moves the kit's authority, and a press landing in that
+ * moment must not be lost; the document's `inputs` record keeps it from running twice */
+export const INPUT_HOLD_MS = 3000;
 
 /** FNV-1a, 32-bit @param {string} s */
 export function hash32(s) {
@@ -125,7 +129,7 @@ export function createBehaviourRuntime(host) {
 
 	/** broadcast the document if the state (or its meta) moved since the last send @param {any} inst @param {boolean} [force] */
 	const flush = (inst, force = false) => {
-		const body = JSON.stringify({ s: inst.state, t: inst.doc.timers, st: inst.doc.started, q: inst.doc.seq, f: inst.doc.fired });
+		const body = JSON.stringify({ s: inst.state, t: inst.doc.timers, st: inst.doc.started, q: inst.doc.seq, f: inst.doc.fired, i: inst.doc.inputs });
 		if (!force && body === inst.lastSent) return false;
 		inst.lastSent = body;
 		const prev = inst.doc;
@@ -147,7 +151,8 @@ export function createBehaviourRuntime(host) {
 		started: !!inst.doc.started,
 		seq: inst.doc.seq,
 		timers: clone(inst.doc.timers),
-		fired: clone(inst.doc.fired)
+		fired: clone(inst.doc.fired),
+		inputs: clone(inst.doc.inputs ?? {})
 	});
 
 	/** take a received (or parked) document into an instance @param {any} inst @param {any} msg */
@@ -166,9 +171,10 @@ export function createBehaviourRuntime(host) {
 			started: !!msg.started,
 			seq: Number(msg.seq) || 0,
 			timers: Array.isArray(msg.timers) ? msg.timers.slice(0, MAX_TIMERS) : [],
-			fired: msg.fired && typeof msg.fired === 'object' ? msg.fired : {}
+			fired: msg.fired && typeof msg.fired === 'object' ? msg.fired : {},
+			inputs: msg.inputs && typeof msg.inputs === 'object' && !Array.isArray(msg.inputs) ? { ...msg.inputs } : {}
 		};
-		inst.lastSent = JSON.stringify({ s: inst.state, t: inst.doc.timers, st: inst.doc.started, q: inst.doc.seq, f: inst.doc.fired });
+		inst.lastSent = JSON.stringify({ s: inst.state, t: inst.doc.timers, st: inst.doc.started, q: inst.doc.seq, f: inst.doc.fired, i: inst.doc.inputs });
 		inst.synced = true;
 		for (const [name, row] of Object.entries(inst.doc.fired)) {
 			const local = inst.trace.fired[name];
@@ -394,7 +400,8 @@ export function createBehaviourRuntime(host) {
 			/** @type {Record<string, any>} */ values: {},
 			state: initialState(def),
 			/** @type {any} */ prevState: null,
-			doc: { rev: 0, at: 0, by: '', started: false, seq: 0, timers: /** @type {any[]} */ ([]), fired: /** @type {Record<string, [number, number]>} */ ({}) },
+			doc: { rev: 0, at: 0, by: '', started: false, seq: 0, timers: /** @type {any[]} */ ([]), fired: /** @type {Record<string, [number, number]>} */ ({}), inputs: /** @type {Record<string, number>} */ ({}) },
+			/** 36 (U10): wired inputs held while this peer cannot act @type {{name: string, stamp: number, payload: any, until: number}[]} */ pendingInputs: [],
 			lastSent: '',
 			depth: 0,
 			localSeq: 0,
@@ -481,10 +488,33 @@ export function createBehaviourRuntime(host) {
 		parked.delete(id);
 	};
 
+	/**
+	 * 36 (U10): run one wired input on the authority, once per stamp: the stamp goes into the
+	 * replicated document (`inputs`), so the next authority — or this one, offered it again —
+	 * knows it was handled. @param {any} inst @param {string} name @param {any} payload @param {number | undefined} stamp
+	 */
+	const runInput = (inst, name, payload, stamp) => {
+		const fn = inst.def.on?.[name];
+		if (typeof fn !== 'function') return;
+		if (typeof stamp === 'number') inst.doc.inputs = { ...inst.doc.inputs, [name]: stamp };
+		dispatch(inst, 'on.' + name, fn, [payload ?? {}]);
+	};
+	/** @param {any} inst @param {string} name @param {number | undefined} stamp */
+	const handled = (inst, name, stamp) => typeof stamp === 'number' && Number(inst.doc.inputs?.[name] ?? -Infinity) >= stamp;
+
 	/** per frame on every peer: the authority starts, fires due timers, flushes */
 	const tick = () => {
 		const now = host.now();
 		for (const inst of [...instances.values()]) {
+			// held inputs: dropped once handled (anywhere) or too old; run if we may act now
+			if (inst.pendingInputs.length) {
+				inst.pendingInputs = inst.pendingInputs.filter((/** @type {any} */ p) => p.until > now && !handled(inst, p.name, p.stamp));
+				if (inst.alive && inst.pendingInputs.length && acts(inst)) {
+					const due = inst.pendingInputs.sort((/** @type {any} */ a, /** @type {any} */ b) => a.stamp - b.stamp);
+					inst.pendingInputs = [];
+					for (const p of due) if (!handled(inst, p.name, p.stamp)) runInput(inst, p.name, p.payload, p.stamp);
+				}
+			}
 			if (!inst.alive || !acts(inst)) continue;
 			if (!inst.doc.started) {
 				inst.doc.started = true;
@@ -600,12 +630,18 @@ export function createBehaviourRuntime(host) {
 		 * fresh stamp) — its `on.<name>` handler runs on the authority. @param {string} id
 		 * @param {string} name @param {any} [payload] @returns {boolean} false = no such input
 		 */
-		input(id, name, payload = {}) {
+		input(id, name, payload = {}, stamp = undefined) {
 			const inst = instances.get(id);
 			if (!inst || !inputsOf(inst.def).includes(name)) return false;
-			const fn = inst.def.on?.[name];
-			if (typeof fn !== 'function') return false;
-			dispatch(inst, 'on.' + name, fn, [payload]);
+			if (typeof inst.def.on?.[name] !== 'function') return false;
+			if (handled(inst, name, stamp)) return true; // already run (here, or by a previous authority)
+			if (!acts(inst)) {
+				// not the authority right now: hold it a moment (the authority may be moving)
+				if (typeof stamp === 'number') inst.pendingInputs.push({ name, stamp, payload, until: host.now() + INPUT_HOLD_MS });
+				else stats.skippedNotAuthority++;
+				return true;
+			}
+			runInput(inst, name, payload, stamp);
 			return true;
 		},
 		/**

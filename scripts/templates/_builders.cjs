@@ -20,7 +20,8 @@ function graphBuilder() {
 	/** every node gets a LABEL — a programmatic node with none renders a blank card.
 	 * @param {string} id @param {string} type @param {string} label @param {number} x @param {number} y @param {any} data */
 	const N = (id, type, label, x, y, data) => {
-		nodes.push({ id, type, position: { x, y }, data: { label, ...data }, class: 'w-[150px]' });
+		// 36 (U10): `data.type` too — every node card reads its spec through it
+		nodes.push({ id, type, position: { x, y }, data: { label, type, ...data }, class: 'w-[150px]' });
 		return id;
 	};
 	/** @param {string} source @param {string} target @param {string} [targetHandle] @param {string} [sourceHandle] */
@@ -39,7 +40,7 @@ function graphBuilder() {
 	 * @param {string} id @param {string} name @param {string} code @param {number} x @param {number} y @param {any} [extra]
 	 */
 	const B = (id, name, code, x, y, extra = {}) => {
-		nodes.push({ id, type: 'behaviour', position: { x, y }, data: { label: 'Behaviour', name, code, main: 1, ...extra }, class: 'w-[250px]' });
+		nodes.push({ id, type: 'behaviour', position: { x, y }, data: { label: 'Behaviour', type: 'behaviour', name, code, main: 1, ...extra }, class: 'w-[250px]' });
 		return id;
 	};
 	/**
@@ -65,7 +66,7 @@ function graphBuilder() {
 	 * @param {string} id @param {string} name @param {string} code @param {any[]} inputs @param {any[]} outputs @param {number} x @param {number} y
 	 */
 	const S = (id, name, code, inputs, outputs, x, y) => {
-		nodes.push({ id, type: 'script', position: { x, y }, data: { label: 'Script', name, code, inputs, outputs }, class: 'w-[200px]' });
+		nodes.push({ id, type: 'script', position: { x, y }, data: { label: 'Script', type: 'script', name, code, inputs, outputs }, class: 'w-[200px]' });
 		return id;
 	};
 	/** move already-made nodes (a block laid out relative to its own origin) @param {string[]} ids @param {number} dx @param {number} dy */

@@ -1376,6 +1376,8 @@ export function gamePausedNow() {
 
 /** 36 (U10): `<node>|<input>` -> the stamp a behaviour input last acted on @type {Map<string, number>} */
 const behaviourActed = new Map();
+/** 36 (U10): what the input pass did (the debug hook / suites) */
+export const behaviourInputStats = { offered: 0, stale: 0, refused: 0, last: /** @type {any} */ (null) };
 
 /**
  * 36 (U10): a trigger wired into a behaviour node's INPUT socket runs that input's handler — on a
@@ -1400,8 +1402,15 @@ function updateBehaviourInputs(time, ctx) {
 			const stamp = handleStamp(node, handle, ctx);
 			if (stamp === null || behaviourActed.get(key) === stamp) continue;
 			behaviourActed.set(key, stamp);
-			if (staleTrigger(node, stamp)) continue;
-			behavioursRef.behaviourInput?.(node.id, handle);
+			if (staleTrigger(node, stamp)) {
+				behaviourInputStats.stale++;
+				behaviourInputStats.last = { key, stamp, seenAt: actionSeenAt.get(node.id), history: triggerHistoryAt, verdict: 'stale' };
+				continue;
+			}
+			behaviourInputStats.offered++;
+			const ok = behavioursRef.behaviourInput?.(node.id, handle, stamp);
+			if (!ok) behaviourInputStats.refused++;
+			behaviourInputStats.last = { key, stamp, seenAt: actionSeenAt.get(node.id), verdict: ok ? 'offered' : 'no such input' };
 		}
 	}
 	for (const key of [...behaviourActed.keys()]) if (!live.has(key)) behaviourActed.delete(key);

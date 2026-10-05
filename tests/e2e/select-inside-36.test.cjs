@@ -97,9 +97,13 @@ const stackAt = (page, px) =>
 		const ray = new s.THREE.Raycaster();
 		ray.setFromCamera(new s.THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1), camera);
 		const none = { water: false, transparent: false, triggers: false };
-		const stack = s.selectThrough.pickStack(ray.intersectObjects(group.children, true), s.objectActions.topLevelObjectOf, none);
+		const hits = ray.intersectObjects(group.children, true);
+		// (the selectThrough hook is absent on 1.23.0 — the before-run lists distinct targets itself)
+		const names = s.selectThrough
+			? s.selectThrough.pickStack(hits, s.objectActions.topLevelObjectOf, none).map((e) => e.target.name)
+			: [...new Set(hits.map((h) => s.objectActions.topLevelObjectOf(h.object)?.name).filter(Boolean))];
 		const at = document.elementFromPoint(x, y);
-		return { names: stack.map((e) => e.target.name), canvas: at === renderer.domElement };
+		return { names, canvas: at === renderer.domElement };
 	}, px);
 
 /** a pixel on `name` where the app's pick finds `front` first and `name` behind it */

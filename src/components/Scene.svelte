@@ -586,7 +586,7 @@
 				if (stack.length > 1 && !selectBehindHinted) {
 					selectBehindHinted = true;
 					safeStorage.setItem('hint:selectBehind', 'true');
-					showToast('Click again to select behind');
+					showToast('Click again to select behind — or Alt+click to cycle through everything here');
 				}
 			}
 			if (target) {

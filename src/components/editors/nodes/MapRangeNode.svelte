@@ -31,7 +31,7 @@
 			</label>
 		{/each}
 		<label class="flex items-center gap-1">
-			<input class="nodrag" type="checkbox" checked={data.clamp ?? true}
+			<input class="nodrag nopan" type="checkbox" checked={data.clamp ?? true}
 				on:change={(e) => setNodeData(id, { clamp: e.currentTarget.checked })} /> clamp
 		</label>
 	</div>

@@ -904,7 +904,7 @@
      `docked`; the FLOATING branch is UvEditor's window verbatim — dragWindow, a KEYED
      focusStack, tabbable, bottomDockable and a corner grip. -->
 {#if !$shaderEditorClose && docked && dockVisible}
-	<div id="shader-editor" class="shader-editor ui-panel" style:height={$dockHeight + 'px'}>
+	<div id="shader-editor" data-key-scope="panel" class="shader-editor ui-panel" style:height={$dockHeight + 'px'}>
 		<!-- top-edge resize hot zone (above the tab strip's z-20, so the band can never
 		     swallow the drag) -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->

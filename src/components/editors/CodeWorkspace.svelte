@@ -462,6 +462,7 @@
 		data-tour="code-workspace"
 		class="code-ws fixed inset-x-0 bottom-0 flex flex-col p-2 {dockVisible ? '' : 'hidden'}"
 		style="z-index: var(--z-bottom); height: {$dockHeight}px"
+		data-key-scope="panel"
 		use:keys
 	>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->

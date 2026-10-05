@@ -48,7 +48,7 @@
 		<label class="flex items-center gap-1">
 			<span class="w-14 shrink-0 text-[10px] text-gray-400">who</span>
 			<select
-				class="nodrag flex-1 rounded bg-gray-700 px-1 text-[11px]"
+				class="nodrag nopan flex-1 rounded bg-gray-700 px-1 text-[11px]"
 				value={data.who ?? 'anyone'}
 				on:change={(e) => setNodeData(id, { who: e.currentTarget.value })}
 			>

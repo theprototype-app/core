@@ -15,7 +15,7 @@
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<label class="flex w-full items-center gap-2">
 		<input
-			class="nodrag"
+			class="nodrag nopan"
 			type="checkbox"
 			checked={!!data.on}
 			on:change={(e) => setNodeData(id, { on: e.currentTarget.checked })}

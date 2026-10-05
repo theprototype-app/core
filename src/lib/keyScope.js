@@ -12,16 +12,27 @@
 //   code      inside a CodeMirror editor (.cm-editor) — CodeMirror's own keymap acts
 //   nodes     inside a [data-key-scope="nodes"] host (the node editor pane)
 //   uv / animation / shader / hud   the other editors that mark their pane
+//   objects   the Object list ([data-key-scope="objects"]): the scene's own outliner, so
+//             the SELECTION rows that name `alsoScopes: ['objects']` (Delete, F, Ctrl+D,
+//             Ctrl+A) still act there — nothing else of the viewport does
+//   panel     every other panel and tool window (36 F2): Explorer, Inspector, the Flow
+//             chrome and a behaviour's Graph view, the Code workspace, the HUD editor's
+//             side panes, previews, chat… Only GLOBAL rows act; WASD never flies. A
+//             floating window gets it from dragWindow, a docked branch marks its root
 //   vr        an immersive session is running (registered by the VR side via a probe)
-//   viewport  everything else: the 3D canvas AND the app chrome around it (toolbar,
-//             inspector, explorer…) — clicking a toolbar button and then pressing F must
-//             keep focusing the object, as it always has
+//   viewport  the 3D canvas and the overlays drawn on it
+//
+// A host marked `data-key-scope="keep"` (the toolbars, a viewport session's floating
+// toolbar) never MOVES the keyboard: pressing the Move button and then F still focuses
+// the object from the viewport, and pressing it from the Explorer leaves the Explorer
+// in charge. The 1.23 rule — "everything that is not a marked editor is the viewport" —
+// is what let W fly the camera while you were in the Explorer (user, 2026-10-05).
 //
 // A row's `scope` says where it lives; absent (or 'global') = every non-text scope. In
 // its own scope a scoped row WINS over a global row with the same combo — Blender's rule
 // that a more specific keymap shadows the window keymap.
 
-/** @typedef {'global'|'viewport'|'nodes'|'code'|'text'|'vr'|'uv'|'animation'|'shader'|'hud'} KeyScope */
+/** @typedef {'global'|'viewport'|'objects'|'panel'|'nodes'|'code'|'text'|'vr'|'uv'|'animation'|'shader'|'hud'} KeyScope */
 
 /** Display order + human names (the `?` sheet and Settings ▸ Shortcuts group by these). */
 export const SCOPE_LABELS = /** @type {Record<string, string>} */ ({
@@ -35,6 +46,8 @@ export const SCOPE_LABELS = /** @type {Record<string, string>} */ ({
 	animation: 'Animation timeline',
 	shader: 'Shader editor',
 	hud: 'HUD editor',
+	objects: 'Object list',
+	panel: 'Panels and tool windows',
 	text: 'Text fields'
 });
 
@@ -59,7 +72,10 @@ export function hostScopeOf(el) {
 	if (!el || typeof el.closest !== 'function') return 'viewport';
 	if (el.closest('.cm-editor')) return 'code';
 	const host = el.closest('[data-key-scope]');
-	return (host && host.getAttribute('data-key-scope')) || 'viewport';
+	const scope = host && host.getAttribute('data-key-scope');
+	// a `keep` host (a toolbar) belongs to nobody: movesScope never lets it take the keys,
+	// and a text field inside one is plain text
+	return scope && scope !== 'keep' ? scope : 'viewport';
 }
 
 let pointerScope = 'viewport';
@@ -170,10 +186,19 @@ export function viewportHasKeys(event) {
 export function pickForScope(rows, focused) {
 	if (focused === 'text' || focused === 'code') return null;
 	for (const scope of chainOf(focused)) {
-		const row = rows.find((r) => (r.scope || 'global') === scope);
+		const row = rows.find((r) => rowIn(r, scope));
 		if (row) return row;
 	}
 	return null;
+}
+
+/**
+ * Is a row bound in `scope`? Its own scope, or one it lends itself to (`alsoScopes`: the
+ * viewport's selection rows also answer in the Object list).
+ * @param {{scope?: string, alsoScopes?: string[]}} row @param {string} scope
+ */
+export function rowIn(row, scope) {
+	return (row.scope || 'global') === scope || !!row.alsoScopes?.includes(scope);
 }
 
 /**
@@ -201,6 +226,8 @@ export function movesScope(el) {
 	if (!el || typeof el.closest !== 'function') return true;
 	if (isTextEntry(el) && !el.closest('.cm-editor')) return false;
 	if (el.closest('[role="menu"], [role="dialog"], [role="listbox"], dialog, [data-key-scope-transient]')) return false;
+	// 36 F2: a toolbar is not a place — the keys stay with whoever had them
+	if (el.closest('[data-key-scope]')?.getAttribute('data-key-scope') === 'keep') return false;
 	return true;
 }
 

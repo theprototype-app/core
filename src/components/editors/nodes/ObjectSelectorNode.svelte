@@ -22,7 +22,7 @@
 <NodeWrapper type={data.type} label={data.label}>
 	<div class="flex w-full items-center space-x-2">
 		<select
-			class="nodrag"
+			class="nodrag nopan"
 			value={data.selected ?? '-None-'}
 			on:change={(e) => setNodeData(id, { selected: e.currentTarget.value })}
 		>

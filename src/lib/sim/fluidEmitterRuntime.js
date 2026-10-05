@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { FluidSolver } from './fluidCore.js';
+import { simHeld } from './fluidRuntime.js';
 import { normalizeEmitter, capFor, domainOf, releaseCount, nozzleBatch, spawnBatch, applySinks, budgetLimits } from './fluidEmitterCore.js';
 import { FluidVisual } from './fluidRender.js';
 import { FluidColliderSet } from './fluidColliders.js';
@@ -328,6 +329,11 @@ function tickEmitter(root, object, camera, renderer, now) {
 	em.visible = !hidden && frustum.intersectsSphere(sphere);
 	em.visual.prepare(camera, renderer?.domElement?.height ?? 800);
 	if (!em.visible || em.pending) return;
+	// 36-int-125 (union of fb-water S9 + fb-fluid F23): the simulation pill's Pause holds emitters too
+	if (simHeld()) {
+		em.sentAt = now; // resume without a jump
+		return;
+	}
 	const dt = em.sentAt ? Math.min((now - em.sentAt) / 1000, 1 / 30) : 1 / 60;
 	em.sentAt = now;
 	em.lastDt = dt;

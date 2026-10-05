@@ -56,9 +56,14 @@ export async function resetWholeSimulation() {
 	const p = await import('../physics');
 	const wasRunning = get(p.simulating);
 	if (wasRunning) p.resetSimulation();
-	const [{ resetFluid }, { resetPours }] = await Promise.all([import('./fluidRuntime.js'), import('../water/pourDrops.js')]);
+	const [{ resetFluid }, { resetPours }, { resetFluidEmitters }] = await Promise.all([
+		import('./fluidRuntime.js'),
+		import('../water/pourDrops.js'),
+		import('./fluidEmitterRuntime.js') // 36-int-125: fb-fluid's emitters start empty again too
+	]);
 	resetFluid();
 	resetPours();
+	resetFluidEmitters();
 	if (!wasRunning) return false;
 	await new Promise((r) => setTimeout(r, 50)); // the reset's restore lands first
 	if (!get(p.simulating) && !get(p.remoteSimulating)) await p.toggleSimulation();

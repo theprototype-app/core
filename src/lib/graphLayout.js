@@ -274,7 +274,7 @@ export function repairLayout(boxes, wires, opts = {}) {
  * stacked top to bottom, cards with no wires (and notes about nothing nearby) in columns on
  * the left, then repaired.
  * @param {Box[]} boxes @param {Wire[]} wires
- * @param {{gapX?: number, gapY?: number, origin?: {x: number, y: number}, noteReach?: number, sweeps?: number, columnHeight?: number}} [opts]
+ * @param {{gapX?: number, gapY?: number, origin?: {x: number, y: number}, noteReach?: number, sweeps?: number, columnHeight?: number, rowWidth?: number}} [opts]
  */
 export function layeredLayout(boxes, wires, opts = {}) {
 	const gapX = opts.gapX ?? GAP_X;

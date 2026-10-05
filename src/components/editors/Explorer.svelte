@@ -314,6 +314,8 @@
 		savePrefabSelection,
 		addPrefabRecord,
 		exportPrefab, duplicatePrefab } from '$lib/prefabs';
+	// 37 R4: an edited prefab offers to update its instances (replicated, one undo)
+	import { offerInstanceUpdate, updateInstances, selectInstances, prefabInstanceCounts } from '$lib/prefabLinks';
 	// 21-I3: Export ▸ scene (.tpscene) — a scene containing just this prefab. Built from
 	// the EMPTY payload plus this one object, never a capture of the live scene.
 	// R22 round 13 P3: `sessions` is read for the Mount picker (which saved entries are
@@ -4207,12 +4209,16 @@
 		const before = prefabSnapshot(prefab.id); // captured BEFORE, held in this closure
 		const next = await updatePrefab(prefab.id, uuids, { toast: false });
 		if (!next) return; // updatePrefab already said why (missing object / too large)
-		showToast(
-			`Updated "${next.name}" from ${uuids.length === 1 ? 'the selection' : uuids.length + ' selected objects'}`,
+		// 37 R4: the report doubles as the offer — "Update N instances" beside the Undo. The
+		// Undo still belongs to the toast (a library edit); the instance update is a scene
+		// edit and takes ONE Ctrl+Z of its own.
+		offerInstanceUpdate(prefab.id, {
+			exclude: uuids,
+			fallback: before ? { element: before.element, graphs: before.graphs } : null,
 			// `undefined`, never `[]` — showToast treats any array as an action toast, and an
 			// action toast with no buttons is a card the user cannot dismiss by acting on it
-			before ? [{ label: 'Undo', action: () => void undoPrefabUpdate(before, next.name) }] : undefined
-		);
+			extra: before ? [{ label: 'Undo', action: () => void undoPrefabUpdate(before, next.name) }] : undefined
+		});
 	}
 
 	async function undoPrefabUpdate(snapshot: any, name: string) {
@@ -4233,6 +4239,35 @@
 			{ label: 'Delete', action: () => void removePrefab(prefab.id) },
 			{ label: 'Cancel', action: () => {} }
 		]);
+	}
+
+	/** 37 R4: the instances in this scene, from the card — only when there are some. */
+	function prefabInstanceItems(prefab: any) {
+		const n = $prefabInstanceCounts[prefab.id] ?? 0;
+		if (!n) return [];
+		const s = n === 1 ? '' : 's';
+		return [
+			{
+				label: `Instances in scene (${n})`,
+				icon: 'boxes',
+				children: [
+					{
+						label: `Update ${n} instance${s}`,
+						tooltip: 'Bring every placed copy up to this prefab — each keeps its own changes (one undo)',
+						action: () => void updateInstances(prefab.id)
+					},
+					{
+						label: 'Update, reset overrides',
+						tooltip: 'Make every placed copy match this prefab exactly — only where each one stands is kept',
+						action: () => void updateInstances(prefab.id, { reset: true })
+					},
+					{
+						label: `Select ${n} instance${s}`,
+						action: () => selectInstances(prefab.id)
+					}
+				]
+			}
+		];
 	}
 
 	function prefabMenu(e: MouseEvent, item: any) {
@@ -4299,6 +4334,7 @@
 					tooltip: 'Re-save this prefab from the objects selected in the scene',
 					action: () => updatePrefabFromSelection(prefab)
 				},
+				...prefabInstanceItems(prefab),
 				{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'item', item }) },
 				{ label: 'Rename', icon: 'pencil', action: () => startRenamePrefab(item) },
 				{ label: 'Delete', icon: 'trash-2', danger: true, action: () => void deletePrefabToBin(prefab) }

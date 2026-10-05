@@ -84,6 +84,9 @@ export function stampElementKeys(element, prefabId) {
 		if (!key || seen.has(key)) key = ud[KEY_FIELD] && !seen.has(ud[KEY_FIELD]) ? ud[KEY_FIELD] : node.uuid;
 		seen.add(/** @type {string} */ (key));
 		ud[KEY_FIELD] = key;
+		// a prefab never contains an instance of itself (an update made from a selection
+		// that held one would otherwise nest the prefab inside its own next revision)
+		if (ud[LINK_FIELD]?.id === prefabId) delete ud[LINK_FIELD];
 		if (ud[KEYS_FIELD]) {
 			const keys = { ...ud[KEYS_FIELD] };
 			delete keys[prefabId];

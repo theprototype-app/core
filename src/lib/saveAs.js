@@ -42,7 +42,7 @@
 import { get } from 'svelte/store';
 import { objectsGroup } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
-import { addPrefabRecord, prefabElementFor, prefabThumbnail } from './prefabs';
+import { addPrefabRecord, prefabElementFor, prefabThumbnail, finishPrefabElement } from './prefabs';
 import { gltfBytesFor } from './fileHandler.svelte.js';
 
 /**
@@ -135,7 +135,10 @@ export async function saveSelectionAs(formatId, uuids, name) {
 	if (format.id === 'snapshot') {
 		const element = prefabElementFor(list, name);
 		if (!element) return null;
-		const entry = await addPrefabRecord({ name: element.name, element: element.element });
+		// 37 R4: keyed for its own id, and carrying the objects' graphs
+		const id = crypto.randomUUID();
+		const graphs = finishPrefabElement(element, id);
+		const entry = await addPrefabRecord({ id, name: element.name, element: element.element, graphs });
 		if (entry) showToast('Prefab saved to your library');
 		return entry;
 	}

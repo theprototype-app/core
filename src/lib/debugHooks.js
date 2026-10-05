@@ -75,6 +75,8 @@ export const DEBUG_HOOKS = [
 	['pathCapture', () => import('./pathCapture')],
 	['lockControl', () => import('./lockControl')],
 	['prefabs', () => import('./prefabs')],
+	['prefabLinks', () => import('./prefabLinks')],
+	['prefabSync', () => import('./prefabSync')],
 	['physics', () => import('./physics')],
 	// 36-sim: buoyancy/jiggle/fluid/splash state
 	['sim', () => import('./sim/debug.js')],

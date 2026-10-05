@@ -6,13 +6,19 @@ import { recordObjectPresence, beginHistoryBatch, endHistoryBatch } from './hist
 import { patch as audioPatch, addCablesRemapped } from './audioPatch';
 import { selectObject } from './objectActions';
 import { parkEditOverlays, stripEditOverlays } from './editOverlays';
-import { idbGet, idbPut } from './idb';
+import { idbGet, idbPut, idbDelete } from './idb';
+import { stampElementKeys, linkNode, linkRoot, elementKey } from './prefabSync';
+import { graphOf } from '../stores/flowStore';
+import { serializeNode, serializeEdge } from './nodesHandler';
 
 // Personal prefab library: save any object/group as a reusable asset
 // (ObjectLoader snapshot + rendered thumbnail) in IndexedDB. The library is
 // LOCAL by design — instantiated copies replicate like any other object.
 
-/** @type {import('svelte/store').Writable<any[]>} [{id, name, createdAt, thumbnail, element}] */
+/** @type {import('svelte/store').Writable<any[]>} [{id, name, createdAt, thumbnail, element,
+ *   rev?, graphs?, folder?, tags?}] — 37 R4: `rev` counts element changes (absent = 0),
+ *   `graphs` the objects' flow graphs keyed by element node key, `folder`/`tags` the
+ *   Library's own organisation (prefabLibrary.js) */
 export const prefabs = writable([]);
 
 const KEY = 'prefabs-v1';
@@ -35,6 +41,86 @@ async function persist() {
 		console.log('prefabs persist failed', error);
 		showToast('Could not save the prefab library');
 	}
+}
+
+// ---- 37 R4: revisions ---------------------------------------------------------------
+// An instance remembers the REVISION it was placed from, because an override is "what this
+// instance changed relative to what it got" — so an update needs the element the instance
+// was made from, not just the one before the edit. The older elements live under their own
+// idb key per prefab (one read per update, never in the in-memory list), newest REV_KEEP.
+
+const REV_KEEP = 8;
+/** @param {string} id */
+const revKey = (id) => 'prefab-revs-v1:' + id;
+
+/** Keep `entry`'s CURRENT bytes as its revision before they are replaced. @param {any} entry */
+async function keepRevision(entry) {
+	if (!entry?.id || !entry.element) return;
+	try {
+		/** @type {Record<string, any>} */
+		const revs = (await idbGet(revKey(entry.id))) ?? {};
+		revs[entry.rev ?? 0] = { element: entry.element, graphs: entry.graphs ?? null };
+		const keep = Object.keys(revs)
+			.map(Number)
+			.sort((a, b) => b - a)
+			.slice(0, REV_KEEP);
+		/** @type {Record<string, any>} */
+		const out = {};
+		for (const r of keep) out[r] = revs[r];
+		await idbPut(revKey(entry.id), out);
+	} catch (error) {
+		console.log('prefab revision keep failed', error);
+	}
+}
+
+/**
+ * The element (and graphs) a prefab had at `rev` — the current one, a kept older one, or
+ * null when it is no longer known.
+ * @param {string} id @param {number} rev
+ * @returns {Promise<{element: any, graphs: any}|null>}
+ */
+export async function prefabRevision(id, rev) {
+	const entry = prefabById(id);
+	if (!entry) return null;
+	if ((entry.rev ?? 0) === rev) return { element: entry.element, graphs: entry.graphs ?? null };
+	try {
+		const revs = await idbGet(revKey(id));
+		return revs?.[rev] ?? null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The objects' flow graphs, keyed by the element node key they will travel under — the
+ * same `{nodes, edges}` payload a `.tpnode` carries, so a prefab's logic is a node group
+ * like any other (37 R4: "a prefab can carry its graph group").
+ * @param {any} element a STAMPED element @param {Record<string, string>} liveToElement
+ * @returns {Record<string, {nodes: any[], edges: any[]}>|null}
+ */
+function captureGraphs(element, liveToElement) {
+	/** @type {Record<string, string>} */
+	const keyOf = {};
+	const walk = (/** @type {any} */ n) => {
+		keyOf[n.uuid] = elementKey(n);
+		for (const c of n.children ?? []) walk(c);
+	};
+	walk(element.object);
+	/** @type {Record<string, {nodes: any[], edges: any[]}>} */
+	const graphs = {};
+	for (const [live, el] of Object.entries(liveToElement)) {
+		const graph = graphOf(live);
+		if (!graph || (!graph.nodes?.length && !graph.edges?.length) || !keyOf[el]) continue;
+		graphs[keyOf[el]] = { nodes: graph.nodes.map(serializeNode), edges: graph.edges.map(serializeEdge) };
+	}
+	return Object.keys(graphs).length ? graphs : null;
+}
+
+/** Key a freshly built element for prefab `id` and capture its graphs.
+ * @param {{element: any, liveToElement: Record<string, string>}} snap @param {string} id */
+function finishElement(snap, id) {
+	stampElementKeys(snap.element, id);
+	return captureGraphs(snap.element, snap.liveToElement);
 }
 
 /** Small offscreen render of the snapshot @param {any} element */
@@ -92,7 +178,7 @@ function stampCables(element, cables) {
  * size refusal lives in exactly one place.
  * @param {string[]} uuids @param {string=} name
  * @param {{keepUuids?: boolean}} [opts]
- * @returns {{element: any, name: string}|null}
+ * @returns {{element: any, name: string, liveToElement: Record<string, string>}|null}
  */
 function buildPrefabElement(uuids, name, opts = {}) {
 	const group = get(objectsGroup);
@@ -108,6 +194,9 @@ function buildPrefabElement(uuids, name, opts = {}) {
 		/** @type {any} */
 		let element;
 		try {
+			// toJSON reads the matrix the last render composed — compose it now, or a move
+			// made since the last frame never reaches the prefab
+			object.updateMatrixWorld(true);
 			element = object.toJSON();
 		} finally {
 			unpark();
@@ -121,7 +210,7 @@ function buildPrefabElement(uuids, name, opts = {}) {
 		const identity = {};
 		object.traverse((/** @type {any} */ node) => (identity[node.uuid] = node.uuid));
 		stampCables(element, cablesWithin(identity));
-		return { element, name: name || object.name || object.type };
+		return { element, name: name || object.name || object.type, liveToElement: identity };
 	}
 	const holder = new THREE.Group();
 	holder.name = name || 'Group';
@@ -159,25 +248,29 @@ function buildPrefabElement(uuids, name, opts = {}) {
 		holder.add(clone);
 	}
 	if (!holder.children.length) return null;
+	holder.updateMatrixWorld(true);
 	const element = holder.toJSON();
 	stampCables(element, cablesWithin(remap));
 	if (JSON.stringify(element).length > PREFAB_LIMIT) {
 		showToast('Selection is too large for a prefab (>5 MB)');
 		return null;
 	}
-	return { element, name: holder.name };
+	return { element, name: holder.name, liveToElement: remap };
 }
 
 /** Save an object (by uuid) into the prefab library @param {string} uuid @param {string=} name */
 export async function savePrefab(uuid, name) {
 	const snap = buildPrefabElement([uuid], name);
 	if (!snap) return null;
+	const id = crypto.randomUUID();
+	const graphs = finishElement(snap, id);
 	const entry = {
-		id: crypto.randomUUID(),
+		id,
 		name: snap.name,
 		createdAt: Date.now(),
 		thumbnail: renderThumbnail(snap.element),
-		element: snap.element
+		element: snap.element,
+		...(graphs ? { graphs } : {})
 	};
 	prefabs.update((list) => [...list, entry]);
 	await persist();
@@ -192,12 +285,15 @@ export async function savePrefabSelection(uuids, name) {
 	if (!uuids || uuids.length <= 1) return savePrefab(uuids?.[0], name);
 	const snap = buildPrefabElement(uuids, name);
 	if (!snap) return null;
+	const id = crypto.randomUUID();
+	const graphs = finishElement(snap, id);
 	const entry = {
-		id: crypto.randomUUID(),
+		id,
 		name: snap.name,
 		createdAt: Date.now(),
 		thumbnail: renderThumbnail(snap.element),
-		element: snap.element
+		element: snap.element,
+		...(graphs ? { graphs } : {})
 	};
 	prefabs.update((list) => [...list, entry]);
 	await persist();
@@ -219,12 +315,17 @@ export async function updatePrefab(id, uuids, opts = {}) {
 	if (!entry) return null;
 	const snap = buildPrefabElement(uuids, entry.name);
 	if (!snap) return null;
+	const graphs = finishElement(snap, id);
+	await keepRevision(entry); // 37 R4: the instances placed from it still need it
 	const next = {
 		...entry,
 		element: snap.element,
+		graphs,
 		thumbnail: renderThumbnail(snap.element),
-		updatedAt: Date.now()
+		updatedAt: Date.now(),
+		rev: (entry.rev ?? 0) + 1
 	};
+	if (!graphs) delete next.graphs;
 	prefabs.update((list) => list.map((p) => (p.id === id ? next : p)));
 	await persist();
 	if (opts.toast !== false) showToast(`Updated "${entry.name}" from the selection`);
@@ -245,7 +346,7 @@ export async function updatePrefab(id, uuids, opts = {}) {
  * `element` is plain JSON and `thumbnail` a dataURL string, so the snapshot is a value:
  * nothing it points at can be mutated out from under it.
  * @param {string} id
- * @returns {{id: string, element: any, thumbnail: string|null, updatedAt: number|null}|null}
+ * @returns {{id: string, element: any, graphs: any, thumbnail: string|null, updatedAt: number|null}|null}
  */
 export function prefabSnapshot(id) {
 	const entry = prefabById(id);
@@ -253,6 +354,7 @@ export function prefabSnapshot(id) {
 	return {
 		id,
 		element: entry.element,
+		graphs: entry.graphs ?? null,
 		thumbnail: entry.thumbnail ?? null,
 		updatedAt: entry.updatedAt ?? null
 	};
@@ -262,13 +364,26 @@ export function prefabSnapshot(id) {
  * Put a `prefabSnapshot` back — the Undo half. Keeps the entry's CURRENT name (a rename
  * between the update and the undo is a different edit, and reverting it too would be
  * undoing something nobody asked about).
- * @param {{id: string, element: any, thumbnail: string|null, updatedAt: number|null}|null} snap
+ *
+ * 37 R4: putting old bytes back is a NEW revision, never a step back in the count —
+ * instances updated in between were placed from the revision being replaced, and their
+ * overrides are measured against it.
+ * @param {{id: string, element: any, graphs?: any, thumbnail: string|null, updatedAt: number|null}|null} snap
  */
 export async function restorePrefabBytes(snap) {
 	if (!snap?.id || !snap.element) return null;
 	const entry = prefabById(snap.id);
 	if (!entry) return null; // deleted in the meantime — nothing to restore into
-	const next = { ...entry, element: snap.element, thumbnail: snap.thumbnail, updatedAt: snap.updatedAt };
+	await keepRevision(entry);
+	const next = {
+		...entry,
+		element: snap.element,
+		graphs: snap.graphs ?? null,
+		thumbnail: snap.thumbnail,
+		updatedAt: snap.updatedAt,
+		rev: (entry.rev ?? 0) + 1
+	};
+	if (!next.graphs) delete next.graphs;
 	if (next.updatedAt === null) delete next.updatedAt; // it had never been updated
 	prefabs.update((list) => list.map((p) => (p.id === snap.id ? next : p)));
 	await persist();
@@ -298,9 +413,11 @@ export async function duplicatePrefab(id) {
 		id: crypto.randomUUID(),
 		name,
 		createdAt: Date.now(),
-		element: JSON.parse(JSON.stringify(source.element))
+		element: JSON.parse(JSON.stringify(source.element)),
+		...(source.graphs ? { graphs: JSON.parse(JSON.stringify(source.graphs)) } : {})
 	};
 	delete entry.updatedAt;
+	delete entry.rev; // a new prefab: its instances start at revision 0
 	prefabs.update((list) => [...list, entry]);
 	await persist();
 	return entry;
@@ -383,6 +500,13 @@ export function prefabElementFor(uuids, name, opts) {
 	return buildPrefabElement(uuids, name, opts);
 }
 
+/** 37 R4: key an element built through `prefabElementFor` for the record `id` it will be
+ * stored under, and capture its objects' graphs — the saveAs path's half of finishElement.
+ * @param {{element: any, liveToElement: Record<string, string>}} snap @param {string} id */
+export function finishPrefabElement(snap, id) {
+	return finishElement(snap, id);
+}
+
 /** The offscreen render, exposed so a byte-backed prefab gets the same picture.
  * @param {any} element */
 export function prefabThumbnail(element) {
@@ -392,16 +516,20 @@ export function prefabThumbnail(element) {
 /**
  * Store a prefab record built elsewhere (see $lib/saveAs). One write path, so the size
  * refusal, the persist and the toast cannot drift between the formats.
- * @param {{name: string, element: any, thumbnail?: string|null, format?: string, bytes?: any}} spec
+ * @param {{name: string, element: any, id?: string, graphs?: any, thumbnail?: string|null, format?: string, bytes?: any}} spec
  */
 export async function addPrefabRecord(spec) {
 	if (!spec?.element) return null;
+	const id = spec.id ?? crypto.randomUUID();
+	// a record built elsewhere may not be keyed yet (stamping twice is a no-op)
+	stampElementKeys(spec.element, id);
 	const entry = {
-		id: crypto.randomUUID(),
+		id,
 		name: spec.name || 'Prefab',
 		createdAt: Date.now(),
 		thumbnail: spec.thumbnail ?? renderThumbnail(spec.element),
 		element: spec.element,
+		...(spec.graphs ? { graphs: spec.graphs } : {}),
 		...(spec.format && spec.format !== 'snapshot' ? { format: spec.format, bytes: spec.bytes } : {})
 	};
 	prefabs.update((list) => [...list, entry]);
@@ -430,11 +558,23 @@ export function instantiatePrefab(prefab, position) {
 	// it is handed one at the call site rather than changing either contract.
 	/** @type {Map<string, string>} the saved uuid -> the fresh one, for the carries below */
 	const uuidMap = new Map();
+	// 37 R4: a library prefab's instance is LINKED to it — every node keyed so an update
+	// can find it again. A snapshot that is not a library record (a VR sleeve slot) is not.
+	const linked = !!prefab.id && !!prefabById(prefab.id);
+	/** @type {Record<string, string>} element key -> fresh uuid (the graph carry) */
+	const freshByKey = {};
 	object.traverse((node) => {
 		const fresh = crypto.randomUUID();
 		uuidMap.set(node.uuid, fresh);
+		freshByKey[elementKey(node)] = fresh;
+		if (linked) linkNode(node, prefab.id);
+		else if (node.userData?.prefabKey !== undefined) {
+			node.userData = { ...node.userData };
+			delete node.userData.prefabKey;
+		}
 		node.uuid = fresh;
 	});
+	if (linked) linkRoot(object, prefab.id, prefab.rev ?? 0);
 	const cables = Array.isArray(object.userData?.cables) ? object.userData.cables : [];
 	// the snapshot stays in the LIBRARY, not on the instance - and ObjectLoader hands the
 	// parsed object the element's userData by REFERENCE, so the copy comes first or the
@@ -465,7 +605,22 @@ export function instantiatePrefab(prefab, position) {
 	// object back); the documents follow, because reading the zip is async and holding
 	// the placement up for it would be the wrong trade.
 	if (prefab.format === 'tpscene' && prefab.bytes) void carryPrefabDocuments(prefab, uuidMap);
+	else if (prefab.graphs) void carryPrefabGraphs(prefab.graphs, freshByKey);
 	return object;
+}
+
+/**
+ * 37 R4: a snapshot prefab's own flow graphs, installed on the fresh objects. The object's
+ * create entry owns the lifecycle (copyGraphFrom's own rule), so nothing records here.
+ * @param {Record<string, any>} graphs @param {Record<string, string>} freshByKey
+ */
+async function carryPrefabGraphs(graphs, freshByKey) {
+	try {
+		const { copyGraphFrom } = await import('./flowGraphs');
+		for (const [key, graph] of Object.entries(graphs)) if (freshByKey[key]) copyGraphFrom(graph, freshByKey[key]);
+	} catch (error) {
+		console.log('prefab graphs failed', error);
+	}
 }
 
 /**
@@ -499,6 +654,7 @@ async function carryPrefabDocuments(prefab, uuidMap) {
 export async function removePrefab(id) {
 	prefabs.update((list) => list.filter((p) => p.id !== id));
 	await persist();
+	idbDelete(revKey(id)).catch(() => {});
 }
 
 /** @param {string} id @param {string} name */
@@ -510,7 +666,7 @@ export async function renamePrefab(id, name) {
 
 /** JSON string for sharing a prefab as a file @param {any} prefab */
 export function exportPrefab(prefab) {
-	return JSON.stringify({ name: prefab.name, element: prefab.element });
+	return JSON.stringify({ name: prefab.name, element: prefab.element, ...(prefab.graphs ? { graphs: prefab.graphs } : {}) });
 }
 
 /** Import a previously exported prefab @param {string} json */
@@ -518,12 +674,15 @@ export async function importPrefab(json) {
 	try {
 		const parsed = JSON.parse(json);
 		if (!parsed?.element) throw new Error('not a prefab file');
+		const id = crypto.randomUUID();
+		stampElementKeys(parsed.element, id);
 		const entry = {
-			id: crypto.randomUUID(),
+			id,
 			name: parsed.name || 'Imported prefab',
 			createdAt: Date.now(),
 			thumbnail: renderThumbnail(parsed.element),
-			element: parsed.element
+			element: parsed.element,
+			...(parsed.graphs && typeof parsed.graphs === 'object' ? { graphs: parsed.graphs } : {})
 		};
 		prefabs.update((list) => [...list, entry]);
 		await persist();

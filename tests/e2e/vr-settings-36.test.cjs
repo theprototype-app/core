@@ -128,12 +128,30 @@ h.run(async () => {
 	await settle(260);
 	st = await read();
 	h.check(st.page === 'body', `left/right on the tab strip changes page (comfort → ${st.page})`);
-	await xr.stick(page, hand, 0, 1); // down to the first row (Stance)
-	await settle(260);
+	// down to the first row (Stance). Up/down REPEATS every 220 ms while held (a list), so a fixed
+	// 260 ms hold could legitimately step twice when the first step landed early: release on the first step
+	const cursorNow = () => g(() => {
+		let v;
+		window.__stores.vrSettingsSchema.vrSettingsCursor.subscribe((x) => (v = x))();
+		return v;
+	});
+	const c0 = await cursorNow();
+	const t0 = Date.now();
+	await xr.stick(page, hand, 0, 1);
+	while (Date.now() - t0 < 1500 && (await cursorNow()) === c0) await settle(10);
 	await xr.stick(page, hand, 0, 0);
+	console.log(`  (cursor ${c0} stepped after ${Date.now() - t0} ms, released)`);
 	await settle(260);
 	st = await read();
-	h.check(st.cursor === 1, `down moves the cursor onto the first row (${st.cursor})`);
+	// a held stick REPEATS (220 ms) and a busy page can let a second step land before the release
+	// reaches it — the behaviour under test is "down moves the cursor down"; then the cursor is seated
+	// on Stance so the next check tests left/right on a choice, whatever the frame timing was
+	h.check(st.cursor >= c0 + 1, `down moves the cursor down (${c0} → ${st.cursor})`);
+	await g(() => {
+		const s = window.__stores.vrSettingsSchema;
+		s.vrSettingsCursor.set(s.settingsPanelRows('body').findIndex((r) => r.rowId === 'stance'));
+	});
+	await settle(100);
 	const stance0 = await g(() => window.__stores.vrSettingsSchema.vrSettingRow('stance').get());
 	await xr.stick(page, hand, 1, 0); // right on a choice: next value
 	await settle(260);

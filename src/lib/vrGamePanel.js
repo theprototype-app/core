@@ -11,13 +11,14 @@
 //    laid out exactly as the desktop HUD lays them out (the 9-grid over the 1280x720
 //    reference stage), plus a footer with two buttons of ours: "Edit mode" (the Edit ⇄
 //    Interact switch 30b-vr-modes adds; a plain `editorMode` write is enough to leave) and
-//    "Top strip" on/off. Its buttons answer the controller LASER + trigger and a
+//    "HUD: Head / World / Wrist" (36 B12: where the playing HUD goes). Its buttons answer the controller LASER + trigger and a
 //    fingertip/controller-tip POKE.
 //  · the WRIST card — the game's small overlays (score, timer, level) as short lines on
 //    the LEFT wrist, shown when you turn the wrist toward your face, with the same two
 //    buttons, so there is always a way back to editing even mid-round.
-//  · the TOP STRIP — the same lines in one head-locked row across the top of the view,
-//    LOCAL on/off (persisted), default on.
+//  · the HUD BAND (36 B12, vrHud.js) — the playing screen as its author laid it out, on a
+//    curved band that follows the head with lag (or stays fixed in the world), LOCAL setting
+//    `vr:hudPlacement`. It replaced 30b's head-locked TOP STRIP of short lines.
 //  · the ANNOUNCE banner — api.announce(), head-locked, big and centred.
 //
 // A button press is the desktop press verbatim: `fireHudButton(id)` pulses the element's
@@ -42,7 +43,7 @@ import { gameFeelActive } from './gameFeel';
 import { PANEL_ORDER } from './vrPanelOverlay';
 import { gameAnnouncement } from './gameAnnounce';
 import { playGameSound } from './gameSfx';
-import { hudImageFor, resolveHudImage } from './hudImages';
+import { drawHudElement, roundRect, imageTick } from './hudCanvasDraw';
 import { safeStorage } from './safeStorage';
 // 31 K3: the game shell's pause menu — its pages are drawn onto this board
 import {
@@ -60,9 +61,12 @@ import {
 } from './gameShell';
 import { gameSettingValues } from './gameSettings';
 import { drawShellPage, SHELL_STAGE, fitLabel, collectOverflow } from './shellPanelDraw';
-// 31 K3 G3: Show FPS in the headset (the strip + the wrist)
+// 31 K3 G3: Show FPS in the headset (the HUD band + the wrist)
 import { fpsReading, fpsText, noteXrFrame, perfStatsShown } from './fpsMeter';
 import { vignetteFrame } from './comfortVignette';
+// 36 B12: the playing HUD on a curved band (it replaced the head-locked top strip)
+import { vrHudFrame, hideVrHud } from './vrHud';
+import { vrHudPlacement, setVrHudPlacement, cycleVrHudPlacement, placementLabel } from './vrHudPrefs';
 
 /** the HUD's authoring reference — the editor artboard's stage */
 export const STAGE_W = 1280;
@@ -74,7 +78,6 @@ const PANEL_DROP = 0.22; // below the eyes: chest height
 const FOLLOW_DEG = 35;
 const SETTLE_DEG = 2;
 const WRIST_W = 0.15;
-const STRIP_KEY = 'vr:gameStrip';
 
 /** the board canvas's pixels per stage pixel. 33 X1: 2, i.e. 1250 texels per metre — a Quest
  * 3's ~25 px per degree at 1.2 m wants ~1190 (`texelRatio`); the 1.5 this was (937 per metre)
@@ -154,7 +157,7 @@ const METRES_PER_PX = 0.0016;
 
 /**
  * The screens on show right now, the HudLayer rule (scene doc + the one keyed by the camera
- * looked through), split into what the panel shows and what the wrist/strip show.
+ * looked through), split into what the panel shows and what the wrist/HUD band show.
  * @returns {{panel: {key: string, screen: any}[], overlay: {key: string, screen: any}[]}}
  */
 export function vrScreens() {
@@ -205,37 +208,6 @@ export function overlayLines(elements, runtime) {
 
 /* --------------------------------------------------------------------- drawing ----- */
 
-/** a style value, token names resolved to literals (a canvas cannot take var()) */
-function paint(/** @type {any} */ value, /** @type {string} */ fallback) {
-	if (value === undefined || value === null || value === '') return fallback;
-	const text = String(value);
-	if (/^[a-z][a-z0-9-]*$/i.test(text) && !/^(transparent|white|black|red|green|blue|gray|grey|yellow|orange|none)$/i.test(text)) {
-		try {
-			const v = getComputedStyle(document.documentElement).getPropertyValue('--' + text).trim();
-			return v || fallback;
-		} catch {
-			return fallback;
-		}
-	}
-	return text;
-}
-
-/** @param {CanvasRenderingContext2D} g @param {number} x @param {number} y @param {number} w @param {number} h @param {number} r */
-function roundRect(g, x, y, w, h, r) {
-	const rr = Math.max(0, Math.min(r, w / 2, h / 2));
-	g.beginPath();
-	g.moveTo(x + rr, y);
-	g.arcTo(x + w, y, x + w, y + h, rr);
-	g.arcTo(x + w, y + h, x, y + h, rr);
-	g.arcTo(x, y + h, x, y, rr);
-	g.arcTo(x, y, x + w, y, rr);
-	g.closePath();
-}
-
-/** @type {Map<string, HTMLImageElement>} */
-const images = new Map();
-let imageTick = 0;
-
 /** @typedef {{id: string, key: string, kind: string, x: number, y: number, w: number, h: number, footer?: string}} HitRect */
 
 /**
@@ -244,7 +216,7 @@ let imageTick = 0;
  * laser is on. Pure over its arguments (the DOM is only touched for token colours and
  * image decode); exported for the suites.
  * @param {CanvasRenderingContext2D} g @param {{key: string, screen: any} | null} entry
- * @param {Record<string, any>} runtime @param {{hover?: string | null, strip?: boolean, mode?: string, crop?: {x: number, y: number, w: number, h: number}, menu?: 'open' | 'available' | null}} [opts]
+ * @param {Record<string, any>} runtime @param {{hover?: string | null, hud?: string, mode?: string, crop?: {x: number, y: number, w: number, h: number}, menu?: 'open' | 'available' | null}} [opts]
  * @returns {HitRect[]}
  */
 export function drawPanel(g, entry, runtime, opts = {}) {
@@ -274,110 +246,9 @@ export function drawPanel(g, entry, runtime, opts = {}) {
 		const y = (r.top - crop.y) * k;
 		const w = r.w * k;
 		const h = r.h * k;
-		const style = el.style ?? {};
 		const rt = runtime?.[el.id] ?? null;
-		const text = rt?.text !== undefined && rt?.text !== null ? String(rt.text) : String(el.label ?? '');
-		const size = Math.max(10, Number(style.size ?? 14)) * k;
-		const weight = String(style.weight ?? (el.kind === 'button' ? 600 : 400));
-		const colour = paint(style.color, '#f3f4f6');
 		const disabled = el.enabled === false;
-		g.globalAlpha = Number(style.opacity ?? 1) * (disabled ? 0.45 : 1);
-		const bg = paint(style.bg, el.kind === 'button' || el.kind === 'toggle' || el.kind === 'dropdown' || el.kind === 'tabs' ? '#374151' : 'transparent');
-		const radius = Number(style.radius ?? (el.kind === 'button' ? 8 : 0)) * k;
-		if (bg !== 'transparent') {
-			roundRect(g, x, y, w, h, radius);
-			g.fillStyle = bg;
-			g.fill();
-		}
-		if (style.border) {
-			roundRect(g, x, y, w, h, radius);
-			g.lineWidth = 2 * k;
-			g.strokeStyle = paint(style.border, 'rgba(75,85,99,0.7)');
-			g.stroke();
-		}
-		g.fillStyle = colour;
-		g.font = `${weight} ${size}px system-ui, sans-serif`;
-		g.textBaseline = 'middle';
-		const align = el.kind === 'button' ? 'center' : String(style.align ?? 'left');
-		g.textAlign = align === 'center' ? 'center' : align === 'right' ? 'right' : 'left';
-		const pad = Number(style.pad ?? 0) * k;
-		const tx = align === 'center' ? x + w / 2 : align === 'right' ? x + w - pad - 4 * k : x + pad + 4 * k;
-		if (el.kind === 'bar' || el.kind === 'progressradial' || el.kind === 'slider') {
-			const value = Number(el.kind === 'slider' ? hudValueOf(el.id, el.value ?? el.min ?? 0) : rt?.value ?? el.value ?? 0);
-			const min = Number(rt?.min ?? el.min ?? 0);
-			const max = Number(rt?.max ?? el.max ?? (el.kind === 'slider' ? 100 : 1));
-			const pct = max - min > 1e-9 ? Math.min(1, Math.max(0, (value - min) / (max - min))) : 0;
-			roundRect(g, x, y + h * 0.3, w, h * 0.4, h * 0.2);
-			g.fillStyle = 'rgba(255,255,255,0.15)';
-			g.fill();
-			roundRect(g, x, y + h * 0.3, w * pct, h * 0.4, h * 0.2);
-			g.fillStyle = paint(style.color, '#ef562f');
-			g.fill();
-			if (text && el.kind !== 'slider') {
-				g.fillStyle = '#f3f4f6';
-				g.textAlign = 'center';
-				g.fillText(text, x + w / 2, y + h / 2);
-			}
-		} else if (el.kind === 'toggle') {
-			const on = !!hudValueOf(el.id, el.value);
-			roundRect(g, x + 6 * k, y + h * 0.2, h * 1.1, h * 0.6, h * 0.3);
-			g.fillStyle = on ? '#22c55e' : 'rgba(255,255,255,0.2)';
-			g.fill();
-			g.beginPath();
-			g.arc(x + 6 * k + (on ? h * 0.8 : h * 0.3), y + h / 2, h * 0.24, 0, Math.PI * 2);
-			g.fillStyle = '#fff';
-			g.fill();
-			g.fillStyle = colour;
-			g.textAlign = 'left';
-			g.fillText(text, x + h * 1.3 + 10 * k, y + h / 2);
-		} else if (el.kind === 'dropdown' || el.kind === 'tabs') {
-			const options = hudOptionsOf(el.id, el);
-			const held = hudValueOf(el.id, el.value ?? (el.kind === 'tabs' ? 0 : options[0]));
-			const shown = el.kind === 'tabs' ? options[Math.round(Number(held)) || 0] ?? '' : String(held ?? '');
-			g.textAlign = 'center';
-			g.fillText((text ? text + ': ' : '') + '‹ ' + shown + ' ›', x + w / 2, y + h / 2);
-		} else if (el.kind === 'list') {
-			const rows = Array.isArray(rt?.rows) && rt.rows.length ? rt.rows : String(el.rowsText ?? '').split('\n').filter(Boolean);
-			const rowH = Number(el.rowHeight ?? 18) * k;
-			let yy = y + rowH / 2;
-			if (text) {
-				g.fillText(text, tx, yy);
-				yy += rowH;
-			}
-			for (const row of rows) {
-				if (yy > y + h) break;
-				g.fillText(String(row), tx, yy);
-				yy += rowH;
-			}
-		} else if (el.kind === 'image') {
-			const url = hudImageFor(String(el.src ?? ''));
-			if (!url && el.src) void resolveHudImage(String(el.src));
-			if (url) {
-				let img = images.get(url);
-				if (!img) {
-					img = new Image();
-					img.onload = () => (imageTick += 1);
-					img.src = url;
-					images.set(url, img);
-				}
-				if (img.complete && img.naturalWidth) g.drawImage(img, x, y, w, h);
-			}
-		} else if (el.kind === 'crosshair' || el.kind === 'minimap' || el.kind === 'debug' || el.kind === 'custom' || el.kind === 'damageflash') {
-			// a crosshair, a plot, a debug pill and a module's own DOM have no VR form here
-		} else if (text && el.kind === 'button' && !el.wrap) {
-			// 33 G5: a button's label fits the button (the desktop's CSS box never overflows)
-			g.fillText(fitLabel(g, text, w - 10 * k, weight, size), tx, y + h / 2);
-		} else if (text) {
-			// text, timer, panel, richtext and anything else that says something
-			const lines = el.wrap || el.kind === 'richtext' ? wrapText(g, text.replace(/\[[^\]]*\]/g, ''), w - 8 * k) : [text];
-			const lh = size * 1.25;
-			let yy = y + h / 2 - ((lines.length - 1) * lh) / 2;
-			for (const line of lines) {
-				g.fillText(line, tx, yy);
-				yy += lh;
-			}
-		}
-		g.globalAlpha = 1;
+		const radius = drawHudElement(g, el, x, y, w, h, k, rt);
 		const pressable = isInteractiveKind(el.kind) && !disabled;
 		if (pressable) {
 			hits.push({ id: el.id, key: entry?.key ?? 'scene', kind: el.kind, x, y, w, h });
@@ -400,7 +271,7 @@ export function drawPanel(g, entry, runtime, opts = {}) {
 }
 
 /**
- * 33 G5: where the footer's n buttons go on a board W canvas px wide — "Menu" and "Top strip"
+ * 33 G5: where the footer's n buttons go on a board W canvas px wide — "Menu" and "HUD"
  * ran OFF the board: three 240-stage-px buttons need 760 while a cropped game menu can be
  * 720 wide, so the row hung past both edges. The buttons keep their natural width when it
  * fits and share the board (inside a side margin) when it does not. Pure; exported.
@@ -418,8 +289,8 @@ export function footerLayout(W, k, n) {
 
 /**
  * The footer: OUR buttons, always there — 31 K3's Menu (while a game offers the pause
- * menu), Edit mode and Top strip. @param {CanvasRenderingContext2D} g @param {number} fy
- * @param {number} k @param {{hover?: string | null, strip?: boolean, menu?: 'open' | 'available' | null}} opts
+ * menu), Edit mode and the HUD placement (36 B12). @param {CanvasRenderingContext2D} g @param {number} fy
+ * @param {number} k @param {{hover?: string | null, hud?: string, menu?: 'open' | 'available' | null}} opts
  * @param {HitRect[]} hits
  */
 function drawFooter(g, fy, k, opts, hits) {
@@ -429,7 +300,7 @@ function drawFooter(g, fy, k, opts, hits) {
 	const buttons = [
 		...(opts.menu ? [{ id: 'menu', label: opts.menu === 'open' ? 'Close menu' : 'Menu' }] : []),
 		{ id: 'edit', label: 'Edit mode' },
-		{ id: 'strip', label: opts.strip === false ? 'Top strip: off' : 'Top strip: on' }
+		{ id: 'hud', label: 'HUD: ' + placementLabel(opts.hud ?? 'head') }
 	];
 	const bh = 60 * k;
 	const slots = footerLayout(W, k, buttons.length);
@@ -452,7 +323,7 @@ function drawFooter(g, fy, k, opts, hits) {
 
 /**
  * 31 K3: the pause menu page on the board (plate + page + footer), hits returned.
- * @param {CanvasRenderingContext2D} g @param {{hover?: string | null, strip?: boolean}} opts
+ * @param {CanvasRenderingContext2D} g @param {{hover?: string | null, hud?: string}} opts
  * @returns {HitRect[]}
  */
 export function drawShellPanel(g, opts = {}) {
@@ -503,35 +374,11 @@ function fitText(g, text, max) {
 	return text.slice(0, lo).trimEnd() + '…';
 }
 
-/** the strip is one glanceable row: a sentence (a hint, an instruction) belongs on the
- * wrist, not across the top of the view @param {string} line */
-export function stripWorthy(line) {
-	return line.length <= 28;
-}
-
-/** @param {CanvasRenderingContext2D} g @param {string} text @param {number} max */
-function wrapText(g, text, max) {
-	/** @type {string[]} */
-	const out = [];
-	for (const para of text.split('\n')) {
-		let line = '';
-		for (const word of para.split(/\s+/)) {
-			const next = line ? line + ' ' + word : word;
-			if (line && g.measureText(next).width > max) {
-				out.push(line);
-				line = word;
-			} else line = next;
-		}
-		if (line) out.push(line);
-	}
-	return out.slice(0, 12);
-}
-
 /**
- * A compact card of lines (+ optional footer buttons) — the wrist, the top strip and the
+ * A compact card of lines (+ optional footer buttons) — the wrist and the
  * banner are all this. Returns the pressable rects.
  * @param {CanvasRenderingContext2D} g @param {string[]} lines
- * @param {{title?: string, row?: boolean, buttons?: boolean, strip?: boolean, hover?: string | null, big?: boolean, color?: string, menu?: 'open' | 'available' | null, res?: number}} [opts]
+ * @param {{title?: string, row?: boolean, buttons?: boolean, hud?: string, hover?: string | null, big?: boolean, color?: string, menu?: 'open' | 'available' | null, res?: number}} [opts]
  * @returns {HitRect[]}
  */
 export function drawCard(g, lines, opts = {}) {
@@ -600,7 +447,7 @@ function drawCardAt(g, W, H, lines, opts) {
 		const labels = [
 			...(opts.menu ? [{ id: 'menu', label: opts.menu === 'open' ? 'Close' : 'Menu' }] : []),
 			{ id: 'edit', label: 'Edit' },
-			{ id: 'strip', label: opts.strip === false ? 'Strip off' : 'Strip on' }
+			{ id: 'hud', label: 'HUD: ' + placementLabel(opts.hud ?? 'head') }
 		];
 		const bw = (W - pad * (labels.length + 1)) / labels.length;
 		labels.forEach((b, i) => {
@@ -679,13 +526,11 @@ function resizeSurface(s, pxW, pxH, worldW) {
 
 /* -------------------------------------------------------------------- the state ---- */
 
-/** LOCAL: the head-locked strip, on by default */
-function stripOn() {
-	return safeStorage.getItem(STRIP_KEY) !== 'false';
-}
-/** @param {boolean} on */
+/** 30b's strip switch, kept for callers that still say it: on = the HUD in front of you
+ * (follows the head), off = the wrist card only. The setting is vrHudPrefs' now.
+ * @param {boolean} on */
 export function setVrStrip(on) {
-	safeStorage.setItem(STRIP_KEY, on ? 'true' : 'false');
+	setVrHudPlacement(on ? 'head' : 'wrist');
 }
 
 const panelYaw = { value: NaN, following: false };
@@ -756,7 +601,7 @@ export function vrGamePanelFrame(opts = {}) {
 	const live = !!head && (opts.force || gameFeelActive());
 	const { panel, overlay } = live ? vrScreens() : { panel: [], overlay: [] };
 	const runtime = get(hudRuntime);
-	const strip = stripOn();
+	const hudAt = get(vrHudPlacement);
 	void get(hudDocs);
 	void get(hudScreenOverride);
 	void get(gameState);
@@ -771,15 +616,15 @@ export function vrGamePanelFrame(opts = {}) {
 	board.mesh.visible = !!entry;
 	if (entry && head) {
 		const sig = shellOpen
-			? JSON.stringify(['shell', get(shellMenu), get(gameLevels)?.list, get(gameLevels)?.current, get(gameSettingValues), hover, strip])
-			: JSON.stringify([entry.key, entry.screen, runtime, hover, strip, imageTick, valuesSig(entry.screen), menuOffer]);
+			? JSON.stringify(['shell', get(shellMenu), get(gameLevels)?.list, get(gameLevels)?.current, get(gameSettingValues), hover, hudAt])
+			: JSON.stringify([entry.key, entry.screen, runtime, hover, hudAt, imageTick(), valuesSig(entry.screen), menuOffer]);
 		if (sig !== board.sig) {
 			board.sig = sig;
 			resizeSurface(board, Math.round(crop.w * SCALE), Math.round((crop.h + FOOTER_H) * SCALE), crop.w * METRES_PER_PX);
 			[board.hits, board.overflow] = collectOverflow(() =>
 				shellOpen
-					? drawShellPanel(board.g, { hover: hover[0] ?? hover[1], strip })
-					: drawPanel(board.g, entry, runtime, { hover: hover[0] ?? hover[1], strip, crop, menu: menuOffer })
+					? drawShellPanel(board.g, { hover: hover[0] ?? hover[1], hud: hudAt })
+					: drawPanel(board.g, entry, runtime, { hover: hover[0] ?? hover[1], hud: hudAt, crop, menu: menuOffer })
 			);
 			board.texture.needsUpdate = true;
 		}
@@ -792,18 +637,19 @@ export function vrGamePanelFrame(opts = {}) {
 		board.mesh.updateMatrixWorld(true);
 	} else if (!entry) panelYaw.value = NaN; // a new menu appears straight ahead
 
-	// ---- the wrist + the strip (the overlay lines; the wrist is there even with none)
+	// ---- the wrist (the overlay lines; there even with none) + the HUD band
 	const lines = overlayLines(
 		overlay.flatMap((o) => o.screen.elements ?? []),
 		runtime
 	);
-	// 31 K3 G3: this game's Show FPS puts the counter FIRST on the strip and the wrist
-	// 33 Q1: not twice — with the app-wide perf strip on, the head-locked strip carries it
-	if (live && get(gameSettingValues).showFps && !get(perfStatsShown)) lines.unshift(fpsText(get(fpsReading)).main);
+	// 31 K3 G3: this game's Show FPS puts the counter FIRST on the HUD band and the wrist
+	// 33 Q1: not twice — with the app-wide perf strip on, the head-locked perf strip carries it
+	const fps = live && get(gameSettingValues).showFps && !get(perfStatsShown) ? fpsText(get(fpsReading)).main : null;
+	if (fps) lines.unshift(fps);
 	const wrist = surface('vr-game-wrist', 320 * WRIST_RES, 300 * WRIST_RES, WRIST_W);
 	const leftHand = opts.hands?.[0] ?? null;
 	if (live && leftHand) {
-		const sig = JSON.stringify([lines, strip, hover, menuOffer, shellOpen]);
+		const sig = JSON.stringify([lines, hudAt, hover, menuOffer, shellOpen]);
 		if (sig !== wrist.sig) {
 			// a line count change re-sizes the card
 			wrist.sig = sig;
@@ -811,7 +657,7 @@ export function vrGamePanelFrame(opts = {}) {
 				drawCard(wrist.g, lines.length ? lines : ['No score yet'], {
 					title: 'Game',
 					buttons: true,
-					strip,
+					hud: hudAt,
 					hover: hover[0] ?? hover[1],
 					menu: menuOffer ? (shellOpen ? 'open' : 'available') : null,
 					res: WRIST_RES
@@ -831,18 +677,8 @@ export function vrGamePanelFrame(opts = {}) {
 		wrist.mesh.visible = _up.dot(_v) > 0.35;
 	} else wrist.mesh.visible = false;
 
-	const stripLines = lines.filter(stripWorthy);
-	const bar = surface('vr-game-strip', 1024, 72, 0.9);
-	bar.mesh.visible = live && strip && stripLines.length > 0;
-	if (bar.mesh.visible && head) {
-		const sig = JSON.stringify(stripLines);
-		if (sig !== bar.sig) {
-			bar.sig = sig;
-			drawCard(bar.g, stripLines, { row: true });
-			bar.texture.needsUpdate = true;
-		}
-		headLocked(bar.mesh, head, 1.3, 0.36);
-	}
+	// 36 B12: the playing screen on the curved band (head / world); 'wrist' = the card only
+	const band = vrHudFrame({ head, overlay, runtime, live, dt: opts.dt, extra: fps, menu: !!menuOffer });
 
 	// ---- the announce banner (head-locked; shown in any mode while presenting)
 	const note = get(gameAnnouncement);
@@ -862,9 +698,8 @@ export function vrGamePanelFrame(opts = {}) {
 	return {
 		panel: board.mesh.visible ? entry?.screen?.id ?? null : null,
 		lines,
-		stripLines,
 		wrist: wrist.mesh.visible,
-		strip: bar.mesh.visible,
+		hud: band.visible,
 		banner: banner.mesh.visible
 	};
 }
@@ -946,7 +781,7 @@ export function pressPanelTarget(target, opts = {}) {
 			// the ONE Edit/Interact switch (30b-vr-modes' Y button calls it too); the store
 			// write is the whole of leaving Interact, the rest re-seats a desktop gizmo
 			setEditorMode('edit');
-		} else if (hit.footer === 'strip') setVrStrip(!stripOn());
+		} else if (hit.footer === 'hud') cycleVrHudPlacement();
 		return true;
 	}
 	const el = elementOf(hit);
@@ -1032,14 +867,14 @@ export function pokeFrame(index, tip) {
 	return pressed;
 }
 
-/** @returns {{presses: number, pokes: number, lastPress: string | null, edits: number, hover: (string | null)[], strip: boolean, hits: Record<string, HitRect[]>, overflow: string[]}} */
+/** @returns {{presses: number, pokes: number, lastPress: string | null, edits: number, hover: (string | null)[], hud: string, hits: Record<string, HitRect[]>, overflow: string[]}} */
 export function vrGamePanelDebug() {
 	/** @type {Record<string, HitRect[]>} */
 	const hits = {};
 	for (const [name, s] of Object.entries(surfaces)) hits[name] = s.hits.map((h) => ({ ...h }));
 	// 33 G5: the labels the visible surfaces had to cut to fit (a layout defect)
 	const overflow = Object.values(surfaces).flatMap((s) => (s.mesh.visible ? (s.overflow ?? []).map((t) => s.name + ': ' + t) : []));
-	return { ...debug, hover: [...hover], strip: stripOn(), hits, overflow };
+	return { ...debug, hover: [...hover], hud: get(vrHudPlacement), hits, overflow };
 }
 
 /** the surfaces' meshes (suites read visibility, poses and canvases) @param {string} name */
@@ -1051,6 +886,7 @@ export function vrGameSurface(name) {
 /** Hide everything (the session ended, the player left the game). */
 export function hideVrGamePanel() {
 	for (const s of Object.values(surfaces)) s.mesh.visible = false;
+	hideVrHud();
 	hover[0] = hover[1] = null;
 	panelYaw.value = NaN;
 }

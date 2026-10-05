@@ -30,8 +30,11 @@ import { writable, get } from 'svelte/store';
  *   defaults?: Record<string, any>, styleDefaults?: Record<string, any>,
  *   fields?: any[], style?: any[],
  *   interactive?: boolean, valued?: boolean,
- *   mount: (el: HTMLElement, element: any, runtime: any) => (() => void) | void
+ *   mount: (el: HTMLElement, element: any, runtime: any) => (() => void) | void,
+ *   vrText?: (element: any, runtime: any) => string
  * }} ModuleHudKind
+ * `vrText` (36 B12): what the element READS in a headset, where its DOM is invisible — the
+ * VR HUD band and board draw that string in the element's box (hudCanvasDraw.moduleVrText).
  */
 
 /** every registered module kind, in registration order.

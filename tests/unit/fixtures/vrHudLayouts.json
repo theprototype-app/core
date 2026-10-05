@@ -1,0 +1,1152 @@
+{
+ "source": "scenes origin/main d391a98, the playing HUD screen of every game (36-vr-hud)",
+ "games": {
+  "dungeon-realms": [
+   {
+    "id": "hud-panel",
+    "kind": "panel",
+    "anchor": "top-left",
+    "x": 16,
+    "y": 16,
+    "w": 290,
+    "h": 132,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "dr-gems",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 28,
+    "y": 22,
+    "w": 44,
+    "h": 34,
+    "label": "0",
+    "style": {
+     "size": 26
+    }
+   },
+   {
+    "id": "dr-need",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 66,
+    "y": 32,
+    "w": 150,
+    "h": 20,
+    "label": "/ 0 needed",
+    "style": {
+     "size": 13
+    }
+   },
+   {
+    "id": "dr-level",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 28,
+    "y": 58,
+    "w": 56,
+    "h": 18,
+    "label": "LEVEL 1",
+    "style": {
+     "size": 12
+    }
+   },
+   {
+    "id": "dr-levels",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 82,
+    "y": 58,
+    "w": 30,
+    "h": 18,
+    "label": "/ 5",
+    "style": {
+     "size": 12
+    }
+   },
+   {
+    "id": "dr-player-count",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 120,
+    "y": 58,
+    "w": 180,
+    "h": 18,
+    "label": "0 in the party",
+    "style": {
+     "size": 12
+    }
+   },
+   {
+    "id": "dr-objective",
+    "kind": "list",
+    "anchor": "top-left",
+    "x": 22,
+    "y": 80,
+    "w": 280,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 12
+    }
+   },
+   {
+    "id": "dr-players",
+    "kind": "list",
+    "anchor": "top-left",
+    "x": 22,
+    "y": 100,
+    "w": 280,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 11
+    }
+   },
+   {
+    "id": "dr-taken",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 28,
+    "y": 122,
+    "w": 270,
+    "h": 18,
+    "label": "0 gems taken",
+    "style": {
+     "size": 11
+    }
+   },
+   {
+    "id": "play-hint",
+    "kind": "text",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 12,
+    "w": 560,
+    "h": 20,
+    "label": "WASD / left stick walk · walk over gems · stand on the unsea",
+    "style": {
+     "size": 11
+    }
+   }
+  ],
+  "escape-room": [
+   {
+    "id": "es-room",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 18,
+    "y": 14,
+    "w": 260,
+    "h": 28,
+    "label": "",
+    "style": {
+     "size": 20
+    }
+   },
+   {
+    "id": "es-gems",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 18,
+    "y": 44,
+    "w": 260,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 14
+    }
+   },
+   {
+    "id": "es-clock",
+    "kind": "text",
+    "anchor": "top-right",
+    "x": 18,
+    "y": 58,
+    "w": 120,
+    "h": 28,
+    "label": "",
+    "style": {
+     "size": 22
+    }
+   },
+   {
+    "id": "es-inv",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 14,
+    "w": 520,
+    "h": 22,
+    "label": "",
+    "style": {
+     "size": 15
+    }
+   },
+   {
+    "id": "es-goal",
+    "kind": "text",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 18,
+    "w": 640,
+    "h": 22,
+    "label": "",
+    "style": {
+     "size": 14
+    }
+   }
+  ],
+  "football": [
+   {
+    "id": "sb-panel",
+    "kind": "panel",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 12,
+    "w": 400,
+    "h": 72,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "sb-red-block",
+    "kind": "panel",
+    "anchor": "top-center",
+    "x": -134,
+    "y": 18,
+    "w": 118,
+    "h": 60,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "sb-red-name",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": -134,
+    "y": 20,
+    "w": 100,
+    "h": 16,
+    "label": "RED",
+    "style": {
+     "size": 11
+    }
+   },
+   {
+    "id": "fb-red-score",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": -134,
+    "y": 34,
+    "w": 100,
+    "h": 42,
+    "label": "0",
+    "style": {
+     "size": 34
+    }
+   },
+   {
+    "id": "sb-blue-block",
+    "kind": "panel",
+    "anchor": "top-center",
+    "x": 134,
+    "y": 18,
+    "w": 118,
+    "h": 60,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "sb-blue-name",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 134,
+    "y": 20,
+    "w": 100,
+    "h": 16,
+    "label": "BLUE",
+    "style": {
+     "size": 11
+    }
+   },
+   {
+    "id": "fb-blue-score",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 134,
+    "y": 34,
+    "w": 100,
+    "h": 42,
+    "label": "0",
+    "style": {
+     "size": 34
+    }
+   },
+   {
+    "id": "fb-clock",
+    "kind": "list",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 24,
+    "w": 74,
+    "h": 34,
+    "label": "",
+    "style": {
+     "size": 26
+    }
+   },
+   {
+    "id": "sb-label",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 58,
+    "w": 62,
+    "h": 18,
+    "label": "FOOTBALL",
+    "style": {
+     "size": 10
+    }
+   },
+   {
+    "id": "fb-ticker",
+    "kind": "list",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 88,
+    "w": 400,
+    "h": 22,
+    "label": "",
+    "style": {
+     "size": 12
+    }
+   },
+   {
+    "id": "fb-sheet-play",
+    "kind": "list",
+    "anchor": "top-right",
+    "x": 16,
+    "y": 14,
+    "w": 380,
+    "h": 96,
+    "label": "",
+    "style": {
+     "size": 12
+    }
+   },
+   {
+    "id": "play-hint",
+    "kind": "text",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 12,
+    "w": 520,
+    "h": 20,
+    "label": "Knock the ball into the other gate  ·  first to 5 or 3:00  ·",
+    "style": {
+     "size": 11
+    }
+   }
+  ],
+  "jam-room": [
+   {
+    "id": "bars-read",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 14,
+    "w": 280,
+    "h": 30,
+    "label": "Bar 0 / 8",
+    "style": {
+     "size": 20
+    }
+   },
+   {
+    "id": "bars-bar",
+    "kind": "bar",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 50,
+    "w": 260,
+    "h": 10,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "beat-read",
+    "kind": "text",
+    "anchor": "top-right",
+    "x": 18,
+    "y": 14,
+    "w": 160,
+    "h": 26,
+    "label": "",
+    "style": {
+     "size": 16
+    }
+   },
+   {
+    "id": "jam-hint",
+    "kind": "text",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 70,
+    "w": 560,
+    "h": 24,
+    "label": "",
+    "style": {
+     "size": 14
+    }
+   }
+  ],
+  "marble-maze": [
+   {
+    "id": "mm-title",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 12,
+    "w": 360,
+    "h": 28,
+    "label": "",
+    "style": {
+     "size": 19
+    }
+   },
+   {
+    "id": "mm-coins",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 42,
+    "w": 420,
+    "h": 22,
+    "label": "",
+    "style": {
+     "size": 14
+    }
+   },
+   {
+    "id": "mm-clock",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 16,
+    "y": 14,
+    "w": 240,
+    "h": 26,
+    "label": "",
+    "style": {
+     "size": 20
+    }
+   },
+   {
+    "id": "mm-falls",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 16,
+    "y": 44,
+    "w": 200,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 13
+    }
+   },
+   {
+    "id": "mm-hint",
+    "kind": "text",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 12,
+    "w": 620,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 12
+    }
+   }
+  ],
+  "mini-golf": [
+   {
+    "id": "mg-title",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 12,
+    "w": 420,
+    "h": 28,
+    "label": "",
+    "style": {
+     "size": 20
+    }
+   },
+   {
+    "id": "mg-par",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": -90,
+    "y": 44,
+    "w": 160,
+    "h": 24,
+    "label": "",
+    "style": {
+     "size": 16
+    }
+   },
+   {
+    "id": "mg-strokes",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 90,
+    "y": 44,
+    "w": 160,
+    "h": 24,
+    "label": "",
+    "style": {
+     "size": 16
+    }
+   },
+   {
+    "id": "mg-total",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 90,
+    "y": 16,
+    "w": 260,
+    "h": 24,
+    "label": "",
+    "style": {
+     "size": 15
+    }
+   },
+   {
+    "id": "mg-tip",
+    "kind": "text",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 14,
+    "w": 640,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 13
+    }
+   }
+  ],
+  "sky-run": [
+   {
+    "id": "sr-hud-panel",
+    "kind": "panel",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 8,
+    "w": 420,
+    "h": 84,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "sr-title",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 12,
+    "w": 400,
+    "h": 26,
+    "label": "",
+    "style": {
+     "size": 18
+    }
+   },
+   {
+    "id": "sr-clock",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 38,
+    "w": 200,
+    "h": 30,
+    "label": "",
+    "style": {
+     "size": 26
+    }
+   },
+   {
+    "id": "sr-coins",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": -130,
+    "y": 68,
+    "w": 150,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 14
+    }
+   },
+   {
+    "id": "sr-cp",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 68,
+    "w": 150,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 13
+    }
+   },
+   {
+    "id": "sr-best",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 130,
+    "y": 68,
+    "w": 150,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 13
+    }
+   },
+   {
+    "id": "sr-count",
+    "kind": "text",
+    "anchor": "center",
+    "x": 0,
+    "y": -90,
+    "w": 200,
+    "h": 90,
+    "label": "",
+    "style": {
+     "size": 72
+    }
+   }
+  ],
+  "stars-room": [
+   {
+    "id": "lit-read",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 14,
+    "w": 280,
+    "h": 30,
+    "label": "",
+    "style": {
+     "size": 20
+    }
+   },
+   {
+    "id": "clock",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 48,
+    "w": 140,
+    "h": 22,
+    "label": "",
+    "style": {
+     "size": 13
+    }
+   },
+   {
+    "id": "touches-read-2",
+    "kind": "text",
+    "anchor": "top-right",
+    "x": 16,
+    "y": 14,
+    "w": 220,
+    "h": 24,
+    "label": "",
+    "style": {
+     "size": 14
+    }
+   },
+   {
+    "id": "board-2",
+    "kind": "list",
+    "anchor": "top-right",
+    "x": 16,
+    "y": 44,
+    "w": 180,
+    "h": 96,
+    "label": "",
+    "style": {
+     "size": 12
+    }
+   },
+   {
+    "id": "play-hint",
+    "kind": "text",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 12,
+    "w": 520,
+    "h": 20,
+    "label": "Light every star.  P: menu",
+    "style": {
+     "size": 11
+    }
+   }
+  ],
+  "target-toss": [
+   {
+    "id": "tt-title",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 12,
+    "w": 360,
+    "h": 28,
+    "label": "",
+    "style": {
+     "size": 19
+    }
+   },
+   {
+    "id": "tt-targets",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 42,
+    "w": 460,
+    "h": 22,
+    "label": "",
+    "style": {
+     "size": 14
+    }
+   },
+   {
+    "id": "tt-bar",
+    "kind": "bar",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 68,
+    "w": 300,
+    "h": 10,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "tt-clock",
+    "kind": "text",
+    "anchor": "top-right",
+    "x": 16,
+    "y": 14,
+    "w": 120,
+    "h": 26,
+    "label": "",
+    "style": {
+     "size": 20
+    }
+   },
+   {
+    "id": "tt-score",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 16,
+    "y": 14,
+    "w": 220,
+    "h": 26,
+    "label": "",
+    "style": {
+     "size": 20
+    }
+   },
+   {
+    "id": "tt-combo",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 16,
+    "y": 44,
+    "w": 220,
+    "h": 24,
+    "label": "",
+    "style": {
+     "size": 17
+    }
+   },
+   {
+    "id": "tt-charge",
+    "kind": "bar",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 44,
+    "w": 220,
+    "h": 10,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "tt-hint",
+    "kind": "text",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 14,
+    "w": 620,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 12
+    }
+   }
+  ],
+  "towers": [
+   {
+    "id": "tw-title",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 12,
+    "w": 360,
+    "h": 28,
+    "label": "",
+    "style": {
+     "size": 19
+    }
+   },
+   {
+    "id": "tw-goal",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 42,
+    "w": 420,
+    "h": 22,
+    "label": "",
+    "style": {
+     "size": 14
+    }
+   },
+   {
+    "id": "tw-bar",
+    "kind": "bar",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 68,
+    "w": 300,
+    "h": 10,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "tw-clock",
+    "kind": "text",
+    "anchor": "top-right",
+    "x": 16,
+    "y": 14,
+    "w": 120,
+    "h": 26,
+    "label": "",
+    "style": {
+     "size": 20
+    }
+   },
+   {
+    "id": "tw-pieces",
+    "kind": "text",
+    "anchor": "top-right",
+    "x": 16,
+    "y": 44,
+    "w": 320,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 12
+    }
+   },
+   {
+    "id": "tw-hold",
+    "kind": "text",
+    "anchor": "center",
+    "x": 0,
+    "y": -120,
+    "w": 360,
+    "h": 40,
+    "label": "",
+    "style": {
+     "size": 28
+    }
+   },
+   {
+    "id": "tw-rule",
+    "kind": "text",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 12,
+    "w": 620,
+    "h": 20,
+    "label": "",
+    "style": {
+     "size": 12
+    }
+   }
+  ],
+  "untangle": [
+   {
+    "id": "hud-panel",
+    "kind": "panel",
+    "anchor": "top-left",
+    "x": 16,
+    "y": 64,
+    "w": 260,
+    "h": 118,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "ut-level",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 30,
+    "y": 72,
+    "w": 230,
+    "h": 30,
+    "label": "LEVEL 1",
+    "style": {
+     "size": 22
+    }
+   },
+   {
+    "id": "ut-crossings",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 30,
+    "y": 104,
+    "w": 230,
+    "h": 22,
+    "label": "Crossings: 0",
+    "style": {
+     "size": 15
+    }
+   },
+   {
+    "id": "ut-time",
+    "kind": "mod-untangle-stats",
+    "anchor": "top-left",
+    "x": 30,
+    "y": 128,
+    "w": 230,
+    "h": 22,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "ut-counter",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 30,
+    "y": 154,
+    "w": 230,
+    "h": 20,
+    "label": "0 untangled",
+    "style": {
+     "size": 12
+    }
+   },
+   {
+    "id": "play-hint",
+    "kind": "text",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 12,
+    "w": 620,
+    "h": 20,
+    "label": "Drag a dot, or click it then click where it goes · on the gl",
+    "style": {
+     "size": 11
+    }
+   }
+  ],
+  "waves": [
+   {
+    "id": "wv-banner",
+    "kind": "panel",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 10,
+    "w": 190,
+    "h": 86,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "wv-wave",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 14,
+    "w": 170,
+    "h": 32,
+    "label": "Wave 1",
+    "style": {
+     "size": 24
+    }
+   },
+   {
+    "id": "wv-level",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 46,
+    "w": 170,
+    "h": 20,
+    "label": "LEVEL 1",
+    "style": {
+     "size": 12
+    }
+   },
+   {
+    "id": "wv-left",
+    "kind": "text",
+    "anchor": "top-center",
+    "x": 0,
+    "y": 66,
+    "w": 170,
+    "h": 22,
+    "label": "",
+    "style": {
+     "size": 13
+    }
+   },
+   {
+    "id": "wv-score-bg",
+    "kind": "panel",
+    "anchor": "top-left",
+    "x": 16,
+    "y": 12,
+    "w": 180,
+    "h": 70,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "wv-score-label",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 30,
+    "y": 18,
+    "w": 150,
+    "h": 18,
+    "label": "SCORE",
+    "style": {
+     "size": 11
+    }
+   },
+   {
+    "id": "wv-score",
+    "kind": "text",
+    "anchor": "top-left",
+    "x": 30,
+    "y": 38,
+    "w": 160,
+    "h": 36,
+    "label": "0",
+    "style": {
+     "size": 28
+    }
+   },
+   {
+    "id": "wv-hp-label",
+    "kind": "text",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 46,
+    "w": 340,
+    "h": 18,
+    "label": "CRYSTAL",
+    "style": {
+     "size": 11
+    }
+   },
+   {
+    "id": "wv-hp",
+    "kind": "bar",
+    "anchor": "bottom-center",
+    "x": 0,
+    "y": 24,
+    "w": 340,
+    "h": 20,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "wv-ability-label",
+    "kind": "list",
+    "anchor": "bottom-right",
+    "x": 20,
+    "y": 62,
+    "w": 200,
+    "h": 24,
+    "label": "",
+    "style": {
+     "size": 11
+    }
+   },
+   {
+    "id": "wv-ability",
+    "kind": "bar",
+    "anchor": "bottom-right",
+    "x": 20,
+    "y": 46,
+    "w": 200,
+    "h": 14,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "wv-heat-label",
+    "kind": "text",
+    "anchor": "bottom-right",
+    "x": 20,
+    "y": 30,
+    "w": 200,
+    "h": 14,
+    "label": "HEAT",
+    "style": {
+     "size": 9
+    }
+   },
+   {
+    "id": "wv-heat",
+    "kind": "bar",
+    "anchor": "bottom-right",
+    "x": 20,
+    "y": 18,
+    "w": 200,
+    "h": 10,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "wv-crosshair",
+    "kind": "crosshair",
+    "anchor": "center",
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 24,
+    "label": "",
+    "style": {}
+   },
+   {
+    "id": "wv-kills",
+    "kind": "list",
+    "anchor": "top-right",
+    "x": 16,
+    "y": 14,
+    "w": 220,
+    "h": 100,
+    "label": "",
+    "style": {
+     "size": 13
+    }
+   }
+  ]
+ }
+}

@@ -8,6 +8,26 @@ import { graphOf } from '../stores/flowStore';
 import { moduleValueTypes, moduleNodeInputs } from './moduleNodeIO';
 import { scriptSocketType } from './scriptIO'; // 34 D3: a Script node's DECLARED sockets
 
+/**
+ * 36 (U10): a BEHAVIOUR node's sockets are declared in its CODE (`inputs`, `outputs`), which only
+ * the analyzer can read — and the analyzer (acorn) loads with the behaviours. behaviours/app.js
+ * registers the reader here, so this leaf stays light; before it does, a behaviour has no typed
+ * sockets (nothing can be wired to one before the behaviours start anyway).
+ * @type {null | ((node: any) => {inputs: {name: string, type: string}[], outputs: {name: string, type: string}[]} | null)}
+ */
+let behaviourSocketsOf = null;
+/** @param {(node: any) => {inputs: {name: string, type: string}[], outputs: {name: string, type: string}[]} | null} fn */
+export function registerBehaviourSockets(fn) {
+	behaviourSocketsOf = fn;
+}
+/** a behaviour node's declared socket type, or null @param {any} node @param {string|null|undefined} handle @param {'input'|'output'} dir */
+export function behaviourSocketType(node, handle, dir) {
+	if (node?.type !== 'behaviour' || !handle || !behaviourSocketsOf) return null;
+	const sockets = behaviourSocketsOf(node);
+	const list = dir === 'input' ? sockets?.inputs : sockets?.outputs;
+	return list?.find((s) => s.name === handle)?.type ?? null;
+}
+
 /** output type of a node's source handle @type {Record<string,string>} */
 const OUTPUT = {
 	number: 'number', slider: 'number', time: 'number', loop: 'number', timer: 'number',
@@ -312,6 +332,8 @@ export function isValidFlowConnection(connection, nodes) {
 			? source.data?.vtype ?? 'number'
 			: // 34 D3: a script output's type is DATA (its declaration), like flowinput's vtype
 				scriptSocketType(source.type, source.data, connection.sourceHandle, 'output') ??
+				// 36 (U10): a behaviour's outputs are declared in its code
+				behaviourSocketType(source, connection.sourceHandle, 'output') ??
 				outputHandleType(source.type, connection.sourceHandle);
 	if (source.type === 'objectflow') {
 		// embedded outputs carry whatever the flow's outputs compute — untyped v1,
@@ -320,6 +342,7 @@ export function isValidFlowConnection(connection, nodes) {
 	}
 	const to = resolvedInputType(target, connection.targetHandle);
 	if (to === 'any') return from !== 'effect'; // flow outputs accept any value
+	if (from === 'any') return to !== 'effect'; // 36 (U10): an untyped value (a behaviour's text/list state) feeds any value input
 	return canConnect(from, to);
 }
 
@@ -333,7 +356,7 @@ export function resolvedInputType(targetNode, handleId) {
 	if (!targetNode) return 'number';
 	if (targetNode.type === 'flowoutput') return 'any';
 	// 34 D3: a v2 Script node's inputs are declared in its data
-	const declared = scriptSocketType(targetNode.type, targetNode.data, handleId, 'input');
+	const declared = scriptSocketType(targetNode.type, targetNode.data, handleId, 'input') ?? behaviourSocketType(targetNode, handleId, 'input');
 	if (declared) return declared;
 	if (targetNode.type === 'objectflow') {
 		const graph = graphOf(targetNode.data?.flowUuid ?? '');

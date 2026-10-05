@@ -1374,6 +1374,39 @@ export function gamePausedNow() {
 	return get(gameState).state === 'paused';
 }
 
+/** 36 (U10): `<node>|<input>` -> the stamp a behaviour input last acted on @type {Map<string, number>} */
+const behaviourActed = new Map();
+
+/**
+ * 36 (U10): a trigger wired into a behaviour node's INPUT socket runs that input's handler — on a
+ * FRESH stamp edge only, inside the actionSeenAt family (a stamp older than the node, or one that
+ * arrived as history, is consumed and refused), so a press seen by every peer is offered once per
+ * peer and the behaviour runtime runs it on the authority alone.
+ * @param {number} time @param {any} ctx
+ */
+function updateBehaviourInputs(time, ctx) {
+	if (!behavioursRef) return;
+	const live = new Set();
+	for (const node of nodes) {
+		if (node.type !== 'behaviour') continue;
+		/** @type {Set<string>} */
+		const handles = new Set();
+		for (const edge of edgesInto(edges, node.id)) if (edge.targetHandle) handles.add(edge.targetHandle);
+		if (!handles.size) continue;
+		seeActionNode(node, time);
+		for (const handle of handles) {
+			const key = node.id + '|' + handle;
+			live.add(key);
+			const stamp = handleStamp(node, handle, ctx);
+			if (stamp === null || behaviourActed.get(key) === stamp) continue;
+			behaviourActed.set(key, stamp);
+			if (staleTrigger(node, stamp)) continue;
+			behavioursRef.behaviourInput?.(node.id, handle);
+		}
+	}
+	for (const key of [...behaviourActed.keys()]) if (!live.has(key)) behaviourActed.delete(key);
+}
+
 /** @param {number} time @param {any} ctx */
 function updateGameNodes(time, ctx) {
 	const game = get(gameState);
@@ -1740,6 +1773,9 @@ function stampOfSource(edge, ctx, seen) {
 	const source = nodeById(nodes, edge.source);
 	if (source && SCHEDULED_TYPES.includes(source.type))
 		return scheduledFireAt(source, edge.sourceHandle, ctx, seen);
+	// 36 (U10): a NAMED event output keeps its own log entry, `<node>#<output>` (a behaviour's
+	// `this.emit('holeSunk')`) — several events on one node, each its own stamp
+	if (edge.sourceHandle && source?.type === 'behaviour') return ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null;
 	return ctx?.triggers?.[edge.source]?.lastT ?? null;
 }
 
@@ -2873,6 +2909,10 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// the embedded node exposes the target flow's outputs as named handles,
 			// computed at the END of the previous tick (one-frame latency)
 			return { __handles: graphOutputs[d.flowUuid] ?? {} };
+		case 'behaviour':
+			// 36 (U10): a behaviour's VALUE outputs are its replicated state fields (the `bhv`
+			// document every peer holds), read by handle like objectflow's
+			return { __handles: behavioursRef?.behaviourState?.(node.id) ?? {} };
 		case 'script': {
 			// 34 D3: a Script node with declared OUTPUTS is a value node — a pure function of
 			// its declared inputs and the synced clock, read through a handle map exactly like
@@ -3019,6 +3059,11 @@ function syncedNow() {
  * @param {any} [at] 31: where it happened ([x, y, z], objects-group frame), for a received clap
  */
 export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null) {
+	// 36 (U10): `<node>#<output>` is a named output's own log entry; the PUSH consumers (a Counter,
+	// a Latch, a Once wired to that output) are found through the node's edges from that handle
+	const hash = typeof nodeId === 'string' ? nodeId.indexOf('#') : -1;
+	const walkId = hash > 0 ? nodeId.slice(0, hash) : nodeId;
+	const walkHandle = hash > 0 ? nodeId.slice(hash + 1) : sourceHandle;
 	// 31: a trigger may carry WHERE it happened (the clap's meeting point). Kept beside the
 	// log rather than in it, so the log's shape, its merge and its late-joiner reply are
 	// untouched — history fires nothing, so a joiner needs no point. A local fire records
@@ -3034,8 +3079,8 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
 		// derived state agrees without being sent. What it costs is a late joiner,
 		// whose trigger log starts empty; each case below says what that means for it.
 		edges.forEach((edge) => {
-			if (edge.source !== nodeId) return;
-			if (sourceHandle !== null && (edge.sourceHandle ?? null) !== sourceHandle) return;
+			if (edge.source !== walkId) return;
+			if (walkHandle !== null && (edge.sourceHandle ?? null) !== walkHandle) return;
 			const target = nodeById(nodes, edge.target);
 			if (!target) return;
 			const handle = edge.targetHandle ?? null;
@@ -3848,6 +3893,8 @@ function runTick(now) {
 	// 34 R2: the kit's authority turns due moments into changes; everyone re-sends what was
 	// never acknowledged (after the game nodes, so a press this frame is already asked)
 	tickKit();
+	// 36 (U10): triggers wired INTO a behaviour's declared inputs run its handlers (authority)
+	updateBehaviourInputs(time, ctx);
 	// 34 R3 (D1): behaviours after the kit — the authority's due timers, every handler's state flush
 	behavioursRef?.tickBehaviours();
 	// 21-E6: the character controller, beside the game shell and for the same reason —
@@ -4135,6 +4182,8 @@ export function startFlowRuntime() {
 	import('./behaviours/app.js')
 		.then((m) => {
 			behavioursRef = m;
+			// 36 (U10): `this.emit(name)` = a replicated pulse on the node's output `name`
+			m.setBehaviourEmitter?.((/** @type {string} */ id, /** @type {string} */ name) => applyNodeTrigger(id + '#' + name, syncedNow(), true));
 			m.startBehaviours();
 		})
 		.catch((error) => console.warn('behaviours failed to start', error));

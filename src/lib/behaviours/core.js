@@ -29,7 +29,7 @@
 // fired (replicated in the document, so every peer's view glows), kit calls, state writes,
 // method calls, errors.
 
-import { paramsOf, initialState, methodsOf, problems, CONTEXT_MEMBERS } from './define.js';
+import { paramsOf, initialState, methodsOf, problems, inputsOf, outputsOf, CONTEXT_MEMBERS } from './define.js';
 import { resolveEvent, grabPayload, kitPayload } from './events.js';
 
 /** the wire type */
@@ -86,8 +86,11 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
  *   lastPeerChange?: () => number,
  *   tagsOf?: (uuid: string) => string[],
  *   findObjects?: (pattern: string) => {uuid: string, name: string, pos: number[], tags: string[]}[],
- *   warn?: (msg: string, detail?: any) => void
+ *   warn?: (msg: string, detail?: any) => void,
+ *   emit?: (id: string, name: string, payload?: any) => void
  * }} BehaviourHost
+ * `emit` (36 U10): `this.emit(name)` on the authority — the app pulses the node's event output
+ * `name` (a replicated nodetrigger), so a flow wired to it acts on every peer.
  */
 
 /** @param {BehaviourHost} host */
@@ -333,7 +336,23 @@ export function createBehaviourRuntime(host) {
 			/** scene objects whose NAME (or a tag) matches a glob: `[{uuid, name, pos, tags}]` @param {string} pattern */
 			findAll: (pattern) => host.findObjects?.(String(pattern ?? '')) ?? [],
 			/** the first of findAll, or null @param {string} pattern */
-			find: (pattern) => ctx.findAll(pattern)[0] ?? null
+			find: (pattern) => ctx.findAll(pattern)[0] ?? null,
+			/**
+			 * 36 (U10): fire the node's EVENT output `name` (declared in `outputs`) — on the authority,
+			 * where handlers run; the pulse replicates, so whatever is wired to it acts on every peer.
+			 * @param {string} name @param {any} [payload]
+			 */
+			emit(name, payload) {
+				const key = String(name ?? '');
+				if (!host.isAuthority()) {
+					warn(inst.name + ': emit("' + key + '") is for the authority (a local handler cannot fire outputs)');
+					return false;
+				}
+				if (!outputsOf(inst.def).includes(key)) warn(inst.name + ': emit("' + key + '") — add it to outputs to wire it');
+				inst.trace.calls['emit.' + key] = { at: host.now(), n: (inst.trace.calls['emit.' + key]?.n ?? 0) + 1 };
+				host.emit?.(inst.id, key, payload);
+				return true;
+			}
 		};
 		for (const m of methodsOf(inst.def)) {
 			ctx[m] = (/** @type {any[]} */ ...a) => {
@@ -393,13 +412,15 @@ export function createBehaviourRuntime(host) {
 		instances.set(id, inst);
 		// the events: each `on` key through the kit face
 		const specs = host.specs?.() ?? [];
+		const inputs = inputsOf(def);
 		for (const [name, fn] of Object.entries(def.on ?? {})) {
-			const ev = resolveEvent(name, specs);
+			const ev = resolveEvent(name, specs, inputs);
 			if (!ev) {
 				inst.problems.push('on.' + name + ': no such event');
 				continue;
 			}
 			if (ev.name === 'start') continue; // the runtime's own (tick)
+			if (ev.input) continue; // 36 (U10): a wired input — `input()` dispatches it
 			const label = 'on.' + name;
 			if (ev.name === 'grabRequest') {
 				const sub = opts.kit?.rules?.onGrabRequest;
@@ -567,6 +588,24 @@ export function createBehaviourRuntime(host) {
 		onChange(fn) {
 			listeners.add(fn);
 			return () => listeners.delete(fn);
+		},
+		/**
+		 * 36 (U10): a flow trigger reached the node's input `name` (flowRuntime, every peer, once per
+		 * fresh stamp) — its `on.<name>` handler runs on the authority. @param {string} id
+		 * @param {string} name @param {any} [payload] @returns {boolean} false = no such input
+		 */
+		input(id, name, payload = {}) {
+			const inst = instances.get(id);
+			if (!inst || !inputsOf(inst.def).includes(name)) return false;
+			const fn = inst.def.on?.[name];
+			if (typeof fn !== 'function') return false;
+			dispatch(inst, 'on.' + name, fn, [payload]);
+			return true;
+		},
+		/** 36 (U10): the live state of an instance, by reference (flowRuntime's value outputs read it;
+		 * never write it) @param {string} id */
+		stateOf(id) {
+			return instances.get(id)?.state ?? parked.get(id)?.state ?? null;
 		},
 		/** run a method by name from outside (tests, the console): one dispatch @param {string} id @param {string} method @param {...any} args */
 		call(id, method, ...args) {

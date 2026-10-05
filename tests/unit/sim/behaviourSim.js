@@ -50,7 +50,9 @@ export function createBehaviourSim(opts = {}) {
 				objects
 					.filter((o) => glob(pattern, o.name) || (o.tags ?? []).some((t) => glob(pattern, t)))
 					.map((o) => ({ uuid: o.uuid, name: o.name, pos: [...o.pos], tags: [...(o.tags ?? [])] })),
-			warn: (msg) => (p.warnings ??= []).push(msg)
+			warn: (msg) => (p.warnings ??= []).push(msg),
+			// 36 (U10): what `this.emit(name)` asks the app to pulse, recorded per peer
+			emit: (id, name, payload) => (p.emits ??= []).push({ id, name, payload, at: sim.now() })
 		});
 		/** load (or reload, with new source) a behaviour file on THIS peer @param {string} id @param {string} source */
 		p.loadBehaviour = async (id, source) => {

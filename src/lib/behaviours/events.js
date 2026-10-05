@@ -8,6 +8,8 @@
 //   '<piece>.<event>'  any kit event by its spec name ('round.started', 'health.died')
 //   <piece><Event>     the same, camel-cased ('roundStarted', 'spawnerEmptied')
 //   an alias           the short names the proposal's examples use (roundStart, died, …)
+//   a declared input   36 (U10): a name in the definition's `inputs` list — a flow trigger wired
+//                      into the node's socket of that name (key `input.<name>`, runs on the authority)
 //
 // WHERE A HANDLER RUNS: on the authority only (the kit's single writer), except a LOCAL event
 // (grabRequest, and spec events marked `local: true` such as rules.refused / score.newBest),
@@ -66,10 +68,12 @@ export const SPECIAL_EVENTS = {
 /**
  * Resolve one `on` key against the kit specs.
  * @param {string} name @param {any[]} specs the kit's specs (kit.specs())
+ * @param {string[]} [inputs] 36 (U10): the definition's declared `inputs` (wired event sockets)
  * @returns {{name: string, key: string, piece: string | null, event: string | null, local: boolean,
- *   label: string, payload: Record<string, string>} | null} null = unknown event
+ *   label: string, payload: Record<string, string>, input?: boolean} | null} null = unknown event
  */
-export function resolveEvent(name, specs) {
+export function resolveEvent(name, specs, inputs = []) {
+	if (inputs.includes(name) && !(name in SPECIAL_EVENTS)) return { name, key: 'input.' + name, piece: null, event: null, local: false, label: 'On ' + name + ' (wired in)', payload: {}, input: true };
 	const special = /** @type {Record<string, {label: string, local: boolean}>} */ (SPECIAL_EVENTS)[name];
 	if (special)
 		return { name, key: name, piece: null, event: null, local: special.local, label: special.label, payload: { ...(/** @type {any} */ (PAYLOAD_TYPES)[name] ?? {}) } };

@@ -58,7 +58,8 @@ export async function lifecycleEnv() {
 		kitRuntime,
 		modelLoader,
 		coreModuleIndex,
-		touchActions
+		touchActions,
+		engines
 	] = await Promise.all([
 		import('../moduleSDK.js'),
 		import('./index.js'),
@@ -100,7 +101,8 @@ export async function lifecycleEnv() {
 		tryLoad(import('../modelLoader')),
 		// the bundled modules, for the leak suite's load/unload cycles (a .svelte import: browser only)
 		tryLoad(import('../../modules/index.js')),
-		tryLoad(import('../touchActions'))
+		tryLoad(import('../touchActions')),
+		tryLoad(import('../behaviours/engines.js'))
 	]);
 	const browser = typeof window !== 'undefined' && typeof document !== 'undefined';
 	return {
@@ -148,7 +150,8 @@ export async function lifecycleEnv() {
 			musicClock,
 			kitRuntime,
 			modelLoader,
-			touchActions
+			touchActions,
+			engines
 		}
 	};
 }

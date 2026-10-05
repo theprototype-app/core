@@ -56,7 +56,10 @@ async function main() {
 	const peer = await h.setupPage(browser, 'eyes', { context: { viewport: { width: 1280, height: 720 } } });
 	const page = peer.page;
 	try {
+		// a CORE module (Towers, the 35 games) is already loaded: only user modules need a zip
+		const loaded = await page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id));
 		for (const id of modules) {
+			if (loaded.includes(id)) continue;
 			const zip = MODULES ? path.join(MODULES, id + '.zip') : h.moduleZipPath(id);
 			if (!fs.existsSync(zip)) throw new Error(`the scene needs module ${id}: no ${zip} (--modules <dir>)`);
 			await page.evaluate(() => window.__stores.modulesOpen.set(true));

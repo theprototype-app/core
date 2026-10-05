@@ -2,9 +2,15 @@
 // A CORE module (the towers precedent: it reaches core internals through PRIMED dynamic imports),
 // dormant in every scene that does not carry the `Target Toss game` marker object.
 //
+// 36 (U10) THE RULES are the "Target Toss rules" behaviour on the Main graph
+// (scripts/templates/rules/target-toss.rules.js): the stage table, what a hit is worth, combos,
+// when a stage is cleared, stars, and the menu buttons. This file is the ENGINE they drive through
+// the `toss` piece: `kit.toss.setStage(def)` (deal it), `setVars` (the replicated state the
+// targets/HUD draw from), and the events `toss.hit` / `toss.timeUp`.
+//
 // WHO DECIDES (golden rule 8): ONE authority — the physics initiator, else the lowest peer id —
-// deals the balls and cans (transient duplicates of the templates parked under the floor), judges
-// hits ~every frame, scores through kit.score and ends the stage through kit.round. Everything
+// deals the balls and cans (transient duplicates of the templates parked under the floor) and
+// measures hits ~every frame; the rules (on the kit's authority, the same peer) score them. Everything
 // else is DERIVED per peer: the swinging/pop-up/cart targets are module EFFECTS (kinematic, a pure
 // function of the clock and the replicated game variables), the HUD words come from one value
 // node. Two messages: `throw` (a desktop charge-throw forwarded to the authority) and `fx` (the
@@ -16,16 +22,15 @@
 // it the velocity (physics.applyThrow, the peer-throw path).
 
 import {
-	STAGES, stageById, POPUP_COUNT, SWING_COUNT, BALL_SLOTS, POINTS, COMBO_WINDOW, COMBO_MAX,
-	pyramid, canCount, targetCount, starsFor, starsText, formatTime, popupsUp, swingOffset, cartOffset
+	POPUP_COUNT, SWING_COUNT, BALL_SLOTS, pyramid, canCount, targetCount, starsText, formatTime, popupsUp, swingOffset, cartOffset
 } from './stages.js';
+/** the stage buttons the rules' inputs answer (the template wires them) */
+const STAGE_COUNT = 5;
 
 const MARKER = 'Target Toss game';
 const BALL_TEMPLATE = 'Ball template';
 const CAN_TEMPLATE = 'Can template';
 const SHELF = 'Ball shelf';
-/** a button stamp older than this (s) when first noticed is history */
-const FRESH_PRESS = 2.5;
 /** the hit test: a ball this close to a target's centre, moving at least this fast */
 const HIT_RADIUS = { swing: 0.42, popup: 0.36, cart: 0.5 };
 const HIT_SPEED = 1.2;
@@ -38,6 +43,7 @@ const THROW_MAX = 16;
 /** game variables (the replicated game singleton), written by the authority only */
 const V = {
 	stage: 'ttStage',
+	def: 'ttDef', // the stage definition the rules handed over (an object)
 	status: 'ttStatus', // 0 none, 1 playing, 2 won, 3 lost
 	dealt: 'ttDealt',
 	cans: 'ttCans', // cans still on the tables
@@ -55,7 +61,7 @@ const STATUS = { none: 0, playing: 1, won: 2, lost: 3 };
 export default {
 	id: 'targettoss',
 	name: 'Target Toss',
-	version: '1.0.0',
+	version: '2.0.0',
 	description: 'The Target Toss game: throw balls at tin-can pyramids, swinging targets, pop-ups and a moving cart — five stages, combos, stars saved on this device.',
 
 	/** @param {any} api */
@@ -82,16 +88,13 @@ export default {
 		const kit = api.kit;
 		kit.score.useGame('targettoss');
 
-		/** @type {Map<string, number>} */ const seenStamps = new Map();
-		/** authority-local: the cans already scored, the last hit time, per-ball rest timers */
+		/** authority-local: the cans already reported down, the last hit time, per-ball rest timers */
 		/** @type {Set<string>} */ const scored = new Set();
 		/** @type {Map<string, number>} */ const restSince = new Map();
 		/** @type {Map<string, number>} */ const lastHitAt = new Map();
-		let lastComboAt = -99;
 		let judgedRound = -1;
 		let announcedRound = -1;
 		let finishedRound = -1;
-		let starting = false;
 		/** desktop charge (local) */
 		let chargeStart = 0;
 		let charging = false;
@@ -109,7 +112,11 @@ export default {
 		const setV = (name, value) => {
 			if (v(name, NaN) !== value) api.game.setVar(name, value);
 		};
-		const stage = () => stageById(v(V.stage, 0));
+		/** the stage in play: the definition the rules handed over (`kit.toss.setStage`) */
+		const stage = () => {
+			const def = api.game.getVar(V.def, null);
+			return def && typeof def === 'object' && Number(def.id) === v(V.stage, 0) ? def : null;
+		};
 		const phase = () => String(kit.round.phase?.() ?? '');
 		const roundNo = () => Number(kit.round.number?.() ?? 0) || 0;
 		const elapsed = () => Number(kit.round.elapsed?.() ?? 0) || 0;
@@ -153,43 +160,55 @@ export default {
 				transient.removeTransientObject(o.uuid);
 			}
 		};
-		/** @param {any} s */
-		const resetVars = (s) => {
-			setV(V.stage, s.id);
-			setV(V.status, STATUS.playing);
-			for (const k of [V.swing, V.pops, V.popDown, V.cart, V.combo, V.stars, V.time, V.score]) setV(k, 0);
-			setV(V.cans, canCount(s));
-			setV(V.dealt, -1);
-			scored.clear();
-			restSince.clear();
-			lastHitAt.clear();
-			lastComboAt = -99;
-		};
-		/** @param {number} id @param {boolean=} force skip the unlock rule (suites, evidence) */
-		const startStage = (id, force = false) => {
-			const s = stageById(id);
-			if (!s || !gs) return false;
-			const row = kit.levels.table?.().find((/** @type {any} */ r) => r.id === String(id));
-			if (row?.locked && !force) {
-				api.announce('Stage ' + id + ' is locked', { sub: 'Clear stage ' + (id - 1) + ' first', ms: 2200, color: '#ffb86b' });
-				return false;
+		// ---- the engine piece the rules drive -------------------------------------------------
+		const toss = api.kit.provide(
+			{
+				piece: 'toss',
+				group: 'Target Toss (engine)',
+				calls: [
+					{ name: 'setStage', kind: 'action', label: 'Set the stage up', doc: 'The stage definition to deal (cans on their tables, swingers, pop-ups, the cart) — every peer draws from it.', args: [{ key: 'stage', type: 'object' }], node: false },
+					{ name: 'setVars', kind: 'action', label: 'Write the stage state', doc: 'Writes these fields (stage, status, cans, swing, pops, popDown, cart, combo, stars, time, score) into the replicated game variables.', args: [{ key: 'patch', type: 'object' }], node: false },
+					{ name: 'tell', kind: 'action', label: 'Tell every player', doc: 'A banner on every screen.', args: [{ key: 'text', type: 'string' }, { key: 'sub', type: 'string' }], node: false },
+					{ name: 'vars', kind: 'value', label: 'The stage state', vtype: 'any', node: false },
+					{ name: 'hit', kind: 'event', label: 'On a target going down', node: false },
+					{ name: 'timeUp', kind: 'event', label: 'On the clock running out', node: false }
+				]
+			},
+			{
+				setStage: (/** @type {any} */ def) => {
+					if (!def || typeof def !== 'object') return;
+					api.game.setVar(V.def, JSON.parse(JSON.stringify(def)));
+					setV(V.dealt, -1);
+					scored.clear();
+					restSince.clear();
+					lastHitAt.clear();
+				},
+				setVars: (/** @type {any} */ patch) => {
+					for (const [k, value] of Object.entries(patch ?? {})) {
+						const name = /** @type {any} */ (V)[k];
+						const n = Number(value);
+						if (name && k !== 'def' && Number.isFinite(n)) setV(name, n);
+					}
+					if (Number(patch?.status) === 0) clearCopies();
+				},
+				tell: (/** @type {any} */ text, /** @type {any} */ sub) => {
+					const msg = { op: 'tell', text: String(text ?? ''), sub: String(sub ?? '') };
+					api.send(msg);
+					tellHere(msg);
+				},
+				vars: () => Object.fromEntries(Object.entries(V).filter(([k]) => k !== 'def').map(([k, name]) => [k, v(name)]))
 			}
-			resetVars(s);
-			kit.levels.select(String(id));
-			kit.round.configure(2, s.limit, 'lose', 2);
-			starting = true;
-			try {
-				kit.round.restart();
-			} finally {
-				starting = false;
-			}
-			return true;
+		);
+		/** @param {any} msg */
+		const tellHere = (msg) => {
+			if (msg?.text) api.announce(String(msg.text), { sub: String(msg.sub ?? ''), ms: 2400, color: '#ffd45e' });
 		};
-		const toMenu = () => {
-			setV(V.status, STATUS.none);
-			setV(V.stage, 0);
-			kit.round.toMenu();
-			clearCopies();
+		/** the rules node on Main (the suites call its methods) */
+		const rulesNode = () => api.flow.nodes('behaviour').find((/** @type {any} */ n) => /Target Toss rules/.test(String(n.data?.name ?? n.data?.label ?? '')))?.id ?? null;
+		/** @param {string} method @param {any[]} args */
+		const callRules = async (method, ...args) => {
+			const m = await import('../../lib/behaviours/app.js');
+			return m.behavioursDebug?.().call(rulesNode(), method, ...args);
 		};
 
 		/** @param {string} templateName @param {number[]} at */
@@ -227,19 +246,13 @@ export default {
 		};
 
 		// ---- the judge (authority, the stepping peer) ----------------------------------------
-		/** @param {string} key @param {number} points @param {number[]} at @param {string} kind */
-		const score = (key, points, at, kind) => {
-			const t = elapsed();
-			const combo = t - lastComboAt <= COMBO_WINDOW ? Math.min(COMBO_MAX, v(V.combo, 0) + 1) : 1;
-			lastComboAt = t;
-			setV(V.combo, combo);
-			const pts = points * combo;
-			setV(V.score, v(V.score) + pts);
-			kit.score.add(pts);
-			const fx = { op: 'fx', kind, at, pts, combo };
+		/** a target went down: the moment on every screen, the rules score it (authority copy)
+		 * @param {string} kind @param {number} index @param {number[]} at @param {number} [slot] */
+		const reportHit = (kind, index, at, slot = -1) => {
+			const fx = { op: 'fx', kind, at };
 			api.send(fx);
 			moment(fx);
-			void key;
+			toss.emit('hit', { kind, index, at, slot });
 		};
 		/** @param {any} s */
 		const judge = (s) => {
@@ -249,6 +262,7 @@ export default {
 			// the cans: on a table = inside its box in x/z and above its top; anything else is down
 			const tables = s.cans.map((/** @type {any} */ c) => byName(c.table)).filter(Boolean).map((/** @type {any} */ o) => worldBox(o));
 			let standing = 0;
+			/** @type {number[][]} */ const down = [];
 			for (const can of cans()) {
 				const p = can.position;
 				const on = tables.some((/** @type {any} */ b) => p.x >= b.min.x - 0.02 && p.x <= b.max.x + 0.02 && p.z >= b.min.z - 0.02 && p.z <= b.max.z + 0.02 && p.y > b.max.y);
@@ -258,10 +272,12 @@ export default {
 				if (on && upright && !scored.has(can.uuid)) standing++;
 				else if (!scored.has(can.uuid)) {
 					scored.add(can.uuid);
-					score(can.uuid, POINTS.can, [p.x, p.y, p.z], 'can');
+					down.push([p.x, p.y, p.z]);
 				}
 			}
+			// what still stands is a measurement; the rules score each can that went down
 			setV(V.cans, standing);
+			down.forEach((at, i) => reportHit('can', i, at));
 			// the balls: hits on the moving targets, and the return to the shelf
 			const slots = shelfSlots();
 			const live = balls();
@@ -302,9 +318,6 @@ export default {
 				spawnCopy(BALL_TEMPLATE, q);
 				count++;
 			}
-			// cleared?
-			const left = remaining(s);
-			if (left <= 0) finish(s, true);
 		};
 		/** @param {any} s */
 		const remaining = (s) => {
@@ -330,8 +343,7 @@ export default {
 				if (!o) continue;
 				const c = worldPos(o);
 				if (Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) > HIT_RADIUS.swing) continue;
-				setV(V.swing, v(V.swing) | (1 << i));
-				score('swing' + i, POINTS.swing, c, 'swing');
+				reportHit('swing', i, c);
 			}
 			// pop-ups: only the ones up right now
 			if (s.popups && v(V.pops) < s.popups) {
@@ -344,9 +356,7 @@ export default {
 					if (!o) continue;
 					const c = worldPos(o);
 					if (Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) > HIT_RADIUS.popup) continue;
-					setV(V.popDown, slot * 64 + (downMask | (1 << i)));
-					setV(V.pops, v(V.pops) + 1);
-					score('pop' + i, POINTS.popup, c, 'popup');
+					reportHit('popup', i, c, slot);
 					break;
 				}
 			}
@@ -357,27 +367,12 @@ export default {
 					const c = worldPos(o);
 					if (Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) <= HIT_RADIUS.cart) {
 						lastHitAt.set('cart', t);
-						setV(V.cart, v(V.cart) + 1);
-						score('cart', POINTS.cart, c, 'cart');
+						reportHit('cart', 0, c);
 					}
 				}
 			}
 			void ball;
 		};
-		/** @param {any} s @param {boolean} won @param {boolean=} byClock the kit's own time-up ended the round */
-		const finish = (s, won, byClock = false) => {
-			if (v(V.status) !== STATUS.playing) return;
-			const t = elapsed();
-			const stars = starsFor(s, won, t);
-			setV(V.stars, stars);
-			setV(V.time, Math.round(t * 10));
-			setV(V.status, won ? STATUS.won : STATUS.lost);
-			kit.levels.complete(won, v(V.score), t);
-			if (byClock) return;
-			if (won) kit.round.win('Stage cleared');
-			else kit.round.lose('Time is up');
-		};
-
 		// ---- the moments (every peer) ---------------------------------------------------------
 		/** @param {any} fx */
 		const moment = (fx) => {
@@ -385,13 +380,12 @@ export default {
 			const kind = String(fx?.kind ?? 'can');
 			api.effects?.burst?.(at, { kind: kind === 'can' ? 'sparks' : 'confetti', count: kind === 'can' ? 28 : 56, color: kind === 'cart' ? '#ffd45e' : '' });
 			api.playSound?.(kind === 'can' ? 'hit' : kind === 'cart' ? 'coin' : 'ring', at);
-			const combo = Number(fx?.combo) || 1;
-			if (combo >= 2) api.playSound?.('pop', at);
 			api.hapticPattern?.('tap');
 		};
 		api.onMessage((/** @type {any} */ msg) => {
 			if (!active()) return;
 			if (msg?.op === 'fx') moment(msg);
+			else if (msg?.op === 'tell') tellHere(msg);
 			else if (msg?.op === 'throw' && stepping()) doThrow(msg);
 		});
 		const watchPhases = () => {
@@ -530,7 +524,7 @@ export default {
 			}
 			if (read === 'menuLine') {
 				const total = table.reduce((/** @type {number} */ a, /** @type {any} */ r) => a + (r.stars || 0), 0);
-				return 'Stars earned: ' + total + ' / ' + STAGES.length * 3;
+				return 'Stars earned: ' + total + ' / ' + (table.length || STAGE_COUNT) * 3;
 			}
 			if (read === 'charge') return charging ? Math.min(1, (now() - chargeStart) / CHARGE_FULL) : 0;
 			// LOCAL words: a headset grips and throws, a desktop holds and releases
@@ -556,7 +550,7 @@ export default {
 					return 'Score ' + v(V.score);
 				case 'combo': {
 					const c = v(V.combo);
-					return c >= 2 && elapsed() - lastComboSeen() <= COMBO_WINDOW ? 'Combo x' + c : ' ';
+					return c >= 2 && elapsed() - lastComboSeen() <= 2.5 ? 'Combo x' + c : ' ';
 				}
 				case 'clock':
 					return formatTime(Number(kit.round.remaining?.() ?? 0));
@@ -601,7 +595,7 @@ export default {
 					defaults: { read: 'title', level: 1 },
 					params: [
 						{ key: 'read', kind: 'select', options: ['title', 'targets', 'progress', 'score', 'combo', 'clock', 'charge', 'hint', 'result', 'resultStars', 'resultLine', 'best', 'levelStars', 'menuLine'] },
-						{ key: 'level', kind: 'range', min: 1, max: STAGES.length, step: 1 }
+						{ key: 'level', kind: 'range', min: 1, max: STAGE_COUNT, step: 1 }
 					]
 				},
 				{ type: 'tossswing', label: 'Swinging target', defaults: { index: 1 }, params: [{ key: 'index', kind: 'range', min: 1, max: SWING_COUNT, step: 1 }] },
@@ -610,64 +604,6 @@ export default {
 			]
 		});
 
-		// ---- the buttons: every peer watches the stamps, the authority acts --------------------
-		/** @param {string} element */
-		const onPress = (element) => {
-			const cur = v(V.stage, 0);
-			const lvl = /^lvl-(\d+)$/.exec(element);
-			if (lvl) return startStage(Number(lvl[1]));
-			if (element === 'retry-btn' || element === 'restart-btn') return cur ? startStage(cur) : false;
-			if (element === 'next-btn') {
-				const next = cur + 1;
-				if (!stageById(next)) {
-					api.announce('That was the last stage', { sub: 'Go back for three stars on each', ms: 2400, color: '#ffd45e' });
-					return toMenu();
-				}
-				return startStage(next);
-			}
-			if (element === 'levels-btn' || element === 'quit-btn') return toMenu();
-			return false;
-		};
-		const watchButtons = () => {
-			const amAuthority = authority();
-			for (const node of api.flow.nodes('hudbutton')) {
-				const element = String(node.data?.element ?? '');
-				if (!/^(lvl-\d+|next-btn|retry-btn|levels-btn|restart-btn|quit-btn)$/.test(element)) continue;
-				const entry = api.flow.triggerStamp(node.id);
-				const stamp = Number(entry?.stamp) || 0;
-				if (!seenStamps.has(node.id)) {
-					seenStamps.set(node.id, stamp);
-					continue;
-				}
-				if (stamp === seenStamps.get(node.id)) continue;
-				const fresh = Number(entry?.age ?? 0) < FRESH_PRESS;
-				seenStamps.set(node.id, stamp);
-				if (fresh && amAuthority) onPress(element);
-			}
-		};
-
-		// ---- levels, help, rules ------------------------------------------------------------
-		/** @type {any} */ let levelsOff = null;
-		const defineLevels = () => {
-			if (typeof levelsOff === 'function') levelsOff();
-			levelsOff = kit.levels.define({
-				id: 'targettoss',
-				list: STAGES.map((s) => ({ id: String(s.id), label: s.id + ' · ' + s.name })),
-				unlock: 'sequential',
-				stars: (/** @type {any} */ row, /** @type {any} */ r) => starsFor(stageById(Number(row.id)) ?? STAGES[0], !!r.won, Number(r.time) || 0)
-			});
-		};
-		kit.levels.onSelected((/** @type {any} */ p) => {
-			if (p?.game !== 'targettoss' || !active() || !authority()) return;
-			const id = Number(p.level);
-			if (stageById(id) && v(V.stage, 0) !== id) startStage(id);
-		});
-		kit.round.onStarted(() => {
-			if (starting || !active() || !authority()) return;
-			const s = stage();
-			if (!s) return kit.round.toMenu();
-			resetVars(s);
-		});
 		const HELP = [
 			'Knock down every target before the clock runs out: tin cans (off the table or over), swinging targets, pop-ups and a moving cart.',
 			'VR: grab a ball from the shelf with the grip and throw it. Desktop: HOLD the mouse to charge, RELEASE to throw (or grab a ball and flick it). Touch: drag to aim, HOLD the Throw button to charge, let go to throw.',
@@ -675,7 +611,6 @@ export default {
 			'Stars: clear the stage for one, with half the clock left for three. A star opens the next stage.'
 		];
 		/** @type {null | (() => void)} */ let helpOff = null;
-		let rulesSet = false;
 		/** 36 U8: the touch Throw button — the desktop charge (hold, release) on a button, aimed
 		 * by the look drag (the whole screen looks: there is nothing to walk to) */
 		/** @type {null | (() => void)} */ let touchOff = null;
@@ -710,14 +645,8 @@ export default {
 			const on = active();
 			if (on !== wasActive) {
 				wasActive = on;
-				if (on) defineLevels();
-				if (on) {
-					kit.rules.set({ reach: 1.6 });
-					rulesSet = true;
-				} else if (rulesSet) {
-					kit.rules.clearRules();
-					rulesSet = false;
-				}
+				// the rules set the reach; leaving the game clears it
+				if (!on) kit.rules.clearRules();
 				if (on && typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
 				if (on) touchOff = touchActions();
 				if (!on && touchOff) {
@@ -727,10 +656,6 @@ export default {
 				if (!on && helpOff) {
 					helpOff();
 					helpOff = null;
-				}
-				if (!on && typeof levelsOff === 'function') {
-					levelsOff();
-					levelsOff = null;
 				}
 			}
 			// the scene's spawn (at the counter) is for a headset, where the shelf must be in arm's
@@ -742,7 +667,6 @@ export default {
 				api.setSpawn?.(want ? DESK_SPAWN : null, 0);
 			}
 			if (!on) return;
-			watchButtons();
 			const s = stage();
 			const p = phase();
 			if (s && authority() && v(V.status) === STATUS.playing) {
@@ -751,7 +675,7 @@ export default {
 				else if (p === 'playing') judge(s);
 				else if ((p === 'lost' || p === 'results') && judgedRound !== r) {
 					judgedRound = r;
-					finish(s, false, true);
+					toss.emit('timeUp', { round: r });
 				}
 			}
 			watchPhases();
@@ -765,12 +689,6 @@ export default {
 				touchOff();
 				touchOff = null;
 			}
-			if (typeof levelsOff === 'function') {
-				levelsOff();
-				levelsOff = null;
-			}
-			rulesSet = false;
-			seenStamps.clear();
 			scored.clear();
 			restSince.clear();
 			announcedRound = -1;
@@ -782,12 +700,13 @@ export default {
 
 		/** the suites' window onto the module */
 		/** @type {any} */ (globalThis).__targetToss = {
-			stages: STAGES,
+			stages: () => kit.levels.table?.() ?? [],
+			rulesNode,
 			vars: () => Object.fromEntries(Object.values(V).map((k) => [k, api.game.getVar(k, null)])),
 			authority,
 			stepping,
-			startStage,
-			toMenu,
+			startStage: (/** @type {number} */ id, /** @type {boolean} */ force = false) => callRules('startStage', id, force),
+			toMenu: () => callRules('toMenu'),
 			info,
 			balls: () => balls().map((/** @type {any} */ o) => ({ uuid: o.uuid, pos: o.position.toArray() })),
 			cans: () => cans().map((/** @type {any} */ o) => ({ uuid: o.uuid, pos: o.position.toArray() })),
@@ -815,7 +734,7 @@ export default {
 			shortenClock: (/** @type {number} */ seconds) => kit.round.configure(2, seconds, 'lose', 2),
 			finishNow: (/** @type {boolean} */ won) => {
 				const s = stage();
-				if (s) finish(s, won !== false);
+				if (s) return callRules('finish', s, won !== false, false);
 			}
 		};
 	}

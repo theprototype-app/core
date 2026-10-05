@@ -5,6 +5,8 @@
 // own HUD and putts with a real mouse — the press reaches the rules through the replicated button
 // stamp, the putt through the engine's broadcast; both peers read the same replicated state on
 // their HUDs; a rules edit made on the non-authority (a knob) reloads the rules on the authority.
+// The Alchemist's Escape (ESCAPE_TPSCENE): a use on the non-authority is forwarded to the authority's
+// rules; the puzzle state replicates back; a refusal reaches only the player who clicked.
 const h = require('./helpers.cjs');
 const fs = require('fs');
 const path = require('path');
@@ -115,6 +117,54 @@ h.run(async () => {
 		10000
 	);
 	h.check((await rules(auth))?.hole === 1, 'the hole in play carried on through the reload');
+
+	// ---- The Alchemist's Escape: a use on the NON-authority runs the authority's rules -----------
+	const ESC = [process.env.ESCAPE_TPSCENE, path.resolve(__dirname, '../../../cloud-lane-30-staging/36-games-graphs/games/escape-room/scene.tpscene')]
+		.filter(Boolean)
+		.find((p) => fs.existsSync(p));
+	if (ESC) {
+		for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(null));
+		await A.page.waitForTimeout(600);
+		await A.page.evaluate(async (arr) => {
+			const s = window.__stores;
+			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
+			await s.sessions.applySession(payload, { backup: false });
+		}, Array.from(fs.readFileSync(ESC)));
+		const escStatus = (peer) =>
+			peer.page.evaluate(() => {
+				const d = window.__stores.behaviours?.behavioursDebug?.();
+				const id = window.__escape?.rulesNode?.();
+				return d && id ? { status: d.status[id]?.status ?? null, authority: d.authority, me: d.me } : null;
+			});
+		await h.eventually(() => escStatus(A), (v) => v?.status === 'running', 'Escape: the rules run on A', 20000);
+		await h.eventually(() => escStatus(B), (v) => v?.status === 'running', 'Escape: the rules loaded on B', 20000);
+		const es = await escStatus(A);
+		const eAuth = es.authority === es.me ? A : B;
+		const eOther = eAuth === A ? B : A;
+		const flags = (peer) => peer.page.evaluate(() => window.__escape.flags());
+		const use = (peer, name) =>
+			peer.page.evaluate((name) => {
+				const s = window.__stores;
+				let g; s.objectsGroup.subscribe((v) => (g = v))();
+				let mesh = g.getObjectByName(name);
+				mesh?.traverse((c) => { if (c.isMesh && !mesh.isMesh) mesh = c; });
+				return mesh ? s.moduleSDK.runClickHandlers(mesh, 'play', { source: 'click' }) : false;
+			}, name);
+		const banner = (peer) => peer.page.evaluate(() => { let v; window.__stores.gameKit.gameAnnounce.gameAnnouncement.subscribe((x) => (v = x))(); return v?.text ?? ''; });
+		for (const p of [A, B]) await p.page.evaluate(() => window.__stores.isLocked.set(true));
+		await h.eventually(() => hud(eOther), (t) => /Start/.test(t), 'Escape: the non-authority sees the start menu', 10000);
+		await eOther.page.locator('#hud-layer button', { hasText: 'Start' }).first().click();
+		await h.eventually(() => flags(eAuth), (f) => f === 0, 'Escape: the round starts with every lock shut', 8000);
+		await eOther.page.waitForTimeout(800);
+		await use(eOther, 'Chest lid');
+		await h.eventually(() => banner(eOther), (t) => /locked/.test(t), 'Escape: a refusal from the rules reaches the player who tried the chest', 5000);
+		h.check(!/chest is locked/i.test(await banner(eAuth)), 'and only that player (the authority saw no refusal banner)');
+		await use(eOther, 'Desk drawer');
+		await h.eventually(() => flags(eAuth), (f) => (f & 1) !== 0, "Escape: the non-authority's use ran the rules on the authority (the drawer opens)", 6000);
+		await h.eventually(() => flags(eOther), (f) => (f & 1) !== 0, 'and the puzzle state replicated back', 6000);
+		await use(eOther, 'Brass key');
+		await h.eventually(() => hud(eAuth), (t) => /Carrying: Key/.test(t), "Escape: the authority's HUD shows the key the other player took", 6000);
+	} else console.log('SKIP escape: no staged games/escape-room/scene.tpscene (set ESCAPE_TPSCENE)');
 
 	await h.finish(browser);
 });

@@ -1,15 +1,16 @@
 // Template def `escape-room` — one file per template (34 R4 A3). Authored by scripts/author-templates.cjs;
 // the def schema is the comment block at the top of that file; the table is ./index.cjs.
 
-const { graphBuilder } = require('./_builders.cjs');
+const { graphBuilder, rulesSource } = require('./_builders.cjs');
 const { P, I, AR, H: HALF, piece } = require('./_level-kit.cjs');
 
 // ---- 35-escape-room: THE ALCHEMIST'S ESCAPE ------------------------------------------------
 // Three rooms in a row along +x (study -12..-4, workshop -4..4, vault 4..12, the exit beyond):
 // drawer -> key -> chest (crank + note) + study door; dials + levers + the crank you TWIST to
-// raise the iron gate; three gems on three pedestals open the vault door. The RULES live in the
-// core `escape` module (src/modules/escape), which finds every puzzle piece BY NAME — the names
-// below are its contract. Doors, gates, gems and handles are SENSORS (every top-level object is a
+// raise the iron gate; three gems on three pedestals open the vault door. The RULES are the "Escape rules"
+// behaviour on the Main graph (./rules/escape-room.rules.js — the dial code, the lever order, the
+// crank's turns, what every piece does); the core `escape` module (src/modules/escape) is the ENGINE,
+// which finds every puzzle piece BY NAME — the names below are its contract. Doors, gates, gems and handles are SENSORS (every top-level object is a
 // fixed body once the sim starts, and a body does not follow a door the module slides open); the
 // module keeps the player in the rooms they have opened. The crate is the one dynamic body: a
 // level with none starts no simulation, and then the walker collides with nothing.
@@ -75,32 +76,71 @@ const pedestal = (gem, x, color) => [
 
 function escapeGraph() {
 	const g = graphBuilder();
-	const { N, E } = g;
-	N('click', 'gamesound', 'Button click', 520, 40, { sound: 'click' });
-	const button = (id, element, label, state, x, y) => {
-		N(id, 'hudbutton', label, x, y, { element });
-		N(id + 's', 'setgamestate', label + ' -> ' + state, x + 260, y, { state, outcome: '' });
+	const { N, E, B, G, T } = g;
+
+	// ---- the hub: the RULES (scripts/templates/rules/escape-room.rules.js) --------------------
+	T('n-main', "The Alchemist's Escape — read me first",
+		'**Escape rules** is the whole puzzle in one script: what every drawer, key, dial, lever, crank and pedestal does.\n' +
+		'- **Double-click** it to read or change the code — the dial **CODE**, the **LEVER_ORDER** (Ctrl+S reloads it for everyone).\n' +
+		'- **Select** it and open the ⓘ tab to tune *Crank turns to lift the gate*.\n' +
+		'- Its right-hand sockets are its **state** and its **moments** ⚡ (the win, a buzz).\n' +
+		'The house itself — doors, gems, sounds, the hold-to-twist crank — is the **engine** below it.',
+		-380, 0, { w: 340, h: 260, color: 'blue' });
+	B('rules', 'Escape rules', rulesSource('escape-room.rules.js'), 300, 0);
+
+	// ---- the menu buttons: the game state (the engine sets a fresh round up through the rules) --
+	const menu = [];
+	menu.push(N('click', 'gamesound', 'Button click', 0, 520, { sound: 'click' }));
+	const button = (id, element, label, state, y) => {
+		menu.push(N(id, 'hudbutton', label, 0, y, { element }));
+		menu.push(N(id + 's', 'setgamestate', label + ' -> ' + state, 0, y + 70, { state, outcome: '' }));
 		E(id, id + 's', 'trigger');
 		E(id, 'click', 'trigger');
 	};
-	button('bstart', 'start-btn', 'Start button', 'playing', 40, 40);
-	button('bagain', 'again-btn', 'Play again button', 'playing', 40, 120);
-	button('bmenu', 'menu-btn', 'Menu button', 'menu', 40, 200);
-	const text = (id, read, element, x, y) => {
-		N(id + 'i', 'escapeinfo', 'Escape: ' + read, x, y, { read });
-		N(id + 't', 'hudtext', 'HUD ' + element, x + 240, y, { element, format: '', decimals: 0, value: 0 });
+	button('bstart', 'start-btn', 'Start button', 'playing', 40);
+	button('bagain', 'again-btn', 'Play again button', 'playing', 200);
+	button('bmenu', 'menu-btn', 'Menu button', 'menu', 360);
+	G('g-menu', 'Start menu & buttons', menu, 0, 40);
+	T('n-menu', 'Start menu & buttons', '**Start** and **Play again** begin a round; the engine then asks the rules to set the house up (a practice room from the Levels page starts with the rooms before it solved).', 0, 170, { w: 250, h: 130, color: 'gray' });
+
+	// ---- the engine, openable from here ---------------------------------------------------------
+	N('engine', 'coderef', 'Code link', 300, 420, { module: 'escape', file: 'module.js', title: "Alchemist's Escape engine — the house, its sounds, the crank", main: 1 });
+	T('n-engine', 'The engine', 'What the rules call as **kit.escape.*** — it reports what a player used, draws every door, gem and dial from the puzzle state, plays the sounds and banners, keeps players in the rooms they have opened. Double-click to read it.', 300, 600, { w: 260, h: 130, color: 'gray' });
+
+	// ---- the moments: the win and a buzz ------------------------------------------------------
+	const fb = [];
+	fb.push(N('win', 'setgamestate', 'Escaped -> over · won', 660, 40, { state: 'over', outcome: 'won' }));
+	E('rules', 'win', 'trigger', 'escaped');
+	fb.push(N('hOpen', 'hapticpulse', 'Buzz: a room opens', 660, 180, { pattern: 'success', hand: 'both' }));
+	E('rules', 'hOpen', 'trigger', 'roomOpened');
+	fb.push(N('hGem', 'hapticpulse', 'Buzz: a gem placed', 660, 320, { pattern: 'bump', hand: 'both' }));
+	E('rules', 'hGem', 'trigger', 'gemPlaced');
+	G('g-moments', 'Win & buzzes', fb, 660, 40);
+	T('n-moments', 'Win & buzzes', '**escaped** ends the round as won (the results screen, your best time); a room opening and a gem placed buzz the controllers. Banners and sounds come from the engine on every screen.', 900, 0, { w: 260, h: 130, color: 'green' });
+
+	// ---- the HUD words (the engine's Escape info node, one per line) --------------------------
+	const hud = [];
+	const text = (id, read, element, i) => {
+		const x = 1300 + (i % 2) * 520;
+		const y = 40 + Math.floor(i / 2) * 130;
+		hud.push(N(id + 'i', 'escapeinfo', 'Escape: ' + read, x, y, { read }));
+		hud.push(N(id + 't', 'hudtext', 'HUD ' + element, x + 250, y, { element, format: '', decimals: 0, value: 0 }));
 		E(id + 'i', id + 't', 'format');
 	};
-	text('room', 'room', 'es-room', 800, 40);
-	text('clock', 'clock', 'es-clock', 800, 110);
-	text('inv', 'inventory', 'es-inv', 800, 180);
-	text('gems', 'gems', 'es-gems', 800, 250);
-	text('goal', 'goal', 'es-goal', 800, 320);
-	text('res', 'result', 'es-result', 800, 390);
-	text('best', 'best', 'es-best', 800, 460);
-	text('mbest', 'menuBest', 'menu-best', 800, 530);
-	// walk with gravity (desktop WASD, VR stick); no jumping over a locked door
-	N('body', 'charcontroller', 'Player: walk', 40, 320, { mode: 'walk', speed: 0.05, jumpHeight: 0, eyeHeight: 1.65, gravity: true });
+	text('room', 'room', 'es-room', 0);
+	text('clock', 'clock', 'es-clock', 1);
+	text('inv', 'inventory', 'es-inv', 2);
+	text('gems', 'gems', 'es-gems', 3);
+	text('goal', 'goal', 'es-goal', 4);
+	text('res', 'result', 'es-result', 5);
+	text('best', 'best', 'es-best', 6);
+	text('mbest', 'menuBest', 'menu-best', 7);
+	G('g-hud', 'HUD words', hud, 1300, 40);
+	T('n-hud', 'HUD words', 'Each **Escape info** node reads one line from the house (the room, the clock, what you carry, the goal…) into a HUD Text (the HUD editor lays the screens out).', 1300, 170, { w: 270, h: 120, color: 'purple' });
+
+	// ---- the player: walk with gravity (desktop WASD, VR stick); no jumping over a locked door
+	N('body', 'charcontroller', 'Player: walk', 660, 420, { mode: 'walk', speed: 0.05, jumpHeight: 0, eyeHeight: 1.65, gravity: true });
+	T('n-body', 'The player', 'Walking with gravity and no jump, so a locked door stays locked.', 900, 420, { w: 220, h: 90, color: 'gray' });
 	return g.done();
 }
 

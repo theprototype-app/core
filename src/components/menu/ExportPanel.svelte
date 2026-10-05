@@ -5,6 +5,7 @@
 	import { onMount } from 'svelte';
 	import { exportPrefs, setExportPrefs, publishedLink } from '$lib/export/exportStores.js';
 	import { buildExport, estimateExport, embedSnippet, fmtBytes, ExportUnavailable } from '$lib/export/exportBuilder.js';
+	import { embedSourceUrl } from '$lib/export/exportCore.js';
 	import { currentLevel } from '$lib/levels';
 
 	const PRESETS = [
@@ -24,7 +25,8 @@
 
 	const preset = $derived($exportPrefs.preset);
 	const embedUrl = $derived($exportPrefs.embedUrl || $publishedLink?.playUrl || '');
-	const snippet = $derived(embedUrl ? embedSnippet(embedUrl, { w: $exportPrefs.viewportW, h: $exportPrefs.viewportH, title: title || 'Game' }) : '');
+	// 36-community (C4): a play link framed by the snippet counts its visits as `src=embed`
+	const snippet = $derived(embedUrl ? embedSnippet(embedSourceUrl(embedUrl), { w: $exportPrefs.viewportW, h: $exportPrefs.viewportH, title: title || 'Game' }) : '');
 	const pct = $derived(progress && progress.total ? Math.round((progress.done / progress.total) * 100) : 0);
 
 	onMount(async () => {

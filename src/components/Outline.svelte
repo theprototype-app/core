@@ -35,6 +35,7 @@
 	import { editingObject } from '$lib/meshEdit';
 	import { coarsePointer } from '$lib/inputDevice';
 	import { viewPrefs } from '$lib/viewPrefs';
+	import { recordingClean } from '$lib/helperLayer';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
 	import { framesHeld, registerComposerWarm, schedule } from '$lib/sceneLoader';
@@ -548,7 +549,8 @@
 		// argument the mesh-edit session already makes one line up.
 		// 30b P1: ...and in INTERACT, which is play's hands without play's lock: a
 		// player-style view of the scene has no selection glare either
-		const playing = $isLocked || $editorMode === 'interact';
+		// 36-share: a clean recording is a viewer's picture too
+		const playing = $isLocked || $editorMode === 'interact' || $recordingClean;
 		if ($objectsGroup && !editing && !playing)
 			for (const uuid of $selectedObjects) addMeshes(outlineEffectSelected.selection, uuid);
 		outlineEffectLocked.selection.clear();

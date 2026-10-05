@@ -195,6 +195,10 @@ export function noteSceneFileName(name) {
 	idSources.file = name ? String(name) : null;
 	resolveId();
 }
+/** the scene file's name (36 B14: a checkpoint restore hands it back to the load) @returns {string | null} */
+export function sceneFileName() {
+	return idSources.file;
+}
 /** the saved scene's name changed (levels.currentLevel) @param {any} name */
 export function noteSceneLevelName(name) {
 	idSources.level = name ? String(name) : null;

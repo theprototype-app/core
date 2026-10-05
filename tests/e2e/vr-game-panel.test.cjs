@@ -9,9 +9,9 @@
 // 1 a menu screen becomes the world panel, 1.2 m ahead at chest height, drawn · 2 its
 // buttons are hit rects, ours included · 3 the LASER + trigger presses Start through the
 // real trigger hook: the game starts, the press is consumed and its trailing select
-// swallowed · 4 in play the score becomes the wrist card + the top strip · 5 the wrist
+// swallowed · 4 in play the score becomes the wrist card + the HUD band (36 B12) · 5 the wrist
 // shows only when turned toward the face · 6 a POKE presses once and re-arms on retreat ·
-// 7 the strip toggles · 8 Edit mode leaves Interact and every surface goes · 9 the panel
+// 7 the HUD placement (wrist only) · 8 Edit mode leaves Interact and every surface goes · 9 the panel
 // follows the head LAZILY · 10 the announce banner in VR · 11 not presenting = nothing ·
 // 12 a toggle flips its value · 13 the REAL Towers template: its menu in VR, Start pressed.
 const h = require('./helpers.cjs');
@@ -34,6 +34,7 @@ h.run(async () => {
 			{ id: 'panel30b', name: 'Panel test', version: '1.0.0', description: 'the 30b VR panel', register(api) { window.__api = api; } }
 		]);
 		localStorage.removeItem('vr:gameStrip');
+		s.gameKit.vrHudPrefs.setVrHudPlacement('head');
 		// a game: a menu screen bound to 'menu' with Start + a music toggle, and a play HUD
 		s.hudDocs.setHudDocFor('scene', {
 			active: '',
@@ -147,7 +148,7 @@ h.run(async () => {
 	console.log('\n=== 2. the buttons are hit rects, ours included ===');
 	const ids = await page.evaluate(() => window.__stores.gameKit.vrGamePanel.vrGamePanelDebug().hits['vr-game-panel'].map((x) => x.id));
 	h.check(ids.includes('start') && ids.includes('music') && !ids.includes('title'), '2.1 Start and the toggle press, the title does not (' + ids + ')');
-	h.check(ids.includes('footer:edit') && ids.includes('footer:strip'), '2.2 our Edit mode and Top strip buttons are on the footer');
+	h.check(ids.includes('footer:edit') && ids.includes('footer:hud'), '2.2 our Edit mode and HUD placement buttons are on the footer');
 
 	console.log('\n=== 3. laser + trigger presses Start through the real trigger hook ===');
 	await page.waitForTimeout(700); // a fresh binding must be seen by a tick before its first press (actionSeenAt)
@@ -170,17 +171,17 @@ h.run(async () => {
 	h.check(press.consumed === true && press.state === 'playing', '3.2 the trigger pressed it: the game is playing (' + JSON.stringify(press) + ')');
 	h.check(press.swallow1 === true && press.swallow2 === false, '3.3 the trailing select is swallowed once, not forever');
 
-	console.log('\n=== 4. in play the score is on the wrist and the strip ===');
+	console.log('\n=== 4. in play the score is on the wrist and the HUD band ===');
 	const f4 = await frame();
 	h.check(f4.panel === null, '4.1 the panel goes when the menu does');
 	h.check(JSON.stringify(f4.lines) === JSON.stringify(['Height: 0 m', '1:30']), '4.2 the overlay reads as lines (' + JSON.stringify(f4.lines) + ')');
-	h.check(f4.wrist && f4.strip, '4.3 the wrist card and the top strip are up');
-	const stripPose = await page.evaluate(() => window.__stores.gameKit.vrGamePanel.vrGameSurface('vr-game-strip').mesh.position.toArray());
-	h.check(stripPose[1] > 1.8 && stripPose[2] < -1, '4.4 the strip rides high in front of the eyes (' + stripPose.map((n) => n.toFixed(2)) + ')');
+	h.check(f4.wrist && f4.hud, '4.3 the wrist card and the HUD band are up');
+	const band = await page.evaluate(() => window.__stores.gameKit.vrHud.vrHudDebug());
+	h.check(band.visible && band.groups.some((g) => g.ids.includes('score')) && band.groups.some((g) => g.ids.includes('time')), '4.4 the band carries the score and the clock (' + JSON.stringify(band.groups.map((g) => g.ids)) + ')');
 
 	console.log('\n=== 5. the wrist shows only when turned to the face ===');
 	const away = await frame('{"facing": false}');
-	h.check(away.wrist === false && away.strip === true, '5.1 turned away: no wrist card (the strip stays)');
+	h.check(away.wrist === false && away.hud === true, '5.1 turned away: no wrist card (the HUD band stays)');
 	const noHand = await frame('{"hand": false}');
 	h.check(noHand.wrist === false, '5.2 no tracked left hand: no card');
 
@@ -190,27 +191,27 @@ h.run(async () => {
 		const s = window.__stores;
 		const T = window.__T;
 		const k = s.gameKit.vrGamePanel;
-		const at = T.rectPoint('vr-game-wrist', 'footer:strip');
+		const at = T.rectPoint('vr-game-wrist', 'footer:hud');
 		const surf = k.vrGameSurface('vr-game-wrist');
 		const normal = new s.THREE.Vector3(0, 0, 1).applyQuaternion(surf.mesh.quaternion);
-		const before = k.vrGamePanelDebug().strip;
+		const before = k.vrGamePanelDebug().hud;
 		const first = k.pokeFrame(0, at.clone().addScaledVector(normal, 0.005))?.hit.id ?? null;
-		const afterFirst = k.vrGamePanelDebug().strip;
+		const afterFirst = k.vrGamePanelDebug().hud;
 		const held = k.pokeFrame(0, at.clone().addScaledVector(normal, -0.004))?.hit.id ?? null;
 		k.pokeFrame(0, at.clone().addScaledVector(normal, 0.1)); // pull back
 		const again = k.pokeFrame(0, at.clone().addScaledVector(normal, 0.003))?.hit.id ?? null;
-		return { before, first, afterFirst, held, again, after: k.vrGamePanelDebug().strip };
+		return { before, first, afterFirst, held, again, after: k.vrGamePanelDebug().hud };
 	});
-	h.check(poke.first === 'footer:strip' && poke.before === true && poke.afterFirst === false, '6.1 pushing the tip into "Strip on" presses it (' + JSON.stringify(poke) + ')');
+	h.check(poke.first === 'footer:hud' && poke.before === 'head' && poke.afterFirst === 'world', '6.1 pushing the tip into "HUD: Head" presses it (' + JSON.stringify(poke) + ')');
 	h.check(poke.held === null, '6.2 holding the tip in the button does not press again');
-	h.check(poke.again === 'footer:strip' && poke.after === true, '6.3 pulling back re-arms it: the next push presses');
+	h.check(poke.again === 'footer:hud' && poke.after === 'wrist', '6.3 pulling back re-arms it: the next push presses');
 
-	console.log('\n=== 7. the strip toggles ===');
-	await page.evaluate(() => window.__stores.gameKit.vrGamePanel.setVrStrip(false));
+	console.log('\n=== 7. the HUD placement: wrist only ===');
+	await page.evaluate(() => window.__stores.gameKit.vrHudPrefs.setVrHudPlacement('wrist'));
 	const off = await frame();
-	h.check(off.strip === false && off.wrist === true, '7.1 strip off: gone, the wrist stays');
-	h.check((await page.evaluate(() => localStorage.getItem('vr:gameStrip'))) === 'false', '7.2 persisted locally');
-	await page.evaluate(() => window.__stores.gameKit.vrGamePanel.setVrStrip(true));
+	h.check(off.hud === false && off.wrist === true, '7.1 wrist only: the band goes, the wrist stays');
+	h.check((await page.evaluate(() => localStorage.getItem('vr:hudPlacement'))) === 'wrist', '7.2 persisted locally');
+	await page.evaluate(() => window.__stores.gameKit.vrHudPrefs.setVrHudPlacement('head'));
 
 	console.log('\n=== 8. Edit mode leaves Interact, and everything goes ===');
 	await frame();
@@ -228,7 +229,7 @@ h.run(async () => {
 	});
 	h.check(edit.consumed && edit.mode === 'edit', '8.1 "Edit" on the wrist switched to Edit (' + JSON.stringify(edit) + ')');
 	const f8 = await frame();
-	h.check(!f8.panel && !f8.wrist && !f8.strip, '8.2 in Edit no game surface shows (' + JSON.stringify(f8) + ')');
+	h.check(!f8.panel && !f8.wrist && !f8.hud, '8.2 in Edit no game surface shows (' + JSON.stringify(f8) + ')');
 	await page.evaluate(() => {
 		window.__stores.objectActions.setEditorMode('interact');
 		window.__stores.gameState.setGameState('menu');
@@ -269,7 +270,7 @@ h.run(async () => {
 
 	console.log('\n=== 11. not presenting: nothing ===');
 	const flat = await page.evaluate(() => window.__stores.gameKit.vrGamePanel.vrGamePanelFrame({ hands: [null, null] }));
-	h.check(!flat.panel && !flat.wrist && !flat.strip && !flat.banner, '11.1 with no headset session nothing is drawn (' + JSON.stringify(flat) + ')');
+	h.check(!flat.panel && !flat.wrist && !flat.hud && !flat.banner, '11.1 with no headset session nothing is drawn (' + JSON.stringify(flat) + ')');
 
 	console.log('\n=== 12. a toggle flips its value ===');
 	await frame();
@@ -326,10 +327,11 @@ h.run(async () => {
 			return { state, f };
 		}, startId);
 		h.check(started.state === 'playing', '13.2 pressing its Start in VR starts the round (' + JSON.stringify(started) + ')');
-		h.check(started.f.lines.length > 0, '13.3 the round\'s HUD reads on the wrist/strip (' + JSON.stringify(started.f.lines) + ')');
+		h.check(started.f.lines.length > 0, '13.3 the round\'s HUD reads on the wrist (' + JSON.stringify(started.f.lines) + ')');
+		const towersBand = await page.evaluate(() => window.__stores.gameKit.vrHud.vrHudDebug());
 		h.check(
-			started.f.stripLines.length > 0 && started.f.stripLines.every((l) => l.length <= 28) && started.f.stripLines.length < started.f.lines.length,
-			'13.4 the strip keeps the short readouts and leaves the sentence-long hint to the wrist (' + JSON.stringify(started.f.stripLines) + ')'
+			started.f.hud === true && towersBand.groups.length >= 2 && towersBand.groups.every((g) => g.texelRatio >= 1 - 1e-9),
+			'13.4 the round\'s HUD is on the band, as Towers lays it out, crisp (' + JSON.stringify(towersBand.groups.map((g) => g.ids)) + ')'
 		);
 	}
 

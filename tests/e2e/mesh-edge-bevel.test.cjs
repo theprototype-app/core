@@ -212,7 +212,9 @@ h.run(async () => {
 	} else {
 		h.check(
 			refusals.valenceRefused,
-			'an endpoint with FOUR faces is refused rather than guessed (that needs a mitered corner)'
+			// 19-A P7c: the subdivided top is ONE coplanar logical face, so this edge has no
+			// crease to fold at all — the refusal stands (real valence-4 ends are mitered now)
+			'an edge inside a flat (coplanar) region is refused — nothing to fold'
 		);
 		h.check(refusals.valenceUntouched, '...leaving the geometry untouched');
 	}

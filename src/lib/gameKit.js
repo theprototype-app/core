@@ -10,6 +10,9 @@ export * as vrGameInput from './vrGameInput';
 export * as effectsBurst from './effectsBurst';
 export * as gameAnnounce from './gameAnnounce';
 export * as vrGamePanel from './vrGamePanel';
+export * as vrHud from './vrHud';
+export * as vrHudLayout from './vrHudLayout';
+export * as vrHudPrefs from './vrHudPrefs';
 export * as gameFeelActions from './gameFeelActions'; // 30b (core-games): the Game Feel flow nodes
 // 31 K3 (game-shell): the pause menu, the per-game settings, their wiring, the FPS counter
 export * as gameShell from './gameShell';

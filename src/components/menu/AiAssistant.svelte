@@ -5,18 +5,25 @@
 	// go out as normal replicated edits from this peer, undoable as one step.
 	import {
 		aiAssistantHidden,
-		aiPromptBarOpen
+		aiPromptBarOpen,
+		showToast,
+		settingsOpen,
+		settingsSection
 	} from '../../stores/appStore';
+	import { Mic, Square } from '@lucide/svelte';
 	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider } from '$lib/ai/providers';
 	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi } from '$lib/ai/assistant';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
+	import { sttConfig, sttReady } from '$lib/ai/stt';
+	import { dictation, startDictation, stopDictation } from '$lib/ai/sttCapture';
 
 	let prompt = $state('');
 	let pillPrompt = $state('');
 	let scroller: any = $state(null);
 	let pillInput: any = $state(null);
+	let promptInput: any = $state(null);
 
 	const hasProvider = $derived($aiProviders.length > 0 && !!$aiActiveProvider);
 	const pillVisible = $derived($aiPromptBarOpen && $aiEnabled && hasProvider && $aiAssistantHidden !== '');
@@ -26,6 +33,28 @@
 		if (!text || $aiBusy) return;
 		prompt = '';
 		runPrompt(text);
+	}
+
+	// 36-vr-ai (F2): voice typing — click to listen, click again to stop; the transcript lands in the input,
+	// EDITABLE (nothing is sent until you press Send). The VR panel's mic sends instead.
+	async function toggleMic() {
+		if ($dictation.state === 'recording') {
+			const text = await stopDictation();
+			if (text) {
+				prompt = prompt.trim() ? prompt.trimEnd() + ' ' + text : text;
+				requestAnimationFrame(() => promptInput?.focus());
+			} else if ($dictation.error) showToast('Voice typing: ' + $dictation.error);
+			return;
+		}
+		if ($dictation.state !== 'idle') return;
+		if (!sttReady($sttConfig)) {
+			showToast('Set up Voice typing in Settings ▸ AI to talk to the assistant', [
+				{ label: 'Open Settings', action: () => { settingsSection.set('ai'); settingsOpen.set(true); } }
+			]);
+			return;
+		}
+		const ok = await startDictation('desktop');
+		if (!ok && $dictation.error) showToast('Voice typing: ' + $dictation.error);
 	}
 
 	function submitPill() {
@@ -153,15 +182,28 @@
 			</div>
 			<div class="flex items-center gap-1.5">
 				<input
+					bind:this={promptInput}
 					type="text"
 					class="ui-input min-w-0 flex-1"
-					placeholder="Ask the assistant…"
+					placeholder={$dictation.state === 'recording' ? 'Listening… click the mic to stop' : $dictation.state === 'transcribing' ? 'Transcribing…' : 'Ask the assistant…'}
 					bind:value={prompt}
 					disabled={$aiBusy}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') submit();
 					}}
 				/>
+				<button
+					id="ai-mic"
+					class="ai-mic ui-button-quiet shrink-0"
+					class:ai-mic-on={$dictation.state === 'recording'}
+					aria-label={$dictation.state === 'recording' ? 'Stop voice typing' : 'Voice typing'}
+					aria-pressed={$dictation.state === 'recording'}
+					title={$dictation.state === 'recording' ? 'Stop and type what was said' : 'Voice typing (Settings ▸ AI)'}
+					disabled={$aiBusy || $dictation.state === 'transcribing'}
+					onclick={toggleMic}
+				>
+					{#if $dictation.state === 'recording'}<Square size={16} aria-hidden="true" />{:else}<Mic size={16} aria-hidden="true" />{/if}
+				</button>
 				{#if $aiBusy}
 					<button
 						class="shrink-0 rounded-lg bg-red-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600"
@@ -185,6 +227,10 @@
 <style>
 	#ai-assistant.hidden {
 		display: none;
+	}
+	.ai-mic-on {
+		color: var(--ink-bad);
+		animation: ai-blink 1.2s step-end infinite;
 	}
 	.ai-caret {
 		animation: ai-blink 1s step-end infinite;

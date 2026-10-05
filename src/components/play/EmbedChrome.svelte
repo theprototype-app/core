@@ -13,6 +13,9 @@
 	import { embedMode, embedOpenUrl, requestPlay, vrSupported } from '$lib/playMode';
 	import { isLocked, isVRMode } from '../../stores/sceneStore';
 	import { exportConfig, exportMode } from '$lib/export/exportBoot.js';
+	// 36-community (C6): the published scene's heart on the start card (a cloud plugin sets it)
+	import { sceneHeart } from '$lib/cloudHooks';
+	import HeartButton from '../ui/HeartButton.svelte';
 
 	const vrAllowed = exportConfig ? exportConfig.vrButton : true;
 	const title = exportConfig?.title || '';
@@ -75,6 +78,9 @@
 				<button id="embed-play" type="button" class="embed-play" onclick={play}>▶ Play</button>
 				{#if vrAllowed && $vrSupported}
 					<button id="embed-vr" type="button" class="embed-play embed-vr" onclick={() => requestPlay()}>Enter VR</button>
+				{/if}
+				{#if $sceneHeart}
+					<HeartButton id="embed-heart" size="md" count={$sceneHeart.count} liked={$sceneHeart.liked} label="Like this game" ontoggle={() => $sceneHeart.toggle()} />
 				{/if}
 			</div>
 			<div class="embed-hint">Click to look around · Esc to pause</div>

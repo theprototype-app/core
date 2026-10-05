@@ -18,6 +18,9 @@
 		secondaryModes = [{ key: 'settings', icon: '⚙', label: 'Settings' }] as Mode[],
 		secondaryDefaultOpen = false,
 		secondaryDefaultWidth = 224,
+		// 36 B14: Settings on a phone shows its sections as a chip strip in the topbar, so it
+		// draws no sidebar at all; and a window with no secondary modes draws no tab column
+		hidePrimary = false,
 		topbar,
 		primary,
 		main,
@@ -30,6 +33,7 @@
 		secondaryModes?: Mode[]
 		secondaryDefaultOpen?: boolean
 		secondaryDefaultWidth?: number
+		hidePrimary?: boolean
 		topbar?: Snippet
 		primary?: Snippet
 		main?: Snippet
@@ -186,13 +190,14 @@
 
 <div class="ws-root flex h-full w-full overflow-hidden" bind:clientWidth={rootW}>
 	<!-- PRIMARY panel -->
-	{#if primaryOpen}
+	{#if primaryOpen && !hidePrimary}
 		<div class="ws-panel flex h-full shrink-0 flex-col overflow-y-auto" style="order: {primaryPanelOrder}; width: {primaryWidth}px">
 			{@render primary?.()}
 		</div>
 	{/if}
 	<!-- PRIMARY edge: the SAME collapse bar whether open or closed (arrow flips);
 	     the resize handle only exists while there's a panel to resize -->
+	{#if !hidePrimary}
 	<div class="ws-edge shrink-0" style="order: {primaryEdgeOrder}">
 		<button
 			class="ws-edge-btn"
@@ -212,6 +217,8 @@
 		{/if}
 	</div>
 
+	{/if}
+
 	<!-- MAIN (+ optional topbar) -->
 	<div class="ws-main flex min-w-0 flex-1 flex-col" style="order: 3">
 		{#if topbar}
@@ -221,6 +228,7 @@
 	</div>
 
 	<!-- SECONDARY mode tabs (stacked): they hug the border when the panel is closed -->
+	{#if secondaryModes.length}
 	<div class="ws-tabs shrink-0" style="order: {secondaryTabsOrder}">
 		{#each secondaryModes as m (m.key)}
 			<button
@@ -247,6 +255,7 @@
 			></div>
 		{/if}
 	</div>
+	{/if}
 	<!-- SECONDARY panel -->
 	{#if secondaryOpen}
 		<div

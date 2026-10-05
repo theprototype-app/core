@@ -85,6 +85,8 @@ export function tpsceneOptions() {
 /** B3: save the scene as a .tpscene bundle (session.json + assets/ + packs/) */
 async function saveTpScene() {
 	const { buildSessionPayload, exportSessionZip } = await import('./sessions');
+	// 36-community (C4): a saved file carries the scene's permanent game id
+	(await import('./gameIdentity.js')).ensureGameId();
 	const payload = buildSessionPayload('Scene export');
 	const zip = await exportSessionZip(payload, tpsceneOptions());
 	const blob = new Blob([zip], { type: 'application/zip' });

@@ -13,6 +13,7 @@ import {
 	vrMenuHold,
 	vrObjectsPanelOpen,
 	vrChatPanelOpen,
+	vrAiPanelOpen,
 	vrPaletteOpen,
 	vrPropsPanelOpen,
 	vrPrefabsPanelOpen,
@@ -102,6 +103,7 @@ import {
 } from './panels.js';
 import { updateRaysAndHover, controllerRay } from './pointer.js';
 import { raycastMenu, executeVRMenuAction, pingFromController } from './radial.js';
+import { raycastAi, aiTalkHold } from './aiPanel.js';
 import {
 	boxSelect,
 	updateBoxSelect,
@@ -188,6 +190,7 @@ function panelModal() {
 		get(vrPropsPanelOpen) ||
 		get(vrPrefabsPanelOpen) ||
 		get(vrChatPanelOpen) ||
+		get(vrAiPanelOpen) ||
 		get(vrSettingsPanelOpen)
 	);
 }
@@ -223,6 +226,7 @@ export function updateVRControls() {
 		!get(vrPropsPanelOpen) &&
 		!get(vrPrefabsPanelOpen) &&
 		!get(vrChatPanelOpen) &&
+		!get(vrAiPanelOpen) &&
 		!get(vrSettingsPanelOpen) && // 36: its row cursor owns the sticks
 		!get(vrKeyboardTarget) &&
 		// 36 (plan 55): a grab owns ITS hand's stick — the turn/teleport stick stands down when that hand holds
@@ -307,7 +311,12 @@ export function updateVRControls() {
 		// A is one jump and landing with it down is none (no bunny-hopping).
 		const aPressed = actionPressed('ptt', source);
 		if (source.handedness === handOf('ptt') && aPressed !== !!prev.a) {
-			if (vrJumpHeight() > 0) {
+			// 36-vr-ai (F2): with the AI panel up and voice typing set up, the talk button dictates to the
+			// assistant instead — nothing goes to peers while you are talking to it
+			if (aiTalkHold(aPressed)) {
+				if (pttByA) setPttHeld(false);
+				pttByA = false;
+			} else if (vrJumpHeight() > 0) {
 				setJumpRequested(aPressed);
 				if (pttByA) setPttHeld(false);
 				pttByA = false;
@@ -374,6 +383,9 @@ export function updateVRControls() {
 				// ray hover wins; otherwise the stick-press opens the input (117)
 				const action = get(vrHovered) ?? 'chat:input';
 				executeVRMenuAction(action);
+			} else if (get(vrAiPanelOpen)) {
+				// 36-vr-ai: the AI panel, the chat panel's rule
+				executeVRMenuAction(get(vrHovered) ?? 'ai:input');
 			} else if (get(vrSettingsPanelOpen)) {
 				// 36 (S23): ray hover wins; otherwise press the cursored row (the tab strip pages on)
 				const rows = settingsPanelRows(get(vrSettingsPage));
@@ -653,6 +665,14 @@ export function updateVRControls() {
 		// chat panel (117): the pointer ray highlights close / input
 		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
 		const hovered = pointerIndex >= 0 ? raycastChat(pointerIndex) : null;
+		if (hovered !== get(vrHovered)) {
+			if (hovered) hapticPulse(0.12, 14);
+			vrHovered.set(hovered);
+		}
+	} else if (get(vrAiPanelOpen)) {
+		// 36-vr-ai: the AI panel, lit like the chat panel
+		const pointerIndex = controllerIndexFor(get(vrMenuHand) === 'right' ? 'left' : 'right');
+		const hovered = pointerIndex >= 0 ? raycastAi(pointerIndex) : null;
 		if (hovered !== get(vrHovered)) {
 			if (hovered) hapticPulse(0.12, 14);
 			vrHovered.set(hovered);

@@ -37,9 +37,10 @@ h.run(async () => {
 	h.check(rows.every((r) => r.button), `every mesh-edit command is its own rebindable row (${JSON.stringify(rows.filter((r) => !r.button).map((r) => r.id))})`);
 	h.check(!(await p.locator('[data-shortcut="mesh-edit.ops"]').count()), 'the old bundled display row is gone');
 
-	// --- 2. rebind Extrude from E to J in the UI ----------------------------------------
-	await rebind(p, 'mesh.extrude', 'j');
-	h.check((await p.evaluate(() => window.__stores.shortcutsRegistry.bindingOf('mesh.extrude'))) === 'J', 'clicking the keys and pressing J rebinds Extrude');
+	// (K, not J: 19-A P6 gave J to Connect in the mesh scope — 36-int-124)
+	// --- 2. rebind Extrude from E to K in the UI ----------------------------------------
+	await rebind(p, 'mesh.extrude', 'k');
+	h.check((await p.evaluate(() => window.__stores.shortcutsRegistry.bindingOf('mesh.extrude'))) === 'K', 'clicking the keys and pressing K rebinds Extrude');
 
 	// --- 3. a conflict INSIDE a scope is warned and can be swapped; across scopes is fine --
 	await rebind(p, 'mesh.inset', 'g'); // G is Move in the same (mesh) scope
@@ -62,7 +63,7 @@ h.run(async () => {
 	await p.evaluate(() => window.__stores.settingsOpen.set(false));
 	await p.waitForTimeout(400);
 
-	// --- 4. the session obeys the rebind: J arms Extrude, E no longer does ---------------
+	// --- 4. the session obeys the rebind: K arms Extrude, E no longer does ---------------
 	await p.evaluate(async () => {
 		window.__stores.commandsHandler.sceneCommand('/create box');
 		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
@@ -75,9 +76,9 @@ h.run(async () => {
 	await p.keyboard.press('g');
 	await p.waitForTimeout(150);
 	h.check((await op(p)) === 'move', 'G still arms Move');
-	await p.keyboard.press('j');
+	await p.keyboard.press('k');
 	await p.waitForTimeout(150);
-	h.check((await op(p)) === 'extrude', 'the rebound key (J) arms Extrude');
+	h.check((await op(p)) === 'extrude', 'the rebound key (K) arms Extrude');
 	await p.keyboard.press('g');
 	await p.keyboard.press('e');
 	await p.waitForTimeout(150);
@@ -86,12 +87,12 @@ h.run(async () => {
 	await p.evaluate(() => document.querySelector('#mesh-keys-help')?.click());
 	await p.waitForTimeout(250);
 	h.check(
-		(await p.evaluate(() => document.querySelector('#mesh-keys-popover')?.textContent ?? '')).includes('J / I / G'),
-		'the mesh key sheet is generated from the keymap (shows J)'
+		(await p.evaluate(() => document.querySelector('#mesh-keys-popover')?.textContent ?? '')).includes('K / I / G'),
+		'the mesh key sheet is generated from the keymap (shows K)'
 	);
-	// the registry's stand-down follows the rebind: a viewport row on J would be shadowed
-	const stand = await p.evaluate(() => window.__stores.shortcutsRegistry.conflictOf('J', 'scene.physics').meshEdit);
-	h.check(stand === true, 'a viewport key moved onto J is warned that a mesh session owns J');
+	// the registry's stand-down follows the rebind: a viewport row on K would be shadowed
+	const stand = await p.evaluate(() => window.__stores.shortcutsRegistry.conflictOf('K', 'scene.physics').meshEdit);
+	h.check(stand === true, 'a viewport key moved onto K is warned that a mesh session owns K');
 	await p.evaluate(() => window.__stores.faceEdit.exitFaceEdit());
 
 	// --- 5. Reset all ------------------------------------------------------------------

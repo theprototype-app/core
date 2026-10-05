@@ -20,7 +20,6 @@
 
 	const KEY = 0.03
 	const GAP = 0.006
-	const WIDTH = 10 * KEY + 11 * GAP // widest row (digits) sets the plate width
 
 	let group: any = $state(null)
 
@@ -29,7 +28,9 @@
 	})
 
 	// each key: id, glyph, x/y, and a width multiple (space/enter/shift wider)
-	const WIDE: Record<string, number> = { space: 4, enter: 2, backspace: 1.6, shift: 1.6, esc: 1.4 }
+	const WIDE: Record<string, number> = { space: 4, enter: 2, backspace: 1.6, shift: 1.6, esc: 1.4, clear: 1.6 }
+	const rowWidth = (keys: string[]) => keys.reduce((sum, k) => sum + (WIDE[k] ?? 1) * KEY + ((WIDE[k] ?? 1) - 1) * GAP, 0) + (keys.length - 1) * GAP
+	const WIDTH = Math.max(...KEY_ROWS.map(rowWidth)) // the widest row sets the plate width
 	let rows = $derived(
 		KEY_ROWS.map((keys, r) => {
 			const widths = keys.map((k) => (WIDE[k] ?? 1) * KEY + ((WIDE[k] ?? 1) - 1) * GAP)
@@ -69,6 +70,7 @@
 		if ($vrHovered === 'kbd:' + id) return '#ff4000'
 		if (id === 'enter') return '#1f6f43'
 		if (id === 'esc') return '#6f2f2f'
+		if (id === 'clear') return '#4a3a2a'
 		if (id === 'shift' && $vrKeyboardTarget?.shift) return '#2f81f7'
 		return '#2a2f38'
 	}

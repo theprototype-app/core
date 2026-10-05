@@ -28,7 +28,7 @@ const point = { x: 0, y: 0, z: 0 };
 const opts = { volumes: /** @type {any[]} */ ([]) };
 const one = { volumes: /** @type {any[]} */ ([]) };
 /** @type {import('./buoyancy.js').WaterHit} */
-const hitOut = { surfaceY: 0, flow: null, density: 1000, linearDrag: 1.5, angularDrag: 1, volume: null };
+const hitOut = { surfaceY: 0, flow: null, density: 1000, linearDrag: 1.5, angularDrag: 1, heaveDrag: 4, volume: null };
 
 /**
  * Point W1 at the scene objects group when nothing else has (36-water's app wiring does
@@ -45,6 +45,11 @@ export function beginWaterFrame() {
 	frameVolumes = lastRoot ? waterVolumes.list() : [];
 	opts.volumes = frameVolumes;
 	return frameVolumes.length > 0 || tankVolumes.length > 0;
+}
+
+/** 36-fb-water F12: this frame's W1 volumes (after beginWaterFrame) — the ground cuts holes for them */
+export function currentWaterVolumes() {
+	return frameVolumes;
 }
 
 /** is there any water this frame (after beginWaterFrame) */
@@ -68,6 +73,7 @@ export function queryWater(x, y, z) {
 			hitOut.density = t.spec.density;
 			hitOut.linearDrag = t.spec.linearDrag;
 			hitOut.angularDrag = t.spec.angularDrag;
+			hitOut.heaveDrag = 4;
 			hitOut.volume = t;
 			return hitOut;
 		}
@@ -79,6 +85,7 @@ export function queryWater(x, y, z) {
 	hitOut.density = spec.density;
 	hitOut.linearDrag = spec.linearDrag;
 	hitOut.angularDrag = spec.angularDrag;
+	hitOut.heaveDrag = spec.heaveDrag ?? 4;
 	hitOut.volume = hit.volume;
 	return hitOut;
 }

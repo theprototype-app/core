@@ -44,6 +44,10 @@ const MIN_DENSITY = 10;
 const MAX_DENSITY = 20000;
 const MAX_MULTIPLIER = 10;
 const HEAVE_DRAG = 4;
+/** 36-fb-water F12: ADDED MASS — a body accelerating through water drags some water with it
+ * (a sphere: half its displaced volume). Without it a foam block released at the pool floor
+ * reached 5.7 g and left the water like a rocket (measured: 2.9 m above the surface). */
+const ADDED_MASS = 0.5;
 
 /**
  * The ONE boundary for `userData.physics.floats` (replicated bytes from a peer or a
@@ -173,7 +177,7 @@ export function bodySamples(parts, res = 3) {
 
 /**
  * @typedef {{surfaceY: number, flow?: number[] | null, density?: number,
- *   linearDrag?: number, angularDrag?: number, volume?: any}} WaterHit
+ *   linearDrag?: number, angularDrag?: number, heaveDrag?: number, volume?: any}} WaterHit
  */
 
 /**
@@ -200,7 +204,7 @@ export function buoyancyStep(body, samples, query, floats, out) {
 	let ix = 0, iy = 0, iz = 0;
 	let tx = 0, ty = 0, tz = 0;
 	let fx = 0, fy = 0, fz = 0; // submerged-weighted flow
-	let linDrag = 0, angDrag = 0;
+	let linDrag = 0, angDrag = 0, heave = 0;
 	let submerged = 0;
 	/** @type {WaterHit | null} */ let lastHit = null;
 	for (let i = 0, s = 0; i < pts.length; i += 3, s++) {
@@ -233,7 +237,19 @@ export function buoyancyStep(body, samples, query, floats, out) {
 			fz += flow[2] * share;
 		}
 		linDrag += (hit.linearDrag ?? 1) * share;
+		heave += (hit.linearDrag ?? 1) * (hit.heaveDrag ?? HEAVE_DRAG) * share;
 		angDrag += (hit.angularDrag ?? 1) * share;
+	}
+	// ADDED MASS (36-fb-water): the net vertical acceleration is g (rS - 1) / (1 + Ca rS), not
+	// g (rS - 1) — r = rho_water / rho_body, S = the submerged share. Rapier adds -g itself, so the
+	// buoyant impulse is scaled by (1 + Ca) / (1 + Ca rS): exactly 1 at rest (the draft is
+	// unchanged), < 1 for a light body (it rises slower), > 1 for a heavy one (it sinks slower).
+	if (submerged > 0 && lastHit) {
+		const rS = ((lastHit.density ?? WATER_DENSITY) / rhoBody) * submerged * floats.multiplier;
+		const f = (1 + ADDED_MASS) / (1 + ADDED_MASS * rS);
+		iy *= f;
+		tx *= f;
+		tz *= f;
 	}
 	out.impulse[0] = ix;
 	out.impulse[1] = iy;
@@ -264,7 +280,8 @@ export function buoyancyStep(body, samples, query, floats, out) {
 	// water out of the way (added mass + the waves it radiates), and with the plain drag
 	// a crate kept bouncing for ten seconds. HEAVE_DRAG x the drag puts a 1 m crate near
 	// critical damping (ω = sqrt(g / draft) ≈ 4 rad/s).
-	const kv = 1 - Math.exp(-linDrag * HEAVE_DRAG * body.dt);
+	// (36-fb-water: the water's own "Bob damping" scales it; the default is HEAVE_DRAG)
+	const kv = 1 - Math.exp(-heave * body.dt);
 	out.linvel[0] = body.linvel[0] + (flowX - body.linvel[0]) * kl;
 	out.linvel[1] = body.linvel[1] + (flowY - body.linvel[1]) * kv;
 	out.linvel[2] = body.linvel[2] + (flowZ - body.linvel[2]) * kl;

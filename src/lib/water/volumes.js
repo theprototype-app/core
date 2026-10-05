@@ -44,6 +44,9 @@ export const WATER_PHYSICS_DEFAULTS = Object.freeze({
 	density: 1000,
 	linearDrag: 1.5,
 	angularDrag: 1,
+	// 36-fb-water F12: how hard a floating body's up-and-down bob is damped (x the drag);
+	// 4 = the 36-sim tuning (a crate near critical damping), lower = it bobs longer
+	heaveDrag: 4,
 	flow: Object.freeze([0, 0, 0])
 });
 
@@ -73,6 +76,7 @@ export function normalizeWater(raw) {
 		density: Math.max(1, num(w.density, WATER_PHYSICS_DEFAULTS.density)),
 		linearDrag: Math.max(0, num(w.linearDrag, WATER_PHYSICS_DEFAULTS.linearDrag)),
 		angularDrag: Math.max(0, num(w.angularDrag, WATER_PHYSICS_DEFAULTS.angularDrag)),
+		heaveDrag: Math.min(20, Math.max(0, num(w.heaveDrag, WATER_PHYSICS_DEFAULTS.heaveDrag))),
 		flow: [num(flow[0], 0), num(flow[1], 0), num(flow[2], 0)],
 		preset: typeof w.preset === 'string' ? w.preset : '',
 		look: { ...obj(w.look) },

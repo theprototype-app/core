@@ -484,6 +484,15 @@
 		value={water.flow[2]}
 		onchange={(v) => updateObjectWater(uuid, { flow: [water.flow[0], water.flow[1], v] })}
 	/>
+	<!-- 36-fb-water F12: an upward current (a bubbler, a fountain basin), and how long things bob -->
+	<SliderRow
+		label="Flow up (m/s)"
+		min={-5}
+		max={5}
+		step={0.05}
+		value={water.flow[1]}
+		onchange={(v) => updateObjectWater(uuid, { flow: [water.flow[0], v, water.flow[2]] })}
+	/>
 	<SliderRow
 		label="Density"
 		min={50}
@@ -508,6 +517,14 @@
 		step={0.05}
 		value={water.angularDrag}
 		onchange={(v) => updateObjectWater(uuid, { angularDrag: v })}
+	/>
+	<SliderRow
+		label="Bob damping"
+		min={0}
+		max={10}
+		step={0.1}
+		value={water.heaveDrag}
+		onchange={(v) => updateObjectWater(uuid, { heaveDrag: v })}
 	/>
 {/if}
 

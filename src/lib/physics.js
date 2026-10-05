@@ -46,7 +46,9 @@ import { sceneJoints } from './joints';
 // 36-sim I1: buoyancy + drag + flow in water volumes (W1). Both leaves import nothing
 // from the app, so these edges close no cycle.
 import { bodySamples, applyBuoyancy, buoyancyOut, normalizeFloats } from './sim/buoyancy.js';
-import { beginWaterFrame, ensureWaterRoot, queryWater } from './sim/waterQuery.js';
+import { beginWaterFrame, ensureWaterRoot, queryWater, currentWaterVolumes } from './sim/waterQuery.js';
+// 36-fb-water F12: the ground gets holes where water goes below it (a leaf, imports nothing)
+import { waterHoles, groundSlabs, holesKey, GROUND_THICK } from './sim/groundHoles.js';
 
 // Physics preview (P-A rework): the INITIATOR runs rapier and broadcasts plain
 // `move` messages (~10/s per awake body) — peers just watch standard moves.
@@ -109,6 +111,13 @@ let colliderOwner = new Map();
 let groundHandle = -1;
 /** B4: the live ground collider, so a config change can swap it mid-sim */
 /** @type {any} */ let groundCollider = null;
+/** 36-fb-water F12: the ground is SEVERAL slabs once water cuts holes in it (groundHoles.js);
+ * every slab's handle, so the impact/ground tests stay one Set lookup. groundCollider/
+ * groundHandle keep naming the first slab (debug views + the "is there a ground" reads). */
+/** @type {any[]} */ let groundColliders = [];
+/** @type {Set<number>} */ let groundHandles = new Set();
+/** the holes the current ground was built with (rebuild only when they change) */
+let groundHolesKey = '';
 /** B4: a store subscription fires on subscribe; the world was just built with
  * that same value, so the first emission is skipped rather than re-applied */
 let groundSubPrimed = false;
@@ -891,6 +900,8 @@ async function startSimulation() {
 	world = new RAPIER.World({ x: 0, y: get(sceneGravity), z: 0 });
 	groundCollider = null;
 	groundHandle = -1;
+	groundColliders = []; // the old world's colliders died with it
+	groundHandles = new Set();
 	buildGround(get(scenePhysicsGround));
 	eventQueue = new RAPIER.EventQueue(true);
 	colliderOwner = new Map();
@@ -1051,18 +1062,38 @@ async function startSimulation() {
  */
 function buildGround(cfg) {
 	if (!world || !RAPIER) return false;
-	if (groundCollider) {
-		world.removeCollider(groundCollider, true);
-		groundCollider = null;
-	}
+	for (const c of groundColliders) world.removeCollider(c, true);
+	groundColliders = [];
+	groundHandles = new Set();
+	groundCollider = null;
 	groundHandle = -1;
+	groundHolesKey = '';
 	if (!cfg?.enabled) return false;
-	const desc = RAPIER.ColliderDesc.cuboid(500, 0.1, 500).setTranslation(0, (cfg.height ?? 0) - 0.1, 0);
-	if (cfg.friction != null) desc.setFriction(cfg.friction);
-	if (cfg.restitution != null) desc.setRestitution(cfg.restitution);
-	groundCollider = world.createCollider(desc);
-	groundHandle = groundCollider.handle;
+	// 36-fb-water F12: a pool sunk into the ground must not have the ground as its LID
+	const height = cfg.height ?? 0;
+	ensureWaterRoot(get(objectsGroup));
+	beginWaterFrame();
+	const holes = waterHoles(currentWaterVolumes(), height);
+	groundHolesKey = holesKey(holes);
+	for (const slab of groundSlabs(height, holes)) {
+		const desc = RAPIER.ColliderDesc.cuboid(slab.hx, GROUND_THICK / 2, slab.hz).setTranslation(slab.cx, slab.top - GROUND_THICK / 2, slab.cz);
+		if (cfg.friction != null) desc.setFriction(cfg.friction);
+		if (cfg.restitution != null) desc.setRestitution(cfg.restitution);
+		const c = world.createCollider(desc);
+		groundColliders.push(c);
+		groundHandles.add(c.handle);
+	}
+	groundCollider = groundColliders[0] ?? null;
+	groundHandle = groundCollider ? groundCollider.handle : -1;
 	return true;
+}
+
+/** 36-fb-water F12: water moved, appeared or went (once per step, cheap) — re-cut the ground */
+function syncGroundHoles() {
+	if (!world || !groundCollider) return;
+	const cfg = get(scenePhysicsGround);
+	const key = holesKey(waterHoles(currentWaterVolumes(), cfg.height ?? 0));
+	if (key !== groundHolesKey) buildGround(cfg);
 }
 
 /**
@@ -1627,7 +1658,9 @@ function stepInner(now) {
 	/** @type {{entry: BodyEntry, floats: ReturnType<typeof normalizeFloats>}[]} */
 	const floaters = [];
 	ensureWaterRoot(get(objectsGroup));
-	if (beginWaterFrame())
+	const anyWater = beginWaterFrame();
+	syncGroundHoles();
+	if (anyWater)
 		for (const entry of bodies)
 			if (entry.mode === 'dynamic' && entry.buoy) {
 				const floats = normalizeFloats(entry.object.userData?.physics?.floats);
@@ -1745,7 +1778,7 @@ function stepInner(now) {
  */
 function queueContact(h1, h2, now) {
 	for (const handle of [h1, h2]) {
-		if (handle === groundHandle) continue;
+		if (groundHandles.has(handle)) continue;
 		const entry = colliderOwner.get(handle)?.entry;
 		if (!entry || entry.mode !== 'dynamic' || entry.hold) continue;
 		const down = -(entry.preVy ?? 0);
@@ -1755,7 +1788,7 @@ function queueContact(h1, h2, now) {
 		lastImpactAt.set(uuid, now);
 		// 36 X6: and what it hit — the other collider's owner, '' for the ground
 		const other = handle === h1 ? h2 : h1;
-		pendingImpacts.push({ uuid, strength: down, other: other === groundHandle ? '' : colliderOwner.get(other)?.uuid ?? '' });
+		pendingImpacts.push({ uuid, strength: down, other: groundHandles.has(other) ? '' : colliderOwner.get(other)?.uuid ?? '' });
 	}
 }
 
@@ -1878,6 +1911,9 @@ export function stopSimulation(opts = {}) {
 	oobCount = 0;
 	groundCollider = null;
 	groundHandle = -1;
+	groundColliders = [];
+	groundHandles = new Set();
+	groundHolesKey = '';
 	world?.free?.();
 	world = null;
 	eventQueue?.free?.();
@@ -2059,6 +2095,9 @@ export function physicsWorldDebug() {
 		running: !!world,
 		groundHandle,
 		groundEnabled: !!groundCollider,
+		// 36-fb-water F12: the ground's slabs (1 = no water cuts it) + the holes' key
+		groundSlabs: groundColliders.length,
+		groundHoles: groundHolesKey,
 		groundTop: groundCollider ? (get(scenePhysicsGround).height ?? 0) : null,
 		bodies: bodies.length,
 		ownerHandles: [...colliderOwner.keys()],

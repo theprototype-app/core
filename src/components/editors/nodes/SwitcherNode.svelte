@@ -18,7 +18,7 @@
 
 <NodeWrapper type={data.type} label={data.label}>
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
-	<div class="nodrag flex flex-col">
+	<div class="nodrag nopan flex flex-col">
 		{#each options as option, i}
 			<label class="flex">
 				<input

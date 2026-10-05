@@ -36,7 +36,7 @@
 		<div class="bview-value" data-bview-value>{formatValue(shown)}{data.unit ? ' ' + data.unit : ''}</div>
 		{#if data.editable && data.ptype === 'number'}
 			<input
-				class="nodrag bview-knob"
+				class="nodrag nopan bview-knob"
 				type="range"
 				min={data.min}
 				max={data.max}
@@ -54,7 +54,7 @@
 				}}
 			/>
 		{:else if data.editable && data.ptype === 'boolean'}
-			<label class="nodrag bview-sub"><input type="checkbox" checked={!!shown} onchange={(e) => data.onKnob?.(data.key, (e.currentTarget as HTMLInputElement).checked, true)} /> on</label>
+			<label class="nodrag nopan bview-sub"><input type="checkbox" checked={!!shown} onchange={(e) => data.onKnob?.(data.key, (e.currentTarget as HTMLInputElement).checked, true)} /> on</label>
 		{/if}
 	{:else if data.liveText !== undefined}
 		<div class="bview-value" data-bview-value>{data.liveText}</div>

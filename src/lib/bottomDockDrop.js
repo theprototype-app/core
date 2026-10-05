@@ -1,3 +1,4 @@
+import { isHeaderDrag } from './windowGrip';
 import { get } from 'svelte/store';
 import { bottomInset, armDockMode, activateDock, DOCK_FAMILY } from './bottomDock';
 import { groupOfKey, headerTargetAt } from './windowTabs';
@@ -100,7 +101,7 @@ export function bottomDockable(node, { key }) {
 	let armed = false;
 	/** @param {any} e */
 	const down = (e) => {
-		if (!e.target.closest('.move-handle') || e.button !== 0) return;
+		if (!isHeaderDrag(e.target) || e.button !== 0) return; // 36 F4: not on a header control
 		if (node.dataset?.docked) return; // edge-docked: docking.js's own drag undocks it first
 		if (groupOfKey(key)) return; // a tab group drags as one; docking one member is ambiguous
 		dragging = true;

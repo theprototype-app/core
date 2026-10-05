@@ -26,7 +26,7 @@
 	<!-- one column (the wrapper slot is a flex ROW) -->
 	<div class="flex w-full flex-col gap-1">
 		<button
-			class="nodrag w-full rounded-sm border border-gray-600 px-1 py-0.5 text-xs {capturing ? 'bg-primary-700 text-white' : ''}"
+			class="nodrag nopan w-full rounded-sm border border-gray-600 px-1 py-0.5 text-xs {capturing ? 'bg-primary-700 text-white' : ''}"
 			on:click={() => (capturing = true)}
 			on:keydown={capturing ? onCaptureKey : undefined}
 			on:blur={() => (capturing = false)}
@@ -38,7 +38,7 @@
 			<!-- 21-E3: down = the original pulse (held keys keep it high); up = the falling
 			     edge, the other half of hold-to-show; held = the same read, said as a level -->
 			<select
-				class="nodrag rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
+				class="nodrag nopan rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
 				value={data.edge ?? 'down'}
 				on:change={(e) => setNodeData(id, { edge: e.currentTarget.value })}
 			>

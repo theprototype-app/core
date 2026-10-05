@@ -571,7 +571,10 @@ h.run(async () => {
 		return stack.length ? stack[stack.length - 1].kind : '';
 	});
 	h.check(['session', 'aibatch'].includes(sealed), `the sealed session is one composite entry (${sealed})`);
-	// a LATE joiner sees the piece and the opened box from the ordinary scene walk
+	// a LATE joiner sees the piece and the opened box from the ordinary scene walk. B is
+	// done by now — closed first, so the third page boots on a two-page budget (a third
+	// live page timed its hydration out on a loaded box)
+	await B.ctx.close();
 	const C = await h.setupPage(browser, 'C');
 	await h.connect(C, A);
 	await h.eventually(() => facts(C.page, pieceUuid), (v) => v && v.tris === 2, 'a late joiner (C) gets the piece', 30000);

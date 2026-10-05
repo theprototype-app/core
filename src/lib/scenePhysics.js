@@ -217,6 +217,11 @@ export function normalizeScenePhysics(raw) {
 		...optional('pick', normalizePick(source.pick)),
 		// 36-fb-water F14: "Start simulation on load" (sim/simOnLoad.js) — same rule: present only when on
 		...(source.simOnLoad === true ? { simOnLoad: true } : {}),
+		// 36-fb S3: ONE particle budget across every Fluid emitter — present only when set
+		// (a scene that never touched it stays byte-identical); 200..20000
+		...(typeof source.fluidBudget === 'number' && Number.isFinite(source.fluidBudget)
+			? { fluidBudget: Math.round(Math.max(200, Math.min(20000, source.fluidBudget))) }
+			: {}),
 		changedAt: typeof source.changedAt === 'number' ? source.changedAt : 0
 	};
 	return withUnknown(source, state, [
@@ -232,6 +237,7 @@ export function normalizeScenePhysics(raw) {
 		'holdCamera',
 		'pick',
 		'simOnLoad',
+		'fluidBudget',
 		'changedAt',
 		'type' // the wire envelope's own field, never state
 	]);

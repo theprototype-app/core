@@ -13,11 +13,15 @@
 	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
 	import SelectionPassSetting from './scene/SelectionPassSetting.svelte'; // 36 F22 / S8
 	import SimOnLoadSetting from './scene/SimOnLoadSetting.svelte';
+	import FluidBudgetSetting from './scene/FluidBudgetSetting.svelte'; // 36-fb S3
 	import LodGroupPanel from './LodGroupPanel.svelte';
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
+	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
+	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
+	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
 	import DragRow from '../ui/DragRow.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
@@ -2367,6 +2371,7 @@
 				<p class="text-[10px] uppercase tracking-wide text-gray-500">World</p>
 				<!-- CL-A A6: shared scene gravity (replicated singleton, applies live) -->
 				<SliderRow label="Gravity" min={-20} max={5} step={0.1} value={$sceneGravity} onchange={(v) => setSceneGravity(v)} />
+				<FluidBudgetSetting /><!-- 36-fb S3: scene data, saved + replicated -->
 				<SliderRow
 					id="physics-timescale"
 					label="Time scale"
@@ -3837,6 +3842,8 @@
 			{/if}
 
 			{#if $selectedObject.userData?.fluid}<FluidTankSection object={$selectedObject} />{/if}<!-- 36-sim U2b -->
+			{#if $selectedObject.userData?.fluidEmitter}<FluidEmitterSection object={$selectedObject} />{/if}<!-- 36-fb F23 -->
+			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
 			{#if !$selectedObject.isLight}
 				<Section label="Physics">
 					{#if multiCount}
@@ -3953,6 +3960,7 @@
 						</div>
 						<PhysicsFloats object={$selectedObject} {setPhysics} /><!-- 36-sim I1 -->
 					{/if}
+					<FluidInteractionRow targets={insTargets} /><!-- 36-fb F23 -->
 					<!-- CL-A A7: per-object collider preview (local, this device) -->
 					<Checkbox
 						id="physics-show-collider"

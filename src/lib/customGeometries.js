@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { fbm2, valueNoise2 } from './noise';
 import { fluidTankGeometry } from './sim/fluidTank.js';
+import { fluidEmitterGeometry } from './sim/fluidEmitterObject.js';
+import { flowPathGeometry } from './sim/flowPathObject.js';
+import { FLOW_PATH_DEFAULTS } from './sim/flowPathCore.js';
 
 // Architectural building-block geometries. All builders return a BufferGeometry
 // centered on X/Z and resting on y=0 (bbox bottom at the floor), so surface
@@ -217,5 +220,7 @@ export const customGeometryBuilders = {
 	// both camera kinds share one body; the KIND lives in userData.camera
 	Camera: cameraBody,
 	CameraOrtho: cameraBody,
-	FluidTank: fluidTankGeometry // 36-sim U2b (sim/fluidTank.js)
+	FluidTank: fluidTankGeometry, // 36-sim U2b (sim/fluidTank.js)
+	FluidEmitter: fluidEmitterGeometry, // 36-fb F23 (sim/fluidEmitterObject.js)
+	FlowPath: () => flowPathGeometry(FLOW_PATH_DEFAULTS) // 36-fb F24 (sim/flowPathObject.js)
 };

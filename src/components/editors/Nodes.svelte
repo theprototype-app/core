@@ -177,6 +177,8 @@
 		objectselector: ObjectSelectorNode,
 		shake: AnimationNode,
 		spin: AnimationNode,
+		rotor: AnimationNode, // 36-fb F25
+		flowfloat: AnimationNode, // 36-fb F24
 		bounce: AnimationNode,
 		orbit: AnimationNode,
 		pulse: AnimationNode,

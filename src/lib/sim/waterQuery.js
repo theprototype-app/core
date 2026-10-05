@@ -23,6 +23,24 @@ let tankVolumes = [];
 export function setTankVolumes(list) {
 	tankVolumes = list;
 }
+
+/**
+ * 36-fb F23: the POOLS a Fluid emitter's particles form, as water for buoyancy — the tank's
+ * idea with a surface that varies across the pool (`surfaceAt(x, z)`, null = dry there).
+ * Published by fluidEmitterRuntime every solver frame; a separate list so the tank's
+ * publisher (which replaces its whole list) and the emitter's never overwrite each other.
+ * @type {{uuid: string, tank: true, pool: true, contains: (x: number, y: number, z: number) => boolean,
+ *   surfaceAt: (x: number, z: number) => number | null, surfaceY: number, spec: {density: number, linearDrag: number, angularDrag: number}}[]}
+ */
+let poolVolumes = [];
+
+/** @param {typeof poolVolumes} list */
+export function setPoolVolumes(list) {
+	poolVolumes = list;
+}
+
+/** a tank's flat surface or a pool's local one @param {any} t @param {number} x @param {number} z */
+const surfaceOfVolume = (t, x, z) => (t.surfaceAt ? t.surfaceAt(x, z) : t.surfaceY);
 /** @type {any} */ let lastRoot = null;
 const point = { x: 0, y: 0, z: 0 };
 const opts = { volumes: /** @type {any[]} */ ([]), span: 0 };
@@ -44,7 +62,7 @@ export function ensureWaterRoot(root) {
 export function beginWaterFrame() {
 	frameVolumes = lastRoot ? waterVolumes.list() : [];
 	opts.volumes = frameVolumes;
-	return frameVolumes.length > 0 || tankVolumes.length > 0;
+	return frameVolumes.length > 0 || tankVolumes.length > 0 || poolVolumes.length > 0;
 }
 
 /** 36-fb-water F12: this frame's W1 volumes (after beginWaterFrame) — the ground cuts holes for them */
@@ -54,7 +72,7 @@ export function currentWaterVolumes() {
 
 /** is there any water this frame (after beginWaterFrame) */
 export function waterActive() {
-	return frameVolumes.length > 0 || tankVolumes.length > 0;
+	return frameVolumes.length > 0 || tankVolumes.length > 0 || poolVolumes.length > 0;
 }
 
 /**
@@ -68,9 +86,10 @@ export function queryWater(x, y, z, span = 0) {
 	opts.span = span;
 	const hit = frameVolumes.length ? ((point.x = x), (point.y = y), (point.z = z), waterVolumes.query(point, opts)) : null;
 	if (!hit) {
-		for (const t of tankVolumes) {
-			if (y > t.surfaceY || !t.contains(x, y, z)) continue;
-			hitOut.surfaceY = t.surfaceY;
+		for (const t of poolVolumes.length ? [...tankVolumes, ...poolVolumes] : tankVolumes) {
+			const sy = surfaceOfVolume(t, x, z);
+			if (sy == null || y > sy || !t.contains(x, y, z)) continue;
+			hitOut.surfaceY = sy;
 			hitOut.flow = null;
 			hitOut.density = t.spec.density;
 			hitOut.linearDrag = t.spec.linearDrag;
@@ -112,8 +131,10 @@ export function waterSurfaceAt(x, y, z) {
 		if (!waterVolumes.query(point, one)) continue;
 		if (!best || sy > best.surfaceY) best = { surfaceY: sy, volume: v };
 	}
-	for (const t of tankVolumes)
-		if (t.contains(x, Math.min(y, t.surfaceY - 0.01), z) && (!best || t.surfaceY > best.surfaceY)) best = { surfaceY: t.surfaceY, volume: t };
+	for (const t of poolVolumes.length ? [...tankVolumes, ...poolVolumes] : tankVolumes) {
+		const sy = surfaceOfVolume(t, x, z);
+		if (sy != null && t.contains(x, Math.min(y, sy - 0.01), z) && (!best || sy > best.surfaceY)) best = { surfaceY: sy, volume: t };
+	}
 	return best;
 }
 
@@ -128,5 +149,6 @@ export function resetWaterQuery() {
 	frameVolumes = [];
 	opts.volumes = [];
 	tankVolumes = [];
+	poolVolumes = [];
 	lastRoot = null;
 }

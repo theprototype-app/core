@@ -6,6 +6,8 @@ import { tickJiggle } from './jiggleRuntime.js';
 import { tickSplashes } from './splashWatch.js';
 import { ensureWaterRoot, beginWaterFrame } from './waterQuery.js';
 import { tickFluid, simHeld } from './fluidRuntime.js';
+import { tickFluidEmitters } from './fluidEmitterRuntime.js';
+import { tickFlowPaths } from './flowPaths.js';
 import { tickPours } from '../water/pourDrops.js';
 // 36 S5: a scene load puts its primitives on screen before the fluid sims start (a leaf store)
 import { heavyWorkDeferred } from '../sceneLoader';
@@ -24,5 +26,7 @@ export function tickSim(root, camera, renderer, now) {
 	if (!heavyWorkDeferred()) {
 		tickFluid(root, camera, renderer, now);
 		tickPours(root, camera, renderer, now, simHeld()); // 36-fb-water F16/F17 (+ S9 pause): pour emitters + tank spills
+		tickFluidEmitters(root, camera, renderer, now); // 36-fb F23
+		tickFlowPaths(root, now); // 36-fb F24
 	}
 }

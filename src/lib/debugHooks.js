@@ -300,6 +300,9 @@ export const DEBUG_HOOKS = [
 	['kitInstancing', () => import('./kitInstancing')],
 	['scriptSockets', () => import('./scriptSockets')],
 	['scriptLint', () => import('./scriptLint')],
+	['codeWorkspace', () => import('./codeWorkspace')],
+	['scriptAssets', () => import('./scriptAssets')],
+	['codeTabs', () => import('./codeTabs')],
 	['aiExtensions', () => import('./ai/aiExtensions')],
 	['graphText', () => import('./graphText')],
 	// 36 (G1): code <-> node (openCode seam, module source, fork) + the Main graph migration

@@ -247,3 +247,7 @@ export const nodeDesignerOpen = writable(null);
 // nodeId -> last script error message (shown as a badge on the node)
 /** @type {import('svelte/store').Writable<Record<string, string>>} */
 export const scriptErrors = writable({});
+// 36-code: nodeId -> why the code workspace's last save did NOT reach this node (a parse
+// error: the node keeps running its last good code). Beside scriptErrors, set by codeWorkspace.
+/** @type {import('svelte/store').Writable<Record<string, string>>} */
+export const scriptFileErrors = writable({});

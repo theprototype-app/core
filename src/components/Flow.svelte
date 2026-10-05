@@ -9,7 +9,6 @@
 	import ContextMenu from './ContextMenu.svelte';
 	import Nodes from './editors/Nodes.svelte';
 	import BehaviourView from './editors/behaviours/BehaviourView.svelte';
-	import ScriptPanel from './editors/ScriptPanel.svelte';
 	import ModuleSourceWindow from './editors/ModuleSourceWindow.svelte'; // 36 (G1): read-only module code
 	import NodeDesigner from './editors/NodeDesigner.svelte';
 	import DockTabs from './DockTabs.svelte';
@@ -248,7 +247,6 @@
 	{/if}
 {/if}
 
-<ScriptPanel />
 <ModuleSourceWindow />
 <NodeDesigner />
 

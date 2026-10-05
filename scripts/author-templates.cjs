@@ -92,6 +92,9 @@
 //                    aimed by rotation — place a directional OUTSIDE the scene on its sun side
 //   camera           lookAt, fov, aspect — the app's own /create Camera marker
 //   spline           points [{pos, radius}], closed, color
+//   terrain          terrain {size, segments (<= 48), seed, amplitude, frequency, octaves, ridged, warp,
+//                    falloff 'flat'|'island'|'bowl', offsetX, offsetZ} — the app's parametric Terrain (C1)
+//   (any non-kit)    scale [x, y, z] | n · children [objects] on a mesh too (visual parts riding it)
 //   group / empty    children [objects] (names resolve inside groups too)
 //   mirror           of (a named object/group), opacity (0.15), prefix — reflected across x = 0
 //   kit              pack*, item* (a pack item NAME, e.g. 'architecture-kit' / 'WallStone'), scale?
@@ -504,6 +507,10 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 			const simTank = d.objects.some((/** @type {any} */ o) => o.type === 'fluidtank')
 				? await import('/src/lib/sim/fluidTank.js')
 				: null;
+			// 36-backlog-21c: a procedural TERRAIN (C1's builder + its geometryParams stamp), fetched only when a def asks
+			const terrainBuilder = d.objects.some((/** @type {any} */ o) => o.type === 'terrain')
+				? (await import('/src/lib/customGeometries.js')).terrainGeometry
+				: null;
 			/** @param {any} o @param {{mirror?: boolean, prefix?: string, opacity?: number, shadow?: boolean}} [opts] */
 			const build = (o, opts = {}) => {
 				const mirror = !!opts.mirror;
@@ -612,6 +619,8 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					}
 					// 36-sim: a fluid tank — open glass box; userData.fluid + its compound collider below
 					else if (o.type === 'fluidtank') geo = simTank.fluidTankGeometry(...(o.size ?? []));
+					// 36-backlog-21c: a parametric terrain — the app's own builder, so the Inspector's Terrain rows edit it
+					else if (o.type === 'terrain') geo = terrainBuilder(o.terrain ?? {});
 					else throw new Error('object "' + o.name + '": unknown type "' + o.type + '"');
 					// 30 author-kit: MeshPhysicalMaterial when a def asks for `physical` or uses any
 					// field only it has; MeshToonMaterial for `toon`. Absent all of those it is the
@@ -658,6 +667,20 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 				if (o.type === 'fluidtank') {
 					simTank.stampFluidTank(object, ...(o.size ?? []));
 					if (o.fluid) object.userData.fluid = { ...object.userData.fluid, ...o.fluid };
+				}
+				if (o.type === 'terrain') {
+					object.userData.terrain = true;
+					object.userData.geometryParams = { gtype: 'Terrain', params: { ...(o.terrain ?? {}) } };
+				}
+				// 36-backlog-21c: a MESH may carry visual children too (a car's wheels and cabin); a
+				// group/empty already builds its own above
+				if (o.children && o.type !== 'group' && o.type !== 'empty' && o.type !== 'kit')
+					for (const child of o.children) object.add(build(child, opts));
+				// and a non-kit object may be SCALED (a spline flattened into a road ribbon); a kit
+				// piece takes its own `scale` above
+				if (o.scale != null && o.type !== 'kit') {
+					const k = Array.isArray(o.scale) ? o.scale : [o.scale, o.scale, o.scale];
+					object.scale.set(k[0], k[1], k[2]);
 				}
 				object.name = (opts.prefix ?? '') + o.name;
 				if (pos && o.type !== 'spline') object.position.set(pos[0], pos[1], pos[2]);

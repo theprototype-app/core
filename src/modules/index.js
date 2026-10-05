@@ -18,5 +18,7 @@ import minigolf from './minigolf/module.js';
 import skyrun from './skyrun/module.js';
 // 35: the Target Toss game's stages and judge (dormant outside a Target Toss scene)
 import targettoss from './targettoss/module.js';
+// 36-backlog-21c (21-C8): the Race game's seats, arcade cars and lap judge (dormant outside a Race scene)
+import race from './race/module.js';
 
-export const coreModules = [hello, button, pong, vrsleeve, towers, escape, marble, minigolf, skyrun, targettoss];
+export const coreModules = [hello, button, pong, vrsleeve, towers, escape, marble, minigolf, skyrun, targettoss, race];

@@ -122,3 +122,22 @@ describe('moving colliders carry water (F25)', () => {
 		expect(swirl(true)).toBeGreaterThan(swirl(false) + 0.03);
 	});
 });
+
+describe('thin walls do not leak (36-fb)', () => {
+	it('water pressed hard against a thin wall stays on its own side', () => {
+		const s = new FluidSolver({ min: [-0.5, -0.3, -0.3], max: [0.5, 0.3, 0.3], capacity: 900, spacing: 0.04 });
+		// fill the -x half
+		let n = 0;
+		for (let x = -0.48; x < -0.06 && n < 900; x += 0.04)
+			for (let y = -0.28; y < 0.2 && n < 900; y += 0.04)
+				for (let z = -0.28; z < 0.28 && n < 900; z += 0.04) {
+					s.spawn([x, y, z], [0, 0, 0]);
+					n++;
+				}
+		const wall = { kind: 'box', center: [0, 0, 0], half: [0.02, 0.3, 0.3], quat: [0, 0, 0, 1] };
+		for (let f = 0; f < 180; f++) s.step(1 / 60, { gravity: [40, -9.81, 0], viscosity: 0.05, surfaceTension: 0.5, colliders: [wall] });
+		let across = 0;
+		for (let i = 0; i < s.count; i++) if (s.x[i * 3] > 0.02) across++;
+		expect(across).toBe(0);
+	});
+});

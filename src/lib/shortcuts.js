@@ -371,6 +371,8 @@ export const shortcuts = [
 		keys: 'O',
 		group: 'Panels',
 		scope: 'viewport',
+		// 36 F2: window management, not the 3D view — it also answers from a panel
+		alsoScopes: ['panel', 'objects'],
 		// the key IS the toolbar button now (one tree in panelToggles): a buried
 		// window is raised first and only closes on the next press
 		label: 'Object list: show / bring to front / hide',
@@ -381,6 +383,8 @@ export const shortcuts = [
 		keys: 'N',
 		group: 'Panels',
 		scope: 'viewport',
+		// 36 F2: window management, not the 3D view — it also answers from a panel
+		alsoScopes: ['panel', 'objects'],
 		label: 'Node editor: show / bring to front / hide',
 		action: () => togglePanel('flow')
 	},
@@ -414,6 +418,8 @@ export const shortcuts = [
 		keys: 'T',
 		group: 'Panels',
 		scope: 'viewport',
+		// 36 F2: window management, not the 3D view — it also answers from a panel
+		alsoScopes: ['panel', 'objects'],
 		// the tool dock: the strip that holds the Node editor, Explorer, Flow Code,
 		// Animation, UV, Shader and HUD tabs. Minimizing leaves every tab open, and
 		// since a minimized dock draws nothing at all, this key is one of the only

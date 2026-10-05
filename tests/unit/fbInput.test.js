@@ -135,10 +135,12 @@ describe('36 F2 — panels own the keyboard', () => {
 		expect(SCOPE_LABELS.objects).toBeTruthy();
 	});
 
-	it('the registry lends exactly the selection rows to the Object list', () => {
+	it('the registry lends exactly the selection rows to the Object list, and the panel toggles to every panel', () => {
 		const src = fs.readFileSync(path.join(ROOT, 'src/lib/shortcuts.js'), 'utf8');
-		const lent = [...src.matchAll(/id: '([\w.-]+)',[^}]*?alsoScopes: \['objects'\]/g)].map((m) => m[1]).sort();
-		expect(lent).toEqual(['camera.focus', 'objects.delete', 'objects.delete-backspace', 'objects.duplicate', 'objects.select-all']);
+		const lent = (list) => [...src.matchAll(/id: '([\w.-]+)',[^}]*?alsoScopes: \[([^\]]*)\]/g)].filter((m) => m[2] === list).map((m) => m[1]).sort();
+		expect(lent("'objects'")).toEqual(['camera.focus', 'objects.delete', 'objects.delete-backspace', 'objects.duplicate', 'objects.select-all']);
+		// T / N / O manage windows — they answer from a panel too (C, chat, stays the 3D view's: 36 U11)
+		expect(lent("'panel', 'objects'")).toEqual(['panels.dock', 'panels.node-editor', 'panels.object-list']);
 	});
 
 	it('every docked panel root is marked (a floating one is marked by dragWindow)', () => {

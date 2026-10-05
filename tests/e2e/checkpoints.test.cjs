@@ -111,7 +111,8 @@ h.run(async () => {
 	await h.eventually(
 		() => objectNames(page),
 		(n) => n.length === 2 && n.includes('Box') && n.includes('Sphere'),
-		'Restore puts the checkpoint back (2 objects)'
+		'Restore puts the checkpoint back (2 objects)',
+		30000 // a full scene load: the backup cut, the budget gate, the module ask, the sliced build
 	);
 	list = await until(() => rows(page), (l) => l.length === 3, 'the scene before it is kept');
 	const before = list.find((r) => /^Before restoring/.test(r.name));

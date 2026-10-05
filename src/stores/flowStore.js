@@ -162,6 +162,23 @@ export function allEdges() {
 	return out;
 }
 
+/**
+ * 36 U11: what the RUNTIME evaluates — every node minus the editor-only kinds (a group,
+ * a note: annotation, never evaluated) and minus MUTED nodes (`data.muted`, the node
+ * editor's M / "Mute (bypass)"), plus only the wires whose both ends survive. A muted
+ * node is as good as absent: its effect stops, its value reads as unwired downstream.
+ * A graph with nothing muted and no groups/notes is passed through UNCHANGED (the same
+ * arrays), so the cost of the filter is one scan.
+ * @param {any[]} nodes @param {any[]} edges @returns {{nodes: any[], edges: any[]}}
+ */
+export function runtimeGraph(nodes, edges) {
+	const skip = (/** @type {any} */ n) => n.type === 'group' || n.type === 'note' || n.data?.muted === true;
+	if (!nodes.some(skip)) return { nodes, edges };
+	const live = nodes.filter((n) => !skip(n));
+	const ids = new Set(live.map((n) => n.id));
+	return { nodes: live, edges: edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
+}
+
 /** nodes+edges count across every graph (nodesync drift heal). */
 export function graphTotals() {
 	const all = get(flowGraphs);

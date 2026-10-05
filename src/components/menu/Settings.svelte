@@ -13,6 +13,7 @@
 	import WaterSettings from '../water/WaterSettings.svelte';
 	import ToursSettings from './settings/ToursSettings.svelte'; // 36 U3b/I5
 	import VRSettingsSection from './VRSettingsSection.svelte';
+	import NodeTypesSection from './NodeTypesSection.svelte'; // 36 B7
 	// 30b (vr-play) C5: the two LOCAL game-audio volumes
 	import { gameSoundVolume } from '$lib/gameSfx';
 	import { gameMusicVolume } from '$lib/gameMusic';
@@ -103,6 +104,7 @@
 		setShortcutCapture,
 		nonLatinLayoutSeen
 	} from '$lib/shortcuts';
+	import { scopeLabel } from '$lib/keyScope';
 	import {
 		aiEnabled,
 		setAiEnabled,
@@ -264,6 +266,13 @@
 		shortcutsVersion++;
 	}
 
+	/** 36 U11: where a group's keys fire (its rows' scope), for the group header */
+	function groupScope(group: string) {
+		const scopes = [...new Set(shortcuts.filter((s) => s.group === group).map((s) => s.scope || 'global'))];
+		if (scopes.length !== 1 || scopes[0] === 'global') return '';
+		return scopes[0] === 'mesh' ? 'in an Edit Mesh session' : 'in the ' + scopeLabel(scopes[0]);
+	}
+
 	function resetEveryShortcut() {
 		resetAllShortcuts();
 		shortcutConflict = null;
@@ -272,6 +281,9 @@
 	let aiExpanded = false;
 	// 36-export: Settings ▸ Export — opened by a search (the filter needs mounted rows) or a deep link
 	let exportExpanded = false;
+	// 36 B7: Settings ▸ Node types (the node manager) — opened by a search or a deep link
+	let nodeTypesExpanded = false;
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'nodetypes')) nodeTypesExpanded = true;
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'export')) exportExpanded = true;
 	let sceneExpanded = false;
 	let explorerExpanded = false;
@@ -1998,6 +2010,10 @@
 					{#snippet header()}Export{/snippet}
 					<ExportSettingsSection />
 				</AccordionItem>
+				<AccordionItem bind:open={nodeTypesExpanded}>
+					{#snippet header()}Node types{/snippet}
+					<NodeTypesSection />
+				</AccordionItem>
 				<AccordionItem bind:open={connectionExpanded}>
 					{#snippet header()}Connection{/snippet}
 					<SettingRow name="Session size">
@@ -2156,7 +2172,9 @@
 						<!-- 131: borderless multi-column grid; group headers span all columns -->
 						<div id="shortcut-grid" class="grid grid-cols-1 gap-x-8 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
 							{#each shortcutGroups as group}
-								<p class="col-span-full mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">{group}</p>
+								<p class="col-span-full mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">
+									{group}{#if groupScope(group)}<span class="shortcut-scope ml-2 font-normal normal-case text-gray-500">· keys work {groupScope(group)}</span>{/if}
+								</p>
 								{#each shortcuts.filter((s) => s.group === group) as shortcut}
 									<div class="flex flex-col py-1" data-shortcut={shortcut.id}>
 										<div class="flex items-center gap-2">

@@ -1,4 +1,5 @@
 <script>
+	import { viewportHasKeys } from '$lib/keyScope'; // 36 U11
 	// T-2: sculpt toolbar — CL-B B5 floating strip -> M0 TOOLBOX: rebuilt on the
 	// shared ToolboxWindow shell so both edit toolboxes look and behave the same
 	// (header drag, width-resize reflows the square brush buttons, status
@@ -27,6 +28,7 @@
 
 	/** @param {KeyboardEvent} event */
 	function onKeydown(event) {
+		if (!viewportHasKeys(event)) return; // 36 U11: keys in another pane are that pane's
 		if (event.key === 'Escape' && $sculptObject) exitSculpt();
 	}
 </script>

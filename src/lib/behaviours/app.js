@@ -235,7 +235,8 @@ function disownEntities(moduleId) {
 function reconcile() {
 	/** @type {Map<string, any>} */
 	const want = new Map();
-	for (const node of allNodes()) if (node.type === BEHAVIOUR_NODE) want.set(String(node.id), node);
+	// 36 U11: a MUTED behaviour node unloads like a disabled one
+	for (const node of allNodes()) if (node.type === BEHAVIOUR_NODE && node.data?.muted !== true) want.set(String(node.id), node);
 	for (const id of [...loaded.keys()]) {
 		const node = want.get(id);
 		if (!node) unload(id);

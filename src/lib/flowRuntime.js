@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { get } from 'svelte/store';
 import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
-import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused} from '../stores/flowStore';
+import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused, runtimeGraph } from '../stores/flowStore';
 // 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
 import { objectsGroup, isLocked } from '../stores/sceneStore';
 import { peers, showToast, showInfoToast, dismissToastById} from '../stores/appStore';
@@ -4199,8 +4199,8 @@ export function startFlowRuntime() {
 		})
 		.catch((error) => console.warn('behaviours failed to start', error));
 	flowGraphs.subscribe(() => {
-		nodes = allNodes();
-		edges = allEdges();
+		// 36 U11: muted nodes and the editor-only kinds (group, note) are not evaluated
+		({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
 		applyColors();
 	});
 	objectsGroup.subscribe((value) => {

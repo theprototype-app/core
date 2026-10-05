@@ -92,7 +92,8 @@ h.run(async () => {
 	h.check(edges.dvorakF === 'F', `Dvorak: key f on KeyU stays F — the printed label wins when ASCII (${edges.dvorakF})`);
 	h.check(edges.azertyA === 'A', `AZERTY: key a on KeyQ stays A (${edges.azertyA})`);
 	h.check(edges.shiftDigit === 'Shift+1', `Shift+1 stays Shift+1, never "!" (${edges.shiftDigit})`);
-	h.check(edges.punctuation === 'Shift+?', `punctuation stays by key (${edges.punctuation})`);
+	// 36 I3: a SHIFTED symbol is named without Shift, so `?` matches `?` on every layout
+	h.check(edges.punctuation === '?', `punctuation stays by key (${edges.punctuation})`);
 	h.check(edges.named === 'Escape', `named keys unchanged (${edges.named})`);
 	h.check(edges.emptyCode === 'G', `an empty code (soft keyboard) falls through to key (${edges.emptyCode})`);
 	h.check(edges.noKey === 'G', `a missing key with a Key* code resolves physically (${edges.noKey})`);

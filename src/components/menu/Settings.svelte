@@ -31,6 +31,7 @@
 	import NodeTypesSection from './NodeTypesSection.svelte'; // 36 B7
 	import AiSttSettings from './AiSttSettings.svelte';
 	import WaterSettings from '../water/WaterSettings.svelte';
+	import HdriSettings from '../hdri/HdriSettings.svelte'; // 37-hdri
 	import ToursSettings from './settings/ToursSettings.svelte'; // 36 U3b/I5
 	import VRSettingsSection from './VRSettingsSection.svelte';
 	// 30b (vr-play) C5: the two LOCAL game-audio volumes
@@ -1210,6 +1211,7 @@
 						Every copy of one pack piece (a wall, a floor tile, a battlement) is drawn in one go instead of one by one, which is what keeps a level built from the kits inside a headset's budget. Only on THIS machine; an edited or selected piece is always drawn on its own
 					</SettingRow>
 					<WaterSettings />
+					<HdriSettings />
 					<SettingRow name="Simulation controls">
 						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>
 						Show the physics transport (play/pause/stop/reset) at bottom-right. Off by default to avoid confusion with the main play button; the P key still starts/stops the simulation

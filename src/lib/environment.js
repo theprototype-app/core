@@ -11,6 +11,8 @@ import { cappedShadowSize, shadowsDisabled } from './lightParams';
 import { wireframeActive } from './viewMode';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { safeStorage } from './safeStorage';
+// 37-hdri: the PURE half only (normalize/merge/rotate) — the loader is a registered layer below
+import { mergeHdriPatch, rotateAboutY } from './hdri/hdriCore.js';
 
 // Environment v2 (phase 70). Everything environmental lives under ONE group at
 // the scene root: `environment-root` — the preset rig (hemi+sun) plus any
@@ -59,6 +61,55 @@ export const ENVIRONMENT_PRESETS = {
 		hemi: null, // rig off — the pre-rig look, bring your own lights
 		sun: null,
 		exposure: 1
+	},
+	// 37-hdri: the HDRI presets (static/hdri/, CC0 — hdri/catalog.js). The flat background/hemi
+	// colours are the bake's band means (scripts/hdri-bake.cjs): what shows while the file loads
+	// and what an older peer, which ignores `hdri`, renders. The rig sun sits where the sky's sun
+	// is, so shadows agree with it; the hemi yields to the image-based light once that is ready.
+	clearsky: {
+		label: 'Clear sky',
+		background: '#a6b1ca',
+		fog: null,
+		hemi: { sky: '#a1afd3', ground: '#737c95', intensity: 1.2 },
+		sun: { color: '#fff3df', intensity: 2.2, position: [8.8, 11.9, 6] },
+		exposure: 1,
+		hdri: { src: 'bundled:clearsky' }
+	},
+	meadow: {
+		label: 'Meadow',
+		background: '#7993a2',
+		fog: null,
+		hemi: { sky: '#7a9bc2', ground: '#58623b', intensity: 1.2 },
+		sun: { color: '#fff1d6', intensity: 2.4, position: [11.5, 7.2, 8.4] },
+		exposure: 1,
+		hdri: { src: 'bundled:meadow' }
+	},
+	sunrise: {
+		label: 'Sunrise',
+		background: '#ccd0c5',
+		fog: null,
+		hemi: { sky: '#7a97bc', ground: '#594f24', intensity: 0.9 },
+		sun: { color: '#ffc78a', intensity: 2.2, position: [12.9, 2.2, 9.2] },
+		exposure: 1,
+		hdri: { src: 'bundled:sunrise' }
+	},
+	starlight: {
+		label: 'Starlight',
+		background: '#0f121c',
+		fog: null,
+		hemi: { sky: '#33405e', ground: '#0c0f18', intensity: 0.5 },
+		sun: { color: '#a9c0ff', intensity: 0.45, position: [-7.2, 13.6, -4.8] },
+		exposure: 1,
+		hdri: { src: 'bundled:starlight' }
+	},
+	photostudio: {
+		label: 'Photo studio',
+		background: '#9f9c9b',
+		fog: null,
+		hemi: { sky: '#ffffff', ground: '#cac7c6', intensity: 1 },
+		sun: { color: '#ffffff', intensity: 1.2, position: [-13.1, 4.1, -8.1] },
+		exposure: 1,
+		hdri: { src: 'bundled:photostudio' }
 	}
 };
 
@@ -269,6 +320,28 @@ export function registerToneMappingOwner(fn) {
 	applyEnvironment(); // the answer may have changed since the last apply
 }
 
+/**
+ * 37-hdri — the HDRI LAYER, a registration seam for the same reason as the tone-mapping owner:
+ * the loader reaches the Explorer, the asset pull and the quality governor, and none of that may
+ * sit in this module's import graph. `hdri/hdriRuntime.js` registers it (startEnvironment loads
+ * it lazily). Until then — and on the server — an HDRI payload renders its flat colours.
+ * @type {(scene: any, renderer: any, payload: any, opts: {passthrough: boolean}) => {ready: boolean, background: boolean, toneMapping: string, rotation: number}}
+ */
+let hdriLayer = () => ({ ready: false, background: false, toneMapping: '', rotation: 0 });
+
+/** @param {typeof hdriLayer | null} fn */
+export function registerHdriLayer(fn) {
+	hdriLayer = fn ?? (() => ({ ready: false, background: false, toneMapping: '', rotation: 0 }));
+	applyEnvironment();
+}
+
+/** three's tone mapping constant for an HDRI payload's curve @param {string} mode */
+function toneMappingConstant(mode) {
+	if (mode === 'agx') return THREE.AgXToneMapping;
+	if (mode === 'neutral') return THREE.NeutralToneMapping;
+	return THREE.ACESFilmicToneMapping;
+}
+
 /** Re-apply the current environment to the scene/renderer */
 export function applyEnvironment() {
 	const scene = get(globalScene);
@@ -278,15 +351,21 @@ export function applyEnvironment() {
 	const state = get(environment);
 	const preset = presetPayload(state);
 
+	// 37-hdri: the HDRI layer first — when its PMREM is ready it owns the sky (unless the payload
+	// says light-only) and the ambient; while it loads, the payload's flat colours show
+	const passthrough = !!get(passthroughActive);
+	const hdri = hdriLayer(scene, renderer, preset, { passthrough });
+
 	// passthrough (90): local view mode — the room shows through where the sky
 	// would render; the replicated env STATE keeps its colors untouched
-	if (get(passthroughActive)) {
+	if (passthrough) {
 		scene.background = null;
 		scene.fog = null;
 	} else {
 		// 30 author-kit: a gradient sky when the payload carries one, else the flat colour
 		const gradient = skyGradientOf(preset);
-		scene.background = (gradient && gradientTexture(gradient)) || new THREE.Color(preset.background);
+		if (!(hdri.ready && hdri.background))
+			scene.background = (gradient && gradientTexture(gradient)) || new THREE.Color(preset.background);
 		// fog never swallows a big scene: a PRESET's reach grows with the scene bounds; a fog the
 		// user set by hand (`fit: false`) keeps its own (36 A5, fogReach.js)
 		scene.fog = preset.fog
@@ -302,7 +381,13 @@ export function applyEnvironment() {
 		// below rather than this module importing it, which keeps environment out of
 		// the post/history import family entirely.
 		const stackTonemaps = toneMappingOwner();
-		renderer.toneMapping = stackTonemaps ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+		// 37-hdri: an HDRI picks its curve (ACES unless the payload says AgX/Neutral) — this is
+		// what VR and the PiP inset show; the desktop composer gets the same curve as a pass
+		renderer.toneMapping = stackTonemaps
+			? THREE.NoToneMapping
+			: hdri.ready
+				? toneMappingConstant(hdri.toneMapping)
+				: THREE.ACESFilmicToneMapping;
 		// exposure is only read by three's tone mapping chunk, so it is inert under
 		// NoToneMapping — left as authored so switching back needs no re-apply
 		renderer.toneMappingExposure = (preset.exposure ?? 1) * (state.exposure ?? 1);
@@ -315,7 +400,8 @@ export function applyEnvironment() {
 
 	const { hemi, sun } = rigLights(scene, !!preset.hemi);
 	if (hemi) {
-		if (preset.hemi) {
+		// 37-hdri: the image-based light IS the ambient once it is ready — the hemi stands down
+		if (preset.hemi && !hdri.ready) {
 			hemi.visible = true;
 			hemi.color.set(preset.hemi.sky);
 			hemi.groundColor.set(preset.hemi.ground);
@@ -327,7 +413,8 @@ export function applyEnvironment() {
 			sun.visible = true;
 			sun.color.set(preset.sun.color);
 			sun.intensity = preset.sun.intensity * userLightFactor;
-			sun.position.fromArray(preset.sun.position);
+			// 37-hdri: the rig sun turns with the HDRI so the shadows keep agreeing with the sky
+			sun.position.fromArray(hdri.ready ? rotateAboutY(preset.sun.position, hdri.rotation) : preset.sun.position);
 			// fit the ortho shadow frustum to the scene: sceneBounds re-calls
 			// applyEnvironment when the radius changes by >1, so the frustum
 			// tracks scene growth for free
@@ -413,13 +500,21 @@ export function applyCustomPreset(payload) {
  * until the color picker's dead `on:input` was fixed, since the handler never
  * ran at all.) Editing the sky now detaches into a live custom payload, exactly
  * like editRigComponent: it sticks, persists and replicates.
- * @param {{background?: string, fog?: {color?: string, near?: number, far?: number} | null}} patch
+ * 37-hdri: `hdri` is the third sky field — a partial patch merged into the payload's hdri
+ * (hdriCore.mergeHdriPatch), `null` removes it. It rides the same commit, so an HDRI pick,
+ * rotation or exposure drag persists and replicates like a background colour does.
+ * @param {{background?: string, fog?: {color?: string, near?: number, far?: number} | null, hdri?: any}} patch
  * @param {{replicate?: boolean}} [opts]
  */
 export function editEnvSky(patch, opts = {}) {
 	const payload = JSON.parse(JSON.stringify(presetPayload()));
 	payload.label = 'Custom';
 	if (patch.background !== undefined) payload.background = patch.background;
+	if (patch.hdri !== undefined) {
+		const next = mergeHdriPatch(payload.hdri, patch.hdri);
+		if (next) payload.hdri = next;
+		else delete payload.hdri;
+	}
 	// 36 A5: a patch naming near/far makes the fog AUTHORED (`fit: false`): applyEnvironment
 	// then keeps its exact reach instead of growing it to the scene's (fogReach.js)
 	if (patch.fog !== undefined) payload.fog = mergeFogPatch(payload.fog, patch.fog);
@@ -698,6 +793,10 @@ export function startEnvironment() {
 	started = true;
 	registerSystemGroup(ENV_ROOT); // advanced object-list System filter
 	loadEnvPresets();
+	// 37-hdri: the HDRI layer loads LAZILY (three's HDR/EXR loaders + PMREM stay out of boot)
+	import('./hdri/hdriRuntime.js')
+		.then((m) => m.installHdriLayer(registerHdriLayer, applyEnvironment))
+		.catch((err) => console.warn('[hdri] layer unavailable', err));
 	environment.subscribe((state) => {
 		try {
 			safeStorage.setItem('environment', JSON.stringify(state));

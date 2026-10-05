@@ -56,6 +56,9 @@
 	import { pipRect, pipTarget, glRect } from '$lib/cameraPip';
 	import { buildCamera } from '$lib/cameraObjects';
 	import { safeStorage } from '$lib/safeStorage';
+	// 37-hdri: half-float buffers + the environment's tone-mapping pass while an HDRI shows
+	import { envToneMapping } from '$lib/hdri/skyEnv';
+	import { setComposerHdr, syncEnvTonePass } from '$lib/hdri/composerHdr';
 
 	let outlineEffectSelected: OutlineEffect | null = null;
 	let outlineEffectLocked: OutlineEffect | null = null;
@@ -225,8 +228,33 @@
 		if (nextTonemaps !== stackTonemaps) {
 			stackTonemaps = nextTonemaps;
 			applyEnvironment();
+			syncEnvTone();
 		}
 	}
+
+	// 37-hdri — "EXPOSURE-AWARE" ON THE DESKTOP. The composer renders into a target, where the
+	// renderer's tone mapping never applies (L4 above), so an HDRI sky would clip at 1.0 into
+	// the 8-bit buffer and Exposure would do nothing. While the environment asks for a curve
+	// ($envToneMapping), the buffers go half float and an env-owned ToneMapping pass sits right
+	// before the outlines — unless the stack has its own Tone mapping entry, which wins. No
+	// HDRI = the stock 8-bit chain. The direct-to-canvas path (nothing to compose, VR) already
+	// gets the curve from renderer.toneMapping, which environment.js sets to the same one.
+	let envTonePass: any = null;
+	function syncEnvTone() {
+		const want = get(envToneMapping);
+		setComposerHdr(composer, renderer, !!want);
+		envTonePass = syncEnvTonePass({
+			composer,
+			camera: camera.current,
+			before: outlinePassLocked,
+			mode: want && !stackTonemaps ? want.mode : null,
+			current: envTonePass
+		});
+	}
+	$effect(() => {
+		void $envToneMapping;
+		untrack(syncEnvTone);
+	});
 
 	// 16-P5: every pass above baked `camera.current` at CONSTRUCTION, so a camera
 	// swap (previewing a camera object makes its real camera the default) would
@@ -578,12 +606,16 @@
 					if (pass === renderPass) return 'render';
 					if (pass === outlinePassLocked) return 'outline-locked';
 					if (pass === outlinePassSelected) return 'outline-selected';
+					if (pass === envTonePass) return 'env-tone';
 					const index = stackPasses.indexOf(pass);
 					return index >= 0 ? 'stack:' + (stackPlan[index]?.kinds ?? []).join('+') : 'other';
 				}),
 				composerPasses: ((composer as any).passes ?? []).length,
 				// 26-D: the composer's own buffer, which must follow a governor dpr change
 				composerBufferWidth: (composer as any).inputBuffer?.width ?? null,
+				// 37-hdri: 1009 = UnsignedByte (stock), 1016 = HalfFloat (an HDRI shows)
+				composerBufferType: (composer as any).inputBuffer?.texture?.type ?? null,
+				envToneMode: envTonePass?.__tpToneEffect?.mode ?? null,
 				outlinedSelected: outlineEffectSelected?.selection.size ?? 0,
 				outlinedLocked: outlineEffectLocked?.selection.size ?? 0,
 				stackPasses: stackPasses.length,

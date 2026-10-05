@@ -18,6 +18,7 @@
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
+	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
@@ -1581,6 +1582,7 @@
 					value={$environment.exposure}
 					onchange={(v) => setEnvironment($environment.preset, v)}
 				/>
+				<HdriSection />
 
 				{#if $envPresets.length}
 					<p class="ui-section-label">Saved presets</p>

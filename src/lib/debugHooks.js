@@ -86,6 +86,11 @@ export const DEBUG_HOOKS = [
 	['terrainSculpt', () => import('./terrainSculpt')],
 	['userModules', () => import('./userModules')],
 	['environment', () => import('./environment')],
+	// 37-hdri: the HDRI layer (hdriDebug, installHdriLayer) + its leaf stores (skyEnv, envToneMapping, hdriStatus) + the pure core
+	['hdri', () => import('./hdri/hdriRuntime.js')],
+	['hdriStores', () => import('./hdri/skyEnv.js')],
+	['hdriCore', () => import('./hdri/hdriCore.js')],
+	['hdriPrefs', () => import('./hdri/hdriPrefs.js')],
 	['sceneMusic', () => import('./sceneMusic')],
 	['animatedImports', () => import('./animatedImports')],
 	['fileHandler', () => import('./fileHandler.svelte')],

@@ -12,6 +12,8 @@ import { waveComponents } from './waves.js';
 import { resolveLook, resolveBubbles, MAX_BUBBLES } from './presets.js';
 import { waterDetailTexture } from './waterTextures.js';
 import { waterQuality } from './waterPrefs.js';
+// 37-hdri: the live HDRI (a leaf store), so reflections and the fake refraction see the real sky
+import { skyEnv } from '../hdri/skyEnv.js';
 // 36 S5: the water waits for a scene load to put its primitives on screen (a leaf store)
 import { heavyWorkDeferred } from '../sceneLoader';
 import {
@@ -92,6 +94,25 @@ const swapped = [];
 objectsGroup.subscribe(() => (dirty = true));
 waterQuality.subscribe((v) => (qualityPref = v));
 qualityOverrides.subscribe((o) => (overrides = o));
+// 37-hdri: three's CubeUV size rule (WebGLPrograms getTextureCubeUVSize) and its envMapRotation
+// convention (the scene Euler NEGATED), so the water samples exactly what a PBR material does
+const _envEuler = new THREE.Euler();
+const _envMat = new THREE.Matrix4();
+skyEnv.subscribe((env) => {
+	const height = env?.texture?.image?.height ?? 0;
+	if (!env || !height) {
+		shared.uEnvOn.value = 0;
+		shared.uEnvMap.value = null;
+		return;
+	}
+	const maxMip = Math.log2(height) - 2;
+	shared.uEnvTexel.value.set(1 / (3 * Math.max(Math.pow(2, maxMip), 7 * 16)), 1 / height);
+	shared.uEnvMaxMip.value = maxMip;
+	shared.uEnvMap.value = env.texture;
+	shared.uEnvIntensity.value = env.intensity;
+	shared.uEnvRot.value.setFromMatrix4(_envMat.makeRotationFromEuler(_envEuler.set(0, -env.rotationY, 0)));
+	shared.uEnvOn.value = 1;
+});
 
 const invisible = new THREE.MeshBasicMaterial({ visible: false });
 
@@ -103,6 +124,13 @@ const shared = {
 	uSkyTop: { value: new THREE.Color(0.55, 0.7, 0.9) },
 	uSkyHorizon: { value: new THREE.Color(0.75, 0.82, 0.9) },
 	uSkyBottom: { value: new THREE.Color(0.25, 0.27, 0.3) },
+	// 37-hdri: the HDRI's PMREM (waterShader sky()); uEnvOn 0 = the analytic sky model
+	uEnvMap: { value: /** @type {any} */ (null) },
+	uEnvOn: { value: 0 },
+	uEnvRot: { value: new THREE.Matrix3() },
+	uEnvIntensity: { value: 1 },
+	uEnvTexel: { value: new THREE.Vector2(1, 1) },
+	uEnvMaxMip: { value: 0 },
 	uNormalMap: { value: /** @type {any} */ (null) },
 	uSceneColor: { value: /** @type {any} */ (null) },
 	uSceneDepth: { value: /** @type {any} */ (null) },

@@ -13,23 +13,28 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } } });
 	await A.page.evaluate(() => window.__stores.objectActions.flyTo([0, 2.2, 7], [0, 1, -2], 0));
 	await A.page.waitForTimeout(800);
-	/** draw calls + triangles of ONE render of the scene from the editor camera (no post) */
-	const measure = () =>
-		A.page.evaluate(() => {
+	/** draw calls + triangles of ONE render of the scene from the editor camera (no post); `shadows`
+	 * false = the main pass only (a headset's entry quality level turns shadows off) */
+	const measure = (shadows = true) =>
+		A.page.evaluate((shadows) => {
 			const s = window.__stores;
 			let r, scene, cam;
 			s.globalRenderer.subscribe((x) => (r = x))();
 			s.globalScene.subscribe((x) => (scene = x))();
 			s.globalCamera.subscribe((x) => (cam = x))();
 			const auto = r.info.autoReset;
+			const sm = r.shadowMap.enabled;
+			r.shadowMap.enabled = shadows;
 			r.info.autoReset = false;
 			r.info.reset();
 			r.render(scene, cam);
 			const out = { calls: r.info.render.calls, tris: r.info.render.triangles, textures: r.info.memory.textures, geometries: r.info.memory.geometries };
 			r.info.autoReset = auto;
+			r.shadowMap.enabled = sm;
 			return out;
-		});
+		}, shadows);
 	const base = await measure();
+	const baseMain = await measure(false);
 
 	// 8 peers, one per character, with a hat and a stylised head on half of them (the 2-call case)
 	await A.page.evaluate((chars) => {
@@ -69,19 +74,43 @@ h.run(async () => {
 		return frames / 2;
 	}, 8);
 	const withPeers = await measure();
-	const dCalls = withPeers.calls - base.calls;
-	const dTris = withPeers.tris - base.tris;
-	console.log(`base ${JSON.stringify(base)} with8 ${JSON.stringify(withPeers)} fps(this box) ${fps.toFixed(0)}`);
-	h.check(dCalls <= 8 * 2, `1.1 eight avatars add ${dCalls} draw calls (<= 16: one body + at most one head/hat each)`);
+	const withMain = await measure(false);
+	const dCalls = withMain.calls - baseMain.calls;
+	const dShadow = withPeers.calls - base.calls - dCalls;
+	const dTris = withMain.tris - baseMain.tris;
+	console.log(`base ${JSON.stringify(base)} with8 ${JSON.stringify(withPeers)} main-pass ${JSON.stringify(withMain)} fps(this box) ${fps.toFixed(0)}`);
+	h.check(dCalls <= 8 * 2, `1.1 eight avatars add ${dCalls} main-pass draw calls (<= 16: one body + at most one head/hat each; +${dShadow} shadow draws while shadows are on)`);
 	h.check(dTris <= 8 * 10000, `1.2 ...and ${dTris} triangles (<= 80k, the per-avatar 10k cap)`);
 	h.check(withPeers.calls <= 150 && withPeers.tris <= 300000, `1.3 the whole frame with 8 peers stays inside the Quest budget (${withPeers.calls} calls, ${withPeers.tris} tris)`);
 	const state = await A.page.evaluate(() => Object.values(window.__stores.avatars.avatarsDebug()).map((a) => a.top));
 	h.check(state.filter((t) => t !== 'idle').length >= 6, `1.4 (premise) the ring is walking (${state.join(',')})`);
 
-	// B11: the avatars' texture memory — one 256² RGBA8 atlas per character, mipmapped
-	const dTex = withPeers.textures - base.textures;
-	const bytes = dTex * 256 * 256 * 4 * (4 / 3);
-	console.log(`B11: +${dTex} textures ~ ${(bytes / 1048576).toFixed(2)} MiB GPU for 8 characters (KTX2 would save ~${((bytes * 0.75) / 1048576).toFixed(2)} MiB)`);
+	// B11: the avatars' texture memory, sized from the REAL textures: each character's atlas (mipmapped
+	// RGBA8) + each skeleton's bone texture (float RGBA, no mips) + any head/photo maps
+	const tex = await A.page.evaluate(() => {
+		let scene;
+		window.__stores.globalScene.subscribe((x) => (scene = x))();
+		const seen = new Set();
+		let bytes = 0;
+		const add = (t, perTexel, mips) => {
+			if (!t || seen.has(t)) return;
+			seen.add(t);
+			const img = t.image;
+			const w = img?.width ?? 0;
+			const h = img?.height ?? 0;
+			bytes += w * h * perTexel * (mips ? 4 / 3 : 1);
+		};
+		scene.traverse((o) => {
+			if (!/-avatar$/.test(o.name)) return;
+			o.traverse((m) => {
+				if (m.material?.map) add(m.material.map, 4, true);
+				if (m.isSkinnedMesh) add(m.skeleton?.boneTexture, 16, false);
+			});
+		});
+		return { count: seen.size, bytes };
+	});
+	const bytes = tex.bytes;
+	console.log(`B11: ${tex.count} avatar textures = ${(bytes / 1048576).toFixed(2)} MiB GPU for 8 characters (+${withPeers.textures - base.textures} textures in renderer.info); KTX2 (ETC1S/UASTC ~4-8x) would save at most ~${((bytes * 0.8) / 1048576).toFixed(2)} MiB`);
 	h.check(bytes < 4 * 1048576, `2.1 B11 evidence: the avatars add ${(bytes / 1048576).toFixed(2)} MiB of texture (< 4 MiB: KTX2 not needed)`);
 
 	await h.finish(browser);

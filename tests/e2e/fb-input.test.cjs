@@ -74,10 +74,12 @@ const neutralPoint = (/** @type {any} */ page, /** @type {string} */ root, /** @
 			const r = el.getBoundingClientRect();
 			if (!r.width || !r.height) return null;
 			const bad = 'button, input, select, textarea, a, label, [role="tab"], [role="button"], [role="slider"], [role="checkbox"], [role="menuitem"], [role="tree"], [role="treeitem"], [contenteditable="true"], .cm-editor, canvas, .resize-cue, .dw-resize, .svelte-flow__node, .svelte-flow__handle, .svelte-flow__minimap, .svelte-flow__controls' + (exclude ? ', ' + exclude : '');
-			for (let gy = 0; gy < 14; gy++)
-				for (let gx = 0; gx < 10; gx++) {
-					const x = Math.round(r.left + 10 + ((r.width - 20) * (gx + 0.5)) / 10);
-					const y = Math.round(r.top + 8 + ((r.height - 16) * (gy + 0.5)) / 14);
+			const GX = 24;
+			const GY = Math.max(14, Math.round(r.height / 12));
+			for (let gy = 0; gy < GY; gy++)
+				for (let gx = 0; gx < GX; gx++) {
+					const x = Math.round(r.left + 6 + ((r.width - 12) * (gx + 0.5)) / GX);
+					const y = Math.round(r.top + 4 + ((r.height - 8) * (gy + 0.5)) / GY);
 					if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
 					const hit = /** @type {HTMLElement | null} */ (document.elementFromPoint(x, y));
 					if (!hit || !el.contains(hit) || hit.closest(bad)) continue;
@@ -128,7 +130,16 @@ const viewOf = (/** @type {any} */ page) =>
 		const cam = c?.current ?? c;
 		return { pos: cam ? [cam.position.x, cam.position.y, cam.position.z] : [0, 0, 0], quat: cam ? [cam.quaternion.x, cam.quaternion.y, cam.quaternion.z, cam.quaternion.w] : [0, 0, 0, 1], sel: (/** @type {any[]} */ (sel) ?? []).map((o) => o?.uuid ?? o).sort().join(',') };
 	});
-const viewMoved = (/** @type {any} */ a, /** @type {any} */ b) => dist(a.pos, b.pos) > 0.005 || Math.hypot(...a.quat.map((/** @type {number} */ q, /** @type {number} */ i) => q - b.quat[i])) > 0.002 || a.sel !== b.sel;
+/** '' when the 3D view is as it was, else WHAT changed (camera position / turn / selection) */
+const viewMoved = (/** @type {any} */ a, /** @type {any} */ b) => {
+	const d = dist(a.pos, b.pos);
+	const q = Math.hypot(...a.quat.map((/** @type {number} */ x, /** @type {number} */ i) => x - b.quat[i]));
+	const why = [];
+	if (d > 0.005) why.push('cam moved ' + d.toFixed(3));
+	if (q > 0.002) why.push('cam turned ' + q.toFixed(4));
+	if (a.sel !== b.sel) why.push('selection [' + a.sel + '] -> [' + b.sel + ']');
+	return why.join(', ');
+};
 
 /**
  * S1: wheel, drags (left / middle / right) and a double-click at `p`, inside the panel — did any
@@ -142,7 +153,7 @@ async function mouseLeak(page, p, root) {
 	const len = Math.hypot(cx - p.x, cy - p.y) || 1;
 	const step = Math.min(60, len * 0.8) / len;
 	const to = { x: p.x + (cx - p.x) * step, y: p.y + (cy - p.y) * step };
-	/** @type {Record<string, boolean>} */
+	/** @type {Record<string, any>} */
 	const out = {};
 	const settle = async () => {
 		await page.keyboard.press('Escape'); // a menu a right press opened
@@ -225,7 +236,14 @@ async function panelRow(page, label, root, o = {}) {
 	await page.waitForSelector(root, { state: 'visible', timeout: 8000 }).catch(() => {});
 	const p = await neutralPoint(page, root, o.exclude);
 	if (!p) {
-		h.check(false, `F2 ${label}: found a plain spot to press in ${root}`);
+		const why = await page.evaluate((sel) => {
+			const el = document.querySelector(sel);
+			if (!el) return 'not in the DOM';
+			const r = el.getBoundingClientRect();
+			const mid = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+			return `${Math.round(r.width)}x${Math.round(r.height)} at ${Math.round(r.left)},${Math.round(r.top)}, display ${getComputedStyle(el).display}, centre hit ${mid?.tagName}.${typeof mid?.className === 'string' ? mid.className.split(' ')[0] : ''}`;
+		}, root);
+		h.check(false, `F2 ${label}: found a plain spot to press in ${root} (${why})`);
 		table.push([label, root, '—', 'no spot', '—', '—', '—', '—', '—', '—', '—']);
 		return;
 	}
@@ -256,7 +274,7 @@ async function panelRow(page, label, root, o = {}) {
 	}
 	// S1: wheel / drags / double-click
 	const m = await mouseLeak(page, p, root);
-	const mouseLeaks = Object.entries(m).filter(([, v]) => v).map(([k]) => k);
+	const mouseLeaks = Object.entries(m).filter(([, v]) => v).map(([k, v]) => (typeof v === 'string' ? k + ': ' + v : k));
 	h.check(mouseLeaks.length === 0, `S1 ${label}: wheel, left/middle/right drag and double-click never reach the 3D view; no canvas holes (${mouseLeaks.join(', ') || 'none'})`);
 	table.push([label, root + ' (' + p.what + ')', scope, leaked ? `LEAK (W ${r.flew.toFixed(2)}, C ${r.chat ? 'toggled chat' : '—'})` : 'none', ...['wheel', 'drag-left', 'drag-middle', 'drag-right', 'dblclick', 'holes'].map((k) => (m[k] ? 'LEAK' : 'ok')), undo]);
 }
@@ -699,7 +717,10 @@ h.run(async () => {
 			const out = [];
 			for (const el of document.querySelectorAll(sel + ' .move-handle *')) {
 				const cs = getComputedStyle(el);
-				const looks = cs.cursor === 'pointer' || el.hasAttribute('role') || el.hasAttribute('tabindex');
+				// a CONTROL by its looks: a pointer cursor, a control role, or keyboard focusability —
+				// a container (role group / tablist) whose gaps drag the window is the browser's own idiom
+				const role = el.getAttribute('role') ?? '';
+				const looks = cs.cursor === 'pointer' || /^(button|tab|link|checkbox|switch|slider|option|menuitem|radio)$/.test(role) || Number(el.getAttribute('tabindex') ?? -1) >= 0;
 				if (looks && el.getBoundingClientRect().width > 0 && g?.isHeaderDrag?.(el)) out.push(el.tagName + (el.className ? '.' + String(el.className).split(/\s+/)[0] : '') + (el.getAttribute('role') ? '[' + el.getAttribute('role') + ']' : ''));
 			}
 			return out;

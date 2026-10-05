@@ -20,6 +20,7 @@
 	import LoadingSettings from './settings/LoadingSettings.svelte';
 	import CheckpointSettings from './settings/CheckpointSettings.svelte'; // 36 B14
 	import NodeEditorViewSettings from './settings/NodeEditorViewSettings.svelte'; // 36 F10
+	import WorkspaceLayoutsSettings from './settings/WorkspaceLayoutsSettings.svelte'; // 37 R14
 	import SettingRow from './SettingRow.svelte';
 	import TextSelectionSettings from './settings/TextSelectionSettings.svelte'; // 36 U6
 	import AvatarSettings from './settings/AvatarSettings.svelte'; // 36-avatars
@@ -950,6 +951,7 @@
 						</svelte:fragment>
 						Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI
 					</SettingRow>
+					<WorkspaceLayoutsSettings />
 					<SettingRow name="Touch tools">
 						<svelte:fragment slot="control"><Toggle bind:checked={$touchTools} /></svelte:fragment>
 						Undo / Redo / Multi-select buttons beside the logo, for touch — no <kbd>Ctrl+Z</kbd> or <kbd>Shift</kbd> needed. Multi-select adds on tap and boxes on drag, for objects and for mesh vertices, edges and faces. On by default on phones

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onLayoutRestore } from '$lib/uiLayoutsCore';
 	import { Activity, Braces, Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, Hand, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
@@ -880,6 +881,19 @@
 			top = 100;
 			node.style.left = `${left}px`;
 			node.style.top = `${top}px`;
+		});
+
+		// 37 R14: a named workspace layout rewrote (or removed) `objectListRect`
+		onLayoutRestore(() => {
+			let stored: any = null;
+			try {
+				stored = JSON.parse(safeStorage.getItem('objectListRect') ?? 'null');
+			} catch {}
+			left = stored?.left ?? 350;
+			top = stored?.top ?? 100;
+			width = stored?.width ?? 300;
+			height = stored?.height ?? 250;
+			clampRect();
 		});
 	}
 

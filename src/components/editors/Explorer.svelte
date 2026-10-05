@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, HardDrive, House, LayoutGrid, List, LoaderCircle, PackageOpen, Play, RefreshCw, Save, Share2, X } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
@@ -392,6 +393,18 @@
 	loadExplorer();
 	loadPrefabs();
 	loadMountedVolumes();
+
+	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
+	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	$effect(() =>
+		onLayoutRestore(() => {
+			const stored = storedPanelLayout(safeStorage.getItem, 'explorer', 720, 440);
+			docked = !!(stored.docked || (window.matchMedia?.('(pointer: coarse)').matches && !get(mobileUndockAllowed)));
+			const fit = clampWinSize(stored.w, stored.h, WIN_MIN);
+			winW = fit.w;
+			winH = fit.h;
+		})
+	);
 
 	function setDocked(v: boolean) {
 		docked = v;

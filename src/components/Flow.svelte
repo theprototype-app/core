@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	// Flow host: the Node editor. DOCKED mode is a Flow-family TAB in the shared bottom
 	// dock (DockTabs strip; shares dockHeight with Flow Code + Animation; only the
 	// visible tab renders). UNDOCKED mode is a floating, resizable window. Both persist.
@@ -63,6 +64,18 @@
 		window.addEventListener('resize', onResize);
 		return () => window.removeEventListener('resize', onResize);
 	});
+
+	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
+	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	$effect(() =>
+		onLayoutRestore(() => {
+			const stored = storedPanelLayout(safeStorage.getItem, 'flow', 760, 480);
+			docked = !!(stored.docked || (window.matchMedia?.('(pointer: coarse)').matches && !get(mobileUndockAllowed)));
+			winW = stored.w;
+			winH = stored.h;
+			clampWin();
+		})
+	);
 
 	function setDocked(v: boolean) {
 		docked = v;

@@ -34,6 +34,8 @@
 	import { startEditorTour } from '$lib/tours/builtin.js';
 	import { safeStorage } from '$lib/safeStorage';
 	import { statsOpen } from '$lib/sceneBudget';
+	import { layoutsMenuOpen } from '$lib/uiLayouts'; // 37 R14
+	import { PanelsTopLeft } from '@lucide/svelte'; // 37 R14
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
 	// no boxed group / section headers / vertical bar), a fast fade-in (was a
@@ -263,6 +265,10 @@
 				{#if box.shortcut}<span class="side-hint">{box.shortcut}</span>{/if}
 			</button>
 		{/each}
+		<!-- 37 R14: named workspace layouts (windows, docks, sizes) -->
+		<button id="open-layouts" class="side-row" onclick={() => { layoutsMenuOpen.set(true); closeMenu.set(true); }}>
+			<span class="side-ico"><PanelsTopLeft size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Layouts</span>
+		</button>
 		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Archive size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Sessions</span>
 		</button>

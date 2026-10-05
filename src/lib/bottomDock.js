@@ -1,5 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { viewPrefs } from './viewPrefs';
+import { onLayoutRestore } from './uiLayoutsCore';
 
 // Bottom dock: the dock shows exactly ONE panel at a time, and every panel that is
 // docked+open is a notebook TAB in it — the Flow family (Node editor / Flow Code /
@@ -148,6 +149,14 @@ dockTabOrder.subscribe((value) => {
 	try {
 		ls?.setItem('dockTabOrder', JSON.stringify(value));
 	} catch {}
+});
+
+// 37 R14: a named workspace layout rewrote the dock's height and tab order — adopt them.
+// (Which tab is in front rides the layout's workspace record; minimized never persists.)
+onLayoutRestore(() => {
+	dockHeight.set(clampH(parseInt(ls?.getItem('flowDockHeight') ?? '320')));
+	dockTabOrder.set(readTabOrder());
+	dockMinimized.set(false);
 });
 
 /**

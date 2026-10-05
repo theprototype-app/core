@@ -119,7 +119,11 @@ h.run(async () => {
 	h.check(loading.some((f) => f.phase === 'fetching'), '1b. it says "downloading" before the bytes are in');
 	const buildingWater = frames.filter((f) => (f.phase === 'objects' || f.phase === 'preparing') && f.water.includes('V'));
 	h.check(buildingWater.length === 0, '2. the water is not drawn while the objects are built (' + buildingWater.length + ' frames)');
-	const firstWhole = frames.find((f) => f.objs >= 31 && !f.held && f.phase === null);
+	// the island's object count comes from the loaded scene, not a constant: 36-fb-water's rowing boat
+	// (a hull with children) changed it 31 -> 29 on the 1.25 union (36-int-125)
+	const whole = Math.max(...frames.map((f) => f.objs));
+	h.check(whole >= 20, `the island arrived whole (${whole} objects)`);
+	const firstWhole = frames.find((f) => f.objs >= whole && !f.held && f.phase === null);
 	h.check(!!firstWhole && !firstWhole.water.includes('V'), '3a. the first full frames show the island with the ocean placeholder, water still compiling (' + JSON.stringify(firstWhole) + ')');
 	const waterAt = frames.find((f) => f.water.includes('V'));
 	h.check(!!waterAt && !!firstWhole && waterAt.t >= firstWhole.t, '3b. then the water is drawn (at ' + waterAt?.t + ' ms, primitives at ' + firstWhole?.t + ' ms)');

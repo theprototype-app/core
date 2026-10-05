@@ -57,7 +57,8 @@ export function triggerLogPayload() {
 	/** @type {Record<string, {count: number, lastT: number}>} */
 	const triggers = {};
 	for (const [id, entry] of Object.entries(get(flowTriggers) ?? {})) {
-		if (!live.has(id)) continue;
+		// 36 (U10): a NAMED output's stamp is keyed `<node>#<output>` (a behaviour's emit)
+		if (!live.has(id.includes('#') ? id.slice(0, id.indexOf('#')) : id)) continue;
 		if (typeof entry?.lastT !== 'number') continue;
 		triggers[id] = { count: Number(entry.count) || 0, lastT: entry.lastT };
 	}

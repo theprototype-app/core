@@ -40,7 +40,9 @@
 	// the target sockets this node type declares, in a fixed order so the offsets are
 	// stable as params come and go
 	const INPUTS: Record<string, string[]> = {
-		hudtext: ['value'],
+		// 36 (U10): `format` = the whole text, wired (a rules node's line) — it had no socket, so
+		// such wires were invisible on the card
+		hudtext: ['value', 'format'],
 		hudbar: ['value', 'min', 'max'],
 		hudtimer: ['start', 'duration'],
 		hudscreen: ['trigger'],

@@ -37,6 +37,8 @@ function compute() {
 	/** @type {any[]} */
 	const out = [];
 	const seenAudio = new Set();
+	/** 36-code: a script FILE bound to several nodes is ONE asset, listed under its own name */
+	const seenFiles = new Set();
 	for (const source of sources) {
 		let refs = [];
 		try {
@@ -74,10 +76,13 @@ function compute() {
 		}
 		// 34 R3: a behaviour node's file is a .js asset of the scene the same way
 		if ((node.type === 'script' || node.type === 'behaviour') && node.data?.code?.trim()) {
+			const file = node.data.src?.kind === 'asset' && node.data.src.hash ? node.data.src : null;
+			if (file && seenFiles.has(file.hash)) continue;
+			if (file) seenFiles.add(file.hash);
 			out.push({
 				id: 'config:script:' + node.id,
 				group: 'config',
-				name: (node.data.name || node.type + '-' + String(node.id).slice(0, 5)) + '.js',
+				name: file ? String(file.name) : (node.data.name || node.type + '-' + String(node.id).slice(0, 5)) + '.js',
 				kind: 'text',
 				nodeId: node.id,
 				derived: true

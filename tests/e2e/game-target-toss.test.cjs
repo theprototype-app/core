@@ -11,6 +11,7 @@ const path = require('path');
 
 const CANDIDATES = [
 	process.env.TARGET_TOSS_TPSCENE,
+	path.resolve(__dirname, '../../../cloud-lane-30-staging/36-games-graphs/games/target-toss/scene.tpscene'),
 	'/home/deck/.code/theprototype-app/cloud-lane-30-staging/35-target-toss/games/target-toss/scene.tpscene',
 	path.resolve(__dirname, '../../../scenes/games/target-toss/scene.tpscene'),
 	path.resolve(__dirname, '../../../theprototype.app-scenes/games/target-toss/scene.tpscene')
@@ -210,6 +211,81 @@ h.run(async () => {
 	h.check((await tt('info', [{ read: 'hint' }])) === 'Grip a ball · throw it', 'VR: the hint line says grip and throw (not hold the mouse)');
 	await page.evaluate(() => window.__stores.isVRMode.set(false));
 	await xr.uninstall(page);
+
+
+	// 8 — THE U10 PROBE: the biggest combo from the GRAPH, a can's points from the CODE; felt in
+	// Play, kept by a save and a reload
+	await page.evaluate(() => window.__stores.editorMode?.set?.('edit'));
+	const rid = await tt('rulesNode');
+	h.check(!!rid, `premise: the Main graph carries the Target Toss rules node (${rid})`);
+	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the Target Toss rules behaviour is running', 10000);
+	const codeNow = () => page.evaluate((id) => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id)?.data?.code ?? ''; }, rid);
+	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.waitForTimeout(600);
+	if (!(await page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await page.locator('p[title="Node editor (N)"]').click();
+	await page.waitForTimeout(1000);
+	await page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(600));
+	if (!(await page.locator('#flow-props').count())) await page.locator('#flow-props-toggle').click();
+	await page.locator('#flow-tab-info').click();
+	await page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
+	await h.eventually(() => page.locator('#flow-prop-comboMax').count(), (n) => n === 1, 'the rules node shows Biggest combo in its properties panel', 6000);
+	await page.locator('#flow-prop-comboMax').fill('1');
+	await page.locator('#flow-prop-comboMax').press('Enter');
+	await h.eventually(codeNow, (c) => /comboMax:\s*\{\s*value:\s*1\b/.test(c), 'the knob rewrote the literal in the rules source (comboMax: 1)', 4000);
+	await page.evaluate((id) => {
+		let ns;
+		window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		const n = ns.find((x) => x.id === id);
+		window.__flowViewport?.setViewport({ x: -n.position.x + 300, y: -n.position.y + 60, zoom: 1 });
+	}, rid);
+	await page.waitForTimeout(600);
+	const nbox = await page.locator(`.svelte-flow__node[data-id="${rid}"]`).boundingBox().catch(() => null);
+	if (nbox) await page.mouse.dblclick(nbox.x + nbox.width / 2, nbox.y + 8);
+	else await page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
+	await h.eventually(() => page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, 'double-click opens the rules in the code workspace', 15000);
+	const edited = (await codeNow()).replace('const POINTS = { can: 100,', 'const POINTS = { can: 150,');
+	const paneId = await page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+	await page.locator(`[data-pane="${paneId}"] .cm-content`).click();
+	await page.keyboard.press('Control+A');
+	await page.keyboard.insertText(edited);
+	await page.keyboard.press('Control+S');
+	await h.eventually(codeNow, (c) => /const POINTS = \{ can: 150,/.test(c), 'Ctrl+S saved the code onto the node (a can is worth 150)', 6000);
+	await page.locator('#code-ws-close').click().catch(() => {});
+	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
+	/** stage 1, every can swept off: six cans x 150 with no combo = exactly 900 */
+	const feel = async (when) => {
+		await page.evaluate(() => window.__stores.isLocked.set(true));
+		await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, `${when}: the simulation runs`, 10000);
+		await tt('startStage', [1, true]);
+		await h.eventually(() => tt('cans').then((c) => c.length), (n) => n === 6, `${when}: stage 1 deals its six cans`, 8000);
+		await page.waitForTimeout(2800); // the intro countdown
+		await tt('sweepCans');
+		await h.eventually(() => snap().then((v) => v.state), (v) => v === 'over', `${when}: every can down clears the stage`, 8000);
+		const sc = Number((await tt('vars')).ttScore);
+		h.check(sc === 900, `${when}: six cans score exactly 900 — 150 each (the code change) with no combo (the graph change) (${sc})`);
+	};
+	await feel('Play');
+	const saved = await page.evaluate(async () => {
+		const s = window.__stores;
+		const payload = s.sessions.buildSessionPayload('Target Toss probe');
+		const zip = await s.sessions.exportSessionZip(payload, { assets: true, packs: false, flow: true });
+		return Array.from(zip);
+	});
+	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.waitForTimeout(600);
+	await page.evaluate(async (arr) => {
+		const s = window.__stores;
+		s.flowGraphs.set({ scene: { nodes: [], edges: [] } });
+		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
+		await s.sessions.applySession(payload, { backup: false });
+	}, saved);
+	await page.waitForTimeout(2500);
+	const reloaded = await codeNow();
+	h.check(/comboMax:\s*\{\s*value:\s*1\b/.test(reloaded) && /const POINTS = \{ can: 150,/.test(reloaded), 'after a save and a reload the rules keep the combo cap 1 and a 150-point can');
+	await h.eventually(() => page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__targetToss.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
+	await feel('Play after the reload');
+	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.waitForTimeout(400);
 
 	await h.finish(browser);
 });

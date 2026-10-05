@@ -61,6 +61,7 @@ import {
 	commitMeshPivotDrag,
 	setMeshPivotPreview
 } from './meshPivot';
+import { viewportHasKeys } from './keyScope'; // 36 U11
 
 // Face editing core (118, pulled forward from pending/25 and scoped to VR
 // blockout). Desktop-agnostic geometry math: read a BufferGeometry into a flat
@@ -5846,6 +5847,7 @@ export function enterFaceEdit(uuid) {
 
 /** @param {KeyboardEvent} event */
 function onFaceKeydown(event) {
+	if (!viewportHasKeys(event)) return; // 36 U11: Esc in the node editor leaves a GROUP, not the session
 	if (event.key === 'Escape') {
 		if (escapeConsumedByKnife(event)) return;
 		if (escapeConsumedByPivotPick(event)) return; // an armed pivot pick first

@@ -18,7 +18,7 @@
 //   · the physics ground is OFF (you fall into the clouds) and the module catches a fall 7 m
 //     under the stage's start pad; ~70 meshes in all, well under the 150-call budget, and NO
 //     authored light (the env rig lights it; the portals glow through bloom — budget: 2 lights).
-const { graphBuilder } = require('./_builders.cjs');
+const { graphBuilder, rulesSource } = require('./_builders.cjs');
 
 const PANEL = { bg: 'rgba(12, 22, 48, 0.9)', radius: 18, border: '1px solid rgba(160, 220, 255, 0.35)' };
 const BTN = { size: 17, weight: '600', bg: '#2f8fe0', color: '#ffffff', radius: 10 };
@@ -161,59 +161,93 @@ portal(3, 0, 17.5, -55.1);
 
 function skyGraph() {
 	const g = graphBuilder();
-	const { N, E } = g;
-	N('click', 'gamesound', 'Button click', 760, 40, { sound: 'click' });
-	// ---- the start menu: a stage button selects the stage AND starts the round ------------
+	const { N, E, B, G, T } = g;
+
+	// ---- the hub: the RULES (scripts/templates/rules/sky-run.rules.js) ------------------------
+	T('n-main', 'Sky Run — read me first',
+		'**Sky Run rules** holds the game: the stages (names, par times), the stars, the jump, the countdown, how deep a fall goes, who wins.\n' +
+		'- **Double-click** it to read or change the code (Ctrl+S reloads it for everyone).\n' +
+		'- **Select** it and open the ⓘ tab to tune *Jump height*, *Fall depth*, *Countdown*.\n' +
+		'Each player\'s run — flags, coins, falls, the moving platforms — is the **engine** below it.',
+		-380, 0, { w: 340, h: 230, color: 'blue' });
+	B('rules', 'Sky Run rules', rulesSource('sky-run.rules.js'), 300, 0);
+
+	// ---- the menu and results buttons -> the game kit ------------------------------------------
+	const menu = [];
+	menu.push(N('click', 'gamesound', 'Button click', 760, 40, { sound: 'click' }));
 	for (let s = 1; s <= 3; s++) {
 		const y = 40 + (s - 1) * 120;
-		N('b' + s, 'hudbutton', 'Stage ' + s + ' button', 40, y, { element: 'stage-' + s });
-		N('sel' + s, 'kit-levels-select', 'Go to stage ' + s, 280, y, { level: String(s) });
-		N('go' + s, 'kit-round-start', 'Start (stage ' + s + ')', 520, y, {});
+		menu.push(N('b' + s, 'hudbutton', 'Stage ' + s + ' button', 40, y, { element: 'stage-' + s }));
+		menu.push(N('sel' + s, 'kit-levels-select', 'Go to stage ' + s, 280, y, { level: String(s) }));
+		menu.push(N('go' + s, 'kit-round-start', 'Start (stage ' + s + ')', 520, y, {}));
 		E('b' + s, 'sel' + s, 'trigger');
 		E('b' + s, 'go' + s, 'trigger');
 		E('b' + s, 'click', 'trigger');
 	}
-	// ---- results: Retry / Next stage / Menu -----------------------------------------------
-	N('bretry', 'hudbutton', 'Retry button', 40, 420, { element: 'retry-btn' });
-	N('retry', 'kit-round-restart', 'Retry the stage', 280, 420, {});
+	menu.push(N('bretry', 'hudbutton', 'Retry button', 40, 420, { element: 'retry-btn' }));
+	menu.push(N('retry', 'kit-round-restart', 'Retry the stage', 280, 420, {}));
 	E('bretry', 'retry', 'trigger');
 	E('bretry', 'click', 'trigger');
-	N('bnext', 'hudbutton', 'Next stage button', 40, 500, { element: 'next-btn' });
-	N('next', 'kit-levels-next', 'Next stage', 280, 500, {});
+	menu.push(N('bnext', 'hudbutton', 'Next stage button', 40, 500, { element: 'next-btn' }));
+	menu.push(N('next', 'kit-levels-next', 'Next stage', 280, 500, {}));
 	E('bnext', 'next', 'trigger');
-	// and starts the round from the results (the stage buttons' select + start pair)
-	N('nextgo', 'kit-round-start', 'Start (next stage)', 520, 500, {});
+	menu.push(N('nextgo', 'kit-round-start', 'Start (next stage)', 520, 500, {}));
 	E('bnext', 'nextgo', 'trigger');
 	E('bnext', 'click', 'trigger');
-	N('bmenu', 'hudbutton', 'Menu button', 40, 580, { element: 'menu-btn' });
-	N('tomenu', 'kit-round-toMenu', 'Back to menu', 280, 580, {});
+	menu.push(N('bmenu', 'hudbutton', 'Menu button', 40, 580, { element: 'menu-btn' }));
+	menu.push(N('tomenu', 'kit-round-toMenu', 'Back to menu', 280, 580, {}));
 	E('bmenu', 'tomenu', 'trigger');
 	E('bmenu', 'click', 'trigger');
-	// ---- the player: walk + jump, and the music ---------------------------------------------
-	N('body', 'charcontroller', 'Player: walk + jump', 40, 700, { mode: 'walk', speed: 0.07, jumpHeight: 1.3, eyeHeight: 1.7, gravity: true });
-	N('music', 'gamemusic', 'Sky music', 280, 700, { preset: 'arcade', volume: 0.35, while: 'always' });
+	G('g-menu', 'Stage menu & buttons', menu, 0, 40);
+	T('n-menu', 'Stage menu & buttons', 'A stage button **selects** the stage and **starts** the round (kit nodes); the rules hear the pick and set the jump and countdown up. Retry / Next stage / Menu on the results screen.', 0, 170, { w: 260, h: 130, color: 'gray' });
+
+	// ---- the moments: a stage starting, the portal reached ------------------------------------
+	const fb = [];
+	fb.push(N('sGo', 'gamesound', 'Sound: go', 660, 40, { sound: 'whistle' }));
+	E('rules', 'sGo', 'trigger', 'stageStarted');
+	fb.push(N('aWin', 'announce', 'Banner: the winner', 660, 160, { text: '{v} reached the portal!', sub: '', seconds: 2.4, color: '#7dffb0' }));
+	E('rules', 'aWin', 'trigger', 'portalReached');
+	E('rules', 'aWin', 'value', 'winner');
+	G('g-moments', 'Stage start & win', fb, 660, 40);
+	T('n-moments', 'Stage start & win', 'A whistle when a stage starts and a banner naming whoever reached the portal first — on **every** screen.', 900, 0, { w: 240, h: 110, color: 'green' });
+
+	// ---- the engine, openable from here --------------------------------------------------------
+	N('engine', 'coderef', 'Code link', 300, 460, { module: 'skyrun', file: 'module.js', title: 'Sky Run engine — the run, flags, coins, moving platforms', main: 1 });
+	T('n-engine', 'The engine', 'What the rules call as **kit.skyrun.*** — each player\'s run (falls back to the last flag, coins, the portal), the moving platforms on the shared clock. Double-click to read it.', 300, 640, { w: 260, h: 120, color: 'gray' });
+
+	// ---- the player and the music --------------------------------------------------------------
+	const player = [];
+	player.push(N('body', 'charcontroller', 'Player: walk + jump', 660, 420, { mode: 'walk', speed: 0.07, jumpHeight: 1.3, eyeHeight: 1.7, gravity: true }));
+	player.push(N('music', 'gamemusic', 'Sky music', 900, 420, { preset: 'arcade', volume: 0.35, while: 'always' }));
+	G('g-player', 'Player & music', player, 660, 420);
+	T('n-player', 'Player & music', 'Walking with gravity and a jump (the rules\' *Jump height* sets how high), and the arcade music.', 660, 550, { w: 240, h: 100, color: 'gray' });
+
 	// ---- the HUD words ------------------------------------------------------------------------
-	const text = (id, read, element, x, y, extra = {}) => {
-		N(id + 'i', 'skyruninfo', 'Sky Run: ' + read, x, y, { read, ...extra });
-		N(id + 't', 'hudtext', 'HUD ' + element, x + 240, y, { element, format: '', decimals: 0, value: 0 });
+	const hud = [];
+	const text = (id, read, element, i, extra = {}) => {
+		const x = 1300 + (i % 2) * 520;
+		const y = 40 + Math.floor(i / 2) * 120;
+		hud.push(N(id + 'i', 'skyruninfo', 'Sky Run: ' + read, x, y, { read, ...extra }));
+		hud.push(N(id + 't', 'hudtext', 'HUD ' + element, x + 250, y, { element, format: '', decimals: 0, value: 0 }));
 		E(id + 'i', id + 't', 'format');
 	};
-	text('title', 'title', 'sr-title', 800, 200);
-	text('clock', 'clock', 'sr-clock', 800, 270);
-	text('coins', 'coins', 'sr-coins', 800, 340);
-	text('cp', 'checkpoint', 'sr-cp', 800, 410);
-	text('best', 'best', 'sr-best', 800, 480);
-	text('count', 'countdown', 'sr-count', 800, 550);
-	text('res', 'result', 'sr-result', 800, 620);
-	text('resl', 'resultLine', 'sr-line', 800, 690);
-	for (let s = 1; s <= 3; s++) text('sb' + s, 'stageBest', 'stage-' + s + '-best', 800, 760 + (s - 1) * 70, { level: String(s) });
+	[['title', 'title', 'sr-title'], ['clock', 'clock', 'sr-clock'], ['coins', 'coins', 'sr-coins'], ['cp', 'checkpoint', 'sr-cp'],
+		['best', 'best', 'sr-best'], ['count', 'countdown', 'sr-count'], ['res', 'result', 'sr-result'], ['resl', 'resultLine', 'sr-line']]
+		.forEach(([id, read, el], i) => text(id, read, el, i));
+	for (let s = 1; s <= 3; s++) text('sb' + s, 'stageBest', 'stage-' + s + '-best', 7 + s, { level: String(s) });
+	G('g-hud', 'HUD words', hud, 1300, 40);
+	T('n-hud', 'HUD words', 'Each **Sky Run info** node reads one line of the run (the stage, the clock, your coins, your flag, your best…) into a HUD Text.', 1300, 170, { w: 260, h: 110, color: 'purple' });
+
 	// ---- every moving thing: a mover effect on its object -----------------------------------
+	const movers = [];
 	MOVERS.forEach((m, i) => {
 		const y = 40 + i * 70;
-		N('mv' + i, 'skyrunmove', 'Move: ' + m.name, 1400, y, m.data);
-		N('mvs' + i, 'objectselector', m.name, 1640, y, { selected: m.name });
+		movers.push(N('mv' + i, 'skyrunmove', 'Move: ' + m.name, 1650, y, m.data));
+		movers.push(N('mvs' + i, 'objectselector', m.name, 1890, y, { selected: m.name }));
 		E('mv' + i, 'mvs' + i);
 	});
+	G('g-movers', 'Moving platforms', movers, 1650, 40);
+	T('n-movers', 'Moving platforms', 'Sliders, bobbers, spinners and blinking tiles: one **Move** node per object, all on the shared clock, so every player sees them in the same place.', 1650, 170, { w: 260, h: 120, color: 'gray' });
 	return g.done();
 }
 

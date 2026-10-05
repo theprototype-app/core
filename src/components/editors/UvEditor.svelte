@@ -1818,6 +1818,7 @@
 				bind:this={wrapEl}
 				id="uv-canvas-wrap"
 				class="relative h-full w-full overflow-hidden bg-gray-900 outline-none"
+				data-key-scope="uv"
 				tabindex="-1"
 				use:uvSurface
 			>

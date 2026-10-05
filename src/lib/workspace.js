@@ -10,7 +10,8 @@ import {
 	shaderEditorClose,
 	explorerClose,
 	objectListClose,
-	notesDrawerOpen
+	notesDrawerOpen,
+	codeWorkspaceClose
 } from '../stores/appStore';
 import { bottomDockActive } from './bottomDock';
 
@@ -47,6 +48,7 @@ const PANELS = [
 	{ name: 'shader', store: shaderEditorClose, closed: true },
 	{ name: 'explorer', store: explorerClose, closed: true },
 	{ name: 'objectList', store: objectListClose, closed: true },
+	{ name: 'code', store: codeWorkspaceClose, closed: true },
 	// 21-H2: `library` retired with Library.svelte (an unreachable second home for
 	// prefabs). A saved payload naming it is simply not in this table any more, and
 	// `applyWorkspace` walks the TABLE — so an old record restores everything it still

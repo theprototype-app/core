@@ -14,9 +14,36 @@
 //            (events.js names them and types their payloads).
 //   anything else that is a function is a METHOD, callable as `this.name(…)` and as an
 //   `after` target by name (`this.after(3, 'startWave', 2)` survives the authority leaving).
+//
+// 36 (U10, 36-games-graphs) — A BEHAVIOUR IN THE GRAPH. Two optional lists make the node a
+// wired part of its flow instead of an island:
+//   inputs   `['start', 'menu']` — EVENT sockets on the node. A trigger wired into one runs the
+//            handler of the same name in `on` (`on: {start() {…}}`), on the authority, once per
+//            fresh stamp (flowRuntime's stamp edge, the Set Game State rule).
+//   outputs  `['title', 'strokes', 'holeSunk']` — sockets out. A name that is a STATE field is a
+//            VALUE output (the replicated state, so every peer reads the same); any other name is
+//            an EVENT output, fired by `this.emit('holeSunk')` (a replicated pulse, the
+//            nodetrigger path: wire it into Announce, Game sound, a kit action…).
+// A behaviour with neither list has no sockets, exactly as before.
 
 /** keys of a behaviour object that are not methods */
-export const RESERVED_KEYS = ['name', 'doc', 'params', 'state', 'on'];
+export const RESERVED_KEYS = ['name', 'doc', 'params', 'state', 'on', 'inputs', 'outputs'];
+
+/** input names that are the runtime's own events (events.js SPECIAL_EVENTS) */
+export const RESERVED_INPUTS = ['start', 'grabRequest'];
+
+/** a socket name (an identifier) */
+const SOCKET_NAME = /^[A-Za-z_$][\w$]*$/;
+
+/** the declared input names of a definition @param {any} def @returns {string[]} */
+export function inputsOf(def) {
+	return Array.isArray(def?.inputs) ? def.inputs.map(String).filter((/** @type {string} */ n) => SOCKET_NAME.test(n)) : [];
+}
+
+/** the declared output names of a definition @param {any} def @returns {string[]} */
+export function outputsOf(def) {
+	return Array.isArray(def?.outputs) ? def.outputs.map(String).filter((/** @type {string} */ n) => SOCKET_NAME.test(n)) : [];
+}
 
 /** names a method may not take (they are the handler `this`'s own members) */
 export const CONTEXT_MEMBERS = [
@@ -126,6 +153,25 @@ export function problems(def) {
 		}
 	}
 	if (def.on !== undefined && (typeof def.on !== 'object' || def.on === null)) out.push('on must be an object of handlers');
+	for (const key of ['inputs', 'outputs']) {
+		const list = def[key];
+		if (list === undefined) continue;
+		if (!Array.isArray(list)) {
+			out.push(key + ' must be a list of names');
+			continue;
+		}
+		const seen = new Set();
+		for (const n of list) {
+			if (typeof n !== 'string' || !SOCKET_NAME.test(n)) out.push(key + ': "' + String(n) + '" is not a name');
+			else if (seen.has(n)) out.push(key + ': "' + n + '" twice');
+			seen.add(n);
+		}
+	}
+	for (const n of inputsOf(def)) {
+		// the runtime's own events keep their names (`on.start` runs once when the behaviour starts)
+		if (RESERVED_INPUTS.includes(n)) out.push('input "' + n + '" is a built-in event name — call it e.g. "' + n + 'Pressed"');
+		else if (typeof def.on?.[n] !== 'function') out.push('input "' + n + '" has no on.' + n + ' handler');
+	}
 	for (const [name, fn] of Object.entries(def.on ?? {})) if (typeof fn !== 'function') out.push('on.' + name + ' is not a function');
 	return out;
 }

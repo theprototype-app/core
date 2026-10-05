@@ -1176,6 +1176,7 @@
 			<div
 				id="hud-board-wrap"
 				class="hud-board-wrap"
+				data-key-scope="hud"
 				tabindex="-1"
 				use:hudSurface
 				onpointerdown={(/** @type {any} */ e) => {

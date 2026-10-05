@@ -149,7 +149,9 @@ export default defineConfig({
 			// so dev discovered it on the FIRST reduction and reloaded the page mid-import
 			// ("optimized dependencies changed. reloading") — losing whatever was unsaved.
 			// Pre-bundle it up front so the first reduction is as quiet as the rest.
-			include: ['lodash.groupby', 'meshoptimizer/simplifier']
+			// 36: the code editor's read-only + highlight extensions are separate bare imports
+			// (CodeEditor.svelte); discovered on first use they reloaded the page the same way
+			include: ['lodash.groupby', 'meshoptimizer/simplifier', '@codemirror/state', '@codemirror/language', '@lezer/highlight']
 		},
 	// dev https via the repo's local certs (vite-plugin-mkcert stayed on vite<=5;
 	// certs/ was already how CI-less https worked before mkcert)

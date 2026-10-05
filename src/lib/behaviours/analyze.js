@@ -23,7 +23,7 @@
 
 import { parse } from 'acorn';
 import { resolveEvent } from './events.js';
-import { RESERVED_KEYS, CONTEXT_MEMBERS } from './define.js';
+import { RESERVED_KEYS, RESERVED_INPUTS, CONTEXT_MEMBERS } from './define.js';
 
 /** globals a behaviour may not touch, with what to use instead */
 export const BANNED = {
@@ -136,6 +136,7 @@ function scanFunction(fn, specs, methodNames) {
 	/** @type {Map<string, {piece: string, call: string, type: string | null, label: string, kind: string, line: number}>} */ const kit = new Map();
 	/** @type {Set<string>} */ const actions = new Set();
 	/** @type {Set<string>} */ const payload = new Set();
+	/** 36 (U10): `this.emit('name')` — the event outputs this function fires @type {Set<string>} */ const emits = new Set();
 	let random = false;
 	// the payload: the first parameter's destructured names
 	const first = fn.params?.[0];
@@ -233,6 +234,9 @@ function scanFunction(fn, specs, methodNames) {
 					}
 					timers.push({ method, params: ps, line: n.loc?.start.line ?? 0 });
 					if (method) calls.add(method);
+				} else if (c[1] === 'emit') {
+					const arg = n.arguments[0];
+					if (arg?.type === 'Literal' && typeof arg.value === 'string') emits.add(arg.value);
 				} else if (c[1] === 'rand' || c[1] === 'randInt' || c[1] === 'pick') random = true;
 				else if (methodNames.includes(c[1])) calls.add(c[1]);
 			}
@@ -247,8 +251,21 @@ function scanFunction(fn, specs, methodNames) {
 		kit: [...kit.values()],
 		actions: [...actions],
 		payload: [...payload],
+		emits: [...emits],
 		random
 	};
+}
+
+/** a list literal of strings (`['a', 'b']`) -> the strings; null when it is not one @param {any} n */
+function stringList(n) {
+	if (n?.type !== 'ArrayExpression') return null;
+	/** @type {string[]} */
+	const out = [];
+	for (const el of n.elements) {
+		const v = literalOf(el);
+		if (typeof v === 'string') out.push(v);
+	}
+	return out;
 }
 
 /** @param {any} ast @param {Finding[]} out */
@@ -317,7 +334,9 @@ export function analyze(source, specs = []) {
 			params: [],
 			state: [],
 			handlers: [],
-			methods: []
+			methods: [],
+			inputs: [],
+			outputs: []
 		};
 	}
 	lint(ast, lintOut);
@@ -327,9 +346,17 @@ export function analyze(source, specs = []) {
 	/** @type {any[]} */ const state = [];
 	/** @type {any[]} */ const handlers = [];
 	/** @type {any[]} */ const methods = [];
+	/** 36 (U10): the declared wired sockets @type {string[]} */ let inputs = [];
+	/** @type {string[]} */ let outputNames = [];
 	/** @type {string} */
 	let name = '';
 	if (def) {
+		// the socket lists first: a handler named by `inputs` resolves to the wired input
+		for (const prop of def.properties) {
+			const k = keyName(prop);
+			if (k === 'inputs') inputs = stringList(prop.value) ?? [];
+			if (k === 'outputs') outputNames = stringList(prop.value) ?? [];
+		}
 		/** @type {string[]} */
 		const methodNames = [];
 		for (const prop of def.properties) {
@@ -377,7 +404,7 @@ export function analyze(source, specs = []) {
 					const hk = keyName(p);
 					const fn = fnOf(p);
 					if (!hk || !fn) continue;
-					const event = resolveEvent(hk, specs);
+					const event = resolveEvent(hk, specs, inputs);
 					if (!event) lintOut.push({ message: 'on.' + hk + ': no such event (it will never fire)', line: p.loc?.start.line ?? 0, col: (p.loc?.start.column ?? 0) + 1, level: 'warning' });
 					handlers.push({ name: hk, event, line: p.loc?.start.line ?? 0, ...scanFunction(fn, specs, methodNames) });
 				}
@@ -386,6 +413,24 @@ export function analyze(source, specs = []) {
 				methods.push({ name: k, line, ...scanFunction(fnOf(prop), specs, methodNames) });
 			}
 		}
+	}
+	// 36 (U10): each output is a state field (a VALUE socket, typed by its initial value) or an
+	// event (fired by this.emit). An emit that is not declared cannot be wired — say so.
+	const stateKeys = new Map(state.map((/** @type {any} */ f) => [f.key, f]));
+	const outputs = outputNames.map((n) => {
+		const field = stateKeys.get(n);
+		if (!field) return { name: n, kind: 'event', type: 'event' };
+		const v = field.init;
+		// a number/boolean literal types the socket; anything else (text, a list, an object) is 'any'
+		const type = typeof v === 'number' ? 'number' : typeof v === 'boolean' ? 'boolean' : 'any';
+		return { name: n, kind: 'value', type };
+	});
+	for (const fn of [...handlers, ...methods])
+		for (const e of fn.emits ?? [])
+			if (!outputNames.includes(e)) lintOut.push({ message: 'this.emit(\'' + e + '\'): add \'' + e + '\' to outputs to wire it', line: fn.line, col: 1, level: 'warning' });
+	for (const n of inputs) {
+		if (RESERVED_INPUTS.includes(n)) errors.push({ message: 'input "' + n + '" is a built-in event name — call it e.g. "' + n + 'Pressed"', line: 1, col: 1, level: 'error' });
+		else if (!handlers.some((/** @type {any} */ h) => h.name === n)) lintOut.push({ message: 'input "' + n + '" has no on.' + n + ' handler', line: 1, col: 1, level: 'warning' });
 	}
 	for (const f of lintOut) if (f.level === 'error') errors.push(f);
 	return {
@@ -396,7 +441,9 @@ export function analyze(source, specs = []) {
 		params,
 		state,
 		handlers,
-		methods
+		methods,
+		inputs,
+		outputs
 	};
 }
 

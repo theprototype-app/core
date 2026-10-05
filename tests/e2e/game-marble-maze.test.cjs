@@ -46,6 +46,7 @@ const autopilot = (page, path, limit) =>
 
 const CANDIDATES = [
 	process.env.MARBLE_TPSCENE,
+	path.resolve(__dirname, '../../../cloud-lane-30-staging/36-games-graphs/games/marble-maze/scene.tpscene'),
 	'/home/deck/.code/theprototype-app/cloud-lane-30-staging/35-marble-maze/games/marble-maze/scene.tpscene',
 	process.env.SCENES_REPO && path.join(process.env.SCENES_REPO, 'games/marble-maze/scene.tpscene')
 ].filter(Boolean);
@@ -192,6 +193,86 @@ const CANDIDATES = [
 	await page.evaluate(() => window.__marble.toHole(0));
 	await h.eventually(snap, (v) => v.vars.mmFalls >= 1, 'the marble over a hole falls (counted)', 4000);
 	await h.eventually(snap, (v) => v.local && v.local[1] > -0.02 && v.local[0] < -0.25 && v.local[2] > 0.25, 'and is back on the start pad', 4000);
+
+	// 7 — THE U10 PROBE: the board's tilt limit from the GRAPH, a maze name from the CODE; felt in
+	// Play, kept by a save and a reload
+	const rid = await page.evaluate(() => window.__marble.rulesNode());
+	h.check(!!rid, `premise: the Main graph carries the Marble Maze rules node (${rid})`);
+	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the Marble Maze rules behaviour is running', 10000);
+	const fullTilt = async () => {
+		await page.evaluate(() => window.__marble.setTilt(0.5, 0.5));
+		await page.waitForTimeout(1200);
+		const t = await page.evaluate(() => window.__marble.tilt());
+		await page.evaluate(() => window.__marble.setTilt(0, 0));
+		return Math.max(Math.abs(t.x), Math.abs(t.z));
+	};
+	const stock = await fullTilt();
+	h.check(stock > 0.24 && stock < 0.28, `premise: a full tilt reaches the stock 15° (${stock.toFixed(3)} rad)`);
+	const codeNow = () => page.evaluate((id) => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id)?.data?.code ?? ''; }, rid);
+	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.waitForTimeout(600);
+	if (!(await page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await page.locator('p[title="Node editor (N)"]').click();
+	await page.waitForTimeout(1000);
+	await page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(600));
+	if (!(await page.locator('#flow-props').count())) await page.locator('#flow-props-toggle').click();
+	await page.locator('#flow-tab-info').click();
+	await page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
+	await h.eventually(() => page.locator('#flow-prop-maxTilt').count(), (n) => n === 1, 'the rules node shows the Board tilt limit in its properties panel', 6000);
+	await page.locator('#flow-prop-maxTilt').fill('5');
+	await page.locator('#flow-prop-maxTilt').press('Enter');
+	await h.eventually(codeNow, (c) => /maxTilt:\s*\{\s*value:\s*5\b/.test(c), 'the knob rewrote the literal in the rules source (maxTilt: 5)', 4000);
+	await page.evaluate((id) => {
+		let ns;
+		window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		const n = ns.find((x) => x.id === id);
+		window.__flowViewport?.setViewport({ x: -n.position.x + 300, y: -n.position.y + 60, zoom: 1 });
+	}, rid);
+	await page.waitForTimeout(600);
+	const nbox = await page.locator(`.svelte-flow__node[data-id="${rid}"]`).boundingBox().catch(() => null);
+	if (nbox) await page.mouse.dblclick(nbox.x + nbox.width / 2, nbox.y + 8);
+	else await page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
+	await h.eventually(() => page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, 'double-click opens the rules in the code workspace', 15000);
+	const edited = (await codeNow()).replace("{ id: 1, name: 'First roll', par: 25 }", "{ id: 1, name: 'Gentle roll', par: 25 }");
+	const paneId = await page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+	await page.locator(`[data-pane="${paneId}"] .cm-content`).click();
+	await page.keyboard.press('Control+A');
+	await page.keyboard.insertText(edited);
+	await page.keyboard.press('Control+S');
+	await h.eventually(codeNow, (c) => /name: 'Gentle roll'/.test(c), "Ctrl+S saved the code onto the node (maze 1 is 'Gentle roll')", 6000);
+	await page.locator('#code-ws-close').click().catch(() => {});
+	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
+	const feel = async (when) => {
+		await page.evaluate(() => window.__stores.isLocked.set(true));
+		await h.eventually(() => snap().then((v) => v.sim), (v) => v === true, `${when}: the simulation runs`, 10000);
+		await page.evaluate(() => window.__marble.startLevel(1));
+		await h.eventually(snap, (v) => v.state === 'playing' && v.vars.mmLevel === 1 && v.vars.mmStatus === 1, `${when}: maze 1 runs`, 8000);
+		await h.eventually(() => page.evaluate(() => window.__marble.info({ read: 'title' })), (t) => t === 'Maze 1 · Gentle roll', `${when}: the HUD title reads 'Maze 1 · Gentle roll' — the code change`, 4000);
+		await page.waitForTimeout(1200);
+		const lim = await fullTilt();
+		h.check(lim > 0.06 && lim < 0.095, `${when}: a full tilt stops at ~5° — the graph change (${lim.toFixed(3)} rad)`);
+	};
+	await feel('Play');
+	const saved = await page.evaluate(async () => {
+		const s = window.__stores;
+		const payload = s.sessions.buildSessionPayload('Marble probe');
+		const zip = await s.sessions.exportSessionZip(payload, { assets: true, packs: false, flow: true });
+		return Array.from(zip);
+	});
+	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.waitForTimeout(600);
+	await page.evaluate(async (arr) => {
+		const s = window.__stores;
+		s.flowGraphs.set({ scene: { nodes: [], edges: [] } });
+		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
+		await s.sessions.applySession(payload, { backup: false });
+	}, saved);
+	await page.waitForTimeout(2500);
+	const reloaded = await codeNow();
+	h.check(/maxTilt:\s*\{\s*value:\s*5\b/.test(reloaded) && /name: 'Gentle roll'/.test(reloaded), "after a save and a reload the rules keep the 5° limit and 'Gentle roll'");
+	await h.eventually(() => page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__marble.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
+	await feel('Play after the reload');
+	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.waitForTimeout(400);
 
 	h.check(h.pageErrors(A).length === 0, `no page errors (${h.pageErrors(A).slice(0, 2).join(' | ')})`);
 	await h.finish(browser);

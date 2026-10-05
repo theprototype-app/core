@@ -2,7 +2,7 @@
 	import { Position, type NodeProps } from '@xyflow/svelte';
 	import Socket from './Socket.svelte';
 	import NodeWrapper from './NodeWrapper.svelte';
-	import { scriptEditorOpen, scriptErrors, flowValues } from '../../../stores/flowStore';
+	import { scriptEditorOpen, scriptErrors, scriptFileErrors, flowValues } from '../../../stores/flowStore';
 	import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
 
 	type $$Props = NodeProps;
@@ -10,6 +10,9 @@
 	export let data;
 
 	$: error = $scriptErrors[id];
+	// 36-code: a workspace save that did NOT reach this node (it keeps its last good code)
+	$: pending = $scriptFileErrors[id];
+	$: file = data.src?.kind === 'asset' && data.src.hash ? data.src.name : '';
 	$: lines = (data.code ?? '').split('\n').filter((l) => l.trim() && !l.trim().startsWith('//')).length;
 	// 34 D3: declared sockets make it v2. With no declaration the card is the v1 card,
 	// byte-for-byte: the a/b/c inputs and the effect output.
@@ -57,6 +60,9 @@
 			</div>
 		{/each}
 		<span class="text-[10px] text-gray-400">{lines} line{lines === 1 ? '' : 's'} of code</span>
+		{#if file}
+			<span class="script-file max-w-[180px] truncate text-[10px] text-sky-300" title="Runs the script file {file} — saving the file reloads every node bound to it">📄 {file}</span>
+		{/if}
 		<button
 			class="nodrag rounded-sm bg-[#ff4000] px-2 py-0.5 text-white"
 			on:click={() => scriptEditorOpen.set(id)}
@@ -65,6 +71,9 @@
 		</button>
 		{#if error}
 			<span class="max-w-[180px] wrap-break-word text-[10px] text-red-500" title={error}>⚠ {error}</span>
+		{/if}
+		{#if pending}
+			<span class="script-pending max-w-[180px] wrap-break-word text-[10px] text-amber-400" title={pending}>⚠ {pending}</span>
 		{/if}
 	</div>
 </NodeWrapper>

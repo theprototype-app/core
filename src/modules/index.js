@@ -12,7 +12,7 @@ import towers from './towers/module.js';
 import escape from './escape/module.js';
 // 35: the Marble Maze game's mazes, tilt and judge (dormant outside a Marble Maze scene)
 import marble from './marble/module.js';
-// 35-mini-golf: the Mini Golf game's holes, putting and scorecard (dormant outside a Mini Golf scene)
+// 35-mini-golf → 36 U10: the Mini Golf ENGINE (ball, putting, VR putter) — the rules are the scene's Main graph
 import minigolf from './minigolf/module.js';
 // 35-sky-obby: the Sky Run game's movers and run rules (dormant outside a Sky Run scene)
 import skyrun from './skyrun/module.js';

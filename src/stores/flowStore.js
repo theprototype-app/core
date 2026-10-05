@@ -162,12 +162,41 @@ export function allEdges() {
 	return out;
 }
 
+/**
+ * 36 U11: what the RUNTIME evaluates — every node minus the editor-only kinds (a group,
+ * a note: annotation, never evaluated) and minus MUTED nodes (`data.muted`, the node
+ * editor's M / "Mute (bypass)"), plus only the wires whose both ends survive. A muted
+ * node is as good as absent: its effect stops, its value reads as unwired downstream.
+ * A graph with nothing muted and no groups/notes is passed through UNCHANGED (the same
+ * arrays), so the cost of the filter is one scan.
+ * @param {any[]} nodes @param {any[]} edges @returns {{nodes: any[], edges: any[]}}
+ */
+export function runtimeGraph(nodes, edges) {
+	const skip = (/** @type {any} */ n) => n.type === 'group' || n.type === 'note' || n.data?.muted === true;
+	if (!nodes.some(skip)) return { nodes, edges };
+	const live = nodes.filter((n) => !skip(n));
+	const ids = new Set(live.map((n) => n.id));
+	return { nodes: live, edges: edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
+}
+
 /** nodes+edges count across every graph (nodesync drift heal). */
 export function graphTotals() {
 	const all = get(flowGraphs);
 	let count = 0;
 	for (const graph of Object.values(all ?? {})) count += graph.nodes.length + graph.edges.length;
 	return count;
+}
+
+/**
+ * 36 (U10): every node card reads its spec through `data.type` (the editor writes it on every
+ * node it makes); a node authored in CODE — a game template's graph — often carried only the
+ * top-level `type`, so its card found no spec and drew no sockets and no controls. Filled in on
+ * the way in (the same on every peer that loads the file; a joiner receives the filled copy).
+ * @param {any} node
+ */
+function withDataType(node) {
+	if (!node || !node.type || !node.data || node.data.type !== undefined) return node;
+	return { ...node, data: { ...node.data, type: node.type } };
 }
 
 /**
@@ -179,7 +208,7 @@ export function restoreGraphs(graphs) {
 	/** @type {Record<string, {nodes: any[], edges: any[]}>} */
 	const next = { [SCENE_GRAPH]: { nodes: [], edges: [] } };
 	for (const [graphId, graph] of Object.entries(graphs ?? {})) {
-		next[graphId] = { nodes: graph.nodes ?? [], edges: graph.edges ?? [] };
+		next[graphId] = { nodes: (graph.nodes ?? []).map(withDataType), edges: graph.edges ?? [] };
 	}
 	flowGraphs.set(next);
 	activeGraphId.set(SCENE_GRAPH);
@@ -247,3 +276,7 @@ export const nodeDesignerOpen = writable(null);
 // nodeId -> last script error message (shown as a badge on the node)
 /** @type {import('svelte/store').Writable<Record<string, string>>} */
 export const scriptErrors = writable({});
+// 36-code: nodeId -> why the code workspace's last save did NOT reach this node (a parse
+// error: the node keeps running its last good code). Beside scriptErrors, set by codeWorkspace.
+/** @type {import('svelte/store').Writable<Record<string, string>>} */
+export const scriptFileErrors = writable({});

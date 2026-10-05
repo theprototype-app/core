@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { showToast } from '../stores/appStore';
+import { viewportHasKeys } from './keyScope'; // 36 U11
 
 // Two-click distance measuring. Local-only: measurements are a personal
 // inspection tool and do not replicate.
@@ -26,6 +27,7 @@ export function toggleMeasure() {
 
 /** @param {KeyboardEvent} event */
 function onKeydown(event) {
+	if (!viewportHasKeys(event)) return; // 36 U11: Esc in another pane is that pane's
 	if (event.key === 'Escape') toggleMeasure();
 }
 

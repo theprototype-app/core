@@ -915,6 +915,10 @@ function handleKeydown(event) {
 	if (get(isLocked)) return;
 
 	const combo = comboOf(event);
+	// 36 L4: inside an open popover/menu (the profile dropdown is a flowbite popover) Tab
+	// is the browser's focus navigation — the global Tab (enter Edit Mesh) left every
+	// menu row unreachable by keyboard
+	if ((combo === 'Tab' || combo === 'Shift+Tab') && target?.closest?.('[popover], [role="menu"], dialog')) return;
 	// D3: while a mesh-edit session owns its hotkeys, bare mesh-edit keys never
 	// match the registry — F would ALSO focus the object mid-edit. Delete
 	// self-guards; 1/2/3 intentionally stay (gizmo mode on the proxy).

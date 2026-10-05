@@ -63,6 +63,11 @@ const perf = (page, ms) =>
 	page.evaluate(async (dur) => {
 		let r;
 		window.__stores.globalRenderer.subscribe((v) => (r = v))();
+		// renderer.info resets on EVERY render call, and the desktop pipeline renders several
+		// passes a frame — sum them per frame (autoReset off, reset once per rAF)
+		const autoWas = r.info.autoReset;
+		r.info.autoReset = false;
+		r.info.reset();
 		const frames = [];
 		const calls = [];
 		const tris = [];
@@ -75,11 +80,15 @@ const perf = (page, ms) =>
 				last = now;
 				calls.push(r.info.render.calls);
 				tris.push(r.info.render.triangles);
+				r.info.reset();
 				if (now < end) requestAnimationFrame(tick);
 				else done(null);
 			};
 			requestAnimationFrame(tick);
 		});
+		r.info.autoReset = autoWas;
+		calls.shift(); // the first sample started mid-frame
+		tris.shift();
 		const q = (a, f) => [...a].sort((x, y) => x - y)[Math.min(a.length - 1, Math.floor(a.length * f))];
 		const d = window.__stores.sim.fluidEmitterDebug()[0];
 		return {

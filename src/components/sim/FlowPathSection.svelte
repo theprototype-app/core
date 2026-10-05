@@ -111,10 +111,14 @@
 			{/if}
 			<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Points ({length.toFixed(2)} m)</p>
 			{#each f.points as p, i (i)}
-				<div class="ui-row items-center gap-1" data-flow-point={i}>
-					<span class="w-5 shrink-0 text-[10px] text-gray-400">{i + 1}</span>
+				<!-- a GRID with min-width-0 cells: three DragRows in a flex row were wider than the
+				     Inspector and scrolled the whole panel sideways (seen in the light-theme shot) -->
+				<div class="grid items-center gap-1" style="grid-template-columns: 1rem repeat(3, minmax(0, 1fr)) auto" data-flow-point={i}>
+					<span class="text-[10px] text-gray-400">{i + 1}</span>
 					{#each ['X', 'Y', 'Z'] as axis, a (axis)}
-						<DragRow id={'flow-point-' + i + '-' + a} label={axis} value={p[a]} step={0.05} decimals={2} unit="length" onchange={(v) => setPoint(i, a, v)} />
+						<div class="min-w-0 overflow-hidden">
+							<DragRow id={'flow-point-' + i + '-' + a} label={axis} value={p[a]} step={0.05} decimals={2} unit="length" onchange={(v) => setPoint(i, a, v)} />
+						</div>
 					{/each}
 					<button
 						class="ui-chip shrink-0 px-1 text-gray-300 hover:text-[var(--ink-bad,#f87171)]"

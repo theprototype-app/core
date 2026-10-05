@@ -796,6 +796,12 @@
 		align-items: center;
 		gap: 4px;
 	}
+	/* the window paints its own surface from the tokens, so its header follows the same ink
+	   (ui-panel-header's @apply'd gray-100 assumes a dark ui-panel; on light it read washed out) */
+	.code-ws :global(.ui-panel-header) {
+		color: var(--text, #f3f4f6);
+		border-color: var(--border, rgb(55 65 81 / 0.6));
+	}
 	.code-ws {
 		background: var(--surface, #1f2937);
 		color: var(--text, #e5e7eb);

@@ -150,6 +150,7 @@ h.run(async () => {
 	const engine = list?.find((x) => x.kind === 'module');
 	h.check(!!engine?.readOnly && /KinematicCharacterController|charControl/.test(engine?.code ?? ''), 'F5: "Engine source" opens the core walker code read-only');
 	h.check((await page.locator('#code-ws-fork').count()) === 0, 'F5: the engine source offers no copy (nothing could run it)');
+	h.check((await S(page, (t) => window.__stores.codeWorkspace.nodesUsingModuleFile(t).map((b) => b.node.id), engine)).includes('body'), 'F5: Bound nodes of the engine source names the Player that steers it');
 	// counterfactual: a node with no code still opens nothing
 	const plain = await S(page, () => {
 		let ns;

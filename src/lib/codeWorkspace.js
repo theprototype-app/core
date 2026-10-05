@@ -583,6 +583,15 @@ export function revealInTab(tabId, line) {
  * @param {{moduleId?: string, name?: string}} tab @returns {{node: any, graphId: string}[]}
  */
 export function nodesUsingModuleFile(tab) {
+	// a built-in's engine source (moduleId 'core'): the nodes whose code steers it (the Players)
+	if (tab.moduleId === 'core') {
+		/** @type {{node: any, graphId: string}[]} */
+		const steer = [];
+		for (const [graphId, graph] of Object.entries(get(flowGraphs)))
+			for (const node of /** @type {any} */ (graph).nodes ?? [])
+				if (isBuiltinCodeType(node.type) && BUILTIN_CODE[node.type].engine === tab.name) steer.push({ node, graphId });
+		return steer;
+	}
 	const want = String(tab.moduleId ?? '') + (tab.name ? '/' + tab.name : '');
 	/** @type {{node: any, graphId: string}[]} */
 	const out = [];

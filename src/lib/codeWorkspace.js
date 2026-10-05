@@ -116,6 +116,12 @@ async function builtinModuleSource(ref) {
 	const file = ref.name || 'module.js';
 	const loader = coreModuleSources['../modules/' + id + '/' + file];
 	if (loader) return { title: id + '/' + file, code: String(await loader()) };
+	// 36-fb-code (F6): the kit's pieces (`kit/<piece>.js`) live in src/lib/kit, read by codeOpen
+	if (id === 'kit') {
+		const { moduleSourceFiles } = await import('./codeOpen');
+		const hit = (await moduleSourceFiles('kit')).find((f) => f.file === file);
+		if (hit) return { title: 'kit/' + file, code: hit.text };
+	}
 	const { userModules } = await import('./userModules');
 	const record = get(userModules).find((/** @type {any} */ r) => r.id === id);
 	const bytes = record?.files?.[ref.name || record?.entry];

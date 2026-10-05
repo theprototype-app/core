@@ -76,8 +76,8 @@
 				<ThemedSelect
 					id="flow-path-kind"
 					items={[
-						{ value: 'river', name: 'River / chute (steers water along it)' },
-						{ value: 'pipe', name: 'Pipe (in at the start, out at the end)' }
+						{ value: 'river', name: 'River / chute' },
+						{ value: 'pipe', name: 'Pipe (pump)' }
 					]}
 					value={f.kind}
 					onchange={(/** @type {any} */ v) => set({ kind: v })}

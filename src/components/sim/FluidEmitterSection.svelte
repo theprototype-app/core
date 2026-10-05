@@ -38,13 +38,13 @@
 	<Section label="Fluid emitter">
 		<div data-tour="fluid-emitter" class="contents">
 			<Checkbox id="fluid-emitter-on" checked={f.on} onchange={(/** @type {any} */ e) => set({ on: e.currentTarget.checked })}>Emitting</Checkbox>
-			<div class="ui-row items-center gap-2">
+			<div class="ui-row items-center gap-2" title="Stream pours continuously; Spill releases the spill amount once">
 				<span class="w-20 shrink-0 text-xs text-gray-400">Mode</span>
 				<ThemedSelect
 					id="fluid-emitter-mode"
 					items={[
-						{ value: 'stream', name: 'Stream (continuous)' },
-						{ value: 'burst', name: 'Spill (a set amount, once)' }
+						{ value: 'stream', name: 'Stream' },
+						{ value: 'burst', name: 'Spill (once)' }
 					]}
 					value={f.mode}
 					onchange={(/** @type {any} */ v) => set({ mode: v })}
@@ -102,7 +102,7 @@
 				<ThemedSelect
 					id="fluid-emitter-quality"
 					items={[
-						{ value: 'auto', name: 'Auto (surface on desktop, drops on Quest)' },
+						{ value: 'auto', name: 'Auto' },
 						{ value: 'high', name: 'Smooth surface' },
 						{ value: 'points', name: 'Drops (cheapest)' }
 					]}

@@ -24,14 +24,14 @@
 
 {#if hasFluid && targets.length && !targets.some((/** @type {any} */ o) => o?.userData?.fluidEmitter)}
 	<div class="ui-row items-center gap-2" data-keywords="fluid interaction water particles collide float buoyancy">
-		<span class="w-20 shrink-0 text-xs text-gray-400" title="How particle fluid (Fluid emitters) meets this object">Fluid</span>
+		<span class="w-20 shrink-0 text-xs text-gray-400" title="How particle fluid (Fluid emitters) meets this object. Auto: it collides, and a dynamic body is pushed. None: the fluid passes through. Collide: a solid, never pushed. Collide + push + float: pushed, and light objects float on the pools.">Fluid</span>
 		<ThemedSelect
 			id="physics-fluid-interaction"
 			items={[
-				{ value: 'auto', name: 'Auto (collide; dynamic bodies are pushed)' },
-				{ value: 'none', name: 'None (fluid passes through)' },
-				{ value: 'collide', name: 'Collide (never pushed)' },
-				{ value: 'float', name: 'Collide + push + float (light objects)' },
+				{ value: 'auto', name: 'Auto' },
+				{ value: 'none', name: 'None (passes through)' },
+				{ value: 'collide', name: 'Collide' },
+				{ value: 'float', name: 'Collide + push + float' },
 				...(value === 'mixed' ? [{ value: 'mixed', name: '—' }] : [])
 			]}
 			{value}

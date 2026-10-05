@@ -23,6 +23,10 @@ const MAX_NEIGHBORS = 48;
 const ITERATIONS = 3;
 const RELAX = 0.05; // ε in λ = -C / (Σ|∇C|² + ε), as a fraction of a full neighbourhood's Σ|∇C|²
 const MAX_SPEED = 12; // m/s: a particle never outruns this (no tunnelling through the glass)
+/** 36-fb: escaped particles handed back per takeEscaped() call (the rest are counted, not kept) */
+export const ESCAPE_CAP = 2048;
+/** wall order of the mask: [xlo, xhi, ylo, yhi, zlo, zhi] */
+export const ALL_WALLS = Object.freeze([true, true, true, true, true, true]);
 
 /** @typedef {{version: number, generation: number, count: number, fill: number, viscosity: number, surfaceTension: number,
  *   gravityScale: number, color: string, clarity: number, quality: 'auto'|'high'|'points',
@@ -98,7 +102,10 @@ export function spacingFor(size, count, fill) {
 
 /**
  * @typedef {{kind: 'box'|'sphere', center: number[], half: number[], quat: number[],
- *   vel?: number[], id?: string, dynamic?: boolean}} FluidCollider  tank-local
+ *   vel?: number[], omega?: number[], id?: string, dynamic?: boolean, carry?: number}} FluidCollider  tank-local.
+ *   36-fb F25: `vel` (m/s) + `omega` (rad/s about `center`) = the collider's motion; a
+ *   particle it touches takes `carry` (0..1, default 0.8) of the surface's displacement, so a
+ *   turning paddle lifts and drags water instead of only shoving it aside.
  */
 
 /**
@@ -146,6 +153,32 @@ export class FluidSolver {
 		this.impulses = {};
 		/** particle mass in kg if the fluid were water: spacing^3 x 1000 */
 		this.particleMass = 1000 * o.spacing ** 3;
+		// 36-fb (F16 spill, F23 emitter): which glass walls exist, the particles that left
+		// through a missing one, and each particle's age (lifetime caps)
+		/** @type {boolean[]} [xlo, xhi, ylo, yhi, zlo, zhi] */
+		this.walls = ALL_WALLS.slice();
+		this.age = new Float32Array(n);
+		this.escaped = new Float32Array(ESCAPE_CAP * 6);
+		this.escapedCount = 0;
+		this.escapedDropped = 0;
+		/** particles removed by the lifetime cap since construction */
+		this.expired = 0;
+	}
+
+	/** @param {any} mask 6 booleans [xlo, xhi, ylo, yhi, zlo, zhi]; anything else = all walls */
+	setWalls(mask) {
+		this.walls = Array.isArray(mask) && mask.length === 6 ? mask.map((w) => w !== false) : ALL_WALLS.slice();
+	}
+
+	/**
+	 * The particles that left through a missing wall since the last call, as
+	 * [x, y, z, vx, vy, vz]* (solver-local). The buffer is a COPY (transferable).
+	 * @returns {Float32Array}
+	 */
+	takeEscaped() {
+		const out = this.escaped.slice(0, this.escapedCount * 6);
+		this.escapedCount = 0;
+		return out;
 	}
 
 	/** @param {number} r2 */
@@ -245,6 +278,7 @@ export class FluidSolver {
 					this.x[i + 1] = y + rand();
 					this.x[i + 2] = z + rand();
 					this.v[i] = this.v[i + 1] = this.v[i + 2] = 0;
+					this.age[i / 3] = 0;
 				}
 		}
 		return this.count;
@@ -253,22 +287,26 @@ export class FluidSolver {
 	/** add one particle (an emitter) @param {number[]} at @param {number[]} vel */
 	spawn(at, vel) {
 		if (this.count >= this.capacity) return false;
-		const i = this.count++ * 3;
+		const n = this.count++;
+		const i = n * 3;
 		for (let a = 0; a < 3; a++) {
 			this.x[i + a] = Math.min(this.max[a] - this.radius, Math.max(this.min[a] + this.radius, at[a]));
 			this.v[i + a] = vel[a];
 		}
+		this.age[n] = 0;
 		return true;
 	}
 
 	/** swap-remove particle i @param {number} i */
 	remove(i) {
 		const last = --this.count;
-		if (i !== last)
+		if (i !== last) {
 			for (let a = 0; a < 3; a++) {
 				this.x[i * 3 + a] = this.x[last * 3 + a];
 				this.v[i * 3 + a] = this.v[last * 3 + a];
 			}
+			this.age[i] = this.age[last];
+		}
 	}
 
 	/** counting-sort the predicted positions into the dense grid, then gather neighbours */
@@ -327,9 +365,13 @@ export class FluidSolver {
 		const p = this.p;
 		const r = this.radius;
 		const k = i * 3;
+		const walls = this.walls;
 		for (let a = 0; a < 3; a++) {
-			if (p[k + a] < this.min[a] + r) p[k + a] = this.min[a] + r;
-			else if (p[k + a] > this.max[a] - r) p[k + a] = this.max[a] - r;
+			if (p[k + a] < this.min[a] + r) {
+				if (walls[a * 2]) p[k + a] = this.min[a] + r;
+			} else if (p[k + a] > this.max[a] - r) {
+				if (walls[a * 2 + 1]) p[k + a] = this.max[a] - r;
+			}
 		}
 		for (const c of colliders) {
 			// into the collider's frame (inverse quat)
@@ -345,6 +387,7 @@ export class FluidSolver {
 				p[k + 1] += ly0 * push;
 				p[k + 2] += lz0 * push;
 				if (c.dynamic && c.id) this.react(c.id, -lx0 * push, -ly0 * push, -lz0 * push, dt);
+				if (c.vel || c.omega) this.carry(k, c, lx0, ly0, lz0, lx0 / d, ly0 / d, lz0 / d, dt);
 				continue;
 			}
 			// box: rotate into box space
@@ -362,7 +405,36 @@ export class FluidSolver {
 			p[k + 1] += wy;
 			p[k + 2] += wz;
 			if (c.dynamic && c.id) this.react(c.id, -wx, -wy, -wz, dt);
+			if (c.vel || c.omega) {
+				const wl = Math.hypot(wx, wy, wz) || 1;
+				this.carry(k, c, lx0, ly0, lz0, wx / wl, wy / wl, wz / wl, dt);
+			}
 		}
+	}
+
+	/**
+	 * F25: a touching particle rides along with a MOVING collider — it takes `carry` of the
+	 * surface's TANGENTIAL displacement this step (v + ω × r, minus its part along the contact
+	 * normal: the projection above already did the normal push, and adding it again shoves a
+	 * particle under a rising paddle back into it). Without it a turning wheel only parts the
+	 * water and a paddle sliding under it drags nothing.
+	 * @param {number} k particle index × 3 @param {FluidCollider} c @param {number} rx @param {number} ry @param {number} rz offset from the collider centre
+	 * @param {number} nx @param {number} ny @param {number} nz the contact normal (unit, out of the collider)
+	 * @param {number} dt
+	 */
+	carry(k, c, rx, ry, rz, nx, ny, nz, dt) {
+		const f = (c.carry ?? 0.8) * dt;
+		const v = c.vel, w = c.omega;
+		let sx = v ? v[0] : 0, sy = v ? v[1] : 0, sz = v ? v[2] : 0;
+		if (w) {
+			sx += w[1] * rz - w[2] * ry;
+			sy += w[2] * rx - w[0] * rz;
+			sz += w[0] * ry - w[1] * rx;
+		}
+		const sn = sx * nx + sy * ny + sz * nz;
+		this.p[k] += (sx - sn * nx) * f;
+		this.p[k + 1] += (sy - sn * ny) * f;
+		this.p[k + 2] += (sz - sn * nz) * f;
 	}
 
 	/** @param {string} id @param {number} dx @param {number} dy @param {number} dz @param {number} dt */
@@ -378,14 +450,18 @@ export class FluidSolver {
 	/**
 	 * One frame. `gravity` is tank-local (the tank may be tilted). Returns the active count.
 	 * @param {number} dt
-	 * @param {{gravity: number[], viscosity: number, surfaceTension: number, colliders?: FluidCollider[]}} o
+	 * @param {{gravity: number[], viscosity: number, surfaceTension: number, colliders?: FluidCollider[],
+	 *   walls?: boolean[], lifetime?: number}} o  36-fb: `walls` = the wall mask (setWalls), `lifetime` (s, 0 = forever)
 	 */
 	step(dt, o) {
 		const { x, v, p, lambda, dp, nbr, nbrCount } = this;
 		const n = this.count;
 		const colliders = o.colliders ?? [];
+		if (o.walls) this.setWalls(o.walls);
+		const walls = this.walls;
 		// the reaction on dynamic bodies is counted once, in the final pass
-		const quiet = colliders.map((c) => (c.dynamic ? { ...c, dynamic: false } : c));
+		// (and a moving collider's carry, once per step — not once per iteration)
+		const quiet = colliders.map((c) => (c.dynamic || c.vel || c.omega ? { ...c, dynamic: false, vel: undefined, omega: undefined } : c));
 		this.impulses = {};
 		if (!n) return 0;
 		dt = Math.min(dt, 1 / 30);
@@ -443,13 +519,13 @@ export class FluidSolver {
 				// the six walls of the glass (an open top is still a wall: the lid is the
 				// tank's top face; the fluid never reaches it in a sane fill)
 				for (let a = 0; a < 3; a++) {
-					const lo = this.wallBin(p[k + a] - this.min[a]);
+					const lo = walls[a * 2] ? this.wallBin(p[k + a] - this.min[a]) : -1;
 					if (lo >= 0) {
 						rho += this.wallRho[lo];
 						const w = this.wallGrad[lo];
 						if (a === 0) gx += w; else if (a === 1) gy += w; else gz += w;
 					}
-					const hi = this.wallBin(this.max[a] - p[k + a]);
+					const hi = walls[a * 2 + 1] ? this.wallBin(this.max[a] - p[k + a]) : -1;
 					if (hi >= 0) {
 						rho += this.wallRho[hi];
 						const w = -this.wallGrad[hi];
@@ -484,8 +560,8 @@ export class FluidSolver {
 				}
 				// the walls push back with the particle's own λ (a mirrored neighbour)
 				for (let a = 0; a < 3; a++) {
-					const lo = this.wallBin(p[k + a] - this.min[a]);
-					const hi = this.wallBin(this.max[a] - p[k + a]);
+					const lo = walls[a * 2] ? this.wallBin(p[k + a] - this.min[a]) : -1;
+					const hi = walls[a * 2 + 1] ? this.wallBin(this.max[a] - p[k + a]) : -1;
 					let w = 0;
 					if (lo >= 0) w += this.wallGrad[lo];
 					if (hi >= 0) w -= this.wallGrad[hi];
@@ -538,7 +614,42 @@ export class FluidSolver {
 			for (let i = 0; i < n * 3; i++) v[i] += c * dp[i];
 		}
 		x.set(p.subarray(0, n * 3));
-		return n;
+		this.cull(dt, o.lifetime ?? 0);
+		return this.count;
+	}
+
+	/**
+	 * 36-fb: the hard caps after a step — a particle past a MISSING wall by more than h is
+	 * handed to takeEscaped(); one older than `lifetime` s (0 = forever) expires.
+	 * @param {number} dt @param {number} lifetime
+	 */
+	cull(dt, lifetime) {
+		const { x, v, age, walls, min, max, h } = this;
+		const open = !walls.every(Boolean);
+		for (let i = this.count - 1; i >= 0; i--) {
+			age[i] += dt;
+			const k = i * 3;
+			if (open) {
+				let out = false;
+				for (let a = 0; a < 3 && !out; a++)
+					out = (!walls[a * 2] && x[k + a] < min[a] - h) || (!walls[a * 2 + 1] && x[k + a] > max[a] + h);
+				if (out) {
+					if (this.escapedCount < ESCAPE_CAP) {
+						const e = this.escapedCount++ * 6;
+						for (let a = 0; a < 3; a++) {
+							this.escaped[e + a] = x[k + a];
+							this.escaped[e + 3 + a] = v[k + a];
+						}
+					} else this.escapedDropped++;
+					this.remove(i);
+					continue;
+				}
+			}
+			if (lifetime > 0 && age[i] > lifetime) {
+				this.remove(i);
+				this.expired++;
+			}
+		}
 	}
 }
 

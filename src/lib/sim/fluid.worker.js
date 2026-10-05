@@ -2,8 +2,9 @@
 // thread. One worker serves every tank (tanks are few; a worker each would multiply the
 // memory). Protocol (all plain data, positions transferred, never copied twice):
 //   {op:'init', id, min, max, capacity, spacing, fill, count}
-//   {op:'step', id, dt, gravity, viscosity, surfaceTension, colliders, spec, buffer?}
-//        -> {op:'frame', id, count, positions (transferred), impulses, ms}
+//   {op:'step', id, dt, gravity, viscosity, surfaceTension, colliders, spec, buffer?,
+//        walls? (36-fb: 6 booleans), lifetime? (s)}
+//        -> {op:'frame', id, count, positions (transferred), impulses, ms, escaped? (transferred)}
 //   {op:'drop', id}
 import { FluidSolver, pourAndDrain } from './fluidCore.js';
 
@@ -32,9 +33,11 @@ self.onmessage = (/** @type {MessageEvent} */ e) => {
 		/** @type {Float32Array} */
 		const out = m.buffer && m.buffer.byteLength >= n * 12 ? new Float32Array(m.buffer, 0, tank.solver.capacity * 3) : new Float32Array(tank.solver.capacity * 3);
 		out.set(tank.solver.x.subarray(0, n * 3));
+		// 36-fb: particles that left through a missing wall (opts.walls), transferred
+		const escaped = tank.solver.escapedCount ? tank.solver.takeEscaped() : null;
 		/** @type {any} */ (self).postMessage(
-			{ op: 'frame', id: m.id, gen: tank.gen, count: n, positions: out, impulses: tank.solver.impulses, ms: performance.now() - t0 },
-			[out.buffer]
+			{ op: 'frame', id: m.id, gen: tank.gen, count: n, positions: out, impulses: tank.solver.impulses, ms: performance.now() - t0, ...(escaped ? { escaped } : {}) },
+			escaped ? [out.buffer, escaped.buffer] : [out.buffer]
 		);
 	}
 };

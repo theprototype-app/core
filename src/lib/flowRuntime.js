@@ -2974,7 +2974,8 @@ export function resolveInputs(node, allNodes, allEdges, time, ctx = null) {
 			!valueTypes.includes(source.type) &&
 			!sourceValueTypes.includes(source.type) &&
 			!moduleValueNodes[source.type] &&
-			!(source.type === 'script' && isScriptValue(source.data)) // 34 D3
+			!(source.type === 'script' && isScriptValue(source.data)) && // 34 D3
+			source.type !== 'behaviour' // 36 (U10): a behaviour's state outputs
 		)
 			continue;
 		const value = unwrapHandle(evalNode(source, allNodes, allEdges, time, new Set(), ctx), edge);
@@ -3927,7 +3928,9 @@ function runTick(now) {
 				((valueTypes.includes(node.type) || moduleValueNodes[node.type]) &&
 					node.type !== 'objectflow') ||
 				// 34 D3: a value script's card shows its outputs (a handle map, read per name)
-				(node.type === 'script' && isScriptValue(node.data))
+				(node.type === 'script' && isScriptValue(node.data)) ||
+				// 36 (U10): a behaviour's state outputs (the ⓘ panel's wired rows read them)
+				node.type === 'behaviour'
 			)
 				values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
 		}

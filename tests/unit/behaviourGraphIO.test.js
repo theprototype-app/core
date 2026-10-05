@@ -157,6 +157,23 @@ describe('engine pieces — a module lends the rules its helpers', () => {
 	});
 });
 
+describe('on.load — every peer, read-only', () => {
+	it('runs once per peer at load (and after a source edit); a state write there is put back', async () => {
+		const SRC = `export default behaviour({
+			state: { n: 0 },
+			on: { load() { this.state.n = 99; kit.round.phase(); } }
+		});`;
+		const sim = createBehaviourSim({ peers: ['a', 'b'] });
+		await sim.load('l', SRC);
+		sim.advance(2500);
+		sim.settle();
+		expect(sim.peer('a').bhv.live('l').fired['on.load'].n).toBe(1);
+		expect(sim.peer('b').bhv.live('l').fired['on.load'].n).toBe(1);
+		expect(sim.states('l')).toEqual([JSON.stringify({ n: 0 }), JSON.stringify({ n: 0 })]);
+		expect(analyze(SRC).handlers[0].event).toMatchObject({ name: 'load', local: true });
+	});
+});
+
 describe('logic sim — a wired input offered on every peer runs ONCE, state reaches all', () => {
 	it('three peers each see the press; the authority acts; every peer reads the outputs', async () => {
 		const SRC = `export default behaviour({

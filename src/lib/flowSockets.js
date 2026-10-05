@@ -179,7 +179,8 @@ const INPUT = {
 	// A3 HUD. `value` is the whole point: counter -> hudtext is a live score with no
 	// new code, because Counter already counts replicated pulses and every number
 	// source already reaches a named input through resolveInputs.
-	hudtext: { value: 'number' },
+	// 36 (U10): `format` takes TEXT from a wire (a behaviour's state line, a script's words)
+	hudtext: { value: 'number', format: 'any' },
 	hudbar: { value: 'number', min: 'number', max: 'number' },
 	hudscreen: { trigger: 'event' },
 	hudtimer: { start: 'event', duration: 'number' },
@@ -203,7 +204,8 @@ const INPUT = {
 	// 30b (core-games): the Game Feel family — an event, a wired number for {v}, a PLACE
 	// (an object: an undeclared handle types as 'number' and would refuse an Object
 	// Selector), and Game Music's on/off
-	announce: { trigger: 'event', value: 'number' },
+	// 36 (U10): `sub` — the second line, wired as text (a behaviour's bannerSub)
+	announce: { trigger: 'event', value: 'number', sub: 'any' },
 	gamesound: { trigger: 'event', at: 'object' },
 	effectburst: { trigger: 'event', at: 'object' },
 	hapticpulse: { trigger: 'event' },
@@ -344,6 +346,24 @@ export function isValidFlowConnection(connection, nodes) {
 	if (to === 'any') return from !== 'effect'; // flow outputs accept any value
 	if (from === 'any') return to !== 'effect'; // 36 (U10): an untyped value (a behaviour's text/list state) feeds any value input
 	return canConnect(from, to);
+}
+
+/**
+ * 36 (U10): the type a GROUP's routed socket carries for an inner endpoint — the one rule the
+ * node editor's group reconcile and the template author's both use (a data-declared script or
+ * behaviour output, else the static table), so an authored group never needs rewriting on open.
+ * @param {any} node @param {string|null} socket @param {'in'|'out'} dir
+ */
+export function groupSocketType(node, socket, dir) {
+	try {
+		const t =
+			dir === 'in'
+				? resolvedInputType(node, socket)
+				: scriptSocketType(node?.type, node?.data, socket, 'output') ?? behaviourSocketType(node, socket, 'output') ?? outputHandleType(node?.type, socket);
+		return t || 'any';
+	} catch {
+		return 'any';
+	}
 }
 
 /**

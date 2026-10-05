@@ -65,6 +65,7 @@ export function createBehaviourSim(opts = {}) {
 			const { def, scope } = await compileBehaviour(source, dataUrlImporter);
 			const inst = p.bhv.start(id, def, { name: def.name ?? id, kit: mod.face, resetGuard: () => scope.scope.resetGuard?.() });
 			scope.bind(inst.ctx.kit);
+			p.bhv.loaded(id); // 36 (U10): on.load, every peer
 			mod.list.push(() => scope.dispose());
 			return inst;
 		};

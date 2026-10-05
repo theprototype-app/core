@@ -84,7 +84,7 @@
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { nodeDoc } from '$lib/nodeDocs';
-	import { isValidFlowConnection, typeColor, replaceableInputEdges, outputHandleType, resolvedInputType } from '$lib/flowSockets';
+	import { isValidFlowConnection, typeColor, replaceableInputEdges, groupSocketType } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus, showToast } from '../../stores/appStore';
 	import { safeStorage } from '$lib/safeStorage';
@@ -573,14 +573,8 @@
 			reconcileGroups();
 		});
 	}
-	function socketTypeOf(node: any, socket: string | null, dir: 'in' | 'out') {
-		try {
-			const t = dir === 'in' ? resolvedInputType(node, socket) : outputHandleType(node?.type, socket);
-			return t || 'any';
-		} catch {
-			return 'any';
-		}
-	}
+	// 36 (U10): one rule with the template author (declared script/behaviour outputs included)
+	const socketTypeOf = groupSocketType;
 	function reconcileGroups() {
 		const sn = storeNodesNow();
 		if (!sn.some(isGroup)) return;

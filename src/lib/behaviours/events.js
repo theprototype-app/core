@@ -3,6 +3,9 @@
 // A pure LEAF (the kit specs come in as an argument). A handler name in `on` resolves to:
 //
 //   start              the behaviour's own first run (once per session, on the authority)
+//   load               36 (U10): the behaviour (re)started on THIS peer — runs on EVERY peer, may only
+//                      read state: per-device setup the same on all of them (the shell's level picker
+//                      through kit.levels.define, an engine's aim settings)
 //   grabRequest        the kit.rules VETO — asked on the GRABBING peer before a grab happens,
 //                      possibly every frame while aiming: read params, call `refuse(reason)`
 //   '<piece>.<event>'  any kit event by its spec name ('round.started', 'health.died')
@@ -47,6 +50,7 @@ export const ALIASES = {
 /** payload field types per event key (what the derived view shows as outputs) */
 export const PAYLOAD_TYPES = {
 	start: {},
+	load: {},
 	grabRequest: { piece: 'piece', hand: 'string', distance: 'number', reach: 'number', point: 'vector3', refuse: 'action' },
 	'spawner.spawned': { entity: 'entity' },
 	'spawner.despawned': { entity: 'entity' },
@@ -62,6 +66,7 @@ export const PAYLOAD_TYPES = {
 /** the special (non-kit) events */
 export const SPECIAL_EVENTS = {
 	start: { label: 'On behaviour start', local: false },
+	load: { label: 'On load (every peer)', local: true },
 	grabRequest: { label: 'On grab request', local: true }
 };
 

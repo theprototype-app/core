@@ -33,7 +33,51 @@ function graphBuilder() {
 			...(targetHandle ? { targetHandle } : {})
 		});
 	};
-	return { N, E, nodes, edges, done: () => ({ nodes, edges }) };
+	/**
+	 * 36 (U10): a game's RULES — a behaviour node holding the rules file (`data.main: 1` marks the
+	 * Main graph as authored, so the old-scene migration leaves it alone).
+	 * @param {string} id @param {string} name @param {string} code @param {number} x @param {number} y @param {any} [extra]
+	 */
+	const B = (id, name, code, x, y, extra = {}) => {
+		nodes.push({ id, type: 'behaviour', position: { x, y }, data: { label: 'Behaviour', name, code, main: 1, ...extra }, class: 'w-[250px]' });
+		return id;
+	};
+	/**
+	 * 36 (U10): a node GROUP (N1) — a collapsed card standing for `children`; its routed sockets
+	 * are derived from the wires crossing it when the template is authored (groupReconcile).
+	 * @param {string} id @param {string} label @param {string[]} children @param {number} x @param {number} y
+	 */
+	const G = (id, label, children, x, y) => {
+		nodes.push({ id, type: 'group', position: { x, y }, data: { label, type: 'group', children, inputs: [], outputs: [] }, class: 'w-[190px]' });
+		return id;
+	};
+	/**
+	 * 36 (U10): a NOTE (N1) — markdown explaining a part of the graph.
+	 * @param {string} id @param {string} title @param {string} text @param {number} x @param {number} y
+	 * @param {{w?: number, h?: number, color?: string}} [opts]
+	 */
+	const T = (id, title, text, x, y, opts = {}) => {
+		nodes.push({ id, type: 'note', position: { x, y }, data: { title, text, color: opts.color ?? 'yellow', w: opts.w ?? 260, h: opts.h ?? 150, type: 'note' } });
+		return id;
+	};
+	/**
+	 * 36 (U10): a Script node v2 (custom code in the graph): declared inputs/outputs + its code.
+	 * @param {string} id @param {string} name @param {string} code @param {any[]} inputs @param {any[]} outputs @param {number} x @param {number} y
+	 */
+	const S = (id, name, code, inputs, outputs, x, y) => {
+		nodes.push({ id, type: 'script', position: { x, y }, data: { label: 'Script', name, code, inputs, outputs }, class: 'w-[200px]' });
+		return id;
+	};
+	/** move already-made nodes (a block laid out relative to its own origin) @param {string[]} ids @param {number} dx @param {number} dy */
+	const shift = (ids, dx, dy) => {
+		for (const n of nodes) if (ids.includes(n.id)) n.position = { x: n.position.x + dx, y: n.position.y + dy };
+	};
+	return { N, E, B, G, T, S, shift, nodes, edges, done: () => ({ nodes, edges }) };
 }
 
-module.exports = { gray, graphBuilder };
+/** 36 (U10): a rules file beside the template (scripts/templates/rules/<name>) @param {string} name */
+function rulesSource(name) {
+	return require('fs').readFileSync(require('path').join(__dirname, 'rules', name), 'utf8');
+}
+
+module.exports = { gray, graphBuilder, rulesSource };

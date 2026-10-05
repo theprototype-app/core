@@ -288,7 +288,10 @@ export const DEBUG_HOOKS = [
 	['graphText', () => import('./graphText')],
 	// 36 (G1): code <-> node (openCode seam, module source, fork) + the Main graph migration
 	['codeOpen', () => import('./codeOpen')],
-	['mainGraph', () => import('./mainGraph.js')]
+	['mainGraph', () => import('./mainGraph.js')],
+	// 36 (U10, games-graphs): engine pieces, the behaviour runtime, authored-group sockets
+	['engines', () => import('./behaviours/engines.js')],
+	['groupReconcile', () => import('./groupReconcile.js')]
 ];
 
 /** hooks published at runtime through registerDebugHook @type {Record<string, any>} */

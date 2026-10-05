@@ -19,7 +19,9 @@
 export const SCRIPT_INPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'object', 'event'];
 /** an output carries a value; an EVENT output would need a stamp, which a pure function
  * of (inputs, time) cannot mint — so outputs are values only */
-export const SCRIPT_OUTPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'object'];
+export const SCRIPT_OUTPUT_TYPES = ['number', 'boolean', 'vector3', 'color', 'object', 'any'];
+// 36 (U10): 'any' passes the returned value through unchanged — TEXT for a HUD Text's format,
+// a list — there is no string socket type, and 'object' only carries an object reference
 
 /** names the v2 function binds itself, plus the node-data keys an effect's \`data\` already
  * holds (a socket named `code` would read the script's own source), so a socket may not

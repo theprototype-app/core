@@ -144,26 +144,27 @@ h.run(async () => {
 	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.nodeId === 'cn-bhv' && x.kind === 'behaviour'), 'double-click a Behaviour → its source in the code workspace', 15000);
 	await A.page.locator('#code-ws-close').click();
 
-	await addGraph(A, [node('cn-ref', 'coderef', { label: 'Code link', module: 'minigolf', file: 'holes.js', title: 'Mini Golf holes' }, 440, 200)]);
+	// 36-games-graphs: Mini Golf's rules moved to its Main graph; its module is the ENGINE now
+	await addGraph(A, [node('cn-ref', 'coderef', { label: 'Code link', module: 'minigolf', file: 'module.js', title: 'Mini Golf engine' }, 440, 200)]);
 	await A.page.waitForTimeout(600);
 	await centerOn(A, 'cn-ref');
 	await A.page.waitForTimeout(400);
 	await dblclickNode(A, 'cn-ref');
-	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.kind === 'module' && x.moduleId === 'minigolf' && x.name === 'holes.js'), 'double-click a Code link → the module file as a code-workspace tab', 15000);
+	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.kind === 'module' && x.moduleId === 'minigolf' && x.name === 'module.js'), 'double-click a Code link → the module file as a code-workspace tab', 15000);
 	await h.eventually(
-		() => tabsOf(A).then((t) => t.find((x) => x.name === 'holes.js')),
-		(tab) => /PUTT_MAX\s*=\s*7/.test(tab?.code ?? '') && tab.readOnly === true,
-		'holes.js opens on the file the link names — PUTT_MAX = 7 is readable from the graph, read-only',
+		() => tabsOf(A).then((t) => t.find((x) => x.name === 'module.js')),
+		(tab) => /api\.kit\.provide\(/.test(tab?.code ?? '') && tab.readOnly === true,
+		'module.js opens on the file the link names — the engine it lends the rules is readable from the graph, read-only',
 		6000
 	);
 	if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, '22-module-source-readonly.png') });
 	await A.page.locator('#code-ws-close').click();
 
-	// a module's own node (registered by the core minigolf module) opens the same way
+	// a module's own node (registered by a core module — hello, the SDK example) opens the same way
 	const golfType = await A.page.evaluate(() => {
 		let groups;
 		window.__stores.moduleSDK.moduleNodeGroups.subscribe((v) => (groups = v))();
-		for (const g of groups) for (const i of g.items) if (i.moduleId === 'minigolf') return i.type;
+		for (const g of groups) for (const i of g.items) if (i.moduleId === 'hello') return i.type;
 		return null;
 	});
 	if (golfType) {
@@ -172,9 +173,9 @@ h.run(async () => {
 		await centerOn(A, 'cn-golf');
 		await A.page.waitForTimeout(400);
 		await dblclickNode(A, 'cn-golf');
-		await h.eventually(() => A.page.evaluate(() => window.__stores.codeOpen?.lastOpenCode?.()), (r) => r?.source === 'module' && r?.ref === 'minigolf', `double-click a module node (${golfType}) → its module's source`, 4000);
+		await h.eventually(() => A.page.evaluate(() => window.__stores.codeOpen?.lastOpenCode?.()), (r) => r?.source === 'module' && r?.ref === 'hello', `double-click a module node (${golfType}) → its module's source`, 4000);
 		await A.page.locator('#code-ws-close').click().catch(() => {});
-	} else h.check(false, 'premise: the core minigolf module registered a node type');
+	} else h.check(false, 'premise: the core hello module registered a node type');
 
 	// --- 3: the seam ------------------------------------------------------------------------
 	const routed = await A.page.evaluate(async () => {

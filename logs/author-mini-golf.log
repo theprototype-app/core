@@ -1,0 +1,6 @@
+lane-dev: /home/deck/.code/theprototype-app/theprototype-lane-36-games-graphs on port 5336 (pgid 1319974); stops after 15 min unused; log /home/deck/.local/state/lane-dev/5336/log
+GPU: ANGLE (AMD, Vulkan 1.4.330 (AMD Radeon 890M Graphics (RADV GFX1150) (0x0000150E)), radv)
+game mini-golf: scene 40857 B, thumb 6458 B
+scenes repo tree -> /home/deck/.code/theprototype-app/cloud-lane-30-staging/36-games-graphs
+lane-dev: stopped /home/deck/.code/theprototype-app/theprototype-lane-36-games-graphs on port 5336
+EXIT 0

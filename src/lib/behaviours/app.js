@@ -221,6 +221,7 @@ async function load(node) {
 			resetGuard: () => compiled.scope.scope.resetGuard?.()
 		});
 		compiled.scope.bind(inst.ctx.kit);
+		runtime.loaded(id); // 36 (U10): `on.load` on this peer, now that `kit` is bound
 		for (const off of oldOffs) entry.releases.get(off)?.();
 		for (const off of oldOffs) entry.releases.delete(off);
 		entry.scope?.dispose();

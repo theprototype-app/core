@@ -1288,8 +1288,9 @@ function carryObjectDocuments(payload, uuidMap) {
 function reportUnknownNodes(payload) {
 	// remembered first: the unknown-node card names its provider from this
 	rememberSceneModules(payload?.modules);
+	// 36 (N1): a group or a note is an editor-only VIEW node, never a missing module's
 	const missing = allNodes().filter(
-		(/** @type {any} */ node) => node.type && !findNodeSpec(node.type)
+		(/** @type {any} */ node) => node.type && node.type !== 'group' && node.type !== 'note' && !findNodeSpec(node.type)
 	);
 	if (!missing.length) return;
 	const kinds = [...new Set(missing.map((/** @type {any} */ node) => node.type))];

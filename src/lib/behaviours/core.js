@@ -239,6 +239,8 @@ export function createBehaviourRuntime(host) {
 				}
 				flush(inst);
 			}
+			// 36 (U10): the handler's emits, after its state went out
+			for (const [name, payload] of inst.emits.splice(0)) host.emit?.(inst.id, name, payload);
 			changed();
 		}
 		return result;
@@ -350,7 +352,10 @@ export function createBehaviourRuntime(host) {
 				}
 				if (!outputsOf(inst.def).includes(key)) warn(inst.name + ': emit("' + key + '") — add it to outputs to wire it');
 				inst.trace.calls['emit.' + key] = { at: host.now(), n: (inst.trace.calls['emit.' + key]?.n ?? 0) + 1 };
-				host.emit?.(inst.id, key, payload);
+				// the pulse leaves AFTER the handler's state document (dispatch drains this once it
+				// has flushed), so a peer's Announce wired to the event reads the state it produced
+				if (inst.depth > 0) inst.emits.push([key, payload]);
+				else host.emit?.(inst.id, key, payload);
 				return true;
 			}
 		};
@@ -396,6 +401,7 @@ export function createBehaviourRuntime(host) {
 			timerSeq: 0,
 			/** @type {any} */ rng: null,
 			/** @type {any[]} */ closures: [],
+			/** 36 (U10): `this.emit` calls waiting for the outer dispatch to flush @type {[string, any][]} */ emits: [],
 			/** @type {(() => void)[]} */ offs: [],
 			/** @type {any[]} */ errors: [],
 			/** @type {string[]} */ problems: [],
@@ -419,7 +425,7 @@ export function createBehaviourRuntime(host) {
 				inst.problems.push('on.' + name + ': no such event');
 				continue;
 			}
-			if (ev.name === 'start') continue; // the runtime's own (tick)
+			if (ev.name === 'start' || ev.name === 'load') continue; // the runtime's own (tick / loaded())
 			if (ev.input) continue; // 36 (U10): a wired input — `input()` dispatches it
 			const label = 'on.' + name;
 			if (ev.name === 'grabRequest') {
@@ -600,6 +606,17 @@ export function createBehaviourRuntime(host) {
 			const fn = inst.def.on?.[name];
 			if (typeof fn !== 'function') return false;
 			dispatch(inst, 'on.' + name, fn, [payload]);
+			return true;
+		},
+		/**
+		 * 36 (U10): the host bound the behaviour's scope (its `kit` works now) — run `on.load` on THIS
+		 * peer (every peer does; local, state read-only). @param {string} id
+		 */
+		loaded(id) {
+			const inst = instances.get(id);
+			const fn = inst?.def.on?.load;
+			if (!inst || typeof fn !== 'function') return false;
+			dispatch(inst, 'on.load', fn, [{}], { local: true });
 			return true;
 		},
 		/** 36 (U10): the live state of an instance, by reference (flowRuntime's value outputs read it;

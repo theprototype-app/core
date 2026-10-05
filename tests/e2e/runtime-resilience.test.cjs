@@ -86,7 +86,8 @@ h.run(async () => {
 			throw new Error('frame-task-boom');
 		});
 	});
-	await page.waitForTimeout(900);
+	// 1800 ms: at ~5 fps a 900 ms window read 2 calls on a loaded CI runner (36-int-125) — the claim is "repeatedly"
+	await page.waitForTimeout(1800);
 	const afterTask = await readRot();
 	const taskCalls = await page.evaluate(() => window.__rt.taskCalls);
 	// Headless SwiftShader renders at ~5 fps here (CLAUDE.md measures ~4.5), so 900ms is a

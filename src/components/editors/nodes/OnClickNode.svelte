@@ -41,7 +41,7 @@
 			<label class="flex flex-col">
 				<span>marker</span>
 				<input
-					class="nodrag"
+					class="nodrag nopan"
 					list="animmarker-names-{id}"
 					placeholder="any marker"
 					value={data.name ?? ''}

@@ -98,6 +98,8 @@ export const NODE_DOCS = {
 	gamepadaxis: "A gamepad stick or trigger axis as a number between -1 and 1, with a dead zone.",
 	shake: "Jitters the connected object around its resting position - rumble, nervousness, impact feedback.",
 	spin: "Rotates the connected object continuously around one axis.",
+	rotor: "Turns the connected object about its own local axis (and its origin, so a wheel turns on its hub) at a set rpm with a spin-up. Paddles and scoops it turns carry water from Fluid emitters. On a dynamic physics body during a simulation it becomes a real motor: torque-limited, so a load slows it.",
+	flowfloat: "Carries the connected object along a Flow path - a leaf, a toy boat - from where you placed it, at the path's speed, bobbing and turning with the current, looping at the end. Uses the nearest Flow path unless one is wired.",
 	bounce: "Bounces the connected object up and down off its resting height, like a dribbled ball.",
 	orbit: "Circles the connected object around its resting position on the horizontal plane.",
 	pathpatrol: "Walks the connected object along a series of waypoints you click into the scene, facing along the path.",

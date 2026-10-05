@@ -26,6 +26,7 @@ import { objectsGroup, globalScene, globalRenderer } from '../stores/sceneStore'
 import { gameFeelActive, gameClickMode } from './gameFeel';
 import { sceneHits } from './scenePick';
 import { pickStack, primaryIndex } from './selectThrough';
+import { gamePass } from './pickPass'; // 36 F22 / S6
 import { topLevelObjectOf } from './objectActions';
 import { objectHasOnClick, fireObjectClick } from './flowRuntime';
 import { moduleInteractiveGroups, runClickHandlers } from './moduleSDK';
@@ -100,7 +101,7 @@ export function clickTargetAlong(ray) {
 		if (target && (!best || target.distance < best.distance)) best = target;
 	}
 	if (get(objectsGroup)) {
-		const stack = pickStack(sceneHits(ray), topLevelObjectOf);
+		const stack = pickStack(sceneHits(ray), topLevelObjectOf, gamePass());
 		const entry = stack.length ? stack[primaryIndex(stack)] : null;
 		const target = entry?.hit ? clickTargetOf(entry.hit) : null;
 		if (target && (!best || target.distance < best.distance)) best = target;

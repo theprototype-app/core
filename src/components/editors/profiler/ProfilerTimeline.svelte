@@ -440,6 +440,10 @@
 		const key = (e) => {
 			const n = frames.length;
 			if (!n) return;
+			// 36 S8: a modifier combo is the app's or the browser's (Ctrl+Z undo, Ctrl+0 page zoom) —
+			// only the arrows take Ctrl here (a 10-frame step); `z` with Ctrl held used to zoom AND
+			// swallow the undo
+			if ((e.ctrlKey || e.metaKey || e.altKey) && !e.key.startsWith('Arrow')) return;
 			let handled = true;
 			const by = e.ctrlKey || e.metaKey ? 10 : 1;
 			const walk = (/** @type {number} */ to) => {

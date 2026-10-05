@@ -9,6 +9,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import DragRow from '../ui/DragRow.svelte';
+	import PourPanel from './PourPanel.svelte'; // 36-fb-water F17
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { normalizeWater, localBounds } from '$lib/water/volumes.js';
 	import { WATER_PRESETS, resolveLook, resolveBubbles } from '$lib/water/presets.js';
@@ -34,18 +35,24 @@
 		return $objectsGroup?.getObjectByProperty?.('uuid', id) ?? null;
 	}
 	const object = $derived(objectOf(uuid, $objectsGroup));
-	// a fresh SNAPSHOT per poke ($derived compares with ===; userData is mutated in place)
-	const water = $derived(object?.userData?.water ? normalizeWater(object.userData.water) : null);
+	// a fresh SNAPSHOT per poke ($derived compares with ===; userData is mutated in place).
+	// 36-fb-water: the snapshots take the store tick as an argument — `object` is the SAME
+	// reference after an edit, so a derived that only read it never re-ran (Add bubble emitter
+	// / a preset applied left the panel showing the old state until it was reopened)
+	/** @param {any} o @param {any} _tick */
+	const userDataOf = (o, _tick) => ({ water: o?.userData?.water ?? null, bubbles: o?.userData?.bubbles ?? null });
+	const ud = $derived(userDataOf(object, $objectsGroup));
+	const water = $derived(ud.water ? normalizeWater(ud.water) : null);
 	const look = $derived(resolveLook(water ?? {}));
 	const waves = $derived(normalizeWaves(water?.waves));
 	const bubbles = $derived(
 		water
 			? resolveBubbles(water.bubbles)
-			: object?.userData?.bubbles
-				? resolveBubbles({ enabled: true, ...object.userData.bubbles })
+			: ud.bubbles
+				? resolveBubbles({ enabled: true, ...ud.bubbles })
 				: null
 	);
-	const standalone = $derived(!water && !!object?.userData?.bubbles);
+	const standalone = $derived(!water && !!ud.bubbles);
 
 	let userPresets = $state(userWaterPresets());
 	let saving = $state(false);
@@ -197,6 +204,11 @@
 	</div>
 
 	<h4 class="mt-2 text-[11px] font-semibold text-gray-300">Waves</h4>
+	{#if look.frozen}
+	<p class="text-[10px] text-gray-500">Frozen: the surface holds still — no waves, foam or ripple motion. Untick Frozen (under Underwater) to use these.</p>
+	{/if}
+	<!-- 36-fb-water F13: Frozen locks these (resolveLook) — say so instead of a dead slider -->
+	<div class="contents" inert={look.frozen} class:frozen-locked={look.frozen}>
 	<SliderRow
 		label="Count"
 		min={0}
@@ -250,6 +262,7 @@
 		onchange={(v) => setWaves({ choppiness: v })}
 	/>
 
+	</div>
 	<h4 class="mt-2 text-[11px] font-semibold text-gray-300">Look</h4>
 	<div class="ui-row items-center gap-2">
 		<span class="w-20 shrink-0 text-xs text-gray-400">Colour</span>
@@ -343,6 +356,7 @@
 		value={look.roughness}
 		onchange={(v) => setLook({ roughness: v })}
 	/>
+	<div class="contents" inert={look.frozen} class:frozen-locked={look.frozen}>
 	<SliderRow
 		label="Foam"
 		min={0}
@@ -369,6 +383,7 @@
 		value={look.foamWidth}
 		onchange={(v) => setLook({ foamWidth: v })}
 	/>
+	</div>
 	<SliderRow
 		label="Caustics"
 		min={0}
@@ -409,6 +424,7 @@
 		value={look.detailScale}
 		onchange={(v) => setLook({ detailScale: v })}
 	/>
+	<div class="contents" inert={look.frozen} class:frozen-locked={look.frozen}>
 	<SliderRow
 		label="Ripple speed"
 		min={0}
@@ -417,6 +433,7 @@
 		value={look.detailSpeed}
 		onchange={(v) => setLook({ detailSpeed: v })}
 	/>
+	</div>
 	<div class="ui-row items-center gap-2">
 		<span class="w-20 shrink-0 text-xs text-gray-400">Glow</span>
 		<input
@@ -484,6 +501,15 @@
 		value={water.flow[2]}
 		onchange={(v) => updateObjectWater(uuid, { flow: [water.flow[0], water.flow[1], v] })}
 	/>
+	<!-- 36-fb-water F12: an upward current (a bubbler, a fountain basin), and how long things bob -->
+	<SliderRow
+		label="Flow up (m/s)"
+		min={-5}
+		max={5}
+		step={0.05}
+		value={water.flow[1]}
+		onchange={(v) => updateObjectWater(uuid, { flow: [water.flow[0], v, water.flow[2]] })}
+	/>
 	<SliderRow
 		label="Density"
 		min={50}
@@ -508,6 +534,14 @@
 		step={0.05}
 		value={water.angularDrag}
 		onchange={(v) => updateObjectWater(uuid, { angularDrag: v })}
+	/>
+	<SliderRow
+		label="Bob damping"
+		min={0}
+		max={10}
+		step={0.1}
+		value={water.heaveDrag}
+		onchange={(v) => updateObjectWater(uuid, { heaveDrag: v })}
 	/>
 {/if}
 
@@ -656,6 +690,10 @@
 	{/if}
 {/if}
 
+{#if object}
+	<PourPanel {uuid} /><!-- 36-fb-water F17: a pour emitter on any object, a Water tank included -->
+{/if}
+
 {#if water}
 	<div class="ui-row mt-2 items-center gap-2">
 		<Button id="water-remove" size="xs" color="alternative" onclick={() => removeObjectWater(uuid)}>
@@ -665,6 +703,10 @@
 {/if}
 
 <style>
+	/* 36-fb-water F13: controls Frozen locks read as unavailable (and are inert) */
+	.frozen-locked > :global(*) {
+		opacity: 0.55;
+	}
 	.water-swatch {
 		height: 1.5rem;
 		width: 2rem;

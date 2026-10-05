@@ -74,18 +74,20 @@
 					onChange(lastEmitted);
 				}),
 				// dark professional theme from the ui tokens (107) — the stock
-				// white box looked pasted-in on every dark panel
+				// white box looked pasted-in on every dark panel. 36-fb-code (F9): every colour is a
+				// `--code-*` token whose FALLBACK is the dark value, so dark (and the dark-based
+				// themes) render exactly as before and the light theme gets a light editor.
 				EditorView.theme(
 					{
-						'&': { fontSize: '12px', height: '100%', backgroundColor: '#111827', color: '#e5e7eb' },
+						'&': { fontSize: '12px', height: '100%', backgroundColor: 'var(--code-bg, #111827)', color: 'var(--code-text, #e5e7eb)' },
 						'.cm-scroller': { fontFamily: 'ui-monospace, Consolas, monospace' },
-						'.cm-gutters': { backgroundColor: '#1f2937', color: '#6b7280', border: 'none' },
-						'.cm-activeLine': { backgroundColor: 'rgba(59, 130, 246, 0.08)' },
-						'.cm-activeLineGutter': { backgroundColor: 'rgba(59, 130, 246, 0.12)' },
-						'.cm-content': { caretColor: '#f97316' },
-						'.cm-cursor': { borderLeftColor: '#f97316' },
+						'.cm-gutters': { backgroundColor: 'var(--code-gutter-bg, #1f2937)', color: 'var(--code-gutter-text, #6b7280)', border: 'none' },
+						'.cm-activeLine': { backgroundColor: 'var(--code-active-line, rgba(59, 130, 246, 0.08))' },
+						'.cm-activeLineGutter': { backgroundColor: 'var(--code-active-gutter, rgba(59, 130, 246, 0.12))' },
+						'.cm-content': { caretColor: 'var(--code-caret, #f97316)' },
+						'.cm-cursor': { borderLeftColor: 'var(--code-caret, #f97316)' },
 						'&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
-							backgroundColor: 'rgba(59, 130, 246, 0.28) !important'
+							backgroundColor: 'var(--code-selection, rgba(59, 130, 246, 0.28)) !important'
 						}
 					},
 					{ dark: true }
@@ -104,14 +106,14 @@
 			([{ StateEffect }, { HighlightStyle, syntaxHighlighting }, { tags: t }]) => {
 				if (!view) return;
 				const dark = HighlightStyle.define([
-					{ tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword], color: '#c792ea' },
-					{ tag: [t.variableName, t.propertyName, t.attributeName], color: '#e5e7eb' },
-					{ tag: [t.definition(t.variableName), t.function(t.variableName), t.function(t.propertyName)], color: '#82aaff' },
-					{ tag: [t.number, t.bool, t.null, t.atom], color: '#f78c6c' },
-					{ tag: [t.string, t.special(t.string), t.regexp], color: '#c3e88d' },
-					{ tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: '#7c8799', fontStyle: 'italic' },
-					{ tag: [t.typeName, t.className], color: '#ffcb6b' },
-					{ tag: [t.operator, t.punctuation, t.bracket], color: '#9ca3af' }
+					{ tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword], color: 'var(--code-keyword, #c792ea)' },
+					{ tag: [t.variableName, t.propertyName, t.attributeName], color: 'var(--code-ident, #e5e7eb)' },
+					{ tag: [t.definition(t.variableName), t.function(t.variableName), t.function(t.propertyName)], color: 'var(--code-def, #82aaff)' },
+					{ tag: [t.number, t.bool, t.null, t.atom], color: 'var(--code-number, #f78c6c)' },
+					{ tag: [t.string, t.special(t.string), t.regexp], color: 'var(--code-string, #c3e88d)' },
+					{ tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: 'var(--code-comment, #7c8799)', fontStyle: 'italic' },
+					{ tag: [t.typeName, t.className], color: 'var(--code-type, #ffcb6b)' },
+					{ tag: [t.operator, t.punctuation, t.bracket], color: 'var(--code-op, #9ca3af)' }
 				]);
 				view.dispatch({ effects: StateEffect.appendConfig.of(syntaxHighlighting(dark)) });
 			}

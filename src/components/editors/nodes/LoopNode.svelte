@@ -20,7 +20,7 @@
 		<div class="flex justify-between">
 			<span>loop</span><span class="font-mono">{typeof live === 'number' ? live.toFixed(2) : '—'}</span>
 		</div>
-		<select class="nodrag" value={data.mode ?? 'wrap'} on:change={(e) => setNodeData(id, { mode: e.currentTarget.value })}>
+		<select class="nodrag nopan" value={data.mode ?? 'wrap'} on:change={(e) => setNodeData(id, { mode: e.currentTarget.value })}>
 			<option value="wrap">wrap</option>
 			<option value="pingpong">pingpong</option>
 			<option value="once">once</option>
@@ -30,7 +30,7 @@
 		<label class="flex items-center gap-1"><span class="w-10 text-gray-400">to</span>
 			<DragRow nodrag step={0.01} decimals={2} value={data.to ?? 1} onchange={(/** @type {number} */ v) => setNodeData(id, { to: v })} /></label>
 		<label class="flex items-center gap-1"><span class="w-10 text-gray-400">rate</span>
-			<input class="nodrag w-full accent-[#ff4000]" type="range" min="0.1" max="5" step="0.1" value={data.rate ?? 1}
+			<input class="nodrag nopan w-full accent-[#ff4000]" type="range" min="0.1" max="5" step="0.1" value={data.rate ?? 1}
 				on:input={(e) => setNodeData(id, { rate: +e.currentTarget.value })} /></label>
 	</div>
 </NodeWrapper>

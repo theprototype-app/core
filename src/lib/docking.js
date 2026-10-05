@@ -1,3 +1,4 @@
+import { isHeaderDrag } from './windowGrip';
 import { get } from 'svelte/store';
 import { inspectorClose, closeMenu } from '../stores/appStore';
 import { bottomDockWouldTake } from './bottomDockDrop';
@@ -371,7 +372,7 @@ export function dockable(node, { key }) {
 	let dragging = false;
 	/** @param {any} e */
 	const down = (e) => {
-		if (!e.target.closest('.move-handle') || e.button !== 0) return;
+		if (!isHeaderDrag(e.target) || e.button !== 0) return; // 36 F4: not on a header control
 		if (sideOf(key)) {
 			// docked: dragging the header away undocks and hands back to the
 			// window's own drag behavior on the NEXT gesture

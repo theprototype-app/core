@@ -125,7 +125,7 @@
 		{
 			label: 'Ping here',
 			icon: 'radar',
-			tooltip: 'Everyone sees a pulse at this spot (or Alt+click anywhere)',
+			tooltip: 'Everyone sees a pulse at this spot (or Ctrl+Alt+click anywhere)',
 			action: () => sendPing(menu?.point ?? [0, 0, 0])
 		},
 		// 124: everything that acts on the CURRENT SELECTION lives in one submenu.

@@ -22,7 +22,7 @@
 			<span class="font-mono">{typeof live === 'number' ? live.toFixed(2) : '—'}</span>
 		</div>
 		<select
-			class="nodrag"
+			class="nodrag nopan"
 			value={data.mode ?? 'sin'}
 			on:change={(e) => setNodeData(id, { mode: e.currentTarget.value })}
 		>
@@ -33,7 +33,7 @@
 		</select>
 		<label class="flex items-center gap-1">
 			<span class="w-10 text-gray-400">rate</span>
-			<input class="nodrag w-full accent-[#ff4000]" type="range" min="0.1" max="5" step="0.1"
+			<input class="nodrag nopan w-full accent-[#ff4000]" type="range" min="0.1" max="5" step="0.1"
 				value={data.rate ?? 1}
 				on:input={(e) => setNodeData(id, { rate: +e.currentTarget.value })} />
 			<span class="font-mono">{(data.rate ?? 1).toFixed(1)}</span>

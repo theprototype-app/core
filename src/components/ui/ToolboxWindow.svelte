@@ -134,7 +134,7 @@
 	style="z-index: var(--z-window)"
 	style:--tbx-w="{width}px"
 	style:--tbx-sheet-h="{sheetH}px"
-	use:dragWindow={{ key, defaultRect, resizable: true, axis: 'x', minW, inert: () => sheetMode }}
+	use:dragWindow={{ key, defaultRect, resizable: true, axis: 'x', minW, inert: () => sheetMode, keyScope: 'keep' }}
 	use:focusStack={key}
 >
 	{#if sheetMode}

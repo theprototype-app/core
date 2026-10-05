@@ -13,7 +13,7 @@
 <NodeWrapper type={data.type} label={data.label}>
 	<div class="flex items-center space-x-2">
 		<input
-			class="nodrag border-md h-6 w-6"
+			class="nodrag nopan border-md h-6 w-6"
 			type="color"
 			value={data.color ?? '#ff4000'}
 			on:input={(e) => setNodeData(id, { color: e.currentTarget.value })}

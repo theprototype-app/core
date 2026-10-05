@@ -218,7 +218,14 @@ export const TIMING = {
 	 * (turning shadows off recompiles every lit material, a dpr change reallocates the
 	 * composer). MEASURED: without this, 3,000 real boxes took a second, needless step
 	 * on the recompile frames right after the shadows step. */
-	settleMs: 600
+	settleMs: 600,
+	/** 36-fb-water F27: frames this soon after a scene LOAD ends are not evidence either — the
+	 * scene's first frames still link programs, fill fluid tanks, start workers and run the first
+	 * screen-space passes. MEASURED on a phone profile (Fluid tank toy, CPU x4): one p95 of 33 ms
+	 * right after the load stepped 4 -> 5 -> 6 (the fluid's points tier) and the walk back took
+	 * minutes; on a contended box it never came back within 95 s. 8 s: Aquarium's water pre-pass
+	 * and bubbles still hitched at 7 s after its load (phone profile). */
+	loadSettleMs: 8000
 };
 
 /** Nearest-rank percentile (sceneBudget's rule). @param {number[]} sorted @param {number} q */
@@ -314,6 +321,13 @@ export function createGovernor(opts = {}) {
 		forget() {
 			frames = [];
 			longTasks = [];
+		},
+		/** 36-fb-water F27: ignore frames + long tasks for `ms` from `now` (a scene load just
+		 * ended — its warm-up is not the scene's cost). @param {number} now @param {number} [ms] */
+		settleFor(now, ms = timing.loadSettleMs) {
+			frames = [];
+			longTasks = [];
+			settleUntil = Math.max(settleUntil, now + ms);
 		},
 		/**
 		 * @param {number} now

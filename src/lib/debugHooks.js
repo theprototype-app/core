@@ -78,6 +78,8 @@ export const DEBUG_HOOKS = [
 	['physics', () => import('./physics')],
 	// 36-sim: buoyancy/jiggle/fluid/splash state
 	['sim', () => import('./sim/debug.js')],
+	// 36-fb-water S8: the undoable "Start simulation on load"
+	['simOnLoad', () => import('./sim/simOnLoadHistory.js')],
 	['joints', () => import('./joints')],
 	['possess', () => import('./possess')],
 	['handModels', () => import('./handModels')],
@@ -100,6 +102,8 @@ export const DEBUG_HOOKS = [
 	['inputRuntime', () => import('./inputRuntime')],
 	['shortcutsRegistry', () => import('./shortcuts')],
 	['keyScope', () => import('./keyScope')],
+	// 36 F3/F4: the window-chrome rules (isHeaderDrag, windowDragActive)
+	['windowGrip', () => import('./windowGrip')],
 	['nodeGroups', () => import('./nodeGroups')],
 	['nodeEditorActions', () => import('./nodeEditorActions')],
 	['themes', () => import('./themes')],
@@ -143,6 +147,8 @@ export const DEBUG_HOOKS = [
 	['meshProviders', () => import('./ai/meshProviders')],
 	['meshJobs', () => import('./ai/meshJobs')],
 	['flowGraphsCtl', () => import('./flowGraphs')],
+	// 36 F10: where the node editor opens (saved views, the setting)
+	['flowView', () => import('./flowView')],
 	['objectFlow', () => import('./objectFlow')],
 	['peerServer', () => import('./peerServer')],
 	['cloudHooks', () => import('./cloudHooks')],
@@ -312,6 +318,10 @@ export const DEBUG_HOOKS = [
 	['lodLevelEdit', () => import('./lodLevelEdit')],
 	['packBehavior', () => import('./packBehavior')],
 	['sceneLoader', () => import('./sceneLoader')],
+	['pickCycle', () => import('./pickCycle')],
+	['pickPass', () => import('./pickPass')],
+	['selectThrough', () => import('./selectThrough')],
+	['vrGameInput', () => import('./vrGameInput')],
 	// 36 L2: the scene start view + the camera hold (startViewDebug, releaseHold, backToStartView)
 	['startView', () => import('./startView')],
 	['sceneSwitch', () => import('./sceneSwitch')],
@@ -320,6 +330,7 @@ export const DEBUG_HOOKS = [
 	['scriptSockets', () => import('./scriptSockets')],
 	['scriptLint', () => import('./scriptLint')],
 	['codeWorkspace', () => import('./codeWorkspace')],
+	['codeSidebars', () => import('./codeSidebars')],
 	['scriptAssets', () => import('./scriptAssets')],
 	['codeTabs', () => import('./codeTabs')],
 	['aiExtensions', () => import('./ai/aiExtensions')],

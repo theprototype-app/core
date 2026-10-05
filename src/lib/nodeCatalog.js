@@ -897,6 +897,35 @@ export const nodeCatalog = [
 					{ key: 'speed', kind: 'range', min: -5, max: 5, step: 0.1 }
 				]
 			},
+			// 36-fb F25: a real axle — a LOCAL axis (a tilted wheel turns about its own hub), the
+			// object's origin as the pivot, rpm with a spin-up, and on a DYNAMIC body during a run a
+			// torque-limited motor instead (sim/motionNodes.js)
+			{
+				type: 'rotor',
+				label: 'Rotate / Motor',
+				defaults: { axis: 'x', rpm: 10, torque: 50, spinUp: 1, on: true },
+				inputs: ['on'],
+				inputLabels: { on: 'on — wire a boolean (off rests at its pose)' },
+				params: [
+					{ key: 'axis', kind: 'select', options: ['x', 'y', 'z'] },
+					{ key: 'rpm', kind: 'range', min: -120, max: 120, step: 1 },
+					{ key: 'torque', kind: 'range', min: 0, max: 2000, step: 5 },
+					{ key: 'spinUp', kind: 'range', min: 0, max: 10, step: 0.1 }
+				]
+			},
+			// 36-fb F24: ride a Flow path (the nearest one when nothing is wired)
+			{
+				type: 'flowfloat',
+				label: 'Float Along Flow',
+				defaults: { speed: 1, bob: 0.03, align: true },
+				inputs: ['path'],
+				inputLabels: { path: 'path — a Flow path (else the nearest)' },
+				params: [
+					{ key: 'speed', kind: 'range', min: 0, max: 5, step: 0.05 },
+					{ key: 'bob', kind: 'range', min: 0, max: 0.3, step: 0.01 },
+					{ key: 'align', kind: 'toggle' }
+				]
+			},
 			{
 				type: 'bounce',
 				label: 'Bounce',
@@ -1194,6 +1223,7 @@ export const nodeCatalog = [
 // managed object actions: LookAt orients, Set Color paints, Visibility toggles)
 export const animationTypes = [
 	'shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol',
+	'rotor', 'flowfloat', // 36-fb F25/F24 (sim/motionNodes.js)
 	'lookat', 'setcolor', 'visibility', 'setuniform',
 	'deviceparam', 'notetrigger' // 23-B3
 ];

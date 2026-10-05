@@ -228,3 +228,12 @@
 .tp-tr-range:disabled {
   opacity: 0.5;
 }
+
+/* 36 S12: the panel that holds the keyboard says so (keyScope sets `data-has-keys` on the pane a
+   press gave the keys to) — the node editor's hairline (36 U11), as an OUTLINE so a window keeps
+   its drop shadow. The accent token, so every theme (light + dark) draws it in its own colour. */
+[data-key-scope='panel'][data-has-keys],
+[data-key-scope='objects'][data-has-keys] {
+  outline: 1px solid color-mix(in srgb, var(--accent, #60a5fa) 55%, transparent);
+  outline-offset: -1px;
+}

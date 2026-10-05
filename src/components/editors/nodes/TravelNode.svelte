@@ -57,7 +57,7 @@
 	<div class="flex w-full flex-col gap-1">
 		<label class="flex flex-col">
 			<span>scene</span>
-			<select class="nodrag" value={chosen} on:change={(e) => pick(e.currentTarget.value)}>
+			<select class="nodrag nopan" value={chosen} on:change={(e) => pick(e.currentTarget.value)}>
 				<option value="">— none —</option>
 				{#if names.length}
 					<optgroup label="Project scenes (latest version)">

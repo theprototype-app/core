@@ -3,13 +3,16 @@
 // driven through the real surfaces: the start menu, Play, a scripted run of stage 1 (a coin, a
 // checkpoint flag, a fall back to that flag, the portal -> the round is won and the best time is
 // saved) and the VR board pressing a stage button through the real trigger hook. Skip-never-fail
-// when no authored scene is found.
+// when no authored scene is found. §6 is the U10 ACCEPTANCE PROBE (36-games-graphs): the rules are the
+// "Sky Run rules" node on Main — fall depth from the ⓘ panel, a stage name from the code view, both felt in
+// Play and kept by a reload.
 const h = require('./helpers.cjs');
 const fs = require('fs');
 const path = require('path');
 
 const CANDIDATES = [
 	process.env.SKY_RUN_TPSCENE,
+	path.resolve(__dirname, '../../../cloud-lane-30-staging/36-games-graphs/games/sky-run/scene.tpscene'),
 	path.resolve(__dirname, '../../../cloud-lane-30-staging/35-sky-obby/games/sky-run/scene.tpscene'),
 	path.resolve(__dirname, '../../../scenes/games/sky-run/scene.tpscene'),
 	path.resolve(__dirname, '../../../theprototype.app-scenes/games/sky-run/scene.tpscene')
@@ -141,6 +144,7 @@ h.run(async () => {
 		return cam.getWorldPosition(new s.THREE.Vector3()).toArray().map((n) => +n.toFixed(2));
 	});
 	h.check(Math.abs(back[2] - -17.7) < 1.5 && Math.abs(back[0]) < 0.5 && back[1] > 13, `and puts you back on the flag (${back})`);
+	const stockDrop = (await run()).fallDrop; // §6's baseline: how far under the pad the stock depth catches you
 	// the portal
 	await page.evaluate(() => window.__skyrun.teleportTo('Sky S1 finish'));
 	await h.eventually(() => snap().then((v) => v.state + '/' + v.screen), (v) => v === 'over/over', 'reaching the portal wins the round: the results screen', 8000);
@@ -235,5 +239,87 @@ h.run(async () => {
 	h.check(press.hover === 'stage-2' && press.consumed === true, `the laser hovers and the trigger presses Stage 2 (${JSON.stringify(press)})`);
 	await h.eventually(() => snap().then((v) => v.stage + '/' + v.phase), (v) => v === '2/intro' || v === '2/playing', 'stage 2 starts from the VR board', 8000);
 	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+
+	console.log('\n=== 6. THE U10 PROBE: fall depth from the GRAPH, a stage name from the CODE; felt in Play, kept by a reload ===');
+	const rid = await page.evaluate(() => window.__skyrun?.rulesNode?.() ?? null);
+	h.check(!!rid, `premise: the Main graph carries the Sky Run rules node (${rid})`);
+	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the Sky Run rules behaviour is running', 10000);
+	h.check(stockDrop > 5.5 && stockDrop < 8.5, `premise: at the stock fall depth a fall is caught ~7 m under the start pad (${stockDrop})`);
+	const codeNow = () => page.evaluate((id) => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.id === id)?.data?.code ?? ''; }, rid);
+	// (a) the GRAPH: select the rules node, the ⓘ tab, Fall depth 7 -> 2
+	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.waitForTimeout(600);
+	if (!(await page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await page.locator('p[title="Node editor (N)"]').click();
+	await page.waitForTimeout(1000);
+	await page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(600));
+	if (!(await page.locator('#flow-props').count())) await page.locator('#flow-props-toggle').click();
+	await page.locator('#flow-tab-info').click();
+	await page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), rid);
+	await h.eventually(() => page.locator('#flow-prop-fallDepth').count(), (n) => n === 1, 'the rules node shows Fall depth in its properties panel', 6000);
+	await page.locator('#flow-prop-fallDepth').fill('2');
+	await page.locator('#flow-prop-fallDepth').press('Enter');
+	await h.eventually(codeNow, (c) => /fallDepth:\s*\{\s*value:\s*2\b/.test(c), 'the knob rewrote the literal in the rules source (fallDepth: 2)', 4000);
+	// (b) the CODE: open the rules in the code workspace and rename stage 1
+	await page.evaluate((id) => {
+		let ns;
+		window.__stores.flowNodes.subscribe((v) => (ns = v))();
+		const n = ns.find((x) => x.id === id);
+		window.__flowViewport?.setViewport({ x: -n.position.x + 300, y: -n.position.y + 60, zoom: 1 });
+	}, rid);
+	await page.waitForTimeout(600);
+	const box = await page.locator(`.svelte-flow__node[data-id="${rid}"]`).boundingBox().catch(() => null);
+	if (box) await page.mouse.dblclick(box.x + box.width / 2, box.y + 8);
+	else await page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rid);
+	await h.eventually(() => page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, 'double-click opens the rules in the code workspace', 15000);
+	const edited = (await codeNow()).replace("{ id: '1', name: 'Cloud Steps', par: 45 }", "{ id: '1', name: 'Puff Steps', par: 45 }");
+	const paneId = await page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+	await page.locator(`[data-pane="${paneId}"] .cm-content`).click();
+	await page.keyboard.press('Control+A');
+	await page.keyboard.insertText(edited);
+	await page.keyboard.press('Control+S');
+	await h.eventually(codeNow, (c) => /name: 'Puff Steps'/.test(c), "Ctrl+S saved the code onto the node (stage 1 is 'Puff Steps')", 6000);
+	await page.locator('#code-ws-close').click().catch(() => {});
+	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
+	/** stage 1 from the menu, the HUD title (the code change), then a fall (the graph change) */
+	const feel = async (when) => {
+		await page.evaluate(() => window.__stores.isLocked.set(true));
+		await page.waitForTimeout(800);
+		await page.evaluate(() => window.__stores.gameState.setGameState('menu'));
+		await h.eventually(hud, (t) => /Cloud Steps|Puff Steps|1 ·/.test(t), `${when}: the start menu`, 8000);
+		await page.locator('#hud-layer button', { hasText: /^\s*1 ·/ }).first().click();
+		await h.eventually(() => snap().then((v) => v.stage + '/' + v.phase), (v) => v === '1/playing', `${when}: stage 1 runs`, 12000);
+		await h.eventually(() => page.evaluate(() => window.__skyrun.info({ read: 'title' })), (t) => t === 'Stage 1 · Puff Steps', `${when}: the HUD title reads 'Stage 1 · Puff Steps' — the code change`, 4000);
+		await page.evaluate(() => {
+			const s = window.__stores;
+			s.playSettings.setRuntimeSpawn([12, 12, -18], 0, 'test');
+			s.playSpawn.spawnDesktopPlayer(s.playSpawn.desktopSpawn());
+		});
+		await h.eventually(() => run().then((r) => r.falls), (n) => n >= 1, `${when}: a fall is caught`, 8000);
+		const drop = (await run()).fallDrop;
+		h.check(drop > 1 && drop < 3.5, `${when}: … ~2 m under the start pad instead of ~7 — the graph change (${drop})`);
+	};
+	await feel('Play');
+	// (c) both survive a save and a reload
+	const saved = await page.evaluate(async () => {
+		const s = window.__stores;
+		const payload = s.sessions.buildSessionPayload('Sky Run probe');
+		const zip = await s.sessions.exportSessionZip(payload, { assets: true, packs: false, flow: true });
+		return Array.from(zip);
+	});
+	await page.evaluate(() => window.__stores.isLocked.set(null));
+	await page.waitForTimeout(600);
+	await page.evaluate(async (arr) => {
+		const s = window.__stores;
+		s.flowGraphs.set({ scene: { nodes: [], edges: [] } });
+		const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
+		await s.sessions.applySession(payload, { backup: false });
+	}, saved);
+	await page.waitForTimeout(2500);
+	const reloaded = await codeNow();
+	h.check(/fallDepth:\s*\{\s*value:\s*2\b/.test(reloaded) && /name: 'Puff Steps'/.test(reloaded), "after a save and a reload the rules keep fall depth 2 and 'Puff Steps'");
+	await h.eventually(() => page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__skyrun.rulesNode()]?.status), (st) => st === 'running', 'the reloaded rules run', 10000);
+	await feel('Play after the reload');
+	await page.evaluate(() => window.__stores.isLocked.set(false));
+	await page.waitForTimeout(400);
 	await h.finish(browser);
 });

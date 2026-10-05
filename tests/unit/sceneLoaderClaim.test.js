@@ -13,7 +13,8 @@ import {
 	onCancel,
 	updateLoad,
 	currentJob,
-	sceneLoad
+	sceneLoad,
+	heavyWorkDeferred
 } from '../../src/lib/sceneLoader.js';
 
 beforeEach(() => {
@@ -100,5 +101,21 @@ describe('the half scene a claim superseded', () => {
 		expect(claim.interrupted).toBe(false);
 		endLoad(claim);
 		expect(undone).toBe(0);
+	});
+});
+
+describe('36 S5: heavy work waits for the primitives', () => {
+	it('is deferred from the click until the objects are built, and not after', () => {
+		expect(heavyWorkDeferred()).toBe(false);
+		const job = claimLoad('Island ocean');
+		expect(heavyWorkDeferred()).toBe(true); // downloading
+		adoptLoad(job, { total: 31 });
+		expect(heavyWorkDeferred()).toBe(true); // preparing
+		updateLoad(job, { phase: 'objects' });
+		expect(heavyWorkDeferred()).toBe(true); // building
+		updateLoad(job, { phase: 'models' });
+		expect(heavyWorkDeferred()).toBe(false); // the shape is on screen
+		endLoad(job);
+		expect(heavyWorkDeferred()).toBe(false);
 	});
 });

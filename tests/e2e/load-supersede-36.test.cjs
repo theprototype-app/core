@@ -118,7 +118,7 @@ h.run(async () => {
 	const early = await loadJob(page);
 	h.check(early?.name === 'Slow island' && early?.phase === 'fetching', `the job is the island, fetching (${JSON.stringify(early)})`);
 	await h.eventually(() => page.locator('#scene-load-bar').isVisible(), (v) => v === true, 'the load bar is on screen during the download', 2000);
-	const barText = (await page.locator('#scene-load-bar').innerText()).replace(/\s+/g, ' ');
+	const barText = (await page.locator('#scene-load-bar').innerText({ timeout: 2000 }).catch(() => '')).replace(/\s+/g, ' ');
 	h.check(/Slow island/.test(barText) && /download/i.test(barText), `the bar says what it is doing ("${barText}")`);
 
 	// the user opens another level while the island is still downloading

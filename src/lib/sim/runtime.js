@@ -6,6 +6,8 @@ import { tickJiggle } from './jiggleRuntime.js';
 import { tickSplashes } from './splashWatch.js';
 import { ensureWaterRoot, beginWaterFrame } from './waterQuery.js';
 import { tickFluid } from './fluidRuntime.js';
+// 36 S5: a scene load puts its primitives on screen before the fluid sims start (a leaf store)
+import { heavyWorkDeferred } from '../sceneLoader';
 
 /**
  * @param {any} root the scene objects group
@@ -18,5 +20,5 @@ export function tickSim(root, camera, renderer, now) {
 	ensureWaterRoot(root);
 	beginWaterFrame();
 	tickSplashes(root, now);
-	tickFluid(root, camera, renderer, now);
+	if (!heavyWorkDeferred()) tickFluid(root, camera, renderer, now);
 }

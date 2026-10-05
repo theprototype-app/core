@@ -11,6 +11,8 @@ import { waveComponents } from './waves.js';
 import { resolveLook, resolveBubbles, MAX_BUBBLES } from './presets.js';
 import { waterDetailTexture } from './waterTextures.js';
 import { waterQuality } from './waterPrefs.js';
+// 36 S5: the water waits for a scene load to put its primitives on screen (a leaf store)
+import { heavyWorkDeferred } from '../sceneLoader';
 import {
 	surfaceVertex,
 	surfaceFragment,
@@ -485,13 +487,56 @@ function createEntry(volume) {
 		lookKey: '',
 		wavesKey: '',
 		comps: /** @type {any[]} */ ([]),
-		visible: true
+		visible: true,
+		// 36 S5: the water's programs are compiled OFF-FRAME (compileAsync) and the volume is
+		// drawn only once they are ready — until then the object's own material (the author's
+		// placeholder box/plane) shows. Compiling them inside the first frame was the multi-
+		// second freeze at the start of Island Ocean, which read as "the water loads first".
+		ready: false,
+		compiling: false
 	};
 	entry.surface.name = 'water-surface';
 	setupVisual(entry.surface);
 	root?.add(entry.surface);
 	buildGeometry(entry, volume);
 	return entry;
+}
+
+/** the last camera a frame was drawn with (compileAsync wants one) @type {any} */
+let lastCamera = null;
+/** the longest the water waits for its programs before it is drawn anyway (a driver that
+ * never reports ready must not leave a scene without its water) */
+const COMPILE_WAIT_MS = 6000;
+
+/**
+ * 36 S5: compile an entry's materials off-frame, then let it draw. Not while a scene load is
+ * still building (heavyWorkDeferred) — the primitives come first.
+ * @param {any} entry
+ */
+function compileEntry(entry) {
+	if (heavyWorkDeferred()) return;
+	entry.compiling = true;
+	const done = () => {
+		entry.ready = true;
+		entry.compiling = false;
+	};
+	const renderer = rendererRef;
+	if (!renderer?.compileAsync || !lastCamera || !sceneRef) return done();
+	const group = new THREE.Group();
+	for (const mesh of [entry.surface, entry.body, entry.bubbles]) if (mesh) group.add(mesh.clone(false));
+	const timer = setTimeout(done, COMPILE_WAIT_MS);
+	try {
+		renderer
+			.compileAsync(group, lastCamera, sceneRef)
+			.catch(() => {})
+			.then(() => {
+				clearTimeout(timer);
+				done();
+			});
+	} catch {
+		clearTimeout(timer);
+		done();
+	}
 }
 
 /** @param {any} entry */
@@ -996,10 +1041,12 @@ function beforeSceneRender(renderer, scene, camera, target) {
 	prevBefore?.(renderer, scene, camera, target);
 	if (renderDepth++ > 0) return;
 	swapped.length = 0;
+	if (camera?.isCamera) lastCamera = camera;
 	if (!entries.size) return;
 	for (const e of entries.values()) {
 		const o = e.object;
-		if (o.isMesh && o.material) {
+		// 36 S5: the placeholder stays until the water's programs are ready
+		if (e.ready && o.isMesh && o.material) {
 			swapped.push(o, o.material);
 			o.material = invisible;
 		}
@@ -1256,7 +1303,8 @@ export function tickWater(_delta) {
 	updateSky();
 	for (const e of entries.values()) {
 		const o = e.object;
-		e.visible = shown(o);
+		if (!e.ready && !e.compiling) compileEntry(e);
+		e.visible = shown(o) && e.ready;
 		if (e.matTier !== tier) {
 			e.matTier = tier;
 			e.surface.material.dispose();
@@ -1413,6 +1461,7 @@ export function waterDebug() {
 			uuid: e.uuid,
 			shape: e.volume.shape,
 			visible: e.visible,
+			ready: !!e.ready, // 36 S5: its programs compiled off-frame
 			body: !!e.body,
 			bubbles: !!e.bubbles?.visible,
 			vertices: e.surface.geometry?.attributes?.position?.count ?? 0,

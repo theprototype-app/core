@@ -377,6 +377,17 @@ export function scenesCleared(job) {
 	job.orphaned = [];
 }
 
+/**
+ * 36 S5 (user, 2026-10-05): "a scene must show its primitives immediately — today it seems to
+ * load the water first". Is a scene load still putting its objects on screen? While it is, the
+ * HEAVY optional work waits: the water renderer's shaders (compiled off-frame, then swapped in
+ * over the object's own placeholder material) and the particle-fluid sims. 'models' counts as
+ * done: the scene's shape is on screen and only pack pieces are still arriving.
+ */
+export function heavyWorkDeferred() {
+	return !!current && current.phase !== 'models';
+}
+
 /** Is THIS job still the one loading (not cancelled, not superseded)? @param {LoadJob} job */
 export function isLive(job) {
 	return job === current && !job.cancelled;

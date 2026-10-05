@@ -17,11 +17,13 @@ const fs = require('fs');
 const path = require('path');
 
 const SHOTS = process.env.RECORDING_SHOTS || '';
+// E2E_THEME=light re-runs the suite in another theme; its screenshots get a -<theme> suffix
+const THEME = process.env.E2E_THEME || '';
 /** @param {any} page @param {string} name */
 async function shot(page, name) {
 	if (!SHOTS) return;
 	fs.mkdirSync(SHOTS, { recursive: true });
-	await page.screenshot({ path: path.join(SHOTS, name) });
+	await page.screenshot({ path: path.join(SHOTS, THEME ? name.replace(/\.png$/, `-${THEME}.png`) : name) });
 }
 
 /** camera position + azimuth about the controls' target @param {any} page */
@@ -43,7 +45,7 @@ const state = (/** @type {any} */ page) =>
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
-	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 800 }, acceptDownloads: true } });
+	const A = await h.setupPage(browser, 'A', { ...(THEME ? { storage: { theme: THEME } } : {}), context: { viewport: { width: 1280, height: 800 }, acceptDownloads: true } });
 	const { page } = A;
 
 	// a small scene to film

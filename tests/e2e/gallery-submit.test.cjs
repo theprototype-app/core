@@ -21,17 +21,19 @@ const { execFileSync } = require('child_process');
 const { unzipSync, strFromU8 } = require('fflate');
 
 const SHOTS = process.env.RECORDING_SHOTS || '';
+// E2E_THEME=light re-runs the suite in another theme; its screenshots get a -<theme> suffix
+const THEME = process.env.E2E_THEME || '';
 const GALLERY = [process.env.COMMUNITY_GALLERY_DIR, path.resolve(__dirname, '../../../community-gallery')].filter(Boolean).find((p) => fs.existsSync(path.join(p, 'scripts/validate.cjs')));
 /** @param {any} page @param {string} name */
 async function shot(page, name) {
 	if (!SHOTS) return;
 	fs.mkdirSync(SHOTS, { recursive: true });
-	await page.screenshot({ path: path.join(SHOTS, name) });
+	await page.screenshot({ path: path.join(SHOTS, THEME ? name.replace(/\.png$/, `-${THEME}.png`) : name) });
 }
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
-	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 860 }, acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'] } });
+	const A = await h.setupPage(browser, 'A', { ...(THEME ? { storage: { theme: THEME } } : {}), context: { viewport: { width: 1280, height: 860 }, acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'] } });
 	const { page } = A;
 	/** @type {string[]} */
 	const opened = [];

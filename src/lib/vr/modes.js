@@ -2,7 +2,7 @@
 // 34 R4 (A5): one concern of src/lib/vrControls.js, which re-exports the public names unchanged.
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { globalScene, vrMenuHand, editorMode } from '../../stores/sceneStore';
+import { globalScene, editorMode } from '../../stores/sceneStore';
 import { resolvePlaySettings, playPublishers } from '../playSettings';
 import { hudDocs, isGameHud } from '../hudDocs';
 import { setEditorMode, toggleEditorMode } from '../objectActions';
@@ -12,6 +12,7 @@ import { grabs, syncGrabbedHand, endGrab, emptyAirSqueeze, resetWorldRig } from 
 import { hapticPulse } from './haptics.js';
 import { controllerIndexFor } from './input.js';
 import { noteXRBaseSpace, viewerNow, spawnPlayer } from './locomotion.js';
+import { handOf, bindingOf, bindingLabel, controlName } from './bindings.js';
 
 // ---- 30b P4: ENTER INTERACT, SWITCH IN VR, SPAWN ------------------------------------------
 // Contract C1: pressing Play in VR on a GAME enters Interact; the left Y button toggles
@@ -27,9 +28,10 @@ export function sceneIsGame() {
 	return playPublishers(scene).length > 0;
 }
 
-/** which hand owns the mode button: the LEFT (Y), unless the radial menu lives there */
+/** which hand owns the mode button: the LEFT (Y), unless the radial menu lives there — 36 (plan 55): the
+ * mode binding says (it follows a menu-hand move, so the old rule still holds by default) */
 export function modeHand() {
-	return get(vrMenuHand) === 'left' ? 'right' : 'left';
+	return handOf('mode');
 }
 
 /** Scene's onsessionstart (after the base space is live). */
@@ -83,6 +85,7 @@ export function payPendingSpawn() {
 /** @type {any} */ let modeLabel = null;
 /** @type {any} */ let modeLabelCanvas = null;
 let modeLabelText = '';
+let modeLabelKey = '';
 let modeLabelFlashUntil = 0;
 
 function ensureModeLabel() {
@@ -117,7 +120,10 @@ export function updateModeLabel() {
 	const interact = get(editorMode) === 'interact';
 	const text = interact ? 'INTERACT' : 'EDIT';
 	label.scale.setScalar(Date.now() < modeLabelFlashUntil ? 1.35 : 1);
-	if (text === modeLabelText) return;
+	// 36: the corner letter is the mode BINDING's, so a remap redraws the label too
+	const key = text + '|' + bindingLabel('mode');
+	if (key === modeLabelKey) return;
+	modeLabelKey = key;
 	modeLabelText = text;
 	const ctx = modeLabelCanvas.getContext('2d');
 	if (!ctx) return;
@@ -134,7 +140,8 @@ export function updateModeLabel() {
 	ctx.fillText(text, 112, 42);
 	ctx.font = 'bold 22px sans-serif';
 	ctx.fillStyle = 'rgba(255,255,255,0.75)';
-	ctx.fillText(modeHand() === 'left' ? 'Y' : 'B', 228, 42);
+	const mb = bindingOf('mode');
+	ctx.fillText(mb.control === 'stickClick' ? '◉' : controlName(mb.hand, mb.control), 228, 42);
 	label.material.map.needsUpdate = true;
 }
 

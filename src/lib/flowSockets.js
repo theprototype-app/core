@@ -189,6 +189,10 @@ const INPUT = {
 	hapticpulse: { trigger: 'event' },
 	gamemusic: { on: 'boolean' },
 	onclap: { enabled: 'boolean' }, // 31
+	// 36 X6: contacts take an OBJECT filter — fire only when the other body is that one
+	onimpact: { filter: 'object' },
+	onenter: { filter: 'object' },
+	onexit: { filter: 'object' },
 	pointgrab: { enabled: 'boolean' }, // 31
 	gamestart: { camera: 'object' },
 	// 21-F4: travel fires on its trigger edge; allplayers takes each player's own
@@ -209,7 +213,11 @@ const INPUT = {
  * clap's pulse is an event, but its `point` is a place and `byMe` a boolean. Only listed
  * handles differ; every other handle keeps its node's type. @type {Record<string, Record<string, string>>} */
 const OUTPUT_HANDLES = {
-	onclap: { point: 'vector3', byMe: 'boolean' }
+	onclap: { point: 'vector3', byMe: 'boolean' },
+	// 36 X6: the OTHER body of the contact, as an object (wire it into lookat/distance)
+	onimpact: { other: 'object' },
+	onenter: { other: 'object' },
+	onexit: { other: 'object' }
 };
 
 /** the type a source HANDLE carries @param {string} nodeType @param {string|null|undefined} handleId */

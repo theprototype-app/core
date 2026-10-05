@@ -738,6 +738,18 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'particles', uuid: entry.uuid, particles: state.particles });
 	}
+	if ('water' in state) {
+		// 36-water: the water volume blob (W1) and a standalone bubble emitter ride the
+		// same kind; the water renderer re-reads both on the poke below
+		if (state.water) object.userData.water = state.water;
+		else delete object.userData.water;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'water', uuid: entry.uuid, water: state.water ?? null });
+	}
+	if ('bubbles' in state) {
+		if (state.bubbles) object.userData.bubbles = state.bubbles;
+		else delete object.userData.bubbles;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'bubbles', uuid: entry.uuid, bubbles: state.bubbles ?? null });
+	}
 	if ('camera' in state) {
 		// 16-P5: camera-object settings ride the same kind (viz + any live preview
 		// rebuild from the poke below)
@@ -765,6 +777,12 @@ registerHistoryKind('props', (entry, state) => {
 		if (state.lod) object.userData.lod = state.lod;
 		else delete object.userData.lod;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'lod', uuid: entry.uuid, lod: state.lod ?? null });
+	}
+	if ('fluid' in state) {
+		// 36-sim U2b: a fluid tank's settings (fluidActions.setFluidFor is the write path)
+		if (state.fluid) object.userData.fluid = state.fluid;
+		else delete object.userData.fluid;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'fluid', uuid: entry.uuid, fluid: state.fluid ?? null });
 	}
 	if ('origin' in state) {
 		// 17-D: the per-object transform origin (pivot offset) is scene data, so

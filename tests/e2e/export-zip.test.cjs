@@ -165,8 +165,13 @@ h.run(async () => {
 	})();
 	h.check(!/cloudflareinsights|data-cf-beacon/i.test(zipText), 'no host-injected beacon anywhere in the zip');
 	if (process.env.EXPECT_CF_BEACON) {
-		const resultText = (await page.locator('#export-result').textContent()) || '';
-		h.check(/Removed https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js from index\.html/.test(resultText), 'the export reports the beacon it removed from index.html');
+		// 36 L3: the beacon is a KNOWN host script — removed quietly: no visible warning, one line
+		// in the result's (collapsed) Details
+		const warned = (await page.locator('#export-result .ex-warn').allTextContents()).join('\n');
+		h.check(!/cloudflareinsights|beacon/i.test(warned), `the beacon removal is not a visible warning (${warned.slice(0, 120) || 'none'})`);
+		const detailsText = (await page.locator('#export-details').textContent()) || '';
+		h.check(/Removed https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js from index\.html/.test(detailsText), 'the export lists the beacon it removed in its Details');
+		h.check((await page.locator('#export-details').getAttribute('open')) === null, 'the Details start collapsed');
 	}
 	if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '03-export-result-dark.png') });
 

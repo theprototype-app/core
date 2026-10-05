@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { fbm2, valueNoise2 } from './noise';
+import { fluidTankGeometry } from './sim/fluidTank.js';
 
 // Architectural building-block geometries. All builders return a BufferGeometry
 // centered on X/Z and resting on y=0 (bbox bottom at the floor), so surface
@@ -215,5 +216,6 @@ export const customGeometryBuilders = {
 	Terrain: terrain,
 	// both camera kinds share one body; the KIND lives in userData.camera
 	Camera: cameraBody,
-	CameraOrtho: cameraBody
+	CameraOrtho: cameraBody,
+	FluidTank: fluidTankGeometry // 36-sim U2b (sim/fluidTank.js)
 };

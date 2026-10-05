@@ -62,7 +62,7 @@ function mulberry32(seed) {
 	return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
-const SHAPE_INDEX = { cone: 0, sphere: 1, disc: 2 };
+const SHAPE_INDEX = { cone: 0, sphere: 1, disc: 2, box: 3 };
 
 /** Effective config: defaults + the emitter's data. @param {any} data */
 function configOf(data) {
@@ -119,6 +119,11 @@ function buildEntry(key, count) {
 			uSpin: { value: 0 },
 			uSizeScale: { value: 600 },
 			uOffset: { value: new THREE.Vector3() },
+			// 36 B3: weather areas (rain / snow)
+			uArea: { value: new THREE.Vector2(1, 1) },
+			uWind: { value: new THREE.Vector3() },
+			uFall: { value: 0 },
+			uGround: { value: 0 },
 			uQuat: { value: new THREE.Vector4(0, 0, 0, 1) },
 			uWorldSpace: { value: 0 },
 			uMap: { value: spriteTexture('dot') },
@@ -194,6 +199,14 @@ function applyUniforms(entry, cfg) {
 	u.uShape.value = SHAPE_INDEX[/** @type {'cone'} */ (cfg.shape)] ?? 0;
 	u.uAngle.value = (cfg.angle * Math.PI) / 180;
 	u.uRadius.value = cfg.radius;
+	// 36 B3: a box AREA (`area: [w, d]`), constant `wind`, a ground `fall` metres below the
+	// emitter where `ground` 'splash' (rain) or 'settle' (snow) happens
+	const area = Array.isArray(cfg.area) ? cfg.area : [2, 2];
+	u.uArea.value.set((Number(area[0]) || 2) / 2, (Number(area[1]) || 2) / 2);
+	const wind = Array.isArray(cfg.wind) ? cfg.wind : [0, 0, 0];
+	u.uWind.value.set(Number(wind[0]) || 0, Number(wind[1]) || 0, Number(wind[2]) || 0);
+	u.uFall.value = Math.max(0, Number(cfg.fall) || 0);
+	u.uGround.value = cfg.ground === 'settle' ? 2 : cfg.ground === 'splash' ? 1 : 0;
 	u.uSpeed.value = cfg.speed;
 	u.uSpeedJitter.value = cfg.speedJitter;
 	u.uGravity.value = cfg.gravity;

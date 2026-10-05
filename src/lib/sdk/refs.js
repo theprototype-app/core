@@ -37,6 +37,8 @@ export let knockRef = null;
 export let knockReady = Promise.resolve(null);
 /** 30b: primed for api.effects (effectsBurst imports moduleFrameTasks from here) @type {any} */
 export let effectsRef = null;
+/** 36-water: primed for api.water (waterActions reaches the history family) @type {any} */
+export let waterActionsRef = null;
 if (typeof window !== 'undefined') {
 	knockReady = import('../knock').then((m) => (knockRef = m));
 	import('../inputRuntime').then((m) => (inputRuntimeRef = m));
@@ -60,6 +62,7 @@ if (typeof window !== 'undefined') {
 	import('../nodeCatalog').then((m) => (nodeCatalogRef = m));
 	// 30b (C6): the burst pool reads moduleFrameTasks from here, so the edge back is dynamic
 	import('../effectsBurst').then((m) => (effectsRef = m));
+	import('../water/waterActions.js').then((m) => (waterActionsRef = m));
 }
 
 export function inputApi() {

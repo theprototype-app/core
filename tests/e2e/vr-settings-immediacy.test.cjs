@@ -1,7 +1,7 @@
-// R-2: VR settings immediacy — the snap-turn angle cycle is unified across the
-// radial, the VR settings panel, and desktop Settings ([0,15,30,45], 0 = Off),
-// the radial label reflects the current value live, and toggles write the store
-// that vrControls reads live each frame. Headless (state + entry label); the
+// R-2 → 36 (U3): VR settings immediacy. Turning is ONE setting shared by the radial (Settings ▸ Comfort),
+// the in-headset panel and desktop Settings ▸ VR — they all render the same row of the settings table —
+// and a row's value line follows the store live. Snap / Smooth / Off is its own choice; the snap angle
+// (15/30/45/90) another; `vrSnapAngle` 0 still means "snap turning off" (older saves keep working). The
 // in-headset feel is the user's check.
 const h = require('./helpers.cjs');
 
@@ -9,40 +9,46 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A');
 
-	// the radial snapangle entry has a LIVE label reflecting the store
-	const label0 = await A.page.evaluate(() => {
-		window.__stores.vrSnapAngle.set(0);
-		const e = window.__stores.vrRadialMenu.findMenuEntry('snapangle');
-		return typeof e.label === 'function' ? e.label() : e.label;
-	});
-	h.check(/off/i.test(label0), `radial snap label shows Off at 0 (${label0})`);
-	const label45 = await A.page.evaluate(() => {
-		window.__stores.vrSnapAngle.set(45);
-		const e = window.__stores.vrRadialMenu.findMenuEntry('snapangle');
-		return typeof e.label === 'function' ? e.label() : e.label;
-	});
-	h.check(/45/.test(label45), `radial snap label updates to 45 live (${label45})`);
-
-	// cycling from the radial reaches Off (0) — the unified [0,15,30,45] cycle
-	const seq = await A.page.evaluate(async () => {
-		const e = window.__stores.vrRadialMenu.findMenuEntry('snapangle');
-		const read = () => new Promise((r) => window.__stores.vrSnapAngle.subscribe((v) => r(v))());
-		window.__stores.vrSnapAngle.set(45);
-		const out = [];
-		for (let i = 0; i < 4; i++) {
-			e.action();
-			out.push(await read());
+	const res = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const m = s.vrRadialMenu;
+		const S = s.vrSettingsSchema;
+		const g1 = (st) => {
+			let v;
+			st.subscribe((x) => (v = x))();
+			return v;
+		};
+		const value = (id) => m.findMenuEntry(id)?.value?.() ?? null;
+		s.vrSnapAngle.set(0);
+		const offText = value('set:turning');
+		s.vrSnapAngle.set(45);
+		const snapText = value('set:turning');
+		const angleText = value('set:snapAngle');
+		// a radial press cycles Turning: Snap -> Smooth -> Off -> Snap
+		const seq = [];
+		for (let i = 0; i < 3; i++) {
+			m.findMenuEntry('set:turning').action();
+			seq.push(S.vrSettingRow('turning').get() + '/' + g1(s.vrSnapAngle) + '/' + g1(s.vrPrefs.vrSmoothTurn));
 		}
-		return out;
+		// the panel row and the radial sector are the SAME row: the panel's action reads what the radial wrote
+		s.vrControls.executeVRMenuAction('vrset:snapAngle');
+		const viaPanel = g1(s.vrSnapAngle);
+		const turning = s.vrControls.turningInForce();
+		// the legacy panel id still flips teleport (back-compat for anything that dispatches it)
+		const tele0 = g1(s.vrTeleportEnabled);
+		s.vrControls.executeVRMenuAction('settings:teleport');
+		const tele1 = g1(s.vrTeleportEnabled);
+		return { offText, snapText, angleText, seq, viaPanel, turning, tele0, tele1 };
 	});
-	h.check(seq.includes(0), `radial cycle reaches Off (${seq.join(' -> ')})`);
-	h.check(new Set(seq).size === 4, `radial cycles through all four steps (${seq.join(',')})`);
-
-	// teleport toggle writes the store vrControls reads live each frame
-	const before = await A.page.evaluate(() => new Promise((r) => window.__stores.vrTeleportEnabled.subscribe((v) => r(v))()));
-	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('settings:teleport'));
-	const after = await A.page.evaluate(() => new Promise((r) => window.__stores.vrTeleportEnabled.subscribe((v) => r(v))()));
-	h.check(before !== after, `settings:teleport flips the live-read store (${before} -> ${after})`);
+	h.check(res.offText === 'Off' && res.snapText === 'Snap', `the Turning sector's value is live (${res.offText} → ${res.snapText})`);
+	h.check(res.angleText === '45°', `Snap angle shows the stored angle (${res.angleText})`);
+	h.check(
+		res.seq.join(' ') === 'smooth/45/true off/0/false snap/45/false',
+		`a press cycles Snap → Smooth → Off → Snap, Off is vrSnapAngle 0 (${res.seq.join(' ')})`
+	);
+	h.check(res.viaPanel === 90, `the panel's Snap angle press moves the same store the radial shows (45 → ${res.viaPanel})`);
+	h.check(res.turning.mode === 'snap' && res.turning.angle === 90, `vrControls turns by it at once (${JSON.stringify(res.turning)})`);
+	h.check(res.tele0 !== res.tele1, `settings:teleport flips the live-read store (${res.tele0} -> ${res.tele1})`);
 
 	await h.finish(browser);
 });

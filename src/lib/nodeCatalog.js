@@ -758,14 +758,6 @@ export const nodeCatalog = [
 				defaults: { code: 'KeyR', pulse: 0.3, edge: 'down' },
 				params: [{ key: 'edge', kind: 'select', options: ['down', 'up', 'held'] }]
 			},
-			// PFX-C: fires when the physics sim lands this object on the ground /
-			// another object (initiator-detected, replicated trigger stamp)
-			{
-				type: 'onimpact',
-				label: 'On Impact',
-				defaults: { pulse: 0.3, minStrength: 1 },
-				params: [{ key: 'minStrength', kind: 'range', min: 0, max: 10, step: 0.1 }]
-			},
 			// 24-A A2: a hand (VR controller) or a walking player KNOCKED this body (A1's
 			// probe). Fired on EVERY peer as the `hit` message is applied, stamped from the
 			// message's own `at` — one message per knock, identical stamps everywhere, no
@@ -782,9 +774,6 @@ export const nodeCatalog = [
 					{ key: 'who', kind: 'select', options: ['anyone', 'me', 'others'] }
 				]
 			},
-			// CL-C C2: sensor overlap edges (initiator-detected, replicated stamps)
-			{ type: 'onenter', label: 'On Enter', defaults: { pulse: 0.3 } },
-			{ type: 'onexit', label: 'On Exit', defaults: { pulse: 0.3 } },
 			// B6: fires once when a body settles, and re-arms when it moves again.
 			// Initiator-detected, replicated stamp — the On Impact shape.
 			{
@@ -927,6 +916,20 @@ export const nodeCatalog = [
 	{
 		group: 'Physics',
 		items: [
+			// 36 X6: the CONTACT triggers moved here from Triggers — they gained a `filter`
+			// input (only fire for that other object) and an `other` output, and Triggers
+			// holds only input-less sources (the palette rule). Palette-only: no wire change.
+			// PFX-C: fires when the physics sim lands this object on the ground /
+			// another object (initiator-detected, replicated trigger stamp)
+			{
+				type: 'onimpact',
+				label: 'On Impact',
+				defaults: { pulse: 0.3, minStrength: 1 },
+				params: [{ key: 'minStrength', kind: 'range', min: 0, max: 10, step: 0.1 }]
+			},
+			// CL-C C2: sensor overlap edges (initiator-detected, replicated stamps)
+			{ type: 'onenter', label: 'On Enter', defaults: { pulse: 0.3 } },
+			{ type: 'onexit', label: 'On Exit', defaults: { pulse: 0.3 } },
 			{
 				type: 'mass',
 				label: 'Mass',
@@ -961,11 +964,13 @@ export const nodeCatalog = [
 			{
 				type: 'collider',
 				label: 'Collider',
-				defaults: { shape: 'box', sensor: false, scale: 1 },
+				defaults: { shape: 'box', sensor: false, scale: 1, group: 'inherit' },
 				params: [
-					{ key: 'shape', kind: 'select', options: ['box', 'sphere', 'capsule', 'cylinder', 'cone', 'hull', 'custom', 'object'] },
+					{ key: 'shape', kind: 'select', options: ['box', 'sphere', 'capsule', 'cylinder', 'cone', 'hull', 'trimesh', 'custom', 'object'] },
 					{ key: 'scale', kind: 'range', min: 0.25, max: 4, step: 0.05 },
-					{ key: 'sensor', kind: 'toggle' }
+					{ key: 'sensor', kind: 'toggle' },
+					// 36 X5: collision group ('inherit' keeps the Inspector's pick)
+					{ key: 'group', kind: 'select', options: ['inherit', 'default', 'a', 'b', 'c', 'd', 'water'] }
 				]
 			},
 			{
@@ -1075,6 +1080,27 @@ export const nodeCatalog = [
 					{ key: 'sprite', kind: 'select', options: ['dot', 'streak', 'puff', 'star', 'square'] },
 					{ key: 'blending', kind: 'select', options: ['additive', 'normal'] },
 					{ key: 'space', kind: 'select', options: ['local', 'world'] }
+				]
+			},
+			// 36-sim U2b: secondary motion + soft-body wobble on the connected object (or the
+			// graph owner). LOCAL per peer from the pose every peer sees — the jiggle runtime
+			// (sim/jiggleRuntime.js), not animationTypes: it never writes the transform.
+			{
+				type: 'jiggle',
+				label: 'Jiggle',
+				defaults: { stiffness: 120, damping: 0.15, gravity: 0.3, maxOffset: 0.35, wind: 0, amplitude: 0.08, frequency: 3, falloff: 1.5, pivot: 'bottom', bones: '' },
+				note: 'Each player sees their own wobble; the settings are shared.',
+				params: [
+					{ key: 'stiffness', kind: 'range', min: 5, max: 600, step: 5 },
+					{ key: 'damping', kind: 'range', min: 0, max: 1, step: 0.01 },
+					{ key: 'gravity', kind: 'range', min: 0, max: 2, step: 0.05 },
+					{ key: 'maxOffset', kind: 'range', label: 'max offset', min: 0, max: 1, step: 0.01 },
+					{ key: 'wind', kind: 'range', min: 0, max: 20, step: 0.5 },
+					{ key: 'amplitude', kind: 'range', label: 'wobble', min: 0, max: 0.4, step: 0.01 },
+					{ key: 'frequency', kind: 'range', label: 'wobble Hz', min: 0.5, max: 10, step: 0.1 },
+					{ key: 'falloff', kind: 'range', min: 0.25, max: 4, step: 0.05 },
+					{ key: 'pivot', kind: 'select', options: ['bottom', 'center', 'top'] },
+					{ key: 'bones', kind: 'text', label: 'bones (globs)', placeholder: 'hair*, tail*', maxLength: 200 }
 				]
 			}
 		]

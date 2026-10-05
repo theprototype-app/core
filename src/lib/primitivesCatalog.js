@@ -39,6 +39,11 @@ export const primitivesCatalog = [
 		items: [{ label: 'Terrain', command: '/create Terrain 24 48' }]
 	},
 	{
+		// 36-sim U2b: a glass tank of particle fluid (local per peer; settings replicate)
+		group: 'Simulation',
+		items: [{ label: 'Fluid tank', command: '/create FluidTank 1.2 0.8 0.8' }]
+	},
+	{
 		// 16-P5: camera OBJECTS are marker meshes carrying userData.camera, so they
 		// create / replicate / undo through the same /create path as any primitive
 		group: 'Camera',

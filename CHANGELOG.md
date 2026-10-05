@@ -5,6 +5,64 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.22.0 — Water, a VR welcome, and every VR setting in the headset 🌊
+
+### 🌊 Water
+
+- 🌊 **Add ▸ Water** — a tank, a pool, an ocean, a round pool, or **Properties ▸ Water ▸ Make it water…** on any
+  object: waves, see-through refraction, caustics on the floor, foam, a sky or mirror reflection, underwater fog when
+  you dive in, and bubbles that rise and pop. Everyone sees the same water, waves in step.
+- 🎨 **Nine presets** — pool, aquarium, ocean, lake, river (it flows), lava, swamp, toxic, ice — and **Save as preset…**
+  for your own. **Settings ▸ Water quality** (Auto / High / Medium / Low); headsets get a light Quest tier.
+- 🛟 **Things float**: dynamic objects in water float, sink or drift with the current; **Inspector ▸ Physics ▸ Floats**
+  picks foam, wood, stone… or a density, and a splash ripples the surface.
+- 🧪 **Create ▸ Simulation ▸ Fluid tank** — particle fluid you can pour, drain and slosh; toys float in it. A smooth
+  surface on desktop, drops on a Quest.
+- 🍮 **Jiggle node** (Effects) — springy secondary motion and jelly wobble on any object, swinging bone chains on rigged
+  models.
+- 🌧️ **Rain and Snow** particle presets (Add ▸ Effects). Modules get `api.water`. Water is editable in VR.
+- 🏝️ **Five new examples**: Aquarium, Pool party, Island ocean, Jelly room, Fluid tank toy.
+
+### 🧱 Colliders that match the shape
+
+- 🏛️ **Exact mesh colliders** for static scenery — pools, tunnels and arches collide as they look (Inspector ▸ Physics ▸
+  Collider ▸ Exact mesh). Static Arch and Corner use it automatically.
+- 🧩 **Decompose** splits a concave object into convex pieces in the background, so a dynamic arch or cup keeps its
+  openings.
+- 👻 **Collision groups** (Group + Collides with): ghost walls the player walks through, projectile-only barriers; water
+  is a pass-through trigger.
+- 🎯 **On Impact / On Enter / On Exit** get "only with" an object and an "other" output naming what was touched.
+- 🥽 **Edit collider** in the VR radial menu — shape a custom collider in the headset.
+
+### 🥽 VR
+
+- 👋 **Welcome to ThePrototype VR** plays on your first VR entry: Quest 2 / 3 / 3S controller drawings that follow your
+  button layout, each step waits for you to do it, Skip any time. Restart it from Settings ▸ Tours or radial ▸
+  Settings ▸ Welcome tour.
+- ⚙️ **Every VR setting in the headset**: a Settings ring per page (Comfort · Body · Controls · Display · Editing ·
+  Microphone) plus a panel you can drive with the stick. **Smooth turning, the comfort vignette, seated mode and height**
+  now work everywhere, not only in games.
+- 🎮 **Remap every VR button** (Settings ▸ VR ▸ Controls, or in the headset), with a left-handed layout and a swap when
+  two actions collide.
+- 🧭 **The radial menu** shows the desktop's icons and names (Objects · Add · Scene · Tools · Redo · Undo · Chat ·
+  Settings), Delete is last, and letting go over a ▸ opens that ring.
+- 📲 A headset browser **offers Enter VR by itself** — once, follows passthrough, remembers a decline.
+
+### 🧭 Getting started
+
+- 🗺️ **A 6-step editor tour** after the first-visit Welcome card (a touch version on phones); restart it from Settings ▸
+  Tours or the logo menu ▸ Tours.
+- 🎥 **Opening a scene puts the camera on its saved view at once**, and moving while it loads is never undone
+  ("Back to start view", Home). New scene option **Hold camera until loaded** (Configure Scene ▸ Camera).
+- 🧊 **Modern loading placeholders are the default** (an explicit Colored boxes choice is kept).
+- 👥 **Community** in the profile menu, right under Support — the published scenes and contests.
+
+### 🔧 Fixes
+
+- 📦 Exports drop the host's analytics script quietly (listed under Details); other external scripts still warn.
+- 🔗 A peer that joins while an object is animating gets its true resting pose, and peers notice and heal a flow graph
+  that drifted apart.
+
 ## 1.21.0 — Publish anywhere, touch buttons, readable themes 📦
 
 ### 📦 Publish / Export

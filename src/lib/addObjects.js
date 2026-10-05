@@ -6,6 +6,9 @@ import { primitivesCatalog } from './primitivesCatalog';
 import { meshGenReady } from './ai/meshProviders';
 import { addParticlesPreset } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
+// 36-water: a PRIMED dynamic import — waterActions reaches history (the TDZ-cycle family)
+/** @type {any} */ let waterRef = null;
+import('./water/waterActions.js').then((m) => (waterRef = m));
 
 // 23-A5: device kinds (core's and every module's, one registry) as an Add-menu group.
 // PRIMED dynamic import: audioDevices reaches history, and a static edge from a
@@ -99,8 +102,30 @@ export function buildAddChildren(pointOf) {
 					delete object.userData.physics;
 					if (peer) peer.send({ type: 'objectParameters', parameter: 'physics', uuid: object.uuid, physics: null });
 					addParticlesPreset(object.uuid, preset.key);
+					// 36 B3: a weather emitter hangs at cloud height over the clicked ground
+					const fall = Number(/** @type {any} */ (preset.config).fall) || 0;
+					if (fall > 0) {
+						object.position.y += fall;
+						if (peer) peer.send({ type: 'move', uuid: object.uuid, pos: object.position.toArray(), rot: object.rotation.toArray(), scale: object.scale.toArray() });
+					}
 				}
 			}))
+		},
+		// 36-water: tanks, pools, an ocean, bubbles — a /create container made into water
+		{
+			label: 'Water',
+			children: [
+				...(waterRef?.WATER_KINDS ?? []).map((/** @type {any} */ kind) => ({
+					label: kind.label,
+					tooltip: 'Place ' + kind.label.toLowerCase() + ' (' + kind.preset + ' preset)',
+					action: () => waterRef?.makeWater(spawnAtPoint(kind.command, pointOf()), kind.key)
+				})),
+				{
+					label: 'Bubbles',
+					tooltip: 'Place a bubble emitter (rises to the surface of the water it sits in)',
+					action: () => waterRef?.makeBubbles(spawnAtPoint('/create Sphere 0.08', pointOf()))
+				}
+			]
 		},
 		// Generate a custom mesh from a prompt (roadmap #11) — only when configured
 		...(meshGenReady()

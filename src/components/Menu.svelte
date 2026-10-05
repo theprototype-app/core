@@ -35,6 +35,8 @@
 	// RW: replaced the gutted News.svelte stub (empty body, inverted hasSeenModal flag)
 	import Welcome from './menu/Welcome.svelte';
 	import WhatsNew from './menu/WhatsNew.svelte';
+	// 36 U3b/I5: the first-run tours' screen card (and the tours' install)
+	import TourCard from './tours/TourCard.svelte';
 
 	import { isLocked } from '../stores/sceneStore'
 	// 29-E: `?embed=1` (playMode.embedMode) hides the editor chrome for the page's life
@@ -50,6 +52,7 @@
 <div id="editor-chrome" class={$isLocked || $embedMode ? 'hidden' : ''}>
 <Welcome />
 <WhatsNew />
+<TourCard />
 <Connect />
 <Controls />
 <Inspector />

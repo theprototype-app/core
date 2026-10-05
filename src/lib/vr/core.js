@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 
 /** @type {any} */ export let renderer = null;
-/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean, mode?: boolean, x?: boolean}[]} */
+/** @type {{menu?: boolean, squeeze?: boolean, stick?: boolean, trigger?: boolean, a?: boolean, mode?: boolean, x?: boolean, ping?: boolean}[]} */
 export const previousButtons = [{}, {}];
 export const raycaster = new THREE.Raycaster();
 export const tempMatrix = new THREE.Matrix4();

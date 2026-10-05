@@ -63,6 +63,33 @@ const ys = (page, names) =>
 	}, names);
 const simulating = (page) => page.evaluate(() => new Promise((r) => window.__stores.physics.simulating.subscribe(r)()));
 
+/** mean colour of a small square of the frame around a world point (in-page decode)
+ * @param {any} peer @param {number[]} world @param {number} [size] */
+async function meanRGB(peer, world, size = 16) {
+	const p = await h.projectPoint(peer.page, world);
+	const png = await peer.page.screenshot({ clip: { x: Math.round(p.x - size / 2), y: Math.round(p.y - size / 2), width: size, height: size } });
+	return peer.page.evaluate(async (b64) => {
+		const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+		const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+		const c = new OffscreenCanvas(bmp.width, bmp.height);
+		const g = c.getContext('2d');
+		g.drawImage(bmp, 0, 0);
+		const d = g.getImageData(0, 0, bmp.width, bmp.height).data;
+		const m = [0, 0, 0];
+		for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) m[k] += d[i + k];
+		return m.map((v) => Math.round(v / (d.length / 4)));
+	}, png.toString('base64'));
+}
+/** world centre of a named object @param {any} page @param {string} name */
+const centreOf = (page, name) =>
+	page.evaluate((n) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		const o = g.getObjectByName(n);
+		const b = new window.__stores.THREE.Box3().setFromObject(o);
+		return b.getCenter(new window.__stores.THREE.Vector3()).toArray();
+	}, name);
+
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } } });
@@ -127,6 +154,132 @@ h.run(async () => {
 			await shots(A.page, '11-after-F12-flow-physics-params');
 		}
 		await A.page.evaluate(() => window.__stores.objectActions.deselectObject?.());
+	}
+
+
+	// ── F14: Jelly room renders its jellies (not black) + Start simulation on load ──────────
+	if (want('f14')) {
+		await load(A.page, 'jelly-room');
+		await A.page.waitForTimeout(1500);
+		const att = await A.page.evaluate(() => {
+			let g;
+			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			return g.getObjectByName('Jelly lime').material.attenuationDistance;
+		});
+		h.check(att === Infinity, `a loaded transmissive jelly keeps attenuationDistance = Infinity (${att}; the file says null)`);
+		const lime = await meanRGB(A, await centreOf(A.page, 'Jelly lime'));
+		h.check(lime[1] > 90 && lime[1] > lime[2] + 20, `Jelly lime renders green, not black (rgb ${lime})`);
+		const lemon = await meanRGB(A, await centreOf(A.page, 'Jelly lemon'));
+		h.check(lemon[0] > 120 && lemon[1] > 100, `Jelly lemon renders yellow (rgb ${lemon})`);
+		await shots(A.page, '20-after-F14-jelly-room');
+		// the setting: Configure Scene ▸ Camera ▸ Start view
+		await A.page.evaluate(() => window.__stores.openSceneSection('Camera:Start view'));
+		const box = await A.page.waitForSelector('#sim-on-load', { timeout: 8000 }).catch(() => null);
+		h.check(!!box, 'Configure Scene shows "Start simulation on load" beside "Hold camera until loaded"');
+		if (box) {
+			await box.scrollIntoViewIfNeeded();
+			await box.click();
+			await A.page.waitForTimeout(300);
+			await shots(A.page, '21-after-F14-sim-on-load-setting');
+		}
+		const on = await A.page.evaluate(() => {
+			let s;
+			window.__stores.scenePhysics.scenePhysicsState_.subscribe((v) => (s = v))();
+			return s.simOnLoad;
+		});
+		h.check(on === true, 'ticking it sets scenePhysics.simOnLoad (scene data)');
+		// saved into the scene, and a load of that file starts the run by itself
+		const bytes = await A.page.evaluate(async () => {
+			const s = window.__stores.sessions;
+			const zip = await s.exportSessionZip(s.buildSessionPayload('Jelly sim'));
+			const buf = new Uint8Array(zip instanceof Blob ? await zip.arrayBuffer() : zip);
+			return Array.from(buf);
+		});
+		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: false }));
+		await A.page.evaluate(async (arr) => {
+			const s = window.__stores;
+			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
+			window.__f14saved = payload.physics;
+			await s.sessions.applySession(payload, { backup: false });
+		}, bytes);
+		h.check((await A.page.evaluate(() => window.__f14saved?.simOnLoad)) === true, 'the saved scene carries simOnLoad');
+		await h.eventually(() => simulating(A.page), (v) => v === true, 'opening that scene starts the simulation by itself', 10000);
+		await A.page.waitForTimeout(1500);
+		const wob = await A.page.evaluate(() => Math.max(...window.__stores.sim.jiggleDebug().map((d) => Math.abs(d.wobble))));
+		h.check(wob > 0.01, `...the jellies drop and wobble with nobody pressing P (${wob.toFixed(3)})`);
+		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+		// counterfactual: the same scene WITHOUT the flag opens still
+		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: false }));
+		await load(A.page, 'pool-party');
+		await A.page.waitForTimeout(1500);
+		const scenesHaveFlag = await A.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsSnapshot()?.simOnLoad === true);
+		if (!scenesHaveFlag) h.check((await simulating(A.page)) === false, 'a scene without the flag does not start by itself');
+		else h.check((await simulating(A.page)) === true, 'the re-authored Pool party starts by itself');
+		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	}
+
+	// ── F18: "Add bubble emitter" makes bubbles you can SEE (under water and in the air) ────
+	if (want('f18')) {
+		await load(A.page, 'pool-party');
+		const ids = await A.page.evaluate(() => {
+			const cmd = window.__stores.commandsHandler.sceneCommand;
+			let g;
+			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			const last = () => g.children[g.children.length - 1];
+			cmd('/create Box 0.5 0.5 0.5');
+			const wet = last();
+			wet.name = 'Bubbler wet';
+			wet.position.set(-1.5, -1.3, 1.2);
+			delete wet.userData.physics;
+			cmd('/create Box 0.5 0.5 0.5');
+			const dry = last();
+			dry.name = 'Bubbler dry';
+			dry.position.set(1.5, 0.25, 4.4);
+			delete dry.userData.physics;
+			for (const o of [wet, dry]) o.updateMatrixWorld(true);
+			return { wet: wet.uuid, dry: dry.uuid };
+		});
+		// the real button, on each object
+		for (const uuid of [ids.wet, ids.dry]) {
+			await A.page.evaluate((u) => {
+				localStorage.setItem('inspector:sec:Water', 'open');
+				window.__stores.objectActions.selectObject(u, true);
+			}, uuid);
+			const btn = await A.page.waitForSelector('#bubbles-add', { timeout: 8000 }).catch(() => null);
+			h.check(!!btn, 'the Water section offers "Add bubble emitter" on a plain object');
+			if (btn) {
+				await btn.scrollIntoViewIfNeeded();
+				await btn.click();
+			}
+			await A.page.waitForTimeout(300);
+		}
+		h.check(
+			(await A.page.evaluate((i) => {
+				let g;
+				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				return [i.wet, i.dry].every((u) => g.getObjectByProperty('uuid', u)?.userData?.bubbles?.enabled === true);
+			}, ids)),
+			'both objects carry an enabled bubble emitter (userData.bubbles)'
+		);
+		await A.page.evaluate(() => window.__stores.objectActions.deselectObject?.());
+		await look(A.page, [0, 1.6, 7.2], [0, -0.2, 2]);
+		await A.page.waitForTimeout(1500);
+		/** pixels the bubbles change around an emitter: on vs off, same frame otherwise */
+		const delta = async (/** @type {string} */ uuid, /** @type {number[]} */ at) => {
+			const clip = await h.centeredClip(A, at, 220);
+			const on = await A.page.screenshot({ clip });
+			await A.page.evaluate((u) => window.__stores.waterActions.updateObjectBubbles(u, { enabled: false }, { immediate: true }), uuid);
+			await A.page.waitForTimeout(500);
+			const off = await A.page.screenshot({ clip });
+			await A.page.evaluate((u) => window.__stores.waterActions.updateObjectBubbles(u, { enabled: true }, { immediate: true }), uuid);
+			await A.page.waitForTimeout(500);
+			return h.frameDelta(A.page, on, off, 24);
+		};
+		const wet = await delta(ids.wet, [-1.5, -0.5, 1.2]);
+		h.check(wet.changed > 250, `bubbles under the water are visible through the surface (${wet.changed} px changed)`);
+		const dry = await delta(ids.dry, [1.5, 1.2, 4.4]);
+		h.check(dry.changed > 250, `bubbles from an object in the air are visible against the sky (${dry.changed} px changed)`);
+		await shots(A.page, '40-after-F18-bubble-emitters');
 	}
 
 	h.check((await h.pageErrors(A)).length === 0, 'no page errors');

@@ -17,6 +17,7 @@ import { parkPackPieces, fillPackRef, isPristinePackRef, stubElementOf, warmProg
 import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, warmComposer, loading as sceneLoading, loadSettled } from './sceneLoader';
 // 36 L2: the saved view is applied at the START of a restore (startView.js)
 import { beginStartView, settleStartView, sceneHoldsCamera } from './startView';
+import { startSimOnLoad } from './sim/simOnLoad.js';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
@@ -751,8 +752,14 @@ async function applyRestore(snapshot, offer = null) {
 		// the bar stays (still cancellable) while kit pieces arrive from their packs
 		if (refills.length) {
 			updateLoad(job, { phase: 'models' });
-			void Promise.allSettled(refills).then(() => endLoad(job));
-		} else endLoad(job);
+			void Promise.allSettled(refills).then(() => {
+				endLoad(job);
+				void startSimOnLoad(snapshot.physics); // 36-fb-water F14
+			});
+		} else {
+			endLoad(job);
+			void startSimOnLoad(snapshot.physics); // 36-fb-water F14
+		}
 		return true;
 	} catch (error) {
 		releaseFrames();

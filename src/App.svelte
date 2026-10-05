@@ -1,5 +1,7 @@
 <script>
 	import { safeStorage } from '$lib/safeStorage';
+	// 36-fb-water F14: three JSON round-trip fixes (transmissive materials came back black)
+	import '$lib/threeFixes.js';
   // 34 R4 (A2): the debug hook's table. A STATIC import on purpose (the module has no static
   // deps, only lazy loaders): the install must start synchronously in onMount, before the first
   // frames' blocking shader links. A dynamic import here queued it behind them (a third e2e page

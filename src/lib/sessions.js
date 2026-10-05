@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import './threeFixes.js'; // 36-fb-water F14: transmissive materials survive a JSON trip (the export runtime loads scenes here too)
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
 import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
@@ -10,6 +11,7 @@ import { stripEditOverlays } from './editOverlays';
 import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
 // 36 L2: the scene's saved view is applied at the START of a load (startView.js)
 import { beginStartView, settleStartView, sceneHoldsCamera } from './startView';
+import { startSimOnLoad } from './sim/simOnLoad.js';
 import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, warmComposer } from './sceneLoader';
 // B7: a spawner's copies exist only while the world runs — never in a scene file
 import { isTransient } from './transientObjects';
@@ -1594,6 +1596,8 @@ async function applySessionNow(payload, opts, job) {
 		if (!isLive(job)) return;
 		endLoad(job);
 		if (!quiet) showToast('Session loaded: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)');
+		// 36-fb-water F14: a simulation scene starts running — on the peer that loaded it
+		if (replicate) void startSimOnLoad(payload.physics);
 	};
 	if (refills.length) {
 		updateLoad(job, { phase: 'models' });

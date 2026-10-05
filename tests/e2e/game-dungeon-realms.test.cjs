@@ -353,5 +353,85 @@ h.run(async () => {
 	await h.eventually(() => snap(C.page), (s) => s.collected === aEnd.collected && s.started && s.won, '6.3 C: the game state caught up (gems, started, won)', 20000);
 	await h.eventually(() => gameStateOf(C.page), (v) => v === 'over', '6.4 C: the game shell reads over');
 
+	// ---- 7. 36 U10: THE PROBE — one number from the graph, one from the code, both kept ------------
+	// The settings are the Game Rules node (ⓘ panel); the DECISIONS are the "Dungeon Realms rules"
+	// behaviour on the Main graph (its code: EXTRA_GEMS). On a fresh peer alone (D), then a reload (E).
+	const hasRules = (await nodesOf(A.page, 'behaviour')).some((n) => /Dungeon Realms rules/.test(n.data?.name ?? ''));
+	if (hasRules) {
+		for (const p of [B, C]) await p.page.close().catch(() => {});
+		const D = await h.setupPage(browser, 'D', { context: { viewport: { width: 1400, height: 900 } } });
+		await installZip(D, 'dungeon', kitZip.bytes, 'D');
+		await installZip(D, 'dungeon-realms', realmsZip.bytes, 'D');
+		await D.page.evaluate(async (arr) => {
+			const s = window.__stores;
+			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
+			await s.sessions.applySession(payload, { backup: false });
+		}, Array.from(scene.bytes));
+		await h.eventually(() => snap(D.page), (s) => s.seed === SEED && s.overlay, '7.0 (premise) D: the dungeon stands', 20000);
+		const rulesId = (await nodesOf(D.page, 'behaviour'))[0].id;
+		const rulesState = (page) => page.evaluate((id) => JSON.parse(JSON.stringify(window.__stores.behaviours.behaviourState(id) ?? null)), rulesId);
+		await h.eventually(() => rulesState(D.page), (st) => st?.floor === 1 && st.need > 0, '7.1 the rules decided floor 1 (their state carries need)', 15000);
+		const t1 = (await snap(D.page)).total;
+		// (a) the GRAPH: Game Rules ▸ gem share 0.7 → 0.5, in the properties panel
+		if (!(await D.page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await D.page.locator('p[title="Node editor (N)"]').click();
+		await D.page.waitForTimeout(1000);
+		await D.page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(560));
+		if (!(await D.page.locator('#flow-props').count())) await D.page.locator('#flow-props-toggle').click();
+		await D.page.locator('#flow-tab-info').click();
+		const drrules = (await nodesOf(D.page, 'drrules'))[0].id;
+		await D.page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), drrules);
+		await h.eventually(() => D.page.locator('#flow-prop-gemShare').count(), (n) => n === 1, '7.2 Game Rules shows "gem share" in its properties panel', 6000);
+		await D.page.locator('#flow-prop-gemShare').fill('0.5');
+		await D.page.locator('#flow-prop-gemShare').press('Enter');
+		const half = Math.max(1, Math.ceil(t1 * 0.5));
+		await h.eventually(() => snap(D.page), (s) => s.need === half, `7.3 the rules re-decided: ${half} of ${t1} gems now open the portal (the graph change)`, 8000);
+		// (b) the CODE: one EXTRA gem, in the code workspace
+		const code = (await nodesOf(D.page, 'behaviour'))[0].data.code;
+		await D.page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), rulesId);
+		await h.eventually(() => D.page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, '7.4 the rules open in the code workspace', 15000);
+		const pane = await D.page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+		await D.page.locator(`[data-pane="${pane}"] .cm-content`).click();
+		await D.page.keyboard.press('Control+A');
+		await D.page.keyboard.insertText(code.replace('const EXTRA_GEMS = 0;', 'const EXTRA_GEMS = 1;'));
+		await D.page.keyboard.press('Control+S');
+		await h.eventually(() => nodesOf(D.page, 'behaviour').then((n) => n[0].data.code), (c) => /const EXTRA_GEMS = 1;/.test(c), '7.5 Ctrl+S put the edited code on the node', 6000);
+		await D.page.locator('#code-ws-close').click().catch(() => {});
+		await h.eventually(() => D.page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rulesId), (st) => st === 'running', '7.6 the edited rules reloaded', 10000);
+		// both felt in Play: start, the HUD line, and the portal opens on the right gem
+		await D.page.evaluate(() => window.__stores.isLocked.set(true));
+		await D.page.evaluate(() => window.__dungeonRealms.game.start());
+		const want = Math.min(t1, half + 1);
+		await h.eventually(() => snap(D.page), (s) => s.need === want, `7.7 Play: the floor asks for ${want} gems (share 0.5 + EXTRA_GEMS 1)`, 8000);
+		await h.eventually(() => hudRuntime(D.page), (r) => r['dr-need']?.text === '/ ' + want + ' needed', `7.8 the HUD says "/ ${want} needed" (the rules' need wired into it)`, 8000);
+		await collect(D.page, want - 1);
+		await D.page.waitForTimeout(600);
+		h.check((await snap(D.page)).sealedUp === true, `7.9 one gem short (${want - 1}) the portal is still sealed`);
+		await collect(D.page, 1);
+		await h.eventually(() => snap(D.page), (s) => s.sealedUp === false, `7.10 the ${want}th gem opens it`, 6000);
+		// (c) both survive a save and a reload — into a FRESH peer
+		const saved = await D.page.evaluate(async () => {
+			const s = window.__stores;
+			const zip = await s.sessions.exportSessionZip(s.sessions.buildSessionPayload('Realms probe'), { assets: true, packs: false, flow: true });
+			return Array.from(zip);
+		});
+		await D.page.close().catch(() => {});
+		const E = await h.setupPage(browser, 'E');
+		await installZip(E, 'dungeon', kitZip.bytes, 'E');
+		await installZip(E, 'dungeon-realms', realmsZip.bytes, 'E');
+		await E.page.evaluate(async (arr) => {
+			const s = window.__stores;
+			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
+			await s.sessions.applySession(payload, { backup: false });
+		}, saved);
+		await h.eventually(() => snap(E.page), (s) => s.seed === SEED && s.overlay, '  (premise) E: the dungeon stands', 20000);
+		const eNodes = { rules: (await nodesOf(E.page, 'behaviour'))[0], drr: (await nodesOf(E.page, 'drrules'))[0] };
+		h.check(/const EXTRA_GEMS = 1;/.test(eNodes.rules.data.code) && eNodes.drr.data.gemShare === 0.5, `7.11 the saved scene, reopened, keeps both (EXTRA_GEMS 1, gem share ${eNodes.drr.data.gemShare})`);
+		await E.page.evaluate(() => window.__stores.isLocked.set(true));
+		await E.page.evaluate(() => window.__dungeonRealms.game.start());
+		await h.eventually(() => snap(E.page), (s) => s.floorIndex === 1 && s.need === want, `7.12 after the reload floor 1 still asks for ${want}`, 15000);
+		await collect(E.page, want);
+		await h.eventually(() => snap(E.page), (s) => s.sealedUp === false, '7.13 ...and opens on the same gem', 6000);
+	} else console.log('SKIP 7: this scene has no "Dungeon Realms rules" behaviour (an older scene)');
+
 	await h.finish(browser);
 });

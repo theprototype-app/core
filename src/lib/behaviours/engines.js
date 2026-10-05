@@ -48,8 +48,8 @@ export function reserveEngineNames(names) {
 }
 
 /**
- * Register an engine piece. Returns `{emit(event, payload), dispose()}`; a second provide of the
- * same piece REPLACES the first (a module reload).
+ * Register an engine piece. Returns `{emit(event, payload), listening(event), dispose()}`; a second
+ * provide of the same piece REPLACES the first (a module reload).
  * @param {any} spec kit-spec shaped `{piece, group, calls}` @param {Record<string, any>} impl
  * @param {string} [moduleId]
  */
@@ -79,6 +79,11 @@ export function provideEngine(spec, impl, moduleId = '') {
 				}
 			}
 			return n;
+		},
+		/** how many listeners an event has right now (0 = no rules are listening: the engine's own
+		 * built-in rule may decide) @param {string} event */
+		listening(event) {
+			return disposed || pieces.get(name) !== piece ? 0 : (piece.listeners.get(String(event))?.size ?? 0);
 		},
 		dispose() {
 			if (disposed) return;

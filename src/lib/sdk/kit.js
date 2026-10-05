@@ -32,7 +32,8 @@ export function sdkKit(ctx) {
 			 * (emit on every peer that saw it, or forward it — handlers run on the authority).
 			 * Unloading the module removes the piece and reloads the behaviours without it.
 			 * @param {any} spec @param {Record<string, any>} impl
-			 * @returns {{emit: (event: string, payload?: any) => number, dispose: () => void}}
+			 * `listening(event)` says whether any rules listen (0 = let the module's built-in rule decide).
+			 * @returns {{emit: (event: string, payload?: any) => number, listening: (event: string) => number, dispose: () => void}}
 			 */
 			provide(spec, impl) {
 				const handle = provideEngine(spec, impl, ctx.moduleId);

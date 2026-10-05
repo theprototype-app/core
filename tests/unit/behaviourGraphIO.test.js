@@ -108,7 +108,9 @@ describe('engine pieces — a module lends the rules its helpers', () => {
 		expect(hits).toEqual([[1, 2, 3]]);
 		expect(face.speed()).toBe(2.5);
 		const heard = [];
+		expect(golf.listening('stopped')).toBe(0);
 		face.onStopped((/** @type {any} */ p) => heard.push(p));
+		expect(golf.listening('stopped')).toBe(1);
 		expect(offs.length).toBe(1); // the listener is journaled (T2)
 		expect(golf.emit('stopped', { pos: [0, 0, 0] })).toBe(1);
 		expect(heard).toEqual([{ pos: [0, 0, 0] }]);

@@ -103,7 +103,7 @@ import {
 } from './panels.js';
 import { updateRaysAndHover, controllerRay } from './pointer.js';
 import { raycastMenu, executeVRMenuAction, pingFromController } from './radial.js';
-import { raycastAi } from './aiPanel.js';
+import { raycastAi, aiTalkHold } from './aiPanel.js';
 import {
 	boxSelect,
 	updateBoxSelect,
@@ -311,7 +311,12 @@ export function updateVRControls() {
 		// A is one jump and landing with it down is none (no bunny-hopping).
 		const aPressed = actionPressed('ptt', source);
 		if (source.handedness === handOf('ptt') && aPressed !== !!prev.a) {
-			if (vrJumpHeight() > 0) {
+			// 36-vr-ai (F2): with the AI panel up and voice typing set up, the talk button dictates to the
+			// assistant instead — nothing goes to peers while you are talking to it
+			if (aiTalkHold(aPressed)) {
+				if (pttByA) setPttHeld(false);
+				pttByA = false;
+			} else if (vrJumpHeight() > 0) {
 				setJumpRequested(aPressed);
 				if (pttByA) setPttHeld(false);
 				pttByA = false;

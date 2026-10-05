@@ -10,6 +10,7 @@
 	import TouchControlsSettings from './TouchControlsSettings.svelte'; // 36 U8
 	// 36-export: the export defaults section (its own file; also the Publish / Export modal's Settings tab)
 	import ExportSettingsSection from './ExportSettingsSection.svelte';
+	import AiSttSettings from './AiSttSettings.svelte';
 	import WaterSettings from '../water/WaterSettings.svelte';
 	import ToursSettings from './settings/ToursSettings.svelte'; // 36 U3b/I5
 	import VRSettingsSection from './VRSettingsSection.svelte';
@@ -1931,6 +1932,7 @@
 							</span>
 						</SettingRow>
 					{/if}
+					<AiSttSettings />
 					<SettingRow name="Mesh generation">
 						<svelte:fragment slot="control"><Toggle bind:checked={$meshGenEnabled} onchange={() => setMeshGenEnabled($meshGenEnabled)} /></svelte:fragment>
 						<span class="font-semibold">Text → 3D mesh</span> — generate custom models from prompts (Add menu → “✨ Generate 3D model”, or the assistant). Backends: a self-hosted <span class="font-mono">ComfyUI</span> running TRELLIS, or a hosted API (Meshy). See the Console/AI docs for setup.

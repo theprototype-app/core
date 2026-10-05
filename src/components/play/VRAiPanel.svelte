@@ -7,7 +7,8 @@
 	import { Text } from '@threlte/extras'
 	import { vrAiPanelOpen, vrMenuHand } from '../../stores/sceneStore'
 	import { vrHovered, controllerIndexFor } from '$lib/vrControls'
-	import { vrAiGroup, vrAiMessages, vrAiBusy, vrAiStatus, vrAiReady, mountVRAiPanel } from '$lib/vr/aiPanel.js'
+	import { vrAiGroup, vrAiMessages, vrAiBusy, vrAiStatus, vrAiReady, vrSttReady, vrAiNotice, mountVRAiPanel, talkBindingLabel } from '$lib/vr/aiPanel.js'
+	import { dictation } from '$lib/ai/sttCapture.js'
 	import { vrIconTexture } from '$lib/vr/icons.js'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
 	import { menuPoseFromController } from '$lib/vrRadialMenu'
@@ -17,6 +18,7 @@
 	// look of its own — a violet header with the sparkles icon — so it never reads as the peer chat panel
 	// beside it. Controls are named vrai-* for the raycast; the panel follows the menu hand and the 111
 	// grab/persist applies (window id `ai`). Unconfigured: a hint row points at desktop Settings ▸ AI.
+	// F2: the mic button (hold to talk, release to send) with a red dot while it listens.
 
 	const { renderer } = useThrelte()
 
@@ -76,6 +78,15 @@
 	const top = panelH / 2
 	const bottom = -panelH / 2
 	const statusY = bottom + 0.05
+	const MIC_W = 0.03
+
+	// the hovered state passed in so the template re-renders on it (a helper reading a store is untracked)
+	function micColor(state: string, hovered: string | null, ready: boolean) {
+		if (state === 'recording') return '#d93025'
+		if (state === 'transcribing') return '#6b5bd6'
+		if (!ready) return '#30343c'
+		return hovered === 'ai:mic' ? '#4b3aa8' : '#3a3f4a'
+	}
 	const inputY = bottom + 0.018
 </script>
 
@@ -161,7 +172,7 @@
 			{/if}
 		{/each}
 
-		<!-- busy line + STOP while a run is in flight -->
+		<!-- the status line: a run in flight (with STOP), listening, transcribing, a note, or the talk hint -->
 		{#if $vrAiBusy}
 			<Text
 				text={$vrAiStatus || 'Working…'}
@@ -177,11 +188,27 @@
 			</T.Mesh>
 			<Text text="Stop" color="#ffffff" fontSize={0.0075} anchorX="center" anchorY="middle"
 				position={[WIDTH / 2 - 0.035, statusY, 0.002]} />
+		{:else if $dictation.state === 'recording'}
+			<T.Mesh name="vr-ai-rec-dot" position={[-WIDTH / 2 + 0.014, statusY, 0.002]}>
+				<T.CircleGeometry args={[0.004, 16]} />
+				<T.MeshBasicMaterial color="#ff3b30" side={THREE.DoubleSide} />
+			</T.Mesh>
+			<Text text="Listening… let go to send" color="#ffb4ae" fontSize={0.0075} anchorX="left" anchorY="middle"
+				position={[-WIDTH / 2 + 0.024, statusY, 0.002]} />
+		{:else if $dictation.state === 'transcribing'}
+			<Text text="Transcribing…" color="#c9bcff" fontSize={0.0075} anchorX="left" anchorY="middle"
+				position={[-WIDTH / 2 + 0.01, statusY, 0.002]} />
+		{:else if $vrAiNotice}
+			<Text text={$vrAiNotice} color="#ffcf70" fontSize={0.0072} anchorX="left" anchorY="middle"
+				maxWidth={WIDTH - 0.02} position={[-WIDTH / 2 + 0.01, statusY, 0.002]} />
+		{:else if $vrAiReady && $vrSttReady}
+			<Text text={`Hold ${talkBindingLabel()} or the mic to talk`} color="#6c7480" fontSize={0.007} anchorX="left"
+				anchorY="middle" position={[-WIDTH / 2 + 0.01, statusY, 0.002]} />
 		{/if}
 
-		<!-- input row: opens the VR keyboard (116) -->
-		<T.Mesh name="vrai-input" position={[0, inputY, 0]}>
-			<T.PlaneGeometry args={[WIDTH - 0.02, 0.024]} />
+		<!-- input row: opens the VR keyboard (116); the mic beside it is a hold-to-talk button (F2) -->
+		<T.Mesh name="vrai-input" position={[-MIC_W / 2, inputY, 0]}>
+			<T.PlaneGeometry args={[WIDTH - 0.02 - MIC_W, 0.024]} />
 			<T.MeshBasicMaterial
 				color={!$vrAiReady || $vrAiBusy ? '#22262d' : $vrHovered === 'ai:input' ? '#4b3aa8' : '#2a2f38'}
 				side={THREE.DoubleSide}
@@ -193,7 +220,17 @@
 			fontSize={0.0085}
 			anchorX="center"
 			anchorY="middle"
-			position={[0, inputY, 0.002]}
+			position={[-MIC_W / 2, inputY, 0.002]}
 		/>
+		<T.Mesh name="vrai-mic" position={[WIDTH / 2 - 0.01 - MIC_W / 2 + 0.004, inputY, 0]}>
+			<T.CircleGeometry args={[0.0115, 24]} />
+			<T.MeshBasicMaterial color={micColor($dictation.state, $vrHovered, $vrSttReady)} side={THREE.DoubleSide} />
+		</T.Mesh>
+		{#if vrIconTexture('mic')}
+			<T.Mesh position={[WIDTH / 2 - 0.01 - MIC_W / 2 + 0.004, inputY, 0.002]}>
+				<T.PlaneGeometry args={[0.013, 0.013]} />
+				<T.MeshBasicMaterial map={vrIconTexture('mic')} color={$vrSttReady ? '#ffffff' : '#7a808a'} transparent depthWrite={false} side={THREE.DoubleSide} />
+			</T.Mesh>
+		{/if}
 	</T.Group>
 {/if}

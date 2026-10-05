@@ -21,6 +21,17 @@ if (!proto[KEY]) {
 		if (json && 'attenuationDistance' in json && !(json.attenuationDistance > 0)) this.attenuationDistance = Infinity;
 		return out;
 	};
+	// 36-int-125: the other half. With Infinity restored, three's toJSON writes it AS IS — and the
+	// object wire is binarypack, not JSON: it throws "Invalid integer" on Infinity, so a host holding
+	// any transmissive/physical material could not send its scene to a joiner (Race's cars, measured).
+	// Leave the key out instead: absent = three's own default, Infinity, on every reader.
+	const toJSON = proto.toJSON;
+	/** @this {any} @param {any} meta */
+	proto.toJSON = function (meta) {
+		const data = toJSON.call(this, meta);
+		if (data && 'attenuationDistance' in data && !Number.isFinite(data.attenuationDistance)) delete data.attenuationDistance;
+		return data;
+	};
 }
 
 /** for tests: is the fix installed */

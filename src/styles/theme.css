@@ -51,6 +51,24 @@
 	--text-2: #1f2937;
 	--muted: #6b7280;
 	--border: #cbd0d6;
+	/* 36-fb-code (F9): the code editor (CodeEditor.svelte) — every other theme keeps its dark
+	   fallbacks, which is the editor as it always looked */
+	--code-bg: #ffffff;
+	--code-text: #1f2937;
+	--code-gutter-bg: #f3f4f6;
+	--code-gutter-text: #6b7280;
+	--code-active-line: rgba(37, 99, 235, 0.06);
+	--code-active-gutter: rgba(37, 99, 235, 0.12);
+	--code-caret: #ea580c;
+	--code-selection: rgba(37, 99, 235, 0.2);
+	--code-keyword: #7c3aed;
+	--code-ident: #1f2937;
+	--code-def: #1d4ed8;
+	--code-number: #c2410c;
+	--code-string: #15803d;
+	--code-comment: #6b7280;
+	--code-type: #a16207;
+	--code-op: #4b5563;
 }
 
 :root[data-theme='green'] {

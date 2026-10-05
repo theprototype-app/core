@@ -139,16 +139,22 @@
 		// render (inspectorScrollTo's rule).
 		flowFocus.set(null);
 		if (!($flowNodesStore as any[]).some((n) => n.id === id)) return;
-		// fitView only — the xyflow instance owns `selected` through its own binding, and
-		// writing it from here fights that binding for no gain. Centring IS the answer to
-		// "where is the node that drives this element".
-		setTimeout(() => {
-			try {
-				fitView({ nodes: [{ id }], duration: 200, maxZoom: 1.2 });
-			} catch {
-				/* the pane is not up yet */
-			}
-		}, 60);
+		// 36-fb-code (F7): the code workspace's "Bound nodes" means "show me THIS node" — so a
+		// node inside a collapsed group is shown by entering its group first (members are hidden
+		// outside it), and it is SELECTED through selectOnly (leaveGroup's own path), not centred
+		// alone. Then fitView, as before.
+		const parent = parentMap(storeNodesNow()).get(id) ?? null;
+		if (parent !== level) level = parent;
+		tick().then(() => {
+			selectOnly([id]);
+			setTimeout(() => {
+				try {
+					fitView({ nodes: [{ id }], duration: 200, maxZoom: 1.2 });
+				} catch {
+					/* the pane is not up yet */
+				}
+			}, 60);
+		});
 	}
 
 	// A6.4: ONE rewrite fixes three bugs that lived in this map.

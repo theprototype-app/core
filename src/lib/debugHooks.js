@@ -322,6 +322,7 @@ export const DEBUG_HOOKS = [
 	['scriptSockets', () => import('./scriptSockets')],
 	['scriptLint', () => import('./scriptLint')],
 	['codeWorkspace', () => import('./codeWorkspace')],
+	['codeSidebars', () => import('./codeSidebars')],
 	['scriptAssets', () => import('./scriptAssets')],
 	['codeTabs', () => import('./codeTabs')],
 	['aiExtensions', () => import('./ai/aiExtensions')],

@@ -1,4 +1,9 @@
-// 35 MARBLE MAZE — the rules for the Marble Maze game template (scripts/templates/marble-maze.cjs).
+// 35 MARBLE MAZE — the ENGINE for the Marble Maze game template (scripts/templates/marble-maze.cjs).
+// 36 (U10): THE RULES — the maze table, par times, stars, the tilt limits, what a fall costs and the
+// menu buttons — are the "Marble Maze rules" behaviour on the Main graph
+// (scripts/templates/rules/marble-maze.rules.js). This engine lends them the `marble` piece: it reports
+// a coin, a fall and the goal (`marble.coin` / `fell` / `goal`), takes the tilt limits (`tune`), starts a
+// run on a maze (`startRun`) and stores what they write (`setVars`).
 // A CORE module, the Towers precedent: dormant in every scene without the `Marble Maze game`
 // marker object.
 //
@@ -21,28 +26,22 @@
 const MARKER = 'Marble Maze game';
 /** where the board stands while you play (the def's BOARD) */
 const BOARD = [0, 1.1, -0.75];
-/** the tilt limit, radians (±15°) */
-const MAX_TILT = (15 * Math.PI) / 180;
+/** the tilt limit, radians (±15°) — the rules' maxTilt param replaces it (kit.marble.tune) */
+let MAX_TILT = (15 * Math.PI) / 180;
 const WALL_H = 0.09;
-/** the most the board turns per second (rad/s): a faster swing throws the marble over the walls */
-const MAX_RATE = 2.0;
-/** a button stamp older than this (seconds) when first noticed is history, not a press */
-const FRESH_PRESS = 2.5;
-/** the maze table: names and par times (seconds) — the geometry is the def's */
-const MAZES = [
-	{ id: 1, name: 'First roll', par: 25 },
-	{ id: 2, name: 'Pits', par: 35 },
-	{ id: 3, name: 'Labyrinth', par: 50 },
-	{ id: 4, name: 'Gatehouse', par: 60 },
-	{ id: 5, name: 'The gauntlet', par: 75 }
-];
+/** the most the board turns per second (rad/s): a faster swing throws the marble over the walls —
+ * the rules' maxRate param replaces it */
+let MAX_RATE = 2.0;
+/** the mazes the template builds (the rules' table names them) */
+const MAZE_COUNT = 5;
 const V = {
 	level: 'mmLevel',
 	status: 'mmStatus', // 0 none, 1 playing, 2 won
 	coins: 'mmCoins', // bitmask of the coins taken this run
 	falls: 'mmFalls',
 	time: 'mmTime', // the finishing time, tenths
-	stars: 'mmStars'
+	stars: 'mmStars',
+	par: 'mmPar' // the maze's par time (s), as the rules said
 };
 const STATUS = { none: 0, playing: 1, won: 2 };
 const HELP = [
@@ -64,12 +63,11 @@ const formatTime = (s) => {
 	return m + ':' + String(Math.floor(t % 60)).padStart(2, '0') + '.' + Math.floor((t * 10) % 10);
 };
 /** the stars a finished run earns @param {any} maze @param {{time: number, coins: number}} r */
-export const marbleStars = (maze, r) => 1 + (r.coins >= 3 ? 1 : 0) + (r.time <= (maze?.par ?? 0) ? 1 : 0);
 
 export default {
 	id: 'marble',
 	name: 'Marble Maze',
-	version: '1.0.0',
+	version: '2.0.0',
 	description: 'The Marble Maze game: tilt the board and roll the marble to the goal — five mazes, holes, coins, gates and stars saved on this device.',
 
 	/** @param {any} api */
@@ -102,7 +100,13 @@ export default {
 		const setV = (name, value) => {
 			if (v(name, NaN) !== value) api.game.setVar(name, value);
 		};
-		const currentMaze = () => MAZES.find((m) => m.id === v(V.level, 0)) ?? null;
+		/** the maze in play, as the rules' level table names it: {id, name, par} */
+		const currentMaze = () => {
+			const id = v(V.level, 0);
+			const row = id ? kit.levels.level?.(String(id)) : null;
+			if (!row) return null;
+			return { id, name: String(row.label ?? '').replace(/^\s*\S+\s*·\s*/, ''), par: Number(row.par?.time) || v(V.par, 0) };
+		};
 		/** the maze on the board: the current one, else maze 1 (the menu shows it) */
 		const shownMaze = () => v(V.level, 0) || 1;
 		const prog = () => kit.levels.progress?.() ?? { levels: {} };
@@ -140,7 +144,7 @@ export default {
 		api.onMessage((/** @type {any} */ msg) => {
 			if (msg?.op === 'tilt' && Number.isFinite(msg.x) && Number.isFinite(msg.z))
 				remote = { x: clamp(msg.x, -MAX_TILT, MAX_TILT), z: clamp(msg.z, -MAX_TILT, MAX_TILT), at: performance.now() };
-			if (msg?.op === 'pick' && authority()) startLevel(Number(msg.level));
+			if (msg?.op === 'tell') tellHere(msg);
 		});
 
 		const listen = (/** @type {any} */ target, /** @type {string} */ type, /** @type {any} */ fn) => {
@@ -225,7 +229,7 @@ export default {
 			const now = performance.now();
 			/** @type {{x: number, z: number}} */ let target = { x: 0, z: 0 };
 			if (mine) target = { x: clamp(mine.x, -MAX_TILT, MAX_TILT), z: clamp(mine.z, -MAX_TILT, MAX_TILT) };
-			else if (now - remote.at < 400) target = remote;
+			else if (now - remote.at < 400) target = { x: clamp(remote.x, -MAX_TILT, MAX_TILT), z: clamp(remote.z, -MAX_TILT, MAX_TILT) };
 			const k = Math.min(1, dt * 12);
 			const step = MAX_RATE * dt;
 			cur.x += clamp((target.x - cur.x) * k, -step, step);
@@ -311,52 +315,69 @@ export default {
 			if (!stores.get(phys.simulating) && !stores.get(phys.remoteSimulating)) phys.toggleSimulation?.();
 		};
 		let settleUntil = 0;
-		/** @param {number} id */
-		const startLevel = (id) => {
-			const m = MAZES.find((x) => x.id === id);
-			if (!m || !gs) return false;
-			if (!(kit.levels.unlocked?.(String(id)) ?? true)) {
-				api.announce('Maze ' + id + ' is locked', { sub: 'Finish maze ' + (id - 1) + ' first', ms: 2200, color: '#ffb86b' });
-				return false;
+		// ---- the engine piece the rules drive -------------------------------------------------
+		const marblePiece = api.kit.provide(
+			{
+				piece: 'marble',
+				group: 'Marble Maze (engine)',
+				calls: [
+					{ name: 'setVars', kind: 'action', label: 'Write the run state', doc: 'Writes these fields (level, status, coins, falls, time, stars, par) into the replicated game variables.', args: [{ key: 'patch', type: 'object' }], node: false },
+					{ name: 'startRun', kind: 'action', label: 'Put the marble on a maze', doc: 'The marble on maze N\'s start pad; `run` also starts the simulation and holds the marble while the maze swings in.', args: [{ key: 'maze', type: 'number' }, { key: 'run', type: 'boolean' }], node: false },
+					{ name: 'tune', kind: 'action', label: 'Tune the tilt', doc: '{maxTilt (degrees), maxRate (degrees a second)}', args: [{ key: 'settings', type: 'object' }], node: false },
+					{ name: 'tell', kind: 'action', label: 'Tell every player', doc: 'A banner on every screen.', args: [{ key: 'text', type: 'string' }, { key: 'sub', type: 'string' }], node: false },
+					{ name: 'progress', kind: 'value', label: 'This device\'s maze progress store', vtype: 'any', node: false },
+					{ name: 'vars', kind: 'value', label: 'The run state', vtype: 'any', node: false },
+					{ name: 'coin', kind: 'event', label: 'On the marble taking a coin', node: false },
+					{ name: 'fell', kind: 'event', label: 'On the marble falling (a hole, over the rim)', node: false },
+					{ name: 'goal', kind: 'event', label: 'On the marble reaching the gold ring', node: false }
+				]
+			},
+			{
+				setVars: (/** @type {any} */ patch) => {
+					for (const [k, value] of Object.entries(patch ?? {})) {
+						const name = /** @type {any} */ (V)[k];
+						const n = Number(value);
+						if (name && Number.isFinite(n)) setV(name, n);
+					}
+				},
+				startRun: (/** @type {any} */ maze, /** @type {any} */ run) => {
+					const k = Math.max(1, Math.min(MAZE_COUNT, Number(maze) || 1));
+					if (run) {
+						ensureSim();
+						settleUntil = performance.now() + 900;
+					}
+					resetMarble(k);
+				},
+				tune: (/** @type {any} */ t) => {
+					const tilt = Number(t?.maxTilt);
+					const rate = Number(t?.maxRate);
+					if (Number.isFinite(tilt) && tilt > 0) MAX_TILT = (tilt * Math.PI) / 180;
+					if (Number.isFinite(rate) && rate > 0) MAX_RATE = (rate * Math.PI) / 180;
+				},
+				tell: (/** @type {any} */ text, /** @type {any} */ sub) => {
+					const msg = { op: 'tell', text: String(text ?? ''), sub: String(sub ?? '') };
+					api.send(msg);
+					tellHere(msg);
+				},
+				progress: () => ({
+					get: () => api.storage?.get?.('progress', null),
+					set: (/** @type {any} */ p) => api.storage?.set?.('progress', p)
+				}),
+				vars: () => Object.fromEntries(Object.entries(V).map(([k, name]) => [k, v(name)]))
 			}
-			setV(V.level, id);
-			setV(V.status, STATUS.playing);
-			setV(V.coins, 0);
-			setV(V.falls, 0);
-			setV(V.time, 0);
-			setV(V.stars, 0);
-			kit.levels.select(String(id));
-			kit.round.configure(0, 0, 'lose', 2);
-			starting = true;
-			try {
-				kit.round.restart();
-			} finally {
-				starting = false;
-			}
-			ensureSim();
-			settleUntil = performance.now() + 900;
-			resetMarble(id);
-			return true;
+		);
+		/** @param {any} msg */
+		const tellHere = (msg) => {
+			if (msg?.text) api.announce(String(msg.text), { sub: String(msg.sub ?? ''), ms: 2400, color: '#ffd45e' });
 		};
-		let starting = false;
-		const toMenu = () => {
-			setV(V.status, STATUS.none);
-			setV(V.level, 0);
-			kit.round.toMenu();
-			resetMarble(1);
+		/** the rules node on Main (the suites call its methods) */
+		const rulesNode = () => api.flow.nodes('behaviour').find((/** @type {any} */ n) => /Marble Maze rules/.test(String(n.data?.name ?? n.data?.label ?? '')))?.id ?? null;
+		/** @param {string} method @param {any[]} args */
+		const callRules = async (method, ...args) => {
+			const m = await import('../../lib/behaviours/app.js');
+			return m.behavioursDebug?.().call(rulesNode(), method, ...args);
 		};
-		const finish = () => {
-			const m = currentMaze();
-			if (!m || !gs) return;
-			const elapsed = gs.gameElapsed();
-			const coins = countBits(v(V.coins));
-			const stars = marbleStars(m, { time: elapsed, coins });
-			setV(V.stars, stars);
-			setV(V.time, Math.round(elapsed * 10));
-			setV(V.status, STATUS.won);
-			kit.levels.complete(true, coins, elapsed, String(m.id), { coins, falls: v(V.falls) });
-			kit.round.win('Maze cleared!');
-		};
+		let goalSent = -1;
 		/** @param {number} n */
 		const countBits = (n) => {
 			let c = 0;
@@ -425,30 +446,31 @@ export default {
 					const m = marble();
 					if (m && phys?.holdBody?.(m.uuid)) {
 						falling = { at: now, x: hole.x, z: hole.z, uuid: m.uuid };
-						setV(V.falls, v(V.falls) + 1);
-						setV(V.coins, 0);
+						marblePiece.emit('fell', { how: 'hole' });
 						return;
 					}
 				}
 			}
 			// off the board (a hop over the rim)
 			if (p.y < -0.08 || Math.abs(p.x) > 0.7 || Math.abs(p.z) > 0.7) {
-				setV(V.falls, v(V.falls) + 1);
-				setV(V.coins, 0);
+				marblePiece.emit('fell', { how: 'rim' });
 				resetMarble();
 				settleUntil = now + 500;
 				return;
 			}
 			const k = shownMaze();
-			let mask = v(V.coins);
+			const mask = v(V.coins);
 			for (let i = 0; i < 3; i++) {
 				if (mask & (1 << i)) continue;
 				const c = localOf('Coin ' + k + '.' + (i + 1));
-				if (c && Math.hypot(p.x - c.x, p.z - c.z) < 0.055 && p.y < 0.12) mask |= 1 << i;
+				if (c && Math.hypot(p.x - c.x, p.z - c.z) < 0.055 && p.y < 0.12) marblePiece.emit('coin', { index: i });
 			}
-			setV(V.coins, mask);
 			const goal = localOf('Goal ' + k);
-			if (goal && Math.hypot(p.x - goal.x, p.z - goal.z) < 0.045 && p.y < 0.08) finish();
+			const round = Number(game()?.round ?? 0);
+			if (goal && goalSent !== round && Math.hypot(p.x - goal.x, p.z - goal.z) < 0.045 && p.y < 0.08) {
+				goalSent = round;
+				marblePiece.emit('goal', {});
+			}
 		};
 
 		// ---- every peer: what the variables mean on screen -------------------------------------
@@ -523,46 +545,6 @@ export default {
 			cam.updateMatrixWorld(true);
 		};
 
-		// ---- the buttons: every peer watches the stamps, the authority acts ------------------
-		/** @type {Map<string, number>} */ const seenStamps = new Map();
-		/** @param {string} element */
-		const onPress = (element) => {
-			const level = v(V.level, 0);
-			const lvl = /^lvl-(\d+)$/.exec(element);
-			if (lvl) return startLevel(Number(lvl[1]));
-			if (element === 'start-btn') {
-				// the first maze without three stars yet, else maze 1
-				const next = MAZES.find((m) => (kit.levels.unlocked?.(String(m.id)) ?? true) && !((prog().levels?.[String(m.id)]?.stars ?? 0) >= 3));
-				return startLevel(next?.id ?? 1);
-			}
-			if (element === 'retry-btn') return startLevel(level || 1);
-			if (element === 'next-btn') {
-				const next = MAZES.find((m) => m.id === level + 1);
-				if (next) return startLevel(next.id);
-				api.announce('That was the last maze', { sub: 'Go back for three stars on every one', ms: 2400, color: '#ffd45e' });
-				return toMenu();
-			}
-			if (element === 'levels-btn') return toMenu();
-			return false;
-		};
-		const watchButtons = () => {
-			const amAuthority = authority();
-			for (const node of api.flow.nodes('hudbutton')) {
-				const element = String(node.data?.element ?? '');
-				if (!/^(lvl-\d+|start-btn|next-btn|retry-btn|levels-btn)$/.test(element)) continue;
-				const entry = api.flow.triggerStamp(node.id);
-				const stamp = Number(entry?.stamp) || 0;
-				if (!seenStamps.has(node.id)) {
-					seenStamps.set(node.id, stamp);
-					continue;
-				}
-				if (stamp === seenStamps.get(node.id)) continue;
-				const fresh = Number(entry?.age ?? 0) < FRESH_PRESS;
-				seenStamps.set(node.id, stamp);
-				if (fresh && amAuthority) onPress(element);
-			}
-		};
-
 		// ---- the HUD words ----------------------------------------------------------------------
 		/** @param {any} data @returns {any} */
 		const info = (data) => {
@@ -574,8 +556,9 @@ export default {
 				return row ? starsText(row.stars ?? 0) : '☆☆☆';
 			}
 			if (read === 'menuLine') {
-				const total = MAZES.reduce((a, m) => a + (prog().levels?.[String(m.id)]?.stars ?? 0), 0);
-				return 'Stars earned: ' + total + ' / ' + MAZES.length * 3;
+				const table = kit.levels.table?.() ?? [];
+				const total = table.reduce((/** @type {number} */ a, /** @type {any} */ r) => a + (prog().levels?.[String(r.id)]?.stars ?? 0), 0);
+				return 'Stars earned: ' + total + ' / ' + (table.length || MAZE_COUNT) * 3;
 			}
 			const m = currentMaze();
 			if (!m) return '';
@@ -623,7 +606,7 @@ export default {
 					defaults: { read: 'title', level: 1 },
 					params: [
 						{ key: 'read', kind: 'select', options: ['title', 'clock', 'coins', 'falls', 'hint', 'result', 'resultStars', 'resultLine', 'resultBest', 'levelStars', 'menuLine'] },
-						{ key: 'level', kind: 'range', min: 1, max: MAZES.length, step: 1 }
+						{ key: 'level', kind: 'range', min: 1, max: MAZE_COUNT, step: 1 }
 					]
 				},
 				{
@@ -631,44 +614,13 @@ export default {
 					label: 'Marble tilt',
 					defaults: { maze: 1, gate: false, lx: 0, lz: 0, phase: 0 },
 					params: [
-						{ key: 'maze', kind: 'range', min: 1, max: MAZES.length, step: 1 },
+						{ key: 'maze', kind: 'range', min: 1, max: MAZE_COUNT, step: 1 },
 						{ key: 'phase', kind: 'range', min: 0, max: 1, step: 0.05 }
 					]
 				}
 			]
 		});
 
-		// ---- the levels: kit.levels (the table, unlocks, stars, the K3 picker) -----------------
-		/** @type {any} */ let levelsOff = null;
-		const defineLevels = () => {
-			if (typeof levelsOff === 'function') levelsOff();
-			levelsOff = kit.levels.define({
-				id: 'marble',
-				list: MAZES.map((m) => ({ id: String(m.id), label: m.id + ' · ' + m.name })),
-				unlock: 'sequential',
-				stars: (/** @type {any} */ row, /** @type {any} */ r) => marbleStars(MAZES.find((m) => String(m.id) === String(row.id)), { time: r.time, coins: Number(r.coins ?? r.score ?? 0) }),
-				store: {
-					get: () => api.storage?.get?.('progress', null),
-					set: (/** @type {any} */ progress) => api.storage?.set?.('progress', progress)
-				}
-			});
-		};
-		kit.levels.onSelected((/** @type {any} */ p) => {
-			if (p?.game !== 'marble' || !active() || !authority()) return;
-			const id = Number(p.level);
-			if (MAZES.some((m) => m.id === id) && v(V.level, 0) !== id) startLevel(id);
-		});
-		kit.round.onStarted(() => {
-			if (starting || !active() || !authority()) return;
-			const m = currentMaze();
-			if (!m) return kit.round.toMenu();
-			setV(V.status, STATUS.playing);
-			setV(V.coins, 0);
-			setV(V.falls, 0);
-			settleUntil = performance.now() + 900;
-			ensureSim();
-			resetMarble();
-		});
 		// a marble you GRAB is no marble maze: refuse it (and the boards) on every grab path
 		kit.rules.onGrabRequest?.((/** @type {any} */ req) => {
 			if (!active()) return;
@@ -690,7 +642,6 @@ export default {
 			const on = active();
 			if (on !== wasActive) {
 				wasActive = on;
-				if (on) defineLevels();
 				if (on && typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
 				if (on) touchOff = api.input?.actions?.([], { preset: 'custom', stick: false, look: false }) ?? null;
 				if (!on && touchOff) {
@@ -700,8 +651,6 @@ export default {
 				if (!on) {
 					helpOff?.();
 					helpOff = null;
-					if (typeof levelsOff === 'function') levelsOff();
-					levelsOff = null;
 				}
 			}
 			// while a maze runs the keys and the stick tilt the board, never walk
@@ -728,7 +677,6 @@ export default {
 			}
 			readInput(dt);
 			updateTilt(dt);
-			watchButtons();
 			if (authority()) judge();
 			moments();
 			applyAim();
@@ -738,10 +686,8 @@ export default {
 			helpOff = null;
 			touchOff?.();
 			touchOff = null;
-			if (typeof levelsOff === 'function') levelsOff();
-			levelsOff = null;
-			seenStamps.clear();
 			wasActive = false;
+			goalSent = -1;
 			announcedRound = -1;
 			lastMask = lastFalls = lastStatus = 0;
 			cur.x = cur.z = 0;
@@ -749,10 +695,11 @@ export default {
 
 		// the suites' window onto the module
 		/** @type {any} */ (globalThis).__marble = {
-			mazes: MAZES,
+			mazes: () => kit.levels.table?.() ?? [],
 			authority,
-			startLevel,
-			toMenu,
+			rulesNode,
+			startLevel: (/** @type {number} */ id) => callRules('startMaze', id),
+			toMenu: () => callRules('toMenu'),
 			info,
 			tilt: () => ({ ...cur }),
 			eye: () => (scene && stores ? stores.get(scene.playerCam)?.getWorldPosition?.(new THREE.Vector3())?.toArray() : null),
@@ -786,7 +733,7 @@ export default {
 			},
 			holes: () => holesOf(shownMaze()).map((/** @type {any} */ h) => ({ x: h.x, z: h.z, half: h.half })),
 			/** a coin taken, for a scripted three-star win */
-			takeCoins: () => setV(V.coins, 7),
+			takeCoins: () => [0, 1, 2].forEach((i) => marblePiece.emit('coin', { index: i })),
 			/** a suite's shortcut to a progress state (written through api.storage like a win) */
 			setProgress: (/** @type {any} */ raw) => {
 				api.storage?.set?.('progress', raw);

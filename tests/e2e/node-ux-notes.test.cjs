@@ -219,8 +219,19 @@ h.run(async () => {
 	h.check((await graph(p)).nodes.find((n) => n.id === 'sc').sel, 'right-clicking a node makes it the selection');
 	await p.locator('[role="menu"] [role="menuitem"]', { hasText: /^\s*Open\ code/ }).first().click();
 	await p.waitForTimeout(400);
-	h.check((await p.evaluate(() => new Promise((r) => window.__stores.scriptEditorOpen.subscribe((v) => r(v))()))) === 'sc', 'Open code opens the script node\'s code');
+	// alone, node-ux opens the Script panel; with 36-code merged the code workspace (its registered opener) takes it
+	const opened = await p.evaluate(() => {
+		const s = window.__stores;
+		let panel = null;
+		s.scriptEditorOpen.subscribe((v) => (panel = v))();
+		let tabs = [];
+		s.codeWorkspace?.codeTabs?.subscribe?.((v) => (tabs = v))?.();
+		return { panel, ws: (tabs ?? []).some((t) => t.nodeId === 'sc') };
+	});
+	h.check(opened.panel === 'sc' || opened.ws, `Open code opens the script node's code (${JSON.stringify(opened)})`);
 	await p.evaluate(() => window.__stores.scriptEditorOpen.set(null));
+	if (opened.ws) await p.locator('#code-ws-close').click().catch(() => {});
+	await p.waitForTimeout(300);
 
 	await select(p, ['a', 'b', 'c']);
 	await p.waitForTimeout(200);

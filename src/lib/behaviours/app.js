@@ -35,6 +35,10 @@ import { createBehaviourRuntime, BHV } from './core.js';
 import { compileBehaviour } from './source.js';
 import { analyze } from './analyze.js';
 import { globMatch } from './events.js';
+// 36 (U10): module ENGINE pieces a game's rules call as `kit.<piece>.*` (engines.js)
+import { engineSpecs, engineFaces, enginesKey, onEnginesChange, reserveEngineNames } from './engines.js';
+import { registerBehaviourSockets } from '../flowSockets.js';
+import { behaviourSockets } from './sockets.js';
 // 34 D5 (34-graph-ai): the assistant's create_behaviour / edit_behaviour reach behaviours here
 import { registerBehaviourHost } from '../ai/aiExtensions.js';
 import { makeBehaviourHost } from './aiHost.js';
@@ -45,6 +49,17 @@ export const BEHAVIOUR_NODE = 'behaviour';
 export const moduleIdOf = (nodeId) => 'behaviour:' + nodeId;
 
 const me = () => /** @type {any} */ (get(peers))?.peer?.id ?? null;
+
+/** 36 (U10): every spec a behaviour can name — the kit's pieces, then the modules' engine pieces */
+export const behaviourSpecs = () => [...kit.specs(), ...engineSpecs()];
+
+/** 36 (U10): how `this.emit(name)` reaches the graph — flowRuntime registers the pulse
+ * (`applyNodeTrigger(<node>#<name>)`); null until it starts @type {null | ((id: string, name: string, payload?: any) => void)} */
+let emitter = null;
+/** @param {(id: string, name: string, payload?: any) => void} fn */
+export function setBehaviourEmitter(fn) {
+	emitter = fn;
+}
 const openPeers = () => [.../** @type {any} */ (get(peers))?.openedPeers ?? []].map(String);
 
 /** the session-clock moment the set of open connections last changed (the joiner grace) */
@@ -74,7 +89,8 @@ export const runtime = createBehaviourRuntime({
 		const p = get(peers);
 		if (p) p.send(msg);
 	},
-	specs: () => kit.specs(),
+	specs: behaviourSpecs,
+	emit: (id, name, payload) => emitter?.(id, name, payload),
 	peerCount: () => openPeers().length,
 	lastPeerChange: () => {
 		notePeers();
@@ -109,7 +125,8 @@ export const runtime = createBehaviourRuntime({
  */
 export const behaviourStatus = writable({});
 
-/** nodeId -> what is loaded @type {Map<string, {code: string, enabled: boolean, seq: number, face: any, releases: Map<Function, () => void>, scope: any}>} */
+/** nodeId -> what is loaded (`engines` = the engine registry key it was loaded against)
+ * @type {Map<string, {code: string, enabled: boolean, seq: number, face: any, releases: Map<Function, () => void>, scope: any, engines?: string}>} */
 const loaded = new Map();
 
 /** @param {string} id @param {any} patch */
@@ -160,8 +177,9 @@ async function load(node) {
 	}
 	entry.code = code;
 	entry.enabled = true;
+	entry.engines = enginesKey();
 	const seq = ++entry.seq;
-	const model = analyze(code, kit.specs());
+	const model = analyze(code, behaviourSpecs());
 	if (!model.ok) {
 		runtime.stop(id); // the document stays parked: the fixed file carries on from it
 		setStatus(id, { status: 'error', name: node.data?.name || model.name || 'Behaviour', errors: model.errors, lint: model.lint, model });
@@ -186,13 +204,24 @@ async function load(node) {
 	const old = runtime.instances.get(id);
 	const oldOffs = old ? [...old.offs] : [];
 	try {
+		// 36 (U10): the engine pieces join the kit face for THIS load (their listeners are journaled
+		// in the behaviour's lifecycle module exactly like the kit's, and released the same way)
+		const moduleId = moduleIdOf(id);
+		const releases = entry.releases;
+		const engines = engineFaces({
+			onDispose: (/** @type {() => void} */ fn) => {
+				releases.set(fn, track(moduleId, 'kit', fn));
+			},
+			moduleId
+		});
 		const inst = runtime.start(id, compiled.def, {
 			name: node.data?.name || compiled.def.name || model.name || id,
-			kit: entry.face,
+			kit: { ...entry.face, ...engines },
 			object: ownerRef(node.__graph),
 			resetGuard: () => compiled.scope.scope.resetGuard?.()
 		});
 		compiled.scope.bind(inst.ctx.kit);
+		runtime.loaded(id); // 36 (U10): `on.load` on this peer, now that `kit` is bound
 		for (const off of oldOffs) entry.releases.get(off)?.();
 		for (const off of oldOffs) entry.releases.delete(off);
 		entry.scope?.dispose();
@@ -248,7 +277,9 @@ function reconcile() {
 			continue;
 		}
 		const entry = loaded.get(id);
-		if (!entry || entry.code !== String(node.data?.code ?? '')) load(node);
+		// 36 (U10): an engine piece arriving/leaving reloads the behaviours (their `kit.<piece>` face
+		// and their `on` subscriptions are bound at start)
+		if (!entry || entry.code !== String(node.data?.code ?? '') || entry.engines !== enginesKey()) load(node);
 	}
 }
 
@@ -259,14 +290,28 @@ export function startBehaviours() {
 	if (started) return;
 	started = true;
 	registerBehaviourHost(makeBehaviourHost(() => get(behaviourStatus)));
-	flowGraphs.subscribe(() => {
+	registerBehaviourSockets((node) => behaviourSockets(String(node?.data?.code ?? '')));
+	reserveEngineNames(kit.specs().map((/** @type {any} */ s) => s.piece));
+	const schedule = () => {
 		if (scheduled) return;
 		scheduled = true;
 		queueMicrotask(() => {
 			scheduled = false;
 			reconcile();
 		});
-	});
+	};
+	flowGraphs.subscribe(schedule);
+	onEnginesChange(schedule);
+}
+
+/** 36 (U10): a flow trigger reached a behaviour node's input `name` (flowRuntime, every peer) */
+export function behaviourInput(/** @type {string} */ nodeId, /** @type {string} */ name, /** @type {number | undefined} */ stamp = undefined) {
+	return runtime.input(nodeId, name, {}, stamp);
+}
+
+/** 36 (U10): a behaviour node's live state (its value outputs), by reference @param {string} nodeId */
+export function behaviourState(nodeId) {
+	return runtime.stateOf(nodeId);
 }
 
 /** per frame (flowRuntime's tick, after the kit) */

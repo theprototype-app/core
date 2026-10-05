@@ -454,6 +454,7 @@ h.run(async () => {
 	await h.eventually(() => snap(A.page), (s) => s?.started === false && s.outcome?.reason === 'time' && s.outcome.winner === 'blue', '6.1 A: time is up — blue wins', 45000);
 	await h.eventually(() => snap(B.page), (s) => s?.started === false && s.outcome?.winner === 'blue', '6.2 B: over');
 	await h.eventually(() => snap(C.page), (s) => s?.started === false && s.outcome?.winner === 'blue', '6.3 C (the late joiner): over');
+	if (process.env.DEBUG_FB) for (const [nm, pg] of [['A', A.page], ['B', B.page], ['C', C.page]]) console.log('DEBUG evover', nm, await stampOf(pg, 'evover'), await stampOf(pg, 'evstart'), JSON.stringify(await pg.evaluate(() => ({ ids: (() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.filter((n) => n.type === 'fbevent').map((n) => n.id + ':' + n.data.event); })(), auth: window.__football.snapshot().authority }))));
 	await h.eventually(() => stampOf(C.page, 'evover'), (t) => t !== null && t !== overBefore, '6.4 C: the "On match over" stamp is in the TRIGGER LOG');
 	await h.eventually(() => gameStateOf(B.page), (v) => v === 'over', '6.5 the shell reads over');
 	await h.eventually(() => snap(B.page), (s) => s?.log.length === 1 && s.log[0].blue === 3 && s.log[0].winner === 'blue', '6.6 the saved match log carries the sheet (gameState.vars)');
@@ -631,6 +632,81 @@ h.run(async () => {
 	await teleport(low.page, ball, redPos);
 	await h.eventually(() => snap(high.page), (s) => s?.score.blue === before7 + 1, `7.20 A GOAL SCORES through the race (blue ${before7} -> ${before7 + 1} on the loser's copy)`, 15000);
 	await h.eventually(() => snap(C.page), (s) => s?.score.blue === before7 + 1, '7.21 ...and on the spectator', 15000);
+
+	// ---- 8. 36 U10: THE PROBE — one number from the graph, one from the code, both kept ------------
+	// The match settings are the Match Rules node (ⓘ panel); the DECISIONS are the "Football rules"
+	// behaviour on the Main graph (its code: what a goal is worth). Skipped on a scene without it.
+	const rulesNode = () => A.page.evaluate(() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); const n = g.scene.nodes.find((x) => x.type === 'behaviour' && /Football rules/.test(x.data?.name ?? '')); return n ? { id: n.id, code: n.data.code } : null; });
+	const fr = await rulesNode();
+	if (fr) {
+		h.check(/const GOAL_POINTS = 1;/.test(fr.code), '8.0 Main holds the "Football rules" behaviour (a goal is worth GOAL_POINTS = 1)');
+		await h.eventually(() => low.page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, fr.id), (st) => st === 'running', '8.0b the rules run on the authority', 10000);
+		// (a) the GRAPH: Match Rules ▸ goals to win = 2, in the properties panel (A's real UI)
+		await A.page.evaluate(() => window.__stores.isLocked.set(false));
+		await A.page.waitForTimeout(800);
+		if (!(await A.page.evaluate(() => !!document.querySelector('.svelte-flow__pane')))) await A.page.locator('p[title="Node editor (N)"]').click();
+		await A.page.waitForTimeout(1000);
+		await A.page.evaluate(() => window.__stores.bottomDock?.dockHeight?.set(560));
+		if (!(await A.page.locator('#flow-props').count())) await A.page.locator('#flow-props-toggle').click();
+		await A.page.locator('#flow-tab-info').click();
+		const fbrulesId = await A.page.evaluate(() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.type === 'fbrules')?.id; });
+		await A.page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), fbrulesId);
+		await h.eventually(() => A.page.locator('#flow-prop-goalsToWin').count(), (n) => n === 1, '8.1 Match Rules shows "goals to win" in its properties panel', 6000);
+		// first to (blue's score now): the match is decided the moment the setting lands
+		const blueNow = (await snap(low.page)).score.blue;
+		const target = Math.max(1, blueNow);
+		await A.page.locator('#flow-prop-goalsToWin').fill(String(target));
+		await A.page.locator('#flow-prop-goalsToWin').press('Enter');
+		await h.eventually(() => snap(low.page), (s) => s?.rules.goalsToWin === target, `8.2 the setting replicated to the authority (goals to win ${target})`, 8000);
+		await h.eventually(() => snap(C.page), (s) => s?.started === false && s.outcome?.reason === 'goals' && s.outcome.winner === 'blue', `8.3 Play: with blue on ${blueNow}, first-to-${target} blows the final whistle (the rules read the new setting)`, 15000);
+		// (b) the CODE: a goal is worth 2 — the rules file, edited in the code workspace on A
+		await A.page.evaluate((id) => window.__stores.codeWorkspace.openCode({ source: 'behaviour', ref: { nodeId: id } }), fr.id);
+		await h.eventually(() => A.page.locator('[data-pane] .cm-content').count(), (n) => n >= 1, '8.4 the rules open in the code workspace', 15000);
+		const pane = await A.page.evaluate(() => { let v; window.__stores.codeWorkspace.activeCodeTab.subscribe((x) => (v = x))(); return v; });
+		await A.page.locator(`[data-pane="${pane}"] .cm-content`).click();
+		await A.page.keyboard.press('Control+A');
+		await A.page.keyboard.insertText(fr.code.replace('const GOAL_POINTS = 1;', 'const GOAL_POINTS = 2;'));
+		await A.page.keyboard.press('Control+S');
+		await h.eventually(() => rulesNode(), (n) => /const GOAL_POINTS = 2;/.test(n?.code ?? ''), '8.5 Ctrl+S put the edited code on the node', 6000);
+		await A.page.locator('#code-ws-close').click().catch(() => {});
+		await h.eventually(() => low.page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, fr.id), (st) => st === 'running', '8.6 the authority reloaded the edited rules', 10000);
+		// both felt in Play: a rematch, ONE goal = 2 for blue, and first-to-2 ends it
+		await A.page.evaluate(() => window.__stores.isLocked.set(true));
+		await h.eventually(() => screenOf(A.page), (v) => v === 'over', '  (premise) the results screen is up', 8000);
+		await hudButton(A.page, 'Rematch').click();
+		await h.eventually(() => snap(low.page), (s) => s?.started === true && s.score.blue === 0, '8.7 Rematch: a fresh match', 12000);
+		await h.eventually(() => snap(low.page), (s) => s?.started && s.serveAt === 0, '  (premise) kicked off', 12000);
+		await teleport(low.page, ball, redPos);
+		await h.eventually(() => snap(C.page), (s) => s?.score.blue === 2, '8.8 Play: ONE goal into the red gate is worth 2 now (the code change), on every peer', 12000);
+		await h.eventually(() => snap(B.page), (s) => s?.started === false && s.outcome?.winner === 'blue' && s.outcome.reason === 'goals', `8.9 ...and first-to-${target} ends the match on it (the graph change)`, 15000);
+		// (c) both survive a save and a reload — into a FRESH peer, alone
+		const saved = await A.page.evaluate(async () => {
+			const s = window.__stores;
+			const zip = await s.sessions.exportSessionZip(s.sessions.buildSessionPayload('Football probe'), { assets: true, packs: false, flow: true });
+			return Array.from(zip);
+		});
+		for (const p of [A, B, C]) await p.page.evaluate(() => window.__stores.isLocked.set(false)).catch(() => {});
+		const D = await h.setupPage(browser, 'D');
+		await installZip(D, zip.bytes, 'D');
+		await D.page.evaluate(async (arr) => {
+			const s = window.__stores;
+			const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
+			await s.sessions.applySession(payload, { backup: false });
+		}, saved);
+		await D.page.waitForTimeout(2500);
+		const dGraph = await D.page.evaluate(() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return { code: g.scene.nodes.find((n) => n.type === 'behaviour')?.data.code ?? '', goals: g.scene.nodes.find((n) => n.type === 'fbrules')?.data.goalsToWin }; });
+		h.check(/const GOAL_POINTS = 2;/.test(dGraph.code) && dGraph.goals === target, `8.10 the saved scene, reopened, keeps both (GOAL_POINTS 2, goals to win ${dGraph.goals})`);
+		await D.page.evaluate(() => window.__stores.isLocked.set(true));
+		await h.eventually(() => D.page.evaluate(() => window.__football?.snapshot?.().ball ?? null), (b) => !!b, '  (premise) D: the module owns the ball', 15000);
+		await h.eventually(() => D.page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__stores.flowGraphs && (() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.find((n) => n.type === 'behaviour')?.id; })()]?.status), (st) => st === 'running', '  (premise) D: the rules run', 15000);
+		await D.page.evaluate(() => window.__football.game.act('start'));
+		const dBall = await D.page.evaluate(() => window.__football.snapshot().ball);
+		await h.eventually(() => snap(D.page), (s) => s?.started && s.serveAt === 0, '  (premise) D kicked off', 15000);
+		const dRed = await posOf(D.page, redGate);
+		await teleport(D.page, dBall, dRed);
+		await h.eventually(() => snap(D.page), (s) => s?.score.blue === 2, '8.11 after the reload: one goal is still worth 2', 15000);
+		await h.eventually(() => snap(D.page), (s) => s?.started === false && s.outcome?.reason === 'goals', `8.12 ...and first-to-${target} still ends the match`, 15000);
+	} else console.log('SKIP 8: this scene has no "Football rules" behaviour (an older scene)');
 
 	for (const p of [A, B, C]) await p.page.evaluate(() => window.__stores.isLocked.set(false)).catch(() => {});
 	await A.page.waitForTimeout(400);

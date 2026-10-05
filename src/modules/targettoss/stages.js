@@ -1,24 +1,10 @@
-// 35 TARGET TOSS — the stage table and the pure rules (no scene, no stores).
-//
-// Five stages of rising difficulty. A stage is CLEARED when every target in it is down: every
-// can off its table, every swinging target hit, enough pop-ups hit, the cart hit enough times.
-// The clock running out loses the stage (kit.round's own time limit). Stars come from the time
-// left: half the clock or more = 3, a quarter = 2, else 1.
+// 35 TARGET TOSS — the engine's pure helpers (no scene, no stores): pyramids, target counts, the
+// pop-up schedule, the swing and cart poses. 36 (U10): the stage TABLE, the points, the combo and
+// the stars moved to the "Target Toss rules" node on the Main graph
+// (scripts/templates/rules/target-toss.rules.js); a stage definition reaches this file from there.
 
 /** @typedef {{table: string, rows: number}} CanStack */
 /** @typedef {{id: number, name: string, limit: number, intro: string, cans: CanStack[], swing: number, swingSpeed: number, popups: number, popTime: number, cart: number, cartSpeed: number}} Stage */
-
-/** @type {Stage[]} */
-export const STAGES = [
-	{ id: 1, name: 'Tin cans', limit: 45, intro: 'Knock every can down — off the table or over', cans: [{ table: 'Table left', rows: 3 }], swing: 0, swingSpeed: 0, popups: 0, popTime: 0, cart: 0, cartSpeed: 0 },
-	{ id: 2, name: 'Two stacks', limit: 50, intro: 'Two pyramids — clear both tables', cans: [{ table: 'Table left', rows: 3 }, { table: 'Table right', rows: 3 }], swing: 0, swingSpeed: 0, popups: 0, popTime: 0, cart: 0, cartSpeed: 0 },
-	{ id: 3, name: 'Swingers', limit: 45, intro: 'Hit the three swinging targets', cans: [], swing: 3, swingSpeed: 1.1, popups: 0, popTime: 0, cart: 0, cartSpeed: 0 },
-	{ id: 4, name: 'Pop-ups', limit: 45, intro: 'Hit 6 targets before they drop', cans: [], swing: 0, swingSpeed: 0, popups: 6, popTime: 2.2, cart: 0, cartSpeed: 0 },
-	{ id: 5, name: 'The cart', limit: 60, intro: 'Hit the moving cart 3 times and clear the big pyramid', cans: [{ table: 'Table right', rows: 4 }], swing: 2, swingSpeed: 1.5, popups: 0, popTime: 0, cart: 3, cartSpeed: 0.7 }
-];
-
-/** @param {any} id @returns {Stage | null} */
-export const stageById = (id) => STAGES.find((s) => s.id === Number(id)) ?? null;
 
 /** the pop-up targets on the back wall */
 export const POPUP_COUNT = 6;
@@ -28,12 +14,6 @@ export const SWING_COUNT = 3;
 export const CAN = { r: 0.105, h: 0.28 };
 /** the ball shelf slots: x offsets from the shelf centre */
 export const BALL_SLOTS = [-0.75, -0.45, -0.15, 0.15, 0.45, 0.75];
-/** points */
-export const POINTS = { can: 100, swing: 250, popup: 200, cart: 300 };
-/** a hit within this many seconds of the last one grows the combo */
-export const COMBO_WINDOW = 2.5;
-export const COMBO_MAX = 5;
-
 /** the can positions of a pyramid of `rows` on a table top, centred at x/z, top y
  * @param {number} rows @param {number} cx @param {number} top @param {number} cz @returns {number[][]} */
 export function pyramid(rows, cx, top, cz) {
@@ -55,15 +35,6 @@ export const canCount = (stage) => stage.cans.reduce((a, c) => a + (c.rows * (c.
 
 /** the number of targets a stage has in all @param {Stage} stage */
 export const targetCount = (stage) => canCount(stage) + stage.swing + stage.popups + stage.cart;
-
-/** stars from the time left @param {Stage} stage @param {boolean} won @param {number} elapsed */
-export function starsFor(stage, won, elapsed) {
-	if (!won || !stage) return 0;
-	const left = stage.limit - elapsed;
-	if (left >= stage.limit * 0.5) return 3;
-	if (left >= stage.limit * 0.25) return 2;
-	return 1;
-}
 
 /** ★★☆ @param {number} n */
 export function starsText(n) {

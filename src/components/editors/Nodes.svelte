@@ -23,7 +23,7 @@
 	import NodeProperties from './NodeProperties.svelte'; // 36 (flow-revamp 200)
 	// 36 (G1): Main graph label + code <-> node (double-click / Open code)
 	import { MAIN_GRAPH_LABEL, nodeHasCode, openCodeRequestFor } from '$lib/graphContract.js';
-	import { openCode } from '$lib/codeOpen';
+	import { openCode as openCodeRequest } from '$lib/codeOpen';
 	import PeerCursors from './PeerCursors.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ColorPickerNode from './nodes/ColorPickerNode.svelte';
@@ -85,7 +85,7 @@
 	import { defDefaults } from '$lib/customNodes';
 	import { findNodeSpec, nodeCatalog } from '$lib/nodeCatalog';
 	import { nodeDoc } from '$lib/nodeDocs';
-	import { isValidFlowConnection, typeColor, replaceableInputEdges, outputHandleType, resolvedInputType } from '$lib/flowSockets';
+	import { isValidFlowConnection, typeColor, replaceableInputEdges, groupSocketType } from '$lib/flowSockets';
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus, showToast } from '../../stores/appStore';
 	import { safeStorage } from '$lib/safeStorage';
@@ -118,7 +118,7 @@
 	import { onScopeChange, lastScope, setLastScope } from '$lib/keyScope';
 	import { bindingOf } from '$lib/shortcuts';
 	import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
-	import { nodeHasCode, openNodeCode } from '$lib/nodeCode';
+	import { nodeHasCode as nodeUxHasCode, openNodeCode } from '$lib/nodeCode';
 	// 36 B7: the node manager (types switched off on this device) + the .tpnode group file
 	import { disabledNodeTypes, enabledCatalog } from '$lib/nodeTypePrefs';
 	import { buildTpnode, parseTpnode, tpnodeFileName } from '$lib/tpnode';
@@ -575,14 +575,8 @@
 			reconcileGroups();
 		});
 	}
-	function socketTypeOf(node: any, socket: string | null, dir: 'in' | 'out') {
-		try {
-			const t = dir === 'in' ? resolvedInputType(node, socket) : outputHandleType(node?.type, socket);
-			return t || 'any';
-		} catch {
-			return 'any';
-		}
-	}
+	// 36 (U10): one rule with the template author (declared script/behaviour outputs included)
+	const socketTypeOf = groupSocketType;
 	function reconcileGroups() {
 		const sn = storeNodesNow();
 		if (!sn.some(isGroup)) return;
@@ -1355,6 +1349,12 @@
 
 	function openCode(node?: any) {
 		const target = node ?? selectedVisible()[0];
+		// 36 (G1): the code workspace first (script / behaviour / kit / module / coderef), then U11's built-ins
+		const spec = target ? findNodeSpec(String(target.type)) : null;
+		if (target && nodeHasCode(target, spec)) {
+			void openCodeRequest(openCodeRequestFor(target, activeId, spec));
+			return;
+		}
 		if (!target || !openNodeCode(target, activeId)) showToast('This node has no code to open');
 	}
 
@@ -1557,7 +1557,7 @@
 		const collapsed = list.some((n) => n.data?.collapsed);
 		const n = list.length;
 		const items: any[] = [];
-		if (one && nodeHasCode(one)) items.push({ label: 'Open code', icon: 'file-text', action: () => openCode(one) });
+		if (one && (nodeHasCode(one, findNodeSpec(String(one.type))) || nodeUxHasCode(one))) items.push({ label: 'Open code', icon: 'file-text', action: () => openCode(one) });
 		if (one && isGroup(one)) items.push({ label: 'Open group', icon: 'folder-input', hint: hint('nodes.enter-group'), action: () => enterGroup(one.id) });
 		items.push({ label: n > 1 ? `Group ${n} nodes` : 'Group', icon: 'group', hint: hint('nodes.group'), action: groupSelection });
 		if (groups.length) items.push({ label: groups.length > 1 ? `Ungroup ${groups.length}` : 'Ungroup', icon: 'ungroup', hint: hint('nodes.ungroup'), action: () => ungroup() });
@@ -1625,7 +1625,7 @@
 		if (!node || !nodeHasCode(node, spec)) return;
 		event.stopPropagation();
 		event.preventDefault();
-		void openCode(openCodeRequestFor(node, activeId, spec));
+		void openCodeRequest(openCodeRequestFor(node, activeId, spec));
 	}
 
 	const onEdgeContextMenu = ({ edge, event }: { edge: Edge; event: MouseEvent }) => {

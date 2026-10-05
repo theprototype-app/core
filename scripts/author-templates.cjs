@@ -998,6 +998,10 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					};
 				}
 				s.restoreGraphs(resolved);
+				// 36 (U10): a group's routed sockets are derived from the wires crossing it — the
+				// app computes them now, with the editor's own rule, so opening the game rewrites nothing
+				await new Promise((r) => setTimeout(r, 300)); // the behaviours load (their sockets type the groups)
+				s.groupReconcile?.reconcileGroupSockets?.();
 			}
 			if (d.hud && s.hudDocs) s.hudDocs.hudDocsRestore(d.hud, false);
 			if (d.shaders && s.shaderGraph) {

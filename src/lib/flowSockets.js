@@ -8,6 +8,26 @@ import { graphOf } from '../stores/flowStore';
 import { moduleValueTypes, moduleNodeInputs } from './moduleNodeIO';
 import { scriptSocketType } from './scriptIO'; // 34 D3: a Script node's DECLARED sockets
 
+/**
+ * 36 (U10): a BEHAVIOUR node's sockets are declared in its CODE (`inputs`, `outputs`), which only
+ * the analyzer can read — and the analyzer (acorn) loads with the behaviours. behaviours/app.js
+ * registers the reader here, so this leaf stays light; before it does, a behaviour has no typed
+ * sockets (nothing can be wired to one before the behaviours start anyway).
+ * @type {null | ((node: any) => {inputs: {name: string, type: string}[], outputs: {name: string, type: string}[]} | null)}
+ */
+let behaviourSocketsOf = null;
+/** @param {(node: any) => {inputs: {name: string, type: string}[], outputs: {name: string, type: string}[]} | null} fn */
+export function registerBehaviourSockets(fn) {
+	behaviourSocketsOf = fn;
+}
+/** a behaviour node's declared socket type, or null @param {any} node @param {string|null|undefined} handle @param {'input'|'output'} dir */
+export function behaviourSocketType(node, handle, dir) {
+	if (node?.type !== 'behaviour' || !handle || !behaviourSocketsOf) return null;
+	const sockets = behaviourSocketsOf(node);
+	const list = dir === 'input' ? sockets?.inputs : sockets?.outputs;
+	return list?.find((s) => s.name === handle)?.type ?? null;
+}
+
 /** output type of a node's source handle @type {Record<string,string>} */
 const OUTPUT = {
 	number: 'number', slider: 'number', time: 'number', loop: 'number', timer: 'number',
@@ -159,7 +179,8 @@ const INPUT = {
 	// A3 HUD. `value` is the whole point: counter -> hudtext is a live score with no
 	// new code, because Counter already counts replicated pulses and every number
 	// source already reaches a named input through resolveInputs.
-	hudtext: { value: 'number' },
+	// 36 (U10): `format` takes TEXT from a wire (a behaviour's state line, a script's words)
+	hudtext: { value: 'number', format: 'any' },
 	hudbar: { value: 'number', min: 'number', max: 'number' },
 	hudscreen: { trigger: 'event' },
 	hudtimer: { start: 'event', duration: 'number' },
@@ -183,7 +204,8 @@ const INPUT = {
 	// 30b (core-games): the Game Feel family — an event, a wired number for {v}, a PLACE
 	// (an object: an undeclared handle types as 'number' and would refuse an Object
 	// Selector), and Game Music's on/off
-	announce: { trigger: 'event', value: 'number' },
+	// 36 (U10): `sub` — the second line, wired as text (a behaviour's bannerSub)
+	announce: { trigger: 'event', value: 'number', sub: 'any' },
 	gamesound: { trigger: 'event', at: 'object' },
 	effectburst: { trigger: 'event', at: 'object' },
 	hapticpulse: { trigger: 'event' },
@@ -320,6 +342,8 @@ export function isValidFlowConnection(connection, nodes) {
 			? source.data?.vtype ?? 'number'
 			: // 34 D3: a script output's type is DATA (its declaration), like flowinput's vtype
 				scriptSocketType(source.type, source.data, connection.sourceHandle, 'output') ??
+				// 36 (U10): a behaviour's outputs are declared in its code
+				behaviourSocketType(source, connection.sourceHandle, 'output') ??
 				outputHandleType(source.type, connection.sourceHandle);
 	if (source.type === 'objectflow') {
 		// embedded outputs carry whatever the flow's outputs compute — untyped v1,
@@ -328,7 +352,26 @@ export function isValidFlowConnection(connection, nodes) {
 	}
 	const to = resolvedInputType(target, connection.targetHandle);
 	if (to === 'any') return from !== 'effect'; // flow outputs accept any value
+	if (from === 'any') return to !== 'effect'; // 36 (U10): an untyped value (a behaviour's text/list state) feeds any value input
 	return canConnect(from, to);
+}
+
+/**
+ * 36 (U10): the type a GROUP's routed socket carries for an inner endpoint — the one rule the
+ * node editor's group reconcile and the template author's both use (a data-declared script or
+ * behaviour output, else the static table), so an authored group never needs rewriting on open.
+ * @param {any} node @param {string|null} socket @param {'in'|'out'} dir
+ */
+export function groupSocketType(node, socket, dir) {
+	try {
+		const t =
+			dir === 'in'
+				? resolvedInputType(node, socket)
+				: scriptSocketType(node?.type, node?.data, socket, 'output') ?? behaviourSocketType(node, socket, 'output') ?? outputHandleType(node?.type, socket);
+		return t || 'any';
+	} catch {
+		return 'any';
+	}
 }
 
 /**
@@ -341,7 +384,7 @@ export function resolvedInputType(targetNode, handleId) {
 	if (!targetNode) return 'number';
 	if (targetNode.type === 'flowoutput') return 'any';
 	// 34 D3: a v2 Script node's inputs are declared in its data
-	const declared = scriptSocketType(targetNode.type, targetNode.data, handleId, 'input');
+	const declared = scriptSocketType(targetNode.type, targetNode.data, handleId, 'input') ?? behaviourSocketType(targetNode, handleId, 'input');
 	if (declared) return declared;
 	if (targetNode.type === 'objectflow') {
 		const graph = graphOf(targetNode.data?.flowUuid ?? '');

@@ -123,6 +123,14 @@
 
 		return {
 			...kitFixtures,
+			// 36 (U10): an engine piece lent to behaviours (behaviours/engines.js)
+			'kit.provide': {
+				needs: ['engines'],
+				call(api, t) {
+					api.kit.provide({ piece: 'lc' + String(t.id).replace(/[^a-z0-9]/gi, '').toLowerCase(), group: 'LC', calls: [{ name: 'ping', kind: 'action', label: 'Ping' }] }, { ping() {} });
+				},
+				present: (t) => M.engines.enginesDebug().some((p) => p.piece === 'lc' + String(t.id).replace(/[^a-z0-9]/gi, '').toLowerCase())
+			},
 			// ---- nodes ---------------------------------------------------------------------
 			registerNodeGroup: {
 				call: (api, t) => api.registerNodeGroup({ group: 'LC ' + t.id, items: [{ type: 'lc-node-' + t.id, label: 'x' }] }),

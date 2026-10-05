@@ -18,7 +18,12 @@ const fs = require('fs');
 const path = require('path');
 
 const SHOTS = process.env.SHOTS || '';
+// §6 is about MIGRATING a scene authored before the Main graph existed, so it wants an OLD Mini Golf
+// (36-games-graphs re-authors the game with an authored Main graph, which the migration leaves alone —
+// asserted too, when only a new scene is found)
 const GOLF = [
+	process.env.MINIGOLF_OLD_TPSCENE,
+	path.resolve(__dirname, '../../../cloud-lane-30-staging/35-mini-golf/games/mini-golf/scene.tpscene'),
 	process.env.MINIGOLF_TPSCENE,
 	path.resolve(__dirname, '../../../scenes/games/mini-golf/scene.tpscene')
 ].filter(Boolean).find((p) => fs.existsSync(p));
@@ -144,26 +149,27 @@ h.run(async () => {
 	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.nodeId === 'cn-bhv' && x.kind === 'behaviour'), 'double-click a Behaviour → its source in the code workspace', 15000);
 	await A.page.locator('#code-ws-close').click();
 
-	await addGraph(A, [node('cn-ref', 'coderef', { label: 'Code link', module: 'minigolf', file: 'holes.js', title: 'Mini Golf holes' }, 440, 200)]);
+	// 36-games-graphs: Mini Golf's rules moved to its Main graph; its module is the ENGINE now
+	await addGraph(A, [node('cn-ref', 'coderef', { label: 'Code link', module: 'minigolf', file: 'module.js', title: 'Mini Golf engine' }, 440, 200)]);
 	await A.page.waitForTimeout(600);
 	await centerOn(A, 'cn-ref');
 	await A.page.waitForTimeout(400);
 	await dblclickNode(A, 'cn-ref');
-	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.kind === 'module' && x.moduleId === 'minigolf' && x.name === 'holes.js'), 'double-click a Code link → the module file as a code-workspace tab', 15000);
+	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.kind === 'module' && x.moduleId === 'minigolf' && x.name === 'module.js'), 'double-click a Code link → the module file as a code-workspace tab', 15000);
 	await h.eventually(
-		() => tabsOf(A).then((t) => t.find((x) => x.name === 'holes.js')),
-		(tab) => /PUTT_MAX\s*=\s*7/.test(tab?.code ?? '') && tab.readOnly === true,
-		'holes.js opens on the file the link names — PUTT_MAX = 7 is readable from the graph, read-only',
+		() => tabsOf(A).then((t) => t.find((x) => x.name === 'module.js')),
+		(tab) => /api\.kit\.provide\(/.test(tab?.code ?? '') && tab.readOnly === true,
+		'module.js opens on the file the link names — the engine it lends the rules is readable from the graph, read-only',
 		6000
 	);
 	if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, '22-module-source-readonly.png') });
 	await A.page.locator('#code-ws-close').click();
 
-	// a module's own node (registered by the core minigolf module) opens the same way
+	// a module's own node (registered by a core module — hello, the SDK example) opens the same way
 	const golfType = await A.page.evaluate(() => {
 		let groups;
 		window.__stores.moduleSDK.moduleNodeGroups.subscribe((v) => (groups = v))();
-		for (const g of groups) for (const i of g.items) if (i.moduleId === 'minigolf') return i.type;
+		for (const g of groups) for (const i of g.items) if (i.moduleId === 'hello') return i.type;
 		return null;
 	});
 	if (golfType) {
@@ -172,9 +178,9 @@ h.run(async () => {
 		await centerOn(A, 'cn-golf');
 		await A.page.waitForTimeout(400);
 		await dblclickNode(A, 'cn-golf');
-		await h.eventually(() => A.page.evaluate(() => window.__stores.codeOpen?.lastOpenCode?.()), (r) => r?.source === 'module' && r?.ref === 'minigolf', `double-click a module node (${golfType}) → its module's source`, 4000);
+		await h.eventually(() => A.page.evaluate(() => window.__stores.codeOpen?.lastOpenCode?.()), (r) => r?.source === 'module' && r?.ref === 'hello', `double-click a module node (${golfType}) → its module's source`, 4000);
 		await A.page.locator('#code-ws-close').click().catch(() => {});
-	} else h.check(false, 'premise: the core minigolf module registered a node type');
+	} else h.check(false, 'premise: the core hello module registered a node type');
 
 	// --- 3: the seam ------------------------------------------------------------------------
 	const routed = await A.page.evaluate(async () => {
@@ -235,13 +241,26 @@ h.run(async () => {
 				const payload = await s.sessions.readSessionZip(new Uint8Array(arr).buffer);
 				await s.sessions.applySession(payload, { backup: false });
 			}, bytes);
+		const authored = await A.page.evaluate(async (arr) => {
+			const payload = await window.__stores.sessions.readSessionZip(new Uint8Array(arr).buffer);
+			const graphs = payload?.flow?.graphs ?? payload?.graphs ?? {};
+			const scene = graphs.scene ?? payload?.flow ?? {};
+			return (scene.nodes ?? payload?.nodes ?? []).some((n) => n?.data?.main);
+		}, bytes);
 		await load();
 		const mainIds = (peer) => peer.page.evaluate(() => { let g; window.__stores.flowGraphs.subscribe((v) => (g = v))(); return g.scene.nodes.filter((n) => n.data?.main).map((n) => n.id); });
+		if (authored) {
+			// a scene authored WITH its Main graph (36-games-graphs): the migration adds nothing
+			await A.page.waitForTimeout(1500);
+			const ids = await mainIds(A);
+			h.check(!ids.includes('main-mod-minigolf') && ids.includes('engine'), `an authored Main graph is left as authored: its own Code link, no migrated one (${ids.join(', ')})`);
+		} else {
 		await h.eventually(() => mainIds(A), (ids) => ids.includes('main-mod-minigolf'), 'loading the old Mini Golf scene adds a Code link to its module on Main', 8000);
 		await h.eventually(() => mainIds(B), (ids) => ids.includes('main-mod-minigolf'), 'the peer receives it with the load', 8000);
 		await load();
 		await A.page.waitForTimeout(1500);
 		h.check((await mainIds(A)).filter((id) => id === 'main-mod-minigolf').length === 1, 'a reload adds nothing twice');
+		}
 		const tree = await A.page.evaluate(() => document.querySelector('#graph-tree-flow-scene')?.textContent ?? '');
 		h.check(/Main/.test(tree), `the Flow list calls the scene graph Main (${tree.trim()})`);
 		if (SHOTS) {

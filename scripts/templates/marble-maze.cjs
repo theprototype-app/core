@@ -3,7 +3,8 @@
 //
 // 35 MARBLE MAZE: tilt the board, roll the marble to the gold goal. Five mazes of rising
 // difficulty (gates that rise and sink on 4 and 5), holes that send you back to the start,
-// three coins per maze, a timer and 1-3 stars a maze. The rules live in the CORE module
+// three coins per maze, a timer and 1-3 stars a maze. 36 (U10): the rules are the "Marble Maze
+// rules" node on Main (./rules/marble-maze.rules.js); the engine is the CORE module
 // `marble` (src/modules/marble/module.js), dormant unless the scene holds the `Marble Maze
 // game` marker — the Towers precedent. This def owns the GEOMETRY:
 //   · each maze is ONE group (`Maze N`) with a custom COMPOUND collider (floor strips with the
@@ -17,7 +18,7 @@
 // The mazes are GENERATED here from a seed (a recursive backtracker, then a few walls knocked
 // out to braid the easy ones), so every one is solvable and two builds are identical.
 
-const { graphBuilder } = require('./_builders.cjs');
+const { graphBuilder, rulesSource } = require('./_builders.cjs');
 
 /** where the board sits while you play: 0.75 m in front of the spawn, at chest height */
 const BOARD = [0, 1.1, -0.75];
@@ -325,50 +326,84 @@ const BTN = { size: 17, weight: '600', bg: '#c4792d', color: '#ffffff', radius: 
 
 function marbleGraph() {
 	const g = graphBuilder();
-	const { N, E } = g;
-	N('click', 'gamesound', 'Button click', 520, 40, { sound: 'click' });
-	const button = (/** @type {string} */ id, /** @type {string} */ element, /** @type {string} */ label, /** @type {number} */ x, /** @type {number} */ y) => {
-		N(id, 'hudbutton', label, x, y, { element });
+	const { N, E, B, G, T } = g;
+
+	// ---- the hub: the RULES (scripts/templates/rules/marble-maze.rules.js) --------------------
+	T('n-main', 'Marble Maze — read me first',
+		'**Marble Maze rules** holds the game: the five mazes and their par times, how far the board tilts and how fast it turns, what a fall costs, the stars.\n' +
+		'- **Double-click** it to read or change the code (Ctrl+S reloads it for everyone).\n' +
+		'- **Select** it and open the ⓘ tab to tune the *Board tilt limit*, *Board turn speed*, *A fall puts the coins back*.\n' +
+		'The tilt input, the boards and the marble\'s physics are the **engine** below it.',
+		-380, 0, { w: 340, h: 240, color: 'blue' });
+	B('rules', 'Marble Maze rules', rulesSource('marble-maze.rules.js'), 300, 0);
+
+	// ---- the buttons -> the rules' inputs -------------------------------------------------------
+	const menu = [];
+	menu.push(N('click', 'gamesound', 'Button click', 40, 720, { sound: 'click' }));
+	const button = (id, element, label, input, y) => {
+		menu.push(N(id, 'hudbutton', label, 40, y, { element }));
 		E(id, 'click', 'trigger');
+		E(id, 'rules', input);
 	};
-	for (let i = 1; i <= MAZES.length; i++) button('lvl' + i, 'lvl-' + i, 'Maze ' + i + ' button', 40, 40 + (i - 1) * 70);
-	button('bstart', 'start-btn', 'Start button', 40, 420);
-	button('bnext', 'next-btn', 'Next maze button', 40, 490);
-	button('bretry', 'retry-btn', 'Retry button', 40, 560);
-	button('blevels', 'levels-btn', 'Mazes button', 40, 630);
-	// the HUD's words, from the module's Marble info node into HUD Text's FORMAT
-	const text = (/** @type {string} */ id, /** @type {string} */ read, /** @type {string} */ element, /** @type {number} */ x, /** @type {number} */ y, extra = {}) => {
-		N(id + 'i', 'marbleinfo', 'Marble: ' + read, x, y, { read, ...extra });
-		N(id + 't', 'hudtext', 'HUD ' + element, x + 240, y, { element, format: '', decimals: 0, value: 0 });
+	for (let i = 1; i <= MAZES.length; i++) button('lvl' + i, 'lvl-' + i, 'Maze ' + i + ' button', 'maze' + i, 40 + (i - 1) * 70);
+	button('bstart', 'start-btn', 'Start button', 'begin', 420);
+	button('bnext', 'next-btn', 'Next maze button', 'next', 490);
+	button('bretry', 'retry-btn', 'Retry button', 'retry', 560);
+	button('blevels', 'levels-btn', 'Mazes button', 'menu', 630);
+	G('g-menu', 'Maze & results buttons', menu, 0, 40);
+	T('n-menu', 'Maze & results buttons', 'Every button is wired into an **input** of the rules: Start (the first maze without three stars), Maze 1-5, Next maze, Retry, back to the mazes.', 0, 360, { w: 250, h: 120, color: 'gray' });
+
+	// ---- the moments -------------------------------------------------------------------------------
+	const fb = [];
+	fb.push(N('hFell', 'hapticpulse', 'Buzz: a fall', 660, 40, { pattern: 'fail', hand: 'both' }));
+	E('rules', 'hFell', 'trigger', 'fell');
+	fb.push(N('aGo', 'announce', 'Banner: the maze', 660, 160, { text: 'Maze: {v}', sub: '', seconds: 2.2, color: '#ffd45e' }));
+	E('rules', 'aGo', 'trigger', 'mazeStarted');
+	E('rules', 'aGo', 'value', 'mazeName');
+	G('g-moments', 'Maze start & falls', fb, 660, 40);
+	T('n-moments', 'Maze start & falls', 'A banner naming the maze when a run starts and a controller buzz on a fall — on **every** screen. Coins, the goal and the hole drop sound from the engine.', 900, 0, { w: 250, h: 120, color: 'green' });
+
+	// ---- the engine, openable from here ---------------------------------------------------------
+	N('engine', 'coderef', 'Code link', 300, 560, { module: 'marble', file: 'module.js', title: 'Marble Maze engine — the tilt, the boards, the marble', main: 1 });
+	T('n-engine', 'The engine', 'What the rules call as **kit.marble.*** — the tilt (keys, mouse drag, VR grips and stick), the board pose, the marble\'s body; it reports a coin, a fall and the goal. Double-click to read it.', 300, 720, { w: 260, h: 130, color: 'gray' });
+
+	// ---- the HUD words ----------------------------------------------------------------------------
+	const hud = [];
+	const text = (id, read, element, i, extra = {}) => {
+		const x = 1300 + (i % 2) * 520;
+		const y = 40 + Math.floor(i / 2) * 110;
+		hud.push(N(id + 'i', 'marbleinfo', 'Marble: ' + read, x, y, { read, ...extra }));
+		hud.push(N(id + 't', 'hudtext', 'HUD ' + element, x + 250, y, { element, format: '', decimals: 0, value: 0 }));
 		E(id + 'i', id + 't', 'format');
 	};
-	text('mline', 'menuLine', 'mm-menu-line', 800, 40);
-	for (let i = 1; i <= MAZES.length; i++) text('ls' + i, 'levelStars', 'lvl-' + i + '-stars', 800, 110 + (i - 1) * 70, { level: i });
-	text('title', 'title', 'mm-title', 1300, 40);
-	text('clock', 'clock', 'mm-clock', 1300, 110);
-	text('coins', 'coins', 'mm-coins', 1300, 180);
-	text('falls', 'falls', 'mm-falls', 1300, 250);
-	text('hint', 'hint', 'mm-hint', 1300, 320);
-	text('result', 'result', 'mm-result', 1300, 410);
-	text('rstars', 'resultStars', 'mm-stars', 1300, 480);
-	text('rline', 'resultLine', 'mm-line', 1300, 550);
-	text('rbest', 'resultBest', 'mm-best', 1300, 620);
-	N('music', 'gamemusic', 'Puzzle music', 40, 760, { preset: 'puzzle', volume: 0.35, while: 'always' });
-	// the boards and gates: the module's tilt effect, one per object (a KINEMATIC platform each)
-	let y = 860;
-	for (let k = 1; k <= MAZES.length; k++) {
-		N('tilt' + k, 'marbletilt', 'Maze ' + k + ' tilts', 40, y, { maze: k, gate: false, lx: 0, lz: 0, phase: 0 });
-		N('seltilt' + k, 'objectselector', 'Maze ' + k, 280, y, { selected: 'Maze ' + k });
-		E('tilt' + k, 'seltilt' + k);
+	let k = 0;
+	text('mline', 'menuLine', 'mm-menu-line', k++);
+	for (let i = 1; i <= MAZES.length; i++) text('ls' + i, 'levelStars', 'lvl-' + i + '-stars', k++, { level: i });
+	[['title', 'title', 'mm-title'], ['clock', 'clock', 'mm-clock'], ['coins', 'coins', 'mm-coins'], ['falls', 'falls', 'mm-falls'], ['hint', 'hint', 'mm-hint'],
+		['result', 'result', 'mm-result'], ['rstars', 'resultStars', 'mm-stars'], ['rline', 'resultLine', 'mm-line'], ['rbest', 'resultBest', 'mm-best']]
+		.forEach(([id, read, el]) => text(id, read, el, k++));
+	G('g-hud', 'HUD words', hud, 1300, 40);
+	T('n-hud', 'HUD words', 'Each **Marble info** node reads one line (the maze, the clock against par, coins, falls, the stars…) into a HUD Text.', 1300, 170, { w: 260, h: 110, color: 'purple' });
+
+	// ---- the boards and gates (module tilt effects = kinematic platforms) and the music ----------
+	const world = [];
+	world.push(N('music', 'gamemusic', 'Puzzle music', 1650, 40, { preset: 'puzzle', volume: 0.35, while: 'always' }));
+	let y = 120;
+	for (let m = 1; m <= MAZES.length; m++) {
+		world.push(N('tilt' + m, 'marbletilt', 'Maze ' + m + ' tilts', 1650, y, { maze: m, gate: false, lx: 0, lz: 0, phase: 0 }));
+		world.push(N('seltilt' + m, 'objectselector', 'Maze ' + m, 1890, y, { selected: 'Maze ' + m }));
+		E('tilt' + m, 'seltilt' + m);
 		y += 80;
-		for (const gate of BUILT[k - 1].gates) {
+		for (const gate of BUILT[m - 1].gates) {
 			const id = gate.name.replace(/[^a-z0-9]/gi, '');
-			N('tilt' + id, 'marbletilt', gate.name + ' rises', 40, y, { maze: k, gate: true, lx: gate.gate.lx, lz: gate.gate.lz, phase: gate.gate.phase });
-			N('sel' + id, 'objectselector', gate.name, 280, y, { selected: gate.name });
+			world.push(N('tilt' + id, 'marbletilt', gate.name + ' rises', 1650, y, { maze: m, gate: true, lx: gate.gate.lx, lz: gate.gate.lz, phase: gate.gate.phase }));
+			world.push(N('sel' + id, 'objectselector', gate.name, 1890, y, { selected: gate.name }));
 			E('tilt' + id, 'sel' + id);
 			y += 80;
 		}
 	}
+	G('g-world', 'Boards, gates & music', world, 1650, 40);
+	T('n-world', 'Boards, gates & music', 'One **Marble tilt** node per maze and gate: the board follows the players\' tilt (a kinematic platform), the gates rise and sink on the shared clock.', 1650, 170, { w: 260, h: 120, color: 'gray' });
 	return g.done();
 }
 

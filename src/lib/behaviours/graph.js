@@ -73,7 +73,7 @@ export function deriveGraph(model) {
 		add(0, 'e:' + h.name, 'event', {
 			key: h.name,
 			label: ev?.label ?? 'on.' + h.name,
-			sub: ev ? (ev.piece ? 'kit.' + ev.piece + '.' + ev.event : ev.name) + (ev.local ? ' · local' : ' · authority') : 'unknown event',
+			sub: ev ? (ev.input ? 'wired input' : ev.piece ? 'kit.' + ev.piece + '.' + ev.event : ev.name) + (ev.local ? ' · local' : ' · authority') : 'unknown event',
 			outputs: Object.entries(ev?.payload ?? {}).map(([k, t]) => k + ': ' + t),
 			line: h.line,
 			unknown: !ev
@@ -135,6 +135,11 @@ export function deriveGraph(model) {
 		for (const a of f.actions ?? []) {
 			const aid = add(2, 'a:' + f.fid + ':' + a, 'action', { key: f.fid + ':' + a, label: a + '()', line: f.line });
 			link(f.fid, aid, 'action');
+		}
+		// 36 (U10): an emitted event output (`this.emit('holeSunk')`) — the wire out to the graph
+		for (const e of f.emits ?? []) {
+			const xid = add(2, 'x:' + e, 'action', { key: 'emit:' + e, label: 'emit ' + e + ' ⚡', line: f.line });
+			link(f.fid, xid, 'action');
 		}
 	}
 	// vertical balance: centre the shorter columns on the tallest

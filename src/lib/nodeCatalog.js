@@ -272,8 +272,8 @@ export const nodeCatalog = [
 				type: 'announce',
 				label: 'Announce',
 				defaults: { text: 'Level ' + V_MARK, sub: '', seconds: 1.8, color: '#ffd76a', decimals: 0 },
-				inputs: ['trigger', 'value'],
-				inputLabels: { value: 'value - fills ' + V_MARK + ' in the text' },
+				inputs: ['trigger', 'value', 'sub'],
+				inputLabels: { value: 'value - fills ' + V_MARK + ' in the text', sub: 'sub - the second line (wired text)' },
 				params: [
 					{ key: 'text', kind: 'text', placeholder: 'Ring ' + V_MARK + ' reached', maxLength: 80 },
 					{ key: 'sub', kind: 'text', placeholder: 'a smaller second line', maxLength: 120 },

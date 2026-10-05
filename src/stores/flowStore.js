@@ -188,6 +188,18 @@ export function graphTotals() {
 }
 
 /**
+ * 36 (U10): every node card reads its spec through `data.type` (the editor writes it on every
+ * node it makes); a node authored in CODE — a game template's graph — often carried only the
+ * top-level `type`, so its card found no spec and drew no sockets and no controls. Filled in on
+ * the way in (the same on every peer that loads the file; a joiner receives the filled copy).
+ * @param {any} node
+ */
+function withDataType(node) {
+	if (!node || !node.type || !node.data || node.data.type !== undefined) return node;
+	return { ...node, data: { ...node.data, type: node.type } };
+}
+
+/**
  * Replace all graph documents (session/autosave restore). Resets the editor to
  * the scene graph.
  * @param {Record<string, {nodes: any[], edges: any[]}>} graphs
@@ -196,7 +208,7 @@ export function restoreGraphs(graphs) {
 	/** @type {Record<string, {nodes: any[], edges: any[]}>} */
 	const next = { [SCENE_GRAPH]: { nodes: [], edges: [] } };
 	for (const [graphId, graph] of Object.entries(graphs ?? {})) {
-		next[graphId] = { nodes: graph.nodes ?? [], edges: graph.edges ?? [] };
+		next[graphId] = { nodes: (graph.nodes ?? []).map(withDataType), edges: graph.edges ?? [] };
 	}
 	flowGraphs.set(next);
 	activeGraphId.set(SCENE_GRAPH);

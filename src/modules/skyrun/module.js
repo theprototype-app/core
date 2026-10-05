@@ -13,9 +13,13 @@
 //   this file: the mover EFFECT (deterministic from the synced clock, so every peer agrees with
 //     no message, and an effect target is a KINEMATIC body, so the walker stands on it), and the
 //     RUN — fall/checkpoint/coin/spinner/portal — which is LOCAL per player (each peer watches
-//     ITSELF, the playerPosition self-proximity read). The first player through the portal wins
-//     the round for everybody through kit.round.win (a kit request: whoever asks, the
-//     authority applies it once).
+//     ITSELF, the playerPosition self-proximity read).
+//   36 (U10) THE RULES are the "Sky Run rules" behaviour on the Main graph
+//     (scripts/templates/rules/sky-run.rules.js): the stages (names, par), the stars, the jump, the
+//     countdown, how deep a fall goes and who wins. This engine lends them the `skyrun` piece: it
+//     reports a player reaching the portal (`skyrun.portal`, broadcast — the authority's rules
+//     decide) and takes the fall depth (`kit.skyrun.tune`); it reads the stage words from the
+//     kit's level rows the rules define.
 //
 // SHARED: the round (kit.round: menu -> intro -> playing -> won -> results) and the stage
 // (kit.levels). LOCAL: your checkpoint, your coins (a coin hides only for its collector), your
@@ -23,12 +27,8 @@
 
 /** the marker object that says "this scene is a Sky Run game" */
 const MARKER = 'Sky Run game';
-const STAGES = [
-	{ id: '1', name: 'Cloud Steps', par: 45 },
-	{ id: '2', name: 'Spin Cycle', par: 70 },
-	{ id: '3', name: 'Sky Gauntlet', par: 100 }
-];
-/** a fall this far under the stage's start pad puts you back on your checkpoint (metres) */
+/** a fall this far under the stage's start pad puts you back on your checkpoint (metres) — the
+ * rules' `fallDepth` param replaces it (kit.skyrun.tune) */
 const FALL_DEPTH = 7;
 /** player capsule: eye above the feet, and the touch radius for flags/coins/portal */
 const EYE = 1.7;
@@ -46,7 +46,7 @@ const formatTime = (s) => {
 export default {
 	id: 'skyrun',
 	name: 'Sky Run',
-	version: '1.0.0',
+	version: '2.0.0',
 	description:
 		'The Sky Run game: three stages of floating platforms — moving platforms, vanishing tiles, spinners, checkpoints, coins and a finish portal. Best times saved on this device.',
 
@@ -75,12 +75,6 @@ export default {
 				/* storage refused: the default stays off */
 			}
 		};
-		/** @type {any} */ let kitRt = null; // primed: the kit's authority (the towers rule: never a static edge)
-		import('../../lib/kit/runtime.js').then((m) => (kitRt = m));
-		const amAuthority = () => {
-			const a = kitRt?.kitAuthorityId?.();
-			return !a || a === api.peerId?.();
-		};
 		const group = () => api.objectsGroup();
 		/** @param {string} name */
 		const byName = (name) => group()?.getObjectByName(name) ?? null;
@@ -89,8 +83,14 @@ export default {
 		const allNamed = (prefix) => (group()?.children ?? []).filter((/** @type {any} */ o) => typeof o.name === 'string' && o.name.startsWith(prefix));
 		const stageNo = () => {
 			const cur = String(kit.levels.current?.() ?? '');
-			return STAGES.some((s) => s.id === cur) ? cur : '1';
+			return cur && kit.levels.level?.(cur) ? cur : '1';
 		};
+		/** the stage's row in the rules' level table: {id, label '1 · Cloud Steps', par: {time}} */
+		const stageRow = (/** @type {string} */ id) => kit.levels.level?.(id) ?? null;
+		const stageName = (/** @type {string} */ id) => String(stageRow(id)?.label ?? '').replace(/^\s*\S+\s*·\s*/, '');
+		const stagePar = (/** @type {string} */ id) => Number(stageRow(id)?.par?.time) || 60;
+		/** what the rules tuned (kit.skyrun.tune) */
+		const tuned = { fallDepth: FALL_DEPTH };
 		const phase = () => String(kit.round.phase?.() ?? 'menu');
 		const tmpBox = new THREE.Box3();
 		const tmpV = new THREE.Vector3();
@@ -117,6 +117,8 @@ export default {
 			taken: /** @type {Set<string>} */ (new Set()),
 			finished: 0, // my finishing time (s), 0 = not yet
 			falls: 0,
+			/** how far under the start pad the last fall was caught (m) */
+			fallDrop: 0,
 			lastHit: -10,
 			result: '',
 			resultLine: '',
@@ -181,7 +183,7 @@ export default {
 			if (key !== run.key && (ph === 'intro' || ph === 'playing')) {
 				run.key = key;
 				resetRun(id, true);
-				api.announce('Stage ' + id + ' · ' + (STAGES.find((s) => s.id === id)?.name ?? ''), { sub: 'Reach the portal. Flags save your spot.', ms: 2600, color: '#ffd45e' });
+				api.announce('Stage ' + id + ' · ' + stageName(id), { sub: 'Reach the portal. Flags save your spot.', ms: 2600, color: '#ffd45e' });
 			}
 			if (ph !== 'playing' || run.finished) return;
 			const eye = api.playerPosition();
@@ -189,7 +191,8 @@ export default {
 			const feet = [eye[0], eye[1] - EYE, eye[2]];
 			const start = startOf(id);
 			// a fall
-			if (feet[1] < (start.floor ?? start.pos[1]) - FALL_DEPTH) {
+			if (feet[1] < (start.floor ?? start.pos[1]) - tuned.fallDepth) {
+				run.fallDrop = +((start.floor ?? start.pos[1]) - feet[1]).toFixed(2);
 				backToCheckpoint('You fell!');
 				return;
 			}
@@ -252,7 +255,6 @@ export default {
 		const finish = (id) => {
 			const t = Math.max(0.1, Number(kit.round.elapsed?.() ?? 0));
 			run.finished = t;
-			const stage = STAGES.find((s) => s.id === id);
 			const was = bestOf(id);
 			const isBest = !(was > 0) || t < was;
 			if (isBest) api.storage?.set?.(bestKey(id), +t.toFixed(1));
@@ -265,8 +267,9 @@ export default {
 			const p = api.playerPosition();
 			if (p) api.effects?.burst?.(p, { kind: 'confetti', count: 96 });
 			// stars: finishing, every coin, par time
-			kit.levels.complete(true, run.coins, t, id, { coins: run.coins, coinsTotal: run.coinsTotal, par: stage?.par ?? 60 });
-			kit.round.win(name + ' reached the portal in ' + formatTime(t));
+			kit.levels.complete(true, run.coins, t, id, { coins: run.coins, coinsTotal: run.coinsTotal, par: stagePar(id) });
+			// the RULES decide the round (the first through the portal wins, on the authority's copy)
+			emitAll('portal', { by: String(api.peerId?.() ?? ''), name, time: t, coins: run.coins, coinsTotal: run.coinsTotal, stage: id });
 		};
 
 		// ---- the mover effect: slide / bob / spin / blink, from the synced clock ---------------
@@ -304,10 +307,9 @@ export default {
 		// ---- the HUD words ---------------------------------------------------------------------
 		const info = (/** @type {any} */ data) => {
 			const id = stageNo();
-			const stage = STAGES.find((s) => s.id === id);
 			switch (String(data?.read ?? 'title')) {
 				case 'title':
-					return 'Stage ' + id + ' · ' + (stage?.name ?? '');
+					return 'Stage ' + id + ' · ' + stageName(id);
 				case 'clock':
 					return formatTime(run.finished || Number(kit.round.elapsed?.() ?? 0));
 				case 'coins':
@@ -369,31 +371,35 @@ export default {
 		});
 
 		// ---- levels + round ---------------------------------------------------------------------
-		/** @type {any} */ let levelsOff = null;
-		const defineLevels = () => {
-			if (typeof levelsOff === 'function') levelsOff();
-			levelsOff = kit.levels.define({
-				id: 'skyrun',
-				list: STAGES.map((s) => ({ id: s.id, label: s.id + ' · ' + s.name, par: { time: s.par } })),
-				unlock: 'all',
-				stars: (/** @type {any} */ row, /** @type {any} */ r) => {
-					if (!r?.won) return 0;
-					const stage = STAGES.find((s) => s.id === String(row.id));
-					let n = 1;
-					if ((r.coinsTotal ?? 0) > 0 && (r.coins ?? 0) >= r.coinsTotal) n++;
-					if (stage && r.time > 0 && r.time <= stage.par) n++;
-					return n;
+		// ---- the engine piece the rules drive -------------------------------------------------
+		const skyrun = api.kit.provide(
+			{
+				piece: 'skyrun',
+				group: 'Sky Run (engine)',
+				calls: [
+					{ name: 'tune', kind: 'action', label: 'Tune the run', doc: 'How deep a fall goes before it sends a player back to their flag ({fallDepth} in metres).', args: [{ key: 'settings', type: 'object' }], node: false },
+					{ name: 'progress', kind: 'value', label: 'This device\'s stage progress store', vtype: 'any', node: false },
+					{ name: 'portal', kind: 'event', label: 'On a player reaching the portal', node: false }
+				]
+			},
+			{
+				tune: (/** @type {any} */ settings) => {
+					const d = Number(settings?.fallDepth);
+					if (Number.isFinite(d) && d > 0) tuned.fallDepth = d;
 				},
-				store: {
+				progress: () => ({
 					get: () => api.storage?.get?.('progress', null),
 					set: (/** @type {any} */ p) => api.storage?.set?.('progress', p)
-				}
-			});
+				})
+			}
+		);
+		/** an event every peer hears (the rules act on the authority's copy) @param {string} name @param {any} payload */
+		const emitAll = (name, payload) => {
+			skyrun.emit(name, payload);
+			api.send({ op: 'ev', name, payload });
 		};
-		// a stage chosen (a menu button, the shell's picker) starts a fresh round on it
-		kit.levels.onSelected?.((/** @type {any} */ p) => {
-			if (p?.game !== 'skyrun' || !active() || !amAuthority()) return;
-			kit.round.restart();
+		api.onMessage((/** @type {any} */ msg) => {
+			if (msg?.op === 'ev' && typeof msg.name === 'string') skyrun.emit(msg.name, msg.payload ?? {});
 		});
 		const HELP = [
 			'Run and jump from platform to platform to the glowing portal at the end of the stage.',
@@ -410,9 +416,6 @@ export default {
 			if (on !== wasActive) {
 				wasActive = on;
 				if (on) {
-					defineLevels();
-					kit.rules.set?.({ jump: 1.3 });
-					kit.round.configure?.(3, 0, 'lose', 2.5);
 					if (typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
 					touchOff = api.input?.actions?.(['jump'], { preset: 'platformer' }) ?? null;
 					const s = startOf(stageNo());
@@ -423,8 +426,6 @@ export default {
 					helpOff = null;
 					if (touchOff) touchOff();
 					touchOff = null;
-					if (typeof levelsOff === 'function') levelsOff();
-					levelsOff = null;
 				}
 			}
 			if (!on) return;
@@ -435,8 +436,6 @@ export default {
 			helpOff = null;
 			if (touchOff) touchOff();
 			touchOff = null;
-			if (typeof levelsOff === 'function') levelsOff();
-			levelsOff = null;
 			run.key = '';
 			run.taken.clear();
 			wasActive = false;
@@ -444,7 +443,9 @@ export default {
 
 		// the suites' window onto the module
 		/** @type {any} */ (globalThis).__skyrun = {
-			stages: STAGES,
+			stages: () => kit.levels.table?.() ?? [],
+			tuned: () => ({ ...tuned }),
+			rulesNode: () => api.flow.nodes('behaviour').find((/** @type {any} */ n) => /Sky Run rules/.test(String(n.data?.name ?? n.data?.label ?? '')))?.id ?? null,
 			run: () => ({ ...run, taken: [...run.taken] }),
 			startOf,
 			info,

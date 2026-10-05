@@ -9,11 +9,19 @@
 //                    turns) to raise the iron gate.
 //   Room 3 VAULT     put each gem on its pedestal -> the vault door opens -> step through = win.
 //
+// 36 (U10) — THIS FILE IS THE ENGINE, NOT THE RULES. What each drawer, key, dial, lever, crank
+// and pedestal DOES, the dial code, the lever order and the crank's turns live in the
+// "Escape rules" behaviour on the game's Main graph (scripts/templates/rules/escape-room.rules.js).
+// The engine lends them the `escape` piece (api.kit.provide): it reports what a player USED
+// (`escape.use` — a click, a VR trigger, a held crank, walking into the portal) and when a fresh
+// round starts (`escape.roundStarted`), stores the puzzle state the rules write
+// (`kit.escape.setVars`) and says what the rules tell a player (`kit.escape.tell`).
+//
 // WHAT REPLICATES: the puzzle state is a handful of GAME VARIABLES (the replicated game
-// singleton), written by whoever clicked; every visual — a door's slide, a gem's visibility, a
-// dial's angle, every sound and banner — is DERIVED per peer from those numbers each frame, so a
-// joiner and a spectator see exactly what the player sees and this module adds no message. A
-// round restart (Start / Restart) zeroes the variables on the lowest peer id.
+// singleton), written by the rules on the session's authority; every visual — a door's slide, a
+// gem's visibility, a dial's angle, every sound and banner — is DERIVED per peer from those numbers
+// each frame, so a joiner and a spectator see exactly what the player sees. A use travels as one
+// module message to every peer (the rules act on the authority's copy).
 //
 // Puzzle objects are found BY NAME (the template def owns the geometry). Their authored pose is
 // the CLOSED pose; the module only offsets from it.
@@ -39,29 +47,45 @@ const F = {
 };
 /** pedestal bits (esPlaced) */
 const P = { sun: 1, moon: 2, star: 4 };
-/** the dial code and the lever order (on the alchemist's note) */
-const CODE = [3, 7, 1];
-const LEVER_ORDER = ['right', 'left', 'middle'];
-const TURNS = 8;
-const V = { flags: 'esFlags', placed: 'esPlaced', d1: 'esD1', d2: 'esD2', d3: 'esD3', lev: 'esLev', turns: 'esTurns', start: 'esStart' };
-/** the state a stage starts from (the Levels page: practise one room) */
-const STAGE_FLAGS = [0, F.drawer | F.key | F.chest | F.crank | F.studyDoor | F.sun | F.note, 0];
-STAGE_FLAGS[2] = STAGE_FLAGS[1] | F.fitted | F.hatch | F.moon | F.levers | F.star | F.gate;
+/** the game variables the rules write (kit.escape.setVars keys -> variable names). `code` and
+ * `levers` are the note's numbers as digits (371; levers 1 left, 2 middle, 3 right) so the HUD
+ * and the hints can say them; `round` is the round the rules last set up. */
+const V = {
+	flags: 'esFlags',
+	placed: 'esPlaced',
+	d1: 'esD1',
+	d2: 'esD2',
+	d3: 'esD3',
+	lev: 'esLev',
+	turns: 'esTurns',
+	start: 'esStart',
+	turnsMax: 'esTurnsMax',
+	code: 'esCode',
+	levers: 'esLevers',
+	round: 'esRound'
+};
+/** everything a player can use (the rules decide what happens) */
+const USABLE = new Set([
+	'Desk drawer', 'Brass key', 'Chest lid', 'Chest body', 'Crank', 'Old note', 'Sun gem', 'Study door',
+	'Dial 1', 'Dial 2', 'Dial 3', 'Moon gem', 'Lever left', 'Lever middle', 'Lever right', 'Star gem',
+	'Crank socket', 'Fitted crank', 'Pedestal sun', 'Pedestal moon', 'Pedestal star', 'Workshop gate',
+	'Vault door', 'Exit portal'
+]);
+const LEVER_NAMES = ['', 'left', 'middle', 'right'];
 /** how long the button is held on the crank per quarter turn (hold-to-twist) */
 const TWIST_STEP = 0.32;
 
 const ROOMS = [
 	{ name: 'The Study', spawn: [-8, 0, 2.6], yaw: 0, hint: 'The desk drawer sticks, but it opens. A key opens more than one lock.' },
-	{ name: 'The Workshop', spawn: [-2.6, 0, 0], yaw: -Math.PI / 2, hint: 'The note says 3 · 7 · 1 for the dials, and RIGHT · LEFT · MIDDLE for the levers. The crank fits the socket by the gate — keep turning it.' },
+	{ name: 'The Workshop', spawn: [-2.6, 0, 0], yaw: -Math.PI / 2, hint: 'The note says {code} for the dials, and {levers} for the levers. The crank fits the socket by the gate — keep turning it.' },
 	{ name: 'The Vault', spawn: [5.4, 0, 0], yaw: -Math.PI / 2, hint: 'Each pedestal wants the gem of its colour: gold sun, pale moon, violet star.' }
 ];
-const NOTE_TEXT = 'The note reads: "DIALS 3 · 7 · 1 — LEVERS right, left, middle — the crank lifts the gate."';
 const HINT_AFTER = 60;
 
 export default {
 	id: 'escape',
 	name: "The Alchemist's Escape",
-	version: '1.0.0',
+	version: '2.0.0',
 	description: "The Alchemist's Escape: three rooms of drawers, keys, dials, levers and a crank to twist — find the gems and get out. Best time saved on this device.",
 
 	/** @param {any} api */
@@ -100,11 +124,6 @@ export default {
 		/** @param {number} bit */
 		const clearFlag = (bit) => setV(V.flags, v(V.flags) & ~bit);
 		const dials = () => [v(V.d1), v(V.d2), v(V.d3)];
-		const amLowest = () => {
-			const me = String(api.peerId?.() ?? '');
-			const ids = (api.peerIds?.() ?? []).map(String);
-			return ids.every((/** @type {string} */ id) => !me || me <= id);
-		};
 		/** where the player is (camera / VR head), [x, y, z] */
 		const playerPos = () => {
 			const p = api.playerPosition?.();
@@ -122,138 +141,92 @@ export default {
 			return [w.x, w.y, w.z];
 		};
 
+		// ---- the note's numbers, as the rules last wrote them (for the HUD and the hints) -------
+		const digits = (/** @type {number} */ n) => String(Math.max(0, Math.round(n))).split('').map(Number);
+		const codeWords = () => {
+			const n = v(V.code, -1);
+			return n < 0 ? '?' : String(Math.round(n)).padStart(3, '0').split('').join(' · ');
+		};
+		const leverWords = () =>
+			digits(v(V.levers))
+				.map((i) => LEVER_NAMES[i] ?? '?')
+				.filter(Boolean)
+				.map((w) => w.toUpperCase())
+				.join(' · ') || '?';
+		const turnsMax = () => Math.max(1, v(V.turnsMax, 8));
+
+		// ---- the engine piece the rules drive ------------------------------------------------------
+		const me = () => String(api.peerId?.() ?? '');
+		/** say what the rules tell a player, here @param {string} text @param {any} [o] */
+		const tellHere = (text, o = {}) => {
+			if (!text) return;
+			say(String(text), {
+				...(o.sub ? { sub: String(o.sub) } : {}),
+				...(o.ms ? { ms: Number(o.ms) } : {}),
+				...(o.color ? { color: String(o.color) } : {})
+			});
+			if (o.sound) sound(String(o.sound), o.at ? posOf(String(o.at)) : undefined);
+		};
+		const escape = api.kit.provide(
+			{
+				piece: 'escape',
+				group: "Alchemist's Escape (engine)",
+				calls: [
+					{ name: 'setVars', kind: 'action', label: 'Write the puzzle state', doc: 'Writes these puzzle fields (flags, placed, d1-d3, lev, turns, start, turnsMax, code, levers, round) into the game variables every peer draws the house from.', args: [{ key: 'patch', type: 'object' }], node: false },
+					{ name: 'tell', kind: 'action', label: 'Tell a player', doc: 'A banner (and an optional sound at an object) on the screen of the player who used something.', args: [{ key: 'by', type: 'string' }, { key: 'text', type: 'string' }, { key: 'options', type: 'object' }], node: false },
+					{ name: 'vars', kind: 'value', label: 'The puzzle state', vtype: 'any', node: false },
+					{ name: 'use', kind: 'event', label: 'On a player using something', node: false },
+					{ name: 'roundStarted', kind: 'event', label: 'On a fresh round (Start, Restart, a practice room)', node: false }
+				]
+			},
+			{
+				setVars: (/** @type {any} */ patch) => {
+					for (const [k, value] of Object.entries(patch ?? {})) {
+						const name = /** @type {any} */ (V)[k];
+						const n = Number(value);
+						if (name && Number.isFinite(n)) setV(name, n);
+					}
+				},
+				tell: (/** @type {any} */ by, /** @type {any} */ text, /** @type {any} */ options) => {
+					const who = String(by ?? '');
+					if (!who || who === me()) tellHere(text, options ?? {});
+					if (who !== me()) api.send({ op: 'tell', to: who, text: String(text ?? ''), options: options ?? {} });
+				},
+				vars: () => Object.fromEntries(Object.entries(V).map(([k, name]) => [k, v(name)]))
+			}
+		);
+		/** an event every peer hears (the rules act on the authority's copy) @param {string} name @param {any} payload */
+		const emitAll = (name, payload) => {
+			escape.emit(name, payload);
+			api.send({ op: 'ev', name, payload });
+		};
+		api.onMessage((/** @type {any} */ msg) => {
+			if (msg?.op === 'ev' && typeof msg.name === 'string') escape.emit(msg.name, msg.payload ?? {});
+			else if (msg?.op === 'tell' && String(msg.to) === me()) tellHere(msg.text, msg.options ?? {});
+		});
+
 		// ---- the actions (a click, a VR trigger, a suite's scripted press) ----------------------
 		/** @param {string} name the puzzle object's name @returns {boolean} consumed */
 		const act = (name) => {
 			if (!active()) return false;
 			if (game()?.state !== 'playing') return false;
-			switch (name) {
-				case 'Desk drawer':
-					if (!has(F.drawer)) setFlag(F.drawer);
-					else if (!has(F.key)) say('A brass key lies in the drawer.');
-					else say('An empty drawer.');
-					return true;
-				case 'Brass key':
-					if (has(F.drawer) && !has(F.key)) setFlag(F.key);
-					return true;
-				case 'Chest lid':
-				case 'Chest body':
-					if (has(F.chest)) return true;
-					if (!has(F.key)) {
-						say('The chest is locked.', { sub: 'There is a small brass keyhole.' });
-						sound('fail', posOf('Chest body'));
-					} else setFlag(F.chest);
-					return true;
-				case 'Crank':
-					if (has(F.chest) && !has(F.crank)) setFlag(F.crank);
-					return true;
-				case 'Old note':
-					if (!has(F.note)) setFlag(F.note);
-					say(NOTE_TEXT, { ms: 6500, color: '#f3e3b8' });
-					sound('pop', posOf('Old note'));
-					return true;
-				case 'Sun gem':
-					if (!has(F.sun)) setFlag(F.sun);
-					return true;
-				case 'Study door':
-					if (has(F.studyDoor)) return true;
-					if (!has(F.key)) {
-						say('The study door is locked.', { sub: 'Find its key.' });
-						sound('fail', posOf('Study door'));
-					} else setFlag(F.studyDoor);
-					return true;
-				case 'Dial 1':
-				case 'Dial 2':
-				case 'Dial 3': {
-					if (has(F.hatch)) return true;
-					const k = name === 'Dial 1' ? V.d1 : name === 'Dial 2' ? V.d2 : V.d3;
-					setV(k, (v(k) + 1) % 10);
-					sound('click', posOf(name));
-					const d = dials();
-					if (d[0] === CODE[0] && d[1] === CODE[1] && d[2] === CODE[2]) setFlag(F.hatch);
-					return true;
-				}
-				case 'Moon gem':
-					if (has(F.hatch) && !has(F.moon)) setFlag(F.moon);
-					return true;
-				case 'Lever left':
-				case 'Lever middle':
-				case 'Lever right': {
-					if (has(F.levers)) return true;
-					const which = name.slice(6);
-					const step = v(V.lev);
-					if (LEVER_ORDER[step] === which) {
-						setV(V.lev, step + 1);
-						if (step + 1 >= LEVER_ORDER.length) setFlag(F.levers);
-					} else {
-						setV(V.lev, 0);
-						say('Clunk — the levers spring back.', { sub: 'Wrong order.', color: '#ffb86b' });
-						sound('fail', posOf(name));
-					}
-					return true;
-				}
-				case 'Star gem':
-					if (has(F.levers) && !has(F.star)) setFlag(F.star);
-					return true;
-				case 'Crank socket':
-				case 'Fitted crank':
-					if (has(F.gate)) return true;
-					if (!has(F.fitted)) {
-						if (!has(F.crank)) {
-							say('An empty square socket.', { sub: 'Something with a handle would fit.' });
-							sound('fail', posOf('Crank socket'));
-						} else setFlag(F.fitted);
-						return true;
-					}
-					{
-						const t = v(V.turns) + 1;
-						setV(V.turns, t);
-						if (t >= TURNS) setFlag(F.gate);
-					}
-					return true;
-				case 'Pedestal sun':
-				case 'Pedestal moon':
-				case 'Pedestal star': {
-					const gem = name.slice(9);
-					const bit = gem === 'sun' ? P.sun : gem === 'moon' ? P.moon : P.star;
-					const held = gem === 'sun' ? F.sun : gem === 'moon' ? F.moon : F.star;
-					if (placed() & bit) return true;
-					if (!has(held)) {
-						say('This pedestal wants the ' + gem + ' gem.', { color: '#c7b8ff' });
-						return true;
-					}
-					const now = v(V.placed) | bit;
-					setV(V.placed, now);
-					if (now === 7) setFlag(F.vault);
-					return true;
-				}
-				case 'Workshop gate':
-					if (!has(F.gate)) {
-						say('The iron gate is down.', { sub: has(F.fitted) ? 'Keep turning the crank.' : 'There is an empty square socket in the wall beside it.' });
-						sound('fail', posOf('Workshop gate'));
-					}
-					return true;
-				case 'Vault door':
-					if (!has(F.vault)) {
-						say('The vault door will not move.', { sub: 'Three pedestals wait for three gems.' });
-						sound('fail', posOf('Vault door'));
-					} else win();
-					return true;
-				case 'Hint crystal 1':
-				case 'Hint crystal 2':
-				case 'Hint crystal 3':
-					hint(Number(name.slice(-1)) - 1);
-					return true;
-				case 'Exit portal':
-					if (has(F.vault)) win();
-					return true;
+			if (/^Hint crystal [123]$/.test(name)) {
+				hint(Number(name.slice(-1)) - 1);
+				return true;
 			}
-			return false;
+			if (!USABLE.has(name)) return false;
+			if (!escape.listening('use')) {
+				say('Nothing happens.', { sub: 'The rules of this house are not running — open the Escape rules node.', color: '#ffb86b' });
+				return true;
+			}
+			emitAll('use', { name, by: me() });
+			return true;
 		};
 
 		/** @type {number[]} when this peer entered each room (seconds of the round) */
 		let roomSince = [0, 0, 0];
 		let curRoom = 0;
+		const hintText = (/** @type {number} */ room) => ROOMS[room].hint.replace('{code}', codeWords()).replace('{levers}', leverWords());
 		/** @param {number} [room] */
 		const hint = (room = curRoom) => {
 			const el = gs ? gs.gameElapsed() : 0;
@@ -263,12 +236,8 @@ export default {
 				sound('sparkle');
 				return;
 			}
-			say('Hint — ' + ROOMS[room].name, { sub: ROOMS[room].hint, ms: 7000, color: '#9ee6ff' });
+			say('Hint — ' + ROOMS[room].name, { sub: hintText(room), ms: 7000, color: '#9ee6ff' });
 			sound('sparkle');
-		};
-		const win = () => {
-			if (!gs || game()?.state !== 'playing') return;
-			gs.setGameState('over', { outcome: 'won' });
 		};
 
 		api.registerClickHandler(
@@ -321,16 +290,20 @@ export default {
 		let prevPlaced = 0;
 		let prevTurns = 0;
 		let prevLev = 0;
+		let prevDials = '';
 		let prevState = '';
 		let prevRound = -1;
 		let lastT = 0;
 		let fenceAt = 0;
+		let portalAt = 0;
 		const moments = () => {
 			const f = flags();
 			const pl = placed();
 			const turns = running() ? v(V.turns) : 0;
 			const lev = running() ? v(V.lev) : 0;
+			const dialKey = running() ? dials().join(',') : '';
 			if (prevFlags < 0) {
+				prevDials = dialKey;
 				prevFlags = f;
 				prevPlaced = pl;
 				prevTurns = turns;
@@ -386,6 +359,13 @@ export default {
 				say('The iron gate is up!', { sub: 'The vault lies beyond.', color: '#ffd45e' });
 				sound('levelup');
 			}
+			if (dialKey !== prevDials && prevDials) {
+				const was = prevDials.split(',');
+				dials().forEach((d, i) => {
+					if (String(d) !== was[i]) sound('click', posOf('Dial ' + (i + 1)));
+				});
+			}
+			prevDials = dialKey;
 			if (lev > prevLev) sound('lever', posOf(['Lever right', 'Lever left', 'Lever middle'][lev - 1]));
 			if (pl !== prevPlaced) {
 				for (const [gem, bit] of Object.entries(P))
@@ -426,7 +406,7 @@ export default {
 			show('Star gem', done && !(f & F.star));
 			show('Fitted crank', (f & F.fitted) !== 0);
 			pose('Fitted crank', [0, 0, 0], [(-turns * Math.PI) / 2, 0, 0], dt);
-			pose('Workshop gate', [0, (2.3 * Math.min(turns, TURNS)) / TURNS, 0], [0, 0, 0], dt);
+			pose('Workshop gate', [0, (2.3 * Math.min(turns, turnsMax())) / turnsMax(), 0], [0, 0, 0], dt);
 			for (const [gem, bit] of Object.entries(P)) show('Placed ' + gem, (pl & bit) !== 0);
 			pose('Vault door', [0, 0, f & F.vault ? -1.55 : 0], [0, 0, 0], dt);
 			show('Exit portal', (f & F.vault) !== 0);
@@ -469,7 +449,11 @@ export default {
 				say('The way is shut.', { ms: 1400, color: '#ffb86b' });
 				api.hapticPattern?.('bump');
 			}
-			if (f & F.vault && x > 12.7) win();
+			// walking through the open vault: the rules hear it as using the exit portal
+			if (f & F.vault && x > 12.7 && now - portalAt > 1) {
+				portalAt = now;
+				act('Exit portal');
+			}
 			const room = roomOf(x);
 			if (room !== curRoom) {
 				curRoom = room;
@@ -509,8 +493,8 @@ export default {
 					if (!(f & F.studyDoor)) return 'Find a way out of the study';
 					if (!(f & F.gate))
 						return (
-							'Open the iron gate · dials ' + dials().join(' · ') + ' · crank ' + Math.min(v(V.turns), TURNS) + '/' + TURNS +
-							(f & F.note ? '  —  note: ' + CODE.join('·') + ', levers ' + LEVER_ORDER.map((w) => w[0].toUpperCase()).join('·') : '')
+							'Open the iron gate · dials ' + dials().join(' · ') + ' · crank ' + Math.min(v(V.turns), turnsMax()) + '/' + turnsMax() +
+							(f & F.note ? '  —  note: ' + codeWords().replace(/ /g, '') + ', levers ' + leverWords().replace(/([A-Z])[A-Z]*/g, '$1').replace(/ /g, '') : '')
 						);
 					if (!(f & F.vault)) return 'Place the three gems on their pedestals';
 					return 'The door is open — escape!';
@@ -558,10 +542,6 @@ export default {
 		/** @type {null | (() => void)} */ let helpOff = null;
 		// 36 U8: touch — tap to use what the crosshair is on, and the hint key as a button
 		/** @type {null | (() => void)} */ let touchOff = null;
-		const resetPuzzle = () => {
-			for (const k of Object.values(V)) setV(k, 0);
-		};
-
 		/** start a fresh round in a stage (0 study, 1 workshop, 2 vault) — the Levels page */
 		const startStage = (/** @type {number} */ stage) => {
 			if (!gs) return;
@@ -570,19 +550,10 @@ export default {
 			gs.setGameState('playing');
 		};
 		let pendingStage = -1;
-		const applyStage = (/** @type {number} */ stage) => {
-			resetPuzzle();
-			setV(V.start, stage);
-			if (stage <= 0) return;
-			setV(V.flags, STAGE_FLAGS[stage]);
-			if (stage >= 2) {
-				setV(V.d1, CODE[0]);
-				setV(V.d2, CODE[1]);
-				setV(V.d3, CODE[2]);
-				setV(V.lev, 3);
-				setV(V.turns, TURNS);
-			}
-		};
+		/** the stage this peer started the round in, and the round the rules were last asked about */
+		let localStage = 0;
+		let askedAt = -1;
+		let setupRound = -1;
 		/** @type {any} */ let levelsOff = null;
 		const defineLevels = () => {
 			if (typeof api.game?.levels !== 'function') return;
@@ -661,7 +632,8 @@ export default {
 					helpOff();
 					helpOff = null;
 				}
-				if (on) api.game?.onRestart?.(() => amLowest() && applyStage(v(V.start)));
+				// the pause menu's Restart: the rules set the same room up again
+				if (on) api.game?.onRestart?.(() => emitAll('roundStarted', { stage: v(V.start), round: game()?.round ?? 0, restart: true }));
 				if (on) defineLevels();
 				if (!on && typeof levelsOff === 'function') {
 					levelsOff();
@@ -672,12 +644,17 @@ export default {
 			const dt = Math.min(0.1, Math.max(0, time - lastT));
 			lastT = time;
 			const g = game();
-			// a fresh round (Start / Restart): the lowest peer id zeroes the puzzle
+			// a fresh round (Start / Restart / a practice room): the RULES set the puzzle up. The peer
+			// that picked a practice room tells everyone which; every peer then asks its own rules copy
+			// (only the authority's acts) until the puzzle says this round is set up — so a rules node
+			// still loading, or an authority that changes hands, cannot leave last round's house standing
 			if (g && g.state === 'playing' && g.round !== prevRound) {
 				prevRound = g.round;
 				const stage = Math.max(0, pendingStage);
+				if (pendingStage >= 0) emitAll('roundStarted', { stage, round: g.round });
 				pendingStage = -1;
-				if (amLowest()) applyStage(stage);
+				localStage = stage;
+				askedAt = -1;
 				curRoom = stage;
 				roomSince = [0, 0, 0];
 				prevFlags = -1;
@@ -697,6 +674,20 @@ export default {
 				}
 				if (g.state === 'menu') api.music?.stop?.();
 				prevState = g.state;
+			}
+			if (g && g.state === 'playing' && v(V.round, -1) !== g.round && (askedAt < 0 || time - askedAt > 0.5)) {
+				askedAt = time;
+				escape.emit('roundStarted', { stage: localStage, round: g.round });
+			}
+			// the round is set up: a peer that did not pick the practice room walks into it too
+			if (g && g.state === 'playing' && v(V.round, -1) === g.round && setupRound !== g.round) {
+				setupRound = g.round;
+				const st = Math.max(0, Math.min(2, v(V.start)));
+				if (st !== localStage) {
+					localStage = st;
+					curRoom = st;
+					api.setSpawn?.(ROOMS[st].spawn, ROOMS[st].yaw, { teleport: st > 0 });
+				}
 			}
 			twist(dt);
 			world(dt);
@@ -732,6 +723,7 @@ export default {
 			best,
 			startStage,
 			twisting: () => twisting,
+			rulesNode: () => api.flow.nodes('behaviour').find((/** @type {any} */ n) => /Escape rules/.test(String(n.data?.name ?? n.data?.label ?? '')))?.id ?? null,
 			solve: () => {
 				for (const n of ['Desk drawer', 'Brass key', 'Chest lid', 'Crank', 'Old note', 'Sun gem', 'Study door']) act(n);
 			}

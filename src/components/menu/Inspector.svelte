@@ -24,6 +24,7 @@
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
 	import DragRow from '../ui/DragRow.svelte';
+	import ParticleMotionRows from '../fx/ParticleMotionRows.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
 	import CustomWrapper from '$lib/ColorWrapper.svelte';
 	import { sineIn } from 'svelte/easing';
@@ -4281,6 +4282,7 @@
 								onchange={(/** @type {any} */ v) => setParticles({ space: v })}
 							/>
 						</div>
+						<ParticleMotionRows {p} set={setParticles} />
 						<div class="ui-row items-center gap-2">
 							<Button size="xs" color="red" onclick={() => removeObjectParticles($selectedObject.uuid)}>
 								Remove emitter

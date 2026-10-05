@@ -8,7 +8,7 @@
 	import { resolveAvatar, hatAnchorY, usesPhotoCard } from '$lib/avatarModel'
 	import { peerHands } from '../../stores/sceneStore'
 	import { RiggedAvatar, lookOf } from '$lib/avatars/riggedAvatar'
-	import { avatarIkPeers, avatarInstances } from '$lib/avatars/avatarState'
+	import { avatarIkPeers, avatarInstances, peersAsClassic } from '$lib/avatars/avatarState'
 	import { feetBelowHead } from '$lib/avatars/catalog'
 
 	// Builds a peer's character from their replicated avatar config (userdata
@@ -27,7 +27,8 @@
 
 	const { camera } = useThrelte()
 	$: config = resolveAvatar(user[5])
-	$: look = lookOf(config, lookId || user[0], user[2] || '')
+	// the local "show everyone as classic heads" switch never applies to your own preview
+	$: look = $peersAsClassic && !preview ? null : lookOf(config, lookId || user[0], user[2] || '')
 	$: photoCard = usesPhotoCard(config, user[2])
 
 	let avatar: RiggedAvatar | null = null

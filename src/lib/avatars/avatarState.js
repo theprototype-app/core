@@ -1,7 +1,8 @@
 // 36-avatars: the small LOCAL state the rigged avatars share with the rest of the UI. A leaf
-// (svelte/store only). Nothing here replicates.
+// (svelte/store + safeStorage). Nothing here replicates.
 
 import { writable } from 'svelte/store';
+import { safeStorage } from '../safeStorage';
 
 /**
  * Which peers' hands the rigged body is currently holding with its IK (so Player stops drawing the
@@ -27,3 +28,10 @@ export function avatarsDebug() {
 	for (const [name, a] of avatarInstances) out[name] = a.state();
 	return out;
 }
+
+/**
+ * LOCAL pref (Settings ▸ Interface ▸ Avatars): draw everybody as the classic floating head on THIS
+ * device — the fallback for a headset with many peers. Never replicated; peers still see your choice.
+ */
+export const peersAsClassic = writable(safeStorage.getItem('avatars:peersClassic') === '1');
+peersAsClassic.subscribe((v) => safeStorage.setItem('avatars:peersClassic', v ? '1' : '0'));

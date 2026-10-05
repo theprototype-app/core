@@ -5,6 +5,7 @@
 	import LoadingSettings from './settings/LoadingSettings.svelte';
 	import SettingRow from './SettingRow.svelte';
 	import TextSelectionSettings from './settings/TextSelectionSettings.svelte'; // 36 U6
+	import AvatarSettings from './settings/AvatarSettings.svelte'; // 36-avatars
 	// 36 I4: what a row is known by (its text, group, section, keywords) + the highlight spans
 	import { rowMatches, matchSpans } from '$lib/settingsSearch';
 	import TouchControlsSettings from './TouchControlsSettings.svelte'; // 36 U8
@@ -816,6 +817,7 @@
 					{#snippet header()}Interface{/snippet}
 					<p class="ui-section-label">Appearance</p>
 					<TextSelectionSettings />
+					<AvatarSettings />
 					<SettingRow name="Theme">
 						<svelte:fragment slot="control">
 							<ThemedSelect

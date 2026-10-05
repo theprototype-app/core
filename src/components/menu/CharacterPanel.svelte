@@ -38,6 +38,10 @@
 	let savedView = null;
 	/** @type {{position: number[], yaw: number} | null} */
 	let stand = null;
+	// the view the camera is flying back to, and when that flight ends: a reopen DURING it must take
+	// this as home, not the mid-flight camera (or the next Apply returns you somewhere in between)
+	/** @type {{position: number[], target: number[], until: number} | null} */
+	let returning = null;
 
 	const myId = () => /** @type {any} */ (get(peers))?.peer?.id ?? '';
 	const myPhoto = () => safeStorage.getItem('avatar') || '';
@@ -68,10 +72,14 @@
 		if (!cam) return;
 		// YOUR character stands where your head is, facing where you look — what peers see
 		const fwd = cam.getWorldDirection(new cam.position.constructor());
-		const yaw = Math.atan2(-fwd.x, -fwd.z);
-		const head = cam.position.toArray();
+		const yawNow = Math.atan2(-fwd.x, -fwd.z);
+		const flying = returning && performance.now() < returning.until ? returning : null;
+		const head = flying ? flying.position : cam.position.toArray();
+		const homeTarget = flying ? flying.target : controls ? controls.target.toArray() : [head[0] + fwd.x, head[1] + fwd.y, head[2] + fwd.z];
+		const yaw = flying ? Math.atan2(-(homeTarget[0] - head[0]), -(homeTarget[2] - head[2])) : yawNow;
+		returning = null;
 		stand = { position: head, yaw };
-		savedView = { position: head, target: controls ? controls.target.toArray() : [head[0] + fwd.x, head[1] + fwd.y, head[2] + fwd.z] };
+		savedView = { position: head, target: homeTarget };
 		pushPreview();
 		if (get(isVRMode)) return;
 		// fly to a 3/4 front view that fits the whole body (head to feet, ~2.2 m) at the camera's fov,
@@ -94,7 +102,10 @@
 		if (apply) commit();
 		open = false;
 		avatarPreview.set(null);
-		if (savedView && !get(isVRMode)) flyTo(savedView.position, savedView.target, 450);
+		if (savedView && !get(isVRMode)) {
+			flyTo(savedView.position, savedView.target, 450);
+			returning = { ...savedView, until: performance.now() + 500 };
+		}
 		savedView = null;
 		stand = null;
 		if (get(characterModalOpen)) characterModalOpen.set(false);

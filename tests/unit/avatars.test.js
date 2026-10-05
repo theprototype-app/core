@@ -303,3 +303,28 @@ describe('armIK', () => {
 		expect(got.angleTo(want)).toBeLessThan(1e-5);
 	});
 });
+
+describe('look resolution', () => {
+	it('seats a hat higher on a taller character (helmets, hoods, wizard hats)', async () => {
+		const { hatLiftFor } = await import('../../src/lib/avatars/catalog.js');
+		expect(hatLiftFor('mage')).toBeGreaterThan(hatLiftFor('knight'));
+		expect(hatLiftFor('knight')).toBeGreaterThan(hatLiftFor('skeleton-minion'));
+		expect(hatLiftFor('nope')).toBe(0.15);
+		for (const c of CHARACTERS) expect(hatLiftFor(c.id)).toBeGreaterThanOrEqual(0);
+	});
+
+	it('maps a config to a look: classic = none, photo face = the photo head, auto per peer', async () => {
+		const { lookOf } = await import('../../src/lib/avatars/riggedAvatar.js');
+		const { resolveAvatar } = await import('../../src/lib/avatarModel.js');
+		expect(lookOf(resolveAvatar({ character: 'classic' }), 'p1')).toBe(null);
+		const auto = lookOf(resolveAvatar(null), 'p1');
+		expect(auto.character).toBe(resolveCharacter('auto', 'p1').id);
+		expect(auto.head).toBe('character');
+		expect(auto.outfit).toBe('');
+		const photo = lookOf(resolveAvatar({ character: 'mage', face: 'image' }), 'p1', 'data:x');
+		expect(photo.head).toBe('photo');
+		expect(photo.photo).toBe('data:x');
+		// a photo face with no photo keeps the chosen head
+		expect(lookOf(resolveAvatar({ character: 'mage', face: 'image', head: 'box' }), 'p1', '').head).toBe('box');
+	});
+});

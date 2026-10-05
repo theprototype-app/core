@@ -44,7 +44,7 @@
 		<label class="flex flex-col">
 			<span>clip</span>
 			<input
-				class="nodrag"
+				class="nodrag nopan"
 				list="playanim-clips-{id}"
 				placeholder="default clip"
 				value={data.clip ?? ''}
@@ -59,7 +59,7 @@
 		<label class="flex flex-col">
 			<span>on trigger</span>
 			<select
-				class="nodrag"
+				class="nodrag nopan"
 				value={data.action ?? 'toggle'}
 				on:change={(e) => setNodeData(id, { action: e.currentTarget.value })}
 			>
@@ -72,7 +72,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>speed</span><span>{(data.speed ?? 1).toFixed(1)}×</span></span>
 			<input
-				class="nodrag accent-[#ff4000]"
+				class="nodrag nopan accent-[#ff4000]"
 				type="range"
 				min="0.1"
 				max="4"

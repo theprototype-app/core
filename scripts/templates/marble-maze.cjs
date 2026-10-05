@@ -454,6 +454,8 @@ const MARBLE_DEF = {
 	view: { pos: [0.9, 1.9, 0.6], target: [0, 1.1, -0.75] },
 	thumb: { camera: 'Card camera' },
 	graphs: { scene: marbleGraph() },
+	// 36 F11: the layout reads well — the author script only moves what overlaps or sits on a wire
+	graphTidy: 'repair',
 	hud: {
 		scene: {
 			active: '',

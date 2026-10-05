@@ -25,7 +25,8 @@ import { parse } from 'acorn';
  *   id: string, kind: TabKind, title: string, lang: 'js' | 'json', code: string, saved: string,
  *   readOnly?: boolean, stale?: boolean, external?: string, error?: CodeError | null,
  *   nodeId?: string, graphId?: string, itemId?: string | null, hash?: string, name?: string,
- *   moduleId?: string, line?: number, fromNode?: { nodeId: string, graphId: string } | null
+ *   moduleId?: string, line?: number, fromNode?: { nodeId: string, graphId: string } | null,
+ *   nodeType?: string
  * }} CodeTab
  */
 
@@ -249,4 +250,19 @@ export function normalizeCodeRequest(req) {
 export function scriptFileName(name) {
 	const base = String(name ?? '').trim().replace(/[*\\/]/g, '-') || 'script';
 	return /\.js$/i.test(base) ? base : base + '.js';
+}
+
+/**
+ * 36-fb-code (F6/F8): move one tab to a new index (drag in the tab strip or the Open editors
+ * list). `toIndex` is where it lands in the list WITHOUT it — the drop-indicator's slot — so a
+ * tab dropped on its own slot stays put. Unknown id = the list unchanged (same array).
+ * @param {CodeTab[]} tabs @param {string} id @param {number} toIndex @returns {CodeTab[]}
+ */
+export function moveTab(tabs, id, toIndex) {
+	const from = tabs.findIndex((t) => t.id === id);
+	if (from < 0) return tabs;
+	const rest = tabs.filter((t) => t.id !== id);
+	const at = Math.max(0, Math.min(rest.length, Math.floor(Number(toIndex) || 0)));
+	if (at === from) return tabs;
+	return [...rest.slice(0, at), tabs[from], ...rest.slice(at)];
 }

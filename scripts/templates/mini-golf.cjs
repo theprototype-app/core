@@ -233,6 +233,25 @@ function golfGraph() {
 	world.push(N('body', 'charcontroller', 'Player: walk', 1640, 660, { mode: 'walk', speed: 0.06, jumpHeight: 0, eyeHeight: 1.6, gravity: true }));
 	G('g-world', 'Course & world', world, 1400, 580);
 	T('n-world', 'Course & world', 'The windmill blades turn (Spin), puzzle music plays, the player walks.', 1400, 700, { w: 250, h: 90, color: 'gray' });
+	// ---- 36 F11 (the user, 1.25: "the Hole Feedback group covers wires — align it and its
+	// neighbours"): Main, hand-aligned on the cards as DRAWN. The rules card feeds ~45 sockets, so
+	// every card it feeds sits in ONE column right of it, in socket order (the HUD lines are the
+	// top sockets, the moments below) — a wire from the rules then ends before it can cross a
+	// card. The best-round reader and its words sit above the rules, so their wire into the HUD
+	// crosses nothing; the click and Kit: back to menu sit beside the buttons that drive them.
+	// Inside the groups nothing moved. The author script's repair Tidy checks the result.
+	const at = {
+		'n-main': [-420, 0],
+		bstart: [0, 40], bagain: [0, 150], bmenu: [0, 260],
+		kmenu: [250, 260], click: [250, 400],
+		'n-end': [250, -620], bestv: [250, -470], bestw: [510, -470],
+		rules: [510, 0], engine: [510, 760], 'n-engine': [510, 940],
+		'g-hud': [920, 0], 'n-hud': [1150, 0],
+		'g-feedback': [920, 430], 'n-feedback': [1150, 430],
+		kscore: [920, 1070], kwin: [920, 1380], best: [920, 1600],
+		'n-world': [1150, 1070], 'g-world': [1150, 1190]
+	};
+	for (const n of g.nodes) if (at[n.id]) n.position = { x: at[n.id][0], y: at[n.id][1] };
 	return g.done();
 }
 
@@ -284,6 +303,8 @@ const MINI_GOLF_DEF = {
 		]
 	},
 	graphs: { scene: golfGraph() },
+	// 36 F11: the layout reads well — the author script only moves what overlaps or sits on a wire
+	graphTidy: 'repair',
 	hud: {
 		scene: {
 			active: '',

@@ -84,6 +84,9 @@ export async function startExportRuntime() {
 		if (!payload) throw new Error('the scene file is unreadable or from a newer app version');
 		if (cfg.title) payload.name = cfg.title;
 		await applySession(payload, { backup: false, replicate: false, workspace: false, quiet: true });
+		// 36-fb-water S9: an exported simulation scene runs when it opens, as it does in the app
+		const { startSimOnLoad } = await import('../sim/simOnLoad.js');
+		await startSimOnLoad(payload.physics);
 
 		exportRuntimeState.phase = 'settings';
 		await applyGameDefaults(cfg);

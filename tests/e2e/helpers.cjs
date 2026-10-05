@@ -98,6 +98,9 @@ async function setupPage(browser, name, options = {}) {
 		localStorage.setItem('hasSeenWelcome', 'true');
 		if (peerConfig) localStorage.setItem('peerServerConfig', peerConfig);
 	}, PEER_CONFIG);
+	// E2E_NO_PERF_OFFER=1: a deployed PREVIEW build offers perf reports in a sticky toast that covers clicks and
+	// lands in golden frames — answer it up front for proofs against a preview (36-int-125)
+	if (process.env.E2E_NO_PERF_OFFER === '1') await ctx.addInitScript(() => localStorage.setItem('perfReports:offered', 'no'));
 	// options.audio installs the destination TAP before any app code runs, so
 	// everything the app plays can be measured. Opt-in on purpose: it inserts a
 	// gain node in front of ctx.destination, and `spatial-voice` asserts on the

@@ -104,6 +104,7 @@
 	     top and the same inset. -->
 	<div
 		id="touch-tools"
+		data-key-scope="keep"
 		class="touch-tools"
 		class:tt-stacked={stacked}
 		style="--tt-anchor: {$connectDocked ? $connectBarHeight + 8 : 20}px"

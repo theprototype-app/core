@@ -60,6 +60,12 @@
 		{#if f.drain.on}
 			<SliderRow id="fluid-drain-rate" label="Drain rate" min={0} max={4000} step={50} decimals={0} value={f.drain.rate} onchange={(v) => set({ drain: { rate: v } })} />
 		{/if}
+		<!-- 36-fb-water F16: tip the tank and it pours out — capped, so it never piles up -->
+		<Checkbox id="fluid-spill-on" checked={f.spill.on} onchange={(/** @type {any} */ e) => set({ spill: { on: e.currentTarget.checked } })}>Spill when tipped</Checkbox>
+		{#if f.spill.on}
+			<SliderRow id="fluid-spill-max" label="Max spilled drops" min={10} max={2000} step={10} decimals={0} value={f.spill.maxDrops} onchange={(v) => set({ spill: { maxDrops: v } })} />
+			<SliderRow id="fluid-spill-life" label="Drop lifetime (s)" min={0.5} max={30} step={0.5} value={f.spill.lifetime} onchange={(v) => set({ spill: { lifetime: v } })} />
+		{/if}
 		<button id="fluid-refill" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => set({ generation: f.generation + 1 })}>
 			Refill
 		</button>

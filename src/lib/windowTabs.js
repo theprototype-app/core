@@ -1,3 +1,4 @@
+import { isHeaderDrag } from './windowGrip';
 import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
 
@@ -394,7 +395,7 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 		mergeTarget?.classList.add('merge-target');
 	};
 	const down = (/** @type {any} */ e) => {
-		if (!e.target.closest('.move-handle')) return;
+		if (!isHeaderDrag(e.target)) return; // 36 F4: a tab/control in the header is not a grip
 		if (groupOfKey(key)) return; // grouped windows drag via the strip
 		draggingHeader = true;
 	};

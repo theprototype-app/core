@@ -1,5 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from '../lib/safeStorage';
+import { loadFlowViews } from '../lib/flowView';
 
 // Shared node graph state, replicated between peers.
 //
@@ -202,9 +203,13 @@ function withDataType(node) {
 /**
  * Replace all graph documents (session/autosave restore). Resets the editor to
  * the scene graph.
+ * 36 F10: a wholesale replace is a NEW scene for the node editor too — the file's saved
+ * views (`opts.views`, the payload's `flowViews`; absent = none) replace this session's,
+ * and the open editor re-opens the active graph (its saved view, else framed).
  * @param {Record<string, {nodes: any[], edges: any[]}>} graphs
+ * @param {{views?: any}} [opts]
  */
-export function restoreGraphs(graphs) {
+export function restoreGraphs(graphs, opts = {}) {
 	/** @type {Record<string, {nodes: any[], edges: any[]}>} */
 	const next = { [SCENE_GRAPH]: { nodes: [], edges: [] } };
 	for (const [graphId, graph] of Object.entries(graphs ?? {})) {
@@ -213,6 +218,7 @@ export function restoreGraphs(graphs) {
 	flowGraphs.set(next);
 	activeGraphId.set(SCENE_GRAPH);
 	pushViewFromGraph(SCENE_GRAPH);
+	loadFlowViews(opts.views ?? null);
 }
 
 /** Empty every graph (clear scene). */
@@ -220,6 +226,7 @@ export function clearGraphs() {
 	flowGraphs.set({ [SCENE_GRAPH]: { nodes: [], edges: [] } });
 	activeGraphId.set(SCENE_GRAPH);
 	pushViewFromGraph(SCENE_GRAPH);
+	loadFlowViews(null);
 }
 
 // scene object uuids whose flow effects (animations/colors) are muted locally

@@ -130,7 +130,7 @@
 </script>
 
 {#if $notesDrawerOpen}
-	<aside id="notes-drawer" class="ui-panel flex flex-col" style="--notes-h: {sheetH}px;">
+	<aside id="notes-drawer" data-key-scope="panel" class="ui-panel flex flex-col" style="--notes-h: {sheetH}px;">
 		<!-- top drag handle: adjusts the sheet height (bottom-sheet mode on narrow only) -->
 		<div
 			class="notes-resize"

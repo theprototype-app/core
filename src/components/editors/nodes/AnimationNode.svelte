@@ -102,7 +102,7 @@
 						</span>
 					{:else if param.kind === 'range'}
 						<input
-							class="nodrag accent-[#ff4000]"
+							class="nodrag nopan accent-[#ff4000]"
 							type="range"
 							min={param.min}
 							max={param.max}
@@ -112,7 +112,7 @@
 						/>
 					{:else if param.kind === 'toggle'}
 						<!-- CL-C: boolean param (checkbox) -->
-						<span class="nodrag flex items-center gap-1.5">
+						<span class="nodrag nopan flex items-center gap-1.5">
 							<input
 								type="checkbox"
 								checked={!!(data[param.key] ?? spec.defaults[param.key])}
@@ -123,7 +123,7 @@
 						<!-- A1: free text. `change` (commit/blur), NOT `input` — setNodeData
 						     replicates the whole node, so per-keystroke = one message each. -->
 						<input
-							class="nodrag w-full rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px]"
+							class="nodrag nopan w-full rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px]"
 							type="text"
 							placeholder={param.placeholder ?? ''}
 							maxlength={param.maxLength ?? null}
@@ -132,7 +132,7 @@
 						/>
 					{:else if param.kind === 'select'}
 						<select
-							class="nodrag"
+							class="nodrag nopan"
 							value={data[param.key] ?? spec.defaults[param.key]}
 							on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.value })}
 						>

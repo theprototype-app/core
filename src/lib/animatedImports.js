@@ -245,7 +245,8 @@ export function setAnimationState(uuid, next, replicate = true) {
 	}
 }
 
-/** Receive side of the raw-bytes sync @param {any} data */
+/** Receive side of the raw-bytes sync (a local restore may pass `live`, see
+ * animatedImportsRestore) @param {any} data */
 export async function applyObjectFile(data) {
 	const group = get(objectsGroup);
 	if (!group) return;
@@ -272,6 +273,8 @@ export async function applyObjectFile(data) {
 		const bytes = data.buffer instanceof ArrayBuffer ? data.buffer : data.buffer?.buffer ?? data.buffer;
 		// absent kind = 'gltf' (every pre-17-D2 sender)
 		const { root, animations } = await parseAnimatedBytes(bytes, data.kind);
+		// 36 F20: a scene load restoring this rig was superseded while it parsed
+		if (data.live && !data.live()) return;
 		root.uuid = data.uuid;
 		root.name = data.name ?? 'Animated import';
 		// 33 P2: the spec rides the message (it lives in the pack row, not the file); absent =
@@ -446,15 +449,18 @@ async function fetchAnimRef(ref) {
  * declines a uuid that already exists.
  * 21-F4: `replicate` false restores locally with nothing sent — level travel runs the
  * restore on EVERY peer at once, so pushing would broadcast the same raw bytes N ways.
- * @param {any[]} entries @param {boolean} [replicate]
+ * 36 F20: `live` — false once the scene load running this restore was superseded; the
+ * loop stops and a rig still parsing is not added (it would land in the newer scene).
+ * @param {any[]} entries @param {boolean} [replicate] @param {() => boolean} [live]
  */
-export async function animatedImportsRestore(entries, replicate = true) {
+export async function animatedImportsRestore(entries, replicate = true, live = () => true) {
 	if (!entries?.length) return 0;
 	const group = get(objectsGroup);
 	/** @type {any} */
 	const peer = get(peers);
 	let restored = 0;
 	for (const entry of entries ?? []) {
+		if (!live()) break;
 		if (!entry?.bytes && !entry?.animRef?.path) continue;
 		const stale = group?.getObjectByProperty('uuid', entry.uuid);
 		if (stale) stale.parent?.remove(stale);
@@ -484,8 +490,10 @@ export async function animatedImportsRestore(entries, replicate = true) {
 				scale: entry.scale,
 				anim: entry.anim,
 				behavior: entry.behavior,
-				lod: entry.lod
+				lod: entry.lod,
+				live
 			});
+			if (!live()) break;
 			const root = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);
 			if (root && replicate && peer) sendAnimatedImport(peer, root); // peers reparse the same file
 			if (root) restored++;

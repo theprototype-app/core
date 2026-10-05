@@ -24,7 +24,7 @@
 		<div class="flex justify-between">
 			<span>count</span><span class="font-mono text-sm">{count}</span>
 		</div>
-		<select class="nodrag" value={data.op ?? 'up'} on:change={(e) => setNodeData(id, { op: e.currentTarget.value })}>
+		<select class="nodrag nopan" value={data.op ?? 'up'} on:change={(e) => setNodeData(id, { op: e.currentTarget.value })}>
 			<option value="up">count up</option>
 			<option value="down">count down</option>
 			<option value="reset">reset to 0</option>

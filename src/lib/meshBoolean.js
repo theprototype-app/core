@@ -15,6 +15,8 @@ import { editingObject } from './meshEdit';
 import { readStoredFaces } from './meshTopology';
 import { deleteObjectsByUuid } from './objectActions';
 import { booleanGeometry, openEdgeCount } from './meshBooleanCore';
+// re-exported for the e2e debug hook (the suite measures results with the same rule)
+export { openEdgeCount } from './meshBooleanCore';
 import { canEditObject, warnViewerReadOnly } from './objectPermissions';
 
 // B10 (36-mesh-ops): CSG BOOLEANS — union / subtract / intersect two meshes with

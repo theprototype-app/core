@@ -334,7 +334,8 @@ h.run(async () => {
 	);
 	h.check(
 		JSON.stringify(groups.operations) ===
-			JSON.stringify(['bevel', 'loopcut', 'bridge', 'subdivide', 'duplicate', 'flip', 'delete']),
+			// 19-A P6: Solidify joins the parameterized group, Separate the one-shots
+			JSON.stringify(['bevel', 'loopcut', 'bridge', 'subdivide', 'solidify', 'duplicate', 'separate', 'flip', 'delete']),
 		`OPERATIONS holds the selection actions, parameterized first (${(groups.operations ?? []).join(', ')})`
 	);
 

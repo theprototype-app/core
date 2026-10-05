@@ -6078,17 +6078,22 @@ function solidifyFaces(priorFaces, origLen, r) {
 }
 
 /** a vertex-mode one-shot's commit: the before/after triple + the composed
- * partition, through `commitMeshGeoTriple` (one replicated meshgeo entry)
+ * partition, through `commitMeshGeoTriple` (one replicated meshgeo entry).
+ * `beforeFaces` is the partition the op READ (stored else derived) and goes into the
+ * before state EXPLICITLY: a fresh mesh stores none, and an absent `faces` makes the
+ * undo CARRY the op's own partition whenever the triangle count matches — which a
+ * connect's always does, so undo restored the shape with the cut still in its
+ * topology and the next connect split a face that was not there (the e2e J case).
  * @param {string} uuid @param {any[]} inputTris @param {any} object
- * @param {any[]} tris @param {number[][]} faces */
-function commitVertexOp(uuid, object, inputTris, tris, faces) {
+ * @param {any[]} tris @param {number[][]} faces @param {number[][]} beforeFaces */
+function commitVertexOp(uuid, object, inputTris, tris, faces, beforeFaces) {
 	return commitMeshGeoTriple(
 		uuid,
 		{
 			positions: trisToPositions(inputTris),
 			groups: trisToGroups(inputTris),
 			uvs: trisToUVs(inputTris),
-			faces: readStoredFaces(object.geometry)
+			faces: readStoredFaces(object.geometry) ?? beforeFaces
 		},
 		{
 			positions: trisToPositions(tris),
@@ -6115,12 +6120,13 @@ export function connectVertices(uuid, vertexKeys) {
 		return false;
 	}
 	const inputTris = readTriangles(object.geometry);
-	const r = connectVerticesCore(inputTris, partitionOfGeometry(object.geometry, inputTris), keys[0], keys[1]);
+	const partition = partitionOfGeometry(object.geometry, inputTris);
+	const r = connectVerticesCore(inputTris, partition, keys[0], keys[1]);
 	if ('error' in r) {
 		showToast(r.error);
 		return false;
 	}
-	if (!commitVertexOp(uuid, object, inputTris, r.tris, r.faces)) return false;
+	if (!commitVertexOp(uuid, object, inputTris, r.tris, r.faces, partition)) return false;
 	showToast('Connected — the face is split in two');
 	return true;
 }
@@ -6139,14 +6145,15 @@ export function dissolveVertices(uuid, vertexKeys) {
 		return false;
 	}
 	const inputTris = readTriangles(object.geometry);
-	const r = dissolveVerticesCore(inputTris, partitionOfGeometry(object.geometry, inputTris), vertexKeys);
+	const partition = partitionOfGeometry(object.geometry, inputTris);
+	const r = dissolveVerticesCore(inputTris, partition, vertexKeys);
 	if (!r.done) {
 		showToast(
 			'Nothing to dissolve — the faces around that vertex do not form one closed outline (a vertex where two separate pieces only touch, or a face with a hole)'
 		);
 		return false;
 	}
-	if (!commitVertexOp(uuid, object, inputTris, r.tris, r.faces)) return false;
+	if (!commitVertexOp(uuid, object, inputTris, r.tris, r.faces, partition)) return false;
 	showToast(
 		'Dissolved ' +
 			r.done +

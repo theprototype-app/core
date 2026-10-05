@@ -216,7 +216,9 @@ h.run(async () => {
 	const afterSlide = await facts(A.page, uuid);
 	h.check(afterSlide.odd === 0 && afterSlide.sameWay === 0, 'still watertight and consistently wound');
 	h.check(afterSlide.tris === preSlide.tris, `slide never changes the triangle count (${afterSlide.tris})`);
-	h.check(afterSlide.faces === preSlide.faces, 'every stored face keeps its triangles');
+	// a fresh primitive stores no partition (derived on demand), so compare against the
+	// box's own shape: 4 split sides x 2 quads + 2 whole ends = 10 quads, all kept
+	h.check(afterSlide.faces === '2,2,2,2,2,2,2,2,2,2', `every face keeps its two triangles (${afterSlide.faces})`);
 	await undo(A.page);
 	h.check((await facts(A.page, uuid)).soup === preSlide.soup, 'ONE undo restores the exact pre-slide soup');
 	const other = await A.page.evaluate(
@@ -257,7 +259,12 @@ h.run(async () => {
 	h.check(f.faceCount === 7, `the top quad is TWO faces now: 7 stored faces (${f.faces})`);
 	h.check(f.odd === 0 && f.sameWay === 0 && Math.abs(f.volume - 1) < 1e-6, 'closed, consistently wound, volume 1');
 	await undo(A.page);
-	h.check((await facts(A.page, uuid)).soup === pre.soup, 'ONE undo restores the box');
+	const undoneC = await facts(A.page, uuid);
+	h.check(undoneC.soup === pre.soup, 'ONE undo restores the box');
+	// the before state records the DERIVED partition explicitly: without it the undo
+	// carried the cut's partition (same triangle count) and the next connect split a
+	// face that did not exist
+	h.check(undoneC.faceCount === 6, `...and its six quads, not the cut's topology (${undoneC.faces})`);
 	picked = await pickVerts(A.page, uuid, [
 		[-0.5, 0.5, -0.5],
 		[0.5, 0.5, 0.5]
@@ -494,6 +501,9 @@ h.run(async () => {
 	await A.page.evaluate((uuid) => {
 		const fe = window.__stores.faceEdit;
 		fe.enterFaceEdit(uuid);
+		// the sub-mode is a persisted store: section 5b left the session in EDGES, where
+		// the faces Operations grid is not rendered at all
+		fe.setFaceSubmode('faces');
 		let g;
 		window.__stores.objectsGroup.subscribe((v) => (g = v))();
 		const tris = fe.readTriangles(g.getObjectByProperty('uuid', uuid).geometry);
@@ -501,6 +511,7 @@ h.run(async () => {
 		fe.highlightFaceByTriangle(top);
 		fe.pickFaceUnit(top);
 	}, uuid);
+	await A.page.waitForTimeout(300);
 	h.check((await A.page.locator('#mesh-op-separate').count()) === 1, 'the faces Operations grid has Separate');
 	const preSep = await facts(A.page, uuid);
 	await A.page.click('#mesh-op-separate');

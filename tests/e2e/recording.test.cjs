@@ -85,7 +85,10 @@ h.run(async () => {
 	await page.click('#recording-start');
 	await page.waitForSelector('#recording-bar', { timeout: 5000 });
 	h.check(true, 'starting shows the progress bar (the dialog steps aside)');
-	const dialogHidden = await page.evaluate(() => !document.querySelector('#recording-dialog'));
+	const dialogHidden = await page
+		.waitForSelector('#recording-dialog', { state: 'detached', timeout: 3000 })
+		.then(() => true)
+		.catch(() => false);
 	h.check(dialogHidden, 'the dialog is out of the way while recording');
 
 	// sample the camera during the take: it must ORBIT (azimuth sweeps), at a constant distance
@@ -96,14 +99,17 @@ h.run(async () => {
 	let helpersHiddenDuring = false;
 	let sawProgress = 0;
 	for (let i = 0; i < 12; i++) {
-		await page.waitForTimeout(170);
+		await page.waitForTimeout(150);
+		// read the state and the camera in one go, and keep only samples taken DURING the take
+		// (before it, the camera is still being posed; after it, it is being restored)
+		const st = await state(page);
 		const c = await camState(page);
+		sawProgress = Math.max(sawProgress, st.progress);
+		if (st.status !== 'recording' || (await state(page)).status !== 'recording') continue;
 		const dx = c.pos[0] - c.target[0];
 		const dz = c.pos[2] - c.target[2];
 		azimuths.push(Math.atan2(dx, dz));
 		dists.push(Math.hypot(dx, c.pos[1] - c.target[1], dz));
-		const st = await state(page);
-		sawProgress = Math.max(sawProgress, st.progress);
 		if (!helpersHiddenDuring)
 			helpersHiddenDuring = await page.evaluate(() => {
 				let clean = false;
@@ -123,6 +129,7 @@ h.run(async () => {
 		swept += Math.abs(d);
 	}
 	const distSpread = Math.max(...dists) - Math.min(...dists);
+	h.check(azimuths.length >= 5, `enough samples inside the take (${azimuths.length})`);
 	h.check(swept > 2.0, `the camera orbits during the take (swept ${(swept * 57.3).toFixed(0)}° of the samples)`);
 	h.check(distSpread < 0.05, `at a constant distance (spread ${distSpread.toFixed(4)})`);
 	h.check(sawProgress > 0.2, `the progress advances (${Math.round(sawProgress * 100)}%)`);

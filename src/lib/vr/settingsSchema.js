@@ -32,6 +32,7 @@ import { vrFaceCap } from '../faceEdit';
 import { vrVertexCap } from '../meshEdit';
 import { resetWindowPoses } from '../vrWindowPoses';
 import { safeStorage } from '../safeStorage';
+import { openVRKeyboard } from '../vrKeyboard';
 import { renderer } from './core.js';
 import { applyVRFrameRate } from './input.js';
 import { vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrSnapAngleLast, clampHeight, SMOOTH_SPEEDS, SNAP_ANGLES, HEIGHT_LIMIT } from './prefs.js';
@@ -352,7 +353,9 @@ export function activateVRSetting(id, dir = 1) {
 
 /** bumps whenever any VR setting changes (a dependency for the radial's live labels and the panels) */
 export const vrSettingsTick = writable(0);
-const watched = [vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrFlying, vrMenuHand, vrMenuHold, vrGrabStyle, vrTargetHz, vrStatsOpen, peerHandStyle, vrPassthrough, vrWireframeSelection, vrVertexHold, vrSleeveEnabled, perfStatsShown, vrMicMode, vrFaceCap, vrVertexCap, vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrBindings];
+/** 36-vr-ai (B9): what the in-headset Search page filters by (typed on the VR keyboard) */
+export const vrSettingsQuery = writable('');
+const watched = [vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrFlying, vrMenuHand, vrMenuHold, vrGrabStyle, vrTargetHz, vrStatsOpen, peerHandStyle, vrPassthrough, vrWireframeSelection, vrVertexHold, vrSleeveEnabled, perfStatsShown, vrMicMode, vrFaceCap, vrVertexCap, vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrBindings, vrSettingsQuery];
 /** one derived over every watched store: any change re-renders whatever shows a setting */
 let version = 0;
 export const vrSettingsVersion = derived([vrSettingsTick, ...watched], () => ++version);
@@ -442,8 +445,42 @@ export function bindingRows() {
 	return VR_ACTIONS.map((a) => ({ id: a.id, label: a.label, locked: a.kind === 'locked', doc: a.doc }));
 }
 
-/** the page tabs the in-headset panel shows: the settings pages + Buttons (the remap table) */
-export const VR_PANEL_TABS = [...VR_SETTING_PAGES.filter((p) => p.id !== 'voice'), { id: 'buttons', label: 'Buttons', icon: 'keyboard', keywords: [] }];
+/** the page tabs the in-headset panel shows: the settings pages + Buttons (the remap table) + Search (B9) */
+export const VR_PANEL_TABS = [
+	...VR_SETTING_PAGES.filter((p) => p.id !== 'voice'),
+	{ id: 'buttons', label: 'Buttons', icon: 'keyboard', keywords: [] },
+	{ id: 'search', label: 'Search', icon: 'search', keywords: [] }
+];
+
+/**
+ * 36-vr-ai (B9): the VR settings a query finds — every word must appear in the row's label, its keywords or
+ * its page's name ("turn" finds Turning, Snap angle, Smooth speed and Mirror turn but not Teleport; "comfort
+ * vignette" the vignette). The page's own keywords do NOT count: they would match every row on it. Empty = none.
+ * @param {string} query @returns {SettingRow[]}
+ */
+export function searchVRSettings(query) {
+	const words = String(query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+	if (!words.length) return [];
+	return VR_SETTINGS.filter((r) => {
+		if (r.vr === false || r.id === 'heightReset') return false;
+		const page = VR_SETTING_PAGES.find((p) => p.id === r.page);
+		const text = [r.label, ...(r.keywords ?? []), page?.label ?? ''].join(' ').toLowerCase();
+		return words.every((w) => text.includes(w));
+	});
+}
+
+/** B9: type the search on the VR keyboard — the results follow every key; Esc puts the old query back */
+export function openVRSettingsSearch() {
+	const before = get(vrSettingsQuery);
+	vrSettingsPage.set('search');
+	openVRKeyboard({
+		title: 'Search settings',
+		initial: before,
+		onInput: (text) => vrSettingsQuery.set(text),
+		onCommit: (text) => vrSettingsQuery.set(text.trim()),
+		onCancel: () => vrSettingsQuery.set(before)
+	});
+}
 
 /**
  * The panel's rows for a page, top to bottom — what it draws and what the stick cursor walks. Row 0 is
@@ -454,7 +491,13 @@ export const VR_PANEL_TABS = [...VR_SETTING_PAGES.filter((p) => p.id !== 'voice'
 export function settingsPanelRows(page) {
 	/** @type {{action: string, kind: string, rowId?: string, label: string}[]} */
 	const rows = [{ action: 'tabs', kind: 'tabs', label: 'Pages' }];
-	if (page === 'buttons') {
+	if (page === 'search') {
+		const query = get(vrSettingsQuery).trim();
+		rows.push({ action: 'vrset:search', kind: 'search', label: query ? 'Search: ' + query : 'Type to search…' });
+		const found = searchVRSettings(query);
+		for (const r of found) rows.push({ action: 'vrset:' + r.id, kind: r.kind, rowId: r.id, label: r.label });
+		if (query && !found.length) rows.push({ action: '', kind: 'locked', label: 'No VR setting matches' });
+	} else if (page === 'buttons') {
 		for (const b of bindingRows()) rows.push({ action: b.locked ? '' : 'vrbind:' + b.id, kind: b.locked ? 'locked' : 'binding', rowId: b.id, label: b.label });
 		rows.push({ action: 'vrset:leftHanded', kind: 'toggle', rowId: 'leftHanded', label: 'Left-handed' });
 		rows.push({ action: 'vrset:bindingsReset', kind: 'action', rowId: 'bindingsReset', label: 'Reset buttons' });

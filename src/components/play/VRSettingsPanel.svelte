@@ -69,6 +69,7 @@
 		return r && r.kind !== 'action' ? settingValueText(r) : ''
 	}
 	function iconOf(row: Row): string | null {
+		if (row.kind === 'search') return 'search'
 		if (row.kind === 'binding' || row.kind === 'locked') return null
 		return (row.rowId && vrSettingRow(row.rowId)?.icon) || null
 	}

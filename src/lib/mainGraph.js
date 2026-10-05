@@ -20,7 +20,9 @@
 // A LEAF (imports nothing): graphs in, graphs out.
 
 const COLUMN_GAP = 320;
-const ROW_H = 110;
+// 36 F11: a Code link card is drawn ~150 px tall (title, text, file, button), so the 1.23 row of 110
+// stacked two of them on top of each other (Waves, Jam Room: two modules each). 190 clears it.
+const ROW_H = 190;
 
 /** @param {any} m @returns {string} */
 const moduleIdOf = (m) => (typeof m === 'string' ? m : String(m?.id ?? ''));

@@ -62,6 +62,9 @@
 //   graphs           {'scene' | <object name>: {nodes, edges}} — node data strings naming a def
 //                    object become its uuid (not label/format/text/placeholder/name); '$music' and
 //                    '$sound:<key>' become content hashes
+//   graphTidy        36 F11: 'layout' (rebuild Main left -> right) | 'repair' (keep it, move only what
+//                    overlaps or sits on a wire) — the node editor's own Tidy, run on the cards as DRAWN
+//                    (the editor is opened for the measurement and closed again before the save)
 //   hud              a hudDocs map · shaders {'scene' | <object name>: shader graph document}
 //   animations       {<object name>: an authored animation set (clips of tracks of keys)}
 //   music            {url | file, sha256, name, volume?} — the scene's background track (+ Explorer)
@@ -304,6 +307,8 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 	});
 	const page = await ctx.newPage();
 	page.on('pageerror', (e) => console.log('PAGEERROR: ' + e.message.split('\n')[0]));
+	// 36 F11: the in-page graphTidy report
+	page.on('console', (m) => m.text().startsWith('[graphTidy]') && console.log(m.text()));
 	await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForFunction(() => window.__stores && !!window.__stores.sessions, { timeout: 40000 });
 	await page.waitForTimeout(2000);
@@ -1045,6 +1050,32 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 			}
 			// let every write settle (the debounced compiles and the reconciles)
 			await new Promise((r) => setTimeout(r, d.graphs || d.shaders ? 900 : 100));
+
+			// 36 F11: tidy Main on the cards as the editor draws them (sizes and handle bounds are
+			// only known once rendered), then close the editor so the file's workspace is clean
+			if (d.graphs && d.graphTidy) {
+				// the G1 links a load would add (a Code link per module, an Object flow link per
+				// object graph) are added HERE, so the tidy lays them out and the file carries them
+				/** @type {any} */ let now;
+				s.flowGraphs.subscribe((/** @type {any} */ v) => (now = v))();
+				const linked = s.mainGraph.ensureMainGraph(now, { modules: s.moduleRequirements?.moduleRequirements?.() ?? d.modules ?? [], sceneKey: s.SCENE_GRAPH });
+				if (linked.added.length) s.restoreGraphs(linked.graphs);
+				s.activeGraphId.set(s.SCENE_GRAPH);
+				s.flowGraphClose.set(false);
+				s.bottomDock.activateDock('flow');
+				const t0 = Date.now();
+				while (!window.__flowTidy && Date.now() - t0 < 15000) await new Promise((r) => setTimeout(r, 100));
+				if (!window.__flowTidy) throw new Error(d.slug + ': graphTidy needs the node editor (debugStores) — it never mounted');
+				await new Promise((r) => setTimeout(r, 1500)); // every card measured
+				const before = window.__flowTidy.lint();
+				const result = window.__flowTidy.tidy(d.graphTidy === 'layout' ? 'layout' : 'repair');
+				await new Promise((r) => setTimeout(r, 600));
+				const after = window.__flowTidy.lint();
+				console.log('[graphTidy] ' + d.slug + ' (' + d.graphTidy + '): ' + JSON.stringify({ moved: result?.moved ?? 0, before: [before.overlaps.length, before.wireHits.length], after: [after.overlaps.length, after.wireHits.length] }));
+				if (!after.ok) throw new Error(d.slug + ': graphTidy left ' + after.overlaps.length + ' overlaps and ' + after.wireHits.length + ' wires through cards');
+				s.flowGraphClose.set(true);
+				await new Promise((r) => setTimeout(r, 300));
+			}
 
 			// belt and braces: let the render loop compose world matrices too
 			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));

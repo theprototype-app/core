@@ -20,7 +20,8 @@ describe('ensureMainGraph', () => {
 			['objectflow', 'obj-1', 1]
 		]);
 		expect(main[0].position).toEqual({ x: 100 - 320, y: 10 });
-		expect(main[1].position.y).toBe(120);
+		// 36 F11: one Code link card's height apart (110 stacked two on each other)
+		expect(main[1].position.y).toBe(10 + 190);
 		expect(graphs.scene.edges).toHaveLength(1);
 		expect(graphs['obj-1'].nodes.map((n) => n.id)).toEqual(['o1']); // object graphs untouched
 	});

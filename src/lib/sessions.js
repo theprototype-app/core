@@ -5,6 +5,7 @@ import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls,
 import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
 import { ensureMainGraph } from './mainGraph.js'; // 36 (G1): a leaf
 import { serializeGraphs, copyGraphFrom } from './flowGraphs';
+import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
@@ -260,6 +261,7 @@ export function buildSessionPayload(name) {
 	const clock = transportSnapshot();
 	const routing = patchSnapshot();
 	const mods = moduleRequirements();
+	const views = flowViewsSnapshot((id) => id === SCENE_GRAPH || !!group?.getObjectByProperty?.('uuid', id));
 	try {
 		return {
 			id: crypto.randomUUID(),
@@ -332,7 +334,11 @@ export function buildSessionPayload(name) {
 			// P5: where the author left off — the selection and any open mesh-edit /
 			// sculpt session with its picks. NULL for an ordinary scene, so the field is
 			// absent and every existing file stays byte-identical.
-			workspace: captureEditResume()
+			workspace: captureEditResume(),
+			// 36 F10: where the author LEFT each graph in the node editor (a pan or zoom by
+			// hand). Omitted when nobody moved a view, so a template opens FRAMED and an
+			// ordinary scene's file stays byte-identical.
+			...(views ? { flowViews: views } : {})
 		};
 	} finally {
 		restore();
@@ -1562,7 +1568,7 @@ async function applySessionNow(payload, opts, job) {
 	// them to the room. A G1-authored or already-migrated scene comes back unchanged.
 	const graphsPayload = ensureMainGraph(loadedGraphs, { modules: payload.modules, sceneKey: SCENE_GRAPH }).graphs;
 	if (graphsPayload) {
-		restoreGraphs(graphsPayload);
+		restoreGraphs(graphsPayload, { views: payload.flowViews });
 		if (replicate && peer)
 			peer.send({
 				type: 'nodes',

@@ -147,6 +147,8 @@ export const DEBUG_HOOKS = [
 	['meshProviders', () => import('./ai/meshProviders')],
 	['meshJobs', () => import('./ai/meshJobs')],
 	['flowGraphsCtl', () => import('./flowGraphs')],
+	// 36 F10: where the node editor opens (saved views, the setting)
+	['flowView', () => import('./flowView')],
 	['objectFlow', () => import('./objectFlow')],
 	['peerServer', () => import('./peerServer')],
 	['cloudHooks', () => import('./cloudHooks')],

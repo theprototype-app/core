@@ -31,35 +31,45 @@
 	let revealed = 0;
 
 	onMount(async () => {
+		// the extras (state/view/lint) load only for a caller that uses the new props, so every
+		// older caller mounts exactly as fast as it always did
+		const extras = !!(readOnly || readonly || onSave || reveal || diagnostic || line);
 		const [{ EditorView, basicSetup }, { javascript }, state, viewMod, lint] = await Promise.all([
 			import('codemirror'),
 			import('@codemirror/lang-javascript'),
-			import('@codemirror/state'),
-			import('@codemirror/view'),
-			import('@codemirror/lint')
+			extras ? import('@codemirror/state') : null,
+			extras ? import('@codemirror/view') : null,
+			extras ? import('@codemirror/lint') : null
 		]);
 		cm = { EditorView, state, lint };
-		const saveKeys = viewMod.keymap.of([
-			{
-				key: 'Mod-s',
-				preventDefault: true,
-				run: () => {
-					if (!onSave) return false;
-					onSave();
-					return true;
+		/** @type {any[]} */
+		const more = [];
+		if (state && viewMod && lint) {
+			const saveKeys = viewMod.keymap.of([
+				{
+					key: 'Mod-s',
+					preventDefault: true,
+					run: () => {
+						if (!onSave) return false;
+						onSave();
+						return true;
+					}
 				}
-			}
-		]);
+			]);
+			more.push(
+				state.Prec.highest(saveKeys),
+				lint.lintGutter(),
+				state.EditorState.readOnly.of(!!(readOnly || readonly)),
+				EditorView.editable.of(!(readOnly || readonly))
+			);
+		}
 		view = new EditorView({
 			doc: value,
 			parent: host,
 			extensions: [
-				state.Prec.highest(saveKeys),
 				basicSetup,
 				javascript(),
-				lint.lintGutter(),
-				state.EditorState.readOnly.of(!!(readOnly || readonly)),
-				EditorView.editable.of(!(readOnly || readonly)),
+				...more,
 				EditorView.updateListener.of((update) => {
 					if (!update.docChanged) return;
 					lastEmitted = update.state.doc.toString();
@@ -114,11 +124,15 @@
 		view.focus();
 	}
 
-	$: if (view && cm) {
-		const l = diagnostic ? lineRange(diagnostic.line) : null;
-		view.dispatch(
-			cm.lint.setDiagnostics(view.state, l ? [{ from: l.from, to: l.to, severity: 'error', message: diagnostic?.message ?? '' }] : [])
-		);
+	$: if (view && cm) showDiagnostic(diagnostic);
+	/** @param {null | {line: number, message: string}} d */
+	async function showDiagnostic(d) {
+		if (!cm.lint) {
+			if (!d) return;
+			cm.lint = await import('@codemirror/lint');
+		}
+		const l = d ? lineRange(d.line) : null;
+		view.dispatch(cm.lint.setDiagnostics(view.state, l ? [{ from: l.from, to: l.to, severity: 'error', message: d?.message ?? '' }] : []));
 	}
 
 	onDestroy(() => view?.destroy());

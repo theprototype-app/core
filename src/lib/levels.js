@@ -98,6 +98,7 @@ import { sessionHost } from './connectionState';
 // this exact file", which is what makes a dragged-in .tpscene loose.
 import { isLocked } from '../stores/sceneStore';
 import { registerPerfContext } from './perf/perfMarks.js';
+import { ensureGameId } from './gameIdentity.js';
 
 /** 21-G1: the name of the conventional scenes folder. It is freely renamable and
  * deletable, because it is NOT how a scene is found: `levelItems()` discovers by KIND
@@ -533,6 +534,8 @@ export function levelSceneName(fileName) {
  */
 export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	const target = await targetFolder(folderId);
+	// 36-community (C4): a deliberate save gives the scene its permanent game id (forks a remix)
+	ensureGameId();
 	const payload = /** @type {any} */ (buildSessionPayload(String(name ?? '').trim() || 'Scene'));
 	delete payload.workspace;
 	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true });

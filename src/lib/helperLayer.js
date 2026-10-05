@@ -75,16 +75,21 @@ export function helpersHiddenFor(locked, mode, debug) {
 	return (locked === true || mode === 'interact') && !debug;
 }
 
-/** Should helpers be hidden right now (Play or Interact, without the debug toggle)? */
+/** 36-share (B13): a recording with "Hide editor helpers" on draws the scene as a viewer sees it,
+ * whatever the mode — the recorder sets this for the length of one recording (LOCAL, never saved).
+ * @type {import('svelte/store').Writable<boolean>} */
+export const recordingClean = writable(false);
+
+/** Should helpers be hidden right now (Play or Interact, without the debug toggle, or a clean recording)? */
 export function helpersHidden() {
-	return helpersHiddenFor(get(isLocked), get(editorMode), get(helpersInPlay));
+	return helpersHiddenFor(get(isLocked), get(editorMode), get(helpersInPlay)) || get(recordingClean);
 }
 
 /** 30b P1: the same answer as a store, for components (the grid, the VR selection shell)
  * and for anything that toggles `visible` per frame. */
 export const editorHelpersShown = derived(
-	[isLocked, editorMode, helpersInPlay],
-	([$locked, $mode, $debug]) => !helpersHiddenFor($locked, $mode, $debug)
+	[isLocked, editorMode, helpersInPlay, recordingClean],
+	([$locked, $mode, $debug, $clean]) => !helpersHiddenFor($locked, $mode, $debug) && !$clean
 );
 
 /** the marker-hop state the last `setMarkersHidden` applied (reads for the test seam) */
@@ -149,4 +154,5 @@ export function startHelperLayer() {
 	isLocked.subscribe(applyToEditorCamera);
 	editorMode.subscribe(applyToEditorCamera);
 	helpersInPlay.subscribe(applyToEditorCamera);
+	recordingClean.subscribe(applyToEditorCamera);
 }

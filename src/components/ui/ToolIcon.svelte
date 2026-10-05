@@ -109,7 +109,39 @@
 			base: ['M4 4h11v11H4z'],
 			accent: ['M9 9h11v11H9z']
 		},
+		// 19-A P6: the two quads either side, and the edge sliding between them
+		'edge-slide': {
+			base: ['M3 4h18v16H3z'],
+			accent: ['M12 4v16', 'M6.5 12H9', 'M15 12h2.5', 'M7.5 10.5L6 12l1.5 1.5', 'M16.5 10.5L18 12l-1.5 1.5']
+		},
+		// the rim of a hole, and the cap closing it
+		'fill-hole': {
+			base: ['M4 7l8-4 8 4v10l-8 4-8-4z'],
+			accentFill: ['M7.5 8.8L12 6.5l4.5 2.3v6.4L12 17.5l-4.5-2.3z']
+		},
+		// a surface, and the back copy + rim that give it thickness
+		solidify: {
+			base: ['M3 8h18'],
+			accent: ['M3 16h18', 'M3 8v8', 'M21 8v8']
+		},
+		// the mesh, and the piece lifted off it into its own object
+		separate: {
+			base: ['M3 9h10v12H3z'],
+			accent: ['M12 3h9v9h-9z', 'M15 15l3-3']
+		},
 		// ---- vertex tools -----------------------------------------------------
+		// 19-A P6: two corners of a face, and the cut connecting them
+		connect: {
+			base: ['M4 4h16v16H4z'],
+			accent: ['M4.5 19.5L19.5 4.5'],
+			accentFill: ['M4 18.4a1.6 1.6 0 100 3.2 1.6 1.6 0 100-3.2z', 'M20 2.4a1.6 1.6 0 100 3.2 1.6 1.6 0 100-3.2z']
+		},
+		// the faces around a vertex, and the vertex going away
+		'dissolve-vertex': {
+			base: ['M3 3h18v18H3z'],
+			accent: ['M12 3v5', 'M12 16v5', 'M3 12h5', 'M16 12h5'],
+			accentFill: ['M12 10.4a1.6 1.6 0 100 3.2 1.6 1.6 0 100-3.2z']
+		},
 		// two vertices, and the arrows bringing them together
 		weld: {
 			base: ['M3 12h4', 'M17 12h4'],

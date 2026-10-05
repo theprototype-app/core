@@ -655,10 +655,11 @@ export const shortcuts = [
 		['mesh.subdivide', 'S', 'Subdivide (faces)'],
 		['mesh.loopcut', 'C', 'Loop cut (faces)'],
 		['mesh.bridge', 'B', 'Bridge (faces)'],
-		['mesh.flip', 'F', 'Flip normals (faces)'],
+		['mesh.flip', 'F', 'Flip normals (faces); fill the hole (edges)'],
 		['mesh.delete', 'X', 'Delete the selection (faces; Delete too)'],
 		['mesh.loop', 'L', 'Loop select (faces: again = perpendicular; edges: the chain)'],
-		['mesh.weld', 'W', 'Weld the selected vertices (vertices)']
+		['mesh.weld', 'W', 'Weld the selected vertices (vertices)'],
+		['mesh.connect', 'J', 'Connect two corners of a face (vertices)']
 	]),
 	/*
 	 * 36 U11 — THE NODE EDITOR'S KEYMAP (scope 'nodes'). These fire only while the node

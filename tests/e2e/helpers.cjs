@@ -84,7 +84,10 @@ function launch(options = {}) {
  * @returns {{ctx: any, page: any, id: string}}
  */
 async function setupPage(browser, name, options = {}) {
-	const ctx = await browser.newContext({ ignoreHTTPSErrors: true, ...(options.context ?? {}) });
+	// E2E_BLOCK_SW=1: a deployed (PROD) build registers /sw.js, and page.route() never sees a request a service
+	// worker forwards — suites that mock a server by route (vr-ai-panel, vr-ai-voice) need it blocked there (36-int-124)
+	const sw = process.env.E2E_BLOCK_SW === '1' ? { serviceWorkers: /** @type {'block'} */ ('block') } : {};
+	const ctx = await browser.newContext({ ignoreHTTPSErrors: true, ...sw, ...(options.context ?? {}) });
 	await ctx.addInitScript((peerConfig) => {
 		localStorage.setItem('debugStores', 'true');
 		localStorage.setItem('hasSeenDisclaimer', 'true');

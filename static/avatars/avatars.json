@@ -1,0 +1,147 @@
+{
+	"version": 1,
+	"atlasGrid": {
+		"cols": 8,
+		"rows": 4
+	},
+	"clips": [
+		"Idle",
+		"Walking_A",
+		"Walking_Backwards",
+		"Running_A",
+		"Running_Strafe_Left",
+		"Running_Strafe_Right",
+		"Jump_Idle",
+		"Cheer",
+		"Interact",
+		"Sit_Floor_Idle"
+	],
+	"characters": [
+		{
+			"id": "knight",
+			"name": "Knight",
+			"file": "knight.glb",
+			"source": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+			"tris": 4712,
+			"height": 2.467,
+			"headBoneY": 1.241,
+			"outfitCells": [
+				3,
+				7,
+				6
+			]
+		},
+		{
+			"id": "mage",
+			"name": "Mage",
+			"file": "mage.glb",
+			"source": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+			"tris": 4509,
+			"height": 2.716,
+			"headBoneY": 1.241,
+			"outfitCells": [
+				8,
+				19,
+				4
+			]
+		},
+		{
+			"id": "rogue",
+			"name": "Rogue",
+			"file": "rogue.glb",
+			"source": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+			"tris": 4347,
+			"height": 2.187,
+			"headBoneY": 1.241,
+			"outfitCells": [
+				8,
+				9,
+				19
+			]
+		},
+		{
+			"id": "rogue-hooded",
+			"name": "Hooded rogue",
+			"file": "rogue-hooded.glb",
+			"source": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+			"tris": 4005,
+			"height": 2.251,
+			"headBoneY": 1.241,
+			"outfitCells": [
+				8,
+				19,
+				5
+			]
+		},
+		{
+			"id": "barbarian",
+			"name": "Barbarian",
+			"file": "barbarian.glb",
+			"source": "KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0",
+			"tris": 4777,
+			"height": 2.398,
+			"headBoneY": 1.241,
+			"outfitCells": [
+				6,
+				10,
+				19
+			]
+		},
+		{
+			"id": "skeleton-minion",
+			"name": "Skeleton",
+			"file": "skeleton-minion.glb",
+			"source": "KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0",
+			"tris": 5288,
+			"height": 2.166,
+			"headBoneY": 1.241,
+			"outfitCells": [
+				6,
+				7,
+				5
+			]
+		},
+		{
+			"id": "skeleton-warrior",
+			"name": "Skeleton warrior",
+			"file": "skeleton-warrior.glb",
+			"source": "KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0",
+			"tris": 5934,
+			"height": 2.59,
+			"headBoneY": 1.241,
+			"outfitCells": [
+				3,
+				6,
+				18
+			]
+		},
+		{
+			"id": "skeleton-mage",
+			"name": "Skeleton mage",
+			"file": "skeleton-mage.glb",
+			"source": "KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0",
+			"tris": 4588,
+			"height": 2.63,
+			"headBoneY": 1.241,
+			"outfitCells": [
+				18,
+				7,
+				3
+			]
+		},
+		{
+			"id": "skeleton-rogue",
+			"name": "Skeleton rogue",
+			"file": "skeleton-rogue.glb",
+			"source": "KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0",
+			"tris": 5278,
+			"height": 2.308,
+			"headBoneY": 1.241,
+			"outfitCells": [
+				3,
+				7,
+				6
+			]
+		}
+	]
+}

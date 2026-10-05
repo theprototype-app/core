@@ -9,22 +9,32 @@ h.run(async () => {
 
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
-	await A.page.getByText('Scene', { exact: true }).first().click(); // expand Scene
-	await A.page.waitForTimeout(300);
-	// Theme lives in the Interface section since the settings reorg
+	// 36 B14: Settings shows ONE section at a time (the sidebar picks it), so each label is
+	// checked while its own section is on screen. Theme lives in Interface since the reorg.
+	const prefixes = () =>
+		A.page.evaluate(() => ({
+			shadows: document.body.innerText.includes('Shadows: low'),
+			themePrefix: document.body.innerText.includes('Theme: '),
+			snap: document.body.innerText.includes('Snap turn 15')
+		}));
 	await A.page.getByText('Interface', { exact: true }).first().click();
 	await A.page.waitForTimeout(300);
-
-	// label prefixes on the descriptions
-	h.check(await A.page.getByText('Shadow quality', { exact: false }).first().isVisible(), 'a "Shadow quality" label renders');
 	h.check(await A.page.getByText('Theme', { exact: false }).first().isVisible(), 'a "Theme" label renders');
+	const inInterface = await prefixes();
+	await A.page.getByText('VR', { exact: true }).first().click();
+	await A.page.waitForTimeout(300);
+	const inVr = await prefixes();
+	await A.page.getByText('Scene', { exact: true }).first().click();
+	await A.page.waitForTimeout(300);
+	h.check(await A.page.getByText('Shadow quality', { exact: false }).first().isVisible(), 'a "Shadow quality" label renders');
 
-	// the redundant prefixes are gone from the option values
-	const dupes = await A.page.evaluate(() => ({
-		shadows: document.body.innerText.includes('Shadows: low'),
-		themePrefix: document.body.innerText.includes('Theme: '),
-		snap: document.body.innerText.includes('Snap turn 15')
-	}));
+	// the redundant prefixes are gone from the option values (each read with its section shown)
+	const inScene = await prefixes();
+	const dupes = {
+		shadows: inScene.shadows,
+		themePrefix: inInterface.themePrefix,
+		snap: inVr.snap
+	};
 	h.check(!dupes.shadows, 'no "Shadows: low" prefix on the values');
 	h.check(!dupes.themePrefix, 'no "Theme:" prefix on the values');
 	h.check(!dupes.snap, 'no "Snap turn 15" prefix on the values');

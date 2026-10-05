@@ -38,7 +38,7 @@ import {
 } from '../../stores/sceneStore';
 import { activeRing, findMenuEntry, pushRing, popRing, vrMenuPressed } from '../vrRadialMenu';
 import { registerSettingsRings } from './settingsRings.js';
-import { activateVRSetting, vrSettingsPage, openVRSettingsPage, cycleBinding, vrSettingsCursor } from './settingsSchema.js';
+import { activateVRSetting, vrSettingsPage, openVRSettingsPage, cycleBinding, vrSettingsCursor, openVRSettingsSearch } from './settingsSchema.js';
 import { perfStatsShown } from '../fpsMeter';
 import {
 	editingObject,
@@ -106,6 +106,7 @@ import {
 } from './panels.js';
 import { controllerRay } from './pointer.js';
 import { boxSelectEnd, beginStretch, commitStretch } from './tools.js';
+import { handleAiAction } from './aiPanel.js';
 // 36 X4: the collider session, PRIMED (colliderEdit reaches faceEdit/history — a static
 // edge from here is the documented cycle family); every use below is null-safe
 /** @type {any} */ let colliderEditRef = null;
@@ -488,6 +489,11 @@ export function executeVRMenuAction(name) {
 		}
 		return;
 	}
+	if (name.startsWith('ai:')) {
+		// 36-vr-ai: the AI panel's controls (close, input row -> keyboard, stop)
+		handleAiAction(name.slice('ai:'.length));
+		return;
+	}
 	if (name.startsWith('chat:')) {
 		const action = name.slice('chat:'.length);
 		if (action === 'close') vrChatPanelOpen.set(false);
@@ -798,6 +804,10 @@ function handleSettingsPanelAction(key) {
 	const id = minus || plus ? key.slice(0, -2) : key;
 	if (id === 'remap') {
 		openVRSettingsPage('buttons');
+		return;
+	}
+	if (id === 'search') {
+		openVRSettingsSearch(); // 36-vr-ai (B9): the query row opens the VR keyboard
 		return;
 	}
 	activateVRSetting(id, minus ? -1 : 1);

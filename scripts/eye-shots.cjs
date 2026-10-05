@@ -9,6 +9,8 @@
 //        [--at x,y,z --yaw r]   (feet; default the scene's play.spawn, else 0,0,4)
 //        [--views <level slug>] (every named viewpoint of scripts/level-views.cjs)
 //        [--size 512] [--out <dir>] [--name <prefix>]
+//        [--hud]   (36 B12: mid-round — Interact, the game state 'playing', the VR game HUD band
+//                   posed from the eye head; writes <name>-<view>-hud.json beside the PNGs)
 //
 // Run it through e2e-slot like any suite (`e2e-slot --dev . <port> -- node scripts/eye-shots.cjs …`).
 // Writes <out>/<name>-<view>-left.png, -right.png and -pair.png (left | right).
@@ -31,6 +33,7 @@ const MODE = arg('mode', 'play');
 const MODULES = arg('modules', null);
 const SIZE = Number(arg('size', '512'));
 const OUT = arg('out', path.join(process.cwd(), 'eye-shots'));
+const HUD = argv.includes('--hud');
 const NAME = arg('name', FILE ? path.basename(path.dirname(path.resolve(FILE))) : 'scene');
 
 async function main() {
@@ -53,7 +56,10 @@ async function main() {
 	const peer = await h.setupPage(browser, 'eyes', { context: { viewport: { width: 1280, height: 720 } } });
 	const page = peer.page;
 	try {
+		// a CORE module (Towers, the 35 games) is already loaded: only user modules need a zip
+		const loaded = await page.evaluate(() => window.__stores.moduleSDK.loadedModules.map((m) => m.id));
 		for (const id of modules) {
+			if (loaded.includes(id)) continue;
 			const zip = MODULES ? path.join(MODULES, id + '.zip') : h.moduleZipPath(id);
 			if (!fs.existsSync(zip)) throw new Error(`the scene needs module ${id}: no ${zip} (--modules <dir>)`);
 			await page.evaluate(() => window.__stores.modulesOpen.set(true));
@@ -70,10 +76,20 @@ async function main() {
 		}, Array.from(bytes));
 		await page.waitForTimeout(1500);
 		await settleScene(page);
-		await fx.install(page);
-		await fx.pose(page, 'left', [-20, 30, 20], { pitch: 1.4 });
-		await fx.pose(page, 'right', [20, 30, 20], { pitch: 1.4 });
-		if (MODE === 'play') await page.locator('#play-button').click({ timeout: 10000 }).catch(() => page.evaluate(() => window.__stores.isLocked.set(true)));
+		// --hud drives the VR game surfaces with a synthetic head (no fake session: its frame hook
+		// would re-pose them from its own head between our frames and the shot)
+		if (!HUD) {
+			await fx.install(page);
+			await fx.pose(page, 'left', [-20, 30, 20], { pitch: 1.4 });
+			await fx.pose(page, 'right', [20, 30, 20], { pitch: 1.4 });
+		}
+		if (HUD)
+			await page.evaluate(() => {
+				const s = window.__stores;
+				s.objectActions.setEditorMode('interact');
+				s.gameState.setGameState('playing');
+			});
+		else if (MODE === 'play') await page.locator('#play-button').click({ timeout: 10000 }).catch(() => page.evaluate(() => window.__stores.isLocked.set(true)));
 		else if (MODE === 'interact') await page.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
 		await page.waitForTimeout(1500);
 		fs.mkdirSync(OUT, { recursive: true });
@@ -83,7 +99,23 @@ async function main() {
 			if (MODE === 'play') await placeCamera(page, feet, yaw);
 			await page.waitForTimeout(400);
 			await settleLod(page);
-			const out = await eyes.save(page, path.join(OUT, `${NAME}-${label.replace(/\W+/g, '-')}`), { size: SIZE, head });
+			const file = path.join(OUT, `${NAME}-${label.replace(/\W+/g, '-')}`);
+			if (HUD) {
+				const band = await page.evaluate(async (hd) => {
+					const s = window.__stores;
+					const THREE = s.THREE;
+					const head = { position: new THREE.Vector3(...hd.position), quaternion: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, hd.yaw, 0, 'YXZ')) };
+					for (let i = 0; i < 120; i++) {
+						s.gameKit.vrGamePanel.vrGamePanelFrame({ head, hands: [null, null], dt: 1 / 72 });
+						if (i % 30 === 29) await new Promise((r) => setTimeout(r, 120)); // let the runtime texts arrive
+					}
+					const d = s.gameKit.vrHud.vrHudDebug();
+					return { visible: d.visible, placement: d.placement, radius: d.radius, halfWidth: d.halfWidth, atlas: d.atlas, triangles: d.triangles, hints: d.hints, groups: d.groups.map((g) => ({ ids: g.ids, f: g.f, k: g.k, texelRatio: +g.texelRatio.toFixed(3), plate: g.plate })) };
+				}, head);
+				fs.writeFileSync(file + '-hud.json', JSON.stringify(band, null, 1) + '\n');
+				console.log(`${label}: band ${band.visible ? 'up' : 'DOWN'}, ${band.groups.length} groups, radius ${Number(band.radius).toFixed(2)} m`);
+			}
+			const out = await eyes.save(page, file, { size: SIZE, head });
 			console.log(`${label}: ${out.pair}`);
 		}
 	} finally {

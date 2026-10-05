@@ -5,17 +5,20 @@ import { writable, get } from 'svelte/store';
 // renders named key meshes and vrControls routes ray/stick/trigger to keyPress.
 // Reused by object rename (116) and chat (117) via {initial, onCommit, onCancel}.
 
-// key rows (lowercase base; Shift upper-cases letters and swaps the digit row)
+// key rows (lowercase base; Shift upper-cases letters and swaps the digit + punctuation keys).
+// 36-vr-ai (B9): the punctuation a sentence needs — a prompt to the AI assistant is a sentence, a rename
+// often has a dash or an apostrophe — on the US layout's keys, so Shift gives what it gives on a desk (the
+// ? key is the one exception: ? is the common case, Shift gives /). Clear empties the line.
 export const KEY_ROWS = [
-	['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'],
-	['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
-	['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
-	['shift', 'z', 'x', 'c', 'v', 'b', 'n', 'm', 'backspace'],
-	['esc', 'space', 'enter']
+	['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-'],
+	['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', "'"],
+	['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';'],
+	['shift', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', 'backspace'],
+	['esc', 'clear', 'space', '?', 'enter']
 ];
 
 /** @type {Record<string, string>} */
-const SHIFT_DIGITS = {
+const SHIFTED = {
 	'1': '!',
 	'2': '@',
 	'3': '#',
@@ -25,7 +28,13 @@ const SHIFT_DIGITS = {
 	'7': '&',
 	'8': '*',
 	'9': '(',
-	'0': ')'
+	'0': ')',
+	'-': '_',
+	"'": '"',
+	';': ':',
+	',': '<',
+	'.': '>',
+	'?': '/'
 };
 
 /** Glyph shown on a key given the current shift state @param {string} key @param {boolean} shift */
@@ -35,8 +44,9 @@ export function keyLabel(key, shift) {
 	if (key === 'space') return '␣';
 	if (key === 'enter') return '⏎';
 	if (key === 'esc') return 'esc';
+	if (key === 'clear') return 'clear';
 	if (key.length === 1) {
-		if (shift && SHIFT_DIGITS[key]) return SHIFT_DIGITS[key];
+		if (shift && SHIFTED[key]) return SHIFTED[key];
 		return shift ? key.toUpperCase() : key;
 	}
 	return key;
@@ -55,6 +65,7 @@ export function keyPress(key, state) {
 	if (key === 'esc') return { buffer, shift, done: 'cancel' };
 	if (key === 'shift') return { buffer, shift: !shift, done: null };
 	if (key === 'backspace') return { buffer: buffer.slice(0, -1), shift, done: null };
+	if (key === 'clear') return { buffer: '', shift, done: null };
 	if (key === 'space') return { buffer: buffer + ' ', shift, done: null };
 	// a character: shift affects only this keystroke, then clears
 	const char = keyLabel(key, shift);
@@ -62,18 +73,20 @@ export function keyPress(key, state) {
 }
 
 /** the open keyboard target, or null @type {import('svelte/store').Writable<any>}
- * {title, buffer, shift, onCommit(text), onCancel()} */
+ * {title, buffer, shift, onCommit(text), onCancel(), onInput?(text)} */
 export const vrKeyboardTarget = writable(null);
 
-/** Open the keyboard bound to a target @param {{title?: string, initial?: string,
- * onCommit: (text: string) => void, onCancel?: () => void}} opts */
+/** Open the keyboard bound to a target. `onInput` (36-vr-ai B9) hears every edit of the buffer — a search
+ * that filters as you type. @param {{title?: string, initial?: string,
+ * onCommit: (text: string) => void, onCancel?: () => void, onInput?: (text: string) => void}} opts */
 export function openVRKeyboard(opts) {
 	vrKeyboardTarget.set({
 		title: opts.title ?? 'Type',
 		buffer: opts.initial ?? '',
 		shift: false,
 		onCommit: opts.onCommit,
-		onCancel: opts.onCancel ?? (() => {})
+		onCancel: opts.onCancel ?? (() => {}),
+		onInput: opts.onInput ?? null
 	});
 }
 
@@ -93,6 +106,7 @@ export function pressVRKey(key) {
 		return;
 	}
 	vrKeyboardTarget.set({ ...target, buffer: next.buffer, shift: next.shift });
+	if (next.buffer !== target.buffer) target.onInput?.(next.buffer);
 }
 
 export function closeVRKeyboard() {

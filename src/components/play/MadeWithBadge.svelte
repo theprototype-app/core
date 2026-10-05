@@ -14,14 +14,19 @@
 	// action buttons). DOM never reaches a headset's eye buffer, and the badge also stands down
 	// while a VR session runs. The click opens theprototype.app in a NEW tab — never the frame.
 	import { onMount } from 'svelte';
-	import { embedMode, embedSceneId } from '$lib/playMode';
+	import { embedMode, embedSceneId, embedSource, embedBuild } from '$lib/playMode';
+	import { gameIdentity } from '$lib/gameIdentity.js';
 	import { isVRMode } from '../../stores/sceneStore';
 	import { exportConfig } from '$lib/export/exportBoot.js';
-	import { badgeHref, BADGE_TEXT } from '$lib/export/badge.js';
+	import { badgeHref, badgeRefFor, BADGE_TEXT } from '$lib/export/badge.js';
 	import { avoidRects, liftAbove } from '$lib/play/hudAvoid.js';
 
 	const BASE = 10;
-	const href = badgeHref(exportConfig?.id || embedSceneId);
+	// 36-community (C4): the game id is known once the scene has LOADED (it is in the file), so the
+	// link follows it — a pending remix still counts the original: that is the game being played
+	const href = $derived(
+		badgeHref(badgeRefFor({ exportConfig, gameId: $gameIdentity?.gameId || '', sceneId: embedSceneId, source: embedSource, build: embedBuild }))
+	);
 	let lift = $state(BASE);
 	/** @type {HTMLAnchorElement | null} */
 	let el = $state(null);

@@ -13,8 +13,9 @@
 	import TouchTools from './menu/TouchTools.svelte';
 	import MenuSettings from './menu/Settings.svelte';
 	import SessionsManager from './menu/SessionsManager.svelte';
+	import CheckpointTimeline from './menu/checkpoints/CheckpointTimeline.svelte'; // 36 B14
 	import TemplatesModal from './menu/TemplatesModal.svelte';
-	import CharacterModal from './menu/CharacterModal.svelte';
+	import CharacterPanel from './menu/CharacterPanel.svelte'; // 36-avatars: the customise side panel
 	import ViewportMenu from './menu/ViewportMenu.svelte';
 	import MeshEditPopup from './menu/MeshEditPopup.svelte';
 	import MarqueeOverlay from './menu/MarqueeOverlay.svelte';
@@ -60,8 +61,9 @@
 <TouchTools />
 <MenuSettings />
 <SessionsManager />
+<CheckpointTimeline />
 <TemplatesModal />
-<CharacterModal />
+<CharacterPanel />
 <ViewportMenu />
 <MeshEditPopup />
 <MarqueeOverlay />

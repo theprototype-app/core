@@ -32,9 +32,11 @@ import { vrFaceCap } from '../faceEdit';
 import { vrVertexCap } from '../meshEdit';
 import { resetWindowPoses } from '../vrWindowPoses';
 import { safeStorage } from '../safeStorage';
+import { openVRKeyboard } from '../vrKeyboard';
 import { renderer } from './core.js';
 import { applyVRFrameRate } from './input.js';
 import { vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrSnapAngleLast, clampHeight, SMOOTH_SPEEDS, SNAP_ANGLES, HEIGHT_LIMIT } from './prefs.js';
+import { vrHudPlacement, vrHudSize, vrHudHints, setVrHudPlacement, setVrHudSize, setVrHudHints } from '../vrHudPrefs';
 import { vrBindings, resetBindings, mirrorBindings, isLeftHanded, VR_ACTIONS, CONTROLS_FOR, bindingOf, setBinding, actionInfo, controlName } from './bindings.js';
 
 /** @typedef {{value: any, label: string}} Option */
@@ -246,6 +248,39 @@ export const VR_SETTINGS = [
 	},
 	{ id: 'wireframe', page: 'display', label: 'Selection wireframe', icon: 'box', kind: 'toggle', get: () => get(vrWireframeSelection), set: (v) => put(vrWireframeSelection, 'vrWireframe', !!v), keywords: ['outline', 'highlight'], note: 'Draws a wireframe over what you select' },
 	{ id: 'resetPanels', page: 'display', label: 'Reset panel positions', icon: 'layers', kind: 'action', run: () => (resetWindowPoses(), showToast('VR panel positions reset')), keywords: ['windows', 'menus'], note: 'Panels you moved go back to their spots on the controllers' },
+	// 36 B12: the game HUD in the headset (vrHud.js) — where it floats, how big, and the button hints
+	{
+		id: 'gameHud',
+		page: 'display',
+		label: 'Game HUD',
+		icon: 'scan-eye',
+		kind: 'choice',
+		options: [
+			{ value: 'head', label: 'Follow head' },
+			{ value: 'world', label: 'Fixed in world' },
+			{ value: 'wrist', label: 'Wrist only' }
+		],
+		get: () => get(vrHudPlacement),
+		set: (v) => setVrHudPlacement(v),
+		keywords: ['hud', 'score', 'heads-up', 'overlay', 'game', 'strip'],
+		note: 'Where a game’s score and timer show in the headset'
+	},
+	{
+		id: 'gameHudSize',
+		page: 'display',
+		label: 'Game HUD size',
+		icon: 'maximize',
+		kind: 'choice',
+		options: [
+			{ value: 'small', label: 'Small' },
+			{ value: 'medium', label: 'Medium' },
+			{ value: 'large', label: 'Large' }
+		],
+		get: () => get(vrHudSize),
+		set: (v) => setVrHudSize(v),
+		keywords: ['hud', 'text size', 'readable', 'bigger']
+	},
+	{ id: 'gameHudHints', page: 'display', label: 'Button hints', icon: 'gamepad-2', kind: 'toggle', get: () => get(vrHudHints), set: (v) => setVrHudHints(!!v), keywords: ['hud', 'controls', 'buttons', 'help'], note: 'Shows which button jumps, fires or opens the menu in a game' },
 	// ---- Voice
 	{
 		id: 'mic',
@@ -352,7 +387,9 @@ export function activateVRSetting(id, dir = 1) {
 
 /** bumps whenever any VR setting changes (a dependency for the radial's live labels and the panels) */
 export const vrSettingsTick = writable(0);
-const watched = [vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrFlying, vrMenuHand, vrMenuHold, vrGrabStyle, vrTargetHz, vrStatsOpen, peerHandStyle, vrPassthrough, vrWireframeSelection, vrVertexHold, vrSleeveEnabled, perfStatsShown, vrMicMode, vrFaceCap, vrVertexCap, vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrBindings];
+/** 36-vr-ai (B9): what the in-headset Search page filters by (typed on the VR keyboard) */
+export const vrSettingsQuery = writable('');
+const watched = [vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrFlying, vrMenuHand, vrMenuHold, vrGrabStyle, vrTargetHz, vrStatsOpen, peerHandStyle, vrPassthrough, vrWireframeSelection, vrVertexHold, vrSleeveEnabled, perfStatsShown, vrMicMode, vrFaceCap, vrVertexCap, vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrBindings, vrSettingsQuery];
 /** one derived over every watched store: any change re-renders whatever shows a setting */
 let version = 0;
 export const vrSettingsVersion = derived([vrSettingsTick, ...watched], () => ++version);
@@ -442,8 +479,42 @@ export function bindingRows() {
 	return VR_ACTIONS.map((a) => ({ id: a.id, label: a.label, locked: a.kind === 'locked', doc: a.doc }));
 }
 
-/** the page tabs the in-headset panel shows: the settings pages + Buttons (the remap table) */
-export const VR_PANEL_TABS = [...VR_SETTING_PAGES.filter((p) => p.id !== 'voice'), { id: 'buttons', label: 'Buttons', icon: 'keyboard', keywords: [] }];
+/** the page tabs the in-headset panel shows: the settings pages + Buttons (the remap table) + Search (B9) */
+export const VR_PANEL_TABS = [
+	...VR_SETTING_PAGES.filter((p) => p.id !== 'voice'),
+	{ id: 'buttons', label: 'Buttons', icon: 'keyboard', keywords: [] },
+	{ id: 'search', label: 'Search', icon: 'search', keywords: [] }
+];
+
+/**
+ * 36-vr-ai (B9): the VR settings a query finds — every word must appear in the row's label, its keywords or
+ * its page's name ("turn" finds Turning, Snap angle, Smooth speed and Mirror turn but not Teleport; "comfort
+ * vignette" the vignette). The page's own keywords do NOT count: they would match every row on it. Empty = none.
+ * @param {string} query @returns {SettingRow[]}
+ */
+export function searchVRSettings(query) {
+	const words = String(query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+	if (!words.length) return [];
+	return VR_SETTINGS.filter((r) => {
+		if (r.vr === false || r.id === 'heightReset') return false;
+		const page = VR_SETTING_PAGES.find((p) => p.id === r.page);
+		const text = [r.label, ...(r.keywords ?? []), page?.label ?? ''].join(' ').toLowerCase();
+		return words.every((w) => text.includes(w));
+	});
+}
+
+/** B9: type the search on the VR keyboard — the results follow every key; Esc puts the old query back */
+export function openVRSettingsSearch() {
+	const before = get(vrSettingsQuery);
+	vrSettingsPage.set('search');
+	openVRKeyboard({
+		title: 'Search settings',
+		initial: before,
+		onInput: (text) => vrSettingsQuery.set(text),
+		onCommit: (text) => vrSettingsQuery.set(text.trim()),
+		onCancel: () => vrSettingsQuery.set(before)
+	});
+}
 
 /**
  * The panel's rows for a page, top to bottom — what it draws and what the stick cursor walks. Row 0 is
@@ -454,7 +525,13 @@ export const VR_PANEL_TABS = [...VR_SETTING_PAGES.filter((p) => p.id !== 'voice'
 export function settingsPanelRows(page) {
 	/** @type {{action: string, kind: string, rowId?: string, label: string}[]} */
 	const rows = [{ action: 'tabs', kind: 'tabs', label: 'Pages' }];
-	if (page === 'buttons') {
+	if (page === 'search') {
+		const query = get(vrSettingsQuery).trim();
+		rows.push({ action: 'vrset:search', kind: 'search', label: query ? 'Search: ' + query : 'Type to search…' });
+		const found = searchVRSettings(query);
+		for (const r of found) rows.push({ action: 'vrset:' + r.id, kind: r.kind, rowId: r.id, label: r.label });
+		if (query && !found.length) rows.push({ action: '', kind: 'locked', label: 'No VR setting matches' });
+	} else if (page === 'buttons') {
 		for (const b of bindingRows()) rows.push({ action: b.locked ? '' : 'vrbind:' + b.id, kind: b.locked ? 'locked' : 'binding', rowId: b.id, label: b.label });
 		rows.push({ action: 'vrset:leftHanded', kind: 'toggle', rowId: 'leftHanded', label: 'Left-handed' });
 		rows.push({ action: 'vrset:bindingsReset', kind: 'action', rowId: 'bindingsReset', label: 'Reset buttons' });

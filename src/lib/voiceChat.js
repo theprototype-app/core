@@ -293,6 +293,20 @@ export function releaseMic() {
 }
 
 /**
+ * 36-vr-ai (plan F2): a COPY of the live microphone track for a local recording (voice typing), or null when
+ * voice chat holds no stream. A clone has its own `enabled` and its own `stop()`: recording through it never
+ * opens the mic to peers, and stopping it never closes voice chat — one capture device, two independent uses.
+ * @returns {MediaStreamTrack | null}
+ */
+export function borrowMicTrack() {
+	const track = localStream?.getAudioTracks()[0];
+	if (!track || track.readyState !== 'live') return null;
+	const copy = track.clone();
+	copy.enabled = true;
+	return copy;
+}
+
+/**
  * How long the mic stays claimed after a push-to-talk release.
  *
  * NOT zero, and this is the one piece of policy in the change. Re-acquiring costs a

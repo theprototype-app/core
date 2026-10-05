@@ -29,6 +29,7 @@ import { writable, get } from 'svelte/store';
 import { explorerItems, hiddenItems, registerDuplicateResolver } from './explorer';
 import { showToast } from '../stores/appStore';
 import { safeStorage } from './safeStorage';
+import { forkPayloadGame } from './gameIdentity.js';
 
 export const DUPLICATE_MODES = ['ask', 'skip', 'copy'];
 const STORAGE_KEY = 'importDuplicateMode';
@@ -91,6 +92,8 @@ export async function sceneCopyBytes(buffer, name, opts = {}) {
 		if (!payload || typeof payload !== 'object') return null;
 		payload.id = crypto.randomUUID();
 		payload.createdAt = Date.now();
+		// 36-community (C4): a copy is a NEW game whose parent is the source ("Save as copy")
+		forkPayloadGame(payload);
 		if (name) payload.name = name;
 		if (opts.workspace === false) delete payload.workspace;
 		entries['session.json'] = strToU8(JSON.stringify(payload));

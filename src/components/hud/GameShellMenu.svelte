@@ -33,6 +33,9 @@
 	} from '$lib/gameShell';
 	import { touchControlsVisible } from '$lib/touchActions'; // 36 U8: the Touch controls row
 	import { gameSettingValues, gameSettingRows, setGameSetting } from '$lib/gameSettings';
+	// 36-community (C6): a PUBLISHED game's heart (null without a cloud plugin / for a local scene)
+	import { sceneHeart } from '$lib/cloudHooks';
+	import HeartButton from '../ui/HeartButton.svelte';
 
 	const playing = $derived($isLocked === true);
 	// the dependencies are passed as unused arguments: shellMenuAvailable reads its stores
@@ -138,6 +141,11 @@
 					<h2 class="gs-title">{shellPageTitle(page)}</h2>
 					<p class="gs-sub">{gameName}</p>
 				</div>
+				{#if page === 'main' && $sceneHeart}
+					<span class="gs-heart">
+						<HeartButton id="game-shell-heart" size="md" count={$sceneHeart.count} liked={$sceneHeart.liked} label="Like this game" ontoggle={() => $sceneHeart.toggle()} />
+					</span>
+				{/if}
 			</header>
 
 			{#if page === 'main'}
@@ -257,6 +265,17 @@
 {/snippet}
 
 <style>
+	/* 36-community (C6): the heart sits at the right end of the header row, out of the flow so the
+	   centred title stays centred */
+	.gs-head {
+		position: relative;
+	}
+	.gs-heart {
+		position: absolute;
+		right: 0;
+		top: 50%;
+		transform: translateY(-50%);
+	}
 	.gs-corner {
 		position: fixed;
 		top: calc(var(--connect-bottom, 0px) + 108px);

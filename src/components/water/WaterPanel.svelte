@@ -204,6 +204,11 @@
 	</div>
 
 	<h4 class="mt-2 text-[11px] font-semibold text-gray-300">Waves</h4>
+	{#if look.frozen}
+	<p class="text-[10px] text-gray-500">Frozen: the surface holds still — no waves, foam or ripple motion. Untick Frozen (under Underwater) to use these.</p>
+	{/if}
+	<!-- 36-fb-water F13: Frozen locks these (resolveLook) — say so instead of a dead slider -->
+	<div class="contents" inert={look.frozen} class:frozen-locked={look.frozen}>
 	<SliderRow
 		label="Count"
 		min={0}
@@ -257,6 +262,7 @@
 		onchange={(v) => setWaves({ choppiness: v })}
 	/>
 
+	</div>
 	<h4 class="mt-2 text-[11px] font-semibold text-gray-300">Look</h4>
 	<div class="ui-row items-center gap-2">
 		<span class="w-20 shrink-0 text-xs text-gray-400">Colour</span>
@@ -350,6 +356,7 @@
 		value={look.roughness}
 		onchange={(v) => setLook({ roughness: v })}
 	/>
+	<div class="contents" inert={look.frozen} class:frozen-locked={look.frozen}>
 	<SliderRow
 		label="Foam"
 		min={0}
@@ -376,6 +383,7 @@
 		value={look.foamWidth}
 		onchange={(v) => setLook({ foamWidth: v })}
 	/>
+	</div>
 	<SliderRow
 		label="Caustics"
 		min={0}
@@ -416,6 +424,7 @@
 		value={look.detailScale}
 		onchange={(v) => setLook({ detailScale: v })}
 	/>
+	<div class="contents" inert={look.frozen} class:frozen-locked={look.frozen}>
 	<SliderRow
 		label="Ripple speed"
 		min={0}
@@ -424,6 +433,7 @@
 		value={look.detailSpeed}
 		onchange={(v) => setLook({ detailSpeed: v })}
 	/>
+	</div>
 	<div class="ui-row items-center gap-2">
 		<span class="w-20 shrink-0 text-xs text-gray-400">Glow</span>
 		<input
@@ -693,6 +703,10 @@
 {/if}
 
 <style>
+	/* 36-fb-water F13: controls Frozen locks read as unavailable (and are inert) */
+	.frozen-locked > :global(*) {
+		opacity: 0.55;
+	}
 	.water-swatch {
 		height: 1.5rem;
 		width: 2rem;

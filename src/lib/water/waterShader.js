@@ -342,19 +342,40 @@ void main() {
 	// seen at a normal angle), so a scene keeps its look until you turn the visibility down.
 	float vis = smoothstep(0.5, 1.5, thickness / max(uFogDistance, 0.05));
 	trans = mix(trans, uFogColor * (0.35 + 0.65 * max(L.y, 0.15)), vis);
-	if (uRefraction <= 0.0) trans = mix(uShallow, uDeep, clamp(absorb + 0.2, 0.0, 1.0)) * (0.35 + 0.65 * max(dot(vec3(0.0, 1.0, 0.0), L), 0.15)) * uSunColor * 0.6 + uDeep * 0.4;
+	// an OPAQUE liquid (no refraction: lava, ice) — 36-fb-water F13: it still honours Opacity. The
+	// opaque colour covers the (un-bent) view through it by cover: exactly 1 at the presets'
+	// 0.95-1, so lava and ice look as they did, and turning Opacity down lets you see in (and then
+	// Caustics and Visibility act on what is seen, as on any see-through water).
+	float cover = clamp(max(absorbO * uOpacity, smoothstep(0.85, 0.95, uOpacity)), 0.0, 1.0);
+	if (uRefraction <= 0.0) {
+		vec3 molten = mix(uShallow, uDeep, clamp(absorb + 0.2, 0.0, 1.0)) * (0.35 + 0.65 * max(dot(vec3(0.0, 1.0, 0.0), L), 0.15)) * uSunColor * 0.6 + uDeep * 0.4;
+		trans = mix(trans, molten, cover);
+	}
 	if (tir) trans = mix(uDeep, uFogColor, 0.5);
 
 #ifndef WATER_SS
 	// Quest tier: the floor shows through by blending; opaque where the water is deep
 	alpha = clamp(max(max(absorbO * uOpacity, vis), F) + spec, 0.0, 1.0);
-	if (uRefraction <= 0.0) alpha = max(alpha, uOpacity);
+	if (uRefraction <= 0.0) alpha = max(alpha, cover);
 	if (!front) alpha = clamp(0.35 + absorb * 0.65, 0.0, 1.0);
 #endif
 
 	vec3 col = mix(trans, refl, F) + sunSpec;
 
-	// foam: crests + the shoreline band, broken up by the map's foam channel
+	// glow (lava, toxic): bright veins where the noise is high, a dark cooled crust where it is low
+	float emit = max(max(uEmissive.r, uEmissive.g), uEmissive.b);
+	if (emit > 0.0) {
+		// 36-fb-water F13: Ripples (detail) sets the veins' contrast too — on a glowing liquid the
+		// normals barely show, so the slider did nothing on lava (full contrast from 0.5 up)
+		float vein = smoothstep(0.38, 0.72, mix(0.55, foamNoise, clamp(uDetail * 2.0, 0.0, 1.0)));
+		// an opaque glow (no refraction: lava) cools into a crust; a see-through one (toxic) only pulses
+		bool molten = uRefraction <= 0.0;
+		if (molten) col = mix(col * 0.35 + uDeep * 0.25, col, vein);
+		col += uEmissive * (front ? 1.0 : 0.7) * (molten ? mix(0.12, 1.5, vein) : mix(0.6, 1.15, vein));
+	}
+
+	// foam: crests + the shoreline band, broken up by the map's foam channel — drawn AFTER the
+	// glow (36-fb-water F13: lava's dark crust foam was washed out by its own glow)
 	float foamMask = 0.0;
 	if (uBody < 0.5 && front) {
 		// 36-fb-water F13 FOAM: the shoreline band only appeared where scene geometry crossed the
@@ -384,16 +405,6 @@ void main() {
 	vec3 lit = uSkyTop * 0.45 + uSunColor * (0.35 + 0.65 * max(dot(N, L), 0.0));
 	col = mix(col, uFoamColor * lit, clamp(foamMask, 0.0, 1.0));
 	alpha = max(alpha, foamMask);
-	// glow (lava, toxic): bright veins where the noise is high, a dark cooled crust where it is low
-	float emit = max(max(uEmissive.r, uEmissive.g), uEmissive.b);
-	if (emit > 0.0) {
-		float vein = smoothstep(0.38, 0.72, foamNoise);
-		// an opaque glow (no refraction: lava) cools into a crust; a see-through one (toxic) only pulses
-		bool molten = uRefraction <= 0.0;
-		if (molten) col = mix(col * 0.35 + uDeep * 0.25, col, vein);
-		col += uEmissive * (front ? 1.0 : 0.7) * (molten ? mix(0.12, 1.5, vein) : mix(0.6, 1.15, vein));
-	}
-
 	gl_FragColor = vec4(col, alpha);
 	#include <tonemapping_fragment>
 	#include <colorspace_fragment>

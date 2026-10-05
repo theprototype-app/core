@@ -123,6 +123,8 @@ h.run(async () => {
 	// ── F12: a body placed UNDER the water rises by density (Pool party) ────────────────────
 	if (want('f12')) {
 		await load(A.page, 'pool-party');
+		// the re-authored Pool party starts simulating on load: probes join a FRESH run
+		await A.page.evaluate(() => window.__stores.physics.resetSimulation());
 		await A.page.evaluate(() => {
 			const cmd = window.__stores.commandsHandler.sceneCommand;
 			let g;
@@ -189,7 +191,8 @@ h.run(async () => {
 			let g;
 			window.__stores.objectsGroup.subscribe((v) => (g = v))();
 			const T = window.__stores.THREE;
-			const f = g.getObjectByName('Fish orange');
+			// a STATIC object under the water (the fish swim away between aiming and measuring)
+			const f = g.getObjectByName('Rock small');
 			const b = new T.Box3().setFromObject(g.getObjectByName('Aquarium water'));
 			window.__f13bMat = f.material;
 			return { uuid: f.uuid, pos: f.position.toArray(), front: b.max.z };
@@ -208,7 +211,7 @@ h.run(async () => {
 			g.getObjectByProperty('uuid', u).material = new s.THREE.MeshBasicMaterial({ color: 0xff00ff });
 		}, fish.uuid);
 		await A.page.waitForTimeout(800);
-		const clip = await h.centeredClip(A, fish.pos, 320);
+		const clip = await h.centeredClip(A, fish.pos, 360);
 		const on = await outlineVsObject(A, clip);
 		await A.page.evaluate(() => window.__stores.waterRuntime.setSelectionUnrefract(false));
 		await A.page.waitForTimeout(800);
@@ -229,7 +232,7 @@ h.run(async () => {
 		// underwater: the camera inside the tank
 		await look(A.page, [fish.pos[0] + 0.25, fish.pos[1] + 0.1, fish.pos[2] + 0.7], fish.pos);
 		await A.page.waitForTimeout(1200);
-		const under = await outlineVsObject(A, await h.centeredClip(A, fish.pos, 320));
+		const under = await outlineVsObject(A, await h.centeredClip(A, fish.pos, 360));
 		h.check(under.offset !== null && under.offset < 3, `underwater: aligned (${under.offset?.toFixed(1)} px)`);
 		await A.page.evaluate((u) => {
 			const s = window.__stores;
@@ -241,8 +244,9 @@ h.run(async () => {
 		}, fish.uuid);
 		// the fluid tank toy: a duck in the particle fluid (no refraction there — measured aligned)
 		await load(A.page, 'fluid-tank-toy');
-		await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+		if (!(await simulating(A.page))) await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
 		await A.page.waitForTimeout(6000);
+		await A.page.evaluate(() => window.__stores.physics.pauseSimulation(true)); // hold the duck still for the measurement
 		const duck = await A.page.evaluate(() => {
 			const s = window.__stores;
 			let g;
@@ -272,6 +276,8 @@ h.run(async () => {
 	// ── F14: Jelly room renders its jellies (not black) + Start simulation on load ──────────
 	if (want('f14')) {
 		await load(A.page, 'jelly-room');
+		// the re-authored room starts on load: back to the authored layout for the colour reads
+		await A.page.evaluate(() => window.__stores.physics.resetSimulation());
 		await A.page.waitForTimeout(1500);
 		const att = await A.page.evaluate(() => {
 			let g;
@@ -285,6 +291,7 @@ h.run(async () => {
 		h.check(lemon[0] > 120 && lemon[1] > 100, `Jelly lemon renders yellow (rgb ${lemon})`);
 		await shots(A.page, '20-after-F14-jelly-room');
 		// the setting: Configure Scene ▸ Camera ▸ Start view
+		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: false }));
 		await A.page.evaluate(() => window.__stores.openSceneSection('Camera:Start view'));
 		const box = await A.page.waitForSelector('#sim-on-load', { timeout: 8000 }).catch(() => null);
 		h.check(!!box, 'Configure Scene shows "Start simulation on load" beside "Hold camera until loaded"');
@@ -515,10 +522,10 @@ h.run(async () => {
 		await A.page.waitForTimeout(1500);
 		const c = await A.page.evaluate(() => window.__stores.sim.fluidDebug().map((t) => t.steps));
 		h.check(c.every((n, i) => n > b[i] + 5), `Resume carries on (steps ${b} -> ${c})`);
+		const cNow = await A.page.evaluate(() => window.__stores.sim.fluidDebug().map((t) => t.steps));
 		await A.page.click('#sim-reset');
-		await h.eventually(() => simulating(A.page), (v) => v === true, 'Reset plays it again from the start', 8000);
-		const d = await A.page.evaluate(() => window.__stores.sim.fluidDebug().map((t) => t.steps));
-		h.check(d.every((n, i) => n < c[i]), `...with every tank refilled (steps ${c} -> ${d})`);
+		await h.eventually(() => A.page.evaluate(() => window.__stores.sim.fluidDebug().map((t) => t.steps)), (d) => d.length === 2 && d.every((n, i) => n < cNow[i]), `Reset refills every tank (steps ${cNow} -> fewer)`, 8000);
+		await h.eventually(() => simulating(A.page), (v) => v === true, '...and plays it again from the start', 8000);
 		console.log('duck start', duck0);
 		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
 		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: false }));

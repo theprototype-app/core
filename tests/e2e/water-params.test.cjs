@@ -25,12 +25,12 @@ const D = ['high', 'quest'];
 const DESK = ['high']; // screen-space only (the Quest tier has no pre-pass), documented in the UI
 /** @type {[string, string, any, any, any, 'look'|'waves', string[]][]} */
 const CONTROLS = [
-	['count', 'Waves: Count', 0, 6, { waves: { amplitude: 0.15 } }, 'waves', D],
-	['amplitude', 'Waves: Amplitude', 0, 0.35, {}, 'waves', D],
-	['wavelength', 'Waves: Wavelength', 0.6, 12, { waves: { amplitude: 0.15 } }, 'waves', D],
-	['speed', 'Waves: Speed', 0.2, 3, { waves: { amplitude: 0.15 } }, 'waves', D],
-	['direction', 'Waves: Direction', 0, 120, { waves: { amplitude: 0.15 } }, 'waves', D],
-	['choppiness', 'Waves: Choppiness', 0, 1, { waves: { amplitude: 0.2 } }, 'waves', D],
+	['count', 'Waves: Count', 0, 6, { waves: { amplitude: 0.15, count: 4 } }, 'waves', D],
+	['amplitude', 'Waves: Amplitude', 0, 0.35, { waves: { count: 4 } }, 'waves', D],
+	['wavelength', 'Waves: Wavelength', 0.6, 12, { waves: { amplitude: 0.15, count: 4 } }, 'waves', D],
+	['speed', 'Waves: Speed', 0.2, 3, { waves: { amplitude: 0.15, count: 4 } }, 'waves', D],
+	['direction', 'Waves: Direction', 0, 120, { waves: { amplitude: 0.15, count: 4 } }, 'waves', D],
+	['choppiness', 'Waves: Choppiness', 0, 1, { waves: { amplitude: 0.2, count: 4 } }, 'waves', D],
 	['shallowColor', 'Shallow colour', '#ff2020', '#20ff40', {}, 'look', D],
 	['deepColor', 'Deep colour', '#ff2020', '#2040ff', { look: { opacity: 0.95 } }, 'look', D],
 	['clarity', 'Clarity (m)', 0.3, 15, {}, 'look', D],
@@ -54,8 +54,14 @@ const CONTROLS = [
 	['emissiveStrength', 'Glow strength', 0, 3, { look: { emissive: '#ff6000' } }, 'look', D],
 	['fogColor', 'Underwater fog colour', '#ff0000', '#00ff60', { look: { fogDistance: 0.6 } }, 'look', D],
 	['fogDistance', 'Visibility (m)', 0.4, 40, {}, 'look', D],
-	['frozen', 'Frozen', false, true, { waves: { amplitude: 0.15 } }, 'look', D]
+	['frozen', 'Frozen', false, true, { waves: { amplitude: 0.15, count: 4 } }, 'look', D]
 ];
+// FROZEN (look.frozen) locks these by design (resolveLook: no waves, no foam, no ripple motion) —
+// the Water panel greys them out with the reason, so on a frozen preset they are n/a, not dead
+const FROZEN_LOCKED = ['count', 'amplitude', 'wavelength', 'speed', 'direction', 'choppiness', 'foam', 'foamColor', 'foamWidth', 'detailSpeed'];
+// these act on what is SEEN THROUGH the water (or from inside it): n/a outside an opaque preset,
+// where the camera-inside rows below measure them instead
+const SEE_THROUGH = ['fogColor', 'fogDistance'];
 // the camera INSIDE the water — the controls that are about being underwater
 const UNDER = [
 	['fogColor', 'Underwater fog colour', '#ff0000', '#00ff60', {}, 'look', D],
@@ -65,7 +71,7 @@ const UNDER = [
 
 // the shapes, as Add ▸ Water makes them, each on a bench (floor, stripes, a cube in the water)
 const SHAPES = {
-	tank: { kind: 'tank', at: [0, 0.7, 0], cam: [1.4, 1.5, 2.9], look: [0, 0.6, 0], under: [0, 0.6, 0.1], underLook: [0, 0.6, -1] },
+	tank: { kind: 'tank', at: [0, 0.7, 0], cam: [1.3, 2.3, 2.5], look: [0, 0.7, 0], under: [0, 0.6, 0.1], underLook: [0, 0.6, -1] },
 	pool: { kind: 'pool', at: [0, -0.75, 0], cam: [3.4, 3.2, 5.6], look: [0, -0.8, 0], under: [0, -0.6, 1], underLook: [0, -0.8, -2] },
 	round: { kind: 'cylinder', at: [0, -0.6, 0], cam: [3, 3, 4.6], look: [0, -0.7, 0], under: [0, -0.5, 0.5], underLook: [0, -0.7, -2] },
 	ocean: { kind: 'ocean', at: [0, -1, 0], cam: [5, 3.2, 9], look: [0, -0.5, 0], under: [0, -1.2, 2], underLook: [0, -1.4, -4] }
@@ -154,7 +160,10 @@ h.run(async () => {
 		const hi = await A.page.screenshot({ clip });
 		const d = await h.frameDelta(A.page, lo, hi, 18);
 		const live = d.fraction >= LIVE;
-		rows.push({ key: c[0], label: c[1], lo: c[2], hi: c[3], preset, shape, tier, fraction: d.fraction, changed: d.changed, live, expected: c[6].includes(tier) });
+		const pl = await A.page.evaluate((k) => window.__stores.waterPresets.resolveLook(window.__stores.waterPresets.waterPreset(k, {})), preset);
+		const under = shape.endsWith('-under');
+		const na = (pl.frozen && FROZEN_LOCKED.includes(c[0])) || (!under && SEE_THROUGH.includes(c[0]) && pl.opacity >= 0.9 && !(pl.refraction > 0));
+		rows.push({ key: c[0], label: c[1], lo: c[2], hi: c[3], preset, shape, tier, fraction: d.fraction, changed: d.changed, live, expected: c[6].includes(tier) && !na, na });
 		if (OUT && pairName) {
 			fs.writeFileSync(path.join(OUT, 'pairs', `${pairName}-lo.png`), lo);
 			fs.writeFileSync(path.join(OUT, 'pairs', `${pairName}-hi.png`), hi);
@@ -184,13 +193,15 @@ h.run(async () => {
 					await measure({ uuid, preset, c, shape, tier, clip, pairName });
 				}
 			}
-			// underwater: the camera inside the volume
+			// underwater: the camera inside the volume (every preset on the tank in full mode)
 			if (tier === 'high') {
 				await look(s.under, s.underLook);
 				await A.page.waitForTimeout(800);
 				const uclip = { x: 340, y: 160, width: 600, height: 400 };
-				let n = 0;
-				for (const c of UNDER) await measure({ uuid, preset: presetList[0], c, shape: shape + '-under', tier, clip: uclip, pairName: shape === 'tank' ? `u${++n}-tank-${c[0]}` : '' });
+				for (const preset of presetList) {
+					let n = 0;
+					for (const c of UNDER) await measure({ uuid, preset, c, shape: shape + '-under', tier, clip: uclip, pairName: shape === 'tank' && preset === 'aquarium' ? `u${++n}-tank-${c[0]}` : '' });
+				}
 			}
 		}
 	}
@@ -223,9 +234,17 @@ h.run(async () => {
 		for (const c of CONTROLS) {
 			md += `| ${c[1]} | ${c[2]} → ${c[3]} | ` + presets.map((p) => {
 				const r = rows.find((x) => x.key === c[0] && x.shape === 'tank' && x.tier === 'high' && x.preset === p);
-				return r ? (r.live ? (r.fraction * 100).toFixed(1) : `**DEAD ${(r.fraction * 100).toFixed(2)}**`) : '';
+				return r ? (r.na ? 'n/a' : r.live ? (r.fraction * 100).toFixed(1) : `**DEAD ${(r.fraction * 100).toFixed(2)}**`) : '';
 			}).join(' | ') + ' |\n';
 		}
+		md += `\n## Underwater (camera inside the tank), every preset\n\n| control | ${presets.join(' | ')} |\n|---|${presets.map(() => '---').join('|')}|\n`;
+		for (const c of UNDER) {
+			md += `| ${c[1]} | ` + presets.map((p) => {
+				const r = rows.find((x) => x.key === c[0] && x.shape === 'tank-under' && x.preset === p);
+				return r ? (r.na ? 'n/a' : r.live ? (r.fraction * 100).toFixed(1) : `**DEAD ${(r.fraction * 100).toFixed(2)}**`) : '';
+			}).join(' | ') + ' |\n';
+		}
+		md += `\nn/a: Frozen locks waves, foam and ripple motion (the panel greys them out and says so); the see-through fog rows are measured from inside an opaque preset.\n`;
 		md += `\n## Every shape (its default preset) and the Quest tier\n\n| control | ${shapes.join(' | ')} |\n|---|${shapes.map(() => '---').join('|')}|\n`;
 		const keys = [...new Set(rows.map((r) => r.key + '|' + r.label))];
 		for (const kl of keys) {

@@ -44,6 +44,10 @@ export const DEBUG_HOOKS = [
 	['webmDuration', () => import('./recording/webmDuration.js')],
 	// 36 A2: the offerSession decision (xrOfferMode, xrOfferEnabled, xrOfferDebug)
 	['xrOffer', () => import('./xrOffer')],
+	// 36-avatars: rigged avatars (avatarsDebug, avatarInstances, avatarIkPeers, avatarPreview) + assets/catalog
+	['avatars', () => import('./avatars/avatarState.js')],
+	['avatarAssets', () => import('./avatars/assets.js')],
+	['avatarCatalog', () => import('./avatars/catalog.js')],
 	['perfLiveSource', () => import('./perf/liveSource')],
 	['perfLiveSink', () => import('./perf/liveSink')],
 	['perfLiveWire', () => import('./perf/liveWire')],

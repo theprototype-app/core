@@ -1,5 +1,7 @@
 // Phase 129: avatar v2 — resolveAvatar defaults + per-shape hat anchor
 // (pure), and the rig renders a photo as a camera-facing card (no sphere),
+// 36-avatars: the default is a rigged character now; these fixtures pick the
+// CLASSIC floating head explicitly (avatars-rigged covers the rigged body).
 // the label above the head with a toggle, and the chosen head shape. Visual
 // polish is the user's manual check.
 const h = require('./helpers.cjs');
@@ -35,7 +37,7 @@ h.run(async () => {
 		window.__stores.userdata.subscribe((v) => ud.push(...(v ?? [])))();
 		window.__stores.userdata.set([
 			...ud,
-			['peerBox', 'Zoe', null, null, null, { shape: 'box', hat: 'crown', showLabel: true }]
+			['peerBox', 'Zoe', null, null, null, { character: 'classic', shape: 'box', hat: 'crown', showLabel: true }]
 		]);
 	});
 	await A.page.waitForTimeout(500);
@@ -63,7 +65,7 @@ h.run(async () => {
 		window.__stores.userdata.subscribe((v) => ud.push(...(v ?? [])))();
 		window.__stores.userdata.set([
 			...ud,
-			['peerPhoto', 'Max', png, null, null, { face: 'image', showLabel: false }]
+			['peerPhoto', 'Max', png, null, null, { character: 'classic', face: 'image', showLabel: false }]
 		]);
 	}, PNG);
 	await A.page.waitForTimeout(800);

@@ -37,6 +37,25 @@ function addPing(ping) {
 	}, PING_TTL + 100);
 }
 
+/**
+ * 36-avatars: PREVIEW a ping colour + chime at a point, on THIS screen only (the customise panel's
+ * live preview). Sends nothing — a preview is not a ping.
+ * @param {number[]} pos @param {string} color @param {string} sound
+ */
+export function previewPing(pos, color, sound) {
+	/** @type {any} */
+	const peer = get(peers);
+	addPing({
+		id: crypto.randomUUID(),
+		peerId: peer?.peer?.id ?? 'me',
+		name: get(username) || 'me',
+		pos,
+		ts: Date.now(),
+		color: color || peerColor(peer?.peer?.id ?? 'me'),
+		sound: sound || 'ding'
+	});
+}
+
 /** Ping a world position, locally and for all peers. An optional `uuid` marks
  * the ping as an OBJECT ping: receivers also flash a highlight around that
  * object for PING_TTL (PingHighlights). @param {THREE.Vector3 | number[]} position @param {string=} uuid */

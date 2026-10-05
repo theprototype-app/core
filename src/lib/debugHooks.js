@@ -45,6 +45,8 @@ export const DEBUG_HOOKS = [
 	['perfLiveWire', () => import('./perf/liveWire')],
 	['vrControls', () => import('./vrControls')],
 	['autosave', () => import('./autosave')],
+	// 36 B14: named checkpoints / the version timeline (checkpoints, checkpointsDebug, saveCheckpoint…)
+	['checkpoints', () => import('./checkpoints')],
 	['voiceChat', () => import('./voiceChat')],
 	['audioEngine', () => import('./audioEngine')],
 	['musicClock', () => import('./musicClock')],

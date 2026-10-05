@@ -123,7 +123,7 @@ export const sessions = writable(/** @type {any[]} */ ([]));
  * buffer is cleared after compositing, so it has to be read in the same tick it is drawn.
  * @param {number} maxW @returns {string|null} a dataURL, or null
  */
-function viewportThumbnail(maxW = 256) {
+export function viewportThumbnail(maxW = 256) {
 	/** @type {any} */
 	const renderer = get(globalRenderer);
 	const scene = get(globalScene);
@@ -1603,7 +1603,7 @@ async function applySessionNow(payload, opts, job) {
 
 // ---- proposal flow (50.3) --------------------------------------------------
 
-/** @type {{payload: any, accepts: Set<string>, needed: string[], beforeApply?: () => void} | null} */
+/** @type {{payload: any, opts?: any, accepts: Set<string>, needed: string[], beforeApply?: () => void} | null} */
 let pendingProposal = null;
 
 /** Load a session — solo applies immediately, with peers it becomes a proposal
@@ -1686,8 +1686,10 @@ async function confirmSceneSize(payload) {
 	}
 }
 
-/** @param {any} payload @returns {Promise<boolean>} see the block comment above */
-export async function requestLoadPayload(payload) {
+/** @param {any} payload @returns {Promise<boolean>} see the block comment above
+ * @param {{backup?: boolean, quiet?: boolean}} [opts] applySession's, carried through a proposal too
+ * (36 B14: a checkpoint restore cuts its own backup into the timeline, so it asks for none here) */
+export async function requestLoadPayload(payload, opts = {}) {
 	if (!payload) return false;
 	// 26-C (roadmap 26 Stage 2, last bullet): SAY HOW BIG IT IS BEFORE REPLACING THE
 	// SCENE. This is the file half of the ingest gate, and it sits HERE rather than in
@@ -1726,10 +1728,10 @@ export async function requestLoadPayload(payload) {
 	} catch {}
 	if (!connected.length) {
 		moduleSwitch.run();
-		await applySession(payload);
+		await applySession(payload, opts);
 		return true;
 	}
-	pendingProposal = { payload, accepts: new Set(), needed: connected, beforeApply: moduleSwitch.run };
+	pendingProposal = { payload, opts, accepts: new Set(), needed: connected, beforeApply: moduleSwitch.run };
 	peer.send({
 		type: 'sessionproposal',
 		name: payload.name,
@@ -2646,6 +2648,6 @@ export function applySessionAnswer(data) {
 		const proposal = pendingProposal;
 		pendingProposal = null;
 		proposal.beforeApply?.();
-		applySession(proposal.payload);
+		applySession(proposal.payload, proposal.opts);
 	}
 }

@@ -29,6 +29,8 @@
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 	// 36 I5: own lines (not the shared icon list) so a merge with the menu's other lanes stays a union
 	import { Compass } from '@lucide/svelte';
+	import { Bookmark, History } from '@lucide/svelte'; // 36 B14
+	import { checkpointsOpen, checkpointSaveOpen } from '../../stores/appStore.js'; // 36 B14
 	import { startEditorTour } from '$lib/tours/builtin.js';
 	import { safeStorage } from '$lib/safeStorage';
 	import { statsOpen } from '$lib/sceneBudget';
@@ -263,6 +265,14 @@
 		{/each}
 		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Archive size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Sessions</span>
+		</button>
+		<!-- 36 B14: named checkpoints + the timeline they live in -->
+		<button id="save-checkpoint" class="side-row" onclick={() => { checkpointSaveOpen.set(true); closeMenu.set(true); }}>
+			<span class="side-ico"><Bookmark size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save checkpoint…</span>
+			<span class="side-hint">Ctrl+Shift+S</span>
+		</button>
+		<button id="open-checkpoints" class="side-row" onclick={() => { checkpointsOpen.set(true); closeMenu.set(true); }}>
+			<span class="side-ico"><History size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Checkpoints</span>
 		</button>
 
 		<div class="side-div"></div>

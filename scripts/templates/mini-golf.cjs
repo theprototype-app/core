@@ -1,18 +1,18 @@
 // Template def `mini-golf` — one file per template (34 R4 A3). Authored by scripts/author-templates.cjs;
 // the def schema is the comment block at the top of that file; the table is ./index.cjs.
 
-const { graphBuilder } = require('./_builders.cjs');
+const { graphBuilder, rulesSource } = require('./_builders.cjs');
 
-// ---- 35-mini-golf: MINI GOLF ------------------------------------------------------------
+// ---- 35-mini-golf → 36 (U10): MINI GOLF -------------------------------------------------
 // Six holes side by side, each a lane from its tee (+z) to its cup (-z): a straight warm-up,
 // a ramp to a high green, a windmill whose blades sweep the gap, a bank shot round a wall, a
-// sand trap and a hump with posts. THE SPLIT (the Towers shape): this def is the COURSE (every
-// object the core `minigolf` module finds by name), the HUD and a small graph (buttons, click
-// sounds, the windmill's Spin, music, the walking body, the HUD words through the module's
-// `golfinfo` value node). The rules — strokes, the cup, out of bounds, sand, the putt itself —
-// live in src/modules/minigolf (holes.js is the table; its numbers are mirrored below).
+// sand trap and a hump with posts. THE SPLIT (36 U10, "readable logic"): this def is the COURSE
+// (every object found by name), the HUD and the MAIN GRAPH, whose hub is the "Mini Golf rules"
+// behaviour (scripts/templates/rules/mini-golf.rules.js — holes, par, strokes, the cup, out of
+// bounds, sand, the scorecard, the shot power). The core `minigolf` module is only the ENGINE
+// the rules call (`kit.golf.*`: the ball's body, the putting drag, the VR putter).
 
-/** lane x centres (holes.js LANE_X) */
+/** lane x centres (the rules' HOLES[*].x) */
 const LANE_X = [-12.5, -7.5, -2.5, 2.5, 7.5, 12.5];
 const GREEN = { color: 0x3f9b4a, roughness: 0.92 };
 // rails, flags, poles and signs cast no shadow: the shadow pass is half the draw-call budget
@@ -20,7 +20,7 @@ const RAIL = { color: 0xe9e2d0, physical: true, roughness: 0.45, clearcoat: 0.3,
 const railPhysics = { mode: 'static', friction: 0.2, restitution: 0.65 };
 const greenPhysics = { mode: 'static', friction: 0.6, restitution: 0.05 };
 const deco = { mode: 'static', sensor: true };
-/** the cups (holes.js HOLES[*].cup) */
+/** the cups (the rules' HOLES[*].cup) */
 const CUPS = [
 	[LANE_X[0], 0.1, -4.5],
 	[LANE_X[1], 0.6, -5],
@@ -76,7 +76,7 @@ const OBSTACLES = [
 	// 4 — the wall that makes it a bank shot
 	{ type: 'box', name: 'Bank wall', size: [2.2, 0.3, 0.2], pos: [LANE_X[3] - 0.4, 0.25, -1], ...RAIL, physics: railPhysics },
 	{ type: 'block', shape: 'Wedge', args: [0.6, 0.3, 0.8], name: 'Bank bumper', pos: [LANE_X[3] + 1.2, 0.1, 1.2], rot: [0, -Math.PI / 2, 0], color: 0xd2a86e, roughness: 0.6, physics: { mode: 'static', collider: 'hull', restitution: 0.6 } },
-	// 5 — the sand trap (holes.js sand)
+	// 5 — the sand trap (the rules' HOLES[4].sand)
 	{ type: 'box', name: 'Sand trap', size: [2.1, 0.014, 1.4], pos: [LANE_X[4] - 0.45, 0.107, -1.9], color: 0xe2c98e, roughness: 1, shadow: false, physics: deco },
 	{ type: 'box', name: 'Sand trap 2', size: [1.2, 0.014, 0.9], pos: [LANE_X[4] + 0.6, 0.107, -3.9], color: 0xe2c98e, roughness: 1, shadow: false, physics: deco },
 	// 6 — a hump and three posts round the cup
@@ -91,38 +91,148 @@ const BTN = { size: 17, weight: '600', bg: '#2f9e55', color: '#ffffff', radius: 
 
 function golfGraph() {
 	const g = graphBuilder();
-	const { N, E } = g;
-	N('click', 'gamesound', 'Button click', 520, 40, { sound: 'click' });
-	const button = (id, element, label, x, y) => {
-		N(id, 'hudbutton', label, x, y, { element });
+	const { N, E, B, G, T, S } = g;
+
+	// ---- the hub: the RULES (scripts/templates/rules/mini-golf.rules.js) ----------------------
+	T('n-main', 'Mini Golf — read me first',
+		'**Tee off** starts a round in **Mini Golf rules** — the whole game in one script.\n' +
+		'- **Double-click** it to read or change the code (Ctrl+S reloads it for everyone).\n' +
+		'- **Select** it and open the ⓘ tab to tune *Shot power*, strokes, the cup…\n' +
+		'- Its right-hand sockets are its **state** (the HUD words) and its **moments** ⚡ (sounds, banners).\n' +
+		'The ball and the putting drag are the **engine** below it (read-only; *Make editable copy* forks it).',
+		-360, 0, { w: 330, h: 250, color: 'blue' });
+	B('rules', 'Mini Golf rules', rulesSource('mini-golf.rules.js'), 290, 0);
+
+	// ---- the menu buttons -----------------------------------------------------------------------
+	N('click', 'gamesound', 'Button click', 0, 470, { sound: 'click' });
+	const button = (id, element, label, y) => {
+		N(id, 'hudbutton', label, 0, y, { element });
 		E(id, 'click', 'trigger');
 	};
-	button('bstart', 'start-btn', 'Start button', 40, 40);
-	button('bagain', 'again-btn', 'Play again button', 40, 110);
-	button('bmenu', 'menu-btn', 'Menu button', 40, 180);
-	const text = (id, read, element, x, y, extra = {}) => {
-		N(id + 'i', 'golfinfo', 'Golf: ' + read, x, y, { read, ...extra });
-		N(id + 't', 'hudtext', 'HUD ' + element, x + 240, y, { element, format: '', decimals: 0, value: 0 });
-		E(id + 'i', id + 't', 'format');
+	button('bstart', 'start-btn', 'Tee off button', 40);
+	button('bagain', 'again-btn', 'Play again button', 150);
+	button('bmenu', 'menu-btn', 'Menu button', 260);
+	E('bstart', 'rules', 'teeOff');
+	E('bagain', 'rules', 'playAgain');
+	// a kit call as a kit node: the menu button goes straight to the round's menu
+	N('kmenu', 'kit-round-toMenu', 'Kit: back to menu', 0, 360, {});
+	E('bmenu', 'kmenu', 'trigger');
+
+	// ---- the engine, openable from here ---------------------------------------------------------
+	N('engine', 'coderef', 'Code link', 290, 760, { module: 'minigolf', file: 'module.js', title: 'Mini Golf engine — the ball, putting, the VR putter', main: 1 });
+	T('n-engine', 'The engine', 'What the rules call as **kit.golf.*** — the ball\'s physics body, the drag-to-putt arrow, the VR putter. Double-click to read it.', 290, 900, { w: 250, h: 110, color: 'gray' });
+
+	// ---- hole feedback: every moment the rules emit, on every screen ---------------------------
+	const fb = [];
+	const F = (id, type, label, data, x, y) => {
+		fb.push(N(id, type, label, 640 + x, 40 + y, data));
 	};
-	text('mbest', 'menuBest', 'mg-menu-best', 800, 40);
-	text('title', 'title', 'mg-title', 800, 110);
-	text('par', 'par', 'mg-par', 800, 180);
-	text('strokes', 'strokes', 'mg-strokes', 800, 250);
-	text('total', 'total', 'mg-total', 800, 320);
-	text('tip', 'tip', 'mg-tip', 800, 390);
-	text('rline', 'resultLine', 'mg-result-line', 800, 480);
-	text('rbest', 'best', 'mg-best', 800, 550);
-	for (let i = 1; i <= 6; i++) text('card' + i, 'card', 'mg-card-' + i, 1300, 40 + (i - 1) * 70, { hole: i });
-	// the windmill: two blades turning about the hub (a Spin makes each a kinematic body)
-	N('spinA', 'spin', 'Windmill spin A', 40, 300, { axis: 'z', speed: 0.9 });
-	N('selA', 'objectselector', 'Blade A', 280, 300, { selected: 'Windmill blade A' });
+	// a hole begins
+	F('aStart', 'announce', 'Banner: the hole', { text: '{v}', sub: '', seconds: 3.6, color: '#ffe066' }, 0, 0);
+	F('sWhistle', 'gamesound', 'Sound: whistle', { sound: 'whistle' }, 260, 0);
+	E('rules', 'aStart', 'trigger', 'holeStarted');
+	E('rules', 'aStart', 'value', 'banner');
+	E('rules', 'aStart', 'sub', 'bannerSub');
+	E('rules', 'sWhistle', 'trigger', 'holeStarted');
+	// a stroke
+	F('ball', 'objectselector', 'The ball', { selected: 'Golf ball' }, 520, 140);
+	F('sKick', 'gamesound', 'Sound: putt', { sound: 'kick' }, 260, 140);
+	F('hTap', 'hapticpulse', 'Buzz: tap', { pattern: 'tap', hand: 'both' }, 0, 140);
+	E('rules', 'sKick', 'trigger', 'stroke');
+	E('ball', 'sKick', 'at');
+	E('rules', 'hTap', 'trigger', 'stroke');
+	// out of bounds
+	F('aOob', 'announce', 'Banner: out of bounds', { text: 'Out of bounds', sub: '+1 stroke — back to your last spot', seconds: 1.6, color: '#ff8a6b' }, 0, 280);
+	F('sFail', 'gamesound', 'Sound: fail', { sound: 'fail' }, 260, 280);
+	E('rules', 'aOob', 'trigger', 'outOfBounds');
+	E('rules', 'sFail', 'trigger', 'outOfBounds');
+	// in the cup
+	F('aSunk', 'announce', 'Banner: the score', { text: '{v}', sub: '', seconds: 2, color: '#7dffb0' }, 0, 420);
+	F('sCoin', 'gamesound', 'Sound: coin', { sound: 'coin' }, 260, 420);
+	F('bSparkle', 'effectburst', 'Burst: sparkle', { kind: 'sparkle', color: '', count: 70, lift: 0.3 }, 520, 420);
+	F('hSuccess', 'hapticpulse', 'Buzz: success', { pattern: 'success', hand: 'both' }, 780, 420);
+	for (const id of ['aSunk', 'sCoin', 'bSparkle', 'hSuccess']) E('rules', id, 'trigger', 'holeSunk');
+	E('rules', 'aSunk', 'value', 'banner');
+	E('rules', 'aSunk', 'sub', 'bannerSub');
+	E('rules', 'sCoin', 'at', 'at');
+	E('rules', 'bSparkle', 'at', 'at');
+	// at or under par
+	F('sGoal', 'gamesound', 'Sound: goal', { sound: 'goal' }, 0, 560);
+	F('sCheer', 'gamesound', 'Sound: cheer', { sound: 'cheer' }, 260, 560);
+	F('bConfetti', 'effectburst', 'Burst: confetti', { kind: 'confetti', color: '', count: 140, lift: 0.3 }, 520, 560);
+	for (const id of ['sGoal', 'sCheer', 'bConfetti']) E('rules', id, 'trigger', 'underPar');
+	E('rules', 'bConfetti', 'at', 'at');
+	// picked up at the stroke limit
+	F('aPicked', 'announce', 'Banner: picked up', { text: '{v}', sub: '', seconds: 1.8, color: '#ffb86b' }, 0, 700);
+	E('rules', 'aPicked', 'trigger', 'pickedUp');
+	E('rules', 'aPicked', 'value', 'banner');
+	E('rules', 'aPicked', 'sub', 'bannerSub');
+	// the course is done
+	F('sLevel', 'gamesound', 'Sound: level up', { sound: 'levelup' }, 260, 700);
+	E('rules', 'sLevel', 'trigger', 'courseDone');
+	G('g-feedback', 'Hole feedback', fb, 640, 40);
+	T('n-feedback', 'Hole feedback', 'Every ⚡ moment of the rules plays here on **every** screen: banners, sounds, sparkles, a controller buzz. Double-click the group to open it.', 860, 0, { w: 250, h: 120, color: 'green' });
+
+	// ---- the course is done: score, win, your best on this device -----------------------------
+	N('kscore', 'kit-score-set', 'Kit: set score', 640, 660, { amount: 0, player: '' });
+	N('kwin', 'kit-round-win', 'Kit: win round', 640, 800, { reason: '' });
+	E('rules', 'kscore', 'trigger', 'courseDone');
+	E('rules', 'kscore', 'amount', 'total');
+	E('rules', 'kwin', 'trigger', 'courseDone');
+	E('rules', 'kwin', 'reason', 'resultLine');
+	N('best', 'storevalue', 'Save best round', 880, 660, { key: 'mini-golf-best', mode: 'min', value: 0 });
+	E('rules', 'best', 'trigger', 'courseDone');
+	E('rules', 'best', 'value', 'total');
+	N('bestv', 'storedvalue', 'Best round', 880, 800, { key: 'mini-golf-best', output: 'number', fallback: 0 });
+	S('bestw', 'Best round, in words',
+		'// your best round on this device (the Store Value keeps it), as the menu and the scorecard say it\n' +
+		'const rel = (d) => (d === 0 ? "E" : d > 0 ? "+" + d : String(d));\n' +
+		'const best = inputs.best;\n' +
+		'const par = inputs.parTotal;\n' +
+		'return {\n' +
+		'\tmenuLine: best > 0 ? "Your best: " + best + " strokes (" + rel(best - par) + ")" : "Six holes · par " + par,\n' +
+		'\tbestLine: best > 0 ? "Best on this device: " + best + " (" + rel(best - par) + ")" : "First round on this device"\n' +
+		'};\n',
+		[{ name: 'best', type: 'number' }, { name: 'parTotal', type: 'number', value: 17 }],
+		[{ name: 'menuLine', type: 'any' }, { name: 'bestLine', type: 'any' }],
+		1120, 660);
+	E('bestv', 'bestw', 'best');
+	T('n-end', 'Course complete', 'The total becomes the **score**, the round is **won**, and **Store Value (min)** keeps your best round on this device; a small script words it for the HUD.', 880, 940, { w: 300, h: 110, color: 'yellow' });
+
+	// ---- the HUD: every line is a state field of the rules ------------------------------------
+	const hud = [];
+	const H = (id, element, col, row) => {
+		hud.push(N(id, 'hudtext', 'HUD ' + element, 1400 + col * 260, 40 + row * 130, { element, format: '', decimals: 0, value: 0 }));
+		return id;
+	};
+	const lines = [
+		['hTitle', 'mg-title', 'title'], ['hPar', 'mg-par', 'par'], ['hStrokes', 'mg-strokes', 'strokesLine'], ['hTotal', 'mg-total', 'totalLine'],
+		['hTip', 'mg-tip', 'tip'], ['hResult', 'mg-result-line', 'resultLine'],
+		...[1, 2, 3, 4, 5, 6].map((i) => ['hCard' + i, 'mg-card-' + i, 'card' + i])
+	];
+	lines.forEach(([id, element, out], i) => {
+		H(id, element, i % 2, Math.floor(i / 2));
+		E('rules', id, 'format', out);
+	});
+	H('hMenuBest', 'mg-menu-best', 0, 6);
+	H('hBest', 'mg-best', 1, 6);
+	E('bestw', 'hMenuBest', 'format', 'menuLine');
+	E('bestw', 'hBest', 'format', 'bestLine');
+	G('g-hud', 'Scorecard & HUD', hud, 1400, 40);
+	T('n-hud', 'Scorecard & HUD', 'Each HUD line is a **state field** of the rules wired into a HUD Text (the HUD editor lays the screens out).', 1400, 420, { w: 250, h: 110, color: 'purple' });
+
+	// ---- the course itself: the windmill, music, walking ---------------------------------------
+	const world = [];
+	world.push(N('spinA', 'spin', 'Windmill spin A', 1400, 420, { axis: 'z', speed: 0.9 }));
+	world.push(N('selA', 'objectselector', 'Blade A', 1640, 420, { selected: 'Windmill blade A' }));
 	E('spinA', 'selA');
-	N('spinB', 'spin', 'Windmill spin B', 40, 380, { axis: 'z', speed: 0.9 });
-	N('selB', 'objectselector', 'Blade B', 280, 380, { selected: 'Windmill blade B' });
+	world.push(N('spinB', 'spin', 'Windmill spin B', 1400, 540, { axis: 'z', speed: 0.9 }));
+	world.push(N('selB', 'objectselector', 'Blade B', 1640, 540, { selected: 'Windmill blade B' }));
 	E('spinB', 'selB');
-	N('music', 'gamemusic', 'Puzzle music', 40, 480, { preset: 'puzzle', volume: 0.35, while: 'always' });
-	N('body', 'charcontroller', 'Player: walk', 280, 480, { mode: 'walk', speed: 0.06, jumpHeight: 0, eyeHeight: 1.6, gravity: true });
+	world.push(N('music', 'gamemusic', 'Puzzle music', 1400, 660, { preset: 'puzzle', volume: 0.35, while: 'always' }));
+	world.push(N('body', 'charcontroller', 'Player: walk', 1640, 660, { mode: 'walk', speed: 0.06, jumpHeight: 0, eyeHeight: 1.6, gravity: true }));
+	G('g-world', 'Course & world', world, 1400, 580);
+	T('n-world', 'Course & world', 'The windmill blades turn (Spin), puzzle music plays, the player walks.', 1400, 700, { w: 250, h: 90, color: 'gray' });
 	return g.done();
 }
 
@@ -232,7 +342,7 @@ const MINI_GOLF_DEF = {
 		{ type: 'light', name: 'Sky fill', kind: 'hemisphere', color: 0xcfe6ff, groundColor: 0x55703f, intensity: 0.6 },
 		...[0, 1, 2, 3, 4, 5].flatMap(lane),
 		...OBSTACLES,
-		// the ball (holes.js BALL_R), on hole 1's tee
+		// the ball (BALL_R 0.06), on hole 1's tee
 		{ type: 'sphere', name: 'Golf ball', r: 0.06, pos: [LANE_X[0], 0.19, 4.4], color: 0xffffff, physical: true, roughness: 0.25, clearcoat: 0.8, physics: { mode: 'dynamic', mass: 0.05, collider: 'sphere', friction: 0.5, restitution: 0.35 } },
 		{ type: 'camera', name: 'Card camera', pos: [0.9, 1.9, 3.6], lookAt: [-2.2, 0.7, -1.6], fov: 58 }
 	]

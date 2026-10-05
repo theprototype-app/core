@@ -89,6 +89,9 @@ export const DEBUG_HOOKS = [
 	['viewModeCtl', () => import('./viewMode')],
 	['inputRuntime', () => import('./inputRuntime')],
 	['shortcutsRegistry', () => import('./shortcuts')],
+	['keyScope', () => import('./keyScope')],
+	['nodeGroups', () => import('./nodeGroups')],
+	['nodeEditorActions', () => import('./nodeEditorActions')],
 	['themes', () => import('./themes')],
 	['textSelection', () => import('./textSelection')],
 	['vrRadialMenu', () => import('./vrRadialMenu')],
@@ -300,8 +303,17 @@ export const DEBUG_HOOKS = [
 	['kitInstancing', () => import('./kitInstancing')],
 	['scriptSockets', () => import('./scriptSockets')],
 	['scriptLint', () => import('./scriptLint')],
+	['codeWorkspace', () => import('./codeWorkspace')],
+	['scriptAssets', () => import('./scriptAssets')],
+	['codeTabs', () => import('./codeTabs')],
 	['aiExtensions', () => import('./ai/aiExtensions')],
-	['graphText', () => import('./graphText')]
+	['graphText', () => import('./graphText')],
+	// 36 (G1): code <-> node (openCode seam, module source, fork) + the Main graph migration
+	['codeOpen', () => import('./codeOpen')],
+	['mainGraph', () => import('./mainGraph.js')],
+	// 36 (U10, games-graphs): engine pieces, the behaviour runtime, authored-group sockets
+	['engines', () => import('./behaviours/engines.js')],
+	['groupReconcile', () => import('./groupReconcile.js')]
 ];
 
 /** hooks published at runtime through registerDebugHook @type {Record<string, any>} */

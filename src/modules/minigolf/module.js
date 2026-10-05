@@ -1,41 +1,36 @@
-// 35-mini-golf: MINI GOLF — six holes (ramp, windmill, bank shot, sand, a hump), putting with
-// the mouse (drag back from the ball, let go) or a held putter in VR (the club head's speed is
-// the putt), strokes and par per hole, a scorecard at the end. A CORE module (the Towers
-// precedent: it ships with the app and reaches core internals through PRIMED dynamic imports),
-// dormant in every scene that does not carry the `Mini golf game` marker object.
+// 35-mini-golf → 36 (U10): the Mini Golf ENGINE. The game's RULES — holes, par, strokes, the
+// cup, out of bounds, sand, picking up, the scorecard — live in the "Mini Golf rules" behaviour
+// on the scene's Main graph, where anyone can read and change them. What stays here is the
+// physical side the rules cannot be, lent to them as the `golf` engine piece (`kit.golf.*`):
 //
-// WHO DECIDES (golden rule 8): the ball is a dynamic body, so the PHYSICS INITIATOR owns it —
-// it counts strokes (a ball going from rest to moving IS a stroke, whatever moved it: a mouse
-// putt, a held putter, a VR hand's knock), catches the ball in the cup, sends it back on
-// out-of-bounds (+1) and writes the `mg*` game variables. A non-initiator's mouse putt is
-// forwarded as a module message. Every peer derives the rest (the HUD words through the
-// `golfinfo` value node, the moments, the teleport to the next tee) from the replicated game
-// singleton.
-
-import {
-	HOLES, holeById, teeOf, spawnOf, outOfBounds, inSand, inCup, scoreName, relText, puttSpeed,
-	PUTT_MAX, MAX_STROKES, PAR_TOTAL, BALL_R
-} from './holes.js';
+//   the ball      a dynamic body only the PHYSICS INITIATOR may move — hit / placeBall /
+//                 pocketBall / slow / stop are applied there (forwarded from any other peer)
+//   watching it   on the initiator, every frame: rest → moving (`moved`), each rolling frame
+//                 (`rolling`), back to rest after 0.35 s still (`stopped`)
+//   putting       desktop: press on the ball, drag back, let go — the drag (`putt`) goes to the
+//                 rules, which decide the speed; the aim arrow is drawn here, locally
+//   the VR club   a held putter's head moving through the ball at speed (`club`)
+//   the players   walkTo moves every player behind a tee (a spawn is local, so it is broadcast)
+//   feel          the rail-bounce click, the help text, the touch preset, the shell's Restart
+//
+// A CORE module (the Towers precedent: core internals through PRIMED dynamic imports), dormant
+// in every scene without the `Mini golf game` marker object.
 
 const MARKER = 'Mini golf game';
 const BALL = 'Golf ball';
 const AIM = 'golf-aim';
-/** a button stamp older than this (seconds) when first noticed is history */
-const FRESH_PRESS = 2.5;
-/** game variables, written by the authority only */
-const V = { hole: 'mgHole', strokes: 'mgStrokes', phase: 'mgPhase', oob: 'mgOob', sunk: 'mgSunk' };
-/** per-hole score vars */
-const S = (/** @type {number} */ i) => 'mgS' + i;
-/** phases */
-const READY = 0;
-const ROLLING = 1;
-const SUNK = 2;
+const BALL_R = 0.06;
+/** the rest detector: slower than this (m/s) for REST_S seconds is at rest */
+const REST_SPEED = 0.06;
+const REST_S = 0.35;
+/** faster than this from rest is moving */
+const MOVE_SPEED = 0.3;
 
 export default {
 	id: 'minigolf',
 	name: 'Mini Golf',
-	version: '1.0.0',
-	description: 'The Mini Golf game: six holes with a ramp, a windmill, a bank shot, sand and a hump — putt with the mouse or a VR putter.',
+	version: '2.0.0',
+	description: 'The Mini Golf engine: the ball, putting with the mouse or a VR putter. The rules are the "Mini Golf rules" node on the Main graph.',
 
 	/** @param {any} api */
 	register(api) {
@@ -58,25 +53,13 @@ export default {
 			rect = e;
 		});
 		const THREE = api.THREE;
-		const kit = api.kit;
 
 		const group = () => api.objectsGroup();
 		/** @param {string} name */
 		const byName = (name) => group()?.getObjectByName(name) ?? null;
 		const active = () => !!byName(MARKER);
-		const game = () => (gs && stores ? stores.get(gs.gameState) : null);
-		/** @param {string} name @param {number=} fallback */
-		const v = (name, fallback = 0) => {
-			const n = Number(api.game.getVar(name, fallback));
-			return Number.isFinite(n) ? n : fallback;
-		};
-		/** @param {string} name @param {number} value */
-		const setV = (name, value) => {
-			if (v(name, NaN) !== value) api.game.setVar(name, value);
-		};
-		const currentHole = () => holeById(v(V.hole, 0));
-		const playing = () => game()?.state === 'playing';
-
+		const playing = () => !!(gs && stores && stores.get(gs.gameState)?.state === 'playing');
+		/** may THIS peer move the ball (the physics initiator; no sim = the lowest peer id) */
 		const authority = () => {
 			if (!phys || !stores) return false;
 			if (stores.get(phys.simulating)) return phys.isInitiator();
@@ -88,7 +71,7 @@ export default {
 		};
 		const simRunning = () => !!(phys && stores && stores.get(phys.simulating));
 
-		// ---- the ball -------------------------------------------------------------------------
+		// ---- the ball --------------------------------------------------------------------------
 		const ball = () => byName(BALL);
 		/** @returns {number[]} */
 		const ballPos = () => {
@@ -98,25 +81,10 @@ export default {
 			b.getWorldPosition(p);
 			return [p.x, p.y, p.z];
 		};
-		/** put the ball somewhere, at rest (authority); `body: false` parks it in a cup with no body
-		 * @param {number[]} pos @param {{body?: boolean}} [opts] */
-		const placeBall = (pos, opts = {}) => {
-			const b = ball();
-			if (!b) return;
-			if (simRunning()) phys.physicsRemoveBody?.(b.uuid);
-			api.moveObject(b.uuid, { pos, rot: [0, 0, 0] });
-			if (simRunning() && opts.body !== false) {
-				phys.physicsAddBody?.(b.uuid);
-				phys.setBodyVelocity?.(b.uuid, [0, 0, 0], [0, 0, 0]);
-			}
-			lastRest = pos.slice();
-			restSince = -1;
-		};
-		/** the ball's velocity (the initiator's body, else the pose stream) */
 		let prevBall = /** @type {null | {p: number[], t: number}} */ (null);
 		let derivedVel = [0, 0, 0];
-		/** @param {number} time */
-		const ballVel = (time) => {
+		/** the ball's velocity: the initiator's body, else derived from the pose stream @param {number} time */
+		const sampleVel = (time) => {
 			const b = ball();
 			const fromBody = b && simRunning() ? phys.bodyVelocityOf?.(b.uuid) : null;
 			const p = ballPos();
@@ -127,117 +95,124 @@ export default {
 			prevBall = { p, t: time };
 			return fromBody ? fromBody.linvel : derivedVel;
 		};
+		let lastVel = [0, 0, 0];
 
-		// ---- the course (authority) -------------------------------------------------------------
-		let lastRest = /** @type {number[]} */ ([0, 0, 0]);
+		/** the watcher's view: 'rest' (waiting), 'moving', 'parked' (in a cup, no body) */
+		let watch = 'rest';
 		let restSince = -1;
-		let sunkAt = -1;
-		let lastSimAsk = -10;
-		/** when the last putt was applied (ms) — a ball that starts rolling on its own (it
-		 * came to rest on a slope) is SETTLING, not a stroke */
-		let lastPuttAt = -1e9;
-		/** @param {number} id */
-		const setupHole = (id) => {
-			const hole = holeById(id);
-			if (!hole) return;
-			setV(V.hole, id);
-			setV(V.strokes, 0);
-			setV(V.phase, READY);
-			sunkAt = -1;
-			placeBall(teeOf(hole));
-		};
-		/** @param {number} [from] the first hole (the Levels page starts a round anywhere) */
-		const startRound = (from = 1) => {
-			if (!gs) return;
-			for (const h of HOLES) setV(S(h.id), 0);
-			setV(V.oob, 0);
-			setV(V.sunk, 0);
-			kit.round.configure(0, 0, 'lose', 1);
-			starting = true;
-			try {
-				kit.round.restart();
-			} finally {
-				starting = false;
-			}
-			setupHole(holeById(from) ? from : 1);
-		};
-		/** startRound is restarting the kit round itself */
-		let starting = false;
-		// the shell's Restart (pause menu): after its reset, a fresh round from hole 1
-		api.game?.onRestart?.(() => {
-			if (!active()) return;
-			if (authority()) startRound(1);
-			else api.send({ op: 'pick', hole: 1 });
-		});
-		// a kit round restarted some other way (a Kit node): a fresh card from hole 1
-		kit.round.onStarted?.(() => {
-			if (starting || !active() || !authority()) return;
-			for (const h of HOLES) setV(S(h.id), 0);
-			setupHole(1);
-		});
-		const toMenu = () => {
-			setV(V.hole, 0);
-			kit.round.toMenu();
-		};
-		/** the hole is done (sunk, or picked up at the stroke limit) @param {number} strokes */
-		const holeDone = (strokes) => {
-			const hole = currentHole();
-			if (!hole) return;
-			setV(S(hole.id), strokes);
-			setV(V.phase, SUNK);
-			setV(V.sunk, v(V.sunk) + 1);
-		};
-		/** next hole, or the scorecard */
-		const advance = () => {
-			const hole = currentHole();
-			if (!hole) return;
-			const next = holeById(hole.id + 1);
-			if (next) setupHole(next.id);
-			else {
-				const total = HOLES.reduce((s, h) => s + v(S(h.id)), 0);
-				kit.score.set?.(total);
-				kit.round.win(relText(total - PAR_TOTAL) + ' · ' + total + ' strokes');
-			}
-		};
-		/** a putt: the ball takes this velocity (authority, ball at rest) @param {number[]} vel */
-		const putt = (vel) => {
-			lastPuttAt = performance.now();
+		/** when the last hit was applied (ms): a ball that leaves rest soon after is a putt */
+		let lastHitAt = -1e9;
+
+		// ---- the engine piece: what the rules may ask, and what they hear -----------------------
+		const v3 = (/** @type {any} */ v) => (Array.isArray(v) ? [Number(v[0]) || 0, Number(v[1]) || 0, Number(v[2]) || 0] : [0, 0, 0]);
+		/** @param {number[]} pos @param {boolean} body */
+		const applyPlace = (pos, body) => {
 			const b = ball();
-			if (!b || !playing() || v(V.phase) !== READY) return false;
-			if (!simRunning()) return false;
-			const sp = Math.hypot(vel[0], vel[2]);
-			const k = sp > PUTT_MAX ? PUTT_MAX / sp : 1;
-			const lin = [vel[0] * k, 0, vel[2] * k];
-			// a rolling ball spins about the axis perpendicular to its travel
-			const ang = [lin[2] / BALL_R, 0, -lin[0] / BALL_R];
-			return phys.setBodyVelocity(b.uuid, lin, ang.map((a) => a * 0.6));
+			if (!b) return;
+			if (simRunning()) phys.physicsRemoveBody?.(b.uuid);
+			api.moveObject(b.uuid, { pos, rot: [0, 0, 0] });
+			if (simRunning() && body) {
+				phys.physicsAddBody?.(b.uuid);
+				phys.setBodyVelocity?.(b.uuid, [0, 0, 0], [0, 0, 0]);
+			}
+			watch = body ? 'rest' : 'parked';
+			restSince = -1;
 		};
-		/** any peer: ask for a putt */
 		/** @param {number[]} vel */
-		const requestPutt = (vel) => {
-			if (authority()) putt(vel);
-			else api.send({ op: 'putt', vel });
+		const applyHit = (vel) => {
+			const b = ball();
+			if (!b || !simRunning()) return false;
+			const lin = [vel[0], 0, vel[2]];
+			// a rolling ball spins about the axis across its travel
+			const ang = [(lin[2] / BALL_R) * 0.6, 0, (-lin[0] / BALL_R) * 0.6];
+			lastHitAt = performance.now();
+			if (watch === 'parked') watch = 'rest';
+			return phys.setBodyVelocity(b.uuid, lin, ang);
+		};
+		/** @param {number} k */
+		const applySlow = (k) => {
+			const b = ball();
+			if (!b || !simRunning()) return;
+			const f = Math.max(0, Math.min(1, Number(k)));
+			phys.setBodyVelocity(b.uuid, [lastVel[0] * f, lastVel[1], lastVel[2] * f], null);
+		};
+		const applyStop = () => {
+			const b = ball();
+			if (b && simRunning()) phys.setBodyVelocity(b.uuid, [0, 0, 0], [0, 0, 0]);
+		};
+		/** run on the ball's owner: here when we are it, else ask it @param {string} op @param {any[]} args @param {() => any} here */
+		const onOwner = (op, args, here) => {
+			if (authority()) return here();
+			api.send({ op, args });
+			return true;
+		};
+		/** @param {number[]} pos */
+		const walkHere = (pos) => api.setSpawn?.(pos, 0, { teleport: true });
+		let aimFull = 2.5;
+
+		const golf = api.kit.provide(
+			{
+				piece: 'golf',
+				group: 'Mini golf (engine)',
+				calls: [
+					{ name: 'hit', kind: 'action', label: 'Hit the ball', doc: 'Gives the ball this velocity (m/s) — the putt itself.', args: [{ key: 'velocity', type: 'vector3' }], node: false },
+					{ name: 'placeBall', kind: 'action', label: 'Place the ball', doc: 'Puts the ball here, at rest, on its body.', args: [{ key: 'position', type: 'vector3' }], node: false },
+					{ name: 'pocketBall', kind: 'action', label: 'Drop the ball in the cup', doc: 'Parks the ball here with no body (it sits in the cup).', args: [{ key: 'position', type: 'vector3' }], node: false },
+					{ name: 'slow', kind: 'action', label: 'Slow the ball', doc: 'Keeps this share of its speed (sand, a slow roll).', args: [{ key: 'factor', type: 'number', default: 0.9, min: 0, max: 1, step: 0.01 }], node: false },
+					{ name: 'stop', kind: 'action', label: 'Stop the ball', node: false },
+					{ name: 'walkTo', kind: 'action', label: 'Walk every player to', doc: 'Moves every player here (behind a tee).', args: [{ key: 'position', type: 'vector3' }], node: false },
+					{ name: 'aim', kind: 'action', label: 'Scale the aim arrow', doc: 'The drag that reads as a full putt, for the arrow (this device).', args: [{ key: 'fullDrag', type: 'number', default: 2.5 }, { key: 'maxSpeed', type: 'number', default: 7 }], node: false },
+					{ name: 'ballPosition', kind: 'value', label: 'Ball position', vtype: 'vector3', node: false },
+					{ name: 'ballSpeed', kind: 'value', label: 'Ball speed', vtype: 'number', node: false },
+					{ name: 'putt', kind: 'event', label: 'On putt (drag released)', node: false },
+					{ name: 'club', kind: 'event', label: 'On VR putter hit', node: false },
+					{ name: 'moved', kind: 'event', label: 'On ball moving', node: false },
+					{ name: 'rolling', kind: 'event', label: 'Every frame while rolling', node: false },
+					{ name: 'stopped', kind: 'event', label: 'On ball stopped', node: false },
+					{ name: 'restart', kind: 'event', label: 'On the pause menu\'s Restart', node: false }
+				]
+			},
+			{
+				hit: (/** @type {any} */ v) => onOwner('hit', [v3(v)], () => applyHit(v3(v))),
+				placeBall: (/** @type {any} */ p) => onOwner('place', [v3(p)], () => applyPlace(v3(p), true)),
+				pocketBall: (/** @type {any} */ p) => onOwner('pocket', [v3(p)], () => applyPlace(v3(p), false)),
+				slow: (/** @type {any} */ k) => onOwner('slow', [Number(k)], () => applySlow(Number(k))),
+				stop: () => onOwner('stop', [], applyStop),
+				walkTo: (/** @type {any} */ p) => {
+					const pos = v3(p);
+					walkHere(pos);
+					api.send({ op: 'walk', args: [pos] });
+				},
+				aim: (/** @type {any} */ full) => {
+					aimFull = Math.max(0.2, Number(full) || 2.5);
+				},
+				ballPosition: () => ballPos(),
+				ballSpeed: () => Math.hypot(lastVel[0], lastVel[2])
+			}
+		);
+		/** an event every peer hears (the rules act on the authority's copy) @param {string} name @param {any} payload */
+		const emitAll = (name, payload) => {
+			golf.emit(name, payload);
+			api.send({ op: 'ev', name, payload });
 		};
 		api.onMessage((/** @type {any} */ msg) => {
-			if (msg?.op === 'putt' && Array.isArray(msg.vel) && authority()) putt(msg.vel.map(Number));
-			if (msg?.op === 'pick' && authority()) startRound(Number(msg.hole) || 1);
+			const a = Array.isArray(msg?.args) ? msg.args : [];
+			if (msg?.op === 'ev' && typeof msg.name === 'string') golf.emit(msg.name, msg.payload ?? {});
+			else if (msg?.op === 'walk') walkHere(v3(a[0]));
+			else if (!authority()) return;
+			else if (msg.op === 'hit') applyHit(v3(a[0]));
+			else if (msg.op === 'place') applyPlace(v3(a[0]), true);
+			else if (msg.op === 'pocket') applyPlace(v3(a[0]), false);
+			else if (msg.op === 'slow') applySlow(Number(a[0]));
+			else if (msg.op === 'stop') applyStop();
 		});
-		/** the shell's Levels page (desktop + VR board): every hole, start a round there */
-		/** @type {any} */ let levelsOff = null;
-		const defineLevels = () => {
-			if (typeof api.game?.levels !== 'function') return;
-			levelsOff = api.game.levels({
-				list: HOLES.map((h) => ({ id: String(h.id), label: h.id + ' · ' + h.name + ' (par ' + h.par + ')' })),
-				current: String(v(V.hole, 0) || 1),
-				onPick: (/** @type {any} */ id) => {
-					const hole = Number(id) || 1;
-					if (authority()) startRound(hole);
-					else api.send({ op: 'pick', hole });
-				}
-			});
-		};
+		// the pause menu's Restart → the rules start a fresh round
+		api.game?.onRestart?.(() => {
+			if (active()) emitAll('restart', {});
+		});
 
-		/** putters held in VR: the club head touching the ball at speed is a putt */
+		// ---- watching the ball (the initiator, every frame) -------------------------------------
+		/** putters held in VR: the club head touching the ball at speed */
 		/** @type {Map<string, {p: number[], t: number}>} */ const headPrev = new Map();
 		let lastClub = -10;
 		/** @param {number} time */
@@ -254,82 +229,55 @@ export default {
 				const dt = Math.max(1e-3, time - was.t);
 				const vel = [(h[0] - was.p[0]) / dt, 0, (h[2] - was.p[2]) / dt];
 				const near = Math.hypot(h[0] - b[0], h[1] - b[1], h[2] - b[2]) < 0.16;
-				if (near && Math.hypot(vel[0], vel[2]) > 0.4 && v(V.phase) === READY) {
+				if (near && Math.hypot(vel[0], vel[2]) > 0.4) {
 					lastClub = time;
-					putt([vel[0] * 1.1, 0, vel[2] * 1.1]);
+					emitAll('club', { velocity: vel });
 				}
 			}
 		};
-
-		/** the authority's judge, every frame @param {number} time */
-		const judge = (time) => {
-			const g = game();
-			if (!g || g.state !== 'playing') return;
-			const hole = currentHole();
-			if (!hole) return;
-			// a game in play needs its simulation; the first press of Play asks for it, this is
-			// the fallback for Interact (no Play press) — throttled, never a toggle-off
-			if (!simRunning() && !(stores && stores.get(phys.remoteSimulating))) {
+		let lastSimAsk = -10;
+		/** @param {number} time */
+		const watchBall = (time) => {
+			// a game in play needs its simulation; Play asks for it, this is the fallback for
+			// Interact (no Play press) — throttled, never a toggle-off
+			if (playing() && !simRunning() && !(stores && stores.get(phys.remoteSimulating))) {
 				if (time - lastSimAsk > 2) {
 					lastSimAsk = time;
 					phys.toggleSimulation?.();
 				}
 				return;
 			}
-			const b = ball();
-			if (!b) return;
+			if (!ball() || !simRunning()) return;
+			const vel = sampleVel(time);
+			lastVel = vel;
+			if (watch === 'parked') return;
 			const p = ballPos();
-			const vel = ballVel(time);
 			const speed = Math.hypot(vel[0], vel[2]);
-			const phase = v(V.phase);
-			if (phase === SUNK) {
-				if (sunkAt < 0) sunkAt = time;
-				if (time - sunkAt > 2.2) advance();
-				return;
-			}
-			clubs(time);
-			if (phase === READY) {
-				if (speed > 0.3) {
-					// a putt, a putter or a hand knock (fast) is a stroke; a slow creep off a
-					// slope after the rest snap is the ball settling, and costs nothing
-					if (performance.now() - lastPuttAt < 1000 || speed > 1) setV(V.strokes, v(V.strokes) + 1);
-					setV(V.phase, ROLLING);
+			if (watch === 'rest') {
+				clubs(time);
+				if (speed > MOVE_SPEED) {
+					watch = 'moving';
 					restSince = -1;
+					emitAll('moved', { speed, putted: performance.now() - lastHitAt < 1000, pos: p });
 				}
 				return;
 			}
-			// ROLLING
-			if (inCup(hole, p, speed)) {
-				placeBall([hole.cup[0], hole.cup[1] + BALL_R - 0.05, hole.cup[2]], { body: false });
-				holeDone(v(V.strokes));
-				sunkAt = time;
-				return;
-			}
-			if (outOfBounds(hole, p)) {
-				setV(V.strokes, v(V.strokes) + 1);
-				setV(V.oob, v(V.oob) + 1);
-				placeBall(lastRest);
-				setV(V.phase, READY);
-				return;
-			}
-			const sand = inSand(hole, p);
-			if (sand && speed > 0.05) phys.setBodyVelocity(b.uuid, [vel[0] * 0.86, vel[1], vel[2] * 0.86], null);
-			else if (speed < 0.45 && speed > 0.02) phys.setBodyVelocity(b.uuid, [vel[0] * 0.96, vel[1], vel[2] * 0.96], null);
-			if (speed < 0.06 && Math.abs(vel[1]) < 0.1) {
+			// moving: every frame to the rules (the initiator IS the kit's authority while a sim
+			// runs — kit/authority.js — so the rules hear it here, with no message)
+			golf.emit('rolling', { pos: p, speed, velocity: vel });
+			if (watch !== 'moving') return; // the rules pocketed / placed it in that handler
+			if (speed < REST_SPEED && Math.abs(vel[1]) < 0.1) {
 				if (restSince < 0) restSince = time;
-				if (time - restSince > 0.35) {
-					phys.setBodyVelocity(b.uuid, [0, 0, 0], [0, 0, 0]);
-					lastRest = p;
+				if (time - restSince > REST_S) {
+					applyStop();
+					watch = 'rest';
 					restSince = -1;
-					if (v(V.strokes) >= MAX_STROKES) {
-						api.announce('Picked up', { sub: MAX_STROKES + ' strokes is the most a hole takes', ms: 1800, color: '#ffb86b' });
-						holeDone(MAX_STROKES);
-					} else setV(V.phase, READY);
+					emitAll('stopped', { pos: p });
 				}
 			} else restSince = -1;
 		};
 
-		// ---- desktop putting: drag back from the ball, let go ------------------------------------
+		// ---- desktop putting: drag back from the ball, let go -----------------------------------
 		/** @type {any} */ let aim = null; // the arrow (scene root, local)
 		const aimArrow = () => {
 			if (aim) return aim;
@@ -349,14 +297,14 @@ export default {
 			api.own?.(aim);
 			return aim;
 		};
-		/** @type {null | {rect: any, drag: number[]}} */ let aiming = null;
-		/** may this desktop pointer putt right now */
+		/** @type {null | {drag: number[]}} */ let aiming = null;
+		/** may this desktop pointer putt right now: playing, the ball at rest */
 		const desktopPutting = () => {
 			if (!scene || !stores || !active() || !playing()) return false;
 			if (stores.get(scene.isVRMode)) return false;
 			const locked = stores.get(scene.isLocked) === true;
 			const interact = stores.get(scene.editorMode) === 'interact';
-			return (locked || interact) && v(V.phase) === READY;
+			return (locked || interact) && watch === 'rest';
 		};
 		/** the ray through a client point @param {number} x @param {number} y */
 		const rayAt = (x, y) => {
@@ -375,7 +323,7 @@ export default {
 			if (!r) return;
 			const b = ballPos();
 			if (r.ray.distanceToPoint(new THREE.Vector3(b[0], b[1], b[2])) > 0.35) return;
-			aiming = { rect: null, drag: [0, 0, 0] };
+			aiming = { drag: [0, 0, 0] };
 			e.stopPropagation();
 			e.preventDefault();
 		};
@@ -393,13 +341,13 @@ export default {
 			const a = aimArrow();
 			a.visible = len > 0.12;
 			if (a.visible) {
-				const shown = Math.min(2.5, len);
+				const shown = Math.min(aimFull, len);
 				a.position.set(b[0], b[1] + 0.01, b[2]);
 				a.rotation.set(0, Math.atan2(-aiming.drag[0], -aiming.drag[2]), 0);
 				a.children[0].scale.z = shown;
 				a.children[0].position.z = -shown / 2;
 				a.children[1].position.z = -shown - 0.1;
-				const t = shown / 2.5;
+				const t = shown / aimFull;
 				a.children[0].material.color.setRGB(1, 0.95 - 0.75 * t, 0.25 * (1 - t));
 			}
 			e.stopPropagation();
@@ -411,60 +359,16 @@ export default {
 			aiming = null;
 			if (aim) aim.visible = false;
 			e.stopPropagation();
-			const len = Math.hypot(drag[0], drag[2]);
-			if (len < 0.12) return;
-			const sp = puttSpeed(len);
-			requestPutt([(drag[0] / len) * sp, 0, (drag[2] / len) * sp]);
+			const length = Math.hypot(drag[0], drag[2]);
+			if (length < 0.12) return;
+			// the rules turn the drag into a putt (their shot power, their drag-for-full)
+			emitAll('putt', { drag, length });
 		};
 		api.listen(window, 'pointerdown', onDown, true);
 		api.listen(window, 'pointermove', onMove, true);
 		api.listen(window, 'pointerup', onUp, true);
 
-		// the ball is putted, never carried; a desktop never carries a putter
-		kit.rules.onGrabRequest?.((/** @type {any} */ req) => {
-			if (!active()) return;
-			if (req.name === BALL) req.refuse('Putt the ball — drag back from it and let go');
-			else if (/^Putter/.test(String(req.name)) && req.hand === 'desktop') req.refuse('Drag back from the ball to putt');
-		});
-
-		// ---- the buttons: every peer watches the stamps, the authority acts ---------------------
-		/** @type {Map<string, number>} */ const seenStamps = new Map();
-		/** @param {string} element */
-		const onPress = (element) => {
-			if (element === 'start-btn' || element === 'again-btn') return startRound();
-			if (element === 'menu-btn') return toMenu();
-			if (element === 'skip-btn' && playing() && v(V.phase) !== SUNK) {
-				holeDone(MAX_STROKES);
-				return;
-			}
-		};
-		const watchButtons = () => {
-			const amAuthority = authority();
-			for (const node of api.flow.nodes('hudbutton')) {
-				const element = String(node.data?.element ?? '');
-				if (!/^(start-btn|again-btn|menu-btn|skip-btn)$/.test(element)) continue;
-				const entry = api.flow.triggerStamp(node.id);
-				const stamp = Number(entry?.stamp) || 0;
-				if (!seenStamps.has(node.id)) {
-					seenStamps.set(node.id, stamp);
-					continue;
-				}
-				if (stamp === seenStamps.get(node.id)) continue;
-				seenStamps.set(node.id, stamp);
-				if (Number(entry?.age ?? 0) >= FRESH_PRESS) continue;
-				if (amAuthority) onPress(element);
-			}
-		};
-
-		// ---- every peer: the moments ---------------------------------------------------------
-		let seenHole = -1;
-		let seenRound = -1;
-		let seenOob = -1;
-		let seenSunk = -1;
-		let seenStrokes = -1;
-		let finishedRound = -1;
-		/** a bounce off a rail or an obstacle: the ball turned sharply at speed (every peer, from the
-		 * pose it sees) */
+		// ---- every peer: a click when the ball turns sharply off a rail --------------------------
 		let bounce = /** @type {null | {p: number[], v: number[], t: number}} */ (null);
 		let lastBounce = -10;
 		/** @param {number} time */
@@ -485,133 +389,15 @@ export default {
 			}
 			bounce = { p, v, t: time };
 		};
-		/** @param {number} time */
-		const moments = (time) => {
-			const g = game();
-			if (!g) return;
-			if (g.state === 'playing') bounces(time);
-			const hole = currentHole();
-			if (g.state === 'playing' && hole && (seenHole !== hole.id || seenRound !== g.round)) {
-				seenHole = hole.id;
-				seenRound = g.round;
-				// the tee: every peer walks itself there (a spawn is local)
-				const s = spawnOf(hole);
-				api.setSpawn?.(s, 0, { teleport: true });
-				api.announce('Hole ' + hole.id + ' · ' + hole.name, { sub: 'Par ' + hole.par + ' — ' + hole.tip, ms: 3600, color: '#ffe066' });
-				api.playSound('whistle');
-				seenOob = v(V.oob);
-				seenSunk = v(V.sunk);
-				seenStrokes = v(V.strokes);
-			}
-			if (g.state !== 'playing' || !hole) return;
-			const strokes = v(V.strokes);
-			if (strokes > seenStrokes && v(V.oob) === seenOob) {
-				api.playSound('kick', ballPos());
-				api.hapticPattern?.('tap');
-			}
-			seenStrokes = strokes;
-			if (v(V.oob) > seenOob) {
-				seenOob = v(V.oob);
-				api.playSound('fail');
-				api.announce('Out of bounds', { sub: '+1 stroke — back to your last spot', ms: 1600, color: '#ff8a6b' });
-			}
-			if (v(V.sunk) > seenSunk) {
-				seenSunk = v(V.sunk);
-				const n = v(S(hole.id));
-				const name = n >= MAX_STROKES ? 'Picked up' : scoreName(n, hole.par);
-				api.playSound(n <= hole.par ? 'goal' : 'coin', hole.cup);
-				if (n <= hole.par) api.playSound('cheer');
-				api.hapticPattern?.('success');
-				api.effects?.burst?.([hole.cup[0], hole.cup[1] + 0.3, hole.cup[2]], { kind: n <= hole.par ? 'confetti' : 'sparkle', count: n === 1 ? 140 : 70 });
-				api.announce(name, { sub: n + (n === 1 ? ' stroke' : ' strokes') + ' · par ' + hole.par, ms: 2000, color: '#7dffb0' });
-			}
-		};
-		const roundEnd = () => {
-			const g = game();
-			if (g?.state === 'over' && finishedRound !== g.round) {
-				finishedRound = g.round;
-				const total = HOLES.reduce((s, h) => s + v(S(h.id)), 0);
-				if (total > 0) {
-					const best = Number(api.storage?.get?.('best', 0)) || 0;
-					if (!best || total < best) api.storage?.set?.('best', total);
-					api.playSound('levelup');
-				}
-			}
-		};
 
-		// ---- the HUD's words -------------------------------------------------------------------
-		/** @param {any} data */
-		const info = (data) => {
-			const read = String(data?.read ?? 'title');
-			const hole = currentHole();
-			const total = HOLES.reduce((s, h) => s + v(S(h.id)), 0);
-			const parSoFar = HOLES.filter((h) => v(S(h.id)) > 0).reduce((s, h) => s + h.par, 0);
-			switch (read) {
-				case 'title':
-					return hole ? 'Hole ' + hole.id + ' of ' + HOLES.length + ' · ' + hole.name : '';
-				case 'par':
-					return hole ? 'Par ' + hole.par : '';
-				case 'strokes':
-					return hole ? 'Strokes ' + v(V.strokes) : '';
-				case 'total':
-					return 'Total ' + total + ' (' + relText(total - parSoFar) + ')';
-				case 'tip':
-					return hole ? hole.tip : '';
-				case 'card': {
-					const row = Number(data?.hole) || 0;
-					const h = holeById(row);
-					if (!h) return '';
-					const n = v(S(h.id));
-					return h.id + '. ' + h.name + ' — par ' + h.par + ' — ' + (n ? n + ' (' + relText(n - h.par) + ')' : '–');
-				}
-				case 'result':
-					return 'Course complete!';
-				case 'resultLine':
-					return total + ' strokes · par ' + PAR_TOTAL + ' · ' + relText(total - PAR_TOTAL);
-				case 'best': {
-					const best = Number(api.storage?.get?.('best', 0)) || 0;
-					return best ? 'Best on this device: ' + best + ' (' + relText(best - PAR_TOTAL) + ')' : 'First round on this device';
-				}
-				case 'menuBest': {
-					const best = Number(api.storage?.get?.('best', 0)) || 0;
-					return best ? 'Your best: ' + best + ' strokes (' + relText(best - PAR_TOTAL) + ')' : 'Six holes · par ' + PAR_TOTAL;
-				}
-				default:
-					return '';
-			}
-		};
-		api.registerValueNode(
-			'golfinfo',
-			(/** @type {any} */ data) => {
-				const out = info(data);
-				return out === '' ? ' ' : out;
-			},
-			{ vtype: 'any' }
-		);
-		api.registerNodeGroup({
-			group: 'Mini Golf',
-			items: [
-				{
-					type: 'golfinfo',
-					label: 'Mini golf info',
-					defaults: { read: 'title', hole: 1 },
-					params: [
-						{ key: 'read', kind: 'select', options: ['title', 'par', 'strokes', 'total', 'tip', 'card', 'result', 'resultLine', 'best', 'menuBest'] },
-						{ key: 'hole', kind: 'range', min: 1, max: HOLES.length, step: 1 }
-					]
-				}
-			]
-		});
-
-		// ---- the frame -------------------------------------------------------------------------
+		// ---- the frame ----------------------------------------------------------------------------
 		const HELP = [
 			'Sink the ball in as few strokes as you can. Six holes; par is shown for each.',
 			'Desktop: press on the ball, drag BACK (away from where you want it to go) and let go — the further you drag, the harder the putt. WASD walks.',
 			'VR: pick up the putter lying beside the tee (grip) and swing it through the ball. Or knock the ball with your hand.',
-			'Out of bounds costs a stroke and puts the ball back where it last stopped. Eight strokes and the ball is picked up.'
+			'Out of bounds costs a stroke and puts the ball back where it last stopped. The rules (strokes, par, shot power) are the "Mini Golf rules" node on the Main graph.'
 		];
 		/** @type {null | (() => void)} */ let helpOff = null;
-		// 36 U8: touch — the stick walks to the ball, the look aims, the putt is the module's own drag on the ball
 		/** @type {null | (() => void)} */ let touchOff = null;
 		let wasActive = false;
 		api.registerFrameTask((/** @type {number} */ time) => {
@@ -620,72 +406,53 @@ export default {
 			if (on !== wasActive) {
 				wasActive = on;
 				if (on && typeof api.game?.setHelp === 'function') helpOff = api.game.setHelp(HELP);
+				// 36 U8: touch — the stick walks to the ball, the look aims, the putt is the drag on the ball
 				if (on) touchOff = api.input?.actions?.([], { preset: 'golf' }) ?? null;
-				if (!on && touchOff) {
-					touchOff();
+				if (!on) {
+					touchOff?.();
 					touchOff = null;
-				}
-				if (on) defineLevels();
-				if (!on && helpOff) {
-					helpOff();
+					helpOff?.();
 					helpOff = null;
-				}
-				if (!on && typeof levelsOff === 'function') {
-					levelsOff();
-					levelsOff = null;
 				}
 			}
 			if (!on) return;
-			watchButtons();
-			if (authority()) judge(time);
-			moments(time);
-			roundEnd();
+			if (authority()) watchBall(time);
+			if (playing()) bounces(time);
 		});
 		api.onSceneClear(() => {
-			if (helpOff) {
-				helpOff();
-				helpOff = null;
-			}
+			helpOff?.();
+			helpOff = null;
 			touchOff?.();
 			touchOff = null;
-			if (typeof levelsOff === 'function') {
-				levelsOff();
-				levelsOff = null;
-			}
-			seenStamps.clear();
 			headPrev.clear();
-			seenHole = -1;
-			seenRound = -1;
-			finishedRound = -1;
 			wasActive = false;
 			aiming = null;
+			watch = 'rest';
 			if (aim) aim.visible = false;
 		});
 
-		// the suites' window onto the module
+		// the suites' window onto the engine (the rules' own state is the behaviour's — see rules())
+		/** the rules behaviour node's id on Main @returns {string | null} */
+		const rulesNode = () => api.flow.nodes('behaviour').find((/** @type {any} */ n) => /Mini Golf rules/.test(String(n.data?.name ?? n.data?.label ?? '')))?.id ?? null;
 		/** @type {any} */ (globalThis).__minigolf = {
-			holes: HOLES,
 			authority,
-			info,
-			vars: () => ({ ...Object.fromEntries(Object.values(V).map((k) => [k, api.game.getVar(k, null)])), ...Object.fromEntries(HOLES.map((h) => [S(h.id), api.game.getVar(S(h.id), null)])) }),
-			ball: () => ({ pos: ballPos() }),
-			startRound,
-			setupHole,
-			putt: requestPutt,
+			watch: () => watch,
+			ball: () => ({ pos: ballPos(), speed: Math.hypot(lastVel[0], lastVel[2]) }),
+			rulesNode,
 			/** a raw velocity, y included (a suite's out-of-bounds lob) @param {number[]} vel */
 			lob: (vel) => {
 				const b = ball();
 				if (!b || !authority() || !simRunning()) return false;
+				lastHitAt = performance.now();
 				return phys.setBodyVelocity(b.uuid, vel, null);
 			},
-			/** aim straight at the cup with a speed (a scripted putt) @param {number} speed */
-			puttAtCup: (speed = 3) => {
-				const hole = currentHole();
-				if (!hole) return false;
+			/** a putt straight at a point as a DRAG the rules turn into speed @param {number[]} at @param {number} drag metres of drag */
+			puttAt: (at, drag = 1) => {
 				const b = ballPos();
-				const d = [hole.cup[0] - b[0], 0, hole.cup[2] - b[2]];
+				const d = [at[0] - b[0], 0, at[2] - b[2]];
 				const l = Math.hypot(d[0], d[2]) || 1;
-				requestPutt([(d[0] / l) * speed, 0, (d[2] / l) * speed]);
+				// the drag vector runs from the pointer to the ball — the way the ball will go
+				golf.emit('putt', { drag: [(d[0] / l) * drag, 0, (d[2] / l) * drag], length: drag });
 				return true;
 			}
 		};

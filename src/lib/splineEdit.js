@@ -37,6 +37,7 @@ import {
 	registerVRFrameHook,
 	registerVRTriggerHooks
 } from './vrControls';
+import { viewportHasKeys } from './keyScope'; // 36 U11
 
 // 57.3/57.4: the spline EDIT session, built the same way mesh edit is — one
 // object at a time, scene-root handles (never children of the object: they must
@@ -289,6 +290,7 @@ export function exitSplineEdit() {
 
 /** @param {KeyboardEvent} event */
 function onKeydown(event) {
+	if (!viewportHasKeys(event)) return; // 36 U11: Esc in another pane is that pane's
 	if (event.key === 'Escape') exitSplineEdit();
 }
 

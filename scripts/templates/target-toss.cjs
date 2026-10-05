@@ -1,7 +1,7 @@
 // Template def `target-toss` — one file per template (34 R4 A3). Authored by scripts/author-templates.cjs;
 // the def schema is the comment block at the top of that file; the table is ./index.cjs.
 
-const { graphBuilder } = require('./_builders.cjs');
+const { graphBuilder, rulesSource } = require('./_builders.cjs');
 
 // ---- 35: TARGET TOSS -----------------------------------------------------------------------
 // A fairground booth: grab a ball from the shelf and throw it at tin-can pyramids, swinging
@@ -10,8 +10,9 @@ const { graphBuilder } = require('./_builders.cjs');
 // star. THE SPLIT (the Towers precedent): this def is the BOOTH — every object the stages name
 // (the tables, the shelf, the targets, the TEMPLATES parked under the floor), the HUD and a
 // small graph (buttons, P pause, click sounds, music, the moving-target effects, the HUD words
-// through the core `targettoss` module's `tossinfo` value node). The stages, the dealing, the
-// hit judge and the scoring live in src/modules/targettoss. No module download.
+// through the core `targettoss` module's `tossinfo` value node). 36 (U10): the stages, the scoring,
+// combos, clears and stars are the "Target Toss rules" node on Main (./rules/target-toss.rules.js);
+// the dealing, the hit judge and the moving targets are the engine, src/modules/targettoss.
 
 const TOSS_PANEL = { bg: 'rgba(30, 14, 18, 0.92)', radius: 18, border: '1px solid rgba(255, 196, 92, 0.35)' };
 const TOSS_BTN = { size: 17, weight: '600', bg: '#d8453b', color: '#ffffff', radius: 10 };
@@ -22,60 +23,91 @@ const HALF_PI = Math.PI / 2;
 
 function tossGraph() {
 	const g = graphBuilder();
-	const { N, E } = g;
-	N('click', 'gamesound', 'Button click', 520, 40, { sound: 'click' });
-	const button = (id, element, label, x, y) => {
-		N(id, 'hudbutton', label, x, y, { element });
+	const { N, E, B, G, T } = g;
+
+	// ---- the hub: the RULES (scripts/templates/rules/target-toss.rules.js) --------------------
+	T('n-main', 'Target Toss — read me first',
+		'**Target Toss rules** holds the game: the five stages (what stands in each, the clock), what a hit is worth, combos, when a stage is cleared, stars.\n' +
+		'- **Double-click** it to read or change the code (Ctrl+S reloads it for everyone).\n' +
+		'- **Select** it and open the ⓘ tab to tune the *Combo window*, *Biggest combo*, *Grab reach*.\n' +
+		'The balls, the cans, the physics and the moving targets are the **engine** below it.',
+		-380, 0, { w: 340, h: 230, color: 'blue' });
+	B('rules', 'Target Toss rules', rulesSource('target-toss.rules.js'), 300, 0);
+
+	// ---- the buttons -> the rules' inputs -------------------------------------------------------
+	const menu = [];
+	menu.push(N('click', 'gamesound', 'Button click', 40, 640, { sound: 'click' }));
+	const button = (id, element, label, input, y) => {
+		menu.push(N(id, 'hudbutton', label, 40, y, { element }));
 		E(id, 'click', 'trigger');
-		return id;
+		E(id, 'rules', input);
 	};
-	for (let i = 1; i <= 5; i++) button('lvl' + i, 'lvl-' + i, 'Stage ' + i + ' button', 40, 40 + (i - 1) * 70);
-	button('bnext', 'next-btn', 'Next stage button', 40, 420);
-	button('bretry', 'retry-btn', 'Retry button', 40, 490);
-	button('blevels', 'levels-btn', 'Stages button', 40, 560);
-	// (no pause menu of our own: the game shell's Esc / VR menu gives Resume / Restart / Stages)
-	// ---- the HUD's words, from the module's info node into HUD Text's FORMAT
-	const text = (id, read, element, x, y, extra = {}) => {
-		N(id + 'i', 'tossinfo', 'Toss: ' + read, x, y, { read, ...extra });
-		N(id + 't', 'hudtext', 'HUD ' + element, x + 240, y, { element, format: '', decimals: 0, value: 0 });
+	for (let i = 1; i <= 5; i++) button('lvl' + i, 'lvl-' + i, 'Stage ' + i + ' button', 'stage' + i, 40 + (i - 1) * 70);
+	button('bnext', 'next-btn', 'Next stage button', 'next', 420);
+	button('bretry', 'retry-btn', 'Retry button', 'retry', 490);
+	button('blevels', 'levels-btn', 'Stages button', 'menu', 560);
+	G('g-menu', 'Stage & results buttons', menu, 0, 40);
+	T('n-menu', 'Stage & results buttons', 'Every button is wired into an **input** of the rules: Stage 1-5, Next stage, Retry, back to the stages. (The game shell\'s Esc / VR menu gives Resume / Restart.)', 0, 330, { w: 250, h: 130, color: 'gray' });
+
+	// ---- the moments ------------------------------------------------------------------------------
+	const fb = [];
+	fb.push(N('sCombo', 'gamesound', 'Sound: combo', 660, 40, { sound: 'pop' }));
+	E('rules', 'sCombo', 'trigger', 'comboUp');
+	fb.push(N('aCombo', 'announce', 'Banner: combo', 660, 160, { text: 'Combo x{v}', sub: '', seconds: 0.9, color: '#ffd45e' }));
+	E('rules', 'aCombo', 'trigger', 'comboUp');
+	E('rules', 'aCombo', 'value', 'combo');
+	G('g-moments', 'Combo', fb, 660, 40);
+	T('n-moments', 'Combo', 'Two hits inside the *Combo window* grow the combo: a pop and a small banner on **every** screen. Each hit\'s burst and sound come from the engine where it happened.', 900, 0, { w: 250, h: 120, color: 'green' });
+
+	// ---- the engine, openable from here ---------------------------------------------------------
+	N('engine', 'coderef', 'Code link', 300, 520, { module: 'targettoss', file: 'module.js', title: 'Target Toss engine — balls, cans, throws, moving targets', main: 1 });
+	T('n-engine', 'The engine', 'What the rules call as **kit.toss.*** — it deals the cans and balls, judges every throw (which target went down), returns balls to the shelf, moves the swingers / pop-ups / cart. Double-click to read it.', 300, 680, { w: 260, h: 130, color: 'gray' });
+
+	// ---- the HUD words ----------------------------------------------------------------------------
+	const hud = [];
+	const text = (id, read, element, i, extra = {}) => {
+		const x = 1300 + (i % 2) * 520;
+		const y = 40 + Math.floor(i / 2) * 110;
+		hud.push(N(id + 'i', 'tossinfo', 'Toss: ' + read, x, y, { read, ...extra }));
+		hud.push(N(id + 't', 'hudtext', 'HUD ' + element, x + 250, y, { element, format: '', decimals: 0, value: 0 }));
 		E(id + 'i', id + 't', 'format');
 	};
-	text('mline', 'menuLine', 'menu-line', 800, 40);
-	for (let i = 1; i <= 5; i++) text('ls' + i, 'levelStars', 'lvl-' + i + '-stars', 800, 110 + (i - 1) * 70, { level: i });
-	text('title', 'title', 'tt-title', 1300, 40);
-	text('targets', 'targets', 'tt-targets', 1300, 110);
-	text('score', 'score', 'tt-score', 1300, 180);
-	text('combo', 'combo', 'tt-combo', 1300, 250);
-	text('clock', 'clock', 'tt-clock', 1300, 320);
-	text('result', 'result', 'tt-result', 1300, 410);
-	text('rstars', 'resultStars', 'tt-stars', 1300, 480);
-	text('rline', 'resultLine', 'tt-line', 1300, 550);
-	text('rbest', 'best', 'tt-best', 1300, 620);
-	text('hint', 'hint', 'tt-hint', 800, 480);
-	N('progi', 'tossinfo', 'Toss: progress', 1300, 710, { read: 'progress' });
-	N('progbar', 'hudbar', 'HUD progress bar', 1540, 710, { element: 'tt-bar', value: 0, min: 0, max: 1, format: '' });
+	let k = 0;
+	text('mline', 'menuLine', 'menu-line', k++);
+	for (let i = 1; i <= 5; i++) text('ls' + i, 'levelStars', 'lvl-' + i + '-stars', k++, { level: i });
+	[['title', 'title', 'tt-title'], ['targets', 'targets', 'tt-targets'], ['score', 'score', 'tt-score'], ['combo', 'combo', 'tt-combo'],
+		['clock', 'clock', 'tt-clock'], ['result', 'result', 'tt-result'], ['rstars', 'resultStars', 'tt-stars'], ['rline', 'resultLine', 'tt-line'],
+		['rbest', 'best', 'tt-best'], ['hint', 'hint', 'tt-hint']].forEach(([id, read, el]) => text(id, read, el, k++));
+	hud.push(N('progi', 'tossinfo', 'Toss: progress', 1300, 40 + Math.ceil(k / 2) * 110, { read: 'progress' }));
+	hud.push(N('progbar', 'hudbar', 'HUD progress bar', 1550, 40 + Math.ceil(k / 2) * 110, { element: 'tt-bar', value: 0, min: 0, max: 1, format: '' }));
 	E('progi', 'progbar', 'value');
-	N('chargei', 'tossinfo', 'Toss: charge (desktop)', 1300, 790, { read: 'charge' });
-	N('chargebar', 'hudbar', 'HUD charge bar', 1540, 790, { element: 'tt-charge', value: 0, min: 0, max: 1, format: '' });
+	hud.push(N('chargei', 'tossinfo', 'Toss: charge (desktop)', 1820, 40 + Math.ceil(k / 2) * 110, { read: 'charge' }));
+	hud.push(N('chargebar', 'hudbar', 'HUD charge bar', 2070, 40 + Math.ceil(k / 2) * 110, { element: 'tt-charge', value: 0, min: 0, max: 1, format: '' }));
 	E('chargei', 'chargebar', 'value');
-	// ---- the world: fairground music, the moving targets (module effects = kinematic bodies)
-	N('music', 'gamemusic', 'Arcade music', 40, 980, { preset: 'arcade', volume: 0.35, while: 'always' });
+	G('g-hud', 'HUD words', hud, 1300, 40);
+	T('n-hud', 'HUD words', 'Each **Target Toss info** node reads one line (the stage, what is left standing, the score, the clock, the stars…) into a HUD Text or bar.', 1300, 170, { w: 260, h: 110, color: 'purple' });
+
+	// ---- the world: the moving targets (module effects = kinematic bodies) and the music ---------
+	const world = [];
+	world.push(N('music', 'gamemusic', 'Arcade music', 1650, 40, { preset: 'arcade', volume: 0.35, while: 'always' }));
 	for (let i = 1; i <= 3; i++) {
-		N('sw' + i, 'tossswing', 'Swinging target ' + i, 40, 1060 + (i - 1) * 70, { index: i });
-		N('sws' + i, 'objectselector', 'Swing target ' + i, 280, 1060 + (i - 1) * 70, { selected: 'Swing target ' + i });
+		world.push(N('sw' + i, 'tossswing', 'Swinging target ' + i, 1650, 110 + (i - 1) * 70, { index: i }));
+		world.push(N('sws' + i, 'objectselector', 'Swing target ' + i, 1890, 110 + (i - 1) * 70, { selected: 'Swing target ' + i }));
 		E('sw' + i, 'sws' + i);
 	}
 	for (let i = 1; i <= 6; i++) {
-		N('pp' + i, 'tosspopup', 'Pop-up target ' + i, 600, 1060 + (i - 1) * 70, { index: i });
-		N('pps' + i, 'objectselector', 'Popup target ' + i, 840, 1060 + (i - 1) * 70, { selected: 'Popup target ' + i });
+		world.push(N('pp' + i, 'tosspopup', 'Pop-up target ' + i, 1650, 320 + (i - 1) * 70, { index: i }));
+		world.push(N('pps' + i, 'objectselector', 'Popup target ' + i, 1890, 320 + (i - 1) * 70, { selected: 'Popup target ' + i }));
 		E('pp' + i, 'pps' + i);
 	}
-	N('cart', 'tosscart', 'Moving cart', 1160, 1060, {});
-	N('carts', 'objectselector', 'Cart', 1400, 1060, { selected: 'Cart' });
+	world.push(N('cart', 'tosscart', 'Moving cart', 1650, 760, {}));
+	world.push(N('carts', 'objectselector', 'Cart', 1890, 760, { selected: 'Cart' }));
 	E('cart', 'carts');
-	N('cartt', 'tosscart', 'Moving cart target', 1160, 1130, {});
-	N('cartts', 'objectselector', 'Cart target', 1400, 1130, { selected: 'Cart target' });
+	world.push(N('cartt', 'tosscart', 'Moving cart target', 1650, 830, {}));
+	world.push(N('cartts', 'objectselector', 'Cart target', 1890, 830, { selected: 'Cart target' }));
 	E('cartt', 'cartts');
+	G('g-world', 'Moving targets & music', world, 1650, 40);
+	T('n-world', 'Moving targets & music', 'The swingers, pop-ups and the cart move as **module effects** (kinematic bodies on the shared clock); each shows only in the stages that use it.', 1650, 170, { w: 260, h: 120, color: 'gray' });
 	return g.done();
 }
 

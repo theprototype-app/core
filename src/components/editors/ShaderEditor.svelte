@@ -668,6 +668,7 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="shader-canvas"
+				data-key-scope="shader"
 				bind:this={paneEl}
 				ondrop={onDrop}
 				ondragover={(e) => e.preventDefault()}

@@ -6,7 +6,8 @@ import {
 	shaderEditorClose,
 	hudEditorClose,
 	explorerClose,
-	profilerClose
+	profilerClose,
+	codeWorkspaceClose
 } from '../stores/appStore';
 import { get } from 'svelte/store';
 import { activateDock, armDockMode, dockOccupants, dockTabs, moveDockTab, DOCK_TITLES } from './bottomDock';
@@ -55,7 +56,8 @@ export const DOCK_VIEWS = [
 	{ key: 'shader', tooltip: 'Drive this material from a node graph' },
 	{ key: 'hud', tooltip: 'Lay out the on-screen HUD its nodes drive' },
 	{ key: 'explorer', tooltip: 'Browse the asset library' },
-	{ key: 'profiler', tooltip: 'Record frame time and draw calls, and find what draws most' }
+	{ key: 'profiler', tooltip: 'Record frame time and draw calls, and find what draws most' },
+	{ key: 'code', tooltip: 'Scripts, behaviours and graph JSON in tabs (Ctrl+S saves)' }
 ];
 
 /**
@@ -174,7 +176,8 @@ export const DOCK_CLOSERS = {
 	shader: shaderEditorClose,
 	hud: hudEditorClose,
 	explorer: explorerClose,
-	profiler: profilerClose
+	profiler: profilerClose,
+	code: codeWorkspaceClose
 };
 
 /** @param {string} key @returns {import('svelte/store').Writable<boolean>|null} */

@@ -60,6 +60,18 @@ function coreNodeTypes() {
 	// the palette, and the info line per node
 	for (const m of read('src/lib/nodeCatalog.js').matchAll(/\btype: '([a-z0-9_]+)'/g)) types.add(m[1]);
 	for (const k of Object.keys(require('../src/lib/nodeDocs.js').NODE_DOCS)) types.add(k);
+	// 36 (N1): the editor-only view kinds — a node group and a note (never evaluated, always drawn)
+	types.add('group');
+	types.add('note');
+	// 34 R2: the kit's generated nodes, `kit-<piece>-<call>`, one per spec call (src/lib/kit/*.spec.js)
+	const kitDir = path.join(ROOT, 'src/lib/kit');
+	for (const f of fs.readdirSync(kitDir).filter((x) => x.endsWith('.spec.js'))) {
+		const src = fs.readFileSync(path.join(kitDir, f), 'utf8');
+		const piece = /\bpiece: '([a-z][a-z0-9]*)'/.exec(src)?.[1];
+		if (!piece) continue;
+		for (const m of src.matchAll(/\bname: '([a-z][A-Za-z0-9]*)',\s*kind: '(action|value|event)'/g)) types.add('kit-' + piece + '-' + m[1]);
+		for (const m of src.matchAll(/\bname: '([a-z][A-Za-z0-9]*)',\s*\n\s*kind: '(action|value|event)'/g)) types.add('kit-' + piece + '-' + m[1]);
+	}
 	return types;
 }
 /** environment presets (environment.js ENVIRONMENT_PRESETS) + 'custom' */

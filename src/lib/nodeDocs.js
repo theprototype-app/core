@@ -14,6 +14,7 @@ import { kitNodeDoc } from './kit/catalog.js';
 
 /** @type {Record<string, string>} type -> one line */
 export const NODE_DOCS = {
+	coderef: "Points at the module or kit file whose code runs part of this game - double-click (or Open code) to read it. It does nothing at runtime; it is how the Main graph shows where every rule lives.",
 	behaviour: "Game logic written as a small JavaScript file (params, replicated state, event handlers, kit calls) - run once on the authority peer, with a live node view of its events, state and knobs.",
 	slider: "An interactive slider that outputs a number - the quickest way to hand-tune any numeric input live.",
 	colorpicker: "Outputs a color chosen with a swatch - the color source for anything that paints.",
@@ -67,8 +68,8 @@ export const NODE_DOCS = {
 	hudrows: "Appends or replaces rows in a HUD rows element from a pulse - a log, a chat, a scoreboard feed.",
 	hudinput: "Reads what the player typed into a HUD input element as a value.",
 	hudset: "Writes a value into a HUD input element when a pulse arrives - to prefill, clear or correct it.",
-	script: "Your own JavaScript - an effect that moves its object every frame, or (with declared typed inputs and outputs) a small pure function whose return feeds other nodes.",
-	math: "Combines two numbers with an arithmetic operation.",
+	script: "Your own JavaScript - an effect that moves its object every frame, or (with declared typed inputs and outputs) a small pure function whose return feeds other nodes. v2 scripts also get `api`: object(uuid or name), raycast(from, dir), and in effects keys() (this device only) and spawn('/create ...') (the host spawns once for everyone).",
+	math: "Combines two numbers (+ - * / min max mod pow) or shapes one: sin/cos (b scales them, 0 = 1), abs, round, floor, clamp to 0..b, negate.",
 	compare: "Compares two numbers and outputs true or false.",
 	gate: "Boolean logic on two inputs - AND, OR, NOT, XOR.",
 	maprange: "Remaps a number from one range to another - the glue between free-range sources and bounded parameters.",

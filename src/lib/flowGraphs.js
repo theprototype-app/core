@@ -13,6 +13,7 @@ import { removeEmbedsOf } from './objectFlow';
 import {
 	createFlowNode,
 	createFlowEdge,
+	moveFlowNode,
 	deleteFlowNodes,
 	deleteFlowEdges,
 	updateFlowNodeData,
@@ -209,7 +210,9 @@ registerHistoryKind('flowgraph', (entry, state) => {
  * {items: [{id, before, after, graphId?}]} of node-data patches. An item's own
  * `graphId` overrides the entry's (R29 S3: a module's group edit spans one graph per
  * object, and it is still ONE undo step). `moduleId` attributes a module's write.
- * @param {{op: 'create'|'delete'|'data', graphId: string, nodes?: any[],
+ * 36 U11: op 'move' takes {items: [{id, before: {x, y}, after: {x, y}}]} — a drag, a nudge
+ * or an align in the node editor, replicated as the ordinary `nodemove`.
+ * @param {{op: 'create'|'delete'|'data'|'move', graphId: string, nodes?: any[],
  *   edges?: any[], items?: {id: string, before: any, after: any, graphId?: string}[],
  *   moduleId?: string}} info
  */
@@ -222,6 +225,16 @@ registerHistoryKind('flownodes', (entry, state) => {
 	/** @type {any} */
 	const peer = get(peers);
 	const graphId = entry.graphId;
+	if (entry.op === 'move') {
+		for (const item of entry.items ?? []) {
+			const position = undoing ? item.before : item.after;
+			if (!position) continue;
+			const gid = item.graphId ?? graphId;
+			moveFlowNode(item.id, { x: position.x, y: position.y }, gid);
+			if (peer) peer.send({ type: 'nodemove', id: item.id, position: { x: position.x, y: position.y }, graphId: gid });
+		}
+		return true;
+	}
 	if (entry.op === 'data') {
 		// undo walks the items BACKWARDS: a batch that writes one node twice recorded the
 		// second item's `before` AFTER the first write, so only the reverse order lands on

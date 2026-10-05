@@ -78,7 +78,7 @@ h.run(async () => {
 	const flowTree = await A.page.evaluate(READ_TREE, 'flow');
 	h.check(flowTree.present, 'the node editor renders a Flows tree');
 	h.check(
-		flowTree.labels.some((l) => l.startsWith('Scene')),
+		flowTree.labels.some((l) => l.startsWith('Main')), // 36 (G1): the scene's flow graph is labelled Main
 		`Scene is always the root (${JSON.stringify(flowTree.labels)})`
 	);
 	h.check(
@@ -92,7 +92,7 @@ h.run(async () => {
 	);
 
 	// ---- 2. Scene is active while nothing is selected --------------------------
-	const sceneActive = flowTree.rows.find((r) => r.text.startsWith('Scene'))?.active;
+	const sceneActive = flowTree.rows.find((r) => r.text.startsWith('Main'))?.active;
 	h.check(sceneActive === true, `with nothing selected, Scene is the active row (${sceneActive})`);
 
 	// ---- 3. clicking a row selects the object and moves the highlight ----------

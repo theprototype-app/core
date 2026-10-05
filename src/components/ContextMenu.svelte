@@ -54,6 +54,9 @@
 	 * consumers; this is the runes-friendly door onto the same moment.
 	 */
 	export let onclose: (() => void) | null = null;
+	/** 36 U11: open already SEARCHING (the node editor's Shift+A / Space "add at cursor").
+	 *  Absent = byte-identical to before. */
+	export let startSearch: boolean = false;
 
 	const rawDispatch = createEventDispatcher();
 	const dispatch = (name: string) => {
@@ -85,7 +88,7 @@
 	/** 16-P7: search MODE is sticky — clearing the query keeps the flat list (now
 	 *  showing everything) instead of snapping back to the grouped menu; only Esc
 	 *  leaves search. Entered by typing or by a `revealFilter` row. */
-	let searchMode = false;
+	let searchMode = startSearch;
 	/** the cursor position we left behind on each level, keyed by its path — so
 	 *  stepping OUT of a submenu lands back on the row you came from */
 	let levelHighlight: Record<string, number> = {};

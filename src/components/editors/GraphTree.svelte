@@ -1,4 +1,5 @@
 <script>
+	import { MAIN_GRAPH_LABEL } from '$lib/graphContract.js';
 	// #20 P7: the GRAPHS tree — a navigator for the documents of one editor kind.
 	//
 	// A collapsible section stacked ABOVE the palette in the same left pane (the fork
@@ -108,10 +109,11 @@
 				class:gt-active={sceneActive}
 				id={'graph-tree-' + kind + '-scene'}
 				onclick={() => deselectObject()}
-				title="The scene-wide graph — deselect everything"
+				title={kind === 'flow' ? 'Main — the scene-wide graph every game\'s logic is reachable from (deselects everything)' : 'The scene-wide graph — deselect everything'}
 			>
 				<span class="gt-ico"><Waypoints size={12} aria-hidden="true" /></span>
-				<span class="flex-1 truncate text-left">Scene</span>
+				<!-- 36 (G1): the scene's flow graph IS "Main" -->
+				<span class="flex-1 truncate text-left">{kind === 'flow' ? MAIN_GRAPH_LABEL : 'Scene'}</span>
 				{#if sceneNodes}<span class="gt-count">{sceneNodes}</span>{/if}
 			</button>
 			{#each rows as row (row.uuid)}

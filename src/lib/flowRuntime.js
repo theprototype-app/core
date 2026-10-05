@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { get } from 'svelte/store';
 import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
-import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused} from '../stores/flowStore';
+import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused, runtimeGraph } from '../stores/flowStore';
 // 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
 import { objectsGroup, isLocked } from '../stores/sceneStore';
 import { peers, showToast, showInfoToast, dismissToastById} from '../stores/appStore';
@@ -78,7 +78,7 @@ import { sceneStorageKey, readStored, writeStored } from './gameStorage';
 import { GAME_FEEL_ACTIONS, runGameFeelAction, updateGameMusicNodes, primeGameFeelActions } from './gameFeelActions';
 // 34 R2 (T3): the game kit — its action nodes act on the stamp edge here, its document ticks here
 import { KIT_ACTION_TYPES, runKitNodeAction, installKitNodes } from './kit/nodes.js';
-import { tickKit, primeKitRuntime } from './kit/runtime.js';
+import { tickKit, primeKitRuntime, kitAuthorityId } from './kit/runtime.js';
 /** 34 R3: behaviours/app.js, primed in startFlowRuntime @type {any} */
 let behavioursRef = null;
 // 31 (Stars Room): a scene's own settings rows (31-game-shell's leaf), and the pointing switch
@@ -1414,6 +1414,48 @@ export function gamePausedNow() {
 	return get(gameState).state === 'paused';
 }
 
+/** 36 (U10): `<node>|<input>` -> the stamp a behaviour input last acted on @type {Map<string, number>} */
+const behaviourActed = new Map();
+/** 36 (U10): what the input pass did (the debug hook / suites) */
+export const behaviourInputStats = { offered: 0, stale: 0, refused: 0, last: /** @type {any} */ (null) };
+
+/**
+ * 36 (U10): a trigger wired into a behaviour node's INPUT socket runs that input's handler — on a
+ * FRESH stamp edge only, inside the actionSeenAt family (a stamp older than the node, or one that
+ * arrived as history, is consumed and refused), so a press seen by every peer is offered once per
+ * peer and the behaviour runtime runs it on the authority alone.
+ * @param {number} time @param {any} ctx
+ */
+function updateBehaviourInputs(time, ctx) {
+	if (!behavioursRef) return;
+	const live = new Set();
+	for (const node of nodes) {
+		if (node.type !== 'behaviour') continue;
+		/** @type {Set<string>} */
+		const handles = new Set();
+		for (const edge of edgesInto(edges, node.id)) if (edge.targetHandle) handles.add(edge.targetHandle);
+		if (!handles.size) continue;
+		seeActionNode(node, time);
+		for (const handle of handles) {
+			const key = node.id + '|' + handle;
+			live.add(key);
+			const stamp = handleStamp(node, handle, ctx);
+			if (stamp === null || behaviourActed.get(key) === stamp) continue;
+			behaviourActed.set(key, stamp);
+			if (staleTrigger(node, stamp)) {
+				behaviourInputStats.stale++;
+				behaviourInputStats.last = { key, stamp, seenAt: actionSeenAt.get(node.id), history: triggerHistoryAt, verdict: 'stale' };
+				continue;
+			}
+			behaviourInputStats.offered++;
+			const ok = behavioursRef.behaviourInput?.(node.id, handle, stamp);
+			if (!ok) behaviourInputStats.refused++;
+			behaviourInputStats.last = { key, stamp, seenAt: actionSeenAt.get(node.id), verdict: ok ? 'offered' : 'no such input' };
+		}
+	}
+	for (const key of [...behaviourActed.keys()]) if (!live.has(key)) behaviourActed.delete(key);
+}
+
 /** @param {number} time @param {any} ctx */
 function updateGameNodes(time, ctx) {
 	const game = get(gameState);
@@ -1780,6 +1822,9 @@ function stampOfSource(edge, ctx, seen) {
 	const source = nodeById(nodes, edge.source);
 	if (source && SCHEDULED_TYPES.includes(source.type))
 		return scheduledFireAt(source, edge.sourceHandle, ctx, seen);
+	// 36 (U10): a NAMED event output keeps its own log entry, `<node>#<output>` (a behaviour's
+	// `this.emit('holeSunk')`) — several events on one node, each its own stamp
+	if (edge.sourceHandle && source?.type === 'behaviour') return ctx?.triggers?.[edge.source + '#' + edge.sourceHandle]?.lastT ?? null;
 	return ctx?.triggers?.[edge.source]?.lastT ?? null;
 }
 
@@ -2230,6 +2275,116 @@ function scriptInputValue(socket, raw, ctx) {
 	});
 }
 
+// --- 36 (plan 56.3): the script API ---------------------------------------------
+// What a Script node may ask the world, as the 4th thing beside inputs/time/helpers:
+//   api.object(uuidOrName) -> {uuid, name, position} | null      read-only view
+//   api.raycast(from, dir, max?) -> {uuid, name, point, distance} | null
+//   api.keys() -> ['KeyW', …]   THIS DEVICE's held keys (effect scripts only — see below)
+//   api.spawn('/create cube …') -> boolean   a replicated create (effect scripts only)
+// The first two are reads of replicated world state, so a VALUE script may use them and
+// stay a function every peer computes alike. keys() is LOCAL INPUT: two peers hold
+// different keys, so a script that reads it diverges by construction — fine for the
+// local-authority patterns (a paddle that only its owner drives and whose pose then
+// replicates), wrong for anything everyone must agree on; a value script gets a refusal.
+// spawn() would run on EVERY peer (every peer runs every effect script), so it acts on
+// the session's AUTHORITY peer only (the kit's rule) and its create replicates through
+// the ordinary `create` message; it is rate-limited per node and capped, because a script
+// that spawns "every frame" is the obvious first thing to write.
+const SCRIPT_SPAWN_GAP_MS = 250;
+const SCRIPT_SPAWN_MAX = 50;
+/** node id -> spawn budget (re-armed by a code edit) @type {Map<string, {code: string, last: number, count: number}>} */
+const scriptSpawns = new Map();
+/** debug: how many creates each script node issued on THIS peer @returns {Record<string, number>} */
+export function scriptSpawnStats() {
+	return Object.fromEntries([...scriptSpawns].map(([id, b]) => [id, b.count]));
+}
+/** one raycaster for every script call (no per-frame allocation) */
+const scriptRay = new THREE.Raycaster();
+
+/** @param {any} v @returns {any} THREE.Vector3 | null */
+function vec3Of(v) {
+	if (Array.isArray(v) && v.length >= 3) return new THREE.Vector3(num(v[0]), num(v[1]), num(v[2]));
+	if (v && typeof v === 'object' && 'x' in v) return new THREE.Vector3(num(v.x), num(v.y), num(v.z));
+	return null;
+}
+
+/** the top-level scene object a hit mesh belongs to @param {any} object */
+function sceneObjectOf(object) {
+	let o = object;
+	while (o && o.parent && o.parent !== sceneObjects) o = o.parent;
+	return o && o.parent === sceneObjects ? o : null;
+}
+
+/** @param {any} object */
+function objectView(object) {
+	if (!object) return null;
+	const p = object.getWorldPosition(new THREE.Vector3());
+	return Object.freeze({ uuid: object.uuid, name: object.name ?? '', position: [p.x, p.y, p.z] });
+}
+
+/**
+ * The api object a script gets. Built per call (cheap: four closures) so a value script
+ * and an effect script of the same node cannot share a refusal by accident.
+ * @param {string} nodeId @param {string} code @param {'effect' | 'value'} kind
+ */
+export function scriptApi(nodeId, code, kind) {
+	return Object.freeze({
+		object(/** @type {any} */ ref) {
+			if (!sceneObjects || ref === undefined || ref === null) return null;
+			const key = typeof ref === 'object' ? ref.uuid : String(ref);
+			const object = sceneObjects.getObjectByProperty('uuid', key) ?? sceneObjects.getObjectByName(key);
+			return objectView(object ?? null);
+		},
+		raycast(/** @type {any} */ from, /** @type {any} */ dir, max = 100) {
+			const o = vec3Of(from);
+			const d = vec3Of(dir);
+			if (!sceneObjects || !o || !d || d.lengthSq() === 0) return null;
+			scriptRay.set(o, d.normalize());
+			scriptRay.far = Math.max(0, num(max)) || 100;
+			const hits = scriptRay.intersectObjects(sceneObjects.children, true);
+			for (const hit of hits) {
+				if (!hit.object.visible || hit.object.userData?.helper) continue;
+				const owner = sceneObjectOf(hit.object);
+				if (!owner) continue;
+				return Object.freeze({
+					uuid: owner.uuid,
+					name: owner.name ?? '',
+					point: [hit.point.x, hit.point.y, hit.point.z],
+					distance: hit.distance
+				});
+			}
+			return null;
+		},
+		keys() {
+			if (kind === 'value')
+				throw new Error('api.keys() is this device\'s input — read it in a script without outputs (an effect), never in a value every peer must agree on');
+			return inputRuntimeRef ? [...inputRuntimeRef.getInput().codes] : [];
+		},
+		spawn(/** @type {any} */ command) {
+			if (kind === 'value') throw new Error('api.spawn() changes the scene — use it in a script without outputs (an effect)');
+			const cmd = String(command ?? '');
+			if (!/^\/create\s/.test(cmd)) throw new Error("api.spawn() takes a '/create …' command");
+			/** @type {any} */
+			const peer = get(peers);
+			const me = peer?.peer?.id ?? null;
+			if (me && kitAuthorityId() !== me) return false; // the authority spawns; we receive its create
+			let budget = scriptSpawns.get(nodeId);
+			if (!budget || budget.code !== code) {
+				budget = { code, last: -Infinity, count: 0 };
+				scriptSpawns.set(nodeId, budget);
+			}
+			const now = performance.now();
+			if (budget.count >= SCRIPT_SPAWN_MAX || now - budget.last < SCRIPT_SPAWN_GAP_MS) return false;
+			budget.last = now;
+			budget.count++;
+			// commandsHandler imports history, which imports this module: a static edge closes the
+			// TDZ cycle that crashes the SSR prerender (the documented family)
+			void import('./commandsHandler.svelte').then((m) => m.sceneCommand(cmd));
+			return true;
+		}
+	});
+}
+
 // --- 21-F3's collectible chain walk (edgeIndex / collectibleLatches / collectibleStats /
 // collectibleCountsFor) MOVED to the collectible module in R3a: it was the one core
 // reader that knew the recipe's chain shape, and the module owns that shape now. The
@@ -2250,10 +2405,33 @@ export function evalNode(node, allNodes, allEdges, time, seen = new Set(), ctx =
 	// TWO inputs of one node evaluated once — the second input read undefined and
 	// fell back (math a+b wired from one number returned a + fallback). Deleting
 	// on exit lets siblings re-evaluate; true cycles are still cut on the path.
-	if (!node || seen.has(node.id)) return undefined;
+	if (!node) return undefined;
+	if (seen.has(node.id)) {
+		if (ctx && typeof ctx.cuts === 'number') ctx.cuts++;
+		return undefined;
+	}
+	// 36 (plan 56.1): ONE evaluation per node per tick. Pulling was exponential in fan-in
+	// — every consumer of every handle re-ran its whole upstream, so a chain of diamonds
+	// (a Math reading one source twice, five deep) evaluated the source 2^5 times a frame,
+	// and the card readouts did it all again. The memo lives on the tick's ctx (a fresh
+	// Map per runtimeCtx), keyed by node id and checked against the time and the graph
+	// arrays it was computed for: a Timer evaluates its source at `time - delay` through
+	// the same ctx, and an object flow is evaluated over other arrays.
+	// A value computed while a CYCLE was cut below it is NOT kept: it depends on which
+	// node the walk entered the loop from, so caching it would make the answer depend on
+	// evaluation ORDER — today's per-path answer is kept instead, and it stays a pure
+	// function of the graph, as every peer needs.
+	const memo = ctx?.memo;
+	if (memo) {
+		const hit = memo.get(node.id);
+		if (hit && hit.time === time && hit.nodes === allNodes && hit.edges === allEdges) return hit.value;
+	}
+	if (ctx && typeof ctx.evals === 'number') ctx.evals++; // what actually RAN (the debug stat)
+	const cutsBefore = memo ? ctx.cuts : 0;
 	seen.add(node.id);
 	const value = evalNodeBody(node, allNodes, allEdges, time, seen, ctx);
 	seen.delete(node.id);
+	if (memo && ctx.cuts === cutsBefore) memo.set(node.id, { time, nodes: allNodes, edges: allEdges, value });
 	return value;
 }
 
@@ -2366,6 +2544,17 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 				case 'min': return Math.min(a, b);
 				case 'max': return Math.max(a, b);
 				case 'mod': return b !== 0 ? ((a % b) + b) % b : 0;
+				// 36 (plan 56.4): the unary shapers a value graph needs between a slider and
+				// a param. `b` scales sin/cos (0 = 1, so a fresh node reads sin(a)); `clamp`
+				// keeps a inside [0, b] (b <= 0 = [0, 1]); `pow` is a^b.
+				case 'pow': return Math.pow(a, b);
+				case 'sin': return Math.sin(a) * (b || 1);
+				case 'cos': return Math.cos(a) * (b || 1);
+				case 'abs': return Math.abs(a);
+				case 'round': return Math.round(a);
+				case 'floor': return Math.floor(a);
+				case 'clamp': return Math.min(Math.max(a, 0), b > 0 ? b : 1);
+				case 'neg': return -a;
 				default: return a + b;
 			}
 		}
@@ -2507,6 +2696,12 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 		case 'animfinished': // 17-E: fired locally when a clip reaches its end
 		case 'animmarker': // 17-E F5: fired locally when the playhead crosses one
 		case 'ongrab': // 30b (core-games): the On Click window, fired on a player's grab
+		case 'hudtimer':
+			// 36 audit: listed as a value source since A3 but never evaluated, so a wire from
+			// it read undefined everywhere but its own card
+			return hudTimerRemaining(node, { ...d, duration: input('duration', d.duration) }, time, ctx);
+		case 'hudbutton': // 36 / DEVX #22: the press is the onclick pulse window — a wire
+		case 'ongamestate': // into a module input or a Math read undefined before (silent)
 		case 'onclick': {
 			const trig = ctx && ctx.triggers ? ctx.triggers[node.id] : null;
 			const dt = trig ? time - trig.lastT : Infinity;
@@ -2775,6 +2970,10 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			// the embedded node exposes the target flow's outputs as named handles,
 			// computed at the END of the previous tick (one-frame latency)
 			return { __handles: graphOutputs[d.flowUuid] ?? {} };
+		case 'behaviour':
+			// 36 (U10): a behaviour's VALUE outputs are its replicated state fields (the `bhv`
+			// document every peer holds), read by handle like objectflow's
+			return { __handles: behavioursRef?.behaviourState?.(node.id) ?? {} };
 		case 'script': {
 			// 34 D3: a Script node with declared OUTPUTS is a value node — a pure function of
 			// its declared inputs and the synced clock, read through a handle map exactly like
@@ -2789,7 +2988,7 @@ function evalNodeBody(node, allNodes, allEdges, time, seen, ctx) {
 			const inputs = {};
 			for (const socket of scriptInputs(d) ?? [])
 				inputs[socket.name] = scriptInputValue(socket, input(socket.name, socket.value), ctx);
-			const value = runScriptValue(node.id, d.code ?? '', inputs, time, outputs);
+			const value = runScriptValue(node.id, d.code ?? '', inputs, time, outputs, scriptApi(node.id, d.code ?? '', 'value'));
 			if (scriptValueMemo.size > 500) scriptValueMemo.clear(); // deleted nodes' entries
 			scriptValueMemo.set(node.id, { time, data: node.data, value });
 			return value;
@@ -2836,7 +3035,8 @@ export function resolveInputs(node, allNodes, allEdges, time, ctx = null) {
 			!valueTypes.includes(source.type) &&
 			!sourceValueTypes.includes(source.type) &&
 			!moduleValueNodes[source.type] &&
-			!(source.type === 'script' && isScriptValue(source.data)) // 34 D3
+			!(source.type === 'script' && isScriptValue(source.data)) && // 34 D3
+			source.type !== 'behaviour' // 36 (U10): a behaviour's state outputs
 		)
 			continue;
 		const value = unwrapHandle(evalNode(source, allNodes, allEdges, time, new Set(), ctx), edge);
@@ -2853,8 +3053,21 @@ function runtimeCtx() {
 			return object ? object.getWorldPosition(new THREE.Vector3()) : null;
 		},
 		triggers: get(flowTriggers),
-		speed: (/** @type {string} */ uuid) => speedOf(uuid)
+		speed: (/** @type {string} */ uuid) => speedOf(uuid),
+		// 36 (56.1): the per-tick value memo (see evalNode) + its counters
+		/** @type {Map<string, {time: number, nodes: any[], edges: any[], value: any}>} */
+		memo: new Map(),
+		cuts: 0,
+		evals: 0
 	};
+}
+
+/** 36 (56.1): last tick's value-graph stats, for the debug hook — evaluations actually run
+ * (memo misses) against the nodes in the graph. @type {{evals: number, nodes: number, cuts: number}} */
+let valueStats = { evals: 0, nodes: 0, cuts: 0 };
+/** @returns {{evals: number, nodes: number, cuts: number}} */
+export function flowValueStats() {
+	return { ...valueStats };
 }
 
 // --- CL-C C3: LOCAL per-object speed feed (velocity node) --------------------
@@ -2910,6 +3123,11 @@ function syncedNow() {
 export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = null, at = null, other = undefined) {
 	// 36 X6: a contact's other body, received with the stamp (see contactOthers)
 	if (typeof other === 'string') contactOthers.set(nodeId, other);
+	// 36 (U10): `<node>#<output>` is a named output's own log entry; the PUSH consumers (a Counter,
+	// a Latch, a Once wired to that output) are found through the node's edges from that handle
+	const hash = typeof nodeId === 'string' ? nodeId.indexOf('#') : -1;
+	const walkId = hash > 0 ? nodeId.slice(0, hash) : nodeId;
+	const walkHandle = hash > 0 ? nodeId.slice(hash + 1) : sourceHandle;
 	// 31: a trigger may carry WHERE it happened (the clap's meeting point). Kept beside the
 	// log rather than in it, so the log's shape, its merge and its late-joiner reply are
 	// untouched — history fires nothing, so a joiner needs no point. A local fire records
@@ -2925,8 +3143,8 @@ export function applyNodeTrigger(nodeId, t, replicate = true, sourceHandle = nul
 		// derived state agrees without being sent. What it costs is a late joiner,
 		// whose trigger log starts empty; each case below says what that means for it.
 		edges.forEach((edge) => {
-			if (edge.source !== nodeId) return;
-			if (sourceHandle !== null && (edge.sourceHandle ?? null) !== sourceHandle) return;
+			if (edge.source !== walkId) return;
+			if (walkHandle !== null && (edge.sourceHandle ?? null) !== walkHandle) return;
 			const target = nodeById(nodes, edge.target);
 			if (!target) return;
 			const handle = edge.targetHandle ?? null;
@@ -3297,7 +3515,7 @@ function applyAnimation(object, base, anim, time, ctx) {
 			const inputs = {};
 			for (const socket of declared)
 				inputs[socket.name] = scriptInputValue(socket, data[socket.name] ?? socket.value, ctx);
-			runScript(anim.id, data.code ?? '', object, base, data, time, inputs);
+			runScript(anim.id, data.code ?? '', object, base, data, time, inputs, scriptApi(anim.id, data.code ?? '', 'effect'));
 		}
 		return;
 	}
@@ -3745,6 +3963,8 @@ function runTick(now) {
 	// 34 R2: the kit's authority turns due moments into changes; everyone re-sends what was
 	// never acknowledged (after the game nodes, so a press this frame is already asked)
 	tickKit();
+	// 36 (U10): triggers wired INTO a behaviour's declared inputs run its handlers (authority)
+	updateBehaviourInputs(time, ctx);
 	// 34 R3 (D1): behaviours after the kit — the authority's due timers, every handler's state flush
 	behavioursRef?.tickBehaviours();
 	// 21-E6: the character controller, beside the game shell and for the same reason —
@@ -3777,7 +3997,9 @@ function runTick(now) {
 				((valueTypes.includes(node.type) || moduleValueNodes[node.type]) &&
 					node.type !== 'objectflow') ||
 				// 34 D3: a value script's card shows its outputs (a handle map, read per name)
-				(node.type === 'script' && isScriptValue(node.data))
+				(node.type === 'script' && isScriptValue(node.data)) ||
+				// 36 (U10): a behaviour's state outputs (the ⓘ panel's wired rows read them)
+				node.type === 'behaviour'
 			)
 				values[node.id] = evalNode(node, nodes, edges, time, new Set(), ctx);
 		}
@@ -3819,6 +4041,7 @@ function runTick(now) {
 		(nextOutputs[node.__graph] ??= {})[name] = evalNode(node, nodes, edges, time, new Set(), ctx);
 	});
 	graphOutputs = nextOutputs;
+	valueStats = { evals: ctx.evals, nodes: nodes.length, cuts: ctx.cuts };
 	phaseEnd(PHASE_FLOW);
 
 	phaseBegin(PHASE_MODULES);
@@ -4031,12 +4254,14 @@ export function startFlowRuntime() {
 	import('./behaviours/app.js')
 		.then((m) => {
 			behavioursRef = m;
+			// 36 (U10): `this.emit(name)` = a replicated pulse on the node's output `name`
+			m.setBehaviourEmitter?.((/** @type {string} */ id, /** @type {string} */ name) => applyNodeTrigger(id + '#' + name, syncedNow(), true));
 			m.startBehaviours();
 		})
 		.catch((error) => console.warn('behaviours failed to start', error));
 	flowGraphs.subscribe(() => {
-		nodes = allNodes();
-		edges = allEdges();
+		// 36 U11: muted nodes and the editor-only kinds (group, note) are not evaluated
+		({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
 		applyColors();
 	});
 	objectsGroup.subscribe((value) => {

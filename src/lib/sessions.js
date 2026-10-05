@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalCamera, globalScene, globalRenderer, orbitControls, TControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
 import { restoreGraphs, clearGraphs, SCENE_GRAPH, allNodes } from '../stores/flowStore';
+import { ensureMainGraph } from './mainGraph.js'; // 36 (G1): a leaf
 import { serializeGraphs, copyGraphFrom } from './flowGraphs';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
@@ -25,6 +26,8 @@ import {
 	showInfoToast,
 	dismissToastById,
 	modulesOpen,
+	templatesModalOpen,
+	templatesModalTab,
 	// R22 round 33: "Save scene & connect" hands over to the Explorer's own inline naming
 	explorerClose,
 	armExplorerSceneSave
@@ -76,6 +79,7 @@ import { showConfirm, showChoice } from './confirmDialog';
 // 33 (L2/L4): what happens to modules when the scene changes
 import { prepareSceneSwitch, sceneArrived } from './sceneSwitch';
 import { APP_VERSION } from './version.js';
+import { oldRulesGame, RETIRED_GAME_NODES } from './oldGameScene.js';
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
 // stores its top-level objects as individual ObjectLoader jsons — that makes
@@ -1289,8 +1293,17 @@ function carryObjectDocuments(payload, uuidMap) {
 function reportUnknownNodes(payload) {
 	// remembered first: the unknown-node card names its provider from this
 	rememberSceneModules(payload?.modules);
+	// 36 (U10): a game saved before its rules moved onto the Main graph says so — and its retired
+	// engine nodes (Mini Golf's golfinfo) are not "a module to install", so they leave this count
+	const oldGame = reportOldRulesGame(payload);
+	// 36 (N1): a group or a note is an editor-only VIEW node, never a missing module's
 	const missing = allNodes().filter(
-		(/** @type {any} */ node) => node.type && !findNodeSpec(node.type)
+		(/** @type {any} */ node) =>
+			node.type &&
+			node.type !== 'group' &&
+			node.type !== 'note' &&
+			!(oldGame && RETIRED_GAME_NODES.has(node.type)) &&
+			!findNodeSpec(node.type)
 	);
 	if (!missing.length) return;
 	const kinds = [...new Set(missing.map((/** @type {any} */ node) => node.type))];
@@ -1312,6 +1325,34 @@ function reportUnknownNodes(payload) {
 			}
 		]
 	);
+}
+
+/**
+ * 36 (U10, 36-int-123): ONE sticky notice when the loaded scene is a copy of a core game saved
+ * before 1.23 — its marker is there, no rules node calls its engine, so the game would silently
+ * never start. Points at the Games tab, where the same game opens with its readable rules.
+ * @param {any} payload @returns {boolean} whether the scene is such a copy
+ */
+function reportOldRulesGame(payload) {
+	const game = oldRulesGame(payload);
+	if (!game) return false;
+	showInfoToast(
+		'scene-old-rules-game',
+		'This ' + game.name + ' was saved before 1.23. Its rules now live on the Main graph as a node you can read ' +
+			'and change, and this older copy has none, so the game will not start. Open ' + game.name +
+			' from the Games tab to play or remix the new version.',
+		[
+			{
+				label: 'Open Games',
+				action: () => {
+					dismissToastById('scene-old-rules-game');
+					templatesModalTab.set('games');
+					templatesModalOpen.set(true);
+				}
+			}
+		]
+	);
+	return true;
 }
 
 /** Replace the scene with a session (safety-stash first). Replicates through
@@ -1483,12 +1524,16 @@ async function applySessionNow(payload, opts, job) {
 	animationsRestore(payload.animations ?? {}, replicate);
 	// H1: new format restores EVERY graph document; legacy payloads carry the
 	// scene graph only. One 'nodes' snapshot replicates the whole map.
-	const graphsPayload =
+	const loadedGraphs =
 		payload.graphs && typeof payload.graphs === 'object'
 			? payload.graphs
 			: payload.nodes?.length || payload.edges?.length
 				? { [SCENE_GRAPH]: { nodes: payload.nodes ?? [], edges: payload.edges ?? [] } }
 				: null;
+	// 36 (G1): an old scene's Main graph gains links to the logic it hides (its modules' code,
+	// its object graphs) — here, before the restore, so the one 'nodes' snapshot below carries
+	// them to the room. A G1-authored or already-migrated scene comes back unchanged.
+	const graphsPayload = ensureMainGraph(loadedGraphs, { modules: payload.modules, sceneKey: SCENE_GRAPH }).graphs;
 	if (graphsPayload) {
 		restoreGraphs(graphsPayload);
 		if (replicate && peer)

@@ -133,6 +133,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startSharedLibrary } from '$lib/sharedLibrary'
   import { startSceneIdentity } from '$lib/sceneIdentity'
   import GameChip from './components/hud/GameChip.svelte'
+  import ShortcutSheet from './components/menu/ShortcutSheet.svelte' // 36 I3
   import HudLayer from './components/hud/HudLayer.svelte'
   // 31 K3: the game shell — the pause menu + its wiring
   import GameShellMenu from './components/hud/GameShellMenu.svelte'
@@ -145,6 +146,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { showToast, showInfoToast } from './stores/appStore'
   // 34 PF: the Profiler dock tab, loaded the first time it opens (it is closed by default)
   import { profilerClose } from './stores/appStore'
+  // 36-code: the code workspace (plan 75), loaded the first time a tab opens
+  import { codeWorkspaceClose } from './stores/appStore'
+  import { startCodeWorkspace } from '$lib/codeWorkspace'
   import { peers, userdata } from './stores/appStore'
   import { get } from 'svelte/store'
   import { initModules, disabledModules } from '$lib/moduleSDK'
@@ -260,6 +264,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startSnapping()
     startAutosave()
     startSceneAssets()
+    startCodeWorkspace() // 36-code: scriptEditorOpen -> a workspace tab, file follow
     startNetworkQuality()
     startAudioDevices() // 23-A3: the device reconcile off objectsGroup
     registerVRPatch() // 23-B1: plugs, cables and knobs in VR
@@ -366,6 +371,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
 {#if !$profilerClose}
 {#await import('./components/editors/Profiler.svelte') then m}<m.default />{/await}
 {/if}
+{#if !$codeWorkspaceClose}
+{#await import('./components/editors/CodeWorkspace.svelte') then m}<m.default />{/await}
+{/if}
 <TextEditorWindow />
 <!-- R22 round 12: ONE INSTANCE PER OPEN PREVIEW. With the multi-window pref off the list
      never holds more than one, so this renders exactly what it always did. -->
@@ -423,6 +431,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
      editor's stand-in for a game's screens, which HudLayer no longer draws outside Play.
      Editor-only (it hides itself in Play, in VR and in embed mode). -->
 <GameChip />
+<ShortcutSheet />
 <!-- 31 K3: the pause menu every game shares (Esc / the corner Menu button) -->
 <GameShellMenu />
 <FpsCounter />

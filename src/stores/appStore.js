@@ -41,6 +41,8 @@ export const shaderEditorClose = writable(true);
 export const hudEditorClose = writable(true);
 // 34 PF: the Profiler — recordings, timeline, who draws most (a dock tab, Explorer-like: not a Flow-family view)
 export const profilerClose = writable(true);
+// 36-code: the code workspace (plan 75) — tabs of scripts, behaviours, files, graph JSON
+export const codeWorkspaceClose = writable(true);
 
 /**
  * 21-D7: DEEP LINK into a flow node — "show me the node that drives this HUD element".

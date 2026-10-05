@@ -181,6 +181,9 @@
 	.sheet-filter {
 		flex: 1;
 		min-width: 0;
+		background: var(--field, #111827);
+		color: var(--text, #e5e7eb);
+		border-color: var(--border, #374151);
 	}
 	.sheet-close {
 		color: var(--muted, #9ca3af);

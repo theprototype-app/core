@@ -206,7 +206,7 @@ h.run(async () => {
 	for (const want of ['Search nodes', 'Add note', 'Select all', 'Frame all'])
 		h.check(labels.some((l) => l.startsWith(want)), `the canvas menu offers ${want}`);
 	h.check(labels.some((l) => l.includes('Shift+A') || l.includes('Shift A')), 'canvas menu rows show their shortcut (from the registry)');
-	await p.locator('[role="menu"] [role="menuitem"]', { hasText: 'Add note' }).first().click();
+	await p.locator('[role="menu"] [role="menuitem"]', { hasText: /^\s*Add\ note/ }).first().click();
 	await p.waitForTimeout(400);
 	h.check((await graph(p)).nodes.filter((n) => n.type === 'note').length === 3, 'the canvas menu adds a note');
 
@@ -217,7 +217,7 @@ h.run(async () => {
 	for (const want of ['Open code', 'Group', 'Add note around', 'Duplicate', 'Copy', 'Cut', 'Mute', 'Collapse', 'Frame', 'Disconnect all', 'Delete node'])
 		h.check(labels.some((l) => l.startsWith(want)), `the node menu offers ${want}`);
 	h.check((await graph(p)).nodes.find((n) => n.id === 'sc').sel, 'right-clicking a node makes it the selection');
-	await p.locator('[role="menu"] [role="menuitem"]', { hasText: 'Open code' }).first().click();
+	await p.locator('[role="menu"] [role="menuitem"]', { hasText: /^\s*Open\ code/ }).first().click();
 	await p.waitForTimeout(400);
 	h.check((await p.evaluate(() => new Promise((r) => window.__stores.scriptEditorOpen.subscribe((v) => r(v))()))) === 'sc', 'Open code opens the script node\'s code');
 	await p.evaluate(() => window.__stores.scriptEditorOpen.set(null));
@@ -225,33 +225,38 @@ h.run(async () => {
 	await select(p, ['a', 'b', 'c']);
 	await p.waitForTimeout(200);
 	const cb = await box(p, 'c');
+	await closeMenu(p);
 	await p.mouse.click(cb.x + 30, cb.y + 12, { button: 'right' });
 	await p.waitForTimeout(300);
 	labels = await menuLabels(p);
 	h.check(labels.some((l) => l.startsWith('Group 3 nodes')) && labels.some((l) => l.startsWith('Delete 3 nodes')), 'the multi-selection menu acts on the whole set');
 	h.check(labels.some((l) => l.startsWith('Align')), 'the multi-selection menu offers Align');
 	h.check(!labels.some((l) => l.startsWith('Open code')), 'Open code is offered only for a node that has code');
-	await p.locator('[role="menu"] [role="menuitem"]', { hasText: 'Align' }).first().hover();
+	await p.locator('[role="menu"] [role="menuitem"]', { hasText: /^\s*Align/ }).first().hover();
 	await p.waitForTimeout(300);
-	await p.locator('[role="menu"] [role="menuitem"]', { hasText: 'Row (top edges)' }).first().click();
+	await p.locator('[role="menu"] [role="menuitem"]', { hasText: /^\s*Row \(top edges\)/ }).first().click();
 	await p.waitForTimeout(400);
 	g = await graph(p);
 	const ys = ['a', 'b', 'c'].map((id) => g.nodes.find((n) => n.id === id).y);
 	h.check(ys.every((y) => y === ys[0]), `Align ▸ Row lines the selection up (${ys})`);
+	await closeMenu(p);
 	await p.mouse.click(cb.x + 30, cb.y + 12, { button: 'right' });
 	await p.waitForTimeout(300);
-	await p.locator('[role="menu"] [role="menuitem"]', { hasText: 'Group 3 nodes' }).first().click();
+	await p.locator('[role="menu"] [role="menuitem"]', { hasText: /^\s*Group\ 3\ nodes/ }).first().click();
 	await p.waitForTimeout(500);
 	g = await graph(p);
 	const grp = g.nodes.find((n) => n.type === 'group');
 	h.check(!!grp && grp.data.children.length === 3, 'Group from the menu groups the selection');
 	await select(p, [grp.id]);
+	await closeMenu(p);
+	await p.keyboard.press('a'); // frame all: a new card can sit under the scope chip at the pane top
+	await p.waitForTimeout(500);
 	const gb = await box(p, grp.id);
-	await p.mouse.click(gb.x + 30, gb.y + 12, { button: 'right' });
+	await p.mouse.click(gb.x + gb.width / 2, gb.y + gb.height / 2, { button: 'right' });
 	await p.waitForTimeout(300);
 	labels = await menuLabels(p);
 	h.check(labels.some((l) => l.startsWith('Open group')) && labels.some((l) => l.startsWith('Ungroup')), 'a group\'s menu offers Open group and Ungroup');
-	await p.locator('[role="menu"] [role="menuitem"]', { hasText: 'Ungroup' }).first().click();
+	await p.locator('[role="menu"] [role="menuitem"]', { hasText: /^\s*Ungroup/ }).first().click();
 	await p.waitForTimeout(400);
 	h.check(!(await graph(p)).nodes.some((n) => n.type === 'group'), 'Ungroup from the menu ungroups');
 

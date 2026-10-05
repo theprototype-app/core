@@ -50,8 +50,7 @@
 					this={block.t === 'h' ? 'h' + (block.level ?? 1) : block.t === 'quote' ? 'blockquote' : block.t === 'li' || block.t === 'oli' ? 'div' : 'p'}
 					class="tp-note-{block.t}"
 				>
-					{#if block.t === 'li'}<span class="tp-note-bullet">•</span>{:else if block.t === 'oli'}<span class="tp-note-bullet">{block.n}.</span>{/if}
-					{#each block.spans as span, si (si)}
+					{#if block.t === 'li'}<span class="tp-note-bullet">•</span>{:else if block.t === 'oli'}<span class="tp-note-bullet">{block.n}.</span>{/if}{#each block.spans as span, si (si)}
 						{#if span.t === 'b'}<strong>{span.v}</strong>
 						{:else if span.t === 'i'}<em>{span.v}</em>
 						{:else if span.t === 'code'}<code>{span.v}</code>

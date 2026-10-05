@@ -132,4 +132,13 @@ describe('keyScope', () => {
 		expect(movesScope(el({ editable: true, parent: el({ cls: 'cm-editor' }) }))).toBe(true);
 		expect(movesScope(el())).toBe(true);
 	});
+
+	it('a pane that is closed gives the keyboard back to the viewport', () => {
+		const pane = { isConnected: true, getClientRects: () => [1] };
+		setLastScope('nodes', pane);
+		expect(scopeOfEvent({ target: el() })).toBe('nodes');
+		pane.getClientRects = () => [];
+		expect(scopeOfEvent({ target: el() })).toBe('viewport');
+		expect(lastScope()).toBe('viewport');
+	});
 });

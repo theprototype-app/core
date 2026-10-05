@@ -79,12 +79,15 @@ h.run(async () => {
 	const G = (await graph(p)).nodes.find((n) => n.type === 'group');
 	await p.evaluate((id) => window.__stores.nodesHandler.setNodeData(id, { label: 'Doubler' }), G.id);
 	await p.waitForTimeout(300);
+	await p.keyboard.press('a'); // frame all: the new card can sit under the scope chip at the pane top
+	await p.waitForTimeout(500);
 	const gb = await p.locator(`.svelte-flow__node[data-id="${G.id}"]`).boundingBox();
-	await p.mouse.click(gb.x + 30, gb.y + 12, { button: 'right' });
+	await p.mouse.click(gb.x + gb.width / 2, gb.y + gb.height / 2, { button: 'right' });
 	await p.waitForTimeout(300);
+	console.log('group menu: ' + JSON.stringify(await p.evaluate(() => [...document.querySelectorAll('[role="menu"] [role="menuitem"]')].map((r) => r.textContent.trim()))));
 	const [download] = await Promise.all([
 		p.waitForEvent('download', { timeout: 10000 }),
-		p.locator('[role="menu"] [role="menuitem"]', { hasText: 'Export group (.tpnode)' }).first().click()
+		p.locator('[role="menu"] [role="menuitem"]', { hasText: /^\s*Export group/ }).first().click()
 	]);
 	const file = '/tmp/claude-1000/node-ux-' + Date.now() + '.tpnode';
 	await download.saveAs(file);

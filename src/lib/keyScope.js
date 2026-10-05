@@ -63,6 +63,8 @@ export function hostScopeOf(el) {
 }
 
 let pointerScope = 'viewport';
+/** the pane element that holds the keyboard (null = the viewport / unknown) @type {any} */
+let pointerHost = null;
 /** @type {(() => boolean) | null} */
 let vrProbe = null;
 
@@ -81,8 +83,12 @@ export function onScopeChange(fn) {
 	return () => listeners.delete(fn);
 }
 
-/** Set it directly (tests, and a pane that takes focus programmatically). @param {string} scope */
-export function setLastScope(scope) {
+/**
+ * Set it directly (tests, and a pane that takes focus programmatically).
+ * @param {string} scope @param {any} [host] the pane element, so a CLOSED pane gives the keys back
+ */
+export function setLastScope(scope, host = null) {
+	pointerHost = host;
 	const next = scope || 'viewport';
 	if (next === pointerScope) return;
 	pointerScope = next;
@@ -101,6 +107,16 @@ export function setVrScopeProbe(probe) {
 	vrProbe = probe;
 }
 
+/** Is a pane element still on screen? @param {any} el */
+function paneShowing(el) {
+	if (!el.isConnected) return false;
+	try {
+		return typeof el.getClientRects !== 'function' || el.getClientRects().length > 0;
+	} catch {
+		return true;
+	}
+}
+
 /**
  * The scope a key event belongs to.
  * @param {{target?: any} | null | undefined} event
@@ -114,6 +130,12 @@ export function scopeOfEvent(event) {
 		if (vrProbe && vrProbe()) return 'vr';
 	} catch {
 		/* a probe that throws is not in VR */
+	}
+	// the pane that had the keyboard was CLOSED (unmounted, or hidden by its dock/tab
+	// group): its keys must not outlive it — the viewport takes them back
+	if (pointerHost && !paneShowing(pointerHost)) {
+		setLastScope('viewport');
+		return 'viewport';
 	}
 	return pointerScope;
 }
@@ -193,7 +215,8 @@ export function startKeyScope() {
 	const note = (event) => {
 		const target = /** @type {any} */ (event.target);
 		if (!movesScope(target)) return;
-		setLastScope(hostScopeOf(target));
+		const host = typeof target?.closest === 'function' ? target.closest('[data-key-scope]') : null;
+		setLastScope(hostScopeOf(target), host);
 	};
 	window.addEventListener('pointerdown', note, true);
 	window.addEventListener('focusin', note, true);

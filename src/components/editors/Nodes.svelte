@@ -1326,6 +1326,17 @@
 			commitMoves([{ id: arg.id, x: Math.round(arg.x), y: Math.round(arg.y) }]);
 			commitData([{ id: arg.id, patch: { w: arg.w, h: arg.h } }]);
 		});
+		// the resizer leaves xyflow's own width/height on the node, which would pin the
+		// wrapper at that size forever (an undo or a collapse could not shrink it): the
+		// note's size is its DATA, so drop them
+		updateGraph(activeId, (g) => ({
+			nodes: g.nodes.map((n: any) => {
+				if (n.id !== arg.id || (n.width === undefined && n.height === undefined)) return n;
+				const { width: _w, height: _h, ...rest } = n;
+				return rest;
+			}),
+			edges: g.edges
+		}));
 	}
 	function propsOpenFor(tab: 'info' | 'settings') {
 		propsOpen = true;
@@ -1508,14 +1519,14 @@
 				{ label: 'Search nodes…', revealFilter: true, hint: hint('nodes.add-search') },
 				{ label: 'Add note', icon: 'sticky-note', hint: hint('nodes.add-note'), action: () => addNote(flowPos) },
 				...(clip?.nodes?.length
-					? [{ label: `Paste ${clip.nodes.length} node${clip.nodes.length === 1 ? '' : 's'}`, icon: 'clipboard-paste', hint: hint('nodes.paste'), action: () => pasteAt(flowPos) }]
+					? [{ label: `Paste ${clip.nodes.length} node${clip.nodes.length === 1 ? '' : 's'}`, icon: 'file-plus', hint: hint('nodes.paste'), action: () => pasteAt(flowPos) }]
 					: []),
 				{ label: 'Select all', hint: hint('nodes.select-all'), action: selectAll },
-				{ label: 'Frame all', icon: 'scan', hint: hint('nodes.frame-all'), action: frameAll },
-				{ label: 'Import node group (.tpnode)…', icon: 'file-input', action: () => pickTpnode(flowPos) },
+				{ label: 'Frame all', icon: 'focus', hint: hint('nodes.frame-all'), action: frameAll },
+				{ label: 'Import node group (.tpnode)…', icon: 'folder-input', action: () => pickTpnode(flowPos) },
 				...(level
 					? [
-							{ label: 'Leave group', icon: 'log-out', hint: 'Esc', action: leaveGroup },
+							{ label: 'Leave group', icon: 'undo-2', hint: 'Esc', action: leaveGroup },
 							{ label: 'Ungroup this group', hint: hint('nodes.ungroup'), action: () => ungroup(level ?? undefined) }
 						]
 					: []),
@@ -1538,26 +1549,26 @@
 		const collapsed = list.some((n) => n.data?.collapsed);
 		const n = list.length;
 		const items: any[] = [];
-		if (one && nodeHasCode(one)) items.push({ label: 'Open code', icon: 'code', action: () => openCode(one) });
-		if (one && isGroup(one)) items.push({ label: 'Open group', icon: 'log-in', hint: hint('nodes.enter-group'), action: () => enterGroup(one.id) });
+		if (one && nodeHasCode(one)) items.push({ label: 'Open code', icon: 'file-text', action: () => openCode(one) });
+		if (one && isGroup(one)) items.push({ label: 'Open group', icon: 'folder-input', hint: hint('nodes.enter-group'), action: () => enterGroup(one.id) });
 		items.push({ label: n > 1 ? `Group ${n} nodes` : 'Group', icon: 'group', hint: hint('nodes.group'), action: groupSelection });
 		if (groups.length) items.push({ label: groups.length > 1 ? `Ungroup ${groups.length}` : 'Ungroup', icon: 'ungroup', hint: hint('nodes.ungroup'), action: () => ungroup() });
 		items.push({ label: 'Add note around', icon: 'sticky-note', hint: hint('nodes.note-around'), action: noteAroundSelection });
-		items.push({ label: one && isGroup(one) ? 'Export group (.tpnode)…' : 'Export as node group (.tpnode)…', icon: 'file-output', action: () => exportTpnode(list.map((x) => x.id)) });
+		items.push({ label: one && isGroup(one) ? 'Export group (.tpnode)…' : 'Export as node group (.tpnode)…', icon: 'download', action: () => exportTpnode(list.map((x) => x.id)) });
 		items.push({ section: ' ' });
-		items.push({ label: 'Duplicate', icon: 'copy-plus', hint: hint('nodes.duplicate'), action: duplicateSelection });
-		items.push({ label: 'Copy', icon: 'clipboard-copy', hint: hint('nodes.copy'), action: () => copySelection(false) });
-		items.push({ label: 'Cut', icon: 'scissors', hint: hint('nodes.cut'), action: () => copySelection(true) });
+		items.push({ label: 'Duplicate', icon: 'copy', hint: hint('nodes.duplicate'), action: duplicateSelection });
+		items.push({ label: 'Copy', icon: 'copy', hint: hint('nodes.copy'), action: () => copySelection(false) });
+		items.push({ label: 'Cut', hint: hint('nodes.cut'), action: () => copySelection(true) });
 		const clip = readClipboard();
-		if (clip?.nodes?.length) items.push({ label: 'Paste', icon: 'clipboard-paste', hint: hint('nodes.paste'), action: () => pasteAt() });
+		if (clip?.nodes?.length) items.push({ label: 'Paste', icon: 'file-plus', hint: hint('nodes.paste'), action: () => pasteAt() });
 		items.push({ section: ' ' });
-		if (!list.every(isNote)) items.push({ label: muted ? 'Unmute' : 'Mute (bypass)', icon: muted ? 'volume-2' : 'volume-x', hint: hint('nodes.mute'), action: toggleMute });
-		items.push({ label: collapsed ? 'Expand' : 'Collapse', icon: collapsed ? 'chevrons-up-down' : 'chevrons-down-up', hint: hint('nodes.collapse'), action: toggleCollapse });
-		items.push({ label: 'Frame', icon: 'scan', hint: hint('nodes.frame-selected'), action: frameSelected });
+		if (!list.every(isNote)) items.push({ label: muted ? 'Unmute' : 'Mute (bypass)', icon: muted ? 'eye' : 'eye-off', hint: hint('nodes.mute'), action: toggleMute });
+		items.push({ label: collapsed ? 'Expand' : 'Collapse', icon: collapsed ? 'chevron-down' : 'chevron-up', hint: hint('nodes.collapse'), action: toggleCollapse });
+		items.push({ label: 'Frame', icon: 'focus', hint: hint('nodes.frame-selected'), action: frameSelected });
 		if (n > 1)
 			items.push({
 				label: 'Align',
-				icon: 'align-start-vertical',
+				icon: 'sliders-horizontal',
 				children: [
 					{ label: 'Column (left edges)', hint: hint('nodes.align-column'), action: () => arrangeSelection('column') },
 					{ label: 'Row (top edges)', hint: hint('nodes.align-row'), action: () => arrangeSelection('row') },
@@ -1565,7 +1576,7 @@
 					{ label: 'Distribute horizontally', hint: hint('nodes.distribute-h'), disabled: n < 3, action: () => arrangeSelection('distributeH') }
 				]
 			});
-		if (one && !isNote(one)) items.push({ label: 'Disconnect all', icon: 'unplug', action: () => disconnectNode(one.id) });
+		if (one && !isNote(one)) items.push({ label: 'Disconnect all', icon: 'x', action: () => disconnectNode(one.id) });
 		items.push({ label: n > 1 ? `Delete ${n} nodes` : 'Delete node', danger: true, icon: 'trash-2', hint: hint('nodes.delete'), action: deleteSelection });
 		return items;
 	}
@@ -1573,7 +1584,7 @@
 	const onNodeContextMenu = ({ node, event }: { node: Node; event: MouseEvent }) => {
 		event.preventDefault();
 		if (isPseudo(node)) {
-			menu = { x: event.clientX, y: event.clientY, items: [{ label: 'Leave group', icon: 'log-out', hint: 'Esc', action: leaveGroup }] };
+			menu = { x: event.clientX, y: event.clientY, items: [{ label: 'Leave group', icon: 'undo-2', hint: 'Esc', action: leaveGroup }] };
 			return;
 		}
 		// right-clicking a node outside the selection makes it the selection (DCC rule)

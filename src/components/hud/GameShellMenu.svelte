@@ -265,10 +265,16 @@
 {/snippet}
 
 <style>
-	/* 36-community (C6): the heart sits at the end of the header row */
+	/* 36-community (C6): the heart sits at the right end of the header row, out of the flow so the
+	   centred title stays centred */
+	.gs-head {
+		position: relative;
+	}
 	.gs-heart {
-		margin-left: auto;
-		align-self: center;
+		position: absolute;
+		right: 0;
+		top: 50%;
+		transform: translateY(-50%);
 	}
 	.gs-corner {
 		position: fixed;

@@ -229,6 +229,34 @@ A provider swap while the tab is showing re-lists from the new source; anything 
 `list` function reads as `null`. While a provider is installed the tab's pull-request copy
 stands down (it would be a claim about a source core knows nothing about).
 
+#### 36-community additions (game identity, template opens, hearts, Mine) — additive, no bump
+
+Every member below is typeof-probed by the plugin; without a plugin nothing listens and the
+two stores stay `null`, so the OSS build is unchanged. Core keeps a scene's **permanent game
+id** (`gameId`, a UUID) in `session.json` — minted at the first deliberate save / export /
+publish, kept by every ordinary save, forked (new id, `parentGameId` = the old) by a copy
+(Explorer Duplicate, paste, Templates ▸ Save to Library) and by a REMIX at its first save.
+The "Made with ThePrototype" badge links `?ref=export&g=<gameId>&b=<build>&src=<play|itch|
+static|embed>`. Core never talks to a server about it.
+
+| member | contract |
+|---|---|
+| `game.current()` | `{gameId, parentGameId, template, pendingFork}` or `null`. `pendingFork`: a remote scene opened by a non-owner — `gameId` is still the original's until the first save |
+| `game.ensure()` | the open scene's game id, minted (or forked, for a pending remix) if needed |
+| `game.fork()` | a NEW id whose parent is the current one — the answer when the server says the id belongs to another account |
+| `loadRemoteScene({…, keepGameId?})` | `keepGameId: true` = the OWNER opening their own published scene (no fork); otherwise a community load is a remix |
+| `onExportBuilt(fn)` → off | after an export zip is built: `fn({gameId, buildId, preset, title, template, parentGameId, appVersion})` |
+| `onTemplateOpen(fn)` → off | a Games-tab template was started: `fn(slug)` (one "template open") |
+| `setSceneHeart(info \| null)` | the heart on the play-link start card (`#embed-heart`) and a game's pause menu (`#game-shell-heart`): `{count, liked, toggle() → Promise<{liked, count} \| null>}`; `null` from `toggle` rolls the optimistic flip back |
+
+The community provider gains three optional entry fields — `liked` (boolean, the viewer's own
+heart), `mine` (boolean, the viewer's own scene), `notice` (one line on the card, e.g.
+"Hidden by moderation: …") — and two optional provider members: `mine: true` shows the
+**Mine** chip (`#templates-chip-mine`, filters `entry.mine`), and `toggleLike(entry) →
+Promise<{liked, likeCount} | null>` puts a heart on every card (`[data-card-heart]`).
+A play link's frame may carry `&src=play|embed&b=v<n>` (read once with `embed=1`;
+`playMode.embedSource` / `embedBuild`) — the badge inside counts them.
+
 #### Deep links: `?s=<id>`
 
 Published scenes deep-link through the **query string** (`/?s=<id>[&play=1][&remix=1]`)

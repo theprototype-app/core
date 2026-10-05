@@ -163,12 +163,16 @@ function readmeText({ title, preset, id, cdn }) {
  * validating it with the same rules `scripts/check-export.cjs` applies.
  * @param {ExportOptions} opts
  * @param {(p: ExportProgress) => void} [onProgress]
- * @returns {Promise<{blob: Blob, fileName: string, id: string, report: import('./exportValidate.js').ExportReport,
+ * @returns {Promise<{blob: Blob, fileName: string, id: string, gameId: string, report: import('./exportValidate.js').ExportReport,
  *   breakdown: {runtime: number, scene: number, packs: number, modules: number}, warnings: string[], details: string[]}>}
  */
 export async function buildExport(opts, onProgress = () => {}) {
 	if (opts.preset === 'embed') throw new Error('The Embed preset makes a snippet, not a zip.');
+	// 36-community (C4): `id` is THIS build; `gameId` is the game's permanent id (minted on the
+	// first export/save, kept by every later one), so re-exports never split a game's visits
 	const id = newExportId();
+	const { ensureGameId, gameIdentity } = await import('../gameIdentity.js');
+	const gameId = ensureGameId();
 	const title = String(opts.title || '').trim() || 'Game';
 	/** @type {string[]} */
 	const warnings = [];
@@ -284,6 +288,7 @@ export async function buildExport(opts, onProgress = () => {}) {
 	const config = {
 		version: 1,
 		id,
+		gameId,
 		title,
 		scene: 'scene.tpscene',
 		packsBase,
@@ -325,7 +330,15 @@ export async function buildExport(opts, onProgress = () => {}) {
 	const zipped = await zipAsync(zipInput);
 	onProgress({ phase: 'Done', done: 1, total: 1 });
 	const blob = new Blob([/** @type {BlobPart} */ (zipped)], { type: 'application/zip' });
-	return { blob, fileName: `${slugify(title)}-${opts.preset === 'itch' ? 'itch' : 'web'}.zip`, id, report, breakdown, warnings, details };
+	// 36-community (C4): tell a cloud plugin (it registers signed-in builds); inert without one
+	try {
+		const { notifyExportBuilt } = await import('../cloudHooks.js');
+		const ident = get(gameIdentity);
+		notifyExportBuilt({ gameId, buildId: id, preset: opts.preset, title, template: ident?.template || '', parentGameId: ident?.parentGameId || '', appVersion: APP_VERSION });
+	} catch {
+		/* a listener's failure never fails an export */
+	}
+	return { blob, fileName: `${slugify(title)}-${opts.preset === 'itch' ? 'itch' : 'web'}.zip`, id, gameId, report, breakdown, warnings, details };
 }
 
 /**

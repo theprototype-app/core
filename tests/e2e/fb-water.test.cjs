@@ -569,6 +569,50 @@ h.run(async () => {
 		if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, 'diag-s9-failure.png') }).catch(() => {});
 	}
 
+	// ── S9 × F23 (36-int-125 union seam): the pill's Pause holds fb-fluid's emitters, Reset empties them ──
+	if (want('s9e')) try {
+		await load(A.page, 'water-works');
+		const emitter = await A.page.evaluate(() => {
+			let g;
+			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			let hit = null;
+			g.traverse((o) => {
+				if (!hit && o.userData?.fluidEmitter) hit = o.getWorldPosition(o.position.clone()).toArray();
+			});
+			return hit;
+		});
+		h.check(!!emitter, 'Water works has a Fluid emitter');
+		if (emitter) await look(A.page, [emitter[0] + 4, emitter[1] + 2, emitter[2] + 4], emitter);
+		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: true }));
+		await A.page.waitForSelector('#sim-controls', { timeout: 5000 });
+		if (!(await simulating(A.page))) await A.page.$eval('#sim-play', (el) => /** @type {any} */ (el).click());
+		const emDbg = () => A.page.evaluate(() => window.__stores.sim.fluidEmitterDebug().filter((e) => e.visible));
+		await h.eventually(emDbg, (d) => d.length > 0 && d.every((e) => e.steps > 20 && e.count > 0), 'emitters running', 20000);
+		const press = (/** @type {string} */ sel) => A.page.$eval(sel, (el) => /** @type {any} */ (el).click());
+		await press('#sim-pause');
+		await A.page.waitForTimeout(500);
+		const a = await emDbg();
+		await A.page.waitForTimeout(1500);
+		const b = await emDbg();
+		h.check(b.every((e) => e.steps - (a.find((x) => x.uuid === e.uuid)?.steps ?? 0) <= 1), `Pause holds the fluid emitters (steps ${a.map((e) => e.steps)} -> ${b.map((e) => e.steps)})`);
+		await press('#sim-pause'); // resume
+		await A.page.waitForTimeout(1500);
+		const c = await emDbg();
+		h.check(c.some((e) => e.steps > (b.find((x) => x.uuid === e.uuid)?.steps ?? 0) + 5), 'Resume carries the emitters on');
+		const before = c.reduce((s, e) => s + e.released, 0);
+		await press('#sim-reset');
+		await h.eventually(
+			() => A.page.evaluate(() => window.__stores.sim.fluidEmitterDebug().reduce((s, e) => s + e.released, 0)),
+			(n) => n < before,
+			`Reset empties the emitters and pours again (released ${before} -> fewer)`,
+			8000
+		);
+		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: false }));
+	} catch (error) {
+		h.check(false, 'S9e section stopped: ' + (error?.message ?? error));
+	}
+
 	// ── F18: "Add bubble emitter" makes bubbles you can SEE (under water and in the air) ────
 	if (want('f18')) {
 		await load(A.page, 'pool-party');

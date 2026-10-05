@@ -32,7 +32,7 @@ const state = (page) =>
 		let q;
 		S.qualityGovernor.qualityState.subscribe((v) => (q = v))();
 		const w = S.waterRuntime.waterDebug?.();
-		return { level: q?.level, reason: q?.reason, phone: S.qualityGovernor.phoneQuality(), water: w?.tier ?? null, prepass: w?.prepass?.frame ?? null, tanks: S.sim.fluidDebug().map((t) => ({ mode: t.mode, ssfRuns: t.ssfRuns })) };
+		return { level: q?.level, reason: q?.reason, phone: S.qualityGovernor.phoneQuality(), hz: S.qualityGovernor.phoneRefreshHz?.() ?? null, water: w?.tier ?? null, prepass: w?.prepass?.frame ?? null, tanks: S.sim.fluidDebug().map((t) => ({ mode: t.mode, ssfRuns: t.ssfRuns })) };
 	});
 
 h.run(async () => {
@@ -53,7 +53,20 @@ h.run(async () => {
 	if (OUT) await A.page.screenshot({ path: path.join(OUT, '70-phone-fluid-tank-toy-auto.png') });
 	await load(A.page, 'aquarium');
 	await h.eventually(() => state(A.page), (s) => s.water && s.water !== 'quest' && s.level <= 4, 'Aquarium on a phone: the water refracts (screen-space tier) at the phone level', 60000);
-	console.log('aquarium', JSON.stringify(await state(A.page)));
+	// THE REGRESSION (36-int-124's probe): on steady frames the level must STAY there — batch 6
+	// read 4 at load and 9 thirty seconds later (frames timed off the callback clock read a 60 fps
+	// panel as 72 Hz with a late p95), so a check at one instant cannot see it
+	/** @type {number[]} */
+	const held = [];
+	for (let i = 0; i < 12; i++) {
+		await A.page.waitForTimeout(3000);
+		const s = await state(A.page);
+		held.push(s.level);
+		if (i % 4 === 3) console.log('aquarium hold', JSON.stringify(s));
+	}
+	const after = await state(A.page);
+	h.check(after.hz === 60, `the phone is judged against the 60 Hz the page really presents at (${after.hz})`);
+	h.check(Math.max(...held) <= 4 && after.water !== 'quest', `Aquarium holds the phone level for 36 s on steady frames (levels ${held.join(',')}, water ${after.water})`);
 	if (OUT) await A.page.screenshot({ path: path.join(OUT, '71-phone-aquarium-auto.png') });
 	void fluidUp;
 

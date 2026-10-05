@@ -370,7 +370,14 @@ void main() {
 	if (front && uBody < 0.5 && camInside < 0.5) {
 		float see = 1.0 - clamp(absorbO * uOpacity, 0.0, 1.0);
 		float lens = dot(N.xz, vec2(0.7071)) * 2.0 * min(uRefraction, 1.0);
-		alpha = clamp(alpha + lens * 0.9 * see, 0.0, 1.0);
+		// both halves of a band show: one side of a ripple gathers the water's tint, the other
+		// FOCUSES light onto the floor. Adding the signed band to alpha clipped the second half
+		// away wherever the water is clear (a clear tank seen from above: the audit measured
+		// Ripples / Ripple size / Ripple speed at the edge of dead on this tier).
+		float na = clamp(alpha + abs(lens) * 0.9 * see, 0.0, 1.0);
+		vec3 bandCol = lens > 0.0 ? col : min(col + uSunColor * 0.45, vec3(1.0));
+		col = (col * alpha + bandCol * (na - alpha)) / max(na, 1e-3);
+		alpha = na;
 		float glint = caustic(vWorld.xz / uCausticScale + uFlow * t * 0.1, t * uCausticSpeed);
 		col += uShallow * glint * uCaustics * 0.3 * see * max(L.y, 0.2);
 	}

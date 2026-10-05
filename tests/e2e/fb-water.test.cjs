@@ -110,7 +110,7 @@ async function outlineVsObject(peer, clip) {
 				if (gg - Math.max(r, b) > 50) { acc.gx += x; acc.gy += y; acc.gn++; }
 				else if ((r + b) / 2 - gg > 30 && r > gg + 15 && b > gg + 15) { acc.mx += x; acc.my += y; acc.mn++; }
 			}
-		const out = { outline: acc.gn, object: acc.mn, offset: null };
+		const out = { outline: acc.gn, object: acc.mn, offset: null, ox: acc.gn ? acc.gx / acc.gn : null, oy: acc.gn ? acc.gy / acc.gn : null };
 		if (acc.gn && acc.mn) out.offset = Math.hypot(acc.gx / acc.gn - acc.mx / acc.mn, acc.gy / acc.gn - acc.my / acc.mn);
 		return out;
 	}, png.toString('base64'));
@@ -196,6 +196,11 @@ h.run(async () => {
 			const f = g.getObjectByName('Rock small');
 			const b = new T.Box3().setFromObject(g.getObjectByName('Aquarium water'));
 			window.__f13bMat = f.material;
+			// a still picture: the fish swim across the rock and the bubbles rise over it, and either
+			// moves the VISIBLE blob's centroid between two reads (5.8 .. 8.5 px for one view)
+			window.__f13bHidden = g.children.filter((o) => /^Fish /.test(o.name) && o.visible);
+			for (const o of window.__f13bHidden) o.visible = false;
+			window.__stores.waterRuntime.freezeWaterClock(100.25);
 			return { uuid: f.uuid, pos: f.position.toArray(), front: b.max.z };
 		});
 		const frontView = [fish.pos[0] + 0.3, fish.pos[1] + 0.2, fish.front + 1.4];
@@ -235,6 +240,8 @@ h.run(async () => {
 		h.check(off.offset !== null && off.offset > quest.offset + 3, `COUNTERFACTUAL: without the mask the refracted object drifts off its outline (${off.offset?.toFixed(1)} px)`);
 		// underwater: the camera inside the tank, above the rock
 		await look(A.page, [fish.pos[0] + 0.3, fish.pos[1] + 0.45, fish.pos[2] + 0.55], fish.pos);
+		// look() deselects (it parks the camera as a fresh view) — select again AFTER aiming
+		await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), fish.uuid);
 		await A.page.waitForTimeout(1200);
 		const underClip = await h.centeredClip(A, fish.pos, 360);
 		const under = await outlineVsObject(A, underClip);
@@ -250,6 +257,8 @@ h.run(async () => {
 			let g;
 			s.objectsGroup.subscribe((v) => (g = v))();
 			g.getObjectByProperty('uuid', u).material = window.__f13bMat;
+			for (const o of window.__f13bHidden ?? []) o.visible = true;
+			s.waterRuntime.freezeWaterClock(null);
 			s.objectActions.deselectObject?.();
 		}, fish.uuid);
 		// the fluid tank toy: a duck in the particle fluid (no refraction there — measured aligned)
@@ -269,10 +278,23 @@ h.run(async () => {
 			return d.position.toArray();
 		});
 		await look(A.page, [duck[0] + 0.2, duck[1] + 1.1, duck[2] + 0.7], duck); // from above: the duck's top is out of the fluid
+		await A.page.evaluate(() => {
+			let g;
+			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			window.__stores.objectActions.selectObject(g.getObjectByName('Duck 1').uuid);
+		});
 		await A.page.waitForTimeout(1000);
-		const dk = await outlineVsObject(A, await h.centeredClip(A, duck, 320));
+		// the gizmo's green arrow would count as outline pixels; the fluid's particles cover part of
+		// the duck, which drags the VISIBLE blob's centroid away from the duck — so the outline ring
+		// (a circle round a sphere) is measured against where the duck really projects
+		await A.page.evaluate(() => window.__stores.TControls.subscribe((tc) => tc?.detach?.())());
+		await A.page.waitForTimeout(400);
+		const dclip = await h.centeredClip(A, duck, 320);
+		const dk = await outlineVsObject(A, dclip);
+		const dp = await h.projectPoint(A.page, duck);
+		const ring = dk.ox === null ? null : Math.hypot(dk.ox - (dp.x - dclip.x), dk.oy - (dp.y - dclip.y));
 		if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, 'diag-f13b-duck.png') });
-		h.check(dk.offset !== null && dk.offset < 4, `Fluid tank toy: a duck in the fluid sits under its outline (${dk.offset?.toFixed(1)} px; the fluid does not refract)`);
+		h.check(dk.outline > 50 && ring !== null && ring < 4, `Fluid tank toy: a duck in the fluid sits under its outline (ring centre ${ring?.toFixed(1)} px from the duck; ${dk.outline} outline px; the fluid does not refract)`);
 		await A.page.evaluate(() => {
 			const s = window.__stores;
 			s.viewPrefs.setViewPrefs({ outlineColor: '#353535' });

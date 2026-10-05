@@ -28,7 +28,7 @@
 			/>
 		</svelte:fragment>
 		High draws refraction, caustics, shoreline foam and planar mirrors at full resolution; Medium at half; Low is the
-		headset look (waves and ripples, no screen-space passes). Auto picks Low in a headset, on a phone or when the
-		scene is heavy. Only on THIS machine
+		headset look (waves, ripples and a light-bending shimmer, no screen-space passes). Auto follows this device's
+		quality level (a phone included): Low in a headset or once the scene is too heavy for refraction. Only on THIS machine
 	</SettingRow>
 </div>

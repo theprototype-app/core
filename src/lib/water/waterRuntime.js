@@ -4,7 +4,8 @@ import { get } from 'svelte/store';
 import { objectsGroup, TControls, selectedObjects, lockedObjects } from '../../stores/sceneStore';
 import { HELPER_LAYER } from '../helperLayer';
 import { isEditOverlay } from '../editOverlays';
-import { qualityOverrides, phoneQuality } from '../qualityGovernor';
+import { qualityOverrides } from '../qualityGovernor';
+import { noteSimplified } from './simplifiedNotice.js';
 import { sessionNow } from '../sessionClock';
 import { waterVolumes, invertAffine, localBounds } from './volumes.js';
 import { waveComponents } from './waves.js';
@@ -121,7 +122,10 @@ function resolveTier(renderer) {
 	if (qualityPref === 'low') return 'quest';
 	if (qualityPref === 'high') return 'high';
 	if (qualityPref === 'medium') return 'medium';
-	if (phoneQuality()) return 'quest';
+	// 36-fb-water F27: a PHONE follows the current quality level like any device (it used to be
+	// pinned to the Quest tier, so Aquarium never refracted on a phone even at Full quality): the
+	// governor's phone start (AO off, 72 %) is the half-res screen-space tier, a phone that steps
+	// up gets full refraction, one that steps down past "post off" gets the Quest tier
 	if (overrides.postOff) return 'quest';
 	if (overrides.aoOff || overrides.dprScale < 0.8) return 'medium';
 	return 'high';
@@ -1347,8 +1351,15 @@ export function tickWater(_delta) {
 	if (dirty || now - lastScan > 1000) scan();
 	if (!entries.size && !emitters.size) {
 		if (trigger) trigger.visible = false;
+		noteSimplified('water', false);
 		return;
 	}
+	// 36-fb-water F27: the QUALITY LEVEL (not a headset, not the user's own Low) took the
+	// refraction away from water on screen — SimplifiedWaterNotice says so, once a session
+	noteSimplified(
+		'water',
+		tier === 'quest' && qualityPref === 'auto' && !rendererRef?.xr?.isPresenting && [...entries.values()].some((e) => shown(e.object))
+	);
 	if (!shared.uNormalMap.value) shared.uNormalMap.value = waterDetailTexture();
 	updateSky();
 	for (const e of entries.values()) {

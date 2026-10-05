@@ -15,6 +15,9 @@ export function simHeld() {
 import { inferredColliderKind } from '../colliderSpec';
 import { normalizeFloats } from './buoyancy.js';
 import { setTankVolumes } from './waterQuery.js';
+import { noteSimplified } from '../water/simplifiedNotice.js';
+/** 36-fb-water F27: a tank this frame draws drops instead of its smooth surface BECAUSE OF QUALITY */
+let qualityLowered = false;
 import { spillDrops } from '../water/pourDrops.js';
 
 // 36-fb-water F16: a tank's walls with the TOP open (fluidCore wall mask [xlo,xhi,ylo,yhi,zlo,zhi])
@@ -277,6 +280,7 @@ export function tickFluid(root, camera, renderer, now) {
 	/** @type {Set<string>} */
 	const alive = new Set();
 	visualParent = root?.parent ?? null;
+	qualityLowered = false;
 	if (root && visualParent)
 		for (const o of root.children) {
 			if (!o.userData?.fluid) continue;
@@ -289,6 +293,7 @@ export function tickFluid(root, camera, renderer, now) {
 			tanks.delete(uuid);
 		}
 	publishTankVolumes();
+	noteSimplified('fluid', qualityLowered);
 }
 
 /** @param {any} root @param {any} object @param {any} camera @param {any} renderer @param {number} now */
@@ -297,6 +302,7 @@ function tickTank(root, object, camera, renderer, now) {
 	const xr = !!renderer?.xr?.isPresenting;
 	const q = get(qualityOverrides);
 	const low = xr || q.postOff || q.particlesCapped || spec.quality === 'points';
+	if (!xr && spec.quality === 'auto' && (q.postOff || q.particlesCapped)) qualityLowered = true;
 	const count = Math.min(spec.count, low ? QUEST_CAP : FLUID_MAX_PARTICLES);
 	object.updateWorldMatrix(true, false);
 	const inside = interiorOf(object);

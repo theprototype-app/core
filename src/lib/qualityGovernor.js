@@ -90,6 +90,8 @@ let snoozedUntil = 0;
 let drawGapEngaged = false;
 /** @type {string} */
 let lastReason = '';
+/** 36-fb-water F27: a scene load was running at the last frame (its end starts a settle) */
+let wasLoading = false;
 /** 33 G1: this device is a phone (decided once at load, see the bottom of the file) */
 let phone = false;
 /** 36 G1: the phone's measured refresh rate (null until enough frames) and the recent frame
@@ -178,7 +180,13 @@ export function noteFrameForQuality(ms) {
 	// of a phone Restore (432 ms of setSize at CPU x6). It judges the scene once it is loaded.
 	if (sceneLoading()) {
 		governor.forget();
+		wasLoading = true;
 		return;
+	}
+	// 36-fb-water F27: …and the first seconds AFTER it, while the arrived scene warms up
+	if (wasLoading) {
+		wasLoading = false;
+		governor.settleFor(t);
 	}
 	governor.noteFrame(ms, t);
 	if (phone) notePhoneFrame(ms);

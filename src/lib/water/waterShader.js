@@ -361,6 +361,20 @@ void main() {
 #endif
 
 	vec3 col = mix(trans, refl, F) + sunSpec;
+#ifndef WATER_SS
+	// 36-fb-water F27: the Quest / low tier's FAKE REFRACTION. With no screen pass it cannot bend
+	// the floor seen through the surface, so it bends the LIGHT on it: lensing bands that follow
+	// the waves and ripples change how much of the floor shows through, and caustic glints play
+	// on it — a tank reads as water, not tinted glass. Refraction and Caustics drive it (they did
+	// nothing on this tier); costs a few ALU, no pass, no texture.
+	if (front && uBody < 0.5 && camInside < 0.5) {
+		float see = 1.0 - clamp(absorbO * uOpacity, 0.0, 1.0);
+		float lens = dot(N.xz, vec2(0.7071)) * min(uRefraction * 1.5, 1.5);
+		alpha = clamp(alpha + lens * 0.4 * see, 0.0, 1.0);
+		float glint = caustic(vWorld.xz / uCausticScale + uFlow * t * 0.1, t * uCausticSpeed);
+		col += uShallow * glint * uCaustics * 0.3 * see * max(L.y, 0.2);
+	}
+#endif
 
 	// glow (lava, toxic): bright veins where the noise is high, a dark cooled crust where it is low
 	float emit = max(max(uEmissive.r, uEmissive.g), uEmissive.b);

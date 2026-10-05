@@ -35,7 +35,7 @@ const CONTROLS = [
 	['deepColor', 'Deep colour', '#ff2020', '#2040ff', { look: { opacity: 0.95 } }, 'look', D],
 	['clarity', 'Clarity (m)', 0.3, 15, {}, 'look', D],
 	['opacity', 'Opacity', 0.2, 1, {}, 'look', D],
-	['refraction', 'Refraction', 0, 1.5, { look: { opacity: 0.6 } }, 'look', DESK],
+	['refraction', 'Refraction', 0, 1.5, { look: { opacity: 0.6 } }, 'look', D], // F27: the Quest tier's fake refraction
 	['chromatic', 'Chromatic', 0, 1, { look: { refraction: 1.2, opacity: 0.6 } }, 'look', DESK],
 	['reflection', 'Reflection', 'none', 'env', { look: { reflectivity: 1, fresnel: 1 } }, 'look', D],
 	['reflectivity', 'Reflectivity', 0, 1, {}, 'look', D],
@@ -44,7 +44,7 @@ const CONTROLS = [
 	['foam', 'Foam', 0, 1, { look: { foamWidth: 0.4 } }, 'look', D],
 	['foamColor', 'Foam colour', '#ffffff', '#ff00ff', { look: { foam: 1, foamWidth: 0.4 } }, 'look', D],
 	['foamWidth', 'Shore foam (m)', 0.05, 1.5, { look: { foam: 1 } }, 'look', D],
-	['caustics', 'Caustics', 0, 2, { look: { opacity: 0.5 } }, 'look', DESK],
+	['caustics', 'Caustics', 0, 2, { look: { opacity: 0.5 } }, 'look', D], // F27: glints on the Quest tier
 	['causticScale', 'Caustic size', 0.3, 6, { look: { caustics: 2, opacity: 0.5 } }, 'look', DESK],
 	['causticSpeed', 'Caustic speed', 0.1, 3, { look: { caustics: 2, opacity: 0.5 } }, 'look', DESK],
 	['detail', 'Ripples', 0, 1.5, {}, 'look', D],

@@ -5,6 +5,68 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.24.0 — Characters that walk, a race, and your games' stats 🏁
+
+### 🧍 Characters
+
+- 🧍 **Everyone is a rigged character now** — nine CC0 KayKit adventurers and skeletons that walk, run, strafe and jump
+  with their camera, and reach for their VR controllers with their arms. Without a pick you get one chosen from your id;
+  the classic floating head is one click away.
+- 🎨 **Customize Character is a side panel** (profile menu) with a live preview on your own character: body, the
+  character's own head or a stylised one (or your photo card), hats, outfit colour, and your ping colour and sound.
+  **Settings ▸ Interface ▸ Avatars** can show everyone else as classic heads.
+
+### 🏎️ Race
+
+- 🏎️ **New game: Race** — up to four players: click a car, press Start, three laps round a valley. A lap counts only
+  when you have driven all of it. Laps, speed and grip live on the **Race rules** node in the Main graph; move the
+  road's points and the race follows.
+
+### 🔷 Edit Mesh
+
+- ✂️ **Slide edges, fill holes (F), connect (J) and dissolve vertices, solidify, and separate faces into a new
+  object.** Edge bevels miter their corners where four or more faces meet; vertex bevels get segments (rounded corners).
+- ➕ **Boolean union / subtract / intersect** for two meshes, from the object menu (also "Subtract, keep the cutter").
+
+### 🕰️ Checkpoints and Settings
+
+- 🕰️ **Checkpoints** — save a named version of your scene (**Ctrl+Shift+S**) and let autosave add automatic ones; a
+  timeline restores, compares, renames, notes and pins them. They stay on this device.
+- ⚙️ **Settings is a window** with a section sidebar (chips on phones); search still spans every section.
+
+### 🎬 Share
+
+- 🎬 **Tools ▸ Recording…** — record a turntable or a flythrough of the viewport as a webm; it lands in the Explorer's
+  Recordings folder.
+- 🖼️ **Publish / Export ▸ Community gallery** — build a submission for the community gallery and send it to GitHub in
+  two clicks.
+
+### ❤️ Community
+
+- 🆔 **Every game keeps one permanent id**: re-exports and the play link count as the same game, by build and by
+  source. A copy or a remix becomes a new game.
+- 📊 **Your games & stats** in the profile menu and the Publish dialog; a **Mine** filter in the community browser
+  (in the app and on /community).
+- ❤️ **Hearts in the app** — on community cards, a play link's start card and the pause menu.
+- 🛡️ Staff Insights and moderation (report queue, hide / feature / remove / suspend, an audit log, review requests);
+  auto-hide now counts only reports from accounts older than three days.
+
+### 🥽 VR
+
+- 🥽 **A game's HUD floats in front of you in the headset**, laid out as on the desktop: it follows your head with a
+  little lag, stays fixed in the world, or lives on your wrist (**Settings ▸ VR ▸ Display ▸ Game HUD**). Button hints
+  say what to press. Replaces the old top strip.
+- 🤖 **Tools ▸ AI in VR** opens an AI chat panel that shares the desktop assistant's conversation; hold the mic or the
+  talk button to speak to it.
+- 🎙️ **Voice typing for the AI assistant** (Settings ▸ AI): OpenAI, Groq or a self-hosted Whisper server; a mic in the
+  AI window.
+- ⌨️ The VR keyboard gains punctuation and Clear; the VR Settings panel has a **Search** tab.
+
+### 🧑‍💻 For module authors
+
+- `api.hud.vrHud()`; HUD element kinds may give `vrText(element, runtime)`. VR game cards draw in one pass (was two).
+- Untangle 2.4.1 takes its VR readout from core's HUD on 1.24.
+
 ## 1.23.0 — Game rules you can read and change 🧩
 
 ### 🧩 Every game's rules on its Main graph

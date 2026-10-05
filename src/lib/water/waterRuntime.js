@@ -1,12 +1,12 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { objectsGroup, TControls } from '../../stores/sceneStore';
+import { objectsGroup, TControls, selectedObjects, lockedObjects } from '../../stores/sceneStore';
 import { HELPER_LAYER } from '../helperLayer';
 import { isEditOverlay } from '../editOverlays';
 import { qualityOverrides, phoneQuality } from '../qualityGovernor';
 import { sessionNow } from '../sessionClock';
-import { waterVolumes, invertAffine } from './volumes.js';
+import { waterVolumes, invertAffine, localBounds } from './volumes.js';
 import { waveComponents } from './waves.js';
 import { resolveLook, resolveBubbles, MAX_BUBBLES } from './presets.js';
 import { waterDetailTexture } from './waterTextures.js';
@@ -48,7 +48,17 @@ import {
 const DAY_MS = 86400000;
 /** seconds of the shared day (double precision — never hand this to a shader raw) */
 export function waterClock() {
+	if (frozenClock !== null) return frozenClock;
 	return (sessionNow() % DAY_MS) / 1000;
+}
+/** @type {number | null} */ let frozenClock = null;
+/**
+ * TEST/EVIDENCE (36-fb-water F13/S2): hold the water clock at `t` seconds (null = live) so two
+ * frames differ ONLY by the parameter under test — waves, detail ripples and bubbles all read it.
+ * Local to this page; nothing replicates. @param {number | null} t
+ */
+export function freezeWaterClock(t) {
+	frozenClock = typeof t === 'number' && Number.isFinite(t) ? t : null;
 }
 waterVolumes.setClock(waterClock);
 
@@ -95,6 +105,9 @@ const shared = {
 	uSceneDepth: { value: /** @type {any} */ (null) },
 	uViewport: { value: new THREE.Vector2(1, 1) },
 	uSSActive: { value: 0 },
+	// 36-fb-water F13b: where the selection is (soft mask, pre-pass size / 2); 0 = nothing selected
+	uSelMask: { value: /** @type {any} */ (null) },
+	uSelActive: { value: 0 },
 	uCamNear: { value: 0.1 },
 	uCamFar: { value: 1000 },
 	uProjInv: { value: new THREE.Matrix4() },
@@ -347,6 +360,7 @@ function entryUniforms() {
 		uBoxMin: { value: new THREE.Vector3() },
 		uBoxMax: { value: new THREE.Vector3() },
 		uOpen: { value: 0 },
+		uRound: { value: 0 }, // 36-fb-water F13: cylinder footprint (rim foam measures to the ellipse)
 		uReflTex: { value: /** @type {any} */ (null) },
 		uReflMatrix: { value: new THREE.Matrix4() }
 	};
@@ -524,7 +538,9 @@ function applyLook(entry) {
 	setColor(u.uShallow.value, L.shallowColor);
 	setColor(u.uDeep.value, L.deepColor);
 	setColor(u.uFoamColor.value, L.foamColor);
-	setColor(u.uFogColor.value, L.fogColor);
+	// 36-fb-water F13: an empty fog colour means "the deep colour" (as underwater already did);
+	// it was read as BLACK here, so Visibility from outside would have fogged to black
+	setColor(u.uFogColor.value, L.fogColor || L.deepColor);
 	setColor(u.uEmissive.value, L.emissive);
 	u.uEmissive.value.multiplyScalar(Math.max(0, Number(L.emissiveStrength) || 0));
 	u.uClarity.value = Math.max(0.01, Number(L.clarity) || 1);
@@ -714,20 +730,33 @@ function volumeBubbles(entry, t) {
 	updateBubbles(entry.bubbles, B, t, { origin, axisX, axisZ, riseH: surface.y - origin.y });
 }
 
-/** a standalone emitter (userData.bubbles on any object) @param {any} em @param {number} t */
+/**
+ * a standalone emitter (userData.bubbles on any object) @param {any} em @param {number} t
+ * 36-fb-water F18: the bubbles leave from the object's TOP (they used to start at its centre,
+ * inside the object, and the first half of every rise was hidden), and the spread covers at
+ * least its footprint — an emitter on a 1 m crate rises off the whole lid, not a 30 cm dot.
+ */
 function emitterBubbles(em, t) {
 	const B = resolveBubbles({ enabled: true, ...em.object.userData.bubbles });
 	const on = B.enabled && shown(em.object);
 	em.mesh.visible = on;
 	if (!on) return;
-	const p = new THREE.Vector3().setFromMatrixPosition(em.object.matrixWorld);
+	const o = em.object;
+	const m = o.matrixWorld;
+	const b = localBounds(o);
+	const cx = (b[0] + b[3]) / 2;
+	const cz = (b[2] + b[5]) / 2;
+	const p = new THREE.Vector3(cx, b[4], cz).applyMatrix4(m);
 	const q = volumeList.length ? waterVolumes.query(p, { volumes: volumeList, time: t }) : null;
 	const riseH = q ? q.depth : B.height;
-	const r = B.spread * 0.5;
+	const sx = new THREE.Vector3().setFromMatrixColumn(m, 0).length();
+	const sz = new THREE.Vector3().setFromMatrixColumn(m, 2).length();
+	const hx = Math.max(B.spread * 0.5, ((b[3] - b[0]) / 2) * sx * 0.8);
+	const hz = Math.max(B.spread * 0.5, ((b[5] - b[2]) / 2) * sz * 0.8);
 	updateBubbles(em.mesh, B, t, {
 		origin: p,
-		axisX: new THREE.Vector3(r, 0, 0),
-		axisZ: new THREE.Vector3(0, 0, r),
+		axisX: new THREE.Vector3(hx, 0, 0),
+		axisZ: new THREE.Vector3(0, 0, hz),
 		riseH
 	});
 }
@@ -805,6 +834,68 @@ function hideEditorHelpers(camera) {
 }
 let lastHiddenHelpers = 0;
 
+// ── 36-fb-water F13b: the selection stays under its OUTLINE ──────────────────────────
+// The outline (a postprocessing pass) traces an object's TRUE silhouette, while the water
+// shows it through screen-space refraction — shifted by the ripples, so a selected fish or a
+// toy in a pool sat beside its own outline (reported in Aquarium). Engines handle a selected
+// object behind a refractive surface by drawing it un-refracted: here the selected (and
+// peer-locked) meshes are rendered into a small SOFT mask during the pre-pass, and the water
+// shader fades its refraction offset to zero inside it. The selection then reads exactly where
+// the outline is; everything else still refracts. Quest tier (no screen-space refraction)
+// and the underwater view (no surface in between) were never offset.
+const SEL_LAYER = 29;
+const selMaskMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, depthWrite: false });
+/** @type {any} */ let selMaskTarget = null;
+/** @type {string[]} */ let selectionUuids = [];
+/** @type {string[]} */ let lockedUuids = [];
+selectedObjects.subscribe((v) => (selectionUuids = [...(/** @type {any} */ (v) ?? [])].filter((u) => typeof u === 'string')));
+lockedObjects.subscribe((v) => (lockedUuids = (/** @type {any[]} */ (v) ?? []).map((r) => r?.[1]).filter((u) => typeof u === 'string')));
+const _clearColor = new THREE.Color();
+
+/** @param {any} renderer @param {any} scene @param {any} camera @param {number} w @param {number} h */
+function renderSelectionMask(renderer, scene, camera, w, h) {
+	/** @type {any[]} */
+	const meshes = [];
+	if (objectsRoot && (selectionUuids.length || lockedUuids.length))
+		for (const uuid of [...selectionUuids, ...lockedUuids])
+			objectsRoot.getObjectByProperty('uuid', uuid)?.traverse((/** @type {any} */ n) => {
+				if (n.isMesh && n.visible && !n.userData?.__waterVisual && !n.userData?.__fluidVisual) meshes.push(n);
+			});
+	shared.uSelActive.value = meshes.length ? 1 : 0;
+	if (!meshes.length) return;
+	const mw = Math.max(1, w >> 1);
+	const mh = Math.max(1, h >> 1);
+	if (!selMaskTarget || selMaskTarget.width !== mw || selMaskTarget.height !== mh) {
+		selMaskTarget?.dispose();
+		// half size + linear filtering = a soft edge, so the un-refracted object blends into the
+		// refracted water around it instead of being cut out with a hard line
+		selMaskTarget = new THREE.WebGLRenderTarget(mw, mh, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+	}
+	const masks = meshes.map((m) => m.layers.mask);
+	for (const m of meshes) m.layers.enable(SEL_LAYER);
+	const camMask = camera.layers.mask;
+	camera.layers.set(SEL_LAYER);
+	const bg = scene.background;
+	const fog = scene.fog;
+	const override = scene.overrideMaterial;
+	renderer.getClearColor(_clearColor);
+	const clearAlpha = renderer.getClearAlpha();
+	scene.background = null;
+	scene.fog = null;
+	scene.overrideMaterial = selMaskMaterial;
+	renderer.setRenderTarget(selMaskTarget);
+	renderer.setClearColor(0x000000, 1);
+	renderer.clear();
+	renderer.render(scene, camera);
+	scene.background = bg;
+	scene.fog = fog;
+	scene.overrideMaterial = override;
+	renderer.setClearColor(_clearColor, clearAlpha);
+	camera.layers.mask = camMask;
+	meshes.forEach((m, i) => (m.layers.mask = masks[i]));
+	shared.uSelMask.value = selMaskTarget.texture;
+}
+
 // ── the pre-pass (desktop tiers) ──────────────────────────────────────────────────────
 const prepass = {
 	/** @type {any} */ target: null,
@@ -881,6 +972,7 @@ function runPrepass(renderer, scene, camera) {
 	renderer.state.buffers.depth.setMask(true);
 	renderer.clear();
 	renderer.render(scene, camera);
+	renderSelectionMask(renderer, scene, camera, target.width, target.height);
 	// planar reflection for the nearest volume that asks for it
 	const planar = planarCandidate(camera);
 	if (planar) renderReflection(renderer, scene, camera, planar);
@@ -1280,6 +1372,7 @@ export function tickWater(_delta) {
 		e.uniforms.uBoxMin.value.set(b.minX, b.minY, b.minZ);
 		e.uniforms.uBoxMax.value.set(b.maxX, e.volume.level, b.maxZ);
 		e.uniforms.uOpen.value = e.volume.shape === 'plane' ? 1 : 0;
+		e.uniforms.uRound.value = e.volume.shape === 'cylinder' ? 1 : 0;
 		applyLook(e);
 		applyWaves(e, t);
 		volumeBubbles(e, t);

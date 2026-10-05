@@ -93,6 +93,9 @@
 //   camera           lookAt, fov, aspect — the app's own /create Camera marker
 //   spline           points [{pos, radius}], closed, color
 //   group / empty    children [objects] (names resolve inside groups too)
+//   (any primitive)  children [objects] too (36-fb-water) — built in the parent's LOCAL frame, so
+//                    they ride its body: a floating boat = a dynamic hull (collider 'hull' = the
+//                    hull mesh alone) carrying its stripe and mast
 //   mirror           of (a named object/group), opacity (0.15), prefix — reflected across x = 0
 //   kit              pack*, item* (a pack item NAME, e.g. 'architecture-kit' / 'WallStone'), scale?
 //                    ([x,y,z] or a number) — a PACK PIECE as a reference (30c packRefs.js): written
@@ -663,6 +666,11 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 				if (pos && o.type !== 'spline') object.position.set(pos[0], pos[1], pos[2]);
 				if (rot) object.rotation.set(rot[0], rot[1], rot[2]);
 				if (o.physics && !mirror) object.userData.physics = o.physics;
+				// 36-fb-water F15: `children` on ANY primitive, built in its LOCAL frame — they ride
+				// its body (a boat's stripe and mast on a floating hull) while the parent's own
+				// collider stays its own shape (collider: 'hull' reads the parent mesh only)
+				if (o.type !== 'group' && o.type !== 'empty' && Array.isArray(o.children))
+					for (const child of o.children) object.add(build(child, opts));
 				// 30 author-kit: object FLAGS. Each lands where the app itself keeps it, so the
 				// .tpscene carries it the ordinary way (userData rides toJSON; a clip rides the
 				// animations block). A mirror ghost takes none of them (it is decoration).

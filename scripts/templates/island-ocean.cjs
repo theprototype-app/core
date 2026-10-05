@@ -104,6 +104,8 @@ module.exports = {
 			h: 3,
 			pos: [8.6, -0.8, 8.3]
 		},
+		// 36-fb-water F15: the boat FLOATS — one dynamic body (the hull, a 'hull' collider of its own
+		// mesh, a boat's density) carrying the stripe and the mast, so they ride its bobbing
 		{
 			type: 'box',
 			name: 'Boat hull',
@@ -112,19 +114,17 @@ module.exports = {
 			bevel: 0.2,
 			pos: [10.5, 0.1, 9.5],
 			rot: [0, 0.4, 0],
-			roughness: 0.5
+			roughness: 0.5,
+			physics: { mode: 'dynamic', mass: 120, collider: 'hull', friction: 0.6, floats: { density: 320 } },
+			children: [
+				{ type: 'box', name: 'Boat stripe', color: 0x2f6fb0, size: [1.32, 0.12, 3.42], pos: [0, 0.1, 0] },
+				{ type: 'cylinder', name: 'Boat mast', color: 0xd8d2c4, r: 0.05, h: 3, pos: [0, 1.7, 0] }
+			]
 		},
-		{
-			type: 'box',
-			name: 'Boat stripe',
-			color: 0x2f6fb0,
-			size: [1.32, 0.12, 3.42],
-			pos: [10.5, 0.2, 9.5],
-			rot: [0, 0.4, 0]
-		},
-		{ type: 'cylinder', name: 'Boat mast', color: 0xd8d2c4, r: 0.05, h: 3, pos: [10.5, 1.8, 9.5] },
 		{ type: 'box', name: 'Hut', color: 0xc99a62, size: [2.2, 1.6, 2], pos: [-2.6, 1.85, 1.6] },
 		{ type: 'cone', name: 'Hut roof', color: 0xa77d44, r: 1.9, h: 1.2, pos: [-2.6, 3.25, 1.6] }
 	],
-	view: { pos: [22, 7, 24], target: [0, 1, 0] }
+	view: { pos: [22, 7, 24], target: [0, 1, 0] },
+	// 36-fb-water F15: the boat rides the swell as soon as the island opens
+	physics: { simOnLoad: true }
 };

@@ -3,7 +3,8 @@
 	// SCENE data like "Hold camera until loaded" beside it: saved in the file and replicated
 	// with the scenePhysics singleton. Its own file so the Inspector edit is one line.
 	import { Checkbox } from 'flowbite-svelte';
-	import { scenePhysicsState_, setScenePhysics } from '$lib/scenePhysics';
+	import { scenePhysicsState_ } from '$lib/scenePhysics';
+	import { setSimOnLoad } from '$lib/sim/simOnLoadHistory.js'; // S8: one undo entry per change
 </script>
 
 <div data-keywords="simulation physics start load open play run automatic jelly fluid water">
@@ -11,7 +12,7 @@
 		id="sim-on-load"
 		data-tour="sim-on-load"
 		checked={$scenePhysicsState_.simOnLoad === true}
-		onchange={(/** @type {any} */ e) => setScenePhysics({ simOnLoad: e.currentTarget.checked })}
+		onchange={(/** @type {any} */ e) => setSimOnLoad(e.currentTarget.checked)}
 		>Start simulation on load</Checkbox
 	>
 	<p class="text-[10px] italic text-gray-400">

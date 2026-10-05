@@ -750,6 +750,12 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.bubbles;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'bubbles', uuid: entry.uuid, bubbles: state.bubbles ?? null });
 	}
+	if ('pour' in state) {
+		// 36-fb-water F17: a pour emitter (userData.pour) on any object
+		if (state.pour) object.userData.pour = state.pour;
+		else delete object.userData.pour;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'pour', uuid: entry.uuid, pour: state.pour ?? null });
+	}
 	if ('camera' in state) {
 		// 16-P5: camera-object settings ride the same kind (viz + any live preview
 		// rebuild from the poke below)

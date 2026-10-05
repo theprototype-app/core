@@ -218,6 +218,186 @@ h.run(async () => {
 		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
 	}
 
+	// ── F15: Island ocean — the boat floats (rides the swell, stays upright, keeps its mast) ─
+	if (want('f15')) {
+		await load(A.page, 'island-ocean');
+		const authored = await A.page.evaluate(() => {
+			let g;
+			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			const hull = g.getObjectByName('Boat hull');
+			const was = hull.userData.physics?.mode ?? null;
+			if (was !== 'dynamic') {
+				// today's scene file (1.22 authoring): give it the def's new shape in-page
+				for (const n of ['Boat stripe', 'Boat mast']) hull.attach(g.getObjectByName(n));
+				hull.userData.physics = { mode: 'dynamic', mass: 120, collider: 'hull', friction: 0.6, floats: { density: 320 } };
+			}
+			return was;
+		});
+		console.log('boat as authored:', authored);
+		await look(A.page, [16, 3.2, 15], [10.5, 0, 9.5]);
+		if (!(await simulating(A.page))) await A.page.evaluate(() => window.__stores.physics.toggleSimulation());
+		await h.eventually(() => simulating(A.page), (v) => v === true, 'simulation running');
+		const pose = () =>
+			A.page.evaluate(() => {
+				let g;
+				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				const T = window.__stores.THREE;
+				const hull = g.getObjectByName('Boat hull');
+				const mast = g.getObjectByName('Boat mast');
+				hull.updateMatrixWorld(true);
+				const up = new T.Vector3(0, 1, 0).applyQuaternion(hull.getWorldQuaternion(new T.Quaternion()));
+				const m = mast.getWorldPosition(new T.Vector3()).sub(hull.getWorldPosition(new T.Vector3()));
+				const vols = window.__stores.waterVolumes.waterVolumes.list();
+				const sy = window.__stores.waterVolumes.waterVolumes.surfaceY(vols[0], hull.position.x, hull.position.z);
+				return { y: hull.position.y, x: hull.position.x, up: up.y, mastOff: m.length(), surface: sy };
+			});
+		const p0 = await pose();
+		await A.page.waitForTimeout(4000);
+		const samples = [];
+		for (let i = 0; i < 12; i++) {
+			samples.push(await pose());
+			await A.page.waitForTimeout(250);
+		}
+		const ys = samples.map((p) => p.y);
+		const last = samples[samples.length - 1];
+		h.check(Math.abs(last.y - last.surface) < 0.45, `the boat floats at the ocean surface (hull y ${last.y.toFixed(2)}, surface ${last.surface.toFixed(2)})`);
+		h.check(Math.max(...ys) - Math.min(...ys) > 0.04, `...and rides the swell (bob ${(Math.max(...ys) - Math.min(...ys)).toFixed(2)} m)`);
+		h.check(Math.min(...samples.map((p) => p.up)) > 0.85, `...upright (min up ${Math.min(...samples.map((p) => p.up)).toFixed(2)})`);
+		h.check(Math.abs(last.mastOff - p0.mastOff) < 0.01, `the mast rides the hull (offset ${p0.mastOff.toFixed(2)} -> ${last.mastOff.toFixed(2)})`);
+		await shots(A.page, '30-after-F15-island-boat');
+		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+	}
+
+	// ── F16: tipping a fluid tank spills it (drops fall, splash, settle) — within its limits ─
+	if (want('f16')) {
+		await load(A.page, 'fluid-tank-toy');
+		await h.eventually(() => A.page.evaluate(() => window.__stores.sim.fluidDebug()), (t) => t.length === 2 && t.every((x) => x.count > 500 && x.steps > 20), 'both tanks run', 20000);
+		const tank = await A.page.evaluate(() => {
+			let g;
+			window.__stores.objectsGroup.subscribe((v) => (g = v))();
+			const t = g.getObjectByName('Honey tank');
+			window.__stores.sim.setFluidFor(t.uuid, { spill: { maxDrops: 300, lifetime: 4 } });
+			return { uuid: t.uuid, pos: t.position.toArray() };
+		});
+		await look(A.page, [tank.pos[0] + 2.6, tank.pos[1] + 1.2, 3.4], [tank.pos[0] + 0.8, 0.6, 0]);
+		const before = await A.page.evaluate(() => window.__stores.sim.fluidDebug().find((t) => t.uuid));
+		// tip it over sideways, as a gizmo rotate would (the runtime reads the pose every frame)
+		for (let i = 1; i <= 20; i++) {
+			await A.page.evaluate(([u, a]) => {
+				let g;
+				window.__stores.objectsGroup.subscribe((v) => (g = v))();
+				const t = g.getObjectByProperty('uuid', u);
+				t.rotation.z = -a;
+				t.updateMatrixWorld(true);
+			}, [tank.uuid, (i / 20) * 1.9]);
+			await A.page.waitForTimeout(60);
+		}
+		let maxCount = 0;
+		for (let i = 0; i < 25; i++) {
+			await A.page.waitForTimeout(200);
+			const n = await A.page.evaluate(() => window.__stores.sim.totalDropCount());
+			maxCount = Math.max(maxCount, n);
+		}
+		const after = await A.page.evaluate((u) => ({ tank: window.__stores.sim.fluidDebug().find((t) => t.uuid === u), drops: window.__stores.sim.pourDebug().find((d) => d.key === 'spill:' + u) }), tank.uuid);
+		h.check((after.tank?.spilled ?? 0) > 50, `the tipped tank spilled over its rim (${after.tank?.spilled} particles left the tank)`);
+		h.check(after.tank.count < (before?.count ?? 3000), `...so the tank holds less (${after.tank.count})`);
+		h.check((after.drops?.settled ?? 0) + (after.drops?.splashes ?? 0) > 20, `the spilled drops landed (settled ${after.drops?.settled}, splashed ${after.drops?.splashes})`);
+		h.check(maxCount <= 300 + 10, `...and never exceeded the spill cap (${maxCount} <= 300 drops alive)`);
+		await shots(A.page, '50-after-F16-tank-spill');
+		// spill off: tipped further, nothing more leaves
+		await A.page.evaluate((u) => window.__stores.sim.setFluidFor(u, { spill: { on: false } }), tank.uuid);
+		await A.page.waitForTimeout(800);
+		const s1 = await A.page.evaluate((u) => window.__stores.sim.fluidDebug().find((t) => t.uuid === u).spilled, tank.uuid);
+		await A.page.waitForTimeout(2000);
+		const s2 = await A.page.evaluate((u) => window.__stores.sim.fluidDebug().find((t) => t.uuid === u).spilled, tank.uuid);
+		h.check(s2 - s1 <= 5, `Spill when tipped OFF keeps the fluid in (${s2 - s1} more after switching it off)`);
+	}
+
+	// ── F17: a pour emitter from Add ▸ Water ▸ Pour and on a plain Water tank ───────────────
+	if (want('f17')) {
+		await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/clear all'));
+		await A.page.waitForTimeout(500);
+		const ids = await A.page.evaluate(() => {
+			const st = window.__stores;
+			// Add ▸ Water ▸ Water tank, then Add ▸ Water ▸ Pour — the menu's own actions
+			const water = st.addObjects.buildAddChildren(() => [0, 0, 0]).find((g) => g.label === 'Water');
+			water.children.find((c) => c.label === 'Water tank').action();
+			let g;
+			st.objectsGroup.subscribe((v) => (g = v))();
+			const tank = g.children[g.children.length - 1];
+			tank.position.set(0, 0.6, 0);
+			tank.updateMatrixWorld(true);
+			const pourItem = st.addObjects.buildAddChildren(() => [-2.5, 0, 0]).find((x) => x.label === 'Water').children.find((c) => c.label === 'Pour');
+			pourItem.action();
+			const spout = g.children[g.children.length - 1];
+			return { tank: tank.uuid, spout: spout.uuid, spoutName: spout.name, hasPour: !!spout.userData.pour };
+		});
+		h.check(ids.hasPour && ids.spoutName === 'Pour', 'Add ▸ Water ▸ Pour places a spout carrying userData.pour');
+		// the Water section's button on the Water tank
+		await A.page.evaluate((u) => {
+			localStorage.setItem('inspector:sec:Water', 'open');
+			window.__stores.objectActions.selectObject(u, true);
+		}, ids.tank);
+		const btn = await A.page.waitForSelector('#pour-add', { timeout: 8000 }).catch(() => null);
+		h.check(!!btn, 'a Water tank offers "Add pour emitter"');
+		if (btn) {
+			await btn.scrollIntoViewIfNeeded();
+			await btn.click();
+			await A.page.waitForTimeout(300);
+			await A.page.waitForSelector('#pour-remove', { timeout: 4000 }).catch(() => null);
+			if (SHOTS) {
+				await A.page.evaluate(() => document.querySelector('#pour-remove')?.scrollIntoView({ block: 'end' }));
+				await shots(A.page, '61-after-F17-pour-panel');
+			}
+		}
+		await A.page.evaluate(() => window.__stores.objectActions.deselectObject?.());
+		await look(A.page, [0.5, 2.2, 5.2], [0, 0.4, 0]);
+		await A.page.waitForTimeout(3000);
+		const d = await A.page.evaluate(() => window.__stores.sim.pourDebug());
+		const tankPour = d.find((x) => x.key === 'pour:' + ids.tank);
+		const spoutPour = d.find((x) => x.key === 'pour:' + ids.spout);
+		h.check((tankPour?.count ?? 0) > 20, `the Water tank pours (${tankPour?.count} drops alive)`);
+		h.check((spoutPour?.count ?? 0) > 20 && (spoutPour?.settled ?? 0) > 5, `the spout pours and its drops settle on the ground (${spoutPour?.count} alive, ${spoutPour?.settled} settled)`);
+		await shots(A.page, '60-after-F17-pour-emitters');
+		// limits from the panel's model: max drops caps it
+		await A.page.evaluate((u) => window.__stores.waterActions.updateObjectPour(u, { maxParticles: 25, rate: 200 }, { immediate: true }), ids.spout);
+		await A.page.waitForTimeout(1500);
+		const capped = await A.page.evaluate((u) => window.__stores.sim.pourDebug().find((x) => x.key === 'pour:' + u)?.count, ids.spout);
+		h.check(capped <= 25, `Max drops caps a spout (${capped} <= 25 at rate 200)`);
+	}
+
+	// ── S9: one transport for the whole simulation (bodies + fluid tanks + drops) ───────────
+	if (want('s9')) {
+		await load(A.page, 'fluid-tank-toy');
+		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: true }));
+		const pill = await A.page.waitForSelector('#sim-controls', { timeout: 5000 }).catch(() => null);
+		h.check(!!pill, 'a simulation scene shows the simulation transport without the Settings toggle');
+		if (!(await simulating(A.page))) await A.page.click('#sim-play');
+		await h.eventually(() => simulating(A.page), (v) => v === true, 'running');
+		await h.eventually(() => A.page.evaluate(() => window.__stores.sim.fluidDebug()), (t) => t.length === 2 && t.every((x) => x.steps > 20), 'tanks running', 20000);
+		const duck0 = (await ys(A.page, ['Duck 1']))['Duck 1'];
+		await A.page.click('#sim-pause');
+		await A.page.waitForTimeout(500);
+		const a = await A.page.evaluate(() => ({ steps: window.__stores.sim.fluidDebug().map((t) => t.steps), y: null }));
+		const yA = (await ys(A.page, ['Duck 1']))['Duck 1'];
+		await A.page.waitForTimeout(1500);
+		const b = await A.page.evaluate(() => window.__stores.sim.fluidDebug().map((t) => t.steps));
+		const yB = (await ys(A.page, ['Duck 1']))['Duck 1'];
+		h.check(b.every((n, i) => n - a.steps[i] <= 1), `Pause holds the fluid tanks still (steps ${a.steps} -> ${b})`);
+		h.check(Math.abs(yB - yA) < 1e-4, `...and the bodies (duck y ${yA.toFixed(3)} -> ${yB.toFixed(3)})`);
+		await A.page.click('#sim-pause'); // resume
+		await A.page.waitForTimeout(1500);
+		const c = await A.page.evaluate(() => window.__stores.sim.fluidDebug().map((t) => t.steps));
+		h.check(c.every((n, i) => n > b[i] + 5), `Resume carries on (steps ${b} -> ${c})`);
+		await A.page.click('#sim-reset');
+		await h.eventually(() => simulating(A.page), (v) => v === true, 'Reset plays it again from the start', 8000);
+		const d = await A.page.evaluate(() => window.__stores.sim.fluidDebug().map((t) => t.steps));
+		h.check(d.every((n, i) => n < c[i]), `...with every tank refilled (steps ${c} -> ${d})`);
+		console.log('duck start', duck0);
+		await A.page.evaluate(() => window.__stores.physics.stopSimulation());
+		await A.page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ simOnLoad: false }));
+	}
+
 	// ── F18: "Add bubble emitter" makes bubbles you can SEE (under water and in the air) ────
 	if (want('f18')) {
 		await load(A.page, 'pool-party');

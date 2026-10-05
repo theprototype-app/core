@@ -9,6 +9,7 @@
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import DragRow from '../ui/DragRow.svelte';
+	import PourPanel from './PourPanel.svelte'; // 36-fb-water F17
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { normalizeWater, localBounds } from '$lib/water/volumes.js';
 	import { WATER_PRESETS, resolveLook, resolveBubbles } from '$lib/water/presets.js';
@@ -671,6 +672,10 @@
 			</Button>
 		</div>
 	{/if}
+{/if}
+
+{#if object}
+	<PourPanel {uuid} /><!-- 36-fb-water F17: a pour emitter on any object, a Water tank included -->
 {/if}
 
 {#if water}

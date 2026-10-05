@@ -124,6 +124,20 @@ export function buildAddChildren(pointOf) {
 					label: 'Bubbles',
 					tooltip: 'Place a bubble emitter (rises to the surface of the water it sits in)',
 					action: () => waterRef?.makeBubbles(spawnAtPoint('/create Sphere 0.08', pointOf()))
+				},
+				// 36-fb-water F17: a spout that pours drops (they splash into water and settle)
+				{
+					label: 'Pour',
+					tooltip: 'Place a pour emitter (drops arc out, splash into water and settle)',
+					action: () => {
+						const o = spawnAtPoint('/create Sphere 0.08', pointOf());
+						if (!o?.uuid) return;
+						o.position.y += 1.2; // a spout pours from above the ground
+						/** @type {any} */
+						const peer = get(peers);
+						if (peer) peer.send({ type: 'move', uuid: o.uuid, pos: o.position.toArray(), rot: o.rotation.toArray(), scale: o.scale.toArray() });
+						waterRef?.makePour(o);
+					}
 				}
 			]
 		},

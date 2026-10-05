@@ -73,6 +73,9 @@ import { waterHoles, groundSlabs, holesKey, GROUND_THICK } from './sim/groundHol
 
 export const simulating = writable(false);
 export const simPaused = writable(false);
+/** 36-fb-water S9: a PEER's run is paused (the pause flag on its `simulate` message) — the local
+ * simulation visuals (fluid tanks, pour drops) hold still with it, as the bodies already do */
+export const remoteSimPaused = writable(false);
 /** @type {import('svelte/store').Writable<string | null>} peer currently simulating */
 export const remoteSimulating = writable(null);
 
@@ -2048,6 +2051,7 @@ export function applySimulate(data) {
 	}
 	if (verdict === 'clear') releaseExternalHoldsBy(theirs);
 	remoteSimulating.set(data?.running ? theirs : null);
+	remoteSimPaused.set(!!(data?.running && data?.paused));
 	// a finished run must not leave an interpolation half-applied
 	if (!data?.running) import('./moveSmoothing').then((m) => m.clearMoveSmoothing()).catch(() => {});
 	if (data?.running && !data?.paused && verdict !== 'yield')
@@ -2058,6 +2062,7 @@ export function applySimulate(data) {
 export function physicsPeerDisconnected(peerId) {
 	if (get(remoteSimulating) === peerId) {
 		remoteSimulating.set(null);
+		remoteSimPaused.set(false);
 		import('./moveSmoothing').then((m) => m.clearMoveSmoothing()).catch(() => {});
 	}
 	// B5: drop that peer's grab claim, or their crate stays theirs forever

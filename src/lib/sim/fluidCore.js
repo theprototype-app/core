@@ -31,7 +31,8 @@ export const ALL_WALLS = Object.freeze([true, true, true, true, true, true]);
 /** @typedef {{version: number, generation: number, count: number, fill: number, viscosity: number, surfaceTension: number,
  *   gravityScale: number, color: string, clarity: number, quality: 'auto'|'high'|'points',
  *   emitter: {on: boolean, rate: number, speed: number, at: number[], dir: number[]},
- *   drain: {on: boolean, rate: number, at: number[], radius: number}}} FluidSpec */
+ *   drain: {on: boolean, rate: number, at: number[], radius: number},
+ *   spill: {on: boolean, maxDrops: number, lifetime: number}}} FluidSpec */
 
 /** the defaults a new Fluid tank is stamped with */
 export const FLUID_DEFAULTS = Object.freeze({
@@ -87,6 +88,14 @@ export function normalizeFluid(raw) {
 			rate: clampNum(g.rate, d.drain.rate, 0, 4000),
 			at: vec3(g.at, d.drain.at, 0, 1),
 			radius: clampNum(g.radius, d.drain.radius, 0.01, 1)
+		},
+		// 36-fb-water F16: a tipped tank SPILLS over its open top (fluidRuntime opens the top wall
+		// and hands the escaped particles to water/pourDrops); ON unless a scene says otherwise,
+		// with the two limits that keep the spilled drops from piling up
+		spill: {
+			on: !(r.spill && typeof r.spill === 'object' && r.spill.on === false),
+			maxDrops: Math.round(clampNum(r.spill?.maxDrops, 400, 10, 2000)),
+			lifetime: clampNum(r.spill?.lifetime, 6, 0.5, 60)
 		}
 	};
 }

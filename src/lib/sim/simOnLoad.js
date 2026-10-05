@@ -33,3 +33,34 @@ export async function startSimOnLoad(physics) {
 		return false; // physics failing to load never breaks a scene load
 	}
 }
+
+// ── 36-fb-water S9: ONE transport for every simulation in the scene ──────────────────────
+// The physics pill (SimControls) paused and reset the RIGID BODIES only, while fluid tanks
+// and pour/spill drops (each peer's own, always running) carried on regardless. These are the
+// pill's verbs now: paused means everything holds still (on every peer — a peer's pause rides
+// its `simulate` message), and Reset puts the whole thing back to how it opened.
+
+/** is the scene's simulation paused (here, or by the peer running it)? */
+export async function simPausedAnywhere() {
+	const p = await import('../physics');
+	return (get(p.simulating) && get(p.simPaused)) || get(p.remoteSimPaused);
+}
+
+/**
+ * Reset: the initial layout back (physics' own reset), every fluid tank refilled from its
+ * fill, every drop gone — and a run that was going starts again from the start (a Reset in
+ * a simulation scene is "play it again", not "stop").
+ * @returns {Promise<boolean>} restarted
+ */
+export async function resetWholeSimulation() {
+	const p = await import('../physics');
+	const wasRunning = get(p.simulating);
+	if (wasRunning) p.resetSimulation();
+	const [{ resetFluid }, { resetPours }] = await Promise.all([import('./fluidRuntime.js'), import('../water/pourDrops.js')]);
+	resetFluid();
+	resetPours();
+	if (!wasRunning) return false;
+	await new Promise((r) => setTimeout(r, 50)); // the reset's restore lands first
+	if (!get(p.simulating) && !get(p.remoteSimulating)) await p.toggleSimulation();
+	return !!get(p.simulating);
+}

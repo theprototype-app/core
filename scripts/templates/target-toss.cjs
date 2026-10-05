@@ -47,7 +47,7 @@ function tossGraph() {
 	button('bretry', 'retry-btn', 'Retry button', 'retry', 490);
 	button('blevels', 'levels-btn', 'Stages button', 'menu', 560);
 	G('g-menu', 'Stage & results buttons', menu, 0, 40);
-	T('n-menu', 'Stage & results buttons', 'Every button is wired into an **input** of the rules: Stage 1-5, Next stage, Retry, back to the stages. (The game shell\'s Esc / VR menu gives Resume / Restart.)', 0, 170, { w: 250, h: 130, color: 'gray' });
+	T('n-menu', 'Stage & results buttons', 'Every button is wired into an **input** of the rules: Stage 1-5, Next stage, Retry, back to the stages. (The game shell\'s Esc / VR menu gives Resume / Restart.)', 0, 330, { w: 250, h: 130, color: 'gray' });
 
 	// ---- the moments ------------------------------------------------------------------------------
 	const fb = [];

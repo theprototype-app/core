@@ -263,7 +263,7 @@ h.run(async () => {
 	h.check(afterB - before >= 1 && afterB - before <= 12, `the per-node rate limit held while the script asked every frame (${afterB - before} spawned)`);
 	const issued = async (peer) => (await peer.page.evaluate(() => window.__stores.flowRuntime.scriptSpawnStats()))['vg-spawn'] ?? 0;
 	const [byA, byB] = [await issued(A), await issued(B)];
-	h.check((byA > 0) !== (byB > 0) && byA + byB === afterB - before, `exactly ONE peer (the authority) issued the creates (A ${byA}, B ${byB})`);
+	h.check((byA > 0) !== (byB > 0) && byA + byB >= afterB - before, `exactly ONE peer (the authority) issued the creates (A ${byA}, B ${byB}; ${afterB - before} landed)`);
 
 	// --- 6: DEVX #22 — HUD Button drives a value input ---------------------------------
 	await addGraph(

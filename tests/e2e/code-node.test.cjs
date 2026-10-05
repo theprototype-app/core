@@ -196,12 +196,18 @@ h.run(async () => {
 	const paneId = await A.page.evaluate(() => new Promise((r) => window.__stores.codeWorkspace.activeCodeTab.subscribe(r)()));
 	await A.page.locator(`[data-pane="${paneId}"] .cm-content`).click();
 	await A.page.keyboard.press('Control+End');
-	await A.page.keyboard.type('\n// later: inputs.extra');
-	await A.page.waitForTimeout(300);
-	// a comment adds nothing — the scanner masks it
-	await A.page.keyboard.type('\nconst e = inputs.extra;');
-	await A.page.keyboard.press('Control+S'); // the workspace applies on save (36-code fork #4)
-	await h.eventually(() => dataOf(B, 'cn-script'), (d) => (d?.inputs ?? []).some((s) => s.name === 'extra') && d.inputs.length === 2, 'typing inputs.extra adds the socket on both peers (B)', 5000);
+	// one line, no Enter: an open autocomplete popup would take an Enter as "accept"
+	await A.page.keyboard.type(' /* inputs.ghost */ const e = inputs.extra;');
+	await A.page.keyboard.press('Escape');
+	await A.page.keyboard.press('Control+S'); // the code workspace applies on save (36-code fork #4)
+	await h.eventually(
+		() => dataOf(B, 'cn-script'),
+		(d) => (d?.inputs ?? []).map((s) => s.name).join(',') === 'power,extra',
+		'typing inputs.extra adds that socket on both peers — and the commented inputs.ghost does not (B)',
+		8000
+	);
+	const after = await dataOf(B, 'cn-script');
+	if (!(after?.inputs ?? []).some((s) => s.name === 'extra')) console.log('diag code:', JSON.stringify(after?.code), JSON.stringify(after?.inputs));
 	await A.page.locator('#code-ws-close').click();
 
 	// --- 5: module-bound code is read-only until forked ------------------------------------

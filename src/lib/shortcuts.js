@@ -690,6 +690,8 @@ export const shortcuts = [
 		['nodes.enter-group', 'Tab', 'toggleGroup', 'Enter the selected group / leave the one you are in'],
 		['nodes.add-note', 'N', 'addNote', 'Add a note at the cursor'],
 		['nodes.note-around', 'Shift+N', 'noteAround', 'Add a note around the selection (a frame)'],
+		['nodes.tidy', 'L', 'tidy', 'Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card'],
+		['nodes.tidy-keep', 'Shift+L', 'tidyKeep', 'Fix overlaps and crossings, keeping the layout'],
 		['nodes.align-column', 'Q', 'alignColumn', 'Align the selection into a column (left edges)'],
 		['nodes.align-row', 'E', 'alignRow', 'Align the selection into a row (top edges)'],
 		['nodes.distribute-v', 'Shift+Q', 'distributeV', 'Distribute the selection evenly top to bottom'],

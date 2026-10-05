@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { untrack, tick, onMount } from 'svelte';
-	import { Trash2 } from '@lucide/svelte';
+	import { Trash2, Network } from '@lucide/svelte';
 	import {
 		SvelteFlow,
 		Background,
 		BackgroundVariant,
 		Controls,
+		ControlButton,
 		MiniMap,
 		MarkerType,
 		SelectionMode,
@@ -123,6 +124,8 @@
 	import { disabledNodeTypes, enabledCatalog } from '$lib/nodeTypePrefs';
 	import { buildTpnode, parseTpnode, tpnodeFileName } from '$lib/tpnode';
 	import { APP_VERSION } from '$lib/version';
+	import { nodeEditorOpens, openingView, rememberView, flowViewEpoch, viewportOf, viewOf } from '$lib/flowView';
+	import { layeredLayout, repairLayout, lintGraph, lintSummary } from '$lib/graphLayout';
 
 	// 21-D7: DEEP LINK — 'show me the node that drives this HUD element'. A write-once
 	// request that we act on and CLEAR, the inspectorScrollTo shape, so it cannot re-fire
@@ -347,7 +350,7 @@
 	// svelte-ignore state_referenced_locally
 	const mountedTypes: string[] = Object.keys(nodeTypes);
 
-	const { screenToFlowPosition, fitView, setViewport } = useSvelteFlow();
+	const { screenToFlowPosition, fitView, setViewport, getInternalNode } = useSvelteFlow();
 
 	// e2e hook (debugStores opt-in), the Outline/CameraPreview pattern: the pane's
 	// viewport belongs to xyflow, not to any store, and `fitView` runs at MOUNT — so a
@@ -360,6 +363,8 @@
 		if (safeStorage.getItem('debugStores') !== 'true') return;
 		// TS syntax, not a JSDoc cast: this file is lang="ts", where JSDoc @type is IGNORED
 		(window as any).__flowViewport = { setViewport, fitView };
+		// 36 F11/S4: the measured geometry the lint and the Tidy command work on
+		(window as any).__flowTidy = { model: () => graphModel(), lint: () => lintHere(), tidy: (mode?: 'layout' | 'repair') => tidyGraph(mode) };
 		// A6.4: which types this MOUNTED pane can actually render, plus the snapshot it
 		// resolved at mount. A suite proves the reactivity fix by comparing the two:
 		// with the old non-reactive `get(moduleNodeGroups)` read they were identical,
@@ -372,6 +377,7 @@
 		};
 		return () => {
 			delete (window as any).__flowViewport;
+			delete (window as any).__flowTidy;
 			delete (window as any).__flowNodeTypes;
 		};
 	});
@@ -1120,6 +1126,155 @@
 	};
 	const frameAll = () => frameNodes((nodes as any[]).filter((n) => !n.hidden));
 
+	// =================================================================================
+	// 36 F11 / S4 — TIDY GRAPH. The same layout the game templates are authored with
+	// ($lib/graphLayout), on the cards as they are DRAWN: sizes from xyflow's measurement,
+	// wire ends from its handle bounds, so a 24-socket group card counts as tall as it is.
+	// Every move lands as ONE undo step and one nodemove per card (commitMoves), so peers
+	// see the tidy and Ctrl+Z takes it back whole (S8).
+	// =================================================================================
+	function graphModel() {
+		const vis = (nodes as any[]).filter((n) => !n.hidden && !isPseudo(n));
+		const ids = new Set(vis.map((n) => n.id));
+		const boxes = vis.map((n) => {
+			const w = n.measured?.width ?? n.width ?? 150;
+			const h = n.measured?.height ?? n.height ?? 80;
+			const kind: 'node' | 'note' | 'group' | 'frame' = n.type === 'note' ? (n.data?.frame ? 'frame' : 'note') : n.type === 'group' ? 'group' : 'node';
+			return { id: n.id, x: n.position.x, y: n.position.y, w, h, kind };
+		});
+		const wires: any[] = [];
+		for (const e of edges as any[]) {
+			if (!ids.has(e.source) || !ids.has(e.target) || e.hidden) continue;
+			const s = getInternalNode(e.source);
+			const t = getInternalNode(e.target);
+			const pick = (list: any[] | null | undefined, id: string | null | undefined) => (list ? (!id ? list[0] : list.find((h) => h.id === id)) : null) ?? null;
+			const sh = pick(s?.internals.handleBounds?.source, e.sourceHandle);
+			const th = pick(t?.internals.handleBounds?.target, e.targetHandle);
+			const sb = boxes.find((b) => b.id === e.source)!;
+			const tb = boxes.find((b) => b.id === e.target)!;
+			const end = (h: any, b: any, fallback: string) => {
+				const pos = h?.position ?? fallback;
+				const hx = h?.x ?? (fallback === 'right' ? b.w : 0);
+				const hy = h?.y ?? b.h / 2;
+				const hw = h?.width ?? 0;
+				const hh = h?.height ?? 0;
+				if (pos === 'right') return { x: hx + hw, y: hy + hh / 2, pos };
+				if (pos === 'top') return { x: hx + hw / 2, y: hy, pos };
+				if (pos === 'bottom') return { x: hx + hw / 2, y: hy + hh, pos };
+				return { x: hx, y: hy + hh / 2, pos };
+			};
+			const a = end(sh, sb, 'right');
+			const b = end(th, tb, 'left');
+			wires.push({ id: e.id, source: e.source, target: e.target, sx: a.x, sy: a.y, sp: a.pos, tx: b.x, ty: b.y, tp: b.pos });
+		}
+		return { boxes, wires };
+	}
+	function lintHere() {
+		const m = graphModel();
+		return lintGraph(m.boxes, m.wires);
+	}
+	function tidyGraph(mode: 'layout' | 'repair' = 'layout') {
+		const m = graphModel();
+		if (m.boxes.length < 2) {
+			showToast('Nothing to tidy here');
+			return null;
+		}
+		const before = lintGraph(m.boxes, m.wires);
+		const r = mode === 'repair' ? repairLayout(m.boxes, m.wires) : layeredLayout(m.boxes, m.wires);
+		const moved = commitMoves(r.boxes.map((b) => ({ id: b.id, x: Math.round(b.x), y: Math.round(b.y) })));
+		const n = moved?.length ?? 0;
+		showToast(
+			n
+				? `${mode === 'repair' ? 'Fixed' : 'Tidied'}: ${n} card${n === 1 ? '' : 's'} moved — ${r.lint.ok ? 'nothing overlaps, no wire crosses a card' : lintSummary(r.lint)} (Ctrl+Z undoes it)`
+				: before.ok
+					? 'Already tidy: nothing overlaps, no wire crosses a card'
+					: 'Could not tidy this graph: ' + lintSummary(before)
+		);
+		if (n && mode === 'layout') tick().then(() => setTimeout(frameAll, 60));
+		return { moved: n, before, after: r.lint };
+	}
+
+	// =================================================================================
+	// 36 F10 — WHERE THE EDITOR OPENS. It used to fit ONCE, at mount (xyflow's `fitView`
+	// prop): a scene loaded with the editor already open kept the last scene's pan and zoom
+	// (Target Toss opened on Mini Golf's view, cut off at the right). Every OPEN — the pane
+	// mounting, the active graph switching, a scene replacing the graphs (flowViewEpoch) —
+	// now shows the graph's saved view (where a hand left it: this session, or the file's
+	// `flowViews`) or frames every node. A graph that is still empty is framed the moment
+	// its first nodes arrive (a joiner's snapshot, a recipe). Setting: Node editor opens.
+	// =================================================================================
+	let paneEl: HTMLDivElement | null = $state(null);
+	/** an open is waiting for nodes to frame */
+	let framePending = false;
+	/** bumps per open, so a slow retry of an older open gives up */
+	let openSeq = 0;
+	const visibleCount = () => (nodes as any[]).filter((n) => !n.hidden).length;
+	function paneSize() {
+		return { w: paneEl?.clientWidth ?? 0, h: paneEl?.clientHeight ?? 0 };
+	}
+	function frameOnOpen() {
+		framePending = false;
+		try {
+			// no `nodes` list: xyflow frames every VISIBLE node once they are measured (the
+			// call is queued until then), so this works while the new graph is still mounting
+			fitView({ padding: FIT_PADDING as any, maxZoom: 1, duration: 0 });
+		} catch {
+			/* the pane is not up yet */
+		}
+	}
+	function openView() {
+		const seq = ++openSeq;
+		const graphId = activeId;
+		const choice = openingView(graphId, get(nodeEditorOpens));
+		if (choice.kind === 'saved') {
+			framePending = false;
+			const place = (tries: number) => {
+				if (seq !== openSeq) return;
+				const { w, h } = paneSize();
+				if (w && h) {
+					void setViewport(viewportOf(choice.view, w, h)).then((ok) => {
+						if (!ok && tries > 0) requestAnimationFrame(() => place(tries - 1));
+					});
+				} else if (tries > 0) requestAnimationFrame(() => place(tries - 1));
+			};
+			place(60);
+			return;
+		}
+		if (visibleCount() === 0) framePending = true;
+		else frameOnOpen();
+	}
+	// the opens: mount + a graph switch + a scene load (each re-runs this effect)
+	$effect(() => {
+		void activeId;
+		void $flowViewEpoch;
+		untrack(() => tick().then(openView));
+	});
+	// an empty graph that was opened is framed when its first nodes arrive
+	$effect(() => {
+		const count = (nodes as any[]).filter((n) => !n.hidden).length;
+		// re-checked when it runs: an open queued in the same flush (a switch back to a graph
+		// with a saved view) clears it first, and must not be framed over
+		if (count > 0 && framePending) untrack(() => tick().then(() => framePending && frameOnOpen()));
+	});
+	/** where a hand gesture on the pane started (a click with no travel ends one too) */
+	let moveFrom: { x: number; y: number; zoom: number } | null = null;
+	function onMoveStart(event: MouseEvent | TouchEvent | null, vp: { x: number; y: number; zoom: number }) {
+		moveFrom = event ? { ...vp } : null;
+	}
+	/** a hand moved the view (a programmatic fit or focus passes no event): remember it */
+	function onMoveEnd(event: MouseEvent | TouchEvent | null, vp: { x: number; y: number; zoom: number }) {
+		const from = moveFrom;
+		moveFrom = null;
+		// only a gesture a hand STARTED counts: an animated fit (A, F, focus a node) can end with
+		// an event attached while its start had none
+		if (!event || !from || level) return;
+		// a click that went nowhere is not "where it was left" (xyflow ends a move for it too)
+		if (Math.abs(from.x - vp.x) < 0.5 && Math.abs(from.y - vp.y) < 0.5 && Math.abs(from.zoom - vp.zoom) < 1e-4) return;
+		framePending = false;
+		const { w, h } = paneSize();
+		if (w && h) rememberView(activeId, viewOf(vp, w, h));
+	}
+
 	function selectAll() {
 		nodes = (nodes as any[]).map((n) => (!n.hidden && !n.selected ? { ...n, selected: true } : n)) as Node[];
 	}
@@ -1430,6 +1585,8 @@
 				addNote: () => addNote(),
 				noteAround: noteAroundSelection,
 				noteResized,
+				tidy: () => tidyGraph('layout'),
+				tidyKeep: () => tidyGraph('repair'),
 				alignColumn: () => arrangeSelection('column'),
 				alignRow: () => arrangeSelection('row'),
 				distributeV: () => arrangeSelection('distributeV'),
@@ -1531,6 +1688,8 @@
 					: []),
 				{ label: 'Select all', hint: hint('nodes.select-all'), action: selectAll },
 				{ label: 'Frame all', icon: 'focus', hint: hint('nodes.frame-all'), action: frameAll },
+				{ label: 'Tidy graph', icon: 'network', hint: hint('nodes.tidy'), action: () => tidyGraph('layout') },
+				{ label: 'Fix overlaps and crossings', icon: 'wand-sparkles', hint: hint('nodes.tidy-keep'), action: () => tidyGraph('repair') },
 				{ label: 'Import node group (.tpnode)…', icon: 'folder-input', action: () => pickTpnode(flowPos) },
 				...(level
 					? [
@@ -1693,6 +1852,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		class="svelteFlow relative h-full grow"
+		bind:this={paneEl}
 		class:tp-has-keys={hasKeys}
 		style="order: {paletteSide === 'right' ? 1 : 3}"
 		ondblclickcapture={onNodeDoubleClick}
@@ -1807,7 +1967,8 @@
 			deleteKey={null}
 			panActivationKey={null}
 			disableKeyboardA11y={true}
-			fitView
+			onmovestart={onMoveStart}
+			onmoveend={onMoveEnd}
 			maxZoom={1}
 			minZoom={0.2}
 			ondragover={onDragOver}
@@ -1829,7 +1990,12 @@
 					<Background bgColor="transparent" variant={bgVariant} lineWidth={0.6} patternColor="rgba(128,128,128,0.18)" />
 				{/key}
 			{/if}
-			<Controls showLock={false} />
+			<Controls showLock={false}>
+				<!-- 36 S4: Tidy graph (L) — the same layout the game templates are authored with -->
+				<ControlButton id="flow-tidy" title={'Tidy graph (' + (hint('nodes.tidy') || 'L') + ')'} aria-label="Tidy graph" onclick={() => tidyGraph('layout')}>
+					<Network size={14} aria-hidden="true" />
+				</ControlButton>
+			</Controls>
 			{#if showMinimap}
 				<MiniMap
 					pannable

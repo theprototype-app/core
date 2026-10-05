@@ -3,6 +3,7 @@
 	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import LoadingSettings from './settings/LoadingSettings.svelte';
+	import NodeEditorViewSettings from './settings/NodeEditorViewSettings.svelte'; // 36 F10
 	import SettingRow from './SettingRow.svelte';
 	import TextSelectionSettings from './settings/TextSelectionSettings.svelte'; // 36 U6
 	// 36 I4: what a row is known by (its text, group, section, keywords) + the highlight spans
@@ -1127,6 +1128,7 @@
 						</svelte:fragment>
 						<span>Classic (the default): a left drag on the node editor's canvas pans and <kbd>Shift</kbd>+drag draws a selection box. Select-first: a left drag selects, dragging any selected node moves the whole selection, <kbd>Shift</kbd>+click adds to or removes from it, and the middle or right button pans — a right click that does not move still opens the menu</span>
 					</SettingRow>
+					<NodeEditorViewSettings />
 				</AccordionItem>
 				<TouchControlsSettings searching={!!settingsQuery.trim()} />
 				<AccordionItem bind:open={sceneExpanded}>

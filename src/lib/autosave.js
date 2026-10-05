@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { objectsGroup, globalCamera, globalScene, orbitControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
 import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
+import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
@@ -343,6 +344,8 @@ async function writeSnapshot() {
 		nodes,
 		edges,
 		graphs,
+		// 36 F10: where each graph was left in the node editor (null when never moved)
+		flowViews: flowViewsSnapshot((id) => id === SCENE_GRAPH || !!group?.getObjectByProperty?.('uuid', id)),
 		annotations: annotationsProvider ? annotationsProvider() : [],
 		// L2: the post stack is screen-space scene data with nowhere in a GLTF to
 		// live, so it rides beside the snapshot — the same shape rigs and material
@@ -724,7 +727,7 @@ async function applyRestore(snapshot, offer = null) {
 		if (!isLive(job)) return null; // superseded while the rigs parsed
 		animationsRestore(snapshot.animations ?? {});
 		if (snapshot.graphs && typeof snapshot.graphs === 'object') {
-			restoreGraphs(snapshot.graphs); // H1 format: every graph document
+			restoreGraphs(snapshot.graphs, { views: snapshot.flowViews }); // H1 format: every graph document
 		} else if (snapshot.nodes?.length || snapshot.edges?.length) {
 			restoreGraphs({ [SCENE_GRAPH]: { nodes: snapshot.nodes ?? [], edges: snapshot.edges ?? [] } });
 		}

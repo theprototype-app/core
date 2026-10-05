@@ -64,9 +64,10 @@ h.run(async () => {
 		}, H.id);
 
 	// ---- 1. the VR menu on the headset
-	const sys = await ring('system');
+	// 36-vr R2: the System ring is gone — Profile ▸ lives in Tools, as on the desktop
+	const sys = await ring('tools');
 	const prof = await ring('profile');
-	h.check(sys.includes('nav:profile') && !sys.includes('moment'), `1.1 System has "Profile ▸" (${sys.join(', ')})`);
+	h.check(sys.includes('nav:profile') && !sys.includes('moment'), `1.1 Tools has "Profile ▸" (${sys.join(', ')})`);
 	h.check(prof.join(',') === 'perf:record,perf:detailed,moment', `1.2 Profile = Record, Record detailed, Report moment (${prof.join(', ')})`);
 	h.check(!(await pill()).visible, '1.3 no pill while nothing records and nobody watches');
 	await menu('perf:record');

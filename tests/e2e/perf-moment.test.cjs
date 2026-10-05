@@ -115,10 +115,10 @@ h.run(async () => {
 	const entry = await page.evaluate(() => {
 		const radial = window.__stores.vrRadialMenu;
 		const e = radial.findMenuEntry('moment');
-		return { label: e?.label, closes: e?.closes, action: typeof e?.action, ring: radial.ringEntries('profile').map((x) => x.id), system: radial.ringEntries('system').map((x) => x.id) };
+		return { label: e?.label, closes: e?.closes, action: typeof e?.action, ring: radial.ringEntries('profile').map((x) => x.id), tools: radial.ringEntries('tools').map((x) => x.id) };
 	});
-	// 34 profiler-xr: "Report moment" lives in System ▸ Profile ▸ beside Record / Stop
-	h.check(entry.label === 'Report moment' && entry.closes === true && entry.action === 'function' && entry.ring.includes('moment') && entry.system.includes('nav:profile'), `3.2 the VR menu's System ▸ Profile ring has "Report moment" (${entry.ring.join(', ')})`);
+	// 34 profiler-xr: "Report moment" lives in Profile ▸ beside Record / Stop (36-vr R2: Profile ▸ is in Tools)
+	h.check(entry.label === 'Report moment' && entry.closes === true && entry.action === 'function' && entry.ring.includes('moment') && entry.tools.includes('nav:profile'), `3.2 the VR menu's Tools ▸ Profile ring has "Report moment" (${entry.ring.join(', ')})`);
 
 	// ---- 4. the eye screenshot in a (simulated) headset
 	const eye = await page.evaluate(async () => {

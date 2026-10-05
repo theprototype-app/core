@@ -124,8 +124,9 @@ h.run(async () => {
 	// D4: modules may append entries (avatar:possess from the default-on avatar
 	// module) — assert the built-in prefix, not an exact list. 36: the desktop object menu's order
 	h.check(
-		registry.objectOps.slice(0, 8).join(',') ===
-			'obj:duplicate,obj:editmesh,obj:props,obj:color,snap,wireframe,obj:prefab,obj:delete' &&
+		// 36-int-122: + 36-colliders' Edit collider (X4), after Save prefab — Delete stays last
+		registry.objectOps.slice(0, 9).join(',') ===
+			'obj:duplicate,obj:editmesh,obj:props,obj:color,snap,wireframe,obj:prefab,obj:editcollider,obj:delete' &&
 			!registry.objectOps.includes('obj:visible') &&
 			!registry.objectOps.includes('obj:vertices') &&
 			!registry.objectOps.includes('nav:faces'),

@@ -1,6 +1,15 @@
 <script context="module">
-	// 36 U3b/I5: the settings search (I4) indexes labels + these keywords
-	export const keywords = ['tour', 'tours', 'tutorial', 'welcome', 'onboarding', 'help', 'first run', 'vr welcome', 'controllers', 'guide', 'enter vr', 'offer', 'headset browser', 'quest'];
+	import { registerSettingsKeywords } from '$lib/settingsSearch';
+	// 36 U3b/I5: the settings search (I4) indexes labels + these keywords. 36-int-122: words for the
+	// whole section sit on its root; the headset words belong to their own rows only (a word on the
+	// root lists every Tours row — "headset" must find the rows that are about a headset)
+	const sectionKeywords = ['tour', 'tours', 'tutorial', 'welcome', 'onboarding', 'help', 'first run', 'guide'];
+	const rowKeywords = {
+		'VR welcome': ['vr welcome', 'controllers', 'quest'],
+		'Offer Enter VR': ['enter vr', 'offer', 'headset browser', 'quest']
+	};
+	for (const [row, words] of Object.entries(rowKeywords)) registerSettingsKeywords(row, words);
+	export const keywords = [...sectionKeywords, ...Object.values(rowKeywords).flat()];
 </script>
 
 <script>
@@ -40,7 +49,7 @@
 </script>
 
 <!-- 36-int-122: the I4 search reads a section's keywords from its root element -->
-<div class="contents" data-keywords={keywords.join(' ')}>
+<div class="contents" data-keywords={sectionKeywords.join(' ')}>
 	<p class="ui-section-label">Tours</p>
 	<SettingRow name="Show tours automatically">
 		<svelte:fragment slot="control"><Toggle id="setting-tours-auto" checked={autoStart} onchange={onAutoStart} /></svelte:fragment>

@@ -40,7 +40,9 @@ const TEMPLATE_FILES = [
 	'island-ocean',
 	// 36-sim: Jiggle + Fluid tank examples
 	'jelly-room',
-	'fluid-tank-toy'
+	'fluid-tank-toy',
+	// 36-fb F26: the Water works diorama (Fluid emitter, flow paths, Rotate / Motor, Float Along Flow)
+	'water-works'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

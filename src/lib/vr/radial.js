@@ -106,6 +106,7 @@ import {
 } from './panels.js';
 import { controllerRay } from './pointer.js';
 import { boxSelectEnd, beginStretch, commitStretch } from './tools.js';
+import { handleAiAction } from './aiPanel.js';
 // 36 X4: the collider session, PRIMED (colliderEdit reaches faceEdit/history — a static
 // edge from here is the documented cycle family); every use below is null-safe
 /** @type {any} */ let colliderEditRef = null;
@@ -486,6 +487,11 @@ export function executeVRMenuAction(name) {
 			if (action === 'yes') approvePeer(first.peerId);
 			else if (action === 'no') denyPeer(first.peerId);
 		}
+		return;
+	}
+	if (name.startsWith('ai:')) {
+		// 36-vr-ai: the AI panel's controls (close, input row -> keyboard, stop)
+		handleAiAction(name.slice('ai:'.length));
 		return;
 	}
 	if (name.startsWith('chat:')) {

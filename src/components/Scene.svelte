@@ -90,6 +90,7 @@
 	import VRPrefabsPanel from './play/VRPrefabsPanel.svelte';
 	import VRKeyboard from './play/VRKeyboard.svelte';
 	import VRChatPanel from './play/VRChatPanel.svelte';
+	import VRAiPanel from './play/VRAiPanel.svelte';
 	import VREditMenu from './play/VREditMenu.svelte';
 	import VRSnapMenu from './play/VRSnapMenu.svelte';
 	import VRSettingsPanel from './play/VRSettingsPanel.svelte';
@@ -1683,6 +1684,7 @@ position={[0, 2, 3]}
 <VRPropertiesPanel />
 <VRPrefabsPanel />
 <VRChatPanel />
+<VRAiPanel />
 <VREditMenu />
 <VRSnapMenu />
 <VRSettingsPanel />

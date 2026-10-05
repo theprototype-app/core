@@ -99,6 +99,7 @@ export const DEBUG_HOOKS = [
 	['vrPalette', () => import('./vrPalette')],
 	['vrWindowPoses', () => import('./vrWindowPoses')],
 	['vrKeyboard', () => import('./vrKeyboard')],
+	['vrAiPanel', () => import('./vr/aiPanel.js')],
 	['faceEdit', () => import('./faceEdit')],
 	['meshToolParams', () => import('./meshToolParams')],
 	['avatarModel', () => import('./avatarModel')],

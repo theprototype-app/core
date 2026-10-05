@@ -176,6 +176,7 @@ export const DEBUG_HOOKS = [
 	['uvEditor', () => import('./uvEditor')],
 	['uvUnwrap', () => import('./uvUnwrap')],
 	['meshTopology', () => import('./meshTopology')],
+	['meshBoolean', () => import('./meshBoolean')],
 	['meshBudget', () => import('./meshBudget')],
 	['proportional', () => import('./proportional')],
 	['proportionalRing', () => import('./proportionalRing')],

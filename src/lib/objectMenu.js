@@ -387,6 +387,39 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 							}
 						]
 					: []),
+		// B10 (36-mesh-ops): CSG booleans on exactly TWO meshes — the FIRST-clicked one
+		// takes the result (the hinge rule's order), the second is the cutter
+		...(targets.length === 2 &&
+		targets.every((u) => !!group?.getObjectByProperty('uuid', u)?.geometry?.attributes?.position)
+			? [
+					{
+						label: 'Boolean',
+						icon: 'combine',
+						disabled: locked,
+						tooltip: locked ? lockedTooltip : 'Combine the two meshes into the first one',
+						children: [
+							...[
+								['union', 'Union', 'Merge both into one solid'],
+								['subtract', 'Subtract', 'Cut the second out of the first'],
+								['intersect', 'Intersect', 'Keep only where they overlap']
+							].map(([op, label, tooltip]) => ({
+								label,
+								tooltip: tooltip + ' — the second object is removed (Ctrl+Z brings both back)',
+								action: () =>
+									import('./meshBoolean').then((m) => m.booleanObjects(targets[0], targets[1], /** @type {any} */ (op)))
+							})),
+							{
+								label: 'Subtract, keep the cutter',
+								tooltip: 'Cut the second out of the first and leave the second where it is',
+								action: () =>
+									import('./meshBoolean').then((m) =>
+										m.booleanObjects(targets[0], targets[1], 'subtract', { keepCutter: true })
+									)
+							}
+						]
+					}
+				]
+			: []),
 		{ section: 'Physics & effects' },
 		// P-B: joints — attach exactly TWO objects (weld holds the pose, a hinge
 		// spins about the FIRST-clicked object's chosen local axis, anchored at

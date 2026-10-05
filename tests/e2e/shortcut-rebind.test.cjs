@@ -94,7 +94,8 @@ h.run(async () => {
 	});
 	h.check(seed.withoutId === 0 && seed.dupeIds === 0, `1.1 every entry has a UNIQUE stable id (${seed.total} entries, ${seed.withoutId} missing, ${seed.dupeIds} duplicated)`);
 	h.check(seed.withoutDefault === 0, `1.2 every entry carries defaultKeys (${seed.withoutDefault} missing)`);
-	h.check(seed.fixedCount >= 6, `1.3 the display-only rows are marked fixed (${seed.fixedCount} of them)`);
+	// 36 B8: the two bundled mesh-edit display rows became 16 real, rebindable rows, so 4 display rows remain
+	h.check(seed.fixedCount >= 4, `1.3 the display-only rows are marked fixed (${seed.fixedCount} of them)`);
 	h.check(seed.objectList === 'O', `1.4 premise: the Object list is on bare O (${seed.objectList})`);
 	h.check(seed.ls === null, `1.5 premise: no overrides stored yet (${seed.ls})`);
 	h.check(

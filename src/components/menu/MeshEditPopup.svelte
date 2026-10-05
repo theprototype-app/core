@@ -1,4 +1,5 @@
 <script>
+	import { viewportHasKeys } from '$lib/keyScope'; // 36 U11
 	// Desktop mesh-edit toolbar (135 -> 144 pinned strip -> CL-B B5 floating
 	// strip -> M0 TOOLBOX): a professional tool-palette window on the shared
 	// ToolboxWindow shell — header-drag, width-resize reflows the square icon
@@ -10,7 +11,7 @@
 	// the meshEditHotkeys pref is on (the toggle here; while on, shortcuts.js
 	// skips bare mesh-edit keys and editorNavigation parks the fly keys);
 	// typing in inputs skips. Esc always works.
-	import { letterOf } from '$lib/keyOf';
+	import { comboOf, meshCommandFor, bindingOf } from '$lib/shortcuts'; // 36 B8: the mesh keymap
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import {
@@ -647,6 +648,9 @@
 	/** @param {KeyboardEvent} event */
 	function onKeydown(event) {
 		if (!active) return;
+		// 36 U11: a mesh session's letters (E/I/G/C/L…) and Escape belong to the VIEWPORT;
+		// typed in the node editor they mean the node editor's own commands
+		if (!viewportHasKeys(event)) return;
 		if (event.key === 'Escape') {
 			// M9b: a pending knife cut owns Escape first. ALL THREE Escape handlers
 			// (here, meshEdit's and faceEdit's) have to ask, since whichever runs
@@ -661,74 +665,65 @@
 		if (!$meshEditHotkeys) return; // D3: toggled off — Esc/Done still work above
 		const target = /** @type {any} */ (event.target);
 		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-		// 24-A1: layout-independent (`л` on a Cyrillic layout is the L key)
-		const key = letterOf(event);
-		// M2/M6: the SELECTION commands are Ctrl chords, so they are checked before
-		// the plain-key guard below (which deliberately ignores modifier combos)
-		if ((event.ctrlKey || event.metaKey) && !event.altKey) {
-			// resolved against the CURRENT mode's command list, so Ctrl+A / Ctrl+I
-			// work in all three modes instead of faces only
-			const byChord = {
-				'=': ['grow'],
-				'+': ['grow'],
-				'-': ['shrink'],
-				_: ['shrink'],
-				a: ['all', 'eall', 'vall'],
-				i: ['invert', 'einvert', 'vinvert']
-			};
-			const ids = /** @type {any} */ (byChord)[key];
-			const cmd = ids && SELECT_CMDS.find((c) => ids.includes(c.id));
-			if (!cmd) return;
-			runSelectCmd(cmd);
+		// 36 B8: the keys come from the KEYMAP REGISTRY (Settings ▸ Shortcuts can rebind
+		// every one); comboOf is layout-independent like letterOf was (24-A1)
+		const combo = comboOf(event);
+		/** @type {string | null} */
+		let cmd = meshCommandFor(combo);
+		if (!cmd && event.key === 'Delete' && !event.ctrlKey && !event.metaKey && !event.altKey) cmd = 'mesh.delete';
+		if (!cmd) return;
+		// M2/M6: the SELECTION commands resolve against the CURRENT mode's list, so
+		// Ctrl+A / Ctrl+I work in all three modes instead of faces only
+		/** @type {Record<string, string[]>} */
+		const selectIds = {
+			'mesh.grow': ['grow'],
+			'mesh.shrink': ['shrink'],
+			'mesh.select-all': ['all', 'eall', 'vall'],
+			'mesh.select-invert': ['invert', 'einvert', 'vinvert'],
+			'mesh.loop': ['loop', 'eloop']
+		};
+		if (selectIds[cmd]) {
+			const found = SELECT_CMDS.find((c) => selectIds[/** @type {string} */ (cmd)].includes(c.id));
+			if (!found) return;
+			runSelectCmd(found);
 			event.preventDefault();
 			return;
 		}
 		// TAB CYCLES the element mode (Shift+Tab backwards). It used to be 1/2/3,
 		// which cost the session its gizmo transform modes: 1/2/3 are Move/Rotate/
-		// Scale everywhere else in the app, and shortcuts.js SUPPRESSED them while
-		// a session was open so the modeller binding could have them. One pair of
-		// keys cannot mean two things in the same session, and the transform modes
-		// are the ones you reach for mid-edit — so the element modes moved to a key
-		// nothing else in a session wants. Tab still enters Edit Mesh from outside
+		// Scale everywhere else in the app. Tab still enters Edit Mesh from outside
 		// (shortcuts.js); Esc/Done is still how you leave.
-		if (!event.ctrlKey && !event.metaKey && !event.altKey && event.key === 'Tab') {
+		if (cmd === 'mesh.mode-next' || cmd === 'mesh.mode-prev') {
 			const order = /** @type {('vertices'|'edges'|'faces')[]} */ ([
 				'vertices',
 				'edges',
 				'faces'
 			]);
 			const at = order.indexOf(mode);
-			const step = event.shiftKey ? -1 : 1;
+			const step = cmd === 'mesh.mode-prev' ? -1 : 1;
 			setMode(order[(at + step + order.length) % order.length]);
 			event.preventDefault();
 			return;
 		}
-		if (event.ctrlKey || event.metaKey || event.altKey) return;
 		if (mode === 'faces') {
-			if (key === 'l') {
-				runSelectCmd(/** @type {any} */ (SELECT_CMDS[0]));
-				event.preventDefault();
-				return;
-			}
-			// C commits the loop cut outright: a shortcut EXECUTES. 19-A P2: it
-			// routes through runOp — the same focus-and-apply path as the grid — so
-			// the pane follows the hotkey and becomes the live adjust (or the hint).
-			if (key === 'c') {
-				runOp('loopcut');
-				event.preventDefault();
-				return;
-			}
-			if (key === 'b') {
-				runOp('bridge');
-				event.preventDefault();
-				return;
-			}
-			const byKey = { e: 'extrude', i: 'inset', g: 'move', s: 'subdivide', f: 'flip', x: 'delete' };
-			const op = event.key === 'Delete' ? 'delete' : /** @type {any} */ (byKey)[key];
+			// C commits the loop cut outright: a shortcut EXECUTES. 19-A P2: it routes
+			// through runOp — the same focus-and-apply path as the grid.
+			/** @type {Record<string, string>} */
+			const ops = {
+				'mesh.extrude': 'extrude',
+				'mesh.inset': 'inset',
+				'mesh.move': 'move',
+				'mesh.subdivide': 'subdivide',
+				'mesh.flip': 'flip',
+				'mesh.delete': 'delete',
+				'mesh.loopcut': 'loopcut',
+				'mesh.bridge': 'bridge'
+			};
+			const op = ops[cmd];
 			if (!op) return;
 			runOp(op);
 			event.preventDefault();
-		} else if (key === 'w') {
+		} else if (mode === 'vertices' && cmd === 'mesh.weld') {
 			weld();
 			event.preventDefault();
 		}
@@ -742,33 +737,41 @@
 	// Grouped by SECTION so the sheet reads as a reference instead of a blob of
 	// text; the section matching the CURRENT mode is marked so the eye lands on
 	// the keys that are live right now.
-	const KEY_SECTIONS = [
-		{
-			id: 'any',
-			title: 'Any mode',
-			rows: [
-				['Tab', 'Next element mode (Vertices - Edges - Faces)'],
-				['Shift Tab', 'Previous element mode'],
-				['1 / 2 / 3', 'Gizmo: Move / Rotate / Scale'],
-				['Ctrl A', 'Select all'],
-				['Ctrl I', 'Invert the selection'],
-				['Esc', 'Done — leave the session']
-			]
-		},
-		{
-			id: 'faces',
-			title: 'Faces',
-			rows: [
-				['E / I / G', 'Arm Extrude / Inset / Move'],
-				['S / C', 'Subdivide / Loop cut'],
-				['B / F / X', 'Bridge / Flip normals / Delete'],
-				['L', 'Loop select (again = perpendicular)'],
-				['Ctrl + / -', 'Grow / shrink the selection']
-			]
-		},
-		{ id: 'edges', title: 'Edges', rows: [['L', 'Edge loop — the chain end to end']] },
-		{ id: 'vertices', title: 'Vertices', rows: [['W', 'Weld the selected vertices']] }
-	];
+	// 36 B8: generated from the keymap registry, so a rebind shows here too (re-read
+	// whenever the sheet opens — the registry is a plain array, not a store)
+	/** @param {string} id @param {string} fallback */
+	const k = (id, fallback) => (bindingOf(id) ?? fallback).replace(/\+/g, ' ');
+	const KEY_SECTIONS = $derived(
+		showKeys
+			? [
+					{
+						id: 'any',
+						title: 'Any mode',
+						rows: [
+							[k('mesh.mode-next', 'Tab'), 'Next element mode (Vertices - Edges - Faces)'],
+							[k('mesh.mode-prev', 'Shift+Tab'), 'Previous element mode'],
+							['1 / 2 / 3', 'Gizmo: Move / Rotate / Scale'],
+							[k('mesh.select-all', 'Ctrl+A'), 'Select all'],
+							[k('mesh.select-invert', 'Ctrl+I'), 'Invert the selection'],
+							['Esc', 'Done — leave the session']
+						]
+					},
+					{
+						id: 'faces',
+						title: 'Faces',
+						rows: [
+							[[k('mesh.extrude', 'E'), k('mesh.inset', 'I'), k('mesh.move', 'G')].join(' / '), 'Arm Extrude / Inset / Move'],
+							[[k('mesh.subdivide', 'S'), k('mesh.loopcut', 'C')].join(' / '), 'Subdivide / Loop cut'],
+							[[k('mesh.bridge', 'B'), k('mesh.flip', 'F'), k('mesh.delete', 'X')].join(' / '), 'Bridge / Flip normals / Delete'],
+							[k('mesh.loop', 'L'), 'Loop select (again = perpendicular)'],
+							[[k('mesh.grow', 'Ctrl+='), k('mesh.shrink', 'Ctrl+-')].join(' / '), 'Grow / shrink the selection']
+						]
+					},
+					{ id: 'edges', title: 'Edges', rows: [[k('mesh.loop', 'L'), 'Edge loop — the chain end to end']] },
+					{ id: 'vertices', title: 'Vertices', rows: [[k('mesh.weld', 'W'), 'Weld the selected vertices']] }
+				]
+			: []
+	);
 </script>
 
 <svelte:window onkeydown={onKeydown} />

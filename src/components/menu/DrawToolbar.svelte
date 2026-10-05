@@ -1,4 +1,5 @@
 <script>
+	import { viewportHasKeys } from '$lib/keyScope'; // 36 U11
 	// 57.2: the draw toolbar now switches between two TOOLS. Freehand paints while
 	// you drag (drawMode.js); Spline places control points click by click and the
 	// result stays editable (splineTool.js). Both share the colour + size pickers,
@@ -20,6 +21,7 @@
 	/** @param {KeyboardEvent} event */
 	function onKeydown(event) {
 		if (!$drawMode) return;
+		if (!viewportHasKeys(event)) return; // 36 U11: keys in another pane are that pane's
 		const target = /** @type {any} */ (event.target);
 		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable))
 			return;

@@ -12,6 +12,7 @@ import { faceEditObject, meshEditHotkeys } from './faceEdit';
 // 24-A1: fly keys by layout-independent letter (zero-import leaf) — on a Cyrillic
 // layout W is `ц`, so `event.key` never matched and the camera could not fly
 import { letterOf } from './keyOf';
+import { viewportHasKeys } from './keyScope'; // 36 U11
 
 // WASD fly-panning for the desktop editor, Q down / E up, Shift = 3x.
 // Camera position and orbit target move together. Inert while typing, in
@@ -68,6 +69,9 @@ export function startEditorNavigation() {
 		// The keyup below stays unguarded on purpose (the Ctrl+V push-to-talk lesson):
 		// guarding it strands a key held down when the modifier arrives mid-hold.
 		if (guarded(event) || event.ctrlKey || event.metaKey || event.altKey || get(anyModalOpen)) return;
+		// 36 U11: the camera flies only while the VIEWPORT has the keyboard — A frames
+		// all nodes and Q/E align them in the node editor, and must not strafe the camera
+		if (!viewportHasKeys(event)) return;
 		const key = letterOf(event);
 		if (event.shiftKey && isShiftCommand(key)) return; // a command, not movement
 		if (KEYS.includes(key)) pressed.add(key);

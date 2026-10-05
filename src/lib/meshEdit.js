@@ -72,6 +72,7 @@ import {
 	commitMeshPivotDrag,
 	setMeshPivotPreview
 } from './meshPivot';
+import { viewportHasKeys } from './keyScope'; // 36 U11
 
 // Vertex edit mode: one object at a time, drag vertex handles with the
 // regular gizmo. Handles that share a position (e.g. the 24 position entries
@@ -595,6 +596,7 @@ export function exitEditMode() {
 
 /** @param {KeyboardEvent} event */
 function onKeydown(event) {
+	if (!viewportHasKeys(event)) return; // 36 U11: Esc in the node editor leaves a GROUP, not the session
 	if (event.key === 'Escape') {
 		// an armed pivot pick eats the FIRST Escape (the knife rule — the verdict
 		// rides the event, because faceEdit has a second Escape handler)

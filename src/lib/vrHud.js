@@ -24,7 +24,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalScene, globalRenderer, objectsGroup } from '../stores/sceneStore';
 import { isRenderableKind } from './hudKinds';
-import { drawHudElement, roundRect, imageTick, moduleVrText } from './hudCanvasDraw';
+import { drawHudElement, roundRect, imageTick, moduleVrText, elementShows } from './hudCanvasDraw';
 import { PANEL_ORDER } from './vrPanelOverlay';
 import { MODULE_WORLD_ROOT } from './moduleWorld';
 import { touchSpec } from './touchSpec';
@@ -216,7 +216,8 @@ function drawAtlas(runtime) {
 		g.beginPath();
 		g.rect(grp.slot.x, grp.slot.y, grp.cw, grp.ch);
 		g.clip();
-		if (grp.plate) {
+		// a group with nothing to say yet (a score the game has not written) draws no plate
+		if (grp.plate && grp.members.some((m) => m.el && elementShows(m.el, runtime?.[m.el.id] ?? null))) {
 			// a translucent plate so white text reads against a bright sky or a white wall
 			roundRect(g, grp.slot.x + 1, grp.slot.y + 1, grp.cw - 2, grp.ch - 2, Math.min(14 * grp.k, grp.ch / 2));
 			g.fillStyle = 'rgba(10, 14, 22, 0.62)';

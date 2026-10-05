@@ -63,7 +63,8 @@ h.run(async () => {
 						{ id: 'time', kind: 'timer', anchor: 'top-right', x: 24, y: 24, w: 160, h: 40, label: '1:30', style: { size: 24, align: 'right' } },
 						{ id: 'blank', kind: 'mod-hudtest-blank', anchor: 'top-right', x: 24, y: 120, w: 160, h: 30 },
 						{ id: 'hint', kind: 'text', anchor: 'bottom-center', x: 0, y: 16, w: 600, h: 24, label: 'Stack the blocks as high as you can', style: { size: 14, align: 'center' } },
-						{ id: 'aim', kind: 'crosshair', anchor: 'center', x: 0, y: 0, w: 24, h: 24 }
+						{ id: 'aim', kind: 'crosshair', anchor: 'center', x: 0, y: 0, w: 24, h: 24 },
+						{ id: 'empty', kind: 'text', anchor: 'bottom-left', x: 24, y: 24, w: 200, h: 30, label: '' }
 					]
 				}
 			]
@@ -101,6 +102,17 @@ h.run(async () => {
 				const L = s.gameKit.vrHudLayout;
 				const a = L.stageAngles(g.rect.left + g.rect.w / 2, g.rect.top + g.rect.h / 2, d.halfWidth);
 				return { yaw: (a.yaw * 180) / Math.PI, pitch: (a.pitch * 180) / Math.PI, f: g.f };
+			},
+			/** how many non-transparent atlas pixels the group holding `id` has */
+			alphaIn: (id) => {
+				const d = s.gameKit.vrHud.vrHudDebug();
+				const g = d.groups.find((x) => x.ids.includes(id));
+				const cv = s.gameKit.vrHud.vrHudSurface()?.canvas;
+				if (!g || !cv) return -1;
+				const data = cv.getContext('2d').getImageData(g.slot.x, g.slot.y, Math.max(1, g.slot.w), Math.max(1, g.slot.h)).data;
+				let n = 0;
+				for (let i = 3; i < data.length; i += 4) if (data[i] > 8) n++;
+				return n;
 			},
 			/** how many opaque-ish pixels the atlas holds inside a member's box */
 			inkIn: (id) => {
@@ -191,6 +203,8 @@ h.run(async () => {
 	h.check(crisp.score > 150 && crisp.time > 80, '4.2 the score and the clock are drawn into the atlas (' + crisp.score + ', ' + crisp.time + ' text px)');
 	h.check(crisp.tex.mip && crisp.tex.cs === 'srgb' && crisp.tex.aniso >= 4, '4.3 mipmapped, sRGB, anisotropic (' + JSON.stringify(crisp.tex) + ')');
 	h.check(crisp.atlas.w <= 2048, '4.4 the atlas stays small (' + JSON.stringify(crisp.atlas) + ')');
+	const plates = await T(() => ({ empty: window.__T.alphaIn('empty'), hint: window.__T.alphaIn('hint') }));
+	h.check(plates.empty === 0 && plates.hint > 500, '4.5 a group with nothing to say draws no plate; one with text does (' + JSON.stringify(plates) + ')');
 
 	console.log('\n=== 5. comfort ===');
 	const comfort = await T(() => {

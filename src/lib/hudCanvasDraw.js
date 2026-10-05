@@ -78,6 +78,22 @@ export function moduleVrText(el, rt) {
 	}
 }
 
+/** what an element SAYS right now: a module kind's headset text, else its runtime text,
+ * else its authored label @param {any} el @param {any} rt @returns {string} */
+export function elementText(el, rt) {
+	const vr = moduleVrText(el, rt);
+	return vr !== null ? vr : rt?.text !== undefined && rt?.text !== null ? String(rt.text) : String(el.label ?? '');
+}
+
+/** does an element put anything on screen (text, a bar, an image, a list row)? A HUD group
+ * whose members all show nothing draws no plate — an empty dark box reads as broken.
+ * @param {any} el @param {any} rt */
+export function elementShows(el, rt) {
+	if (['bar', 'progressradial', 'slider', 'toggle', 'image'].includes(el?.kind)) return true;
+	if (el?.kind === 'list' && ((Array.isArray(rt?.rows) && rt.rows.length) || String(el.rowsText ?? '').trim())) return true;
+	return elementText(el, rt).replace(/\[[^\]]*\]/g, '').trim().length > 0;
+}
+
 /**
  * Draw ONE HUD element into the box (x, y, w, h) in canvas px, at `k` canvas px per stage
  * px. Returns the corner radius it used (the board rings a hovered button with it).
@@ -87,8 +103,7 @@ export function moduleVrText(el, rt) {
  */
 export function drawHudElement(g, el, x, y, w, h, k, rt) {
 	const style = el.style ?? {};
-	const vr = moduleVrText(el, rt);
-	const text = vr !== null ? vr : rt?.text !== undefined && rt?.text !== null ? String(rt.text) : String(el.label ?? '');
+	const text = elementText(el, rt);
 	const size = Math.max(10, Number(style.size ?? 14)) * k;
 	const weight = String(style.weight ?? (el.kind === 'button' ? 600 : 400));
 	const colour = paint(style.color, '#f3f4f6');

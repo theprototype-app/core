@@ -9,6 +9,7 @@ import {
 	hudEditorClose,
 	explorerClose,
 	profilerClose,
+	codeWorkspaceClose,
 	objectListClose
 } from '../stores/appStore';
 import {
@@ -93,6 +94,7 @@ const PANELS = {
 	hud: { key: 'hud', openStore: hudEditorClose, dragKey: 'hud', dockedLs: 'hudDocked' },
 	explorer: { key: 'explorer', openStore: explorerClose, dragKey: 'explorerWin', dockedLs: 'explorerDocked' },
 	profiler: { key: 'profiler', openStore: profilerClose, dragKey: 'profilerWin', dockedLs: 'profilerDocked' },
+	code: { key: 'code', openStore: codeWorkspaceClose, dragKey: 'codeWin', dockedLs: 'codeDocked' },
 	objects: { key: 'objects', openStore: objectListClose, dragKey: null, dockedLs: null }
 };
 

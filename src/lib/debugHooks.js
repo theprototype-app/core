@@ -278,6 +278,9 @@ export const DEBUG_HOOKS = [
 	['kitInstancing', () => import('./kitInstancing')],
 	['scriptSockets', () => import('./scriptSockets')],
 	['scriptLint', () => import('./scriptLint')],
+	['codeWorkspace', () => import('./codeWorkspace')],
+	['scriptAssets', () => import('./scriptAssets')],
+	['codeTabs', () => import('./codeTabs')],
 	['aiExtensions', () => import('./ai/aiExtensions')],
 	['graphText', () => import('./graphText')]
 ];

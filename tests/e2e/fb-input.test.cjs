@@ -88,8 +88,16 @@ const neutralPoint = (/** @type {any} */ page, /** @type {string} */ root, /** @
 		{ root, exclude }
 	);
 /** a real press on the 3D view, clear of the dock and the chrome */
+/** the 3D view's own canvas (a game scene can add others: a minimap, a HUD texture) */
+const canvasBox = (/** @type {any} */ page) =>
+	page.evaluate(() => {
+		let r;
+		/** @type {any} */ (window).__stores.globalRenderer.subscribe((/** @type {any} */ v) => (r = v))();
+		const b = /** @type {any} */ (r)?.domElement?.getBoundingClientRect();
+		return b ? { x: b.left, y: b.top, width: b.width, height: b.height } : null;
+	});
 async function focusViewport(/** @type {any} */ page) {
-	const box = await page.locator('canvas').first().boundingBox();
+	const box = await canvasBox(page);
 	await page.mouse.click(box.x + box.width * 0.5, box.y + 150);
 	await page.waitForTimeout(120);
 }
@@ -193,6 +201,7 @@ async function undoRedo(page, uuid) {
 		let g;
 		s.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 		const o = /** @type {any} */ (g).getObjectByProperty('uuid', u);
+		if (!o) return;
 		const before = { pos: o.position.toArray(), rot: [o.rotation.x, o.rotation.y, o.rotation.z], scale: o.scale.toArray() };
 		o.position.x += 1;
 		const after = { pos: o.position.toArray(), rot: before.rot, scale: before.scale };
@@ -400,7 +409,6 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1500, height: 940 } } });
 	const p = A.page;
 	h.check(await S(p, PROBE), 'probe module up');
-	await spawnProbe(p, 'A');
 
 	// ---- F1 (a): MARBLE MAZE's behaviour, the user's case ---------------------------------------
 	if (MARBLE) {
@@ -438,6 +446,9 @@ h.run(async () => {
 		await S(p, () => /** @type {any} */ (window).__stores.flowGraphClose.set(true));
 	} else console.log('SKIP Marble Maze (no authored scene.tpscene; set MARBLE_TPSCENE)');
 
+	// S8's probe box — AFTER the Marble Maze load, which replaces the scene
+	await spawnProbe(p, 'A');
+
 	// ---- F1 (b): a probe behaviour with six number knobs ----------------------------------------
 	const [wid] = await S(p, (/** @type {string} */ code) => /** @type {any} */ (window).__fbApi.flow.addNodes({ nodes: [{ type: 'behaviour', x: 40, y: 40, data: { name: 'Waves spawner', code } }] }), WAVES);
 	await S(p, (/** @type {string} */ i) => {
@@ -448,7 +459,7 @@ h.run(async () => {
 	}, wid);
 	await p.waitForTimeout(1500);
 	await behaviourViewChecks(p, 'probe behaviour');
-	await shot(p, '02-behaviour-view-after-dark.png');
+	await shot(p, '02-behaviour-view-dark.png');
 
 	// F2: the Graph view is a panel (the user's first-named leak)
 	await panelRow(p, 'Behaviour Graph view (docked)', '#behaviour-view', { expect: 'panel' });
@@ -491,7 +502,7 @@ h.run(async () => {
 	h.check(ctl.flew > 0.05 && ctl.chat, `F2 control: from the 3D view W flies (${ctl.flew.toFixed(2)}) and C toggles chat (${ctl.chat})`);
 	// S1 control: the same wheel over the canvas DOES zoom (so the measurement can see a leak)
 	{
-		const cvb = await p.locator('canvas').first().boundingBox();
+		const cvb = await canvasBox(p);
 		const v0 = await viewOf(p);
 		await p.mouse.move(cvb.x + cvb.width * 0.5, cvb.y + 150);
 		await p.mouse.wheel(0, 360);
@@ -645,7 +656,7 @@ h.run(async () => {
 	// F3 control: a plain right click on the 3D view is NOT ours to stop (the app's own viewport
 	// menu may take it — but the guard must not have)
 	await q.evaluate(() => (/** @type {any} */ (window).__cm = []));
-	const cv = await q.locator('canvas').first().boundingBox();
+	const cv = await canvasBox(q);
 	await q.mouse.click(cv.x + cv.width * 0.5, cv.y + 150, { button: 'right' });
 	await q.waitForTimeout(200);
 	await q.keyboard.press('Escape');
@@ -711,7 +722,7 @@ h.run(async () => {
 			s.behaviourViewOpen.set({ id: i, graphId: 'scene' });
 		}, wid);
 		await p.waitForTimeout(1500);
-		await shot(p, '05-behaviour-view-after-light.png');
+		await shot(p, '05-behaviour-view-light.png');
 	}
 
 	console.log('\nF2 / S1 / S8 TABLE (panel | pressed | scope | keys W+C | wheel | drag L | drag M | drag R | dblclick | canvas holes | undo/redo)');

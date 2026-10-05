@@ -80,6 +80,8 @@ import { showConfirm, showChoice } from './confirmDialog';
 import { prepareSceneSwitch, sceneArrived } from './sceneSwitch';
 import { APP_VERSION } from './version.js';
 import { oldRulesGame, RETIRED_GAME_NODES } from './oldGameScene.js';
+// 36-community (C4): the scene's permanent game id rides session.json; a load takes it from the file
+import { gameFields, noteLoadedGame } from './gameIdentity.js';
 
 // Multi-slot sessions (phase 50) on top of the autosave format. Each session
 // stores its top-level objects as individual ObjectLoader jsons — that makes
@@ -265,6 +267,9 @@ export function buildSessionPayload(name) {
 			// appVersion is display-only provenance
 			format: SESSION_FORMAT,
 			appVersion: APP_VERSION,
+			// 36-community (C4): `gameId` / `parentGameId` / `template` — READ ONLY here (a payload is
+			// built for autosave and the dirty check too); the deliberate saves mint it first
+			...gameFields(),
 			count: (group?.children ?? []).filter((/** @type {any} */ child) => !isTransient(child)).length,
 			thumbnail: renderSceneThumbnail(group),
 			// animated imports are saved as their ORIGINAL bytes below instead:
@@ -1400,6 +1405,9 @@ async function applySessionNow(payload, opts, job) {
 	// screen — nothing anybody made, so no "Backup before" of it
 	const hadContent = !!group?.children.length && !job.interrupted;
 	if (backup && hadContent) await saveSession('Backup before "' + payload.name + '"');
+	// 36-community (C4): the arriving scene's game identity — AFTER the backup, which saves the
+	// scene being LEFT under its own id
+	noteLoadedGame(payload);
 	// R22-R8: a session saved by "Save into session" carries the whole Explorer library
 	// beside the scene, because that gesture EMPTIES the library and the save is the only
 	// thing standing between the user and losing it. Restoring it is hash-deduped, so a

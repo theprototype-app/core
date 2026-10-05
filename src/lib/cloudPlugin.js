@@ -29,7 +29,9 @@ import { safeStorage } from './safeStorage';
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
 import { aiProviders, aiActiveProvider, aiEnabled, addAiProvider, updateAiProvider, removeAiProvider, setAiActiveProvider, setAiEnabled } from './ai/providers';
 import { meshProviders, meshActiveProvider, meshGenEnabled, addMeshProvider, updateMeshProvider, removeMeshProvider, setMeshActiveProvider, setMeshGenEnabled } from './ai/meshProviders';
-import { meshJobStatus } from './cloudHooks';
+import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart } from './cloudHooks';
+// 36-community (C4): a leaf (svelte/store only) — safe as a static edge
+import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
 import { publishSlot, publishedLink, openPublishExport } from './export/exportStores.js';
 
@@ -334,6 +336,9 @@ export function makeCloudApi() {
 		 */
 		buildSceneBundle: async ({ assets = true, flow = true, name = '' } = {}) => {
 			const { buildSessionPayload, exportSessionZip, sessionFileList } = await import('./sessions');
+			// 36-community (C4): a published file carries the scene's permanent game id
+			const { ensureGameId } = await import('./gameIdentity.js');
+			ensureGameId();
 			const payload = buildSessionPayload(String(name || get(currentLevel)?.name || 'Untitled'));
 			const zip = await exportSessionZip(payload, { assets: assets !== false, flow: flow !== false, packs: false });
 			const blob = new Blob([/** @type {BlobPart} */ (zip)], { type: 'application/zip' });
@@ -348,18 +353,23 @@ export function makeCloudApi() {
 		 * "Open in ThePrototype" and "Remix": a remix is a LOCAL load, nothing new on the
 		 * wire. Resolves true when the scene was applied, false when refused/declined/failed
 		 * (the user already saw why, as a toast or a confirm).
-		 * @param {{sceneUrl: string, title?: string, slug?: string, modules?: {id: string, version: string}[]}} entry
+		 * @param {{sceneUrl: string, title?: string, slug?: string, modules?: {id: string, version: string}[], keepGameId?: boolean}} entry
 		 * @returns {Promise<boolean>}
 		 */
-		loadRemoteScene: async ({ sceneUrl, title = '', slug = '', modules = [] } = /** @type {any} */ ({})) => {
+		loadRemoteScene: async ({ sceneUrl, title = '', slug = '', modules = [], keepGameId = false } = /** @type {any} */ ({})) => {
 			if (!sceneUrl) return false;
 			const { loadRemoteScene } = await import('./sceneTemplates');
-			return loadRemoteScene({
-				sceneUrl: String(sceneUrl),
-				title: String(title || slug || 'Scene'),
-				slug: String(slug || title || 'scene'),
-				modules: Array.isArray(modules) ? modules : []
-			});
+			// 36-community (C4): a published scene opened by someone else is a REMIX (it forks its game
+			// id at the first save); `keepGameId` = the owner opening their own scene, which keeps it
+			return loadRemoteScene(
+				{
+					sceneUrl: String(sceneUrl),
+					title: String(title || slug || 'Scene'),
+					slug: String(slug || title || 'scene'),
+					modules: Array.isArray(modules) ? modules : []
+				},
+				{ origin: 'community', keepGameId: keepGameId === true }
+			);
 		},
 
 		/**
@@ -482,6 +492,28 @@ export function makeCloudApi() {
 		 *  `fn() → string | null` (null renders nothing) or null to remove it; call it
 		 *  again whenever the line may have changed — every set is a poke. */
 		setMeshJobStatus: (/** @type {any} */ fn) => meshJobStatus.set(typeof fn === 'function' ? fn : null),
+
+		// --- 36-community (C4/C2/C6): ADDITIVE, typeof-probed, no bump ---
+		/** The open scene's GAME identity (the scene file's permanent `gameId`). `current()` →
+		 *  `{gameId, parentGameId, template, pendingFork}` or null; `ensure()` mints one (or forks a
+		 *  pending remix) and returns it; `fork()` gives the scene a NEW id whose parent is the old
+		 *  one — the answer when the server says the id belongs to another account. */
+		game: {
+			current: () => {
+				const g = get(gameIdentity);
+				return g ? { ...g } : null;
+			},
+			ensure: () => ensureGameId(),
+			fork: () => forkGameId()
+		},
+		/** An export zip was built: `fn({gameId, buildId, preset, title, template, parentGameId,
+		 *  appVersion})`. Returns `off`. */
+		onExportBuilt: (/** @type {any} */ fn) => onExportBuilt(fn),
+		/** A Games-tab template was started: `fn(slug)`. Returns `off`. */
+		onTemplateOpen: (/** @type {any} */ fn) => onTemplateOpen(fn),
+		/** C6: the heart for the scene on screen (play-link start card + pause menu):
+		 *  `{count, liked, toggle() → Promise<{liked, count} | null>}`, or null to remove it. */
+		setSceneHeart: (/** @type {any} */ info) => setSceneHeart(info),
 
 		// --- utilities ---
 		toast: showToast

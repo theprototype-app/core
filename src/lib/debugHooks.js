@@ -267,6 +267,8 @@ export const DEBUG_HOOKS = [
 	['exportStores', () => import('./export/exportStores.js')],
 	['exportBoot', () => import('./export/exportBoot.js')],
 	['exportRuntime', () => import('./export/exportRuntime.js')],
+	// 36-community (C4): the open scene's permanent game id
+	['gameIdentity', () => import('./gameIdentity.js')],
 	['gameSettings', () => import('./gameSettings')],
 	['objectListNav', () => import('./objectListNav')],
 	['inviteLinks', () => import('./inviteLinks')],

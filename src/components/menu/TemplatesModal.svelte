@@ -31,6 +31,7 @@
 	import { licenseLabel } from '$lib/packs';
 	import { classifyRequirements } from '$lib/moduleRequirements';
 	import { Gamepad2, Puzzle } from '@lucide/svelte';
+	import HeartButton from '../ui/HeartButton.svelte';
 
 	let tab = $state('general');
 	/** A7: active tag chips, PER TAB — a filter that survived a tab switch would
@@ -44,7 +45,33 @@
 	// chips are DERIVED from the tab's own tags, so a new tag in the index appears
 	// without a core release, and a tab with no tags grows no chip row at all
 	const chips = $derived(tagUnion(tabEntries));
-	const shown = $derived(tabEntries.filter((/** @type {any} */ e) => matchesTags(e, activeTags)));
+	// 36-community (C5): the "Mine" chip — a provider that knows who is signed in says so
+	// (`provider.mine`) and marks the viewer's own entries; a facet of its own, AND-ed with tags
+	let mineOnly = $state(false);
+	const mineChip = $derived(tab === 'community' && $communityProvider?.mine === true);
+	const shown = $derived(
+		tabEntries.filter((/** @type {any} */ e) => matchesTags(e, activeTags) && (!mineOnly || !mineChip || e.mine === true))
+	);
+	// 36-community (C6): a provider that can write a like puts a heart on its cards
+	const canLike = $derived(tab === 'community' && typeof $communityProvider?.toggleLike === 'function');
+	/** C6: the card's heart → the provider; the entry is patched with the answer so the grid agrees
+	 * @param {any} entry @returns {Promise<{liked: boolean, count: number} | null>} */
+	async function toggleLike(entry) {
+		const provider = $communityProvider;
+		if (typeof provider?.toggleLike !== 'function') return null;
+		/** @type {any} */
+		let res = null;
+		try {
+			res = await provider.toggleLike(entry);
+		} catch {
+			res = null;
+		}
+		if (!res || typeof res !== 'object') return null;
+		const liked = !!res.liked;
+		const count = Math.max(0, Number(res.likeCount ?? res.count) || 0);
+		communityEntries.update((list) => list.map((/** @type {any} */ e) => (e.slug === entry.slug ? { ...e, liked, likeCount: count } : e)));
+		return { liked, count };
+	}
 	// 28-A6: the provider's submit control replaces "Submit yours on GitHub" when present,
 	// and the pull-request copy stands down whenever ANY provider is installed — it would
 	// be a false statement about a source core knows nothing about.
@@ -63,6 +90,7 @@
 	function pickTab(next) {
 		tab = next;
 		activeTags = [];
+		mineOnly = false;
 	}
 	/** A7: what this game needs that this device has not got. Advisory on the card —
 	 * the load path prompts properly (A6.2); the badge exists so a player is not
@@ -134,7 +162,8 @@
 		templatesModalOpen.set(false);
 		// 28-A6: a Community card goes through the provider when one is installed
 		if (tab === 'community') loadCommunityEntry(entry);
-		else loadRemoteScene(entry);
+		// 36-community (C4): the tab names the template the game starts from
+		else loadRemoteScene(entry, { origin: tab });
 	}
 	/** 28-A6: the provider's submit control — a link when it names an href, a button
 	 * when it names an action (a plugin's publish dialog opens in-app). */
@@ -216,13 +245,16 @@
 					<Puzzle size={11} aria-hidden="true" />{req?.text}
 				</span>
 			{/if}
+			{#if entry.notice}
+				<p class="tpl-notice-line" data-card-notice={entry.slug}>{entry.notice}</p>
+			{/if}
 			<p class="mt-auto text-[10px] text-gray-500">
 				{#if entry.author}{entry.author}{/if}
 				{#if entry.author && entry.license}·{/if}
 				{#if entry.license}<span title={licenseLabel(entry.license)}>{entry.license}</span>{/if}
 				{#if entry.bytes}<span class="pl-1">{sizeLabel(entry.bytes)}</span>{/if}
 				<!-- 28-A6: provider-only facts, rendered ONLY when present (a GitHub row has none) -->
-				{#if entry.likeCount != null}<span class="tpl-likes pl-1" title="Likes">♥ {entry.likeCount}</span>{/if}
+				{#if entry.likeCount != null && !canLike}<span class="tpl-likes pl-1" title="Likes">♥ {entry.likeCount}</span>{/if}
 				{#if entry.remixOf}<span class="tpl-remix pl-1" title="A remix of another published scene">remix{#if entry.remixOf.title}&nbsp;of {entry.remixOf.title}{/if}</span>{/if}
 			</p>
 		</div>
@@ -237,6 +269,12 @@
 	>
 		<FolderDown size={14} aria-hidden="true" />
 	</button>
+	{#if canLike && entry.likeCount != null}
+		<!-- 36-community (C6): the heart, a sibling of the load button (never inside it) -->
+		<span class="tpl-heart" data-card-heart={entry.slug}>
+			<HeartButton count={entry.likeCount} liked={entry.liked === true} label={'Like ' + entry.title} ontoggle={() => toggleLike(entry)} />
+		</span>
+	{/if}
 	</div>
 {/snippet}
 
@@ -314,8 +352,19 @@
 		<!-- A7: tag chips, shared by all four tabs and derived from the ACTIVE tab's own
 		     tags. OR within the facet (see matchesTags) — an AND would empty the grid on
 		     the second click, which reads as a broken filter. VR is just a chip. -->
-		{#if chips.length}
+		{#if chips.length || mineChip}
 			<div id="templates-chips" class="tpl-chips">
+				{#if mineChip}
+					<button
+						id="templates-chip-mine"
+						class="tpl-chip"
+						class:active={mineOnly}
+						data-chip="__mine"
+						aria-pressed={mineOnly}
+						title="Only what you published"
+						onclick={() => (mineOnly = !mineOnly)}>Mine</button
+					>
+				{/if}
 				{#each chips as tag (tag)}
 					<button
 						class="tpl-chip"
@@ -449,6 +498,9 @@
 						{@render card(entry)}
 					{/each}
 				</div>
+				{#if !shown.length && mineOnly}
+					<p id="community-mine-empty" class="mt-3 text-xs italic text-gray-500">Nothing published yet — publish a scene and it shows here.</p>
+				{/if}
 				<p class="mt-3 text-xs text-gray-500">
 					{#if !provided}
 						Community scenes are contributed via pull request and reviewed before they appear.
@@ -608,6 +660,16 @@
 		color: #fff;
 		border-color: var(--color-primary-600, #2563eb);
 		background: rgb(17 24 39 / 0.95);
+	}
+	.tpl-heart {
+		position: absolute;
+		top: 0.35rem;
+		left: 0.35rem;
+	}
+	.tpl-notice-line {
+		font-size: 0.68rem;
+		font-weight: 600;
+		color: var(--ink-warn, #fbbf24);
 	}
 	.tpl-save:disabled {
 		opacity: 0.5;

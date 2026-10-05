@@ -99,6 +99,23 @@ export function makePlayJs(config) {
 }
 
 /**
+ * 36-community (C4): an iframe snippet around a PLAY LINK (`…/p/<id>`) asks it to count the
+ * visit as an EMBED (`?src=embed`, which the community Worker passes to the badge inside).
+ * Any other URL — a static export the user hosts — is returned unchanged.
+ * @param {string} url @returns {string}
+ */
+export function embedSourceUrl(url) {
+	try {
+		const u = new URL(String(url));
+		if (!/^\/p\/[A-Za-z0-9_-]{1,64}$/.test(u.pathname)) return String(url);
+		u.searchParams.set('src', 'embed');
+		return u.toString();
+	} catch {
+		return String(url);
+	}
+}
+
+/**
  * An iframe snippet for a hosted game (a play link, or wherever a static export lives). PURE.
  * @param {string} url @param {{w?: number, h?: number, title?: string}} [opts]
  */

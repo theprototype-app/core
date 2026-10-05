@@ -51,6 +51,7 @@
 	} from '$lib/sessions';
 	import { showConfirm } from '$lib/confirmDialog';
 	import { safeStorage } from '$lib/safeStorage';
+	import { ensureGameId } from '$lib/gameIdentity.js';
 	// R22 round 11: a file's icon. The Explorer keeps its own map inside the component, so
 	// this is the small subset a saved entry can hold rather than an import of it — three
 	// rows, and no reason to export a table from a 5,000-line component to share them.
@@ -188,6 +189,8 @@
 	function confirmSave() {
 		const name = saveName.trim();
 		if (!name) return;
+		// 36-community (C4): a named save gives the scene its permanent game id
+		ensureGameId();
 		if (saveKind === 'project') void saveSessionWithLibrary(name);
 		else saveSession(name);
 		saving = false;

@@ -146,6 +146,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { showToast, showInfoToast } from './stores/appStore'
   // 34 PF: the Profiler dock tab, loaded the first time it opens (it is closed by default)
   import { profilerClose } from './stores/appStore'
+  // 36-code: the code workspace (plan 75), loaded the first time a tab opens
+  import { codeWorkspaceClose } from './stores/appStore'
+  import { startCodeWorkspace } from '$lib/codeWorkspace'
   import { peers, userdata } from './stores/appStore'
   import { get } from 'svelte/store'
   import { initModules, disabledModules } from '$lib/moduleSDK'
@@ -261,6 +264,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startSnapping()
     startAutosave()
     startSceneAssets()
+    startCodeWorkspace() // 36-code: scriptEditorOpen -> a workspace tab, file follow
     startNetworkQuality()
     startAudioDevices() // 23-A3: the device reconcile off objectsGroup
     registerVRPatch() // 23-B1: plugs, cables and knobs in VR
@@ -366,6 +370,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <Explorer />
 {#if !$profilerClose}
 {#await import('./components/editors/Profiler.svelte') then m}<m.default />{/await}
+{/if}
+{#if !$codeWorkspaceClose}
+{#await import('./components/editors/CodeWorkspace.svelte') then m}<m.default />{/await}
 {/if}
 <TextEditorWindow />
 <!-- R22 round 12: ONE INSTANCE PER OPEN PREVIEW. With the multi-window pref off the list

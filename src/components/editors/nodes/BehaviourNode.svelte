@@ -3,7 +3,7 @@
 	// runs the handlers), and the way into its derived live node view (D2). No sockets: a
 	// behaviour listens to kit events and acts through the kit.
 	import NodeWrapper from './NodeWrapper.svelte';
-	import { behaviourViewOpen, activeGraphId } from '../../../stores/flowStore';
+	import { behaviourViewOpen, activeGraphId, scriptFileErrors } from '../../../stores/flowStore';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { onMount } from 'svelte';
 
@@ -22,6 +22,7 @@
 	$: state = data.enabled === false ? 'off' : (status?.status ?? 'loading');
 	$: handlers = status?.model?.handlers?.length ?? 0;
 	$: firstError = status?.errors?.[0];
+	$: pending = $scriptFileErrors[id];
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
@@ -46,6 +47,13 @@
 				Open view
 			</button>
 			<button
+				class="nodrag behaviour-code rounded-sm bg-gray-600 px-2 py-0.5 text-white"
+				title="Edit this behaviour's source in the code workspace (Ctrl+S reloads it)"
+				on:click={() => import('$lib/codeWorkspace').then((m) => m.openCode({ source: 'behaviour', ref: { nodeId: id, graphId: $activeGraphId } }))}
+			>
+				Code
+			</button>
+			<button
 				class="nodrag rounded-sm bg-gray-600 px-2 py-0.5 text-white"
 				title={data.enabled === false ? 'Run this behaviour' : 'Stop this behaviour (its state is kept)'}
 				on:click={() => setNodeData(id, { enabled: data.enabled === false })}
@@ -53,6 +61,9 @@
 				{data.enabled === false ? 'Run' : 'Stop'}
 			</button>
 		</div>
+		{#if pending}
+			<span class="max-w-[200px] wrap-break-word text-[10px] text-amber-400" title={pending}>⚠ {pending}</span>
+		{/if}
 		{#if firstError}
 			<span class="max-w-[200px] wrap-break-word text-[10px] text-red-500" title={firstError.message}>⚠ {firstError.line ? 'line ' + firstError.line + ': ' : ''}{firstError.message}</span>
 		{/if}

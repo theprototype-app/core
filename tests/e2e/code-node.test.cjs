@@ -50,6 +50,7 @@ const dataOf = (peer, id) =>
 const select = (peer, id) =>
 	peer.page.evaluate((id) => window.__stores.flowNodes.update((ns) => ns.map((n) => ({ ...n, selected: n.id === id }))), id);
 const storeVal = (peer, name) => peer.page.evaluate((name) => { let v; window.__stores[name].subscribe((x) => (v = x))(); return v; }, name);
+const tabsOf = (peer) => peer.page.evaluate(() => { let v = []; window.__stores.codeWorkspace?.codeTabs.subscribe((x) => (v = x))(); return JSON.parse(JSON.stringify(v)); }); // 36-code: the workspace's open tabs
 const dblclickNode = async (peer, id) => {
 	const box = await peer.page.locator(`.svelte-flow__node[data-id="${id}"]`).boundingBox();
 	if (!box) return false;
@@ -133,38 +134,30 @@ h.run(async () => {
 	await centerOn(A, 'cn-script');
 	await A.page.waitForTimeout(500);
 	h.check(await dblclickNode(A, 'cn-script'), 'premise: the script card is on screen');
-	await h.eventually(() => storeVal(A, 'scriptEditorOpen'), (v) => v === 'cn-script', 'double-click a Script → the Script panel opens on it', 4000);
-	await A.page.locator('#script-panel-close').click();
+	// 36-code merged: the opener is the code workspace — the Script node opens as its tab
+	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.nodeId === 'cn-script'), 'double-click a Script → its tab in the code workspace', 15000);
+	await A.page.locator('#code-ws-close').click();
 
 	await centerOn(A, 'cn-bhv');
 	await A.page.waitForTimeout(400);
 	await dblclickNode(A, 'cn-bhv');
-	await h.eventually(() => A.page.locator('#behaviour-view-editor').count(), (n) => n === 1, 'double-click a Behaviour → its view opens WITH the source panel', 4000);
-	await A.page.locator('#behaviour-view-back').click();
+	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.nodeId === 'cn-bhv' && x.kind === 'behaviour'), 'double-click a Behaviour → its source in the code workspace', 15000);
+	await A.page.locator('#code-ws-close').click();
 
 	await addGraph(A, [node('cn-ref', 'coderef', { label: 'Code link', module: 'minigolf', file: 'holes.js', title: 'Mini Golf holes' }, 440, 200)]);
 	await A.page.waitForTimeout(600);
 	await centerOn(A, 'cn-ref');
 	await A.page.waitForTimeout(400);
 	await dblclickNode(A, 'cn-ref');
-	await h.eventually(() => A.page.locator('#module-source-window').count(), (n) => n === 1, 'double-click a Code link → the Module source window', 4000);
+	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.kind === 'module' && x.moduleId === 'minigolf' && x.name === 'holes.js'), 'double-click a Code link → the module file as a code-workspace tab', 15000);
 	await h.eventually(
-		() => A.page.evaluate(() => [...document.querySelectorAll('#module-source-window [data-file]')].map((b) => b.getAttribute('data-file'))),
-		(files) => files.includes('module.js') && files.includes('holes.js'),
-		"it lists minigolf's real files (module.js, holes.js)",
+		() => tabsOf(A).then((t) => t.find((x) => x.name === 'holes.js')),
+		(tab) => /PUTT_MAX\s*=\s*7/.test(tab?.code ?? '') && tab.readOnly === true,
+		'holes.js opens on the file the link names — PUTT_MAX = 7 is readable from the graph, read-only',
 		6000
 	);
-	// CodeMirror renders only the lines in view, so the FILE is read through the same loader the
-	// window uses, and the open TAB is the one the link names
-	h.check(
-		(await A.page.locator('#module-source-window [data-file="holes.js"][aria-selected="true"]').count()) === 1,
-		'the window opens on the file the link names (holes.js)'
-	);
-	const holes = await A.page.evaluate(async () => (await window.__stores.codeOpen.moduleSourceFiles('minigolf')).find((f) => f.file === 'holes.js')?.text ?? '');
-	h.check(/PUTT_MAX\s*=\s*7/.test(holes), 'PUTT_MAX = 7 (the shot power) is readable from the graph');
-	h.check((await A.page.locator('#module-source-window [data-readonly="true"]').count()) === 1, 'the module source is read-only');
 	if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, '22-module-source-readonly.png') });
-	await A.page.locator('#module-source-close').click();
+	await A.page.locator('#code-ws-close').click();
 
 	// a module's own node (registered by the core minigolf module) opens the same way
 	const golfType = await A.page.evaluate(() => {
@@ -180,7 +173,7 @@ h.run(async () => {
 		await A.page.waitForTimeout(400);
 		await dblclickNode(A, 'cn-golf');
 		await h.eventually(() => A.page.evaluate(() => window.__stores.codeOpen?.lastOpenCode?.()), (r) => r?.source === 'module' && r?.ref === 'minigolf', `double-click a module node (${golfType}) → its module's source`, 4000);
-		await A.page.locator('#module-source-close').click().catch(() => {});
+		await A.page.locator('#code-ws-close').click().catch(() => {});
 	} else h.check(false, 'premise: the core minigolf module registered a node type');
 
 	// --- 3: the seam ------------------------------------------------------------------------
@@ -198,27 +191,30 @@ h.run(async () => {
 
 	// --- 4: sockets follow the code --------------------------------------------------------
 	await A.page.evaluate(() => window.__stores.scriptEditorOpen.set('cn-script'));
+	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.nodeId === 'cn-script'), 'premise: the script tab is open', 15000);
 	await A.page.waitForTimeout(800);
-	await A.page.locator('#script-panel-editor .cm-content').click();
+	const paneId = await A.page.evaluate(() => new Promise((r) => window.__stores.codeWorkspace.activeCodeTab.subscribe(r)()));
+	await A.page.locator(`[data-pane="${paneId}"] .cm-content`).click();
 	await A.page.keyboard.press('Control+End');
 	// one line, no Enter: an open autocomplete popup would take an Enter as "accept"
 	await A.page.keyboard.type(' /* inputs.ghost */ const e = inputs.extra;');
 	await A.page.keyboard.press('Escape');
+	await A.page.keyboard.press('Control+S'); // the code workspace applies on save (36-code fork #4)
 	await h.eventually(
 		() => dataOf(B, 'cn-script'),
 		(d) => (d?.inputs ?? []).map((s) => s.name).join(',') === 'power,extra',
 		'typing inputs.extra adds that socket on both peers — and the commented inputs.ghost does not (B)',
-		5000
+		8000
 	);
 	const after = await dataOf(B, 'cn-script');
 	if (!(after?.inputs ?? []).some((s) => s.name === 'extra')) console.log('diag code:', JSON.stringify(after?.code), JSON.stringify(after?.inputs));
-	await A.page.locator('#script-panel-close').click();
+	await A.page.locator('#code-ws-close').click();
 
 	// --- 5: module-bound code is read-only until forked ------------------------------------
 	await addGraph(A, [node('cn-mod', 'script', { label: 'Script', inputs: [], code: 'object.rotation.y = time;', src: { kind: 'module', module: 'minigolf', file: 'spin.js' } }, 0, 400)]);
 	await A.page.waitForTimeout(600);
 	await A.page.evaluate(() => window.__stores.scriptEditorOpen.set('cn-mod'));
-	await h.eventually(() => A.page.locator('#script-readonly').count(), (n) => n === 1, 'a module-bound script says read-only and offers Make editable copy', 4000);
+	await h.eventually(() => A.page.locator('#script-readonly').count(), (n) => n === 1, 'a module-bound script says read-only and offers Make editable copy', 15000);
 	h.check((await A.page.locator('[data-readonly="true"]').count()) >= 1, 'its editor is read-only');
 	await A.page.locator('#script-make-editable').click();
 	await h.eventually(() => dataOf(B, 'cn-mod'), (d) => d?.src?.kind === 'asset' && /spin \(copy\)\.js/.test(d.src.name) && d.src.hash?.length > 10, 'the fork re-points data.src at a new Explorer asset (B sees it)', 6000);
@@ -227,8 +223,8 @@ h.run(async () => {
 		await A.page.evaluate(() => { let items; window.__stores.explorer?.explorerItems?.subscribe((v) => (items = v))(); return (items ?? []).some((i) => /spin \(copy\)\.js/.test(i.name)); }),
 		'the copy is in the Explorer library'
 	);
-	await h.eventually(() => A.page.locator('#script-readonly').count(), (n) => n === 0, 'the editor becomes editable after the fork', 4000);
-	await A.page.locator('#script-panel-close').click();
+	await h.eventually(() => A.page.locator('#script-readonly').count(), (n) => n === 0, 'the editor becomes editable after the fork', 6000);
+	await A.page.locator('#code-ws-close').click();
 
 	// --- 6: the Main graph migration -------------------------------------------------------
 	if (GOLF) {

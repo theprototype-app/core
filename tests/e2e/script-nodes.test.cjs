@@ -91,12 +91,21 @@ h.run(async () => {
 	);
 	h.check(!errAfter, 'script error cleared after fix');
 
-	await A.page.locator('p[title="Node editor (N)"]').click();
+	// the editor's scope follows the selection, and /create selects the box (21-E): show the scene graph
+	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.locator('p[title="Node editor (N)"]').click().catch(async (e) => {
+		if (process.env.CW_SHOTS) await A.page.screenshot({ path: process.env.CW_SHOTS + '/zz-script-nodes-fail.png' });
+		throw e;
+	});
 	await A.page.waitForTimeout(800);
-	await A.page.getByRole('button', { name: 'Edit code' }).first().click();
-	await A.page.waitForTimeout(1500);
+	await A.page.getByRole('button', { name: 'Edit code' }).first().click().catch(async (e) => {
+		if (process.env.CW_SHOTS) await A.page.screenshot({ path: process.env.CW_SHOTS + '/zz-script-nodes-edit.png' });
+		throw e;
+	});
+	// 36-code: "Edit code" opens the node's tab in the code workspace (ScriptPanel retired)
+	await A.page.locator('#code-ws-dock .cm-editor, #code-ws-window .cm-editor').first().waitFor({ timeout: 45000 }).catch(() => {});
 	h.check((await A.page.locator('.cm-editor').count()) > 0, 'CodeMirror editor panel mounts');
-	await A.page.locator('#script-panel-close').click();
+	await A.page.locator('#code-ws-close').click();
 	await A.page.locator('p[title="Node editor (N)"]').click();
 
 	await A.page.evaluate(async () => {

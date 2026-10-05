@@ -320,7 +320,6 @@
 	import { emptySessionPayload, exportSessionZip, sessions, loadSessions } from '$lib/sessions';
 	import { selectedObjects } from '../../stores/sceneStore.js';
 	import { sceneAssets } from '$lib/sceneAssets';
-	import { setNodeData } from '$lib/nodesHandler';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
 	import { bottomDockActive, visibleDockKey, dockMinimized, setDockOccupant, dockHeight, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
@@ -4570,6 +4569,16 @@
 							}
 						]
 					: []),
+				...(item.kind === 'text' && /\.js$/i.test(item.name) && !item.packEntry
+					? [
+							{
+								label: 'Open in code editor',
+								icon: 'file-code',
+								tooltip: 'Edit this script in a code workspace tab; saving reloads every node that runs it',
+								action: () => import('$lib/codeWorkspace').then((m) => m.openCode({ source: 'script', ref: { itemId: item.id, hash: item.hash } }))
+							}
+						]
+					: []),
 				...(item.kind === 'text'
 					? [
 							{
@@ -6100,15 +6109,10 @@
 			// scripts edit the NODE code (replicated via setNodeData)
 			if (item.kind === 'image' && item.dataUrl) openImagePreview({ title: item.name, url: item.dataUrl, onClose: () => gridEl?.focus() });
 			else if (item.kind === 'text' && item.nodeId) {
-				// H1: the script node can live in any graph document
+				// H1: the script node can live in any graph document; 36-code: its tab in the
+				// code workspace (a node bound to a file opens the FILE's tab)
 				const found = findNodeAnyGraph((n: any) => n.id === item.nodeId);
-				if (found)
-					openTextEditor({
-						title: item.name + ' (live script)',
-						code: found.node.data?.code ?? '',
-						onSave: (code: string) => setNodeData(item.nodeId, { code }, found.graphId),
-						onClose: () => gridEl?.focus()
-					});
+				if (found) import('$lib/codeWorkspace').then((m) => m.openCode({ source: 'script', ref: { nodeId: item.nodeId, graphId: found.graphId } }));
 			} else if (item.kind === 'audio' && item.itemId) {
 				const backing = $explorerItems.find((i) => i.id === item.itemId);
 				if (backing) inspectItem(backing);
@@ -6121,7 +6125,11 @@
 			await openSceneItem(item);
 			return;
 		}
-		if (item.kind === 'text') {
+		// 36-code (75.1): a .js file is a SCRIPT — it opens as a code-workspace tab, where Ctrl+S
+		// also hot-reloads every node bound to it. Other text keeps the plain editor window.
+		if (item.kind === 'text' && /\.js$/i.test(item.name)) {
+			import('$lib/codeWorkspace').then((m) => m.openCode({ source: 'script', ref: { itemId: item.id, hash: item.hash } }));
+		} else if (item.kind === 'text') {
 			const blob = await itemBlob(item.id);
 			if (!blob) return;
 			openTextEditor({

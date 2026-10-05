@@ -3,6 +3,11 @@
 
 	// Lazy CodeMirror 6 wrapper: loads the editor bundle on first mount.
 	// One-way flow: `value` seeds/refreshes the doc, edits go out via onChange.
+	// 36-code (the code workspace) adds four OPTIONAL props, all inert when absent: `readOnly`
+	// (= `readonly`), `onSave` (Ctrl/Cmd+S INSIDE the editor — CodeMirror owns the key while it
+	// has focus), `reveal` ({line, token}: put the cursor on a line, once per token) and
+	// `diagnostic` ({line, message} | null: the error underline + gutter mark). Their modules load
+	// only for a caller that uses them, so every older caller mounts exactly as fast as before.
 
 	export let value = '';
 	export let onChange = (/** @type {string} */ code) => {};
@@ -10,6 +15,16 @@
 	export let readonly = false;
 	/** @type {number | undefined} */
 	export let line = undefined;
+	export let readOnly = false;
+	/** @type {null | (() => void)} */
+	export let onSave = null;
+	/** @type {null | {line: number, token: number}} */
+	export let reveal = null;
+	/** @type {null | {line: number, message: string}} */
+	export let diagnostic = null;
+	/** @type {any} the lint module, once loaded */
+	let lint = null;
+	let revealed = 0;
 
 	/** @type {HTMLDivElement} */
 	let host;
@@ -18,10 +33,32 @@
 	let lastEmitted = value;
 
 	onMount(async () => {
-		const [{ EditorView, basicSetup }, { javascript }] = await Promise.all([
+		const extras = !!(readOnly || onSave || reveal || diagnostic);
+		const [{ EditorView, basicSetup }, { javascript }, state, viewMod, lintMod] = await Promise.all([
 			import('codemirror'),
-			import('@codemirror/lang-javascript')
+			import('@codemirror/lang-javascript'),
+			extras ? import('@codemirror/state') : null,
+			extras ? import('@codemirror/view') : null,
+			extras ? import('@codemirror/lint') : null
 		]);
+		/** @type {any[]} */
+		const more = [];
+		if (state && viewMod && lintMod) {
+			lint = lintMod;
+			const saveKeys = viewMod.keymap.of([
+				{
+					key: 'Mod-s',
+					preventDefault: true,
+					run: () => {
+						if (!onSave) return false;
+						onSave();
+						return true;
+					}
+				}
+			]);
+			more.push(state.Prec.highest(saveKeys), lintMod.lintGutter());
+			if (readOnly || readonly) more.push(state.EditorState.readOnly.of(true));
+		}
 		view = new EditorView({
 			doc: value,
 			parent: host,
@@ -29,7 +66,8 @@
 				basicSetup,
 				javascript(),
 				// 36: a module's source is read, never typed into
-				...(readonly ? [EditorView.editable.of(false)] : []),
+				...more,
+				...(readonly || readOnly ? [EditorView.editable.of(false)] : []),
 				EditorView.updateListener.of((update) => {
 					if (!update.docChanged) return;
 					lastEmitted = update.state.doc.toString();
@@ -106,7 +144,31 @@
 		view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } });
 	}
 
+	/** @param {number} n */
+	function lineAt(n) {
+		const doc = view.state.doc;
+		return doc.line(Math.min(Math.max(1, Math.floor(n) || 1), doc.lines));
+	}
+	// 36-code: reveal a line (go-to from an error banner / openCode({line}))
+	$: if (view && reveal && reveal.token !== revealed) {
+		revealed = reveal.token;
+		const l = lineAt(reveal.line);
+		view.dispatch({ selection: { anchor: l.from }, scrollIntoView: true });
+		view.focus();
+	}
+	// 36-code: the parse error the last save hit, underlined on its line
+	$: if (view) showDiagnostic(diagnostic);
+	/** @param {null | {line: number, message: string}} d */
+	async function showDiagnostic(d) {
+		if (!lint) {
+			if (!d) return;
+			lint = await import('@codemirror/lint');
+		}
+		const l = d ? lineAt(d.line) : null;
+		view.dispatch(lint.setDiagnostics(view.state, l ? [{ from: l.from, to: l.to, severity: 'error', message: d?.message ?? '' }] : []));
+	}
+
 	onDestroy(() => view?.destroy());
 </script>
 
-<div bind:this={host} data-readonly={readonly ? 'true' : undefined} class="h-full overflow-auto rounded-sm border border-gray-600 bg-gray-900 text-left"></div>
+<div bind:this={host} data-readonly={readonly || readOnly ? 'true' : undefined} class="h-full overflow-auto rounded-sm border border-gray-600 bg-gray-900 text-left"></div>

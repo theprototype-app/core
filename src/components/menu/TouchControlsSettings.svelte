@@ -11,7 +11,9 @@
 	//
 	// Every value here is a LOCAL per-device pref (touchActions: safeStorage), the
 	// gamepadPrefs family — never replicated, never saved into a scene.
-	import { AccordionItem, Toggle } from 'flowbite-svelte';
+	import { Toggle } from 'flowbite-svelte';
+	// 36 B14: a section of its own, so it registers with the Settings sidebar like the rest
+	import AccordionItem from './settings/SettingsSection.svelte';
 	import { get } from 'svelte/store';
 	import SettingRow from './SettingRow.svelte';
 	import TouchActionButton from '../play/TouchActionButton.svelte';

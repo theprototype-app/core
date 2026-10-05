@@ -300,6 +300,10 @@ export const modulesOpen = writable(false);
 // sessions manager modal (50)
 export const sessionsOpen = writable(false);
 
+// 36 B14: the checkpoint timeline + the "Save checkpoint…" dialog (lib/checkpoints.js)
+export const checkpointsOpen = writable(false);
+export const checkpointSaveOpen = writable(false);
+
 // templates modal ("Templates" sidebar row: General / Examples / Community tabs)
 export const templatesModalOpen = writable(false);
 /** 31 K3: which tab the templates modal opens on next (read once, then cleared) — the game
@@ -316,9 +320,9 @@ export const templatesModalTab = writable(null);
  * meant to coexist with viewport work).
  */
 export const anyModalOpen = derived(
-	[settingsOpen, sessionsOpen, modulesOpen, characterModalOpen, profileSettingsOpen, meshGenModalOpen, templatesModalOpen],
-	([$settings, $sessions, $modules, $character, $profile, $meshGen, $templates]) =>
-		!!$settings || !!$sessions || !!$modules || !!$character || !!$profile || !!$meshGen || !!$templates
+	[settingsOpen, sessionsOpen, modulesOpen, characterModalOpen, profileSettingsOpen, meshGenModalOpen, templatesModalOpen, checkpointsOpen, checkpointSaveOpen],
+	([$settings, $sessions, $modules, $character, $profile, $meshGen, $templates, $checkpoints, $checkpointSave]) =>
+		!!$settings || !!$sessions || !!$modules || !!$character || !!$profile || !!$meshGen || !!$templates || !!$checkpoints || !!$checkpointSave
 );
 
 // viewport right-click menu (77): { x, y, point: [x,y,z] } | null — rendered

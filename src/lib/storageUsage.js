@@ -57,6 +57,8 @@ import { userModules, removeUserModule } from './userModules';
 import { sharedThumbs, forgetSharedThumb } from './assetShare';
 import { sleeveSlots, clearSlot } from './vrSleeve';
 import { clearSavedSession } from './autosave';
+// 36 B14: the checkpoint timeline's rows are their own category (its index is structure)
+import { checkpoints, deleteCheckpoint, KEY as KEY_CHECKPOINT, INDEX_KEY as KEY_CHECKPOINT_INDEX } from './checkpoints';
 import { fmtBytes } from './transferLedger';
 
 /**
@@ -151,6 +153,11 @@ export const CATEGORIES = [
 		key: 'autosave',
 		label: 'Autosave',
 		note: 'The snapshot the app restores after a crash or a reload. It is rewritten as you work, so clearing it only loses the restore point.'
+	},
+	{
+		key: 'checkpoints',
+		label: 'Checkpoints',
+		note: 'The checkpoint timeline (burger menu ▸ Checkpoints): copies of your scene kept on this device. Its size limit is in Settings ▸ Scene.'
 	},
 	{
 		key: 'structure',
@@ -463,6 +470,36 @@ export async function scanStorage() {
 				continue;
 			}
 
+			// ---- 36 B14: checkpoints (the index rows are the authority, like session metas) ----
+			if (key.startsWith(KEY_CHECKPOINT)) {
+				const id = key.slice(KEY_CHECKPOINT.length);
+				const meta = get(checkpoints).find((r) => r.id === id);
+				push({
+					id: key,
+					category: 'checkpoints',
+					label: meta?.name || 'Checkpoint',
+					sub: meta ? (meta.auto ? 'automatic · ' : '') + fmtWhen(meta.createdAt) + (meta.pinned ? ' · pinned' : '') : id.slice(0, 12),
+					bytes: meta ? Number(meta.bytes) || 0 : valueBytes((await safeGet(key)).value),
+					removable: true,
+					kind: 'checkpoint',
+					ref: id
+				});
+				continue;
+			}
+			if (key === KEY_CHECKPOINT_INDEX) {
+				push({
+					id: key,
+					category: 'structure',
+					label: 'Checkpoint index',
+					sub: get(checkpoints).length + ' checkpoints',
+					bytes: valueBytes((await safeGet(key)).value),
+					removable: false,
+					reason: 'The timeline reads this list instead of every checkpoint. Delete checkpoints instead and it shrinks with them.',
+					kind: 'none'
+				});
+				continue;
+			}
+
 			// ---- environment presets --------------------------------------------------
 			if (key.startsWith(KEY_PRESET)) {
 				const name = key.slice(KEY_PRESET.length);
@@ -644,6 +681,9 @@ export async function reclaimRow(row) {
 				return row.bytes;
 			case 'autosave':
 				await clearSavedSession();
+				return row.bytes;
+			case 'checkpoint':
+				await deleteCheckpoint(String(row.ref));
 				return row.bytes;
 			case 'prefab':
 				await removePrefab(String(row.ref));

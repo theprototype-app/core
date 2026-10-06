@@ -169,7 +169,10 @@ export function declareTouchActions(owner, actions, opts = {}) {
 /* --------------------------------------------------------------- resolution ---- */
 
 /**
- * @typedef {{stick: boolean, look: boolean, preset: string, actions: TouchAction[]}} TouchControlsSpec
+ * `declared` = a module asked for these controls (api.input.actions) rather than the scene
+ * implying them — the module then READS the stick itself (api.input().touch), so the stick
+ * stays live under the module's own 'keys' claim (37: Race steers with it while it owns WASD).
+ * @typedef {{stick: boolean, look: boolean, preset: string, actions: TouchAction[], declared: boolean}} TouchControlsSpec
  */
 
 /**
@@ -206,7 +209,7 @@ export function resolveTouchControls({ declared = [], walk = false, fly = false,
 			add(normalizeAction({ id: 'key:' + code, label: keyLabel(code), icon: '', keys: [code] }));
 		}
 	}
-	return { stick, look, preset, actions };
+	return { stick, look, preset, actions, declared: declared.length > 0 };
 }
 
 /* ------------------------------------------------------------------- prefs ---- */

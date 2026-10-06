@@ -106,6 +106,9 @@ describe('where buttons come from', () => {
 		].map((a) => /** @type {any} */ (normalizeAction(a, 'race')));
 		const spec = resolveTouchControls({ declared: [{ owner: 'race', actions: pedals, preset: 'drive', at: 1 }] });
 		expect(spec.preset).toBe('drive');
+		// a module asked for it, so the overlay keeps its stick live under the module's 'keys' claim
+		expect(spec.declared).toBe(true);
+		expect(resolveTouchControls({}).declared).toBe(false);
 		expect(spec.stick).toBe(true);
 		expect(spec.look).toBe(false);
 		// movement keys are fine as a DECLARED action (only scene-implied keys skip them)

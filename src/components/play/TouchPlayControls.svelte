@@ -101,7 +101,9 @@
 	// stick that stopped where the keyboard kept going would move the same scene two
 	// different ways depending on the device.
 	const inputLive = $derived(shown && !$playPointerFree && !$inputClaims.includes('keys'));
-	const stickLive = $derived(inputLive && spec.stick);
+	// 37: except the stick a MODULE declared — it claimed the keys because it reads the input
+	// itself (api.input().touch), and the stick is how a phone feeds it (Race's steering)
+	const stickLive = $derived(spec.stick && (inputLive || (shown && !$playPointerFree && !!spec.declared)));
 	const lookLive = $derived(inputLive && spec.look);
 	// buttons: in play while the menu substate is not up (a module's key claim does NOT
 	// stop them — it still reads keys through api.onInput), or in the editor when asked
@@ -220,7 +222,7 @@
 	/** @param {PointerEvent} event */
 	function onPointerDown(event) {
 		if (/** @type {any} */ (event)[TOUCH_ACTION_EVENT]) return;
-		if (!inputLive || event.pointerType !== 'touch' || !onCanvas(event.target)) return;
+		if (!(inputLive || stickLive) || event.pointerType !== 'touch' || !onCanvas(event.target)) return;
 		// the stick owns the left half (or its own base, wherever the player put it); with
 		// no stick the whole view looks
 		const nearBase =

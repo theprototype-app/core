@@ -17,7 +17,7 @@
 	--hud-cell: 38px; /* toolbar cells */
 	--hud-icon-button: 34px; /* top-right / Connect icon buttons */
 	--hud-fab: 44px; /* the corner buttons (already a touch size) */
-	--hud-bar-h: 52px; /* the toolbar */
+	--hud-bar-h: 48px; /* the toolbar: at most 48 so it never shares a row with the mic/AI buttons above the bottom pair (toolbar-position) */
 	--hud-row-h: 44px; /* Connect bar, top-right group */
 }
 /* touch: every HUD hit target reaches 44 px (SPEC §6) */

@@ -158,6 +158,7 @@ uniform mat4 uWorldToLocal;
 uniform vec3 uBoxMin;
 uniform vec3 uBoxMax;
 uniform float uOpen; // plane: no floor (an ocean)
+uniform float uRound; // cylinder footprint
 varying vec3 vWorld;
 varying vec3 vNormalW;
 varying float vCrest;
@@ -171,6 +172,8 @@ uniform float uCamNear;
 uniform float uCamFar;
 uniform mat4 uProjInv;
 uniform mat4 uCamWorld;
+uniform sampler2D uSelMask;
+uniform float uSelActive;
 #endif
 #ifdef WATER_PLANAR
 uniform sampler2D uReflTex;
@@ -290,6 +293,11 @@ void main() {
 	if (uSSActive > 0.5) {
 		vec2 uv = gl_FragCoord.xy / uViewport;
 		vec2 off = N.xz * uRefraction * 0.06 / max(1.0, -vViewZ * 0.15);
+		// 36-fb-water F13b: a selected object is seen un-refracted, under its outline
+		if (uSelActive > 0.5) {
+			float sel = max(texture2D(uSelMask, uv).r, texture2D(uSelMask, clamp(uv + off, vec2(0.001), vec2(0.999))).r);
+			off *= 1.0 - smoothstep(0.05, 0.6, sel);
+		}
 		float fragZ = -vViewZ;
 		vec2 uvr = clamp(uv + off, vec2(0.001), vec2(0.999));
 		float d = texture2D(uSceneDepth, uvr).x;
@@ -320,23 +328,97 @@ void main() {
 	}
 #endif
 	float absorb = 1.0 - exp(-thickness / max(uClarity, 0.01));
+	// 36-fb-water F13 OPACITY: it only scaled the deep colour by a clarity term that a 1 m tank
+	// barely reaches, so the slider did nothing. It now sets the water's optical DENSITY on an
+	// exponential curve that is exactly the old look at the presets' 0.85, clear glass at 0 and
+	// a solid colour at 1 (x30 denser), and the same density drives the Quest tier's alpha.
+	float dens = exp((uOpacity - 0.85) * 22.7);
+	float absorbO = 1.0 - exp(-thickness * dens / max(uClarity, 0.01));
 	vec3 tint = mix(vec3(1.0), uShallow, 0.3 + 0.7 * clamp(thickness / max(uClarity, 0.01), 0.0, 1.0));
-	vec3 trans = mix(refr * tint, uDeep, clamp(absorb * uOpacity, 0.0, 1.0));
-	if (uRefraction <= 0.0) trans = mix(uShallow, uDeep, clamp(absorb + 0.2, 0.0, 1.0)) * (0.35 + 0.65 * max(dot(vec3(0.0, 1.0, 0.0), L), 0.15)) * uSunColor * 0.6 + uDeep * 0.4;
+	vec3 trans = mix(refr * tint, uDeep, clamp(absorbO * uOpacity, 0.0, 1.0));
+	// 36-fb-water F13 VISIBILITY: it only fogged the view from INSIDE the water; looking in from
+	// outside, whatever lies further through the water than it fades into the fog colour too.
+	// Nothing changes while the path is under half the visibility (every preset's tank or pool
+	// seen at a normal angle), so a scene keeps its look until you turn the visibility down.
+	float vis = smoothstep(0.5, 1.5, thickness / max(uFogDistance, 0.05));
+	trans = mix(trans, uFogColor * (0.35 + 0.65 * max(L.y, 0.15)), vis);
+	// an OPAQUE liquid (no refraction: lava, ice) — 36-fb-water F13: it still honours Opacity. The
+	// opaque colour covers the (un-bent) view through it by cover: exactly 1 at the presets'
+	// 0.95-1, so lava and ice look as they did, and turning Opacity down lets you see in (and then
+	// Caustics and Visibility act on what is seen, as on any see-through water).
+	float cover = clamp(max(absorbO * uOpacity, smoothstep(0.85, 0.95, uOpacity)), 0.0, 1.0);
+	if (uRefraction <= 0.0) {
+		vec3 molten = mix(uShallow, uDeep, clamp(absorb + 0.2, 0.0, 1.0)) * (0.35 + 0.65 * max(dot(vec3(0.0, 1.0, 0.0), L), 0.15)) * uSunColor * 0.6 + uDeep * 0.4;
+		trans = mix(trans, molten, cover);
+	}
 	if (tir) trans = mix(uDeep, uFogColor, 0.5);
 
 #ifndef WATER_SS
 	// Quest tier: the floor shows through by blending; opaque where the water is deep
-	alpha = clamp(max(absorb * uOpacity, F) + spec, 0.0, 1.0);
-	if (uRefraction <= 0.0) alpha = max(alpha, uOpacity);
+	alpha = clamp(max(max(absorbO * uOpacity, vis), F) + spec, 0.0, 1.0);
+	if (uRefraction <= 0.0) alpha = max(alpha, cover);
 	if (!front) alpha = clamp(0.35 + absorb * 0.65, 0.0, 1.0);
 #endif
 
 	vec3 col = mix(trans, refl, F) + sunSpec;
+#ifndef WATER_SS
+	// 36-fb-water F27: the Quest / low tier's FAKE REFRACTION. With no screen pass it cannot bend
+	// the floor seen through the surface, so it bends the LIGHT on it: lensing bands that follow
+	// the waves and ripples change how much of the floor shows through, and caustic glints play
+	// on it — a tank reads as water, not tinted glass. Refraction and Caustics drive it (they did
+	// nothing on this tier); costs a few ALU, no pass, no texture.
+	if (front && uBody < 0.5 && camInside < 0.5) {
+		float see = 1.0 - clamp(absorbO * uOpacity, 0.0, 1.0);
+		float lens = dot(N.xz, vec2(0.7071)) * 2.0 * min(uRefraction, 1.0);
+		// both halves of a band show: one side of a ripple gathers the water's tint, the other
+		// FOCUSES light onto the floor. Adding the signed band to alpha clipped the second half
+		// away wherever the water is clear (a clear tank seen from above: the audit measured
+		// Ripples / Ripple size / Ripple speed at the edge of dead on this tier).
+		float na = clamp(alpha + abs(lens) * 0.9 * see, 0.0, 1.0);
+		vec3 bandCol = lens > 0.0 ? col : min(col + uSunColor * 0.45, vec3(1.0));
+		col = (col * alpha + bandCol * (na - alpha)) / max(na, 1e-3);
+		alpha = na;
+		float glint = caustic(vWorld.xz / uCausticScale + uFlow * t * 0.1, t * uCausticSpeed);
+		col += uShallow * glint * uCaustics * 0.3 * see * max(L.y, 0.2);
+	}
+#endif
 
-	// foam: crests + the shoreline band, broken up by the map's foam channel
+	// glow (lava, toxic): bright veins where the noise is high, a dark cooled crust where it is low
+	float emit = max(max(uEmissive.r, uEmissive.g), uEmissive.b);
+	if (emit > 0.0) {
+		// 36-fb-water F13: Ripples (detail) sets the veins' contrast too — on a glowing liquid the
+		// normals barely show, so the slider did nothing on lava (full contrast from 0.5 up)
+		float vein = smoothstep(0.38, 0.72, mix(0.55, foamNoise, clamp(uDetail * 2.0, 0.0, 1.0)));
+		// an opaque glow (no refraction: lava) cools into a crust; a see-through one (toxic) only pulses
+		bool molten = uRefraction <= 0.0;
+		if (molten) col = mix(col * 0.35 + uDeep * 0.25, col, vein);
+		col += uEmissive * (front ? 1.0 : 0.7) * (molten ? mix(0.12, 1.5, vein) : mix(0.6, 1.15, vein));
+	}
+
+	// foam: crests + the shoreline band, broken up by the map's foam channel — drawn AFTER the
+	// glow (36-fb-water F13: lava's dark crust foam was washed out by its own glow)
 	float foamMask = 0.0;
 	if (uBody < 0.5 && front) {
+		// 36-fb-water F13 FOAM: the shoreline band only appeared where scene geometry crossed the
+		// surface (and only on desktop), so a tank's foam did nothing. A tank or pool now also
+		// foams where its surface meets its own walls — the meniscus line — in both tiers.
+		if (uOpen < 0.5) {
+			vec3 lp = (uWorldToLocal * vec4(vWorld, 1.0)).xyz;
+			// world metres per local unit along x / z (rows of the inverse matrix are 1/scale)
+			float ix = length(vec3(uWorldToLocal[0][0], uWorldToLocal[1][0], uWorldToLocal[2][0]));
+			float iz = length(vec3(uWorldToLocal[0][2], uWorldToLocal[1][2], uWorldToLocal[2][2]));
+			vec2 c = (uBoxMin.xz + uBoxMax.xz) * 0.5;
+			vec2 hs = max((uBoxMax.xz - uBoxMin.xz) * 0.5, vec2(1e-4));
+			float edge;
+			if (uRound > 0.5) {
+				float r = length((lp.xz - c) / hs);
+				edge = (1.0 - r) * min(hs.x / ix, hs.y / iz);
+			} else {
+				vec2 dd = hs - abs(lp.xz - c);
+				edge = min(dd.x / ix, dd.y / iz);
+			}
+			shore = max(shore, 1.0 - smoothstep(0.0, uFoamWidth, max(edge, 0.0)));
+		}
 		float crestF = smoothstep(0.3, 0.75, vCrest);
 		foamMask = max(crestF * 0.9, shore) * uFoam;
 		foamMask *= smoothstep(0.25, 0.75, foamNoise + foamMask * 0.4);
@@ -344,16 +426,10 @@ void main() {
 	vec3 lit = uSkyTop * 0.45 + uSunColor * (0.35 + 0.65 * max(dot(N, L), 0.0));
 	col = mix(col, uFoamColor * lit, clamp(foamMask, 0.0, 1.0));
 	alpha = max(alpha, foamMask);
-	// glow (lava, toxic): bright veins where the noise is high, a dark cooled crust where it is low
-	float emit = max(max(uEmissive.r, uEmissive.g), uEmissive.b);
-	if (emit > 0.0) {
-		float vein = smoothstep(0.38, 0.72, foamNoise);
-		// an opaque glow (no refraction: lava) cools into a crust; a see-through one (toxic) only pulses
-		bool molten = uRefraction <= 0.0;
-		if (molten) col = mix(col * 0.35 + uDeep * 0.25, col, vein);
-		col += uEmissive * (front ? 1.0 : 0.7) * (molten ? mix(0.12, 1.5, vein) : mix(0.6, 1.15, vein));
-	}
-
+	// 36-fb-water F13: from INSIDE the water its own walls and surface fade with distance like
+	// everything else down there (the scene fog skips these surfaces underwater, so Visibility did
+	// nothing to them — an opaque liquid's walls never changed at all). Three's linear fog curve.
+	if (uUnderwater > 0.5) col = mix(col, uFogColor, clamp((thickness - 0.05) / max(uFogDistance - 0.05, 0.01), 0.0, 1.0));
 	gl_FragColor = vec4(col, alpha);
 	#include <tonemapping_fragment>
 	#include <colorspace_fragment>
@@ -439,6 +515,13 @@ void main() {
 		float rim = smoothstep(0.55, 0.98, d) * (1.0 - smoothstep(0.98, 1.0, d));
 		float glint = smoothstep(0.35, 0.0, length(p - vec2(-0.35, 0.4)));
 		a = rim * 0.85 + glint * 0.9 + 0.08;
+		// 36-fb-water F18: a thin DARKER edge — a bubble is a lens, and a white-only rim
+		// vanished against a bright sky or a white floor (the reported "does nothing visible")
+		float edge = smoothstep(0.8, 0.93, d) * (1.0 - smoothstep(0.96, 1.0, d));
+		vec3 col = mix(uColor, uColor * 0.35, edge * (1.0 - glint));
+		gl_FragColor = vec4(col, max(a, edge * 0.75) * uOpacity * vFade);
+		#include <colorspace_fragment>
+		return;
 	}
 	gl_FragColor = vec4(uColor, a * uOpacity * vFade);
 	#include <colorspace_fragment>

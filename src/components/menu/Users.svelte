@@ -697,7 +697,7 @@
 
 		{#if peersOpen}
 			<div class="fixed inset-0" style="z-index: 996;" role="presentation" onclick={() => { peersOpen = false; roleMenuFor = null; }}></div>
-			<div id="peers-popover" class="ui-panel absolute right-0 top-11 w-72 p-2" style="z-index: 998; {$connectDocked ? `position: fixed; top: ${$connectBarHeight + 44}px; right: 8px; left: auto; max-width: calc(100vw - 16px);` : ''}">
+			<div id="peers-popover" data-key-scope="panel" class="ui-panel absolute right-0 top-11 w-72 p-2" style="z-index: 998; {$connectDocked ? `position: fixed; top: ${$connectBarHeight + 44}px; right: 8px; left: auto; max-width: calc(100vw - 16px);` : ''}">
 				<div class="mb-1 flex items-center justify-between gap-2">
 					<!-- SELF-INCLUSIVE, in both places. The trigger badge and this line count the
 						 same thing and disagreed by one: the badge said 4 while the list drew 5

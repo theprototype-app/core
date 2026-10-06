@@ -30,7 +30,9 @@
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { sceneHits } from '$lib/scenePick';
-	import { pickStack, chooseInStack } from '$lib/selectThrough';
+	import { pickStack, chooseInStack, altCycleIndex } from '$lib/selectThrough';
+	import { editorPass } from '$lib/pickPass'; // 36 F22
+	import { showPickPreview, hidePickPreview, notePickCycled } from '$lib/pickCycle'; // 36 F22 / S6
 	import { tickModuleProxy, selectModuleGroup, moduleGroupOf } from '$lib/moduleContent';
 	import { setModuleWorldRoot } from '$lib/moduleWorld';
 	import { startPlayInteract, tickPlayInteract, stopPlayInteract, carriedUuid, editorInteractActive, cursorGrabStart, cursorGrabMove, cursorGrabEnd, interactClick } from '$lib/playInteract';
@@ -532,13 +534,16 @@
 	// 30 P2: the last plain editor click — where, when, and what it picked — so a repeat on
 	// the same spot can walk DOWN the stack instead of re-picking the same object
 	let lastSelectClick: { x: number; y: number; t: number; uuid: string | null } | null = null;
+	// 36 F22: the last Alt+click — where, and what it took — so the next one on that spot
+	// takes the next object down the stack
+	let lastAltClick: { x: number; y: number; uuid: string | null } | null = null;
 	let selectBehindHinted = safeStorage.getItem('hint:selectBehind') === 'true';
 
 	// 30 P1: `mode` is where the click came from. 'edit' = the desktop editor pick, where a
 	// module handler runs only if it registered for Edit (so a piano or a puzzle piece no
 	// longer swallows the select) and On Click nodes do NOT fire — Interact is where the
 	// scene reacts. null = VR's trigger, unchanged: every handler first, then select + pulse.
-	function raycastSelect(additive = false, mode: string | null = null, click: { x: number; y: number; t: number } | null = null) {
+	function raycastSelect(additive = false, mode: string | null = null, click: { x: number; y: number; t: number } | null = null, cycle = false) {
 		// module-owned interactive groups live at the scene root (pong, dungeon, ...)
 		// 30 P3: in EDIT the nearest module-content hit that no edit handler took is
 		// remembered, so a click on a board or a dungeon selects its PROXY (the object list's
@@ -556,10 +561,15 @@
 		// 30 P2: SELECT-THROUGH — collapse the hits into a stack of top-level targets and
 		// prefer the first OPAQUE one (a 0.12-opacity wall, a flagged ceiling or a hidden
 		// node no longer wins the click); a plain repeat on the same spot walks down it.
-		const stack = pickStack(hits, topLevelObjectOf);
-		const choice = chooseInStack(stack, click ?? { x: -1e6, y: -1e6, t: 0 }, !additive && click ? lastSelectClick : null);
+		// 36 F22: water (and, by the scene's setting, transparent surfaces and triggers) stands
+		// aside too; Alt+click walks the whole stack front to back instead
+		const stack = pickStack(hits, topLevelObjectOf, editorPass());
+		const altPick = cycle && click ? altCycleIndex(stack, click, lastAltClick) : null;
+		const choice = altPick
+			? { index: altPick.index, cycled: altPick.of > 1 }
+			: chooseInStack(stack, click ?? { x: -1e6, y: -1e6, t: 0 }, !additive && click ? lastSelectClick : null);
 		const chosen = choice.index >= 0 ? stack[choice.index] : null;
-		if (mode === 'edit' && !additive && moduleHit && moduleGroupOf(moduleHit.name) && (!chosen || moduleHit.distance < chosen.hit.distance)) {
+		if (mode === 'edit' && !additive && !altPick && moduleHit && moduleGroupOf(moduleHit.name) && (!chosen || moduleHit.distance < chosen.hit.distance)) {
 			deselectObject();
 			selectModuleGroup(moduleHit.name);
 			return true;
@@ -569,13 +579,16 @@
 			// ones that asked for it (an editor tool), everything else in VR
 			if (runModuleClickHandlers(chosen.hit.object, mode)) return true;
 			const target = chosen.target;
-			if (click && !additive) {
+			if (altPick && click && target) {
+				lastAltClick = { x: click.x, y: click.y, uuid: target.uuid };
+				notePickCycled(target, click.x, click.y, altPick.index, altPick.of);
+			} else if (click && !additive) {
 				lastSelectClick = { ...click, uuid: target.uuid };
 				// the first time a click lands on a stack, say how to reach what is behind
 				if (stack.length > 1 && !selectBehindHinted) {
 					selectBehindHinted = true;
 					safeStorage.setItem('hint:selectBehind', 'true');
-					showToast('Click again to select behind');
+					showToast('Click again to select behind — or Alt+click to cycle through everything here');
 				}
 			}
 			if (target) {
@@ -584,7 +597,7 @@
 				// panel). It used to open on EVERY single click — that is exactly
 				// what the pin now controls deliberately.
 				const now = Date.now();
-				const isDouble = !additive && lastPick.uuid === target.uuid && now - lastPick.t < 400;
+				const isDouble = !additive && !altPick && lastPick.uuid === target.uuid && now - lastPick.t < 400;
 				lastPick = { uuid: target.uuid, t: now };
 				// shift-click toggles set membership (13)
 				// 85: WHAT a double-click does is a preference now. 'properties' is
@@ -836,7 +849,62 @@
 			downTime = Date.now();
 		};
 
+		// 36 S6: while Alt is held, preview what an Alt+click would select — a box around it
+		// and the "2 of 4" chip — and nothing at all otherwise. Editor Edit mode only.
+		let altHeld = false;
+		let lastAltPreviewAt = 0;
+		const altPreviewAllowed = () =>
+			$isLocked !== true && !editorInteractActive() && !$editingObject && !$faceEditObject && !$sculptObject && !$splineEditObject && !$drawMode && !$measureMode;
+		const updateAltPreview = (x: number, y: number) => {
+			if (!altHeld || !altPreviewAllowed() || !$objectsGroup) return hidePickPreview();
+			const rect = element.getBoundingClientRect();
+			if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return hidePickPreview();
+			const at = document.elementFromPoint(x, y);
+			if (at !== element) return hidePickPreview();
+			selectionRaycaster.setFromCamera(new THREE.Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1), camera.current);
+			const stack = pickStack(pickSceneObjects(), topLevelObjectOf, editorPass());
+			const next = altCycleIndex(stack, { x, y }, lastAltClick);
+			if (next.index < 0) return hidePickPreview();
+			showPickPreview($globalScene, stack[next.index].target, x, y, next.index, next.of);
+		};
+		// while Alt is held the gizmo stands down: Alt+click SELECTS, and the gizmo of the
+		// object the last Alt+click took (the water box around the fish) would otherwise sit
+		// over the very spot the next Alt+click aims at and swallow it
+		let gizmoParked = false;
+		const parkGizmo = (park: boolean) => {
+			const controls: any = $TControls;
+			if (!controls) return;
+			if (park && controls.enabled && !controls.dragging) {
+				controls.enabled = false;
+				gizmoParked = true;
+			} else if (!park && gizmoParked) {
+				controls.enabled = true;
+				gizmoParked = false;
+			}
+		};
+		const setAltHeld = (held: boolean) => {
+			if (held === altHeld) return;
+			altHeld = held;
+			parkGizmo(altHeld);
+			if (!altHeld) hidePickPreview();
+		};
+		const onAltKey = (event: KeyboardEvent) => {
+			const held = event.type === 'keydown' ? event.altKey || event.key === 'Alt' : event.altKey && event.key !== 'Alt';
+			if (held === altHeld) return;
+			setAltHeld(held);
+			if (altHeld && lastPointerXY) updateAltPreview(lastPointerXY[0], lastPointerXY[1]);
+		};
+		const onAltBlur = () => setAltHeld(false);
+		window.addEventListener('keydown', onAltKey);
+		window.addEventListener('keyup', onAltKey);
+		window.addEventListener('blur', onAltBlur);
 		const onPointerMove = (event) => {
+			// 36 S6: the Alt preview follows the cursor (~30 Hz) and goes the moment Alt is let go
+			if (event.altKey !== altHeld) setAltHeld(event.altKey);
+			if (altHeld && !event.buttons && performance.now() - lastAltPreviewAt > 33) {
+				lastAltPreviewAt = performance.now();
+				updateAltPreview(event.clientX, event.clientY);
+			}
 			// 30 P1: an Interact carry follows the cursor
 			if (interactCarrying) cursorGrabMove(ndcOfEvent(event));
 			// 57.3: a radius drag owns the gesture (thickness, not the camera)
@@ -1019,8 +1087,9 @@
 				);
 				return;
 			}
-			// ignore clicks on the transform gizmo (axis is set while hovering a handle)
-			if ($TControls && ($TControls.dragging || $TControls.axis)) return;
+			// ignore clicks on the transform gizmo (axis is set while hovering a handle) — not an
+			// Alt+click, which selects through it (36 F22; the gizmo is parked while Alt is held)
+			if ($TControls && ($TControls.dragging || ($TControls.axis && !event.altKey))) return;
 			if (!$objectsGroup) return;
 
 			const rect = element.getBoundingClientRect();
@@ -1029,8 +1098,9 @@
 				-((event.clientY - rect.top) / rect.height) * 2 + 1
 			);
 			selectionRaycaster.setFromCamera(ndc, camera.current);
-			// Alt+click pings the pointed spot for every peer
-			if (event.altKey) {
+			// Ctrl+Alt+click pings the pointed spot for every peer (36 F22: plain Alt+click is
+			// the selection cycle now — Blender/Unity's gesture for "the thing behind")
+			if (event.altKey && (event.ctrlKey || event.metaKey)) {
 				const hits = pickSceneObjects();
 				const planePoint = new THREE.Vector3();
 				const point = hits[0]?.point ??
@@ -1161,7 +1231,8 @@
 			// 85: a click on nothing is also the way out of an isolation — the same
 			// "click the background to get back" instinct as deselecting.
 			const additive = event.shiftKey || $multiSelectMode;
-			if (!raycastSelect(additive, 'edit', { x: event.clientX, y: event.clientY, t: Date.now() }) && !additive) {
+			hidePickPreview();
+			if (!raycastSelect(additive, 'edit', { x: event.clientX, y: event.clientY, t: Date.now() }, event.altKey && !additive) && !additive) {
 				if (isIsolated()) clearIsolation();
 				deselectObject();
 			}
@@ -1484,6 +1555,11 @@
 			element.removeEventListener('webglcontextlost', onContextLost);
 			element.removeEventListener('webglcontextrestored', onContextRestored);
 			window.removeEventListener('pointerup', onPointerUp);
+			window.removeEventListener('keydown', onAltKey);
+			window.removeEventListener('keyup', onAltKey);
+			window.removeEventListener('blur', onAltBlur);
+			setAltHeld(false);
+			hidePickPreview();
 			xrControllers.forEach((controller) => {
 				controller.removeEventListener('select', onXRSelect);
 				controller.removeEventListener('selectstart', onXRSelectStart);

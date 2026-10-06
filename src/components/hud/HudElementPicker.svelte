@@ -169,7 +169,7 @@
 	{#if manual}
 		<!-- the escape hatch: free text, exactly what the old control was -->
 		<input
-			class="nodrag hud-ep-manual"
+			class="nodrag nopan hud-ep-manual"
 			placeholder={mode === 'screen' ? 'screen id' : 'element id'}
 			{value}
 			onchange={(/** @type {any} */ e) => {
@@ -179,7 +179,7 @@
 			onblur={() => (manual = false)}
 		/>
 	{:else}
-		<button type="button" class="nodrag hud-ep-field" onclick={open} title={value || 'nothing picked'}>
+		<button type="button" class="nodrag nopan hud-ep-field" onclick={open} title={value || 'nothing picked'}>
 			<span class="hud-ep-name">{shown}</span>
 			{#if sub}<span class="hud-ep-sub">{sub}</span>{/if}
 			<ChevronDown size={12} aria-hidden="true" />
@@ -187,7 +187,7 @@
 		{#if mode === 'element'}
 			<button
 				type="button"
-				class="nodrag hud-ep-icon"
+				class="nodrag nopan hud-ep-icon"
 				class:hud-ep-armed={armed}
 				aria-pressed={armed}
 				aria-label="Pick on the artboard"
@@ -198,7 +198,7 @@
 			</button>
 		{/if}
 		{#if value}
-			<button type="button" class="nodrag hud-ep-icon" aria-label="Clear" title="Clear" onclick={() => onpick?.('')}>
+			<button type="button" class="nodrag nopan hud-ep-icon" aria-label="Clear" title="Clear" onclick={() => onpick?.('')}>
 				<X size={12} aria-hidden="true" />
 			</button>
 		{/if}

@@ -24,7 +24,7 @@
 		<label class="flex flex-col">
 			<span>shape</span>
 			<select
-				class="nodrag"
+				class="nodrag nopan"
 				value={data.shape ?? 'box'}
 				on:change={(e) => setNodeData(id, { shape: e.currentTarget.value })}
 			>
@@ -39,7 +39,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>scale</span><span>{(+(data.scale ?? 1)).toFixed(2)}</span></span>
 			<input
-				class="nodrag accent-[#ff4000]"
+				class="nodrag nopan accent-[#ff4000]"
 				type="range"
 				min="0.25"
 				max="4"
@@ -48,7 +48,7 @@
 				on:input={(e) => setNodeData(id, { scale: +e.currentTarget.value })}
 			/>
 		</label>
-		<label class="nodrag flex items-center gap-1.5">
+		<label class="nodrag nopan flex items-center gap-1.5">
 			<input
 				type="checkbox"
 				checked={!!data.sensor}

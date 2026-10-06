@@ -793,6 +793,9 @@
 				? ''
 				: 'hidden'}"
 			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid var(--tp-line)"
+			data-key-scope="panel"
+			role="region"
+			aria-label="Profiler (docked)"
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div

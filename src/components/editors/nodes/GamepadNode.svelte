@@ -67,7 +67,7 @@
 			<label class="flex w-full flex-col">
 				<span class="text-gray-400">button</span>
 				<select
-					class="nodrag rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
+					class="nodrag nopan rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
 					value={data.button ?? 'GamepadA'}
 					on:change={(e) => setNodeData(id, { button: e.currentTarget.value })}
 				>
@@ -75,7 +75,7 @@
 				</select>
 			</label>
 			<button
-				class="nodrag w-full rounded-sm border border-gray-600 px-1 py-0.5 text-xs {capturing
+				class="nodrag nopan w-full rounded-sm border border-gray-600 px-1 py-0.5 text-xs {capturing
 					? 'bg-primary-700 text-white'
 					: ''}"
 				on:click={beginCapture}
@@ -88,7 +88,7 @@
 				     keeps it high through the re-stamp), up = the falling edge, held = the same
 				     read said as a level -->
 				<select
-					class="nodrag rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
+					class="nodrag nopan rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
 					value={data.edge ?? 'down'}
 					on:change={(e) => setNodeData(id, { edge: e.currentTarget.value })}
 				>
@@ -113,7 +113,7 @@
 			<label class="flex w-full flex-col">
 				<span class="text-gray-400">axis</span>
 				<select
-					class="nodrag rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
+					class="nodrag nopan rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
 					value={data.axis ?? 'lx'}
 					on:change={(e) => setNodeData(id, { axis: e.currentTarget.value })}
 				>
@@ -148,7 +148,7 @@
 			<label class="flex w-full items-center gap-1">
 				<input
 					type="checkbox"
-					class="nodrag"
+					class="nodrag nopan"
 					checked={!!data.invert}
 					on:change={(e) => setNodeData(id, { invert: e.currentTarget.checked })}
 				/>

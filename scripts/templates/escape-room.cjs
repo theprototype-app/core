@@ -187,6 +187,8 @@ const ESCAPE_DEF = {
 	view: { pos: [-6.2, 2.4, 3.6], target: [-9.2, 0.8, -2.2] },
 	thumb: { camera: 'Card camera' },
 	graphs: { scene: escapeGraph() },
+	// 36 F11: the layout reads well — the author script only moves what overlaps or sits on a wire
+	graphTidy: 'repair',
 	hud: {
 		scene: {
 			active: '',

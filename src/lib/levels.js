@@ -30,6 +30,8 @@
 
 import { writable, get } from 'svelte/store';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
+// 36 F20: a hop claims its load before its awaits (a leaf: svelte/store only)
+import { claimLoad, isLive, endLoad } from './sceneLoader';
 import { showToast, showInfoToast, dismissToastById, peers } from '../stores/appStore';
 // R22 round 34: the adopt message names the peer who saved. `sessions.js` — which this
 // module already imports — imports lockControl too, so this closes no new edge.
@@ -1112,6 +1114,11 @@ export async function travelToLevel(hash, name = '', opts = {}) {
 	if (!key) return false;
 	if (inFlight.has(key)) return false;
 	inFlight.add(key);
+	// 36 F20: the hop owns its load from the start — the publish, the idb read, the unzip
+	// and the keep/unload ask all await, and a scene opened meanwhile must win, not be
+	// replaced by this one when its awaits come back
+	const job = claimLoad(name || 'scene');
+	let adopted = false;
 	try {
 		// 21-G2 fork 9: the departing scene's edits are PUBLISHED before the world is
 		// replaced (writer-only, signature-gated — see publishCurrentIfChanged)
@@ -1119,9 +1126,9 @@ export async function travelToLevel(hash, name = '', opts = {}) {
 			await publishCurrentIfChanged();
 		} catch {}
 		const item = await resolveLevelItem(key);
-		if (!item) return false;
+		if (!item || !isLive(job)) return false;
 		const blob = await itemBlob(item.id);
-		if (!blob) return false;
+		if (!blob || !isLive(job)) return false;
 		/** @type {any} */
 		let payload = null;
 		try {
@@ -1129,6 +1136,7 @@ export async function travelToLevel(hash, name = '', opts = {}) {
 		} catch {
 			payload = null;
 		}
+		if (!isLive(job)) return false;
 		if (!payload) {
 			showToast('That scene could not be read.');
 			return false;
@@ -1136,14 +1144,15 @@ export async function travelToLevel(hash, name = '', opts = {}) {
 		if (opts.askModules === true) {
 			const { prepareSceneSwitch } = await import('./sceneSwitch');
 			const go = await prepareSceneSwitch(payload);
-			if (!go) return false;
+			if (!go || !isLive(job)) return false;
 			go.run();
 		}
 		// fork 3: capture the LIVE game before the world is replaced… (33 L4: unless a person
 		// is opening this scene fresh — then the file's own game state applies)
 		const fresh = opts.freshGame === true;
 		const carried = fresh ? null : { ...get(gameState), vars: { ...get(gameState).vars } };
-		await applySession(payload, { backup: false, replicate: false, game: fresh, workspace: false });
+		adopted = true;
+		if (!(await applySession(payload, { backup: false, replicate: false, game: fresh, workspace: false, job }))) return false;
 		// …and put it back. The level's own `game` field never applied (game: false).
 		if (carried) gameStateRestore(carried, false);
 		// R5: the graphs that just arrived from disk may name a scene by a name the
@@ -1221,6 +1230,8 @@ export async function travelToLevel(hash, name = '', opts = {}) {
 		return true;
 	} finally {
 		inFlight.delete(key);
+		// a hop that stopped before its apply (no item, unreadable, declined, superseded)
+		if (!adopted) endLoad(job);
 	}
 }
 

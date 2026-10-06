@@ -1971,6 +1971,9 @@
 			id="uv-dock"
 			class="fixed inset-x-0 bottom-0 flex flex-col bg-white p-2 text-gray-800 dark:bg-gray-800 dark:text-gray-200 {dockVisible ? '' : 'hidden'}"
 			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
+			data-key-scope="panel"
+			role="region"
+			aria-label="UV editor (docked)"
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div

@@ -220,3 +220,22 @@ describe('lintBytes', () => {
 		expect(lint.lintBytes(bytes).map((f) => f.rule)).toContain('env-unknown');
 	});
 });
+
+describe('child-twin (36-int-125)', () => {
+	const car = (kids) => {
+		const c = box('car', [0, 0.5, 0]);
+		c.object.children = kids.map(([name, at]) => ({ uuid: 'k-' + name + at.join(), type: 'Mesh', name, layers: 1, matrix: M(...at), geometry: 'g-car' }));
+		return c;
+	};
+	it('a part built twice (same name, same pose) is an error', () => {
+		const s = clean();
+		s.objects.push(car([['wheel', [1, 0, 0]], ['wheel', [1, 0, 0]]]));
+		expect(rules(s)).toContain('error:child-twin');
+	});
+	it('silent for same-named parts at different poses (four wheels) and on the clean scene', () => {
+		const s = clean();
+		s.objects.push(car([['wheel', [1, 0, 1]], ['wheel', [1, 0, -1]], ['wheel', [-1, 0, 1]], ['wheel', [-1, 0, -1]]]));
+		expect(rules(s)).not.toContain('error:child-twin');
+		expect(rules(clean())).not.toContain('error:child-twin');
+	});
+});

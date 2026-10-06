@@ -191,5 +191,7 @@ module.exports = {
 			pos: [0, 0.3, -(POOL.d / 2 + 1.4)]
 		}
 	],
-	view: { pos: [7.5, 5.2, 9], target: [0, -0.3, 0] }
+	view: { pos: [7.5, 5.2, 9], target: [0, -0.3, 0] },
+	// 36-fb-water F14: a simulation scene runs when it opens (Configure Scene ▸ Start simulation on load)
+	physics: { simOnLoad: true }
 };

@@ -351,7 +351,7 @@ h.run(async () => {
 	h.check(anchor.found && anchor.text === 'Knock', '6.1 the Knock sub-heading exists inside Physics (' + JSON.stringify(anchor) + ')');
 	h.check(anchor.found && anchor.top >= anchor.stickyBottom - 4 && anchor.top < 500, '6.2 the deep link lands it just under the sticky header');
 	const rows = await A.page.evaluate(() => ({
-		enabled: document.querySelector('#physics-knock-enabled')?.checked ?? null,
+		enabled: ((e) => (e ? e.getAttribute('aria-pressed') === 'true' : null))(document.querySelector('#physics-knock-enabled')),
 		gain: !!document.querySelector('#physics-knock-gain'),
 		max: !!document.querySelector('#physics-knock-maxspeed'),
 		radius: !!document.querySelector('#physics-knock-radius'),

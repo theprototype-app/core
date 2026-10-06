@@ -101,13 +101,16 @@ h.run(async () => {
 				const t0 = performance.now();
 				const step = () => {
 					n++;
-					if (performance.now() - t0 > 600) return resolve(n);
+					if (performance.now() - t0 > 1800) return resolve(n);
 					requestAnimationFrame(step);
 				};
 				requestAnimationFrame(step);
 			})
 	);
-	h.check(frames > 3, `the render loop is still running (${frames} frames in 600ms)`);
+	// 1800 ms, not 600: headless SwiftShader runs ~5 fps and the runaway costs part of every frame, so 600 ms
+	// was 2-4 frames on either side of the threshold (1.24.0 and 1.25 both measure 9 frames / 2 s — 36-int-125);
+	// a frozen loop reads 0-1
+	h.check(frames > 3, `the render loop is still running (${frames} frames in 1800ms)`);
 
 	// ---- 3. a healthy node beside it still works ---------------------------------------
 	const uuid2 = await makeBox(A);

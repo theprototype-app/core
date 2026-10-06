@@ -278,7 +278,7 @@ h.run(async () => {
 	await page.waitForTimeout(900);
 	const box = await page.evaluate(() => {
 		const el = document.querySelector('#override-shaders');
-		return { present: !!el, checked: el?.checked ?? null };
+		return { present: !!el, checked: el ? el.getAttribute('aria-pressed') === 'true' : null };
 	});
 	h.check(box.present, '4.10 Configure Scene ▸ View offers the switch: ' + JSON.stringify(box));
 

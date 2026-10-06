@@ -44,6 +44,9 @@ export const WATER_PHYSICS_DEFAULTS = Object.freeze({
 	density: 1000,
 	linearDrag: 1.5,
 	angularDrag: 1,
+	// 36-fb-water F12: how hard a floating body's up-and-down bob is damped (x the drag);
+	// 4 = the 36-sim tuning (a crate near critical damping), lower = it bobs longer
+	heaveDrag: 4,
 	flow: Object.freeze([0, 0, 0])
 });
 
@@ -73,6 +76,7 @@ export function normalizeWater(raw) {
 		density: Math.max(1, num(w.density, WATER_PHYSICS_DEFAULTS.density)),
 		linearDrag: Math.max(0, num(w.linearDrag, WATER_PHYSICS_DEFAULTS.linearDrag)),
 		angularDrag: Math.max(0, num(w.angularDrag, WATER_PHYSICS_DEFAULTS.angularDrag)),
+		heaveDrag: Math.min(20, Math.max(0, num(w.heaveDrag, WATER_PHYSICS_DEFAULTS.heaveDrag))),
 		flow: [num(flow[0], 0), num(flow[1], 0), num(flow[2], 0)],
 		preset: typeof w.preset === 'string' ? w.preset : '',
 		look: { ...obj(w.look) },
@@ -276,13 +280,31 @@ function resolve(v) {
 	return null;
 }
 
-/** @param {Volume} v */
-function comps(v) {
-	const key = JSON.stringify(v.spec.waves ?? {});
-	const hit = waveCache.get(v.uuid);
+/**
+ * The wave components, optionally as felt by a body `span` metres long (36-fb-water F15): a hull
+ * AVERAGES the waves shorter than itself, so each component's height is scaled by the box
+ * filter's response sinc(pi L / lambda), and a component shorter than the hull drops out. A
+ * 3.4 m boat then rides the swell instead of resonating with ripples at its roll period (it
+ * capsized on Island ocean's choppy six-component sea); a 30 cm duck still follows nearly all
+ * of them. span 0 = the raw surface (rendering, splashes, probes).
+ * @param {Volume} v @param {number} [span]
+ */
+function comps(v, span = 0) {
+	const bucket = span > 0 ? Math.round(span * 4) / 4 : 0;
+	const key = JSON.stringify(v.spec.waves ?? {}) + '|' + bucket;
+	const ck = bucket ? v.uuid + '|' + bucket : v.uuid;
+	const hit = waveCache.get(ck);
 	if (hit && hit.key === key) return hit.comps;
-	const c = waveComponents(v.spec.waves);
-	waveCache.set(v.uuid, { key, comps: c });
+	let c = waveComponents(v.spec.waves);
+	if (bucket)
+		c = c
+			.map((w) => {
+				const x = (Math.PI * bucket * w.k) / (2 * Math.PI); // pi L / lambda
+				const f = x < Math.PI ? Math.sin(x) / x : 0;
+				return { ...w, a: w.a * Math.max(0, f) };
+			})
+			.filter((w) => w.a > 1e-5);
+	waveCache.set(ck, { key, comps: c });
 	return c;
 }
 
@@ -312,16 +334,17 @@ function inFootprint(v, lx, lz) {
  * Still-surface world Y (+ waves unless flat) above a local x/z of the volume.
  * @param {Volume} v @param {number} lx @param {number} lz @param {boolean} flat @param {number} t
  */
-function surfaceAt(v, lx, lz, flat, t) {
+function surfaceAt(v, lx, lz, flat, t, span = 0) {
 	const m = worldElements(v.object);
 	const s = applyM(m, lx, v.level, lz);
-	return flat ? s[1] : s[1] + waveHeightAt(comps(v), s[0], s[2], t);
+	return flat ? s[1] : s[1] + waveHeightAt(comps(v, span), s[0], s[2], t);
 }
 
 /**
  * The volume containing a world point (the top-most surface when volumes overlap), or null.
  * @param {any} worldPoint {x,y,z} or [x,y,z]
- * @param {{flat?: boolean, time?: number, volumes?: Volume[]}} [opts]
+ * @param {{flat?: boolean, time?: number, volumes?: Volume[], span?: number}} [opts] span: the
+ *   querying body's size in metres — its buoyancy feels the waves it can't average out (comps)
  * @returns {{volume: Volume, depth: number, surfaceY: number, flow: [number, number, number]} | null}
  */
 function query(worldPoint, opts = {}) {
@@ -336,7 +359,7 @@ function query(worldPoint, opts = {}) {
 		const [lx, ly, lz] = applyM(inv, x, y, z);
 		if (!inFootprint(v, lx, lz)) continue;
 		if (v.shape !== 'plane' && ly < v.bounds.minY) continue;
-		const surfaceY = surfaceAt(v, lx, lz, !!opts.flat, t);
+		const surfaceY = surfaceAt(v, lx, lz, !!opts.flat, t, num(opts.span, 0));
 		if (y > surfaceY) continue;
 		if (best && best.surfaceY >= surfaceY) continue;
 		const f = v.spec.flow;

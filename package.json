@@ -1,6 +1,6 @@
 {
 	"name": "theprototype.app",
-	"version": "1.24.0",
+	"version": "1.25.0",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -19,10 +19,12 @@
 		"format": "prettier --write .",
 		"lint": "prettier --check .",
 		"e2e": "node tests/e2e/run.cjs",
+		"e2e:lock": "node tests/e2e/run.cjs @lock",
 		"deps:check": "node scripts/deps-check.cjs",
 		"sync-llms": "node scripts/sync-llms.cjs",
 		"test:unit": "vitest run",
-		"check:storage": "node scripts/check-storage.cjs"
+		"check:storage": "node scripts/check-storage.cjs",
+		"check:tokens": "node scripts/check-tokens.cjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.10",

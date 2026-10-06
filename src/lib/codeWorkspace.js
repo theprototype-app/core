@@ -42,7 +42,8 @@ import {
 	parseCheck,
 	parseGraphJson,
 	graphJson,
-	normalizeCodeRequest
+	normalizeCodeRequest,
+	moveTab
 } from './codeTabs';
 export { normalizeCodeRequest };
 import {
@@ -58,6 +59,9 @@ import { itemByHash, itemById, itemBlob, explorerItems, loadExplorer } from './e
 import { scriptInputs, scriptOutputs, RESERVED } from './scriptIO';
 import { setScriptSockets } from './scriptSockets';
 import { followCode } from './scriptDerive';
+import { codeOfNode, isBuiltinCodeType, BUILTIN_CODE } from './builtinCode.js';
+import { nodeHasCode, openCodeRequestFor } from './graphContract.js';
+import { keyOfTab, nodeKey, modulesInUse, projectTree } from './codeProject.js';
 
 /** @typedef {import('./codeTabs').CodeTab} CodeTab */
 
@@ -112,6 +116,12 @@ async function builtinModuleSource(ref) {
 	const file = ref.name || 'module.js';
 	const loader = coreModuleSources['../modules/' + id + '/' + file];
 	if (loader) return { title: id + '/' + file, code: String(await loader()) };
+	// 36-fb-code (F6): the kit's pieces (`kit/<piece>.js`) live in src/lib/kit, read by codeOpen
+	if (id === 'kit') {
+		const { moduleSourceFiles } = await import('./codeOpen');
+		const hit = (await moduleSourceFiles('kit')).find((f) => f.file === file);
+		if (hit) return { title: 'kit/' + file, code: hit.text };
+	}
 	const { userModules } = await import('./userModules');
 	const record = get(userModules).find((/** @type {any} */ r) => r.id === id);
 	const bytes = record?.files?.[ref.name || record?.entry];
@@ -119,9 +129,29 @@ async function builtinModuleSource(ref) {
 	return { title: id + '/' + (ref.name || record.entry), code: typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes) };
 }
 
-/** does a source have a fork hook (the button shows only then) @param {string} source */
+/** does a source have a fork hook (the button shows only then). A module file always does:
+ * with nothing registered, the default copies it into the Library (36-fb-code F6).
+ * @param {string} source */
 export function canFork(source) {
-	return typeof sources.get(source)?.fork === 'function';
+	return typeof sources.get(source)?.fork === 'function' || source === 'module';
+}
+
+/**
+ * The default "Make editable copy" of a read-only module file: the text becomes a .js file in
+ * the Library (the user's own, editable, shareable), opened in its own tab. The module keeps
+ * running ITS copy — the toast says so, and that binding a Script node is how a copy runs.
+ * A registered fork (registerCodeSource('module', {fork})) replaces this.
+ * @param {{moduleId?: string, name?: string}} ref @param {string} code
+ */
+async function defaultModuleFork(ref, code) {
+	const { addItemFromBytes } = await import('./explorer');
+	await loadExplorer();
+	const base = String(ref.name ?? 'module.js').split('/').pop()?.replace(/\.m?js$/, '') || 'module';
+	const name = (ref.moduleId ? ref.moduleId + '-' : '') + base + ' (copy).js';
+	const item = await addItemFromBytes(/** @type {ArrayBuffer} */ (new TextEncoder().encode(String(code ?? '')).buffer), name, null, {});
+	if (!item) return null;
+	showToast('Copied to your Library as ' + item.name + '. The module keeps running its own code — use "Use file…" on a Script node to run your copy.');
+	return { source: 'script', ref: { itemId: item.id } };
 }
 
 // ---------------------------------------------------------------- opening
@@ -184,7 +214,7 @@ async function resolve(req) {
 		const found = findNode(ref.nodeId, ref.graphId);
 		if (!found) return null;
 		const { node, graphId } = found;
-		const code = String(node.data?.code ?? '');
+		const code = codeOfNode(node);
 		const bound = assetSrcOf(node);
 		if (bound) {
 			await loadExplorer();
@@ -200,7 +230,10 @@ async function resolve(req) {
 		const title = fromModule
 			? String(node.data.src.module ?? 'module') + '/' + String(node.data.src.file ?? 'source.js')
 			: (node.data?.name || node.data?.label || (behaviour ? 'Behaviour' : 'Script')) + (behaviour ? '.behaviour.js' : '.js');
-		return { id, kind: behaviour ? 'behaviour' : 'node', title, lang: 'js', code, saved: code, nodeId: node.id, graphId, ...(fromModule ? { readOnly: true } : {}) };
+		// 36-fb-code (F5): a built-in with code (the Player) opens like a Script node; `nodeType`
+		// lets the chrome offer what fits it (its engine's source, no Script-file binding)
+		const builtin = isBuiltinCodeType(node.type) ? { nodeType: node.type } : {};
+		return { id, kind: behaviour ? 'behaviour' : 'node', title, lang: 'js', code, saved: code, nodeId: node.id, graphId, ...builtin, ...(fromModule ? { readOnly: true } : {}) };
 	}
 	await loadExplorer();
 	const item = (ref.itemId ? itemById(ref.itemId) : null) ?? (ref.hash ? itemByHash(ref.hash) : null);
@@ -272,6 +305,12 @@ export function setTabCode(id, code) {
 	liveTimers.set(id, setTimeout(() => saveCodeTab(id, { quiet: true }), 500));
 }
 
+/** 36-fb-code (F6/F8): reorder a tab — the strip and the Open editors list share this order
+ * @param {string} id @param {number} toIndex */
+export function moveCodeTab(id, toIndex) {
+	codeTabs.update((list) => moveTab(list, id, toIndex));
+}
+
 /** throw away edits for the source's text @param {string} id */
 export function reloadCodeTab(id) {
 	patchTab(id, reloadTab);
@@ -288,6 +327,27 @@ export function closeCodeTab(id, opts = {}) {
 	clearTimeout(liveTimers.get(id));
 	if (!get(codeTabs).length) codeWorkspaceClose.set(true);
 	return true;
+}
+
+// ---------------------------------------------------------------- the unsaved-changes guard (36-fb-code S7)
+
+/** the tabs holding edits that are not saved @returns {CodeTab[]} */
+export const dirtyTabs = () => get(codeTabs).filter((t) => isDirty(t));
+
+/** Save every unsaved tab. A tab whose code does not check stays dirty (and badged); the result
+ * says which, so the caller keeps the workspace open on them. @returns {Promise<string[]>} ids NOT saved */
+export async function saveAllCodeTabs() {
+	const failed = [];
+	for (const tab of dirtyTabs()) {
+		const r = await saveCodeTab(tab.id);
+		if (!r.ok) failed.push(tab.id);
+	}
+	return failed;
+}
+
+/** Throw away every unsaved edit (each tab shows its source as it is now). */
+export function discardAllCodeTabs() {
+	for (const tab of dirtyTabs()) reloadCodeTab(tab.id);
 }
 
 // ---------------------------------------------------------------- saving
@@ -441,6 +501,19 @@ export async function forkNodeTab(id) {
 	return openCode({ source: 'script', ref });
 }
 
+// 36-fb-code (F5): the core file a built-in's code steers, readable (never editable) — "nothing
+// hidden". A lazy raw chunk per file, the coreModuleSources precedent.
+const engineSources = import.meta.glob(['./charController.js'], { query: '?raw', import: 'default' });
+
+/** open the engine source behind a built-in node's tab, read-only @param {string} id */
+export async function openEngineSource(id) {
+	const tab = tabById(id);
+	const file = tab?.nodeType ? BUILTIN_CODE[tab.nodeType]?.engine : null;
+	const load = file ? engineSources['./' + file] : null;
+	if (!load) return null;
+	return openCode({ source: 'module', ref: { moduleId: 'core', name: file, code: String(await load()) } });
+}
+
 // ---------------------------------------------------------------- files <-> nodes
 
 /** "Save as script file" for an inline node tab; the tab becomes the file's tab @param {string} id */
@@ -485,17 +558,119 @@ export async function unbindTab(id) {
 export async function forkCodeTab(id) {
 	const tab = tabById(id);
 	if (!tab || tab.kind !== 'module') return null;
-	const fork = sources.get('module')?.fork;
-	if (!fork) {
-		showToast('Editable copies of module code are not available in this build');
-		return null;
-	}
+	const fork = sources.get('module')?.fork ?? defaultModuleFork;
 	const target = await fork({ moduleId: tab.moduleId, name: tab.name }, tab.code).catch((e) => {
 		showToast('Could not make an editable copy: ' + (e?.message ?? e));
 		return null;
 	});
 	if (!target) return null;
 	return openCode(/** @type {any} */ (target));
+}
+
+// ---------------------------------------------------------------- the sidebars (36-fb-code F6/F7)
+
+/** show a line of an open tab (Outline, Problems, a Find hit in an open file)
+ * @param {string} tabId @param {number} line */
+export function revealInTab(tabId, line) {
+	if (!tabById(tabId)) return;
+	activeCodeTab.set(tabId);
+	codeRevealLine.set({ tabId, line: Math.max(1, Math.floor(line) || 1), token: ++lineToken });
+}
+
+/**
+ * The nodes that USE a read-only module file — kit nodes, Code links, module nodes and nodes
+ * bound to it — for the Bound nodes panel of a module tab.
+ * @param {{moduleId?: string, name?: string}} tab @returns {{node: any, graphId: string}[]}
+ */
+export function nodesUsingModuleFile(tab) {
+	// a built-in's engine source (moduleId 'core'): the nodes whose code steers it (the Players)
+	if (tab.moduleId === 'core') {
+		/** @type {{node: any, graphId: string}[]} */
+		const steer = [];
+		for (const [graphId, graph] of Object.entries(get(flowGraphs)))
+			for (const node of /** @type {any} */ (graph).nodes ?? [])
+				if (isBuiltinCodeType(node.type) && BUILTIN_CODE[node.type].engine === tab.name) steer.push({ node, graphId });
+		return steer;
+	}
+	const want = String(tab.moduleId ?? '') + (tab.name ? '/' + tab.name : '');
+	/** @type {{node: any, graphId: string}[]} */
+	const out = [];
+	for (const [graphId, graph] of Object.entries(get(flowGraphs))) {
+		for (const node of /** @type {any} */ (graph).nodes ?? []) {
+			const spec = findSpec?.(String(node.type));
+			if (!nodeHasCode(node, spec)) continue;
+			const req = openCodeRequestFor(node, graphId, spec);
+			if (req?.source !== 'module') continue;
+			const ref = String(req.ref ?? '');
+			// a module's own node names the module alone: it uses the module's entry file
+			if (ref === want || (ref === tab.moduleId && (!tab.name || tab.name === 'module.js'))) out.push({ node, graphId });
+		}
+	}
+	return out;
+}
+/** @type {((type: string) => any) | null} the node-spec lookup (nodeCatalog), primed lazily */
+let findSpec = null;
+if (typeof window !== 'undefined') import('./nodeCatalog').then((m) => (findSpec = m.findNodeSpec)).catch(() => {});
+
+/**
+ * The Project tree as it is now (Ctrl+P's list; the left sidebar builds its own reactively).
+ * @param {(graphId: string) => string} [graphTitle]
+ */
+export function currentProjectTree(graphTitle) {
+	return projectTree({
+		graphs: get(flowGraphs),
+		graphTitle,
+		scripts: get(explorerItems).filter((i) => /\.js$/i.test(i.name)),
+		boundCount: (hash) => nodesBoundTo(hash).length,
+		specOf: (type) => findSpec?.(type)
+	});
+}
+
+/**
+ * Every source Find in files searches, open tabs FIRST (their unsaved text wins over what is
+ * stored): script/behaviour/built-in node code, the Explorer's .js files, and — `modules` — the
+ * module and kit sources the graphs use. Each carries what a hit opens.
+ * @param {{modules?: boolean}} [opts]
+ * @returns {Promise<{key: string, title: string, code: string, request: any}[]>}
+ */
+export async function findSources(opts = {}) {
+	const tabs = get(codeTabs);
+	/** @type {{key: string, title: string, code: string, request: any}[]} */
+	const out = [];
+	const seen = new Set();
+	const push = (/** @type {string} */ key, /** @type {string} */ title, /** @type {string} */ code, /** @type {any} */ request) => {
+		if (!key || seen.has(key)) return;
+		seen.add(key);
+		out.push({ key, title, code, request });
+	};
+	for (const t of tabs) push(keyOfTab(t) || 'tab:' + t.id, t.title, t.code, { tabId: t.id });
+	await loadExplorer();
+	for (const [graphId, graph] of Object.entries(get(flowGraphs))) {
+		for (const node of /** @type {any} */ (graph).nodes ?? []) {
+			if (node.type !== 'script' && node.type !== 'behaviour' && !isBuiltinCodeType(node.type)) continue;
+			const code = String(node.data?.code ?? '');
+			const asset = assetSrcOf(node);
+			const request = { source: node.type === 'behaviour' ? 'behaviour' : 'script', ref: { nodeId: node.id, graphId } };
+			if (asset) {
+				const item = itemByHash(asset.hash);
+				push(item ? 'f:' + item.id : 'h:' + asset.hash, asset.name, code, request);
+			} else push(nodeKey(graphId, node.id), String(node.data?.name || node.data?.label || node.type), code, request);
+		}
+	}
+	for (const item of get(explorerItems)) {
+		if (!/\.js$/i.test(item.name) || seen.has('f:' + item.id)) continue;
+		const blob = await itemBlob(item.id).catch(() => null);
+		push('f:' + item.id, item.name, blob ? await blob.text() : '', { source: 'script', ref: { itemId: item.id } });
+	}
+	if (opts.modules) {
+		const { moduleSourceFiles } = await import('./codeOpen');
+		for (const moduleId of modulesInUse(get(flowGraphs), (type) => findSpec?.(type)).keys()) {
+			const files = await moduleSourceFiles(moduleId).catch(() => []);
+			for (const f of files)
+				if (/\.m?js$/.test(f.file)) push('m:' + moduleId + '/' + f.file, moduleId + '/' + f.file, f.text, { source: 'module', ref: { moduleId, name: f.file } });
+		}
+	}
+	return out;
 }
 
 // ---------------------------------------------------------------- go-to
@@ -536,7 +711,7 @@ function followOne(tab) {
 	if (tab.kind === 'node' || tab.kind === 'behaviour') {
 		const f = tab.nodeId ? findNode(tab.nodeId, tab.graphId) : null;
 		if (!f) return tab.error?.message === 'The node this tab edits is gone' ? tab : { ...tab, error: { message: 'The node this tab edits is gone', line: 1 } };
-		return reconcileExternal(tab, String(f.node.data?.code ?? ''));
+		return reconcileExternal(tab, codeOfNode(f.node));
 	}
 	if (tab.kind === 'file') {
 		const bound = nodesBoundTo(tab.hash ?? '');
@@ -573,6 +748,13 @@ export function startCodeWorkspace() {
 	if (started || typeof window === 'undefined') return;
 	started = true;
 	startScriptAssets();
+	// S7: leaving the page with unsaved code asks first (the browser's own prompt — the only one
+	// a page may show there). Closing the workspace keeps the tabs; leaving the page does not.
+	window.addEventListener('beforeunload', (e) => {
+		if (!dirtyTabs().length) return;
+		e.preventDefault();
+		e.returnValue = '';
+	});
 	/** @type {any} */ let timer = null;
 	flowGraphs.subscribe(() => {
 		clearTimeout(timer);

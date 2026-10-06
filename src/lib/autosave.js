@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { objectsGroup, globalCamera, globalScene, orbitControls, pokeScene, beginSceneBatch, endSceneBatch } from '../stores/sceneStore';
 import { flowGraphs, restoreGraphs, SCENE_GRAPH } from '../stores/flowStore';
 import { serializeGraphs } from './flowGraphs';
+import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { shaderGraphsSnapshot, shaderGraphsRestore } from './shaderGraph';
@@ -17,6 +18,7 @@ import { parkPackPieces, fillPackRef, isPristinePackRef, stubElementOf, warmProg
 import { beginLoad, endLoad, progress, slice, updateLoad, onCancel, isLive, LoadCancelled, throttledPoke, holdFrames, releaseFrames, nextFrames, within, WARM_WAIT_MS, warmComposer, loading as sceneLoading, loadSettled } from './sceneLoader';
 // 36 L2: the saved view is applied at the START of a restore (startView.js)
 import { beginStartView, settleStartView, sceneHoldsCamera } from './startView';
+import { startSimOnLoad } from './sim/simOnLoad.js';
 import { animatedImportsSnapshot, animatedImportsRestore } from './animatedImports';
 import { animations, animationsSnapshot, animationsRestore } from './animationPreview';
 import { scenePost, scenePostSnapshot, scenePostRestore } from './scenePost';
@@ -343,6 +345,8 @@ async function writeSnapshot() {
 		nodes,
 		edges,
 		graphs,
+		// 36 F10: where each graph was left in the node editor (null when never moved)
+		flowViews: flowViewsSnapshot((id) => id === SCENE_GRAPH || !!group?.getObjectByProperty?.('uuid', id)),
 		annotations: annotationsProvider ? annotationsProvider() : [],
 		// L2: the post stack is screen-space scene data with nowhere in a GLTF to
 		// live, so it rides beside the snapshot — the same shape rigs and material
@@ -710,6 +714,8 @@ async function applyRestore(snapshot, offer = null) {
 			await within(warmPrograms(group), WARM_WAIT_MS);
 		}
 		releaseFrames();
+		// 36 F20: superseded while the programs warmed — the newer load owns the scene
+		if (!isLive(job)) return null;
 		// multi-material meshes come back from their toJSON, REPLACING the Group of
 		// single-material children the GLTF export left behind (same twin-replacement
 		// shape as rigs below). Keyed by uuid, which the __uuid stamp above restored.
@@ -720,11 +726,11 @@ async function applyRestore(snapshot, offer = null) {
 		shaderGraphsRestore(snapshot.shaderGraphs ?? {});
 		// rigs come back from their ORIGINAL bytes — this also replaces the static
 		// twin the GLTF export wrote — and authored tracks from the snapshot
-		await animatedImportsRestore(snapshot.animated ?? []);
+		await animatedImportsRestore(snapshot.animated ?? [], true, () => isLive(job));
 		if (!isLive(job)) return null; // superseded while the rigs parsed
 		animationsRestore(snapshot.animations ?? {});
 		if (snapshot.graphs && typeof snapshot.graphs === 'object') {
-			restoreGraphs(snapshot.graphs); // H1 format: every graph document
+			restoreGraphs(snapshot.graphs, { views: snapshot.flowViews }); // H1 format: every graph document
 		} else if (snapshot.nodes?.length || snapshot.edges?.length) {
 			restoreGraphs({ [SCENE_GRAPH]: { nodes: snapshot.nodes ?? [], edges: snapshot.edges ?? [] } });
 		}
@@ -751,8 +757,14 @@ async function applyRestore(snapshot, offer = null) {
 		// the bar stays (still cancellable) while kit pieces arrive from their packs
 		if (refills.length) {
 			updateLoad(job, { phase: 'models' });
-			void Promise.allSettled(refills).then(() => endLoad(job));
-		} else endLoad(job);
+			void Promise.allSettled(refills).then(() => {
+				endLoad(job);
+				void startSimOnLoad(snapshot.physics); // 36-fb-water F14
+			});
+		} else {
+			endLoad(job);
+			void startSimOnLoad(snapshot.physics); // 36-fb-water F14
+		}
 		return true;
 	} catch (error) {
 		releaseFrames();

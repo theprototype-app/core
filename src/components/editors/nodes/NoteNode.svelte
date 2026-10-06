@@ -55,7 +55,7 @@
 						{:else if span.t === 'i'}<em>{span.v}</em>
 						{:else if span.t === 'code'}<code>{span.v}</code>
 						{:else if span.t === 's'}<s>{span.v}</s>
-						{:else if span.t === 'a'}<a href={span.href} target="_blank" rel="noopener noreferrer nofollow" class="nodrag">{span.v}</a>
+						{:else if span.t === 'a'}<a href={span.href} target="_blank" rel="noopener noreferrer nofollow" class="nodrag nopan">{span.v}</a>
 						{:else}{span.v}{/if}
 					{/each}
 				</svelte:element>

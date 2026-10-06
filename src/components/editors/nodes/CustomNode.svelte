@@ -51,7 +51,7 @@
 						</span>
 					{:else if param.kind === 'range'}
 						<input
-							class="nodrag accent-[#ff4000]"
+							class="nodrag nopan accent-[#ff4000]"
 							type="range"
 							min={param.min}
 							max={param.max}
@@ -61,7 +61,7 @@
 						/>
 					{:else if param.kind === 'select'}
 						<select
-							class="nodrag"
+							class="nodrag nopan"
 							value={data[param.key] ?? param.options?.[0]}
 							on:change={(e) => setNodeData(id, { [param.key]: e.currentTarget.value })}
 						>
@@ -73,7 +73,7 @@
 				</label>
 			{/each}
 			<button
-				class="nodrag rounded-sm bg-gray-600 px-2 py-0.5 text-[10px] text-white"
+				class="nodrag nopan rounded-sm bg-gray-600 px-2 py-0.5 text-[10px] text-white"
 				on:click={() => nodeDesignerOpen.set(def)}
 			>
 				Edit definition

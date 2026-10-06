@@ -32,7 +32,7 @@ h.run(async () => {
 	// value, and must follow it when the material changes.
 	const readRoughness = () =>
 		A.page.evaluate(() => {
-			const row = [...document.querySelectorAll('.ui-row')].find((r) =>
+			const row = [...document.querySelectorAll('.ui-row, .pr')].find((r) =>
 				r.textContent?.trim().startsWith('Roughness')
 			);
 			const num = row?.querySelector('input.dn-input');

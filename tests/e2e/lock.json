@@ -11,10 +11,8 @@
 		"lock-objectlist"
 	],
 	"adopted": [
-		"docking",
 		"dock-float-exclusivity",
 		"dock-sidebar-inset",
-		"dock-splits",
 		"dock-tab-drag",
 		"dock-tabs-coexist",
 		"flow-dock-mixed",
@@ -45,6 +43,8 @@
 		"dock-inset": "red on v1.24.0 run alone: a locator.click times out after 27 passes (2026-10-06, twice)",
 		"panels": "red on v1.24.0 run alone: 'properties header shows the type chip' + a click timeout; panel open/close breadth is lock-panels",
 		"panel-shortcuts": "red on v1.24.0 run alone: 3b.1 premise says no optional view is on the toolbar of a fresh profile, but Animation is on the default bar since roadmap 33; the keys themselves are locked by lock-shortcuts",
-		"themes": "red on v1.24.0: 11/1 in the battery, then a setup timeout alone; custom-theme restyling is covered by theme-import + theme-tokens and the custom-theme baselines"
+		"themes": "red on v1.24.0: 11/1 in the battery, then a setup timeout alone; custom-theme restyling is covered by theme-import + theme-tokens and the custom-theme baselines",
+		"docking": "red on 1.25.0 main itself, before any 38 change (2026-10-06, twice). Likely cause (not yet proven): 1.25 made a window drag start only on the header itself (docking.js isHeaderDrag, 36 F4) and this suite's drag starts where that now refuses — 'docked right full height' reads 250, then a boundingBox timeout. Owned by 1.25 (not 38); re-adopt once the suite is updated",
+		"dock-splits": "red on 1.25.0 main itself, before any 38 change (2026-10-06, twice). Likely cause (not yet proven): 1.25 made a window drag start only on the header itself (docking.js isHeaderDrag, 36 F4) and this suite's drag starts where that now refuses — 'docked right full height' reads 250, then a boundingBox timeout. Owned by 1.25 (not 38); re-adopt once the suite is updated"
 	}
 }

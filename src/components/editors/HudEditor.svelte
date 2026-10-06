@@ -60,6 +60,8 @@
 	import { HUD_ARRANGE_OPS, HUD_ARRANGE_GROUPS, arrangeOp, arrangeRects, rectHitsBox } from '$lib/hudArrange';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import Icon from '../ui/Icon.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
 	import DragRow from '../ui/DragRow.svelte';
 	import { dragWindow } from '$lib/dragWindow';
@@ -1425,8 +1427,8 @@
 	{#if docked}
 		<div
 			id="hud-dock"
-			class="fixed inset-x-0 bottom-0 flex flex-col bg-white p-2 text-gray-800 dark:bg-gray-800 dark:text-gray-200 {dockVisible ? '' : 'hidden'}"
-			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
+			class="fixed inset-x-0 bottom-0 tp-ui tp-dock-panel flex flex-col p-2 {dockVisible ? '' : 'hidden'}"
+			style="z-index: var(--z-bottom); height: {$dockHeight}px"
 			data-key-scope="panel"
 			role="region"
 			aria-label="HUD editor (docked)"
@@ -1442,10 +1444,10 @@
 			></div>
 			<DockTabs />
 			<div class="flex shrink-0 items-center gap-2 pb-1">
-				<span class="text-xs font-semibold text-gray-200">HUD editor</span>
+				<span class="tp-dock-title">HUD editor</span>
 				<span class="flex-1"></span>
-				<button class="ui-button-quiet" title="Undock into a floating window" onclick={() => setDocked(false)}>⧉</button>
-				<button class="ui-button-quiet" title="Close" onclick={() => hudEditorClose.set(true)}>✕</button>
+				<button class="tp-dock-btn" title="Undock into a floating window" onclick={() => setDocked(false)} aria-label="Undock into a floating window"><Icon name="app-window" size={14} /></button>
+				<button class="tp-dock-btn" title="Close" onclick={() => hudEditorClose.set(true)} aria-label="Close"><Icon name="x" size={14} /></button>
 			</div>
 			<div class="flex min-h-0 flex-1 flex-col">
 				{@render body()}
@@ -1454,7 +1456,7 @@
 	{:else}
 		<div
 			id="hud-window"
-			class="ui-panel fixed flex flex-col overflow-hidden"
+			class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'hud', defaultRect: { left: 240, top: 150 } }}
 			use:focusStack={'hud'}
 			use:tabbable={{ key: 'hud', title: 'HUD editor', openStore: hudEditorClose, isOpen: (v) => !v, close: () => hudEditorClose.set(true) }}
@@ -1463,13 +1465,25 @@
 			style:width="{effW}px"
 			style:height="{effH}px"
 		>
-			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-				<span>HUD editor</span>
-				<span class="text-[11px] font-normal text-gray-400">{screen ? screen.name : 'no screen'}</span>
-				<span class="flex-1"></span>
-				<button class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
-				<button class="ui-button-quiet" title="Close" onclick={() => hudEditorClose.set(true)}>✕</button>
-			</div>
+			<!-- 38 R6: the one window header (ui/WindowChrome, tool) -->
+			<WindowChrome
+				size="tool"
+				bare
+				body={false}
+				title="HUD editor"
+				headerClass="ui-panel-header move-handle cursor-move select-none"
+				onclose={() => hudEditorClose.set(true)}
+				closeAttrs={{ title: 'Close' }}
+			>
+				{#snippet heading()}
+					<span class="wc-label">HUD editor</span>
+					<span class="wc-sub">{screen ? screen.name : 'no screen'}</span>
+					<span class="flex-1"></span>
+				{/snippet}
+				{#snippet actions()}
+					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+				{/snippet}
+			</WindowChrome>
 			<div class="flex min-h-0 flex-1 flex-col">
 				{@render body()}
 			</div>

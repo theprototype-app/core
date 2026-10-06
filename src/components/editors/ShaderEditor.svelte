@@ -68,6 +68,8 @@
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import DockTabs from '../DockTabs.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ShaderNode from './nodes/ShaderNode.svelte';
 	import ShaderSidebar from './ShaderSidebar.svelte';
@@ -610,7 +612,7 @@
 	{/if}
 {/snippet}
 
-{#snippet actions()}
+{#snippet editorActions()}
 	{#if doc}
 		<button
 			class="ui-button-quiet"
@@ -622,12 +624,11 @@
 			<Trash2 size={14} aria-hidden="true" />
 		</button>
 	{/if}
-	<button
-		class="ui-button-quiet"
+	<button class="tp-dock-btn"
 		id="shader-close"
 		title="Close"
 		aria-label="Close the shader editor"
-		onclick={() => shaderEditorClose.set(true)}>✕</button
+		onclick={() => shaderEditorClose.set(true)}><Icon name="x" size={14} /></button
 	>
 {/snippet}
 
@@ -921,14 +922,13 @@
 			{@render domainSwitch()}
 			<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
 			<div class="shader-actions">
-				<button
-					class="ui-button-quiet"
+				<button class="tp-dock-btn"
 					id="shader-undock"
 					title="Undock into a floating window"
 					aria-label="Undock the shader editor"
-					onclick={() => setDocked(false)}>⧉</button
+					onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button
 				>
-				{@render actions()}
+				{@render editorActions()}
 			</div>
 		</div>
 		{@render body()}
@@ -936,7 +936,7 @@
 {:else if !$shaderEditorClose && !docked}
 	<div
 		id="shader-window"
-		class="ui-panel fixed flex flex-col overflow-hidden"
+		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 		use:dragWindow={{ key: 'shader', defaultRect: { left: 240, top: 150 } }}
 		use:focusStack={'shader'}
 		use:tabbable={{
@@ -951,20 +951,25 @@
 		style:width="{effW}px"
 		style:height="{effH}px"
 	>
-		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span>Shader editor</span>
-			{@render domainSwitch()}
-			<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
-			<span class="flex-1"></span>
-			<button
-				class="ui-button-quiet"
-				id="shader-dock"
-				title="Dock to the bottom"
-				aria-label="Dock the shader editor"
-				onclick={() => setDocked(true)}>⇩ Dock</button
-			>
-			{@render actions()}
-		</div>
+		<!-- 38 R6: the one window header (ui/WindowChrome, tool) -->
+		<WindowChrome
+			size="tool"
+			bare
+			body={false}
+			title="Shader editor"
+			headerClass="ui-panel-header move-handle cursor-move select-none"
+		>
+			{#snippet heading()}
+				<span class="wc-label">Shader editor</span>
+				{@render domainSwitch()}
+				<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
+				<span class="flex-1"></span>
+			{/snippet}
+			{#snippet actions()}
+				<button class="wc-act-text" id="shader-dock" title="Dock to the bottom" aria-label="Dock the shader editor" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+				{@render editorActions()}
+			{/snippet}
+		</WindowChrome>
 		{@render body()}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div

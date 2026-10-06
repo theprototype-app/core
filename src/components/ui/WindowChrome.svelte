@@ -301,6 +301,26 @@
 		white-space: nowrap;
 		cursor: pointer;
 	}
+	/* a caller's legacy quiet button (an editor's Apply / Reload riding in its header) takes
+	   the text-action look rather than the old gray-700 chip */
+	.wc-head :global(.ui-button-quiet) {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		flex-shrink: 0;
+		height: 28px;
+		padding: 0 8px;
+		border: 0;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text-2);
+		font-size: var(--fs-desc);
+		font-weight: 500;
+	}
+	.wc-head :global(.ui-button-quiet:hover:not(:disabled)) {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
 	.wc-head :global(:is(.wc-act, .wc-act-text):hover:not(:disabled)) {
 		background: var(--surface-hover);
 		color: var(--text);

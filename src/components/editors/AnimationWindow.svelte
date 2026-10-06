@@ -39,6 +39,8 @@
 	} from '@lucide/svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { createGesture } from '$lib/modalGrab';
 	// W5: the BINDING for this pane's grab key lives in the shortcut registry (an
 	// `external` row), so Settings can move it; the key itself is answered here.
@@ -1981,7 +1983,7 @@
 								onclick={() => { selId = t.id; selKeys = []; }}>{channelLabel(t.channel)}</button
 							>
 							<span class="shrink-0 text-[10px] tabular-nums text-gray-500">{t.keys.length}</span>
-							<button class="ui-button-quiet shrink-0 text-red-400" title="Remove" aria-label="Remove channel" onclick={() => { if (target) removeTrack(target.uuid, t.id); }}>✕</button>
+							<button class="ui-button-quiet shrink-0 text-red-400" title="Remove" aria-label="Remove channel" onclick={() => { if (target) removeTrack(target.uuid, t.id); }}><Icon name="x" size={14} /></button>
 						</div>
 					{/each}
 				</div>
@@ -2019,11 +2021,10 @@
 											ondblclick={() => (markEdit = index)}>{marker.name}</button
 										>
 										<span class="shrink-0 text-[10px] tabular-nums text-gray-500">{marker.t.toFixed(2)}s</span>
-										<button
-											class="ui-button-quiet shrink-0 text-red-400"
+										<button class="ui-button-quiet shrink-0 text-red-400"
 											title="Remove marker"
 											aria-label="Remove marker"
-											onclick={() => { if (target) removeMarker(target.uuid, index); }}>✕</button
+											onclick={() => { if (target) removeMarker(target.uuid, index); }}><Icon name="x" size={14} /></button
 										>
 									</div>
 								{/if}
@@ -2483,8 +2484,8 @@
 		<div
 			id="animation-dock"
 			use:noNativeMenu
-			class="fixed inset-x-0 bottom-0 flex flex-col bg-white p-2 text-gray-800 dark:bg-gray-800 dark:text-gray-200 {dockVisible ? '' : 'hidden'}"
-			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
+			class="fixed inset-x-0 bottom-0 tp-ui tp-dock-panel flex flex-col p-2 {dockVisible ? '' : 'hidden'}"
+			style="z-index: var(--z-bottom); height: {$dockHeight}px"
 			data-key-scope="panel"
 			role="region"
 			aria-label="Animation (docked)"
@@ -2499,11 +2500,11 @@
 			></div>
 			<DockTabs />
 			<div class="flex shrink-0 items-center gap-2 pb-1">
-				<span class="text-xs font-semibold text-gray-200">Animation</span>
-				<span class="text-[11px] text-gray-400">{target ? target.name || 'object' : 'no selection'}</span>
+				<span class="tp-dock-title">Animation</span>
+				<span class="tp-dock-sub">{target ? target.name || 'object' : 'no selection'}</span>
 				<span class="flex-1"></span>
-				<button class="ui-button-quiet" title="Undock into a floating window" aria-label="Undock" onclick={() => setDocked(false)}>⧉</button>
-				<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={() => animationClose.set(true)}>✕</button>
+				<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock" onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button>
+				<button class="tp-dock-btn" title="Close" aria-label="Close" onclick={() => animationClose.set(true)}><Icon name="x" size={14} /></button>
 			</div>
 			<div class="flex min-h-0 flex-1 flex-col">
 				{@render body()}
@@ -2513,7 +2514,7 @@
 		<div
 			id="animation-window"
 			use:noNativeMenu
-			class="ui-panel fixed flex flex-col overflow-hidden"
+			class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'animation', defaultRect: { left: 200, top: 120 } }}
 			use:focusStack={'animation'}
 			use:tabbable={{ key: 'animation', title: 'Animation', openStore: animationClose, isOpen: (v) => !v, close: () => animationClose.set(true) }}
@@ -2522,13 +2523,26 @@
 			style:width="{effW}px"
 			style:height="{effH}px"
 		>
-			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-				<span>Animation</span>
-				<span class="text-[11px] font-normal text-gray-400">{target ? target.name || 'object' : 'no selection'}</span>
-				<span class="flex-1"></span>
-				<button class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
-				<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={() => animationClose.set(true)}>✕</button>
-			</div>
+			<!-- 38 R6: the one window header (ui/WindowChrome, tool) -->
+			<WindowChrome
+				size="tool"
+				bare
+				body={false}
+				title="Animation"
+				headerClass="ui-panel-header move-handle cursor-move select-none"
+				onclose={() => animationClose.set(true)}
+				closeLabel="Close"
+				closeAttrs={{ title: 'Close' }}
+			>
+				{#snippet heading()}
+					<span class="wc-label">Animation</span>
+					<span class="wc-sub">{target ? target.name || 'object' : 'no selection'}</span>
+					<span class="flex-1"></span>
+				{/snippet}
+				{#snippet actions()}
+					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+				{/snippet}
+			</WindowChrome>
 			{@render body()}
 			<div
 				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"

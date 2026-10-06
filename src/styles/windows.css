@@ -68,3 +68,57 @@
 		font-size: var(--fs-input);
 	}
 }
+
+/* a docked view's own small chrome button (Undock ⧉ in the top-right of a bottom-dock view):
+   the header action's box and ink, since a docked view has no header row of its own */
+.tp-dock-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	height: 28px;
+	min-width: 28px;
+	padding: 0 6px;
+	border: 0;
+	border-radius: var(--radius-input);
+	background: transparent;
+	color: var(--text-muted);
+	font: inherit;
+	font-size: var(--fs-desc);
+	cursor: pointer;
+}
+.tp-dock-btn:hover {
+	background: var(--surface-hover);
+	color: var(--text);
+}
+/* the same inside a docked view's own title row */
+.tp-dock-panel .ui-button-quiet {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 28px;
+	padding: 0 8px;
+	border: 0;
+	border-radius: var(--radius-input);
+	background: transparent;
+	color: var(--text-2);
+	font-size: var(--fs-desc);
+	font-weight: 500;
+}
+.tp-dock-panel .ui-button-quiet:hover:not(:disabled) {
+	background: var(--surface-hover);
+	color: var(--text);
+}
+/* a docked view's title (its row under the dock tabs) */
+.tp-dock-title {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+	font-size: var(--fs-desc);
+	font-weight: 600;
+	color: var(--text);
+}
+.tp-dock-title svg {
+	color: var(--text-muted);
+}

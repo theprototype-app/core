@@ -159,7 +159,12 @@ h.run(async () => {
 	await h.eventually(() => value(p, 'g'), (v) => v === true, 'OR over five: one true input is enough');
 	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('g', { op: 'and' }));
 	await h.eventually(() => value(p, 'g'), (v) => v === false, 'AND over five: one true is not');
-	await p.evaluate(() => ['t1', 't2', 't3', 't4'].forEach((id) => window.__stores.nodesHandler.setNodeData(id, { on: true })));
+	// one write per step, each confirmed: a burst of setNodeData writes in one task does not all land
+	// (the documented write-chain cost), which read here as "AND over five is still false"
+	for (const id of ['t1', 't2', 't3', 't4']) {
+		await p.evaluate((id) => window.__stores.nodesHandler.setNodeData(id, { on: true }), id);
+		await h.eventually(() => graph(p), (gr) => gr.nodes.find((n) => n.id === id)?.data.on === true, `toggle ${id} is on`);
+	}
 	await h.eventually(() => value(p, 'g'), (v) => v === true, 'AND over five: all five true');
 	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('g', { op: 'xor' }));
 	await h.eventually(() => value(p, 'g'), (v) => v === true, 'XOR over five trues = odd parity = true');

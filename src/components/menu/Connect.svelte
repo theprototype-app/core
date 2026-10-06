@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { ChevronDown, Copy, Globe } from '@lucide/svelte';
+	import { ChevronDown, ChevronsLeftRight, Copy, Globe, Mic, MicOff } from '@lucide/svelte';
+	import { micActive, pttActive, toggleMic, speakingPeers } from '$lib/voiceChat';
+	import { peerColor } from '$lib/lockControl';
 	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight, toastStore, toastsInDrawerOnly } from '../../stores/appStore'
 	import Badge from '../ui/Badge.svelte';
 	import { onMount, tick } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
 	// 27-F: the signaling link's retry state (audit H2). A chip, not a toast per attempt.
-	import { signalingRetry, approvalStartedAt, approvalRemaining, APPROVAL_WINDOW_MS, joinRefusal, clearJoinRefusal, HARD_PEER_CAP } from '$lib/connectionState';
+	import { signalingRetry, formatElapsed, approvalStartedAt, approvalRemaining, APPROVAL_WINDOW_MS, joinRefusal, clearJoinRefusal, HARD_PEER_CAP } from '$lib/connectionState';
 	import { cancelOutboundRequest, requestConnect } from '$lib/peerApproval';
 	import { sessionHost } from '$lib/connectionState';
 	import { connectSlot, drawerSlot } from '$lib/cloudHooks';
@@ -84,6 +86,14 @@
 	const connState = $derived(
 		remoteOpen.length > 0 ? 'connected' : pendingOut.length > 0 ? 'pending' : 'idle'
 	);
+	// 38 R8 (NOTES-38 #16): the retry chip reads elapsed time — a 1 s clock, only while retrying
+	let retryNow = $state(Date.now());
+	$effect(() => {
+		if (!$signalingRetry.retrying) return;
+		retryNow = Date.now();
+		const t = setInterval(() => (retryNow = Date.now()), 1000);
+		return () => clearInterval(t);
+	});
 	// the drawer is visible when open OR pinned (pinned keeps the tab bar under the pill)
 	const drawerVisible = $derived($connectDrawerOpen || $connectDrawerPinned);
 	// 15-B4: toasts routed drawer-only are INVISIBLE while the drawer is closed —
@@ -173,6 +183,24 @@
 	const connectedText = $derived(
 		$sessionHost ? 'Connected to ' + hostLabel : 'Hosting · ' + remoteOpen.length + ' peer' + (remoteOpen.length === 1 ? '' : 's')
 	);
+
+	// 38 R8 (NOTES-38 #10): once CONNECTED the bar collapses to a chip — status dot · who ·
+	// peer avatars · mic — and a click expands it back to the full bar. Every connect resets
+	// it to the chip; disconnected / connecting always show the full bar.
+	let expanded = $state(false);
+	$effect(() => {
+		if (connState !== 'connected') expanded = false;
+	});
+	const compact = $derived(connState === 'connected' && !expanded);
+	const chipLabel = $derived($sessionHost ? hostLabel : 'Hosting');
+	/** up to three peers on the chip, the rest as +N (NOTES-38 #12: a speaker gets the ring) */
+	const chipPeers = $derived(
+		remoteOpen.slice(0, 3).map((id) => {
+			const name = $userdata.find((u) => u[0] === id)?.[1] || String(id);
+			return { id, name, initial: String(name).trim().charAt(0).toUpperCase() || '?' };
+		})
+	);
+	const selfSpeaking = $derived(!!$peers?.peer?.id && $speakingPeers.includes($peers.peer.id));
 
 	function updateDisplayId(id) {
 		displayid = id;
@@ -277,7 +305,38 @@
 	<!-- 38 R8: one glass bar (styles/hud.css) — your invite id as a mono chip, the dial field
 	     with ONE primary button, status as a Badge, icon buttons for the rest. Every id,
 	     testid, placeholder and button name the suites and the tour read is unchanged. -->
-	<div class="connect-pill tp-ui hud-glass" class:drawer-open={drawerVisible} class:docked bind:this={pillEl} role="group" data-state={connState}>
+	<div class="connect-pill tp-ui hud-glass" class:drawer-open={drawerVisible} class:compact class:docked bind:this={pillEl} role="group" data-state={connState}>
+		{#if compact}
+			<!-- NOTES-38 #10: the connected chip. Click it for the full bar. -->
+			<button
+				type="button"
+				class="cx-chip"
+				title={connectedText + ' — click for the full bar'}
+				aria-label={connectedText + '. Show the full connection bar'}
+				aria-expanded="false"
+				onclick={() => (expanded = true)}
+			>
+				<span class="cx-dot" aria-hidden="true"></span>
+				<span class="cx-chip-label">{chipLabel}</span>
+				<span class="cx-avatars" aria-hidden="true">
+					{#each chipPeers as p (p.id)}
+						<span class="cx-av" class:speaking={$speakingPeers.includes(p.id)} style:background={peerColor(p.id)} title={p.name}>{p.initial}</span>
+					{/each}
+					{#if remoteOpen.length > 3}<span class="cx-av cx-av-more">+{remoteOpen.length - 3}</span>{/if}
+				</span>
+			</button>
+			<button
+				type="button"
+				class="hud-cell cx-mic"
+				class:on={$micActive || $pttActive}
+				class:speaking={selfSpeaking}
+				title={$micActive ? 'Microphone on — click to mute' : 'Microphone off — click to talk, or hold V for push-to-talk'}
+				aria-label={$micActive ? 'Mute microphone' : 'Unmute microphone'}
+				onclick={() => toggleMic()}
+			>
+				{#if $micActive || $pttActive}<Mic size={20} strokeWidth={1.75} aria-hidden="true" />{:else}<MicOff size={20} strokeWidth={1.75} aria-hidden="true" />{/if}
+			</button>
+		{:else}
 		<!-- your invite id (click to copy the share link) — the FIRST button in the pill -->
 		<button type="button" class="cx-id" onclick={copy} title="Copy your invite link"
 			><span class="cx-id-text">{myidcap}</span><Copy size={16} strokeWidth={1.75} aria-hidden="true" /></button
@@ -335,6 +394,14 @@
 			</div>
 		{/if}
 
+		{#if connState === 'connected'}
+			<!-- back to the chip -->
+			<button type="button" class="hud-cell cx-collapse" title="Collapse to the chip" aria-label="Collapse the connection bar" onclick={() => (expanded = false)}
+				><ChevronsLeftRight size={20} strokeWidth={1.75} aria-hidden="true" /></button
+			>
+		{/if}
+		{/if}
+
 		{#if $signalingRetry.retrying}
 			<!-- 27-F: the signaling link is down and retrying — a STATE you can look at, so a
 				 Badge (SPEC §5), not a toast per attempt. Live peers are unaffected. -->
@@ -342,8 +409,8 @@
 				tone="warn"
 				id="connect-retry-chip"
 				data-testid="connect-retry-chip"
-				title="Reconnecting to the signaling server — peers you are already connected to are unaffected"
-				text={'Reconnecting… ' + $signalingRetry.attempt}
+				title={'Reconnecting to the signaling server (attempt ' + $signalingRetry.attempt + ') — peers you are already connected to are unaffected'}
+				text={'Reconnecting · ' + formatElapsed(retryNow - ($signalingRetry.since ?? retryNow))}
 			/>
 		{/if}
 
@@ -626,6 +693,79 @@
 		}
 		.cx-input {
 			font-size: 16px; /* no iOS zoom */
+		}
+	}
+	/* NOTES-38 #10: the connected chip */
+	.cx-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		height: var(--control-h-sm);
+		padding: 0 8px 0 10px;
+		border: 0;
+		border-radius: var(--radius-button);
+		background: transparent;
+		color: var(--text);
+		font-size: var(--fs-desc);
+		font-weight: 500;
+		cursor: pointer;
+		min-width: 0;
+	}
+	.cx-chip:hover {
+		background: var(--surface-hover);
+	}
+	.cx-chip:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+	}
+	.cx-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--ink-good);
+		flex: 0 0 auto;
+	}
+	.cx-chip-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 14rem;
+	}
+	.cx-avatars {
+		display: inline-flex;
+		padding-left: 6px;
+	}
+	.cx-av {
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		margin-left: -6px;
+		border-radius: 50%;
+		color: var(--bg-app);
+		font: 600 11px var(--font-ui);
+		box-shadow: 0 0 0 2px var(--surface-1);
+	}
+	.cx-av-more {
+		background: var(--surface-inset);
+		color: var(--text-2);
+		font-family: var(--font-ui-mono);
+		font-size: 10px;
+	}
+	/* NOTES-38 #12: speaking = a soft pulsing ring in --speaking, never --live */
+	.cx-av.speaking,
+	.cx-mic.speaking {
+		box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--speaking);
+		animation: cx-speak 1.4s ease-in-out infinite;
+	}
+	@keyframes cx-speak {
+		50% {
+			box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px color-mix(in srgb, var(--speaking) 35%, transparent);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.cx-av.speaking,
+		.cx-mic.speaking {
+			animation: none;
 		}
 	}
 </style>

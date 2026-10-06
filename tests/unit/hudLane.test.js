@@ -15,3 +15,13 @@ describe('play banner', () => {
 		expect(normalizePlayBanner({ mode: 'custom', text: 5 })).toEqual({ mode: 'custom', text: '' });
 	});
 });
+
+import { formatElapsed } from '../../src/lib/connectionState.js';
+describe('reconnect elapsed (NOTES-38 #16)', () => {
+	it('reads seconds, minutes, hours', () => {
+		expect(formatElapsed(12_400)).toBe('12 s');
+		expect(formatElapsed(125_000)).toBe('2 min');
+		expect(formatElapsed(65 * 60_000)).toBe('1 h 5 min');
+		expect(formatElapsed(-5)).toBe('0 s');
+	});
+});

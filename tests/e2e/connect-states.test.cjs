@@ -276,7 +276,10 @@ h.run(async () => {
 		));
 		h.check(hosts[0] === B.id, 'CN: dialer sessionHost = approver id');
 		h.check(hosts[1] === null, 'CN: approver sessionHost = null (hosting)');
-		h.check(await A.page.locator('#disconnect-button').first().isVisible(), 'CN: red Disconnect visible');
+		// 38 R8 (NOTES-38 #10): connected collapses to a chip; a click on it is the full bar
+		h.check(await A.page.locator('.connect-pill.compact .cx-chip').first().isVisible(), '38: connected shows the compact chip');
+		await A.page.locator('.cx-chip').first().click();
+		h.check(await A.page.locator('#disconnect-button').first().isVisible(), 'CN: Disconnect visible in the expanded bar');
 		await A.page.locator('#disconnect-button').click();
 		await A.page.waitForTimeout(1500);
 		h.check(

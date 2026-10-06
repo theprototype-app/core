@@ -20,9 +20,17 @@ h.run(async () => {
 	/** drag a window by its header by (dx, dy) with the real mouse */
 	async function dragHeader(/** @type {string} */ sel, dx, dy) {
 		const r = await page.evaluate((s) => {
-			const hd = document.querySelector(s + ' .move-handle');
+			// a point of the header that is really the header: another floating window (the
+			// node editor opens at its own default rect) can sit over part of it
+			const win = document.querySelector(s);
+			const hd = win.querySelector('.move-handle');
 			const b = hd.getBoundingClientRect();
-			return { x: b.left + 40, y: b.top + b.height / 2 };
+			const y = b.top + b.height / 2;
+			for (let x = b.left + 20; x < b.right - 20; x += 15) {
+				const at = document.elementFromPoint(x, y);
+				if (at && hd.contains(at) && !at.closest('button, input, select, a')) return { x, y };
+			}
+			return { x: b.left + 40, y };
 		}, sel);
 		await page.mouse.move(r.x, r.y);
 		await page.mouse.down();

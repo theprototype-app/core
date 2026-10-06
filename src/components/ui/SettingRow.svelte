@@ -77,7 +77,7 @@
 		align-items: center;
 		column-gap: var(--space-6);
 		row-gap: 0;
-		padding: var(--space-4) 18px;
+		padding: var(--setting-row-pad-y) 18px;
 		color: var(--text);
 		font-size: var(--fs-body);
 	}
@@ -142,7 +142,7 @@
 	@media (max-width: 639.98px) {
 		.sr {
 			column-gap: var(--space-4);
-			padding: 14px var(--space-4);
+			padding: var(--setting-row-pad-y) var(--space-4);
 		}
 		.sr-wide {
 			grid-template-columns: minmax(0, 1fr);

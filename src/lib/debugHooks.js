@@ -65,6 +65,7 @@ export const DEBUG_HOOKS = [
 	['musicToolbox', () => import('./musicToolbox')],
 	['micCapture', () => import('./micCapture')],
 	['annotationsHandler', () => import('./annotationsHandler')],
+	['noteHistory', () => import('./noteHistory')],
 	['flowRuntime', () => import('./flowRuntime')],
 	['history', () => import('./history')],
 	['materialsHandler', () => import('./materialsHandler')],

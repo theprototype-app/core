@@ -22,12 +22,13 @@ import {
 import { registerAnnotationsPersistence, markAnnotationsDirty } from './autosave';
 import { flyTo } from './objectActions';
 import { safeStorage } from './safeStorage';
+import { normalizeReplies, mergeReplies } from './noteReplies';
 
 // Synced note pins on objects. Offsets are object-local so pins follow their
 // object; one note per pin. Replication mirrors the flow-graph pattern:
 // live CRUD messages + a full-state reply on the connection handshake.
 
-/** @type {import('svelte/store').Writable<{id: string, objectUuid: string, objectName: string, offset: number[], text: string, author: string, authorKey: string, ts: number, name: string, color: string, label: string, shape: string, camera: {position: number[], target: number[]} | null, follow: boolean}[]>} */
+/** @type {import('svelte/store').Writable<{id: string, objectUuid: string, objectName: string, offset: number[], text: string, author: string, authorKey: string, ts: number, name: string, color: string, label: string, shape: string, camera: {position: number[], target: number[]} | null, follow: boolean, replies?: any[]}[]>} */
 export const annotations = writable([]);
 /** popover state: { id, mode:'view'|'edit' } for an existing note, { draft: {...} } for a new one, or null */
 /** @type {import('svelte/store').Writable<any>} */
@@ -91,7 +92,7 @@ function validCameraPose(pose) {
  * @param {any} a
  */
 export function normalizeAnnotation(a) {
-	return {
+	const out = {
 		...a,
 		text: typeof a?.text === 'string' ? a.text : '',
 		name: typeof a?.name === 'string' ? a.name : '',
@@ -113,7 +114,16 @@ export function normalizeAnnotation(a) {
 		// survive a reload — the sweep re-keys by name instead of pruning.
 		objectName: typeof a?.objectName === 'string' ? a.objectName : ''
 	};
+	// 37 R16: threaded replies — present only when there are some, so a note nobody answered
+	// is byte-identical to before (and an older peer just carries the field along)
+	const replies = normalizeReplies(a?.replies);
+	if (replies.length) out.replies = replies;
+	else delete out.replies;
+	return out;
 }
+
+// 37 R16: the reply rules are a zero-import leaf (vitest: tests/unit/noteReplies.test.js)
+export { MAX_REPLIES, normalizeReplies, mergeReplies } from './noteReplies';
 
 // --- H9 color math (sRGB bytes, never through THREE.Color: round-tripping a hex
 // through the LINEAR working space re-darkens it — the documented trap) --------
@@ -258,9 +268,17 @@ function broadcast(data) {
 	if (peer) peer.send(data);
 }
 
+// 37 R16: note edits UNDO. The 'annotation' history kind lives in noteHistory.js (its body
+// registers the kind, and this module sits in the history family's import graph through
+// objectActions — so it is reached by a PRIMED dynamic import, the TDZ-cycle rule).
+/** @type {any} */
+let noteHistory = null;
+if (typeof window !== 'undefined') import('./noteHistory').then((m) => (noteHistory = m)).catch(() => {});
+
 /** Create/update locally and replicate @param {any} annotation */
 export function setAnnotation(annotation) {
 	const normalized = normalizeAnnotation(annotation);
+	noteHistory?.recordNoteChange(get(annotations).find((a) => a.id === normalized.id) ?? null, normalized);
 	annotations.update((list) => {
 		const index = list.findIndex((a) => a.id === normalized.id);
 		if (index >= 0) {
@@ -284,6 +302,7 @@ export function broadcastAllAnnotations() {
 
 /** @param {string} id */
 export function deleteAnnotation(id) {
+	noteHistory?.recordNoteChange(get(annotations).find((a) => a.id === id) ?? null, null);
 	annotations.update((list) => list.filter((a) => a.id !== id));
 	broadcast({ type: 'annotation', op: 'delete', annotation: { id } });
 	activeAnnotation.update((active) => (active?.id === id ? null : active));
@@ -303,12 +322,44 @@ export function applyAnnotation(data) {
 			const index = list.findIndex((a) => a.id === normalized.id);
 			if (index >= 0) {
 				const next = [...list];
-				next[index] = normalized;
+				// 37 R16: the note's own fields are latest-wins (the whole document), but the
+				// REPLIES merge per reply — two people answering at once must both survive
+				const replies = mergeReplies(list[index].replies, normalized.replies);
+				next[index] = replies.length ? { ...normalized, replies } : normalized;
 				return next;
 			}
 			return [...list, normalized];
 		});
 	}
+}
+
+/**
+ * 37 R16: answer a note. Anyone in the session may reply; the reply rides the note (one
+ * ordinary `annotation` set, merged per reply on arrival) and is ONE undo step.
+ * @param {string} noteId @param {string} text @returns {string | null} the reply id
+ */
+export function addReply(noteId, text) {
+	const body = String(text ?? '').trim().slice(0, 2000);
+	const note = get(annotations).find((a) => a.id === noteId);
+	if (!body || !note) return null;
+	const now = Date.now();
+	const reply = { id: crypto.randomUUID(), text: body, author: myAuthorName(), authorKey: myAuthorKey(), ts: now, at: now };
+	setAnnotation({ ...note, replies: [...(note.replies ?? []), reply] });
+	return reply.id;
+}
+
+/** 37 R16: take a reply back (a tombstone; undo restores it) @param {string} noteId @param {string} replyId */
+export function deleteReply(noteId, replyId) {
+	const note = get(annotations).find((a) => a.id === noteId);
+	if (!note?.replies?.some((/** @type {any} */ r) => r.id === replyId && !r.deleted)) return false;
+	const now = Date.now();
+	setAnnotation({ ...note, replies: note.replies.map((/** @type {any} */ r) => (r.id === replyId ? { ...r, deleted: true, at: now } : r)) });
+	return true;
+}
+
+/** the replies a person sees (tombstones hidden) @param {any} note */
+export function visibleReplies(note) {
+	return (note?.replies ?? []).filter((/** @type {any} */ r) => !r.deleted);
 }
 
 /** Apply the full set from a peer (merge by id) @param {any[]} list */

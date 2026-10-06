@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-05T22:55:51.832Z",
+	"recordedAt": "2026-10-06T14:44:23.864Z",
 	"settings": {
 		"Allow text selection everywhere": {
 			"rows": [
@@ -1828,7 +1828,8 @@
 				"Show everyone as classic heads",
 				"Show helpers in Play (debug)",
 				"Simplify distant models",
-				"Theme"
+				"Theme",
+				"Water quality"
 			],
 			"sections": [
 				"Interface",
@@ -3056,6 +3057,7 @@
 		"zoom": {
 			"rows": [
 				"Allow browser pinch zoom",
+				"Node editor opens",
 				"Pinch zoom",
 				"Trackpad gestures",
 				"Two-finger pan",
@@ -3063,6 +3065,7 @@
 			],
 			"sections": [
 				"Controls",
+				"Input",
 				"Node types",
 				"Shortcuts"
 			]
@@ -3075,6 +3078,7 @@
 				"Dock resizes the viewport",
 				"Floating toolbar",
 				"Mouse bindings",
+				"Node editor opens",
 				"Reset panel positions",
 				"Reverse trackpad pan",
 				"Spatial voice",
@@ -3414,6 +3418,7 @@
 		},
 		"scene": {
 			"": [
+				"Advanced",
 				"Background",
 				"Camera",
 				"Components",
@@ -3427,6 +3432,7 @@
 				"Saved views",
 				"Scene look",
 				"Scene track (shared)",
+				"Selection passes through",
 				"Shader materials",
 				"Snap to elements",
 				"Snapping",
@@ -3462,12 +3468,14 @@
 				"Viewport — this device"
 			],
 			"view": [
+				"Advanced",
 				"Camera",
 				"Orbit feel",
 				"Overrides — this device",
 				"Physics",
 				"Saved views",
 				"Scene look",
+				"Selection passes through",
 				"Shader materials",
 				"Snap to elements",
 				"Snapping",
@@ -3541,7 +3549,11 @@
 				"Snapping"
 			],
 			"physics": [
-				"Physics"
+				"Camera",
+				"Orbit feel",
+				"Physics",
+				"Saved views",
+				"Start view"
 			],
 			"background": [
 				"Background",
@@ -3551,6 +3563,15 @@
 			],
 			"fog": [
 				"Fog"
+			],
+			"advanced": [
+				"Advanced",
+				"Physics",
+				"Selection passes through"
+			],
+			"selection passes through": [
+				"Advanced",
+				"Selection passes through"
 			],
 			"position": [
 				"Snap to elements",
@@ -3584,7 +3605,10 @@
 				"Viewport — this device"
 			],
 			"intensity": [],
-			"water": [],
+			"water": [
+				"Advanced",
+				"Selection passes through"
+			],
 			"lod": [],
 			"render": [
 				"Overrides — this device",

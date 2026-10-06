@@ -65,7 +65,7 @@
 		box-sizing: border-box;
 		width: 100%;
 		min-height: var(--nav-row-h);
-		padding: var(--space-3) var(--space-4);
+		padding: var(--nav-row-pad-y) var(--space-4);
 		border: 0;
 		background: transparent;
 		color: var(--text);

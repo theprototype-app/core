@@ -107,6 +107,7 @@
 	--prop-label-w: 96px;
 	--setting-row-pad-y: var(--space-4); /* SettingRow top/bottom */
 	--nav-row-h: 48px; /* NavRow minimum */
+	--nav-row-pad-y: var(--space-3);
 }
 
 /* SPEC §6 mobile (< 640px): body/labels 16, descriptions 14, inputs 16 (no iOS zoom),
@@ -138,6 +139,7 @@
 		--icon-button: 28px;
 		--setting-row-pad-y: var(--space-2);
 		--nav-row-h: 36px;
+		--nav-row-pad-y: var(--space-2);
 	}
 }
 

@@ -74,6 +74,19 @@ h.run(async () => {
 			await page.waitForTimeout(800);
 			await page.screenshot({ path: `${OUT}/${n}-inspector-hdri-${theme}.png` });
 		}
+		// the quality row in Settings (it sits right after the water rows)
+		await page.evaluate(() => {
+			const s = window.__stores;
+			s.settingsSection.set('scene');
+			s.settingsOpen.set(true);
+		});
+		await page.waitForTimeout(1200);
+		await page.evaluate(() => document.getElementById('hdri-quality-row')?.scrollIntoView({ block: 'center' }));
+		for (const [n, theme] of [['12', 'dark'], ['13', 'light']]) {
+			await page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
+			await page.waitForTimeout(800);
+			await page.screenshot({ path: `${OUT}/${n}-settings-hdri-${theme}.png` });
+		}
 	}
 	console.log('errors', JSON.stringify(page.__errors));
 	await browser.close();

@@ -395,8 +395,8 @@
 	// so it adds no on:-directive/a11y warnings in this on:-style component.
 	function shareDropZone(node: HTMLElement) {
 		const setActive = (on: boolean) => {
-			node.style.boxShadow = on ? 'inset 0 0 0 2px rgb(59 130 246 / 0.7)' : '';
-			node.style.background = on ? 'rgb(59 130 246 / 0.08)' : '';
+			node.style.boxShadow = on ? 'inset 0 0 0 2px var(--accent)' : '';
+			node.style.background = on ? 'var(--accent-soft)' : '';
 		};
 		const over = (e: DragEvent) => {
 			if (e.dataTransfer?.types.includes('application/x-object-uuid')) {

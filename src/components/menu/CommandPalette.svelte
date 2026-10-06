@@ -159,6 +159,13 @@
 		color: var(--text);
 		font-size: var(--fs-panel-title);
 	}
+	/* the forms plugin paints a ring + border on a focused text input; the palette's field
+	   is the whole header, so its focus is the open palette itself */
+	.cp-input:focus {
+		outline: none;
+		box-shadow: none;
+		border-color: transparent;
+	}
 	.cp-input::placeholder {
 		color: var(--text-faint);
 	}

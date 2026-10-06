@@ -81,7 +81,7 @@ h.run(async () => {
 			s.settingsOpen.set(true);
 		});
 		await page.waitForTimeout(1200);
-		await page.evaluate(() => document.getElementById('hdri-quality-row')?.scrollIntoView({ block: 'center' }));
+		await page.evaluate(() => (document.getElementById('hdri-quality')?.closest('.setting-row') ?? document.getElementById('hdri-quality'))?.scrollIntoView({ block: 'center' }));
 		for (const [n, theme] of [['12', 'dark'], ['13', 'light']]) {
 			await page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
 			await page.waitForTimeout(800);

@@ -45,15 +45,18 @@ const create = (page, cmd) =>
 	}, cmd);
 
 h.run(async () => {
-	const browser = await h.launch();
+	// three pages (A, B and the late joiner): on software GL the third boots past setupPage's 30 s
+	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
+	const opened = await A.page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r([...(p?.openedPeers ?? [])].length))()));
+	h.check(opened >= 1, `PREMISE: A holds an open connection to B (${opened})`);
 
 	// ============================================================ 1. a wall with a door
 	const wall = await create(A.page, '/create Wall 4 2.8 0.2 1');
 	h.check(!!wall, 'A: /create Wall made an object');
-	await A.page.waitForTimeout(1200);
+	await h.eventually(() => archInfo(B.page, wall), (v) => !!v, 'B: the wall arrived', 15000);
 	const wa = await archInfo(A.page, wall);
 	const wb = await archInfo(B.page, wall);
 	h.check(wa?.gtype === 'Wall' && wa.params.doors === 1, `A: it is a Wall with one door (${JSON.stringify(wa?.params)})`);
@@ -87,11 +90,11 @@ h.run(async () => {
 	const rows = async () =>
 		A.page.evaluate(() => document.querySelector('#inspector-geometry')?.textContent ?? '');
 	const withDoor = await rows();
-	h.check(withDoor.includes('Door width') && !withDoor.includes('Win width'), 'Inspector: a wall with a door shows Door width, hides the window rows');
+	h.check(withDoor.includes('Door width') && !withDoor.includes('Win width'), `Inspector: a wall with a door shows Door width, hides the window rows ("${withDoor.slice(0, 160)}")`);
 	await A.page.evaluate((uuid) => window.__stores.geometryEdit.applyGeometry(uuid, { doors: 0, windows: 1 }), wall);
 	await A.page.waitForTimeout(800);
 	const withWindow = await A.page.evaluate(() => document.querySelector('#inspector-geometry')?.textContent ?? '');
-	h.check(!withWindow.includes('Door width') && withWindow.includes('Win width'), 'Inspector: with no door the door rows go and the window rows come');
+	h.check(!withWindow.includes('Door width') && withWindow.includes('Win width'), `Inspector: with no door the door rows go and the window rows come ("${withWindow.slice(0, 160)}")`);
 
 	// ============================================================ 5. a door: leaf built on every peer
 	const door = await A.page.evaluate(async () => {

@@ -807,6 +807,9 @@
 	let geoTick = $state(0);
 	const geoParams = $derived.by(() => {
 		geoTick;
+		// 37 R3: a peer's geometry edit or an undo replaces userData.geometryParams and pokes the
+		// scene — without this the rows (and which of them `show`) stayed on the old params
+		$objectsGroup;
 		return !isLight && !isGroup && $selectedObject ? geometryParamsOf($selectedObject) : null;
 	});
 	const geoSpec = $derived(geoParams ? geometrySpec(geoParams.gtype) : null);

@@ -38,7 +38,7 @@
 	import { dockTabs, bottomDockActive, activateDock, dockMinimized, reorderDockTabs, armDockMode } from '$lib/bottomDock';
 	import { dockAddItems, dockTabItems } from '$lib/dockMenu';
 	import ContextMenu from './ContextMenu.svelte';
-	import { Plus, PanelBottom } from '@lucide/svelte';
+	import Icon from './ui/Icon.svelte';
 
 	let addMenu = $state(/** @type {{x:number,y:number}|null} */ (null));
 	// Rebuilt per OPEN, not once at init: the list drops views that are already docked,
@@ -212,7 +212,7 @@
 		class="tab-note flex h-5.5 shrink-0 items-center justify-center bg-gray-900/70 px-3 text-gray-300 hover:text-white"
 		title="Add a view (Flow Code, Animation, UV editor, Shader editor, HUD editor, Explorer)"
 		aria-label="Add a view to the dock"
-		onclick={openAdd}><Plus size={14} aria-hidden="true" /></button
+		onclick={openAdd}><Icon name="plus" size={16} aria-hidden="true" /></button
 	>
 </div>
 
@@ -223,7 +223,7 @@
 		class="tab-note flex h-5.5 items-center justify-center bg-gray-900/70 px-3 text-gray-300 hover:text-white"
 		title="Minimize the dock"
 		aria-label="Minimize the dock"
-		onclick={() => dockMinimized.set(true)}><PanelBottom size={14} aria-hidden="true" /></button
+		onclick={() => dockMinimized.set(true)}><Icon name="panel-bottom" size={16} aria-hidden="true" /></button
 	>
 </div>
 

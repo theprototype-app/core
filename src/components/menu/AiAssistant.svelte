@@ -10,7 +10,7 @@
 		settingsOpen,
 		settingsSection
 	} from '../../stores/appStore';
-	import { Mic, Square } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider } from '$lib/ai/providers';
 	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi } from '$lib/ai/assistant';
 	import { dragWindow } from '$lib/dragWindow';
@@ -202,7 +202,7 @@
 					disabled={$aiBusy || $dictation.state === 'transcribing'}
 					onclick={toggleMic}
 				>
-					{#if $dictation.state === 'recording'}<Square size={16} aria-hidden="true" />{:else}<Mic size={16} aria-hidden="true" />{/if}
+					{#if $dictation.state === 'recording'}<Icon name="square" size={16} aria-hidden="true" />{:else}<Icon name="mic" size={16} aria-hidden="true" />{/if}
 				</button>
 				{#if $aiBusy}
 					<button

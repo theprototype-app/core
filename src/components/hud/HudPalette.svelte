@@ -56,7 +56,7 @@
 				ondragstart={(/** @type {any} */ e) => e.dataTransfer?.setData('application/x-hud-kind', def.key)}
 				onclick={() => onPick(def.key)}
 			>
-				<Icon name={def.icon} size={13} />
+				<Icon name={def.icon} size={16} />
 				<span>{def.label}</span>
 			</button>
 		{/each}

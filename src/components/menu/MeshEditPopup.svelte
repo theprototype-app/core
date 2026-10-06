@@ -128,23 +128,8 @@
 		faceBevelReady,
 		loopCutReady
 	} from '$lib/faceEdit';
-	import {
-		Keyboard,
-		CircleHelp,
-		Check,
-		X,
-		Grid2x2,
-		Box,
-		Circle,
-		Shrink,
-		BoxSelect,
-		FlipHorizontal,
-		Link2,
-		Undo2,
-		Redo2
-	} from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
-	import ToolIcon from '../ui/ToolIcon.svelte';
 	import {
 		colliderEditObject,
 		addColliderPiece,
@@ -846,7 +831,7 @@
 			title={`${o.hint ? `${o.label} (${o.hint})` : o.label} — ${o.desc}${o.param ? ' (sets options below)' : ''}`}
 			onclick={() => runOp(o.op)}
 		>
-			<ToolIcon name={o.icon} />
+			<Icon name={'tool:' + o.icon} size={20} />
 		</button>
 	{/each}
 {/snippet}
@@ -862,7 +847,7 @@
 		aria-pressed={$proportionalEdit}
 		aria-label="Proportional editing"
 		title="Proportional editing — drag a vertex, edge or face and its neighbourhood follows, weighted by distance (radius below). For smooth bulges and dips instead of a crease."
-		onclick={() => proportionalEdit.set(!$proportionalEdit)}><ToolIcon name="proportional" /></button
+		onclick={() => proportionalEdit.set(!$proportionalEdit)}><Icon name="tool:proportional" size={20} /></button
 	>
 {/snippet}
 
@@ -884,7 +869,7 @@
 				aria-label="Show mesh-edit key bindings"
 				aria-pressed={showKeys}
 				title="Key bindings — opens a movable cheat sheet you can park anywhere"
-				onclick={() => (showKeys = !showKeys)}><CircleHelp size={14} aria-hidden="true" /></button
+				onclick={() => (showKeys = !showKeys)}><Icon name="circle-help" size={16} aria-hidden="true" /></button
 			>
 			{#if $colliderEditObject}
 				<!-- CL-A A8: collider session — commit or drop -->
@@ -893,14 +878,14 @@
 					class="tbx-hbtn tbx-ok"
 					aria-label="Save the collider"
 					title="Save the custom collider (each shell = one convex piece)"
-					onclick={() => commitColliderEdit()}><Check size={14} aria-hidden="true" /></button
+					onclick={() => commitColliderEdit()}><Icon name="check" size={16} aria-hidden="true" /></button
 				>
 				<button
 					id="collider-edit-cancel"
 					class="tbx-hbtn"
 					aria-label="Cancel the collider edit"
 					title="Drop the collider edit (Esc)"
-					onclick={() => exitColliderEdit()}><X size={14} aria-hidden="true" /></button
+					onclick={() => exitColliderEdit()}><Icon name="x" size={16} aria-hidden="true" /></button
 				>
 			{:else}
 				<!-- 19-A P2 (plan §6): undo/redo IN the toolbox header, before
@@ -913,7 +898,7 @@
 					aria-label="Undo"
 					disabled={!$canUndo}
 					title="Undo (Ctrl+Z) — steps back inside this edit session"
-					onclick={() => undo()}><Undo2 size={14} aria-hidden="true" /></button
+					onclick={() => undo()}><Icon name="undo-2" size={16} aria-hidden="true" /></button
 				>
 				<button
 					id="mesh-redo"
@@ -921,7 +906,7 @@
 					aria-label="Redo"
 					disabled={!$canRedo}
 					title="Redo (Ctrl+Y) — replay the step you just undid"
-					onclick={() => redo()}><Redo2 size={14} aria-hidden="true" /></button
+					onclick={() => redo()}><Icon name="redo-2" size={16} aria-hidden="true" /></button
 				>
 				<!-- The session discard is NOT a bigger undo, and drawing it as one
 				     (it used Undo2, sitting immediately beside #mesh-undo's Undo2)
@@ -933,14 +918,14 @@
 					class="tbx-hbtn tbx-danger"
 					aria-label="Cancel — revert every change made in this session"
 					title="Cancel — revert EVERY change made since Edit Mesh opened (asks first)"
-					onclick={askCancel}><X size={14} aria-hidden="true" /></button
+					onclick={askCancel}><Icon name="x" size={16} aria-hidden="true" /></button
 				>
 				<button
 					id="mesh-edit-done"
 					class="tbx-hbtn tbx-done"
 					aria-label="Done"
 					title="Finish (Esc)"
-					onclick={finish}><Check size={14} aria-hidden="true" /></button
+					onclick={finish}><Icon name="check" size={16} aria-hidden="true" /></button
 				>
 			{/if}
 		{/snippet}
@@ -1028,7 +1013,7 @@
 				aria-label="Move edges with the gizmo"
 				title="Move — seat the gizmo on the selected edges (X runs along the edge, Z out of the surface). The welded neighbours stretch with it."
 				onclick={() => setFaceOp('move')}
-				><ToolIcon name="move" /></button
+				><Icon name="tool:move" size={20} /></button
 			>
 			<button
 				id="edge-bevel"
@@ -1038,7 +1023,7 @@
 				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel edges"
 				title="Bevel — replace the selected edge with a chamfer strip, adjustable below (P3: with an edge picked the click applies immediately, like the faces grid). An end where four or more faces meet gets a mitered corner (a small cap joining the strip to every face there); an end that runs straight on into a flat surface is refused."
-				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
+				onclick={() => runOp('bevel')}><Icon name="tool:bevel" size={20} /></button
 			>
 			<button
 				id="edge-extrude"
@@ -1048,7 +1033,7 @@
 				aria-pressed={$optionsFocus === 'edge-extrude'}
 				aria-label="Extrude edges"
 				title="Extrude — pull the selected BORDER edges out into a new strip, distance adjustable below (with an edge picked the click applies immediately). A chain of edges extrudes as ONE welded strip; an interior edge (a face on both sides) is refused."
-				onclick={() => runOp('edge-extrude')}><ToolIcon name="edge-extrude" /></button
+				onclick={() => runOp('edge-extrude')}><Icon name="tool:edge-extrude" size={20} /></button
 			>
 			<button
 				id="edge-slide"
@@ -1058,7 +1043,7 @@
 				aria-pressed={$optionsFocus === 'edge-slide'}
 				aria-label="Slide edges"
 				title="Slide — move the selected edges along the faces either side of them, keeping the shape (factor below: 0 = where they are, ±1 = onto the neighbouring line). Pick a whole loop with Loop first. A vertex with no single edge to run along stays put."
-				onclick={() => runOp('edge-slide')}><ToolIcon name="edge-slide" /></button
+				onclick={() => runOp('edge-slide')}><Icon name="tool:edge-slide" size={20} /></button
 			>
 			<button
 				id="edge-subdivide"
@@ -1069,7 +1054,7 @@
 				title="Subdivide — split every face along the selected edges at their midpoints. Both sides split at the identical welded point, so the mesh stays watertight; the two halves stay selected."
 				onclick={() => {
 					if (subdivideSelectedEdges()) flash('esubdivide');
-				}}><ToolIcon name="edge-subdivide" /></button
+				}}><Icon name="tool:edge-subdivide" size={20} /></button
 			>
 			<button
 				id="edge-fill"
@@ -1080,7 +1065,7 @@
 				title="Fill — close the hole the selected border edges go around with one new face (pick ONE rim edge to fill its whole hole). The cap is wound to match the faces around it."
 				onclick={() => {
 					if (fillHole()) flash('efill');
-				}}><ToolIcon name="fill-hole" /></button
+				}}><Icon name="tool:fill-hole" size={20} /></button
 			>
 			<button
 				id="edge-dissolve"
@@ -1091,7 +1076,7 @@
 				title="Dissolve — remove the edge and merge the two coplanar faces it joins"
 				onclick={() => {
 					if (dissolveEdges()) flash('dissolve');
-				}}><ToolIcon name="dissolve" /></button
+				}}><Icon name="tool:dissolve" size={20} /></button
 			>
 			<button
 				id="edge-delete"
@@ -1102,7 +1087,7 @@
 				title="Delete — remove the faces on BOTH sides of the selected edges, leaving a hole. (Dissolve keeps the surface; this opens it up, which is how you make a hole to bridge or fill.)"
 				onclick={() => {
 					if (deleteSelectedEdges()) flash('edelete');
-				}}><ToolIcon name="delete-face" /></button
+				}}><Icon name="tool:delete-face" size={20} /></button
 			>
 			{@render proportionalBtn()}
 		{:else if mode === 'faces'}
@@ -1126,7 +1111,7 @@
 				class="tbx-btn {$vertexSelectionSize >= 2 ? 'tbx-on bg-primary-600 text-white' : 'tbx-disabled'}"
 				aria-label="Weld the selected vertices"
 				title="Weld (W) — merge the selected vertices into one (Ctrl+click adds)"
-				onclick={weld}><ToolIcon name="weld" /></button
+				onclick={weld}><Icon name="tool:weld" size={20} /></button
 			>
 			<button
 				id="mesh-create-face"
@@ -1135,7 +1120,7 @@
 					: 'tbx-disabled'}"
 				aria-label="Create a face from the selected vertices"
 				title="Create face — select 3-4 vertices (Ctrl+click adds) first"
-				onclick={createFace}><ToolIcon name="create-face" /></button
+				onclick={createFace}><Icon name="tool:create-face" size={20} /></button
 			>
 			<button
 				id="mesh-vertex-bevel"
@@ -1145,7 +1130,7 @@
 				aria-pressed={$optionsFocus === 'bevel'}
 				aria-label="Bevel the selected vertices"
 				title="Bevel — cut the corner off every selected vertex and cap it, adjustable below (P3: with a vertex picked the click applies immediately, like the faces grid). Works on any number of vertices."
-				onclick={() => runOp('bevel')}><ToolIcon name="bevel" /></button
+				onclick={() => runOp('bevel')}><Icon name="tool:bevel" size={20} /></button
 			>
 			<button
 				id="mesh-smooth"
@@ -1155,7 +1140,7 @@
 				aria-pressed={$optionsFocus === 'smooth'}
 				aria-label="Smooth the selected vertices"
 				title="Smooth — relax each selected vertex toward the average of its neighbours (factor and passes below; with a vertex picked the click applies immediately). Evens out lumps; unselected vertices never move."
-				onclick={() => runOp('smooth')}><ToolIcon name="smooth" /></button
+				onclick={() => runOp('smooth')}><Icon name="tool:smooth" size={20} /></button
 			>
 			<button
 				id="mesh-connect"
@@ -1166,7 +1151,7 @@
 				title="Connect (J) — cut the face two selected corners share along the line between them, making two faces (Ctrl+click adds the second vertex). They must be corners of ONE face and not already neighbours."
 				onclick={() => {
 					if (connectSelectedVerts()) flash('vconnect');
-				}}><ToolIcon name="connect" /></button
+				}}><Icon name="tool:connect" size={20} /></button
 			>
 			<button
 				id="mesh-dissolve-verts"
@@ -1177,7 +1162,7 @@
 				title="Dissolve — remove each selected vertex and merge the faces around it into one (a vertex in the middle of an edge just leaves it). Unlike Delete, the surface stays closed."
 				onclick={() => {
 					if (dissolveSelectedVerts()) flash('vdissolve');
-				}}><ToolIcon name="dissolve-vertex" /></button
+				}}><Icon name="tool:dissolve-vertex" size={20} /></button
 			>
 			{@render proportionalBtn()}
 			<button
@@ -1195,7 +1180,7 @@
 					// proportional button's shape
 					if (on) focusTool('slide');
 					else if (get(optionsFocus) === 'slide') focusTool('');
-				}}><ToolIcon name="vertex-slide" /></button
+				}}><Icon name="tool:vertex-slide" size={20} /></button
 			>
 			<button
 				id="mesh-delete-verts"
@@ -1206,7 +1191,7 @@
 				title="Delete — remove every face that uses a selected vertex, leaving a hole (Ctrl+click adds vertices)"
 				onclick={() => {
 					if (deleteSelectedVerts()) flash('vdelete');
-				}}><ToolIcon name="delete-face" /></button
+				}}><Icon name="tool:delete-face" size={20} /></button
 			>
 		{/if}
 
@@ -1254,7 +1239,7 @@
 						? 'Gizmo ON — click to hide it and select/operate without handles in the way'
 						: 'Gizmo OFF — click to show it again (vertices, edges and faces)'}
 					onclick={() => meshGizmoEnabled.set(!$meshGizmoEnabled)}
-					><ToolIcon name="gizmo" /></button
+					><Icon name="tool:gizmo" size={20} /></button
 				>
 				<div
 					id="mesh-gizmo-space"
@@ -1384,7 +1369,7 @@
 					aria-label={c.label}
 					title={`${c.label} — ${c.desc}`}
 					onclick={() => runWholeMesh(() => runSelectCmd(c))}
-					><ToolIcon name={c.icon} /></button
+					><Icon name={'tool:' + c.icon} size={20} /></button
 				>
 			{/each}
 			<button
@@ -1399,7 +1384,7 @@
 					runWholeMesh(() => {
 						setShadingSmooth(shadingMode() !== 'smooth');
 						flash('shading');
-					})}><ToolIcon name="shading" /></button
+					})}><Icon name="tool:shading" size={20} /></button
 			>
 			<!-- the merge threshold sits with its own button now -->
 			<div class="tbx-row text-xs text-gray-300">
@@ -1456,7 +1441,7 @@
 				aria-label="Wireframe overlay"
 				aria-pressed={$meshEditWireframe}
 				title="Show the edit wireframe overlay"
-				onclick={() => meshEditWireframe.update((v) => !v)}><ToolIcon name="wireframe" /></button
+				onclick={() => meshEditWireframe.update((v) => !v)}><Icon name="tool:wireframe" size={20} /></button
 			>
 			<!-- the object outline is a postprocessing pass, so it paints OVER the
 			     handles and highlights — off while editing unless you ask for it -->
@@ -1469,7 +1454,7 @@
 					? 'Selection outline ON — it draws over vertices and edges'
 					: 'Selection outline OFF while editing (clearer handles)'}
 				onclick={() => meshEditOutline.update((v) => !v)}
-				><ToolIcon name="outline" /></button
+				><Icon name="tool:outline" size={20} /></button
 			>
 			<!-- quad structure by default; the diagonals are triangulation artifacts
 			     the pick/dissolve tools deliberately refuse to touch -->
@@ -1482,7 +1467,7 @@
 					? 'Showing triangulation — every triangle edge, diagonals included'
 					: 'Showing quads — the diagonals are hidden (they cannot be picked)'}
 				onclick={() => meshEditTriWire.update((v) => !v)}
-				><ToolIcon name="triangulation" /></button
+				><Icon name="tool:triangulation" size={20} /></button
 			>
 			<!-- D3: hotkeys on/off (the "?" cheat sheet lives in the window header) -->
 			<button
@@ -1493,7 +1478,7 @@
 				title={$meshEditHotkeys
 					? 'Keyboard shortcuts ON — E/I/G/S/B/F/X, W (camera fly keys pause)'
 					: 'Keyboard shortcuts OFF — W/A/S/D fly the camera again'}
-				onclick={() => meshEditHotkeys.update((v) => !v)}><Keyboard size={18} aria-hidden="true" /></button
+				onclick={() => meshEditHotkeys.update((v) => !v)}><Icon name="keyboard" size={20} aria-hidden="true" /></button
 			>
 			{#if mode === 'vertices'}
 				<!-- vertex HANDLE size is a display preference, not a tool -->
@@ -1534,14 +1519,14 @@
 					class="tbx-btn"
 					aria-label="Add a box piece"
 					title="Merge a box into the collider as a new convex piece"
-					onclick={() => addColliderPiece('box')}><Box size={18} aria-hidden="true" /></button
+					onclick={() => addColliderPiece('box')}><Icon name="box" size={20} aria-hidden="true" /></button
 				>
 				<button
 					id="collider-add-sphere"
 					class="tbx-btn"
 					aria-label="Add a sphere piece"
 					title="Merge a sphere into the collider as a new convex piece"
-					onclick={() => addColliderPiece('sphere')}><Circle size={18} aria-hidden="true" /></button
+					onclick={() => addColliderPiece('sphere')}><Icon name="circle" size={20} aria-hidden="true" /></button
 				>
 			</ToolboxSection>
 		{/if}
@@ -1592,7 +1577,7 @@
 					class="tbx-hbtn"
 					aria-label="Close the key list"
 					title="Close"
-					onclick={() => (showKeys = false)}><X size={14} aria-hidden="true" /></button
+					onclick={() => (showKeys = false)}><Icon name="x" size={16} aria-hidden="true" /></button
 				>
 			{/snippet}
 			<div class="tbx-row flex-col items-stretch gap-0 text-xs">

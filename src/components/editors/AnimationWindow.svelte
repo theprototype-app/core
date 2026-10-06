@@ -33,10 +33,7 @@
 	// a rigged model showed "no movements yet" and its own animations were
 	// reachable only from the Inspector.
 	import { animatedObjects, setAnimationState, clipInfo, behaviorOf } from '$lib/animatedImports';
-	import {
-		SkipBack, SkipForward, StepBack, StepForward, Play, Pause, Square, Rewind, ZoomIn, ZoomOut, Maximize2,
-		SquareDashed, Lasso, Ghost
-	} from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
 	import { createGesture } from '$lib/modalGrab';
@@ -1699,13 +1696,13 @@
 					id="animation-rewind"
 					title="Go to the start of the clip"
 					aria-label="Go to start"
-					onclick={() => target && scrub(target.uuid, rangeIn)}><SkipBack size={14} /></button
+					onclick={() => target && scrub(target.uuid, rangeIn)}><Icon name="skip-back" size={16} /></button
 				>
 				<button
 					id="animation-prev-key"
 					title="Previous key"
 					aria-label="Previous key"
-					onclick={() => stepKey(-1)}><StepBack size={14} /></button
+					onclick={() => stepKey(-1)}><Icon name="step-back" size={16} /></button
 				>
 				<button
 					id="animation-play-back"
@@ -1713,7 +1710,7 @@
 					title="Play backwards from here"
 					aria-label="Play backwards"
 					aria-pressed={!!(isPlaying && pb?.reverse)}
-					onclick={playBack}><Rewind size={14} /></button
+					onclick={playBack}><Icon name="rewind" size={16} /></button
 				>
 				<button
 					id="animation-play"
@@ -1725,26 +1722,26 @@
 					aria-pressed={isPlaying}
 					onclick={togglePlay}
 				>
-					{#if isPlaying}<Pause size={14} />{:else}<Play size={14} />{/if}
+					{#if isPlaying}<Icon name="pause" size={16} />{:else}<Icon name="play" size={16} />{/if}
 				</button>
 				<button
 					id="animation-stop"
 					title="Stop and go back to the frame this run started from"
 					aria-label="Stop"
-					onclick={() => target && stop(target.uuid)}><Square size={13} /></button
+					onclick={() => target && stop(target.uuid)}><Icon name="square" size={16} /></button
 				>
 				<button
 					id="animation-next-key"
 					class="border-l border-gray-600/80"
 					title="Next key"
 					aria-label="Next key"
-					onclick={() => stepKey(1)}><StepForward size={14} /></button
+					onclick={() => stepKey(1)}><Icon name="step-forward" size={16} /></button
 				>
 				<button
 					id="animation-end"
 					title="Go to the end of the clip"
 					aria-label="Go to end"
-					onclick={() => target && scrub(target.uuid, rangeOut)}><SkipForward size={14} /></button
+					onclick={() => target && scrub(target.uuid, rangeOut)}><Icon name="skip-forward" size={16} /></button
 				>
 			</div>
 
@@ -2072,7 +2069,7 @@
 							title="Box select keys (drag a rectangle on the plot; Shift adds)"
 							aria-label="Box select"
 							aria-pressed={marqMode === 'box'}
-							onclick={() => setMarqMode('box')}><SquareDashed size={13} aria-hidden="true" /></button
+							onclick={() => setMarqMode('box')}><Icon name="square-dashed" size={16} aria-hidden="true" /></button
 						>
 						<button
 							id="animation-marquee-lasso"
@@ -2080,7 +2077,7 @@
 							title="Lasso select keys (draw around them on the plot; Shift adds)"
 							aria-label="Lasso select"
 							aria-pressed={marqMode === 'lasso'}
-							onclick={() => setMarqMode('lasso')}><Lasso size={13} aria-hidden="true" /></button
+							onclick={() => setMarqMode('lasso')}><Icon name="lasso" size={16} aria-hidden="true" /></button
 						>
 					</div>
 					<!-- F6: onion skin. A LOCAL viewing aid, off by default, exactly like
@@ -2091,7 +2088,7 @@
 						title="Onion skin: faint copies of the object at the keys either side of the playhead (local only)"
 						aria-label="Onion skin"
 						aria-pressed={$showOnionSkin}
-						onclick={() => setOnionSkin(!$showOnionSkin)}><Ghost size={13} aria-hidden="true" /></button
+						onclick={() => setOnionSkin(!$showOnionSkin)}><Icon name="ghost" size={16} aria-hidden="true" /></button
 					>
 					<label class="flex items-center gap-1" title="What key times snap to while you drag">
 						snap
@@ -2145,9 +2142,9 @@
 						>?</span
 					>
 					<div class="flex items-center gap-0.5">
-						<button class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Zoom out" aria-label="Zoom out" onclick={() => zoomView(1.4)}><ZoomOut size={12} /></button>
-						<button class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Zoom in" aria-label="Zoom in" onclick={() => zoomView(1 / 1.4)}><ZoomIn size={12} /></button>
-						<button id="animation-fit" class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Fit the whole clip" aria-label="Fit" onclick={fitView}><Maximize2 size={12} /></button>
+						<button class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Zoom out" aria-label="Zoom out" onclick={() => zoomView(1.4)}><Icon name="zoom-out" size={16} /></button>
+						<button class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Zoom in" aria-label="Zoom in" onclick={() => zoomView(1 / 1.4)}><Icon name="zoom-in" size={16} /></button>
+						<button id="animation-fit" class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Fit the whole clip" aria-label="Fit" onclick={fitView}><Icon name="maximize-2" size={16} /></button>
 					</div>
 					<span class="flex-1"></span>
 					{#if grabbing}

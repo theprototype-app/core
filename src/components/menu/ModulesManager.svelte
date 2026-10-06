@@ -1,5 +1,5 @@
 <script>
-	import { Download } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { Modal, Button, Toggle, Checkbox } from 'flowbite-svelte';
 	import { modulesOpen, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
 	import { sceneCommand } from '$lib/commandsHandler.svelte';
@@ -370,7 +370,7 @@
 								{/each}
 							{/if}
 							<Button size="xs" color="alternative" onclick={() => downloadModule(mod)}>
-								<Download size={16} class="mr-1" aria-hidden="true" />Download as example
+								<Icon name="download" size={16} class="mr-1" aria-hidden="true" />Download as example
 							</Button>
 						</div>
 					</div>

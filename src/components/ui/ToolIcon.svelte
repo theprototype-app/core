@@ -236,14 +236,53 @@
 			base: ['M3 8.5C6 4 9 4 12 7s6 3 9-1.5'],
 			accent: ['M3 17c6 0 12 0 18 0']
 		},
+		// 38 R10 / NOTES-38 #11: the in-house domain set (icons-brief.md) — first batch
+		'interact': {
+			base: ['M5 4l5.5 15 2.2-6.3L19 10.5z'],
+			accent: ['M14.5 3.5a6 6 0 0 1 6 6', 'M14 6.8a3 3 0 0 1 3.2 3.2']
+		},
+		'vr': {
+			base: ['M4 8h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-4l-2-2.5h-4L8 17H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2z'],
+			accent: ['M6 12.5h3', 'M15 12.5h3']
+		},
+		'physics': {
+			base: ['M3 20h18', 'M18 14a3 3 0 1 1-6 0 3 3 0 0 1 6 0z'],
+			accent: ['M3 13c1.5-6 6-8 9.5-3.5', 'M6 17.5v.01']
+		},
+		'joint-weld': {
+			base: ['M3 7h7v10H3z', 'M14 7h7v10h-7z'],
+			accent: ['M12 4l-1 2.7 2 2.6-2 2.7 2 2.6-2 2.7 1 2.7']
+		},
+		'joint-hinge': {
+			base: ['M2 14.5h8v4H2z', 'M14.8 13.2l5-6 3.1 2.6-5 6z'],
+			accent: ['M14 16.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0z']
+		},
+		'collider': {
+			base: ['M9 9h6v6H9z'],
+			accent: ['M3 7V3h4', 'M17 3h4v4', 'M21 17v4h-4', 'M7 21H3v-4']
+		},
+		'water': {
+			base: ['M3 6v14h18V6'],
+			accent: ['M3 11c1.5 0 1.5-1.5 3-1.5s1.5 1.5 3 1.5 1.5-1.5 3-1.5 1.5 1.5 3 1.5 1.5-1.5 3-1.5 1.5 1.5 3 1.5']
+		},
+		'fluid': {
+			base: ['M11 3s-5 6-5 9.5a5 5 0 0 0 10 0C16 9 11 3 11 3z'],
+			accent: ['M19 13h.01', 'M20 18h.01', 'M16.5 20.5h.01']
+		},
+		'kit-node': {
+			base: ['M6 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z', 'M4 9h14'],
+			accent: ['M1.5 14h4', 'M16.5 14h5']
+		},
 		flatten: {
 			base: ['M4 7h16'],
 			accent: ['M12 7v6', 'M9 10l3 3 3-3', 'M4 18h16']
 		}
 	};
 
-	/** @type {{ name: string, size?: number }} */
-	let { name, size = 18 } = $props();
+	// 38 R10: rendered through ui/Icon.svelte as `tool:<name>` (Icon passes the standard size
+	// and stroke); components never import this file directly.
+	/** @type {{ name: string, size?: number, strokeWidth?: number, class?: string }} */
+	let { name, size = 18, strokeWidth = 2, class: cls = '' } = $props();
 	// back-compat: a plain array is a base-only glyph, so callers written before
 	// the duotone split keep working untouched
 	const glyph = $derived.by(() => {
@@ -254,13 +293,13 @@
 </script>
 
 <svg
-	class="lucide"
+	class="lucide {cls}"
 	width={size}
 	height={size}
 	viewBox="0 0 24 24"
 	fill="none"
 	stroke="currentColor"
-	stroke-width="2"
+	stroke-width={strokeWidth}
 	stroke-linecap="round"
 	stroke-linejoin="round"
 	aria-hidden="true"

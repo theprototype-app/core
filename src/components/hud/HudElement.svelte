@@ -510,7 +510,7 @@
 	<div class="hud-el hud-rich" style={boxStyle}>
 		{#each richRuns as run, i (i)}{#if run.kind === 'br'}<br />{:else if run.kind === 'icon'}<span
 					class="hud-rich-icon"
-					style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}><Icon name={run.name} size={14} /></span
+					style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}><Icon name={run.name} size={14} snap={false} /></span
 				>{:else}<span
 					class="hud-rich-run"
 					class:hud-rich-b={run.bold}
@@ -526,7 +526,7 @@
 		<div class="hud-scroll-body">
 			{#each richRuns as run, i (i)}{#if run.kind === 'br'}<br />{:else if run.kind === 'icon'}<span
 						class="hud-rich-icon"
-						style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}><Icon name={run.name} size={14} /></span
+						style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}><Icon name={run.name} size={14} snap={false} /></span
 					>{:else}<span
 						class="hud-rich-run"
 						class:hud-rich-b={run.bold}
@@ -596,7 +596,7 @@
 		{#each Array(slotCount) as _, i (i)}
 			{#if i < filled || element?.empty !== false}
 				<span class="hud-icon-slot" class:hud-icon-empty={i >= filled}
-					><Icon name={String(element?.icon ?? 'heart')} size={Number(style.size ?? 18)} /></span
+					><Icon name={String(element?.icon ?? 'heart')} size={Number(style.size ?? 18)} snap={false} /></span
 				>
 			{/if}
 		{/each}

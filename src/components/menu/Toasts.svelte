@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Info, UserPlus, Download } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
     import { cameraPreview, stopCameraPreview, toggleCameraControl, previewLabel } from '$lib/cameraPreview'
     // R22 round 2: the connect-time library offer (see the effect below)
     import { pullAllShared, bulkCounts, pendingShareAsk } from '$lib/sharedLibrary'
@@ -534,7 +534,7 @@ style="z-index: var(--z-toast); pointer-events: none;"
 {#each $pendingApprovals.slice(0, MAX_REQUESTS) as approval}
 <div class="my-1 tp-toast tp-toast--req" transition:fly={{ y: -8, duration: 180 }}>
     <div class="tp-toast-body">
-        <UserPlus size={16} class="tp-toast-icon" aria-hidden="true" />
+        <Icon name="user-plus" size={16} class="tp-toast-icon" aria-hidden="true" />
         <div class="tp-toast-main">
             <div class="tp-toast-text">
                 Connection request <span class="cxreq-id">{String(approval.peerId).slice(0, 6).toUpperCase()}</span>
@@ -603,7 +603,7 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
      15-P2: progressVisible hides it 2.5s after the transfer completes -->
 <div class="my-1 tp-toast tp-toast--progress" transition:fly={{ y: -8, duration: 180 }}>
 	<div class="tp-toast-body">
-		<Download size={16} class="tp-toast-icon" aria-hidden="true" />
+		<Icon name="download" size={16} class="tp-toast-icon" aria-hidden="true" />
 		<div class="tp-toast-main">
 			<div class="tp-toast-text">Receiving objects: {($loadingcount-$loading.length)}/{$loadingcount}</div>
 			<Progressbar progress={100 * (($loadingcount-$loading.length) - 0) / ($loadingcount - 0)} color="green" size="h-1.5" class="mt-1.5" />
@@ -670,7 +670,7 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
         <button class="tp-toast-x" title="Dismiss" aria-label="Dismiss" onclick={() => dismiss(toast)}>✕</button>
     {/if}
     <div class="tp-toast-body">
-        <Info size={16} class="tp-toast-icon" aria-hidden="true" />
+        <Icon name="info" size={16} class="tp-toast-icon" aria-hidden="true" />
         <div class="tp-toast-main">
             <div class="tp-toast-text">{typeof toast === 'string' ? toast : toast.text}</div>
             {#if typeof toast !== 'string' && toast.actions?.length}

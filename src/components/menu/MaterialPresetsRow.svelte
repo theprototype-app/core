@@ -44,6 +44,16 @@
 	const isActive = (resolved) => !!look && !!resolved && sameLook(look, resolved);
 
 	let editing = $state(false);
+	/** in edit mode a click PICKS a swatch for the toolbar instead of applying it
+	 * @type {{kind: 'mine'|'peer', name: string, payload: any} | null} */
+	let picked = $state(null);
+	$effect(() => {
+		if (!editing) picked = null;
+	});
+	/** @param {'mine'|'peer'} kind @param {string} name @param {any} payload */
+	function pick(kind, name, payload) {
+		picked = { kind, name, payload };
+	}
 	/** @type {{mode: 'save'|'rename', from?: string, name: string} | null} */
 	let naming = $state(null);
 	let nameError = $state('');
@@ -99,12 +109,15 @@
 				nameError = 'That name is taken';
 				return;
 			}
+			const entry = $materialPresets.find((p) => p.name === renamed);
+			picked = entry ? { kind: 'mine', name: renamed, payload: entry.payload } : null;
 			naming = null;
 		}
 	}
 
-	/** @param {string} name */
+	/** @param {string} name (read before anything clears `picked`: the toolbar's name derives from it) */
 	async function remove(name) {
+		picked = null;
 		const ok = await showConfirm({
 			title: 'Delete material preset?',
 			message: `“${name}” leaves your library on this device. Objects already wearing it keep their look.`,
@@ -237,30 +250,35 @@
 					class="mp-swatch"
 					data-preset-kind="mine"
 					data-preset-name={p.name}
-					aria-pressed={isActive(p.payload)}
-					title={`${p.name} — apply to the selection`}
-					onclick={() => apply(p.payload, p.name)}
+					aria-pressed={editing ? picked?.kind === 'mine' && picked.name === p.name : isActive(p.payload)}
+					title={editing ? `${p.name} — pick to rename, export or delete` : `${p.name} — apply to the selection`}
+					onclick={() => (editing ? pick('mine', p.name, p.payload) : apply(p.payload, p.name))}
 				>
 					<span class="mp-ball" style:background={swatchStyle(p.payload)} style:background-blend-mode={swatchBlend(p.payload)}></span>
 					<span class="mp-label">{p.name}</span>
 				</button>
-				{#if editing}
-					<span class="mp-tools">
-						<Button variant="icon" size="sm" icon="pencil" data-preset-rename={p.name} label={`Rename ${p.name}`} title="Rename" onclick={() => startRename(p.name)} />
-						<Button variant="icon" size="sm" icon="download" data-preset-export={p.name} label={`Export ${p.name}`} title="Download as .matpreset.json" onclick={() => download(p.payload)} />
-						<Button variant="icon" size="sm" icon="trash-2" data-preset-delete={p.name} label={`Delete ${p.name}`} title="Delete" onclick={() => remove(p.name)} />
-					</span>
-				{/if}
 			</div>
 		{/each}
 	</div>
 	{#if editing}
+		<div class="mp-editbar" id="material-preset-toolbar">
+			{#if picked?.kind === 'mine'}
+				{@const name = picked.name}
+				<span class="mp-picked">{name}</span>
+				<Button variant="icon" size="sm" icon="pencil" data-preset-rename={name} label={`Rename ${name}`} title="Rename" onclick={() => startRename(name)} />
+				<Button variant="icon" size="sm" icon="download" data-preset-export={name} label={`Export ${name}`} title="Download as .matpreset.json" onclick={() => download(picked?.payload)} />
+				<Button variant="icon" size="sm" icon="trash-2" data-preset-delete={name} label={`Delete ${name}`} title="Delete" onclick={() => remove(name)} />
+			{:else if picked?.kind === 'peer'}
+				{@const copy = picked.payload}
+				<span class="mp-picked">{picked.name}</span>
+				<Button variant="outline" size="sm" icon="copy" data-preset-copy={picked.name} title="Save a copy to your presets" onclick={() => saveCopy(copy)}>Save a copy</Button>
+			{:else}
+				<span class="mp-hint">{$materialPresets.length || peerLists.length ? 'Pick one of your presets to rename, export or delete it.' : 'Save a look with + to start your own library. The starter set is built in.'}</span>
+			{/if}
+		</div>
 		<div class="mp-editbar">
 			<Button variant="outline" size="sm" icon="folder-input" title="Import a .matpreset.json file" onclick={() => document.getElementById('material-preset-import')?.click()}>Import</Button>
 			<input type="file" id="material-preset-import" style="display: none" accept=".json" onchange={onImport} />
-			{#if !$materialPresets.length}
-				<span class="mp-hint">Save a look with + to start your own library. The starter set is built in.</span>
-			{/if}
 		</div>
 	{/if}
 
@@ -274,18 +292,13 @@
 						class="mp-swatch"
 						data-preset-kind="peer"
 						data-preset-name={p.label}
-						aria-pressed={isActive(p)}
-						title={`${p.label} (from ${nameOf(peerId)}) — apply to the selection`}
-						onclick={() => apply(p, p.label)}
+						aria-pressed={editing ? picked?.kind === 'peer' && picked.payload === p : isActive(p)}
+						title={editing ? `${p.label} — pick to save a copy` : `${p.label} (from ${nameOf(peerId)}) — apply to the selection`}
+						onclick={() => (editing ? pick('peer', p.label, p) : apply(p, p.label))}
 					>
 						<span class="mp-ball" style:background={swatchStyle(p)} style:background-blend-mode={swatchBlend(p)}></span>
 						<span class="mp-label">{p.label}</span>
 					</button>
-					{#if editing}
-						<span class="mp-tools">
-							<Button variant="icon" size="sm" icon="copy" data-preset-copy={p.label} label={`Save a copy of ${p.label}`} title="Save a copy to your presets" onclick={() => saveCopy(p)} />
-						</span>
-					{/if}
 				</div>
 			{/each}
 		</div>
@@ -313,16 +326,17 @@
 		text-transform: uppercase;
 		color: var(--text-muted);
 	}
-	.mp-actions,
-	.mp-tools {
+	.mp-actions {
 		display: inline-flex;
 		gap: var(--space-1);
 	}
-	.mp-tools {
-		margin-top: 2px;
-		/* the three icon buttons sit under a swatch: shrink the kit's sm square to fit */
-		transform: scale(0.72);
-		transform-origin: top center;
+	.mp-picked {
+		max-width: 50%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--fs-desc);
+		color: var(--text);
 	}
 	.mp-row {
 		display: flex;

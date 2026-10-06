@@ -323,6 +323,7 @@ h.run(async () => {
 
 	// rename
 	await A.page.locator('#material-preset-edit').click();
+	await swatch(A.page, 'mine', 'Candy red 2').click(); // edit mode: a click PICKS, it does not apply
 	await A.page.locator('[data-preset-rename="Candy red 2"]').click();
 	await nameField.fill('Wood');
 	await nameField.press('Enter');
@@ -336,6 +337,7 @@ h.run(async () => {
 	await shot(A.page, '02-swatches-dark-edit.png');
 
 	// delete — asks first
+	await swatch(A.page, 'mine', 'Ruby').click();
 	await A.page.locator('[data-preset-delete="Ruby"]').click();
 	await A.page.locator('#confirm-dialog-ok').waitFor({ timeout: 5000 });
 	await A.page.locator('#confirm-dialog-ok').click();

@@ -70,11 +70,19 @@ h.run(async () => {
 	const chip = await A.page.evaluate((id) => {
 		const li = [...document.querySelectorAll('#messages li')].find((x) => x.textContent.includes('look at this'));
 		const span = li?.querySelector('.chat-mention');
-		return { text: span?.textContent, color: span ? getComputedStyle(span).color : null, ring: li?.classList.contains('chat-mentions-me'), want: window.__stores.lockControl?.peerColor?.(id) };
+		return { text: span?.textContent, color: span ? getComputedStyle(span).borderBottomColor : null, ring: li?.classList.contains('chat-mentions-me'), want: (() => {
+			// the peer colour as the browser computes it
+			const probe = document.createElement('span');
+			probe.style.color = window.__stores.lockControl.peerColor(id);
+			document.body.append(probe);
+			const c = getComputedStyle(probe).color;
+			probe.remove();
+			return c;
+		})() };
 	}, A.id);
 	h.check(chip.text === '@' + A.id, `3.3 the mention is a chip (${chip.text})`);
 	h.check(chip.ring === true, '3.4 the line that mentions A is highlighted on A');
-	h.check(!!chip.color && chip.color !== 'rgb(229, 231, 235)', `3.5 the chip wears the peer colour (${chip.color})`);
+	h.check(!!chip.color && chip.color === chip.want, `3.5 the chip is underlined in the peer colour (${chip.color} for ${chip.want})`);
 
 	await shots(A.page, '20-chat-mentions', '#chat-window');
 	await shots(B.page, '21-chat-unread-badge', '#chat-button');

@@ -138,7 +138,7 @@
 									<span class="text-[9px] text-gray-400">{stamp(m)}</span>
 								</span>
 								<!-- 37 R15: TEXT NODES ONLY — a peer's string never becomes markup -->
-								<span class="wrap-break-word">{#each tokens as t, i (i)}{#if t.kind === 'mention'}<span class="chat-mention" style:color={peerColor(t.id)} style:border-color={peerColor(t.id)}>{t.text}</span>{:else}{t.text}{/if}{/each}</span>
+								<span class="wrap-break-word">{#each tokens as t, i (i)}{#if t.kind === 'mention'}<span class="chat-mention" style:--peer={peerColor(t.id)}>{t.text}</span>{:else}{t.text}{/if}{/each}</span>
 							</li>
 						{/if}
 					{/each}

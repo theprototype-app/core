@@ -231,7 +231,7 @@
 	.link {
 		align-self: flex-start;
 		font-size: 12px;
-		color: var(--accent-text, #93c5fd);
+		color: var(--accent, #2563eb);
 		text-decoration: underline;
 		background: none;
 	}

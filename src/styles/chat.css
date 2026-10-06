@@ -11,12 +11,14 @@ ul {
    hover after the Tailwind 4 migration). Tailwind ships `.hidden` itself, so
    `class={$chatHidden}` keeps working without it. */
 
-/* 37 R15: an @mention — the mentioned peer's own colour (peerColor), as a quiet chip */
+/* 37 R15: an @mention — the mentioned peer's own colour (peerColor, via --peer) as a tint and
+   an underline; the TEXT keeps the bubble's colour, so it reads in every theme (a light-green
+   peer colour as text was unreadable on the light theme's pale bubble) */
 .chat-mention {
 	padding: 0 3px;
-	border-bottom: 1px solid;
+	border-bottom: 2px solid var(--peer, currentColor);
 	border-radius: 3px;
-	background: rgb(0 0 0 / 0.18);
+	background: color-mix(in srgb, var(--peer, currentColor) 28%, transparent);
 	font-weight: 600;
 }
 /* a line that mentions YOU: a ring in the accent colour, so it stands out in a busy room */

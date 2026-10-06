@@ -10,7 +10,7 @@ import { serializeNode, serializeEdge } from './nodesHandler';
 import { parkEditOverlays, stripEditOverlays } from './editOverlays';
 import { keepSet, disposeTree } from './disposeTree';
 import { prefabs, prefabById, prefabRevision, updatePrefab } from './prefabs';
-import { linkOf, mergeInstance, overridesOf, unlinkPatch, instanceKey, same } from './prefabSync';
+import { linkOf, mergeInstance, overridesOf, unlinkPatch, instanceKey, elementKey, same } from './prefabSync';
 
 // 37 R4 — PREFAB UPDATE PROPAGATION, the runtime half (prefabSync.js is the merge).
 //
@@ -246,8 +246,10 @@ export async function updateInstances(id, opts = {}) {
 		if (!same(before.object, merged.element.object) || !same(before.materials, merged.element.materials) || !same(before.geometries, merged.element.geometries))
 			items.push({ uuid: root.uuid, parentUuid, before, after: merged.element });
 		// the flow graphs, node by node of the merged instance
+		// the merged ROOT carries no key of its own (it is the link) — it is the element's root
+		const rootKey = elementKey(entry.element.object);
 		const walk = (/** @type {any} */ node) => {
-			const key = instanceKey(node, id);
+			const key = node === merged.element.object ? rootKey : instanceKey(node, id);
 			if (key !== undefined) {
 				const nextG = entry.graphs?.[key] ?? null;
 				const baseG = base?.graphs?.[key] ?? null;

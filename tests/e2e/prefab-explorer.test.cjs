@@ -143,9 +143,13 @@ h.run(async () => {
 		bgLabels.includes('Create from selection'),
 		`the prefabs grid BACKGROUND offers "Create from selection" (${bgLabels.join(' | ') || 'no menu'})`
 	);
+	// 37 R4 flips one of these: the Prefabs tab has FOLDERS of its own now, so its "New
+	// folder" makes a prefab folder (prefab-library covers it). The scene/project entries
+	// still mean nothing here.
+	h.check(bgLabels.includes('New folder'), 'the prefabs background offers a prefab "New folder" (37 R4)');
 	h.check(
-		!bgLabels.some((l) => /New folder|Save scene|New scene|Export project|Import project/.test(l)),
-		'and none of the folder/project entries, which mean nothing in a virtual folder'
+		!bgLabels.some((l) => /Save scene|New scene|Export project|Import project/.test(l)),
+		'and none of the scene/project entries, which mean nothing in a virtual folder'
 	);
 	await closeCtxMenu(A);
 

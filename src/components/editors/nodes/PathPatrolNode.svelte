@@ -23,7 +23,7 @@
 		</span>
 		<div class="flex gap-1">
 			<button
-				class="nodrag flex-1 rounded px-1 py-0.5 text-white {capturing
+				class="nodrag nopan flex-1 rounded px-1 py-0.5 text-white {capturing
 					? 'bg-green-600'
 					: 'bg-[#ff4000]'}"
 				on:click={() => togglePathCapture(id)}
@@ -31,7 +31,7 @@
 				{capturing ? 'Capturing… (click scene)' : 'Capture clicks'}
 			</button>
 			<button
-				class="nodrag rounded-sm bg-gray-600 px-1 py-0.5 text-white"
+				class="nodrag nopan rounded-sm bg-gray-600 px-1 py-0.5 text-white"
 				on:click={() => setNodeData(id, { points: [] })}
 			>
 				Clear
@@ -40,7 +40,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>speed</span><span>{data.speed ?? 1}</span></span>
 			<input
-				class="nodrag accent-[#ff4000]"
+				class="nodrag nopan accent-[#ff4000]"
 				type="range"
 				min="0.1"
 				max="5"
@@ -52,7 +52,7 @@
 		<label class="flex flex-col">
 			<span>mode</span>
 			<select
-				class="nodrag"
+				class="nodrag nopan"
 				value={data.mode ?? 'loop'}
 				on:change={(e) => setNodeData(id, { mode: e.currentTarget.value })}
 			>

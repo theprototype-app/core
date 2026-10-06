@@ -23,7 +23,7 @@
 		<label class="flex flex-col">
 			<span>button object</span>
 			<select
-				class="nodrag"
+				class="nodrag nopan"
 				value={data.button ?? '-None-'}
 				on:change={(e) => setNodeData(id, { button: e.currentTarget.value })}
 			>
@@ -36,7 +36,7 @@
 		<label class="flex flex-col">
 			<span>mode</span>
 			<select
-				class="nodrag"
+				class="nodrag nopan"
 				value={data.mode ?? 'toggle'}
 				on:change={(e) => setNodeData(id, { mode: e.currentTarget.value })}
 			>
@@ -47,7 +47,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>height</span><span>{data.height ?? 2}</span></span>
 			<input
-				class="nodrag accent-[#ff4000]"
+				class="nodrag nopan accent-[#ff4000]"
 				type="range"
 				min="-4"
 				max="4"
@@ -65,7 +65,7 @@
 				{data.pressed ? 'pressed' : 'released'}
 			</span>
 			<button
-				class="nodrag rounded-sm bg-[#ff4000] px-2 text-white"
+				class="nodrag nopan rounded-sm bg-[#ff4000] px-2 text-white"
 				on:click={() => pressTriggerNode({ id, data })}
 			>
 				Press

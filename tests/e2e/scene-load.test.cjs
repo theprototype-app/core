@@ -11,7 +11,7 @@
 //   2. The UI answers mid-load: the logo menu opens while the castle is still arriving.
 //   3. Opening ANOTHER scene mid-load supersedes the first cleanly (no castle piece in the
 //      forest, the bar ends).
-//   4. Cancel stops the load and takes back what it had added.
+//   4. Cancel (now the API only — 36 S5 removed the button) stops the load and takes back what it had added.
 //   5. AUTOSAVE writes pristine kit pieces as STUBS — the snapshot is a fraction of the 51 MB
 //      it was — and a frame drawn right after the save still shows every piece; an EDITED
 //      piece is written in full.
@@ -183,8 +183,14 @@ h.run(async () => {
 	const pieces = one.last?.top ?? 0;
 	h.check(pieces > 150, '1.1 (premise) the castle is a big scene (' + pieces + ' top-level objects)');
 	h.check(one.bars.some((t) => /^Loading .+— \d+ \/ \d+ objects/.test(t)), '1.2 the load bar says what loads and how far it is ("' + (one.bars.find((t) => /objects/.test(t)) ?? one.bars[0] ?? 'never shown') + '")');
-	const dones = [...new Set(one.jobs.map((j) => j.done))];
-	h.check(one.jobs.length > 0 && one.jobs[0].total === pieces && dones.length >= 3 && dones.every((d, i) => i === 0 || d >= dones[i - 1]), '1.3 it counts up over the ' + pieces + ' objects (' + dones.slice(0, 10).join(', ') + ' …)');
+	// 36 F20/F21: the job exists from the CLICK — its first samples are the download ('fetching',
+	// nothing to count yet); the count starts once the file is in
+	// (and the unzip right after it reads 'preparing' with no total yet — count from the first
+	// sample that carries the file's own object count)
+	const counted = one.jobs.filter((j) => j.phase !== 'fetching' && j.total > 0);
+	h.check(one.jobs.length > 0 && one.jobs[0].phase === 'fetching', '1.2b the load is on screen from the click, downloading (' + (one.jobs[0]?.phase ?? 'none') + ')');
+	const dones = [...new Set(counted.map((j) => j.done))];
+	h.check(counted.length > 0 && counted[0].total === pieces && dones.length >= 3 && dones.every((d, i) => i === 0 || d >= dones[i - 1]), '1.3 it counts up over the ' + pieces + ' objects (' + dones.slice(0, 10).join(', ') + ' …)');
 	h.check(probe.max <= LONG_MS, `1.4 no long task over ${LONG_MS} ms while it loads (max ${probe.max} ms of ${probe.longtasks.length}; longest frame gap ${probe.maxGap} ms)`);
 	console.log('   open long tasks: ' + JSON.stringify(probe.longtasks.slice().sort((a, b) => b - a).slice(0, 10)));
 
@@ -242,15 +248,19 @@ h.run(async () => {
 	await fresh();
 	await throttle(CPU);
 	await open(castleUrl);
-	await h.eventually(() => page.evaluate(() => !!document.querySelector('#scene-load-cancel')), (v) => v, '4.0 (premise) the bar offers Cancel while the scene loads', 30000);
-	const hit = await page.evaluate(() => {
-		const b = /** @type {HTMLElement} */ (document.querySelector('#scene-load-cancel'));
-		const r = b.getBoundingClientRect();
-		const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-		return at === b || b.contains(at) ? 'ok' : (at?.id || at?.className || String(at));
-	});
-	h.check(hit === 'ok', '4.1 Cancel is on top where it is drawn (elementFromPoint: ' + hit + ')');
-	await page.locator('#scene-load-cancel').click({ timeout: 5000 });
+	// 36 S5 (user, 2026-10-05): the bar has NO Cancel button any more — opening another scene
+	// abandons a load (section 3). The undo a cancel runs is still the path a dropped claim
+	// takes (36 F20), so it is driven through the API here.
+	await h.eventually(() => page.locator('#scene-load-bar').isVisible(), (v) => v, '4.0 (premise) the bar is up while the scene loads', 30000);
+	h.check((await page.locator('#scene-load-cancel').count()) === 0, '4.1 the bar offers no Cancel button (36 S5)');
+	// cancel once the castle is being BUILT (a cancel during the download has nothing to take back)
+	await h.eventually(
+		() => page.evaluate(() => { let v; window.__stores.sceneLoader.sceneLoad.subscribe((x) => (v = x))(); return v?.phase ?? null; }),
+		(p) => p === 'objects' || p === 'models',
+		'4.1b (premise) the castle is being built',
+		30000
+	);
+	await page.evaluate(() => window.__stores.sceneLoader.cancelLoad());
 	await throttle(1);
 	await h.eventually(() => sceneState(page, null), (s) => !s.job && s.top === 0, '4.2 Cancel stops the load and takes back what it had added', 20000);
 	await page.waitForTimeout(3500);

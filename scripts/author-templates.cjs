@@ -62,6 +62,9 @@
 //   graphs           {'scene' | <object name>: {nodes, edges}} — node data strings naming a def
 //                    object become its uuid (not label/format/text/placeholder/name); '$music' and
 //                    '$sound:<key>' become content hashes
+//   graphTidy        36 F11: 'layout' (rebuild Main left -> right) | 'repair' (keep it, move only what
+//                    overlaps or sits on a wire) — the node editor's own Tidy, run on the cards as DRAWN
+//                    (the editor is opened for the measurement and closed again before the save)
 //   hud              a hudDocs map · shaders {'scene' | <object name>: shader graph document}
 //   animations       {<object name>: an authored animation set (clips of tracks of keys)}
 //   music            {url | file, sha256, name, volume?} — the scene's background track (+ Explorer)
@@ -96,6 +99,9 @@
 //                    falloff 'flat'|'island'|'bowl', offsetX, offsetZ} — the app's parametric Terrain (C1)
 //   (any non-kit)    scale [x, y, z] | n · children [objects] on a mesh too (visual parts riding it)
 //   group / empty    children [objects] (names resolve inside groups too)
+//   (any primitive)  children [objects] too (36-fb-water) — built in the parent's LOCAL frame, so
+//                    they ride its body: a floating boat = a dynamic hull (collider 'hull' = the
+//                    hull mesh alone) carrying its stripe and mast
 //   mirror           of (a named object/group), opacity (0.15), prefix — reflected across x = 0
 //   kit              pack*, item* (a pack item NAME, e.g. 'architecture-kit' / 'WallStone'), scale?
 //                    ([x,y,z] or a number) — a PACK PIECE as a reference (30c packRefs.js): written
@@ -117,7 +123,11 @@
 //   a Play Animation node) · particles '<preset>' | {preset, ...overrides} (sparkles, fire,
 //   smoke, dust, confetti, sparks) · water '<preset>' | {preset, shape?, level?, look?, waves?, bubbles?,
 //   flow?, density?} (36: a water volume, userData.water — pool aquarium ocean lake river lava swamp toxic
-//   ice; a static sensor unless `physics` says otherwise) · bubbles {…} (a standalone bubble emitter)
+//   ice; a static sensor unless `physics` says otherwise) · bubbles {…} (a standalone bubble emitter) ·
+//   scale [x,y,z] | n · fluid 'none'|'collide'|'float' (36-fb: how a Fluid emitter's water meets it)
+//   36-fb types: fluidemitter (fluidEmitter: settings over the defaults, area merged) · flowpath
+//   (flowPath: {kind river|pipe, points (object-local), width, depth, speed, strength, recycle, show,
+//   color, opacity}) — graphs may carry `rotor` (Rotate / Motor) and `flowfloat` nodes
 // ENV — a custom sky: {preset: 'custom' | '<preset>', base?: '<preset>', exposure,
 //   background: '#hex' | {top, bottom} (a gradient; `background` keeps the bottom colour),
 //   fog: {color, near, far} | null, ground: {color, roughness?} (a solid ground disc that takes
@@ -301,6 +311,8 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 	});
 	const page = await ctx.newPage();
 	page.on('pageerror', (e) => console.log('PAGEERROR: ' + e.message.split('\n')[0]));
+	// 36 F11: the in-page graphTidy report
+	page.on('console', (m) => m.text().startsWith('[graphTidy]') && console.log(m.text()));
 	await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 	await page.waitForFunction(() => window.__stores && !!window.__stores.sessions, { timeout: 40000 });
 	await page.waitForTimeout(2000);
@@ -511,6 +523,10 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 			const terrainBuilder = d.objects.some((/** @type {any} */ o) => o.type === 'terrain')
 				? (await import('/src/lib/customGeometries.js')).terrainGeometry
 				: null;
+			// 36-fb: a Fluid emitter (`/create FluidEmitter`) and a Flow path (`/create FlowPath`)
+			const simFluid = d.objects.some((/** @type {any} */ o) => o.type === 'fluidemitter' || o.type === 'flowpath')
+				? { ...(await import('/src/lib/sim/fluidEmitterObject.js')), ...(await import('/src/lib/sim/flowPathObject.js')), ...(await import('/src/lib/sim/fluidEmitterCore.js')) }
+				: null;
 			/** @param {any} o @param {{mirror?: boolean, prefix?: string, opacity?: number, shadow?: boolean}} [opts] */
 			const build = (o, opts = {}) => {
 				const mirror = !!opts.mirror;
@@ -621,6 +637,9 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					else if (o.type === 'fluidtank') geo = simTank.fluidTankGeometry(...(o.size ?? []));
 					// 36-backlog-21c: a parametric terrain — the app's own builder, so the Inspector's Terrain rows edit it
 					else if (o.type === 'terrain') geo = terrainBuilder(o.terrain ?? {});
+					// 36-fb: a spout / a flow path's ribbon (built again from its record below)
+					else if (o.type === 'fluidemitter') geo = simFluid.fluidEmitterGeometry();
+					else if (o.type === 'flowpath') geo = simFluid.flowPathGeometry(o.flowPath);
 					else throw new Error('object "' + o.name + '": unknown type "' + o.type + '"');
 					// 30 author-kit: MeshPhysicalMaterial when a def asks for `physical` or uses any
 					// field only it has; MeshToonMaterial for `toon`. Absent all of those it is the
@@ -682,10 +701,30 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					const k = Array.isArray(o.scale) ? o.scale : [o.scale, o.scale, o.scale];
 					object.scale.set(k[0], k[1], k[2]);
 				}
+				// 36-fb: the emitter's settings (`fluidEmitter`, merged over the defaults) and the
+				// path's record (`flowPath`); `fluid` on any OTHER object = its Fluid interaction
+				if (o.type === 'fluidemitter') {
+					simFluid.stampFluidEmitter(object);
+					const e = object.userData.fluidEmitter;
+					object.userData.fluidEmitter = simFluid.normalizeEmitter({ ...e, ...(o.fluidEmitter ?? {}), area: { ...e.area, ...(o.fluidEmitter?.area ?? {}) } });
+				}
+				if (o.type === 'flowpath') {
+					simFluid.stampFlowPath(object);
+					simFluid.applyFlowPathTo(object, { ...object.userData.flowPath, ...(o.flowPath ?? {}) });
+				}
+				if (typeof o.fluid === 'string' && o.type !== 'fluidtank' && o.fluid !== 'auto') object.userData.fluidInteraction = o.fluid;
 				object.name = (opts.prefix ?? '') + o.name;
 				if (pos && o.type !== 'spline') object.position.set(pos[0], pos[1], pos[2]);
 				if (rot) object.rotation.set(rot[0], rot[1], rot[2]);
+				// 36-fb: `scale` on any object (a kit piece has its own, above)
+				if (o.scale != null && o.type !== 'kit') {
+					const k = Array.isArray(o.scale) ? o.scale : [o.scale, o.scale, o.scale];
+					object.scale.set(k[0], k[1], k[2]);
+				}
 				if (o.physics && !mirror) object.userData.physics = o.physics;
+				// 36-fb-water F15's `children` on any primitive is the 36-backlog-21c block above (both lanes
+				// added one; the 1.25 union built every child twice — 36-int-125). The parent's collider stays
+				// its own shape (collider: 'hull' reads the parent mesh only)
 				// 30 author-kit: object FLAGS. Each lands where the app itself keeps it, so the
 				// .tpscene carries it the ordinary way (userData rides toJSON; a clip rides the
 				// animations block). A mirror ghost takes none of them (it is decoration).
@@ -1038,6 +1077,32 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 			// let every write settle (the debounced compiles and the reconciles)
 			await new Promise((r) => setTimeout(r, d.graphs || d.shaders ? 900 : 100));
 
+			// 36 F11: tidy Main on the cards as the editor draws them (sizes and handle bounds are
+			// only known once rendered), then close the editor so the file's workspace is clean
+			if (d.graphs && d.graphTidy) {
+				// the G1 links a load would add (a Code link per module, an Object flow link per
+				// object graph) are added HERE, so the tidy lays them out and the file carries them
+				/** @type {any} */ let now;
+				s.flowGraphs.subscribe((/** @type {any} */ v) => (now = v))();
+				const linked = s.mainGraph.ensureMainGraph(now, { modules: s.moduleRequirements?.moduleRequirements?.() ?? d.modules ?? [], sceneKey: s.SCENE_GRAPH });
+				if (linked.added.length) s.restoreGraphs(linked.graphs);
+				s.activeGraphId.set(s.SCENE_GRAPH);
+				s.flowGraphClose.set(false);
+				s.bottomDock.activateDock('flow');
+				const t0 = Date.now();
+				while (!window.__flowTidy && Date.now() - t0 < 15000) await new Promise((r) => setTimeout(r, 100));
+				if (!window.__flowTidy) throw new Error(d.slug + ': graphTidy needs the node editor (debugStores) — it never mounted');
+				await new Promise((r) => setTimeout(r, 1500)); // every card measured
+				const before = window.__flowTidy.lint();
+				const result = window.__flowTidy.tidy(d.graphTidy === 'layout' ? 'layout' : 'repair');
+				await new Promise((r) => setTimeout(r, 600));
+				const after = window.__flowTidy.lint();
+				console.log('[graphTidy] ' + d.slug + ' (' + d.graphTidy + '): ' + JSON.stringify({ moved: result?.moved ?? 0, before: [before.overlaps.length, before.wireHits.length], after: [after.overlaps.length, after.wireHits.length] }));
+				if (!after.ok) throw new Error(d.slug + ': graphTidy left ' + after.overlaps.length + ' overlaps and ' + after.wireHits.length + ' wires through cards');
+				s.flowGraphClose.set(true);
+				await new Promise((r) => setTimeout(r, 300));
+			}
+
 			// belt and braces: let the render loop compose world matrices too
 			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
@@ -1106,6 +1171,7 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 			// objects' bounds without the camera markers and without floor-like slabs (a 30x40 m
 			// ground framed whole leaves every game piece a speck — the 1690-byte Waves card).
 			let thumb = null;
+			/** @type {string | null} */ let thumbError = null;
 			try {
 				const T = s.THREE;
 				/** @type {any} */ let liveScene;
@@ -1268,6 +1334,8 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 				renderer.forceContextLoss?.();
 			} catch (e) {
 				console.log('thumb failed', e);
+				// 36-fb: say WHY in the runner's own output (the page console is not forwarded)
+				thumbError = String(/** @type {any} */ (e)?.stack ?? e).slice(0, 600);
 			}
 			// leave no look or rule behind for the next def — a leaked sky or gravity is
 			// exactly the bug A6 exists to fix, and it would be baked into the next scene
@@ -1288,10 +1356,11 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 			// library, and the hash dedupes a re-run; nothing of it reaches the next def)
 			if (s.animationPreview) s.animationPreview.animationsRestore({}, false);
 			if (s.sceneMusic) s.sceneMusic.musicRestore(null, false);
-			return { bytes: Array.from(bytes), thumb };
+			return { bytes: Array.from(bytes), thumb, thumbError };
 		}, { d: def, music, sounds, humanTextKeys: [...HUMAN_TEXT_KEYS] });
 		const bytes = Buffer.from(out.bytes);
 		const thumb = out.thumb ? Buffer.from(out.thumb.split(',')[1], 'base64') : null;
+		if (out.thumbError) console.log('  THUMB FAILED (' + def.slug + '): ' + out.thumbError);
 		built[def.slug] = { entry: def, bytes, thumb };
 		console.log(`${def.kind} ${def.slug}: scene ${bytes.length} B, thumb ${thumb ? thumb.length : 0} B`);
 		// 34 B3: every scene this writes is linted first (scripts/scene-lint.cjs) — an unknown

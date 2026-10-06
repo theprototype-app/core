@@ -4,6 +4,7 @@
 
 import { clampWinSize, clampResize, bottomReserve } from './windowSize';
 import { safeStorage } from './safeStorage';
+import { isHeaderDrag, startWindowDragGuard } from './windowGrip';
 
 // 169: live reset registry — every draggable window (this action + the object
 // list's own dragMe) registers a reset fn so Settings can rescue windows stuck
@@ -60,7 +61,7 @@ export function resetWindowLayout() {
  * @param {any} node
  * @param {{key: string, defaultRect?: {left?: number, top?: number, right?: number, bottom?: number},
  *   resizable?: boolean, axis?: 'x'|'xy', minW?: number, minH?: number,
- *   inert?: (() => boolean) | null}} options
+ *   inert?: (() => boolean) | null, keyScope?: string | null}} options
  *   `resizable` (15-B7) adds a bottom-right grabber and persists {w,h} in the
  *   SAME `win:<key>` record — opt-in, so windows that own their sizing (Flow,
  *   Explorer, the object list) are untouched.
@@ -72,8 +73,12 @@ export function resetWindowLayout() {
  *   rendering as something else — the toolbox becomes a full-width bottom SHEET
  *   on a phone, and a sheet pinned to left:0 would otherwise be clamped and
  *   SAVED as position 0, losing the desktop placement on the way back.
+ *   `keyScope` (36 F2) is the keyboard scope the window takes when pressed (keyScope.js):
+ *   'panel' by default — a tool window owns the keys, so W no longer flies the camera
+ *   behind it; 'keep' for a toolbar that leaves the keys where they were. A marked editor
+ *   pane inside the window keeps its own scope (the nearest mark wins).
  */
-export function dragWindow(node, { key, defaultRect = {}, resizable = false, axis = 'xy', minW = 260, minH = 180, inert = null }) {
+export function dragWindow(node, { key, defaultRect = {}, resizable = false, axis = 'xy', minW = 260, minH = 180, inert = null, keyScope = 'panel' }) {
 	/** @type {any} */
 	let rect = null;
 	try {
@@ -84,6 +89,9 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	rect = rect ?? { ...defaultRect };
 
 	node.style.position = 'fixed';
+	if (keyScope && !node.hasAttribute?.('data-key-scope')) node.setAttribute?.('data-key-scope', keyScope);
+	// 36 F3: a right press mid-drag never opens the browser menu (one guard for every window)
+	startWindowDragGuard();
 
 	/** 18-C3: is the consumer currently rendering as something this action must
 	 * not touch (a bottom sheet)? A predicate, so it tracks without an update(). */
@@ -307,8 +315,8 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	/** @param {any} e */
 	function down(e) {
 		if (suspended()) return;
-		if (!e.target.closest('.move-handle')) return;
-		if (e.target.closest('button, input, select, textarea')) return; // header controls stay clickable
+		// 36 F4: header controls stay clickable — a TAB in the header too (windowGrip.js)
+		if (e.button !== 0 || !isHeaderDrag(e.target)) return;
 		dragging = true;
 		node.setPointerCapture?.(e.pointerId);
 		e.preventDefault();

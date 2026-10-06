@@ -64,7 +64,7 @@
 			<span class="script-file max-w-[180px] truncate text-[10px] text-sky-300" title="Runs the script file {file} — saving the file reloads every node bound to it">📄 {file}</span>
 		{/if}
 		<button
-			class="nodrag rounded-sm bg-[#ff4000] px-2 py-0.5 text-white"
+			class="nodrag nopan rounded-sm bg-[#ff4000] px-2 py-0.5 text-white"
 			on:click={() => scriptEditorOpen.set(id)}
 		>
 			Edit code

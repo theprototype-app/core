@@ -1,5 +1,7 @@
 <script>
 	import { safeStorage } from '$lib/safeStorage';
+	// 36-fb-water F14: three JSON round-trip fixes (transmissive materials came back black)
+	import '$lib/threeFixes.js';
   // 34 R4 (A2): the debug hook's table. A STATIC import on purpose (the module has no static
   // deps, only lazy loaders): the install must start synchronously in onMount, before the first
   // frames' blocking shader links. A dynamic import here queued it behind them (a third e2e page
@@ -134,8 +136,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startSharedLibrary } from '$lib/sharedLibrary'
   import { startSceneIdentity } from '$lib/sceneIdentity'
   import GameChip from './components/hud/GameChip.svelte'
+  import SimplifiedWaterNotice from './components/water/SimplifiedWaterNotice.svelte' // 36-fb-water F27
   import ShortcutSheet from './components/menu/ShortcutSheet.svelte' // 36 I3
   import HudLayer from './components/hud/HudLayer.svelte'
+  import PickCycleHint from './components/menu/PickCycleHint.svelte' // 36 F22 / S6 / S12
   // 31 K3: the game shell — the pause menu + its wiring
   import GameShellMenu from './components/hud/GameShellMenu.svelte'
   import FpsCounter from './components/hud/FpsCounter.svelte'
@@ -432,10 +436,12 @@ import { startMusicToolbox } from './lib/musicToolbox'
      above (a game HUD that dies when you press play is no HUD at all). --z-hud, no
      new tier: it beats the camera PiP and loses to modal/toast/menu. -->
 <HudLayer />
+<PickCycleHint />
 <!-- 30 P1: the game chip — "Game · <state>" + ▶ Test play. Beside HudLayer because it is the
      editor's stand-in for a game's screens, which HudLayer no longer draws outside Play.
      Editor-only (it hides itself in Play, in VR and in embed mode). -->
 <GameChip />
+<SimplifiedWaterNotice />
 <ShortcutSheet />
 <!-- 31 K3: the pause menu every game shares (Esc / the corner Menu button) -->
 <GameShellMenu />

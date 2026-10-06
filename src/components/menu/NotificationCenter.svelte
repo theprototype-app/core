@@ -50,7 +50,7 @@
 
 	{#if $notificationCenterOpen}
 		<div class="fixed inset-0" style="z-index: 996;" role="presentation" onclick={() => notificationCenterOpen.set(false)}></div>
-		<div id="notif-panel" class="ui-panel absolute right-0 top-10 w-80 p-2" style="z-index: 998;">
+		<div id="notif-panel" data-key-scope="panel" class="ui-panel absolute right-0 top-10 w-80 p-2" style="z-index: 998;">
 			<div class="mb-1 flex items-center justify-between">
 				<p class="ui-section-label">Notifications</p>
 				{#if $notifications.length}

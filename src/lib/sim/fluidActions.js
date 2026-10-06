@@ -19,6 +19,7 @@ export function setFluidFor(uuid, patch) {
 	const merged = { ...before, ...patch };
 	if (patch.emitter) merged.emitter = { ...before.emitter, ...patch.emitter };
 	if (patch.drain) merged.drain = { ...before.drain, ...patch.drain };
+	if (patch.spill) merged.spill = { ...before.spill, ...patch.spill }; // 36-fb-water F16
 	const next = normalizeFluid(merged);
 	object.userData.fluid = next;
 	recordEntry({ kind: 'props', uuid, before: { fluid: before }, after: { fluid: next } });

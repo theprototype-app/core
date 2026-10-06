@@ -42,7 +42,9 @@ const TEMPLATE_FILES = [
 	'jelly-room',
 	'fluid-tank-toy',
 	// 36-backlog-21c (21-C8): Race (the core `race` module drives it)
-	'race'
+	'race',
+	// 36-fb F26: the Water works diorama (Fluid emitter, flow paths, Rotate / Motor, Float Along Flow)
+	'water-works'
 ];
 
 /** games whose def is OWNED BY ITS MODULE (modules/<id>/<id>.def.json, read by moduleDef) */

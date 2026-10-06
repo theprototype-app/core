@@ -4,13 +4,15 @@ import { peers } from '../../stores/appStore';
 import { recordEntry } from '../history';
 import { safeStorage } from '../safeStorage';
 import { normalizeWater } from './volumes.js';
+import { normalizePour } from './pourDrops.js';
 import {
 	waterPreset,
 	presetByKey,
 	userPresetFrom,
 	applyUserPreset,
 	resolveBubbles,
-	BUBBLE_DEFAULTS
+	BUBBLE_DEFAULTS,
+	STANDALONE_BUBBLES
 } from './presets.js';
 import { waterClock } from './waterRuntime.js';
 
@@ -38,7 +40,7 @@ function poke() {
 /** @param {any} v */
 const clone = (v) => (v == null ? null : JSON.parse(JSON.stringify(v)));
 
-/** @param {string} uuid @param {'water'|'bubbles'} key @param {any} value */
+/** @param {string} uuid @param {'water'|'bubbles'|'pour'} key @param {any} value */
 function send(uuid, key, value) {
 	/** @type {any} */
 	const peer = get(peers);
@@ -50,7 +52,7 @@ const gestures = new Map();
 
 /**
  * Write userData[key] now; replicate + record one undo entry, coalescing a burst of edits.
- * @param {string} uuid @param {'water'|'bubbles'} key @param {any} value null = remove
+ * @param {string} uuid @param {'water'|'bubbles'|'pour'} key @param {any} value null = remove
  * @param {{immediate?: boolean}} [opts]
  */
 function write(uuid, key, value, opts = {}) {
@@ -186,7 +188,7 @@ export function burstWaterBubbles(uuid) {
 
 /** @param {string} uuid @param {any} config null = remove */
 export function setObjectBubbles(uuid, config) {
-	return write(uuid, 'bubbles', config ? { ...BUBBLE_DEFAULTS, enabled: true, ...config } : null, {
+	return write(uuid, 'bubbles', config ? { ...BUBBLE_DEFAULTS, ...STANDALONE_BUBBLES, enabled: true, ...config } : null, {
 		immediate: true
 	});
 }
@@ -197,6 +199,47 @@ export function updateObjectBubbles(uuid, patch, opts = {}) {
 	if (!object?.userData.bubbles) return false;
 	const next = resolveBubbles({ ...object.userData.bubbles, ...patch });
 	return write(uuid, 'bubbles', next, { immediate: !!opts.immediate });
+}
+
+// ── 36-fb-water F17: pour emitters (userData.pour, any object) ────────────────────────────
+
+/** where a pour leaves a WATER object (a tank/pool): over the rim of its +X side, outward */
+const RIM_SPOUT = Object.freeze({ at: [1.02, 0.97, 0.5], dir: [1, 0.25, 0] });
+
+/**
+ * Add (config) or remove (null) a pour emitter. On a water volume the spout starts on the rim.
+ * @param {string} uuid @param {any} config
+ */
+export function setObjectPour(uuid, config) {
+	const object = objectOf(uuid);
+	if (!object) return false;
+	const base = object.userData?.water ? RIM_SPOUT : {};
+	return write(uuid, 'pour', config ? normalizePour({ ...base, ...config, enabled: config.enabled ?? true }) : null, { immediate: true });
+}
+
+/** @param {string} uuid @param {any} patch @param {{immediate?: boolean}} [opts] */
+export function updateObjectPour(uuid, patch, opts = {}) {
+	const object = objectOf(uuid);
+	if (!object?.userData.pour) return false;
+	return write(uuid, 'pour', normalizePour({ ...object.userData.pour, ...patch }), { immediate: !!opts.immediate });
+}
+
+/** Add ▸ Water ▸ Pour: a small spout marker that pours (the Bubbles marker's shape). @param {any} object */
+export function makePour(object) {
+	if (!object?.uuid) return null;
+	/** @type {any} */
+	const peer = get(peers);
+	object.name = 'Pour';
+	if (peer) peer.send({ type: 'name', uuid: object.uuid, name: object.name });
+	object.castShadow = false;
+	object.userData.shadow = false;
+	if (peer) peer.send({ type: 'objectParameters', parameter: 'castShadow', uuid: object.uuid, castShadow: false });
+	delete object.userData.physics;
+	if (peer) peer.send({ type: 'objectParameters', parameter: 'physics', uuid: object.uuid, physics: null });
+	object.userData.pour = normalizePour({});
+	send(object.uuid, 'pour', clone(object.userData.pour));
+	poke();
+	return object;
 }
 
 // ── user presets (LOCAL library; the BLOB they produce replicates like any edit) ──────
@@ -331,7 +374,7 @@ export function makeBubbles(object) {
 	delete object.userData.physics;
 	if (peer)
 		peer.send({ type: 'objectParameters', parameter: 'physics', uuid: object.uuid, physics: null });
-	object.userData.bubbles = { ...BUBBLE_DEFAULTS, enabled: true, spread: 0.3 };
+	object.userData.bubbles = { ...BUBBLE_DEFAULTS, ...STANDALONE_BUBBLES, enabled: true, spread: 0.3 };
 	send(object.uuid, 'bubbles', clone(object.userData.bubbles));
 	poke();
 	return object;

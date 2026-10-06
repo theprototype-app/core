@@ -9,6 +9,8 @@
 	import { qualityState, pinQuality, releaseQuality } from '$lib/qualityGovernor';
 	import { showToast as showQualityToast } from '../../stores/appStore';
 	import { keyOf } from '$lib/keyOf';
+	import { setLastScope } from '$lib/keyScope';
+	import { isHeaderDrag, startWindowDragGuard } from '$lib/windowGrip';
 	import { systemGroupNames } from '$lib/moduleSDK';
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
@@ -263,6 +265,9 @@
 				const active = document.activeElement as HTMLElement | null;
 				if (active && treeEl?.contains(active)) active.blur();
 				else treeEl?.blur();
+				// 36 F2: the Object list is a scope of its own now, so blurring alone would
+				// leave its keys in charge — Escape hands them to the viewport, as it says
+				setLastScope('viewport');
 				return;
 			}
 		}
@@ -714,6 +719,7 @@
 	const objHideLabel = $derived(objHeaderW < 190);
 
 	function dragMe(node) {
+		startWindowDragGuard(); // 36 F3: no browser menu from a right press mid-drag
 		// 80.1: proper resize (start-size captured, clamped) + persisted rect
 		let saved: any = null;
 		try {
@@ -793,8 +799,9 @@
 			// 153: start the drag when the click lands anywhere in the move-handle
 			// header (incl. the "☰ Objects" title text), but NOT on its interactive
 			// children (search input, close button) so those still focus/click
+			// 36 F4: the shared header rule (windowGrip.isHeaderDrag), which also spares tabs
 			const t = /** @type {any} */ (e.target);
-			if (t?.closest?.('.move-handle') && !t.closest('input, button')) {
+			if (e.button === 0 && isHeaderDrag(t)) {
 				moving = true;
 			}
 		});
@@ -2026,8 +2033,10 @@
      exactly as before. The cells are `w-10` literals now: the grid's content-sized
      `fr` columns used to take their width from the spacer, and a flex row has to say
      it out loud. -->
+<!-- 36 F2: a toolbar never takes the keyboard (keyScope `keep`) -->
 <nav
 	id="controls-pill"
+	data-key-scope="keep"
 	class="border-gray-200 dark:border-gray-600 absolute max-w-lg -translate-x-1/2 rtl:translate-x-1/2 border bottom-4 start-1/2 h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 {pillZClass}"
 	style={pillStyle}
 	use:toolbarDrag
@@ -2260,7 +2269,7 @@
 	/>
 {/if}
 
-<div id="object-list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack={'objects'}
+<div id="object-list" data-key-scope="objects" role="region" aria-label="Object list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack={'objects'}
 	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
 	use:dockable={{ key: 'objects' }}
 	style="z-index: var(--z-window)">

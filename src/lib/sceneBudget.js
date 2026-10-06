@@ -671,11 +671,20 @@ export function noteExternalFrame(now) {
 	}
 }
 
-function loop() {
+/**
+ * 36-fb-water F27: a frame is timed from the rAF TIMESTAMP (the frame's vsync-aligned start),
+ * not from when this callback happened to run. The callback's own clock jitters with whatever
+ * ran before it in the frame — measured on a phone profile at CPU x4: a steady 60 fps read as a
+ * 72-75 Hz panel with a p95 over the budget, and the governor stepped Aquarium 4 -> 9 on frames
+ * that were all on time. A missed frame still shows: the next timestamp is a vsync later.
+ * @param {number} [ts]
+ */
+function loop(ts) {
 	const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
 	lastLoopAt = now;
-	if (lastFrameAt) {
-		const ms = now - lastFrameAt;
+	const at = Number.isFinite(ts) && /** @type {number} */ (ts) > 0 ? /** @type {number} */ (ts) : now;
+	if (lastFrameAt && at > lastFrameAt) {
+		const ms = at - lastFrameAt;
 		noteFrame(ms);
 		for (const fn of frameObservers) {
 			try {
@@ -685,7 +694,7 @@ function loop() {
 			}
 		}
 	}
-	lastFrameAt = now;
+	lastFrameAt = at;
 	renderFrames++;
 	if (now - lastSampleAt >= SAMPLE_MS) {
 		lastSampleAt = now;

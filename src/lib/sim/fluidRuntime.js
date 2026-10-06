@@ -4,11 +4,25 @@ import { get } from 'svelte/store';
 import { FluidSolver, pourAndDrain, normalizeFluid, spacingFor, FLUID_MAX_PARTICLES, TANK_WALL } from './fluidCore.js';
 import { FluidVisual } from './fluidRender.js';
 import { sceneGravity } from '../scenePhysics';
-import { qualityOverrides } from '../qualityGovernor';
-import { simulating, applyImpulse } from '../physics';
+import { qualityOverrides, settleQuality } from '../qualityGovernor';
+import { simulating, simPaused, remoteSimPaused, applyImpulse } from '../physics';
+
+/** 36-fb-water S9: the scene's simulation is paused (here or by the peer running it) — the
+ * local sims (tanks, drops) hold still with the bodies */
+export function simHeld() {
+	return (get(simulating) && get(simPaused)) || get(remoteSimPaused);
+}
 import { inferredColliderKind } from '../colliderSpec';
 import { normalizeFloats } from './buoyancy.js';
 import { setTankVolumes } from './waterQuery.js';
+import { noteSimplified } from '../water/simplifiedNotice.js';
+/** 36-fb-water F27: a tank this frame draws drops instead of its smooth surface BECAUSE OF QUALITY */
+let qualityLowered = false;
+import { spillDrops } from '../water/pourDrops.js';
+
+// 36-fb-water F16: a tank's walls with the TOP open (fluidCore wall mask [xlo,xhi,ylo,yhi,zlo,zhi])
+const OPEN_TOP = [true, true, true, false, true, true];
+const ALL_WALLS = [true, true, true, true, true, true]; // the solver keeps the last mask: always send one
 
 // 36-sim U2b: FLUID TANKS — the runtime between a tank object (`userData.fluid`, made by
 // Create ▸ Simulation ▸ Fluid tank), the solver (a Web Worker running fluidCore) and the
@@ -29,7 +43,7 @@ export const QUEST_CAP = 1500;
  *   pending: boolean, sentAt: number, steps: number, ms: number, count: number, visible: boolean,
  *   min: number[], max: number[], frame: THREE.Matrix4, frameQuat: THREE.Quaternion, prevPos: THREE.Vector3 | null,
  *   prevVel: THREE.Vector3, accel: THREE.Vector3, lastAt: number, lastDt: number, surfaceLocal?: number | null, gen?: number, local?: {solver: FluidSolver, acc: {carry: number, drainCarry: number}},
- *   spare: ArrayBuffer | null}} Tank */
+ *   spare: ArrayBuffer | null, spilled?: number}} Tank */
 
 /** @type {Map<string, Tank>} */
 const tanks = new Map();
@@ -72,6 +86,11 @@ function onFrame(data) {
 	tank.spare = /** @type {ArrayBuffer} */ (positions.buffer);
 	tank.surfaceLocal = surfaceOf(positions, data.count, tank);
 	applyPush(tank, data.impulses);
+	// 36-fb-water F16: what left over the rim falls on as drops (splash, settle, dry up)
+	if (data.escaped?.length) {
+		tank.spilled = (tank.spilled ?? 0) + data.escaped.length / 6;
+		spillDrops(tank.object, data.escaped, tank.frame, tank.frameQuat, { ...tank.spec.spill, color: tank.spec.color, size: (tank.visual?.radius ?? 0.02) * 2 });
+	}
 }
 
 /**
@@ -261,6 +280,7 @@ export function tickFluid(root, camera, renderer, now) {
 	/** @type {Set<string>} */
 	const alive = new Set();
 	visualParent = root?.parent ?? null;
+	qualityLowered = false;
 	if (root && visualParent)
 		for (const o of root.children) {
 			if (!o.userData?.fluid) continue;
@@ -273,6 +293,7 @@ export function tickFluid(root, camera, renderer, now) {
 			tanks.delete(uuid);
 		}
 	publishTankVolumes();
+	noteSimplified('fluid', qualityLowered);
 }
 
 /** @param {any} root @param {any} object @param {any} camera @param {any} renderer @param {number} now */
@@ -281,6 +302,7 @@ function tickTank(root, object, camera, renderer, now) {
 	const xr = !!renderer?.xr?.isPresenting;
 	const q = get(qualityOverrides);
 	const low = xr || q.postOff || q.particlesCapped || spec.quality === 'points';
+	if (!xr && spec.quality === 'auto' && (q.postOff || q.particlesCapped)) qualityLowered = true;
 	const count = Math.min(spec.count, low ? QUEST_CAP : FLUID_MAX_PARTICLES);
 	object.updateWorldMatrix(true, false);
 	const inside = interiorOf(object);
@@ -299,11 +321,16 @@ function tickTank(root, object, camera, renderer, now) {
 	tank.min = inside.min;
 	tank.max = inside.max;
 	if (tank.key !== key) {
+		// 36-fb-water F27: a re-init after load (the tier's particle cap changed) restarts the solver
+		// and rebuilds the visual — its hitch is not the scene's cost
+		if (tank.key) settleQuality();
 		tank.key = key;
 		initTank(tank, count);
 	}
 	tank.visual.setLook(spec.color, spec.clarity);
-	tank.visual.setMode(low && spec.quality !== 'high' ? 'points' : xr ? 'points' : 'ssf');
+	const mode = low && spec.quality !== 'high' ? 'points' : xr ? 'points' : 'ssf';
+	if (tank.visual.mode !== mode && tank.steps > 0) settleQuality(); // F27: SSF passes compile on first use
+	tank.visual.setMode(mode);
 	// the tank frame: position + rotation, metres (scale is in the interior already)
 	const centerW = inside.center.clone().applyQuaternion(inside.quat).add(inside.pos);
 	tank.frame.compose(centerW, inside.quat, tmpS.set(1, 1, 1));
@@ -337,6 +364,10 @@ function tickTank(root, object, camera, renderer, now) {
 	}
 	tank.prevPos = centerW.clone();
 	if (!tank.visible || tank.pending) return;
+	if (simHeld()) {
+		tank.sentAt = now; // resume without a jump
+		return;
+	}
 	const dt = tank.sentAt ? Math.min((now - tank.sentAt) / 1000, 1 / 30) : 1 / 60;
 	tank.sentAt = now;
 	tank.lastDt = dt;
@@ -350,13 +381,17 @@ function tickTank(root, object, camera, renderer, now) {
 		viscosity: spec.viscosity,
 		surfaceTension: spec.surfaceTension,
 		colliders: collidersFor(root, tank, centerW, radius),
-		spec: { ...spec, count }
+		spec: { ...spec, count },
+		// 36-fb-water F16: the top is open when the tank may spill (it only matters once tipped:
+		// upright, nothing climbs a smoothing length above the rim)
+		walls: spec.spill.on ? OPEN_TOP : ALL_WALLS
 	};
 	if (tank.local) {
 		const t0 = performance.now();
 		pourAndDrain(tank.local.solver, msg.spec, dt, tank.local.acc);
 		tank.local.solver.step(dt, msg);
-		onFrame({ op: 'frame', id: object.uuid, gen: tank.gen, count: tank.local.solver.count, positions: tank.local.solver.x, impulses: tank.local.solver.impulses, ms: performance.now() - t0 });
+		const escaped = tank.local.solver.escapedCount ? tank.local.solver.takeEscaped() : null;
+		onFrame({ op: 'frame', id: object.uuid, gen: tank.gen, count: tank.local.solver.count, positions: tank.local.solver.x, impulses: tank.local.solver.impulses, ms: performance.now() - t0, ...(escaped ? { escaped } : {}) });
 		return;
 	}
 	const w = ensureWorker();
@@ -379,6 +414,7 @@ export function fluidDebug() {
 		visible: t.visible,
 		mode: t.visual?.mode,
 		ssfRuns: t.visual?.passStats?.runs ?? 0,
+		spilled: Math.round(t.spilled ?? 0),
 		worker: worker ? 'worker' : worker === false ? 'main' : 'none'
 	}));
 }

@@ -173,6 +173,18 @@ function jamGraph() {
 	E('allwin', 'donesnd', 'trigger');
 	N('donebuzz', 'hapticpulse', 'Buzz: done', 2680, 480, { pattern: 'success', hand: 'both' });
 	E('allwin', 'donebuzz', 'trigger');
+	// ---- 36 F11: MAIN, READABLE — four group cards with notes (groups are views: every node
+	// and wire above is unchanged), laid out by the author script's Tidy
+	const GX = -2400;
+	g.T('n-readme', 'Jam Room — read me first', 'Press **Start jam**: a three-second count-in, then keep the **transport** playing for **8 bars** (the music lab\'s pads and the DJ deck make the sound). When everyone agrees the session is complete; the tempo you played at is saved as your best.', GX, -1300, { color: 'blue', w: 340, h: 180 });
+	g.T('n-start', 'Start & count-in', 'Start jam → the round starts, the count-in shows for three seconds and the beat it began on is remembered.', GX, -1080, { color: 'gray', w: 300, h: 100 });
+	g.G('g-start', 'Start & count-in', ['bgo', 'begin', 'goplay', 'showcount', 'countdone', 'hidecount', 'elapsed', 'countval', 'hcount', 'keepstart', 'saygo'], GX, -950);
+	g.T('n-bars', 'Bars & beat', 'The transport\'s beat since the start → bars played, the beat in the bar and the hint on the HUD.', GX, -820, { color: 'green', w: 300, h: 100 });
+	g.G('g-bars', 'Bars & beat', ['tbeat', 'tbpm', 'tplaying', 'startbeat', 'since', 'restarted', 'beats', 'bars', 'barsfloor', 'barsshown', 'hbars', 'hbarbar', 'beatmod', 'beatshown', 'hbeat', 'hintpick', 'hhint'], GX, -690);
+	g.T('n-done', 'Session complete', '8 bars with the transport running, the round on and the count-in over, everyone agreeing → complete: confetti, a fanfare, and the tempo saved (best and this one) for the HUD.', GX, -560, { color: 'yellow', w: 300, h: 120 });
+	g.G('g-done', 'Session complete', ['enough', 'pastcount', 'isplaying', 'g1', 'g2', 'g3', 'allwin', 'gowin', 'storebest', 'storelast', 'storedbest', 'storedlast', 'hbest', 'hbest2', 'hlast', 'donefx', 'donesnd', 'donebuzz'], GX, -410);
+	g.T('n-menu', 'Menus & buttons', 'The **P** menu (resume, restart, quit) and the over screen\'s buttons, with the click sound.', GX, -280, { color: 'purple', w: 300, h: 100 });
+	g.G('g-menu', 'Menus & buttons', ['pkey', 'pausetoggle', 'bresume', 'resumehide', 'brestart', 'breplay', 'restartreset', 'restarthide', 'restartdelay', 'bquit', 'bmenu', 'doquit', 'quithide', 'click'], GX, -150);
 	return g.done();
 }
 /** 30b: where a VR player stands in the Jam Room — the middle of the cockpit (feet) */
@@ -258,6 +270,8 @@ const JAM_DEF = {
 	view: { pos: [1.0, 2.5, 2.2], target: [1.0, 0.7, -1.4] },
 	thumb: { camera: 'Card camera' },
 	graphs: { scene: jamGraph() },
+	// 36 F11: group cards laid out by the node editor's own Tidy
+	graphTidy: 'layout',
 	hud: {
 		scene: {
 			active: '',

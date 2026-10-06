@@ -29,7 +29,7 @@ import { safeStorage } from './safeStorage';
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
 import { aiProviders, aiActiveProvider, aiEnabled, addAiProvider, updateAiProvider, removeAiProvider, setAiActiveProvider, setAiEnabled } from './ai/providers';
 import { meshProviders, meshActiveProvider, meshGenEnabled, addMeshProvider, updateMeshProvider, removeMeshProvider, setMeshActiveProvider, setMeshGenEnabled } from './ai/meshProviders';
-import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart } from './cloudHooks';
+import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart, problemReporter } from './cloudHooks';
 // 36-community (C4): a leaf (svelte/store only) — safe as a static edge
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
@@ -492,6 +492,9 @@ export function makeCloudApi() {
 		 *  `fn() → string | null` (null renders nothing) or null to remove it; call it
 		 *  again whenever the line may have changed — every set is a poke. */
 		setMeshJobStatus: (/** @type {any} */ fn) => meshJobStatus.set(typeof fn === 'function' ? fn : null),
+		/** 37 R20: "Report a problem" — `{submit(report), account()}` (see cloudHooks.problemReporter)
+		 *  or null. ADDITIVE and typeof-probed: an older engine has no Send, only "Save". */
+		setProblemReporter: (/** @type {any} */ r) => problemReporter.set(r && typeof r.submit === 'function' ? r : null),
 
 		// --- 36-community (C4/C2/C6): ADDITIVE, typeof-probed, no bump ---
 		/** The open scene's GAME identity (the scene file's permanent `gameId`). `current()` →

@@ -31,6 +31,7 @@ export const DEBUG_HOOKS = [
 	['perfBeacon', () => import('./perf/beacon')],
 	['staleModules', () => import('./staleModules')],
 	['perfMoment', () => import('./perf/moment')],
+	['problemReport', () => import('./problemReport')],
 	['profilerView', () => import('./perf/profilerView')],
 	['profilerModel', () => import('./perf/profilerModel.js')],
 	['vrRecIndicator', () => import('./vrRecIndicator')],

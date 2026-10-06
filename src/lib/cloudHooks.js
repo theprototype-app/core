@@ -208,6 +208,16 @@ export const cloudPluginInfo = writable(null);
 export const meshJobStatus = writable(null);
 
 /**
+ * 37 R20 — "REPORT A PROBLEM": where a finished report goes. The plugin installs
+ * `{submit(report) → Promise<{ok, id?, reason?, error?}>, account() → {signedIn, name?}}`
+ * (`api.setProblemReporter`); core draws the whole report — screenshot, boxes, note,
+ * consent — and calls `submit` only when the person presses Send with the box ticked.
+ * `report` = `{note, marks: [{x,y,w,h}] (fractions of the picture), meta, perf | null,
+ * shot: Blob | null}`. Null = no plugin: the report is saved on this device instead.
+ * @type {import('svelte/store').Writable<{submit: (report: any) => Promise<any>, account?: () => any} | null>} */
+export const problemReporter = writable(null);
+
+/**
  * 21-G5 (F7): CROSS-SCENE PRESENCE, the rolesInfo-bridge shape one domain over. The
  * rooms plugin publishes who is in the project's OTHER rooms/scenes and core renders
  * it in the Users popover — chips, a Watch that says WHY it cannot reach them (a peer

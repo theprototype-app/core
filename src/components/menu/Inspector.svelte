@@ -1,5 +1,4 @@
 <script>
-	import { Download, Save, Search, Sparkles, SquarePen, Trash2, Upload } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Unified inspector (phase 64): one drawer serves every target — mesh, group,
 	// light (from the selection) and the scene itself ($inspectorKind = 'scene').
@@ -1478,7 +1477,7 @@
 						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded-sm border border-gray-600 object-cover" />
 					{:else}
 						<span class="flex h-24 w-24 items-center justify-center rounded-sm border border-gray-600 bg-gray-700 text-4xl text-gray-400">
-							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={36} class={inspectedItem.kind === 'audio' ? 'ico-audio' : inspectedItem.kind === 'text' ? 'ico-doc' : ''} />
+							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={32} class={inspectedItem.kind === 'audio' ? 'ico-audio' : inspectedItem.kind === 'text' ? 'ico-doc' : ''} />
 						</span>
 					{/if}
 				</div>
@@ -1509,7 +1508,7 @@
 					<div class="flex flex-wrap gap-2">
 						{#if inspectedItem.kind === 'text' || inspectedItem.kind === 'image'}
 							<Button size="xs" color="alternative" onclick={() => openInspectedItem()}>
-								{#if inspectedItem.kind === 'text'}<SquarePen size={14} class="mr-1" aria-hidden="true" />{:else}<Search size={14} class="mr-1" aria-hidden="true" />{/if}{inspectedItem.kind === 'text' ? 'Edit' : 'Preview'}
+								{#if inspectedItem.kind === 'text'}<Icon name="square-pen" size={16} class="mr-1" aria-hidden="true" />{:else}<Icon name="search" size={16} class="mr-1" aria-hidden="true" />{/if}{inspectedItem.kind === 'text' ? 'Edit' : 'Preview'}
 							</Button>
 						{/if}
 						<Button
@@ -1518,7 +1517,7 @@
 							onclick={() => {
 								deleteItem(inspectedItem.id);
 								inspectorClose.set(true);
-							}}><Trash2 size={16} class="ico-danger mr-1" aria-hidden="true" />Delete</Button
+							}}><Icon name="trash-2" size={16} class="ico-danger mr-1" aria-hidden="true" />Delete</Button
 						>
 					</div>
 				</Section>
@@ -1618,11 +1617,11 @@
 				{/each}
 				<div class="flex flex-wrap gap-1">
 					<button id="env-save-preset" class="ui-button-quiet" title="Save the current environment as a named preset" onclick={savePresetPrompt}>
-						<Save size={16} class="mr-1" aria-hidden="true" />Save preset
+						<Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save preset
 					</button>
-					<button class="ui-button-quiet" title="Download the current environment as JSON" onclick={exportCurrentPreset}><Download size={16} class="mr-1" aria-hidden="true" />Export</button>
+					<button class="ui-button-quiet" title="Download the current environment as JSON" onclick={exportCurrentPreset}><Icon name="download" size={16} class="mr-1" aria-hidden="true" />Export</button>
 					<button class="ui-button-quiet" title="Import a .envpreset.json file" onclick={() => document.getElementById('env-import-file')?.click()}>
-						<Upload size={16} class="mr-1" aria-hidden="true" />Import
+						<Icon name="upload" size={16} class="mr-1" aria-hidden="true" />Import
 					</button>
 					<input type="file" id="env-import-file" style="display: none" accept=".json" onchange={onImportPreset} />
 				</div>
@@ -1947,10 +1946,10 @@
 									onchange={(/** @type {any} */ e) => renameBookmark(bookmark.id, e.currentTarget.value)}
 								/>
 								<button class={bmBtn} title="Recall this view" onclick={() => recallBookmark(index)}>
-									<Icon name="eye" size={13} />
+									<Icon name="eye" size={16} />
 								</button>
 								<button class={bmBtn} title="Overwrite with the current view" onclick={() => overwriteBookmark(bookmark.id)}>
-									<Icon name="camera" size={13} />
+									<Icon name="camera" size={16} />
 								</button>
 								<button class={bmBtn} title="Move up" disabled={index === 0} onclick={() => moveBookmark(bookmark.id, -1)}>↑</button>
 								<button
@@ -1960,7 +1959,7 @@
 									onclick={() => moveBookmark(bookmark.id, 1)}>↓</button
 								>
 								<button class="{bmBtn} text-red-400" title="Delete this view" onclick={() => deleteBookmark(bookmark.id)}>
-									<Icon name="trash-2" size={13} />
+									<Icon name="trash-2" size={16} />
 								</button>
 							</div>
 						{/each}
@@ -2976,7 +2975,7 @@
 							title="Render one frame through this camera and download it as a PNG"
 							onclick={() => captureThroughCamera($selectedObject.uuid)}
 						>
-							<Icon name="camera" size={13} />Capture
+							<Icon name="camera" size={16} />Capture
 						</button>
 						<span class="text-[10px] text-gray-500">saves a PNG at the framing aspect</span>
 					</div>
@@ -4158,7 +4157,7 @@
 						{#if (p.mode ?? 'continuous') !== 'continuous'}
 							<div class="ui-row items-center gap-2">
 								<Button size="xs" color="alternative" onclick={() => burstObjectParticles($selectedObject.uuid)}>
-									<Sparkles size={16} class="mr-1" aria-hidden="true" />Burst now
+									<Icon name="sparkles" size={16} class="mr-1" aria-hidden="true" />Burst now
 								</Button>
 								<span class="text-xs text-gray-400">fires for every peer</span>
 							</div>

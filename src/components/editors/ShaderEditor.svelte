@@ -14,7 +14,7 @@
 	// arrays, not stores, so the two are mirrored both ways behind a re-entrancy guard.
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { Info, Settings, Trash2 } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import {
 		SvelteFlow,
 		Background,
@@ -619,7 +619,7 @@
 			aria-label="Remove this shader graph"
 			onclick={removeGraph}
 		>
-			<Trash2 size={14} aria-hidden="true" />
+			<Icon name="trash-2" size={16} aria-hidden="true" />
 		</button>
 	{/if}
 	<button
@@ -752,14 +752,14 @@
 							class:active={propsTab === 'info'}
 							title="Selected node"
 							aria-label="Selected node properties"
-							onclick={() => (propsTab = 'info')}><Info size={13} aria-hidden="true" /></button
+							onclick={() => (propsTab = 'info')}><Icon name="info" size={16} aria-hidden="true" /></button
 						>
 						<button
 							class:active={propsTab === 'settings'}
 							title="Graph settings"
 							aria-label="Graph settings"
 							onclick={() => (propsTab = 'settings')}
-							><Settings size={13} aria-hidden="true" /></button
+							><Icon name="settings" size={16} aria-hidden="true" /></button
 						>
 					</div>
 

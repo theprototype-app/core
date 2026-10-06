@@ -7,7 +7,7 @@
 	// installs the automatic-checkpoint follower (startCheckpoints, once).
 	import { onMount } from 'svelte';
 	import { Modal, Button } from 'flowbite-svelte';
-	import { Bookmark, Columns2, History, Pin, PinOff, RotateCcw, Trash2, X } from '@lucide/svelte';
+	import Icon from '../../ui/Icon.svelte';
 	import { checkpointsOpen, checkpointSaveOpen, hidePanels, restorePanels } from '../../../stores/appStore.js';
 	import {
 		checkpoints,
@@ -173,7 +173,7 @@
 	<div id="checkpoint-timeline" class="flex flex-col gap-3 p-1">
 		<div class="flex flex-wrap items-center gap-2">
 			<Button id="checkpoint-new" size="xs" onclick={() => checkpointSaveOpen.set(true)}>
-				<Bookmark size={14} class="mr-1" aria-hidden="true" />Save checkpoint…
+				<Icon name="bookmark" size={16} class="mr-1" aria-hidden="true" />Save checkpoint…
 			</Button>
 			<div class="tp-seg" role="group" aria-label="Which checkpoints">
 				<button id="checkpoint-scope-all" class="tp-seg-btn" aria-pressed={scope === 'all'} onclick={() => (scope = 'all')}>All</button>
@@ -197,7 +197,7 @@
 				title="Tick two checkpoints (or one, against the scene as it is now)"
 				onclick={toggleCompare}
 			>
-				<Columns2 size={14} aria-hidden="true" />{comparing ? 'Done comparing' : 'Compare'}
+				<Icon name="columns-2" size={16} aria-hidden="true" />{comparing ? 'Done comparing' : 'Compare'}
 			</button>
 			<span id="checkpoint-usage" class="cp-muted ml-auto text-xs" title="Settings ▸ Scene ▸ Checkpoint storage">
 				{formatBytes(used)} of {$checkpointCapMb} MB · {$checkpoints.length} checkpoint{$checkpoints.length === 1 ? '' : 's'}{pinnedCount ? ' · ' + pinnedCount + ' pinned' : ''}
@@ -247,7 +247,7 @@
 
 		{#if rows.length === 0}
 			<div id="checkpoint-empty" class="cp-empty">
-				<History size={28} aria-hidden="true" />
+				<Icon name="history" size={32} aria-hidden="true" />
 				<p>No checkpoints yet.</p>
 				<p class="cp-muted text-xs">
 					Save one with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>, or let autosave add one every few minutes
@@ -273,7 +273,7 @@
 						{#if row.thumbnail}
 							<img class="cp-thumb" src={row.thumbnail} alt="" />
 						{:else}
-							<div class="cp-thumb cp-noimg"><History size={16} aria-hidden="true" /></div>
+							<div class="cp-thumb cp-noimg"><Icon name="history" size={16} aria-hidden="true" /></div>
 						{/if}
 						<div class="cp-body">
 							<div class="flex items-center gap-1">
@@ -301,7 +301,7 @@
 									>
 								{/if}
 								{#if row.auto}<span class="cp-badge">auto</span>{/if}
-								{#if row.pinned}<Pin size={12} class="cp-pin-ico" aria-label="Pinned" />{/if}
+								{#if row.pinned}<Icon name="pin" size={16} class="cp-pin-ico" aria-label="Pinned" />{/if}
 							</div>
 							<div class="cp-muted text-xs">
 								{timeOf(row.createdAt)} · {row.count} object{row.count === 1 ? '' : 's'} · {formatBytes(row.bytes)}{#if row.scene && (scope === 'all' || !sceneName)}
@@ -335,7 +335,7 @@
 								disabled={$checkpointBusy}
 								onclick={() => void restore(row)}
 							>
-								<RotateCcw size={14} aria-hidden="true" />Restore
+								<Icon name="rotate-ccw" size={16} aria-hidden="true" />Restore
 							</button>
 							<button
 								class="ui-button-quiet cp-icon"
@@ -344,10 +344,10 @@
 								aria-label={row.pinned ? 'Unpin' : 'Pin'}
 								onclick={() => void pinCheckpoint(row.id)}
 							>
-								{#if row.pinned}<PinOff size={14} aria-hidden="true" />{:else}<Pin size={14} aria-hidden="true" />{/if}
+								{#if row.pinned}<Icon name="pin-off" size={16} aria-hidden="true" />{:else}<Icon name="pin" size={16} aria-hidden="true" />{/if}
 							</button>
 							<button class="ui-button-quiet cp-icon cp-delete" title="Delete" aria-label="Delete" onclick={() => void remove(row)}>
-								<Trash2 size={14} class="ico-danger" aria-hidden="true" />
+								<Icon name="trash-2" size={16} class="ico-danger" aria-hidden="true" />
 							</button>
 						</div>
 					</li>
@@ -360,7 +360,7 @@
 			When storage is full the oldest unpinned checkpoints go first — automatic ones before named ones.
 		</span>
 		<Button color="alternative" onclick={() => checkpointsOpen.set(false)}>
-			<X size={14} class="mr-1" aria-hidden="true" />Close
+			<Icon name="x" size={16} class="mr-1" aria-hidden="true" />Close
 		</Button>
 	{/snippet}
 </Modal>

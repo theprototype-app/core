@@ -8,7 +8,7 @@
 	// reminder of which handle does what.
 	import { splineEditObject, splineSelectedPoint, splinePointCount, exitSplineEdit } from '$lib/splineEdit';
 	import { setSplineClosed, setSplineRadiusAll, setSplineSides, splineDataOf, splineObjectOf } from '$lib/splineTool';
-	import { Check } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import DragRow from '../ui/DragRow.svelte';
 	import { isVRMode, objectsGroup } from '../../stores/sceneStore';
@@ -40,7 +40,7 @@
 				class="tbx-hbtn tbx-done"
 				aria-label="Done"
 				title="Finish (Esc)"
-				onclick={() => exitSplineEdit()}><Check size={14} aria-hidden="true" /></button
+				onclick={() => exitSplineEdit()}><Icon name="check" size={16} aria-hidden="true" /></button
 			>
 		{/snippet}
 

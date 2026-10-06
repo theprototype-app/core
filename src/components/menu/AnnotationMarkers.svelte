@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { MessageSquare, Layers } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import {
 		activeAnnotation,
 		openAnnotation,
@@ -197,7 +197,7 @@
 
 	<div class="marker-layer">
 		{#each markers as marker (marker.id)}
-			{@const Icon = marker.cluster ? Layers : MessageSquare}
+			{@const markerIcon = marker.cluster ? 'layers' : 'message-square'}
 			<button
 				class="marker-badge"
 				class:is-occluded={marker.occluded}
@@ -218,7 +218,7 @@
 				onpointerenter={() => (hoverId = marker.id)}
 				onpointerleave={() => (hoverId = hoverId === marker.id ? '' : hoverId)}
 			>
-				<Icon size={12} aria-hidden="true" />
+				<Icon name={markerIcon} size={16} aria-hidden="true" />
 				<span class="marker-num">{marker.number}</span>
 			</button>
 			{#if hoverId === marker.id}

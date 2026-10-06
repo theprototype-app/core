@@ -4,7 +4,7 @@
 	// Below: PROJECT — every source the scene has (codeProject.js builds the tree), searchable,
 	// read-only module sources with "Make editable copy". Chrome only; the verbs are the
 	// workspace's (openCode, moveCodeTab, the forks).
-	import { ChevronDown, ChevronRight, Folder, FileCode, Braces, Lock, Copy, Search, X, UserRound, Package, Sparkles } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { codeTabs, activeCodeTab, openCode, moveCodeTab, forkCodeTab, forkNodeTab, tabById } from '$lib/codeWorkspace';
 	import { isDirty } from '$lib/codeTabs';
 	import { codeLeftSplit } from '$lib/codeSidebars';
@@ -160,7 +160,7 @@
 	}
 
 	/** @param {string} icon */
-	const iconOf = (icon) => ({ script: FileCode, behaviour: Sparkles, builtin: UserRound, graph: Braces, file: FileCode, module: Package })[icon] ?? FileCode;
+	const iconOf = (icon) => ({ script: 'file-code', behaviour: 'sparkles', builtin: 'user-round', graph: 'braces', file: 'file-code', module: 'package' })[icon] ?? 'file-code';
 </script>
 
 {#snippet branch(/** @type {any[]} */ nodes, /** @type {number} */ depth)}
@@ -179,15 +179,15 @@
 				title={node.detail ?? node.label}
 				onclick={() => toggle(node)}
 			>
-				{#if isOpen(node)}<ChevronDown size={12} aria-hidden="true" />{:else}<ChevronRight size={12} aria-hidden="true" />{/if}
-				<Folder size={12} aria-hidden="true" />
+				{#if isOpen(node)}<Icon name="chevron-down" size={16} aria-hidden="true" />{:else}<Icon name="chevron-right" size={16} aria-hidden="true" />{/if}
+				<Icon name="folder" size={16} aria-hidden="true" />
 				<span class="cs-name">{node.label}</span>
-				{#if node.readOnly}<Lock size={10} aria-hidden="true" />{/if}
+				{#if node.readOnly}<Icon name="lock" size={16} aria-hidden="true" />{/if}
 				<span class="cs-count">{node.children.length}</span>
 			</button>
 			{#if isOpen(node)}{@render branch(node.children, depth + 1)}{/if}
 		{:else}
-			{@const Icon = iconOf(node.icon)}
+			{@const leafIcon = iconOf(node.icon)}
 			<div class="cs-leaf-wrap" class:cs-on={node.key === activeKey}>
 				<button
 					class="cs-row cs-leaf"
@@ -201,13 +201,13 @@
 					title={(node.detail ? node.label + ' — ' + node.detail : node.label) + (node.readOnly ? ' (read-only)' : '')}
 					onclick={() => openLeaf(node)}
 				>
-					<Icon size={12} aria-hidden="true" />
+					<Icon name={leafIcon} size={16} aria-hidden="true" />
 					<span class="cs-name">{node.label}</span>
 					{#if node.detail}<span class="cs-detail">{node.detail}</span>{/if}
-					{#if node.readOnly}<Lock size={10} aria-hidden="true" />{/if}
+					{#if node.readOnly}<Icon name="lock" size={16} aria-hidden="true" />{/if}
 				</button>
 				{#if node.fork}
-					<button class="cs-act" tabindex="-1" data-fork-key={node.key} title="Make editable copy — copy this code into a script you own" aria-label="Make editable copy of {node.label}" onclick={() => forkLeaf(node)}><Copy size={11} aria-hidden="true" /></button>
+					<button class="cs-act" tabindex="-1" data-fork-key={node.key} title="Make editable copy — copy this code into a script you own" aria-label="Make editable copy of {node.label}" onclick={() => forkLeaf(node)}><Icon name="copy" size={16} aria-hidden="true" /></button>
 				{/if}
 			</div>
 		{/if}
@@ -233,12 +233,12 @@
 						tabindex={tab.id === ($activeCodeTab ?? $codeTabs[0]?.id) ? 0 : -1}
 						onclick={() => activeCodeTab.set(tab.id)}
 					>
-						{#if tab.readOnly}<Lock size={10} aria-hidden="true" />{:else}<FileCode size={12} aria-hidden="true" />{/if}
+						{#if tab.readOnly}<Icon name="lock" size={16} aria-hidden="true" />{:else}<Icon name="file-code" size={16} aria-hidden="true" />{/if}
 						<span class="cs-name">{tab.title}</span>
 						{#if badOf(tab)}<span class="cs-bad" aria-label="has problems">!</span>{/if}
 						{#if isDirty(tab)}<span class="cs-dirty" aria-label="unsaved">●</span>{/if}
 					</button>
-					<button class="cs-act" tabindex="-1" aria-label="Close {tab.title}" title="Close" onclick={() => onClose(tab.id)}><X size={11} aria-hidden="true" /></button>
+					<button class="cs-act" tabindex="-1" aria-label="Close {tab.title}" title="Close" onclick={() => onClose(tab.id)}><Icon name="x" size={16} aria-hidden="true" /></button>
 				</div>
 			{/each}
 			{#if !$codeTabs.length}<p class="cs-empty">Nothing open.</p>{/if}
@@ -259,7 +259,7 @@
 	<section class="cs-section cs-grow">
 		<header class="cs-head">Project</header>
 		<label class="cs-search">
-			<Search size={12} aria-hidden="true" />
+			<Icon name="search" size={16} aria-hidden="true" />
 			<input id="code-ws-project-search" type="search" placeholder="Search scripts…" bind:value={query} aria-label="Search the project's scripts" />
 		</label>
 		<div

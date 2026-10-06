@@ -6,7 +6,7 @@
 	// H6 (notes v2): rows are "#n name — description", grouped by LABEL (collapsible,
 	// 'General' first) with per-group ‹ › traversal in GLOBAL pin-number order, plus
 	// a header toggle for the in-scene pins.
-	import { ChevronDown, ChevronRight, ChevronLeft, Pencil, Eye, EyeOff } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { notesDrawerOpen, inspectorClose, noteDoubleClickToOpen } from '../../stores/appStore.js';
 	import {
 		annotations,
@@ -151,7 +151,7 @@
 					aria-pressed={$showNotePins}
 					onclick={() => showNotePins.set(!$showNotePins)}
 				>
-					{#if $showNotePins}<Eye size={15} aria-hidden="true" />{:else}<EyeOff size={15} aria-hidden="true" />{/if}
+					{#if $showNotePins}<Icon name="eye" size={16} aria-hidden="true" />{:else}<Icon name="eye-off" size={16} aria-hidden="true" />{/if}
 				</button>
 				<button class="ui-button-quiet" title="Close" aria-label="Close notes" onclick={() => notesDrawerOpen.set(false)}>✕</button>
 			</div>
@@ -171,9 +171,9 @@
 								onclick={() => (collapsed = { ...collapsed, [group.label]: !collapsed[group.label] })}
 							>
 								{#if collapsed[group.label]}
-									<ChevronRight size={14} aria-hidden="true" />
+									<Icon name="chevron-right" size={16} aria-hidden="true" />
 								{:else}
-									<ChevronDown size={14} aria-hidden="true" />
+									<Icon name="chevron-down" size={16} aria-hidden="true" />
 								{/if}
 								<span class="truncate">{group.label}</span>
 								<span class="text-gray-500">({group.rows.length})</span>
@@ -184,7 +184,7 @@
 								aria-label={'Previous note in ' + group.label}
 								onclick={() => step(group, -1)}
 							>
-								<ChevronLeft size={14} aria-hidden="true" />
+								<Icon name="chevron-left" size={16} aria-hidden="true" />
 							</button>
 							<button
 								class="notes-icon"
@@ -192,7 +192,7 @@
 								aria-label={'Next note in ' + group.label}
 								onclick={() => step(group, 1)}
 							>
-								<ChevronRight size={14} aria-hidden="true" />
+								<Icon name="chevron-right" size={16} aria-hidden="true" />
 							</button>
 						</div>
 						{#if !collapsed[group.label]}
@@ -232,7 +232,7 @@
 												aria-label="Edit note"
 												onclick={() => openAnnotation(row.a.id, 'edit')}
 											>
-												<Pencil size={14} aria-hidden="true" />
+												<Icon name="pencil" size={16} aria-hidden="true" />
 											</button>
 											<button
 												class="shrink-0 text-gray-500 hover:text-red-400"

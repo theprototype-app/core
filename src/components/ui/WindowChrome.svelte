@@ -41,7 +41,7 @@
 		...rest
 	} = $props();
 
-	const iconSize = $derived(size === 'tool' ? 14 : 16);
+	const iconSize = $derived(size === 'tool' ? 16 : 20);
 	const hasCount = $derived(count !== undefined && count !== null && count !== '');
 </script>
 
@@ -49,19 +49,19 @@
 	<header class="wc-head" class:wc-nav={!!onback} bind:this={headerEl} {...headerAttrs}>
 		{#if onback}
 			<button type="button" class="wc-back" onclick={onback}>
-				<Icon name="chevron-left" size={20} strokeWidth={1.75} />
+				<Icon name="chevron-left" size={20} />
 				<span>{backLabel}</span>
 			</button>
 		{/if}
 		{#if icon && size === 'panel' && !onback}
-			<span class="wc-icon" aria-hidden="true"><Icon name={icon} size={16} strokeWidth={1.75} /></span>
+			<span class="wc-icon" aria-hidden="true"><Icon name={icon} size={16} /></span>
 		{/if}
 		<h2 class="wc-title" id={titleId}>{title}</h2>
 		{#if hasCount}<span class="wc-count">{count}</span>{/if}
 		{#if actions}<div class="wc-actions">{@render actions()}</div>{/if}
 		{#if onpopout}
 			<button type="button" class="wc-btn" aria-label="Pop out" title="Pop out" onclick={onpopout}>
-				<Icon name="external-link" size={iconSize} strokeWidth={1.75} />
+				<Icon name="external-link" size={iconSize} />
 			</button>
 		{/if}
 		{#if onpin}
@@ -73,12 +73,12 @@
 				aria-pressed={pinned}
 				onclick={onpin}
 			>
-				<Icon name={pinned ? 'pin' : 'pin-off'} size={iconSize} strokeWidth={1.75} />
+				<Icon name={pinned ? 'pin' : 'pin-off'} size={iconSize} />
 			</button>
 		{/if}
 		{#if onclose}
 			<button type="button" class="wc-btn wc-close" aria-label={closeLabel || (title ? `Close ${title}` : 'Close')} title="Close" onclick={onclose}>
-				<Icon name="x" size={size === 'tool' ? 14 : 18} strokeWidth={1.75} />
+				<Icon name="x" size={size === 'tool' ? 16 : 20} />
 			</button>
 		{/if}
 	</header>

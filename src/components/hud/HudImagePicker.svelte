@@ -8,7 +8,7 @@
 	// imports into the Explorer, an Explorer drag-drop target, a thumbnail, a clear ✕, and a
 	// "waiting for peer" state so a hash whose bytes are still in flight says so instead of
 	// looking like a broken picker.
-	import { X } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { onDestroy } from 'svelte';
 	import { explorerItems, itemByHash, importFiles } from '$lib/explorer';
 	import { hudImageFor, resolveHudImage, shareHudImage, registerHudImageListener } from '$lib/hudImages';
@@ -105,7 +105,7 @@
 	</span>
 	{#if hash}
 		<button class="hud-pick-clear" title="Remove this image" aria-label="Remove this image" onclick={() => assign('')}>
-			<X size={11} aria-hidden="true" />
+			<Icon name="x" size={16} aria-hidden="true" />
 		</button>
 	{/if}
 </div>

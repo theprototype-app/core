@@ -1,18 +1,7 @@
 <script lang="ts">
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
-	import {
-		Pencil,
-		Trash2,
-		X,
-		Check,
-		Circle,
-		Star,
-		Square,
-		Video,
-		VideoOff,
-		LocateFixed
-	} from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import {
 		annotations,
 		activeAnnotation,
@@ -95,7 +84,7 @@
 			target: controls.target.toArray()
 		};
 	}
-	const SHAPE_ICONS: Record<string, any> = { round: Circle, star: Star, square: Square };
+	const SHAPE_ICONS: Record<string, any> = { round: 'circle', star: 'star', square: 'square' };
 
 	let nameInput: HTMLInputElement | null = $state(null);
 	$effect(() => {
@@ -242,11 +231,11 @@
 					aria-label="Edit note"
 					onclick={() => activeAnnotation.set({ id: note.id, mode: 'edit' })}
 				>
-					<Pencil size={15} aria-hidden="true" />
+					<Icon name="pencil" size={16} aria-hidden="true" />
 				</button>
 			{/if}
 			<button class="note-icon" title="Close" aria-label="Close note" onclick={close}>
-				<X size={15} aria-hidden="true" />
+				<Icon name="x" size={16} aria-hidden="true" />
 			</button>
 		</div>
 
@@ -296,7 +285,7 @@
 				<span class="note-caption">Pin shape — VR only</span>
 				<div class="note-shapes" role="group" aria-label="Pin shape">
 					{#each NOTE_SHAPES as s (s)}
-						{@const ShapeIcon = SHAPE_ICONS[s]}
+						{@const shapeIcon = SHAPE_ICONS[s]}
 						<button
 							class="note-shape"
 							class:is-on={shape === s}
@@ -305,7 +294,7 @@
 							aria-pressed={shape === s}
 							onclick={() => (shape = s)}
 						>
-							<ShapeIcon size={14} aria-hidden="true" />
+							<Icon name={shapeIcon} size={16} aria-hidden="true" />
 							<span>{s}</span>
 						</button>
 					{/each}
@@ -329,7 +318,7 @@
 				<span class="note-caption">Camera</span>
 				<div class="note-camera">
 					<button class="note-flat" title="Store the current view with this note" onclick={saveView}>
-						<LocateFixed size={13} aria-hidden="true" />
+						<Icon name="locate-fixed" size={16} aria-hidden="true" />
 						{pose ? 'Update saved view' : 'Save camera view'}
 					</button>
 					{#if pose}
@@ -339,7 +328,7 @@
 							aria-label="Clear the saved camera view"
 							onclick={() => (pose = null)}
 						>
-							<X size={13} aria-hidden="true" />
+							<Icon name="x" size={16} aria-hidden="true" />
 						</button>
 					{/if}
 				</div>
@@ -353,13 +342,13 @@
 			<div class="note-actions">
 				{#if existing}
 					<button class="note-danger" title="Delete note" aria-label="Delete note" onclick={remove}>
-						<Trash2 size={14} aria-hidden="true" /> Delete
+						<Icon name="trash-2" size={16} aria-hidden="true" /> Delete
 					</button>
 				{/if}
 				<span class="flex-1"></span>
 				<button class="ui-button-quiet" onclick={cancel}>Cancel</button>
 				<button class="note-primary" onclick={save}>
-					<Check size={14} aria-hidden="true" /> Save
+					<Icon name="check" size={16} aria-hidden="true" /> Save
 				</button>
 			</div>
 		{:else}
@@ -377,7 +366,7 @@
 			</div>
 			<div class="note-actions">
 				<button class="note-danger" title="Delete note" aria-label="Delete note" onclick={remove}>
-					<Trash2 size={14} aria-hidden="true" /> Delete
+					<Icon name="trash-2" size={16} aria-hidden="true" /> Delete
 				</button>
 				<span class="flex-1"></span>
 				<!-- H11: the follow session outlives this card — closing it keeps riding -->
@@ -390,16 +379,16 @@
 					onclick={() => (following ? stopNoteFollow() : startNoteFollow(note.id))}
 				>
 					{#if following}
-						<VideoOff size={14} aria-hidden="true" /> Following
+						<Icon name="video-off" size={16} aria-hidden="true" /> Following
 					{:else}
-						<Video size={14} aria-hidden="true" /> Follow
+						<Icon name="video" size={16} aria-hidden="true" /> Follow
 					{/if}
 				</button>
 				<button
 					class="note-primary"
 					onclick={() => activeAnnotation.set({ id: note.id, mode: 'edit' })}
 				>
-					<Pencil size={14} aria-hidden="true" /> Edit
+					<Icon name="pencil" size={16} aria-hidden="true" /> Edit
 				</button>
 			</div>
 		{/if}

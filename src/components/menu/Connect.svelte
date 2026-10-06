@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronDown, Copy, Globe } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight, toastStore, toastsInDrawerOnly } from '../../stores/appStore'
 	import { Input, Button } from 'flowbite-svelte';
 	import { onMount, tick } from 'svelte';
@@ -280,7 +280,7 @@
 			color="primary"
 			class="nob shrink-0 rounded-lg bg-gray-600 text-gray-900 ring-0 dark:bg-gray-600 dark:text-gray-200"
 			onclick={copy}
-			title="Copy your invite link"><span class="inline-flex items-center gap-1.5" style="white-space: nowrap;"><Copy size={14} aria-hidden="true" />{myidcap}</span></Button
+			title="Copy your invite link"><span class="inline-flex items-center gap-1.5" style="white-space: nowrap;"><Icon name="copy" size={16} aria-hidden="true" />{myidcap}</span></Button
 		>
 		<span class="connect-divider"></span>
 
@@ -381,7 +381,7 @@
 			aria-expanded={$connectDrawerOpen}
 			onclick={toggleInfo}
 		>
-			<ChevronDown size={16} class="cx-chevron" aria-hidden="true" />
+			<Icon name="chevron-down" size={16} class="cx-chevron" aria-hidden="true" />
 			<!-- 15-B4: with toasts routed drawer-only, a CLOSED drawer hid them
 				 entirely — surface the same count the Toasts tab shows. -->
 			{#if hiddenToastCount > 0}
@@ -406,7 +406,7 @@
 				title="Browse public rooms"
 				aria-label="Browse public rooms"
 				onclick={openRooms}
-			><Globe size={16} class="mr-1" aria-hidden="true" />Rooms</button>
+			><Icon name="globe" size={16} class="mr-1" aria-hidden="true" />Rooms</button>
 		{/if}
 
 		<!-- open-core (M1d): cloud plugin mount point. Empty in the OSS build; the

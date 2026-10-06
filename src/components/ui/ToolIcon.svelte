@@ -242,8 +242,10 @@
 		}
 	};
 
-	/** @type {{ name: string, size?: number }} */
-	let { name, size = 18 } = $props();
+	// 38 R10: rendered through ui/Icon.svelte as `tool:<name>` (Icon passes the standard size
+	// and stroke); components never import this file directly.
+	/** @type {{ name: string, size?: number, strokeWidth?: number, class?: string }} */
+	let { name, size = 18, strokeWidth = 2, class: cls = '' } = $props();
 	// back-compat: a plain array is a base-only glyph, so callers written before
 	// the duotone split keep working untouched
 	const glyph = $derived.by(() => {
@@ -254,13 +256,13 @@
 </script>
 
 <svg
-	class="lucide"
+	class="lucide {cls}"
 	width={size}
 	height={size}
 	viewBox="0 0 24 24"
 	fill="none"
 	stroke="currentColor"
-	stroke-width="2"
+	stroke-width={strokeWidth}
 	stroke-linecap="round"
 	stroke-linejoin="round"
 	aria-hidden="true"

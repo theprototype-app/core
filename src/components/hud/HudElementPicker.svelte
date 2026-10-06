@@ -14,7 +14,7 @@
 	// cannot enumerate must still work (an element a module creates, or one on a document
 	// this pane is not looking at). Suggestions are a convenience, never the allowed set —
 	// so "enter id manually" is one click away and free text.
-	import { ChevronDown, X, Pipette } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { onDestroy } from 'svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import {
@@ -182,7 +182,7 @@
 		<button type="button" class="nodrag nopan hud-ep-field" onclick={open} title={value || 'nothing picked'}>
 			<span class="hud-ep-name">{shown}</span>
 			{#if sub}<span class="hud-ep-sub">{sub}</span>{/if}
-			<ChevronDown size={12} aria-hidden="true" />
+			<Icon name="chevron-down" size={16} aria-hidden="true" />
 		</button>
 		{#if mode === 'element'}
 			<button
@@ -194,12 +194,12 @@
 				title={armed ? 'Click an element on the artboard (Esc to cancel)' : 'Pick on the artboard'}
 				onclick={() => (armed ? hudPickArm.set(null) : armHudPick(token))}
 			>
-				<Pipette size={12} aria-hidden="true" />
+				<Icon name="pipette" size={16} aria-hidden="true" />
 			</button>
 		{/if}
 		{#if value}
 			<button type="button" class="nodrag nopan hud-ep-icon" aria-label="Clear" title="Clear" onclick={() => onpick?.('')}>
-				<X size={12} aria-hidden="true" />
+				<Icon name="x" size={16} aria-hidden="true" />
 			</button>
 		{/if}
 	{/if}

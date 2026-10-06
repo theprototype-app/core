@@ -15,7 +15,7 @@
 	// the headset lane streams into `liveSources` (profilerView.js).
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { Circle, Square, History, Upload, GitCompare, Camera, Activity } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { profilerLiveOpen } from '$lib/perf/liveSink';
 	import DockTabs from '../DockTabs.svelte';
 	import ProfilerTimeline from './profiler/ProfilerTimeline.svelte';
@@ -606,11 +606,11 @@
 				class="ui-button-quiet"
 				title="Take a per-object capture now"
 				onclick={() => void captureNow()}
-				><Camera size={12} class="inline" aria-hidden="true" /> Capture</button
+				><Icon name="camera" size={16} class="inline" aria-hidden="true" /> Capture</button
 			>
 		{/if}
 		<button id="profiler-stop" class="ui-button-quiet pf-stop" onclick={stop}
-			><Square size={11} class="inline" aria-hidden="true" /> Stop</button
+			><Icon name="square" size={16} class="inline" aria-hidden="true" /> Stop</button
 		>
 	{:else}
 		<div class="tp-seg" role="group" aria-label="Recording mode">
@@ -638,13 +638,13 @@
 			</select>
 		{/if}
 		<button id="profiler-record" class="ui-button-quiet pf-record" onclick={record}
-			><Circle size={11} class="inline" aria-hidden="true" /> Record</button
+			><Icon name="circle" size={16} class="inline" aria-hidden="true" /> Record</button
 		>
 		<button
 			id="profiler-last30"
 			class="ui-button-quiet"
 			title="Save the last 30 seconds the app always keeps (light)"
-			onclick={lastThirty}><History size={12} class="inline" aria-hidden="true" /> Last 30 s</button
+			onclick={lastThirty}><Icon name="history" size={16} class="inline" aria-hidden="true" /> Last 30 s</button
 		>
 	{/if}
 	<button
@@ -652,7 +652,7 @@
 		class="ui-button-quiet"
 		title="Open .tpprof recordings or beacon exports (or drop them on the panel)"
 		onclick={() => fileInput?.click()}
-		><Upload size={12} class="inline" aria-hidden="true" /> Import</button
+		><Icon name="upload" size={16} class="inline" aria-hidden="true" /> Import</button
 	>
 	<button
 		id="profiler-compare-toggle"
@@ -660,7 +660,7 @@
 		aria-pressed={compareOn}
 		class:pf-on={compareOn}
 		onclick={toggleCompare}
-		><GitCompare size={12} class="inline" aria-hidden="true" /> Compare</button
+		><Icon name="git-compare" size={16} class="inline" aria-hidden="true" /> Compare</button
 	>
 	<!-- 36 U5: the Live view (a peer's frames as they arrive) opens from here now — it used to be
 	     a burger-menu row, away from the tool it belongs to -->
@@ -669,7 +669,7 @@
 		class="ui-button-quiet"
 		title="Watch a peer's frames live (a headset in your room)"
 		onclick={() => profilerLiveOpen.set(true)}
-		><Activity size={12} class="inline" aria-hidden="true" /> Live</button
+		><Icon name="activity" size={16} class="inline" aria-hidden="true" /> Live</button
 	>
 	<input
 		bind:this={fileInput}

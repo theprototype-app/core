@@ -18,7 +18,7 @@
 	import { PING_SOUNDS, playPing } from '$lib/pingAudio';
 	import { safeStorage } from '$lib/safeStorage';
 	import { flyTo } from '$lib/objectActions';
-	import { X, ChevronLeft, ChevronRight, Play } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 
 	const HATS = [
 		{ value: 'none', name: 'None' },
@@ -170,7 +170,7 @@
 		<header class="cp-head">
 			<b>Customize character</b>
 			<button id="character-close" class="cp-icon" aria-label="Close without applying" title="Close (Esc)" onclick={() => end(false)}>
-				<X size={18} aria-hidden="true" />
+				<Icon name="x" size={20} aria-hidden="true" />
 			</button>
 		</header>
 
@@ -178,9 +178,9 @@
 			<section>
 				<div class="cp-label">Character</div>
 				<div class="cp-cycle">
-					<button class="cp-icon" aria-label="Previous character" onclick={() => cycle(-1)}><ChevronLeft size={18} aria-hidden="true" /></button>
+					<button class="cp-icon" aria-label="Previous character" onclick={() => cycle(-1)}><Icon name="chevron-left" size={20} aria-hidden="true" /></button>
 					<span id="character-current" class="cp-current">{shownName}</span>
-					<button class="cp-icon" aria-label="Next character" onclick={() => cycle(1)}><ChevronRight size={18} aria-hidden="true" /></button>
+					<button class="cp-icon" aria-label="Next character" onclick={() => cycle(1)}><Icon name="chevron-right" size={20} aria-hidden="true" /></button>
 				</div>
 				<div class="cp-chips" role="radiogroup" aria-label="Character">
 					{#each choices as c (c.value)}
@@ -271,7 +271,7 @@
 						{#each PING_SOUNDS as s (s.id)}<option value={s.id}>{s.name}</option>{/each}
 					</select>
 					<button id="character-ping-preview" class="cp-chip" title="Ping beside your character (only you see and hear it)" onclick={pingHere}>
-						<Play size={13} aria-hidden="true" /> Preview
+						<Icon name="play" size={16} aria-hidden="true" /> Preview
 					</button>
 				</div>
 				<p class="cp-note">Peers see and hear YOUR pings this way.</p>

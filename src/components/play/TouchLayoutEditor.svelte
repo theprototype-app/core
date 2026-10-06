@@ -14,7 +14,7 @@
 	// handlers die in panel chrome; a drag must survive leaving its element).
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { X, RotateCcw, Check } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { gameId } from '$lib/gameSettings';
 	import {
 		touchPrefs,
@@ -284,10 +284,10 @@
 			<p class="tle-hint">Drag a control to move it. Select one to resize it (or pinch it with a second finger).</p>
 		{/if}
 		<div class="tle-row tle-actions">
-			<button type="button" class="tle-btn" id="touch-layout-reset" data-tour="touch-layout-reset" onclick={reset}><RotateCcw size={14} aria-hidden="true" /> Reset</button>
+			<button type="button" class="tle-btn" id="touch-layout-reset" data-tour="touch-layout-reset" onclick={reset}><Icon name="rotate-ccw" size={16} aria-hidden="true" /> Reset</button>
 			<span class="tle-spacer"></span>
-			<button type="button" class="tle-btn" id="touch-layout-cancel" onclick={() => closeTouchLayoutEditor()}><X size={14} aria-hidden="true" /> Cancel</button>
-			<button type="button" class="tle-btn tle-primary" id="touch-layout-save" data-tour="touch-layout-save" onclick={save}><Check size={14} aria-hidden="true" /> Save</button>
+			<button type="button" class="tle-btn" id="touch-layout-cancel" onclick={() => closeTouchLayoutEditor()}><Icon name="x" size={16} aria-hidden="true" /> Cancel</button>
+			<button type="button" class="tle-btn tle-primary" id="touch-layout-save" data-tour="touch-layout-save" onclick={save}><Icon name="check" size={16} aria-hidden="true" /> Save</button>
 		</div>
 	</div>
 </div>

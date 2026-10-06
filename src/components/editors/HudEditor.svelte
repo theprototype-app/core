@@ -22,12 +22,7 @@
 	// geometry over absolute rects, because the anchor conversion is the whole difficulty
 	// and it belongs on this side of the seam.
 	import { untrack } from 'svelte';
-	import {
-		AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical,
-		AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical,
-		AlignVerticalSpaceAround, BoxSelect, Camera, Copy, Eye, EyeOff, MousePointer2,
-		Proportions, Trash2
-	} from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { hudEditorClose, showToast } from '../../stores/appStore.js';
 	import {
 		hudDocs, hudRuntime, hudSelection, hudScreenOverride, HUD_ANCHORS, HUD_SCENE_KEY,
@@ -550,15 +545,15 @@
 	/** the topbar's glyphs. Presentation, so it lives here and not in the data module. */
 	/** @type {Record<string, any>} */
 	const ARRANGE_ICONS = {
-		'align-left': AlignStartVertical,
-		'align-hcenter': AlignCenterVertical,
-		'align-right': AlignEndVertical,
-		'align-top': AlignStartHorizontal,
-		'align-vcenter': AlignCenterHorizontal,
-		'align-bottom': AlignEndHorizontal,
-		'distribute-h': AlignHorizontalSpaceAround,
-		'distribute-v': AlignVerticalSpaceAround,
-		equalize: Proportions
+		'align-left': 'align-start-vertical',
+		'align-hcenter': 'align-center-vertical',
+		'align-right': 'align-end-vertical',
+		'align-top': 'align-start-horizontal',
+		'align-vcenter': 'align-center-horizontal',
+		'align-bottom': 'align-end-horizontal',
+		'distribute-h': 'align-horizontal-space-around',
+		'distribute-v': 'align-vertical-space-around',
+		equalize: 'proportions'
 	};
 
 	// --- keys ------------------------------------------------------------------
@@ -992,7 +987,7 @@
 					aria-pressed={tool === 'select'}
 					aria-label="Select tool"
 					title="Select — click an element to pick it, drag it to move it, Shift to add"
-					onclick={() => (tool = 'select')}><MousePointer2 size={14} aria-hidden="true" /></button
+					onclick={() => (tool = 'select')}><Icon name="mouse-pointer-2" size={16} aria-hidden="true" /></button
 				>
 				<button
 					id="hud-tool-marquee"
@@ -1000,7 +995,7 @@
 					aria-pressed={tool === 'marquee'}
 					aria-label="Multi-select tool"
 					title="Multi-select — drag a box on the board to select everything it touches (Shift adds to the selection)"
-					onclick={() => (tool = 'marquee')}><BoxSelect size={14} aria-hidden="true" /></button
+					onclick={() => (tool = 'marquee')}><Icon name="box-select" size={16} aria-hidden="true" /></button
 				>
 				<span class="hud-sep"></span>
 				<!-- ONE list drives these AND the context menu (`$lib/hudArrange`), so a new op
@@ -1009,7 +1004,7 @@
 					{#if i > 0 && HUD_ARRANGE_OPS[i - 1].group !== op.group}
 						<span class="hud-sep"></span>
 					{/if}
-					{@const Glyph = ARRANGE_ICONS[op.key]}
+					{@const glyph = ARRANGE_ICONS[op.key]}
 					<button
 						id="hud-arrange-{op.key}"
 						class="hud-btn"
@@ -1019,11 +1014,11 @@
 						title="{op.label} — {op.hint}{selected.length < op.min
 							? ' (needs ' + op.min + ' selected)'
 							: ''}"
-						onclick={() => runArrange(op.key)}><Glyph size={14} aria-hidden="true" /></button
+						onclick={() => runArrange(op.key)}><Icon name={glyph} size={16} aria-hidden="true" /></button
 					>
 				{/each}
 				<span class="hud-sep"></span>
-				<button class="hud-btn" title="Duplicate (Ctrl+D)" disabled={!selected.length} onclick={duplicate}><Copy size={14} aria-hidden="true" /></button>
+				<button class="hud-btn" title="Duplicate (Ctrl+D)" disabled={!selected.length} onclick={duplicate}><Icon name="copy" size={16} aria-hidden="true" /></button>
 				<button
 					class="hud-btn hud-danger"
 					title="Delete (Del)"
@@ -1031,7 +1026,7 @@
 					onclick={() => {
 						removeHudElements(docKey, screenId, selected);
 						setPicks([]);
-					}}><Trash2 size={14} aria-hidden="true" /></button
+					}}><Icon name="trash-2" size={16} aria-hidden="true" /></button
 				>
 				<span class="hud-sep"></span>
 				<label class="hud-check"><input type="checkbox" checked={snapOn} onchange={(/** @type {any} */ e) => (snapOn = e.currentTarget.checked)} /> Snap</label>
@@ -1045,7 +1040,7 @@
 					title={$hudPreviewInViewport ? 'Hide the HUD in the viewport while editing' : 'Also show the HUD in the viewport'}
 					onclick={() => hudPreviewInViewport.set(!$hudPreviewInViewport)}
 				>
-					{#if $hudPreviewInViewport}<Eye size={14} aria-hidden="true" />{:else}<EyeOff size={14} aria-hidden="true" />{/if}
+					{#if $hudPreviewInViewport}<Icon name="eye" size={16} aria-hidden="true" />{:else}<Icon name="eye-off" size={16} aria-hidden="true" />{/if}
 				</button>
 				<!-- E1.4: the stage is a fixed REFERENCE and the numbers you type are px against
 				     it, while the runtime is the real window. Saying both out loud is the whole
@@ -1074,7 +1069,7 @@
 			<!-- 21-D5: which DOCUMENT — the scene HUD, or one attached to a camera. A
 			     camera-attached HUD shows only while that camera is being looked through. -->
 			<label class="hud-doc-pick" title="A camera HUD shows only while you look through that camera">
-				<Camera size={12} aria-hidden="true" />
+				<Icon name="camera" size={16} aria-hidden="true" />
 				<select
 					id="hud-doc-key"
 					class="hud-input"

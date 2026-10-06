@@ -1,15 +1,5 @@
 <script lang="ts">
-	import {
-		AudioLines,
-		Box,
-		ChevronLeft,
-		ChevronRight,
-		CornerLeftUp,
-		Folder,
-		Image,
-		RotateCw,
-		Settings
-	} from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { untrack } from 'svelte';
 	// R22 round 11 — WAS ImagePreviewWindow, and it is the FILE preview now: image, audio
 	// or 3D, with arrows that walk the folder you are looking at.
@@ -528,7 +518,7 @@
 		if (get(openPreviewCog) === winId) openPreviewCog.set(null);
 	}
 
-	const ICONS: any = { image: Image, audio: AudioLines, object: Box, folder: Folder };
+	const ICONS: any = { image: 'image', audio: 'audio-lines', object: 'box', folder: 'folder' };
 </script>
 
 {#if target}
@@ -576,7 +566,7 @@
 				title="Previous file in this folder (←)"
 				aria-label="Previous file"
 				disabled={!canPrev}
-				onclick={() => step(-1)}><ChevronLeft size={14} aria-hidden="true" /></button
+				onclick={() => step(-1)}><Icon name="chevron-left" size={16} aria-hidden="true" /></button
 			>
 			<!--
 				R22 ROUND 24 (user): "when 9/25 and then show 10/25 files the second arrow slightly
@@ -609,7 +599,7 @@
 				title="Next file in this folder (→)"
 				aria-label="Next file"
 				disabled={!canNext}
-				onclick={() => step(1)}><ChevronRight size={14} aria-hidden="true" /></button
+				onclick={() => step(1)}><Icon name="chevron-right" size={16} aria-hidden="true" /></button
 			>
 			<button
 				id="preview-up"
@@ -618,14 +608,14 @@
 				title="Up one folder (Backspace)"
 				aria-label="Up one folder"
 				disabled={!upAvailable}
-				onclick={() => void goUp()}><CornerLeftUp size={14} aria-hidden="true" /></button
+				onclick={() => void goUp()}><Icon name="corner-left-up" size={16} aria-hidden="true" /></button
 			>
 			<!-- the title is the FIRST thing to go: the window is already showing you the file,
 			     and the name stays on the tooltip and on the drag handle -->
 			<span class="pv-title" class:pv-gone={hideTitle} title={target.title}>
 				{#key face}
-					{@const Ico = ICONS[face ?? 'image'] ?? Image}
-					<Ico size={16} class="mr-1" aria-hidden="true" />
+					{@const faceIcon = ICONS[face ?? 'image'] ?? 'image'}
+					<Icon name={faceIcon} size={16} class="mr-1" aria-hidden="true" />
 				{/key}{target.title}</span
 			>
 			<span class="flex-1"></span>
@@ -642,7 +632,7 @@
 				title="Overlay settings"
 				aria-label="Overlay settings"
 				onclick={() => openPreviewCog.set(cogOpen ? null : winId)}
-				><Settings size={14} aria-hidden="true" /></button
+				><Icon name="settings" size={16} aria-hidden="true" /></button
 			>
 			<button class="ui-button-quiet" title="Close" onclick={close}>✕</button>
 		</div>
@@ -817,7 +807,7 @@
 				     the space above it is left empty rather than stretched (the user's words). -->
 				<div class="pv-audio">
 					<div class="pv-audio-art">
-						<AudioLines size={44} aria-hidden="true" />
+						<Icon name="audio-lines" size={48} aria-hidden="true" />
 					</div>
 					<AudioPlayer bind:this={player} itemId={target.itemId} name={target.name ?? target.title} />
 				</div>
@@ -909,13 +899,13 @@
 				-->
 				{#if !$previewShowStats && winOpacity >= 1}
 					<span class="pv-hint" aria-hidden="true">
-						<RotateCw size={12} />
+						<Icon name="rotate-cw" size={16} />
 						{spinning ? 'Click to stop' : 'Click to auto-rotate'} · drag to turn · scroll to zoom
 					</span>
 				{/if}
 			{:else if face === 'folder'}
 				<div class="pv-folder">
-					<Folder size={44} aria-hidden="true" />
+					<Icon name="folder" size={48} aria-hidden="true" />
 					<span class="pv-folder-name">{target.title}</span>
 					<button id="preview-enter" class="ui-button-quiet" onclick={() => void enterFolder()}>Open (Enter)</button>
 				</div>

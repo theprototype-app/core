@@ -4,7 +4,7 @@
 	// LIMITS (max drops, lifetime) that keep it from growing without bound. Every write goes
 	// through waterActions (local apply + objectParameters 'pour' + one props undo entry).
 	import { Button } from 'flowbite-svelte';
-	import { Droplet, Trash2 } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { normalizePour } from '$lib/water/pourDrops.js';
@@ -39,7 +39,7 @@
 	{#if !pour}
 		<div class="ui-row items-center gap-2">
 			<Button id="pour-add" size="xs" color="alternative" onclick={() => setObjectPour(uuid, {})}>
-				<Droplet size={16} class="mr-1" aria-hidden="true" />Add pour emitter
+				<Icon name="droplet" size={16} class="mr-1" aria-hidden="true" />Add pour emitter
 			</Button>
 		</div>
 	{:else}
@@ -79,7 +79,7 @@
 		</p>
 		<div class="ui-row items-center gap-2">
 			<Button id="pour-remove" size="xs" color="alternative" onclick={() => setObjectPour(uuid, null)}>
-				<Trash2 size={16} class="mr-1" aria-hidden="true" />Remove pour emitter
+				<Icon name="trash-2" size={16} class="mr-1" aria-hidden="true" />Remove pour emitter
 			</Button>
 		</div>
 	{/if}

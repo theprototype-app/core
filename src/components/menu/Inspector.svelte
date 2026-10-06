@@ -2664,6 +2664,39 @@
 				>
 					Start the simulation when play mode opens
 				</Checkbox>
+				<!-- 38 R8 (NOTES-38 #4): the top "Playing · Press Esc to stop" banner — the hint by
+				     default; a game or an advanced scene may hide it or say its own words -->
+				<div class="ui-row items-center gap-2">
+					<span class="w-24 shrink-0 text-xs text-gray-300">Top banner</span>
+					<ThemedSelect
+						id="physics-play-banner"
+						class="flex-1"
+						value={$scenePlay.banner?.mode ?? 'hint'}
+						items={[
+							{ value: 'hint', name: 'Show hint' },
+							{ value: 'hide', name: 'Hide' },
+							{ value: 'custom', name: 'Custom text' }
+						]}
+						onchange={(/** @type {any} */ val) =>
+							setScenePhysics({
+								play: { banner: val === 'hint' ? null : val === 'hide' ? { mode: 'hide' } : { mode: 'custom', text: $scenePlay.banner?.text ?? '' } }
+							})}
+					/>
+				</div>
+				{#if $scenePlay.banner?.mode === 'custom'}
+					<div class="ui-row items-center gap-2">
+						<span class="w-24 shrink-0 text-xs text-gray-300">Banner text</span>
+						<input
+							id="physics-play-banner-text"
+							class="ui-input flex-1 text-xs"
+							type="text"
+							maxlength="80"
+							placeholder="e.g. Find the three keys"
+							value={$scenePlay.banner.text}
+							onchange={(e) => setScenePhysics({ play: { banner: { mode: 'custom', text: e.currentTarget.value } } })}
+						/>
+					</div>
+				{/if}
 				<!-- 30c: where desktop play starts — feet position + heading, shared scene data -->
 				<div class="ui-row items-center gap-2">
 					<span class="w-24 shrink-0 text-xs text-gray-300">Spawn point</span>

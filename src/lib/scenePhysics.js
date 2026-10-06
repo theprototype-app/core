@@ -95,6 +95,16 @@ function optional(key, value) {
 	return value == null ? {} : { [key]: value };
 }
 
+/** 38 R8 (NOTES-38 #4): the top "Playing · Press Esc to stop" banner in play mode. The DEFAULT
+ *  (show the hint) is never written; a scene may hide it or put its own words there.
+ *  @param {any} v @returns {{mode: 'hide'} | {mode: 'custom', text: string} | null} */
+export function normalizePlayBanner(v) {
+	if (!v || typeof v !== 'object') return null;
+	if (v.mode === 'hide') return { mode: 'hide' };
+	if (v.mode === 'custom') return { mode: 'custom', text: typeof v.text === 'string' ? v.text.slice(0, 80) : '' };
+	return null;
+}
+
 /** @param {any} v @param {boolean} fallback */
 function bool(v, fallback) {
 	return typeof v === 'boolean' ? v : fallback;
@@ -189,9 +199,11 @@ export function normalizeScenePhysics(raw) {
 				// authored (absent = no limit, every scene before it)
 				...optional('reach', normalizeReach(playRaw.reach)),
 				// 36 F22: a game's rays skip water + triggers unless it opts back in here
-				...optional('rayHits', normalizeRayHits(playRaw.rayHits))
+				...optional('rayHits', normalizeRayHits(playRaw.rayHits)),
+				// 38 R8: the play banner, present only when not the default hint
+				...optional('banner', normalizePlayBanner(playRaw.banner))
 			},
-			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits']
+			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits', 'banner']
 		),
 		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
 		// this module is store-only and the response clamps through clampThrow anyway
@@ -254,7 +266,7 @@ scenePhysicsState_.subscribe((s) => sceneGravity.set(s.gravity));
 export const scenePhysicsGround = derived(scenePhysicsState_, (s) => s.ground);
 /** out-of-bounds config. NOT named `sceneBounds` — that is sceneBounds.js */
 export const scenePhysicsBounds = derived(scenePhysicsState_, (s) => s.bounds);
-/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free', spawn?: {position, yaw}}) */
+/** play-mode block ({interaction, grounded, simOnPlay, cursor?: 'free', spawn?: {position, yaw}, banner?}) */
 export const scenePlay = derived(scenePhysicsState_, (s) => s.play);
 /** A1: the knock block ({enabled, gain, maxSpeed, minSpeed, radius, spin, predict}) */
 export const sceneKnock = derived(scenePhysicsState_, (s) => s.knock);

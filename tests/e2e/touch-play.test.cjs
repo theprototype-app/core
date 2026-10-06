@@ -129,7 +129,7 @@ h.run(async () => {
 	h.check(coarse === true, 'the touch context reports (pointer: coarse)');
 
 	// ---- 1. entering play gives a phone a way out -------------------------------
-	await A.page.locator('#play-button').click();
+	await A.page.locator('#ps-play').click(); // 38 R9: the phone shell's Play (the toolbar pill stands down < 640px)
 	await h.eventually(() => lockedState(A.page), (v) => v === true, 'touch device enters play');
 	const entered = await A.page.evaluate(() => {
 		const exit = document.querySelector('#play-exit');
@@ -264,7 +264,7 @@ h.run(async () => {
 	h.check(!restored.overlay, 'and the overlay goes with play mode');
 
 	// ---- 7. the hardware Back button ---------------------------------------------
-	await A.page.locator('#play-button').click();
+	await A.page.locator('#ps-play').click(); // 38 R9: the phone shell's Play (the toolbar pill stands down < 640px)
 	await h.eventually(() => lockedState(A.page), (v) => v === true, 'play re-enters');
 	const marked = await historyState(A.page);
 	h.check(
@@ -284,7 +284,7 @@ h.run(async () => {
 	// guard: without the consume, the marker would still be on top after a ✕ exit and
 	// the next real Back press would be silently swallowed by it.
 	await h.eventually(() => lockedState(A.page), (v) => v === null, 'settled before re-entry');
-	await A.page.locator('#play-button').click();
+	await A.page.locator('#ps-play').click(); // 38 R9: the phone shell's Play (the toolbar pill stands down < 640px)
 	await h.eventually(() => lockedState(A.page), (v) => v === true, 'play re-enters once more');
 	await A.page.locator('#play-exit').click();
 	await h.eventually(() => lockedState(A.page), (v) => v !== true, 'the ✕ exits again');
@@ -302,7 +302,7 @@ h.run(async () => {
 	await A.page.evaluate(() =>
 		window.__stores.gamepadPrefs.setGamepadPrefs({ enabled: false })
 	);
-	await A.page.locator('#play-button').click();
+	await A.page.locator('#ps-play').click(); // 38 R9: the phone shell's Play (the toolbar pill stands down < 640px)
 	await h.eventually(() => lockedState(A.page), (v) => v === true, 'play re-enters with the pad off');
 	const beforeNoPad = await rig(A.page);
 	await gesture(A.page, cdp, [[L, midY], [L, midY - 70]], { holdMs: 700 });

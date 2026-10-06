@@ -18,7 +18,7 @@
 		starterPresets,
 		resolvePreset,
 		applyMaterialPreset,
-		lookOfMaterial,
+		lookOfObject,
 		saveMaterialPreset,
 		saveObjectMaterialAsPreset,
 		renameMaterialPreset,
@@ -33,8 +33,9 @@
 
 	const starters = starterPresets();
 
-	/** the primary object's look now (re-read on every Inspector poke: `material` is a fresh snapshot) */
-	const look = $derived(material?.ref ? lookOfMaterial(material.ref) : null);
+	/** the primary object's look now, selection tint removed (re-read on every Inspector poke:
+	 * `material` is a fresh snapshot, so reading it here is the dependency) */
+	const look = $derived(material?.ref && primaryUuid ? lookOfObject(primaryUuid) : null);
 
 	/** resolved starters, once (their procedural maps are generated on first use) */
 	const resolvedStarters = starters.map((s) => ({ ...s, resolved: resolvePreset(s.preset) }));

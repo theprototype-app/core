@@ -36,6 +36,15 @@ import {
 } from './materialPresetsCore';
 import { proceduralMaps } from './materialPresetMaps';
 
+// PRIMED dynamic import (the materialsHandler/animationPreview pattern): objectActions holds the
+// selection-tint memory, and a static edge from here would put this module (reached from
+// peerHandler at boot) on a cycle through objectActions' own import tree.
+/** @type {any} */
+let actionsRef = null;
+import('./objectActions')
+	.then((module) => (actionsRef = module))
+	.catch(() => {});
+
 /** this person's saved presets: [{name, payload}] */
 export const materialPresets = writable(/** @type {{name: string, payload: any}[]} */ ([]));
 /** each connected peer's library, by peer id */
@@ -168,6 +177,10 @@ export function applyMaterialPreset(uuid, preset) {
 	const resolved = resolvePreset(preset);
 	if (!object?.material || Array.isArray(object.material) || !resolved) return false;
 	const before = materialsPayload(object);
+	// a tinted member's material carries the selection highlight in `emissive`: the undo
+	// snapshot must hold the author's emissive, or undo restores the highlight as the look
+	const tinted = actionsRef?.selectionTintOriginals?.(uuid)?.[object.uuid];
+	if (typeof tinted === 'number' && before.materials?.[0] && 'emissive' in before.materials[0]) before.materials[0].emissive = tinted;
 	const after = presetWirePayload(resolved, object.material);
 	applyMaterials(object, after, false);
 	const fresh = object.material;
@@ -175,6 +188,9 @@ export function applyMaterialPreset(uuid, preset) {
 		const node = objectOf(other);
 		if (node && !Array.isArray(node.material)) node.material = fresh;
 	}
+	// a multi-select member wears the selection tint: the new material takes it too, and the
+	// tint memory now restores THIS material's emissive on deselect (not the replaced one's)
+	actionsRef?.refreshMemberTint?.(uuid);
 	recordEntry({ kind: 'material', uuid, param: 'materials', before: { value: before }, after: { value: after } });
 	/** @type {any} */
 	const peer = get(peers);
@@ -201,6 +217,29 @@ export function lookOfMaterial(material, label = 'Material') {
 		mapUrl: material.userData?.mapDataUrl ?? null,
 		normalMapUrl: material.normalMap ? (material.userData?.normalMapDataUrl ?? null) : null
 	});
+}
+
+/**
+ * The look an OBJECT wears — its material's look with the selection tint taken back out (a
+ * multi-select member's emissive is the highlight, not the author's).
+ * @param {string} uuid @param {string} [label]
+ */
+export function lookOfObject(uuid, label = 'Material') {
+	const object = objectOf(uuid);
+	const look = lookOfMaterial(object?.material, label);
+	if (!look) return null;
+	const original = actionsRef?.selectionTintOriginals?.(uuid)?.[object.uuid];
+	if (typeof original === 'number') {
+		const hex = '#' + original.toString(16).padStart(6, '0');
+		if (hex === '#000000') {
+			delete look.emissive;
+			delete look.emissiveIntensity;
+		} else {
+			look.emissive = hex;
+			if (typeof object.material.emissiveIntensity === 'number') look.emissiveIntensity = object.material.emissiveIntensity;
+		}
+	}
+	return look;
 }
 
 /** Does this material wear this preset? @param {any} material @param {any} preset */
@@ -255,7 +294,7 @@ export async function saveMaterialPreset(name, payload, opts = {}) {
 
 /** Snapshot an object's material and save it. @param {string} uuid @param {string} name */
 export async function saveObjectMaterialAsPreset(uuid, name) {
-	const look = lookOfMaterial(objectOf(uuid)?.material, name);
+	const look = lookOfObject(uuid, name);
 	if (!look) {
 		showToast('This object has no single material to save');
 		return null;

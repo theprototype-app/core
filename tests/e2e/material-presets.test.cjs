@@ -242,6 +242,30 @@ h.run(async () => {
 		'4.3 ONE undo restores each object\'s own previous look: ' + back.map((g) => g.color + (g.hasMap ? '+map' : '')).join(', ')
 	);
 
+	// the selection TINT is not a look: members wear the highlight emissive, the look reads past it
+	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await selectSet(A.page, [b1, b2, b3]); // a fresh set: every member wears the highlight now
+	const tint = await A.page.evaluate((u) => {
+		const raw = window.__stores.materialPresets.lookOfMaterial(
+			window.__stores.objectsGroup && (() => { let g = null; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.getObjectByProperty('uuid', u).material; })()
+		);
+		const look = window.__stores.materialPresets.lookOfObject(u);
+		return { raw: raw?.emissive ?? null, look: look?.emissive ?? null };
+	}, b3);
+	h.check(tint.raw === '#2a4d8f' && tint.look === null, '4.4 a tinted member reads its OWN look, not the highlight: ' + JSON.stringify(tint));
+	// a preset applied to tinted members survives the deselect (the tint memory must not write
+	// the REPLACED material's emissive over the new one — Neon's glow used to vanish)
+	await swatch(A.page, 'starter', 'Neon').click();
+	await A.page.waitForTimeout(700);
+	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
+	await A.page.waitForTimeout(500);
+	const glow = await Promise.all([b1, b2, b3].map((u) => matOf(A.page, u)));
+	h.check(glow.every((g) => g.emissive === 'ff2bd6'), '4.5 Neon keeps its glow after the set is deselected: ' + glow.map((g) => g.emissive).join(', '));
+	await A.page.evaluate(() => window.__stores.history.undo());
+	await A.page.waitForTimeout(800);
+	const unglow = await Promise.all([b1, b2, b3].map((u) => matOf(A.page, u)));
+	h.check(unglow.every((g) => g.emissive === '000000'), '4.6 and undo takes it back to no glow (no tint baked in): ' + unglow.map((g) => g.emissive).join(', '));
+
 	// ------------------------------------------------------------------ 5. save current
 	console.log('\n=== 5. save current, persist, rename, delete ===');
 	await selectSet(A.page, [b3]);
@@ -267,10 +291,10 @@ h.run(async () => {
 	const stored = await A.page.evaluate(async () => {
 		await window.__stores.materialPresets.loadMaterialPresets();
 		const list = await new Promise((r) => window.__stores.materialPresets.materialPresets.subscribe(r)());
-		return list.map((p) => ({ name: p.name, color: p.payload.color, roughness: p.payload.roughness }));
+		return list.map((p) => ({ name: p.name, color: p.payload.color, roughness: p.payload.roughness, emissive: p.payload.emissive ?? null }));
 	});
 	h.check(
-		stored.length === 1 && stored[0].color === '#cc2244' && Math.abs(stored[0].roughness - 0.2) < 1e-3,
+		stored.length === 1 && stored[0].color === '#cc2244' && Math.abs(stored[0].roughness - 0.2) < 1e-3 && stored[0].emissive === null,
 		'5.3 stored in IndexedDB with the look: ' + JSON.stringify(stored)
 	);
 	// a duplicate save does not overwrite: it counts up

@@ -337,13 +337,13 @@ export function makeCloudApi() {
 		 * or renames anything locally — publish is a COPY OUT, and the "a save names the
 		 * room" rules (rounds 34/35) are untouched. `name` is the file's own name only; it
 		 * defaults to the open scene's name, else 'Untitled'. `packs` are never bundled.
-		 * @param {{assets?: boolean, flow?: boolean, name?: string}} [opts]
+		 * @param {{assets?: boolean, flow?: boolean, name?: string, signature?: boolean}} [opts]
 		 * @returns {Promise<{blob: Blob, meta: {objectCount: number, hasFlow: boolean, hasAudio: boolean,
 		 *   hasGame: boolean, modules: {id: string, version: string}[], appVersion: string, bytes: number,
 		 *   camera: {position: number[], target: number[]} | null, duration: number | null, files: any[],
-		 *   signature: string}}>} (`signature` = CL-5's content identity, see sceneSignature)
+		 *   signature?: string}}>} (`signature` = CL-5's content identity, only with `signature: true`)
 		 */
-		buildSceneBundle: async ({ assets = true, flow = true, name = '' } = {}) => {
+		buildSceneBundle: async ({ assets = true, flow = true, name = '', signature = false } = {}) => {
 			const { buildSessionPayload, exportSessionZip, sessionFileList } = await import('./sessions');
 			// 36-community (C4): a published file carries the scene's permanent game id
 			const { ensureGameId } = await import('./gameIdentity.js');
@@ -352,8 +352,10 @@ export function makeCloudApi() {
 			const zip = await exportSessionZip(payload, { assets: assets !== false, flow: flow !== false, packs: false });
 			const blob = new Blob([/** @type {BlobPart} */ (zip)], { type: 'application/zip' });
 			const meta = await bundleMeta(payload, { flow: flow !== false, bytes: blob.size, files: sessionFileList(payload) });
-			// CL-5 (37-continuity): ADDITIVE — the content signature of what was just bundled (see sceneSignature below)
-			return { blob, meta: { ...meta, signature: await contentSignature(payload) } };
+			// CL-5 (37-continuity): ADDITIVE, opt-in — the content signature of what was just bundled (see
+			// sceneSignature below). Opt-in because it is one more pass over the whole payload: a publish of a
+			// big kit scene must not pay for what only a room keeper reads.
+			return { blob, meta: signature === true ? { ...meta, signature: await contentSignature(payload) } : meta };
 		},
 
 		/**
@@ -537,7 +539,8 @@ export function makeCloudApi() {
 		 *  sceneSignature: no uuid/createdAt/thumbnail, no latest-wins stamps, no game state). The revision
 		 *  counter above moves on every internal refresh too, so "did the scene really change since the
 		 *  version I saved / loaded?" is answered by comparing two of these, never two revisions.
-		 *  `buildSceneBundle` returns the same string as `meta.signature`. One serialization per call.
+		 *  `buildSceneBundle({signature: true})` returns the same string as `meta.signature`. One
+		 *  serialization per call.
 		 *  @returns {Promise<string>} */
 		sceneSignature: async () => {
 			const { buildSessionPayload } = await import('./sessions');

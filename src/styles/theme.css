@@ -383,12 +383,13 @@
 /* 36 U1: `ui-panel-header` / `ui-section-label` are @apply'd dark-panel inks (gray-100 /
    gray-400). Inside a `ui-panel` (dark in every theme) they are right; OUTSIDE one — the
    Inspector drawer is bg-white on light — the drawer title read 1.1:1 and its section
-   labels 2.6:1. */
+   labels 2.6:1. (38 R5: a `.tp-ui` surface — the redesigned Inspector — inks its labels
+   from the tokens itself.) */
 :root[data-theme='light'] .ui-panel-header:not(.ui-panel *) {
 	color: var(--text) !important;
 	border-color: var(--border) !important;
 }
-:root[data-theme='light'] .ui-section-label:not(.ui-panel *) {
+:root[data-theme='light'] .ui-section-label:not(.ui-panel *):not(.tp-ui *):not(.tp-ui) {
 	color: var(--muted) !important;
 }
 /* 36 U1: the pale primary inks (an armed mode button's label on its primary tint) are

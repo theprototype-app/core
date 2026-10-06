@@ -187,8 +187,10 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.objectActions.deselectObject());
 	await page.evaluate(() => window.__stores.openSceneSection('Advanced'));
 	await h.eventually(() => page.locator('#pick-through-water').isVisible(), (v) => v, 'Configure Scene ▸ Advanced shows the setting', 5000);
-	h.check(await page.locator('#pick-through-water').isChecked(), 'water passes through by default');
-	h.check(!(await page.locator('#pick-through-transparent').isChecked()) && !(await page.locator('#pick-through-triggers').isChecked()), 'transparent and triggers do not by default');
+	// 38 R5: the switches are Toggles — their state is aria-pressed
+	const isOn = async (/** @type {string} */ sel) => (await page.locator(sel).getAttribute('aria-pressed')) === 'true';
+	h.check(await isOn('#pick-through-water'), 'water passes through by default');
+	h.check(!(await isOn('#pick-through-transparent')) && !(await isOn('#pick-through-triggers')), 'transparent and triggers do not by default');
 	if (SHOTS) await page.locator('#pick-through-water').screenshot({ path: SHOTS + '-setting-row.png' }).catch(() => {});
 	if (SHOTS) await page.screenshot({ path: SHOTS + '-setting.png' });
 	await page.locator('#pick-through-water').click();

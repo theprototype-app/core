@@ -29,6 +29,8 @@ h.run(async () => {
 		await P.evaluate(() => {
 			const s = window.__stores;
 			s.phoneShell.phoneSheet.set(null);
+			s.viewportMenu.set(null);
+			s.objectContextMenu.set(null);
 			s.objectListClose.set(true);
 			s.chatHidden.set('hidden');
 			s.aiAssistantHidden.set('hidden');
@@ -207,6 +209,28 @@ h.run(async () => {
 	await tap('#ps-add');
 	await P.waitForTimeout(300);
 	row(17, await visible('.ctx-scroll'), 'Add (+) is the bottom bar Add and opens the add menu');
+	// Phase B: the Add tab IS the Add list (rooted, not the whole viewport menu), as a
+	// bottom sheet; a category drills in place over it and Back returns
+	const addRows = await read(() => [...document.querySelectorAll('[role=menu] > .ctx-row, [role=menu] .ctx-row')].map((r) => r.textContent.trim().split(/\s+/)[0]));
+	h.check(addRows[0] === 'Mesh' && !addRows.includes('Undo'), `the Add tab opens the Add list itself (${JSON.stringify(addRows.slice(0, 4))})`);
+	const sheet = await read(() => document.querySelector('[role=menu].ctx-scroll').getBoundingClientRect().toJSON());
+	h.check(Math.abs(sheet.bottom - 844) < 2 && sheet.left === 0 && Math.abs(sheet.width - 390) < 2, `menus are bottom sheets on the phone shell (${JSON.stringify(sheet)})`);
+	await tap('[role=menu] .ctx-row:has-text("Mesh")');
+	await P.waitForTimeout(400);
+	const sub = await read(() => { const n = document.querySelector('.ctx-scroll:not([role])'); return n && { r: n.getBoundingClientRect().toJSON(), back: n.querySelector('.ctx-back')?.textContent.trim(), cube: [...n.querySelectorAll('.ctx-row')].some((r) => r.textContent.trim() === 'Cube') }; });
+	h.check(sub && sub.back === 'Mesh' && sub.cube && Math.abs(sub.r.top - sheet.top) < 2 && Math.abs(sub.r.height - sheet.height) < 2, `a submenu drills in place over its parent, with Back (${JSON.stringify(sub)})`);
+	await tap('.ctx-back');
+	await P.waitForTimeout(300);
+	h.check((await read(() => document.querySelectorAll('.ctx-scroll:not([role])').length)) === 0 && (await visible('[role=menu].ctx-scroll')), 'Back returns to the Add list');
+	const objsBefore = await read(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; });
+	await tap('[role=menu] .ctx-row:has-text("Mesh")');
+	await P.waitForTimeout(400);
+	await tap('.ctx-scroll:not([role]) .ctx-row:has(span.flex-1:text-is("Cube"))');
+	await h.eventually(() => read(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; }), (n) => n === objsBefore + 1, 'tapping Cube in the sheet adds a cube and closes the menu', 5000);
+	h.check(!(await visible('.ctx-scroll')), 'the sheet closes after adding');
+	// leave the scene empty: later rows long-press the empty viewport
+	await read(() => window.__stores.history.undo());
+	await h.eventually(() => read(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); return g.children.length; }), (n) => n === objsBefore, 'undo takes the added cube back', 5000);
 	await P.keyboard.press('Escape');
 	await P.mouse.click(5, 420).catch(() => {});
 	await rest();

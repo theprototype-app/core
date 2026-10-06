@@ -219,6 +219,72 @@
 	display: none !important;
 }
 
+/* ---- 4. menus are bottom sheets ------------------------------------------------------
+   Every ContextMenu (the viewport/Add menu, an object's menu, the node editor's) opens as
+   a sheet along the bottom edge, where the thumb is, at ONE fixed height: a submenu is a
+   second sheet laid exactly OVER its parent (drill in place) with a Back row on top
+   (ContextMenuItems' .ctx-back), so the two never peek out from under each other.
+   ContextMenu/placeSubmenu still measure and write left/top inline; !important wins. */
+:root.phone-shell .ctx-scroll {
+	left: 0 !important;
+	right: 0 !important;
+	top: auto !important;
+	bottom: 0 !important;
+	width: auto !important;
+	min-width: 0 !important;
+	height: min(68vh, 600px);
+	max-height: min(68vh, 600px) !important;
+	box-sizing: border-box;
+	padding: 18px 6px calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+	border-radius: 18px 18px 0 0 !important;
+	border-width: 1px 0 0 !important;
+	font-size: 15px !important;
+	box-shadow: 0 -12px 32px rgb(0 0 0 / 0.35) !important;
+}
+/* the sheet's grabber: a visual cue that this is a sheet (the backdrop closes it) */
+:root.phone-shell .ctx-scroll[role='menu']::before {
+	content: '';
+	position: absolute;
+	top: 7px;
+	left: 50%;
+	width: 36px;
+	height: 4px;
+	margin-left: -18px;
+	border-radius: 2px;
+	background: var(--text-faint, rgb(148 163 184 / 0.6));
+}
+:root.phone-shell .ctx-scroll .ctx-row {
+	display: flex;
+	align-items: center;
+	min-height: 44px;
+	border-radius: 10px;
+	white-space: normal !important;
+}
+:root.phone-shell .ctx-scroll .ctx-row > span {
+	flex: 1;
+	min-width: 0;
+}
+:root.phone-shell .ctx-back {
+	display: flex !important;
+	align-items: center;
+	gap: 6px;
+	width: 100%;
+	min-height: 44px;
+	margin: -8px 0 4px;
+	padding: 0 8px;
+	border: 0;
+	border-bottom: 1px solid var(--border, rgb(55 65 81 / 0.6));
+	background: transparent;
+	color: var(--text, inherit);
+	font-weight: 600;
+	font-size: 16px;
+	text-align: left;
+}
+/* the search-height grip belongs to a pointer-resized desktop menu */
+:root.phone-shell .ctx-grip {
+	display: none !important;
+}
+
 /* SPEC NOTES-38 #1: no native scrollbars in sheets or menus on a phone — touch scrolls
    without one, and the main menu shows none at all */
 :root.phone-shell [data-ps-host],

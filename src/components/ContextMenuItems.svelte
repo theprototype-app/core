@@ -107,15 +107,36 @@
 			clearTimeout(closeTimer);
 			if (openChild === item.label) return; // already open — just cancel any close
 			openTimer = setTimeout(() => onopen([...path, item.label]), 120);
-		} else if (openChild) {
+		} else if (openChild && tapOpened !== openChild) {
 			// grazing a leaf on the way INTO an open submenu must not slam it shut
 			clearTimeout(closeTimer);
 			closeTimer = setTimeout(() => onopen(path), 150);
 		}
 	}
+	/** 38 R9: a finger has no hover — a TAP on a submenu row opens it at once (a mouse
+	 *  click keeps the hover-intent behaviour; a click inside the open submenu bubbles
+	 *  here too, so only a press on this row itself counts) */
+	function tapRow(e: MouseEvent, item: any) {
+		const kind = (e as PointerEvent).pointerType;
+		if (kind !== 'touch' && kind !== 'pen') return;
+		if ((e.target as HTMLElement)?.closest('.ctx-scroll') !== (e.currentTarget as HTMLElement).closest('.ctx-scroll')) return;
+		clearTimeout(openTimer);
+		clearTimeout(closeTimer);
+		tapOpened = item.label;
+		if (openChild !== item.label) onopen([...path, item.label]);
+	}
+	/** a submenu a finger opened stays open until a tap elsewhere or Back: the
+	 *  compatibility mouse events a tap leaves behind must not hover it shut */
+	let tapOpened: string | null = null;
+	// only openChild is a dependency here: the pin is forgotten when the open submenu
+	// CHANGES, never in the instant between the tap and the open it asked for
+	const childChanged = (child: string | null) => {
+		if (child !== tapOpened) tapOpened = null;
+	};
+	$: childChanged(openChild);
 	function leaveRow() {
 		clearTimeout(openTimer);
-		if (!openChild) return;
+		if (!openChild || tapOpened === openChild) return;
 		clearTimeout(closeTimer);
 		closeTimer = setTimeout(() => onopen(path), 150);
 	}
@@ -184,6 +205,9 @@
 			<div class="ctx-divider" role="presentation"></div>
 		{/if}
 	{:else if item.children}
+		<!-- the click is the TOUCH open (tapRow); the keyboard opens submenus through
+		     ContextMenu's arrow/Enter navigation -->
+		<!-- svelte-ignore a11y_interactive_supports_focus, a11y_click_events_have_key_events -->
 		<div
 			class="relative {itemClass} ctx-row"
 			class:ctx-active={atNav && indexOf.get(item) === highlight}
@@ -192,6 +216,7 @@
 			role="menuitem"
 			on:mouseenter={() => hoverRow(item, indexOf.get(item) ?? -1)}
 			on:mouseleave={leaveRow}
+			on:click={(e) => tapRow(e, item)}
 		>
 			<span class="flex items-center gap-2">
 				{#if hasIcons}
@@ -213,6 +238,12 @@
 					class="ctx-scroll fixed min-w-36 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-700"
 					style="z-index: calc(var(--z-menu) + 2);"
 				>
+					<!-- 38 R9: on the phone shell a submenu is a sheet laid OVER its parent
+					     (drill in place), so it needs a way back; hidden everywhere else
+					     (phone.css). Not a menuitem: keyboard nav and the suites skip it. -->
+					<button type="button" class="ctx-back" on:click|stopPropagation={() => onopen(path)}>
+						<Icon name="chevron-left" size={16} /><span>{item.label}</span>
+					</button>
 					<svelte:self
 						items={item.children}
 						{onrun}
@@ -269,6 +300,10 @@
 {/each}
 
 <style>
+	/* 38 R9: the submenu Back row exists for the phone sheet only (phone.css shows it) */
+	.ctx-back {
+		display: none;
+	}
 	/* ONE highlight for mouse and keyboard — they can never disagree (16-P1) */
 	.ctx-row.ctx-active,
 	.ctx-row.ctx-open {

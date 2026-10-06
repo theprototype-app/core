@@ -45,6 +45,7 @@
 		connectDrawerPinned,
 		waitingForApproval,
 		viewportMenuOpener,
+		viewportMenu,
 		multiSelectMode,
 		touchTools,
 		showSidebar,
@@ -271,6 +272,9 @@
 		const r = document.getElementById('ps-add')?.getBoundingClientRect();
 		const centre = canvasCenter();
 		$viewportMenuOpener?.(centre.x, centre.y, true, r?.left ?? 16, r?.top ?? window.innerHeight - 90);
+		// the Add tab is the Add LIST itself (the design's Add sheet), not the whole
+		// viewport menu — that one stays on the canvas long-press and More › Viewport tools
+		viewportMenu.update((m) => (m ? { ...m, only: 'add' } : m));
 	}
 	// unread chat: messages that arrived while the chat sheet was closed
 	let seenChat = $state(0);

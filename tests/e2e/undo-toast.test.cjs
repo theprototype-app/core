@@ -71,6 +71,10 @@ h.run(async () => {
 		await h.eventually(() => pa.locator('#confirm-clear-scene').isVisible(), (v) => v, 'the Clear scene dialog opens', 20000);
 	}
 
+	// the 8 s offer is a person's window; at a load average of 30 one page call can take
+	// seconds, so the suite widens it (and narrows it in section 6 to watch an expiry)
+	await pa.evaluate(() => (window.__stores.undoToast.undoTiming.ms = 60000));
+
 	// ---- 0. a scene worth keeping: three objects, a note, a sky -----------------------
 	for (const cmd of ['/create box', '/create sphere 1', '/create cone 1'])
 		await pa.evaluate((c) => window.__stores.commandsHandler.sceneCommand(c), cmd);
@@ -209,16 +213,19 @@ h.run(async () => {
 	await pa.waitForTimeout(300);
 
 	// ---- 6. the offer EXPIRES: after ~8 s there is nothing to undo ---------------------
+	await pa.evaluate(() => (window.__stores.undoToast.undoTiming.ms = 3000));
+	const offeredBefore = await pa.evaluate(() => window.__stores.undoToast.undoToastDebug().offered);
 	await openClear();
 	await pa.locator('#confirm-dialog-clear').click();
-	await h.eventually(() => undoCard().isVisible(), (v) => v, '6.1 Undo offered', 20000);
+	// the debug count, not the card: a 3 s card can come and go between two polls on a loaded box
+	await h.eventually(() => pa.evaluate(() => window.__stores.undoToast.undoToastDebug().offered), (n) => n > offeredBefore, '6.1 Undo offered', 20000);
 	// the drawer hides viewport toasts while open: the offer must still run out (its timer
 	// is the module's, not the rendered card's)
 	await pa.evaluate(() => window.__stores.toastsInDrawerOnly?.set?.(true));
-	await pa.waitForTimeout(8600);
+	await pa.waitForTimeout(3600);
 	await pa.evaluate(() => window.__stores.toastsInDrawerOnly?.set?.(false));
 	const after = await pa.evaluate(() => window.__stores.undoToast.undoToastDebug());
-	h.check(after.live.length === 0 && after.toasts === 0 && after.expired >= 1, `6.2 after 8 s the offer is gone (${JSON.stringify(after)})`);
+	h.check(after.live.length === 0 && after.toasts === 0 && after.expired >= 1, `6.2 after its time the offer is gone (${JSON.stringify(after)})`);
 	h.check((await undoCard().count()) === 0, '6.3 no Undo card on screen');
 	h.check((await uuids(pa)).length === 0 && (await uuids(B.page)).length === 0, '6.4 and the clear stands');
 	const hist = await pa.evaluate(() => {

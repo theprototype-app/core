@@ -24,6 +24,9 @@ import { toastStore, pushNotification, showToast } from '../stores/appStore';
 
 /** how long an Undo stays on offer, in ms */
 export const UNDO_MS = 8000;
+/** the offer length in force — a suite on a loaded box widens it (and narrows it to watch an
+ * expiry) through the debug hook; nothing in the app writes it */
+export const undoTiming = { ms: UNDO_MS };
 
 /** @type {Map<string, {timer: any, entry: any}>} the live offers, by id */
 const live = new Map();
@@ -43,7 +46,7 @@ function drop(entry) {
  *   `done` = the toast after a successful undo; `actions` = extra buttons AFTER Undo
  * @returns {{id: string, cancel: () => void}}
  */
-export function offerUndo({ id, text, undo, ms = UNDO_MS, done = 'Undone', actions = [] }) {
+export function offerUndo({ id, text, undo, ms = undoTiming.ms, done = 'Undone', actions = [] }) {
 	withdrawUndo(id);
 	let used = false;
 	/** @type {any} */

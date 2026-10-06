@@ -84,11 +84,11 @@ export function faceOf(mesh, id) {
 	const v = new THREE.Vector3();
 	let halfW = 0.3;
 	let top = 0.5;
-	let front = 0.45;
+	/** @type {(number[] | null)[]} each vertex in the head-centre frame (null = not the head's) */
+	const local = new Array(pos.count).fill(null);
 	if (hi >= 0 && inv) {
 		halfW = 0;
 		top = 0;
-		front = 0;
 		for (let k = 0; k < pos.count; k++) {
 			let best = 0;
 			let bi = -1;
@@ -104,12 +104,35 @@ export function faceOf(mesh, id) {
 			v.y -= HEAD_CENTER_ABOVE_BONE;
 			halfW = Math.max(halfW, Math.abs(v.x));
 			top = Math.max(top, v.y);
-			if (Math.abs(v.y) < 0.12 && Math.abs(v.x) < 0.3) front = Math.max(front, v.z);
+			local[k] = [v.x, v.y, v.z];
 		}
 	}
 	const eyeX = Math.min(halfW, 0.6) * 0.33;
+	// the depth of the face AT each eye: a ray straight through the eye point, the front-most HEAD
+	// triangle it crosses. Not the nose tip and not a nearby helmet rim (the knight's face sits
+	// recessed inside its helmet) — a star in front of the face slides off the eye seen from the side
+	const index = mesh.geometry.index;
+	const tris = index ? index.count / 3 : pos.count / 3;
+	const vid = (/** @type {number} */ t, /** @type {number} */ c) => (index ? index.getX(t * 3 + c) : t * 3 + c);
+	const depthAt = (/** @type {number} */ x, /** @type {number} */ y) => {
+		let z = -Infinity;
+		for (let t = 0; t < tris; t++) {
+			const a = local[vid(t, 0)];
+			const b = local[vid(t, 1)];
+			const c = local[vid(t, 2)];
+			if (!a || !b || !c) continue;
+			const d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+			if (Math.abs(d) < 1e-9) continue;
+			const l1 = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (y - c[1])) / d;
+			const l2 = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (y - c[1])) / d;
+			const l3 = 1 - l1 - l2;
+			if (l1 < 0 || l2 < 0 || l3 < 0) continue;
+			z = Math.max(z, l1 * a[2] + l2 * b[2] + l3 * c[2]);
+		}
+		return Number.isFinite(z) && z > 0 ? z : 0.45;
+	};
 	const face = {
-		eyes: [new THREE.Vector3(-eyeX, 0, front + 0.03), new THREE.Vector3(eyeX, 0, front + 0.03)],
+		eyes: [new THREE.Vector3(-eyeX, 0, depthAt(-eyeX, 0) + 0.015), new THREE.Vector3(eyeX, 0, depthAt(eyeX, 0) + 0.015)],
 		ring: Math.min(halfW, 0.62) + 0.06,
 		lift: Math.min(top, 0.62) + 0.12
 	};

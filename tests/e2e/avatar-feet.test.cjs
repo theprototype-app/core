@@ -67,13 +67,15 @@ h.run(async () => {
 		strides.push(await stateOn(A.page, B.id));
 		await A.page.waitForTimeout(110);
 	}
-	if (SHOTS) {
-		const s = strides[strides.length - 1];
-		await A.page.evaluate((f) => window.__stores.objectActions.flyTo([f[0] + 3.2, 0.6, f[2]], [f[0], 0.6, f[2]], 0), s.feet);
-		await A.page.waitForTimeout(400);
-		await A.page.screenshot({ path: SHOTS + '/01-feet-walking-side.png' });
-	}
 	await B.page.keyboard.up('KeyW');
+	if (SHOTS) {
+		// from the side, at the floor, once B has stopped (a walking B leaves the frame)
+		await A.page.waitForTimeout(1200);
+		const s = await stateOn(A.page, B.id);
+		await A.page.evaluate((f) => window.__stores.objectActions.flyTo([f[0] + 2.6, 0.7, f[2]], [f[0], 0.6, f[2]], 0), s.feet);
+		await A.page.waitForTimeout(500);
+		await A.page.screenshot({ path: SHOTS + '/01-feet-on-floor-side.png' });
+	}
 	const walking = strides.filter((s) => s && (s.top === 'walk' || s.top === 'run'));
 	h.check(walking.length >= 3, `1.4 (premise) A plays B's walk while B moves (${walking.length}/8 samples walking)`);
 	const soles = strides.map((s) => soleWorld(s));

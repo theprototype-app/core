@@ -93,7 +93,7 @@
 	color: var(--text);
 }
 /* the same inside a docked view's own title row */
-.tp-dock-panel .ui-button-quiet {
+:where(.tp-dock-panel .ui-button-quiet) {
 	display: inline-flex;
 	align-items: center;
 	gap: 4px;
@@ -106,7 +106,7 @@
 	font-size: var(--fs-desc);
 	font-weight: 500;
 }
-.tp-dock-panel .ui-button-quiet:hover:not(:disabled) {
+:where(.tp-dock-panel .ui-button-quiet:hover:not(:disabled)) {
 	background: var(--surface-hover);
 	color: var(--text);
 }
@@ -188,6 +188,9 @@
 	}
 }
 
+/* (the legacy-button rules below are wrapped in :where() — zero specificity, so a
+   component's own rule, e.g. FilePreview's ranking `.pv-gone { display: none }`, always
+   wins; being unlayered they still beat the ui-button-quiet utility) */
 /* A window whose header is still its own markup (the file / model / text previews, Stats,
    live Profiler — their headers carry measured rankings and suites pin their DOM) wears the
    WindowChrome TOOL header's look through this rule instead: 40px, 12px start inset, the
@@ -203,7 +206,7 @@
 	font-size: var(--fs-desc);
 	font-weight: 600;
 }
-.tp-window > .ui-panel-header .ui-button-quiet {
+:where(.tp-window > .ui-panel-header .ui-button-quiet) {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -218,7 +221,7 @@
 	font-size: var(--fs-desc);
 	font-weight: 500;
 }
-.tp-window > .ui-panel-header .ui-button-quiet:hover:not(:disabled) {
+:where(.tp-window > .ui-panel-header .ui-button-quiet:hover:not(:disabled)) {
 	background: var(--surface-hover);
 	color: var(--text);
 }
@@ -228,7 +231,7 @@
 	}
 }
 /* an unsaved editor's Save action: the accent fill (one primary per view) */
-.tp-window > .ui-panel-header .ui-button-quiet.tp-dirty {
+:where(.tp-window > .ui-panel-header) .ui-button-quiet.tp-dirty {
 	background: var(--accent-fill);
 	color: var(--on-accent);
 }

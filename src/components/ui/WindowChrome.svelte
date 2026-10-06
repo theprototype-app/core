@@ -308,7 +308,7 @@
 	}
 	/* a caller's legacy quiet button (an editor's Apply / Reload riding in its header) takes
 	   the text-action look rather than the old gray-700 chip */
-	.wc-head :global(.ui-button-quiet) {
+	:global(:where(.wc-head .ui-button-quiet)) {
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
@@ -322,7 +322,7 @@
 		font-size: var(--fs-desc);
 		font-weight: 500;
 	}
-	.wc-head :global(.ui-button-quiet:hover:not(:disabled)) {
+	:global(:where(.wc-head .ui-button-quiet:hover:not(:disabled))) {
 		background: var(--surface-hover);
 		color: var(--text);
 	}

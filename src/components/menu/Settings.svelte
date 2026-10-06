@@ -460,7 +460,7 @@
 				</aside>
 			{/if}
 			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-			<div id="settings-main" class="settings-main" use:filterSettings={settingsQuery} use:minimalScroll on:click={onMainClick}>
+			<div id="settings-main" class="settings-main" tabindex="-1" data-autofocus={narrowSettings ? '' : undefined} use:filterSettings={settingsQuery} use:minimalScroll on:click={onMainClick}>
 			<!-- ONE nav per layout (each row renders its section's header snippet, ids and tour anchors
 			     included): the phone's list stays mounted while a page is shown, so labels resolve -->
 			{#if narrowSettings}
@@ -712,6 +712,9 @@
 		overscroll-behavior: contain;
 		padding: 24px 28px 28px;
 	}
+	.settings-main:focus {
+		outline: none;
+	}
 	.settings-pages-hidden {
 		display: none;
 	}
@@ -785,9 +788,18 @@
 		.settings-main {
 			padding: 12px 16px 24px;
 		}
-		/* the title clears the logo button top-left on the list screen */
-		.settings-shell > :global(.wc .wc-head:not(.wc-nav)) {
+		/* the app logo floats top-left over every screen: the title on the list, and "‹ Back" on a
+		   page, both start clear of it */
+		.settings-shell > :global(.wc .wc-head) {
 			padding-left: 62px;
+		}
+		/* a segmented control on its own line under the label (a wide row) fills that line in
+		   equal columns — the kit's `full` form */
+		.settings-main :global(.sr-control > .seg) {
+			display: grid;
+			grid-template-columns: repeat(var(--seg-cols), minmax(0, 1fr));
+			width: 100%;
+			box-sizing: border-box;
 		}
 	}
 </style>

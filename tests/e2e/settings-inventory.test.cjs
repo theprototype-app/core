@@ -185,8 +185,20 @@ async function openPage(page, key) {
 	await page.waitForTimeout(300);
 }
 
-/** drive one row's control through the real UI @param {any} page @param {Row} row */
+/** drive one row, once more if the control was re-rendered under the click @param {any} page @param {Row} row */
 async function drive(page, row) {
+	try {
+		await driveOnce(page, row);
+	} catch (e) {
+		if (!/not attached|detached/i.test(String(e))) throw e;
+		console.log(`  (retry #${row.id}: the control was re-rendered under the click)`);
+		await page.waitForTimeout(400);
+		await driveOnce(page, row);
+	}
+}
+
+/** @param {any} page @param {Row} row */
+async function driveOnce(page, row) {
 	const sel = '#' + row.id;
 	if (row.kind === 'toggle') {
 		await page.locator(sel).scrollIntoViewIfNeeded();
@@ -237,7 +249,14 @@ h.run(async () => {
 	let rows = 0;
 	for (const [pageKey, list] of Object.entries(PAGES)) {
 		await openPage(page, pageKey);
+		// probe: does driving a row REMOUNT the page? (a re-render is fine, a remount is a finding)
+		await page.evaluate(() => document.querySelector('#settings-sections .ss-page')?.setAttribute('data-probe', '1'));
 		for (const row of list) {
+			const kept = await page.evaluate(() => !!document.querySelector('#settings-sections .ss-page[data-probe="1"]'));
+			if (!kept) {
+				console.log(`  NOTE ${pageKey}: the page was remounted before #${row.id}`);
+				await page.evaluate(() => document.querySelector('#settings-sections .ss-page')?.setAttribute('data-probe', '1'));
+			}
 			const present = await page.locator(row.kind === 'seg' ? `#${row.id} [data-value="${row.set}"]` : '#' + row.id).count();
 			if (!present) {
 				h.check(false, `${pageKey}: the control #${row.id} exists`);

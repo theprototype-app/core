@@ -226,3 +226,25 @@
 .hud-fab.hud-fab-warn {
 	color: var(--warn-text);
 }
+
+/* a phone: nine tools + Play cannot all be 44 px wide in 390 px. The bar takes the screen
+   width and the cells share it (they stay 44 px TALL); the phone's own bottom bar is R9's
+   redesign (38-mobile). Id selectors beat the nav's `min-w-max` utility. */
+@media (max-width: 520px) {
+	#controls-pill {
+		min-width: 0;
+		max-width: calc(100vw - 12px);
+		padding: 0 4px;
+	}
+	#controls-pill .hud-bar-row {
+		gap: 0;
+	}
+	#controls-pill .hud-cell {
+		flex: 0 1 var(--hud-cell);
+		width: auto;
+		min-width: 30px;
+	}
+	#controls-pill .hud-play-well {
+		width: calc(var(--hud-fab) + 6px);
+	}
+}

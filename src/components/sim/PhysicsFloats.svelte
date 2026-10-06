@@ -39,7 +39,7 @@
 </script>
 
 <div class="ui-row items-center gap-2" data-tour="physics-floats">
-	<span class="w-20 shrink-0 text-xs text-gray-400" title="How this body behaves in water volumes">Floats</span>
+	<span class="w-20 shrink-0 text-xs text-text-muted" title="How this body behaves in water volumes">Floats</span>
 	<ThemedSelect
 		id="physics-floats"
 		items={[
@@ -81,7 +81,7 @@
 		value={floats.multiplier}
 		onchange={(v) => write({ multiplier: v === 1 ? null : v })}
 	/>
-	<p class="text-[10px] text-gray-400" id="physics-floats-hint">
+	<p class="text-badge text-text-muted" id="physics-floats-hint">
 		{#if ratio == null}
 			Density = mass ÷ collider volume (water is 1000 kg/m³).
 		{:else if ratio >= 1}

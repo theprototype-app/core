@@ -5,7 +5,7 @@
 	// light (from the selection) and the scene itself ($inspectorKind = 'scene').
 	// Replication messages are byte-identical to the old three panels.
 	import * as THREE from 'three';
-	import { Checkbox, Tooltip } from 'flowbite-svelte';
+	import { Tooltip } from 'flowbite-svelte';
 	import { fly } from 'svelte/transition';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import InspectorHead from './inspector/InspectorHead.svelte';
@@ -22,6 +22,7 @@
 	import Chips from '../ui/Chips.svelte';
 	import UiButton from '../ui/Button.svelte';
 	import MenuButton from './inspector/MenuButton.svelte';
+	import InsToggle from './inspector/InsToggle.svelte';
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
@@ -1482,16 +1483,16 @@
 			<div id="file-properties" class="flex flex-col gap-3">
 				<div class="flex justify-center">
 					{#if inspectedItem.thumbnail}
-						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded-sm border border-gray-600 object-cover" />
+						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded-sm border border-border-strong object-cover" />
 					{:else}
-						<span class="flex h-24 w-24 items-center justify-center rounded-sm border border-gray-600 bg-gray-700 text-4xl text-gray-400">
+						<span class="flex h-24 w-24 items-center justify-center rounded-sm border border-border-strong bg-surface-inset text-4xl text-text-muted">
 							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={36} class={inspectedItem.kind === 'audio' ? 'ico-audio' : inspectedItem.kind === 'text' ? 'ico-doc' : ''} />
 						</span>
 					{/if}
 				</div>
 				<Section variant="panel" label="File">
 					<div class="ui-row">
-						<span class="w-16 text-gray-400">Name</span>
+						<span class="w-16 text-text-muted">Name</span>
 						<input
 							id="file-name"
 							class="ui-input flex-1"
@@ -1499,17 +1500,17 @@
 							onchange={(e) => renameItem(inspectedItem.id, e.currentTarget.value)}
 						/>
 					</div>
-					<div class="ui-row"><span class="w-16 text-gray-400">Kind</span><span class="ui-badge-type">{inspectedItem.kind}</span></div>
-					<div class="ui-row"><span class="w-16 text-gray-400">Size</span><span>{(inspectedItem.size / 1024).toFixed(1)} KB</span></div>
-					<div class="ui-row"><span class="w-16 text-gray-400">Folder</span><span class="truncate">{fileFolderPath}</span></div>
-					<div class="ui-row"><span class="w-16 text-gray-400">Added</span><span>{new Date(inspectedItem.createdAt).toLocaleString()}</span></div>
+					<div class="ui-row"><span class="w-16 text-text-muted">Kind</span><span class="ui-badge-type">{inspectedItem.kind}</span></div>
+					<div class="ui-row"><span class="w-16 text-text-muted">Size</span><span>{(inspectedItem.size / 1024).toFixed(1)} KB</span></div>
+					<div class="ui-row"><span class="w-16 text-text-muted">Folder</span><span class="truncate">{fileFolderPath}</span></div>
+					<div class="ui-row"><span class="w-16 text-text-muted">Added</span><span>{new Date(inspectedItem.createdAt).toLocaleString()}</span></div>
 					<div class="ui-row">
-						<span class="w-16 text-gray-400">Hash</span>
-						<span class="truncate font-mono text-[10px]" title={inspectedItem.hash}>{inspectedItem.hash.slice(0, 16)}…</span>
+						<span class="w-16 text-text-muted">Hash</span>
+						<span class="truncate font-mono text-badge" title={inspectedItem.hash}>{inspectedItem.hash.slice(0, 16)}…</span>
 						<button class="ui-button-quiet" title="Copy the full hash" onclick={() => navigator.clipboard?.writeText(inspectedItem.hash)}>⧉</button>
 					</div>
 					{#if fileDetails}
-						<div class="ui-row"><span class="w-16 text-gray-400">Details</span><span>{fileDetails}</span></div>
+						<div class="ui-row"><span class="w-16 text-text-muted">Details</span><span>{fileDetails}</span></div>
 					{/if}
 				</Section>
 				<Section variant="panel" label="Actions">
@@ -1531,7 +1532,7 @@
 				</Section>
 			</div>
 		{:else}
-			<p class="p-3 text-sm italic text-gray-400">The file was removed.</p>
+			<p class="p-3 text-sm italic text-text-muted">The file was removed.</p>
 		{/if}
 	{:else if $inspectorKind === 'scene'}
 		<InspectorHead
@@ -1719,14 +1720,14 @@
 						{$music.playing ? '■ Stop' : '▶ Play'}
 					</button>
 					{#if $musicBlocked && $music.playing}
-						<span class="text-xs text-amber-400">click anywhere to enable audio</span>
+						<span class="text-xs text-warn-text">click anywhere to enable audio</span>
 					{/if}
 				</div>
 				<SliderRow label="Shared volume" min={0} max={1} step={0.05} value={$music.volume} onchange={(v) => setMusicVolume(v)} />
 				<p class="ui-section-label">This device</p>
 				<SliderRow label="Local volume" min={0} max={1} step={0.05} value={$musicLocalVolume} onchange={(v) => musicLocalVolume.set(v)} />
-				<Checkbox bind:checked={$musicMuted}>Mute music on this device</Checkbox>
-				<p class="mt-1 text-xs text-gray-400">
+				<InsToggle bind:checked={$musicMuted}>Mute music on this device</InsToggle>
+				<p class="mt-1 text-xs text-text-muted">
 					One background track for everyone, synced to the same moment. Volume is shared; the local trim + mute affect only you.
 				</p>
 			</Section>
@@ -1751,12 +1752,12 @@
 						</button>
 					{/each}
 				</div>
-				<p class="mb-1 text-xs text-gray-400">
+				<p class="mb-1 text-xs text-text-muted">
 					How YOUR viewport shades the scene — not shown to peers. The scene's own look
 					(post-processing) renders for everyone regardless; switch it off below if you need to.
 				</p>
 				{#if sceneProvidesAo($scenePost)}
-					<p class="mb-1 text-[10px] text-gray-400">
+					<p class="mb-1 text-badge text-text-muted">
 						This scene sets its own ambient occlusion, so it is used instead of your personal
 						setting.
 					</p>
@@ -1766,17 +1767,17 @@
 					 "do my peers need to switch this on?" question. -->
 				<p class="ui-section-label" data-anchor="Overrides">Overrides — this device</p>
 				{#each OVERRIDES as override (override.key)}
-					<Checkbox
+					<InsToggle
 						id={'override-' + override.key}
 						checked={$viewportOverrides[override.key] !== false}
 						onchange={(e) => setRenderLayer(override.key, e.currentTarget.checked)}
 					>
 						{override.label}
-					</Checkbox>
-					<p class="mb-1 text-[10px] italic text-gray-400">{override.hint}</p>
+					</InsToggle>
+					<p class="mb-1 text-badge italic text-text-muted">{override.hint}</p>
 				{/each}
-				<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
-				<Checkbox bind:checked={$showColliders}>Show colliders — this device</Checkbox>
+				<InsToggle bind:checked={$showLightHelpers}>Show light helpers</InsToggle>
+				<InsToggle bind:checked={$showColliders}>Show colliders — this device</InsToggle>
 			</Section>
 
 			<!-- P6 — ONE STORY, not three. The post stack, the scene default material and
@@ -1789,7 +1790,7 @@
 				 on it, so both names resolve (the 21-G1 rule — the user-visible word moves,
 				 the identifier already written down does not). -->
 			<Section variant="panel" label="Scene look" badge="Shared" aliases={['Post-processing']}>
-				<p class="mb-1 text-[10px] text-gray-400">
+				<p class="mb-1 text-badge text-text-muted">
 					Three layers, all of them scene data that everyone sees: effects over the
 					finished frame (below), a default material every object without its own
 					inherits, and a material on one object. Only the right to switch a layer off
@@ -1797,7 +1798,7 @@
 				</p>
 				<PostStack />
 				<p class="ui-section-label" data-anchor="Materials">Shader materials</p>
-				<p id="scene-look-shaders" class="text-[10px] text-gray-400">
+				<p id="scene-look-shaders" class="text-badge text-text-muted">
 					{shaderSummaryOf($shaderGraphs, $objectsGroup)}
 				</p>
 				<button
@@ -1857,7 +1858,7 @@
 					onchange={(v) => setCameraNear(v)}
 				/>
 				<div class="ui-row">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Far clip</span>
+					<span class="w-20 shrink-0 text-xs text-text-muted">Far clip</span>
 					<div class="w-24 shrink-0">
 						<DragRow
 							id="camera-far"
@@ -1870,9 +1871,9 @@
 							onchange={(v) => setCameraFar(v)}
 						/>
 					</div>
-					<span class="text-[10px] text-gray-500">grows to fit the scene</span>
+					<span class="text-badge text-text-faint">grows to fit the scene</span>
 				</div>
-				<p class="text-[10px] italic text-gray-400">Clip planes are per-device (not shared).</p>
+				<p class="text-badge italic text-text-muted">Clip planes are per-device (not shared).</p>
 				<p class="ui-section-label">Orbit feel</p>
 				<SliderRow
 					label="Rotate speed"
@@ -1901,17 +1902,17 @@
 					value={$orbitPrefs.panSpeed}
 					onchange={(v) => setOrbitPrefs({ panSpeed: v })}
 				/>
-				<Checkbox
+				<InsToggle
 					id="orbit-damping"
 					checked={$orbitPrefs.damping}
 					onchange={(/** @type {any} */ e) => setOrbitPrefs({ damping: e.currentTarget.checked })}
-					>Smooth (damped) orbiting</Checkbox
+					>Smooth (damped) orbiting</InsToggle
 				>
-				<Checkbox
+				<InsToggle
 					id="orbit-invert"
 					checked={$orbitPrefs.invertY}
 					onchange={(/** @type {any} */ e) => setOrbitPrefs({ invertY: e.currentTarget.checked })}
-					>Invert vertical orbit</Checkbox
+					>Invert vertical orbit</InsToggle
 				>
 				<div class="ui-row items-center gap-2">
 					<button id="camera-frame-scene" class="ui-chip" onclick={() => frameScene()}>
@@ -1931,15 +1932,15 @@
 					<button id="bookmark-save" class="ui-chip" onclick={() => saveBookmark()}>
 						Save current view
 					</button>
-					<span class="text-[10px] text-gray-500">Shift+1..{SHORTCUT_SLOTS} recall the first {SHORTCUT_SLOTS}</span>
+					<span class="text-badge text-text-faint">Shift+1..{SHORTCUT_SLOTS} recall the first {SHORTCUT_SLOTS}</span>
 				</div>
 				{#if $bookmarks.length === 0}
-					<p class="text-xs text-gray-400">No saved views yet. Frame something you like, then Save current view.</p>
+					<p class="text-xs text-text-muted">No saved views yet. Frame something you like, then Save current view.</p>
 				{:else}
 					<div id="bookmark-list" class="flex flex-col gap-1">
 						{#each $bookmarks as bookmark, index (bookmark.id)}
 							<div class="bookmark-row flex items-center gap-1">
-								<span class="w-8 shrink-0 text-[10px] text-gray-500">{index < SHORTCUT_SLOTS ? '⇧' + (index + 1) : ''}</span>
+								<span class="w-8 shrink-0 text-badge text-text-faint">{index < SHORTCUT_SLOTS ? '⇧' + (index + 1) : ''}</span>
 								<input
 									class="ui-input min-w-0 flex-1 px-1 py-0.5 text-xs"
 									aria-label="View name"
@@ -1959,13 +1960,13 @@
 									disabled={index === $bookmarks.length - 1}
 									onclick={() => moveBookmark(bookmark.id, 1)}>↓</button
 								>
-								<button class="{bmBtn} text-red-400" title="Delete this view" onclick={() => deleteBookmark(bookmark.id)}>
+								<button class="{bmBtn} text-warn-text" title="Delete this view" onclick={() => deleteBookmark(bookmark.id)}>
 									<Icon name="trash-2" size={13} />
 								</button>
 							</div>
 						{/each}
 					</div>
-					<p class="text-[10px] italic text-gray-400">
+					<p class="text-badge italic text-text-muted">
 						Each view stores its lens (FOV + clip planes) and restores it on recall.
 					</p>
 				{/if}
@@ -1974,22 +1975,22 @@
 			<!-- 16-P3: grid + snapping are LOCAL view prefs (like the clip planes and
 			     the render mode above) — peers each get their own. -->
 			<Section variant="panel" label="Grid" badge="This device">
-				<Checkbox
+				<InsToggle
 					id="grid-show"
 					checked={!!$showGrid}
 					onchange={() => {
 						showGrid.update((v) => !v);
 						if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
 						else safeStorage.setItem('showGrid', 'false');
-					}}>Show grid</Checkbox
+					}}>Show grid</InsToggle
 				>
-				<Checkbox
+				<InsToggle
 					id="grid-match-snap"
 					checked={$gridSettings.matchSnapStep}
 					onchange={(/** @type {any} */ e) => setGrid({ matchSnapStep: e.currentTarget.checked })}
 				>
 					Match snapping step ({$snapSettings.translate})
-				</Checkbox>
+				</InsToggle>
 				<SliderRow
 					label="Cell size"
 					min={0.05}
@@ -2009,7 +2010,7 @@
 					onchange={(v) => setGrid({ sectionEvery: Math.round(v) })}
 				/>
 				<div class="ui-row items-center gap-2">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Colours</span>
+					<span class="w-20 shrink-0 text-xs text-text-muted">Colours</span>
 					<!-- plain swatches: the full picker is overkill for two grid lines,
 					     and v4 pickers must never take bind:hex (15-C) -->
 					<input
@@ -2028,10 +2029,10 @@
 						value={$gridSettings.sectionColor}
 						oninput={(/** @type {any} */ e) => setGrid({ sectionColor: e.currentTarget.value })}
 					/>
-					<span class="text-[10px] text-gray-500">cell · major</span>
+					<span class="text-badge text-text-faint">cell · major</span>
 				</div>
 				<div class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Fade</span>
+					<span class="w-20 shrink-0 text-xs text-text-muted">Fade</span>
 					{#each [['auto', 'Auto'], ['fixed', 'Fixed']] as [mode, label]}
 						<button
 							class={'ui-chip ' +
@@ -2063,11 +2064,11 @@
 					value={$gridSettings.fadeStrength}
 					onchange={(v) => setGrid({ fadeStrength: v })}
 				/>
-				<Checkbox
+				<InsToggle
 					id="grid-infinite"
 					checked={$gridSettings.infinite}
 					onchange={(/** @type {any} */ e) => setGrid({ infinite: e.currentTarget.checked })}
-					>Infinite grid</Checkbox
+					>Infinite grid</InsToggle
 				>
 				{#if !$gridSettings.infinite}
 					<SliderRow
@@ -2084,7 +2085,7 @@
 				     is not what "follow the camera" should mean while you're looking
 				     somewhere else; Look-at centres the grid under your gaze. -->
 				<div id="grid-follow" class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Follow</span>
+					<span class="w-20 shrink-0 text-xs text-text-muted">Follow</span>
 					{#each [['off', 'Off'], ['lookat', 'Look-at'], ['camera', 'Camera']] as [mode, label]}
 						<button
 							class={'ui-chip ' +
@@ -2100,29 +2101,29 @@
 						>
 					{/each}
 				</div>
-				<Checkbox
+				<InsToggle
 					id="grid-axes"
 					checked={$gridSettings.showAxes}
 					onchange={(/** @type {any} */ e) => setGrid({ showAxes: e.currentTarget.checked })}
-					>Show origin axes</Checkbox
+					>Show origin axes</InsToggle
 				>
 				<div class="ui-row items-center gap-2">
 					<button id="grid-reset" class="ui-chip" onclick={() => resetGrid()}>
 						Reset grid
 					</button>
-					<span class="text-[10px] italic text-gray-400">Per-device (not shared).</span>
+					<span class="text-badge italic text-text-muted">Per-device (not shared).</span>
 				</div>
 			</Section>
 
 			<Section variant="panel" label="Snapping" badge="This device">
-				<Checkbox
+				<InsToggle
 					id="snap-enabled"
 					checked={$snapEnabled}
 					onchange={(/** @type {any} */ e) => snapEnabled.set(e.currentTarget.checked)}
-					>Snap transforms to a grid</Checkbox
+					>Snap transforms to a grid</InsToggle
 				>
 				<div class="snap-row">
-					<span class="text-xs text-gray-400">Position</span>
+					<span class="text-xs text-text-muted">Position</span>
 					<div class="snap-chips">
 					{#each [0.1, 0.25, 0.5, 1] as step}
 						<button
@@ -2149,7 +2150,7 @@
 					</div>
 				</div>
 				<div class="snap-row">
-					<span class="text-xs text-gray-400">Rotation</span>
+					<span class="text-xs text-text-muted">Rotation</span>
 					<div class="snap-chips">
 					{#each [5, 15, 45, 90] as step}
 						<button
@@ -2176,7 +2177,7 @@
 					</div>
 				</div>
 				<div class="snap-row">
-					<span class="text-xs text-gray-400">Scale</span>
+					<span class="text-xs text-text-muted">Scale</span>
 					<div class="snap-chips">
 					{#each [0.05, 0.1, 0.25] as step}
 						<button
@@ -2201,11 +2202,11 @@
 						/>
 					</div>
 				</div>
-				<Checkbox
+				<InsToggle
 					id="snap-surface"
 					checked={$surfaceSnap}
 					onchange={(/** @type {any} */ e) => surfaceSnap.set(e.currentTarget.checked)}
-					>Rest dragged objects on the surface below</Checkbox
+					>Rest dragged objects on the surface below</InsToggle
 				>
 				<!-- 19-B: element snap targets. Same three-column grid as the steps
 				     above (label | chips | number), so every control in the section
@@ -2218,7 +2219,7 @@
 				     in the numeric grid stranded the fifth chip alone against the right
 				     edge. Own line, left-aligned, wrapping naturally. -->
 				<div class="snap-sub">
-					<span class="text-xs text-gray-400">Targets</span>
+					<span class="text-xs text-text-muted">Targets</span>
 					<span class="snap-sub-hint">
 						{activeTargetCount === 0 ? 'none — element snap is idle' : `${activeTargetCount} on`}
 					</span>
@@ -2238,7 +2239,7 @@
 					{/each}
 				</div>
 				<div class="snap-row">
-					<span class="text-xs text-gray-400">Radius</span>
+					<span class="text-xs text-text-muted">Radius</span>
 					<div class="snap-chips">
 						{#each [15, 25, 40] as preset}
 							<button
@@ -2269,18 +2270,18 @@
 					</div>
 				</div>
 				<!-- 19-B P4: align to the candidate normal (face/surface targets only) -->
-				<Checkbox
+				<InsToggle
 					id="snap-align-normal"
 					checked={$snapTargets.alignNormal}
 					onchange={(/** @type {any} */ e) =>
 						snapTargets.update((t) => ({ ...t, alignNormal: e.currentTarget.checked }))}
-					>Rotate to the surface (align to normal)</Checkbox
+					>Rotate to the surface (align to normal)</InsToggle
 				>
 				<!-- Auto/Pivot are the MODE (two chips, so the numeric grid fits them);
 				     picking is an ACTION that arms the next viewport click, so it gets a
 				     full-width button of its own rather than a third, much wider chip -->
 				<div class="snap-row">
-					<span class="text-xs text-gray-400">Snap origin</span>
+					<span class="text-xs text-text-muted">Snap origin</span>
 					<div class="snap-chips">
 						<button
 							id="snap-anchor-auto"
@@ -2355,10 +2356,10 @@
 						>
 					</div>
 				{/if}
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-badge italic text-text-muted">
 					A picked origin is local and lasts until you select something else — save it to keep it.
 				</p>
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-badge italic text-text-muted">
 					Snapping is per-device; the same steps drive the viewport menu.
 				</p>
 			</Section>
@@ -2368,7 +2369,7 @@
 					 internal grouping). Splitting it would break its collapse state, the
 					 openSceneSection('Physics') deep link AND inspectorFilter, all three
 					 of which key off the label. -->
-				<p class="text-[10px] uppercase tracking-wide text-gray-500">World</p>
+				<p class="text-badge uppercase tracking-wide text-text-faint">World</p>
 				<!-- CL-A A6: shared scene gravity (replicated singleton, applies live) -->
 				<SliderRow label="Gravity" min={-20} max={5} step={0.1} value={$sceneGravity} onchange={(v) => setSceneGravity(v)} />
 				<FluidBudgetSetting /><!-- 36-fb S3: scene data, saved + replicated -->
@@ -2382,7 +2383,7 @@
 					onchange={(v) => setScenePhysics({ timeScale: v })}
 				/>
 				{#if $scenePhysicsDefaults.timeScale > 1.5 && !$scenePhysicsDefaults.ccd}
-					<p class="text-[10px] italic text-amber-400">
+					<p class="text-badge italic text-warn-text">
 						Above 1.5x bodies travel further per step — turn Continuous collision on
 						below, or fast objects can pass through thin walls.
 					</p>
@@ -2396,18 +2397,18 @@
 						Reset gravity ({DEFAULT_GRAVITY})
 					</button>
 				</div>
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-badge italic text-text-muted">
 					Shared with everyone and applies to running simulations live.
 				</p>
 
-				<p class="mt-2 text-[10px] uppercase tracking-wide text-gray-500">Ground &amp; bounds</p>
-				<Checkbox
+				<p class="mt-2 text-badge uppercase tracking-wide text-text-faint">Ground &amp; bounds</p>
+				<InsToggle
 					id="physics-ground-enabled"
 					checked={$scenePhysicsGround.enabled}
 					onchange={(e) => setScenePhysics({ ground: { enabled: e.currentTarget.checked } })}
 				>
 					Ground plane
-				</Checkbox>
+				</InsToggle>
 				{#if $scenePhysicsGround.enabled}
 					<DragRow
 						id="physics-ground-height"
@@ -2437,7 +2438,7 @@
 						onchange={(v) => setScenePhysics({ ground: { restitution: v } })}
 					/>
 				{:else}
-					<p class="text-[10px] italic text-gray-400">
+					<p class="text-badge italic text-text-muted">
 						No floor — objects fall until they hit something you placed, then the
 						out-of-bounds rule below.
 					</p>
@@ -2452,7 +2453,7 @@
 					onchange={(/** @type {number} */ v) => setScenePhysics({ bounds: { limit: v } })}
 				/>
 				<div class="ui-row items-center gap-2">
-					<span class="w-24 shrink-0 text-xs text-gray-300">Then</span>
+					<span class="w-24 shrink-0 text-xs text-text-2">Then</span>
 					<ThemedSelect
 						id="physics-bounds-action"
 						class="flex-1"
@@ -2466,9 +2467,9 @@
 					/>
 				</div>
 
-				<p class="mt-2 text-[10px] uppercase tracking-wide text-gray-500">Defaults (advanced)</p>
+				<p class="mt-2 text-badge uppercase tracking-wide text-text-faint">Defaults (advanced)</p>
 				<div class="ui-row items-center gap-2">
-					<span class="w-24 shrink-0 text-xs text-gray-300">Material</span>
+					<span class="w-24 shrink-0 text-xs text-text-2">Material</span>
 					<ThemedSelect
 						id="physics-scene-material"
 						class="flex-1"
@@ -2487,7 +2488,7 @@
 							})}
 					/>
 				</div>
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-badge italic text-text-muted">
 					Fills in friction and bounce for every object that does not set its own.
 				</p>
 				<SliderRow
@@ -2508,19 +2509,19 @@
 					value={$scenePhysicsDefaults.damping.angular}
 					onchange={(v) => setScenePhysics({ damping: { angular: v } })}
 				/>
-				<Checkbox
+				<InsToggle
 					id="physics-ccd"
 					checked={$scenePhysicsDefaults.ccd}
 					onchange={(e) => setScenePhysics({ ccd: e.currentTarget.checked })}
 				>
 					Continuous collision (fast objects)
-				</Checkbox>
-				<p class="text-[10px] italic text-gray-400">
+				</InsToggle>
+				<p class="text-badge italic text-text-muted">
 					Costs a little speed; thrown objects turn it on for themselves either way.
 				</p>
 				<!-- C1: every object that gets a body at sim start; click = select -->
 				{#if physicsRows.length === 0}
-					<p class="text-xs text-gray-400">
+					<p class="text-xs text-text-muted">
 						No objects have physics yet. Select an object and set its Physics mode to
 						Dynamic (or wire a Mass node to an Object Selector in the node editor),
 						then press ▶ / P to simulate.
@@ -2538,7 +2539,7 @@
 							>
 								<span class="truncate">{row.name}</span>
 								<!-- 36 U1: no fade on the selected row's accent fill (2.6:1 with it) -->
-								<span class={'shrink-0 text-[10px] ' + ($selectedObject?.uuid === row.uuid ? '' : 'opacity-75')}>
+								<span class={'shrink-0 text-badge ' + ($selectedObject?.uuid === row.uuid ? '' : 'opacity-75')}>
 									{row.mode === 'dynamic'
 										? 'dynamic · ' + row.mass + ' kg'
 										: row.mode === 'static'
@@ -2556,21 +2557,21 @@
 				>
 					Enable physics on selection
 				</button>
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-badge italic text-text-muted">
 					Dynamic objects fall and collide while a simulation runs (▶ or P).
 				</p>
 
 				<!-- 24-A A2: the knock block (A1) — an open VR hand or a walking player hitting a
 					 dynamic body. Inside the Physics section (the B4 rule: one section, labelled
 					 sub-blocks), with a data-anchor so a toast can openSceneSection('Physics:Knock'). -->
-				<p class="mt-2 text-[10px] uppercase tracking-wide text-gray-500" data-anchor="Knock">Knock</p>
-				<Checkbox
+				<p class="mt-2 text-badge uppercase tracking-wide text-text-faint" data-anchor="Knock">Knock</p>
+				<InsToggle
 					id="physics-knock-enabled"
 					checked={$sceneKnock.enabled}
 					onchange={(e) => setScenePhysics({ knock: { enabled: e.currentTarget.checked } })}
 				>
 					Hands and players knock dynamic objects
-				</Checkbox>
+				</InsToggle>
 				{#if $sceneKnock.enabled}
 					<SliderRow
 						id="physics-knock-gain"
@@ -2610,14 +2611,14 @@
 						onchange={(v) => setScenePhysics({ knock: { spin: v } })}
 					/>
 				{/if}
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-badge italic text-text-muted">
 					An open VR hand, or walking into an object on desktop, sends it off at the speed it
 					was hit. Grip still grabs. Shared, and it needs a running simulation.
 				</p>
 
-				<p class="mt-2 text-[10px] uppercase tracking-wide text-gray-500">Play mode</p>
+				<p class="mt-2 text-badge uppercase tracking-wide text-text-faint">Play mode</p>
 				<div class="ui-row items-center gap-2">
-					<span class="w-24 shrink-0 text-xs text-gray-300">Pointer</span>
+					<span class="w-24 shrink-0 text-xs text-text-2">Pointer</span>
 					<ThemedSelect
 						id="physics-play-interaction"
 						class="flex-1"
@@ -2631,13 +2632,13 @@
 					/>
 				</div>
 				<!-- 31-towers P1: grab REACH, measured from the player's body (absent = no limit) -->
-				<Checkbox
+				<InsToggle
 					id="physics-play-reach-on"
 					checked={$scenePlay.reach != null}
 					onchange={(e) => setScenePhysics({ play: { reach: e.currentTarget.checked ? 1.3 : null } })}
 				>
 					Limit grab reach
-				</Checkbox>
+				</InsToggle>
 				{#if $scenePlay.reach != null}
 					<SliderRow
 						id="physics-play-reach"
@@ -2650,24 +2651,24 @@
 						onchange={(v) => setScenePhysics({ play: { reach: v } })}
 					/>
 				{/if}
-				<Checkbox
+				<InsToggle
 					id="physics-play-grounded"
 					checked={$scenePlay.grounded}
 					onchange={(e) => setScenePhysics({ play: { grounded: e.currentTarget.checked } })}
 				>
 					Keep players on the ground
-				</Checkbox>
-				<Checkbox
+				</InsToggle>
+				<InsToggle
 					id="physics-sim-on-play"
 					checked={$scenePlay.simOnPlay}
 					onchange={(e) => setScenePhysics({ play: { simOnPlay: e.currentTarget.checked } })}
 				>
 					Start the simulation when play mode opens
-				</Checkbox>
+				</InsToggle>
 				<!-- 30c: where desktop play starts — feet position + heading, shared scene data -->
 				<div class="ui-row items-center gap-2">
-					<span class="w-24 shrink-0 text-xs text-gray-300">Spawn point</span>
-					<span id="physics-spawn-readout" class="flex-1 text-xs text-gray-400">{spawnText($scenePlay.spawn)}</span>
+					<span class="w-24 shrink-0 text-xs text-text-2">Spawn point</span>
+					<span id="physics-spawn-readout" class="flex-1 text-xs text-text-muted">{spawnText($scenePlay.spawn)}</span>
 				</div>
 				<div class="ui-row gap-2">
 					<button
@@ -2682,7 +2683,7 @@
 						>
 					{/if}
 				</div>
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-badge italic text-text-muted">
 					Shared: everyone entering play mode in this scene gets these.
 				</p>
 			</Section>
@@ -2752,8 +2753,8 @@
 			onpin={() => inspectorPinned.update((v) => !v)}
 			onclose={() => inspectorClose.set(true)}
 		/>
-		<div id="module-content-card" class="mt-2 flex flex-col gap-2 rounded-sm border border-gray-600/60 p-2 text-xs text-gray-300">
-			<p class="text-sm font-semibold text-gray-100">{$moduleSelection.label}</p>
+		<div id="module-content-card" class="mt-2 flex flex-col gap-2 rounded-sm border border-border p-2 text-xs text-text-2">
+			<p class="text-sm font-semibold text-text">{$moduleSelection.label}</p>
 			<p>Made by the <strong>{$moduleSelection.moduleName}</strong> module — edit it with its toolbox or nodes.</p>
 			{#if moduleToolbox}
 				<button type="button" class="ui-button self-start" onclick={() => openModuleToolbox(moduleToolbox.id)}>Open {moduleToolbox.title}</button>
@@ -2779,7 +2780,7 @@
 				     object is for. -->
 				<div id="selection-multi-banner" class="ins-banner">
 					<p class="text-xs font-semibold ins-accent-text">Editing {multiCount} objects</p>
-					<p class="text-[10px] text-gray-400">Every value below applies to all of them.</p>
+					<p class="text-badge text-text-muted">Every value below applies to all of them.</p>
 				</div>
 			{/if}
 			{#if !multiCount}
@@ -2795,7 +2796,7 @@
 					}}
 				/>
 				<Tooltip placement="top" arrow={false} triggeredBy="#name">Name</Tooltip>
-				<p id="uuid" class="truncate px-1 text-[10px] text-gray-500" title={$selectedObject.uuid}>
+				<p id="uuid" class="truncate px-1 text-badge text-text-faint" title={$selectedObject.uuid}>
 					{$selectedObject.uuid}
 				</p>
 				<div onclick={refreshGroups} role="presentation">
@@ -2838,10 +2839,10 @@
 							>
 								{anim.playing ? '⏸ Pause' : '▶ Play'}
 							</UiButton>
-							<span class="text-xs text-gray-400">speed {anim.speed.toFixed(1)}×</span>
+							<span class="text-xs text-text-muted">speed {anim.speed.toFixed(1)}×</span>
 							<input
 								type="range"
-								class="flex-1 accent-primary-600"
+								class="flex-1 accent-accent"
 								min="0.1"
 								max="3"
 								step="0.1"
@@ -2849,7 +2850,7 @@
 								oninput={(e) => setAnimationState($selectedObject.uuid, { speed: +e.currentTarget.value })}
 							/>
 						</div>
-						<p class="pt-1 text-[10px] italic text-gray-400">
+						<p class="pt-1 text-badge italic text-text-muted">
 							Clips run on the synced clock — peers see the same pose.
 						</p>
 					</div>
@@ -2863,7 +2864,7 @@
 				{@const cam = cameraSpec($selectedObject)}
 				<Section variant="panel" label="Camera">
 					<div class="ui-row items-center gap-1">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Kind</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Kind</span>
 						{#each [['perspective', 'Perspective'], ['orthographic', 'Orthographic']] as [kind, label]}
 							<button
 								class={'ui-chip ' + (cam.kind === kind ? 'ins-chip-on' : '')}
@@ -2902,7 +2903,7 @@
 						onchange={(v) => setCameraFor($selectedObject.uuid, { near: v })}
 					/>
 					<div class="ui-row items-center gap-2">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Far</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Far</span>
 						<div class="w-24 shrink-0">
 							<DragRow
 								id="camera-object-far"
@@ -2917,7 +2918,7 @@
 						</div>
 					</div>
 					<div class="ui-row items-center gap-1">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Framing</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Framing</span>
 						{#each ASPECTS as aspect}
 							<button
 								class={'ui-chip ' + (cam.aspect === aspect ? 'ins-chip-on' : '')}
@@ -2925,11 +2926,11 @@
 							>
 						{/each}
 					</div>
-					<Checkbox
+					<InsToggle
 						id="camera-guide"
 						checked={cam.guide}
 						onchange={(/** @type {any} */ e) => setCameraFor($selectedObject.uuid, { guide: e.currentTarget.checked })}
-						>Letterbox guide while previewing</Checkbox
+						>Letterbox guide while previewing</InsToggle
 					>
 					<div class="ui-row flex-wrap items-center gap-2">
 						<button
@@ -2968,21 +2969,21 @@
 						>
 							<Icon name="camera" size={13} />Capture
 						</button>
-						<span class="text-[10px] text-gray-500">saves a PNG at the framing aspect</span>
+						<span class="text-badge text-text-faint">saves a PNG at the framing aspect</span>
 					</div>
-					<Checkbox
+					<InsToggle
 						id="camera-pip"
 						checked={cam.pip !== false}
 						onchange={(/** @type {any} */ e) => setCameraFor($selectedObject.uuid, { pip: e.currentTarget.checked })}
-						>Preview window while selected</Checkbox
+						>Preview window while selected</InsToggle
 					>
-					<Checkbox
+					<InsToggle
 						id="camera-frustums"
 						checked={$showCameraFrustums}
 						onchange={(/** @type {any} */ e) => showCameraFrustums.set(e.currentTarget.checked)}
-						>Show camera frustums — this device</Checkbox
+						>Show camera frustums — this device</InsToggle
 					>
-					<p class="text-[10px] italic text-gray-400">
+					<p class="text-badge italic text-text-muted">
 						The camera itself is shared; previewing and the frustum lines are yours alone.
 					</p>
 				</Section>
@@ -2999,7 +3000,7 @@
 					     (the gizmo's pivot), so every axis has one real value instead of a
 					     dash, and typing moves the group rigidly. -->
 					<div class="mb-1 flex items-center justify-between gap-2">
-						<span class="text-[10px] text-gray-400">
+						<span class="text-badge text-text-muted">
 							{$pivotOnly ? 'Moving the origin only' : `Moves all ${multiCount} together`}
 						</span>
 						<div class="flex items-center gap-1">
@@ -3019,7 +3020,7 @@
 					<!-- 24-E3: the PIVOT POINT of the set — Blender's list minus the 3D cursor
 					     (the snap anchor plays that role). A hand-placed origin overrides any mode. -->
 					<div class="mb-1 grid grid-cols-[3.2rem_1fr] items-center gap-1">
-						<span class="text-[11px] text-gray-400">Pivot</span>
+						<span class="text-badge text-text-muted">Pivot</span>
 						<ThemedSelect
 							id="pivot-mode"
 							items={[
@@ -3087,9 +3088,9 @@
 					     move the mesh — it moves the point rotate/scale happen around, which
 					     is what makes hinges, lids and wheels possible. Saved per object, so
 					     switching selections brings each one's origin back. -->
-					<div id="object-origin" class="mt-1 rounded-sm border border-gray-700/60 p-1.5">
+					<div id="object-origin" class="mt-1 rounded-sm border border-border p-1.5">
 						<div class="mb-1 flex items-center justify-between gap-2">
-							<span class="text-[11px] text-gray-300">
+							<span class="text-badge text-text-2">
 								Origin {originSet ? '' : '(default)'}
 							</span>
 							<div class="flex items-center gap-1">
@@ -3145,7 +3146,7 @@
 								</UiButton>
 							{/if}
 							{#if isLight}
-								<span class="self-center text-[10px] text-gray-500">A light with an origin orbits it under Rotate.</span>
+								<span class="self-center text-badge text-text-faint">A light with an origin orbits it under Rotate.</span>
 							{:else if editingThis}
 								<UiButton id="origin-hinge" size="sm" variant="primary" onclick={originFromSelection}>
 									Set origin here{$vertexSelectionSize > 1 ? ` (${$vertexSelectionSize} verts)` : ''}
@@ -3157,12 +3158,12 @@
 							{/if}
 						</div>
 						{#if editingThis}
-							<p class="mt-1 text-[10px] ins-accent-text">
+							<p class="mt-1 text-badge ins-accent-text">
 								Click a vertex — ctrl-click both ends of an edge to hinge on it — then press Set
 								origin here.
 							</p>
 						{/if}
-						<p class="mt-1 text-[10px] text-gray-500">
+						<p class="mt-1 text-badge text-text-faint">
 							{#if $pivotOnly}
 								Drag the gizmo (or type above) to place the origin — the mesh stays put. Grid and
 								surface snapping apply. Press Done to transform around it.
@@ -3173,7 +3174,7 @@
 						</p>
 					</div>
 				{/if}
-				<p class="text-[10px] text-gray-500">
+				<p class="text-badge text-text-faint">
 					{#if multiCount && $pivotOnly}
 						Re-place the origin, then press Done to rotate or scale the selection around it. The
 						origin is a local editing aid — peers keep their own.
@@ -3203,16 +3204,16 @@
 						</div>
 					{/snippet}
 					</PropRow>
-					<Checkbox
+					<InsToggle
 						checked={$selectedObject.frustumCulled}
 						onchange={(/** @type {any} */ e) => setObjectParam('frustumCulled', e.target.checked)}
 					>
 						Frustum culled
-					</Checkbox>
-					<p class="text-[10px] text-gray-500">Higher render order draws later (over other objects). Disable culling for objects that vanish at screen edges.</p>
+					</InsToggle>
+					<p class="text-badge text-text-faint">Higher render order draws later (over other objects). Disable culling for objects that vanish at screen edges.</p>
 					<!-- 30 P2: a wall, a ceiling or a glass case can stand aside for the editor's
 					     click — it picks the next opaque thing behind (click again to cycle back) -->
-					<Checkbox
+					<InsToggle
 						id="inspector-pick-through"
 						checked={pickThroughAll}
 						onchange={(/** @type {any} */ e) => {
@@ -3222,7 +3223,7 @@
 						}}
 					>
 						Click-through in the viewport
-					</Checkbox>
+					</InsToggle>
 				</Section>
 			{/if}
 
@@ -3245,20 +3246,20 @@
 					<!-- 23-B4: the device's declared params, fanned over the selection; presets and
 						 the mixer live in the Music toolbox, which the link below opens on the primary -->
 					{#if devTargets.length > 1}
-						<p id="device-multi-note" class="text-[10px] italic text-gray-400">
+						<p id="device-multi-note" class="text-badge italic text-text-muted">
 							Applies to {devTargets.length} selected devices.
 						</p>
 					{/if}
-					<p class="text-[10px] uppercase tracking-wide text-gray-500">
+					<p class="text-badge uppercase tracking-wide text-text-faint">
 						{deviceSpec(devPrimary.userData.device.kind)?.label ?? devPrimary.userData.device.kind}
 					</p>
 					{#if !devParams.length}
-						<p class="text-[10px] italic text-gray-400">This device has no settings.</p>
+						<p class="text-badge italic text-text-muted">This device has no settings.</p>
 					{/if}
 					{#each devParams as p (p.key)}
 						{#if p.kind === 'select'}
 							<div class="ui-row items-center gap-2">
-								<span class="w-24 shrink-0 text-xs text-gray-400">{p.label ?? p.key}</span>
+								<span class="w-24 shrink-0 text-xs text-text-muted">{p.label ?? p.key}</span>
 								<ThemedSelect
 									id={'device-param-' + p.key}
 									items={[...(devMixed(p.key) ? [{ value: '', name: '—' }] : []), ...(p.options ?? []).map((/** @type {any} */ opt) => ({ value: String(opt.value), name: String(opt.label ?? opt.value) }))]}
@@ -3267,13 +3268,13 @@
 								/>
 							</div>
 						{:else if p.kind === 'toggle'}
-							<Checkbox
+							<InsToggle
 								id={'device-param-' + p.key}
 								checked={!!devValue(p.key)}
 								onchange={(/** @type {any} */ e) => devWrite(p.key, e.target.checked)}
 							>
 								{p.label ?? p.key}{devMixed(p.key) ? ' (mixed)' : ''}
-							</Checkbox>
+							</InsToggle>
 						{:else}
 							<DragRow
 								id={'device-param-' + p.key}
@@ -3296,17 +3297,17 @@
 							Open in Music toolbox
 						</button>
 					</div>
-					<p class="text-[10px] text-gray-500">Presets and the mixer live in the Music toolbox.</p>
+					<p class="text-badge text-text-faint">Presets and the mixer live in the Music toolbox.</p>
 				</Section>
 			{/if}
 
 			{#if geoParams && geoSpec}
 				<Section variant="panel" label="Geometry">
-					<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">
+					<p class="px-1 text-badge uppercase tracking-wider text-text-faint">
 						{geoParams.gtype}{geoTargets.length > 1 ? ` · ${geoTargets.length} objects` : ''}
 					</p>
 					{#if geoOtherTypes.length}
-						<p id="geometry-mixed-note" class="rounded-sm bg-gray-700/50 px-2 py-1 text-[10px] text-gray-300">
+						<p id="geometry-mixed-note" class="rounded-sm bg-surface-inset px-2 py-1 text-badge text-text-2">
 							Only the {geoTargets.length} {geoParams.gtype} object{geoTargets.length === 1 ? '' : 's'}
 							in this selection change — {geoOtherTypes.join(', ')}
 							{geoOtherTypes.length === 1 ? 'has' : 'have'} different parameters.
@@ -3315,7 +3316,7 @@
 					{#if meshEditedLock}
 						<!-- 164: once the mesh is edited, the parametric controls are LOCKED
 						     (changing one rebuilds the primitive + discards the edits) -->
-						<p id="geometry-locked" class="rounded-sm bg-yellow-900/40 px-2 py-1 text-[10px] text-yellow-200">
+						<p id="geometry-locked" class="rounded-sm bg-surface-inset px-2 py-1 text-badge text-warn-text">
 							Mesh edited — geometry parameters are locked (changing them would rebuild the shape and discard your edits).
 						</p>
 						{#if $selectedObject.userData?.terrain}
@@ -3336,18 +3337,18 @@
 						<div id="inspector-geometry" class="flex flex-col gap-1">
 							{#each geoSpec.params as spec (spec.key)}
 								{#if spec.kind === 'bool'}
-									<Checkbox
+									<InsToggle
 										checked={!!geoParams.params[spec.key]}
 										onchange={(/** @type {any} */ e) => editGeometry(spec.key, e.target.checked)}
 									>
 										{spec.label}
-									</Checkbox>
+									</InsToggle>
 								{:else if spec.kind === 'choice'}
 									<!-- 21-C1: a param whose value is one of a NAMED set (a terrain's edge
 									     profile). Chips rather than a ThemedSelect: three short words fit, and
 									     a select cannot shrink below its longest option. -->
 									<div class="ui-row items-center gap-2">
-										<span class="w-20 shrink-0 text-xs text-gray-400">{spec.label}</span>
+										<span class="w-20 shrink-0 text-xs text-text-muted">{spec.label}</span>
 										<div class="flex flex-wrap gap-1">
 											{#each spec.options ?? [] as option (option)}
 												<button
@@ -3381,7 +3382,7 @@
 
 			{#if isGroup}
 				<Section variant="panel" label="Group">
-					<p class="px-1 text-xs text-gray-400">
+					<p class="px-1 text-xs text-text-muted">
 						{$selectedObject.children.length} direct child{$selectedObject.children.length === 1 ? '' : 'ren'},
 						{countTree($selectedObject)} object{countTree($selectedObject) === 1 ? '' : 's'} in total.
 					</p>
@@ -3491,7 +3492,7 @@
 									onchange={(v) => setAimAxis(index, v)} />
 							{/each}
 						</div>
-						<p class="text-[10px] text-gray-500">
+						<p class="text-badge text-text-faint">
 							Rotating the light (gizmo or the rotation rows) aims it too. Shadows follow.
 							{#if $selectedObject.isDirectionalLight}
 								A directional light has a direction, not a distance — the helper's line length is Settings ▸ Scene.
@@ -3501,11 +3502,11 @@
 
 					{#if SHADOW_TYPES.includes($selectedObject.type)}
 						<p class="ui-section-label">Shadow</p>
-						<Checkbox bind:checked={$selectedObject.castShadow} onchange={() => sendLightUpdate()}>
+						<InsToggle bind:checked={$selectedObject.castShadow} onchange={() => sendLightUpdate()}>
 							Cast Shadow
-						</Checkbox>
+						</InsToggle>
 						<div class="ui-row">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Map size</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Map size</span>
 							<ThemedSelect
 								class="flex-1"
 								items={SHADOW_SIZES.map((size) => ({ value: size, name: size + ' px' }))}
@@ -3518,7 +3519,7 @@
 							/>
 						</div>
 						{#if cappedShadowSize($selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x) < ($selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x)}
-							<p class="text-[10px] italic text-gray-400">Capped by Settings ▸ Shadow quality on this machine.</p>
+							<p class="text-badge italic text-text-muted">Capped by Settings ▸ Shadow quality on this machine.</p>
 						{/if}
 						<SliderRow label="Bias" min={-0.01} max={0.01} step={0.0005} decimals={4}
 							value={$selectedObject.shadow.bias}
@@ -3533,11 +3534,11 @@
 								sendLightUpdate();
 							}} />
 					{/if}
-					<Checkbox bind:checked={$selectedObject.visible} onchange={() => sendLightUpdate()}>
+					<InsToggle bind:checked={$selectedObject.visible} onchange={() => sendLightUpdate()}>
 						Visible
-					</Checkbox>
+					</InsToggle>
 					{#if $selectedObject.type === 'RectAreaLight'}
-						<p class="text-[10px] italic text-gray-400">
+						<p class="text-badge italic text-text-muted">
 							Rect area lights only affect Standard/Physical materials and cast no shadows.
 						</p>
 					{/if}
@@ -3547,13 +3548,13 @@
 			{#if material}
 				<Section variant="panel" label="Material">
 					{#if matCount}
-						<p id="material-multi-note" class="text-[10px] italic text-gray-400">
+						<p id="material-multi-note" class="text-badge italic text-text-muted">
 							Applies to {matCount} selected objects.
 						</p>
 					{/if}
-					<Checkbox bind:checked={$selectedObject.visible} onchange={() => sendParam('visible')}>
+					<InsToggle bind:checked={$selectedObject.visible} onchange={() => sendParam('visible')}>
 						Visible
-					</Checkbox>
+					</InsToggle>
 
 					<!-- SH5: a shader graph OWNS this material, so say so and offer the two things
 					     that make sense here. The editors below are hidden rather than disabled:
@@ -3706,7 +3707,7 @@
 								<img
 									src={material.userData.mapDataUrl}
 									alt="texture"
-									class="h-10 w-10 cursor-pointer rounded-sm border border-gray-500 object-cover"
+									class="h-10 w-10 cursor-pointer rounded-sm border border-border-strong object-cover"
 									role="presentation"
 									onclick={() => document.getElementById('texture-file')?.click()}
 								/>
@@ -3725,7 +3726,7 @@
 								>
 									Set texture...
 								</UiButton>
-								<span class="text-[10px] text-gray-500">or drop an Explorer image</span>
+								<span class="text-badge text-text-faint">or drop an Explorer image</span>
 							{/if}
 						</div>
 						</div>
@@ -3759,7 +3760,7 @@
 							onchange={(v) => setMat('shininess', v)} />
 					{/if}
 					{#if material.type === 'MeshNormalMaterial' || material.type === 'MeshDepthMaterial'}
-						<p class="text-[11px] italic text-gray-400">
+						<p class="text-badge italic text-text-muted">
 							This material type derives its look from geometry — no color or surface parameters.
 						</p>
 					{/if}
@@ -3773,24 +3774,24 @@
 								})} />
 					{/if}
 					{#if typeof material.wireframe !== 'undefined'}
-						<Checkbox
+						<InsToggle
 							checked={material.wireframe}
 							onchange={(/** @type {any} */ e) => setMat('wireframe', e.target.checked)}
 						>
 							Wireframe
-						</Checkbox>
+						</InsToggle>
 					{/if}
 					{#if 'flatShading' in material}
-						<Checkbox
+						<InsToggle
 							checked={material.flatShading}
 							onchange={(/** @type {any} */ e) => setMat('flatShading', e.target.checked)}
 						>
 							Flat shading
-						</Checkbox>
+						</InsToggle>
 					{/if}
 					{#if typeof material.side !== 'undefined'}
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Side</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Side</span>
 							<ThemedSelect
 								class="flex-1"
 								items={[
@@ -3815,16 +3816,16 @@
 							mixed={matMixed((o) => o.material.emissiveIntensity)}
 							onchange={(v) => setMat('emissiveIntensity', v)} />
 						<div id="inspector-emissive" class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Color</span>
 							<input
 								type="color"
 								id="emissive-color"
 								aria-label="Emission colour"
-								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
+								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
 								value={'#' + material.emissive.getHexString()}
 								oninput={(/** @type {any} */ e) => setMat('emissive', e.currentTarget.value)}
 							/>
-							<span class="text-[10px] italic text-gray-400">black = no glow</span>
+							<span class="text-badge italic text-text-muted">black = no glow</span>
 						</div>
 					{/if}
 
@@ -3834,15 +3835,15 @@
 					     properties, so they stay editable on a shader-driven object -->
 					<p class="ui-section-label">Shadow</p>
 					<div class="flex gap-4 px-1">
-						<Checkbox bind:checked={$selectedObject.castShadow} onchange={() => setCastShadow()}>
+						<InsToggle bind:checked={$selectedObject.castShadow} onchange={() => setCastShadow()}>
 							Cast
-						</Checkbox>
-						<Checkbox
+						</InsToggle>
+						<InsToggle
 							bind:checked={$selectedObject.receiveShadow}
 							onchange={() => sendParam('receiveShadow')}
 						>
 							Receive
-						</Checkbox>
+						</InsToggle>
 					</div>
 				</Section>
 			{/if}
@@ -3853,12 +3854,12 @@
 			{#if !$selectedObject.isLight}
 				<Section variant="panel" label="Physics">
 					{#if multiCount}
-						<p id="physics-multi-note" class="text-[10px] italic text-gray-400">
+						<p id="physics-multi-note" class="text-badge italic text-text-muted">
 							Applies to {multiCount} selected objects.
 						</p>
 					{/if}
 					<div class="ui-row items-center gap-2">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Body</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Body</span>
 						<ThemedSelect
 							id="physics-mode"
 							items={[
@@ -3876,7 +3877,7 @@
 							onchange={(v) => setPhysics({ mass: v })} />
 					{/if}
 					<div class="ui-row items-center gap-2">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Material</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Material</span>
 						<ThemedSelect
 							id="physics-material"
 							items={[
@@ -3900,7 +3901,7 @@
 						mixed={mixed((o) => o.userData.physics?.friction ?? 0.5)}
 						onchange={(v) => setPhysics({ friction: v })} />
 					<div class="ui-row items-center gap-2">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Collider</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Collider</span>
 						<ThemedSelect
 							id="physics-collider"
 							items={[
@@ -3935,32 +3936,32 @@
 					{/if}
 					{#if $selectedObject.isMesh || $selectedObject.children?.length}<ColliderDecomposeRow uuid={$selectedObject.uuid} />{/if}
 					<!-- CL-A A3: sensor = trigger volume; overlaps fire On Enter / On Exit -->
-					<Checkbox
+					<InsToggle
 						id="physics-sensor"
 						checked={!!$selectedObject.userData.physics?.sensor}
 						onchange={(/** @type {any} */ e) => setPhysics({ sensor: e.currentTarget.checked || null })}
-						>Sensor — no collision, fires On Enter / On Exit</Checkbox
+						>Sensor — no collision, fires On Enter / On Exit</InsToggle
 					>
 					<PhysicsGroupRow physics={$selectedObject.userData.physics} water={$selectedObject.userData.water} onchange={setPhysics} />
 					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
 						<!-- CL-A A5: freeze axes (dynamic bodies only) -->
-						<div id="physics-freeze-rot" class="ui-row items-center gap-2 text-xs text-gray-300">
-							<span class="w-20 shrink-0 text-gray-400">Lock rotation</span>
+						<div id="physics-freeze-rot" class="ui-row items-center gap-2 text-xs text-text-2">
+							<span class="w-20 shrink-0 text-text-muted">Lock rotation</span>
 							{#each [['rx', 'X'], ['ry', 'Y'], ['rz', 'Z']] as [key, label] (key)}
-								<Checkbox
+								<InsToggle
 									checked={!!$selectedObject.userData.physics?.freeze?.[key]}
 									onchange={(/** @type {any} */ e) => setFreeze(key, e.currentTarget.checked)}
-									>{label}</Checkbox
+									>{label}</InsToggle
 								>
 							{/each}
 						</div>
-						<div id="physics-freeze-pos" class="ui-row items-center gap-2 text-xs text-gray-300">
-							<span class="w-20 shrink-0 text-gray-400">Lock position</span>
+						<div id="physics-freeze-pos" class="ui-row items-center gap-2 text-xs text-text-2">
+							<span class="w-20 shrink-0 text-text-muted">Lock position</span>
 							{#each [['px', 'X'], ['py', 'Y'], ['pz', 'Z']] as [key, label] (key)}
-								<Checkbox
+								<InsToggle
 									checked={!!$selectedObject.userData.physics?.freeze?.[key]}
 									onchange={(/** @type {any} */ e) => setFreeze(key, e.currentTarget.checked)}
-									>{label}</Checkbox
+									>{label}</InsToggle
 								>
 							{/each}
 						</div>
@@ -3968,13 +3969,13 @@
 					{/if}
 					<FluidInteractionRow targets={insTargets} /><!-- 36-fb F23 -->
 					<!-- CL-A A7: per-object collider preview (local, this device) -->
-					<Checkbox
+					<InsToggle
 						id="physics-show-collider"
 						checked={$colliderVizObjects.has($selectedObject.uuid)}
 						onchange={(/** @type {any} */ e) => setColliderViz($selectedObject.uuid, e.currentTarget.checked)}
-						>Show collider — this device</Checkbox
+						>Show collider — this device</InsToggle
 					>
-					<p class="mt-1 text-xs text-gray-400">
+					<p class="mt-1 text-xs text-text-muted">
 						Dynamic bodies fall and collide when a simulation runs; flow Mass/Bounciness/Friction nodes override these.
 					</p>
 				</Section>
@@ -3983,15 +3984,15 @@
 				     it and let every peer rebuild the tube (never the geometry directly) -->
 				{#if spline}
 					<Section variant="panel" label="Spline">
-						<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">
+						<p class="px-1 text-badge uppercase tracking-wider text-text-faint">
 							{spline.points.length} control points
 						</p>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Color</span>
 							<input
 								id="spline-color"
 								type="color"
-								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent"
+								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
 								aria-label="Spline color"
 								value={spline.color}
 								onchange={(/** @type {any} */ e) => setSplineColor($selectedObject.uuid, e.currentTarget.value)}
@@ -4009,7 +4010,7 @@
 						/>
 						{#if splineRadius === null}
 							<div class="ui-row items-center gap-2">
-								<span class="flex-1 text-[10px] text-yellow-200/80"
+								<span class="flex-1 text-badge text-warn-text"
 									>Points have different radii — Thickness flattens them.</span
 								>
 								<UiButton size="sm" variant="outline" onclick={() => scaleSplineRadii($selectedObject.uuid, 1.25)}
@@ -4040,12 +4041,12 @@
 							value={spline.segmentsPerSpan}
 							onchange={(v) => setSplineSmoothness($selectedObject.uuid, Math.round(v))}
 						/>
-						<Checkbox
+						<InsToggle
 							checked={spline.closed}
 							onchange={(/** @type {any} */ e) => setSplineClosed($selectedObject.uuid, e.target.checked)}
 						>
 							Closed loop
-						</Checkbox>
+						</InsToggle>
 						<UiButton
 							id="spline-edit-open"
 							size="sm"
@@ -4055,14 +4056,14 @@
 						>
 							{$splineEditObject === $selectedObject.uuid ? 'Close spline editor' : 'Edit control points'}
 						</UiButton>
-						<p class="text-[10px] text-gray-500">
+						<p class="text-badge text-text-faint">
 							Per-point thickness lives on the handles — open the editor and drag the amber dot above a point.
 						</p>
 						<!-- the same two directions the context menu offers, and the same
 						     interaction: press, then click the partner in the viewport. A
 						     list of terrain NAMES was the first version and it does not
 						     survive a scene with a ring of tiles. -->
-						<span class="px-1 text-[10px] uppercase tracking-wider text-gray-500">Flatten</span>
+						<span class="px-1 text-badge uppercase tracking-wider text-text-faint">Flatten</span>
 						<div class="flex flex-wrap gap-1">
 							<UiButton
 								id="spline-carve-pick"
@@ -4087,7 +4088,7 @@
 								This onto a surface…
 							</UiButton>
 						</div>
-						<p class="text-[10px] text-gray-500">
+						<p class="text-badge text-text-faint">
 							{#if $flattenPicking}
 								Click the {$flattenPicking.kind === 'carve' ? 'terrain' : 'surface'} in the viewport — Esc cancels.
 							{:else}
@@ -4109,7 +4110,7 @@
 				     the operations that are safe to apply blind. -->
 				{#if multiCount}
 					<Section variant="panel" label="Particles">
-						<p id="particles-multi-note" class="text-[10px] text-gray-400">
+						<p id="particles-multi-note" class="text-badge text-text-muted">
 							{multiCount} objects selected — an emitter is edited one object at a time so tuned
 							configs are not overwritten. Right-click the selection for Particles ▸ Add, Burst or
 							Remove across all {multiCount}.
@@ -4119,7 +4120,7 @@
 				<Section variant="panel" label="Particles">
 					{#if !$selectedObject.userData.particles}
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Emitter</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Emitter</span>
 							<ThemedSelect
 								id="particles-add"
 								items={[
@@ -4135,7 +4136,7 @@
 					{:else}
 						{@const p = $selectedObject.userData.particles}
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Preset</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Preset</span>
 							<ThemedSelect
 								id="particles-preset"
 								items={PARTICLE_PRESETS.map((item) => ({ value: item.key, name: item.name }))}
@@ -4144,7 +4145,7 @@
 							/>
 						</div>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Emission</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Emission</span>
 							<ThemedSelect
 								id="particles-mode"
 								items={[
@@ -4157,7 +4158,7 @@
 							/>
 						</div>
 						{#if (p.mode ?? 'continuous') === 'impact'}
-							<p class="text-xs text-gray-400">
+							<p class="text-xs text-text-muted">
 								Fires when a physics simulation lands this object on the ground or another object (needs a Dynamic body + a running sim).
 							</p>
 						{/if}
@@ -4166,7 +4167,7 @@
 								<UiButton size="sm" variant="outline" onclick={() => burstObjectParticles($selectedObject.uuid)}>
 									<Sparkles size={16} class="mr-1" aria-hidden="true" />Burst now
 								</UiButton>
-								<span class="text-xs text-gray-400">fires for every peer</span>
+								<span class="text-xs text-text-muted">fires for every peer</span>
 							</div>
 						{/if}
 						<SliderRow label="Count" min={1} max={500} step={1} value={p.count ?? 80}
@@ -4190,7 +4191,7 @@
 							<SliderRow label="Ground below" min={0} max={40} step={0.1} value={p.fall ?? 0}
 								onchange={(v) => setParticles({ fall: v })} />
 							<div class="ui-row items-center gap-2">
-								<span class="w-20 shrink-0 text-xs text-gray-400">On landing</span>
+								<span class="w-20 shrink-0 text-xs text-text-muted">On landing</span>
 								<ThemedSelect
 									id="particles-ground"
 									items={[
@@ -4212,7 +4213,7 @@
 						<SliderRow label="Opacity" min={0} max={1} step={0.05} value={p.opacity ?? 0.9}
 							onchange={(v) => setParticles({ opacity: v })} />
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400" title="Where particles spawn, relative to the object center (local axes)">Emit from</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted" title="Where particles spawn, relative to the object center (local axes)">Emit from</span>
 							{#each ['x', 'y', 'z'] as axis, i}
 								<div class="w-14 shrink-0">
 									<DragRow
@@ -4231,25 +4232,25 @@
 							{/each}
 						</div>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Color</span>
 							<input
 								type="color"
 								aria-label="Particle start color"
-								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
+								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
 								value={p.colorStart ?? '#ffffff'}
 								oninput={(/** @type {any} */ e) => setParticles({ colorStart: e.currentTarget.value })}
 							/>
-							<span class="text-xs text-gray-400">→</span>
+							<span class="text-xs text-text-muted">→</span>
 							<input
 								type="color"
 								aria-label="Particle end color"
-								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
+								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
 								value={p.colorEnd ?? '#8899aa'}
 								oninput={(/** @type {any} */ e) => setParticles({ colorEnd: e.currentTarget.value })}
 							/>
 						</div>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Sprite</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Sprite</span>
 							<ThemedSelect
 								id="particles-sprite"
 								items={[
@@ -4264,7 +4265,7 @@
 							/>
 						</div>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Blending</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Blending</span>
 							<ThemedSelect
 								id="particles-blending"
 								items={[
@@ -4276,7 +4277,7 @@
 							/>
 						</div>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Space</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Space</span>
 							<ThemedSelect
 								id="particles-space"
 								items={[

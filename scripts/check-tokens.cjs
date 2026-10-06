@@ -25,6 +25,9 @@ const COMPONENTS = path.join(ROOT, 'src', 'components');
 
 /** files that must stay token-clean (relative to the repo root, forward slashes) */
 const CLEAN = [
+	'src/components/menu/inspector/InsToggle.svelte',
+	'src/components/menu/inspector/InspectorHead.svelte',
+	'src/components/menu/inspector/MenuButton.svelte',
 	'src/components/ui/Badge.svelte',
 	'src/components/ui/Button.svelte',
 	'src/components/ui/Checkbox.svelte',
@@ -36,6 +39,7 @@ const CLEAN = [
 	'src/components/ui/SearchField.svelte',
 	'src/components/ui/Segmented.svelte',
 	'src/components/ui/SettingRow.svelte',
+	'src/components/ui/SliderRow.svelte',
 	'src/components/ui/Sheet.svelte',
 	'src/components/ui/Slider.svelte',
 	'src/components/ui/Tabs.svelte',

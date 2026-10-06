@@ -7,7 +7,8 @@
 		"lock-dragrow-sync",
 		"lock-shortcuts",
 		"lock-panels",
-		"lock-search"
+		"lock-search",
+		"lock-objectlist"
 	],
 	"adopted": [
 		"docking",
@@ -36,7 +37,8 @@
 		"inspector-multi-edit",
 		"undo",
 		"theme-import",
-		"theme-tokens"
+		"theme-tokens",
+		"object-list-keys"
 	],
 	"excluded": {
 		"dock-chrome": "red on v1.24.0 run alone (70/1): 9.3 measures a Node editor tab's pixel width (103.55 vs ~98) — a LAYOUT number the redesign changes, not behaviour; its 70 behaviour checks pass",

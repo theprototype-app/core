@@ -13,6 +13,18 @@
 	import { explorerItems, addItemFromBytes } from '$lib/explorer';
 	import { showToast } from '../../../stores/appStore';
 	import { pageUrl } from '$lib/export/exportBoot.js';
+	import { onMount } from 'svelte';
+	import { tours } from '$lib/tours/index.js';
+	import { autoStartAllowed } from '$lib/tours/builtin.js';
+	import { HDRI_TOUR } from '$lib/hdri/hdriTour.js';
+
+	// T1: the first time the cards are on screen, a two-step tour points at them
+	onMount(() => {
+		const t = setTimeout(() => {
+			if (autoStartAllowed()) tours.maybeAutoStart?.(HDRI_TOUR);
+		}, 600);
+		return () => clearTimeout(t);
+	});
 
 	const MAX_UPLOAD = 25 * 1024 * 1024; // the asset-share cap: a bigger file could not reach peers
 

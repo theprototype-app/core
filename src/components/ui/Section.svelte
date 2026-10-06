@@ -218,6 +218,11 @@
 		padding-bottom: var(--space-2);
 		border-bottom: 1px solid var(--border);
 	}
+	/* the filter's `hidden` (a Tailwind utility, LAYERED) loses to this file's unlayered
+	   `display: flex` — say it here, or a filtered-out panel section never hides */
+	.sec-panel.hidden {
+		display: none;
+	}
 	.sec-panel-head {
 		display: flex;
 		align-items: center;

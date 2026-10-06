@@ -32,7 +32,8 @@ const typeIntoPicker = (page, index, hex) =>
 
 /** the numeric field of a SliderRow by its label */
 const rowField = (page, label) =>
-	page.locator('.ui-row', { has: page.getByTitle(label, { exact: true }) }).locator('.dn-input').first();
+	// 38 R5: a slider row is a PropRow (label | slider | value box)
+	page.locator('.pr', { has: page.locator('.pr-label', { hasText: new RegExp('^' + label + '$') }) }).locator('.dn-input').first();
 
 /** live material/physics readout for the trio */
 const readTrio = (page) =>

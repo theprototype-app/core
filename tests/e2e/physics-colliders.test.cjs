@@ -81,7 +81,7 @@ h.run(async () => {
 		page.evaluate(() => {
 			/** @type {Record<string, boolean>} */
 			const state = {};
-			for (const s of document.querySelectorAll('#inspector .border-b')) {
+			for (const s of document.querySelectorAll('#inspector .border-b, #inspector .sec-panel')) {
 				const label = s.querySelector('.ui-section-label')?.textContent?.replace(/[−+]\s*$/, '').trim();
 				if (label) state[label] = !s.classList.contains('hidden');
 			}

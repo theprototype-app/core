@@ -32,7 +32,7 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		min-height: 32px;
+		min-height: var(--row-h); /* density token: 36 / 32 Compact / 44 touch */
 	}
 	.it-label {
 		flex: 1;
@@ -47,9 +47,6 @@
 		cursor: default;
 	}
 	@media (max-width: 639.98px) {
-		.it {
-			min-height: 44px;
-		}
 		.it-label {
 			font-size: var(--fs-body);
 		}

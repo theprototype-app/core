@@ -206,6 +206,10 @@ h.run(async () => {
 	// which made the select refuse to shrink and pushed the Add button off the edge.
 	const fits = await page.evaluate(() => {
 		const button = document.querySelector('#post-add');
+		// 38 R5: the redesigned rows are taller, so bring the row on screen before asking
+		// what is under its centre (the question is "does anything cover it", not "is it
+		// above the fold")
+		button.scrollIntoView({ block: 'center' });
 		const box = button.getBoundingClientRect();
 		const panel = button.closest('[class*="drawer"], aside, .app-drawer') ?? document.body;
 		const panelBox = panel.getBoundingClientRect();

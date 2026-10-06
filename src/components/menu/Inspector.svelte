@@ -4333,10 +4333,11 @@
 	/* the panel's legacy controls, drawn in the kit's look through the tokens (their markup,
 	   ids and handlers unchanged): choice chips with ONE accent for the selected state
 	   (orange stays for Play/live only), quiet buttons as small outline buttons, inset inputs */
+	/* heights follow the density tokens (NOTES-38 #19: Compact reaches the Inspector) */
 	.ins-shell :global(.ui-chip) {
 		display: inline-flex;
 		align-items: center;
-		min-height: 26px;
+		min-height: calc(var(--control-h-sm) - 6px);
 		padding: 0 10px;
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-pill);
@@ -4366,7 +4367,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
-		min-height: 26px;
+		min-height: calc(var(--control-h-sm) - 6px);
 		padding: 0 8px;
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-input);
@@ -4384,7 +4385,7 @@
 		opacity: 0.4;
 	}
 	.ins-shell :global(.ui-input) {
-		min-height: 30px;
+		min-height: calc(var(--control-h-sm) - 2px);
 		border: 1px solid var(--border-input);
 		border-radius: var(--radius-input);
 		background: var(--surface-inset);
@@ -4401,8 +4402,8 @@
 	}
 	/* colour swatches (a native colour input, drawn as a 28px tile) */
 	.ins-shell :global(.ins-swatch) {
-		width: 28px;
-		height: 28px;
+		width: calc(var(--control-h-sm) - 4px);
+		height: calc(var(--control-h-sm) - 4px);
 		padding: 0;
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-input);
@@ -4457,7 +4458,7 @@
 	}
 	.ins-saved-apply,
 	.ins-saved-del {
-		min-height: 26px;
+		min-height: calc(var(--control-h-sm) - 6px);
 		padding: 0 6px 0 10px;
 		background: transparent;
 		color: var(--text-2);
@@ -4511,7 +4512,7 @@
 	}
 	.ins-shell :global(.ins-axes .dn-wrap) {
 		box-sizing: border-box;
-		min-height: 28px;
+		min-height: calc(var(--control-h-sm) - 4px);
 		gap: 3px;
 		padding-inline: 4px;
 		border-radius: var(--radius-input);
@@ -4534,9 +4535,6 @@
 		color: var(--axis-z);
 	}
 	@media (max-width: 639.98px) {
-		.ins-shell :global(.ins-axes .dn-wrap) {
-			min-height: 36px;
-		}
 		.ins-shell :global(.ins-axes .dn-input) {
 			font-size: var(--fs-input);
 		}

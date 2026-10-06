@@ -303,7 +303,8 @@ h.run(async () => {
 	tab = (await read(A.page, 'codeWorkspace.codeTabs')).find((t) => t.id === active);
 	h.check(tab?.kind === 'module' && tab.readOnly === true, 'a module source opens READ-ONLY');
 	h.check((await A.page.locator(`[data-pane="${active}"] .cm-content`).getAttribute('contenteditable')) === 'false', 'its editor refuses typing');
-	h.check(await A.page.locator('#code-ws-fork').count() === 0, 'no "Make editable copy" without a fork hook');
+	// 36-fb-code (F6): a module file is always copyable — with no hook the default puts a copy in the Library
+	h.check(await A.page.locator('#code-ws-fork').isVisible(), '"Make editable copy" is offered without a hook too (the Library copy)');
 	await S(A.page, () => {
 		window.__forked = null;
 		window.__offFork = window.__stores.codeWorkspace.registerCodeSource('module', {
@@ -317,7 +318,7 @@ h.run(async () => {
 	await A.page.locator('.code-tab[data-kind="file"]').first().click();
 	await A.page.locator('.code-tab[data-kind="module"]').first().click();
 	await A.page.waitForTimeout(300);
-	h.check(await A.page.locator('#code-ws-fork').isVisible(), 'with a fork hook registered the button appears');
+	h.check(await A.page.locator('#code-ws-fork').isVisible(), 'with a fork hook registered the button stays (the hook wins)');
 	await A.page.locator('#code-ws-fork').click();
 	await A.page.waitForTimeout(800);
 	const forked = await S(A.page, () => window.__forked);

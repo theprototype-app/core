@@ -9,19 +9,22 @@
 		remoteSimulating,
 		toggleSimulation,
 		pauseSimulation,
-		resetSimulation
 	} from '$lib/physics';
 	import { nameOf } from '$lib/lockControl';
 	import { showSimControls } from '../../stores/appStore.js';
+	import { scenePhysicsState_ } from '$lib/scenePhysics';
+	import { resetWholeSimulation } from '$lib/sim/simOnLoad.js';
+	// 36-fb-water S9: a SIMULATION scene (Start simulation on load) always shows the transport,
+	// and Reset puts the whole simulation back (bodies, fluid tanks, drops) and plays it again
 
 	const btn =
 		'flex h-9 w-9 items-center justify-center rounded-full bg-gray-700 text-white shadow-lg transition-colors hover:bg-gray-600';
 </script>
 
-{#if $showSimControls}
+{#if $showSimControls || $scenePhysicsState_.simOnLoad === true}
 <div id="sim-controls" class="fixed bottom-[112px] right-4 z-30 flex flex-col gap-1.5">
 	{#if $simulating}
-		<button id="sim-reset" class={btn} aria-label="Reset simulation" title="Reset — restore the initial layout" onclick={() => resetSimulation()}>
+		<button id="sim-reset" class={btn} aria-label="Reset simulation" title="Reset — back to how it opened (bodies, fluid tanks, drops), and play again" onclick={() => resetWholeSimulation()}>
 			<RotateCcw size={16} class="text-xs" aria-hidden="true" />
 		</button>
 		<button id="sim-pause" class={btn} aria-label={$simPaused ? 'Resume simulation' : 'Pause simulation'} title={$simPaused ? 'Resume' : 'Pause'} onclick={() => pauseSimulation()}>

@@ -40,7 +40,7 @@
 		<label class="flex flex-col">
 			<span>clip</span>
 			<input
-				class="nodrag"
+				class="nodrag nopan"
 				list="animstate-clips-{id}"
 				placeholder="any clip"
 				value={data.clip ?? ''}
@@ -55,7 +55,7 @@
 		<label class="flex flex-col">
 			<span>read</span>
 			<select
-				class="nodrag"
+				class="nodrag nopan"
 				value={read}
 				on:change={(e) => setNodeData(id, { read: e.currentTarget.value })}
 			>

@@ -48,7 +48,7 @@
 		<label class="flex w-full flex-col">
 			<span class="text-gray-400">name</span>
 			<input
-				class="nodrag w-full"
+				class="nodrag nopan w-full"
 				type="text"
 				value={data.name ?? (data.type === 'flowinput' ? 'value' : 'out')}
 				on:change={(e) => setNodeData(id, { name: e.currentTarget.value.trim() || 'value' })}
@@ -58,7 +58,7 @@
 			<label class="flex w-full flex-col">
 				<span class="text-gray-400">type</span>
 				<select
-					class="nodrag w-full"
+					class="nodrag nopan w-full"
 					value={data.vtype ?? 'number'}
 					on:change={(e) => onTypeChange(e.currentTarget.value)}
 				>
@@ -73,7 +73,7 @@
 				{#if (data.vtype ?? 'number') === 'boolean'}
 					<label class="flex items-center gap-1">
 						<input
-							class="nodrag"
+							class="nodrag nopan"
 							type="checkbox"
 							checked={data.fallback === true}
 							on:change={(e) => setNodeData(id, { fallback: e.currentTarget.checked })}
@@ -82,7 +82,7 @@
 					</label>
 				{:else if (data.vtype ?? 'number') === 'color'}
 					<input
-						class="nodrag h-6 w-full"
+						class="nodrag nopan h-6 w-full"
 						type="color"
 						value={typeof data.fallback === 'string' ? data.fallback : '#ffffff'}
 						on:change={(e) => setNodeData(id, { fallback: e.currentTarget.value })}

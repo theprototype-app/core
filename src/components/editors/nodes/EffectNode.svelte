@@ -27,14 +27,14 @@
 			<p class="text-[10px] text-gray-400">faces the wired target object/point</p>
 		{:else if data.type === 'setcolor'}
 			<label class="flex items-center gap-2">
-				<input class="nodrag h-5 w-7" type="color" value={data.color ?? '#ff4000'}
+				<input class="nodrag nopan h-5 w-7" type="color" value={data.color ?? '#ff4000'}
 					on:input={(e) => setNodeData(id, { color: e.currentTarget.value })} />
 				<span class="text-[10px] text-gray-400">or wire a color</span>
 			</label>
 		{:else if data.type === 'setuniform'}
 			<label class="flex w-full flex-col gap-0.5">
 				<span class="text-[9px] text-gray-400">uniform</span>
-				<input class="nodrag w-full font-mono text-[10px]" type="text" placeholder="u_c1_value"
+				<input class="nodrag nopan w-full font-mono text-[10px]" type="text" placeholder="u_c1_value"
 					value={data.uniform ?? ''}
 					on:change={(e) => setNodeData(id, { uniform: e.currentTarget.value })} />
 			</label>
@@ -43,7 +43,7 @@
 			</p>
 		{:else if data.type === 'visibility'}
 			<label class="flex items-center gap-2">
-				<input class="nodrag" type="checkbox" checked={data.on !== false}
+				<input class="nodrag nopan" type="checkbox" checked={data.on !== false}
 					on:change={(e) => setNodeData(id, { on: e.currentTarget.checked })} />
 				<span>{data.on !== false ? 'visible' : 'hidden'}</span>
 			</label>
@@ -52,7 +52,7 @@
 			     hand — a plain param on the card, not a hidden rule about recipe nodes. -->
 			<label class="flex items-center gap-2"
 				title="Outside play mode this node leaves the object alone, so you can hide and show it by hand">
-				<input class="nodrag" type="checkbox" checked={!!data.whilePlaying}
+				<input class="nodrag nopan" type="checkbox" checked={!!data.whilePlaying}
 					on:change={(e) => setNodeData(id, { whilePlaying: e.currentTarget.checked })} />
 				<span class="text-[10px] text-gray-400">only while playing</span>
 			</label>

@@ -66,6 +66,13 @@ export const BUBBLE_DEFAULTS = Object.freeze({
 	height: 2 // standalone emitter: how far a bubble rises when it is not under water
 });
 
+/**
+ * 36-fb-water F18: what "Add bubble emitter" / Add ▸ Water ▸ Bubbles start with. The volume
+ * defaults (2-6 cm, 40 of them) suit an aquarium seen through glass; on an object they were the
+ * reported "does nothing visible" — a faint few dots, half of them inside the object.
+ */
+export const STANDALONE_BUBBLES = Object.freeze({ count: 70, rate: 16, sizeMin: 0.04, sizeMax: 0.11, spread: 0.4, opacity: 0.9, riseSpeed: 0.7 });
+
 /** Bubble cap per emitter (one instanced draw). */
 export const MAX_BUBBLES = 400;
 

@@ -76,6 +76,7 @@
 		style="left: {group.rect.left}px; top: {group.rect.top}px; width: {group.rect.width}px; height: 34px; z-index: {[$focusTick, stripZ(group)][1]}; cursor: move"
 		role="tablist"
 		tabindex="-1"
+		data-key-scope="panel"
 		onpointerdown={(e) => onStripDown(e, group)}
 	>
 		{#each group.members as key (key)}

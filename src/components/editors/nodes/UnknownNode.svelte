@@ -36,7 +36,7 @@
 			It is kept exactly as saved, so installing the module brings it back to life.
 		</span>
 		<button
-			class="nodrag rounded-sm bg-yellow-600/80 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-yellow-600"
+			class="nodrag nopan rounded-sm bg-yellow-600/80 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-yellow-600"
 			onclick={() => modulesOpen.set(true)}
 		>
 			Install module

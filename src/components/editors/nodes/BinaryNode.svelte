@@ -34,19 +34,19 @@
 		<div class="flex justify-between">
 			<span>out</span><span class="font-mono">{readout}</span>
 		</div>
-		<select class="nodrag" value={data.op ?? ops[0][0]} on:change={(e) => setNodeData(id, { op: e.currentTarget.value })}>
+		<select class="nodrag nopan" value={data.op ?? ops[0][0]} on:change={(e) => setNodeData(id, { op: e.currentTarget.value })}>
 			{#each ops as [value, glyph]}
 				<option {value}>{glyph}</option>
 			{/each}
 		</select>
 		{#if isGate}
 			<label class="flex items-center gap-1">
-				<input class="nodrag" type="checkbox" checked={!!data.a}
+				<input class="nodrag nopan" type="checkbox" checked={!!data.a}
 					on:change={(e) => setNodeData(id, { a: e.currentTarget.checked })} /> a
 			</label>
 			{#if data.op !== 'not'}
 				<label class="flex items-center gap-1">
-					<input class="nodrag" type="checkbox" checked={!!data.b}
+					<input class="nodrag nopan" type="checkbox" checked={!!data.b}
 						on:change={(e) => setNodeData(id, { b: e.currentTarget.checked })} /> b
 				</label>
 			{/if}

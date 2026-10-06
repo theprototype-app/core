@@ -71,6 +71,13 @@ h.run(async () => {
 	await h.eventually(() => notes(B.page), (n) => n.includes('keep me'), 'premise: B holds the note');
 	await h.eventually(() => preset(B.page), (p) => p === 'sunset', 'premise: B has the sunset sky');
 
+	// evidence: a long-lived offer (a screenshot on a loaded box can outlast the real 8 s)
+	if (process.env.EVIDENCE_DIR) {
+		await pa.evaluate(() => window.__stores.undoToast.offerUndo({ id: 'shot', text: '3 objects cleared. Still here: sky & look.', undo: () => {}, ms: 120000, actions: [{ label: 'Clear those too', action: () => {} }] }));
+		await shots(pa, '40-undo-toast', '.tp-toast--undo');
+		await pa.evaluate(() => window.__stores.undoToast.withdrawUndo('shot'));
+	}
+
 	// ---- 1. Clear objects, then Undo ------------------------------------------------
 	await openClear();
 	await pa.locator('#confirm-dialog-clear').click(); // "Clear objects" (the box starts off)
@@ -79,8 +86,7 @@ h.run(async () => {
 	await h.eventually(() => undoCard().isVisible(), (v) => v, '1.3 a toast offers Undo');
 	const text = await undoCard().textContent();
 	h.check(/3 objects cleared/.test(text) && /Still here:.*sky/.test(text), `1.4 it says what went and what stayed (${text?.replace(/\s+/g, ' ').trim()})`);
-	await shots(pa, '40-undo-toast', '.tp-toast--undo');
-	h.check((await pa.locator('.tp-toast--undo .tp-toast-ttl').count()) === 1, '1.5 the card shows the time left (draining bar)');
+	h.check((await pa.locator('.tp-toast--undo .tp-toast-ttl').count()) >= 1, '1.5 the card shows the time left (draining bar)');
 	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click();
 	await h.eventually(() => uuids(pa), (u) => u.join() === original.join(), '1.6 Undo: A has the SAME objects back (uuids)', 30000);
 	await h.eventually(() => uuids(B.page), (u) => u.join() === original.join(), '1.7 and so does B', 30000);

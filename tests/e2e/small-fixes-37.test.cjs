@@ -148,7 +148,11 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	await page.getByText('Interface', { exact: true }).first().click();
 	await page.waitForTimeout(300);
-	const themeBefore = await readStore('theme');
+	const themeBefore = await page.evaluate(() => {
+		let v;
+		window.__stores.themes.theme.subscribe((x) => (v = x))();
+		return v;
+	});
 	// move the theme picker into a fresh showModal() dialog: the case a dialog that reverts
 	// to modal would produce (every app dialog is non-modal today, so this is the guard)
 	await page.evaluate(() => {
@@ -177,10 +181,14 @@ h.run(async () => {
 	h.check(probe.hitIsOption, 'an option is the topmost element at its own centre (paints above the top layer)');
 	if (probe.x) await page.mouse.click(probe.x, probe.y);
 	await page.waitForTimeout(250);
-	const themeAfter = await readStore('theme');
+	const themeAfter = await page.evaluate(() => {
+		let v;
+		window.__stores.themes.theme.subscribe((x) => (v = x))();
+		return v;
+	});
 	h.check(themeAfter !== themeBefore, `clicking the option picks it inside the modal (${themeBefore} -> ${themeAfter})`);
 	await page.evaluate((t) => {
-		window.__stores.theme.set(t);
+		window.__stores.themes.theme.set(t);
 		const dlg = document.querySelector('#r18-modal');
 		const wrap = dlg.querySelector('.ts-wrap');
 		window.__tsHome.parent.insertBefore(wrap, window.__tsHome.next);

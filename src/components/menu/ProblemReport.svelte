@@ -97,15 +97,24 @@
 	function onKey(e) {
 		if (e.key === 'Escape') {
 			e.stopPropagation();
+			e.preventDefault();
 			if (drawing) drawing = null;
 			else void answer(null);
 		}
 	}
+	// Escape must close the card wherever focus went (a disabled Send button drops focus to
+	// <body> while it sends): a window CAPTURE listener while the card is open
+	$effect(() => {
+		if (!$problemDraft) return;
+		const key = (/** @type {KeyboardEvent} */ e) => onKey(e);
+		window.addEventListener('keydown', key, true);
+		return () => window.removeEventListener('keydown', key, true);
+	});
 </script>
 
 {#if $problemDraft}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<div id="problem-report" class="problem ui-panel" role="dialog" aria-label="Report a problem" tabindex="-1" onkeydown={onKey}>
+	<div id="problem-report" class="problem ui-panel" role="dialog" aria-label="Report a problem" tabindex="-1">
 		<p class="title">Report a problem</p>
 		{#if $problemDraft.shotUrl}
 			<p class="muted">Drag on the picture to box what is wrong{marks.length ? ` (${marks.length})` : ''}.</p>

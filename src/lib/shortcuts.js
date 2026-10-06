@@ -652,7 +652,7 @@ export const shortcuts = [
 		scope: 'viewport',
 		label: 'Cycle view mode (Shaded / Shaded + AO / Wireframe)',
 		action: () => {
-			void cycleViewMode().then((label) => showToast('View: ' + label));
+			showToast('View: ' + cycleViewMode());
 		}
 	},
 	{

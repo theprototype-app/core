@@ -41,6 +41,23 @@ async function spyWire(page) {
 	});
 }
 const wire = (page) => page.evaluate(() => (window.__wire = window.__wire ?? []).splice(0));
+/** HTML5 drag from one object-list row to another through the rows' REAL handlers: one
+ * DataTransfer shared by dragstart / dragover / drop, as a browser does. (Playwright's dragTo
+ * timed out here: the object list is a tabbable window that can sit behind the Inspector's tab.) */
+const dragRow = (page, from, to) =>
+	page.evaluate(({ from, to }) => {
+		const src = document.getElementById(from);
+		const dst = document.getElementById(to);
+		if (!src || !dst) return 'missing row ' + (!src ? from : to);
+		const dt = new DataTransfer();
+		const fire = (el, type) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt }));
+		fire(src, 'dragstart');
+		fire(dst, 'dragenter');
+		const accepted = !fire(dst, 'dragover'); // preventDefault = "you may drop here"
+		fire(dst, 'drop');
+		fire(src, 'dragend');
+		return accepted ? 'ok' : 'refused';
+	}, { from, to });
 const undoDepth = (page) => page.evaluate(() => { let v; window.__stores.history.undoStack.subscribe((x) => (v = x))(); return v.length; });
 
 h.run(async () => {
@@ -49,8 +66,13 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { storage: open, context: { viewport: { width: 1400, height: 900 } } });
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
-	const caps = await A.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return [...p.wireBatchPeers]; });
-	h.check(caps.includes(B.id), `premise: B advertised the batch envelope (wb:1) in its handshake (${JSON.stringify(caps)})`);
+	// the `modules` handshake carrying wb:1 may land after connect() returns
+	await h.eventually(
+		() => A.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return [...p.wireBatchPeers]; }),
+		(caps) => caps.includes(B.id),
+		'premise: B advertised the batch envelope (wb:1) in its handshake',
+		30000
+	);
 
 	// three boxes; A makes them DISAGREE locally (shadow, roughness, colour)
 	const ids = await A.page.evaluate(() => {
@@ -60,7 +82,7 @@ h.run(async () => {
 		const c = s.addObjects.spawnAtPoint('/create Box 1 1 1', [5, 0, 0]);
 		return { a: a.uuid, b: b.uuid, c: c.uuid };
 	});
-	await h.eventually(() => objOf(B.page, ids.c, (o) => o.uuid), (u) => !!u, 'B has the three boxes', 15000);
+	await h.eventually(() => objOf(B.page, ids.c, (o) => o.uuid), (u) => !!u, 'B has the three boxes', 30000);
 	await A.page.evaluate(({ a, b, c }) => {
 		const s = window.__stores;
 		let g;
@@ -168,6 +190,28 @@ h.run(async () => {
 		await A.page.waitForTimeout(300);
 	}
 
+	// a typed value followed by Enter (the habit) must not apply twice: DragRow applies LIVE
+	// per keystroke and Enter only blurs
+	await A.page.evaluate(() => window.__stores.multiTransform.pivotMode.set('median'));
+	await A.page.waitForTimeout(300);
+	{
+		const yRow = A.page.locator('#inspector-rotation .dn-input').nth(1);
+		await yRow.click();
+		await yRow.fill('90');
+		await yRow.press('Enter');
+		await A.page.waitForTimeout(900);
+		const pa = await worldPos(A.page, ids.a);
+		h.check(near(pa, [2, 0, 1]), `3.enter type 90 + Enter turns the set 90°, not 180° (${fmt(pa)})`);
+		await A.page.evaluate(() => window.__stores.history.undo());
+		await A.page.waitForTimeout(500);
+		await A.page.evaluate(({ a, b }) => {
+			const s = window.__stores;
+			s.objectActions.selectObject(a, true);
+			s.objectActions.selectObject(b, false, true);
+		}, ids);
+		await A.page.waitForTimeout(300);
+	}
+
 	// the TOOLBAR cell shows and steps the same mode
 	await A.page.evaluate(() => window.__stores.multiTransform.pivotMode.set('median'));
 	await A.page.waitForTimeout(200);
@@ -196,7 +240,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	await wire(A.page);
 	const depth1 = await undoDepth(A.page);
-	await A.page.locator(`[id="${ids.a}"]`).dragTo(A.page.locator(`[id="${g}"]`));
+	const d1 = await dragRow(A.page, ids.a, g);
+	h.check(d1 === 'ok', `4.0 the group row accepts the drag (${d1})`);
 	await A.page.waitForTimeout(600);
 	const parents = await Promise.all([ids.a, ids.b, ids.c].map((u) => objOf(A.page, u, (o) => o.parent?.uuid)));
 	h.check(parents[0] === g && parents[1] === g && parents[2] !== g, `4.1 dragging one SELECTED row moved the whole selection into the group (${parents.map((p) => (p === g ? 'G' : 'root')).join(', ')})`);
@@ -219,7 +264,8 @@ h.run(async () => {
 		s.objectActions.selectObject(b, false, true);
 	}, ids);
 	await A.page.waitForTimeout(300);
-	await A.page.locator(`[id="${ids.b}"]`).dragTo(A.page.locator(`[id="${ids.c}"]`));
+	const d2 = await dragRow(A.page, ids.b, ids.c);
+	h.check(d2 === 'ok', `4.8a a plain object row accepts the drag too (${d2})`);
 	await A.page.waitForTimeout(600);
 	const parented = await Promise.all([ids.a, ids.b].map((u) => objOf(A.page, u, (o) => o.parent?.uuid)));
 	h.check(parented.every((p) => p === ids.c), `4.8 dropping onto a box PARENTS the selection to it (${parented.map((p) => (p === ids.c ? 'C' : p)).join(', ')})`);

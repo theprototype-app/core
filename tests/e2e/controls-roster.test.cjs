@@ -89,7 +89,7 @@ h.run(async () => {
 	let titles = await barTitles(A.page);
 	h.check(
 		titles.join(' | ') === DEFAULT.join(' | '),
-		`premise: eight buttons around the play well, in order (${titles.join(' | ')})`
+		`premise: nine buttons around the play well, in order (${titles.join(' | ')})`
 	);
 	h.check(
 		await A.page.evaluate(() => !!document.querySelector('#controls-pill #play-button')),
@@ -118,8 +118,8 @@ h.run(async () => {
 	// plus Play. It reads checked (it IS on the bar) and carries no toggle, because
 	// there is no toolbar without a way to press play.
 	h.check(
-		menu.filter((r) => r.checked).length === 9,
-		`Customize lists the eight buttons AND the play well as on the bar (${menu.filter((r) => r.checked).length})`
+		menu.filter((r) => r.checked).length === 10, // 37 R1: + Pivot
+		`Customize lists the nine buttons AND the play well as on the bar (${menu.filter((r) => r.checked).length})`
 	);
 	h.check(
 		menu.some((r) => r.label === 'Play' && r.checked),
@@ -154,10 +154,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	titles = await barTitles(A.page);
 	h.check(
-		!titles.includes('Rotate (2)') && titles.length === 8,
+		!titles.includes('Rotate (2)') && titles.length === 9,
 		`the hidden button is still hidden after a reload (${titles.join(' | ')})`
 	);
-	h.check(titles.indexOf('—') === 3, 'the well came back where it was left');
+	h.check(titles.indexOf('—') === 4, 'the well came back where it was left');
 
 	// ---- REORDER: Move right on Move ----------------------------------------------
 	await cellMenu(A.page, 'Move (1)');
@@ -223,7 +223,7 @@ h.run(async () => {
 	await pick(A.page, 'Expand toolbar');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.length === 8 && titles.includes('Explorer'),
+		titles.length === 9 && titles.includes('Explorer'),
 		`the FAB menu brings the bar back exactly as it was (${titles.join(' | ')})`
 	);
 	h.check((await layout(A.page))?.collapsed === false, 'expanding persisted too');
@@ -232,15 +232,15 @@ h.run(async () => {
 	await cellMenu(A.page, 'Explorer');
 	await pick(A.page, 'Customize toolbar…');
 	h.check(
-		(await rows(A.page)).filter((r) => r.checked).length === 8,
-		'premise: Customize opens showing the hidden button unchecked (7 buttons + Play)'
+		(await rows(A.page)).filter((r) => r.checked).length === 9,
+		'premise: Customize opens showing the hidden button unchecked (8 buttons + Play)'
 	);
 	await pick(A.page, 'Reset toolbar');
 	// W1: Reset is `keepOpen` too, so the list itself has to show the restored roster
 	h.check(await menuOpen(A.page), 'Reset toolbar leaves the Customize list up');
 	h.check(
-		(await rows(A.page)).filter((r) => r.checked).length === 9,
-		`and the rows re-rendered IN PLACE — all eight read checked again (${(await rows(A.page)).filter((r) => r.checked).length})`
+		(await rows(A.page)).filter((r) => r.checked).length === 10,
+		`and the rows re-rendered IN PLACE — all nine read checked again (${(await rows(A.page)).filter((r) => r.checked).length})`
 	);
 	titles = await barTitles(A.page);
 	h.check(
@@ -703,15 +703,22 @@ h.run(async () => {
 	);
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('Move (1)') === 2 && titles.indexOf('—') === 3,
-		`a second press walked it one further, past Interact (${titles.join(' | ')})`
+		titles.indexOf('Move (1)') === 2 && titles.indexOf('—') === 5,
+		`a second press walked it one further, past Scale (${titles.join(' | ')})`
 	);
-	// 33 E1: Interact sits before the well now, so the THIRD press is the one that crosses it
+	// 33 E1 + 37 R1: Pivot and Interact sit before the well, so the FIFTH press crosses it
+	await rowArrow(A.page, 'Move Move (1) down');
 	await rowArrow(A.page, 'Move Move (1) down');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('Move (1)') === 3 && titles.indexOf('—') === 2,
-		`a third press walked it across the play well (${titles.join(' | ')})`
+		titles.indexOf('Move (1)') === 4 && titles.indexOf('—') === 5,
+		`the third and fourth presses walked it past Pivot and Interact (${titles.join(' | ')})`
+	);
+	await rowArrow(A.page, 'Move Move (1) down');
+	titles = await barTitles(A.page);
+	h.check(
+		titles.indexOf('Move (1)') === 5 && titles.indexOf('—') === 4,
+		`a fifth press walked it across the play well (${titles.join(' | ')})`
 	);
 	// the two controls must be DISTINGUISHABLE: `Icon`'s map is `MAP[name] ?? Box`, and
 	// `chevron-left`/`chevron-right` were in no map at all, so both reorder controls had
@@ -733,7 +740,7 @@ h.run(async () => {
 	await pick(A.page, 'Flow Code');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.includes('Flow Code') && titles.length === 10,
+		titles.includes('Flow Code') && titles.length === 11,
 		`enabling Flow Code put it on the bar (${titles.join(' | ')})`
 	);
 	h.check(

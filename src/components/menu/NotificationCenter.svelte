@@ -20,6 +20,24 @@
 		notificationsUnread.set(0);
 	}
 
+	// NOTES-38 #13 (user): a message that repeats ("Cannot reach the peer server. Retrying…"
+	// eleven times) is ONE entry — ×N and its latest time — expandable to each time. A view
+	// over the same history: the store, the badge and Clear all are untouched. Newest first.
+	const groups = $derived.by(() => {
+		/** @type {Map<string, {text: string, items: any[]}>} */
+		const byText = new Map();
+		for (const n of $notifications) {
+			const g = byText.get(n.text);
+			if (g) g.items.push(n);
+			else byText.set(n.text, { text: n.text, items: [n] });
+		}
+		return [...byText.values()]
+			.map((g) => ({ ...g, latest: g.items[g.items.length - 1] }))
+			.sort((a, b) => b.latest.ts - a.latest.ts || b.latest.id - a.latest.id);
+	});
+	/** expanded groups, by text @type {Record<string, boolean>} */
+	let open = $state({});
+
 	/** @param {number} ts */
 	function ago(ts) {
 		const s = Math.floor((Date.now() - ts) / 1000);
@@ -71,13 +89,30 @@
 					<EmptyState icon="bell" title="You are all caught up" description="Connection messages, joins and saves appear here." />
 				{:else}
 					<ul class="notif-list">
-						{#each [...$notifications].reverse() as n (n.id)}
-							<li class="notif-row">
+						{#each groups as g (g.text)}
+							<li class="notif-row" data-count={g.items.length}>
 								<span class="notif-icon" aria-hidden="true"><Icon name="info" size={16} strokeWidth={1.75} /></span>
 								<span class="min-w-0">
-									<span class="notif-text">{n.text}</span>
-									<span class="notif-time">{ago(n.ts)}</span>
+									<span class="notif-text">{g.text}</span>
+									<span class="notif-time">{ago(g.latest.ts)}</span>
+									{#if g.items.length > 1 && open[g.text]}
+										<ul class="notif-times">
+											{#each [...g.items].reverse() as n (n.id)}
+												<li>{ago(n.ts)} · {new Date(n.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</li>
+											{/each}
+										</ul>
+									{/if}
 								</span>
+								{#if g.items.length > 1}
+									<button
+										class="notif-count"
+										aria-expanded={!!open[g.text]}
+										title={open[g.text] ? 'Hide the individual times' : 'Show each time'}
+										onclick={() => (open = { ...open, [g.text]: !open[g.text] })}
+									>×{g.items.length}</button>
+								{:else}
+									<span></span>
+								{/if}
 							</li>
 						{/each}
 					</ul>
@@ -101,7 +136,7 @@
 	}
 	.notif-row {
 		display: grid;
-		grid-template-columns: 16px minmax(0, 1fr);
+		grid-template-columns: 16px minmax(0, 1fr) auto;
 		gap: 10px;
 		padding: 10px 14px;
 		font-size: var(--fs-desc);
@@ -121,6 +156,32 @@
 	.notif-time {
 		display: block;
 		margin-top: 2px;
+		font-size: var(--fs-badge);
+		color: var(--text-faint);
+	}
+	.notif-count {
+		align-self: start;
+		height: 20px;
+		padding: 0 7px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-pill);
+		background: var(--surface-inset);
+		color: var(--text-muted);
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
+		cursor: pointer;
+	}
+	.notif-count:hover,
+	.notif-count[aria-expanded='true'] {
+		border-color: var(--border-strong);
+		color: var(--text);
+	}
+	.notif-times {
+		margin: 6px 0 0;
+		padding: 0 0 0 8px;
+		border-left: 1px solid var(--border);
+		list-style: none;
+		font-family: var(--font-ui-mono);
 		font-size: var(--fs-badge);
 		color: var(--text-faint);
 	}

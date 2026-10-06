@@ -39,7 +39,7 @@
 	{#if !pour}
 		<div class="ui-row items-center gap-2">
 			<Button id="pour-add" size="xs" color="alternative" onclick={() => setObjectPour(uuid, {})}>
-				<Icon name="droplet" size={16} class="mr-1" aria-hidden="true" />Add pour emitter
+				<Icon name="tool:fluid" size={16} class="mr-1" aria-hidden="true" />Add pour emitter
 			</Button>
 		</div>
 	{:else}

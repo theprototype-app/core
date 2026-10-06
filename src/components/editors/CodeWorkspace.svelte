@@ -16,6 +16,8 @@
 	import { quickItems } from '$lib/codeProject';
 	import { outlineOf } from '$lib/codeOutline';
 	import DockTabs from '../DockTabs.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { codeWorkspaceClose, showToast } from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore';
@@ -725,7 +727,7 @@
 	<div
 		id="code-ws-dock"
 		data-tour="code-workspace"
-		class="code-ws fixed inset-x-0 bottom-0 flex flex-col p-2 {dockVisible ? '' : 'hidden'}"
+		class="code-ws tp-ui tp-dock-panel fixed inset-x-0 bottom-0 flex flex-col p-2 {dockVisible ? '' : 'hidden'}"
 		style="z-index: var(--z-bottom); height: {$dockHeight}px"
 		data-key-scope="panel"
 		role="region"
@@ -744,12 +746,12 @@
 		<DockTabs />
 		<div class="flex shrink-0 items-center gap-1 pb-1">
 			{@render sideToggle('left')}
-			<span class="text-xs font-semibold">Code</span>
+			<span class="tp-dock-title">Code</span>
 			<span class="flex-1"></span>
 			{@render openGraph()}
 			{@render sideToggle('right')}
-			<button class="ui-button-quiet" title="Undock into a floating window" onclick={() => setDocked(false)}>⧉</button>
-			<button id="code-ws-close" class="ui-button-quiet" title="Close the code workspace" onclick={requestCloseWorkspace}>✕</button>
+			<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock into a floating window" onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button>
+			<button id="code-ws-close" class="tp-dock-btn" title="Close the code workspace" aria-label="Close the code workspace" onclick={requestCloseWorkspace}><Icon name="x" size={14} /></button>
 		</div>
 		{@render main()}
 	</div>
@@ -757,7 +759,7 @@
 	<div
 		id="code-ws-window"
 		data-tour="code-workspace"
-		class="code-ws ui-panel fixed flex flex-col overflow-hidden"
+		class="code-ws ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 		use:dragWindow={{ key: 'codeWin', defaultRect: { left: 200, top: 110 } }}
 		use:focusStack={'code'}
 		use:tabbable={{ key: 'code', title: 'Code', openStore: codeWorkspaceClose, isOpen: (v) => !v, close: requestCloseWorkspace, minW: 360, minH: 260 }}
@@ -767,15 +769,28 @@
 		style:width="{effW}px"
 		style:height="{effH}px"
 	>
-		<div class="ui-panel-header move-handle flex shrink-0 cursor-move select-none items-center gap-1 py-1.5">
-			{@render sideToggle('left')}
-			<span>Code</span>
-			<span class="flex-1"></span>
-			{@render openGraph()}
-			{@render sideToggle('right')}
-			<button class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
-			<button id="code-ws-close" class="ui-button-quiet" title="Close the code workspace" onclick={requestCloseWorkspace}>✕</button>
-		</div>
+		<!-- 38 R6: the one window header (ui/WindowChrome, tool) -->
+		<WindowChrome
+			size="tool"
+			bare
+			body={false}
+			title="Code"
+			headerClass="ui-panel-header move-handle cursor-move select-none"
+			onclose={requestCloseWorkspace}
+			closeLabel="Close the code workspace"
+			closeAttrs={{ id: 'code-ws-close', title: 'Close the code workspace' }}
+		>
+			{#snippet heading()}
+				{@render sideToggle('left')}
+				<span class="wc-label">Code</span>
+				<span class="flex-1"></span>
+			{/snippet}
+			{#snippet actions()}
+				{@render openGraph()}
+				{@render sideToggle('right')}
+				<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+			{/snippet}
+		</WindowChrome>
 		<div class="flex min-h-0 flex-1 flex-col p-1">{@render main()}</div>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
@@ -799,17 +814,8 @@
 		align-items: center;
 		gap: 4px;
 	}
-	/* the window paints its own surface from the tokens, so its header follows the same ink
-	   (ui-panel-header's @apply'd gray-100 assumes a dark ui-panel; on light it read washed out) */
-	.code-ws :global(.ui-panel-header) {
-		color: var(--text, #f3f4f6);
-		border-color: var(--border, rgb(55 65 81 / 0.6));
-	}
-	.code-ws {
-		background: var(--surface, #1f2937);
-		color: var(--text, #e5e7eb);
-		border-top: 1px solid var(--border, rgb(55 65 81 / 0.6));
-	}
+	/* 38 R6: the surface is the shared window / dock panel (src/styles/windows.css) and the
+	   header is WindowChrome — this file paints neither any more */
 	.code-main {
 		position: relative;
 		display: flex;

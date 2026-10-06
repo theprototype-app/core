@@ -905,7 +905,7 @@
      `docked`; the FLOATING branch is UvEditor's window verbatim — dragWindow, a KEYED
      focusStack, tabbable, bottomDockable and a corner grip. -->
 {#if !$shaderEditorClose && docked && dockVisible}
-	<div id="shader-editor" data-key-scope="panel" role="region" aria-label="Shader editor (docked)" class="shader-editor ui-panel" style:height={$dockHeight + 'px'}>
+	<div id="shader-editor" data-key-scope="panel" role="region" aria-label="Shader editor (docked)" class="shader-editor ui-panel tp-ui tp-dock-panel" style:height={$dockHeight + 'px'}>
 		<!-- top-edge resize hot zone (above the tab strip's z-20, so the band can never
 		     swallow the drag) -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1003,8 +1003,10 @@
 		z-index: var(--z-bottom, 35);
 		display: flex;
 		flex-direction: column;
-		background: var(--surface, #1f2937);
-		border-top: 1px solid rgba(255, 255, 255, 0.1);
+		/* 38 R6: surface + top line from .tp-dock-panel (src/styles/windows.css); a docked
+		   view sits flush, so no window corners or shadow from ui-panel */
+		border-radius: 0;
+		box-shadow: none;
 	}
 	.shader-topbar {
 		display: flex;

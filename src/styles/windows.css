@@ -30,6 +30,7 @@
 .tp-dock-panel {
 	background: var(--surface-1);
 	color: var(--text);
+	border: 0;
 	border-top: 1px solid var(--border);
 }
 /* the exotic themes' panel rules (theme.css, layered) keep applying to a migrated window */
@@ -160,4 +161,29 @@
 }
 ::-webkit-scrollbar-thumb:hover {
 	background: var(--scrollbar-thumb-hover);
+}
+/* the compact field a window HEADER carries (Explorer's inline search) */
+.tp-field-sm {
+	height: 28px;
+	padding: 0 8px;
+	border-radius: var(--radius-input);
+}
+
+/* ONE menu container (SPEC §4: context, Add and viewport menus) — the same box as
+   ui/Menu.svelte: surface-1, 1px border, 10px corners, the window shadow, 5px inset.
+   Rows are each menu's own (ContextMenuItems .ctx-row, AddMenu, ViewportMenu). */
+.tp-menu {
+	box-sizing: border-box;
+	padding: 5px;
+	background: var(--surface-1);
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-card);
+	box-shadow: var(--shadow-window);
+	font-size: var(--fs-desc);
+}
+@media (max-width: 639.98px) {
+	.tp-menu {
+		font-size: var(--fs-body);
+	}
 }

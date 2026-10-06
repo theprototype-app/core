@@ -14,6 +14,7 @@
 // 640 is the breakpoint the bottom-sheet mode has used since the responsive pass (Inspector,
 // NotesDrawer, the full-screen `.tp-modal-*` treatment) — one phone width for the whole app.
 import { readable, writable } from 'svelte/store';
+import { safeStorage } from '../safeStorage';
 
 export const PHONE_MAX_WIDTH = 640;
 export const PHONE_QUERY = `(max-width: ${PHONE_MAX_WIDTH}px)`;
@@ -36,9 +37,43 @@ export const phoneShell = readable(false, (set) => {
  *  sheets the shell draws itself. LOCAL, never saved. */
 export const phoneSheet = writable(/** @type {string|null} */ (null));
 
-/** The detent the framed sheets rest at ('peek' | 'half' | 'full'). One value for the
- *  session, so a sheet reopens at the height you left the last one at. */
-export const phoneDetent = writable('half');
+/** NOTES-38 #15: where each framed sheet rests ('peek' | 'half' | 'full'), PER WINDOW —
+ *  Objects reopens at peek, Chat at full, as you left them. Device-scoped like window
+ *  positions (`phoneSheetDetents` in safeStorage); a window never moved reads 'half'. The
+ *  Inspector and the notes sheet keep their own (`inspectorSheetH`, the notes drawer's). */
+export const DETENT_KEY = 'phoneSheetDetents';
+const DETENT_NAMES = ['peek', 'half', 'full'];
+/** @returns {Record<string, string>} */
+function loadDetents() {
+	try {
+		const raw = typeof localStorage === 'undefined' ? null : safeStorage.getItem(DETENT_KEY);
+		const obj = raw ? JSON.parse(raw) : {};
+		/** @type {Record<string, string>} */
+		const out = {};
+		for (const [k, v] of Object.entries(obj ?? {})) if (typeof v === 'string' && DETENT_NAMES.includes(v)) out[k] = v;
+		return out;
+	} catch {
+		return {};
+	}
+}
+export const phoneDetents = writable(loadDetents());
+/** @param {Record<string, string>} map @param {string|null} kind */
+export function detentOf(map, kind) {
+	return (kind && map[kind]) || 'half';
+}
+/** @param {string} kind @param {string} detent */
+export function setPhoneDetent(kind, detent) {
+	if (!DETENT_NAMES.includes(detent)) return;
+	phoneDetents.update((m) => {
+		const next = { ...m, [kind]: detent };
+		try {
+			safeStorage.setItem(DETENT_KEY, JSON.stringify(next));
+		} catch {
+			// private mode: remembered for this session only
+		}
+		return next;
+	});
+}
 
 /** SPEC §6 / the design page: peek 32 %, half 58 %, full 92 % of the window height. */
 export const PHONE_DETENTS = { peek: 0.32, half: 0.58, full: 0.92 };

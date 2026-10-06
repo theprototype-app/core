@@ -22,10 +22,13 @@
 	import Icon from '../ui/Icon.svelte';
 	import {
 		phoneSheet,
-		phoneDetent,
+		phoneDetents,
+		detentOf,
+		setPhoneDetent,
 		phoneDetentHeights,
 		phoneShellActive
 	} from '$lib/ui/phoneShell.js';
+	import { phoneBarSlots, setBarSlots, toggleSlot, splitAroundPlay, BAR_CATALOG, DEFAULT_BAR, MAX_SLOTS } from '$lib/ui/phoneBar.js';
 	import { snapDetent, stepDetent } from '$lib/ui/sheetSnap.js';
 	import {
 		peers,
@@ -36,6 +39,8 @@
 		objectListClose,
 		notificationCenterOpen,
 		notesDrawerOpen,
+		inspectorClose,
+		inspectorKind,
 		connectDrawerOpen,
 		connectDrawerPinned,
 		waitingForApproval,
@@ -113,17 +118,14 @@
 		if (next.join() !== order.join()) order = next;
 	});
 	const top = $derived(order.length ? order[order.length - 1] : null);
-	// a sheet that opens starts at half (the design's rule), the main menu at full
-	/** @type {string|null} */
-	let lastTop = null;
-	$effect(() => {
-		if (top && top !== lastTop) phoneDetent.set('half');
-		lastTop = top;
-	});
+	// NOTES-38 #15: each window's sheet reopens at the height it was left at (half the first time)
+	const detent = $derived(detentOf($phoneDetents, top));
+	/** @param {string} d */
+	const setDetent = (d) => top && setPhoneDetent(top, d);
 
 	/** live height while a finger drags the handle; null = resting on a detent */
 	let dragH = $state(/** @type {number|null} */ (null));
-	const sheetH = $derived(top ? (dragH ?? heights[$phoneDetent] ?? heights.half) : 0);
+	const sheetH = $derived(top ? (dragH ?? heights[detent] ?? heights.half) : 0);
 	const titled = $derived(top ? HOSTS[top][1] !== null : false);
 	const STRIP_H = 22; // the handle strip
 	const HEAD_H = 44; // the frame's own title row (Connection, More)
@@ -213,7 +215,7 @@
 			dragH = null;
 			draggedAt = performance.now();
 			if (next === 'closed') closeKind(top);
-			else phoneDetent.set(next);
+			else setDetent(next);
 		};
 		node.addEventListener('pointerdown', down);
 		node.addEventListener('pointermove', move);
@@ -230,16 +232,16 @@
 	}
 	function tapHandle() {
 		if (performance.now() - draggedAt < 350) return;
-		const up = stepDetent($phoneDetent, 1, DETENTS, heights, false);
-		phoneDetent.set(up === $phoneDetent ? 'peek' : up);
+		const up = stepDetent(detent, 1, DETENTS, heights, false);
+		setDetent(up === detent ? 'peek' : up);
 	}
 	/** @param {KeyboardEvent} e */
 	function handleKey(e) {
 		if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
 		e.preventDefault();
-		const next = stepDetent($phoneDetent, e.key === 'ArrowUp' ? 1 : -1, DETENTS, heights, true);
+		const next = stepDetent(detent, e.key === 'ArrowUp' ? 1 : -1, DETENTS, heights, true);
 		if (next === 'closed') closeKind(top);
-		else phoneDetent.set(next);
+		else setDetent(next);
 	}
 
 	// ---- the Connect chip + sheet ----------------------------------------------------
@@ -277,9 +279,6 @@
 		if (chatOpen) seenChat = $messages.length;
 	});
 	const chatUnread = $derived(chatOpen ? 0 : Math.max(0, $messages.length - seenChat));
-	function toggleChat() {
-		chatHidden.set(chatOpen ? 'hidden' : '');
-	}
 	// a long press (contextmenu) on Play opens the SAME "Play as / Test play" menu the
 	// toolbar's play button owns — forwarded to that button's own listener, not rebuilt
 	/** @param {MouseEvent} e */
@@ -309,35 +308,90 @@
 		}
 		aiAssistantHidden.set('');
 	}
-	const TILES = [
-		['chat', 'message-square', 'Chat'],
-		['explorer', 'folder-open'],
-		['flow', 'workflow'],
-		['animation', 'clapperboard'],
-		['scene', 'sun', 'Scene'],
-		['ai', 'sparkles', 'AI assistant'],
-		['notes', 'sticky-note', 'Notes'],
-		['flowcode', 'code'],
-		['shader', 'palette'],
-		['uv', 'grid-2x2'],
-		['hud', 'monitor'],
-		['profiler', 'activity'],
-		['code', 'braces']
-	];
+	/** close the shell's own sheet, then run (a destination opened from More replaces it) */
+	const fromMore = (/** @type {() => void} */ fn) => () => {
+		phoneSheet.set(null);
+		fn();
+	};
 	/** @param {string} key */
-	function tile(key) {
-		if (key === 'scene') {
-			phoneSheet.set(null);
-			showSidebar('scene');
-		} else if (key === 'ai') openAi();
-		else if (key === 'chat') {
-			phoneSheet.set(null);
-			chatHidden.set('');
-		}
-		else if (key === 'notes') {
-			phoneSheet.set(null);
-			notesDrawerOpen.set(true);
-		} else openView(key);
+	const viewAction = (key) => ({
+		label: DOCK_TITLES[key] ?? key,
+		run: fromMore(() => togglePanel(key)),
+		pressed: () => $visibleDockKey === key
+	});
+	/** ONE map the bar AND the More tiles render from, so a destination cannot behave
+	 *  differently in its two places (NOTES-38 #7: any of them may sit on the bar).
+	 * @type {Record<string, {label: string, icon: string, run: () => void, pressed: () => boolean, badge?: () => number}>} */
+	const ACTIONS = {
+		add: { label: 'Add', icon: 'plus', run: () => add(), pressed: () => false },
+		objects: { label: 'Objects', icon: 'list', run: fromMore(() => togglePanel('objects')), pressed: () => !$objectListClose },
+		chat: {
+			label: 'Chat',
+			icon: 'message-square',
+			run: () => {
+				const open = chatOpen;
+				phoneSheet.set(null);
+				chatHidden.set(open ? 'hidden' : '');
+			},
+			pressed: () => chatOpen,
+			badge: () => chatUnread
+		},
+		scene: {
+			label: 'Scene',
+			icon: 'sun',
+			run: fromMore(() => showSidebar('scene')),
+			pressed: () => !$inspectorClose && $inspectorKind === 'scene'
+		},
+		ai: { label: 'AI assistant', icon: 'sparkles', run: () => openAi(), pressed: () => $aiAssistantHidden === '' },
+		notes: {
+			label: 'Notes',
+			icon: 'sticky-note',
+			run: () => {
+				const open = $notesDrawerOpen;
+				phoneSheet.set(null);
+				notesDrawerOpen.set(!open);
+			},
+			pressed: () => $notesDrawerOpen
+		},
+		more: {
+			label: 'More',
+			icon: 'layout-grid',
+			run: () => toggleMore(),
+			pressed: () => $phoneSheet === 'more',
+			// the More tab carries the unread count of whatever lives in More
+			badge: () => ($phoneBarSlots.includes('chat') ? 0 : chatUnread)
+		},
+		explorer: { ...viewAction('explorer'), icon: 'folder-open' },
+		flow: { ...viewAction('flow'), icon: 'workflow' },
+		animation: { ...viewAction('animation'), icon: 'clapperboard' },
+		flowcode: { ...viewAction('flowcode'), icon: 'code' },
+		shader: { ...viewAction('shader'), icon: 'palette' },
+		uv: { ...viewAction('uv'), icon: 'grid-2x2' },
+		hud: { ...viewAction('hud'), icon: 'monitor' },
+		profiler: { ...viewAction('profiler'), icon: 'activity' },
+		code: { ...viewAction('code'), icon: 'braces' }
+	};
+	/** the More sheet's Windows tiles: every destination except the bar's own verbs */
+	const TILES = ['chat', 'explorer', 'flow', 'animation', 'scene', 'ai', 'notes', 'flowcode', 'shader', 'uv', 'hud', 'profiler', 'code'];
+	const bar = $derived(splitAroundPlay($phoneBarSlots));
+
+	// ---- Edit bar (NOTES-38 #7): inside the More sheet; a long press on a tab gets there too
+	let editingBar = $state(false);
+	$effect(() => {
+		if ($phoneSheet !== 'more') editingBar = false;
+	});
+	/** @param {MouseEvent} e */
+	function editBarFromTab(e) {
+		e.preventDefault();
+		phoneSheet.set('more');
+		tick().then(() => (editingBar = true));
+	}
+	/** @param {string} key */
+	function editTap(key) {
+		const before = $phoneBarSlots;
+		const next = toggleSlot(before, key);
+		if (next === before && !before.includes(key) && key !== 'more') showToast(`The bar holds ${MAX_SLOTS} — take one off first`);
+		else setBarSlots(next);
 	}
 	function viewportTools() {
 		phoneSheet.set(null);
@@ -413,9 +467,24 @@
 	{/if}
 
 	<!-- BOTTOM BAR: five destinations; Play is the only live (orange) control -->
-	<nav class="ps-bar" aria-label="Main" id="ps-bar">
-		<button type="button" class="ps-tab" id="ps-add" data-tour="add" onclick={add}><Icon name="plus" size={20} /><span>Add</span></button>
-		<button type="button" class="ps-tab" id="ps-objects" aria-pressed={!$objectListClose} onclick={() => togglePanel('objects')}><Icon name="list" size={20} /><span>Objects</span></button>
+	<nav class="ps-bar" aria-label="Main" id="ps-bar" style:grid-template-columns="repeat({$phoneBarSlots.length + 1}, minmax(0, 1fr))">
+		{#snippet tab(/** @type {string} */ key)}
+			{@const act = ACTIONS[key]}
+			{@const n = act.badge?.() ?? 0}
+			<button
+				type="button"
+				class="ps-tab"
+				id="ps-{key}"
+				data-tour={key === 'add' ? 'add' : undefined}
+				aria-pressed={key === 'add' ? undefined : act.pressed()}
+				onclick={act.run}
+				oncontextmenu={editBarFromTab}
+			>
+				<Icon name={act.icon} size={20} /><span class="ps-tab-lbl">{act.label}</span>
+				{#if n > 0}<span class="ps-nb" aria-label={`${n} unread`}>{n > 99 ? '99+' : n}</span>{/if}
+			</button>
+		{/snippet}
+		{#each bar.left as key (key)}{@render tab(key)}{/each}
 		<button
 			type="button"
 			class="ps-tab ps-play"
@@ -425,22 +494,20 @@
 			aria-label={$willEnterAR ? 'Enter AR' : $willEnterXR ? 'Enter VR' : 'Play'}
 			onclick={() => requestPlay()}
 		><span class="ps-live"><Icon name="play" size={24} fill="currentColor" /></span></button>
-		<!-- NOTES-38 #7: slot 4 is the Explorer (Chat moved into More) -->
-		<button type="button" class="ps-tab" id="ps-explorer" aria-pressed={$visibleDockKey === 'explorer'} onclick={() => togglePanel('explorer')}><Icon name="folder-open" size={20} /><span>Explorer</span></button>
-		<button type="button" class="ps-tab" id="ps-more" aria-pressed={$phoneSheet === 'more'} onclick={toggleMore}><Icon name="layout-grid" size={20} /><span>More</span>{#if chatUnread > 0}<span class="ps-nb" aria-label={`${chatUnread} unread chat messages`}>{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}</button>
+		{#each bar.right as key (key)}{@render tab(key)}{/each}
 	</nav>
 
 	<!-- THE SHEET FRAME: a surface, a handle, (a title row for the shell's own sheets);
 	     the reused window is placed into the rest of it by phone.css -->
 	{#if top}
-		{#if HOSTS[top][2] || $phoneDetent === 'full'}
+		{#if HOSTS[top][2] || detent === 'full'}
 			<button type="button" class="ps-scrim" tabindex="-1" aria-label="Close" onclick={() => closeKind(top)}></button>
 		{/if}
 		<section
 			class="ps-sheet"
 			class:ps-dragging={dragH !== null}
 			data-kind={top}
-			data-detent={dragH !== null ? 'dragging' : $phoneDetent}
+			data-detent={dragH !== null ? 'dragging' : detent}
 			style:height="{sheetH}px"
 			aria-label={HOSTS[top][1] ?? 'Sheet'}
 		>
@@ -449,7 +516,7 @@
 					type="button"
 					class="ps-handle"
 					id="ps-sheet-handle"
-					aria-label={`Sheet height: ${$phoneDetent}. Tap to change, drag down to close.`}
+					aria-label={`Sheet height: ${detent}. Tap to change, drag down to close.`}
 					onclick={tapHandle}
 					onkeydown={handleKey}
 				><span class="ps-grabber" aria-hidden="true"></span></button>
@@ -460,24 +527,54 @@
 					<button type="button" class="ps-close" id="ps-sheet-close" aria-label={`Close ${HOSTS[top][1]}`} onclick={() => closeKind(top)}><Icon name="x" size={20} /></button>
 				</div>
 			{/if}
-			{#if top === 'more'}
+			{#if top === 'more' && editingBar}
+				<div class="ps-body" id="ps-edit-bar">
+					<p class="ps-hint">Pick up to {MAX_SLOTS} for the bar on this device. Play stays in the middle; More always stays.</p>
+					<div class="ps-preview" aria-label="Bar preview">
+						{#each bar.left as key (key)}<span class="ps-pv"><Icon name={ACTIONS[key].icon} size={18} />{ACTIONS[key].label}</span>{/each}
+						<span class="ps-pv ps-pv-play"><Icon name="play" size={18} />Play</span>
+						{#each bar.right as key (key)}<span class="ps-pv"><Icon name={ACTIONS[key].icon} size={18} />{ACTIONS[key].label}</span>{/each}
+					</div>
+					<div class="ps-rows" role="group" aria-label="Bar slots">
+						{#each BAR_CATALOG as key (key)}
+							{@const on = $phoneBarSlots.includes(key)}
+							<button
+								type="button"
+								class="ps-row ps-pick"
+								id="ps-pick-{key}"
+								role="checkbox"
+								aria-checked={on}
+								aria-disabled={key === 'more' || (!on && $phoneBarSlots.length >= MAX_SLOTS)}
+								onclick={() => editTap(key)}
+							>
+								<Icon name={ACTIONS[key].icon} size={20} /><span>{ACTIONS[key].label}</span>
+								<span class="ps-check" aria-hidden="true">{#if on}<Icon name="check" size={16} />{/if}</span>
+							</button>
+						{/each}
+					</div>
+					<div class="ps-edit-foot">
+						<button type="button" class="ps-btn" id="ps-bar-reset" disabled={$phoneBarSlots.join() === DEFAULT_BAR.join()} onclick={() => setBarSlots(DEFAULT_BAR)}>Reset to default</button>
+						<button type="button" class="ps-btn ps-btn-primary" id="ps-bar-done" onclick={() => (editingBar = false)}>Done</button>
+					</div>
+				</div>
+			{:else if top === 'more'}
 				<div class="ps-body" id="ps-more-sheet">
 					<h3 class="ps-sec">Windows</h3>
 					<div class="ps-tiles">
-						{#each TILES as [key, icon, label] (key)}
-							<button
-								type="button"
-								class="ps-tile"
-								id="ps-tile-{key}"
-								aria-pressed={$visibleDockKey === key}
-								onclick={() => tile(key)}
-							><span class="ps-gi"><Icon name={icon} size={20} /></span>{label ?? DOCK_TITLES[key] ?? key}{#if key === 'chat' && chatUnread > 0}<span class="ps-nb ps-nb-tile">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}</button>
+						{#each TILES as key (key)}
+							{@const act = ACTIONS[key]}
+							{@const n = act.badge?.() ?? 0}
+							<button type="button" class="ps-tile" id="ps-tile-{key}" aria-pressed={act.pressed()} onclick={act.run}>
+								<span class="ps-gi"><Icon name={act.icon} size={20} /></span>{act.label}
+								{#if n > 0}<span class="ps-nb ps-nb-tile">{n > 99 ? '99+' : n}</span>{/if}
+							</button>
 						{/each}
 					</div>
 					<h3 class="ps-sec">Tools &amp; view</h3>
 					<div class="ps-rows">
 						<button type="button" class="ps-row" id="ps-viewport-tools" onclick={viewportTools}><Icon name="wrench" size={20} /><span>Tools, snapping, view and camera…</span><Icon name="chevron-right" size={16} /></button>
 						<button type="button" class="ps-row" id="ps-stats" onclick={openStats}><Icon name="gauge" size={20} /><span>Statistics</span></button>
+						<button type="button" class="ps-row" id="ps-edit-bar-open" onclick={() => (editingBar = true)}><Icon name="pencil" size={20} /><span>Edit bar…</span><Icon name="chevron-right" size={16} /></button>
 					</div>
 				</div>
 			{/if}
@@ -630,7 +727,6 @@
 		height: calc(76px + env(safe-area-inset-bottom, 0px));
 		padding: 0 6px calc(8px + env(safe-area-inset-bottom, 0px));
 		display: grid;
-		grid-template-columns: repeat(5, minmax(0, 1fr));
 		align-items: center;
 		background: var(--surface-1);
 		border-top: 1px solid var(--border);
@@ -812,6 +908,86 @@
 	}
 	.ps-rows {
 		display: grid;
+	}
+	.ps-tab-lbl {
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.ps-hint {
+		margin: 8px 4px 12px;
+		color: var(--text-muted);
+		font: 400 var(--fs-desc) var(--font-ui);
+	}
+	.ps-preview {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin: 0 4px 12px;
+	}
+	.ps-pv {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		height: 32px;
+		padding: 0 10px;
+		border-radius: var(--radius-pill, 999px);
+		border: 1px solid var(--border);
+		background: var(--surface-2);
+		color: var(--text-2);
+		font: 500 13px var(--font-ui);
+	}
+	.ps-pv-play {
+		background: var(--live);
+		border-color: var(--live);
+		color: var(--on-live, #fff);
+	}
+	.ps-pick[aria-checked='true'] {
+		color: var(--accent-text);
+	}
+	.ps-pick[aria-disabled='true'] {
+		opacity: 0.5;
+	}
+	.ps-check {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		border-radius: 6px;
+		border: 1.5px solid var(--border-strong);
+	}
+	.ps-pick[aria-checked='true'] .ps-check {
+		background: var(--accent-fill, var(--accent));
+		border-color: var(--accent-fill, var(--accent));
+		color: var(--on-accent, #fff);
+	}
+	.ps-edit-foot {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+		margin-top: 16px;
+	}
+	.ps-btn {
+		height: 44px;
+		padding: 0 16px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-button, 8px);
+		background: transparent;
+		color: var(--text);
+		font: 500 var(--fs-body) var(--font-ui);
+		cursor: pointer;
+	}
+	.ps-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+	.ps-btn-primary {
+		border-color: transparent;
+		background: var(--accent-fill, var(--accent));
+		color: var(--on-accent, #fff);
+		font-weight: 600;
 	}
 	.ps-row {
 		display: flex;

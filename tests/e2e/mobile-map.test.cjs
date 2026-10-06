@@ -215,9 +215,9 @@ h.run(async () => {
 	const objBox = await read(() => document.querySelector('#object-list')?.getBoundingClientRect().toJSON());
 	h.check(objBox && Math.abs(objBox.bottom - 844) < 2 && objBox.width >= 388, `the object list is placed into a bottom sheet (${JSON.stringify(objBox)})`);
 	// the sheet handle: tap steps a detent, drag down past peek closes
-	const d0 = await read(store('phoneShell.phoneDetent'));
+	const d0 = await read(() => { let m; window.__stores.phoneShell.phoneDetents.subscribe((v) => (m = v))(); return m.objects ?? 'half'; });
 	await tap('#ps-sheet-handle');
-	const d1 = await read(store('phoneShell.phoneDetent'));
+	const d1 = await read(() => { let m; window.__stores.phoneShell.phoneDetents.subscribe((v) => (m = v))(); return m.objects ?? 'half'; });
 	h.check(d0 === 'half' && d1 === 'full', `a tap on the handle steps the sheet up (${d0} -> ${d1})`);
 	const hb = await read(() => document.querySelector('#ps-sheet-handle').getBoundingClientRect().toJSON());
 	await P.mouse.move(195, hb.y + 10);
@@ -304,6 +304,59 @@ h.run(async () => {
 	row(33, longPress || viaMore, `Viewport menu: long press (${longPress}) and More › Tools (${viaMore})`);
 	await P.keyboard.press('Escape');
 	await P.mouse.click(5, 420).catch(() => {});
+
+	// ---- NOTES-38 #7: the bar is customisable (per device); More always stays -------------
+	await rest();
+	const lsBar = () => read(() => localStorage.getItem('phoneBarSlots'));
+	const barIds = () => read(() => [...document.querySelectorAll('#ps-bar > button')].map((b) => b.id));
+	h.check(JSON.stringify(await barIds()) === JSON.stringify(['ps-add', 'ps-objects', 'ps-play', 'ps-explorer', 'ps-more']), `default bar: Add, Objects, Play, Explorer, More (${JSON.stringify(await barIds())})`);
+	// a long press (contextmenu) on a tab opens the editor
+	await P.locator('#ps-objects').dispatchEvent('contextmenu');
+	await P.waitForTimeout(500);
+	h.check(await visible('#ps-edit-bar'), 'a long press on a bar tab opens Edit bar');
+	h.check((await read(() => document.querySelector('#ps-pick-more')?.getAttribute('aria-disabled'))) === 'true', 'More cannot be taken off the bar');
+	await P.locator('#ps-pick-more').tap({ force: true });
+	await P.waitForTimeout(300);
+	h.check((await barIds()).includes('ps-more'), 'tapping More in the editor leaves it on the bar');
+	await tap('#ps-pick-explorer');
+	await tap('#ps-pick-chat');
+	const custom = await barIds();
+	h.check(JSON.stringify(custom) === JSON.stringify(['ps-add', 'ps-objects', 'ps-play', 'ps-chat', 'ps-more']), `the bar follows the picks (${JSON.stringify(custom)})`);
+	h.check((await lsBar()) === JSON.stringify(['add', 'objects', 'chat', 'more']), `the pick is saved on this device (${await lsBar()})`);
+	await P.locator('#ps-pick-flow').tap({ force: true });
+	await P.waitForTimeout(300);
+	h.check(!(await barIds()).includes('ps-flow'), 'a full bar refuses a fifth');
+	await tap('#ps-bar-done');
+	h.check(!(await visible('#ps-edit-bar')) && (await visible('#ps-more-sheet')), 'Done returns to the More sheet');
+	await rest();
+	await tap('#ps-chat');
+	h.check((await read(store('chatHidden'))) === '', 'a customised Chat slot opens Chat');
+	await rest();
+	await tap('#ps-more');
+	await tap('#ps-edit-bar-open');
+	await tap('#ps-bar-reset');
+	h.check(JSON.stringify(await barIds()) === JSON.stringify(['ps-add', 'ps-objects', 'ps-play', 'ps-explorer', 'ps-more']) && (await lsBar()) === null, 'Reset to default restores the bar and forgets the key');
+	await tap('#ps-bar-done');
+
+	// ---- NOTES-38 #15: each sheet remembers its own height, per device ----------------------
+	await rest();
+	const detents = () => read(() => { let m; window.__stores.phoneShell.phoneDetents.subscribe((v) => (m = v))(); return m; });
+	await tap('#ps-more');
+	await tap('#ps-tile-chat');
+	h.check((await read(() => document.querySelector('.ps-sheet')?.getAttribute('data-detent'))) === 'half', 'a sheet first opens at half');
+	await tap('#ps-sheet-handle');
+	await rest();
+	await tap('#notif-bell');
+	const otherDet = await read(() => document.querySelector('.ps-sheet')?.getAttribute('data-detent'));
+	await rest();
+	await tap('#ps-more');
+	await tap('#ps-tile-chat');
+	const chatDet = await read(() => document.querySelector('.ps-sheet')?.getAttribute('data-detent'));
+	h.check(chatDet === 'full', `Chat reopens at the height it was left at (${chatDet})`);
+	h.check(otherDet === 'half', `another window keeps its own height (notifications: ${otherDet})`);
+	const saved = await read(() => JSON.parse(localStorage.getItem('phoneSheetDetents') || '{}'));
+	h.check(saved.chat === 'full', `the heights are saved on this device (${JSON.stringify(saved)})`);
+	await P.evaluate(() => window.__stores.settingsOpen.set(null));
 
 	// ---- rows 34-35: Settings ---------------------------------------------------------
 	await rest();

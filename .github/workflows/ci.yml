@@ -143,7 +143,7 @@ jobs:
   # 38 (NOTES-38 #18): THE TOKEN SCREENSHOT DIFF. /kit renders every redesign primitive in every
   # state; this job shoots it in the dark, light and custom themes on the PR's BASE ref and on its
   # HEAD, on this same runner (so fonts and anti-aliasing cannot drift between machines), and diffs
-  # them (tests/e2e/tools/kit-diff.cjs). It FAILS when a theme moved more than 0.05% of the kit's
+  # them (tests/e2e/tools/kit-diff.cjs). It FAILS when a theme moved more than 0.01% of the kit's
   # pixels — a signal to look at the diff images in the artifact, not a required check: a PR that
   # changes a token on purpose turns it red and says so. A base without /kit is skipped.
   kit-diff:

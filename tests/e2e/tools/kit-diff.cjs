@@ -6,7 +6,7 @@
 //   node tests/e2e/tools/kit-diff.cjs shoot <app-url> <out-dir>         /kit?theme=… -> <out-dir>/kit-<theme>.png
 //   node tests/e2e/tools/kit-diff.cjs diff <base-dir> <head-dir> <out-dir>
 //        -> <out-dir>/kit-<theme>-diff.png (changed pixels in red over a faded head), report.md,
-//           and exit 1 when any theme changed more than KIT_DIFF_MAX (fraction, default 0.0005)
+//           and exit 1 when any theme changed more than KIT_DIFF_MAX (fraction, default 0.0001)
 //
 // CI (.github/workflows/ci.yml › kit-diff) shoots the PR's BASE ref and its HEAD on the same
 // runner and diffs the two, so there is no committed baseline to drift with fonts or
@@ -19,7 +19,7 @@ const { chromium } = require('playwright');
 
 const THEMES = ['dark', 'light', 'custom'];
 const WIDTH = 1440;
-const MAX = Number(process.env.KIT_DIFF_MAX ?? 0.0005);
+const MAX = Number(process.env.KIT_DIFF_MAX ?? 0.0001);
 // a channel difference at or under this is anti-aliasing noise, not a token change
 const TOLERANCE = Number(process.env.KIT_DIFF_TOLERANCE ?? 16);
 

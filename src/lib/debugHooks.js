@@ -221,6 +221,7 @@ export const DEBUG_HOOKS = [
 	['postBackends', () => import('./postBackends')],
 	['workspace', () => import('./workspace')],
 	['uiLayouts', () => import('./uiLayouts')],
+	['undoToast', () => import('./undoToast')],
 	['docking', () => import('./docking')],
 	['editResume', () => import('./editResume')],
 	['moduleRequirements', () => import('./moduleRequirements')],

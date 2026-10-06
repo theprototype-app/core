@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { dropToSurface } from './snapping';
-import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, beginHistoryBatch, endHistoryBatch } from './history';
+import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, beginHistoryBatch, endHistoryBatch, historyBatchOpen, undoEntry, undoStack } from './history';
+import { offerUndo } from './undoToast'; // 37 R25 (a leaf)
 import { cascadeJointDeletes } from './joints';
 import { createGroup } from './geometries.svelte';
 import { suspendAnimation, resumeAnimation, parkAnimatedAtBase } from './flowRuntime';
@@ -450,8 +451,39 @@ export function deleteObjectsByUuid(uuids) {
 	return uuids.length;
 }
 
+/**
+ * Delete the selection — the person's Delete (key, menus, VR). 37 R25: it happens at once and
+ * a toast offers Undo for ~8 s; the whole delete (objects + cascaded joints) is ONE history
+ * entry, and the toast undoes THAT entry (the object comes back on every peer the way any
+ * history restore does). Programmatic deletes (AI tools, modules) call deleteObjectsByUuid
+ * and get no toast.
+ */
 export function deleteSelection() {
-	return deleteObjectsByUuid(selectionUuids());
+	return deleteWithUndo(selectionUuids());
+}
+
+/** the person's delete of these objects, with the Undo offer (see deleteSelection) @param {string[]} uuids */
+function deleteWithUndo(uuids) {
+	if (!uuids.length) return 0;
+	const group = get(objectsGroup);
+	const first = group?.getObjectByProperty('uuid', uuids[0]);
+	const own = !historyBatchOpen();
+	if (own) beginHistoryBatch();
+	const count = deleteObjectsByUuid(uuids);
+	if (!own) return count;
+	endHistoryBatch('Delete');
+	const stack = get(undoStack);
+	const entry = stack[stack.length - 1];
+	if (count && entry?.label === 'Delete') {
+		const label = count === 1 ? '"' + (first?.name || 'object') + '"' : count + ' objects';
+		offerUndo({
+			id: 'delete-selection',
+			text: 'Deleted ' + label + '.',
+			done: 'Restored ' + label,
+			undo: () => undoEntry(entry)
+		});
+	}
+	return count;
 }
 
 /**
@@ -469,7 +501,7 @@ export function requestDeleteSelection() {
 			const count = collectTree(object).length - 1;
 			const name = object.name || 'group';
 			showToast(`Delete "${name}" and its ${count} object${count === 1 ? '' : 's'}?`, [
-				{ label: 'Delete', action: () => deleteObjectsByUuid([object.uuid]) },
+				{ label: 'Delete', action: () => deleteWithUndo([object.uuid]) },
 				{ label: 'Cancel', action: () => {} }
 			]);
 			return;

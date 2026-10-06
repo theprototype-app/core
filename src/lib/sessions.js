@@ -240,8 +240,11 @@ export async function loadSessions() {
 	}
 }
 
-/** Build a session payload from the current scene @param {string} name */
-export function buildSessionPayload(name) {
+/** Build a session payload from the current scene
+ * @param {string} name
+ * @param {{thumbnail?: boolean}} [opts] 37 R25: `thumbnail: false` for an in-memory snapshot
+ *   nobody will see (the Undo after Clear scene) — the picture is a fresh render */
+export function buildSessionPayload(name, opts = {}) {
 	const group = get(objectsGroup);
 	/** @type {any} */
 	const camera = get(globalCamera);
@@ -275,7 +278,7 @@ export function buildSessionPayload(name) {
 			// built for autosave and the dirty check too); the deliberate saves mint it first
 			...gameFields(),
 			count: (group?.children ?? []).filter((/** @type {any} */ child) => !isTransient(child)).length,
-			thumbnail: renderSceneThumbnail(group),
+			thumbnail: opts.thumbnail === false ? null : renderSceneThumbnail(group),
 			// animated imports are saved as their ORIGINAL bytes below instead:
 				// toJSON carries no AnimationClip and mangles rigs, so a saved scene
 				// used to come back with dead, static models
@@ -675,8 +678,10 @@ async function confirmModuleRequirements(payload) {
  * the scene-switch ask unloaded comes back the moment a scene that needs it is opened,
  * through this prompt, with no reload. A user module re-activates from its stored record,
  * a core one re-registers from the app's own list.
- * @param {{id: string}[]} entries */
-async function enableRequired(entries) {
+ * 37 R25: exported for the Undo after Clear everything, which brings the scene's modules
+ * back the same way (`quiet` = no "Enabled …" toast; the Undo says what it did).
+ * @param {{id: string}[]} entries @param {{quiet?: boolean}} [opts] */
+export async function enableRequired(entries, opts = {}) {
 	const ids = entries.map((entry) => entry.id);
 	disabledModules.update((list) => list.filter((id) => !ids.includes(id)));
 	const late = [];
@@ -697,6 +702,7 @@ async function enableRequired(entries) {
 	} catch {
 		late.push(...ids);
 	}
+	if (opts.quiet && !late.length) return;
 	showToast(
 		'Enabled ' + ids.join(', ') + (late.length ? ' — reload if a node still shows as missing' : '')
 	);

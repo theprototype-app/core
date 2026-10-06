@@ -155,6 +155,22 @@
 	import { peers } from '../../stores/appStore.js';
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
 	import { safeStorage } from '$lib/safeStorage';
+	import { offerUndo } from '$lib/undoToast';
+	// 37 R25: Reset settings happens at once (its values apply on the next reload, as before)
+	// and a toast offers Undo for ~8 s — every stored key and value is held by the offer and
+	// written back, so an accidental press costs nothing. LOCAL, like the settings.
+	function resetSettings() {
+		const saved = safeStorage.keys().map((key) => [key, safeStorage.getItem(key)] as const);
+		safeStorage.clear();
+		offerUndo({
+			id: 'reset-settings',
+			text: 'Settings reset — the defaults apply after a reload.',
+			done: 'Settings restored',
+			undo: () => {
+				for (const [key, value] of saved) if (value !== null) safeStorage.setItem(key, value);
+			}
+		});
+	}
 
 	// 24-D2: Settings ▸ Connection applies WITHOUT a reload — PeerConnection.switchServer
 	// rebuilds the Peer on the configured server, keeping the session id (an open session
@@ -2288,7 +2304,7 @@
 	</WindowShell>
 	</div>
 	{#snippet footer()}
-		<Button onclick={() => safeStorage.clear()}>Reset settings</Button>
+		<Button id="settings-reset" onclick={resetSettings}>Reset settings</Button>
 		<Button color="alternative" onclick={() => clearSavedSession()}>Clear saved session</Button>
 		<Button id="about-whats-new" color="alternative" onclick={() => { settingsOpen.set(false); openWhatsNew(); }}>What's new</Button>
 	{/snippet}

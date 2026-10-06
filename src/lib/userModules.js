@@ -3,6 +3,7 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { idbGet, idbPut } from './idb';
 import { showToast } from '../stores/appStore';
 import { showConfirm } from './confirmDialog';
+import { offerUndo } from './undoToast'; // 37 R25 (a leaf)
 import { APP_VERSION } from './version.js';
 import { fetchIndex } from './contentBase';
 import {
@@ -482,16 +483,40 @@ export function setDevPoll(record, on) {
 	}, 2000);
 }
 
-/** @param {string} id */
+/**
+ * Remove an installed module. 37 R25: it goes at once and a toast offers Undo for ~8 s —
+ * the record (its files, dev URL, position in the list) is held by the offer and put back
+ * as it was, running again if it was running. Local to this device, like the install.
+ * @param {string} id
+ */
 export async function removeUserModule(id) {
-	const record = get(userModules).find((m) => m.id === id);
+	const list = get(userModules);
+	const at = list.findIndex((m) => m.id === id);
+	const record = list[at];
+	const polling = !!record && get(devPolling).includes(id);
 	if (record) setDevPoll(record, false);
-	userModules.update((list) => list.filter((m) => m.id !== id));
+	userModules.update((all) => all.filter((m) => m.id !== id));
 	await persist();
-	if (record && isModuleLoaded(id)) {
-		deactivateModule(id);
-		showToast('"' + record.name + '" removed');
-	}
+	const wasLoaded = !!record && isModuleLoaded(id);
+	if (wasLoaded) deactivateModule(id);
+	if (!record) return;
+	offerUndo({
+		id: 'remove-module',
+		text: '"' + record.name + '" removed.',
+		done: '"' + record.name + '" is back',
+		undo: async () => {
+			userModules.update((all) => {
+				if (all.some((m) => m.id === id)) return all; // reinstalled meanwhile
+				const next = [...all];
+				next.splice(Math.min(at, next.length), 0, record);
+				return next;
+			});
+			await persist();
+			if (polling) setDevPoll(record, true);
+			if (wasLoaded && !get(disabledModules).includes(id)) return activateUserModule(record);
+			return true;
+		}
+	});
 }
 
 /** Boot: load stored records and activate the enabled ones */

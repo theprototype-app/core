@@ -238,6 +238,7 @@ function dismiss(toast: any) {
 }
 function autoDismiss(node: any, toast: any) {
     if (toast?.sticky) return {}; // 15-L: info prompts wait for the user
+    if (toast?.kind === 'undo') return {}; // 37 R25: undoToast.js owns this one's lifetime
     const id = setTimeout(() => dismiss(toast), typeof toast === 'string' ? 5000 : 15000);
     return { destroy() { clearTimeout(id); } };
 }
@@ -665,7 +666,11 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
      distinct objects): an UNKEYED each reuses rows here, so a neighbour's expiry
      migrated text across nodes and svelte 5.5x left a stuck duplicate behind -->
 {#each visibleToasts as toast (toast)}
-<div class="my-1 tp-toast" class:tp-toast--info={toast?.kind === 'info'} transition:fly={{ y: -8, duration: 180 }} use:autoDismiss={toast}>
+<div class="my-1 tp-toast" class:tp-toast--info={toast?.kind === 'info'} class:tp-toast--undo={toast?.kind === 'undo'} transition:fly={{ y: -8, duration: 180 }} use:autoDismiss={toast}>
+    {#if toast?.kind === 'undo'}
+        <!-- 37 R25: how long the Undo stays on offer, draining (CSS only; the timer lives in undoToast.js) -->
+        <span class="tp-toast-ttl" style:animation-duration={`${toast.ttl}ms`} aria-hidden="true"></span>
+    {/if}
     {#if !toast?.noClose}
         <button class="tp-toast-x" title="Dismiss" aria-label="Dismiss" onclick={() => dismiss(toast)}>✕</button>
     {/if}
@@ -787,6 +792,15 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
         font-size: 11px; line-height: 1; border-radius: 6px;
     }
     .tp-toast-x:hover { color: #fff; background: rgb(255 255 255 / 0.08); }
+    /* 37 R25: an Undo offer drains a thin bar along the card's bottom edge for the time it
+       stays on offer — the timer lives in undoToast.js, the bar is only the picture of it */
+    .tp-toast--undo { overflow: hidden; }
+    .tp-toast-ttl {
+        position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+        background: var(--accent, #60a5fa); transform-origin: left center;
+        animation-name: tp-toast-drain; animation-timing-function: linear; animation-fill-mode: forwards;
+    }
+    @keyframes tp-toast-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
     /* 15-L: INFO variant — the standing, informational prompts (restore a
        session, the first-run notice). Teal reads as "system info" against the
        blue default notification and the amber approval card; the icon needs

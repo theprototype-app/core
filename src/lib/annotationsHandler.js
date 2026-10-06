@@ -273,6 +273,15 @@ export function setAnnotation(annotation) {
 	broadcast({ type: 'annotation', op: 'set', annotation: normalized });
 }
 
+/**
+ * 37 R25: send every note we hold to the room (one ordinary `set` each). A session load
+ * restores notes LOCALLY only; the Undo after Clear scene must put them back on every peer
+ * the Clear removed them from, so it calls this after the load.
+ */
+export function broadcastAllAnnotations() {
+	for (const annotation of get(annotations)) broadcast({ type: 'annotation', op: 'set', annotation });
+}
+
 /** @param {string} id */
 export function deleteAnnotation(id) {
 	annotations.update((list) => list.filter((a) => a.id !== id));

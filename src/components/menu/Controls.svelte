@@ -15,7 +15,7 @@
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
 	import { mutedFlowObjects } from '../../stores/flowStore';
-	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup, setTransformMode, selectObject, toggleEditorMode } from '$lib/objectActions';
+	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectsToParent, setTransformMode, selectObject, toggleEditorMode } from '$lib/objectActions';
 	import { registerWindowReset } from '$lib/dragWindow';
 	import { enterEditMode } from '$lib/meshEdit';
 	import { addAnnotation } from '$lib/annotationsHandler';
@@ -390,6 +390,25 @@
 	// Drop-to-share: dragging a LOCAL object anywhere over the shared object-list body
 	// shares it to the scene root (a shared object just moves to root). Uses an action
 	// so it adds no on:-directive/a11y warnings in this on:-style component.
+	/** 37 R1: the set a row drag carries (Objects.svelte), else its single uuid */
+	function listDropUuids(e: DragEvent): string[] {
+		try {
+			const list = JSON.parse(e.dataTransfer?.getData('application/x-object-uuids') || 'null');
+			if (Array.isArray(list) && list.length) return list.filter((id: any) => typeof id === 'string');
+		} catch {}
+		const one = e.dataTransfer?.getData('application/x-object-uuid');
+		return one ? [one] : [];
+	}
+	/** a list-body drop: local objects are shared to the root, the rest move there as ONE undo + batch */
+	function dropToRoot(uuids: string[]) {
+		const moves: string[] = [];
+		for (const uuid of uuids) {
+			const obj: any = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
+			if (obj?.userData?.__localOnly) shareObject(obj);
+			else moves.push(uuid);
+		}
+		moveObjectsToParent(moves, 'root');
+	}
 	function shareDropZone(node: HTMLElement) {
 		const setActive = (on: boolean) => {
 			node.style.boxShadow = on ? 'inset 0 0 0 2px rgb(59 130 246 / 0.7)' : '';
@@ -405,13 +424,11 @@
 		const leave = () => setActive(false);
 		const drop = (e: DragEvent) => {
 			setActive(false);
-			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
-			if (!uuid) return;
+			const uuids = listDropUuids(e);
+			if (!uuids.length) return;
 			e.preventDefault();
 			e.stopPropagation();
-			const obj: any = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
-			if (obj?.userData?.__localOnly) shareObject(obj);
-			else moveObjectToGroup(uuid, 'root');
+			dropToRoot(uuids);
 		};
 		node.addEventListener('dragover', over);
 		node.addEventListener('dragleave', leave);
@@ -2282,12 +2299,10 @@
 		use:objHeaderWidth
 		on:dragover={(e) => { if (e.dataTransfer?.types.includes('application/x-object-uuid')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
 		on:drop={(e) => {
-			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
-			if (!uuid) return;
+			const uuids = listDropUuids(e);
+			if (!uuids.length) return;
 			e.preventDefault();
-			const obj = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
-			if (obj?.userData?.__localOnly) shareObject(obj);
-			else moveObjectToGroup(uuid, 'root');
+			dropToRoot(uuids);
 		}}
 	>
 		<span class="flex shrink-0 items-center" title="Objects"

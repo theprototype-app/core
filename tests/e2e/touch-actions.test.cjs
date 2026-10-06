@@ -106,7 +106,7 @@ h.run(async () => {
 	const page = A.page;
 	const cdp = await page.context().newCDPSession(page);
 	h.check(await g(page, () => window.__stores.inputDevice.coarsePointer()), 'the phone context reports (pointer: coarse)');
-	await page.locator('#play-button').click();
+	await page.locator('#ps-play:visible, #play-button:visible').first().click(); // 38 R9: the phone shell's Play below 640px
 	await h.eventually(() => locked(page), (v) => v === true, 'the phone enters play');
 	const spec0 = await g(page, () => { let v; window.__stores.touchSpec.touchSpec.subscribe((x) => (v = x))(); return { stick: v.stick, preset: v.preset, ids: v.actions.map((a) => a.id) }; });
 	h.check(spec0.preset === 'fly' && spec0.ids.join() === 'up,down' && spec0.stick, `a blank scene flies: stick + Up/Down (${JSON.stringify(spec0)})`);
@@ -286,7 +286,7 @@ h.run(async () => {
 	const saved = await g(page, () => window.__stores.touchActions.touchActionsDebug().layouts);
 	h.check(!!saved.games.untitled?.items['btn:up'], `the layout is saved for this game (${Object.keys(saved.games)})`);
 	await h.freshReload(A);
-	await page.locator('#play-button').click();
+	await page.locator('#ps-play:visible, #play-button:visible').first().click(); // 38 R9: the phone shell's Play below 640px
 	await h.eventually(() => locked(page), (v) => v === true, 'play again after the reload');
 	await h.eventually(() => rectOf(page, '#touch-btn-up'), (r) => !!r && Math.abs(r.x - dragged.x) < 6 && Math.abs(r.y - dragged.y) < 6 && Math.abs(r.w - 110) < 2, 'after a RELOAD the Up button is where it was dragged, at the new size', 5000);
 	const op = await page.evaluate(() => getComputedStyle(document.querySelector('#touch-btn-up .tab-face')).opacity);
@@ -301,7 +301,7 @@ h.run(async () => {
 	await h.eventually(() => rectOf(page, '#touch-visibility-never'), (r) => !!r, 'the Show touch controls switch is there', 5000);
 	await page.locator('#touch-visibility-never').click();
 	await page.evaluate(() => window.__stores.settingsOpen.set(false));
-	await page.locator('#play-button').click();
+	await page.locator('#ps-play:visible, #play-button:visible').first().click(); // 38 R9: the phone shell's Play below 640px
 	await h.eventually(() => locked(page), (v) => v === true, 'play with Never');
 	await page.waitForTimeout(400);
 	h.check(!(await rectOf(page, '#touch-actions')) && !(await rectOf(page, '#play-exit')), 'Never hides the buttons and the overlay, even on a phone');
@@ -331,7 +331,7 @@ h.run(async () => {
 			await h.eventually(() => g(pg, () => window.__skyrun.phase()), (v) => v === 'playing', `N6 ${name}: stage 1`, 12000);
 			await pg.waitForTimeout(1200);
 		} else {
-			await pg.locator('#play-button').click();
+			await pg.locator('#ps-play:visible, #play-button:visible').first().click(); // 38 R9: phone shell < 640px, toolbar above
 			await h.eventually(() => locked(pg), (v) => v === true, `N6 ${name}: play`);
 		}
 		const all = await pg.evaluate(() => [...document.querySelectorAll('.touch-btn, .touch-stick-rest')].map((el) => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }));

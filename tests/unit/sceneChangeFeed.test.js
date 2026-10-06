@@ -6,8 +6,10 @@ import { sceneChangeFeed } from '../../src/lib/sceneChangeFeed.js';
 // keeps this in the zero-import unit layer.
 function counter(start = 0) {
 	let value = start;
+	/** @type {Set<(n: number) => void>} */
 	const subs = new Set();
 	return {
+		/** @param {(n: number) => void} fn */
 		subscribe(fn) {
 			subs.add(fn);
 			fn(value);
@@ -52,6 +54,7 @@ describe('sceneChangeFeed', () => {
 	it('a listener hears changes, never the synchronous first call', () => {
 		const store = counter(3);
 		const feed = sceneChangeFeed(() => store);
+		/** @type {number[]} */
 		const heard = [];
 		const off = feed.onChange((n) => heard.push(n));
 		expect(heard).toEqual([]);

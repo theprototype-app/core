@@ -4,7 +4,9 @@
 	// never underneath the flow drawer. Bubbles with author color chips and
 	// timestamps, Enter to send, autoscroll with a new-messages pill, /hints.
 	import '../../styles/chat.css';
-	import { peers, messages, chatHidden, username } from '../../stores/appStore';
+	import { peers, messages, chatHidden, username, userdata } from '../../stores/appStore';
+	// 37 R15: emoji shortcodes (expanded on send) and @mentions (resolved on render)
+	import { expandShortcodes, tokenizeChat, shortcodeSuggestions, mentionSuggestions } from '$lib/chatTokens';
 	import { isLocked } from '../../stores/sceneStore';
 	import { nameOf, peerColor } from '$lib/lockControl';
 	import { dragWindow } from '$lib/dragWindow';
@@ -32,12 +34,38 @@
 			: []
 	);
 
+	// 37 R15: who can be @mentioned — the roster plus us (a name, else the peer id)
+	const myId = $derived($peers?.peer?.id ?? '');
+	const people = $derived.by(() => {
+		const out = ($userdata ?? [])
+			.filter((row: any) => Array.isArray(row) && row[0])
+			.map((row: any) => ({ id: String(row[0]), name: row[1] ? String(row[1]) : undefined }));
+		if (myId && !out.some((p: any) => p.id === myId)) out.push({ id: myId, name: $username ?? undefined });
+		return out;
+	});
+	// the word being typed decides the suggestions: "@ad" -> people, ":thu" -> emoji
+	const lastWord = $derived(message.startsWith('/') ? '' : (message.match(/(?:^|\s)([@:][^\s]*)$/)?.[1] ?? ''));
+	const suggestions = $derived.by(() => {
+		if (lastWord.startsWith('@'))
+			return mentionSuggestions(lastWord.slice(1), people, myId).map((p) => ({ key: p.id, label: '@' + p.label, insert: '@' + p.label + ' ', color: peerColor(p.id) }));
+		const code = lastWord.match(/^:([a-z0-9_+-]{1,32})$/i)?.[1];
+		if (code) return shortcodeSuggestions(code).map((e) => ({ key: e.code, label: e.emoji + '  :' + e.code + ':', insert: e.emoji + ' ', color: '' }));
+		return [];
+	});
+	/** @param {{insert: string}} pick */
+	function accept(pick: { insert: string }) {
+		message = message.slice(0, message.length - lastWord.length) + pick.insert;
+		document.getElementById('message')?.focus();
+	}
+
 	function send() {
 		const text = message.trim();
 		if (!text) return;
-		$peers.sendMessage(text);
+		$peers.sendMessage(text.startsWith('/') ? text : expandShortcodes(text));
 		message = '';
 	}
+	// a line that @mentions us (and is not ours) is highlighted
+	const mentionsMe = (tokens: any[]) => !!myId && tokens.some((t) => t.kind === 'mention' && t.id === myId);
 
 	function onScroll() {
 		if (!scroller) return;
@@ -98,16 +126,19 @@
 								{m.sender === 'SYSTEM' ? '' : authorName(m) + ' '}{m.text}
 							</li>
 						{:else}
+							{@const tokens = tokenizeChat(m.text, people)}
 							<li class={'chat-message ' + m.type + ' max-w-[85%] rounded-lg px-2 py-1 text-sm ' +
 								(isMine(m)
 									? 'self-end rounded-br-sm bg-primary-800/80 text-primary-50'
-									: 'self-start rounded-bl-sm bg-gray-700/80 text-gray-100')}>
+									: 'self-start rounded-bl-sm bg-gray-700/80 text-gray-100')}
+								class:chat-mentions-me={!isMine(m) && mentionsMe(tokens)}>
 								<span class="flex items-baseline gap-1.5">
 									<span class="h-2 w-2 shrink-0 self-center rounded-full" style={'background:' + peerColor(m.sender)}></span>
 									<span class="text-[11px] font-semibold opacity-90">{authorName(m)}</span>
 									<span class="text-[9px] text-gray-400">{stamp(m)}</span>
 								</span>
-								<span class="wrap-break-word">{m.text}</span>
+								<!-- 37 R15: TEXT NODES ONLY — a peer's string never becomes markup -->
+								<span class="wrap-break-word">{#each tokens as t, i (i)}{#if t.kind === 'mention'}<span class="chat-mention" style:color={peerColor(t.id)} style:border-color={peerColor(t.id)}>{t.text}</span>{:else}{t.text}{/if}{/each}</span>
 							</li>
 						{/if}
 					{/each}
@@ -126,6 +157,17 @@
 
 		{#if !$isLocked}
 			<div id="chat-input" class="shrink-0 border-t border-gray-700/60 p-2">
+				{#if suggestions.length}
+					<div id="chat-suggestions" class="mb-1 flex flex-wrap gap-1 rounded-md border border-gray-700/60 bg-gray-800/95 p-1 text-xs">
+						{#each suggestions as pick (pick.key)}
+							<button
+								class="chat-suggestion rounded-sm px-1.5 py-0.5 text-left hover:bg-gray-700"
+								style:color={pick.color || null}
+								onclick={() => accept(pick)}>{pick.label}</button
+							>
+						{/each}
+					</div>
+				{/if}
 				{#if hints.length}
 					<div class="mb-1 flex flex-col gap-0.5 rounded-md border border-gray-700/60 bg-gray-800/95 p-1 text-xs">
 						{#each hints as hint}
@@ -147,9 +189,15 @@
 						type="text"
 						id="message"
 						class="ui-input min-w-0 flex-1"
-						placeholder="Message — / for commands"
+						placeholder="Message — / for commands, @ for people, : for emoji"
 						bind:value={message}
 						onkeydown={(e) => {
+							// Tab takes the first suggestion (an @name or an emoji)
+							if (e.key === 'Tab' && suggestions.length) {
+								e.preventDefault();
+								accept(suggestions[0]);
+								return;
+							}
 							if (e.key === 'Enter') send();
 						}}
 					/>

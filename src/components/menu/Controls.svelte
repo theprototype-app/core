@@ -3,6 +3,7 @@
 	import { Activity, Braces, Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, Hand, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
+	import { chatUnread, chatMentioned } from '../../stores/appStore.js'; // 37 R15: the chat button's badge
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
 	import { visibleObjectRows, withExpanded, typeAheadIndex } from '$lib/objectListNav';
@@ -2204,10 +2205,13 @@
 <button
 	id="chat-button"
 	class="fixed bottom-4 right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 shadow-lg transition-colors hover:bg-gray-600"
-	title="Chat (C)"
+	title={$chatUnread > 0 ? `Chat (C) — ${$chatUnread} unread${$chatMentioned ? ', you were mentioned' : ''}` : 'Chat (C)'}
 	on:click={() => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')}
 >
 	<MessageSquare size={16} class="text-white" aria-hidden="true" />
+	{#if $chatUnread > 0}
+		<span id="chat-unread" class="chat-unread-badge" class:mention={$chatMentioned}>{$chatUnread > 99 ? '99+' : $chatUnread}</span>
+	{/if}
 </button>
 
 <!-- mobile "+" (bottom-left): opens the same create/context menu as a right-click

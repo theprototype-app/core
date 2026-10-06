@@ -30,6 +30,7 @@ const ALWAYS_ALLOWED = new Set([
 	'getmodulestate',
 	'getnodedefs',
 	'getjoints',
+	'getchat', // 37 R15: the chat-history REQUEST (its reply stays gateable, the getnodes rule)
 	// A1/A2: WHERE A PEER IS STANDING. On the floor because it is the ROOM GATE'S OWN
 	// EVIDENCE - a plugin that gated `atscene` would silently switch off scene adoption
 	// AND every room gate built on it (`canApplyByRoom` reads no evidence, so it allows

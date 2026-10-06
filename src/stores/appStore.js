@@ -1,5 +1,6 @@
 import { writable, derived, get } from 'svelte/store';
 import { safeStorage } from '../lib/safeStorage';
+import { mentionsIn, mergeChat } from '../lib/chatTokens'; // 37 R15 (a zero-import leaf)
 
 /** @type {import('svelte/store').Writable<any>} */
 export const settingsOpen = writable(null);
@@ -749,17 +750,93 @@ export const loading = writable([]);
 export const loadingcount = writable(0);
 export const loadingFile = writable([]);
 
+/** @type {import('svelte/store').Writable<any[]>} */
 export const messages = writable([]);
 
+// 37 R15: every chat line has a STABLE id. It used to be `messages.length` — the length of
+// the STORE OBJECT (undefined), so every message shared one key and nothing could tell two
+// apart. A peer's line keeps the id it was sent with, which is what lets a joiner's history
+// merge without duplicates; a local line (a system note, an older peer's message) mints one.
+let chatSeq = 0;
+
+/** @param {{message: string, type: string, sender: any, id?: string, at?: number}} newMessage @param {string} [type] unused @param {any} [sender] unused */
 export function addMessage(newMessage, type, sender) {
-	messages.update((currentMessages) => [
-		...currentMessages,
-		{
-			id: messages.length,
-			text: newMessage.message,
-			sender: newMessage.sender,
-			type: newMessage.type,
-			ts: Date.now() // local receive time — display only, never replicated
-		}
-	]);
+	const ts = Date.now(); // local receive time — the bubble's clock
+	const id = typeof newMessage.id === 'string' && newMessage.id ? newMessage.id : 'local-' + ++chatSeq + '-' + ts;
+	const at = typeof newMessage.at === 'number' && Number.isFinite(newMessage.at) ? newMessage.at : ts;
+	let added = false;
+	messages.update((currentMessages) => {
+		if (newMessage.id && currentMessages.some((m) => m.id === newMessage.id)) return currentMessages;
+		added = true;
+		return [...currentMessages, { id, text: newMessage.message, sender: newMessage.sender, type: newMessage.type, ts, at }];
+	});
+	if (added && newMessage.type === 'received') noteUnreadChat(String(newMessage.message ?? ''));
+}
+
+/** 37 R15: the people a chat line may @mention — the roster plus us */
+export function chatPeople() {
+	/** @type {any} */
+	const peer = get(peers);
+	const me = peer?.peer?.id;
+	/** @type {{id: string, name?: string}[]} */
+	const out = [];
+	for (const row of get(userdata) ?? []) if (Array.isArray(row) && row[0]) out.push({ id: String(row[0]), name: row[1] ? String(row[1]) : undefined });
+	if (me && !out.some((p) => p.id === me)) out.push({ id: me, name: get(username) ?? undefined });
+	return out;
+}
+
+/** 37 R15: chat lines that arrived while the chat window was closed (the toolbar badge) */
+export const chatUnread = writable(0);
+/** …and whether one of them @mentioned us (the badge turns to the mention colour) */
+export const chatMentioned = writable(false);
+/** @param {string} text */
+function noteUnreadChat(text) {
+	if (get(chatHidden) !== 'hidden') return;
+	chatUnread.update((n) => n + 1);
+	/** @type {any} */
+	const peer = get(peers);
+	const me = peer?.peer?.id;
+	if (me && mentionsIn(text, chatPeople()).includes(me)) chatMentioned.set(true);
+}
+// opening the chat reads it (chatHidden is declared above: the module-level subscribe rule)
+chatHidden.subscribe((v) => {
+	if (v === 'hidden') return;
+	chatUnread.set(0);
+	chatMentioned.set(false);
+});
+
+/** the chat lines worth keeping — what people said, not system notes — as plain records
+ * (the joiner reply and the session save) @param {number} [cap] */
+export function chatHistory(cap = 200) {
+	return get(messages)
+		.filter((/** @type {any} */ m) => (m.type === 'sent' || m.type === 'received') && typeof m.text === 'string')
+		.slice(-cap)
+		.map((/** @type {any} */ m) => ({ id: String(m.id), text: m.text, sender: String(m.sender ?? ''), at: m.at ?? m.ts }));
+}
+
+/** Merge a history (a peer's reply, a loaded session) into ours, by id. Nothing in it counts
+ * as unread: it is the past, not news. @param {any[]} list */
+export function mergeChatHistory(list) {
+	if (!Array.isArray(list) || !list.length) return 0;
+	/** @type {any} */
+	const peer = get(peers);
+	const me = peer?.peer?.id;
+	const incoming = list
+		.filter((m) => m && typeof m.text === 'string' && typeof m.id === 'string' && m.id && m.text.length <= 4000)
+		.map((m) => ({
+			id: m.id,
+			text: m.text,
+			sender: String(m.sender ?? ''),
+			type: m.sender && m.sender === me ? 'sent' : 'received',
+			ts: Date.now(),
+			at: Number.isFinite(m.at) ? m.at : Date.now(),
+			past: true
+		}));
+	let added = 0;
+	messages.update((current) => {
+		const next = mergeChat(current, incoming);
+		added = next.length - current.length;
+		return next;
+	});
+	return added;
 }

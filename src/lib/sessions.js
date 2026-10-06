@@ -33,7 +33,9 @@ import {
 	templatesModalTab,
 	// R22 round 33: "Save scene & connect" hands over to the Explorer's own inline naming
 	explorerClose,
-	armExplorerSceneSave
+	armExplorerSceneSave,
+	chatHistory,
+	mergeChatHistory
 } from '../stores/appStore';
 import { bottomDockActive } from './bottomDock';
 // R22 round 33 — both are store-only leaves (svelte/store + localStorage), so this edge
@@ -462,6 +464,13 @@ export function emptySessionPayload(name) {
 
 /** Persist a payload as a slot @param {any} payload */
 async function persistSession(payload) {
+	// 37 R15: a SAVED SESSION keeps the conversation (Sessions manager saves, projects and the
+	// "Backup before" stashes all come through here). Additive and local: absent when nobody
+	// has said anything, never written into a .tpscene/.zip export (exportSessionZip strips it).
+	if (!Array.isArray(payload.chat)) {
+		const chat = chatHistory();
+		if (chat.length) payload.chat = chat;
+	}
 	if (JSON.stringify(payload).length > MAX_SESSION_BYTES) {
 		showToast('Scene is too large to save as a session (>50 MB)');
 		return null;
@@ -860,6 +869,11 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 	if (opts.flow === false) {
 		payload = { ...payload, nodes: [], edges: [], graphs: {} };
 		delete payload.modules;
+	}
+	// 37 R15: a saved session's chat stays on this device — a file is for sharing
+	if (payload.chat) {
+		payload = { ...payload };
+		delete payload.chat;
 	}
 	/**
 	 * R22 round 12 — THE LIBRARY HAS TO TRAVEL AS FILES.
@@ -1586,6 +1600,9 @@ async function applySessionNow(payload, opts, job) {
 	// a scene LOAD replaces the world, so replace the documents too
 	shaderGraphsRestore(payload.shaderGraphs ?? {}, replicate);
 	annotationsRestore(payload.annotations ?? []);
+	// 37 R15: a saved session brings its conversation back (merged by id, LOCAL — the room's
+	// own history is each peer's; nothing here counts as unread)
+	if (Array.isArray(payload.chat)) mergeChatHistory(payload.chat);
 	// P-B: joints restore locally + replicate each def (receivers only apply)
 	jointsRestore(payload.joints ?? []);
 	// the look replicates on restore too, so loading a scene into a live room

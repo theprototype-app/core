@@ -3461,7 +3461,7 @@
 			{#if isLight}
 				<Section label="Light">
 					{#if lightTargets.length > 1}
-						<p id="light-multi-note" class="text-[10px] italic text-gray-400">
+						<p id="light-multi-note" class="text-[10px] italic text-text-muted">
 							Applies to {lightTargets.length} selected lights{lightMixed((l) => l.color?.getHex?.()) ? ' — their colours differ (—); picking one sets all' : ''}.
 						</p>
 					{/if}
@@ -3714,7 +3714,7 @@
 					{#if material.color && material.type !== 'MeshNormalMaterial'}
 						{#if matMixed((o) => o.material.color?.getHex?.())}
 							<!-- 37 R1: the picker can only show ONE colour; say the set differs -->
-							<p id="material-color-mixed" class="text-[10px] italic text-gray-400">
+							<p id="material-color-mixed" class="text-[10px] italic text-text-muted">
 								Colour — (mixed): picking one sets all {matCount}.
 							</p>
 						{/if}
@@ -3919,7 +3919,7 @@
 								value={'#' + material.emissive.getHexString()}
 								oninput={(/** @type {any} */ e) => setMat('emissive', e.currentTarget.value)}
 							/>
-							<span class="text-[10px] italic text-gray-400">{matMixed((o) => o.material.emissive?.getHex?.()) ? '— (mixed) · ' : ''}black = no glow</span>
+							<span class="text-[10px] italic text-text-muted">{matMixed((o) => o.material.emissive?.getHex?.()) ? '— (mixed) · ' : ''}black = no glow</span>
 						</div>
 					{/if}
 

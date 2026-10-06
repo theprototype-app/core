@@ -9,6 +9,7 @@
 		Bell,
 		Box,
 		Boxes,
+		Crosshair, // 37 R1: the Pivot cell (Median point)
 		Brush,
 		Camera,
 		Check,
@@ -79,7 +80,8 @@
 		Video,
 		Workflow,
 		Wrench,
-		X
+		X,
+		LocateFixed // 37 R1: the Pivot cell (Active object)
 	} from '@lucide/svelte';
 
 	// 15-Q (context-menu redesign): the menu item defs carry icon NAMES in data,
@@ -91,6 +93,8 @@
 		bell: Bell,
 		box: Box,
 		boxes: Boxes,
+		crosshair: Crosshair,
+		'locate-fixed': LocateFixed,
 		brush: Brush,
 		camera: Camera,
 		check: Check,

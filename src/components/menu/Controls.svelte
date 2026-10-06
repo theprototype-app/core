@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Activity, Boxes, Braces, Crosshair, LocateFixed, Network, Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, Hand, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
+	import { Activity, Braces, Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, Hand, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
@@ -48,6 +48,7 @@
 	import { DOCK_VIEWS } from '$lib/dockMenu';
 	import { safeStorage } from '$lib/safeStorage';
 	import { pivotMode, pivotParentAvailable } from '$lib/multiTransform'; // 37 R1: the toolbar Pivot cell
+	import Icon from '../ui/Icon.svelte';
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -1032,7 +1033,8 @@
 	// 30 P1: `pressed` makes the cell a TOGGLE — it renders as a real <button> carrying
 	// aria-pressed (a <p> cannot: the attribute is not supported on its role)
 	const PIVOT_NAMES: Record<string, string> = { median: 'Median point', active: 'Active object', individual: 'Individual origins', parent: 'Parent origin' };
-	const PIVOT_ICONS: Record<string, any> = { median: Crosshair, active: LocateFixed, individual: Boxes, parent: Network };
+	// 38 rule: a NEW glyph goes through ui/Icon.svelte (names, sizes 16/20)
+	const PIVOT_ICONS: Record<string, string> = { median: 'crosshair', active: 'locate-fixed', individual: 'boxes', parent: 'network' };
 	/** the next pivot mode; Parent origin only when the set shares a parent */
 	function cyclePivotMode() {
 		const order = ['median', 'active', 'individual', ...(pivotParentAvailable() ? ['parent'] : [])];
@@ -1040,7 +1042,7 @@
 		pivotMode.set(next);
 		showQualityToast('Pivot: ' + PIVOT_NAMES[next]);
 	}
-	type CellButton = { title: string; slot?: string; icon: any; tint: () => string; run: () => void; pressed?: () => boolean };
+	type CellButton = { title: string; slot?: string; icon?: any; iconName?: string; tint: () => string; run: () => void; pressed?: () => boolean };
 
 	/** the one PSEUDO-cell: the transparent well the play FAB sits in. It is not a
 	 *  roster entry (play is never hideable) but it IS a cell of the row, which is
@@ -1135,8 +1137,8 @@
 			get title() {
 				return 'Pivot: ' + PIVOT_NAMES[$pivotMode] + ' (click to change)';
 			},
-			get icon() {
-				return PIVOT_ICONS[$pivotMode] ?? Crosshair;
+			get iconName() {
+				return PIVOT_ICONS[$pivotMode] ?? 'crosshair';
 			},
 			tint: () => (multiSel ? ICON_ON : ICON_OFF),
 			run: () => cyclePivotMode()
@@ -2206,7 +2208,7 @@
 					use:cellClick={cell.id}
 					use:cellMenu={cell.id}
 				>
-					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
+					{#if btn.iconName}<Icon name={btn.iconName} size={20} class={btn.tint()} />{:else}<Glyph size={18} class={btn.tint()} aria-hidden="true" />{/if}
 				</button>
 				{:else}
 				<!-- ONE template for every roster button: the six hand-written cells each
@@ -2222,7 +2224,7 @@
 					on:click={() => runCell(cell.id)}
 					use:cellMenu={cell.id}
 				>
-					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
+					{#if btn.iconName}<Icon name={btn.iconName} size={20} class={btn.tint()} />{:else}<Glyph size={18} class={btn.tint()} aria-hidden="true" />{/if}
 				</p>
 				{/if}
 			{/if}

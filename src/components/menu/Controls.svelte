@@ -32,6 +32,10 @@
 	import LocalObjects from './LocalObjects.svelte';
 	import ModuleContent from './ModuleContent.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import SearchField from '../ui/SearchField.svelte';
+	import Icon from '../ui/Icon.svelte';
+	import { createAttachmentKey, fromAction } from 'svelte/attachments';
 	import MobileAddButton from './MobileAddButton.svelte';
 	import AiHudButton from './AiHudButton.svelte';
 	import SimControls from './SimControls.svelte';
@@ -717,6 +721,26 @@
 	}
 	const objHideSearch = $derived(objHeaderW < 260);
 	const objHideLabel = $derived(objHeaderW < 190);
+	// 38 R6: what the header element carries now that WindowChrome draws it — the width
+	// probe above (as an attachment) and the drop-to-root target
+	const objHeaderAttrs = {
+		[createAttachmentKey()]: fromAction(objHeaderWidth),
+		role: 'list',
+		ondragover: (e: DragEvent) => {
+			if (e.dataTransfer?.types.includes('application/x-object-uuid')) {
+				e.preventDefault();
+				e.dataTransfer.dropEffect = 'move';
+			}
+		},
+		ondrop: (e: DragEvent) => {
+			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
+			if (!uuid) return;
+			e.preventDefault();
+			const obj = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
+			if (obj?.userData?.__localOnly) shareObject(obj);
+			else moveObjectToGroup(uuid, 'root');
+		}
+	};
 
 	function dragMe(node) {
 		startWindowDragGuard(); // 36 F3: no browser menu from a right press mid-drag
@@ -2269,55 +2293,47 @@
 	/>
 {/if}
 
-<div id="object-list" data-key-scope="objects" role="region" aria-label="Object list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack={'objects'}
-	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
+<div id="object-list" data-key-scope="objects" role="region" aria-label="Object list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel tp-ui tp-window overflow-hidden'} use:dragMe use:focusStack={'objects'}
+	use:tabbable={{ key: 'objects', title: 'Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
 	use:dockable={{ key: 'objects' }}
 	style="z-index: var(--z-window)">
 	<!-- dropping a row on the header moves the object back to the scene root -->
-	<!-- header matches the Explorer chrome (104): title + inline search + close;
-	     still the move handle AND the drop-to-root target -->
-	<div
-		role="list"
-		class="ui-panel-header move-handle shrink-0 cursor-move select-none rounded-tl-lg rounded-tr-lg py-1.5"
-		use:objHeaderWidth
-		on:dragover={(e) => { if (e.dataTransfer?.types.includes('application/x-object-uuid')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
-		on:drop={(e) => {
-			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
-			if (!uuid) return;
-			e.preventDefault();
-			const obj = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
-			if (obj?.userData?.__localOnly) shareObject(obj);
-			else moveObjectToGroup(uuid, 'root');
-		}}
+	<!-- 38 R6: the one window header (ui/WindowChrome, tool size). It is still the move
+	     handle AND the drop-to-root target, and keeps its R22 ranking: the search leaves
+	     first, then the word "Objects" (the icon stands in), the ✕ never -->
+	<WindowChrome
+		size="tool"
+		bare
+		body={false}
+		title="Objects"
+		headerClass="ui-panel-header move-handle cursor-move select-none"
+		headerAttrs={objHeaderAttrs}
+		onclose={() => objectListClose.set(true)}
+		closeAttrs={{ title: 'Close (O)' }}
 	>
-		<span class="flex shrink-0 items-center" title="Objects"
-			><List size={16} class={objHideLabel ? '' : 'mr-1'} aria-hidden="true" />{objHideLabel
-				? ''
-				: 'Objects'}</span
-		>
-		{#if !objHideSearch}
-			<input
-				id="object-search"
-				class="ui-input w-36 py-0.5 font-normal normal-case tracking-normal"
-				placeholder="Search objects…"
-				value={searchTerm}
-				on:pointerdown={(e) => e.stopPropagation()}
-				on:input={(e) => (searchTerm = e.currentTarget.value)}
-				on:keydown={searchKeydown}
-			/>
-		{/if}
-		<span class="flex-1"></span>
-		<button class="ui-button-quiet" title="Close (O)" on:click={() => objectListClose.set(true)}>✕</button>
-	</div>
-	<div class="flex flex-col gap-1 bg-gray-100 p-1 text-xs dark:bg-gray-700">
+		{#snippet heading()}
+			<span class="wc-label" title="Objects">{#if objHideLabel}<Icon name="list" size={16} />{:else}Objects{/if}</span>
+			{#if !objHideSearch}
+				<span class="obj-search" on:pointerdown={(e) => e.stopPropagation()} role="presentation">
+					<SearchField
+						id="object-search"
+						size="sm"
+						placeholder="Search objects…"
+						bind:value={searchTerm}
+						onkeydown={searchKeydown}
+					/>
+				</span>
+			{/if}
+			<span class="flex-1"></span>
+		{/snippet}
+	</WindowChrome>
+	<div class="obj-filters flex flex-col gap-1">
 		<div class="relative flex items-center gap-1">
 			<!-- 80.2: one scrollable chip row that never overflows the window -->
 			<div id="filter-chips" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll>
 				<button
-					class={'shrink-0 rounded-full px-2 py-0.5 ' +
-						(!searchTypes.size && !viewMode
-							? 'bg-primary-600 text-white'
-							: 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200')}
+					class="obj-chip"
+					aria-pressed={!searchTypes.size && !viewMode}
 					title="Show everything — click again to restore the previous chips"
 					on:click={clickAll}
 				>
@@ -2326,10 +2342,8 @@
 				{#each [['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes']] as [value, label]}
 					{#if !hiddenChips.has(value)}
 						<button
-							class={'shrink-0 rounded-full px-2 py-0.5 ' +
-								(searchTypes.has(value)
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200')}
+							class="obj-chip"
+							aria-pressed={searchTypes.has(value)}
 							on:click={() => toggleTypeChip(value)}
 						>
 							{label}
@@ -2339,10 +2353,8 @@
 				{#each [...($showEnvInList ? [['environment', 'Environment']] : []), ...($advancedMode ? [['system', 'System']] : [])] as [value, label]}
 					{#if !hiddenChips.has(value)}
 						<button
-							class={'shrink-0 rounded-full px-2 py-0.5 ' +
-								(viewMode === value
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200')}
+							class="obj-chip"
+							aria-pressed={viewMode === value}
 							on:click={() => { viewMode = viewMode === value ? '' : value; searchTypes = new Set(); }}
 						>
 							{label}
@@ -2350,25 +2362,27 @@
 					{/if}
 				{/each}
 				{#if $objectFilter}
-					<span class="shrink-0 text-gray-500 dark:text-gray-300">{matchCount} match{matchCount === 1 ? '' : 'es'}</span>
+					<span class="obj-matches shrink-0">{matchCount} match{matchCount === 1 ? '' : 'es'}</span>
 				{/if}
 			</div>
 			<!-- 80.3: chip visibility popover + reset -->
 			<button
 				id="chip-config"
-				class="shrink-0 rounded-sm bg-gray-200 px-1.5 py-0.5 text-gray-600 dark:bg-gray-600 dark:text-gray-200"
+				class="obj-cfg"
 				title="Choose which filters show here"
+				aria-label="Choose which filters show here"
+				aria-expanded={chipPopup}
 				on:click={() => (chipPopup = !chipPopup)}
 			>
-				⚙
+				<Icon name="sliders-horizontal" size={14} />
 			</button>
 			{#if chipPopup}
 				<div
 					id="chip-popup"
-					class="absolute right-0 top-6 z-10 flex w-44 flex-col gap-1 rounded-lg border border-gray-300 bg-white p-2 shadow-xl dark:border-gray-600 dark:bg-gray-800"
+					class="obj-pop absolute right-0 top-8 z-10 flex w-48 flex-col gap-0.5"
 				>
 					{#each [['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes'], ...($showEnvInList ? [['environment', 'Environment']] : []), ...($advancedMode ? [['system', 'System']] : [])] as [value, label]}
-						<label class="flex cursor-pointer items-center gap-2 text-gray-700 dark:text-gray-200">
+						<label class="obj-pop-row">
 							<input
 								type="checkbox"
 								checked={!hiddenChips.has(value)}
@@ -2379,12 +2393,12 @@
 					{/each}
 					<button
 						id="reset-filters"
-						class="mt-1 rounded-sm bg-gray-200 px-2 py-1 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
+						class="obj-pop-reset"
 						on:click={resetAllFilters}
 					>
 						Reset all filters
 					</button>
-					<label class="mt-1 flex cursor-pointer items-center gap-2 border-t border-gray-300 pt-1.5 text-gray-700 dark:border-gray-600 dark:text-gray-200">
+					<label class="obj-pop-row obj-pop-sep">
 						<input type="checkbox" bind:checked={$showLocalObjects} />
 						Show local objects
 					</label>
@@ -2392,7 +2406,7 @@
 			{/if}
 		</div>
 	</div>
-	<Listgroup active class="min-h-0 flex-1 overflow-y-auto -rounded rounded-br rounded-bl">
+	<Listgroup active class="obj-scroller min-h-0 flex-1 overflow-y-auto -rounded rounded-br rounded-bl border-0 bg-transparent dark:bg-transparent">
 		<!-- 24-B2: the tree is the keyboard surface — focusable, arrows/Enter/F2/type-ahead
 		     walk the VISIBLE rows (see listKeydown); a subtle ring says it has focus -->
 		<div
@@ -2533,7 +2547,7 @@
 	{/if}
 	<button
 		id="object-count"
-		class="shrink-0 rounded-bl rounded-br bg-gray-100 px-2 py-0.5 text-left text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300"
+		class="obj-foot shrink-0 text-left"
 		title={budgetTitle}
 		use:openStats
 	>
@@ -2556,3 +2570,124 @@
 		on:close={() => ($objectContextMenu = null)}
 	/>
 {/if}
+
+<style>
+	/* 38 R6: the object list's filter row, footer and chip popover in the tokens — chips are
+	   the kit's Chips look (pill, border-strong, the accent-soft fill when on); the row logic
+	   (All restores the previous set, Environment / System are exclusive views) is unchanged */
+	.obj-search {
+		display: flex;
+		min-width: 0;
+		width: 168px;
+		flex-shrink: 1;
+	}
+	.obj-search :global(.sf) {
+		width: 100%;
+	}
+	.obj-filters {
+		padding: 8px 10px;
+		border-bottom: 1px solid var(--border);
+		font-size: var(--fs-section);
+	}
+	.obj-chip {
+		display: inline-flex;
+		align-items: center;
+		flex-shrink: 0;
+		height: 26px;
+		padding: 0 10px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-pill);
+		background: transparent;
+		color: var(--text-2);
+		font-size: var(--fs-section);
+		cursor: pointer;
+	}
+	.obj-chip:hover {
+		border-color: var(--text-faint);
+	}
+	.obj-chip[aria-pressed='true'] {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+		color: var(--text);
+	}
+	.obj-matches {
+		color: var(--text-faint);
+	}
+	.obj-cfg {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		width: 26px;
+		height: 26px;
+		border: 0;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+	.obj-cfg:hover,
+	.obj-cfg[aria-expanded='true'] {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.obj-pop {
+		padding: 6px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-1);
+		box-shadow: var(--shadow-window);
+		color: var(--text);
+	}
+	.obj-pop-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		height: 30px;
+		padding: 0 6px;
+		border-radius: var(--radius-input);
+		font-size: var(--fs-desc);
+		cursor: pointer;
+	}
+	.obj-pop-row:hover {
+		background: var(--surface-hover);
+	}
+	.obj-pop-row input {
+		accent-color: var(--accent);
+	}
+	.obj-pop-sep {
+		margin-top: 4px;
+		border-top: 1px solid var(--border);
+		border-radius: 0;
+	}
+	.obj-pop-reset {
+		height: 30px;
+		margin-top: 4px;
+		padding: 0 6px;
+		border: 0;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--warn-text);
+		font-size: var(--fs-desc);
+		text-align: left;
+		cursor: pointer;
+	}
+	.obj-pop-reset:hover {
+		background: var(--surface-hover);
+	}
+	.obj-foot {
+		display: flex;
+		align-items: center;
+		height: 26px;
+		padding: 0 12px;
+		border: 0;
+		border-top: 1px solid var(--border);
+		background: transparent;
+		color: var(--text-faint);
+		font-size: var(--fs-badge);
+		cursor: pointer;
+	}
+	.obj-foot:hover {
+		color: var(--text-2);
+	}
+</style>

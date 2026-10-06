@@ -79,6 +79,14 @@
 		Video,
 		Workflow,
 		Wrench,
+		AppWindow,
+		FolderTree,
+		MessageSquare,
+		PanelBottom,
+		Settings2,
+		Cog,
+		Mic,
+		Square,
 		X
 	} from '@lucide/svelte';
 
@@ -157,6 +165,14 @@
 		video: Video,
 		workflow: Workflow,
 		wrench: Wrench,
+		'app-window': AppWindow,
+		'folder-tree': FolderTree,
+		'message-square': MessageSquare,
+		'panel-bottom': PanelBottom,
+		'settings-2': Settings2,
+		cog: Cog,
+		mic: Mic,
+		square: Square,
 		x: X
 	};
 

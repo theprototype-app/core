@@ -6,7 +6,9 @@
 	// H6 (notes v2): rows are "#n name — description", grouped by LABEL (collapsible,
 	// 'General' first) with per-group ‹ › traversal in GLOBAL pin-number order, plus
 	// a header toggle for the in-scene pins.
-	import { ChevronDown, ChevronRight, ChevronLeft, Pencil, Eye, EyeOff } from '@lucide/svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import Icon from '../ui/Icon.svelte';
+	import EmptyState from '../ui/EmptyState.svelte';
 	import { notesDrawerOpen, inspectorClose, noteDoubleClickToOpen } from '../../stores/appStore.js';
 	import {
 		annotations,
@@ -130,7 +132,7 @@
 </script>
 
 {#if $notesDrawerOpen}
-	<aside id="notes-drawer" data-key-scope="panel" class="ui-panel flex flex-col" style="--notes-h: {sheetH}px;">
+	<aside id="notes-drawer" data-key-scope="panel" class="ui-panel tp-ui tp-window flex flex-col" style="--notes-h: {sheetH}px;">
 		<!-- top drag handle: adjusts the sheet height (bottom-sheet mode on narrow only) -->
 		<div
 			class="notes-resize"
@@ -141,26 +143,36 @@
 		>
 			<span class="notes-grabber"></span>
 		</div>
-		<div class="ui-panel-header shrink-0 justify-between">
-			<span>Scene notes {#if $annotations.length}<span class="text-xs text-gray-400">({$annotations.length})</span>{/if}</span>
-			<div class="flex items-center gap-1">
+		<!-- 38 R6: the one window header (ui/WindowChrome) -->
+		<WindowChrome
+			size="tool"
+			bare
+			body={false}
+			title="Scene notes"
+			count={$annotations.length || undefined}
+			headerClass="ui-panel-header"
+			onclose={() => notesDrawerOpen.set(false)}
+			closeLabel="Close notes"
+		>
+			{#snippet actions()}
 				<button
-					class="notes-icon"
+					class="wc-act"
 					title={$showNotePins ? 'Hide note pins in the viewport' : 'Show note pins in the viewport'}
 					aria-label={$showNotePins ? 'Hide note pins' : 'Show note pins'}
 					aria-pressed={$showNotePins}
 					onclick={() => showNotePins.set(!$showNotePins)}
 				>
-					{#if $showNotePins}<Eye size={15} aria-hidden="true" />{:else}<EyeOff size={15} aria-hidden="true" />{/if}
+					{#if $showNotePins}<Icon name="eye" size={14} />{:else}<Icon name="eye-off" size={14} />{/if}
 				</button>
-				<button class="ui-button-quiet" title="Close" aria-label="Close notes" onclick={() => notesDrawerOpen.set(false)}>✕</button>
-			</div>
-		</div>
+			{/snippet}
+		</WindowChrome>
 		<div class="notes-body min-h-0 flex-1 overflow-y-auto p-2">
 			{#if !$annotations.length}
-				<p class="px-1 py-6 text-center text-sm text-gray-400">
-					No notes yet. Select an object and add a note from its context menu or the object list.
-				</p>
+				<EmptyState
+					icon="sticky-note"
+					title="No notes yet"
+					description="Select an object and add a note from its context menu or the object list."
+				/>
 			{:else}
 				{#each groups as group (group.label)}
 					<div class="notes-group">
@@ -171,12 +183,12 @@
 								onclick={() => (collapsed = { ...collapsed, [group.label]: !collapsed[group.label] })}
 							>
 								{#if collapsed[group.label]}
-									<ChevronRight size={14} aria-hidden="true" />
+									<Icon name="chevron-right" size={14} />
 								{:else}
-									<ChevronDown size={14} aria-hidden="true" />
+									<Icon name="chevron-down" size={14} />
 								{/if}
 								<span class="truncate">{group.label}</span>
-								<span class="text-gray-500">({group.rows.length})</span>
+								<span class="notes-count">{group.rows.length}</span>
 							</button>
 							<button
 								class="notes-icon"
@@ -184,7 +196,7 @@
 								aria-label={'Previous note in ' + group.label}
 								onclick={() => step(group, -1)}
 							>
-								<ChevronLeft size={14} aria-hidden="true" />
+								<Icon name="chevron-left" size={14} />
 							</button>
 							<button
 								class="notes-icon"
@@ -192,14 +204,14 @@
 								aria-label={'Next note in ' + group.label}
 								onclick={() => step(group, 1)}
 							>
-								<ChevronRight size={14} aria-hidden="true" />
+								<Icon name="chevron-right" size={14} />
 							</button>
 						</div>
 						{#if !collapsed[group.label]}
 							<ul class="flex flex-col gap-1.5 pb-1">
 								{#each group.rows as row (row.a.id)}
 									<li
-										class="group rounded-sm bg-gray-800/60 hover:bg-gray-700/60"
+										class="notes-row group"
 										class:notes-row-active={($activeAnnotation?.id ?? $visitedNote) === row.a.id}
 									>
 										<div class="flex items-start gap-2 p-2">
@@ -216,13 +228,13 @@
 														class="notes-num"
 														style="background:{row.a.color || DEFAULT_NOTE_COLOR}">{row.n}</span
 													>
-													<span class="shrink-0 text-sm text-gray-100">{displayName(row.a)}</span>
+													<span class="notes-name shrink-0">{displayName(row.a)}</span>
 													{#if (row.a.name || '').trim() && (row.a.text || '').trim()}
 														<span class="notes-desc">{row.a.text}</span>
 													{/if}
 												</div>
-												<div class="mt-0.5 flex items-center gap-1.5 truncate text-[10px] text-gray-500">
-													<span class="rounded-sm bg-gray-700/70 px-1 text-gray-300">{labelFor(row.a.objectUuid)}</span>
+												<div class="notes-meta mt-0.5 flex items-center gap-1.5 truncate">
+													<span class="notes-obj">{labelFor(row.a.objectUuid)}</span>
 													<span class="truncate">{displayAuthor(row.a)} · {when(row.a.ts)}</span>
 												</div>
 											</button>
@@ -232,14 +244,14 @@
 												aria-label="Edit note"
 												onclick={() => openAnnotation(row.a.id, 'edit')}
 											>
-												<Pencil size={14} aria-hidden="true" />
+												<Icon name="pencil" size={14} />
 											</button>
 											<button
-												class="shrink-0 text-gray-500 hover:text-red-400"
+												class="notes-icon notes-del shrink-0"
 												title="Delete note"
 												aria-label="Delete note"
 												onclick={() => deleteAnnotation(row.a.id)}
-											>✕</button>
+											><Icon name="x" size={14} /></button>
 										</div>
 									</li>
 								{/each}
@@ -266,7 +278,7 @@
 		bottom: calc(var(--bottom-inset, 0px) + var(--controls-inset, 0px));
 		width: min(320px, 92vw);
 		z-index: calc(var(--z-bottom) - 1);
-		border-radius: 0.5rem 0 0 0.5rem;
+		border-radius: var(--radius-window) 0 0 var(--radius-window);
 	}
 	/* only when Connect is docked (chrome dropped under it), and only in side-drawer mode
 	   (wide) — tuck below the bar and cover the chrome buttons; narrow stays a bottom sheet */
@@ -290,20 +302,52 @@
 		width: 40px;
 		height: 4px;
 		border-radius: 9999px;
-		background: rgb(148 163 184 / 0.7);
+		background: var(--border-strong);
 	}
 	/* --- H6 rows + groups --------------------------------------------------- */
+	/* 38 R6: rows, groups and icons in the tokens */
 	.notes-icon {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		border-radius: 0.25rem;
-		padding: 0.15rem;
-		color: rgb(156 163 175);
+		width: 24px;
+		height: 24px;
+		border-radius: var(--radius-input);
+		color: var(--text-muted);
 	}
 	.notes-icon:hover {
-		background: rgb(55 65 81 / 0.7);
-		color: rgb(243 244 246);
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.notes-del:hover {
+		color: var(--warn-text);
+	}
+	.notes-row {
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-2);
+	}
+	.notes-row:hover {
+		border-color: var(--border-strong);
+	}
+	.notes-name {
+		font-size: var(--fs-desc);
+		color: var(--text);
+	}
+	.notes-meta {
+		font-size: var(--fs-badge);
+		color: var(--text-faint);
+	}
+	.notes-obj {
+		padding: 0 6px;
+		border-radius: var(--radius-pill);
+		background: var(--badge-bg);
+		color: var(--badge-text);
+	}
+	.notes-count {
+		font-family: var(--font-ui-mono);
+		font-weight: 500;
+		letter-spacing: 0;
 	}
 	.notes-group + .notes-group {
 		margin-top: 0.5rem;
@@ -320,14 +364,14 @@
 		flex: 1 1 auto;
 		align-items: center;
 		gap: 0.25rem;
-		font-size: 10px;
+		font-size: var(--fs-badge);
 		font-weight: 600;
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
-		color: rgb(156 163 175);
+		letter-spacing: var(--tracking-section);
+		color: var(--text-faint);
 	}
 	.notes-group-toggle:hover {
-		color: rgb(229 231 235);
+		color: var(--text-2);
 	}
 	.notes-num {
 		display: inline-flex;
@@ -349,11 +393,12 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		font-size: 0.75rem;
-		color: rgb(156 163 175);
+		font-size: var(--fs-section);
+		color: var(--text-muted);
 	}
 	.notes-row-active {
-		outline: 1px solid rgb(249 115 22 / 0.7);
+		border-color: var(--accent);
+		background: var(--accent-soft);
 	}
 	/* Narrow / folded: a bottom sheet (like the Flow/Explorer dock) with a drag handle. */
 	@media (max-width: 640px) {
@@ -367,7 +412,7 @@
 			height: var(--notes-h, 45vh);
 			/* never rise above the Connect bar + top-right chrome (like the Flow/Explorer dock) */
 			max-height: calc(100vh - var(--connect-bottom, 54px) - 56px);
-			border-radius: 0.75rem 0.75rem 0 0;
+			border-radius: var(--radius-window) var(--radius-window) 0 0;
 			/* below the Controls HUD in the bottom-sheet layout (not the wide cover-z) */
 			z-index: calc(var(--z-bottom) - 1);
 		}

@@ -1,0 +1,70 @@
+/* 38 R6 — THE WINDOW SURFACE (SPEC §4 "All docked/floating windows use WindowChrome").
+
+   A floating / edge-docked window keeps its own root element — dragWindow, dockable,
+   tabbable and focusStack act on it (SPEC §0: dock/float/split/tab stay as they are) — and
+   wears `tp-ui tp-window` on it. The header inside is ui/WindowChrome (`bare`), so the box
+   is painted here once for every window: surface-1 body, 1px border, 12px corners, the
+   window shadow. An edge-docked window (docking.js sets data-docked) and a bottom-docked
+   view sit flush against the screen, so they drop the corners and the shadow.
+
+   Unlayered on purpose: it has to win over the `ui-panel` utility (bg-gray-800 …) the same
+   root still carries for the light/bit8/contrast theme rules and the suites that query it. */
+.tp-window {
+	background: var(--surface-1);
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-window);
+	box-shadow: var(--shadow-window);
+}
+.tp-window[data-docked] {
+	border-radius: 0;
+	box-shadow: none;
+}
+.tp-window[data-docked='left'] {
+	border-width: 0 1px 0 0;
+}
+.tp-window[data-docked='right'] {
+	border-width: 0 0 0 1px;
+}
+/* a bottom-docked view: flush with the screen edges, the dock's top line only */
+.tp-dock-panel {
+	background: var(--surface-1);
+	color: var(--text);
+	border-top: 1px solid var(--border);
+}
+/* the exotic themes' panel rules (theme.css, layered) keep applying to a migrated window */
+:root[data-theme='bit8'] .tp-window {
+	border-width: 2px;
+}
+:root[data-theme='contrast'] .tp-window {
+	border-width: 2px;
+	box-shadow: none;
+}
+
+/* ONE text field look inside windows (SPEC §4 "one search field style"; a search with an
+   icon is ui/SearchField — this is the plain field: a chat composer, a rename box) */
+.tp-field {
+	box-sizing: border-box;
+	height: var(--control-h-sm);
+	min-width: 0;
+	padding: 0 10px;
+	background: var(--surface-inset);
+	border: 1px solid var(--border-input);
+	border-radius: var(--radius-button);
+	color: var(--text);
+	font: inherit;
+	font-size: var(--fs-desc);
+}
+.tp-field::placeholder {
+	color: var(--text-faint);
+}
+.tp-field:focus {
+	outline: none;
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+@media (max-width: 639.98px) {
+	.tp-field {
+		font-size: var(--fs-input);
+	}
+}

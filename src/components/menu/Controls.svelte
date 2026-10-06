@@ -108,8 +108,11 @@
 	// 151: tint follows the ACTIVE selection set (cleared on deselect), not the
 	// sticky selectedObject (which keeps the last object for the inspector bind)
 	const hasSel = $derived($selectedObjects.length > 0);
+	// 38 R8: the armed state is painted on the CELL (`.hud-cell.on`, the accent's soft fill);
+	// the glyph keeps `text-primary-500` only as the MARKER the controls/dock suites read
+	// (hud.css lets the cell's colour win over it). ICON_OFF adds nothing.
 	const ICON_ON = 'text-primary-500';
-	const ICON_OFF = 'text-black dark:text-slate-200';
+	const ICON_OFF = '';
 
 	// --- object list search/filter: rows read the visible-uuid set via context ---
 	// 80: type chips MULTI-select (union); All clears and, clicked again,
@@ -681,11 +684,6 @@
 		const timer = setInterval(refreshEnvRows, 1000);
 		return () => clearInterval(timer);
 	});
-	let classActive =
-		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-hidden focus:ring-4 focus:ring-primary-300';
-	// 33 E2: the toggle cell's twin of classActive — same hover, no click-focus ring
-	const cellToggleClass =
-		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-300';
 
 	// 18-B: object-list window size limits, shared with the clamp helpers
 	const OBJ_WIN_MIN = { minW: 250, minH: 200 };
@@ -2034,55 +2032,23 @@
      `fr` columns used to take their width from the spacer, and a flex row has to say
      it out loud. -->
 <!-- 36 F2: a toolbar never takes the keyboard (keyScope `keep`) -->
+<!-- 38 R8: the toolbar is one glass bar (styles/hud.css): icon cells 38 px on a fine pointer,
+     44 px on touch, the accent's soft fill on an armed cell, and Play — the only `--live`
+     control — a 44 px circle sitting IN the bar instead of overhanging it. Ids, titles, the
+     roster, the drag and every handler are unchanged. -->
 <nav
 	id="controls-pill"
 	data-key-scope="keep"
-	class="border-gray-200 dark:border-gray-600 absolute max-w-lg -translate-x-1/2 rtl:translate-x-1/2 border bottom-4 start-1/2 h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 {pillZClass}"
+	class="tp-ui hud-glass hud-bar absolute -translate-x-1/2 rtl:translate-x-1/2 bottom-4 start-1/2 w-max min-w-max shrink-0 {pillZClass}"
 	style={pillStyle}
 	use:toolbarDrag
 >
-	<div class="mx-auto flex h-full max-w-lg">
-		{#each visibleCells as cell, i (cell.id)}
+	<div class="hud-bar-row">
+		{#each visibleCells as cell (cell.id)}
 			{#if cell.id === SPACER}
-				<!-- QW (Controls Option A): the transparent WELL the floating play button
-				     sits in — the old filled square peeked out around the circle. Hovering
-				     either NEIGHBOR paints it too (the arbitrary variants below), so the
-				     hover red runs continuously up to the round button instead of leaving
-				     pill-colored notches above/below the circle.
-				       TWO HALVES so each neighbor's hover paints only ITS side up to the
-				     circle (a full-width paint peeked out red on the opposite side of the
-				     FAB). No transition — the neighbors' own hover backgrounds are instant,
-				     a fade here lagged visibly.
-				       4b: the FAB is the well's own THIRD child now (see below), which is
-				     why the right half is addressed as `:nth-child(2)` rather than
-				     `:last-child` — the FAB would otherwise steal that position and the
-				     right-hand hover paint would silently stop appearing.
-				       33 E3: the neighbour test is `*:hover`, never `p:hover` — the Interact
-				     toggle is a <button> (it carries aria-pressed), so beside the well it lit
-				     itself and left the two pill-coloured corners this paint exists to fill. -->
-				<div class="relative flex h-full w-10 items-stretch justify-center">
-					<div
-						class={'h-full w-5 [*:hover+div>&:first-child]:bg-primary-700' + (i === 0 ? ' rounded-l-full' : '')}
-					></div>
-					<div
-						class={'h-full w-5 [div:has(+*:hover)>&:nth-child(2)]:bg-primary-700' +
-							(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}
-					></div>
-					<!-- QW (Controls Option A): the WHOLE button scales on hover anywhere on
-					     it (the centering translate lives in a tailwind class so the two
-					     transforms compose instead of fighting). clip-path circles the HIT
-					     AREA too: the 50px square box used to intercept clicks/hovers meant
-					     for the cells it overlaps. fill=currentColor keeps the play triangle
-					     SOLID (lucide is stroke-only by default); the 2px nudge is the
-					     classic optical centering.
-					       4b: the FAB LIVES IN THE BAR now instead of being an absolutely
-					     positioned sibling with its own `--bottom-inset` arithmetic. It
-					     inherits the pill's ride for free (one anchor, one transition, no
-					     chance of the two drifting apart mid-animation) and it TRACKS THE
-					     WELL, so moving the well moves the play button. `top: -5px` against
-					     the 38px inner row reproduces the old geometry exactly: a 50px
-					     circle 5px proud of the bar's top and 7px below its bottom, which is
-					     the 4px/6px overhang measured against the bordered 40px pill. -->
+				<!-- the WELL Play sits in. 4b: the play button is the well's own child, so it
+				     rides the bar's position (one anchor) and moving the well moves Play. -->
+				<div class="hud-play-well">
 					<p
 						id="play-button"
 						title={$willEnterAR
@@ -2090,95 +2056,62 @@
 							: $willEnterXR
 								? 'Enter VR'
 								: 'Play'}
-						class={classActive +
-							' -translate-x-1/2 rounded-full bg-primary-600 font-medium hover:scale-110 dark:focus:ring-primary-800'}
-						style="position: absolute; height: 50px; width: 50px; top: -5px; left: 50%; z-index: var(--z-hud);
-	        display: flex; transition: transform 100ms"
+						class="hud-play"
 						on:click={() => {
 							requestPlay();
 						}}
 						use:playModeMenu
 					>
-						<!-- CO4b: ONE entry point that SHOWS its destination. The FAB already
-						     starts play mode on desktop and an immersive session in a headset,
-						     and `$vrPassthrough` decides which KIND (both hidden XR buttons
-						     mount below; `data-aim` says which one a press clicks) — so the
-						     honest thing is to say so ON this button rather than grow a second
-						     one beside it. Right-click picks the mode explicitly.
-						       desktop  the play triangle, unchanged
-						       VR       a headset (rectangle-goggles): press this and you are
-						                IN there
-						       AR       the same headset with A and R in its two lens halves,
-						                and a slightly bigger glyph to carry them
-						     The visor is ONE path with a nose notch at the bottom centre, so
-						     its halves sit at x 7.5 and 16.5 of the 24-unit box — 31.25% and
-						     68.75% — which is where the letters are anchored
-						     (translate(-50%,-50%) centres them on that point, so they stay put
-						     at any icon size). The overlay is `pointer-events: none` and
-						     unselectable: the circle stays ONE hit target, which
-						     #play-button's clip-path was tuned for. No `ml-0.5` on the goggles
-						     — that 2px nudge is optical centering for a TRIANGLE, and a
-						     symmetric visor with it looks off-centre. -->
+						<!-- CO4b: ONE entry point that SHOWS its destination — the play triangle,
+						     a headset for VR, the headset with A and R in its lenses for AR. The
+						     overlay is pointer-events none, so the circle stays ONE hit target
+						     (#play-button's clip-path in ui.css). -->
 						{#if $willEnterAR}
 							<span class="pointer-events-none relative inline-flex select-none items-center justify-center">
-								<RectangleGoggles size={30} class="text-white" aria-hidden="true" />
-								<span
-									class="absolute text-[10px] font-bold leading-none text-white"
-									style="left: 29%; top: 50%; transform: translate(-50%, -50%)">A</span
-								>
-								<span
-									class="absolute text-[10px] font-bold leading-none text-white"
-									style="left: 71%; top: 50%; transform: translate(-50%, -50%)">R</span
-								>
+								<RectangleGoggles size={24} aria-hidden="true" />
+								<span class="hud-play-lens" style="left: 29%">A</span>
+								<span class="hud-play-lens" style="left: 71%">R</span>
 							</span>
 						{:else if $willEnterXR}
-							<RectangleGoggles size={26} class="text-white" aria-hidden="true" />
+							<RectangleGoggles size={22} aria-hidden="true" />
 						{:else}
-							<Play size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
+							<Play size={20} class="hud-play-tri" fill="currentColor" aria-hidden="true" />
 						{/if}
 					</p>
 				</div>
 			{:else}
 				{@const btn = BUTTONS[cell.id]}
 				{@const Glyph = btn.icon}
+				{@const tint = btn.tint()}
 				{#if btn.pressed}
-				<!-- 30 P1: a TOGGLE cell is a real button, so it can say aria-pressed.
-				     33 E2: a <button> TAKES FOCUS on click where the <p> cells cannot, so
-				     classActive's `focus:ring-4` drew the theme's red ring on every press —
-				     the only cell that ever showed one. The ring is keyboard-only here
-				     (`focus-visible`, which a mouse press never matches), so a click looks
-				     like every other cell's. -->
-				<button
-					type="button"
-					id={btn.slot}
-					class={cellToggleClass +
-						' w-10' +
-						(i === 0 ? ' rounded-l-full' : '') +
-						(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}
-					title={btn.title}
-					aria-label={btn.title}
-					aria-pressed={btn.pressed()}
-					use:cellClick={cell.id}
-					use:cellMenu={cell.id}
-				>
-					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
-				</button>
+					<!-- 30 P1: a TOGGLE cell is a real button, so it can say aria-pressed; the
+					     focus ring is keyboard-only (33 E2). -->
+					<button
+						type="button"
+						id={btn.slot}
+						class="hud-cell"
+						class:on={tint === ICON_ON}
+						title={btn.title}
+						aria-label={btn.title}
+						aria-pressed={btn.pressed()}
+						use:cellClick={cell.id}
+						use:cellMenu={cell.id}
+					>
+						<Glyph size={20} strokeWidth={1.75} class={tint} aria-hidden="true" />
+					</button>
 				{:else}
-				<!-- ONE template for every roster button: the six hand-written cells each
-				     carried their own copy of this element, so each one also carried its own
-				     copy of the same three a11y/deprecation warnings. -->
-				<p
-					id={btn.slot}
-					class={classActive +
-						' w-10' +
-						(i === 0 ? ' rounded-l-full' : '') +
-						(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}
-					title={btn.title}
-					on:click={() => runCell(cell.id)}
-					use:cellMenu={cell.id}
-				>
-					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
-				</p>
+					<!-- ONE template for every roster button (`p[title=…]` is what suites and
+					     the panel toggles select on). -->
+					<p
+						id={btn.slot}
+						class="hud-cell"
+						class:on={tint === ICON_ON}
+						title={btn.title}
+						on:click={() => runCell(cell.id)}
+						use:cellMenu={cell.id}
+					>
+						<Glyph size={20} strokeWidth={1.75} class={tint} aria-hidden="true" />
+					</p>
 				{/if}
 			{/if}
 		{/each}
@@ -2189,11 +2122,12 @@
      dock so an open flow editor / Explorer covers the stack -->
 <button
 	id="chat-button"
-	class="fixed bottom-4 right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 shadow-lg transition-colors hover:bg-gray-600"
+	class="tp-ui hud-fab fixed bottom-4 right-4 z-30"
+	class:on={$chatHidden !== 'hidden'}
 	title="Chat (C)"
 	on:click={() => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')}
 >
-	<MessageSquare size={16} class="text-white" aria-hidden="true" />
+	<MessageSquare size={20} strokeWidth={1.75} aria-hidden="true" />
 </button>
 
 <!-- mobile "+" (bottom-left): opens the same create/context menu as a right-click

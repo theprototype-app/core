@@ -24,10 +24,10 @@
 
 <button
 	id="mobile-add-button"
-	class="mobile-hud-btn fixed bottom-16 left-4 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 text-white shadow-lg transition-colors hover:bg-gray-600"
+	class="tp-ui hud-fab mobile-hud-btn fixed bottom-16 left-4 z-30"
 	title="Add / context menu"
 	aria-label="Add object or open the context menu"
 	onclick={add}
 >
-	<Plus size={16} aria-hidden="true" />
+	<Plus size={20} strokeWidth={1.75} aria-hidden="true" />
 </button>

@@ -4,6 +4,8 @@
 @import './styles/theme.css' layer(utilities);
 /* 38 R2: the redesign tokens (SPEC §1) — after theme.css, whose legacy blocks they derive from */
 @import './styles/tokens.css' layer(utilities);
+/* 38 R8: the main HUD's shared look (Controls, Connect, top-right, corner buttons, toasts) */
+@import './styles/hud.css' layer(utilities);
 
 @plugin 'flowbite/plugin';
 

@@ -35,6 +35,7 @@ import { recallBookmark } from './cameraBookmarks';
 // 36 L2: Home = the scene's start view (startView imports no history-family module)
 import { backToStartView } from './startView';
 import { snapTargets } from './snapping';
+import { cycleViewMode } from './viewMode'; // 37 R18
 import { togglePanel, toggleDock } from './panelToggles';
 // Phase 5: the play FAB's own entry point. playMode.js imports sceneStore +
 // svelte/store ONLY (it says so at the top of the file, and that is deliberate),
@@ -640,6 +641,18 @@ export const shortcuts = [
 				return { ...t, enabled };
 			});
 			showToast(enabled ? 'Element snapping on' : 'Element snapping off');
+		}
+	},
+	{
+		// 37 R18: the HUD view-mode quick toggle — cycle Shaded / Shaded + AO / Wireframe
+		// (LOCAL, never replicated); viewMode.js is a leaf, so the static edge is safe
+		id: 'view.cycle',
+		keys: 'Z',
+		group: 'View',
+		scope: 'viewport',
+		label: 'Cycle view mode (Shaded / Shaded + AO / Wireframe)',
+		action: () => {
+			void cycleViewMode().then((label) => showToast('View: ' + label));
 		}
 	},
 	{

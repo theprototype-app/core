@@ -118,3 +118,34 @@ export function startViewMode() {
 	// write — no rebuild, and nothing to do when wireframe isn't the active mode.
 	viewPrefs.subscribe((prefs) => wireMaterial?.color.set(prefs.wireColor));
 }
+
+// 37 R18: the view-mode QUICK TOGGLE (key Z, the Blender shading key). The cycle order is
+// the Configure Scene ▸ View chips' order, and it skips Shaded + AO exactly when that chip
+// is disabled (the scene's own look sets AO, so the personal pass would not apply).
+/** the modes in cycle order, with the chip labels */
+export const VIEW_MODES = [
+	{ id: 'shaded', label: 'Shaded' },
+	{ id: 'shaded-ao', label: 'Shaded + AO' },
+	{ id: 'wireframe', label: 'Wireframe' }
+];
+
+/** @param {string} current @param {boolean} skipAo @returns {string} */
+export function nextViewMode(current, skipAo) {
+	const ids = VIEW_MODES.map((m) => m.id).filter((id) => !(skipAo && id === 'shaded-ao'));
+	const at = ids.indexOf(current);
+	return ids[(at + 1) % ids.length];
+}
+
+/** Advance this viewer's view mode one step; resolves the label of the mode it lands on.
+ *  scenePost is reached by a DYNAMIC import: it imports history, and the shortcuts module
+ *  that calls this sits in history's import family (the TDZ cycle rule). */
+export async function cycleViewMode() {
+	let skipAo = false;
+	try {
+		const post = await import('./scenePost');
+		skipAo = post.sceneProvidesAo(get(post.scenePost));
+	} catch {}
+	const next = nextViewMode(get(viewMode), skipAo);
+	viewMode.set(next);
+	return VIEW_MODES.find((m) => m.id === next)?.label ?? next;
+}

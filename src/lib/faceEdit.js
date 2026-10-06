@@ -1728,26 +1728,49 @@ export function editWireGeometry(geometry) {
 }
 
 /**
+ * The edit wire's colour for an object: an explicit preference wins (18-A); 'auto' (the
+ * default) picks from the material's luminance (D4 — a fixed blue disappeared on
+ * similar-hued / light materials). @param {any} object @returns {number | string}
+ */
+export function editWireColorFor(object) {
+	const material = Array.isArray(object.material) ? object.material[0] : object.material;
+	const c = material?.color;
+	// relative luminance over three's LINEAR color components
+	const lum = c ? 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b : 0;
+	return editWireOverride(get(viewPrefs)) ?? (lum > 0.5 ? 0x1f2937 : 0x2f81f7);
+}
+
+/** per-frame scratch for retintEditWire (no allocation on the hot path) */
+const retintScratch = new THREE.Color();
+
+/**
+ * 37 R18: LIVE contrast re-tint. The colour used to be picked at BUILD time only, so a
+ * material edit mid-session (the Inspector, a peer's colour message, undo, the VR palette,
+ * a flow node) left a wire that vanished into the new colour until the next geometry swap.
+ * There is no single material-changed signal to hook (several paths write `.color`
+ * directly), so the per-frame ticks ask instead: one luminance read + one hex compare,
+ * and a write only when the answer changed. @param {any} overlay @param {any} object
+ */
+export function retintEditWire(overlay, object) {
+	const mat = overlay?.material;
+	if (!mat?.color || !object) return false;
+	const want = retintScratch.set(editWireColorFor(object)).getHex();
+	if (mat.color.getHex() === want) return false;
+	mat.color.setHex(want);
+	return true;
+}
+
+/**
  * The edit-session wireframe overlay: an object-CHILD LineSegments (follows
  * the transform for free) whose raycast is stubbed out (D8: three raycasts
  * lines with a 1-world-unit threshold — a live overlay would eat beams/picks
  * a metre off the surface). Shared with meshEdit's vertex mode. @param {any} object
  */
 export function buildEditWireframe(object) {
-	// D4: pick the wire color at BUILD time from the material's luminance — the
-	// fixed blue disappeared on similar-hued/light materials. Rebuilds happen on
-	// every geometry swap, so material changes are picked up incidentally.
-	const material = Array.isArray(object.material) ? object.material[0] : object.material;
-	const c = material?.color;
-	// relative luminance over three's LINEAR color components
-	const lum = c ? 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b : 0;
-	// 18-A: an explicit colour preference wins; 'auto' (the default) keeps the
-	// luminance pick, which is why the pref is not simply a hex.
-	const chosen = editWireOverride(get(viewPrefs)) ?? (lum > 0.5 ? 0x1f2937 : 0x2f81f7);
 	const overlay = new THREE.LineSegments(
 		editWireGeometry(object.geometry),
 		new THREE.LineBasicMaterial({
-			color: chosen,
+			color: editWireColorFor(object),
 			transparent: true,
 			opacity: 0.5
 		})
@@ -1810,7 +1833,10 @@ export function tickEditWireframe() {
 	// a serializer has the overlays parked (async for the GLTF paths, so frames
 	// pass) — healing now would put one back INTO the snapshot being written
 	if (editOverlaysParked()) return;
-	if (wire.parent === faceEdited && wireSource === faceEdited.geometry) return;
+	if (wire.parent === faceEdited && wireSource === faceEdited.geometry) {
+		retintEditWire(wire, faceEdited); // 37 R18
+		return;
+	}
 	refreshFaceWireframe();
 }
 

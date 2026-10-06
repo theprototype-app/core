@@ -19,6 +19,7 @@ import {
 	commitMeshGeoSnapshot,
 	meshEditWireframe,
 	buildEditWireframe,
+	retintEditWire,
 	readTriangles,
 	trisToPositions,
 	registerVertexSessionRefresher,
@@ -421,6 +422,8 @@ export function setHoveredHandle(index) {
  */
 export function tickMeshEdit() {
 	if (!edited || !handleMesh) return;
+	// 37 R18: the vertex-mode wire re-tints live too (it never re-picked its colour at all)
+	if (overlay) retintEditWire(overlay, edited);
 	edited.updateMatrixWorld();
 	const moved = !lastObjectMatrix.equals(edited.matrixWorld);
 	// ADAPTIVE mode also has to follow the CAMERA: the handles keep a constant pixel size,

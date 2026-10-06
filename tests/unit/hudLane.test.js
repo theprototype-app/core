@@ -25,3 +25,16 @@ describe('reconnect elapsed (NOTES-38 #16)', () => {
 		expect(formatElapsed(-5)).toBe('0 s');
 	});
 });
+
+import { rankCommands } from '../../src/lib/commandRank.js';
+describe('command palette ranking (NOTES-38 #14)', () => {
+	/** @param {string} label @param {string} [detail] */
+	const c = (label, detail = '') => ({ id: label, kind: 'tool', label, detail, run: () => {} });
+	const list = [c('Scale to fit'), c('Show grid', 'Settings ▸ Scene'), c('Scale'), c('Grid snapping', 'Snapping')];
+	it('a label that starts with the query beats a word inside one; detail matches last', () => {
+		expect(rankCommands(list, 'scale').map((x) => x.label)).toEqual(['Scale', 'Scale to fit']);
+		expect(rankCommands(list, 'grid').map((x) => x.label)).toEqual(['Grid snapping', 'Show grid']);
+		expect(rankCommands(list, 'scene').map((x) => x.label)).toEqual(['Show grid']);
+		expect(rankCommands(list, 'zzz')).toEqual([]);
+	});
+});

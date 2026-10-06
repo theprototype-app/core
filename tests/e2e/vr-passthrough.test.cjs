@@ -102,7 +102,9 @@ h.run(async () => {
 
 	// survives a reload (localStorage-backed store + button swap)
 	await A.page.reload();
-	await A.page.waitForTimeout(2500);
+	// wait for the debug hook, not a timer: it loads after boot and missed a fixed 2.5 s once
+	await A.page.waitForFunction(() => !!(/** @type {any} */ (window).__stores?.vrPassthrough), null, { timeout: 30000 });
+	await A.page.waitForTimeout(500);
 	const aimAfterReload = await aim();
 	const still = await A.page.evaluate(
 		() =>

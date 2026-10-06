@@ -111,7 +111,7 @@
 	</Section>
 
 	<Section variant="card" label="Disk">
-		<SettingRow id="row-storage-used" label="Storage used" description="What uses this device’s storage, with ticks to reclaim what you no longer want.">
+		<SettingRow id="row-storage-used" label="Storage used" wide description="What uses this device’s storage, with ticks to reclaim what you no longer want.">
 			<Button
 				id="settings-storage"
 				size="sm"

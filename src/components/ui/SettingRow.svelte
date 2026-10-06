@@ -144,20 +144,24 @@
 			column-gap: var(--space-4);
 			padding: var(--setting-row-pad-y) var(--space-4);
 		}
-		/* a segmented control is always wide on a phone: two long options beside the label
-		   squeezed the description into a one-word column (37-settings, Density) */
+		/* on a phone these are always wide: a segmented control, a slider, or a control of two
+		   or more pieces (two buttons, a field and its unit). Beside the label they squeezed the
+		   description into a narrow column (37-settings: Density, the volume sliders, Apply) */
 		.sr-wide,
-		.sr:has(.sr-control :global(.seg)) {
+		.sr:has(.sr-control :global(:is(.seg, .sl))),
+		.sr:has(.sr-control > :global(:nth-child(2))) {
 			grid-template-columns: minmax(0, 1fr);
 			grid-template-areas: 'text' 'control' 'extra';
 			row-gap: var(--space-3);
 		}
 		.sr-wide .sr-control,
-		.sr:has(.sr-control :global(.seg)) .sr-control {
+		.sr:has(.sr-control :global(:is(.seg, .sl))) .sr-control,
+		.sr:has(.sr-control > :global(:nth-child(2))) .sr-control {
 			justify-content: stretch;
 		}
 		.sr-wide .sr-control > :global(*),
-		.sr:has(.sr-control :global(.seg)) .sr-control > :global(*) {
+		.sr:has(.sr-control :global(:is(.seg, .sl))) .sr-control > :global(*),
+		.sr:has(.sr-control > :global(:nth-child(2))) .sr-control > :global(*) {
 			flex: 1 1 auto;
 		}
 		.sr-desc {

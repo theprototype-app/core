@@ -243,7 +243,9 @@ function okValue(want, raw) {
 
 /** @param {string[]} keys the pages to walk @param {boolean} extras the node-type and cross-category checks */
 async function walk(keys, extras) {
-	const browser = await h.launch();
+	// the GPU backend: under SwiftShader on a loaded box each click's "stable" wait spans several slow
+	// frames (~5 s a row), which pushed both halves of the walk past the runner's 8-minute cap
+	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const { page } = A;
 	const read = (/** @type {string} */ key) => page.evaluate((k) => localStorage.getItem(k), key);
@@ -265,7 +267,9 @@ async function walk(keys, extras) {
 				h.check(false, `${pageKey}: the control #${row.id} exists`);
 				continue;
 			}
+			const t0 = Date.now();
 			await drive(page, row);
+			if (Date.now() - t0 > 3000) console.log(`  (slow: #${row.id} took ${Date.now() - t0} ms)`);
 			const raw = await read(row.key);
 			h.check(okValue(row.want, raw), `${pageKey}: #${row.id} writes ${row.key} the 1.25.0 way (${raw})`);
 			rows++;
@@ -286,7 +290,8 @@ async function walk(keys, extras) {
 		const after = await page.evaluate(() => Object.keys(localStorage).length);
 		h.check(after >= before - list.length - 4, `${pageKey} reset: other categories' keys stay (${before} → ${after})`);
 	}
-	h.check(rows >= (extras ? 60 : 50), `the walk drove ${rows} setting rows`);
+	const listed = keys.reduce((n, k) => n + PAGES[k].length, 0);
+	h.check(rows === listed, `the walk drove every listed row (${rows} of ${listed})`);
 	if (extras) {
 
 	// Node types: a type switched off in its group's sub-page lands in disabledNodeTypes

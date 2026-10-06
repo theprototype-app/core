@@ -4535,6 +4535,10 @@
 		color: var(--axis-z);
 	}
 	@media (max-width: 639.98px) {
+		/* 16px labels on a phone: a wider label column so "Position" never breaks */
+		.ins-transform {
+			--prop-label-w: 76px;
+		}
 		.ins-shell :global(.ins-axes .dn-input) {
 			font-size: var(--fs-input);
 		}

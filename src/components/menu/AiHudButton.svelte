@@ -9,7 +9,7 @@
 	// user at Settings -> AI with a toast (the exact toggleAiPrompt unconfigured branch
 	// from shortcuts.js — the backquote pill already behaves this way). When configured,
 	// it toggles the chat window.
-	import { Sparkles } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { aiAssistantHidden, showToast, settingsOpen, settingsSection } from '../../stores/appStore.js';
 	import { aiReady } from '$lib/ai/providers';
 
@@ -32,5 +32,5 @@
 	onclick={toggle}
 >
 	<!-- brand-orange sparkles: the AI entry point earns the accent color -->
-	<Sparkles size={18} class="text-primary-500" aria-hidden="true" />
+	<Icon name="sparkles" size={20} class="text-primary-500" aria-hidden="true" />
 </button>

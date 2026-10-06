@@ -5,7 +5,7 @@
 	// Every write goes through waterActions (local apply + objectParameters + ONE props undo
 	// entry per settled gesture); the panel only renders from the object's userData.
 	import { Button } from 'flowbite-svelte';
-	import { Droplets, Sparkles, Trash2, Save } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import DragRow from '../ui/DragRow.svelte';
@@ -122,7 +122,7 @@
 				color="alternative"
 				onclick={() => setObjectBubbles(uuid, { spread: 0.3 })}
 			>
-				<Sparkles size={16} class="mr-1" aria-hidden="true" />Add bubble emitter
+				<Icon name="sparkles" size={16} class="mr-1" aria-hidden="true" />Add bubble emitter
 			</Button>
 		</div>
 	{/if}
@@ -154,7 +154,7 @@
 			>
 		{:else}
 			<Button id="water-save-preset" size="xs" color="alternative" onclick={() => (saving = true)}>
-				<Save size={16} class="mr-1" aria-hidden="true" />Save as preset…
+				<Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save as preset…
 			</Button>
 			{#if water.preset?.startsWith('user:')}
 				<Button
@@ -578,7 +578,7 @@
 					color="alternative"
 					onclick={() => burstWaterBubbles(uuid)}
 				>
-					<Droplets size={16} class="mr-1" aria-hidden="true" />Burst now
+					<Icon name="droplets" size={16} class="mr-1" aria-hidden="true" />Burst now
 				</Button>
 				<span class="text-xs text-gray-400">for every peer</span>
 			</div>
@@ -684,7 +684,7 @@
 	{#if standalone}
 		<div class="ui-row items-center gap-2">
 			<Button size="xs" color="alternative" onclick={() => setObjectBubbles(uuid, null)}>
-				<Trash2 size={16} class="mr-1" aria-hidden="true" />Remove bubble emitter
+				<Icon name="trash-2" size={16} class="mr-1" aria-hidden="true" />Remove bubble emitter
 			</Button>
 		</div>
 	{/if}
@@ -697,7 +697,7 @@
 {#if water}
 	<div class="ui-row mt-2 items-center gap-2">
 		<Button id="water-remove" size="xs" color="alternative" onclick={() => removeObjectWater(uuid)}>
-			<Trash2 size={16} class="mr-1" aria-hidden="true" />Remove water
+			<Icon name="trash-2" size={16} class="mr-1" aria-hidden="true" />Remove water
 		</Button>
 	</div>
 {/if}

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Mic, MicOff } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { remoteStreams, mutedPeers, micActive, pttActive, toggleMic, spatialVoice } from '$lib/voiceChat';
 
 	// hidden audio sinks for remote voices + the mic toggle button.
@@ -31,5 +31,5 @@
 	title={$micActive ? 'Microphone on — click to mute' : 'Microphone off — click to talk, or hold V for push-to-talk'}
 	on:click={toggleMic}
 >
-	{#if $micActive || $pttActive}<Mic size={18} class="text-white" aria-hidden="true" />{:else}<MicOff size={18} class="text-white" aria-hidden="true" />{/if}
+	{#if $micActive || $pttActive}<Icon name="mic" size={20} class="text-white" aria-hidden="true" />{:else}<Icon name="mic-off" size={20} class="text-white" aria-hidden="true" />{/if}
 </button>

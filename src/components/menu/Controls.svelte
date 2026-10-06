@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Activity, Braces, Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, Hand, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
@@ -1069,15 +1069,15 @@
 	 *  unmistakable; `clapperboard` beats `film`, whose plain rectangle muddles against
 	 *  every other boxy glyph; `palette` says materials where `sparkles` says nothing. */
 	const VIEW_ICONS: Record<string, any> = {
-		flowcode: Code,
-		animation: Clapperboard,
-		uv: Grid2x2,
-		shader: Palette,
-		hud: Monitor,
+		flowcode: 'code',
+		animation: 'clapperboard',
+		uv: 'grid-2x2',
+		shader: 'palette',
+		hud: 'monitor',
 		// 34 PF: a pulse trace reads as "performance" beside the five editor glyphs
-		profiler: Activity,
+		profiler: 'activity',
 		// 36-code: `{}` — the code workspace, distinct from Flow Code's `</>`
-		code: Braces
+		code: 'braces'
 	};
 
 	// The six roster buttons. Every title and every handler is VERBATIM what the
@@ -1091,45 +1091,45 @@
 		mode: {
 			title: 'Interact mode (I)',
 			slot: 'editor-mode-toggle',
-			icon: Hand,
+			icon: 'hand',
 			tint: () => ($editorMode === 'interact' ? ICON_ON : ICON_OFF),
 			pressed: () => $editorMode === 'interact',
 			run: () => toggleEditorMode()
 		},
 		move: {
 			title: 'Move (1)',
-			icon: Move,
+			icon: 'move',
 			tint: () => (hasSel && $transformMode === 'translate' ? ICON_ON : ICON_OFF),
 			run: () => setTransformMode('translate')
 		},
 		rotate: {
 			title: 'Rotate (2)',
-			icon: RotateCcw,
+			icon: 'rotate-ccw',
 			tint: () => (hasSel && $transformMode === 'rotate' ? ICON_ON : ICON_OFF),
 			run: () => setTransformMode('rotate')
 		},
 		scale: {
 			title: 'Scale (3)',
-			icon: Maximize2,
+			icon: 'maximize-2',
 			tint: () => (hasSel && $transformMode === 'scale' ? ICON_ON : ICON_OFF),
 			run: () => setTransformMode('scale')
 		},
 		objects: {
 			title: 'Object list (O)',
-			icon: List,
+			icon: 'list',
 			tint: () => (!$objectListClose ? ICON_ON : ICON_OFF),
 			run: () => togglePanel('objects')
 		},
 		flow: {
 			title: 'Node editor (N)',
-			icon: Workflow,
+			icon: 'workflow',
 			tint: () => (flowShown ? ICON_ON : ICON_OFF),
 			run: () => togglePanel('flow')
 		},
 		explorer: {
 			title: 'Explorer',
 			slot: 'explorer-slot',
-			icon: FolderOpen,
+			icon: 'folder-open',
 			tint: () => (panelShown.explorer ? ICON_ON : ICON_OFF),
 			run: () => togglePanel('explorer')
 		},
@@ -2121,7 +2121,7 @@
 						     symmetric visor with it looks off-centre. -->
 						{#if $willEnterAR}
 							<span class="pointer-events-none relative inline-flex select-none items-center justify-center">
-								<RectangleGoggles size={30} class="text-white" aria-hidden="true" />
+								<Icon name="rectangle-goggles" size={32} class="text-white" aria-hidden="true" />
 								<span
 									class="absolute text-[10px] font-bold leading-none text-white"
 									style="left: 29%; top: 50%; transform: translate(-50%, -50%)">A</span
@@ -2132,15 +2132,15 @@
 								>
 							</span>
 						{:else if $willEnterXR}
-							<RectangleGoggles size={26} class="text-white" aria-hidden="true" />
+							<Icon name="rectangle-goggles" size={24} class="text-white" aria-hidden="true" />
 						{:else}
-							<Play size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
+							<Icon name="play" size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
 						{/if}
 					</p>
 				</div>
 			{:else}
 				{@const btn = BUTTONS[cell.id]}
-				{@const Glyph = btn.icon}
+				{@const glyph = btn.icon}
 				{#if btn.pressed}
 				<!-- 30 P1: a TOGGLE cell is a real button, so it can say aria-pressed.
 				     33 E2: a <button> TAKES FOCUS on click where the <p> cells cannot, so
@@ -2161,7 +2161,7 @@
 					use:cellClick={cell.id}
 					use:cellMenu={cell.id}
 				>
-					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
+					<Icon name={glyph} size={20} class={btn.tint()} aria-hidden="true" />
 				</button>
 				{:else}
 				<!-- ONE template for every roster button: the six hand-written cells each
@@ -2177,7 +2177,7 @@
 					on:click={() => runCell(cell.id)}
 					use:cellMenu={cell.id}
 				>
-					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
+					<Icon name={glyph} size={20} class={btn.tint()} aria-hidden="true" />
 				</p>
 				{/if}
 			{/if}
@@ -2193,7 +2193,7 @@
 	title="Chat (C)"
 	on:click={() => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')}
 >
-	<MessageSquare size={16} class="text-white" aria-hidden="true" />
+	<Icon name="message-square" size={16} class="text-white" aria-hidden="true" />
 </button>
 
 <!-- mobile "+" (bottom-left): opens the same create/context menu as a right-click
@@ -2291,7 +2291,7 @@
 		}}
 	>
 		<span class="flex shrink-0 items-center" title="Objects"
-			><List size={16} class={objHideLabel ? '' : 'mr-1'} aria-hidden="true" />{objHideLabel
+			><Icon name="list" size={16} class={objHideLabel ? '' : 'mr-1'} aria-hidden="true" />{objHideLabel
 				? ''
 				: 'Objects'}</span
 		>
@@ -2428,7 +2428,7 @@
 							>
 								{expandedSystem[row.name] ? '−' : '+'}
 							</button>
-							<Cog size={16} class="text-gray-400" aria-hidden="true" title="System object" />
+							<Icon name="cog" size={16} class="text-gray-400" aria-hidden="true" title="System object" />
 							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title="Managed by a module / the environment">
 								{row.name}
 							</span>
@@ -2436,15 +2436,15 @@
 							<button
 								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
 								title="Ping it for everyone"
-								on:click={() => pingObject(row.object)}><Pin size={16} aria-hidden="true" /></button>
+								on:click={() => pingObject(row.object)}><Icon name="pin" size={16} aria-hidden="true" /></button>
 							<button
 								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
 								title="Pin a synced note to it"
-								on:click={() => addAnnotation(row.object.uuid)}><SquarePen size={16} aria-hidden="true" /></button>
+								on:click={() => addAnnotation(row.object.uuid)}><Icon name="square-pen" size={16} aria-hidden="true" /></button>
 							<button
 								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
 								title="Focus the camera on it"
-								on:click={() => focusSystemObject(row.object)}><Eye size={16} aria-hidden="true" /></button>
+								on:click={() => focusSystemObject(row.object)}><Icon name="eye" size={16} aria-hidden="true" /></button>
 						</div>
 						{#if expandedSystem[row.name]}
 							{#each row.children as childName}
@@ -2474,7 +2474,7 @@
 				{#each envRows as row (row.name)}
 					<div class="border-b border-gray-600/40 px-2 py-1 text-sm text-gray-800 dark:text-gray-200">
 						<div class="flex items-center gap-2">
-							<Sun size={16} class="w-4 text-center text-yellow-300/80" aria-hidden="true" title="Environment light" />
+							<Icon name="sun" size={16} class="text-yellow-300/80" aria-hidden="true" title="Environment light" />
 							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title="Managed from Scene settings">
 								{row.name}
 							</span>
@@ -2482,11 +2482,11 @@
 							<button
 								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
 								title="Ping it for everyone"
-								on:click={() => pingObject(row.object)}><Pin size={16} aria-hidden="true" /></button>
+								on:click={() => pingObject(row.object)}><Icon name="pin" size={16} aria-hidden="true" /></button>
 							<button
 								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
 								title="Focus the camera on it"
-								on:click={() => focusSystemObject(row.object)}><Eye size={16} aria-hidden="true" /></button>
+								on:click={() => focusSystemObject(row.object)}><Icon name="eye" size={16} aria-hidden="true" /></button>
 						</div>
 					</div>
 				{/each}

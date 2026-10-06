@@ -5,7 +5,6 @@
 	// of control. Icons inherit `currentColor` (never a hardcoded gray), 16px inline — the
 	// app's own rule — and the buttons became `inline-flex` so a glyph and its word sit on
 	// one centre line rather than on a text baseline.
-	import { Archive, Download, FolderOpen, HardDrive, Import, LayoutGrid, List, Save, Upload, X } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Sessions manager (phase 50): thumbnail grid of saved sessions with
 	// load (proposal when peers are connected), selective object import,
@@ -655,12 +654,12 @@
 					>{saveKind === 'project' ? 'project + library' : 'scene only'}</span
 				>
 				<Button id="session-save-confirm" size="xs" disabled={!saveName.trim()} onclick={confirmSave}>
-					<Save size={16} class="mr-1" aria-hidden="true" />Save
+					<Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save
 				</Button>
 				<Button size="xs" color="alternative" onclick={() => (saving = false)}>Cancel</Button>
 			{:else}
 				<Button id="session-save" size="xs" onclick={() => beginSave(false)}
-					><Save size={16} class="mr-1" aria-hidden="true" />Save current scene</Button
+					><Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save current scene</Button
 				>
 				<!-- R22 round 9: the project save. Beside the scene one and never inferred from it. -->
 				<Button
@@ -669,11 +668,11 @@
 					color="alternative"
 					title="The scene AND every file in the Explorer — folders, records and their bytes"
 					onclick={() => beginSave(true)}
-					><Save size={16} class="mr-1" aria-hidden="true" />Save current project</Button
+					><Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save current project</Button
 				>
 			{/if}
 			<Button size="xs" color="alternative" onclick={() => document.getElementById('session-import-file')?.click()}>
-				<Upload size={16} class="mr-1" aria-hidden="true" />Import session file
+				<Icon name="upload" size={16} class="mr-1" aria-hidden="true" />Import session file
 			</Button>
 			<input
 				type="file"
@@ -729,14 +728,14 @@
 						class="tp-seg-btn"
 						aria-pressed={sessionView === 'grid'}
 						title="Thumbnails"
-						onclick={() => (sessionView = 'grid')}><LayoutGrid size={14} aria-hidden="true" /></button
+						onclick={() => (sessionView = 'grid')}><Icon name="layout-grid" size={16} aria-hidden="true" /></button
 					>
 					<button
 						id="session-view-list"
 						class="tp-seg-btn"
 						aria-pressed={sessionView === 'list'}
 						title="Details, with a button per row"
-						onclick={() => (sessionView = 'list')}><List size={14} aria-hidden="true" /></button
+						onclick={() => (sessionView = 'list')}><Icon name="list" size={16} aria-hidden="true" /></button
 					>
 				</div>
 			</div>
@@ -770,7 +769,7 @@
 							<img src={meta.thumbnail} alt="" class="h-8 w-12 shrink-0 rounded-sm object-cover" />
 						{:else}
 							<span class="flex h-8 w-12 shrink-0 items-center justify-center rounded-sm bg-gray-700 text-gray-400"
-								><Archive size={14} aria-hidden="true" /></span
+								><Icon name="archive" size={16} aria-hidden="true" /></span
 							>
 						{/if}
 						{#if renamingId === meta.id}
@@ -825,7 +824,7 @@
 									? "Open this project: the scene comes back and so do its files, and you leave the session first"
 									: 'Open this scene — it replaces the scene on screen (peers must accept)'}
 								onclick={() => void openEntry(meta)}
-								><FolderOpen size={16} aria-hidden="true" />Open</button
+								><Icon name="folder-open" size={16} aria-hidden="true" />Open</button
 							>
 							{#if meta.hasLibrary}
 								<button
@@ -835,7 +834,7 @@
 										? 'Already mounted — it is above Library in the Explorer'
 										: "Add this project's files to the Explorer as a root of its own, above Library. The scene on screen is not touched."}
 									onclick={() => void mountVolume(meta.id)}
-									><HardDrive size={16} aria-hidden="true" />{mountedIds.has(meta.id)
+									><Icon name="hard-drive" size={16} aria-hidden="true" />{mountedIds.has(meta.id)
 										? 'Mounted'
 										: 'Mount'}</button
 								>
@@ -846,7 +845,7 @@
 									? "Browse this entry's files, and pick objects out of any scene in it"
 									: 'Pick objects from this scene to add to the one on screen'}
 								onclick={() => openPicker(meta)}
-								><Import size={16} aria-hidden="true" />{meta.hasLibrary
+								><Icon name="import" size={16} aria-hidden="true" />{meta.hasLibrary
 									? 'Import files…'
 									: 'Import objects…'}</button
 							>
@@ -877,7 +876,7 @@
 								class="ui-button-quiet inline-flex items-center hover:bg-red-700"
 								title="Delete"
 								aria-label="Delete"
-								onclick={() => confirmDelete([meta])}><X size={16} aria-hidden="true" /></button
+								onclick={() => confirmDelete([meta])}><Icon name="x" size={16} aria-hidden="true" /></button
 							>
 						</div>
 					</div>
@@ -896,7 +895,7 @@
 						{#if meta.thumbnail}
 							<img src={meta.thumbnail} alt={meta.name} class="h-24 w-full object-cover" />
 						{:else}
-							<div class="flex h-24 w-full items-center justify-center bg-gray-700 text-2xl text-gray-400"><Archive size={16} aria-hidden="true" /></div>
+							<div class="flex h-24 w-full items-center justify-center bg-gray-700 text-2xl text-gray-400"><Icon name="archive" size={16} aria-hidden="true" /></div>
 						{/if}
 						<div class="flex flex-col gap-1 p-2">
 							{#if renamingId === meta.id}
@@ -952,22 +951,22 @@
 							<div class="flex flex-wrap gap-1">
 								<button class="ui-button-quiet session-load inline-flex items-center gap-1"
 									title={meta.hasLibrary ? "Open this project: the scene comes back and so do its files, and you leave the session first" : 'Open this scene — it replaces the scene on screen (peers must accept)'}
-									onclick={() => void openEntry(meta)}><FolderOpen size={16} aria-hidden="true" />Open</button>
+									onclick={() => void openEntry(meta)}><Icon name="folder-open" size={16} aria-hidden="true" />Open</button>
 								{#if meta.hasLibrary}
 									<button class="ui-button-quiet session-mount inline-flex items-center gap-1" disabled={mountedIds.has(meta.id)}
 										title={mountedIds.has(meta.id) ? 'Already mounted — it is above Library in the Explorer' : "Add this project's files to the Explorer as a root of its own, above Library. The scene on screen is not touched."}
-										onclick={() => void mountVolume(meta.id)}><HardDrive size={16} aria-hidden="true" />{mountedIds.has(meta.id) ? 'Mounted' : 'Mount'}</button>
+										onclick={() => void mountVolume(meta.id)}><Icon name="hard-drive" size={16} aria-hidden="true" />{mountedIds.has(meta.id) ? 'Mounted' : 'Mount'}</button>
 								{/if}
 								<button class="ui-button-quiet session-import inline-flex items-center gap-1" title={meta.hasLibrary ? "Browse this entry's files, and pick objects out of any scene in it" : 'Pick objects from this scene to add to the one on screen'}
-									onclick={() => openPicker(meta)}><Import size={16} aria-hidden="true" />{meta.hasLibrary ? 'Import files…' : 'Import objects…'}</button>
+									onclick={() => openPicker(meta)}><Icon name="import" size={16} aria-hidden="true" />{meta.hasLibrary ? 'Import files…' : 'Import objects…'}</button>
 								{#if meta.hasLibrary}
-									<button class="ui-button-quiet session-download-project inline-flex items-center gap-1" title="Download as .tp — the whole project: this scene plus its library files and folders, in the format this app opens as a project" onclick={() => downloadSession(meta, 'project')}><Download size={16} aria-hidden="true" />.tp</button>
+									<button class="ui-button-quiet session-download-project inline-flex items-center gap-1" title="Download as .tp — the whole project: this scene plus its library files and folders, in the format this app opens as a project" onclick={() => downloadSession(meta, 'project')}><Icon name="download" size={16} aria-hidden="true" />.tp</button>
 								{:else}
-									<button class="ui-button-quiet session-download-scene inline-flex items-center gap-1" title="Download as .tpscene — the scene bundle this app can open again, with the assets it uses" onclick={() => downloadSession(meta)}><Download size={16} aria-hidden="true" />.tpscene</button>
+									<button class="ui-button-quiet session-download-scene inline-flex items-center gap-1" title="Download as .tpscene — the scene bundle this app can open again, with the assets it uses" onclick={() => downloadSession(meta)}><Icon name="download" size={16} aria-hidden="true" />.tpscene</button>
 								{/if}
-								<button class="ui-button-quiet session-download-json inline-flex items-center gap-1" title="Download as JSON — readable, and what a bug report can carry" onclick={() => downloadSession(meta, 'json')}><Download size={16} aria-hidden="true" />.json</button>
+								<button class="ui-button-quiet session-download-json inline-flex items-center gap-1" title="Download as JSON — readable, and what a bug report can carry" onclick={() => downloadSession(meta, 'json')}><Icon name="download" size={16} aria-hidden="true" />.json</button>
 								<button class="ui-button-quiet inline-flex items-center hover:bg-red-700" title="Delete" aria-label="Delete"
-									onclick={() => confirmDelete([meta])}><X size={16} aria-hidden="true" /></button>
+									onclick={() => confirmDelete([meta])}><Icon name="x" size={16} aria-hidden="true" /></button>
 							</div>
 						</div>
 					</div>
@@ -1024,14 +1023,14 @@
 						class="tp-seg-btn"
 						aria-pressed={pickerView === 'list'}
 						title="Details"
-						onclick={() => (pickerView = 'list')}><List size={14} aria-hidden="true" /></button
+						onclick={() => (pickerView = 'list')}><Icon name="list" size={16} aria-hidden="true" /></button
 					>
 					<button
 						id="picker-view-grid"
 						class="tp-seg-btn"
 						aria-pressed={pickerView === 'grid'}
 						title="Thumbnails"
-						onclick={() => (pickerView = 'grid')}><LayoutGrid size={14} aria-hidden="true" /></button
+						onclick={() => (pickerView = 'grid')}><Icon name="layout-grid" size={16} aria-hidden="true" /></button
 					>
 				</div>
 			</div>
@@ -1050,7 +1049,7 @@
 										: 'border-gray-700/60 hover:border-gray-500'}"
 									onclick={() => togglePick(entry.index)}
 								>
-									<span class="text-gray-400"><Icon name={FILE_ICONS.object} size={22} /></span>
+									<span class="text-gray-400"><Icon name={FILE_ICONS.object} size={20} /></span>
 									<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-200"
 										>{entry.name}</span
 									>
@@ -1111,7 +1110,7 @@
 										<span class="flex h-12 items-center text-gray-400"
 											><Icon
 												name={row.kind === 'folder' ? 'folder' : (FILE_ICONS[row.kindOf] ?? 'package')}
-												size={22}
+												size={20}
 											/></span
 										>
 									{/if}
@@ -1137,7 +1136,7 @@
 										<span class="shrink-0 text-gray-400"
 											><Icon
 												name={row.kind === 'folder' ? 'folder' : (FILE_ICONS[row.kindOf] ?? 'package')}
-												size={14}
+												size={16}
 											/></span
 										>
 									{/if}

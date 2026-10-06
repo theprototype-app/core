@@ -52,7 +52,7 @@
 			data-kit-state={o.kitState}
 			onclick={() => press(o)}
 		>
-			{#if o.icon}<Icon name={o.icon} size={16} strokeWidth={1.75} />{/if}
+			{#if o.icon}<Icon name={o.icon} size={16} />{/if}
 			<span>{o.label}</span>
 			{#if o.count !== undefined && o.count !== null && o.count !== ''}<span class="chip-count">{o.count}</span>{/if}
 		</button>

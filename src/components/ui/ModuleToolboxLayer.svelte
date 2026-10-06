@@ -13,7 +13,7 @@
 	import { cloudMount } from '$lib/cloudMount';
 	import { moduleToolboxes, openToolboxes, closeModuleToolbox } from '$lib/moduleToolboxes';
 	import { isLocked } from '../../stores/sceneStore';
-	import { X } from '@lucide/svelte';
+	import Icon from './Icon.svelte';
 
 	// A module toolbox CAN close itself, unlike the mesh/sculpt ones — it belongs to no
 	// edit session, so the ✕ is the only way out and has to be there.
@@ -41,7 +41,7 @@
 				aria-label="Close {box.title}"
 				onclick={() => closeModuleToolbox(box.id)}
 			>
-				<X size={14} aria-hidden="true" />
+				<Icon name="x" size={16} aria-hidden="true" />
 			</button>
 		{/snippet}
 		<div class="mod-tbx-mount" use:cloudMount={box.mount}></div>

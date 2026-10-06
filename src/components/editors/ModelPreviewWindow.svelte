@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Box } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	// N4: floating 3D model preview window — a rotatable ModelPreview canvas with a
 	// poly-stats box top-right. Opened from the Explorer (Enter / double-click / menu
 	// on an object item) when the global 3D-preview toggle is on. Esc / ✕ close and
@@ -73,7 +73,7 @@
 		onkeydown={onKeydown}
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span><Box size={16} class="mr-1" aria-hidden="true" />{$modelPreviewTarget.title}</span>
+			<span><Icon name="box" size={16} class="mr-1" aria-hidden="true" />{$modelPreviewTarget.title}</span>
 			<span class="flex-1"></span>
 			<button class="ui-button-quiet" title="Close" onclick={close}>✕</button>
 		</div>

@@ -11,7 +11,7 @@
 	// there is one thing to learn and one mode to see. Scene.svelte reads
 	// `multiSelectMode` in the same two places it reads `event.shiftKey`, which is what
 	// keeps this from being a second selection implementation.
-	import { Undo2, Redo2, BoxSelect } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { touchTools, multiSelectMode, connectDocked, connectBarHeight } from '../../stores/appStore';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 
@@ -118,7 +118,7 @@
 			aria-label="Undo"
 			onclick={() => undo()}
 		>
-			<Undo2 size={20} aria-hidden="true" />
+			<Icon name="undo-2" size={20} aria-hidden="true" />
 		</button>
 		<button
 			id="touch-redo"
@@ -128,7 +128,7 @@
 			aria-label="Redo"
 			onclick={() => redo()}
 		>
-			<Redo2 size={20} aria-hidden="true" />
+			<Icon name="redo-2" size={20} aria-hidden="true" />
 		</button>
 		<button
 			id="touch-multiselect"
@@ -141,7 +141,7 @@
 			aria-label="Multi-select"
 			onclick={() => multiSelectMode.update((v) => !v)}
 		>
-			<BoxSelect size={20} aria-hidden="true" />
+			<Icon name="box-select" size={20} aria-hidden="true" />
 		</button>
 	</div>
 {/if}

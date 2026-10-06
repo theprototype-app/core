@@ -3,7 +3,7 @@
 	// water (no refraction) or a fluid tank (drops instead of a smooth surface): what happened and
 	// where to give it back. Once per session (sessionStorage), never in Play, never in a headset.
 	// Theme tokens only. Its own file; App.svelte mounts it with one line.
-	import { X } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { simplifiedWater } from '$lib/water/simplifiedNotice.js';
 	import { isLocked, globalRenderer } from '../../stores/sceneStore';
 	import { settingsOpen, settingsSection } from '../../stores/appStore';
@@ -51,7 +51,7 @@
 			<button type="button" class="sw-link" onclick={openSetting}>Settings ▸ Scene ▸ Water quality ▸ High</button>
 			shows refraction.
 		</span>
-		<button type="button" class="sw-x" aria-label="Dismiss" onclick={finish}><X size={14} aria-hidden="true" /></button>
+		<button type="button" class="sw-x" aria-label="Dismiss" onclick={finish}><Icon name="x" size={16} aria-hidden="true" /></button>
 	</div>
 {/if}
 

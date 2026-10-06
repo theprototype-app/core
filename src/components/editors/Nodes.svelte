@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { untrack, tick, onMount } from 'svelte';
-	import { Trash2, Network } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import {
 		SvelteFlow,
 		Background,
@@ -1913,7 +1913,7 @@
 					title="Delete this object's flow"
 					onclick={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
 				>
-					<Trash2 size={16} aria-hidden="true" />
+					<Icon name="trash-2" size={16} aria-hidden="true" />
 				</button>
 			{/if}
 			<!-- A6.4: how many nodes in THIS graph cannot be rendered. Counted per
@@ -2001,7 +2001,7 @@
 			<Controls showLock={false}>
 				<!-- 36 S4: Tidy graph (L) — the same layout the game templates are authored with -->
 				<ControlButton id="flow-tidy" title={'Tidy graph (' + (hint('nodes.tidy') || 'L') + ')'} aria-label="Tidy graph" onclick={() => tidyGraph('layout')}>
-					<Network size={14} aria-hidden="true" />
+					<Icon name="network" size={16} aria-hidden="true" />
 				</ControlButton>
 			</Controls>
 			{#if showMinimap}

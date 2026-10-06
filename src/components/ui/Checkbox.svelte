@@ -36,7 +36,7 @@
 		{...rest}
 	/>
 	<span class="cb-box" aria-hidden="true">
-		{#if indeterminate}<Icon name="minus" size={12} strokeWidth={3} />{:else if checked}<Icon name="check" size={12} strokeWidth={3} />{/if}
+		{#if indeterminate}<Icon name="minus" size={12} strokeWidth={3} snap={false} />{:else if checked}<Icon name="check" size={12} strokeWidth={3} snap={false} />{/if}
 	</span>
 </span>
 

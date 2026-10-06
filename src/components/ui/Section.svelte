@@ -133,7 +133,7 @@
 	<section class="tp-ui sec-panel" class:hidden={filtering && !match} bind:this={root}>
 		{#if collapsible && !filtering}
 			<button type="button" class="sec-panel-head" aria-expanded={showContent} onclick={toggle}>
-				<span class="sec-chev" class:sec-chev-open={showContent} aria-hidden="true"><Icon name="chevron-right" size={16} strokeWidth={1.75} /></span>
+				<span class="sec-chev" class:sec-chev-open={showContent} aria-hidden="true"><Icon name="chevron-right" size={16} /></span>
 				<span class="sec-title">{label}</span>
 				{#if badge}<Badge tone="scope" text={badge} />{/if}
 			</button>

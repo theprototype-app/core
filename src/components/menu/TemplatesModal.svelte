@@ -4,7 +4,7 @@
 	// $lib/sceneTemplates.js — this file is presentation only. Runes-mode.
 	import { untrack } from 'svelte';
 	import { Modal } from 'flowbite-svelte';
-	import { FilePlus, FolderDown, Image as ImageIcon, RefreshCw } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { templatesModalOpen, templatesModalTab, hidePanels, restorePanels } from '../../stores/appStore.js';
 	import {
 		templates,
@@ -30,7 +30,6 @@
 	import { communityProvider } from '$lib/cloudHooks';
 	import { licenseLabel } from '$lib/packs';
 	import { classifyRequirements } from '$lib/moduleRequirements';
-	import { Gamepad2, Puzzle } from '@lucide/svelte';
 	import HeartButton from '../ui/HeartButton.svelte';
 
 	let tab = $state('general');
@@ -214,11 +213,11 @@
 		{#if entry.thumbUrl}
 			<img src={entry.thumbUrl} alt={entry.title} class="h-24 w-full object-cover" loading="lazy" onerror={hideThumb} />
 			<div class="tpl-thumb-ph hidden h-24 w-full items-center justify-center bg-gray-700 text-gray-400">
-				<ImageIcon size={20} aria-hidden="true" />
+				<Icon name="image" size={20} aria-hidden="true" />
 			</div>
 		{:else}
 			<div class="flex h-24 w-full items-center justify-center bg-gray-700 text-gray-400">
-				<ImageIcon size={20} aria-hidden="true" />
+				<Icon name="image" size={20} aria-hidden="true" />
 			</div>
 		{/if}
 		<div class="flex flex-1 flex-col gap-1 p-2">
@@ -242,7 +241,7 @@
 							? 'You have a different version than this scene was built against — every player must run the same one, or the game will drift'
 							: 'Each player needs this module; loading will offer to install it'}
 				>
-					<Puzzle size={11} aria-hidden="true" />{req?.text}
+					<Icon name="puzzle" size={16} aria-hidden="true" />{req?.text}
 				</span>
 			{/if}
 			{#if entry.notice}
@@ -267,7 +266,7 @@
 		aria-label={'Save ' + entry.title + ' to your Library'}
 		onclick={() => saveEntry(entry)}
 	>
-		<FolderDown size={14} aria-hidden="true" />
+		<Icon name="folder-down" size={16} aria-hidden="true" />
 	</button>
 	{#if canLike && entry.likeCount != null}
 		<!-- 36-community (C6): the heart, a sibling of the load button (never inside it) -->
@@ -337,7 +336,7 @@
 				aria-selected={tab === 'games'}
 				onclick={() => pickTab('games')}
 			>
-				<Gamepad2 size={14} aria-hidden="true" /> Games
+				<Icon name="gamepad-2" size={16} aria-hidden="true" /> Games
 			</button>
 			<button
 				id="templates-tab-community"
@@ -398,7 +397,7 @@
 						title="Clear the scene and start fresh (peers see it too)"
 						onclick={pickBlank}
 					>
-						<FilePlus size={24} aria-hidden="true" />
+						<Icon name="file-plus" size={24} aria-hidden="true" />
 						<span class="text-sm font-semibold">Blank scene</span>
 						<span class="text-[10px] text-gray-500">Start from nothing</span>
 					</button>
@@ -410,7 +409,7 @@
 					<div class="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-gray-600 p-3 text-sm text-gray-400">
 						<span class="flex-1">Couldn't load the template library and nothing is bundled.</span>
 						<button id="templates-retry" class="ui-button-quiet" onclick={() => loadTemplatesIndex(true)}>
-							<RefreshCw size={14} aria-hidden="true" /> Retry
+							<Icon name="refresh-cw" size={16} aria-hidden="true" /> Retry
 						</button>
 					</div>
 				{/if}
@@ -438,7 +437,7 @@
 					</p>
 					{#if $templatesState !== 'ready'}
 						<button id="examples-retry" class="ui-button-quiet" onclick={() => loadTemplatesIndex(true)}>
-							<RefreshCw size={14} aria-hidden="true" /> Retry
+							<Icon name="refresh-cw" size={16} aria-hidden="true" /> Retry
 						</button>
 					{/if}
 				</div>
@@ -466,7 +465,7 @@
 					id="games-empty"
 					class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-600 p-6 text-center"
 				>
-					<Gamepad2 size={22} aria-hidden="true" />
+					<Icon name="gamepad-2" size={20} aria-hidden="true" />
 					<p class="text-sm text-gray-400">
 						{$templatesState === 'ready'
 							? 'No games published yet — check back after the next content release.'
@@ -474,7 +473,7 @@
 					</p>
 					{#if $templatesState !== 'ready'}
 						<button id="games-retry" class="ui-button-quiet" onclick={() => loadTemplatesIndex(true)}>
-							<RefreshCw size={14} aria-hidden="true" /> Retry
+							<Icon name="refresh-cw" size={16} aria-hidden="true" /> Retry
 						</button>
 					{/if}
 				</div>
@@ -523,7 +522,7 @@
 						{@render submitControl('community-submit-link', 'tpl-link text-sm')}
 						{#if $communityState === 'error'}
 							<button id="community-retry" class="ui-button-quiet" onclick={() => loadCommunityGallery(true)}>
-								<RefreshCw size={14} aria-hidden="true" /> Retry
+								<Icon name="refresh-cw" size={16} aria-hidden="true" /> Retry
 							</button>
 						{/if}
 					</div>

@@ -105,6 +105,9 @@
 	--toggle-h: 24px;
 	--row-h: 36px; /* PropRow minimum */
 	--prop-label-w: 96px;
+	--setting-row-pad-y: var(--space-4); /* SettingRow top/bottom */
+	--nav-row-h: 48px; /* NavRow minimum */
+	--nav-row-pad-y: var(--space-3);
 }
 
 /* SPEC §6 mobile (< 640px): body/labels 16, descriptions 14, inputs 16 (no iOS zoom),
@@ -120,6 +123,23 @@
 		--toggle-w: 51px;
 		--toggle-h: 31px;
 		--row-h: 44px;
+		--setting-row-pad-y: 14px;
+		--nav-row-h: 52px;
+	}
+}
+
+/* DENSITY (NOTES-38 #19): Comfortable is the design (the values above); Compact is ONE switch,
+   `data-density="compact"` on <html> ($lib/ui/density.js applyDensity; the Settings ▸ Interface row
+   is 37-settings'). Desktop only: under 640px touch targets stay >= 44 (SPEC §6). */
+@media (min-width: 640px) {
+	:root[data-density='compact'] {
+		--row-h: 32px;
+		--control-h: 32px;
+		--control-h-sm: 28px;
+		--icon-button: 28px;
+		--setting-row-pad-y: var(--space-2);
+		--nav-row-h: 36px;
+		--nav-row-pad-y: var(--space-2);
 	}
 }
 

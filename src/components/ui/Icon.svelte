@@ -79,7 +79,14 @@
 		Video,
 		Workflow,
 		Wrench,
-		X
+		X,
+		Bookmark,
+		Columns2,
+		FolderOpen,
+		Import,
+		LoaderCircle,
+		TriangleAlert,
+		Upload
 	} from '@lucide/svelte';
 
 	// 15-Q (context-menu redesign): the menu item defs carry icon NAMES in data,
@@ -157,7 +164,15 @@
 		video: Video,
 		workflow: Workflow,
 		wrench: Wrench,
-		x: X
+		x: X,
+		// 38 R7 (modals)
+		bookmark: Bookmark,
+		'columns-2': Columns2,
+		'folder-open': FolderOpen,
+		import: Import,
+		'loader-circle': LoaderCircle,
+		'triangle-alert': TriangleAlert,
+		upload: Upload
 	};
 
 	/** @type {{ name: string, size?: number } & Record<string, any>} */

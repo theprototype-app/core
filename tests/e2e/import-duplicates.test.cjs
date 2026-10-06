@@ -598,16 +598,17 @@ h.run(async () => {
 	});
 	h.check(rowText.present, 'the rule has a row in Settings ▸ Files, not in the Explorer view cog');
 	h.check(
-		/Ask lets you decide file by file/.test(rowText.text) &&
+		/Ask decides file by file/.test(rowText.text) &&
 			/Skip keeps what you have/.test(rowText.text) &&
-			/Import as copies brings them in/.test(rowText.text),
+			/Copy brings them in/.test(rowText.text),
 		'…and the description explains all three answers'
 	);
 	// the flex-cell trap: `.sr-desc` is a flex COLUMN, so sibling <strong>s render one
 	// fragment per line. One block child keeps it as prose.
+	// 37-settings: the description is one paragraph (the kit row is not a flex column any more)
 	h.check(
-		rowText.descChildren === 1,
-		`…as ONE block of prose rather than a fragment per <strong> (${rowText.descChildren} flex children)`
+		rowText.descChildren <= 1,
+		`…as ONE block of prose rather than a fragment per <strong> (${rowText.descChildren} children)`
 	);
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 	await A.page.waitForTimeout(400);

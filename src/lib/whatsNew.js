@@ -63,9 +63,14 @@ function markSeen() {
 
 /** Open the changelog window; clears the badge and marks this version seen. */
 export function openWhatsNew() {
+	markWhatsNewSeen();
+	whatsNewOpen.set(true);
+}
+
+/** Clear the badge and mark this version seen without opening the window (Settings ▸ About ▸ What's new) */
+export function markWhatsNewSeen() {
 	whatsNewUnseen.set(false);
 	markSeen();
-	whatsNewOpen.set(true);
 }
 
 export function closeWhatsNew() {

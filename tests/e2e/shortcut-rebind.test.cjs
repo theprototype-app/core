@@ -244,7 +244,9 @@ h.run(async () => {
 	h.check(oneReset.node === 'N', `6.6 the per-row reset restores one default (${oneReset.node})`);
 	h.check(!/panels.node-editor/.test(oneReset.ls || ''), `6.7 ...and drops only that override (${oneReset.ls})`);
 
-	await A.page.click('#shortcut-reset-all');
+	// 37-settings: "Reset all" is the footer's "Reset Shortcuts to defaults" now, and it asks first
+	await A.page.locator('#settings-reset-category').click();
+	await A.page.locator('#confirm-dialog-ok').click();
 	await A.page.waitForTimeout(400);
 	const allReset = await A.page.evaluate(() => {
 		const r = window.__stores.shortcutsRegistry.shortcuts;

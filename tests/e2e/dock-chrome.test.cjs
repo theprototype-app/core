@@ -245,11 +245,12 @@ h.run(async () => {
 	);
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
-	await A.page.getByText('Interface', { exact: true }).first().click();
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
 	await A.page.waitForTimeout(400);
-	const row = A.page.locator('.setting-row').filter({ hasText: 'Floating toolbar' }).first();
-	h.check((await row.count()) === 1, '4.2 Settings ▸ Interface has a "Floating toolbar" row');
-	const toggle = row.locator('input[type="checkbox"]');
+	// 37-settings: the row reads "Lift the toolbar above docked panels"; a kit Toggle (<button aria-pressed>)
+	const row = A.page.locator('.setting-row').filter({ hasText: 'Lift the toolbar above docked panels' }).first();
+	h.check((await row.count()) === 1, '4.2 Settings ▸ Interface has the floating-toolbar row');
+	const toggle = row.locator('button[aria-pressed]');
 	h.check((await toggle.count()) === 1, '4.3 ...with a real toggle');
 	// flowbite's Toggle keeps its real input `sr-only` under a painted track, so a
 	// POSITIONAL click lands on whatever overlays that spot (here the Controls pill —

@@ -152,12 +152,11 @@ h.run(async () => {
 	await A.page.locator('#placeholder-style').scrollIntoViewIfNeeded();
 	await shot('00-loading-settings-default-dark.png');
 	h.check((await A.page.evaluate(() => localStorage.getItem('placeholderStyle'))) === null, 'the default is not written until the person picks');
-	await A.page.locator('#placeholder-style').click();
-	await A.page.getByRole('option', { name: 'Colored boxes' }).click();
+	// 37-settings: the style is a segmented control (Modern · Boxes)
+	await A.page.locator('#placeholder-style-boxes').click();
 	await A.page.waitForTimeout(200);
 	h.check((await A.page.evaluate(() => localStorage.getItem('placeholderStyleChosen'))) === '1', 'a pick is recorded as a choice');
-	await A.page.locator('#placeholder-style').click();
-	await A.page.getByRole('option', { name: 'Modern (default)' }).click();
+	await A.page.locator('#placeholder-style-modern').click();
 	await A.page.waitForTimeout(200);
 	const stored = await A.page.evaluate(() => localStorage.getItem('placeholderStyle'));
 	h.check(stored === '"modern"', `choosing Modern in the UI persists it (${stored})`);

@@ -102,17 +102,16 @@ h.run(async () => {
 	);
 	h.check(rehydrated === 1.5, `saved poses rehydrate on boot (${rehydrated})`);
 
-	// --- Settings ▸ VR: first accordion, reset button clears poses ---
+	// --- Settings ▸ VR ▸ Display ▸ Reset panel positions clears poses ---
+	// 37-settings: VR sits under "Devices & services" in the grouped menu; the reset is the schema's
+	// `resetPanels` action row (vr-set-resetPanels)
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
-	const firstHeader = await A.page.evaluate(() => {
-		const buttons = [...document.querySelectorAll('.modal-content button')];
-		return buttons.find((b) => /VR|Scene|Shortcuts|About/.test(b.textContent))?.textContent.trim();
-	});
-	h.check(firstHeader === 'VR', `the VR section leads the settings accordion (${firstHeader})`);
-	await A.page.locator('.modal-content button', { hasText: 'VR' }).first().click();
+	const vrGroup = await A.page.evaluate(() => document.querySelector('#settings-nav .sn-row[data-section="VR"]')?.closest('.sn-group')?.getAttribute('data-group'));
+	h.check(vrGroup === 'devices', `VR is in the Devices & services group (${vrGroup})`);
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();
 	await A.page.waitForTimeout(300);
-	await A.page.locator('#vr-reset-poses').click();
+	await A.page.locator('#vr-set-resetPanels').click();
 	await A.page.waitForTimeout(300);
 	const afterReset = await A.page.evaluate(() => ({
 		storage: localStorage.getItem('vrWindowPoses'),

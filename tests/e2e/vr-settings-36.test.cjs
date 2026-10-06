@@ -266,15 +266,16 @@ h.run(async () => {
 	await xr.uninstall(page);
 	await g(() => window.__stores.settingsOpen.set(true));
 	await settle(500);
-	await page.getByText('VR', { exact: true }).first().click();
+	await page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();
 	await settle(500);
 	const tables = await page.locator('[data-tour="settings-vr-controls"]').count();
 	const dump = await g(() => [...document.querySelectorAll('[data-tour="settings-vr-controls"]')].map((e) => (e.closest('dialog,[role=dialog],.setting-search,[data-search]')?.tagName ?? '-') + ':' + (e.offsetParent ? 'shown' : 'hidden')).join(' '));
 	h.check(tables >= 1, `the Controls table is in Settings ▸ VR (${tables}: ${dump})`);
-	await page.locator('#vr-bind-move-hand').scrollIntoViewIfNeeded();
-	await page.locator('#vr-bind-move-hand').click();
-	await settle(200);
-	await page.locator('.ts-list [role="option"]', { hasText: 'Right' }).click();
+	// 37-settings: the remap table is a sub-page (VR › Remap buttons); the hand is a segmented control
+	await page.locator('#vr-remap-open').click();
+	await settle(300);
+	await page.locator('#vr-bind-move-hand-right').scrollIntoViewIfNeeded();
+	await page.locator('#vr-bind-move-hand-right').click();
 	await settle(300);
 	h.check((await page.locator('#vr-bind-conflict').count()) === 1, 'moving Move onto the right stick warns: Turn + Teleport are there');
 	const refused = await g(() => window.__stores.vrBindings.bindingOf('move').hand);

@@ -3,6 +3,7 @@
 	// list view. Five or more → Chips. A role="radiogroup" of role="radio" buttons (SPEC §8)
 	// with ONE tab stop — the selected option — and arrow keys that move AND select
 	// ($lib/ui/roving.js). `full` stretches it to equal columns (the mobile / wide-row form).
+	// With an `id`, each option is `<id>-<value>` (37-settings: the hooks Settings' suites address).
 	import { rovingIndex } from '$lib/ui/roving.js';
 	import Icon from './Icon.svelte';
 
@@ -65,6 +66,8 @@
 	{#each options as o, i (o.value)}
 		<button
 			bind:this={buttons[i]}
+			id={id ? `${id}-${o.value}` : undefined}
+			data-value={o.value}
 			type="button"
 			role="radio"
 			class="seg-opt"

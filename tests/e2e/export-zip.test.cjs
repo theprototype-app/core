@@ -135,8 +135,9 @@ h.run(async () => {
 	h.check(await page.locator('#publish-oss').isVisible(), 'the OSS Publish tab says where publishing lives');
 	await page.locator('#publish-export-tab-settings').click();
 	const badgeRow = await page.evaluate(() => {
-		const el = /** @type {HTMLInputElement | null} */ (document.querySelector('#export-badge'));
-		return el ? { checked: el.checked, disabled: el.disabled } : null;
+		// 37-settings: a kit Toggle (a <button aria-pressed>), on and disabled
+		const el = /** @type {HTMLButtonElement | null} */ (document.querySelector('#export-badge'));
+		return el ? { checked: el.getAttribute('aria-pressed') === 'true', disabled: el.disabled } : null;
 	});
 	h.check(badgeRow?.checked === true && badgeRow?.disabled === true, `Settings: "Show Made with ThePrototype badge" is checked and disabled (${JSON.stringify(badgeRow)})`);
 	if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '01-modal-settings-dark.png') });

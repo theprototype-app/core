@@ -5,13 +5,14 @@
 	// caller's `id` and is bindable, so existing focus shortcuts and suites still find it.
 	import Icon from './Icon.svelte';
 
-	/** @type {{value?: string, placeholder?: string, label?: string, id?: string, hint?: string, size?: 'md'|'sm', inputEl?: HTMLInputElement | null, oninput?: (v: string) => void, onclear?: () => void} & Record<string, any>} */
+	/** @type {{value?: string, placeholder?: string, label?: string, id?: string, hint?: string, clearId?: string, size?: 'md'|'sm', inputEl?: HTMLInputElement | null, oninput?: (v: string) => void, onclear?: () => void} & Record<string, any>} */
 	let {
 		value = $bindable(''),
 		placeholder = 'Search',
 		label = '',
 		id = undefined,
 		hint = '',
+		clearId = undefined,
 		size = 'md',
 		inputEl = $bindable(null),
 		oninput = () => {},
@@ -43,7 +44,7 @@
 		{...rest}
 	/>
 	{#if value}
-		<button type="button" class="sf-clear" aria-label="Clear" onclick={clear}><Icon name="x" size={14} strokeWidth={1.75} /></button>
+		<button type="button" id={clearId} class="sf-clear" aria-label="Clear" onclick={clear}><Icon name="x" size={14} strokeWidth={1.75} /></button>
 	{:else if hint}
 		<kbd class="sf-hint">{hint}</kbd>
 	{/if}

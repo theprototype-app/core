@@ -17,14 +17,14 @@ h.run(async () => {
 			themePrefix: document.body.innerText.includes('Theme: '),
 			snap: document.body.innerText.includes('Snap turn 15')
 		}));
-	await A.page.getByText('Interface', { exact: true }).first().click();
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
 	await A.page.waitForTimeout(300);
 	h.check(await A.page.getByText('Theme', { exact: false }).first().isVisible(), 'a "Theme" label renders');
 	const inInterface = await prefixes();
-	await A.page.getByText('VR', { exact: true }).first().click();
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();
 	await A.page.waitForTimeout(300);
 	const inVr = await prefixes();
-	await A.page.getByText('Scene', { exact: true }).first().click();
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'Scene' }).first().click();
 	await A.page.waitForTimeout(300);
 	h.check(await A.page.getByText('Shadow quality', { exact: false }).first().isVisible(), 'a "Shadow quality" label renders');
 
@@ -39,14 +39,14 @@ h.run(async () => {
 	h.check(!dupes.themePrefix, 'no "Theme:" prefix on the values');
 	h.check(!dupes.snap, 'no "Snap turn 15" prefix on the values');
 
-	// terse values still drive the store (shadow quality button shows the value)
-	const btn = () => A.page.locator('#shadow-quality').innerText();
+	// terse values still drive the store (37-settings: a segmented control, the checked option is the value)
+	const picked = () => A.page.locator('#shadow-quality [aria-checked="true"]').innerText();
 	await A.page.evaluate(() => window.__stores.lightParams.shadowQuality.set('low'));
 	await A.page.waitForTimeout(150);
-	h.check((await btn()).includes('Low'), 'the shadow-quality select shows the terse value (Low)');
+	h.check((await picked()).trim() === 'Low', 'the shadow-quality control shows the terse value (Low)');
 	await A.page.evaluate(() => window.__stores.lightParams.shadowQuality.set('high'));
 	await A.page.waitForTimeout(150);
-	h.check((await btn()).includes('High'), 'and updates with the store (High)');
+	h.check((await picked()).trim() === 'High', 'and updates with the store (High)');
 
 	// --- the settings SEARCH ---------------------------------------------------
 	// It went dead in the flowbite 1.x migration: an AccordionItem mounts its body
@@ -60,7 +60,7 @@ h.run(async () => {
 		await A.page.waitForTimeout(450);
 		return A.page.evaluate(() => {
 			const rows = [...document.querySelectorAll('.setting-row')];
-			const headers = [...document.querySelectorAll('.modal-content h2')];
+			const headers = [...document.querySelectorAll('#settings-sections .ss-page')];
 			return {
 				mounted: rows.length,
 				shown: rows.filter((r) => /** @type {any} */ (r).style.display !== 'none').length,

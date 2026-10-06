@@ -1,26 +1,37 @@
-// 36 B14 — SETTINGS ON WINDOWSHELL. The sidebar lists every registered section (no list
-// written anywhere: each section registers itself), exactly one section is on screen outside a
-// search, a click / ↑↓ / a deep link picks it, the choice survives a reopen, the I4 search still
-// spans every section (the sidebar narrowing to the sections that match), every section added
-// in 1.21-1.23 is reachable, and a phone gets the same list as a chip strip. Dark/light shots.
+// 36 B14 → 37-settings (R21): THE SETTINGS WINDOW. The menu lists every registered section (no list
+// written anywhere: each section registers itself), GROUPED (General · Workspace · Devices &
+// services) with "About & what's new" pinned last; exactly one page on screen outside a search; a
+// click / ↑↓ / a deep link picks it and a reopen comes back to it; a SUB-PAGE opens in the content
+// area with a breadcrumb + back (Esc backs out first); the search spans every page and shows each
+// match under its path, a click on a row's name JUMPS to it; a phone gets the category LIST first,
+// a pushed page with "‹ Settings", and a pushed sub-page with "‹ <Category>".
 const fs = require('fs');
 const h = require('./helpers.cjs');
 
-const EVIDENCE = process.env.EVIDENCE_DIR || '/home/deck/.code/lanes-30/after-36/36-editor-extras';
+const EVIDENCE = process.env.EVIDENCE_DIR || '/home/deck/.code/lanes-30/after-37/37-settings';
 
 /** @param {any} page */
 const state = (page) =>
 	page.evaluate(() => {
-		const nav = document.querySelector('#settings-nav') ?? document.querySelector('#settings-nav-chips');
+		const nav = document.querySelector('#settings-nav') ?? document.querySelector('#settings-home');
 		const rows = [...(nav?.querySelectorAll('.sn-row') ?? [])].map((b) => ({
-			label: (b.textContent || '').trim(),
+			label: (b.querySelector('.sn-label')?.textContent || '').trim(),
 			current: b.getAttribute('aria-current') === 'page',
-			hidden: /** @type {HTMLElement} */ (b).hidden
+			hidden: /** @type {HTMLElement} */ (b).hidden,
+			group: b.closest('.sn-group')?.getAttribute('data-group') ?? (b.closest('.sn-about') ? 'about' : '')
 		}));
-		const titles = [...document.querySelectorAll('#settings-sections h2')]
-			.filter((t) => /** @type {HTMLElement} */ (t).style.display !== 'none')
-			.map((t) => (t.textContent || '').trim());
-		return { rows, titles, inShell: !!nav?.closest('.ws-root'), visibleRows: [...document.querySelectorAll('.setting-row')].filter((r) => /** @type {HTMLElement} */ (r).offsetParent !== null).length };
+		const pages = [...document.querySelectorAll('#settings-sections .ss-page')].filter((p) => /** @type {HTMLElement} */ (p).style.display !== 'none' && /** @type {HTMLElement} */ (p).offsetParent !== null);
+		const titles = pages.map((p) => (p.querySelector('.ss-title')?.textContent || '').replace(/›\s*$/, '').trim());
+		const crumb = document.querySelector('#settings-sections .ss-crumb')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+		return {
+			rows,
+			titles,
+			keys: pages.map((p) => p.getAttribute('data-section')),
+			crumb,
+			chromeTitle: document.querySelector('.settings-shell .wc-title')?.textContent?.trim() ?? '',
+			back: document.querySelector('.settings-shell .wc-back')?.textContent?.trim() ?? '',
+			visibleRows: [...document.querySelectorAll('#settings-sections .setting-row')].filter((r) => /** @type {HTMLElement} */ (r).offsetParent !== null).length
+		};
 	});
 
 h.run(async () => {
@@ -29,37 +40,42 @@ h.run(async () => {
 	const page = A.page;
 	await page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await page.locator('#settings-nav').waitFor({ timeout: 10000 });
-	await page.waitForTimeout(400);
+	await page.waitForTimeout(500);
 
-	// ---- 1. The sidebar is the registered list ------------------------------------------------
+	// ---- 1. The grouped menu --------------------------------------------------------------------
 	let s = await state(page);
 	const labels = s.rows.map((r) => r.label);
-	h.check(s.inShell, 'Settings is laid out on WindowShell (the nav sits in its sidebar)');
-	const expected = ['Interface', 'Controls', 'Input', 'Touch controls', 'Scene', 'Explorer', 'VR', 'AI', 'Export', 'Connection', 'Shortcuts', 'About'];
-	h.check(
-		expected.every((l) => labels.includes(l)),
-		'every section is in the sidebar, the own-file ones included (' + labels.join(', ') + ')'
-	);
-	h.check(
-		expected.every((l, i) => i === 0 || labels.indexOf(expected[i - 1]) < labels.indexOf(l)),
-		'in the order Settings.svelte declares them'
-	);
-	h.check(s.titles.length === 1, 'exactly one section on screen (' + s.titles.join(',') + ')');
-	h.check(s.rows.filter((r) => r.current).length === 1 && s.rows.find((r) => r.current)?.label === s.titles[0], 'the sidebar marks the one on screen');
+	const groups = await page.$$eval('#settings-nav .sn-group-label', (els) => els.map((e) => (e.textContent || '').trim()));
+	h.check(JSON.stringify(groups) === JSON.stringify(['General', 'Workspace', 'Devices & services']), 'the menu is grouped General · Workspace · Devices & services (' + groups.join(' · ') + ')');
+	const byGroup = (g) => s.rows.filter((r) => r.group === g).map((r) => r.label);
+	h.check(JSON.stringify(byGroup('general')) === JSON.stringify(['Interface', 'Controls', 'Input', 'Touch controls', 'Shortcuts']), 'General: Interface, Controls, Input, Touch controls, Shortcuts (' + byGroup('general').join(', ') + ')');
+	h.check(JSON.stringify(byGroup('workspace')) === JSON.stringify(['Scene', 'Explorer', 'Node types', 'Export']), 'Workspace: Scene, Explorer, Node types, Export');
+	h.check(JSON.stringify(byGroup('devices')) === JSON.stringify(['VR', 'AI', 'Connection']), 'Devices & services: VR, AI, Connection');
+	h.check(labels[labels.length - 1] === 'About & what’s new' && s.rows[s.rows.length - 1].group === 'about', '"About & what’s new" is pinned last');
+	const pinned = await page.evaluate(() => {
+		const about = document.querySelector('#settings-nav .sn-about')?.getBoundingClientRect();
+		const side = document.querySelector('.settings-side')?.getBoundingClientRect();
+		return about && side ? side.bottom - about.bottom : -1;
+	});
+	h.check(pinned >= 0 && pinned < 40, `About sits at the bottom of the menu (${Math.round(pinned)}px from it)`);
+	h.check(s.titles.length === 1, 'exactly one page on screen (' + s.titles.join(',') + ')');
+	h.check(s.rows.filter((r) => r.current).length === 1 && s.rows.find((r) => r.current)?.label === s.titles[0], 'the menu marks the one on screen');
 
-	// ---- 2. Every section reachable, each with its rows (incl. the 1.21-1.23 additions) --------
-	/** label -> a row (or element) that proves the section's own content is there */
+	// ---- 2. Every page reachable, each with its own rows ----------------------------------------
 	const proofs = {
-		Interface: '#allow-text-select', // 1.21 U6
+		Interface: '#allow-text-select',
+		Controls: '#trackpad-mode',
 		Input: '#flow-mouse-bindings',
-		'Touch controls': '#touch-visibility-never', // 1.21 U8 (own file; its header id lives in the sidebar row)
-		Scene: '#checkpoints-open-timeline', // 1.24 B14 + the 1.21 Loading rows below
-		Explorer: '#recycle-bin',
-		VR: '[data-tour="settings-vr-controls"]', // 1.22 U3
-		Export: '#export-settings-section', // 1.21 U4 (own file)
-		'Node types': '#node-types-section', // 1.23 B7 (own file; no SettingRow rows) — 36-int-124 union
+		'Touch controls': '#touch-visibility-never',
 		Shortcuts: '#shortcut-grid',
-		About: '#about-copy-diagnostics'
+		Scene: '#checkpoints-open-timeline',
+		Explorer: '#recycle-bin',
+		'Node types': '#node-types-section',
+		Export: '#export-settings-section',
+		VR: '[data-tour="settings-vr-controls"]',
+		AI: '#ai-enabled',
+		Connection: '#peer-server-mode',
+		'About & what’s new': '#about-copy-diagnostics'
 	};
 	for (const label of labels) {
 		await page.locator('#settings-nav .sn-row', { hasText: label }).first().click();
@@ -71,20 +87,21 @@ h.run(async () => {
 	}
 	await page.locator('#settings-nav .sn-row', { hasText: 'Scene' }).first().click();
 	await page.waitForTimeout(250);
-	for (const id of ['[data-tour="settings-loading"]', '#modules-on-open']) {
+	for (const id of ['[data-tour="settings-loading"]', '#modules-on-open', '#water-quality']) {
 		h.check((await page.locator('#settings-main ' + id).count()) === 1, `Scene holds ${id}`);
 	}
-	h.check(/Water quality/.test(await page.locator('#settings-main').textContent()), 'Scene holds the 1.22 Water rows');
-	await page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
-	await page.waitForTimeout(250);
-	h.check(/Tours|tour/i.test(await page.locator('#settings-main').textContent()), 'Interface holds the 1.22 Tours rows');
+	const sceneCards = await page.$$eval('#settings-main .ss-page [data-section-label]', (els) => els.map((e) => (e.textContent || '').trim()));
+	h.check(
+		JSON.stringify(sceneCards) === JSON.stringify(['Viewport', 'Performance', 'Collaboration', 'Saving & checkpoints', 'Editing', 'Units', 'Duplicates', 'Colours', 'Loading placeholders']),
+		'Scene is split into its nine sections (' + sceneCards.join(', ') + ')'
+	);
 
-	// ---- 3. Keyboard, persistence, deep links -----------------------------------------------
+	// ---- 3. Keyboard, persistence, deep links ---------------------------------------------------
 	await page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().focus();
 	await page.keyboard.press('ArrowDown');
 	await page.waitForTimeout(250);
 	s = await state(page);
-	h.check(s.titles[0] === 'Controls', '↓ in the sidebar shows the next section (' + s.titles[0] + ')');
+	h.check(s.titles[0] === 'Controls', '↓ in the menu shows the next page (' + s.titles[0] + ')');
 	await page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();
 	await page.evaluate(() => window.__stores.settingsOpen.set(false));
 	await page.waitForTimeout(400);
@@ -92,7 +109,7 @@ h.run(async () => {
 	await page.locator('#settings-nav').waitFor();
 	await page.waitForTimeout(500);
 	s = await state(page);
-	h.check(s.titles.length === 1 && s.titles[0] === 'VR', 'a reopen comes back to the section last used (' + s.titles.join(',') + ')');
+	h.check(s.titles.length === 1 && s.titles[0] === 'VR', 'a reopen comes back to the page last used (' + s.titles.join(',') + ')');
 	await page.evaluate(() => window.__stores.settingsOpen.set(false));
 	await page.waitForTimeout(400);
 	await page.evaluate(() => {
@@ -101,80 +118,140 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(800);
 	s = await state(page);
-	h.check(s.titles.length === 1 && s.titles[0] === 'Explorer', 'a deep link opens its section (' + s.titles.join(',') + ')');
+	h.check(s.titles.length === 1 && s.titles[0] === 'Explorer', 'a deep link opens its page (' + s.titles.join(',') + ')');
 	await page.evaluate(() => window.__stores.settingsSection.set('touch'));
 	await page.waitForTimeout(500);
 	s = await state(page);
-	h.check(s.titles.length === 1 && s.titles[0] === 'Touch controls', 'a deep link while open switches the section ("touch" names Touch controls)');
+	h.check(s.titles.length === 1 && s.titles[0] === 'Touch controls', 'a deep link while open switches the page ("touch" names Touch controls)');
+	await page.evaluate(() => window.__stores.settingsSection.set('about'));
+	await page.waitForTimeout(500);
+	s = await state(page);
+	h.check(s.titles[0] === 'About & what’s new', 'the old "about" deep link lands on About & what’s new');
 	await page.evaluate(() => window.__stores.settingsSection.set('ai'));
 	await page.waitForTimeout(500);
 	s = await state(page);
 	h.check(s.titles.length === 1 && s.titles[0] === 'AI', 'the AI deep link (the HUD AI button) lands on AI');
 
-	// ---- 4. The search still spans everything -----------------------------------------------
+	// ---- 4. Sub-pages: in the content area, breadcrumb + back, Esc backs out first ---------------
+	await page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();
+	await page.waitForTimeout(250);
+	await page.locator('#vr-remap-open').click();
+	await page.waitForTimeout(300);
+	s = await state(page);
+	h.check(/VR\s*›\s*Remap buttons/.test(s.crumb), `a submenu opens as a sub-page with a breadcrumb ("${s.crumb}")`);
+	h.check((await page.locator('dialog[open]').count()) === 1, 'no second dialog opened (not a modal on a modal)');
+	h.check((await page.locator('#vr-bind-move-hand-left').count()) === 1, 'the remap rows are on the sub-page');
+	await page.keyboard.press('Escape');
+	await page.waitForTimeout(300);
+	s = await state(page);
+	h.check(!s.crumb && s.titles[0] === 'VR' && (await page.locator('dialog.settings-dialog').isVisible()), 'Esc backs out of the sub-page, Settings stays open');
+	await page.locator('#settings-nav .sn-row', { hasText: 'Touch controls' }).first().click();
+	await page.waitForTimeout(250);
+	await page.locator('[data-touch-tile="jump"]').click();
+	await page.waitForTimeout(300);
+	s = await state(page);
+	h.check(/Touch controls\s*›\s*Jump/.test(s.crumb) && (await page.locator('[id^="touch-tex-upload-released"]').count()) === 1, `a Button looks tile opens its own sub-page ("${s.crumb}")`);
+	await page.locator('.ss-back').click();
+	await page.waitForTimeout(250);
+	s = await state(page);
+	h.check(!s.crumb && (await page.locator('[data-touch-tile]').count()) >= 9, 'the back button returns to the tile grid');
+	await page.locator('#settings-nav .sn-row', { hasText: 'About' }).first().click();
+	await page.waitForTimeout(250);
+	await page.locator('#about-whats-new').click();
+	await page.waitForTimeout(400);
+	h.check((await page.locator('#settings-whats-new details').count()) > 0 && (await page.locator('#whats-new-window').count()) === 0, 'What’s new opens inside Settings (About › What’s new), not as a window on top');
+	await page.locator('.ss-crumb-parent').click();
+	await page.waitForTimeout(250);
+
+	// ---- 5. The search spans everything, shows the path, jumps to the row ----------------------
 	await page.fill('#settings-search', 'dark');
 	await page.waitForTimeout(700);
 	s = await state(page);
 	const shownNav = s.rows.filter((r) => !r.hidden).map((r) => r.label);
 	h.check(s.visibleRows > 0 && s.visibleRows <= 4, 'searching "dark" finds the Theme row (' + s.visibleRows + ' rows)');
-	h.check(shownNav.includes('Interface') && shownNav.length < labels.length, 'the sidebar narrows to the sections that match (' + shownNav.join(',') + ')');
-	h.check(s.rows.every((r) => !r.current), 'no section is marked current while searching');
+	h.check(shownNav.includes('Interface') && shownNav.length < labels.length, 'the menu narrows to the pages that match (' + shownNav.join(',') + ')');
+	h.check(s.rows.every((r) => !r.current), 'no page is marked current while searching');
+	const path = await page.evaluate(() => {
+		const row = [...document.querySelectorAll('#settings-sections .setting-row')].find((r) => /** @type {HTMLElement} */ (r).offsetParent !== null && /Theme/.test(r.querySelector('.sr-name')?.textContent ?? ''));
+		const label = row?.closest('.sec-card-wrap')?.querySelector('[data-section-label]');
+		return label ? getComputedStyle(label, '::before').content + ' ' + label.textContent : '';
+	});
+	h.check(/Interface ›.*Appearance/.test(path), `the match shows its path ("${path.replace(/"/g, '')}")`);
+	await page.locator('#settings-sections .setting-row .sr-name', { hasText: 'Theme' }).first().click();
+	await page.waitForTimeout(800);
+	s = await state(page);
+	const jumped = await page.evaluate(() => {
+		const row = document.querySelector('#row-theme');
+		const main = document.getElementById('settings-main');
+		if (!row || !main) return null;
+		const a = row.getBoundingClientRect();
+		const b = main.getBoundingClientRect();
+		return { inView: a.top >= b.top && a.bottom <= b.bottom, query: /** @type {HTMLInputElement} */ (document.getElementById('settings-search'))?.value };
+	});
+	h.check(s.titles.length === 1 && s.titles[0] === 'Interface' && !!jumped?.inView && jumped.query === '', 'a click on a result jumps to the row on its page, the search cleared');
 	await page.fill('#settings-search', 'snap');
 	await page.waitForTimeout(700);
 	s = await state(page);
-	h.check(s.titles.length >= 2, 'a search shows every matching section at once (' + s.titles.join(',') + ')');
-	const second = s.rows.filter((r) => !r.hidden)[1]?.label;
-	await page.locator('#settings-nav .sn-row', { hasText: second }).first().click();
-	await page.waitForTimeout(400);
-	const inView = await page.evaluate((label) => {
-		const t = [...document.querySelectorAll('#settings-sections h2')].find((x) => (x.textContent || '').trim() === label);
-		const main = document.getElementById('settings-main');
-		if (!t || !main) return false;
-		const a = t.getBoundingClientRect();
-		const b = main.getBoundingClientRect();
-		return a.top >= b.top - 2 && a.top < b.top + 80;
-	}, second);
-	h.check(inView, `a sidebar click during a search scrolls to "${second}"`);
+	h.check(s.titles.length >= 2, 'a search shows every matching page at once (' + s.titles.join(',') + ')');
 	await page.focus('#settings-search');
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(500);
 	s = await state(page);
-	h.check(s.titles.length === 1 && s.titles[0] === 'AI', 'clearing the search goes back to the one section (' + s.titles.join(',') + ')');
+	h.check(s.titles.length === 1, 'Esc clears the search and goes back to one page (' + s.titles.join(',') + ')');
 	h.check(await page.locator('#settings-search').isVisible(), 'and Settings stays open');
 
-	// ---- 5. Screenshots, dark + light --------------------------------------------------------
-	fs.mkdirSync(EVIDENCE, { recursive: true });
-	await page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
-	for (const [theme, file] of [['dark', '03-settings-shell-dark.png'], ['light', '04-settings-shell-light.png']]) {
-		await page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
-		await page.waitForTimeout(400);
-		await page.screenshot({ path: EVIDENCE + '/' + file });
-	}
-	await page.fill('#settings-search', 'grid');
-	await page.waitForTimeout(700);
-	await page.screenshot({ path: EVIDENCE + '/05-settings-search-light.png' });
-	await page.fill('#settings-search', '');
-	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+	// ---- 6. The quiet footer ----------------------------------------------------------------------
+	await page.locator('#settings-nav .sn-row', { hasText: 'Controls' }).first().click();
+	await page.waitForTimeout(250);
+	h.check(((await page.locator('#settings-reset-category').textContent()) || '').trim() === 'Reset Controls to defaults', 'the footer offers "Reset Controls to defaults"');
+	h.check(/Changes save automatically/.test((await page.locator('.settings-foot').textContent()) || ''), 'the footer says changes save automatically');
+	await page.locator('#settings-nav .sn-row', { hasText: 'About' }).first().click();
+	await page.waitForTimeout(250);
+	h.check((await page.locator('#settings-reset-category').count()) === 0, 'About has no reset (it holds no settings)');
+	h.check((await page.locator('#settings-clear-session').count()) === 1 && (await page.locator('#settings-reset-all').count()) === 1, 'Clear saved session + Reset all settings live in About › Danger zone');
+	await page.locator('#settings-done').click();
+	await page.waitForTimeout(300);
+	h.check(!(await page.locator('dialog.settings-dialog').isVisible().catch(() => false)), 'Done closes Settings');
 
-	// ---- 6. A phone: the same list as a chip strip -----------------------------------------
+	// ---- 7. A phone: the category list, then pushed pages ----------------------------------------
 	const P = await h.setupPage(browser, 'P', {
 		context: { viewport: { width: 393, height: 851 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2.75 }
 	});
 	await P.page.evaluate(() => window.__stores.settingsOpen.set(true));
-	await P.page.locator('#settings-nav-chips').waitFor({ timeout: 10000 });
+	await P.page.locator('#settings-home').waitFor({ timeout: 10000 });
 	await P.page.waitForTimeout(400);
 	const phone = await P.page.evaluate(() => ({
 		sidebar: !!document.querySelector('#settings-nav'),
-		chips: document.querySelectorAll('#settings-nav-chips .sn-row').length,
+		rows: [...document.querySelectorAll('#settings-home .sn-row')].map((r) => r.getBoundingClientRect().height),
+		pageShown: [...document.querySelectorAll('#settings-sections .ss-page')].some((p) => /** @type {HTMLElement} */ (p).offsetParent !== null),
+		search: /** @type {HTMLElement | null} */ (document.querySelector('#settings-search'))?.offsetParent !== null,
+		searchFont: parseFloat(getComputedStyle(/** @type {Element} */ (document.querySelector('#settings-search'))).fontSize),
 		overflowX: document.documentElement.scrollWidth > window.innerWidth
 	}));
-	h.check(!phone.sidebar && phone.chips === labels.length, `a phone draws the sections as chips, no sidebar (${phone.chips})`);
+	h.check(!phone.sidebar && phone.rows.length === labels.length && !phone.pageShown, `a phone opens on the category list, no sidebar, no page (${phone.rows.length} rows)`);
+	h.check(phone.rows.every((hgt) => hgt >= 52), 'every category row is at least 52 px tall');
+	h.check(phone.search && phone.searchFont >= 16, `a full-width search with 16 px text (${phone.searchFont}px)`);
 	h.check(!phone.overflowX, 'and the page does not scroll sideways');
-	await P.page.locator('#settings-nav-chips .sn-row', { hasText: 'Scene' }).first().click();
+	await P.page.locator('#settings-home .sn-row', { hasText: 'Scene' }).first().click();
 	await P.page.waitForTimeout(300);
 	s = await state(P.page);
-	h.check(s.titles.length === 1 && s.titles[0] === 'Scene', 'a chip tap shows that section');
-	await P.page.screenshot({ path: EVIDENCE + '/06-settings-phone-dark.png' });
+	h.check(s.keys.length === 1 && s.keys[0] === 'scene' && s.chromeTitle === 'Scene' && /Settings/.test(s.back), `a tap pushes the page: "‹ Settings · Scene" (${s.back} · ${s.chromeTitle})`);
+	h.check(!(await P.page.locator('#settings-sections .ss-page .ss-head').isVisible()), 'the page does not repeat its title in the content');
+	await P.page.locator('.settings-shell .wc-back').click();
+	await P.page.waitForTimeout(300);
+	h.check(await P.page.locator('#settings-home').isVisible(), '‹ Settings pops back to the list');
+	await P.page.locator('#settings-home .sn-row', { hasText: 'VR' }).first().click();
+	await P.page.waitForTimeout(300);
+	await P.page.locator('#vr-remap-open').click();
+	await P.page.waitForTimeout(300);
+	s = await state(P.page);
+	h.check(s.chromeTitle === 'Remap buttons' && /VR/.test(s.back), `a submenu pushes another level: "‹ VR · Remap buttons" (${s.back} · ${s.chromeTitle})`);
+	await P.page.locator('.settings-shell .wc-back').click();
+	await P.page.waitForTimeout(300);
+	s = await state(P.page);
+	h.check(s.chromeTitle === 'VR' && /Settings/.test(s.back), '‹ VR pops back to the VR page');
+	fs.mkdirSync(EVIDENCE, { recursive: true });
+	await P.page.screenshot({ path: EVIDENCE + '/40-shell-phone-vr.png' });
 
 	await h.finish(browser);
 });

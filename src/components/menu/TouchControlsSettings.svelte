@@ -1,23 +1,30 @@
-<script context="module">
-	/** 36 I4: what the settings search should also match for this section (labels are
-	 * searched already; these are the words people type for it). */
+<script module>
+	/** 36 I4: what the settings search should also match for this section (labels are searched
+	 * already; these are the words people type for it). */
 	export const keywords = ['touch', 'mobile', 'phone', 'tablet', 'buttons', 'joystick', 'stick', 'jump', 'fire', 'haptic', 'vibrate', 'layout', 'on-screen'];
 </script>
 
 <script>
 	// 36 U8: SETTINGS ▸ TOUCH CONTROLS — its own section file (the settings hot spot rule:
-	// Settings.svelte gains one import and one line). Legacy mode on purpose, like every
-	// row it sits beside: SettingRow takes `slot="control"`.
+	// Settings.svelte gains one import and one line). Every value here is a LOCAL per-device pref
+	// (touchActions: safeStorage), the gamepadPrefs family — never replicated, never saved into a scene.
 	//
-	// Every value here is a LOCAL per-device pref (touchActions: safeStorage), the
-	// gamepadPrefs family — never replicated, never saved into a scene.
-	import { Toggle } from 'flowbite-svelte';
-	// 36 B14: a section of its own, so it registers with the Settings sidebar like the rest
-	import AccordionItem from './settings/SettingsSection.svelte';
+	// 37-settings (R21, docs/settings-inventory.md §3.4): on the redesign kit. "Button looks" is a
+	// 3-column TILE grid (icon, name, Default / Custom); a tile opens that button's SUB-PAGE in the
+	// content area ("Touch controls › Jump": released + pressed image, tint, size, the default look)
+	// instead of ten controls crammed into one row. Same stores, same keys.
+	import { getContext } from 'svelte';
 	import { get } from 'svelte/store';
-	import SettingRow from './SettingRow.svelte';
+	import AccordionItem from './settings/SettingsSection.svelte';
+	import Section from '../ui/Section.svelte';
+	import SettingRow from '../ui/SettingRow.svelte';
+	import Toggle from '../ui/Toggle.svelte';
+	import Segmented from '../ui/Segmented.svelte';
+	import Slider from '../ui/Slider.svelte';
+	import Button from '../ui/Button.svelte';
 	import TouchActionButton from '../play/TouchActionButton.svelte';
 	import { settingsOpen, settingsSection, showToast } from '../../stores/appStore.js';
+	import { NAV_CONTEXT } from '$lib/settingsNav';
 	import { explorerItems, itemBlob } from '$lib/explorer';
 	import { touchLookSpeed, setTouchLookSpeed, TOUCH_LOOK_SPEED_RANGE } from '$lib/touchControls';
 	import {
@@ -37,16 +44,20 @@
 	import { gameId } from '$lib/gameSettings';
 
 	/** while the settings search has a query, the section is open so its rows can match */
-	export let searching = false;
+	let { searching = false } = $props();
 
-	let open = false;
+	const nav = /** @type {any} */ (getContext(NAV_CONTEXT));
+	const sub = nav?.sub;
+
+	let open = $state(false);
 	/** the expansion before a search opened the section, restored when it clears
 	 * @type {boolean | null} */
 	let beforeSearch = null;
-	$: if ($settingsOpen) open = $settingsSection === 'touch';
-	$: syncSearch(searching);
-	/** @param {boolean} on */
-	function syncSearch(on) {
+	$effect(() => {
+		if ($settingsOpen) open = $settingsSection === 'touch';
+	});
+	$effect(() => {
+		const on = searching;
 		if (on && beforeSearch === null) {
 			beforeSearch = open;
 			open = true;
@@ -54,7 +65,7 @@
 			open = beforeSearch;
 			beforeSearch = null;
 		}
-	}
+	});
 
 	/** the built-in actions, then whatever the scene on screen adds (a module's own)
 	 * @param {import('$lib/touchActions').TouchControlsSpec} spec
@@ -69,9 +80,16 @@
 		for (const a of spec.actions) if (!BUILTIN_ACTIONS[a.id]) list.push(a);
 		return list;
 	}
-	$: actions = actionList($touchSpec);
+	const actions = $derived(actionList($touchSpec));
+	/** the action whose sub-page is open ("touch:<id>") */
+	const editing = $derived($sub?.id?.startsWith('touch:') ? (actions.find((a) => 'touch:' + a.id === $sub.id) ?? null) : null);
+	const imageItems = $derived($explorerItems.filter((it) => it.kind === 'image' || /\.svg$/i.test(it.name ?? '')));
 
-	$: imageItems = $explorerItems.filter((it) => it.kind === 'image' || /\.svg$/i.test(it.name ?? ''));
+	const VISIBILITY = [
+		{ value: 'auto', label: 'Auto' },
+		{ value: 'always', label: 'Always' },
+		{ value: 'never', label: 'Never' }
+	];
 
 	function editLayout() {
 		settingsOpen.set(false);
@@ -135,182 +153,203 @@
 
 	/** @type {Record<string, HTMLInputElement>} */
 	const fileInputs = {};
+	/** @param {string} id */
+	const safeId = (id) => id.replace(/[^\w-]/g, '_');
 </script>
 
 <AccordionItem bind:open>
 	{#snippet header()}<span id="settings-touch-header" data-tour="settings-touch">Touch controls</span>{/snippet}
-	<p class="ui-section-label">On-screen controls</p>
-	<SettingRow name="Show touch controls">
-		<svelte:fragment slot="control">
-			<span class="tp-seg" role="group" aria-label="Show touch controls">
-				{#each [['auto', 'Auto'], ['always', 'Always'], ['never', 'Never']] as [value, label] (value)}
-					<button
-						type="button"
-						id={'touch-visibility-' + value}
-						class="tp-seg-btn"
-						aria-pressed={$touchPrefs.visibility === value}
-						on:click={() => setTouchPrefs({ visibility: /** @type {any} */ (value) })}>{label}</button
-					>
-				{/each}
-			</span>
-		</svelte:fragment>
-		<span>Auto shows the stick and action buttons in Play on a touch screen (or once you touch the screen). Always forces them on, Never hides them<span class="sr-only"> — {keywords.join(', ')}</span></span>
-	</SettingRow>
-	<SettingRow name="Show in edit">
-		<svelte:fragment slot="control">
-			<Toggle id="touch-show-in-edit" checked={$touchPrefs.showInEdit} onchange={(e) => setTouchPrefs({ showInEdit: e.currentTarget.checked })} />
-		</svelte:fragment>
-		<span>Also draw the action buttons while editing (they press keys there too). The stick and look only exist in Play</span>
-	</SettingRow>
-	<SettingRow name="Haptic tick">
-		<svelte:fragment slot="control">
-			<Toggle id="touch-haptics" checked={$touchPrefs.haptics} onchange={(e) => setTouchPrefs({ haptics: e.currentTarget.checked })} />
-		</svelte:fragment>
-		<span>A short vibration when a button is pressed (phones that support it)</span>
-	</SettingRow>
-	<SettingRow name="Look speed">
-		<svelte:fragment slot="control">
-			<input
-				id="touch-look-speed"
-				type="range"
-				style="width: 100%"
-				min={TOUCH_LOOK_SPEED_RANGE.min}
-				max={TOUCH_LOOK_SPEED_RANGE.max}
-				step="0.05"
-				value={$touchLookSpeed}
-				on:input={(e) => setTouchLookSpeed(Number(e.currentTarget.value))}
-				aria-label="Touch look speed"
-			/>
-		</svelte:fragment>
-		<span>How far a drag on the right half turns the view ({$touchLookSpeed.toFixed(2)}×)</span>
-	</SettingRow>
-	<SettingRow name="Layout">
-		<svelte:fragment slot="control">
-			<span class="sr-stack">
-				<button id="touch-edit-layout" data-tour="touch-edit-layout" class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={editLayout}>Edit layout</button>
-				<button id="touch-reset-layout" class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={resetLayouts}>Reset</button>
-			</span>
-		</svelte:fragment>
-		<span>Drag, resize and fade the stick and every button — for this game or all games, saved on this device. Also in the pause menu during a game</span>
-	</SettingRow>
-	<p class="ui-section-label">Button looks</p>
-	{#each actions as action (action.id)}
-		{@const tex = $touchTextures[action.id] ?? null}
-		<SettingRow name={action.label} noControl={true}>
-			<div class="tcs-row" data-touch-texture={action.id}>
-				<span class="tcs-preview" title="Released">
-					<TouchActionButton {action} size={44} texture={tex} />
-				</span>
-				<span class="tcs-preview" title="Pressed">
-					<TouchActionButton {action} size={44} texture={tex} pressed={true} />
-				</span>
-				{#each [['released', 'Released'], ['pressed', 'Pressed']] as [state, label] (state)}
-					<span class="tcs-state">
-						<span class="tcs-label">{label}</span>
-						<button
-							type="button"
-							class="tcs-btn"
-							id={'touch-tex-upload-' + state + '-' + action.id.replace(/[^\w-]/g, '_')}
-							on:click={() => fileInputs[action.id + state]?.click()}>Upload</button
-						>
+	<div class="settings-page-body" data-keywords={keywords.join(' ')}>
+		{#if editing}
+			{@const tex = $touchTextures[editing.id] ?? null}
+			<Section variant="card" label="Preview">
+				<div class="tcs-previews" data-touch-texture={editing.id}>
+					<span class="tcs-preview"><TouchActionButton action={editing} size={56} texture={tex} /><span class="tcs-cap">Released</span></span>
+					<span class="tcs-preview"><TouchActionButton action={editing} size={56} texture={tex} pressed={true} /><span class="tcs-cap">Pressed</span></span>
+				</div>
+			</Section>
+			<Section variant="card" label="Images">
+				{#each [['released', 'Released image'], ['pressed', 'Pressed image']] as [state, label] (state)}
+					<SettingRow id={'row-touch-' + state} {label} description="A PNG or SVG, up to 160 KB." wide>
+						<Button size="sm" variant="outline" id={'touch-tex-upload-' + state + '-' + safeId(editing.id)} onclick={() => fileInputs[editing.id + state]?.click()}>Upload…</Button>
 						<input
 							type="file"
 							accept="image/png,image/svg+xml,.png,.svg"
 							style="display: none"
-							bind:this={fileInputs[action.id + state]}
-							data-touch-tex-file={action.id + ':' + state}
-							on:change={(e) => onUpload(action.id, state, e)}
+							bind:this={fileInputs[editing.id + state]}
+							data-touch-tex-file={editing.id + ':' + state}
+							onchange={(e) => onUpload(editing.id, state, e)}
 						/>
-						<select class="tcs-select" aria-label={'Pick a ' + label.toLowerCase() + ' image from Explorer'} on:change={(e) => onExplorerPick(action.id, state, e)}>
-							<option value="">Explorer…</option>
+						<select class="tcs-select" aria-label={'Pick a ' + label.toLowerCase() + ' from Explorer'} onchange={(e) => onExplorerPick(editing.id, state, e)}>
+							<option value="">From Explorer…</option>
 							{#each imageItems as item (item.id)}
 								<option value={item.id}>{item.name}</option>
 							{/each}
 						</select>
 						{#if texHas(tex, state)}
-							<button type="button" class="tcs-btn" aria-label={'Clear the ' + label.toLowerCase() + ' image'} on:click={() => setTouchTexture(action.id, { [asState(state)]: undefined })}>✕</button>
+							<Button size="sm" variant="ghost" label={'Clear the ' + label.toLowerCase()} onclick={() => setTouchTexture(editing.id, { [asState(state)]: undefined })}>Clear</Button>
 						{/if}
-					</span>
+					</SettingRow>
 				{/each}
-				<label class="tcs-state">
-					<span class="tcs-label">Tint</span>
+			</Section>
+			<Section variant="card" label="Look">
+				<SettingRow id="row-touch-tint" label="Tint" description="Colours the button’s icon or image.">
 					<input
 						type="color"
 						class="tcs-color"
 						value={tex?.tint ?? '#ffffff'}
-						on:change={(e) => setTouchTexture(action.id, { tint: e.currentTarget.value })}
-						aria-label={'Tint for ' + action.label}
+						onchange={(e) => setTouchTexture(editing.id, { tint: e.currentTarget.value })}
+						aria-label={'Tint for ' + editing.label}
 					/>
-				</label>
-				<label class="tcs-state">
-					<span class="tcs-label">Size</span>
-					<input
-						type="range"
-						class="tcs-range"
+				</SettingRow>
+				<SettingRow id="row-touch-size" label="Size" description="The icon’s size inside the button.">
+					<Slider
+						id="touch-tex-size"
+						label={'Icon size for ' + editing.label}
 						min={TEXTURE_SCALE_RANGE.min}
 						max={TEXTURE_SCALE_RANGE.max}
-						step="0.05"
+						step={0.05}
 						value={tex?.scale ?? 1}
-						on:input={(e) => setTouchTexture(action.id, { scale: Number(e.currentTarget.value) })}
-						aria-label={'Icon size for ' + action.label}
+						format={(v) => v.toFixed(2) + '×'}
+						onchange={(v) => setTouchTexture(editing.id, { scale: v })}
 					/>
-				</label>
+				</SettingRow>
 				{#if tex}
-					<button type="button" class="tcs-btn" on:click={() => clearTouchTexture(action.id)}>Default look</button>
+					<SettingRow id="row-touch-default" label="Use the default look" description="Drops the images, tint and size of this button.">
+						<Button size="sm" variant="outline" onclick={() => clearTouchTexture(editing.id)}>Default look</Button>
+					</SettingRow>
 				{/if}
-			</div>
-		</SettingRow>
-	{/each}
+			</Section>
+		{:else}
+			<Section variant="card" label="On-screen controls" badge="This device">
+				<SettingRow id="row-touch-visibility" label="Show touch controls" description="Auto shows them in Play on a touch screen.">
+					<Segmented id="touch-visibility" label="Show touch controls" options={VISIBILITY} value={$touchPrefs.visibility} onchange={(v) => setTouchPrefs({ visibility: /** @type {any} */ (v) })} />
+				</SettingRow>
+				<SettingRow id="row-touch-in-edit" label="Show in edit" description="Also draw the action buttons while editing.">
+					<Toggle id="touch-show-in-edit" label="Show in edit" checked={$touchPrefs.showInEdit} onchange={(on) => setTouchPrefs({ showInEdit: on })} />
+				</SettingRow>
+				<SettingRow id="row-touch-haptics" label="Haptic tick" description="A short vibration on each press, where supported." keywords="vibrate vibration haptics">
+					<Toggle id="touch-haptics" label="Haptic tick" checked={$touchPrefs.haptics} onchange={(on) => setTouchPrefs({ haptics: on })} />
+				</SettingRow>
+				<SettingRow id="row-touch-look" label="Look speed" description="How far a drag on the right half turns the view.">
+					<Slider
+						id="touch-look-speed"
+						label="Touch look speed"
+						min={TOUCH_LOOK_SPEED_RANGE.min}
+						max={TOUCH_LOOK_SPEED_RANGE.max}
+						step={0.05}
+						value={$touchLookSpeed}
+						format={(v) => v.toFixed(2) + '×'}
+						onchange={(v) => setTouchLookSpeed(v)}
+					/>
+				</SettingRow>
+				<SettingRow id="row-touch-layout" label="Layout" description="Move, resize and fade the stick and buttons, per game or for all." wide>
+					<Button id="touch-reset-layout" size="sm" variant="outline" onclick={resetLayouts}>Reset</Button>
+					<Button id="touch-edit-layout" data-tour="touch-edit-layout" size="sm" variant="outline" onclick={editLayout}>Edit layout</Button>
+				</SettingRow>
+			</Section>
+			<Section variant="card" label="Button looks">
+				<SettingRow id="row-touch-looks" label="Button looks" description="Pick one to change its images, tint and size." keywords="images icons textures look">
+					{#snippet extra()}
+						<div class="tcs-grid">
+							{#each actions as action (action.id)}
+								{@const tex = $touchTextures[action.id] ?? null}
+								<button
+									type="button"
+									class="tcs-tile"
+									data-touch-tile={action.id}
+									onclick={() => nav.openSub('touch:' + action.id, action.label, 'touchcontrols')}
+								>
+									<TouchActionButton {action} size={40} texture={tex} />
+									<span class="tcs-tile-name">{action.label}</span>
+									<span class="tcs-tile-state" class:tcs-custom={!!tex}>{tex ? 'Custom' : 'Default'}</span>
+								</button>
+							{/each}
+						</div>
+					{/snippet}
+				</SettingRow>
+			</Section>
+		{/if}
+	</div>
 </AccordionItem>
 
 <style>
-	.tcs-row {
+	.settings-page-body {
+		display: contents;
+	}
+	.tcs-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 8px;
+	}
+	.tcs-tile {
 		display: flex;
-		flex-wrap: wrap;
+		flex-direction: column;
 		align-items: center;
-		gap: 6px 10px;
+		gap: 6px;
+		min-height: 44px;
+		padding: 12px 6px 10px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card, 10px);
+		background: var(--surface-inset);
+		color: var(--text);
+		font: inherit;
+		cursor: pointer;
+	}
+	.tcs-tile:hover {
+		border-color: var(--border-strong);
+		background: var(--surface-hover);
+	}
+	.tcs-tile-name {
+		font-size: var(--fs-body);
+		font-weight: 500;
+	}
+	.tcs-tile-state {
+		font-size: var(--fs-badge, 11px);
+		color: var(--text-faint);
+	}
+	.tcs-custom {
+		color: var(--accent-text);
+	}
+	.tcs-previews {
+		display: flex;
+		gap: 28px;
+		padding: 16px 18px;
 	}
 	.tcs-preview {
 		display: inline-flex;
-		padding: 2px;
-		border-radius: 9999px;
-		background: rgb(var(--surface-deep-rgb, 0 0 0) / 0.5);
-	}
-	.tcs-state {
-		display: inline-flex;
+		flex-direction: column;
 		align-items: center;
-		gap: 4px;
+		gap: 6px;
 	}
-	.tcs-label {
-		font-size: 11px;
-		color: var(--muted, #9ca3af);
-	}
-	.tcs-btn {
-		padding: 1px 6px;
-		font-size: 11px;
-		border-radius: 4px;
-		border: 1px solid var(--border, #4b5563);
-		background: var(--surface-2, #374151);
-		color: var(--text, #f3f4f6);
+	.tcs-cap {
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
 	}
 	.tcs-select {
-		max-width: 110px;
-		padding: 1px 4px;
-		font-size: 11px;
-		border-radius: 4px;
-		border: 1px solid var(--border, #4b5563);
-		background: var(--field, #111827);
-		color: var(--text, #f3f4f6);
+		max-width: 160px;
+		height: var(--control-h-sm);
+		padding: 0 8px;
+		border: 1px solid var(--border-input);
+		border-radius: var(--radius-button, 8px);
+		background: var(--surface-inset);
+		color: var(--text);
+		font: inherit;
+		font-size: var(--fs-desc);
 	}
 	.tcs-color {
-		width: 28px;
-		height: 20px;
+		width: 40px;
+		height: 28px;
 		padding: 0;
-		border: 1px solid var(--border, #4b5563);
-		border-radius: 4px;
+		border: 1px solid var(--border-input);
+		border-radius: 6px;
 		background: transparent;
+		cursor: pointer;
 	}
-	.tcs-range {
-		width: 70px;
+	@media (max-width: 639.98px) {
+		.tcs-select {
+			font-size: 16px;
+			height: 44px;
+		}
 	}
 </style>

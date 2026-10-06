@@ -25,7 +25,7 @@ h.run(async () => {
 	// in the DOM and the click threw on null.
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
-	await A.page.getByText('Interface', { exact: true }).first().click();
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
 	await A.page.waitForTimeout(300);
 	const present = await A.page.evaluate(() => !!document.querySelector('#reset-windows'));
 	h.check(present, 'Settings has a Reset window positions button');

@@ -5,7 +5,7 @@
 const h = require('./helpers.cjs');
 const path = require('node:path');
 
-const SHOTS = process.env.EVIDENCE_DIR || '/home/deck/.code/lanes-30/after-36/36-ui-polish';
+const SHOTS = process.env.EVIDENCE_DIR || '/home/deck/.code/lanes-30/after-37/37-settings';
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
@@ -19,7 +19,9 @@ h.run(async () => {
 		page.evaluate(() =>
 			[...document.querySelectorAll('.setting-row')]
 				.filter((r) => /** @type {HTMLElement} */ (r).offsetParent !== null)
-				.map((r) => (r.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 50))
+				// 37-settings: a kit row's label and description are separate blocks — read the label
+				// first so "Theme" is not glued to the description's first word
+				.map((r) => ((r.querySelector('.sr-name')?.textContent || '') + ' ' + (r.textContent || '')).replace(/\s+/g, ' ').trim().slice(0, 50))
 		);
 	const search = async (q) => {
 		await page.fill('#settings-search', q);
@@ -52,7 +54,7 @@ h.run(async () => {
 	for (const word of ['headset', 'xr']) {
 		await search(word);
 		const r = await page.evaluate((word) => {
-			const vr = [...document.querySelectorAll('h2')].find((x) => /^\s*VR\s*$/.test(x.textContent || ''))?.nextElementSibling;
+			const vr = document.querySelector('#settings-sections .ss-page[data-section="vr"]');
 			const rowsAll = [...document.querySelectorAll('.setting-row')];
 			const saying = rowsAll.filter((r) => (r.textContent || '').toLowerCase().includes(word));
 			const vis = rowsAll.filter((r) => /** @type {HTMLElement} */ (r).offsetParent !== null);
@@ -86,7 +88,7 @@ h.run(async () => {
 	await page.evaluate(() => {
 		// stand-in for e.g. 36-preload's LoadingSettings: one row under a root with data-keywords,
 		// mounted inside an existing section's body (what a one-line mount in Settings.svelte does)
-		const body = [...document.querySelectorAll('h2')].find((x) => /Scene/.test(x.textContent || ''))?.nextElementSibling;
+		const body = document.querySelector('#settings-sections .ss-page[data-section="scene"] .ss-body');
 		const root = document.createElement('div');
 		root.id = 'zz-lane-section';
 		root.setAttribute('data-keywords', 'zzquokka placeholder stuck');
@@ -100,7 +102,12 @@ h.run(async () => {
 	// 36-int-121: the REAL lane sections carry their keywords on their roots (Loading: "hologram")
 	await search('hologram');
 	rows = await visibleRows();
-	h.check(rows.length > 0 && rows.every((r) => /placeholder|grid|stuck|loading/i.test(r)), `the real Loading section is found by its keywords (${JSON.stringify(rows)})`);
+	const inLoading = await page.evaluate(() =>
+		[...document.querySelectorAll('#settings-sections .setting-row')]
+			.filter((r) => /** @type {HTMLElement} */ (r).offsetParent !== null)
+			.every((r) => /Loading placeholders/.test(r.closest('.sec-card-wrap')?.querySelector('[data-section-label]')?.textContent ?? ''))
+	);
+	h.check(rows.length > 0 && inLoading, `the real Loading section is found by its keywords, its rows only (${JSON.stringify(rows.map((r) => r.slice(0, 24)))})`);
 	// 36-int-122: the 1.22 sections — Water (Settings ▸ Water quality), Tours, VR rows by their own words
 	for (const [q, re, what] of [
 		['caustics', /Water quality/, 'Water'],

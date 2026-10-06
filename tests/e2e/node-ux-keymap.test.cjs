@@ -97,7 +97,9 @@ h.run(async () => {
 
 	// --- 5. Reset all ------------------------------------------------------------------
 	await openShortcuts(p);
-	await p.locator('#shortcut-reset-all').click();
+	// 37-settings: "Reset all" is the footer's "Reset Shortcuts to defaults" now, and it asks first
+	await p.locator('#settings-reset-category').click();
+	await p.locator('#confirm-dialog-ok').click();
 	await p.waitForTimeout(300);
 	const reset = await p.evaluate(() => ({
 		extrude: window.__stores.shortcutsRegistry.bindingOf('mesh.extrude'),

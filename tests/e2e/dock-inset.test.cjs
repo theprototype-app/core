@@ -82,13 +82,14 @@ const setFloating = async (page, on) => {
 const setFloatingViaSettings = async (page, on) => {
 	await page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await page.waitForTimeout(500);
-	await page.getByText('Interface', { exact: true }).first().click();
+	await page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
 	await page.waitForTimeout(400);
-	const row = page.locator('.setting-row').filter({ hasText: 'Floating toolbar' }).first();
-	const toggle = row.locator('input[type="checkbox"]');
+	// 37-settings: the row reads "Lift the toolbar above docked panels" (old label kept as a keyword); a kit Toggle
+	const row = page.locator('.setting-row').filter({ hasText: 'Lift the toolbar above docked panels' }).first();
+	const toggle = row.locator('button[aria-pressed]');
 	// counted BEFORE the modal closes — a locator counted afterwards finds nothing,
 	// which reads as "the row does not exist" rather than "the row has gone away"
-	const found = { rows: await row.count(), toggles: await toggle.count(), was: await toggle.isChecked() };
+	const found = { rows: await row.count(), toggles: await toggle.count(), was: (await toggle.getAttribute('aria-pressed')) === 'true' };
 	if (found.was !== on) await toggle.evaluate((el) => el.click());
 	await page.waitForTimeout(400);
 	await page.evaluate(() => window.__stores.settingsOpen.set(false));

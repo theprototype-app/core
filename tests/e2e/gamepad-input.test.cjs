@@ -547,14 +547,19 @@ h.run(async () => {
 	h.check(rows.sensitivity === '1', `and the sensitivity field (${rows.sensitivity})`);
 
 	// drive the REAL field, not the store: a pref nobody can reach is not a pref
-	await page.locator('#gamepad-deadzone').fill('0.3');
-	await page.locator('#gamepad-deadzone').dispatchEvent('change');
+	// 37-settings: the deadzone is a slider with its readout (a ranged number, Decision F)
+	const slide = (v) =>
+		page.evaluate((v) => {
+			const el = /** @type {HTMLInputElement} */ (document.querySelector('#gamepad-deadzone'));
+			el.value = v;
+			el.dispatchEvent(new Event('input', { bubbles: true }));
+		}, v);
+	await slide('0.3');
 	await page.waitForTimeout(300);
 	const typed = (await prefs()).deadzone;
 	h.check(typed === 0.3, `typing in the field writes the pref (${typed})`);
 	// out of range is CLAMPED at the store boundary, not trusted
-	await page.locator('#gamepad-deadzone').fill('9');
-	await page.locator('#gamepad-deadzone').dispatchEvent('change');
+	await slide('9'); // the range itself stops at its max, and the store clamps as before
 	await page.waitForTimeout(300);
 	const clamped = (await prefs()).deadzone;
 	h.check(clamped === 0.4, `and a silly value is clamped rather than handed to the camera maths (${clamped})`);

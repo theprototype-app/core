@@ -8,6 +8,12 @@
 // false). The Quest report this answers: "In [the dungeon] I can go through walls,
 // teleport, I want to be able to do this only in edit mode and fly only in edit mode."
 //
+// 37 R24 (user, 2026-10-06): FLYING IS OPT-IN in Play too — desktop and touch included, not only
+// VR. A game flies only when it says so (`play.locomotion.fly`, a module publishing it, a module
+// that un-grounds play — Dungeon Realms' disableFlight rule — or a Character Controller in fly
+// mode), and a scene's `play.locomotion.noFly` removes the option for everything. See
+// playSettings.flyDecision. Editor free-fly is unaffected.
+//
 // 31 K1 adds `worldGrab`: in Interact/Play the grips move/rotate/SCALE the world exactly
 // like Edit's world gestures, whenever a grip does not start on something a player may hold
 // (a grip on a grabbable body still takes it). "Entangle game does not allow me to scale
@@ -41,15 +47,17 @@ export function locomotionPolicy(mode, locomotion) {
  * `play.locomotion` at a store boundary: only the typed booleans survive (`teleport`, `fly`,
  * 31 K1's `worldGrab`), and an empty block is ABSENT (so a scene that never used it saves
  * byte-identically). `play.bounds` is a SIBLING (teleportRules.normalizeBounds).
- * @param {any} raw @returns {{teleport?: boolean, fly?: boolean, worldGrab?: boolean} | null}
+ * @param {any} raw @returns {{teleport?: boolean, fly?: boolean, worldGrab?: boolean, noFly?: boolean} | null}
  */
 export function normalizeLocomotion(raw) {
 	if (!raw || typeof raw !== 'object') return null;
-	/** @type {{teleport?: boolean, fly?: boolean, worldGrab?: boolean}} */
+	/** @type {{teleport?: boolean, fly?: boolean, worldGrab?: boolean, noFly?: boolean}} */
 	const out = {};
 	if (typeof raw.teleport === 'boolean') out.teleport = raw.teleport;
 	if (typeof raw.fly === 'boolean') out.fly = raw.fly;
 	if (typeof raw.worldGrab === 'boolean') out.worldGrab = raw.worldGrab;
+	// 37 R24: a SCENE may remove flying outright — no game module or node can turn it back on
+	if (raw.noFly === true) out.noFly = true;
 	return Object.keys(out).length ? out : null;
 }
 
@@ -121,4 +129,22 @@ export function vrSpawnOffsets(head, headYaw, headHeight, spawn) {
 		z: head.z - spawn.position[2]
 	};
 	return { turn, move };
+}
+
+/**
+ * 37 R24: may players fly in Interact/Play? One pure rule every consumer (desktop Play, the touch
+ * buttons, VR Interact locomotion) reads through resolvePlaySettings.
+ *   removed   the scene's `noFly` — nothing turns flying back on
+ *   pinned    an explicit `grounded: true` (a publisher's wins over the scene's) — kept off
+ *   wants     `fly: true` (scene / publisher), a publisher's explicit `grounded: false` (the game
+ *             un-grounded play on purpose), or a Character Controller node in fly mode
+ * The scene's own `grounded: false` is the stored DEFAULT and never asks for flight.
+ * @param {{removed?: boolean, pinned?: boolean, flyFlag?: boolean, publisherUngrounded?: boolean, controllerFlies?: boolean}} s
+ * @returns {{fly: boolean, reason: 'removed' | 'pinned' | 'allowed' | 'off'}}
+ */
+export function flyDecision({ removed = false, pinned = false, flyFlag = false, publisherUngrounded = false, controllerFlies = false } = {}) {
+	if (removed) return { fly: false, reason: 'removed' };
+	if (pinned) return { fly: false, reason: 'pinned' };
+	if (flyFlag || publisherUngrounded || controllerFlies) return { fly: true, reason: 'allowed' };
+	return { fly: false, reason: 'off' };
 }

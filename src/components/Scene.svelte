@@ -62,6 +62,8 @@
 	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
 	let knifeFrom: number[] | null = null;
 	import { peerScenes } from '$lib/peerScenes';
+	// 37 R23/R22: presence extras on the camera stream (a walker's feet, the knocked-off idle)
+	import { localFeet, localKnockedOut, tickIdle } from '$lib/avatars/avatarState';
 	import { initVRControls, updateVRControls, raycastMenu, radialStickSelection, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuids, hapticKnock, hapticPulse, onVRSessionStart } from '$lib/vrControls';
 	// 30b (vr-play): the game in your hands — hover/press haptics (P1), the sweep (P4)
 	import { startVrGameInput, stopVrGameInput } from '$lib/vrGameInput';
@@ -229,6 +231,11 @@
 	const camContentPos = new THREE.Vector3();
 	const camContentQuat = new THREE.Quaternion();
 	const camContentEuler = new THREE.Euler();
+	// 37 R23/R22: the camera message's optional presence extras (`feet` from a walker; the
+	// knocked-off idle flag) and the last ones SENT — a change re-publishes even standing still
+	const camFeetPoint = new THREE.Vector3();
+	const camFeetQuat = new THREE.Quaternion();
+	let lastCameraExtras = '';
 
 	function readControllerPose(index) {
 		const controller = renderer.xr.getController(index);
@@ -376,9 +383,21 @@
 			// world-grab repositions you for peers; no-op when the rig is unbent, so
 			// desktop + normal VR stay unchanged. Detect movement in the SAME frame,
 			// else a grab (which leaves camera.position untouched) never sends.
-			camContentPos.copy(camera.current.position);
-			camContentQuat.copy(camera.current.quaternion);
+			// 37 R23: the WORLD pose. Play mode's camera lives in a group at y = 0.9 (Player.svelte),
+			// so its local position put every walking player 0.9 m into the floor on every peer.
+			camera.current.updateWorldMatrix(true, false);
+			camera.current.matrixWorld.decompose(camContentPos, camContentQuat, camFeetPoint);
+			const feetWorld = localFeet();
+			const camExtras: Record<string, number> = {};
+			if (feetWorld !== null) {
+				camFeetPoint.set(camContentPos.x, feetWorld, camContentPos.z);
+				worldToContentPose($worldRig, camFeetPoint, camFeetQuat.identity());
+				camExtras.feet = Math.round(camFeetPoint.y * 1000) / 1000;
+			}
+			tickIdle(camContentPos.toArray(), camContentQuat.toArray(), performance.now());
+			if (localKnockedOut()) camExtras.knocked = 1;
 			worldToContentPose($worldRig, camContentPos, camContentQuat);
+			const camExtrasKey = JSON.stringify(camExtras);
 			// 27-E (audit H7): the camera stream is RATE-GATED now. It used to send on every
 			// frame the camera moved past a threshold — in VR that threshold is 0.0001 m, so
 			// at 90 Hz it is a message per frame, and at N=10 each peer both sends and
@@ -389,11 +408,13 @@
 			const camGapMs = ($isVRMode ? 33 : 50) * (presenceSlow ? 2 : 1);
 			const nowMs = performance.now();
 			if ((camContentPos.distanceTo(lastCameraPosition) > ($isVRMode ? 0.0001 : 0.01) ||
-				camContentQuat.angleTo(lastCameraQuaternion) > THREE.MathUtils.degToRad(1)) &&
+				camContentQuat.angleTo(lastCameraQuaternion) > THREE.MathUtils.degToRad(1) ||
+				camExtrasKey !== lastCameraExtras) &&
 				nowMs - lastCameraSendAt >= camGapMs) {
 				lastCameraSendAt = nowMs;
 				camContentEuler.setFromQuaternion(camContentQuat);
-				$peers.send({ type: 'camera', peerId: $peers.peer.id, position: camContentPos.toArray(), rotation: [camContentEuler.x, camContentEuler.y, camContentEuler.z] });
+				$peers.send({ type: 'camera', peerId: $peers.peer.id, position: camContentPos.toArray(), rotation: [camContentEuler.x, camContentEuler.y, camContentEuler.z], ...camExtras });
+				lastCameraExtras = camExtrasKey;
 				lastCameraPosition.copy(camContentPos);
 				lastCameraQuaternion.copy(camContentQuat);
 			}

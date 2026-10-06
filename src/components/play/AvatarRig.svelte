@@ -10,6 +10,7 @@
 	import { RiggedAvatar, lookOf } from '$lib/avatars/riggedAvatar'
 	import { avatarIkPeers, avatarInstances, peersAsClassic } from '$lib/avatars/avatarState'
 	import { feetBelowHead } from '$lib/avatars/catalog'
+	import { DizzyFx } from '$lib/avatars/dizzy'
 
 	// Builds a peer's character from their replicated avatar config (userdata
 	// slot 5: { character, head, outfit, body, hat, face, shape, showLabel }).
@@ -71,6 +72,60 @@
 		faceTexture = null
 	}
 
+	// 37 R22: the classic floating head's knocked-off idle — the same stars + star eyes as the rigged
+	// body, swaying an INNER group (the root is posed by every camera message, so it cannot carry it)
+	const classicDizzy = new DizzyFx()
+	let swayGroup: any = null
+	const CLASSIC_FACE: Record<string, { z: number; y: number }> = {
+		sphere: { z: 0.6, y: 0.1 },
+		box: { z: 0.52, y: 0.1 },
+		capsule: { z: 0.47, y: 0.12 },
+		cone: { z: 0.33, y: 0 }
+	}
+	const classicEyes = [new THREE.Vector3(), new THREE.Vector3()]
+	const photoEyes = [new THREE.Vector3(-0.18, 0.12, 0.02), new THREE.Vector3(0.18, 0.12, 0.02)]
+	const classicHead = new THREE.Matrix4()
+	const classicCardFrame = new THREE.Matrix4()
+	const classicTurn = new THREE.Quaternion()
+	const classicRoll = new THREE.Quaternion()
+	const classicPos = new THREE.Vector3()
+	const viewerLocal = new THREE.Vector3()
+	const zAxis = new THREE.Vector3(0, 0, 1)
+	const yAxis = new THREE.Vector3(0, 1, 0)
+	onDestroy(() => classicDizzy.dispose())
+	function tickClassicDizzy(dt: number) {
+		if (!root) return
+		if (classicDizzy.mesh.parent !== root) root.add(classicDizzy.mesh)
+		const on = !look && !preview && !!root.userData?.knocked
+		if (classicDizzy.step(on, dt) <= 0) {
+			if (swayGroup) {
+				swayGroup.position.set(0, 0, 0)
+				swayGroup.rotation.set(0, 0, 0)
+			}
+			return
+		}
+		const sw = classicDizzy.sway()
+		if (swayGroup) {
+			swayGroup.position.set(sw.x, sw.y, 0)
+			swayGroup.rotation.set(0, 0, sw.roll)
+		}
+		// the head's frame: the camera looks down -Z, so turn it to face out of +Z like a rigged head
+		classicTurn.setFromAxisAngle(yAxis, Math.PI).multiply(classicRoll.setFromAxisAngle(zAxis, -sw.roll))
+		classicHead.compose(classicPos.set(sw.x, sw.y, 0), classicTurn, new THREE.Vector3(1, 1, 1))
+		const f = CLASSIC_FACE[config.shape] ?? CLASSIC_FACE.sphere
+		classicEyes[0].set(-0.2, f.y, f.z)
+		classicEyes[1].set(0.2, f.y, f.z)
+		root.updateMatrixWorld()
+		const vl = root.worldToLocal(viewerLocal.copy(viewer))
+		if (photoCard && card && swayGroup) {
+			// the card lives in the sway group: its frame in the root's is sway * card
+			swayGroup.updateMatrix()
+			card.updateMatrix()
+			classicCardFrame.multiplyMatrices(swayGroup.matrix, card.matrix)
+			classicDizzy.pose(classicHead, { ring: 0.62, lift: 0.72, size: 0.09 }, photoEyes, vl, classicCardFrame)
+		} else classicDizzy.pose(classicHead, { ring: 0.62, lift: 0.72, size: 0.09 }, classicEyes, vl)
+	}
+
 	// the photo card + the label billboard toward the viewer each frame; the rigged body updates
 	let root: any = null
 	let card: any = null
@@ -87,6 +142,7 @@
 		if (card) card.lookAt(viewer)
 		if (labelGroup) labelGroup.lookAt(viewer)
 		if (avatar && root) avatar.update(Math.min(delta, 0.1), performance.now() / 1000, root, preview ? null : $peerHands[user[0]], viewer)
+		tickClassicDizzy(Math.min(delta, 0.1))
 	})
 </script>
 
@@ -107,6 +163,8 @@
 			</T.Group>
 		{/if}
 
+		<!-- 37 R22: the head's knocked-off sway rides this inner group -->
+		<T.Group bind:ref={swayGroup}>
 		{#if photoCard && faceTexture}
 			<!-- 129: a camera-facing square card carries the photo (no sphere) -->
 			<T.Mesh bind:ref={card} name={`${user[0]}-face-card`}>
@@ -174,6 +232,7 @@
 				{/if}
 			</T.Group>
 		{/if}
+		</T.Group>
 	{/if}
 </T.Group>
 

@@ -194,23 +194,20 @@ h.run(async () => {
 	await p.screenshot({ path: OUT + '04-camera-rig.png' });
 
 	// --- 6. a rig wired to a non-camera moves nothing ---------------------------------------
-	await p.evaluate((box2) => {
-		const S = window.__stores;
-		S.restoreGraphs({
-			scene: {
-				nodes: [
-					{ id: 'selbox', type: 'objectselector', position: { x: 0, y: 0 }, data: { type: 'objectselector', selected: box2 } },
-					{ id: 'seltgt2', type: 'objectselector', position: { x: 0, y: 0 }, data: { type: 'objectselector' } },
-					{ id: 'rig2', type: 'camerarig', position: { x: 0, y: 0 }, data: { type: 'camerarig', damping: 0, target: [0, 0, 0] } }
-				],
-				edges: [{ id: 'e-rig2-selbox', source: 'rig2', target: 'selbox' }]
-			}
-		});
-	}, made.box2);
-	// restoreGraphs does not broadcast: push it, or nodesync's drift heal (equal counts -> the
-	// peer-id tie-break, which changes every run) can pull the OLD rig back onto A — run 6 read
-	// that as "the camera never returned to its authored pose"
-	await p.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	const BOX_DOC = {
+		scene: {
+			nodes: [
+				{ id: 'selbox', type: 'objectselector', position: { x: 0, y: 0 }, data: { type: 'objectselector', selected: made.box2 } },
+				{ id: 'seltgt2', type: 'objectselector', position: { x: 0, y: 0 }, data: { type: 'objectselector' } },
+				{ id: 'rig2', type: 'camerarig', position: { x: 0, y: 0 }, data: { type: 'camerarig', damping: 0, target: [0, 0, 0] } }
+			],
+			edges: [{ id: 'e-rig2-selbox', source: 'rig2', target: 'selbox' }]
+		}
+	};
+	// the SAME document on BOTH peers: restoreGraphs does not broadcast, a `nodes` push MERGES
+	// (the old rig stays on the receiver) and nodesync's drift heal then copies the bigger graph
+	// back — runs 6/7 read that as "the camera never returned to its authored pose"
+	for (const page of [p, B.page]) await page.evaluate((doc) => window.__stores.restoreGraphs(doc), BOX_DOC);
 	const holdsRig2 = (page) =>
 		page.evaluate(() => {
 			let g;

@@ -80,6 +80,15 @@ const waitVal = async (fn, pred, ms) => {
 	return last;
 };
 
+/** wait until a swatch is (or is not) in the row — a save/rename/delete is several IndexedDB
+ * round trips, which a loaded box stretches well past any fixed sleep
+ * @param {any} page @param {string} kind @param {string} name @param {number} want */
+const swatchCount = (page, kind, name, want = 1) =>
+	waitVal(() => page.locator(`#material-presets .mp-swatch[data-preset-kind="${kind}"][data-preset-name="${name}"]`).count(), (n) => n === want, 15000);
+/** the library store, by name @param {any} page */
+const library = (page) =>
+	page.evaluate(async () => (await new Promise((r) => window.__stores.materialPresets.materialPresets.subscribe(r)())).map((p) => p.name).sort());
+
 const swatch = (page, kind, name) => page.locator(`#material-presets .mp-swatch[data-preset-kind="${kind}"][data-preset-name="${name}"]`);
 
 /** create N boxes, return their uuids @param {any} page @param {number} n */
@@ -247,9 +256,9 @@ h.run(async () => {
 	await nameField.waitFor({ timeout: 5000 });
 	await nameField.fill('Candy red');
 	await nameField.press('Enter');
-	await A.page.waitForTimeout(800);
-	h.check((await swatch(A.page, 'mine', 'Candy red').count()) === 1, '5.1 the saved preset joins the row');
-	h.check(JSON.stringify(await pressed(A.page)) === '["Candy red"]', '5.2 ...and lights up for the object it came from');
+	h.check((await swatchCount(A.page, 'mine', 'Candy red')) === 1, '5.1 the saved preset joins the row');
+	const lit = await waitVal(() => pressed(A.page), (v) => JSON.stringify(v) === '["Candy red"]', 5000);
+	h.check(JSON.stringify(lit) === '["Candy red"]', '5.2 ...and lights up for the object it came from: ' + JSON.stringify(lit));
 	const stored = await A.page.evaluate(async () => {
 		await window.__stores.materialPresets.loadMaterialPresets();
 		const list = await new Promise((r) => window.__stores.materialPresets.materialPresets.subscribe(r)());
@@ -263,8 +272,7 @@ h.run(async () => {
 	await A.page.locator('#material-preset-save').click();
 	await nameField.fill('Candy red');
 	await nameField.press('Enter');
-	await A.page.waitForTimeout(800);
-	h.check((await swatch(A.page, 'mine', 'Candy red 2').count()) === 1, '5.4 saving a taken name never overwrites (Candy red 2)');
+	h.check((await swatchCount(A.page, 'mine', 'Candy red 2')) === 1, '5.4 saving a taken name never overwrites (Candy red 2)');
 
 	await h.freshReload(A);
 	await A.page.evaluate(() => localStorage.setItem('inspector:sec:Material', 'open'));
@@ -287,11 +295,7 @@ h.run(async () => {
 	h.check(/taken/i.test(err ?? '') && (await swatch(A.page, 'mine', 'Candy red 2').count()) === 1, '5.7 renaming onto a starter name is refused: ' + err);
 	await nameField.fill('Ruby');
 	await nameField.press('Enter');
-	await A.page.waitForTimeout(700);
-	const renamed = await A.page.evaluate(async () => {
-		const list = await new Promise((r) => window.__stores.materialPresets.materialPresets.subscribe(r)());
-		return list.map((p) => p.name).sort();
-	});
+	const renamed = await waitVal(() => library(A.page), (v) => JSON.stringify(v) === '["Candy red","Ruby"]', 15000);
 	h.check(JSON.stringify(renamed) === '["Candy red","Ruby"]', '5.8 rename moved the record: ' + JSON.stringify(renamed));
 	await shot(A.page, '02-swatches-dark-edit.png');
 
@@ -299,8 +303,7 @@ h.run(async () => {
 	await A.page.locator('[data-preset-delete="Ruby"]').click();
 	await A.page.locator('#confirm-dialog-ok').waitFor({ timeout: 5000 });
 	await A.page.locator('#confirm-dialog-ok').click();
-	await A.page.waitForTimeout(700);
-	h.check((await swatch(A.page, 'mine', 'Ruby').count()) === 0, '5.9 delete (after the confirm) removes it');
+	h.check((await swatchCount(A.page, 'mine', 'Ruby', 0)) === 0, '5.9 delete (after the confirm) removes it');
 	await A.page.locator('#material-preset-edit').click();
 
 	// ------------------------------------------------------------------ 6. light theme

@@ -1,12 +1,12 @@
 <script>
 	// 38 R3 — /kit: the redesign's primitives in every state, in dark, light and a custom
-	// theme (SPEC §2: "a dev-only /kit route"). DEV-ONLY: `npm run dev`, or a build with
-	// VITE_UI_KIT=1 (the preview-ui-kit Pages deploy). Anywhere else the constant below is
-	// false at build time, the dynamic import is dropped and no kit code ships — the route
-	// only says it is not available.
+	// theme. SPEC §2 made it dev-only; NOTES-38 #17 (user) publishes it as the reference module
+	// authors build their UIs from (docs: ui-kit page). The kit is a lazy chunk loaded only
+	// here, so the app itself ships nothing extra. A build with VITE_UI_KIT=0 drops it again
+	// (the dynamic import is dead code then) and the route only says it is not available.
 	import '../../app.css';
 
-	const KIT = import.meta.env.DEV || import.meta.env.VITE_UI_KIT === '1';
+	const KIT = import.meta.env.DEV || import.meta.env.VITE_UI_KIT !== '0';
 	const load = KIT ? import('../../components/ui/kit/KitPage.svelte') : null;
 </script>
 
@@ -20,7 +20,7 @@
 		<mod.default />
 	{/await}
 {:else}
-	<p class="kit-off">The UI kit is only available in development builds. <a href="/">Open the app</a></p>
+	<p class="kit-off">The UI kit is not part of this build. <a href="/">Open the app</a></p>
 {/if}
 
 <style>

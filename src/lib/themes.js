@@ -40,6 +40,7 @@ export const REDESIGN_TOKENS = [
 	'--accent-text',
 	'--live',
 	'--on-live',
+	'--speaking',
 	'--warn-text',
 	'--danger',
 	'--on-danger',

@@ -107,8 +107,12 @@
 				all.find((n) => !n.closest('.wc-head')) ??
 				all[0] ??
 				null;
-			if (el) el.focus();
-			else dlg.focus();
+			// the same element flowbite focused; no focus RING for this programmatic focus (a
+			// keyboard user still gets one the moment they press Tab)
+			// @ts-ignore focusVisible is newer than the DOM lib
+			if (el) el.focus({ focusVisible: false });
+			// @ts-ignore
+			else dlg.focus({ focusVisible: false });
 		});
 		return () => dlg.close();
 	}
@@ -151,6 +155,8 @@
 	.md {
 		box-sizing: border-box;
 		width: 100%;
+		/* Tailwind's preflight zeroes every margin; the UA centres a dialog with margin: auto */
+		margin: auto;
 		max-height: 88vh;
 		padding: 0;
 		overflow: hidden;
@@ -183,15 +189,18 @@
 	.md-xl {
 		max-width: min(1200px, 94vw) !important;
 	}
-	/* the chrome is the dialog's own header here: no second frame around it */
+	/* the chrome is the dialog's own header here: no second frame around it. Each part paints
+	   the surface ITSELF: .tp-modal-frame's dim is a z-index:-1 ::before INSIDE the dialog's
+	   stacking context, which lands above the dialog's own background (but under its children). */
 	.md > :global(.wc) {
 		flex-shrink: 0;
-		background: transparent;
+		background: var(--surface-1);
 		border: 0;
 		border-radius: 0;
 	}
 	.md-bar {
 		flex-shrink: 0;
+		background: var(--surface-1);
 		padding: 0 22px;
 		border-bottom: 1px solid var(--border);
 	}
@@ -203,6 +212,7 @@
 	   minimalScroll draws the app's thin overlay thumb. */
 	.md-body {
 		flex: 1 1 auto;
+		background: var(--surface-1);
 		min-height: 0;
 		overflow-y: auto;
 		overscroll-behavior: contain;
@@ -231,7 +241,7 @@
 			border-right: 0;
 			box-shadow: none;
 		}
-		.md.tp-modal-frame > :global(.wc .wc-head) {
+		.md.tp-modal-frame > :global(.wc) :global(.wc-head) {
 			padding-left: 62px;
 		}
 		.md-bar {

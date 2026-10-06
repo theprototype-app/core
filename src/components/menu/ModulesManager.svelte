@@ -257,6 +257,7 @@
 	{/snippet}
 	{#snippet bar()}
 		<Tabs
+			data-wrap
 			tabs={tabDefs}
 			idPrefix="modules"
 			label="Modules"
@@ -855,9 +856,19 @@
 		.mm-body {
 			padding: var(--space-4);
 		}
+		/* the filter takes its own line under the tabs, so no tab is clipped */
+		:global(.tabs[data-wrap] .tabs-strip) {
+			flex-wrap: wrap;
+			row-gap: 0;
+		}
+		:global(.tabs[data-wrap] .tabs-actions) {
+			flex-basis: 100%;
+			margin-left: 0;
+		}
 		.mm-filter {
 			width: 100%;
 			max-width: none;
+			padding-bottom: var(--space-2);
 		}
 		.mm-actions {
 			margin-left: 0;

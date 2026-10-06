@@ -18,6 +18,8 @@ module.exports = {
 	tags: ['simulation', 'fluid', 'toy'],
 	env: { preset: 'studio', background: { top: '#dfeaf2', bottom: '#c9d7e2' } },
 	view: { pos: [0, 2.6, 4.4], target: [0, 0.9, 0] },
+	// 36-fb-water F14: a simulation scene runs when it opens (Configure Scene ▸ Start simulation on load)
+	physics: { simOnLoad: true },
 	// the card is rendered offscreen before any fluid exists (it is each peer's runtime
 	// simulation): dress the picture with the two fills, never written into the file
 	thumb: {

@@ -301,6 +301,16 @@ function lintSession(session, opts = {}) {
 				boxes.push({ box: boxToWorld(m, g.box), solid: g.solid, where, sensor: !!top.userData?.physics?.sensor, visible: o.visible !== false && top.visible !== false });
 			}
 		}
+		// 36-int-125: two children with the same name AND the same local matrix are one part built twice
+		// (the 1.25 union's author run added every car wheel / boat mast twice: two lanes each taught
+		// author-templates to build `children` on a primitive) — double draw calls for nothing
+		/** @type {Set<string>} */
+		const twins = new Set();
+		for (const c of o.children ?? []) {
+			const key = (c.name ?? '') + '|' + (c.matrix ?? IDENTITY).map((/** @type {number} */ v) => v.toFixed(5)).join(',');
+			if (c.name && twins.has(key)) add('child-twin', 'error', where, `child "${c.name}" appears twice with the same pose — one part built twice`);
+			twins.add(key);
+		}
 		for (const c of o.children ?? []) walk(c, geos, m, top);
 	};
 	for (const entry of session.objects ?? []) {

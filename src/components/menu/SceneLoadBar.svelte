@@ -1,14 +1,16 @@
 <script>
 	// 33 L1 — the scene-load bar. A load may take time; it says so instead of freezing:
-	// "Loading Castle Courtyard — 34 / 182 objects", a real progress bar, and Cancel, which
-	// takes the whole load back (sceneLoader.cancelLoad runs the load's own undo) — while the
-	// objects are built and while kit models are still arriving from their pack.
+	// "Loading Castle Courtyard — 34 / 182 objects" and a real progress bar — from the click
+	// (36 F21: "downloading…" while the file arrives), while the objects are built and while
+	// kit models are still arriving from their pack. (No Cancel button since 36 S5.)
 	//
 	// NON-MODAL by design: it lives in the toast stack's first slot (the spectator banner's
 	// spot, so arriving toasts never shove it), the rest of the UI stays usable, and opening
 	// another scene simply supersedes this load. It appears only after a short delay so a
 	// small scene that loads at once does not flash a bar.
-	import { sceneLoad, cancelLoad } from '$lib/sceneLoader';
+	// 36 S5 (user, 2026-10-05): NO Cancel button — opening another scene is how a load is
+	// abandoned (the newest load wins at once, F20); the bar only says what is happening.
+	import { sceneLoad } from '$lib/sceneLoader';
 
 	const SHOW_AFTER_MS = 250;
 
@@ -39,10 +41,16 @@
 		$sceneLoad && $sceneLoad.total > 0 ? Math.round((100 * $sceneLoad.done) / $sceneLoad.total) : 0
 	);
 	const verb = $derived($sceneLoad?.verb ?? 'Loading');
+	// 36 F21: a click's load is on screen from the click — its file downloading first
 	const what = $derived(
-		$sceneLoad?.phase === 'reading' || $sceneLoad?.phase === 'preparing'
-			? 'getting ready…'
-			: ($sceneLoad?.done ?? 0) + ' / ' + ($sceneLoad?.total ?? 0) + ' objects'
+		$sceneLoad?.phase === 'fetching'
+			? 'downloading…'
+			: $sceneLoad?.phase === 'reading' || $sceneLoad?.phase === 'preparing'
+				? 'getting ready…'
+				: ($sceneLoad?.done ?? 0) + ' / ' + ($sceneLoad?.total ?? 0) + ' objects'
+	);
+	const waiting = $derived(
+		$sceneLoad?.phase === 'fetching' || $sceneLoad?.phase === 'reading' || $sceneLoad?.phase === 'preparing' || $sceneLoad?.total === 0
 	);
 </script>
 
@@ -64,13 +72,10 @@
 					{verb} <strong>{$sceneLoad.name}</strong>
 					<span class="scene-load-count">— {what}</span>
 				</p>
-				{#if $sceneLoad.cancellable}
-					<button id="scene-load-cancel" class="scene-load-cancel" onclick={() => cancelLoad()}>Cancel</button>
-				{/if}
 			</div>
 			<div
 				class="scene-load-track"
-				class:indeterminate={$sceneLoad.phase === 'reading' || $sceneLoad.phase === 'preparing' || $sceneLoad.total === 0}
+				class:indeterminate={waiting}
 				role="progressbar"
 				aria-label={verb + ' ' + $sceneLoad.name}
 				aria-valuemin="0"
@@ -127,20 +132,6 @@
 	.scene-load-count {
 		color: #9ca3af;
 		font-variant-numeric: tabular-nums;
-	}
-	.scene-load-cancel {
-		flex: 0 0 auto;
-		font-size: 11.5px;
-		font-weight: 600;
-		padding: 4px 12px;
-		border-radius: 999px;
-		border: 1px solid rgb(255 255 255 / 0.18);
-		background: transparent;
-		color: #e5e7eb;
-		cursor: pointer;
-	}
-	.scene-load-cancel:hover {
-		background: rgb(255 255 255 / 0.08);
 	}
 	.scene-load-track {
 		position: relative;

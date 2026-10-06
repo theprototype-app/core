@@ -188,6 +188,8 @@ const TARGET_TOSS_DEF = {
 		]
 	},
 	graphs: { scene: tossGraph() },
+	// 36 F11: the layout reads well — the author script only moves what overlaps or sits on a wire
+	graphTidy: 'repair',
 	hud: {
 		scene: {
 			active: '',

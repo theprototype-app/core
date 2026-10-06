@@ -8,11 +8,19 @@
 	// here for the tab that edits ONE script node (same element ids, so its suites carry over).
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { Save, RotateCcw, Crosshair, FileCode, Unlink, Link, Copy, Lock, FolderOpen, Braces } from '@lucide/svelte';
+	import { Save, RotateCcw, Crosshair, FileCode, Unlink, Link, Copy, Lock, FolderOpen, Braces, PanelLeft, PanelRight } from '@lucide/svelte';
 	import CodeEditor from './CodeEditor.svelte';
+	import CodeSidebarLeft from './CodeSidebarLeft.svelte';
+	import CodeSidebarRight from './CodeSidebarRight.svelte';
+	import CodeQuickPick from './CodeQuickPick.svelte';
+	import { quickItems } from '$lib/codeProject';
+	import { outlineOf } from '$lib/codeOutline';
 	import DockTabs from '../DockTabs.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { codeWorkspaceClose, showToast } from '../../stores/appStore.js';
+	import { objectsGroup } from '../../stores/sceneStore';
 	import { flowGraphs, scriptErrors, findNodeAnyGraph, activeGraphId } from '../../stores/flowStore';
 	import {
 		codeTabs,
@@ -32,11 +40,22 @@
 		unbindTab,
 		forkCodeTab,
 		forkNodeTab,
+		openEngineSource,
 		canFork,
 		tabById,
-		openCode
+		openCode,
+		moveCodeTab,
+		revealInTab,
+		dirtyTabs,
+		saveAllCodeTabs,
+		discardAllCodeTabs,
+		currentProjectTree
 	} from '$lib/codeWorkspace';
+	import { codeLeftOpen, codeLeftWidth, codeRightOpen, codeRightWidth, sidebarKey, focusFind, clampSidebarWidth } from '$lib/codeSidebars';
+	import { dragReorder } from '$lib/dragReorder';
+	import { arrowNav } from '$lib/arrowNav';
 	import { isDirty } from '$lib/codeTabs';
+	import { BUILTIN_CODE } from '$lib/builtinCode.js';
 	import { explorerItems, revealItem } from '$lib/explorer';
 	import { scriptInputs, scriptOutputs, SCRIPT_INPUT_TYPES, SCRIPT_OUTPUT_TYPES } from '$lib/scriptIO';
 	import { setScriptSockets, upgradeScriptToV2 } from '$lib/scriptSockets';
@@ -51,12 +70,12 @@
 	import { popOutAvailable, popOutCode } from '$lib/codePopout';
 
 	let docked = $state(true);
-	let winW = $state(640);
-	let winH = $state(460);
+	let winW = $state(900);
+	let winH = $state(500);
 	if (typeof localStorage !== 'undefined') {
 		docked = safeStorage.getItem('codeDocked') !== 'false';
-		winW = parseInt(safeStorage.getItem('codeWinW') ?? '640') || 640;
-		winH = parseInt(safeStorage.getItem('codeWinH') ?? '460') || 460;
+		winW = parseInt(safeStorage.getItem('codeWinW') ?? '900') || 900;
+		winH = parseInt(safeStorage.getItem('codeWinH') ?? '500') || 500;
 	}
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
@@ -102,7 +121,7 @@
 	const socketNode = $derived.by(() => {
 		void $flowGraphs;
 		if (!active) return null;
-		if (active.kind === 'node') return bound[0] ?? null;
+		if (active.kind === 'node') return bound[0]?.node.type === 'script' ? bound[0] : null;
 		if (active.kind === 'file' && active.fromNode) {
 			const f = findNodeAnyGraph((/** @type {any} */ n) => n.id === active.fromNode?.nodeId);
 			return f && f.node.type === 'script' ? f : null;
@@ -124,6 +143,20 @@
 		}
 		return out;
 	}
+	/** 36-fb-code (F7): what a tab's NODES reported, for the Problems panel (its own text's
+	 * problems the panel reads itself, live) @param {any} tab @returns {{message: string, line?: number}[]} */
+	function runtimeOf(tab) {
+		const out = [];
+		if (tab.error && tab.kind !== 'graph') out.push({ message: 'not saved — line ' + tab.error.line + ': ' + tab.error.message, line: tab.error.line });
+		for (const b of boundNodesOf(tab)) {
+			const label = b.node.data?.name || b.node.data?.label || b.node.type;
+			if ($scriptErrors[b.node.id]) out.push({ message: label + ': ' + $scriptErrors[b.node.id] });
+			const bs = behaviourStatus[b.node.id];
+			if (bs?.status === 'error' && bs.errors?.[0]) out.push({ message: label + ': ' + bs.errors[0].message, line: bs.errors[0].line ?? undefined });
+		}
+		return out;
+	}
+
 	/** behaviours/app.js's status, loaded lazily (the card's rule: it must not join this import graph) */
 	let behaviourStatus = $state(/** @type {Record<string, any>} */ ({}));
 	$effect(() => {
@@ -239,6 +272,7 @@
 	}
 	/** @param {any} tab */
 	function kindLabel(tab) {
+		if (tab.nodeType) return BUILTIN_CODE[tab.nodeType]?.title + ' code';
 		return { node: 'Script node', behaviour: 'Behaviour node', file: 'Script file', module: 'Module source (read-only)', graph: 'Graph JSON' }[/** @type {string} */ (tab.kind)] ?? tab.kind;
 	}
 	/** @param {any} tab */
@@ -260,11 +294,167 @@
 				e.preventDefault();
 				e.stopPropagation();
 				save();
+				return;
 			}
+			// 36-fb-code (F7): Ctrl+B left · Ctrl+Alt+B right · Ctrl+Shift+F find — the workspace's
+			// own, so they win over CodeMirror and never reach the viewport
+			const side = sidebarKey(e);
+			if (!side) return;
+			e.preventDefault();
+			e.stopPropagation();
+			if (side === 'find') {
+				if (narrow) narrowSide = 'right';
+				focusFind();
+			} else if (side === 'quickOpen') openQuick('files');
+			else if (side === 'symbols') openQuick('symbols');
+			else toggleSide(side);
 		};
 		node.addEventListener('keydown', down);
 		return { destroy: () => node.removeEventListener('keydown', down) };
 	}
+
+	// ------------------------------------------------------------- the sidebars (36-fb-code F6/F7)
+	// WIDE: both sit beside the editor and their open/closed state is the remembered pref.
+	// NARROW (a phone dock, a small window): they would leave the editor no room, so they
+	// OVERLAY it, one at a time, and are closed until asked for (not remembered — it is a
+	// fact about this width, not a preference).
+	let mainW = $state(0);
+	// narrow = the open sidebars would leave the editor under ~340 px
+	const needW = $derived(($codeLeftOpen ? $codeLeftWidth : 0) + ($codeRightOpen ? $codeRightWidth : 0) + 340);
+	const narrow = $derived(mainW > 0 && mainW < needW);
+	let narrowSide = $state(/** @type {'left' | 'right' | null} */ (null));
+	const leftShown = $derived(narrow ? narrowSide === 'left' : $codeLeftOpen);
+	const rightShown = $derived(narrow ? narrowSide === 'right' : $codeRightOpen);
+	/** @param {'left' | 'right'} side */
+	function toggleSide(side) {
+		// closing the sidebar that holds the focus would drop it to <body>, where the workspace's
+		// own keys (Ctrl+Alt+B to bring it back) no longer reach — hand it to the editor first
+		const panel = document.getElementById(side === 'left' ? 'code-ws-left' : 'code-ws-right');
+		if (panel?.contains(document.activeElement) && active) {
+			// a read-only source's editor is not focusable (contenteditable=false): its tab in the
+			// strip is, and it is the strip's one tab stop anyway
+			const editor = /** @type {HTMLElement | null} */ (document.querySelector(`[data-pane="${active.id}"] .cm-content[contenteditable="true"]`));
+			(editor ?? /** @type {HTMLElement | null} */ (document.querySelector(`.code-tab[data-tab-id="${active.id}"]`)))?.focus();
+		}
+		if (narrow) narrowSide = narrowSide === side ? null : side;
+		else (side === 'left' ? codeLeftOpen : codeRightOpen).update((v) => !v);
+	}
+	const leftW = $derived(narrow ? Math.min($codeLeftWidth, Math.round(mainW * 0.85)) : $codeLeftWidth);
+	const rightW = $derived(narrow ? Math.min($codeRightWidth, Math.round(mainW * 0.85)) : $codeRightWidth);
+	let sideDrag = /** @type {null | {side: 'left' | 'right', x: number, w: number}} */ (null);
+	/** @param {PointerEvent} e @param {'left' | 'right'} side */
+	function startSide(e, side) {
+		sideDrag = { side, x: e.clientX, w: side === 'left' ? $codeLeftWidth : $codeRightWidth };
+		/** @type {HTMLElement} */ (e.currentTarget).setPointerCapture(e.pointerId);
+		e.preventDefault();
+		e.stopPropagation();
+	}
+	/** @param {PointerEvent} e */
+	function moveSide(e) {
+		if (!sideDrag) return;
+		const dx = e.clientX - sideDrag.x;
+		const w = clampSidebarWidth(sideDrag.side, sideDrag.side === 'left' ? sideDrag.w + dx : sideDrag.w - dx);
+		(sideDrag.side === 'left' ? codeLeftWidth : codeRightWidth).set(w);
+	}
+	/** @param {PointerEvent} e */
+	function endSide(e) {
+		if (!sideDrag) return;
+		sideDrag = null;
+		/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
+	}
+
+	// ------------------------------------------------------------- quick picks (36-fb-code S7)
+	let quick = $state(/** @type {null | {mode: 'files' | 'symbols', items: any[]}} */ (null));
+	/** @param {string} id */
+	function graphName(id) {
+		if (id === 'scene') return 'Main graph';
+		/** @type {any} */
+		const g = get(objectsGroup);
+		return g?.getObjectByProperty?.('uuid', id)?.name || 'Object ' + id.slice(0, 6);
+	}
+	const MARK = { function: 'ƒ', method: 'ƒ', handler: '⚡', param: '◆', state: '▣', input: '→', output: '←', class: 'C', const: '·', node: '◇' };
+	/** Ctrl+P: every project script · Ctrl+Shift+O: the symbols of the active file @param {'files' | 'symbols'} mode */
+	function openQuick(mode) {
+		if (mode === 'files') {
+			quick = { mode, items: quickItems(currentProjectTree(graphName)) };
+			return;
+		}
+		if (!active) return;
+		const o = outlineOf(active.code, { lang: active.lang, kind: active.kind });
+		quick = {
+			mode,
+			items: o.items.map((it, i) => ({ key: i + ':' + it.name, label: it.name, detail: it.kind + ' · line ' + it.line, mark: MARK[it.kind] ?? '·', line: it.line }))
+		};
+	}
+	/** @param {any} item */
+	function pickQuick(item) {
+		const mode = quick?.mode;
+		quick = null;
+		if (mode === 'files') void openCode(item.request);
+		else if (active) revealInTab(active.id, item.line);
+	}
+
+	// ------------------------------------------------------------- closing with unsaved code (S7)
+	let confirmCloseAll = $state(false);
+	let closeFailed = $state(0);
+	/** the workspace's ✕: with unsaved tabs it asks Save all / Don't save / Cancel first */
+	function requestCloseWorkspace() {
+		if (!dirtyTabs().length) return void codeWorkspaceClose.set(true);
+		closeFailed = 0;
+		confirmCloseAll = true;
+	}
+	async function closeSavingAll() {
+		const failed = await saveAllCodeTabs();
+		if (failed.length) {
+			// a tab whose code does not check stays open on screen, with its error
+			closeFailed = failed.length;
+			activeCodeTab.set(failed[0]);
+			return;
+		}
+		confirmCloseAll = false;
+		codeWorkspaceClose.set(true);
+	}
+	function closeDiscarding() {
+		discardAllCodeTabs();
+		confirmCloseAll = false;
+		codeWorkspaceClose.set(true);
+	}
+
+	// ------------------------------------------------------------- the tab strip (36-fb-code F8)
+	let stripEl = $state(/** @type {HTMLElement | null} */ (null));
+	/** the wheel scrolls a strip that overflows SIDEWAYS (a mouse has no horizontal wheel) @param {WheelEvent} e */
+	function stripWheel(e) {
+		if (!stripEl || stripEl.scrollWidth <= stripEl.clientWidth) return;
+		const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+		if (!d) return;
+		e.preventDefault();
+		stripEl.scrollLeft += d * (e.deltaMode === 1 ? 16 : 1);
+	}
+	// the active tab is always scrolled into view (opened from the tree, Find, a node…)
+	$effect(() => {
+		const id = active?.id;
+		void tabs.length;
+		const strip = stripEl;
+		if (!id || !strip) return;
+		requestAnimationFrame(() => {
+			const el = /** @type {HTMLElement | null} */ (strip.querySelector(`[data-tab-id="${id}"]`));
+			if (!el) return;
+			const l = el.offsetLeft - strip.offsetLeft;
+			if (l < strip.scrollLeft) strip.scrollLeft = l - 8;
+			else if (l + el.offsetWidth > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = l + el.offsetWidth - strip.clientWidth + 8;
+		});
+	});
+	/** S12: Delete closes the focused tab (asking when it is unsaved) @param {KeyboardEvent} e */
+	function stripKeys(e) {
+		if (e.key !== 'Delete') return;
+		const id = /** @type {HTMLElement} */ (e.target).closest('[data-tab-id]')?.getAttribute('data-tab-id');
+		if (!id) return;
+		e.preventDefault();
+		e.stopPropagation();
+		requestClose(id);
+	}
+	/** @param {any} tab */
+	const badOf = (tab) => problemsOf(tab, $scriptErrors, $scriptFileErrors, $flowGraphs).length > 0;
 
 	// resize: docked = shared dock height; floating = corner grip
 	const clampH = (/** @type {number} */ h) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
@@ -290,21 +480,34 @@
 </script>
 
 {#snippet strip()}
-	<div id="code-ws-tabs" data-tour="code-tabs" class="code-strip" role="tablist" aria-label="Open sources">
+	<div
+		id="code-ws-tabs"
+		data-tour="code-tabs"
+		class="code-strip"
+		role="tablist"
+		tabindex="-1"
+		aria-label="Open sources"
+		bind:this={stripEl}
+		onwheel={stripWheel}
+		use:dragReorder={{ axis: 'x', item: '.code-tab', idAttr: 'data-tab-id', onMove: moveCodeTab, handleIgnore: '.code-tab-close' }}
+		use:arrowNav={{ item: '.code-tab', axis: 'x', onMove: (el) => activeCodeTab.set(el.dataset.tabId ?? null), onKey: stripKeys }}
+	>
 		{#each tabs as tab (tab.id)}
 			{@const dirty = isDirty(tab)}
-			{@const bad = problemsOf(tab, $scriptErrors, $scriptFileErrors, $flowGraphs).length > 0}
+			{@const bad = badOf(tab)}
 			<div
 				class="code-tab"
 				class:code-tab-on={active?.id === tab.id}
 				role="tab"
-				tabindex="-1"
+				id="code-tab-{tab.id}"
+				tabindex={active?.id === tab.id ? 0 : -1}
 				aria-selected={active?.id === tab.id}
+				aria-controls="code-pane-{tab.id}"
 				data-tab-id={tab.id}
 				data-kind={tab.kind}
 				data-dirty={dirty}
 				data-error={bad}
-				title={kindLabel(tab) + (tab.readOnly ? '' : ' — Ctrl+S saves')}
+				title={tab.title + ' — ' + kindLabel(tab) + (tab.readOnly ? '' : ' · Ctrl+S saves') + ' · drag to reorder'}
 				onclick={() => activeCodeTab.set(tab.id)}
 				onkeydown={(e) => e.key === 'Enter' && activeCodeTab.set(tab.id)}
 				onauxclick={(e) => e.button === 1 && requestClose(tab.id)}
@@ -313,7 +516,7 @@
 				<span class="code-tab-name">{tab.title}</span>
 				{#if bad}<span class="code-tab-bad" aria-label="has errors">!</span>{/if}
 				{#if dirty}<span class="code-tab-dirty" aria-label="unsaved">●</span>{/if}
-				<button class="code-tab-close" aria-label="Close {tab.title}" onclick={(e) => { e.stopPropagation(); requestClose(tab.id); }}>✕</button>
+				<button class="code-tab-close" tabindex="-1" aria-label="Close {tab.title}" onclick={(e) => { e.stopPropagation(); requestClose(tab.id); }}>✕</button>
 			</div>
 		{/each}
 	</div>
@@ -340,14 +543,17 @@
 					<button id="code-ws-goto" class="ui-button-quiet" title="Show the node in the Node editor" onclick={openGoto}><Crosshair size={14} aria-hidden="true" />Go to node</button>
 				{/if}
 			{:else if active.kind === 'module'}
-				{#if canFork('module')}
+				{#if canFork('module') && active.moduleId !== 'core'}
 					<button id="code-ws-fork" class="ui-button-quiet" title="Copy this source into an editable script the scene owns" onclick={() => forkCodeTab(active.id)}><Copy size={14} aria-hidden="true" />Make editable copy</button>
 				{/if}
 			{:else}
 				{#if bound.length}
 					<button id="code-ws-goto" class="ui-button-quiet" title={bound.length === 1 ? 'Show the node in the Node editor' : 'Show one of the ' + bound.length + ' nodes that run this'} onclick={openGoto}><Crosshair size={14} aria-hidden="true" />Go to node{bound.length > 1 ? ' (' + bound.length + ')' : ''}</button>
 				{/if}
-				{#if active.kind === 'node' || active.kind === 'behaviour'}
+				{#if active.nodeType}
+					<span id="code-ws-builtin-help" class="code-muted" title="What this code receives and returns">{BUILTIN_CODE[active.nodeType]?.help}</span>
+					<button id="code-ws-engine" class="ui-button-quiet" title="Read the engine code this node steers (read-only)" onclick={() => openEngineSource(active.id)}><FileCode size={14} aria-hidden="true" />Engine source</button>
+				{:else if active.kind === 'node' || active.kind === 'behaviour'}
 					<button id="code-ws-to-file" class="ui-button-quiet" title="Save this code as a .js file in the Explorer; the node then runs that file" onclick={() => convertTabToFile(active.id)}><FileCode size={14} aria-hidden="true" />Save as file</button>
 					<button id="code-ws-bind" class="ui-button-quiet" title="Run a .js file from your Library instead of this inline code" onclick={openBind}><Link size={14} aria-hidden="true" />Use file…</button>
 				{/if}
@@ -426,7 +632,7 @@
 	{/if}
 	<div class="relative min-h-0 flex-1 p-1">
 		{#each tabs as tab (tab.id)}
-			<div class="code-pane h-full" class:hidden={active?.id !== tab.id} data-pane={tab.id} data-readonly={!!tab.readOnly}>
+			<div class="code-pane h-full" class:hidden={active?.id !== tab.id} id="code-pane-{tab.id}" role="tabpanel" aria-labelledby="code-tab-{tab.id}" data-pane={tab.id} data-readonly={!!tab.readOnly}>
 				<CodeEditor
 					value={tab.code}
 					readOnly={!!tab.readOnly}
@@ -438,7 +644,7 @@
 			</div>
 		{/each}
 		{#if !tabs.length}
-			<p class="code-muted p-4">No open sources. "Edit code" on a Script node, double-click a .js file in the Explorer, or open the graph as JSON with "Graph JSON".</p>
+			<p class="code-muted p-4">No open sources. Pick one in Project (Ctrl+B), "Edit code" or double-click a code node, double-click a .js file in the Explorer, or open the graph as JSON with "Graph JSON".</p>
 		{/if}
 		{#if confirmClose}
 			<div id="code-ws-confirm" class="absolute inset-0 z-10 flex items-center justify-center bg-black/50">
@@ -456,12 +662,76 @@
 	</div>
 {/snippet}
 
+{#snippet sideToggle(/** @type {'left' | 'right'} */ side)}
+	<button
+		id="code-ws-toggle-{side}"
+		class="ui-button-quiet code-side-toggle"
+		aria-pressed={side === 'left' ? leftShown : rightShown}
+		title={side === 'left' ? 'Open editors and Project files (Ctrl+B)' : 'Outline, Problems, Bound nodes, Find in files (Ctrl+Alt+B)'}
+		aria-label={side === 'left' ? 'Toggle the files sidebar' : 'Toggle the tools sidebar'}
+		onclick={() => toggleSide(side)}
+	>
+		{#if side === 'left'}<PanelLeft size={14} aria-hidden="true" />{:else}<PanelRight size={14} aria-hidden="true" />{/if}
+	</button>
+{/snippet}
+
+{#snippet main()}
+	<div class="code-main" class:code-narrow={narrow} bind:clientWidth={mainW}>
+		{#if leftShown}
+			<div class="code-side code-side-left" style:width="{leftW}px">
+				<CodeSidebarLeft {badOf} onClose={requestClose} />
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="code-side-grip code-side-grip-l" title="Drag to resize" onpointerdown={(e) => startSide(e, 'left')} onpointermove={moveSide} onpointerup={endSide}></div>
+			</div>
+		{/if}
+		<div class="code-center">
+			{@render strip()}
+			{@render body()}
+		</div>
+		{#if quick}
+			<CodeQuickPick
+				id={quick.mode === 'files' ? 'code-ws-quick-open' : 'code-ws-quick-symbol'}
+				placeholder={quick.mode === 'files' ? 'Open a script by name (Ctrl+P)…' : 'Go to a symbol in ' + (active?.title ?? 'this file') + ' (Ctrl+Shift+O)…'}
+				items={quick.items}
+				onPick={pickQuick}
+				onClose={() => (quick = null)}
+			/>
+		{/if}
+		{#if confirmCloseAll}
+			<div id="code-ws-confirm-all" class="absolute inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" aria-label="Unsaved changes">
+				<div class="ui-panel w-96 rounded-lg p-4 text-sm shadow-2xl">
+					<p class="mb-2 font-semibold">{dirtyTabs().length === 1 ? '1 file has' : dirtyTabs().length + ' files have'} unsaved changes</p>
+					<ul class="code-muted mb-3 max-h-24 overflow-auto text-xs">
+						{#each dirtyTabs() as t (t.id)}<li>● {t.title}</li>{/each}
+					</ul>
+					{#if closeFailed}<p class="code-bad mb-3 text-xs">{closeFailed} could not be saved — their code has an error (shown in the editor). Fix it, or close without saving.</p>{/if}
+					<div class="flex justify-end gap-2">
+						<button id="code-ws-confirm-all-cancel" class="ui-button-quiet" onclick={() => (confirmCloseAll = false)}>Cancel</button>
+						<button id="code-ws-confirm-all-discard" class="ui-button-quiet code-bad" onclick={closeDiscarding}>Don't save</button>
+						<button id="code-ws-confirm-all-save" class="ui-button-quiet code-save-armed" onclick={closeSavingAll}>Save all</button>
+					</div>
+				</div>
+			</div>
+		{/if}
+		{#if rightShown}
+			<div class="code-side code-side-right" style:width="{rightW}px">
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="code-side-grip code-side-grip-r" title="Drag to resize" onpointerdown={(e) => startSide(e, 'right')} onpointermove={moveSide} onpointerup={endSide}></div>
+				<CodeSidebarRight {runtimeOf} />
+			</div>
+		{/if}
+	</div>
+{/snippet}
+
 {#if docked}
 	<div
 		id="code-ws-dock"
 		data-tour="code-workspace"
-		class="code-ws fixed inset-x-0 bottom-0 flex flex-col p-2 {dockVisible ? '' : 'hidden'}"
+		class="code-ws tp-ui tp-dock-panel fixed inset-x-0 bottom-0 flex flex-col p-2 {dockVisible ? '' : 'hidden'}"
 		style="z-index: var(--z-bottom); height: {$dockHeight}px"
+		data-key-scope="panel"
+		role="region"
+		aria-label="Code (docked)"
 		use:keys
 	>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -475,36 +745,53 @@
 		></div>
 		<DockTabs />
 		<div class="flex shrink-0 items-center gap-1 pb-1">
-			<span class="text-xs font-semibold">Code</span>
-			{@render strip()}
+			{@render sideToggle('left')}
+			<span class="tp-dock-title">Code</span>
+			<span class="flex-1"></span>
 			{@render openGraph()}
-			<button class="ui-button-quiet" title="Undock into a floating window" onclick={() => setDocked(false)}>⧉</button>
-			<button id="code-ws-close" class="ui-button-quiet" title="Close the code workspace" onclick={() => codeWorkspaceClose.set(true)}>✕</button>
+			{@render sideToggle('right')}
+			<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock into a floating window" onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button>
+			<button id="code-ws-close" class="tp-dock-btn" title="Close the code workspace" aria-label="Close the code workspace" onclick={requestCloseWorkspace}><Icon name="x" size={14} /></button>
 		</div>
-		<div class="flex min-h-0 flex-1 flex-col">{@render body()}</div>
+		{@render main()}
 	</div>
 {:else}
 	<div
 		id="code-ws-window"
 		data-tour="code-workspace"
-		class="code-ws ui-panel fixed flex flex-col overflow-hidden"
+		class="code-ws ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 		use:dragWindow={{ key: 'codeWin', defaultRect: { left: 200, top: 110 } }}
 		use:focusStack={'code'}
-		use:tabbable={{ key: 'code', title: 'Code', openStore: codeWorkspaceClose, isOpen: (v) => !v, close: () => codeWorkspaceClose.set(true), minW: 360, minH: 260 }}
+		use:tabbable={{ key: 'code', title: 'Code', openStore: codeWorkspaceClose, isOpen: (v) => !v, close: requestCloseWorkspace, minW: 360, minH: 260 }}
 		use:bottomDockable={{ key: 'code' }}
 		use:keys
 		style="z-index: var(--z-window); max-width: 96vw; max-height: 85vh"
 		style:width="{effW}px"
 		style:height="{effH}px"
 	>
-		<div class="ui-panel-header move-handle flex shrink-0 cursor-move select-none items-center gap-1 py-1.5">
-			<span>Code</span>
-			{@render strip()}
-			{@render openGraph()}
-			<button class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
-			<button id="code-ws-close" class="ui-button-quiet" title="Close the code workspace" onclick={() => codeWorkspaceClose.set(true)}>✕</button>
-		</div>
-		<div class="flex min-h-0 flex-1 flex-col p-1">{@render body()}</div>
+		<!-- 38 R6: the one window header (ui/WindowChrome, tool) -->
+		<WindowChrome
+			size="tool"
+			bare
+			body={false}
+			title="Code"
+			headerClass="ui-panel-header move-handle cursor-move select-none"
+			onclose={requestCloseWorkspace}
+			closeLabel="Close the code workspace"
+			closeAttrs={{ id: 'code-ws-close', title: 'Close the code workspace' }}
+		>
+			{#snippet heading()}
+				{@render sideToggle('left')}
+				<span class="wc-label">Code</span>
+				<span class="flex-1"></span>
+			{/snippet}
+			{#snippet actions()}
+				{@render openGraph()}
+				{@render sideToggle('right')}
+				<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+			{/snippet}
+		</WindowChrome>
+		<div class="flex min-h-0 flex-1 flex-col p-1">{@render main()}</div>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
@@ -527,18 +814,99 @@
 		align-items: center;
 		gap: 4px;
 	}
-	.code-ws {
-		background: var(--surface, #1f2937);
-		color: var(--text, #e5e7eb);
-		border-top: 1px solid var(--border, rgb(55 65 81 / 0.6));
-	}
-	.code-strip {
+	/* 38 R6: the surface is the shared window / dock panel (src/styles/windows.css) and the
+	   header is WindowChrome — this file paints neither any more */
+	.code-main {
+		position: relative;
 		display: flex;
 		flex: 1;
+		min-height: 0;
+		min-width: 0;
+	}
+	.code-center {
+		display: flex;
+		flex: 1;
+		flex-direction: column;
+		min-width: 0;
+		min-height: 0;
+	}
+	.code-side {
+		position: relative;
+		flex-shrink: 0;
+		min-height: 0;
+	}
+	/* narrow: a sidebar overlays the editor instead of squeezing it */
+	.code-narrow .code-side {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		z-index: 20;
+		box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+	}
+	.code-narrow .code-side-left {
+		left: 0;
+	}
+	.code-narrow .code-side-right {
+		right: 0;
+	}
+	.code-side-grip {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		z-index: 5;
+		width: 6px;
+		cursor: ew-resize;
+		touch-action: none;
+	}
+	.code-side-grip:hover {
+		background: color-mix(in srgb, var(--accent-fill, #2563eb) 35%, transparent);
+	}
+	.code-side-grip-l {
+		right: -3px;
+	}
+	.code-side-grip-r {
+		left: -3px;
+	}
+	.code-side-toggle[aria-pressed='true'] {
+		color: var(--text, #f3f4f6);
+		background: color-mix(in srgb, var(--accent-fill, #2563eb) 25%, transparent);
+	}
+	/* 36-fb-code (F8): the strip scrolls — the wheel (stripWheel) and a THIN visible scrollbar */
+	.code-strip {
+		display: flex;
+		flex-shrink: 0;
 		min-width: 0;
 		gap: 2px;
+		margin: 0 4px 2px;
+		padding-bottom: 3px;
 		overflow-x: auto;
-		scrollbar-width: none;
+		overflow-y: hidden;
+		scrollbar-width: thin;
+		scrollbar-color: var(--scrollbar-thumb, #4b5563) transparent;
+		border-bottom: 1px solid var(--border, rgb(55 65 81 / 0.6));
+	}
+	.code-strip::-webkit-scrollbar {
+		height: 4px;
+	}
+	.code-strip::-webkit-scrollbar-thumb {
+		border-radius: 2px;
+		background: var(--scrollbar-thumb, #4b5563);
+	}
+	.code-strip::-webkit-scrollbar-thumb:hover {
+		background: var(--scrollbar-thumb-hover, #6b7280);
+	}
+	.code-strip::-webkit-scrollbar-track {
+		background: transparent;
+	}
+	/* drag to reorder (dragReorder.js) */
+	.code-tab:global([data-dragging]) {
+		opacity: 0.45;
+	}
+	.code-tab:global([data-drop='before']) {
+		box-shadow: inset 2px 0 0 var(--accent-fill, #2563eb);
+	}
+	.code-tab:global([data-drop='after']) {
+		box-shadow: inset -2px 0 0 var(--accent-fill, #2563eb);
 	}
 	.code-tab {
 		display: flex;

@@ -545,7 +545,7 @@
 		data-preview-id={winId}
 		bind:this={winEl}
 		tabindex="-1"
-		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
+		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden outline-hidden"
 		class:pv-through={winPassthrough}
 		class:pv-faded={winOpacity < 1}
 		style:--pv-opacity={winOpacity}

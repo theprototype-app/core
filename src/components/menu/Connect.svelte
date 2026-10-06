@@ -273,7 +273,7 @@
 	 transparent margin pass clicks to windows underneath (z-index 300); the pill
 	 re-enables them. Narrow screens drop the bar to its own row BELOW the logo
 	 (left) and the peers/profile chrome (right) instead of squeezing between them. -->
-<div class="connect-wrap" class:docked class:body-open={$connectDrawerOpen}>
+<div class="connect-wrap" data-key-scope="keep" class:docked class:body-open={$connectDrawerOpen}>
 	<div class="connect-pill" class:drawer-open={drawerVisible} class:docked bind:this={pillEl} role="group" data-state={connState}>
 		<!-- your invite id (click to copy the share link) -->
 		<Button

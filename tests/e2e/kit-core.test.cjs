@@ -25,7 +25,8 @@ const PROBE = () => {
 };
 
 h.run(async () => {
-	const browser = await h.launch();
+	// three pages: the GPU backend (a third SwiftShader page boots past setupPage's 30 s — CLAUDE.md gotcha; red twice on the 1.25 union)
+	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A');
 	const B = await h.setupPage(browser, 'B');
 	for (const p of [A, B]) h.check(await p.page.evaluate(PROBE), p.id + ': api.kit is on a module (score, round, levels, rules, pickups)');

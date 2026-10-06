@@ -144,6 +144,19 @@ function towersGraph() {
 	N('wobble', 'towerswobble', 'Wobble plate rocks (level 10)', 40, 1560, { amplitude: 0.07, period: 3.4 });
 	N('selwobble', 'objectselector', 'Wobble plate', 280, 1560, { selected: 'Wobble plate' });
 	E('wobble', 'selwobble');
+	// ---- 36 F11: MAIN, READABLE — four group cards with notes (groups are views: every node
+	// and wire above is unchanged), laid out by the author script's Tidy
+	const nums = (/** @type {string} */ p, /** @type {string} */ q = '') => Array.from({ length: 12 }, (_, i) => p + (i + 1) + q);
+	const GX = -2400;
+	g.T('n-readme', 'Towers — read me first', 'Stack the pieces you are dealt into a tower that meets the level\'s goal and **hold it** until the timer runs out. Twelve levels; stars for the win, few pieces and a quick time. The **Towers** module deals the pieces, judges the tower and keeps your stars — open its **Code link** to read it. This graph wires its words into the HUD and its buttons into the menus.', GX, -1500, { color: 'blue', w: 340, h: 210 });
+	g.T('n-buttons', 'Level buttons', 'The level picker and the results buttons (Next, Retry, Levels) and the click every button makes. The module reads the presses.', GX, -1250, { color: 'gray', w: 300, h: 110 });
+	g.G('g-buttons', 'Level buttons', [...nums('lvl'), 'bnext', 'bretry', 'blevels', 'click'], GX, -1100);
+	g.T('n-picker', 'Level picker stars', 'The picker\'s headline and the stars you hold on each of the 12 levels — a **Towers** value into each HUD line.', GX, -950, { color: 'gray', w: 300, h: 100 });
+	g.G('g-picker', 'Level picker stars', ['mlinei', 'mlinet', ...nums('ls', 'i'), ...nums('ls', 't')], GX, -820);
+	g.T('n-hud', 'Play HUD & results', 'In play: the level, its goal, pieces left, the clock, the hold timer and the rule; at the end: the result, stars, the line and your best; the progress bar.', GX, -680, { color: 'green', w: 300, h: 120 });
+	g.G('g-hud', 'Play HUD & results', ['titlei', 'titlet', 'goali', 'goalt', 'piecesi', 'piecest', 'clocki', 'clockt', 'holdi', 'holdt', 'rulei', 'rulet', 'resulti', 'resultt', 'rstarsi', 'rstarst', 'rlinei', 'rlinet', 'rbesti', 'rbestt', 'progi', 'progbar'], GX, -530);
+	g.T('n-pause', 'Pause menu', '**P** opens it; Resume closes it, Restart replays the level, Levels goes back to the picker (the module acts on those two).', GX, -390, { color: 'purple', w: 300, h: 110 });
+	g.G('g-pause', 'Pause menu', ['pkey', 'pausetoggle', 'pausehide', 'bresume', 'brestart', 'bquit'], GX, -250);
 	return g.done();
 }
 
@@ -215,6 +228,8 @@ const TOWERS_DEF = {
 		]
 	},
 	graphs: { scene: towersGraph() },
+	// 36 F11: group cards laid out by the node editor's own Tidy
+	graphTidy: 'layout',
 	shaders: { 'Arena floor': TOWERS_FLOOR_SHADER },
 	hud: {
 		scene: {

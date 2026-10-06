@@ -5,6 +5,71 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.25.0 — Your feedback, fixed: panels that keep their keys, water that behaves 🌊
+
+### ⌨️ Panels and windows
+
+- ⌨️ **Keys follow the panel you are in.** W/A/S/D no longer fly the camera from the Explorer, Inspector, node Graph
+  view, HUD editor or any tool window, and the panel that has the keys shows an outline. The Object list keeps
+  Delete / F / Ctrl+D, T/N/O work from anywhere, and C opens chat only from the 3D view.
+- 🎚️ **Sliders and number fields in nodes never drag the graph**, and the behaviour view stops flickering.
+- 🖱️ No browser menu on a right-click while you drag a window; the undocked Code window's tabs are clickable;
+  Ctrl+Z works with a checkbox or slider focused and inside the Profiler timeline.
+
+### 🧑‍💻 Code workspace
+
+- ✏️ **The Player node's code opens and saves** like any other code node (with the engine source beside it, read-only).
+- 🗂️ **Sidebars**: Open editors and a searchable Project tree on the left (module sources open read-only with
+  **Make editable copy**); Outline, Problems, Bound nodes and Find in files on the right (**Ctrl+B**, **Ctrl+Alt+B**,
+  **Ctrl+Shift+F**).
+- 📑 The tab strip scrolls and tabs drag to reorder; **Ctrl+P** quick open, **Ctrl+Shift+O** go to symbol, a guard
+  before closing unsaved code, full keyboard navigation and a light-theme editor.
+
+### 🧩 Node graphs
+
+- 🔍 **The node editor opens with the whole graph in view** — or where you left it, saved with the scene
+  (Settings ▸ Input ▸ Node editor opens).
+- 🧹 **Tidy graph** (button, right-click menu, **L**; **Shift+L** only fixes overlaps and crossings) — one undo, and
+  everyone in the room sees it.
+- 🗺️ **Every game's Main graph is tidied**: nothing overlaps and no wire crosses a card; Waves, Stars Room, Towers,
+  Jam Room and Untangle read as group cards with notes.
+
+### 🎯 Selecting and loading
+
+- 🐟 **Click things inside or behind water.** **Alt+click** cycles everything under the cursor (hold Alt to preview,
+  "2 of 4"), and Configure Scene ▸ Advanced ▸ **Selection passes through** chooses what clicks go through. Game rays
+  and the VR laser skip water and triggers. **Ping is now Ctrl+Alt+click.**
+- 🧭 **Opening a scene while another is loading always gives you the newest one.** The load bar shows progress from
+  the click, scenes draw their shapes first and the water a moment later.
+
+### 🌊 Water and simulations
+
+- 🛟 **Things under water rise or sink by their density**; Island Ocean's boat rides the swell; the Jelly Room
+  renders again.
+- 🎛️ **Every water setting works on every preset** (Opacity, Visibility, Foam…), and a selected object under water
+  sits exactly under its outline.
+- ▶️ **Start simulation on load** (Configure Scene) and one **Reset / Pause** for the whole simulation — tanks,
+  bodies, drops and fluid alike; play links start the simulation too.
+- 🫧 Bubble emitters you can see, **Add ▸ Water ▸ Pour** emitters, and fluid tanks that spill when tipped.
+- 📱 **Phones**: water and fluid follow the quality level live, the quality climbs back up once a scene has loaded,
+  and the simplified water still bends the light (a one-time notice says how to get the full look).
+
+### 💧 Fluids (new)
+
+- 💧 **Add ▸ Water ▸ Fluid** — real particle water poured into the scene, with hard caps so it can never run away; it
+  pools, splashes, lands on meshes and joins water it is poured into. **Physics ▸ Fluid** on any mesh chooses how it
+  meets the water.
+- 🌀 **Add ▸ Water ▸ Flow path** — a river, chute or pipe that carries water and floating things; a looping river
+  recycles its water.
+- ⚙️ New nodes **Rotate / Motor** and **Float Along Flow**; one scene-wide **Fluid budget** (Configure Scene ▸
+  Physics) that the quality governor lowers when frames drop.
+- 🏭 **New example: Water works** — a closed-loop water diorama.
+
+### 🔧 Fixes
+
+- An old game scene with two modules no longer opens with its two Code link cards on top of each other.
+- Particle fluid no longer tunnels through thin walls under pressure.
+
 ## 1.24.0 — Characters that walk, a race, and your games' stats 🏁
 
 ### 🧍 Characters

@@ -81,6 +81,13 @@
 		edges = g.edges;
 	});
 
+	/** the node itself when the live layer changed nothing on it (xyflow then skips it) */
+	function keep(n: any, d: any) {
+		const o = n.data;
+		if (o.glow === d.glow && o.error === d.error && o.live === d.live && o.liveText === d.liveText) return n;
+		return { ...n, data: d };
+	}
+
 	/** a knob: preview while dragged, write the literal on release */
 	function onKnob(key: string, value: any, final: boolean) {
 		if (!open || !app) return;
@@ -133,10 +140,15 @@
 				if (prev.key !== key) seen.set(nodeId, { key, at: t0 });
 				return t0 - (seen.get(nodeId)?.at ?? -Infinity) < GLOW_MS;
 			};
+			// 36 F1 ("the cursor flickers hand↔arrow"): a node is replaced ONLY when its live data
+			// changed, and the replacement keeps `measured`. A fresh node object without it is a
+			// node xyflow has never measured — `visibility: hidden` until its ResizeObserver
+			// fires — so rebuilding all of them every 100 ms blinked every node out ten times a
+			// second, and the pointer fell through to the pane's grab hand each time.
 			nodes = nodes.map((n) => {
 				const v = n.data.view;
 				const d: any = { ...n.data, glow: false, error: '' };
-				if (!live) return { ...n, data: { ...d, liveText: v.kind === 'state' ? '—' : undefined } };
+				if (!live) return keep(n, { ...d, liveText: v.kind === 'state' ? '—' : undefined });
 				if (v.kind === 'param') d.live = live.params[v.key];
 				else if (v.kind === 'state') {
 					d.liveText = formatValue(live.state?.[v.key]);
@@ -160,7 +172,7 @@
 					const pending = (live.timers ?? []).filter((t: any) => t.method === n.data.method);
 					d.liveText = pending.length ? 'in ' + Math.max(0, (pending[0].at - now) / 1000).toFixed(1) + ' s' : '';
 				}
-				return { ...n, data: d };
+				return keep(n, d);
 			});
 		}, 100);
 	});
@@ -174,7 +186,7 @@
 </script>
 
 {#if open}
-	<div id="behaviour-view" class="absolute inset-0 z-20 flex flex-col bg-gray-900" data-behaviour-view={open.id}>
+	<div id="behaviour-view" data-key-scope="panel" role="region" aria-label="Behaviour graph view" class="absolute inset-0 z-20 flex flex-col bg-gray-900" data-behaviour-view={open.id}>
 		<div class="flex shrink-0 items-center gap-2 border-b border-gray-700 px-2 py-1 text-xs text-gray-200">
 			<button id="behaviour-view-back" class="ui-button-quiet" title="Back to the graph" onclick={() => behaviourViewOpen.set(null)}>← Graph</button>
 			<span class="font-semibold">{graphNode?.data?.name || status?.name || 'Behaviour'}</span>
@@ -193,8 +205,9 @@
 				{#if !graphNode}
 					<p class="p-4 text-sm text-gray-400">This behaviour node is gone.</p>
 				{:else}
+					<!-- bind: xyflow writes each node's `measured` size back, so a live update keeps it -->
 					<SvelteFlow
-						{nodes}
+						bind:nodes
 						{edges}
 						{nodeTypes}
 						nodesDraggable={false}

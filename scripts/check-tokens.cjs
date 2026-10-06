@@ -25,6 +25,14 @@ const COMPONENTS = path.join(ROOT, 'src', 'components');
 
 /** files that must stay token-clean (relative to the repo root, forward slashes) */
 const CLEAN = [
+	// 38 R7 (38-modals)
+	'src/components/menu/CharacterPanel.svelte',
+	'src/components/menu/ConfirmModal.svelte',
+	'src/components/menu/ExportPanel.svelte',
+	'src/components/menu/ImportDuplicatesModal.svelte',
+	'src/components/menu/ModulesManager.svelte',
+	'src/components/menu/PublishExportModal.svelte',
+	'src/components/ui/ModalDialog.svelte',
 	'src/components/ui/Badge.svelte',
 	'src/components/ui/Button.svelte',
 	'src/components/ui/Checkbox.svelte',

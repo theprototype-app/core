@@ -659,16 +659,19 @@
 <!-- when Connect docks to a full-width top bar, drop this corner chrome below it (plus
 	 its tab strip when pinned) so nothing overlaps — connectBarHeight is the bar's height -->
 <div class="top-right-chrome" style="position: fixed; right: 0px; z-index: 997; top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
-	<div class="flex items-center gap-2" style=" position: absolute; top: 15px; right: 100px; z-index: 997;">
+	<!-- 38 R8: one glass group (styles/hud.css) — notes, notifications, peers — sitting just
+	     left of the profile circle, which keeps its own place (its dropdown is anchored to it) -->
+	<div class="tp-ui hud-glass hud-tr" style="position: absolute; top: 10px; right: 76px; z-index: 997;">
 	<!-- E2: scene-notes drawer toggle -->
 	<button
 		id="notes-toggle"
-		class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-700/60 bg-gray-800/85 text-gray-200 backdrop-blur-sm hover:bg-gray-700/85 {$notesDrawerOpen ? 'ring-2 ring-primary-500/60' : ''}"
+		class="hud-cell"
+		class:on={$notesDrawerOpen}
 		title="Scene notes"
 		aria-label="Scene notes"
 		onclick={() => notesDrawerOpen.update((v) => !v)}
 	>
-		<StickyNote size={16} class="text-xs" aria-hidden="true" />
+		<StickyNote size={20} strokeWidth={1.75} aria-hidden="true" />
 	</button>
 	<!-- E1: notifications bell + history panel -->
 	<NotificationCenter />
@@ -683,16 +686,17 @@
 		<!-- compact trigger: a few stacked avatars + the peer count -->
 		<button
 			id="peers-trigger"
-			class="flex items-center gap-2 rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-1 backdrop-blur-sm hover:bg-gray-700/85"
+			class="hud-cell hud-tr-peers"
+			class:on={peersOpen}
 			title="Connected peers"
 			onclick={() => (peersOpen = !peersOpen)}
 		>
 			<div class="flex -space-x-2">
 				{#each $userdata.slice(1, 4) as user (user[0])}
-					<Avatar stacked src={user[2]} class="h-7 w-7 rounded-full border-2 border-gray-800" />
+					<Avatar stacked src={user[2]} class="hud-tr-av h-6 w-6 rounded-full" />
 				{/each}
 			</div>
-			<span class="pr-1 text-xs font-semibold text-gray-200">{$userdata.length}</span>
+			<span class="hud-tr-count">{$userdata.length}</span>
 		</button>
 
 		{#if peersOpen}

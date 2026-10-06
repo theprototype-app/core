@@ -248,3 +248,25 @@
 		width: calc(var(--hud-fab) + 6px);
 	}
 }
+
+/* ---- the top-right group (Users.svelte: notes, notifications, peers) ---- */
+.hud-tr {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	height: var(--hud-row-h);
+	padding: 0 5px;
+	border-radius: var(--radius-window);
+}
+.hud-tr .hud-tr-peers {
+	width: auto;
+	gap: 6px;
+	padding: 0 8px 0 6px;
+}
+.hud-tr .hud-tr-av {
+	box-shadow: 0 0 0 2px var(--surface-1);
+}
+.hud-tr-count {
+	font: 600 0.75rem var(--font-ui-mono);
+	color: var(--text-2);
+}

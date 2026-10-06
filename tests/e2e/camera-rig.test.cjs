@@ -56,6 +56,26 @@ const moveTo = (page, uuid, pos) =>
 		},
 		{ uuid, pos }
 	);
+/**
+ * a CONFIRMED node-data write: a single setNodeData can be lost under load (the documented
+ * write-chain cost — run 5 read "target space" with the rig still in lookat), so write, read the
+ * node back and write again until every key holds
+ */
+const setRig = async (page, data, label) => {
+	for (let i = 0; i < 6; i++) {
+		const ok = await page.evaluate((data) => {
+			let g;
+			window.__stores.flowGraphs.subscribe((v) => (g = v))();
+			const n = g.scene?.nodes.find((x) => x.id === 'rig');
+			if (n && Object.entries(data).every(([k, v]) => n.data[k] === v)) return true;
+			window.__stores.nodesHandler.setNodeData('rig', data);
+			return false;
+		}, data);
+		if (ok) return;
+		await page.waitForTimeout(400);
+	}
+	h.check(false, 'the rig data write landed: ' + label);
+};
 const N = (id, type, data = {}) => ({ id, type, position: { x: 0, y: 0 }, data: { type, label: id, ...data }, class: 'w-[150px]' });
 
 h.run(async () => {
@@ -144,7 +164,7 @@ h.run(async () => {
 	await h.eventually(() => pose(B.page, made.cam), (x) => x && near(x.pos, [-4, 3, 7]), 'on the peer too (the target pose replicated, the rig ran locally)');
 
 	// --- 4. damping lags --------------------------------------------------------------------
-	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('rig', { damping: 1.5 }));
+	await setRig(p, { damping: 1.5 }, 'damping 1.5');
 	await p.waitForTimeout(300);
 	await moveTo(p, made.box, [6, 1, 0]);
 	await p.waitForTimeout(250);
@@ -152,19 +172,25 @@ h.run(async () => {
 	const dx = c.pos[0];
 	h.check(dx > -4 + 0.2 && dx < 6 - 0.5, `damping lags behind the target (x ${dx.toFixed(2)} between -4 and 6 after 0.25 s)`);
 	await h.eventually(() => pose(p, made.cam), (x) => x && near(x.pos, [6, 3, 5], 0.2), 'and settles on it', 15000);
-	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('rig', { damping: 0 }));
+	await setRig(p, { damping: 0 }, 'damping 0');
 
 	// --- 5. lookat only keeps the authored position; target space turns the offset ----------
-	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('rig', { mode: 'lookat' }));
+	await setRig(p, { mode: 'lookat' }, 'lookat');
 	await h.eventually(() => pose(p, made.cam), (x) => x && near(x.pos, camBase) && aimsAt(x, [6, 1, 0]) > 0.999, 'lookat: the camera stays where it was authored and turns to the target');
+	// the turn goes out as a replicated move, so the peer's copy (and any reconcile) agrees with it
 	await p.evaluate(({ box }) => {
 		let g;
+		let peer;
 		window.__stores.objectsGroup.subscribe((v) => (g = v))();
-		g.getObjectByProperty('uuid', box).rotation.set(0, Math.PI / 2, 0);
-		window.__stores.nodesHandler.setNodeData('rig', { mode: 'follow', space: 'target', ox: 0, oy: 0, oz: 5 });
+		window.__stores.peers.subscribe((v) => (peer = v))();
+		const o = g.getObjectByProperty('uuid', box);
+		o.rotation.set(0, Math.PI / 2, 0);
+		o.updateMatrixWorld(true);
+		peer?.send({ type: 'move', uuid: box, pos: o.position.toArray(), rot: o.rotation.toArray(), scale: o.scale.toArray() });
 	}, made);
+	await setRig(p, { mode: 'follow', space: 'target', ox: 0, oy: 0, oz: 5 }, 'follow in target space');
 	await h.eventually(() => pose(p, made.cam), (x) => x && near(x.pos, [11, 1, 0]), 'target space: the offset turns with the target (behind it at +X)');
-	await p.evaluate(() => window.__stores.nodesHandler.setNodeData('rig', { mode: 'both', space: 'world', oy: 2, oz: 5 }));
+	await setRig(p, { mode: 'both', space: 'world', oy: 2, oz: 5 }, 'both, world');
 	await p.screenshot({ path: OUT + '04-camera-rig.png' });
 
 	// --- 6. a rig wired to a non-camera moves nothing ---------------------------------------

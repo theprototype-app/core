@@ -316,6 +316,20 @@
 		exportPrefab, duplicatePrefab } from '$lib/prefabs';
 	// 37 R4: an edited prefab offers to update its instances (replicated, one undo)
 	import { offerInstanceUpdate, updateInstances, selectInstances, prefabInstanceCounts } from '$lib/prefabLinks';
+	// 37 R4: the prefab tab's folders + tags (local organisation of a local library)
+	import {
+		prefabFolder,
+		prefabTagFilter,
+		prefabFolderList,
+		loadPrefabFolders,
+		createPrefabFolder,
+		renamePrefabFolder,
+		deletePrefabFolder,
+		movePrefabsTo
+	} from '$lib/prefabLibrary';
+	import { prefabView, folderPaths, nameOf as folderLeaf } from '$lib/prefabLibraryCore';
+	import PrefabTagBar from './PrefabTagBar.svelte';
+	import PrefabDetails from './PrefabDetails.svelte';
 	// 21-I3: Export ▸ scene (.tpscene) — a scene containing just this prefab. Built from
 	// the EMPTY payload plus this one object, never a capture of the live scene.
 	// R22 round 13 P3: `sessions` is read for the Mount picker (which saved entries are
@@ -393,6 +407,7 @@
 		docked = true;
 	loadExplorer();
 	loadPrefabs();
+	loadPrefabFolders();
 	loadMountedVolumes();
 
 	function setDocked(v: boolean) {
@@ -1009,6 +1024,7 @@
 		text: 'file-text',
 		object: 'box',
 		prefab: 'boxes',
+		'prefab-folder': 'folder', // 37 R4: a folder inside the Prefabs view
 		scene: 'map' // 21-F4: a level (.tpscene)
 	};
 	// semantic icon colors (ui.css classes over the --icon-* theme tokens)
@@ -1033,6 +1049,7 @@
 		text: 'ico-doc',
 		object: 'ico-object',
 		prefab: 'ico-prefab',
+		'prefab-folder': 'ico-folder',
 		scene: 'ico-prefab' // 21-F4: levels share the prefab tint
 	};
 
@@ -1254,14 +1271,28 @@
 				.map((i: any) => ({ ...i, volumeId: volume.id, volumeName: volume.name, volumeItem: true }))
 				.filter(passesFilter);
 		}
-		if ($activeFolder === 'prefabs')
-			return $prefabs.map((p) => ({
-				id: 'prefab:' + p.id,
-				name: p.name,
-				kind: 'prefab',
-				thumbnail: p.thumbnail,
-				prefabId: p.id
-			}));
+		if ($activeFolder === 'prefabs') {
+			// 37 R4: the tab has FOLDERS and TAGS now — folder cards first, then the prefabs
+			// filed here; a search or a tag filter reaches everything below (prefabLibraryCore)
+			const view = prefabView($prefabs, $prefabFolderList, $prefabFolder, $prefabTagFilter, search);
+			return [
+				...view.folders.map((f) => ({
+					id: 'prefabfolder:' + f.path,
+					name: f.name,
+					kind: 'prefab-folder',
+					prefabFolder: f.path,
+					count: f.count
+				})),
+				...view.items.map((p: any) => ({
+					id: 'prefab:' + p.id,
+					name: p.name,
+					kind: 'prefab',
+					thumbnail: p.thumbnail,
+					prefabId: p.id,
+					tags: p.tags ?? []
+				}))
+			];
+		}
 		// P4: the Packs root — one card per pack (single-click a pack card opens it)
 		if ($activeFolder === 'packs') {
 			return shownPacks.map((p: any) => ({
@@ -1548,7 +1579,17 @@
 			for (const f of chain) out.push({ label: f.name, id: volumeKey(volScope.volumeId, f.id) });
 			return out;
 		}
-		if (a === 'prefabs') return [{ label: 'Prefabs', id: 'prefabs' as string | null }];
+		if (a === 'prefabs') {
+			// 37 R4: "Prefabs / Furniture / Chairs" — each crumb a `prefabs/<path>` id that
+			// openFolder answers by moving the view's own folder, not `activeFolder`
+			const out = [{ label: 'Prefabs', id: 'prefabs' as string | null }];
+			let path = '';
+			for (const seg of ($prefabFolder || '').split('/').filter(Boolean)) {
+				path = path ? path + '/' + seg : seg;
+				out.push({ label: seg, id: 'prefabs/' + path });
+			}
+			return out;
+		}
 		if (a === 'packs') return [{ label: 'Packs', id: 'packs' as string | null }];
 		// R22 round 7: the bin is its own place, so the breadcrumb has to say so — it read
 		// "Library", which is exactly where these files are not.
@@ -2475,6 +2516,8 @@
 		// R5: the scene rename — replicated through the manifest, its files follow
 		else if (edit.mode === 'rename-scene') renameScene(edit.sceneName, edit.value);
 		else if (edit.mode === 'rename-prefab') renamePrefab(edit.prefabId, edit.value);
+		else if (edit.mode === 'rename-prefab-folder') await renamePrefabFolder(edit.folderPath, edit.value);
+		else if (edit.mode === 'new-prefab-folder') await createPrefabFolder($prefabFolder, edit.value);
 		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
 		// 21-G9 (union): land the scene where the user is looking — Scenes when the
 		// active folder is a pseudo view or a stale id
@@ -2562,6 +2605,7 @@
 				editing.mode === 'new-scene' ||
 				editing.mode === 'duplicate-scene' ||
 				editing.mode === 'new-pack' ||
+				editing.mode === 'new-prefab-folder' ||
 				(editing.mode === 'create' && editing.inGrid))
 			? (editing.mode as string)
 			: null
@@ -3669,7 +3713,8 @@
 		// `deleted:<hash>`, which `explorerItems` has never held — so every batch op here was
 		// addressing nothing, silently. The bin's own menus are where its rows are acted on.
 		!item.deletedEntry &&
-		item.kind !== 'pack-folder';
+		item.kind !== 'pack-folder' &&
+		item.kind !== 'prefab-folder';
 
 	/** what the selection breaks down into, once and for every batch entry point */
 	// ---- 24-C1: Duplicate / Copy / Cut / Paste --------------------------------------
@@ -4241,6 +4286,75 @@
 		]);
 	}
 
+	/** 37 R4: "Move to folder ▸" — every folder of the tab, the root first, and a new one.
+	 * @param {string[]} ids @param {string} current */
+	function prefabMoveItem(ids: string[], current: string) {
+		const paths = [...folderPaths($prefabs, $prefabFolderList)].sort();
+		return {
+			label: 'Move to folder',
+			icon: 'folder-input',
+			children: [
+				{ label: 'Prefabs (top level)', checked: !current, action: () => void movePrefabsTo(ids, '') },
+				...paths.map((path) => ({ label: path.split('/').join(' / '), checked: current === path, action: () => void movePrefabsTo(ids, path) })),
+				{ section: ' ' },
+				{
+					label: 'New folder here',
+					icon: 'folder-plus',
+					tooltip: 'Make a folder where you are standing and move this into it',
+					action: async () => {
+						const path = await createPrefabFolder($prefabFolder);
+						await movePrefabsTo(ids, path);
+						startRenamePrefabFolder(path);
+					}
+				}
+			]
+		};
+	}
+
+	/** 37 R4: a folder card's menu in the Prefabs view. */
+	function prefabFolderMenu(e: MouseEvent, item: any) {
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{ label: 'Open', icon: 'folder', action: () => openFolder('prefabs/' + item.prefabFolder) },
+				{ label: 'Rename', icon: 'pencil', action: () => startRenamePrefabFolder(item.prefabFolder) },
+				{
+					label: 'Delete folder',
+					icon: 'trash-2',
+					danger: true,
+					tooltip: 'Its prefabs and folders move up one level — nothing is deleted with it',
+					action: () => void deletePrefabFolder(item.prefabFolder)
+				}
+			]
+		};
+	}
+
+	/** @param {string} path */
+	function startRenamePrefabFolder(path: string) {
+		settlePendingEdit();
+		editing = { mode: 'rename-prefab-folder', cardId: 'prefabfolder:' + path, folderPath: path, value: folderLeaf(path) };
+	}
+	function startNewPrefabFolder() {
+		settlePendingEdit();
+		editing = { mode: 'new-prefab-folder', value: 'New folder', inGrid: true };
+	}
+
+	/** a prefab card dropped on a folder card files it there @param {DragEvent} e @param {any} item */
+	function dropOnPrefabFolder(e: DragEvent, item: any) {
+		const payload = payloadOf(e);
+		dropFolder = null;
+		if (!payload) return;
+		const dragged = payload.items?.length ? payload.items : [payload];
+		const ids = dragged.map((p: any) => p?.prefabId).filter(Boolean);
+		if (!ids.length) return;
+		e.preventDefault();
+		e.stopPropagation();
+		void movePrefabsTo(ids, item.prefabFolder).then(() =>
+			showToast('Moved ' + (ids.length === 1 ? 'the prefab' : ids.length + ' prefabs') + ' to ' + item.name)
+		);
+	}
+
 	/** 37 R4: the instances in this scene, from the card — only when there are some. */
 	function prefabInstanceItems(prefab: any) {
 		const n = $prefabInstanceCounts[prefab.id] ?? 0;
@@ -4335,6 +4449,8 @@
 					action: () => updatePrefabFromSelection(prefab)
 				},
 				...prefabInstanceItems(prefab),
+				prefabMoveItem([prefab.id], prefab.folder ?? ''),
+				{ label: 'Edit tags…', icon: 'tag', tooltip: 'Tags filter the Prefabs view', action: () => showProperties({ kind: 'item', item }) },
 				{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'item', item }) },
 				{ label: 'Rename', icon: 'pencil', action: () => startRenamePrefab(item) },
 				{ label: 'Delete', icon: 'trash-2', danger: true, action: () => void deletePrefabToBin(prefab) }
@@ -4360,6 +4476,7 @@
 			if (pack) packRowMenu(e, pack);
 			return;
 		}
+		if (item.kind === 'prefab-folder') return prefabFolderMenu(e, item);
 		// P3: a file in a MOUNTED project. Its own menu, for the reason every branch here
 		// has one: Rename / Delete / Share / Download all address a library record it has
 		// none of, and Properties is the only one of them that would have worked.
@@ -5134,6 +5251,12 @@
 						icon: 'boxes',
 						tooltip: 'Save the objects selected in the scene as a new prefab',
 						action: () => void createPrefabFromSelection()
+					},
+					{
+						label: 'New folder',
+						icon: 'folder-plus',
+						tooltip: 'A folder for prefabs, here',
+						action: () => startNewPrefabFolder()
 					}
 				]
 			};
@@ -5805,6 +5928,10 @@
 			openFolder('pack:' + item.packName); // P4: single-click a pack card opens it
 			return;
 		}
+		if (item.kind === 'prefab-folder') {
+			openFolder('prefabs/' + item.prefabFolder); // 37 R4: the pack card's rule
+			return;
+		}
 		if (item.packEntry) {
 			// pack items aren't library items (no inspectedFile highlight); just select
 			// for the Properties panel
@@ -5848,6 +5975,12 @@
 	}
 	function openFolder(id: string | null) {
 		search = '';
+		// 37 R4: a folder INSIDE the Prefabs view is the view's own state, not a location
+		if (id === 'prefabs' || (typeof id === 'string' && id.startsWith('prefabs/'))) {
+			prefabFolder.set(id === 'prefabs' ? '' : id.slice('prefabs/'.length));
+			activeFolder.set('prefabs');
+			return;
+		}
 		// R22 round 36: `deletedlog` is an ALIAS now, not a place. Round 13 made the log a
 		// navigable folder id so it could be deep-linked and returned to; round 36 makes the
 		// same reading a view FLAG over the bin (see `deletedRootCount`). Answering the old id
@@ -6129,6 +6262,10 @@
 		}
 		if (item.kind === 'pack-folder') {
 			openFolder('pack:' + item.packName);
+			return;
+		}
+		if (item.kind === 'prefab-folder') {
+			openFolder('prefabs/' + item.prefabFolder);
 			return;
 		}
 		if (item.kind === 'prefab') {
@@ -6442,7 +6579,7 @@
 								><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={14} /></span
 							>
 						{/if}
-						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-scene' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId)}
+						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-scene' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === id)}
 							{@render cardEdit()}
 						{:else}
 							<span
@@ -6743,6 +6880,7 @@
 					{/if}
 				</div>
 			{/if}
+			{#if $activeFolder === 'prefabs'}<PrefabTagBar />{/if}
 		{/snippet}
 		{#snippet primary()}
 		<!-- folder tree (106.6); width/collapse/side owned by WindowShell (197) -->
@@ -7342,8 +7480,8 @@
 							<!-- 21-G10: name it where it will appear, in this view too — a placeholder
 							     that only exists in one of two layouts is a trap. -->
 							<div id="explorer-new-card" class="ex-new flex items-center gap-1.5">
-								<span class={pendingCard === 'create' ? 'ico-folder' : 'text-gray-400'}>
-									{#if pendingCard === 'create'}
+								<span class={pendingCard === 'create' || pendingCard === 'new-prefab-folder' ? 'ico-folder' : 'text-gray-400'}>
+									{#if pendingCard === 'create' || pendingCard === 'new-prefab-folder'}
 										<Folder size={14} aria-hidden="true" />
 									{:else}
 										<Icon name={KIND_ICONS.scene} size={14} />
@@ -7408,8 +7546,8 @@
 							id="explorer-new-card"
 							class="explorer-folder-card flex flex-col items-center gap-1 rounded border border-dashed border-primary-600/70 bg-primary-600/5 p-1.5"
 						>
-							<span class="flex h-14 w-14 items-center justify-center {pendingCard === 'create' ? 'ico-folder' : 'text-gray-400'}">
-								{#if pendingCard === 'create'}
+							<span class="flex h-14 w-14 items-center justify-center {pendingCard === 'create' || pendingCard === 'new-prefab-folder' ? 'ico-folder' : 'text-gray-400'}">
+								{#if pendingCard === 'create' || pendingCard === 'new-prefab-folder'}
 									<Folder size={32} aria-hidden="true" />
 								{:else}
 									<Icon name={KIND_ICONS.scene} size={32} />
@@ -7495,6 +7633,12 @@
 							oncontextmenu={(e) => itemMenu(e, item)}
 							onclick={(e) => onCardClick(e, item)}
 							ondblclick={() => openItem(item)}
+							ondragover={(e) => {
+								if (item.kind !== 'prefab-folder') return;
+								e.preventDefault();
+								dropFolder = item.id;
+							}}
+							ondrop={(e) => item.kind === 'prefab-folder' && dropOnPrefabFolder(e, item)}
 						>
 							{#if openSceneHash && item.hash === openSceneHash}
 								<!-- 21-G9: THIS is the scene you have open. The ring alone reads as a
@@ -7617,7 +7761,7 @@
 									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} />
 								</span>
 							{/if}
-							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-scene' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId)}
+							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-scene' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === item.id)}
 								{@render cardEdit()}
 							{:else}
 								<!-- R22-R2: the plan asks for local items in a distinct colour. Drawn only
@@ -7734,6 +7878,7 @@
 									<span id="prefab-updated">{new Date(selPrefab.updatedAt).toLocaleString()}</span>
 								</div>
 							{/if}
+							<PrefabDetails prefabId={selItem.prefabId} />
 						</div>
 					{:else}
 					<div class="flex flex-col gap-1">

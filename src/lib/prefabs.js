@@ -657,6 +657,16 @@ export async function removePrefab(id) {
 	idbDelete(revKey(id)).catch(() => {});
 }
 
+/**
+ * 37 R4: rewrite records in place (folders, tags) — ONE write path for the Library's own
+ * organisation, so the persist cannot drift. `fn` returns the new record or undefined to
+ * leave it alone. @param {(p: any) => any} fn
+ */
+export async function patchPrefabs(fn) {
+	prefabs.update((list) => list.map((p) => fn(p) ?? p));
+	await persist();
+}
+
 /** @param {string} id @param {string} name */
 export async function renamePrefab(id, name) {
 	if (!name) return;

@@ -231,6 +231,28 @@ h.run(async () => {
 	}, uuid);
 	h.check(sent?.inherit === 0.7 && sent?.render === 'stretch' && sent?.stretch === 0.08, 'render / stretch / inherit replicate with the config');
 
+	// 9) the Inspector rows (38 kit: PropRow + Segmented) drive the same config, real clicks
+	await set({ render: 'points', space: 'world', mode: 'continuous' });
+	await page.evaluate((u) => window.__stores.objectActions.applySelectionSet([u], true), uuid);
+	const seg = page.locator('#particles-render');
+	await seg.waitFor({ state: 'visible', timeout: 10000 });
+	await seg.scrollIntoViewIfNeeded();
+	h.check((await seg.locator('[role="radio"]').count()) === 4, 'Inspector: "Draw as" is a 4-way Segmented (kit)');
+	await seg.getByRole('radio', { name: 'Trails' }).click();
+	await h.eventually(
+		() => page.evaluate(() => window.__fx.userData.particles?.render),
+		(r) => r === 'trails',
+		'clicking Trails sets render: trails (replicated config path)'
+	);
+	h.check(await page.locator('text=Trail length').first().isVisible(), 'Trails shows its Trail length row');
+	h.check(await page.locator('text=Inherit velocity').first().isVisible(), 'World space shows the Inherit velocity row');
+	for (const theme of ['dark', 'light']) {
+		await page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
+		await page.waitForTimeout(400);
+		if (SHOTS) await seg.locator('xpath=ancestor::*[contains(@class,"pm")][1]').screenshot({ path: path.join(SHOTS, `05-inspector-${theme}.png`) });
+	}
+	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
+
 	h.check(glErrors.length === 0, `no shader compile errors (${glErrors.slice(0, 2).join(' | ')})`);
 	await h.finish(browser, [A]);
 });

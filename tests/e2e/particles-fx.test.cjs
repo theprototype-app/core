@@ -37,8 +37,11 @@ h.run(async () => {
 			const fwd = cam.getWorldDirection(cam.position.clone());
 			box.position.copy(cam.position).addScaledVector(fwd, 4);
 			box.scale.setScalar(0.3);
+			// grey, so the coloured-pixel metric sees particles and not the palette colour
+			box.material?.color?.set?.('#7a7a7a');
 			delete box.userData.physics;
 			window.__fx = box;
+			window.__fxUuid = box.uuid;
 			window.__fxHome = box.position.clone();
 			window.__fxRight = fwd.clone().cross(cam.up).normalize();
 			return box.uuid;
@@ -54,38 +57,54 @@ h.run(async () => {
 			({ on, speed }) => {
 				cancelAnimationFrame(window.__fxRaf);
 				if (!on) {
-					window.__fx.position.copy(window.__fxHome);
+					let group;
+					window.__stores.objectsGroup.subscribe((g) => (group = g))();
+					(group?.getObjectByProperty('uuid', window.__fxUuid) ?? window.__fx).position.copy(window.__fxHome);
 					return;
 				}
 				const t0 = performance.now();
+				// by uuid every frame: the live object, whatever replaced the cached reference
+				const live = () => {
+					let group;
+					window.__stores.objectsGroup.subscribe((g) => (group = g))();
+					return group?.getObjectByProperty('uuid', window.__fxUuid) ?? window.__fx;
+				};
 				const loop = () => {
 					const t = (performance.now() - t0) / 1000;
-					window.__fx.position.copy(window.__fxHome).addScaledVector(window.__fxRight, Math.sin(t * speed) * 1.4);
-					window.__fx.position.y = window.__fxHome.y + Math.sin(t * speed * 2) * 0.35;
+					const box = live();
+					box.position.copy(window.__fxHome).addScaledVector(window.__fxRight, Math.sin(t * speed) * 1.4);
+					box.position.y = window.__fxHome.y + Math.sin(t * speed * 2) * 0.35;
 					window.__fxRaf = requestAnimationFrame(loop);
 				};
 				loop();
 			},
 			{ on, speed }
 		);
-	// lit pixels inside the box's screen neighbourhood (the canvas only; UI chrome excluded)
+	// COLOURED pixels on the canvas: max channel - min channel > 60 and max > 110. The editor
+	// background, grid and an unselected box are greys; the ribbon/trail presets are saturated
+	// cyan-to-blue. (A brightness threshold missed a blue band and counted the selection outline.)
 	const litPixels = () =>
 		page.evaluate(async () => {
 			const s = window.__stores;
 			let renderer;
 			s.globalRenderer.subscribe((r) => (renderer = r))();
 			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-			const src = renderer.domElement;
 			const c = document.createElement('canvas');
 			c.width = 320;
 			c.height = 180;
 			const g = c.getContext('2d');
-			g.drawImage(src, 0, 0, 320, 180);
+			g.drawImage(renderer.domElement, 0, 0, 320, 180);
 			const d = g.getImageData(0, 0, 320, 180).data;
 			let lit = 0;
-			for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 600) lit++;
+			for (let i = 0; i < d.length; i += 4) {
+				const hi = Math.max(d[i], d[i + 1], d[i + 2]);
+				const lo = Math.min(d[i], d[i + 1], d[i + 2]);
+				if (hi - lo > 60 && hi > 110) lit++;
+			}
 			return lit;
 		});
+	// no gizmo, no outline: both are coloured and would read as particles
+	const deselect = () => page.evaluate(() => window.__stores.objectActions.deselectObject());
 
 	const uuid = await place();
 	const set = (cfg) =>
@@ -127,11 +146,18 @@ h.run(async () => {
 
 	// 4) the ribbon trail preset behind a moving object — pixels on screen
 	await preset('trail');
+	await deselect();
 	await sweep(true);
 	await page.waitForTimeout(1200);
 	const ribbonLit = await litPixels();
 	h.check(ribbonLit > 150, `ribbon trail draws a band behind the moving box (${ribbonLit} lit px of 57600)`);
 	await shot('02-ribbon-trail.png');
+	const same = await page.evaluate(() => {
+		let group;
+		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		return group?.getObjectByProperty('uuid', window.__fxUuid) === window.__fx;
+	});
+	console.log(`(premise) the cached box is still the scene's object: ${same}`);
 	const ent = (await entriesOn(page))[0];
 	h.check(ent.render === 'ribbon' && Math.hypot(...ent.vel) > 0.3, `the emitter's velocity is tracked while it moves (|v| = ${Math.hypot(...ent.vel).toFixed(2)} m/s)`);
 
@@ -178,6 +204,7 @@ h.run(async () => {
 	// a STILL emitter with speed 0 has every slot at one point — a ribbon of zero area
 	await sweep(false);
 	await preset('trail');
+	await deselect();
 	await page.waitForTimeout(1500); // every slot reborn at the still position
 	const stillRibbon = await litPixels();
 	h.check(stillRibbon < 60, `a still ribbon collapses to nothing (${stillRibbon} lit px)`);

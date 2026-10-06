@@ -510,20 +510,8 @@
 </div>
 
 <style>
-	/* a slim but VISIBLE vertical scrollbar for a too-tall menu/submenu */
-	:global(.ctx-scroll) {
-		scrollbar-width: thin;
-	}
-	:global(.ctx-scroll::-webkit-scrollbar) {
-		width: 8px;
-	}
-	:global(.ctx-scroll::-webkit-scrollbar-thumb) {
-		background: rgb(148 163 184 / 0.7);
-		border-radius: 4px;
-	}
-	:global(.ctx-scroll::-webkit-scrollbar-track) {
-		background: transparent;
-	}
+	/* NOTES-38 #1: a too-tall menu scrolls with the app's minimal auto-hiding thumb
+	   (src/styles/windows.css) — no native bar of its own */
 	/* 16-P1: collapsed by default — mounted + focused, but taking no space. NOT
 	   display:none / hidden: the input must stay focusable to own the keyboard. */
 	.ctx-filter {

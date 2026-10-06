@@ -237,7 +237,7 @@
 			>
 		</SettingRow>
 		<SettingRow id="row-touch-tools" label="Touch tools" description="Undo, Redo and Multi-select buttons beside the logo. On by default on phones.">
-			<Toggle id="touch-tools" label="Touch tools" bind:checked={$touchTools} />
+			<Toggle id="setting-touch-tools" label="Touch tools" bind:checked={$touchTools} />
 		</SettingRow>
 		<SettingRow id="row-undock-touch" label="Allow undocking on touch screens" description="Lets the Node editor and Explorer float as windows on a phone.">
 			<Toggle id="mobile-undock" label="Allow undocking on touch screens" bind:checked={$mobileUndockAllowed} />
@@ -252,7 +252,7 @@
 			<Toggle id="env-in-list" label="Show the environment in the object list" bind:checked={$showEnvInList} />
 		</SettingRow>
 		<SettingRow id="row-object-search" label="Object search in the right-click menu" description="Find a scene object and fly the camera to it.">
-			<Toggle id="object-search" label="Object search in the right-click menu" bind:checked={$objectSearchEnabled} />
+			<Toggle id="setting-object-search" label="Object search in the right-click menu" bind:checked={$objectSearchEnabled} />
 		</SettingRow>
 	</Section>
 

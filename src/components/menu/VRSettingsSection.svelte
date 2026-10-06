@@ -86,7 +86,11 @@
 		vertexCap: 'The most vertices a mesh may have for vertex editing in VR.'
 	});
 	/** @param {any} row */
-	const noteOf = (row) => row.note || DESKTOP_NOTES[row.id] || '';
+	const noteOf = (row) => {
+		const n = row.note || DESKTOP_NOTES[row.id] || '';
+		// the schema's notes are shared with the headset and carry no full stop; a description does
+		return n && !/[.!?]$/.test(n) ? n + '.' : n;
+	};
 	/** @param {any} row */
 	const optionsOf = (row) => (row.options ?? []).map((/** @type {any} */ o) => ({ value: String(o.value), label: o.label }));
 	/** a choice row's value back to the type its options carry (snap angles are numbers) @param {any} row @param {string} v */

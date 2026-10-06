@@ -43,11 +43,11 @@ const PAGES = {
 		{ id: 'setting-xr-offer', kind: 'toggle', key: 'xrOfferSession', want: 'false', def: absentOr('true') },
 		{ id: 'floating-toolbar', kind: 'toggle', key: 'floatingToolbar', want: 'false', def: absentOr('true') },
 		{ id: 'toolbar-on-top', kind: 'toggle', key: 'toolbarOnTop', want: 'true', def: absentOr('false') },
-		{ id: 'touch-tools', kind: 'toggle', key: 'touchTools', want: 'true', def: absentOr('false'), note: 'desktop default is off' },
+		{ id: 'setting-touch-tools', kind: 'toggle', key: 'touchTools', want: 'true', def: absentOr('false'), note: 'desktop default is off' },
 		{ id: 'mobile-undock', kind: 'toggle', key: 'mobileUndockAllowed', want: 'true', def: absentOr('false') },
 		{ id: 'advanced-mode', kind: 'toggle', key: 'advancedMode', want: 'true', def: absentOr('false') },
 		{ id: 'env-in-list', kind: 'toggle', key: 'showEnvInList', want: 'true', def: absentOr('false') },
-		{ id: 'object-search', kind: 'toggle', key: 'objectSearchEnabled', want: 'true', def: absentOr('false') },
+		{ id: 'setting-object-search', kind: 'toggle', key: 'objectSearchEnabled', want: 'true', def: absentOr('false') },
 		{ id: 'show-perf-stats', kind: 'toggle', key: 'perfStats:show', want: 'true', def: absentOr('false') },
 		{ id: 'dock-pushes-viewport', kind: 'toggle', key: 'viewPrefs', want: field('dockPushesViewport', false), def: (raw) => raw === null || json(raw)?.dockPushesViewport === true }
 	],
@@ -192,7 +192,7 @@ async function drive(page, row) {
 		await page.locator(sel).scrollIntoViewIfNeeded();
 		await page.locator(sel).click();
 	} else if (row.kind === 'seg') {
-		const opt = `${sel}-${row.set}`;
+		const opt = `${sel} [data-value="${row.set}"]`;
 		await page.locator(opt).scrollIntoViewIfNeeded();
 		await page.locator(opt).click();
 	} else if (row.kind === 'select') {
@@ -238,7 +238,7 @@ h.run(async () => {
 	for (const [pageKey, list] of Object.entries(PAGES)) {
 		await openPage(page, pageKey);
 		for (const row of list) {
-			const present = (await page.locator('#' + row.id).count()) + (await page.locator(`#${row.id}-${row.set}`).count());
+			const present = await page.locator(row.kind === 'seg' ? `#${row.id} [data-value="${row.set}"]` : '#' + row.id).count();
 			if (!present) {
 				h.check(false, `${pageKey}: the control #${row.id} exists`);
 				continue;

@@ -15,7 +15,7 @@
 	import { get } from 'svelte/store';
 	import { settingsSection } from '../../../stores/appStore.js';
 	import { sectionKeyOf } from '$lib/settingsNav';
-	import { groupSections } from '$lib/settings/categories.js';
+	import { SETTINGS_GROUPS, categoryMeta } from '$lib/settings/categories.js';
 	import { whatsNewUnseen } from '$lib/whatsNew';
 	import Icon from '../../ui/Icon.svelte';
 
@@ -30,16 +30,36 @@
 	const buttons = new Map<any, HTMLButtonElement>();
 
 	const keyOf = (e: any) => sectionKeyOf(e.label);
+	// group the ENTRIES themselves (never through a key lookup: before the labels resolve every
+	// key is '' and a lookup would list one entry several times — a duplicate each-key)
 	const grouped = $derived.by(() => {
 		void filterTick;
 		const list: any[] = $entries;
-		const byKey = new Map(list.map((e) => [keyOf(e), e]));
-		const groups = groupSections(list.map(keyOf)).map((g) => ({ group: g.group, items: g.keys.map((k) => byKey.get(k)).filter(Boolean) }));
-		const about = list.find((e) => keyOf(e).startsWith('about'));
+		const keyed = list.map((e, i) => ({ e, k: keyOf(e), i }));
+		const about = keyed.find((x) => x.k.startsWith('about'))?.e;
+		const rest = keyed.filter((x) => x.e !== about);
+		const groups = SETTINGS_GROUPS.map((group) => ({
+			group,
+			items: rest
+				.filter((x) => categoryMeta(x.k).group === group.id)
+				.sort((a, b) => categoryMeta(a.k).order - categoryMeta(b.k).order || a.i - b.i)
+				.map((x) => x.e)
+		})).filter((g) => g.items.length);
 		return { groups, about };
 	});
 	/** every row in the order shown, for the arrow keys */
 	const order = $derived([...grouped.groups.flatMap((g) => g.items), ...(grouped.about ? [grouped.about] : [])]);
+
+	let resolveQueued = false;
+	function queueResolve() {
+		if (resolveQueued) return;
+		resolveQueued = true;
+		queueMicrotask(() => {
+			resolveQueued = false;
+			const key = get(settingsSection);
+			if (key) nav.activateKey(key);
+		});
+	}
 
 	/** svelte action: remember the button, read the label once the header snippet rendered */
 	function row(node: HTMLButtonElement, e: any) {
@@ -49,6 +69,8 @@
 			if (text && e.label !== text) {
 				e.label = text;
 				filterTick++;
+				// a deep link that arrived before the labels did found nothing: settle it now
+				queueResolve();
 			}
 		});
 		return {

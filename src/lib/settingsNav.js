@@ -110,6 +110,9 @@ export function createSettingsNav() {
 		if (get(searching)) return;
 		const list = get(entries);
 		if (!list.length) return;
+		// 37-settings: the labels arrive a tick after the rows render — deciding before that would
+		// miss the deep link and the remembered page alike (SettingsNav calls resolve again then)
+		if (list.some((e) => !e.label)) return;
 		if (deepLink && activateKey(deepLink)) return;
 		const current = get(active);
 		const remembered = safeStorage.getItem(LAST_KEY);

@@ -17,7 +17,7 @@
 	import NavRow from '../ui/NavRow.svelte';
 	import KitRow from '../ui/SettingRow.svelte';
 	import ChangelogBody from './settings/ChangelogBody.svelte';
-	import { showConfirm } from '$lib/confirmDialog';
+	import { showConfirm, confirmDialog } from '$lib/confirmDialog';
 	import Section from '../ui/Section.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import '$lib/uiDensity'; // NOTES-38 #19: applies the stored density at boot
@@ -354,7 +354,29 @@
 	settingsNav.openSub = (id: string, label: string, key?: string) => {
 		if (get(settingsNav.searching) && key) void jumpTo(key, null, { id, label });
 		else baseOpenSub(id, label);
+		keepFocusInside();
 	};
+	const baseCloseSub = settingsNav.closeSub;
+	settingsNav.closeSub = () => {
+		baseCloseSub();
+		keepFocusInside();
+	};
+	/** the button that opened (or closed) a sub-page unmounts with it: hand the focus to the content
+	 * column so the keyboard — Esc included — stays inside Settings */
+	function keepFocusInside() {
+		void tick().then(() => {
+			const a = document.activeElement;
+			if (!a || a === document.body || !a.closest('dialog.settings-dialog')) document.getElementById('settings-main')?.focus({ preventScroll: true });
+		});
+	}
+	/** Esc with the focus lost to <body> (a control that was pressed has unmounted) still belongs to Settings */
+	function onWindowKey(e: KeyboardEvent) {
+		if (!$settingsOpen || e.key !== 'Escape' || e.defaultPrevented) return;
+		const t = e.target as HTMLElement | null;
+		if (t && t !== document.body && t !== document.documentElement) return;
+		if (get(confirmDialog)) return;
+		onDialogKey(e);
+	}
 
 	/** searching: a click on a row's NAME jumps to it (the controls keep working in place) */
 	function onMainClick(e: MouseEvent) {
@@ -402,6 +424,8 @@
 	$: mobileTitle = !narrowSettings || searching || $navHome ? 'Settings' : $navSub ? $navSub.label : activeLabel;
 	$: mobileBackLabel = $navSub ? activeLabel : 'Settings';
 </script>
+
+<svelte:window on:keydown={onWindowKey} />
 
 <Modal
 	bind:open={$settingsOpen}
@@ -795,6 +819,10 @@
 		}
 		/* a segmented control on its own line under the label (a wide row) fills that line in
 		   equal columns — the kit's `full` form */
+		/* SPEC: touch targets >= 44 px on a phone — a segmented option too */
+		.settings-main :global(.seg-opt) {
+			min-height: 44px;
+		}
 		.settings-main :global(.sr-control > .seg) {
 			display: grid;
 			grid-template-columns: repeat(var(--seg-cols), minmax(0, 1fr));

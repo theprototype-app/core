@@ -126,7 +126,7 @@ h.run(async () => {
 		'Reset positions clears the stored window poses'
 	);
 	const toastShown = await A.page.evaluate(() =>
-		document.body.textContent.includes('VR menu positions reset')
+		document.body.textContent.includes('VR panel positions reset') // the schema's resetPanels toast
 	);
 	h.check(toastShown, 'reset confirms with a toast');
 

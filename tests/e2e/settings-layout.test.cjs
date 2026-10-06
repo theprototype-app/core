@@ -136,10 +136,14 @@ h.run(async () => {
 
 	// ---- 4. keyboard only ----------------------------------------------------------------------
 	await open(page, 'interface');
+	// header (search, close) → the menu → the page: a few Tabs from the search reach the menu
 	await page.locator('#settings-search').focus();
-	await page.keyboard.press('Tab');
-	const onNav = await page.evaluate(() => document.activeElement?.classList.contains('sn-row') ?? false);
-	h.check(onNav, 'Tab from the search lands in the menu');
+	let onNav = false;
+	for (let i = 0; i < 3 && !onNav; i++) {
+		await page.keyboard.press('Tab');
+		onNav = await page.evaluate(() => document.activeElement?.classList.contains('sn-row') ?? false);
+	}
+	h.check(onNav, 'Tab from the search reaches the menu (after the close button)');
 	await page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().focus();
 	await page.keyboard.press('ArrowDown');
 	await page.keyboard.press('ArrowDown');

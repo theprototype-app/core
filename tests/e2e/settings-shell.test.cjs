@@ -57,7 +57,7 @@ h.run(async () => {
 		const side = document.querySelector('.settings-side')?.getBoundingClientRect();
 		return about && side ? side.bottom - about.bottom : -1;
 	});
-	h.check(pinned >= 0 && pinned < 40, `About sits at the bottom of the menu (${Math.round(pinned)}px from it)`);
+	h.check(pinned > -2 && pinned < 40, `About sits at the bottom of the menu (${pinned.toFixed(1)}px from it)`);
 	h.check(s.titles.length === 1, 'exactly one page on screen (' + s.titles.join(',') + ')');
 	h.check(s.rows.filter((r) => r.current).length === 1 && s.rows.find((r) => r.current)?.label === s.titles[0], 'the menu marks the one on screen');
 

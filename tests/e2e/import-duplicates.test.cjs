@@ -576,8 +576,9 @@ h.run(async () => {
 	// 6. THE SETTING — Settings ▸ Files, and the modal's "don't ask again"
 	// =====================================================================
 	await setMode(A, 'ask');
+	// the file rules live in Settings ▸ Explorer (R22 round 5 moved them out of Scene)
 	await A.page.evaluate(() => {
-		window.__stores.settingsSection.set('scene');
+		window.__stores.settingsSection.set('explorer');
 		window.__stores.settingsOpen.set(true);
 	});
 	await A.page.waitForTimeout(900);

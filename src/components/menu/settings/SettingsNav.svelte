@@ -56,8 +56,8 @@
 		resolveQueued = true;
 		queueMicrotask(() => {
 			resolveQueued = false;
-			const key = get(settingsSection);
-			if (key) nav.activateKey(key);
+			// the deep link, else the page in use / remembered — resolve was waiting for the labels
+			nav.resolve(get(settingsSection));
 		});
 	}
 

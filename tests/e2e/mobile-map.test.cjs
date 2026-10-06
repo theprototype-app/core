@@ -56,7 +56,7 @@ h.run(async () => {
 	h.check(shell.cls && shell.bar, `the phone shell is mounted at 390x844 (${JSON.stringify(shell)})`);
 	h.check(shell.oldPill === 'none', `the desktop toolbar pill stands down on a phone (${shell.oldPill})`);
 	const atRest = await read(() =>
-		['#logo-menu', '#ps-connect-chip', '#notif-bell', '#avatar-trigger', '#ps-strip', '#ps-add', '#ps-objects', '#ps-play', '#ps-chat', '#ps-more']
+		['#logo-menu', '#ps-connect-chip', '#notif-bell', '#avatar-trigger', '#ps-strip', '#ps-add', '#ps-objects', '#ps-play', '#ps-explorer', '#ps-more']
 			.filter((s) => {
 				const el = document.querySelector(s);
 				if (!el) return true;
@@ -227,8 +227,9 @@ h.run(async () => {
 	await P.waitForTimeout(400);
 	h.check((await read(store('objectListClose'))) === true, 'dragging the handle to the bottom closes the sheet (and the window)');
 	await rest();
-	await tap('#ps-chat');
-	row(20, (await read(store('chatHidden'))) === '' && (await visible('#chat-window')), 'Chat: Bottom bar › Chat');
+	await tap('#ps-more');
+	await tap('#ps-tile-chat');
+	row(20, (await read(store('chatHidden'))) === '' && (await visible('#chat-window')), 'Chat: More › Chat (NOTES-38 #7)');
 	await rest();
 	row(25, await visible('#ps-play'), 'Play: the centre of the bottom bar');
 	const playColour = await read(() => getComputedStyle(document.querySelector('#ps-play .ps-live')).backgroundColor);

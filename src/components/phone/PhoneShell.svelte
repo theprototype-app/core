@@ -310,6 +310,7 @@
 		aiAssistantHidden.set('');
 	}
 	const TILES = [
+		['chat', 'message-square', 'Chat'],
 		['explorer', 'folder-open'],
 		['flow', 'workflow'],
 		['animation', 'clapperboard'],
@@ -329,6 +330,10 @@
 			phoneSheet.set(null);
 			showSidebar('scene');
 		} else if (key === 'ai') openAi();
+		else if (key === 'chat') {
+			phoneSheet.set(null);
+			chatHidden.set('');
+		}
 		else if (key === 'notes') {
 			phoneSheet.set(null);
 			notesDrawerOpen.set(true);
@@ -420,11 +425,9 @@
 			aria-label={$willEnterAR ? 'Enter AR' : $willEnterXR ? 'Enter VR' : 'Play'}
 			onclick={() => requestPlay()}
 		><span class="ps-live"><Icon name="play" size={24} fill="currentColor" /></span></button>
-		<button type="button" class="ps-tab" id="ps-chat" aria-pressed={chatOpen} onclick={toggleChat}>
-			<Icon name="message-square" size={20} /><span>Chat</span>
-			{#if chatUnread > 0}<span class="ps-nb" aria-label={`${chatUnread} unread`}>{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}
-		</button>
-		<button type="button" class="ps-tab" id="ps-more" aria-pressed={$phoneSheet === 'more'} onclick={toggleMore}><Icon name="layout-grid" size={20} /><span>More</span></button>
+		<!-- NOTES-38 #7: slot 4 is the Explorer (Chat moved into More) -->
+		<button type="button" class="ps-tab" id="ps-explorer" aria-pressed={$visibleDockKey === 'explorer'} onclick={() => togglePanel('explorer')}><Icon name="folder-open" size={20} /><span>Explorer</span></button>
+		<button type="button" class="ps-tab" id="ps-more" aria-pressed={$phoneSheet === 'more'} onclick={toggleMore}><Icon name="layout-grid" size={20} /><span>More</span>{#if chatUnread > 0}<span class="ps-nb" aria-label={`${chatUnread} unread chat messages`}>{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}</button>
 	</nav>
 
 	<!-- THE SHEET FRAME: a surface, a handle, (a title row for the shell's own sheets);
@@ -468,7 +471,7 @@
 								id="ps-tile-{key}"
 								aria-pressed={$visibleDockKey === key}
 								onclick={() => tile(key)}
-							><span class="ps-gi"><Icon name={icon} size={20} /></span>{label ?? DOCK_TITLES[key] ?? key}</button>
+							><span class="ps-gi"><Icon name={icon} size={20} /></span>{label ?? DOCK_TITLES[key] ?? key}{#if key === 'chat' && chatUnread > 0}<span class="ps-nb ps-nb-tile">{chatUnread > 99 ? '99+' : chatUnread}</span>{/if}</button>
 						{/each}
 					</div>
 					<h3 class="ps-sec">Tools &amp; view</h3>
@@ -798,6 +801,14 @@
 		background: var(--accent-soft);
 		border-color: var(--accent);
 		color: var(--accent-text);
+	}
+	.ps-tile {
+		position: relative;
+	}
+	.ps-nb-tile {
+		top: 4px;
+		left: auto;
+		right: 12px;
 	}
 	.ps-rows {
 		display: grid;

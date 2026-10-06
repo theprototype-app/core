@@ -267,13 +267,14 @@ boot exactly as it does for an invite. What the id means, fetching the record, l
 
 ### 5. Continuity — scene changes and projects (CL-5) — additive, no bump
 
-Four members for a tier that keeps scenes and whole projects on a server (cloud saves, rooms that survive
+Five members for a tier that keeps scenes and whole projects on a server (cloud saves, rooms that survive
 everyone leaving). Each is inert without a plugin: nothing subscribes until `onSceneChange` is called.
 
 | member | contract |
 |---|---|
 | `sceneRevision()` | a number that moves on EVERY scene change — objects, graphs, animation, looks, sky, physics, music, HUD, game state — local or replicated from a peer (autosave's own dirty signal). Compare two reads to know whether anything changed between them. `0` before boot |
 | `onSceneChange(fn)` → `off` | `fn(revision)` after every change from now on, never for the current value. A throwing listener is logged and never breaks the others. What a room's autosave listens to |
+| `sceneSignature()` → `Promise<string>` | the CONTENT identity of the open scene: a short hash over the meaningful fields only (no uuid/createdAt/thumbnail, no latest-wins stamps, no game state — core's own "has this scene changed" signature). The revision above also moves on internal refreshes, so "did the scene really change since the version I saved or loaded?" compares two of these. `buildSceneBundle()` returns the same string as `meta.signature` |
 | `buildProjectBundle({versions?})` → `Promise<{blob, meta}>` | the whole PROJECT as a `.tp` — the Explorer's own "Export project" bytes (manifest, every scene and library item; the stored "include versions" preference unless `versions` says otherwise). Downloads, names and changes nothing. `meta = {name, scenes, assets, items, bytes, appVersion}` |
 | `openRemoteProject({url, title?})` → `Promise<counts \| null>` | fetch a `.tp` and OPEN it through core's own path — the format gate and the "This replaces your current project" confirm. Viewer-gated like `loadRemoteScene`. `null` when refused, declined or failed (the user already saw why) |
 

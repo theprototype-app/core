@@ -340,7 +340,8 @@ export function makeCloudApi() {
 		 * @param {{assets?: boolean, flow?: boolean, name?: string}} [opts]
 		 * @returns {Promise<{blob: Blob, meta: {objectCount: number, hasFlow: boolean, hasAudio: boolean,
 		 *   hasGame: boolean, modules: {id: string, version: string}[], appVersion: string, bytes: number,
-		 *   camera: {position: number[], target: number[]} | null, duration: number | null, files: any[]}}>}
+		 *   camera: {position: number[], target: number[]} | null, duration: number | null, files: any[],
+		 *   signature: string}}>} (`signature` = CL-5's content identity, see sceneSignature)
 		 */
 		buildSceneBundle: async ({ assets = true, flow = true, name = '' } = {}) => {
 			const { buildSessionPayload, exportSessionZip, sessionFileList } = await import('./sessions');
@@ -351,7 +352,8 @@ export function makeCloudApi() {
 			const zip = await exportSessionZip(payload, { assets: assets !== false, flow: flow !== false, packs: false });
 			const blob = new Blob([/** @type {BlobPart} */ (zip)], { type: 'application/zip' });
 			const meta = await bundleMeta(payload, { flow: flow !== false, bytes: blob.size, files: sessionFileList(payload) });
-			return { blob, meta };
+			// CL-5 (37-continuity): ADDITIVE — the content signature of what was just bundled (see sceneSignature below)
+			return { blob, meta: { ...meta, signature: await contentSignature(payload) } };
 		},
 
 		/**
@@ -531,6 +533,16 @@ export function makeCloudApi() {
 		/** `fn(revision)` after every scene change from now on (never for the current value). Returns
 		 *  `off`. What a room keeper autosaves from. @param {(revision: number) => void} fn */
 		onSceneChange: (/** @type {any} */ fn) => sceneFeed.onChange(fn),
+		/** The CONTENT identity of the open scene — a short hash over the meaningful fields only (levels'
+		 *  sceneSignature: no uuid/createdAt/thumbnail, no latest-wins stamps, no game state). The revision
+		 *  counter above moves on every internal refresh too, so "did the scene really change since the
+		 *  version I saved / loaded?" is answered by comparing two of these, never two revisions.
+		 *  `buildSceneBundle` returns the same string as `meta.signature`. One serialization per call.
+		 *  @returns {Promise<string>} */
+		sceneSignature: async () => {
+			const { buildSessionPayload } = await import('./sessions');
+			return contentSignature(buildSessionPayload(String(get(currentLevel)?.name || 'Untitled')));
+		},
 		/** The whole PROJECT as a `.tp` — the Explorer's own "Export project" bytes (exportProject: the
 		 *  manifest, every scene and library item; the stored "include versions" preference unless
 		 *  `versions` says otherwise). Never downloads, names or changes anything locally.
@@ -606,6 +618,13 @@ function setCameraPose(pose) {
 	controls.update();
 	cameraClaim.update((n) => n + 1);
 	return true;
+}
+
+/** CL-5: fingerprint(sceneSignature(payload)) — both reached dynamically (levels is history-family)
+ * @param {any} payload @returns {Promise<string>} */
+async function contentSignature(payload) {
+	const [{ sceneSignature }, { fingerprint }] = await Promise.all([import('./levels'), import('./checkpointsCore')]);
+	return fingerprint(sceneSignature(payload));
 }
 
 /**

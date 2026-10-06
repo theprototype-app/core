@@ -28,7 +28,16 @@ h.run(async () => {
 		const kinds = new Set([...document.querySelectorAll('#command-palette .cp-item')].map((b) => b.dataset.kind));
 		return [...kinds];
 	});
-	h.check(['tool', 'window', 'menu', 'setting'].every((k) => listed.includes(k)), 'an empty query lists all four kinds', listed);
+	// an empty query lists the first rows (tools lead); the other three kinds are reached by
+	// typing, which the sections below cover (window, setting) — and the menu here
+	h.check(listed.includes('tool'), 'an empty query lists commands, tools first');
+	await page.keyboard.type('Modules');
+	await page.waitForTimeout(150);
+	h.check(
+		await page.evaluate(() => [...document.querySelectorAll('#command-palette .cp-item')].some((b) => b.dataset.kind === 'menu' && b.querySelector('.cp-label')?.textContent === 'Modules')),
+		'typing "Modules" offers the Modules menu entry'
+	);
+	await page.fill('#command-palette-input', '');
 
 	// --- a tool: "scale" ranks the Scale shortcut first and Enter runs it ---
 	await page.keyboard.type('scale');

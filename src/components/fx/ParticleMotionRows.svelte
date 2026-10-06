@@ -21,11 +21,12 @@
 </script>
 
 <div class="pm" data-keywords="particles render stretch trail ribbon streak sparks velocity">
-	<PropRow label="Draw as" valueBox={false}>
-		{#snippet control()}
-			<Segmented id="particles-render" full label="Draw particles as" options={MODES} value={render} onchange={(v) => set({ render: v })} />
-		{/snippet}
-	</PropRow>
+	<!-- four options do not fit the PropRow middle column (measured: "SpritesStretch" ran
+	     together and "Ribbon" clipped), so the control takes the whole row under its label -->
+	<div class="pm-mode">
+		<span id="particles-render-label" class="pm-label">Draw as</span>
+		<Segmented id="particles-render" full labelledby="particles-render-label" options={MODES} value={render} onchange={(v) => set({ render: v })} />
+	</div>
 	{#if render === 'stretch'}
 		<PropRow label="Stretch" slider min={0.005} max={0.3} step={0.005} decimals={3} value={p.stretch ?? 0.04}
 			title="Seconds of motion each streak covers" onchange={(v) => set({ stretch: v })} />
@@ -55,6 +56,16 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-2);
+	}
+	.pm-mode {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+	.pm-label {
+		font-size: var(--fs-desc);
+		color: var(--text-2);
+		line-height: 1.3;
 	}
 	.pm-note {
 		margin: 0;

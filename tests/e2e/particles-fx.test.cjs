@@ -238,6 +238,10 @@ h.run(async () => {
 	await seg.waitFor({ state: 'visible', timeout: 10000 });
 	await seg.scrollIntoViewIfNeeded();
 	h.check((await seg.locator('[role="radio"]').count()) === 4, 'Inspector: "Draw as" is a 4-way Segmented (kit)');
+	const clipped = await seg.evaluate((el) => [...el.querySelectorAll('[role="radio"]')]
+		.filter((b) => b.scrollWidth > b.clientWidth + 1 || b.getBoundingClientRect().right > el.getBoundingClientRect().right + 1)
+		.map((b) => b.textContent.trim()));
+	h.check(clipped.length === 0, `every "Draw as" label fits its button (clipped: ${clipped.join(', ') || 'none'})`);
 	await seg.getByRole('radio', { name: 'Trails' }).click();
 	await h.eventually(
 		() => page.evaluate(() => window.__fx.userData.particles?.render),
@@ -249,7 +253,7 @@ h.run(async () => {
 	for (const theme of ['dark', 'light']) {
 		await page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
 		await page.waitForTimeout(400);
-		if (SHOTS) await seg.locator('xpath=ancestor::*[contains(@class,"pm")][1]').screenshot({ path: path.join(SHOTS, `05-inspector-${theme}.png`) });
+		if (SHOTS) await seg.locator('xpath=ancestor::*[contains(concat(" ",@class," ")," pm ")][1]').screenshot({ path: path.join(SHOTS, `05-inspector-${theme}.png`) });
 	}
 	await page.evaluate(() => window.__stores.themes.theme.set('dark'));
 

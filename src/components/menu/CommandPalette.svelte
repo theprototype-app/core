@@ -183,7 +183,7 @@
 		align-items: center;
 		gap: 12px;
 		width: 100%;
-		min-height: 40px;
+		min-height: calc(var(--row-h) + 4px); /* follows Compact density (NOTES-38 #19) */
 		padding: 6px 10px;
 		border: 0;
 		border-radius: var(--radius-button);

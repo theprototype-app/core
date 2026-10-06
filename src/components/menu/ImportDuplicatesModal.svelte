@@ -17,6 +17,7 @@
 	import ModalDialog from '../ui/ModalDialog.svelte';
 	import Button from '../ui/Button.svelte';
 	import Checkbox from '../ui/Checkbox.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		duplicateImportDialog,
 		resolveDuplicateImport,
@@ -103,7 +104,7 @@
 						Select all
 					</label>
 				</div>
-				<ul class="dup-list">
+				<ul class="dup-list" use:minimalScroll>
 					{#each scenes as row (row.hash)}
 						<li class="dup-row" data-dup-hash={row.hash}>
 							<Checkbox
@@ -127,7 +128,7 @@
 		{#if others.length}
 			<section class="dup-group">
 				<h3 class="dup-label">Other files — the same file, not a copy</h3>
-				<ul class="dup-list">
+				<ul class="dup-list" use:minimalScroll>
 					{#each others as row (row.hash)}
 						<li class="dup-row" data-dup-hash={row.hash}>
 							<span class="dup-name dup-name--wide" title={row.name}>{row.name}</span>

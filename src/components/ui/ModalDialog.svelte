@@ -26,6 +26,7 @@
 	import { fade } from 'svelte/transition';
 	import { sineIn } from 'svelte/easing';
 	import WindowChrome from './WindowChrome.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	/** @type {{open?: boolean, title?: string, titleId?: string, modal?: boolean, outsideclose?: boolean, dismissable?: boolean, permanent?: boolean, frame?: boolean, width?: 'sm'|'md'|'lg'|'xl', padded?: boolean, bodyId?: string, bodyClass?: string, class?: string, oncancel?: (e: Event) => void, actions?: import('svelte').Snippet, bar?: import('svelte').Snippet, footer?: import('svelte').Snippet, children?: import('svelte').Snippet} & Record<string, any>} */
 	let {
@@ -139,7 +140,7 @@
 			/>
 		{/if}
 		{#if bar}<div class="md-bar">{@render bar()}</div>{/if}
-		<div class="md-body {bodyClass}" class:md-padded={padded} id={bodyId}>
+		<div class="md-body {bodyClass}" class:md-padded={padded} id={bodyId} use:minimalScroll>
 			{@render children?.()}
 		</div>
 		{#if footer}<footer class="md-foot">{@render footer()}</footer>{/if}
@@ -198,7 +199,8 @@
 	.md-bar :global(.tabs-strip) {
 		border-bottom: 0;
 	}
-	/* THE single scroll container (the old .tp-modal-body rule) */
+	/* THE single scroll container (the old .tp-modal-body rule). NOTES-38 #1: no native bar —
+	   minimalScroll draws the app's thin overlay thumb. */
 	.md-body {
 		flex: 1 1 auto;
 		min-height: 0;

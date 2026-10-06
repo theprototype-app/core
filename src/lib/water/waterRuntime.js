@@ -94,25 +94,6 @@ const swapped = [];
 objectsGroup.subscribe(() => (dirty = true));
 waterQuality.subscribe((v) => (qualityPref = v));
 qualityOverrides.subscribe((o) => (overrides = o));
-// 37-hdri: three's CubeUV size rule (WebGLPrograms getTextureCubeUVSize) and its envMapRotation
-// convention (the scene Euler NEGATED), so the water samples exactly what a PBR material does
-const _envEuler = new THREE.Euler();
-const _envMat = new THREE.Matrix4();
-skyEnv.subscribe((env) => {
-	const height = env?.texture?.image?.height ?? 0;
-	if (!env || !height) {
-		shared.uEnvOn.value = 0;
-		shared.uEnvMap.value = null;
-		return;
-	}
-	const maxMip = Math.log2(height) - 2;
-	shared.uEnvTexel.value.set(1 / (3 * Math.max(Math.pow(2, maxMip), 7 * 16)), 1 / height);
-	shared.uEnvMaxMip.value = maxMip;
-	shared.uEnvMap.value = env.texture;
-	shared.uEnvIntensity.value = env.intensity;
-	shared.uEnvRot.value.setFromMatrix4(_envMat.makeRotationFromEuler(_envEuler.set(0, -env.rotationY, 0)));
-	shared.uEnvOn.value = 1;
-});
 
 const invisible = new THREE.MeshBasicMaterial({ visible: false });
 
@@ -144,6 +125,27 @@ const shared = {
 	uProjInv: { value: new THREE.Matrix4() },
 	uCamWorld: { value: new THREE.Matrix4() }
 };
+
+// (below `shared`: the subscribe fires synchronously — above it is a TDZ crash of the SSR render)
+// 37-hdri: three's CubeUV size rule (WebGLPrograms getTextureCubeUVSize) and its envMapRotation
+// convention (the scene Euler NEGATED), so the water samples exactly what a PBR material does
+const _envEuler = new THREE.Euler();
+const _envMat = new THREE.Matrix4();
+skyEnv.subscribe((env) => {
+	const height = env?.texture?.image?.height ?? 0;
+	if (!env || !height) {
+		shared.uEnvOn.value = 0;
+		shared.uEnvMap.value = null;
+		return;
+	}
+	const maxMip = Math.log2(height) - 2;
+	shared.uEnvTexel.value.set(1 / (3 * Math.max(Math.pow(2, maxMip), 7 * 16)), 1 / height);
+	shared.uEnvMaxMip.value = maxMip;
+	shared.uEnvMap.value = env.texture;
+	shared.uEnvIntensity.value = env.intensity;
+	shared.uEnvRot.value.setFromMatrix4(_envMat.makeRotationFromEuler(_envEuler.set(0, -env.rotationY, 0)));
+	shared.uEnvOn.value = 1;
+});
 
 // ── quality tier ──────────────────────────────────────────────────────────────────────
 /** @param {any} renderer */

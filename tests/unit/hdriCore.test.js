@@ -134,7 +134,7 @@ describe('the bundled catalog', () => {
 			// ≤ 1k (the brief): a 1024x512 RGBE file is ~1.5 MB
 			expect(fs.statSync(path.join('static', row.file)).size).toBeLessThan(2.5 * 1024 * 1024);
 			const block = presetBlock(key);
-			expect(block, key).toContain("hdri: { src: 'bundled:" + key + "' }");
+			expect(block, key).toContain("hdri: { src: 'bundled:" + key + "'");
 			expect(bundledHdri('bundled:' + key)).toBe(row);
 			// the scene lint's preset-key regex (`^\t([a-z]+): \{`) must see it
 			expect(key).toMatch(/^[a-z]+$/);

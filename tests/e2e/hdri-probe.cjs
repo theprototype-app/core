@@ -9,11 +9,11 @@ h.run(async () => {
 	// a few lit objects to read the IBL on
 	await page.evaluate(() => {
 		const c = window.__stores.commandsHandler;
-		c.sceneCommand('/box');
-		c.sceneCommand('/sphere');
+		c.sceneCommand('/create box');
+		c.sceneCommand('/create sphere');
 	});
 	await page.waitForTimeout(1500);
-	await page.evaluate(() => {
+	const made = await page.evaluate(() => {
 		const g = window.__stores.objectsGroup;
 		let group;
 		g.subscribe((v) => (group = v))();
@@ -27,7 +27,22 @@ h.run(async () => {
 			}
 		});
 		window.__stores.selectedObjects.set([]);
+		let tc;
+		window.__stores.TControls.subscribe((v) => (tc = v))();
+		tc?.detach?.();
+		// a low 3/4 view with the horizon in frame: the sky, the IBL on both objects, the sun's shadow
+		let camera;
+		let orbit;
+		window.__stores.globalCamera.subscribe((v) => (camera = v))();
+		window.__stores.orbitControls.subscribe((v) => (orbit = v))();
+		camera.position.set(3.2, 1.6, 4.2);
+		orbit?.target?.set(0, 0.8, 0);
+		camera.lookAt(0, 0.8, 0);
+		orbit?.update?.();
+		camera.updateMatrixWorld(true);
+		return kids.length;
 	});
+	console.log('objects', made);
 	const presets = process.argv.slice(2).length ? process.argv.slice(2) : ['studio', 'meadow', 'clearsky', 'sunrise', 'starlight', 'photostudio'];
 	for (const [i, key] of presets.entries()) {
 		await page.evaluate((k) => window.__stores.environment.setEnvironment(k), key);

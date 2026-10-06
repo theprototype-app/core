@@ -71,7 +71,7 @@ export const ENVIRONMENT_PRESETS = {
 		background: '#a6b1ca',
 		fog: null,
 		hemi: { sky: '#a1afd3', ground: '#737c95', intensity: 1.2 },
-		sun: { color: '#fff3df', intensity: 2.2, position: [8.8, 11.9, 6] },
+		sun: { color: '#fff3df', intensity: 1.3, position: [8.8, 11.9, 6] },
 		exposure: 1,
 		hdri: { src: 'bundled:clearsky' }
 	},
@@ -80,16 +80,16 @@ export const ENVIRONMENT_PRESETS = {
 		background: '#7993a2',
 		fog: null,
 		hemi: { sky: '#7a9bc2', ground: '#58623b', intensity: 1.2 },
-		sun: { color: '#fff1d6', intensity: 2.4, position: [11.5, 7.2, 8.4] },
+		sun: { color: '#fff1d6', intensity: 1.3, position: [11.5, 7.2, 8.4] },
 		exposure: 1,
-		hdri: { src: 'bundled:meadow' }
+		hdri: { src: 'bundled:meadow', intensity: 0.6 }
 	},
 	sunrise: {
 		label: 'Sunrise',
 		background: '#ccd0c5',
 		fog: null,
 		hemi: { sky: '#7a97bc', ground: '#594f24', intensity: 0.9 },
-		sun: { color: '#ffc78a', intensity: 2.2, position: [12.9, 2.2, 9.2] },
+		sun: { color: '#ffc78a', intensity: 1.4, position: [12.9, 2.2, 9.2] },
 		exposure: 1,
 		hdri: { src: 'bundled:sunrise' }
 	},
@@ -104,12 +104,15 @@ export const ENVIRONMENT_PRESETS = {
 	},
 	photostudio: {
 		label: 'Photo studio',
-		background: '#9f9c9b',
+		background: '#3a3d42',
+		gradient: { top: '#4a4e55', bottom: '#2a2c30' },
 		fog: null,
 		hemi: { sky: '#ffffff', ground: '#cac7c6', intensity: 1 },
-		sun: { color: '#ffffff', intensity: 1.2, position: [-13.1, 4.1, -8.1] },
+		sun: { color: '#ffffff', intensity: 0.8, position: [-13.1, 4.1, -8.1] },
 		exposure: 1,
-		hdri: { src: 'bundled:photostudio' }
+		// an interior: as a sky it reads as a giant blurred wall, so it LIGHTS a plain backdrop
+		// (the product-shot setup) — reflections still show the softboxes
+		hdri: { src: 'bundled:photostudio', background: false }
 	}
 };
 

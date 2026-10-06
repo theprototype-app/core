@@ -132,8 +132,12 @@ function setGraphDoc(uuid, doc) {
 		edges: doc.edges.map((/** @type {any} */ e) => ({ ...e }))
 	}));
 	if (peer) {
+		// per node, the flownodes kind's own messages: a `nodes` SNAPSHOT merges, and putting
+		// back nodes a peer just deleted through one was measured not to land (peer B kept an
+		// empty graph after an undo)
 		peer.send({ type: 'graphcreate', uuid });
-		peer.send({ type: 'nodes', graphs: { [uuid]: doc } });
+		for (const node of doc.nodes) peer.send({ type: 'nodecreate', node, graphId: uuid });
+		for (const edge of doc.edges) peer.send({ type: 'edgecreate', edge, graphId: uuid });
 	}
 }
 

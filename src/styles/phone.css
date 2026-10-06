@@ -53,21 +53,21 @@
 :root.phone-shell .top-right-chrome {
 	top: 0 !important;
 }
-:root.phone-shell .top-right-chrome > .flex {
-	top: 12px !important;
+:root.phone-shell .top-right-chrome > .hud-tr {
+	/* 38-hud's glass group (bell, peers) keeps its look; on the phone it sits beside the
+	   avatar at the top bar's height and its cells are full 44 px touch targets */
+	top: 11px !important;
 	right: 64px !important;
-	gap: 6px !important;
-	height: 44px;
+	height: auto;
+	padding: 0;
+	gap: 0;
 }
-:root.phone-shell #notif-bell,
+:root.phone-shell .top-right-chrome > .hud-tr > .hud-cell,
+:root.phone-shell .top-right-chrome > .hud-tr #notif-bell,
 :root.phone-shell #peers-trigger {
 	height: 44px !important;
 	min-width: 44px !important;
 	justify-content: center;
-}
-:root.phone-shell #notif-bell {
-	width: 44px !important;
-	border-radius: 50% !important;
 }
 :root.phone-shell .top-right-chrome,
 :root.phone-shell #avatar-menu {
@@ -76,7 +76,7 @@
 	   inside them are targets */
 	pointer-events: none;
 }
-:root.phone-shell .top-right-chrome > .flex,
+:root.phone-shell .top-right-chrome > .hud-tr,
 :root.phone-shell #peers-popover,
 :root.phone-shell #notif-panel {
 	pointer-events: auto;
@@ -173,6 +173,7 @@
 	gap: 8px;
 	width: 100% !important;
 	max-width: none !important;
+	height: auto !important;
 	padding: 8px !important;
 	border-radius: 12px !important;
 	white-space: normal !important;
@@ -180,17 +181,19 @@
 	backdrop-filter: none !important;
 }
 /* one thing per row: the invite link, then the join field + its button */
-:root.phone-shell .connect-wrap[data-ps-host] .connect-pill > button:first-child {
+:root.phone-shell .connect-wrap[data-ps-host] .cx-id {
 	flex: 1 0 100%;
 	min-height: 44px;
 	justify-content: center;
 }
-:root.phone-shell .connect-wrap[data-ps-host] .connect-divider,
+:root.phone-shell .connect-wrap[data-ps-host] .hud-sep,
+:root.phone-shell .connect-wrap[data-ps-host] .cx-collapse,
 :root.phone-shell .connect-wrap[data-ps-host] #connect-info-button {
 	display: none !important;
 }
 :root.phone-shell .connect-wrap[data-ps-host] .cx-connect {
 	flex: 1 1 100% !important;
+	height: auto !important;
 	min-height: 44px;
 }
 :root.phone-shell .connect-wrap[data-ps-host] .cx-connect > * {

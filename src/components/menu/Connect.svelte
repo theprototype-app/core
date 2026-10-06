@@ -195,7 +195,9 @@
 	$effect(() => {
 		if (connState !== 'connected') expanded = false;
 	});
-	const compact = $derived(connState === 'connected' && !expanded);
+	// on the phone shell the bar only ever shows INSIDE the Connect sheet, which is the
+	// expanded form already — the shell draws its own chip (#ps-connect-chip)
+	const compact = $derived(connState === 'connected' && !expanded && !$phoneShellActive);
 	const chipLabel = $derived($sessionHost ? hostLabel : 'Hosting');
 	/** up to three peers on the chip, the rest as +N (NOTES-38 #12: a speaker gets the ring) */
 	const chipPeers = $derived(

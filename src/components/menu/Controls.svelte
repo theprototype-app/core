@@ -1091,7 +1091,7 @@
 		mode: {
 			title: 'Interact mode (I)',
 			slot: 'editor-mode-toggle',
-			icon: 'hand',
+			icon: 'tool:interact',
 			tint: () => ($editorMode === 'interact' ? ICON_ON : ICON_OFF),
 			pressed: () => $editorMode === 'interact',
 			run: () => toggleEditorMode()
@@ -2121,7 +2121,7 @@
 						     symmetric visor with it looks off-centre. -->
 						{#if $willEnterAR}
 							<span class="pointer-events-none relative inline-flex select-none items-center justify-center">
-								<Icon name="rectangle-goggles" size={32} class="text-white" aria-hidden="true" />
+								<Icon name="tool:vr" size={32} class="text-white" aria-hidden="true" />
 								<span
 									class="absolute text-[10px] font-bold leading-none text-white"
 									style="left: 29%; top: 50%; transform: translate(-50%, -50%)">A</span
@@ -2132,7 +2132,7 @@
 								>
 							</span>
 						{:else if $willEnterXR}
-							<Icon name="rectangle-goggles" size={24} class="text-white" aria-hidden="true" />
+							<Icon name="tool:vr" size={24} class="text-white" aria-hidden="true" />
 						{:else}
 							<Icon name="play" size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
 						{/if}

@@ -275,6 +275,13 @@ h.run(async () => {
 	h.check((await swatchCount(A.page, 'mine', 'Candy red 2')) === 1, '5.4 saving a taken name never overwrites (Candy red 2)');
 
 	await h.freshReload(A);
+	// a reload is a NEW peer: the id setupPage read is gone, and section 7 dials A by id
+	A.id = await waitVal(
+		() => A.page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id ?? ''))())),
+		(v) => !!v,
+		20000
+	);
+	console.log('A id after reload: ' + A.id);
 	await A.page.evaluate(() => localStorage.setItem('inspector:sec:Material', 'open'));
 	const [b4] = await makeBoxes(A.page, 1);
 	await selectSet(A.page, [b4]);

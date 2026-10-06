@@ -20,6 +20,8 @@ async function closeMenus(A) {
 	});
 	await A.page.waitForTimeout(250);
 }
+/** a tag chip of the kit's Chips (its first span is the label, the count follows) */
+const chip = (A, tag) => A.page.locator('#prefab-tag-bar .chip').filter({ has: A.page.locator('span', { hasText: new RegExp('^' + tag + '$') }) });
 const menuItem = (A, label, last = false) => {
 	const rows = A.page.locator('[role="menuitem"]').filter({ hasText: label });
 	return last ? rows.last() : rows.first();
@@ -111,16 +113,16 @@ h.run(async () => {
 	h.check((await crumbs(A)).length === 1, 'the breadcrumb takes you back to the root');
 
 	// ---- 5. the tag bar filters (AND), reaching inside folders -------------------------------
-	const chips = await A.page.locator('#prefab-tag-bar .prefab-tag-chip').evaluateAll((els) => els.map((e) => e.dataset.tag));
+	const chips = await A.page.locator('#prefab-tag-bar .chip').evaluateAll((els) => els.map((e) => e.querySelector('span')?.textContent?.trim()));
 	h.check(chips[0] === 'seat' && chips.length === 4, `the tag bar lists every tag, most used first (${chips})`);
-	await A.page.locator('#prefab-tag-bar [data-tag="seat"]').click();
+	await chip(A, 'seat').click();
 	await A.page.waitForTimeout(300);
 	ids = await cards(A);
 	h.check(ids.length === 2 && ids.every((id) => id.startsWith('prefab:')), `"seat" shows both chairs from inside their folder, no folder cards (${ids.length})`);
-	await A.page.locator('#prefab-tag-bar [data-tag="wood"]').click();
+	await chip(A, 'wood').click();
 	await A.page.waitForTimeout(300);
 	h.check((await cards(A)).length === 1, 'seat AND wood is the oak chair alone');
-	const pressed = await A.page.locator('#prefab-tag-bar [data-tag="wood"]').evaluate((el) => getComputedStyle(el).backgroundColor);
+	const pressed = await chip(A, 'wood').evaluate((el) => getComputedStyle(el).backgroundColor);
 	h.check(pressed !== 'rgba(0, 0, 0, 0)', `a pressed chip is painted (${pressed})`);
 	await A.page.locator('#prefab-tag-clear').click();
 	await A.page.waitForTimeout(300);

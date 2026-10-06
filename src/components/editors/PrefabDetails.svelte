@@ -1,7 +1,9 @@
 <script>
 	// 37 R4: the Library's own facts about a prefab in its Properties pane — where it is
-	// filed, its tags, its placed copies in this scene, and the flow logic it carries.
-	import { X } from '@lucide/svelte';
+	// filed, its tags, its placed copies in this scene, and the flow logic it carries. Built
+	// from the 38 kit (Badge, Button, Icon, tokens).
+	import Badge from '../ui/Badge.svelte';
+	import Button from '../ui/Button.svelte';
 	import { prefabs } from '$lib/prefabs';
 	import { setPrefabTags, prefabFolder, prefabTagFilter } from '$lib/prefabLibrary';
 	import { parseTags } from '$lib/prefabLibraryCore';
@@ -27,7 +29,7 @@
 	function dropTag(tag) {
 		if (prefab) void setPrefabTags(prefab.id, (prefab.tags ?? []).filter((/** @type {string} */ t) => t !== tag));
 	}
-	/** a carried graph as a .tpnode file — the same payload a node group saves */
+	/** the carried graphs as a .tpnode file — the same payload a node group saves */
 	function exportLogic() {
 		if (!prefab || !graphs.length) return;
 		const nodes = graphs.flatMap(([, g]) => g.nodes ?? []);
@@ -43,32 +45,34 @@
 </script>
 
 {#if prefab}
-	<div id="prefab-details" class="flex flex-col gap-1">
-		<div class="flex gap-2">
-			<span class="w-14 shrink-0 text-gray-500">Folder</span>
-			<button
+	<div id="prefab-details" class="pd">
+		<div class="pd-row">
+			<span class="pd-label">Folder</span>
+			<Button
 				id="prefab-folder-path"
-				class="min-w-0 truncate text-left hover:underline"
+				variant="ghost"
+				size="sm"
+				icon="folder"
 				title="Show this folder"
+				text={prefab.folder ? 'Prefabs / ' + prefab.folder.split('/').join(' / ') : 'Prefabs'}
 				onclick={() => {
 					prefabTagFilter.set([]);
 					prefabFolder.set(prefab.folder ?? '');
-				}}>{prefab.folder ? 'Prefabs/' + prefab.folder : 'Prefabs'}</button
-			>
+				}}
+			/>
 		</div>
-		<div class="flex gap-2">
-			<span class="w-14 shrink-0 text-gray-500">Tags</span>
-			<div class="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+		<div class="pd-row">
+			<span class="pd-label">Tags</span>
+			<div class="pd-tags">
 				{#each prefab.tags ?? [] as tag (tag)}
-					<span class="prefab-tag" data-tag={tag}
-						>{tag}<button class="prefab-tag-x" aria-label={'Remove the tag ' + tag} onclick={() => dropTag(tag)}
-							><X size={10} aria-hidden="true" /></button
-						></span
-					>
+					<span class="prefab-tag" data-tag={tag}>
+						<Badge tone="neutral" text={tag} />
+						<Button variant="icon" size="sm" icon="x" label={'Remove the tag ' + tag} onclick={() => dropTag(tag)} />
+					</span>
 				{/each}
 				<input
 					id="prefab-tag-input"
-					class="min-w-16 flex-1 rounded-sm border border-gray-600 bg-transparent px-1 text-[11px]"
+					class="pd-input"
 					placeholder="Add tags…"
 					title="Type a tag (or several, separated by commas) and press Enter"
 					bind:value={draft}
@@ -80,47 +84,74 @@
 				/>
 			</div>
 		</div>
-		<div class="flex gap-2">
-			<span class="w-14 shrink-0 text-gray-500">In scene</span>
-			<span id="prefab-instances" class="flex min-w-0 flex-wrap items-center gap-1"
-				>{count} cop{count === 1 ? 'y' : 'ies'} · version {(prefab.rev ?? 0) + 1}
+		<div class="pd-row">
+			<span class="pd-label">In scene</span>
+			<span id="prefab-instances" class="pd-value">
+				<Badge tone="count" text={String(count)} />
+				<span>cop{count === 1 ? 'y' : 'ies'} · version {(prefab.rev ?? 0) + 1}</span>
 				{#if count}
-					<button class="text-primary-400 hover:underline" onclick={() => void updateInstances(prefab.id)}>Update all</button>
-					<button class="text-primary-400 hover:underline" onclick={() => selectInstances(prefab.id)}>Select</button>
-				{/if}</span
-			>
+					<Button variant="ghost" size="sm" text="Update all" onclick={() => void updateInstances(prefab.id)} />
+					<Button variant="ghost" size="sm" text="Select" onclick={() => selectInstances(prefab.id)} />
+				{/if}
+			</span>
 		</div>
 		{#if graphs.length}
-			<div class="flex gap-2">
-				<span class="w-14 shrink-0 text-gray-500">Logic</span>
-				<span id="prefab-logic" class="flex min-w-0 flex-wrap items-center gap-1"
-					>{nodeCount} node{nodeCount === 1 ? '' : 's'} in {graphs.length} flow{graphs.length === 1 ? '' : 's'}
-					<button id="prefab-logic-export" class="text-primary-400 hover:underline" title="Save the logic as a node group (.tpnode)" onclick={exportLogic}
-						>Export .tpnode</button
-					></span
-				>
+			<div class="pd-row">
+				<span class="pd-label">Logic</span>
+				<span id="prefab-logic" class="pd-value">
+					<span>{nodeCount} node{nodeCount === 1 ? '' : 's'} in {graphs.length} flow{graphs.length === 1 ? '' : 's'}</span>
+					<Button id="prefab-logic-export" variant="ghost" size="sm" icon="arrow-down-to-line" text="Export .tpnode" title="Save the logic as a node group (.tpnode)" onclick={exportLogic} />
+				</span>
 			</div>
 		{/if}
 	</div>
 {/if}
 
 <style>
+	.pd {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1, 4px);
+	}
+	.pd-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2, 8px);
+		min-height: 28px;
+	}
+	.pd-label {
+		width: 3.5rem;
+		flex-shrink: 0;
+		color: var(--text-faint);
+	}
+	.pd-value,
+	.pd-tags {
+		display: flex;
+		min-width: 0;
+		flex: 1;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-1, 4px);
+		color: var(--text-2);
+	}
 	.prefab-tag {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.15rem;
-		border: 1px solid rgb(75 85 99);
-		border-radius: 9999px;
-		padding: 0 0.15rem 0 0.4rem;
-		line-height: 1.1rem;
 	}
-	.prefab-tag-x {
-		border-radius: 9999px;
-		padding: 0.1rem;
-		opacity: 0.7;
+	.pd-input {
+		min-width: 4rem;
+		flex: 1;
+		height: 26px;
+		padding: 0 var(--space-2, 8px);
+		border: 1px solid var(--border-input);
+		border-radius: 6px;
+		background: var(--surface-inset);
+		color: var(--text);
+		font: inherit;
+		font-size: var(--fs-input);
 	}
-	.prefab-tag-x:hover {
-		opacity: 1;
-		background: rgb(75 85 99);
+	.pd-input:focus {
+		outline: 2px solid var(--accent);
+		outline-offset: 1px;
 	}
 </style>

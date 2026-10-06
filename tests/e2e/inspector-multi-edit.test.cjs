@@ -169,9 +169,8 @@ h.run(async () => {
 	// ---------- the panel says it is editing a SET, not one object ----------
 	const banner = await A.page.evaluate(() => {
 		const el = document.querySelector('#selection-multi-banner');
-		const badge = [...document.querySelectorAll('#drawer-label *')]
-			.map((n) => n.textContent?.trim() ?? '')
-			.find((t) => /objects$/.test(t));
+		// 38 R5: the kind badge is its own element in the WindowChrome header
+		const badge = document.querySelector('#drawer-label [data-inspector-badge]')?.textContent?.trim();
 		return { text: el?.textContent?.replace(/\s+/g, ' ').trim() ?? '', badge: badge ?? '' };
 	});
 	h.check(/Editing 3 objects/.test(banner.text), `the banner names the count ("${banner.text.slice(0, 60)}")`);

@@ -56,8 +56,11 @@
 			match = true;
 			return;
 		}
-		// the rendered text IS the search index — labels, values, hints all count
-		match = (label + ' ' + (root?.textContent ?? '')).toLowerCase().includes(q);
+		// the rendered text IS the search index — labels, values, hints all count. A panel
+		// section's scope badge is chrome, not content: match the label and the BODY, so a
+		// "This device" badge does not answer a query its rows never did
+		const text = variant === 'panel' ? root?.querySelector('.sec-panel-body')?.textContent : root?.textContent;
+		match = (label + ' ' + (text ?? '')).toLowerCase().includes(q);
 	});
 
 	const filtering = $derived(!isCard && $inspectorFilter.trim().length > 0);

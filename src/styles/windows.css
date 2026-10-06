@@ -232,3 +232,25 @@
 	background: var(--accent-fill);
 	color: var(--on-accent);
 }
+
+/* SPEC §1 "one accent" inside a migrated window. The legacy Tailwind `primary` scale is
+   Flowbite's salmon (app.css @theme), and window bodies still select with it — the Explorer's
+   active folder, view toggles, selected cards, drop targets. Orange is now Play/live only, so
+   inside a window, dock view or menu the scale IS the accent: fills -> --accent-fill, the
+   mid tone -> --accent, light inks -> --accent-text, deep tints -> --accent-soft, the
+   palest steps (text on a fill) -> --on-accent. One block instead of a rewrite of every
+   class, and a custom theme's accent flows through it. */
+.tp-window,
+.tp-dock-panel,
+.tp-menu {
+	--color-primary-50: var(--on-accent);
+	--color-primary-100: var(--on-accent);
+	--color-primary-200: var(--on-accent);
+	--color-primary-300: var(--accent-text);
+	--color-primary-400: var(--accent-text);
+	--color-primary-500: var(--accent);
+	--color-primary-600: var(--accent-fill);
+	--color-primary-700: var(--accent-fill);
+	--color-primary-800: var(--accent-soft);
+	--color-primary-900: var(--accent-soft);
+}

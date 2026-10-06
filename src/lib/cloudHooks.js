@@ -207,6 +207,28 @@ export const cloudPluginInfo = writable(null);
 export const meshJobStatus = writable(null);
 
 /**
+ * 37-fx (R19): the CLOUD's own "what's new". Core's What's New window reads the bundled
+ * CHANGELOG.md, which knows nothing about the hosted service (rooms, publishing, sign-in…);
+ * the plugin publishes one section `{title, markdown}` and the window draws it above the
+ * releases, through the same escaped markdown subset as the changelog (so the plugin cannot
+ * inject markup). NULL without a plugin — the OSS window is byte-identical.
+ * @type {import('svelte/store').Writable<{title: string, markdown: string} | null>} */
+export const whatsNewCloud = writable(null);
+
+export const WHATS_NEW_CLOUD_MAX = 20000; // characters of markdown
+
+/** Validate + publish (or clear with null) the cloud section. @param {any} section */
+export function setWhatsNewCloud(section) {
+	if (!section || typeof section.markdown !== 'string' || !section.markdown.trim()) {
+		whatsNewCloud.set(null);
+		return false;
+	}
+	const title = typeof section.title === 'string' && section.title.trim() ? section.title.trim().slice(0, 80) : 'Cloud';
+	whatsNewCloud.set({ title, markdown: section.markdown.slice(0, WHATS_NEW_CLOUD_MAX) });
+	return true;
+}
+
+/**
  * 21-G5 (F7): CROSS-SCENE PRESENCE, the rolesInfo-bridge shape one domain over. The
  * rooms plugin publishes who is in the project's OTHER rooms/scenes and core renders
  * it in the Users popover — chips, a Watch that says WHY it cannot reach them (a peer

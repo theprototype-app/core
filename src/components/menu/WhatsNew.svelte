@@ -3,6 +3,7 @@
 	// windows — ui-panel + dragWindow + focusStack). Opened by the logo-menu row, the
 	// update toast, or Settings ▸ About. Opening it marks the version seen.
 	import { whatsNewOpen, closeWhatsNew, CHANGELOG } from '$lib/whatsNew';
+	import { whatsNewCloud } from '$lib/cloudHooks';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 
@@ -109,6 +110,14 @@
 	 * them. `<details>` does the folding natively — keyboard and screen readers get
 	 * it for free, and there is no open/closed state to keep in sync.
 	 */
+	// 37-fx: the cloud plugin's own section (null without a plugin), same escaped subset;
+	// its h1/h2 headings step down to h3 so they read as part of ONE folded section
+	const cloudBlocks = $derived(
+		$whatsNewCloud
+			? blocks($whatsNewCloud.markdown).map((b) => (b.kind === 'h1' || b.kind === 'h2' ? { ...b, kind: 'h3' } : b))
+			: []
+	);
+
 	const intro: typeof parsed = [];
 	const releases: { title: string; body: typeof parsed }[] = [];
 	for (const block of parsed) {
@@ -154,6 +163,12 @@
 				{/each}
 			{/snippet}
 			{@render body(intro)}
+			{#if $whatsNewCloud && cloudBlocks.length}
+				<details id="whats-new-cloud" class="wn-release wn-cloud" open>
+					<summary><h2>{$whatsNewCloud.title}</h2></summary>
+					{@render body(cloudBlocks)}
+				</details>
+			{/if}
 			<!-- newest release open, the history folded away behind its heading -->
 			{#each releases as release, index (release.title)}
 				<details class="wn-release" open={index === 0}>

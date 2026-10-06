@@ -36,6 +36,30 @@ const ROAD = [
 const ROAD_W = 4.2; // tube radius = half the road width
 const ASPHALT = 0x2e3238;
 
+// 37-slipped (plan 21-C C9): the Race look's missing half — the terrain blended by SLOPE and HEIGHT,
+// "the single graph that makes a noise terrain look like terrain rather than a green tablecloth".
+// Grass where the ground is flat, rock where it is steep, snow on the high gentle ground. The
+// mountains are FLAT-SHADED (three declares no normal varying then), so the face normal comes
+// from the screen-space derivatives of vViewPosition — three's own flat-shading recipe — and is
+// turned back into WORLD space through the view matrix (a view-space normal would change the
+// blend as the camera turns). Materials, never post: VR draws no post stack.
+const RACE_TERRAIN_SHADER = {
+	nodes: [
+		{
+			id: 'blend',
+			type: 'glsl',
+			position: { x: 60, y: 80 },
+			data: {
+				type: 'vec3',
+				expression:
+					'mix(mix(vec3(0.16, 0.25, 0.07), vec3(0.22, 0.19, 0.16), 1.0 - smoothstep(0.55, 0.8, (vec4(normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition))), 0.0) * viewMatrix).y)), vec3(0.82, 0.84, 0.88), smoothstep(24.0, 34.0, (cameraPosition + (vec4(-vViewPosition, 0.0) * viewMatrix).xyz).y) * smoothstep(0.45, 0.7, (vec4(normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition))), 0.0) * viewMatrix).y))'
+			}
+		},
+		{ id: 's', type: 'surface', position: { x: 520, y: 80 }, data: {} }
+	],
+	edges: [{ id: 'e-blend-s', source: 'blend', sourceHandle: 'out', target: 's', targetHandle: 'albedo' }]
+};
+
 /** a car: one dynamic box (the collider is the box of its parts), the parts riding it
  * @param {number} n 1..4 @param {number} color @param {number[]} pos @param {number} yaw */
 function car(n, color, pos, yaw) {
@@ -180,6 +204,7 @@ const RACE_DEF = {
 	},
 	// 21-C9's Race look, trimmed to what reads on a desktop (post is off in VR): an ACES film
 	// curve, a touch of contrast, low bloom for the tail-lights, a vignette, SMAA
+	shaders: { Mountains: RACE_TERRAIN_SHADER },
 	post: {
 		enabled: true,
 		effects: [

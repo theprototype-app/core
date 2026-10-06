@@ -239,7 +239,11 @@ h.run(async () => {
 	await h.eventually(() => wp.evaluate(() => { let v; window.__stores.physics.simulating.subscribe((x) => (v = x))(); return !!v; }), (v) => v, 'the simulation runs', 15000);
 	h.check((await wp.evaluate(() => { let v; window.__stores.isLocked.subscribe((x) => (v = x))(); return v; })) !== true, 'premise: no pointer lock (a headset never takes one)');
 	await wp.evaluate(() => window.__race.claim('Race car 1'));
-	await wp.evaluate(() => window.__stores.kit.kit.round.start());
+	// the round starts through the kit api (the DOM HUD's Start is not drawn in a headset)
+	await wp.evaluate(async () => {
+		await window.__stores.moduleSDK.initModules([{ id: 'racekit', name: 'kit handle', version: '1.0.0', description: '', register(api) { window.__raceKit = api.kit; } }]);
+		window.__raceKit.round.start();
+	});
 	await h.eventually(() => phaseOf(wp), (p) => p === 'playing', 'the race runs', 15000);
 	await h.eventually(() => viewOf(wp), (v) => v?.engaged && v.view === 'seat', 'VR Interact with no pointer lock seats the driver — before 37 a headset never engaged at all', 6000);
 	const b5 = await carPose(wp, 'Race car 1');

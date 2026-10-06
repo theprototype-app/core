@@ -17,6 +17,29 @@ const camPos = (page) =>
 		return c.position.toArray();
 	});
 const moved = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+/** a canvas pixel whose ray hits NOTHING in the scene (the camera moves during the suite, so
+ * look for it at the moment it is needed) @returns {Promise<{x: number, y: number} | null>} */
+const emptyPixel = (page) =>
+	page.evaluate(() => {
+		const s = window.__stores;
+		let cam, group, renderer;
+		s.globalCamera.subscribe((v) => (cam = v))();
+		s.objectsGroup.subscribe((v) => (group = v))();
+		s.globalRenderer.subscribe((v) => (renderer = v))();
+		const rect = renderer.domElement.getBoundingClientRect();
+		const ray = new s.THREE.Raycaster();
+		for (const ny of [0.8, 0.6, 0.4, -0.8, -0.6]) {
+			for (const nx of [-0.6, -0.3, 0, 0.3, 0.6]) {
+				ray.setFromCamera(new s.THREE.Vector2(nx, ny), cam);
+				if (ray.intersectObject(group, true).some((h) => h.object.visible)) continue;
+				const x = rect.left + ((nx + 1) / 2) * rect.width;
+				const y = rect.top + ((1 - ny) / 2) * rect.height;
+				if (document.elementFromPoint(x, y) !== renderer.domElement) continue;
+				return { x, y };
+			}
+		}
+		return null;
+	});
 const seam = (page) => page.evaluate(() => ({ ...window.__ptr, api: undefined }));
 
 h.run(async () => {
@@ -90,17 +113,19 @@ h.run(async () => {
 	h.check(st.moves >= 6 && st.ups === 1, `the drag and the release came to it (moves ${st.moves}, ups ${st.ups})`);
 	h.check(claimedOrbit < 0.01, `a CLAIMED drag does not orbit the camera (moved ${claimedOrbit.toFixed(3)})`);
 	await page.evaluate(() => (window.__ptr.claim = false));
+	const movesBefore = st.moves;
 	const freeOrbit = await drag(onBox.x - 200, onBox.y - 100);
 	st = await seam(page);
 	h.check(freeOrbit > 0.2, `COUNTERFACTUAL: the same drag unclaimed orbits the camera (moved ${freeOrbit.toFixed(2)})`);
-	h.check(st.moves < 6 + 8 && st.ups === 1, `...and an unclaimed gesture sends no move/up (moves ${st.moves}, ups ${st.ups})`);
+	h.check(st.moves === movesBefore && st.ups === 1, `...and an unclaimed gesture sends no move/up (moves ${movesBefore} -> ${st.moves}, ups ${st.ups})`);
 
 	console.log('\n=== 3. onClickMiss: an Edit click on nothing ===');
 	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
 	await page.waitForTimeout(300);
-	const sky = await h.projectPoint(page, [0, 40, -200]);
+	const sky = await emptyPixel(page);
+	h.check(!!sky, `premise: a canvas pixel that hits nothing (${JSON.stringify(sky)})`);
 	const misses0 = (await seam(page)).misses;
-	await page.mouse.click(sky.x, Math.max(sky.y, 150));
+	await page.mouse.click(sky.x, sky.y);
 	await page.waitForTimeout(400);
 	h.check((await seam(page)).misses === misses0 + 1, `a click on empty space reached onClickMiss (${misses0} -> ${(await seam(page)).misses})`);
 
@@ -137,7 +162,8 @@ h.run(async () => {
 	h.check((await seam(page)).downs.length === d0 && after > 0.2, `no handler hears the press and the drag orbits again (moved ${after.toFixed(2)})`);
 	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
 	const m0 = (await seam(page)).misses;
-	await page.mouse.click(sky.x, Math.max(sky.y, 150));
+	const sky2 = (await emptyPixel(page)) ?? sky;
+	await page.mouse.click(sky2.x, sky2.y);
 	await page.waitForTimeout(300);
 	h.check((await seam(page)).misses === m0, 'onClickMiss is gone');
 	const seamDbg = await page.evaluate(() => window.__stores.modulePointer?.modulePointerDebug?.() ?? null);

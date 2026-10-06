@@ -9,7 +9,13 @@
 	// Sessions manager (phase 50): thumbnail grid of saved sessions with
 	// load (proposal when peers are connected), selective object import,
 	// rename, export/import and delete.
-	import { Modal, Button } from 'flowbite-svelte';
+	// 38 R7: the shared ModalDialog (WindowChrome size="modal"), kit Button / Checkbox / EmptyState,
+	// tokens only; every id and class the suites address is kept (session-*, picker-*).
+	import ModalDialog from '../ui/ModalDialog.svelte';
+	import Button from '../ui/Button.svelte';
+	import Checkbox from '../ui/Checkbox.svelte';
+	import EmptyState from '../ui/EmptyState.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { peers, sessionsOpen, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
 	// R22 round 13 (user): "Instead of 'Load' for items put 'Open'". Once this button says
 	// what the Explorer's scene card says, it has to MEAN what that one means — so it asks
@@ -623,22 +629,21 @@
 	}
 </script>
 
-<Modal
+<ModalDialog
 	title="Sessions"
 	bind:open={$sessionsOpen}
-	modal={false} onkeydown={(e) => { if (e.key === 'Escape') sessionsOpen.set(false); }}
-	outsideclose
-	size="lg"
-	class="tp-modal-frame"
-	classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
+	onkeydown={(/** @type {KeyboardEvent} */ e) => {
+		if (e.key === 'Escape') sessionsOpen.set(false);
+	}}
+	width="lg"
 >
-	<div class="modal-content p-1">
+	<div class="modal-content">
 		<div class="mb-3 flex flex-wrap items-center gap-2">
 			{#if saving}
 				<!-- B5: inline name entry — Enter saves, Esc cancels -->
 				<input
 					id="session-save-name"
-					class="ui-input w-52 text-sm"
+					class="ss-input w-52 text-sm"
 					type="text"
 					aria-label="Session name"
 					placeholder="Session name"
@@ -650,29 +655,28 @@
 					}}
 				/>
 				<!-- say WHICH of the two saves this name is for: one field serves both buttons -->
-				<span id="session-save-kind" class="text-[10px] uppercase tracking-wide text-gray-400"
+				<span id="session-save-kind" class="text-[10px] uppercase tracking-wide text-text-muted"
 					>{saveKind === 'project' ? 'project + library' : 'scene only'}</span
 				>
-				<Button id="session-save-confirm" size="xs" disabled={!saveName.trim()} onclick={confirmSave}>
-					<Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save
+				<Button variant="primary" id="session-save-confirm" size="sm" disabled={!saveName.trim()} onclick={confirmSave} icon="save">
+					Save
 				</Button>
-				<Button size="xs" color="alternative" onclick={() => (saving = false)}>Cancel</Button>
+				<Button variant="outline" size="sm" onclick={() => (saving = false)}>Cancel</Button>
 			{:else}
-				<Button id="session-save" size="xs" onclick={() => beginSave(false)}
-					><Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save current scene</Button
+				<Button icon="save" variant="primary" id="session-save" size="sm" onclick={() => beginSave(false)}
+					>Save current scene</Button
 				>
 				<!-- R22 round 9: the project save. Beside the scene one and never inferred from it. -->
-				<Button
+				<Button icon="save" variant="outline"
 					id="session-save-project"
-					size="xs"
-					color="alternative"
+					size="sm"
 					title="The scene AND every file in the Explorer — folders, records and their bytes"
 					onclick={() => beginSave(true)}
-					><Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save current project</Button
+					>Save current project</Button
 				>
 			{/if}
-			<Button size="xs" color="alternative" onclick={() => document.getElementById('session-import-file')?.click()}>
-				<Icon name="upload" size={16} class="mr-1" aria-hidden="true" />Import session file
+			<Button icon="upload" variant="outline" size="sm" onclick={() => document.getElementById('session-import-file')?.click()}>
+				Import session file
 			</Button>
 			<input
 				type="file"
@@ -681,7 +685,7 @@
 				accept=".json,.zip,.tpscene,.tp"
 				onchange={importSessionFile}
 			/>
-			<span class="text-xs text-gray-400">
+			<span class="text-xs text-text-muted">
 				Loading with peers connected asks everyone first; a backup session is stashed before any replace.
 			</span>
 		</div>
@@ -693,12 +697,12 @@
 				"how much are my projects costing me" instead of repeating a number that does not
 				match the cards underneath it.
 			-->
-			<div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-400">
-				<div class="tp-seg" role="group" aria-label="Filter sessions">
+			<div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-text-muted">
+				<div class="ss-seg" role="group" aria-label="Filter sessions">
 					{#each [{ v: 'all', l: 'All' }, { v: 'scene', l: 'Scenes' }, { v: 'project', l: 'Projects' }] as opt (opt.v)}
 						<button
 							id={'session-filter-' + opt.v}
-							class="tp-seg-btn"
+							class="ss-seg-btn"
 							aria-pressed={kindFilter === opt.v}
 							onclick={() => (kindFilter = opt.v)}>{opt.l}</button
 						>
@@ -708,31 +712,31 @@
 					>{shownSessions.length} of {$sessions.length} · about {fmtBytes(shownBytes)}</span
 				>
 				{#if picked.size}
-					<span id="session-picked" class="text-gray-300">{picked.size} selected</span>
+					<span id="session-picked" class="text-text-2">{picked.size} selected</span>
 					<button
 						id="session-delete-picked"
-						class="ui-button-quiet hover:bg-red-700"
+						class="ss-btn ss-del"
 						title="Delete every selected entry"
 						onclick={() => confirmDelete(shownSessions.filter((/** @type {any} */ m) => picked.has(m.id)))}
 						>Delete {picked.size}</button
 					>
-					<button class="ui-button-quiet" title="Clear the selection" onclick={() => (picked = new Set())}
+					<button class="ss-btn" title="Clear the selection" onclick={() => (picked = new Set())}
 						>Clear</button
 					>
 				{/if}
 				<span class="flex-1"></span>
 				<!-- R22 round 11: thumbnails or a list, the Explorer's own split. Local. -->
-				<div class="tp-seg" role="group" aria-label="View">
+				<div class="ss-seg" role="group" aria-label="View">
 					<button
 						id="session-view-grid"
-						class="tp-seg-btn"
+						class="ss-seg-btn"
 						aria-pressed={sessionView === 'grid'}
 						title="Thumbnails"
 						onclick={() => (sessionView = 'grid')}><Icon name="layout-grid" size={16} aria-hidden="true" /></button
 					>
 					<button
 						id="session-view-list"
-						class="tp-seg-btn"
+						class="ss-seg-btn"
 						aria-pressed={sessionView === 'list'}
 						title="Details, with a button per row"
 						onclick={() => (sessionView = 'list')}><Icon name="list" size={16} aria-hidden="true" /></button
@@ -743,10 +747,12 @@
 
 
 		{#if !$sessions.length}
-			<p class="rounded-lg border border-dashed border-gray-600 p-4 text-center text-sm italic text-gray-400">
-				No saved sessions yet — Save current scene keeps a named snapshot you can reload,
-				share as a file or pick objects from later.
-			</p>
+			<EmptyState
+				id="sessions-empty"
+				icon="archive"
+				title="No saved sessions yet"
+				description="Save current scene keeps a named snapshot you can reload, share as a file or pick objects from later."
+			/>
 		{:else if sessionView === 'list'}
 			<!--
 				R22 round 11: "allow list view as well (details with buttons for each row)". The
@@ -761,21 +767,21 @@
 					<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 					<div
 						class="session-card session-row flex items-center gap-2 rounded-sm border px-2 py-1 {picked.has(meta.id)
-							? 'session-picked border-primary-500 bg-primary-600/20'
-							: 'border-gray-700/60 bg-gray-800/70'}"
+							? 'session-picked ss-on'
+							: 'border-border bg-surface-2'}"
 						onclick={(e) => pickEntry(meta.id, e)}
 					>
 						{#if meta.thumbnail}
 							<img src={meta.thumbnail} alt="" class="h-8 w-12 shrink-0 rounded-sm object-cover" />
 						{:else}
-							<span class="flex h-8 w-12 shrink-0 items-center justify-center rounded-sm bg-gray-700 text-gray-400"
+							<span class="flex h-8 w-12 shrink-0 items-center justify-center rounded-sm bg-surface-inset text-text-muted"
 								><Icon name="archive" size={16} aria-hidden="true" /></span
 							>
 						{/if}
 						{#if renamingId === meta.id}
 							<!-- the same flex slot the name occupies, so committing does not shift the row -->
 							<input
-								class="ui-input min-w-0 flex-1 text-sm"
+								class="ss-input min-w-0 flex-1 text-sm"
 								type="text"
 								aria-label="Session name"
 								bind:value={renameValue}
@@ -798,7 +804,7 @@
 								one and every file manager's — and it is why the two agree now.
 							-->
 							<span
-								class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-gray-100"
+								class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-text"
 								title="Double-click to rename"
 								ondblclick={(e) => {
 									e.stopPropagation();
@@ -808,18 +814,18 @@
 						{/if}
 						<span class="session-meta flex shrink-0 items-center gap-1.5 text-[10px]">
 							{#if meta.hasLibrary}
-								<span class="session-badge rounded-sm bg-teal-500/20 px-1 py-px font-semibold text-teal-300">Project</span>
-								<span class="text-gray-500">{meta.libraryCount} file{meta.libraryCount === 1 ? '' : 's'}</span>
+								<span class="session-badge rounded-sm bg-badge px-1 py-px font-semibold text-badge-text">Project</span>
+								<span class="text-text-faint">{meta.libraryCount} file{meta.libraryCount === 1 ? '' : 's'}</span>
 							{:else}
-								<span class="session-badge rounded-sm bg-gray-600/40 px-1 py-px font-semibold text-gray-300">Scene</span>
+								<span class="session-badge rounded-sm border border-border-strong px-1 py-px font-semibold text-text-2">Scene</span>
 							{/if}
 						</span>
-						<span class="shrink-0 text-[10px] text-gray-500">{meta.count} obj</span>
-						<span class="session-size shrink-0 text-[10px] text-gray-500">{fmtBytes(meta.bytes)}</span>
-						<span class="shrink-0 text-[10px] text-gray-500">{stamp(meta.createdAt)}</span>
+						<span class="shrink-0 text-[10px] text-text-faint">{meta.count} obj</span>
+						<span class="session-size shrink-0 text-[10px] text-text-faint">{fmtBytes(meta.bytes)}</span>
+						<span class="shrink-0 text-[10px] text-text-faint">{stamp(meta.createdAt)}</span>
 						<div class="flex shrink-0 gap-1">
 							<button
-								class="ui-button-quiet session-load inline-flex items-center gap-1"
+								class="ss-btn session-load inline-flex items-center gap-1"
 								title={meta.hasLibrary
 									? "Open this project: the scene comes back and so do its files, and you leave the session first"
 									: 'Open this scene — it replaces the scene on screen (peers must accept)'}
@@ -828,7 +834,7 @@
 							>
 							{#if meta.hasLibrary}
 								<button
-									class="ui-button-quiet session-mount inline-flex items-center gap-1"
+									class="ss-btn session-mount inline-flex items-center gap-1"
 									disabled={mountedIds.has(meta.id)}
 									title={mountedIds.has(meta.id)
 										? 'Already mounted — it is above Library in the Explorer'
@@ -840,7 +846,7 @@
 								>
 							{/if}
 							<button
-								class="ui-button-quiet session-import inline-flex items-center gap-1"
+								class="ss-btn session-import inline-flex items-center gap-1"
 								title={meta.hasLibrary
 									? "Browse this entry's files, and pick objects out of any scene in it"
 									: 'Pick objects from this scene to add to the one on screen'}
@@ -856,24 +862,24 @@
 							-->
 							{#if meta.hasLibrary}
 								<button
-									class="ui-button-quiet session-download-project"
+									class="ss-btn session-download-project"
 									title="Download as .tp — the whole project: this scene plus its library files and folders, in the format this app opens as a project"
 									onclick={() => downloadSession(meta, 'project')}>.tp</button
 								>
 							{:else}
 								<button
-									class="ui-button-quiet session-download-scene"
+									class="ss-btn session-download-scene"
 									title="Download as .tpscene — the scene bundle this app can open again, with the assets it uses"
 									onclick={() => downloadSession(meta)}>.tpscene</button
 								>
 							{/if}
 							<button
-								class="ui-button-quiet session-download-json"
+								class="ss-btn session-download-json"
 								title="Download as JSON — readable, and what a bug report can carry"
 								onclick={() => downloadSession(meta, 'json')}>.json</button
 							>
 							<button
-								class="ui-button-quiet inline-flex items-center hover:bg-red-700"
+								class="ss-btn inline-flex items-center ss-del"
 								title="Delete"
 								aria-label="Delete"
 								onclick={() => confirmDelete([meta])}><Icon name="x" size={16} aria-hidden="true" /></button
@@ -887,21 +893,21 @@
 				{#each shownSessions as meta (meta.id)}
 					<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
 					<div
-						class="session-card flex flex-col overflow-hidden rounded-lg border {picked.has(meta.id)
-							? 'session-picked border-primary-500 bg-primary-600/20'
-							: 'border-gray-700/60 bg-gray-800/70'}"
+						class="session-card flex flex-col overflow-hidden rounded-card border {picked.has(meta.id)
+							? 'session-picked ss-on'
+							: 'border-border bg-surface-2'}"
 						onclick={(e) => pickEntry(meta.id, e)}
 					>
 						{#if meta.thumbnail}
 							<img src={meta.thumbnail} alt={meta.name} class="h-24 w-full object-cover" />
 						{:else}
-							<div class="flex h-24 w-full items-center justify-center bg-gray-700 text-2xl text-gray-400"><Icon name="archive" size={16} aria-hidden="true" /></div>
+							<div class="flex h-24 w-full items-center justify-center bg-surface-inset text-2xl text-text-muted"><Icon name="archive" size={16} aria-hidden="true" /></div>
 						{/if}
 						<div class="flex flex-col gap-1 p-2">
 							{#if renamingId === meta.id}
 								<!-- B5: inline rename (was a prompt) -->
 								<input
-									class="ui-input w-full text-sm"
+									class="ss-input w-full text-sm"
 									type="text"
 									aria-label="Session name"
 									bind:value={renameValue}
@@ -914,14 +920,14 @@
 								/>
 							{:else}
 								<p
-									class="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-gray-100"
+									class="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-text"
 									title="Double-click to rename"
 									ondblclick={() => beginRename(meta)}
 								>
 									{meta.name}
 								</p>
 							{/if}
-							<p class="text-[10px] text-gray-400">
+							<p class="text-[10px] text-text-muted">
 								{meta.count} object{meta.count === 1 ? '' : 's'} · {stamp(meta.createdAt)}
 							</p>
 							<!--
@@ -932,40 +938,40 @@
 							<p class="session-meta flex items-center gap-1.5 text-[10px]">
 								{#if meta.hasLibrary}
 									<span
-										class="session-badge rounded-sm bg-teal-500/20 px-1 py-px font-semibold text-teal-300"
+										class="session-badge rounded-sm bg-badge px-1 py-px font-semibold text-badge-text"
 										title={'The scene AND ' + meta.libraryCount + ' library file' + (meta.libraryCount === 1 ? '' : 's')}
 										>Project</span
 									>
-									<span class="text-gray-500">{meta.libraryCount} file{meta.libraryCount === 1 ? '' : 's'}</span>
+									<span class="text-text-faint">{meta.libraryCount} file{meta.libraryCount === 1 ? '' : 's'}</span>
 								{:else}
 									<span
-										class="session-badge rounded-sm bg-gray-600/40 px-1 py-px font-semibold text-gray-300"
+										class="session-badge rounded-sm border border-border-strong px-1 py-px font-semibold text-text-2"
 										title="The scene only — the Explorer's files are not in this entry"
 										>Scene</span
 									>
 								{/if}
-								<span class="session-size text-gray-500" title="Approximate — idb's own overhead is not measurable from here"
+								<span class="session-size text-text-faint" title="Approximate — idb's own overhead is not measurable from here"
 									>{fmtBytes(meta.bytes)}</span
 								>
 							</p>
 							<div class="flex flex-wrap gap-1">
-								<button class="ui-button-quiet session-load inline-flex items-center gap-1"
+								<button class="ss-btn session-load inline-flex items-center gap-1"
 									title={meta.hasLibrary ? "Open this project: the scene comes back and so do its files, and you leave the session first" : 'Open this scene — it replaces the scene on screen (peers must accept)'}
 									onclick={() => void openEntry(meta)}><Icon name="folder-open" size={16} aria-hidden="true" />Open</button>
 								{#if meta.hasLibrary}
-									<button class="ui-button-quiet session-mount inline-flex items-center gap-1" disabled={mountedIds.has(meta.id)}
+									<button class="ss-btn session-mount inline-flex items-center gap-1" disabled={mountedIds.has(meta.id)}
 										title={mountedIds.has(meta.id) ? 'Already mounted — it is above Library in the Explorer' : "Add this project's files to the Explorer as a root of its own, above Library. The scene on screen is not touched."}
 										onclick={() => void mountVolume(meta.id)}><Icon name="hard-drive" size={16} aria-hidden="true" />{mountedIds.has(meta.id) ? 'Mounted' : 'Mount'}</button>
 								{/if}
-								<button class="ui-button-quiet session-import inline-flex items-center gap-1" title={meta.hasLibrary ? "Browse this entry's files, and pick objects out of any scene in it" : 'Pick objects from this scene to add to the one on screen'}
+								<button class="ss-btn session-import inline-flex items-center gap-1" title={meta.hasLibrary ? "Browse this entry's files, and pick objects out of any scene in it" : 'Pick objects from this scene to add to the one on screen'}
 									onclick={() => openPicker(meta)}><Icon name="import" size={16} aria-hidden="true" />{meta.hasLibrary ? 'Import files…' : 'Import objects…'}</button>
 								{#if meta.hasLibrary}
-									<button class="ui-button-quiet session-download-project inline-flex items-center gap-1" title="Download as .tp — the whole project: this scene plus its library files and folders, in the format this app opens as a project" onclick={() => downloadSession(meta, 'project')}><Icon name="download" size={16} aria-hidden="true" />.tp</button>
+									<button class="ss-btn session-download-project inline-flex items-center gap-1" title="Download as .tp — the whole project: this scene plus its library files and folders, in the format this app opens as a project" onclick={() => downloadSession(meta, 'project')}><Icon name="download" size={16} aria-hidden="true" />.tp</button>
 								{:else}
-									<button class="ui-button-quiet session-download-scene inline-flex items-center gap-1" title="Download as .tpscene — the scene bundle this app can open again, with the assets it uses" onclick={() => downloadSession(meta)}><Icon name="download" size={16} aria-hidden="true" />.tpscene</button>
+									<button class="ss-btn session-download-scene inline-flex items-center gap-1" title="Download as .tpscene — the scene bundle this app can open again, with the assets it uses" onclick={() => downloadSession(meta)}><Icon name="download" size={16} aria-hidden="true" />.tpscene</button>
 								{/if}
-								<button class="ui-button-quiet session-download-json inline-flex items-center gap-1" title="Download as JSON — readable, and what a bug report can carry" onclick={() => downloadSession(meta, 'json')}><Icon name="download" size={16} aria-hidden="true" />.json</button>
-								<button class="ui-button-quiet inline-flex items-center hover:bg-red-700" title="Delete" aria-label="Delete"
+								<button class="ss-btn session-download-json inline-flex items-center gap-1" title="Download as JSON — readable, and what a bug report can carry" onclick={() => downloadSession(meta, 'json')}><Icon name="download" size={16} aria-hidden="true" />.json</button>
+								<button class="ss-btn inline-flex items-center ss-del" title="Delete" aria-label="Delete"
 									onclick={() => confirmDelete([meta])}><Icon name="x" size={16} aria-hidden="true" /></button>
 							</div>
 						</div>
@@ -974,7 +980,7 @@
 			</div>
 		{/if}
 	</div>
-</Modal>
+</ModalDialog>
 
 <!--
 	R22 round 12 (user): "rework on this 'import files'/'import object' dialog, it feels
@@ -993,41 +999,39 @@
 	this needs its own Escape handler — a non-modal dialog fires no cancel event.
 -->
 {#if picker}
-	<Modal
+	<!-- a cancel (outside click, the close button) ends the picker, as Escape does -->
+	<ModalDialog
 		title={picker.file ? 'Import objects' : 'Import files'}
 		open={true}
-		modal={false}
-		onkeydown={(e) => {
+		oncancel={() => (picker = null)}
+		onkeydown={(/** @type {KeyboardEvent} */ e) => {
 			if (e.key === 'Escape') picker = null;
 		}}
-		outsideclose
-		size="lg"
-		class="tp-modal-frame"
-		classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
+		width="lg"
 	>
-		<div id="session-picker" class="flex h-full min-h-0 flex-col gap-2 p-1">
-			<div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
+		<div id="session-picker" class="flex min-h-0 flex-col gap-3">
+			<div class="flex flex-wrap items-center gap-2 text-xs text-text-muted">
 				{#if picker.file}
-					<button id="session-file-back" class="ui-button-quiet" title="Back to the files" onclick={closeFile}
+					<button id="session-file-back" class="ss-btn" title="Back to the files" onclick={closeFile}
 						>‹ Files</button
 					>
-					<span class="text-gray-200">{picker.file.name}</span>
+					<span class="text-text">{picker.file.name}</span>
 				{:else}
-					<span class="text-gray-200">{picker.name}</span>
+					<span class="text-text">{picker.name}</span>
 				{/if}
 				<span class="flex-1"></span>
 				<!-- the same Grid/List pair the entries above use, so one control means one thing -->
-				<div class="tp-seg" role="group" aria-label="View">
+				<div class="ss-seg" role="group" aria-label="View">
 					<button
 						id="picker-view-list"
-						class="tp-seg-btn"
+						class="ss-seg-btn"
 						aria-pressed={pickerView === 'list'}
 						title="Details"
 						onclick={() => (pickerView = 'list')}><Icon name="list" size={16} aria-hidden="true" /></button
 					>
 					<button
 						id="picker-view-grid"
-						class="tp-seg-btn"
+						class="ss-seg-btn"
 						aria-pressed={pickerView === 'grid'}
 						title="Thumbnails"
 						onclick={() => (pickerView = 'grid')}><Icon name="layout-grid" size={16} aria-hidden="true" /></button
@@ -1037,7 +1041,7 @@
 
 			{#if picker.file}
 				<!-- LEVEL TWO: the objects inside one scene file -->
-				<div id="session-object-list" class="min-h-0 flex-1 overflow-y-auto">
+				<div id="session-object-list" class="min-h-0 flex-1 overflow-y-auto" use:minimalScroll>
 					{#if pickerView === 'grid'}
 						<div class="grid grid-cols-[repeat(auto-fill,120px)] justify-start gap-2">
 							{#each picker.entries as entry (entry.index)}
@@ -1045,15 +1049,15 @@
 									class="picker-card flex flex-col items-center gap-1 rounded border p-2 text-center {picker.checked.has(
 										entry.index
 									)
-										? 'border-primary-500 bg-primary-600/20'
-										: 'border-gray-700/60 hover:border-gray-500'}"
+										? 'ss-on'
+										: 'border-border hover:border-border-strong'}"
 									onclick={() => togglePick(entry.index)}
 								>
-									<span class="text-gray-400"><Icon name={FILE_ICONS.object} size={20} /></span>
-									<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-200"
+									<span class="text-text-muted"><Icon name={FILE_ICONS.object} size={20} /></span>
+									<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-text"
 										>{entry.name}</span
 									>
-									<span class="text-[10px] uppercase text-gray-500">{entry.type}</span>
+									<span class="text-[10px] uppercase text-text-faint">{entry.type}</span>
 								</button>
 							{/each}
 						</div>
@@ -1061,36 +1065,31 @@
 						<div class="flex flex-col gap-0.5">
 							{#each picker.entries as entry (entry.index)}
 								<label
-									class="picker-row flex cursor-pointer items-center gap-2 rounded-sm px-1 py-0.5 text-sm text-gray-200 hover:bg-gray-700"
+									class="picker-row flex cursor-pointer items-center gap-2 rounded-sm px-1 py-0.5 text-sm text-text hover:bg-surface-hover"
 								>
-									<input
-										class="tp-check"
-										type="checkbox"
-										checked={picker.checked.has(entry.index)}
-										onchange={() => togglePick(entry.index)}
-									/>
+									<Checkbox checked={picker.checked.has(entry.index)} onchange={() => togglePick(entry.index)} />
 									<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{entry.name}</span>
-									<span class="text-[10px] uppercase text-gray-400">{entry.type}</span>
+									<span class="text-[10px] uppercase text-text-muted">{entry.type}</span>
 								</label>
 							{/each}
 						</div>
 					{/if}
 					{#if !picker.entries.length}
-						<p class="p-1 text-xs italic text-gray-400">This scene has no objects.</p>
+						<p class="p-1 text-xs italic text-text-muted">This scene has no objects.</p>
 					{/if}
 				</div>
 				<div class="flex shrink-0 gap-2">
-					<Button id="session-import-selected" size="xs" disabled={picker.checked.size === 0} onclick={runImport}>
+					<Button variant="primary" id="session-import-selected" size="sm" disabled={picker.checked.size === 0} onclick={runImport}>
 						Import {picker.checked.size} into the scene
 					</Button>
-					<Button size="xs" color="alternative" onclick={() => (picker = null)}>Cancel</Button>
+					<Button variant="outline" size="sm" onclick={() => (picker = null)}>Cancel</Button>
 				</div>
 			{:else}
 				<!--
 					LEVEL ONE: the FILES, with the folder structure the payload always carried and
 					nothing ever drew. Ticking a folder takes everything under it.
 				-->
-				<div id="session-file-list" class="min-h-0 flex-1 overflow-y-auto">
+				<div id="session-file-list" class="min-h-0 flex-1 overflow-y-auto" use:minimalScroll>
 					{#if pickerView === 'grid'}
 						<div class="grid grid-cols-[repeat(auto-fill,120px)] justify-start gap-2">
 							{#each picker.tree as row (row.key)}
@@ -1098,8 +1097,8 @@
 									class="picker-card session-file flex flex-col items-center gap-1 rounded border p-2 text-center {rowPicked(
 										row
 									)
-										? 'border-primary-500 bg-primary-600/20'
-										: 'border-gray-700/60 hover:border-gray-500'}"
+										? 'ss-on'
+										: 'border-border hover:border-border-strong'}"
 									data-kind={row.kind === 'folder' ? 'folder' : row.kindOf}
 									title={row.path}
 									onclick={() => toggleFile(row)}
@@ -1107,14 +1106,14 @@
 									{#if row.thumbnail}
 										<img src={row.thumbnail} alt="" class="h-12 w-full rounded-sm object-cover" />
 									{:else}
-										<span class="flex h-12 items-center text-gray-400"
+										<span class="flex h-12 items-center text-text-muted"
 											><Icon
 												name={row.kind === 'folder' ? 'folder' : (FILE_ICONS[row.kindOf] ?? 'package')}
 												size={20}
 											/></span
 										>
 									{/if}
-									<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-200"
+									<span class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-xs text-text"
 										>{row.name}</span
 									>
 								</button>
@@ -1124,16 +1123,16 @@
 						<div class="flex flex-col gap-0.5">
 							{#each picker.tree as row (row.key)}
 								<label
-									class="picker-row session-file flex cursor-pointer items-center gap-2 rounded-sm px-1 py-1 text-sm text-gray-200 hover:bg-gray-700"
+									class="picker-row session-file flex cursor-pointer items-center gap-2 rounded-sm px-1 py-1 text-sm text-text hover:bg-surface-hover"
 									data-kind={row.kind === 'folder' ? 'folder' : row.kindOf}
 									title={row.path}
 									style="padding-left: {4 + row.depth * 16}px"
 								>
-									<input class="tp-check" type="checkbox" checked={rowPicked(row)} onchange={() => toggleFile(row)} />
+									<Checkbox checked={rowPicked(row)} onchange={() => toggleFile(row)} />
 									{#if row.thumbnail}
 										<img src={row.thumbnail} alt="" class="h-6 w-8 shrink-0 rounded-sm object-cover" />
 									{:else}
-										<span class="shrink-0 text-gray-400"
+										<span class="shrink-0 text-text-muted"
 											><Icon
 												name={row.kind === 'folder' ? 'folder' : (FILE_ICONS[row.kindOf] ?? 'package')}
 												size={16}
@@ -1150,7 +1149,7 @@
 									-->
 									{#if row.kindOf === 'scene'}
 										<button
-											class="session-file-open ui-button-quiet"
+											class="session-file-open ss-btn"
 											title="Open this scene and pick objects out of it"
 											onclick={(e) => {
 												e.preventDefault();
@@ -1159,7 +1158,7 @@
 											}}>Open…</button
 										>
 									{/if}
-									<span class="text-[10px] uppercase text-gray-400"
+									<span class="text-[10px] uppercase text-text-muted"
 										>{row.kind === 'folder' ? 'folder' : row.kindOf}</span
 									>
 								</label>
@@ -1167,13 +1166,13 @@
 						</div>
 					{/if}
 					{#if !picker.tree.length}
-						<p class="p-1 text-xs italic text-gray-400">
+						<p class="p-1 text-xs italic text-text-muted">
 							This entry has no library files — it is a scene on its own.
 						</p>
 					{/if}
 				</div>
 				<div class="flex shrink-0 flex-wrap items-center gap-2">
-					<Button id="session-import-files" size="xs" disabled={pickedFileCount === 0} onclick={runFileImport}>
+					<Button variant="primary" id="session-import-files" size="sm" disabled={pickedFileCount === 0} onclick={runFileImport}>
 						Import {pickedFileCount} file{pickedFileCount === 1 ? '' : 's'} into the Library
 					</Button>
 					<!-- the OTHER act this dialog offers, and they are different: files go to the
@@ -1183,17 +1182,102 @@
 						it is the scene the entry IS. Its own button, beside the file import, because
 						the two are different acts on different things.
 					-->
-					<Button
+					<Button variant="outline"
 						id="session-open-scene"
-						size="xs"
-						color="alternative"
+						size="sm"
 						title="Open this entry's own scene and pick objects out of it"
 						onclick={() => void openFile(picker.files[0])}>Objects from its scene…</Button
 					>
 					<span class="flex-1"></span>
-					<Button size="xs" color="alternative" onclick={() => (picker = null)}>Close</Button>
+					<Button variant="outline" size="sm" onclick={() => (picker = null)}>Close</Button>
 				</div>
 			{/if}
 		</div>
-	</Modal>
+	</ModalDialog>
 {/if}
+
+<style>
+	/* 38 R7: the manager's own small controls, from the tokens (were the global ui-button-quiet /
+	   ui-input / tp-seg, which paint from the legacy palette) */
+	.ss-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		height: 28px;
+		padding: 0 8px;
+		border: 1px solid transparent;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text-2);
+		font: inherit;
+		font-size: var(--fs-desc);
+		cursor: pointer;
+	}
+	.ss-btn:hover:not(:disabled) {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.ss-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.ss-del:hover:not(:disabled) {
+		color: var(--warn-text);
+	}
+	.ss-input {
+		box-sizing: border-box;
+		height: var(--control-h-sm);
+		padding: 0 8px;
+		border: 1px solid var(--border-input);
+		border-radius: var(--radius-input);
+		background: var(--surface-inset);
+		color: var(--text);
+		font: inherit;
+		font-size: var(--fs-input);
+	}
+	.ss-input:focus {
+		outline: 2px solid var(--accent);
+		outline-offset: -1px;
+	}
+	/* SPEC Segmented: an inset track, the picked option on the raised thumb */
+	.ss-seg {
+		display: inline-flex;
+		gap: 2px;
+		padding: 2px;
+		border: 1px solid var(--border-input);
+		border-radius: var(--radius-button);
+		background: var(--surface-inset);
+	}
+	.ss-seg-btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 28px;
+		height: 26px;
+		padding: 0 10px;
+		border: 0;
+		border-radius: 6px;
+		background: transparent;
+		color: var(--text-muted);
+		font: inherit;
+		font-size: var(--fs-desc);
+		cursor: pointer;
+	}
+	.ss-seg-btn:hover:not(:disabled) {
+		color: var(--text);
+	}
+	.ss-seg-btn[aria-pressed='true'] {
+		background: var(--segment-on);
+		color: var(--text);
+		box-shadow: var(--shadow-thumb);
+	}
+	.ss-seg-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+	/* the one selection style: accent-soft fill + accent border */
+	.ss-on {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+	}
+</style>

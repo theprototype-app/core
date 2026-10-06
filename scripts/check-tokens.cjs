@@ -35,6 +35,7 @@ const CLEAN = [
 	'src/components/menu/ModulesManager.svelte',
 	'src/components/menu/PublishExportModal.svelte',
 	'src/components/menu/SessionsManager.svelte',
+	'src/components/menu/TemplatesModal.svelte',
 	'src/components/ui/ModalDialog.svelte',
 	'src/components/ui/Badge.svelte',
 	'src/components/ui/Button.svelte',

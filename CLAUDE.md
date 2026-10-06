@@ -2632,6 +2632,21 @@ loadable play content. Everything a user does must be visible to connected peers
   pushes/pulls a one-grip world, as Edit does an object); `addSetting({onLevels: true})` draws a choice as tabs on the
   VR Levels page, which now lists every level.
 
+## UI design system (redesign epic)
+
+- All UI follows the redesign spec kept in the `cloud` repo: `docs/design/redesign/SPEC.md`
+  (mockups in `docs/design/redesign/mockups/`). Locally that is
+  `../cloud/docs/design/redesign/` from this checkout (`theprototype-app/cloud`).
+- Build UI only from `src/components/ui` primitives (WindowChrome, Tabs, Segmented, Chips,
+  Toggle, Button, Badge, SettingRow, PropRow, NavRow, EmptyState, Sheet). Add a primitive
+  there before inventing a one-off.
+- Colours, radii, spacing and type come from the semantic tokens in `app.css` only — no raw
+  hex, no ad-hoc Tailwind palette colours in components (`npm run check:tokens`).
+- Every icon goes through `ui/Icon.svelte` (sizes 16 or 20 only).
+- A redesign change must not alter behaviour: DragRow scrubbing, modifiers, click-to-type,
+  shortcuts, undo grouping, peer sync, storage keys and defaults. The behaviour-lock e2e
+  suites must stay green.
+
 ## Replication golden rules
 
 1. Every mutation = apply locally + `$peers.send({type, ...})`; receivers apply WITHOUT
@@ -4943,11 +4958,13 @@ loadable play content. Everything a user does must be visible to connected peers
   `error during build: undefined` (svelte-check never runs; vite dev 500s too).
   Same trap in any non-TS component: JSDoc for types, never TS syntax (#13-B3).
 - **Icons = `@lucide/svelte` SVG components** (Font Awesome fully REMOVED post-1.0.1
-  — never add `fa-` classes). Static markup imports named components
-  (`import { Play } from '@lucide/svelte'`; sizes 16 inline/menu, 18-20 toolbar/
-  header, 24 the play FAB; `aria-hidden="true"` when decorative); DATA-DRIVEN icon
-  names (Explorer KIND_ICONS, menu-item defs) render via `components/ui/Icon.svelte`
-  (kebab lucide names). Icons inherit `currentColor` — never hardcode grays;
+  — never add `fa-` classes). **Redesign (SPEC §7): EVERY icon goes through
+  `components/ui/Icon.svelte`** — data-driven names (Explorer KIND_ICONS, menu-item defs)
+  AND static markup (`<Icon name="play" />`, kebab lucide names; add the name to its MAP,
+  an unmapped name silently renders a box). Sizes 16 (inline/menu/rows) or 20 (toolbar/
+  header) only, stroke ~1.75 at 16; `aria-hidden="true"` when decorative. Older code still
+  imports named components from `@lucide/svelte` directly — R10 migrates it; new code
+  never does. Icons inherit `currentColor` — never hardcode grays;
   semantic colors come from the `--icon-*` theme tokens. TWO TRAPS: a `class` passed
   to a lucide component lands on the CHILD-scope `<svg>`, so scoped CSS targeting it
   needs `:global(...)` (bit cx-chevron/tp-toast-icon/role-caret — silent style loss,

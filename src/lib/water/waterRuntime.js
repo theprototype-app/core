@@ -1593,6 +1593,8 @@ export function waterDebug() {
 		},
 		planar: [...entries.values()].filter((e) => e.planar).map((e) => e.uuid),
 		helpersHidden: lastHiddenHelpers,
+		// 37-hdri: does the sky model sample the scene's HDRI (and which PMREM)?
+		env: { on: shared.uEnvOn.value === 1, texture: shared.uEnvMap.value?.name ?? null, maxMip: shared.uEnvMaxMip.value },
 		drawCalls:
 			[...entries.values()].reduce(
 				(n, e) => n + (e.visible ? 1 + (e.body ? 1 : 0) + (e.bubbles?.visible ? 1 : 0) : 0),

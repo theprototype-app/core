@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ChevronDown, Copy, Globe } from '@lucide/svelte';
+	import { phoneShellActive } from '$lib/ui/phoneShell.js';
 	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight, toastStore, toastsInDrawerOnly } from '../../stores/appStore'
 	import { Input, Button } from 'flowbite-svelte';
 	import { onMount, tick } from 'svelte';
@@ -128,13 +129,16 @@
 
 	// publish docked + the bar height so the logo/profile chrome can clear it
 	const TAB_STRIP_H = 32; // approx height of the drawer's tab bar
+	// 38 R9: on the phone shell the bar is a SHEET behind a chip — it docks nothing and
+	// pushes nothing down, so it publishes the undocked values
+	const docksChrome = $derived(docked && !$phoneShellActive);
 	$effect(() => {
-		connectDocked.set(docked);
+		connectDocked.set(docksChrome);
 	});
 	$effect(() => {
 		const barVisible = drawerVisible; // track
 		let bh = 0;
-		if (docked) {
+		if (docksChrome) {
 			const pillH = pillEl?.offsetHeight || 46;
 			bh = pillH + (barVisible ? TAB_STRIP_H : 0);
 		}
@@ -144,7 +148,7 @@
 		// docked (chrome dropped under it) — otherwise they stay below the profile.
 		if (typeof document !== 'undefined') {
 			document.documentElement.style.setProperty('--connect-bottom', bh + 'px');
-			document.documentElement.classList.toggle('connect-docked', docked);
+			document.documentElement.classList.toggle('connect-docked', docksChrome);
 		}
 	});
 

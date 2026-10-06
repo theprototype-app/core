@@ -1,0 +1,250 @@
+/* 38 R9 — THE PHONE SHELL's placement rules (SPEC §6; components/phone/PhoneShell.svelte).
+ *
+ * Everything here is scoped to `:root.phone-shell`, a class PhoneShell puts on <html>
+ * ONLY while it is mounted (< 640px, editor, not embedded). So the old phone chrome is
+ * hidden exactly when the new one is drawn, and a desktop window never sees a rule here.
+ *
+ * Three jobs:
+ *   1. hide the controls whose new home is the shell (they stay MOUNTED — their stores,
+ *      effects and listeners keep running; only their phone face moves);
+ *   2. re-seat the reused top-bar pieces (logo, bell, peers, avatar);
+ *   3. place a reused window into the sheet FRAME PhoneShell draws: the frame publishes
+ *      --ps-body-top (the first pixel under its handle/title) and the window marked
+ *      [data-ps-host] fills from there to the bottom edge.
+ * !important throughout: the reused elements carry inline positions from dragWindow /
+ * floating-ui / their own measured layout, and an inline style beats any selector. */
+
+/* ---- 1. old phone chrome off ------------------------------------------------------- */
+:root.phone-shell #controls-pill,
+:root.phone-shell #chat-button,
+:root.phone-shell #mobile-add-button,
+:root.phone-shell #ai-hud-button,
+:root.phone-shell #mic-button,
+:root.phone-shell #touch-tools,
+:root.phone-shell #notes-toggle {
+	display: none !important;
+}
+/* the Connect bar is the Connect SHEET now: off until the chip opens it */
+:root.phone-shell .connect-wrap:not([data-ps-host]) {
+	display: none !important;
+}
+
+/* ---- 2. the top bar: logo left, bell + avatar right (peers between when present) --- */
+:root.phone-shell {
+	--ps-right: 116px;
+	/* the sheets and the Inspector clear the bottom bar instead of the old pill */
+	--controls-inset: calc(76px + env(safe-area-inset-bottom, 0px));
+}
+:root.phone-shell:has(#peers-trigger) {
+	--ps-right: 176px;
+}
+:root.phone-shell #logo-menu {
+	position: fixed !important;
+	top: 12px !important;
+	left: 12px !important;
+	width: 44px !important;
+	height: 44px !important;
+	border-radius: 12px !important;
+}
+:root.phone-shell #logo-menu img {
+	width: 30px;
+	height: 30px;
+}
+:root.phone-shell .top-right-chrome {
+	top: 0 !important;
+}
+:root.phone-shell .top-right-chrome > .flex {
+	top: 12px !important;
+	right: 64px !important;
+	gap: 6px !important;
+	height: 44px;
+}
+:root.phone-shell #notif-bell,
+:root.phone-shell #peers-trigger {
+	height: 44px !important;
+	min-width: 44px !important;
+	justify-content: center;
+}
+:root.phone-shell #notif-bell {
+	width: 44px !important;
+	border-radius: 50% !important;
+}
+:root.phone-shell .top-right-chrome,
+:root.phone-shell #avatar-menu {
+	/* the corner wrapper and #avatar-menu (a 208px-wide INVISIBLE anchor box from the
+	   desktop layout) would catch taps meant for the Connect chip; only the real controls
+	   inside them are targets */
+	pointer-events: none;
+}
+:root.phone-shell .top-right-chrome > .flex,
+:root.phone-shell #peers-popover,
+:root.phone-shell #notif-panel {
+	pointer-events: auto;
+}
+:root.phone-shell #avatar-trigger {
+	pointer-events: auto;
+	top: 12px !important;
+	right: 12px !important;
+}
+:root.phone-shell #avatar-trigger img,
+:root.phone-shell #avatar-trigger > div {
+	width: 44px !important;
+	height: 44px !important;
+}
+/* the profile menu opens as a sheet from the bottom edge, where the thumb is */
+:root.phone-shell #avatar-dropdown {
+	position: fixed !important;
+	top: auto !important;
+	bottom: 0 !important;
+	left: 0 !important;
+	right: 0 !important;
+	width: auto !important;
+	max-width: none !important;
+	max-height: 92vh;
+	overflow-y: auto;
+	margin: 0 !important;
+	border-radius: 18px 18px 0 0 !important;
+	padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+/* the main menu is ONE sheet (the logo still toggles it) */
+:root.phone-shell #sidebar70 {
+	position: fixed !important;
+	top: auto !important;
+	left: 0 !important;
+	right: 0 !important;
+	bottom: 0 !important;
+	width: auto !important;
+	min-width: 0 !important;
+	max-width: none !important;
+	max-height: 92vh !important;
+	padding: 26px 8px calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+	border-radius: 18px 18px 0 0 !important;
+	font-size: var(--fs-body);
+}
+:root.phone-shell #sidebar70::before {
+	content: '';
+	position: absolute;
+	top: 9px;
+	left: 50%;
+	width: 40px;
+	height: 5px;
+	margin-left: -20px;
+	border-radius: 3px;
+	background: var(--border-strong, rgb(148 163 184 / 0.6));
+}
+:root.phone-shell #sidebar70 .side-row {
+	min-height: 48px;
+}
+
+/* ---- 3. a reused window inside the sheet frame -------------------------------------- */
+:root.phone-shell [data-ps-host] {
+	position: fixed !important;
+	left: 0 !important;
+	right: 0 !important;
+	top: var(--ps-body-top) !important;
+	bottom: 0 !important;
+	width: auto !important;
+	height: auto !important;
+	min-width: 0 !important;
+	min-height: 0 !important;
+	max-width: none !important;
+	max-height: none !important;
+	margin: 0 !important;
+	transform: none !important;
+	border: 0 !important;
+	border-radius: 0 !important;
+	box-shadow: none !important;
+	z-index: 40 !important;
+	background: var(--surface-1, #151a24);
+}
+:root.phone-shell [data-ps-host='top'] {
+	z-index: 41 !important;
+}
+/* the Connect bar's pill + drawer as the Connect sheet's body */
+:root.phone-shell .connect-wrap[data-ps-host] {
+	display: block !important;
+	overflow-y: auto;
+	padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+	pointer-events: auto;
+}
+:root.phone-shell .connect-wrap[data-ps-host] .connect-pill {
+	display: flex !important;
+	flex-wrap: wrap;
+	gap: 8px;
+	width: 100% !important;
+	max-width: none !important;
+	padding: 8px !important;
+	border-radius: 12px !important;
+	white-space: normal !important;
+	box-shadow: none !important;
+	backdrop-filter: none !important;
+}
+/* one thing per row: the invite link, then the join field + its button */
+:root.phone-shell .connect-wrap[data-ps-host] .connect-pill > button:first-child {
+	flex: 1 0 100%;
+	min-height: 44px;
+	justify-content: center;
+}
+:root.phone-shell .connect-wrap[data-ps-host] .connect-divider,
+:root.phone-shell .connect-wrap[data-ps-host] #connect-info-button {
+	display: none !important;
+}
+:root.phone-shell .connect-wrap[data-ps-host] .cx-connect {
+	flex: 1 1 100% !important;
+	min-height: 44px;
+}
+:root.phone-shell .connect-wrap[data-ps-host] .cx-connect > * {
+	min-height: 44px;
+}
+:root.phone-shell .connect-wrap[data-ps-host] .cx-input {
+	flex: 1 1 auto;
+	width: auto !important;
+	min-width: 0 !important;
+	font-size: 16px !important; /* no iOS zoom on focus (SPEC §6) */
+}
+/* the drawer (Info / Rooms / Toasts) is the sheet's lower half, in the flow */
+:root.phone-shell .connect-wrap[data-ps-host] .cxd-panel {
+	position: static !important;
+	margin-top: 12px;
+	border: 1px solid var(--border, rgb(55 65 81 / 0.6)) !important;
+	border-radius: 12px !important;
+	max-height: none !important;
+}
+/* a window's own resize grip / drag affordances mean nothing inside a sheet */
+:root.phone-shell [data-ps-host] .resize-grip,
+:root.phone-shell [data-ps-host] [data-window-grip] {
+	display: none !important;
+}
+
+/* SPEC NOTES-38 #1: no native scrollbars in sheets or menus on a phone — touch scrolls
+   without one, and the main menu shows none at all */
+:root.phone-shell [data-ps-host],
+:root.phone-shell [data-ps-host] *,
+:root.phone-shell .ps-body,
+:root.phone-shell #sidebar70,
+:root.phone-shell #avatar-dropdown,
+:root.phone-shell #inspector,
+:root.phone-shell #notes-drawer,
+:root.phone-shell .ctx-scroll {
+	scrollbar-width: none;
+}
+:root.phone-shell [data-ps-host]::-webkit-scrollbar,
+:root.phone-shell [data-ps-host] *::-webkit-scrollbar,
+:root.phone-shell .ps-body::-webkit-scrollbar,
+:root.phone-shell #sidebar70::-webkit-scrollbar,
+:root.phone-shell #avatar-dropdown::-webkit-scrollbar,
+:root.phone-shell #inspector::-webkit-scrollbar,
+:root.phone-shell #inspector *::-webkit-scrollbar,
+:root.phone-shell #notes-drawer *::-webkit-scrollbar,
+:root.phone-shell .ctx-scroll::-webkit-scrollbar {
+	display: none;
+}
+
+/* the toasts clear the top bar (logo / chip / avatar are 12 + 44 tall) */
+:root.phone-shell .toasts-stack {
+	top: 64px !important;
+}
+/* physics transport (SimControls) rides above the strip, not over the bar */
+:root.phone-shell #sim-controls {
+	bottom: calc(148px + env(safe-area-inset-bottom, 0px)) !important;
+}

@@ -107,6 +107,7 @@ export const DEBUG_HOOKS = [
 	['nodeGroups', () => import('./nodeGroups')],
 	['nodeEditorActions', () => import('./nodeEditorActions')],
 	['themes', () => import('./themes')],
+	['phoneShell', () => import('./ui/phoneShell.js')],
 	['textSelection', () => import('./textSelection')],
 	['vrRadialMenu', () => import('./vrRadialMenu')],
 	['vrBindings', () => import('./vr/bindings.js')],

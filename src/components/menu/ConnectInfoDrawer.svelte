@@ -79,7 +79,10 @@
 			panelEl &&
 			!panelEl.contains(t) &&
 			!t.closest?.('#connect-info-button') &&
-			!t.closest?.('#connect-rooms-button')
+			!t.closest?.('#connect-rooms-button') &&
+			// 38 R9: on a phone the bar + drawer ARE the Connect sheet — a tap on its pill,
+			// handle or title row is inside it, not outside
+			!t.closest?.('.connect-wrap[data-ps-host], .ps-sheet')
 		)
 			onClose();
 	}

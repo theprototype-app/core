@@ -69,7 +69,7 @@
 		<button id="fluid-refill" class="ui-chip bg-gray-600 text-text-2 hover:bg-gray-500" onclick={() => set({ generation: f.generation + 1 })}>
 			Refill
 		</button>
-		<p class="mt-1 text-badge text-text-muted">
+		<p class="mt-1 text-[length:var(--fs-badge)] text-text-muted">
 			Each player simulates their own splash; these settings are shared. Pauses when off-screen. Quest shows drops (max 1500).
 		</p>
 	</div>

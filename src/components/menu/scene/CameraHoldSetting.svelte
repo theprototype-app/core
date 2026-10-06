@@ -14,7 +14,7 @@
 	checked={$scenePhysicsState_.holdCamera === true}
 	onchange={(/** @type {any} */ e) => setScenePhysics({ holdCamera: e.currentTarget.checked })}>Hold camera until loaded</InsToggle
 >
-<p class="text-badge italic text-text-muted">
+<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 	Saved with the scene. While it loads, the camera stays on the view it was saved with and ignores
 	input — until everything is in, only stuck or failed pieces are left, {$placeholderStuckSeconds} s
 	pass, or you press Esc / Take control. Off: the scene opens on that view and your first move wins.

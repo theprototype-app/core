@@ -81,7 +81,7 @@
 		value={floats.multiplier}
 		onchange={(v) => write({ multiplier: v === 1 ? null : v })}
 	/>
-	<p class="text-badge text-text-muted" id="physics-floats-hint">
+	<p class="text-[length:var(--fs-badge)] text-text-muted" id="physics-floats-hint">
 		{#if ratio == null}
 			Density = mass ÷ collider volume (water is 1000 kg/m³).
 		{:else if ratio >= 1}

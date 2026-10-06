@@ -15,7 +15,7 @@
 		onchange={(/** @type {any} */ e) => setSimOnLoad(e.currentTarget.checked)}
 		>Start simulation on load</InsToggle
 	>
-	<p class="text-badge italic text-text-muted">
+	<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 		Saved with the scene. When it opens, physics starts by itself (once everything has loaded) — for
 		scenes that are a simulation: things falling, floating, jiggling or pouring. The person who
 		opens it runs it; everyone else sees it move.

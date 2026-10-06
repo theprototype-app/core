@@ -30,7 +30,7 @@
 		checked={pass.triggers}
 		onchange={(/** @type {any} */ e) => setPass('triggers', e.currentTarget.checked)}>Triggers</InsToggle
 	>
-	<p class="text-badge italic text-text-muted">
+	<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 		Saved with the scene. A click selects what is inside or behind these; with nothing behind,
 		the click takes them. <strong>Alt+click</strong> cycles through everything under the cursor,
 		front to back (hold Alt to preview). The object list always reaches them.

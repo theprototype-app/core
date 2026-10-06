@@ -71,7 +71,7 @@
 					onchange={(/** @type {any} */ v) => AIMS[v] && set({ dir: AIMS[v] })}
 				/>
 			</div>
-			<p class="text-badge font-semibold uppercase tracking-wide text-text-muted">Hard caps</p>
+			<p class="text-[length:var(--fs-badge)] font-semibold uppercase tracking-wide text-text-muted">Hard caps</p>
 			<SliderRow id="fluid-emitter-max" label="Max particles" min={64} max={EMITTER_MAX_PARTICLES} step={50} decimals={0} value={f.maxParticles} onchange={(v) => set({ maxParticles: v })} />
 			<SliderRow id="fluid-emitter-lifetime" label="Lifetime s" min={0.5} max={600} step={0.5} value={f.lifetime} onchange={(v) => set({ lifetime: v })} />
 			{#each ['Width', 'Height', 'Depth'] as label, i (label)}
@@ -79,7 +79,7 @@
 			{/each}
 			<SliderRow id="fluid-emitter-area-drop" label="Area below" min={-MAX_AREA_SIDE} max={MAX_AREA_SIDE} step={0.1} value={f.area.offset[1]} onchange={(v) => setOffset(1, v)} />
 			<InsToggle id="fluid-emitter-floor" checked={f.floor} onchange={(/** @type {any} */ e) => set({ floor: e.currentTarget.checked })}>Area floor holds water</InsToggle>
-			<p class="text-badge font-semibold uppercase tracking-wide text-text-muted">Fluid</p>
+			<p class="text-[length:var(--fs-badge)] font-semibold uppercase tracking-wide text-text-muted">Fluid</p>
 			<SliderRow id="fluid-emitter-size" label="Drop size" min={0.025} max={0.12} step={0.005} decimals={3} value={f.particleSize} onchange={(v) => set({ particleSize: v })} />
 			<SliderRow id="fluid-emitter-viscosity" label="Viscosity" min={0} max={1} step={0.01} value={f.viscosity} onchange={(v) => set({ viscosity: v })} />
 			<SliderRow id="fluid-emitter-tension" label="Surface tension" min={0} max={2} step={0.05} value={f.surfaceTension} onchange={(v) => set({ surfaceTension: v })} />
@@ -113,7 +113,7 @@
 			<InsToggle id="fluid-emitter-interact" checked={f.interact} onchange={(/** @type {any} */ e) => set({ interact: e.currentTarget.checked })}>Collide with the scene</InsToggle>
 			<InsToggle id="fluid-emitter-join" checked={f.joinPools} onchange={(/** @type {any} */ e) => set({ joinPools: e.currentTarget.checked })}>Pouring into water joins it</InsToggle>
 			<button id="fluid-emitter-restart" class="ui-chip bg-gray-600 text-text-2 hover:bg-gray-500" onclick={() => set({ generation: f.generation + 1 })}>Restart</button>
-			<p class="mt-1 text-badge text-text-muted">
+			<p class="mt-1 text-[length:var(--fs-badge)] text-text-muted">
 				Each player simulates their own splash; these settings are shared. Pauses when off-screen. Quest shows drops (max {QUEST_EMITTER_CAP}). Water
 				leaving the area is gone; pouring into a pool joins it.
 			</p>

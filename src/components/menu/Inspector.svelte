@@ -1506,7 +1506,7 @@
 					<div class="ui-row"><span class="w-16 text-text-muted">Added</span><span>{new Date(inspectedItem.createdAt).toLocaleString()}</span></div>
 					<div class="ui-row">
 						<span class="w-16 text-text-muted">Hash</span>
-						<span class="truncate font-mono text-badge" title={inspectedItem.hash}>{inspectedItem.hash.slice(0, 16)}…</span>
+						<span class="truncate font-mono text-[length:var(--fs-badge)]" title={inspectedItem.hash}>{inspectedItem.hash.slice(0, 16)}…</span>
 						<button class="ui-button-quiet" title="Copy the full hash" onclick={() => navigator.clipboard?.writeText(inspectedItem.hash)}>⧉</button>
 					</div>
 					{#if fileDetails}
@@ -1757,7 +1757,7 @@
 					(post-processing) renders for everyone regardless; switch it off below if you need to.
 				</p>
 				{#if sceneProvidesAo($scenePost)}
-					<p class="mb-1 text-badge text-text-muted">
+					<p class="mb-1 text-[length:var(--fs-badge)] text-text-muted">
 						This scene sets its own ambient occlusion, so it is used instead of your personal
 						setting.
 					</p>
@@ -1774,7 +1774,7 @@
 					>
 						{override.label}
 					</InsToggle>
-					<p class="mb-1 text-badge italic text-text-muted">{override.hint}</p>
+					<p class="mb-1 text-[length:var(--fs-badge)] italic text-text-muted">{override.hint}</p>
 				{/each}
 				<InsToggle bind:checked={$showLightHelpers}>Show light helpers</InsToggle>
 				<InsToggle bind:checked={$showColliders}>Show colliders — this device</InsToggle>
@@ -1790,7 +1790,7 @@
 				 on it, so both names resolve (the 21-G1 rule — the user-visible word moves,
 				 the identifier already written down does not). -->
 			<Section variant="panel" label="Scene look" badge="Shared" aliases={['Post-processing']}>
-				<p class="mb-1 text-badge text-text-muted">
+				<p class="mb-1 text-[length:var(--fs-badge)] text-text-muted">
 					Three layers, all of them scene data that everyone sees: effects over the
 					finished frame (below), a default material every object without its own
 					inherits, and a material on one object. Only the right to switch a layer off
@@ -1798,7 +1798,7 @@
 				</p>
 				<PostStack />
 				<p class="ui-section-label" data-anchor="Materials">Shader materials</p>
-				<p id="scene-look-shaders" class="text-badge text-text-muted">
+				<p id="scene-look-shaders" class="text-[length:var(--fs-badge)] text-text-muted">
 					{shaderSummaryOf($shaderGraphs, $objectsGroup)}
 				</p>
 				<button
@@ -1871,9 +1871,9 @@
 							onchange={(v) => setCameraFar(v)}
 						/>
 					</div>
-					<span class="text-badge text-text-faint">grows to fit the scene</span>
+					<span class="text-[length:var(--fs-badge)] text-text-faint">grows to fit the scene</span>
 				</div>
-				<p class="text-badge italic text-text-muted">Clip planes are per-device (not shared).</p>
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">Clip planes are per-device (not shared).</p>
 				<p class="ui-section-label">Orbit feel</p>
 				<SliderRow
 					label="Rotate speed"
@@ -1932,7 +1932,7 @@
 					<button id="bookmark-save" class="ui-chip" onclick={() => saveBookmark()}>
 						Save current view
 					</button>
-					<span class="text-badge text-text-faint">Shift+1..{SHORTCUT_SLOTS} recall the first {SHORTCUT_SLOTS}</span>
+					<span class="text-[length:var(--fs-badge)] text-text-faint">Shift+1..{SHORTCUT_SLOTS} recall the first {SHORTCUT_SLOTS}</span>
 				</div>
 				{#if $bookmarks.length === 0}
 					<p class="text-xs text-text-muted">No saved views yet. Frame something you like, then Save current view.</p>
@@ -1940,7 +1940,7 @@
 					<div id="bookmark-list" class="flex flex-col gap-1">
 						{#each $bookmarks as bookmark, index (bookmark.id)}
 							<div class="bookmark-row flex items-center gap-1">
-								<span class="w-8 shrink-0 text-badge text-text-faint">{index < SHORTCUT_SLOTS ? '⇧' + (index + 1) : ''}</span>
+								<span class="w-8 shrink-0 text-[length:var(--fs-badge)] text-text-faint">{index < SHORTCUT_SLOTS ? '⇧' + (index + 1) : ''}</span>
 								<input
 									class="ui-input min-w-0 flex-1 px-1 py-0.5 text-xs"
 									aria-label="View name"
@@ -1966,7 +1966,7 @@
 							</div>
 						{/each}
 					</div>
-					<p class="text-badge italic text-text-muted">
+					<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 						Each view stores its lens (FOV + clip planes) and restores it on recall.
 					</p>
 				{/if}
@@ -2029,7 +2029,7 @@
 						value={$gridSettings.sectionColor}
 						oninput={(/** @type {any} */ e) => setGrid({ sectionColor: e.currentTarget.value })}
 					/>
-					<span class="text-badge text-text-faint">cell · major</span>
+					<span class="text-[length:var(--fs-badge)] text-text-faint">cell · major</span>
 				</div>
 				<div class="ui-row items-center gap-1">
 					<span class="w-20 shrink-0 text-xs text-text-muted">Fade</span>
@@ -2111,7 +2111,7 @@
 					<button id="grid-reset" class="ui-chip" onclick={() => resetGrid()}>
 						Reset grid
 					</button>
-					<span class="text-badge italic text-text-muted">Per-device (not shared).</span>
+					<span class="text-[length:var(--fs-badge)] italic text-text-muted">Per-device (not shared).</span>
 				</div>
 			</Section>
 
@@ -2356,10 +2356,10 @@
 						>
 					</div>
 				{/if}
-				<p class="text-badge italic text-text-muted">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					A picked origin is local and lasts until you select something else — save it to keep it.
 				</p>
-				<p class="text-badge italic text-text-muted">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					Snapping is per-device; the same steps drive the viewport menu.
 				</p>
 			</Section>
@@ -2369,7 +2369,7 @@
 					 internal grouping). Splitting it would break its collapse state, the
 					 openSceneSection('Physics') deep link AND inspectorFilter, all three
 					 of which key off the label. -->
-				<p class="text-badge uppercase tracking-wide text-text-faint">World</p>
+				<p class="text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint">World</p>
 				<!-- CL-A A6: shared scene gravity (replicated singleton, applies live) -->
 				<SliderRow label="Gravity" min={-20} max={5} step={0.1} value={$sceneGravity} onchange={(v) => setSceneGravity(v)} />
 				<FluidBudgetSetting /><!-- 36-fb S3: scene data, saved + replicated -->
@@ -2383,7 +2383,7 @@
 					onchange={(v) => setScenePhysics({ timeScale: v })}
 				/>
 				{#if $scenePhysicsDefaults.timeScale > 1.5 && !$scenePhysicsDefaults.ccd}
-					<p class="text-badge italic text-warn-text">
+					<p class="text-[length:var(--fs-badge)] italic text-warn-text">
 						Above 1.5x bodies travel further per step — turn Continuous collision on
 						below, or fast objects can pass through thin walls.
 					</p>
@@ -2397,11 +2397,11 @@
 						Reset gravity ({DEFAULT_GRAVITY})
 					</button>
 				</div>
-				<p class="text-badge italic text-text-muted">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					Shared with everyone and applies to running simulations live.
 				</p>
 
-				<p class="mt-2 text-badge uppercase tracking-wide text-text-faint">Ground &amp; bounds</p>
+				<p class="mt-2 text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint">Ground &amp; bounds</p>
 				<InsToggle
 					id="physics-ground-enabled"
 					checked={$scenePhysicsGround.enabled}
@@ -2438,7 +2438,7 @@
 						onchange={(v) => setScenePhysics({ ground: { restitution: v } })}
 					/>
 				{:else}
-					<p class="text-badge italic text-text-muted">
+					<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 						No floor — objects fall until they hit something you placed, then the
 						out-of-bounds rule below.
 					</p>
@@ -2467,7 +2467,7 @@
 					/>
 				</div>
 
-				<p class="mt-2 text-badge uppercase tracking-wide text-text-faint">Defaults (advanced)</p>
+				<p class="mt-2 text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint">Defaults (advanced)</p>
 				<div class="ui-row items-center gap-2">
 					<span class="w-24 shrink-0 text-xs text-text-2">Material</span>
 					<ThemedSelect
@@ -2488,7 +2488,7 @@
 							})}
 					/>
 				</div>
-				<p class="text-badge italic text-text-muted">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					Fills in friction and bounce for every object that does not set its own.
 				</p>
 				<SliderRow
@@ -2516,7 +2516,7 @@
 				>
 					Continuous collision (fast objects)
 				</InsToggle>
-				<p class="text-badge italic text-text-muted">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					Costs a little speed; thrown objects turn it on for themselves either way.
 				</p>
 				<!-- C1: every object that gets a body at sim start; click = select -->
@@ -2539,7 +2539,7 @@
 							>
 								<span class="truncate">{row.name}</span>
 								<!-- 36 U1: no fade on the selected row's accent fill (2.6:1 with it) -->
-								<span class={'shrink-0 text-badge ' + ($selectedObject?.uuid === row.uuid ? '' : 'opacity-75')}>
+								<span class={'shrink-0 text-[length:var(--fs-badge)] ' + ($selectedObject?.uuid === row.uuid ? '' : 'opacity-75')}>
 									{row.mode === 'dynamic'
 										? 'dynamic · ' + row.mass + ' kg'
 										: row.mode === 'static'
@@ -2557,14 +2557,14 @@
 				>
 					Enable physics on selection
 				</button>
-				<p class="text-badge italic text-text-muted">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					Dynamic objects fall and collide while a simulation runs (▶ or P).
 				</p>
 
 				<!-- 24-A A2: the knock block (A1) — an open VR hand or a walking player hitting a
 					 dynamic body. Inside the Physics section (the B4 rule: one section, labelled
 					 sub-blocks), with a data-anchor so a toast can openSceneSection('Physics:Knock'). -->
-				<p class="mt-2 text-badge uppercase tracking-wide text-text-faint" data-anchor="Knock">Knock</p>
+				<p class="mt-2 text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint" data-anchor="Knock">Knock</p>
 				<InsToggle
 					id="physics-knock-enabled"
 					checked={$sceneKnock.enabled}
@@ -2611,12 +2611,12 @@
 						onchange={(v) => setScenePhysics({ knock: { spin: v } })}
 					/>
 				{/if}
-				<p class="text-badge italic text-text-muted">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					An open VR hand, or walking into an object on desktop, sends it off at the speed it
 					was hit. Grip still grabs. Shared, and it needs a running simulation.
 				</p>
 
-				<p class="mt-2 text-badge uppercase tracking-wide text-text-faint">Play mode</p>
+				<p class="mt-2 text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint">Play mode</p>
 				<div class="ui-row items-center gap-2">
 					<span class="w-24 shrink-0 text-xs text-text-2">Pointer</span>
 					<ThemedSelect
@@ -2683,7 +2683,7 @@
 						>
 					{/if}
 				</div>
-				<p class="text-badge italic text-text-muted">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					Shared: everyone entering play mode in this scene gets these.
 				</p>
 			</Section>
@@ -2780,7 +2780,7 @@
 				     object is for. -->
 				<div id="selection-multi-banner" class="ins-banner">
 					<p class="text-xs font-semibold ins-accent-text">Editing {multiCount} objects</p>
-					<p class="text-badge text-text-muted">Every value below applies to all of them.</p>
+					<p class="text-[length:var(--fs-badge)] text-text-muted">Every value below applies to all of them.</p>
 				</div>
 			{/if}
 			{#if !multiCount}
@@ -2796,7 +2796,7 @@
 					}}
 				/>
 				<Tooltip placement="top" arrow={false} triggeredBy="#name">Name</Tooltip>
-				<p id="uuid" class="truncate px-1 text-badge text-text-faint" title={$selectedObject.uuid}>
+				<p id="uuid" class="truncate px-1 text-[length:var(--fs-badge)] text-text-faint" title={$selectedObject.uuid}>
 					{$selectedObject.uuid}
 				</p>
 				<div onclick={refreshGroups} role="presentation">
@@ -2850,7 +2850,7 @@
 								oninput={(e) => setAnimationState($selectedObject.uuid, { speed: +e.currentTarget.value })}
 							/>
 						</div>
-						<p class="pt-1 text-badge italic text-text-muted">
+						<p class="pt-1 text-[length:var(--fs-badge)] italic text-text-muted">
 							Clips run on the synced clock — peers see the same pose.
 						</p>
 					</div>
@@ -2969,7 +2969,7 @@
 						>
 							<Icon name="camera" size={13} />Capture
 						</button>
-						<span class="text-badge text-text-faint">saves a PNG at the framing aspect</span>
+						<span class="text-[length:var(--fs-badge)] text-text-faint">saves a PNG at the framing aspect</span>
 					</div>
 					<InsToggle
 						id="camera-pip"
@@ -2983,7 +2983,7 @@
 						onchange={(/** @type {any} */ e) => showCameraFrustums.set(e.currentTarget.checked)}
 						>Show camera frustums — this device</InsToggle
 					>
-					<p class="text-badge italic text-text-muted">
+					<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 						The camera itself is shared; previewing and the frustum lines are yours alone.
 					</p>
 				</Section>
@@ -3000,7 +3000,7 @@
 					     (the gizmo's pivot), so every axis has one real value instead of a
 					     dash, and typing moves the group rigidly. -->
 					<div class="mb-1 flex items-center justify-between gap-2">
-						<span class="text-badge text-text-muted">
+						<span class="text-[length:var(--fs-badge)] text-text-muted">
 							{$pivotOnly ? 'Moving the origin only' : `Moves all ${multiCount} together`}
 						</span>
 						<div class="flex items-center gap-1">
@@ -3020,7 +3020,7 @@
 					<!-- 24-E3: the PIVOT POINT of the set — Blender's list minus the 3D cursor
 					     (the snap anchor plays that role). A hand-placed origin overrides any mode. -->
 					<div class="mb-1 grid grid-cols-[3.2rem_1fr] items-center gap-1">
-						<span class="text-badge text-text-muted">Pivot</span>
+						<span class="text-[length:var(--fs-badge)] text-text-muted">Pivot</span>
 						<ThemedSelect
 							id="pivot-mode"
 							items={[
@@ -3090,7 +3090,7 @@
 					     switching selections brings each one's origin back. -->
 					<div id="object-origin" class="mt-1 rounded-sm border border-border p-1.5">
 						<div class="mb-1 flex items-center justify-between gap-2">
-							<span class="text-badge text-text-2">
+							<span class="text-[length:var(--fs-badge)] text-text-2">
 								Origin {originSet ? '' : '(default)'}
 							</span>
 							<div class="flex items-center gap-1">
@@ -3146,7 +3146,7 @@
 								</UiButton>
 							{/if}
 							{#if isLight}
-								<span class="self-center text-badge text-text-faint">A light with an origin orbits it under Rotate.</span>
+								<span class="self-center text-[length:var(--fs-badge)] text-text-faint">A light with an origin orbits it under Rotate.</span>
 							{:else if editingThis}
 								<UiButton id="origin-hinge" size="sm" variant="primary" onclick={originFromSelection}>
 									Set origin here{$vertexSelectionSize > 1 ? ` (${$vertexSelectionSize} verts)` : ''}
@@ -3158,12 +3158,12 @@
 							{/if}
 						</div>
 						{#if editingThis}
-							<p class="mt-1 text-badge ins-accent-text">
+							<p class="mt-1 text-[length:var(--fs-badge)] ins-accent-text">
 								Click a vertex — ctrl-click both ends of an edge to hinge on it — then press Set
 								origin here.
 							</p>
 						{/if}
-						<p class="mt-1 text-badge text-text-faint">
+						<p class="mt-1 text-[length:var(--fs-badge)] text-text-faint">
 							{#if $pivotOnly}
 								Drag the gizmo (or type above) to place the origin — the mesh stays put. Grid and
 								surface snapping apply. Press Done to transform around it.
@@ -3174,7 +3174,7 @@
 						</p>
 					</div>
 				{/if}
-				<p class="text-badge text-text-faint">
+				<p class="text-[length:var(--fs-badge)] text-text-faint">
 					{#if multiCount && $pivotOnly}
 						Re-place the origin, then press Done to rotate or scale the selection around it. The
 						origin is a local editing aid — peers keep their own.
@@ -3210,7 +3210,7 @@
 					>
 						Frustum culled
 					</InsToggle>
-					<p class="text-badge text-text-faint">Higher render order draws later (over other objects). Disable culling for objects that vanish at screen edges.</p>
+					<p class="text-[length:var(--fs-badge)] text-text-faint">Higher render order draws later (over other objects). Disable culling for objects that vanish at screen edges.</p>
 					<!-- 30 P2: a wall, a ceiling or a glass case can stand aside for the editor's
 					     click — it picks the next opaque thing behind (click again to cycle back) -->
 					<InsToggle
@@ -3246,15 +3246,15 @@
 					<!-- 23-B4: the device's declared params, fanned over the selection; presets and
 						 the mixer live in the Music toolbox, which the link below opens on the primary -->
 					{#if devTargets.length > 1}
-						<p id="device-multi-note" class="text-badge italic text-text-muted">
+						<p id="device-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
 							Applies to {devTargets.length} selected devices.
 						</p>
 					{/if}
-					<p class="text-badge uppercase tracking-wide text-text-faint">
+					<p class="text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint">
 						{deviceSpec(devPrimary.userData.device.kind)?.label ?? devPrimary.userData.device.kind}
 					</p>
 					{#if !devParams.length}
-						<p class="text-badge italic text-text-muted">This device has no settings.</p>
+						<p class="text-[length:var(--fs-badge)] italic text-text-muted">This device has no settings.</p>
 					{/if}
 					{#each devParams as p (p.key)}
 						{#if p.kind === 'select'}
@@ -3297,17 +3297,17 @@
 							Open in Music toolbox
 						</button>
 					</div>
-					<p class="text-badge text-text-faint">Presets and the mixer live in the Music toolbox.</p>
+					<p class="text-[length:var(--fs-badge)] text-text-faint">Presets and the mixer live in the Music toolbox.</p>
 				</Section>
 			{/if}
 
 			{#if geoParams && geoSpec}
 				<Section variant="panel" label="Geometry">
-					<p class="px-1 text-badge uppercase tracking-wider text-text-faint">
+					<p class="px-1 text-[length:var(--fs-badge)] uppercase tracking-wider text-text-faint">
 						{geoParams.gtype}{geoTargets.length > 1 ? ` · ${geoTargets.length} objects` : ''}
 					</p>
 					{#if geoOtherTypes.length}
-						<p id="geometry-mixed-note" class="rounded-sm bg-surface-inset px-2 py-1 text-badge text-text-2">
+						<p id="geometry-mixed-note" class="rounded-sm bg-surface-inset px-2 py-1 text-[length:var(--fs-badge)] text-text-2">
 							Only the {geoTargets.length} {geoParams.gtype} object{geoTargets.length === 1 ? '' : 's'}
 							in this selection change — {geoOtherTypes.join(', ')}
 							{geoOtherTypes.length === 1 ? 'has' : 'have'} different parameters.
@@ -3316,7 +3316,7 @@
 					{#if meshEditedLock}
 						<!-- 164: once the mesh is edited, the parametric controls are LOCKED
 						     (changing one rebuilds the primitive + discards the edits) -->
-						<p id="geometry-locked" class="rounded-sm bg-surface-inset px-2 py-1 text-badge text-warn-text">
+						<p id="geometry-locked" class="rounded-sm bg-surface-inset px-2 py-1 text-[length:var(--fs-badge)] text-warn-text">
 							Mesh edited — geometry parameters are locked (changing them would rebuild the shape and discard your edits).
 						</p>
 						{#if $selectedObject.userData?.terrain}
@@ -3492,7 +3492,7 @@
 									onchange={(v) => setAimAxis(index, v)} />
 							{/each}
 						</div>
-						<p class="text-badge text-text-faint">
+						<p class="text-[length:var(--fs-badge)] text-text-faint">
 							Rotating the light (gizmo or the rotation rows) aims it too. Shadows follow.
 							{#if $selectedObject.isDirectionalLight}
 								A directional light has a direction, not a distance — the helper's line length is Settings ▸ Scene.
@@ -3519,7 +3519,7 @@
 							/>
 						</div>
 						{#if cappedShadowSize($selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x) < ($selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x)}
-							<p class="text-badge italic text-text-muted">Capped by Settings ▸ Shadow quality on this machine.</p>
+							<p class="text-[length:var(--fs-badge)] italic text-text-muted">Capped by Settings ▸ Shadow quality on this machine.</p>
 						{/if}
 						<SliderRow label="Bias" min={-0.01} max={0.01} step={0.0005} decimals={4}
 							value={$selectedObject.shadow.bias}
@@ -3538,7 +3538,7 @@
 						Visible
 					</InsToggle>
 					{#if $selectedObject.type === 'RectAreaLight'}
-						<p class="text-badge italic text-text-muted">
+						<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 							Rect area lights only affect Standard/Physical materials and cast no shadows.
 						</p>
 					{/if}
@@ -3548,7 +3548,7 @@
 			{#if material}
 				<Section variant="panel" label="Material">
 					{#if matCount}
-						<p id="material-multi-note" class="text-badge italic text-text-muted">
+						<p id="material-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
 							Applies to {matCount} selected objects.
 						</p>
 					{/if}
@@ -3726,7 +3726,7 @@
 								>
 									Set texture...
 								</UiButton>
-								<span class="text-badge text-text-faint">or drop an Explorer image</span>
+								<span class="text-[length:var(--fs-badge)] text-text-faint">or drop an Explorer image</span>
 							{/if}
 						</div>
 						</div>
@@ -3760,7 +3760,7 @@
 							onchange={(v) => setMat('shininess', v)} />
 					{/if}
 					{#if material.type === 'MeshNormalMaterial' || material.type === 'MeshDepthMaterial'}
-						<p class="text-badge italic text-text-muted">
+						<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 							This material type derives its look from geometry — no color or surface parameters.
 						</p>
 					{/if}
@@ -3825,7 +3825,7 @@
 								value={'#' + material.emissive.getHexString()}
 								oninput={(/** @type {any} */ e) => setMat('emissive', e.currentTarget.value)}
 							/>
-							<span class="text-badge italic text-text-muted">black = no glow</span>
+							<span class="text-[length:var(--fs-badge)] italic text-text-muted">black = no glow</span>
 						</div>
 					{/if}
 
@@ -3854,7 +3854,7 @@
 			{#if !$selectedObject.isLight}
 				<Section variant="panel" label="Physics">
 					{#if multiCount}
-						<p id="physics-multi-note" class="text-badge italic text-text-muted">
+						<p id="physics-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
 							Applies to {multiCount} selected objects.
 						</p>
 					{/if}
@@ -3984,7 +3984,7 @@
 				     it and let every peer rebuild the tube (never the geometry directly) -->
 				{#if spline}
 					<Section variant="panel" label="Spline">
-						<p class="px-1 text-badge uppercase tracking-wider text-text-faint">
+						<p class="px-1 text-[length:var(--fs-badge)] uppercase tracking-wider text-text-faint">
 							{spline.points.length} control points
 						</p>
 						<div class="ui-row items-center gap-2">
@@ -4010,7 +4010,7 @@
 						/>
 						{#if splineRadius === null}
 							<div class="ui-row items-center gap-2">
-								<span class="flex-1 text-badge text-warn-text"
+								<span class="flex-1 text-[length:var(--fs-badge)] text-warn-text"
 									>Points have different radii — Thickness flattens them.</span
 								>
 								<UiButton size="sm" variant="outline" onclick={() => scaleSplineRadii($selectedObject.uuid, 1.25)}
@@ -4056,14 +4056,14 @@
 						>
 							{$splineEditObject === $selectedObject.uuid ? 'Close spline editor' : 'Edit control points'}
 						</UiButton>
-						<p class="text-badge text-text-faint">
+						<p class="text-[length:var(--fs-badge)] text-text-faint">
 							Per-point thickness lives on the handles — open the editor and drag the amber dot above a point.
 						</p>
 						<!-- the same two directions the context menu offers, and the same
 						     interaction: press, then click the partner in the viewport. A
 						     list of terrain NAMES was the first version and it does not
 						     survive a scene with a ring of tiles. -->
-						<span class="px-1 text-badge uppercase tracking-wider text-text-faint">Flatten</span>
+						<span class="px-1 text-[length:var(--fs-badge)] uppercase tracking-wider text-text-faint">Flatten</span>
 						<div class="flex flex-wrap gap-1">
 							<UiButton
 								id="spline-carve-pick"
@@ -4088,7 +4088,7 @@
 								This onto a surface…
 							</UiButton>
 						</div>
-						<p class="text-badge text-text-faint">
+						<p class="text-[length:var(--fs-badge)] text-text-faint">
 							{#if $flattenPicking}
 								Click the {$flattenPicking.kind === 'carve' ? 'terrain' : 'surface'} in the viewport — Esc cancels.
 							{:else}
@@ -4110,7 +4110,7 @@
 				     the operations that are safe to apply blind. -->
 				{#if multiCount}
 					<Section variant="panel" label="Particles">
-						<p id="particles-multi-note" class="text-badge text-text-muted">
+						<p id="particles-multi-note" class="text-[length:var(--fs-badge)] text-text-muted">
 							{multiCount} objects selected — an emitter is edited one object at a time so tuned
 							configs are not overwritten. Right-click the selection for Particles ▸ Add, Burst or
 							Remove across all {multiCount}.

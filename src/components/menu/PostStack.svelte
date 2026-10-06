@@ -315,7 +315,7 @@
 			onchange={(v) => setCameraLookMode(docKey, String(v))}
 		/>
 	</div>
-	<p class="text-badge italic text-text-muted">
+	<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 		This look applies while anyone is looking through that camera — switch camera (a Set
 		Active Camera node, or Control on the camera) and the grade switches with it.
 	</p>
@@ -327,7 +327,7 @@
 
 <!-- the cost model, visible: the gap between enabled entries and PASSES is the
 	 Effect-merging rule doing its job, and an author has no other way to see it -->
-<p id="post-counts" class="text-badge text-text-muted">
+<p id="post-counts" class="text-[length:var(--fs-badge)] text-text-muted">
 	Effects: {counts.enabled}{counts.effects !== counts.enabled ? ' of ' + counts.effects : ''}, passes: {counts.passes}{counts.merged >
 	0
 		? ' (' + counts.merged + ' merged into a shared pass)'
@@ -371,12 +371,12 @@
 							: 'Show parameters'}
 						onclick={() => (openId = openId === entry.id ? '' : entry.id)}
 					>
-						{labelOf(entry)}{#if isUnknown(entry)}<span class="ml-1 text-badge text-warn-text">unsupported</span
+						{labelOf(entry)}{#if isUnknown(entry)}<span class="ml-1 text-[length:var(--fs-badge)] text-warn-text">unsupported</span
 							>{/if}
 					</button>
 					<button
 						id={'post-up-' + entry.id}
-						class="px-1 text-badge text-text-muted hover:text-gray-100 disabled:opacity-30"
+						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-gray-100 disabled:opacity-30"
 						title="Move earlier in the stack"
 						aria-label="Move up"
 						disabled={index === 0}
@@ -384,7 +384,7 @@
 					>
 					<button
 						id={'post-down-' + entry.id}
-						class="px-1 text-badge text-text-muted hover:text-gray-100 disabled:opacity-30"
+						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-gray-100 disabled:opacity-30"
 						title="Move later in the stack"
 						aria-label="Move down"
 						disabled={index === doc.effects.length - 1}
@@ -392,7 +392,7 @@
 					>
 					<button
 						id={'post-remove-' + entry.id}
-						class="px-1 text-badge text-text-muted hover:text-red-400"
+						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-red-400"
 						title="Remove from the stack"
 						aria-label={'Remove ' + labelOf(entry)}
 						onclick={() => removePostEffect(entry.id, docKey)}>✕</button
@@ -401,11 +401,11 @@
 				{#if openId === entry.id}
 					<div id={'post-params-' + entry.id} class="flex flex-col gap-1 px-2 pb-1 pt-1">
 						{#if isUnknown(entry)}
-							<p class="text-badge italic text-warn-text">
+							<p class="text-[length:var(--fs-badge)] italic text-warn-text">
 								Saved and shared as-is. Open this scene in a build that has "{entry.kind}" to edit it.
 							</p>
 						{:else if (postEffectDef(entry.kind)?.params ?? []).length === 0}
-							<p class="text-badge italic text-text-muted">No parameters.</p>
+							<p class="text-[length:var(--fs-badge)] italic text-text-muted">No parameters.</p>
 						{:else}
 							{#each postEffectDef(entry.kind).params as param (param.key)}
 								{#if param.type === 'select'}
@@ -441,7 +441,7 @@
 										>
 									</div>
 									{#each graphErrorsOf(entry, $shaderErrors) as message, i (i)}
-										<p class="text-badge italic text-warn-text">{message}</p>
+										<p class="text-[length:var(--fs-badge)] italic text-warn-text">{message}</p>
 									{/each}
 								{:else if param.type === 'asset'}
 									<div class="ui-row items-center gap-2">
@@ -479,7 +479,7 @@
 									/>
 								{/if}
 								{#if param.hint}
-									<p class="text-badge italic text-text-faint">{param.hint}</p>
+									<p class="text-[length:var(--fs-badge)] italic text-text-faint">{param.hint}</p>
 								{/if}
 							{/each}
 						{/if}
@@ -508,21 +508,21 @@
 	/>
 {/if}
 
-<p class="text-badge italic text-text-muted">
+<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 	The stack is part of the scene: everyone in the session sees it as soon as you change it, and it
 	is saved with the file. Nobody has to switch anything on.
 </p>
 {#if $scenePost.effects.length && $viewMode === 'wireframe'}
-	<p class="text-badge text-warn-text">
+	<p class="text-[length:var(--fs-badge)] text-warn-text">
 		Your viewport is in Wireframe, which skips post-processing — the look is still there for
 		everyone else.
 	</p>
 {:else if $scenePost.effects.length && !$postEnabledLocal}
-	<p class="text-badge text-warn-text">
+	<p class="text-[length:var(--fs-badge)] text-warn-text">
 		You have switched the scene look off on this device (View ▸ Overrides). Peers still see it.
 	</p>
 {/if}
-<p class="text-badge italic text-text-muted">
+<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 	Post-processing does not run in VR — the effects are skipped in a headset, and objects still look
 	the same.
 </p>

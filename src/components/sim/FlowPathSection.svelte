@@ -109,12 +109,12 @@
 				</div>
 				<SliderRow id="flow-path-opacity" label="Opacity" min={0.05} max={1} step={0.05} value={f.opacity} onchange={(v) => set({ opacity: v })} />
 			{/if}
-			<p class="text-badge font-semibold uppercase tracking-wide text-text-muted">Points ({length.toFixed(2)} m)</p>
+			<p class="text-[length:var(--fs-badge)] font-semibold uppercase tracking-wide text-text-muted">Points ({length.toFixed(2)} m)</p>
 			{#each f.points as p, i (i)}
 				<!-- a GRID with min-width-0 cells: three DragRows in a flex row were wider than the
 				     Inspector and scrolled the whole panel sideways (seen in the light-theme shot) -->
 				<div class="grid items-center gap-1" style="grid-template-columns: 1rem repeat(3, minmax(0, 1fr)) auto" data-flow-point={i}>
-					<span class="text-badge text-text-muted">{i + 1}</span>
+					<span class="text-[length:var(--fs-badge)] text-text-muted">{i + 1}</span>
 					{#each ['X', 'Y', 'Z'] as axis, a (axis)}
 						<div class="min-w-0 overflow-hidden">
 							<DragRow id={'flow-point-' + i + '-' + a} label={axis} value={p[a]} step={0.05} decimals={2} unit="length" onchange={(v) => setPoint(i, a, v)} />
@@ -142,7 +142,7 @@
 					/>
 				{/if}
 			</div>
-			<p class="mt-1 text-badge text-text-muted">
+			<p class="mt-1 text-[length:var(--fs-badge)] text-text-muted">
 				Water from a Fluid emitter whose area reaches this path is carried along it. Objects with a "Float along flow" node ride it. Physics bodies pass through the
 				surface (it is a sensor).
 			</p>

@@ -1,5 +1,6 @@
 <script>
 	import { Pin } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	// CN-2 (roadmap #14): the connection & server info drawer, anchored under the
 	// Connect pill ((i) button). NotificationCenter pattern: a fixed click-catcher
 	// + a ui-panel. Three sections: Session (state/host/peers w/ live quality),
@@ -316,7 +317,7 @@
 				<span class="cxd-key">Ping</span>
 				<span class="cxd-val">
 					{#if ping === '…'}measuring…{:else if ping === null}<span class="cxd-bad">unreachable</span>{:else}~{ping} ms{/if}
-					<button class="cxd-refresh" title="Re-measure" aria-label="Re-measure server ping" onclick={probe}>↻</button>
+					<button class="cxd-refresh" title="Re-measure" aria-label="Re-measure server ping" onclick={probe}><Icon name="refresh-cw" size={16} /></button>
 				</span>
 			</div>
 			<!-- 38 R8 (NOTES-38 #16): the pill says how LONG; the attempt count lives here -->
@@ -339,160 +340,194 @@
 </div>
 
 <style>
-	/* the drawer hangs FLUSH off the pill's bottom edge and spans the pill's full
-	   width; the pill squares its bottom corners while open (Connect.svelte) so the
-	   two read as one connected surface — no rounded-corner notches. */
+	/* 38 R8: the drawer on the redesign tokens — one surface with the pill (it hangs FLUSH off
+	   the pill's bottom edge and spans its width; the pill squares its bottom corners while
+	   open, Connect.svelte), the Tabs look (underline, accent), kv rows, kit buttons. */
 	.cxd-panel {
 		position: absolute;
 		top: 100%;
 		left: 0;
 		right: 0;
 		width: auto;
+		background: var(--surface-1);
+		border: 1px solid var(--border);
 		border-top: 0;
-		border-top-left-radius: 0;
-		border-top-right-radius: 0;
+		border-radius: 0 0 var(--radius-window) var(--radius-window);
+		box-shadow: var(--shadow-window);
+		color: var(--text);
+		font-family: var(--font-ui);
 		pointer-events: auto;
 		z-index: 2;
 	}
 	.cxd-tabs {
 		display: flex;
 		align-items: center;
-		gap: 2px;
-		padding: 4px 6px 0;
+		gap: var(--space-4);
+		padding: 0 var(--space-2) 0 var(--space-3);
+		border-bottom: 1px solid var(--border);
 	}
 	.cxd-tab {
+		position: relative;
+		height: 36px;
+		margin-bottom: -1px;
+		padding: 0;
 		border: 0;
+		border-bottom: 2px solid transparent;
 		background: transparent;
-		color: rgb(156 163 175);
-		font-size: 12px;
-		padding: 5px 10px;
-		border-radius: 8px 8px 0 0;
+		color: var(--text-muted);
+		font: inherit;
+		font-size: var(--fs-desc);
+		font-weight: 500;
 		cursor: pointer;
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
+		gap: 6px;
+		white-space: nowrap;
 	}
 	.cxd-tab:hover {
-		color: #e5e7eb;
-		background: rgb(255 255 255 / 0.05);
+		color: var(--text);
 	}
 	.cxd-tab.active {
-		color: #fff;
-		background: rgb(255 255 255 / 0.09);
+		color: var(--text);
+		border-bottom-color: var(--accent);
+	}
+	.cxd-tab:focus-visible,
+	.cxd-pin:focus-visible,
+	.cxd-refresh:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
 	}
 	.cxd-tab-badge {
-		font-size: 9px;
-		min-width: 15px;
-		height: 15px;
+		min-width: 16px;
+		height: 16px;
 		padding: 0 4px;
-		border-radius: 9999px;
-		background: rgb(75 85 99 / 0.8);
-		color: #fff;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
+		box-sizing: border-box;
+		border-radius: var(--radius-pill);
+		background: var(--badge-bg);
+		color: var(--badge-text);
+		font: 600 10px/16px var(--font-ui-mono);
+		text-align: center;
 	}
+	/* a request waiting on YOU — the accent (counts are never red, SPEC §5) */
 	.cxd-tab-badge.req {
-		background: #f59e0b;
-		color: #1f2937;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.cxd-rooms {
-		padding: 4px 8px 8px;
+		padding: var(--space-1) var(--space-2) var(--space-2);
 	}
 	.cxd-empty {
-		padding: 16px 6px;
+		padding: var(--space-4) var(--space-2);
 		text-align: center;
-		font-size: 12px;
-		color: rgb(156 163 175);
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
 	}
 	.cxd-toast-list {
 		list-style: none;
 		margin: 0;
-		padding: 0;
+		padding: var(--space-2) 0 0;
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
+		gap: var(--space-2);
 	}
+	/* the kit Toast card, small: a surface-2 card, the kind as a 3px edge */
 	.cxd-toast {
-		border-radius: 8px;
-		background: rgb(31 41 55 / 0.6);
-		padding: 6px 8px;
-		border-left: 3px solid rgb(75 85 99 / 0.7);
+		border-radius: var(--radius-card);
+		background: var(--surface-2);
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--border-strong);
+		padding: var(--space-2) var(--space-3);
 	}
 	.cxd-toast[data-kind='request'] {
-		border-left-color: #f59e0b;
+		border-left-color: var(--accent);
+	}
+	.cxd-toast[data-kind='waiting'] {
+		border-left-color: var(--warn-text);
 	}
 	.cxd-toast[data-kind='msg'] {
-		border-left-color: #22c55e;
+		border-left-color: var(--ink-good, var(--speaking));
 	}
-	/* 15-L: informational prompts (restore session, first-run notice) — teal,
-	   matching their .tp-toast--info card in the viewport */
 	.cxd-toast[data-kind='info'] {
-		border-left-color: #2dd4bf;
+		border-left-color: var(--accent-muted);
 	}
 	.cxd-toast-text {
-		font-size: 12px;
-		color: #e5e7eb;
+		font-size: var(--fs-desc);
+		color: var(--text);
+	}
+	.cxd-knock {
+		color: var(--text-muted);
 	}
 	.cxd-live-actions {
 		display: flex;
-		gap: 6px;
-		margin-top: 5px;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+		margin-top: var(--space-2);
 	}
 	.cxd-approve,
-	.cxd-reject {
-		font-size: 11px;
-		padding: 3px 10px;
-		border-radius: 6px;
-		border: 0;
+	.cxd-reject,
+	.cxd-cancel {
+		height: var(--control-h-sm);
+		padding: 0 var(--space-3);
+		border-radius: var(--radius-button);
+		border: 1px solid transparent;
+		font: inherit;
+		font-size: var(--fs-desc);
+		font-weight: 500;
 		cursor: pointer;
-		color: #fff;
 	}
 	.cxd-approve {
-		background: #2563eb;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.cxd-approve:hover {
-		background: #1d4ed8;
+		filter: brightness(1.08);
 	}
+	/* "Editor access" is the stronger grant: an outlined accent, not a second hue */
 	.cxd-approve-edit {
-		background: #7c3aed;
+		background: var(--accent-soft);
+		color: var(--accent-soft-text);
+		border-color: var(--accent-muted);
 	}
-	.cxd-approve-edit:hover {
-		background: #6d28d9;
+	.cxd-reject,
+	.cxd-cancel {
+		background: transparent;
+		color: var(--text);
+		border-color: var(--border-strong);
 	}
-	.cxd-reject {
-		background: rgb(75 85 99 / 0.8);
-	}
-	.cxd-reject:hover {
-		background: rgb(107 114 128 / 0.9);
+	.cxd-reject:hover,
+	.cxd-cancel:hover {
+		background: var(--surface-hover);
 	}
 	.cxd-status {
 		display: inline-flex;
 		align-items: center;
-		gap: 5px;
-		font-size: 11px;
-		color: rgb(209 213 219);
-		padding: 0 4px;
+		gap: 6px;
+		font-size: var(--fs-badge);
+		color: var(--text-2);
 		min-width: 0;
 	}
 	.cxd-sdot {
 		width: 7px;
 		height: 7px;
-		border-radius: 9999px;
+		border-radius: 50%;
 		flex: 0 0 auto;
-		background: rgb(107 114 128);
+		background: var(--text-faint);
 	}
 	.cxd-status[data-state='connected'] .cxd-sdot {
-		background: #22c55e;
-		box-shadow: 0 0 6px rgb(34 197 94 / 0.7);
+		background: var(--ink-good, var(--speaking));
 	}
 	.cxd-status[data-state='pending'] .cxd-sdot {
-		background: #f59e0b;
+		background: var(--warn-text);
 		animation: cxd-pulse 1.2s ease-in-out infinite;
 	}
 	@keyframes cxd-pulse {
 		0%, 100% { opacity: 1; }
 		50% { opacity: 0.35; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.cxd-status[data-state='pending'] .cxd-sdot {
+			animation: none;
+		}
 	}
 	.cxd-slabel {
 		overflow: hidden;
@@ -501,89 +536,111 @@
 		max-width: 120px;
 	}
 	.cxd-req-badge {
-		font-size: 10px;
+		font-size: var(--fs-badge);
 		padding: 1px 7px;
-		border-radius: 9999px;
-		background: #f59e0b;
-		color: #1f2937;
+		border-radius: var(--radius-pill);
+		background: var(--accent-soft);
+		color: var(--accent-soft-text);
 		white-space: nowrap;
 	}
 	.cxd-pin {
 		flex: 0 0 auto;
-		width: 24px;
-		height: 24px;
-		border-radius: 7px;
+		width: 28px;
+		height: 28px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: var(--radius-button);
 		border: 0;
 		background: transparent;
-		color: rgb(156 163 175);
+		color: var(--text-muted);
 		cursor: pointer;
-		font-size: 11px;
 		transform: rotate(30deg);
 	}
 	.cxd-pin:hover {
-		color: #e5e7eb;
-		background: rgb(255 255 255 / 0.06);
+		color: var(--text);
+		background: var(--surface-hover);
 	}
 	.cxd-pin.pinned {
-		color: #60a5fa;
+		color: var(--accent);
 		transform: rotate(0deg);
 	}
 	.cxd-body {
-		padding: 4px 10px 10px;
+		padding: var(--space-1) var(--space-3) var(--space-3);
 		max-height: min(60vh, 480px);
 		overflow-y: auto;
+		scrollbar-width: thin;
+		scrollbar-color: var(--border-strong) transparent;
+	}
+	/* the section labels (.ui-section-label) on the kit's section style */
+	.cxd-body :global(.ui-section-label) {
+		margin: var(--space-3) 0 var(--space-1);
+		font-size: var(--fs-section);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
 	}
 	.cxd-row {
 		display: flex;
-		align-items: baseline;
-		gap: 8px;
-		padding: 2px 4px;
-		font-size: 12px;
+		align-items: center;
+		gap: var(--space-3);
+		min-height: 28px;
+		padding: 0 var(--space-1);
+		font-size: var(--fs-desc);
+		border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+	}
+	.cxd-row:last-child {
+		border-bottom: 0;
 	}
 	.cxd-key {
-		flex: 0 0 72px;
-		color: rgb(156 163 175);
+		flex: 0 0 88px;
+		color: var(--text-muted);
 	}
 	.cxd-val {
 		flex: 1;
 		min-width: 0;
-		color: rgb(229 231 235);
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-1);
+		color: var(--text);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 	.cxd-mono {
-		font-family: ui-monospace, monospace;
-		font-size: 11px;
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
 	}
 	.cxd-muted {
-		color: rgb(156 163 175);
+		color: var(--text-muted);
 	}
 	.cxd-bad {
-		color: #f87171;
+		color: var(--ink-bad, var(--danger));
 	}
 	.cxd-badge {
-		font-size: 10px;
+		font-size: var(--fs-badge);
 		padding: 1px 8px;
-		border-radius: 9999px;
-		background: rgb(75 85 99 / 0.6);
-		color: #e5e7eb;
+		border-radius: var(--radius-pill);
+		background: var(--badge-bg);
+		color: var(--badge-text);
 	}
 	.cxd-badge-live {
-		background: rgb(22 101 52 / 0.7);
-		color: #86efac;
+		background: color-mix(in srgb, var(--ink-good, var(--speaking)) 18%, transparent);
+		color: var(--ink-good, var(--speaking));
 	}
 	.cxd-badge-wait {
-		background: rgb(120 76 10 / 0.6);
-		color: #fcd34d;
+		background: color-mix(in srgb, var(--warn-text) 18%, transparent);
+		color: var(--warn-text);
 	}
 	.cxd-peer {
 		display: flex;
 		align-items: center;
-		gap: 8px;
-		padding: 2px 4px 2px 12px;
-		font-size: 11px;
-		color: rgb(209 213 219);
+		gap: var(--space-2);
+		min-height: 26px;
+		padding: 0 var(--space-1) 0 var(--space-3);
+		font-size: var(--fs-badge);
+		color: var(--text-2);
 	}
 	.cxd-peer-id {
 		flex: 0 0 auto;
@@ -596,47 +653,59 @@
 		white-space: nowrap;
 	}
 	.cxd-wait-label {
-		color: #fcd34d;
+		color: var(--warn-text);
 	}
 	.cxd-ago {
-		color: rgb(156 163 175);
-		font-size: 10px;
+		color: var(--text-faint);
+		font-size: var(--fs-badge);
 	}
 	.cxd-relay {
-		color: #fdba74;
-		font-size: 10px;
+		color: var(--warn-text);
+		font-size: var(--fs-badge);
 	}
 	.cxd-cancel {
 		flex: 0 0 auto;
-		font-size: 10px;
-		padding: 1px 8px;
-		border-radius: 6px;
-		border: 0;
-		cursor: pointer;
-		background: #d97706;
-		color: #fff;
-	}
-	.cxd-cancel:hover {
-		background: #b45309;
+		height: 24px;
 	}
 	.cxd-warn {
-		margin: 2px 4px;
-		padding: 6px 8px;
-		border-radius: 8px;
-		font-size: 11px;
-		background: rgb(120 76 10 / 0.35);
-		color: #fcd34d;
+		margin: var(--space-1) 0;
+		padding: var(--space-2) var(--space-3);
+		border-radius: var(--radius-card);
+		font-size: var(--fs-badge);
+		background: color-mix(in srgb, var(--warn-text) 14%, transparent);
+		color: var(--warn-text);
 	}
 	.cxd-refresh {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
 		border: 0;
+		border-radius: var(--radius-button);
 		background: transparent;
-		color: rgb(156 163 175);
+		color: var(--text-muted);
 		cursor: pointer;
-		font-size: 12px;
-		padding: 0 4px;
+		padding: 0;
 	}
 	.cxd-refresh:hover {
-		color: #fff;
+		color: var(--text);
+		background: var(--surface-hover);
+	}
+	@media (pointer: coarse) {
+		.cxd-tab {
+			height: 44px;
+		}
+		.cxd-pin,
+		.cxd-refresh {
+			width: 44px;
+			height: 44px;
+		}
+		.cxd-approve,
+		.cxd-reject,
+		.cxd-cancel {
+			height: 44px;
+		}
 	}
 	/* narrow: the pill is already a full-width top bar, so the absolute panel
 	   (left:0/right:0/top:100%) spans it flush — no viewport-pin override needed. */

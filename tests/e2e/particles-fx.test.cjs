@@ -194,11 +194,23 @@ h.run(async () => {
 		});
 	await preset('wisps');
 	await set({ render: 'points', inherit: 0, count: 200, lifetime: 2.5, speed: 0.1, drag: 0, turbulence: 0, gravity: 0, sizeStart: 0.06, sizeEnd: 0.06, colorStart: '#ffffff', colorEnd: '#ffffff' });
+	// the box sweeps with a ~2.5 s period, so ONE read lands on whatever phase the clock
+	// gives it (201 vs 158 px under load). Take the WIDEST spread over a whole period for
+	// each setting: both runs then see the sweep at its full width, and only inherit differs.
+	const widest = async () => {
+		const reads = [];
+		for (const t0 = Date.now(); Date.now() - t0 < 2800; ) {
+			reads.push(await spread());
+			await page.waitForTimeout(200);
+		}
+		console.log(`(premise) ${reads.length} spread reads: ${reads.join(' ')}`);
+		return Math.max(...reads);
+	};
 	await page.waitForTimeout(2600);
-	const still = await spread();
+	const still = await widest();
 	await set({ inherit: 1 });
 	await page.waitForTimeout(2600);
-	const carried = await spread();
+	const carried = await widest();
 	await shot('03-inherit-velocity.png');
 	h.check(carried > still * 1.15, `inherit 1 carries the particles on past the sweep (x-spread ${still} → ${carried} px)`);
 	await set({ render: 'trails', inherit: 0.3, trail: 0.6, colorStart: '#e9d7ff', colorEnd: '#8a5cff', count: 40, speed: 0.6, turbulence: 0.9 });

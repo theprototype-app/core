@@ -1,0 +1,40 @@
+// 38 R8 (NOTES-38 #4): the play banner is scene data in the play block, absent at its default
+import { describe, it, expect } from 'vitest';
+import { normalizePlayBanner, normalizeScenePhysics } from '../../src/lib/scenePhysics.js';
+
+describe('play banner', () => {
+	it('the default (show the hint) is never written', () => {
+		expect(normalizePlayBanner(undefined)).toBe(null);
+		expect(normalizePlayBanner({ mode: 'hint' })).toBe(null);
+		expect('banner' in normalizeScenePhysics({}).play).toBe(false);
+	});
+	it('hide and custom text survive a normalize, text capped at 80', () => {
+		expect(normalizeScenePhysics({ play: { banner: { mode: 'hide', text: 'x' } } }).play.banner).toEqual({ mode: 'hide' });
+		const long = 'a'.repeat(120);
+		expect(normalizePlayBanner({ mode: 'custom', text: long })).toEqual({ mode: 'custom', text: 'a'.repeat(80) });
+		expect(normalizePlayBanner({ mode: 'custom', text: 5 })).toEqual({ mode: 'custom', text: '' });
+	});
+});
+
+import { formatElapsed } from '../../src/lib/connectionState.js';
+describe('reconnect elapsed (NOTES-38 #16)', () => {
+	it('reads seconds, minutes, hours', () => {
+		expect(formatElapsed(12_400)).toBe('12 s');
+		expect(formatElapsed(125_000)).toBe('2 min');
+		expect(formatElapsed(65 * 60_000)).toBe('1 h 5 min');
+		expect(formatElapsed(-5)).toBe('0 s');
+	});
+});
+
+import { rankCommands } from '../../src/lib/commandRank.js';
+describe('command palette ranking (NOTES-38 #14)', () => {
+	/** @param {string} label @param {string} [detail] */
+	const c = (label, detail = '') => ({ id: label, kind: 'tool', label, detail, run: () => {} });
+	const list = [c('Scale to fit'), c('Show grid', 'Settings ▸ Scene'), c('Scale'), c('Grid snapping', 'Snapping')];
+	it('a label that starts with the query beats a word inside one; detail matches last', () => {
+		expect(rankCommands(list, 'scale').map((x) => x.label)).toEqual(['Scale', 'Scale to fit']);
+		expect(rankCommands(list, 'grid').map((x) => x.label)).toEqual(['Grid snapping', 'Show grid']);
+		expect(rankCommands(list, 'scene').map((x) => x.label)).toEqual(['Show grid']);
+		expect(rankCommands(list, 'zzz')).toEqual([]);
+	});
+});

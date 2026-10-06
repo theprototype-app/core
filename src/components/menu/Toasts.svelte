@@ -127,8 +127,8 @@ const hideCritical = $derived($connectDrawerOpen || $toastsInDrawerOnly);
 const hideRegular = $derived($connectDrawerOpen || $toastsInDrawerOnly);
 
 // U-3: cap how many generic toasts stack at once (older ones collapse into a
-// "+N more" line) so bursts can't fill the screen
-const MAX_TOASTS = 4;
+// "+N more" line) so bursts can't fill the screen. 38 R8: 3, SPEC §5.
+const MAX_TOASTS = 3;
 // 15-P: a rush of joiners folds the same way — the drawer's Toasts tab lists
 // every pending request, so the viewport never fills with approval cards
 const MAX_REQUESTS = 3;
@@ -466,7 +466,7 @@ $effect(() => {
      must NOT use transform (that would create a stacking context and trap the
      children's z-index, breaking "approvals above modals"), so it centres with
      auto margins. -->
-<div class="toasts-stack">
+<div class="toasts-stack tp-ui">
 <!-- 33 L1: a scene load's progress — the stack's first slot, like the mode banners below -->
 <SceneLoadBar />
 <StartViewHint /><!-- 36 L2: "camera is held" / "Back to start view" -->
@@ -648,19 +648,6 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     </div>
 {/if}
 
-{#if hiddenCount > 0}
-<!-- 15-L: the overflow line is a BUTTON — the hidden toasts all live in the
-     drawer's Toasts tab, so send the user straight there -->
-<div class="my-1 text-center">
-    <button
-        id="toast-overflow-more"
-        class="tp-toast-more"
-        title="Show all toasts in the Connect drawer"
-        onclick={() => { connectDrawerTab.set('toasts'); connectDrawerOpen.set(true); }}
-        >+{hiddenCount} more…</button
-    >
-</div>
-{/if}
 <!-- keyed by the entry (dedupe keeps plain strings unique; action toasts are
      distinct objects): an UNKEYED each reuses rows here, so a neighbour's expiry
      migrated text across nodes and svelte 5.5x left a stuck duplicate behind -->
@@ -694,6 +681,19 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     </div>
 </div>
 {/each}
+{#if hiddenCount > 0}
+<!-- 38 R8: BELOW the stack (SPEC §5 "max 3, then +N more"). 15-L: the overflow line is a BUTTON — the hidden toasts all live in the
+     drawer's Toasts tab, so send the user straight there -->
+<div class="my-1 text-center">
+    <button
+        id="toast-overflow-more"
+        class="tp-toast-more"
+        title="Show all toasts in the Connect drawer"
+        onclick={() => { connectDrawerTab.set('toasts'); connectDrawerOpen.set(true); }}
+        >+{hiddenCount} more…</button
+    >
+</div>
+{/if}
 
 </div>
 </div><!-- /toasts-stack -->
@@ -759,50 +759,43 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     .cxreq-reject { background: transparent; border: 1px solid rgb(248 113 113 / 0.4); color: #f87171; }
     .cxreq-reject:hover { background: rgb(220 38 38 / 0.15); }
     .cxreq-full { background: #b45309; }
-    /* professional notification toast (replaces the flowbite green toast) */
+    /* 38 R8: the toast card = the kit's Toast look (SPEC §5): window surface, one border,
+       the icon carries the kind's ink — no coloured stripe. Tokens only. */
     .tp-toast {
         pointer-events: auto;
         position: relative;
-        width: min(420px, 94vw);
+        width: min(400px, 94vw);
         margin: 0 auto;
-        background: var(--color-form, rgb(31 41 55 / 0.98));
-        border: 1px solid rgb(255 255 255 / 0.1);
-        border-left: 3px solid #60a5fa;
-        border-radius: 12px;
-        padding: 10px 32px 10px 12px;
-        box-shadow: 0 12px 30px rgb(0 0 0 / 0.4);
-        backdrop-filter: blur(6px);
+        box-sizing: border-box;
+        background: var(--surface-1);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-card);
+        padding: 10px 34px 10px 12px;
+        box-shadow: var(--shadow-window);
+        color: var(--text-2);
+        font-family: var(--font-ui);
     }
-    .tp-toast-body { display: flex; align-items: flex-start; gap: 9px; }
+    .tp-toast-body { display: flex; align-items: flex-start; gap: 10px; }
     /* the icon is a lucide component's svg (outside this component's scope hash) */
-    .tp-toast-body :global(.tp-toast-icon) { color: #60a5fa; margin-top: 1px; flex: 0 0 auto; }
+    .tp-toast-body :global(.tp-toast-icon) { color: var(--accent-text); margin-top: 1px; flex: 0 0 auto; }
     .tp-toast-main { min-width: 0; flex: 1 1 auto; }
-    .tp-toast-text { font-size: 12.5px; color: #e5e7eb; line-height: 1.4; }
-    .tp-toast-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; }
-    .tp-toast-action { font-size: 11px; color: #93c5fd; background: transparent; border: 0; cursor: pointer; padding: 0; text-decoration: underline; }
-    .tp-toast-action:hover { color: #bfdbfe; }
+    .tp-toast-text { font-size: var(--fs-desc); color: var(--text-2); line-height: 1.45; }
+    .tp-toast-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+    .tp-toast-action { font-size: var(--fs-desc); font-weight: 500; color: var(--accent-text); background: transparent; border: 0; cursor: pointer; padding: 0; }
+    .tp-toast-action:hover { text-decoration: underline; }
+    .tp-toast-action:focus-visible, .tp-toast-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
     .tp-toast-x {
-        position: absolute; top: 7px; right: 7px; width: 20px; height: 20px;
-        border: 0; background: transparent; color: rgb(156 163 175); cursor: pointer;
-        font-size: 11px; line-height: 1; border-radius: 6px;
+        position: absolute; top: 7px; right: 7px; width: 22px; height: 22px;
+        border: 0; background: transparent; color: var(--text-faint); cursor: pointer;
+        font-size: 11px; line-height: 1; border-radius: var(--radius-input);
     }
-    .tp-toast-x:hover { color: #fff; background: rgb(255 255 255 / 0.08); }
-    /* 15-L: INFO variant — the standing, informational prompts (restore a
-       session, the first-run notice). Teal reads as "system info" against the
-       blue default notification and the amber approval card; the icon needs
-       :global because it is a lucide component's own svg. */
-    /* 15-P: connection requests + transfer progress wear the same card, so the
-       whole stack reads as one system. Amber = needs a decision; the progress
-       card keeps the neutral blue of an ordinary notification. */
-    .tp-toast--req { border-left-color: #f59e0b; }
-    .tp-toast--req :global(.tp-toast-icon) { color: #f59e0b; }
+    .tp-toast-x:hover { color: var(--text); background: var(--surface-hover); }
+    /* the kinds differ by the icon's ink only: a decision (approval) = warn, transfer =
+       good, a standing system prompt = the accent like any notification */
+    .tp-toast--req :global(.tp-toast-icon) { color: var(--ink-warn); }
     .tp-toast--req .tp-toast-actions { gap: 8px; margin-top: 8px; }
-    .tp-toast--progress { border-left-color: #22c55e; }
-    .tp-toast--progress :global(.tp-toast-icon) { color: #22c55e; }
-    .tp-toast--info { border-left-color: #2dd4bf; background: var(--color-form, rgb(31 41 55 / 0.98)); }
-    .tp-toast--info :global(.tp-toast-icon) { color: #2dd4bf; }
-    .tp-toast--info .tp-toast-action { color: #5eead4; }
-    .tp-toast--info .tp-toast-action:hover { color: #99f6e4; }
+    .tp-toast--progress :global(.tp-toast-icon) { color: var(--ink-good); }
+    .tp-toast--info { background: var(--surface-1); }
     /* 15-P: SPECTATOR mode banner. A mode is not a notification: it gets its own
        fixed strip so it can never be queued behind toasts or shifted when one
        arrives (the user's complaint), never expires, and stays exactly centred.
@@ -892,10 +885,11 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     /* the "+N more" overflow line is a button into the drawer's Toasts tab */
     .tp-toast-more {
         pointer-events: auto;
-        border: 0; background: transparent; cursor: pointer;
-        font-size: 11px; color: rgb(156 163 175); padding: 2px 8px; border-radius: 6px;
+        border: 1px solid var(--border-strong); cursor: pointer;
+        background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+        font-size: var(--fs-badge); color: var(--text-muted); padding: 3px 10px; border-radius: var(--radius-pill);
     }
-    .tp-toast-more:hover { color: #e5e7eb; background: rgb(255 255 255 / 0.08); text-decoration: underline; }
+    .tp-toast-more:hover { color: var(--text); }
     /* narrow: full-width connect bar (row 1) + logo/profile (row 2) sit above; keep
        toasts below both */
     @media (max-width: 640px) {

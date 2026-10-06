@@ -18,7 +18,7 @@
 		connectDrawerOpen,
 		connectDrawerPinned
 	} from '../../stores/appStore.js';
-	import { sessionHost, peerJoinedAt } from '$lib/connectionState';
+	import { sessionHost, peerJoinedAt, signalingRetry } from '$lib/connectionState';
 	import { peerQuality, qColor } from '$lib/networkQuality';
 	import { peerServerStatus, peerServerPingUrl, peerServerPeersUrl } from '$lib/peerServer';
 	import { cancelOutboundRequest } from '$lib/peerApproval';
@@ -322,6 +322,13 @@
 					<button class="cxd-refresh" title="Re-measure" aria-label="Re-measure server ping" onclick={probe}>↻</button>
 				</span>
 			</div>
+			<!-- 38 R8 (NOTES-38 #16): the pill says how LONG; the attempt count lives here -->
+			{#if $signalingRetry.retrying}
+				<div class="cxd-row" data-testid="drawer-retry-row">
+					<span class="cxd-key">Reconnecting</span>
+					<span class="cxd-val">attempt {$signalingRetry.attempt}</span>
+				</div>
+			{/if}
 			<div class="cxd-row">
 				<span class="cxd-key">Discovery</span>
 				<span class="cxd-val">{discovery === 'on' ? 'on (rooms listable)' : discovery === 'off' ? 'off' : '—'}</span>

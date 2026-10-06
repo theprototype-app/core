@@ -703,22 +703,22 @@ h.run(async () => {
 	);
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('Move (1)') === 2 && titles.indexOf('—') === 5,
+		titles.indexOf('Move (1)') === 2 && titles.indexOf('—') === 4,
 		`a second press walked it one further, past Scale (${titles.join(' | ')})`
 	);
-	// 33 E1 + 37 R1: Pivot and Interact sit before the well, so the FIFTH press crosses it
-	await rowArrow(A.page, 'Move Move (1) down');
+	// 33 E1 + 37 R1 (Rotate is hidden here): Pivot and Interact sit before the well, so the
+	// FOURTH press is the one that crosses it
 	await rowArrow(A.page, 'Move Move (1) down');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('Move (1)') === 4 && titles.indexOf('—') === 5,
-		`the third and fourth presses walked it past Pivot and Interact (${titles.join(' | ')})`
+		titles.indexOf('Move (1)') === 3 && titles.indexOf('—') === 4,
+		`a third press walked it past Interact (${titles.join(' | ')})`
 	);
 	await rowArrow(A.page, 'Move Move (1) down');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('Move (1)') === 5 && titles.indexOf('—') === 4,
-		`a fifth press walked it across the play well (${titles.join(' | ')})`
+		titles.indexOf('Move (1)') === 4 && titles.indexOf('—') === 3,
+		`a fourth press walked it across the play well (${titles.join(' | ')})`
 	);
 	// the two controls must be DISTINGUISHABLE: `Icon`'s map is `MAP[name] ?? Box`, and
 	// `chevron-left`/`chevron-right` were in no map at all, so both reorder controls had

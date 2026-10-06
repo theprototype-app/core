@@ -105,7 +105,7 @@
 	// the heterogeneous markup. Rows carry the `.setting-row` class; inner controls
 	// live in <p>, so hiding a row never hides a control inside a shown row.
 	let settingsQuery = '';
-	let searchInput: any; // the search box, for refocus after the clear (X) button
+	let searchInput: any = null; // the search box (bound to SearchField.inputEl — never undefined: props_invalid_value)
 	/**
 	 * Searching must EXPAND every section first. flowbite-svelte 1.x renders an
 	 * AccordionItem's body only while it is open, so with the sections collapsed

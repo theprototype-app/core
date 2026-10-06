@@ -19,6 +19,7 @@
 		"format": "prettier --write .",
 		"lint": "prettier --check .",
 		"e2e": "node tests/e2e/run.cjs",
+		"e2e:lock": "node tests/e2e/run.cjs @lock",
 		"deps:check": "node scripts/deps-check.cjs",
 		"sync-llms": "node scripts/sync-llms.cjs",
 		"test:unit": "vitest run",

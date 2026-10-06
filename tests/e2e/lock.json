@@ -1,0 +1,48 @@
+{
+	"about": "38 R1 behaviour lock: the suites every roadmap-38 (UI redesign) PR keeps green. `npm run e2e:lock` runs them all; `npm run e2e -- @lock` is the same. The lock-* suites compare against fixtures/lock/*.json, recorded on the pre-redesign UI (v1.24.0) with LOCK_RECORD=1 — a redesign PR never re-records them (SPEC §0: a change that needs to alter behaviour is split out). See tests/e2e/README.md › Behaviour lock.",
+	"suites": [
+		"lock-settings",
+		"lock-settings-b",
+		"lock-dragrow",
+		"lock-dragrow-sync",
+		"lock-shortcuts",
+		"lock-panels",
+		"lock-search"
+	],
+	"adopted": [
+		"docking",
+		"dock-float-exclusivity",
+		"dock-sidebar-inset",
+		"dock-splits",
+		"dock-tab-drag",
+		"dock-tabs-coexist",
+		"flow-dock-mixed",
+		"flow-dock-tabs",
+		"flow-dock-toggle",
+		"flow-explorer-dock",
+		"panel-toggle-keys",
+		"panel-deeplinks",
+		"window-size-clamp",
+		"settings-search-36",
+		"settings-layout",
+		"settings-shell",
+		"settings-labels",
+		"shortcut-rebind",
+		"node-ux-keymap",
+		"node-drag-fields",
+		"number-fields",
+		"units",
+		"inspector",
+		"inspector-multi-edit",
+		"undo",
+		"theme-import",
+		"theme-tokens"
+	],
+	"excluded": {
+		"dock-chrome": "red on v1.24.0 run alone (70/1): 9.3 measures a Node editor tab's pixel width (103.55 vs ~98) — a LAYOUT number the redesign changes, not behaviour; its 70 behaviour checks pass",
+		"dock-inset": "red on v1.24.0 run alone: a locator.click times out after 27 passes (2026-10-06, twice)",
+		"panels": "red on v1.24.0 run alone: 'properties header shows the type chip' + a click timeout; panel open/close breadth is lock-panels",
+		"panel-shortcuts": "red on v1.24.0 run alone: 3b.1 premise says no optional view is on the toolbar of a fresh profile, but Animation is on the default bar since roadmap 33; the keys themselves are locked by lock-shortcuts",
+		"themes": "red on v1.24.0: 11/1 in the battery, then a setup timeout alone; custom-theme restyling is covered by theme-import + theme-tokens and the custom-theme baselines"
+	}
+}

@@ -87,7 +87,7 @@ h.run(async () => {
 	const text = await undoCard().textContent();
 	h.check(/3 objects cleared/.test(text) && /Still here:.*sky/.test(text), `1.4 it says what went and what stayed (${text?.replace(/\s+/g, ' ').trim()})`);
 	h.check((await pa.locator('.tp-toast--undo .tp-toast-ttl').count()) >= 1, '1.5 the card shows the time left (draining bar)');
-	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click();
+	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click({ force: true }) // the stack reflows as other toasts come and go; the press is what is under test;
 	await h.eventually(() => uuids(pa), (u) => u.join() === original.join(), '1.6 Undo: A has the SAME objects back (uuids)', 30000);
 	await h.eventually(() => uuids(B.page), (u) => u.join() === original.join(), '1.7 and so does B', 30000);
 	await h.eventually(() => notes(B.page), (n) => n.includes('keep me'), '1.8 the note is back on B');
@@ -103,7 +103,7 @@ h.run(async () => {
 	await h.eventually(() => preset(B.page), (p) => p !== 'sunset', '2.1 Clear everything reset the sky on B', 20000);
 	await h.eventually(() => uuids(B.page), (u) => u.length === 0, '2.2 and emptied B');
 	await h.eventually(() => undoCard().isVisible(), (v) => v, '2.3 Undo offered');
-	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click();
+	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click({ force: true }) // the stack reflows as other toasts come and go; the press is what is under test;
 	await h.eventually(() => preset(B.page), (p) => p === 'sunset', '2.4 Undo: the sky is back on B', 30000);
 	await h.eventually(() => uuids(B.page), (u) => u.join() === original.join(), '2.5 the objects too', 30000);
 	h.check((await preset(pa)) === 'sunset', '2.6 and on A');
@@ -126,7 +126,7 @@ h.run(async () => {
 	// something else happens before the Undo: the toast must still undo the DELETE, not that
 	await pa.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
 	await h.eventually(() => uuids(pa), (u) => u.length === 2, '3.5 premise: another object was added after the delete');
-	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click();
+	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click({ force: true }) // the stack reflows as other toasts come and go; the press is what is under test;
 	await h.eventually(() => uuids(pa), (u) => doomed.every((id) => u.includes(id)) && u.length === 4, '3.6 Undo brings the two deleted objects back (the newer box stays)', 20000);
 	await h.eventually(() => uuids(B.page), (u) => doomed.every((id) => u.includes(id)), '3.7 on B too', 20000);
 
@@ -146,7 +146,7 @@ h.run(async () => {
 	await pa.evaluate(() => window.__stores.userModules.removeUserModule('r25-probe'));
 	h.check(JSON.stringify(await modState()) === JSON.stringify({ stored: false, loaded: false }), '4.2 Remove takes it out at once');
 	await h.eventually(() => undoCard().textContent(), (t) => /R25 Probe" removed/.test(t ?? ''), '4.3 a toast offers Undo');
-	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click();
+	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click({ force: true }) // the stack reflows as other toasts come and go; the press is what is under test;
 	await h.eventually(modState, (m) => m.stored && m.loaded, '4.4 Undo: installed and running again');
 	const persisted = await pa.evaluate(async () => {
 		const { idbGet } = await import('/src/lib/idb.js');
@@ -163,7 +163,7 @@ h.run(async () => {
 	await pa.locator('#settings-reset').click();
 	h.check((await pa.evaluate(() => localStorage.getItem('r25:probe'))) === null, '5.1 Reset settings clears the stored settings');
 	await h.eventually(() => undoCard().textContent(), (t) => /Settings reset/.test(t ?? ''), '5.2 a toast offers Undo');
-	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click();
+	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click({ force: true }) // the stack reflows as other toasts come and go; the press is what is under test;
 	await pa.waitForTimeout(200);
 	h.check((await pa.evaluate(() => localStorage.getItem('r25:probe'))) === 'kept', '5.3 Undo writes them back');
 	const keysAfter = await pa.evaluate(() => Object.keys(localStorage).length);

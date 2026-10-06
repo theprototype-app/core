@@ -226,6 +226,11 @@
 	.wc-btn[aria-pressed='true'] {
 		color: var(--accent-text);
 	}
+	/* an icon is the BUTTON's face, not a target of its own: the press (and a hit test at the
+	   button's centre) lands on the button */
+	.wc-head :global(button svg) {
+		pointer-events: none;
+	}
 	/* a header's ink is the window's, also when the header wears `ui-panel-header` (whose
 	   @apply'd gray-100 would otherwise win over inheritance) */
 	.wc-head {

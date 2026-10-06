@@ -254,3 +254,8 @@
 	--color-primary-800: var(--accent-soft);
 	--color-primary-900: var(--accent-soft);
 }
+/* an icon is its button's face, never a hit target of its own (see WindowChrome) */
+.tp-window > .ui-panel-header button svg,
+.tp-dock-btn svg {
+	pointer-events: none;
+}

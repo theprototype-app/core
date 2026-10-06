@@ -1,5 +1,5 @@
 <script>
-	// 38 R3 — the UI KIT page behind /kit (dev / VITE_UI_KIT builds only; see routes/kit).
+	// 38 R3 — the UI KIT page behind /kit (public since NOTES-38 #17: the module-author reference; see routes/kit).
 	// Every redesign primitive in every state, under Dark, Light, a CUSTOM theme written with
 	// legacy keys only (kitData.js — it proves the token derivation), and the exotic built-ins.
 	// `?theme=light` (dark | light | custom | green | bit8 | contrast) deep-links a theme for
@@ -8,6 +8,7 @@
 	// exactly like the real pseudo-class.
 	import { onMount, tick } from 'svelte';
 	import { THEME_TOKENS } from '$lib/themes.js';
+	import { DENSITIES, DEFAULT_DENSITY, applyDensity } from '$lib/ui/density.js';
 	import { SAMPLE_CUSTOM_THEME, SKY_GROUND } from './kitData.js';
 	import WindowChrome from '../WindowChrome.svelte';
 	import Tabs from '../Tabs.svelte';
@@ -38,6 +39,17 @@
 		{ value: 'contrast', label: 'High contrast' }
 	];
 	let kitTheme = $state('dark');
+	// NOTES-38 #19: `?density=compact` previews the Compact switch (local to the kit, like the theme)
+	let kitDensity = $state(DEFAULT_DENSITY);
+
+	/** @param {string} d */
+	function applyKitDensity(d) {
+		applyDensity(d);
+		const url = new URL(location.href);
+		if (d === DEFAULT_DENSITY) url.searchParams.delete('density');
+		else url.searchParams.set('density', d);
+		history.replaceState(history.state, '', url);
+	}
 
 	/** @param {string} id */
 	function applyKitTheme(id) {
@@ -76,6 +88,7 @@
 		'--segment-on',
 		'--accent-text',
 		'--live',
+		'--speaking',
 		'--warn-text',
 		'--danger',
 		'--badge-bg',
@@ -150,6 +163,8 @@
 		const wanted = new URL(location.href).searchParams.get('theme') ?? 'dark';
 		kitTheme = THEME_CHOICES.some((t) => t.value === wanted) ? wanted : 'dark';
 		applyKitTheme(kitTheme);
+		kitDensity = new URL(location.href).searchParams.get('density') === 'compact' ? 'compact' : DEFAULT_DENSITY;
+		applyKitDensity(kitDensity);
 	});
 
 	// ---- interactive demo state ----
@@ -209,9 +224,40 @@
 			onchange={(v) => applyKitTheme(/** @type {string} */ (v))}
 			data-testid="kit-theme"
 		/>
+		<Segmented
+			label="Density"
+			options={DENSITIES}
+			bind:value={kitDensity}
+			onchange={(v) => applyKitDensity(/** @type {string} */ (v))}
+			data-testid="kit-density"
+		/>
 	</header>
 
 	<main class="kit-main">
+		<!-- ================= module authors (NOTES-38 #17) ================= -->
+		<section class="kit-card kit-wide" id="kit-authors">
+			<header><b>Building a module UI?</b><span>use these parts, not your own</span></header>
+			<div class="kit-authors">
+				<p>
+					<b>Core modules</b> import the primitives directly:
+					<code>import Toggle from '../../components/ui/Toggle.svelte'</code> from <code>src/modules/&lt;name&gt;/</code> (WindowChrome, Tabs, Segmented, Chips, Toggle,
+					Button, Badge, SettingRow, PropRow, NavRow, Section, EmptyState, Sheet, Menu, Toast, SearchField). Icons go
+					through <code>ui/Icon.svelte</code>.
+				</p>
+				<p>
+					<b>User modules</b> are self-contained: put <code>class="tp-ui"</code> on your panel's root and paint only with
+					the tokens in the table below (<code>var(--surface-2)</code>, <code>var(--text-muted)</code>,
+					<code>var(--accent)</code> …). Every theme, including a user's custom <code>.theme.json</code>, then restyles
+					your UI with the app, and the Compact density applies to it too.
+				</p>
+				<p>
+					Rules: one primary button per view; <code>--live</code> only for Play, record and streaming; toggles for on/off,
+					checkboxes only to pick items in a list. Full guide:
+					<a href="https://docs.theprototype.app/ui-kit/" target="_blank" rel="noopener">UI kit for module authors</a>.
+				</p>
+			</div>
+		</section>
+
 		<!-- ================= tokens ================= -->
 		<section class="kit-card kit-wide" id="kit-tokens">
 			<header><b>Tokens</b><span>SPEC §1 · resolved in this theme</span></header>
@@ -749,6 +795,28 @@
 		font-size: var(--fs-section);
 		color: var(--text-faint);
 		text-align: right;
+	}
+	.kit-authors {
+		display: grid;
+		gap: var(--space-2);
+		max-width: 90ch;
+		color: var(--text-2);
+		font-size: var(--fs-desc);
+		line-height: 1.5;
+	}
+	.kit-authors p {
+		margin: 0;
+	}
+	.kit-authors b {
+		color: var(--text);
+	}
+	.kit-authors code {
+		font-family: var(--font-ui-mono);
+		font-size: 0.95em;
+		color: var(--text);
+	}
+	.kit-authors a {
+		color: var(--accent-text);
 	}
 	.kit-row {
 		display: flex;

@@ -148,8 +148,13 @@ h.run(async () => {
 	await preset('trail');
 	await deselect();
 	await sweep(true);
-	await page.waitForTimeout(1200);
-	const ribbonLit = await litPixels();
+	// wait on the band, not a timer: it GROWS after the sweep (2 px at 300 ms, 132-148 px at
+	// 1.2 s on a loaded box), so one read at a fixed moment was a coin against the 150 bar
+	let ribbonLit = 0;
+	for (const t0 = Date.now(); Date.now() - t0 < 5000 && ribbonLit <= 150; ) {
+		await page.waitForTimeout(250);
+		ribbonLit = Math.max(ribbonLit, await litPixels());
+	}
 	h.check(ribbonLit > 150, `ribbon trail draws a band behind the moving box (${ribbonLit} lit px of 57600)`);
 	await shot('02-ribbon-trail.png');
 	const same = await page.evaluate(() => {

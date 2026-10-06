@@ -18,6 +18,8 @@
 	import { Circle, Square, History, Upload, GitCompare, Camera, Activity } from '@lucide/svelte';
 	import { profilerLiveOpen } from '$lib/perf/liveSink';
 	import DockTabs from '../DockTabs.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ProfilerTimeline from './profiler/ProfilerTimeline.svelte';
 	import ProfilerDetail from './profiler/ProfilerDetail.svelte';
 	import ProfilerRecordings from './profiler/ProfilerRecordings.svelte';
@@ -789,7 +791,7 @@
 		<div
 			id="profiler-dock"
 			use:ownKeys
-			class="tp-themed fixed inset-x-0 bottom-0 flex flex-col bg-white p-2 dark:bg-gray-800 {dockVisible
+			class="tp-themed fixed inset-x-0 bottom-0 tp-ui tp-dock-panel flex flex-col p-2 {dockVisible
 				? ''
 				: 'hidden'}"
 			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid var(--tp-line)"
@@ -808,21 +810,19 @@
 			></div>
 			<DockTabs />
 			<div class="pf-head flex shrink-0 items-center gap-1 pb-1">
-				<span class="text-xs font-semibold text-gray-200">Profiler</span>
+				<span class="tp-dock-title">Profiler</span>
 				<span class="w-2"></span>
 				{@render controls()}
 				<span class="flex-1"></span>
-				<button
-					class="ui-button-quiet"
+				<button class="tp-dock-btn"
 					title="Undock into a floating window"
 					aria-label="Undock the Profiler"
-					onclick={() => setDocked(false)}>⧉</button
+					onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button
 				>
-				<button
-					class="ui-button-quiet"
+				<button class="tp-dock-btn"
 					title="Close"
 					aria-label="Close the Profiler"
-					onclick={() => profilerClose.set(true)}>✕</button
+					onclick={() => profilerClose.set(true)}><Icon name="x" size={14} /></button
 				>
 			</div>
 			<div class="flex min-h-0 flex-1 flex-col">
@@ -848,20 +848,26 @@
 			style:width="{effW}px"
 			style:height="{effH}px"
 		>
-			<div class="ui-panel-header move-handle shrink-0 cursor-move flex-wrap py-1.5 select-none">
-				<span>Profiler</span>
-				{#if !myGroup}{@render controls()}{/if}
-				<span class="flex-1"></span>
-				<button class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}
-					>⇩ Dock</button
-				>
-				<button
-					class="ui-button-quiet"
-					title="Close"
-					aria-label="Close the Profiler"
-					onclick={() => profilerClose.set(true)}>✕</button
-				>
-			</div>
+			<!-- 38 R6: the one window header (ui/WindowChrome, tool) -->
+			<WindowChrome
+				size="tool"
+				bare
+				body={false}
+				title="Profiler"
+				headerClass="ui-panel-header move-handle cursor-move select-none"
+				onclose={() => profilerClose.set(true)}
+				closeLabel="Close the Profiler"
+				closeAttrs={{ title: 'Close' }}
+			>
+				{#snippet heading()}
+					<span class="wc-label">Profiler</span>
+					{#if !myGroup}{@render controls()}{/if}
+					<span class="flex-1"></span>
+				{/snippet}
+				{#snippet actions()}
+					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+				{/snippet}
+			</WindowChrome>
 			{#if myGroup}
 				<div
 					class="flex shrink-0 flex-wrap items-center gap-1 border-b border-gray-700/60 px-2 py-1"

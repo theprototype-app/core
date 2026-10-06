@@ -46,7 +46,16 @@ const CLEAN = [
 	'src/components/ui/Toast.svelte',
 	'src/components/ui/Toggle.svelte',
 	'src/components/ui/WindowChrome.svelte',
-	'src/components/ui/kit/KitPage.svelte'
+	'src/components/ui/kit/KitPage.svelte',
+	// 38 R6 (windows + menus)
+	'src/components/ContextMenu.svelte',
+	'src/components/ContextMenuItems.svelte',
+	'src/components/DockTabs.svelte',
+	'src/components/menu/AddMenu.svelte',
+	'src/components/menu/AiAssistant.svelte',
+	'src/components/menu/Chat.svelte',
+	'src/components/menu/Objects.svelte',
+	'src/components/menu/TabStrips.svelte'
 ];
 
 const PALETTE =

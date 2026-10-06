@@ -332,6 +332,8 @@
 	import { dockable } from '$lib/docking';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import { createAttachmentKey, fromAction } from 'svelte/attachments';
 	import WindowShell from '../shared/WindowShell.svelte';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { fly } from 'svelte/transition';
@@ -581,6 +583,8 @@
 	 */
 	const hideSearch = $derived(headerW < 520);
 	const hideLabel = $derived(headerW < 420);
+	// 38 R6: WindowChrome draws the floating header now; the width probe rides on it
+	const headerAttrs = { [createAttachmentKey()]: fromAction(headerWidth) };
 	const hideIdentity = $derived(headerW < 340);
 	const filtering = $derived(kindFilter.size > 0 || localOnly);
 
@@ -7964,8 +7968,8 @@
 		<div
 			id="explorer-list"
 			transition:fly={{ y: 300, duration: 200 }}
-			class="fixed inset-x-0 bottom-0 bg-white p-2 dark:bg-gray-800 {dockVisible ? '' : 'hidden'}"
-			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
+			class="tp-ui tp-dock-panel fixed inset-x-0 bottom-0 p-2 {dockVisible ? '' : 'hidden'}"
+			style="z-index: var(--z-bottom); height: {$dockHeight}px"
 			data-key-scope="panel"
 			aria-label="Explorer (docked)"
 			ondragover={(e) => {
@@ -7987,7 +7991,7 @@
 			></div>
 			<DockTabs />
 			<div class="mb-1 flex items-center gap-2" use:headerWidth>
-				<span class="shrink-0 text-xs font-semibold text-gray-200"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
+				<span class="tp-dock-title"><Icon name="folder-tree" size={16} />Explorer</span>
 				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way.
 				     W6 deliberately left this row's LAYOUT alone — its narrow-width behaviour
 				     is explorer-header-panels' own measured contract, and the docked chrome
@@ -7995,7 +7999,7 @@
 				     its TAB's right-click menu). -->
 				<input
 					id="explorer-search"
-					class="ui-input w-48 shrink-0 py-0.5"
+					class="tp-field tp-field-sm w-48 shrink-0"
 					placeholder="Search assets…"
 					bind:value={search}
 				/>
@@ -8006,9 +8010,10 @@
 				{@render identityChip()}
 				<button
 					id="explorer-undock"
-					class="ui-button-quiet shrink-0"
+					class="tp-dock-btn shrink-0"
 					title="Undock into a floating window"
-					onclick={() => setDocked(false)}>⧉</button
+					aria-label="Undock into a floating window"
+					onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button
 				>
 			</div>
 			<div style="height: {$dockHeight - 44}px">
@@ -8018,7 +8023,7 @@
 	{:else}
 		<div
 			id="explorer-window"
-			class="ui-panel fixed flex flex-col overflow-hidden"
+			class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'explorerWin', defaultRect: { left: 160, top: 120 } }}
 			use:focusStack={'explorer'}
 			use:tabbable={{ key: 'explorer', title: 'Explorer', openStore: explorerClose, isOpen: (v) => !v, close: () => explorerClose.set(true) }}
@@ -8036,46 +8041,49 @@
 			ondrop={onDrop}
 			role="region"
 		>
-			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5" use:headerWidth>
-				<span class="shrink-0" title="Explorer"
-					><FolderTree size={16} class={hideLabel ? '' : 'mr-1'} aria-hidden="true" />{hideLabel
-						? ''
-						: 'Explorer'}</span
-				>
-				<!-- W6: the header's overflow lives HERE. The ✕ was never missing — every
-				     item ahead of it was `shrink-0`, so the row's minimum width (~730px)
-				     exceeded the window's own 420px minimum and the two trailing buttons
-				     were pushed OUT of an `overflow-hidden` window: measured at winW 420,
-				     the ✕ sat at x=743 against a right edge of 580, unhittable. That is the
-				     "the Explorer has no close button" report. Clipping the search + chips
-				     instead keeps Dock and ✕ inside the window at every width. -->
-				<div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-				{#if !hideSearch}
-					<input
-						id="explorer-search"
-						class="ui-input w-44 shrink-0 py-0.5 font-normal"
-						placeholder="Search assets…"
-						bind:value={search}
-					/>
-				{/if}
-					{@render filterChip()}
-					{@render viewChip()}
-					{@render logChip()}
-					{@render storageChip()}
-					{@render identityChip()}
-				</div>
-				<button id="explorer-dock" class="ui-button-quiet shrink-0" title="Dock to the bottom" onclick={() => setDocked(true)}>
-					⇩ Dock
-				</button>
-				<!-- the id + aria-label its siblings' close buttons lack, so a suite can pin it -->
-				<button
-					id="explorer-close"
-					class="ui-button-quiet shrink-0"
-					title="Close"
-					aria-label="Close the Explorer"
-					onclick={() => explorerClose.set(true)}>✕</button
-				>
-			</div>
+			<!-- 38 R6: the one window header (ui/WindowChrome, tool). Its R22 ranking stays: the
+			     search leaves first, then the word "Explorer" (the icon stands in); Dock and ✕
+			     never leave -->
+			<WindowChrome
+				size="tool"
+				bare
+				body={false}
+				title="Explorer"
+				headerClass="ui-panel-header move-handle cursor-move select-none"
+				{headerAttrs}
+				onclose={() => explorerClose.set(true)}
+				closeLabel="Close the Explorer"
+				closeAttrs={{ id: 'explorer-close', title: 'Close' }}
+			>
+				{#snippet heading()}
+					<span class="wc-label" title="Explorer">{#if hideLabel}<Icon name="folder-tree" size={16} />{:else}Explorer{/if}</span>
+					<!-- W6: the header's overflow lives HERE. The ✕ was never missing — every
+					     item ahead of it was `shrink-0`, so the row's minimum width (~730px)
+					     exceeded the window's own 420px minimum and the two trailing buttons
+					     were pushed OUT of an `overflow-hidden` window: measured at winW 420,
+					     the ✕ sat at x=743 against a right edge of 580, unhittable. That is the
+					     "the Explorer has no close button" report. Clipping the search + chips
+					     instead keeps Dock and ✕ inside the window at every width. -->
+					<div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+					{#if !hideSearch}
+						<input
+							id="explorer-search"
+							class="tp-field tp-field-sm w-44 shrink-0"
+							placeholder="Search assets…"
+							bind:value={search}
+						/>
+					{/if}
+						{@render filterChip()}
+						{@render viewChip()}
+						{@render logChip()}
+						{@render storageChip()}
+						{@render identityChip()}
+					</div>
+				{/snippet}
+				{#snippet actions()}
+					<button id="explorer-dock" class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+				{/snippet}
+			</WindowChrome>
 			<div class="min-h-0 flex-1 p-1">
 				{@render content()}
 			</div>

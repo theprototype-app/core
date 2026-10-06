@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '../ui/Icon.svelte';
 	import { Box } from '@lucide/svelte';
 	// N4: floating 3D model preview window — a rotatable ModelPreview canvas with a
 	// poly-stats box top-right. Opened from the Explorer (Enter / double-click / menu
@@ -66,7 +67,7 @@
 		id="model-preview-window"
 		bind:this={winEl}
 		tabindex="-1"
-		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
+		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden outline-hidden"
 		use:dragWindow={{ key: WIN_KEY, defaultRect: { left: 280, top: 120 } }}
 		use:focusStack={WIN_KEY}
 		style="z-index: var(--z-window); width: 560px; height: 460px"
@@ -75,7 +76,7 @@
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 			<span><Box size={16} class="mr-1" aria-hidden="true" />{$modelPreviewTarget.title}</span>
 			<span class="flex-1"></span>
-			<button class="ui-button-quiet" title="Close" onclick={close}>✕</button>
+			<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={close}><Icon name="x" size={14} /></button>
 		</div>
 		<div class="relative min-h-0 flex-1 bg-[#0d1117]">
 			<!-- 21-H2: keyed on BOTH sources — an item id and a prefab id are different

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Icon from '../ui/Icon.svelte';
 	import { Save, SquarePen } from '@lucide/svelte';
 	// Floating professional code editor (107): Explorer text files and the
 	// custom-node definition editor share this window. Ctrl+S saves; the title
@@ -57,7 +58,7 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		id="text-editor-window"
-		class="ui-panel fixed flex flex-col overflow-hidden"
+		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 		use:dragWindow={{ key: 'textEditorWin', defaultRect: { left: 220, top: 110 } }}
 		use:focusStack
 		style="z-index: var(--z-window); width: 620px; height: 440px"
@@ -68,11 +69,11 @@
 			<span class="flex-1"></span>
 			<button
 				id="text-editor-save"
-				class="ui-button-quiet {dirty ? 'bg-primary-700 text-white' : ''}"
+				class="ui-button-quiet {dirty ? 'tp-dirty' : ''}"
 				title="Save (Ctrl+S)"
 				onclick={save}><Save size={16} class="mr-1" aria-hidden="true" />Save</button
 			>
-			<button class="ui-button-quiet" title="Close" onclick={requestClose}>✕</button>
+			<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={requestClose}><Icon name="x" size={14} /></button>
 		</div>
 		<div class="min-h-0 flex-1 p-1.5">
 			<CodeEditor

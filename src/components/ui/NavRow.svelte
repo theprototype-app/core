@@ -64,7 +64,7 @@
 		gap: var(--space-3);
 		box-sizing: border-box;
 		width: 100%;
-		min-height: 48px;
+		min-height: var(--nav-row-h);
 		padding: var(--space-3) var(--space-4);
 		border: 0;
 		background: transparent;
@@ -138,10 +138,5 @@
 		height: 7px;
 		border-radius: 50%;
 		background: var(--accent);
-	}
-	@media (max-width: 639.98px) {
-		.nr {
-			min-height: 52px;
-		}
 	}
 </style>

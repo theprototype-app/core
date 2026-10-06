@@ -45,9 +45,10 @@ function remember(map, key, value, drop) {
 	map.delete(key);
 	map.set(key, value);
 	while (map.size > 2) {
-		const [oldKey, old] = map.entries().next().value;
-		map.delete(oldKey);
-		drop?.(old);
+		const oldest = map.entries().next().value;
+		if (!oldest) break;
+		map.delete(oldest[0]);
+		drop?.(oldest[1]);
 	}
 }
 

@@ -130,7 +130,21 @@
 		const next = uKind ? parseValue(typed, uKind, uName) : parseFloat(typed);
 		// LIVE: every keystroke that parses applies immediately (16-Q3 — it used to
 		// wait for Enter, so arrow keys inside the box looked like they did nothing)
-		if (Number.isFinite(next)) commit(next);
+		if (Number.isFinite(next)) {
+			commit(next);
+			liveText = typed;
+		}
+	}
+
+	/** 37 R1: the text the last LIVE commit applied. Enter blurs, and the blur fires the
+	 * native `change` with that same text — re-committing it applied a selection's typed
+	 * rotation TWICE (90° → 180°: the multi rows drive a per-gesture pivot handle). A change
+	 * that repeats it is skipped; any other change (autofill, a spinner) still commits. */
+	let liveText = '';
+	/** @param {any} event */
+	function onChange(event) {
+		if (event.currentTarget.value === liveText) return;
+		onInput(event);
 	}
 
 	/**
@@ -192,6 +206,7 @@
 	/** @param {any} event */
 	function onFocus(event) {
 		focused = true;
+		liveText = '';
 		entryValue = Number(value) || 0;
 		typed = fmt(value);
 		// select all so typing REPLACES, the usual expectation for a value field
@@ -281,7 +296,7 @@
 		{disabled}
 		use:keys
 		oninput={onInput}
-		onchange={onInput}
+		onchange={onChange}
 		onfocus={onFocus}
 		onblur={onBlur}
 	/>

@@ -161,6 +161,7 @@ const INPUT = {
 	distance: { a: 'object', b: 'object' },
 	proximity: { a: 'object', b: 'object' },
 	lookat: { target: 'object' },
+	camerarig: { target: 'object', offset: 'vector3' }, // 37 (R8)
 	rotor: { on: 'boolean' }, // 36-fb F25
 	flowfloat: { path: 'object' }, // 36-fb F24
 	setcolor: { color: 'color' },

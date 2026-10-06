@@ -83,6 +83,7 @@ export const NODE_DOCS = {
 	timer: "A delay line: outputs its input as it was a set number of seconds ago.",
 	distance: "Measures the live distance between two things in the scene.",
 	proximity: "True while two things are within a radius of each other - a distance sensor with the threshold built in.",
+	camerarig: "Moves a camera object: it follows the target at an offset and/or turns to look at it, with damping (seconds of lag). Wire it into an Object Selector that picks a camera. It never moves the editor view or another player's view - look through the camera (Set Active Camera) to see it.",
 	lookat: "Keeps the connected object facing a target - another object or a fixed point - every frame.",
 	setcolor: "Paints the connected object's material with a color, re-applied every frame.",
 	visibility: "Shows or hides the connected object based on a boolean.",

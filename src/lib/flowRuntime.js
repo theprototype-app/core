@@ -88,6 +88,7 @@ import { setPointGrabEnabled } from './pointGrab';
 import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
 import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
 // 37 (R6): variadic math/gate + the Switcher multiplexer (a leaf, no imports)
+import { rigGoal, rigStep, validVec } from './cameraRig.js'; // 37 (R8): a three leaf
 import { INPUT_LETTERS, socketCount, opFolds, foldMath, foldGate, switcherItems, switcherHandle, switcherIndexOf, switcherRadioIndex } from './variadicNodes.js';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
@@ -3685,6 +3686,8 @@ function applyAnimation(object, base, anim, time, ctx) {
 			if (other) target = other.getWorldPosition(new THREE.Vector3());
 		}
 		if (target) object.lookAt(target);
+	} else if (anim.type === 'camerarig') {
+		applyCameraRig(object, anim, data);
 	} else if (anim.type === 'setcolor') {
 		// drive the material color from a color input, LOCAL per peer (no spam) — 134
 		if (object.material?.color && typeof data.color === 'string') object.material.color.set(data.color);
@@ -3742,6 +3745,78 @@ function applyAnimation(object, base, anim, time, ctx) {
 			const value = Number(data.value);
 			if (slot && Number.isFinite(value)) slot.value = value;
 		}
+	}
+}
+
+// --- 37 (R8): Camera Rig — a camera OBJECT follows / looks at a target ------------------------
+/** the smoothed world pose per node+camera, so damping carries across frames (the base restore
+ * each frame would otherwise reset it) @type {Map<string, {pos: THREE.Vector3, quat: THREE.Quaternion, t: number}>} */
+const cameraRigState = new Map();
+/** nodes already told they are wired to something that is not a camera @type {Set<string>} */
+const cameraRigWarned = new Set();
+const _rigQ = new THREE.Quaternion();
+
+/**
+ * Move a camera MARKER toward the rig's goal. LOCAL per peer and never sent: every peer runs the
+ * same replicated graph against the same replicated target pose, so the markers converge with no
+ * message (the setcolor/lookat rule). Only an object carrying `userData.camera` moves — never the
+ * editor camera (not in the objects group at all) and never anything else.
+ * @param {any} object @param {any} anim @param {any} data
+ */
+function applyCameraRig(object, anim, data) {
+	if (!object?.userData?.camera) {
+		if (!cameraRigWarned.has(anim.id)) {
+			cameraRigWarned.add(anim.id);
+			showToast('Camera Rig moves camera objects only — wire it into an Object Selector that picks a camera.');
+		}
+		return;
+	}
+	/** @type {THREE.Vector3 | null} */
+	let targetPos = null;
+	/** @type {THREE.Quaternion | undefined} */
+	let targetQuat;
+	const vec = validVec(data.target);
+	if (vec) targetPos = new THREE.Vector3().fromArray(vec);
+	else if (typeof data.target === 'string' && data.target && data.target !== object.uuid) {
+		const other = sceneObjects?.getObjectByProperty('uuid', data.target);
+		if (other) {
+			other.updateWorldMatrix(true, false);
+			targetPos = other.getWorldPosition(new THREE.Vector3());
+			targetQuat = other.getWorldQuaternion(new THREE.Quaternion());
+		}
+	}
+	if (!targetPos) return; // nothing to follow: the camera keeps its authored pose
+	const key = anim.id + '|' + object.uuid;
+	const now = performance.now() / 1000;
+	let state = cameraRigState.get(key);
+	if (!state) {
+		object.updateWorldMatrix(true, false);
+		state = { pos: object.getWorldPosition(new THREE.Vector3()), quat: object.getWorldQuaternion(new THREE.Quaternion()), t: now };
+		cameraRigState.set(key, state);
+	}
+	const offset = validVec(data.offset) ?? [num(data.ox ?? 0), num(data.oy ?? 2), num(data.oz ?? 5)];
+	const goal = rigGoal(state, { pos: targetPos, quat: targetQuat }, { mode: data.mode, space: data.space, offset, aim: num(data.aim ?? 0) });
+	const next = rigStep(state, goal, num(data.damping ?? 0.25), now - state.t);
+	state.pos.copy(next.pos);
+	state.quat.copy(next.quat);
+	state.t = now;
+	// world -> the marker's parent frame
+	const parent = object.parent;
+	if (parent) {
+		parent.updateWorldMatrix(true, false);
+		object.position.copy(parent.worldToLocal(next.pos.clone()));
+		object.quaternion.copy(parent.getWorldQuaternion(_rigQ).invert().multiply(next.quat));
+	} else {
+		object.position.copy(next.pos);
+		object.quaternion.copy(next.quat);
+	}
+}
+
+/** 37 (R8): forget rig state for nodes/objects that are gone (called from the effect restore). */
+function pruneCameraRigs(/** @type {Map<string, any>} */ active) {
+	for (const key of cameraRigState.keys()) {
+		const [id, uuid] = key.split('|');
+		if (!(active.get(uuid) ?? []).some((/** @type {any} */ a) => a.id === id && a.type === 'camerarig')) cameraRigState.delete(key);
 	}
 }
 
@@ -3903,6 +3978,7 @@ function runTick(now) {
 		});
 	}
 
+	pruneCameraRigs(active); // 37 (R8): a rig that stopped starts from the camera's pose next time
 	// restore objects whose animations were disconnected/deleted
 	baseState.forEach((base, uuid) => {
 		if (!active.has(uuid)) {

@@ -207,6 +207,18 @@ h.run(async () => {
 			}
 		});
 	}, made.box2);
+	// restoreGraphs does not broadcast: push it, or nodesync's drift heal (equal counts -> the
+	// peer-id tie-break, which changes every run) can pull the OLD rig back onto A — run 6 read
+	// that as "the camera never returned to its authored pose"
+	await p.evaluate((id) => window.__stores.nodesHandler.sendNodes(id), B.id);
+	const holdsRig2 = (page) =>
+		page.evaluate(() => {
+			let g;
+			window.__stores.flowGraphs.subscribe((v) => (g = v))();
+			const ids = (g.scene?.nodes ?? []).map((n) => n.id);
+			return ids.includes('rig2') && !ids.includes('rig');
+		});
+	await h.eventually(() => holdsRig2(B.page), (v) => v === true, 'the peer holds the box-only graph');
 	await p.waitForTimeout(1000);
 	h.check(near((await pose(p, made.box2)).pos, box2Base, 1e-6), 'a rig wired to a box moves nothing (camera objects only)');
 	h.check(
@@ -215,6 +227,7 @@ h.run(async () => {
 	);
 
 	// --- 7. removing the rig hands the camera back its authored pose ------------------------
+	h.check(await holdsRig2(p), 'premise: A still holds the graph with no camera rig');
 	await h.eventually(() => pose(p, made.cam), (x) => x && near(x.pos, camBase, 1e-3), 'with no rig the camera is back at its authored pose');
 	h.check(sameMatrix(await editorCam(p), editA0) && sameMatrix(await editorCam(B.page), editB0), 'neither editor camera moved at any point');
 

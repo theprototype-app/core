@@ -58,6 +58,23 @@ h.run(async () => {
 		console.log(key, state, JSON.stringify(info));
 		await page.screenshot({ path: `${OUT}/${String(i + 1).padStart(2, '0')}-preset-${key}.png` });
 	}
+	// HDRI_UI=1: the Inspector section in the dark and light themes (Meadow, rotated, blurred a little)
+	if (process.env.HDRI_UI === '1') {
+		await page.evaluate(() => {
+			const s = window.__stores;
+			s.environment.setEnvironment('meadow');
+			s.environment.editEnvSky({ hdri: { rotation: 40, blur: 0.1 } });
+			s.openSceneSection('Environment');
+		});
+		await page.evaluate(() => window.__stores.hdri.hdriDebug.settle());
+		await page.waitForTimeout(1200);
+		await page.evaluate(() => document.getElementById('env-hdri')?.scrollIntoView({ block: 'center' }));
+		for (const [n, theme] of [['10', 'dark'], ['11', 'light']]) {
+			await page.evaluate((t) => window.__stores.themes.theme.set(t), theme);
+			await page.waitForTimeout(800);
+			await page.screenshot({ path: `${OUT}/${n}-inspector-hdri-${theme}.png` });
+		}
+	}
 	console.log('errors', JSON.stringify(page.__errors));
 	await browser.close();
 });

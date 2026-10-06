@@ -144,15 +144,20 @@
 			column-gap: var(--space-4);
 			padding: var(--setting-row-pad-y) var(--space-4);
 		}
-		.sr-wide {
+		/* a segmented control is always wide on a phone: two long options beside the label
+		   squeezed the description into a one-word column (37-settings, Density) */
+		.sr-wide,
+		.sr:has(.sr-control :global(.seg)) {
 			grid-template-columns: minmax(0, 1fr);
 			grid-template-areas: 'text' 'control' 'extra';
 			row-gap: var(--space-3);
 		}
-		.sr-wide .sr-control {
+		.sr-wide .sr-control,
+		.sr:has(.sr-control :global(.seg)) .sr-control {
 			justify-content: stretch;
 		}
-		.sr-wide .sr-control > :global(*) {
+		.sr-wide .sr-control > :global(*),
+		.sr:has(.sr-control :global(.seg)) .sr-control > :global(*) {
 			flex: 1 1 auto;
 		}
 		.sr-desc {

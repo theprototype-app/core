@@ -175,9 +175,18 @@ h.run(async () => {
 
 	// ---- 5. a phone: touch targets and inputs ---------------------------------------------------
 	const P = await h.setupPage(browser, 'P', { context: { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } });
-	for (const key of ['interface', 'scene', 'connection']) {
+	for (const key of PAGES) {
 		await open(P.page, key);
 		const t = await P.page.evaluate(() => {
+			// a description squeezed beside its control (Density's two long options left it a
+			// one-word column) — on a phone the text keeps at least half the row
+			const squeezed = [];
+			for (const row of document.querySelectorAll('#settings-sections .setting-row')) {
+				const el = /** @type {HTMLElement} */ (row);
+				const d = el.querySelector('.sr-desc');
+				if (!el.offsetParent || !d || !(d.textContent || '').trim()) continue;
+				if (d.getBoundingClientRect().width < el.getBoundingClientRect().width * 0.5) squeezed.push((el.querySelector('.sr-name')?.textContent || '').trim());
+			}
 			const small = [];
 			for (const el of document.querySelectorAll('#settings-sections .seg-opt, #settings-sections .tp-ui.nr, #settings-sections button.btn, #settings-sections .settings-num, #settings-sections .settings-text')) {
 				const e = /** @type {HTMLElement} */ (el);
@@ -188,8 +197,9 @@ h.run(async () => {
 			const inputs = [...document.querySelectorAll('#settings-sections input[type="text"], #settings-sections input[type="number"], #settings-sections input:not([type])')]
 				.filter((e) => /** @type {HTMLElement} */ (e).offsetParent)
 				.map((e) => parseFloat(getComputedStyle(e).fontSize));
-			return { small, inputs, overflowX: document.documentElement.scrollWidth > window.innerWidth };
+			return { squeezed, small, inputs, overflowX: document.documentElement.scrollWidth > window.innerWidth };
 		});
+		h.check(t.squeezed.length === 0, `${key} (phone): no description squeezed beside its control (${JSON.stringify(t.squeezed.slice(0, 4))})`);
 		h.check(t.small.length === 0, `${key} (phone): touch targets >= 44 px (${JSON.stringify(t.small.slice(0, 4))})`);
 		h.check(t.inputs.every((f) => f >= 16), `${key} (phone): inputs use 16 px text (${JSON.stringify(t.inputs)})`);
 		h.check(!t.overflowX, `${key} (phone): nothing scrolls sideways`);

@@ -70,6 +70,7 @@ The sticky footer with three big buttons is removed.
 | 2 | Avatars | Your character | btn "Customize character…" | — | opens Character panel (closes Settings) | | btn "Customize" | |
 | 3 | Avatars | Show everyone as classic heads | toggle | D | `peersAsClassic` → `avatars:peersClassic` | Show others as classic heads | toggle | badge *This device* (replaces "On this device only") |
 | 4 | Appearance | Theme | select (Dark, Light, Green console, 8-bit, High contrast + custom) | D | `theme` → `theme` | | select | badge *This device*. 5+ options, so it stays a dropdown (see Decision A). |
+| 4b | Appearance | **NEW** (NOTES-38 #19) | — | D | `uiDensity` → `ui:density` (absent = Comfortable) | Density | segmented Comfortable / Compact (on its own line on a phone) | badge *This device*. Intentional NEW row, not in 1.25.0: Compact sets `data-density="compact"` on `<html>` (desktop only; phones keep 44 px targets). |
 | 5 | Appearance | Custom theme | 2 btns + chips of loaded themes (✕ removes) | D | `customThemes` → `customThemes` | | btn pair "Export" / "Load file…" (wide), loaded themes as removable chips under the row | |
 | 6 | Sound *(section badge This device)* | Game sounds | range 0–1 (% in the description) | D | `gameSoundVolume` → `game:soundVolume` | | range + mono readout "80%" | |
 | 7 | Sound | Music | range 0–1 | D | `gameMusicVolume` → `game:musicVolume` | | range + mono readout | |
@@ -405,7 +406,7 @@ behind a store's back.
 
 | Category | Keys (localStorage, via safeStorage) |
 |---|---|
-| Interface | `allowTextSelection` `avatars:peersClassic` `theme` `customThemes`* `game:soundVolume` `game:musicVolume` `showWelcomeOnStart` `showWhatsNewNotice` `toastsInDrawerOnly` `toursAutoStart` `xrOfferSession` `showRoomsButton` `floatingToolbar` `toolbarOnTop` `touchTools` `mobileUndockAllowed` `advancedMode` `showEnvInList` `objectSearchEnabled` `perfStats:show` `perfReports:send` `viewPrefs.dockPushesViewport` |
+| Interface | `allowTextSelection` `avatars:peersClassic` `theme` `customThemes`* `game:soundVolume` `game:musicVolume` `showWelcomeOnStart` `showWhatsNewNotice` `toastsInDrawerOnly` `toursAutoStart` `xrOfferSession` `showRoomsButton` `floatingToolbar` `toolbarOnTop` `touchTools` `mobileUndockAllowed` `advancedMode` `showEnvInList` `objectSearchEnabled` `perfStats:show` `perfReports:send` `viewPrefs.dockPushesViewport` `ui:density` (NEW) |
 | Controls | `enableShiftAdd` `helpersInPlay` `noteDoubleClickToOpen` `trackpadMode` `trackpadPanEnabled` `trackpadReversePan` `trackpadPinchZoom` `allowBrowserZoom` |
 | Input | `gamepadPrefs` `flow:mouseBindings` `flow:opens` |
 | Touch controls | `touchControlsPrefs` `touchLookSpeed` `touchControlsTextures` `touchControlsLayouts` |

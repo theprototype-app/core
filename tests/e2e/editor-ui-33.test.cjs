@@ -50,7 +50,8 @@ h.run(async () => {
 	await page.waitForTimeout(800);
 
 	// ================================================================ E1 the default order
-	const DEFAULT = ['Move (1)', 'Rotate (2)', 'Scale (3)', 'Interact mode (I)', '—', 'Object list (O)', 'Node editor (N)', 'Explorer', 'Animation'];
+	// 37 R1: the Pivot cell sits with the transforms
+	const DEFAULT = ['Move (1)', 'Rotate (2)', 'Scale (3)', 'Pivot: Median point (click to change)', 'Interact mode (I)', '—', 'Object list (O)', 'Node editor (N)', 'Explorer', 'Animation'];
 	let titles = await barTitles(page);
 	h.check(titles.join(' | ') === DEFAULT.join(' | '), 'E1.1 a fresh profile: transforms, Interact, Play, list, nodes, Explorer, Animation (' + titles.join(' | ') + ')');
 	h.check((await page.evaluate(() => localStorage.getItem('controlsLayout'))) === null, 'E1.2 and writes nothing');
@@ -84,7 +85,7 @@ h.run(async () => {
 	await page.waitForTimeout(700);
 	titles = await barTitles(page);
 	h.check(
-		titles.join(' | ') === ['Move (1)', 'Scale (3)', '—', 'Object list (O)', 'Node editor (N)', 'Explorer', 'Interact mode (I)'].join(' | '),
+		titles.join(' | ') === ['Move (1)', 'Scale (3)', '—', 'Object list (O)', 'Node editor (N)', 'Explorer', 'Interact mode (I)', 'Pivot: Median point (click to change)'].join(' | '), // 37 R1: a button NEW to the app is appended
 		'E1.6 a CUSTOM bar keeps its own order, and gains no Animation (' + titles.join(' | ') + ')'
 	);
 	await page.evaluate(() => localStorage.removeItem('controlsLayout'));

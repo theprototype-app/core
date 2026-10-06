@@ -84,7 +84,8 @@ h.run(async () => {
 	// ---- premise: the default roster, in the default order ------------------------
 	// 33 E1: the user's order — transforms, Interact, Play (the well), object list, node
 	// editor, Explorer, Animation (Animation was an opt-in view before)
-	const DEFAULT = ['Move (1)', 'Rotate (2)', 'Scale (3)', 'Interact mode (I)', '—', 'Object list (O)', 'Node editor (N)', 'Explorer', 'Animation'];
+	// 37 R1: the Pivot cell sits with the transforms (its title names the current mode)
+	const DEFAULT = ['Move (1)', 'Rotate (2)', 'Scale (3)', 'Pivot: Median point (click to change)', 'Interact mode (I)', '—', 'Object list (O)', 'Node editor (N)', 'Explorer', 'Animation'];
 	let titles = await barTitles(A.page);
 	h.check(
 		titles.join(' | ') === DEFAULT.join(' | '),
@@ -137,14 +138,14 @@ h.run(async () => {
 	await pick(A.page, 'Rotate (2)');
 	titles = await barTitles(A.page);
 	h.check(!titles.includes('Rotate (2)'), `Rotate left the bar (${titles.join(' | ')})`);
-	h.check(titles.length === 8, `the bar lost exactly one cell (${titles.length})`);
+	h.check(titles.length === 9, `the bar lost exactly one cell (${titles.length})`);
 	h.check(
-		titles.indexOf('—') === 3,
+		titles.indexOf('—') === 4,
 		`the well stayed between the same neighbours — spacerIndex followed the hide (${titles.indexOf('—')})`
 	);
 	let saved = await layout(A.page);
 	h.check(
-		saved && saved.hidden.join(',') === 'rotate' && saved.spacerIndex === 3,
+		saved && saved.hidden.join(',') === 'rotate' && saved.spacerIndex === 4,
 		`the layout persisted (hidden=${saved?.hidden} spacerIndex=${saved?.spacerIndex})`
 	);
 
@@ -269,7 +270,7 @@ h.run(async () => {
 	await pick(A.page, 'Move right');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('—') === 3 && titles[4] === 'Interact mode (I)',
+		titles.indexOf('—') === 4 && titles[5] === 'Interact mode (I)',
 		`Interact crossed the play button in ONE step (${titles.join(' | ')})`
 	);
 	h.check(
@@ -278,7 +279,7 @@ h.run(async () => {
 	);
 	saved = await layout(A.page);
 	h.check(
-		saved && saved.spacerIndex === 3 && saved.order.join(',') === 'move,rotate,scale,mode,objects,flow,explorer,animation',
+		saved && saved.spacerIndex === 4 && saved.order.join(',') === 'move,rotate,scale,pivot,mode,objects,flow,explorer,animation',
 		`the RECORD is derived from the row: the well moved, the order did not (spacerIndex=${saved?.spacerIndex} order=${saved?.order.join(',')})`
 	);
 	await cellMenu(A.page, 'Interact mode (I)');
@@ -291,7 +292,7 @@ h.run(async () => {
 	await pick(A.page, 'Move left');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('—') === 3 && noWell(titles).join(' | ') === noWell(DEFAULT).join(' | '),
+		titles.indexOf('—') === 4 && noWell(titles).join(' | ') === noWell(DEFAULT).join(' | '),
 		`the play button's own Move left walks the well one place (${titles.join(' | ')})`
 	);
 	await fabMenu(A.page);
@@ -585,7 +586,7 @@ h.run(async () => {
 	// pins the exact cells, their order AND the well's index — not just a count.
 	titles = await barTitles(A.page);
 	h.check(
-		titles.join(' | ') === DEFAULT.join(' | ') && titles.indexOf('—') === 4,
+		titles.join(' | ') === DEFAULT.join(' | ') && titles.indexOf('—') === 5,
 		`W8b: the default bar is the roster's default — same cells, same order, same well slot (${titles.join(' | ')})`
 	);
 	h.check(

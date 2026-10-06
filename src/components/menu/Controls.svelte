@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Activity, Braces, Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, Hand, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
+	import { Activity, Boxes, Braces, Crosshair, LocateFixed, Network, Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, Hand, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
 	import { Listgroup } from 'flowbite-svelte';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
@@ -47,6 +47,7 @@
 	import { hudIsGame } from '$lib/hudDocs';
 	import { DOCK_VIEWS } from '$lib/dockMenu';
 	import { safeStorage } from '$lib/safeStorage';
+	import { pivotMode, pivotParentAvailable } from '$lib/multiTransform'; // 37 R1: the toolbar Pivot cell
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -108,6 +109,8 @@
 	// 151: tint follows the ACTIVE selection set (cleared on deselect), not the
 	// sticky selectedObject (which keeps the last object for the inspector bind)
 	const hasSel = $derived($selectedObjects.length > 0);
+	// 37 R1: the pivot point only means something for a SET (one object turns about its own origin)
+	const multiSel = $derived($selectedObjects.length > 1);
 	const ICON_ON = 'text-primary-500';
 	const ICON_OFF = 'text-black dark:text-slate-200';
 
@@ -1028,6 +1031,15 @@
 	};
 	// 30 P1: `pressed` makes the cell a TOGGLE — it renders as a real <button> carrying
 	// aria-pressed (a <p> cannot: the attribute is not supported on its role)
+	const PIVOT_NAMES: Record<string, string> = { median: 'Median point', active: 'Active object', individual: 'Individual origins', parent: 'Parent origin' };
+	const PIVOT_ICONS: Record<string, any> = { median: Crosshair, active: LocateFixed, individual: Boxes, parent: Network };
+	/** the next pivot mode; Parent origin only when the set shares a parent */
+	function cyclePivotMode() {
+		const order = ['median', 'active', 'individual', ...(pivotParentAvailable() ? ['parent'] : [])];
+		const next = order[(order.indexOf($pivotMode) + 1) % order.length] as any;
+		pivotMode.set(next);
+		showQualityToast('Pivot: ' + PIVOT_NAMES[next]);
+	}
 	type CellButton = { title: string; slot?: string; icon: any; tint: () => string; run: () => void; pressed?: () => boolean };
 
 	/** the one PSEUDO-cell: the transparent well the play FAB sits in. It is not a
@@ -1043,8 +1055,9 @@
 	// the views they open most: object list, node editor, Explorer, Animation. Interact
 	// sits beside Play because the two answer one question ("how am I touching the scene
 	// right now"), and Animation joined the default bar (it was an opt-in view before).
-	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'mode', 'objects', 'flow', 'explorer', 'animation'];
-	const DEFAULT_SPACER = 4;
+	// 37 R1: the PIVOT POINT sits with the transforms it changes (Blender's header place)
+	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation'];
+	const DEFAULT_SPACER = 5;
 	/** 33 E1: the bars a profile could hold WITHOUT ever customizing — the default rows the
 	 *  app has shipped, read as the VISUAL row (the well as `__spacer`). A stored record
 	 *  that still IS one of these is a default nobody chose, so it migrates to the new
@@ -1052,7 +1065,9 @@
 	 *  a custom bar and wins as saved. Pre-30 had no 'mode'; 30-31 appended it last. */
 	const LEGACY_DEFAULT_ROWS = [
 		'move,rotate,scale,__spacer,objects,flow,explorer',
-		'move,rotate,scale,__spacer,objects,flow,explorer,mode'
+		'move,rotate,scale,__spacer,objects,flow,explorer,mode',
+		// 37 R1: the 33 E1 default, before the Pivot cell joined it
+		'move,rotate,scale,mode,__spacer,objects,flow,explorer,animation'
 	];
 	/** 33 E1: ids that became DEFAULT after having been opt-in. A custom record that does
 	 *  not list one LEFT it off on purpose (it was unticked), so it is not appended there —
@@ -1112,6 +1127,19 @@
 			tint: () => ($editorMode === 'interact' ? ICON_ON : ICON_OFF),
 			pressed: () => $editorMode === 'interact',
 			run: () => toggleEditorMode()
+		},
+		// 37 R1: Median / Active / Individual (/ Parent) — a click steps to the next mode; the
+		// glyph and title say which is on. Shared with the Inspector's Pivot row and the object
+		// menu (one `pivotMode` store), so all three always agree.
+		pivot: {
+			get title() {
+				return 'Pivot: ' + PIVOT_NAMES[$pivotMode] + ' (click to change)';
+			},
+			get icon() {
+				return PIVOT_ICONS[$pivotMode] ?? Crosshair;
+			},
+			tint: () => (multiSel ? ICON_ON : ICON_OFF),
+			run: () => cyclePivotMode()
 		},
 		move: {
 			title: 'Move (1)',

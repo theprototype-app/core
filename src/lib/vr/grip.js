@@ -49,7 +49,11 @@ import {
 	lookupEditable
 } from '../faceEdit';
 import { peers } from '../../stores/appStore';
-import { recordTransform } from '../history';
+import { recordTransform, recordTransformSet } from '../history';
+import { withWireBatch } from '../wireBatch';
+import { pivotMode, commonParentOf } from '../multiTransform';
+import { originWorld } from '../objectOrigin';
+import { setGrabPivot, poseSetGrab } from './setGrab.js';
 import { snapEnabled, snapSettings, dropToSurface } from '../snapping';
 import { selectObject, topLevelObjectOf } from '../objectActions';
 import { suspendAnimation, resumeAnimation, fireObjectGrab } from '../flowRuntime';
@@ -84,7 +88,9 @@ export function vrGrabbedUuid() {
 }
 /** 33 G4: EVERY object a VR hand holds right now (both hands may each hold one) */
 export function vrGrabbedUuids() {
-	return [grabs[0]?.object?.uuid, grabs[1]?.object?.uuid, S.scaleGrab?.object?.uuid].filter(Boolean);
+	// 37 R1: a set grab holds every member
+	const members = grabs.flatMap((g) => (g?.set ? g.set.map((/** @type {any} */ m) => m.object.uuid) : []));
+	return [grabs[0]?.object?.uuid, grabs[1]?.object?.uuid, S.scaleGrab?.object?.uuid, ...members].filter(Boolean);
 }
 /** 33 G4: vrGrabbedHand = the hand holding something, or 'both' — the stick gates read it */
 export function syncGrabbedHand() {
@@ -121,8 +127,14 @@ export function broadcastMove(object, force = false) {
 }
 
 /** @param {any} object @param {any} before null = a PLAYER's grab (Interact): moved and
- * thrown like any other, but not an edit, so no undo entry */
+ * thrown like any other, but not an edit, so no undo entry. 37 R1: a SET grab's `before` is
+ * `{setGrab}` so every existing release site (squeeze end, mode switch, session end) ends
+ * the whole set through this one door. */
 export function endGrab(object, before) {
+	if (before?.setGrab) {
+		endSetGrab(before.setGrab);
+		return;
+	}
 	broadcastMove(object, true);
 	const after = transformStateOf(object);
 	if (before && JSON.stringify(before) !== JSON.stringify(after))
@@ -494,6 +506,17 @@ export function onSqueezeStart(index) {
 	if (get(lockedObjects).find((lock) => lock[1] === object.uuid)) return;
 
 	const other = grabs[1 - index];
+	// 37 R1: the other hand already carries the set this object belongs to — nothing to take
+	if (other?.set?.some((/** @type {any} */ m) => m.object === object)) return;
+	// 37 R1: Edit grip on a MEMBER of a selection of 2+ carries the whole set
+	if (mode === 'edit' && get(selectedObjects).length > 1 && get(selectedObjects).includes(object.uuid)) {
+		const previousSet = grabs[index];
+		if (previousSet) {
+			grabs[index] = null;
+			endGrab(previousSet.object, previousSet.interact ? null : previousSet.before);
+		}
+		if (beginSetGrab(index, object)) return;
+	}
 	if (other && other.object === object) {
 		// 30b P2: a player's second hand does not resize the thing it is holding
 		if (mode === 'interact') return;
@@ -709,7 +732,7 @@ export function onSqueezeEnd(index) {
 		// slot; the hook restores the object's pose + animation itself, so no
 		// move commits — but the physics hold must still release)
 		const object = grab.object;
-		const consumed = gripDropHooks.some((fn) => {
+		const consumed = !grab.set && gripDropHooks.some((fn) => {
 			try {
 				return !!fn(object, grab.before);
 			} catch (error) {
@@ -769,8 +792,104 @@ export function grabStickAdjust({ length, scale, x, y }) {
 	};
 }
 
+// ---- 37 R1: the SET grab (setGrab.js has the maths) ---------------------------------
+let lastSetSent = 0;
+
+/** Start carrying the whole selection from the member `object`. @param {number} index @param {any} object */
+function beginSetGrab(index, object) {
+	const group = get(objectsGroup);
+	const locked = get(lockedObjects);
+	/** @type {any} */
+	const peer = get(peers);
+	const mine = peer?.peer?.id;
+	const objects = get(selectedObjects)
+		.map((uuid) => group?.getObjectByProperty('uuid', uuid))
+		.filter((o) => o && !locked.find((lock) => lock[1] === o.uuid && lock[0] !== mine));
+	if (objects.length < 2 || !objects.includes(object)) return false;
+	const set = objects.map((member) => {
+		suspendAnimation(member.uuid);
+		import('../physics').then((m) => m.holdBody(member.uuid));
+		member.updateMatrixWorld(true);
+		return {
+			object: member,
+			startWorld: member.matrixWorld.clone(),
+			origin: originWorld(member),
+			worldPos: member.getWorldPosition(new THREE.Vector3()),
+			before: transformStateOf(member)
+		};
+	});
+	const parent = commonParentOf(objects);
+	const mode = /** @type {any} */ (get(pivotMode));
+	const controller = renderer.xr.getController(index);
+	const grab = {
+		object,
+		index,
+		interact: false,
+		style: 'set',
+		set,
+		pivot: setGrabPivot(mode, set, objects.indexOf(object), parent ? originWorld(parent) : null),
+		handPos0: controller.getWorldPosition(new THREE.Vector3()),
+		handQuat0: controller.getWorldQuaternion(new THREE.Quaternion()),
+		scaleFactor: 1,
+		/** @type {any} */ before: null
+	};
+	grab.before = { setGrab: grab };
+	grabs[index] = grab;
+	syncGrabbedHand();
+	perfMark('grab', { hand: index, interact: false, set: set.length });
+	hapticPattern('hit', controller?.userData?.handedness ?? undefined);
+	return true;
+}
+
+/** One frame of a set grab. @param {any} grab */
+function updateSetGrab(grab) {
+	const controller = renderer.xr.getController(grab.index);
+	const position = controller.getWorldPosition(new THREE.Vector3());
+	const quaternion = controller.getWorldQuaternion(new THREE.Quaternion());
+	const move = position.sub(grab.handPos0);
+	const turn = quaternion.multiply(grab.handQuat0.clone().invert());
+	const axes = axesForSlot(grab.index);
+	// the stick's X scales the set about the pivot (its Y reel is a single-object gesture)
+	grab.scaleFactor = grabStickAdjust({ length: 1, scale: grab.scaleFactor, x: axes[2] ?? 0, y: 0 }).scale;
+	poseSetGrab(grab.set, grab.pivot, move, turn, grab.scaleFactor);
+	pokeScene();
+	const now = Date.now();
+	if (now - lastSetSent < 50) return;
+	lastSetSent = now;
+	sendSetMoves(grab);
+}
+
+/** every member's pose, as ONE replicated batch @param {any} grab */
+function sendSetMoves(grab) {
+	/** @type {any} */
+	const peer = get(peers);
+	if (!peer) return;
+	withWireBatch(() => {
+		for (const m of grab.set)
+			peer.send({ type: 'move', uuid: m.object.uuid, pos: m.object.position.toArray(), rot: m.object.rotation.toArray(), scale: m.object.scale.toArray() });
+	});
+}
+
+/** Release: final poses as one batch, ONE undo step for the set. @param {any} grab */
+function endSetGrab(grab) {
+	sendSetMoves(grab);
+	/** @type {any[]} */
+	const items = [];
+	for (const m of grab.set) {
+		const after = transformStateOf(m.object);
+		if (JSON.stringify(m.before) !== JSON.stringify(after)) items.push({ uuid: m.object.uuid, before: m.before, after });
+		import('../physics').then((mod) => mod.releaseBody(m.object.uuid));
+		resumeAnimation(m.object.uuid);
+	}
+	recordTransformSet(items);
+}
+
 /** @param {any} grab one hand's grab (33 G4: each hand updates its own) */
 export function updateGrab(grab) {
+	if (grab.set) {
+		updateSetGrab(grab);
+		return;
+	}
 	const controller = renderer.xr.getController(grab.index);
 	const position = controller.getWorldPosition(new THREE.Vector3());
 	const quaternion = controller.getWorldQuaternion(new THREE.Quaternion());

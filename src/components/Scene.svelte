@@ -41,6 +41,7 @@
 	import { startClap, tickClap, stopClap } from '$lib/clap'; // 31: two hands together make something
 	import { tickMoveSmoothing } from '$lib/moveSmoothing';
 	import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from '$lib/moduleSDK';
+	import { modulePointerDown, modulePointerMove, modulePointerUp, modulePointerWanted } from '$lib/modulePointer';
 	import { updateSpatialAudio } from '$lib/voiceChat';
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
@@ -767,7 +768,28 @@
 		const interactPress = () =>
 			editorInteractActive() && !$specatorMode && !$editingObject && !$faceEditObject && !$splineEditObject && !$drawMode && !$sculptObject;
 
+		// 37 (DEVX #29): a module may OWN a press — Interact, or Edit when no editor tool or
+		// session holds it (a handler that asked for 'edit'); Play's presses are playInteract's
+		let modulePressOwned = false;
+		const modulePressMode = () => {
+			if ($isLocked === true || $isVRMode || $specatorMode) return null;
+			if (interactPress()) return 'interact';
+			if (editorInteractActive() || $editingObject || $faceEditObject || $splineEditObject || $drawMode || $sculptObject) return null;
+			return 'edit';
+		};
+
 		const onPointerDown = (event) => {
+			if (event.button === 0) {
+				const pm = modulePressMode();
+				if (pm && modulePointerWanted(pm)) {
+					setRayFromEvent(event);
+					if (modulePointerDown(pm, selectionRaycaster, event)) {
+						modulePressOwned = true;
+						setOrbitEnabled(false);
+						return;
+					}
+				}
+			}
 			if (event.button === 2) {
 				rightDown = [event.clientX, event.clientY, Date.now()];
 				return;
@@ -899,6 +921,12 @@
 		window.addEventListener('keyup', onAltKey);
 		window.addEventListener('blur', onAltBlur);
 		const onPointerMove = (event) => {
+			// 37: a module-owned press hears the drag, and nothing else does
+			if (modulePressOwned) {
+				setRayFromEvent(event);
+				modulePointerMove(selectionRaycaster, event);
+				return;
+			}
 			// 36 S6: the Alt preview follows the cursor (~30 Hz) and goes the moment Alt is let go
 			if (event.altKey !== altHeld) setAltHeld(event.altKey);
 			if (altHeld && !event.buttons && performance.now() - lastAltPreviewAt > 33) {
@@ -971,6 +999,14 @@
 		};
 
 		const onPointerUp = (event) => {
+			if (modulePressOwned && event.button === 0) {
+				modulePressOwned = false;
+				setRayFromEvent(event);
+				modulePointerUp(selectionRaycaster, event);
+				setOrbitEnabled(true);
+				downPosition = null;
+				return;
+			}
 			if (interactCarrying && event.button === 0) {
 				interactCarrying = false;
 				cursorGrabEnd(); // a throw (false if the carry was already cancelled)

@@ -61,7 +61,10 @@ export async function lifecycleEnv() {
 		coreModuleIndex,
 		touchActions,
 		engines,
-		vrSeat
+		vrSeat,
+		modulePointer,
+		sdkRegistries,
+		pointerSeam
 	] = await Promise.all([
 		import('../moduleSDK.js'),
 		import('./index.js'),
@@ -106,7 +109,10 @@ export async function lifecycleEnv() {
 		tryLoad(import('../../modules/index.js')),
 		tryLoad(import('../touchActions')),
 		tryLoad(import('../behaviours/engines.js')),
-		tryLoad(import('../vr/seat.js'))
+		tryLoad(import('../vr/seat.js')),
+		tryLoad(import('../modulePointer.js')),
+		tryLoad(import('./registries.js')),
+		tryLoad(import('./pointerSeam.js'))
 	]);
 	const browser = typeof window !== 'undefined' && typeof document !== 'undefined';
 	return {
@@ -157,7 +163,10 @@ export async function lifecycleEnv() {
 			touchActions,
 			engines,
 			waterVolumes,
-			vrSeat
+			vrSeat,
+			modulePointer,
+			sdkRegistries,
+			pointerSeam
 		}
 	};
 }

@@ -170,6 +170,8 @@ export const DEBUG_HOOKS = [
 	['confirmDialog', () => import('./confirmDialog')],
 	['scenePhysics', () => import('./scenePhysics')],
 	['playInteract', () => import('./playInteract')],
+	// 37: the module pointer seam (DEVX #29)
+	['modulePointer', () => import('./modulePointer.js')],
 	['moveSmoothing', () => import('./moveSmoothing')],
 	['knock', () => import('./knock')],
 	['playSettings', () => import('./playSettings')],

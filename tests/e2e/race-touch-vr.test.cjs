@@ -222,34 +222,52 @@ h.run(async () => {
 	h.check(Math.abs(wrap(head.yaw - car.yaw)) < 0.08, `...and turned with it (head-vs-car ${wrap(head.yaw - car.yaw).toFixed(3)} rad)`);
 	await shoot(vp, '03-race-vr-seat.png');
 
+	await xr.uninstall(vp);
+	await V.ctx.close();
+
 	console.log('\n=== 5. a headset game runs in Interact: no pointer lock, still driving ===');
-	await vp.evaluate(() => window.__stores.isLocked.set(null));
-	await vp.waitForTimeout(500);
-	const v5 = await viewOf(vp);
-	h.check(v5?.engaged && v5.view === 'seat', `VR Interact with no pointer lock keeps the driver in the seat (${JSON.stringify(v5)})`);
-	const b5 = await carPose(vp, 'Race car 1');
-	await xr.stick(vp, 'left', 0, -1);
-	await vp.waitForTimeout(1500);
-	await xr.stick(vp, 'left', 0, 0);
-	const a5 = await carPose(vp, 'Race car 1');
-	h.check(flat(b5.pos, a5.pos) > 2, `...and the stick still drives (${flat(b5.pos, a5.pos).toFixed(1)} m) — before 37 a headset never engaged at all`);
+	// a fresh page that NEVER pressed desktop Play: VR enters Interact, the session start runs
+	// sim-on-play, the round starts from the kit (the DOM HUD is not drawn in a headset)
+	const W = await h.setupPage(browser, 'W', { context: { viewport: { width: 1280, height: 720 } } });
+	const wp = W.page;
+	await loadScene(wp, TPSCENE);
+	await xr.install(wp);
+	await xr.installSpace(wp, { head: [0, 1.6, 0], yaw: 0 });
+	await wp.evaluate(() => window.__stores.isVRMode.set(true));
+	await wp.evaluate(() => window.__stores.objectActions.setEditorMode('interact'));
+	await wp.evaluate(() => window.__stores.physics.toggleSimulation());
+	await h.eventually(() => wp.evaluate(() => { let v; window.__stores.physics.simulating.subscribe((x) => (v = x))(); return !!v; }), (v) => v, 'the simulation runs', 15000);
+	h.check((await wp.evaluate(() => { let v; window.__stores.isLocked.subscribe((x) => (v = x))(); return v; })) !== true, 'premise: no pointer lock (a headset never takes one)');
+	await wp.evaluate(() => window.__race.claim('Race car 1'));
+	await wp.evaluate(() => window.__stores.kit.kit.round.start());
+	await h.eventually(() => phaseOf(wp), (p) => p === 'playing', 'the race runs', 15000);
+	await h.eventually(() => viewOf(wp), (v) => v?.engaged && v.view === 'seat', 'VR Interact with no pointer lock seats the driver — before 37 a headset never engaged at all', 6000);
+	const b5 = await carPose(wp, 'Race car 1');
+	await xr.stick(wp, 'left', 0, -1);
+	await wp.waitForTimeout(1800);
+	await xr.stick(wp, 'left', 0, 0);
+	await wp.waitForTimeout(600);
+	const a5 = await carPose(wp, 'Race car 1');
+	h.check(flat(b5.pos, a5.pos) > 2, `...and the left stick drives (${flat(b5.pos, a5.pos).toFixed(1)} m)`);
 
 	console.log('\n=== 6. leaving the race stands you up beside the car ===');
-	await vp.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
-	await h.eventually(() => viewOf(vp), (v) => v && !v.engaged && v.view === '', 'Edit: out of the car', 6000);
-	await vp.waitForTimeout(300);
-	car = await carPose(vp, 'Race car 1');
-	head = await xr.head(vp);
+	const parked = await carPose(wp, 'Race car 1');
+	await wp.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
+	await h.eventually(() => viewOf(wp), (v) => v && !v.engaged && v.view === '', 'Edit: out of the car', 6000);
+	await wp.waitForTimeout(300);
+	car = await carPose(wp, 'Race car 1');
+	h.check(flat(parked.pos, car.pos) < 0.5, `premise: the car stayed put while you got out (${flat(parked.pos, car.pos).toFixed(2)} m)`);
+	head = await xr.head(wp);
 	const side = carLocal(head, car);
 	h.check(side[0] < -1.5 && Math.abs(side[2]) < 1, `stepped out on the driver's side (car-local ${side.map((n) => n.toFixed(2))})`);
-	const claims6 = await vp.evaluate(() => {
+	const claims6 = await wp.evaluate(() => {
 		let v;
 		window.__stores.inputRuntime.inputClaims.subscribe((x) => (v = x))();
 		return v;
 	});
 	h.check(!claims6.includes('sticks'), `the sticks are free again (${claims6})`);
-	h.check((await vp.evaluate(() => window.__stores.vrControls.seatDebug())) === null, 'no seat left behind');
-	await xr.uninstall(vp);
-	await V.ctx.close();
+	h.check((await wp.evaluate(() => window.__stores.vrControls.seatDebug())) === null, 'no seat left behind');
+	await xr.uninstall(wp);
+	await W.ctx.close();
 	await browser.close();
 });

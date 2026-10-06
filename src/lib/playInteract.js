@@ -20,6 +20,7 @@ import { pickStack, primaryIndex, gameRayEntry } from './selectThrough';
 import { gamePass } from './pickPass'; // 36 F22: a game's rays skip water + triggers
 import { nameOf } from './lockControl';
 import { moduleInteractiveGroups, fireClickMiss, runClickHandlers } from './moduleSDK';
+import { modulePointerDown, modulePointerMove, modulePointerUp, modulePointerWanted, modulePointerOwned } from './modulePointer.js';
 // 30 P3: where play mode aims — the crosshair under a lock, the cursor in a free-cursor game
 import { playAimNdc, playCursorFree } from './playCursor';
 // 31-towers P1: grab reach, measured from the player's body
@@ -369,6 +370,14 @@ function onPointerDown(event) {
 	// Under a lock the target is the locked canvas anyway, which is why this is scoped to
 	// free mode (a synthesized window-level press keeps working there, as it always has).
 	if (playCursorFree() && !isViewportTarget(event)) return;
+	// 37 (DEVX #29): a module may OWN the press (its own drag) — then no carry, no tap
+	if (activeCamera && get(isLocked) === true && !get(isVRMode) && modulePointerWanted('play')) {
+		aimFrom(activeCamera);
+		if (modulePointerDown('play', raycaster, event)) {
+			press = null;
+			return;
+		}
+	}
 	const mode = interactionMode();
 	if (mode === 'off' || !activeCamera) return;
 	// 36 F22: the stack, not the nearest hit — a water volume or a trigger in front of the
@@ -407,6 +416,13 @@ function onPointerDown(event) {
 	beginGrab(target, activeCamera);
 }
 
+/** 37: a module-owned Play press hears the drag (the aim ray: crosshair or free cursor) @param {PointerEvent} event */
+function onModuleDrag(event) {
+	if (!modulePointerOwned() || !activeCamera) return;
+	aimFrom(activeCamera);
+	modulePointerMove(raycaster, event);
+}
+
 /** Is this event aimed at the 3D viewport (the renderer's canvas)? @param {Event} event */
 function isViewportTarget(event) {
 	/** @type {any} */
@@ -417,6 +433,12 @@ function isViewportTarget(event) {
 /** @param {PointerEvent} event */
 function onPointerUp(event) {
 	if (event.button !== 0) return;
+	if (modulePointerOwned()) {
+		if (activeCamera) aimFrom(activeCamera);
+		modulePointerUp(raycaster, event);
+		lastUp = 'module';
+		return;
+	}
 	const wasPress = press;
 	press = null;
 	if (grab) {
@@ -603,6 +625,7 @@ export function startPlayInteract(options = {}) {
 	started = true;
 	moduleHitTest = options.moduleHitTest ?? null;
 	window.addEventListener('pointerdown', onPointerDown);
+	window.addEventListener('pointermove', onModuleDrag);
 	window.addEventListener('pointerup', onPointerUp);
 	window.addEventListener('wheel', onWheel, { capture: true, passive: false });
 	return stopPlayInteract;

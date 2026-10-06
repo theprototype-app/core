@@ -335,6 +335,33 @@
 				absent: (t) => get(M.possess.followingCam) !== t.data.scratch.uuid,
 				cleanup: dropScratch
 			},
+			// ---- 37: the pointer seam, the click miss, the play-mode signal -----------------------
+			registerPointerHandler: {
+				needs: ['modulePointer'],
+				call(api, t) {
+					t.data.before = M.modulePointer.modulePointerDebug().handlers;
+					api.registerPointerHandler({ down: () => false }, { modes: ['play'] });
+				},
+				present: (t) => M.modulePointer.modulePointerDebug().handlers === t.data.before + 1,
+				absent: (t) => M.modulePointer.modulePointerDebug().handlers === t.data.before
+			},
+			onClickMiss: {
+				needs: ['sdkRegistries'],
+				call(api, t) {
+					t.data.before = M.sdkRegistries.moduleClickMissHandlers.length;
+					api.onClickMiss(() => {});
+				},
+				present: (t) => M.sdkRegistries.moduleClickMissHandlers.length === t.data.before + 1,
+				absent: (t) => M.sdkRegistries.moduleClickMissHandlers.length === t.data.before
+			},
+			onPlayMode: {
+				needs: ['pointerSeam'],
+				call(api, t) {
+					t.data.fn = () => {};
+					api.onPlayMode(t.data.fn);
+				},
+				present: (t) => M.pointerSeam.playModeWatchers.has(t.data.fn)
+			},
 			vrSeat: {
 				// 37: reached through the primed vrControls ref, which only the app's boot primes
 				needs: ['vrSeat', 'objects', 'browser'],

@@ -89,6 +89,7 @@
 	import { isValidFlowConnection, typeColor, replaceableInputEdges, groupSocketType } from '$lib/flowSockets';
 	import { variadicSocketExists, switcherItems, MAX_SWITCHER_ITEMS, SWITCHER_TYPES, switcherVType } from '$lib/variadicNodes.js'; // 37 (R6)
 	import { removeVariadicSocket, setSwitcherType, addSwitcherItem } from '$lib/variadicEdit.js'; // 37 (R6)
+	import KitButton from '../ui/Button.svelte'; // 37: the Switcher ⓘ rows on the redesign kit
 	import { moduleNodeGroups, moduleNodeComponents } from '$lib/moduleSDK';
 	import { peers, username, modulesOpen, flowFocus, showToast } from '../../stores/appStore';
 	import { safeStorage } from '$lib/safeStorage';
@@ -2066,13 +2067,13 @@
 									}} />
 								<!-- 37 (R6): removing an item removes its input socket; wires into later items move
 								     down with them, the radio keeps its item, groups follow — ONE undo step -->
-								<button class="rounded-sm bg-gray-600 px-1.5 hover:bg-red-700" title="Remove item"
-									onclick={() => removeVariadicSocket(selectedNode.id, i, activeId)}>✕</button>
+								<KitButton variant="icon" size="sm" icon="x" label="Remove item" title="Remove item"
+									onclick={() => removeVariadicSocket(selectedNode.id, i, activeId)} />
 							</div>
 						{/each}
 						{#if switcherItems(selectedNode.data).length < MAX_SWITCHER_ITEMS}
-							<button id="param-switcher-add" class="rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500"
-								onclick={() => addSwitcherItem(selectedNode.id, undefined, activeId)}>＋ Add item</button>
+							<KitButton id="param-switcher-add" variant="secondary" size="sm" icon="plus" text="Add item"
+								onclick={() => addSwitcherItem(selectedNode.id, undefined, activeId)} />
 						{/if}
 						<!-- 37 (R6): what the item sockets and the `value` output carry -->
 						<label class="flex items-center justify-between gap-2">Inputs carry

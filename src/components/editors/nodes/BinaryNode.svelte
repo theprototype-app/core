@@ -5,6 +5,9 @@
 	import { setNodeData } from '$lib/nodesHandler';
 	import { flowValues, flowEdges } from '../../../stores/flowStore';
 	import DragRow from '../../ui/DragRow.svelte';
+	// 37: new UI on the redesign kit (38 R3) — Button / Toggle, tokens only
+	import Button from '../../ui/Button.svelte';
+	import Toggle from '../../ui/Toggle.svelte';
 	import { isVariadic, variadicInputs, opFolds, MAX_SOCKETS, MIN_SOCKETS } from '$lib/variadicNodes.js';
 	import { addVariadicSocket, removeVariadicSocket } from '$lib/variadicEdit.js';
 
@@ -55,31 +58,31 @@
 		</select>
 		{#each inputs as key, i (key)}
 			<div
-				class="relative -mx-3 flex h-6 items-center gap-1 px-3"
+				class="relative -mx-3 flex min-h-6 items-center gap-1 px-3"
 				class:opacity-50={!used(i, data.op, folds)}
 				data-socket={key}
 				title={used(i, data.op, folds) ? '' : 'Not used by this operation'}
 			>
 				<Socket kind="target" nodeType={data.type} position={Position.Left} id={key} style="top: 50%" />
-				<span class="w-3 text-gray-400">{key}</span>
+				<span class="w-3 text-text-muted">{key}</span>
 				{#if i < 2 && isGate}
-					<input class="nodrag nopan" type="checkbox" checked={!!data[key]} disabled={wired.has(key)}
-						on:change={(e) => setNodeData(id, { [key]: e.currentTarget.checked })} />
+					<span class="nodrag nopan"><Toggle checked={!!data[key]} disabled={wired.has(key)} label={'Input ' + key}
+						onchange={(/** @type {boolean} */ next) => setNodeData(id, { [key]: next })} /></span>
 				{:else if i < 2}
 					<DragRow nodrag step={0.01} decimals={2} value={data[key] ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { [key]: v })} />
 				{:else}
-					<span class="flex-1 text-[10px] text-gray-400">{wired.has(key) ? 'wired' : 'unwired — skipped'}</span>
+					<span class="flex-1 text-[10px] text-text-muted">{wired.has(key) ? 'wired' : 'unwired — skipped'}</span>
 				{/if}
 				{#if variadic && inputs.length > MIN_SOCKETS}
-					<button class="nodrag nopan variadic-remove ml-auto rounded-sm px-1 leading-none text-gray-400 hover:bg-gray-700 hover:text-gray-100"
-						title={'Remove input ' + key} aria-label={'Remove input ' + key}
-						on:click={() => removeVariadicSocket(id, i)}>−</button>
+					<span class="nodrag nopan variadic-remove ml-auto"><Button variant="icon" size="sm" icon="minus"
+						label={'Remove input ' + key} title={'Remove input ' + key}
+						onclick={() => removeVariadicSocket(id, i)} /></span>
 				{/if}
 			</div>
 		{/each}
 		{#if variadic && inputs.length < MAX_SOCKETS}
-			<button class="nodrag nopan variadic-add rounded-sm bg-gray-700/70 px-2 py-0.5 text-[11px] hover:bg-gray-600"
-				title="Add an input socket" on:click={() => addVariadicSocket(id)}>+ input</button>
+			<span class="nodrag nopan variadic-add"><Button variant="ghost" size="sm" icon="plus" text="input" full
+				title="Add an input socket" onclick={() => addVariadicSocket(id)} /></span>
 		{/if}
 	</div>
 </NodeWrapper>

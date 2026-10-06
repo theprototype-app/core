@@ -6,6 +6,8 @@
 	import { flowValues, flowEdges } from '../../../stores/flowStore';
 	import { switcherItems, switcherVType, switcherRadioIndex, switcherHandle, MAX_SWITCHER_ITEMS } from '$lib/variadicNodes.js';
 	import { addSwitcherItem } from '$lib/variadicEdit.js';
+	// 37: new UI on the redesign kit (38 R3) — Button, tokens only
+	import Button from '../../ui/Button.svelte';
 
 	type $$Props = NodeProps;
 	export let id: string;
@@ -38,15 +40,15 @@
 	<div class="nodrag nopan flex w-full flex-col">
 		<div class="relative -mx-3 flex h-6 items-center justify-between gap-2 px-3" data-socket="index">
 			<Socket kind="target" nodeType={data.type} id="index" position={Position.Left} forceType="number" style="top: 50%" />
-			<span class="text-gray-400">index</span>
-			<span class="font-mono text-[10px] text-gray-400" title="The selected index (the unnamed output)">{indexWired ? '◈ ' : ''}{liveIndex}</span>
+			<span class="text-text-muted">index</span>
+			<span class="font-mono text-[10px] text-text-muted" title="The selected index (the unnamed output)">{indexWired ? '◈ ' : ''}{liveIndex}</span>
 			<Socket kind="source" nodeType={data.type} position={Position.Right} forceType="number" style="top: 50%" />
 		</div>
 		{#each options as option, i}
 			<label class="relative -mx-3 flex h-6 items-center px-3" data-socket={switcherHandle(i)}>
 				<Socket kind="target" nodeType={data.type} id={switcherHandle(i)} position={Position.Left} forceType={vtype} style="top: 50%" />
 				<input
-					class="accent-[#ff4000]"
+					class="accent-[var(--accent)]"
 					type="radio"
 					name={`shape-${id}`}
 					value={option}
@@ -58,12 +60,12 @@
 			</label>
 		{/each}
 		{#if options.length < MAX_SWITCHER_ITEMS}
-			<button class="switcher-add mt-0.5 rounded-sm bg-gray-700/70 px-2 py-0.5 text-[11px] hover:bg-gray-600"
-				title="Add an item (and its input socket)" on:click={() => addSwitcherItem(id)}>+ item</button>
+			<span class="switcher-add"><Button variant="ghost" size="sm" icon="plus" text="item" full
+				title="Add an item (and its input socket)" onclick={() => addSwitcherItem(id)} /></span>
 		{/if}
 		<div class="relative -mx-3 mt-0.5 flex h-6 items-center justify-end gap-2 px-3" data-socket="value">
-			<span class="font-mono text-[10px] text-gray-300">{fmt(liveValue)}</span>
-			<span class="text-gray-400">value · {vtype}</span>
+			<span class="font-mono text-[10px] text-text-2">{fmt(liveValue)}</span>
+			<span class="text-text-muted">value · {vtype}</span>
 			<Socket kind="source" nodeType={data.type} id="value" position={Position.Right} forceType={vtype} style="top: 50%" />
 		</div>
 	</div>

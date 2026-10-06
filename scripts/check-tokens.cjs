@@ -28,6 +28,8 @@ const CLEAN = [
 	// 38 R7 (38-modals)
 	'src/components/menu/CharacterPanel.svelte',
 	'src/components/menu/ConfirmModal.svelte',
+	'src/components/menu/checkpoints/CheckpointSaveDialog.svelte',
+	'src/components/menu/checkpoints/CheckpointTimeline.svelte',
 	'src/components/menu/ExportPanel.svelte',
 	'src/components/menu/ImportDuplicatesModal.svelte',
 	'src/components/menu/ModulesManager.svelte',

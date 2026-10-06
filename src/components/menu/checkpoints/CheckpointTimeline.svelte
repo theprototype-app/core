@@ -6,7 +6,12 @@
 	// (`checkpoints`), so opening this never parses a scene. Also mounts the save dialog and
 	// installs the automatic-checkpoint follower (startCheckpoints, once).
 	import { onMount } from 'svelte';
-	import { Modal, Button } from 'flowbite-svelte';
+	// 38 R7: the shared ModalDialog (WindowChrome size="modal"), kit Button / Toggle / Checkbox /
+	// EmptyState, tokens only. "Automatic" is a Toggle (SPEC §2); ids and cp-* hooks kept.
+	import ModalDialog from '../../ui/ModalDialog.svelte';
+	import Button from '../../ui/Button.svelte';
+	import Toggle from '../../ui/Toggle.svelte';
+	import Checkbox from '../../ui/Checkbox.svelte';
 	import Icon from '../../ui/Icon.svelte';
 	import { checkpointsOpen, checkpointSaveOpen, hidePanels, restorePanels } from '../../../stores/appStore.js';
 	import {
@@ -152,11 +157,10 @@
 
 <CheckpointSaveDialog />
 
-<Modal
+<ModalDialog
 	title="Checkpoints"
 	bind:open={$checkpointsOpen}
-	modal={false}
-	onkeydown={(e) => {
+	onkeydown={(e: KeyboardEvent) => {
 		if (e.key !== 'Escape' || editing) return;
 		if (comparing) {
 			e.stopPropagation();
@@ -165,34 +169,31 @@
 		}
 		checkpointsOpen.set(false);
 	}}
-	outsideclose
-	size="lg"
-	class="tp-modal-frame"
-	classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
+	width="lg"
 >
 	<div id="checkpoint-timeline" class="flex flex-col gap-3 p-1">
 		<div class="flex flex-wrap items-center gap-2">
-			<Button id="checkpoint-new" size="xs" onclick={() => checkpointSaveOpen.set(true)}>
-				<Icon name="bookmark" size={16} class="mr-1" aria-hidden="true" />Save checkpoint…
+			<Button id="checkpoint-new" variant="primary" size="sm" icon="bookmark" onclick={() => checkpointSaveOpen.set(true)}>
+				Save checkpoint…
 			</Button>
-			<div class="tp-seg" role="group" aria-label="Which checkpoints">
-				<button id="checkpoint-scope-all" class="tp-seg-btn" aria-pressed={scope === 'all'} onclick={() => (scope = 'all')}>All</button>
+			<div class="cp-seg" role="group" aria-label="Which checkpoints">
+				<button id="checkpoint-scope-all" class="cp-seg-btn" aria-pressed={scope === 'all'} onclick={() => (scope = 'all')}>All</button>
 				<button
 					id="checkpoint-scope-scene"
-					class="tp-seg-btn"
+					class="cp-seg-btn"
 					aria-pressed={scope === 'scene'}
 					disabled={!sceneName}
 					title={sceneName ? 'Only checkpoints of “' + sceneName + '”' : 'This scene has no name yet'}
 					onclick={() => (scope = 'scene')}>This scene</button
 				>
 			</div>
-			<label class="cp-check-label">
-				<input id="checkpoint-show-auto" type="checkbox" class="tp-check" bind:checked={showAuto} />
-				Automatic
-			</label>
+			<span class="cp-check-label">
+				<Toggle id="checkpoint-show-auto" labelledby="checkpoint-show-auto-label" bind:checked={showAuto} />
+				<span id="checkpoint-show-auto-label">Automatic</span>
+			</span>
 			<button
 				id="checkpoint-compare"
-				class="ui-button-quiet inline-flex items-center gap-1 text-xs"
+				class="cp-btn inline-flex items-center gap-1 text-xs"
 				aria-pressed={comparing}
 				title="Tick two checkpoints (or one, against the scene as it is now)"
 				onclick={toggleCompare}
@@ -264,7 +265,7 @@
 						{#if comparing}
 							<input
 								type="checkbox"
-								class="tp-check cp-pick"
+								class="cp-pick"
 								aria-label={'Compare ' + row.name}
 								checked={picked.includes(row.id)}
 								onchange={() => togglePick(row.id)}
@@ -279,7 +280,7 @@
 							<div class="flex items-center gap-1">
 								{#if editing === row.id + ':name'}
 									<input
-										class="ui-input cp-name-input"
+										class="cp-input cp-name-input"
 										type="text"
 										maxlength="80"
 										bind:value={draft}
@@ -309,7 +310,7 @@
 							</div>
 							{#if editing === row.id + ':note'}
 								<textarea
-									class="ui-input cp-note-input"
+									class="cp-input cp-note-input"
 									rows="2"
 									maxlength="500"
 									bind:value={draft}
@@ -331,14 +332,14 @@
 						</div>
 						<div class="cp-actions">
 							<button
-								class="ui-button-quiet cp-restore inline-flex items-center gap-1 text-xs"
+								class="cp-btn cp-restore inline-flex items-center gap-1 text-xs"
 								disabled={$checkpointBusy}
 								onclick={() => void restore(row)}
 							>
 								<Icon name="rotate-ccw" size={16} aria-hidden="true" />Restore
 							</button>
 							<button
-								class="ui-button-quiet cp-icon"
+								class="cp-btn cp-icon"
 								aria-pressed={row.pinned}
 								title={row.pinned ? 'Unpin (may be removed when storage is full)' : 'Pin (never removed to make room)'}
 								aria-label={row.pinned ? 'Unpin' : 'Pin'}
@@ -346,7 +347,7 @@
 							>
 								{#if row.pinned}<Icon name="pin-off" size={16} aria-hidden="true" />{:else}<Icon name="pin" size={16} aria-hidden="true" />{/if}
 							</button>
-							<button class="ui-button-quiet cp-icon cp-delete" title="Delete" aria-label="Delete" onclick={() => void remove(row)}>
+							<button class="cp-btn cp-icon cp-delete" title="Delete" aria-label="Delete" onclick={() => void remove(row)}>
 								<Icon name="trash-2" size={16} class="ico-danger" aria-hidden="true" />
 							</button>
 						</div>
@@ -359,35 +360,113 @@
 		<span class="cp-muted mr-auto text-xs">
 			When storage is full the oldest unpinned checkpoints go first — automatic ones before named ones.
 		</span>
-		<Button color="alternative" onclick={() => checkpointsOpen.set(false)}>
-			<Icon name="x" size={16} class="mr-1" aria-hidden="true" />Close
+		<Button variant="outline" onclick={() => checkpointsOpen.set(false)}>
+			Close
 		</Button>
 	{/snippet}
-</Modal>
+</ModalDialog>
 
 <style>
+	/* 38 R7: the timeline's own small controls, from the tokens */
+	.cp-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		height: 28px;
+		padding: 0 8px;
+		border: 1px solid transparent;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text-2);
+		font: inherit;
+		font-size: var(--fs-desc);
+		cursor: pointer;
+	}
+	.cp-btn:hover:not(:disabled) {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.cp-btn:disabled {
+		opacity: 0.5;
+		cursor: default;
+	}
+	.cp-delete:hover:not(:disabled) {
+		color: var(--warn-text);
+	}
+	.cp-btn[aria-pressed='true'] {
+		color: var(--accent-text);
+	}
+	.cp-input {
+		box-sizing: border-box;
+		padding: 2px 6px;
+		border: 1px solid var(--border-input);
+		border-radius: var(--radius-input);
+		background: var(--surface-inset);
+		color: var(--text);
+		font: inherit;
+	}
+	.cp-input:focus {
+		outline: 2px solid var(--accent);
+		outline-offset: -1px;
+	}
+	.cp-pick {
+		width: 16px;
+		height: 16px;
+		accent-color: var(--accent);
+	}
+	.cp-seg {
+		display: inline-flex;
+		gap: 2px;
+		padding: 2px;
+		border: 1px solid var(--border-input);
+		border-radius: var(--radius-button);
+		background: var(--surface-inset);
+	}
+	.cp-seg-btn {
+		height: 26px;
+		padding: 0 10px;
+		border: 0;
+		border-radius: 6px;
+		background: transparent;
+		color: var(--text-muted);
+		font: inherit;
+		font-size: var(--fs-desc);
+		cursor: pointer;
+	}
+	.cp-seg-btn:hover:not(:disabled) {
+		color: var(--text);
+	}
+	.cp-seg-btn[aria-pressed='true'] {
+		background: var(--segment-on);
+		color: var(--text);
+		box-shadow: var(--shadow-thumb);
+	}
+	.cp-seg-btn:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
 	.cp-muted {
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 	}
 	.cp-good {
-		color: var(--ink-good, rgb(74 222 128));
+		color: var(--ink-good);
 	}
 	.cp-check-label {
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
 		font-size: 0.75rem;
-		color: var(--text-2, rgb(203 213 225));
+		color: var(--text-2);
 	}
 	.cp-meter {
 		height: 3px;
 		border-radius: 2px;
-		background: var(--surface-3, rgb(55 65 81));
+		background: var(--surface-inset);
 		overflow: hidden;
 	}
 	.cp-meter-fill {
 		height: 100%;
-		background: var(--accent-fill, rgb(37 99 235));
+		background: var(--accent);
 	}
 	.cp-day {
 		margin-top: 4px;
@@ -395,7 +474,7 @@
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 	}
 	.cp-list {
 		display: flex;
@@ -407,10 +486,10 @@
 		align-items: flex-start;
 		gap: 10px;
 		padding: 6px;
-		border: 1px solid var(--border, rgb(55 65 81));
+		border: 1px solid var(--border);
 		border-radius: 6px;
-		background: var(--surface-2, rgb(31 41 55));
-		color: var(--text, rgb(229 231 235));
+		background: var(--surface-2);
+		color: var(--text);
 	}
 	.cp-pick {
 		margin-top: 14px;
@@ -421,13 +500,13 @@
 		flex-shrink: 0;
 		object-fit: cover;
 		border-radius: 4px;
-		background: var(--surface-deep, rgb(17 24 39));
+		background: var(--surface-inset);
 	}
 	.cp-noimg {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 		font-size: 0.7rem;
 	}
 	.cp-body {
@@ -455,7 +534,7 @@
 	.cp-note {
 		text-align: left;
 		font-size: 0.75rem;
-		color: var(--text-2, rgb(203 213 225));
+		color: var(--text-2);
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 		cursor: text;
@@ -468,11 +547,11 @@
 		font-size: 0.65rem;
 		padding: 0 5px;
 		border-radius: 8px;
-		border: 1px solid var(--border, rgb(75 85 99));
-		color: var(--muted, rgb(156 163 175));
+		border: 1px solid var(--border);
+		color: var(--text-muted);
 	}
 	.cp-row :global(.cp-pin-ico) {
-		color: var(--accent, rgb(96 165 250));
+		color: var(--accent);
 	}
 	.cp-actions {
 		display: flex;
@@ -484,7 +563,7 @@
 		padding: 4px;
 	}
 	.cp-icon[aria-pressed='true'] {
-		color: var(--accent, rgb(96 165 250));
+		color: var(--accent);
 	}
 	.cp-empty {
 		display: flex;
@@ -493,17 +572,17 @@
 		gap: 6px;
 		padding: 24px 8px;
 		text-align: center;
-		color: var(--text-2, rgb(203 213 225));
+		color: var(--text-2);
 	}
 	.cp-compare {
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
 		padding: 8px;
-		border: 1px solid var(--border, rgb(55 65 81));
+		border: 1px solid var(--border);
 		border-radius: 6px;
-		background: var(--surface-2, rgb(31 41 55));
-		color: var(--text, rgb(229 231 235));
+		background: var(--surface-2);
+		color: var(--text);
 	}
 	.cp-frame {
 		position: relative;
@@ -513,7 +592,7 @@
 		margin: 0 auto;
 		overflow: hidden;
 		border-radius: 4px;
-		background: var(--surface-deep, rgb(17 24 39));
+		background: var(--surface-inset);
 	}
 	.cp-img {
 		position: absolute;
@@ -532,7 +611,7 @@
 		left: var(--split);
 		width: 2px;
 		transform: translateX(-1px);
-		background: var(--accent, rgb(96 165 250));
+		background: var(--accent);
 		pointer-events: none;
 	}
 	.cp-tag {
@@ -545,8 +624,8 @@
 		padding: 1px 6px;
 		border-radius: 4px;
 		font-size: 0.7rem;
-		background: rgb(var(--surface-deep-rgb, 17 24 39) / 0.8);
-		color: var(--text, rgb(229 231 235));
+		background: color-mix(in srgb, var(--bg-app) 80%, transparent);
+		color: var(--text);
 	}
 	.cp-tag-l {
 		left: 6px;

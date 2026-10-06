@@ -167,7 +167,7 @@
 <svelte:window onpointerdown={onWindowDown} />
 
 <div
-	class="ui-panel cxd-panel"
+	class="ui-panel tp-ui cxd-panel"
 	data-testid="connect-info-drawer"
 	bind:this={panelEl}
 	transition:slide={{ duration: 200, easing: cubicOut }}

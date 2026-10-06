@@ -300,7 +300,7 @@ export const VALIDATORS = {
 	// else onto userData)
 	objectParameters: (d) => {
 		if (d.parameter === 'lod') return isUuid(d.uuid) && (d.lod === null || (!!d.lod && typeof d.lod === 'object' && isArray(d.lod.levels)));
-		if (d.parameter === 'water' || d.parameter === 'bubbles') {
+		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));
 		}

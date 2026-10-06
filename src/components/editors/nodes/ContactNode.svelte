@@ -38,7 +38,7 @@
 			<label class="flex items-center gap-1">
 				<span class="w-14 shrink-0 text-[10px] text-gray-400">min m/s</span>
 				<input
-					class="nodrag flex-1"
+					class="nodrag nopan flex-1"
 					type="range"
 					min="0"
 					max="10"

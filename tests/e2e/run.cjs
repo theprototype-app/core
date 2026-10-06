@@ -10,7 +10,12 @@ const all = fs
 	.filter((file) => file.endsWith('.test.cjs'))
 	.sort();
 const args = process.argv.slice(2).filter((a) => a !== 'all');
-const chosen = args.length === 0 ? all : all.filter((f) => args.some((a) => f.includes(a)));
+// `@lock` = the 38 R1 behaviour lock (tests/e2e/lock.json), matched by EXACT suite name
+const lock = args.includes('@lock') ? require('./lock.json') : null;
+const lockNames = lock ? [...lock.suites, ...lock.adopted].map((n) => n + '.test.cjs') : [];
+const rest = args.filter((a) => a !== '@lock');
+const chosen =
+	args.length === 0 ? all : all.filter((f) => lockNames.includes(f) || rest.some((a) => f.includes(a)));
 
 if (chosen.length === 0) {
 	console.log('No tests match. Available: ' + all.join(', '));

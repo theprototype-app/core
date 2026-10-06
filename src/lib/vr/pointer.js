@@ -25,6 +25,8 @@ import { moduleWorldChildren } from '../moduleWorld';
 import { editingObject, vertexHandleMesh } from '../meshEdit';
 import { peers } from '../../stores/appStore';
 import { topLevelObjectOf } from '../objectActions';
+import { pickStack, primaryIndex } from '../selectThrough'; // 36 S6
+import { rayPass } from '../pickPass';
 import { vrKeyboardTarget } from '../vrKeyboard';
 import { pingColor } from '../ping';
 import { peerColor } from '../lockControl';
@@ -268,12 +270,15 @@ export function beamTarget(ray) {
 	let object = null;
 	let info = null;
 	if (group) {
-		const hits = ray.intersectObjects(group.children, true);
-		if (hits.length > 0) {
-			distance = hits[0].distance;
+		// 36 S6: the laser follows the pick-through rules — it ends on the object a press
+		// would select (the fish, not the water in front of it), the editor's or the game's
+		const stack = pickStack(ray.intersectObjects(group.children, true), topLevelObjectOf, rayPass());
+		const entry = stack.length ? stack[primaryIndex(stack)] : null;
+		if (entry) {
+			distance = entry.hit.distance;
 			hit = true;
-			object = topLevelObjectOf(hits[0].object);
-			info = hits[0];
+			object = entry.target;
+			info = entry.hit;
 		}
 	}
 	// 31 G5: a module's INTERACTIVE scene-root content (its board, its buttons, its level

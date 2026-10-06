@@ -11,7 +11,8 @@ import { animationTypes } from './nodeCatalog';
 import { isIndexValuedKind } from './hudKinds';
 import { moduleEffects, moduleFrameTasks } from './moduleSDK';
 import { moduleValueNodes, moduleNodeInputs, evalModuleValueNode } from './moduleNodeIO';
-import { runScript, runScriptValue } from './scriptRuntime';
+import { runScript, runScriptValue, runPlayerScript, reportScriptProblems, clearScriptError } from './scriptRuntime';
+import { builtinCodeActive, mergePlayerResult } from './builtinCode.js'; // 36-fb-code (F5): a leaf
 import { scriptInputs, scriptOutputs, isScriptValue, coerceInput } from './scriptIO'; // 34 D3: a leaf
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
@@ -85,6 +86,7 @@ let behavioursRef = null;
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
 import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
+import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
 // pattern) — a static edge would close the TDZ cycle history -> flowRuntime ->
@@ -484,7 +486,8 @@ const suspended = new Set();
  * restore is exactly what a suspended object must not get), module effects, scripts and
  * custom nodes (all of them may write a pose).
  */
-const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger']);
+// 36-fb F25: a rotor on a DYNAMIC body during a run drives it with torque (no pose write)
+const POSE_FREE_EFFECTS = new Set(['setcolor', 'setuniform', 'deviceparam', 'notetrigger', 'rotor']);
 
 /** @param {any} object */
 function captureBase(object) {
@@ -1702,6 +1705,26 @@ function charTargetOf(node, data) {
 	return implicitOwnerOf(node);
 }
 
+/**
+ * 36-fb-code (F5): run the Character Controller's "Player" code and fold its answer over the
+ * card's settings. `input` is THIS peer's keys (moveinput's axes + jump/sprint/crouch).
+ * @template {Record<string, any>} T @param {any} node @param {T} settings @param {number} time @returns {T}
+ */
+function playerCodeSettings(node, settings, time) {
+	const codes = inputRuntimeRef ? inputRuntimeRef.getInput().codes : new Set();
+	const input = {
+		x: (codes.has('KeyD') ? 1 : 0) - (codes.has('KeyA') ? 1 : 0),
+		z: (codes.has('KeyW') ? 1 : 0) - (codes.has('KeyS') ? 1 : 0),
+		jump: codes.has('Space'),
+		sprint: codes.has('ShiftLeft') || codes.has('ShiftRight'),
+		crouch: codes.has('ControlLeft') || codes.has('ControlRight')
+	};
+	const returned = runPlayerScript(node.id, String(node.data?.code ?? ''), { ...settings }, input, time);
+	const merged = mergePlayerResult(settings, returned);
+	reportScriptProblems(node.id, merged.problems);
+	return /** @type {T} */ (merged.settings);
+}
+
 /** @param {number} time @param {any} ctx */
 function updateCharNodes(time, ctx) {
 	// 1. THE DECLARATION. charcontroller is not an action and has no trigger: it is
@@ -1731,14 +1754,20 @@ function updateCharNodes(time, ctx) {
 			);
 		}
 		const d = resolveInputs(winner, nodes, edges, time, ctx);
-		setCharControl({
+		/** @type {{mode: 'fly' | 'walk', speed: number, jumpHeight: number, eyeHeight: number, gravity: boolean}} */
+		let settings = {
 			mode: d.mode === 'walk' ? 'walk' : 'fly',
 			speed: num(d.speed ?? DEFAULT_FLY_SPEED),
 			jumpHeight: num(d.jumpHeight ?? 1.2),
 			eyeHeight: num(d.eyeHeight ?? 1.7),
-			gravity: d.gravity !== false,
-			sourceNodeId: winner.id
-		});
+			gravity: d.gravity !== false
+		};
+		// 36-fb-code (F5): the Player's own code, when the author saved some. It runs on EVERY
+		// peer for THAT peer's own keys (the controller drives each peer's own camera, so the
+		// keys are local by nature — the moveinput rule). No code = the 21-E6 path, untouched.
+		if (builtinCodeActive(winner)) settings = playerCodeSettings(winner, settings, time);
+		else clearScriptError(winner.id);
+		setCharControl({ ...settings, sourceNodeId: winner.id });
 	}
 
 	// 2. THE ACTIONS, each on a fresh stamp for its OWN handle
@@ -3562,6 +3591,21 @@ function applyAnimation(object, base, anim, time, ctx) {
 				pivotVec.z + Math.sin(time * speed) * radius
 			);
 		}
+		return;
+	}
+	// 36-fb F25/F24: the water machinery (sim/motionNodes.js, a leaf)
+	if (anim.type === 'rotor') {
+		applyRotor(object, base, data, time, {
+			suspended: suspended.has(object.uuid),
+			physics: physicsRef,
+			pivot: originOffsetOf(object) ? originPivotOf(object, base).clone() : null,
+			key: anim.id + '|' + object.uuid,
+			now: performance.now()
+		});
+		return;
+	}
+	if (anim.type === 'flowfloat') {
+		applyFlowFloat(object, base, data, time, { root: sceneObjects, key: anim.id + '|' + object.uuid });
 		return;
 	}
 	if (anim.type === 'shake') {

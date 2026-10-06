@@ -61,7 +61,7 @@
 			<label class="flex w-full flex-col">
 				<span>object</span>
 				<select
-					class="nodrag"
+					class="nodrag nopan"
 					value={data.flowUuid ?? ''}
 					on:change={(e) => setNodeData(id, { flowUuid: e.currentTarget.value })}
 				>

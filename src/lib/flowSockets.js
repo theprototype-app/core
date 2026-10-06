@@ -154,6 +154,8 @@ const INPUT = {
 	distance: { a: 'object', b: 'object' },
 	proximity: { a: 'object', b: 'object' },
 	lookat: { target: 'object' },
+	rotor: { on: 'boolean' }, // 36-fb F25
+	flowfloat: { path: 'object' }, // 36-fb F24
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
 	setuniform: { value: 'number' },

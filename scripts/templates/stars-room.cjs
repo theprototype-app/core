@@ -344,6 +344,27 @@ function starsGraph() {
 	E('onover', 'confetti', 'trigger');
 	N('cheer', 'gamesound', 'Cheer', 3400, 2780, { sound: 'cheer' });
 	E('onover', 'cheer', 'trigger');
+
+	// ---- 36 F11: MAIN, READABLE. 350 nodes on one canvas read as noise; Main now shows six
+	// group cards (double-click one to open it) chosen so only a handful of wires cross between
+	// them, each with a note, and the author script's Tidy lays them out. Groups are views (N1):
+	// every node and wire above is unchanged.
+	const perStar = (/** @type {string[]} */ prefixes) => prefixes.flatMap((p) => Array.from({ length: 24 }, (_, i) => p + (i + 1)));
+	const sums = Array.from({ length: 23 }, (_, i) => 'sum' + (i + 2));
+	const GX = -2200;
+	g.T('n-readme', 'Stars Room — read me first', '**24 crystal stars** float in a glass room. Knock one (a hand in VR, your body on desktop) and it chimes; during a **round** each star you hit lights up, and lighting all 24 before the two-minute clock runs out wins. **Free play** has no clock. Clap both hands to make a new star.', GX, -1900, { color: 'blue', w: 340, h: 200 });
+	g.T('n-menus', 'Menus & buttons', 'The start screen, the **P** menu (resume, restart, quit, more stars) and the round-over buttons, each into its game state or screen, with the click sound.', GX, -1640, { color: 'gray', w: 300, h: 120 });
+	g.G('g-menus', 'Menus & buttons', ['bstart0', 'gostart', 'bfree', 'gofree', 'bstart', 'padstart', 'selstartpad', 'starthide', 'bagain', 'gomenu', 'breplay', 'pkey', 'pausetoggle', 'bresume', 'resumehide', 'brestart', 'restartreset', 'restartdelay', 'restartplay', 'restarthide', 'bquit', 'doquit', 'quithide', 'click', 'sayfree'], GX, -1500);
+	g.T('n-more', 'More stars & clap', '**More stars** (button or pad) spawns three copies of the template; a **clap** makes one between your hands. The two player settings switch pointing-to-move and clapping. A copy answers to the template, so its hits count too.', GX, -1300, { color: 'purple', w: 300, h: 140 });
+	g.G('g-more', 'More stars & clap', ['bmore', 'padmore', 'selmorepad', 'seltpl', 'spawn', 'setpoint', 'setclap', 'pointgrab', 'clap', 'clapme', 'clapspawn', 'clapfx', 'clapfx2', 'clapsnd', 'clapbuzz', 'tplhit', 'tplme', 'tplsnd'], GX, -1140);
+	g.T('n-stars', 'The 24 stars', 'One row per star: a hit **chimes** and **sparkles**; MY hit counts a **touch**; the first hit of a round **lights** it (a per-round latch → its colour) and pays a coin. The lit count adds down the column (Lit 1-24) and every hit saves the best round.', GX, -940, { color: 'green', w: 300, h: 150 });
+	g.G('g-stars', 'The 24 stars', [...perStar(['sel', 'hit', 'snd', 'me', 'lat', 'lit', 'col', 'fx', 'first', 'coin']), ...sums, 'buzzlit', 'touch', 'storebest', 'storelast', 'storetime', 'winat'], GX, -770);
+	g.T('n-touch', 'Touches & leaderboard', 'Each player counts their own touches (one writer per row); the HUD shows yours, the total and the leaderboards.', GX, -560, { color: 'gray', w: 300, h: 110 });
+	g.G('g-touch', 'Touches & leaderboard', ['mytouch', 'hmine', 'hmine2', 'sumtouch', 'hsum', 'board', 'board2', 'board3'], GX, -430);
+	g.T('n-clock', 'Round clock', 'Two minutes counting down; when everyone playing is out of time the round is over (with a whistle).', GX, -300, { color: 'yellow', w: 300, h: 100 });
+	g.G('g-clock', 'Round clock', ['clock', 'hclock', 'elapsed', 'timeup', 'playing', 'timeandplay', 'alltime', 'gotime', 'upwhistle'], GX, -180);
+	g.T('n-result', 'Round result & best', 'All 24 lit (everyone agreeing) wins; the results screen reads the STORED count, time and best (a per-round latch reads un-lit once the round ends), with confetti and a cheer.', GX, -40, { color: 'yellow', w: 300, h: 130 });
+	g.G('g-result', 'Round result & best', ['hlit', 'alllit', 'allwin', 'gowin', 'onround', 'zerolast', 'zerotime', 'storedlast', 'storedtime', 'storedbest', 'won', 'titlepick', 'htitle', 'linepick', 'pickvalue', 'hfinal', 'hbest', 'hbest0', 'saygo', 'whistle', 'fanfare', 'onover', 'confetti', 'cheer'], GX, 120);
 	return g.done();
 }
 
@@ -413,6 +434,8 @@ const STARS_DEF = {
 	view: { pos: [0, 3.4, 11], target: [0, 1.6, 0] },
 	thumb: { camera: 'Card camera' },
 	graphs: { scene: starsGraph() },
+	// 36 F11: six group cards laid out by the node editor's own Tidy
+	graphTidy: 'layout',
 	hud: {
 		scene: {
 			active: '',

@@ -17,7 +17,7 @@
 			{data.module || '—'}{data.file ? '/' + data.file : ''}
 		</span>
 		<button
-			class="nodrag coderef-open self-start rounded-sm bg-gray-600 px-2 py-0.5 text-white hover:bg-gray-500"
+			class="nodrag nopan coderef-open self-start rounded-sm bg-gray-600 px-2 py-0.5 text-white hover:bg-gray-500"
 			onclick={() => openCode(openCodeRequestFor({ id, type: 'coderef', data }, $activeGraphId))}
 		>
 			Open code

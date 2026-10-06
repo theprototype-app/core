@@ -11,11 +11,17 @@
 	import PanelHeader from '../ui/PanelHeader.svelte';
 	import Section from '../ui/Section.svelte';
 	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
+	import SelectionPassSetting from './scene/SelectionPassSetting.svelte'; // 36 F22 / S8
+	import SimOnLoadSetting from './scene/SimOnLoadSetting.svelte';
+	import FluidBudgetSetting from './scene/FluidBudgetSetting.svelte'; // 36-fb S3
 	import LodGroupPanel from './LodGroupPanel.svelte';
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
+	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
+	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
+	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
 	import DragRow from '../ui/DragRow.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
@@ -1446,6 +1452,9 @@
 	transition:fly={insTransition}
 	class={'fixed inset-e-0 top-16 z-50 w-80 overflow-y-auto bg-white p-4 dark:bg-gray-800 rounded-tl-lg pt-0' + (bottomRounded ? ' rounded-bl-lg' : '')}
 	id="inspector"
+	data-key-scope="panel"
+	role="region"
+	aria-label="Properties"
 >
 	<!-- bottom-sheet drag handle (shown only in the narrow bottom-sheet layout) -->
 	<div
@@ -1916,6 +1925,7 @@
 					</button>
 				</div>
 				<CameraHoldSetting /><!-- 36 L2: scene data, saved + replicated -->
+				<SimOnLoadSetting /><!-- 36-fb-water F14: scene data, saved + replicated -->
 				<p class="ui-section-label" data-anchor="Saved views">Saved views</p>
 				<div class="ui-row items-center gap-2">
 					<button id="bookmark-save" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => saveBookmark()}>
@@ -2361,6 +2371,7 @@
 				<p class="text-[10px] uppercase tracking-wide text-gray-500">World</p>
 				<!-- CL-A A6: shared scene gravity (replicated singleton, applies live) -->
 				<SliderRow label="Gravity" min={-20} max={5} step={0.1} value={$sceneGravity} onchange={(v) => setSceneGravity(v)} />
+				<FluidBudgetSetting /><!-- 36-fb S3: scene data, saved + replicated -->
 				<SliderRow
 					id="physics-timescale"
 					label="Time scale"
@@ -2727,6 +2738,8 @@
 					onclick={() => editEnvSky({ fog: null })}>Remove Fog</Button
 				>
 			</Section>
+			<!-- 36 F22 / S8: scene data, saved + replicated -->
+			<Section label="Advanced" aliases={['Selection']}><SelectionPassSetting /></Section>
 		</div>
 	{:else if $moduleSelection && !$selectedObjects.length}
 		<!-- 30 P3: a Module content row (a PROXY, not an object): whose it is, and where it
@@ -3829,6 +3842,8 @@
 			{/if}
 
 			{#if $selectedObject.userData?.fluid}<FluidTankSection object={$selectedObject} />{/if}<!-- 36-sim U2b -->
+			{#if $selectedObject.userData?.fluidEmitter}<FluidEmitterSection object={$selectedObject} />{/if}<!-- 36-fb F23 -->
+			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
 			{#if !$selectedObject.isLight}
 				<Section label="Physics">
 					{#if multiCount}
@@ -3945,6 +3960,7 @@
 						</div>
 						<PhysicsFloats object={$selectedObject} {setPhysics} /><!-- 36-sim I1 -->
 					{/if}
+					<FluidInteractionRow targets={insTargets} /><!-- 36-fb F23 -->
 					<!-- CL-A A7: per-object collider preview (local, this device) -->
 					<Checkbox
 						id="physics-show-collider"

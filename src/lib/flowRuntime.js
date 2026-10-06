@@ -3788,14 +3788,17 @@ function applyCameraRig(object, anim, data) {
 	if (!targetPos) return; // nothing to follow: the camera keeps its authored pose
 	const key = anim.id + '|' + object.uuid;
 	const now = performance.now() / 1000;
+	// the restore loop has just put the marker back at its AUTHORED pose: that is what lookat keeps
+	// as its position and follow keeps as its orientation
+	object.updateWorldMatrix(true, false);
+	const base = { pos: object.getWorldPosition(new THREE.Vector3()), quat: object.getWorldQuaternion(new THREE.Quaternion()) };
 	let state = cameraRigState.get(key);
 	if (!state) {
-		object.updateWorldMatrix(true, false);
-		state = { pos: object.getWorldPosition(new THREE.Vector3()), quat: object.getWorldQuaternion(new THREE.Quaternion()), t: now };
+		state = { pos: base.pos.clone(), quat: base.quat.clone(), t: now };
 		cameraRigState.set(key, state);
 	}
 	const offset = validVec(data.offset) ?? [num(data.ox ?? 0), num(data.oy ?? 2), num(data.oz ?? 5)];
-	const goal = rigGoal(state, { pos: targetPos, quat: targetQuat }, { mode: data.mode, space: data.space, offset, aim: num(data.aim ?? 0) });
+	const goal = rigGoal(base, { pos: targetPos, quat: targetQuat }, { mode: data.mode, space: data.space, offset, aim: num(data.aim ?? 0) });
 	const next = rigStep(state, goal, num(data.damping ?? 0.25), now - state.t);
 	state.pos.copy(next.pos);
 	state.quat.copy(next.quat);

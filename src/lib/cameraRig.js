@@ -25,7 +25,9 @@ const _q = new THREE.Quaternion();
 
 /**
  * The pose the rig is heading for this frame (no smoothing).
- * @param {{pos: THREE.Vector3, quat: THREE.Quaternion}} cam the camera's CURRENT world pose
+ * @param {{pos: THREE.Vector3, quat: THREE.Quaternion}} cam the camera's AUTHORED world pose — what
+ *   `lookat` keeps as the position and `follow` keeps as the orientation (never the smoothed pose,
+ *   or a mode switch would freeze the camera wherever the last mode left it)
  * @param {{pos: THREE.Vector3, quat?: THREE.Quaternion}} target the target's world pose
  * @param {{mode?: string, space?: string, offset?: number[], aim?: number}} opts
  * @returns {{pos: THREE.Vector3, quat: THREE.Quaternion}}
@@ -49,12 +51,13 @@ export function rigGoal(cam, target, opts) {
 /**
  * One smoothed step from `cam` toward `goal`. @param {{pos: THREE.Vector3, quat: THREE.Quaternion}} cam
  * @param {{pos: THREE.Vector3, quat: THREE.Quaternion}} goal @param {number} damping seconds (0 = rigid)
- * @param {number} dt seconds since the last step (clamped to 0..0.25)
+ * @param {number} dt seconds since the last step. NOT clamped: an exponential step can never
+ *   overshoot, and a clamp makes the camera fall behind whenever frames are rare (a throttled tab)
  * @returns {{pos: THREE.Vector3, quat: THREE.Quaternion}}
  */
 export function rigStep(cam, goal, damping, dt) {
 	const tau = Number.isFinite(damping) ? Math.max(0, damping) : 0;
-	const step = Math.min(Math.max(Number.isFinite(dt) ? dt : 0, 0), 0.25);
+	const step = Math.max(Number.isFinite(dt) ? dt : 0, 0);
 	const alpha = tau <= 0 ? 1 : 1 - Math.exp(-step / tau);
 	return {
 		pos: cam.pos.clone().lerp(goal.pos, alpha),

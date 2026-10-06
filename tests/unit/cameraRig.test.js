@@ -54,9 +54,10 @@ describe('rigStep', () => {
 		expect(one).toBeGreaterThan(0);
 		expect(one).toBeLessThan(10);
 	});
-	it('a long stall (a backgrounded tab) is clamped, never overshoots', () => {
+	it('a long gap between frames (a throttled tab) catches up but never overshoots', () => {
 		const p = rigStep(cam(), goal, 0.5, 30).pos.x;
 		expect(p).toBeLessThanOrEqual(10);
-		expect(p).toBeCloseTo(10 * (1 - Math.exp(-0.25 / 0.5)), 9);
+		expect(p).toBeGreaterThan(9.99);
+		expect(rigStep(cam(), goal, 0.5, 0.25).pos.x).toBeCloseTo(10 * (1 - Math.exp(-0.25 / 0.5)), 9);
 	});
 });

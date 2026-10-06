@@ -53,6 +53,11 @@ jobs:
       # the subscriber for the session.
       - name: no bare localStorage
         run: node scripts/check-storage.cjs
+      # 38 R2: colours come from the redesign tokens. WARNING mode while the redesign
+      # migrates area by area — it only fails when a token-CLEAN file (its CLEAN list)
+      # grows a raw colour. R11 switches this to --strict.
+      - name: redesign tokens (warning mode)
+        run: node scripts/check-tokens.cjs
 
   # 34 B3: scene-lint over every scene core ships (the seed) and every scene of the scenes ref
   # the perf budget is about (perf/budgets.json), with the packs checkout for the kit rules.

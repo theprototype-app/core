@@ -211,7 +211,7 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
-		min-height: 40px;
+		min-height: var(--row-h);
 		padding: var(--space-1) var(--space-3);
 		font-size: var(--fs-desc);
 		color: var(--text);

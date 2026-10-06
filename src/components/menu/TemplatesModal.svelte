@@ -532,7 +532,7 @@
 		margin-bottom: var(--space-4);
 	}
 	.tpl-chip {
-		height: 28px;
+		height: var(--control-h-sm);
 		padding: 0 12px;
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-pill);
@@ -602,8 +602,8 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 28px;
-		height: 28px;
+		width: var(--icon-button);
+		height: var(--icon-button);
 		color: var(--text);
 		background: color-mix(in srgb, var(--surface-1) 80%, transparent);
 		border: 1px solid var(--border-strong);
@@ -672,7 +672,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
-		height: 28px;
+		height: var(--control-h-sm);
 		padding: 0 10px;
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-input);

@@ -314,8 +314,8 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: var(--space-4);
-		min-height: 48px;
-		padding: var(--space-2) var(--space-4);
+		min-height: var(--nav-row-h);
+		padding: var(--nav-row-pad-y) var(--space-4);
 	}
 	.ex-check + .ex-check {
 		border-top: 1px solid var(--border);

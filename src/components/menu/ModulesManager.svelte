@@ -625,7 +625,7 @@
 		flex-wrap: wrap;
 		align-items: center;
 		gap: var(--space-2) 14px;
-		padding: 14px 16px;
+		padding: var(--setting-row-pad-y) 16px;
 	}
 	.mm-row + .mm-row {
 		border-top: 1px solid var(--border);
@@ -803,7 +803,7 @@
 		gap: 6px;
 	}
 	.mm-chip {
-		height: 28px;
+		height: var(--control-h-sm);
 		padding: 0 12px;
 		border: 1px solid var(--border-strong);
 		border-radius: var(--radius-pill);

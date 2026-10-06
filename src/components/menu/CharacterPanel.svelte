@@ -569,7 +569,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: var(--space-1);
-		height: 30px;
+		height: var(--control-h-sm);
 		padding: 0 12px;
 		border-radius: var(--radius-pill);
 		border: 1px solid var(--border-strong);
@@ -601,7 +601,7 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-3);
-		min-height: 44px;
+		min-height: var(--row-h);
 		padding: var(--space-1) var(--space-3);
 	}
 	.cp-row + .cp-row {

@@ -1203,7 +1203,7 @@
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
-		height: 28px;
+		height: var(--control-h-sm);
 		padding: 0 8px;
 		border: 1px solid transparent;
 		border-radius: var(--radius-input);
@@ -1253,7 +1253,7 @@
 		align-items: center;
 		justify-content: center;
 		min-width: 28px;
-		height: 26px;
+		height: calc(var(--control-h-sm) - 6px);
 		padding: 0 10px;
 		border: 0;
 		border-radius: 6px;

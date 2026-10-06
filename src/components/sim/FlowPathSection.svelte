@@ -69,7 +69,7 @@
 </script>
 
 <div data-keywords={keywords} class="contents">
-	<Section label="Flow path">
+	<Section variant="panel" label="Flow path">
 		<div data-tour="flow-path" class="contents">
 			<div class="ui-row items-center gap-2">
 				<span class="w-20 shrink-0 text-xs text-gray-400">Kind</span>

@@ -19,7 +19,7 @@
 	}
 </script>
 
-<Section label="Fluid tank">
+<Section variant="panel" label="Fluid tank">
 	<div data-tour="fluid-tank" class="contents">
 		<SliderRow id="fluid-count" label="Particles" min={200} max={FLUID_MAX_PARTICLES} step={100} decimals={0} value={f.count} onchange={(v) => set({ count: v })} />
 		<SliderRow id="fluid-fill" label="Fill" min={0} max={0.95} step={0.05} value={f.fill} onchange={(v) => set({ fill: v })} />

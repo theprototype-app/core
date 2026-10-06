@@ -134,12 +134,12 @@
 		{#if collapsible && !filtering}
 			<button type="button" class="sec-panel-head" aria-expanded={showContent} onclick={toggle}>
 				<span class="sec-chev" class:sec-chev-open={showContent} aria-hidden="true"><Icon name="chevron-right" size={16} strokeWidth={1.75} /></span>
-				<span class="sec-title">{label}</span>
+				<span class="sec-title ui-section-label">{label}</span>
 				{#if badge}<Badge tone="scope" text={badge} />{/if}
 			</button>
 		{:else}
 			<div class="sec-panel-head sec-static">
-				<span class="sec-title">{label}</span>
+				<span class="sec-title ui-section-label">{label}</span>
 				{#if badge}<Badge tone="scope" text={badge} />{/if}
 			</div>
 		{/if}
@@ -183,8 +183,12 @@
 		gap: var(--space-2);
 		padding: 0 2px;
 	}
+	/* a panel title also wears `ui-section-label` — the HOOK the Inspector's deep links,
+	   the behaviour lock and the suites read section names through (its utility look is
+	   overridden here: these scoped rules are unlayered, so they win) */
 	.sec-title {
 		margin: 0;
+		padding: 0;
 		font-size: var(--fs-section);
 		font-weight: 600;
 		letter-spacing: var(--tracking-section);

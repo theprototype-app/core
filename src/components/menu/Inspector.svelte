@@ -8,7 +8,7 @@
 	import { Checkbox, Button, Tooltip } from 'flowbite-svelte';
 	import { fly } from 'svelte/transition';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
-	import PanelHeader from '../ui/PanelHeader.svelte';
+	import InspectorHead from './inspector/InspectorHead.svelte';
 	import Section from '../ui/Section.svelte';
 	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
 	import SelectionPassSetting from './scene/SelectionPassSetting.svelte'; // 36 F22 / S8
@@ -18,6 +18,7 @@
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
+	import PropRow from '../ui/PropRow.svelte';
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
@@ -1450,7 +1451,7 @@
 <div
 	style={drawerStyle + '; --inspector-h: ' + inspectorH + 'px'}
 	transition:fly={insTransition}
-	class={'fixed inset-e-0 top-16 z-50 w-80 overflow-y-auto bg-white p-4 dark:bg-gray-800 rounded-tl-lg pt-0' + (bottomRounded ? ' rounded-bl-lg' : '')}
+	class={'tp-ui ins-shell fixed inset-e-0 top-16 z-50 w-80 overflow-y-auto p-4 pt-0' + (bottomRounded ? ' ins-rounded-bl' : '')}
 	id="inspector"
 	data-key-scope="panel"
 	role="region"
@@ -1468,9 +1469,7 @@
 	</div>
 	{#if $inspectorKind === 'file'}
 		<!-- Explorer file properties (107) -->
-		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
-			<PanelHeader title={inspectedItem?.name ?? 'File'} badge="File" onclose={() => inspectorClose.set(true)} />
-		</div>
+		<InspectorHead title={inspectedItem?.name ?? 'File'} icon="file-text" badge="File" onclose={() => inspectorClose.set(true)} />
 		{#if inspectedItem}
 			<div id="file-properties" class="flex flex-col gap-3">
 				<div class="flex justify-center">
@@ -1482,7 +1481,7 @@
 						</span>
 					{/if}
 				</div>
-				<Section label="File">
+				<Section variant="panel" label="File">
 					<div class="ui-row">
 						<span class="w-16 text-gray-400">Name</span>
 						<input
@@ -1505,7 +1504,7 @@
 						<div class="ui-row"><span class="w-16 text-gray-400">Details</span><span>{fileDetails}</span></div>
 					{/if}
 				</Section>
-				<Section label="Actions">
+				<Section variant="panel" label="Actions">
 					<div class="flex flex-wrap gap-2">
 						{#if inspectedItem.kind === 'text' || inspectedItem.kind === 'image'}
 							<Button size="xs" color="alternative" onclick={() => openInspectedItem()}>
@@ -1527,28 +1526,18 @@
 			<p class="p-3 text-sm italic text-gray-400">The file was removed.</p>
 		{/if}
 	{:else if $inspectorKind === 'scene'}
-		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
-			<PanelHeader
-				title="Scene"
-				badge="Scene"
-				pinned={$inspectorPinned}
-				onpin={() => inspectorPinned.update((v) => !v)}
-				onclose={() => inspectorClose.set(true)}
-			/>
-			<!-- PFX-C follow-up: property search — Sections filter by rendered text -->
-			<input
-				id="inspector-search"
-				type="search"
-				class="ui-input mb-2 w-full"
-				placeholder="Filter properties…"
-				value={$inspectorFilter}
-				oninput={(/** @type {any} */ e) => inspectorFilter.set(e.currentTarget.value)}
-				onkeydown={(/** @type {any} */ e) => e.key === 'Escape' && inspectorFilter.set('')}
-			/>
-		</div>
+		<InspectorHead
+			title="Scene"
+			icon="sun"
+			badge="Scene"
+			filter
+			pinned={$inspectorPinned}
+			onpin={() => inspectorPinned.update((v) => !v)}
+			onclose={() => inspectorClose.set(true)}
+		/>
 
 		<div class="flex flex-col gap-3">
-			<Section label="Environment">
+			<Section variant="panel" label="Environment">
 				<div id="environment-presets" class="flex flex-wrap gap-1">
 					{#each Object.entries(ENVIRONMENT_PRESETS) as [key, preset]}
 						<button
@@ -1691,7 +1680,7 @@
 				</p>
 			</Section>
 
-			<Section label="Music">
+			<Section variant="panel" label="Music">
 				<p class="ui-section-label">Scene track (shared)</p>
 				<select
 					class="ui-input w-full"
@@ -1731,7 +1720,7 @@
 				</p>
 			</Section>
 
-			<Section label="View">
+			<Section variant="panel" label="View">
 				<p class="ui-section-label">Viewport — this device</p>
 				<div id="view-mode-switch" class="flex flex-wrap gap-1">
 					{#each [['shaded', 'Shaded'], ['shaded-ao', 'Shaded + AO'], ['wireframe', 'Wireframe']] as [mode, label] (mode)}
@@ -1788,7 +1777,7 @@
 				 The LABEL changed and the deep-link name did not: `openSceneSection` matches
 				 on it, so both names resolve (the 21-G1 rule — the user-visible word moves,
 				 the identifier already written down does not). -->
-			<Section label="Scene look" aliases={['Post-processing']}>
+			<Section variant="panel" label="Scene look" aliases={['Post-processing']}>
 				<p class="mb-1 text-[10px] text-gray-400">
 					Three layers, all of them scene data that everyone sees: effects over the
 					finished frame (below), a default material every object without its own
@@ -1814,7 +1803,7 @@
 			     "Camera lens" sub-label buried in View): lens, clip planes, orbit feel,
 			     framing shortcuts and the saved views. All LOCAL, never replicated —
 			     except 36 L2's start-view hold, which is scene data (CameraHoldSetting). -->
-			<Section label="Camera">
+			<Section variant="panel" label="Camera">
 				<div id="lens-presets" class="flex flex-wrap gap-1">
 					{#each LENS_PRESETS as p (p.label)}
 						<button
@@ -1973,7 +1962,7 @@
 
 			<!-- 16-P3: grid + snapping are LOCAL view prefs (like the clip planes and
 			     the render mode above) — peers each get their own. -->
-			<Section label="Grid">
+			<Section variant="panel" label="Grid">
 				<Checkbox
 					id="grid-show"
 					checked={!!$showGrid}
@@ -2114,7 +2103,7 @@
 				</div>
 			</Section>
 
-			<Section label="Snapping">
+			<Section variant="panel" label="Snapping">
 				<Checkbox
 					id="snap-enabled"
 					checked={$snapEnabled}
@@ -2363,7 +2352,7 @@
 				</p>
 			</Section>
 
-			<Section label="Physics">
+			<Section variant="panel" label="Physics">
 				<!-- B4: ONE section, three labelled sub-blocks (the Snapping section's
 					 internal grouping). Splitting it would break its collapse state, the
 					 openSceneSection('Physics') deep link AND inspectorFilter, all three
@@ -2687,7 +2676,7 @@
 				</p>
 			</Section>
 
-			<Section label="Background">
+			<Section variant="panel" label="Background">
 				<ColorPicker
 					isAlpha={false}
 					isTextInput={true}
@@ -2707,7 +2696,7 @@
 				/>
 			</Section>
 
-			<Section label="Fog">
+			<Section variant="panel" label="Fog">
 				<ColorPicker
 					isAlpha={false}
 					isTextInput={true}
@@ -2739,20 +2728,19 @@
 				>
 			</Section>
 			<!-- 36 F22 / S8: scene data, saved + replicated -->
-			<Section label="Advanced" aliases={['Selection']}><SelectionPassSetting /></Section>
+			<Section variant="panel" label="Advanced" aliases={['Selection']}><SelectionPassSetting /></Section>
 		</div>
 	{:else if $moduleSelection && !$selectedObjects.length}
 		<!-- 30 P3: a Module content row (a PROXY, not an object): whose it is, and where it
 		     is edited — never transform rows the module would overwrite on its next rebuild -->
-		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
-			<PanelHeader
-				title="Properties"
-				badge="Module content"
-				pinned={$inspectorPinned}
-				onpin={() => inspectorPinned.update((v) => !v)}
-				onclose={() => inspectorClose.set(true)}
-			/>
-		</div>
+		<InspectorHead
+			title="Properties"
+			icon="package"
+			badge="Module content"
+			pinned={$inspectorPinned}
+			onpin={() => inspectorPinned.update((v) => !v)}
+			onclose={() => inspectorClose.set(true)}
+		/>
 		<div id="module-content-card" class="mt-2 flex flex-col gap-2 rounded-sm border border-gray-600/60 p-2 text-xs text-gray-300">
 			<p class="text-sm font-semibold text-gray-100">{$moduleSelection.label}</p>
 			<p>Made by the <strong>{$moduleSelection.moduleName}</strong> module — edit it with its toolbox or nodes.</p>
@@ -2761,25 +2749,15 @@
 			{/if}
 		</div>
 	{:else if $selectedObject?.name !== undefined}
-		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
-			<PanelHeader
-				title="Properties"
-				badge={multiCount ? `${multiCount} objects` : $selectedObject.type}
-				pinned={$inspectorPinned}
-				onpin={() => inspectorPinned.update((v) => !v)}
-				onclose={() => inspectorClose.set(true)}
-			/>
-			<!-- PFX-C follow-up: property search — Sections filter by rendered text -->
-			<input
-				id="inspector-search"
-				type="search"
-				class="ui-input mb-2 w-full"
-				placeholder="Filter properties…"
-				value={$inspectorFilter}
-				oninput={(/** @type {any} */ e) => inspectorFilter.set(e.currentTarget.value)}
-				onkeydown={(/** @type {any} */ e) => e.key === 'Escape' && inspectorFilter.set('')}
-			/>
-		</div>
+		<InspectorHead
+			title="Properties"
+			icon="box"
+			badge={multiCount ? `${multiCount} objects` : $selectedObject.type}
+			filter
+			pinned={$inspectorPinned}
+			onpin={() => inspectorPinned.update((v) => !v)}
+			onclose={() => inspectorClose.set(true)}
+		/>
 
 		<div class="flex flex-col gap-3">
 			{#if multiCount}
@@ -2832,7 +2810,7 @@
 
 			{#if $animatedObjects[$selectedObject.uuid]}
 				{@const anim = $animatedObjects[$selectedObject.uuid]}
-				<Section label="Animation">
+				<Section variant="panel" label="Animation">
 					<div id="animation-controls">
 						<ThemedSelect
 							class="mb-1"
@@ -2871,7 +2849,7 @@
 			     viz/preview poke) — the setPhysicsFor precedent. -->
 			{#if isCameraObject($selectedObject)}
 				{@const cam = cameraSpec($selectedObject)}
-				<Section label="Camera">
+				<Section variant="panel" label="Camera">
 					<div class="ui-row items-center gap-1">
 						<span class="w-20 shrink-0 text-xs text-gray-400">Kind</span>
 						{#each [['perspective', 'Perspective'], ['orthographic', 'Orthographic']] as [kind, label]}
@@ -2999,11 +2977,11 @@
 			{/if}
 			<!-- 36 U9: a kit piece still loading — its file, its progress, Retry / Replace / Remove -->
 			{#if !multiCount && isLoadingStubOf($selectedObject, $objectsGroup)}
-				<Section label="Loading">
+				<Section variant="panel" label="Loading">
 					<LoadStatePanel object={$selectedObject} />
 				</Section>
 			{/if}
-			<Section label="Transform">
+			<Section variant="panel" label="Transform">
 				{#if multiCount}
 					<!-- 17-D1 follow-up: for a SET these rows drive the selection's origin
 					     (the gizmo's pivot), so every axis has one real value instead of a
@@ -3041,44 +3019,55 @@
 							bind:value={$pivotMode} />
 					</div>
 				{/if}
-				<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
-					<span class="text-[11px] text-gray-400">{multiCount ? 'Origin' : 'Position'}</span>
-					<div id="inspector-position" class="grid grid-cols-3 gap-1">
-						<DragRow label="X" accent="text-red-400" step={0.02} unit="length"
+				<!-- 38 R5: the transform rows are PropRows — a fixed label column and the three
+				     axis fields as its control; every field is the same DragRow as before -->
+				<div class="ins-transform">
+					<PropRow label={multiCount ? 'Origin' : 'Position'} valueBox={false}>
+					{#snippet control()}
+					<div id="inspector-position" class="ins-axes">
+						<DragRow label="X" accent="ins-axis-x" step={0.02} unit="length"
 							value={multiCount ? ($pivotPose?.pos?.[0] ?? 0) : $selectedObject.position.x}
 							onchange={(v) => setTransform('position', 'x', v)} />
-						<DragRow label="Y" accent="text-green-400" step={0.02} unit="length"
+						<DragRow label="Y" accent="ins-axis-y" step={0.02} unit="length"
 							value={multiCount ? ($pivotPose?.pos?.[1] ?? 0) : $selectedObject.position.y}
 							onchange={(v) => setTransform('position', 'y', v)} />
-						<DragRow label="Z" accent="text-blue-400" step={0.02} unit="length"
+						<DragRow label="Z" accent="ins-axis-z" step={0.02} unit="length"
 							value={multiCount ? ($pivotPose?.pos?.[2] ?? 0) : $selectedObject.position.z}
 							onchange={(v) => setTransform('position', 'z', v)} />
 					</div>
+					{/snippet}
+					</PropRow>
 					{#if !isLight && !$pivotOnly}
-						<span class="text-[11px] text-gray-400">Rotation</span>
-						<div id="inspector-rotation" class="grid grid-cols-3 gap-1">
-							<DragRow label="X" accent="text-red-400" step={0.01} snap={RAD_SNAP} unit="angle"
+						<PropRow label="Rotation" valueBox={false}>
+						{#snippet control()}
+						<div id="inspector-rotation" class="ins-axes">
+							<DragRow label="X" accent="ins-axis-x" step={0.01} snap={RAD_SNAP} unit="angle"
 								value={multiCount ? ($pivotPose?.rot?.[0] ?? 0) : $selectedObject.rotation.x}
 								onchange={(v) => setTransform('rotation', 'x', v)} />
-							<DragRow label="Y" accent="text-green-400" step={0.01} snap={RAD_SNAP} unit="angle"
+							<DragRow label="Y" accent="ins-axis-y" step={0.01} snap={RAD_SNAP} unit="angle"
 								value={multiCount ? ($pivotPose?.rot?.[1] ?? 0) : $selectedObject.rotation.y}
 								onchange={(v) => setTransform('rotation', 'y', v)} />
-							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={RAD_SNAP} unit="angle"
+							<DragRow label="Z" accent="ins-axis-z" step={0.01} snap={RAD_SNAP} unit="angle"
 								value={multiCount ? ($pivotPose?.rot?.[2] ?? 0) : $selectedObject.rotation.z}
 								onchange={(v) => setTransform('rotation', 'z', v)} />
 						</div>
-						<span class="text-[11px] text-gray-400">Scale</span>
-						<div id="inspector-scale" class="grid grid-cols-3 gap-1">
-							<DragRow label="X" accent="text-red-400" step={0.01} snap={0.1}
+						{/snippet}
+						</PropRow>
+						<PropRow label="Scale" valueBox={false}>
+						{#snippet control()}
+						<div id="inspector-scale" class="ins-axes">
+							<DragRow label="X" accent="ins-axis-x" step={0.01} snap={0.1}
 								value={multiCount ? ($pivotPose?.scale?.[0] ?? 1) : $selectedObject.scale.x}
 								onchange={(v) => setTransform('scale', 'x', v)} />
-							<DragRow label="Y" accent="text-green-400" step={0.01} snap={0.1}
+							<DragRow label="Y" accent="ins-axis-y" step={0.01} snap={0.1}
 								value={multiCount ? ($pivotPose?.scale?.[1] ?? 1) : $selectedObject.scale.y}
 								onchange={(v) => setTransform('scale', 'y', v)} />
-							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={0.1}
+							<DragRow label="Z" accent="ins-axis-z" step={0.01} snap={0.1}
 								value={multiCount ? ($pivotPose?.scale?.[2] ?? 1) : $selectedObject.scale.z}
 								onchange={(v) => setTransform('scale', 'z', v)} />
 						</div>
+						{/snippet}
+						</PropRow>
 					{/if}
 				</div>
 				{#if originTarget}
@@ -3108,16 +3097,19 @@
 								</Button>
 							</div>
 						</div>
-						<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
-							<span class="text-[11px] text-gray-400">World</span>
-							<div id="inspector-origin" class="grid grid-cols-3 gap-1">
-								<DragRow label="X" accent="text-red-400" step={0.02} unit="length" value={originPos[0]}
+						<div class="ins-transform">
+							<PropRow label="World" valueBox={false}>
+							{#snippet control()}
+							<div id="inspector-origin" class="ins-axes">
+								<DragRow label="X" accent="ins-axis-x" step={0.02} unit="length" value={originPos[0]}
 									onchange={(v) => setOriginAxis('x', v)} />
-								<DragRow label="Y" accent="text-green-400" step={0.02} unit="length" value={originPos[1]}
+								<DragRow label="Y" accent="ins-axis-y" step={0.02} unit="length" value={originPos[1]}
 									onchange={(v) => setOriginAxis('y', v)} />
-								<DragRow label="Z" accent="text-blue-400" step={0.02} unit="length" value={originPos[2]}
+								<DragRow label="Z" accent="ins-axis-z" step={0.02} unit="length" value={originPos[2]}
 									onchange={(v) => setOriginAxis('z', v)} />
 							</div>
+							{/snippet}
+							</PropRow>
 						</div>
 						<div class="mt-1 flex flex-wrap gap-1">
 							{#if !isLight}
@@ -3183,10 +3175,10 @@
 			</Section>
 
 			{#if !isLight}
-				<Section label="Object">
-					<div class="ui-row items-center gap-2">
-						<span class="w-24 shrink-0 text-xs text-gray-400">Render order</span>
-						<div class="w-20 shrink-0">
+				<Section variant="panel" label="Object">
+					<PropRow label="Render order" labelFor="inspector-render-order" valueBox={false}>
+					{#snippet control()}
+						<div class="ins-axes ins-solo">
 							<DragRow
 								id="inspector-render-order"
 								value={$selectedObject.renderOrder}
@@ -3197,7 +3189,8 @@
 								onchange={(v) => setObjectParam('renderOrder', Math.round(v) || 0)}
 							/>
 						</div>
-					</div>
+					{/snippet}
+					</PropRow>
 					<Checkbox
 						checked={$selectedObject.frustumCulled}
 						onchange={(/** @type {any} */ e) => setObjectParam('frustumCulled', e.target.checked)}
@@ -3223,20 +3216,20 @@
 
 			{#if !isLight && !multiCount && $selectedObject?.uuid}
 				<!-- 33 (K6): the object's LOD GROUP — levels, transitions, Force LOD, edit a level -->
-				<Section label="LOD">
+				<Section variant="panel" label="LOD">
 					<LodGroupPanel uuid={$selectedObject.uuid} />
 				</Section>
 			{/if}
 
 			{#if !isLight && !multiCount && $selectedObject?.uuid}
 				<!-- 36-water: make any object water (a tank, a pool, an ocean) or a bubble emitter -->
-				<Section label="Water">
+				<Section variant="panel" label="Water">
 					<WaterPanel uuid={$selectedObject.uuid} />
 				</Section>
 			{/if}
 
 			{#if devPrimary}
-				<Section label="Device">
+				<Section variant="panel" label="Device">
 					<!-- 23-B4: the device's declared params, fanned over the selection; presets and
 						 the mixer live in the Music toolbox, which the link below opens on the primary -->
 					{#if devTargets.length > 1}
@@ -3296,7 +3289,7 @@
 			{/if}
 
 			{#if geoParams && geoSpec}
-				<Section label="Geometry">
+				<Section variant="panel" label="Geometry">
 					<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">
 						{geoParams.gtype}{geoTargets.length > 1 ? ` · ${geoTargets.length} objects` : ''}
 					</p>
@@ -3375,7 +3368,7 @@
 			{/if}
 
 			{#if isGroup}
-				<Section label="Group">
+				<Section variant="panel" label="Group">
 					<p class="px-1 text-xs text-gray-400">
 						{$selectedObject.children.length} direct child{$selectedObject.children.length === 1 ? '' : 'ren'},
 						{countTree($selectedObject)} object{countTree($selectedObject) === 1 ? '' : 's'} in total.
@@ -3384,7 +3377,7 @@
 			{/if}
 
 			{#if isLight}
-				<Section label="Light">
+				<Section variant="panel" label="Light">
 					<ColorPicker
 						isAlpha={false}
 						isTextInput={true}
@@ -3432,10 +3425,10 @@
 							}}
 						/>
 					{/if}
-					<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
-						<span class="text-[11px] text-gray-400">Intensity</span>
-						<div id="inspector-intensity">
-							<DragRow label="I" accent="text-yellow-300" step={0.02} min={0} snap={0.5}
+					<PropRow label="Intensity" valueBox={false}>
+					{#snippet control()}
+						<div id="inspector-intensity" class="ins-axes ins-solo">
+							<DragRow step={0.02} min={0} snap={0.5} ariaLabel="Intensity"
 								value={$selectedObject.intensity}
 								onchange={(v) => {
 									$selectedObject.intensity = v;
@@ -3443,7 +3436,8 @@
 									sendLightUpdate();
 								}} />
 						</div>
-					</div>
+					{/snippet}
+					</PropRow>
 					{#each LIGHT_PARAMS[$selectedObject.type] ?? [] as spec (spec.key)}
 						<SliderRow
 							label={spec.label}
@@ -3474,11 +3468,11 @@
 								{$lightAimPicking === $selectedObject.uuid ? 'Picking… (Esc)' : 'Pick in viewport'}
 							</Button>
 						</div>
-						<div id="inspector-light-aim" class="grid grid-cols-3 gap-1">
+						<div id="inspector-light-aim" class="ins-axes">
 							{#each ['X', 'Y', 'Z'] as axis, index (axis)}
 								<DragRow
 									label={axis}
-									accent={['text-red-400', 'text-green-400', 'text-blue-400'][index]}
+									accent={['ins-axis-x', 'ins-axis-y', 'ins-axis-z'][index]}
 									step={0.05}
 									unit="length"
 									value={aimPoint[index]}
@@ -3539,7 +3533,7 @@
 			{/if}
 
 			{#if material}
-				<Section label="Material">
+				<Section variant="panel" label="Material">
 					{#if matCount}
 						<p id="material-multi-note" class="text-[10px] italic text-gray-400">
 							Applies to {matCount} selected objects.
@@ -3845,7 +3839,7 @@
 			{#if $selectedObject.userData?.fluidEmitter}<FluidEmitterSection object={$selectedObject} />{/if}<!-- 36-fb F23 -->
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
 			{#if !$selectedObject.isLight}
-				<Section label="Physics">
+				<Section variant="panel" label="Physics">
 					{#if multiCount}
 						<p id="physics-multi-note" class="text-[10px] italic text-gray-400">
 							Applies to {multiCount} selected objects.
@@ -3976,7 +3970,7 @@
 				<!-- 57.5: SPLINE — the record is the source of truth, so these rows edit
 				     it and let every peer rebuild the tube (never the geometry directly) -->
 				{#if spline}
-					<Section label="Spline">
+					<Section variant="panel" label="Spline">
 						<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">
 							{spline.points.length} control points
 						</p>
@@ -4102,7 +4096,7 @@
 				     Particles ▸ Add / Burst / Remove for a whole selection, which are
 				     the operations that are safe to apply blind. -->
 				{#if multiCount}
-					<Section label="Particles">
+					<Section variant="panel" label="Particles">
 						<p id="particles-multi-note" class="text-[10px] text-gray-400">
 							{multiCount} objects selected — an emitter is edited one object at a time so tuned
 							configs are not overwritten. Right-click the selection for Particles ▸ Add, Burst or
@@ -4110,7 +4104,7 @@
 						</p>
 					</Section>
 				{:else}
-				<Section label="Particles">
+				<Section variant="panel" label="Particles">
 					{#if !$selectedObject.userData.particles}
 						<div class="ui-row items-center gap-2">
 							<span class="w-20 shrink-0 text-xs text-gray-400">Emitter</span>
@@ -4296,6 +4290,87 @@
 {/if}
 
 <style>
+	/* 38 R5: the Inspector is a migrated surface — `.tp-ui` gives its whole body the SPEC
+	   tokens (one blue accent, the surface-2 panel, the UI sans); the chrome is the panel
+	   window's (WindowChrome in InspectorHead) */
+	.ins-shell {
+		background: var(--surface-2);
+		color: var(--text);
+		border: 1px solid var(--border);
+		border-right: 0;
+		border-top-left-radius: var(--radius-window);
+		box-shadow: var(--shadow-window);
+	}
+	.ins-rounded-bl {
+		border-bottom-left-radius: var(--radius-window);
+	}
+	.ins-shell {
+		padding-inline: 14px;
+	}
+	/* sub-headings inside a section ("Saved presets", "Shadow") in the section-header
+	   type, one step smaller; still `.ui-section-label` for the filter and deep links */
+	.ins-shell :global(p.ui-section-label) {
+		margin: 8px 0 0;
+		padding: 0;
+		font-size: var(--fs-badge);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		color: var(--text-faint);
+	}
+	/* transform rows: a narrower label column so three axis fields fit the panel */
+	.ins-transform {
+		display: flex;
+		flex-direction: column;
+		--prop-label-w: 64px;
+	}
+	/* axis fields (and a lone value box) drawn like PropRow's value box: the inset well,
+	   the input border, mono numbers — DragRow restyled from outside, behaviour untouched */
+	.ins-shell :global(.ins-axes) {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 4px;
+		flex: 1;
+		min-width: 0;
+		--field: var(--surface-inset);
+		--border: var(--border-input);
+		--color-primary-400: var(--accent);
+		--color-primary-500: var(--accent);
+	}
+	.ins-shell :global(.ins-axes.ins-solo) {
+		grid-template-columns: 64px;
+		justify-content: end;
+	}
+	.ins-shell :global(.ins-axes .dn-wrap) {
+		box-sizing: border-box;
+		min-height: 28px;
+		padding-inline: 5px;
+		border-radius: var(--radius-input);
+	}
+	.ins-shell :global(.ins-axes .dn-wrap:not(.dn-focus):not(.dn-scrub):hover) {
+		border-color: var(--border-strong);
+	}
+	.ins-shell :global(.ins-axes .dn-input) {
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-section);
+		color: var(--text);
+	}
+	.ins-shell :global(.ins-axis-x) {
+		color: var(--axis-x);
+	}
+	.ins-shell :global(.ins-axis-y) {
+		color: var(--axis-y);
+	}
+	.ins-shell :global(.ins-axis-z) {
+		color: var(--axis-z);
+	}
+	@media (max-width: 639.98px) {
+		.ins-shell :global(.ins-axes .dn-wrap) {
+			min-height: 36px;
+		}
+		.ins-shell :global(.ins-axes .dn-input) {
+			font-size: var(--fs-input);
+		}
+	}
 	/* 16-Q6: the three snapping rows line up — label | chips | field in ONE grid, so
 	   the numeric boxes share an edge no matter how many preset chips a row has */
 	.snap-row {

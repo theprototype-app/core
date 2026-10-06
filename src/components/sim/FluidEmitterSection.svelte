@@ -35,7 +35,7 @@
 </script>
 
 <div data-keywords={keywords} class="contents">
-	<Section label="Fluid emitter">
+	<Section variant="panel" label="Fluid emitter">
 		<div data-tour="fluid-emitter" class="contents">
 			<Checkbox id="fluid-emitter-on" checked={f.on} onchange={(/** @type {any} */ e) => set({ on: e.currentTarget.checked })}>Emitting</Checkbox>
 			<div class="ui-row items-center gap-2" title="Stream pours continuously; Spill releases the spill amount once">

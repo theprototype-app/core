@@ -47,6 +47,23 @@ h.run(async () => {
 			return v?.preset;
 		});
 	const undoCard = () => pa.locator('.tp-toast--undo');
+	/** the Undo button's own click (a mouse aimed at it races the stack reflowing as other
+	 * toasts come and go — measured: the press landed beside it and the offer expired); that a
+	 * person CAN press it is asserted separately by `onTop` */
+	const pressUndo = () =>
+		pa.evaluate(() => {
+			const b = [...document.querySelectorAll('.tp-toast--undo .tp-toast-action')].find((x) => x.textContent.trim() === 'Undo');
+			b?.click();
+			return !!b;
+		});
+	/** is the Undo button the topmost element at its own centre (nothing covers it) */
+	const onTop = () =>
+		pa.evaluate(() => {
+			const b = [...document.querySelectorAll('.tp-toast--undo .tp-toast-action')].find((x) => x.textContent.trim() === 'Undo');
+			if (!b) return false;
+			const r = b.getBoundingClientRect();
+			return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b;
+		});
 	async function openClear() {
 		await pa.evaluate(() => window.__stores.closeMenu.set(false));
 		await pa.waitForTimeout(300);
@@ -86,8 +103,27 @@ h.run(async () => {
 	await h.eventually(() => undoCard().isVisible(), (v) => v, '1.3 a toast offers Undo');
 	const text = await undoCard().textContent();
 	h.check(/3 objects cleared/.test(text) && /Still here:.*sky/.test(text), `1.4 it says what went and what stayed (${text?.replace(/\s+/g, ' ').trim()})`);
+	// what is at the Undo button's centre (a modal still open, an inert ancestor, a cover)
+	const probe = await pa.evaluate(() => {
+		const btns = [...document.querySelectorAll('.tp-toast--undo .tp-toast-action')].filter((b) => b.textContent.trim() === 'Undo');
+		return btns.map((b) => {
+			const r = b.getBoundingClientRect();
+			const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+			const cs = getComputedStyle(b);
+			return {
+				rect: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)],
+				at: at ? at.tagName + '#' + at.id + '.' + String(at.className).slice(0, 60) : null,
+				same: at === b,
+				inert: !!b.closest('[inert]'),
+				vis: cs.visibility + '/' + cs.opacity + '/' + cs.pointerEvents,
+				dialogs: [...document.querySelectorAll('dialog[open]')].map((d) => d.id + (d.matches(':modal') ? ':modal' : ''))
+			};
+		});
+	});
+	console.log('UNDO-PROBE ' + JSON.stringify(probe));
+	h.check(probe.length === 1 && probe[0].same, `1.5b the Undo button is on top at its own centre (${JSON.stringify(probe)})`);
 	h.check((await pa.locator('.tp-toast--undo .tp-toast-ttl').count()) >= 1, '1.5 the card shows the time left (draining bar)');
-	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click({ force: true }) // the stack reflows as other toasts come and go; the press is what is under test;
+	await pressUndo();
 	await h.eventually(() => uuids(pa), (u) => u.join() === original.join(), '1.6 Undo: A has the SAME objects back (uuids)', 30000);
 	await h.eventually(() => uuids(B.page), (u) => u.join() === original.join(), '1.7 and so does B', 30000);
 	await h.eventually(() => notes(B.page), (n) => n.includes('keep me'), '1.8 the note is back on B');
@@ -103,7 +139,7 @@ h.run(async () => {
 	await h.eventually(() => preset(B.page), (p) => p !== 'sunset', '2.1 Clear everything reset the sky on B', 20000);
 	await h.eventually(() => uuids(B.page), (u) => u.length === 0, '2.2 and emptied B');
 	await h.eventually(() => undoCard().isVisible(), (v) => v, '2.3 Undo offered');
-	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click({ force: true }) // the stack reflows as other toasts come and go; the press is what is under test;
+	await pressUndo();
 	await h.eventually(() => preset(B.page), (p) => p === 'sunset', '2.4 Undo: the sky is back on B', 30000);
 	await h.eventually(() => uuids(B.page), (u) => u.join() === original.join(), '2.5 the objects too', 30000);
 	h.check((await preset(pa)) === 'sunset', '2.6 and on A');
@@ -126,7 +162,7 @@ h.run(async () => {
 	// something else happens before the Undo: the toast must still undo the DELETE, not that
 	await pa.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
 	await h.eventually(() => uuids(pa), (u) => u.length === 2, '3.5 premise: another object was added after the delete');
-	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click({ force: true }) // the stack reflows as other toasts come and go; the press is what is under test;
+	await pressUndo();
 	await h.eventually(() => uuids(pa), (u) => doomed.every((id) => u.includes(id)) && u.length === 4, '3.6 Undo brings the two deleted objects back (the newer box stays)', 20000);
 	await h.eventually(() => uuids(B.page), (u) => doomed.every((id) => u.includes(id)), '3.7 on B too', 20000);
 
@@ -146,7 +182,7 @@ h.run(async () => {
 	await pa.evaluate(() => window.__stores.userModules.removeUserModule('r25-probe'));
 	h.check(JSON.stringify(await modState()) === JSON.stringify({ stored: false, loaded: false }), '4.2 Remove takes it out at once');
 	await h.eventually(() => undoCard().textContent(), (t) => /R25 Probe" removed/.test(t ?? ''), '4.3 a toast offers Undo');
-	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click({ force: true }) // the stack reflows as other toasts come and go; the press is what is under test;
+	await pressUndo();
 	await h.eventually(modState, (m) => m.stored && m.loaded, '4.4 Undo: installed and running again');
 	const persisted = await pa.evaluate(async () => {
 		const { idbGet } = await import('/src/lib/idb.js');
@@ -163,7 +199,8 @@ h.run(async () => {
 	await pa.locator('#settings-reset').click();
 	h.check((await pa.evaluate(() => localStorage.getItem('r25:probe'))) === null, '5.1 Reset settings clears the stored settings');
 	await h.eventually(() => undoCard().textContent(), (t) => /Settings reset/.test(t ?? ''), '5.2 a toast offers Undo');
-	await pa.locator('.tp-toast--undo .tp-toast-action', { hasText: 'Undo' }).click({ force: true }) // the stack reflows as other toasts come and go; the press is what is under test;
+	h.check(await onTop(), '5.2b with Settings still open, the Undo is above it (not covered by the dialog it came from)');
+	await pressUndo();
 	await pa.waitForTimeout(200);
 	h.check((await pa.evaluate(() => localStorage.getItem('r25:probe'))) === 'kept', '5.3 Undo writes them back');
 	const keysAfter = await pa.evaluate(() => Object.keys(localStorage).length);
@@ -174,7 +211,7 @@ h.run(async () => {
 	// ---- 6. the offer EXPIRES: after ~8 s there is nothing to undo ---------------------
 	await openClear();
 	await pa.locator('#confirm-dialog-clear').click();
-	await h.eventually(() => undoCard().isVisible(), (v) => v, '6.1 Undo offered');
+	await h.eventually(() => undoCard().isVisible(), (v) => v, '6.1 Undo offered', 20000);
 	// the drawer hides viewport toasts while open: the offer must still run out (its timer
 	// is the module's, not the rendered card's)
 	await pa.evaluate(() => window.__stores.toastsInDrawerOnly?.set?.(true));

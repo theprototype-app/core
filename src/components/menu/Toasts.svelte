@@ -156,7 +156,11 @@ const rowAge = (approval: any) => approvalAge(approval?.peerId);
 const roomFull = $derived(roomIsFull($peers));
 
 const stickyToasts = $derived($toastStore.filter((t: any) => t?.sticky));
-const transientToasts = $derived($toastStore.filter((t: any) => !t?.sticky));
+// 37 R25: an Undo offer sits in the CRITICAL tier (above modals): the action it takes back
+// often came FROM a dialog still open (Settings ▸ Reset settings), and an Undo under that
+// dialog is an Undo nobody can press. It is not folded into "+N more" either.
+const undoToasts = $derived($toastStore.filter((t: any) => t?.kind === 'undo'));
+const transientToasts = $derived($toastStore.filter((t: any) => !t?.sticky && t?.kind !== 'undo'));
 const hiddenCount = $derived(Math.max(0, transientToasts.length - MAX_TOASTS));
 const visibleToasts = $derived([...transientToasts.slice(-MAX_TOASTS), ...stickyToasts]);
 
@@ -587,6 +591,10 @@ style="z-index: var(--z-toast); pointer-events: none;"
 </div>
 {/if}
 
+<!-- 37 R25: Undo offers (above modals — see undoToasts) -->
+{#each undoToasts as toast (toast)}
+{@render toastCard(toast)}
+{/each}
 <!-- CN: the OUTBOUND "Connection request to peer / pending" toast was removed — the
      Connect pill already shows the "Waiting for approval…" state + a Cancel button, so
      the toast was redundant chrome. Incoming approval requests (above) still toast. -->
@@ -666,6 +674,13 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
      distinct objects): an UNKEYED each reuses rows here, so a neighbour's expiry
      migrated text across nodes and svelte 5.5x left a stuck duplicate behind -->
 {#each visibleToasts as toast (toast)}
+{@render toastCard(toast)}
+{/each}
+
+</div>
+</div><!-- /toasts-stack -->
+
+{#snippet toastCard(toast: any)}
 <div class="my-1 tp-toast" class:tp-toast--info={toast?.kind === 'info'} class:tp-toast--undo={toast?.kind === 'undo'} transition:fly={{ y: -8, duration: 180 }} use:autoDismiss={toast}>
     {#if toast?.kind === 'undo'}
         <!-- 37 R25: how long the Undo stays on offer, draining (CSS only; the timer lives in undoToast.js) -->
@@ -698,10 +713,7 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
         </div>
     </div>
 </div>
-{/each}
-
-</div>
-</div><!-- /toasts-stack -->
+{/snippet}
 
 <style>
     /* toasts stay clickable while the empty container area passes clicks through */

@@ -5,8 +5,9 @@
 	// fan: shader-driven members are skipped with its counted toast, N objects = ONE undo);
 	// "Save" snapshots the primary object's look into YOUR library; the pencil toggles
 	// rename / delete / export on your own swatches; a peer's library shows below yours, and
-	// any of their swatches applies or saves as a copy. Colours are theme tokens only.
-	import { Plus, Pencil, Check, X, Trash2, Download, Upload, Copy } from '@lucide/svelte';
+	// any of their swatches applies or saves as a copy. Built on the 38 redesign kit (Button,
+	// Icon via Button) and theme tokens only — `check-tokens` reports nothing here.
+	import Button from '../ui/Button.svelte';
 	import { selectedObject } from '../../stores/sceneStore';
 	import { showToast } from '../../stores/appStore';
 	import { nameOf } from '$lib/lockControl';
@@ -25,7 +26,7 @@
 		exportMaterialPreset,
 		importMaterialPreset
 	} from '$lib/materialPresets';
-	import { sameLook, swatchLayers, NAME_MAX } from '$lib/materialPresetsCore';
+	import { sameLook, swatchLayers, NAME_MAX, LOOK_DEFAULTS } from '$lib/materialPresetsCore';
 
 	/** @type {{ material: any, count?: number, fan: (label: string, fn: (object: any) => void) => void, primaryUuid?: string }} */
 	let { material, count = 0, fan, primaryUuid = '' } = $props();
@@ -59,7 +60,7 @@
 		const layers = swatchLayers(resolved);
 		if (!resolved.map) return layers.join(', ');
 		// the map multiplies the colour (exactly what the material does), under the shading
-		const color = resolved.color ?? '#ffffff';
+		const color = resolved.color ?? LOOK_DEFAULTS.color;
 		return [...layers.slice(0, -1), `url("${resolved.map}") center / 220%`, `linear-gradient(${color}, ${color})`].join(', ');
 	}
 	/** @param {any} resolved */
@@ -172,25 +173,26 @@
 	<div class="mp-head">
 		<span class="mp-title">Presets{count ? ` — applies to all ${count}` : ''}</span>
 		<span class="mp-actions">
-			<button
+			<Button
 				id="material-preset-save"
-				type="button"
-				class="mp-icon"
+				variant="icon"
+				size="sm"
+				icon="plus"
+				label="Save material as preset"
 				title="Save this object's material as a preset"
-				aria-label="Save material as preset"
 				disabled={!primaryUuid || !look}
-				onclick={startSave}><Plus size={14} aria-hidden="true" /></button
-			>
-			<button
+				onclick={startSave}
+			/>
+			<Button
 				id="material-preset-edit"
-				type="button"
-				class="mp-icon"
-				aria-pressed={editing}
+				variant="icon"
+				size="sm"
+				icon={editing ? 'check' : 'pencil'}
+				pressed={editing}
+				label="Edit your presets"
 				title={editing ? 'Done editing your presets' : 'Rename, delete or export your presets'}
-				aria-label="Edit your presets"
 				onclick={() => (editing = !editing)}
-				>{#if editing}<Check size={14} aria-hidden="true" />{:else}<Pencil size={14} aria-hidden="true" />{/if}</button
-			>
+			/>
 		</span>
 	</div>
 
@@ -200,16 +202,14 @@
 				id="material-preset-name"
 				class="mp-name-input"
 				maxlength={NAME_MAX}
+				autocomplete="off"
+				spellcheck="false"
 				aria-label={naming.mode === 'save' ? 'New preset name' : 'Rename preset'}
 				bind:value={naming.name}
 				use:nameKeys
 			/>
-			<button id="material-preset-name-ok" type="button" class="mp-icon" title="Save" aria-label="Confirm name" onclick={commitName}
-				><Check size={14} aria-hidden="true" /></button
-			>
-			<button type="button" class="mp-icon" title="Cancel" aria-label="Cancel naming" onclick={() => (naming = null)}
-				><X size={14} aria-hidden="true" /></button
-			>
+			<Button id="material-preset-name-ok" variant="icon" size="sm" icon="check" label="Confirm name" title="Save" onclick={commitName} />
+			<Button variant="icon" size="sm" icon="x" label="Cancel naming" title="Cancel" onclick={() => (naming = null)} />
 		</div>
 		{#if nameError}<p class="mp-error" role="alert">{nameError}</p>{/if}
 	{/if}
@@ -245,15 +245,9 @@
 				</button>
 				{#if editing}
 					<span class="mp-tools">
-						<button type="button" class="mp-mini" data-preset-rename={p.name} title="Rename" aria-label={`Rename ${p.name}`} onclick={() => startRename(p.name)}
-							><Pencil size={11} aria-hidden="true" /></button
-						>
-						<button type="button" class="mp-mini" data-preset-export={p.name} title="Download as .matpreset.json" aria-label={`Export ${p.name}`} onclick={() => download(p.payload)}
-							><Download size={11} aria-hidden="true" /></button
-						>
-						<button type="button" class="mp-mini mp-danger" data-preset-delete={p.name} title="Delete" aria-label={`Delete ${p.name}`} onclick={() => remove(p.name)}
-							><Trash2 size={11} aria-hidden="true" /></button
-						>
+						<Button variant="icon" size="sm" icon="pencil" data-preset-rename={p.name} label={`Rename ${p.name}`} title="Rename" onclick={() => startRename(p.name)} />
+						<Button variant="icon" size="sm" icon="download" data-preset-export={p.name} label={`Export ${p.name}`} title="Download as .matpreset.json" onclick={() => download(p.payload)} />
+						<Button variant="icon" size="sm" icon="trash-2" data-preset-delete={p.name} label={`Delete ${p.name}`} title="Delete" onclick={() => remove(p.name)} />
 					</span>
 				{/if}
 			</div>
@@ -261,9 +255,7 @@
 	</div>
 	{#if editing}
 		<div class="mp-editbar">
-			<button type="button" class="ui-button-quiet" title="Import a .matpreset.json file" onclick={() => document.getElementById('material-preset-import')?.click()}>
-				<Upload size={14} class="mr-1 inline" aria-hidden="true" />Import
-			</button>
+			<Button variant="outline" size="sm" icon="folder-input" title="Import a .matpreset.json file" onclick={() => document.getElementById('material-preset-import')?.click()}>Import</Button>
 			<input type="file" id="material-preset-import" style="display: none" accept=".json" onchange={onImport} />
 			{#if !$materialPresets.length}
 				<span class="mp-hint">Save a look with + to start your own library. The starter set is built in.</span>
@@ -290,9 +282,7 @@
 					</button>
 					{#if editing}
 						<span class="mp-tools">
-							<button type="button" class="mp-mini" data-preset-copy={p.label} title="Save a copy to your presets" aria-label={`Save a copy of ${p.label}`} onclick={() => saveCopy(p)}
-								><Copy size={11} aria-hidden="true" /></button
-							>
+							<Button variant="icon" size="sm" icon="copy" data-preset-copy={p.label} label={`Save a copy of ${p.label}`} title="Save a copy to your presets" onclick={() => saveCopy(p)} />
 						</span>
 					{/if}
 				</div>
@@ -305,59 +295,41 @@
 	.mp-root {
 		display: flex;
 		flex-direction: column;
-		gap: 4px;
-		margin: 2px 0 6px;
+		gap: var(--space-1);
+		margin: var(--space-1) 0 var(--space-2);
 	}
 	.mp-head {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 0 4px;
+		gap: var(--space-2);
+		padding: 0 var(--space-1);
 	}
 	.mp-title {
-		font-size: 10px;
+		font-size: var(--fs-section);
 		font-weight: 600;
-		letter-spacing: 0.05em;
+		letter-spacing: var(--tracking-section);
 		text-transform: uppercase;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
-	.mp-actions {
+	.mp-actions,
+	.mp-tools {
 		display: inline-flex;
-		gap: 2px;
+		gap: var(--space-1);
 	}
-	.mp-icon,
-	.mp-mini {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		border-radius: 4px;
-		color: var(--text-2, #d1d5db);
-		background: transparent;
-	}
-	.mp-icon {
-		width: 22px;
-		height: 22px;
-	}
-	.mp-icon:hover:not(:disabled),
-	.mp-mini:hover {
-		background: var(--hover, #374151);
-	}
-	.mp-icon:disabled {
-		opacity: 0.4;
-		cursor: not-allowed;
-	}
-	.mp-icon[aria-pressed='true'] {
-		background: var(--accent-fill, var(--accent, #2563eb));
-		color: var(--on-accent, #fff);
+	.mp-tools {
+		margin-top: 2px;
+		/* the three icon buttons sit under a swatch: shrink the kit's sm square to fit */
+		transform: scale(0.72);
+		transform-origin: top center;
 	}
 	.mp-row {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 6px 4px;
+		gap: var(--space-2) var(--space-1);
 		padding: 0 2px;
 	}
 	.mp-mine {
-		position: relative;
 		display: inline-flex;
 		flex-direction: column;
 		align-items: center;
@@ -367,93 +339,86 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 2px;
-		width: 44px;
-		padding: 3px 0 2px;
-		border-radius: 6px;
-		background: transparent;
+		width: 48px;
+		padding: var(--space-1) 0 2px;
+		border-radius: var(--radius-button);
 		border: 1px solid transparent;
-		color: var(--text-2, #d1d5db);
+		background: transparent;
+		color: var(--text-2);
+		cursor: pointer;
 	}
 	.mp-swatch:hover {
-		background: var(--hover, #374151);
+		background: var(--surface-hover);
 	}
 	.mp-swatch:focus-visible {
-		outline: 2px solid var(--accent, #2563eb);
+		outline: 2px solid var(--accent);
 		outline-offset: 1px;
 	}
 	.mp-swatch[aria-pressed='true'] {
-		border-color: var(--accent, #2563eb);
-		background: var(--surface-2, #1f2937);
+		border-color: var(--accent);
+		background: var(--surface-active);
 	}
 	.mp-ball {
 		display: block;
 		width: 30px;
 		height: 30px;
-		border-radius: 999px;
-		box-shadow: 0 0 0 1px var(--border, #4b5563);
-		/* glass / anything see-through shows a checker behind it */
-		background-color: var(--surface-3, #374151);
+		border-radius: var(--radius-pill);
+		box-shadow: 0 0 0 1px var(--border-strong);
+		/* see-through looks (glass) show the panel's inset well behind them */
+		background-color: var(--surface-inset);
 	}
 	.mp-label {
-		max-width: 42px;
+		max-width: 46px;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		font-size: 9px;
-		line-height: 1.1;
-	}
-	.mp-tools {
-		display: inline-flex;
-		gap: 1px;
-		margin-top: 1px;
-	}
-	.mp-mini {
-		width: 15px;
-		height: 15px;
-	}
-	.mp-danger {
-		color: var(--icon-danger, #f87171);
+		font-size: var(--fs-badge);
+		line-height: 1.2;
 	}
 	.mp-naming {
 		display: flex;
 		align-items: center;
-		gap: 2px;
-		padding: 0 4px;
+		gap: var(--space-1);
+		padding: 0 var(--space-1);
 	}
+	/* the kit's field look (SearchField's inset well), for a plain text input */
 	.mp-name-input {
 		flex: 1;
 		min-width: 0;
-		height: 22px;
-		padding: 0 6px;
-		font-size: 12px;
-		border-radius: 4px;
-		border: 1px solid var(--border, #4b5563);
-		background: var(--field, #111827);
-		color: var(--text, #f3f4f6);
+		box-sizing: border-box;
+		height: var(--control-h-sm);
+		padding: 0 var(--space-2);
+		font: inherit;
+		font-size: var(--fs-desc);
+		border-radius: var(--radius-input);
+		border: 1px solid var(--border-input);
+		background: var(--surface-inset);
+		color: var(--text);
+		outline: none;
 	}
 	.mp-name-input:focus {
-		outline: 1px solid var(--accent, #2563eb);
+		border-color: var(--accent);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 	}
 	.mp-error {
-		padding: 0 6px;
-		font-size: 10px;
-		color: var(--ink-bad, #f87171);
+		padding: 0 var(--space-2);
+		font-size: var(--fs-desc);
+		color: var(--ink-bad);
 	}
 	.mp-editbar {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 6px;
-		padding: 2px 4px;
+		gap: var(--space-2);
+		padding: 2px var(--space-1);
 	}
-	.mp-hint {
-		font-size: 10px;
-		color: var(--muted, #9ca3af);
+	.mp-hint,
+	.mp-peer {
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
 	}
 	.mp-peer {
-		margin-top: 4px;
-		padding: 0 4px;
-		font-size: 10px;
-		color: var(--muted, #9ca3af);
+		margin-top: var(--space-1);
+		padding: 0 var(--space-1);
 	}
 </style>

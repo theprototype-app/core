@@ -259,6 +259,11 @@ h.run(async () => {
 	h.check((await swatchCount(A.page, 'mine', 'Candy red')) === 1, '5.1 the saved preset joins the row');
 	const lit = await waitVal(() => pressed(A.page), (v) => JSON.stringify(v) === '["Candy red"]', 5000);
 	h.check(JSON.stringify(lit) === '["Candy red"]', '5.2 ...and lights up for the object it came from: ' + JSON.stringify(lit));
+	const ballBg = await A.page.evaluate(() => {
+		const ball = document.querySelector('#material-presets .mp-swatch[data-preset-name="Candy red"] .mp-ball');
+		return ball ? getComputedStyle(ball).backgroundImage : '';
+	});
+	h.check(/rgb\(204, 34, 68\)/.test(ballBg), '5.2b the saved swatch is drawn in its own colour: ' + ballBg.slice(-80));
 	const stored = await A.page.evaluate(async () => {
 		await window.__stores.materialPresets.loadMaterialPresets();
 		const list = await new Promise((r) => window.__stores.materialPresets.materialPresets.subscribe(r)());
@@ -340,7 +345,9 @@ h.run(async () => {
 		15000
 	);
 	h.check(lib.includes('Candy red'), '7.1 B received A\'s library in the handshake: ' + JSON.stringify(lib));
-	await B.page.waitForTimeout(1500);
+	// the joiner receives the scene a moment after the handshake: select only once it holds the box
+	const hasB4 = await waitVal(() => matOf(B.page, b4), (v) => !!v, 20000);
+	h.check(!!hasB4, '7.1b premise: B holds A\'s box');
 	await selectSet(B.page, [b4]);
 	await B.page.locator('#material-presets').waitFor({ timeout: 15000 }).catch(() => {});
 	h.check((await B.page.locator('#material-presets .mp-peer').count()) === 1, '7.2 B shows a "From A" row');

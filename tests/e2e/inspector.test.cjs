@@ -101,7 +101,7 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.showSidebar('scene'));
 	await A.page.waitForTimeout(500);
 	h.check(
-		await A.page.locator('#drawer-label .ui-badge-type', { hasText: 'Scene' }).isVisible(),
+		await A.page.locator('#drawer-label [data-inspector-badge]', { hasText: 'Scene' }).isVisible(),
 		'scene badge shown'
 	);
 	h.check(

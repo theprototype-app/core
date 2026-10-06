@@ -16,7 +16,7 @@
 	// Mobile (SPEC §6): `onback` turns the header into the nav bar "‹ Back · Title · Close".
 	import Icon from './Icon.svelte';
 
-	/** @type {{size?: 'modal'|'panel'|'tool', title?: string, icon?: string, count?: number|string, titleId?: string, onclose?: (() => void) | null, closeLabel?: string, onpin?: (() => void) | null, pinned?: boolean, pinId?: string, pinTitle?: string, pinLabel?: string, onpopout?: (() => void) | null, onback?: (() => void) | null, backLabel?: string, body?: boolean, padded?: boolean, elevated?: boolean, headerEl?: HTMLElement | null, headerAttrs?: Record<string, any>, actions?: import('svelte').Snippet, footer?: import('svelte').Snippet, children?: import('svelte').Snippet} & Record<string, any>} */
+	/** @type {{size?: 'modal'|'panel'|'tool', title?: string, icon?: string, count?: number|string, titleId?: string, onclose?: (() => void) | null, closeLabel?: string, onpin?: (() => void) | null, pinned?: boolean, pinAttrs?: Record<string, any>, onpopout?: (() => void) | null, onback?: (() => void) | null, backLabel?: string, body?: boolean, padded?: boolean, elevated?: boolean, headerEl?: HTMLElement | null, headerAttrs?: Record<string, any>, actions?: import('svelte').Snippet, footer?: import('svelte').Snippet, children?: import('svelte').Snippet} & Record<string, any>} */
 	let {
 		size = 'panel',
 		title = '',
@@ -27,9 +27,7 @@
 		closeLabel = '',
 		onpin = null,
 		pinned = false,
-		pinId = undefined,
-		pinTitle = '',
-		pinLabel = '',
+		pinAttrs = {},
 		onpopout = null,
 		onback = null,
 		backLabel = 'Back',
@@ -69,13 +67,13 @@
 		{/if}
 		{#if onpin}
 			<button
-				id={pinId}
 				type="button"
 				class="wc-btn"
-				aria-label={pinLabel || (pinned ? 'Unpin' : 'Pin')}
-				title={pinTitle || (pinned ? 'Unpin' : 'Pin')}
+				aria-label={pinned ? 'Unpin' : 'Pin'}
+				title={pinned ? 'Unpin' : 'Pin'}
 				aria-pressed={pinned}
 				onclick={onpin}
+				{...pinAttrs}
 			>
 				<Icon name={pinned ? 'pin' : 'pin-off'} size={iconSize} strokeWidth={1.75} />
 			</button>

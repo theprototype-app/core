@@ -21,11 +21,13 @@
 		body={false}
 		{pinned}
 		{onpin}
-		pinId="inspector-pin"
-		pinTitle={pinned
-			? 'Unpin — properties then open on double-click or via the context menu'
-			: 'Pin — keep this panel open and follow the selection'}
-		pinLabel={pinned ? 'Unpin the properties panel' : 'Pin the properties panel'}
+		pinAttrs={{
+			id: 'inspector-pin',
+			title: pinned
+				? 'Unpin — properties then open on double-click or via the context menu'
+				: 'Pin — keep this panel open and follow the selection',
+			'aria-label': pinned ? 'Unpin the properties panel' : 'Pin the properties panel'
+		}}
 		{onclose}
 		closeLabel="Close the properties panel"
 		style="border: 0; border-radius: 0; background: transparent; overflow: visible"

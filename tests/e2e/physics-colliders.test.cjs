@@ -104,14 +104,14 @@ h.run(async () => {
 	h.check(vis.Transform === true && vis.Physics === true, 'clearing the search restores all sections');
 
 	// collapse toggles + persists
-	await A.page.locator('#inspector button.ui-section-label', { hasText: 'Transform' }).click();
+	await A.page.locator('#inspector button:has(.ui-section-label)', { hasText: 'Transform' }).click();
 	await A.page.waitForTimeout(200);
 	const collapsed = await A.page.evaluate(() => ({
 		rows: !!document.querySelector('#inspector-position'),
 		stored: localStorage.getItem('inspector:sec:Transform')
 	}));
 	h.check(collapsed.rows === false && collapsed.stored === 'closed', 'section collapses and persists');
-	await A.page.locator('#inspector button.ui-section-label', { hasText: 'Transform' }).click();
+	await A.page.locator('#inspector button:has(.ui-section-label)', { hasText: 'Transform' }).click();
 	await A.page.waitForTimeout(200);
 	const reopened = await A.page.evaluate(() => !!document.querySelector('#inspector-position'));
 	h.check(reopened === true, 'section reopens');

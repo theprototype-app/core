@@ -46,7 +46,7 @@ h.run(async () => {
 	await page.waitForTimeout(1200);
 	// the Material section renders collapsed unless it has been opened before
 	await page.evaluate(() => {
-		const heads = [...document.querySelectorAll('button.ui-section-label')];
+		const heads = [...document.querySelectorAll('button .ui-section-label')];
 		const mat = heads.find((b) => b.textContent.trim().startsWith('Material'));
 		if (mat && !document.querySelector('#select-material')) mat.click();
 	});

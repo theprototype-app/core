@@ -1,11 +1,11 @@
 <script>
-	import { Download, Save, Search, Sparkles, SquarePen, Trash2, Upload } from '@lucide/svelte';
+	import { Search, Sparkles, SquarePen, Trash2 } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Unified inspector (phase 64): one drawer serves every target — mesh, group,
 	// light (from the selection) and the scene itself ($inspectorKind = 'scene').
 	// Replication messages are byte-identical to the old three panels.
 	import * as THREE from 'three';
-	import { Checkbox, Button, Tooltip } from 'flowbite-svelte';
+	import { Checkbox, Tooltip } from 'flowbite-svelte';
 	import { fly } from 'svelte/transition';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import InspectorHead from './inspector/InspectorHead.svelte';
@@ -19,6 +19,9 @@
 	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import PropRow from '../ui/PropRow.svelte';
+	import Chips from '../ui/Chips.svelte';
+	import UiButton from '../ui/Button.svelte';
+	import MenuButton from './inspector/MenuButton.svelte';
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
@@ -1349,6 +1352,11 @@
 
 	// ---- environment v2 (70) -------------------------------------------------
 	const envPayload = $derived(presetPayload($environment));
+	// 38 R5: the preset chips (a saved custom preset joins the row as 'custom')
+	const envPresetOptions = $derived([
+		...Object.entries(ENVIRONMENT_PRESETS).map(([key, preset]) => ({ value: key, label: preset.label })),
+		...($environment.customPreset ? [{ value: 'custom', label: $environment.customPreset.label ?? 'Custom' }] : [])
+	]);
 	/** @type {any} */
 	const envFog = $derived(envPayload?.fog ?? null);
 	const selectedIsSceneLight = $derived(
@@ -1431,7 +1439,7 @@
 		return '(' + spawn.position.map((/** @type {number} */ v) => v.toFixed(1)).join(', ') + '), facing ' + deg + '°';
 	}
 	/** shared look for the small bookmark row buttons */
-	const bmBtn = 'shrink-0 rounded-sm bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-40';
+	const bmBtn = 'ins-mini-btn'; // 38 R5: token-styled (this file's style block)
 	function resetView() {
 		// the editor camera's mount defaults (Scene.svelte)
 		flyTo([-10, 10, 10], [0, 1.5, 0]);
@@ -1507,17 +1515,17 @@
 				<Section variant="panel" label="Actions">
 					<div class="flex flex-wrap gap-2">
 						{#if inspectedItem.kind === 'text' || inspectedItem.kind === 'image'}
-							<Button size="xs" color="alternative" onclick={() => openInspectedItem()}>
+							<UiButton size="sm" variant="outline" onclick={() => openInspectedItem()}>
 								{#if inspectedItem.kind === 'text'}<SquarePen size={14} class="mr-1" aria-hidden="true" />{:else}<Search size={14} class="mr-1" aria-hidden="true" />{/if}{inspectedItem.kind === 'text' ? 'Edit' : 'Preview'}
-							</Button>
+							</UiButton>
 						{/if}
-						<Button
-							size="xs"
-							color="alternative"
+						<UiButton
+							size="sm"
+							variant="outline"
 							onclick={() => {
 								deleteItem(inspectedItem.id);
 								inspectorClose.set(true);
-							}}><Trash2 size={16} class="ico-danger mr-1" aria-hidden="true" />Delete</Button
+							}}><Trash2 size={16} class="ico-danger mr-1" aria-hidden="true" />Delete</UiButton
 						>
 					</div>
 				</Section>
@@ -1537,31 +1545,16 @@
 		/>
 
 		<div class="flex flex-col gap-3">
-			<Section variant="panel" label="Environment">
-				<div id="environment-presets" class="flex flex-wrap gap-1">
-					{#each Object.entries(ENVIRONMENT_PRESETS) as [key, preset]}
-						<button
-							class={'ui-chip ' +
-								($environment.preset === key
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
-							onclick={() => setEnvironment(key)}
-						>
-							{preset.label}
-						</button>
-					{/each}
-					{#if $environment.customPreset}
-						<button
-							class={'ui-chip ' +
-								($environment.preset === 'custom'
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
-							onclick={() => applyCustomPreset($environment.customPreset)}
-						>
-							{$environment.customPreset.label ?? 'Custom'}
-						</button>
-					{/if}
-				</div>
+			<Section variant="panel" label="Environment" badge="Shared">
+				<!-- 38 R5: the presets are Chips in the one accent; a press re-applies the
+				     preset even when it is already selected, exactly as the old buttons did -->
+				<Chips
+					id="environment-presets"
+					label="Environment preset"
+					options={envPresetOptions}
+					value={$environment.preset}
+					onpress={(key) => (key === 'custom' ? applyCustomPreset($environment.customPreset) : setEnvironment(key))}
+				/>
 				<SliderRow
 					label="Exposure"
 					min={0.4}
@@ -1575,16 +1568,17 @@
 					<p class="ui-section-label">Saved presets</p>
 					<div class="flex flex-wrap gap-1">
 						{#each $envPresets as saved (saved.name)}
-							<span class="inline-flex items-center overflow-hidden rounded-full bg-gray-600">
+							<span class="ins-saved">
 								<button
-									class="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gray-200 hover:bg-gray-500"
+									class="ins-saved-apply"
 									title="Apply this preset (replicates to peers)"
 									onclick={() => applyCustomPreset(saved.payload)}
 								>
 									{saved.name}
 								</button>
 								<button
-									class="px-1 text-[10px] text-gray-300 hover:bg-red-700 hover:text-white"
+									class="ins-saved-del"
+									aria-label="Delete saved preset {saved.name}"
 									title="Delete saved preset"
 									onclick={() => deleteEnvPreset(saved.name)}>✕</button>
 							</span>
@@ -1596,7 +1590,7 @@
 					<div class="flex flex-wrap gap-1">
 						{#each list as saved (saved.name)}
 							<button
-								class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+								class="ui-chip"
 								title="Apply this peer preset (replicates to everyone)"
 								onclick={() => applyCustomPreset(saved.payload)}
 							>
@@ -1605,67 +1599,86 @@
 						{/each}
 					</div>
 				{/each}
-				<div class="flex flex-wrap gap-1">
-					<button id="env-save-preset" class="ui-button-quiet" title="Save the current environment as a named preset" onclick={savePresetPrompt}>
-						<Save size={16} class="mr-1" aria-hidden="true" />Save preset
-					</button>
-					<button class="ui-button-quiet" title="Download the current environment as JSON" onclick={exportCurrentPreset}><Download size={16} class="mr-1" aria-hidden="true" />Export</button>
-					<button class="ui-button-quiet" title="Import a .envpreset.json file" onclick={() => document.getElementById('env-import-file')?.click()}>
-						<Upload size={16} class="mr-1" aria-hidden="true" />Import
-					</button>
-					<input type="file" id="env-import-file" style="display: none" accept=".json" onchange={onImportPreset} />
-				</div>
 
 				<p class="ui-section-label">Components</p>
 				{#if envPayload.hemi}
 					<SliderRow label="Sky light" min={0} max={4} step={0.05} value={envPayload.hemi.intensity}
 						onchange={(v) => editRigComponent('hemi', { intensity: v })} />
-					<div class="ui-row">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Sky / ground</span>
-						<input type="color" class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={envPayload.hemi.sky}
-							onchange={(e) => editRigComponent('hemi', { sky: e.currentTarget.value })} />
-						<input type="color" class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={envPayload.hemi.ground}
-							onchange={(e) => editRigComponent('hemi', { ground: e.currentTarget.value })} />
-					</div>
+					<PropRow label="Sky / ground" valueBox={false}>
+						{#snippet control()}
+							<input type="color" class="ins-swatch" aria-label="Sky colour" value={envPayload.hemi.sky}
+								onchange={(e) => editRigComponent('hemi', { sky: e.currentTarget.value })} />
+							<input type="color" class="ins-swatch" aria-label="Ground colour" value={envPayload.hemi.ground}
+								onchange={(e) => editRigComponent('hemi', { ground: e.currentTarget.value })} />
+						{/snippet}
+					</PropRow>
 				{/if}
 				{#if envPayload.sun}
 					<SliderRow label="Sun" min={0} max={4} step={0.05} value={envPayload.sun.intensity}
 						onchange={(v) => editRigComponent('sun', { intensity: v })} />
-					<div class="ui-row">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Sun color</span>
-						<input type="color" class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={envPayload.sun.color}
-							onchange={(e) => editRigComponent('sun', { color: e.currentTarget.value })} />
-					</div>
+					<PropRow label="Sun color" valueBox={false}>
+						{#snippet control()}
+							<input type="color" class="ins-swatch" aria-label="Sun colour" value={envPayload.sun.color}
+								onchange={(e) => editRigComponent('sun', { color: e.currentTarget.value })} />
+						{/snippet}
+					</PropRow>
 				{/if}
 
 				{#each $environment.lights ?? [] as def (def.id)}
-					<div class="env-light rounded-lg border border-gray-700/60 p-1.5">
-						<div class="flex items-center gap-1.5">
-							<span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{def.kind}</span>
-							<input type="color" class="h-5 w-7 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={def.color}
+					<div class="env-light ins-card">
+						<div class="ins-card-head">
+							<span class="ins-card-kind">{def.kind}</span>
+							<input type="color" class="ins-swatch" aria-label="Light colour" value={def.color}
 								onchange={(e) => updateEnvLight(def.id, { color: e.currentTarget.value })} />
 							{#if def.kind === 'hemisphere'}
-								<input type="color" class="h-5 w-7 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={def.groundColor}
+								<input type="color" class="ins-swatch" aria-label="Ground colour" value={def.groundColor}
 									onchange={(e) => updateEnvLight(def.id, { groundColor: e.currentTarget.value })} />
 							{/if}
 							<span class="flex-1"></span>
-							<button class="ui-button-quiet" title="Convert back into a normal scene object"
-								onclick={() => convertFromEnvironment(def.id)}>⇱ object</button>
-							<button class="ui-button-quiet hover:bg-red-700" title="Remove"
-								onclick={() => removeEnvLight(def.id)}>✕</button>
+							<UiButton variant="ghost" size="sm" title="Convert back into a normal scene object"
+								onclick={() => convertFromEnvironment(def.id)}>⇱ object</UiButton>
+							<UiButton variant="icon" size="sm" icon="x" label="Remove" title="Remove"
+								onclick={() => removeEnvLight(def.id)} />
 						</div>
 						<SliderRow label="Intensity" min={0} max={4} step={0.05} value={def.intensity}
 							onchange={(v) => updateEnvLight(def.id, { intensity: v })} />
 					</div>
 				{/each}
-				<div class="flex flex-wrap gap-1">
-					<button id="env-add-hemisphere" class="ui-button-quiet" onclick={() => addEnvLight('hemisphere')}>+ Hemisphere</button>
-					<button id="env-add-directional" class="ui-button-quiet" onclick={() => addEnvLight('directional')}>+ Directional</button>
-					<button id="env-add-point" class="ui-button-quiet" onclick={() => addEnvLight('point')}>+ Point</button>
+				<!-- 38 R5: one "+ Light" menu instead of three buttons; the items keep the old
+				     ids and actions. Save / Export / Import fold into "Presets". -->
+				<div class="ins-actions">
+					<MenuButton
+						text="+ Light"
+						full
+						items={[
+							{ id: 'env-add-hemisphere', label: 'Hemisphere', value: 'hemisphere' },
+							{ id: 'env-add-directional', label: 'Directional', value: 'directional' },
+							{ id: 'env-add-point', label: 'Point', value: 'point' }
+						]}
+						onselect={(item) => addEnvLight(item.value)}
+					/>
+					<MenuButton
+						text="Presets"
+						align="end"
+						items={[
+							{ id: 'env-save-preset', label: 'Save preset…', icon: 'save' },
+							{ id: 'env-export-preset', label: 'Export', icon: 'download' },
+							{ id: 'env-import-preset', label: 'Import…', icon: 'folder-input' }
+						]}
+						onselect={(item) =>
+							item.id === 'env-save-preset'
+								? savePresetPrompt()
+								: item.id === 'env-export-preset'
+									? exportCurrentPreset()
+									: document.getElementById('env-import-file')?.click()}
+					/>
+					<input type="file" id="env-import-file" style="display: none" accept=".json" onchange={onImportPreset} />
 				</div>
-				<button
+				<UiButton
 					id="env-adopt"
-					class="ui-button-quiet disabled:cursor-not-allowed disabled:opacity-40"
+					variant="outline"
+					size="sm"
+					full
 					disabled={!selectedIsSceneLight}
 					title={selectedIsSceneLight
 						? 'Move the selected light out of the scene objects into the environment'
@@ -1673,11 +1686,9 @@
 					onclick={() => convertToEnvironment($selectedObject.uuid)}
 				>
 					⇲ Adopt selected light into environment
-				</button>
+				</UiButton>
 
-				<p class="text-[10px] italic text-gray-400">
-					Everything here replicates to peers; your own lights automatically dim the default rig.
-				</p>
+				<p class="ins-note">Your own lights dim the default rig automatically.</p>
 			</Section>
 
 			<Section variant="panel" label="Music">
@@ -1701,7 +1712,7 @@
 				</select>
 				<div class="mt-1 flex items-center gap-2">
 					<button
-						class="ui-chip {$music.playing ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500'}"
+						class="ui-chip {$music.playing ? 'ins-chip-on' : ''}"
 						disabled={!$music.hash}
 						onclick={() => setMusicPlaying(!$music.playing)}
 					>
@@ -1728,7 +1739,7 @@
 						<button
 							id={'view-mode-' + mode}
 							class={'ui-chip ' +
-								($viewMode === mode ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500') +
+								($viewMode === mode ? 'ins-chip-on' : '') +
 								(aoTaken ? ' cursor-not-allowed opacity-40' : '')}
 							disabled={aoTaken}
 							title={aoTaken
@@ -1777,7 +1788,7 @@
 				 The LABEL changed and the deep-link name did not: `openSceneSection` matches
 				 on it, so both names resolve (the 21-G1 rule — the user-visible word moves,
 				 the identifier already written down does not). -->
-			<Section variant="panel" label="Scene look" aliases={['Post-processing']}>
+			<Section variant="panel" label="Scene look" badge="Shared" aliases={['Post-processing']}>
 				<p class="mb-1 text-[10px] text-gray-400">
 					Three layers, all of them scene data that everyone sees: effects over the
 					finished frame (below), a default material every object without its own
@@ -1791,7 +1802,7 @@
 				</p>
 				<button
 					id="scene-look-open-shader"
-					class="ui-chip w-full justify-center bg-gray-600 text-gray-200 hover:bg-gray-500"
+					class="ui-chip w-full justify-center"
 					title="Open the shader editor — the scene default with nothing selected, an object's own when one is"
 					onclick={() => openShaderEditor()}
 				>
@@ -1809,8 +1820,8 @@
 						<button
 							class={'ui-chip ' +
 								(Math.round($globalCamera?.fov ?? 0) === p.fov
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title={p.mm + 'mm equivalent · ' + p.fov + '° vertical FOV'}
 							onclick={() => {
 								if ($globalCamera) {
@@ -1903,13 +1914,13 @@
 					>Invert vertical orbit</Checkbox
 				>
 				<div class="ui-row items-center gap-2">
-					<button id="camera-frame-scene" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => frameScene()}>
+					<button id="camera-frame-scene" class="ui-chip" onclick={() => frameScene()}>
 						Frame scene
 					</button>
-					<button id="camera-reset-view" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetView()}>
+					<button id="camera-reset-view" class="ui-chip" onclick={() => resetView()}>
 						Reset view
 					</button>
-					<button id="orbit-reset" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetOrbitPrefs()}>
+					<button id="orbit-reset" class="ui-chip" onclick={() => resetOrbitPrefs()}>
 						Reset feel
 					</button>
 				</div>
@@ -1917,7 +1928,7 @@
 				<SimOnLoadSetting /><!-- 36-fb-water F14: scene data, saved + replicated -->
 				<p class="ui-section-label" data-anchor="Saved views">Saved views</p>
 				<div class="ui-row items-center gap-2">
-					<button id="bookmark-save" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => saveBookmark()}>
+					<button id="bookmark-save" class="ui-chip" onclick={() => saveBookmark()}>
 						Save current view
 					</button>
 					<span class="text-[10px] text-gray-500">Shift+1..{SHORTCUT_SLOTS} recall the first {SHORTCUT_SLOTS}</span>
@@ -1962,7 +1973,7 @@
 
 			<!-- 16-P3: grid + snapping are LOCAL view prefs (like the clip planes and
 			     the render mode above) — peers each get their own. -->
-			<Section variant="panel" label="Grid">
+			<Section variant="panel" label="Grid" badge="This device">
 				<Checkbox
 					id="grid-show"
 					checked={!!$showGrid}
@@ -2025,8 +2036,8 @@
 						<button
 							class={'ui-chip ' +
 								($gridSettings.fadeMode === mode
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title={mode === 'auto' ? 'Fade scales with the camera distance' : 'A fixed fade radius'}
 							onclick={() => setGrid({ fadeMode: mode })}>{label}</button
 						>
@@ -2078,8 +2089,8 @@
 						<button
 							class={'ui-chip ' +
 								($gridSettings.follow === mode
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title={mode === 'lookat'
 								? 'Centre the grid under what you are looking at (horizontal only)'
 								: mode === 'camera'
@@ -2096,14 +2107,14 @@
 					>Show origin axes</Checkbox
 				>
 				<div class="ui-row items-center gap-2">
-					<button id="grid-reset" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetGrid()}>
+					<button id="grid-reset" class="ui-chip" onclick={() => resetGrid()}>
 						Reset grid
 					</button>
 					<span class="text-[10px] italic text-gray-400">Per-device (not shared).</span>
 				</div>
 			</Section>
 
-			<Section variant="panel" label="Snapping">
+			<Section variant="panel" label="Snapping" badge="This device">
 				<Checkbox
 					id="snap-enabled"
 					checked={$snapEnabled}
@@ -2117,8 +2128,8 @@
 						<button
 							class={'ui-chip ' +
 								($snapSettings.translate === step
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							onclick={() => snapSettings.update((s) => ({ ...s, translate: step }))}>{step}</button
 						>
 					{/each}
@@ -2144,8 +2155,8 @@
 						<button
 							class={'ui-chip ' +
 								($snapSettings.rotateDeg === step
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							onclick={() => snapSettings.update((s) => ({ ...s, rotateDeg: step }))}>{step}°</button
 						>
 					{/each}
@@ -2171,8 +2182,8 @@
 						<button
 							class={'ui-chip ' +
 								($snapSettings.scale === step
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							onclick={() => snapSettings.update((s) => ({ ...s, scale: step }))}>{step}</button
 						>
 					{/each}
@@ -2218,8 +2229,8 @@
 							id={'snap-target-' + target[0]}
 							class={'ui-chip ' +
 								(targetOn($snapTargets, target[0])
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							aria-pressed={targetOn($snapTargets, target[0])}
 							onclick={() => toggleTarget(target[0])}
 							>{target[1]}</button
@@ -2233,8 +2244,8 @@
 							<button
 								class={'ui-chip ' +
 									($snapTargets.radiusPx === preset
-										? 'bg-primary-600 text-white'
-										: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+										? 'ins-chip-on'
+										: '')}
 								onclick={() => snapTargets.update((t) => ({ ...t, radiusPx: preset }))}
 								>{preset}</button
 							>
@@ -2275,8 +2286,8 @@
 							id="snap-anchor-auto"
 							class={'ui-chip ' +
 								($snapTargets.anchorMode === 'auto' && $snapAnchor.mode !== 'picked'
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title="Snap from the nearest point on the object's bounding box"
 							onclick={() => {
 								clearSnapAnchor();
@@ -2287,8 +2298,8 @@
 							id="snap-anchor-pivot"
 							class={'ui-chip ' +
 								($snapTargets.anchorMode === 'pivot' && $snapAnchor.mode !== 'picked'
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title="Snap from the object's own origin"
 							onclick={() => {
 								clearSnapAnchor();
@@ -2320,7 +2331,7 @@
 						<span class="snap-status-hint">Esc cancels</span>
 						<button
 							id="snap-anchor-cancel"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							aria-label="cancel picking the snap origin"
 							title="Cancel (Esc)"
 							onclick={() => cancelSnapAnchorPick()}>✕</button
@@ -2331,13 +2342,13 @@
 						<span class="snap-status-text">Picked ✓</span>
 						<button
 							id="snap-anchor-save-origin"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							title="Keep this point for good: it becomes the object's own origin — shared with peers, undoable, and it survives selecting something else"
 							onclick={() => saveSnapAnchorAsOrigin()}>Save as object origin</button
 						>
 						<button
 							id="snap-anchor-clear"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							aria-label="clear the picked snap origin"
 							title="Forget this point"
 							onclick={() => clearSnapAnchor()}>✕</button
@@ -2379,7 +2390,7 @@
 				<div class="ui-row items-center gap-2">
 					<button
 						id="physics-gravity-reset"
-						class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+						class="ui-chip"
 						onclick={() => resetSceneGravity()}
 					>
 						Reset gravity ({DEFAULT_GRAVITY})
@@ -2520,8 +2531,8 @@
 							<button
 								class={'flex items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs transition-colors ' +
 									($selectedObject?.uuid === row.uuid
-										? 'bg-primary-600 text-white'
-										: 'bg-gray-700 text-gray-200 hover:bg-gray-600')}
+										? 'ins-chip-on'
+										: '')}
 								title="Click to select"
 								onclick={() => selectObject(row.uuid)}
 							>
@@ -2540,7 +2551,7 @@
 				{/if}
 				<button
 					id="physics-enable-selection"
-					class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+					class="ui-chip"
 					onclick={() => enablePhysicsOnSelection()}
 				>
 					Enable physics on selection
@@ -2676,7 +2687,7 @@
 				</p>
 			</Section>
 
-			<Section variant="panel" label="Background">
+			<Section variant="panel" label="Background" badge="Shared">
 				<ColorPicker
 					isAlpha={false}
 					isTextInput={true}
@@ -2696,7 +2707,7 @@
 				/>
 			</Section>
 
-			<Section variant="panel" label="Fog">
+			<Section variant="panel" label="Fog" badge="Shared">
 				<ColorPicker
 					isAlpha={false}
 					isTextInput={true}
@@ -2721,10 +2732,10 @@
 					onchange={(v) => editEnvSky({ fog: { near: v } })} />
 				<SliderRow id="fog-far" label="Far" min={0} max={Math.max(100, Math.ceil(envFog?.far ?? 0))} step={0.1} decimals={1} value={envFog?.far ?? 0}
 					onchange={(v) => editEnvSky({ fog: { far: v } })} />
-				<Button
-					size="xs"
-					color="alternative"
-					onclick={() => editEnvSky({ fog: null })}>Remove Fog</Button
+				<UiButton
+					size="sm"
+					variant="outline"
+					onclick={() => editEnvSky({ fog: null })}>Remove Fog</UiButton
 				>
 			</Section>
 			<!-- 36 F22 / S8: scene data, saved + replicated -->
@@ -2766,8 +2777,8 @@
 				     last-clicked object's name and id read like the target. Renaming or
 				     re-grouping one member of a selection is what clicking that one
 				     object is for. -->
-				<div id="selection-multi-banner" class="rounded-sm border border-primary-500/40 bg-primary-500/10 px-2 py-1.5">
-					<p class="text-xs font-semibold text-primary-200">Editing {multiCount} objects</p>
+				<div id="selection-multi-banner" class="ins-banner">
+					<p class="text-xs font-semibold ins-accent-text">Editing {multiCount} objects</p>
 					<p class="text-[10px] text-gray-400">Every value below applies to all of them.</p>
 				</div>
 			{/if}
@@ -2820,12 +2831,13 @@
 								setAnimationState($selectedObject.uuid, { clip: val })}
 						/>
 						<div class="flex items-center gap-2">
-							<button
-								class="rounded-sm bg-primary-700 px-2 py-0.5 text-sm text-white"
+							<UiButton
+								variant="secondary"
+								size="sm"
 								onclick={() => setAnimationState($selectedObject.uuid, { playing: !anim.playing })}
 							>
 								{anim.playing ? '⏸ Pause' : '▶ Play'}
-							</button>
+							</UiButton>
 							<span class="text-xs text-gray-400">speed {anim.speed.toFixed(1)}×</span>
 							<input
 								type="range"
@@ -2854,7 +2866,7 @@
 						<span class="w-20 shrink-0 text-xs text-gray-400">Kind</span>
 						{#each [['perspective', 'Perspective'], ['orthographic', 'Orthographic']] as [kind, label]}
 							<button
-								class={'ui-chip ' + (cam.kind === kind ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+								class={'ui-chip ' + (cam.kind === kind ? 'ins-chip-on' : '')}
 								onclick={() => setCameraFor($selectedObject.uuid, { kind })}>{label}</button
 							>
 						{/each}
@@ -2908,7 +2920,7 @@
 						<span class="w-20 shrink-0 text-xs text-gray-400">Framing</span>
 						{#each ASPECTS as aspect}
 							<button
-								class={'ui-chip ' + (cam.aspect === aspect ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+								class={'ui-chip ' + (cam.aspect === aspect ? 'ins-chip-on' : '')}
 								onclick={() => setCameraFor($selectedObject.uuid, { aspect })}>{aspect}</button
 							>
 						{/each}
@@ -2924,8 +2936,8 @@
 							id="camera-preview"
 							class={'ui-chip ' +
 								($cameraPreview?.uuid === $selectedObject.uuid
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title="Render the scene through this camera (exit from the banner)"
 							onclick={() =>
 								$cameraPreview?.uuid === $selectedObject.uuid
@@ -2935,13 +2947,13 @@
 						>
 						<button
 							id="camera-from-view"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							title="Move this camera to your current viewpoint (and take its FOV)"
 							onclick={() => setCameraFromView($selectedObject.uuid)}>Set from view</button
 						>
 						<button
 							id="camera-align-view"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							title="Fly YOUR view to look through this camera (stays your camera)"
 							onclick={() => alignViewToCamera($selectedObject.uuid)}>Align view</button
 						>
@@ -2950,7 +2962,7 @@
 					<div class="ui-row items-center gap-2">
 						<button
 							id="camera-capture"
-							class="ui-chip inline-flex items-center gap-1 bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip inline-flex items-center gap-1"
 							title="Render one frame through this camera and download it as a PNG"
 							onclick={() => captureThroughCamera($selectedObject.uuid)}
 						>
@@ -2991,17 +3003,17 @@
 							{$pivotOnly ? 'Moving the origin only' : `Moves all ${multiCount} together`}
 						</span>
 						<div class="flex items-center gap-1">
-							<Button
+							<UiButton
 								id="origin-mode"
-								size="xs"
-								color={$pivotOnly ? 'primary' : 'alternative'}
+								size="sm"
+								variant={$pivotOnly ? 'primary' : 'outline'}
 								onclick={() => pivotOnly.update((v) => !v)}
 							>
 								{$pivotOnly ? 'Done' : 'Move origin'}
-							</Button>
-							<Button id="origin-reset" size="xs" color="alternative" onclick={() => resetPivotOrigin()}>
+							</UiButton>
+							<UiButton id="origin-reset" size="sm" variant="outline" onclick={() => resetPivotOrigin()}>
 								Centre
-							</Button>
+							</UiButton>
 						</div>
 					</div>
 					<!-- 24-E3: the PIVOT POINT of the set — Blender's list minus the 3D cursor
@@ -3081,20 +3093,20 @@
 								Origin {originSet ? '' : '(default)'}
 							</span>
 							<div class="flex items-center gap-1">
-								<Button
+								<UiButton
 									id="origin-mode-single"
-									size="xs"
-									color={$pivotOnly ? 'primary' : 'alternative'}
+									size="sm"
+									variant={$pivotOnly ? 'primary' : 'outline'}
 									onclick={() => {
 										pivotOnly.update((v) => !v);
 										reseatPivot(); // the gizmo has to exist to drag the origin
 									}}
 								>
 									{$pivotOnly ? 'Done' : 'Move origin'}
-								</Button>
-								<Button id="origin-clear" size="xs" color="alternative" onclick={clearOrigin}>
+								</UiButton>
+								<UiButton id="origin-clear" size="sm" variant="outline" onclick={clearOrigin}>
 									Reset
-								</Button>
+								</UiButton>
 							</div>
 						</div>
 						<div class="ins-transform">
@@ -3114,38 +3126,38 @@
 						<div class="mt-1 flex flex-wrap gap-1">
 							{#if !isLight}
 								<!-- 24-E1: a light has no geometry to measure — World 0 and the rows are its presets -->
-								<Button id="origin-bottom" size="xs" color="alternative" onclick={() => applyOriginPreset('bottom')}>
+								<UiButton id="origin-bottom" size="sm" variant="outline" onclick={() => applyOriginPreset('bottom')}>
 									Bottom
-								</Button>
-								<Button id="origin-center" size="xs" color="alternative" onclick={() => applyOriginPreset('center')}>
+								</UiButton>
+								<UiButton id="origin-center" size="sm" variant="outline" onclick={() => applyOriginPreset('center')}>
 									Centre
-								</Button>
-								<Button id="origin-median" size="xs" color="alternative" onclick={() => applyOriginPreset('median')}>
+								</UiButton>
+								<UiButton id="origin-median" size="sm" variant="outline" onclick={() => applyOriginPreset('median')}>
 									Median
-								</Button>
+								</UiButton>
 							{/if}
-							<Button id="origin-world" size="xs" color="alternative" onclick={() => applyOriginPreset('world')}>
+							<UiButton id="origin-world" size="sm" variant="outline" onclick={() => applyOriginPreset('world')}>
 								World 0
-							</Button>
+							</UiButton>
 							{#if isGroup}
-								<Button id="origin-children" size="xs" color="alternative" onclick={() => applyOriginPreset('children')}>
+								<UiButton id="origin-children" size="sm" variant="outline" onclick={() => applyOriginPreset('children')}>
 									Children
-								</Button>
+								</UiButton>
 							{/if}
 							{#if isLight}
 								<span class="self-center text-[10px] text-gray-500">A light with an origin orbits it under Rotate.</span>
 							{:else if editingThis}
-								<Button id="origin-hinge" size="xs" color="primary" onclick={originFromSelection}>
+								<UiButton id="origin-hinge" size="sm" variant="primary" onclick={originFromSelection}>
 									Set origin here{$vertexSelectionSize > 1 ? ` (${$vertexSelectionSize} verts)` : ''}
-								</Button>
+								</UiButton>
 							{:else}
-								<Button id="origin-pick" size="xs" color="alternative" onclick={pickOriginFromMesh}>
+								<UiButton id="origin-pick" size="sm" variant="outline" onclick={pickOriginFromMesh}>
 									Pick from mesh…
-								</Button>
+								</UiButton>
 							{/if}
 						</div>
 						{#if editingThis}
-							<p class="mt-1 text-[10px] text-primary-200">
+							<p class="mt-1 text-[10px] ins-accent-text">
 								Click a vertex — ctrl-click both ends of an edge to hinge on it — then press Set
 								origin here.
 							</p>
@@ -3313,11 +3325,11 @@
 							     because someone nudged the seed is the bug that lock prevents. So the way
 							     back is ASKED FOR (the switchMaterialType REFUSES precedent), and it is
 							     one undoable geometry rebuild. -->
-							<Button
+							<UiButton
 								id="terrain-regenerate"
-								size="xs"
-								color="alternative"
-								onclick={() => regenerateTerrain()}>Regenerate (discards the sculpt)</Button
+								size="sm"
+								variant="outline"
+								onclick={() => regenerateTerrain()}>Regenerate (discards the sculpt)</UiButton
 							>
 						{/if}
 					{:else}
@@ -3342,8 +3354,8 @@
 													id={`geo-choice-${spec.key}-${option}`}
 													class={'ui-chip ' +
 														(String(geoParams.params[spec.key] ?? spec.def) === option
-															? 'bg-primary-600 text-white'
-															: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+															? 'ins-chip-on'
+															: '')}
 													onclick={() => editGeometry(spec.key, option)}>{option}</button
 												>
 											{/each}
@@ -3459,14 +3471,14 @@
 						     point one helper length along its forward. -->
 						<div class="flex items-center justify-between gap-2">
 							<p class="ui-section-label">Aim at</p>
-							<Button
+							<UiButton
 								id="light-aim-pick"
-								size="xs"
-								color={$lightAimPicking === $selectedObject.uuid ? 'primary' : 'alternative'}
+								size="sm"
+								variant={$lightAimPicking === $selectedObject.uuid ? 'primary' : 'outline'}
 								title="Click a surface in the viewport to aim the light at it"
 								onclick={pickAim}>
 								{$lightAimPicking === $selectedObject.uuid ? 'Picking… (Esc)' : 'Pick in viewport'}
-							</Button>
+							</UiButton>
 						</div>
 						<div id="inspector-light-aim" class="ins-axes">
 							{#each ['X', 'Y', 'Z'] as axis, index (axis)}
@@ -3660,7 +3672,7 @@
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 							id="texture-drop"
-							class="rounded-sm border border-dashed {textureDropActive ? 'border-primary-500 bg-primary-500/10' : 'border-transparent'}"
+							class="rounded-sm border border-dashed {textureDropActive ? 'ins-drop-on' : 'border-transparent'}"
 							ondragover={(e) => {
 								if (e.dataTransfer?.types.includes('application/x-explorer-item')) {
 									e.preventDefault();
@@ -3698,21 +3710,21 @@
 									role="presentation"
 									onclick={() => document.getElementById('texture-file')?.click()}
 								/>
-								<Button
-									size="xs"
-									color="alternative"
+								<UiButton
+									size="sm"
+									variant="outline"
 									onclick={() =>
 										fanTexture(async (uuid) => removeObjectTexture(uuid), 'Remove texture')}
-										>Remove</Button
+										>Remove</UiButton
 								>
 							{:else}
-								<Button
-									size="xs"
-									color="alternative"
+								<UiButton
+									size="sm"
+									variant="outline"
 									onclick={() => document.getElementById('texture-file')?.click()}
 								>
 									Set texture...
-								</Button>
+								</UiButton>
 								<span class="text-[10px] text-gray-500">or drop an Explorer image</span>
 							{/if}
 						</div>
@@ -3915,7 +3927,7 @@
 					{#if ($selectedObject.userData.physics?.collider ?? 'box') === 'custom'}
 						<button
 							id="physics-edit-collider"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							onclick={() => enterColliderEdit($selectedObject.uuid)}
 						>
 							Edit collider…
@@ -4000,11 +4012,11 @@
 								<span class="flex-1 text-[10px] text-yellow-200/80"
 									>Points have different radii — Thickness flattens them.</span
 								>
-								<Button size="xs" color="alternative" onclick={() => scaleSplineRadii($selectedObject.uuid, 1.25)}
-									>Thicker</Button
+								<UiButton size="sm" variant="outline" onclick={() => scaleSplineRadii($selectedObject.uuid, 1.25)}
+									>Thicker</UiButton
 								>
-								<Button size="xs" color="alternative" onclick={() => scaleSplineRadii($selectedObject.uuid, 0.8)}
-									>Thinner</Button
+								<UiButton size="sm" variant="outline" onclick={() => scaleSplineRadii($selectedObject.uuid, 0.8)}
+									>Thinner</UiButton
 								>
 							</div>
 						{/if}
@@ -4034,15 +4046,15 @@
 						>
 							Closed loop
 						</Checkbox>
-						<Button
+						<UiButton
 							id="spline-edit-open"
-							size="xs"
-							color="alternative"
+							size="sm"
+							variant="outline"
 							onclick={() =>
 								$splineEditObject === $selectedObject.uuid ? exitSplineEdit() : enterSplineEdit($selectedObject.uuid)}
 						>
 							{$splineEditObject === $selectedObject.uuid ? 'Close spline editor' : 'Edit control points'}
-						</Button>
+						</UiButton>
 						<p class="text-[10px] text-gray-500">
 							Per-point thickness lives on the handles — open the editor and drag the amber dot above a point.
 						</p>
@@ -4052,28 +4064,28 @@
 						     survive a scene with a ring of tiles. -->
 						<span class="px-1 text-[10px] uppercase tracking-wider text-gray-500">Flatten</span>
 						<div class="flex flex-wrap gap-1">
-							<Button
+							<UiButton
 								id="spline-carve-pick"
-								size="xs"
-								color="alternative"
+								size="sm"
+								variant="outline"
 								onclick={() =>
 									import('$lib/flattenActions').then((m) =>
 										m.startFlattenPick('carve', $selectedObject.uuid)
 									)}
 							>
 								Terrain to this…
-							</Button>
-							<Button
+							</UiButton>
+							<UiButton
 								id="spline-drape-pick"
-								size="xs"
-								color="alternative"
+								size="sm"
+								variant="outline"
 								onclick={() =>
 									import('$lib/flattenActions').then((m) =>
 										m.startFlattenPick('drape', $selectedObject.uuid)
 									)}
 							>
 								This onto a surface…
-							</Button>
+							</UiButton>
 						</div>
 						<p class="text-[10px] text-gray-500">
 							{#if $flattenPicking}
@@ -4151,9 +4163,9 @@
 						{/if}
 						{#if (p.mode ?? 'continuous') !== 'continuous'}
 							<div class="ui-row items-center gap-2">
-								<Button size="xs" color="alternative" onclick={() => burstObjectParticles($selectedObject.uuid)}>
+								<UiButton size="sm" variant="outline" onclick={() => burstObjectParticles($selectedObject.uuid)}>
 									<Sparkles size={16} class="mr-1" aria-hidden="true" />Burst now
-								</Button>
+								</UiButton>
 								<span class="text-xs text-gray-400">fires for every peer</span>
 							</div>
 						{/if}
@@ -4276,9 +4288,9 @@
 							/>
 						</div>
 						<div class="ui-row items-center gap-2">
-							<Button size="xs" color="red" onclick={() => removeObjectParticles($selectedObject.uuid)}>
+							<UiButton size="sm" variant="warn-text" onclick={() => removeObjectParticles($selectedObject.uuid)}>
 								Remove emitter
-							</Button>
+							</UiButton>
 						</div>
 					{/if}
 				</Section>
@@ -4317,11 +4329,167 @@
 		letter-spacing: var(--tracking-section);
 		color: var(--text-faint);
 	}
+	/* the panel's legacy controls, drawn in the kit's look through the tokens (their markup,
+	   ids and handlers unchanged): choice chips with ONE accent for the selected state
+	   (orange stays for Play/live only), quiet buttons as small outline buttons, inset inputs */
+	.ins-shell :global(.ui-chip) {
+		display: inline-flex;
+		align-items: center;
+		min-height: 26px;
+		padding: 0 10px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-pill);
+		background: transparent;
+		color: var(--text-2);
+		font-size: var(--fs-section);
+		font-weight: 500;
+		letter-spacing: 0;
+		text-transform: none;
+		cursor: pointer;
+	}
+	.ins-shell :global(.ui-chip:hover:not(:disabled):not(.ins-chip-on)) {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.ins-shell :global(.ui-chip.ins-chip-on) {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+		color: var(--accent-soft-text);
+	}
+	.ins-shell :global(.ui-chip:disabled) {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+	.ins-shell :global(.ui-button-quiet),
+	.ins-shell :global(.ins-mini-btn) {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		min-height: 26px;
+		padding: 0 8px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text-2);
+		font-size: var(--fs-section);
+		cursor: pointer;
+	}
+	.ins-shell :global(.ui-button-quiet:hover:not(:disabled)),
+	.ins-shell :global(.ins-mini-btn:hover:not(:disabled)) {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.ins-shell :global(.ins-mini-btn:disabled) {
+		opacity: 0.4;
+	}
+	.ins-shell :global(.ui-input) {
+		min-height: 30px;
+		border: 1px solid var(--border-input);
+		border-radius: var(--radius-input);
+		background: var(--surface-inset);
+		color: var(--text);
+		font-size: var(--fs-desc);
+	}
+	.ins-shell :global(.ui-input:focus) {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+		outline: none;
+	}
+	.ins-shell :global(.ui-row) {
+		color: var(--text-2);
+	}
+	/* colour swatches (a native colour input, drawn as a 28px tile) */
+	.ins-shell :global(.ins-swatch) {
+		width: 28px;
+		height: 28px;
+		padding: 0;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-input);
+		background: transparent;
+		cursor: pointer;
+	}
+	.ins-shell :global(.ins-swatch::-webkit-color-swatch-wrapper) {
+		padding: 2px;
+	}
+	.ins-shell :global(.ins-swatch::-webkit-color-swatch) {
+		border: 0;
+		border-radius: 4px;
+	}
+	.ins-actions {
+		display: flex;
+		gap: 8px;
+		margin-top: 6px;
+	}
+	.ins-note {
+		margin: 2px 0 0;
+		font-size: var(--fs-badge);
+		line-height: 1.45;
+		color: var(--text-faint);
+	}
+	.ins-card {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 6px 8px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-inset);
+	}
+	.ins-card-head {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.ins-card-kind {
+		font-size: var(--fs-badge);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+	.ins-saved {
+		display: inline-flex;
+		align-items: center;
+		overflow: hidden;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-pill);
+	}
+	.ins-saved-apply,
+	.ins-saved-del {
+		min-height: 26px;
+		padding: 0 6px 0 10px;
+		background: transparent;
+		color: var(--text-2);
+		font-size: var(--fs-section);
+		cursor: pointer;
+	}
+	.ins-saved-del {
+		padding: 0 8px;
+		color: var(--text-faint);
+	}
+	.ins-saved-apply:hover,
+	.ins-saved-del:hover {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.ins-shell :global(.ins-banner) {
+		padding: 6px 8px;
+		border: 1px solid var(--accent);
+		border-radius: var(--radius-input);
+		background: var(--accent-soft);
+	}
+	.ins-shell :global(.ins-accent-text) {
+		color: var(--accent-soft-text);
+	}
+	.ins-shell :global(.ins-drop-on) {
+		border-color: var(--accent) !important;
+		background: var(--accent-soft);
+	}
 	/* transform rows: a narrower label column so three axis fields fit the panel */
 	.ins-transform {
 		display: flex;
 		flex-direction: column;
-		--prop-label-w: 64px;
+		--prop-label-w: 56px;
 	}
 	/* axis fields (and a lone value box) drawn like PropRow's value box: the inset well,
 	   the input border, mono numbers — DragRow restyled from outside, behaviour untouched */
@@ -4343,7 +4511,8 @@
 	.ins-shell :global(.ins-axes .dn-wrap) {
 		box-sizing: border-box;
 		min-height: 28px;
-		padding-inline: 5px;
+		gap: 3px;
+		padding-inline: 4px;
 		border-radius: var(--radius-input);
 	}
 	.ins-shell :global(.ins-axes .dn-wrap:not(.dn-focus):not(.dn-scrub):hover) {
@@ -4351,7 +4520,7 @@
 	}
 	.ins-shell :global(.ins-axes .dn-input) {
 		font-family: var(--font-ui-mono);
-		font-size: var(--fs-section);
+		font-size: var(--fs-badge);
 		color: var(--text);
 	}
 	.ins-shell :global(.ins-axis-x) {

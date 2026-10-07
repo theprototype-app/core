@@ -15,6 +15,7 @@ import { duplicateSelection, deleteSelection, groupSelection, selectionUuids } f
 import { savePrefab, savePrefabSelection } from './prefabs';
 import { perfContext } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
 import { vrDollhouseOpen, vrSculptActive } from './vr/worldStores.js'; // 37: a leaf
+import { sculptOp } from './terrainSculpt';
 
 // D4 (roadmap 13): selection-set helpers for the Edit ring — counted labels
 // act on the whole SET (parity with the desktop object menu, U-2)
@@ -25,6 +26,10 @@ function selCount() {
 function isSplineSelection() {
 	const object = /** @type {any} */ (get(selectedObject));
 	return !!object?.userData?.spline?.points?.length;
+}
+/** 37 R9: is the lone selection a Terrain (its Selected ring offers Sculpt terrain instead of Edit mesh)? */
+function isTerrainSelection() {
+	return !!(/** @type {any} */ (get(selectedObject))?.userData?.terrain);
 }
 function countSuffix() {
 	const n = selCount();
@@ -183,6 +188,7 @@ export function isRingNav(id) {
 export function ringTitle(ring) {
 	if (ring === 'root') return '';
 	if (ring === 'object') return 'Selected';
+	if (ring === 'sculpt') return 'Sculpt terrain'; // 37 R9: opened by a session, not a ▸ sector
 	for (const list of registry.values()) {
 		const opener = list.find((e) => e.ring === ring);
 		if (opener) return typeof opener.label === 'function' ? opener.label() : opener.label;
@@ -300,6 +306,8 @@ function registerBuiltins() {
 		['cylinder', 'Cylinder', 'cylinder'],
 		['torus', 'Torus', 'torus']
 	].forEach(([id, label, icon], order) => registerVRMenuEntry({ id, group: 'add', label, icon, order }));
+	// 37 R9: Terrain lands ahead of you and starts a sculpt session on it (the desktop Add menu's Terrain)
+	registerVRMenuEntry({ id: 'terrain', group: 'add', label: 'Terrain', icon: 'mountain', order: 5.5 });
 	// Prefabs opens the thumbnail window (115)
 	registerVRMenuEntry({ id: 'prefabs', group: 'add', label: 'Prefabs', icon: 'package', order: 6 });
 
@@ -422,7 +430,22 @@ function registerBuiltins() {
 		visible: () =>
 			selCount() <= 1 &&
 			/** @type {any} */ (get(selectedObject))?.type !== 'Group' &&
-			!isSplineSelection()
+			!isSplineSelection() &&
+			!isTerrainSelection()
+	});
+	// 37 R9: a TERRAIN gets the sculpt brush in the same slot (the desktop object menu's Sculpt terrain)
+	registerVRMenuEntry({
+		id: 'obj:sculpt',
+		group: 'object',
+		label: 'Sculpt terrain',
+		icon: 'brush',
+		order: 1,
+		closes: true,
+		visible: () => selCount() <= 1 && isTerrainSelection(),
+		action: () => {
+			const uuid = /** @type {any} */ (get(selectedObject))?.uuid;
+			if (uuid) void import('./vr/sculpt.js').then((m) => m.startVRSculpt(uuid));
+		}
 	});
 	// 57.4: a SPLINE gets its own editor in the same slot
 	registerVRMenuEntry({
@@ -517,6 +540,34 @@ function registerBuiltins() {
 		action: () => deleteSelection()
 	});
 
+	// 37 R9: the Sculpt ring — the radial opens on it while a VR sculpt session is up (Back = the usual menu)
+	[
+		['raise', 'Raise', 'arrow-up'],
+		['lower', 'Lower', 'arrow-down'],
+		['smooth', 'Smooth', 'waves-horizontal'],
+		['flatten', 'Flatten', 'minus']
+	].forEach(([op, label, icon], order) =>
+		registerVRMenuEntry({
+			id: 'sculpt:' + op,
+			group: 'sculpt',
+			label,
+			icon,
+			order,
+			closes: true,
+			active: () => get(sculptOp) === op,
+			action: () => void import('./vr/sculpt.js').then((m) => m.setVRSculptOp(op))
+		})
+	);
+	registerVRMenuEntry({
+		id: 'sculpt:done',
+		group: 'sculpt',
+		label: 'Done',
+		icon: 'check',
+		order: 4,
+		closes: true,
+		action: () => void import('./vr/sculpt.js').then((m) => m.stopVRSculpt())
+	});
+
 	// Face ops (118/137): ids the side-menu arms via setFaceOp; the 'faces' group stays registered so
 	// those ids resolve (no longer a ring)
 	registerVRMenuEntry({ id: 'face:extrude', group: 'faces', label: 'Extrude', order: 0 });
@@ -530,4 +581,6 @@ registerBuiltins();
 // closing the menu (any path) resets navigation to the base ring
 vrMenuOpen.subscribe((open) => {
 	if (!open) resetRings();
+	// 37 R9: a sculpt session opens the menu on its own ring (Back pops to the base ring)
+	else if (get(vrSculptActive) && get(activeRing) === 'root') pushRing('sculpt');
 });

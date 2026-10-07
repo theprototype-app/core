@@ -113,6 +113,7 @@ export const DEBUG_HOOKS = [
 	['vrSettingsSchema', () => import('./vr/settingsSchema.js')],
 	['vrDollhouse', () => import('./vr/dollhouse.js')],
 	['vrWorldSnap', () => import('./vr/worldSnap.js')],
+	['vrSculpt', () => import('./vr/sculpt.js')],
 	['vrTourTargets', () => import('./vr/tourTargets.js')],
 	['vrPrefs', () => import('./vr/prefs.js')],
 	['vrPalette', () => import('./vrPalette')],

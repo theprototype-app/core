@@ -21,7 +21,7 @@ export default {
 	}
 };`;
 	// only the modules repo — the packs/scenes CDN fetches must fall through
-	await A.page.route('**/gh/theprototype-app/modules@main/**', (route) => {
+	await A.page.route('**/gh/theprototype-app/modules@format-1/**', (route) => {
 		const url = route.request().url();
 		if (indexDown) return route.abort();
 		if (url.includes('index.json'))
@@ -137,7 +137,7 @@ export default {
 			)
 	);
 	h.check(
-		typeof record.source === 'string' && record.source.includes('modules@main/modules/gallerymod'),
+		typeof record.source === 'string' && record.source.includes('modules@format-1/modules/gallerymod'),
 		'record keeps the CDN source URL (Update + dev reload keep working)'
 	);
 

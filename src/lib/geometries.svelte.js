@@ -378,6 +378,10 @@ export function moveCamera(data) {
     if (!peerMesh) return;
     peerMesh.position.set(data.position[0], data.position[1], data.position[2]);
     peerMesh.rotation.set(data.rotation[0], data.rotation[1], data.rotation[2]);
+    // 37 R23/R22: optional presence extras — where a walking peer's feet are (its walker's floor)
+    // and whether it is "knocked off" idle. Absent = not walking / awake; an older peer sends neither.
+    peerMesh.userData.feet = Number.isFinite(data.feet) ? data.feet : null;
+    peerMesh.userData.knocked = data.knocked === 1;
 }
 
 /**

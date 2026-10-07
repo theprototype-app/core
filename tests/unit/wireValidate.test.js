@@ -145,3 +145,19 @@ describe('nodesync (36-sim)', () => {
 		expect(validateWireMessage({ type: 'nodesync', peerId: 'a', hash: {}, count: 5 })).toBe(false);
 	});
 });
+
+describe('37: camera presence extras', () => {
+	const base = { type: 'camera', peerId: 'a', position: [0, 1.7, 0], rotation: [0, 0, 0] };
+	it('an older peer (no extras) and a walker / knocked-off peer all pass', () => {
+		expect(validateWireMessage(base)).toBe(true);
+		expect(validateWireMessage({ ...base, feet: 0.25 })).toBe(true);
+		expect(validateWireMessage({ ...base, feet: 0, knocked: 1 })).toBe(true);
+		expect(validateWireMessage({ ...base, knocked: 0 })).toBe(true);
+	});
+	it('a malformed extra is refused', () => {
+		expect(validateWireMessage({ ...base, feet: 'floor' })).toBe(false);
+		expect(validateWireMessage({ ...base, feet: Infinity })).toBe(false);
+		expect(validateWireMessage({ ...base, knocked: true })).toBe(false);
+		expect(validateWireMessage({ ...base, knocked: 2 })).toBe(false);
+	});
+});

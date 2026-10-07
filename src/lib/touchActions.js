@@ -168,6 +168,9 @@ export function declareTouchActions(owner, actions, opts = {}) {
 
 /* --------------------------------------------------------------- resolution ---- */
 
+/** 37 R24: the buttons that fly (hidden unless the scene's play rules allow flying) */
+const FLY_ACTIONS = new Set(['up', 'down']);
+
 /**
  * `declared` = a module asked for these controls (api.input.actions) rather than the scene
  * implying them — the module then READS the stick itself (api.input().touch), so the stick
@@ -177,17 +180,21 @@ export function declareTouchActions(owner, actions, opts = {}) {
 
 /**
  * What the overlay draws for this scene, PURE (the unit layer drives it).
- * @param {{declared?: TouchDeclaration[], walk?: boolean, fly?: boolean, keyCodes?: string[]}} input
+ * 37 R24: `canFly` false (the scene's play rules do not allow flying) hides the Up/Down buttons
+ * whoever asked for them — a module's 'fly' preset falls back to 'explore'.
+ * @param {{declared?: TouchDeclaration[], walk?: boolean, fly?: boolean, canFly?: boolean, keyCodes?: string[]}} input
  * @returns {TouchControlsSpec}
  */
-export function resolveTouchControls({ declared = [], walk = false, fly = false, keyCodes = [] } = {}) {
+export function resolveTouchControls({ declared = [], walk = false, fly = false, canFly = true, keyCodes = [] } = {}) {
 	/** @type {TouchAction[]} */
 	const actions = [];
 	const add = (/** @type {TouchAction | null} */ a) => {
-		if (a && !actions.some((x) => x.id === a.id) && actions.length < MAX_BUTTONS) actions.push(a);
+		if (!a || (!canFly && FLY_ACTIONS.has(a.id))) return;
+		if (!actions.some((x) => x.id === a.id) && actions.length < MAX_BUTTONS) actions.push(a);
 	};
 	const withPreset = [...declared].reverse().find((d) => d.preset);
-	let preset = withPreset?.preset || (declared.length ? 'custom' : walk ? 'platformer' : fly ? 'fly' : 'explore');
+	let preset = withPreset?.preset || (declared.length ? 'custom' : walk ? 'platformer' : fly && canFly ? 'fly' : 'explore');
+	if (preset === 'fly' && !canFly) preset = 'explore';
 	const frame = TOUCH_PRESETS[preset] ?? TOUCH_PRESETS.custom;
 	let stick = frame.stick;
 	let look = frame.look;

@@ -24,6 +24,8 @@
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
 	import DragRow from '../ui/DragRow.svelte';
+	import PropRow from '../ui/PropRow.svelte';
+	import Segmented from '../ui/Segmented.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
 	import CustomWrapper from '$lib/ColorWrapper.svelte';
 	import { sineIn } from 'svelte/easing';
@@ -1495,6 +1497,29 @@
 		const r2 = (/** @type {number} */ v) => Math.round(v * 100) / 100;
 		setScenePhysics({ play: { spawn: { position: [r2(target.x), r2(target.y), r2(target.z)], yaw: Math.round(yaw * 1000) / 1000 } } });
 	}
+	// 37 R24: the scene's Flying choice — Off (default: players walk; a game module may still allow
+	// it) · Allowed (`play.locomotion.fly`) · Removed (`play.locomotion.noFly`, beats every module)
+	const FLY_CHOICES = [
+		{ value: 'off', label: 'Off', title: 'Players walk. A game module may still allow flying.' },
+		{ value: 'allowed', label: 'Allowed', title: 'Players may fly: Q / E on desktop, Up / Down on touch, the VR stick along the aim' },
+		{ value: 'removed', label: 'Removed', title: 'Nobody flies in this scene, even if a game module asks' }
+	];
+	/** @param {any} play */
+	function flyChoiceOf(play) {
+		return play?.locomotion?.noFly ? 'removed' : play?.locomotion?.fly ? 'allowed' : 'off';
+	}
+	/** @param {string} choice */
+	function setFlyChoice(choice) {
+		/** @type {Record<string, any>} */
+		const loco = { ...($scenePlay.locomotion ?? {}) };
+		delete loco.fly;
+		delete loco.noFly;
+		if (choice === 'allowed') loco.fly = true;
+		if (choice === 'removed') loco.noFly = true;
+		const locomotion = Object.keys(loco).length ? loco : null;
+		// Allowed un-pins a scene that was kept on the ground (the two used to be separate switches)
+		setScenePhysics({ play: { locomotion, ...(choice === 'allowed' ? { grounded: false } : {}) } });
+	}
 	/** @param {any} spawn */
 	function spawnText(spawn) {
 		if (!spawn) return 'Default — (0, 2, 3), facing −Z';
@@ -2722,13 +2747,20 @@
 						onchange={(v) => setScenePhysics({ play: { reach: v } })}
 					/>
 				{/if}
-				<Checkbox
-					id="physics-play-grounded"
-					checked={$scenePlay.grounded}
-					onchange={(e) => setScenePhysics({ play: { grounded: e.currentTarget.checked } })}
-				>
-					Keep players on the ground
-				</Checkbox>
+				<!-- 37 R24: flying in Play is OPT-IN per game (players walk unless the game allows it),
+				     and a scene can remove it outright — over any module or Character Controller -->
+				<PropRow label="Flying" valueBox={false} id="physics-play-flying-row">
+					{#snippet control()}
+						<Segmented
+							id="physics-play-flying"
+							label="Flying in Play"
+							full
+							options={FLY_CHOICES}
+							value={flyChoiceOf($scenePlay)}
+							onchange={setFlyChoice}
+						/>
+					{/snippet}
+				</PropRow>
 				<Checkbox
 					id="physics-sim-on-play"
 					checked={$scenePlay.simOnPlay}

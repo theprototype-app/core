@@ -266,7 +266,13 @@ export const VALIDATORS = {
 			(/** @type {any} */ t) => !!t && typeof t.k === 'string' && Number.isFinite(t.at) && typeof t.m === 'string' && isArray(t.a)
 		) &&
 		(d.fired === undefined || (!!d.fired && typeof d.fired === 'object' && !Array.isArray(d.fired))),
-	camera: (d) => typeof d.peerId === 'string' && isVec3(d.position) && isFiniteArray(d.rotation, 3),
+	// 37: optional presence extras — `feet` (a walker's floor, metres) and `knocked` (0/1 idle flag)
+	camera: (d) =>
+		typeof d.peerId === 'string' &&
+		isVec3(d.position) &&
+		isFiniteArray(d.rotation, 3) &&
+		(d.feet === undefined || Number.isFinite(d.feet)) &&
+		(d.knocked === undefined || d.knocked === 0 || d.knocked === 1),
 	// 34 R2 (kit-entities): the ONE wire type kit entities replicate on — written by the
 	// authority peer only (the applier refuses anyone else), applied straight into poses and
 	// hit points, so every row is checked here: finite numbers, bounded counts, bounded strings

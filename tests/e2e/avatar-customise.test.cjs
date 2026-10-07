@@ -72,6 +72,26 @@ h.run(async () => {
 			return !!g.getObjectByName('avatar-preview') || !!g.getObjectByName('avatar-preview-avatar');
 		});
 		h.check(!inGroup, t('1.3 the preview is local (not in the replicated objectsGroup)'));
+		// 38 NOTES-38 #34: the body is centred in the part of the viewport the drawer leaves free
+		// (wide screens: left of the drawer), not half under the drawer
+		await page.waitForTimeout(900);
+		const framing = await page.evaluate(() => {
+			const s = window.__stores;
+			let cam, g;
+			s.globalCamera.subscribe((v) => (cam = v))();
+			s.globalScene?.subscribe?.((v) => (g = v))();
+			const scene = g ?? cam?.parent;
+			let body = null;
+			scene?.traverse?.((o) => { if (!body && /avatar-preview/.test(o.name || '')) body = o; });
+			const panel = document.getElementById('character-panel')?.getBoundingClientRect();
+			if (!cam || !body || !panel) return null;
+			const box = new s.THREE.Box3().setFromObject(body);
+			const c = box.getCenter(new s.THREE.Vector3()).project(cam);
+			return { x: ((c.x + 1) / 2) * innerWidth, freeW: panel.left, narrow: innerWidth < 640 };
+		});
+		if (framing && !framing.narrow)
+			h.check(Math.abs(framing.x - framing.freeW / 2) < framing.freeW * 0.12, t(`1.4 the body is centred in the free part left of the drawer (x ${Math.round(framing.x)} of ${Math.round(framing.freeW)})`));
+		else if (!framing) h.check(false, t('1.4 could read the preview framing'));
 		if (SHOTS) await page.screenshot({ path: `${SHOTS}/0${theme === 'dark' ? 1 : 2}-customise-panel-${theme}.png` });
 
 		// ---- 2. live edits ----

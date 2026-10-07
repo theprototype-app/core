@@ -3,6 +3,7 @@
 	// the active window's header area — notebook tabs (narrower on top, curvy),
 	// drag the strip background to move the whole group, drag a tab out to
 	// re-float it, ✕ closes the active member through its own path.
+	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import { tabGroups, activateTab, moveGroup, tearOff, titleOf, closeGroup, closeMember, nodeOf } from '$lib/windowTabs';
 	import { focusTick, raiseWindowNode } from '$lib/windowFocus';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -86,25 +87,40 @@
 		data-key-scope="panel"
 		onpointerdown={(e) => onStripDown(e, group)}
 	>
-		{#each group.members as key (key)}
-			<button
-				class="tab-note tp-dtab ts-tab relative"
-				role="tab"
-				aria-selected={key === group.active}
-				title="Click to switch — drag out to detach — right-click to hide"
-				onpointerdown={(e) => {
-					e.stopPropagation();
-					onTabDown(e, group.id, key);
-				}}
-				oncontextmenu={(e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					tabMenu = { x: e.clientX, y: e.clientY, key };
-				}}
-			>
-				{#if TAB_ICONS[key]}<span class="tp-dtab-ico"><Icon name={TAB_ICONS[key]} size={16} /></span>{/if}{titleOf(key)}
-			</button>
-		{/each}
+		<!-- NOTES-38 #39: more tabs than width scroll sideways (wheel / swipe, fade edge); the
+		     close-all ✕ stays pinned at the end -->
+		<div class="tp-noscrollbar flex min-w-0 items-center overflow-x-auto" use:stripScroll>
+			{#each group.members as key (key)}
+				<!-- 38 NOTES-38 #29: the tab carries its own ✕ (= right-click ▸ Hide tab) -->
+				<span class="tp-dtab-group" class:tp-dtab-group-on={key === group.active}>
+					<button
+						class="tab-note tp-dtab ts-tab relative"
+						role="tab"
+						aria-selected={key === group.active}
+						title="Click to switch — drag out to detach — right-click to hide"
+						onpointerdown={(e) => {
+							e.stopPropagation();
+							onTabDown(e, group.id, key);
+						}}
+						oncontextmenu={(e) => {
+							e.preventDefault();
+							e.stopPropagation();
+							tabMenu = { x: e.clientX, y: e.clientY, key };
+						}}
+					>
+						{#if TAB_ICONS[key]}<span class="tp-dtab-ico"><Icon name={TAB_ICONS[key]} size={16} /></span>{/if}{titleOf(key)}
+					</button>
+					<button
+						class="tp-dtab-x ts-tab-x"
+						data-tab-close={key}
+						title="Hide {titleOf(key)}"
+						aria-label="Hide {titleOf(key)}"
+						onpointerdown={(e) => e.stopPropagation()}
+						onclick={() => closeMember(key)}><Icon name="x" size={16} aria-hidden="true" /></button
+					>
+				</span>
+			{/each}
+		</div>
 		<span class="flex-1"></span>
 		<button
 			class="ts-close tp-dtab tp-dtab-icon shrink-0"

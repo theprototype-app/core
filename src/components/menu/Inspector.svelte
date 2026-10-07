@@ -2790,9 +2790,14 @@
 					was hit. Grip still grabs. Shared, and it needs a running simulation.
 				</p>
 
-				<p class="mt-2 text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint">Play mode</p>
-				<div class="ui-row items-center gap-2">
-					<span class="w-24 shrink-0 text-xs text-text-2">Pointer</span>
+			</Section>
+
+			<!-- 38 NOTES-38 #33: Play is its own section (it was the "Play mode" block inside Physics):
+			     how the pointer acts, grab reach, flying, the simulation, the Playing banner and where
+			     play starts. Same rows, same ids, same scene data (the play block). -->
+			<Section variant="panel" label="Play" badge="Shared" aliases={['Play mode']}>
+				<PropRow label="Pointer" valueBox={false}>
+					{#snippet control()}
 					<ThemedSelect
 						id="physics-play-interaction"
 						class="flex-1"
@@ -2804,7 +2809,8 @@
 						]}
 						onchange={(/** @type {any} */ val) => setScenePhysics({ play: { interaction: val } })}
 					/>
-				</div>
+					{/snippet}
+				</PropRow>
 				<!-- 31-towers P1: grab REACH, measured from the player's body (absent = no limit) -->
 				<InsToggle
 					id="physics-play-reach-on"
@@ -2846,60 +2852,55 @@
 				>
 					Start the simulation when play mode opens
 				</InsToggle>
-				<!-- 38 R8 (NOTES-38 #4): the top "Playing · Press Esc to stop" banner — the hint by
-				     default; a game or an advanced scene may hide it or say its own words -->
-				<div class="ui-row items-center gap-2">
-					<span class="w-24 shrink-0 text-xs text-text-2">Top banner</span>
-					<ThemedSelect
-						id="physics-play-banner"
-						class="flex-1"
-						value={$scenePlay.banner?.mode ?? 'hint'}
-						items={[
-							{ value: 'hint', name: 'Show hint' },
-							{ value: 'hide', name: 'Hide' },
-							{ value: 'custom', name: 'Custom text' }
-						]}
-						onchange={(/** @type {any} */ val) =>
-							setScenePhysics({
-								play: { banner: val === 'hint' ? null : val === 'hide' ? { mode: 'hide' } : { mode: 'custom', text: $scenePlay.banner?.text ?? '' } }
-							})}
-					/>
-				</div>
+				<!-- 38 NOTES-38 #4 / #33: the "Playing · Press Esc to stop" banner — shown by default;
+				     a game or an advanced scene hides it or says its own words (phone too: the
+				     banner reads the same scene setting). A game's Menu · Esc button is not this. -->
+				<PropRow label="Playing banner" valueBox={false} id="physics-play-banner-row">
+					{#snippet control()}
+						<Segmented
+							id="physics-play-banner"
+							label="Playing banner"
+							full
+							options={[
+								{ value: 'hint', label: 'Show' },
+								{ value: 'hide', label: 'Hide' },
+								{ value: 'custom', label: 'Custom' }
+							]}
+							value={$scenePlay.banner?.mode ?? 'hint'}
+							onchange={(/** @type {any} */ val) =>
+								setScenePhysics({
+									play: { banner: val === 'hint' ? null : val === 'hide' ? { mode: 'hide' } : { mode: 'custom', text: $scenePlay.banner?.text ?? '' } }
+								})}
+						/>
+					{/snippet}
+				</PropRow>
 				{#if $scenePlay.banner?.mode === 'custom'}
-					<div class="ui-row items-center gap-2">
-						<span class="w-24 shrink-0 text-xs text-text-2">Banner text</span>
+					<PropRow label="Banner text" valueBox={false}>
+						{#snippet control()}
 						<input
 							id="physics-play-banner-text"
-							class="ui-input flex-1 text-xs"
+							class="tp-field w-full"
 							type="text"
 							maxlength="80"
 							placeholder="e.g. Find the three keys"
 							value={$scenePlay.banner.text}
 							onchange={(e) => setScenePhysics({ play: { banner: { mode: 'custom', text: e.currentTarget.value } } })}
 						/>
-					</div>
+						{/snippet}
+					</PropRow>
 				{/if}
 				<!-- 30c: where desktop play starts — feet position + heading, shared scene data -->
-				<div class="ui-row items-center gap-2">
-					<span class="w-24 shrink-0 text-xs text-text-2">Spawn point</span>
-					<span id="physics-spawn-readout" class="flex-1 text-xs text-text-muted">{spawnText($scenePlay.spawn)}</span>
-				</div>
-				<div class="ui-row gap-2">
-					<button
-						id="physics-spawn-set"
-						class="ui-button-quiet text-xs"
-						title="Play starts at the point the view orbits around, facing the way the camera looks at it"
-						onclick={setSpawnFromView}>Set to the view's focus</button
-					>
+				<PropRow label="Spawn point" valueBox={false}>
+					{#snippet control()}
+					<span id="physics-spawn-readout" class="text-[length:var(--fs-desc)] text-text-muted">{spawnText($scenePlay.spawn)}</span>
+					{/snippet}
+				</PropRow>
+				<div class="flex flex-wrap gap-2">
+					<UiButton id="physics-spawn-set" variant="outline" size="sm" title="Play starts at the point the view orbits around, facing the way the camera looks at it" onclick={setSpawnFromView}>Set to the view's focus</UiButton>
 					{#if $scenePlay.spawn}
-						<button id="physics-spawn-clear" class="ui-button-quiet text-xs" onclick={() => setScenePhysics({ play: { spawn: null } })}
-							>Clear</button
-						>
+						<UiButton id="physics-spawn-clear" variant="ghost" size="sm" onclick={() => setScenePhysics({ play: { spawn: null } })}>Clear</UiButton>
 					{/if}
 				</div>
-				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
-					Shared: everyone entering play mode in this scene gets these.
-				</p>
 			</Section>
 
 			<Section variant="panel" label="Background" badge="Shared">

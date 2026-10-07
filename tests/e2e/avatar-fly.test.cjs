@@ -1,5 +1,5 @@
 // 37-avatar-fix R24 — FLYING IS OPT-IN. A game flies only when it says so; Configure Scene ▸
-// Physics ▸ Play mode ▸ Flying (Off / Allowed / Removed) is the scene's word; the editor still flies.
+// Configure Scene ▸ Play ▸ Flying (Off / Allowed / Removed) is the scene's word; the editor still flies.
 //  1. A plain scene in Play: Q / E do nothing (the eye stays at 1.7 m), no Up/Down touch buttons.
 //  2. Flying ▸ Allowed (the real control): Q / E fly, the touch overlay offers Up/Down.
 //  3. Flying ▸ Removed beats a Character Controller node in fly mode: still no flying.
@@ -41,7 +41,7 @@ h.run(async () => {
 		return { y0, y1, dy: y1 - y0 };
 	};
 	const pick = async (label) => {
-		await page.evaluate(() => window.__stores.openSceneSection('Physics'));
+		await page.evaluate(() => window.__stores.openSceneSection('Play')); // 38 #33: its own section
 		const opt = page.locator('#physics-play-flying [role="radio"]', { hasText: label });
 		await opt.waitFor({ state: 'visible', timeout: 10000 });
 		await opt.scrollIntoViewIfNeeded();

@@ -71,6 +71,7 @@ import { controllerRay } from './pointer.js';
 import { stretch } from './tools.js';
 import { perfMark } from '../perf/perfMarks.js';
 import { handOf } from './bindings.js';
+import { applyWorldSnap, endWorldSnap, yawOf } from './worldSnap.js';
 
 /** @type {any[]} per-hand grabs, indexed by controller SLOT: each is { object, index, prevPos,
  * prevQuat, before, ... }. 33 G4: one per hand, so two hands hold two things at once — a single
@@ -218,8 +219,10 @@ export function resetWorldRig() {
  * @param {{a: number[], b: number[]}} start
  * @param {{a: number[], b: number[]}} now
  * @param {{pos: number[], quat: number[], scale: number}} rig0
+ * @param {((raw: {total: number, yaw: number, yaw0: number}) => {total: number, yaw: number}) | null} [snap]
+ *   37 R10: may move the wanted scale/yaw onto a step (worldSnap.js); the hands' midpoint stays the pivot
  */
-export function computeWorldGrabTransform(start, now, rig0) {
+export function computeWorldGrabTransform(start, now, rig0, snap = null) {
 	const a0 = new THREE.Vector3().fromArray(start.a);
 	const b0 = new THREE.Vector3().fromArray(start.b);
 	const a = new THREE.Vector3().fromArray(now.a);
@@ -229,12 +232,13 @@ export function computeWorldGrabTransform(start, now, rig0) {
 	const d0 = Math.max(a0.distanceTo(b0), 0.05);
 	const d = Math.max(a.distanceTo(b), 0.001);
 	// clamp the TOTAL scale, then work with the relative ratio
-	const total = THREE.MathUtils.clamp(rig0.scale * (d / d0), WORLD_SCALE_MIN, WORLD_SCALE_MAX);
-	const ratio = total / rig0.scale;
+	let total = THREE.MathUtils.clamp(rig0.scale * (d / d0), WORLD_SCALE_MIN, WORLD_SCALE_MAX);
 	// yaw from the hands' axis on the ground plane (angle0 - angleNow, +Y up)
 	const angle0 = Math.atan2(b0.z - a0.z, b0.x - a0.x);
 	const angle = Math.atan2(b.z - a.z, b.x - a.x);
-	const yaw = angle0 - angle;
+	let yaw = angle0 - angle;
+	if (snap) ({ total, yaw } = snap({ total, yaw, yaw0: yawOf(rig0.quat) }));
+	const ratio = total / rig0.scale;
 	const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
 	const quat0 = new THREE.Quaternion().fromArray(rig0.quat);
 	// rig' = T(mid) · R(yaw) · S(ratio) · T(-mid0) applied to the rig's start
@@ -281,7 +285,7 @@ export function updateWorldGrab() {
 			console.log('world-grab divert failed', error);
 		}
 	}
-	const next = computeWorldGrabTransform(live.start, live.now, S.worldGrab.rig0);
+	const next = computeWorldGrabTransform(live.start, live.now, S.worldGrab.rig0, applyWorldSnap);
 	rig.position.fromArray(next.pos);
 	rig.quaternion.fromArray(next.quat);
 	rig.scale.setScalar(next.scale);
@@ -689,6 +693,7 @@ export function onSqueezeEnd(index) {
 		// releasing either grip ends the world gesture; a still-held RIGHT grip
 		// resumes the single-hand world pan without re-squeezing
 		S.worldGrab = null;
+		endWorldSnap();
 		const other = index === 0 ? 1 : 0;
 		if (emptyAirSqueeze[other]) {
 			const handedness = renderer.xr.getController(other)?.userData?.handedness ?? null;

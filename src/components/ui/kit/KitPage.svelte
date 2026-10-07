@@ -30,6 +30,7 @@
 	import Menu from '../Menu.svelte';
 	import Toast from '../Toast.svelte';
 	import SearchField from '../SearchField.svelte';
+	import ScrollStrip from '../ScrollStrip.svelte';
 
 	const THEME_CHOICES = [
 		{ value: 'dark', label: 'Dark' },
@@ -361,6 +362,19 @@
 				]}
 				data-testid="kit-dock-tabs"
 			/>
+		</section>
+
+		<!-- ================= ScrollStrip (NOTES-38 #39) ================= -->
+		<section class="kit-card kit-wide" id="kit-scrollstrip">
+			<header><b>ScrollStrip</b><span>a toolbar or tab row that can overflow · drag / swipe / wheel sideways · fades the hidden side</span></header>
+			<p class="kit-note">Nothing is ever unreachable on a phone: the strip scrolls and the edge that still hides tools fades. Keep a pinned control (a "+", a close) outside the strip.</p>
+			<div class="kit-strip-demo" data-testid="kit-scrollstrip">
+				<ScrollStrip label="Demo toolbar">
+					{#each ['Select', 'Box', 'Lasso', 'Paint', 'Move', 'Rotate', 'Scale', 'Unwrap', 'Fit', 'Flip U', 'Flip V', 'Last tool'] as t (t)}
+						<Button variant="secondary" size="sm">{t}</Button>
+					{/each}
+				</ScrollStrip>
+			</div>
 		</section>
 
 		<!-- ================= Segmented ================= -->
@@ -855,6 +869,13 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
 		gap: var(--space-3);
+	}
+	.kit-strip-demo {
+		max-width: 340px;
+		padding: var(--space-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-input);
+		background: var(--surface-inset);
 	}
 	.kit-note {
 		margin: 0;

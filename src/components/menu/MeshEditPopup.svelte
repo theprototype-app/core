@@ -37,6 +37,7 @@
 		mergeDistance,
 		symAxis,
 		symKeep,
+		liveSymmetry,
 		optionsFocus,
 		focusTool,
 		hasOptions,
@@ -223,7 +224,7 @@
 		{ op: 'move', label: 'Move', hint: 'G', oneShot: false, param: false, icon: 'move', desc: 'seat the gizmo on the selection and drag it' },
 		{ op: 'extrude', label: 'Extrude', hint: 'E', oneShot: false, param: false, icon: 'extrude', desc: 'pull the face out along its normal' },
 		{ op: 'inset', label: 'Inset', hint: 'I', oneShot: false, param: false, icon: 'inset', desc: 'shrink a copy inside a stitched ring' },
-		{ op: 'knife', label: 'Knife', hint: 'K', oneShot: false, param: false, icon: 'knife', desc: 'cut across the mesh: click one end of the line, then the other' }
+		{ op: 'knife', label: 'Knife', hint: 'K', oneShot: false, param: false, icon: 'knife', desc: 'cut across the mesh: click one end of the line, then the other (Shift+click adds corners)' }
 	];
 	const ACTION_OPS = [
 		{ op: 'bevel', label: 'Bevel', hint: '', oneShot: true, param: true, icon: 'bevel', desc: "chamfer the selected face's border" },
@@ -1432,6 +1433,28 @@
 						})}>Symmetrize</button
 				>
 			</div>
+			<!-- 37 R11: LIVE symmetry — every edit mirrored, vertex drags move their twin -->
+			<label
+				class="tbx-row flex items-center gap-1 text-xs text-text-2"
+				title="While on, every edit is mirrored across the axis above, from the side you edited — and dragging a vertex moves its mirror twin with it. Symmetrize first if the mesh is not symmetric yet."
+			>
+				<input
+					id="mesh-sym-live"
+					class="tbx-check"
+					type="checkbox"
+					checked={$liveSymmetry}
+					onchange={(e) => {
+						liveSymmetry.set(e.currentTarget.checked);
+						if (e.currentTarget.checked)
+							showToast(
+								'Live symmetry on: edits are mirrored across ' +
+									$symAxis.toUpperCase() +
+									'. Symmetrize first if the mesh is not symmetric yet.'
+							);
+					}}
+				/>
+				live symmetry
+			</label>
 		</ToolboxSection>
 
 		<ToolboxSection key="display" label="Display" open={true} id="mesh-sec-display">

@@ -15,6 +15,28 @@ export function registerNavSuppressor(fn) {
 		if (i >= 0) navSuppressors.splice(i, 1);
 	};
 }
+/** @type {(() => ('left' | 'right' | null))[]} 37: a feature reading ONE hand's stick itself (the VR sculpt
+ * brush sizes on the pointer hand's stick) — that hand's navigation (move, turn, teleport) stands down, the
+ * other stick keeps working. A grab already owns its hand's stick this way (vrGrabbedHand). */
+export const stickOwners = [];
+/** @param {() => ('left' | 'right' | null)} fn @returns {() => void} */
+export function registerStickOwner(fn) {
+	stickOwners.push(fn);
+	return () => {
+		const i = stickOwners.indexOf(fn);
+		if (i >= 0) stickOwners.splice(i, 1);
+	};
+}
+/** does some feature own this hand's stick right now? @param {string} hand */
+export function stickOwned(hand) {
+	return stickOwners.some((fn) => {
+		try {
+			return fn() === hand;
+		} catch {
+			return false;
+		}
+	});
+}
 /** @type {(() => any)[]} extra beam-terminating groups (openPanelGroups family) */
 export const panelGroupProviders = [];
 /** @param {() => any} fn returns a THREE.Group or null @returns {() => void} */

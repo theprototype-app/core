@@ -71,6 +71,9 @@
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
+	import Sheet from '../ui/Sheet.svelte';
+	import Button from '../ui/Button.svelte';
+	import ScrollStrip from '../ui/ScrollStrip.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ShaderNode from './nodes/ShaderNode.svelte';
 	import ShaderSidebar from './ShaderSidebar.svelte';
@@ -150,6 +153,26 @@
 	let propsTab = $state(LS?.getItem('shaderPropsTab') || 'settings');
 	// #20 P7: the left column's own height, measured — the graph tree's resize ceiling
 	let paletteColH = $state(0);
+	// 38 NOTES-38 #36: below 640px of its OWN width (a docked phone panel, a narrowed window)
+	// the two side columns squeezed the graph to a sliver. COMPACT gives the canvas the whole
+	// width and opens the palette and the properties as kit Sheets from two buttons over it.
+	// LOCAL, unsaved: the desktop column prefs (shaderPaletteOpen / shaderPropsOpen) are not
+	// touched. 0 = hidden behind another dock tab, which is not narrow.
+	let bodyW = $state(0);
+	const compact = $derived(bodyW > 0 && bodyW < 640);
+	let paletteSheet = $state(false);
+	let propsSheet = $state(false);
+	$effect(() => {
+		if (!compact) {
+			paletteSheet = false;
+			propsSheet = false;
+		}
+	});
+	/** a pick from the palette SHEET lands on the canvas and gets out of the way @param {string} key */
+	function pickFromSheet(key) {
+		addNodeAtCentre(key);
+		paletteSheet = false;
+	}
 	let edgeStyle = $state(LS?.getItem('shaderEdgeStyle') ?? 'bezier');
 	let bgPattern = $state(LS?.getItem('shaderBg') ?? 'dots');
 	let showMinimap = $state(LS?.getItem('shaderMinimap') === 'true');
@@ -678,16 +701,7 @@
 	>
 {/snippet}
 
-{#snippet body()}
-	{#if errors.length}
-			<div class="shader-errors" id="shader-errors" use:minimalScroll>
-				{#each errors as message, i (i)}<div>{message}</div>{/each}
-			</div>
-		{/if}
-
-		<div class="shader-body">
-			{#if paletteOpen}
-				<div class="shader-side shader-side-left" bind:clientHeight={paletteColH}>
+{#snippet paletteContent(/** @type {number} */ paneH, /** @type {(key: string) => void} */ pick)}
 					<!-- #20 P7: the graph navigator sits ABOVE the palette in the same pane -->
 					<!-- the navigator shows the documents of the domain you are IN: it resolves a
 					     key to the object that owns it, and a post graph owns no object, so
@@ -697,13 +711,27 @@
 						documents={treeDocuments}
 						sceneKey={SCENE_GRAPH_KEY}
 						label={isPost ? 'Post effects' : 'Shaders'}
-						paneHeight={paletteColH}
+						paneHeight={paneH}
 					/>
 					<div class="shader-side-scroll" use:minimalScroll>
-						<ShaderSidebar onPick={addNodeAtCentre} entries={catalog} />
+						<ShaderSidebar onPick={pick} entries={catalog} />
 					</div>
+{/snippet}
+
+{#snippet body()}
+	{#if errors.length}
+			<div class="shader-errors" id="shader-errors" use:minimalScroll>
+				{#each errors as message, i (i)}<div>{message}</div>{/each}
+			</div>
+		{/if}
+
+		<div class="shader-body" bind:clientWidth={bodyW}>
+			{#if paletteOpen && !compact}
+				<div class="shader-side shader-side-left" bind:clientHeight={paletteColH}>
+					{@render paletteContent(paletteColH, addNodeAtCentre)}
 				</div>
 			{/if}
+			{#if !compact}
 			<button
 				id="shader-palette-toggle"
 				class="shader-divider"
@@ -711,10 +739,12 @@
 				aria-label="Toggle the node palette"
 				onclick={() => (paletteOpen = !paletteOpen)}>{paletteOpen ? '‹' : '›'}</button
 			>
+			{/if}
 
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="shader-canvas"
+				class:shader-canvas-compact={compact}
 				data-key-scope="shader"
 				bind:this={paneEl}
 				ondrop={onDrop}
@@ -783,8 +813,32 @@
 						{/if}
 					</div>
 				{/if}
+				{#if compact}
+					<!-- the two side panels, one tap away (NOTES-38 #36) -->
+					<div class="shader-fabs">
+						<Button
+							variant="secondary"
+							size="sm"
+							icon="plus"
+							id="shader-palette-sheet-btn"
+							aria-haspopup="dialog"
+							aria-expanded={paletteSheet}
+							onclick={() => { propsSheet = false; paletteSheet = !paletteSheet; }}>Nodes</Button
+						>
+						<Button
+							variant="secondary"
+							size="sm"
+							icon="sliders-horizontal"
+							id="shader-props-sheet-btn"
+							aria-haspopup="dialog"
+							aria-expanded={propsSheet}
+							onclick={() => { paletteSheet = false; propsSheet = !propsSheet; }}>Properties</Button
+						>
+					</div>
+				{/if}
 			</div>
 
+			{#if !compact}
 			<button
 				id="shader-props-toggle"
 				class="shader-divider"
@@ -792,8 +846,24 @@
 				aria-label="Toggle the properties panel"
 				onclick={() => (propsOpen = !propsOpen)}>{propsOpen ? '›' : '‹'}</button
 			>
-			{#if propsOpen}
+			{/if}
+			{#if propsOpen && !compact}
 				<div class="shader-side shader-side-right" id="shader-props" use:minimalScroll>
+					{@render propsContent()}
+				</div>
+			{/if}
+		</div>
+		{#if compact}
+			<Sheet bind:open={paletteSheet} title="Nodes" detents={['half', 'full']} id="shader-palette-sheet">
+				<div class="shader-sheet-body">{@render paletteContent(320, pickFromSheet)}</div>
+			</Sheet>
+			<Sheet bind:open={propsSheet} title="Properties" detents={['half', 'full']} id="shader-props-sheet">
+				<div class="shader-sheet-body" id="shader-props">{@render propsContent()}</div>
+			</Sheet>
+		{/if}
+{/snippet}
+
+{#snippet propsContent()}
 					<div class="shader-props-tabs">
 						<button
 							class:active={propsTab === 'info'}
@@ -941,9 +1011,6 @@
 							{/if}
 						</div>
 					{/if}
-				</div>
-			{/if}
-		</div>
 {/snippet}
 
 <!-- The seventh dock view finally has both modes. The DOCKED branch keeps the render
@@ -965,8 +1032,12 @@
 		></div>
 		<div class="shader-topbar">
 			<DockTabs />
-			{@render domainSwitch()}
-			<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
+			<!-- the domain switch + scope scroll sideways on a narrow screen (NOTES-38 #39);
+			     the window actions stay pinned at the right -->
+			<ScrollStrip class="shader-strip" gap="var(--space-2)" label="Shader editor tools">
+				{@render domainSwitch()}
+				<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
+			</ScrollStrip>
 			<div class="shader-actions">
 				<button class="tp-dock-btn"
 					id="shader-undock"
@@ -1069,6 +1140,9 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 	}
+	.shader-topbar > :global(.shader-strip) {
+		flex: 1 1 auto;
+	}
 	.shader-actions {
 		margin-left: auto;
 		display: flex;
@@ -1115,6 +1189,36 @@
 		position: relative;
 		flex: 1;
 		min-width: 0;
+	}
+	/* 38 NOTES-38 #36: compact — the canvas alone, the side panels a tap away */
+	.shader-fabs {
+		position: absolute;
+		top: var(--space-2);
+		left: var(--space-2);
+		right: var(--space-2);
+		z-index: 5;
+		display: flex;
+		justify-content: space-between;
+		pointer-events: none;
+	}
+	.shader-fabs > :global(*) {
+		pointer-events: auto;
+		box-shadow: var(--shadow-window);
+	}
+	.shader-sheet-body {
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+		padding: 0 var(--space-3) var(--space-3);
+	}
+	/* a socket is an 8px dot: a finger gets an invisible 36px target around it (nothing changes
+	   where it is drawn, and a mouse never sees it) */
+	@media (pointer: coarse) {
+		.shader-canvas :global(.svelte-flow__handle)::after {
+			content: '';
+			position: absolute;
+			inset: -14px;
+		}
 	}
 	.shader-errors {
 		flex: 0 0 auto;

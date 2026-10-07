@@ -12,6 +12,7 @@
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import ScrollStrip from '../ui/ScrollStrip.svelte';
 	import { selectedObject, selectedObjects, objectsGroup, globalScene } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
 	import { setObjectTexture, removeObjectTexture, addMaterialSlot } from '$lib/materialsHandler';
@@ -1306,7 +1307,7 @@
 			tooltip: pickedTris
 				? 'Applies to the ' + pickedTris + ' face triangles selected in Edit Mesh'
 				: 'Applies to the whole mesh',
-			children: backends.map((backend) => ({
+			children: unwrapBackends().map((backend) => ({
 				label: backend.label,
 				action: () => runUnwrap(backend.key)
 			}))
@@ -1444,7 +1445,23 @@
 	}
 
 	let unwrapOpen = $state(false);
-	const backends = unwrapBackends();
+	// re-read whenever a menu opens: a module (37 R11's Smart unwrap) can register a backend
+	// while this editor is already mounted, and a list read once at mount never showed it
+	let backends = $state(unwrapBackends());
+	// 38 NOTES-38 #37: the tool row is a ScrollStrip, whose overflow would clip a dropdown hung
+	// under its button — so the Unwrap menu hangs off the ROW instead, at the button's x
+	/** @type {HTMLElement | undefined} */
+	let topbarEl = $state();
+	/** @type {HTMLElement | undefined} */
+	let unwrapBtn = $state();
+	let unwrapLeft = $state(0);
+	function toggleUnwrap() {
+		if (!unwrapOpen) backends = unwrapBackends();
+		if (!unwrapOpen && topbarEl && unwrapBtn) {
+			unwrapLeft = Math.max(0, unwrapBtn.getBoundingClientRect().left - topbarEl.getBoundingClientRect().left);
+		}
+		unwrapOpen = !unwrapOpen;
+	}
 
 	/** @param {string} key */
 	async function runUnwrap(key) {
@@ -1645,7 +1662,8 @@
 		secondaryModes={[{ key: 'tool', icon: '🖌', label: 'Tool' }, { key: 'settings', icon: '⚙', label: 'Settings' }]}
 	>
 		{#snippet topbar()}
-			<div class="flex items-center gap-1 border-b border-border px-2 py-1">
+			<div class="relative border-b border-border px-2 py-1" bind:this={topbarEl}>
+			<ScrollStrip label="UV tools" id="uv-toolbar">
 				<!-- tools: pointer / box / lasso -->
 				<div class="flex shrink-0 items-center gap-0.5">
 					{#each TOOLS as t (t.key)}
@@ -1737,30 +1755,17 @@
 					</button>
 				</div>
 				<!-- unwrap is a destructive whole-mesh action, so it is a labelled menu -->
-				<div class="relative shrink-0">
+				<div class="shrink-0">
 					<button
+						bind:this={unwrapBtn}
 						class="ui-button-quiet"
 						id="uv-unwrap"
 						title={editable.ok
 							? 'Generate new UVs for this mesh, or just the faces selected in Edit Mesh'
 							: editable.reason}
 						disabled={!editable.ok}
-						onclick={() => (unwrapOpen = !unwrapOpen)}
+						onclick={toggleUnwrap}
 					>Unwrap ▾</button>
-					{#if unwrapOpen}
-						<div id="uv-unwrap-menu" class="absolute left-0 top-full z-30 mt-1 w-44 rounded-sm border border-border bg-surface-1 py-1 shadow-lg">
-							{#each backends as backend (backend.key)}
-								<button
-									class="block w-full px-2 py-1 text-left text-[11px] text-text-2 hover:bg-surface-hover"
-									id="uv-unwrap-{backend.key}"
-									onclick={() => runUnwrap(backend.key)}
-								>{backend.label}</button>
-							{/each}
-							<p class="border-t border-border px-2 pt-1 text-[10px] leading-relaxed text-text-faint">
-								{pickedTris ? `Applies to the ${pickedTris} selected face triangles.` : 'Applies to the whole mesh.'}
-							</p>
-						</div>
-					{/if}
 				</div>
 				<span class="truncate text-[11px] text-text-muted">{target ? target.name || 'object' : 'no selection'}</span>
 				{#if $selectedObjects.length > 1}
@@ -1784,6 +1789,21 @@
 				<span class="w-12 text-center text-[11px] tabular-nums text-text-muted">{Math.round(zoom * 100)}%</span>
 				<button class="ui-button-quiet" title="Zoom in" aria-label="Zoom in" onclick={() => zoomBy(1.25)}>＋</button>
 				<button class="ui-button-quiet" title="Fit the UV square" onclick={fitView}>Fit</button>
+			</ScrollStrip>
+			{#if unwrapOpen}
+				<div id="uv-unwrap-menu" class="absolute top-full z-30 mt-1 w-44 rounded-sm border border-border bg-surface-1 py-1 shadow-lg" style:left="{unwrapLeft}px">
+					{#each backends as backend (backend.key)}
+						<button
+							class="block w-full px-2 py-1 text-left text-[11px] text-text-2 hover:bg-surface-hover"
+							id="uv-unwrap-{backend.key}"
+							onclick={() => runUnwrap(backend.key)}
+						>{backend.label}</button>
+					{/each}
+					<p class="border-t border-border px-2 pt-1 text-[10px] leading-relaxed text-text-faint">
+						{pickedTris ? `Applies to the ${pickedTris} selected face triangles.` : 'Applies to the whole mesh.'}
+					</p>
+				</div>
+			{/if}
 			</div>
 		{/snippet}
 

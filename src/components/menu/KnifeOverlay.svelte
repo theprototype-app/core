@@ -13,6 +13,16 @@
 <!-- tokens-ok-begin: viewport overlay drawn in faceEdit's three.js mesh-edit overlay orange (0xff7a1a), so the rubber band matches the 3D edit lines -->
 {#if $knifePreview}
 	<svg class="knife-overlay" width="100%" height="100%" aria-hidden="true">
+		<!-- 37 R11: the corners placed so far (a polyline cut), then the live segment -->
+		{#if $knifePreview.points.length > 1}
+			<polyline
+				class="knife-placed"
+				points={$knifePreview.points.map((p) => p[0] + ',' + p[1]).join(' ')}
+				fill="none"
+				stroke="#ff7a1a"
+				stroke-width="1.5"
+			/>
+		{/if}
 		<line
 			x1={$knifePreview.from[0]}
 			y1={$knifePreview.from[1]}
@@ -22,7 +32,9 @@
 			stroke-width="1.5"
 			stroke-dasharray="6 4"
 		/>
-		<circle cx={$knifePreview.from[0]} cy={$knifePreview.from[1]} r="3.5" fill="#ff7a1a" />
+		{#each $knifePreview.points as point, i (i)}
+			<circle cx={point[0]} cy={point[1]} r="3.5" fill="#ff7a1a" />
+		{/each}
 		<circle
 			cx={$knifePreview.to[0]}
 			cy={$knifePreview.to[1]}

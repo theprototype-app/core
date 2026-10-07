@@ -62,7 +62,7 @@ import {
 	updateScaleGrab
 } from './grip.js';
 import { hapticPulse } from './haptics.js';
-import { navSuppressors, vrFrameHooks } from './hooks.js';
+import { navSuppressors, vrFrameHooks, stickOwned } from './hooks.js';
 import { controllerIndexFor, axesForSlot } from './input.js';
 import { actionPressed, handOf, CONTROL_INDEX } from './bindings.js';
 import { settingsPanelRows, vrSettingsPage, vrSettingsCursor, neighbourTab, activateVRSetting } from './settingsSchema.js';
@@ -233,6 +233,9 @@ export function updateVRControls() {
 		get(vrGrabbedHand) !== handOf('turn') &&
 		get(vrGrabbedHand) !== handOf('teleport') &&
 		get(vrGrabbedHand) !== 'both' &&
+		// 37: so does a feature reading that stick itself (the VR sculpt brush)
+		!stickOwned(handOf('turn')) &&
+		!stickOwned(handOf('teleport')) &&
 		!vrNavigationSuppressed({ grips: true })
 	) {
 		updateTeleport(session);

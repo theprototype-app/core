@@ -5,6 +5,31 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.28.0 — Sculpt and snap the world from the headset, cut with a polyline knife 🔪
+
+### 🥽 VR
+
+- ⛰️ **Sculpt terrain in VR**: radial menu ▸ **Add ▸ Terrain** puts a terrain in front of you and starts sculpting (or
+  select one and pick **Selected ▸ Sculpt terrain**). Hold the trigger to Raise, Lower, Smooth or Flatten; the pointing
+  hand's thumbstick sets brush size and strength. Every stroke is one undo step and everyone sees it.
+- 🧲 **The two-grip world grab snaps**: the world turns in 15° steps and sticks at 1×, 2×, 5× and 10× (and ½, ⅕, ⅒)
+  with a light tick and a readout between your hands. Turn it off in Settings ▸ VR ▸ Controls ▸ World grab snapping.
+- 🏠 **Dollhouse teleport**: **Scene ▸ Dollhouse** shows the whole scene as a model on a table — point into it and pull
+  the trigger to stand there.
+- 🧱 **Add ▸ Architecture ▸** in the radial menu: the same walls, doors, windows and stairs as the desktop Add menu.
+
+### ✂️ Mesh editing
+
+- 🔪 **The knife cuts polylines**: Shift+click adds corners, Enter ends, Backspace takes one back (Back / Cut buttons on
+  touch); the corners become real vertices. A two-click cut that ends inside the mesh now ends where you clicked.
+- 🪞 **Live symmetry** (Edit Mesh toolbox ▸ Symmetry): every edit and vertex drag is mirrored across the axis, from the
+  side you edited — one undo step for both halves.
+- 🗺️ **New module: Smart unwrap (xatlas)** adds **Unwrap ▸ Smart (xatlas)** to the UV editor: automatic seams and an
+  overlap-free packed atlas, one undo step (Modules ▸ Browse).
+
+<!-- 1.28 fixes on the way: Backspace now reaches a pending knife cut (the viewport Backspace row stood down too late).
+     New third-party code inside the smart-unwrap module zip only: xatlas-wasm 0.1.3 (MIT). -->
+
 ## 1.27.0 — Sky images, walls and stairs, smarter nodes and sparks that fly 🏛️
 
 ### 🌅 World

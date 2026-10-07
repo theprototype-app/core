@@ -1583,7 +1583,7 @@
 		   it, leaving the gesture hung. */
 		user-select: none;
 		-webkit-user-select: none;
-		background: color-mix(in srgb, var(--bg-app) 85%, transparent);
+		background: rgb(17 24 39 / 0.85); /* tokens-ok: the stage stands in for the 3D viewport a HUD draws over (dark in every theme, like the scene) — a light stage hid white HUD text */
 		box-shadow: 0 0 0 1px var(--border-strong);
 		/* E1.3: the runtime layer clips at the WINDOW, so the artboard clips at the stage.
 		   Without this an element dragged past the edge spilled across the whole wrap, which

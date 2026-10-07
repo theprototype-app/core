@@ -228,21 +228,24 @@ h.run(async () => {
 	await page.keyboard.type('2.5');
 	r = await readout();
 	h.check(/Exposure 2\.50/.test(r ?? ''), 'PropRow: click-to-type applies live');
-	// Esc after ARROW steps restores the focus-time value (number-fields' case). NOT after
-	// typing: DragRow's blur() fires the native `change` with the typed text still in the box,
-	// which re-commits it — a pre-existing DragRow behaviour (QUESTIONS-38-tokens Q4), locked
-	// by SPEC §0, so PropRow passes it through as it is.
-	await page.keyboard.press('Escape'); // leaves 2.50 (see above)
+	// Esc restores the focus-time value — after typing too since 1.26: 37 R1 stopped DragRow's
+	// blur from re-committing the typed text through the native `change` (the double-apply
+	// that turned a typed 90° into 180°), which was what used to leave 2.50 here
+	// (QUESTIONS-38-tokens Q4; roadmap-37 R26 "Escape after typing reverts").
+	await page.keyboard.press('Escape');
+	await page.waitForTimeout(100);
+	r = await readout();
+	h.check(/Exposure 1\.55/.test(r ?? ''), `PropRow: Esc after typing restores the value it was focused with (${r?.match(/Exposure [\d.]+/)?.[0]})`);
 	await box.click();
 	await page.waitForTimeout(100);
 	await page.keyboard.press('ArrowUp');
 	await page.keyboard.press('ArrowUp');
 	r = await readout();
-	h.check(/Exposure 2\.52/.test(r ?? ''), `PropRow: ArrowUp steps one minor unit (${r?.match(/Exposure [\d.]+/)?.[0]})`);
+	h.check(/Exposure 1\.57/.test(r ?? ''), `PropRow: ArrowUp steps one minor unit (${r?.match(/Exposure [\d.]+/)?.[0]})`);
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(100);
 	r = await readout();
-	h.check(/Exposure 2\.50/.test(r ?? ''), `PropRow: Esc restores the value it was focused with (${r?.match(/Exposure [\d.]+/)?.[0]})`);
+	h.check(/Exposure 1\.55/.test(r ?? ''), `PropRow: Esc restores the value it was focused with (${r?.match(/Exposure [\d.]+/)?.[0]})`);
 	await page.$eval('#kit-proprow input[type="range"]', (el) => {
 		const input = /** @type {HTMLInputElement} */ (el);
 		input.value = '0.75';

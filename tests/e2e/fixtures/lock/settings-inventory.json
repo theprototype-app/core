@@ -1,806 +1,1272 @@
 {
- "Interface": [
-  {
-   "name": "Allow text selection everywhere",
-   "kind": "toggle",
-   "desc": "Off: only text fields, code, chat, logs and help text can be selected, so a drag across a menu or a panel never paints a selection. The viewport and the node ed"
-  },
-  {
-   "name": "Your character",
-   "kind": "button:Customize character\u2026",
-   "desc": "Pick your character, head, hat, outfit colour and ping, with a live preview on yourself."
-  },
-  {
-   "name": "Show everyone as classic heads",
-   "kind": "toggle",
-   "desc": "On this device only: draws other people as the floating head instead of their animated character (lighter on a headset with many people). They still see your ch"
-  },
-  {
-   "name": "Theme",
-   "kind": "select",
-   "desc": "UI theme for THIS device (the 3D viewport follows the environment, not the theme)"
-  },
-  {
-   "name": "Custom theme",
-   "kind": "input",
-   "desc": "Export the active theme as an editable .theme.json, tweak the colors, then Browse to load it back"
-  },
-  {
-   "name": "Game sounds",
-   "kind": "slider",
-   "desc": "How loud a game's effects are on this device \u2014 coins, goals, hits, the clicks a game makes. Local to you; 80%"
-  },
-  {
-   "name": "Music",
-   "kind": "slider",
-   "desc": "The background music a game plays while you are in Interact or Play (it stops when you go back to editing). Local to you; 60%"
-  },
-  {
-   "name": "Welcome on start",
-   "kind": "toggle",
-   "desc": "Show the welcome card every time the app opens. It normally appears only on your first visit \u2014 turn this on to keep its quick links handy, or open it now"
-  },
-  {
-   "name": "Announce new versions",
-   "kind": "toggle",
-   "desc": "After an update, mark the logo menu with a dot and show one toast linking to the changelog. Off means updates arrive silently \u2014 What's new stays in the logo men"
-  },
-  {
-   "name": "Toasts in drawer only",
-   "kind": "toggle",
-   "desc": "Hide ALL pop-up toasts in the viewport \u2014 including connection requests \u2014 so they appear only in the connection drawer's Toasts tab (the notification bell still "
-  },
-  {
-   "name": "Show tours automatically",
-   "kind": "toggle",
-   "desc": "Start the short first-run tours by themselves: the editor tour after the welcome card, and \"Welcome to ThePrototype VR\" the first time you enter VR. \"Don't show"
-  },
-  {
-   "name": "VR welcome",
-   "kind": "button:Start VR welcome",
-   "desc": "Your controllers, moving, pointing, grabbing, the radial menu, playing and leaving VR. In a headset it starts now (also: radial menu \u25b8 Settings \u25b8 Welcome tour);"
-  },
-  {
-   "name": "Editor tour",
-   "kind": "button:Start editor tour",
-   "desc": "Six steps around the editor \u2014 adding things, looking around, the tools, Play, building together and the logo menu (mouse and keyboard). Not seen yet"
-  },
-  {
-   "name": "Offer Enter VR",
-   "kind": "toggle",
-   "desc": "In a headset's browser (Quest), let the browser show its own \"Enter VR\" button for this page, once per visit. Declining it is remembered on this device; switchi"
-  },
-  {
-   "name": "Reset tours",
-   "kind": "button:Reset all",
-   "desc": "Forget which tours you have seen or skipped and turn automatic tours back on"
-  },
-  {
-   "name": "Floating toolbar",
-   "kind": "toggle",
-   "desc": "The bottom toolbar lifts above the docked Node editor or Explorer when one opens, so it never sits over their content (the default). Off, it stays down on the v"
-  },
-  {
-   "name": "Toolbar always on top",
-   "kind": "toggle",
-   "desc": "The bottom toolbar paints over the docked panels and over floating windows, so it is always reachable. Off (the default), a window or an open panel covers it in"
-  },
-  {
-   "name": "Window positions",
-   "kind": "button:Reset",
-   "desc": "Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI"
-  },
-  {
-   "name": "Touch tools",
-   "kind": "toggle",
-   "desc": "Undo / Redo / Multi-select buttons beside the logo, for touch \u2014 no Ctrl+Z or Shift needed. Multi-select adds on tap and boxes on drag, for objects and for mesh "
-  },
-  {
-   "name": "Allow undocking (touch)",
-   "kind": "toggle",
-   "desc": "On touch / small screens the Flow and Explorer panels stay docked and their \"undock\" buttons are hidden (floating windows are cramped on a phone). Turn this on "
-  },
-  {
-   "name": "Advanced mode",
-   "kind": "toggle",
-   "desc": "Show system objects (module content, environment rig) as a System filter in the object list"
-  },
-  {
-   "name": "Environment in list",
-   "kind": "toggle",
-   "desc": "Show the environment group as an Environment filter in the object list"
-  },
-  {
-   "name": "Object search in menu",
-   "kind": "toggle",
-   "desc": "Add a \"Search objects\u2026\" entry to the viewport right-click menu \u2014 find a scene object and fly the camera to it"
-  },
-  {
-   "name": "Show FPS + draw calls",
-   "kind": "toggle",
-   "desc": "A small counter with the frame rate, frame time, draw calls and triangles \u2014 in the corner of the viewport and, in a headset, on a strip at the top of the view. "
-  },
-  {
-   "name": "Dock resizes the viewport",
-   "kind": "toggle",
-   "desc": "On, the 3D view ends where an open bottom panel begins \u2014 the way every editor lays out its viewport, so nothing you are working on sits behind the Node editor o"
-  }
- ],
- "Controls": [
-  {
-   "name": "Shift+A quick add",
-   "kind": "toggle",
-   "desc": "Pressing Shift+A opens the Add menu at the cursor and spawns the picked object under it. Off by default \u2014 Shift also strafes the camera in fly mode"
-  },
-  {
-   "name": "Show helpers in Play (debug)",
-   "kind": "toggle",
-   "desc": "Light helpers, camera frustums and camera markers hide when Play starts (camera previews and captures never show them). On, they render inside Play with a DEBUG"
-  },
-  {
-   "name": "Double-click to open notes",
-   "kind": "toggle",
-   "desc": "A single click on a note marker \u2014 and the notes drawer's \u2039 \u203a group arrows \u2014 then only flies the camera to the note; the card opens on a double click. Handy for "
-  },
-  {
-   "name": "Trackpad gestures",
-   "kind": "select",
-   "desc": "Two-finger swipes on a laptop trackpad pan the camera; pinch zooms. Auto detects trackpads and leaves mouse wheels zooming as usual \u2014 pick On/Off if the detecti"
-  },
-  {
-   "name": "Two-finger pan",
-   "kind": "toggle",
-   "desc": "Two-finger swipes pan the camera. Off: swipes zoom like a mouse wheel, and panning stays available with a right-click drag"
-  },
-  {
-   "name": "Reverse trackpad pan",
-   "kind": "toggle",
-   "desc": "Flip the two-finger pan direction (default: the scene follows your fingers, like touch scrolling)"
-  },
-  {
-   "name": "Pinch zoom",
-   "kind": "toggle",
-   "desc": "Pinching in/out on the viewport zooms the camera. Off: pinch does nothing (the page still never zooms) and zooming stays on the mouse wheel"
-  },
-  {
-   "name": "Allow browser pinch zoom",
-   "kind": "toggle",
-   "desc": "Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and stops accidental page zoom over panels, on desktop and m"
-  },
-  {
-   "name": "Wheel diagnostics",
-   "kind": "none",
-   "desc": "Linux \u00b7 Chromium \u00b7 pointer: fine \u00b7 wheel mode: auto\n\nScroll over the viewport \u2014 the last 8 wheel events land here, with how each was classified.\n\nIf a mouse whe"
-  }
- ],
- "Input": [
-  {
-   "name": "Gamepad",
-   "kind": "toggle",
-   "desc": "A connected controller drives the game with no setup: the left stick walks, the right stick looks, and the d-pad + A work a HUD menu. Off ignores the pad entire"
-  },
-  {
-   "name": "Swap sticks",
-   "kind": "toggle",
-   "desc": "Move with the RIGHT stick and look with the left \u2014 the southpaw layout"
-  },
-  {
-   "name": "Invert look Y",
-   "kind": "toggle",
-   "desc": "Push the look stick up to look DOWN (the flight-stick convention)"
-  },
-  {
-   "name": "Stick deadzone",
-   "kind": "number",
-   "desc": "How far a stick may drift at rest before it counts as pushed (0.05\u20130.4). Raise it if the camera creeps with your hands off the pad; the range beyond it is resca"
-  },
-  {
-   "name": "Look sensitivity",
-   "kind": "number",
-   "desc": "How fast the look stick turns (0.5\u20133\u00d7). Mouse look has its own speed and is unaffected"
-  },
-  {
-   "name": "Per-game controls",
-   "kind": "none",
-   "desc": "A scene can bind the pad itself with the Gamepad Button and Gamepad Axis nodes in the node editor (Input group) \u2014 button presses replicate like a key press, whi"
-  },
-  {
-   "name": "Mouse bindings",
-   "kind": "select",
-   "desc": "Classic (the default): a left drag on the node editor's canvas pans and Shift+drag draws a selection box. Select-first: a left drag selects, dragging any select"
-  }
- ],
- "Touch controls": [
-  {
-   "name": "Show touch controls",
-   "kind": "button:Auto|Always|Never",
-   "desc": "Auto shows the stick and action buttons in Play on a touch screen (or once you touch the screen). Always forces them on, Never hides them\n\u2014 touch, mobile, phone"
-  },
-  {
-   "name": "Show in edit",
-   "kind": "toggle",
-   "desc": "Also draw the action buttons while editing (they press keys there too). The stick and look only exist in Play"
-  },
-  {
-   "name": "Haptic tick",
-   "kind": "toggle",
-   "desc": "A short vibration when a button is pressed (phones that support it)"
-  },
-  {
-   "name": "Look speed",
-   "kind": "slider",
-   "desc": "How far a drag on the right half turns the view (1.00\u00d7)"
-  },
-  {
-   "name": "Layout",
-   "kind": "button:Edit layout|Reset",
-   "desc": "Drag, resize and fade the stick and every button \u2014 for this game or all games, saved on this device. Also in the pause menu during a game"
-  },
-  {
-   "name": "Jump",
-   "kind": "none",
-   "desc": "Released\nUpload\nExplorer\u2026\nPressed\nUpload\nExplorer\u2026\nTint\nSize"
-  },
-  {
-   "name": "Fire",
-   "kind": "none",
-   "desc": "Released\nUpload\nExplorer\u2026\nPressed\nUpload\nExplorer\u2026\nTint\nSize"
-  },
-  {
-   "name": "Use",
-   "kind": "none",
-   "desc": "Released\nUpload\nExplorer\u2026\nPressed\nUpload\nExplorer\u2026\nTint\nSize"
-  },
-  {
-   "name": "Grab",
-   "kind": "none",
-   "desc": "Released\nUpload\nExplorer\u2026\nPressed\nUpload\nExplorer\u2026\nTint\nSize"
-  },
-  {
-   "name": "Crouch",
-   "kind": "none",
-   "desc": "Released\nUpload\nExplorer\u2026\nPressed\nUpload\nExplorer\u2026\nTint\nSize"
-  },
-  {
-   "name": "Sprint",
-   "kind": "none",
-   "desc": "Released\nUpload\nExplorer\u2026\nPressed\nUpload\nExplorer\u2026\nTint\nSize"
-  },
-  {
-   "name": "Reload",
-   "kind": "none",
-   "desc": "Released\nUpload\nExplorer\u2026\nPressed\nUpload\nExplorer\u2026\nTint\nSize"
-  },
-  {
-   "name": "Up",
-   "kind": "none",
-   "desc": "Released\nUpload\nExplorer\u2026\nPressed\nUpload\nExplorer\u2026\nTint\nSize"
-  },
-  {
-   "name": "Down",
-   "kind": "none",
-   "desc": "Released\nUpload\nExplorer\u2026\nPressed\nUpload\nExplorer\u2026\nTint\nSize"
-  }
- ],
- "Scene": [
-  {
-   "name": "Show grid",
-   "kind": "toggle",
-   "desc": "Display grid on floor"
-  },
-  {
-   "name": "Light helper length",
-   "kind": "number",
-   "desc": "How far a directional or spot light's helper line reaches along its direction (display only \u2014 a directional light has a direction, not a distance)"
-  },
-  {
-   "name": "Shadow quality",
-   "kind": "select",
-   "desc": "Caps every light's shadow map size on THIS machine (Off disables shadows entirely; per-light sizes still replicate)"
-  },
-  {
-   "name": "Reduce quality when the scene is heavy",
-   "kind": "toggle",
-   "desc": "When a heavy scene cannot keep 30 frames a second on THIS machine, drop shadows, then resolution, then effects, one step at a time, and give each back when fram"
-  },
-  {
-   "name": "Simplify distant models",
-   "kind": "toggle",
-   "desc": "Draw a lighter version of a dense model (a few thousand triangles or more) when it is far from you, built once per model on THIS machine. Nothing in the scene c"
-  },
-  {
-   "name": "Draw repeated kit pieces together",
-   "kind": "toggle",
-   "desc": "Every copy of one pack piece (a wall, a floor tile, a battlement) is drawn in one go instead of one by one, which is what keeps a level built from the kits insi"
-  },
-  {
-   "name": "Water quality",
-   "kind": "select",
-   "desc": "High draws refraction, caustics, shoreline foam and planar mirrors at full resolution; Medium at half; Low is the headset look (waves and ripples, no screen-spa"
-  },
-  {
-   "name": "Simulation controls",
-   "kind": "toggle",
-   "desc": "Show the physics transport (play/pause/stop/reset) at bottom-right. Off by default to avoid confusion with the main play button; the P key still starts/stops th"
-  },
-  {
-   "name": "Sync animations",
-   "kind": "toggle",
-   "desc": "Node animations use wall-clock time so all peers see the same phase"
-  },
-  {
-   "name": "Spatial voice",
-   "kind": "toggle",
-   "desc": "Voices come from where each peer is (pan + distance falloff)"
-  },
-  {
-   "name": "Ping color + sound",
-   "kind": "select",
-   "desc": "Your ping color + sound \u2014 peers see and hear YOUR pings this way (color empty = your peer color)"
-  },
-  {
-   "name": "Autosave",
-   "kind": "toggle",
-   "desc": "Keep a local session snapshot (restore offered after a crash/reload)"
-  },
-  {
-   "name": "Auto-restore on load",
-   "kind": "toggle",
-   "desc": "Restore that snapshot automatically at startup instead of asking. Only ever runs when the scene is still empty; a message tells you what was restored"
-  },
-  {
-   "name": "Keep automatic checkpoints",
-   "kind": "toggle",
-   "desc": "While you work, autosave also adds a row to the checkpoint timeline every few minutes \u2014 only when the scene changed. Named checkpoints (Ctrl+Shift+S) are kept e"
-  },
-  {
-   "name": "Automatic checkpoint every",
-   "kind": "select",
-   "desc": "The shortest gap between two automatic checkpoints"
-  },
-  {
-   "name": "Checkpoint storage",
-   "kind": "select",
-   "desc": "How much of this device checkpoints may use. When a new one would not fit, the oldest unpinned checkpoints are removed \u2014 automatic ones before named ones. Pinne"
-  },
-  {
-   "name": "When opening another scene",
-   "kind": "select",
-   "desc": "Modules that came with the scene you are leaving (a game's Waves or Untangle) and that the next scene does not use. Ask (the default) shows them and lets you ch"
-  },
-  {
-   "name": "Double-click action",
-   "kind": "select",
-   "desc": "What a double-click on an object does in the viewport. A single click always just selects it; Ctrl+A selects everything"
-  },
-  {
-   "name": "Length",
-   "kind": "select",
-   "desc": "How distances are shown and typed \u2014 positions, snapping steps, bevel widths. The scene is always metres underneath, so this changes nothing but the display. You"
-  },
-  {
-   "name": "Angle",
-   "kind": "select",
-   "desc": "The same for rotations and angular snapping. 90deg and 1.57rad both parse whichever is on display"
-  },
-  {
-   "name": "Carry animation clips",
-   "kind": "toggle",
-   "desc": "A duplicate gets its own copy of the object's animation clips, so the copy plays independently. Off leaves the copy unanimated"
-  },
-  {
-   "name": "Carry object flow",
-   "kind": "toggle",
-   "desc": "A duplicate gets its own copy of the object's flow graph, with fresh node ids. An embedded Object Flow node keeps pointing at the object it referenced \u2014 re-aimi"
-  },
-  {
-   "name": "Carry shader graph",
-   "kind": "toggle",
-   "desc": "A duplicate of a shader-driven object gets its own copy of the graph. Off leaves the copy with a frozen snapshot of the compiled material and nothing to edit. A"
-  },
-  {
-   "name": "Share materials",
-   "kind": "toggle",
-   "desc": "Off (the default), a duplicate gets its own copy of the material, so editing one leaves the other alone. On, the copy and the original share ONE material and an"
-  },
-  {
-   "name": "Wireframe color",
-   "kind": "color",
-   "desc": "Line color of the Wireframe view mode (Configure Scene \u25b8 View mode)"
-  },
-  {
-   "name": "Selection outline color",
-   "kind": "color",
-   "desc": "Outline drawn around your selected objects (objects a peer has locked keep their own color)"
-  },
-  {
-   "name": "Edit Mesh wireframe",
-   "kind": "toggle",
-   "desc": "Edge overlay while editing a mesh. Auto picks dark or light from the object's own color; turn it off to pin one color"
-  },
-  {
-   "name": "Reset line colors",
-   "kind": "button:Reset",
-   "desc": "Back to the defaults (#9aa4b0 / #353535 / auto). Per-device, never shared"
-  },
-  {
-   "name": "Loading placeholders",
-   "kind": "select",
-   "desc": "What a kit piece shows while its file is still loading. Modern (the default) = a translucent blue box that fills up as the bytes arrive; both turn amber when st"
-  },
-  {
-   "name": "Placeholder grid texture",
-   "kind": "toggle",
-   "desc": "A prototype grid on the modern boxes, sized in world metres so every box reads at the same scale"
-  },
-  {
-   "name": "Grid size (m)",
-   "kind": "number",
-   "desc": "One grid cell, in metres (default 0.5)"
-  },
-  {
-   "name": "Grid color",
-   "kind": "color",
-   "desc": "The grid lines' colour"
-  },
-  {
-   "name": "Grid opacity",
-   "kind": "slider",
-   "desc": "How strongly the grid shows on the boxes"
-  },
-  {
-   "name": "Placeholder animation speed",
-   "kind": "slider",
-   "desc": "The pulse and the scan sweep of the modern boxes (0 = still)"
-  },
-  {
-   "name": "Stuck after (seconds)",
-   "kind": "number",
-   "desc": "A loading piece with no new data for this long turns amber; three times this long and the download is restarted (up to three retries, then it turns red)"
-  }
- ],
- "Explorer": [
-  {
-   "name": "When you add files during a session",
-   "kind": "select",
-   "desc": "A file is local until somebody says otherwise, so this is what happens when you add one while connected. Ask each time puts the question in the Explorer, above "
-  },
-  {
-   "name": "Download shared files automatically",
-   "kind": "toggle",
-   "desc": "When somebody shares a file or a folder, fetch it straight away. On by default: without it every shared file costs each peer a right-click, which is an extra st"
-  },
-  {
-   "name": "Offer to merge unsaved work on connect",
-   "kind": "toggle",
-   "desc": "When you connect with work in a scene that was never saved, this app asks you to save it or dismiss it \u2014 an unsaved scene has no identity, so there is nothing f"
-  },
-  {
-   "name": "Who can unshare a file",
-   "kind": "select",
-   "desc": "A shared file is part of the project, so by default any editor can take it out again \u2014 the same way anyone can delete an object. Choose Only whoever shared it f"
-  },
-  {
-   "name": "Keep versions per scene",
-   "kind": "number",
-   "desc": "How many past versions of each scene keep their bytes on this machine \u2014 browse them under Version history in a scene file's properties. Pinned versions are alwa"
-  },
-  {
-   "name": "When importing files already in your library",
-   "kind": "select",
-   "desc": "Rule for importing same files which already in your library. Ask lets you decide file by file. Skip keeps what you have and tells you how many it left out. Impo"
-  },
-  {
-   "name": "Save name",
-   "kind": "input",
-   "desc": "What a downloaded scene, project or GLTF file is called. [name] is the scene's name (the project's, for a .tp); the date parts are [YYYY] [YY] [MM] [DD] [HH] [m"
-  },
-  {
-   "name": "Keep a recycle bin",
-   "kind": "toggle",
-   "desc": "Deleting a shared file removes it from the project for everyone, so each peer keeps its own copy in Deleted files where it can be restored. Turn this off and a "
-  },
-  {
-   "name": "Delete without asking",
-   "kind": "toggle",
-   "desc": "Skip the confirmation when deleting files and folders. Reasonable only because the recycle bin exists \u2014 with the bin also off, a delete is immediate and final, "
-  },
-  {
-   "name": "Keep deleted files after a reload",
-   "kind": "toggle",
-   "desc": "Off by default: the bin is a safety net for the minutes after a delete, not storage, so its files are reclaimed the next time you load. The file then leaves Del"
-  },
-  {
-   "name": "Deleted files log",
-   "kind": "toggle",
-   "desc": "Keep a record of what was deleted from this project \u2014 the name, who removed it, when, and the thumbnail taken at the time \u2014 in a Deleted log beside the bin. On "
-  },
-  {
-   "name": "Storage used",
-   "kind": "button:Show breakdown",
-   "desc": "What is using this device\u2019s storage \u2014 your library files, saved scenes and projects, old scene versions, the recycle bin and the caches \u2014 with a tick beside eac"
-  }
- ],
- "VR": [
-  {
-   "name": "VR override",
-   "kind": "toggle",
-   "desc": "Forces normal play even if immersive-vr is enabled"
-  },
-  {
-   "name": "Turning",
-   "kind": "select",
-   "desc": "\u00b7 now Snap"
-  },
-  {
-   "name": "Snap angle",
-   "kind": "select",
-   "desc": "\u00b7 now 45\u00b0"
-  },
-  {
-   "name": "Smooth speed",
-   "kind": "select",
-   "desc": "\u00b7 now 90\u00b0/s"
-  },
-  {
-   "name": "Mirror turn",
-   "kind": "toggle",
-   "desc": ""
-  },
-  {
-   "name": "Comfort vignette",
-   "kind": "toggle",
-   "desc": "Darkens the edges while the stick moves or turns you"
-  },
-  {
-   "name": "Teleport",
-   "kind": "toggle",
-   "desc": "Push the teleport stick up to aim, let go to land"
-  },
-  {
-   "name": "Flying",
-   "kind": "toggle",
-   "desc": "In Edit the move stick follows where that controller points"
-  },
-  {
-   "name": "Stance",
-   "kind": "select",
-   "desc": "Seated lifts your view to a standing eye height\u00b7 now Standing"
-  },
-  {
-   "name": "Height",
-   "kind": "select",
-   "desc": "\u00b7 now 0 cm"
-  },
-  {
-   "name": "Menu hand",
-   "kind": "select",
-   "desc": "Which controller opens the radial menu; the other one points\u00b7 now Right"
-  },
-  {
-   "name": "Hold to open menu",
-   "kind": "toggle",
-   "desc": "Hold the menu button, release over a sector to pick it"
-  },
-  {
-   "name": "Left-handed",
-   "kind": "toggle",
-   "desc": "Mirrors every button to the other hand"
-  },
-  {
-   "name": "Grab style",
-   "kind": "select",
-   "desc": "Rigid: the controller is the handle (the stick reels and scales)\u00b7 now Rigid"
-  },
-  {
-   "name": "Refresh rate",
-   "kind": "select",
-   "desc": "120 Hz needs the headset\u2019s own 120 Hz setting\u00b7 now Max"
-  },
-  {
-   "name": "Statistics card",
-   "kind": "toggle",
-   "desc": "A card on the other hand: peers, objects, network"
-  },
-  {
-   "name": "Peer hands",
-   "kind": "select",
-   "desc": "How hand-tracked peers look to you\u00b7 now Hands"
-  },
-  {
-   "name": "Passthrough",
-   "kind": "toggle",
-   "desc": "Mixed reality \u2014 applies on the next VR entry\u2014 not supported on this device"
-  },
-  {
-   "name": "Selection wireframe",
-   "kind": "toggle",
-   "desc": "Draws a wireframe over what you select"
-  },
-  {
-   "name": "Reset panel positions",
-   "kind": "button:Reset panel positions",
-   "desc": "Panels you moved go back to their spots on the controllers"
-  },
-  {
-   "name": "Game HUD",
-   "kind": "select",
-   "desc": "Where a game\u2019s score and timer show in the headset\u00b7 now Follow head"
-  },
-  {
-   "name": "Game HUD size",
-   "kind": "select",
-   "desc": "\u00b7 now Medium"
-  },
-  {
-   "name": "Button hints",
-   "kind": "toggle",
-   "desc": "Shows which button jumps, fires or opens the menu in a game"
-  },
-  {
-   "name": "Hold to move vertex",
-   "kind": "toggle",
-   "desc": "Off: press to pick a vertex up, press again to drop it"
-  },
-  {
-   "name": "Sleeve palette",
-   "kind": "toggle",
-   "desc": "Experimental: drag shapes off a strip on your forearm"
-  },
-  {
-   "name": "Face edit limit",
-   "kind": "number",
-   "desc": "\u00b7 now 2500 tris"
-  },
-  {
-   "name": "Vertex edit limit",
-   "kind": "number",
-   "desc": "\u00b7 now 800 verts"
-  },
-  {
-   "name": "My hand model",
-   "kind": "select",
-   "desc": "Custom hands (identity) \u2014 a GLB from your Explorer library that OTHER peers see as your hands in VR (bytes push automatically; renders rigid at the wrist)"
-  },
-  {
-   "name": "Colocation probe (dev)",
-   "kind": "button:Probe AR capabilities|Clear stored anchor",
-   "desc": "CO0 on-device probe \u2014 run this inside the headset: it opens an immersive-ar session, creates an anchor at your feet, persists the handle and reports what the ru"
-  },
-  {
-   "name": "Colocation",
-   "kind": "button:Colocate here|Stop",
-   "desc": "Not colocated \u2014 share one physical room with a co-present peer. Colocate here uses the current viewpoint (both of you stand on the agreed spot facing the agreed"
-  },
-  {
-   "name": "Ghost hands",
-   "kind": "toggle",
-   "desc": "While colocated, a room-mate's avatar body, name label and voice are hidden \u2014 you are looking at and listening to the real person. Their HANDS stay, drawn faint"
-  }
- ],
- "AI": [
-  {
-   "name": "Enable assistant",
-   "kind": "toggle",
-   "desc": "AI scene assistant \u2014 build and edit the scene with prompts. Press ` for the quick prompt bar, or open the AI Assistant window. Edits replicate to peers and undo"
-  },
-  {
-   "name": "Providers",
-   "kind": "none",
-   "desc": "No providers yet. + Add provider"
-  },
-  {
-   "name": "Voice typing provider",
-   "kind": "select",
-   "desc": "Speech to text for the assistant's mic \u2014 in the AI window and in VR (Tools \u25b8 AI: hold the mic or the talk button). OpenAI and Groq need an API key; a self-hoste"
-  },
-  {
-   "name": "Voice typing server",
-   "kind": "none",
-   "desc": "Test connection"
-  },
-  {
-   "name": "Mesh generation",
-   "kind": "toggle",
-   "desc": "Text \u2192 3D mesh \u2014 generate custom models from prompts (Add menu \u2192 \u201c\u2728 Generate 3D model\u201d, or the assistant). Backends: a self-hosted ComfyUI running TRELLIS, or a"
-  },
-  {
-   "name": "Mesh providers",
-   "kind": "none",
-   "desc": "No mesh providers yet. + Add mesh provider"
-  },
-  {
-   "name": "Storage",
-   "kind": "none",
-   "desc": "API keys are stored unencrypted in this browser's local storage (like all settings) and never leave your device except in requests to the provider you configure"
-  }
- ],
- "Export": [
-  {
-   "name": "Show Made with ThePrototype badge",
-   "kind": "toggle",
-   "desc": "Always on in play links, embeds and exported games: a small logo in the bottom-right corner that opens theprototype.app. An exported file is yours to edit, so t"
-  },
-  {
-   "name": "Start fullscreen",
-   "kind": "toggle",
-   "desc": "The first Play press also asks the browser for fullscreen (a page may only go fullscreen on a click)."
-  },
-  {
-   "name": "Show FPS",
-   "kind": "toggle",
-   "desc": "The game starts with its frame counter on. Players can still switch it in the game's own menu."
-  },
-  {
-   "name": "Quality",
-   "kind": "select",
-   "desc": "The quality a player starts at. Auto steps down by itself when frames run slow."
-  },
-  {
-   "name": "Include VR button",
-   "kind": "toggle",
-   "desc": "On a headset browser the start card offers Enter VR. Off = the game always plays on the screen."
-  },
-  {
-   "name": "Use CDN for packs",
-   "kind": "toggle",
-   "desc": "Smaller zip: kit pieces load from the packs CDN when the game starts, so it needs internet. Off = every pack file the scene uses is copied into the zip."
-  },
-  {
-   "name": "Compress textures",
-   "kind": "toggle",
-   "desc": "Not in this release: textures go into the export exactly as authored."
-  }
- ],
- "Node types": [],
- "Connection": [
-  {
-   "name": "Session size",
-   "kind": "number",
-   "desc": "How many people you expect in a session. Everyone connects to everyone, so each extra person costs every other person bandwidth \u2014 voice and live gestures are th"
-  },
-  {
-   "name": "Signaling server",
-   "kind": "select",
-   "desc": "Where peers discover each other. Default is the public PeerJS cloud. Custom pins your own server (no fallback). Local dev is the npm run peer server on this mac"
-  },
-  {
-   "name": "Apply changes",
-   "kind": "button:Apply",
-   "desc": "Switches the signaling server now and keeps your session id; an open session is left first. Reload if anything looks stuck"
-  }
- ],
- "Shortcuts": [],
- "About": [
-  {
-   "name": "Version",
-   "kind": "none",
-   "desc": "1.24.0-dev (84492c3)"
-  },
-  {
-   "name": "Diagnostics",
-   "kind": "button:Copy diagnostics",
-   "desc": "What the app has been doing: version, this session's peer and scene counts, and the last 300 log lines. It goes to your clipboard and nowhere else \u2014 paste it in"
-  },
-  {
-   "name": "Dev Builds",
-   "kind": "none",
-   "desc": "https://alexz005.github.io/theprototype"
-  },
-  {
-   "name": "Source Code",
-   "kind": "none",
-   "desc": "github.com/theprototype-app/core"
-  },
-  {
-   "name": "Modules",
-   "kind": "none",
-   "desc": "github.com/theprototype-app/modules"
-  },
-  {
-   "name": "Docs",
-   "kind": "none",
-   "desc": "github.com/theprototype-app/docs"
-  }
- ]
+	"Interface": [
+		{
+			"name": "Theme",
+			"kind": "select",
+			"desc": ""
+		},
+		{
+			"name": "Density",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Custom theme",
+			"kind": "button:Export",
+			"desc": ""
+		},
+		{
+			"name": "Allow text selection everywhere",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Your character",
+			"kind": "button:Customize",
+			"desc": ""
+		},
+		{
+			"name": "Show others as classic heads",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Knocked-off idle",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Game sounds",
+			"kind": "range",
+			"desc": ""
+		},
+		{
+			"name": "Music",
+			"kind": "range",
+			"desc": ""
+		},
+		{
+			"name": "Welcome card on start",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Announce new versions",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Show pop-ups only in the drawer",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Show tours automatically",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "VR welcome tour",
+			"kind": "button:Start",
+			"desc": ""
+		},
+		{
+			"name": "Editor tour",
+			"kind": "button:Start",
+			"desc": ""
+		},
+		{
+			"name": "Offer Enter VR in a headset browser",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Reset tours",
+			"kind": "button:Reset",
+			"desc": ""
+		},
+		{
+			"name": "Lift the toolbar above docked panels",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Toolbar always on top",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Window positions",
+			"kind": "button:Reset",
+			"desc": ""
+		},
+		{
+			"name": "Workspace layouts",
+			"kind": "text",
+			"desc": ""
+		},
+		{
+			"name": "Touch tools",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Allow undocking on touch screens",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Show system objects in the object list",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Show the environment in the object list",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Object search in the right-click menu",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Show FPS and draw calls",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Dock resizes the viewport",
+			"kind": "toggle",
+			"desc": ""
+		}
+	],
+	"Controls": [
+		{
+			"name": "Shift+A opens the Add menu",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Show helpers in Play",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Double-click to open notes",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Trackpad gestures",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Two-finger pan",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Reverse trackpad pan",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Pinch zoom",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Allow browser pinch zoom",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Wheel diagnostics",
+			"kind": "toggle",
+			"desc": ""
+		}
+	],
+	"Input": [
+		{
+			"name": "Use a connected gamepad",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Swap sticks",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Invert look Y",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Stick deadzone",
+			"kind": "range",
+			"desc": ""
+		},
+		{
+			"name": "Look sensitivity",
+			"kind": "range",
+			"desc": ""
+		},
+		{
+			"name": "Node editor mouse",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Node editor opens",
+			"kind": "segment",
+			"desc": ""
+		}
+	],
+	"Touch controls": [
+		{
+			"name": "Show touch controls",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Show in edit",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Haptic tick",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Look speed",
+			"kind": "range",
+			"desc": ""
+		},
+		{
+			"name": "Layout",
+			"kind": "button:Reset",
+			"desc": ""
+		},
+		{
+			"name": "Button looks",
+			"kind": "button:Jump Default",
+			"desc": ""
+		}
+	],
+	"Shortcuts": [
+		{
+			"name": "Move (translate)",
+			"kind": "button:Rebind Move (translate)",
+			"desc": ""
+		},
+		{
+			"name": "Rotate",
+			"kind": "button:Rebind Rotate",
+			"desc": ""
+		},
+		{
+			"name": "Scale",
+			"kind": "button:Rebind Scale",
+			"desc": ""
+		},
+		{
+			"name": "Move (grab) — same as 1",
+			"kind": "button:Rebind Move (grab) — same as 1",
+			"desc": ""
+		},
+		{
+			"name": "Arm Move (in the UV editor)",
+			"kind": "button:Rebind Arm Move (in the UV editor)",
+			"desc": ""
+		},
+		{
+			"name": "Arm Move (in the timeline)",
+			"kind": "button:Rebind Arm Move (in the timeline)",
+			"desc": ""
+		},
+		{
+			"name": "Fly the camera (horizontal)",
+			"kind": "none",
+			"desc": ""
+		},
+		{
+			"name": "Fly down / up",
+			"kind": "none",
+			"desc": ""
+		},
+		{
+			"name": "Fly 3x faster",
+			"kind": "none",
+			"desc": ""
+		},
+		{
+			"name": "Back to the scene's start view",
+			"kind": "button:Rebind Back to the scene's start view",
+			"desc": ""
+		},
+		{
+			"name": "Focus selected object",
+			"kind": "button:Rebind Focus selected object",
+			"desc": ""
+		},
+		{
+			"name": "Recall camera bookmark 1",
+			"kind": "button:Rebind Recall camera bookmark 1",
+			"desc": ""
+		},
+		{
+			"name": "Recall camera bookmark 2",
+			"kind": "button:Rebind Recall camera bookmark 2",
+			"desc": ""
+		},
+		{
+			"name": "Recall camera bookmark 3",
+			"kind": "button:Rebind Recall camera bookmark 3",
+			"desc": ""
+		},
+		{
+			"name": "Recall camera bookmark 4",
+			"kind": "button:Rebind Recall camera bookmark 4",
+			"desc": ""
+		},
+		{
+			"name": "Recall camera bookmark 5",
+			"kind": "button:Rebind Recall camera bookmark 5",
+			"desc": ""
+		},
+		{
+			"name": "Duplicate selection (whole set)",
+			"kind": "button:Rebind Duplicate selection (whole set)",
+			"desc": ""
+		},
+		{
+			"name": "Select all objects",
+			"kind": "button:Rebind Select all objects",
+			"desc": ""
+		},
+		{
+			"name": "Leave isolation (double-click view)",
+			"kind": "button:Rebind Leave isolation (double-click view)",
+			"desc": ""
+		},
+		{
+			"name": "Delete selection (a group asks first)",
+			"kind": "button:Rebind Delete selection (a group asks first)",
+			"desc": ""
+		},
+		{
+			"name": "Delete selection (Backspace)",
+			"kind": "button:Rebind Delete selection (Backspace)",
+			"desc": ""
+		},
+		{
+			"name": "Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits)",
+			"kind": "button:Rebind Enter mesh edit mode (inside it Tab cycles Vertices/E",
+			"desc": ""
+		},
+		{
+			"name": "Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
+			"kind": "button:Rebind Edit / Interact mode (Interact: clicks play with the ",
+			"desc": ""
+		},
+		{
+			"name": "Add object at the cursor (enable in Settings)",
+			"kind": "button:Rebind Add object at the cursor (enable in Settings)",
+			"desc": ""
+		},
+		{
+			"name": "Object list: show / bring to front / hide",
+			"kind": "button:Rebind Object list: show / bring to front / hide",
+			"desc": ""
+		},
+		{
+			"name": "Node editor: show / bring to front / hide",
+			"kind": "button:Rebind Node editor: show / bring to front / hide",
+			"desc": ""
+		},
+		{
+			"name": "Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)",
+			"kind": "button:Rebind Tool dock: show / hide (Node editor, Explorer, Animat",
+			"desc": ""
+		},
+		{
+			"name": "Explorer: show / bring to front / hide",
+			"kind": "button:Rebind Explorer: show / bring to front / hide",
+			"desc": ""
+		},
+		{
+			"name": "Flow Code: show / bring to front / hide",
+			"kind": "button:Rebind Flow Code: show / bring to front / hide",
+			"desc": ""
+		},
+		{
+			"name": "Animation: show / bring to front / hide",
+			"kind": "button:Rebind Animation: show / bring to front / hide",
+			"desc": ""
+		},
+		{
+			"name": "UV editor: show / bring to front / hide",
+			"kind": "button:Rebind UV editor: show / bring to front / hide",
+			"desc": ""
+		},
+		{
+			"name": "Shader editor: show / bring to front / hide",
+			"kind": "button:Rebind Shader editor: show / bring to front / hide",
+			"desc": ""
+		},
+		{
+			"name": "HUD editor: show / bring to front / hide",
+			"kind": "button:Rebind HUD editor: show / bring to front / hide",
+			"desc": ""
+		},
+		{
+			"name": "Toggle chat",
+			"kind": "button:Rebind Toggle chat",
+			"desc": ""
+		},
+		{
+			"name": "Toggle AI prompt bar",
+			"kind": "button:Rebind Toggle AI prompt bar",
+			"desc": ""
+		},
+		{
+			"name": "Save scene",
+			"kind": "button:Rebind Save scene",
+			"desc": ""
+		},
+		{
+			"name": "Simulate physics (toggle)",
+			"kind": "button:Rebind Simulate physics (toggle)",
+			"desc": ""
+		},
+		{
+			"name": "Play / Enter VR·AR (right-click the play button for modes)",
+			"kind": "button:Rebind Play / Enter VR·AR (right-click the play button for m",
+			"desc": ""
+		},
+		{
+			"name": "Toggle element snapping (vertex/face/surface targets)",
+			"kind": "button:Rebind Toggle element snapping (vertex/face/surface targets)",
+			"desc": ""
+		},
+		{
+			"name": "Save checkpoint…",
+			"kind": "button:Rebind Save checkpoint…",
+			"desc": ""
+		},
+		{
+			"name": "Undo",
+			"kind": "button:Rebind Undo",
+			"desc": ""
+		},
+		{
+			"name": "Redo",
+			"kind": "button:Rebind Redo",
+			"desc": ""
+		},
+		{
+			"name": "Redo (alternative)",
+			"kind": "button:Rebind Redo (alternative)",
+			"desc": ""
+		},
+		{
+			"name": "Cycle view mode (Shaded / Shaded + AO / Wireframe)",
+			"kind": "button:Rebind Cycle view mode (Shaded / Shaded + AO / Wireframe)",
+			"desc": ""
+		},
+		{
+			"name": "Push to talk while the mic toggle is off",
+			"kind": "none",
+			"desc": ""
+		},
+		{
+			"name": "Next element mode (Vertices - Edges - Faces)",
+			"kind": "button:Rebind Next element mode (Vertices - Edges - Faces)",
+			"desc": ""
+		},
+		{
+			"name": "Previous element mode",
+			"kind": "button:Rebind Previous element mode",
+			"desc": ""
+		},
+		{
+			"name": "Select all (any mode)",
+			"kind": "button:Rebind Select all (any mode)",
+			"desc": ""
+		},
+		{
+			"name": "Invert the selection (any mode)",
+			"kind": "button:Rebind Invert the selection (any mode)",
+			"desc": ""
+		},
+		{
+			"name": "Grow the selection (faces)",
+			"kind": "button:Rebind Grow the selection (faces)",
+			"desc": ""
+		},
+		{
+			"name": "Shrink the selection (faces)",
+			"kind": "button:Rebind Shrink the selection (faces)",
+			"desc": ""
+		},
+		{
+			"name": "Arm Move (faces)",
+			"kind": "button:Rebind Arm Move (faces)",
+			"desc": ""
+		},
+		{
+			"name": "Arm Extrude (faces)",
+			"kind": "button:Rebind Arm Extrude (faces)",
+			"desc": ""
+		},
+		{
+			"name": "Arm Inset (faces)",
+			"kind": "button:Rebind Arm Inset (faces)",
+			"desc": ""
+		},
+		{
+			"name": "Subdivide (faces)",
+			"kind": "button:Rebind Subdivide (faces)",
+			"desc": ""
+		},
+		{
+			"name": "Loop cut (faces)",
+			"kind": "button:Rebind Loop cut (faces)",
+			"desc": ""
+		},
+		{
+			"name": "Bridge (faces)",
+			"kind": "button:Rebind Bridge (faces)",
+			"desc": ""
+		},
+		{
+			"name": "Flip normals (faces); fill the hole (edges)",
+			"kind": "button:Rebind Flip normals (faces); fill the hole (edges)",
+			"desc": ""
+		},
+		{
+			"name": "Delete the selection (faces; Delete too)",
+			"kind": "button:Rebind Delete the selection (faces; Delete too)",
+			"desc": ""
+		},
+		{
+			"name": "Loop select (faces: again = perpendicular; edges: the chain)",
+			"kind": "button:Rebind Loop select (faces: again = perpendicular; edges: the",
+			"desc": ""
+		},
+		{
+			"name": "Weld the selected vertices (vertices)",
+			"kind": "button:Rebind Weld the selected vertices (vertices)",
+			"desc": ""
+		},
+		{
+			"name": "Connect two corners of a face (vertices)",
+			"kind": "button:Rebind Connect two corners of a face (vertices)",
+			"desc": ""
+		},
+		{
+			"name": "Frame the selected nodes (all when none are selected)",
+			"kind": "button:Rebind Frame the selected nodes (all when none are selected)",
+			"desc": ""
+		},
+		{
+			"name": "Frame all nodes",
+			"kind": "button:Rebind Frame all nodes",
+			"desc": ""
+		},
+		{
+			"name": "Frame all nodes (Home)",
+			"kind": "button:Rebind Frame all nodes (Home)",
+			"desc": ""
+		},
+		{
+			"name": "Add a node at the cursor (search)",
+			"kind": "button:Rebind Add a node at the cursor (search)",
+			"desc": ""
+		},
+		{
+			"name": "Add a node at the cursor (search) — Space",
+			"kind": "button:Rebind Add a node at the cursor (search) — Space",
+			"desc": ""
+		},
+		{
+			"name": "Delete the selected nodes and wires",
+			"kind": "button:Rebind Delete the selected nodes and wires",
+			"desc": ""
+		},
+		{
+			"name": "Delete the selected nodes and wires (X)",
+			"kind": "button:Rebind Delete the selected nodes and wires (X)",
+			"desc": ""
+		},
+		{
+			"name": "Delete the selected nodes and wires (Backspace)",
+			"kind": "button:Rebind Delete the selected nodes and wires (Backspace)",
+			"desc": ""
+		},
+		{
+			"name": "Duplicate the selection (wires between copies kept)",
+			"kind": "button:Rebind Duplicate the selection (wires between copies kept)",
+			"desc": ""
+		},
+		{
+			"name": "Select all nodes",
+			"kind": "button:Rebind Select all nodes",
+			"desc": ""
+		},
+		{
+			"name": "Copy the selection",
+			"kind": "button:Rebind Copy the selection",
+			"desc": ""
+		},
+		{
+			"name": "Cut the selection",
+			"kind": "button:Rebind Cut the selection",
+			"desc": ""
+		},
+		{
+			"name": "Paste at the cursor",
+			"kind": "button:Rebind Paste at the cursor",
+			"desc": ""
+		},
+		{
+			"name": "Mute / unmute the selection (a muted node does nothing)",
+			"kind": "button:Rebind Mute / unmute the selection (a muted node does nothin",
+			"desc": ""
+		},
+		{
+			"name": "Collapse / expand the selected nodes",
+			"kind": "button:Rebind Collapse / expand the selected nodes",
+			"desc": ""
+		},
+		{
+			"name": "Group the selection",
+			"kind": "button:Rebind Group the selection",
+			"desc": ""
+		},
+		{
+			"name": "Ungroup (the selected group, or the one you are in)",
+			"kind": "button:Rebind Ungroup (the selected group, or the one you are in)",
+			"desc": ""
+		},
+		{
+			"name": "Enter the selected group / leave the one you are in",
+			"kind": "button:Rebind Enter the selected group / leave the one you are in",
+			"desc": ""
+		},
+		{
+			"name": "Add a note at the cursor",
+			"kind": "button:Rebind Add a note at the cursor",
+			"desc": ""
+		},
+		{
+			"name": "Add a note around the selection (a frame)",
+			"kind": "button:Rebind Add a note around the selection (a frame)",
+			"desc": ""
+		},
+		{
+			"name": "Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
+			"kind": "button:Rebind Tidy the graph: lay it out left to right, nothing ove",
+			"desc": ""
+		},
+		{
+			"name": "Fix overlaps and crossings, keeping the layout",
+			"kind": "button:Rebind Fix overlaps and crossings, keeping the layout",
+			"desc": ""
+		},
+		{
+			"name": "Align the selection into a column (left edges)",
+			"kind": "button:Rebind Align the selection into a column (left edges)",
+			"desc": ""
+		},
+		{
+			"name": "Align the selection into a row (top edges)",
+			"kind": "button:Rebind Align the selection into a row (top edges)",
+			"desc": ""
+		},
+		{
+			"name": "Distribute the selection evenly top to bottom",
+			"kind": "button:Rebind Distribute the selection evenly top to bottom",
+			"desc": ""
+		},
+		{
+			"name": "Distribute the selection evenly left to right",
+			"kind": "button:Rebind Distribute the selection evenly left to right",
+			"desc": ""
+		},
+		{
+			"name": "Nudge the selection left (Shift: ×5)",
+			"kind": "button:Rebind Nudge the selection left (Shift: ×5)",
+			"desc": ""
+		},
+		{
+			"name": "Nudge the selection right",
+			"kind": "button:Rebind Nudge the selection right",
+			"desc": ""
+		},
+		{
+			"name": "Nudge the selection up",
+			"kind": "button:Rebind Nudge the selection up",
+			"desc": ""
+		},
+		{
+			"name": "Nudge the selection down",
+			"kind": "button:Rebind Nudge the selection down",
+			"desc": ""
+		},
+		{
+			"name": "Nudge the selection left ×5",
+			"kind": "button:Rebind Nudge the selection left ×5",
+			"desc": ""
+		},
+		{
+			"name": "Nudge the selection right ×5",
+			"kind": "button:Rebind Nudge the selection right ×5",
+			"desc": ""
+		},
+		{
+			"name": "Nudge the selection up ×5",
+			"kind": "button:Rebind Nudge the selection up ×5",
+			"desc": ""
+		},
+		{
+			"name": "Nudge the selection down ×5",
+			"kind": "button:Rebind Nudge the selection down ×5",
+			"desc": ""
+		},
+		{
+			"name": "Leave the group you are in",
+			"kind": "button:Rebind Leave the group you are in",
+			"desc": ""
+		},
+		{
+			"name": "Keyboard cheat sheet (every scope; the focused one first)",
+			"kind": "button:Rebind Keyboard cheat sheet (every scope; the focused one fi",
+			"desc": ""
+		},
+		{
+			"name": "Show this shortcut list",
+			"kind": "button:Rebind Show this shortcut list",
+			"desc": ""
+		},
+		{
+			"name": "Race: drive / brake",
+			"kind": "none",
+			"desc": ""
+		},
+		{
+			"name": "Race: steer",
+			"kind": "none",
+			"desc": ""
+		},
+		{
+			"name": "Race: back on the road",
+			"kind": "none",
+			"desc": ""
+		}
+	],
+	"Scene": [
+		{
+			"name": "Show grid",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Light helper length",
+			"kind": "number",
+			"desc": ""
+		},
+		{
+			"name": "Show the simulation controls",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Shadow quality",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Reduce quality when the scene is heavy",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Simplify distant models",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Draw repeated kit pieces together",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Water quality",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Sync animations",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Spatial voice",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Ping colour",
+			"kind": "color",
+			"desc": ""
+		},
+		{
+			"name": "Ping sound",
+			"kind": "select",
+			"desc": ""
+		},
+		{
+			"name": "Autosave",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Auto-restore on load",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Keep automatic checkpoints",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Automatic checkpoint every",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Checkpoint storage",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "When opening another scene",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Double-click action",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Length",
+			"kind": "select",
+			"desc": ""
+		},
+		{
+			"name": "Angle",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Carry animation clips",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Carry object flow",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Carry shader graph",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Share materials",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Wireframe colour",
+			"kind": "color",
+			"desc": ""
+		},
+		{
+			"name": "Selection outline colour",
+			"kind": "color",
+			"desc": ""
+		},
+		{
+			"name": "Edit mesh wireframe colour",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Reset line colours",
+			"kind": "button:Reset",
+			"desc": ""
+		},
+		{
+			"name": "Placeholder style",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Placeholder grid texture",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Grid size",
+			"kind": "number",
+			"desc": ""
+		},
+		{
+			"name": "Grid colour",
+			"kind": "color",
+			"desc": ""
+		},
+		{
+			"name": "Grid opacity",
+			"kind": "range",
+			"desc": ""
+		},
+		{
+			"name": "Animation speed",
+			"kind": "range",
+			"desc": ""
+		},
+		{
+			"name": "Stuck after",
+			"kind": "number",
+			"desc": ""
+		}
+	],
+	"Explorer": [
+		{
+			"name": "When you add files during a session",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Download shared files automatically",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Offer to merge unsaved work on connect",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Who can unshare a file",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Keep versions per scene",
+			"kind": "number",
+			"desc": ""
+		},
+		{
+			"name": "When importing files already in your library",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Save name",
+			"kind": "text",
+			"desc": ""
+		},
+		{
+			"name": "Keep a recycle bin",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Delete without asking",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Keep deleted files after a reload",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Deleted files log",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Storage used",
+			"kind": "button:Show breakdown",
+			"desc": ""
+		}
+	],
+	"Node types": [],
+	"Export": [
+		{
+			"name": "Show the Made with ThePrototype badge",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Start fullscreen",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Show FPS",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Quality",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Include VR button",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Use CDN for packs",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Compress textures",
+			"kind": "toggle",
+			"desc": ""
+		}
+	],
+	"VR": [
+		{
+			"name": "Play on the screen, even in a headset",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Turning",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Snap angle",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Smooth speed",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Mirror turn",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Comfort vignette",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Teleport",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Flying",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Stance",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Height",
+			"kind": "range",
+			"desc": ""
+		},
+		{
+			"name": "Menu hand",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Hold to open menu",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Left-handed",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Grab style",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Refresh rate",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Statistics card",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Peer hands",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Passthrough",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Selection wireframe",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Reset panel positions",
+			"kind": "button:Reset",
+			"desc": ""
+		},
+		{
+			"name": "Game HUD",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Game HUD size",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Button hints",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Pivot point",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Hold to move vertex",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Sleeve palette",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Face edit limit",
+			"kind": "number",
+			"desc": ""
+		},
+		{
+			"name": "Vertex edit limit",
+			"kind": "number",
+			"desc": ""
+		},
+		{
+			"name": "My hand model",
+			"kind": "select",
+			"desc": ""
+		},
+		{
+			"name": "Colocation",
+			"kind": "button:Colocate here",
+			"desc": ""
+		},
+		{
+			"name": "Ghost hands",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Colocation probe",
+			"kind": "button:Probe AR capabilities",
+			"desc": ""
+		}
+	],
+	"AI": [
+		{
+			"name": "Enable assistant",
+			"kind": "toggle",
+			"desc": ""
+		},
+		{
+			"name": "Voice typing provider",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Mesh generation",
+			"kind": "toggle",
+			"desc": ""
+		}
+	],
+	"Connection": [
+		{
+			"name": "Session size",
+			"kind": "number",
+			"desc": ""
+		},
+		{
+			"name": "Signaling server",
+			"kind": "segment",
+			"desc": ""
+		},
+		{
+			"name": "Apply changes",
+			"kind": "button:Reload",
+			"desc": ""
+		}
+	],
+	"About & what’s new": [
+		{
+			"name": "Version",
+			"kind": "none",
+			"desc": ""
+		},
+		{
+			"name": "Diagnostics",
+			"kind": "button:Copy",
+			"desc": ""
+		},
+		{
+			"name": "Clear saved session",
+			"kind": "button:Clear",
+			"desc": ""
+		},
+		{
+			"name": "Reset all settings",
+			"kind": "button:Reset all",
+			"desc": ""
+		}
+	]
 }

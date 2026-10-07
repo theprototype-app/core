@@ -5,7 +5,7 @@ const h = require('./helpers.cjs');
 
 const activeFolder = (A) => A.page.evaluate(() => { let v; window.__stores.explorer.activeFolder.subscribe((x) => (v = x))(); return v; });
 const selName = (A) =>
-	A.page.evaluate(() => document.querySelector('#explorer-list .border-primary-600')?.textContent?.trim() ?? null);
+	A.page.evaluate(() => document.querySelector('#explorer-list .border-accent')?.textContent?.trim() ?? null);
 
 h.run(async () => {
 	const browser = await h.launch();

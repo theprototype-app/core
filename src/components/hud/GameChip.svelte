@@ -12,7 +12,7 @@
 	// LOCAL chrome: editor only, never in embed mode (an embed has its own ▶), never in a
 	// headset (DOM is invisible there), and it replicates nothing — Test play's reset goes
 	// through the game shell's own write path, which is what replicates.
-	import { Play, Eye, EyeOff } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { isLocked, isVRMode } from '../../stores/sceneStore';
 	import { hudIsGame, hudPreviewInViewport } from '$lib/hudDocs';
 	import { gameState } from '$lib/gameState';
@@ -35,7 +35,7 @@
 			title={$hudPreviewInViewport ? 'Hide the game screens in the editor' : 'Preview the game screens in the editor (buttons inert)'}
 			onclick={() => hudPreviewInViewport.update((on) => !on)}
 		>
-			{#if $hudPreviewInViewport}<Eye size={14} aria-hidden="true" />{:else}<EyeOff size={14} aria-hidden="true" />{/if}
+			{#if $hudPreviewInViewport}<Icon name="eye" size={16} aria-hidden="true" />{:else}<Icon name="eye-off" size={16} aria-hidden="true" />{/if}
 		</button>
 		<button
 			id="game-chip-test"
@@ -44,7 +44,7 @@
 			title="Test play: back to the menu, enter Play, start from the Start screen"
 			onclick={() => testPlay()}
 		>
-			<Play size={13} aria-hidden="true" />
+			<Icon name="play" size={16} aria-hidden="true" />
 			<span>Test play</span>
 		</button>
 	</div>
@@ -64,10 +64,10 @@
 		gap: 6px;
 		padding: 4px 4px 4px 10px;
 		border-radius: 9999px;
-		background: var(--surface, #1f2937);
-		color: var(--icon-strong, #e5e7eb);
-		border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+		background: var(--surface-1);
+		color: var(--text);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow-window);
 		font-size: 12px;
 		line-height: 1;
 		user-select: none;
@@ -92,7 +92,7 @@
 	.game-chip-icon:hover,
 	.game-chip-icon[aria-pressed='true'] {
 		opacity: 1;
-		background: rgba(255, 255, 255, 0.08);
+		background: var(--surface-hover);
 	}
 	.game-chip-test {
 		display: inline-flex;
@@ -100,8 +100,8 @@
 		gap: 4px;
 		padding: 5px 10px 5px 8px;
 		border-radius: 9999px;
-		background: var(--accent, #ef562f);
-		color: #fff;
+		background: var(--live);
+		color: var(--on-live);
 		font-weight: 600;
 		white-space: nowrap;
 	}

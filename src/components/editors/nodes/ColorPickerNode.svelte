@@ -8,6 +8,7 @@
 	export let id: string;
 	export let data;
 	// One-way flow: render from data, write through setNodeData (replicates to peers)
+	const DEFAULT_COLOR = '#ff4000'; // tokens-ok: the picker's starting value (user data)
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
@@ -15,10 +16,10 @@
 		<input
 			class="nodrag nopan border-md h-6 w-6"
 			type="color"
-			value={data.color ?? '#ff4000'}
+			value={data.color ?? DEFAULT_COLOR}
 			on:input={(e) => setNodeData(id, { color: e.currentTarget.value })}
 		/>
-		<p>{data.color ?? '#ff4000'}</p>
+		<p>{data.color ?? DEFAULT_COLOR}</p>
 	</div>
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 </NodeWrapper>

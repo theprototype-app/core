@@ -187,7 +187,7 @@
      the design page's dock) — an inset bar of pill tabs with the view icon. `stripEl` stays the
      full-width, transparent scroll box the W7 drag measures (its rect decides reorder vs
      undock), so the bar is an inner wrapper and only the paint changed. -->
-<div bind:this={stripEl} class="absolute -top-6 left-3 right-24 z-20 flex overflow-x-auto">
+<div bind:this={stripEl} class="tp-noscrollbar absolute -top-6 left-3 right-24 z-20 flex overflow-x-auto">
 	<div class="tp-ui tp-dtabs tp-dtabs-slim" role="tablist" aria-label="Docked views">
 		{#each $dockTabs as tab (tab.key)}
 			<button
@@ -201,7 +201,7 @@
 				use:tabDrag={{ key: tab.key }}
 				oncontextmenu={(/** @type {MouseEvent} */ e) => openTabMenu(e, tab.key)}
 				onclick={() => tabClick(tab.key)}
-				>{#if tab.icon}<span class="tp-dtab-ico"><Icon name={tab.icon} size={12} /></span>{/if}{tab.title}</button
+				>{#if tab.icon}<span class="tp-dtab-ico"><Icon name={tab.icon} size={16} aria-hidden="true" /></span>{/if}{tab.title}</button
 			>
 		{/each}
 		<button
@@ -209,7 +209,7 @@
 			class="tab-note dt-btn tp-dtab tp-dtab-icon"
 			title="Add a view (Flow Code, Animation, UV editor, Shader editor, HUD editor, Explorer)"
 			aria-label="Add a view to the dock"
-			onclick={openAdd}><Icon name="plus" size={14} /></button
+			onclick={openAdd}><Icon name="plus" size={16} aria-hidden="true" /></button
 		>
 	</div>
 	<!-- the insertion bar: where the dragged tab would land. Hidden once the pointer is
@@ -231,7 +231,7 @@
 			class="tab-note dt-btn tp-dtab tp-dtab-icon"
 			title="Minimize the dock"
 			aria-label="Minimize the dock"
-			onclick={() => dockMinimized.set(true)}><Icon name="panel-bottom" size={14} /></button
+			onclick={() => dockMinimized.set(true)}><Icon name="panel-bottom" size={16} aria-hidden="true" /></button
 		>
 	</div>
 </div>

@@ -28,15 +28,15 @@
 	<div class="flex w-full flex-col gap-1">
 		<div class="relative -mx-3 flex h-5 items-center gap-1 px-3">
 			<Socket kind="target" nodeType={data.type} position={Position.Left} id="filter" style="top: 50%;" />
-			<span class="text-[10px] text-gray-300">only with</span>
+			<span class="text-[10px] text-text-2">only with</span>
 		</div>
 		<div class="flex items-center gap-2">
-			<span class="h-2.5 w-2.5 rounded-full" style="background: {pulsing ? '#22c55e' : '#374151'}"></span>
+			<span class="h-2.5 w-2.5 rounded-full" style="background: {pulsing ? 'var(--ink-good)' : 'var(--control-off)'}"></span>
 			<span>{pulsing ? verb : 'idle'}</span>
 		</div>
 		{#if impact}
 			<label class="flex items-center gap-1">
-				<span class="w-14 shrink-0 text-[10px] text-gray-400">min m/s</span>
+				<span class="w-14 shrink-0 text-[10px] text-text-muted">min m/s</span>
 				<input
 					class="nodrag nopan flex-1"
 					type="range"
@@ -46,12 +46,12 @@
 					value={data.minStrength ?? 1}
 					on:change={(e) => setNodeData(id, { minStrength: +e.currentTarget.value })}
 				/>
-				<span class="w-6 text-right font-mono text-[10px] text-gray-400">{(+(data.minStrength ?? 1)).toFixed(1)}</span>
+				<span class="w-6 text-right font-mono text-[10px] text-text-muted">{(+(data.minStrength ?? 1)).toFixed(1)}</span>
 			</label>
 		{/if}
 		<div class="relative -mx-3 flex h-5 items-center gap-1 px-3">
-			<span class="text-[10px] text-gray-300">other</span>
-			<span class="ml-auto max-w-[80px] truncate font-mono text-[10px] text-gray-400">{otherName}</span>
+			<span class="text-[10px] text-text-2">other</span>
+			<span class="ml-auto max-w-[80px] truncate font-mono text-[10px] text-text-muted">{otherName}</span>
 			<Socket kind="source" nodeType={data.type} position={Position.Right} id="other" forceType="object" style="top: 50%;" />
 		</div>
 	</div>

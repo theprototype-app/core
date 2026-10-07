@@ -1,4 +1,5 @@
 <script module>
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { vrSettingsKeywords, VR_SETTINGS, VR_SETTING_PAGES } from '$lib/vr/settingsSchema.js';
 	import { registerSettingsKeywords } from '$lib/settingsSearch';
 	/** I4 settings search: every label + keyword of the VR section */
@@ -313,7 +314,7 @@
 				<Button id="ar-probe-clear" size="sm" variant="ghost" disabled={$probeRunning} onclick={() => clearProbeState()}>Clear stored anchor</Button>
 				{#snippet extra()}
 					{#if $probeFindings.length}
-						<div class="vr-probe" id="ar-probe-report">
+						<div class="vr-probe" id="ar-probe-report" use:minimalScroll>
 							{#each $probeFindings as finding, i (i)}
 								<div class="vr-probe-row">
 									<span class={finding.ok ? 'vr-ok' : 'vr-bad'}>{finding.ok ? '✓' : '✗'}</span>
@@ -386,10 +387,10 @@
 		color: var(--text-muted);
 	}
 	.vr-ok {
-		color: var(--ink-good, #4ade80);
+		color: var(--ink-good);
 	}
 	.vr-bad {
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 	@media (max-width: 639.98px) {
 		.vr-select {

@@ -39,7 +39,7 @@
 		for (const [id, { ping, target }] of wanted) {
 			let helper = helpers.get(id);
 			if (!helper) {
-				helper = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color(ping.color || '#4f83cc'));
+				helper = new THREE.Box3Helper(new THREE.Box3(), new THREE.Color(ping.color || '#4f83cc')); // tokens-ok: three.js helper colour (peer ping colour fallback)
 				helper.material.transparent = true;
 				helper.material.depthTest = false;
 				helper.renderOrder = 9998;

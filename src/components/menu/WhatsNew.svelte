@@ -6,6 +6,7 @@
 	import { changelogReleases } from '$lib/changelog.js';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	let winEl: any = $state(null);
 
@@ -64,7 +65,7 @@
 			<span class="flex-1"></span>
 			<button id="whats-new-close" class="ui-button-quiet" title="Close" onclick={closeWhatsNew}>✕</button>
 		</div>
-		<div class="wn-body min-h-0 flex-1 overflow-y-auto px-4 py-3">
+		<div class="wn-body min-h-0 flex-1 overflow-y-auto px-4 py-3" use:minimalScroll>
 			{#snippet body(list: Block[])}
 				{#each list as block}
 					{#if block.kind === 'h3'}
@@ -128,13 +129,13 @@
 	.wn-body {
 		font-size: 13px;
 		line-height: 1.6;
-		color: #d1d5db;
+		color: var(--text-2);
 	}
 	.wn-body h2 {
 		display: inline;
 		font-size: 15.5px;
 		font-weight: 700;
-		color: #f3f4f6;
+		color: var(--text);
 	}
 	/* one foldable section per release: the heading IS the toggle */
 	.wn-release > summary {
@@ -143,7 +144,7 @@
 		gap: 0.4rem;
 		margin: 20px 0 8px;
 		padding-bottom: 6px;
-		border-bottom: 1px solid rgb(255 255 255 / 0.09);
+		border-bottom: 1px solid var(--border);
 		cursor: pointer;
 		list-style: none;
 	}
@@ -162,25 +163,25 @@
 		border-left: 5px solid currentColor;
 		border-top: 4px solid transparent;
 		border-bottom: 4px solid transparent;
-		color: #9ca3af;
+		color: var(--text-faint);
 		transition: transform 120ms ease;
 	}
 	.wn-release[open] > summary::before {
 		transform: rotate(90deg);
 	}
 	.wn-release > summary:hover {
-		color: #fff;
+		color: var(--text);
 	}
 	.wn-body h3 {
 		font-size: 13.5px;
 		font-weight: 650;
-		color: #e5e7eb;
+		color: var(--text);
 		margin: 16px 0 6px;
 	}
 	.wn-body h4 {
 		font-size: 12.5px;
 		font-weight: 600;
-		color: #cbd5e1;
+		color: var(--text-2);
 		margin: 12px 0 4px;
 	}
 	.wn-body p {
@@ -195,7 +196,7 @@
 		margin: 4px 0;
 	}
 	.wn-body :global(strong) {
-		color: #f3f4f6;
+		color: var(--text);
 		font-weight: 620;
 	}
 	.wn-body :global(code) {
@@ -203,14 +204,15 @@
 		font-size: 11.5px;
 		padding: 1px 5px;
 		border-radius: 5px;
-		background: rgb(255 255 255 / 0.08);
-		color: #e5e7eb;
+		background: var(--surface-inset);
+		color: var(--text);
 	}
 	.wn-body :global(a) {
-		color: #93c5fd;
+		color: var(--accent-text);
 		text-decoration: underline;
 	}
 	.wn-body :global(a:hover) {
-		color: #bfdbfe;
+		color: var(--accent-text);
+		filter: brightness(1.15);
 	}
 </style>

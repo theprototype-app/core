@@ -25,9 +25,9 @@
 	on:dblclick|stopPropagation={() => runNodeAction('enterGroup', id)}
 	title="Group — double-click or Tab to open it"
 >
-	<NodeWrapper type="group" label={'⧉ ' + (data?.label ?? 'Group')} accent="var(--accent, #60a5fa)">
+	<NodeWrapper type="group" label={'⧉ ' + (data?.label ?? 'Group')} accent="var(--accent)">
 		<div class="flex w-full flex-col gap-0.5">
-			<span class="text-[10px] text-gray-400">{count} node{count === 1 ? '' : 's'} inside</span>
+			<span class="text-[10px] text-text-muted">{count} node{count === 1 ? '' : 's'} inside</span>
 			{#each Array(rows) as _, i (i)}
 				<div class="relative -mx-3 flex h-5 items-center justify-between gap-2 px-3">
 					{#if inputs[i]}
@@ -55,7 +55,7 @@
 				</div>
 			{/each}
 			{#if !rows}
-				<span class="text-[10px] italic text-gray-500">no wires cross it</span>
+				<span class="text-[10px] italic text-text-faint">no wires cross it</span>
 			{/if}
 		</div>
 	</NodeWrapper>

@@ -1,4 +1,5 @@
 <script module>
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { registerSettingsKeywords } from '$lib/settingsSearch';
 	// the old labels of the rows this redesign renamed (Decision C) + the words people search with
 	const ROW_WORDS = {
@@ -85,7 +86,7 @@
 							{wheelPlatform || 'unknown platform'} · pointer: {wheelCoarse ? 'coarse' : 'fine'} · wheel mode: {$trackpadMode === 'off' ? 'zoom' : $trackpadMode === 'on' ? 'pan' : 'auto'}
 						</p>
 						{#if $lastWheelEvents.length}
-							<div class="wd-scroll">
+							<div class="wd-scroll" use:minimalScroll>
 								<table class="wheel-diag">
 									<thead><tr><th>Δt ms</th><th>mode</th><th>ΔX</th><th>ΔY</th><th>wheelΔY</th><th>ctrl</th><th>as</th><th>why</th></tr></thead>
 									<tbody>

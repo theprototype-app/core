@@ -4,9 +4,9 @@ import { createRequire } from 'node:module';
 // 38 R2: the `check:tokens` scanner. What it must catch is every way a component paints a
 // colour of its own; what it must NOT catch is everything that merely looks like one — a
 // Svelte block (`{#each}`), an HTML entity, an id selector, a token utility, a note in a
-// comment — or warning mode drowns in noise and nobody reads it.
+// comment — or the hard fail (R11) blocks honest work and someone turns it off.
 const require = createRequire(import.meta.url);
-const { scanText, CLEAN } = require('../../scripts/check-tokens.cjs');
+const { scanText, DEFINITIONS } = require('../../scripts/check-tokens.cjs');
 
 /** @param {string} text */
 const kinds = (text) => scanText(text).map((/** @type {any} */ h) => h.kind + ':' + h.match);
@@ -48,8 +48,19 @@ describe('check:tokens scanText', () => {
 		expect(hits.map((/** @type {any} */ h) => [h.line, h.match])).toEqual([[4, '#000']]);
 	});
 
-	it('CLEAN lists the primitives the redesign builds from tokens', () => {
-		expect(CLEAN).toContain('src/components/ui/Toggle.svelte');
-		expect(CLEAN).toContain('src/components/ui/WindowChrome.svelte');
+	it('a tokens-ok pragma WITH a reason exempts its line; a bare one is itself a violation', () => {
+		expect(kinds("const tint = '#ffffff'; // tokens-ok: the picker's starting value")).toEqual([]);
+		expect(kinds('<div style="color: #fff"> <!-- tokens-ok: canvas pixels -->')).toEqual([]);
+		expect(kinds("const tint = '#ffffff'; // tokens-ok")).toEqual(['pragma:tokens-ok without a reason', 'hex:#ffffff']);
+		expect(kinds("const tint = '#ffffff'; // tokens-ok: x")).toEqual(['hex:#ffffff']);
+	});
+
+	it('a tokens-ok-begin … tokens-ok-end block exempts every line inside it, and only those', () => {
+		const src = ['/* tokens-ok-begin: node category hues (graph data) */', "a: '#ff0000',", "b: 'rgb(1 2 3)',", '/* tokens-ok-end */', "c: '#00ff00'"].join('\n');
+		expect(scanText(src).map((/** @type {any} */ h) => [h.line, h.match])).toEqual([[5, '#00ff00']]);
+	});
+
+	it('the files that DEFINE the tokens are the only ones outside the scan', () => {
+		expect([...DEFINITIONS].sort()).toEqual(['src/styles/theme.css', 'src/styles/tokens.css']);
 	});
 });

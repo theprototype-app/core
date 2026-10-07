@@ -102,7 +102,7 @@
 					tabMenu = { x: e.clientX, y: e.clientY, key };
 				}}
 			>
-				{#if TAB_ICONS[key]}<span class="tp-dtab-ico"><Icon name={TAB_ICONS[key]} size={14} /></span>{/if}{titleOf(key)}
+				{#if TAB_ICONS[key]}<span class="tp-dtab-ico"><Icon name={TAB_ICONS[key]} size={16} /></span>{/if}{titleOf(key)}
 			</button>
 		{/each}
 		<span class="flex-1"></span>
@@ -112,7 +112,7 @@
 			aria-label="Close all tabs in this window"
 			onclick={() => closeGroup(group.active)}
 		>
-			<Icon name="x" size={14} />
+			<Icon name="x" size={16} />
 		</button>
 	</div>
 {/each}

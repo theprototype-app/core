@@ -67,6 +67,7 @@
 	})
 
 	function keyColor(id: string) {
+		// tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var())
 		if ($vrHovered === 'kbd:' + id) return '#ff4000'
 		if (id === 'enter') return '#1f6f43'
 		if (id === 'esc') return '#6f2f2f'
@@ -74,7 +75,9 @@
 		if (id === 'shift' && $vrKeyboardTarget?.shift) return '#2f81f7'
 		return '#2a2f38'
 	}
+	// tokens-ok-end
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if $vrKeyboardTarget}
 	<T.Group bind:ref={group} name="vr-keyboard">
@@ -122,3 +125,4 @@
 		{/each}
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

@@ -1,4 +1,5 @@
 <script module>
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { registerSettingsKeywords } from '$lib/settingsSearch';
 	const ROW_WORDS = {
 		'enable assistant': ['ai', 'llm', 'claude', 'openai', 'assistant', 'prompt'],
@@ -318,7 +319,7 @@
 				/>
 				{#snippet extra()}
 					{#if aiModelListOpen && aiFormModels.length}
-						<div id="ai-model-list" class="ai-models">
+						<div id="ai-model-list" class="ai-models" use:minimalScroll>
 							{#each aiModelFiltered as m (m)}
 								<button
 									type="button"
@@ -470,10 +471,10 @@
 		font-size: var(--fs-desc);
 	}
 	.ai-ok {
-		color: var(--ink-good, #4ade80);
+		color: var(--ink-good);
 	}
 	.ai-bad {
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 	.ai-models {
 		max-height: 10rem;

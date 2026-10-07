@@ -853,7 +853,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(150);
 	const picked = await A.page.evaluate(() =>
 		/(\d+) keys selected/.test(document.body.textContent ?? '') ||
-		!!document.querySelector('#animation-timeline rect[fill="rgb(250 204 21)"]')
+		!!document.querySelector('#animation-timeline rect.an-sel')
 	);
 	h.check(picked, 'Ctrl+Space selects the key at the playhead');
 	const keyTimesNow = () =>
@@ -881,7 +881,7 @@ h.run(async () => {
 	await A.page.keyboard.press('Escape');
 	await A.page.waitForTimeout(150);
 	const cleared = await A.page.evaluate(
-		() => !document.querySelector('#animation-timeline rect[fill="rgb(250 204 21)"]')
+		() => !document.querySelector('#animation-timeline rect.an-sel')
 	);
 	h.check(cleared, 'Escape drops the selection');
 
@@ -922,7 +922,7 @@ h.run(async () => {
 		const el = document.getElementById('animation-navigator');
 		if (!el) return null;
 		const r = el.getBoundingClientRect();
-		const thumb = el.querySelector('span.border-primary-500\\/70');
+		const thumb = el.querySelector('span.border-accent\\/70');
 		const tr = thumb?.getBoundingClientRect();
 		return {
 			x: r.x, y: r.y, w: r.width,
@@ -937,7 +937,7 @@ h.run(async () => {
 	const zoomedIn = await A.page.evaluate(() => {
 		const el = document.getElementById('animation-navigator');
 		const r = el.getBoundingClientRect();
-		const thumb = el.querySelector('span.border-primary-500\\/70');
+		const thumb = el.querySelector('span.border-accent\\/70');
 		return thumb ? thumb.getBoundingClientRect().width / r.width : null;
 	});
 	h.check(
@@ -949,7 +949,7 @@ h.run(async () => {
 	const zoomedOut = await A.page.evaluate(() => {
 		const el = document.getElementById('animation-navigator');
 		const r = el.getBoundingClientRect();
-		const thumb = el.querySelector('span.border-primary-500\\/70');
+		const thumb = el.querySelector('span.border-accent\\/70');
 		return thumb ? thumb.getBoundingClientRect().width / r.width : null;
 	});
 	h.check(zoomedOut > zoomedIn, `and scrolling down zooms out (${(zoomedOut * 100).toFixed(0)}%)`);

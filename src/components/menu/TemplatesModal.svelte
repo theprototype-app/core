@@ -3,8 +3,13 @@
 	// of loadable starting scenes. Content + storage architecture documented in
 	// $lib/sceneTemplates.js — this file is presentation only. Runes-mode.
 	import { untrack } from 'svelte';
-	import { Modal } from 'flowbite-svelte';
-	import { FilePlus, FolderDown, Image as ImageIcon, RefreshCw } from '@lucide/svelte';
+	// 38 R7: the shared ModalDialog (WindowChrome size="modal"); kit Tabs in the strip under the
+	// header (ids templates-tab-<id> are the Tabs' own); chips and cards with the accent selection;
+	// tokens only. #templates-modal is the dialog itself now, so it holds the tabs too.
+	import ModalDialog from '../ui/ModalDialog.svelte';
+	import Tabs from '../ui/Tabs.svelte';
+	import EmptyState from '../ui/EmptyState.svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { templatesModalOpen, templatesModalTab, hidePanels, restorePanels } from '../../stores/appStore.js';
 	import {
 		templates,
@@ -30,10 +35,15 @@
 	import { communityProvider } from '$lib/cloudHooks';
 	import { licenseLabel } from '$lib/packs';
 	import { classifyRequirements } from '$lib/moduleRequirements';
-	import { Gamepad2, Puzzle } from '@lucide/svelte';
 	import HeartButton from '../ui/HeartButton.svelte';
 
 	let tab = $state('general');
+	const TEMPLATE_TABS = [
+		{ id: 'general', label: 'General' },
+		{ id: 'examples', label: 'Examples' },
+		{ id: 'games', label: 'Games' },
+		{ id: 'community', label: 'Community' }
+	];
 	/** A7: active tag chips, PER TAB — a filter that survived a tab switch would
 	 * silently empty the next grid ("the Examples tab is broken"). @type {string[]} */
 	let activeTags = $state(/** @type {string[]} */ ([]));
@@ -205,7 +215,7 @@
 	     word the card shows. -->
 	<div class="tpl-card-wrap relative">
 	<button
-		class="tpl-card flex h-full w-full flex-col overflow-hidden rounded-lg border border-gray-700/60 bg-gray-800/70 text-left"
+		class="tpl-card flex h-full w-full flex-col overflow-hidden rounded-card border border-border bg-surface-2 text-left"
 		data-scene-slug={entry.slug}
 		disabled={$loadingSlug === entry.slug}
 		title={'Load "' + entry.title + '" — replaces the current scene (a backup is stashed first)'}
@@ -213,18 +223,18 @@
 	>
 		{#if entry.thumbUrl}
 			<img src={entry.thumbUrl} alt={entry.title} class="h-24 w-full object-cover" loading="lazy" onerror={hideThumb} />
-			<div class="tpl-thumb-ph hidden h-24 w-full items-center justify-center bg-gray-700 text-gray-400">
-				<ImageIcon size={20} aria-hidden="true" />
+			<div class="tpl-thumb-ph hidden h-24 w-full items-center justify-center bg-surface-inset text-text-faint">
+				<Icon name="image" size={20} aria-hidden="true" />
 			</div>
 		{:else}
-			<div class="flex h-24 w-full items-center justify-center bg-gray-700 text-gray-400">
-				<ImageIcon size={20} aria-hidden="true" />
+			<div class="flex h-24 w-full items-center justify-center bg-surface-inset text-text-faint">
+				<Icon name="image" size={20} aria-hidden="true" />
 			</div>
 		{/if}
 		<div class="flex flex-1 flex-col gap-1 p-2">
-			<p class="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-gray-100">{entry.title}</p>
+			<p class="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-text">{entry.title}</p>
 			{#if entry.description}
-				<p class="tpl-desc text-xs text-gray-400">{entry.description}</p>
+				<p class="tpl-desc text-xs text-text-muted">{entry.description}</p>
 			{/if}
 			<!-- A7: a game is a module PLUS a scene, so the card says which module up
 			     front. Amber when this device has not got it: the load still works and
@@ -242,13 +252,13 @@
 							? 'You have a different version than this scene was built against — every player must run the same one, or the game will drift'
 							: 'Each player needs this module; loading will offer to install it'}
 				>
-					<Puzzle size={11} aria-hidden="true" />{req?.text}
+					<Icon name="puzzle" size={16} aria-hidden="true" />{req?.text}
 				</span>
 			{/if}
 			{#if entry.notice}
 				<p class="tpl-notice-line" data-card-notice={entry.slug}>{entry.notice}</p>
 			{/if}
-			<p class="mt-auto text-[10px] text-gray-500">
+			<p class="mt-auto text-[10px] text-text-faint">
 				{#if entry.author}{entry.author}{/if}
 				{#if entry.author && entry.license}·{/if}
 				{#if entry.license}<span title={licenseLabel(entry.license)}>{entry.license}</span>{/if}
@@ -267,7 +277,7 @@
 		aria-label={'Save ' + entry.title + ' to your Library'}
 		onclick={() => saveEntry(entry)}
 	>
-		<FolderDown size={14} aria-hidden="true" />
+		<Icon name="folder-down" size={16} aria-hidden="true" />
 	</button>
 	{#if canLike && entry.likeCount != null}
 		<!-- 36-community (C6): the heart, a sibling of the load button (never inside it) -->
@@ -294,60 +304,30 @@
 {#snippet skeletons()}
 	<div class="grid grid-cols-2 gap-3 md:grid-cols-3">
 		{#each [0, 1, 2] as i (i)}
-			<div class="h-40 animate-pulse rounded-lg border border-gray-700/60 bg-gray-800/70"></div>
+			<div class="h-40 animate-pulse rounded-card border border-border bg-surface-2"></div>
 		{/each}
 	</div>
 {/snippet}
 
-<Modal
+<ModalDialog
 	title="Templates"
 	bind:open={$templatesModalOpen}
-	modal={false}
 	onkeydown={(/** @type {KeyboardEvent} */ e) => {
 		if (e.key === 'Escape') templatesModalOpen.set(false);
 	}}
-	outsideclose
-	size="lg"
-	class="tp-modal-frame"
-	classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
+	width="lg"
+	id="templates-modal"
 >
-	<div id="templates-modal" class="p-1">
-		<div class="tpl-tabs" role="tablist">
-			<button
-				id="templates-tab-general"
-				class="tpl-tab"
-				class:active={tab === 'general'}
-				role="tab"
-				aria-selected={tab === 'general'}
-				onclick={() => pickTab('general')}>General</button
-			>
-			<button
-				id="templates-tab-examples"
-				class="tpl-tab"
-				class:active={tab === 'examples'}
-				role="tab"
-				aria-selected={tab === 'examples'}
-				onclick={() => pickTab('examples')}>Examples</button
-			>
-			<button
-				id="templates-tab-games"
-				class="tpl-tab"
-				class:active={tab === 'games'}
-				role="tab"
-				aria-selected={tab === 'games'}
-				onclick={() => pickTab('games')}
-			>
-				<Gamepad2 size={14} aria-hidden="true" /> Games
-			</button>
-			<button
-				id="templates-tab-community"
-				class="tpl-tab"
-				class:active={tab === 'community'}
-				role="tab"
-				aria-selected={tab === 'community'}
-				onclick={() => pickTab('community')}>Community</button
-			>
-		</div>
+	{#snippet bar()}
+		<Tabs
+			tabs={TEMPLATE_TABS}
+			idPrefix="templates"
+			label="Templates"
+			value={tab}
+			onchange={(/** @type {string} */ next) => pickTab(next)}
+		/>
+	{/snippet}
+	<div class="tpl-body">
 
 		<!-- A7: tag chips, shared by all four tabs and derived from the ACTIVE tab's own
 		     tags. OR within the facet (see matchesTags) — an AND would empty the grid on
@@ -387,30 +367,30 @@
 				{@render skeletons()}
 			{:else}
 				{#if $templatesState === 'fallback'}
-					<p id="templates-fallback-note" class="mb-2 text-xs italic text-gray-500">
+					<p id="templates-fallback-note" class="mb-2 text-xs italic text-text-faint">
 						Showing the bundled starters — the scene library couldn't be reached.
 					</p>
 				{/if}
 				<div class="grid grid-cols-2 gap-3 md:grid-cols-3">
 					<button
 						id="template-blank"
-						class="tpl-card tpl-blank flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-600 p-4 text-gray-300"
+						class="tpl-card tpl-blank flex flex-col items-center justify-center gap-2 rounded-card border border-dashed border-border-strong p-4 text-text-2"
 						title="Clear the scene and start fresh (peers see it too)"
 						onclick={pickBlank}
 					>
-						<FilePlus size={24} aria-hidden="true" />
+						<Icon name="file-plus" size={24} aria-hidden="true" />
 						<span class="text-sm font-semibold">Blank scene</span>
-						<span class="text-[10px] text-gray-500">Start from nothing</span>
+						<span class="text-[10px] text-text-faint">Start from nothing</span>
 					</button>
 					{#each shown as entry (entry.slug)}
 						{@render card(entry)}
 					{/each}
 				</div>
 				{#if $templatesState === 'error'}
-					<div class="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-gray-600 p-3 text-sm text-gray-400">
+					<div class="mt-3 flex items-center gap-2 rounded-card border border-dashed border-border-strong p-3 text-sm text-text-muted">
 						<span class="flex-1">Couldn't load the template library and nothing is bundled.</span>
-						<button id="templates-retry" class="ui-button-quiet" onclick={() => loadTemplatesIndex(true)}>
-							<RefreshCw size={14} aria-hidden="true" /> Retry
+						<button id="templates-retry" class="tpl-btn" onclick={() => loadTemplatesIndex(true)}>
+							<Icon name="refresh-cw" size={16} aria-hidden="true" /> Retry
 						</button>
 					</div>
 				{/if}
@@ -420,7 +400,7 @@
 				{@render skeletons()}
 			{:else if $examples.length}
 				{#if $templatesState === 'fallback'}
-					<p class="mb-2 text-xs italic text-gray-500">
+					<p class="mb-2 text-xs italic text-text-faint">
 						Showing bundled examples — the scene library couldn't be reached.
 					</p>
 				{/if}
@@ -430,15 +410,15 @@
 					{/each}
 				</div>
 			{:else}
-				<div id="examples-empty" class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-600 p-6 text-center">
-					<p class="text-sm text-gray-400">
+				<div id="examples-empty" class="flex flex-col items-center gap-2 rounded-card border border-dashed border-border-strong p-6 text-center">
+					<p class="text-sm text-text-muted">
 						{$templatesState === 'ready'
 							? 'No examples published yet — check back after the next content release.'
 							: 'Examples are curated online content — reconnect to browse them.'}
 					</p>
 					{#if $templatesState !== 'ready'}
-						<button id="examples-retry" class="ui-button-quiet" onclick={() => loadTemplatesIndex(true)}>
-							<RefreshCw size={14} aria-hidden="true" /> Retry
+						<button id="examples-retry" class="tpl-btn" onclick={() => loadTemplatesIndex(true)}>
+							<Icon name="refresh-cw" size={16} aria-hidden="true" /> Retry
 						</button>
 					{/if}
 				</div>
@@ -453,28 +433,28 @@
 					{/each}
 				</div>
 				{#if !shown.length}
-					<p id="games-filtered-empty" class="mt-3 text-xs italic text-gray-500">
+					<p id="games-filtered-empty" class="mt-3 text-xs italic text-text-faint">
 						No games match those tags.
 					</p>
 				{/if}
-				<p class="mt-3 text-xs text-gray-500">
+				<p class="mt-3 text-xs text-text-faint">
 					A game is a scene plus a module. Loading one offers to install what it needs —
-					<span class="text-gray-400">every player needs their own copy</span>.
+					<span class="text-text-muted">every player needs their own copy</span>.
 				</p>
 			{:else}
 				<div
 					id="games-empty"
-					class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-600 p-6 text-center"
+					class="flex flex-col items-center gap-2 rounded-card border border-dashed border-border-strong p-6 text-center"
 				>
-					<Gamepad2 size={22} aria-hidden="true" />
-					<p class="text-sm text-gray-400">
+					<Icon name="gamepad-2" size={20} aria-hidden="true" />
+					<p class="text-sm text-text-muted">
 						{$templatesState === 'ready'
 							? 'No games published yet — check back after the next content release.'
 							: 'Games are curated online content — reconnect to browse them.'}
 					</p>
 					{#if $templatesState !== 'ready'}
-						<button id="games-retry" class="ui-button-quiet" onclick={() => loadTemplatesIndex(true)}>
-							<RefreshCw size={14} aria-hidden="true" /> Retry
+						<button id="games-retry" class="tpl-btn" onclick={() => loadTemplatesIndex(true)}>
+							<Icon name="refresh-cw" size={16} aria-hidden="true" /> Retry
 						</button>
 					{/if}
 				</div>
@@ -499,31 +479,31 @@
 					{/each}
 				</div>
 				{#if !shown.length && mineOnly}
-					<p id="community-mine-empty" class="mt-3 text-xs italic text-gray-500">Nothing published yet — publish a scene and it shows here.</p>
+					<p id="community-mine-empty" class="mt-3 text-xs italic text-text-faint">Nothing published yet — publish a scene and it shows here.</p>
 				{/if}
-				<p class="mt-3 text-xs text-gray-500">
+				<p class="mt-3 text-xs text-text-faint">
 					{#if !provided}
 						Community scenes are contributed via pull request and reviewed before they appear.
 					{/if}
 					{@render submitControl('community-submit', 'tpl-link')}
 				</p>
 			{:else}
-				<div id="community-empty" class="flex flex-col items-center gap-2 rounded-lg border border-dashed border-gray-600 p-6 text-center">
-					<p class="text-sm text-gray-400">
+				<div id="community-empty" class="flex flex-col items-center gap-2 rounded-card border border-dashed border-border-strong p-6 text-center">
+					<p class="text-sm text-text-muted">
 						{$communityState === 'error'
 							? "Couldn't reach the community gallery — check your connection."
 							: 'No community scenes yet — be the first!'}
 					</p>
 					{#if !provided}
-						<p class="text-xs text-gray-500">
+						<p class="text-xs text-text-faint">
 							Scenes are shared as pull requests and reviewed before they appear here.
 						</p>
 					{/if}
 					<div class="flex items-center gap-2">
 						{@render submitControl('community-submit-link', 'tpl-link text-sm')}
 						{#if $communityState === 'error'}
-							<button id="community-retry" class="ui-button-quiet" onclick={() => loadCommunityGallery(true)}>
-								<RefreshCw size={14} aria-hidden="true" /> Retry
+							<button id="community-retry" class="tpl-btn" onclick={() => loadCommunityGallery(true)}>
+								<Icon name="refresh-cw" size={16} aria-hidden="true" /> Retry
 							</button>
 						{/if}
 					</div>
@@ -531,152 +511,128 @@
 			{/if}
 		{/if}
 
-		<p class="mt-4 border-t border-gray-700/60 pt-2 text-xs text-gray-500">
+		<p class="mt-4 border-t border-border pt-2 text-xs text-text-faint">
 			Loading a scene replaces the current one for everyone — a backup session is stashed first,
 			and connected peers are asked before anything changes.
 		</p>
 	</div>
-</Modal>
+</ModalDialog>
 
 <style>
-	/* General / Examples / Community read as real tabs (the ModulesManager pattern) */
-	.tpl-tabs {
+	.tpl-body {
 		display: flex;
-		gap: 0.25rem;
-		margin-bottom: 0.85rem;
-		border-bottom: 1px solid rgb(75 85 99 / 0.6);
+		flex-direction: column;
 	}
-	.tpl-tab {
-		padding: 0.4rem 1.1rem;
-		font-size: 0.82rem;
-		font-weight: 600;
-		color: rgb(156 163 175);
-		background: none;
-		border: 0;
-		border-bottom: 2px solid transparent;
-		margin-bottom: -1px;
-		cursor: pointer;
-	}
-	.tpl-tab:hover {
-		color: rgb(229 231 235);
-	}
-	.tpl-tab.active {
-		color: #fff;
-		border-bottom-color: var(--color-primary-600, #2563eb);
-	}
-	/* the Games tab carries an icon, so its label needs to sit beside it */
-	.tpl-tab {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-	}
-	/* A7 tag chips. Every colour ends in a LITERAL fallback: neither the dark nor the
-	   light theme defines every token, and a bare var() leaves an unstyled control. */
+	/* A7 tag chips (SPEC Chips: pill + border-strong; selected = accent-soft + accent border).
+	   Hand-rolled because each chip carries the data-chip hook the suites address. */
 	.tpl-chips {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.3rem;
-		margin-bottom: 0.7rem;
+		gap: 6px;
+		margin-bottom: var(--space-4);
 	}
 	.tpl-chip {
-		padding: 0.15rem 0.6rem;
-		font-size: 0.7rem;
-		font-weight: 600;
-		color: rgb(156 163 175);
-		background: rgb(55 65 81 / 0.5);
-		border: 1px solid rgb(75 85 99 / 0.6);
-		border-radius: 999px;
+		height: var(--control-h-sm);
+		padding: 0 12px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-pill);
+		background: transparent;
+		color: var(--text-2);
+		font: inherit;
+		font-size: var(--fs-desc);
 		cursor: pointer;
 	}
 	.tpl-chip:hover {
-		color: rgb(229 231 235);
-		border-color: var(--color-primary-600, #2563eb);
+		background: var(--surface-hover);
 	}
 	.tpl-chip.active {
-		color: #fff;
-		background: var(--color-primary-600, #2563eb);
-		border-color: var(--color-primary-600, #2563eb);
+		border-color: var(--accent);
+		background: var(--accent-soft);
+		color: var(--accent-soft-text);
 	}
 	.tpl-chip-clear {
-		font-weight: 500;
-		font-style: italic;
+		border-color: transparent;
+		color: var(--accent-text);
 	}
-	/* the module a game needs: amber when this device has not got it */
+	/* the module a game needs: warn ink when this device has not got it */
 	.tpl-needs {
 		display: inline-flex;
 		align-items: center;
-		gap: 0.2rem;
+		gap: 4px;
 		align-self: flex-start;
 		max-width: 100%;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		padding: 0.05rem 0.4rem;
-		font-size: 0.62rem;
+		height: 20px;
+		padding: 0 8px;
+		font-size: var(--fs-badge);
 		font-weight: 600;
-		color: #fcd34d;
-		background: rgb(120 53 15 / 0.35);
-		border: 1px solid rgb(180 83 9 / 0.5);
-		border-radius: 999px;
+		color: var(--ink-warn);
+		background: color-mix(in srgb, var(--ink-warn) 14%, transparent);
+		border-radius: var(--radius-pill);
 	}
 	.tpl-needs-ok {
-		color: rgb(134 239 172);
-		background: rgb(20 83 45 / 0.3);
-		border-color: rgb(22 101 52 / 0.5);
+		color: var(--ink-good);
+		background: color-mix(in srgb, var(--ink-good) 14%, transparent);
 	}
 	.tpl-card {
 		cursor: pointer;
 		transition: border-color 0.12s ease;
 		min-height: 10rem;
+		font: inherit;
+		color: var(--text);
 	}
-	.tpl-card:hover {
-		border-color: var(--color-primary-600, #2563eb);
+	.tpl-card:hover,
+	.tpl-card:focus-visible {
+		border-color: var(--accent);
 	}
 	.tpl-card:disabled {
 		opacity: 0.6;
 		cursor: wait;
 	}
-	/* 24-C3: the corner "save to Library" button. Always visible (touch has no hover),
-	   quiet until pointed at; LITERAL fallbacks like every colour in this file. */
+	/* 24-C3: the corner "save to Library" button. Always visible (touch has no hover). */
 	.tpl-card-wrap {
 		min-height: 10rem;
 	}
 	.tpl-save {
 		position: absolute;
-		top: 0.35rem;
-		right: 0.35rem;
+		top: 6px;
+		right: 6px;
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 1.6rem;
-		height: 1.6rem;
-		color: rgb(209 213 219);
-		background: rgb(17 24 39 / 0.75);
-		border: 1px solid rgb(75 85 99 / 0.7);
-		border-radius: 0.375rem;
+		width: var(--icon-button);
+		height: var(--icon-button);
+		color: var(--text);
+		background: color-mix(in srgb, var(--surface-1) 80%, transparent);
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-input);
 		cursor: pointer;
 	}
 	.tpl-save:hover {
-		color: #fff;
-		border-color: var(--color-primary-600, #2563eb);
-		background: rgb(17 24 39 / 0.95);
+		border-color: var(--accent);
+		background: var(--surface-1);
 	}
 	.tpl-heart {
 		position: absolute;
-		top: 0.35rem;
-		left: 0.35rem;
+		top: 6px;
+		left: 6px;
 	}
 	.tpl-notice-line {
-		font-size: 0.68rem;
+		font-size: var(--fs-badge);
 		font-weight: 600;
-		color: var(--ink-warn, #fbbf24);
+		color: var(--ink-warn);
 	}
 	.tpl-save:disabled {
 		opacity: 0.5;
 		cursor: wait;
 	}
+	.tpl-blank {
+		color: var(--text-2);
+	}
 	.tpl-blank:hover {
-		color: #fff;
+		color: var(--text);
 	}
 	/* clamp long descriptions to two lines so the grid rows stay even */
 	.tpl-desc {
@@ -687,7 +643,7 @@
 		overflow: hidden;
 	}
 	.tpl-link {
-		color: #93c5fd;
+		color: var(--accent-text);
 		text-decoration: underline;
 	}
 	/* 28-A6: a submit BUTTON (a provider with an action) reads exactly like the link */
@@ -700,20 +656,34 @@
 	}
 	/* 28-A6: the provider's notice row — one quiet line, never a banner */
 	.tpl-notice {
-		margin-bottom: 0.7rem;
-		padding: 0.35rem 0.6rem;
-		font-size: 0.75rem;
-		color: rgb(209 213 219);
-		background: rgb(55 65 81 / 0.4);
-		border: 1px solid rgb(75 85 99 / 0.6);
-		border-radius: 0.375rem;
+		margin-bottom: var(--space-3);
+		padding: var(--space-2) var(--space-3);
+		font-size: var(--fs-desc);
+		color: var(--text-2);
+		background: var(--surface-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
 	}
 	.tpl-likes,
 	.tpl-remix {
 		white-space: nowrap;
 	}
-	.tpl-link:hover {
-		color: #bfdbfe;
+	.tpl-btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		height: var(--control-h-sm);
+		padding: 0 10px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text);
+		font: inherit;
+		font-size: var(--fs-desc);
+		cursor: pointer;
+	}
+	.tpl-btn:hover {
+		background: var(--surface-hover);
 	}
 	/* thumb onerror fallback: img hides itself, this reveals */
 	.tpl-thumb-ph {

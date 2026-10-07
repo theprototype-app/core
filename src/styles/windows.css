@@ -127,44 +127,9 @@
 	color: var(--text-muted);
 }
 
-/* NOTES-38 #1 (user, 2026-10-06): "No native scrollbars anywhere — the app's custom minimal
-   scrollbar; the burger menu needs NO visible vertical scrollbar (just scrolls; at most a
-   minimal, auto-hiding thumb)". ONE scrollbar for the whole app: a thin thumb on a clear
-   track that shows only while the pointer is over the scroller (`*:hover` matches every
-   ancestor of the pointer, so the box being scrolled lights up and nothing else does).
-   The standard properties win in Chromium/Firefox; the ::-webkit- rules are Safari's.
-   It replaces theme.css' always-on themed bar (148) — its --scrollbar-* tokens still give
-   the thumb its colour per theme. High contrast keeps the thumb visible at rest. Surfaces
-   that want no bar at all (the burger menu) keep `scrollbar-width: none`. */
-* {
-	/* width stays theme.css' `thin` (layered), so a `scrollbar-none` utility still wins */
-	scrollbar-color: transparent transparent;
-}
-*:hover {
-	scrollbar-color: var(--scrollbar-thumb) transparent;
-}
-:root[data-theme='contrast'] * {
-	scrollbar-color: var(--scrollbar-thumb) transparent;
-}
-::-webkit-scrollbar {
-	width: 6px;
-	height: 6px;
-}
-::-webkit-scrollbar-track,
-::-webkit-scrollbar-corner {
-	background: transparent;
-}
-::-webkit-scrollbar-thumb {
-	background: transparent;
-	border: 0;
-	border-radius: 999px;
-}
-*:hover::-webkit-scrollbar-thumb {
-	background: var(--scrollbar-thumb);
-}
-::-webkit-scrollbar-thumb:hover {
-	background: var(--scrollbar-thumb-hover);
-}
+/* NOTES-38 #1 (no native scrollbars): R6's hover-only thin native bar lived here; R11 replaced
+   it with the app's own overlay thumb ($lib/ui/minimalScroll.js on every scroller) and hides the
+   platform bar everywhere (app.css). */
 /* the compact field a window HEADER carries (Explorer's inline search) */
 .tp-field-sm {
 	height: 28px;

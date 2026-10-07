@@ -1,22 +1,22 @@
 @utility ui-panel {
   /* panel chrome */
-  @apply rounded-lg border border-gray-700/60 bg-gray-800 text-gray-200 shadow-xl;
+  @apply rounded-lg border border-border bg-surface-1 text-text-2 shadow-xl;
 }
 
 @utility ui-panel-header {
-  @apply flex items-center gap-2 border-b border-gray-700/60 px-3 py-2 text-sm font-semibold text-gray-100;
+  @apply flex items-center gap-2 border-b border-border px-3 py-2 text-sm font-semibold text-text;
 }
 
 @utility ui-section-label {
-  @apply mb-1 mt-3 px-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400;
+  @apply mb-1 mt-3 px-1 text-[10px] font-semibold uppercase tracking-wider text-text-faint;
 }
 
 @utility ui-row {
-  @apply flex items-center gap-2 px-1 py-1 text-sm text-gray-200;
+  @apply flex items-center gap-2 px-1 py-1 text-sm text-text-2;
 }
 
 @utility ui-input {
-  @apply rounded-sm border border-gray-600 bg-gray-900/60 px-2 py-1 text-sm text-gray-100 placeholder-gray-500 focus:outline-hidden focus:ring-1 focus:ring-primary-500;
+  @apply rounded-sm border border-border-input bg-surface-inset px-2 py-1 text-sm text-text placeholder-text-faint focus:outline-hidden focus:ring-1 focus:ring-accent;
 }
 
 @utility ui-chip {
@@ -24,11 +24,11 @@
 }
 
 @utility ui-badge-type {
-  @apply ui-chip bg-primary-700 text-white;
+  @apply ui-chip bg-badge text-badge-text;
 }
 
 @utility ui-button-quiet {
-  @apply rounded-sm bg-gray-700 px-2 py-0.5 text-xs text-gray-200 hover:bg-gray-600;
+  @apply rounded-sm bg-surface-2 px-2 py-0.5 text-xs text-text-2 hover:bg-surface-active;
 }
 
 @utility resize-cue {
@@ -37,7 +37,7 @@
   background-color: transparent;
   transition: background-color 0.15s ease 0.6s;
   &:hover {
-    background-color: rgb(249 115 22 / 0.5);
+    background-color: color-mix(in srgb, var(--accent) 50%, transparent);
   }
 }
 
@@ -53,7 +53,7 @@
 
 @utility merge-target {
   /* drag-merge feedback (104): the window you'd merge into lights up */
-  outline: 2px solid rgb(249 115 22 / 0.9);
+  outline: 2px solid color-mix(in srgb, var(--accent) 90%, transparent);
   outline-offset: -1px;
   &::before {
     content: '⧉ Merge into tabs';
@@ -63,8 +63,8 @@
     z-index: 50;
     padding: 2px 8px;
     border-radius: 6px;
-    background: rgb(249 115 22);
-    color: white;
+    background: var(--accent-fill);
+    color: var(--on-accent);
     font-size: 11px;
     font-weight: 600;
     white-space: nowrap;
@@ -85,7 +85,7 @@
 @utility tp-seg {
   display: inline-flex;
   overflow: hidden;
-  border: 1px solid var(--border, #374151);
+  border: 1px solid var(--border);
   border-radius: 4px;
 }
 
@@ -99,13 +99,13 @@
   /* 36 U1: the resting/hover ink follows the theme (the literals read 2.5:1 on light) and
      the armed half is the theme's accent FILL with the ink made for it — white on the
      plain accent was 3.3-3.7:1 everywhere and unreadable on High contrast's yellow */
-  color: var(--muted, #9ca3af);
+  color: var(--text-muted);
   &:hover {
-    color: var(--text, #e5e7eb);
+    color: var(--text);
   }
   &[aria-pressed='true'] {
-    background: var(--accent-fill, #2563eb);
-    color: var(--on-accent, #fff);
+    background: var(--accent-fill);
+    color: var(--on-accent);
   }
   /*
     R22 round 13: a HALF that is switched off. The Explorer's Bin|Log control is the first
@@ -121,23 +121,23 @@
     opacity: 0.45;
   }
   &:disabled:hover {
-    color: var(--muted, #9ca3af);
+    color: var(--text-muted);
   }
 }
 
 /* 36 U1: a panel that paints its own surface must also say what colour its TEXT is — the
    Profiler's dock set a background and no colour, so its numbers inherited the page's black
    (1.4:1 on the dark theme). `tp-themed` is that statement plus the scoped ink a panel's own
-   rules read, every one a theme token with the dark-authored fallback (dark defines none). */
+   rules read, every one a redesign token (38 R11: every theme defines them). */
 @utility tp-themed {
-  --tp-ink: var(--text, #e5e7eb);
-  --tp-ink-2: var(--text-2, #d1d5db);
-  --tp-muted: var(--muted, #9ca3af);
-  --tp-surface: var(--surface, #1f2937);
-  --tp-field: var(--field, #111827);
-  --tp-line: var(--border, #374151);
-  --tp-hover: var(--hover, #374151);
-  --tp-accent: var(--accent, #3b82f6);
+  --tp-ink: var(--text);
+  --tp-ink-2: var(--text-2);
+  --tp-muted: var(--text-muted);
+  --tp-surface: var(--surface-1);
+  --tp-field: var(--surface-inset);
+  --tp-line: var(--border);
+  --tp-hover: var(--surface-hover);
+  --tp-accent: var(--accent);
   color: var(--tp-ink);
   /* a themed panel's own header follows it (ui-panel-header is @apply'd gray-100 text) */
   & .ui-panel-header {
@@ -164,9 +164,9 @@
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--border, #374151);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  background: var(--surface, #1f2937);
+  background: var(--surface-1);
   padding: 0 8px;
 }
 .tp-tr-btn {
@@ -177,27 +177,27 @@
   align-items: center;
   justify-content: center;
   border-radius: 3px;
-  color: #d1d5db;
+  color: var(--text-2);
 }
 .tp-tr-btn:hover {
-  background: rgb(255 255 255 / 8%);
-  color: #fff;
+  background: var(--surface-hover);
+  color: var(--text);
 }
 .tp-tr-btn:disabled {
   opacity: 0.4;
 }
 .tp-tr-play {
-  color: var(--accent, #3b82f6);
+  color: var(--accent-text);
 }
 .tp-tr-on {
-  background: var(--accent, #3b82f6);
-  color: #fff;
+  background: var(--accent-fill);
+  color: var(--on-accent);
 }
 .tp-tr-time {
   flex: 0 0 auto;
   font-size: 10px;
   font-variant-numeric: tabular-nums;
-  color: #9ca3af;
+  color: var(--text-muted);
 }
 /* the seek bar is the one thing that grows; everything beside it is fixed */
 .tp-tr-seek {
@@ -208,7 +208,7 @@
   height: 4px;
   appearance: none;
   border-radius: 2px;
-  background: #4b5563;
+  background: var(--border-strong);
   cursor: pointer;
 }
 .tp-tr-range::-webkit-slider-thumb {
@@ -216,14 +216,14 @@
   width: 11px;
   appearance: none;
   border-radius: 50%;
-  background: var(--accent, #3b82f6);
+  background: var(--accent);
 }
 .tp-tr-range::-moz-range-thumb {
   height: 11px;
   width: 11px;
   border: 0;
   border-radius: 50%;
-  background: var(--accent, #3b82f6);
+  background: var(--accent);
 }
 .tp-tr-range:disabled {
   opacity: 0.5;
@@ -234,6 +234,6 @@
    its drop shadow. The accent token, so every theme (light + dark) draws it in its own colour. */
 [data-key-scope='panel'][data-has-keys],
 [data-key-scope='objects'][data-has-keys] {
-  outline: 1px solid color-mix(in srgb, var(--accent, #60a5fa) 55%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
   outline-offset: -1px;
 }

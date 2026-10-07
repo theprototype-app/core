@@ -109,9 +109,9 @@
 		padding: 0 8px;
 		box-sizing: border-box;
 		border-radius: 8px;
-		border: 1px solid var(--border, rgba(255, 255, 255, 0.2));
-		background: rgb(var(--surface-rgb, 17 24 39) / 0.8);
-		color: var(--text, #e5e7eb);
+		border: 1px solid var(--border);
+		background: color-mix(in srgb, var(--surface-1) 80%, transparent);
+		color: var(--text);
 		font: 600 11px/1 system-ui, sans-serif;
 		text-decoration: none;
 		cursor: pointer;
@@ -119,7 +119,7 @@
 		touch-action: manipulation;
 	}
 	.embed-btn:hover {
-		background: rgb(var(--surface-rgb, 17 24 39) / 0.95);
+		background: color-mix(in srgb, var(--surface-1) 95%, transparent);
 	}
 	.embed-start {
 		position: fixed;
@@ -135,9 +135,9 @@
 		max-width: calc(100vw - 32px);
 		box-sizing: border-box;
 		border-radius: 14px;
-		border: 1px solid var(--border, rgba(255, 255, 255, 0.2));
-		background: rgb(var(--surface-rgb, 17 24 39) / 0.78);
-		color: var(--text, #e5e7eb);
+		border: 1px solid var(--border);
+		background: color-mix(in srgb, var(--surface-1) 78%, transparent);
+		color: var(--text);
 		backdrop-filter: blur(6px);
 		text-align: center;
 	}
@@ -156,22 +156,22 @@
 		padding: 0 18px;
 		border: 0;
 		border-radius: 10px;
-		background: var(--accent, #ea580c);
-		color: #fff;
+		background: var(--live);
+		color: var(--on-live);
 		font: 700 14px/1 system-ui, sans-serif;
 		cursor: pointer;
 		touch-action: manipulation;
 	}
 	.embed-vr {
-		background: var(--surface-3, #374151);
-		color: var(--text, #e5e7eb);
+		background: var(--accent-muted);
+		color: var(--accent-soft-text);
 	}
 	.embed-play:hover {
 		filter: brightness(1.1);
 	}
 	.embed-hint {
 		font: 500 11px/1.3 system-ui, sans-serif;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	@media (pointer: coarse) {
 		.embed-hint {

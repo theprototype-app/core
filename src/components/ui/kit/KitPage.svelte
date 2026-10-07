@@ -7,6 +7,7 @@
 	// theme. Forced hover / focus states ride `data-kit-state`, which the primitives style
 	// exactly like the real pseudo-class.
 	import { onMount, tick } from 'svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { THEME_TOKENS } from '$lib/themes.js';
 	import { DENSITIES, DEFAULT_DENSITY, applyDensity } from '$lib/ui/density.js';
 	import { SAMPLE_CUSTOM_THEME, SKY_GROUND } from './kitData.js';
@@ -211,7 +212,7 @@
 	</div>
 {/snippet}
 
-<div class="tp-ui kit" bind:this={probeHost}>
+<div class="tp-ui kit" bind:this={probeHost} use:minimalScroll>
 	<header class="kit-top">
 		<div class="kit-brand">
 			<h1>UI kit</h1>

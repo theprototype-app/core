@@ -21,7 +21,7 @@
 </script>
 
 <div class="tp-ui es" class:es-compact={compact} {...rest}>
-	{#if icon}<span class="es-icon" aria-hidden="true"><Icon name={icon} size={20} strokeWidth={1.75} /></span>{/if}
+	{#if icon}<span class="es-icon" aria-hidden="true"><Icon name={icon} size={20} /></span>{/if}
 	<p class="es-title">{title}</p>
 	{#if description}<p class="es-desc">{description}</p>{/if}
 	{#if action}

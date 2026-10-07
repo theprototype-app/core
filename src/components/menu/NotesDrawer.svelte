@@ -25,6 +25,7 @@
 	} from '$lib/annotationsHandler';
 	import { objectsGroup, selectedObjects } from '../../stores/sceneStore.js';
 	import { safeStorage } from '$lib/safeStorage';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	// One bottom sheet at a time on narrow: opening scene notes closes the object/scene
 	// settings sheet (they'd otherwise stack at the bottom).
@@ -163,11 +164,11 @@
 					aria-pressed={$showNotePins}
 					onclick={() => showNotePins.set(!$showNotePins)}
 				>
-					{#if $showNotePins}<Icon name="eye" size={14} />{:else}<Icon name="eye-off" size={14} />{/if}
+					{#if $showNotePins}<Icon name="eye" size={16} aria-hidden="true" />{:else}<Icon name="eye-off" size={16} aria-hidden="true" />{/if}
 				</button>
 			{/snippet}
 		</WindowChrome>
-		<div class="notes-body min-h-0 flex-1 overflow-y-auto p-2">
+		<div class="notes-body min-h-0 flex-1 overflow-y-auto p-2" use:minimalScroll>
 			{#if !$annotations.length}
 				<!-- 38 NOTES-38 #24 (design page): the empty view offers its next step — the same
 				     addAnnotation the object menu's Add note runs, on the current selection -->
@@ -188,9 +189,9 @@
 								onclick={() => (collapsed = { ...collapsed, [group.label]: !collapsed[group.label] })}
 							>
 								{#if collapsed[group.label]}
-									<Icon name="chevron-right" size={14} />
+									<Icon name="chevron-right" size={16} aria-hidden="true" />
 								{:else}
-									<Icon name="chevron-down" size={14} />
+									<Icon name="chevron-down" size={16} aria-hidden="true" />
 								{/if}
 								<span class="truncate">{group.label}</span>
 								<span class="notes-count">{group.rows.length}</span>
@@ -201,7 +202,7 @@
 								aria-label={'Previous note in ' + group.label}
 								onclick={() => step(group, -1)}
 							>
-								<Icon name="chevron-left" size={14} />
+								<Icon name="chevron-left" size={16} aria-hidden="true" />
 							</button>
 							<button
 								class="notes-icon"
@@ -209,7 +210,7 @@
 								aria-label={'Next note in ' + group.label}
 								onclick={() => step(group, 1)}
 							>
-								<Icon name="chevron-right" size={14} />
+								<Icon name="chevron-right" size={16} aria-hidden="true" />
 							</button>
 						</div>
 						{#if !collapsed[group.label]}
@@ -249,14 +250,14 @@
 												aria-label="Edit note"
 												onclick={() => openAnnotation(row.a.id, 'edit')}
 											>
-												<Icon name="pencil" size={14} />
+												<Icon name="pencil" size={16} aria-hidden="true" />
 											</button>
 											<button
 												class="notes-icon notes-del shrink-0"
 												title="Delete note"
 												aria-label="Delete note"
 												onclick={() => deleteAnnotation(row.a.id)}
-											><Icon name="x" size={14} /></button>
+											><Icon name="x" size={16} /></button>
 										</div>
 									</li>
 								{/each}
@@ -389,7 +390,7 @@
 		padding: 0 0.2rem;
 		font-size: 9px;
 		font-weight: 700;
-		color: #1c1917;
+		color: #1c1917; /* tokens-ok: ink on the USER's note colour (data swatch, same in every theme; the pins' contrastOn dark ink) */
 	}
 	/* description rides the same line, grey and single-line truncated */
 	.notes-desc {

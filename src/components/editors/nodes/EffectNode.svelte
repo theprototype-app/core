@@ -17,6 +17,7 @@
 		setuniform: 'value'
 	};
 	$: handleId = INPUT[data.type] ?? 'in';
+	const DEFAULT_COLOR = '#ff4000'; // tokens-ok: the picker's starting value (user data)
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
@@ -24,21 +25,21 @@
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<div class="flex w-full flex-col gap-1">
 		{#if data.type === 'lookat'}
-			<p class="text-[10px] text-gray-400">faces the wired target object/point</p>
+			<p class="text-[10px] text-text-muted">faces the wired target object/point</p>
 		{:else if data.type === 'setcolor'}
 			<label class="flex items-center gap-2">
-				<input class="nodrag nopan h-5 w-7" type="color" value={data.color ?? '#ff4000'}
+				<input class="nodrag nopan h-5 w-7" type="color" value={data.color ?? DEFAULT_COLOR}
 					on:input={(e) => setNodeData(id, { color: e.currentTarget.value })} />
-				<span class="text-[10px] text-gray-400">or wire a color</span>
+				<span class="text-[10px] text-text-muted">or wire a color</span>
 			</label>
 		{:else if data.type === 'setuniform'}
 			<label class="flex w-full flex-col gap-0.5">
-				<span class="text-[9px] text-gray-400">uniform</span>
+				<span class="text-[9px] text-text-muted">uniform</span>
 				<input class="nodrag nopan w-full font-mono text-[10px]" type="text" placeholder="u_c1_value"
 					value={data.uniform ?? ''}
 					on:change={(e) => setNodeData(id, { uniform: e.currentTarget.value })} />
 			</label>
-			<p class="text-[9px] leading-tight text-gray-500">
+			<p class="text-[9px] leading-tight text-text-faint">
 				the name shown beside that param in the Shader editor
 			</p>
 		{:else if data.type === 'visibility'}
@@ -54,7 +55,7 @@
 				title="Outside play mode this node leaves the object alone, so you can hide and show it by hand">
 				<input class="nodrag nopan" type="checkbox" checked={!!data.whilePlaying}
 					on:change={(e) => setNodeData(id, { whilePlaying: e.currentTarget.checked })} />
-				<span class="text-[10px] text-gray-400">only while playing</span>
+				<span class="text-[10px] text-text-muted">only while playing</span>
 			</label>
 		{/if}
 	</div>

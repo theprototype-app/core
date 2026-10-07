@@ -5,8 +5,8 @@
 .svelte-flow .svelte-flow__handle {
 	width: 10px;
 	height: 10px;
-	background: var(--node-accent, #94a3b8);
-	border: 2px solid #111827;
+	background: var(--node-accent, var(--text-muted));
+	border: 2px solid var(--surface-2);
 	border-radius: 9999px;
 	transition: box-shadow 0.12s ease, border-color 0.12s ease;
 }
@@ -19,38 +19,38 @@
 .svelte-flow .svelte-flow__handle:hover,
 .svelte-flow .svelte-flow__handle.connectingfrom,
 .svelte-flow .svelte-flow__handle.connectingto {
-	border-color: #f9fafb;
-	box-shadow: 0 0 0 4px color-mix(in srgb, var(--node-accent, #94a3b8) 45%, transparent);
+	border-color: var(--text);
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--node-accent, var(--text-muted)) 45%, transparent);
 }
 
 /* B4.2: typed sockets — the color says WHAT connects (flowSockets.typeColor);
    unmigrated handles above keep the node-accent fallback */
 .svelte-flow .svelte-flow__handle.socket-typed {
-	background: var(--socket-color, var(--node-accent, #94a3b8));
+	background: var(--socket-color, var(--node-accent, var(--text-muted)));
 }
 .svelte-flow .svelte-flow__handle.socket-typed:hover,
 .svelte-flow .svelte-flow__handle.socket-typed.connectingfrom,
 .svelte-flow .svelte-flow__handle.socket-typed.connectingto {
-	box-shadow: 0 0 0 4px color-mix(in srgb, var(--socket-color, #94a3b8) 45%, transparent);
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--socket-color, var(--text-muted)) 45%, transparent);
 }
 /* an incompatible drag target reads RED (xyflow stamps valid only when
    isValidFlowConnection passes) */
 .svelte-flow .svelte-flow__handle.connectingto:not(.valid) {
-	border-color: #ef4444;
-	box-shadow: 0 0 0 4px rgb(239 68 68 / 0.45);
+	border-color: var(--ink-bad);
+	box-shadow: 0 0 0 4px color-mix(in srgb, var(--ink-bad) 45%, transparent);
 }
 
 /* node-internal form controls (91): native selects/inputs render WHITE on the
-   dark cards — restyle them once here so every node (incl. module/custom ones)
-   gets dark fields without per-component classes */
+   cards — restyle them once here so every node (incl. module/custom ones)
+   gets themed fields without per-component classes */
 .node-card select,
 .node-card input[type='text'],
 .node-card input[type='number'] {
 	width: 100%;
-	background-color: rgb(17 24 39 / 0.6);
-	border: 1px solid rgb(75 85 99);
+	background-color: var(--surface-inset);
+	border: 1px solid var(--border-input);
 	border-radius: 4px;
-	color: rgb(243 244 246);
+	color: var(--text);
 	font-size: 11px;
 	line-height: 1.4;
 	padding: 3px 6px;
@@ -59,12 +59,12 @@
 .node-card select:focus,
 .node-card input[type='text']:focus,
 .node-card input[type='number']:focus {
-	border-color: var(--node-accent, #94a3b8);
-	box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-accent, #94a3b8) 55%, transparent);
+	border-color: var(--node-accent, var(--text-muted));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-accent, var(--text-muted)) 55%, transparent);
 }
 .node-card select option {
-	background-color: #1f2937;
-	color: #f3f4f6;
+	background-color: var(--surface-1);
+	color: var(--text);
 }
 .node-card input[type='range'] {
 	width: 100%;
@@ -72,40 +72,40 @@
 
 /* edges: calmer default, thicken on hover, accent when selected */
 .svelte-flow .svelte-flow__edge-path {
-	stroke: #64748b;
+	stroke: var(--text-faint);
 	stroke-width: 1.5;
 }
 .svelte-flow .svelte-flow__edge:hover .svelte-flow__edge-path {
-	stroke: #94a3b8;
+	stroke: var(--text-muted);
 	stroke-width: 3;
 }
 .svelte-flow .svelte-flow__edge.selected .svelte-flow__edge-path {
-	stroke: #38bdf8;
+	stroke: var(--accent);
 	stroke-width: 2.5;
 }
 
 /* connection preview while dragging from a handle */
 .svelte-flow .svelte-flow__connection-path {
-	stroke: #38bdf8;
+	stroke: var(--accent);
 	stroke-width: 2;
 	stroke-dasharray: 6 4;
 }
 
-/* controls + minimap on the dark theme */
+/* controls + minimap */
 .svelte-flow .svelte-flow__controls {
-	box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+	box-shadow: 0 4px 12px color-mix(in srgb, var(--bg-app) 40%, transparent);
 }
 .svelte-flow .svelte-flow__controls-button {
-	background: #1f2937;
-	border-bottom: 1px solid #374151;
-	fill: #d1d5db;
-	color: #d1d5db;
+	background: var(--surface-1);
+	border-bottom: 1px solid var(--border);
+	fill: var(--text-2);
+	color: var(--text-2);
 }
 .svelte-flow .svelte-flow__controls-button:hover {
-	background: #374151;
+	background: var(--surface-hover);
 }
 .svelte-flow .svelte-flow__minimap {
-	background: #111827;
+	background: var(--bg-app);
 	border-radius: 8px;
 	overflow: hidden;
 }

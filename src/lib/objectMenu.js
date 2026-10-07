@@ -551,17 +551,19 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			? [
 					{
 						label: 'Physics',
-						icon: 'magnet',
+						icon: 'tool:physics',
 						children: [
 							...(targets.length === 2
 								? [
 										{
 											label: 'Weld together',
+											icon: 'tool:joint-weld',
 											tooltip: 'Fixed joint — they move as one during simulations',
 											action: () => createJoint('fixed', targets[0], targets[1])
 										},
 										...['x', 'y', 'z'].map((axis) => ({
 											label: `Hinge (${axis.toUpperCase()} axis)`,
+											icon: 'tool:joint-hinge',
 											tooltip:
 												'Revolute joint about the first object’s local ' + axis.toUpperCase() + ' axis, anchored at the second object',
 											action: () => createJoint('revolute', targets[0], targets[1], /** @type {'x'|'y'|'z'} */ (axis))

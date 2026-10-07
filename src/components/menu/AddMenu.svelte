@@ -2,6 +2,7 @@
 	// Add-object SEARCH popover (phase 77): opened from the viewport menu's
 	// 🔍 entry or Shift+A. Results are Category · Label over the full catalog;
 	// Enter/click spawns at the menu's ground point and replicates.
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { untrack } from 'svelte';
 	import { addMenu, aiAssistantHidden, showToast, settingsOpen, settingsSection } from '../../stores/appStore.js';
 	import { aiReady } from '$lib/ai/providers';
@@ -189,7 +190,7 @@
 			oninput={(e) => { query = e.currentTarget.value; selectedIndex = 0; }}
 			onkeydown={onSearchKeydown}
 		/>
-		<div class="mt-1 max-h-64 overflow-y-auto">
+		<div class="mt-1 max-h-64 overflow-y-auto" use:minimalScroll>
 			<!-- 38 R6: menu rows (32px, the shared hover = the keyboard cursor), group on the right -->
 			{#each results as entry, index (entry.command)}
 				{#if browsing && (index === 0 || results[index - 1].group !== entry.group)}

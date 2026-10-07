@@ -53,10 +53,10 @@ jobs:
       # the subscriber for the session.
       - name: no bare localStorage
         run: node scripts/check-storage.cjs
-      # 38 R2: colours come from the redesign tokens. WARNING mode while the redesign
-      # migrates area by area — it only fails when a token-CLEAN file (its CLEAN list)
-      # grows a raw colour. R11 switches this to --strict.
-      - name: redesign tokens (warning mode)
+      # 38 R2/R11: colours come from the redesign tokens — a HARD FAIL since R11 (every
+      # component was migrated). A colour that is data, not chrome, carries
+      # `tokens-ok: <reason>` on its line; scripts/check-tokens.cjs says how.
+      - name: redesign tokens
         run: node scripts/check-tokens.cjs
 
   # 34 B3: scene-lint over every scene core ships (the seed) and every scene of the scenes ref

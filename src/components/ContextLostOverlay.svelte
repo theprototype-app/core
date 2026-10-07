@@ -45,7 +45,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: rgba(0, 0, 0, 0.72);
+		background: var(--scrim);
 		backdrop-filter: blur(2px);
 	}
 	.gl-lost-card {
@@ -53,9 +53,10 @@
 		margin: 16px;
 		padding: 20px 22px;
 		border-radius: 10px;
-		background: var(--surface, #1f2937);
-		color: var(--text, #fff);
-		box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+		background: var(--surface-1);
+		color: var(--text);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow-window);
 	}
 	.gl-lost-card h2 {
 		margin: 0 0 8px;
@@ -66,7 +67,7 @@
 		margin: 0 0 16px;
 		font-size: 13px;
 		line-height: 1.5;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 	}
 	.gl-lost-actions {
 		display: flex;
@@ -78,17 +79,19 @@
 		border: 0;
 		border-radius: 7px;
 		font-size: 13px;
-		color: #fff;
-		background: #374151;
+		color: var(--text);
+		background: var(--surface-2);
 		cursor: pointer;
 	}
 	.gl-lost-btn:hover {
-		background: #4b5563;
+		background: var(--surface-active);
 	}
 	.gl-lost-primary {
-		background: #2563eb;
+		color: var(--on-accent);
+		background: var(--accent-fill);
 	}
 	.gl-lost-primary:hover {
-		background: #1d4ed8;
+		background: var(--accent-fill);
+		filter: brightness(0.92);
 	}
 </style>

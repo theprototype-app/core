@@ -24,9 +24,9 @@
 		<div class="flex justify-between">
 			<span>{isProximity ? 'within' : 'dist'}</span><span class="font-mono">{readout}</span>
 		</div>
-		<p class="text-[10px] text-gray-400">wire two Object Selectors to a/b</p>
+		<p class="text-[10px] text-text-muted">wire two Object Selectors to a/b</p>
 		{#if isProximity}
-			<label class="flex items-center gap-1"><span class="w-12 text-gray-400">radius</span>
+			<label class="flex items-center gap-1"><span class="w-12 text-text-muted">radius</span>
 				<DragRow nodrag step={0.01} decimals={2} min={0} value={data.radius ?? 3} onchange={(/** @type {number} */ v) => setNodeData(id, { radius: v })} /></label>
 		{/if}
 	</div>

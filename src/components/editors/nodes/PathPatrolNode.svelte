@@ -17,21 +17,21 @@
 <NodeWrapper type={data.type} label={data.label}>
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<div class="flex w-full flex-col gap-1">
-		<span class="text-[10px] text-gray-400">
+		<span class="text-[10px] text-text-muted">
 			{waypointCount} waypoint{waypointCount === 1 ? '' : 's'}
 			{#if waypointCount < 2}(need 2+){/if}
 		</span>
 		<div class="flex gap-1">
 			<button
-				class="nodrag nopan flex-1 rounded px-1 py-0.5 text-white {capturing
-					? 'bg-green-600'
-					: 'bg-[#ff4000]'}"
+				class="nodrag nopan flex-1 rounded px-1 py-0.5 {capturing
+					? 'bg-accent-fill text-on-accent'
+					: 'bg-surface-active text-text hover:bg-border-strong'}"
 				on:click={() => togglePathCapture(id)}
 			>
 				{capturing ? 'Capturing… (click scene)' : 'Capture clicks'}
 			</button>
 			<button
-				class="nodrag nopan rounded-sm bg-gray-600 px-1 py-0.5 text-white"
+				class="nodrag nopan rounded-sm bg-surface-active px-1 py-0.5 text-text hover:bg-border-strong"
 				on:click={() => setNodeData(id, { points: [] })}
 			>
 				Clear
@@ -40,7 +40,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>speed</span><span>{data.speed ?? 1}</span></span>
 			<input
-				class="nodrag nopan accent-[#ff4000]"
+				class="nodrag nopan accent-accent"
 				type="range"
 				min="0.1"
 				max="5"

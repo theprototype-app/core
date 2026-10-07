@@ -4,12 +4,13 @@
 	// Below: PROJECT — every source the scene has (codeProject.js builds the tree), searchable,
 	// read-only module sources with "Make editable copy". Chrome only; the verbs are the
 	// workspace's (openCode, moveCodeTab, the forks).
-	import { ChevronDown, ChevronRight, Folder, FileCode, Braces, Lock, Copy, Search, X, UserRound, Package, Sparkles } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { codeTabs, activeCodeTab, openCode, moveCodeTab, forkCodeTab, forkNodeTab, tabById } from '$lib/codeWorkspace';
 	import { isDirty } from '$lib/codeTabs';
 	import { codeLeftSplit } from '$lib/codeSidebars';
 	import { projectTree, filterTree, keyOfTab, moduleLeaf } from '$lib/codeProject';
 	import { dragReorder } from '$lib/dragReorder';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { arrowNav } from '$lib/arrowNav';
 	import { flowGraphs } from '../../stores/flowStore';
 	import { objectsGroup } from '../../stores/sceneStore';
@@ -160,7 +161,7 @@
 	}
 
 	/** @param {string} icon */
-	const iconOf = (icon) => ({ script: FileCode, behaviour: Sparkles, builtin: UserRound, graph: Braces, file: FileCode, module: Package })[icon] ?? FileCode;
+	const iconOf = (icon) => ({ script: 'file-code', behaviour: 'sparkles', builtin: 'user-round', graph: 'braces', file: 'file-code', module: 'package' })[icon] ?? 'file-code';
 </script>
 
 {#snippet branch(/** @type {any[]} */ nodes, /** @type {number} */ depth)}
@@ -179,15 +180,15 @@
 				title={node.detail ?? node.label}
 				onclick={() => toggle(node)}
 			>
-				{#if isOpen(node)}<ChevronDown size={12} aria-hidden="true" />{:else}<ChevronRight size={12} aria-hidden="true" />{/if}
-				<Folder size={12} aria-hidden="true" />
+				{#if isOpen(node)}<Icon name="chevron-down" size={16} aria-hidden="true" />{:else}<Icon name="chevron-right" size={16} aria-hidden="true" />{/if}
+				<Icon name="folder" size={16} aria-hidden="true" />
 				<span class="cs-name">{node.label}</span>
-				{#if node.readOnly}<Lock size={10} aria-hidden="true" />{/if}
+				{#if node.readOnly}<Icon name="lock" size={16} aria-hidden="true" />{/if}
 				<span class="cs-count">{node.children.length}</span>
 			</button>
 			{#if isOpen(node)}{@render branch(node.children, depth + 1)}{/if}
 		{:else}
-			{@const Icon = iconOf(node.icon)}
+			{@const leafIcon = iconOf(node.icon)}
 			<div class="cs-leaf-wrap" class:cs-on={node.key === activeKey}>
 				<button
 					class="cs-row cs-leaf"
@@ -201,13 +202,13 @@
 					title={(node.detail ? node.label + ' — ' + node.detail : node.label) + (node.readOnly ? ' (read-only)' : '')}
 					onclick={() => openLeaf(node)}
 				>
-					<Icon size={12} aria-hidden="true" />
+					<Icon name={leafIcon} size={16} aria-hidden="true" />
 					<span class="cs-name">{node.label}</span>
 					{#if node.detail}<span class="cs-detail">{node.detail}</span>{/if}
-					{#if node.readOnly}<Lock size={10} aria-hidden="true" />{/if}
+					{#if node.readOnly}<Icon name="lock" size={16} aria-hidden="true" />{/if}
 				</button>
 				{#if node.fork}
-					<button class="cs-act" tabindex="-1" data-fork-key={node.key} title="Make editable copy — copy this code into a script you own" aria-label="Make editable copy of {node.label}" onclick={() => forkLeaf(node)}><Copy size={11} aria-hidden="true" /></button>
+					<button class="cs-act" tabindex="-1" data-fork-key={node.key} title="Make editable copy — copy this code into a script you own" aria-label="Make editable copy of {node.label}" onclick={() => forkLeaf(node)}><Icon name="copy" size={16} aria-hidden="true" /></button>
 				{/if}
 			</div>
 		{/if}
@@ -220,6 +221,7 @@
 		<div
 			id="code-ws-open-editors"
 			class="cs-scroll"
+			use:minimalScroll
 			role="group"
 			aria-label="Open editors"
 			use:dragReorder={{ axis: 'y', item: '[data-open-tab]', idAttr: 'data-open-tab', onMove: moveCodeTab, handleIgnore: '.cs-act' }}
@@ -233,12 +235,12 @@
 						tabindex={tab.id === ($activeCodeTab ?? $codeTabs[0]?.id) ? 0 : -1}
 						onclick={() => activeCodeTab.set(tab.id)}
 					>
-						{#if tab.readOnly}<Lock size={10} aria-hidden="true" />{:else}<FileCode size={12} aria-hidden="true" />{/if}
+						{#if tab.readOnly}<Icon name="lock" size={16} aria-hidden="true" />{:else}<Icon name="file-code" size={16} aria-hidden="true" />{/if}
 						<span class="cs-name">{tab.title}</span>
 						{#if badOf(tab)}<span class="cs-bad" aria-label="has problems">!</span>{/if}
 						{#if isDirty(tab)}<span class="cs-dirty" aria-label="unsaved">●</span>{/if}
 					</button>
-					<button class="cs-act" tabindex="-1" aria-label="Close {tab.title}" title="Close" onclick={() => onClose(tab.id)}><X size={11} aria-hidden="true" /></button>
+					<button class="cs-act" tabindex="-1" aria-label="Close {tab.title}" title="Close" onclick={() => onClose(tab.id)}><Icon name="x" size={16} aria-hidden="true" /></button>
 				</div>
 			{/each}
 			{#if !$codeTabs.length}<p class="cs-empty">Nothing open.</p>{/if}
@@ -259,12 +261,13 @@
 	<section class="cs-section cs-grow">
 		<header class="cs-head">Project</header>
 		<label class="cs-search">
-			<Search size={12} aria-hidden="true" />
+			<Icon name="search" size={16} aria-hidden="true" />
 			<input id="code-ws-project-search" type="search" placeholder="Search scripts…" bind:value={query} aria-label="Search the project's scripts" />
 		</label>
 		<div
 			id="code-ws-project"
 			class="cs-scroll"
+			use:minimalScroll
 			role="tree"
 			tabindex="-1"
 			aria-label="Project scripts"
@@ -283,9 +286,9 @@
 		min-height: 0;
 		height: 100%;
 		font-size: 11px;
-		color: var(--text, #e5e7eb);
-		background: var(--surface-deep, #111827);
-		border-right: 1px solid var(--border, rgb(55 65 81 / 0.6));
+		color: var(--text);
+		background: var(--bg-app);
+		border-right: 1px solid var(--border);
 		user-select: none;
 	}
 	.cs-section {
@@ -307,24 +310,22 @@
 		font-weight: 600;
 		letter-spacing: 0.04em;
 		text-transform: uppercase;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.cs-scroll {
 		flex: 1;
 		min-height: 0;
 		overflow: auto;
-		scrollbar-width: thin;
-		scrollbar-color: var(--scrollbar-thumb, #4b5563) transparent;
 	}
 	.cs-split {
 		flex-shrink: 0;
 		height: 5px;
 		cursor: ns-resize;
 		touch-action: none;
-		border-top: 1px solid var(--border, rgb(55 65 81 / 0.6));
+		border-top: 1px solid var(--border);
 	}
 	.cs-split:hover {
-		background: color-mix(in srgb, var(--accent-fill, #2563eb) 40%, transparent);
+		background: color-mix(in srgb, var(--accent) 40%, transparent);
 	}
 	.cs-search {
 		display: flex;
@@ -333,16 +334,16 @@
 		margin: 0 6px 4px;
 		padding: 0 6px;
 		border-radius: 4px;
-		color: var(--muted, #9ca3af);
-		background: var(--field, #1f2937);
-		border: 1px solid var(--border, #374151);
+		color: var(--text-muted);
+		background: var(--surface-inset);
+		border: 1px solid var(--border);
 	}
 	.cs-search input {
 		flex: 1;
 		min-width: 0;
 		padding: 2px 0;
 		font-size: 11px;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 		background: transparent;
 		border: none;
 		outline: none;
@@ -360,12 +361,12 @@
 		color: inherit;
 	}
 	.cs-group {
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 		font-weight: 600;
 	}
 	.cs-row:hover,
 	.cs-leaf-wrap:hover {
-		background: var(--hover, rgb(55 65 81 / 0.5));
+		background: var(--surface-hover);
 	}
 	.cs-leaf-wrap {
 		display: flex;
@@ -379,9 +380,9 @@
 		padding-left: 8px;
 	}
 	.cs-on {
-		color: var(--text, #f3f4f6);
-		background: color-mix(in srgb, var(--accent-fill, #2563eb) 22%, transparent);
-		box-shadow: inset 2px 0 0 var(--accent-fill, #2563eb);
+		color: var(--accent-soft-text);
+		background: var(--accent-soft);
+		box-shadow: inset 2px 0 0 var(--accent);
 	}
 	.cs-name {
 		overflow: hidden;
@@ -394,12 +395,12 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		font-size: 10px;
 	}
 	.cs-count {
 		margin-left: auto;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		font-weight: 400;
 	}
 	.cs-act {
@@ -411,7 +412,7 @@
 		height: 18px;
 		margin-right: 3px;
 		border-radius: 3px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.cs-leaf-wrap:hover .cs-act,
 	.cs-on .cs-act,
@@ -419,11 +420,11 @@
 		display: inline-flex;
 	}
 	.cs-act:hover {
-		color: var(--text, #f3f4f6);
-		background: var(--surface-3, #4b5563);
+		color: var(--text);
+		background: var(--surface-active);
 	}
 	.cs-dirty {
-		color: var(--ink-warn, #fbbf24);
+		color: var(--ink-warn);
 	}
 	.cs-bad {
 		display: inline-flex;
@@ -434,21 +435,21 @@
 		border-radius: 9999px;
 		font-size: 9px;
 		font-weight: 700;
-		color: var(--on-accent, #fff);
-		background: var(--ink-bad, #f87171);
+		color: var(--on-danger);
+		background: var(--danger);
 	}
 	.cs-empty {
 		padding: 6px 10px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	/* drag to reorder (dragReorder.js): the dragged row fades, the gap shows as a line */
 	.cs-open:global([data-dragging]) {
 		opacity: 0.45;
 	}
 	.cs-open:global([data-drop='before']) {
-		box-shadow: inset 0 2px 0 var(--accent-fill, #2563eb);
+		box-shadow: inset 0 2px 0 var(--accent);
 	}
 	.cs-open:global([data-drop='after']) {
-		box-shadow: inset 0 -2px 0 var(--accent-fill, #2563eb);
+		box-shadow: inset 0 -2px 0 var(--accent);
 	}
 </style>

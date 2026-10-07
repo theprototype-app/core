@@ -19,22 +19,22 @@ h.run(async () => {
 	});
 	await A.page.waitForTimeout(200);
 	const off = await iconClass('Object list (O)');
-	h.check(!off.includes('text-primary-500'), 'object-list icon is idle when closed');
+	h.check(!off.includes('text-accent'), 'object-list icon is idle when closed');
 
 	await A.page.evaluate(() => window.__stores.objectListClose.set(false));
 	await A.page.waitForTimeout(200);
 	const on = await iconClass('Object list (O)');
-	h.check(on.includes('text-primary-500'), 'object-list icon tints when open');
+	h.check(on.includes('text-accent'), 'object-list icon tints when open');
 
 	await A.page.evaluate(() => window.__stores.explorerClose.set(false));
 	await A.page.waitForTimeout(200);
 	const explorerOn = await iconClass('Explorer');
-	h.check(explorerOn.includes('text-primary-500'), 'Explorer icon tints when open');
+	h.check(explorerOn.includes('text-accent'), 'Explorer icon tints when open');
 	await A.page.evaluate(() => { window.__stores.objectListClose.set(true); window.__stores.explorerClose.set(true); });
 
 	// --- Move/Rotate/Scale stay idle with no selection ---
 	const moveIdle = await iconClass('Move (1)');
-	h.check(!moveIdle.includes('text-primary-500'), 'Move icon is idle with no selection');
+	h.check(!moveIdle.includes('text-accent'), 'Move icon is idle with no selection');
 
 	// --- boot gizmo: not visible on a fresh scene with no selection ---
 	const gizmoBoot = await A.page.evaluate(
@@ -61,7 +61,7 @@ h.run(async () => {
 	h.check(afterSelect.visible && afterSelect.attached, 'selecting an object shows + attaches the gizmo');
 	await A.page.waitForTimeout(150);
 	const moveActive = await iconClass('Move (1)');
-	h.check(moveActive.includes('text-primary-500'), 'Move tints as the active mode once selected');
+	h.check(moveActive.includes('text-accent'), 'Move tints as the active mode once selected');
 
 	// --- deselect hides the gizmo again ---
 	const afterDeselect = await A.page.evaluate(async () => {

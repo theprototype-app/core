@@ -8,6 +8,7 @@ import { runNodeAction, hasNodeAction, nodeEditorInsideGroup } from './nodeEdito
 import {
 	chatHidden,
 	settingsOpen,
+	commandPaletteOpen,
 	anyModalOpen,
 	settingsSection,
 	specatorMode,
@@ -758,6 +759,17 @@ export const shortcuts = [
 		action: () => cheatSheetOpen.update((open) => !open)
 	},
 	{
+		// 38 R8 (NOTES-38 #14): one search over tools, windows, menus and Settings rows.
+		// Ctrl+K was free in every scope (no row, no editor handler); it answers with a modal
+		// open too (exempted below, like the shortcut list), never in a text field.
+		id: 'help.palette',
+		keys: 'Ctrl+K',
+		group: 'Help',
+		scope: 'global',
+		label: 'Command palette — search every command and setting',
+		action: () => commandPaletteOpen.update((v) => !v)
+	},
+	{
 		id: 'help.shortcuts',
 		keys: 'Ctrl+/',
 		group: 'Help',
@@ -1157,7 +1169,7 @@ function handleKeydown(event) {
 	// (was Settings only, which is also why panel toggles couldn't fight the
 	// hidePanels snapshot). The help list stays live — by ID since Phase 5, so
 	// the exemption follows the command when a user rebinds it.
-	if (get(anyModalOpen) && shortcut.id !== 'help.shortcuts' && shortcut.id !== 'help.cheatsheet') return;
+	if (get(anyModalOpen) && shortcut.id !== 'help.shortcuts' && shortcut.id !== 'help.cheatsheet' && shortcut.id !== 'help.palette') return;
 	// A binding may decline the key (85: Escape only means "leave isolation" WHILE
 	// something is isolated). Declining rows were filtered out above, BEFORE
 	// preventDefault, so a declined key is left completely untouched for whoever else

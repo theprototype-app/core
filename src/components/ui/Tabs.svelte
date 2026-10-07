@@ -75,7 +75,7 @@
 					onclick={() => select(i)}
 					onkeydown={(e) => onKey(e, i)}
 				>
-					{#if variant === 'dock' && t.icon}<span class="tp-dtab-ico"><Icon name={t.icon} size={14} /></span>{/if}{t.label}{#if t.count !== undefined && t.count !== null && t.count !== ''}<span class="tab-count">{t.count}</span>{/if}
+					{#if variant === 'dock' && t.icon}<span class="tp-dtab-ico"><Icon name={t.icon} size={16} /></span>{/if}{t.label}{#if t.count !== undefined && t.count !== null && t.count !== ''}<span class="tab-count">{t.count}</span>{/if}
 				</button>
 			{/each}
 		</div>

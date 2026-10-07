@@ -298,6 +298,7 @@
 					side={THREE.DoubleSide}
 				/>
 			</T.Mesh>
+			<!-- tokens-ok-begin: troika pin-number outline in the 3D view, contrasting the user's pin colour (canvas pixels) -->
 			<Text
 				color={contrastOn(fillOf(annotation))}
 				outlineColor={contrastOn(fillOf(annotation)) === '#1c1917' ? '#ffffff' : '#000000'}
@@ -311,6 +312,7 @@
 				position={[0, 0, 0.004]}
 				text={String(index + 1)}
 			/>
+			<!-- tokens-ok-end -->
 			</T.Group>
 			{/if}
 		</T.Group>

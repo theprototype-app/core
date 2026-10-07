@@ -88,18 +88,18 @@
 		height: 1.6rem;
 		padding: 0 0.45rem;
 		font: 600 0.7rem/1 system-ui, sans-serif;
-		color: var(--text, #e5e7eb);
-		background: rgb(var(--surface-rgb, 17 24 39) / 0.75);
-		border: 1px solid var(--border, rgb(75 85 99 / 0.7));
+		color: var(--text);
+		background: color-mix(in srgb, var(--surface-1) 75%, transparent);
+		border: 1px solid var(--border-strong);
 		border-radius: 999px;
 		cursor: pointer;
 		touch-action: manipulation;
 	}
 	.tp-heart:hover {
-		border-color: var(--ink-bad, #f87171);
+		border-color: var(--ink-bad);
 	}
 	.tp-heart-on {
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 	.tp-heart:disabled {
 		cursor: wait;
@@ -117,6 +117,6 @@
 	}
 	.tp-heart-count {
 		font-variant-numeric: tabular-nums;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 	}
 </style>

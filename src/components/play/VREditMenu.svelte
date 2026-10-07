@@ -110,11 +110,13 @@
 	})
 
 	function rowColor(row: Row) {
+		// tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var())
 		if ($vrHovered === row.action) return '#ff4000'
 		if (row.active) return '#2f81f7'
 		if (row.danger) return '#5a2a2a'
 		return '#2a2f38'
 	}
+	// tokens-ok-end
 	// tab bar geometry (horizontal)
 	const TAB_GAP = 0.004
 	let tabW = $derived((WIDTH - TAB_GAP * (modeTabs.length - 1)) / modeTabs.length)
@@ -127,6 +129,7 @@
 		return tabY - TAB_H / 2 - 0.008 - ROW_H / 2 - i * ROW_H
 	}
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if $vrEditMenuOpen}
 	<T.Group bind:ref={group} name="vr-edit-menu">
@@ -208,3 +211,4 @@
 		{/if}
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

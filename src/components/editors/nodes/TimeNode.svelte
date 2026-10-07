@@ -32,8 +32,8 @@
 			<option value="pingpong">pingpong</option>
 		</select>
 		<label class="flex items-center gap-1">
-			<span class="w-10 text-gray-400">rate</span>
-			<input class="nodrag nopan w-full accent-[#ff4000]" type="range" min="0.1" max="5" step="0.1"
+			<span class="w-10 text-text-muted">rate</span>
+			<input class="nodrag nopan w-full accent-accent" type="range" min="0.1" max="5" step="0.1"
 				value={data.rate ?? 1}
 				on:input={(e) => setNodeData(id, { rate: +e.currentTarget.value })} />
 			<span class="font-mono">{(data.rate ?? 1).toFixed(1)}</span>

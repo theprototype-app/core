@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Pause, Play, Repeat, Volume2, VolumeX } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { itemBlob } from '$lib/explorer';
 	import { formatClock } from '$lib/filePreview';
 
@@ -224,7 +224,7 @@
 			disabled={!url}
 			onclick={toggle}
 		>
-			{#if playing}<Pause size={16} aria-hidden="true" />{:else}<Play size={16} aria-hidden="true" />{/if}
+			{#if playing}<Icon name="pause" size={16} aria-hidden="true" />{:else}<Icon name="play" size={16} aria-hidden="true" />{/if}
 		</button>
 		<span class="ap-time tp-tr-time" id="audio-at">{formatClock(at)}</span>
 		<input
@@ -251,7 +251,7 @@
 			aria-label={muted ? 'Unmute' : 'Mute'}
 			onclick={() => (muted = !muted)}
 		>
-			{#if muted}<VolumeX size={14} aria-hidden="true" />{:else}<Volume2 size={14} aria-hidden="true" />{/if}
+			{#if muted}<Icon name="volume-x" size={16} aria-hidden="true" />{:else}<Icon name="volume-2" size={16} aria-hidden="true" />{/if}
 		</button>
 		<input
 			id="audio-volume"
@@ -273,7 +273,7 @@
 				aria-label="Loop"
 				onclick={() => (loop = !loop)}
 			>
-				<Repeat size={14} aria-hidden="true" />
+				<Icon name="repeat" size={16} aria-hidden="true" />
 			</button>
 		{/if}
 	</div>
@@ -313,9 +313,9 @@
 		font-size: 10px;
 	}
 	.ap-name {
-		color: #6b7280;
+		color: var(--text-faint);
 	}
 	.ap-error {
-		color: #f87171;
+		color: var(--ink-bad);
 	}
 </style>

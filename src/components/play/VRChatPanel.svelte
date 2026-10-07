@@ -54,6 +54,7 @@
 		applyWindowPose(group, 'chat', pose)
 	})
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if $vrChatPanelOpen}
 	<T.Group bind:ref={group} name="vr-chat-panel">
@@ -127,3 +128,4 @@
 		/>
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

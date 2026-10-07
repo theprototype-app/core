@@ -15,10 +15,10 @@ const CSS = `
 .tp-scroll{scrollbar-width:none;-ms-overflow-style:none}
 .tp-scroll::-webkit-scrollbar{display:none;width:0;height:0}
 .tp-scroll-thumb{position:absolute;right:2px;top:0;width:6px;border-radius:999px;
-background:color-mix(in srgb,var(--text-faint,#8b94a7) 55%,transparent);opacity:0;
+background:color-mix(in srgb,var(--text-faint) 55%,transparent);opacity:0;
 transition:opacity .2s ease,width .12s ease;z-index:5;touch-action:none;cursor:default}
 .tp-scroll-thumb[data-on]{opacity:1}
-.tp-scroll-thumb:hover,.tp-scroll-thumb[data-drag]{width:8px;background:color-mix(in srgb,var(--text-faint,#8b94a7) 80%,transparent)}
+.tp-scroll-thumb:hover,.tp-scroll-thumb[data-drag]{width:8px;background:color-mix(in srgb,var(--text-faint) 80%,transparent)}
 @media (prefers-reduced-motion:reduce){.tp-scroll-thumb{transition:none}}
 `;
 

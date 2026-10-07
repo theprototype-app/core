@@ -30,17 +30,17 @@
 	<div class="flex w-full flex-col gap-0.5">
 		{#each AXES as axis (axis.id)}
 			<div class="relative -mx-3 flex h-6 items-center gap-1 px-3">
-				<span class="font-mono text-[10px] text-gray-300">{axis.label}</span>
+				<span class="font-mono text-[10px] text-text-2">{axis.label}</span>
 				<span
 					class="ml-auto w-6 shrink-0 text-right font-mono text-[11px]"
-					class:text-primary-300={!!handles[axis.id]}
-					class:text-gray-400={!handles[axis.id]}
+					class:text-accent-text={!!handles[axis.id]}
+					class:text-text-muted={!handles[axis.id]}
 				>
 					{fmt(handles[axis.id])}
 				</span>
 				<Socket kind="source" nodeType={data.type} position={Position.Right} id={axis.id} style="top: 50%;" />
 			</div>
 		{/each}
-		<p class="text-[10px] text-gray-400">your own keys — every peer reads its own</p>
+		<p class="text-[10px] text-text-muted">your own keys — every peer reads its own</p>
 	</div>
 </NodeWrapper>

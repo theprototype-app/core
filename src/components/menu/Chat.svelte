@@ -2,6 +2,7 @@
 	// Chat (phases 67+68): floating draggable window on the --z-window tier —
 	// never underneath the flow drawer. Bubbles with author color chips and
 	// timestamps, Enter to send, autoscroll with a new-messages pill, /hints.
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import '../../styles/chat.css';
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	import Button from '../ui/Button.svelte';
@@ -126,7 +127,7 @@
 		/>
 
 		<div class="relative min-h-0 flex-1">
-			<div id="chat-messages" bind:this={scroller} onscroll={onScroll} class="h-full overflow-y-auto px-2 py-1">
+			<div id="chat-messages" bind:this={scroller} onscroll={onScroll} class="h-full overflow-y-auto px-2 py-1" use:minimalScroll>
 				<ul id="messages" class="flex flex-col gap-1">
 					{#each $messages as m (m)}
 						{#if isNote(m)}

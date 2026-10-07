@@ -13,11 +13,9 @@
 	// - The default width lives in CSS through --tbx-w (never inline `width`):
 	//   dragWindow's reset removes the inline width a grip drag wrote, and the
 	//   CSS rule must win again or an auto-width grid collapses to one column.
-	// - Theming: authored DIRECTLY against theme tokens with fallback chains —
-	//   dark AND light define no --surface/--accent tokens, so every var() here
-	//   must end in a literal (accent falls back through Tailwind's
-	//   --color-primary-600). Content buttons that need the theme REMAP layer
-	//   (bg-primary-600 etc.) keep using utility classes — both work inside.
+	// - Theming: authored DIRECTLY against the redesign tokens (38 R11: every
+	//   theme defines them, so no literal fallbacks). Content buttons that carry
+	//   utility classes (the e2e state markers) keep them — both work inside.
 	// - Content contract (all styled from here via :global so consumers carry
 	//   zero CSS): `.tbx-label` full-width section mini-label · `.tbx-row`
 	//   full-width flex row · `.tbx-seg` segmented control (text buttons with
@@ -43,11 +41,12 @@
 	//   re-applied it (reported as "the keys window appears in the corner first").
 	//   `style:` writes ONE property via setProperty and leaves the rest alone —
 	//   the pattern Flow.svelte already uses for its width/height.
-	import { GripVertical } from '@lucide/svelte';
+	import Icon from './Icon.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore';
 	import { safeStorage } from '$lib/safeStorage';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	/** @type {{ id: string, title: string, key: string,
 	 *   defaultRect?: { left?: number, top?: number, right?: number, bottom?: number },
@@ -149,7 +148,7 @@
 		</div>
 	{/if}
 	<div class="toolbox-header move-handle">
-		<GripVertical size={14} aria-hidden="true" />
+		<Icon name="grip-vertical" size={16} aria-hidden="true" />
 		<span class="toolbox-title">{title}</span>
 		<span class="toolbox-spacer"></span>
 		{@render actions?.()}
@@ -159,7 +158,7 @@
 			{@render tabs()}
 		</div>
 	{/if}
-	<div class="toolbox-body">
+	<div class="toolbox-body" use:minimalScroll>
 		{@render children()}
 	</div>
 	{#if status}
@@ -171,13 +170,13 @@
 
 <style>
 	.toolbox {
-		/* alias tokens — every chain ENDS in a literal (dark/light define none) */
-		--tbx-hover: var(--hover, #4b5563);
-		--tbx-border: var(--border, rgb(55 65 81 / 0.6));
-		--tbx-text: var(--text-2, #d1d5db);
-		--tbx-muted: var(--muted, #9ca3af);
-		--tbx-accent: var(--accent, var(--color-primary-600, #2563eb));
-		--tbx-danger: var(--icon-danger, #f87171);
+		/* alias tokens (the redesign tokens, defined in every theme) */
+		--tbx-hover: var(--surface-hover);
+		--tbx-border: var(--border);
+		--tbx-text: var(--text-2);
+		--tbx-muted: var(--text-muted);
+		--tbx-accent: var(--accent);
+		--tbx-danger: var(--icon-danger);
 		/* fixed SQUARE cell — px on purpose: rem would shrink under bit8's 11px
 		   root font, and the requirement is that resizing changes the row count,
 		   never the button size */
@@ -204,7 +203,7 @@
 		   (which targets literal `.bg-gray-800` class NAMES) never rethemes it —
 		   without this the toolbox stayed dark in every theme. The ui-panel class
 		   stays for radius/shadow + the bit8/contrast personality hooks. */
-		background: var(--surface, #1f2937);
+		background: var(--surface-1);
 		border-color: var(--tbx-border);
 		color: var(--tbx-text);
 	}
@@ -285,7 +284,7 @@
 		width: 40px;
 		height: 4px;
 		border-radius: 9999px;
-		background: rgb(148 163 184 / 0.7);
+		background: var(--text-faint);
 	}
 	@media (max-width: 640px) {
 		.toolbox.tbx-sheet {
@@ -354,8 +353,8 @@
 	}
 	.toolbox :global(.tbx-tab.tbx-tab-on),
 	.toolbox :global(.tbx-tab.tbx-tab-on:hover) {
-		background: var(--tbx-accent);
-		color: #fff;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.toolbox :global(.tbx-tab:focus-visible) {
 		outline: 2px solid var(--tbx-accent);
@@ -440,7 +439,7 @@
 		border-radius: 6px;
 		font-size: 11px;
 		color: var(--tbx-text);
-		background: var(--surface-2, #374151);
+		background: var(--surface-2);
 	}
 	.toolbox :global(.tbx-cmd:hover) {
 		background: var(--tbx-hover);
@@ -456,8 +455,8 @@
 	   After :hover, so armed wins while hovered. */
 	.toolbox :global(.tbx-cmd.tbx-on),
 	.toolbox :global(.tbx-cmd.tbx-on:hover) {
-		background: var(--tbx-accent);
-		color: #fff;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.toolbox :global(.tbx-cmd:disabled) {
 		opacity: 0.45;
@@ -470,8 +469,8 @@
 		border-radius: 9999px;
 		font-size: 11px;
 		font-weight: 600;
-		color: #fff;
-		background: var(--tbx-accent);
+		color: var(--on-accent);
+		background: var(--accent-fill);
 	}
 	.toolbox :global(.tbx-primary:hover) {
 		filter: brightness(1.12);
@@ -505,12 +504,12 @@
 	   armed color also wins while hovered. */
 	.toolbox :global(.tbx-btn.tbx-on),
 	.toolbox :global(.tbx-btn.tbx-on:hover) {
-		background: var(--tbx-accent);
-		color: #fff;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 		/* 18-C4: on the solid accent fill the duotone would be accent-on-accent,
-		   so the armed glyph collapses to white monochrome — the Blender
+		   so the armed glyph collapses to the on-accent monochrome — the Blender
 		   active-tool convention */
-		--icon-accent: #fff;
+		--icon-accent: var(--on-accent);
 	}
 	/* 18-C1: SELECTED but not armed — a parameterized one-shot (Bevel, Loop cut)
 	   whose options are showing, waiting for Apply. Deliberately a ring rather
@@ -523,7 +522,7 @@
 	/* toggle ON = the "tinted well" (deliberately DISTINCT from the solid-accent
 	   armed tool, the Blender depressed-toggle vs blue-active-tool convention) */
 	.toolbox :global(.tbx-btn[aria-pressed='true']) {
-		background: var(--surface-3, #4b5563);
+		background: var(--surface-active);
 		box-shadow: inset 0 0 0 1px var(--tbx-accent);
 		color: var(--tbx-accent);
 		/* 18-C4: one state, one colour. A duotone glyph inside an accent-coloured
@@ -563,7 +562,7 @@
 		margin: 0;
 		border: 1px solid var(--tbx-border);
 		border-radius: 3px;
-		background-color: var(--surface-2, #374151);
+		background-color: var(--surface-inset);
 		color: var(--tbx-accent);
 		accent-color: var(--tbx-accent);
 		cursor: pointer;
@@ -596,8 +595,8 @@
 	}
 	@keyframes -global-tbx-flash {
 		0% {
-			background-color: var(--tbx-accent, #2563eb);
-			color: #fff;
+			background-color: var(--accent-fill);
+			color: var(--on-accent);
 		}
 		100% {
 			background-color: transparent;
@@ -622,11 +621,11 @@
 		background: var(--tbx-hover);
 	}
 	.toolbox :global(.tbx-hbtn.tbx-done) {
-		background: #ff4000; /* the brand Done, same hex as today */
-		color: #fff;
+		background: var(--accent-fill); /* Done = the primary action */
+		color: var(--on-accent);
 	}
 	.toolbox :global(.tbx-hbtn.tbx-ok) {
-		background: #22c55e; /* collider Done keeps its green */
-		color: #fff;
+		background: var(--ink-good); /* collider Done keeps its green */
+		color: var(--bg-app);
 	}
 </style>

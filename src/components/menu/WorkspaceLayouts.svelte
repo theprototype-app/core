@@ -1,9 +1,10 @@
 <script>
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	// 37 R14 — the named workspace layouts list: apply (click), rename (double-click or the
 	// pencil), update (save under the same name), delete, and "save the current layout".
 	// ONE component, two hosts: the Layouts popover from the burger menu and
 	// Settings ▸ Interface. Theme tokens only.
-	import { Check, Pencil, Trash2, Save } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { uiLayouts, activeLayoutId, saveLayout, applyLayout, deleteLayout, renameLayoutTo } from '$lib/uiLayouts';
 	import { showToast } from '../../stores/appStore';
 
@@ -64,7 +65,7 @@
 
 <div class="wl" id="{idPrefix}-root">
 	{#if $uiLayouts.length}
-		<ul class="wl-list" id="{idPrefix}-list">
+		<ul class="wl-list" id="{idPrefix}-list" use:minimalScroll>
 			{#each $uiLayouts as layout (layout.id)}
 				<li class="wl-row" class:wl-active={$activeLayoutId === layout.id} data-layout-id={layout.id}>
 					{#if renaming === layout.id}
@@ -87,11 +88,11 @@
 							onclick={() => apply(layout)}
 							ondblclick={() => startRename(layout)}
 						>
-							<span class="wl-check" aria-hidden="true">{#if $activeLayoutId === layout.id}<Check size={14} />{/if}</span>
+							<span class="wl-check" aria-hidden="true">{#if $activeLayoutId === layout.id}<Icon name="check" size={16} />{/if}</span>
 							<span class="wl-name">{layout.name}</span>
 						</button>
-						<button class="wl-icon" title="Rename" aria-label="Rename {layout.name}" onclick={() => startRename(layout)}><Pencil size={14} aria-hidden="true" /></button>
-						<button class="wl-icon wl-danger" title="Delete" aria-label="Delete {layout.name}" onclick={() => remove(layout)}><Trash2 size={14} aria-hidden="true" /></button>
+						<button class="wl-icon" title="Rename" aria-label="Rename {layout.name}" onclick={() => startRename(layout)}><Icon name="pencil" size={16} aria-hidden="true" /></button>
+						<button class="wl-icon wl-danger" title="Delete" aria-label="Delete {layout.name}" onclick={() => remove(layout)}><Icon name="trash-2" size={16} aria-hidden="true" /></button>
 					{/if}
 				</li>
 			{/each}
@@ -115,7 +116,7 @@
 			bind:value={name}
 			onkeydown={(e) => e.stopPropagation()}
 		/>
-		<button id="{idPrefix}-save" type="submit" class="wl-btn" title="Save the current windows, docks and sizes under this name"><Save size={14} aria-hidden="true" /> Save</button>
+		<button id="{idPrefix}-save" type="submit" class="wl-btn" title="Save the current windows, docks and sizes under this name"><Icon name="save" size={16} aria-hidden="true" /> Save</button>
 	</form>
 	{#if error}<p class="wl-error" role="alert">{error}</p>{/if}
 </div>
@@ -144,7 +145,7 @@
 		border-radius: 6px;
 	}
 	.wl-row:hover {
-		background: var(--hover, rgb(255 255 255 / 0.06));
+		background: var(--surface-hover);
 	}
 	.wl-apply {
 		flex: 1;
@@ -154,14 +155,14 @@
 		gap: 6px;
 		padding: 4px 6px;
 		text-align: left;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 		background: transparent;
 		border: 0;
 		border-radius: 6px;
 		cursor: pointer;
 	}
 	.wl-active .wl-apply {
-		color: var(--accent, #60a5fa);
+		color: var(--accent);
 		font-weight: 600;
 	}
 	.wl-check {
@@ -178,18 +179,18 @@
 		flex: none;
 		display: inline-flex;
 		padding: 4px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		background: transparent;
 		border: 0;
 		border-radius: 4px;
 		cursor: pointer;
 	}
 	.wl-icon:hover {
-		color: var(--text, #e5e7eb);
-		background: var(--surface-3, rgb(255 255 255 / 0.08));
+		color: var(--text);
+		background: var(--surface-hover);
 	}
 	.wl-danger:hover {
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 	.wl-save {
 		display: flex;
@@ -200,9 +201,9 @@
 		min-width: 0;
 		padding: 4px 8px;
 		font-size: 0.8rem;
-		color: var(--text, #e5e7eb);
-		background: var(--field, #111827);
-		border: 1px solid var(--border, #374151);
+		color: var(--text);
+		background: var(--surface-inset);
+		border: 1px solid var(--border);
 		border-radius: 6px;
 	}
 	.wl-rename {
@@ -222,8 +223,8 @@
 		gap: 4px;
 		padding: 4px 10px;
 		font-size: 0.8rem;
-		color: var(--on-accent, #fff);
-		background: var(--accent-fill, #2563eb);
+		color: var(--on-accent);
+		background: var(--accent-fill);
 		border: 0;
 		border-radius: 6px;
 		cursor: pointer;
@@ -231,11 +232,11 @@
 	.wl-empty {
 		margin: 0;
 		font-size: 0.78rem;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.wl-error {
 		margin: 0;
 		font-size: 0.78rem;
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 </style>

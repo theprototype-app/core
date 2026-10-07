@@ -16,7 +16,7 @@
 
 	/** the same group colours the properties pane and the artboard badges use */
 	/** @type {Record<string, string>} */
-	const GROUP_ACCENT = { Display: '#38bdf8', Input: '#f0abfc', Layout: '#4ade80' };
+	const GROUP_ACCENT = { Display: '#38bdf8', Input: '#f0abfc', Layout: '#4ade80' }; // tokens-ok: HUD kind-group hue table (category data, same in every theme)
 
 	let filter = $state('');
 	const groups = $derived(
@@ -44,7 +44,7 @@
 	<p class="hud-pal-hint">Drag onto the board, or click to add it.</p>
 	{#each groups as entry (entry.group)}
 		<p class="hud-pal-group">
-			<span class="hud-pal-dot" style="background: {GROUP_ACCENT[entry.group] ?? '#94a3b8'}"></span>
+			<span class="hud-pal-dot" style="background: {GROUP_ACCENT[entry.group] ?? 'var(--text-faint)'}"></span>
 			{entry.group}
 		</p>
 		{#each entry.items as def (def.key)}
@@ -56,7 +56,7 @@
 				ondragstart={(/** @type {any} */ e) => e.dataTransfer?.setData('application/x-hud-kind', def.key)}
 				onclick={() => onPick(def.key)}
 			>
-				<Icon name={def.icon} size={13} />
+				<Icon name={def.icon} size={16} />
 				<span>{def.label}</span>
 			</button>
 		{/each}
@@ -77,7 +77,7 @@
 	}
 	.hud-pal-filter {
 		border-radius: 0.2rem;
-		background: rgb(17 24 39 / 0.6);
+		background: var(--surface-inset);
 		padding: 0.15rem 0.35rem;
 		font-size: 11px;
 	}
@@ -109,14 +109,14 @@
 		align-items: center;
 		gap: 0.4rem;
 		border-radius: 0.25rem;
-		border: 1px solid rgb(75 85 99 / 0.45);
-		background: rgb(31 41 55 / 0.5);
+		border: 1px solid var(--border);
+		background: var(--surface-2);
 		padding: 0.2rem 0.35rem;
 		text-align: left;
 		font-size: 11px;
 	}
 	.hud-pal-item:hover {
-		border-color: var(--accent, #ef562f);
-		background: rgb(55 65 81 / 0.7);
+		border-color: var(--accent);
+		background: var(--surface-hover);
 	}
 </style>

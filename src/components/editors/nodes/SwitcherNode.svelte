@@ -22,7 +22,7 @@
 		{#each options as option, i}
 			<label class="flex">
 				<input
-					class="accent-[#ff4000]"
+					class="accent-accent"
 					type="radio"
 					name={`shape-${id}`}
 					value={option}

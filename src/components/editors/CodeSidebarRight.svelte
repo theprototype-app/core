@@ -5,7 +5,7 @@
 	//   Bound nodes  which graph nodes run this source; a click selects the node in the editor
 	//   Find         across every source the project has (open tabs' unsaved text first)
 	// A click on any entry jumps the editor to its line. Chrome only; the libs are pure.
-	import { ListTree, CircleAlert, Waypoints, Search, CaseSensitive, Regex, WholeWord, Package } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { codeTabs, activeCodeTab, boundNodesOf, goToNode, openCode, revealInTab, nodesUsingModuleFile, findSources } from '$lib/codeWorkspace';
 	import { codeRightPanel, codeFindFocus, RIGHT_PANELS } from '$lib/codeSidebars';
 	import { outlineOf } from '$lib/codeOutline';
@@ -15,6 +15,7 @@
 	import { explorerItems } from '$lib/explorer';
 	import { safeStorage } from '$lib/safeStorage';
 	import { arrowNav } from '$lib/arrowNav';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	/** `runtimeOf(tab)` = what the tab's nodes reported (the workspace's stores: a throw, a save
 	 * not applied) as `{message, line?}`
@@ -24,7 +25,7 @@
 	const active = $derived($codeTabs.find((t) => t.id === $activeCodeTab) ?? null);
 
 	const LABELS = { outline: 'Outline', problems: 'Problems', bound: 'Bound nodes', find: 'Find in files' };
-	const ICONS = { outline: ListTree, problems: CircleAlert, bound: Waypoints, find: Search };
+	const ICONS = { outline: 'list-tree', problems: 'circle-alert', bound: 'waypoints', find: 'search' };
 
 	// ---------------------------------------------------------------- Outline
 	// acorn reads a few thousand lines in a few ms, so the outline simply follows the text
@@ -121,7 +122,7 @@
 		use:arrowNav={{ item: '.rs-tab', axis: 'x', onMove: (el) => codeRightPanel.set(/** @type {any} */ (el.dataset.panel)) }}
 	>
 		{#each RIGHT_PANELS as p (p)}
-			{@const Icon = ICONS[p]}
+			{@const tabIcon = ICONS[p]}
 			<button
 				class="rs-tab"
 				class:rs-tab-on={$codeRightPanel === p}
@@ -135,7 +136,7 @@
 				aria-label={LABELS[p]}
 				onclick={() => codeRightPanel.set(p)}
 			>
-				<Icon size={14} aria-hidden="true" />
+				<Icon name={tabIcon} size={16} aria-hidden="true" />
 				{#if p === 'problems' && problemCount}<span class="rs-badge" data-count={problemCount}>{problemCount}</span>{/if}
 			</button>
 		{/each}
@@ -150,7 +151,7 @@
 				<p class="rs-empty">Nothing to list in {active.title}.</p>
 			{:else}
 				{#if outline.partial}<p class="rs-note">The code does not parse — this outline is a best guess.</p>{/if}
-				<ul id="code-ws-outline" class="rs-list" use:arrowNav={{ item: '.rs-row' }}>
+				<ul id="code-ws-outline" class="rs-list" use:minimalScroll use:arrowNav={{ item: '.rs-row' }}>
 					{#each outline.items as item, i (i + ':' + item.kind + ':' + item.name + ':' + item.line)}
 						<li>
 							<button class="rs-row" style:padding-left="{6 + item.depth * 12}px" data-outline={item.kind} data-line={item.line} title="{item.kind} — line {item.line}" onclick={() => revealInTab(active.id, item.line)}>
@@ -167,7 +168,7 @@
 			{#if !problems.length}
 				<p class="rs-empty" id="code-ws-no-problems">No problems in the open files.</p>
 			{:else}
-				<ul id="code-ws-problems" class="rs-list" use:arrowNav={{ item: '.rs-row' }}>
+				<ul id="code-ws-problems" class="rs-list" use:minimalScroll use:arrowNav={{ item: '.rs-row' }}>
 					{#each problems as group (group.tab.id)}
 						<li class="rs-group">{group.tab.title} <span class="rs-count">{group.items.length}</span></li>
 						{#each group.items as p, i (i)}
@@ -190,11 +191,11 @@
 			{:else if !bound.length}
 				<p class="rs-empty">No node runs {active.title} yet.{active.kind === 'file' ? ' Bind one with "Use file…" on a Script node.' : ''}</p>
 			{:else}
-				<ul id="code-ws-bound" class="rs-list" use:arrowNav={{ item: '.rs-row' }}>
+				<ul id="code-ws-bound" class="rs-list" use:minimalScroll use:arrowNav={{ item: '.rs-row' }}>
 					{#each bound as b (b.graphId + ':' + b.node.id)}
 						<li>
 							<button class="rs-row" data-bound-node={b.node.id} title="Select this node in the Node editor" onclick={() => goToNode(b.node.id, b.graphId)}>
-								<Waypoints size={12} aria-hidden="true" />
+								<Icon name="waypoints" size={16} aria-hidden="true" />
 								<span class="rs-name">{nodeName(b.node)}</span>
 								<span class="rs-detail">{b.graphId === 'scene' ? 'Main' : 'object flow'}</span>
 							</button>
@@ -205,14 +206,14 @@
 		{:else}
 			<div class="rs-find">
 				<label class="rs-search">
-					<Search size={12} aria-hidden="true" />
+					<Icon name="search" size={16} aria-hidden="true" />
 					<input id="code-ws-find" type="search" bind:this={findInput} bind:value={query} placeholder="Find in files…" aria-label="Find in files" />
 				</label>
 				<div class="rs-toggles">
-					<button class="rs-toggle" aria-pressed={caseSensitive} title="Match case" aria-label="Match case" onclick={() => (caseSensitive = !caseSensitive)}><CaseSensitive size={14} aria-hidden="true" /></button>
-					<button class="rs-toggle" aria-pressed={wholeWord} title="Whole word" aria-label="Whole word" onclick={() => (wholeWord = !wholeWord)}><WholeWord size={14} aria-hidden="true" /></button>
-					<button class="rs-toggle" aria-pressed={regex} title="Regular expression" aria-label="Regular expression" onclick={() => (regex = !regex)}><Regex size={14} aria-hidden="true" /></button>
-					<button id="code-ws-find-modules" class="rs-toggle" aria-pressed={withModules} title="Also search the module sources the scene uses (read-only)" aria-label="Include module sources" onclick={() => (withModules = !withModules)}><Package size={14} aria-hidden="true" /></button>
+					<button class="rs-toggle" aria-pressed={caseSensitive} title="Match case" aria-label="Match case" onclick={() => (caseSensitive = !caseSensitive)}><Icon name="case-sensitive" size={16} aria-hidden="true" /></button>
+					<button class="rs-toggle" aria-pressed={wholeWord} title="Whole word" aria-label="Whole word" onclick={() => (wholeWord = !wholeWord)}><Icon name="whole-word" size={16} aria-hidden="true" /></button>
+					<button class="rs-toggle" aria-pressed={regex} title="Regular expression" aria-label="Regular expression" onclick={() => (regex = !regex)}><Icon name="regex" size={16} aria-hidden="true" /></button>
+					<button id="code-ws-find-modules" class="rs-toggle" aria-pressed={withModules} title="Also search the module sources the scene uses (read-only)" aria-label="Include module sources" onclick={() => (withModules = !withModules)}><Icon name="package" size={16} aria-hidden="true" /></button>
 				</div>
 				{#if found.error}
 					<p class="rs-note rs-bad">{found.error}</p>
@@ -222,7 +223,7 @@
 					</p>
 				{/if}
 			</div>
-			<ul id="code-ws-find-results" class="rs-list" use:arrowNav={{ item: '.rs-row' }}>
+			<ul id="code-ws-find-results" class="rs-list" use:minimalScroll use:arrowNav={{ item: '.rs-row' }}>
 				{#each found.results as r (r.key)}
 					{@const source = sources.find((s) => s.key === r.key)}
 					<li class="rs-group" title={r.title}>{r.title} <span class="rs-count">{r.matches.length}</span></li>
@@ -247,16 +248,16 @@
 		min-height: 0;
 		height: 100%;
 		font-size: 11px;
-		color: var(--text, #e5e7eb);
-		background: var(--surface-deep, #111827);
-		border-left: 1px solid var(--border, rgb(55 65 81 / 0.6));
+		color: var(--text);
+		background: var(--bg-app);
+		border-left: 1px solid var(--border);
 	}
 	.rs-tabs {
 		display: flex;
 		flex-shrink: 0;
 		gap: 2px;
 		padding: 3px 4px 0;
-		border-bottom: 1px solid var(--border, rgb(55 65 81 / 0.6));
+		border-bottom: 1px solid var(--border);
 	}
 	.rs-tab {
 		position: relative;
@@ -266,15 +267,15 @@
 		width: 30px;
 		height: 24px;
 		border-radius: 4px 4px 0 0;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.rs-tab:hover {
-		color: var(--text, #f3f4f6);
-		background: var(--hover, rgb(55 65 81 / 0.5));
+		color: var(--text);
+		background: var(--surface-hover);
 	}
 	.rs-tab-on {
-		color: var(--text, #f3f4f6);
-		box-shadow: inset 0 -2px 0 var(--accent-fill, #2563eb);
+		color: var(--text);
+		box-shadow: inset 0 -2px 0 var(--accent);
 	}
 	.rs-badge {
 		position: absolute;
@@ -287,8 +288,8 @@
 		font-size: 9px;
 		font-weight: 700;
 		line-height: 13px;
-		color: var(--on-accent, #fff);
-		background: var(--ink-bad, #f87171);
+		color: var(--on-danger);
+		background: var(--danger);
 	}
 	.rs-head {
 		flex-shrink: 0;
@@ -297,7 +298,7 @@
 		font-weight: 600;
 		letter-spacing: 0.04em;
 		text-transform: uppercase;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.rs-body {
 		display: flex;
@@ -309,8 +310,6 @@
 		flex: 1;
 		min-height: 0;
 		overflow: auto;
-		scrollbar-width: thin;
-		scrollbar-color: var(--scrollbar-thumb, #4b5563) transparent;
 	}
 	.rs-row {
 		display: flex;
@@ -323,7 +322,7 @@
 		color: inherit;
 	}
 	.rs-row:hover {
-		background: var(--hover, rgb(55 65 81 / 0.5));
+		background: var(--surface-hover);
 	}
 	.rs-group {
 		display: flex;
@@ -334,30 +333,30 @@
 		white-space: nowrap;
 		text-overflow: ellipsis;
 		font-weight: 600;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 	}
 	.rs-count {
 		margin-left: auto;
 		font-weight: 400;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.rs-mark {
 		flex-shrink: 0;
 		width: 12px;
 		text-align: center;
-		color: var(--icon-accent, #60a5fa);
+		color: var(--icon-accent);
 	}
 	.rs-mark[data-kind='handler'],
 	.rs-mark[data-severity='warning'] {
-		color: var(--ink-warn, #fbbf24);
+		color: var(--ink-warn);
 	}
 	.rs-mark[data-kind='param'],
 	.rs-mark[data-kind='input'],
 	.rs-mark[data-kind='output'] {
-		color: var(--ink-good, #4ade80);
+		color: var(--ink-good);
 	}
 	.rs-mark[data-severity='error'] {
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 	.rs-name {
 		min-width: 0;
@@ -379,13 +378,13 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		font-size: 10px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.rs-line {
 		flex-shrink: 0;
 		margin-left: auto;
 		font-size: 10px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.rs-line-left {
 		margin-left: 0;
@@ -395,14 +394,14 @@
 	.rs-empty,
 	.rs-note {
 		padding: 6px 10px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.rs-note {
 		padding: 2px 8px 4px;
 		font-size: 10px;
 	}
 	.rs-bad {
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 	.rs-find {
 		flex-shrink: 0;
@@ -414,16 +413,16 @@
 		margin: 0 6px 4px;
 		padding: 0 6px;
 		border-radius: 4px;
-		color: var(--muted, #9ca3af);
-		background: var(--field, #1f2937);
-		border: 1px solid var(--border, #374151);
+		color: var(--text-muted);
+		background: var(--surface-inset);
+		border: 1px solid var(--border);
 	}
 	.rs-search input {
 		flex: 1;
 		min-width: 0;
 		padding: 2px 0;
 		font-size: 11px;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 		background: transparent;
 		border: none;
 		outline: none;
@@ -441,13 +440,13 @@
 		width: 24px;
 		height: 22px;
 		border-radius: 4px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.rs-toggle:hover {
-		background: var(--hover, rgb(55 65 81 / 0.5));
+		background: var(--surface-hover);
 	}
 	.rs-toggle[aria-pressed='true'] {
-		color: var(--on-accent, #fff);
-		background: var(--accent-fill, #2563eb);
+		color: var(--on-accent);
+		background: var(--accent-fill);
 	}
 </style>

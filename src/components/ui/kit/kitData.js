@@ -3,6 +3,7 @@
 // primitive through the derivation in styles/tokens.css — and scene colours a swatch row
 // shows. Kept out of KitPage.svelte so that file stays token-clean (check:tokens CLEAN).
 
+/* tokens-ok-begin: the /kit page's demo data — a sample user theme file and scene swatch colours */
 /** a .theme.json as users wrote them before 38: legacy keys only, no redesign tokens */
 export const SAMPLE_CUSTOM_THEME = {
 	name: 'Kit sample (legacy keys only)',
@@ -28,3 +29,4 @@ export const SAMPLE_CUSTOM_THEME = {
 
 /** scene colours (user data, not chrome) for the PropRow swatch demo */
 export const SKY_GROUND = ['#ffffff', '#4a4f59'];
+/* tokens-ok-end */

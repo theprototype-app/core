@@ -96,6 +96,7 @@
 				depthTest={false}
 			/>
 		</T.Mesh>
+		<!-- tokens-ok-begin: three.js spark material + troika name label in the 3D view (white on black outline reads in every theme) -->
 		<!-- impact spark -->
 		<T.Mesh position.y={0.12} oncreate={track(ping.id, 'spark')}>
 			<T.OctahedronGeometry args={[1, 0]} />
@@ -110,5 +111,6 @@
 			position={[0, 2.2, 0]}
 			text={ping.name}
 		/>
+		<!-- tokens-ok-end -->
 	</T.Group>
 {/each}

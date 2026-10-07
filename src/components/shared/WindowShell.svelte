@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte'
+	import { minimalScroll } from '$lib/ui/minimalScroll.js'
 
 	// 197: reusable window CHROME. A MAIN area flanked by a collapsible PRIMARY
 	// sidebar and a SECONDARY panel that can show one of several MODES (e.g.
@@ -191,7 +192,7 @@
 <div class="ws-root flex h-full w-full overflow-hidden" bind:clientWidth={rootW}>
 	<!-- PRIMARY panel -->
 	{#if primaryOpen && !hidePrimary}
-		<div class="ws-panel flex h-full shrink-0 flex-col overflow-y-auto" style="order: {primaryPanelOrder}; width: {primaryWidth}px">
+		<div class="ws-panel flex h-full shrink-0 flex-col overflow-y-auto" use:minimalScroll style="order: {primaryPanelOrder}; width: {primaryWidth}px">
 			{@render primary?.()}
 		</div>
 	{/if}
@@ -259,7 +260,7 @@
 	<!-- SECONDARY panel -->
 	{#if secondaryOpen}
 		<div
-			class="ws-panel ws-panel-secondary flex h-full shrink-0 flex-col overflow-y-auto"
+			class="ws-panel ws-panel-secondary tp-noscrollbar flex h-full shrink-0 flex-col overflow-y-auto"
 			style="order: {secondaryPanelOrder}; width: {secondaryEff}px"
 		>
 			<div class="ws-panel-head flex shrink-0 items-center gap-1 px-2 py-1">
@@ -267,7 +268,7 @@
 				<button class="ws-mini" title="Switch sidebar side" onclick={switchSide} data-ws-switch-side>⇄</button>
 				<button class="ws-mini" title="Close" onclick={hideSecondary}>✕</button>
 			</div>
-			<div class="min-h-0 flex-1 overflow-y-auto">{@render secondary?.(secondaryMode)}</div>
+			<div class="min-h-0 flex-1 overflow-y-auto" use:minimalScroll>{@render secondary?.(secondaryMode)}</div>
 		</div>
 	{/if}
 </div>
@@ -275,12 +276,12 @@
 <style>
 	.ws-panel {
 		width: 14rem;
-		/* 36 U1: the theme's surface + ink (dark keeps its literals — it defines no tokens). The
-		   panel was gray-800 in every theme while the remapped text utilities inside it turned
-		   dark on the light theme: the Explorer's root rows read 1:1 */
-		background: var(--ws-panel-bg, var(--surface-2, rgb(31 41 55)));
-		color: var(--ws-panel-fg, var(--text, rgb(229 231 235)));
-		border-inline: 1px solid rgb(255 255 255 / 0.06);
+		/* 36 U1: the theme's surface + ink. The panel was gray-800 in every theme while the
+		   remapped text utilities inside it turned dark on the light theme: the Explorer's
+		   root rows read 1:1 */
+		background: var(--ws-panel-bg, var(--surface-2));
+		color: var(--ws-panel-fg, var(--text));
+		border-inline: 1px solid var(--border);
 	}
 	.ws-edge {
 		position: relative;
@@ -294,21 +295,21 @@
 		align-items: center;
 		justify-content: center;
 		font-size: 0.75rem;
-		color: rgb(226 232 240);
-		background: rgb(55 65 81);
+		color: var(--text-2);
+		background: var(--surface-active);
 		cursor: pointer;
 		z-index: 20;
 	}
 	.ws-edge-btn:hover {
-		background: rgb(75 85 99);
+		background: var(--border-strong);
 	}
 	.ws-resize {
 		flex: 1;
 		cursor: ew-resize;
-		border-inline: 1px solid rgb(255 255 255 / 0.06);
+		border-inline: 1px solid var(--border);
 	}
 	.ws-resize:hover {
-		background: rgb(255 255 255 / 0.08);
+		background: var(--surface-hover);
 	}
 	.ws-tabs {
 		display: flex;
@@ -324,19 +325,19 @@
 		align-items: center;
 		justify-content: center;
 		font-size: 0.8rem;
-		color: rgb(203 213 225);
-		background: rgb(55 65 81);
+		color: var(--text-2);
+		background: var(--surface-active);
 		cursor: pointer;
 	}
 	.ws-tab-btn:first-child {
 		border-radius: 0.25rem 0 0 0;
 	}
 	.ws-tab-btn:hover {
-		background: rgb(75 85 99);
+		background: var(--border-strong);
 	}
 	.ws-tab-active {
-		background: rgb(37 99 235);
-		color: white;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.ws-mini {
 		display: inline-flex;
@@ -346,9 +347,9 @@
 		justify-content: center;
 		border-radius: 0.25rem;
 		font-size: 0.75rem;
-		color: var(--text-2, rgb(203 213 225));
+		color: var(--text-2);
 	}
 	.ws-mini:hover {
-		background: rgb(255 255 255 / 0.1);
+		background: var(--surface-hover);
 	}
 </style>

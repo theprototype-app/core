@@ -35,11 +35,11 @@
 </script>
 
 {#snippet inner()}
-	{#if icon}<Icon name={icon} size={iconSize} strokeWidth={1.75} />{/if}
+	{#if icon}<Icon name={icon} size={iconSize} />{/if}
 	{#if !iconOnly}
 		{#if children}{@render children()}{:else}{text}{/if}
 	{/if}
-	{#if iconRight}<Icon name={iconRight} size={16} strokeWidth={1.75} />{/if}
+	{#if iconRight}<Icon name={iconRight} size={16} />{/if}
 	{#if count !== undefined && count !== null && count !== '' && count !== 0}<span class="btn-count" aria-hidden="true">{count}</span>{:else if dot}<span class="btn-dot" aria-hidden="true"></span>{/if}
 {/snippet}
 

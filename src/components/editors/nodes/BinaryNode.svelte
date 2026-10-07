@@ -52,11 +52,11 @@
 			{/if}
 		{:else}
 			<label class="flex items-center gap-1">
-				<span class="w-3 text-gray-400">a</span>
+				<span class="w-3 text-text-muted">a</span>
 				<DragRow nodrag step={0.01} decimals={2} value={data.a ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { a: v })} />
 			</label>
 			<label class="flex items-center gap-1">
-				<span class="w-3 text-gray-400">b</span>
+				<span class="w-3 text-text-muted">b</span>
 				<DragRow nodrag step={0.01} decimals={2} value={data.b ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { b: v })} />
 			</label>
 		{/if}

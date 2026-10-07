@@ -46,6 +46,7 @@
 	// and keyboard. Hover-intent lives here: 120ms to open, 150ms to close.
 	import { tick } from 'svelte';
 	import Icon from './ui/Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	export let items: any[] = [];
 	export let onrun: (item: any) => void;
 	/** this level's submenu chain from the root ([] at the top level) */
@@ -107,15 +108,36 @@
 			clearTimeout(closeTimer);
 			if (openChild === item.label) return; // already open — just cancel any close
 			openTimer = setTimeout(() => onopen([...path, item.label]), 120);
-		} else if (openChild) {
+		} else if (openChild && tapOpened !== openChild) {
 			// grazing a leaf on the way INTO an open submenu must not slam it shut
 			clearTimeout(closeTimer);
 			closeTimer = setTimeout(() => onopen(path), 150);
 		}
 	}
+	/** 38 R9: a finger has no hover — a TAP on a submenu row opens it at once (a mouse
+	 *  click keeps the hover-intent behaviour; a click inside the open submenu bubbles
+	 *  here too, so only a press on this row itself counts) */
+	function tapRow(e: MouseEvent, item: any) {
+		const kind = (e as PointerEvent).pointerType;
+		if (kind !== 'touch' && kind !== 'pen') return;
+		if ((e.target as HTMLElement)?.closest('.ctx-scroll') !== (e.currentTarget as HTMLElement).closest('.ctx-scroll')) return;
+		clearTimeout(openTimer);
+		clearTimeout(closeTimer);
+		tapOpened = item.label;
+		if (openChild !== item.label) onopen([...path, item.label]);
+	}
+	/** a submenu a finger opened stays open until a tap elsewhere or Back: the
+	 *  compatibility mouse events a tap leaves behind must not hover it shut */
+	let tapOpened: string | null = null;
+	// only openChild is a dependency here: the pin is forgotten when the open submenu
+	// CHANGES, never in the instant between the tap and the open it asked for
+	const childChanged = (child: string | null) => {
+		if (child !== tapOpened) tapOpened = null;
+	};
+	$: childChanged(openChild);
 	function leaveRow() {
 		clearTimeout(openTimer);
-		if (!openChild) return;
+		if (!openChild || tapOpened === openChild) return;
 		clearTimeout(closeTimer);
 		closeTimer = setTimeout(() => onopen(path), 150);
 	}
@@ -173,7 +195,7 @@
 				{/if}
 			</div>
 			{#if item.header.locked}
-				<div class="ctx-locked"><Icon name="lock" size={11} /> locked by {item.header.locked}</div>
+				<div class="ctx-locked"><Icon name="lock" size={16} /> locked by {item.header.locked}</div>
 			{/if}
 		</div>
 	{:else if item.section}
@@ -185,6 +207,9 @@
 			<div class="ctx-divider" role="presentation"></div>
 		{/if}
 	{:else if item.children}
+		<!-- the click is the TOUCH open (tapRow); the keyboard opens submenus through
+		     ContextMenu's arrow/Enter navigation -->
+		<!-- svelte-ignore a11y_interactive_supports_focus, a11y_click_events_have_key_events -->
 		<div
 			class="relative {itemClass} ctx-row"
 			class:ctx-active={atNav && indexOf.get(item) === highlight}
@@ -193,10 +218,11 @@
 			role="menuitem"
 			on:mouseenter={() => hoverRow(item, indexOf.get(item) ?? -1)}
 			on:mouseleave={leaveRow}
+			on:click={(e) => tapRow(e, item)}
 		>
 			<span class="flex items-center gap-2">
 				{#if hasIcons}
-					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={15} />{/if}</span>
+					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={16} />{/if}</span>
 				{/if}
 				<span class="flex-1">{item.label}</span>
 				{#if item.hint}
@@ -210,10 +236,17 @@
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					use:placeSubmenu
+					use:minimalScroll
 					on:mouseenter={() => clearTimeout(closeTimer)}
 					class="ctx-scroll tp-ui tp-menu fixed min-w-36 overflow-y-auto overflow-x-hidden"
 					style="z-index: calc(var(--z-menu) + 2);"
 				>
+					<!-- 38 R9: on the phone shell a submenu is a sheet laid OVER its parent
+					     (drill in place), so it needs a way back; hidden everywhere else
+					     (phone.css). Not a menuitem: keyboard nav and the suites skip it. -->
+					<button type="button" class="ctx-back" on:click|stopPropagation={() => onopen(path)}>
+						<Icon name="chevron-left" size={16} /><span>{item.label}</span>
+					</button>
 					<svelte:self
 						items={item.children}
 						{onrun}
@@ -242,7 +275,7 @@
 		>
 			<span class="flex items-center gap-2">
 				{#if hasIcons}
-					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={15} />{/if}</span>
+					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={16} />{/if}</span>
 				{/if}
 				<span class="flex-1">{item.label}</span>
 				{#if item.hint}
@@ -259,7 +292,7 @@
 								disabled={act.disabled}
 								on:click|stopPropagation={(e) => runRowAction(act, e.currentTarget)}
 							>
-								<Icon name={act.icon} size={13} />
+								<Icon name={act.icon} size={16} />
 							</button>
 						{/each}
 					</span>
@@ -298,6 +331,10 @@
 	.ctx-danger,
 	.ctx-danger .ctx-ico {
 		color: var(--warn-text);
+	}
+	/* 38 R9: the submenu Back row exists for the phone sheet only (phone.css shows it) */
+	.ctx-back {
+		display: none;
 	}
 	/* ONE highlight for mouse and keyboard — they can never disagree (16-P1) */
 	.ctx-row.ctx-active,

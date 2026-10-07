@@ -77,7 +77,7 @@
 		{#each spec?.inputs ?? [] as key (key)}
 			<div class="relative -mx-3 flex h-5 items-center px-3">
 				<Socket kind="target" nodeType={data.type} position={Position.Left} id={key} style="top: 50%;" />
-				<span class="max-w-full truncate text-[10px] text-gray-300" title={key}>
+				<span class="max-w-full truncate text-[10px] text-text-2" title={key}>
 					{spec?.inputLabels?.[key] ?? key}
 				</span>
 			</div>
@@ -97,12 +97,12 @@
 					</span>
 					{#if param.kind === 'range' && wiredSource(param.key)}
 						<!-- wired: the incoming value drives this param — show it live -->
-						<span class="wired-value rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300" title="Driven by the wired input">
+						<span class="wired-value rounded-sm bg-surface-inset px-1.5 py-0.5 font-mono text-[11px] text-accent-text" title="Driven by the wired input">
 							◈ {fmt($flowValues[wiredSource(param.key)])}
 						</span>
 					{:else if param.kind === 'range'}
 						<input
-							class="nodrag nopan accent-[#ff4000]"
+							class="nodrag nopan accent-accent"
 							type="range"
 							min={param.min}
 							max={param.max}
@@ -123,7 +123,7 @@
 						<!-- A1: free text. `change` (commit/blur), NOT `input` — setNodeData
 						     replicates the whole node, so per-keystroke = one message each. -->
 						<input
-							class="nodrag nopan w-full rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px]"
+							class="nodrag nopan w-full rounded-sm bg-surface-inset px-1.5 py-0.5 font-mono text-[11px]"
 							type="text"
 							placeholder={param.placeholder ?? ''}
 							maxlength={param.maxLength ?? null}
@@ -158,6 +158,6 @@
 		margin-top: 2px;
 		font-size: 9px;
 		line-height: 1.25;
-		color: #9ca3af;
+		color: var(--text-muted);
 	}
 </style>

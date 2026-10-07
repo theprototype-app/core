@@ -142,7 +142,7 @@ h.run(async () => {
 			bg: getComputedStyle(el).backgroundColor
 		};
 	});
-	h.check(armed.cls.includes('bg-primary'), 'the armed tool carries the bg-primary contract class');
+	h.check(armed.cls.includes('bg-accent-fill'), 'the armed tool carries the bg-accent-fill contract class');
 	h.check(
 		armed.bg !== restBg && armed.bg !== 'rgba(0, 0, 0, 0)',
 		'...and is VISIBLY filled (computed ' + restBg + ' -> ' + armed.bg + ')'
@@ -231,7 +231,7 @@ h.run(async () => {
 			fixed: getComputedStyle(root).position === 'fixed',
 			text: root.innerText,
 			square: Math.round(r.width) === 36 && Math.round(r.height) === 36,
-			armed: btn.getAttribute('class').includes('bg-primary'),
+			armed: btn.getAttribute('class').includes('bg-accent-fill'),
 			headerHandle: !!root.querySelector('.toolbox-header.move-handle')
 		};
 	});

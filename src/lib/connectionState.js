@@ -43,13 +43,26 @@ export function dropPeerJoined(peerId) {
  * A STORE rather than a toast per attempt: an unbounded retry toasting each time is
  * spam, while a chip is a state you can look at. peerHandler already imports this
  * leaf, so surfacing it costs no new module edge.
- * @type {import('svelte/store').Writable<{retrying: boolean, attempt: number}>}
+ * 38 R8 (NOTES-38 #16): `since` = when this outage began (Date.now() of the first attempt),
+ * so the pill can say "Reconnecting · 2 min"; the attempt count moves to Connect ▸ Info.
+ * @type {import('svelte/store').Writable<{retrying: boolean, attempt: number, since?: number}>}
  */
 export const signalingRetry = writable({ retrying: false, attempt: 0 });
 
 /** @param {number} attempt */
 export function noteSignalingRetry(attempt) {
-	signalingRetry.set({ retrying: true, attempt });
+	const prev = get(signalingRetry);
+	signalingRetry.set({ retrying: true, attempt, since: prev.retrying && prev.since ? prev.since : Date.now() });
+}
+
+/** "12 s", "2 min", "1 h 5 min" — how long an outage has lasted (38 R8, NOTES-38 #16)
+ *  @param {number} ms */
+export function formatElapsed(ms) {
+	const s = Math.max(0, Math.floor(ms / 1000));
+	if (s < 60) return s + ' s';
+	const m = Math.floor(s / 60);
+	if (m < 60) return m + ' min';
+	return Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '');
 }
 
 /** The link is back (or we gave the peer up) — clear the chip. */

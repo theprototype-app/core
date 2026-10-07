@@ -120,10 +120,10 @@
 	}
 	.stt-ok {
 		font-size: var(--fs-desc);
-		color: var(--ink-good, #4ade80);
+		color: var(--ink-good);
 	}
 	.stt-bad {
 		font-size: var(--fs-desc);
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 </style>

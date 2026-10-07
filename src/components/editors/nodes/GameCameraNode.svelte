@@ -145,15 +145,15 @@
 	}
 	.gc-warn {
 		font-size: 10px;
-		color: #fbbf24;
+		color: var(--ink-warn);
 	}
 	.gc-state {
 		margin-top: 2px;
 		border-radius: 2px;
-		background: rgb(17 24 39 / 0.7);
+		background: var(--surface-inset);
 		padding: 1px 5px;
 		font-family: ui-monospace, monospace;
 		font-size: 10px;
-		color: #6ee7b7;
+		color: var(--ink-good);
 	}
 </style>

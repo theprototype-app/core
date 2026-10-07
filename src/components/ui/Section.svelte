@@ -136,7 +136,7 @@
 	<section class="tp-ui sec-panel" class:hidden={filtering && !match} bind:this={root}>
 		{#if collapsible && !filtering}
 			<button type="button" class="sec-panel-head" aria-expanded={showContent} onclick={toggle}>
-				<span class="sec-chev" class:sec-chev-open={showContent} aria-hidden="true"><Icon name="chevron-right" size={16} strokeWidth={1.75} /></span>
+				<span class="sec-chev" class:sec-chev-open={showContent} aria-hidden="true"><Icon name="chevron-right" size={16} /></span>
 				<span class="sec-title ui-section-label">{label}</span>
 				{#if badge}<Badge tone="scope" text={badge} />{/if}
 			</button>
@@ -153,14 +153,14 @@
 		{/if}
 	</section>
 {:else}
-<div class="border-b border-gray-700/40 pb-2" class:hidden={filtering && !match} bind:this={root}>
+<div class="border-b border-border pb-2" class:hidden={filtering && !match} bind:this={root}>
 	{#if collapsible && !filtering}
 		<button
-			class="ui-section-label flex w-full items-center justify-between hover:text-gray-200"
+			class="ui-section-label flex w-full items-center justify-between hover:text-text-2"
 			onclick={toggle}
 		>
 			<span>{label}</span>
-			<span class="text-gray-500">{showContent ? '−' : '+'}</span>
+			<span class="text-text-faint">{showContent ? '−' : '+'}</span>
 		</button>
 	{:else}
 		<p class="ui-section-label">{label}</p>

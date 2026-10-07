@@ -189,20 +189,20 @@
 		<button id="flow-code-format-json" class="tp-seg-btn" aria-pressed={format === 'json'} title="The graph as JSON (unapplied edits are dropped)" onclick={() => setFormat('json')}>JSON</button>
 	</span>
 	<button class="ui-button-quiet" title="Reload the text from the graph" onclick={() => (text = snapshot())}>↻ Reload</button>
-	<button class="ui-button-quiet text-primary-400" title="Apply the text to the graph (replaces it)" onclick={apply}>Apply</button>
+	<button class="ui-button-quiet text-accent-text" title="Apply the text to the graph (replaces it)" onclick={apply}>Apply</button>
 {/snippet}
 
 {#snippet body()}
 	<!-- when tab-grouped the strip covers the header, so Apply/Reload move into a
 	     content row; docked/floating keep them in the header instead (below) -->
 	{#if myGroup}
-		<div class="flex shrink-0 items-center gap-1 border-b border-gray-700/60 px-2 py-1">
+		<div class="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1">
 			<span class="flex-1"></span>
 			{@render editorActions()}
 		</div>
 	{/if}
 	{#if error}
-		<div class="shrink-0 bg-red-900/40 px-2 py-1 text-[11px] text-red-300">{error}</div>
+		<div class="shrink-0 bg-ink-bad/15 px-2 py-1 text-[11px] text-ink-bad">{error}</div>
 	{/if}
 	<div class="min-h-0 flex-1 p-1">
 		<CodeEditor value={text} onChange={(v) => (text = v)} />
@@ -220,7 +220,7 @@
 			aria-label="Flow Code (docked)"
 		>
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
+				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -232,8 +232,8 @@
 				<span class="tp-dock-title">Flow Code</span>
 				<span class="flex-1"></span>
 				{@render editorActions()}
-				<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock into a floating window" onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button>
-				<button class="tp-dock-btn" title="Close" aria-label="Close Flow Code" onclick={() => flowCodeClose.set(true)}><Icon name="x" size={14} /></button>
+				<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock into a floating window" onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button>
+				<button class="tp-dock-btn" title="Close" aria-label="Close Flow Code" onclick={() => flowCodeClose.set(true)}><Icon name="x" size={16} /></button>
 			</div>
 			<div class="flex min-h-0 flex-1 flex-col">
 				{@render body()}
@@ -271,12 +271,12 @@
 			>
 				{#snippet actions()}
 					{#if !myGroup}{@render editorActions()}{/if}
-					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
 				{/snippet}
 			</WindowChrome>
 			{@render body()}
 			<div
-				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-text-faint/40"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startWinResize}

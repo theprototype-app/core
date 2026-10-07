@@ -962,6 +962,16 @@
 			"when": false
 		},
 		{
+			"id": "help.palette",
+			"keys": "Ctrl+K",
+			"defaultKeys": "Ctrl+K",
+			"group": "Help",
+			"scope": "global",
+			"label": "Command palette — search every command and setting",
+			"kind": "action",
+			"when": false
+		},
+		{
 			"id": "help.shortcuts",
 			"keys": "Ctrl+/",
 			"defaultKeys": "Ctrl+/",

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import Icon from '../ui/Icon.svelte';
-	import { Save, SquarePen } from '@lucide/svelte';
 	// Floating professional code editor (107): Explorer text files and the
 	// custom-node definition editor share this window. Ctrl+S saves; the title
 	// carries a dirty dot. Esc / ✕ close, prompting to save unsaved edits via an
@@ -65,15 +64,15 @@
 		onkeydown={onKeydown}
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span><SquarePen size={16} class="mr-1" aria-hidden="true" />{$textEditorTarget.title}{dirty ? ' ●' : ''}</span>
+			<span><Icon name="square-pen" size={16} class="mr-1" aria-hidden="true" />{$textEditorTarget.title}{dirty ? ' ●' : ''}</span>
 			<span class="flex-1"></span>
 			<button
 				id="text-editor-save"
 				class="ui-button-quiet {dirty ? 'tp-dirty' : ''}"
 				title="Save (Ctrl+S)"
-				onclick={save}><Save size={16} class="mr-1" aria-hidden="true" />Save</button
+				onclick={save}><Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save</button
 			>
-			<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={requestClose}><Icon name="x" size={14} /></button>
+			<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={requestClose}><Icon name="x" size={16} /></button>
 		</div>
 		<div class="min-h-0 flex-1 p-1.5">
 			<CodeEditor
@@ -87,22 +86,22 @@
 
 		<!-- 219: in-window unsaved-changes dialog (was a toast) -->
 		{#if showSavePrompt}
-			<div class="absolute inset-0 z-10 flex items-center justify-center bg-black/50">
+			<div class="absolute inset-0 z-10 flex items-center justify-center bg-scrim">
 				<div class="ui-panel w-72 rounded-lg p-4 text-sm shadow-2xl">
-					<p class="mb-3 font-semibold text-gray-100">Save changes to {$textEditorTarget.title}?</p>
-					<p class="mb-4 text-xs text-gray-400">Your edits will be lost if you don't save them.</p>
+					<p class="mb-3 font-semibold text-text">Save changes to {$textEditorTarget.title}?</p>
+					<p class="mb-4 text-xs text-text-muted">Your edits will be lost if you don't save them.</p>
 					<div class="flex justify-end gap-2">
 						<button
 							id="text-editor-cancel"
 							class="ui-button-quiet"
 							onclick={() => (showSavePrompt = false)}>Cancel</button
 						>
-						<button id="text-editor-discard" class="ui-button-quiet text-red-300" onclick={close}
+						<button id="text-editor-discard" class="ui-button-quiet text-warn-text" onclick={close}
 							>Don't save</button
 						>
 						<button
 							id="text-editor-savenclose"
-							class="ui-button-quiet bg-primary-700 text-white"
+							class="ui-button-quiet bg-accent-fill text-on-accent"
 							onclick={() => {
 								save();
 								close();

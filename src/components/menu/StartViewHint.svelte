@@ -43,16 +43,16 @@
 		gap: 10px;
 		padding: 5px 6px 5px 12px;
 		border-radius: 999px;
-		background: var(--surface, #1f2937);
-		border: 1px solid var(--border, rgb(255 255 255 / 0.12));
-		color: var(--text, #e5e7eb);
+		background: var(--surface-1);
+		border: 1px solid var(--border);
+		color: var(--text);
 		font-size: 12px;
 		line-height: 1.3;
-		box-shadow: 0 6px 18px rgb(0 0 0 / 0.28);
+		box-shadow: var(--shadow-window);
 		animation: sv-in 0.16s ease-out;
 	}
 	.sv-text {
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.sv-btn {
 		font-size: 11.5px;
@@ -60,8 +60,8 @@
 		padding: 3px 11px;
 		border-radius: 999px;
 		border: none;
-		background: var(--accent-fill, #2563eb);
-		color: var(--on-accent, #fff);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 		cursor: pointer;
 	}
 	.sv-back {

@@ -27,7 +27,7 @@
 	let values = $state<Record<string, string>>({})
 	let title = $state('Properties')
 	let visibleState = $state(true)
-	let liveHex = $state('#ffffff')
+	let liveHex = $state('#ffffff') // tokens-ok: the swatch's placeholder before the selection's material colour is read (three.js data)
 	let refreshAt = 0
 
 	$effect(() => {
@@ -111,13 +111,16 @@
 		applyWindowPose(group, 'props', pose)
 	})
 
+	// tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var())
 	function buttonColor(action: string) {
 		return $vrHovered === 'props:' + action ? '#ff4000' : '#39404d'
 	}
 	function rowBg(index: number) {
 		return $vrPropsCursor === index ? '#5a3a12' : '#1d232d'
 	}
+	// tokens-ok-end
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if $vrPropsPanelOpen}
 	<T.Group bind:ref={group} name="vr-props-panel">
@@ -245,3 +248,4 @@
 		/>
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

@@ -27,14 +27,14 @@
 	<button type="button" class="tp-ui toast-more" onclick={onmore} {...rest}>+{more} more in notifications</button>
 {:else}
 	<div class="tp-ui toast toast-{tone}" {...rest}>
-		<span class="toast-icon" aria-hidden="true"><Icon name={icon} size={16} strokeWidth={1.75} /></span>
+		<span class="toast-icon" aria-hidden="true"><Icon name={icon} size={16} /></span>
 		<span class="toast-msg">{message}</span>
 		{#if repeat > 1}<span class="toast-repeat" title={`Shown ${repeat} times`}>×{repeat}</span>{/if}
 		{#if actionLabel && onaction}
 			<button type="button" class="toast-action" onclick={onaction}>{actionLabel}</button>
 		{/if}
 		{#if ondismiss}
-			<button type="button" class="toast-x" aria-label="Dismiss" onclick={ondismiss}><Icon name="x" size={14} strokeWidth={1.75} /></button>
+			<button type="button" class="toast-x" aria-label="Dismiss" onclick={ondismiss}><Icon name="x" size={16} /></button>
 		{/if}
 	</div>
 {/if}

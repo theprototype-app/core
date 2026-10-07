@@ -16,7 +16,7 @@
 </script>
 
 <div class="tp-group-io" data-io={inbound ? 'in' : 'out'}>
-	<NodeWrapper type="group" label={inbound ? 'Group inputs' : 'Group outputs'} accent="var(--muted, #9ca3af)">
+	<NodeWrapper type="group" label={inbound ? 'Group inputs' : 'Group outputs'} accent="var(--text-muted)">
 		<div class="flex w-full flex-col gap-0.5">
 			{#each entries as entry (entry.key)}
 				<div class="relative -mx-3 flex h-5 items-center px-3 {inbound ? 'justify-end' : 'justify-start'}">
@@ -28,7 +28,7 @@
 					{/if}
 				</div>
 			{/each}
-			<div class="relative -mx-3 flex h-5 items-center px-3 text-gray-500 {inbound ? 'justify-end' : 'justify-start'}" title="Drag an inner socket here to expose it">
+			<div class="relative -mx-3 flex h-5 items-center px-3 text-text-faint {inbound ? 'justify-end' : 'justify-start'}" title="Drag an inner socket here to expose it">
 				<span>＋ new</span>
 				{#if inbound}
 					<Socket kind="source" nodeType="group" id="i|+" position={Position.Right} forceType="any" style="top: 50%;" />

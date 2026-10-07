@@ -807,20 +807,19 @@ h.run(async () => {
 			(reclaimPicked || {}).cursor +
 			')'
 	);
-	// THE COUNTERFACTUAL, measured in-page: the CLASS STRING still says disabled on both
-	// buttons in every state. That is the bug these three checks stand on, and it is also
-	// why none of them may assert a class.
+	// 38 R7: the buttons are the kit Button now, whose class follows `disabled` (flowbite froze
+	// its class string at mount — the bug the three checks above were written around). The
+	// computed checks above stay the contract; this one pins that no frozen class is left.
 	const staleClasses = await page.evaluate(() => {
 		const cls = (id) => document.querySelector(id)?.className ?? '';
 		return {
-			reclaim: /opacity-50/.test(cls('#storage-reclaim')) && /cursor-not-allowed/.test(cls('#storage-reclaim')),
-			rescan: /opacity-50/.test(cls('#storage-rescan')) && /cursor-not-allowed/.test(cls('#storage-rescan'))
+			reclaim: /opacity-50|cursor-not-allowed/.test(cls('#storage-reclaim')),
+			rescan: /opacity-50|cursor-not-allowed/.test(cls('#storage-rescan'))
 		};
 	});
 	h.check(
-		staleClasses.reclaim && staleClasses.rescan,
-		'...while the CLASS STRING on both still says disabled - flowbite freezes it at mount, ' +
-			'so a class assertion here would read the feature as broken'
+		!staleClasses.reclaim && !staleClasses.rescan,
+		'...and no frozen flowbite disabled class is left on either button (38 R7: the kit Button)'
 	);
 	await page.locator('#storage-select-all').click();
 	await page.waitForTimeout(350);

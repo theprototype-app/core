@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
-	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, HardDrive, House, LayoutGrid, List, LoaderCircle, PackageOpen, Play, RefreshCw, Save, Share2, X } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
@@ -356,6 +355,7 @@
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { fly } from 'svelte/transition';
 	import { safeStorage } from '$lib/safeStorage';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	const clampH = (h: number) =>
 		Math.min(Math.max(h || 300, 200), Math.round(window.innerHeight * 0.8));
@@ -728,7 +728,7 @@
 	/** a thumbnail cannot be recoloured, so it is desaturated and faded instead */
 	const MUTED_IMG = 'opacity-50 saturate-50';
 	/** an icon is a glyph in currentColor, so it just goes quiet */
-	const MUTED_ICON = 'text-gray-600';
+	const MUTED_ICON = 'text-text-faint';
 
 	/**
 	 * R22 round 2 (user): the PICTURE for a card. A file we hold renders its own
@@ -2217,10 +2217,10 @@
 		// on it, or the highlight and the set disagree about what Delete would take.
 		const tint =
 			isAnchor && (ids.size === 0 || picked)
-				? 'border-primary-600 bg-primary-600/10'
+				? 'border-accent bg-accent-soft'
 				: picked
-					? 'border-sky-400 bg-sky-400/20'
-					: 'border-transparent hover:border-gray-600 hover:bg-gray-700/60';
+					? 'border-accent/50 bg-accent/15'
+					: 'border-transparent hover:border-border hover:bg-surface-hover';
 		// `explorer-selected` marks MEMBERSHIP independently of which of the two tints the
 		// card ended up with, so nothing has to infer the set from a colour
 		return picked ? 'explorer-selected ' + tint : tint;
@@ -6402,7 +6402,7 @@
 {#snippet editRow(depth: number)}
 	<div class="flex flex-col gap-0.5" style="padding-left: {8 + depth * 14}px">
 		<input
-			class="ui-input w-40 py-0.5 {isValidName(editing.value) ? '' : 'border-red-500'}"
+			class="ui-input w-40 py-0.5 {isValidName(editing.value) ? '' : 'border-ink-bad'}"
 			value={editing.value}
 			use:focusSelect
 			oninput={(e) => (editing = { ...editing, value: e.currentTarget.value })}
@@ -6410,7 +6410,7 @@
 			onblur={blurCommit}
 		/>
 		{#if !isValidName(editing.value)}
-			<span class="text-[10px] text-red-400">names can't contain * \ /</span>
+			<span class="text-[10px] text-ink-bad">names can't contain * \ /</span>
 		{/if}
 	</div>
 {/snippet}
@@ -6420,7 +6420,7 @@
 	<!-- `select-text`: the grid is `select-none` (the marquee's text-drag cure), which
 	     would otherwise reach into the one input that lives inside it -->
 	<input
-		class="ui-input w-full select-text py-0 text-center text-[10px] {isValidName(editing.value) ? '' : 'border-red-500'}"
+		class="ui-input w-full select-text py-0 text-center text-[10px] {isValidName(editing.value) ? '' : 'border-ink-bad'}"
 		value={editing.value}
 		use:focusSelect
 		oninput={(e) => (editing = { ...editing, value: e.currentTarget.value })}
@@ -6440,7 +6440,7 @@
 {#snippet filterChip()}
 	<button
 		id="explorer-filter"
-		class="ui-button-quiet shrink-0 {filtering ? 'text-primary-400' : ''}"
+		class="ui-button-quiet shrink-0 {filtering ? 'text-accent-text' : ''}"
 		title={filtering
 			? 'Filtering — click to change or clear'
 			: 'Filter by type, and by who can see it'}
@@ -6481,7 +6481,7 @@
 			aria-pressed={$explorerViewMode === 'thumbnails'}
 			title="Thumbnails"
 			aria-label="Thumbnails"
-			onclick={() => explorerViewMode.set('thumbnails')}><LayoutGrid size={14} aria-hidden="true" /></button
+			onclick={() => explorerViewMode.set('thumbnails')}><Icon name="layout-grid" size={16} aria-hidden="true" /></button
 		>
 		<button
 			id="explorer-view-list"
@@ -6489,7 +6489,7 @@
 			aria-pressed={$explorerViewMode === 'list'}
 			title="List — sortable columns; right-click the header to choose them"
 			aria-label="List"
-			onclick={() => explorerViewMode.set('list')}><List size={14} aria-hidden="true" /></button
+			onclick={() => explorerViewMode.set('list')}><Icon name="list" size={16} aria-hidden="true" /></button
 		>
 	</div>
 {/snippet}
@@ -6588,7 +6588,7 @@
 					<span class="flex min-w-0 items-center gap-1.5">
 						{#if isFolder}
 							<span class="shrink-0 {mutedFolder(folder) ? MUTED_ICON : 'ico-folder'}"
-								><Folder size={14} aria-hidden="true" /></span
+								><Icon name="folder" size={16} aria-hidden="true" /></span
 							>
 						{:else if thumbFor(item)}
 							<img
@@ -6598,8 +6598,8 @@
 							/>
 						{:else}
 							<span
-								class="shrink-0 {mutedItem(item) ? MUTED_ICON : (KIND_COLORS[item.kind] ?? 'text-gray-400')}"
-								><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={14} /></span
+								class="shrink-0 {mutedItem(item) ? MUTED_ICON : (KIND_COLORS[item.kind] ?? 'text-text-muted')}"
+								><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={16} /></span
 							>
 						{/if}
 						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-scene' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === id)}
@@ -6609,8 +6609,8 @@
 								class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap {(
 									isFolder ? mutedFolder(folder) : mutedItem(item)
 								)
-									? 'text-gray-500'
-									: 'text-gray-300'}">{isFolder ? folder.name : item.name}</span
+									? 'text-text-faint'
+									: 'text-text-2'}">{isFolder ? folder.name : item.name}</span
 							>
 						{/if}
 						<!-- the same status the card carries in its corners, folded into ONE inline dot:
@@ -6618,44 +6618,44 @@
 						     precedence is the card's own, top to bottom. -->
 						{#if !isFolder && item.behavior}
 							<span
-								class="explorer-animated shrink-0 text-amber-300"
+								class="explorer-animated shrink-0 text-icon-warning"
 								title={behaviorTitle(item.behavior)}
 								data-behavior={item.behavior.type}
-							><Play size={10} aria-hidden="true" /></span>
+							><Icon name="play" size={16} aria-hidden="true" /></span>
 						{/if}
 						{#if !isFolder}
 							{#if item.volumeItem}
 								<span
-									class="ex-dot explorer-mount-dot bg-indigo-400"
+									class="ex-dot explorer-mount-dot bg-icon-image"
 									title={'In the mounted project “' + (item.volumeName ?? '') + '” — not in your library'}
 								></span>
 							{:else if openSceneHash && item.hash === openSceneHash}
-								<span class="ex-dot bg-emerald-400" title="The scene you have open"></span>
+								<span class="ex-dot bg-ink-good" title="The scene you have open"></span>
 							{:else if item.remoteScene}
 								<span
-									class="ex-dot bg-sky-400"
+									class="ex-dot bg-icon-accent"
 									title="In this project, not on this device yet — open it to download it"
 								></span>
 							{:else if item.remoteItem}
 								<span
 									class="ex-dot {$unavailableHashes.has(item.hash)
-										? 'bg-red-400'
+										? 'bg-ink-bad'
 										: $pendingPulls.has(item.hash)
-											? 'animate-pulse bg-amber-400'
-											: 'bg-sky-400'}"
+											? 'animate-pulse bg-ink-warn'
+											: 'bg-icon-accent'}"
 									title={$pendingPulls.has(item.hash) ? 'Downloading from peers…' : shareTitle(item)}
 								></span>
 							{:else if sharingOn && isShared(item)}
 								<span
-									class="ex-dot {shareOf(item) === 'mine' ? 'bg-teal-400' : 'bg-sky-400'}"
+									class="ex-dot {shareOf(item) === 'mine' ? 'bg-icon-audio' : 'bg-icon-accent'}"
 									title={shareTitle(item)}
 								></span>
 							{:else if sharingOn && item.wasShared}
-								<span class="ex-dot border border-gray-500" title={shareTitle(item)}></span>
+								<span class="ex-dot border border-border-strong" title={shareTitle(item)}></span>
 							{/if}
 							{#if item.kind === 'scene' && !item.remoteScene && staleScene($projectManifest, item.hash)}
 								<span
-									class="ex-dot bg-amber-400"
+									class="ex-dot bg-ink-warn"
 									title={'An update of "' +
 										staleScene($projectManifest, item.hash) +
 										'" exists — this file is an older version'}
@@ -6665,7 +6665,7 @@
 								{@const roster = sceneRoster($peerScenes, $currentLevel, $sessionHost, item)}
 								{#if roster.me || roster.peerIds.length}
 									<span
-										class="explorer-here ml-1 shrink-0 rounded-full bg-gray-700 px-1 text-[9px] leading-4 text-gray-200"
+										class="explorer-here ml-1 shrink-0 rounded-full bg-surface-active px-1 text-[9px] leading-4 text-text-2"
 										title={rosterTitle(roster)}
 										data-here={rosterCount(roster)}>{rosterCount(roster)} here</span
 									>
@@ -6673,7 +6673,7 @@
 							{/if}
 						{:else if sharingOn && (folder.share === 'mine' || folder.share === 'peer')}
 							<span
-								class="ex-dot {folder.share === 'mine' ? 'bg-teal-400' : 'bg-sky-400'}"
+								class="ex-dot {folder.share === 'mine' ? 'bg-icon-audio' : 'bg-icon-accent'}"
 								title={folder.share === 'mine'
 									? 'Shared by you — peers see this folder, and anything you add to it'
 									: 'Shared — a peer offered this folder'}
@@ -6681,7 +6681,7 @@
 						{/if}
 					</span>
 				{:else}
-					<span class="overflow-hidden text-ellipsis whitespace-nowrap text-gray-400"
+					<span class="overflow-hidden text-ellipsis whitespace-nowrap text-text-muted"
 						>{cellText(entry, col.key)}</span
 					>
 				{/if}
@@ -6767,15 +6767,15 @@
 		{:else}
 			<button
 				id="explorer-project"
-				class="min-w-0 truncate rounded-sm px-1 py-0.5 font-medium hover:bg-gray-700 {$projectManifest.name
-					? 'text-gray-200'
-					: 'italic text-gray-500'}"
+				class="min-w-0 truncate rounded-sm px-1 py-0.5 font-medium hover:bg-surface-hover {$projectManifest.name
+					? 'text-text-2'
+					: 'italic text-text-faint'}"
 				title={projectLabel + ' — click to rename this project'}
 				onclick={startProjectEdit}>{projectLabel}</button
 			>
 		{/if}
 		{#if $currentLevel?.name}
-			<span class="shrink-0 px-0.5 text-gray-600" aria-hidden="true">▸</span>
+			<span class="shrink-0 px-0.5 text-text-faint" aria-hidden="true">▸</span>
 			{#if sceneEdit !== null}
 				<input
 					id="explorer-scene-input"
@@ -6790,7 +6790,7 @@
 			{:else}
 				<button
 					id="explorer-scene"
-					class="min-w-0 truncate rounded-sm px-1 py-0.5 text-white hover:bg-gray-700"
+					class="min-w-0 truncate rounded-sm px-1 py-0.5 text-text hover:bg-surface-hover"
 					title={'The scene you have open: ' +
 						$currentLevel.name +
 						' — click to find its file, double-click to rename it'}
@@ -6803,7 +6803,7 @@
 					     from right now, and a rename moves it -->
 					<span
 						id="explorer-scene-file"
-						class="min-w-0 shrink truncate text-[10px] text-gray-500"
+						class="min-w-0 shrink truncate text-[10px] text-text-faint"
 						title={'Loaded from ' + openSceneFile + ' — renaming the scene renames its files'}
 						>[{openSceneFile}]</span
 					>
@@ -6823,19 +6823,19 @@
 			-->
 			<button
 				id="explorer-save-scene"
-				class="shrink-0 rounded-sm p-0.5 {$sceneDirty ? 'text-amber-400 hover:bg-gray-700' : 'text-gray-500'}"
+				class="shrink-0 rounded-sm p-0.5 {$sceneDirty ? 'text-ink-warn hover:bg-surface-hover' : 'text-text-faint'}"
 				disabled={!$sceneDirty}
 				title={$sceneDirty
 					? 'Save "' + $currentLevel.name + '" (Ctrl+S)'
 					: 'Nothing to save - this scene matches the version its name points at'}
 				aria-label={$sceneDirty ? 'Save scene' : 'Nothing to save'}
-				onclick={saveOpenScene}><Save size={12} aria-hidden="true" /></button
+				onclick={saveOpenScene}><Icon name="save" size={16} aria-hidden="true" /></button
 			>
 			{#if $sceneDirty}
 				<!-- the same signal the window title's asterisk uses (sceneIdentity.js) -->
 				<span
 					id="explorer-dirty"
-					class="shrink-0 text-[9px] leading-none text-amber-400"
+					class="shrink-0 text-[9px] leading-none text-ink-warn"
 					title="This scene has changes that are not in the version its name points at"
 					aria-label="Unsaved changes">●</span
 				>
@@ -6860,11 +6860,11 @@
 			     search box. What is left is the LOCATION trail — which folder am I in —
 			     which is a different question and keeps its own ⚙ toggle. -->
 			{#if showBreadcrumb}
-				<div id="explorer-crumbs" class="flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-gray-700/60 px-2 py-1 text-[11px] text-gray-300">
+				<div id="explorer-crumbs" class="tp-noscrollbar flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-b border-border px-2 py-1 text-[11px] text-text-2">
 					{#each crumbs as c, i (c.id ?? 'root')}
-						{#if i > 0}<span class="px-0.5 text-gray-600">/</span>{/if}
+						{#if i > 0}<span class="px-0.5 text-text-faint">/</span>{/if}
 						<button
-							class="rounded-sm px-1 py-0.5 hover:bg-gray-700 {i === crumbs.length - 1 ? 'text-white' : ''}"
+							class="rounded-sm px-1 py-0.5 hover:bg-surface-hover {i === crumbs.length - 1 ? 'text-text' : ''}"
 							onclick={() => openFolder(c.id)}>{c.label}</button
 						>
 					{/each}
@@ -6898,7 +6898,7 @@
 									' can be put back)'
 								: 'The deleted files log is switched off in File settings'}
 							onclick={() => explorerBinShowSpent.update((v: boolean) => !v)}
-							><Icon name="history" size={13} aria-hidden="true" /></button
+							><Icon name="history" size={16} aria-hidden="true" /></button
 						>
 					{/if}
 				</div>
@@ -6922,7 +6922,7 @@
 			-->
 			<div
 				id="explorer-mounts"
-				class="flex shrink-0 flex-col gap-0.5 border-b border-gray-700/60 p-1"
+				class="flex shrink-0 flex-col gap-0.5 border-b border-border p-1"
 				bind:clientHeight={mountsH}
 			>
 				<!--
@@ -6951,11 +6951,12 @@
 					id="explorer-mount-list"
 					class="flex min-h-0 flex-col gap-0.5 overflow-y-auto"
 					style="max-height: {mountListMax}px"
+					use:minimalScroll
 				>
 				{#each $mountedVolumes as vol (vol.id)}
 					<div class="flex items-center whitespace-nowrap">
 						<button
-							class="w-4 shrink-0 text-gray-500"
+							class="w-4 shrink-0 text-text-faint"
 							aria-label={expanded.has(volumeKey(vol.id)) ? 'Collapse' : 'Expand'}
 							onclick={() => toggleExpand(volumeKey(vol.id))}
 							>{vol.folders.length ? (expanded.has(volumeKey(vol.id)) ? '▾' : '▸') : ''}</button
@@ -6964,8 +6965,8 @@
 							data-mount={vol.id}
 							class="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left {volScope?.volumeId === vol.id
 								? 'ex-tree-on'
-								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === volumeKey(vol.id)
-								? 'outline-solid outline-2 outline-primary-500'
+								: 'text-text-2 hover:bg-surface-hover'} {dropFolder === volumeKey(vol.id)
+								? 'outline-solid outline-2 outline-accent'
 								: ''}"
 							title={(vol.missing
 								? 'The saved project behind this mount is gone — these rows are what was read before it went'
@@ -6977,11 +6978,11 @@
 							ondrop={(e) => dropInto(e, volumeKey(vol.id))}
 							onclick={() => openFolder(volumeKey(vol.id))}
 						>
-							<HardDrive
+							<Icon name="hard-drive"
 								size={16}
-								class="mr-1.5 w-4 text-center {vol.missing ? 'text-amber-400' : 'text-indigo-300'}"
+								class="mr-1.5 {vol.missing ? 'text-ink-warn' : 'text-icon-image'}"
 								aria-hidden="true"
-							/>{vol.name}{#if vol.dirty}<span class="mount-dirty text-amber-400" title="Unsaved changes"
+							/>{vol.name}{#if vol.dirty}<span class="mount-dirty text-ink-warn" title="Unsaved changes"
 									>&nbsp;•</span
 								>{/if}
 						</button>
@@ -6990,21 +6991,21 @@
 						<button
 							id={'mount-save-' + vol.id}
 							class="shrink-0 rounded px-1 py-1 {vol.dirty
-								? 'text-amber-300 hover:bg-gray-700'
-								: 'cursor-default text-gray-600'}"
+								? 'text-ink-warn hover:bg-surface-hover'
+								: 'cursor-default text-text-faint'}"
 							disabled={!vol.dirty}
 							aria-label={'Save ' + vol.name}
 							title={vol.dirty
 								? 'Write these files back into the saved project'
 								: 'No unsaved changes'}
-							onclick={() => void saveVolume(vol.id)}><Save size={14} aria-hidden="true" /></button
+							onclick={() => void saveVolume(vol.id)}><Icon name="save" size={16} aria-hidden="true" /></button
 						>
 						<button
 							id={'mount-unmount-' + vol.id}
-							class="shrink-0 rounded px-1 py-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+							class="shrink-0 rounded px-1 py-1 text-text-muted hover:bg-surface-hover hover:text-text-2"
 							aria-label={'Unmount ' + vol.name}
 							title="Stop showing this project here — the saved project is not deleted"
-							onclick={() => doUnmount(vol)}><X size={14} aria-hidden="true" /></button
+							onclick={() => doUnmount(vol)}><Icon name="x" size={16} aria-hidden="true" /></button
 						>
 					</div>
 					{#if expanded.has(volumeKey(vol.id))}
@@ -7023,7 +7024,7 @@
 									ondrop={(e) => dropInto(e, row.folder.id)}
 								>
 									<button
-										class="w-4 shrink-0 text-gray-500"
+										class="w-4 shrink-0 text-text-faint"
 										aria-label={row.hasChildren ? 'Expand or collapse' : 'No subfolders'}
 										onclick={() => toggleExpand(row.folder.id)}
 										>{row.hasChildren ? (expanded.has(row.folder.id) ? '▾' : '▸') : ''}</button
@@ -7032,15 +7033,15 @@
 										data-vol-folder={row.folder.id}
 										class="flex-1 truncate rounded px-1.5 py-1 text-left {$activeFolder === row.folder.id
 											? 'ex-tree-on'
-											: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id
-											? 'outline-solid outline-2 outline-primary-500'
+											: 'text-text-2 hover:bg-surface-hover'} {dropFolder === row.folder.id
+											? 'outline-solid outline-2 outline-accent'
 											: ''}"
 										draggable="true"
 										ondragstart={(e) => onFolderDragStart(e, row.folder)}
 										oncontextmenu={(e) => folderMenu(e, row.folder)}
 										onclick={() => openFolder(row.folder.id)}
 									>
-										<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{row
+										<Icon name="folder" size={16} class="ico-folder mr-1.5" aria-hidden="true" />{row
 											.folder.name}
 									</button>
 								</div>
@@ -7063,16 +7064,17 @@
 			<div
 				id="explorer-folder-list"
 				class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-x-auto overflow-y-auto p-1"
+				use:minimalScroll
 			>
 			<button
 				id="explorer-root-row"
 				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === null && !search
 					? 'ex-tree-on'
-					: 'text-gray-300 hover:bg-gray-700'} {dropFolder === 'root' ? 'outline-solid outline-2 outline-primary-500' : ''}"
+					: 'text-text-2 hover:bg-surface-hover'} {dropFolder === 'root' ? 'outline-solid outline-2 outline-accent' : ''}"
 				ondragover={(e) => dragOverInto(e, 'root')}
 				ondragleave={() => (dropFolder = null)}
 				ondrop={(e) => dropInto(e, null)}
-				onclick={() => openFolder(null)}><House size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Library</button
+				onclick={() => openFolder(null)}><Icon name="house" size={16} class="mr-1.5 text-text-muted" aria-hidden="true" />Library</button
 			>
 			{#if editing?.mode === 'create' && !editing.inGrid && editing.parentId === null}
 				{@render editRow(0)}
@@ -7092,7 +7094,7 @@
 						ondrop={(e) => dropInto(e, row.folder.id)}
 					>
 						<button
-							class="w-4 shrink-0 text-gray-500"
+							class="w-4 shrink-0 text-text-faint"
 							onclick={() => toggleExpand(row.folder.id)}
 							title={row.hasChildren ? (expanded.has(row.folder.id) ? 'Collapse' : 'Expand') : ''}
 						>
@@ -7101,7 +7103,7 @@
 						<button
 							class="flex-1 rounded px-1.5 py-1 text-left {$activeFolder === row.folder.id
 								? 'ex-tree-on'
-								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id ? 'outline-solid outline-2 outline-primary-500' : ''}"
+								: 'text-text-2 hover:bg-surface-hover'} {dropFolder === row.folder.id ? 'outline-solid outline-2 outline-accent' : ''}"
 							draggable="true"
 							ondragstart={(e) =>
 								onFolderDragStart(e, row.folder)}
@@ -7109,7 +7111,7 @@
 							onclick={() => openFolder(row.folder.id)}
 							ondblclick={() => toggleExpand(row.folder.id)}
 						>
-							<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{row.folder.name}
+							<Icon name="folder" size={16} class="ico-folder mr-1.5" aria-hidden="true" />{row.folder.name}
 						</button>
 					</div>
 				{/if}
@@ -7119,7 +7121,7 @@
 			{/each}
 			<!-- New folder + the read-only roots are pinned to the bottom together -->
 			</div>
-			<div class="flex shrink-0 flex-col gap-0.5 border-t border-gray-700/60 p-1">
+			<div class="flex shrink-0 flex-col gap-0.5 border-t border-border p-1">
 				<button
 					id="new-folder"
 					class="whitespace-nowrap ex-side-btn"
@@ -7131,9 +7133,9 @@
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					id="explorer-roots-resize"
-					class="my-0.5 h-1.5 shrink-0 cursor-ns-resize border-t border-gray-700/40 {rootsResizing
-						? 'bg-primary-600/60'
-						: 'hover:bg-gray-600/60'}"
+					class="my-0.5 h-1.5 shrink-0 cursor-ns-resize border-t border-border {rootsResizing
+						? 'bg-accent/60'
+						: 'hover:bg-surface-active'}"
 					style="touch-action: none"
 					title="Drag to resize this section (double-click to reset)"
 					onpointerdown={startRootsResize}
@@ -7142,14 +7144,14 @@
 					onpointercancel={endRootsResize}
 					ondblclick={resetRootsH}
 				></div>
-				<div id="explorer-roots" class="flex flex-col gap-0.5 overflow-y-auto" style="max-height: {rootsH}px">
+				<div id="explorer-roots" class="flex flex-col gap-0.5 overflow-y-auto" style="max-height: {rootsH}px" use:minimalScroll>
 					<button
 						id="prefabs-folder"
 						class="whitespace-nowrap rounded px-2 py-1 text-left {dropFolder === 'prefabs'
-							? 'bg-primary-500/20 ring-1 ring-primary-400 text-white'
+							? 'bg-accent/20 ring-1 ring-accent text-text'
 							: $activeFolder === 'prefabs'
 								? 'ex-tree-on'
-								: 'text-gray-300 hover:bg-gray-700'}"
+								: 'text-text-2 hover:bg-surface-hover'}"
 						title="Your prefab library. Drop a 3D object or a scene file here to make one — it keeps its own format."
 						ondragover={(e) => {
 							if (!canAccept(e)) return;
@@ -7159,15 +7161,15 @@
 						}}
 						ondragleave={() => (dropFolder = null)}
 						ondrop={(e) => void dropToPrefabs(e)}
-						onclick={() => openFolder('prefabs')}><Boxes size={16} class="ico-prefab mr-1.5 w-4 text-center" aria-hidden="true" />Prefabs</button
+						onclick={() => openFolder('prefabs')}><Icon name="boxes" size={16} class="ico-prefab mr-1.5" aria-hidden="true" />Prefabs</button
 					>
 					<button
 						id="packs-folder"
 						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'packs'
 							? 'ex-tree-on'
-							: 'text-gray-300 hover:bg-gray-700'}"
+							: 'text-text-2 hover:bg-surface-hover'}"
 						title="Asset packs — click to list them, double-click to expand the tree"
-						onclick={() => openFolder('packs')} ondblclick={togglePacks}><PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Packs {packsExpanded ? '▾' : '▸'}</button
+						onclick={() => openFolder('packs')} ondblclick={togglePacks}><Icon name="package-open" size={16} class="mr-1.5 text-text-muted" aria-hidden="true" />Packs {packsExpanded ? '▾' : '▸'}</button
 					>
 					{#if packsExpanded}
 						{#each shownPacks as pack (pack.name)}
@@ -7177,10 +7179,10 @@
 							<button
 								data-pack={pack.name}
 								class="whitespace-nowrap rounded px-2 py-1 text-left {dropFolder === 'pack:' + pack.name
-									? 'bg-primary-500/20 text-white ring-1 ring-primary-400'
+									? 'bg-accent/20 text-text ring-1 ring-accent'
 									: $activeFolder === 'pack:' + pack.name
 										? 'ex-tree-on'
-										: 'text-gray-400 hover:bg-gray-700'}"
+										: 'text-text-muted hover:bg-surface-hover'}"
 								style="padding-left: 22px"
 								title={pack.source === 'default'
 									? (pack.license ? pack.title + ' · ' + pack.license : pack.title) + ' — built in'
@@ -7197,32 +7199,32 @@
 								ondrop={(e) => void dropIntoPack(e, pack)}
 								onclick={() => openFolder('pack:' + pack.name)}
 							>
-								<PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-500" aria-hidden="true" />{pack.title}
+								<Icon name="package-open" size={16} class="mr-1.5 text-text-faint" aria-hidden="true" />{pack.title}
 							</button>
 							{/if}
 						{/each}
 						{#if shownPacks.length === 0}
-							<span class="px-2 py-1 text-[10px] italic text-gray-500" style="padding-left: 22px">No packs</span>
+							<span class="px-2 py-1 text-[10px] italic text-text-faint" style="padding-left: 22px">No packs</span>
 						{/if}
 					{/if}
 					<button
 						id="scene-folder"
 						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene'
 							? 'ex-tree-on'
-							: 'text-gray-300 hover:bg-gray-700'}"
+							: 'text-text-2 hover:bg-surface-hover'}"
 						title="Assets the shared scene uses right now — identical on every peer"
-						onclick={() => openFolder('scene')} ondblclick={toggleScene}><Globe size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
+						onclick={() => openFolder('scene')} ondblclick={toggleScene}><Icon name="globe" size={16} class="mr-1.5 text-text-muted" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
 					>
 					{#if sceneExpanded}
 					{#each ['audio', 'config', 'textures'] as sub}
 						<button
 							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
 								? 'ex-tree-on'
-								: 'text-gray-400 hover:bg-gray-700'}"
+								: 'text-text-muted hover:bg-surface-hover'}"
 							style="padding-left: 22px"
 							onclick={() => openFolder('scene:' + sub)}
 						>
-							<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
+							<Icon name="folder" size={16} class="ico-folder mr-1.5" aria-hidden="true" />{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
 						</button>
 					{/each}
 					{/if}
@@ -7242,10 +7244,10 @@
 						<button
 							id="deleted-folder"
 							class="whitespace-nowrap rounded px-2 py-1 text-left {binDropActive
-								? 'bg-red-600/30 text-white ring-1 ring-red-400'
+								? 'bg-danger/30 text-text ring-1 ring-ink-bad'
 								: binScope.inBin
 									? 'ex-tree-on'
-									: 'text-gray-300 hover:bg-gray-700'}"
+									: 'text-text-2 hover:bg-surface-hover'}"
 							title={($deletedLogEnabled && logCount !== binCount
 								? logCount +
 									' deleted, of which ' +
@@ -7264,11 +7266,11 @@
 							}}
 							ondragleave={() => (binDropActive = false)}
 							ondrop={(e) => void dropToBin(e)}
-							><Icon name="trash-2" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted
+							><Icon name="trash-2" size={16} class="mr-1.5 text-text-muted" aria-hidden="true" />Deleted
 							{#if libraryDragging && !deletedRootCount}
-								<span class="text-gray-500">(drop here)</span>
+								<span class="text-text-faint">(drop here)</span>
 							{:else}
-								<span class="text-gray-500">({deletedRootCount})</span>
+								<span class="text-text-faint">({deletedRootCount})</span>
 							{/if}</button
 						>
 					{/if}
@@ -7286,6 +7288,7 @@
 			id="explorer-grid"
 			class="relative h-full min-w-0 select-none overflow-y-auto p-1 outline-hidden"
 			style="scrollbar-gutter: stable"
+			use:minimalScroll
 			tabindex="-1"
 			oncontextmenu={gridMenu}
 			onclick={gridBackgroundClick}
@@ -7315,7 +7318,7 @@
 					}}
 				>
 					<span class="ex-confirm-icon {confirmStrip.safe ? 'ex-confirm-icon--safe' : ''}"
-						><Icon name={confirmStrip.icon ?? 'trash-2'} size={14} /></span
+						><Icon name={confirmStrip.icon ?? 'trash-2'} size={16} /></span
 					>
 					<span class="ex-confirm-text">
 						<span class="ex-confirm-title">{confirmStrip.title}</span>
@@ -7366,7 +7369,7 @@
 						answerShareAsk('keep');
 					}}
 				>
-					<span class="ex-confirm-icon ex-ask-icon"><Share2 size={14} aria-hidden="true" /></span>
+					<span class="ex-confirm-icon ex-ask-icon"><Icon name="share-2" size={16} aria-hidden="true" /></span>
 					<span class="ex-confirm-text">
 						<span class="ex-confirm-title">
 							{#if shareAsk.kind === 'connect'}Share your {shareAsk.items.length} file{shareAsk
@@ -7451,21 +7454,21 @@
 				{#if openPack && $openPackLoading}
 					<!-- QW: first open of a pack fetches its item list from the CDN — show a
 					     real loading state instead of "no items" (or the stale previous list) -->
-					<div id="pack-loading" class="flex items-center justify-center gap-2 p-6 text-xs text-gray-400">
-						<LoaderCircle size={16} class="animate-spin" aria-hidden="true" /> Loading pack contents…
+					<div id="pack-loading" class="flex items-center justify-center gap-2 p-6 text-xs text-text-muted">
+						<Icon name="loader-circle" size={16} class="animate-spin" aria-hidden="true" /> Loading pack contents…
 					</div>
 				{:else if openPack && openPack.source === 'default' && openPack.zip}
 					<!-- RP: a zip-only pack (audio-essentials) has no browsable item list —
 					     its open view IS the install prompt (right-click-only was undiscoverable) -->
 					<div class="flex flex-col items-center gap-2 p-6 text-center">
-						<span class="text-4xl text-gray-300"><Gift size={16} aria-hidden="true" /></span>
-						<span class="text-sm text-gray-300">"{openPack.title}" installs into your local library.</span>
+						<span class="text-4xl text-text-2"><Icon name="gift" size={16} aria-hidden="true" /></span>
+						<span class="text-sm text-text-2">"{openPack.title}" installs into your local library.</span>
 						<button
 							id="pack-install"
-							class="rounded-sm bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-500 disabled:opacity-50"
+							class="rounded-sm bg-accent-fill px-3 py-1.5 text-sm text-on-accent hover:brightness-110 disabled:opacity-50"
 							disabled={installingPack}
 							onclick={() => installZipPack(openPack)}
-						><Download size={16} class="mr-1" aria-hidden="true" />{installingPack ? 'Installing…' : `Install ${openPack.title}`}</button>
+						><Icon name="download" size={16} class="mr-1" aria-hidden="true" />{installingPack ? 'Installing…' : `Install ${openPack.title}`}</button>
 					</div>
 				{:else}
 				<!-- 38 NOTES-38 #24 (design page): an empty view is an EmptyState, not italic text -->
@@ -7502,16 +7505,16 @@
 						width agreement between the head and every row, which a flexbox imitation has
 						to keep in step by hand.
 					-->
-					<div class="ex-list">
+					<div class="ex-list" use:minimalScroll>
 						{#if pendingCard}
 							<!-- 21-G10: name it where it will appear, in this view too — a placeholder
 							     that only exists in one of two layouts is a trap. -->
 							<div id="explorer-new-card" class="ex-new flex items-center gap-1.5">
-								<span class={pendingCard === 'create' || pendingCard === 'new-prefab-folder' ? 'ico-folder' : 'text-gray-400'}>
+								<span class={pendingCard === 'create' || pendingCard === 'new-prefab-folder' ? 'ico-folder' : 'text-text-muted'}>
 									{#if pendingCard === 'create' || pendingCard === 'new-prefab-folder'}
-										<Folder size={14} aria-hidden="true" />
+										<Icon name="folder" size={16} aria-hidden="true" />
 									{:else}
-										<Icon name={KIND_ICONS.scene} size={14} />
+										<Icon name={KIND_ICONS.scene} size={16} />
 									{/if}
 								</span>
 								{@render cardEdit()}
@@ -7561,21 +7564,21 @@
 							{/if}
 						</table>
 						{#if !gridEntries.length && !pendingCard}
-							<p class="px-2 py-3 text-[11px] text-gray-500">Nothing here.</p>
+							<p class="px-2 py-3 text-[11px] text-text-faint">Nothing here.</p>
 						{/if}
 					</div>
 				{:else}
-				<div class="ex-cards grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-1">
+				<div class="ex-cards grid grid-cols-[repeat(auto-fill,96px)] justify-start gap-1" use:minimalScroll>
 					{#if pendingCard}
 						<!-- 21-G10: name it where it will appear. A placeholder card, not a modal and
 						     not a browser prompt — Esc removes it having created nothing. -->
 						<div
 							id="explorer-new-card"
-							class="explorer-folder-card flex flex-col items-center gap-1 rounded border border-dashed border-primary-600/70 bg-primary-600/5 p-1.5"
+							class="explorer-folder-card flex flex-col items-center gap-1 rounded border border-dashed border-accent/70 bg-accent/5 p-1.5"
 						>
-							<span class="flex h-14 w-14 items-center justify-center {pendingCard === 'create' || pendingCard === 'new-prefab-folder' ? 'ico-folder' : 'text-gray-400'}">
+							<span class="flex h-14 w-14 items-center justify-center {pendingCard === 'create' || pendingCard === 'new-prefab-folder' ? 'ico-folder' : 'text-text-muted'}">
 								{#if pendingCard === 'create' || pendingCard === 'new-prefab-folder'}
-									<Folder size={32} aria-hidden="true" />
+									<Icon name="folder" size={32} aria-hidden="true" />
 								{:else}
 									<Icon name={KIND_ICONS.scene} size={32} />
 								{/if}
@@ -7588,7 +7591,7 @@
 							<div
 								data-card-id={folder.id}
 								class="explorer-folder-card relative flex cursor-pointer flex-col items-center gap-1 rounded border p-1.5 {dropFolder === folder.id
-									? 'border-primary-500 bg-primary-500/10'
+									? 'border-accent bg-accent/10'
 									: cardClass(selectedIds, null, selected, folder.id)} {folder.deletedNode
 									? 'ex-deleted-node'
 									: ''} {folder.ghost ? 'ex-deleted-ghost' : ''}"
@@ -7611,7 +7614,7 @@
 									     more here than on a file, because a shared folder also shares whatever
 									     you drop into it later. -->
 									<span
-										class="explorer-share-dot absolute bottom-1 left-1 h-2 w-2 rounded-full {folder.share === 'mine' ? 'bg-teal-400' : 'bg-sky-400'}"
+										class="explorer-share-dot absolute bottom-1 left-1 h-2 w-2 rounded-full {folder.share === 'mine' ? 'bg-icon-audio' : 'bg-icon-accent'}"
 										title={folder.share === 'mine'
 											? 'Shared by you — peers see this folder, and anything you add to it'
 											: 'Shared' + (ownerLabel(folder) ? ' by ' + ownerLabel(folder) : '') + ' — a peer offered this folder'}
@@ -7622,13 +7625,13 @@
 								<span
 									class="flex h-14 w-14 items-center justify-center {mutedFolder(folder)
 										? MUTED_ICON
-										: 'ico-folder'}"><Folder size={32} aria-hidden="true" /></span
+										: 'ico-folder'}"><Icon name="folder" size={32} aria-hidden="true" /></span
 								>
 								{#if editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === folder.id}
 									{@render cardEdit()}
 								{:else}
 									<span
-										class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] {mutedFolder(folder) ? 'text-gray-500' : 'text-gray-300'}"
+										class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] {mutedFolder(folder) ? 'text-text-faint' : 'text-text-2'}"
 									>
 										{folder.name}
 									</span>
@@ -7645,7 +7648,7 @@
 								selected,
 								item.id
 							)} {openSceneHash && item.hash === openSceneHash
-								? 'explorer-open-scene ring-1 ring-emerald-400'
+								? 'explorer-open-scene ring-1 ring-ink-good'
 								: ''} {item.remoteScene || item.remoteItem || (item.deletedEntry && !item.restorable) ? 'explorer-remote opacity-60' : ''}"
 							draggable="true"
 							role="listitem"
@@ -7671,7 +7674,7 @@
 								<!-- 21-G9: THIS is the scene you have open. The ring alone reads as a
 								     selection at a glance, so the dot carries the meaning in words. -->
 								<span
-									class="explorer-open-dot absolute left-1 top-1 h-2.5 w-2.5 rounded-full bg-emerald-400"
+									class="explorer-open-dot absolute left-1 top-1 h-2.5 w-2.5 rounded-full bg-ink-good"
 									title="The scene you have open"
 								></span>
 							{/if}
@@ -7681,7 +7684,7 @@
 								     dot, the open-scene ring) describes a library record, and a row that
 								     looks like one but answers no library operation is the confusing case. -->
 								<span
-									class="explorer-mount-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-indigo-400"
+									class="explorer-mount-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-icon-image"
 									title={'In the mounted project “' + (item.volumeName ?? '') + '” — not in your library'}
 								></span>
 							{/if}
@@ -7689,7 +7692,7 @@
 							<!-- P2a: a project scene whose bytes are not on this device. Dimmed rather
 							     than hidden: the project agrees it exists, and opening it fetches it. -->
 							<span
-								class="explorer-remote-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-sky-400"
+								class="explorer-remote-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-icon-accent"
 								title="In this project, not on this device yet — open it to download it"
 							></span>
 						{/if}
@@ -7700,7 +7703,7 @@
 						     `$pendingPulls` is the only thing that distinguishes "not here" from "on
 						     its way", which is what stops the card reading as dead when clicked. -->
 							<span
-								class="explorer-remote-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full {$unavailableHashes.has(item.hash) ? 'bg-red-400' : $pendingPulls.has(item.hash) ? 'animate-pulse bg-amber-400' : 'bg-sky-400'}"
+								class="explorer-remote-dot absolute right-1 top-1 h-2.5 w-2.5 rounded-full {$unavailableHashes.has(item.hash) ? 'bg-ink-bad' : $pendingPulls.has(item.hash) ? 'animate-pulse bg-ink-warn' : 'bg-icon-accent'}"
 								title={$pendingPulls.has(item.hash) ? 'Downloading from peers…' : shareTitle(item)}
 							></span>
 						{:else if sharingOn && isShared(item)}
@@ -7709,7 +7712,7 @@
 						     pair), and drawn only once something in the project is actually shared —
 						     in a solo project the distinction is pure noise. -->
 							<span
-								class="explorer-share-dot absolute bottom-1 left-1 h-2 w-2 rounded-full {shareOf(item) === 'mine' ? 'bg-teal-400' : 'bg-sky-400'}"
+								class="explorer-share-dot absolute bottom-1 left-1 h-2 w-2 rounded-full {shareOf(item) === 'mine' ? 'bg-icon-audio' : 'bg-icon-accent'}"
 								title={shareTitle(item)}
 							></span>
 						{:else if sharingOn && item.wasShared}
@@ -7717,7 +7720,7 @@
 						     never lost the file, and this says so rather than leaving it looking
 						     identical to something that was never shared at all. -->
 							<span
-								class="explorer-unshared-dot absolute bottom-1 left-1 h-2 w-2 rounded-full border border-gray-500"
+								class="explorer-unshared-dot absolute bottom-1 left-1 h-2 w-2 rounded-full border border-border-strong"
 								title={shareTitle(item)}
 							></span>
 						{/if}
@@ -7726,7 +7729,7 @@
 								     scene moved past it. The manifest keeps every hash, so it still
 								     opens; the dot just says "not the latest". -->
 								<span
-									class="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-amber-400"
+									class="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-ink-warn"
 									title={'An update of "' + staleScene($projectManifest, item.hash) + '" exists — this file is an older version'}
 								></span>
 							{/if}
@@ -7737,11 +7740,11 @@
 									     per person in that person's own colour (emerald = you, the open-scene
 									     dot's colour) and the count, names in the title. -->
 									<span
-										class="explorer-here absolute bottom-1 right-1 flex items-center gap-0.5 rounded-full bg-gray-900/80 px-1 py-px text-[9px] leading-none text-gray-200"
+										class="explorer-here absolute bottom-1 right-1 flex items-center gap-0.5 rounded-full bg-app/80 px-1 py-px text-[9px] leading-none text-text-2"
 										title={rosterTitle(roster)}
 										data-here={rosterCount(roster)}
 									>
-										{#if roster.me}<span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>{/if}
+										{#if roster.me}<span class="h-1.5 w-1.5 rounded-full bg-ink-good"></span>{/if}
 										{#each roster.peerIds.slice(0, 3) as id (id)}<span class="h-1.5 w-1.5 rounded-full" style:background={peerColor(id)}></span>{/each}
 										<span>{rosterCount(roster)}</span>
 									</span>
@@ -7752,10 +7755,10 @@
 								     pack card has no scene dots, so that corner is free on every card that
 								     can carry this. -->
 								<span
-									class="explorer-animated absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-gray-900/80 text-amber-300"
+									class="explorer-animated absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-app/80 text-icon-warning"
 									title={behaviorTitle(item.behavior)}
 									data-behavior={item.behavior.type}
-								><Play size={9} aria-hidden="true" /></span>
+								><Icon name="play" size={16} aria-hidden="true" /></span>
 							{/if}
 							{#if item.packEntry}
 								{#if packThumb(item)}
@@ -7768,7 +7771,7 @@
 										class="h-14 w-14 rounded-sm object-cover"
 									/>
 								{:else}
-									<span class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}"><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} /></span>
+									<span class="flex h-14 w-14 items-center justify-center rounded-sm bg-surface-active {KIND_COLORS[item.kind] ?? 'text-text-muted'}"><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={32} /></span>
 								{/if}
 							{:else if thumbFor(item)}
 								<!-- R22: the picture may be the item's OWN thumbnail or one a peer pushed
@@ -7781,11 +7784,11 @@
 								/>
 							{:else}
 								<span
-									class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {mutedItem(item)
+									class="flex h-14 w-14 items-center justify-center rounded-sm bg-surface-active {mutedItem(item)
 										? MUTED_ICON
-										: (KIND_COLORS[item.kind] ?? 'text-gray-400')}"
+										: (KIND_COLORS[item.kind] ?? 'text-text-muted')}"
 								>
-									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} />
+									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={32} />
 								</span>
 							{/if}
 							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-scene' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === item.id)}
@@ -7795,7 +7798,7 @@
 							     while `sharingOn` — muting every name in a project that has never shared
 							     anything would say nothing and cost legibility everywhere. -->
 								<span
-									class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] {mutedItem(item) ? 'text-gray-500' : 'text-gray-300'}"
+									class="w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[10px] {mutedItem(item) ? 'text-text-faint' : 'text-text-2'}"
 									title={item.name + ' — ' + shareTitle(item)}
 								>
 									{item.name}
@@ -7815,7 +7818,7 @@
 				     `relative`) grid, so it scrolls with the cards it is picking. -->
 				<div
 					id="explorer-marquee"
-					class="pointer-events-none absolute z-20 rounded-xs border border-sky-400 bg-sky-400/15"
+					class="pointer-events-none absolute z-20 rounded-xs border border-accent-text bg-accent/15"
 					style="left: {mqRect.left}px; top: {mqRect.top}px; width: {mqRect.width}px; height: {mqRect.height}px"
 				></div>
 			{/if}
@@ -7834,7 +7837,7 @@
 				-->
 				<div
 					id="explorer-drop-band"
-					class="pointer-events-none absolute left-1 right-1 z-20 rounded-lg border-2 border-dashed border-primary-500 bg-primary-500/10"
+					class="pointer-events-none absolute left-1 right-1 z-20 rounded-lg border-2 border-dashed border-accent bg-accent/10"
 					style="top: {dropBandTop}px; height: {dropBandH}px"
 				></div>
 			{/if}
@@ -7842,16 +7845,16 @@
 		{/snippet}
 		{#snippet secondary(mode)}
 		{#if mode === 'props'}
-			<div class="flex flex-col gap-2 p-2 text-xs text-gray-200">
+			<div class="flex flex-col gap-2 p-2 text-xs text-text-2">
 				{#if openPack}
 					<!-- N6: pack-level properties + attribution -->
-					<div class="flex flex-col gap-1 border-b border-gray-700/40 pb-2">
+					<div class="flex flex-col gap-1 border-b border-border pb-2">
 						<div class="flex items-center gap-2">
-							<span class="text-gray-400"><PackageOpen size={18} aria-hidden="true" /></span>
+							<span class="text-text-muted"><Icon name="package-open" size={20} aria-hidden="true" /></span>
 							<span class="min-w-0 flex-1 wrap-break-word font-semibold">{openPack.title}</span>
 						</div>
-						{#if openPack.license}<div class="text-[11px] text-gray-400">License: {licenseLabel(openPack.license)}</div>{/if}
-						{#if openPack.copyright}<div class="text-[11px] text-gray-400">{openPack.copyright}</div>{/if}
+						{#if openPack.license}<div class="text-[11px] text-text-muted">License: {licenseLabel(openPack.license)}</div>{/if}
+						{#if openPack.copyright}<div class="text-[11px] text-text-muted">{openPack.copyright}</div>{/if}
 						<button id="pack-attribution" class="ui-button-quiet mt-1 self-start" onclick={() => showPackAttribution(openPack)}>ⓘ Attribution / license</button>
 						{#if packSourceUrl(openPack)}
 							<a
@@ -7861,7 +7864,7 @@
 								target="_blank"
 								rel="noopener"
 								title="Open the content source"
-							><ExternalLink size={14} aria-hidden="true" /> {packSourceLabel(packSourceUrl(openPack))}</a>
+							><Icon name="external-link" size={16} aria-hidden="true" /> {packSourceLabel(packSourceUrl(openPack))}</a>
 						{/if}
 					</div>
 				{/if}
@@ -7870,7 +7873,7 @@
 						{#if selItem.thumbnail}
 							<img src={selItem.thumbnail} alt="" class="h-12 w-12 rounded-sm object-cover" />
 						{:else}
-							<span class="flex h-12 w-12 items-center justify-center rounded-sm bg-gray-700 {KIND_COLORS[selItem.kind] ?? 'text-gray-400'}"
+							<span class="flex h-12 w-12 items-center justify-center rounded-sm bg-surface-active {KIND_COLORS[selItem.kind] ?? 'text-text-muted'}"
 								><Icon name={KIND_ICONS[selItem.kind] ?? 'package'} size={24} /></span
 							>
 						{/if}
@@ -7881,13 +7884,13 @@
 						     is not a file in a folder), so it gets the numbers that do: what it
 						     holds, and when it was last saved. -->
 						<div id="prefab-facts" class="flex flex-col gap-1">
-							<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Kind</span><span>prefab</span></div>
+							<div class="flex gap-2"><span class="w-14 shrink-0 text-text-faint">Kind</span><span>prefab</span></div>
 							<div class="flex gap-2">
-								<span class="w-14 shrink-0 text-gray-500">Objects</span>
+								<span class="w-14 shrink-0 text-text-faint">Objects</span>
 								<span id="prefab-objects">{selPrefab?.objects ?? 0}</span>
 							</div>
 							<div class="flex gap-2">
-								<span class="w-14 shrink-0 text-gray-500">Mesh</span>
+								<span class="w-14 shrink-0 text-text-faint">Mesh</span>
 								<span id="prefab-tris"
 									>{(selPrefab?.tris ?? 0).toLocaleString()} tris · {(selPrefab?.verts ?? 0).toLocaleString()} verts
 									· {selPrefab?.meshes ?? 0} mesh{selPrefab?.meshes === 1 ? '' : 'es'}</span
@@ -7895,13 +7898,13 @@
 							</div>
 							{#if selPrefab?.createdAt}
 								<div class="flex gap-2">
-									<span class="w-14 shrink-0 text-gray-500">Saved</span>
+									<span class="w-14 shrink-0 text-text-faint">Saved</span>
 									<span id="prefab-saved">{new Date(selPrefab.createdAt).toLocaleString()}</span>
 								</div>
 							{/if}
 							{#if selPrefab?.updatedAt}
 								<div class="flex gap-2">
-									<span class="w-14 shrink-0 text-gray-500">Updated</span>
+									<span class="w-14 shrink-0 text-text-faint">Updated</span>
 									<span id="prefab-updated">{new Date(selPrefab.updatedAt).toLocaleString()}</span>
 								</div>
 							{/if}
@@ -7909,10 +7912,10 @@
 						</div>
 					{:else}
 					<div class="flex flex-col gap-1">
-						<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Kind</span><span>{selItem.kind}</span></div>
-						<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Size</span><span>{fmtSize(selItem.size)}</span></div>
+						<div class="flex gap-2"><span class="w-14 shrink-0 text-text-faint">Kind</span><span>{selItem.kind}</span></div>
+						<div class="flex gap-2"><span class="w-14 shrink-0 text-text-faint">Size</span><span>{fmtSize(selItem.size)}</span></div>
 						<div class="flex gap-2">
-							<span class="w-14 shrink-0 text-gray-500">Folder</span>
+							<span class="w-14 shrink-0 text-text-faint">Folder</span>
 							<span class="min-w-0 truncate" title={itemFolderPath}>{itemFolderPath}</span>
 						</div>
 						<!--
@@ -7924,13 +7927,13 @@
 							of the third tier: it appears only when a cloud plugin vouched for an account.
 						-->
 						<div class="flex gap-2">
-							<span class="w-14 shrink-0 text-gray-500">Owner</span>
+							<span class="w-14 shrink-0 text-text-faint">Owner</span>
 							<span class="min-w-0 truncate" title={shareTitle(selItem)}>
 								{ownerLabel(selItem) || 'You'}
 							</span>
 						</div>
 						<div class="flex gap-2">
-							<span class="w-14 shrink-0 text-gray-500">Sharing</span>
+							<span class="w-14 shrink-0 text-text-faint">Sharing</span>
 							<span class="min-w-0 truncate">
 								{selItem.remoteItem
 									? 'Shared \u2014 not downloaded'
@@ -7945,19 +7948,19 @@
 						</div>
 						{#if selItem.createdAt}
 							<div class="flex gap-2">
-								<span class="w-14 shrink-0 text-gray-500">Added</span>
+								<span class="w-14 shrink-0 text-text-faint">Added</span>
 								<span>{new Date(selItem.createdAt).toLocaleString()}</span>
 							</div>
 						{/if}
 						{#if selItem.hash}
 							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-gray-500">Hash</span>
+								<span class="w-14 shrink-0 text-text-faint">Hash</span>
 								<span class="min-w-0 flex-1 truncate font-mono text-[10px]" title={selItem.hash}>{selItem.hash.slice(0, 16)}…</span>
 								<button class="ui-button-quiet shrink-0" title="Copy full hash" onclick={() => navigator.clipboard?.writeText(selItem.hash)}>⧉</button>
 							</div>
 						{/if}
 						{#if itemDetails}
-							<div class="flex gap-2"><span class="w-14 shrink-0 text-gray-500">Details</span><span>{itemDetails}</span></div>
+							<div class="flex gap-2"><span class="w-14 shrink-0 text-text-faint">Details</span><span>{itemDetails}</span></div>
 						{/if}
 					</div>
 					{/if}
@@ -7974,15 +7977,15 @@
 						     hole in the panel — the pane keeps its shape, and what it shows is
 						     still this item. The id is unchanged: it is the anchor for "the pane
 						     says where the preview went", which is still exactly what this is. -->
-						<div id="preview-suspended" class="relative mt-1 overflow-hidden rounded-sm bg-[#0d1117]" style="height: 150px">
+						<div id="preview-suspended" class="relative mt-1 overflow-hidden rounded-sm bg-app" style="height: 150px">
 							{#if selItem.thumbnail}
 								<img id="preview-suspended-thumb" src={selItem.thumbnail} alt={selItem.name} class="h-full w-full object-contain" />
 							{:else}
-								<div class="flex h-full w-full items-center justify-center text-gray-600">
-									<Box size={40} aria-hidden="true" />
+								<div class="flex h-full w-full items-center justify-center text-text-faint">
+									<Icon name="box" size={48} aria-hidden="true" />
 								</div>
 							{/if}
-							<div class="pointer-events-none absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-center text-[10px] text-gray-300">
+							<div class="pointer-events-none absolute inset-x-0 bottom-0 bg-app/60 px-2 py-1 text-center text-[10px] text-text-2">
 								Previewing in its own window
 							</div>
 						</div>
@@ -7998,7 +8001,7 @@
 							{/key}
 						</div>
 					{:else if (selItem.kind === 'object' || selItem.kind === 'prefab') && $enable3dPreview && !selItem.packEntry}
-						<div id="inline-preview" class="mt-1 overflow-hidden rounded-sm bg-[#0d1117]" style="height: 150px">
+						<div id="inline-preview" class="mt-1 overflow-hidden rounded-sm bg-app" style="height: 150px">
 							{#key selItem.id}
 								<ModelPreview
 									itemId={selItem.kind === 'prefab' ? '' : selItem.id}
@@ -8010,8 +8013,8 @@
 						</div>
 						{#if inlineStats}
 							<div class="flex gap-2 text-[11px]">
-								<span class="w-14 shrink-0 text-gray-500">Mesh</span>
-								<span class="text-gray-300"
+								<span class="w-14 shrink-0 text-text-faint">Mesh</span>
+								<span class="text-text-2"
 									>{inlineStats.tris.toLocaleString()} tris · {inlineStats.verts.toLocaleString()} verts · {inlineStats.meshes}
 									mesh{inlineStats.meshes === 1 ? '' : 'es'}</span
 								>
@@ -8051,10 +8054,10 @@
 				{:else if selected?.kind === 'folder'}
 					{@const counts = folderCounts(selected.folder.id)}
 					<div class="flex items-center gap-2">
-						<span class="ico-folder"><Folder size={22} aria-hidden="true" /></span>
+						<span class="ico-folder"><Icon name="folder" size={20} aria-hidden="true" /></span>
 						<span class="min-w-0 flex-1 wrap-break-word font-semibold">{selected.folder.name}</span>
 					</div>
-					<p class="text-gray-400">
+					<p class="text-text-muted">
 						{counts.folders} folder{counts.folders === 1 ? '' : 's'}, {counts.items} item{counts.items === 1
 							? ''
 							: 's'}
@@ -8064,13 +8067,13 @@
 						<button class="ui-button-quiet" onclick={() => startRename(selected.folder, false)}>Rename</button>
 					</div>
 				{:else}
-					<p class="leading-relaxed text-gray-400">
+					<p class="leading-relaxed text-text-muted">
 						Select a folder or file (or right-click ▸ Properties) to see its details here.
 					</p>
 				{/if}
 			</div>
 		{:else}
-			<div class="flex flex-col gap-2 p-2 text-xs text-gray-200">
+			<div class="flex flex-col gap-2 p-2 text-xs text-text-2">
 				<label class="flex items-center gap-2">
 					<input
 						class="tp-check"
@@ -8151,7 +8154,7 @@
 						>Show {hiddenPacks.size} hidden pack{hiddenPacks.size === 1 ? '' : 's'}</button
 					>
 				{/if}
-				<div class="mt-1 border-t border-gray-700/40 pt-2">
+				<div class="mt-1 border-t border-border pt-2">
 					<button class="ui-button-quiet w-full" onclick={() => packZipInput?.click()}>＋ Import pack (.zip)</button>
 					<input bind:this={packZipInput} type="file" accept=".zip" class="hidden" onchange={onImportPackZip} />
 				</div>
@@ -8186,7 +8189,7 @@
 			role="region"
 		>
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
+				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -8217,7 +8220,7 @@
 					class="tp-dock-btn shrink-0"
 					title="Undock into a floating window"
 					aria-label="Undock into a floating window"
-					onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button
+					onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button
 				>
 			</div>
 			<div style="height: {$dockHeight - 44}px">
@@ -8285,14 +8288,14 @@
 					</div>
 				{/snippet}
 				{#snippet actions()}
-					<button id="explorer-dock" class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+					<button id="explorer-dock" class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
 				{/snippet}
 			</WindowChrome>
 			<div class="min-h-0 flex-1 p-1">
 				{@render content()}
 			</div>
 			<div
-				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-text-faint/40"
 				style="touch-action: none"
 				title="Drag to resize · double-click to reset size"
 				onpointerdown={startWinResize}
@@ -8320,7 +8323,7 @@
 <!-- mobile touch-drag ghost that follows the finger onto the viewport -->
 {#if tDragging && tDrag}
 	<div
-		class="pointer-events-none fixed z-1400 max-w-[160px] -translate-x-1/2 -translate-y-1/2 truncate rounded-sm border border-primary-400 bg-gray-800 px-2 py-1 text-center text-xs font-semibold text-gray-100 shadow-lg"
+		class="pointer-events-none fixed z-1400 max-w-[160px] -translate-x-1/2 -translate-y-1/2 truncate rounded-sm border border-accent bg-surface-1 px-2 py-1 text-center text-xs font-semibold text-text shadow-lg"
 		style="left: {tGhostX}px; top: {tGhostY}px;"
 	>
 		{tDrag.label}
@@ -8331,7 +8334,7 @@
      Backdrop is a <button> so no div needs a click handler (a11y-clean). -->
 {#if packAttribModal}
 	<button
-		class="fixed inset-0 z-(--z-window) cursor-default bg-black/50"
+		class="fixed inset-0 z-(--z-window) cursor-default bg-scrim"
 		aria-label="Close attribution"
 		onclick={() => (packAttribModal = false)}
 	></button>
@@ -8339,10 +8342,11 @@
 		id="pack-attrib-modal"
 		class="ui-panel fixed left-1/2 top-1/2 z-(--z-window) max-h-[70vh] w-96 -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg p-4 text-sm"
 		style="z-index: calc(var(--z-window) + 1)"
+		use:minimalScroll
 	>
 		{#if packAttribLoading}
-			<div class="flex items-center gap-2 p-4 text-sm text-gray-400">
-				<LoaderCircle size={16} class="animate-spin" aria-hidden="true" /> Loading attribution…
+			<div class="flex items-center gap-2 p-4 text-sm text-text-muted">
+				<Icon name="loader-circle" size={16} class="animate-spin" aria-hidden="true" /> Loading attribution…
 			</div>
 		{:else}
 			<div class="prose prose-invert prose-sm max-w-none">{@html packAttribHtml}</div>
@@ -8472,15 +8476,15 @@
 		gap: 8px;
 		margin-bottom: 4px;
 		padding: 6px 8px;
-		border: 1px solid #b91c1c;
+		border: 1px solid var(--danger);
 		border-radius: 4px;
-		background: var(--surface, #1f2937);
-		box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+		background: var(--surface-1);
+		box-shadow: 0 2px 8px color-mix(in srgb, var(--bg-app) 35%, transparent);
 		font-size: 11px;
 	}
 	.ex-confirm-icon {
 		flex: 0 0 auto;
-		color: #f87171;
+		color: var(--ink-bad);
 	}
 	.ex-confirm-text {
 		display: flex;
@@ -8491,10 +8495,10 @@
 	}
 	.ex-confirm-title {
 		font-weight: 600;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 	}
 	.ex-confirm-detail {
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.ex-confirm-yes,
 	.ex-confirm-no {
@@ -8504,18 +8508,18 @@
 		font-weight: 600;
 	}
 	.ex-confirm-yes {
-		background: #b91c1c;
-		color: #fff;
+		background: var(--danger);
+		color: var(--on-danger);
 	}
 	.ex-confirm-yes:hover {
-		background: #dc2626;
+		background: color-mix(in srgb, var(--danger) 88%, var(--on-danger));
 	}
 	.ex-confirm-no {
-		border: 1px solid var(--border, #374151);
-		color: var(--text-2, #d1d5db);
+		border: 1px solid var(--border);
+		color: var(--text-2);
 	}
 	.ex-confirm-no:hover {
-		background: rgb(255 255 255 / 6%);
+		background: var(--surface-hover);
 	}
 	/*
 		R22 round 13 — the SAFE primary. Declared AFTER `.ex-confirm-yes` on purpose: both
@@ -8526,20 +8530,21 @@
 		"unsaved" — the mount row wears the same colour for its dirty dot and its Save.
 	*/
 	.ex-confirm-safe {
-		background: #1d4ed8;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.ex-confirm-safe:hover {
-		background: #2563eb;
+		background: color-mix(in srgb, var(--accent-fill) 88%, var(--on-accent));
 	}
 	.ex-confirm-icon--safe {
-		color: #fbbf24;
+		color: var(--ink-warn);
 	}
 	/*
 		R22 round 30 C2 — the OFFER wears the same layout and a different colour. Red is the
 		destructive question's; an offer to share a file must not read as a warning.
 	*/
 	.ex-confirm--ask {
-		border-color: var(--border, #374151);
+		border-color: var(--border);
 		/* the offer carries one more control than the delete question, so it is the only
 		   strip allowed to wrap — on a narrow panel the remember box drops under the text
 		   with the buttons rather than squeezing the question to nothing */
@@ -8552,31 +8557,32 @@
 		flex: 0 0 auto;
 		align-items: center;
 		gap: 6px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		cursor: pointer;
 	}
 	.ex-ask-remember:hover {
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 	}
 	.ex-ask-icon {
-		color: #93c5fd;
+		color: var(--accent-text);
 	}
 	.ex-ask-yes {
-		background: #1d4ed8;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.ex-ask-yes:hover {
-		background: #2563eb;
+		background: color-mix(in srgb, var(--accent-fill) 88%, var(--on-accent));
 	}
 	/* the way OUT of being asked, offered beside the question rather than described in it */
 	.ex-confirm-settings {
 		flex: 0 0 auto;
 		border-radius: 3px;
 		padding: 3px 8px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		text-decoration: underline;
 	}
 	.ex-confirm-settings:hover {
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 	}
 	/* R22 round 36: the cleaned-up toggle, at the END of the breadcrumb row. `margin-left:
 	   auto` is the whole layout — the row is a flex line that already exists and already has
@@ -8590,16 +8596,16 @@
 		align-items: center;
 		border-radius: 3px;
 		padding: 2px 4px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.ex-crumb-toggle:hover:not(:disabled) {
-		background: rgba(55, 65, 81, 0.9);
-		color: #e5e7eb;
+		background: var(--surface-active);
+		color: var(--text);
 	}
 	/* armed through aria-pressed, so the paint and the accessibility tree cannot disagree */
 	.ex-crumb-toggle[aria-pressed='true'] {
-		background: rgba(59, 130, 246, 0.25);
-		color: #fff;
+		background: var(--accent-soft);
+		color: var(--accent-soft-text);
 	}
 	.ex-crumb-toggle:disabled {
 		opacity: 0.4;
@@ -8656,14 +8662,14 @@
 	}
 	.ex-grip:hover::after,
 	.ex-grip-on::after {
-		background: var(--accent, #3b82f6);
+		background: var(--accent);
 	}
 	/* the column being carried, and the one it would land on */
 	.ex-th-dragging .ex-th-btn {
 		opacity: 0.45;
 	}
 	.ex-th-over {
-		box-shadow: inset 2px 0 0 var(--accent, #3b82f6);
+		box-shadow: inset 2px 0 0 var(--accent);
 	}
 	.ex-head {
 		position: sticky;
@@ -8671,8 +8677,8 @@
 		z-index: 1;
 	}
 	.ex-th {
-		background: var(--surface, #1f2937);
-		border-bottom: 1px solid var(--border, #374151);
+		background: var(--surface-1);
+		border-bottom: 1px solid var(--border);
 		padding: 0;
 		text-align: left;
 		font-weight: 600;
@@ -8687,16 +8693,16 @@
 		align-items: center;
 		gap: 3px;
 		padding: 3px 6px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		text-align: inherit;
 	}
 	.ex-th-btn:hover {
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 	}
 	.ex-sort {
 		font-size: 9px;
 		line-height: 1;
-		color: var(--accent, #3b82f6);
+		color: var(--accent);
 	}
 	.ex-row {
 		cursor: pointer;
@@ -8710,7 +8716,7 @@
 		border-bottom: 0;
 	}
 	.ex-row-drop {
-		outline: 1px solid var(--accent, #3b82f6);
+		outline: 1px solid var(--accent);
 		outline-offset: -1px;
 	}
 	.ex-cell {
@@ -8734,19 +8740,19 @@
 		align-items: center;
 		gap: 4px;
 		padding: 3px 6px;
-		background: color-mix(in srgb, var(--surface, #1f2937) 70%, transparent);
+		background: color-mix(in srgb, var(--surface-1) 70%, transparent);
 		font-size: 10px;
 		font-weight: 600;
 		letter-spacing: 0.02em;
-		color: #d1d5db;
+		color: var(--text-2);
 		text-transform: uppercase;
 	}
 	.ex-group-caret {
 		width: 8px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.ex-group-n {
-		color: var(--muted, #6b7280);
+		color: var(--text-faint);
 		font-weight: 400;
 	}
 	.ex-new {

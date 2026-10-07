@@ -1,11 +1,10 @@
 <script>
-	import { Search, Sparkles, SquarePen, Trash2 } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Unified inspector (phase 64): one drawer serves every target — mesh, group,
 	// light (from the selection) and the scene itself ($inspectorKind = 'scene').
 	// Replication messages are byte-identical to the old three panels.
 	import * as THREE from 'three';
-	import { Tooltip } from 'flowbite-svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { fly } from 'svelte/transition';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import InspectorHead from './inspector/InspectorHead.svelte';
@@ -1019,9 +1018,13 @@
 
 	// color swatches mirror the target when the selection changes
 	/** @type {any} */
-	let color = $state('#ffffff');
+	let color = $state('#ffffff'); // tokens-ok: colour-picker starting value (user data)
 	/** @type {any} */
-	let groundColor = $state('#ffffff');
+	let groundColor = $state('#ffffff'); // tokens-ok: colour-picker starting value (user data)
+	// fallbacks the pickers show for a value the scene has not authored yet (DATA, not chrome)
+	const FOG_DEFAULT = '#ffffff'; // tokens-ok: fog colour default shown by the picker (scene data)
+	const PARTICLE_START_DEFAULT = '#ffffff'; // tokens-ok: particle start colour default (emitter data)
+	const PARTICLE_END_DEFAULT = '#8899aa'; // tokens-ok: particle end colour default (emitter data)
 	$effect(() => {
 		const obj = $selectedObject;
 		if (!obj) return;
@@ -1557,6 +1560,7 @@
 	style={drawerStyle + '; --inspector-h: ' + inspectorH + 'px'}
 	transition:fly={insTransition}
 	class={'tp-ui ins-shell fixed inset-e-0 top-16 z-50 w-80 overflow-y-auto p-4 pt-0' + (bottomRounded ? ' ins-rounded-bl' : '')}
+	use:minimalScroll
 	id="inspector"
 	data-key-scope="panel"
 	role="region"
@@ -1582,7 +1586,7 @@
 						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded-sm border border-border-strong object-cover" />
 					{:else}
 						<span class="flex h-24 w-24 items-center justify-center rounded-sm border border-border-strong bg-surface-inset text-4xl text-text-muted">
-							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={36} class={inspectedItem.kind === 'audio' ? 'ico-audio' : inspectedItem.kind === 'text' ? 'ico-doc' : ''} />
+							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={32} class={inspectedItem.kind === 'audio' ? 'ico-audio' : inspectedItem.kind === 'text' ? 'ico-doc' : ''} />
 						</span>
 					{/if}
 				</div>
@@ -1613,7 +1617,7 @@
 					<div class="flex flex-wrap gap-2">
 						{#if inspectedItem.kind === 'text' || inspectedItem.kind === 'image'}
 							<UiButton size="sm" variant="outline" onclick={() => openInspectedItem()}>
-								{#if inspectedItem.kind === 'text'}<SquarePen size={14} class="mr-1" aria-hidden="true" />{:else}<Search size={14} class="mr-1" aria-hidden="true" />{/if}{inspectedItem.kind === 'text' ? 'Edit' : 'Preview'}
+								{#if inspectedItem.kind === 'text'}<Icon name="square-pen" size={16} class="mr-1" aria-hidden="true" />{:else}<Icon name="search" size={16} class="mr-1" aria-hidden="true" />{/if}{inspectedItem.kind === 'text' ? 'Edit' : 'Preview'}
 							</UiButton>
 						{/if}
 						<UiButton
@@ -1622,7 +1626,7 @@
 							onclick={() => {
 								deleteItem(inspectedItem.id);
 								inspectorClose.set(true);
-							}}><Trash2 size={16} class="ico-danger mr-1" aria-hidden="true" />Delete</UiButton
+							}}><Icon name="trash-2" size={16} class="ico-danger mr-1" aria-hidden="true" />Delete</UiButton
 						>
 					</div>
 				</Section>
@@ -2045,10 +2049,10 @@
 									onchange={(/** @type {any} */ e) => renameBookmark(bookmark.id, e.currentTarget.value)}
 								/>
 								<button class={bmBtn} title="Recall this view" onclick={() => recallBookmark(index)}>
-									<Icon name="eye" size={13} />
+									<Icon name="eye" size={16} />
 								</button>
 								<button class={bmBtn} title="Overwrite with the current view" onclick={() => overwriteBookmark(bookmark.id)}>
-									<Icon name="camera" size={13} />
+									<Icon name="camera" size={16} />
 								</button>
 								<button class={bmBtn} title="Move up" disabled={index === 0} onclick={() => moveBookmark(bookmark.id, -1)}>↑</button>
 								<button
@@ -2058,7 +2062,7 @@
 									onclick={() => moveBookmark(bookmark.id, 1)}>↓</button
 								>
 								<button class="{bmBtn} text-warn-text" title="Delete this view" onclick={() => deleteBookmark(bookmark.id)}>
-									<Icon name="trash-2" size={13} />
+									<Icon name="trash-2" size={16} />
 								</button>
 							</div>
 						{/each}
@@ -2624,7 +2628,7 @@
 						then press ▶ / P to simulate.
 					</p>
 				{:else}
-					<div id="physics-objects" class="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
+					<div id="physics-objects" class="flex max-h-48 flex-col gap-0.5 overflow-y-auto" use:minimalScroll>
 						{#each physicsRows as row (row.uuid)}
 							<button
 								class={'flex items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs transition-colors ' +
@@ -2769,6 +2773,39 @@
 				>
 					Start the simulation when play mode opens
 				</InsToggle>
+				<!-- 38 R8 (NOTES-38 #4): the top "Playing · Press Esc to stop" banner — the hint by
+				     default; a game or an advanced scene may hide it or say its own words -->
+				<div class="ui-row items-center gap-2">
+					<span class="w-24 shrink-0 text-xs text-text-2">Top banner</span>
+					<ThemedSelect
+						id="physics-play-banner"
+						class="flex-1"
+						value={$scenePlay.banner?.mode ?? 'hint'}
+						items={[
+							{ value: 'hint', name: 'Show hint' },
+							{ value: 'hide', name: 'Hide' },
+							{ value: 'custom', name: 'Custom text' }
+						]}
+						onchange={(/** @type {any} */ val) =>
+							setScenePhysics({
+								play: { banner: val === 'hint' ? null : val === 'hide' ? { mode: 'hide' } : { mode: 'custom', text: $scenePlay.banner?.text ?? '' } }
+							})}
+					/>
+				</div>
+				{#if $scenePlay.banner?.mode === 'custom'}
+					<div class="ui-row items-center gap-2">
+						<span class="w-24 shrink-0 text-xs text-text-2">Banner text</span>
+						<input
+							id="physics-play-banner-text"
+							class="ui-input flex-1 text-xs"
+							type="text"
+							maxlength="80"
+							placeholder="e.g. Find the three keys"
+							value={$scenePlay.banner.text}
+							onchange={(e) => setScenePhysics({ play: { banner: { mode: 'custom', text: e.currentTarget.value } } })}
+						/>
+					</div>
+				{/if}
 				<!-- 30c: where desktop play starts — feet position + heading, shared scene data -->
 				<div class="ui-row items-center gap-2">
 					<span class="w-24 shrink-0 text-xs text-text-2">Spawn point</span>
@@ -2802,8 +2839,10 @@
 					isOpen={true}
 					sliderDirection="horizontal"
 					--picker-indicator-size="20px"
-					--cp-bg-color="#1f2937"
-					--cp-border-color="#353f4e"
+					--cp-bg-color="var(--surface-1)"
+					--cp-border-color="var(--border)"
+					--cp-input-color="var(--surface-inset)"
+					--cp-text-color="var(--text)"
 					--picker-height="70px"
 					--picker-width="50px"
 					--slider-width="10px"
@@ -2822,14 +2861,16 @@
 					isOpen={true}
 					sliderDirection="horizontal"
 					--picker-indicator-size="20px"
-					--cp-bg-color="#1f2937"
-					--cp-border-color="#353f4e"
+					--cp-bg-color="var(--surface-1)"
+					--cp-border-color="var(--border)"
+					--cp-input-color="var(--surface-inset)"
+					--cp-text-color="var(--text)"
 					--picker-height="70px"
 					--picker-width="50px"
 					--slider-width="10px"
-					hex={envFog?.color ?? '#ffffff'}
+					hex={envFog?.color ?? FOG_DEFAULT}
 					onInput={(/** @type {any} */ c) => {
-						if (sameHex(c.hex, envFog?.color ?? '#ffffff')) return; // mount echo, not an edit
+						if (sameHex(c.hex, envFog?.color ?? FOG_DEFAULT)) return; // mount echo, not an edit
 						editEnvSky({ fog: { color: c.hex } });
 					}}
 				/>
@@ -2893,6 +2934,7 @@
 			<div class="flex flex-col gap-1">
 				<input
 					id="name"
+					title="Name"
 					type="text"
 					class="ui-input w-full"
 					value={$selectedObject.name}
@@ -2901,8 +2943,8 @@
 						sendName();
 					}}
 				/>
-				<Tooltip placement="top" arrow={false} triggeredBy="#name">Name</Tooltip>
-				<p id="uuid" class="truncate px-1 text-[length:var(--fs-badge)] text-text-faint" title={$selectedObject.uuid}>
+				<!-- 38 R11: the flowbite hover Tooltip "Name" is the input's own title now -->
+<p id="uuid" class="truncate px-1 text-[length:var(--fs-badge)] text-text-faint" title={$selectedObject.uuid}>
 					{$selectedObject.uuid}
 				</p>
 				<div onclick={refreshGroups} role="presentation">
@@ -3073,7 +3115,7 @@
 							title="Render one frame through this camera and download it as a PNG"
 							onclick={() => captureThroughCamera($selectedObject.uuid)}
 						>
-							<Icon name="camera" size={13} />Capture
+							<Icon name="camera" size={16} />Capture
 						</button>
 						<span class="text-[length:var(--fs-badge)] text-text-faint">saves a PNG at the framing aspect</span>
 					</div>
@@ -3516,8 +3558,10 @@
 						isOpen={true}
 						sliderDirection="horizontal"
 						--picker-indicator-size="20px"
-						--cp-bg-color="#1f2937"
-						--cp-border-color="#353f4e"
+						--cp-bg-color="var(--surface-1)"
+						--cp-border-color="var(--border)"
+						--cp-input-color="var(--surface-inset)"
+						--cp-text-color="var(--text)"
 						--picker-height="70px"
 						--picker-width="50px"
 						--slider-width="10px"
@@ -3539,8 +3583,10 @@
 							isOpen={true}
 							sliderDirection="horizontal"
 							--picker-indicator-size="20px"
-							--cp-bg-color="#1f2937"
-							--cp-border-color="#353f4e"
+							--cp-bg-color="var(--surface-1)"
+							--cp-border-color="var(--border)"
+							--cp-input-color="var(--surface-inset)"
+							--cp-text-color="var(--text)"
 							--picker-height="70px"
 							--picker-width="50px"
 							--slider-width="10px"
@@ -3771,8 +3817,10 @@
 							isOpen={true}
 							sliderDirection="horizontal"
 							--picker-indicator-size="20px"
-							--cp-bg-color="#1f2937"
-							--cp-border-color="#353f4e"
+							--cp-bg-color="var(--surface-1)"
+							--cp-border-color="var(--border)"
+							--cp-input-color="var(--surface-inset)"
+							--cp-text-color="var(--text)"
 							--picker-height="70px"
 							--picker-width="50px"
 							--slider-width="10px"
@@ -4316,7 +4364,7 @@
 						{#if (p.mode ?? 'continuous') !== 'continuous'}
 							<div class="ui-row items-center gap-2">
 								<UiButton size="sm" variant="outline" onclick={() => burstObjectParticles($selectedObject.uuid)}>
-									<Sparkles size={16} class="mr-1" aria-hidden="true" />Burst now
+									<Icon name="sparkles" size={16} class="mr-1" aria-hidden="true" />Burst now
 								</UiButton>
 								<span class="text-xs text-text-muted">fires for every peer</span>
 							</div>
@@ -4388,7 +4436,7 @@
 								type="color"
 								aria-label="Particle start color"
 								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
-								value={p.colorStart ?? '#ffffff'}
+								value={p.colorStart ?? PARTICLE_START_DEFAULT}
 								oninput={(/** @type {any} */ e) => setParticles({ colorStart: e.currentTarget.value })}
 							/>
 							<span class="text-xs text-text-muted">→</span>
@@ -4396,7 +4444,7 @@
 								type="color"
 								aria-label="Particle end color"
 								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
-								value={p.colorEnd ?? '#8899aa'}
+								value={p.colorEnd ?? PARTICLE_END_DEFAULT}
 								oninput={(/** @type {any} */ e) => setParticles({ colorEnd: e.currentTarget.value })}
 							/>
 						</div>
@@ -4729,7 +4777,7 @@
 		font-size: 10px;
 		font-style: italic;
 		/* 36 U1: theme ink (2.5:1 on the light theme's white drawer) */
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 	}
 	/* five PEER toggles, not presets: right-aligning them in the numeric grid
 	   stranded the fifth chip on a line of its own against the right edge */
@@ -4752,21 +4800,21 @@
 		width: 100%;
 		padding: 0.3rem 0.5rem;
 		border-radius: 0.375rem;
-		border: 1px dashed var(--border, rgb(255 255 255 / 0.25));
-		background: rgb(255 255 255 / 0.04);
-		color: var(--text-2, rgb(209 213 219));
+		border: 1px dashed var(--border-strong);
+		background: color-mix(in srgb, var(--surface-hover) 45%, transparent);
+		color: var(--text-2);
 		font-size: 11px;
 	}
 	.snap-action:hover {
-		background: rgb(255 255 255 / 0.09);
-		color: var(--text, #fff);
+		background: var(--surface-hover);
+		color: var(--text);
 	}
 	.snap-action-armed,
 	.snap-action-armed:hover {
-		background: #d97706;
+		background: var(--accent-fill);
 		border-style: solid;
-		border-color: #f59e0b;
-		color: #fff;
+		border-color: var(--accent);
+		color: var(--on-accent);
 	}
 	.snap-group {
 		display: flex;
@@ -4775,12 +4823,12 @@
 		gap: 0.5rem;
 		margin-top: 0.35rem;
 		padding-top: 0.4rem;
-		border-top: 1px solid rgb(255 255 255 / 0.08);
+		border-top: 1px solid var(--border);
 	}
 	.snap-group-hint {
 		font-size: 10px;
 		font-style: italic;
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 	}
 	.snap-status {
 		display: flex;
@@ -4799,21 +4847,21 @@
 		min-width: 0;
 		font-size: 10px;
 		font-style: italic;
-		color: rgb(156 163 175);
+		color: var(--text-muted);
 	}
 	.snap-status-armed {
-		background: rgb(217 119 6 / 0.14);
-		border-color: rgb(217 119 6 / 0.45);
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 	}
 	.snap-status-armed .snap-status-text {
-		color: #fbbf24;
+		color: var(--accent-text);
 	}
 	.snap-status-picked {
-		background: rgb(16 185 129 / 0.12);
-		border-color: rgb(16 185 129 / 0.35);
+		background: color-mix(in srgb, var(--ink-good) 12%, transparent);
+		border-color: color-mix(in srgb, var(--ink-good) 35%, transparent);
 	}
 	.snap-status-picked .snap-status-text {
-		color: #34d399;
+		color: var(--ink-good);
 		margin-right: auto;
 	}
 
@@ -4825,14 +4873,14 @@
 		gap: 5px;
 		margin: 2px 0;
 		padding: 6px 7px;
-		border: 1px solid rgb(168 85 247 / 0.4);
+		border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
 		border-radius: 5px;
-		background: rgb(168 85 247 / 0.1);
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
 	}
 	.shader-driven-text {
 		font-size: 10px;
 		line-height: 1.35;
-		color: #d8b4fe;
+		color: var(--accent-text);
 	}
 	.shader-driven-actions {
 		display: flex;

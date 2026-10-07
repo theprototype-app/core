@@ -56,16 +56,17 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: rgba(0, 0, 0, 0.6);
+		background: var(--scrim);
 	}
 	.rp-card {
 		max-width: 440px;
 		margin: 16px;
 		padding: 20px 22px;
 		border-radius: 10px;
-		background: var(--surface, #1f2937);
-		color: var(--text, #fff);
-		box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+		background: var(--surface-1);
+		color: var(--text);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow-window);
 	}
 	.rp-card h2 {
 		margin: 0 0 8px;
@@ -76,11 +77,11 @@
 		margin: 0 0 12px;
 		font-size: 13px;
 		line-height: 1.5;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 	}
 	.rp-note {
 		font-size: 12px !important;
-		color: #fbbf24 !important;
+		color: var(--ink-warn) !important;
 	}
 	.rp-actions {
 		display: flex;
@@ -93,14 +94,15 @@
 		border: 0;
 		border-radius: 7px;
 		font-size: 13px;
-		background: #374151;
-		color: #fff;
+		background: var(--surface-2);
+		color: var(--text);
 		cursor: pointer;
 	}
 	.rp-btn:hover {
 		filter: brightness(1.2);
 	}
 	.rp-primary {
-		background: var(--accent, #2563eb);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 </style>

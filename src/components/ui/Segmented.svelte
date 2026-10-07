@@ -79,7 +79,7 @@
 			onclick={() => pick(i)}
 			onkeydown={(e) => onKey(e, i)}
 		>
-			{#if o.icon}<Icon name={o.icon} size={16} strokeWidth={1.75} />{/if}
+			{#if o.icon}<Icon name={o.icon} size={16} />{/if}
 			<span>{o.label}</span>
 		</button>
 	{/each}

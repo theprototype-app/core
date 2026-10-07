@@ -247,6 +247,28 @@
 	padding: 0 5px;
 	border-radius: var(--radius-window);
 }
+/* The top-right group HOSTS fixed-position panels (#notif-panel, which the phone shell turns
+   into a full-width sheet, and #peers-popover under a docked Connect bar), and a
+   backdrop-filter makes its element the containing block for fixed descendants (the CLAUDE.md
+   transform/filter trap): the notifications sheet came out 44 px wide inside this group. So
+   the glass (fill + blur) lives on a pseudo-element here; the group itself filters nothing. */
+.hud-tr.hud-glass {
+	background: transparent;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+	isolation: isolate;
+}
+.hud-tr.hud-glass::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	border-radius: inherit;
+	background: var(--hud-glass);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	pointer-events: none;
+}
 .hud-tr .hud-tr-peers {
 	width: auto;
 	gap: 6px;

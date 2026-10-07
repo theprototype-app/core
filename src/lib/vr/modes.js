@@ -9,6 +9,7 @@ import { setEditorMode, toggleEditorMode } from '../objectActions';
 import { S } from './state.js';
 import { renderer } from './core.js';
 import { grabs, syncGrabbedHand, endGrab, emptyAirSqueeze, resetWorldRig } from './grip.js';
+import { endWorldSnap } from './worldSnap.js';
 import { hapticPulse } from './haptics.js';
 import { controllerIndexFor } from './input.js';
 import { noteXRBaseSpace, viewerNow, spawnPlayer } from './locomotion.js';
@@ -46,6 +47,7 @@ export function onVRSessionStart() {
 /** Interact starts at 1:1, on the spawn, with no editor gesture half-done. */
 function enterInteractVR() {
 	S.worldGrab = null;
+	endWorldSnap(); // 37 R10: the readout goes with the gesture
 	S.worldPan = null;
 	emptyAirSqueeze[0] = emptyAirSqueeze[1] = false;
 	for (let i = 0; i < grabs.length; i++) {

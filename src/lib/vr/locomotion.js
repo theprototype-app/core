@@ -328,6 +328,11 @@ function executeTeleport(target, bounded = false) {
 	hapticPulse(0.4, 60);
 }
 
+/** 37 R10: stand on a world point, feet first, with the blink (the dollhouse's landing) @param {number[]} point */
+export function teleportTo(point) {
+	executeTeleport(new THREE.Vector3().fromArray(point), true);
+}
+
 /** Does a right-stick position arm the teleport arc? (up + more up than sideways). Pure for tests. @param {number} x @param {number} y */
 export function teleportArms(x, y) {
 	return y < -0.7 && Math.abs(y) > Math.abs(x);

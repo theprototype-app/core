@@ -845,6 +845,19 @@ loadable play content. Everything a user does must be visible to connected peers
   0 welded edges used other than twice AND 0 directed edges walked twice the same way.
   CSG output (three-bvh-csg, `meshBooleanCore`) is full of T-junctions — closed to the
   eye, cracked to every welded-key tool — so `repairTJunctions` runs on every result.
+  37 R11 (1.28): the KNIFE is a polyline (`knifeCutCore`, pure): every corner on the mesh is
+  INSERTED as a vertex first (per welded edge when it sits on one), then each segment is a
+  straight cut on the previous result — a cut ending at an inserted vertex leaves through ONE
+  crossing and the one-crossing fan lands on that vertex, so no per-triangle cut graph is
+  needed. LIVE SYMMETRY (`meshToolParams.liveSymmetry`, local, not persisted) hooks the
+  OPERATOR boundary, never applyGeometrySnapshot/applyMeshGeo (restore paths): one-shot ops
+  record through `recordOp` (mirror on a microtask, after the op's own selection code, then
+  `entry.after` is rewritten — ONE undo entry), the adjust engine mirrors the pure result
+  (`mirrorAdjustResult`, side fixed per adjust), vertex-mode ops pass `op=true` to
+  commitMeshGeoTriple/Snapshot, and a vertex DRAG moves each vertex's mirror twin live
+  (meshEdit `liveTwins`; plane vertices are pinned to the plane). The source side is the side
+  the edit CHANGED (`editSide`), `symKeep` only breaks a tie. `mirrorTrisCore` is the shared
+  pure half of Symmetrize.
   Two traps live here. The LIVE PREVIEW (`liveGeometryUpdate`) swaps geometry every
   frame, so topology has to survive the preview or there is nothing left for the
   commit to carry — that was the real reason a rotated band still lost its quads after

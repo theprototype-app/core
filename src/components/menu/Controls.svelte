@@ -34,6 +34,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	import SearchField from '../ui/SearchField.svelte';
+	import Badge from '../ui/Badge.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import { createAttachmentKey, fromAction } from 'svelte/attachments';
 	import MobileAddButton from './MobileAddButton.svelte';
@@ -2313,6 +2314,8 @@
 	>
 		{#snippet heading()}
 			<span class="wc-label" title="Objects">{#if objHideLabel}<Icon name="list" size={16} />{:else}Objects{/if}</span>
+			<!-- 38 NOTES-38 #24 (design page): the tool header carries the count -->
+			<span class="obj-head-count" aria-label="{objectCount} objects">{objectCount}</span>
 			{#if !objHideSearch}
 				<span class="obj-search" on:pointerdown={(e) => e.stopPropagation()} role="presentation">
 					<SearchField
@@ -2533,26 +2536,31 @@
 	<!-- 26-A: THE BUDGET METER. One dot beside the count that a person can learn in a
 	     second, next to the one number that already says how big the scene is. It opens
 	     the Statistics window, because a warning you cannot act on is a decoration. -->
-	{#if $qualityState.level > 0 || $qualityState.pinned}
+	<!-- 38 NOTES-38 #24 (design page): ONE status line — the count in mono on the left, the
+	     reduced-quality state as a warn Badge on the right (it was a raw amber strip above).
+	     Both stay the buttons they were: same ids, same handlers. -->
+	<div class="obj-foot-row shrink-0">
 		<button
-			id="quality-chip"
-			class="shrink-0 bg-amber-100 px-2 py-0.5 text-left text-[10px] text-amber-800 dark:bg-amber-900/60 dark:text-amber-200"
-			data-level={$qualityState.level}
-			data-pinned={$qualityState.pinned ? 'true' : 'false'}
-			title={qualityTitle}
-			use:qualityChipClick
+			id="object-count"
+			class="obj-foot text-left"
+			title={budgetTitle}
+			use:openStats
 		>
-			Reduced quality{$qualityState.pinned ? ' · held' : ' (scene is heavy)'}
+			<span id="object-budget-dot" class="budget-dot mr-1" data-tier={budgetTier}></span>{objectCount} object{objectCount === 1 ? '' : 's'}{hiddenCount ? ' · ' + hiddenCount + ' hidden' : ''}
 		</button>
-	{/if}
-	<button
-		id="object-count"
-		class="obj-foot shrink-0 text-left"
-		title={budgetTitle}
-		use:openStats
-	>
-		<span id="object-budget-dot" class="budget-dot mr-1" data-tier={budgetTier}></span>{objectCount} object{objectCount === 1 ? '' : 's'}{hiddenCount ? ' · ' + hiddenCount + ' hidden' : ''}
-	</button>
+		{#if $qualityState.level > 0 || $qualityState.pinned}
+			<button
+				id="quality-chip"
+				class="obj-quality"
+				data-level={$qualityState.level}
+				data-pinned={$qualityState.pinned ? 'true' : 'false'}
+				title={qualityTitle}
+				use:qualityChipClick
+			>
+				<Badge tone="warn" text={'Reduced quality' + ($qualityState.pinned ? ' · held' : ' (scene is heavy)')} />
+			</button>
+		{/if}
+	</div>
 	<!-- corner grip INSIDE the window (was parked 38px below the box and unreachable, 92) -->
 	<div
 		class="resize-handle resize-cue"
@@ -2675,17 +2683,42 @@
 	.obj-pop-reset:hover {
 		background: var(--surface-hover);
 	}
+	.obj-foot-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 8px;
+		min-height: 28px;
+		padding: 0 8px 0 0;
+		border-top: 1px solid var(--border);
+	}
 	.obj-foot {
 		display: flex;
 		align-items: center;
+		min-width: 0;
 		height: 26px;
 		padding: 0 12px;
 		border: 0;
-		border-top: 1px solid var(--border);
 		background: transparent;
 		color: var(--text-faint);
+		font-family: var(--font-ui-mono);
 		font-size: var(--fs-badge);
+		white-space: nowrap;
 		cursor: pointer;
+	}
+	.obj-quality {
+		display: inline-flex;
+		min-width: 0;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		cursor: pointer;
+	}
+	.obj-head-count {
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
+		color: var(--text-faint);
+		font-variant-numeric: tabular-nums;
 	}
 	.obj-foot:hover {
 		color: var(--text-2);

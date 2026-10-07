@@ -9,7 +9,7 @@
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
-	import { notesDrawerOpen, inspectorClose, noteDoubleClickToOpen } from '../../stores/appStore.js';
+	import { notesDrawerOpen, inspectorClose, noteDoubleClickToOpen, showToast } from '../../stores/appStore.js';
 	import {
 		annotations,
 		activeAnnotation,
@@ -20,9 +20,10 @@
 		displayName,
 		displayAuthor,
 		showNotePins,
+		addAnnotation,
 		DEFAULT_NOTE_COLOR
 	} from '$lib/annotationsHandler';
-	import { objectsGroup } from '../../stores/sceneStore.js';
+	import { objectsGroup, selectedObjects } from '../../stores/sceneStore.js';
 	import { safeStorage } from '$lib/safeStorage';
 
 	// One bottom sheet at a time on narrow: opening scene notes closes the object/scene
@@ -168,10 +169,14 @@
 		</WindowChrome>
 		<div class="notes-body min-h-0 flex-1 overflow-y-auto p-2">
 			{#if !$annotations.length}
+				<!-- 38 NOTES-38 #24 (design page): the empty view offers its next step — the same
+				     addAnnotation the object menu's Add note runs, on the current selection -->
 				<EmptyState
 					icon="sticky-note"
 					title="No notes yet"
 					description="Select an object and add a note from its context menu or the object list."
+					actionLabel="Add note to selection"
+					onaction={() => ($selectedObjects.length ? addAnnotation($selectedObjects[0]) : showToast('Select an object to annotate'))}
 				/>
 			{:else}
 				{#each groups as group (group.label)}

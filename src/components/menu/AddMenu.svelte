@@ -3,10 +3,18 @@
 	// 🔍 entry or Shift+A. Results are Category · Label over the full catalog;
 	// Enter/click spawns at the menu's ground point and replicates.
 	import { untrack } from 'svelte';
-	import { addMenu } from '../../stores/appStore.js';
+	import { addMenu, aiAssistantHidden, showToast, settingsOpen, settingsSection } from '../../stores/appStore.js';
+	import { aiReady } from '$lib/ai/providers';
 	import { primitivesCatalog } from '$lib/primitivesCatalog';
 	import { spawnAtPoint } from '$lib/addObjects';
 	import { rightDragMove, inputContextMenu } from '$lib/searchMenuUx';
+	import Icon from '../ui/Icon.svelte';
+
+	// 38 NOTES-38 #24 (design page): "one menu style — 32px rows, icons, sections". Browsing
+	// (no query) shows the catalog under faint section labels with an icon per row; a search
+	// stays one flat ranked list with the group on the right, since a hit can come from any.
+	/** @type {Record<string, string>} */
+	const GROUP_ICONS = { Mesh: 'box', 'Building blocks': 'boxes', Ground: 'mountain', Simulation: 'atom', Camera: 'camera', Light: 'sun' };
 
 	let query = $state('');
 	let selectedIndex = $state(0);
@@ -92,6 +100,19 @@
 		dragged = false; // the next open re-anchors to wherever it is invoked from
 	}
 
+	// the menu's last row opens the AI assistant — the AiHudButton's own path (Settings › AI
+	// with a toast when no provider is set up yet), opening rather than toggling
+	function openAi() {
+		close();
+		if (!aiReady()) {
+			showToast('Enable an AI provider in Settings to use the assistant');
+			settingsSection.set('ai');
+			settingsOpen.set(true);
+			return;
+		}
+		aiAssistantHidden.set('');
+	}
+
 	/** @param {string} command */
 	function spawn(command) {
 		const menu = $addMenu;
@@ -107,6 +128,7 @@
 	const entries = primitivesCatalog.flatMap((group) =>
 		group.items.map((item) => ({ ...item, group: group.group }))
 	);
+	const browsing = $derived(!query.trim());
 	const results = $derived.by(() => {
 		const q = query.trim().toLowerCase();
 		if (!q) return entries;
@@ -170,6 +192,9 @@
 		<div class="mt-1 max-h-64 overflow-y-auto">
 			<!-- 38 R6: menu rows (32px, the shared hover = the keyboard cursor), group on the right -->
 			{#each results as entry, index (entry.command)}
+				{#if browsing && (index === 0 || results[index - 1].group !== entry.group)}
+					<div class="add-section" role="presentation">{entry.group}</div>
+				{/if}
 				<button
 					class="add-row"
 					class:add-row-on={index === selectedIndex}
@@ -177,14 +202,22 @@
 					onmouseenter={() => (selectedIndex = index)}
 					onclick={() => spawn(entry.command)}
 				>
+					<span class="add-ico" aria-hidden="true"><Icon name={GROUP_ICONS[entry.group] ?? 'box'} size={16} /></span>
 					<span class="add-label">{entry.label}</span>
-					<span class="add-group">{entry.group}</span>
+					{#if !browsing}<span class="add-group">{entry.group}</span>{/if}
 				</button>
 			{/each}
 			{#if !results.length}
 				<p class="add-empty">No matches for “{query}”</p>
 			{/if}
 		</div>
+		{#if browsing}
+			<div class="add-sep" role="presentation"></div>
+			<button id="add-generate-ai" class="add-row" onclick={openAi}>
+				<span class="add-ico" aria-hidden="true"><Icon name="sparkles" size={16} /></span>
+				<span class="add-label">Generate with AI…</span>
+			</button>
+		{/if}
 	</div>
 {/if}
 
@@ -222,6 +255,24 @@
 		letter-spacing: var(--tracking-section);
 		text-transform: uppercase;
 		color: var(--text-faint);
+	}
+	.add-ico {
+		display: inline-flex;
+		flex-shrink: 0;
+		color: var(--text-muted);
+	}
+	.add-section {
+		padding: 8px 10px 4px;
+		font-size: var(--fs-badge);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+	.add-sep {
+		height: 1px;
+		margin: 5px 4px;
+		background: var(--border);
 	}
 	.add-empty {
 		padding: 8px 10px;

@@ -1694,8 +1694,10 @@
 
 			<Section variant="panel" label="Music">
 				<p class="ui-section-label">Scene track (shared)</p>
+				<!-- 38 NOTES-38 #24 (design page): the track and its Play/Stop on one row -->
+				<div class="flex items-center gap-2">
 				<select
-					class="ui-input w-full"
+					class="ui-input min-w-0 flex-1"
 					value={$music.hash ?? ''}
 					onchange={(e) => {
 						const hash = e.currentTarget.value || null;
@@ -1711,18 +1713,17 @@
 						<option value={$music.hash}>{$music.name || 'shared track'} (fetching…)</option>
 					{/if}
 				</select>
-				<div class="mt-1 flex items-center gap-2">
 					<button
-						class="ui-chip {$music.playing ? 'ins-chip-on' : ''}"
+						class="ui-chip shrink-0 {$music.playing ? 'ins-chip-on' : ''}"
 						disabled={!$music.hash}
 						onclick={() => setMusicPlaying(!$music.playing)}
 					>
 						{$music.playing ? '■ Stop' : '▶ Play'}
 					</button>
-					{#if $musicBlocked && $music.playing}
-						<span class="text-xs text-warn-text">click anywhere to enable audio</span>
-					{/if}
 				</div>
+				{#if $musicBlocked && $music.playing}
+					<span class="text-xs text-warn-text">click anywhere to enable audio</span>
+				{/if}
 				<SliderRow label="Shared volume" min={0} max={1} step={0.05} value={$music.volume} onchange={(v) => setMusicVolume(v)} />
 				<p class="ui-section-label">This device</p>
 				<SliderRow label="Local volume" min={0} max={1} step={0.05} value={$musicLocalVolume} onchange={(v) => musicLocalVolume.set(v)} />
@@ -2761,8 +2762,10 @@
 			{/if}
 		</div>
 	{:else if $selectedObject?.name !== undefined}
+		<!-- 38 NOTES-38 #24 (design page): the header names WHAT is inspected — the object's own
+		     name beside its kind badge; a set keeps the generic title -->
 		<InspectorHead
-			title="Properties"
+			title={multiCount ? 'Properties' : $selectedObject.name || 'Properties'}
 			icon="box"
 			badge={multiCount ? `${multiCount} objects` : $selectedObject.type}
 			filter
@@ -2994,7 +2997,8 @@
 					<LoadStatePanel object={$selectedObject} />
 				</Section>
 			{/if}
-			<Section variant="panel" label="Transform">
+			<!-- 38 NOTES-38 #24 (design page): a transform is shared, and its section says so -->
+			<Section variant="panel" label="Transform" badge="Shared">
 				{#if multiCount}
 					<!-- 17-D1 follow-up: for a SET these rows drive the selection's origin
 					     (the gizmo's pivot), so every axis has one real value instead of a

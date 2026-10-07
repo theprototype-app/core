@@ -180,7 +180,18 @@
 						{/each}
 					</select>
 				{:else}
-					<span class="ai-hint flex-1">No provider configured — see Settings › AI</span>
+					<!-- 38 NOTES-38 #24 (design page): the hint is the way there — the same Settings › AI
+					     deep link the provider toast uses -->
+					<span class="ai-hint flex-1"
+						>No provider yet. <button
+							type="button"
+							class="ai-hint-link"
+							onclick={() => {
+								settingsSection.set('ai');
+								settingsOpen.set(true);
+							}}>Set one up in Settings › AI</button
+						></span
+					>
 				{/if}
 			</div>
 			<div class="flex items-center gap-1.5">
@@ -256,6 +267,18 @@
 	.ai-hint {
 		font-size: var(--fs-section);
 		color: var(--text-muted);
+	}
+	.ai-hint-link {
+		padding: 0 2px;
+		border: 0;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--accent-text);
+		font: inherit;
+		cursor: pointer;
+	}
+	.ai-hint-link:hover {
+		background: var(--surface-hover);
 	}
 	.ai-mic {
 		display: inline-flex;

@@ -96,8 +96,9 @@ h.run(async () => {
 			// and is no roster cell)
 			.filter((e) => e.id !== 'play-button' && e.id !== 'toolbar-customize' && e.getClientRects().length)
 			// cells are keyed by their tooltip (most carry no id); the title is also the
-			// accessible name the redesign keeps (SPEC §5: icon buttons with tooltips)
-			.map((e) => ({ id: e.getAttribute('title') || '', title: e.getAttribute('title') }))
+			// accessible name the redesign keeps (SPEC §5: icon buttons with tooltips). They are
+			// CLICKED by position (data-lock-cell): 1.26's Pivot cell retitles itself per mode.
+			.map((e, i) => (e.setAttribute('data-lock-cell', String(i)), { id: e.getAttribute('title') || '', title: e.getAttribute('title'), at: i }))
 	);
 	h.check(cells.length >= 6, `the toolbar has its cells (${cells.map((c) => c.title).join(', ')})`);
 	/** @type {Set<string>} */
@@ -112,7 +113,7 @@ h.run(async () => {
 		await page.waitForTimeout(200);
 		await L.learnNoise(page, noisy, 250);
 		const before = await L.snap(page);
-		await page.locator(`#controls-pill [title="${cell.title}"]`).click();
+		await page.locator(`#controls-pill [data-lock-cell="${cell.at}"]`).click();
 		await page.waitForTimeout(500);
 		const after = await L.snap(page);
 		const fx = L.effectsOf(before, after, [], noisy);
@@ -129,7 +130,7 @@ h.run(async () => {
 					dialogs: row.dialogs.filter((d) => prev.dialogs.includes(d))
 				};
 		// press it back where it is a toggle; otherwise put the world back
-		await page.locator(`#controls-pill [title="${cell.title}"]`).click().catch(() => {});
+		await page.locator(`#controls-pill [data-lock-cell="${cell.at}"]`).click().catch(() => {});
 		await page.waitForTimeout(300);
 		await S.closeAll(page);
 	}

@@ -2,6 +2,7 @@
 	import { micActive, pttActive, toggleMic, speakingPeers } from '$lib/voiceChat';
 	import { peerColor } from '$lib/lockControl';
 	import Icon from '../ui/Icon.svelte';
+	import { phoneShellActive } from '$lib/ui/phoneShell.js';
 	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight, toastStore, toastsInDrawerOnly } from '../../stores/appStore'
 	import Badge from '../ui/Badge.svelte';
 	import { onMount, tick } from 'svelte';
@@ -138,13 +139,16 @@
 
 	// publish docked + the bar height so the logo/profile chrome can clear it
 	const TAB_STRIP_H = 32; // approx height of the drawer's tab bar
+	// 38 R9: on the phone shell the bar is a SHEET behind a chip — it docks nothing and
+	// pushes nothing down, so it publishes the undocked values
+	const docksChrome = $derived(docked && !$phoneShellActive);
 	$effect(() => {
-		connectDocked.set(docked);
+		connectDocked.set(docksChrome);
 	});
 	$effect(() => {
 		const barVisible = drawerVisible; // track
 		let bh = 0;
-		if (docked) {
+		if (docksChrome) {
 			const pillH = pillEl?.offsetHeight || 46;
 			bh = pillH + (barVisible ? TAB_STRIP_H : 0);
 		}
@@ -154,7 +158,7 @@
 		// docked (chrome dropped under it) — otherwise they stay below the profile.
 		if (typeof document !== 'undefined') {
 			document.documentElement.style.setProperty('--connect-bottom', bh + 'px');
-			document.documentElement.classList.toggle('connect-docked', docked);
+			document.documentElement.classList.toggle('connect-docked', docksChrome);
 		}
 	});
 
@@ -191,7 +195,9 @@
 	$effect(() => {
 		if (connState !== 'connected') expanded = false;
 	});
-	const compact = $derived(connState === 'connected' && !expanded);
+	// on the phone shell the bar only ever shows INSIDE the Connect sheet, which is the
+	// expanded form already — the shell draws its own chip (#ps-connect-chip)
+	const compact = $derived(connState === 'connected' && !expanded && !$phoneShellActive);
 	const chipLabel = $derived($sessionHost ? hostLabel : 'Hosting');
 	/** up to three peers on the chip, the rest as +N (NOTES-38 #12: a speaker gets the ring) */
 	const chipPeers = $derived(

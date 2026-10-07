@@ -42,6 +42,10 @@
 	import { isLocked } from '../stores/sceneStore'
 	// 29-E: `?embed=1` (playMode.embedMode) hides the editor chrome for the page's life
 	import { embedMode } from '../lib/playMode'
+	// 38 R9: below 640px the decluttered phone shell (top bar, context strip, bottom bar,
+	// sheets) is drawn over the same components — see PhoneShell.svelte
+	import PhoneShell from './phone/PhoneShell.svelte'
+	import { phoneShell } from '$lib/ui/phoneShell.js'
 </script>
 
 <Chat />
@@ -84,5 +88,8 @@
      is an inset viewport drawn by the render loop) -->
 <CameraPipWindow />
 </div>
+{#if $phoneShell && !$isLocked && !$embedMode}
+	<PhoneShell />
+{/if}
 
 <div class="dark-mode hidden"><DarkMode /></div>

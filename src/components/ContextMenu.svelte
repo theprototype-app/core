@@ -107,6 +107,16 @@
 	 *  opened. Requiring the pointerdown too makes the backdrop dismiss only real
 	 *  outside taps. */
 	let backdropPressed = false;
+	/** 38 R9: the same rule for the MENU itself. On a phone the menu is a bottom sheet,
+	 *  so a long press low on the screen opens it UNDER the finger and the lift used to
+	 *  tap whatever row landed there. A touch click counts only when its press also
+	 *  landed in the menu (keyboard and synthetic clicks carry no pointerType). */
+	let menuPressed = false;
+	function guardLift(e: MouseEvent) {
+		if ((e as PointerEvent).pointerType !== 'touch' || menuPressed) return;
+		e.stopPropagation();
+		e.preventDefault();
+	}
 	/** how many rows the empty-query browse list shows (it scrolls) */
 	const BROWSE_CAP = 200;
 	/** 16-Q5: default height of the SEARCH list. A menu that unfolds down the whole
@@ -401,7 +411,7 @@
      exists, this menu is already mounted under the cursor and IS its target. No
      blocker on the surface that was right-clicked can help: the event never reaches
      it, in either phase. Submenus are DOM children here, so they bubble to this. -->
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_interactive_supports_focus -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_interactive_supports_focus, a11y_click_events_have_key_events -->
 <div
 	use:portal
 	use:place
@@ -409,6 +419,8 @@
 	style="left: 0; top: 0; z-index: calc(var(--z-menu) + 1);"
 	role="menu"
 	on:mousedown={keepFocus}
+	on:pointerdown|capture={() => (menuPressed = true)}
+	on:click|capture={guardLift}
 	on:contextmenu|preventDefault
 >
 	{#if headerItem}

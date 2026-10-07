@@ -8,6 +8,9 @@
 @import './styles/windows.css';
 /* 38 R8: the main HUD's shared look (Controls, Connect, top-right, corner buttons, toasts) */
 @import './styles/hud.css' layer(utilities);
+/* 38 R9: the phone shell's placement rules — UNLAYERED on purpose: they re-seat reused
+   chrome over inline styles and must beat every utility (all scoped to :root.phone-shell) */
+@import './styles/phone.css';
 
 @plugin 'flowbite/plugin';
 

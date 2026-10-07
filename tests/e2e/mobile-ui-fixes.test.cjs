@@ -235,9 +235,17 @@ h.run(async () => {
 		!!anchor && anchor.trigger[0] <= 60 && anchor.trigger[1] >= 40,
 		`the dropdown's trigger is the avatar circle itself, not a wide invisible box (${JSON.stringify(anchor)})`
 	);
+	// 38 R9: below 640px the phone shell draws the profile menu as a BOTTOM SHEET (design
+	// map row 16, "opens a sheet") — the seat-on-the-circle rule is the desktop/tablet one
+	const phoneShell = await A.page.evaluate(() => document.documentElement.classList.contains('phone-shell'));
+	const sheet = phoneShell && (await A.page.evaluate(() => { const p = document.querySelector('[popover]:popover-open')?.getBoundingClientRect(); return p && { left: Math.round(p.left), right: Math.round(p.right), bottom: Math.round(p.bottom), vw: innerWidth, vh: innerHeight }; }));
 	h.check(
-		!!anchor && Math.abs(anchor.rightGap) <= 2 && Math.abs(anchor.topGap) <= 2 && anchor.inset >= 12,
-		`on a narrow screen the panel seats on the circle and stays off the window edge (${JSON.stringify(anchor)})`
+		phoneShell
+			? !!sheet && sheet.left === 0 && sheet.right === sheet.vw && sheet.bottom === sheet.vh
+			: !!anchor && Math.abs(anchor.rightGap) <= 2 && Math.abs(anchor.topGap) <= 2 && anchor.inset >= 12,
+		phoneShell
+			? `on a phone the profile menu is a bottom sheet (${JSON.stringify(sheet)})`
+			: `on a narrow screen the panel seats on the circle and stays off the window edge (${JSON.stringify(anchor)})`
 	);
 	await A.page.locator(CIRCLE).first().click({ force: true });
 	await A.page.waitForTimeout(300);
@@ -333,7 +341,9 @@ h.run(async () => {
 		localStorage.removeItem('dockedWindows');
 		localStorage.removeItem('dockWidth:objects');
 	});
-	await A.page.setViewportSize({ width: 430, height: 800 });
+	// 38 R9: below 640px the phone shell places the object list into a bottom sheet (no
+	// floating window to drag), so the floating-window rule is checked just above it
+	await A.page.setViewportSize({ width: 700, height: 800 });
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForFunction(() => window.__stores && !!window.__stores.objectActions, { timeout: 30000 });
 	await A.page.evaluate(() => window.__stores.objectListClose.set(false));

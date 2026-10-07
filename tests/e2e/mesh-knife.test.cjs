@@ -233,7 +233,7 @@ h.run(async () => {
 	const c1 = P(-260, -20);
 	const c2 = P(-20, -25); // inside the front face: becomes a vertex
 	const c3 = P(15, 60); // inside too
-	const stray = P(200, 200);
+	const stray = P(150, 120);
 	const c4 = P(260, 70);
 	await A.page.mouse.click(c1[0], c1[1]);
 	await A.page.keyboard.down('Shift');
@@ -252,7 +252,11 @@ h.run(async () => {
 			tris: window.__stores.faceEdit.readTriangles(window.__box.geometry).length
 		};
 	});
-	h.check(placed.points === 4, `Shift+click placed corners (${placed.points} points pending)`);
+	const underStray = await A.page.evaluate(([x, y]) => {
+		const el = document.elementFromPoint(x, y);
+		return el ? el.tagName + '#' + (el.id || '') + '.' + String(el.className || '').slice(0, 40) : 'nothing';
+	}, stray);
+	h.check(placed.points === 4, `Shift+click placed corners (${placed.points} points pending; the stray click landed on ${underStray})`);
 	h.check(placed.polyline && placed.corners >= 4, '...drawn as a polyline with a dot per corner');
 	h.check(placed.tris === 12, '...and nothing is cut yet');
 	await A.page.keyboard.press('Backspace');
@@ -317,33 +321,61 @@ h.run(async () => {
 		window.__stores.faceEdit.setFaceOp('knife');
 		return window.__stores.faceEdit.readTriangles(window.__box.geometry).length;
 	});
-	await A.page.mouse.click(...P(-260, 90));
+	// points projected FROM the box's front face (the toolbox can sit over a fixed pixel offset)
+	const facePx = (pts) =>
+		A.page.evaluate((pts) => {
+			const s = window.__stores;
+			let camera;
+			s.globalCamera.subscribe((c) => (camera = c))();
+			let renderer;
+			s.globalRenderer.subscribe((r) => (renderer = r))();
+			const rect = renderer.domElement.getBoundingClientRect();
+			return pts.map(([x, y]) => {
+				const p = new s.THREE.Vector3(x, y, 1).applyMatrix4(window.__box.matrixWorld).project(camera);
+				const px = [Math.round(rect.left + ((p.x + 1) / 2) * rect.width), Math.round(rect.top + ((1 - p.y) / 2) * rect.height)];
+				const el = document.elementFromPoint(px[0], px[1]);
+				return { px, canvas: el === renderer.domElement, under: el ? el.tagName + '#' + (el.id || '') : 'nothing' };
+			});
+		}, pts);
+	const enterPts = await facePx([[-1.6, 0.6], [0, 0.65], [1.6, 0.7]]);
+	h.check(enterPts.every((p) => p.canvas), `the Enter-section points are on the canvas (${enterPts.map((p) => p.under).join(', ')})`);
+	await A.page.mouse.click(...enterPts[0].px);
 	await A.page.keyboard.down('Shift');
-	await A.page.mouse.click(...P(0, 95));
-	await A.page.mouse.click(...P(260, 100));
+	await A.page.mouse.click(...enterPts[1].px);
+	await A.page.mouse.click(...enterPts[2].px);
 	await A.page.keyboard.up('Shift');
 	await A.page.keyboard.press('Enter');
 	await A.page.waitForTimeout(250);
 	const enterCut = await A.page.evaluate(() => {
 		let preview;
 		window.__stores.faceEdit.knifePreview.subscribe((v) => (preview = v))();
-		return { tris: window.__stores.faceEdit.readTriangles(window.__box.geometry).length, pending: !!preview };
+		return {
+			tris: window.__stores.faceEdit.readTriangles(window.__box.geometry).length,
+			pending: preview ? preview.points.length : 0,
+			focus: document.activeElement?.tagName + '#' + (document.activeElement?.id || '')
+		};
 	});
-	h.check(enterCut.tris > viaEnter && !enterCut.pending, `Enter ends the cut at the last corner (${viaEnter} -> ${enterCut.tris})`);
+	h.check(
+		enterCut.tris > viaEnter && !enterCut.pending,
+		`Enter ends the cut at the last corner (${viaEnter} -> ${enterCut.tris}, ${enterCut.pending} still pending, focus ${enterCut.focus})`
+	);
 	const buttonCut0 = await A.page.evaluate(() => {
 		window.__stores.faceEdit.setFaceOp('knife');
 		window.__stores.meshToolParams.focusTool('knife');
 		return window.__stores.faceEdit.readTriangles(window.__box.geometry).length;
 	});
-	await A.page.mouse.click(...P(-260, -80));
+	const cutPts = await facePx([[-1.6, -0.5], [1.6, -0.45]]);
+	h.check(cutPts.every((p) => p.canvas), `the Cut-section points are on the canvas (${cutPts.map((p) => p.under).join(', ')})`);
+	await A.page.mouse.click(...cutPts[0].px);
 	await A.page.keyboard.down('Shift');
-	await A.page.mouse.click(...P(260, -70));
+	await A.page.mouse.click(...cutPts[1].px);
 	await A.page.keyboard.up('Shift');
 	await A.page.waitForTimeout(150);
 	const cutButton = A.page.locator('#knife-finish');
 	const buttonShown = (await cutButton.count()) > 0;
 	h.check(buttonShown, 'the Tool options pane offers a Cut button while a cut is pending (the touch path)');
 	if (buttonShown) {
+		await cutButton.scrollIntoViewIfNeeded().catch(() => {});
 		await cutButton.click();
 		await A.page.waitForTimeout(250);
 		const buttonCut = await A.page.evaluate(() => window.__stores.faceEdit.readTriangles(window.__box.geometry).length);

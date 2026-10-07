@@ -4335,13 +4335,20 @@ export function knifeDropCorner() {
  * @param {KeyboardEvent} event @returns {boolean} consumed
  */
 export function knifeKeyConsumed(event) {
-	if (event.defaultPrevented || !get(knifePreview)) return false;
+	// NOT gated on defaultPrevented (unlike Escape): the shortcut registry's viewport
+	// Backspace row (objects.delete-backspace) preventDefaults before its action stands down
+	// in a mesh session, so the flag says nothing about whether the cut was answered. One
+	// listener calls this, so a private mark is enough to stop a second answer.
+	const marked = /** @type {any} */ (event);
+	if (marked.__knifeKey || !get(knifePreview)) return false;
 	if (event.key === 'Enter') {
+		marked.__knifeKey = true;
 		event.preventDefault();
 		if (!knifeFinish()) showToast('Knife: place at least two points first');
 		return true;
 	}
 	if (event.key === 'Backspace') {
+		marked.__knifeKey = true;
 		event.preventDefault();
 		knifeDropCorner();
 		return true;

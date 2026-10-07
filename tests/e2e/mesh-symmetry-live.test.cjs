@@ -289,6 +289,13 @@ h.run(async () => {
 		}, point);
 	const corner = await selectNearLocal([-1, 1, 1]);
 	h.check(corner.best >= 0 && corner.bestDistance < 1e-3, `picked the (-1, 1, 1) corner (premise, ${corner.bestDistance.toFixed(4)})`);
+	// mark the stack BEFORE the first drag: picking cycles selectHandle, and every pick is a
+	// 'selection' undo entry, so "two undos" would only walk picks back
+	await A.page.evaluate(() => {
+		let st;
+		window.__stores.history.undoStack.subscribe((v) => (st = v))();
+		window.__mark = st[st.length - 1];
+	});
 	const dragged = await A.page.evaluate(() => {
 		const s = window.__stores;
 		const me = s.meshEdit;
@@ -351,12 +358,25 @@ h.run(async () => {
 		return { onPlaneAtNewHeight, offPlane };
 	});
 	h.check(pinned.onPlaneAtNewHeight && !pinned.offPlane, 'a vertex ON the plane slides along it, never off it');
-	await A.page.evaluate(() => {
-		window.__stores.history.undo();
-		window.__stores.history.undo();
+	const geometryUndos = await A.page.evaluate(() => {
+		const s = window.__stores;
+		const top = () => {
+			let st;
+			s.history.undoStack.subscribe((v) => (st = v))();
+			return st[st.length - 1];
+		};
+		let geometry = 0;
+		for (let i = 0; i < 2000 && top() && top() !== window.__mark; i++) {
+			if (top().kind !== 'selection') geometry++;
+			s.history.undo();
+		}
+		return geometry;
 	});
 	const vundone = await facts(A.page, vbox);
-	h.check(vundone.maxX === 1 && vundone.minX === -1 && vundone.lonely === 0, `two undos take both drags back, twins included (${vundone.minX} .. ${vundone.maxX})`);
+	h.check(
+		geometryUndos === 2 && vundone.maxX === 1 && vundone.minX === -1 && vundone.lonely === 0,
+		`each drag is ONE geometry entry (${geometryUndos}), and undoing both takes the twins back too (${vundone.minX} .. ${vundone.maxX})`
+	);
 
 	await A.page.evaluate(() => {
 		window.__stores.meshEdit.exitEditMode?.();

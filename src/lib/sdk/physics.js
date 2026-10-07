@@ -24,6 +24,14 @@ export function sdkPhysics(ctx) {
 			/** drive a revolute joint's motor (P-B) @param {string} jointId @param {number} vel @param {number=} maxForce */
 			setJointMotor: (jointId, vel, maxForce) =>
 				physicsApi()?.setJointMotor(jointId, vel, maxForce) ?? false,
+			/** 37-fx: drive a revolute joint to an ANGLE (radians; a steering knuckle)
+			 * @param {string} jointId @param {number} angle @param {number=} stiffness @param {number=} damping */
+			setJointMotorPosition: (jointId, angle, stiffness, damping) =>
+				physicsApi()?.setJointMotorPosition?.(jointId, angle, stiffness, damping) ?? false,
+			/** 37-fx: the rapier module core runs (rapier3d-compat, already initialised), for a
+			 * world of the module's OWN — local, never synced; free it in api.onUnload.
+			 * @returns {Promise<any>} */
+			rapier: () => physicsApi()?.rapierModule?.() ?? Promise.resolve(null),
 			/** the replicated joint defs @returns {Promise<any[]>} */
 			joints: () => import('../joints').then((m) => m.jointsSnapshot()),
 			/** Is a simulation running anywhere in the session (ours or a peer's)?
@@ -35,10 +43,12 @@ export function sdkPhysics(ctx) {
 			 * @param {string} uuid @param {any} patch */
 			set: (uuid, patch) => physicsApi()?.setPhysicsFor(uuid, patch),
 			/** Replicated joint (P-B): 'weld' | 'revolute', anchored in OBJECT-local
-			 * space. @param {string} kind @param {string} a @param {string} b
-			 * @param {string=} axis @param {any=} motor */
-			createJoint: (kind, a, b, axis, motor) =>
-				jointsRef?.createJoint(kind, a, b, axis ?? 'x', motor) ?? null
+			 * space. 37-fx: `motor` may be `{pos, stiffness, damping}` (an angle motor), and
+			 * `opts` `{limits: [min, max] radians, contacts: false, sparks: false}`.
+			 * @param {string} kind @param {string} a @param {string} b
+			 * @param {string=} axis @param {any=} motor @param {any=} opts */
+			createJoint: (kind, a, b, axis, motor, opts) =>
+				jointsRef?.createJoint(kind, a, b, axis ?? 'x', motor, opts) ?? null
 		}
 	};
 }
@@ -52,7 +62,9 @@ sdkPhysics.surface = {
 	'physics.applyImpulse': 'action',
 	'physics.applyTorqueImpulse': 'action',
 	'physics.setJointMotor': 'action',
+	'physics.setJointMotorPosition': 'action',
 	'physics.joints': 'read',
+	'physics.rapier': 'read',
 	'physics.running': 'read',
 	'physics.set': 'content',
 	'physics.createJoint': 'content'

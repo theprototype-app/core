@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import { dropToSurface } from './snapping';
 import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, beginHistoryBatch, endHistoryBatch, historyBatchOpen, undoEntry, undoStack } from './history';
 import { offerUndo } from './undoToast'; // 37 R25 (a leaf)
-import { cascadeJointDeletes } from './joints';
+import { cascadeJointDeletes, copyJointsWithin } from './joints';
 import { createGroup } from './geometries.svelte';
 import { withWireBatch } from './wireBatch'; // 37 R1: a set's edit = ONE replicated batch
 import { suspendAnimation, resumeAnimation, parkAnimatedAtBase } from './flowRuntime';
@@ -684,6 +684,10 @@ export function duplicateObject(uuid, options = {}) {
 
 	if (options.select !== false) selectObject(clone.uuid);
 	if (options.history !== false) recordObjectPresence('create', clone);
+	// 37-fx: joints inside THIS object's tree (a jointed group) come along, after the create
+	// entry so one undo walk drops the joints before the object. A set duplicate passes
+	// carryCables:false and clones across the whole set once (duplicateSelection).
+	if (!options.transient && options.carryCables !== false) copyJointsWithin(uuidMapOf(source, clone));
 	return clone;
 }
 
@@ -729,6 +733,8 @@ export function duplicateSelection() {
 		.map((clone) => clone.uuid);
 	// 23-A4: the cables internal to the SET, once, with every member's uuids remapped
 	if (clones.length) patchModule?.copyCablesWithin(uuidMap);
+	// 37-fx: a joint whose BOTH ends were in the set is cloned onto the copies
+	if (clones.length) copyJointsWithin(uuidMap);
 	if (clones.length) applySelectionSet(clones);
 	return clones;
 }

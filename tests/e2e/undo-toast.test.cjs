@@ -129,7 +129,10 @@ h.run(async () => {
 	h.check(probe.length === 1 && probe[0].same, `1.5b the Undo button is on top at its own centre (${JSON.stringify(probe)})`);
 	h.check((await pa.locator('.tp-toast--undo .tp-toast-ttl').count()) >= 1, '1.5 the card shows the time left (draining bar)');
 	await pressUndo();
-	await h.eventually(() => uuids(pa), (u) => u.join() === original.join(), '1.6 Undo: A has the SAME objects back (uuids)', 30000);
+	// the Undo re-applies a whole session payload; on a loaded dev server its start was measured
+	// at 13.9 s after the press (1.26 union: undo → applySession → its own replicated /clear all),
+	// so the restore checks wait a minute — a build does it in ~2 s (the preview proof)
+	await h.eventually(() => uuids(pa), (u) => u.join() === original.join(), '1.6 Undo: A has the SAME objects back (uuids)', 60000);
 	await h.eventually(() => uuids(B.page), (u) => u.join() === original.join(), '1.7 and so does B', 30000);
 	await h.eventually(() => notes(B.page), (n) => n.includes('keep me'), '1.8 the note is back on B');
 	h.check((await notes(pa)).includes('keep me'), '1.9 and on A');
@@ -141,12 +144,12 @@ h.run(async () => {
 	await openClear();
 	await pa.locator('#confirm-dialog-check').check();
 	await pa.locator('#confirm-dialog-clear').click(); // "Clear everything"
-	await h.eventually(() => preset(B.page), (p) => p !== 'sunset', '2.1 Clear everything reset the sky on B', 20000);
+	await h.eventually(() => preset(B.page), (p) => p !== 'sunset', '2.1 Clear everything reset the sky on B', 60000);
 	await h.eventually(() => uuids(B.page), (u) => u.length === 0, '2.2 and emptied B');
-	await h.eventually(() => undoCard().isVisible(), (v) => v, '2.3 Undo offered');
+	await h.eventually(() => undoCard().isVisible(), (v) => v, '2.3 Undo offered', 60000);
 	await pressUndo();
-	await h.eventually(() => preset(B.page), (p) => p === 'sunset', '2.4 Undo: the sky is back on B', 30000);
-	await h.eventually(() => uuids(B.page), (u) => u.join() === original.join(), '2.5 the objects too', 30000);
+	await h.eventually(() => preset(B.page), (p) => p === 'sunset', '2.4 Undo: the sky is back on B', 60000);
+	await h.eventually(() => uuids(B.page), (u) => u.join() === original.join(), '2.5 the objects too', 60000);
 	h.check((await preset(pa)) === 'sunset', '2.6 and on A');
 
 	// ---- 3. delete the selection, then Undo (the same uuids back on both peers) ----------

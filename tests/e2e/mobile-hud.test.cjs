@@ -54,7 +54,8 @@ h.run(async () => {
 		// 38 NOTES-38 #22: rare items live one level down now — parity means REACHABLE
 		return s.objectMenu.flattenMenuItems(s.objectMenu.buildObjectMenuItems(uuid)).map((i) => i.label);
 	});
-	for (const label of ['Save as prefab', 'Rename', 'Align to ground', 'Delete', 'Ping this object']) {
+	// 'Save as prefab' became Save as… ▸ Prefab in R22 round 11 (saveAs.js) — the leaf is 'Prefab'
+	for (const label of ['Prefab', 'Rename', 'Align to ground', 'Delete', 'Ping this object']) {
 		h.check(items.includes(label), `object menu includes "${label}" (parity)`);
 	}
 

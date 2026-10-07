@@ -107,6 +107,8 @@ import {
 import { controllerRay } from './pointer.js';
 import { boxSelectEnd, beginStretch, commitStretch } from './tools.js';
 import { handleAiAction } from './aiPanel.js';
+import { closeDollhouse } from './dollhouse.js';
+import { startVRSculpt } from './sculpt.js';
 // 36 X4: the collider session, PRIMED (colliderEdit reaches faceEdit/history — a static
 // edge from here is the documented cycle family); every use below is null-safe
 /** @type {any} */ let colliderEditRef = null;
@@ -126,15 +128,15 @@ export function radialStickSelection() {
 }
 
 /** Spawn a primitive ~2m in front of the VR camera and replicate its position */
-/** @param {string} command */
-function spawnPrimitive(command) {
+/** @param {string} command @param {number} [ahead] metres in front (37: a terrain lands further out) */
+function spawnPrimitive(command, ahead = 2) {
 	sceneCommand(command);
 	const object = get(selectedObject);
 	const camera = get(globalCamera);
 	if (!object?.uuid || !camera) return;
 	camera.getWorldDirection(tempVector);
 	tempVector.y = 0;
-	tempVector.normalize().multiplyScalar(2);
+	tempVector.normalize().multiplyScalar(ahead);
 	const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
 	// spawn point is a REAL-space spot 2m ahead; convert into the (possibly
 	// grabbed/scaled) world before writing objectsGroup-local coords
@@ -690,6 +692,12 @@ export function executeVRMenuAction(name) {
 	else if (name === 'sphere') spawnPrimitive('/create Sphere 0.7');
 	else if (name === 'cylinder') spawnPrimitive('/create Cylinder 0.5 0.5 1');
 	else if (name === 'torus') spawnPrimitive('/create Torus 0.6 0.25');
+	else if (name === 'terrain') {
+		// 37 R9: the desktop's 24 m Terrain, its centre 6 m ahead (you stand on its near half), then sculpt it
+		spawnPrimitive('/create Terrain 24 48', 6);
+		const uuid = /** @type {any} */ (get(selectedObject))?.uuid;
+		if (uuid && /** @type {any} */ (get(selectedObject))?.userData?.terrain) startVRSculpt(uuid);
+	}
 	else if (name === 'hand') {
 		vrMenuHand.update((hand) => {
 			const next = hand === 'right' ? 'left' : 'right';
@@ -699,6 +707,7 @@ export function executeVRMenuAction(name) {
 	} else if (name === 'mic') {
 		cycleMicMode();
 	} else if (name === 'world') {
+		closeDollhouse(false); // 37: 1:1 also ends a dollhouse (without putting its model back)
 		resetWorldRig(); // back to 1:1 mid-session
 	} else if (name === 'settings') {
 		// 187: Settings ▸ All settings opens the VR settings panel. 36 (R9): it REPLACES the ring on

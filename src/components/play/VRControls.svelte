@@ -7,7 +7,7 @@
 	import * as THREE from 'three';
 	import { useThrelte, useTask } from '@threlte/core';
 	import { vrFlying, vrMenuOpen, vrObjectsPanelOpen, vrSettingsPanelOpen, vrGrabbedHand } from '../../stores/sceneStore';
-	import { computeMoveOffset, worldScale, twoGripStretchActive, controllerIndexFor, vrNavigationSuppressed, tickVRInteractLocomotion } from '$lib/vrControls';
+	import { computeMoveOffset, worldScale, twoGripStretchActive, controllerIndexFor, vrNavigationSuppressed, tickVRInteractLocomotion, stickOwned } from '$lib/vrControls';
 	import { inputClaims } from '$lib/inputRuntime';
 	import { handOf } from '$lib/vr/bindings.js';
 
@@ -43,6 +43,7 @@
 		if (tickVRInteractLocomotion(delta, session)) return;
 		const moveHand = handOf('move');
 		if ($vrGrabbedHand === moveHand || $vrGrabbedHand === 'both') return; // a grab owns its hand's stick (100)
+		if (stickOwned(moveHand)) return; // 37: so does the VR sculpt brush (size/strength on that stick)
 		if (twoGripStretchActive()) return; // 186: both grips + sticks stretch, not move
 		// D9: world pan/grab write reference-space offsets themselves, and the
 		// mesh-edit gestures read the sticks for reel/scale — never also move

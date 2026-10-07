@@ -111,7 +111,7 @@ h.run(async () => {
 	);
 	h.check(registry.system.length === 0, 'no System ring is left (a module filing under "system" lands in Settings)');
 	h.check(registry.objectOps.includes('snap'), 'Selected ring keeps Snapping');
-	h.check(registry.addCount === 7 && registry.sceneHasEnv, 'Add ring: 6 primitives + Prefabs (115)');
+	h.check(registry.addCount === 8 && registry.sceneHasEnv, `Add ring: 6 primitives + Terrain (37 R9) + Prefabs (115) (${registry.addCount})`);
 	h.check(
 		registry.sceneRing.includes('nav:environment') &&
 			registry.sceneRing.includes('grid') &&

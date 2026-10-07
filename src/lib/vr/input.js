@@ -7,6 +7,7 @@ import { vrEndHandleDrag } from '../meshEdit';
 import { S } from './state.js';
 import { renderer, previousButtons } from './core.js';
 import { grabs, endGrab, emptyAirSqueeze, gripHeld } from './grip.js';
+import { endWorldSnap } from './worldSnap.js';
 
 /** 194: resolve a controller slot by HANDEDNESS. three's getController(i) is a
  * persistent object; Scene stamps controller.userData.handedness from each
@@ -199,6 +200,7 @@ export function onInputSourcesChange() {
 	}
 	S.scaleGrab = null;
 	S.worldGrab = null;
+	endWorldSnap(); // 37 R10: the readout goes with the gesture
 	S.worldPan = null;
 	S.windowGrab = null;
 	S.windowGrabPending = null;

@@ -37,6 +37,7 @@
 		mergeDistance,
 		symAxis,
 		symKeep,
+		liveSymmetry,
 		optionsFocus,
 		focusTool,
 		hasOptions,
@@ -1447,6 +1448,28 @@
 						})}>Symmetrize</button
 				>
 			</div>
+			<!-- 37 R11: LIVE symmetry — every edit mirrored, vertex drags move their twin -->
+			<label
+				class="tbx-row flex items-center gap-1 text-xs text-gray-300"
+				title="While on, every edit is mirrored across the axis above, from the side you edited — and dragging a vertex moves its mirror twin with it. Symmetrize first if the mesh is not symmetric yet."
+			>
+				<input
+					id="mesh-sym-live"
+					class="tbx-check"
+					type="checkbox"
+					checked={$liveSymmetry}
+					onchange={(e) => {
+						liveSymmetry.set(e.currentTarget.checked);
+						if (e.currentTarget.checked)
+							showToast(
+								'Live symmetry on: edits are mirrored across ' +
+									$symAxis.toUpperCase() +
+									'. Symmetrize first if the mesh is not symmetric yet.'
+							);
+					}}
+				/>
+				live symmetry
+			</label>
 		</ToolboxSection>
 
 		<ToolboxSection key="display" label="Display" open={true} id="mesh-sec-display">

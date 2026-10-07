@@ -38,7 +38,7 @@ import { editOverlaysParked } from './editOverlays';
 // 19-A P3: the desktop pane's extrude/inset extras, read at BEGIN so a click-
 // extrude matches the toolbox's Apply. meshToolParams is a svelte/store-only
 // leaf, so this cannot close a cycle into history.
-import { extrudeIndividual, insetDepth, insetIndividual } from './meshToolParams';
+import { extrudeIndividual, insetDepth, insetIndividual, liveSymmetry, symAxis, symKeep } from './meshToolParams';
 // 19-A P4: proportional editing shared with the vertex path. Both are LEAVES
 // (proportional = svelte/store only; proportionalRing = three + sceneStore +
 // proportional) — this module must NEVER import meshEdit (meshEdit imports us),
@@ -1257,7 +1257,7 @@ export function bridgeFaces(cuts = 0, twist = 0, invert = false) {
 		composeFaces(priorFaces, result.origin, result.authored)
 	);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
@@ -2453,7 +2453,7 @@ export function commitLoopCut(cuts = 1, position = 0.5) {
 		composeFaces(priorFaces, result.origin, result.authored)
 	);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
@@ -2628,10 +2628,14 @@ export function setFaceSubmode(next) {
 
 /** vertices live in meshEdit, which imports THIS module — the reverse edge
  * would close a TDZ cycle, so meshEdit REGISTERS its accessors here instead.
- * @type {{snapshot: () => {uuid: string, sel: number[]} | null, apply: (sel: number[]) => boolean} | null} */
+ * 37 R11 adds the POSITION pair: a live-symmetry mirror rebuilds the handles in triangle
+ * order, so the picks cross it as positions and are re-found after.
+ * @type {{snapshot: () => {uuid: string, sel: number[]} | null, apply: (sel: number[]) => boolean,
+ *   positions?: () => any, reselect?: (picks: any) => void} | null} */
 let vertexSelectionHistory = null;
 
-/** @param {{snapshot: () => any, apply: (sel: number[]) => boolean}} hooks */
+/** @param {{snapshot: () => any, apply: (sel: number[]) => boolean, positions?: () => any,
+ *   reselect?: (picks: any) => void}} hooks */
 export function registerVertexSelectionHistory(hooks) {
 	vertexSelectionHistory = hooks;
 }
@@ -3203,7 +3207,7 @@ export function bevelFaces(width = 0.15, segments = 1, profile = 1, direction = 
 		composeFaces(priorFaces, appendOrigin(workingTris.length, tris.length), result.authored)
 	);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
@@ -3541,7 +3545,7 @@ export function bevelVertices(uuid, vertexKeys, options = {}) {
 		uvs: trisToUVs(tris),
 		faces: composeFaces(null, appendOrigin(0, tris.length), authored)
 	};
-	if (!commitMeshGeoTriple(uuid, before, after)) return false;
+	if (!commitMeshGeoTriple(uuid, before, after, true)) return false;
 	showToast(
 		'Bevelled ' +
 			done +
@@ -3556,9 +3560,11 @@ export function bevelVertices(uuid, vertexKeys, options = {}) {
  *
  * `commitMeshGeoSnapshot` is positions-only, and a bevel CHANGES the triangle count, so the
  * carry-over cannot save the groups and uvs — a textured or multi-material mesh lost them.
- * @param {string} uuid @param {any} before @param {any} after @returns {boolean}
+ * @param {string} uuid @param {any} before @param {any} after
+ * @param {boolean} [op] an OPERATOR's commit — the live-symmetry boundary (37 R11)
+ * @returns {boolean}
  */
-export function commitMeshGeoTriple(uuid, before, after) {
+export function commitMeshGeoTriple(uuid, before, after, op = false) {
 	if (after.positions.length > MAX_SNAPSHOT) {
 		showToast(tooLargeMessage(after.positions.length, 'edit'));
 		return false;
@@ -3567,7 +3573,8 @@ export function commitMeshGeoTriple(uuid, before, after) {
 	applyMeshGeo(uuid, after.positions, after.groups, after.uvs, packed?.faceCounts, packed?.faceTris);
 	// broadcastMeshGeo reads the topology off the object we just applied to
 	broadcastMeshGeo(uuid, after.positions, after.groups, after.uvs);
-	recordEntry({ kind: 'meshgeo', uuid, before, after });
+	// 37 R11: `op` = an operator's commit (vertex mode) — the live-symmetry boundary
+	(op ? recordOp : recordEntry)({ kind: 'meshgeo', uuid, before, after });
 	return true;
 }
 
@@ -3624,7 +3631,7 @@ export function deleteVertices(uuid, vertexKeys) {
 		// goes away with them — the mergeByDistance shape
 		faces: composeFaces(priorFaces, survivorOrigin(inputTris.length, drop), [])
 	};
-	if (!commitMeshGeoTriple(uuid, before, after)) return false;
+	if (!commitMeshGeoTriple(uuid, before, after, true)) return false;
 	showToast(
 		'Deleted ' +
 			drop.size +
@@ -3723,7 +3730,7 @@ export function smoothVertices(uuid, vertexKeys, options = {}) {
 	const before = trisToPositions(inputTris);
 	const after = trisToPositions(out);
 	if (JSON.stringify(before) === JSON.stringify(after)) return false; // factor 0 / already flat
-	return commitMeshGeoSnapshot(uuid, before, after);
+	return commitMeshGeoSnapshot(uuid, before, after, true);
 }
 
 /**
@@ -3821,7 +3828,7 @@ export function bevelEdges(width = 0.1, segments = 1, profile = 0) {
 	faceEditHighlight.set(-1);
 	applyGeometrySnapshot(positions, trisToGroups(tris), trisToUVs(tris), null);
 	broadcastMeshGeo(faceEdited.uuid, positions, trisToGroups(tris), trisToUVs(tris));
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before,
@@ -4768,7 +4775,7 @@ export function knifePolyline(points) {
 	};
 	applyGeometrySnapshot(after.positions, after.groups, after.uvs, null);
 	broadcastMeshGeo(faceEdited.uuid, after.positions, after.groups, after.uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before,
@@ -4840,14 +4847,18 @@ function mirrorInto(out, pairs, kept, tri, uv) {
 let mirrorComponent = () => {};
 
 /**
- * M7 SYMMETRIZE: mirror one half of the edited mesh onto the other.
- * @param {'x'|'y'|'z'} axis the object-local axis to mirror across
- * @param {number} keep +1 keeps the positive side, -1 the negative
- * @returns {boolean}
+ * The PURE half of symmetrize (37 R11: shared by the one-shot command and LIVE symmetry):
+ * keep one side of a triangle soup, clip what straddles the plane, and append the mirror of
+ * everything kept. Triangles in, triangles out — no session, no scene.
+ * @param {any[]} tris @param {number[][]|null} prior the partition to carry (null = derive)
+ * @param {'x'|'y'|'z'} axis @param {number} keep +1 keeps the positive side, -1 the negative
+ * @param {number} tolerance vertices this close to the plane are pinned ONTO it
+ * @returns {{tris: any[], faces: number[][]|null, kept: Map<number, number>, pairs: number,
+ *   clipped: number, dropped: number}|null} null = nothing on the kept side to mirror.
+ *   `kept` maps a wholly-kept source triangle to its index in the output (a selection
+ *   survives through it).
  */
-export function symmetrizeMesh(axis = 'x', keep = 1) {
-	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
-	if (!faceEdited) return false;
+export function mirrorTrisCore(tris, prior, axis, keep, tolerance) {
 	const index = axis === 'y' ? 1 : axis === 'z' ? 2 : 0;
 	const component = (/** @type {any} */ v) => (index === 0 ? v.x : index === 1 ? v.y : v.z);
 	const setComponent = (/** @type {any} */ v, /** @type {number} */ value) => {
@@ -4855,18 +4866,6 @@ export function symmetrizeMesh(axis = 'x', keep = 1) {
 		else if (index === 1) v.y = value;
 		else v.z = value;
 	};
-	const tris = readTriangles(faceEdited.geometry);
-	if (!tris.length) return false;
-	const before = {
-		positions: trisToPositions(tris),
-		groups: trisToGroups(tris),
-		uvs: trisToUVs(tris),
-		faces: readStoredFaces(faceEdited.geometry)
-	};
-	// the snap tolerance scales with the object, so it means the same thing on a chair and on
-	// a terrain; 0.1% of the bounding diagonal is below anything a user models deliberately
-	const box = new THREE.Box3().setFromObject(faceEdited);
-	const tolerance = Math.max(box.getSize(new THREE.Vector3()).length() * 0.001, 1e-5);
 	mirrorComponent = (v) => setComponent(v, -component(v));
 	const working = cloneTris(tris);
 	for (const tri of working)
@@ -4877,6 +4876,8 @@ export function symmetrizeMesh(axis = 'x', keep = 1) {
 	const origin = [];
 	/** @type {{source: number, mirrored: number}[]} */
 	const pairs = [];
+	/** @type {Map<number, number>} */
+	const kept = new Map();
 	let dropped = 0;
 	let clipped = 0;
 	working.forEach((/** @type {any} */ tri, /** @type {number} */ ti) => {
@@ -4888,9 +4889,10 @@ export function symmetrizeMesh(axis = 'x', keep = 1) {
 		if (!negatives) {
 			// wholly on the keep side
 			origin[out.length] = ti;
-			const kept = out.length;
+			kept.set(ti, out.length);
+			const keptAt = out.length;
 			out.push(withSlot([tri[0].clone(), tri[1].clone(), tri[2].clone()], tri.mi, tri.uv));
-			mirrorInto(out, pairs, kept, tri, tri.uv);
+			mirrorInto(out, pairs, keptAt, tri, tri.uv);
 			return;
 		}
 		if (!positives) {
@@ -4932,30 +4934,15 @@ export function symmetrizeMesh(axis = 'x', keep = 1) {
 			const wound = flip ? [points[0], points[2], points[1]] : points;
 			const woundUv = uvs && (flip ? [uvs[0], uvs[2], uvs[1]] : uvs);
 			origin[out.length] = ti;
-			const kept = out.length;
+			const keptAt = out.length;
 			out.push(withSlot(wound, tri.mi, woundUv));
-			mirrorInto(out, pairs, kept, wound, woundUv);
+			mirrorInto(out, pairs, keptAt, wound, woundUv);
 		}
 	});
-	if (!pairs.length) {
-		showToast(
-			'Nothing to mirror: no geometry on the ' +
-				(keep > 0 ? 'positive' : 'negative') +
-				' side of the ' +
-				axis.toUpperCase() +
-				' plane'
-		);
-		return false;
-	}
-	const positions = trisToPositions(out);
-	if (positions.length > MAX_SNAPSHOT) {
-		showToast(tooLargeMessage(positions.length, 'mirror'));
-		return false;
-	}
+	if (!pairs.length) return null;
 	// the partition: a kept triangle keeps its face, and each mirrored triangle joins the
 	// MIRROR of that face — so a quad stays a quad on both sides instead of becoming loose
 	// triangles that coplanarity has to re-guess
-	const prior = currentPartition();
 	/** @type {Map<number, number[]>} source face index -> mirrored out indices */
 	const mirroredFaces = new Map();
 	if (prior) {
@@ -4973,13 +4960,64 @@ export function symmetrizeMesh(axis = 'x', keep = 1) {
 	const authored = [...mirroredFaces.values()].filter((list) => list.length);
 	const fullOrigin = [];
 	for (let i = 0; i < out.length; i++) fullOrigin[i] = origin[i] ?? -1;
+	return {
+		tris: out,
+		faces: composeFaces(prior, fullOrigin, authored),
+		kept,
+		pairs: pairs.length,
+		clipped,
+		dropped
+	};
+}
+
+/** the snap tolerance scales with the object, so it means the same thing on a chair and on
+ * a terrain; 0.1% of the bounding diagonal is below anything a user models deliberately
+ * @param {any} object @returns {number} */
+function mirrorTolerance(object) {
+	const box = new THREE.Box3().setFromObject(object);
+	return Math.max(box.getSize(new THREE.Vector3()).length() * 0.001, 1e-5);
+}
+
+/**
+ * M7 SYMMETRIZE: mirror one half of the edited mesh onto the other.
+ * @param {'x'|'y'|'z'} axis the object-local axis to mirror across
+ * @param {number} keep +1 keeps the positive side, -1 the negative
+ * @returns {boolean}
+ */
+export function symmetrizeMesh(axis = 'x', keep = 1) {
+	interruptOpAdjust(); // 19-A P2: a one-shot commit ends any live adjust first
+	if (!faceEdited) return false;
+	const tris = readTriangles(faceEdited.geometry);
+	if (!tris.length) return false;
+	const before = {
+		positions: trisToPositions(tris),
+		groups: trisToGroups(tris),
+		uvs: trisToUVs(tris),
+		faces: readStoredFaces(faceEdited.geometry)
+	};
+	const result = mirrorTrisCore(tris, currentPartition(), axis, keep, mirrorTolerance(faceEdited));
+	if (!result) {
+		showToast(
+			'Nothing to mirror: no geometry on the ' +
+				(keep > 0 ? 'positive' : 'negative') +
+				' side of the ' +
+				axis.toUpperCase() +
+				' plane'
+		);
+		return false;
+	}
+	const positions = trisToPositions(result.tris);
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast(tooLargeMessage(positions.length, 'mirror'));
+		return false;
+	}
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
 	clearEdgeSelectionInner();
-	const groups = trisToGroups(out);
-	const uvs = trisToUVs(out);
-	applyGeometrySnapshot(positions, groups, uvs, composeFaces(prior, fullOrigin, authored));
+	const groups = trisToGroups(result.tris);
+	const uvs = trisToUVs(result.tris);
+	applyGeometrySnapshot(positions, groups, uvs, result.faces);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
 	recordEntry({
 		kind: 'meshgeo',
@@ -4991,12 +5029,198 @@ export function symmetrizeMesh(axis = 'x', keep = 1) {
 		'Symmetrized across ' +
 			axis.toUpperCase() +
 			': mirrored ' +
-			pairs.length +
-			(pairs.length === 1 ? ' triangle' : ' triangles') +
-			(clipped ? ', clipped ' + clipped : '') +
-			(dropped ? ', dropped ' + dropped : '')
+			result.pairs +
+			(result.pairs === 1 ? ' triangle' : ' triangles') +
+			(result.clipped ? ', clipped ' + result.clipped : '') +
+			(result.dropped ? ', dropped ' + result.dropped : '')
 	);
 	return true;
+}
+
+// ---- 37 R11: LIVE SYMMETRY ------------------------------------------------
+// M7 shipped a one-shot Symmetrize because a live mode "post-processes every committed
+// meshgeo" and several commit call sites are RESTORE paths (cancel, exit, undo replay, a
+// peer's edit) that must not mirror. So this hooks the OPERATOR boundary instead, twice:
+//   - the adjust engine mirrors the pure op result before it is applied (beginOpAdjust,
+//     every scrub re-run, and the settle all see mirrored triangles — one broadcast each);
+//   - every one-shot operator records through `recordOp`, which mirrors right after the op
+//     has finished (a microtask, so the op's own "select the new cap/band" code has run)
+//     and rewrites the SAME history entry's `after`.
+// Restore paths never pass through either, by construction. UNDO: one entry per op — a
+// single Ctrl+Z takes back the edit and its mirror together (QUESTIONS-37-mesh #2).
+// THE SIDE: whichever side the edit CHANGED (the triangles in `after` that `before` did not
+// have, and the ones it lost), so an extrude on the left is mirrored to the right and not
+// discarded in favour of the old right half; an edit sitting on the plane uses `symKeep`.
+
+/** a triangle's identity in a soup: its three welded vertex keys, order-free @param {any[]} tri */
+function triIdentity(tri) {
+	return tri
+		.map((/** @type {any} */ v) => keyOf(v.x, v.y, v.z))
+		.sort()
+		.join('|');
+}
+
+/**
+ * Which side of the plane an edit happened on: +1, -1, or null when it is balanced (an edit
+ * on the plane itself, or the same change on both sides).
+ * @param {any[]} beforeTris @param {any[]} afterTris @param {'x'|'y'|'z'} axis
+ * @returns {number|null}
+ */
+export function editSide(beforeTris, afterTris, axis) {
+	const index = axis === 'y' ? 1 : axis === 'z' ? 2 : 0;
+	const before = new Set(beforeTris.map(triIdentity));
+	const after = new Set(afterTris.map(triIdentity));
+	let sum = 0;
+	let count = 0;
+	let extent = 0;
+	const add = (/** @type {any[]} */ tri) => {
+		for (const v of tri) {
+			const c = index === 0 ? v.x : index === 1 ? v.y : v.z;
+			sum += c;
+			extent = Math.max(extent, Math.abs(c));
+		}
+		count++;
+	};
+	for (const tri of afterTris) if (!before.has(triIdentity(tri))) add(tri);
+	for (const tri of beforeTris) if (!after.has(triIdentity(tri))) add(tri);
+	if (!count) return null;
+	// balanced within 1% of how far the change reaches: an edit ON the plane
+	if (Math.abs(sum / (count * 3)) <= extent * 0.01) return null;
+	return sum > 0 ? 1 : -1;
+}
+
+/** positions as triangles, for an entry `before` that is a triple or a bare array
+ * @param {any} state @returns {any[]} */
+function trisOfState(state) {
+	const positions = state?.positions ?? state;
+	/** @type {any[]} */
+	const tris = [];
+	if (!positions) return tris;
+	for (let i = 0; i + 8 < positions.length; i += 9)
+		tris.push([
+			new THREE.Vector3(positions[i], positions[i + 1], positions[i + 2]),
+			new THREE.Vector3(positions[i + 3], positions[i + 4], positions[i + 5]),
+			new THREE.Vector3(positions[i + 6], positions[i + 7], positions[i + 8])
+		]);
+	return tris;
+}
+
+/** @param {ArrayLike<number>} a @param {ArrayLike<number>} b */
+function sameFloats(a, b) {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-6) return false;
+	return true;
+}
+
+/** set while the live mirror applies its own result, so nothing re-enters it */
+let liveMirroring = false;
+
+/**
+ * Record a one-shot operator's meshgeo entry, then — when live symmetry is on — mirror the
+ * result into that same entry. THE operator boundary for every op outside the adjust engine.
+ * @param {any} entry
+ */
+function recordOp(entry) {
+	recordEntry(entry);
+	if (!get(liveSymmetry) || liveMirroring) return;
+	queueMicrotask(() => liveMirrorEntry(entry));
+}
+
+/**
+ * Mirror the edited mesh after an operator committed `entry`, and make `entry.after` the
+ * mirrored state. The object is the face session's, or the VERTEX session's (meshEdit's
+ * one-shot ops commit through commitMeshGeoTriple/Snapshot on it). Refuses when the geometry
+ * moved on since the entry (an undo or a peer's edit in between), so it can never mirror
+ * something that is not the op's result.
+ * @param {any} entry @returns {boolean}
+ */
+export function liveMirrorEntry(entry) {
+	if (liveMirroring || !entry?.uuid) return false;
+	const session = !!faceEdited && entry.uuid === faceEdited.uuid;
+	if (!session && vertexSelectionHistory?.snapshot()?.uuid !== entry.uuid) return false;
+	const object = session ? faceEdited : lookupEditable(entry.uuid);
+	if (!object?.geometry) return false;
+	const tris = readTriangles(object.geometry);
+	const current = trisToPositions(tris);
+	const recorded = entry.after?.positions ?? entry.after;
+	if (!recorded || !sameFloats(current, recorded)) return false;
+	const axis = /** @type {'x'|'y'|'z'} */ (get(symAxis));
+	const side = editSide(trisOfState(entry.before), tris, axis) ?? get(symKeep);
+	const prior = session ? currentPartition() : readStoredFaces(object.geometry);
+	const result = mirrorTrisCore(tris, prior, axis, side, mirrorTolerance(object));
+	if (!result) return false;
+	const positions = trisToPositions(result.tris);
+	if (sameFloats(positions, current)) return false; // already symmetric: nothing to send
+	if (positions.length > MAX_SNAPSHOT) {
+		showToast(tooLargeMessage(positions.length, 'mirror'));
+		return false;
+	}
+	const groups = trisToGroups(result.tris);
+	const uvs = trisToUVs(result.tris);
+	liveMirroring = true;
+	try {
+		if (session) {
+			// the selection rides through the reorder: a wholly-kept triangle has a known
+			// new index, anything that was clipped or lay on the replaced side is dropped
+			const picked = get(faceEditSelectedTris)
+				.map((ti) => result.kept.get(ti))
+				.filter((ti) => ti !== undefined);
+			const hadHighlight = get(faceEditHighlight) >= 0;
+			faceEditSelectedTris.set(/** @type {number[]} */ (picked));
+			faceEditHighlight.set(-1);
+			faceEditHoverTri.set(-1);
+			applyGeometrySnapshot(positions, groups, uvs, result.faces);
+			if (hadHighlight && picked.length) {
+				faceEditHighlight.set(faceIndexForTriangle(/** @type {number} */ (picked[0])));
+				refreshFaceOverlay();
+			}
+			// edge keys are positions: the kept side's survive as they are
+			edgeEditSelected.set(get(edgeEditSelected).filter((k) => !!edgeEndpoints(k)));
+			refreshEdgeOverlay();
+			if (gizmoTarget && typeof window !== 'undefined') attachFaceGizmo();
+		} else {
+			// the vertex session rebuilds its handles in triangle order on the swap, so the
+			// picks are carried as POSITIONS (the commitFalloffSnapshot rule)
+			const picks = vertexSelectionHistory?.positions?.() ?? null;
+			const packed = result.faces?.length ? packFaces(result.faces) : null;
+			applyMeshGeo(entry.uuid, positions, groups, uvs, packed?.faceCounts, packed?.faceTris);
+			if (picks) vertexSelectionHistory?.reselect?.(picks);
+		}
+		broadcastMeshGeo(entry.uuid, positions, groups, uvs);
+		const live = session ? faceEdited : lookupEditable(entry.uuid);
+		entry.after = withFacesOn(live, { positions, groups, uvs });
+	} finally {
+		liveMirroring = false;
+	}
+	return true;
+}
+
+/**
+ * The adjust engine's half: mirror a run's pure result before anything applies it. The side is
+ * decided ONCE per adjust (on its first run), so scrubbing a parameter never flips it. Only
+ * inside a face session — the engine's no-session callers (VR on a bare object) are not edits
+ * a mirror plane is defined for.
+ * @param {any} a the adjust state @param {any} result runAdjustCore's output @returns {any}
+ */
+function mirrorAdjustResult(a, result) {
+	if (!get(liveSymmetry) || !a.session || result.error || !faceEdited) return result;
+	const axis = /** @type {'x'|'y'|'z'} */ (get(symAxis));
+	if (a.mirrorSide === undefined)
+		a.mirrorSide = editSide(a.originalTris, result.tris, axis) ?? get(symKeep);
+	const mirrored = mirrorTrisCore(result.tris, result.faces ?? null, axis, a.mirrorSide, mirrorTolerance(faceEdited));
+	if (!mirrored) return result;
+	const map = (/** @type {number[]} */ list) =>
+		/** @type {number[]} */ (list.map((ti) => mirrored.kept.get(ti)).filter((ti) => ti !== undefined));
+	let select = result.select;
+	if (select?.kind === 'cap' || select?.kind === 'set') select = { ...select, tris: map(select.tris) };
+	else if (select?.kind === 'band') {
+		/** @type {number[]} */
+		const band = [];
+		for (let ti = select.firstNew; ti < select.total; ti++) band.push(ti);
+		select = { kind: 'set', tris: map(band) };
+	}
+	if (select?.kind === 'cap' && !select.tris.length) select = { kind: 'cleared' };
+	return { ...result, tris: mirrored.tris, faces: mirrored.faces, select };
 }
 
 /**
@@ -5148,7 +5372,7 @@ export function dissolveEdges() {
 		composeFaces(currentPartition(), origin, fanFaces)
 	);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
@@ -5224,7 +5448,7 @@ export function deleteSelectedEdges() {
 	faceEditHoverTri.set(-1);
 	applyGeometrySnapshot(positions, groups, uvs, composeFaces(priorFaces, origin, []));
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
@@ -5403,7 +5627,7 @@ export function subdivideSelectedEdges() {
 	faceEditHoverTri.set(-1);
 	applyGeometrySnapshot(positions, groups, uvs, composeFaces(priorFaces, origin, []));
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before,
@@ -6434,7 +6658,8 @@ function commitVertexOp(uuid, object, inputTris, tris, faces, beforeFaces) {
 			groups: trisToGroups(tris),
 			uvs: trisToUVs(tris),
 			faces
-		}
+		},
+		true
 	);
 }
 
@@ -6539,7 +6764,7 @@ export function fillHole() {
 		composeFaces(priorFaces, appendOrigin(origLen, r.tris.length), [r.cap])
 	);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: withFaces({ positions, groups, uvs }) });
+	recordOp({ kind: 'meshgeo', uuid: faceEdited.uuid, before, after: withFaces({ positions, groups, uvs }) });
 	showToast(
 		'Filled a ' + r.loopKeys.length + '-edge hole' + (r.centroid ? ' (fanned from its centre — the outline is not a flat convex polygon)' : '')
 	);
@@ -6770,7 +6995,7 @@ export function recalculateNormals() {
 	const uvs = trisToUVs(next);
 	applyGeometrySnapshot(positions, groups, uvs);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
@@ -6859,7 +7084,7 @@ export function mergeByDistance(threshold = 0.001) {
 	// keeps the face it was in; a face whose triangles all collapsed simply goes away
 	applyGeometrySnapshot(positions, groups, uvs, composeFaces(priorFaces, survived, []));
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
@@ -6924,7 +7149,7 @@ export function triangulateMesh() {
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
-	if (!commitMeshGeoTriple(faceEdited.uuid, before, after)) return false;
+	if (!commitMeshGeoTriple(faceEdited.uuid, before, after, true)) return false;
 	showToast('Triangulated: ' + singles.length + ' triangles');
 	return true;
 }
@@ -6972,7 +7197,7 @@ export function trisToQuadsMesh() {
 	faceEditSelectedTris.set([]);
 	faceEditHighlight.set(-1);
 	faceEditHoverTri.set(-1);
-	if (!commitMeshGeoTriple(faceEdited.uuid, before, after)) return false;
+	if (!commitMeshGeoTriple(faceEdited.uuid, before, after, true)) return false;
 	showToast(quads + (quads === 1 ? ' quad paired' : ' quads paired'));
 	return true;
 }
@@ -7753,7 +7978,7 @@ export function commitFaceOp(op, amount) {
 	}
 	applyGeometrySnapshot(positions, groups, uvs, nextFaces);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before: { positions: before, groups: beforeGroups, uvs: beforeUVs, faces: beforeFaces },
@@ -7840,7 +8065,7 @@ export function duplicateSelectedFaces() {
 		composeFaces(priorFaces, appendOrigin(base, next.length), authored)
 	);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before,
@@ -7930,16 +8155,17 @@ function broadcastMeshGeo(uuid, positions, groups, uvs) {
  * Commit a full geometry snapshot for ANY object (161 stretch, 162/163 face
  * transforms): swap locally, replicate, record ONE undoable meshgeo. Size-
  * capped like the face ops. @param {string} uuid @param {number[]} before
- * @param {number[]} after @returns {boolean}
+ * @param {number[]} after @param {boolean} [op] an OPERATOR's commit (37 R11)
+ * @returns {boolean}
  */
-export function commitMeshGeoSnapshot(uuid, before, after) {
+export function commitMeshGeoSnapshot(uuid, before, after, op = false) {
 	if (after.length > MAX_SNAPSHOT) {
 		showToast(tooLargeMessage(after.length, 'edit'));
 		return false;
 	}
 	applyMeshGeo(uuid, after);
 	broadcastMeshGeo(uuid, after);
-	recordEntry({ kind: 'meshgeo', uuid, before, after });
+	(op ? recordOp : recordEntry)({ kind: 'meshgeo', uuid, before, after });
 	return true;
 }
 
@@ -8006,7 +8232,7 @@ export function createFaceFromVerts(uuid, verts, viewerPos = null) {
 	}
 	const before = trisToPositions(readTriangles(object.geometry));
 	const after = before.concat(appended);
-	return commitMeshGeoSnapshot(uuid, before, after);
+	return commitMeshGeoSnapshot(uuid, before, after, true);
 }
 
 // ---- VR face grab + live extrude/inset (122): a pending edit applied live,
@@ -8432,7 +8658,7 @@ export function commitFaceGrab() {
 	remapEdgeSelectionAfterGrab(before.positions);
 	applyGeometrySnapshot(positions, groups, uvs);
 	broadcastMeshGeo(faceEdited.uuid, positions, groups, uvs);
-	recordEntry({
+	recordOp({
 		kind: 'meshgeo',
 		uuid: faceEdited.uuid,
 		before,
@@ -9301,7 +9527,7 @@ export function beginOpAdjust(op, params, opts = {}) {
 		verts: vertexSelectionHistory?.snapshot()?.sel ?? null
 	};
 	// run the pure core + apply
-	const result = runAdjustCore(a);
+	const result = mirrorAdjustResult(a, runAdjustCore(a));
 	if (result.error) {
 		showToast(result.error);
 		return false;
@@ -9359,7 +9585,7 @@ export function reapplyOpAdjust(patch = {}) {
 		return false;
 	}
 	mergeAdjustParams(a, patch);
-	const result = runAdjustCore(a);
+	const result = mirrorAdjustResult(a, runAdjustCore(a));
 	if (result.error) return false; // keep the last good geometry on a refusal
 	const positions = trisToPositions(result.tris);
 	if (positions.length > MAX_SNAPSHOT) {

@@ -1500,6 +1500,11 @@
 		armDockMode('explorer', docked);
 	}
 
+	/** the toolbar's "…" (an action: this file's on: directives and the onclick attribute cannot mix) */
+	function openCustomizeOnClick(node: HTMLElement) {
+		node.addEventListener('click', openCustomize);
+		return { destroy: () => node.removeEventListener('click', openCustomize) };
+	}
 	function openCustomize() {
 		// anchored to the BAR, not the pointer: this menu is about the whole toolbar.
 		// ContextMenu measures itself and clamps into the viewport, so a bar sitting on
@@ -2219,7 +2224,7 @@
 		     the right-click menu's last row. Outside the cell row on purpose: the roster suites read
 		     the row's children as the bar's cells. Hidden on a narrow window (hud.css). -->
 		<span class="hud-sep hud-bar-more" aria-hidden="true"></span>
-		<button id="toolbar-customize" type="button" class="hud-cell hud-bar-more" title="Customize toolbar…" aria-label="Customize toolbar" onclick={openCustomize}
+		<button id="toolbar-customize" type="button" class="hud-cell hud-bar-more" title="Customize toolbar…" aria-label="Customize toolbar" use:openCustomizeOnClick
 			><Icon name="ellipsis" size={20} aria-hidden="true" /></button
 		>
 	{/if}

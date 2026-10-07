@@ -20,6 +20,7 @@
 	import { profilerLiveOpen } from '$lib/perf/liveSink';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
+	import ScrollStrip from '../ui/ScrollStrip.svelte';
 	import ProfilerTimeline from './profiler/ProfilerTimeline.svelte';
 	import ProfilerDetail from './profiler/ProfilerDetail.svelte';
 	import ProfilerRecordings from './profiler/ProfilerRecordings.svelte';
@@ -824,8 +825,8 @@
 			<div class="pf-head flex shrink-0 items-center gap-1 pb-1">
 				<span class="tp-dock-title">Profiler</span>
 				<span class="w-2"></span>
-				{@render controls()}
-				<span class="flex-1"></span>
+				<!-- 38 NOTES-38 #38/#39: the controls scroll sideways on a phone; undock/close stay pinned -->
+				<ScrollStrip class="pf-strip" label="Profiler tools" id="profiler-toolbar">{@render controls()}</ScrollStrip>
 				<button class="tp-dock-btn"
 					title="Undock into a floating window"
 					aria-label="Undock the Profiler"
@@ -873,19 +874,18 @@
 			>
 				{#snippet heading()}
 					<span class="wc-label">Profiler</span>
-					{#if !myGroup}{@render controls()}{/if}
-					<span class="flex-1"></span>
+					{#if !myGroup}<ScrollStrip class="pf-strip" label="Profiler tools" id="profiler-toolbar">{@render controls()}</ScrollStrip>{:else}<span class="flex-1"></span>{/if}
 				{/snippet}
 				{#snippet actions()}
 					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
 				{/snippet}
 			</WindowChrome>
 			{#if myGroup}
-				<div
-					class="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-2 py-1"
+				<ScrollStrip
+					class="shrink-0 border-b border-border px-2 py-1"
+					label="Profiler tools"
+					id="profiler-toolbar">{@render controls()}</ScrollStrip
 				>
-					{@render controls()}
-				</div>
 			{/if}
 			<div class="flex min-h-0 flex-1 flex-col p-2">
 				{@render body()}
@@ -978,6 +978,11 @@
 		font-size: 11px;
 		color: var(--tp-muted);
 		margin-top: 6px;
+	}
+	/* the toolbar strip takes the row's free width (the old flex-1 spacer's job) and keeps the
+	   trailing buttons pinned at the right */
+	:global(.pf-strip) {
+		flex: 1 1 auto;
 	}
 	.pf-select {
 		width: auto;

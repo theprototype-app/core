@@ -340,7 +340,7 @@ export async function askResetAllSettings() {
 	resetAllSettings();
 	offerUndo({
 		id: 'reset-settings',
-		text: 'All settings reset — reload the app to see every default.',
+		text: 'Settings reset — the defaults apply after a reload.',
 		done: 'Settings restored',
 		undo: () => {
 			for (const [key, value] of saved) if (value !== null) safeStorage.setItem(key, value);

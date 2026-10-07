@@ -30,7 +30,10 @@
 		noteNumber,
 		NOTE_COLORS,
 		NOTE_SHAPES,
-		DEFAULT_NOTE_COLOR
+		DEFAULT_NOTE_COLOR,
+		addReply,
+		deleteReply,
+		visibleReplies
 	} from '$lib/annotationsHandler';
 	import { globalCamera, globalRenderer, orbitControls } from '../../stores/sceneStore';
 	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore.js';
@@ -205,6 +208,14 @@
 		else close();
 	}
 
+	// 37 R16: the thread under a note
+	let replyText = $state('');
+	const replies = $derived(existing ? visibleReplies(existing) : []);
+	function sendReply() {
+		if (!existing || !replyText.trim()) return;
+		if (addReply(existing.id, replyText)) replyText = '';
+	}
+
 	function cancel() {
 		if (existing) activeAnnotation.set({ id: existing.id, mode: 'view' });
 		else close();
@@ -374,6 +385,43 @@
 					<span class="note-dot" style="background:{note.color || DEFAULT_NOTE_COLOR}"></span>
 					<span class="truncate">{displayAuthor(note)} · {when(note.ts)}</span>
 				</div>
+				{#if existing}
+					<!-- 37 R16: replies — text nodes only; anyone in the session can answer -->
+					{#if replies.length}
+						<ul class="note-replies" aria-label="Replies">
+							{#each replies as r (r.id)}
+								<li class="note-reply" data-reply={r.id}>
+									<div class="note-reply-head">
+										<span class="truncate">{r.author || 'Someone'} · {when(r.ts)}</span>
+										{#if r.authorKey && r.authorKey === myAuthorKey()}
+											<button class="note-icon note-reply-x" title="Delete your reply" aria-label="Delete your reply" onclick={() => deleteReply(existing.id, r.id)}>
+												<X size={12} aria-hidden="true" />
+											</button>
+										{/if}
+									</div>
+									<p class="note-desc">{r.text}</p>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					<div class="note-reply-row">
+						<input
+							id="note-reply-input"
+							class="ui-input"
+							type="text"
+							maxlength="2000"
+							placeholder="Reply…"
+							bind:value={replyText}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') {
+									e.preventDefault();
+									sendReply();
+								}
+							}}
+						/>
+						<button id="note-reply-send" class="note-flat" disabled={!replyText.trim()} onclick={sendReply}>Reply</button>
+					</div>
+				{/if}
 			</div>
 			<div class="note-actions">
 				<button class="note-danger" title="Delete note" aria-label="Delete note" onclick={remove}>
@@ -473,6 +521,36 @@
 		color: rgb(229 231 235);
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
+	}
+	/* 37 R16: the reply thread */
+	.note-replies {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		margin-top: 0.25rem;
+		padding-left: 0.5rem;
+		border-left: 2px solid var(--border, rgb(75 85 99));
+	}
+	.note-reply-head {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 10px;
+		color: var(--muted, rgb(156 163 175));
+	}
+	.note-reply-head .truncate {
+		flex: 1;
+		min-width: 0;
+	}
+	.note-reply-row {
+		display: flex;
+		gap: 0.375rem;
+		align-items: center;
+		margin-top: 0.25rem;
+	}
+	.note-reply-row input {
+		flex: 1;
+		min-width: 0;
 	}
 	.note-muted {
 		color: rgb(107 114 128);

@@ -1,89 +1,58 @@
-<script context="module">
+<script module>
 	// what the I4 settings search matches this section by, beyond its row names
 	export const keywords = ['export', 'publish', 'itch', 'itch.io', 'zip', 'html', 'badge', 'made with', 'fullscreen', 'fps', 'quality', 'vr', 'cdn', 'packs', 'embed', 'static host'];
+	import { registerSettingsKeywords } from '$lib/settingsSearch';
+	registerSettingsKeywords('show the made with theprototype badge', ['show made with theprototype badge', 'badge', 'logo']);
 </script>
 
 <script>
-	// 36-export — THE EXPORT DEFAULTS, one section in its own file: the Publish / Export
-	// modal's Settings tab renders it, and Settings ▸ Export registers it with one line. Every
-	// row persists per device (exportStores.exportPrefs, safeStorage) and seeds the next export;
-	// the build reads them, so changing one here changes what the next zip does.
+	// 36-export — THE EXPORT DEFAULTS, one section in its own file: the Publish / Export modal's
+	// Settings tab renders it, and Settings ▸ Export registers it with one line. Every row persists
+	// per device (exportStores.exportPrefs, safeStorage) and seeds the next export; the build reads
+	// them, so changing one here changes what the next zip does.
 	//
-	// The badge row is checked and DISABLED on purpose — there is no way to switch it off, here
-	// or anywhere (see MadeWithBadge.svelte); the row exists so the rule is visible where a
-	// person would look for the switch.
-	import SettingRow from './SettingRow.svelte';
+	// The badge row is ON and DISABLED on purpose — there is no way to switch it off, here or anywhere
+	// (see MadeWithBadge.svelte); the row exists so the rule is visible where a person would look.
+	// 37-settings (R21): rows on the redesign kit (toggles, a segmented Quality); same key.
+	import SettingRow from '../ui/SettingRow.svelte';
+	import Toggle from '../ui/Toggle.svelte';
+	import Segmented from '../ui/Segmented.svelte';
 	import { exportPrefs, setExportPrefs } from '$lib/export/exportStores.js';
 
-	/** @param {Event} e */
-	const checked = (e) => /** @type {HTMLInputElement} */ (e.currentTarget).checked;
+	const QUALITY = [
+		{ value: 'auto', label: 'Auto' },
+		{ value: 'high', label: 'High' },
+		{ value: 'medium', label: 'Medium' },
+		{ value: 'low', label: 'Low' }
+	];
 </script>
 
-<div id="export-settings-section" data-keywords={keywords.join(' ')}>
-	<SettingRow name="Show Made with ThePrototype badge">
-		<svelte:fragment slot="control"
-			><input id="export-badge" class="tp-check" type="checkbox" checked disabled aria-label="Show Made with ThePrototype badge (always on)" /></svelte:fragment
-		>
-		Always on in play links, embeds and exported games: a small logo in the bottom-right corner that opens
-		theprototype.app. An exported file is yours to edit, so this is a request, not DRM — please keep it.
+<div id="export-settings-section" class="contents" data-keywords={keywords.join(' ')}>
+	<SettingRow id="row-export-badge" label="Show the Made with ThePrototype badge" badge="Always on" description="A small logo in the corner of play links, embeds and exported games. Please keep it.">
+		<Toggle id="export-badge" label="Show the Made with ThePrototype badge (always on)" checked={true} disabled={true} />
 	</SettingRow>
-	<SettingRow name="Start fullscreen">
-		<svelte:fragment slot="control"
-			><input
-				id="export-start-fullscreen"
-				class="tp-check"
-				type="checkbox"
-				checked={$exportPrefs.startFullscreen}
-				on:change={(e) => setExportPrefs({ startFullscreen: checked(e) })}
-			/></svelte:fragment
-		>
-		The first Play press also asks the browser for fullscreen (a page may only go fullscreen on a click).
+	<SettingRow id="row-export-fullscreen" label="Start fullscreen" description="The first Play press also asks the browser for fullscreen.">
+		<Toggle id="export-start-fullscreen" label="Start fullscreen" checked={$exportPrefs.startFullscreen} onchange={(on) => setExportPrefs({ startFullscreen: on })} />
 	</SettingRow>
-	<SettingRow name="Show FPS">
-		<svelte:fragment slot="control"
-			><input id="export-show-fps" class="tp-check" type="checkbox" checked={$exportPrefs.showFps} on:change={(e) => setExportPrefs({ showFps: checked(e) })} /></svelte:fragment
-		>
-		The game starts with its frame counter on. Players can still switch it in the game's own menu.
+	<SettingRow id="row-export-fps" label="Show FPS" description="The game starts with its frame counter on; players can switch it in the game menu.">
+		<Toggle id="export-show-fps" label="Show FPS" checked={$exportPrefs.showFps} onchange={(on) => setExportPrefs({ showFps: on })} />
 	</SettingRow>
-	<SettingRow name="Quality">
-		<svelte:fragment slot="control">
-			<select
-				id="export-quality"
-				class="ui-input w-full"
-				value={$exportPrefs.quality}
-				on:change={(e) => setExportPrefs({ quality: /** @type {HTMLSelectElement} */ (e.currentTarget).value })}
-			>
-				<option value="auto">Auto</option>
-				<option value="high">High</option>
-				<option value="medium">Medium</option>
-				<option value="low">Low</option>
-			</select>
-		</svelte:fragment>
-		The quality a player starts at. Auto steps down by itself when frames run slow.
+	<SettingRow id="row-export-quality" label="Quality" description="The quality a player starts at. Auto steps down when frames run slow." wide>
+		<Segmented id="export-quality" label="Quality" options={QUALITY} value={$exportPrefs.quality} onchange={(v) => setExportPrefs({ quality: v })} />
 	</SettingRow>
-	<SettingRow name="Include VR button">
-		<svelte:fragment slot="control"
-			><input id="export-vr-button" class="tp-check" type="checkbox" checked={$exportPrefs.vrButton} on:change={(e) => setExportPrefs({ vrButton: checked(e) })} /></svelte:fragment
-		>
-		On a headset browser the start card offers Enter VR. Off = the game always plays on the screen.
+	<SettingRow id="row-export-vr" label="Include VR button" description="On a headset browser the start card offers Enter VR.">
+		<Toggle id="export-vr-button" label="Include VR button" checked={$exportPrefs.vrButton} onchange={(on) => setExportPrefs({ vrButton: on })} />
 	</SettingRow>
-	<SettingRow name="Use CDN for packs">
-		<svelte:fragment slot="control"
-			><input
-				id="export-cdn-packs"
-				class="tp-check"
-				type="checkbox"
-				checked={$exportPrefs.useCdnForPacks}
-				on:change={(e) => setExportPrefs({ useCdnForPacks: checked(e) })}
-			/></svelte:fragment
-		>
-		Smaller zip: kit pieces load from the packs CDN when the game starts, so it needs internet. Off = every pack
-		file the scene uses is copied into the zip.
+	<SettingRow id="row-export-cdn" label="Use CDN for packs" description="A smaller zip: kit pieces load from the packs CDN, so the game needs internet.">
+		<Toggle id="export-cdn-packs" label="Use CDN for packs" checked={$exportPrefs.useCdnForPacks} onchange={(on) => setExportPrefs({ useCdnForPacks: on })} />
 	</SettingRow>
-	<SettingRow name="Compress textures">
-		<svelte:fragment slot="control"
-			><input id="export-compress-textures" class="tp-check" type="checkbox" disabled aria-label="Compress textures (not available yet)" /></svelte:fragment
-		>
-		Not in this release: textures go into the export exactly as authored.
+	<SettingRow id="row-export-compress" label="Compress textures" badge="Not yet" description="Not in this release: textures go into the export as authored.">
+		<Toggle id="export-compress-textures" label="Compress textures (not available yet)" checked={false} disabled={true} />
 	</SettingRow>
 </div>
+
+<style>
+	.contents {
+		display: contents;
+	}
+</style>

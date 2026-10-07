@@ -17,7 +17,8 @@ import { safeStorage } from './safeStorage';
 //      not already cover becomes a labelled key button.
 // A preset picks the frame around the buttons: platformer = stick + jump, shooter =
 // stick + look + fire + jump, toss = the action alone (the whole screen looks), golf = the
-// stick and the look (the putt is the module's own drag on the ball).
+// stick and the look (the putt is the module's own drag on the ball), drive = the stick
+// steers and the game's pedals sit under the right thumb (Race).
 //
 // WHAT A PRESS DOES — no second input pipeline, the W4 integration rule one step on. A
 // button that names `keys` dispatches the same KeyboardEvent a keyboard would, on the
@@ -69,6 +70,10 @@ export const TOUCH_PRESETS = /** @type {Record<string, {stick: boolean, look: bo
 	// the putt is a drag ON the ball (the module stops that press), so golf adds no button
 	golf: { stick: true, look: true, buttons: [] },
 	fly: { stick: true, look: true, buttons: ['up', 'down'] },
+	// 37 (21-C Race touch): a vehicle — the stick steers, the look drag stands down (the chase
+	// camera frames the car), and the pedals come from the game's own actions (gas first, so it
+	// takes the big bottom-right slot under the right thumb, brake beside it)
+	drive: { stick: true, look: false, buttons: [] },
 	explore: { stick: true, look: true, buttons: [] },
 	custom: { stick: true, look: true, buttons: [] }
 });
@@ -163,23 +168,33 @@ export function declareTouchActions(owner, actions, opts = {}) {
 
 /* --------------------------------------------------------------- resolution ---- */
 
+/** 37 R24: the buttons that fly (hidden unless the scene's play rules allow flying) */
+const FLY_ACTIONS = new Set(['up', 'down']);
+
 /**
- * @typedef {{stick: boolean, look: boolean, preset: string, actions: TouchAction[]}} TouchControlsSpec
+ * `declared` = a module asked for these controls (api.input.actions) rather than the scene
+ * implying them — the module then READS the stick itself (api.input().touch), so the stick
+ * stays live under the module's own 'keys' claim (37: Race steers with it while it owns WASD).
+ * @typedef {{stick: boolean, look: boolean, preset: string, actions: TouchAction[], declared: boolean}} TouchControlsSpec
  */
 
 /**
  * What the overlay draws for this scene, PURE (the unit layer drives it).
- * @param {{declared?: TouchDeclaration[], walk?: boolean, fly?: boolean, keyCodes?: string[]}} input
+ * 37 R24: `canFly` false (the scene's play rules do not allow flying) hides the Up/Down buttons
+ * whoever asked for them — a module's 'fly' preset falls back to 'explore'.
+ * @param {{declared?: TouchDeclaration[], walk?: boolean, fly?: boolean, canFly?: boolean, keyCodes?: string[]}} input
  * @returns {TouchControlsSpec}
  */
-export function resolveTouchControls({ declared = [], walk = false, fly = false, keyCodes = [] } = {}) {
+export function resolveTouchControls({ declared = [], walk = false, fly = false, canFly = true, keyCodes = [] } = {}) {
 	/** @type {TouchAction[]} */
 	const actions = [];
 	const add = (/** @type {TouchAction | null} */ a) => {
-		if (a && !actions.some((x) => x.id === a.id) && actions.length < MAX_BUTTONS) actions.push(a);
+		if (!a || (!canFly && FLY_ACTIONS.has(a.id))) return;
+		if (!actions.some((x) => x.id === a.id) && actions.length < MAX_BUTTONS) actions.push(a);
 	};
 	const withPreset = [...declared].reverse().find((d) => d.preset);
-	let preset = withPreset?.preset || (declared.length ? 'custom' : walk ? 'platformer' : fly ? 'fly' : 'explore');
+	let preset = withPreset?.preset || (declared.length ? 'custom' : walk ? 'platformer' : fly && canFly ? 'fly' : 'explore');
+	if (preset === 'fly' && !canFly) preset = 'explore';
 	const frame = TOUCH_PRESETS[preset] ?? TOUCH_PRESETS.custom;
 	let stick = frame.stick;
 	let look = frame.look;
@@ -201,7 +216,7 @@ export function resolveTouchControls({ declared = [], walk = false, fly = false,
 			add(normalizeAction({ id: 'key:' + code, label: keyLabel(code), icon: '', keys: [code] }));
 		}
 	}
-	return { stick, look, preset, actions };
+	return { stick, look, preset, actions, declared: declared.length > 0 };
 }
 
 /* ------------------------------------------------------------------- prefs ---- */

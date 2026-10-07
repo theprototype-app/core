@@ -58,7 +58,9 @@ const PANELS = [
 ];
 
 /**
- * Read the live workspace, for a save payload.
+ * Read the live workspace, for a save payload. `always` (a named layout) returns the record
+ * even when nothing is open.
+ * @param {{always?: boolean}} [opts]
  *
  * Returns NULL when nothing is open, and that is deliberate on two counts: a scene with
  * no windows open adds no field to its file (so an ordinary save stays as small and as
@@ -67,7 +69,7 @@ const PANELS = [
  * somebody's windows because the author had none is the aggressive reading of it.
  * @returns {any|null}
  */
-export function snapshotWorkspace() {
+export function snapshotWorkspace({ always = false } = {}) {
 	/** @type {any} */
 	const open = {};
 	let any = false;
@@ -76,7 +78,8 @@ export function snapshotWorkspace() {
 		open[panel.name] = isOpen;
 		if (isOpen) any = true;
 	}
-	if (!any) return null;
+	// 37 R14: a named layout records "nothing open" too — applying it is asked for
+	if (!any && !always) return null;
 	return {
 		open,
 		dockTab: get(bottomDockActive),

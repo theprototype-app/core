@@ -32,6 +32,7 @@ import { vrFaceCap } from '../faceEdit';
 import { vrVertexCap } from '../meshEdit';
 import { resetWindowPoses } from '../vrWindowPoses';
 import { safeStorage } from '../safeStorage';
+import { pivotMode } from '../multiTransform'; // 37 R1: the selection's pivot point
 import { openVRKeyboard } from '../vrKeyboard';
 import { renderer } from './core.js';
 import { applyVRFrameRate } from './input.js';
@@ -299,6 +300,25 @@ export const VR_SETTINGS = [
 		desktop: false
 	},
 	// ---- Editing
+	// 37 R1: ONE pivotMode store with the desktop toolbar/Inspector (it persists itself). In VR
+	// it decides what a gripped SELECTION turns and scales about (grip.js multi-grab).
+	{
+		id: 'pivotMode',
+		page: 'editing',
+		label: 'Pivot point',
+		icon: 'crosshair',
+		kind: 'choice',
+		options: [
+			{ value: 'median', label: 'Median' },
+			{ value: 'active', label: 'Active' },
+			{ value: 'individual', label: 'Individual' },
+			{ value: 'parent', label: 'Parent' }
+		],
+		get: () => get(pivotMode),
+		set: (v) => pivotMode.set(/** @type {any} */ (v)),
+		keywords: ['pivot', 'origin', 'selection', 'rotate', 'scale', 'median', 'active'],
+		note: 'What a gripped selection turns and scales about: its centre, the object you gripped, or each object in place'
+	},
 	{ id: 'vertexHold', page: 'editing', label: 'Hold to move vertex', icon: 'mouse-pointer-2', kind: 'toggle', get: () => get(vrVertexHold), set: (v) => put(vrVertexHold, 'vrVertexHold', !!v), keywords: ['mesh', 'vertex', 'trigger'], note: 'Off: press to pick a vertex up, press again to drop it' },
 	{ id: 'sleeve', page: 'editing', label: 'Sleeve palette', icon: 'package', kind: 'toggle', get: () => get(vrSleeveEnabled), set: (v) => put(vrSleeveEnabled, 'vrSleeveEnabled', !!v), keywords: ['forearm', 'primitives', 'experimental'], note: 'Experimental: drag shapes off a strip on your forearm' },
 	{

@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 import { inspectorClose, closeMenu } from '../stores/appStore';
 import { bottomDockWouldTake } from './bottomDockDrop';
 import { safeStorage } from './safeStorage';
+import { onLayoutRestore } from './uiLayoutsCore';
 
 // Docking lite (phase 81L). Drag a window near the left/right screen edge to
 // dock it as a full-height panel (--z-drawer tier); drag its header away to
@@ -267,25 +268,59 @@ export function undock(key, x, y) {
 	docked[side] = docked[side].filter((k) => k !== key);
 	persist();
 	const entry = registry.get(key);
-	if (entry) {
-		const { node, prevRect } = entry;
-		delete node.dataset.docked;
-		delete node.dataset.dockSlot;
-		entry.handle?.remove();
-		entry.handle = null;
-		entry.divider?.remove();
-		entry.divider = null;
-		node.style.height = prevRect?.height || '';
-		node.style.width = prevRect?.width || '';
-		node.style.maxWidth = '';
-		node.style.maxHeight = '';
-		node.style.zIndex = prevRect?.zIndex || '40';
-		node.style.left = (x != null ? Math.max(0, x - 120) : parseFloat(prevRect?.left) || 200) + 'px';
-		node.style.top = (y != null ? Math.max(0, y - 12) : parseFloat(prevRect?.top) || 120) + 'px';
-	}
+	if (entry) releaseNode(entry, x, y);
 	// 81.4: the member left behind takes the whole column again
 	applySide(side);
 }
+
+/** Hand a node that is no longer docked its floating geometry back.
+ * @param {any} entry @param {number=} x @param {number=} y */
+function releaseNode(entry, x, y) {
+	const { node, prevRect } = entry;
+	delete node.dataset.docked;
+	delete node.dataset.dockSlot;
+	entry.handle?.remove();
+	entry.handle = null;
+	entry.divider?.remove();
+	entry.divider = null;
+	node.style.height = prevRect?.height || '';
+	node.style.width = prevRect?.width || '';
+	node.style.maxWidth = '';
+	node.style.maxHeight = '';
+	node.style.zIndex = prevRect?.zIndex || '40';
+	node.style.left = (x != null ? Math.max(0, x - 120) : parseFloat(prevRect?.left) || 200) + 'px';
+	node.style.top = (y != null ? Math.max(0, y - 12) : parseFloat(prevRect?.top) || 120) + 'px';
+}
+
+// 37 R14: a named workspace layout rewrote `dockedWindows` (and the widths/splits, which
+// are read live) — adopt the stored sides. A live window that leaves the column gets its
+// floating geometry back (its own dragWindow re-read then places it); one that joins a
+// column remembers where it floated, as a drag-dock does. Registered at module load, so
+// it runs BEFORE the windows' own re-reads.
+onLayoutRestore(() => {
+	/** @type {{left: string[], right: string[]}} */
+	let next = { left: [], right: [] };
+	try {
+		const saved = JSON.parse(safeStorage.getItem('dockedWindows') ?? 'null');
+		if (saved) next = { left: sideList(saved.left), right: sideList(saved.right) };
+	} catch {}
+	const was = docked;
+	docked = next;
+	for (const [key, entry] of registry) {
+		const before = was.left.includes(key) || was.right.includes(key);
+		const now = !!sideOf(key);
+		if (before && !now) releaseNode(entry);
+		else if (!before && now)
+			entry.prevRect = {
+				left: entry.node.style.left,
+				top: entry.node.style.top,
+				width: entry.node.style.width,
+				height: entry.node.style.height,
+				zIndex: entry.node.style.zIndex
+			};
+	}
+	if (!isCoarse()) applyAll();
+});
 
 /** @type {any} */ let zoneEl = null;
 /**

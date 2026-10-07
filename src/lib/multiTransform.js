@@ -6,6 +6,7 @@ import { recordTransformSet } from './history';
 import { hasOrigin, originWorld, setOriginFromWorld } from './objectOrigin';
 import { suspendAnimation, resumeAnimation } from './flowRuntime';
 import { safeStorage } from './safeStorage';
+import { withWireBatch } from './wireBatch';
 // physics is reached DYNAMICALLY: a static import would close the cycle
 // multiTransform -> physics -> lockControl -> objectActions -> multiTransform
 // (the vite-dev TDZ trap; Rollup tolerates it, the dev server 500s)
@@ -236,21 +237,24 @@ export function applyPivotTransform(mutate) {
 	const world = new THREE.Matrix4();
 	const inverse = new THREE.Matrix4();
 	const own = new THREE.Matrix4();
-	for (const entry of starts) {
-		world.multiplyMatrices(entry.origin ? reanchorDelta(delta, pivotStart, entry.origin, own) : delta, entry.startWorld);
-		entry.object.parent.updateMatrixWorld(true);
-		inverse.copy(entry.object.parent.matrixWorld).invert();
-		world.premultiply(inverse);
-		world.decompose(entry.object.position, entry.object.quaternion, entry.object.scale);
-		if (peer)
-			peer.send({
-				type: 'move',
-				uuid: entry.object.uuid,
-				pos: entry.object.position.toArray(),
-				rot: [entry.object.rotation.x, entry.object.rotation.y, entry.object.rotation.z],
-				scale: entry.object.scale.toArray()
-			});
-	}
+	// 37 R1: the whole set's moves leave as ONE replicated batch
+	withWireBatch(() => {
+		for (const entry of starts) {
+			world.multiplyMatrices(entry.origin ? reanchorDelta(delta, pivotStart, entry.origin, own) : delta, entry.startWorld);
+			entry.object.parent.updateMatrixWorld(true);
+			inverse.copy(entry.object.parent.matrixWorld).invert();
+			world.premultiply(inverse);
+			world.decompose(entry.object.position, entry.object.quaternion, entry.object.scale);
+			if (peer)
+				peer.send({
+					type: 'move',
+					uuid: entry.object.uuid,
+					pos: entry.object.position.toArray(),
+					rot: [entry.object.rotation.x, entry.object.rotation.y, entry.object.rotation.z],
+					scale: entry.object.scale.toArray()
+				});
+		}
+	});
 	// the origin travels with the set it just moved (the transient anchor too,
 	// or the next re-seat would snap the gizmo back to the stale point)
 	if (customOrigin) customOrigin.copy(pivot.position);
@@ -379,26 +383,30 @@ function onDraggingChanged(/** @type {any} */ event) {
 	} else if (dragMembers.length) {
 		/** @type {any} */
 		const peer = get(peers);
+		/** @type {any[]} */
 		const set = [];
-		for (const entry of dragMembers) {
-			resumeAnimation(entry.object.uuid);
-			import('./physics').then((m) => m.releaseBody(entry.object.uuid));
-			const after = {
-				pos: entry.object.position.toArray(),
-				rot: entry.object.rotation.toArray(),
-				scale: entry.object.scale.toArray()
-			};
-			if (JSON.stringify(entry.before) !== JSON.stringify(after))
-				set.push({ uuid: entry.object.uuid, before: entry.before, after });
-			if (peer)
-				peer.send({
-					type: 'move',
-					uuid: entry.object.uuid,
-					pos: after.pos,
-					rot: after.rot,
-					scale: after.scale
-				});
-		}
+		// 37 R1: the drag's final poses leave as ONE replicated batch
+		withWireBatch(() => {
+			for (const entry of dragMembers) {
+				resumeAnimation(entry.object.uuid);
+				import('./physics').then((m) => m.releaseBody(entry.object.uuid));
+				const after = {
+					pos: entry.object.position.toArray(),
+					rot: entry.object.rotation.toArray(),
+					scale: entry.object.scale.toArray()
+				};
+				if (JSON.stringify(entry.before) !== JSON.stringify(after))
+					set.push({ uuid: entry.object.uuid, before: entry.before, after });
+				if (peer)
+					peer.send({
+						type: 'move',
+						uuid: entry.object.uuid,
+						pos: after.pos,
+						rot: after.rot,
+						scale: after.scale
+					});
+			}
+		});
 		// one undo step restores every member (existing transformSet kind)
 		recordTransformSet(set);
 		dragMembers = [];
@@ -450,14 +458,16 @@ function onObjectChange() {
 		/** @type {any} */
 		const peer = get(peers);
 		if (peer)
-			for (const entry of dragMembers)
-				peer.send({
-					type: 'move',
-					uuid: entry.object.uuid,
-					pos: entry.object.position.toArray(),
-					rot: entry.object.rotation.toArray(),
-					scale: entry.object.scale.toArray()
-				});
+			withWireBatch(() => {
+				for (const entry of dragMembers)
+					peer.send({
+						type: 'move',
+						uuid: entry.object.uuid,
+						pos: entry.object.position.toArray(),
+						rot: entry.object.rotation.toArray(),
+						scale: entry.object.scale.toArray()
+					});
+			});
 	}
 }
 

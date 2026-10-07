@@ -40,8 +40,13 @@
       walkStep,
       collideRigStep
     } from '$lib/charController'
+    import { setLocalFeet } from '$lib/avatars/avatarState'
 
     const { renderer, camera, invalidate } = useThrelte()
+    // 37 R23: a walking player's feet travel on the camera stream (avatarState.setLocalFeet)
+    const feetProbe = new Vector3()
+    /** Player.svelte seats this camera in a group at y = 0.9 */
+    const PLAYER_BASE_Y = 0.9
   
     const domElement = renderer.domElement
     const cameraParent = useParent()
@@ -276,6 +281,8 @@
             right: moveState.right || (mX > 0.01 ? 1 : 0)
           }
           tickWalker(walker, ctrl, delta, walkStep(walker, padWalkInput, speed, delta))
+          // 37 R23: the walker's floor, for the body peers draw (eyeHeight is world metres here)
+          setLocalFeet(walker.getWorldPosition(feetProbe).y - Math.max(0.1, Number(ctrl.eyeHeight ?? 1.7) || 1.7))
           const lX = prefs.swapSticks ? pad.lx : pad.rx
           const lY = prefs.swapSticks ? pad.ly : pad.ry
           if (lX || lY) {
@@ -365,6 +372,10 @@
       if (play.grounded && $isLocked && $cameraParent) {
         const grounded: any = $cameraParent
         grounded.position.y = play.eyeHeight
+        // 37 R23: the pin stands the eye `eyeHeight` above the camera group's 0.9 m base, i.e. on
+        // the floor at that base less 0.9 — tell peers so our body stands on it
+        grounded.updateWorldMatrix(true, false)
+        setLocalFeet(grounded.getWorldPosition(feetProbe).y - play.eyeHeight - PLAYER_BASE_Y)
       }
 
       // dungeon collision (58.1): slide the XZ step along the raster walls

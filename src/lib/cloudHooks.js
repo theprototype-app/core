@@ -30,6 +30,7 @@ const ALWAYS_ALLOWED = new Set([
 	'getmodulestate',
 	'getnodedefs',
 	'getjoints',
+	'getchat', // 37 R15: the chat-history REQUEST (its reply stays gateable, the getnodes rule)
 	// A1/A2: WHERE A PEER IS STANDING. On the floor because it is the ROOM GATE'S OWN
 	// EVIDENCE - a plugin that gated `atscene` would silently switch off scene adoption
 	// AND every room gate built on it (`canApplyByRoom` reads no evidence, so it allows
@@ -205,6 +206,16 @@ export const cloudPluginInfo = writable(null);
  * job list changes. Null = no plugin, the card is byte-identical.
  * @type {import('svelte/store').Writable<(() => string | null) | null>} */
 export const meshJobStatus = writable(null);
+
+/**
+ * 37 R20 — "REPORT A PROBLEM": where a finished report goes. The plugin installs
+ * `{submit(report) → Promise<{ok, id?, reason?, error?}>, account() → {signedIn, name?}}`
+ * (`api.setProblemReporter`); core draws the whole report — screenshot, boxes, note,
+ * consent — and calls `submit` only when the person presses Send with the box ticked.
+ * `report` = `{note, marks: [{x,y,w,h}] (fractions of the picture), meta, perf | null,
+ * shot: Blob | null}`. Null = no plugin: the report is saved on this device instead.
+ * @type {import('svelte/store').Writable<{submit: (report: any) => Promise<any>, account?: () => any} | null>} */
+export const problemReporter = writable(null);
 
 /**
  * 21-G5 (F7): CROSS-SCENE PRESENCE, the rolesInfo-bridge shape one domain over. The

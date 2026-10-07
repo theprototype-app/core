@@ -54,10 +54,11 @@ h.run(async () => {
 		window.__stores.settingsOpen.set(true);
 	});
 	await A.page.waitForSelector('#ai-stt-preset', { state: 'visible', timeout: 10000 });
-	const presets = await A.page.$$eval('#ai-stt-preset option', (o) => o.map((x) => x.value));
+	// 37-settings: the provider is a segmented control; the server form is a sub-page (AI › Voice typing server)
+	const presets = await A.page.$$eval('#ai-stt-preset [role=radio]', (o) => o.map((x) => x.getAttribute('data-value')));
 	h.check(presets.join(',') === 'openai,groq,custom', `three presets, OpenAI first (${presets})`);
 	h.check((await A.page.locator('#ai-stt-status').textContent()).includes('Needs an API key'), 'an OpenAI preset with no key says it needs one');
-	await A.page.selectOption('#ai-stt-preset', 'groq');
+	await A.page.click('#ai-stt-preset-groq');
 	await A.page.waitForTimeout(200);
 	const groq = await A.page.evaluate(() => {
 		let v;
@@ -67,16 +68,20 @@ h.run(async () => {
 	h.check(groq.cfg.baseUrl === 'https://api.groq.com/openai/v1' && groq.cfg.model === 'whisper-large-v3', 'Groq fills its URL and model');
 	h.check(groq.saved?.preset === 'groq', 'the choice is persisted');
 	// self-hosted at the mock
-	await A.page.selectOption('#ai-stt-preset', 'custom');
+	await A.page.click('#ai-stt-preset-custom');
+	await A.page.click('#ai-stt-server');
+	await A.page.waitForSelector('#ai-stt-base', { state: 'visible', timeout: 5000 });
 	await A.page.fill('#ai-stt-base', origin + '/mock-stt/v1');
 	await A.page.locator('#ai-stt-base').dispatchEvent('change');
 	await A.page.fill('#ai-stt-key', 'stt-key');
 	await A.page.locator('#ai-stt-key').dispatchEvent('change');
 	await A.page.waitForTimeout(150);
-	h.check((await A.page.locator('#ai-stt-status').textContent()).includes('Ready'), 'self-hosted with a URL reads Ready');
 	await A.page.click('#ai-stt-test');
 	await A.page.waitForSelector('#ai-stt-test-result', { timeout: 10000 });
 	h.check((await A.page.locator('#ai-stt-test-result').textContent()).includes('Connected'), 'Test connection reaches the server');
+	await A.page.locator('.ss-back').click();
+	await A.page.waitForSelector('#ai-stt-status', { state: 'visible', timeout: 5000 });
+	h.check((await A.page.locator('#ai-stt-status').textContent()).includes('Ready'), 'self-hosted with a URL reads Ready');
 	const testCall = sttCalls[sttCalls.length - 1];
 	h.check(testCall?.fileField && testCall?.model === 'whisper-1' && testCall?.auth === 'Bearer stt-key', `the request is multipart file + model with the bearer key (${JSON.stringify(testCall)})`);
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));

@@ -78,17 +78,15 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
 	// 111: the passthrough switch lives in the VR section (first accordion) now
-	await A.page.getByText('VR', { exact: true }).first().click();
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();
 	await A.page.waitForTimeout(400);
-	const toggle = A.page.locator('label', { has: A.page.locator('#passthrough-toggle') });
-	h.check((await A.page.locator('#passthrough-toggle').count()) === 1, 'passthrough renders as a Toggle switch');
-	const red = await A.page.evaluate(() => {
-		const input = document.querySelector('#passthrough-toggle');
-		const track = input?.nextElementSibling;
-		return (track?.className ?? '').includes('red');
-	});
-	h.check(red, 'switch uses the red (armed) color');
-	await toggle.click({ force: true });
+	// 37-settings: the kit Toggle (a real <button aria-pressed>); the red "armed" colour gave way
+	// to the one accent every toggle uses (docs/settings-inventory.md, VR row 19)
+	const toggle = A.page.locator('#passthrough-toggle');
+	h.check((await toggle.count()) === 1, 'passthrough renders as a Toggle switch');
+	const pressed = await toggle.getAttribute('aria-pressed');
+	h.check(pressed === 'true' || pressed === 'false', `the switch says its state (aria-pressed=${pressed})`);
+	await toggle.click();
 	await A.page.waitForTimeout(400);
 	const toastAfterToggle = await A.page
 		.getByText(/takes effect on the next VR entry/)
@@ -104,7 +102,9 @@ h.run(async () => {
 
 	// survives a reload (localStorage-backed store + button swap)
 	await A.page.reload();
-	await A.page.waitForTimeout(2500);
+	// wait for the debug hook, not a timer: it loads after boot and missed a fixed 2.5 s once
+	await A.page.waitForFunction(() => !!(/** @type {any} */ (window).__stores?.vrPassthrough), null, { timeout: 30000 });
+	await A.page.waitForTimeout(500);
 	const aimAfterReload = await aim();
 	const still = await A.page.evaluate(
 		() =>

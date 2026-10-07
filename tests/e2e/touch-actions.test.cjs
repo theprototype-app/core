@@ -4,7 +4,8 @@
 //
 // What is proved, against the rig's own pose and the games' own state (never a store the
 // overlay writes):
-//   1. a blank (fly) scene gets Up/Down, and HOLDING Up lifts the rig — a button presses a key
+//   1. a blank scene with Flying ▸ Allowed gets Up/Down, and HOLDING Up lifts the rig — a button presses a key
+//      (37 R24: flying in Play is opt-in, so the suite allows it the way Configure Scene ▸ Physics does)
 //   2. Sky Run: hold the stick AND tap Jump at once (two fingers) -> the character walks and jumps
 //   3. Target Toss: the Throw button charges while held and throws one ball on release
 //   4. the pause menu offers Touch controls; the layout editor drags a button; Save persists it
@@ -83,6 +84,9 @@ async function loadScene(page, file) {
 	await page.waitForTimeout(2000);
 }
 
+/** 37 R24: Configure Scene ▸ Physics ▸ Play mode ▸ Flying ▸ Allowed (what setFlyChoice('allowed') writes) */
+const allowFlying = (page) => page.evaluate(() => window.__stores.scenePhysics.setScenePhysics({ play: { locomotion: { fly: true }, grounded: false } }));
+
 const setTheme = (page, id) => page.evaluate((t) => window.__stores.themes.theme.set(t), id);
 
 h.run(async () => {
@@ -90,6 +94,7 @@ h.run(async () => {
 
 	// ---- 0. a desktop window: nothing on Auto, everything on Always ----------------------
 	const D = await h.setupPage(browser, 'D', { context: { viewport: { width: 1280, height: 720 } } });
+	await allowFlying(D.page);
 	await D.page.locator('#play-button').click();
 	await h.eventually(() => locked(D.page), (v) => v === true, 'desktop enters play');
 	await D.page.waitForTimeout(400);
@@ -106,10 +111,11 @@ h.run(async () => {
 	const page = A.page;
 	const cdp = await page.context().newCDPSession(page);
 	h.check(await g(page, () => window.__stores.inputDevice.coarsePointer()), 'the phone context reports (pointer: coarse)');
+	await allowFlying(page);
 	await page.locator('#play-button').click();
 	await h.eventually(() => locked(page), (v) => v === true, 'the phone enters play');
 	const spec0 = await g(page, () => { let v; window.__stores.touchSpec.touchSpec.subscribe((x) => (v = x))(); return { stick: v.stick, preset: v.preset, ids: v.actions.map((a) => a.id) }; });
-	h.check(spec0.preset === 'fly' && spec0.ids.join() === 'up,down' && spec0.stick, `a blank scene flies: stick + Up/Down (${JSON.stringify(spec0)})`);
+	h.check(spec0.preset === 'fly' && spec0.ids.join() === 'up,down' && spec0.stick, `a blank scene with Flying allowed flies: stick + Up/Down (${JSON.stringify(spec0)})`);
 	const up = await rectOf(page, '#touch-btn-up');
 	h.check(!!up && up.r <= 390 && up.b <= 844 && up.l >= 0, `the Up button is on screen (${up && [Math.round(up.x), Math.round(up.y)]})`);
 	// let the spawn settle, and measure the drift with nothing pressed (the premise)
@@ -254,9 +260,11 @@ h.run(async () => {
 	}
 
 	// ---- 4. the layout editor from Settings; a saved layout survives a reload -------------
-	// a fresh page is a blank (fly) scene again: its id is 'untitled' before and after the reload
+	// a fresh page is a blank scene again (Flying allowed once more, 37 R24): its id is 'untitled'
+	// before and after the reload
 	await h.freshReload(A);
 	await page.waitForTimeout(800);
+	await allowFlying(page);
 	await page.evaluate(() => {
 		window.__stores.settingsSection.set('touch');
 		window.__stores.settingsOpen.set(true);
@@ -286,6 +294,7 @@ h.run(async () => {
 	const saved = await g(page, () => window.__stores.touchActions.touchActionsDebug().layouts);
 	h.check(!!saved.games.untitled?.items['btn:up'], `the layout is saved for this game (${Object.keys(saved.games)})`);
 	await h.freshReload(A);
+	await allowFlying(page);
 	await page.locator('#play-button').click();
 	await h.eventually(() => locked(page), (v) => v === true, 'play again after the reload');
 	await h.eventually(() => rectOf(page, '#touch-btn-up'), (r) => !!r && Math.abs(r.x - dragged.x) < 6 && Math.abs(r.y - dragged.y) < 6 && Math.abs(r.w - 110) < 2, 'after a RELOAD the Up button is where it was dragged, at the new size', 5000);

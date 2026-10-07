@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import { anyModalOpen, showToast } from '../stores/appStore';
 import { GAMEPAD_BUTTONS, applyDeadzone, gamepadPrefsNow } from './gamepadPrefs';
 import { registerShortcut, unregisterShortcutGroup } from './shortcuts';
+import { touchMove } from './touchControls';
 
 // Module SDK input layer (K-C). STORE-ONLY module (the peerApproval.js pattern):
 // imports nothing from peerHandler/vrControls, so vrControls can feed it VR
@@ -128,7 +129,10 @@ export function getInput() {
 		axes: { ...vrAxes },
 		vrButtons: { ...vrButtons },
 		pad: { ...padAxes },
-		padButtons: new Set(padCodes)
+		padButtons: new Set(padCodes),
+		// 37 (21-C Race touch): the on-screen MOVE stick, -1..1 like the pad (up = -y). Additive,
+		// like the pad channels; PointerLockControls stands its own use down under a 'keys' claim.
+		touch: { ...get(touchMove) }
 	};
 }
 

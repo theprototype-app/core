@@ -17,6 +17,7 @@ import { loadCharacter, loadClips, instantiate, setOutfit, buildHeadGeometry, bo
 import { yawPitchOf, forwardOfQuat, handsYaw, nextBodyYaw, neckAngles, armConfidence, wrapAngle } from './bodyEstimate.js';
 import { newTracker, trackPose, bodyFrameVelocity, locomotionWeights, approachWeights, SLOTS, TELEPORT_M } from './locomotion.js';
 import { measureArm, solveArm, orientWrist } from './armIK.js';
+import { DizzyFx } from './dizzy.js';
 
 /** KayKit characters face +Z (glTF's front); three's yaw 0 faces -Z */
 const MODEL_YAW = Math.PI;
@@ -46,6 +47,155 @@ const _one = new THREE.Vector3(1, 1, 1);
 const _pole = new THREE.Vector3();
 const _target = new THREE.Vector3();
 const _hq = new THREE.Quaternion();
+const _sole = new THREE.Vector3();
+const _toObject = new THREE.Matrix4();
+
+/** 37 R23: the SOLE vertices of each character (indices into its shared geometry), picked once */
+/** @type {Map<string, number[]>} */
+const SOLES = new Map();
+/** 37 R22: where a character's own face is, in its head-CENTRE frame (model units), picked once */
+/** @type {Map<string, {eyes: THREE.Vector3[], ring: number, lift: number}>} */
+const FACES = new Map();
+/** a stylised head's eyes + crown, in the head-centre frame (the geometry's 0.72 scale folded in) */
+const STYLISED_FACE = /** @type {Record<string, {eyes: number[][], ring: number, lift: number}>} */ ({
+	sphere: { eyes: [[-0.14, 0.05, 0.4], [0.14, 0.05, 0.4]], ring: 0.48, lift: 0.52 },
+	box: { eyes: [[-0.14, 0.05, 0.38], [0.14, 0.05, 0.38]], ring: 0.5, lift: 0.5 },
+	capsule: { eyes: [[-0.12, 0.08, 0.34], [0.12, 0.08, 0.34]], ring: 0.42, lift: 0.66 },
+	cone: { eyes: [[-0.08, -0.08, 0.22], [0.08, -0.08, 0.22]], ring: 0.42, lift: 0.56 }
+});
+const STYLISED_EYES = Object.fromEntries(Object.entries(STYLISED_FACE).map(([k, f]) => [k, f.eyes.map((e) => new THREE.Vector3(e[0], e[1], e[2]))]));
+/** a photo card's eyes, in the CARD's frame (it is 0.8 m square and faces the viewer) */
+const PHOTO_EYES = [new THREE.Vector3(-0.13, 0.08, 0.02), new THREE.Vector3(0.13, 0.08, 0.02)];
+
+/**
+ * The character's own face: the head-bone vertices in the bind pose, in the head-CENTRE frame. The
+ * eyes sit at the centre's height, a third of the way out to each side, on the FRONT of the face at
+ * that height (a visor or a hood brim sticks out further — measured there, not at the extreme).
+ * @param {THREE.SkinnedMesh} mesh @param {string} id
+ */
+export function faceOf(mesh, id) {
+	const cached = FACES.get(id);
+	if (cached) return cached;
+	const hi = mesh.skeleton.bones.findIndex((b) => b.name === boneName('head'));
+	const inv = mesh.skeleton.boneInverses[hi];
+	const pos = mesh.geometry.attributes.position;
+	const si = mesh.geometry.attributes.skinIndex;
+	const sw = mesh.geometry.attributes.skinWeight;
+	const v = new THREE.Vector3();
+	let halfW = 0.3;
+	let top = 0.5;
+	/** @type {(number[] | null)[]} each vertex in the head-centre frame (null = not the head's) */
+	const local = new Array(pos.count).fill(null);
+	if (hi >= 0 && inv) {
+		halfW = 0;
+		top = 0;
+		for (let k = 0; k < pos.count; k++) {
+			let best = 0;
+			let bi = -1;
+			for (let j = 0; j < 4; j++) {
+				const w = sw.getComponent(k, j);
+				if (w > best) {
+					best = w;
+					bi = si.getComponent(k, j);
+				}
+			}
+			if (bi !== hi) continue;
+			v.fromBufferAttribute(pos, k).applyMatrix4(mesh.bindMatrix).applyMatrix4(inv);
+			v.y -= HEAD_CENTER_ABOVE_BONE;
+			halfW = Math.max(halfW, Math.abs(v.x));
+			top = Math.max(top, v.y);
+			local[k] = [v.x, v.y, v.z];
+		}
+	}
+	const eyeX = Math.min(halfW, 0.6) * 0.33;
+	// the depth of the face AT each eye: a ray straight through the eye point, the front-most HEAD
+	// triangle it crosses. Not the nose tip and not a nearby helmet rim (the knight's face sits
+	// recessed inside its helmet) — a star in front of the face slides off the eye seen from the side
+	const index = mesh.geometry.index;
+	const tris = index ? index.count / 3 : pos.count / 3;
+	const vid = (/** @type {number} */ t, /** @type {number} */ c) => (index ? index.getX(t * 3 + c) : t * 3 + c);
+	const depthAt = (/** @type {number} */ x, /** @type {number} */ y) => {
+		let z = -Infinity;
+		for (let t = 0; t < tris; t++) {
+			const a = local[vid(t, 0)];
+			const b = local[vid(t, 1)];
+			const c = local[vid(t, 2)];
+			if (!a || !b || !c) continue;
+			const d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1]);
+			if (Math.abs(d) < 1e-9) continue;
+			const l1 = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (y - c[1])) / d;
+			const l2 = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (y - c[1])) / d;
+			const l3 = 1 - l1 - l2;
+			if (l1 < 0 || l2 < 0 || l3 < 0) continue;
+			z = Math.max(z, l1 * a[2] + l2 * b[2] + l3 * c[2]);
+		}
+		return Number.isFinite(z) && z > 0 ? z : 0.45;
+	};
+	const face = {
+		eyes: [new THREE.Vector3(-eyeX, 0, depthAt(-eyeX, 0) + 0.015), new THREE.Vector3(eyeX, 0, depthAt(eyeX, 0) + 0.015)],
+		ring: Math.min(halfW, 0.62) + 0.06,
+		lift: Math.min(top, 0.62) + 0.12
+	};
+	FACES.set(id, face);
+	return face;
+}
+
+/** at most this many sole vertices per foot are re-skinned each frame */
+const SOLE_CAP = 40;
+
+/**
+ * The vertices a foot stands on: those skinned mostly to a foot/toes bone, within 2% of the
+ * body's height of that foot's lowest one in the bind pose (the flat-footed rest pose). The
+ * clips roll the foot over its heel and toes, so the lowest point of the body during a stride
+ * is always one of these.
+ * @param {THREE.SkinnedMesh} mesh @param {string} id @returns {number[]}
+ */
+export function soleVertices(mesh, id) {
+	const cached = SOLES.get(id);
+	if (cached) return cached;
+	const bones = mesh.skeleton.bones;
+	/** @type {Map<number, string>} bone index -> side */
+	const footSide = new Map();
+	bones.forEach((b, i) => {
+		const m = /^(?:foot|toes)([lr])$/.exec(b.name);
+		if (m) footSide.set(i, m[1]);
+	});
+	const pos = mesh.geometry.attributes.position;
+	const si = mesh.geometry.attributes.skinIndex;
+	const sw = mesh.geometry.attributes.skinWeight;
+	/** @type {Record<string, {k: number, y: number}[]>} */
+	const sides = { l: [], r: [] };
+	let lo = Infinity;
+	let hi = -Infinity;
+	for (let k = 0; k < pos.count; k++) {
+		const y = _sole.fromBufferAttribute(pos, k).applyMatrix4(mesh.bindMatrix).y;
+		lo = Math.min(lo, y);
+		hi = Math.max(hi, y);
+		let best = 0;
+		let bi = -1;
+		for (let j = 0; j < 4; j++) {
+			const w = sw.getComponent(k, j);
+			if (w > best) {
+				best = w;
+				bi = si.getComponent(k, j);
+			}
+		}
+		const side = footSide.get(bi);
+		if (side) sides[side].push({ k, y });
+	}
+	const eps = (hi - lo) * 0.02;
+	/** @type {number[]} */
+	const out = [];
+	for (const list of Object.values(sides)) {
+		if (!list.length) continue;
+		const min = Math.min(...list.map((v) => v.y));
+		const sole = list.filter((v) => v.y <= min + eps).map((v) => v.k);
+		const stride = Math.max(1, Math.ceil(sole.length / SOLE_CAP));
+		for (let i = 0; i < sole.length; i += stride) out.push(sole[i]);
+	}
+	SOLES.set(id, out);
+	return out;
+}
 
 /**
  * @typedef {{character: string, head: string, hat: string, body: string, outfit: string, photo?: string}} AvatarLook
@@ -89,6 +239,23 @@ export class RiggedAvatar {
 		this.arms = {};
 		this.look = { ...look };
 		this.characterId = '';
+		/** 37 R23: the bones this class poses AFTER the mixer, and their clip pose of the last frame */
+		/** @type {THREE.Object3D[]} */
+		this.posed = [];
+		/** @type {Float32Array | null} */
+		this.clipPose = null;
+		/** @type {number[]} */
+		this.soles = [];
+		/** how far the sole clamp lifted the body this frame (m), and where the lowest sole ended */
+		this.lift = 0;
+		this.soleY = 0;
+		/** where the feet were anchored from: the sender's walker ('wire') or the head ('head') */
+		this.anchor = 'head';
+		/** 37 R22: the knocked-off idle (stars, sway, star eyes) — one instanced draw while it shows */
+		this.dizzy = new DizzyFx();
+		this.object.add(this.dizzy.mesh);
+		/** @type {{eyes: THREE.Vector3[], ring: number, lift: number} | null} */
+		this.face = null;
 		this.build(look);
 	}
 
@@ -136,6 +303,19 @@ export class RiggedAvatar {
 			const a = this.bones[side];
 			if (a.upper && a.lower && a.wrist) this.arms[side] = { ...a, rest: measureArm(a.upper, a.lower, a.wrist) };
 		}
+		// the bones posed on top of the clips (neck, arm IK). A clip whose value did not change
+		// since the last frame is NOT re-applied by three's PropertyMixer, so anything multiplied
+		// onto such a bone kept accumulating — the idle head spun (37 R22). Each frame restores
+		// their clip pose before the mixer runs.
+		this.posed = [this.bones.chest, this.bones.head];
+		for (const side of /** @type {const} */ (['left', 'right'])) {
+			const a = this.bones[side];
+			this.posed.push(a.upper, a.lower, a.wrist);
+		}
+		this.posed = this.posed.filter(Boolean);
+		this.clipPose = null;
+		this.soles = soleVertices(inst.mesh, id);
+		this.face = faceOf(inst.mesh, id);
 		this.mixer = new THREE.AnimationMixer(inst.root);
 		this.actions = {};
 		for (const [slot, name] of Object.entries(SLOT_CLIP)) {
@@ -233,9 +413,14 @@ export class RiggedAvatar {
 		const hy = handsYaw([p.x, p.y, p.z], L?.pos, R?.pos);
 		this.bodyYaw = this.placed ? nextBodyYaw({ bodyYaw: this.bodyYaw, headYaw, handsYaw: hy, speed, dt }) : headYaw;
 
-		// body: feet under the head, eased so a 20 Hz stream does not step
+		// body: feet under the head, eased so a 20 Hz stream does not step. 37 R23: a walking
+		// sender says where its feet are (its walker's floor — slopes and steps included), which
+		// beats a head-height guess: eye heights differ (a 1.7 m walker, a seated VR player).
 		const tx = p.x;
-		const ty = p.y - feetBelowHead();
+		const wireFeet = root.userData?.feet;
+		const fromWire = Number.isFinite(wireFeet) && p.y - wireFeet > 0.3 && p.y - wireFeet < 3.5;
+		this.anchor = fromWire ? 'wire' : 'head';
+		const ty = fromWire ? wireFeet : p.y - feetBelowHead();
 		const tz = p.z;
 		const o = this.object.position;
 		const jump = Math.hypot(tx - o.x, ty - o.y, tz - o.z);
@@ -261,7 +446,10 @@ export class RiggedAvatar {
 			a.setEffectiveWeight(this.weights[s] ?? 0);
 			a.setEffectiveTimeScale(rates[s] ?? 1);
 		}
+		this.restoreClipPose();
 		this.mixer.update(dt);
+		this.saveClipPose();
+		this.planFeet();
 
 		// neck: the head's turn relative to the body, 30% in the chest and 70% in the head
 		const neck = neckAngles(headYaw, headPitch, this.bodyYaw);
@@ -272,6 +460,15 @@ export class RiggedAvatar {
 		if (this.bones.head) {
 			_q.setFromEuler(_e.set(-neck.pitch * 0.7, neck.yaw * 0.7, 0, 'YXZ'));
 			this.bones.head.quaternion.multiply(_q);
+		}
+		// 37 R22: knocked off — the head travels a vertical figure-8 in its own XY plane and tilts with
+		// it (both on top of the clip pose, which restoreClipPose puts back next frame)
+		if (this.dizzy.step(!!root.userData?.knocked, dt) > 0 && this.bones.head) {
+			const sw = this.dizzy.sway();
+			const hb = this.bones.head;
+			hb.position.add(_v.set(sw.x, sw.y, 0).applyQuaternion(hb.quaternion));
+			hb.quaternion.multiply(_q.setFromAxisAngle(_w.set(0, 0, 1), sw.roll));
+			if (this.bones.chest) this.bones.chest.quaternion.multiply(_q.setFromAxisAngle(_w.set(0, 0, 1), sw.roll * 0.25));
 		}
 		this.object.updateMatrixWorld(true);
 
@@ -341,6 +538,87 @@ export class RiggedAvatar {
 				this.photoCard.quaternion.copy(_q2.invert().multiply(_q));
 			}
 		}
+		this.poseDizzy(viewer);
+	}
+
+	/**
+	 * 37 R22: pose the stars and the star eyes for this frame (only while knocked off).
+	 * @param {THREE.Vector3 | null} viewer world
+	 */
+	poseDizzy(viewer) {
+		const hb = this.bones?.head;
+		if (!this.dizzy.mesh.visible || !hb?.parent) return;
+		_m.compose(hb.position, hb.quaternion, _one).premultiply(hb.parent.matrixWorld);
+		_m.multiply(_m2.makeTranslation(0, HEAD_CENTER_ABOVE_BONE, 0));
+		_toObject.copy(this.object.matrixWorld).invert();
+		_m.premultiply(_toObject);
+		const viewerLocal = viewer ? this.object.worldToLocal(_target.copy(viewer)) : null;
+		const head = this.look.head;
+		/** @type {THREE.Vector3[] | null} */
+		let eyes = null;
+		/** @type {THREE.Matrix4 | null} */
+		let eyeFrame = null;
+		let dims = { ring: 0.5, lift: 0.55, size: 0.07 };
+		if (head === 'photo' && this.photoCard) {
+			eyes = PHOTO_EYES;
+			eyeFrame = _m2.compose(this.photoCard.position, this.photoCard.quaternion, _one);
+			dims = { ring: 0.5, lift: 0.55, size: 0.08 };
+		} else if (head && head !== 'character' && STYLISED_FACE[head]) {
+			const f = STYLISED_FACE[head];
+			eyes = STYLISED_EYES[head];
+			dims = { ring: f.ring, lift: f.lift, size: 0.07 };
+		} else if (this.face) {
+			eyes = this.face.eyes;
+			dims = { ring: this.face.ring, lift: this.face.lift, size: 0.07 };
+		}
+		this.dizzy.pose(_m, dims, eyes, viewerLocal, eyeFrame);
+	}
+
+	/** put the post-posed bones back on last frame's clip pose (see `posed`) */
+	restoreClipPose() {
+		const c = this.clipPose;
+		if (!c) return;
+		let i = 0;
+		for (const b of this.posed) {
+			b.quaternion.fromArray(c, i);
+			b.position.fromArray(c, i + 4);
+			i += 7;
+		}
+	}
+
+	saveClipPose() {
+		if (!this.clipPose) this.clipPose = new Float32Array(this.posed.length * 7);
+		let i = 0;
+		for (const b of this.posed) {
+			b.quaternion.toArray(this.clipPose, i);
+			b.position.toArray(this.clipPose, i + 4);
+			i += 7;
+		}
+	}
+
+	/**
+	 * 37 R23: the sole clamp. The clips roll each foot over its heel and toes, which takes a sole
+	 * up to 8 cm through the floor at heel strike. Lift the body by however far the lowest sole
+	 * went below the feet origin (never lower it: a run's flight phase leaves both feet up), so
+	 * the planted foot stands ON the floor. Skipped in the airborne pose. Cost: <= 80 re-skinned
+	 * vertices per body.
+	 */
+	planFeet() {
+		const inst = this.inst;
+		if (!inst || !this.soles.length) return;
+		inst.root.position.y = 0;
+		this.object.updateMatrixWorld(true);
+		_toObject.copy(this.object.matrixWorld).invert().multiply(inst.mesh.matrixWorld);
+		let min = Infinity;
+		for (const k of this.soles) {
+			inst.mesh.getVertexPosition(k, _sole).applyMatrix4(_toObject);
+			if (_sole.y < min) min = _sole.y;
+		}
+		if (!Number.isFinite(min)) return;
+		const air = this.weights.air ?? 0;
+		this.lift = Math.max(0, -min) * (1 - air);
+		this.soleY = min + this.lift;
+		inst.root.position.y = this.lift;
 	}
 
 	/** debug/e2e: what the body is doing */
@@ -360,7 +638,12 @@ export class RiggedAvatar {
 			weights: { ...w },
 			ik: { ...this.ik },
 			wrist: { left: wristL, right: wristR },
-			feet: this.object.position.toArray()
+			feet: this.object.position.toArray(),
+			anchor: this.anchor,
+			dizzy: this.dizzy.weight,
+			lift: this.lift,
+			soleY: this.soleY,
+			headBone: this.bones?.head ? this.bones.head.quaternion.toArray() : null
 		};
 	}
 
@@ -379,6 +662,7 @@ export class RiggedAvatar {
 	dispose() {
 		this.disposed = true;
 		this.teardownInstance();
+		this.dizzy.dispose();
 		if (this.headMesh) {
 			this.headMesh.geometry.dispose();
 			/** @type {any} */ (this.headMesh.material).dispose();

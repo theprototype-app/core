@@ -154,6 +154,8 @@ export function isKitEntityRow(row) {
  */
 export const VALIDATORS = {
 	hosts: (d) => isArray(d.hosts),
+	// 37 R15: a chat history reply — a bounded list (each entry is checked again on merge)
+	chathistory: (d) => isArray(d.messages) && d.messages.length <= 500,
 	userdata: (d) => isArray(d.userdata),
 	locked: (d) => isArray(d.lockeditems),
 	lock: (d) => isUuid(d.uuid) && (d.uuids === undefined || isArray(d.uuids)),
@@ -161,6 +163,9 @@ export const VALIDATORS = {
 	clearscene: (d) => typeof d.peerId === 'string',
 	delete: (d) => isUuid(d.uuid),
 	name: (d) => isUuid(d.uuid) && typeof d.name === 'string',
+	// 37 R1: a multi-object edit's envelope (wireBatch.js); each item is validated again
+	// on its own before it is applied, so only the envelope's shape is checked here
+	batch: (d) => isArray(d.items) && d.items.length > 0 && d.items.length <= 500,
 	move: (d) => isUuid(d.uuid) && isVec3(d.pos) && isQuatOrEuler(d.rot) && isVec3(d.scale),
 	throw: (d) => isUuid(d.uuid),
 	// 24-A: a knock. The velocities are applied to a body the moment this lands, so the
@@ -197,6 +202,8 @@ export const VALIDATORS = {
 	assetchunk: (d) => typeof d.hash === 'string' && Number.isInteger(d.seq),
 	assetfile: (d) => typeof d.hash === 'string',
 	manifest: (d) => !!d.manifest && typeof d.manifest === 'object',
+	// 37 R5: a person's material-preset library; every entry is re-normalised on arrival
+	matpresets: (d) => typeof d.from === 'string' && isArray(d.presets) && d.presets.length <= 200,
 	environment: (d) => !!d && typeof d === 'object',
 	atscene: (d) => typeof d.peerId === 'string',
 	disconnected: (d) => typeof d.peerId === 'string',
@@ -259,7 +266,13 @@ export const VALIDATORS = {
 			(/** @type {any} */ t) => !!t && typeof t.k === 'string' && Number.isFinite(t.at) && typeof t.m === 'string' && isArray(t.a)
 		) &&
 		(d.fired === undefined || (!!d.fired && typeof d.fired === 'object' && !Array.isArray(d.fired))),
-	camera: (d) => typeof d.peerId === 'string' && isVec3(d.position) && isFiniteArray(d.rotation, 3),
+	// 37: optional presence extras — `feet` (a walker's floor, metres) and `knocked` (0/1 idle flag)
+	camera: (d) =>
+		typeof d.peerId === 'string' &&
+		isVec3(d.position) &&
+		isFiniteArray(d.rotation, 3) &&
+		(d.feet === undefined || Number.isFinite(d.feet)) &&
+		(d.knocked === undefined || d.knocked === 0 || d.knocked === 1),
 	// 34 R2 (kit-entities): the ONE wire type kit entities replicate on — written by the
 	// authority peer only (the applier refuses anyone else), applied straight into poses and
 	// hit points, so every row is checked here: finite numbers, bounded counts, bounded strings

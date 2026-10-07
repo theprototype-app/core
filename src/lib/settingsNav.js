@@ -16,6 +16,13 @@
 // scrolls to that section instead.
 //
 // LOCAL: which section was last used is a per-device convenience (safeStorage).
+//
+// 37-settings (R21) adds two pieces of navigation state, both per-window and never persisted:
+//   - `sub`  the SUB-PAGE open inside the active section ({id, label} or null): a submenu opens in
+//            the content area with a breadcrumb ("VR › Remap buttons"), never as a modal on top.
+//            Switching section, a search or a reopen closes it.
+//   - `home` on a phone (< 640 px) the first screen is the category LIST; tapping a category pushes
+//            its page, "‹ Settings" comes back. A deep link skips the list.
 import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
 
@@ -45,6 +52,10 @@ export function createSettingsNav() {
 	const entries = writable(/** @type {NavEntry[]} */ ([]));
 	const active = writable(/** @type {NavEntry | null} */ (null));
 	const searching = writable(false);
+	/** the open sub-page of the active section @type {import('svelte/store').Writable<{id: string, label: string} | null>} */
+	const sub = writable(/** @type {{id: string, label: string} | null} */ (null));
+	/** a phone shows the category list (true) or one category page (false) */
+	const home = writable(false);
 
 	/** @param {NavEntry} entry */
 	function register(entry) {
@@ -62,13 +73,16 @@ export function createSettingsNav() {
 		for (const e of get(entries)) if (e.isOpen() !== (e === current)) e.setOpen(e === current);
 	}
 
-	/** @param {NavEntry | null | undefined} entry @param {{remember?: boolean}} [opts] */
+	/** @param {NavEntry | null | undefined} entry @param {{remember?: boolean, keepHome?: boolean}} [opts] */
 	function activate(entry, opts = {}) {
 		if (!entry) return;
 		if (get(searching)) {
 			entry.el()?.scrollIntoView({ block: 'start' });
 			return;
 		}
+		if (get(active) !== entry) sub.set(null);
+		// a reopen picking the section to show must not leave a phone's list; a tap or a deep link does
+		if (!opts.keepHome) home.set(false);
 		active.set(entry);
 		enforce();
 		if (opts.remember !== false && entry.label) safeStorage.setItem(LAST_KEY, sectionKeyOf(entry.label));
@@ -96,6 +110,9 @@ export function createSettingsNav() {
 		if (get(searching)) return;
 		const list = get(entries);
 		if (!list.length) return;
+		// 37-settings: the labels arrive a tick after the rows render — deciding before that would
+		// miss the deep link and the remembered page alike (SettingsNav calls resolve again then)
+		if (list.some((e) => !e.label)) return;
 		if (deepLink && activateKey(deepLink)) return;
 		const current = get(active);
 		const remembered = safeStorage.getItem(LAST_KEY);
@@ -104,7 +121,7 @@ export function createSettingsNav() {
 			list.find((e) => e.isOpen()) ??
 			list.find((e) => remembered && sectionKeyOf(e.label) === remembered) ??
 			list[0];
-		activate(pick, { remember: false });
+		activate(pick, { remember: false, keepHome: true });
 	}
 
 	/** The search box changed. Ending a search puts the one-section view back. @param {boolean} on */
@@ -112,8 +129,34 @@ export function createSettingsNav() {
 		if (get(searching) === on) return;
 		searching.set(on);
 		// after Settings.svelte has restored its own open flags (same flush), keep the active one
+		if (on) sub.set(null);
 		if (!on) queueMicrotask(() => resolve());
 	}
 
-	return { entries, active, searching, register, activate, activateKey, resolve, setSearching, enforce };
+	/**
+	 * open a sub-page of the active section. `key` names the page that asks (Settings wraps this so a
+	 * NavRow pressed in a search result first jumps to that page).
+	 * @param {string} id @param {string} label @param {string} [key]
+	 */
+	// eslint-disable-next-line no-unused-vars
+	function openSub(id, label, key) {
+		sub.set({ id, label });
+		const main = typeof document !== 'undefined' ? document.getElementById('settings-main') : null;
+		if (main) main.scrollTop = 0;
+	}
+	/** back out of the sub-page (to its section) */
+	function closeSub() {
+		sub.set(null);
+	}
+	/** a phone's "‹ Settings": back to the category list */
+	function showHome() {
+		sub.set(null);
+		home.set(true);
+	}
+	/** the section key of an entry ('Touch controls' → 'touchcontrols') @param {NavEntry | null | undefined} e */
+	function keyOf(e) {
+		return e ? sectionKeyOf(e.label) : '';
+	}
+
+	return { entries, active, searching, sub, home, register, activate, activateKey, resolve, setSearching, enforce, openSub, closeSub, showHome, keyOf };
 }

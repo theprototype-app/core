@@ -132,10 +132,15 @@ registerHistoryKind('material', (entry, state) => {
  * textures ride as data-URLs exactly as they do in the object message.
  * @param {any[]} materials @returns {any} */
 function serializeMaterials(materials) {
+	// The meta caches are KEYED BY UUID (Texture/Source.toJSON write `meta.textures[uuid]`),
+	// while ObjectLoader's parseTextures/parseImages walk an ARRAY by `.length`. Handing it the
+	// keyed objects themselves (they used to be `[]`s written by key) parsed ZERO textures, so
+	// every map on this path - a slot commit, its undo, and (37 R5) undoing a material preset
+	// over a textured object - silently came back untextured. Flatten to arrays here.
 	/** @type {any} */
-	const meta = { textures: [], images: [] };
+	const meta = { textures: {}, images: {} };
 	const list = materials.map((material) => material.toJSON(meta));
-	return { materials: list, textures: meta.textures, images: meta.images };
+	return { materials: list, textures: Object.values(meta.textures), images: Object.values(meta.images) };
 }
 
 /**

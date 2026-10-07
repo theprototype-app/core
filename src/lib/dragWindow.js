@@ -5,6 +5,7 @@
 import { clampWinSize, clampResize, bottomReserve } from './windowSize';
 import { safeStorage } from './safeStorage';
 import { isHeaderDrag, startWindowDragGuard } from './windowGrip';
+import { onLayoutRestore } from './uiLayoutsCore';
 
 // 169: live reset registry — every draggable window (this action + the object
 // list's own dragMe) registers a reset fn so Settings can rescue windows stuck
@@ -297,6 +298,33 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	}
 	const unregisterReset = registerWindowReset(resetToDefault);
 
+	// 37 R14: a named workspace layout was applied — RE-READ the stored rect (the layout
+	// just wrote it, or removed it so the default applies). A tab member / side-docked
+	// window is placed by its owner, so only its stored rect is refreshed.
+	const unregisterReload = onLayoutRestore(() => {
+		/** @type {any} */
+		let stored = null;
+		try {
+			stored = JSON.parse(safeStorage.getItem('win:' + key) ?? 'null');
+		} catch {}
+		rect = stored ?? { ...defaultRect };
+		if (resizable && !(stored && typeof stored.w === 'number')) {
+			node.style.removeProperty('width');
+			node.style.removeProperty('height');
+		}
+		if (node.dataset?.tabMember || node.dataset?.docked) return;
+		if (typeof rect.left === 'number' && typeof rect.top === 'number') {
+			clamp(true);
+			apply();
+		} else if (!resolveDefaults() && typeof ResizeObserver !== 'undefined') {
+			// hidden right now (a class-hidden window): resolve on the first visible frame
+			const once = new ResizeObserver(() => {
+				if (resolveDefaults()) once.disconnect();
+			});
+			once.observe(node);
+		}
+	});
+
 	// 21-I3: the keyed reveal (see revealWindow above). Deliberately does NOT save() —
 	// same reasoning as the IntersectionObserver reveal: bringing a window back is a
 	// DISPLAY decision, and persisting it would overwrite the user's parked spot.
@@ -444,6 +472,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	return {
 		destroy() {
 			unregisterReset();
+			unregisterReload();
 			// only if it is still OURS — a remount can register the new node before the old
 			// one tears down, and deleting blindly would strand the live window
 			if (revealers.get(key) === reveal) revealers.delete(key);

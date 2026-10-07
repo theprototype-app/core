@@ -28,6 +28,7 @@ import { controllerIndexFor } from './input.js';
 import { withRayCamera, safeIntersect } from './pointer.js';
 import { perfMark } from '../perf/perfMarks.js'; // 34 PF: a profiler marker, a leaf
 import { stickOf, handOf } from './bindings.js';
+import { setLocalFeet } from '../avatars/avatarState.js'; // 37 R23: the walker's feet on the camera stream
 import { vrSmoothTurn, vrSmoothTurnSpeed, vrStance, vrHeightOffset } from './prefs.js';
 
 /**
@@ -695,6 +696,9 @@ export function tickVRInteractLocomotion(dt, session) {
 		return true;
 	}
 	if (step.dx || step.dy || step.dz) offsetSpace({ x: -step.dx, y: -step.dy, z: -step.dz });
+	// 37 R23: a walking (not flying) VR player's feet ride the camera stream, so peers stand the
+	// body on the floor the walker found rather than a body-height under a seated or tall head
+	if (!policy.fly) setLocalFeet(step.feet);
 	return true;
 }
 

@@ -29,6 +29,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
+import { holdForWireBatch } from '$lib/wireBatch';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError } from '$lib/wireErrors';
 import { noteWire } from '$lib/sceneBudget';
@@ -60,6 +61,7 @@ import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } f
 import { applyAnimData, applyAnimPlay, applyAnimationsSnapshot, sendAnimations } from '$lib/animationPreview';
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
+import { materialPresetsState, applyRemoteMaterialPresets, dropPeerMaterialPresets } from '$lib/materialPresets'; // 37 R5
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
 // CO1: where the physical room's origin sits in content coords. The scenephysics
@@ -103,7 +105,7 @@ import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
 import { applyRemoteBehavior } from '$lib/packBehavior';
 import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
-import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
+import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast, chatHistory, mergeChatHistory } from '../stores/appStore';
 import { get } from 'svelte/store';
 import { exportMode } from './export/exportBoot.js';
 
@@ -267,6 +269,10 @@ export class PeerConnection {
 		/** 25-F: peers whose NEXT dial is an approval dial-back, so its handshake opens with
 		 * `joinresult: approved` @type {Set<string>} */
 		this.approvedDialBacks = new Set();
+		// 37 R1: peers that advertised `wb: 1` (the `modules` handshake) and so understand a
+		// `{type:'batch'}` envelope; everyone else gets the envelope's items one by one
+		/** @type {Set<string>} */
+		this.wireBatchPeers = new Set();
 		/** @type {Map<string, any>} 29 (rooms access): a cloud plugin's dial data per peer we
 		 * are joining — read by every join dial and its restore re-dials (dialOptions) */
 		this.dialCloud = new Map();
@@ -720,6 +726,26 @@ export class PeerConnection {
 				if(data.type == 'cloud') {
 					// open-core (M1): the cloud plugin's own replicated channel
 					dispatchCloudMessage(conn.peer, data.payload);
+				} else if(data.type == 'batch') {
+					// 37 R1: ONE multi-object edit (wireBatch.js). Every item goes back through
+					// the WHOLE chain — the shape table, canApply, the room and share-or-stash
+					// gates — exactly as if it had arrived alone, so an envelope can never carry
+					// what its items could not. Envelopes do not nest.
+					for (const item of data.items) {
+						if (!item || typeof item !== 'object' || item.type === 'batch') {
+							noteWireError(conn.peer, 'shape', 'batch-item');
+							continue;
+						}
+						if (!validateWireMessage(item)) {
+							noteWireError(conn.peer, 'invalid:' + item.type);
+							continue;
+						}
+						try {
+							dispatch(item);
+						} catch (error) {
+							noteWireError(conn.peer, item.type, error);
+						}
+					}
 				} else if(data.type == 'hosts') {
 					console.log('Connecting to received hosts');
 					data.hosts.forEach( id =>
@@ -739,7 +765,16 @@ export class PeerConnection {
 					}
 					);
 				} else if(data.type == 'sent') {
-					addMessage({message: data.message, type: 'received', sender: data.sender});
+					// 37 R15: `id` + `at` are additive (an older peer sends neither; addMessage mints)
+					addMessage({message: data.message, type: 'received', sender: data.sender, id: data.id, at: data.at});
+				} else if(data.type == 'getchat') {
+					// 37 R15: a joiner's chat history. MESH-WIDE like chat itself (never room-gated)
+					// and answered over the stable channel; empty history = no reply at all.
+					const history = chatHistory();
+					const back = this.connections[conn.peer] ?? conn;
+					if (history.length && back?.open) back.send({type: 'chathistory', messages: history});
+				} else if(data.type == 'chathistory') {
+					mergeChatHistory(data.messages);
 				} else if(data.type == 'info') {
 					addMessage({message: data.message, type: data.type, sender: data.sender});
 				} else if(data.type == 'create') {
@@ -921,6 +956,8 @@ export class PeerConnection {
 					receiveKitMessage(data, conn.peer);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
+				} else if(data.type == 'matpresets') {
+					applyRemoteMaterialPresets(data); // 37 R5: a person's material library
 				} else if(data.type == 'geometry') {
 					applyRemoteGeometry(data);
 				} else if(data.type == 'lighttarget') {
@@ -1043,6 +1080,7 @@ export class PeerConnection {
 						dropPeerVars(data.peerId); // 21-G4
 						dropPeerColocation(data.peerId); // CO5
 						dropPeerEnvPresets(data.peerId);
+						dropPeerMaterialPresets(data.peerId);
 						dropPeerHandModel(data.peerId);
 					}
 				} else if(data.type == 'getnodes') {
@@ -1133,6 +1171,9 @@ export class PeerConnection {
 				} else if(data.type == 'module') {
 					applyModuleMessage(data);
 				} else if(data.type == 'modules') {
+					// 37 R1: `wb` is ADDITIVE — an older peer omits it and keeps getting bare messages
+					if (data.wb === 1) this.wireBatchPeers.add(conn.peer);
+					else this.wireBatchPeers.delete(conn.peer);
 					checkModuleVersions(data.versions);
 					checkPeerAppVersion(data.appVersion);
 				} else if(data.type == 'getmodulestate') {
@@ -1373,7 +1414,10 @@ export class PeerConnection {
 		conn.send({type: 'userdata', userdata: users})
 		// V3: app version rides the modules handshake — old peers ignore the extras,
 		// old senders omit them (checkPeerAppVersion is silent on absence)
-		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA})
+		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1})
+		// 37 R15: the chat so far. Chat is MESH-WIDE (not a room's content), so this goes out
+		// whatever the connect decision / privacy hold below decides about the scene.
+		conn.send({type: 'getchat', sender: this.peer.id})
 		// R22 round 33 — NOTHING MOVES UNTIL THE DECISION, INCLUDING WHAT WE ASK FOR.
 		//
 		// When this handshake is the one that will put the connect decision on screen (we
@@ -1423,6 +1467,7 @@ export class PeerConnection {
 		}
 		conn.send(handModelState())
 		conn.send(envPresetsState())
+		conn.send(materialPresetsState())
 		if (getobjects && !holdContent) this.requestFullState(conn)
 		// singleton PUSH, like environmentState/scenePhysicsState above
 		if (!holdContent) conn.send(gameStatePayload())
@@ -1714,6 +1759,7 @@ export class PeerConnection {
 		dropPeerVars(peerId); // 21-G4
 		dropPeerColocation(peerId); // CO5
 		dropPeerEnvPresets(peerId);
+		dropPeerMaterialPresets(peerId);
 		dropPeerHandModel(peerId);
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
 		checkLocks();
@@ -1750,6 +1796,7 @@ export class PeerConnection {
 				dropPeerVars(peerId); // 21-G4
 				dropPeerColocation(peerId); // CO5
 				dropPeerEnvPresets(peerId);
+				dropPeerMaterialPresets(peerId);
 				dropPeerHandModel(peerId);
 			}
 		}
@@ -1771,6 +1818,9 @@ export class PeerConnection {
 	// conn can't throw mid-loop and starve the rest of the mesh (172).
 	/** @param {any} payload */
 	broadcast(payload) {
+		// 37 R1: inside a multi-object edit, room content is HELD and leaves as one envelope
+		// when the edit closes (wireBatch.js); anything else flushes the held edit first
+		if (holdForWireBatch(payload, ROOM_SCOPED.has(payload?.type), (out) => this.broadcast(out))) return;
 		noteWire('out', payload);
 		// TWO REASONS TO WITHHOLD, and they are different arguments about the same peer.
 		//
@@ -1824,7 +1874,10 @@ export class PeerConnection {
 			if (gated && elsewhereThan(where, mine, peerId, host)) return;
 			if (roomScoped && gateHolds(peerId)) return;
 			try {
-				conn.send(payload);
+				// 37 R1: a peer that never said `wb: 1` gets the envelope's items one by one
+				if (payload?.type === 'batch' && !this.wireBatchPeers.has(peerId))
+					for (const item of payload.items) conn.send(item);
+				else conn.send(payload);
 			} catch (err) {
 				log('error', 'net', 'send failed', { peer: peerId, error: String(err) });
 			}
@@ -1837,8 +1890,11 @@ export class PeerConnection {
 			sceneCommand(message);
 		} else {
 			if(type === undefined) type = 'sent';
-			addMessage({message: message, type: type, sender: this.peer.id});
-			this.broadcast({message: message, type: type, sender: this.peer.id});
+			// 37 R15: a stable id (the history merge keys on it) and the sender's clock
+			const at = Date.now();
+			const id = this.peer.id + '-' + at.toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+			addMessage({message: message, type: type, sender: this.peer.id, id, at});
+			this.broadcast({message: message, type: type, sender: this.peer.id, id, at});
 		}
 	}
 

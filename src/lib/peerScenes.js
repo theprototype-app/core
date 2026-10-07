@@ -599,6 +599,7 @@ export function roomsOfSession(map, mine, host) {
 //     a private peer is by construction elsewhere from everybody. It carries no scene
 //     CONTENT and no name: a request is a peer id, a grant is a promise to publish.
 //   'envpresets' - a PERSON's preset library, keyed by peer, not the scene's sky.
+//   'matpresets' - the same for material presets (37 R5).
 //   'userdata'/'hosts'/'cloud'/'disconnected' - the session itself.
 //   EVERY get* REQUEST. A request is ~40 bytes and asking is never the harm; the REPLY is
 //   where a room is enforced, which is also where `canApply`'s ALWAYS_ALLOWED floor draws
@@ -639,6 +640,9 @@ ROOM_SCOPED.add('kitentity');
 ROOM_SCOPED.add('getkitentities');
 // 34 R3 (D1): a behaviour's document is room content like the kit's
 ROOM_SCOPED.add('bhv');
+// 37 R1: a multi-object edit's ONE envelope (wireBatch.js) — its items are all room content,
+// and each one is gated again on arrival
+ROOM_SCOPED.add('batch');
 
 /**
  * THE ONE PREDICATE, used on both sides of the wire: `broadcast` will not SEND a

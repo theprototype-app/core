@@ -71,6 +71,7 @@ export function register(api) {
   api.camera.pose() / setPose(p) / bookmarks() / recall(id)
   api.startPlay() / api.stopPlay()
   api.setCommunityProvider(p)      // swap the Templates ▸ Community source (null restores GitHub)
+  api.setProblemReporter(r)        // 37 R20: where "Report a problem" sends ({submit, account}) — typeof-probed
 
   api.toast(message)
 }
@@ -256,6 +257,21 @@ heart), `mine` (boolean, the viewer's own scene), `notice` (one line on the card
 Promise<{liked, likeCount} | null>` puts a heart on every card (`[data-card-heart]`).
 A play link's frame may carry `&src=play|embed&b=v<n>` (read once with `embed=1`;
 `playMode.embedSource` / `embedBuild`) — the badge inside counts them.
+
+#### 37 R20: "Report a problem" — `setProblemReporter(reporter | null)` — additive, no bump
+
+Core draws the whole report — the screenshot taken at the press, boxes drawn round what is
+wrong, the note, an explicit consent box — and calls the reporter only when the person
+presses **Send** with the box ticked. Without a reporter (no plugin, or an older plugin) the
+report is kept on this device as a Profiler recording and the card offers no Send.
+
+| member | contract |
+|---|---|
+| `reporter.submit(report)` | `report = {note, marks: [{x, y, w, h}] (fractions of the picture, ≤ 12), meta: {version, build, scene, device, url (no query), viewport, xr, peers, at}, perf: T1 light window \| null, shot: Blob (JPEG) \| null}` → `Promise<{ok, id?, reason?, error?}>`. `reason: 'signin'` = the card keeps itself open and says where to sign in |
+| `reporter.account()` | `{signedIn, name?}` — read when the card opens and every 1.5 s while it is open; Send is off until `signedIn` |
+
+In a headset (VR menu ▸ Profile ▸ Report a problem) there are no boxes: the VR keyboard's
+title says that Enter sends the report, which is the consent.
 
 #### Deep links: `?s=<id>`
 

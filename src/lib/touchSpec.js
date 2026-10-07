@@ -1,4 +1,7 @@
-import { derived } from 'svelte/store';
+import { derived, get } from 'svelte/store';
+import { globalScene } from '../stores/sceneStore';
+import { scenePlay } from './scenePhysics';
+import { resolvePlaySettings } from './playSettings';
 import { flowGraphs } from '../stores/flowStore';
 import { charControl } from './charController';
 import { leftBehindModules } from './sceneScope';
@@ -16,7 +19,7 @@ import { resolveTouchControls, touchDeclarations } from './touchActions';
 // Character Controller's mode, and every Key Press node's key across every graph document.
 
 export const touchSpec = derived(
-	[touchDeclarations, leftBehindModules, charControl, flowGraphs],
+	[touchDeclarations, leftBehindModules, charControl, flowGraphs, scenePlay],
 	([$declared, $left, $control, $graphs]) => {
 		/** @type {string[]} */
 		const keyCodes = [];
@@ -29,6 +32,8 @@ export const touchSpec = derived(
 			declared: $declared.filter((d) => !$left.has(d.owner)),
 			walk: control?.mode === 'walk',
 			fly: !control || control.mode === 'fly',
+			// 37 R24: flying is opt-in per game — the Up/Down buttons only when the rules allow it
+			canFly: resolvePlaySettings(get(globalScene)).locomotion.fly === true,
 			keyCodes
 		});
 	}

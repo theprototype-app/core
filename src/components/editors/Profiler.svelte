@@ -1,4 +1,5 @@
 <script>
+	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	// 34 PF — THE PROFILER TAB. Record (light, or detailed for per-object attribution and CPU
 	// phases), keep recordings (rename / pin / delete / export .tpprof / import — beacon
 	// exports included), read one on a TIMELINE of fps / frame ms / calls / triangles / quality
@@ -68,6 +69,17 @@
 		winW = parseInt(safeStorage.getItem('profilerWinW') ?? '980') || 980;
 		winH = parseInt(safeStorage.getItem('profilerWinH') ?? '460') || 460;
 	}
+	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
+	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	$effect(() =>
+		onLayoutRestore(() => {
+			const stored = storedPanelLayout(safeStorage.getItem, 'profiler', 980, 460);
+			docked = !!(stored.docked);
+			winW = stored.w;
+			winH = stored.h;
+		})
+	);
+
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
 		safeStorage.setItem('profilerDocked', String(v));

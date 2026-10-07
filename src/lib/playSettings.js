@@ -1,7 +1,9 @@
 import { get, writable } from 'svelte/store';
 import { scenePlay } from './scenePhysics';
 import { showToast } from '../stores/appStore';
-import { normalizeLocomotion, normalizeSpawn } from './locomotionPolicy';
+import { normalizeLocomotion, normalizeSpawn, flyDecision } from './locomotionPolicy';
+// 37 R24: a Character Controller in fly mode is a game designed to fly (a leaf store)
+import { charControl } from './charController';
 import { normalizeBounds } from './teleportRules';
 import { moduleWorldChildren } from './moduleWorld';
 import { normalizeReach } from './playReach';
@@ -87,7 +89,9 @@ export function playPublishers(scene) {
  * else a publisher's `userData.play.spawn`, else the scene's `play.spawn`, else null).
  * 31-towers P1: `reach` — how far from the player's BODY a grab may start (metres, playReach.js),
  * null = no limit; a publisher's `userData.play.reach` overrides the scene's.
- * @returns {{interaction: 'grab'|'click'|'off', grounded: boolean, eyeHeight: number, cursor: 'free'|'locked',
+ * 37 R24: `fly` ('allowed' | 'off' | 'pinned' | 'removed') says why flying is (not) on; `grounded`
+ * is its consequence (true unless flying is allowed).
+ * @returns {{interaction: 'grab'|'click'|'off', grounded: boolean, fly: string, eyeHeight: number, cursor: 'free'|'locked',
  *   locomotion: {teleport: boolean, fly: boolean, worldGrab: boolean}, spawn: {position: [number, number, number], yaw: number} | null,
  *   bounds: {min: [number, number, number], max: [number, number, number]} | null, boundsOwner: any, reach: number | null}}
  * 31 K1: `locomotion.worldGrab` and `bounds` (`play.bounds {min, max}`, the bounded teleport's
@@ -111,6 +115,10 @@ export function resolvePlaySettings(scene) {
 	};
 	const baseLoco = normalizeLocomotion(base.locomotion);
 	if (baseLoco) Object.assign(out.locomotion, baseLoco);
+	// 37 R24: the inputs of the fly rule (locomotionPolicy.flyDecision)
+	const flyRemoved = baseLoco?.noFly === true;
+	let pinned = base.grounded === true;
+	let publisherUngrounded = false;
 	const publishers = playPublishers(scene);
 	if (publishers.length > 1 && !warnedMultiple) {
 		warnedMultiple = true;
@@ -125,11 +133,16 @@ export function resolvePlaySettings(scene) {
 		const play = publisher.userData.play;
 		if (play.interaction === 'grab' || play.interaction === 'click' || play.interaction === 'off')
 			out.interaction = play.interaction;
-		if (typeof play.grounded === 'boolean') out.grounded = play.grounded;
+		if (typeof play.grounded === 'boolean') {
+			out.grounded = play.grounded;
+			pinned = play.grounded;
+			publisherUngrounded = !play.grounded;
+		}
 		if (typeof play.eyeHeight === 'number') out.eyeHeight = play.eyeHeight;
 		if (play.cursor === 'free' || play.cursor === 'locked') out.cursor = play.cursor;
 		const loco = normalizeLocomotion(play.locomotion);
-		if (loco) Object.assign(out.locomotion, loco);
+		// a module cannot lift a scene's removal (noFly is the scene's word only)
+		if (loco) Object.assign(out.locomotion, { ...loco, noFly: undefined });
 		const spawn = normalizeSpawn(play.spawn);
 		if (spawn) out.spawn = spawn;
 		const bounds = normalizeBounds(play.bounds);
@@ -149,6 +162,19 @@ export function resolvePlaySettings(scene) {
 		out.bounds = { min: [...kitRules.bounds.min], max: [...kitRules.bounds.max] };
 		out.boundsOwner = null;
 	}
+	// 37 R24: flying is opt-in. `grounded` follows the decision, so every consumer that already
+	// read it (desktop Play's Q/E + eye pin) obeys without a second rule.
+	const decision = flyDecision({
+		removed: flyRemoved,
+		pinned,
+		flyFlag: out.locomotion.fly === true,
+		publisherUngrounded,
+		controllerFlies: get(charControl)?.mode === 'fly'
+	});
+	out.locomotion.fly = decision.fly;
+	delete out.locomotion.noFly;
+	out.fly = decision.reason;
+	out.grounded = !decision.fly;
 	const runtime = get(runtimeSpawn);
 	// 33 (L4): Waves' spawn at its crystal must not put the Towers player there
 	if (runtime && ownerInScope(runtime.owner)) out.spawn = { position: runtime.position, yaw: runtime.yaw };

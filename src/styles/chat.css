@@ -10,3 +10,38 @@ ul {
    object-list row buttons and the Library cards silently stopped appearing on
    hover after the Tailwind 4 migration). Tailwind ships `.hidden` itself, so
    `class={$chatHidden}` keeps working without it. */
+
+/* 37 R15: an @mention — the mentioned peer's own colour (peerColor, via --peer) as a tint and
+   an underline; the TEXT keeps the bubble's colour, so it reads in every theme (a light-green
+   peer colour as text was unreadable on the light theme's pale bubble) */
+.chat-mention {
+	padding: 0 3px;
+	border-bottom: 2px solid var(--peer, currentColor);
+	border-radius: 3px;
+	background: color-mix(in srgb, var(--peer, currentColor) 28%, transparent);
+	font-weight: 600;
+}
+/* a line that mentions YOU: a ring in the accent colour, so it stands out in a busy room */
+.chat-mentions-me {
+	box-shadow: 0 0 0 2px var(--accent, #60a5fa);
+}
+/* the toolbar chat button's unread count (37 R15); the mention variant takes the accent */
+.chat-unread-badge {
+	position: absolute;
+	top: -4px;
+	right: -4px;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 4px;
+	border-radius: 9px;
+	background: var(--ink-bad, #ef4444);
+	color: #fff;
+	font-size: 11px;
+	font-weight: 700;
+	line-height: 18px;
+	text-align: center;
+	pointer-events: none;
+}
+.chat-unread-badge.mention {
+	background: var(--accent, #60a5fa);
+}

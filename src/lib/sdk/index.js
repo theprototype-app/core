@@ -37,6 +37,7 @@ import { sdkOwn } from './own.js';
 import { sdkKit } from './kit.js';
 import { sdkModels } from './models.js';
 import { sdkWater } from './water.js';
+import { sdkPointerSeam } from './pointerSeam.js';
 
 /** The api, slice by slice, in key order. @type {[string, (ctx: import('./context.js').SdkContext) => object][]} */
 export const SDK_TABLE = [
@@ -68,7 +69,8 @@ export const SDK_TABLE = [
 	['kit', sdkKit], // api.kit (34 R2: the game kit, one namespace per piece)
 	['own', sdkOwn], // onUnload, timers, listen, own (34 R6)
 	['models', sdkModels], // loadModel (34 R7)
-	['water', sdkWater] // api.water (36-water: W1 volumes + W2 disturbances)
+	['water', sdkWater], // api.water (36-water: W1 volumes + W2 disturbances)
+	['pointerSeam', sdkPointerSeam] // registerPointerHandler, onClickMiss, camera, onPlayMode, inGame (37: DEVX #29/#31/#11)
 ];
 
 /** @param {string} moduleId @param {string} [moduleName] the DISPLAY name, needed while

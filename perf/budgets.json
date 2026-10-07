@@ -3,7 +3,7 @@
 	"comment": "34 B2 — the Quest budget per Games-tab game and General-tab level, held by `node scripts/perf-games.cjs --check` (CI: .github/workflows/perf-budget.yml). Counts only, in the headset-analogue profile. See perf/README.md.",
 	"scenes": {
 		"repo": "theprototype-app/scenes",
-		"ref": "preview-1-25-r36"
+		"ref": "preview-1-26-r37"
 	},
 	"modules": {
 		"repo": "theprototype-app/modules",

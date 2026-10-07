@@ -1,6 +1,7 @@
 import { isHeaderDrag } from './windowGrip';
 import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
+import { onLayoutRestore } from './uiLayoutsCore';
 
 // Window tab groups (phase 83, floating windows only — docked splits stay in
 // pending/81). Grouped windows share ONE rect; the active member is visible,
@@ -358,6 +359,32 @@ function tryRestore() {
 		return false;
 	});
 }
+
+/** @param {string} text */
+function parseGroups(text) {
+	try {
+		return JSON.parse(text ?? '[]').map((/** @type {any} */ saved) => ({
+			...saved,
+			members: (saved.members ?? []).map(migrateKey),
+			active: migrateKey(saved.active)
+		}));
+	} catch {
+		return [];
+	}
+}
+
+// 37 R14: a named workspace layout rewrote `windowTabGroups`. Dissolve what is grouped
+// now (every member places itself again) and queue the stored groups the way a boot does:
+// each forms once its members have registered — members that open after the layout
+// applies register then and call `tryRestore` themselves.
+onLayoutRestore(() => {
+	// read FIRST: dissolving persists, and would overwrite what the layout just wrote
+	const stored = parseGroups(safeStorage.getItem('windowTabGroups') ?? '[]');
+	for (const group of get(tabGroups)) for (const key of [...group.members]) removeFromGroup(key);
+	tabGroups.set([]);
+	pendingRestore = stored;
+	tryRestore();
+});
 
 /**
  * svelte action for a floating window that can join tab groups.

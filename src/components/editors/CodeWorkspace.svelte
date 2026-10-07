@@ -1,4 +1,5 @@
 <script>
+	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	// 36-code (plan 75.2) — THE CODE WORKSPACE: a notebook of sources, docked as the bottom
 	// dock's `code` tab or floating (FlowCode's shell). Every tab buffers its text; Ctrl+S
 	// saves — re-validates, writes, and hot-reloads the node(s) the tab feeds. The verbs and the
@@ -75,6 +76,17 @@
 		winW = parseInt(safeStorage.getItem('codeWinW') ?? '900') || 900;
 		winH = parseInt(safeStorage.getItem('codeWinH') ?? '500') || 500;
 	}
+	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
+	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	$effect(() =>
+		onLayoutRestore(() => {
+			const stored = storedPanelLayout(safeStorage.getItem, 'code', 900, 500);
+			docked = !!(stored.docked);
+			winW = stored.w;
+			winH = stored.h;
+		})
+	);
+
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
 		safeStorage.setItem('codeDocked', String(v));

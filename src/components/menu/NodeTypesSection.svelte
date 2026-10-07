@@ -1,79 +1,103 @@
-<script context="module">
+<script module>
 	// what the I4 settings search matches this section by, beyond its row names
 	export const keywords = ['node', 'nodes', 'node types', 'node manager', 'palette', 'hide', 'disable', 'enable', 'flow', 'catalog'];
 </script>
 
 <script>
-	// 36 B7: THE NODE MANAGER — switch node types off on this device. A switched-off type
-	// leaves the node palette, the add menus and the node search; nodes of that type already
-	// in a graph keep working (a graph is shared, this preference is not). The disabledModules
-	// pattern: a persisted list, one switch per row, a group switch for the whole group.
+	// 36 B7: THE NODE MANAGER — switch node types off on this device. A switched-off type leaves the
+	// node palette, the add menus and the node search; nodes of that type already in a graph keep
+	// working (a graph is shared, this preference is not). The disabledModules pattern: a persisted
+	// list, one switch per type, a group switch for the whole group.
+	//
+	// 37-settings (R21, docs/settings-inventory.md §3.8): one NavRow per palette group ("12 of 14 on")
+	// opening that group's SUB-PAGE — "All <group> nodes" then one toggle per type — instead of a
+	// 3-column grid of ~200 checkboxes. The filter lists matching types inline, their group as the
+	// path. "Turn all on" is the footer's "Reset Node types to defaults". Same key: disabledNodeTypes.
+	import { getContext } from 'svelte';
+	import Section from '../ui/Section.svelte';
+	import SettingRow from '../ui/SettingRow.svelte';
+	import NavRow from '../ui/NavRow.svelte';
+	import Toggle from '../ui/Toggle.svelte';
+	import SearchField from '../ui/SearchField.svelte';
+	import { NAV_CONTEXT } from '$lib/settingsNav';
 	import { nodeCatalog } from '$lib/nodeCatalog';
 	import { moduleNodeGroups } from '$lib/moduleSDK';
 	import { disabledNodeTypes, setNodeTypesEnabled } from '$lib/nodeTypePrefs';
 	import { flowGraphs } from '../../stores/flowStore';
 
-	let filter = '';
+	const nav = /** @type {any} */ (getContext(NAV_CONTEXT));
+	const sub = nav?.sub;
+
+	let filter = $state('');
 	/** @type {{group: string, items: {type: string, label: string}[]}[]} */
-	let groups = [];
-	$: groups = [...nodeCatalog, ...$moduleNodeGroups];
-	$: used = (() => {
+	const groups = $derived([...nodeCatalog, ...$moduleNodeGroups]);
+	const used = $derived.by(() => {
 		/** @type {Record<string, number>} */
 		const counts = {};
 		for (const g of Object.values($flowGraphs ?? {})) for (const n of /** @type {any} */ (g).nodes ?? []) counts[n.type] = (counts[n.type] ?? 0) + 1;
 		return counts;
-	})();
-	$: q = filter.trim().toLowerCase();
-	$: shown = groups
-		.map((g) => ({ ...g, items: g.items.filter((i) => !q || (i.label + ' ' + i.type + ' ' + g.group).toLowerCase().includes(q)) }))
-		.filter((g) => g.items.length);
-	$: offCount = $disabledNodeTypes.length;
+	});
+	const q = $derived(filter.trim().toLowerCase());
+	const matches = $derived(
+		q
+			? groups.flatMap((g) => g.items.filter((i) => (i.label + ' ' + i.type + ' ' + g.group).toLowerCase().includes(q)).map((i) => ({ ...i, group: g.group })))
+			: []
+	);
+	/** the group whose sub-page is open ("nodes:<group>") */
+	const openGroup = $derived($sub?.id?.startsWith('nodes:') ? (groups.find((g) => 'nodes:' + g.group === $sub.id) ?? null) : null);
 
-	/** @param {Event} e */
-	const checked = (e) => /** @type {HTMLInputElement} */ (e.currentTarget).checked;
+	/** @param {{items: {type: string}[]}} g @param {string[]} off */
+	const onCount = (g, off) => g.items.filter((i) => !off.includes(i.type)).length;
+	/** @param {string} type @returns {string} */
+	const usedText = (type) => (used[type] ? used[type] + ' in use' : '');
 </script>
 
-<div id="node-types-section" class="flex flex-col gap-2" data-keywords={keywords.join(' ')}>
-	<p class="text-xs text-gray-500 dark:text-gray-400">
-		Switch off the node types you never use — they leave the palette, the add menus and the node search
-		on this device. Nodes already in a graph keep working.
-	</p>
-	<div class="flex items-center gap-2">
-		<input id="node-types-filter" class="ui-input flex-1" placeholder="Filter node types…" bind:value={filter} />
-		<button
-			id="node-types-enable-all"
-			class="shrink-0 rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
-			disabled={!offCount}
-			on:click={() => disabledNodeTypes.set([])}>Turn all on{offCount ? ` (${offCount} off)` : ''}</button
-		>
-	</div>
-	<div class="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-3">
-		{#each shown as group (group.group)}
-			{@const types = group.items.map((i) => i.type)}
-			{@const allOn = types.every((t) => !$disabledNodeTypes.includes(t))}
-			<div class="node-type-group mb-1" data-group={group.group}>
-				<label class="flex items-center gap-2 text-xs font-semibold uppercase text-gray-400">
-					<input
-						class="tp-check node-type-group-toggle"
-						type="checkbox"
-						checked={allOn}
-						on:change={(e) => setNodeTypesEnabled(types, checked(e))}
-					/>
-					{group.group}
-				</label>
-				{#each group.items as item (item.type)}
-					<label class="ml-5 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300" data-node-type={item.type}>
-						<input
-							class="tp-check node-type-toggle"
-							type="checkbox"
-							checked={!$disabledNodeTypes.includes(item.type)}
-							on:change={(e) => setNodeTypesEnabled([item.type], checked(e))}
-						/>
-						<span>{item.label}</span>
-						{#if used[item.type]}<span class="text-[10px] text-gray-500">· {used[item.type]} in use</span>{/if}
-					</label>
+<div id="node-types-section" class="nt" data-keywords={keywords.join(' ')}>
+	{#if openGroup}
+		{@const types = openGroup.items.map((i) => i.type)}
+		{@const allOn = types.every((t) => !$disabledNodeTypes.includes(t))}
+		<Section variant="card" label={openGroup.group} badge="This device">
+			<SettingRow id="row-node-group-all" label={'All ' + openGroup.group + ' nodes'} description="Every type in this group at once." data-group={openGroup.group}>
+				<Toggle data-nt="group-toggle" label={'All ' + openGroup.group + ' nodes'} checked={allOn} onchange={(on) => setNodeTypesEnabled(types, on)} />
+			</SettingRow>
+			{#each openGroup.items as item (item.type)}
+				<SettingRow label={item.label} description={usedText(item.type)} data-node-type={item.type}>
+					<Toggle data-nt="type-toggle" label={item.label} checked={!$disabledNodeTypes.includes(item.type)} onchange={(on) => setNodeTypesEnabled([item.type], on)} />
+				</SettingRow>
+			{/each}
+		</Section>
+	{:else}
+		<div class="nt-filter">
+			<SearchField id="node-types-filter" size="sm" placeholder="Filter node types" label="Filter node types" bind:value={filter} />
+		</div>
+		{#if q}
+			<Section variant="card" label={matches.length ? matches.length + ' matching' : 'No match'}>
+				{#each matches as item (item.type)}
+					<SettingRow label={item.label} description={item.group + (usedText(item.type) ? ' · ' + usedText(item.type) : '')} data-node-type={item.type}>
+						<Toggle data-nt="type-toggle" label={item.label} checked={!$disabledNodeTypes.includes(item.type)} onchange={(on) => setNodeTypesEnabled([item.type], on)} />
+					</SettingRow>
 				{/each}
-			</div>
-		{/each}
-	</div>
+			</Section>
+		{:else}
+			<Section variant="card" label="Groups" badge="This device">
+				{#each groups as group (group.group)}
+					<NavRow
+						label={group.group}
+						value={onCount(group, $disabledNodeTypes) + ' of ' + group.items.length + ' on'}
+						data-group={group.group}
+						onclick={() => nav.openSub('nodes:' + group.group, group.group, 'nodetypes')}
+					/>
+				{/each}
+			</Section>
+		{/if}
+	{/if}
 </div>
+
+<style>
+	.nt {
+		display: contents;
+	}
+	.nt-filter {
+		max-width: 320px;
+	}
+</style>

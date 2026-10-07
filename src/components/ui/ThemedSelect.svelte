@@ -16,6 +16,7 @@
 		id = undefined,
 		disabled = false,
 		title = undefined,
+		mixed = false,
 		class: klass = ''
 	}: {
 		items?: Array<{ value: any; name: string }>
@@ -25,6 +26,9 @@
 		id?: string
 		disabled?: boolean
 		title?: string
+		/** 37 R1: a multi-selection disagrees — show a dash, select nothing, and let ANY
+		 * pick (even the primary's own value) write, since it sets every member */
+		mixed?: boolean
 		class?: string
 	} = $props()
 
@@ -35,8 +39,8 @@
 	let pos = $state({ left: 0, top: 0, width: 0 })
 
 	const eq = (a: any, b: any) => String(a) === String(b)
-	let selected = $derived(items.find((it) => eq(it.value, value)))
-	let label = $derived(selected ? selected.name : placeholder)
+	let selected = $derived(mixed ? undefined : items.find((it) => eq(it.value, value)))
+	let label = $derived(mixed ? '—' : selected ? selected.name : placeholder)
 
 	async function reposition() {
 		await tick()
@@ -58,7 +62,7 @@
 	function openList() {
 		if (disabled) return
 		open = true
-		activeIndex = items.findIndex((it) => eq(it.value, value))
+		activeIndex = mixed ? -1 : items.findIndex((it) => eq(it.value, value))
 		reposition()
 	}
 	function toggle() {
@@ -67,7 +71,7 @@
 	}
 	function pick(item: any) {
 		open = false
-		if (!eq(item.value, value)) {
+		if (mixed || !eq(item.value, value)) {
 			value = item.value
 			onchange(item.value)
 		}
@@ -107,8 +111,27 @@
 		if (btn?.contains(t) || listEl?.contains(t)) return
 		open = false
 	}
+	// 37 R18: a TRUE modal dialog (showModal) puts itself in the top layer and makes the rest
+	// of the page inert, so a list portaled to <body> painted UNDER it and took no clicks.
+	// Inside such a dialog the list portals into the dialog instead; `origin` corrects for a
+	// containing block that is not the viewport (a transformed dialog), measured once.
+	let origin = $state({ x: 0, y: 0 })
+	function modalHost(): HTMLElement | null {
+		const dlg = btn?.closest('dialog[open]') as HTMLElement | null
+		try {
+			return dlg && dlg.matches(':modal') ? dlg : null
+		} catch {
+			return null
+		}
+	}
 	function portal(node: HTMLElement) {
-		document.body.appendChild(node)
+		const host = modalHost()
+		;(host ?? document.body).appendChild(node)
+		origin = { x: 0, y: 0 }
+		if (host) {
+			const r = node.getBoundingClientRect()
+			origin = { x: r.left - pos.left, y: r.top - pos.top }
+		}
 		return {
 			destroy() {
 				node.remove()
@@ -143,7 +166,7 @@
 		onclick={toggle}
 		onkeydown={onKey}
 	>
-		<span class="ts-label" class:ts-placeholder={!selected}>{label}</span>
+		<span class="ts-label" class:ts-placeholder={!selected && !mixed} class:ts-mixed={mixed} title={mixed ? 'Mixed — the selected objects differ' : undefined}>{label}</span>
 		<span class="ts-caret" aria-hidden="true">▾</span>
 	</button>
 </div>
@@ -155,16 +178,16 @@
 		class="ts-list"
 		role="listbox"
 		tabindex="-1"
-		style="left:{pos.left}px; top:{pos.top}px; min-width:{pos.width}px;"
+		style="left:{pos.left - origin.x}px; top:{pos.top - origin.y}px; min-width:{pos.width}px;"
 	>
 		{#each items as item, i (item.value)}
 			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
 			<li
 				role="option"
-				aria-selected={eq(item.value, value)}
+				aria-selected={!mixed && eq(item.value, value)}
 				class="ts-opt"
 				class:ts-active={i === activeIndex}
-				class:ts-selected={eq(item.value, value)}
+				class:ts-selected={!mixed && eq(item.value, value)}
 				onmouseenter={() => (activeIndex = i)}
 				onclick={() => pick(item)}
 			>

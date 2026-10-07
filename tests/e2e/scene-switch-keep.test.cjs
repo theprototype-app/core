@@ -63,8 +63,9 @@ h.run(async () => {
 			window.__stores.settingsOpen.set(true);
 		});
 		await ev(() => page.locator('#modules-on-open').isVisible(), (v) => v, '3.1 Settings ▸ Scene has the row', 10000);
-		const text = (await page.locator('#modules-on-open').textContent()).trim();
-		h.check(/Keep modules/.test(text), `3.2 "When opening another scene" reads Keep modules (${text})`);
+		// 37-settings: a segmented control — the checked option is the value
+		const text = (await page.locator('#modules-on-open [aria-checked="true"]').textContent()).trim();
+		h.check(/^Keep$/.test(text), `3.2 "When opening another scene" reads Keep (${text})`);
 		await page.evaluate(() => window.__stores.settingsOpen.set(false));
 		await page.waitForTimeout(400);
 	});

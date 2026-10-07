@@ -5,6 +5,7 @@ import { peers, showToast, closeSelectionInspector } from '../stores/appStore';
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { parkEditOverlays, stripEditOverlays } from '$lib/editOverlays';
 import { HISTORY_BYTES, entryBytes } from '$lib/meshBudget';
+import { withWireBatch } from '$lib/wireBatch';
 
 // Undo/redo for local edits; remote peers' changes are not recorded, so
 // histories stay per-user.
@@ -58,6 +59,37 @@ export function endHistoryBatch(label = 'AI edit') {
 	batch = null;
 	if (entries && entries.length) {
 		recordEntry({ kind: 'aibatch', label, entries, before: 'before', after: 'after' });
+	}
+}
+
+/** 37 R25: is a batch collecting entries right now (a caller that wants its own ONE entry
+ * must not open a second batch inside somebody else's — beginHistoryBatch flushes) */
+export function historyBatchOpen() {
+	return batch !== null;
+}
+
+/**
+ * 37 R25: undo ONE specific entry — the Undo button on a toast, which names the action it
+ * offered rather than "whatever is on top now". On top of the stack it is an ordinary undo
+ * (it moves to redo, so Ctrl+Y does the action again). Deeper down (something was done
+ * since) it is applied out of order and dropped — no redo, because its place in the redo
+ * order would be a lie. False when the entry is gone (already undone, or evicted).
+ * @param {any} entry
+ */
+export function undoEntry(entry) {
+	const stack = get(undoStack);
+	const at = stack.indexOf(entry);
+	if (at < 0) return false;
+	if (at === stack.length - 1) {
+		undo();
+		return !get(undoStack).includes(entry);
+	}
+	undoStack.update((list) => list.filter((e) => e !== entry));
+	applying = true;
+	try {
+		return applyState(entry, entry.before);
+	} finally {
+		applying = false;
 	}
 }
 
@@ -393,7 +425,8 @@ export function undo() {
 	undoStack.update((s) => s.slice(0, -1));
 	applying = true;
 	try {
-		if (applyState(entry, entry.before)) redoStack.update((s) => [...s, entry]);
+		// 37 R1: a multi-object step undoes as ONE replicated batch, the way it was made
+		if (withWireBatch(() => applyState(entry, entry.before))) redoStack.update((s) => [...s, entry]);
 	} finally {
 		applying = false;
 	}
@@ -414,7 +447,7 @@ export function redo() {
 	redoStack.update((s) => s.slice(0, -1));
 	applying = true;
 	try {
-		if (applyState(entry, entry.after)) undoStack.update((s) => [...s, entry]);
+		if (withWireBatch(() => applyState(entry, entry.after))) undoStack.update((s) => [...s, entry]);
 	} finally {
 		applying = false;
 	}

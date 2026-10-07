@@ -312,7 +312,7 @@ async function screenPart(browser) {
 	await page.waitForTimeout(300);
 	h.check((await page.evaluate(() => localStorage.getItem('toursAutoStart'))) === 'false', "I5: Don't show again turns auto-start off");
 	await openTourSettings(page);
-	h.check(!(await page.locator('#setting-tours-auto').isChecked()), 'I5: Settings ▸ Show tours automatically reads off');
+	h.check((await page.locator('#setting-tours-auto').getAttribute('aria-pressed')) === 'false', 'I5: Settings ▸ Show tours automatically reads off');
 	await shotPage(page, '21-settings-tours-light');
 
 	// ---- the VR welcome on a screen: armed + previewed, never marked seen ---------------

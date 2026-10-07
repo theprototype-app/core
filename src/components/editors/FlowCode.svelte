@@ -1,4 +1,5 @@
 <script>
+	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	// Flow Code: an editable view of the flow graph. DOCKED mode is a Flow-family
 	// tab in the bottom dock (Apply + Reload buttons in its toolbar); UNDOCKED mode is a
 	// floating, resizable window. Apply parses the text and REPLACES the graph locally +
@@ -34,6 +35,17 @@
 		winW = parseInt(safeStorage.getItem('flowCodeWinW') ?? '460') || 460;
 		winH = parseInt(safeStorage.getItem('flowCodeWinH') ?? '440') || 440;
 	}
+	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
+	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	$effect(() =>
+		onLayoutRestore(() => {
+			const stored = storedPanelLayout(safeStorage.getItem, 'flowCode', 460, 440);
+			docked = !!(stored.docked);
+			winW = stored.w;
+			winH = stored.h;
+		})
+	);
+
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
 		safeStorage.setItem('flowCodeDocked', String(v));

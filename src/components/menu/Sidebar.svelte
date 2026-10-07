@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { Archive, BookOpen, FileInput, Flag, FolderOpen, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Upload, Wrench } from '@lucide/svelte';
+	import { Archive, BookOpen, FileInput, Flag, FolderOpen, MessageSquareWarning, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Upload, Wrench } from '@lucide/svelte';
 	import { openPublishExport } from '$lib/export/exportStores.js';
 	import { openMomentReport } from '$lib/perf/moment';
+	import { openProblemReport } from '$lib/problemReport';
 	import '../../app.css';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
 	import '../../styles/menu.css';
@@ -34,6 +35,8 @@
 	import { startEditorTour } from '$lib/tours/builtin.js';
 	import { safeStorage } from '$lib/safeStorage';
 	import { statsOpen } from '$lib/sceneBudget';
+	import { layoutsMenuOpen } from '$lib/uiLayouts'; // 37 R14
+	import { PanelsTopLeft } from '@lucide/svelte'; // 37 R14
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
 	// no boxed group / section headers / vertical bar), a fast fade-in (was a
@@ -263,6 +266,10 @@
 				{#if box.shortcut}<span class="side-hint">{box.shortcut}</span>{/if}
 			</button>
 		{/each}
+		<!-- 37 R14: named workspace layouts (windows, docks, sizes) -->
+		<button id="open-layouts" class="side-row" onclick={() => { layoutsMenuOpen.set(true); closeMenu.set(true); }}>
+			<span class="side-ico"><PanelsTopLeft size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Layouts</span>
+		</button>
 		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Archive size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Sessions</span>
 		</button>
@@ -287,6 +294,10 @@
 			recording (and sent when performance reports are on) -->
 		<button id="report-moment" class="side-row" onclick={() => { closeMenu.set(true); void openMomentReport(); }}>
 			<span class="side-ico"><Flag size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report this moment</span>
+		</button>
+		<!-- 37 R20: a picture + boxes round what is wrong + a note, sent to the team with consent -->
+		<button id="report-problem" class="side-row" onclick={() => { closeMenu.set(true); void openProblemReport(); }}>
+			<span class="side-ico"><MessageSquareWarning size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report a problem</span>
 		</button>
 		<!-- 36 U5: "Live profiler" left the menu — it is a Profiler tool, opened from the
 		     Profiler tab's own header (#profiler-open-live) beside Record and Import -->

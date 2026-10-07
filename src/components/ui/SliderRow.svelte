@@ -8,6 +8,7 @@
 	// ×100). It used to be a plain <input type="number"> that only committed on
 	// Enter/blur, which made its arrows look broken.
 	import DragRow from './DragRow.svelte';
+	import { withHistoryGesture } from '$lib/historyGesture';
 
 	/** @type {{label?: string, value?: number, min?: number, max?: number, step?: number, decimals?: number, id?: string, mixed?: boolean, onchange?: (next: number) => void}} */
 	let {
@@ -24,10 +25,16 @@
 		onchange = () => {}
 	} = $props();
 
+	// 37 R26: a drag of the range is ONE history gesture, like a scrub of the box — whatever
+	// the consumer records per tick folds into one undo step ($lib/historyGesture). It ends
+	// with the range's `change` (the release); a keyboard step has none open, so each is its own.
+	/** @type {object|null} */
+	let rangeGesture = null;
+
 	/** @param {any} raw */
 	function commit(raw) {
 		const next = parseFloat(raw);
-		if (!Number.isNaN(next)) onchange(next);
+		if (!Number.isNaN(next)) withHistoryGesture(rangeGesture, () => onchange(next));
 	}
 </script>
 
@@ -43,7 +50,9 @@
 		{max}
 		{step}
 		{value}
+		onpointerdown={() => (rangeGesture = {})}
 		oninput={(e) => commit(e.currentTarget.value)}
+		onchange={() => (rangeGesture = null)}
 	/>
 	<div class="w-16 shrink-0">
 		<DragRow

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { dropToSurface } from './snapping';
-import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, beginHistoryBatch, endHistoryBatch } from './history';
+import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, registerHistoryMerge, sameJson, beginHistoryBatch, endHistoryBatch } from './history';
 import { cascadeJointDeletes } from './joints';
 import { createGroup } from './geometries.svelte';
 import { suspendAnimation, resumeAnimation, parkAnimatedAtBase } from './flowRuntime';
@@ -817,8 +817,33 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'origin', uuid: entry.uuid, origin: state.origin });
 	}
+	if ('renderOrder' in state) {
+		// 37 R26: the Inspector's Render order field (it recorded nothing before)
+		object.renderOrder = state.renderOrder;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'renderOrder', uuid: entry.uuid, renderOrder: state.renderOrder });
+	}
+	if ('light' in state && state.light) {
+		// 37 R26: a light's own numbers (intensity, distance, angle…) — replicated the way the
+		// Inspector sends them, the whole light resent with override
+		Object.assign(object, state.light);
+		if (peer) peer.send({ type: 'object', element: object.toJSON(), override: true });
+	}
 	pokeScene();
 	return true;
+});
+
+/** the keys a props state touches, one level into `light` @param {any} state */
+const propsShape = (state) =>
+	JSON.stringify(Object.keys(state ?? {}).sort().map((k) => (k === 'light' ? [k, Object.keys(state.light ?? {}).sort()] : k)));
+// 37 R26: two edits of one gesture on the same object and the same keys are one step
+registerHistoryMerge('props', {
+	merge(top, next) {
+		if (top.uuid !== next.uuid || propsShape(top.before) !== propsShape(next.before)) return false;
+		top.after = next.after;
+		return true;
+	},
+	noop: (e) => sameJson(e.before, e.after)
 });
 
 // group moves replay through moveObjectToGroup (recordEntry no-ops during replay)

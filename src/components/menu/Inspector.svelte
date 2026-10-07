@@ -18,6 +18,7 @@
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
+	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
@@ -26,6 +27,7 @@
 	import DragRow from '../ui/DragRow.svelte';
 	import PropRow from '../ui/PropRow.svelte';
 	import Segmented from '../ui/Segmented.svelte';
+	import ParticleMotionRows from '../fx/ParticleMotionRows.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
 	import CustomWrapper from '$lib/ColorWrapper.svelte';
 	import { sineIn } from 'svelte/easing';
@@ -41,9 +43,10 @@
 		setObjectColor,
 		setObjectsTexture
 	} from '$lib/materialsHandler';
-	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet } from '$lib/history';
+	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet, registerPendingSeal } from '$lib/history';
 	import { withWireBatch, withWireBatchAsync } from '$lib/wireBatch';
 	import { setObjectFlag, lightStateOf, recordLightChange, sendLight, allMembers } from '$lib/multiEdit';
+	import { currentHistoryGesture, withHistoryGesture } from '$lib/historyGesture';
 	import { deviceOf, deviceSpec, isDeviceObject, setDeviceFor, previewDeviceParams } from '$lib/audioDevices';
 	import { MUSIC_TOOLBOX_ID, musicToolboxPick } from '$lib/musicToolbox';
 	import { openModuleToolbox, moduleToolboxes } from '$lib/moduleToolboxes';
@@ -823,6 +826,9 @@
 	let geoTick = $state(0);
 	const geoParams = $derived.by(() => {
 		geoTick;
+		// 37 R3: a peer's geometry edit or an undo replaces userData.geometryParams and pokes the
+		// scene — without this the rows (and which of them `show`) stayed on the old params
+		$objectsGroup;
 		return !isLight && !isGroup && $selectedObject ? geometryParamsOf($selectedObject) : null;
 	});
 	const geoSpec = $derived(geoParams ? geometrySpec(geoParams.gtype) : null);
@@ -1113,17 +1119,34 @@
 	// same one a multi-gizmo drag records, so replay + replication come free.
 	// Typed transforms recorded nothing at all before; with a selection they must,
 	// because setting an absolute value collapses the whole set onto one plane.
+	// 37 R26: the seal also carries the field's history GESTURE (one scrub, or one typing
+	// session — $lib/historyGesture). Typing slower than the 500ms seal records twice, and
+	// the second entry folds into the first; a NEW gesture seals the pending one first, so
+	// two gestures never share an entry.
 	/** @type {Map<string, any>|null} */
 	let xformGestureStart = null;
+	/** @type {object|null} */
+	let xformGestureToken = null;
 	/** @type {any} */
 	let xformGestureTimer;
 	function trackTransformGesture() {
+		const token = currentHistoryGesture();
+		if (xformGestureStart != null && token !== xformGestureToken) {
+			clearTimeout(xformGestureTimer);
+			sealTransformGesture();
+		}
 		if (xformGestureStart == null) {
 			xformGestureStart = new Map();
+			xformGestureToken = token;
 			for (const object of insTargets) xformGestureStart.set(object.uuid, poseOf(object));
 		}
 		clearTimeout(xformGestureTimer);
-		xformGestureTimer = setTimeout(() => {
+		xformGestureTimer = setTimeout(sealTransformGesture, 500);
+	}
+	function sealTransformGesture() {
+		const token = xformGestureToken;
+		xformGestureToken = null;
+		withHistoryGesture(token, () => {
 			const keepOrigin = true; // a hand-placed origin survives the re-seat
 			const befores = xformGestureStart;
 			xformGestureStart = null;
@@ -1151,7 +1174,7 @@
 					keepOrigin
 				);
 			else if (items.length === 1 && originTarget && originSet) reseatPivot(); // 24-E3: the single-object pivot too
-		}, 500);
+		});
 	}
 
 	/**
@@ -1217,26 +1240,42 @@
 	const lightMixed = (read) => mixed(read, lightTargets);
 	/** @type {Map<string, any>|null} */
 	let lightGestureStart = null;
+	/** @type {object|null} */
+	let lightGestureToken = null;
 	/** @type {any} */
 	let lightGestureTimer;
 	/** @param {any[]} list */
 	function trackLightGesture(list) {
-		if (lightGestureStart == null) lightGestureStart = new Map();
+		// 37-int-127 (R26 on R1's seal): the seal records inside the field's history gesture,
+		// so typing slower than 500 ms still folds into one step; a NEW gesture seals first
+		const token = currentHistoryGesture();
+		if (lightGestureStart != null && token !== lightGestureToken) {
+			clearTimeout(lightGestureTimer);
+			sealLightGesture();
+		}
+		if (lightGestureStart == null) {
+			lightGestureStart = new Map();
+			lightGestureToken = token;
+		}
 		for (const light of list) if (!lightGestureStart.has(light.uuid)) lightGestureStart.set(light.uuid, { light, before: lightStateOf(light) });
 		clearTimeout(lightGestureTimer);
 		lightGestureTimer = setTimeout(sealLightGesture, 500);
 	}
 	function sealLightGesture() {
 		const started = lightGestureStart;
+		const token = lightGestureToken;
 		lightGestureStart = null;
+		lightGestureToken = null;
 		if (!started?.size) return;
 		const many = started.size > 1;
-		if (many) beginHistoryBatch();
-		try {
-			for (const { light, before } of started.values()) recordLightChange(light, before);
-		} finally {
-			if (many) endHistoryBatch(`Lights (${started.size})`);
-		}
+		withHistoryGesture(token, () => {
+			if (many) beginHistoryBatch();
+			try {
+				for (const { light, before } of started.values()) recordLightChange(light, before);
+			} finally {
+				if (many) endHistoryBatch(`Lights (${started.size})`);
+			}
+		});
 	}
 	/**
 	 * One Light-row write over the selected lights.
@@ -1365,12 +1404,21 @@
 	 * flags entry per member (from its own start value) 500 ms after the last step
 	 * @type {Map<string, {object: any, before: any}>|null} */
 	let orderGestureStart = null;
+	/** @type {object|null} */
+	let orderGestureToken = null;
 	/** @type {any} */
 	let orderGestureTimer;
 	/** @param {number} value */
 	function setRenderOrder(value) {
+		// 37-int-127: the seal carries the field's history gesture (R26), like the transform seal
+		const token = currentHistoryGesture();
+		if (orderGestureStart != null && token !== orderGestureToken) {
+			clearTimeout(orderGestureTimer);
+			sealRenderOrder();
+		}
 		if (orderGestureStart == null) {
 			orderGestureStart = new Map();
+			orderGestureToken = token;
 			for (const object of insTargets) orderGestureStart.set(object.uuid, { object, before: object.renderOrder });
 		}
 		withWireBatch(() => {
@@ -1378,17 +1426,38 @@
 		});
 		selectedObject.update((v) => v);
 		clearTimeout(orderGestureTimer);
-		orderGestureTimer = setTimeout(() => {
-			const started = orderGestureStart;
-			orderGestureStart = null;
-			if (!started?.size) return;
-			const list = [...started.values()].filter((entry) => entry.before !== entry.object.renderOrder);
+		orderGestureTimer = setTimeout(sealRenderOrder, 500);
+	}
+	// 37-int-127: Ctrl+Z / redo seal whatever is still pending first (history.registerPendingSeal)
+	function flushInspectorSeals() {
+		if (xformGestureStart != null) {
+			clearTimeout(xformGestureTimer);
+			sealTransformGesture();
+		}
+		if (lightGestureStart != null) {
+			clearTimeout(lightGestureTimer);
+			sealLightGesture();
+		}
+		if (orderGestureStart != null) {
+			clearTimeout(orderGestureTimer);
+			sealRenderOrder();
+		}
+	}
+	$effect(() => registerPendingSeal(flushInspectorSeals));
+	function sealRenderOrder() {
+		const started = orderGestureStart;
+		const token = orderGestureToken;
+		orderGestureStart = null;
+		orderGestureToken = null;
+		if (!started?.size) return;
+		const list = [...started.values()].filter((entry) => entry.before !== entry.object.renderOrder);
+		withHistoryGesture(token, () =>
 			fanOn(
 				list.map((entry) => entry.object),
 				'Render order',
 				(object) => setObjectFlag(object, 'renderOrder', object.renderOrder, { before: started.get(object.uuid)?.before })
-			);
-		}, 500);
+			)
+		);
 	}
 
 	// ---- move to group (shared by mesh and light targets) -------------------
@@ -1678,6 +1747,7 @@
 					value={$environment.exposure}
 					onchange={(v) => setEnvironment($environment.preset, v)}
 				/>
+				<HdriSection />
 
 				{#if $envPresets.length}
 					<p class="ui-section-label">Saved presets</p>
@@ -3437,7 +3507,9 @@
 						{/if}
 					{:else}
 						<div id="inspector-geometry" class="flex flex-col gap-1">
-							{#each geoSpec.params as spec (spec.key)}
+							<!-- 37 R3: a row whose `show` says it does not apply (a door width on a wall
+							     with no doors) is hidden, not disabled -->
+							{#each geoSpec.params.filter((p) => !p.show || p.show(geoParams.params)) as spec (spec.key)}
 								{#if spec.kind === 'bool'}
 									<Checkbox
 										checked={!!geoParams.params[spec.key]}
@@ -4429,6 +4501,7 @@
 								onchange={(/** @type {any} */ v) => setParticles({ space: v })}
 							/>
 						</div>
+						<ParticleMotionRows {p} set={setParticles} />
 						<div class="ui-row items-center gap-2">
 							<Button size="xs" color="red" onclick={() => removeObjectParticles($selectedObject.uuid)}>
 								Remove emitter

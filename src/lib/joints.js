@@ -19,7 +19,27 @@ import { originWorld } from './objectOrigin';
 
 /** @typedef {{id: string, a: string, b: string, kind: 'fixed'|'revolute',
  *   anchorA: number[], anchorB: number[], axisA?: number[],
- *   motor?: {vel: number, maxForce: number}}} JointDef */
+ *   motor?: {vel?: number, maxForce?: number, pos?: number, stiffness?: number, damping?: number},
+ *   limits?: number[], contacts?: boolean, sparks?: boolean}} JointDef */
+// 37-fx additions, all optional (absent = the 1.25 joint, byte-identical): `limits` [min, max]
+// radians on a revolute, `contacts: false` stops the two bodies colliding with each other (a
+// steering knuckle sits inside its wheel), `motor.pos` (+stiffness/damping) drives a revolute
+// to an ANGLE instead of a speed, `sparks: false` keeps a break quiet.
+
+/**
+ * The 37-fx options a caller may put on a joint, validated (anything else is dropped).
+ * @param {any} opts @returns {{limits?: number[], contacts?: boolean, sparks?: boolean}}
+ */
+export function jointOptions(opts) {
+	/** @type {{limits?: number[], contacts?: boolean, sparks?: boolean}} */
+	const out = {};
+	if (!opts || typeof opts !== 'object') return out;
+	const l = opts.limits;
+	if (Array.isArray(l) && l.length === 2 && l.every((n) => Number.isFinite(n)) && l[0] <= l[1]) out.limits = [l[0], l[1]];
+	if (opts.contacts === false) out.contacts = false;
+	if (opts.sparks === false) out.sparks = false;
+	return out;
+}
 
 /** @type {import('svelte/store').Writable<JointDef[]>} */
 export const sceneJoints = writable([]);
@@ -42,9 +62,30 @@ function upsertLocal(joint) {
 	});
 }
 
+/** 37-fx: who hears a joint LEAVE (physics: drop the live joint, spark a mid-run break).
+ * A var, not a const: physics registers from a microtask, but a cycle must never TDZ this. */
+// eslint-disable-next-line no-var
+var removedListeners = new Set();
+
+/** Hear every joint removal (local delete, a peer's jointdelete, undo/redo).
+ * @param {(joint: JointDef) => void} fn @returns {() => void} off */
+export function onJointRemoved(fn) {
+	removedListeners.add(fn);
+	return () => removedListeners.delete(fn);
+}
+
 /** @param {string} id */
 function removeLocal(id) {
+	const gone = get(sceneJoints).find((j) => j.id === id);
 	sceneJoints.update((list) => list.filter((j) => j.id !== id));
+	if (!gone) return;
+	for (const fn of removedListeners) {
+		try {
+			fn(gone);
+		} catch (error) {
+			console.warn('joint removal listener failed', error);
+		}
+	}
 }
 
 /**
@@ -53,10 +94,11 @@ function removeLocal(id) {
  * anchor = B's origin (put the wheel where it should spin, then hinge) with
  * the axis = A's chosen LOCAL axis at the current pose.
  * @param {'fixed'|'revolute'} kind @param {string} aUuid @param {string} bUuid
- * @param {'x'|'y'|'z'=} axis @param {{vel: number, maxForce: number}=} motor
+ * @param {'x'|'y'|'z'=} axis @param {JointDef['motor']=} motor
+ * @param {{limits?: number[], contacts?: boolean, sparks?: boolean}=} opts 37-fx (jointOptions)
  * @returns {JointDef | null}
  */
-export function createJoint(kind, aUuid, bUuid, axis, motor) {
+export function createJoint(kind, aUuid, bUuid, axis, motor, opts) {
 	const a = objectOf(aUuid);
 	const b = objectOf(bUuid);
 	if (!a || !b || aUuid === bUuid) {
@@ -83,7 +125,8 @@ export function createJoint(kind, aUuid, bUuid, axis, motor) {
 		...(kind === 'revolute'
 			? { axisA: axis === 'x' ? [1, 0, 0] : axis === 'z' ? [0, 0, 1] : [0, 1, 0] }
 			: {}),
-		...(motor ? { motor } : {})
+		...(motor ? { motor } : {}),
+		...(kind === 'revolute' ? jointOptions(opts) : jointOptions({ sparks: opts?.sparks }))
 	};
 	upsertLocal(joint);
 	recordEntry({ kind: 'joint', joint, before: { present: false }, after: { present: true } });
@@ -121,6 +164,34 @@ export function detachJoints(uuids) {
  * receivers only apply (golden rule 1). @param {string[]} uuids */
 export function cascadeJointDeletes(uuids) {
 	jointsFor(uuids).forEach((j) => deleteJoint(j.id));
+}
+
+/**
+ * 37-fx: duplicate parity — clone every joint whose BOTH ends were duplicated, onto the
+ * copies (uuids remapped; anchors are object-local, so they carry as they are). A joint with
+ * only one end in the set stays where it is: the copy is a free object, as before. Each clone
+ * is a normal jointcreate + 'joint' history entry, recorded AFTER the objects' create entries,
+ * so one undo walk removes the joints first and the objects after.
+ * @param {Record<string, string>} uuidMap old uuid -> new uuid @returns {number} joints cloned
+ */
+export function copyJointsWithin(uuidMap) {
+	if (!uuidMap || typeof uuidMap !== 'object') return 0;
+	const inside = get(sceneJoints).filter((j) => uuidMap[j.a] && uuidMap[j.b]);
+	/** @type {any} */
+	const peer = get(peers);
+	for (const source of inside) {
+		/** @type {JointDef} */
+		const joint = {
+			...structuredClone(source),
+			id: crypto.randomUUID().slice(0, 8),
+			a: uuidMap[source.a],
+			b: uuidMap[source.b]
+		};
+		upsertLocal(joint);
+		recordEntry({ kind: 'joint', joint, before: { present: false }, after: { present: true } });
+		if (peer) peer.send({ type: 'jointcreate', joint });
+	}
+	return inside.length;
 }
 
 // ---- receive side -----------------------------------------------------------

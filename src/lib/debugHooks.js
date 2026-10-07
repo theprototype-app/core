@@ -93,6 +93,11 @@ export const DEBUG_HOOKS = [
 	['terrainSculpt', () => import('./terrainSculpt')],
 	['userModules', () => import('./userModules')],
 	['environment', () => import('./environment')],
+	// 37-hdri: the HDRI layer (hdriDebug, installHdriLayer) + its leaf stores (skyEnv, envToneMapping, hdriStatus) + the pure core
+	['hdri', () => import('./hdri/hdriRuntime.js')],
+	['hdriStores', () => import('./hdri/skyEnv.js')],
+	['hdriCore', () => import('./hdri/hdriCore.js')],
+	['hdriPrefs', () => import('./hdri/hdriPrefs.js')],
 	['sceneMusic', () => import('./sceneMusic')],
 	['animatedImports', () => import('./animatedImports')],
 	['fileHandler', () => import('./fileHandler.svelte')],
@@ -154,6 +159,8 @@ export const DEBUG_HOOKS = [
 	['meshProviders', () => import('./ai/meshProviders')],
 	['meshJobs', () => import('./ai/meshJobs')],
 	['flowGraphsCtl', () => import('./flowGraphs')],
+	// 37 (R6): socket add/remove + the switcher type
+	['variadic', () => import('./variadicEdit.js')],
 	// 36 F10: where the node editor opens (saved views, the setting)
 	['flowView', () => import('./flowView')],
 	['objectFlow', () => import('./objectFlow')],
@@ -329,6 +336,8 @@ export const DEBUG_HOOKS = [
 	['lodGroupActions', () => import('./lodGroupActions')],
 	['lodLevelEdit', () => import('./lodLevelEdit')],
 	['packBehavior', () => import('./packBehavior')],
+	// 37 R3: parametric architecture parts (archPartsDebug, reconcileArchParts)
+	['arch', () => import('./arch/archParts.js')],
 	['sceneLoader', () => import('./sceneLoader')],
 	['pickCycle', () => import('./pickCycle')],
 	['pickPass', () => import('./pickPass')],

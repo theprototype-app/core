@@ -1,7 +1,7 @@
 // The off-bundle CONTENT BASES, overridable at build time.
 //
 // Three content repos are read over jsDelivr at pinned refs — `scenes@format-2`
-// (templates/examples/games), `modules@main` (the module gallery) and `packs@format-1`
+// (templates/examples/games), `modules@format-1` (the module gallery; `@main` before 1.27) and `packs@format-1`
 // (Explorer packs; 29f/#230: a ref must never look like a semver version, because
 // jsDelivr resolves a version ONCE and a retag of it is a no-op forever). Every one
 // of them was a hardcoded const, which makes them the only build-time configuration
@@ -38,7 +38,7 @@ export function contentBase(value, fallback) {
 
 /**
  * Fetch a content INDEX — a list that lives on a BRANCH ref (`scenes@format-2/index.json`,
- * `packs@format-1/index.json` and each pack's item list, `modules@main/index.json`, the
+ * `packs@format-1/index.json` and each pack's item list, `modules@format-1/index.json`, the
  * community gallery manifest).
  *
  * 1.19.1: jsDelivr answers a branch ref with `cache-control: max-age=604800` — SEVEN DAYS

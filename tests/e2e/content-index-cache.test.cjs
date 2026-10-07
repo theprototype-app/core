@@ -1,6 +1,6 @@
 // 1.19.1: the General tab / packs / module gallery kept a WEEK-OLD list.
 //
-// jsDelivr answers a branch ref (`scenes@format-2`, `packs@format-1`, `modules@main`)
+// jsDelivr answers a branch ref (`scenes@format-2`, `packs@format-1`, `modules@format-1`)
 // with `cache-control: public, max-age=604800`, and every index fetch used the default
 // cache mode — so after 1.19.0 shipped three new General levels, any device that had
 // opened the tab in the last week kept showing the old list (a fresh browser saw the new

@@ -49,7 +49,14 @@ const INFERRED_KINDS = {
 	Wedge: 'hull',
 	Stairs: 'hull',
 	Arch: 'hull',
-	Corner: 'hull'
+	Corner: 'hull',
+	// 37 R3 (the creation stamp says the same; these cover a mesh that lost its hint):
+	// openings and steps are concave, a window is its slab. A door's frame collider is the
+	// 33 behaviour's slabs once its leaf registers; until then its exact mesh.
+	Wall: 'trimesh',
+	Staircase: 'trimesh',
+	Door: 'trimesh',
+	Window: 'box'
 };
 /** kinds a userData.colliderHint stamp may request (never custom/object) */
 const HINT_KINDS = new Set(['box', 'sphere', 'capsule', 'cylinder', 'cone', 'hull', 'trimesh']);

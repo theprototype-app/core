@@ -46,6 +46,7 @@
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
 	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
+	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { drawMode, drawTool, strokePointFromRay, endStroke, setDrawScene } from '$lib/drawMode';
 	import { splinePlaceFromRay, splineToolActive, finishSpline } from '$lib/splineTool';
@@ -1589,6 +1590,7 @@
 		startKnock({ hands: handSnapshot, heldUuids: () => [carriedUuid(), ...vrGrabbedUuids()], haptic: hapticKnock });
 		startClap({ hands: handSnapshot }); // 31: the same hand seam
 		startPackBehaviors({ hands: handSnapshot }); // 33 P2: functional pack items (the knock reads hands)
+		startArchParts(); // 37 R3: parametric door leaves / window sashes on that same runtime
 		// 30b: game feel in VR (a frame hook + a trigger hook through vrControls' registries)
 		startVrGameInput();
 

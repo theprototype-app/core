@@ -47,6 +47,7 @@
 	import CheckpointSettings from './CheckpointSettings.svelte';
 	import LoadingSettings from './LoadingSettings.svelte';
 	import WaterSettings from '../../water/WaterSettings.svelte';
+	import HdriSettings from '../../hdri/HdriSettings.svelte'; // 37-hdri
 	import { showSimControls, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, showToast } from '../../../stores/appStore.js';
 	import { showGrid } from '../../../stores/sceneStore.js';
 	import { syncedAnimations } from '../../../stores/flowStore';
@@ -140,6 +141,7 @@
 			<Toggle id="kit-instancing" label="Draw repeated kit pieces together" bind:checked={$kitInstancingEnabled} />
 		</SettingRow>
 		<WaterSettings />
+		<HdriSettings />
 	</Section>
 
 	<Section variant="card" label="Collaboration">

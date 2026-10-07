@@ -40,9 +40,10 @@ import { simulateVerdict } from './simAuthority';
 // out-of-bounds delete has to reach dynamically.
 import { removeTransientObjects } from './transientObjects';
 import { burstObjectParticles } from './particleActions';
-import { hasImpactEmitter } from './particleRuntime';
+import { hasImpactEmitter, applyBurst } from './particleRuntime';
+import { sessionNow } from './sessionClock';
 import { nameOf } from './lockControl';
-import { sceneJoints } from './joints';
+import { sceneJoints, onJointRemoved } from './joints';
 // 36-sim I1: buoyancy + drag + flow in water volumes (W1). Both leaves import nothing
 // from the app, so these edges close no cycle.
 import { bodySamples, applyBuoyancy, buoyancyOut, normalizeFloats } from './sim/buoyancy.js';
@@ -171,6 +172,13 @@ export async function warmup() {
 	const module = await import('@dimforge/rapier3d-compat');
 	await initQuietly(module);
 	RAPIER = module;
+}
+
+/** 37-fx: the loaded rapier module, for a module that runs a world of its OWN (the Blocks
+ * demo: a local, visual-only world beside the shared simulation). Loads it if needed. */
+export async function rapierModule() {
+	await warmup();
+	return RAPIER;
 }
 
 // 30 P0: rapier-compat's own `init()` hands wasm-bindgen's init a bare byte array — the
@@ -320,6 +328,129 @@ function angvelWorld(object, angvel) {
 	v.applyQuaternion(object.quaternion).multiplyScalar(angvel.speed ?? 0);
 	return { x: v.x, y: v.y, z: v.z };
 }
+
+const jointAnchorWorld = new THREE.Vector3();
+const jointAxisWorld = new THREE.Vector3();
+
+/**
+ * Build ONE live rapier joint from its replicated def (P-B; extracted by 37-fx so a joint can
+ * also arrive mid-run). Anchors are OBJECT-local at attach time -> world -> BODY-local. EVERY
+ * body (box and hull alike, C3) starts with IDENTITY rotation (initialQuat compensates), so
+ * body-local = world - translation and ONE world-space axis is valid in both bodies' local
+ * frames — which rapier's revolute() requires. NOTE mid-run the bodies have moved and turned,
+ * so a joint added then is built from the objects' CURRENT poses the same way, and holds them
+ * where they are.
+ * @param {any} def
+ */
+function buildLiveJoint(def) {
+	if (!world || liveJoints.has(def.id)) return;
+	const entryA = bodies.find((e) => e.object.uuid === def.a);
+	const entryB = bodies.find((e) => e.object.uuid === def.b);
+	// jointed scenery is possible: fall back to any body we created — bodies[]
+	// only holds dynamic+kinematic, so look the object up for a fixed body too
+	const bodyA = entryA?.body ?? fixedBodies.get(def.a);
+	const bodyB = entryB?.body ?? fixedBodies.get(def.b);
+	if (!bodyA || !bodyB) return;
+	const objA = get(objectsGroup)?.getObjectByProperty('uuid', def.a);
+	const objB = get(objectsGroup)?.getObjectByProperty('uuid', def.b);
+	if (!objA || !objB) return;
+	/** body-local point for one side @param {any} obj @param {number[]} anchorLocal @param {any} body */
+	const bodyLocal = (obj, anchorLocal, body) => {
+		obj.updateWorldMatrix(true, false);
+		obj.localToWorld(jointAnchorWorld.fromArray(anchorLocal));
+		const t = body.translation();
+		const r = body.rotation();
+		// identity at sim start; mid-run (37-fx) the body may have turned — undo its rotation
+		tempJointQuat.set(r.x, r.y, r.z, r.w).invert();
+		jointAnchorWorld.set(jointAnchorWorld.x - t.x, jointAnchorWorld.y - t.y, jointAnchorWorld.z - t.z).applyQuaternion(tempJointQuat);
+		return { x: jointAnchorWorld.x, y: jointAnchorWorld.y, z: jointAnchorWorld.z };
+	};
+	const a1 = bodyLocal(objA, def.anchorA, bodyA);
+	const a2 = bodyLocal(objB, def.anchorB, bodyB);
+	let data;
+	if (def.kind === 'revolute') {
+		objA.getWorldQuaternion(tempJointQuat);
+		jointAxisWorld.fromArray(def.axisA ?? [0, 1, 0]).applyQuaternion(tempJointQuat);
+		// into body A's frame (identity at sim start, so this is a no-op then)
+		const r = bodyA.rotation();
+		jointAxisWorld.applyQuaternion(tempJointQuat.set(r.x, r.y, r.z, r.w).invert()).normalize();
+		data = RAPIER.JointData.revolute(a1, a2, { x: jointAxisWorld.x, y: jointAxisWorld.y, z: jointAxisWorld.z });
+	} else {
+		data = RAPIER.JointData.fixed(a1, { w: 1, x: 0, y: 0, z: 0 }, a2, { w: 1, x: 0, y: 0, z: 0 });
+	}
+	const joint = world.createImpulseJoint(data, bodyA, bodyB, true);
+	// 37-fx: limits, no self-collision, an ANGLE motor (a steering knuckle)
+	if (def.kind === 'revolute' && Array.isArray(def.limits)) joint.setLimits?.(def.limits[0], def.limits[1]);
+	if (def.contacts === false) joint.setContactsEnabled?.(false);
+	if (def.kind === 'revolute' && def.motor) {
+		if (Number.isFinite(def.motor.pos))
+			joint.configureMotorPosition(def.motor.pos, def.motor.stiffness ?? 400, def.motor.damping ?? 40);
+		else joint.configureMotorVelocity(def.motor.vel ?? 0, def.motor.maxForce ?? 100);
+	}
+	liveJoints.set(def.id, joint);
+}
+const tempJointQuat = new THREE.Quaternion();
+
+/** 37-fx: the simulator follows the joint list mid-run — a new def is built, a removed one is
+ * dropped (it used to hold until the next run, so Detach did nothing to a running world).
+ * @param {any[]} list */
+function syncLiveJoints(list) {
+	if (!world) return;
+	const ids = new Set(list.map((d) => d.id));
+	for (const [id, joint] of liveJoints)
+		if (!ids.has(id)) {
+			dropLiveJoint(joint);
+			liveJoints.delete(id);
+		}
+	list.forEach((def) => buildLiveJoint(def));
+}
+
+/** @param {any} joint */
+function dropLiveJoint(joint) {
+	try {
+		// removing a BODY takes its joints with it — the handle may already be gone
+		if (world && joint?.isValid?.() !== false) world.removeImpulseJoint(joint, true);
+	} catch {
+		/* already removed with its body */
+	}
+}
+
+/** @type {any} primed for joint-break sparks (effectsBurst reaches moduleSDK: keep it dynamic) */
+let effectsRef = null;
+const breakPoint = new THREE.Vector3();
+
+/**
+ * 37-fx R12: a joint that leaves DURING a run is a break — sparks fly from its anchor and any
+ * "On impact" emitter on either end fires. Runs on EVERY peer (each one applies the jointdelete
+ * itself), visual-only and local, so it needs no message of its own; an edit-time detach is
+ * quiet, and `sparks: false` on the joint keeps it so.
+ * @param {any} def
+ */
+function jointBroke(def) {
+	const live = liveJoints.get(def.id);
+	if (live) {
+		dropLiveJoint(live);
+		liveJoints.delete(def.id);
+	}
+	if (!get(simulating) && !get(remoteSimulating)) return;
+	if (def.sparks === false) return;
+	const group = get(objectsGroup);
+	const a = group?.getObjectByProperty('uuid', def.a);
+	const b = group?.getObjectByProperty('uuid', def.b);
+	const end = a ?? b;
+	if (!end) return;
+	end.updateWorldMatrix(true, false);
+	end.localToWorld(breakPoint.fromArray(a ? def.anchorA : def.anchorB));
+	const fire = (/** @type {any} */ m) => m?.burst?.(breakPoint.toArray(), { kind: 'sparks' });
+	if (effectsRef) fire(effectsRef);
+	else import('./effectsBurst').then((m) => fire((effectsRef = m)));
+	const t = (sessionNow() % 86400000) / 1000; // the flow tick's clock, as burstObjectParticles
+	for (const object of [a, b])
+		if (object && (object.userData?.particles?.mode === 'impact' || hasImpactEmitter(object.uuid)))
+			applyBurst(object.uuid, t);
+}
+// a microtask, so a module cycle can never reach joints.js before it has finished evaluating
+queueMicrotask(() => onJointRemoved(jointBroke));
 
 /**
  * Apply a motor param to the live revolute joints touching the object (C2).
@@ -939,50 +1070,7 @@ async function startSimulation() {
 	// so body-local = world - translation and ONE world-space axis is valid in
 	// both bodies' local frames — which rapier's revolute() requires.
 	liveJoints = new Map();
-	const anchorWorld = new THREE.Vector3();
-	const axisWorld = new THREE.Vector3();
-	get(sceneJoints).forEach((def) => {
-		const entryA = bodies.find((e) => e.object.uuid === def.a);
-		const entryB = bodies.find((e) => e.object.uuid === def.b);
-		// jointed scenery is possible: fall back to any body we created — bodies[]
-		// only holds dynamic+kinematic, so look the object up for a fixed body too
-		const bodyA = entryA?.body ?? fixedBodies.get(def.a);
-		const bodyB = entryB?.body ?? fixedBodies.get(def.b);
-		if (!bodyA || !bodyB) return;
-		const objA = get(objectsGroup)?.getObjectByProperty('uuid', def.a);
-		const objB = get(objectsGroup)?.getObjectByProperty('uuid', def.b);
-		if (!objA || !objB) return;
-		/** body-local point for one side (all bodies start world-aligned, C3)
-		 * @param {any} obj @param {number[]} anchorLocal @param {any} body */
-		const bodyLocal = (obj, anchorLocal, body) => {
-			obj.updateWorldMatrix(true, false);
-			obj.localToWorld(anchorWorld.fromArray(anchorLocal));
-			const t = body.translation();
-			return [anchorWorld.x - t.x, anchorWorld.y - t.y, anchorWorld.z - t.z];
-		};
-		const a1 = bodyLocal(objA, def.anchorA, bodyA);
-		const a2 = bodyLocal(objB, def.anchorB, bodyB);
-		let data;
-		if (def.kind === 'revolute') {
-			axisWorld.fromArray(def.axisA ?? [0, 1, 0]).applyQuaternion(objA.quaternion).normalize();
-			data = RAPIER.JointData.revolute(
-				{ x: a1[0], y: a1[1], z: a1[2] },
-				{ x: a2[0], y: a2[1], z: a2[2] },
-				{ x: axisWorld.x, y: axisWorld.y, z: axisWorld.z }
-			);
-		} else {
-			data = RAPIER.JointData.fixed(
-				{ x: a1[0], y: a1[1], z: a1[2] },
-				{ w: 1, x: 0, y: 0, z: 0 },
-				{ x: a2[0], y: a2[1], z: a2[2] },
-				{ w: 1, x: 0, y: 0, z: 0 }
-			);
-		}
-		const joint = world.createImpulseJoint(data, bodyA, bodyB, true);
-		if (def.kind === 'revolute' && def.motor)
-			joint.configureMotorVelocity(def.motor.vel ?? 0, def.motor.maxForce ?? 100);
-		liveJoints.set(def.id, joint);
-	});
+	get(sceneJoints).forEach((def) => buildLiveJoint(def));
 
 	// C2: initial angular velocities + graph-driven motors (needs liveJoints).
 	// Node params win over a joint def's own motor — applied last.
@@ -1004,6 +1092,7 @@ async function startSimulation() {
 	};
 	liveUnsubs = [
 		flowGraphs.subscribe(onGraphChange), // H1: sees every graph
+		sceneJoints.subscribe(syncLiveJoints), // 37-fx: joints added / detached mid-run
 		// A6: gravity applies live (world.gravity is a plain setter; dynamics
 		// never sleep, so they notice immediately)
 		sceneGravity.subscribe((g) => {
@@ -1959,6 +2048,17 @@ export function setJointMotor(jointId, vel, maxForce = 100) {
 	return true;
 }
 
+/** 37-fx: drive a revolute joint to an ANGLE (radians) — a steering knuckle. Initiator-only,
+ * like setJointMotor. @param {string} jointId @param {number} angle
+ * @param {number=} stiffness @param {number=} damping */
+export function setJointMotorPosition(jointId, angle, stiffness = 400, damping = 40) {
+	if (!world || !get(simulating)) return false;
+	const joint = liveJoints.get(jointId);
+	if (!joint?.configureMotorPosition || !Number.isFinite(angle)) return false;
+	joint.configureMotorPosition(angle, stiffness, damping);
+	return true;
+}
+
 /** Push a dynamic body (module SDK) — initiator-only, mid-sim.
  * @param {string} uuid @param {number[]} impulse [x,y,z] */
 export function applyImpulse(uuid, impulse) {
@@ -2130,6 +2230,11 @@ export function physicsWorldDebug() {
  * land a refactor of the construction block. `name` is there so that comparison can be
  * keyed by something stable across runs (uuids are fresh every time).
  */
+/** 37-fx test view: ids of the joints live in the stepping world */
+export function liveJointIds() {
+	return [...liveJoints.keys()];
+}
+
 export function physicsDebug() {
 	return bodies.map((entry) => ({
 		uuid: entry.object.uuid,

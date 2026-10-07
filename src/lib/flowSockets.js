@@ -7,6 +7,7 @@
 import { graphOf } from '../stores/flowStore';
 import { moduleValueTypes, moduleNodeInputs } from './moduleNodeIO';
 import { scriptSocketType } from './scriptIO'; // 34 D3: a Script node's DECLARED sockets
+import { dataSocketType } from './variadicNodes.js'; // 37 (R6): the Switcher's data-typed sockets
 
 /**
  * 36 (U10): a BEHAVIOUR node's sockets are declared in its CODE (`inputs`, `outputs`), which only
@@ -140,9 +141,15 @@ const INPUT = {
 	spawn: { trigger: 'event', at: 'vector3', source: 'object', position: 'vector3' }, // 31: + a place
 	random: { seed: 'number', reroll: 'event' }, // B6
 	animstate: { target: 'object' }, // 17-E F3: whose clip to read (or the graph owner)
-	math: { a: 'number', b: 'number' },
+	// 37 (R6): math and gate are VARIADIC — c..h are the extra sockets a node may grow
+	// (variadicNodes.js). Declared here so a group routing one, and the socket colour, read the
+	// right type (an undeclared gate handle would type as 'number').
+	math: { a: 'number', b: 'number', c: 'number', d: 'number', e: 'number', f: 'number', g: 'number', h: 'number' },
 	compare: { a: 'number', b: 'number' },
-	gate: { a: 'boolean', b: 'boolean' },
+	gate: { a: 'boolean', b: 'boolean', c: 'boolean', d: 'boolean', e: 'boolean', f: 'boolean', g: 'boolean', h: 'boolean' },
+	// 37 (R6): the multiplexer's `index` drives the choice; its `in<i>` item sockets are typed by
+	// the node's DATA (vtype), so they live in dataSocketType, not here
+	switcher: { index: 'number' },
 	// 21-E4: `trigger` was the whole reason play-a-sound-on-press was not authorable
 	// by ANY means - the node had `playing` (a continuous state) and nothing else.
 	sound: { volume: 'number', trigger: 'event' },
@@ -154,6 +161,7 @@ const INPUT = {
 	distance: { a: 'object', b: 'object' },
 	proximity: { a: 'object', b: 'object' },
 	lookat: { target: 'object' },
+	camerarig: { target: 'object', offset: 'vector3' }, // 37 (R8)
 	rotor: { on: 'boolean' }, // 36-fb F25
 	flowfloat: { path: 'object' }, // 36-fb F24
 	setcolor: { color: 'color' },
@@ -344,6 +352,8 @@ export function isValidFlowConnection(connection, nodes) {
 			? source.data?.vtype ?? 'number'
 			: // 34 D3: a script output's type is DATA (its declaration), like flowinput's vtype
 				scriptSocketType(source.type, source.data, connection.sourceHandle, 'output') ??
+				// 37 (R6): the Switcher's `value` output carries its vtype
+				dataSocketType(source, connection.sourceHandle, 'output') ??
 				// 36 (U10): a behaviour's outputs are declared in its code
 				behaviourSocketType(source, connection.sourceHandle, 'output') ??
 				outputHandleType(source.type, connection.sourceHandle);
@@ -369,7 +379,7 @@ export function groupSocketType(node, socket, dir) {
 		const t =
 			dir === 'in'
 				? resolvedInputType(node, socket)
-				: scriptSocketType(node?.type, node?.data, socket, 'output') ?? behaviourSocketType(node, socket, 'output') ?? outputHandleType(node?.type, socket);
+				: scriptSocketType(node?.type, node?.data, socket, 'output') ?? dataSocketType(node, socket, 'output') ?? behaviourSocketType(node, socket, 'output') ?? outputHandleType(node?.type, socket);
 		return t || 'any';
 	} catch {
 		return 'any';
@@ -386,7 +396,10 @@ export function resolvedInputType(targetNode, handleId) {
 	if (!targetNode) return 'number';
 	if (targetNode.type === 'flowoutput') return 'any';
 	// 34 D3: a v2 Script node's inputs are declared in its data
-	const declared = scriptSocketType(targetNode.type, targetNode.data, handleId, 'input') ?? behaviourSocketType(targetNode, handleId, 'input');
+	const declared =
+		scriptSocketType(targetNode.type, targetNode.data, handleId, 'input') ??
+		dataSocketType(targetNode, handleId, 'input') ?? // 37 (R6): a Switcher's typed item sockets
+		behaviourSocketType(targetNode, handleId, 'input');
 	if (declared) return declared;
 	if (targetNode.type === 'objectflow') {
 		const graph = graphOf(targetNode.data?.flowUuid ?? '');

@@ -51,6 +51,17 @@ released version instead of drifting (it carried a stale 1.8.0 before 1.11.0).
   Pages Deployments page reads `vX.Y.Z (cloud <sha>)` and About shows the tagged
   core; the script asks before shipping anything not exactly on a tag to production.
   Then add the two-line entry to the cloud repo's `CHANGELOG.md`.
+- Content refs (jsDelivr, read off-bundle — `src/lib/contentBase.js`): scenes
+  `format-2`, packs `format-1` and, since 1.27, modules `format-1`. Each is a MOVING tag
+  (never semver-looking — jsDelivr resolves a version once and a retag of it is a no-op
+  forever). Whenever that repo's `main` changes for a release, retag it and purge:
+  ```sh
+  git -C ../modules fetch origin && git -C ../modules tag -f format-1 origin/main
+  git -C ../modules push -f origin format-1
+  curl -s https://purge.jsdelivr.net/gh/theprototype-app/modules@format-1/index.json
+  ```
+  (plus every changed module file; the same three lines with `scenes`/`format-2` and
+  `packs`/`format-1`). A modules merge alone no longer reaches production's gallery.
 - The peers warn (never block) on version mismatches, and `.tpscene`/`.tpmodule`
   files confirm before loading a NEWER format int — older files always load
   silently. Bump `SESSION_FORMAT`/`MODULE_FORMAT` only when the shape actually

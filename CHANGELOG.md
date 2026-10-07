@@ -5,6 +5,50 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.27.0 — Sky images, walls and stairs, smarter nodes and sparks that fly 🏛️
+
+### 🌅 World
+
+- 🌄 **Sky images (HDRI)**: a 360° photo can be the scene's sky AND its light — objects take on its colours, shiny
+  things and water reflect it, and the sun light moves to where the photo's sun is. Five built-in skies (Clear sky,
+  Meadow, Sunrise, Starlight, Photo studio) or **Upload HDRI…** your own `.hdr`/`.exr`; rotation, image light, sky
+  blur and tone mapping (ACES / AgX / Neutral) in Configure Scene ▸ Environment. Exposure now works on the desktop
+  picture too. **Settings ▸ Scene ▸ Sky image quality** picks Full or the lighter headset tier on this device.
+- 🧱 **Architecture in the Add menu**: parametric walls with door and window openings, doors (single/double, hinge,
+  in/out, glass panes, open on click or when you walk up) and windows (fixed or casement) that open for everyone, and
+  straight, L, U and spiral stairs the walker can climb — every dimension editable in the Inspector, pieces land on
+  the 1 m grid.
+
+### 🧠 Nodes
+
+- ➕ **Math and Gate take up to eight inputs** (+ input / −): add, multiply, min, max, AND, OR and XOR work across all
+  of them.
+- 🔀 **The Switcher is a multi-way switch**: each item has its own input and **value** passes on the selected one —
+  picked by hand or by a wired index.
+- 🎥 **Camera Rig node**: a camera object follows and/or looks at a target with damping and an offset — and never
+  moves anyone's editor view.
+
+### ✨ Effects and physics
+
+- 🎆 **Particles drawn four ways**: sprites, stretched sparks, per-particle trails and a ribbon along the emitter's
+  path, plus **Inherit velocity** (sparks fly off a moving object). New presets: Ribbon trail and Magic wisps.
+- 🔗 **Joints break live**: detaching during a simulation pulls the objects apart with sparks, for everyone;
+  duplicating both ends of a joint copies the joint.
+- 🚗 **Drivable Car 1.3.0** steers with its front wheels; new **Blocks** module drops 100 physics blocks in one draw
+  call (Modules ▸ Browse).
+- ☁️ On theprototype.app, What's New starts with a section about the hosted service.
+
+### 🔢 Number fields and undo
+
+- ↩️ **One drag or one typed edit is one undo step** in every scrub field (Inspector, shader nodes, Animation window);
+  **Escape** after typing puts back the value you started with; the Inspector's transform rows show restored values
+  the moment you press Ctrl+Z; the Animation window's Speed is undoable; selecting a node in the Shader editor is no
+  longer an edit sent to everyone.
+
+<!-- Module SDK (1.27): api.physics.setJointMotorPosition, createJoint limits / contacts / sparks options,
+     api.physics.rapier(); cloudApi.setWhatsNewSection({title, markdown}). Module gallery now reads modules@format-1
+     (retagged per modules release; RELEASING.md). -->
+
 ## 1.26.0 — Edit many at once: prefabs that update, material presets and a new Settings 🧰
 
 ### 🎯 Selections

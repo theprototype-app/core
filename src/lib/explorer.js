@@ -76,7 +76,9 @@ const EXTENSIONS = {
 	object: ['glb', 'gltf', 'obj', 'stl', 'fbx'],
 	// 21-F4: a LEVEL — a .tpscene zip the travel node loads by content hash. Its own
 	// kind so it never opens in the text editor (it is a binary zip) and gets a map icon.
-	scene: ['tpscene']
+	scene: ['tpscene'],
+	// 37-hdri: an equirect HDRI — Configure Scene ▸ Environment lights the scene with it by hash
+	hdri: ['hdr', 'exr']
 };
 
 /** @param {string} name */

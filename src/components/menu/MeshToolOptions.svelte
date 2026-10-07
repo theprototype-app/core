@@ -22,7 +22,10 @@
 	import {
 		faceEditAmount,
 		faceAutoApply,
-		opAdjustState
+		opAdjustState,
+		knifePreview,
+		knifeFinish,
+		knifeDropCorner
 	} from '$lib/faceEdit';
 	import { proportionalRadius } from '$lib/meshEdit';
 	// 19-A P4: scrubbing the radius previews the falloff RING at the current
@@ -693,6 +696,26 @@
 {:else if focus === 'knife'}
 	<span class="tbx-label">Knife options</span>
 	<div class="tbx-row text-xs text-gray-400">
-		Click one end of the cut, then the other. Esc drops a pending cut.
+		Click one end of the cut, then the other. Shift+click places a corner and keeps going
+		(a polyline); Enter ends at the last corner, Backspace takes one back, Esc drops the cut.
 	</div>
+	<!-- 37 R11: touch has no Enter/Backspace — the same two actions as buttons -->
+	{#if $knifePreview}
+		<div id="knife-pending" class="tbx-row text-xs text-gray-300">
+			<span>{$knifePreview.points.length} {$knifePreview.points.length === 1 ? 'point' : 'points'}</span>
+			<button
+				id="knife-undo-corner"
+				class="tbx-cmd"
+				title="Take the last point back (Backspace)"
+				onclick={() => knifeDropCorner()}>Back</button
+			>
+			<button
+				id="knife-finish"
+				class="tbx-primary"
+				disabled={$knifePreview.points.length < 2}
+				title="Cut through the points placed so far (Enter)"
+				onclick={() => knifeFinish()}>Cut</button
+			>
+		</div>
+	{/if}
 {/if}

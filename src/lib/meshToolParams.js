@@ -99,6 +99,13 @@ export const mergeDistance = writable(0.001);
 /** M7: symmetrize axis + which half to keep @type {import('svelte/store').Writable<'x'|'y'|'z'>} */
 export const symAxis = writable('x');
 export const symKeep = writable(1);
+/** 37 R11: LIVE symmetry. While on, every operator's result is mirrored across `symAxis`
+ * from the side the edit happened on (`symKeep` decides only when the edit sits ON the
+ * plane), and vertex drags move each vertex's mirror twin with it. A LOCAL tool setting —
+ * the mirrored geometry replicates like any other edit, the switch never does — and it is
+ * deliberately not persisted: a toggle that silently comes back on in the next session
+ * rewrites half of the next mesh. @type {import('svelte/store').Writable<boolean>} */
+export const liveSymmetry = writable(false);
 
 /**
  * Which tool's options the pane shows. Not the same thing as the ARMED op

@@ -67,6 +67,8 @@ export const DEBUG_HOOKS = [
 	['flowRuntime', () => import('./flowRuntime')],
 	['history', () => import('./history')],
 	['materialsHandler', () => import('./materialsHandler')],
+	// 37 R5: material presets (materialPresets, peerMaterialPresets, applyMaterialPreset, materialPresetsDebug…)
+	['materialPresets', () => import('./materialPresets')],
 	['objectActions', () => import('./objectActions')],
 	['commandsHandler', () => import('./commandsHandler.svelte')],
 	['moduleSDK', () => import('./moduleSDK')],

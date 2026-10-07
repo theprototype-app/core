@@ -599,6 +599,7 @@ export function roomsOfSession(map, mine, host) {
 //     a private peer is by construction elsewhere from everybody. It carries no scene
 //     CONTENT and no name: a request is a peer id, a grant is a promise to publish.
 //   'envpresets' - a PERSON's preset library, keyed by peer, not the scene's sky.
+//   'matpresets' - the same for material presets (37 R5).
 //   'userdata'/'hosts'/'cloud'/'disconnected' - the session itself.
 //   EVERY get* REQUEST. A request is ~40 bytes and asking is never the harm; the REPLY is
 //   where a room is enforced, which is also where `canApply`'s ALWAYS_ALLOWED floor draws

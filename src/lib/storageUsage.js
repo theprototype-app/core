@@ -21,7 +21,8 @@
 //    Deleting the record behind the app's back leaves the other half claiming a file
 //    that is gone — the dead-pointer shape the project already forbids in `.tp` exports.
 //    `explorer.deleteItem`, `sessions.deleteSession`, `autosave.clearSavedSession`,
-//    `prefabs.removePrefab`, `environment.deleteEnvPreset`, `userModules
+//    `prefabs.removePrefab`, `environment.deleteEnvPreset`,
+//    `materialPresets.deleteMaterialPreset`, `userModules
 //    .removeUserModule`, `sharedLibrary.purgeDeletedItem`, `assetShare
 //    .forgetSharedThumb`, `vrSleeve.clearSlot` are the deleters, and each one keeps its
 //    own index consistent. An UNKNOWN key — a prefix no module in this build claims — is
@@ -53,6 +54,7 @@ import { projectManifest, keepableHashes } from './projectManifest';
 import { deletedLog, purgeDeletedItem } from './sharedLibrary';
 import { prefabs, removePrefab } from './prefabs';
 import { envPresets, deleteEnvPreset } from './environment';
+import { deleteMaterialPreset } from './materialPresets'; // 37 R5
 import { userModules, removeUserModule } from './userModules';
 import { sharedThumbs, forgetSharedThumb } from './assetShare';
 import { sleeveSlots, clearSlot } from './vrSleeve';
@@ -185,6 +187,11 @@ export const CATEGORIES = [
 		note: 'Lighting and sky presets you saved.'
 	},
 	{
+		key: 'matpresets',
+		label: 'Material presets',
+		note: 'Material swatches you saved in the Inspector (the starter set is built in and stores nothing).'
+	},
+	{
 		key: 'sleeve',
 		label: 'VR sleeve slots',
 		note: 'The objects on your VR forearm strip.'
@@ -204,6 +211,7 @@ const KEY_MANIFEST = 'project:manifest';
 const KEY_PREFABS = 'prefabs-v1';
 const KEY_MODULES = 'user-modules-v1';
 const KEY_PRESET = 'envpreset:';
+const KEY_MATPRESET = 'matpreset:'; // 37 R5
 const KEY_SLEEVE = 'vrsleeve-slots-v1';
 const KEY_AUTOSAVE = 'latest';
 
@@ -515,6 +523,21 @@ export async function scanStorage() {
 				continue;
 			}
 
+			// ---- material presets (37 R5) ---------------------------------------------
+			if (key.startsWith(KEY_MATPRESET)) {
+				const name = key.slice(KEY_MATPRESET.length);
+				push({
+					id: key,
+					category: 'matpresets',
+					label: name,
+					bytes: valueBytes((await safeGet(key)).value),
+					removable: true,
+					kind: 'matpreset',
+					ref: name
+				});
+				continue;
+			}
+
 			// ---- the two STRUCTURE keys ----------------------------------------------
 			if (key === KEY_INDEX) {
 				push({
@@ -690,6 +713,9 @@ export async function reclaimRow(row) {
 				return row.bytes;
 			case 'preset':
 				await deleteEnvPreset(String(row.ref));
+				return row.bytes;
+			case 'matpreset':
+				await deleteMaterialPreset(String(row.ref));
 				return row.bytes;
 			case 'module':
 				await removeUserModule(String(row.ref));

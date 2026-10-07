@@ -136,6 +136,31 @@ function applyMemberTints(group, uuids) {
 }
 
 /**
+ * 37 R5: the selection tint is NOT part of a look. A material preset reads the object's
+ * emissive (save current, the active-swatch test) and REPLACES the material of tinted
+ * members; without these two the tint was saved into presets and, on deselect, the OLD
+ * emissive was written over the new material (a Neon glow vanished).
+ * @param {string} uuid @returns {Record<string, number> | null} node uuid -> pre-tint emissive
+ */
+export function selectionTintOriginals(uuid) {
+	return memberTints.get(uuid) ?? null;
+}
+
+/** Re-record the originals of a tinted member whose material was just replaced, and re-tint
+ * it, so deselecting restores the NEW look. No-op for an untinted object. @param {string} uuid */
+export function refreshMemberTint(uuid) {
+	const original = memberTints.get(uuid);
+	if (!original) return;
+	const object = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	object?.traverse((/** @type {any} */ node) => {
+		if (node.material?.emissive) {
+			original[node.uuid] = node.material.emissive.getHex();
+			node.material.emissive.setHex(0x2a4d8f);
+		}
+	});
+}
+
+/**
  * 24-B1: the "last selection" memory. Pressing the active mode key with a gizmo
  * attached HIDES the selection (deselect + detach, the long-standing "done"
  * gesture) — and nothing remembered what was hidden, so a third press only set the

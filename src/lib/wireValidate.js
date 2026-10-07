@@ -200,6 +200,8 @@ export const VALIDATORS = {
 	assetchunk: (d) => typeof d.hash === 'string' && Number.isInteger(d.seq),
 	assetfile: (d) => typeof d.hash === 'string',
 	manifest: (d) => !!d.manifest && typeof d.manifest === 'object',
+	// 37 R5: a person's material-preset library; every entry is re-normalised on arrival
+	matpresets: (d) => typeof d.from === 'string' && isArray(d.presets) && d.presets.length <= 200,
 	environment: (d) => !!d && typeof d === 'object',
 	atscene: (d) => typeof d.peerId === 'string',
 	disconnected: (d) => typeof d.peerId === 'string',

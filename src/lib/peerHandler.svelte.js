@@ -61,6 +61,7 @@ import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } f
 import { applyAnimData, applyAnimPlay, applyAnimationsSnapshot, sendAnimations } from '$lib/animationPreview';
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
+import { materialPresetsState, applyRemoteMaterialPresets, dropPeerMaterialPresets } from '$lib/materialPresets'; // 37 R5
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
 // CO1: where the physical room's origin sits in content coords. The scenephysics
@@ -946,6 +947,8 @@ export class PeerConnection {
 					receiveKitMessage(data, conn.peer);
 				} else if(data.type == 'envpresets') {
 					applyRemoteEnvPresets(data);
+				} else if(data.type == 'matpresets') {
+					applyRemoteMaterialPresets(data); // 37 R5: a person's material library
 				} else if(data.type == 'geometry') {
 					applyRemoteGeometry(data);
 				} else if(data.type == 'lighttarget') {
@@ -1068,6 +1071,7 @@ export class PeerConnection {
 						dropPeerVars(data.peerId); // 21-G4
 						dropPeerColocation(data.peerId); // CO5
 						dropPeerEnvPresets(data.peerId);
+						dropPeerMaterialPresets(data.peerId);
 						dropPeerHandModel(data.peerId);
 					}
 				} else if(data.type == 'getnodes') {
@@ -1451,6 +1455,7 @@ export class PeerConnection {
 		}
 		conn.send(handModelState())
 		conn.send(envPresetsState())
+		conn.send(materialPresetsState())
 		if (getobjects && !holdContent) this.requestFullState(conn)
 		// singleton PUSH, like environmentState/scenePhysicsState above
 		if (!holdContent) conn.send(gameStatePayload())
@@ -1742,6 +1747,7 @@ export class PeerConnection {
 		dropPeerVars(peerId); // 21-G4
 		dropPeerColocation(peerId); // CO5
 		dropPeerEnvPresets(peerId);
+		dropPeerMaterialPresets(peerId);
 		dropPeerHandModel(peerId);
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
 		checkLocks();
@@ -1778,6 +1784,7 @@ export class PeerConnection {
 				dropPeerVars(peerId); // 21-G4
 				dropPeerColocation(peerId); // CO5
 				dropPeerEnvPresets(peerId);
+				dropPeerMaterialPresets(peerId);
 				dropPeerHandModel(peerId);
 			}
 		}

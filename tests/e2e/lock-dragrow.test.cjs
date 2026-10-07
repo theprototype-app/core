@@ -3,7 +3,8 @@
 // the value to scrub, Shift = fine (x0.1), Ctrl = snap, a 3 px dead zone so a click stays a
 // click, click to type with LIVE updates, Enter commits and blurs, Escape reverts and blurs,
 // Tab walks to the next field, ArrowUp/Down step one minor unit (Ctrl x10, Shift x100), the
-// WHEEL does nothing, one gesture = ONE undo step, the edit is broadcast WHILE it happens,
+// WHEEL does nothing, one gesture = ONE undo step (a scrub, or a typed edit from focus to
+// Enter/Escape — 37 R26 made that true of every field), the edit is broadcast WHILE it happens,
 // min/max clamp, and unit fields follow Settings › Scene › Length/Angle (with typed
 // suffixes).
 //
@@ -47,13 +48,8 @@ async function blurAll(page) {
  *   message?: string,                 // the wire type a live edit broadcasts
  *   messageAtEnd?: boolean,           // gesture-bracketed: one message on release, none during
  *   nextId?: string,                  // the id of the input Tab reaches
- *   undoSteps?: number|'per-change',  // undo steps a scrub records (1 by contract)
  *   focusAfterScrub?: boolean,        // label-wrapped: the release focuses the field
- *   typedUndoSteps?: number,          // undo steps a 2-keystroke typed edit records (locked as measured)
  *   nextAria?: string|null,           // what Tab reaches (aria-label of the next field), null = skip
- *   noUndo?: boolean,                 // a field that records no history at all (locked)
- *   staleAfterUndo?: boolean,         // KNOWN Q2: the field keeps the pre-undo number
- *   refresh?: () => Promise<any>,     // re-read the model into the row after an undo
  *   tol?: number
  * }} f
  */
@@ -119,30 +115,21 @@ async function fieldContract(page, f) {
 		await blurAll(page);
 	} else h.check((await activeId(page))?.dn !== true, `${t} a scrub does not leave the field in typing mode`);
 	await page.waitForTimeout(700);
+	// 37 R26 (was KNOWN Q3): EVERY scrub field records exactly one undo step per scrub — the
+	// shader vector recorded 2, Animation length/fps/step one per change, Animation speed,
+	// render order and light intensity none
 	const scrubSteps = (await undoDepth(page)) - depth0;
-	let undoCount = f.undoSteps ?? 1;
-	if (f.undoSteps === 'per-change') {
-		// KNOWN (QUESTIONS-38-lock Q3): this field records one undo entry PER CHANGE, so a
-		// scrub is as many steps as it had pointer moves. Locked as measured.
-		h.check(scrubSteps >= 2, `${t} KNOWN Q3: a scrub records one undo entry per change, not one per gesture (${scrubSteps})`);
-		undoCount = scrubSteps;
-	} else if (!f.noUndo) h.check(scrubSteps === undoCount, `${t} the whole scrub is ${undoCount} undo step(s) (recorded ${scrubSteps})`);
-	else h.check(scrubSteps === 0, `${t} records no undo entry (locked: ${scrubSteps})`);
-	if (!f.noUndo) {
-		const shown = await input.inputValue();
+	h.check(scrubSteps === 1, `${t} the whole scrub is 1 undo step (recorded ${scrubSteps})`);
+	{
 		const dBefore = await undoDepth(page);
-		for (let i = 0; i < undoCount; i++) await page.keyboard.press('Control+z');
+		await page.keyboard.press('Control+z');
 		await page.waitForTimeout(250);
-		if (process.env.LOCK_DEBUG) console.log(`  ${t} undo x${undoCount}: depth ${dBefore} -> ${await undoDepth(page)}, active ${JSON.stringify(await activeId(page))}`);
-		h.check(near(await f.read(), v0, 1e-6), `${t} Ctrl+Z puts it back exactly: ${fmt(await f.read())} (was ${fmt(v0)})`);
-		if (f.staleAfterUndo) {
-			// KNOWN (QUESTIONS-38-lock Q2): the Inspector's transform rows are not poked by an
-			// undo, so the field keeps showing the pre-undo number until something refreshes the
-			// selection. Locked AS IS — a redesign must not change it silently; fixing it is a
-			// behaviour change of its own.
-			h.check((await input.inputValue()) === shown, `${t} KNOWN Q2: after Ctrl+Z the field still shows ${shown} until the next refresh (shows ${await input.inputValue()})`);
-		}
-		if (f.refresh) await f.refresh();
+		if (process.env.LOCK_DEBUG) console.log(`  ${t} undo: depth ${dBefore} -> ${await undoDepth(page)}, active ${JSON.stringify(await activeId(page))}`);
+		h.check(near(await f.read(), v0, 1e-6), `${t} one Ctrl+Z puts it back exactly: ${fmt(await f.read())} (was ${fmt(v0)})`);
+		// 37 R26 (was KNOWN Q2): the field shows the restored number the moment Ctrl+Z
+		// lands — nothing has to refresh the selection first
+		const shownNow = Number(await input.inputValue());
+		h.check(near(shownNow * factor, v0, 0.0051 * factor + 1e-9), `${t} right after Ctrl+Z the field shows the restored value (${shownNow}, model ${fmt(v0)})`);
 	}
 
 	// --- Shift = fine (x0.1) -----------------------------------------------------------------
@@ -192,8 +179,8 @@ async function fieldContract(page, f) {
 	h.check(near(await f.read(), typedValue, 1e-6 + 0.0051 * factor), `${t} and keeps the typed value`);
 	await page.waitForTimeout(700);
 	const typedSteps = (await undoDepth(page)) - depthT;
-	if (!f.noUndo && f.typedUndoSteps !== undefined)
-		h.check(typedSteps === f.typedUndoSteps, `${t} a typed edit records ${f.typedUndoSteps} undo step(s) (recorded ${typedSteps})`);
+	// 37 R26: a typed edit (focus -> Enter) is one step on every field
+	h.check(typedSteps === 1, `${t} a typed edit records 1 undo step (recorded ${typedSteps})`);
 
 	// --- Escape reverts to the value you started with, then blurs ------------------------------
 	const vEsc = await f.read();
@@ -205,11 +192,9 @@ async function fieldContract(page, f) {
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(150);
 	h.check(!near(during, vEsc), `${t} (premise) the typed 7 was live before Escape: ${fmt(during)}`);
-	// KNOWN (QUESTIONS-38-lock Q1): DragRow's Escape commits the entry value and blurs — and
-	// the blur fires the browser's `change` with the TYPED text still in the box (the reset
-	// of the text lands a render later), so a typed edit is re-committed. Escape reverts
-	// ARROW steps (asserted below) and not typing. Locked as it behaves today.
-	h.check(near(await f.read(), during, 1e-6), `${t} KNOWN Q1: Escape after TYPING keeps the typed value (change-on-blur re-commits it): ${fmt(await f.read())}`);
+	// 37 R26 (was KNOWN Q1): Escape after TYPING reverts to the value before editing, exactly
+	// as it reverts arrow steps (asserted below)
+	h.check(near(await f.read(), vEsc, 1e-6), `${t} Escape after TYPING reverts to the value before editing: ${fmt(await f.read())} (was ${fmt(vEsc)})`);
 	h.check((await activeId(page))?.dn !== true, `${t} Escape leaves the field`);
 	await page.waitForTimeout(650);
 
@@ -322,7 +307,6 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(800);
 	await page.locator('#inspector-position').waitFor({ state: 'visible', timeout: 10000 });
-	const pokeSelection = () => page.evaluate(() => window.__stores.selectedObject.update((v) => v));
 
 	// the rows themselves: three axes each, labelled, the unit on display
 	const rows = await page.evaluate(() =>
@@ -339,15 +323,15 @@ h.run(async () => {
 
 	await fieldContract(page, {
 		name: 'position X', root: '#inspector-position', index: 0, read: transformReader(page, 'position', 'x'),
-		step: 0.02, snap: 0.5, message: 'move', typed: '1.37', typedValue: 1.37, typedUndoSteps: 1, nextAria: 'Y', staleAfterUndo: true, refresh: pokeSelection
+		step: 0.02, snap: 0.5, message: 'move', typed: '1.37', typedValue: 1.37, nextAria: 'Y'
 	});
 	await fieldContract(page, {
 		name: 'rotation Y', root: '#inspector-rotation', index: 1, read: transformReader(page, 'rotation', 'y'),
-		step: 0.01, snap: Math.PI / 12, factor: Math.PI / 180, message: 'move', typed: '33', typedValue: (33 * Math.PI) / 180, typedUndoSteps: 1, nextAria: 'Z', tol: 0.04, refresh: pokeSelection
+		step: 0.01, snap: Math.PI / 12, factor: Math.PI / 180, message: 'move', typed: '33', typedValue: (33 * Math.PI) / 180, nextAria: 'Z', tol: 0.04
 	});
 	await fieldContract(page, {
 		name: 'scale Z', root: '#inspector-scale', index: 2, read: transformReader(page, 'scale', 'z'),
-		step: 0.01, snap: 0.1, message: 'move', typed: '2.3', typedValue: 2.3, typedUndoSteps: 1, refresh: pokeSelection
+		step: 0.01, snap: 0.1, message: 'move', typed: '2.3', typedValue: 2.3
 	});
 
 	// ---- 2. UNITS: Settings › Scene › Length / Angle and typed suffixes -----------------------
@@ -407,7 +391,7 @@ h.run(async () => {
 	await fieldContract(page, {
 		name: 'render order', root: '*:has(> .dn-wrap > #inspector-render-order)', index: 0, step: 0.2, snap: 5,
 		read: () => page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.renderOrder))())),
-		typed: '3', typedValue: 3, nextAria: undefined, noUndo: true, tol: 0.6
+		typed: '3', typedValue: 3, nextAria: undefined, tol: 0.6
 	});
 
 	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/light directional'));
@@ -422,7 +406,7 @@ h.run(async () => {
 	await fieldContract(page, {
 		name: 'light intensity', root: '#inspector-intensity', index: 0, step: 0.02, snap: 0.5, min: 0,
 		read: () => page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.intensity))())),
-		typed: '2.5', typedValue: 2.5, message: 'object', noUndo: true
+		typed: '2.5', typedValue: 2.5, message: 'object'
 	});
 
 	// ---- 4. SHADER VECTOR INPUTS ------------------------------------------------------------------
@@ -450,7 +434,7 @@ h.run(async () => {
 	h.check(vecCount === 4, `the Tiling & offset node edits its two vec2 params as four scrub fields (${vecCount})`);
 	await fieldContract(page, {
 		name: 'shader vec2 x', root: '#shader-editor .shader-vec', index: 0, read: tiling(0),
-		step: 0.005, typed: '3', typedValue: 3, message: 'shadergraph', nextAria: 'y', tol: 0.02, focusAfterScrub: true, undoSteps: 2
+		step: 0.005, typed: '3', typedValue: 3, message: 'shadergraph', nextAria: 'y', tol: 0.02, focusAfterScrub: true
 	});
 
 	// ---- 5. ANIMATION FIELDS ------------------------------------------------------------------------
@@ -485,10 +469,10 @@ h.run(async () => {
 			},
 			{ u: box, key }
 		);
-	await fieldContract(page, { name: 'animation length', root: 'label:has(#animation-length)', index: 0, read: anim('duration'), step: 0.01, min: 0.1, typed: '3', typedValue: 3, message: 'animdata', focusAfterScrub: true, undoSteps: 'per-change' });
-	await fieldContract(page, { name: 'animation speed', root: 'label:has(#animation-speed)', index: 0, read: anim('speed'), step: 0.01, min: 0.1, max: 8, typed: '2', typedValue: 2, noUndo: true, nextAria: null, focusAfterScrub: true });
-	await fieldContract(page, { name: 'animation fps', root: 'label:has(#animation-fps)', index: 0, read: anim('fps'), step: 0.25, min: 1, max: 240, typed: '24', typedValue: 24, tol: 1.01, focusAfterScrub: true, undoSteps: 'per-change' });
-	await fieldContract(page, { name: 'animation step', root: 'label:has(#animation-step)', index: 0, read: anim('step'), step: 0.25, min: 0, max: 240, typed: '2', typedValue: 2, tol: 1.01, nextAria: null, focusAfterScrub: true, undoSteps: 'per-change' });
+	await fieldContract(page, { name: 'animation length', root: 'label:has(#animation-length)', index: 0, read: anim('duration'), step: 0.01, min: 0.1, typed: '3', typedValue: 3, message: 'animdata', focusAfterScrub: true });
+	await fieldContract(page, { name: 'animation speed', root: 'label:has(#animation-speed)', index: 0, read: anim('speed'), step: 0.01, min: 0.1, max: 8, typed: '2', typedValue: 2, nextAria: null, focusAfterScrub: true });
+	await fieldContract(page, { name: 'animation fps', root: 'label:has(#animation-fps)', index: 0, read: anim('fps'), step: 0.25, min: 1, max: 240, typed: '24', typedValue: 24, tol: 1.01, focusAfterScrub: true });
+	await fieldContract(page, { name: 'animation step', root: 'label:has(#animation-step)', index: 0, read: anim('step'), step: 0.25, min: 0, max: 240, typed: '2', typedValue: 2, tol: 1.01, nextAria: null, focusAfterScrub: true });
 
 	// key time / value: put the clip back to 2 s at normal speed (the clamp checks above left
 	// it at its extremes), then select the first key of the track in the dope sheet

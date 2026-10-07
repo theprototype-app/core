@@ -1985,11 +1985,14 @@
 			</div>
 
 			{#if !compact}
-				<!-- the clip settings + REC/＋ scroll sideways when they do not fit (NOTES-38 #39) -->
-				<ScrollStrip class="min-w-0" gap="var(--space-3)" label="Clip settings" id="animation-settings">
-					{@render clipSettings(false)}
+				<!-- the clip settings scroll sideways when they do not fit (NOTES-38 #39); REC and ＋
+				     stay pinned after them, never scrolled out of sight -->
+				<div class="flex min-w-0 items-center gap-3">
+					<ScrollStrip class="min-w-0" gap="var(--space-3)" label="Clip settings" id="animation-settings">
+						{@render clipSettings(false)}
+					</ScrollStrip>
 					{@render recAdd()}
-				</ScrollStrip>
+				</div>
 			{/if}
 		</div>
 

@@ -888,7 +888,7 @@ h.run(async () => {
 		'and no collectible entry survives anywhere inside it'
 	);
 	h.check(
-		objectMenu.leaves.some((l) => l === 'Save as prefab') && objectMenu.leaves.some((l) => l.startsWith('Delete')),
+		objectMenu.leaves.some((l) => l.endsWith('Save as prefab')) && objectMenu.leaves.some((l) => l.startsWith('Delete')),
 		'while the rest of the menu is intact (the removal took exactly one submenu)'
 	);
 

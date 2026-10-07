@@ -60,9 +60,10 @@ h.run(async () => {
 		};
 	});
 	h.check(
-		['Focus', 'Duplicate', 'Align to ground', 'Add note'].every((l) => subChildren.labels.some((t) => t.includes(l))) &&
+		// 38 NOTES-38 #22: Align to ground lives in the Transform ▸ submenu now
+		['Focus', 'Duplicate', 'Transform', 'Add note'].every((l) => subChildren.labels.some((t) => t.includes(l))) &&
 			subChildren.labels.some((t) => t.includes('mesh')),
-		`subgroup holds Focus/Duplicate/Align/Edit mesh/Add note (${subChildren.labels.join(',')})`
+		`subgroup holds Focus/Duplicate/Transform/Edit mesh/Add note (${subChildren.labels.join(',')})`
 	);
 	h.check(subChildren.onScreen, 'the submenu stays on screen');
 

@@ -4,7 +4,14 @@
 	// from '@lucide/svelte' directly instead (tree-shaking stays exact); see the
 	// icons note in CLAUDE.md. Names are lucide kebab-case.
 	import {
+		Activity,
 		Archive,
+		Clapperboard,
+		Code,
+		FolderOpen,
+		Atom,
+		Mountain,
+		Move3d,
 		ArrowDownToLine,
 		Bell,
 		Box,
@@ -21,6 +28,7 @@
 		ChevronRight,
 		ChevronUp,
 		Combine,
+		Crosshair,
 		Copy,
 		Ellipsis,
 		Download,
@@ -94,7 +102,14 @@
 	// so their icons resolve here too.
 	/** @type {Record<string, any>} */
 	const MAP = {
+		activity: Activity,
 		archive: Archive,
+		clapperboard: Clapperboard,
+		code: Code,
+		'folder-open': FolderOpen,
+		atom: Atom,
+		mountain: Mountain,
+		'move-3d': Move3d,
 		'arrow-down-to-line': ArrowDownToLine,
 		bell: Bell,
 		box: Box,
@@ -107,6 +122,7 @@
 		'chevron-right': ChevronRight,
 		'chevron-up': ChevronUp,
 		combine: Combine,
+		crosshair: Crosshair,
 		copy: Copy,
 		ellipsis: Ellipsis,
 		download: Download,

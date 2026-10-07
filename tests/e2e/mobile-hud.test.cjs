@@ -51,7 +51,8 @@ h.run(async () => {
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const uuid = g.children[g.children.length - 1].uuid;
-		return s.objectMenu.buildObjectMenuItems(uuid).map((i) => i.label);
+		// 38 NOTES-38 #22: rare items live one level down now — parity means REACHABLE
+		return s.objectMenu.flattenMenuItems(s.objectMenu.buildObjectMenuItems(uuid)).map((i) => i.label);
 	});
 	for (const label of ['Save as prefab', 'Rename', 'Align to ground', 'Delete', 'Ping this object']) {
 		h.check(items.includes(label), `object menu includes "${label}" (parity)`);

@@ -53,8 +53,9 @@ const selectionSet = (page) =>
 const menuLabels = (page, uuid) =>
 	page.evaluate(
 		(uuid) =>
+			// 38 NOTES-38 #22: every REACHABLE action, submenus walked (Convert to mesh lives in Mesh ▸)
 			window.__stores.objectMenu
-				.buildObjectMenuItems(uuid)
+				.flattenMenuItems(window.__stores.objectMenu.buildObjectMenuItems(uuid))
 				.map((item) => item.label)
 				.filter(Boolean),
 		uuid

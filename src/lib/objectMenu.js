@@ -63,19 +63,17 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 	/** run a per-object action across the target set */
 	const forEach = (/** @type {(u: string) => void} */ fn) => () => targets.forEach(fn);
 
-	// 15-Q approved layout: header (what this acts on) · transform/create ops ·
-	// EDIT · PHYSICS & EFFECTS · SHARE · Delete. Show/Hide removed — the object
-	// list's eye toggle owns visibility (an object hidden from the menu can't be
-	// right-clicked back). Icons are lucide kebab names (ui/Icon.svelte);
-	// shortcut hints render as the dimmed right column.
-	return [
-		{
-			header: {
-				title: multi ? targets.length + ' objects selected' : object?.name || object?.type || 'Object',
-				badge: multi ? 'set' : object?.type,
-				locked: locked ? nameOf(lockHolder) : null
-			}
-		},
+	// 38 NOTES-38 #22 (user): the menu had grown to ~20 rows under four section labels. It is
+	// ordered by FREQUENCY now, related items grouped between plain separators, and the rare or
+	// specialist work folded into submenus (Transform ▸, Mesh ▸, Physics & effects ▸, Save as… ▸).
+	// No action was dropped and every shortcut hint is kept — `flattenMenuItems` below walks the
+	// submenus, which is how the suites assert "still reachable". Groups that come out empty for
+	// this target are skipped, so a separator never doubles up or leads/trails the menu.
+	// 15-Q still holds: no Show/Hide (the object-list eye owns visibility), lucide kebab icons
+	// (ui/Icon.svelte), shortcut hints as the dimmed right column.
+
+	/** @type {any[]} the act-on-it group: what a right-click is most often for */
+	const primary = [
 		...(locked
 			? [
 					{
@@ -86,25 +84,116 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					}
 				]
 			: []),
-		// 38 NOTES-38 #5 (user): Properties is the FIRST action — in the long menu it read as
-		// missing from the bottom of Edit. 15-O: an explicit way in — a plain click only selects now, so this and a
-		// double-click are how the panel opens when it is not pinned
+		// 38 NOTES-38 #5 (user): Properties is the FIRST action. 15-O: an explicit way in — a
+		// plain click only selects now, so this and a double-click are how the panel opens when
+		// it is not pinned
 		{
 			label: 'Properties',
 			icon: 'sliders-horizontal',
 			tooltip: 'Open the properties panel (double-click does this too)',
-			// 15-G audit: during a multi-select, selectObject(uuid) would COLLAPSE the
-			// set to the clicked object — re-apply the set instead so the panel opens
-			// on what the header says it acts on
+			// 15-G audit: during a multi-select, selectObject(uuid) would COLLAPSE the set to the
+			// clicked object — re-apply the set instead so the panel opens on what the header says
 			action: () => (multi ? applySelectionSet(targets, true) : selectObject(uuid, true))
 		},
-		{ label: 'Focus camera' + suffix, icon: 'focus', hint: 'F', action: () => focusObject(multi ? undefined : uuid) },
+		// 15-G audit: renaming is inherently single-target (one name field)
+		...(multi
+			? []
+			: [
+					{
+						label: 'Rename',
+						icon: 'pencil',
+						disabled: locked,
+						tooltip: lockedTooltip,
+						action: () => renamingObject.set(uuid)
+					}
+				]),
 		{
 			label: 'Duplicate' + suffix,
 			icon: 'copy',
 			hint: 'Ctrl+D',
 			action: () => (multi ? duplicateSelection() : duplicateObject(uuid))
 		},
+		{
+			label: 'Delete' + suffix,
+			icon: 'trash-2',
+			hint: 'Del',
+			danger: true,
+			disabled: locked,
+			tooltip: locked ? lockedTooltip : 'A group asks first',
+			// when the clicked object is part of the selection, delete the whole set;
+			// otherwise select just this one first so the delete acts on it
+			action: () => {
+				if (!multi) selectObject(uuid);
+				requestDeleteSelection();
+			}
+		}
+	];
+
+	/** @type {any[]} 36 U9: a placeholder whose piece is late or failed — retry its file, or swap the piece */
+	const loading =
+		loadingStub && !multi
+			? [
+					{ section: 'Loading' },
+					{
+						label: 'Retry loading',
+						icon: 'refresh-cw',
+						tooltip: "Fetch this piece's file again — every copy of the same piece comes back with it",
+						action: () => import('./packRefs').then((m) => m.retryPlaceholder(object))
+					},
+					{
+						label: 'Replace model…',
+						icon: 'folder-input',
+						tooltip: 'Put a different pack item or library model here, keeping the position, rotation and scale',
+						action: () => import('./replaceModel').then((m) => m.openReplaceModel(uuid))
+					}
+				]
+			: [];
+
+	/** @type {any[]} look at it, point at it, tell people about it */
+	const view = [
+		{ label: 'Focus camera' + suffix, icon: 'focus', hint: 'F', action: () => focusObject(multi ? undefined : uuid) },
+		// 16-P5: camera objects get their two headline actions right here (the rest live in
+		// Properties ▸ Camera)
+		...(!multi && object?.userData?.camera
+			? [
+					{
+						label: 'Preview camera',
+						icon: 'camera',
+						tooltip: 'Render the scene through this camera (exit from the banner)',
+						action: () => import('./cameraPreview').then((m) => m.startCameraPreview(uuid))
+					},
+					{
+						label: 'Set from current view',
+						icon: 'focus',
+						disabled: locked,
+						tooltip: locked ? lockedTooltip : 'Move this camera to where you are looking from',
+						action: () => import('./cameraObjects').then((m) => m.setCameraFromView(uuid))
+					}
+				]
+			: []),
+		{
+			label: multi ? 'Ping selection' + suffix : 'Ping this object',
+			icon: 'radar',
+			tooltip: 'Everyone sees a pulse here (Ctrl+Alt+click pings anywhere)',
+			action: () => (multi ? pingObjects(targets) : pingObject(uuid))
+		},
+		// 15-G audit: a note pins to ONE point on ONE object. The ViewportMenu path passes the
+		// sticky primary (not necessarily what is under the cursor), so during a multi-select
+		// this would anchor somewhere the user did not point.
+		...(multi
+			? []
+			: [
+					{
+						label: 'Add note',
+						icon: 'sticky-note',
+						tooltip: 'Pin a synced note exactly where you pointed',
+						action: () => addAnnotation(uuid, point)
+					}
+				])
+	];
+
+	/** @type {any[]} structure + the editing modes */
+	const edit = [
 		...(multi
 			? [
 					{
@@ -115,8 +204,8 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					}
 				]
 			: []),
-		// Ungroup is single-target (the clicked object); during a multi-select the
-		// header says "N objects selected", so acting on one of them would mislead
+		// Ungroup is single-target (the clicked object); during a multi-select the header says
+		// "N objects selected", so acting on one of them would mislead
 		...(isGroup && !multi
 			? [
 					{
@@ -128,8 +217,126 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					}
 				]
 			: []),
-		// 24-E3: a group made by /group or drag-to-group sits at the world centre, so a
-		// typed rotation turned it about (0,0,0); its origin is one right-click away
+		// 15-B8: Edit mesh / Sculpt are SINGLE-object modes — with a set selected they'd silently
+		// act on the last-picked object only (the ViewportMenu path passes the sticky primary),
+		// so hide them rather than mislead.
+		...(multi
+			? []
+			: [
+					{
+						label: 'Edit mesh',
+						icon: 'pen-tool',
+						hint: 'Tab',
+						disabled: locked || !object?.geometry?.attributes?.position,
+						tooltip: locked ? lockedTooltip : 'Drag vertex handles; Esc to finish',
+						action: () => enterEditMode(uuid)
+					}
+				]),
+		// 57.3: a spline carries its authoring record, so it gets its OWN editor (control-point +
+		// radius handles) instead of the raw vertex tools
+		...(multi || !object?.userData?.spline?.points?.length
+			? []
+			: [
+					{
+						label: 'Edit spline',
+						icon: 'spline',
+						disabled: locked,
+						tooltip: locked ? lockedTooltip : 'Move control points, set thickness, insert or delete points',
+						action: () => import('./splineEdit').then((m) => m.enterSplineEdit(uuid))
+					},
+					// 21-C3: FLATTEN is two operations, not one. Once a scene holds a spline AND some
+					// ground, "flatten" is ambiguous, and the two readings are genuinely different
+					// jobs: cut a bed for the path, or lay the path over ground you want left exactly
+					// as it is. So it is a CATEGORY, and each side names which of the two things moves.
+					//
+					// Neither lists its targets by NAME: you click the partner in the viewport (the
+					// snapAnchorPicking shape), because the thing you mean is under the cursor and a
+					// ring of ten terrain tiles makes a list of names useless.
+					{
+						label: 'Flatten',
+						icon: 'mountain',
+						children: [
+							{
+								label: 'Terrain to this spline…',
+								icon: 'mountain',
+								disabled: locked,
+								tooltip: locked
+									? lockedTooltip
+									: 'Then click a terrain: levels a strip under this spline, blended into the slope either side',
+								action: () => import('./flattenActions').then((m) => m.startFlattenPick('carve', uuid))
+							},
+							{
+								label: 'This spline onto a surface…',
+								icon: 'spline',
+								disabled: locked,
+								tooltip: locked
+									? lockedTooltip
+									: 'Then click an object: drops every control point onto it, so the spline comes to rest on the surface and the surface is untouched',
+								action: () => import('./flattenActions').then((m) => m.startFlattenPick('drape', uuid))
+							}
+						]
+					}
+				]),
+		// T-2: brush sculpting — Terrain keeps its column brush; any other mesh gets the
+		// normal-brush MESH sculpt (same toolbar + replication)
+		...(multi
+			? []
+			: object?.userData?.terrain
+				? [
+						{
+							label: 'Sculpt terrain',
+							icon: 'brush',
+							disabled: locked,
+							tooltip: locked ? lockedTooltip : 'Brush raise/lower/smooth/flatten — drag on the terrain',
+							action: () => import('./terrainSculpt').then((m) => m.enterSculpt(uuid))
+						}
+					]
+				: object?.geometry?.attributes?.position
+					? [
+							{
+								label: 'Sculpt mesh',
+								icon: 'brush',
+								disabled: locked,
+								tooltip: locked ? lockedTooltip : 'Brush raise/lower/smooth/flatten along the surface normals',
+								action: () => import('./terrainSculpt').then((m) => m.enterSculpt(uuid))
+							}
+						]
+					: []),
+		// SH5: the Shader editor is scoped by the SELECTION, so this entry makes the object current
+		// and shows the tab. Single-object for the same reason Edit mesh is — with a set selected
+		// the editor scopes to the SCENE-wide graph, which is a different thing from "this
+		// object's material" and would silently be the wrong target.
+		...(multi
+			? []
+			: [
+					{
+						label: 'Edit shader',
+						icon: 'sparkles',
+						disabled: locked || !object?.material || Array.isArray(object?.material),
+						tooltip: locked
+							? lockedTooltip
+							: Array.isArray(object?.material)
+								? 'Shader graphs support single-material objects for now'
+								: 'Author this material as a node graph',
+						action: () => {
+							selectObject(uuid, false);
+							import('./shaderGraph').then((m) => m.openShaderEditor());
+						}
+					}
+				])
+	];
+
+	/** @type {any[]} Transform ▸ — where it sits and what it turns about */
+	const transform = [
+		{
+			label: 'Align to ground' + suffix,
+			icon: 'arrow-down-to-line',
+			disabled: locked,
+			tooltip: locked ? lockedTooltip : 'Drop onto the surface below (undoable)',
+			action: forEach((u) => alignToGround(u))
+		},
+		// 24-E3: a group made by /group or drag-to-group sits at the world centre, so a typed
+		// rotation turned it about (0,0,0); its origin is one right-click away
 		...(isGroup && !multi
 			? [
 					{
@@ -138,7 +345,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						children: [
 							{
 								label: 'Centre of children',
-								tooltip: 'Put the group\'s origin at the centre of what it contains',
+								tooltip: "Put the group's origin at the centre of what it contains",
 								disabled: locked,
 								action: () => {
 									if (originPreset(uuid, 'children') === null) return;
@@ -147,7 +354,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 							},
 							{
 								label: 'World zero',
-								tooltip: 'Put the group\'s origin at the world origin',
+								tooltip: "Put the group's origin at the world origin",
 								disabled: locked,
 								action: () => {
 									originPreset(uuid, 'world');
@@ -179,217 +386,35 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 								label: 'Parent origin',
 								checked: get(pivotMode) === 'parent',
 								disabled: !pivotParentAvailable(),
-								tooltip: pivotParentAvailable() ? 'Rotate and scale about the common parent\'s origin' : 'The selected objects do not share a parent',
+								tooltip: pivotParentAvailable()
+									? "Rotate and scale about the common parent's origin"
+									: 'The selected objects do not share a parent',
 								action: () => pivotMode.set('parent')
 							},
 							{ label: 'Individual origins', checked: get(pivotMode) === 'individual', action: () => pivotMode.set('individual') }
 						]
 					}
 				]
-			: []),
-		// 15-G: bake a group / a set of meshes down to ONE mesh (materials kept as
-		// slots, originals deleted, one undo step)
+			: [])
+	];
+
+	/** @type {any[]} Mesh ▸ — operations that rebuild geometry */
+	const mesh = [
+		// 15-G: bake a group / a set of meshes down to ONE mesh (materials kept as slots,
+		// originals deleted, one undo step)
 		...(multi || isGroup
 			? [
 					{
 						label: 'Convert to mesh' + suffix,
 						icon: 'combine',
 						disabled: locked,
-						tooltip: locked
-							? lockedTooltip
-							: 'Merge into a single mesh — every material is kept as a slot',
+						tooltip: locked ? lockedTooltip : 'Merge into a single mesh — every material is kept as a slot',
 						action: () => convertToMesh(targets)
 					}
 				]
 			: []),
-		// 26-F: a REDUCED import can go back to its original for the rest of the session —
-		// the report toast offers it once, and a way back that expires with a toast is not
-		// a way back. Only where the original file is actually held (the machine that did
-		// the import); a peer sees the stamp and the reason, never a button that cannot work.
-		...(!multi && object?.userData?.reduced
-			? [
-					{
-						label: 'Restore original model',
-						icon: 'history',
-						disabled: locked || !hasOriginal(uuid),
-						tooltip: locked
-							? lockedTooltip
-							: hasOriginal(uuid)
-								? 'Put back the full ' + Number(object.userData.reduced.trianglesBefore).toLocaleString('en-US') + '-triangle model it was reduced from (undoable)'
-								: 'The original file is held only by whoever imported it, and only until they reload',
-						action: () => import('./fileHandler.svelte').then((m) => m.restoreOriginalImport(uuid))
-					}
-				]
-			: []),
-		{
-			label: 'Align to ground' + suffix,
-			icon: 'arrow-down-to-line',
-			disabled: locked,
-			tooltip: locked ? lockedTooltip : 'Drop onto the surface below (undoable)',
-			action: forEach((u) => alignToGround(u))
-		},
-		// 16-P5: camera objects get their two headline actions right here (the rest
-		// live in Properties ▸ Camera)
-		...(!multi && object?.userData?.camera
-			? [
-					{
-						label: 'Preview camera',
-						icon: 'camera',
-						tooltip: 'Render the scene through this camera (exit from the banner)',
-						action: () =>
-							import('./cameraPreview').then((m) => m.startCameraPreview(uuid))
-					},
-					{
-						label: 'Set from current view',
-						icon: 'focus',
-						disabled: locked,
-						tooltip: locked ? lockedTooltip : 'Move this camera to where you are looking from',
-						action: () => import('./cameraObjects').then((m) => m.setCameraFromView(uuid))
-					}
-				]
-			: []),
-		// 36 U9: a placeholder whose piece is late or failed — retry its file, or swap the piece
-		...(loadingStub && !multi
-			? [
-					{ section: 'Loading' },
-					{
-						label: 'Retry loading',
-						icon: 'refresh-cw',
-						tooltip: "Fetch this piece's file again — every copy of the same piece comes back with it",
-						action: () => import('./packRefs').then((m) => m.retryPlaceholder(object))
-					},
-					{
-						label: 'Replace model…',
-						icon: 'folder-input',
-						tooltip: 'Put a different pack item or library model here, keeping the position, rotation and scale',
-						action: () => import('./replaceModel').then((m) => m.openReplaceModel(uuid))
-					}
-				]
-			: []),
-		{ section: 'Edit' },
-		// 15-G audit: renaming is inherently single-target (one name field)
-		...(multi
-			? []
-			: [
-					{
-						label: 'Rename',
-						icon: 'pencil',
-						disabled: locked,
-						tooltip: lockedTooltip,
-						action: () => renamingObject.set(uuid)
-					}
-				]),
-		// SH5: the Shader editor is scoped by the SELECTION, so this entry makes the object
-		// current and shows the tab. Single-object for the same reason Edit mesh is — with a
-		// set selected the editor scopes to the SCENE-wide graph, which is a different thing
-		// from "this object's material" and would silently be the wrong target.
-		...(multi
-			? []
-			: [
-					{
-						label: 'Edit shader',
-						icon: 'sparkles',
-						disabled: locked || !object?.material || Array.isArray(object?.material),
-						tooltip: locked
-							? lockedTooltip
-							: Array.isArray(object?.material)
-								? 'Shader graphs support single-material objects for now'
-								: 'Author this material as a node graph',
-						action: () => {
-							selectObject(uuid, false);
-							import('./shaderGraph').then((m) => m.openShaderEditor());
-						}
-					}
-				]),
-		// 15-B8: Edit mesh / Sculpt are SINGLE-object modes — with a set selected
-		// they'd silently act on the last-picked object only (the ViewportMenu path
-		// passes the sticky primary), so hide them rather than mislead.
-		...(multi
-			? []
-			: [
-					{
-						label: 'Edit mesh',
-						icon: 'pen-tool',
-						disabled: locked || !object?.geometry?.attributes?.position,
-						tooltip: locked ? lockedTooltip : 'Drag vertex handles; Esc to finish',
-						action: () => enterEditMode(uuid)
-					}
-				]),
-		// 57.3: a spline carries its authoring record, so it gets its OWN editor
-		// (control-point + radius handles) instead of the raw vertex tools
-		...(multi || !object?.userData?.spline?.points?.length
-			? []
-			: [
-				{
-					label: 'Edit spline',
-					icon: 'spline',
-					disabled: locked,
-					tooltip: locked ? lockedTooltip : 'Move control points, set thickness, insert or delete points',
-					action: () => import('./splineEdit').then((m) => m.enterSplineEdit(uuid))
-				},
-				// 21-C3: FLATTEN is two operations, not one. Once a scene holds a spline
-				// AND some ground, "flatten" is ambiguous, and the two readings are
-				// genuinely different jobs: cut a bed for the path, or lay the path over
-				// ground you want left exactly as it is. So it is a CATEGORY, and each
-				// side names which of the two things moves.
-				//
-				// Neither lists its targets by NAME: you click the partner in the viewport
-				// (the snapAnchorPicking shape), because the thing you mean is under the
-				// cursor and a ring of ten terrain tiles makes a list of names useless.
-				{
-					label: 'Flatten',
-					icon: 'mountain',
-					children: [
-						{
-							label: 'Terrain to this spline…',
-							icon: 'mountain',
-							disabled: locked,
-							tooltip: locked
-								? lockedTooltip
-								: 'Then click a terrain: levels a strip under this spline, blended into the slope either side',
-							action: () => import('./flattenActions').then((m) => m.startFlattenPick('carve', uuid))
-						},
-						{
-							label: 'This spline onto a surface…',
-							icon: 'spline',
-							disabled: locked,
-							tooltip: locked
-								? lockedTooltip
-								: 'Then click an object: drops every control point onto it, so the spline comes to rest on the surface and the surface is untouched',
-							action: () => import('./flattenActions').then((m) => m.startFlattenPick('drape', uuid))
-						}
-					]
-				}
-			]),
-		// T-2: brush sculpting — Terrain keeps its column brush; any other mesh
-		// gets the normal-brush MESH sculpt (same toolbar + replication)
-		...(multi
-			? []
-			: object?.userData?.terrain
-				? [
-						{
-							label: 'Sculpt terrain',
-							icon: 'brush',
-							disabled: locked,
-							tooltip: locked ? lockedTooltip : 'Brush raise/lower/smooth/flatten — drag on the terrain',
-							action: () => import('./terrainSculpt').then((m) => m.enterSculpt(uuid))
-						}
-					]
-				: object?.geometry?.attributes?.position
-					? [
-							{
-								label: 'Sculpt mesh',
-								icon: 'brush',
-								disabled: locked,
-								tooltip: locked
-									? lockedTooltip
-									: 'Brush raise/lower/smooth/flatten along the surface normals',
-								action: () => import('./terrainSculpt').then((m) => m.enterSculpt(uuid))
-							}
-						]
-					: []),
-		// B10 (36-mesh-ops): CSG booleans on exactly TWO meshes — the FIRST-clicked one
-		// takes the result (the hinge rule's order), the second is the cutter
+		// B10 (36-mesh-ops): CSG booleans on exactly TWO meshes — the FIRST-clicked one takes the
+		// result (the hinge rule's order), the second is the cutter
 		...(targets.length === 2 &&
 		targets.every((u) => !!group?.getObjectByProperty('uuid', u)?.geometry?.attributes?.position)
 			? [
@@ -421,10 +446,34 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					}
 				]
 			: []),
-		{ section: 'Physics & effects' },
-		// P-B: joints — attach exactly TWO objects (weld holds the pose, a hinge
-		// spins about the FIRST-clicked object's chosen local axis, anchored at
-		// the second object's origin); Detach appears when any joint touches this
+		// 26-F: a REDUCED import can go back to its original for the rest of the session — the
+		// report toast offers it once, and a way back that expires with a toast is not a way back.
+		// Only where the original file is actually held (the machine that did the import); a peer
+		// sees the stamp and the reason, never a button that cannot work.
+		...(!multi && object?.userData?.reduced
+			? [
+					{
+						label: 'Restore original model',
+						icon: 'history',
+						disabled: locked || !hasOriginal(uuid),
+						tooltip: locked
+							? lockedTooltip
+							: hasOriginal(uuid)
+								? 'Put back the full ' +
+									Number(object.userData.reduced.trianglesBefore).toLocaleString('en-US') +
+									'-triangle model it was reduced from (undoable)'
+								: 'The original file is held only by whoever imported it, and only until they reload',
+						action: () => import('./fileHandler.svelte').then((m) => m.restoreOriginalImport(uuid))
+					}
+				]
+			: [])
+	];
+
+	/** @type {any[]} Physics & effects ▸ — joints, particles, the object's flow */
+	const behaviour = [
+		// P-B: joints — attach exactly TWO objects (weld holds the pose, a hinge spins about the
+		// FIRST-clicked object's chosen local axis, anchored at the second object's origin);
+		// Detach appears when any joint touches this
 		...(targets.length === 2 || jointsFor(targets).length
 			? [
 					{
@@ -440,7 +489,8 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 										},
 										...['x', 'y', 'z'].map((axis) => ({
 											label: `Hinge (${axis.toUpperCase()} axis)`,
-											tooltip: 'Revolute joint about the first object’s local ' + axis.toUpperCase() + ' axis, anchored at the second object',
+											tooltip:
+												'Revolute joint about the first object’s local ' + axis.toUpperCase() + ' axis, anchored at the second object',
 											action: () => createJoint('revolute', targets[0], targets[1], /** @type {'x'|'y'|'z'} */ (axis))
 										}))
 									]
@@ -488,23 +538,14 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					: [])
 			]
 		},
-		// 21-G1: THE GAME SUBMENU IS GONE FROM HERE. It held exactly the two collectible
-		// recipe entries, and they have moved to the NODE EDITOR's Game category, where a
-		// recipe belongs: what it builds IS a flow graph, and the object menu is the wrong
-		// place to teach that. The spline precedent decided it — 21-C3 pulled the lap gates
-		// out of core for making every spline in every scene sprout a Road menu for the
-		// benefit of one game. This project is not only for games, so a game recipe does
-		// not get a permanent shelf on every object's right-click.
-		//
-		// R3a moved the recipe again — into the collectible MODULE, whose manager toolbox
-		// owns it now (Modules ▸ Browse). Core keeps no collectible entry point at all.
+		// 21-G1: the Game submenu is gone from here (the collectible recipe lives in its module's
+		// manager toolbox now) — this project is not only for games.
+		{ section: ' ' },
 		{
 			label: (muted ? 'Enable flow effects' : 'Disable flow effects') + suffix,
 			icon: 'workflow',
 			action: forEach((u) =>
-				mutedFlowObjects.update((list) =>
-					list.includes(u) ? list.filter((entry) => entry !== u) : [...list, u]
-				)
+				mutedFlowObjects.update((list) => (list.includes(u) ? list.filter((entry) => entry !== u) : [...list, u]))
 			)
 		},
 		// 15-G audit: one embed carries ONE object's declared sockets — single-target
@@ -524,37 +565,26 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 										return;
 									}
 									const added = objectFlow.addObjectFlowToScene(uuid, object?.name || object?.type);
-									appStore.showToast(added ? 'Object Flow node added to the Scene graph' : 'This flow is already embedded in the Scene graph');
+									appStore.showToast(
+										added ? 'Object Flow node added to the Scene graph' : 'This flow is already embedded in the Scene graph'
+									);
 								}
 							)
 					}
-				]),
-		{ section: 'Share' },
+				])
+	];
+
+	/** @type {any[]} the submenus: rare or specialist work, one level down */
+	const more = [
+		{ label: 'Transform', icon: 'move-3d', children: transform },
+		...(mesh.length ? [{ label: 'Mesh', icon: 'box', children: mesh }] : []),
+		{ label: 'Physics & effects', icon: 'atom', children: behaviour },
 		{
-			label: multi ? 'Ping selection' + suffix : 'Ping this object',
-			icon: 'radar',
-			tooltip: 'Everyone sees a pulse here (Ctrl+Alt+click pings anywhere)',
-			action: () => (multi ? pingObjects(targets) : pingObject(uuid))
-		},
-		// 15-G audit: a note pins to ONE point on ONE object. The ViewportMenu path
-		// passes the sticky primary (not necessarily what is under the cursor), so
-		// during a multi-select this would anchor somewhere the user did not point.
-		...(multi
-			? []
-			: [
-					{
-						label: 'Add note',
-						icon: 'sticky-note',
-						tooltip: 'Pin a synced note exactly where you pointed',
-						action: () => addAnnotation(uuid, point)
-					}
-				]),
-		{
-			// R22 round 11 (user): "I would like to be able to save prefabs as they are now
-			// with right click 'Save as...'". The single "Save as prefab" row became a
-			// submenu whose FIRST entry is that same act — the formats are rendered from
-			// $lib/saveAs's catalog, so a format cannot exist in the code and not in the
-			// menu, and each row's tooltip says what its format keeps AND what it drops.
+			// R22 round 11 (user): "I would like to be able to save prefabs as they are now with
+			// right click 'Save as...'". The single "Save as prefab" row became a submenu whose
+			// FIRST entry is that same act — the formats are rendered from $lib/saveAs's catalog,
+			// so a format cannot exist in the code and not in the menu, and each row's tooltip says
+			// what its format keeps AND what it drops.
 			label: 'Save as…' + suffix,
 			icon: 'package',
 			tooltip: 'Store this in your Library, or write it straight out as a file',
@@ -563,27 +593,56 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 				tooltip: format.tooltip,
 				icon: format.kind === 'download' ? 'arrow-down-to-line' : 'package',
 				action: () =>
-					void saveSelectionAs(
-						format.id,
-						targets,
-						multi ? undefined : object?.name || object?.type || undefined
-					)
+					void saveSelectionAs(format.id, targets, multi ? undefined : object?.name || object?.type || undefined)
 			}))
-		},
-		{ section: ' ' },
-		{
-			label: 'Delete' + suffix,
-			icon: 'trash-2',
-			hint: 'Del',
-			danger: true,
-			disabled: locked,
-			tooltip: locked ? lockedTooltip : 'A group asks first',
-			// when the clicked object is part of the selection, delete the whole set;
-			// otherwise select just this one first so the delete acts on it
-			action: () => {
-				if (!multi) selectObject(uuid);
-				requestDeleteSelection();
-			}
 		}
 	];
+
+	const groups = [loading, primary, view, edit, more].filter((g) => g.length);
+	return [
+		{
+			header: {
+				title: multi ? targets.length + ' objects selected' : object?.name || object?.type || 'Object',
+				badge: multi ? 'set' : object?.type,
+				locked: locked ? nameOf(lockHolder) : null
+			}
+		},
+		...groups.flatMap((g, i) => (i ? [{ section: ' ' }, ...g] : g))
+	];
+}
+
+/**
+ * Every ACTION row of a menu built by `buildObjectMenuItems`, submenus walked depth-first, in
+ * the order they render — the "is it still reachable" read the suites and the VR/mobile mirrors
+ * use now that rare items live one level down (38 NOTES-38 #22). Each row gets a `path`
+ * (its parents' labels) so a caller can say where it lives.
+ * @param {any[]} items @param {string[]} [path] @returns {any[]}
+ */
+export function flattenMenuItems(items, path = []) {
+	/** @type {any[]} */
+	const out = [];
+	for (const item of items ?? []) {
+		if (!item || item.header || item.section !== undefined) continue;
+		if (item.children) out.push(...flattenMenuItems(item.children, [...path, item.label]));
+		else out.push({ ...item, path });
+	}
+	return out;
+}
+
+/**
+ * The first row (action OR submenu) labelled `label` anywhere in the menu, depth-first —
+ * `flattenMenuItems`'s twin for a caller that wants a SUBMENU (Boolean ▸, Origin ▸) by name.
+ * @param {any[]} items @param {string | ((label: string) => boolean)} label @returns {any}
+ */
+export function findMenuItem(items, label) {
+	const hit = typeof label === 'function' ? label : (/** @type {string} */ l) => l === label;
+	for (const item of items ?? []) {
+		if (!item || item.header || item.section !== undefined) continue;
+		if (typeof item.label === 'string' && hit(item.label)) return item;
+		if (item.children) {
+			const inner = findMenuItem(item.children, label);
+			if (inner) return inner;
+		}
+	}
+	return undefined;
 }

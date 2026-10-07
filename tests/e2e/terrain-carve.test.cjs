@@ -345,8 +345,8 @@ h.run(async () => {
 		// (uuid FIRST, opts second — passing one object silently builds a menu for
 		// "no object", which has no Flatten entry and would read as a green check)
 		const items = window.__stores.objectMenu.buildObjectMenuItems(uuid, { selection: [uuid] });
-		const labels = items.map((i) => i.label ?? '');
-		const flatten = items.find((i) => i.label === 'Flatten');
+		const labels = window.__stores.objectMenu.flattenMenuItems(items).map((i) => i.label ?? '');
+		const flatten = window.__stores.objectMenu.findMenuItem(items, 'Flatten');
 		const children = (flatten?.children ?? []).map((c) => c.label ?? '');
 		return {
 			hasFlatten: !!flatten,

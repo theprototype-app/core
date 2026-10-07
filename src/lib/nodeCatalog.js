@@ -182,6 +182,25 @@ export const nodeCatalog = [
 			// looks at `camera`. A default nothing consumes is a promise the node cannot keep,
 			// and `gamestart` already covers "put every peer back on the game camera".
 			{ type: 'setcamera', label: 'Set Active Camera', defaults: { camera: '' } },
+			// 37 (R8): a camera OBJECT follows and/or looks at a target — wire it into an Object
+			// Selector that picks the camera (or drop it in the camera's own graph). LOCAL per peer
+			// like every effect: it moves the marker, never the editor camera or a peer's view.
+			{
+				type: 'camerarig',
+				label: 'Camera Rig',
+				defaults: { mode: 'both', space: 'world', ox: 0, oy: 2, oz: 5, damping: 0.25, aim: 0 },
+				inputs: ['target', 'offset'],
+				inputLabels: { target: 'target — what to follow / look at', offset: 'offset — wire a Vector 3 (else ox/oy/oz)' },
+				params: [
+					{ key: 'mode', kind: 'select', options: ['both', 'follow', 'lookat'] },
+					{ key: 'space', kind: 'select', options: ['world', 'target'] },
+					{ key: 'ox', kind: 'range', min: -20, max: 20, step: 0.1 },
+					{ key: 'oy', kind: 'range', min: -20, max: 20, step: 0.1 },
+					{ key: 'oz', kind: 'range', min: -20, max: 20, step: 0.1 },
+					{ key: 'damping', kind: 'range', min: 0, max: 3, step: 0.05 },
+					{ key: 'aim', kind: 'range', min: -5, max: 5, step: 0.05 }
+				]
+			},
 			// L-C: switch a LOOK on or off. The camera input picks WHOSE look (empty = the
 			// scene's); the switch is a per-peer runtime override, not an edit to the
 			// authored document, so it needs no message of its own — the trigger already
@@ -1225,6 +1244,7 @@ export const animationTypes = [
 	'shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol',
 	'rotor', 'flowfloat', // 36-fb F25/F24 (sim/motionNodes.js)
 	'lookat', 'setcolor', 'visibility', 'setuniform',
+	'camerarig', // 37 (R8)
 	'deviceparam', 'notetrigger' // 23-B3
 ];
 

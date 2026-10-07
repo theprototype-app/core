@@ -8,10 +8,13 @@ import { contentBase, fetchIndex, onContentStale } from './contentBase';
 // goes through the existing installUrl with the entry's source folder, so the
 // record keeps a real URL — Update and the A2 dev reload work unchanged.
 
-/** Off-bundle base for the community modules repo. @main (not a tag): the
- * gallery should list new modules without a core release; module CODE is
+/** Off-bundle base for the community modules repo. 1.27 (21-C risk 6): pinned to the
+ * moving tag `format-1` — the scenes/packs rule — instead of `@main`, so a modules merge
+ * no longer reaches production before its release: every modules release retags it
+ * (`git tag -f format-1 && git push -f origin format-1`, then purge — RELEASING.md). Not
+ * semver-looking on purpose (jsDelivr resolves a version ONCE). Module CODE is still
  * versioned by each manifest, and installs snapshot the fetched bytes. */
-export const MODULES_BASE = contentBase(import.meta.env.VITE_MODULES_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@main');
+export const MODULES_BASE = contentBase(import.meta.env.VITE_MODULES_BASE, 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@format-1');
 
 /** normalized gallery entries @type {import('svelte/store').Writable<any[]>} */
 export const galleryModules = writable([]);

@@ -153,6 +153,20 @@ uniform vec3 uSunColor;
 uniform vec3 uSkyTop;
 uniform vec3 uSkyHorizon;
 uniform vec3 uSkyBottom;
+// 37-hdri: the scene's HDRI (its PMREM) — when it shows, the sky model below samples it, so
+// a lake mirrors the actual clouds. three's CubeUV sampler, its size macros pointed at
+// uniforms: ONE program serves both states, no recompile when an HDRI comes or goes.
+uniform sampler2D uEnvMap;
+uniform float uEnvOn;
+uniform mat3 uEnvRot;
+uniform float uEnvIntensity;
+uniform vec2 uEnvTexel;
+uniform float uEnvMaxMip;
+#define ENVMAP_TYPE_CUBE_UV
+#define CUBEUV_TEXEL_WIDTH uEnvTexel.x
+#define CUBEUV_TEXEL_HEIGHT uEnvTexel.y
+#define CUBEUV_MAX_MIP uEnvMaxMip
+#include <cube_uv_reflection_fragment>
 uniform sampler2D uNormalMap;
 uniform mat4 uWorldToLocal;
 uniform vec3 uBoxMin;
@@ -181,6 +195,7 @@ varying vec4 vReflUv;
 #endif
 
 vec3 sky(vec3 d, float blur) {
+	if (uEnvOn > 0.5) return textureCubeUV(uEnvMap, uEnvRot * d, clamp(blur, 0.0, 1.0)).rgb * uEnvIntensity;
 	float y = d.y;
 	vec3 up = mix(uSkyHorizon, uSkyTop, smoothstep(0.0, 0.6, y));
 	vec3 dn = mix(uSkyHorizon, uSkyBottom, smoothstep(0.0, 0.35, -y));

@@ -10,7 +10,7 @@ import {
 	fireAnimFinished as notifyClipFinished,
 	fireAnimMarker as notifyMarker
 } from './flowRuntime';
-import { recordEntry, registerHistoryKind } from './history';
+import { recordEntry, registerHistoryKind, registerHistoryMerge, sameJson } from './history';
 
 // Authored object animation, v2 (17-E). Each object owns a set of named CLIPS;
 // a clip owns TRACKS (one per transform channel) and a track owns KEYS at
@@ -1047,6 +1047,32 @@ registerHistoryKind('anim', (entry, state) => {
 	});
 	broadcastAnim(entry.uuid);
 	return true;
+});
+
+// 37 R26: the edits of one scrub/typing gesture (historyGesture.js) are ONE step — length,
+// fps and step write the clip on every change, so without this a 40px scrub was ~10 steps
+registerHistoryMerge('anim', {
+	merge(top, next) {
+		if (top.uuid !== next.uuid) return false;
+		top.afterSet = next.afterSet;
+		return true;
+	},
+	noop: (e) => sameJson(e.beforeSet, e.afterSet)
+});
+
+// 37 R26: the Animation window's speed field is a transport rate, not clip data, so it had
+// no undo at all — every other scrub field in the window does
+registerHistoryKind('animspeed', (entry, state) => {
+	setSpeed(entry.uuid, state.speed);
+	return true;
+});
+registerHistoryMerge('animspeed', {
+	merge(top, next) {
+		if (top.uuid !== next.uuid) return false;
+		top.after = next.after;
+		return true;
+	},
+	noop: (e) => e.before.speed === e.after.speed
 });
 
 // --- authoring ---------------------------------------------------------------
@@ -2384,12 +2410,17 @@ export function keyTimes(uuid, clipId) {
 	return [...times].sort((a, b) => a - b);
 }
 
-/** @param {string} uuid @param {number} speed */
-export function setSpeed(uuid, speed) {
+/** @param {string} uuid @param {number} speed @param {{record?: boolean}} [opts] */
+export function setSpeed(uuid, speed, opts = {}) {
 	// (transport speed change; rebases the stamp so the pose does not jump)
 	const p = playOf(uuid);
 	const now = syncedNow();
-	setPlay(uuid, { pausedAt: elapsedOf(p, now), at: now, speed: Math.max(0.05, num(speed, 1)) }, true);
+	const next = Math.max(0.05, num(speed, 1));
+	const before = num(p.speed, 1);
+	setPlay(uuid, { pausedAt: elapsedOf(p, now), at: now, speed: next }, true);
+	// 37 R26: an edit from the Animation window is undoable (`record`); playback code is not
+	if (opts.record && before !== next)
+		recordEntry({ kind: 'animspeed', uuid, before: { speed: before }, after: { speed: next } });
 }
 
 /**

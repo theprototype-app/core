@@ -32,7 +32,7 @@ const fs = require('fs');
 const path = require('path');
 
 const SCENES_BASE = (process.env.FOOTBALL_SCENES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@format-2').replace(/\/$/, '');
-const MODULES_BASE = (process.env.FOOTBALL_MODULES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@main').replace(/\/$/, '');
+const MODULES_BASE = (process.env.FOOTBALL_MODULES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@format-1').replace(/\/$/, '');
 const ROOT = path.resolve(__dirname, '../../..');
 
 /** bytes from a URL, or null with the reason logged (never throws) */

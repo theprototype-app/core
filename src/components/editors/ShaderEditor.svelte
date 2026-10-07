@@ -178,17 +178,49 @@
 	let edges = $state.raw([]);
 	let pushing = false;
 
+	// 37 R26: xyflow's VIEW state (a node's `selected`, `dragging`, `measured`…) is this
+	// screen's, never the document's — the nodesHandler.serializeNode rule. Writing it in made
+	// a click that selects a node a replicated, undoable graph edit: scrubbing a vector on an
+	// unselected node recorded TWO undo steps (the selection, then the scrub), and Ctrl+Z
+	// undid the selection. Selection is kept LOCAL and carried across a document rebuild.
+	const VIEW_KEYS = ['selected', 'dragging', 'measured', 'resizing'];
+	let viewKey = '';
+	/** @param {any} item */
+	function docShape(item) {
+		const out = { ...item };
+		for (const k of VIEW_KEYS) delete out[k];
+		return out;
+	}
+
 	$effect(() => {
 		const next = doc;
 		const key = scope;
 		untrack(() => {
 			pushing = true;
+			// another document: nothing in it is selected yet
+			const sameDoc = viewKey === key;
+			viewKey = key;
+			// this screen's view of each node (selection, xyflow's measured size) survives the
+			// rebuild; the document's copy of those fields (an older save wrote them) does not
+			/** @type {Map<string, any>} */
+			const view = new Map();
+			if (sameDoc)
+				for (const n of nodes) {
+					/** @type {any} */
+					const v = {};
+					for (const k of VIEW_KEYS) if (n[k] !== undefined) v[k] = n[k];
+					view.set(n.id, v);
+				}
+			const wasEdgeSelected = new Set((sameDoc ? edges : []).filter((/** @type {any} */ e) => e.selected).map((/** @type {any} */ e) => e.id));
 			nodes = (next?.nodes ?? []).map((/** @type {any} */ n) => ({
-				...n,
+				...docShape(n),
+				...(view.get(n.id) ?? {}),
 				// the card needs to know which document to write its params into
 				data: { ...(n.data ?? {}), __graphKey: key }
 			}));
-			edges = next?.edges ?? [];
+			edges = (next?.edges ?? []).map((/** @type {any} */ e) =>
+				wasEdgeSelected.has(e.id) ? { ...e, selected: true } : docShape(e)
+			);
 			pushing = false;
 		});
 	});
@@ -200,13 +232,14 @@
 			if (pushing || !doc) return;
 			const stripped = localNodes.map((/** @type {any} */ n) => {
 				const { __graphKey, ...rest } = n.data ?? {};
-				return { ...n, data: rest };
+				return docShape({ ...n, data: rest });
 			});
+			const strippedEdges = localEdges.map(docShape);
 			if (
-				JSON.stringify(stripped) !== JSON.stringify(doc.nodes) ||
-				JSON.stringify(localEdges) !== JSON.stringify(doc.edges)
+				JSON.stringify(stripped) !== JSON.stringify((doc.nodes ?? []).map(docShape)) ||
+				JSON.stringify(strippedEdges) !== JSON.stringify((doc.edges ?? []).map(docShape))
 			)
-				setShaderGraphFor(scope, { nodes: stripped, edges: localEdges });
+				setShaderGraphFor(scope, { nodes: stripped, edges: strippedEdges });
 		});
 	});
 

@@ -5,7 +5,7 @@ import { fetchIndex, onContentStale, markContentStale } from '../../src/lib/cont
 
 // 1.19.1: "1.19.0 is out, why are the two new example levels not seen?" The CDN was
 // right; the BROWSER was not. jsDelivr answers a branch ref (`scenes@format-2`,
-// `packs@format-1`, `modules@main`) with `cache-control: max-age=604800`, and every
+// `packs@format-1`, `modules@format-1`) with `cache-control: max-age=604800`, and every
 // index fetch used the default cache mode, so a device that had opened the tab in the
 // last week kept the old list for up to seven days. Every CDN LIST now goes through
 // `fetchIndex` (cache: 'no-cache' = revalidate; a 304 on the ETag when unchanged), and
@@ -60,7 +60,7 @@ describe('the CDN lists use fetchIndex', () => {
 		});
 	}
 
-	it('installUrl revalidates the files a manifest lists (they change in place on modules@main)', () => {
+	it('installUrl revalidates the files a manifest lists (they change in place on modules@format-1)', () => {
 		expect(source('lib/userModules.js')).toContain("fetch(base + '/' + path, { cache: 'no-cache' })");
 	});
 

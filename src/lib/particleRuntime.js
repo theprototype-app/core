@@ -4,7 +4,23 @@ import { get } from 'svelte/store';
 import { globalRenderer, globalCamera, isVRMode } from '../stores/sceneStore';
 import { showToast } from '../stores/appStore';
 import { wireframeActive } from './viewMode';
-import { particleVertexShader, particleFragmentShader, spriteTexture, wrapTime } from './particleShader';
+import {
+	particleVertexShader,
+	particleFragmentShader,
+	stripVertexShader,
+	ribbonVertexShader,
+	stripFragmentShader,
+	spriteTexture,
+	wrapTime
+} from './particleShader';
+import {
+	renderModeOf,
+	segmentsOf,
+	stripLayout,
+	ribbonLayout,
+	expandSlots,
+	smoothEmitterVelocity
+} from './particleStrips';
 import { PARTICLE_DEFAULTS } from './particlePresets';
 import { qualityOverrides } from './qualityGovernor';
 
@@ -69,9 +85,9 @@ function configOf(data) {
 	return { ...PARTICLE_DEFAULTS, ...(data ?? {}) };
 }
 
-/** @param {string} key @param {number} count */
-function buildGeometry(key, count) {
-	const geometry = new THREE.BufferGeometry();
+/** Per-SLOT hashed randoms — the same key + slot index gives the same values on every peer.
+ * @param {string} key @param {number} count */
+function slotRandoms(key, count) {
 	const seed = hashString(key);
 	const rand = new Float32Array(count * 4);
 	const rand2 = new Float32Array(count * 4);
@@ -83,22 +99,66 @@ function buildGeometry(key, count) {
 		}
 		index[i] = i;
 	}
-	geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-	geometry.setAttribute('aRand', new THREE.BufferAttribute(rand, 4));
-	geometry.setAttribute('aRand2', new THREE.BufferAttribute(rand2, 4));
-	geometry.setAttribute('aIndex', new THREE.BufferAttribute(index, 1));
-	geometry.setAttribute('aOrigin', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
-	return geometry;
+	return { rand, rand2, index };
 }
 
-/** @param {string} key @param {number} count */
-function buildEntry(key, count) {
-	const geometry = buildGeometry(key, count);
+/**
+ * The geometry for one render mode. `points` is one vertex per slot (the slot arrays ARE
+ * the attributes); the strip modes expand every slot attribute per vertex through the
+ * layout's maps (particleStrips.js), and the ribbon also carries each quad's other slot.
+ * @param {{rand: Float32Array, rand2: Float32Array, index: Float32Array}} slots
+ * @param {number} count @param {string} render @param {number} segs
+ */
+function buildGeometry(slots, count, render, segs) {
+	const geometry = new THREE.BufferGeometry();
+	/** @param {string} name @param {Float32Array} array @param {number} size */
+	const attr = (name, array, size) => geometry.setAttribute(name, new THREE.BufferAttribute(array, size));
+	if (render === 'points') {
+		attr('position', new Float32Array(count * 3), 3);
+		attr('aRand', slots.rand, 4);
+		attr('aRand2', slots.rand2, 4);
+		attr('aIndex', slots.index, 1);
+		attr('aOrigin', new Float32Array(count * 3), 3);
+		attr('aVel', new Float32Array(count * 3), 3);
+		return { geometry, layout: null };
+	}
+	const layout = render === 'ribbon' ? ribbonLayout(count) : stripLayout(count, segs);
+	const n = layout.verts;
+	attr('position', new Float32Array(n * 3), 3);
+	attr('aRand', expandSlots(slots.rand, 4, layout.slotOf, new Float32Array(n * 4)), 4);
+	attr('aRand2', expandSlots(slots.rand2, 4, layout.slotOf, new Float32Array(n * 4)), 4);
+	attr('aIndex', expandSlots(slots.index, 1, layout.slotOf, new Float32Array(n)), 1);
+	attr('aOrigin', new Float32Array(n * 3), 3);
+	attr('aVel', new Float32Array(n * 3), 3);
+	attr('aSide', layout.side, 1);
+	if ('otherOf' in layout) {
+		attr('aRandN', expandSlots(slots.rand, 4, layout.otherOf, new Float32Array(n * 4)), 4);
+		attr('aRand2N', expandSlots(slots.rand2, 4, layout.otherOf, new Float32Array(n * 4)), 4);
+		attr('aIndexN', expandSlots(slots.index, 1, layout.otherOf, new Float32Array(n)), 1);
+		attr('aOriginN', new Float32Array(n * 3), 3);
+		attr('aVelN', new Float32Array(n * 3), 3);
+		attr('aEnd', layout.end, 1);
+	} else {
+		attr('aSeg', layout.seg, 1);
+	}
+	geometry.setIndex(new THREE.BufferAttribute(layout.index, 1));
+	return { geometry, layout };
+}
+
+const RENDER_INDEX = { points: 0, stretch: 1, trails: 2, ribbon: 3 };
+
+/** @param {string} key @param {number} count @param {string} render @param {number} segs */
+function buildEntry(key, count, render = 'points', segs = 1) {
+	const slots = slotRandoms(key, count);
+	const { geometry, layout } = buildGeometry(slots, count, render, segs);
+	const points = render === 'points';
 	const material = new THREE.ShaderMaterial({
-		vertexShader: particleVertexShader,
-		fragmentShader: particleFragmentShader,
+		vertexShader: points ? particleVertexShader : render === 'ribbon' ? ribbonVertexShader : stripVertexShader,
+		fragmentShader: points ? particleFragmentShader : stripFragmentShader,
 		transparent: true,
 		depthWrite: false,
+		// a strip turns its face to the camera, but which face depends on the path's direction
+		side: points ? THREE.FrontSide : THREE.DoubleSide,
 		uniforms: {
 			uTime: { value: 0 },
 			uMode: { value: 0 },
@@ -106,6 +166,7 @@ function buildEntry(key, count) {
 			uCount: { value: count },
 			uLifetime: { value: 1.5 },
 			uLifeJitter: { value: 0.3 },
+			uPhaseNoise: { value: 0.05 },
 			uShape: { value: 0 },
 			uAngle: { value: 0.4 },
 			uRadius: { value: 0.15 },
@@ -126,6 +187,11 @@ function buildEntry(key, count) {
 			uGround: { value: 0 },
 			uQuat: { value: new THREE.Vector4(0, 0, 0, 1) },
 			uWorldSpace: { value: 0 },
+			// 37-fx: inherit velocity + the strip modes
+			uInherit: { value: 0 },
+			uRender: { value: RENDER_INDEX[/** @type {'points'} */ (render)] ?? 0 },
+			uSegs: { value: segs },
+			uTrail: { value: 0.05 },
 			uMap: { value: spriteTexture('dot') },
 			uColorStart: { value: new THREE.Color('#ffffff') },
 			uColorEnd: { value: new THREE.Color('#8899aa') },
@@ -135,15 +201,18 @@ function buildEntry(key, count) {
 			uFadeOut: { value: 0.4 }
 		}
 	});
-	const points = new THREE.Points(geometry, material);
-	points.frustumCulled = false; // positions live in the shader — three can't cull them
-	points.name = 'particles-' + key;
-	root.add(points);
+	const object = points ? new THREE.Points(geometry, material) : new THREE.Mesh(geometry, material);
+	object.frustumCulled = false; // positions live in the shader — three can't cull them
+	object.name = 'particles-' + key;
+	root.add(object);
 	return {
 		key,
 		uuid: '',
 		count,
-		points,
+		render,
+		segs,
+		layout,
+		points: object,
 		geometry,
 		material,
 		space: 'local',
@@ -153,7 +222,18 @@ function buildEntry(key, count) {
 		lifeKey: '',
 		phases: new Float32Array(count),
 		lives: new Float32Array(count),
-		lastCycle: new Int32Array(count).fill(-1e9)
+		lastCycle: new Int32Array(count).fill(-1e9),
+		// 37-fx: per-SLOT birth stamps (origin + the emitter's velocity then); for points
+		// these are the attribute arrays themselves, the strip modes expand them per vertex
+		slots,
+		slotOrigin: points ? geometry.getAttribute('aOrigin').array : new Float32Array(count * 3),
+		slotVel: points ? geometry.getAttribute('aVel').array : new Float32Array(count * 3),
+		// 37-fx: the emitter's smoothed world velocity (inherit velocity)
+		vel: [0, 0, 0],
+		emitPos: [0, 0, 0],
+		emitNow: [0, 0, 0],
+		emitT: 0,
+		emitSeen: false
 	};
 }
 
@@ -167,24 +247,84 @@ function dropEntry(entry) {
 
 /** Recompute the CPU phase/lifetime mirror (matches the shader math). @param {any} entry @param {any} cfg */
 function refreshLifeCache(entry, cfg) {
-	const lifeKey = [cfg.lifetime, cfg.lifeJitter, cfg.count].join('|');
+	const jitter = lifeJitterOf(entry, cfg);
+	const noise = phaseNoiseOf(entry);
+	const lifeKey = [cfg.lifetime, jitter, noise, cfg.count].join('|');
 	if (entry.lifeKey === lifeKey) return;
 	entry.lifeKey = lifeKey;
-	const rand = entry.geometry.getAttribute('aRand').array;
-	const rand2 = entry.geometry.getAttribute('aRand2').array;
+	const { rand, rand2 } = entry.slots;
 	for (let i = 0; i < entry.count; i++) {
-		entry.lives[i] = Math.max(cfg.lifetime * (1 + cfg.lifeJitter * (rand[i * 4 + 3] - 0.5)), 0.05);
-		entry.phases[i] = (i / Math.max(entry.count, 1)) * cfg.lifetime + rand2[i * 4 + 3] * 0.05;
+		entry.lives[i] = Math.max(cfg.lifetime * (1 + jitter * (rand[i * 4 + 3] - 0.5)), 0.05);
+		entry.phases[i] = (i / Math.max(entry.count, 1)) * cfg.lifetime + rand2[i * 4 + 3] * noise;
 		entry.lastCycle[i] = -1e9;
 	}
+}
+
+/** A ribbon joins slots in birth ORDER, so every slot lives exactly `lifetime` (no
+ * jitter) and is born exactly on its phase (no noise) — the CPU mirror and the shader agree.
+ * @param {any} entry @param {any} cfg */
+function lifeJitterOf(entry, cfg) {
+	return entry.render === 'ribbon' ? 0 : cfg.lifeJitter;
+}
+/** @param {any} entry */
+function phaseNoiseOf(entry) {
+	return entry.render === 'ribbon' ? 0 : 0.05;
+}
+
+/** Stamp one slot's birth: where the emitter was, and how fast it was going.
+ * @param {any} entry @param {number} i @param {any} pos */
+function stampSlot(entry, i, pos) {
+	const k = i * 3;
+	entry.slotOrigin[k] = pos.x;
+	entry.slotOrigin[k + 1] = pos.y;
+	entry.slotOrigin[k + 2] = pos.z;
+	entry.slotVel[k] = entry.vel[0];
+	entry.slotVel[k + 1] = entry.vel[1];
+	entry.slotVel[k + 2] = entry.vel[2];
+}
+
+/** Upload the birth stamps. Points read the slot arrays directly; the strip modes copy each
+ * slot into every vertex that samples it (and a ribbon into its neighbours' "other" too).
+ * @param {any} entry */
+function flushStamps(entry) {
+	const g = entry.geometry;
+	if (entry.layout) {
+		const { slotOf } = entry.layout;
+		expandSlots(entry.slotOrigin, 3, slotOf, g.getAttribute('aOrigin').array);
+		expandSlots(entry.slotVel, 3, slotOf, g.getAttribute('aVel').array);
+		if (entry.layout.otherOf) {
+			expandSlots(entry.slotOrigin, 3, entry.layout.otherOf, g.getAttribute('aOriginN').array);
+			expandSlots(entry.slotVel, 3, entry.layout.otherOf, g.getAttribute('aVelN').array);
+			g.getAttribute('aOriginN').needsUpdate = true;
+			g.getAttribute('aVelN').needsUpdate = true;
+		}
+	}
+	g.getAttribute('aOrigin').needsUpdate = true;
+	g.getAttribute('aVel').needsUpdate = true;
 }
 
 /** Stamp every slot's world-space origin at the emitter's current position. @param {any} entry @param {any} object */
 function stampAllOrigins(entry, object) {
 	object.getWorldPosition(tempPos);
-	const origin = entry.geometry.getAttribute('aOrigin');
-	for (let i = 0; i < entry.count; i++) origin.setXYZ(i, tempPos.x, tempPos.y, tempPos.z);
-	origin.needsUpdate = true;
+	for (let i = 0; i < entry.count; i++) stampSlot(entry, i, tempPos);
+	flushStamps(entry);
+}
+
+/** 37-fx: follow the emitter's world velocity (inherit velocity). Each peer measures the
+ * motion it SEES — the same stance as the origin stamps: the object's pose is the shared
+ * state, the particles are this peer's rendering of it. @param {any} entry @param {any} object */
+function trackEmitterVelocity(entry, object) {
+	object.getWorldPosition(tempPos);
+	const now = performance.now();
+	entry.emitNow[0] = tempPos.x;
+	entry.emitNow[1] = tempPos.y;
+	entry.emitNow[2] = tempPos.z;
+	smoothEmitterVelocity(entry.vel, entry.emitSeen ? entry.emitPos : null, entry.emitNow, (now - entry.emitT) / 1000);
+	entry.emitPos[0] = tempPos.x;
+	entry.emitPos[1] = tempPos.y;
+	entry.emitPos[2] = tempPos.z;
+	entry.emitT = now;
+	entry.emitSeen = true;
 }
 
 /** Push the emitter config into the shader uniforms. @param {any} entry @param {any} cfg */
@@ -195,7 +335,15 @@ function applyUniforms(entry, cfg) {
 	u.uMode.value = cfg.mode !== 'continuous' ? 1 : 0;
 	entry.mode = cfg.mode; // physics asks hasImpactEmitter() by this
 	u.uLifetime.value = cfg.lifetime;
-	u.uLifeJitter.value = cfg.lifeJitter;
+	u.uLifeJitter.value = lifeJitterOf(entry, cfg);
+	u.uPhaseNoise.value = phaseNoiseOf(entry);
+	// 37-fx: inherit velocity (0..1 of the emitter's speed, world space) and how much path a
+	// stretched spark / a trail covers, in seconds
+	u.uInherit.value = Math.min(Math.max(Number(cfg.inherit) || 0, 0), 2);
+	u.uTrail.value =
+		entry.render === 'stretch'
+			? Math.min(Math.max(Number(cfg.stretch ?? 0.04) || 0, 0.005), 0.5)
+			: Math.min(Math.max(Number(cfg.trail ?? 0.4) || 0, 0.02), 3);
 	u.uShape.value = SHAPE_INDEX[/** @type {'cone'} */ (cfg.shape)] ?? 0;
 	u.uAngle.value = (cfg.angle * Math.PI) / 180;
 	u.uRadius.value = cfg.radius;
@@ -290,10 +438,12 @@ export function updateParticles(pairs, sceneObjects, time) {
 		wanted.add(key);
 		const cfg = configOf(data);
 		cfg.count = Math.min(Math.max(Math.round(cfg.count), 1), MAX_COUNT);
+		const render = renderModeOf(cfg);
+		const segs = segmentsOf(cfg, render);
 		let entry = entries.get(key);
-		if (!entry || entry.count !== cfg.count) {
+		if (!entry || entry.count !== cfg.count || entry.render !== render || entry.segs !== segs) {
 			dropEntry(entry);
-			entry = buildEntry(key, cfg.count);
+			entry = buildEntry(key, cfg.count, render, segs);
 			entries.set(key, entry);
 			entry.space = ''; // force the space init below
 			// burst/impact emitters idle until triggered, so attaching one would
@@ -328,7 +478,8 @@ export function updateParticles(pairs, sceneObjects, time) {
 		if (cfg.mode !== 'continuous') {
 			const sig = JSON.stringify([
 				cfg.offset, cfg.speed, cfg.gravity, cfg.sizeStart, cfg.size, cfg.lifetime,
-				cfg.turbulence, cfg.angle, cfg.radius, cfg.shape, cfg.sprite, cfg.colorStart, cfg.colorEnd
+				cfg.turbulence, cfg.angle, cfg.radius, cfg.shape, cfg.sprite, cfg.colorStart, cfg.colorEnd,
+				cfg.inherit, cfg.stretch, cfg.trail
 			]);
 			if (entry.cfgSig !== undefined && entry.cfgSig !== sig) {
 				entry.burstT = tw;
@@ -337,7 +488,8 @@ export function updateParticles(pairs, sceneObjects, time) {
 			entry.cfgSig = sig;
 		}
 		u.uBurstT.value = entry.burstT;
-		entry.geometry.setDrawRange(0, vr ? Math.min(cfg.count, VR_MAX_COUNT) : cfg.count);
+		const drawn = vr ? Math.min(cfg.count, VR_MAX_COUNT) : cfg.count;
+		entry.geometry.setDrawRange(0, entry.layout ? drawn * entry.layout.indicesPerSlot : drawn);
 		entry.points.visible = object.visible !== false;
 
 		// sim space: local = the Points ride the object; world = particles keep
@@ -349,26 +501,28 @@ export function updateParticles(pairs, sceneObjects, time) {
 			entry.points.position.set(0, 0, 0);
 			entry.points.quaternion.identity();
 			entry.lastCycle.fill(-1e9);
+			entry.emitSeen = false;
+			entry.vel[0] = entry.vel[1] = entry.vel[2] = 0;
 			if (world) stampAllOrigins(entry, object);
 		}
 		if (world) {
+			trackEmitterVelocity(entry, object);
 			object.getWorldQuaternion(tempQuat);
 			u.uQuat.value.set(tempQuat.x, tempQuat.y, tempQuat.z, tempQuat.w);
 			if (cfg.mode !== 'burst') {
 				// stamp each slot's spawn point at its rebirth frame (CPU mirror of
 				// the shader's cycle math — N writes/second, not per frame)
 				object.getWorldPosition(tempPos);
-				const origin = entry.geometry.getAttribute('aOrigin');
 				let dirty = false;
 				for (let i = 0; i < entry.count; i++) {
 					const cycle = Math.floor((tw - entry.phases[i]) / entry.lives[i]);
 					if (cycle !== entry.lastCycle[i]) {
 						entry.lastCycle[i] = cycle;
-						origin.setXYZ(i, tempPos.x, tempPos.y, tempPos.z);
+						stampSlot(entry, i, tempPos);
 						dirty = true;
 					}
 				}
-				if (dirty) origin.needsUpdate = true;
+				if (dirty) flushStamps(entry);
 			}
 		} else {
 			object.getWorldPosition(entry.points.position);
@@ -417,6 +571,13 @@ export function particleEntries() {
 		key: entry.key,
 		uuid: entry.uuid,
 		count: entry.count,
+		render: entry.render,
+		segs: entry.segs,
+		verts: entry.geometry.getAttribute('position').count,
+		drawRange: entry.geometry.drawRange.count,
+		vel: [...entry.vel],
+		inherit: entry.material.uniforms.uInherit.value,
+		trail: entry.material.uniforms.uTrail.value,
 		space: entry.space,
 		sprite: entry.sprite,
 		burstT: entry.burstT,

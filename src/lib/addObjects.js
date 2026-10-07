@@ -6,6 +6,7 @@ import { primitivesCatalog } from './primitivesCatalog';
 import { meshGenReady } from './ai/meshProviders';
 import { addParticlesPreset } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
+import { ARCH_TYPES, snapToMetre } from './arch/archGeometry.js';
 // 36-water: a PRIMED dynamic import — waterActions reaches history (the TDZ-cycle family)
 /** @type {any} */ let waterRef = null;
 import('./water/waterActions.js').then((m) => (waterRef = m));
@@ -24,6 +25,9 @@ import('./audioDevices').then((m) => (devicesRef = m));
 export function spawnAtPoint(command, point) {
 	sceneCommand(command);
 	const object = get(selectedObject);
+	// 37 R3: architecture lands on the 1 m grid (a wall's origin is its end, a door's and a
+	// window's the middle of the opening they fill), so pieces placed apart still line up
+	if (point && ARCH_TYPES.includes(object?.userData?.geometryParams?.gtype)) point = snapToMetre(point);
 	if (point && object?.uuid && !command.startsWith('/group')) {
 		object.position.set(point[0], point[1], point[2]);
 		/** @type {any} */

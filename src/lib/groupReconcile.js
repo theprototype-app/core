@@ -10,6 +10,7 @@ import { get } from 'svelte/store';
 import { flowGraphs } from '../stores/flowStore';
 import { isGroup, parentMap, computeGroupIO, sameIO } from './nodeGroups.js';
 import { groupSocketType } from './flowSockets';
+import { variadicSocketExists } from './variadicNodes.js'; // 37 (R6)
 import { setNodeData } from './nodesHandler';
 
 /**
@@ -28,7 +29,7 @@ export function reconcileGroupSockets(graphId) {
 		const parents = parentMap(nodes);
 		const ids = new Set(nodes.map((/** @type {any} */ n) => n.id));
 		for (const g of nodes.filter(isGroup)) {
-			const io = computeGroupIO(nodes, edges, g, { parents, typeOf: groupSocketType });
+			const io = computeGroupIO(nodes, edges, g, { parents, typeOf: groupSocketType, socketExists: variadicSocketExists });
 			const children = (g.data?.children ?? []).filter((/** @type {string} */ c) => ids.has(c));
 			/** @type {Record<string, any>} */
 			const patch = {};

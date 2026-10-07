@@ -22,6 +22,7 @@ const SRC = resolve(__dirname, '../../src/lib');
 const SEMVER_LIKE = /^v?\d+(\.\d+)*$/;
 const SCENES_DEFAULT = 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@format-2';
 const PACKS_DEFAULT = 'https://cdn.jsdelivr.net/gh/theprototype-app/packs@format-1';
+const MODULES_DEFAULT = 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@format-1';
 
 /** the string literal a consumer hands `contentBase()` as its fallback
  * @param {string} file @param {string} constName */
@@ -60,10 +61,15 @@ describe('contentBase', () => {
 		expect(fallbackOf('packs.js', 'PACKS_BASE')).toBe(PACKS_DEFAULT);
 	});
 
+	it('the modules default is the moving tag modules@format-1, not @main (1.27, 21-C risk 6)', () => {
+		expect(fallbackOf('moduleGallery.js', 'MODULES_BASE')).toBe(MODULES_DEFAULT);
+	});
+
 	it('no shipped fallback names a ref jsDelivr would parse as a semver version (#230)', () => {
 		for (const [file, name] of [
 			['sceneTemplates.js', 'SCENES_BASE'],
-			['packs.js', 'PACKS_BASE']
+			['packs.js', 'PACKS_BASE'],
+			['moduleGallery.js', 'MODULES_BASE']
 		]) {
 			const ref = refOf(fallbackOf(file, name));
 			expect(ref, name + ' has a ref').not.toBe('');

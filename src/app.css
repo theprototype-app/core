@@ -12,9 +12,11 @@
    chrome over inline styles and must beat every utility (all scoped to :root.phone-shell) */
 @import './styles/phone.css';
 
+/* flowbite's plugin stays for one reason: its base styles for native form controls (checkbox
+   ticks, select arrows, field resets). No Flowbite COMPONENT is left (38 R11: flowbite-svelte is
+   gone; tests/unit/noFlowbite.test.js keeps it out). Replacing this base with our own is its own
+   change — it restyles every native control at once. */
 @plugin 'flowbite/plugin';
-
-@source '../node_modules/flowbite-svelte/**/*.{html,js,svelte,ts}';
 
 @custom-variant dark (&:is(.dark *));
 

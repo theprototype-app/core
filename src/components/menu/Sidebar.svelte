@@ -149,14 +149,15 @@
 <!-- 94: the logo IS the menu button. Open state = accent ring. -->
 <button
 	id="logo-menu"
-	class="burger tp-ui flex items-center justify-center rounded-lg border bg-surface-1/90 shadow-lg backdrop-blur-sm transition-transform hover:scale-105 {$closeMenu
-		? 'border-border'
+	class="burger tp-ui hud-glass flex items-center justify-center rounded-xl transition-transform hover:scale-105 {$closeMenu
+		? ''
 		: 'logo-open'}"
-	style="height: 48px; width: 48px; {$connectDocked ? `top: ${$connectBarHeight + 8}px` : ''}"
+	style="height: var(--hud-fab); width: var(--hud-fab); {$connectDocked ? `top: ${$connectBarHeight + 8}px` : ''}"
 	title={$closeMenu ? 'Open menu' : 'Close menu'}
 	onclick={toggleMenu}
 >
-	<img src="logo.svg" alt="menu" class="h-9 w-9" />
+	<!-- 38 R8 (design page): the logo sits on the HUD glass, a 44 px tile like the corner buttons -->
+	<img src="logo.svg" alt="menu" class="h-7 w-7" />
 	<!-- RW/B4: unseen-update cue. A dot, never a boot dialog — the menu's "What's new"
 	     row (and the one update toast) lead to the changelog. Class toggle, not an
 	     {#if}, so nothing is destroyed mid-flush when the cue clears (see the row). -->

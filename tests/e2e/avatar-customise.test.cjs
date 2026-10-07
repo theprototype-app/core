@@ -55,7 +55,7 @@ h.run(async () => {
 
 		// ---- 1. open through the profile menu ----
 		await page.click('#avatar-trigger');
-		await page.getByText('Customize Character', { exact: true }).click();
+		await page.getByText(/^Customize character$/i).click(); // 38 R8: sentence case (NavRow)
 		await page.waitForSelector('#character-panel');
 		await h.eventually(
 			() => page.evaluate(() => window.__stores.avatars.avatarsDebug()['avatar-preview'] ?? null),

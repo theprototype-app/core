@@ -6,6 +6,8 @@
 	import { fade } from 'svelte/transition';
 	import { sineIn } from 'svelte/easing';
 	import ModalDialog from '../ui/ModalDialog.svelte';
+	import NavRow from '../ui/NavRow.svelte';
+	import UiButton from '../ui/Button.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		chatHidden,
@@ -127,12 +129,6 @@
 	// 		console.log(element);
 	// 	});
 	// });
-
-	let classProfileSettings = 'z-10 inline-flex w-40 shrink-0 items-center rounded-s-lg border\
-	 border-border-strong bg-surface-2 px-4 py-2.5 text-center text-sm font-medium text-text focus:outline-hidden';
-	/** the two profile fields (were flowbite <Input>s): the token input look */
-	const classProfileInput =
-		'block w-full rounded-lg border border-border-input bg-surface-inset p-2.5 text-sm text-text placeholder:text-text-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50 rtl:text-right';
 
 	 let avatarImage = $state('');
 	 function avatar_load(event) {
@@ -982,7 +978,7 @@
 			{@attach dropdownAttach}
 			in:fade|global={{ duration: 100, easing: sineIn }}
 			onfocusout={dropdownFocusOut}
-			class="w-56 divide-y divide-border overflow-visible rounded-lg bg-surface-2 text-text shadow-sm"
+			class="tp-ui w-64 overflow-visible rounded-lg border border-border bg-surface-2 text-text shadow-sm"
 			style="position: fixed; bottom: auto; left: auto; border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 996; margin-top: -50px;"
 		>
 		<!-- the profile circle, seated in the 1.5rem notch this panel's top-right corner
@@ -997,39 +993,32 @@
 		>
 			{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-12 w-12 border-2 border-border-strong')}
 		</button>
-		<!-- PM (roadmap #14): identity header — name, then the cloud email on a new line
-			 when signed in. No avatar here (it's already the profile button). The rounded
-			 top-right corner is KEPT — it echoes the profile circle. -->
-		<div class="px-4 py-3 text-sm text-text">
-			<div class="min-w-0">
-				<span class="block truncate text-base font-semibold">{effName}</span>
-				{#if cid?.email}
-					<span class="block truncate text-xs text-text-muted">{cid.email}</span>
-				{/if}
-			</div>
+		<!-- PM (roadmap #14): identity header — name, then the cloud email (or "You") under it.
+			 No avatar here (it's already the profile button, seated in the notch on the right).
+			 38 R8 (design page "Profile and peers"): the kit's NavRows below, one card. -->
+		<div class="pm-head">
+			<span class="pm-name">{effName}</span>
+			<span class="pm-sub">{cid?.email || 'You'}</span>
 		</div>
-		<ul class="py-2 text-sm text-text-2">
-			<li>
-				<button
-					type="button"
-					class="block w-full px-4 py-2 text-left hover:bg-surface-hover hover:text-text"
-					onclick={() => {
-						characterModalOpen.set(true);
-						openDropdown = false;
-					}}>Customize Character</button
-				>
-			</li>
-			<li>
-				<button
-					type="button"
-					class="block w-full px-4 py-2 text-left hover:bg-surface-hover hover:text-text"
-					onclick={() => {
-						profileSettingsOpen.set(true);
-						openDropdown = false;
-					}}>Profile Settings</button
-				>
-			</li>
-		</ul>
+		<div class="pm-card">
+			<NavRow
+				icon="user"
+				label="Customize character"
+				onclick={() => {
+					characterModalOpen.set(true);
+					openDropdown = false;
+				}}
+			/>
+			<NavRow
+				icon="settings"
+				label="Profile settings"
+				description="Picture and name"
+				onclick={() => {
+					profileSettingsOpen.set(true);
+					openDropdown = false;
+				}}
+			/>
+		</div>
 		<!-- open-core (PM): cloud account section — the plugin mounts Sign in/out +
 			 preferences here (moved out of the Connect pill). Plain block: the plugin
 			 owns its own clicks, so it is NOT a menu row. -->
@@ -1061,19 +1050,20 @@
 
 <ModalDialog title="Profile Settings" bind:open={$profileSettingsOpen} outsideclose width="md" onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }}>
 
-	<!-- the title moved into the window header (ModalDialog) -->
-
-	<div class="modal-content p-4">
-		<div class="flex px-10 pf-row">
-			<p
-				class={classProfileSettings}
-			>
-				Avatar
-			</p>
+	<!-- 38 R8: kit rows (label left, control right) instead of the boxed label | input table.
+	     Same ids, same handlers: #avatar-file / #avatar-preview / #avatar-reset / #peer-id /
+	     #update-username. -->
+	<div class="modal-content pf-list">
+		<div class="pf-row">
+			<span class="pf-label">Picture<small>Click it to choose an image</small></span>
 			<input type="file" id="avatar-file" style="display: none" onchange={e => avatar_load(e)}/>
 			<div class="flex items-center gap-3">
+				<!-- reset to the signed-in account's picture (or the default) -->
+				{#if avatarImage || (typeof localStorage !== 'undefined' && safeStorage.getItem('avatar'))}
+				<UiButton id="avatar-reset" variant="ghost" size="sm" onclick={resetAvatarToDefault}>Reset to {cid?.avatar ? 'account picture' : 'default'}</UiButton>
+				{/if}
 				{#if effAvatar}
-				<img id="avatar-preview" src={effAvatar} alt="avatar" class="h-14 w-14 rounded-full border-2 border-border cursor-pointer object-cover"
+				<img id="avatar-preview" src={effAvatar} alt="avatar" class="pf-avatar"
 				onclick={() => document.getElementById('avatar-file').click()}
 				/>
 				{:else}
@@ -1081,51 +1071,35 @@
 				fill="currentColor"
 				viewBox="0 0 16 16"
 				xmlns="http://www.w3.org/2000/svg"
-				class="h-14 w-14 rounded-full border-2 border-border-strong cursor-pointer"
+				class="pf-avatar"
 				><path
 					fill-rule="evenodd"
 					d="M8 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
 					clip-rule="evenodd"
 				></path></svg>
 				{/if}
-				<!-- reset to the signed-in account's picture (or the default) -->
-				{#if avatarImage || (typeof localStorage !== 'undefined' && safeStorage.getItem('avatar'))}
-				<button id="avatar-reset" class="rounded-sm border border-border-strong px-2 py-1 text-xs text-text-2 hover:bg-surface-hover"
-					onclick={resetAvatarToDefault}>Reset to {cid?.avatar ? 'account picture' : 'default'}</button>
-				{/if}
 			</div>
 		</div>
-		<br />
-		<div class="flex px-10 pf-row">
-			<p
-				class={classProfileSettings + " rounded-bl-none"}
-			>
-				Peer ID
-			</p>
-			<input
-				id="peer-id"
-				class="{classProfileInput} rounded-s-none! rounded-br-none"
-				placeholder={$peers.peer.id}
-				disabled
-			/>
-		</div>
-
-		<div class="flex px-10 pf-row">
-			<p
-				class={classProfileSettings + " rounded-tl-none"}
-			>
-				Username
-			</p>
+		<div class="pf-row">
+			<label class="pf-label" for="update-username">Name<small>What others see above you and in chat</small></label>
 			<input
 				id="update-username"
-				class="{classProfileInput} rounded-s-none! rounded-tr-none"
+				class="tp-field pf-input"
 				placeholder={cid?.username ? '' + cid.username : 'Username'}
 				bind:value={$username}
 				onchange={onUsernameEdited}
 			/>
 		</div>
+		<div class="pf-row">
+			<label class="pf-label" for="peer-id">Peer ID<small>Your address in a session</small></label>
+			<input
+				id="peer-id"
+				class="tp-field pf-input pf-mono"
+				placeholder={$peers.peer.id}
+				disabled
+			/>
+		</div>
 	</div>
-	<br />
 </ModalDialog>
 
 <style>
@@ -1187,24 +1161,91 @@
 		left: auto !important;
 		right: 20px !important;
 	}
-	/* Profile Settings modal: on a narrow screen stack each label above its control
-	   (the fixed w-40 label beside the input is too cramped) — matches app Settings. */
+	/* 38 R8: the profile menu's rows (design page "Profile and peers") */
+	.pm-head {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		padding: 14px 64px 10px 14px; /* clear of the circle seated in the top-right notch */
+	}
+	.pm-name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--fs-body);
+		font-weight: 600;
+		color: var(--text);
+	}
+	.pm-sub {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--fs-section);
+		color: var(--text-muted);
+	}
+	.pm-card {
+		margin: 0 8px 8px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-1);
+		overflow: hidden;
+	}
+	.pm-card > :global(* + *) {
+		border-top: 1px solid var(--border);
+	}
+	/* Profile settings: one card of SettingRow-shaped rows (label + hint left, control right) */
+	.pf-list {
+		margin: 4px 0;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-2);
+	}
+	.pf-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		min-height: var(--row-h);
+		padding: 12px 16px;
+	}
+	.pf-row + .pf-row {
+		border-top: 1px solid var(--border);
+	}
+	.pf-label {
+		display: flex;
+		flex-direction: column;
+		font-size: var(--fs-body);
+		color: var(--text);
+	}
+	.pf-label small {
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
+	}
+	.pf-input {
+		width: min(260px, 100%);
+	}
+	.pf-mono {
+		font-family: var(--font-ui-mono);
+	}
+	.pf-avatar {
+		width: 48px;
+		height: 48px;
+		flex-shrink: 0;
+		border-radius: 50%;
+		border: 2px solid var(--border-strong);
+		object-fit: cover;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+	/* a narrow screen stacks each label above its control (as Settings does) */
 	@media (max-width: 640px) {
 		.pf-row {
 			flex-direction: column;
 			align-items: stretch;
-			gap: 6px;
-			margin-bottom: 6px;
-			padding-left: 1rem;
-			padding-right: 1rem;
+			gap: 8px;
 		}
-		/* each label + its control becomes its own cleanly-rounded box — the desktop
-		   layout's half-rounded seams (rounded-s-none / rounded-*-none) look broken when
-		   stacked, so force full rounding on both */
-		.pf-row > :global(p),
-		.pf-row :global(input) {
+		.pf-input {
 			width: 100%;
-			border-radius: 8px !important;
 		}
 	}
 </style>

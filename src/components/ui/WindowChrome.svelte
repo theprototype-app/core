@@ -342,18 +342,31 @@
 		cursor: default;
 	}
 
-	/* mobile nav bar: ‹ Back · Title · Close, title centred */
+	/* mobile nav bar: ‹ Back · Title · Close. The title is IN the row (NOTES-38 #25): an absolutely
+	   centred title ignored the back label's width and ran under "‹ Settings" whenever either was
+	   long or the bar was padded for the logo. It takes the room between Back and Close, centred
+	   there, and ellipsizes; the back label gives way first (it is the shorter-lived text). */
 	.wc-nav {
 		position: relative;
 		padding: 0 6px;
 	}
 	.wc-nav .wc-title {
-		position: absolute;
-		left: 96px;
-		right: 96px;
-		flex: none;
+		flex: 1 1 auto;
+		min-width: 0;
 		text-align: center;
-		pointer-events: none;
+	}
+	.wc-nav .wc-back {
+		flex: 0 1 auto;
+		min-width: 0;
+		max-width: 42%;
+	}
+	.wc-nav .wc-back > span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.wc-nav .wc-back :global(svg) {
+		flex-shrink: 0;
 	}
 	.wc-nav .wc-close {
 		margin-left: auto;

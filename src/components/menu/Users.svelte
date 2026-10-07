@@ -1048,7 +1048,7 @@
 	/>
 {/if}
 
-<ModalDialog title="Profile Settings" bind:open={$profileSettingsOpen} outsideclose width="md" onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }}>
+<ModalDialog title="Profile settings" bind:open={$profileSettingsOpen} outsideclose width="md" onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }}>
 
 	<!-- 38 R8: kit rows (label left, control right) instead of the boxed label | input table.
 	     Same ids, same handlers: #avatar-file / #avatar-preview / #avatar-reset / #peer-id /

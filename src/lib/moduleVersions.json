@@ -1,6 +1,6 @@
 {
 	"generated": "2026-10-07",
-	"source": "modules@3ddfbee (origin/main)",
+	"source": "modules@4e39ef0 (origin/main)",
 	"modules": {
 		"avatar": "1.1.0",
 		"blocks": "1.0.0",
@@ -20,6 +20,7 @@
 		"music-voice": "0.1.1",
 		"piano": "1.1.1",
 		"sabers": "1.0.1",
+		"smart-unwrap": "1.0.0",
 		"tutorial-room": "1.1.0",
 		"untangle": "2.4.2",
 		"waves": "2.3.0"

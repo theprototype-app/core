@@ -10,6 +10,7 @@
 //                      start of the session), 'standing' is the real floor
 //   vrHeightOffset     metres added on top (−0.5 … +0.5), e.g. a tall player asking for a lower view
 //   vrSnapAngleLast    the snap angle to come back to when turning goes Off → Snap
+//   vrWorldSnap        37 R10: the two-grip world gesture snaps (15° yaw steps, 1/2/5/10× scale detents)
 import { writable } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
 
@@ -58,6 +59,8 @@ export const vrStance = persisted('vrStance', /** @type {'standing' | 'seated'} 
 export const vrHeightOffset = persisted('vrHeightOffset', 0, (r) => clampHeight(Number(r)));
 /** @type {import('svelte/store').Writable<number>} */
 export const vrSnapAngleLast = persisted('vrSnapAngleLast', 45, oneOf(SNAP_ANGLES, 45));
+/** @type {import('svelte/store').Writable<boolean>} */
+export const vrWorldSnap = persisted('vrWorldSnap', true, bool);
 
 /** clamp + round to the centimetre @param {number} v */
 export function clampHeight(v) {

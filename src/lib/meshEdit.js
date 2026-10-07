@@ -54,7 +54,7 @@ export { proportionalEdit, proportionalRadius, falloffWeight } from './proportio
 import { showProportionalRingAt, hideProportionalRing } from './proportionalRing';
 // 19-A P7b: the vertex slide's clamp toggle — meshToolParams is a svelte/store
 // leaf, so this closes no cycle
-import { slideClamp } from './meshToolParams';
+import { slideClamp, liveSymmetry, symAxis } from './meshToolParams';
 // W9: where the viewport is. A leaf (svelte/store + sceneStore) — no new edge out of
 // the history-cycle family this module belongs to.
 import { canvasRect } from './canvasRect';
@@ -239,6 +239,24 @@ registerVertexSelectionHistory({
 		setAnchor(live.length ? live[live.length - 1] : -1);
 		syncVertexSelection();
 		return true;
+	},
+	// 37 R11: the picks as POSITIONS across a live-symmetry rebuild (commitFalloffSnapshot's rule)
+	positions: () =>
+		edited && handles.length
+			? {
+					anchor: selectedHandle >= 0 ? handles[selectedHandle]?.position.clone() ?? null : null,
+					members: [...vertexSelection].map((i) => handles[i]?.position.clone()).filter(Boolean)
+				}
+			: null,
+	/** @param {any} picks */
+	reselect: (picks) => {
+		if (!edited || !picks) return;
+		const find = (/** @type {any} */ p) => handles.findIndex((h) => h.position.distanceToSquared(p) < 1e-10);
+		vertexSelection = new Set(picks.members.map(find).filter((/** @type {number} */ i) => i >= 0));
+		const anchor = picks.anchor ? find(picks.anchor) : -1;
+		if (anchor >= 0) vertexSelection.add(anchor);
+		setAnchor(anchor);
+		syncVertexSelection();
 	}
 });
 
@@ -1549,10 +1567,98 @@ function applyPivotTransform() {
 	}
 }
 
+/**
+ * 37 R11 LIVE SYMMETRY in vertex mode: each dragged vertex's TWIN across the mirror plane
+ * follows it, mirrored, every frame of the gesture — and a vertex ON the plane stays on it
+ * (it is its own twin; moving it off would tear the seam). Twins are found by position at
+ * DRAG START, so they are stable for the whole gesture. A vertex with no twin (an
+ * asymmetric mesh) simply moves alone; Symmetrize first makes every vertex have one.
+ * @type {{axis: number, tol: number, twinOf: (i: number) => number|undefined, moved: Set<number>} | null} */
+let liveTwins = null;
+
+/** @param {any} v @param {number} axis */
+function axisOf(v, axis) {
+	return axis === 0 ? v.x : axis === 1 ? v.y : v.z;
+}
+
+/** Build the twin lookup from the handles as they stand NOW (drag start). */
+function beginLiveTwins() {
+	liveTwins = null;
+	if (!get(liveSymmetry) || !edited || !handles.length) return;
+	const axisName = get(symAxis);
+	const axis = axisName === 'y' ? 1 : axisName === 'z' ? 2 : 0;
+	const box = new THREE.Box3().setFromObject(edited);
+	const tol = Math.max(box.getSize(new THREE.Vector3()).length() * 0.001, 1e-5);
+	const cell = (/** @type {number} */ n) => Math.round(n / tol);
+	const keyAt = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) =>
+		cell(x) + ',' + cell(y) + ',' + cell(z);
+	/** @type {Map<string, number>} */
+	const byKey = new Map();
+	const starts = handles.map((h) => h.position.clone());
+	starts.forEach((p, i) => byKey.set(keyAt(p.x, p.y, p.z), i));
+	/** @type {Map<number, number|undefined>} */
+	const cache = new Map();
+	liveTwins = {
+		axis,
+		tol,
+		moved: new Set(),
+		twinOf: (i) => {
+			if (cache.has(i)) return cache.get(i);
+			const p = starts[i];
+			let twin;
+			if (p) {
+				if (Math.abs(axisOf(p, axis)) < tol) twin = i;
+				else {
+					const m = p.clone();
+					if (axis === 0) m.x = -m.x;
+					else if (axis === 1) m.y = -m.y;
+					else m.z = -m.z;
+					twin = byKey.get(keyAt(m.x, m.y, m.z));
+				}
+			}
+			cache.set(i, twin);
+			return twin;
+		}
+	};
+}
+
+/** Write every moved vertex's twin (and pin plane vertices) — after the gesture's own writes. */
+function applyLiveTwins() {
+	const twins = liveTwins;
+	if (!twins) return;
+	const moved = falloffActive()
+		? handles.map((_, i) => i).filter((i) => /** @type {number[]} */ (falloffWeights)[i] > 0)
+		: gestureIndices();
+	const movedSet = new Set(moved);
+	const p = new THREE.Vector3();
+	for (const i of moved) {
+		const twin = twins.twinOf(i);
+		if (twin === undefined) continue;
+		p.copy(handles[i].position);
+		if (twin === i) {
+			// on the plane: it may slide along the plane, never off it
+			if (axisOf(p, twins.axis) !== 0) {
+				if (twins.axis === 0) p.x = 0;
+				else if (twins.axis === 1) p.y = 0;
+				else p.z = 0;
+				writeHandle(i, p);
+			}
+			continue;
+		}
+		if (movedSet.has(twin)) continue; // the twin is part of the gesture itself
+		if (twins.axis === 0) p.x = -p.x;
+		else if (twins.axis === 1) p.y = -p.y;
+		else p.z = -p.z;
+		writeHandle(twin, p);
+		twins.moved.add(twin);
+	}
+}
+
 /** Apply whichever transform the gesture is (translate / rotate / scale). */
 function applyProxyGesture() {
 	if (/** @type {any} */ (proxyGesture).mode === 'translate') applyTranslate(translateDelta());
 	else applyPivotTransform();
+	applyLiveTwins(); // 37 R11: the mirror twins follow (no-op unless live symmetry is on)
 	refreshGeometryAfterWrite();
 }
 
@@ -1581,6 +1687,8 @@ export function onProxyMoved() {
 function broadcastGesture() {
 	broadcastSelected(handles[selectedHandle].position.toArray());
 	for (const index of gestureIndices()) if (index !== selectedHandle) broadcastHandle(index);
+	// 37 R11: the live-symmetry twins this gesture moved ride the same channel
+	if (liveTwins) for (const index of liveTwins.moved) broadcastHandle(index);
 }
 
 /** Broadcast one handle's current LOCAL position over the `verts` channel
@@ -1679,6 +1787,7 @@ export function onProxyDragChanged(dragging) {
 			scale: proxy.scale.clone(),
 			starts: handles.map((/** @type {any} */ handle) => handle.position.clone())
 		};
+		beginLiveTwins(); // 37 R11: find each vertex's mirror twin before anything moves
 		// a falloff drag moves many handles, so it undoes as ONE meshgeo snapshot for the same
 		// reason a multi-drag does (a `verts` entry holds one position for all its indices).
 		// P7b: captured whenever falloff COULD engage (`falloffStart`, i.e. the tool is on),
@@ -1687,7 +1796,7 @@ export function onProxyDragChanged(dragging) {
 		// A rotate/scale joins them: even a single handle turning about a placed pivot
 		// is easier to reason about as one geometry snapshot than as a 'verts' delta.
 		dragStartExpanded =
-			vertexSelection.size > 1 || !!falloffStart || mode !== 'translate'
+			vertexSelection.size > 1 || !!falloffStart || mode !== 'translate' || !!liveTwins
 				? trisToPositions(readTriangles(edited.geometry))
 				: null;
 	} else if (dragStartLocal && proxyGesture) {
@@ -1707,7 +1816,8 @@ export function onProxyDragChanged(dragging) {
 		if (!committedWhole) broadcastGesture(); // final unthrottled state, every moved handle
 		if (committedWhole) {
 			// the commit applied, sent and recorded everything
-		} else if (vertexSelection.size > 1 || falloffActive() || mode !== 'translate') {
+		} else if (vertexSelection.size > 1 || falloffActive() || mode !== 'translate' || liveTwins) {
+			// 37 R11: twins moved too, which a one-position 'verts' entry cannot hold
 			const afterExpanded = trisToPositions(readTriangles(edited.geometry));
 			if (dragStartExpanded && JSON.stringify(dragStartExpanded) !== JSON.stringify(afterExpanded))
 				recordEntry({
@@ -1740,6 +1850,7 @@ export function onProxyDragChanged(dragging) {
 		// the next gesture would read the leftover as its own starting delta
 		setAnchor(selectedHandle);
 		dragStartExpanded = null;
+		liveTwins = null;
 	}
 }
 

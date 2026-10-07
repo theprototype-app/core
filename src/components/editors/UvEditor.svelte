@@ -1307,7 +1307,7 @@
 			tooltip: pickedTris
 				? 'Applies to the ' + pickedTris + ' face triangles selected in Edit Mesh'
 				: 'Applies to the whole mesh',
-			children: backends.map((backend) => ({
+			children: unwrapBackends().map((backend) => ({
 				label: backend.label,
 				action: () => runUnwrap(backend.key)
 			}))
@@ -1445,7 +1445,9 @@
 	}
 
 	let unwrapOpen = $state(false);
-	const backends = unwrapBackends();
+	// re-read whenever a menu opens: a module (37 R11's Smart unwrap) can register a backend
+	// while this editor is already mounted, and a list read once at mount never showed it
+	let backends = $state(unwrapBackends());
 	// 38 NOTES-38 #37: the tool row is a ScrollStrip, whose overflow would clip a dropdown hung
 	// under its button — so the Unwrap menu hangs off the ROW instead, at the button's x
 	/** @type {HTMLElement | undefined} */
@@ -1454,6 +1456,7 @@
 	let unwrapBtn = $state();
 	let unwrapLeft = $state(0);
 	function toggleUnwrap() {
+		if (!unwrapOpen) backends = unwrapBackends();
 		if (!unwrapOpen && topbarEl && unwrapBtn) {
 			unwrapLeft = Math.max(0, unwrapBtn.getBoundingClientRect().left - topbarEl.getBoundingClientRect().left);
 		}

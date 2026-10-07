@@ -56,7 +56,6 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
-	import Icon from '../ui/Icon.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
 	import DragRow from '../ui/DragRow.svelte';
 	import { dragWindow } from '$lib/dragWindow';

@@ -19,7 +19,6 @@
 	import { profilerLiveOpen } from '$lib/perf/liveSink';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
-	import Icon from '../ui/Icon.svelte';
 	import ProfilerTimeline from './profiler/ProfilerTimeline.svelte';
 	import ProfilerDetail from './profiler/ProfilerDetail.svelte';
 	import ProfilerRecordings from './profiler/ProfilerRecordings.svelte';

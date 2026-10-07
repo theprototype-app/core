@@ -69,7 +69,6 @@
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
-	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ShaderNode from './nodes/ShaderNode.svelte';
 	import ShaderSidebar from './ShaderSidebar.svelte';

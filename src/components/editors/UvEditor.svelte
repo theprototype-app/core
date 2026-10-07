@@ -38,7 +38,6 @@
 	import { editingObject } from '$lib/meshEdit';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
-	import Icon from '../ui/Icon.svelte';
 	import WindowShell from '../shared/WindowShell.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';

@@ -37,7 +37,6 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
-	import Icon from '../ui/Icon.svelte';
 	import { createGesture } from '$lib/modalGrab';
 	// W5: the BINDING for this pane's grab key lives in the shortcut registry (an
 	// `external` row), so Settings can move it; the key itself is answered here.

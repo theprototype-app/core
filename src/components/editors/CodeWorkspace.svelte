@@ -17,7 +17,6 @@
 	import { outlineOf } from '$lib/codeOutline';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
-	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { codeWorkspaceClose, showToast } from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore';

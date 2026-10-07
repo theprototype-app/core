@@ -978,7 +978,7 @@
 			{@attach dropdownAttach}
 			in:fade|global={{ duration: 100, easing: sineIn }}
 			onfocusout={dropdownFocusOut}
-			class="tp-ui w-64 overflow-visible rounded-lg border border-border bg-surface-2 text-text shadow-sm"
+			class="tp-ui w-72 overflow-visible rounded-lg border border-border bg-surface-2 text-text shadow-sm"
 			style="position: fixed; bottom: auto; left: auto; border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 996; margin-top: -50px;"
 		>
 		<!-- the profile circle, seated in the 1.5rem notch this panel's top-right corner

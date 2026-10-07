@@ -369,7 +369,10 @@
 		$objectsGroup;
 		$flowGraphs;
 		$selectedObject;
-		return listPhysicsObjects();
+		// one row per object: a replicated load can hold the same object twice for a frame, and a
+		// keyed list must not throw on that (each_key_duplicate)
+		const seen = new Set();
+		return listPhysicsObjects().filter((/** @type {any} */ r) => !seen.has(r.uuid) && seen.add(r.uuid));
 	});
 
 	// B4: which PHYSICS_MATERIALS preset the scene default matches, so the select

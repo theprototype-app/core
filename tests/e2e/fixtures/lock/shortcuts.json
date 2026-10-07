@@ -1020,6 +1020,16 @@
 			"label": "Race: back on the road",
 			"kind": "none",
 			"when": false
+		},
+		{
+			"id": "view.cycle",
+			"keys": "Z",
+			"defaultKeys": "Z",
+			"group": "View",
+			"scope": "viewport",
+			"label": "Cycle view mode (Shaded / Shaded + AO / Wireframe)",
+			"kind": "action",
+			"when": false
 		}
 	],
 	"routing": {

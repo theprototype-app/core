@@ -128,6 +128,9 @@ h.run(async () => {
 	await page.keyboard.press('Control+Slash');
 	await page.waitForTimeout(400);
 	h.check((await L.storeValue(page, 'settingsOpen')) === true && (await L.storeValue(page, 'settingsSection')) === 'shortcuts', 'Ctrl+/ opens Settings › Shortcuts');
+	// 1.26's Settings opens with its search field focused, where ? is typed text; the rule under
+	// test is that the help keys answer over a modal when you are NOT typing — so step out of it
+	await page.evaluate(() => /** @type {HTMLElement | null} */ (document.querySelector('#settings-main'))?.focus());
 	await page.keyboard.press('Shift+Slash');
 	await page.waitForTimeout(300);
 	h.check(await page.locator('#shortcut-sheet').isVisible(), '? still answers over an open modal (Settings)');

@@ -32,6 +32,8 @@ const PART = L.RECORD ? 'all' : process.env.LOCK_SETTINGS_PART || 'a';
 /** @param {string} section */
 const inPart = (section) => PART === 'all' || (PART === 'a') === PART_A.includes(section);
 const SETTLE = 450;
+/** buttons whose effect is reloading the page (the probes would not survive it) */
+const RELOADS = new Set(['peer-server-reload']);
 // Messages that are presence/telemetry and fire on their own (camera pose, look, cursor…):
 // they never count as a setting's effect.
 const PRESENCE = new Set(['camera', 'vrhands', 'cursor', 'atscene', 'look', 'perflive', 'userdata', 'playmode']);
@@ -361,6 +363,9 @@ async function sweep(browser, tag) {
 						return null;
 					}
 					if (c.kind === 'button') {
+						// a button that RELOADS the app (1.26: Connection ▸ Apply changes) takes the
+						// sweep's probes with it — its effect is the reload; recorded as a skip
+						if (RELOADS.has(c.id)) return 'skip';
 						await press(page, sel);
 						return null;
 					}

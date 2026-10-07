@@ -406,7 +406,7 @@ h.run(async () => {
 	await fieldContract(page, {
 		name: 'render order', root: '*:has(> .dn-wrap > #inspector-render-order)', index: 0, step: 0.2, snap: 5,
 		read: () => page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.renderOrder))())),
-		typed: '3', typedValue: 3, nextAria: undefined, noUndo: true, tol: 0.6
+		typed: '3', typedValue: 3, nextAria: undefined, tol: 0.6 // 1.26 (37 R1): render order is undoable — one step a scrub
 	});
 
 	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/light directional'));
@@ -421,7 +421,7 @@ h.run(async () => {
 	await fieldContract(page, {
 		name: 'light intensity', root: '#inspector-intensity', index: 0, step: 0.02, snap: 0.5, min: 0,
 		read: () => page.evaluate(() => new Promise((r) => window.__stores.selectedObject.subscribe((o) => r(o?.intensity))())),
-		typed: '2.5', typedValue: 2.5, message: 'object', noUndo: true
+		typed: '2.5', typedValue: 2.5, message: 'object' // 1.26 (37 R1): light rows are undoable — one step a scrub
 	});
 
 	// ---- 4. SHADER VECTOR INPUTS ------------------------------------------------------------------

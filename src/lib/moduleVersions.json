@@ -1,6 +1,6 @@
 {
-	"generated": "2026-10-05",
-	"source": "modules@7fd3dda (origin/dev)",
+	"generated": "2026-10-07",
+	"source": "modules@2fcce49 (origin/main)",
 	"modules": {
 		"avatar": "1.1.0",
 		"car": "1.2.1",
@@ -20,7 +20,7 @@
 		"piano": "1.1.1",
 		"sabers": "1.0.1",
 		"tutorial-room": "1.1.0",
-		"untangle": "2.4.1",
+		"untangle": "2.4.2",
 		"waves": "2.3.0"
 	}
 }

@@ -5,6 +5,69 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.26.0 — Edit many at once: prefabs that update, material presets and a new Settings 🧰
+
+### 🎯 Selections
+
+- 🧮 **The Inspector edits a whole selection.** Rows that differ show a dash (checkboxes go indeterminate, lists show
+  —); one edit is ONE undo step and reaches everyone as one change. Visibility, shadow, render-order and culling flags
+  and every Light row are now undoable, and Light rows edit all selected lights at once.
+- 📍 **Pivot point: Median, Active or Individual** — in the Inspector, the object menu, a new **Pivot** button on the
+  toolbar (after Scale) and VR Settings ▸ Editing. In VR, grip any member of a selection to move the whole set; twist
+  or push the stick to rotate and scale it about the pivot.
+- 🗂️ **Drag a selection onto a group or any object** in the object list to put it inside; drop it on the list to
+  bring it back to the top.
+
+### 🧱 Prefabs and materials
+
+- 🔁 **Prefabs update their copies.** Editing a prefab (Update from selection, or an instance's Prefab ▸ Apply
+  changes) offers **Update N instances** — each copy keeps its own changes unless you pick Reset overrides; one undo,
+  and everyone in the room sees it. Right-click a placed copy for **Prefab ▸ Update / Reset / Unlink / Select all**.
+  Prefabs carry their objects' node graphs.
+- 📁 **Folders and tags in the Library's Prefabs tab**: New folder, Move to folder, drag onto a folder card, a
+  breadcrumb, tags in Properties and a tag filter + tag search.
+- 🎨 **Material presets**: save, rename and share named looks. A starter set (wood, metal, plastic, glass, stone,
+  rubber, neon) is one click away at the top of Inspector ▸ Material; your presets stay on your device and everyone
+  in the session can use them.
+- 🩹 Texture maps no longer vanish when a multi-slot material change is undone or reaches a peer.
+
+### 🪟 Workspace, chat and notes
+
+- 🧭 **Settings, redesigned**: a grouped menu (General · Workspace · Devices & services, About & what's new pinned),
+  cards with one control per row, toggles, segmented controls and sliders with readouts, "This device" badges,
+  sub-pages with a breadcrumb (push navigation on a phone), search results that show their path and jump to the row,
+  a per-category **Reset … to defaults** that asks first, and **Interface ▸ Density** (Comfortable / Compact).
+  Clear saved session and Reset all settings moved to About ▸ Danger zone. No stored setting changed.
+- 🗔 **Workspace layouts**: save the windows you have open (panels, docked or floating, sizes, docks, tab groups)
+  under a name and switch in one click — menu ▸ Layouts, or Settings ▸ Interface ▸ Windows & chrome.
+- 💬 **Chat v2**: @mentions in each person's colour, emoji shortcodes (`:tada:`), an unread badge, and the chat so far
+  for people who join late or reopen a saved session.
+- 🧵 **Reply to a note** in a thread; adding, editing and resolving notes is undoable.
+- ↩️ **Undo after destructive actions**: Clear scene, Delete selection, Remove module and Reset all settings show a
+  toast with **Undo** for about 8 seconds — for everyone in the session for scene changes, on this device for modules
+  and settings.
+- 🐞 **Report a problem** (menu, and in VR): a screenshot, boxes around what is wrong and a note, sent to the team
+  with your consent when you are signed in — or kept on your device.
+- 🔧 Small fixes: **Z** cycles your view mode (Shaded → Shaded + AO → Wireframe), the edit-mode wireframe re-tints
+  the moment a colour changes, VR note pins stay on their objects while you grab the world, and dropdowns open
+  correctly inside a full-screen dialog.
+
+### 🧍 Characters
+
+- 🦶 **Characters stand on the floor** in Play and keep their feet planted.
+- 💫 **Knocked off, not spinning**: an idle character now sees stars — orbiting stars, a woozy sway, star eyes —
+  instead of spinning its head (Settings ▸ Interface ▸ Avatars ▸ Knocked-off idle: Off / 10 / 20 / 60 s).
+- 🕊️ **Flying in Play is opt-in per game**: off unless a game wants it, and a scene can remove it (Configure Scene ▸
+  Physics ▸ Play mode ▸ Flying). Football, Marble maze, Target toss and Stars Room now walk on desktop.
+
+### 🏎️ Race and modules
+
+- 📱 **Race on phones and in VR**: on a phone the stick steers and Gas/Brake sit under your right thumb; in a headset
+  you sit in the car and the left stick drives (a VR player could not drive before).
+- 🏔️ The Race mountains get grass, rock and snow by slope and height.
+- 🧩 Module SDK: `api.registerPointerHandler`, `api.onClickMiss`, `api.camera()`, `api.onPlayMode` / `api.inGame()`,
+  `api.vrSeat` / `api.vrUnseat`, `api.input().touch` and the `drive` touch preset; Untangle aims with `api.camera()`.
+
 ## 1.25.0 — Your feedback, fixed: panels that keep their keys, water that behaves 🌊
 
 ### ⌨️ Panels and windows

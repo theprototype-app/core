@@ -10,7 +10,7 @@
 	// approval card must still reach the player. Not in a headset (DOM is invisible there),
 	// never in the editor.
 	import { tick } from 'svelte';
-	import { Menu as MenuIcon, ChevronLeft, ChevronRight, Lock, Star } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { isLocked, isVRMode, editorMode } from '../../stores/sceneStore';
 	import { hudDocs } from '$lib/hudDocs';
 	import {
@@ -122,7 +122,7 @@
 		aria-label="Open the game menu"
 		onclick={() => openShellMenu()}
 	>
-		<MenuIcon size={16} aria-hidden="true" />
+		<Icon name="menu" size={16} aria-hidden="true" />
 		<span>Menu</span>
 		{#if playing}<kbd>Esc</kbd>{/if}
 	</button>
@@ -134,7 +134,7 @@
 			<header class="gs-head">
 				{#if page !== 'main'}
 					<button type="button" class="gs-back" aria-label="Back" onclick={() => runShellItem('back')}>
-						<ChevronLeft size={18} aria-hidden="true" />
+						<Icon name="chevron-left" size={20} aria-hidden="true" />
 					</button>
 				{/if}
 				<div class="gs-titles">
@@ -192,10 +192,10 @@
 						>
 							<span class="gs-level-label">{level.label}</span>
 							{#if level.locked}
-								<span class="gs-level-sub"><Lock size={13} aria-hidden="true" /> Locked</span>
+								<span class="gs-level-sub"><Icon name="lock" size={16} aria-hidden="true" /> Locked</span>
 							{:else if level.stars}
 								<span class="gs-level-sub gs-stars" aria-label={level.stars + ' stars'}>
-									{#each Array(level.stars) as _, i (i)}<Star size={13} aria-hidden="true" />{/each}
+									{#each Array(level.stars) as _, i (i)}<Icon name="star" size={16} aria-hidden="true" />{/each}
 								</span>
 							{/if}
 						</button>
@@ -253,11 +253,11 @@
 		{:else}
 			<span class="gs-choice">
 				<button type="button" aria-label={'Previous ' + row.label} onclick={() => stepGameSetting(row.id, -1)}>
-					<ChevronLeft size={16} aria-hidden="true" />
+					<Icon name="chevron-left" size={16} aria-hidden="true" />
 				</button>
 				<span class="gs-choice-value">{row.display}</span>
 				<button type="button" aria-label={'Next ' + row.label} onclick={() => stepGameSetting(row.id, 1)}>
-					<ChevronRight size={16} aria-hidden="true" />
+					<Icon name="chevron-right" size={16} aria-hidden="true" />
 				</button>
 			</span>
 		{/if}

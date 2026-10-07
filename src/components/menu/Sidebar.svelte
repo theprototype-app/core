@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Archive, BookOpen, FileInput, Flag, FolderOpen, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Upload, Wrench } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { openPublishExport } from '$lib/export/exportStores.js';
 	import { openMomentReport } from '$lib/perf/moment';
 	import '../../app.css';
@@ -28,8 +28,6 @@
 	import CloudSlot from '../CloudSlot.svelte';
 	import { whatsNewUnseen, openWhatsNew } from '$lib/whatsNew';
 	// 36 I5: own lines (not the shared icon list) so a merge with the menu's other lanes stays a union
-	import { Compass } from '@lucide/svelte';
-	import { Bookmark, History } from '@lucide/svelte'; // 36 B14
 	import { checkpointsOpen, checkpointSaveOpen } from '../../stores/appStore.js'; // 36 B14
 	import { startEditorTour } from '$lib/tours/builtin.js';
 	import { safeStorage } from '$lib/safeStorage';
@@ -177,20 +175,20 @@
 
 		<!-- New scene from a starting point (General / Examples / Community tabs) -->
 		<button id="open-templates" class="side-row" onclick={() => { templatesModalOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico"><LayoutTemplate size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Templates</span>
+			<span class="side-ico"><Icon name="layout-template" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Templates</span>
 		</button>
 
 		<div class="side-div"></div>
 
 		<!-- Files -->
 		<button class="side-row" onclick={() => pickFile('import-file')}>
-			<span class="side-ico"><FileInput size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Import</span>
+			<span class="side-ico"><Icon name="file-input" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Import</span>
 		</button>
 		<button class="side-row" onclick={() => pickFile('load-file')}>
-			<span class="side-ico"><FolderOpen size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Load</span>
+			<span class="side-ico"><Icon name="folder-open" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Load</span>
 		</button>
 		<button class="side-row" onclick={() => save(saveFormat)}>
-			<span class="side-ico"><Save size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save</span>
+			<span class="side-ico"><Icon name="save" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save</span>
 		</button>
 		<!-- 21-H1: [ Project | Scene | cog ]. The KEY stays 'tp' and the id stays
 		     #format-tp — the id addresses the format, not the word — but the label reads
@@ -198,7 +196,7 @@
 		<div id="format-row" class="mb-0.5 mt-0.5 flex gap-1 pl-9 pr-2">
 			<button id="format-tp" class="side-seg {saveFormat === 'tp' ? 'on' : ''}" title="Saves the whole project as .tp — the Explorer library, scene history and manifest" onclick={() => pickFormat('tp')}>Project</button>
 			<button id="format-tpscene" class="side-seg {saveFormat === 'tpscene' ? 'on' : ''}" title="Saves the open scene as .tpscene" onclick={() => pickFormat('tpscene')}>Scene</button>
-			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={openExportSettings}><Settings size={16} aria-hidden="true" /></button>
+			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={openExportSettings}><Icon name="settings" size={16} aria-hidden="true" /></button>
 		</div>
 		<!-- the SECOND row: whichever optional formats the cog has enabled. Absent
 		     entirely when neither is, so nothing here costs a pixel by default. -->
@@ -225,7 +223,7 @@
 		<!-- 36-export (U4): ONE burger item for getting a scene out — the modal's Publish tab (a cloud
 		     plugin's), Export tab (core's: itch.io / static host / embed) and Settings tab -->
 		<button id="open-publish-export" class="side-row" data-tour="publish-export" onclick={() => { openPublishExport(); closeMenu.set(true); }}>
-			<span class="side-ico"><Upload size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Publish / Export</span>
+			<span class="side-ico"><Icon name="upload" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Publish / Export</span>
 		</button>
 
 		<div class="side-div"></div>
@@ -235,14 +233,14 @@
 		     (read as a glitch) and duplicated what the open panel already shows.
 		     The row itself carries an `active` highlight instead, like any nav item. -->
 		<button class="side-row" class:active={!$inspectorClose && $inspectorKind === 'scene'} onclick={() => showSidebar('scene')}>
-			<span class="side-ico"><SlidersHorizontal size={16} aria-hidden="true" /></span>
+			<span class="side-ico"><Icon name="sliders-horizontal" size={16} aria-hidden="true" /></span>
 			<span class="flex-1 whitespace-nowrap">Configure Scene</span>
 		</button>
 		<button id="clear-scene" class="side-row" onclick={() => { closeMenu.set(true); void confirmClearScene(); }}>
-			<span class="side-ico"><Trash2 size={16} class="ico-danger" aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
+			<span class="side-ico"><Icon name="trash-2" size={16} class="ico-danger" aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Clear Scene</span>
 		</button>
 		<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico"><Puzzle size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Modules</span>
+			<span class="side-ico"><Icon name="puzzle" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Modules</span>
 		</button>
 		<!-- A5: a module's own toolbox, one row each, indented under Modules. This is
 		     what makes moduleSDK's JSDoc true — it already CLAIMED a sidebar Modules
@@ -258,21 +256,21 @@
 				class:active={box.checked}
 				onclick={() => { box.action(); closeMenu.set(true); }}
 			>
-				<span class="side-ico"><Wrench size={14} aria-hidden="true" /></span>
+				<span class="side-ico"><Icon name="wrench" size={16} aria-hidden="true" /></span>
 				<span class="flex-1 whitespace-nowrap">{box.label}</span>
 				{#if box.shortcut}<span class="side-hint">{box.shortcut}</span>{/if}
 			</button>
 		{/each}
 		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico"><Archive size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Sessions</span>
+			<span class="side-ico"><Icon name="archive" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Sessions</span>
 		</button>
 		<!-- 36 B14: named checkpoints + the timeline they live in -->
 		<button id="save-checkpoint" class="side-row" onclick={() => { checkpointSaveOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico"><Bookmark size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save checkpoint…</span>
+			<span class="side-ico"><Icon name="bookmark" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save checkpoint…</span>
 			<span class="side-hint">Ctrl+Shift+S</span>
 		</button>
 		<button id="open-checkpoints" class="side-row" onclick={() => { checkpointsOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico"><History size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Checkpoints</span>
+			<span class="side-ico"><Icon name="history" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Checkpoints</span>
 		</button>
 
 		<div class="side-div"></div>
@@ -281,20 +279,20 @@
 		<!-- 26-A: what the scene costs. It sits beside Settings rather than under it
 		     because it is something you WATCH while working, not something you set. -->
 		<button id="open-stats" class="side-row" onclick={() => { statsOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico"><Gauge size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Statistics</span>
+			<span class="side-ico"><Icon name="gauge" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Statistics</span>
 		</button>
 		<!-- 34 R1: the last 30 s of frame data + what the viewport shows + a note, kept as a
 			recording (and sent when performance reports are on) -->
 		<button id="report-moment" class="side-row" onclick={() => { closeMenu.set(true); void openMomentReport(); }}>
-			<span class="side-ico"><Flag size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report this moment</span>
+			<span class="side-ico"><Icon name="flag" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Report this moment</span>
 		</button>
 		<!-- 36 U5: "Live profiler" left the menu — it is a Profiler tool, opened from the
 		     Profiler tab's own header (#profiler-open-live) beside Record and Import -->
 		<button class="side-row" onclick={() => { settingsOpen.set(!$settingsOpen); closeMenu.set(true); }}>
-			<span class="side-ico"><Settings size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Settings</span>
+			<span class="side-ico"><Icon name="settings" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Settings</span>
 		</button>
 		<button class="side-row" onclick={() => window.open('https://docs.theprototype.app', '_blank')}>
-			<span class="side-ico"><BookOpen size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Docs</span>
+			<span class="side-ico"><Icon name="book-open" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Docs</span>
 		</button>
 		<!-- the unseen cue is a CLASS toggle, not an {#if}: clicking this row closes the
 		     menu, and destroying a nested branch inside the subtree being destroyed in
@@ -306,7 +304,7 @@
 		</button>
 		<!-- 36 I5: the first-run editor tour, again (Settings ▸ Tours has the VR welcome + reset) -->
 		<button id="open-tour" class="side-row" onclick={() => { closeMenu.set(true); startEditorTour(); }}>
-			<span class="side-ico"><Compass size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Tours</span>
+			<span class="side-ico"><Icon name="compass" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Tours</span>
 		</button>
 	</nav>
 {/if}

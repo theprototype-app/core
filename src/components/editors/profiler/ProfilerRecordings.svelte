@@ -4,7 +4,7 @@
 	// detailed, a moment, a beacon sample — and its headline numbers; its buttons pin, rename,
 	// export (.tpprof) and delete (a second press confirms). In compare mode each row also
 	// takes the A or B slot.
-	import { Pin, PinOff, Pencil, Download, Trash2 } from '@lucide/svelte';
+	import Icon from '../../ui/Icon.svelte';
 	import { fmtSec } from '$lib/perf/profilerModel.js';
 
 	/**
@@ -119,7 +119,7 @@
 					aria-label="Save a copy of {src.label} as a recording"
 					title="Save a copy"
 					disabled={!src.doc}
-					onclick={() => onexport(key)}><Download size={13} aria-hidden="true" /></button
+					onclick={() => onexport(key)}><Icon name="download" size={16} aria-hidden="true" /></button
 				>
 			</div>
 		</li>
@@ -154,8 +154,8 @@
 					onclick={() => onselect(key)}
 				>
 					<span class="pf-rec-name"
-						>{#if row.pinned}<Pin
-								size={11}
+						>{#if row.pinned}<Icon name="pin"
+								size={16}
 								aria-label="pinned"
 								class="pf-pin-mark"
 							/>{/if}{row.name}</span
@@ -198,18 +198,18 @@
 					aria-pressed={!!row.pinned}
 					onclick={() => onpin(row.id, !row.pinned)}
 				>
-					{#if row.pinned}<PinOff size={13} aria-hidden="true" />{:else}<Pin
-							size={13}
+					{#if row.pinned}<Icon name="pin-off" size={16} aria-hidden="true" />{:else}<Icon name="pin"
+							size={16}
 							aria-hidden="true"
 						/>{/if}
 				</button>
 				<button class="pf-icon" aria-label="Rename {row.name}" onclick={() => startRename(row)}
-					><Pencil size={13} aria-hidden="true" /></button
+					><Icon name="pencil" size={16} aria-hidden="true" /></button
 				>
 				<button
 					class="pf-icon"
 					aria-label="Export {row.name} as .tpprof"
-					onclick={() => onexport(key)}><Download size={13} aria-hidden="true" /></button
+					onclick={() => onexport(key)}><Icon name="download" size={16} aria-hidden="true" /></button
 				>
 				<button
 					class="pf-icon"
@@ -220,7 +220,7 @@
 					onclick={() => askDelete(row.id)}
 				>
 					{#if confirmDelete === row.id}<span class="text-[10px] font-semibold">Delete?</span
-						>{:else}<Trash2 size={13} aria-hidden="true" />{/if}
+						>{:else}<Icon name="trash-2" size={16} aria-hidden="true" />{/if}
 				</button>
 			</div>
 		</li>

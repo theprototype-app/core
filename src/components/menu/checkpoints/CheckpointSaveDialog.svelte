@@ -2,7 +2,10 @@
 	// 36 B14 — "Save checkpoint…": a name and an optional note, nothing else. Opened by the burger
 	// menu, Ctrl+Shift+S and the timeline's own button. Enter saves from the name field; the note
 	// is a textarea, so Enter there is a newline and Ctrl+Enter saves.
-	import { Modal, Button } from 'flowbite-svelte';
+	// 38 R7: the shared ModalDialog (WindowChrome size="modal"), kit Buttons (Save = the one
+	// primary), token-styled fields; ids kept.
+	import ModalDialog from '../../ui/ModalDialog.svelte';
+	import Button from '../../ui/Button.svelte';
 	import { checkpointSaveOpen } from '../../../stores/appStore.js';
 	import { saveCheckpoint, checkpointBusy } from '$lib/checkpoints';
 	import { currentLevel } from '$lib/levels';
@@ -28,24 +31,20 @@
 	}
 </script>
 
-<Modal
+<ModalDialog
 	title="Save checkpoint"
 	bind:open={$checkpointSaveOpen}
-	modal={false}
-	onkeydown={(e) => {
+	onkeydown={(e: KeyboardEvent) => {
 		if (e.key === 'Escape') checkpointSaveOpen.set(false);
 	}}
-	outsideclose
-	size="sm"
-	class="tp-modal-frame"
-	classes={{ header: 'tp-modal-header', body: 'tp-modal-body' }}
+	width="sm"
 >
-	<div id="checkpoint-save" class="flex flex-col gap-3 p-1">
+	<div id="checkpoint-save" class="flex flex-col gap-4">
 		<label class="flex flex-col gap-1 text-sm">
 			<span class="cp-label">Name</span>
 			<input
 				id="checkpoint-save-name"
-				class="ui-input w-full"
+				class="cp-input"
 				type="text"
 				maxlength="80"
 				bind:value={name}
@@ -62,7 +61,7 @@
 			<span class="cp-label">Note <span class="cp-hint">(optional)</span></span>
 			<textarea
 				id="checkpoint-save-note"
-				class="ui-input w-full"
+				class="cp-input"
 				rows="3"
 				maxlength="500"
 				placeholder="What changed, what to try next…"
@@ -81,19 +80,41 @@
 		</p>
 	</div>
 	{#snippet footer()}
-		<Button id="checkpoint-save-confirm" onclick={() => void save()}>Save checkpoint</Button>
-		<Button color="alternative" onclick={() => checkpointSaveOpen.set(false)}>Cancel</Button>
+		<Button variant="outline" onclick={() => checkpointSaveOpen.set(false)}>Cancel</Button>
+		<Button id="checkpoint-save-confirm" variant="primary" onclick={() => void save()}>Save checkpoint</Button>
 	{/snippet}
-</Modal>
+</ModalDialog>
 
 <style>
 	.cp-label {
-		color: var(--text, rgb(229 231 235));
+		font-size: var(--fs-section);
 		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
 	}
 	.cp-hint {
-		color: var(--muted, rgb(156 163 175));
-		font-size: 0.75rem;
+		margin: 0;
+		color: var(--text-muted);
+		font-size: var(--fs-desc);
 		font-weight: 400;
+		text-transform: none;
+		letter-spacing: 0;
+	}
+	.cp-input {
+		box-sizing: border-box;
+		width: 100%;
+		min-height: var(--control-h);
+		padding: 8px 10px;
+		border: 1px solid var(--border-input);
+		border-radius: var(--radius-input);
+		background: var(--surface-inset);
+		color: var(--text);
+		font: inherit;
+		font-size: var(--fs-input);
+	}
+	.cp-input:focus {
+		outline: 2px solid var(--accent);
+		outline-offset: -1px;
 	}
 </style>

@@ -10,7 +10,7 @@
 	//
 	// The open/closed state is a LOCAL preference (localStorage, per section
 	// key): which sections a user keeps open is workflow, not scene data.
-	import { ChevronRight } from '@lucide/svelte';
+	import Icon from './Icon.svelte';
 	import { safeStorage } from '$lib/safeStorage';
 
 	/** @type {{ key: string, label: string, open?: boolean, forceOpen?: boolean,
@@ -44,7 +44,7 @@
 	onclick={toggle}
 	disabled={forceOpen}
 >
-	<ChevronRight size={11} class="tbx-sec-chev" aria-hidden="true" />
+	<Icon name="chevron-right" size={16} class="tbx-sec-chev" aria-hidden="true" />
 	{label}
 </button>
 {#if isOpen}

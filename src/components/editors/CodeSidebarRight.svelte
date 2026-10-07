@@ -5,7 +5,7 @@
 	//   Bound nodes  which graph nodes run this source; a click selects the node in the editor
 	//   Find         across every source the project has (open tabs' unsaved text first)
 	// A click on any entry jumps the editor to its line. Chrome only; the libs are pure.
-	import { ListTree, CircleAlert, Waypoints, Search, CaseSensitive, Regex, WholeWord, Package } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { codeTabs, activeCodeTab, boundNodesOf, goToNode, openCode, revealInTab, nodesUsingModuleFile, findSources } from '$lib/codeWorkspace';
 	import { codeRightPanel, codeFindFocus, RIGHT_PANELS } from '$lib/codeSidebars';
 	import { outlineOf } from '$lib/codeOutline';
@@ -24,7 +24,7 @@
 	const active = $derived($codeTabs.find((t) => t.id === $activeCodeTab) ?? null);
 
 	const LABELS = { outline: 'Outline', problems: 'Problems', bound: 'Bound nodes', find: 'Find in files' };
-	const ICONS = { outline: ListTree, problems: CircleAlert, bound: Waypoints, find: Search };
+	const ICONS = { outline: 'list-tree', problems: 'circle-alert', bound: 'waypoints', find: 'search' };
 
 	// ---------------------------------------------------------------- Outline
 	// acorn reads a few thousand lines in a few ms, so the outline simply follows the text
@@ -121,7 +121,7 @@
 		use:arrowNav={{ item: '.rs-tab', axis: 'x', onMove: (el) => codeRightPanel.set(/** @type {any} */ (el.dataset.panel)) }}
 	>
 		{#each RIGHT_PANELS as p (p)}
-			{@const Icon = ICONS[p]}
+			{@const tabIcon = ICONS[p]}
 			<button
 				class="rs-tab"
 				class:rs-tab-on={$codeRightPanel === p}
@@ -135,7 +135,7 @@
 				aria-label={LABELS[p]}
 				onclick={() => codeRightPanel.set(p)}
 			>
-				<Icon size={14} aria-hidden="true" />
+				<Icon name={tabIcon} size={16} aria-hidden="true" />
 				{#if p === 'problems' && problemCount}<span class="rs-badge" data-count={problemCount}>{problemCount}</span>{/if}
 			</button>
 		{/each}
@@ -194,7 +194,7 @@
 					{#each bound as b (b.graphId + ':' + b.node.id)}
 						<li>
 							<button class="rs-row" data-bound-node={b.node.id} title="Select this node in the Node editor" onclick={() => goToNode(b.node.id, b.graphId)}>
-								<Waypoints size={12} aria-hidden="true" />
+								<Icon name="waypoints" size={16} aria-hidden="true" />
 								<span class="rs-name">{nodeName(b.node)}</span>
 								<span class="rs-detail">{b.graphId === 'scene' ? 'Main' : 'object flow'}</span>
 							</button>
@@ -205,14 +205,14 @@
 		{:else}
 			<div class="rs-find">
 				<label class="rs-search">
-					<Search size={12} aria-hidden="true" />
+					<Icon name="search" size={16} aria-hidden="true" />
 					<input id="code-ws-find" type="search" bind:this={findInput} bind:value={query} placeholder="Find in files…" aria-label="Find in files" />
 				</label>
 				<div class="rs-toggles">
-					<button class="rs-toggle" aria-pressed={caseSensitive} title="Match case" aria-label="Match case" onclick={() => (caseSensitive = !caseSensitive)}><CaseSensitive size={14} aria-hidden="true" /></button>
-					<button class="rs-toggle" aria-pressed={wholeWord} title="Whole word" aria-label="Whole word" onclick={() => (wholeWord = !wholeWord)}><WholeWord size={14} aria-hidden="true" /></button>
-					<button class="rs-toggle" aria-pressed={regex} title="Regular expression" aria-label="Regular expression" onclick={() => (regex = !regex)}><Regex size={14} aria-hidden="true" /></button>
-					<button id="code-ws-find-modules" class="rs-toggle" aria-pressed={withModules} title="Also search the module sources the scene uses (read-only)" aria-label="Include module sources" onclick={() => (withModules = !withModules)}><Package size={14} aria-hidden="true" /></button>
+					<button class="rs-toggle" aria-pressed={caseSensitive} title="Match case" aria-label="Match case" onclick={() => (caseSensitive = !caseSensitive)}><Icon name="case-sensitive" size={16} aria-hidden="true" /></button>
+					<button class="rs-toggle" aria-pressed={wholeWord} title="Whole word" aria-label="Whole word" onclick={() => (wholeWord = !wholeWord)}><Icon name="whole-word" size={16} aria-hidden="true" /></button>
+					<button class="rs-toggle" aria-pressed={regex} title="Regular expression" aria-label="Regular expression" onclick={() => (regex = !regex)}><Icon name="regex" size={16} aria-hidden="true" /></button>
+					<button id="code-ws-find-modules" class="rs-toggle" aria-pressed={withModules} title="Also search the module sources the scene uses (read-only)" aria-label="Include module sources" onclick={() => (withModules = !withModules)}><Icon name="package" size={16} aria-hidden="true" /></button>
 				</div>
 				{#if found.error}
 					<p class="rs-note rs-bad">{found.error}</p>

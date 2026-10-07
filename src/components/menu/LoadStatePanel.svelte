@@ -68,7 +68,7 @@
 				title="Fetch the file again now (every copy of this piece comes back with it)"
 				onclick={() => retryPlaceholder(object)}
 			>
-				<Icon name="refresh-cw" size={13} />Retry
+				<Icon name="refresh-cw" size={16} />Retry
 			</button>
 			<button
 				id="load-replace"
@@ -76,7 +76,7 @@
 				title="Put a different pack item or library model here, keeping the position, rotation and scale"
 				onclick={() => openReplaceModel(object.uuid)}
 			>
-				<Icon name="folder-input" size={13} />Replace model…
+				<Icon name="folder-input" size={16} />Replace model…
 			</button>
 			<button
 				id="load-remove"
@@ -84,7 +84,7 @@
 				title="Delete this piece (undoable)"
 				onclick={() => deleteObjectsByUuid([object.uuid])}
 			>
-				<Icon name="trash-2" size={13} />Remove
+				<Icon name="trash-2" size={16} />Remove
 			</button>
 		</div>
 		<p class="text-[10px] italic opacity-70">You can move, rotate and scale it now — the model arrives where the box is.</p>

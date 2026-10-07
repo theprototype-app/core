@@ -6,8 +6,11 @@
 	//   Community gallery — 36-share: a pull-request submission to the community-gallery repo
 	//   Settings — the export defaults (ExportSettingsSection, also in Settings ▸ Export)
 	// Non-modal like every app dialog (the chrome above --z-modal stays clickable).
+	// 38 R7: the shared ModalDialog (WindowChrome size="modal") with the kit Tabs in the strip
+	// under the header — ids `publish-export-tab-<id>` are the Tabs' own (idPrefix).
 	import { untrack } from 'svelte';
-	import { Modal } from 'flowbite-svelte';
+	import ModalDialog from '../ui/ModalDialog.svelte';
+	import Tabs from '../ui/Tabs.svelte';
 	import { publishExportOpen, publishExportTab, publishSlot } from '$lib/export/exportStores.js';
 	import { hidePanels, restorePanels } from '../../stores/appStore.js';
 	import CloudSlot from '../CloudSlot.svelte';
@@ -30,36 +33,29 @@
 	});
 </script>
 
-<Modal
+<ModalDialog
 	title="Publish / Export"
 	bind:open={$publishExportOpen}
-	modal={false}
 	onkeydown={(/** @type {KeyboardEvent} */ e) => {
 		if (e.key === 'Escape') publishExportOpen.set(false);
 	}}
-	outsideclose
-	size="md"
-	class="tp-modal-frame"
-	classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
+	width="md"
+	id="publish-export-modal"
+	data-tab={$publishExportTab}
 >
+	{#snippet bar()}
+		<Tabs
+			tabs={TABS}
+			idPrefix="publish-export"
+			label="Publish or export"
+			value={$publishExportTab}
+			onchange={(/** @type {string} */ id) => publishExportTab.set(id)}
+		/>
+	{/snippet}
 	<!-- the tabs mount only while open, so a plugin's Publish flow starts fresh on every open -->
 	{#if $publishExportOpen}
-	<div id="publish-export-modal" class="pe-wrap" data-tab={$publishExportTab}>
-		<div class="pe-tabs" role="tablist">
-			{#each TABS as t (t.id)}
-				<button
-					id={'publish-export-tab-' + t.id}
-					type="button"
-					class="pe-tab"
-					class:active={$publishExportTab === t.id}
-					role="tab"
-					aria-selected={$publishExportTab === t.id}
-					onclick={() => publishExportTab.set(t.id)}>{t.label}</button
-				>
-			{/each}
-		</div>
 		{#if $publishExportTab === 'publish'}
-			<div id="publish-tab" role="tabpanel">
+			<div id="publish-tab" role="tabpanel" aria-labelledby="publish-export-tab-publish">
 				{#if $publishSlot}
 					<CloudSlot mount={$publishSlot} />
 				{:else}
@@ -70,63 +66,35 @@
 				{/if}
 			</div>
 		{:else if $publishExportTab === 'export'}
-			<div role="tabpanel"><ExportPanel /></div>
+			<div role="tabpanel" aria-labelledby="publish-export-tab-export"><ExportPanel /></div>
 		{:else if $publishExportTab === 'gallery'}
-			<div role="tabpanel"><GallerySubmitPanel /></div>
+			<div role="tabpanel" aria-labelledby="publish-export-tab-gallery"><GallerySubmitPanel /></div>
 		{:else}
-			<div role="tabpanel"><ExportSettingsSection /></div>
+			<div role="tabpanel" aria-labelledby="publish-export-tab-settings"><ExportSettingsSection /></div>
 		{/if}
-	</div>
 	{/if}
-</Modal>
+</ModalDialog>
 
 <style>
-	.pe-wrap {
-		padding: 0.25rem;
-	}
-	.pe-tabs {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem;
-		margin-bottom: 0.85rem;
-		border-bottom: 1px solid var(--border, rgb(75 85 99 / 0.6));
-	}
-	.pe-tab {
-		padding: 0.4rem 1.1rem;
-		font-size: 0.82rem;
-		font-weight: 600;
-		color: var(--text-2, rgb(209 213 219));
-		opacity: 0.75;
-		background: none;
-		border: 0;
-		border-bottom: 2px solid transparent;
-		margin-bottom: -1px;
-		cursor: pointer;
-	}
-	.pe-tab:hover {
-		color: var(--text, rgb(229 231 235));
-	}
-	.pe-tab.active {
-		opacity: 1;
-		color: var(--text, #fff);
-		border-bottom-color: var(--accent, #2563eb);
-	}
 	.pe-oss {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
-		font-size: 13px;
-		color: var(--text-2, #d1d5db);
-		line-height: 1.45;
+		gap: var(--space-2);
+		font-size: var(--fs-body);
+		line-height: 1.5;
+		color: var(--text-2);
+	}
+	.pe-oss p {
+		margin: 0;
 	}
 	.pe-oss a,
 	.pe-link {
-		color: var(--accent, #60a5fa);
-		text-decoration: underline;
-		background: none;
-		border: 0;
 		padding: 0;
-		cursor: pointer;
+		border: 0;
+		background: none;
 		font: inherit;
+		color: var(--accent-text);
+		text-decoration: underline;
+		cursor: pointer;
 	}
 </style>

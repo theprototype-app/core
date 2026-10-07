@@ -11,7 +11,7 @@
 	//
 	// Presentation only. Every reading comes from `sceneBudget`'s sampler, which is where
 	// the arithmetic lives and where it is tested.
-	import { X, Gauge, RefreshCw } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import {
@@ -55,20 +55,20 @@
 		style="z-index: var(--z-window); width: 380px; height: 460px"
 	>
 		<div class="ui-panel-header move-handle flex shrink-0 cursor-move select-none items-center gap-2 py-1.5">
-			<Gauge size={16} aria-hidden="true" />
+			<Icon name="gauge" size={16} aria-hidden="true" />
 			<span class="flex-1 text-sm font-semibold">Statistics</span>
 			<span id="stats-overall" class="budget-dot" data-tier={overall} title={'Scene budget: ' + overall}></span>
 			<button
 				class="rounded-sm p-1 hover:brightness-150"
 				title="Re-read now"
 				aria-label="Re-read now"
-				onclick={() => { sampleSceneMetrics(); resetWireStats(); }}><RefreshCw size={14} aria-hidden="true" /></button>
+				onclick={() => { sampleSceneMetrics(); resetWireStats(); }}><Icon name="refresh-cw" size={16} aria-hidden="true" /></button>
 			<button
 				id="stats-close"
 				class="rounded-sm p-1 hover:brightness-150"
 				title="Close"
 				aria-label="Close statistics"
-				onclick={() => statsOpen.set(false)}><X size={16} aria-hidden="true" /></button>
+				onclick={() => statsOpen.set(false)}><Icon name="x" size={16} aria-hidden="true" /></button>
 		</div>
 
 		<div class="min-h-0 flex-1 overflow-y-auto px-2 py-1.5 text-xs">

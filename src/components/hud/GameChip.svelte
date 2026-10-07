@@ -12,7 +12,7 @@
 	// LOCAL chrome: editor only, never in embed mode (an embed has its own ▶), never in a
 	// headset (DOM is invisible there), and it replicates nothing — Test play's reset goes
 	// through the game shell's own write path, which is what replicates.
-	import { Play, Eye, EyeOff } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { isLocked, isVRMode } from '../../stores/sceneStore';
 	import { hudIsGame, hudPreviewInViewport } from '$lib/hudDocs';
 	import { gameState } from '$lib/gameState';
@@ -35,7 +35,7 @@
 			title={$hudPreviewInViewport ? 'Hide the game screens in the editor' : 'Preview the game screens in the editor (buttons inert)'}
 			onclick={() => hudPreviewInViewport.update((on) => !on)}
 		>
-			{#if $hudPreviewInViewport}<Eye size={14} aria-hidden="true" />{:else}<EyeOff size={14} aria-hidden="true" />{/if}
+			{#if $hudPreviewInViewport}<Icon name="eye" size={16} aria-hidden="true" />{:else}<Icon name="eye-off" size={16} aria-hidden="true" />{/if}
 		</button>
 		<button
 			id="game-chip-test"
@@ -44,7 +44,7 @@
 			title="Test play: back to the menu, enter Play, start from the Start screen"
 			onclick={() => testPlay()}
 		>
-			<Play size={13} aria-hidden="true" />
+			<Icon name="play" size={16} aria-hidden="true" />
 			<span>Test play</span>
 		</button>
 	</div>

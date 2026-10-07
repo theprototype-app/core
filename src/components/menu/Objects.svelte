@@ -1,5 +1,5 @@
 <script>
-	import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Layers, Lock, PersonStanding, Settings, Share2, Sun, UserLock } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
     /** 26-B: `flat` renders ONE row and no recursion — the virtualised list in
      * Controls draws the flattened `visibleObjectRows` itself and supplies the
      * indent, so the same component (and the same nine handlers) serve both the
@@ -255,7 +255,7 @@
                     title={isExpanded ? 'Collapse group' : 'Expand group'}
                     onclick={(e) => { e.stopPropagation(); setExpanded(!isExpanded); }}
                 >
-                    {#if isExpanded}<ChevronDown size={14} aria-hidden="true" />{:else}<ChevronRight size={14} aria-hidden="true" />{/if}
+                    {#if isExpanded}<Icon name="chevron-down" size={16} aria-hidden="true" />{:else}<Icon name="chevron-right" size={16} aria-hidden="true" />{/if}
                 </button>
             {:else}
                 <span class="w-4 shrink-0"></span>
@@ -263,23 +263,23 @@
 
             <!-- type icon column -->
             {#if element.userData?.animatedClips}
-                <PersonStanding size={16} class="w-4 shrink-0 text-center text-purple-300" aria-hidden="true" title="Animated model" />
+                <Icon name="person-standing" size={16} class="shrink-0 text-purple-300" aria-hidden="true" title="Animated model" />
             {:else if element.type.endsWith('Group')}
-                <Layers size={16} class="w-4 shrink-0 text-center text-sky-300" aria-hidden="true" title="Group" />
+                <Icon name="layers" size={16} class="shrink-0 text-sky-300" aria-hidden="true" title="Group" />
             {:else if element.type.endsWith('Light')}
-                <Sun size={16} class="w-4 shrink-0 text-center text-yellow-300" aria-hidden="true" title="Light" />
+                <Icon name="sun" size={16} class="shrink-0 text-yellow-300" aria-hidden="true" title="Light" />
             {:else}
-                <Box size={16} class="w-4 shrink-0 text-center text-gray-400" aria-hidden="true" title="Object" />
+                <Icon name="box" size={16} class="shrink-0 text-gray-400" aria-hidden="true" title="Object" />
             {/if}
 
             {#if isLocal}
-                <UserLock size={16} class="w-3 shrink-0 text-center text-[10px] text-amber-400" aria-hidden="true" title="Local only (not shared with peers)" />
+                <Icon name="user-lock" size={16} class="shrink-0 text-amber-400" aria-hidden="true" title="Local only (not shared with peers)" />
             {/if}
 
             <!-- 171: a persistent hidden marker so hidden rows read at a glance
                  (the eye toggle only shows on hover) -->
             {#if element.visible === false}
-                <EyeOff size={16} class="hidden-marker w-3 shrink-0 text-center text-[10px] text-gray-500" aria-hidden="true" title="Hidden" />
+                <Icon name="eye-off" size={16} class="hidden-marker shrink-0 text-gray-500" aria-hidden="true" title="Hidden" />
             {/if}
 
             <!-- name / inline rename -->
@@ -309,7 +309,7 @@
             {#if lockEntry}
                 <span class="flex shrink-0 items-center gap-1 pr-1">
                     <span class="h-2 w-2 rounded-full" style={'background:' + peerColor(lockEntry[0])}></span>
-                    <Lock size={16} class="text-gray-400" aria-hidden="true" />
+                    <Icon name="lock" size={16} class="text-gray-400" aria-hidden="true" />
                 </span>
                 <Tooltip placement='left' arrow={false}>Locked by {nameOf(lockEntry[0])} — right-click to request control</Tooltip>
             {:else}
@@ -319,11 +319,11 @@
                         title={element.visible === false ? 'Show' : 'Hide'}
                         onclick={(e) => { e.stopPropagation(); toggleObjectVisibility(element.uuid); }}
                     >
-                        {#if element.visible === false}<EyeOff size={14} aria-hidden="true" />{:else}<Eye size={14} aria-hidden="true" />{/if}
+                        {#if element.visible === false}<Icon name="eye-off" size={16} aria-hidden="true" />{:else}<Icon name="eye" size={16} aria-hidden="true" />{/if}
                     </button>
-                    <button class="configure hover:brightness-200" title="Properties" onclick={(e) => { e.stopPropagation(); configure(element); }}><Settings size={14} aria-hidden="true" /></button>
+                    <button class="configure hover:brightness-200" title="Properties" onclick={(e) => { e.stopPropagation(); configure(element); }}><Icon name="settings" size={16} aria-hidden="true" /></button>
                     {#if isLocal && !isViewer()}
-                        <button class="share-local hover:brightness-200" title="Share with peers" aria-label="Share with peers" onclick={(e) => { e.stopPropagation(); shareLocal(element); }}><Share2 size={16} class="text-primary-300" aria-hidden="true" /></button>
+                        <button class="share-local hover:brightness-200" title="Share with peers" aria-label="Share with peers" onclick={(e) => { e.stopPropagation(); shareLocal(element); }}><Icon name="share-2" size={16} class="text-primary-300" aria-hidden="true" /></button>
                     {/if}
                     <button class="delete hover:brightness-200" title="Delete" onclick={(e) => { e.stopPropagation(); deleteItem(element); }}>✖️</button>
                 </span>

@@ -1,0 +1,6974 @@
+{
+	"recordedAt": "2026-10-06T01:50:16.092Z",
+	"viewport": {
+		"width": 1440,
+		"height": 900
+	},
+	"sections": {
+		"Interface": {
+			"rows": [
+				{
+					"name": "Allow text selection everywhere",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "allow-text-select",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"allowTextSelection": "true"
+								},
+								"stores": {
+									"textSelection.allowTextSelection": true
+								},
+								"html": [
+									"class"
+								],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"allowTextSelection": "false"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Your character",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "settings-customize-character",
+							"label": "Customize character…",
+							"where": "control",
+							"default": "Customize character…",
+							"disabled": false,
+							"state": {
+								"gone": true
+							},
+							"effects": {
+								"storage": {},
+								"stores": {
+									"avatars.avatarPreview": "<object>",
+									"cameraClaim": 1,
+									"characterModalOpen": true,
+									"settingsOpen": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show everyone as classic heads",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "avatars-peers-classic",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"avatars:peersClassic": "1"
+								},
+								"stores": {
+									"avatars.peersAsClassic": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Theme",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "theme-select",
+							"label": "",
+							"where": "control",
+							"default": "Dark",
+							"disabled": false,
+							"options": [
+								"Dark",
+								"Light",
+								"Green console",
+								"8-bit",
+								"High contrast"
+							],
+							"state": "Light",
+							"effects": {
+								"storage": {
+									"theme": "light"
+								},
+								"stores": {
+									"themes.theme": "light"
+								},
+								"html": [
+									"class",
+									"data-theme"
+								],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Dark",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Custom theme",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "theme-export",
+							"label": "Export template",
+							"where": "control",
+							"default": "Export template",
+							"disabled": false,
+							"state": "Export template",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": [
+									"download"
+								]
+							},
+							"scope": "device",
+							"exercise": "done"
+						},
+						{
+							"kind": "button",
+							"id": "theme-browse",
+							"label": "Browse…",
+							"where": "control",
+							"default": "Browse…",
+							"disabled": false,
+							"state": "Browse…",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": [
+									"filechooser"
+								]
+							},
+							"scope": "device",
+							"exercise": "done"
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": "",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Game sounds",
+					"controls": [
+						{
+							"kind": "range",
+							"id": "setting-game-sound-volume",
+							"label": "Game sounds volume",
+							"where": "control",
+							"default": "0.8",
+							"disabled": false,
+							"dir": 1,
+							"state": "0.85",
+							"effects": {
+								"storage": {
+									"game:soundVolume": "0.85"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "0.8",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Music",
+					"controls": [
+						{
+							"kind": "range",
+							"id": "setting-game-music-volume",
+							"label": "Game music volume",
+							"where": "control",
+							"default": "0.6",
+							"disabled": false,
+							"dir": 1,
+							"state": "0.65",
+							"effects": {
+								"storage": {
+									"game:musicVolume": "0.65"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "0.6",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Welcome on start",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"showWelcomeOnStart": "true"
+								},
+								"stores": {
+									"whatsNew.showWelcomeOnStart": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "button",
+							"id": "",
+							"label": "open it now",
+							"where": "body",
+							"default": "open it now",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Announce new versions",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"showWhatsNewNotice": "false"
+								},
+								"stores": {
+									"whatsNew.showWhatsNewNotice": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Toasts in drawer only",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"toastsInDrawerOnly": "true"
+								},
+								"stores": {
+									"toastsInDrawerOnly": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show tours automatically",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "setting-tours-auto",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"toursAutoStart": "false"
+								},
+								"stores": {
+									"tours.tourRecords": 1
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "VR welcome",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "setting-tour-vr",
+							"label": "Start VR welcome",
+							"where": "control",
+							"default": "Start VR welcome",
+							"disabled": false,
+							"state": {
+								"gone": true
+							},
+							"effects": {
+								"storage": {
+									"notifications": "notified: [\"The VR welcome will play the next time you enter VR.\"]"
+								},
+								"stores": {
+									"anyModalOpen": false,
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>",
+									"settingsOpen": false,
+									"toastStore": "<object>",
+									"tours.tourRecords": 3
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Editor tour",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "setting-tour-editor",
+							"label": "Start editor tour",
+							"where": "control",
+							"default": "Start editor tour",
+							"disabled": false,
+							"state": {
+								"gone": true
+							},
+							"effects": {
+								"storage": {
+									"tour.editor": "{\"at\":0}"
+								},
+								"stores": {
+									"anyModalOpen": false,
+									"settingsOpen": false,
+									"tours.activeTour": "<object>",
+									"tours.tourRecords": 4
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [
+									"tour-card"
+								],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Offer Enter VR",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "setting-xr-offer",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"xrOfferSession": "false"
+								},
+								"stores": {
+									"xrOffer.xrOfferEnabled": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Reset tours",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "setting-tours-reset",
+							"label": "Reset all",
+							"where": "control",
+							"default": "Reset all",
+							"disabled": false,
+							"state": "Reset all",
+							"effects": {
+								"storage": {
+									"notifications": "notified: [\"Tours reset — each one shows again the first time it applies.\"]",
+									"tour.editor": null
+								},
+								"stores": {
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>",
+									"toastStore": "<object>",
+									"tours.tourRecords": 6
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Floating toolbar",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"floatingToolbar": "false"
+								},
+								"stores": {
+									"floatingToolbar": false,
+									"toastStore": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Toolbar always on top",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"toolbarOnTop": "true"
+								},
+								"stores": {
+									"toolbarAlwaysOnTop": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Window positions",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "reset-windows",
+							"label": "Reset",
+							"where": "control",
+							"default": "Reset",
+							"disabled": false,
+							"state": "Reset",
+							"effects": {
+								"storage": {
+									"notifications": "notified: [\"Window positions reset\"]"
+								},
+								"stores": {
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>",
+									"toastStore": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Touch tools",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"touchTools": "true"
+								},
+								"stores": {
+									"toastStore": "<object>",
+									"touchTools": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Allow undocking (touch)",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"mobileUndockAllowed": "true"
+								},
+								"stores": {
+									"mobileUndockAllowed": true
+								},
+								"html": [
+									"class"
+								],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Advanced mode",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"advancedMode": "true"
+								},
+								"stores": {
+									"advancedMode": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Environment in list",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"showEnvInList": "true"
+								},
+								"stores": {
+									"showEnvInList": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Object search in menu",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"objectSearchEnabled": "true"
+								},
+								"stores": {
+									"objectSearchEnabled": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show FPS + draw calls",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "show-perf-stats",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"perfStats:show": "true"
+								},
+								"stores": {
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Dock resizes the viewport",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "dock-pushes-viewport",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"viewPrefs": "{\"wireColor\":\"#9aa4b0\",\"outlineColor\":\"#353535\",\"editWireColor\":\"auto\",\"dockPushesViewport\":false}"
+								},
+								"stores": {
+									"viewPrefs.viewPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				}
+			]
+		},
+		"Controls": {
+			"rows": [
+				{
+					"name": "Shift+A quick add",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"enableShiftAdd": "true"
+								},
+								"stores": {
+									"enableShiftAdd": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show helpers in Play (debug)",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "helpers-in-play",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"helpersInPlay": "true"
+								},
+								"stores": {
+									"helperLayer.helpersInPlay": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Double-click to open notes",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"noteDoubleClickToOpen": "true"
+								},
+								"stores": {
+									"noteDoubleClickToOpen": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Trackpad gestures",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "trackpad-mode",
+							"label": "",
+							"where": "control",
+							"default": "Auto",
+							"disabled": false,
+							"options": [
+								"Auto",
+								"On",
+								"Off"
+							],
+							"state": "On",
+							"effects": {
+								"storage": {
+									"trackpadMode": "on"
+								},
+								"stores": {
+									"trackpadNav.trackpadMode": "on"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Auto",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Two-finger pan",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"trackpadPanEnabled": "false"
+								},
+								"stores": {
+									"trackpadNav.panEnabled": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Reverse trackpad pan",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"trackpadReversePan": "true"
+								},
+								"stores": {
+									"trackpadNav.reversePan": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Pinch zoom",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"trackpadPinchZoom": "false"
+								},
+								"stores": {
+									"trackpadNav.pinchZoomEnabled": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Allow browser pinch zoom",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"allowBrowserZoom": "true"
+								},
+								"stores": {
+									"trackpadNav.allowBrowserZoom": true
+								},
+								"html": [],
+								"body": [
+									"style"
+								],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Wheel diagnostics",
+					"controls": []
+				}
+			]
+		},
+		"Input": {
+			"rows": [
+				{
+					"name": "Gamepad",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "gamepad-enabled",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"gamepadPrefs": "{\"enabled\":false,\"invertY\":false,\"deadzone\":0.15,\"lookSensitivity\":1,\"swapSticks\":false}"
+								},
+								"stores": {
+									"gamepadPrefs.gamepadPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Swap sticks",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "gamepad-swap",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"gamepadPrefs": "{\"enabled\":true,\"invertY\":false,\"deadzone\":0.15,\"lookSensitivity\":1,\"swapSticks\":true}"
+								},
+								"stores": {
+									"gamepadPrefs.gamepadPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Invert look Y",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "gamepad-invert-y",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"gamepadPrefs": "{\"enabled\":true,\"invertY\":true,\"deadzone\":0.15,\"lookSensitivity\":1,\"swapSticks\":false}"
+								},
+								"stores": {
+									"gamepadPrefs.gamepadPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Stick deadzone",
+					"controls": [
+						{
+							"kind": "number",
+							"id": "gamepad-deadzone",
+							"label": "",
+							"where": "control",
+							"default": "0.15",
+							"disabled": false,
+							"dir": 1,
+							"state": "0.16",
+							"effects": {
+								"storage": {
+									"gamepadPrefs": "{\"enabled\":true,\"invertY\":false,\"deadzone\":0.16,\"lookSensitivity\":1,\"swapSticks\":false}"
+								},
+								"stores": {
+									"gamepadPrefs.gamepadPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "0.15",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Look sensitivity",
+					"controls": [
+						{
+							"kind": "number",
+							"id": "gamepad-sensitivity",
+							"label": "",
+							"where": "control",
+							"default": "1",
+							"disabled": false,
+							"dir": 1,
+							"state": "1.1",
+							"effects": {
+								"storage": {
+									"gamepadPrefs": "{\"enabled\":true,\"invertY\":false,\"deadzone\":0.15,\"lookSensitivity\":1.1,\"swapSticks\":false}"
+								},
+								"stores": {
+									"gamepadPrefs.gamepadPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "1",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Per-game controls",
+					"controls": []
+				},
+				{
+					"name": "Mouse bindings",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "flow-mouse-bindings",
+							"label": "",
+							"where": "control",
+							"default": "Classic — left-drag pans",
+							"disabled": false,
+							"options": [
+								"Classic — left-drag pans",
+								"Select-first — left-drag selects, right-drag pans"
+							],
+							"state": "Select-first — left-drag selects, right-drag pans",
+							"effects": {
+								"storage": {
+									"flow:mouseBindings": "select"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Classic — left-drag pans",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				}
+			]
+		},
+		"Touch controls": {
+			"rows": [
+				{
+					"name": "Show touch controls",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "touch-visibility-auto",
+							"label": "Auto",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "touch-visibility-always",
+							"label": "Always",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"touchControlsPrefs": "{\"visibility\":\"always\",\"showInEdit\":false,\"haptics\":true,\"scope\":\"game\"}"
+								},
+								"stores": {
+									"touchActions.touchControlsVisible": true,
+									"touchActions.touchPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"touchControlsPrefs": "{\"visibility\":\"auto\",\"showInEdit\":false,\"haptics\":true,\"scope\":\"game\"}"
+							},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "touch-visibility-never",
+							"label": "Never",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"touchControlsPrefs": "{\"visibility\":\"never\",\"showInEdit\":false,\"haptics\":true,\"scope\":\"game\"}"
+								},
+								"stores": {
+									"touchActions.touchPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show in edit",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "touch-show-in-edit",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"touchControlsPrefs": "{\"visibility\":\"auto\",\"showInEdit\":true,\"haptics\":true,\"scope\":\"game\"}"
+								},
+								"stores": {
+									"touchActions.touchPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Haptic tick",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "touch-haptics",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"touchControlsPrefs": "{\"visibility\":\"auto\",\"showInEdit\":false,\"haptics\":false,\"scope\":\"game\"}"
+								},
+								"stores": {
+									"touchActions.touchPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Look speed",
+					"controls": [
+						{
+							"kind": "range",
+							"id": "touch-look-speed",
+							"label": "Touch look speed",
+							"where": "control",
+							"default": "1",
+							"disabled": false,
+							"dir": 1,
+							"state": "1.05",
+							"effects": {
+								"storage": {
+									"touchLookSpeed": "1.05"
+								},
+								"stores": {
+									"touchControls.touchLookSpeed": 1.05
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "1",
+							"storageAfterRestore": {
+								"touchLookSpeed": "1"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Layout",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "touch-edit-layout",
+							"label": "Edit layout",
+							"where": "control",
+							"default": "Edit layout",
+							"disabled": false,
+							"state": {
+								"gone": true
+							},
+							"effects": {
+								"storage": {},
+								"stores": {
+									"anyModalOpen": false,
+									"settingsOpen": false,
+									"touchActions.touchLayoutEditorOpen": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [
+									"touch-layout-editor"
+								],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						},
+						{
+							"kind": "button",
+							"id": "touch-reset-layout",
+							"label": "Reset",
+							"where": "control",
+							"default": "Reset",
+							"disabled": false,
+							"state": "Reset",
+							"effects": {
+								"storage": {
+									"notifications": "notified: [\"Touch layout reset to the default arrangement\"]",
+									"touchControlsLayouts": "{\"global\":null,\"games\":{}}"
+								},
+								"stores": {
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>",
+									"toastStore": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Jump",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-released-jump",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a released image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-pressed-jump",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a pressed image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "color",
+							"id": "",
+							"label": "Tint for Jump",
+							"where": "body",
+							"default": "#ffffff",
+							"disabled": false
+						},
+						{
+							"kind": "range",
+							"id": "",
+							"label": "Icon size for Jump",
+							"where": "body",
+							"default": "1",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Fire",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-released-fire",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a released image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-pressed-fire",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a pressed image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "color",
+							"id": "",
+							"label": "Tint for Fire",
+							"where": "body",
+							"default": "#ffffff",
+							"disabled": false
+						},
+						{
+							"kind": "range",
+							"id": "",
+							"label": "Icon size for Fire",
+							"where": "body",
+							"default": "1",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Use",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-released-interact",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a released image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-pressed-interact",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a pressed image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "color",
+							"id": "",
+							"label": "Tint for Use",
+							"where": "body",
+							"default": "#ffffff",
+							"disabled": false
+						},
+						{
+							"kind": "range",
+							"id": "",
+							"label": "Icon size for Use",
+							"where": "body",
+							"default": "1",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Grab",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-released-grab",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a released image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-pressed-grab",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a pressed image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "color",
+							"id": "",
+							"label": "Tint for Grab",
+							"where": "body",
+							"default": "#ffffff",
+							"disabled": false
+						},
+						{
+							"kind": "range",
+							"id": "",
+							"label": "Icon size for Grab",
+							"where": "body",
+							"default": "1",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Crouch",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-released-crouch",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a released image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-pressed-crouch",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a pressed image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "color",
+							"id": "",
+							"label": "Tint for Crouch",
+							"where": "body",
+							"default": "#ffffff",
+							"disabled": false
+						},
+						{
+							"kind": "range",
+							"id": "",
+							"label": "Icon size for Crouch",
+							"where": "body",
+							"default": "1",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Sprint",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-released-sprint",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a released image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-pressed-sprint",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a pressed image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "color",
+							"id": "",
+							"label": "Tint for Sprint",
+							"where": "body",
+							"default": "#ffffff",
+							"disabled": false
+						},
+						{
+							"kind": "range",
+							"id": "",
+							"label": "Icon size for Sprint",
+							"where": "body",
+							"default": "1",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Reload",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-released-reload",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a released image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-pressed-reload",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a pressed image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "color",
+							"id": "",
+							"label": "Tint for Reload",
+							"where": "body",
+							"default": "#ffffff",
+							"disabled": false
+						},
+						{
+							"kind": "range",
+							"id": "",
+							"label": "Icon size for Reload",
+							"where": "body",
+							"default": "1",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Up",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-released-up",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a released image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-pressed-up",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a pressed image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "color",
+							"id": "",
+							"label": "Tint for Up",
+							"where": "body",
+							"default": "#ffffff",
+							"disabled": false
+						},
+						{
+							"kind": "range",
+							"id": "",
+							"label": "Icon size for Up",
+							"where": "body",
+							"default": "1",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Down",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-released-down",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a released image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "button",
+							"id": "touch-tex-upload-pressed-down",
+							"label": "Upload",
+							"where": "body",
+							"default": "Upload",
+							"disabled": false
+						},
+						{
+							"kind": "file",
+							"id": "",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "Pick a pressed image from Explorer",
+							"where": "body",
+							"default": "Explorer…",
+							"disabled": false
+						},
+						{
+							"kind": "color",
+							"id": "",
+							"label": "Tint for Down",
+							"where": "body",
+							"default": "#ffffff",
+							"disabled": false
+						},
+						{
+							"kind": "range",
+							"id": "",
+							"label": "Icon size for Down",
+							"where": "body",
+							"default": "1",
+							"disabled": false
+						}
+					]
+				}
+			]
+		},
+		"Scene": {
+			"rows": [
+				{
+					"name": "Show grid",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"showGrid": "false"
+								},
+								"stores": {
+									"showGrid": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Light helper length",
+					"controls": [
+						{
+							"kind": "number",
+							"id": "light-helper-length",
+							"label": "",
+							"where": "control",
+							"default": "2",
+							"disabled": false,
+							"dir": 1,
+							"state": "2.2",
+							"effects": {
+								"storage": {
+									"lightHelperLength": "2.2"
+								},
+								"stores": {
+									"toastStore": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "2",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Shadow quality",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "shadow-quality",
+							"label": "",
+							"where": "control",
+							"default": "High",
+							"disabled": false,
+							"options": [
+								"Off",
+								"Low",
+								"Medium",
+								"High"
+							],
+							"state": "Off",
+							"effects": {
+								"storage": {
+									"shadowQuality": "off"
+								},
+								"stores": {
+									"lightParams.shadowQuality": "off"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "High",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Reduce quality when the scene is heavy",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "auto-quality",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"autoQuality": "false"
+								},
+								"stores": {
+									"qualityGovernor.autoQuality": false,
+									"qualityGovernor.qualityState": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {
+								"autoQuality": "true"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Simplify distant models",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "lod-enabled",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"lodEnabled": "false"
+								},
+								"stores": {
+									"lod.lodEnabled": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {
+								"lodEnabled": "true"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Draw repeated kit pieces together",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "kit-instancing",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"kitInstancing": "false"
+								},
+								"stores": {
+									"kitInstancing.kitInstancingEnabled": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {
+								"kitInstancing": "true"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Water quality",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "water-quality",
+							"label": "",
+							"where": "control",
+							"default": "Auto",
+							"disabled": false,
+							"options": [
+								"Auto",
+								"High",
+								"Medium",
+								"Low (headset)"
+							],
+							"state": "High",
+							"effects": {
+								"storage": {
+									"water:quality": "high"
+								},
+								"stores": {
+									"waterPrefs.waterQuality": "high"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Auto",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Simulation controls",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"showSimControls": "true"
+								},
+								"stores": {
+									"showSimControls": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Sync animations",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"syncedAnimations": "false"
+								},
+								"stores": {
+									"syncedAnimations": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Spatial voice",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"spatialVoice": "false"
+								},
+								"stores": {
+									"voiceChat.spatialVoice": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Ping color + sound",
+					"controls": [
+						{
+							"kind": "color",
+							"id": "ping-color",
+							"label": "",
+							"where": "control",
+							"default": "#4f83cc",
+							"disabled": false,
+							"state": "#123456",
+							"effects": {
+								"storage": {
+									"pingColor": "#123456"
+								},
+								"stores": {
+									"ping.pingColor": "#123456"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "#4f83cc",
+							"storageAfterRestore": {
+								"pingColor": "#4f83cc"
+							},
+							"exercise": "done"
+						},
+						{
+							"kind": "select",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": "Ding",
+							"disabled": false,
+							"options": [
+								"Ding",
+								"Chime",
+								"Pluck",
+								"Pop",
+								"Bell"
+							],
+							"state": "Chime",
+							"effects": {
+								"storage": {
+									"pingSound": "chime"
+								},
+								"stores": {
+									"ping.pingSound": "chime"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Ding",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "button",
+							"id": "ping-preview",
+							"label": "▶ Preview",
+							"where": "control",
+							"default": "▶ Preview",
+							"disabled": false,
+							"state": "▶ Preview",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Autosave",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"autosave": "false"
+								},
+								"stores": {
+									"autosave.autosaveEnabled": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Auto-restore on load",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "auto-restore",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"autoRestore": "true"
+								},
+								"stores": {
+									"autosave.autoRestoreEnabled": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Keep automatic checkpoints",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "checkpoints-auto",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"checkpoints:auto": "false"
+								},
+								"stores": {
+									"checkpoints.autoCheckpoints": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Automatic checkpoint every",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "checkpoints-every",
+							"label": "",
+							"where": "control",
+							"default": "10 min",
+							"disabled": false,
+							"options": [
+								"5 min",
+								"10 min",
+								"30 min",
+								"60 min"
+							],
+							"state": "30 min",
+							"effects": {
+								"storage": {
+									"checkpoints:every": "30"
+								},
+								"stores": {
+									"checkpoints.autoCheckpointMinutes": 30
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "10 min",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Checkpoint storage",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "checkpoints-cap",
+							"label": "",
+							"where": "control",
+							"default": "250 MB",
+							"disabled": false,
+							"options": [
+								"100 MB",
+								"250 MB",
+								"500 MB",
+								"1 GB"
+							],
+							"state": "500 MB",
+							"effects": {
+								"storage": {
+									"checkpoints:capMb": "500"
+								},
+								"stores": {
+									"checkpoints.checkpointCapMb": 500
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "250 MB",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "button",
+							"id": "checkpoints-open-timeline",
+							"label": "Open the timeline",
+							"where": "body",
+							"default": "Open the timeline",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "When opening another scene",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "modules-on-open",
+							"label": "",
+							"where": "control",
+							"default": "Ask",
+							"disabled": false,
+							"options": [
+								"Ask",
+								"Keep modules",
+								"Unload modules"
+							],
+							"state": "Keep modules",
+							"effects": {
+								"storage": {
+									"scenes:modulesOnOpen": "keep"
+								},
+								"stores": {
+									"sceneSwitch.modulesOnOpen": "keep"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Ask",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Double-click action",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "double-click-action",
+							"label": "",
+							"where": "control",
+							"default": "Open properties",
+							"disabled": false,
+							"options": [
+								"Open properties",
+								"Edit mesh",
+								"Focus and isolate",
+								"Select same type"
+							],
+							"state": "Edit mesh",
+							"effects": {
+								"storage": {
+									"doubleClickAction": "meshedit"
+								},
+								"stores": {
+									"selectionPrefs.doubleClickAction": "meshedit"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Open properties",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Length",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "length-unit",
+							"label": "",
+							"where": "control",
+							"default": "m",
+							"disabled": false,
+							"options": [
+								"m",
+								"cm",
+								"mm",
+								"in",
+								"ft"
+							],
+							"state": "cm",
+							"effects": {
+								"storage": {
+									"lengthUnit": "cm"
+								},
+								"stores": {
+									"units.lengthUnit": "cm"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "m",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Angle",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "angle-unit",
+							"label": "",
+							"where": "control",
+							"default": "degrees",
+							"disabled": false,
+							"options": [
+								"degrees",
+								"radians"
+							],
+							"state": "radians",
+							"effects": {
+								"storage": {
+									"angleUnit": "rad"
+								},
+								"stores": {
+									"units.angleUnit": "rad"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "degrees",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Carry animation clips",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"duplicateCarriesAnimation": "false"
+								},
+								"stores": {
+									"duplicateCarriesAnimation": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Carry object flow",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"duplicateCarriesFlow": "false"
+								},
+								"stores": {
+									"duplicateCarriesFlow": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Carry shader graph",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"duplicateCarriesShader": "false"
+								},
+								"stores": {
+									"duplicateCarriesShader": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Share materials",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"shareDuplicatedMaterials": "true"
+								},
+								"stores": {
+									"materialSharing.shareDuplicatedMaterials": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Wireframe color",
+					"controls": [
+						{
+							"kind": "color",
+							"id": "wire-color",
+							"label": "",
+							"where": "control",
+							"default": "#9aa4b0",
+							"disabled": false,
+							"state": "#123456",
+							"effects": {
+								"storage": {
+									"viewPrefs": "{\"wireColor\":\"#123456\",\"outlineColor\":\"#353535\",\"editWireColor\":\"auto\",\"dockPushesViewport\":true}"
+								},
+								"stores": {
+									"viewPrefs.viewPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "#9aa4b0",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Selection outline color",
+					"controls": [
+						{
+							"kind": "color",
+							"id": "outline-color",
+							"label": "",
+							"where": "control",
+							"default": "#353535",
+							"disabled": false,
+							"state": "#123456",
+							"effects": {
+								"storage": {
+									"viewPrefs": "{\"wireColor\":\"#9aa4b0\",\"outlineColor\":\"#123456\",\"editWireColor\":\"auto\",\"dockPushesViewport\":true}"
+								},
+								"stores": {
+									"viewPrefs.viewPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "#353535",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Edit Mesh wireframe",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "edit-wire-auto",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"viewPrefs": "{\"wireColor\":\"#9aa4b0\",\"outlineColor\":\"#353535\",\"editWireColor\":\"#2f81f7\",\"dockPushesViewport\":true}"
+								},
+								"stores": {
+									"viewPrefs.viewPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "color",
+							"id": "edit-wire-color",
+							"label": "",
+							"where": "control",
+							"default": "#2f81f7",
+							"disabled": true
+						}
+					]
+				},
+				{
+					"name": "Reset line colors",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "reset-view-colors",
+							"label": "Reset",
+							"where": "control",
+							"default": "Reset",
+							"disabled": false,
+							"state": "Reset",
+							"effects": {
+								"storage": {
+									"notifications": "notified: [\"Line colors reset\"]"
+								},
+								"stores": {
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>",
+									"toastStore": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Loading placeholders",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "placeholder-style",
+							"label": "",
+							"where": "control",
+							"default": "Modern (default)",
+							"disabled": false,
+							"options": [
+								"Modern (default)",
+								"Colored boxes"
+							],
+							"state": "Colored boxes",
+							"effects": {
+								"storage": {
+									"placeholderStyle": "\"boxes\"",
+									"placeholderStyleChosen": "1"
+								},
+								"stores": {
+									"loadStates.placeholderStyle": "boxes"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Modern (default)",
+							"storageAfterRestore": {
+								"placeholderStyle": "\"modern\"",
+								"placeholderStyleChosen": "1"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Placeholder grid texture",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "placeholder-grid-on",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"placeholderGrid": "{\"on\":false,\"size\":0.5,\"color\":\"#bfe6ff\",\"opacity\":0.45,\"speed\":1}"
+								},
+								"stores": {
+									"loadStates.placeholderGrid": "<object>",
+									"toastStore": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {
+								"placeholderGrid": "{\"on\":true,\"size\":0.5,\"color\":\"#bfe6ff\",\"opacity\":0.45,\"speed\":1}"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Grid size (m)",
+					"controls": [
+						{
+							"kind": "number",
+							"id": "placeholder-grid-size",
+							"label": "",
+							"where": "control",
+							"default": "0.5",
+							"disabled": false,
+							"dir": 1,
+							"state": "0.55",
+							"effects": {
+								"storage": {
+									"placeholderGrid": "{\"on\":true,\"size\":0.55,\"color\":\"#bfe6ff\",\"opacity\":0.45,\"speed\":1}"
+								},
+								"stores": {
+									"loadStates.placeholderGrid": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "0.5",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Grid color",
+					"controls": [
+						{
+							"kind": "color",
+							"id": "placeholder-grid-color",
+							"label": "",
+							"where": "control",
+							"default": "#bfe6ff",
+							"disabled": false,
+							"state": "#123456",
+							"effects": {
+								"storage": {
+									"placeholderGrid": "{\"on\":true,\"size\":0.5,\"color\":\"#123456\",\"opacity\":0.45,\"speed\":1}"
+								},
+								"stores": {
+									"loadStates.placeholderGrid": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "#bfe6ff",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Grid opacity",
+					"controls": [
+						{
+							"kind": "range",
+							"id": "placeholder-grid-opacity",
+							"label": "Placeholder grid opacity",
+							"where": "control",
+							"default": "0.45",
+							"disabled": false,
+							"dir": 1,
+							"state": "0.5",
+							"effects": {
+								"storage": {
+									"placeholderGrid": "{\"on\":true,\"size\":0.5,\"color\":\"#bfe6ff\",\"opacity\":0.5,\"speed\":1}"
+								},
+								"stores": {
+									"loadStates.placeholderGrid": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "0.45",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Placeholder animation speed",
+					"controls": [
+						{
+							"kind": "range",
+							"id": "placeholder-anim-speed",
+							"label": "Placeholder animation speed",
+							"where": "control",
+							"default": "1",
+							"disabled": false,
+							"dir": 1,
+							"state": "1.25",
+							"effects": {
+								"storage": {
+									"placeholderGrid": "{\"on\":true,\"size\":0.5,\"color\":\"#bfe6ff\",\"opacity\":0.45,\"speed\":1.25}"
+								},
+								"stores": {
+									"loadStates.placeholderGrid": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "1",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Stuck after (seconds)",
+					"controls": [
+						{
+							"kind": "number",
+							"id": "placeholder-stuck-seconds",
+							"label": "",
+							"where": "control",
+							"default": "10",
+							"disabled": false,
+							"dir": 1,
+							"state": "11",
+							"effects": {
+								"storage": {
+									"placeholderStuckSeconds": "11"
+								},
+								"stores": {
+									"loadStates.placeholderStuckSeconds": 11
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "10",
+							"storageAfterRestore": {
+								"placeholderStuckSeconds": "10"
+							},
+							"exercise": "done"
+						}
+					]
+				}
+			]
+		},
+		"Explorer": {
+			"rows": [
+				{
+					"name": "When you add files during a session",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "share-new-files",
+							"label": "",
+							"where": "control",
+							"default": "Ask each time",
+							"disabled": false,
+							"options": [
+								"Ask each time",
+								"Share automatically",
+								"Keep them local"
+							],
+							"state": "Share automatically",
+							"effects": {
+								"storage": {
+									"shared:shareNewFiles": "always"
+								},
+								"stores": {
+									"sharedLibrary.shareNewFiles": "always"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Ask each time",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Download shared files automatically",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "auto-download",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"shared:autoDownload": "false"
+								},
+								"stores": {
+									"sharedLibrary.autoDownload": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Offer to merge unsaved work on connect",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "merge-on-connect",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"connect:mergeOnConnect": "true"
+								},
+								"stores": {
+									"connectionState.mergeOnConnect": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Who can unshare a file",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "unshare-authority",
+							"label": "",
+							"where": "control",
+							"default": "Anyone in the session",
+							"disabled": false,
+							"options": [
+								"Anyone in the session",
+								"Only whoever shared it"
+							],
+							"state": "Only whoever shared it",
+							"effects": {
+								"storage": {
+									"shared:unshareAuthority": "owner"
+								},
+								"stores": {
+									"sharedLibrary.unshareAuthority": "owner"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Anyone in the session",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Keep versions per scene",
+					"controls": [
+						{
+							"kind": "number",
+							"id": "keep-versions",
+							"label": "",
+							"where": "control",
+							"default": "10",
+							"disabled": false,
+							"dir": 1,
+							"state": "11",
+							"effects": {
+								"storage": {
+									"project:keepVersions": "11"
+								},
+								"stores": {
+									"projectManifest.keepVersionsSetting": 11
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "10",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "When importing files already in your library",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "import-duplicate-mode",
+							"label": "",
+							"where": "control",
+							"default": "Ask",
+							"disabled": false,
+							"options": [
+								"Ask",
+								"Skip them",
+								"Import as copies"
+							],
+							"state": "Skip them",
+							"effects": {
+								"storage": {
+									"importDuplicateMode": "skip"
+								},
+								"stores": {
+									"importDuplicates.duplicateImportMode": "skip"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Ask",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Save name",
+					"controls": [
+						{
+							"kind": "text",
+							"id": "save-name-template",
+							"label": "",
+							"where": "control",
+							"default": "[name]",
+							"disabled": false,
+							"state": "lock-save-name",
+							"effects": {
+								"storage": {
+									"saveNameTemplate": "lock-save-name"
+								},
+								"stores": {
+									"saveName.saveNameTemplate": "lock-save-name"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "[name]",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Keep a recycle bin",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "recycle-bin",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"shared:recycleBin": "false"
+								},
+								"stores": {
+									"sharedLibrary.recycleBinEnabled": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Delete without asking",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "delete-no-confirm",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"shared:deleteNoConfirm": "true"
+								},
+								"stores": {
+									"sharedLibrary.deleteWithoutConfirm": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Keep deleted files after a reload",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "keep-recycle-bin",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"shared:keepRecycleBin": "true"
+								},
+								"stores": {
+									"sharedLibrary.keepRecycleBin": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Deleted files log",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "deleted-log",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"shared:deletedLog": "false"
+								},
+								"stores": {
+									"sharedLibrary.deletedLogEnabled": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Storage used",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "settings-storage",
+							"label": "Show breakdown",
+							"where": "control",
+							"default": "Show breakdown",
+							"disabled": false,
+							"state": "Show breakdown",
+							"effects": {
+								"storage": {},
+								"stores": {
+									"storageUsage.storageModalOpen": true,
+									"storageUsage.storageScan": null
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [
+									"Storage"
+								],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				}
+			]
+		},
+		"VR": {
+			"rows": [
+				{
+					"name": "VR override",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"vrOverride": "true"
+								},
+								"stores": {
+									"vrOverride": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Turning",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "vr-set-turning",
+							"label": "",
+							"where": "control",
+							"default": "Snap",
+							"disabled": false,
+							"options": [
+								"Snap",
+								"Smooth",
+								"Off"
+							],
+							"state": "Smooth",
+							"effects": {
+								"storage": {
+									"vrSmoothTurn": "true"
+								},
+								"stores": {
+									"vrPrefs.vrSmoothTurn": true,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Snap",
+							"storageAfterRestore": {
+								"vrSmoothTurn": "false"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Snap angle",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "vr-set-snapAngle",
+							"label": "",
+							"where": "control",
+							"default": "45°",
+							"disabled": false,
+							"options": [
+								"15°",
+								"30°",
+								"45°",
+								"90°"
+							],
+							"state": "90°",
+							"effects": {
+								"storage": {
+									"vrSnapAngle": "90",
+									"vrSnapAngleLast": "90"
+								},
+								"stores": {
+									"vrPrefs.vrSnapAngleLast": 90,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>",
+									"vrSnapAngle": 90
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "45°",
+							"storageAfterRestore": {
+								"vrSnapAngle": "45",
+								"vrSnapAngleLast": "45"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Smooth speed",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "vr-set-smoothSpeed",
+							"label": "",
+							"where": "control",
+							"default": "90°/s",
+							"disabled": false,
+							"options": [
+								"45°/s",
+								"90°/s",
+								"135°/s",
+								"180°/s"
+							],
+							"state": "135°/s",
+							"effects": {
+								"storage": {
+									"vrSmoothTurnSpeed": "135"
+								},
+								"stores": {
+									"vrPrefs.vrSmoothTurnSpeed": 135,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "90°/s",
+							"storageAfterRestore": {
+								"vrSmoothTurnSpeed": "90"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Mirror turn",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-mirror",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"vrMirrorSnapTurn": "true"
+								},
+								"stores": {
+									"vrMirrorSnapTurn": true,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"vrMirrorSnapTurn": "false"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Comfort vignette",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-vignette",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"vrComfortVignette": "true"
+								},
+								"stores": {
+									"vrPrefs.vrComfortVignette": true,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"vrComfortVignette": "false"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Teleport",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-teleport",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"vrTeleportEnabled": "false"
+								},
+								"stores": {
+									"vrSettingsSchema.vrSettingsVersion": "<changed>",
+									"vrTeleportEnabled": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {
+								"vrTeleportEnabled": "true"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Flying",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-flying",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"vrFlying": "true"
+								},
+								"stores": {
+									"vrFlying": true,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"vrFlying": "false"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Stance",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "vr-set-stance",
+							"label": "",
+							"where": "control",
+							"default": "Standing",
+							"disabled": false,
+							"options": [
+								"Standing",
+								"Seated"
+							],
+							"state": "Seated",
+							"effects": {
+								"storage": {
+									"vrStance": "seated"
+								},
+								"stores": {
+									"vrPrefs.vrStance": "seated",
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Standing",
+							"storageAfterRestore": {
+								"vrStance": "standing"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Height",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "vr-set-height",
+							"label": "",
+							"where": "control",
+							"default": "0 cm",
+							"disabled": false,
+							"options": [
+								"−50 cm",
+								"−45 cm",
+								"−40 cm",
+								"−35 cm",
+								"−30 cm",
+								"−25 cm",
+								"−20 cm",
+								"−15 cm",
+								"−10 cm",
+								"−5 cm",
+								"0 cm",
+								"+5 cm",
+								"+10 cm",
+								"+15 cm",
+								"+20 cm",
+								"+25 cm",
+								"+30 cm",
+								"+35 cm",
+								"+40 cm",
+								"+45 cm",
+								"+50 cm"
+							],
+							"state": "+5 cm",
+							"effects": {
+								"storage": {
+									"vrHeightOffset": "0.05"
+								},
+								"stores": {
+									"vrPrefs.vrHeightOffset": 0.05,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "0 cm",
+							"storageAfterRestore": {
+								"vrHeightOffset": "0"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Menu hand",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "vr-set-menuHand",
+							"label": "",
+							"where": "control",
+							"default": "Right",
+							"disabled": false,
+							"options": [
+								"Right",
+								"Left"
+							],
+							"state": "Left",
+							"effects": {
+								"storage": {
+									"vrBindings": "{\"move\":{\"hand\":\"left\",\"control\":\"stick\"},\"turn\":{\"hand\":\"right\",\"control\":\"stick\"},\"teleport\":{\"hand\":\"right\",\"control\":\"stick\"},\"menu\":{\"hand\":\"right\",\"control\":\"secondary\"},\"mode\":{\"hand\":\"left\",\"control\":\"secondary\"},\"pause\":{\"hand\":\"left\",\"control\":\"primary\"},\"ptt\":{\"hand\":\"right\",\"control\":\"primary\"},\"ping\":{\"hand\":\"right\",\"control\":\"stickClick\"},\"worldPan\":{\"hand\":\"right\",\"control\":\"grip\"},\"grab\":{\"hand\":\"both\",\"control\":\"grip\"},\"select\":{\"hand\":\"both\",\"control\":\"trigger\"}}",
+									"vrMenuHand": "left"
+								},
+								"stores": {
+									"vrBindings.vrBindings": "<object>",
+									"vrMenuHand": "left",
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Right",
+							"storageAfterRestore": {
+								"vrBindings": "{\"move\":{\"hand\":\"left\",\"control\":\"stick\"},\"turn\":{\"hand\":\"right\",\"control\":\"stick\"},\"teleport\":{\"hand\":\"right\",\"control\":\"stick\"},\"menu\":{\"hand\":\"left\",\"control\":\"secondary\"},\"mode\":{\"hand\":\"right\",\"control\":\"secondary\"},\"pause\":{\"hand\":\"left\",\"control\":\"primary\"},\"ptt\":{\"hand\":\"right\",\"control\":\"primary\"},\"ping\":{\"hand\":\"right\",\"control\":\"stickClick\"},\"worldPan\":{\"hand\":\"right\",\"control\":\"grip\"},\"grab\":{\"hand\":\"both\",\"control\":\"grip\"},\"select\":{\"hand\":\"both\",\"control\":\"trigger\"}}",
+								"vrMenuHand": "right"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Hold to open menu",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-menuHold",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"vrMenuHold": "true"
+								},
+								"stores": {
+									"vrMenuHold": true,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"vrMenuHold": "false"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Left-handed",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-leftHanded",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"vrBindings": "{\"move\":{\"hand\":\"right\",\"control\":\"stick\"},\"turn\":{\"hand\":\"left\",\"control\":\"stick\"},\"teleport\":{\"hand\":\"left\",\"control\":\"stick\"},\"menu\":{\"hand\":\"left\",\"control\":\"secondary\"},\"mode\":{\"hand\":\"right\",\"control\":\"secondary\"},\"pause\":{\"hand\":\"right\",\"control\":\"primary\"},\"ptt\":{\"hand\":\"left\",\"control\":\"primary\"},\"ping\":{\"hand\":\"left\",\"control\":\"stickClick\"},\"worldPan\":{\"hand\":\"left\",\"control\":\"grip\"},\"grab\":{\"hand\":\"both\",\"control\":\"grip\"},\"select\":{\"hand\":\"both\",\"control\":\"trigger\"}}",
+									"vrMenuHand": "left"
+								},
+								"stores": {
+									"vrBindings.vrBindings": "<object>",
+									"vrMenuHand": "left",
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"vrBindings": "{\"move\":{\"hand\":\"left\",\"control\":\"stick\"},\"turn\":{\"hand\":\"right\",\"control\":\"stick\"},\"teleport\":{\"hand\":\"right\",\"control\":\"stick\"},\"menu\":{\"hand\":\"right\",\"control\":\"secondary\"},\"mode\":{\"hand\":\"left\",\"control\":\"secondary\"},\"pause\":{\"hand\":\"left\",\"control\":\"primary\"},\"ptt\":{\"hand\":\"right\",\"control\":\"primary\"},\"ping\":{\"hand\":\"right\",\"control\":\"stickClick\"},\"worldPan\":{\"hand\":\"right\",\"control\":\"grip\"},\"grab\":{\"hand\":\"both\",\"control\":\"grip\"},\"select\":{\"hand\":\"both\",\"control\":\"trigger\"}}"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Grab style",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "vr-set-grabStyle",
+							"label": "",
+							"where": "control",
+							"default": "Rigid",
+							"disabled": false,
+							"options": [
+								"Rigid",
+								"Move only",
+								"Rotate only"
+							],
+							"state": "Move only",
+							"effects": {
+								"storage": {
+									"vrGrabStyle": "move"
+								},
+								"stores": {
+									"vrGrabStyle": "move",
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Rigid",
+							"storageAfterRestore": {
+								"vrGrabStyle": "rigid"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Refresh rate",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "vr-set-refresh",
+							"label": "",
+							"where": "control",
+							"default": "Max",
+							"disabled": false,
+							"options": [
+								"Max",
+								"90 Hz",
+								"120 Hz"
+							],
+							"state": "90 Hz",
+							"effects": {
+								"storage": {
+									"vrTargetHz": "90"
+								},
+								"stores": {
+									"vrSettingsSchema.vrSettingsVersion": "<changed>",
+									"vrTargetHz": "90"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Max",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Statistics card",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-stats",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"vrStats": "true"
+								},
+								"stores": {
+									"vrControls.vrStatsGroup": null,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>",
+									"vrStatsOpen": true,
+									"waterVrPanels.vrStatsGroup": null
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"vrStats": "false"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Peer hands",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "vr-set-peerHands",
+							"label": "",
+							"where": "control",
+							"default": "Hands",
+							"disabled": false,
+							"options": [
+								"Model",
+								"Hands",
+								"Spheres"
+							],
+							"state": "Spheres",
+							"effects": {
+								"storage": {
+									"peerHandStyle": "spheres"
+								},
+								"stores": {
+									"peerHandStyle": "spheres",
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Hands",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Passthrough",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "passthrough-toggle",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"notifications": "notified: [\"Passthrough on — takes effect on the next VR entry\"]",
+									"vrPassthrough": "true"
+								},
+								"stores": {
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>",
+									"toastStore": "<object>",
+									"vrPassthrough": true,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"notifications": "[{\"id\":\"n1791250646217_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1791250646217,\"kind\":\"action\"},{\"id\":\"n1791250657716_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1791250657716,\"kind\":\"info\"},{\"id\":\"n1791250672934_3\",\"text\":\"Window positions reset\",\"ts\":1791250672934,\"kind\":\"info\"},{\"id\":\"n1791250795048_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1791250795048,\"kind\":\"info\"},{\"id\":\"n1791250867193_5\",\"text\":\"Line colors reset\",\"ts\":1791250867193,\"kind\":\"info\"},{\"id\":\"n1791250932271_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1791250932271,\"kind\":\"info\"},{\"id\":\"n1791250935287_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1791250935287,\"kind\":\"info\"}]",
+								"vrPassthrough": "false"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Selection wireframe",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-wireframe",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"vrWireframe": "false"
+								},
+								"stores": {
+									"vrSettingsSchema.vrSettingsVersion": "<changed>",
+									"vrWireframeSelection": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {
+								"vrWireframe": "true"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Reset panel positions",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "vr-set-resetPanels",
+							"label": "Reset panel positions",
+							"where": "control",
+							"default": "Reset panel positions",
+							"disabled": false,
+							"state": "Reset panel positions",
+							"effects": {
+								"storage": {
+									"notifications": "notified: [\"VR panel positions reset\"]"
+								},
+								"stores": {
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Game HUD",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "vr-set-gameHud",
+							"label": "",
+							"where": "control",
+							"default": "Follow head",
+							"disabled": false,
+							"options": [
+								"Follow head",
+								"Fixed in world",
+								"Wrist only"
+							],
+							"state": "Fixed in world",
+							"effects": {
+								"storage": {
+									"vr:hudPlacement": "world"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Follow head",
+							"storageAfterRestore": {
+								"vr:hudPlacement": "head"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Game HUD size",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "vr-set-gameHudSize",
+							"label": "",
+							"where": "control",
+							"default": "Medium",
+							"disabled": false,
+							"options": [
+								"Small",
+								"Medium",
+								"Large"
+							],
+							"state": "Large",
+							"effects": {
+								"storage": {
+									"vr:hudSize": "large"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Medium",
+							"storageAfterRestore": {
+								"vr:hudSize": "medium"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Button hints",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-gameHudHints",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"vr:hudHints": "false"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {
+								"vr:hudHints": "true"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Hold to move vertex",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-vertexHold",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"vrVertexHold": "false"
+								},
+								"stores": {
+									"vrSettingsSchema.vrSettingsVersion": "<changed>",
+									"vrVertexHold": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {
+								"vrVertexHold": "true"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Sleeve palette",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "vr-set-sleeve",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"vrSleeveEnabled": "true"
+								},
+								"stores": {
+									"vrSettingsSchema.vrSettingsVersion": "<changed>",
+									"vrSleeveEnabled": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"vrSleeveEnabled": "false"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Face edit limit",
+					"controls": [
+						{
+							"kind": "number",
+							"id": "vr-set-faceCap",
+							"label": "",
+							"where": "control",
+							"default": "2500",
+							"disabled": false,
+							"dir": 1,
+							"state": "2510",
+							"effects": {
+								"storage": {
+									"vrFaceCap": "2510"
+								},
+								"stores": {
+									"faceEdit.vrFaceCap": 2510,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "2500",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Vertex edit limit",
+					"controls": [
+						{
+							"kind": "number",
+							"id": "vr-set-vertexCap",
+							"label": "",
+							"where": "control",
+							"default": "800",
+							"disabled": false,
+							"dir": 1,
+							"state": "810",
+							"effects": {
+								"storage": {
+									"vrVertexCap": "810"
+								},
+								"stores": {
+									"meshEdit.vrVertexCap": 810,
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "800",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "My hand model",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "my-hand-model",
+							"label": "",
+							"where": "control",
+							"default": "Default",
+							"disabled": false,
+							"options": [
+								"Default"
+							],
+							"exercise": "skip"
+						}
+					]
+				},
+				{
+					"name": "Colocation probe (dev)",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "ar-probe-run",
+							"label": "Probe AR capabilities",
+							"where": "control",
+							"default": "Probe AR capabilities",
+							"disabled": false,
+							"state": "Probe AR capabilities",
+							"effects": {
+								"storage": {
+									"arprobe-findings-v1": "[{\"step\":\"navigator.xr\",\"ok\":true,\"detail\":\"present\"},{\"step\":\"XRAnchor\",\"ok\":true,\"detail\":\"constructor present\"},{\"step\":\"XRAnchor.requestPersistentHandle\",\"ok\":false,\"detail\":\"absent — anchors would be session-only\"},{\"step\":\"XRSession.restorePersistentAnchor\",\"ok\":false,\"detail\":\"absent\"},{\"step\":\"XRSession.deletePersistentAnchor\",\"ok\":false,\"detail\":\"absent\"},{\"step\":\"XRSession.persistentAnchors\",\"ok\":false,\"detail\":\"not declared\"},{\"step\":\"stored handle\",\"ok\":false,\"detail\":\"none — this run only creates one (restart the browser, then run again to test restore)\"},{\"step\":\"isSessionSupported('immersive-ar')\",\"ok\":false,\"detail\":\"NOT supported\"},{\"step\":\"session\",\"ok\":false,\"detail\":\"NotSupportedError: The specified session configuration is not supported.\"},{\"step\":\"isSessionSupported('immersive-vr')\",\"ok\":false,\"detail\":\"NOT supported\"}]"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						},
+						{
+							"kind": "button",
+							"id": "ar-probe-clear",
+							"label": "Clear stored anchor",
+							"where": "control",
+							"default": "Clear stored anchor",
+							"disabled": false,
+							"state": "Clear stored anchor",
+							"effects": {
+								"storage": {
+									"arprobe-findings-v1": "[{\"step\":\"cleared\",\"ok\":true,\"detail\":\"nothing was stored\"}]"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Colocation",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "colocate-here",
+							"label": "Colocate here",
+							"where": "control",
+							"default": "Colocate here",
+							"disabled": false,
+							"state": "Colocate here",
+							"effects": {
+								"storage": {
+									"notifications": "<varies>"
+								},
+								"stores": {
+									"colocation.roomAlignment": "<object>",
+									"colocation.roomKey": "<varies>",
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [
+									"colocated"
+								],
+								"events": []
+							},
+							"scope": "shared",
+							"exercise": "done"
+						},
+						{
+							"kind": "button",
+							"id": "colocate-stop",
+							"label": "Stop",
+							"where": "control",
+							"default": "Stop",
+							"disabled": true
+						}
+					]
+				},
+				{
+					"name": "Ghost hands",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "colocated-ghost-hands",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"colocatedGhostHands": "false"
+								},
+								"stores": {
+									"colocationPresence.colocatedGhostHands": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				}
+			]
+		},
+		"AI": {
+			"rows": [
+				{
+					"name": "Enable assistant",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"aiEnabled": "true"
+								},
+								"stores": {
+									"aiProviders.aiEnabled": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"aiEnabled": "false"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Providers",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "+ Add provider",
+							"where": "body",
+							"default": "+ Add provider",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Voice typing provider",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "ai-stt-preset",
+							"label": "Voice typing provider",
+							"where": "control",
+							"default": "OpenAI",
+							"disabled": false,
+							"options": [
+								"OpenAI",
+								"Groq",
+								"Self-hosted (OpenAI-compatible)"
+							],
+							"state": "Groq",
+							"effects": {
+								"storage": {
+									"aiStt": "{\"preset\":\"groq\",\"baseUrl\":\"https://api.groq.com/openai/v1\",\"apiKey\":\"\",\"model\":\"whisper-large-v3\",\"language\":\"\"}"
+								},
+								"stores": {
+									"aiStt.sttConfig": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "OpenAI",
+							"storageAfterRestore": {
+								"aiStt": "{\"preset\":\"openai\",\"baseUrl\":\"https://api.openai.com/v1\",\"apiKey\":\"\",\"model\":\"whisper-1\",\"language\":\"\"}"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Voice typing server",
+					"controls": [
+						{
+							"kind": "text",
+							"id": "ai-stt-base",
+							"label": "",
+							"where": "body",
+							"default": "https://api.openai.com/v1",
+							"disabled": false
+						},
+						{
+							"kind": "other",
+							"id": "ai-stt-key",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "text",
+							"id": "ai-stt-model",
+							"label": "",
+							"where": "body",
+							"default": "whisper-1",
+							"disabled": false
+						},
+						{
+							"kind": "text",
+							"id": "ai-stt-language",
+							"label": "",
+							"where": "body",
+							"default": "",
+							"disabled": false
+						},
+						{
+							"kind": "button",
+							"id": "ai-stt-test",
+							"label": "Test connection",
+							"where": "body",
+							"default": "Test connection",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Mesh generation",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"meshGenEnabled": "true"
+								},
+								"stores": {
+									"meshProviders.meshGenEnabled": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"meshGenEnabled": "false"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Mesh providers",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "+ Add mesh provider",
+							"where": "body",
+							"default": "+ Add mesh provider",
+							"disabled": false
+						}
+					]
+				},
+				{
+					"name": "Storage",
+					"controls": []
+				}
+			]
+		},
+		"Export": {
+			"rows": [
+				{
+					"name": "Show Made with ThePrototype badge",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "export-badge",
+							"label": "Show Made with ThePrototype badge (always on)",
+							"where": "control",
+							"default": true,
+							"disabled": true
+						}
+					]
+				},
+				{
+					"name": "Start fullscreen",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "export-start-fullscreen",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":true,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+								},
+								"stores": {
+									"exportStores.exportPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show FPS",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "export-show-fps",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":true,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+								},
+								"stores": {
+									"exportStores.exportPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Quality",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "export-quality",
+							"label": "",
+							"where": "control",
+							"default": "Auto",
+							"disabled": false,
+							"options": [
+								"Auto",
+								"High",
+								"Medium",
+								"Low"
+							],
+							"state": "High",
+							"effects": {
+								"storage": {
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"high\",\"vrButton\":true,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+								},
+								"stores": {
+									"exportStores.exportPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Auto",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Include VR button",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "export-vr-button",
+							"label": "",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":false,\"useCdnForPacks\":false,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+								},
+								"stores": {
+									"exportStores.exportPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Use CDN for packs",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "export-cdn-packs",
+							"label": "",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"export:prefs": "{\"preset\":\"itch\",\"startFullscreen\":false,\"showFps\":false,\"quality\":\"auto\",\"vrButton\":true,\"useCdnForPacks\":true,\"thumbnail\":true,\"viewportW\":960,\"viewportH\":600,\"embedUrl\":\"\"}"
+								},
+								"stores": {
+									"exportStores.exportPrefs": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Compress textures",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "export-compress-textures",
+							"label": "Compress textures (not available yet)",
+							"where": "control",
+							"default": false,
+							"disabled": true
+						}
+					]
+				}
+			]
+		},
+		"Node types": {
+			"rows": []
+		},
+		"Connection": {
+			"rows": [
+				{
+					"name": "Session size",
+					"controls": [
+						{
+							"kind": "number",
+							"id": "soft-peer-cap",
+							"label": "",
+							"where": "control",
+							"default": "8",
+							"disabled": false,
+							"dir": 1,
+							"state": "9",
+							"effects": {
+								"storage": {
+									"connect:softPeerCap": "9"
+								},
+								"stores": {
+									"connectionState.softPeerCap": 9
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "8",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Signaling server",
+					"controls": [
+						{
+							"kind": "select",
+							"id": "peer-server-mode",
+							"label": "",
+							"where": "control",
+							"default": "Default (self-hosted + fallback)",
+							"disabled": false,
+							"options": [
+								"Default (self-hosted + fallback)",
+								"Public PeerJS cloud",
+								"Custom server",
+								"Local dev (localhost:9001)"
+							],
+							"state": "Public PeerJS cloud",
+							"effects": {
+								"storage": {
+									"peerServerConfig": "{\"mode\":\"public\",\"custom\":{\"host\":\"\",\"port\":443,\"path\":\"/peerjs\",\"secure\":true,\"key\":\"\",\"stunUrls\":\"\",\"turnUrls\":\"\",\"turnUsername\":\"\",\"turnCredential\":\"\"}}"
+								},
+								"stores": {
+									"peerServer.peerServerConfig": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": "Default (self-hosted + fallback)",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Apply changes",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "peer-server-apply",
+							"label": "Apply",
+							"where": "control",
+							"default": "Apply",
+							"disabled": false,
+							"state": "Apply",
+							"effects": {
+								"storage": {
+									"notifications": "notified: [\"Lost the peer server - reconnecting...\",\"Reconnected to the peer server.\",\"Connected to self-hosted — your session id is unchanged.\"]"
+								},
+								"stores": {
+									"diagnostics.diagnosticsCount": "<changed>",
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						},
+						{
+							"kind": "button",
+							"id": "peer-server-reload",
+							"label": "Reload",
+							"where": "body",
+							"default": "Reload",
+							"disabled": false
+						}
+					]
+				}
+			]
+		},
+		"Shortcuts": {
+			"rows": []
+		},
+		"About": {
+			"rows": [
+				{
+					"name": "Version",
+					"controls": []
+				},
+				{
+					"name": "Diagnostics",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "about-copy-diagnostics",
+							"label": "Copy diagnostics",
+							"where": "control",
+							"default": "Copy diagnostics",
+							"disabled": false,
+							"state": "Copy diagnostics",
+							"effects": {
+								"storage": {
+									"notifications": "notified: [\"Diagnostics copied to the clipboard\"]"
+								},
+								"stores": {
+									"notifications": "<object>",
+									"notificationsUnread": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Dev Builds",
+					"controls": []
+				},
+				{
+					"name": "Source Code",
+					"controls": []
+				},
+				{
+					"name": "Modules",
+					"controls": []
+				},
+				{
+					"name": "Docs",
+					"controls": []
+				}
+			]
+		}
+	},
+	"mobile": {
+		"Interface": [
+			{
+				"name": "Allow text selection everywhere",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "allow-text-select",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Your character",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "settings-customize-character",
+						"default": "Customize character…"
+					}
+				]
+			},
+			{
+				"name": "Show everyone as classic heads",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "avatars-peers-classic",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Theme",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "theme-select",
+						"default": "Dark"
+					}
+				]
+			},
+			{
+				"name": "Custom theme",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "theme-export",
+						"default": "Export template"
+					},
+					{
+						"kind": "button",
+						"id": "theme-browse",
+						"default": "Browse…"
+					},
+					{
+						"kind": "file",
+						"id": "",
+						"default": ""
+					}
+				]
+			},
+			{
+				"name": "Game sounds",
+				"controls": [
+					{
+						"kind": "range",
+						"id": "setting-game-sound-volume",
+						"default": "0.8"
+					}
+				]
+			},
+			{
+				"name": "Music",
+				"controls": [
+					{
+						"kind": "range",
+						"id": "setting-game-music-volume",
+						"default": "0.6"
+					}
+				]
+			},
+			{
+				"name": "Welcome on start",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Announce new versions",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Toasts in drawer only",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Show tours automatically",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "setting-tours-auto",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "VR welcome",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "setting-tour-vr",
+						"default": "Start VR welcome"
+					}
+				]
+			},
+			{
+				"name": "Editor tour",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "setting-tour-editor",
+						"default": "Start editor tour"
+					}
+				]
+			},
+			{
+				"name": "Offer Enter VR",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "setting-xr-offer",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Reset tours",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "setting-tours-reset",
+						"default": "Reset all"
+					}
+				]
+			},
+			{
+				"name": "Floating toolbar",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Toolbar always on top",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Window positions",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "reset-windows",
+						"default": "Reset"
+					}
+				]
+			},
+			{
+				"name": "Touch tools",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Allow undocking (touch)",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Advanced mode",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Environment in list",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Object search in menu",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Show FPS + draw calls",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "show-perf-stats",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Dock resizes the viewport",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "dock-pushes-viewport",
+						"default": true
+					}
+				]
+			}
+		],
+		"Controls": [
+			{
+				"name": "Shift+A quick add",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Show helpers in Play (debug)",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "helpers-in-play",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Double-click to open notes",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Trackpad gestures",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "trackpad-mode",
+						"default": "Auto"
+					}
+				]
+			},
+			{
+				"name": "Two-finger pan",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Reverse trackpad pan",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Pinch zoom",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Allow browser pinch zoom",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Wheel diagnostics",
+				"controls": []
+			}
+		],
+		"Input": [
+			{
+				"name": "Gamepad",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "gamepad-enabled",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Swap sticks",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "gamepad-swap",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Invert look Y",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "gamepad-invert-y",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Stick deadzone",
+				"controls": [
+					{
+						"kind": "number",
+						"id": "gamepad-deadzone",
+						"default": "0.15"
+					}
+				]
+			},
+			{
+				"name": "Look sensitivity",
+				"controls": [
+					{
+						"kind": "number",
+						"id": "gamepad-sensitivity",
+						"default": "1"
+					}
+				]
+			},
+			{
+				"name": "Per-game controls",
+				"controls": []
+			},
+			{
+				"name": "Mouse bindings",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "flow-mouse-bindings",
+						"default": "Classic — left-drag pans"
+					}
+				]
+			}
+		],
+		"Touch controls": [
+			{
+				"name": "Show touch controls",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "touch-visibility-auto",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "touch-visibility-always",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "touch-visibility-never",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Show in edit",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "touch-show-in-edit",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Haptic tick",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "touch-haptics",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Look speed",
+				"controls": [
+					{
+						"kind": "range",
+						"id": "touch-look-speed",
+						"default": "1"
+					}
+				]
+			},
+			{
+				"name": "Layout",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "touch-edit-layout",
+						"default": "Edit layout"
+					},
+					{
+						"kind": "button",
+						"id": "touch-reset-layout",
+						"default": "Reset"
+					}
+				]
+			},
+			{
+				"name": "Jump",
+				"controls": []
+			},
+			{
+				"name": "Fire",
+				"controls": []
+			},
+			{
+				"name": "Use",
+				"controls": []
+			},
+			{
+				"name": "Grab",
+				"controls": []
+			},
+			{
+				"name": "Crouch",
+				"controls": []
+			},
+			{
+				"name": "Sprint",
+				"controls": []
+			},
+			{
+				"name": "Reload",
+				"controls": []
+			},
+			{
+				"name": "Up",
+				"controls": []
+			},
+			{
+				"name": "Down",
+				"controls": []
+			}
+		],
+		"Scene": [
+			{
+				"name": "Show grid",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Light helper length",
+				"controls": [
+					{
+						"kind": "number",
+						"id": "light-helper-length",
+						"default": "2"
+					}
+				]
+			},
+			{
+				"name": "Shadow quality",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "shadow-quality",
+						"default": "High"
+					}
+				]
+			},
+			{
+				"name": "Reduce quality when the scene is heavy",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "auto-quality",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Simplify distant models",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "lod-enabled",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Draw repeated kit pieces together",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "kit-instancing",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Water quality",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "water-quality",
+						"default": "Auto"
+					}
+				]
+			},
+			{
+				"name": "Simulation controls",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Sync animations",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Spatial voice",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Ping color + sound",
+				"controls": [
+					{
+						"kind": "color",
+						"id": "ping-color",
+						"default": "#4f83cc"
+					},
+					{
+						"kind": "select",
+						"id": "",
+						"default": "Ding"
+					},
+					{
+						"kind": "button",
+						"id": "ping-preview",
+						"default": "▶ Preview"
+					}
+				]
+			},
+			{
+				"name": "Autosave",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Auto-restore on load",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "auto-restore",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Keep automatic checkpoints",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "checkpoints-auto",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Automatic checkpoint every",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "checkpoints-every",
+						"default": "10 min"
+					}
+				]
+			},
+			{
+				"name": "Checkpoint storage",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "checkpoints-cap",
+						"default": "250 MB"
+					}
+				]
+			},
+			{
+				"name": "When opening another scene",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "modules-on-open",
+						"default": "Ask"
+					}
+				]
+			},
+			{
+				"name": "Double-click action",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "double-click-action",
+						"default": "Open properties"
+					}
+				]
+			},
+			{
+				"name": "Length",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "length-unit",
+						"default": "m"
+					}
+				]
+			},
+			{
+				"name": "Angle",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "angle-unit",
+						"default": "degrees"
+					}
+				]
+			},
+			{
+				"name": "Carry animation clips",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Carry object flow",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Carry shader graph",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Share materials",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Wireframe color",
+				"controls": [
+					{
+						"kind": "color",
+						"id": "wire-color",
+						"default": "#9aa4b0"
+					}
+				]
+			},
+			{
+				"name": "Selection outline color",
+				"controls": [
+					{
+						"kind": "color",
+						"id": "outline-color",
+						"default": "#353535"
+					}
+				]
+			},
+			{
+				"name": "Edit Mesh wireframe",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "edit-wire-auto",
+						"default": true
+					},
+					{
+						"kind": "color",
+						"id": "edit-wire-color",
+						"default": "#2f81f7"
+					}
+				]
+			},
+			{
+				"name": "Reset line colors",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "reset-view-colors",
+						"default": "Reset"
+					}
+				]
+			},
+			{
+				"name": "Loading placeholders",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "placeholder-style",
+						"default": "Modern (default)"
+					}
+				]
+			},
+			{
+				"name": "Placeholder grid texture",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "placeholder-grid-on",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Grid size (m)",
+				"controls": [
+					{
+						"kind": "number",
+						"id": "placeholder-grid-size",
+						"default": "0.5"
+					}
+				]
+			},
+			{
+				"name": "Grid color",
+				"controls": [
+					{
+						"kind": "color",
+						"id": "placeholder-grid-color",
+						"default": "#bfe6ff"
+					}
+				]
+			},
+			{
+				"name": "Grid opacity",
+				"controls": [
+					{
+						"kind": "range",
+						"id": "placeholder-grid-opacity",
+						"default": "0.45"
+					}
+				]
+			},
+			{
+				"name": "Placeholder animation speed",
+				"controls": [
+					{
+						"kind": "range",
+						"id": "placeholder-anim-speed",
+						"default": "1"
+					}
+				]
+			},
+			{
+				"name": "Stuck after (seconds)",
+				"controls": [
+					{
+						"kind": "number",
+						"id": "placeholder-stuck-seconds",
+						"default": "10"
+					}
+				]
+			}
+		],
+		"Explorer": [
+			{
+				"name": "When you add files during a session",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "share-new-files",
+						"default": "Ask each time"
+					}
+				]
+			},
+			{
+				"name": "Download shared files automatically",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "auto-download",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Offer to merge unsaved work on connect",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "merge-on-connect",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Who can unshare a file",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "unshare-authority",
+						"default": "Anyone in the session"
+					}
+				]
+			},
+			{
+				"name": "Keep versions per scene",
+				"controls": [
+					{
+						"kind": "number",
+						"id": "keep-versions",
+						"default": "10"
+					}
+				]
+			},
+			{
+				"name": "When importing files already in your library",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "import-duplicate-mode",
+						"default": "Ask"
+					}
+				]
+			},
+			{
+				"name": "Save name",
+				"controls": [
+					{
+						"kind": "text",
+						"id": "save-name-template",
+						"default": "[name]"
+					}
+				]
+			},
+			{
+				"name": "Keep a recycle bin",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "recycle-bin",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Delete without asking",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "delete-no-confirm",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Keep deleted files after a reload",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "keep-recycle-bin",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Deleted files log",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "deleted-log",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Storage used",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "settings-storage",
+						"default": "Show breakdown"
+					}
+				]
+			}
+		],
+		"VR": [
+			{
+				"name": "VR override",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Turning",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "vr-set-turning",
+						"default": "Snap"
+					}
+				]
+			},
+			{
+				"name": "Snap angle",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "vr-set-snapAngle",
+						"default": "45°"
+					}
+				]
+			},
+			{
+				"name": "Smooth speed",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "vr-set-smoothSpeed",
+						"default": "90°/s"
+					}
+				]
+			},
+			{
+				"name": "Mirror turn",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-mirror",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Comfort vignette",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-vignette",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Teleport",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-teleport",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Flying",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-flying",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Stance",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "vr-set-stance",
+						"default": "Standing"
+					}
+				]
+			},
+			{
+				"name": "Height",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "vr-set-height",
+						"default": "0 cm"
+					}
+				]
+			},
+			{
+				"name": "Menu hand",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "vr-set-menuHand",
+						"default": "Right"
+					}
+				]
+			},
+			{
+				"name": "Hold to open menu",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-menuHold",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Left-handed",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-leftHanded",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Grab style",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "vr-set-grabStyle",
+						"default": "Rigid"
+					}
+				]
+			},
+			{
+				"name": "Refresh rate",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "vr-set-refresh",
+						"default": "Max"
+					}
+				]
+			},
+			{
+				"name": "Statistics card",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-stats",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Peer hands",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "vr-set-peerHands",
+						"default": "Hands"
+					}
+				]
+			},
+			{
+				"name": "Passthrough",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "passthrough-toggle",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Selection wireframe",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-wireframe",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Reset panel positions",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "vr-set-resetPanels",
+						"default": "Reset panel positions"
+					}
+				]
+			},
+			{
+				"name": "Game HUD",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "vr-set-gameHud",
+						"default": "Follow head"
+					}
+				]
+			},
+			{
+				"name": "Game HUD size",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "vr-set-gameHudSize",
+						"default": "Medium"
+					}
+				]
+			},
+			{
+				"name": "Button hints",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-gameHudHints",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Hold to move vertex",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-vertexHold",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Sleeve palette",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "vr-set-sleeve",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Face edit limit",
+				"controls": [
+					{
+						"kind": "number",
+						"id": "vr-set-faceCap",
+						"default": "2500"
+					}
+				]
+			},
+			{
+				"name": "Vertex edit limit",
+				"controls": [
+					{
+						"kind": "number",
+						"id": "vr-set-vertexCap",
+						"default": "800"
+					}
+				]
+			},
+			{
+				"name": "My hand model",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "my-hand-model",
+						"default": "Default"
+					}
+				]
+			},
+			{
+				"name": "Colocation probe (dev)",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "ar-probe-run",
+						"default": "Probe AR capabilities"
+					},
+					{
+						"kind": "button",
+						"id": "ar-probe-clear",
+						"default": "Clear stored anchor"
+					}
+				]
+			},
+			{
+				"name": "Colocation",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "colocate-here",
+						"default": "Colocate here"
+					},
+					{
+						"kind": "button",
+						"id": "colocate-stop",
+						"default": "Stop"
+					}
+				]
+			},
+			{
+				"name": "Ghost hands",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "colocated-ghost-hands",
+						"default": true
+					}
+				]
+			}
+		],
+		"AI": [
+			{
+				"name": "Enable assistant",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Providers",
+				"controls": []
+			},
+			{
+				"name": "Voice typing provider",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "ai-stt-preset",
+						"default": "OpenAI"
+					}
+				]
+			},
+			{
+				"name": "Voice typing server",
+				"controls": []
+			},
+			{
+				"name": "Mesh generation",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Mesh providers",
+				"controls": []
+			},
+			{
+				"name": "Storage",
+				"controls": []
+			}
+		],
+		"Export": [
+			{
+				"name": "Show Made with ThePrototype badge",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "export-badge",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Start fullscreen",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "export-start-fullscreen",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Show FPS",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "export-show-fps",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Quality",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "export-quality",
+						"default": "Auto"
+					}
+				]
+			},
+			{
+				"name": "Include VR button",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "export-vr-button",
+						"default": true
+					}
+				]
+			},
+			{
+				"name": "Use CDN for packs",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "export-cdn-packs",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Compress textures",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "export-compress-textures",
+						"default": false
+					}
+				]
+			}
+		],
+		"Node types": [],
+		"Connection": [
+			{
+				"name": "Session size",
+				"controls": [
+					{
+						"kind": "number",
+						"id": "soft-peer-cap",
+						"default": "8"
+					}
+				]
+			},
+			{
+				"name": "Signaling server",
+				"controls": [
+					{
+						"kind": "select",
+						"id": "peer-server-mode",
+						"default": "Default (self-hosted + fallback)"
+					}
+				]
+			},
+			{
+				"name": "Apply changes",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "peer-server-apply",
+						"default": "Apply"
+					}
+				]
+			}
+		],
+		"Shortcuts": [],
+		"About": [
+			{
+				"name": "Version",
+				"controls": []
+			},
+			{
+				"name": "Diagnostics",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "about-copy-diagnostics",
+						"default": "Copy diagnostics"
+					}
+				]
+			},
+			{
+				"name": "Dev Builds",
+				"controls": []
+			},
+			{
+				"name": "Source Code",
+				"controls": []
+			},
+			{
+				"name": "Modules",
+				"controls": []
+			},
+			{
+				"name": "Docs",
+				"controls": []
+			}
+		]
+	}
+}

@@ -1,5 +1,5 @@
 <script>
-	import { Plus } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	// Mobile "+" HUD button (bottom-left): opens the same create/context menu as a
 	// right-click — touch has none. Its own component so it can use `onclick` (no
 	// deprecation warning) without mixing with Controls.svelte's on: directives.
@@ -29,5 +29,5 @@
 	aria-label="Add object or open the context menu"
 	onclick={add}
 >
-	<Plus size={16} aria-hidden="true" />
+	<Icon name="plus" size={16} aria-hidden="true" />
 </button>

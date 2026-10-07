@@ -14,7 +14,7 @@
 	//
 	// THREE trees are not reactive, so the rows list `objectsGroup` as a dependency —
 	// without it a rename or a delete leaves a stale name in the tree.
-	import { ChevronDown, ChevronRight, Waypoints } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { objectsGroup, selectedObjects } from '../../stores/sceneStore';
 	import { applySelectionSet, deselectObject } from '$lib/objectActions';
 
@@ -93,9 +93,9 @@
 <div class="gt-wrap" id={'graph-tree-' + kind}>
 	<button class="gt-head" onclick={toggle} aria-expanded={open}>
 		{#if open}
-			<ChevronDown size={12} aria-hidden="true" />
+			<Icon name="chevron-down" size={16} aria-hidden="true" />
 		{:else}
-			<ChevronRight size={12} aria-hidden="true" />
+			<Icon name="chevron-right" size={16} aria-hidden="true" />
 		{/if}
 		<span class="flex-1 text-left">{label}</span>
 		<span class="gt-count">{rows.length + (sceneNodes ? 1 : 0)}</span>
@@ -111,7 +111,7 @@
 				onclick={() => deselectObject()}
 				title={kind === 'flow' ? 'Main — the scene-wide graph every game\'s logic is reachable from (deselects everything)' : 'The scene-wide graph — deselect everything'}
 			>
-				<span class="gt-ico"><Waypoints size={12} aria-hidden="true" /></span>
+				<span class="gt-ico"><Icon name="waypoints" size={16} aria-hidden="true" /></span>
 				<!-- 36 (G1): the scene's flow graph IS "Main" -->
 				<span class="flex-1 truncate text-left">{kind === 'flow' ? MAIN_GRAPH_LABEL : 'Scene'}</span>
 				{#if sceneNodes}<span class="gt-count">{sceneNodes}</span>{/if}

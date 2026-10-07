@@ -14,7 +14,7 @@
 	// nodes size to their content). The full name, a scaled PREVIEW and the details live in
 	// a hover card instead.
 	import { onDestroy } from 'svelte';
-	import { Image, X } from '@lucide/svelte';
+	import Icon from '../../ui/Icon.svelte';
 	import { explorerItems, importFiles, itemByHash } from '$lib/explorer';
 	import {
 		shareShaderTexture,
@@ -171,7 +171,7 @@
 		{#if item?.thumbnail}
 			<img src={item.thumbnail} alt={item.name} />
 		{:else}
-			<Image size={compact ? 12 : 14} aria-hidden="true" />
+			<Icon name="image" size={16} aria-hidden="true" />
 		{/if}
 		<input
 			class="shader-tex-file"
@@ -203,7 +203,7 @@
 			aria-label="Remove this texture"
 			onclick={() => assign('')}
 		>
-			<X size={11} aria-hidden="true" />
+			<Icon name="x" size={16} aria-hidden="true" />
 		</button>
 	{/if}
 </div>

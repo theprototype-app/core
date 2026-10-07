@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Pause, Play, SkipBack, SkipForward } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { formatClock, frameAt, frameCount, previewFps } from '$lib/filePreview';
 
 	/**
@@ -142,7 +142,7 @@
 				aria-label={playing ? 'Pause' : 'Play'}
 				onclick={() => onPlay?.(!playing)}
 			>
-				{#if playing}<Pause size={16} aria-hidden="true" />{:else}<Play size={16} aria-hidden="true" />{/if}
+				{#if playing}<Icon name="pause" size={16} aria-hidden="true" />{:else}<Icon name="play" size={16} aria-hidden="true" />{/if}
 			</button>
 			<button
 				id="anim-prev-frame"
@@ -151,7 +151,7 @@
 				aria-label="Previous frame"
 				onclick={() => step(-1)}
 			>
-				<SkipBack size={13} aria-hidden="true" />
+				<Icon name="skip-back" size={16} aria-hidden="true" />
 			</button>
 			<button
 				id="anim-next-frame"
@@ -160,7 +160,7 @@
 				aria-label="Next frame"
 				onclick={() => step(1)}
 			>
-				<SkipForward size={13} aria-hidden="true" />
+				<Icon name="skip-forward" size={16} aria-hidden="true" />
 			</button>
 			<input
 				id="anim-seek"

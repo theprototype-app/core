@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, HardDrive, House, LayoutGrid, List, LoaderCircle, PackageOpen, Play, RefreshCw, Save, Share2, X } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
@@ -6290,7 +6289,7 @@
 			aria-pressed={$explorerViewMode === 'thumbnails'}
 			title="Thumbnails"
 			aria-label="Thumbnails"
-			onclick={() => explorerViewMode.set('thumbnails')}><LayoutGrid size={14} aria-hidden="true" /></button
+			onclick={() => explorerViewMode.set('thumbnails')}><Icon name="layout-grid" size={16} aria-hidden="true" /></button
 		>
 		<button
 			id="explorer-view-list"
@@ -6298,7 +6297,7 @@
 			aria-pressed={$explorerViewMode === 'list'}
 			title="List — sortable columns; right-click the header to choose them"
 			aria-label="List"
-			onclick={() => explorerViewMode.set('list')}><List size={14} aria-hidden="true" /></button
+			onclick={() => explorerViewMode.set('list')}><Icon name="list" size={16} aria-hidden="true" /></button
 		>
 	</div>
 {/snippet}
@@ -6392,7 +6391,7 @@
 					<span class="flex min-w-0 items-center gap-1.5">
 						{#if isFolder}
 							<span class="shrink-0 {mutedFolder(folder) ? MUTED_ICON : 'ico-folder'}"
-								><Folder size={14} aria-hidden="true" /></span
+								><Icon name="folder" size={16} aria-hidden="true" /></span
 							>
 						{:else if thumbFor(item)}
 							<img
@@ -6403,7 +6402,7 @@
 						{:else}
 							<span
 								class="shrink-0 {mutedItem(item) ? MUTED_ICON : (KIND_COLORS[item.kind] ?? 'text-gray-400')}"
-								><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={14} /></span
+								><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={16} /></span
 							>
 						{/if}
 						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-scene' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId)}
@@ -6425,7 +6424,7 @@
 								class="explorer-animated shrink-0 text-amber-300"
 								title={behaviorTitle(item.behavior)}
 								data-behavior={item.behavior.type}
-							><Play size={10} aria-hidden="true" /></span>
+							><Icon name="play" size={16} aria-hidden="true" /></span>
 						{/if}
 						{#if !isFolder}
 							{#if item.volumeItem}
@@ -6633,7 +6632,7 @@
 					? 'Save "' + $currentLevel.name + '" (Ctrl+S)'
 					: 'Nothing to save - this scene matches the version its name points at'}
 				aria-label={$sceneDirty ? 'Save scene' : 'Nothing to save'}
-				onclick={saveOpenScene}><Save size={12} aria-hidden="true" /></button
+				onclick={saveOpenScene}><Icon name="save" size={16} aria-hidden="true" /></button
 			>
 			{#if $sceneDirty}
 				<!-- the same signal the window title's asterisk uses (sceneIdentity.js) -->
@@ -6702,7 +6701,7 @@
 									' can be put back)'
 								: 'The deleted files log is switched off in File settings'}
 							onclick={() => explorerBinShowSpent.update((v: boolean) => !v)}
-							><Icon name="history" size={13} aria-hidden="true" /></button
+							><Icon name="history" size={16} aria-hidden="true" /></button
 						>
 					{/if}
 				</div>
@@ -6780,9 +6779,9 @@
 							ondrop={(e) => dropInto(e, volumeKey(vol.id))}
 							onclick={() => openFolder(volumeKey(vol.id))}
 						>
-							<HardDrive
+							<Icon name="hard-drive"
 								size={16}
-								class="mr-1.5 w-4 text-center {vol.missing ? 'text-amber-400' : 'text-indigo-300'}"
+								class="mr-1.5 {vol.missing ? 'text-amber-400' : 'text-indigo-300'}"
 								aria-hidden="true"
 							/>{vol.name}{#if vol.dirty}<span class="mount-dirty text-amber-400" title="Unsaved changes"
 									>&nbsp;•</span
@@ -6800,14 +6799,14 @@
 							title={vol.dirty
 								? 'Write these files back into the saved project'
 								: 'No unsaved changes'}
-							onclick={() => void saveVolume(vol.id)}><Save size={14} aria-hidden="true" /></button
+							onclick={() => void saveVolume(vol.id)}><Icon name="save" size={16} aria-hidden="true" /></button
 						>
 						<button
 							id={'mount-unmount-' + vol.id}
 							class="shrink-0 rounded px-1 py-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
 							aria-label={'Unmount ' + vol.name}
 							title="Stop showing this project here — the saved project is not deleted"
-							onclick={() => doUnmount(vol)}><X size={14} aria-hidden="true" /></button
+							onclick={() => doUnmount(vol)}><Icon name="x" size={16} aria-hidden="true" /></button
 						>
 					</div>
 					{#if expanded.has(volumeKey(vol.id))}
@@ -6843,7 +6842,7 @@
 										oncontextmenu={(e) => folderMenu(e, row.folder)}
 										onclick={() => openFolder(row.folder.id)}
 									>
-										<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{row
+										<Icon name="folder" size={16} class="ico-folder mr-1.5" aria-hidden="true" />{row
 											.folder.name}
 									</button>
 								</div>
@@ -6875,7 +6874,7 @@
 				ondragover={(e) => dragOverInto(e, 'root')}
 				ondragleave={() => (dropFolder = null)}
 				ondrop={(e) => dropInto(e, null)}
-				onclick={() => openFolder(null)}><House size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Library</button
+				onclick={() => openFolder(null)}><Icon name="house" size={16} class="mr-1.5 text-gray-400" aria-hidden="true" />Library</button
 			>
 			{#if editing?.mode === 'create' && !editing.inGrid && editing.parentId === null}
 				{@render editRow(0)}
@@ -6912,7 +6911,7 @@
 							onclick={() => openFolder(row.folder.id)}
 							ondblclick={() => toggleExpand(row.folder.id)}
 						>
-							<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{row.folder.name}
+							<Icon name="folder" size={16} class="ico-folder mr-1.5" aria-hidden="true" />{row.folder.name}
 						</button>
 					</div>
 				{/if}
@@ -6962,7 +6961,7 @@
 						}}
 						ondragleave={() => (dropFolder = null)}
 						ondrop={(e) => void dropToPrefabs(e)}
-						onclick={() => openFolder('prefabs')}><Boxes size={16} class="ico-prefab mr-1.5 w-4 text-center" aria-hidden="true" />Prefabs</button
+						onclick={() => openFolder('prefabs')}><Icon name="boxes" size={16} class="ico-prefab mr-1.5" aria-hidden="true" />Prefabs</button
 					>
 					<button
 						id="packs-folder"
@@ -6970,7 +6969,7 @@
 							? 'bg-primary-700 text-white'
 							: 'text-gray-300 hover:bg-gray-700'}"
 						title="Asset packs — click to list them, double-click to expand the tree"
-						onclick={() => openFolder('packs')} ondblclick={togglePacks}><PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Packs {packsExpanded ? '▾' : '▸'}</button
+						onclick={() => openFolder('packs')} ondblclick={togglePacks}><Icon name="package-open" size={16} class="mr-1.5 text-gray-400" aria-hidden="true" />Packs {packsExpanded ? '▾' : '▸'}</button
 					>
 					{#if packsExpanded}
 						{#each shownPacks as pack (pack.name)}
@@ -7000,7 +6999,7 @@
 								ondrop={(e) => void dropIntoPack(e, pack)}
 								onclick={() => openFolder('pack:' + pack.name)}
 							>
-								<PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-500" aria-hidden="true" />{pack.title}
+								<Icon name="package-open" size={16} class="mr-1.5 text-gray-500" aria-hidden="true" />{pack.title}
 							</button>
 							{/if}
 						{/each}
@@ -7014,7 +7013,7 @@
 							? 'bg-primary-700 text-white'
 							: 'text-gray-300 hover:bg-gray-700'}"
 						title="Assets the shared scene uses right now — identical on every peer"
-						onclick={() => openFolder('scene')} ondblclick={toggleScene}><Globe size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
+						onclick={() => openFolder('scene')} ondblclick={toggleScene}><Icon name="globe" size={16} class="mr-1.5 text-gray-400" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
 					>
 					{#if sceneExpanded}
 					{#each ['audio', 'config', 'textures'] as sub}
@@ -7025,7 +7024,7 @@
 							style="padding-left: 22px"
 							onclick={() => openFolder('scene:' + sub)}
 						>
-							<Folder size={16} class="ico-folder mr-1.5 w-4 text-center" aria-hidden="true" />{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
+							<Icon name="folder" size={16} class="ico-folder mr-1.5" aria-hidden="true" />{sub} ({$sceneAssets.filter((a) => a.group === sub).length})
 						</button>
 					{/each}
 					{/if}
@@ -7067,7 +7066,7 @@
 							}}
 							ondragleave={() => (binDropActive = false)}
 							ondrop={(e) => void dropToBin(e)}
-							><Icon name="trash-2" size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Deleted
+							><Icon name="trash-2" size={16} class="mr-1.5 text-gray-400" aria-hidden="true" />Deleted
 							{#if libraryDragging && !deletedRootCount}
 								<span class="text-gray-500">(drop here)</span>
 							{:else}
@@ -7118,7 +7117,7 @@
 					}}
 				>
 					<span class="ex-confirm-icon {confirmStrip.safe ? 'ex-confirm-icon--safe' : ''}"
-						><Icon name={confirmStrip.icon ?? 'trash-2'} size={14} /></span
+						><Icon name={confirmStrip.icon ?? 'trash-2'} size={16} /></span
 					>
 					<span class="ex-confirm-text">
 						<span class="ex-confirm-title">{confirmStrip.title}</span>
@@ -7169,7 +7168,7 @@
 						answerShareAsk('keep');
 					}}
 				>
-					<span class="ex-confirm-icon ex-ask-icon"><Share2 size={14} aria-hidden="true" /></span>
+					<span class="ex-confirm-icon ex-ask-icon"><Icon name="share-2" size={16} aria-hidden="true" /></span>
 					<span class="ex-confirm-text">
 						<span class="ex-confirm-title">
 							{#if shareAsk.kind === 'connect'}Share your {shareAsk.items.length} file{shareAsk
@@ -7255,20 +7254,20 @@
 					<!-- QW: first open of a pack fetches its item list from the CDN — show a
 					     real loading state instead of "no items" (or the stale previous list) -->
 					<div id="pack-loading" class="flex items-center justify-center gap-2 p-6 text-xs text-gray-400">
-						<LoaderCircle size={16} class="animate-spin" aria-hidden="true" /> Loading pack contents…
+						<Icon name="loader-circle" size={16} class="animate-spin" aria-hidden="true" /> Loading pack contents…
 					</div>
 				{:else if openPack && openPack.source === 'default' && openPack.zip}
 					<!-- RP: a zip-only pack (audio-essentials) has no browsable item list —
 					     its open view IS the install prompt (right-click-only was undiscoverable) -->
 					<div class="flex flex-col items-center gap-2 p-6 text-center">
-						<span class="text-4xl text-gray-300"><Gift size={16} aria-hidden="true" /></span>
+						<span class="text-4xl text-gray-300"><Icon name="gift" size={16} aria-hidden="true" /></span>
 						<span class="text-sm text-gray-300">"{openPack.title}" installs into your local library.</span>
 						<button
 							id="pack-install"
 							class="rounded-sm bg-primary-600 px-3 py-1.5 text-sm text-white hover:bg-primary-500 disabled:opacity-50"
 							disabled={installingPack}
 							onclick={() => installZipPack(openPack)}
-						><Download size={16} class="mr-1" aria-hidden="true" />{installingPack ? 'Installing…' : `Install ${openPack.title}`}</button>
+						><Icon name="download" size={16} class="mr-1" aria-hidden="true" />{installingPack ? 'Installing…' : `Install ${openPack.title}`}</button>
 					</div>
 				{:else}
 				<p class="p-4 text-center text-xs italic text-gray-500">
@@ -7308,9 +7307,9 @@
 							<div id="explorer-new-card" class="ex-new flex items-center gap-1.5">
 								<span class={pendingCard === 'create' ? 'ico-folder' : 'text-gray-400'}>
 									{#if pendingCard === 'create'}
-										<Folder size={14} aria-hidden="true" />
+										<Icon name="folder" size={16} aria-hidden="true" />
 									{:else}
-										<Icon name={KIND_ICONS.scene} size={14} />
+										<Icon name={KIND_ICONS.scene} size={16} />
 									{/if}
 								</span>
 								{@render cardEdit()}
@@ -7374,7 +7373,7 @@
 						>
 							<span class="flex h-14 w-14 items-center justify-center {pendingCard === 'create' ? 'ico-folder' : 'text-gray-400'}">
 								{#if pendingCard === 'create'}
-									<Folder size={32} aria-hidden="true" />
+									<Icon name="folder" size={32} aria-hidden="true" />
 								{:else}
 									<Icon name={KIND_ICONS.scene} size={32} />
 								{/if}
@@ -7421,7 +7420,7 @@
 								<span
 									class="flex h-14 w-14 items-center justify-center {mutedFolder(folder)
 										? MUTED_ICON
-										: 'ico-folder'}"><Folder size={32} aria-hidden="true" /></span
+										: 'ico-folder'}"><Icon name="folder" size={32} aria-hidden="true" /></span
 								>
 								{#if editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === folder.id}
 									{@render cardEdit()}
@@ -7548,7 +7547,7 @@
 									class="explorer-animated absolute left-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-gray-900/80 text-amber-300"
 									title={behaviorTitle(item.behavior)}
 									data-behavior={item.behavior.type}
-								><Play size={9} aria-hidden="true" /></span>
+								><Icon name="play" size={16} aria-hidden="true" /></span>
 							{/if}
 							{#if item.packEntry}
 								{#if packThumb(item)}
@@ -7561,7 +7560,7 @@
 										class="h-14 w-14 rounded-sm object-cover"
 									/>
 								{:else}
-									<span class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}"><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} /></span>
+									<span class="flex h-14 w-14 items-center justify-center rounded-sm bg-gray-700 {KIND_COLORS[item.kind] ?? 'text-gray-400'}"><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={32} /></span>
 								{/if}
 							{:else if thumbFor(item)}
 								<!-- R22: the picture may be the item's OWN thumbnail or one a peer pushed
@@ -7578,7 +7577,7 @@
 										? MUTED_ICON
 										: (KIND_COLORS[item.kind] ?? 'text-gray-400')}"
 								>
-									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={28} />
+									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={32} />
 								</span>
 							{/if}
 							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-scene' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId)}
@@ -7640,7 +7639,7 @@
 					<!-- N6: pack-level properties + attribution -->
 					<div class="flex flex-col gap-1 border-b border-gray-700/40 pb-2">
 						<div class="flex items-center gap-2">
-							<span class="text-gray-400"><PackageOpen size={18} aria-hidden="true" /></span>
+							<span class="text-gray-400"><Icon name="package-open" size={20} aria-hidden="true" /></span>
 							<span class="min-w-0 flex-1 wrap-break-word font-semibold">{openPack.title}</span>
 						</div>
 						{#if openPack.license}<div class="text-[11px] text-gray-400">License: {licenseLabel(openPack.license)}</div>{/if}
@@ -7654,7 +7653,7 @@
 								target="_blank"
 								rel="noopener"
 								title="Open the content source"
-							><ExternalLink size={14} aria-hidden="true" /> {packSourceLabel(packSourceUrl(openPack))}</a>
+							><Icon name="external-link" size={16} aria-hidden="true" /> {packSourceLabel(packSourceUrl(openPack))}</a>
 						{/if}
 					</div>
 				{/if}
@@ -7771,7 +7770,7 @@
 								<img id="preview-suspended-thumb" src={selItem.thumbnail} alt={selItem.name} class="h-full w-full object-contain" />
 							{:else}
 								<div class="flex h-full w-full items-center justify-center text-gray-600">
-									<Box size={40} aria-hidden="true" />
+									<Icon name="box" size={48} aria-hidden="true" />
 								</div>
 							{/if}
 							<div class="pointer-events-none absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 text-center text-[10px] text-gray-300">
@@ -7843,7 +7842,7 @@
 				{:else if selected?.kind === 'folder'}
 					{@const counts = folderCounts(selected.folder.id)}
 					<div class="flex items-center gap-2">
-						<span class="ico-folder"><Folder size={22} aria-hidden="true" /></span>
+						<span class="ico-folder"><Icon name="folder" size={20} aria-hidden="true" /></span>
 						<span class="min-w-0 flex-1 wrap-break-word font-semibold">{selected.folder.name}</span>
 					</div>
 					<p class="text-gray-400">
@@ -7987,7 +7986,7 @@
 			></div>
 			<DockTabs />
 			<div class="mb-1 flex items-center gap-2" use:headerWidth>
-				<span class="shrink-0 text-xs font-semibold text-gray-200"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
+				<span class="shrink-0 text-xs font-semibold text-gray-200"><Icon name="folder-tree" size={16} class="mr-1" aria-hidden="true" />Explorer</span>
 				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way.
 				     W6 deliberately left this row's LAYOUT alone — its narrow-width behaviour
 				     is explorer-header-panels' own measured contract, and the docked chrome
@@ -8038,7 +8037,7 @@
 		>
 			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5" use:headerWidth>
 				<span class="shrink-0" title="Explorer"
-					><FolderTree size={16} class={hideLabel ? '' : 'mr-1'} aria-hidden="true" />{hideLabel
+					><Icon name="folder-tree" size={16} class={hideLabel ? '' : 'mr-1'} aria-hidden="true" />{hideLabel
 						? ''
 						: 'Explorer'}</span
 				>
@@ -8130,7 +8129,7 @@
 	>
 		{#if packAttribLoading}
 			<div class="flex items-center gap-2 p-4 text-sm text-gray-400">
-				<LoaderCircle size={16} class="animate-spin" aria-hidden="true" /> Loading attribution…
+				<Icon name="loader-circle" size={16} class="animate-spin" aria-hidden="true" /> Loading attribution…
 			</div>
 		{:else}
 			<div class="prose prose-invert prose-sm max-w-none">{@html packAttribHtml}</div>

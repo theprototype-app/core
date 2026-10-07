@@ -7,7 +7,7 @@
 	// is. Module content changes without a poke (a module adds children on its own clock),
 	// so the rows re-derive on every pokeScene AND once a second while the list is shown —
 	// the System view's precedent.
-	import { ChevronDown, ChevronRight, Boxes, Eye, EyeOff } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { get } from 'svelte/store';
 	import * as THREE from 'three';
 	import { globalScene, sceneRevision } from '../../stores/sceneStore';
@@ -134,7 +134,7 @@
 			aria-expanded={open}
 			onclick={toggleOpen}
 		>
-			{#if open}<ChevronDown size={14} aria-hidden="true" />{:else}<ChevronRight size={14} aria-hidden="true" />{/if}
+			{#if open}<Icon name="chevron-down" size={16} aria-hidden="true" />{:else}<Icon name="chevron-right" size={16} aria-hidden="true" />{/if}
 			Module content
 			<span class="ml-auto font-normal normal-case text-gray-400">{rows.length}</span>
 		</button>
@@ -151,9 +151,9 @@
 							aria-label={expanded[row.name] ? 'Hide children' : 'Show children'}
 							onclick={() => (expanded = { ...expanded, [row.name]: !expanded[row.name] })}
 						>
-							{#if expanded[row.name]}<ChevronDown size={14} aria-hidden="true" />{:else}<ChevronRight size={14} aria-hidden="true" />{/if}
+							{#if expanded[row.name]}<Icon name="chevron-down" size={16} aria-hidden="true" />{:else}<Icon name="chevron-right" size={16} aria-hidden="true" />{/if}
 						</button>
-						<Boxes size={14} class="shrink-0 text-gray-400" aria-hidden="true" />
+						<Icon name="boxes" size={16} class="shrink-0 text-gray-400" aria-hidden="true" />
 						<button
 							type="button"
 							class="module-content-name min-w-0 flex-1 truncate text-left"
@@ -171,7 +171,7 @@
 							aria-label={row.visible ? 'Hide in the viewport' : 'Show in the viewport'}
 							onclick={() => toggleHidden(row)}
 						>
-							{#if row.visible}<Eye size={14} aria-hidden="true" />{:else}<EyeOff size={14} aria-hidden="true" />{/if}
+							{#if row.visible}<Icon name="eye" size={16} aria-hidden="true" />{:else}<Icon name="eye-off" size={16} aria-hidden="true" />{/if}
 						</button>
 					</div>
 					{#if expanded[row.name]}

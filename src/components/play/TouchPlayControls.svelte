@@ -32,7 +32,7 @@
 	// one thing that catches: a press on it is the button's, end to end — stopped in the
 	// window's capture phase, so playInteract never reads the same finger as a world tap.
 	import { onMount, untrack } from 'svelte';
-	import { X } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { isLocked, isVRMode, playPointerFree, globalRenderer } from '../../stores/sceneStore';
 	import { coarsePointer } from '$lib/inputDevice';
 	import { inputClaims } from '$lib/inputRuntime';
@@ -383,7 +383,7 @@
 		title="Exit play"
 		onclick={exitPlay}
 	>
-		<X size={20} aria-hidden="true" />
+		<Icon name="x" size={20} aria-hidden="true" />
 	</button>
 {/if}
 

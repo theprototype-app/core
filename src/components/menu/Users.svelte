@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
-	import { ArrowRight, Check, ChevronDown, Eye, Glasses, StickyNote, VolumeX, Camera } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import * as THREE from 'three';
 	import { onMount, untrack } from 'svelte';
 	import {
@@ -519,8 +519,8 @@
 			</div>
 			<div class="flex items-center gap-1.5 text-[10px] text-gray-400">
 				<span class="truncate">{shortId(user[0])}</span>
-				{#if $mutedPeers.includes(user[0])}<span title="Muted"><VolumeX size={16} aria-hidden="true" /></span>{/if}
-				{#if $peerHands[user[0]]?.active}<span title="In VR"><Glasses size={16} aria-hidden="true" /></span>{/if}
+				{#if $mutedPeers.includes(user[0])}<span title="Muted"><Icon name="volume-x" size={16} aria-hidden="true" /></span>{/if}
+				{#if $peerHands[user[0]]?.active}<span title="In VR"><Icon name="glasses" size={16} aria-hidden="true" /></span>{/if}
 				<!-- 21-F3: play-mode presence. `{@const}` may only be the IMMEDIATE
 					 child of a block, so the mode is resolved in the `{#if}` and
 					 named inside it. -->
@@ -564,7 +564,7 @@
 			{#if self}
 				<span class="role-badge" data-role={ri.myRole} title="Your role">{ri.myRole}</span>
 			{:else if ri.amAdmin}
-				<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} aria-haspopup="listbox" aria-expanded={roleMenuFor === user[0]} title="Change role" onclick={(e) => toggleRoleMenu(e, user[0])}>{ri.roleOf(user[0])}<ChevronDown size={10} class="role-caret" aria-hidden="true" /></button>
+				<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} aria-haspopup="listbox" aria-expanded={roleMenuFor === user[0]} title="Change role" onclick={(e) => toggleRoleMenu(e, user[0])}>{ri.roleOf(user[0])}<Icon name="chevron-down" size={16} class="role-caret" aria-hidden="true" /></button>
 			{:else}
 				<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 			{/if}
@@ -578,7 +578,7 @@
 				title={`Previewing ${previewLabel($cameraPreviews[user[0]])} — click to look through it too`}
 				onclick={() => { joinPeerPreview(user[0]); peersOpen = false; }}
 			>
-				<Camera size={14} class="mr-1" aria-hidden="true" />{previewLabel($cameraPreviews[user[0]])}
+				<Icon name="camera" size={16} class="mr-1" aria-hidden="true" />{previewLabel($cameraPreviews[user[0]])}
 			</button>
 		{/if}
 		{#if !self}
@@ -619,7 +619,7 @@
 					title="In the session's world — go back there"
 					onclick={() => doJoinWorld()}
 				>
-					<ArrowRight size={14} class="mr-1" aria-hidden="true" />Join
+					<Icon name="arrow-right" size={16} class="mr-1" aria-hidden="true" />Join
 				</button>
 			{:else if away}
 				<!-- R22 round 30 B2: they are demonstrably in ANOTHER SCENE, so Watch cannot
@@ -631,7 +631,7 @@
 					title={'In ' + away + ' — travel to their scene'}
 					onclick={() => goToScene(user[0])}
 				>
-					<ArrowRight size={14} class="mr-1" aria-hidden="true" />Go to
+					<Icon name="arrow-right" size={16} class="mr-1" aria-hidden="true" />Go to
 				</button>
 			{:else}
 				<button
@@ -649,7 +649,7 @@
 					onclick={() => { specate(user[0]); peersOpen = false; }}
 					oncontextmenu={(e) => openMuteMenu(e, user[0])}
 				>
-					<Eye size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
+					<Icon name="eye" size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
 				</button>
 			{/if}
 		{/if}
@@ -668,7 +668,7 @@
 		aria-label="Scene notes"
 		onclick={() => notesDrawerOpen.update((v) => !v)}
 	>
-		<StickyNote size={16} class="text-xs" aria-hidden="true" />
+		<Icon name="sticky-note" size={16} class="text-xs" aria-hidden="true" />
 	</button>
 	<!-- E1: notifications bell + history panel -->
 	<NotificationCenter />
@@ -844,7 +844,7 @@
 				{@const pid = roleMenuFor}
 				<div use:portal class="role-menu role-menu-portal" role="listbox" style="top:{roleMenuPos.top}px; right:{roleMenuPos.right}px;">
 					{#each ri.order as r}
-						<button type="button" class="role-menu-item" class:sel={ri.roleOf(pid) === r} role="option" aria-selected={ri.roleOf(pid) === r} onclick={(e) => { e.stopPropagation(); ri.setRole(pid, r); roleMenuFor = null; }}><span class="role-badge" data-role={r} style="pointer-events:none">{r}</span>{#if ri.roleOf(pid) === r}<Check size={16} class="role-check" aria-hidden="true" />{/if}</button>
+						<button type="button" class="role-menu-item" class:sel={ri.roleOf(pid) === r} role="option" aria-selected={ri.roleOf(pid) === r} onclick={(e) => { e.stopPropagation(); ri.setRole(pid, r); roleMenuFor = null; }}><span class="role-badge" data-role={r} style="pointer-events:none">{r}</span>{#if ri.roleOf(pid) === r}<Icon name="check" size={16} class="role-check" aria-hidden="true" />{/if}</button>
 					{/each}
 				</div>
 			{/if}

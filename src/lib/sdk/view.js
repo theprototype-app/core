@@ -5,6 +5,8 @@ import { possessRef, vrControlsRef } from './refs.js';
 
 /** 33 (L4): which module last started the follow camera (api.followCam) @type {string | null} */
 let followingFor = null;
+/** 37: which module last seated the VR viewer (api.vrSeat) @type {string | null} */
+let seatedFor = null;
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkView(ctx) {
@@ -48,6 +50,35 @@ export function sdkView(ctx) {
 		 */
 		vrPanel(object) {
 			return owned('vrPanel', vrControlsRef?.registerOverlayPanel?.(object) ?? (() => {}));
+		},
+		/**
+		 * 37 (21-C Race VR): ride an object in VR — the head lands on `seat` (object-local eye
+		 * point, default [0, 0.8, 0.3]) facing the object's forward (-Z), and the tracking space
+		 * is carried with it (yaw + translation only) until vrUnseat. While seated the sticks
+		 * stop walking/turning/teleporting; api.input() still reports them (drive with them).
+		 * Outside a VR session the request waits for one. LOCAL. Feature-detect:
+		 * `api.vrSeat?.(uuid)`. @param {string} uuid @param {{seat?: number[]}} [opts]
+		 * @returns {boolean} whether the object exists
+		 */
+		vrSeat(uuid, opts) {
+			const ok = vrControlsRef?.seatViewer?.(uuid, opts) ?? false;
+			if (ok) seatedFor = moduleId;
+			// one journal entry however often it is called (a module unloaded mid-ride stands up)
+			if (ok)
+				onDispose(
+					() => {
+						if (seatedFor === moduleId) vrControlsRef?.unseatViewer?.(false);
+						seatedFor = null;
+					},
+					'vrSeat',
+					{ key: 'vrSeat' }
+				);
+			return ok;
+		},
+		/** Get up from api.vrSeat: the player steps out beside the object. */
+		vrUnseat() {
+			if (seatedFor === moduleId) seatedFor = null;
+			vrControlsRef?.unseatViewer?.();
 		}
 	};
 }
@@ -59,5 +90,7 @@ sdkView.surface = {
 	followCam: 'registers',
 	stopFollowCam: 'action',
 	vrHand: 'read',
-	vrPanel: 'registers'
+	vrPanel: 'registers',
+	vrSeat: 'registers',
+	vrUnseat: 'action'
 };

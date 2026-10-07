@@ -223,19 +223,54 @@ export default {
 		};
 
 		// ---- driving: engagement (camera + keys) and the input stream ---------------------------
+		// 37 (21-C Race touch + VR): a phone gets PEDALS (the 'drive' touch preset: the stick steers,
+		// gas + brake under the right thumb, keys W / S so the keyboard path reads them), and a
+		// headset sits IN the car (api.vrSeat carries the player with it; the chase camera means
+		// nothing in a headset). Both follow the car you hold, and swap if VR starts mid-race.
 		let engaged = false;
+		/** the camera this engagement chose: 'chase' (desktop / phone) or 'seat' (VR) @type {'' | 'chase' | 'seat'} */
+		let view = '';
+		/** @type {null | (() => void)} */ let pedalsOff = null;
+		/** the eye point in the car, car-local: just over the cabin roof, a touch behind the middle */
+		const SEAT = [0, 0.82, 0.32];
+		const PEDALS = [
+			{ id: 'gas', label: 'Gas', icon: 'gas', keys: ['KeyW'] },
+			{ id: 'brake', label: 'Brake', icon: 'brake', keys: ['KeyS'] },
+			{ id: 'reset', label: 'Reset', icon: 'reload', keys: ['KeyR'] }
+		];
+		/** @param {any} car */
+		const takeView = (car) => {
+			const vr = !!api.isVR?.() && typeof api.vrSeat === 'function';
+			const want = vr ? 'seat' : 'chase';
+			if (view === want) return;
+			dropView();
+			view = want;
+			if (want === 'seat') api.vrSeat(car.uuid, { seat: SEAT });
+			else api.followCam(car.uuid);
+		};
+		const dropView = () => {
+			if (view === 'seat') api.vrUnseat?.();
+			else if (view === 'chase') api.stopFollowCam();
+			view = '';
+		};
+		/** desktop Play, or a headset's game mode: VR Play enters INTERACT and never takes the
+		 * pointer lock, so `isPlaying()` alone left a VR driver on foot (37) */
+		const inGame = () => !!api.isPlaying?.() || (!!api.isVR?.() && api.editorMode?.() === 'interact');
 		const syncEngagement = () => {
 			const car = myCar();
-			const want = !!car && active() && !!api.isPlaying?.() && ['intro', 'playing'].includes(phase());
+			const want = !!car && active() && inGame() && ['intro', 'playing'].includes(phase());
 			if (want && !engaged) {
 				engaged = true;
 				api.claimInput('keys');
-				api.followCam(car.uuid);
+				takeView(car);
+				pedalsOff = api.input?.actions?.(PEDALS, { preset: 'drive' }) ?? null;
 			} else if (!want && engaged) {
 				engaged = false;
 				api.releaseInput('keys');
-				api.stopFollowCam();
-			}
+				dropView();
+				pedalsOff?.();
+				pedalsOff = null;
+			} else if (engaged && car) takeView(car); // entering / leaving VR mid-race
 		};
 		/** @type {Map<string, {t: number, s: number, at: number}>} the initiator's latest input per car */
 		const inputs = new Map();
@@ -247,10 +282,14 @@ export default {
 			const car = myCar();
 			if (!car || !engaged) return;
 			const now = performance.now();
-			const { codes, axes } = api.input();
+			const { codes, axes, pad, touch } = api.input();
 			const dead = (/** @type {number} */ v) => (Math.abs(v) > 0.15 ? v : 0);
-			const keyT = Math.max(-1, Math.min(1, (codes.has('KeyW') || codes.has('ArrowUp') ? 1 : 0) - (codes.has('KeyS') || codes.has('ArrowDown') ? 1 : 0) - dead(axes?.ly ?? 0)));
-			const keyS = Math.max(-1, Math.min(1, (codes.has('KeyD') || codes.has('ArrowRight') ? 1 : 0) - (codes.has('KeyA') || codes.has('ArrowLeft') ? 1 : 0) + dead(axes?.lx ?? 0)));
+			// every stick drives the same way (up = -y): the VR stick, a gamepad's left stick, and
+			// the phone's on-screen stick (37: the 'drive' touch preset — it steers, the pedals are keys)
+			const stickY = dead(axes?.ly ?? 0) || dead(pad?.ly ?? 0) || dead(touch?.y ?? 0);
+			const stickX = dead(axes?.lx ?? 0) || dead(pad?.lx ?? 0) || dead(touch?.x ?? 0);
+			const keyT = Math.max(-1, Math.min(1, (codes.has('KeyW') || codes.has('ArrowUp') ? 1 : 0) - (codes.has('KeyS') || codes.has('ArrowDown') ? 1 : 0) - stickY));
+			const keyS = Math.max(-1, Math.min(1, (codes.has('KeyD') || codes.has('ArrowRight') ? 1 : 0) - (codes.has('KeyA') || codes.has('ArrowLeft') ? 1 : 0) + stickX));
 			const t = scripted ? scripted.t : keyT;
 			const s = scripted ? scripted.s : keyS;
 			const r = codes.has('KeyR');
@@ -556,6 +595,7 @@ export default {
 		const HELP = [
 			'Race round the circuit: the first driver to finish every lap wins.',
 			'Click a car to take the wheel (Start seats everyone still on foot). W / S drive and brake, A / D steer, R puts you back on the road.',
+			'On a phone the stick steers and Gas / Brake sit under your right thumb. In VR you sit in the car: the left stick drives and steers.',
 			'A lap only counts when you have driven all of it — cutting across or reversing over the line does nothing.',
 			'Change the laps, top speed or grip on the Race rules node in the Main graph; move the road\'s points and the race follows.'
 		];
@@ -603,7 +643,9 @@ export default {
 			if (engaged) {
 				engaged = false;
 				api.releaseInput('keys');
-				api.stopFollowCam();
+				dropView();
+				pedalsOff?.();
+				pedalsOff = null;
 			}
 		});
 
@@ -614,6 +656,8 @@ export default {
 			info,
 			board,
 			claims: () => ({ ...claims }),
+			/** 37: the camera this driver's engagement chose ('chase' | 'seat' | '') and whether pedals are declared */
+			view: () => ({ engaged, view, pedals: !!pedalsOff }),
 			mine: () => ({ ...mine, lap: { ...mine.lap, quadrants: [...mine.lap.quadrants] } }),
 			claim: (/** @type {string} */ name) => {
 				const car = byName(name);

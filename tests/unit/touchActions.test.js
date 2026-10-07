@@ -99,6 +99,26 @@ describe('where buttons come from', () => {
 		expect(ids(spec)).toEqual(['fire', 'jump']);
 		expect(spec.stick && spec.look).toBe(true);
 	});
+	it('37: the drive preset steers with the stick, has no look drag, and puts the first pedal under the right thumb', () => {
+		const pedals = [
+			{ id: 'gas', label: 'Gas', icon: 'gas', keys: ['KeyW'] },
+			{ id: 'brake', label: 'Brake', icon: 'brake', keys: ['KeyS'] }
+		].map((a) => /** @type {any} */ (normalizeAction(a, 'race')));
+		const spec = resolveTouchControls({ declared: [{ owner: 'race', actions: pedals, preset: 'drive', at: 1 }] });
+		expect(spec.preset).toBe('drive');
+		// a module asked for it, so the overlay keeps its stick live under the module's 'keys' claim
+		expect(spec.declared).toBe(true);
+		expect(resolveTouchControls({}).declared).toBe(false);
+		expect(spec.stick).toBe(true);
+		expect(spec.look).toBe(false);
+		// movement keys are fine as a DECLARED action (only scene-implied keys skip them)
+		expect(ids(spec)).toEqual(['gas', 'brake']);
+		expect(spec.actions[0].keys).toEqual(['KeyW']);
+		const l = defaultTouchLayout(spec, 390, 844);
+		expect(l.items['btn:gas'].x).toBeGreaterThan(0.7);
+		expect(l.items['btn:gas'].size).toBeGreaterThan(l.items['btn:brake'].size);
+		expect(l.items.stick.x).toBeLessThan(0.3);
+	});
 	it('an explicit stick/look flag beats the preset', () => {
 		const spec = resolveTouchControls({ declared: [{ owner: 'm', actions: [], preset: 'platformer', stick: false, look: false, at: 1 }] });
 		expect(spec.stick).toBe(false);

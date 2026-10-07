@@ -27,6 +27,79 @@ import { pivotMode, reseatPivot, pivotParentAvailable } from './multiTransform';
 import { addAnnotation } from './annotationsHandler';
 import { pingObject, pingObjects } from './ping';
 import { hasOriginal } from './decimate';
+import { linkOf } from './prefabSync';
+import { prefabById } from './prefabs';
+
+/**
+ * 37 R4: the "Prefab" submenu of an object that is (or sits inside) a prefab instance.
+ * The runtime is reached by a dynamic import — it registers a history kind, and the menu
+ * builder is imported by components that must not pull it in eagerly.
+ * @param {any} object @param {any} group
+ */
+function prefabInstanceMenu(object, group) {
+	/** @type {any} */
+	let root = null;
+	for (let o = object; o && o !== group; o = o.parent) {
+		if (linkOf(o)) {
+			root = o;
+			break;
+		}
+	}
+	const link = linkOf(root);
+	if (!root || !link) return [];
+	const entry = prefabById(link.id);
+	const links = () => import('./prefabLinks');
+	const uuid = root.uuid;
+	/** @type {any[]} */
+	const children = entry
+		? [
+				...((entry.rev ?? 0) > link.rev
+					? [
+							{
+								label: 'Update from prefab',
+								icon: 'refresh-cw',
+								tooltip: 'Take the prefab’s newer version — this copy keeps its own changes',
+								action: () => void links().then((m) => m.syncInstance(uuid))
+							}
+						]
+					: []),
+				{
+					label: 'Apply changes to prefab',
+					icon: 'upload',
+					tooltip: 'Make this copy the prefab’s new version, then offer it to the other copies',
+					action: () => void links().then((m) => m.applyInstanceToPrefab(uuid))
+				},
+				{
+					label: 'Reset overrides',
+					icon: 'rotate-ccw',
+					tooltip: 'Make this copy match the prefab again — where it stands is kept (one undo)',
+					action: () => void links().then((m) => m.resetInstance(uuid))
+				},
+				{
+					label: 'Select all instances',
+					icon: 'boxes',
+					action: () => void links().then((m) => m.selectInstances(link.id))
+				},
+				{ section: ' ' }
+			]
+		: [];
+	children.push({
+		label: 'Unlink from prefab',
+		icon: 'unlink',
+		tooltip: entry
+			? 'Make this an ordinary object — prefab updates will not reach it'
+			: 'This copy came from a prefab that is not in your library; unlinking makes it an ordinary object',
+		action: () => void links().then((m) => m.unlinkInstance(uuid))
+	});
+	return [
+		{
+			label: 'Prefab: ' + (entry?.name ?? 'not in your library'),
+			icon: 'boxes',
+			tooltip: root === object ? 'This object is a placed copy of a prefab' : 'This object is part of a placed copy of a prefab',
+			children
+		}
+	];
+}
 
 /**
  * The FULL object context menu, shared so the direct object menu (right-click an
@@ -548,6 +621,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						action: () => addAnnotation(uuid, point)
 					}
 				]),
+		...(multi ? [] : prefabInstanceMenu(object, group)),
 		{
 			// R22 round 11 (user): "I would like to be able to save prefabs as they are now
 			// with right click 'Save as...'". The single "Save as prefab" row became a

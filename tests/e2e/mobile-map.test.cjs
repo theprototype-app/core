@@ -197,10 +197,11 @@ h.run(async () => {
 	await P.waitForTimeout(500);
 	const layer = await read(() => {
 		const play = document.querySelector('#ps-play')?.getBoundingClientRect();
+		const bar = document.querySelector('#ps-bar')?.getBoundingClientRect();
 		const ins = document.querySelector('#inspector')?.getBoundingClientRect();
 		const strip = document.querySelector('#ps-strip')?.getBoundingClientRect();
 		const hit = play ? document.elementFromPoint(play.left + play.width / 2, play.top + play.height / 2) : null;
-		return { playFree: !!hit?.closest('#ps-play'), insAboveBar: !!(ins && play && ins.bottom <= play.top + 2), stripOnTop: !!(strip && ins && strip.bottom <= ins.top + 2) };
+		return { playFree: !!hit?.closest('#ps-play'), insAboveBar: !!(ins && bar && ins.bottom <= bar.top + 2), stripOnTop: !!(strip && ins && strip.bottom <= ins.top + 2) };
 	});
 	h.check(layer.playFree && layer.insAboveBar, `#32 (a): the Inspector sheet ends at the bar, Play stays tappable (${JSON.stringify(layer)})`);
 	h.check(layer.stripOnTop, `#32 (b): the selection strip rides on top of the open sheet (${JSON.stringify(layer)})`);
@@ -233,7 +234,9 @@ h.run(async () => {
 	const addRows = await read(() => [...document.querySelectorAll('[role=menu] > .ctx-row, [role=menu] .ctx-row')].map((r) => r.textContent.trim().split(/\s+/)[0]));
 	h.check(addRows[0] === 'Mesh' && !addRows.includes('Undo'), `the Add tab opens the Add list itself (${JSON.stringify(addRows.slice(0, 4))})`);
 	const sheet = await read(() => document.querySelector('[role=menu].ctx-scroll').getBoundingClientRect().toJSON());
-	h.check(Math.abs(sheet.bottom - 844) < 2 && sheet.left === 0 && Math.abs(sheet.width - 390) < 2, `menus are bottom sheets on the phone shell (${JSON.stringify(sheet)})`);
+	// NOTES-38 #32 (a): the Add list is a sheet that ends at the top of the bottom bar
+	const barTop = await read(() => document.querySelector('#ps-bar').getBoundingClientRect().top);
+	h.check(Math.abs(sheet.bottom - barTop) < 2 && sheet.left === 0 && Math.abs(sheet.width - 390) < 2, `menus are bottom sheets on the phone shell (${JSON.stringify(sheet)})`);
 	await tap('[role=menu] .ctx-row:has-text("Mesh")');
 	await P.waitForTimeout(400);
 	const sub = await read(() => { const n = document.querySelector('.ctx-scroll:not([role])'); return n && { r: n.getBoundingClientRect().toJSON(), back: n.querySelector('.ctx-back')?.textContent.trim(), cube: [...n.querySelectorAll('.ctx-row')].some((r) => r.textContent.trim() === 'Cube') }; });
@@ -256,7 +259,8 @@ h.run(async () => {
 	await tap('#ps-objects');
 	row(26, (await read(store('objectListClose'))) === false && (await visible('#object-list')), 'Object list: Bottom bar › Objects');
 	const objBox = await read(() => document.querySelector('#object-list')?.getBoundingClientRect().toJSON());
-	h.check(objBox && Math.abs(objBox.bottom - 844) < 2 && objBox.width >= 388, `the object list is placed into a bottom sheet (${JSON.stringify(objBox)})`);
+	const barTop2 = await read(() => document.querySelector('#ps-bar').getBoundingClientRect().top);
+	h.check(objBox && Math.abs(objBox.bottom - barTop2) < 2 && objBox.width >= 388, `the object list is placed into a bottom sheet above the bar (#32) (${JSON.stringify(objBox)})`);
 	// the sheet handle: tap steps a detent, drag down past peek closes
 	const d0 = await read(() => { let m; window.__stores.phoneShell.phoneDetents.subscribe((v) => (m = v))(); return m.objects ?? 'half'; });
 	await tap('#ps-sheet-handle');

@@ -775,7 +775,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		z-index: 29;
+		z-index: 42; /* #32: above the sheets, so the raised Play circle is never covered */
 		height: calc(76px + env(safe-area-inset-bottom, 0px));
 		padding: 0 6px calc(8px + env(safe-area-inset-bottom, 0px));
 		display: grid;

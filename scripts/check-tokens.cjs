@@ -68,7 +68,17 @@ const CLEAN = [
 	'src/components/menu/AiAssistant.svelte',
 	'src/components/menu/Chat.svelte',
 	'src/components/menu/Objects.svelte',
-	'src/components/menu/TabStrips.svelte'
+	'src/components/menu/TabStrips.svelte',
+	// 38 R8 (38-hud): the main HUD
+	'src/components/menu/AiHudButton.svelte',
+	'src/components/menu/CommandPalette.svelte',
+	'src/components/menu/Connect.svelte',
+	'src/components/menu/ConnectInfoDrawer.svelte',
+	'src/components/menu/MobileAddButton.svelte',
+	'src/components/menu/SimControls.svelte',
+	'src/components/menu/Toasts.svelte',
+	'src/components/menu/VoiceChat.svelte',
+	'src/components/play/PlayBanner.svelte'
 ];
 
 const PALETTE =

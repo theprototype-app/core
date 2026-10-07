@@ -6,6 +6,8 @@
 @import './styles/tokens.css' layer(utilities);
 /* 38 R6: the window surface, unlayered so it outranks the ui-panel utility */
 @import './styles/windows.css';
+/* 38 R8: the main HUD's shared look (Controls, Connect, top-right, corner buttons, toasts) */
+@import './styles/hud.css' layer(utilities);
 
 @plugin 'flowbite/plugin';
 

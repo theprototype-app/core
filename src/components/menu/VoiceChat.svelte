@@ -26,10 +26,10 @@
      so an open flow editor / Explorer covers them -->
 <button
 	id="mic-button"
-	class="fixed bottom-16 right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full shadow-lg transition-colors
-		{$micActive || $pttActive ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-700 hover:bg-gray-600'}"
+	class="tp-ui hud-fab fixed bottom-16 right-4 z-30"
+	class:on={$micActive || $pttActive}
 	title={$micActive ? 'Microphone on — click to mute' : 'Microphone off — click to talk, or hold V for push-to-talk'}
 	on:click={toggleMic}
 >
-	{#if $micActive || $pttActive}<Icon name="mic" size={20} class="text-white" aria-hidden="true" />{:else}<Icon name="mic-off" size={20} class="text-white" aria-hidden="true" />{/if}
+	{#if $micActive || $pttActive}<Icon name="mic" size={20} aria-hidden="true" />{:else}<Icon name="mic-off" size={20} aria-hidden="true" />{/if}
 </button>

@@ -53,16 +53,16 @@
 <div class="relative">
 	<button
 		id="notif-bell"
-		class="relative flex h-8 w-8 items-center justify-center rounded-full border border-gray-700/60 bg-gray-800/85 text-gray-200 backdrop-blur-sm hover:bg-gray-700/85"
+		class="hud-cell"
+		class:on={$notificationCenterOpen}
 		title="Notifications"
 		aria-label="Notifications"
 		onclick={toggle}
 	>
-		<Icon name="bell" size={16} />
+		<Icon name="bell" size={20} aria-hidden="true" />
 		{#if $notificationsUnread > 0}
-			<span
-				class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
-			>
+			<!-- 38 R8: an unread count is information, not an alarm — the accent, not red -->
+			<span class="hud-count">
 				{$notificationsUnread > 9 ? '9+' : $notificationsUnread}
 			</span>
 		{/if}
@@ -91,7 +91,7 @@
 					<ul class="notif-list">
 						{#each groups as g (g.text)}
 							<li class="notif-row" data-count={g.items.length}>
-								<span class="notif-icon" aria-hidden="true"><Icon name="info" size={16} strokeWidth={1.75} /></span>
+								<span class="notif-icon" aria-hidden="true"><Icon name="info" size={16} /></span>
 								<span class="min-w-0">
 									<span class="notif-text">{g.text}</span>
 									<span class="notif-time">{ago(g.latest.ts)}</span>

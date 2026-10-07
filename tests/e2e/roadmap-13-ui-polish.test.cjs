@@ -64,7 +64,13 @@ h.run(async () => {
 	// --- I1: it uses the MobileAddButton classes (bg-gray-700, matches "+") ---
 	const aiClass = await A.page.locator('#ai-hud-button').getAttribute('class');
 	const plusClass = await A.page.locator('#mobile-add-button').getAttribute('class');
-	h.check(/\bbg-gray-700\b/.test(aiClass) && /\bhover:bg-gray-600\b/.test(aiClass), 'I1: AI button uses the gray-700 "+" styling');
+	// 38 R8: both wear the redesign corner-button look (hud-fab) — the same class, the same paint
+	const fabPaint = (sel) =>
+		A.page.evaluate((q) => { const c = getComputedStyle(document.querySelector(q)); return [c.backgroundColor, c.borderRadius, c.width].join('|'); }, sel);
+	h.check(
+		/\bhud-fab\b/.test(aiClass) && /\bhud-fab\b/.test(plusClass) && (await fabPaint('#ai-hud-button')) === (await fabPaint('#mobile-add-button')),
+		'I1: AI button uses the same corner-button styling as "+"'
+	);
 	h.check(!/\bbg-white\b/.test(aiClass), 'I1: AI button no longer white');
 
 	// --- I2: left stack geometry matches the right (AI=bottom-4, "+"=bottom-16) --

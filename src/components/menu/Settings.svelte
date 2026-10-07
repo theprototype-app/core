@@ -37,7 +37,7 @@
 	import { gameSoundVolume } from '$lib/gameSfx';
 	import { gameMusicVolume } from '$lib/gameMusic';
 	import { showGrid, vrOverride } from '../../stores/sceneStore.js';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, settingsSearchSeed, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
 	import { lightHelperLength } from '$lib/lightHelpers';
 	import { flowMouseBindings, FLOW_MOUSE_BINDINGS } from '$lib/flowPrefs';
@@ -586,6 +586,11 @@
 	// the heterogeneous markup. Rows carry the `.setting-row` class; inner controls
 	// live in <p>, so hiding a row never hides a control inside a shown row.
 	let settingsQuery = '';
+	// 38 R8 (NOTES-38 #14): the command palette opens Settings already searching for a row
+	$: if ($settingsOpen && $settingsSearchSeed) {
+		settingsQuery = $settingsSearchSeed;
+		settingsSearchSeed.set('');
+	}
 	let searchInput: any; // the search box, for refocus after the clear (X) button
 	/**
 	 * Searching must EXPAND every section first. flowbite-svelte 1.x renders an

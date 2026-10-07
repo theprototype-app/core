@@ -35,7 +35,13 @@
     import { rolesInfo } from '$lib/cloudHooks'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
-	import { Progressbar, Toast, Button } from 'flowbite-svelte';
+	import { Progressbar } from 'flowbite-svelte';
+	// the "no light" card's ✕ hides this appearance; the next time the scene loses its
+	// light the card shows again (what flowbite's self-dismissing Toast did on remount)
+	let fixLightClosed = $state(false);
+	$effect(() => {
+		if (!$fixLight) fixLightClosed = false;
+	});
 	import SceneLoadBar from './SceneLoadBar.svelte';
 	import StartViewHint from './StartViewHint.svelte';
     import { fly } from 'svelte/transition';
@@ -127,8 +133,8 @@ const hideCritical = $derived($connectDrawerOpen || $toastsInDrawerOnly);
 const hideRegular = $derived($connectDrawerOpen || $toastsInDrawerOnly);
 
 // U-3: cap how many generic toasts stack at once (older ones collapse into a
-// "+N more" line) so bursts can't fill the screen
-const MAX_TOASTS = 4;
+// "+N more" line) so bursts can't fill the screen. 38 R8: 3, SPEC §5.
+const MAX_TOASTS = 3;
 // 15-P: a rush of joiners folds the same way — the drawer's Toasts tab lists
 // every pending request, so the viewport never fills with approval cards
 const MAX_REQUESTS = 3;
@@ -466,7 +472,7 @@ $effect(() => {
      must NOT use transform (that would create a stacking context and trap the
      children's z-index, breaking "approvals above modals"), so it centres with
      auto margins. -->
-<div class="toasts-stack">
+<div class="toasts-stack tp-ui">
 <!-- 33 L1: a scene load's progress — the stack's first slot, like the mode banners below -->
 <SceneLoadBar />
 <StartViewHint /><!-- 36 L2: "camera is held" / "Back to start view" -->
@@ -618,49 +624,30 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
      so they share the card chrome and appear in the Connect drawer Toasts tab. -->
 
 
-{#if $fixLight}
-<div class="my-1">
-    <Toast  transition={fly} class="flex items-center gap-3 p-2 rounded-lg dark:bg-gray-700 dark:border-dark-700 border-2 border-red-500" onclose={() => 
-        { safeStorage.setItem('hasSeenDisclaimer', 'true'); }
-        }>
-        <div style="position: relative; left: 50%; transform: translate(-25%, -50%);">
-    
+{#if $fixLight && !fixLightClosed}
+<!-- 38 R8: the "no light" prompt on the shared card (was a red-bordered flowbite Toast). ✕
+     behaves as before: it records the disclaimer as seen and hides THIS appearance only. -->
+<div class="my-1 tp-toast" id="fix-light-toast" transition:fly={{ y: -8, duration: 180 }}>
+    <button class="tp-toast-x" title="Dismiss" aria-label="Dismiss" onclick={() => { safeStorage.setItem('hasSeenDisclaimer', 'true'); fixLightClosed = true; }}>✕</button>
+    <div class="tp-toast-body">
+        <Icon name="info" size={16} class="tp-toast-icon" aria-hidden="true" />
+        <div class="tp-toast-main">
+            <div class="tp-toast-text">There is no light in the scene. Click Fix to add a hemisphere light.</div>
+            <div class="tp-toast-actions">
+                <button
+                    class="tp-toast-action"
+                    onclick={() => {
+                        showSidebar('lightProperties');
+                        sceneCommand('/light hemisphere');
+                        $fixLight = false;
+                    }}>Fix</button
+                >
+            </div>
         </div>
-        <div class="mb-1 text-base font-medium text-gray-300 dark:text-brack-500 inline-flex items-center">
-            
-            <p class="text-sm font-medium text-gray-200 dark:text-gray-200 pr-4 overflow-hidden max-w-80">
-                There is no light in the scene<br />
-                Click FIX to add hemisphere. 
-            </p>
-            <Button
-            color="primary"
-            class="nob rounded-sm bg-blue-500 text-white dark:bg-green-600 dark:text-gray-200 dark:hover:bg-green-700"
-            onclick={() => {
-                showSidebar('lightProperties');
-                sceneCommand('/light hemisphere');
-                $fixLight = false;
-            }}
-            >Fix</Button
-        >
-        </div>
-    
-    </Toast>
     </div>
-{/if}
-
-{#if hiddenCount > 0}
-<!-- 15-L: the overflow line is a BUTTON — the hidden toasts all live in the
-     drawer's Toasts tab, so send the user straight there -->
-<div class="my-1 text-center">
-    <button
-        id="toast-overflow-more"
-        class="tp-toast-more"
-        title="Show all toasts in the Connect drawer"
-        onclick={() => { connectDrawerTab.set('toasts'); connectDrawerOpen.set(true); }}
-        >+{hiddenCount} more…</button
-    >
 </div>
 {/if}
+
 <!-- keyed by the entry (dedupe keeps plain strings unique; action toasts are
      distinct objects): an UNKEYED each reuses rows here, so a neighbour's expiry
      migrated text across nodes and svelte 5.5x left a stuck duplicate behind -->
@@ -694,6 +681,19 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     </div>
 </div>
 {/each}
+{#if hiddenCount > 0}
+<!-- 38 R8: BELOW the stack (SPEC §5 "max 3, then +N more"). 15-L: the overflow line is a BUTTON — the hidden toasts all live in the
+     drawer's Toasts tab, so send the user straight there -->
+<div class="my-1 text-center">
+    <button
+        id="toast-overflow-more"
+        class="tp-toast-more"
+        title="Show all toasts in the Connect drawer"
+        onclick={() => { connectDrawerTab.set('toasts'); connectDrawerOpen.set(true); }}
+        >+{hiddenCount} more…</button
+    >
+</div>
+{/if}
 
 </div>
 </div><!-- /toasts-stack -->
@@ -732,7 +732,7 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     /* connection-request card — 15-P: the card CHROME is now .tp-toast--req (shared
        with every other toast); only the role-coloured buttons + the peer-id chip
        remain bespoke (viewer=gray, editor=blue, reject=outlined red). */
-    .cxreq-id { font-size: 11px; color: #9ca3af; font-family: ui-monospace, monospace; }
+    .cxreq-id { font-size: var(--fs-badge); color: var(--text-muted); font-family: var(--font-ui-mono); }
     .cxreq-age {
     margin-top: 2px;
     font-size: 11px;
@@ -745,64 +745,71 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
 }
 .cxreq-age.expired {
     opacity: 0.9;
-    color: #fbbf24;
+    color: var(--warn-text);
 }
 .cxreq-btn:disabled {
     opacity: 0.45;
     cursor: not-allowed;
 }
-.cxreq-btn { font-size: 11px; padding: 4px 10px; border-radius: 7px; border: 0; cursor: pointer; color: #fff; white-space: nowrap; }
-    .cxreq-view { background: #6b7280; }
-    .cxreq-view:hover { background: #7b8494; }
-    .cxreq-editor { background: #2563eb; }
-    .cxreq-editor:hover { background: #1d4ed8; }
-    .cxreq-reject { background: transparent; border: 1px solid rgb(248 113 113 / 0.4); color: #f87171; }
-    .cxreq-reject:hover { background: rgb(220 38 38 / 0.15); }
-    .cxreq-full { background: #b45309; }
-    /* professional notification toast (replaces the flowbite green toast) */
+/* 38 R8: the request card's buttons on the kit Button look — the grant is the filled
+   primary, view-only and "it's full" are secondary, Reject is the outlined danger */
+.cxreq-btn {
+    height: var(--control-h-sm);
+    padding: 0 var(--space-3);
+    border-radius: var(--radius-button);
+    border: 1px solid var(--border-strong);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-desc);
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+}
+    .cxreq-btn:hover:not(:disabled) { background: var(--surface-hover); }
+    .cxreq-editor { background: var(--accent-fill); border-color: transparent; color: var(--on-accent); }
+    .cxreq-editor:hover:not(:disabled) { background: var(--accent-fill); filter: brightness(1.08); }
+    .cxreq-reject { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--ink-bad, var(--danger)); }
+    .cxreq-reject:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+    .cxreq-full { color: var(--warn-text); }
+    @media (pointer: coarse) { .cxreq-btn { height: 44px; } }
+    /* 38 R8: the toast card = the kit's Toast look (SPEC §5): window surface, one border,
+       the icon carries the kind's ink — no coloured stripe. Tokens only. */
     .tp-toast {
         pointer-events: auto;
         position: relative;
-        width: min(420px, 94vw);
+        width: min(400px, 94vw);
         margin: 0 auto;
-        background: var(--color-form, rgb(31 41 55 / 0.98));
-        border: 1px solid rgb(255 255 255 / 0.1);
-        border-left: 3px solid #60a5fa;
-        border-radius: 12px;
-        padding: 10px 32px 10px 12px;
-        box-shadow: 0 12px 30px rgb(0 0 0 / 0.4);
-        backdrop-filter: blur(6px);
+        box-sizing: border-box;
+        background: var(--surface-1);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-card);
+        padding: 10px 34px 10px 12px;
+        box-shadow: var(--shadow-window);
+        color: var(--text-2);
+        font-family: var(--font-ui);
     }
-    .tp-toast-body { display: flex; align-items: flex-start; gap: 9px; }
+    .tp-toast-body { display: flex; align-items: flex-start; gap: 10px; }
     /* the icon is a lucide component's svg (outside this component's scope hash) */
-    .tp-toast-body :global(.tp-toast-icon) { color: #60a5fa; margin-top: 1px; flex: 0 0 auto; }
+    .tp-toast-body :global(.tp-toast-icon) { color: var(--accent-text); margin-top: 1px; flex: 0 0 auto; }
     .tp-toast-main { min-width: 0; flex: 1 1 auto; }
-    .tp-toast-text { font-size: 12.5px; color: #e5e7eb; line-height: 1.4; }
-    .tp-toast-actions { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 6px; }
-    .tp-toast-action { font-size: 11px; color: #93c5fd; background: transparent; border: 0; cursor: pointer; padding: 0; text-decoration: underline; }
-    .tp-toast-action:hover { color: #bfdbfe; }
+    .tp-toast-text { font-size: var(--fs-desc); color: var(--text-2); line-height: 1.45; }
+    .tp-toast-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
+    .tp-toast-action { font-size: var(--fs-desc); font-weight: 500; color: var(--accent-text); background: transparent; border: 0; cursor: pointer; padding: 0; }
+    .tp-toast-action:hover { text-decoration: underline; }
+    .tp-toast-action:focus-visible, .tp-toast-x:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
     .tp-toast-x {
-        position: absolute; top: 7px; right: 7px; width: 20px; height: 20px;
-        border: 0; background: transparent; color: rgb(156 163 175); cursor: pointer;
-        font-size: 11px; line-height: 1; border-radius: 6px;
+        position: absolute; top: 7px; right: 7px; width: 22px; height: 22px;
+        border: 0; background: transparent; color: var(--text-faint); cursor: pointer;
+        font-size: 11px; line-height: 1; border-radius: var(--radius-input);
     }
-    .tp-toast-x:hover { color: #fff; background: rgb(255 255 255 / 0.08); }
-    /* 15-L: INFO variant — the standing, informational prompts (restore a
-       session, the first-run notice). Teal reads as "system info" against the
-       blue default notification and the amber approval card; the icon needs
-       :global because it is a lucide component's own svg. */
-    /* 15-P: connection requests + transfer progress wear the same card, so the
-       whole stack reads as one system. Amber = needs a decision; the progress
-       card keeps the neutral blue of an ordinary notification. */
-    .tp-toast--req { border-left-color: #f59e0b; }
-    .tp-toast--req :global(.tp-toast-icon) { color: #f59e0b; }
+    .tp-toast-x:hover { color: var(--text); background: var(--surface-hover); }
+    /* the kinds differ by the icon's ink only: a decision (approval) = warn, transfer =
+       good, a standing system prompt = the accent like any notification */
+    .tp-toast--req :global(.tp-toast-icon) { color: var(--ink-warn); }
     .tp-toast--req .tp-toast-actions { gap: 8px; margin-top: 8px; }
-    .tp-toast--progress { border-left-color: #22c55e; }
-    .tp-toast--progress :global(.tp-toast-icon) { color: #22c55e; }
-    .tp-toast--info { border-left-color: #2dd4bf; background: var(--color-form, rgb(31 41 55 / 0.98)); }
-    .tp-toast--info :global(.tp-toast-icon) { color: #2dd4bf; }
-    .tp-toast--info .tp-toast-action { color: #5eead4; }
-    .tp-toast--info .tp-toast-action:hover { color: #99f6e4; }
+    .tp-toast--progress :global(.tp-toast-icon) { color: var(--ink-good); }
+    .tp-toast--info { background: var(--surface-1); }
     /* 15-P: SPECTATOR mode banner. A mode is not a notification: it gets its own
        fixed strip so it can never be queued behind toasts or shifted when one
        arrives (the user's complaint), never expires, and stays exactly centred.
@@ -826,17 +833,20 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
         gap: 10px;
         padding: 6px 8px 6px 12px;
         border-radius: 999px;
-        background: rgb(31 41 55 / 0.97);
-        border: 1px solid rgb(239 68 68 / 0.55);
-        box-shadow: 0 10px 26px rgb(0 0 0 / 0.4);
-        backdrop-filter: blur(6px);
+        /* 38 R8: the PlayBanner's glass look — a MODE you are in, not an alarm */
+        background: var(--hud-glass, var(--surface-1));
+        border: 1px solid var(--border);
+        box-shadow: var(--hud-shadow, var(--shadow-window));
+        backdrop-filter: blur(12px);
+        color: var(--text);
+        font-family: var(--font-ui);
     }
     .spectator-dot {
         width: 8px;
         height: 8px;
         border-radius: 999px;
-        background: #ef4444;
-        box-shadow: 0 0 0 3px rgb(239 68 68 / 0.2);
+        background: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
         animation: spectator-pulse 1.8s ease-in-out infinite;
     }
     @keyframes spectator-pulse {
@@ -848,12 +858,12 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     }
 
     .spectator-text {
-        font-size: 12.5px;
-        color: #e5e7eb;
+        font-size: var(--fs-desc);
+        color: var(--text-2);
         margin: 0;
         white-space: nowrap;
     }
-    .spectator-text strong { color: #fff; font-weight: 650; }
+    .spectator-text strong { color: var(--text); font-weight: 600; }
     .spectator-exit {
         margin-left: 10px;
         font-size: 11.5px;
@@ -862,29 +872,29 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
         border-radius: 999px;
         border: 0;
         cursor: pointer;
-        background: #ef4444;
-        color: #fff;
+        background: var(--accent-fill);
+        color: var(--on-accent);
     }
-    .spectator-exit:hover { background: #dc2626; }
+    .spectator-exit:hover { filter: brightness(1.08); }
     /* 16-P5: preview banner reuses the strip, in a calmer blue */
     .preview-banner .spectator-inner {
-        border-color: rgb(138 180 248 / 0.5);
-        background: rgb(30 41 59 / 0.92);
+        border-color: var(--accent-muted);
     }
-    .preview-banner .spectator-dot { background: #8ab4f8; }
+    .preview-banner .spectator-dot { background: var(--accent-muted); }
     .preview-control {
         margin-left: 10px;
         border-radius: 6px;
         padding: 2px 10px;
         font-size: 11px;
         font-weight: 600;
-        color: #e5e7eb;
-        background: rgb(148 163 184 / 0.25);
+        color: var(--text);
+        background: var(--surface-2);
+        border: 1px solid var(--border);
     }
-    .preview-control:hover { background: rgb(148 163 184 / 0.4); }
+    .preview-control:hover { background: var(--surface-hover); }
     .preview-control.on {
-        color: #0b1220;
-        background: #8ab4f8;
+        color: var(--accent-soft-text);
+        background: var(--accent-soft);
     }
     @media (prefers-reduced-motion: reduce) {
         .spectator-dot { animation: none; }
@@ -892,10 +902,11 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     /* the "+N more" overflow line is a button into the drawer's Toasts tab */
     .tp-toast-more {
         pointer-events: auto;
-        border: 0; background: transparent; cursor: pointer;
-        font-size: 11px; color: rgb(156 163 175); padding: 2px 8px; border-radius: 6px;
+        border: 1px solid var(--border-strong); cursor: pointer;
+        background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+        font-size: var(--fs-badge); color: var(--text-muted); padding: 3px 10px; border-radius: var(--radius-pill);
     }
-    .tp-toast-more:hover { color: #e5e7eb; background: rgb(255 255 255 / 0.08); text-decoration: underline; }
+    .tp-toast-more:hover { color: var(--text); }
     /* narrow: full-width connect bar (row 1) + logo/profile (row 2) sit above; keep
        toasts below both */
     @media (max-width: 640px) {

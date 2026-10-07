@@ -13,6 +13,8 @@
 	import ModuleSourceWindow from './editors/ModuleSourceWindow.svelte'; // 36 (G1): read-only module code
 	import NodeDesigner from './editors/NodeDesigner.svelte';
 	import DockTabs from './DockTabs.svelte';
+	import WindowChrome from './ui/WindowChrome.svelte';
+	import Icon from './ui/Icon.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
@@ -183,8 +185,8 @@
 		<div
 			id="flow-list"
 			transition:fly={{ y: 320, duration: 200 }}
-			class="fixed inset-x-0 bottom-0 bg-white p-2 dark:bg-gray-800 {dockVisible ? '' : 'hidden'}"
-			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
+			class="tp-ui tp-dock-panel fixed inset-x-0 bottom-0 p-2 {dockVisible ? '' : 'hidden'}"
+			style="z-index: var(--z-bottom); height: {$dockHeight}px"
 			data-key-scope="panel"
 			role="region"
 			aria-label="Node editor (docked)"
@@ -201,9 +203,10 @@
 			<DockTabs />
 			<button
 				id="flow-undock"
-				class="ui-button-quiet absolute right-2 top-2 z-10"
+				class="tp-dock-btn absolute right-2 top-2 z-10"
 				title="Undock into a floating window"
-				onclick={() => setDocked(false)}>⧉</button
+				aria-label="Undock into a floating window"
+				onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button
 			>
 			<div class="relative" style="height: {$dockHeight - 16}px">
 				<SvelteFlowProvider>
@@ -225,7 +228,7 @@
 		-->
 		<div
 			id="flow-window"
-			class="ui-panel fixed flex flex-col overflow-hidden"
+			class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'flowWin', defaultRect: { left: 120, top: 90 } }}
 			use:focusStack={'flow'}
 			use:tabbable={{ key: 'flow', title: 'Node editor', openStore: flowGraphClose, isOpen: (v) => !v, close: () => flowGraphClose.set(true), minW: 460, minH: 320 }}
@@ -235,13 +238,21 @@
 			style:width="{effW}px"
 			style:height="{effH}px"
 		>
-			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-				<span>Node editor</span>
-				<span class="flex-1"></span>
-				<button id="flow-add-view" class="ui-button-quiet" title="Add a view (Flow Code, Animation, UV editor, Shader editor)" onclick={openAddMenu}>＋</button>
-				<button id="flow-dock" class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
-				<button class="ui-button-quiet" title="Close (N)" onclick={() => flowGraphClose.set(true)}>✕</button>
-			</div>
+			<!-- 38 R6: the one window header (ui/WindowChrome, tool) -->
+			<WindowChrome
+				size="tool"
+				bare
+				body={false}
+				title="Node editor"
+				headerClass="ui-panel-header move-handle cursor-move select-none"
+				onclose={() => flowGraphClose.set(true)}
+				closeAttrs={{ title: 'Close (N)' }}
+			>
+				{#snippet actions()}
+					<button id="flow-add-view" class="wc-act" title="Add a view (Flow Code, Animation, UV editor, Shader editor)" aria-label="Add a view" onclick={openAddMenu}><Icon name="plus" size={14} /></button>
+					<button id="flow-dock" class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+				{/snippet}
+			</WindowChrome>
 			<div class="relative min-h-0 flex-1">
 				<SvelteFlowProvider>
 					<Nodes bind:paletteOpen />

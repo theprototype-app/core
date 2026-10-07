@@ -4,7 +4,14 @@
 	// from '@lucide/svelte' directly instead (tree-shaking stays exact); see the
 	// icons note in CLAUDE.md. Names are lucide kebab-case.
 	import {
+		Activity,
 		Archive,
+		Clapperboard,
+		Code,
+		FolderOpen,
+		Atom,
+		Mountain,
+		Move3d,
 		ArrowDownToLine,
 		Bell,
 		Box,
@@ -83,6 +90,14 @@
 		Video,
 		Workflow,
 		Wrench,
+		AppWindow,
+		FolderTree,
+		MessageSquare,
+		PanelBottom,
+		Settings2,
+		Cog,
+		Mic,
+		Square,
 		X,
 		LocateFixed // 37 R1: the Pivot cell (Active object)
 	} from '@lucide/svelte';
@@ -91,7 +106,14 @@
 	// so their icons resolve here too.
 	/** @type {Record<string, any>} */
 	const MAP = {
+		activity: Activity,
 		archive: Archive,
+		clapperboard: Clapperboard,
+		code: Code,
+		'folder-open': FolderOpen,
+		atom: Atom,
+		mountain: Mountain,
+		'move-3d': Move3d,
 		'arrow-down-to-line': ArrowDownToLine,
 		bell: Bell,
 		box: Box,
@@ -167,6 +189,14 @@
 		video: Video,
 		workflow: Workflow,
 		wrench: Wrench,
+		'app-window': AppWindow,
+		'folder-tree': FolderTree,
+		'message-square': MessageSquare,
+		'panel-bottom': PanelBottom,
+		'settings-2': Settings2,
+		cog: Cog,
+		mic: Mic,
+		square: Square,
 		x: X
 	};
 

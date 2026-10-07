@@ -2,6 +2,7 @@
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { Box, Boxes, Download, ExternalLink, Folder, FolderTree, Gift, Globe, HardDrive, House, LayoutGrid, List, LoaderCircle, PackageOpen, Play, RefreshCw, Save, Share2, X } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
+	import EmptyState from '../ui/EmptyState.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
 	// tree on the left (inline create/rename, expand/collapse, drag re-parent,
 	// cascade delete, resizable), thumbnail grid on the right (subfolder cards
@@ -349,6 +350,8 @@
 	import { dockable } from '$lib/docking';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import { createAttachmentKey, fromAction } from 'svelte/attachments';
 	import WindowShell from '../shared/WindowShell.svelte';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import { fly } from 'svelte/transition';
@@ -611,6 +614,8 @@
 	 */
 	const hideSearch = $derived(headerW < 520);
 	const hideLabel = $derived(headerW < 420);
+	// 38 R6: WindowChrome draws the floating header now; the width probe rides on it
+	const headerAttrs = { [createAttachmentKey()]: fromAction(headerWidth) };
 	const hideIdentity = $derived(headerW < 340);
 	const filtering = $derived(kindFilter.size > 0 || localOnly);
 
@@ -6507,9 +6512,14 @@
 		<button
 			id="explorer-storage"
 			type="button"
-			class="shrink-0 cursor-pointer whitespace-nowrap text-[10px] text-gray-500 underline decoration-dotted hover:text-gray-300"
+			class="ex-meter shrink-0 cursor-pointer whitespace-nowrap"
 			title={storageTitle(storage) + ' Click for the breakdown.'}
-			onclick={openStorageModal}>{fmtSize(storage.used)} / {fmtSize(storage.quota)}</button
+			onclick={openStorageModal}
+			><!-- 38 NOTES-38 #24 (design page): storage as a small meter --><i
+				class="ex-meter-bar"
+				aria-hidden="true"
+				style="--used: {storage.quota ? Math.min(100, Math.max(2, (storage.used / storage.quota) * 100)) : 0}%"
+			></i>{fmtSize(storage.used)} / {fmtSize(storage.quota)}</button
 		>
 	{/if}
 {/snippet}
@@ -6928,7 +6938,7 @@
 				-->
 				<button
 					id="explorer-mount-add"
-					class="shrink-0 whitespace-nowrap rounded-sm border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
+					class="shrink-0 whitespace-nowrap ex-side-btn"
 					title="Browse another saved project's files here, without replacing the one you have open"
 					onclick={openMountPicker}>＋ Mount project…</button
 				>
@@ -6953,7 +6963,7 @@
 						<button
 							data-mount={vol.id}
 							class="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left {volScope?.volumeId === vol.id
-								? 'bg-primary-700 text-white'
+								? 'ex-tree-on'
 								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === volumeKey(vol.id)
 								? 'outline-solid outline-2 outline-primary-500'
 								: ''}"
@@ -7021,7 +7031,7 @@
 									<button
 										data-vol-folder={row.folder.id}
 										class="flex-1 truncate rounded px-1.5 py-1 text-left {$activeFolder === row.folder.id
-											? 'bg-primary-700 text-white'
+											? 'ex-tree-on'
 											: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id
 											? 'outline-solid outline-2 outline-primary-500'
 											: ''}"
@@ -7057,7 +7067,7 @@
 			<button
 				id="explorer-root-row"
 				class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === null && !search
-					? 'bg-primary-700 text-white'
+					? 'ex-tree-on'
 					: 'text-gray-300 hover:bg-gray-700'} {dropFolder === 'root' ? 'outline-solid outline-2 outline-primary-500' : ''}"
 				ondragover={(e) => dragOverInto(e, 'root')}
 				ondragleave={() => (dropFolder = null)}
@@ -7090,7 +7100,7 @@
 						</button>
 						<button
 							class="flex-1 rounded px-1.5 py-1 text-left {$activeFolder === row.folder.id
-								? 'bg-primary-700 text-white'
+								? 'ex-tree-on'
 								: 'text-gray-300 hover:bg-gray-700'} {dropFolder === row.folder.id ? 'outline-solid outline-2 outline-primary-500' : ''}"
 							draggable="true"
 							ondragstart={(e) =>
@@ -7112,7 +7122,7 @@
 			<div class="flex shrink-0 flex-col gap-0.5 border-t border-gray-700/60 p-1">
 				<button
 					id="new-folder"
-					class="whitespace-nowrap rounded-sm border border-dashed border-gray-600 px-2 py-1 text-left text-gray-400 hover:border-gray-400 hover:text-gray-200"
+					class="whitespace-nowrap ex-side-btn"
 					onclick={() => startCreate(typeof $activeFolder === 'string' && ($activeFolder === 'prefabs' || $activeFolder.startsWith('scene')) ? null : $activeFolder)}>＋ New folder</button
 				>
 				<!-- 21-G10: the divider became the grip. GraphTree's shape verbatim (pointer
@@ -7138,7 +7148,7 @@
 						class="whitespace-nowrap rounded px-2 py-1 text-left {dropFolder === 'prefabs'
 							? 'bg-primary-500/20 ring-1 ring-primary-400 text-white'
 							: $activeFolder === 'prefabs'
-								? 'bg-primary-700 text-white'
+								? 'ex-tree-on'
 								: 'text-gray-300 hover:bg-gray-700'}"
 						title="Your prefab library. Drop a 3D object or a scene file here to make one — it keeps its own format."
 						ondragover={(e) => {
@@ -7154,7 +7164,7 @@
 					<button
 						id="packs-folder"
 						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'packs'
-							? 'bg-primary-700 text-white'
+							? 'ex-tree-on'
 							: 'text-gray-300 hover:bg-gray-700'}"
 						title="Asset packs — click to list them, double-click to expand the tree"
 						onclick={() => openFolder('packs')} ondblclick={togglePacks}><PackageOpen size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Packs {packsExpanded ? '▾' : '▸'}</button
@@ -7169,7 +7179,7 @@
 								class="whitespace-nowrap rounded px-2 py-1 text-left {dropFolder === 'pack:' + pack.name
 									? 'bg-primary-500/20 text-white ring-1 ring-primary-400'
 									: $activeFolder === 'pack:' + pack.name
-										? 'bg-primary-700 text-white'
+										? 'ex-tree-on'
 										: 'text-gray-400 hover:bg-gray-700'}"
 								style="padding-left: 22px"
 								title={pack.source === 'default'
@@ -7198,7 +7208,7 @@
 					<button
 						id="scene-folder"
 						class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene'
-							? 'bg-primary-700 text-white'
+							? 'ex-tree-on'
 							: 'text-gray-300 hover:bg-gray-700'}"
 						title="Assets the shared scene uses right now — identical on every peer"
 						onclick={() => openFolder('scene')} ondblclick={toggleScene}><Globe size={16} class="mr-1.5 w-4 text-center text-gray-400" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
@@ -7207,7 +7217,7 @@
 					{#each ['audio', 'config', 'textures'] as sub}
 						<button
 							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
-								? 'bg-primary-700 text-white'
+								? 'ex-tree-on'
 								: 'text-gray-400 hover:bg-gray-700'}"
 							style="padding-left: 22px"
 							onclick={() => openFolder('scene:' + sub)}
@@ -7234,7 +7244,7 @@
 							class="whitespace-nowrap rounded px-2 py-1 text-left {binDropActive
 								? 'bg-red-600/30 text-white ring-1 ring-red-400'
 								: binScope.inBin
-									? 'bg-primary-700 text-white'
+									? 'ex-tree-on'
 									: 'text-gray-300 hover:bg-gray-700'}"
 							title={($deletedLogEnabled && logCount !== binCount
 								? logCount +
@@ -7458,8 +7468,12 @@
 						><Download size={16} class="mr-1" aria-hidden="true" />{installingPack ? 'Installing…' : `Install ${openPack.title}`}</button>
 					</div>
 				{:else}
-				<p class="p-4 text-center text-xs italic text-gray-500">
-					{volScope
+				<!-- 38 NOTES-38 #24 (design page): an empty view is an EmptyState, not italic text -->
+				<EmptyState
+					compact
+					icon={volScope ? 'hard-drive' : $activeFolder === 'prefabs' ? 'package' : 'folder-open'}
+					title={volScope ? 'Nothing here' : 'Nothing here yet'}
+					description={volScope
 						? volume?.missing
 							? 'The saved project behind this mount is gone — unmount it, or save it back to store it again.'
 							: 'This folder of the mounted project is empty.'
@@ -7468,7 +7482,7 @@
 						: $activeFolder === 'packs' ? 'No packs. Right-click here to import a pack (.zip) or load one from a URL.'
 						: typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:') ? 'This pack has no items.'
 						: typeof $activeFolder === 'string' && $activeFolder.startsWith('scene') ? 'No shared assets in this scene group yet.' : 'Drop images, audio, text or 3D files here to import them.'}
-				</p>
+				/>
 				{/if}
 			{:else}
 				<!-- fixed-width columns (not 1fr) so cards don't resize/jiggle when the
@@ -8158,8 +8172,8 @@
 		<div
 			id="explorer-list"
 			transition:fly={{ y: 300, duration: 200 }}
-			class="fixed inset-x-0 bottom-0 bg-white p-2 dark:bg-gray-800 {dockVisible ? '' : 'hidden'}"
-			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid rgb(55 65 81 / 0.6)"
+			class="tp-ui tp-dock-panel fixed inset-x-0 bottom-0 p-2 {dockVisible ? '' : 'hidden'}"
+			style="z-index: var(--z-bottom); height: {$dockHeight}px"
 			data-key-scope="panel"
 			aria-label="Explorer (docked)"
 			ondragover={(e) => {
@@ -8181,7 +8195,7 @@
 			></div>
 			<DockTabs />
 			<div class="mb-1 flex items-center gap-2" use:headerWidth>
-				<span class="shrink-0 text-xs font-semibold text-gray-200"><FolderTree size={16} class="mr-1" aria-hidden="true" />Explorer</span>
+				<span class="tp-dock-title"><Icon name="folder-tree" size={16} />Explorer</span>
 				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way.
 				     W6 deliberately left this row's LAYOUT alone — its narrow-width behaviour
 				     is explorer-header-panels' own measured contract, and the docked chrome
@@ -8189,7 +8203,7 @@
 				     its TAB's right-click menu). -->
 				<input
 					id="explorer-search"
-					class="ui-input w-48 shrink-0 py-0.5"
+					class="tp-field tp-field-sm w-48 shrink-0"
 					placeholder="Search assets…"
 					bind:value={search}
 				/>
@@ -8200,9 +8214,10 @@
 				{@render identityChip()}
 				<button
 					id="explorer-undock"
-					class="ui-button-quiet shrink-0"
+					class="tp-dock-btn shrink-0"
 					title="Undock into a floating window"
-					onclick={() => setDocked(false)}>⧉</button
+					aria-label="Undock into a floating window"
+					onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button
 				>
 			</div>
 			<div style="height: {$dockHeight - 44}px">
@@ -8212,7 +8227,7 @@
 	{:else}
 		<div
 			id="explorer-window"
-			class="ui-panel fixed flex flex-col overflow-hidden"
+			class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 			use:dragWindow={{ key: 'explorerWin', defaultRect: { left: 160, top: 120 } }}
 			use:focusStack={'explorer'}
 			use:tabbable={{ key: 'explorer', title: 'Explorer', openStore: explorerClose, isOpen: (v) => !v, close: () => explorerClose.set(true) }}
@@ -8230,46 +8245,49 @@
 			ondrop={onDrop}
 			role="region"
 		>
-			<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5" use:headerWidth>
-				<span class="shrink-0" title="Explorer"
-					><FolderTree size={16} class={hideLabel ? '' : 'mr-1'} aria-hidden="true" />{hideLabel
-						? ''
-						: 'Explorer'}</span
-				>
-				<!-- W6: the header's overflow lives HERE. The ✕ was never missing — every
-				     item ahead of it was `shrink-0`, so the row's minimum width (~730px)
-				     exceeded the window's own 420px minimum and the two trailing buttons
-				     were pushed OUT of an `overflow-hidden` window: measured at winW 420,
-				     the ✕ sat at x=743 against a right edge of 580, unhittable. That is the
-				     "the Explorer has no close button" report. Clipping the search + chips
-				     instead keeps Dock and ✕ inside the window at every width. -->
-				<div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-				{#if !hideSearch}
-					<input
-						id="explorer-search"
-						class="ui-input w-44 shrink-0 py-0.5 font-normal"
-						placeholder="Search assets…"
-						bind:value={search}
-					/>
-				{/if}
-					{@render filterChip()}
-					{@render viewChip()}
-					{@render logChip()}
-					{@render storageChip()}
-					{@render identityChip()}
-				</div>
-				<button id="explorer-dock" class="ui-button-quiet shrink-0" title="Dock to the bottom" onclick={() => setDocked(true)}>
-					⇩ Dock
-				</button>
-				<!-- the id + aria-label its siblings' close buttons lack, so a suite can pin it -->
-				<button
-					id="explorer-close"
-					class="ui-button-quiet shrink-0"
-					title="Close"
-					aria-label="Close the Explorer"
-					onclick={() => explorerClose.set(true)}>✕</button
-				>
-			</div>
+			<!-- 38 R6: the one window header (ui/WindowChrome, tool). Its R22 ranking stays: the
+			     search leaves first, then the word "Explorer" (the icon stands in); Dock and ✕
+			     never leave -->
+			<WindowChrome
+				size="tool"
+				bare
+				body={false}
+				title="Explorer"
+				headerClass="ui-panel-header move-handle cursor-move select-none"
+				{headerAttrs}
+				onclose={() => explorerClose.set(true)}
+				closeLabel="Close the Explorer"
+				closeAttrs={{ id: 'explorer-close', title: 'Close' }}
+			>
+				{#snippet heading()}
+					<span class="wc-label" title="Explorer">{#if hideLabel}<Icon name="folder-tree" size={16} />{:else}Explorer{/if}</span>
+					<!-- W6: the header's overflow lives HERE. The ✕ was never missing — every
+					     item ahead of it was `shrink-0`, so the row's minimum width (~730px)
+					     exceeded the window's own 420px minimum and the two trailing buttons
+					     were pushed OUT of an `overflow-hidden` window: measured at winW 420,
+					     the ✕ sat at x=743 against a right edge of 580, unhittable. That is the
+					     "the Explorer has no close button" report. Clipping the search + chips
+					     instead keeps Dock and ✕ inside the window at every width. -->
+					<div class="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+					{#if !hideSearch}
+						<input
+							id="explorer-search"
+							class="tp-field tp-field-sm w-44 shrink-0"
+							placeholder="Search assets…"
+							bind:value={search}
+						/>
+					{/if}
+						{@render filterChip()}
+						{@render viewChip()}
+						{@render logChip()}
+						{@render storageChip()}
+						{@render identityChip()}
+					</div>
+				{/snippet}
+				{#snippet actions()}
+					<button id="explorer-dock" class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+				{/snippet}
+			</WindowChrome>
 			<div class="min-h-0 flex-1 p-1">
 				{@render content()}
 			</div>
@@ -8336,6 +8354,60 @@
 {/if}
 
 <style>
+	/* 38 NOTES-38 #24 (design page): the Explorer's sidebar + header in the redesign tokens */
+	:global(.ex-tree-on) {
+		background: var(--accent-soft);
+		color: var(--text);
+	}
+	:global(.ex-tree-on svg) {
+		color: var(--accent-text);
+	}
+	.ex-side-btn {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 4px 10px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text-2);
+		font-size: var(--fs-desc);
+		text-align: left;
+	}
+	.ex-side-btn:hover {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.ex-meter {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: var(--text-faint);
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
+	}
+	.ex-meter:hover {
+		color: var(--text-2);
+	}
+	.ex-meter-bar {
+		position: relative;
+		width: 56px;
+		height: 4px;
+		border-radius: 2px;
+		background: var(--surface-inset);
+		box-shadow: inset 0 0 0 1px var(--border);
+		overflow: hidden;
+	}
+	.ex-meter-bar::after {
+		content: '';
+		position: absolute;
+		inset: 0 auto 0 0;
+		width: var(--used, 0%);
+		background: var(--accent);
+	}
 	/*
 		R22-R8 — THE SPLIT. A flex row holding the cards and the Logs pane. Each half keeps
 		its own scroll, and the log takes a FIXED width so the card grid’s auto-fill

@@ -1,0 +1,354 @@
+/* 38 R6 — THE WINDOW SURFACE (SPEC §4 "All docked/floating windows use WindowChrome").
+
+   A floating / edge-docked window keeps its own root element — dragWindow, dockable,
+   tabbable and focusStack act on it (SPEC §0: dock/float/split/tab stay as they are) — and
+   wears `tp-ui tp-window` on it. The header inside is ui/WindowChrome (`bare`), so the box
+   is painted here once for every window: surface-1 body, 1px border, 12px corners, the
+   window shadow. An edge-docked window (docking.js sets data-docked) and a bottom-docked
+   view sit flush against the screen, so they drop the corners and the shadow.
+
+   Unlayered on purpose: it has to win over the `ui-panel` utility (bg-gray-800 …) the same
+   root still carries for the light/bit8/contrast theme rules and the suites that query it. */
+.tp-window {
+	background: var(--surface-1);
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-window);
+	box-shadow: var(--shadow-window);
+}
+.tp-window[data-docked] {
+	border-radius: 0;
+	box-shadow: none;
+}
+.tp-window[data-docked='left'] {
+	border-width: 0 1px 0 0;
+}
+.tp-window[data-docked='right'] {
+	border-width: 0 0 0 1px;
+}
+/* a bottom-docked view: flush with the screen edges, the dock's top line only */
+.tp-dock-panel {
+	background: var(--surface-1);
+	color: var(--text);
+	border: 0;
+	border-top: 1px solid var(--border);
+}
+/* the exotic themes' panel rules (theme.css, layered) keep applying to a migrated window */
+:root[data-theme='bit8'] .tp-window {
+	border-width: 2px;
+}
+:root[data-theme='contrast'] .tp-window {
+	border-width: 2px;
+	box-shadow: none;
+}
+
+/* ONE text field look inside windows (SPEC §4 "one search field style"; a search with an
+   icon is ui/SearchField — this is the plain field: a chat composer, a rename box) */
+.tp-field {
+	box-sizing: border-box;
+	height: var(--control-h-sm);
+	min-width: 0;
+	padding: 0 10px;
+	background: var(--surface-inset);
+	border: 1px solid var(--border-input);
+	border-radius: var(--radius-button);
+	color: var(--text);
+	font: inherit;
+	font-size: var(--fs-desc);
+}
+.tp-field::placeholder {
+	color: var(--text-faint);
+}
+.tp-field:focus {
+	outline: none;
+	border-color: var(--accent);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+@media (max-width: 639.98px) {
+	.tp-field {
+		font-size: var(--fs-input);
+	}
+}
+
+/* a docked view's own small chrome button (Undock ⧉ in the top-right of a bottom-dock view):
+   the header action's box and ink, since a docked view has no header row of its own */
+.tp-dock-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	height: 28px;
+	min-width: 28px;
+	padding: 0 6px;
+	border: 0;
+	border-radius: var(--radius-input);
+	background: transparent;
+	color: var(--text-muted);
+	font: inherit;
+	font-size: var(--fs-desc);
+	cursor: pointer;
+}
+.tp-dock-btn:hover {
+	background: var(--surface-hover);
+	color: var(--text);
+}
+/* the same inside a docked view's own title row */
+:where(.tp-dock-panel .ui-button-quiet) {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 28px;
+	padding: 0 8px;
+	border: 0;
+	border-radius: var(--radius-input);
+	background: transparent;
+	color: var(--text-2);
+	font-size: var(--fs-desc);
+	font-weight: 500;
+}
+:where(.tp-dock-panel .ui-button-quiet:hover:not(:disabled)) {
+	background: var(--surface-hover);
+	color: var(--text);
+}
+/* a docked view's title (its row under the dock tabs). 38 NOTES-38 #24 (design page: "dock
+   tabs and panel header unified"): the dock TAB above already names the view with its icon,
+   so the row below no longer repeats it — the element stays (callers and the panel's own
+   structure are unchanged), it just takes no room */
+.tp-dock-title {
+	display: none;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+	font-size: var(--fs-desc);
+	font-weight: 600;
+	color: var(--text);
+}
+.tp-dock-title svg {
+	color: var(--text-muted);
+}
+
+/* NOTES-38 #1 (user, 2026-10-06): "No native scrollbars anywhere — the app's custom minimal
+   scrollbar; the burger menu needs NO visible vertical scrollbar (just scrolls; at most a
+   minimal, auto-hiding thumb)". ONE scrollbar for the whole app: a thin thumb on a clear
+   track that shows only while the pointer is over the scroller (`*:hover` matches every
+   ancestor of the pointer, so the box being scrolled lights up and nothing else does).
+   The standard properties win in Chromium/Firefox; the ::-webkit- rules are Safari's.
+   It replaces theme.css' always-on themed bar (148) — its --scrollbar-* tokens still give
+   the thumb its colour per theme. High contrast keeps the thumb visible at rest. Surfaces
+   that want no bar at all (the burger menu) keep `scrollbar-width: none`. */
+* {
+	/* width stays theme.css' `thin` (layered), so a `scrollbar-none` utility still wins */
+	scrollbar-color: transparent transparent;
+}
+*:hover {
+	scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+:root[data-theme='contrast'] * {
+	scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: transparent;
+	border: 0;
+	border-radius: 999px;
+}
+*:hover::-webkit-scrollbar-thumb {
+	background: var(--scrollbar-thumb);
+}
+::-webkit-scrollbar-thumb:hover {
+	background: var(--scrollbar-thumb-hover);
+}
+/* the compact field a window HEADER carries (Explorer's inline search) */
+.tp-field-sm {
+	height: 28px;
+	padding: 0 8px;
+	border-radius: var(--radius-input);
+}
+
+/* ONE menu container (SPEC §4: context, Add and viewport menus) — the same box as
+   ui/Menu.svelte: surface-1, 1px border, 10px corners, the window shadow, 5px inset.
+   Rows are each menu's own (ContextMenuItems .ctx-row, AddMenu, ViewportMenu). */
+.tp-menu {
+	box-sizing: border-box;
+	padding: 5px;
+	background: var(--surface-1);
+	color: var(--text);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-card);
+	box-shadow: var(--shadow-window);
+	font-size: var(--fs-desc);
+}
+@media (max-width: 639.98px) {
+	.tp-menu {
+		font-size: var(--fs-body);
+	}
+}
+
+/* (the legacy-button rules below are wrapped in :where() — zero specificity, so a
+   component's own rule, e.g. FilePreview's ranking `.pv-gone { display: none }`, always
+   wins; being unlayered they still beat the ui-button-quiet utility) */
+/* A window whose header is still its own markup (the file / model / text previews, Stats,
+   live Profiler — their headers carry measured rankings and suites pin their DOM) wears the
+   WindowChrome TOOL header's look through this rule instead: 40px, 12px start inset, the
+   13px semibold title, the border line, quiet 28px actions. Same box as ui/WindowChrome. */
+.tp-window > .ui-panel-header {
+	box-sizing: border-box;
+	min-height: 40px;
+	padding: 0 6px 0 12px;
+	gap: var(--space-2);
+	border-bottom: 1px solid var(--border);
+	color: var(--text);
+	font-family: var(--font-ui);
+	font-size: var(--fs-desc);
+	font-weight: 600;
+}
+:where(.tp-window > .ui-panel-header .ui-button-quiet) {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	min-width: 28px;
+	height: 28px;
+	padding: 0 6px;
+	border: 0;
+	border-radius: var(--radius-input);
+	background: transparent;
+	color: var(--text-muted);
+	font-size: var(--fs-desc);
+	font-weight: 500;
+}
+:where(.tp-window > .ui-panel-header .ui-button-quiet:hover:not(:disabled)) {
+	background: var(--surface-hover);
+	color: var(--text);
+}
+@media (max-width: 639.98px) {
+	.tp-window > .ui-panel-header {
+		min-height: 56px;
+	}
+}
+/* an unsaved editor's Save action: the accent fill (one primary per view) */
+:where(.tp-window > .ui-panel-header) .ui-button-quiet.tp-dirty {
+	background: var(--accent-fill);
+	color: var(--on-accent);
+}
+
+/* SPEC §1 "one accent" inside a migrated window. The legacy Tailwind `primary` scale is
+   Flowbite's salmon (app.css @theme), and window bodies still select with it — the Explorer's
+   active folder, view toggles, selected cards, drop targets. Orange is now Play/live only, so
+   inside a window, dock view or menu the scale IS the accent: fills -> --accent-fill, the
+   mid tone -> --accent, light inks -> --accent-text, deep tints -> --accent-soft, the
+   palest steps (text on a fill) -> --on-accent. One block instead of a rewrite of every
+   class, and a custom theme's accent flows through it. */
+.tp-window,
+.tp-dock-panel,
+.tp-menu {
+	--color-primary-50: var(--on-accent);
+	--color-primary-100: var(--on-accent);
+	--color-primary-200: var(--on-accent);
+	--color-primary-300: var(--accent-text);
+	--color-primary-400: var(--accent-text);
+	--color-primary-500: var(--accent);
+	--color-primary-600: var(--accent-fill);
+	--color-primary-700: var(--accent-fill);
+	--color-primary-800: var(--accent-soft);
+	--color-primary-900: var(--accent-soft);
+}
+/* an icon is its button's face, never a hit target of its own (see WindowChrome) */
+.tp-window > .ui-panel-header button svg,
+.tp-dock-btn svg {
+	pointer-events: none;
+}
+
+/* 38 NOTES-38 #23 — THE DOCK TABS, ONE LOOK (the design page's dock: `.docktabs` / `.dtab`).
+   A window's tab strip is an inset BAR holding pill tabs: the active one a raised surface with
+   a hairline ring (it reads as the panel it shows), the rest muted text on the well, a 14px
+   view icon before the name. Worn by ui/Tabs variant="dock" (the kit), the bottom dock's strip
+   (DockTabs) and a floating window group's strip (TabStrips) — so there is one tab look for
+   every docked and floating window. `tp-dtabs-slim` is the bottom dock's band: W6 pinned its
+   tabs at 22px in a 24px slot above the panel (dock-chrome 9.1-9.4 + the top-edge resize), so
+   the slim bar keeps that metric and changes only the look. */
+.tp-dtabs {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	box-sizing: border-box;
+	min-width: 0;
+	height: 36px;
+	padding: 0 4px;
+	background: var(--surface-inset);
+	border-bottom: 1px solid var(--border);
+}
+.tp-dtab {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+	box-sizing: border-box;
+	height: 28px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 7px;
+	background: transparent;
+	color: var(--text-muted);
+	font-family: var(--font-ui);
+	font-size: var(--fs-desc);
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.tp-dtab:hover {
+	color: var(--text);
+	background: var(--surface-hover);
+}
+.tp-dtab[aria-selected='true'],
+.tp-dtab.tp-dtab-on {
+	background: var(--surface-1);
+	color: var(--text);
+	box-shadow: 0 0 0 1px var(--border);
+}
+.tp-dtab:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+.tp-dtab > .tp-dtab-ico {
+	display: inline-flex;
+	color: var(--text-faint);
+}
+.tp-dtab[aria-selected='true'] > .tp-dtab-ico,
+.tp-dtab.tp-dtab-on > .tp-dtab-ico {
+	color: var(--accent-text, var(--accent));
+}
+/* an icon-only member of a strip (+, minimize, close): the same pill, square */
+.tp-dtab.tp-dtab-icon {
+	justify-content: center;
+	width: 28px;
+	padding: 0;
+}
+/* the bottom dock's slot: a 24px bar (1px top border + 22px tabs + 1px padding), its top
+   corners rounded, flush on the panel's top edge */
+.tp-dtabs.tp-dtabs-slim {
+	height: 24px;
+	padding: 0 1px;
+	border: 1px solid var(--border);
+	border-bottom: 0;
+	border-radius: var(--radius-button) var(--radius-button) 0 0;
+}
+.tp-dtabs-slim .tp-dtab {
+	height: 22px;
+	padding: 0 8px;
+	gap: 5px;
+	border-radius: var(--radius-input);
+	font-size: var(--fs-section);
+}
+.tp-dtabs-slim .tp-dtab.tp-dtab-icon {
+	width: 30px;
+	padding: 0;
+}

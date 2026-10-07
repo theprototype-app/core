@@ -49,13 +49,13 @@ h.run(async () => {
 	// ---- 1. Origin ▸ Centre of children, then a TYPED rotation turns about it --------
 	const menu = await A.page.evaluate((u) => {
 		const items = window.__stores.objectMenu.buildObjectMenuItems(u);
-		const origin = items.find((i) => i.label === 'Origin');
+		const origin = window.__stores.objectMenu.findMenuItem(items, 'Origin');
 		return origin ? origin.children.map((c) => c.label) : null;
 	}, ids.group);
 	h.check(!!menu && menu.includes('Centre of children') && menu.includes('World zero'), `the group's context menu has Origin ▸ (${JSON.stringify(menu)})`);
 	await A.page.evaluate((u) => {
 		const items = window.__stores.objectMenu.buildObjectMenuItems(u);
-		items.find((i) => i.label === 'Origin').children.find((c) => c.label === 'Centre of children').action();
+		window.__stores.objectMenu.findMenuItem(items, 'Origin').children.find((c) => c.label === 'Centre of children').action();
 		window.__stores.objectActions.selectObject(u, true);
 	}, ids.group);
 	await A.page.waitForSelector('#inspector-rotation .dn-input', { timeout: 15000 });
@@ -98,7 +98,7 @@ h.run(async () => {
 	h.check(await A.page.evaluate(() => !!document.querySelector('#pivot-mode')), 'the Inspector shows the Pivot dropdown for a set');
 	const pivotMenu = await A.page.evaluate((u) => {
 		const items = window.__stores.objectMenu.buildObjectMenuItems(u);
-		const p = items.find((i) => i.label === 'Pivot point');
+		const p = window.__stores.objectMenu.findMenuItem(items, 'Pivot point');
 		return p ? p.children.map((c) => c.label + (c.checked ? '✓' : '') + (c.disabled ? '✗' : '')) : null;
 	}, ids.a);
 	h.check(!!pivotMenu && pivotMenu.includes('Parent origin✓'), `the selection menu has Pivot point ▸ (${JSON.stringify(pivotMenu)})`);

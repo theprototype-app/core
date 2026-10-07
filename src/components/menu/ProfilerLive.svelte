@@ -112,7 +112,7 @@
 {#if $profilerLiveOpen}
 	<div
 		id="profiler-live"
-		class="ui-panel tp-themed live-surface fixed flex flex-col overflow-hidden outline-hidden"
+		class="ui-panel tp-ui tp-window tp-themed live-surface fixed flex flex-col overflow-hidden outline-hidden"
 		tabindex="-1"
 		use:dragWindow={{ key: 'profilerLiveWindow', defaultRect: { left: 140, top: 110 }, resizable: true }}
 		use:focusStack={'profilerLive'}

@@ -100,9 +100,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 
 	// ---- 1. MIXED STATE ------------------------------------------------------------
-	const cast = await A.page.evaluate(() => { const i = document.querySelector('#inspector-cast-shadow'); return i ? { checked: i.checked, ind: i.indeterminate } : null; });
+	// (38 R5: these rows are Toggles now — aria-pressed "mixed" is the old indeterminate box)
+	const cast = await A.page.evaluate(() => { const i = document.querySelector('#inspector-cast-shadow'); return i ? (i.type === 'checkbox' ? { checked: i.checked, ind: i.indeterminate } : { checked: i.getAttribute('aria-pressed') === 'true', ind: i.getAttribute('aria-pressed') === 'mixed' }) : null; });
 	h.check(!!cast && cast.ind && !cast.checked, `1.1 Cast shadow reads INDETERMINATE for a set that disagrees (${JSON.stringify(cast)})`);
-	const recv = await A.page.evaluate(() => { const i = document.querySelector('#inspector-receive-shadow'); return i ? { checked: i.checked, ind: i.indeterminate } : null; });
+	const recv = await A.page.evaluate(() => { const i = document.querySelector('#inspector-receive-shadow'); return i ? (i.type === 'checkbox' ? { checked: i.checked, ind: i.indeterminate } : { checked: i.getAttribute('aria-pressed') === 'true', ind: i.getAttribute('aria-pressed') === 'mixed' }) : null; });
 	h.check(!!recv && !recv.ind, `1.2 ...and Receive (they all agree) is a plain checkbox (${JSON.stringify(recv)})`);
 	// the slider's number box (a DragRow labelled like its row) renders the dash
 	const rough = await A.page.evaluate(() => [...document.querySelectorAll('input[aria-label="Roughness"]')].map((i) => i.value));

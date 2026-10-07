@@ -40,7 +40,7 @@
 		autocomplete="off"
 		spellcheck="false"
 		bind:value
-		oninput={() => oninput(value)}
+		oninput={(e) => oninput((value = e.currentTarget.value))}
 		{...rest}
 	/>
 	{#if value}

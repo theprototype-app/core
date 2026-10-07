@@ -4,9 +4,12 @@
 	// natively and a screen reader says "toggle button, pressed". 40x24 on desktop, 51x31
 	// under 640px (tokens --toggle-w/-h). One-way flow like every row control here: render
 	// from `checked`, report through `onchange(next)`; `bind:checked` also works.
-	/** @type {{checked?: boolean, disabled?: boolean, label?: string, labelledby?: string, describedby?: string, id?: string, title?: string, onchange?: (next: boolean) => void} & Record<string, any>} */
+	// `mixed` (a multi-selection whose members differ) renders aria-pressed="mixed" with the
+	// knob centred; a click turns it ON, as an indeterminate checkbox's click does.
+	/** @type {{checked?: boolean, mixed?: boolean, disabled?: boolean, label?: string, labelledby?: string, describedby?: string, id?: string, title?: string, onchange?: (next: boolean) => void} & Record<string, any>} */
 	let {
 		checked = $bindable(false),
+		mixed = false,
 		disabled = false,
 		label = '',
 		labelledby = undefined,
@@ -19,7 +22,7 @@
 
 	function flip() {
 		if (disabled) return;
-		checked = !checked;
+		checked = mixed ? true : !checked;
 		onchange(checked);
 	}
 </script>
@@ -28,7 +31,7 @@
 	{id}
 	type="button"
 	class="tp-ui tg"
-	aria-pressed={checked}
+	aria-pressed={mixed ? 'mixed' : checked}
 	aria-label={labelledby ? undefined : label || undefined}
 	aria-labelledby={labelledby}
 	aria-describedby={describedby}
@@ -81,6 +84,12 @@
 	}
 	.tg[aria-pressed='true'] .tg-knob {
 		transform: translateX(calc(var(--toggle-w) - var(--toggle-h)));
+	}
+	.tg[aria-pressed='mixed'] {
+		background: var(--accent-soft);
+	}
+	.tg[aria-pressed='mixed'] .tg-knob {
+		transform: translateX(calc((var(--toggle-w) - var(--toggle-h)) / 2));
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.tg,

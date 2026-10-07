@@ -4,6 +4,8 @@
 @import './styles/theme.css' layer(utilities);
 /* 38 R2: the redesign tokens (SPEC §1) — after theme.css, whose legacy blocks they derive from */
 @import './styles/tokens.css' layer(utilities);
+/* 38 R6: the window surface, unlayered so it outranks the ui-panel utility */
+@import './styles/windows.css';
 
 @plugin 'flowbite/plugin';
 

@@ -48,7 +48,7 @@
 {#if $statsOpen}
 	<div
 		id="stats-window"
-		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
+		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden outline-hidden"
 		tabindex="-1"
 		use:dragWindow={{ key: 'statsWindow', defaultRect: { left: 120, top: 120 }, resizable: true }}
 		use:focusStack={'stats'}

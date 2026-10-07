@@ -1,9 +1,11 @@
 <script lang="ts">
-	import { MessageSquare } from '@lucide/svelte';
 	// Chat (phases 67+68): floating draggable window on the --z-window tier —
 	// never underneath the flow drawer. Bubbles with author color chips and
 	// timestamps, Enter to send, autoscroll with a new-messages pill, /hints.
 	import '../../styles/chat.css';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import Button from '../ui/Button.svelte';
+	import EmptyState from '../ui/EmptyState.svelte';
 	import { peers, messages, chatHidden, username, userdata } from '../../stores/appStore';
 	// 37 R15: emoji shortcodes (expanded on send) and @mentions (resolved on render)
 	import { expandShortcodes, tokenizeChat, shortcodeSuggestions, mentionSuggestions } from '$lib/chatTokens';
@@ -108,60 +110,62 @@
 		use:dragWindow={{ key: 'chat', defaultRect: { right: 15, bottom: 15 } }}
 		use:focusStack
 		use:tabbable={{ key: 'chat', title: 'Chat', openStore: chatHidden, isOpen: (v) => v === '', close: () => chatHidden.set('hidden') }}
-		class="ui-panel flex h-[420px] w-[min(500px,90vw)] flex-col overflow-hidden bg-gray-900/85 backdrop-blur-sm"
+		class="ui-panel tp-ui tp-window flex h-[420px] w-[min(500px,90vw)] flex-col overflow-hidden"
 		style="z-index: var(--z-window)"
 	>
-		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span><MessageSquare size={16} class="mr-1" aria-hidden="true" />Chat</span>
-			<span class="flex-1"></span>
-			<button class="ui-button-quiet" title="Close (C)" onclick={() => chatHidden.set('hidden')}>✕</button>
-		</div>
+		<!-- 38 R6: the one window header (ui/WindowChrome); `ui-panel-header move-handle` is
+		     the grip dragWindow / tabbing / docking read -->
+		<WindowChrome
+			size="tool"
+			bare
+			body={false}
+			title="Chat"
+			headerClass="ui-panel-header move-handle cursor-move select-none"
+			onclose={() => chatHidden.set('hidden')}
+			closeAttrs={{ title: 'Close (C)' }}
+		/>
 
 		<div class="relative min-h-0 flex-1">
 			<div id="chat-messages" bind:this={scroller} onscroll={onScroll} class="h-full overflow-y-auto px-2 py-1">
 				<ul id="messages" class="flex flex-col gap-1">
 					{#each $messages as m (m)}
 						{#if isNote(m)}
-							<li class="chat-message {m.type} self-center text-center text-[11px] italic text-gray-400">
+							<li class="chat-message chat-note {m.type}">
 								{m.sender === 'SYSTEM' ? '' : authorName(m) + ' '}{m.text}
 							</li>
 						{:else}
 							{@const tokens = tokenizeChat(m.text, people)}
-							<li class={'chat-message ' + m.type + ' max-w-[85%] rounded-lg px-2 py-1 text-sm ' +
-								(isMine(m)
-									? 'self-end rounded-br-sm bg-primary-800/80 text-primary-50'
-									: 'self-start rounded-bl-sm bg-gray-700/80 text-gray-100')}
+							<li class={'chat-message chat-msg ' + m.type} class:chat-mine={isMine(m)}
 								class:chat-mentions-me={!isMine(m) && mentionsMe(tokens)}>
-								<span class="flex items-baseline gap-1.5">
-									<span class="h-2 w-2 shrink-0 self-center rounded-full" style={'background:' + peerColor(m.sender)}></span>
-									<span class="text-[11px] font-semibold opacity-90">{authorName(m)}</span>
-									<span class="text-[9px] text-gray-400">{stamp(m)}</span>
+								<span class="chat-av" style={'background:' + peerColor(m.sender)} aria-hidden="true">{(authorName(m) || '?').slice(0, 1).toUpperCase()}</span>
+								<span class="min-w-0">
+									<span class="chat-who">{authorName(m)}<small>{stamp(m)}</small></span>
+									<!-- 37 R15: TEXT NODES ONLY — a peer's string never becomes markup -->
+									<span class="chat-text wrap-break-word">{#each tokens as t, i (i)}{#if t.kind === 'mention'}<span class="chat-mention" style:--peer={peerColor(t.id)}>{t.text}</span>{:else}{t.text}{/if}{/each}</span>
 								</span>
-								<!-- 37 R15: TEXT NODES ONLY — a peer's string never becomes markup -->
-								<span class="wrap-break-word">{#each tokens as t, i (i)}{#if t.kind === 'mention'}<span class="chat-mention" style:--peer={peerColor(t.id)}>{t.text}</span>{:else}{t.text}{/if}{/each}</span>
 							</li>
 						{/if}
 					{/each}
 				</ul>
+				{#if !$messages.length}
+					<EmptyState icon="message-square" title="No messages yet" description="Messages from everyone in this session appear here. Type / for commands." />
+				{/if}
 			</div>
 
 			{#if unread > 0 && !atBottom}
-				<button
-					class="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-primary-700 px-3 py-0.5 text-xs text-white shadow-lg hover:bg-primary-600"
-					onclick={scrollToBottom}
-				>
+				<button class="chat-unread absolute bottom-2 left-1/2 -translate-x-1/2" onclick={scrollToBottom}>
 					{unread} new message{unread === 1 ? '' : 's'} ↓
 				</button>
 			{/if}
 		</div>
 
 		{#if !$isLocked}
-			<div id="chat-input" class="shrink-0 border-t border-gray-700/60 p-2">
+			<div id="chat-input" class="chat-composer shrink-0">
 				{#if suggestions.length}
-					<div id="chat-suggestions" class="mb-1 flex flex-wrap gap-1 rounded-md border border-gray-700/60 bg-gray-800/95 p-1 text-xs">
+					<div id="chat-suggestions" class="chat-hints mb-1.5 flex flex-wrap gap-1">
 						{#each suggestions as pick (pick.key)}
 							<button
-								class="chat-suggestion rounded-sm px-1.5 py-0.5 text-left hover:bg-gray-700"
+								class="chat-suggestion chat-hint"
 								style:color={pick.color || null}
 								onclick={() => accept(pick)}>{pick.label}</button
 							>
@@ -169,17 +173,17 @@
 					</div>
 				{/if}
 				{#if hints.length}
-					<div class="mb-1 flex flex-col gap-0.5 rounded-md border border-gray-700/60 bg-gray-800/95 p-1 text-xs">
+					<div class="chat-hints mb-1.5 flex flex-col">
 						{#each hints as hint}
 							<button
-								class="flex items-baseline gap-2 rounded-sm px-1.5 py-0.5 text-left hover:bg-gray-700"
+								class="chat-hint"
 								onclick={() => {
 									message = hint.cmd + ' ';
 									document.getElementById('message')?.focus();
 								}}
 							>
-								<span class="font-mono font-semibold text-primary-300">{hint.cmd}</span>
-								<span class="text-gray-400">{hint.help}</span>
+								<span class="chat-cmd">{hint.cmd}</span>
+								<span class="chat-help">{hint.help}</span>
 							</button>
 						{/each}
 					</div>
@@ -188,7 +192,7 @@
 					<input
 						type="text"
 						id="message"
-						class="ui-input min-w-0 flex-1"
+						class="tp-field flex-1"
 						placeholder="Message — / for commands, @ for people, : for emoji"
 						bind:value={message}
 						onkeydown={(e) => {
@@ -201,15 +205,106 @@
 							if (e.key === 'Enter') send();
 						}}
 					/>
-					<button
-						id="send"
-						class="shrink-0 rounded-lg bg-primary-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-primary-600"
-						onclick={send}
-					>
-						Send
-					</button>
+					<Button id="send" variant="primary" size="sm" onclick={send}>Send</Button>
 				</div>
 			</div>
 		{/if}
 	</div>
 </div>
+
+<style>
+	/* 38 R6: the chat body in the tokens — one message list (avatar · name · time · text),
+	   your own lines marked by the accent avatar ring, not a second bubble colour */
+	#messages {
+		gap: 10px;
+		padding: 10px 6px 4px;
+	}
+	.chat-msg {
+		display: grid;
+		grid-template-columns: 24px minmax(0, 1fr);
+		gap: 8px;
+		font-size: var(--fs-desc);
+	}
+	.chat-av {
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		border-radius: 50%;
+		color: var(--on-accent);
+		font-size: var(--fs-badge);
+		font-weight: 600;
+	}
+	.chat-mine .chat-av {
+		box-shadow: 0 0 0 2px var(--accent);
+	}
+	.chat-who {
+		display: block;
+		font-size: var(--fs-section);
+		font-weight: 600;
+		color: var(--text);
+	}
+	.chat-who small {
+		margin-left: 6px;
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
+		font-weight: 400;
+		color: var(--text-faint);
+	}
+	.chat-text {
+		display: block;
+		margin-top: 2px;
+		color: var(--text-2);
+	}
+	.chat-note {
+		align-self: center;
+		text-align: center;
+		font-size: var(--fs-section);
+		color: var(--text-faint);
+	}
+	.chat-unread {
+		height: 26px;
+		padding: 0 12px;
+		border: 0;
+		border-radius: var(--radius-pill);
+		background: var(--accent-fill);
+		color: var(--on-accent);
+		font-size: var(--fs-section);
+		font-weight: 500;
+		box-shadow: var(--shadow-window);
+		cursor: pointer;
+	}
+	.chat-composer {
+		padding: 10px;
+		border-top: 1px solid var(--border);
+	}
+	.chat-hints {
+		padding: 4px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-2);
+	}
+	.chat-hint {
+		display: flex;
+		align-items: baseline;
+		gap: 8px;
+		padding: 4px 8px;
+		border: 0;
+		border-radius: var(--radius-input);
+		background: transparent;
+		font-size: var(--fs-section);
+		text-align: left;
+		cursor: pointer;
+	}
+	.chat-hint:hover {
+		background: var(--surface-hover);
+	}
+	.chat-cmd {
+		font-family: var(--font-ui-mono);
+		font-weight: 500;
+		color: var(--accent-text);
+	}
+	.chat-help {
+		color: var(--text-muted);
+	}
+</style>

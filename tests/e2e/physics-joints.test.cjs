@@ -66,7 +66,7 @@ h.run(async () => {
 		([a, b]) => {
 			window.__stores.objectActions.applySelectionSet([a, b]);
 			const items = window.__stores.objectMenu.buildObjectMenuItems(a);
-			const physics = items.find((i) => i.label === 'Physics');
+			const physics = window.__stores.objectMenu.findMenuItem(items, 'Physics');
 			return physics ? physics.children.map((c) => c.label) : null;
 		},
 		[aUuid, bUuid]

@@ -138,7 +138,7 @@ h.run(async () => {
 	// 8) the object-menu + Add-menu surfaces exist
 	const menu = await A.page.evaluate(() => {
 		const items = window.__stores.objectMenu.buildObjectMenuItems(window.__box.uuid);
-		const effects = items.find((i) => i.label === 'Effects');
+		const effects = window.__stores.objectMenu.findMenuItem(items, 'Effects');
 		return { hasEffects: !!effects, children: effects?.children?.map((c) => c.label) ?? [] };
 	});
 	h.check(

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Archive, BookOpen, FileInput, Flag, FolderOpen, MessageSquareWarning, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Trash2, Upload, Wrench } from '@lucide/svelte';
+	import { Archive, BookOpen, FileInput, Flag, FolderOpen, MessageSquareWarning, Gauge, LayoutTemplate, Puzzle, Save, Settings, SlidersHorizontal, Sparkles, Trash2, Upload, Wrench } from '@lucide/svelte';
 	import { openPublishExport } from '$lib/export/exportStores.js';
 	import { openMomentReport } from '$lib/perf/moment';
 	import { openProblemReport } from '$lib/problemReport';
@@ -152,9 +152,9 @@
 <!-- 94: the logo IS the menu button. Open state = accent ring. -->
 <button
 	id="logo-menu"
-	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur-sm transition-transform hover:scale-105 {$closeMenu
+	class="burger tp-ui flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur-sm transition-transform hover:scale-105 {$closeMenu
 		? 'border-gray-700/60'
-		: 'border-primary-500 ring-2 ring-primary-500/50'}"
+		: 'logo-open'}"
 	style="height: 48px; width: 48px; {$connectDocked ? `top: ${$connectBarHeight + 8}px` : ''}"
 	title={$closeMenu ? 'Open menu' : 'Close menu'}
 	onclick={toggleMenu}
@@ -170,7 +170,7 @@
 	<nav
 		id="sidebar70"
 		transition:fade={{ duration: 130 }}
-		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
+		class="app-sidebar tp-ui tp-menu fixed"
 		style="--side-top: {$connectDocked ? $connectBarHeight + 64 : 64}px"
 	>
 		<!-- multiple + the companion types so an .obj can be picked TOGETHER with its
@@ -178,12 +178,15 @@
 		<input type="file" id="import-file" multiple style="display: none" oninput={(e: any) => importModelFiles(e.target.files)} accept=".gltf, .glb, .obj, .stl, .fbx, .mtl, .png, .jpg, .jpeg, .webp" />
 		<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .tpscene, .tp" />
 
+		<!-- 38 NOTES-38 #24 (design page): the main menu is one of the app's menus — the menu
+		     surface, 32px rows, faint section labels (Project · Scene · Collaborate · App) and a
+		     Segmented save format. Every row, id and handler is unchanged; Modules stays under
+		     Scene (phase 126's order, sidebar-reorg) and Settings stays in App. -->
+		<div class="side-label">Project</div>
 		<!-- New scene from a starting point (General / Examples / Community tabs) -->
 		<button id="open-templates" class="side-row" onclick={() => { templatesModalOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><LayoutTemplate size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Templates</span>
 		</button>
-
-		<div class="side-div"></div>
 
 		<!-- Files -->
 		<button class="side-row" onclick={() => pickFile('import-file')}>
@@ -198,7 +201,7 @@
 		<!-- 21-H1: [ Project | Scene | cog ]. The KEY stays 'tp' and the id stays
 		     #format-tp — the id addresses the format, not the word — but the label reads
 		     "Project", because that is what the file is. -->
-		<div id="format-row" class="mb-0.5 mt-0.5 flex gap-1 pl-9 pr-2">
+		<div id="format-row" class="side-segs mb-0.5 mt-0.5 flex pl-9 pr-2">
 			<button id="format-tp" class="side-seg {saveFormat === 'tp' ? 'on' : ''}" title="Saves the whole project as .tp — the Explorer library, scene history and manifest" onclick={() => pickFormat('tp')}>Project</button>
 			<button id="format-tpscene" class="side-seg {saveFormat === 'tpscene' ? 'on' : ''}" title="Saves the open scene as .tpscene" onclick={() => pickFormat('tpscene')}>Scene</button>
 			<button id="export-settings-cog" class="side-seg" title="Export settings" onclick={openExportSettings}><Settings size={16} aria-hidden="true" /></button>
@@ -206,7 +209,7 @@
 		<!-- the SECOND row: whichever optional formats the cog has enabled. Absent
 		     entirely when neither is, so nothing here costs a pixel by default. -->
 		{#if showGltf || showJson}
-			<div id="format-row-optional" class="mb-0.5 flex gap-1 pl-9 pr-2">
+			<div id="format-row-optional" class="side-segs mb-0.5 flex pl-9 pr-2">
 				{#if showGltf}
 					<button id="format-gltf" class="side-seg {saveFormat === 'gltf' ? 'on' : ''}" title="Exports the scene as glTF — for other tools, not for keeping your work" onclick={() => pickFormat('gltf')}>GLTF</button>
 				{/if}
@@ -232,6 +235,7 @@
 		</button>
 
 		<div class="side-div"></div>
+		<div class="side-label">Scene</div>
 
 		<!-- Scene -->
 		<!-- 15-O: the "●" text prefix is gone — it shifted the label as it appeared
@@ -270,6 +274,8 @@
 		<button id="open-layouts" class="side-row" onclick={() => { layoutsMenuOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><PanelsTopLeft size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Layouts</span>
 		</button>
+		<div class="side-div"></div>
+		<div class="side-label">Collaborate</div>
 		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
 			<span class="side-ico"><Archive size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Sessions</span>
 		</button>
@@ -283,6 +289,7 @@
 		</button>
 
 		<div class="side-div"></div>
+		<div class="side-label">App</div>
 
 		<!-- App -->
 		<!-- 26-A: what the scene costs. It sits beside Settings rather than under it
@@ -311,7 +318,7 @@
 		     menu, and destroying a nested branch inside the subtree being destroyed in
 		     the same flush crashes Svelte's sibling walk (destroy_effect). -->
 		<button id="open-whats-new" class="side-row" onclick={() => { openWhatsNew(); closeMenu.set(true); }}>
-			<span class="side-ico">✨</span>
+			<span class="side-ico"><Sparkles size={16} aria-hidden="true" /></span>
 			<span class="flex-1 whitespace-nowrap">What's new</span>
 			<span class="row-dot" class:row-dot-on={$whatsNewUnseen}></span>
 		</button>
@@ -388,8 +395,8 @@
 		width: 9px;
 		height: 9px;
 		border-radius: 50%;
-		background: #60a5fa;
-		box-shadow: 0 0 0 2px var(--color-form, #1f2937);
+		background: var(--accent);
+		box-shadow: 0 0 0 2px var(--surface-1);
 		visibility: hidden;
 	}
 	.update-dot-on {
@@ -399,7 +406,7 @@
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
-		background: #60a5fa;
+		background: var(--accent);
 		flex: 0 0 auto;
 		visibility: hidden;
 	}
@@ -440,72 +447,113 @@
 	   plugin's button carries no scope class, so without them a Publish row rendered
 	   under Save would sit unstyled beside every native row. Scoped under the slot only,
 	   never as a bare global — the sidebar's look must not leak into the page. */
+	/* 38 NOTES-38 #24: the rows in the menu tokens (.tp-menu surface, ContextMenu row metrics) */
 	.side-row,
 	.side-cloud :global(.side-row) {
 		display: flex;
 		width: 100%;
+		min-height: 32px;
 		align-items: center;
-		gap: 0.5rem;
-		border-radius: 0.375rem;
-		padding: 0.4rem 0.5rem;
+		gap: 10px;
+		border-radius: var(--radius-input);
+		padding: 0 10px;
 		text-align: left;
-		font-size: 0.875rem;
+		font-size: var(--fs-desc);
+		color: var(--text);
 	}
 	.side-row:hover,
 	.side-cloud :global(.side-row:hover) {
-		background-color: rgb(0 0 0 / 0.06);
+		background-color: var(--surface-hover);
 	}
-	:global(.dark) .side-row:hover,
-	:global(.dark) .side-cloud :global(.side-row:hover) {
-		background-color: rgb(255 255 255 / 0.08);
-	}
-	/* 15-O: active nav row (Configure Scene while its panel is open) — a tinted
-	   row + accent rule, replacing the "●" that used to shift the label */
-	/* 16-P6: tint + accent text only — the inset accent bar read as a stray border */
+	/* 15-O / 16-P6: the active nav row (Configure Scene while its panel is open) */
 	.side-row.active {
-		background-color: rgb(59 130 246 / 0.12);
-		color: var(--color-primary-400, #60a5fa);
+		background-color: var(--accent-soft);
+		color: var(--text);
+	}
+	.side-row.active .side-ico {
+		color: var(--accent-text);
 	}
 	.side-ico,
 	.side-cloud :global(.side-ico) {
+		display: inline-flex;
+		justify-content: center;
 		width: 1.25rem;
 		flex-shrink: 0;
 		text-align: center;
+		color: var(--text-muted);
+	}
+	/* Clear scene reads as a warning row (the design's warn-text), the bin icon with it */
+	#clear-scene {
+		color: var(--warn-text);
+	}
+	#clear-scene .side-ico {
+		color: var(--warn-text);
 	}
 	/* A5: a module toolbox row sits under the Modules row it belongs to */
 	.side-sub {
-		padding-left: 1.25rem;
-		font-size: 0.8125rem;
+		padding-left: 1.5rem;
+		font-size: var(--fs-desc);
 	}
 	.side-hint {
 		margin-left: auto;
-		opacity: 0.55;
-		font-family: ui-monospace, monospace;
-		font-size: 0.6875rem;
+		padding-left: 12px;
+		color: var(--text-faint);
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
+	}
+	.side-label {
+		padding: 8px 10px 4px;
+		font-size: var(--fs-badge);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
 	}
 	.side-div {
-		margin: 0.35rem 0.25rem;
-		border-top: 1px solid rgb(0 0 0 / 0.1);
+		height: 1px;
+		margin: 5px 4px;
+		background: var(--border);
 	}
-	:global(.dark) .side-div {
-		border-top-color: rgb(255 255 255 / 0.1);
+	/* the save format: the kit's Segmented (an inset well, the chosen one raised) */
+	.side-segs {
+		gap: 2px;
+	}
+	.side-segs > .side-seg:first-child {
+		margin-left: 0;
 	}
 	.side-seg {
 		flex: 1;
-		border-radius: 0.25rem;
-		padding: 0.1rem 0.4rem;
-		font-size: 0.625rem;
-		font-weight: 600;
-		background-color: rgb(0 0 0 / 0.06);
-		color: rgb(75 85 99);
+		height: 26px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-input);
+		padding: 0 8px;
+		font-size: var(--fs-badge);
+		font-weight: 500;
+		background-color: var(--surface-inset);
+		color: var(--text-muted);
 	}
-	:global(.dark) .side-seg {
-		background-color: rgb(255 255 255 / 0.08);
-		color: rgb(209 213 219);
+	.side-seg:hover {
+		color: var(--text);
 	}
 	.side-seg.on {
-		background-color: var(--color-primary-600, #2563eb);
-		color: #fff;
+		background-color: var(--segment-on);
+		border-color: var(--border-strong);
+		color: var(--text);
+		box-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+	}
+	#export-settings-cog {
+		flex: 0 0 auto;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 30px;
+		padding: 0;
+	}
+	/* the id: a click leaves the logo FOCUSED, and the forms plugin's :focus rule (box-shadow
+	   from empty ring vars, a black border) ties a plain class and wins on order */
+	#logo-menu.logo-open {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 	}
 	/* When the Connect bar docks to a full-width top strip, the logo + its menu drop
 	   below it — driven dynamically by connectDocked/connectBarHeight (inline `top`),

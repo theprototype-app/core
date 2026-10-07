@@ -170,6 +170,7 @@
 	// ---- interactive demo state ----
 	let tab = $state('core');
 	let tabFilter = $state('');
+	let dockTab = $state('explorer');
 	let touchMode = $state('auto');
 	let view = $state('grid');
 	let themeSeg = $state('dark');
@@ -344,6 +345,21 @@
 				{@render st('Hover (Toasts)', hoverTabs)}
 				{@render st('Focus (Grid)', focusTabs)}
 			</div>
+			<!-- 38 NOTES-38 #23: the window tab strip (docked + floating windows, the bottom dock) -->
+			<header><b>Dock tabs</b><span>variant="dock" · a docked or floating window's tab strip</span></header>
+			<Tabs
+				variant="dock"
+				label="Docked views"
+				idPrefix="kit-dock"
+				bind:value={dockTab}
+				tabs={[
+					{ id: 'explorer', label: 'Explorer', icon: 'folder-open' },
+					{ id: 'flow', label: 'Node editor', icon: 'workflow' },
+					{ id: 'animation', label: 'Animation', icon: 'clapperboard' },
+					{ id: 'uv', label: 'UV editor', icon: 'grid-3x3', kitState: 'hover' }
+				]}
+				data-testid="kit-dock-tabs"
+			/>
 		</section>
 
 		<!-- ================= Segmented ================= -->

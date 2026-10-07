@@ -110,7 +110,7 @@ h.run(async () => {
 	const menu = await A.page.evaluate((u) => {
 		const s = window.__stores;
 		const THREE = s.THREE;
-		const find = (/** @type {any[]} */ items) => items.find((i) => i?.label === 'Restore original model');
+		const find = (/** @type {any[]} */ items) => s.objectMenu.findMenuItem(items, 'Restore original model');
 		const mine = find(s.objectMenu.buildObjectMenuItems(u, { selection: [u] }));
 		// a peer's copy: the stamp arrived, the file did not
 		const other = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());

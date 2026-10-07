@@ -206,6 +206,10 @@ h.run(async () => {
 	// which made the select refuse to shrink and pushed the Add button off the edge.
 	const fits = await page.evaluate(() => {
 		const button = document.querySelector('#post-add');
+		// 38 R5: the redesigned rows are taller, so bring the row on screen before asking
+		// what is under its centre (the question is "does anything cover it", not "is it
+		// above the fold")
+		button.scrollIntoView({ block: 'center' });
 		const box = button.getBoundingClientRect();
 		const panel = button.closest('[class*="drawer"], aside, .app-drawer') ?? document.body;
 		const panelBox = panel.getBoundingClientRect();
@@ -578,7 +582,9 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.objectActions.deselectObject());
 	await page.waitForTimeout(500);
 	await page.evaluate(() => document.querySelector('#scene-look-open-shader').click());
-	await page.waitForTimeout(1200);
+	// wait for the THING: on a cold dev server the editor's modules load on first open (1.5-4.5 s)
+	await page.waitForFunction(() => !!document.querySelector('#shader-editor'), null, { timeout: 8000 }).catch(() => {});
+	await page.waitForTimeout(300);
 	const shaderTab = await page.evaluate(() => ({
 		tab: !!document.querySelector('#shader-editor'),
 		scope: document.querySelector('#shader-scope')?.textContent?.trim() ?? ''

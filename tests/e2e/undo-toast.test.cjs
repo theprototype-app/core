@@ -46,20 +46,21 @@ h.run(async () => {
 			window.__stores.environment.environment.subscribe((x) => (v = x))();
 			return v?.preset;
 		});
-	const undoCard = () => pa.locator('.tp-toast--undo');
+	// a used card fading out is not an offer (Svelte 5 marks an outroing element inert)
+	const undoCard = () => pa.locator('.tp-toast--undo:not([inert])');
 	/** the Undo button's own click (a mouse aimed at it races the stack reflowing as other
 	 * toasts come and go — measured: the press landed beside it and the offer expired); that a
 	 * person CAN press it is asserted separately by `onTop` */
 	const pressUndo = () =>
 		pa.evaluate(() => {
-			const b = [...document.querySelectorAll('.tp-toast--undo .tp-toast-action')].find((x) => x.textContent.trim() === 'Undo');
+			const b = [...document.querySelectorAll('.tp-toast--undo:not([inert]) .tp-toast-action')].find((x) => x.textContent.trim() === 'Undo');
 			b?.click();
 			return !!b;
 		});
 	/** is the Undo button the topmost element at its own centre (nothing covers it) */
 	const onTop = () =>
 		pa.evaluate(() => {
-			const b = [...document.querySelectorAll('.tp-toast--undo .tp-toast-action')].find((x) => x.textContent.trim() === 'Undo');
+			const b = [...document.querySelectorAll('.tp-toast--undo:not([inert]) .tp-toast-action')].find((x) => x.textContent.trim() === 'Undo');
 			if (!b) return false;
 			const r = b.getBoundingClientRect();
 			return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === b;
@@ -109,7 +110,7 @@ h.run(async () => {
 	h.check(/3 objects cleared/.test(text) && /Still here:.*sky/.test(text), `1.4 it says what went and what stayed (${text?.replace(/\s+/g, ' ').trim()})`);
 	// what is at the Undo button's centre (a modal still open, an inert ancestor, a cover)
 	const probe = await pa.evaluate(() => {
-		const btns = [...document.querySelectorAll('.tp-toast--undo .tp-toast-action')].filter((b) => b.textContent.trim() === 'Undo');
+		const btns = [...document.querySelectorAll('.tp-toast--undo:not([inert]) .tp-toast-action')].filter((b) => b.textContent.trim() === 'Undo');
 		return btns.map((b) => {
 			const r = b.getBoundingClientRect();
 			const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);

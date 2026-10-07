@@ -18,7 +18,11 @@
 	// deleting it costs, because that is the question somebody freeing space is actually
 	// asking and it cannot be inferred from a byte count.
 	import { untrack } from 'svelte';
-	import { Modal, Button } from 'flowbite-svelte';
+	// 38 R7: the shared ModalDialog (WindowChrome size="modal"), kit Buttons (Reclaim is the one
+	// emphasised, destructive answer), tokens only; every storage-* hook kept.
+	import ModalDialog from '../ui/ModalDialog.svelte';
+	import Button from '../ui/Button.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import Icon from '../ui/Icon.svelte';
 	import { showConfirm } from '$lib/confirmDialog';
 	import { showToast } from '../../stores/appStore';
@@ -182,19 +186,15 @@
 	}
 </script>
 
-<Modal
+<ModalDialog
 	title="Storage"
 	bind:open={$storageModalOpen}
-	modal={false}
 	onkeydown={(/** @type {KeyboardEvent} */ e) => {
 		if (e.key === 'Escape') storageModalOpen.set(false);
 	}}
-	outsideclose
-	size="lg"
-	class="tp-modal-frame"
-	classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
+	width="lg"
 >
-	<div id="storage-modal" class="modal-content p-3">
+	<div id="storage-modal" class="modal-content">
 		<!--
 			THE HONEST HEADER. `navigator.storage.estimate()` is a quota for the whole
 			ORIGIN — localStorage, the caches, the service worker and IndexedDB's own
@@ -204,7 +204,7 @@
 		-->
 		<div class="mb-3">
 			<div class="mb-1 flex flex-wrap items-center gap-2">
-				<span class="flex items-center gap-1.5 text-sm font-semibold text-gray-200">
+				<span class="flex items-center gap-1.5 text-sm font-semibold text-text">
 					<Icon name="hard-drive" size={16} aria-hidden="true" />
 					{#if scan?.estimate}
 						{fmtBytes(scan.estimate.used)} used of {fmtBytes(scan.estimate.quota)} granted
@@ -214,12 +214,13 @@
 				</span>
 				<Button
 					id="storage-rescan"
-					size="xs"
-					color="alternative"
+					variant="outline"
+					size="sm"
+					icon="refresh-cw"
 					disabled={$storageScanning || busy}
 					onclick={() => void scanStorage()}
 				>
-					<Icon name="refresh-cw" size={16} class="mr-1" aria-hidden="true" />{$storageScanning ? 'Reading…' : 'Rescan'}
+					{$storageScanning ? 'Reading…' : 'Rescan'}
 				</Button>
 			</div>
 			{#if scan?.estimate?.quota}
@@ -228,7 +229,7 @@
 				</div>
 			{/if}
 			{#if scan}
-				<p id="storage-summary" class="mt-1.5 text-xs text-gray-400">
+				<p id="storage-summary" class="mt-1.5 text-xs text-text-muted">
 					This app accounts for <strong id="storage-accounted">{fmtBytes(scan.accounted)}</strong>
 					of that across {scan.keys} stored records.
 					{#if scan.unaccounted != null}
@@ -245,9 +246,9 @@
 					{/if}
 				</p>
 			{:else}
-				<p class="mt-1.5 text-xs text-gray-400">Reading the store…</p>
+				<p class="mt-1.5 text-xs text-text-muted">Reading the store…</p>
 			{/if}
-		<p id="storage-autosave" class="mt-1.5 text-xs text-gray-400">
+		<p id="storage-autosave" class="mt-1.5 text-xs text-text-muted">
 			{#if !$autosaveEnabled}
 				Autosave is <strong>off</strong>, so nothing here is crash recovery.
 			{:else if $autosaveStatus.lastError}
@@ -271,7 +272,7 @@
 
 		{#if groups.length}
 			<div class="mb-2 flex items-center justify-between">
-				<p class="ui-section-label !mb-0">What is using it</p>
+				<h3 class="storage-section">What is using it</h3>
 				<button id="storage-select-all" type="button" class="storage-link" onclick={toggleEverything}>
 					Select everything removable
 				</button>
@@ -326,7 +327,7 @@
 					{#if isOpen(cat.key)}
 					<div id={'storage-group-body-' + cat.key} class="storage-group-body">
 					<p class="storage-group-note">{cat.note}</p>
-					<ul class="storage-rows">
+					<ul class="storage-rows" use:minimalScroll>
 						{#each cat.rows as row (row.id)}
 							<li class="storage-row" data-storage-row={row.id} data-removable={row.removable}>
 								<input
@@ -360,14 +361,14 @@
 				</div>
 			{/each}
 		{:else if scan}
-			<p class="text-xs text-gray-400">Nothing is stored on this device yet.</p>
+			<p class="text-xs text-text-muted">Nothing is stored on this device yet.</p>
 		{/if}
 	</div>
 
 	{#snippet footer()}
 		<!-- names the bytes about to be freed, because "3 items" is not the question -->
 		<div class="flex w-full flex-wrap items-center justify-end gap-2">
-			<span id="storage-selection" class="mr-auto text-xs text-gray-400">
+			<span id="storage-selection" class="mr-auto text-xs text-text-muted">
 				{#if pickedRows.length}
 					{pickedRows.length}
 					{pickedRows.length === 1 ? 'item' : 'items'} selected · about
@@ -378,19 +379,19 @@
 			</span>
 			<Button
 				id="storage-reclaim"
-				size="xs"
-				color="red"
+				variant="danger"
+				icon="trash-2"
 				disabled={!pickedRows.length || busy}
 				onclick={reclaim}
 			>
-				<Icon name="trash-2" size={16} class="mr-1" aria-hidden="true" />{busy ? 'Reclaiming…' : 'Reclaim'}
+				{busy ? 'Reclaiming…' : 'Reclaim'}
 			</Button>
-			<Button id="storage-close" size="xs" color="alternative" onclick={() => storageModalOpen.set(false)}>
+			<Button id="storage-close" variant="outline" onclick={() => storageModalOpen.set(false)}>
 				Close
 			</Button>
 		</div>
 	{/snippet}
-</Modal>
+</ModalDialog>
 
 <style>
 	/* Owns its surface explicitly rather than through `ui-panel`: `@apply`-built
@@ -400,56 +401,17 @@
 		height: 6px;
 		border-radius: 3px;
 		overflow: hidden;
-		background: var(--surface-2, #374151);
+		background: var(--surface-2);
 	}
 	.storage-bar-fill {
 		height: 100%;
-		background: var(--accent, #2563eb);
+		background: var(--accent);
 	}
-	/* THE PAINT MUST FOLLOW `:disabled`, BECAUSE THE CLASS STRING DOES NOT.
-
-	   The first pass here read the symptom right and the cause wrong. flowbite's Button
-	   theme does paint its disabled variant `cursor-not-allowed opacity-50`
-	   (buttons/theme.js:140) - but the real defect is that it never takes it OFF again.
-	   `Button.svelte:34` reads
-
-	       const { base, ... } = $derived(button({ ..., disabled: isDisabled, ... }));
-
-	   and a DESTRUCTURING declaration evaluates its object once, so `base` is frozen with
-	   whatever `disabled` happened to be at mount. The element's own `disabled={isDisabled}`
-	   is a separate, genuinely reactive `$derived` - so the ATTRIBUTE tracks the state and
-	   the CLASS STRING never moves.
-
-	   Both of this panel's buttons are born disabled: the modal opens with a scan already
-	   running (Rescan) and with nothing ticked (Reclaim). So both wore the blocked cursor
-	   and the 50% fade PERMANENTLY. MEASURED, before this rule: with an item ticked and no
-	   scan running, Reclaim reported `{disabled:false, opacity:'0.5', cursor:'not-allowed'}`
-	   and Rescan the same - which is precisely the two reports ("remove .cursor-not-allowed",
-	   "when any checkbox in modal selected remove opacity-50"). They are ONE bug, and the
-	   round-13 `:disabled { cursor: default }` rule had fixed the only state in which that
-	   class was telling the truth.
-
-	   So the rules key off `:disabled` and `:not(:disabled)`, which is the half that is
-	   reactive, rather than trying to correct a string that cannot change:
-
-	     enabled          -> pointer, full strength. It is a live control; it must look it.
-	     Rescan disabled  -> neutral cursor, FULL STRENGTH. It is disabled because the thing
-	                         it does is already happening, and its own label says so
-	                         ("Reading..."); a fade would repeat that in the vocabulary of
-	                         refusal, which is what the blocked cursor was doing.
-	     Reclaim disabled -> neutral cursor, and the fade STAYS. "Nothing is ticked yet" is a
-	                         real state with no label to carry it, and the grey is what says
-	                         so. This is the line the user drew: off Rescan outright, off
-	                         Reclaim only once something is selected.
-
-	   `:global` because a flowbite <Button> renders its <button> in its OWN scope, so a
-	   plain scoped selector never lands on it; UNLAYERED, because that beats a Tailwind
-	   utility whatever the specificity. `.tp-check:disabled` in ui.css settled on
-	   `cursor: default` for a disabled control for the same reason, and this follows it.
-
-	   Scoped to these two ids on purpose. The flowbite defect is app-wide - every <Button>
-	   whose `disabled` prop can change is wearing a stale class string somewhere - but that
-	   is a survey and a shared cure, not something to guess at from inside one panel. */
+	/* The user's disabled-paint rule (R22 round 13), kept on the kit Button: a disabled
+	   control shows the neutral cursor, Rescan stays at FULL strength while disabled (it is
+	   disabled because a scan is already running, and its label says "Reading…"), and Reclaim
+	   keeps the fade while nothing is ticked (the grey is what says so). `:global` because the
+	   <button> is the kit Button's own element. */
 	:global(#storage-rescan:disabled),
 	:global(#storage-reclaim:disabled) {
 		cursor: default;
@@ -457,15 +419,18 @@
 	:global(#storage-rescan:disabled) {
 		opacity: 1;
 	}
-	:global(#storage-rescan:not(:disabled)),
-	:global(#storage-reclaim:not(:disabled)) {
-		cursor: pointer;
-		opacity: 1;
+	.storage-section {
+		margin: 0;
+		font-size: var(--fs-section);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
 	}
 	.storage-link {
-		font-size: 0.7rem;
+		font-size: var(--fs-desc);
 		text-decoration: underline;
-		color: var(--accent, #2563eb);
+		color: var(--accent-text);
 		background: none;
 		border: none;
 		padding: 0;
@@ -473,9 +438,9 @@
 	}
 	.storage-group {
 		margin-bottom: 0.6rem;
-		border: 1px solid var(--border, #374151);
+		border: 1px solid var(--border);
 		border-radius: 6px;
-		background: var(--surface-2, #111827);
+		background: var(--surface-2);
 	}
 	/* THE HEAD IS A HEAD. Its own surface (one step off the card's), a heavier name and a
 	   rule under it while open — without those three it sat in the same visual register as
@@ -486,12 +451,12 @@
 		gap: 0.5rem;
 		padding: 0.4rem 0.5rem;
 		font-size: 0.78rem;
-		color: var(--text, #e5e7eb);
-		background: var(--surface-3, #1f2937);
+		color: var(--text);
+		background: var(--surface-inset);
 		border-radius: 5px 5px 0 0;
 	}
 	.storage-group[data-open='true'] .storage-group-head {
-		border-bottom: 1px solid var(--border, #374151);
+		border-bottom: 1px solid var(--border);
 	}
 	.storage-group-tick {
 		display: flex;
@@ -517,7 +482,7 @@
 	.storage-group-toggle :global(.storage-group-chev) {
 		flex: 0 0 auto;
 		transition: transform 0.12s ease;
-		color: var(--text-dim, #9ca3af);
+		color: var(--text-muted);
 	}
 	.storage-group[data-open='true'] .storage-group-toggle :global(.storage-group-chev) {
 		transform: rotate(90deg);
@@ -528,13 +493,13 @@
 	}
 	.storage-group-count {
 		flex: 1 1 auto;
-		color: var(--text-dim, #9ca3af);
+		color: var(--text-muted);
 		font-size: 0.7rem;
 		font-weight: 400;
 	}
 	/* a selection must not be able to hide behind a fold */
 	.storage-group-picked {
-		color: var(--accent, #2563eb);
+		color: var(--accent-text);
 	}
 	.storage-group-bytes {
 		flex: 0 0 auto;
@@ -544,10 +509,10 @@
 		padding: 0.35rem 0.5rem 0.35rem 1.9rem;
 		font-size: 0.68rem;
 		line-height: 1.35;
-		color: var(--text-dim, #9ca3af);
+		color: var(--text-muted);
 	}
 	.storage-rows {
-		border-top: 1px solid var(--border, #374151);
+		border-top: 1px solid var(--border);
 		max-height: 30vh;
 		overflow-y: auto;
 	}
@@ -557,8 +522,8 @@
 		gap: 0.5rem;
 		padding: 0.3rem 0.5rem;
 		font-size: 0.72rem;
-		color: var(--text, #e5e7eb);
-		border-bottom: 1px solid var(--border, #374151);
+		color: var(--text);
+		border-bottom: 1px solid var(--border);
 	}
 	.storage-row:last-child {
 		border-bottom: none;
@@ -576,13 +541,13 @@
 	}
 	.storage-row-sub {
 		font-size: 0.65rem;
-		color: var(--text-dim, #9ca3af);
+		color: var(--text-muted);
 	}
 	.storage-row-reason {
 		margin-top: 0.15rem;
 		font-size: 0.65rem;
 		line-height: 1.35;
-		color: var(--text-dim, #9ca3af);
+		color: var(--text-muted);
 	}
 	/* a `class` handed to a lucide component lands on the CHILD-scope <svg>, so a
 	   scoped selector for it must be :global — the documented icon trap */
@@ -594,6 +559,6 @@
 	.storage-row-bytes {
 		flex: 0 0 auto;
 		font-variant-numeric: tabular-nums;
-		color: var(--text-dim, #9ca3af);
+		color: var(--text-muted);
 	}
 </style>

@@ -71,7 +71,7 @@ h.run(async () => {
 		list.find((t) => t && t.id === 'stale-modules').actions.find((a) => a.label === 'Open Modules').action();
 	});
 	await page.locator('#stale-modules').waitFor({ state: 'visible', timeout: 5000 });
-	h.check(await page.locator('.mod-tab.active').innerText().then((s) => /^User/.test(s)), '3.1 Open Modules lands on the User tab');
+	h.check((await page.locator('#modules-tab-user').getAttribute('aria-selected')) === 'true', '3.1 Open Modules lands on the User tab');
 	h.check((await page.locator('#stale-modules [data-stale="waves"]').innerText()).includes(`v${older} → v${want}`), '3.2 the row says installed -> expected');
 	h.check(await page.locator('#update-stale-waves').isVisible(), '3.3 with an Update button');
 	h.check((await toast()) === null, '3.4 the toast went away when it was answered');

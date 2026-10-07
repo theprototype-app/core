@@ -22,6 +22,15 @@ h.run(async () => {
 				window.__stores.globalCamera.subscribe((x) => (c = x))();
 				return c.position.toArray();
 			});
+		// NOTES-38 #2: the WHOLE viewport pose — the camera AND the orbit target
+		const camPose = () =>
+			page.evaluate(() => {
+				let c, o;
+				window.__stores.globalCamera.subscribe((x) => (c = x))();
+				window.__stores.orbitControls.subscribe((x) => (o = x))();
+				return [...c.position.toArray(), ...(o ? o.target.toArray() : [0, 0, 0])];
+			});
+		const poseOff = (a, b) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
 		const read = (name) =>
 			page.evaluate((name) => {
 				let v;
@@ -31,6 +40,7 @@ h.run(async () => {
 		await page.evaluate(() => window.__stores.objectActions.flyTo([2, 1.6, 4], [0, 1, 0], 0));
 		await page.waitForTimeout(600);
 		const home = await camPos();
+		const homePose = await camPose();
 		// count every send while the panel is open
 		await page.evaluate(() => {
 			let p;
@@ -82,6 +92,7 @@ h.run(async () => {
 		await page.waitForTimeout(800);
 		const back = await camPos();
 		h.check(Math.hypot(back[0] - home[0], back[1] - home[1], back[2] - home[2]) < 0.05, t('3.1 Escape returns the camera'));
+		h.check(poseOff(await camPose(), homePose) < 1e-4, t('3.1b ...EXACTLY: position and orbit target (NOTES-38 #2)'));
 		h.check((await read('avatarConfig')).character !== 'skeleton-mage', t('3.2 ...and keeps the old look'));
 		h.check(!(await page.evaluate(() => window.__stores.avatars.avatarsDebug()['avatar-preview'])), t('3.3 ...and removes the preview'));
 
@@ -127,6 +138,53 @@ h.run(async () => {
 		h.check((await page.evaluate(() => localStorage.getItem('pingSound'))) === 'pop', t('5.4 ...and the ping sound'));
 		const end = await camPos();
 		h.check(Math.hypot(end[0] - home[0], end[1] - home[1], end[2] - home[2]) < 0.05, t('5.5 the camera is home again'));
+		h.check(poseOff(await camPose(), homePose) < 1e-4, t('5.5b ...EXACTLY after Apply (NOTES-38 #2)'));
+
+		// ---- 5c. NOTES-38 #2: orbit by hand while choosing, then Cancel — the damped orbit's
+		// momentum must not carry the viewport past the pose it is returning to ----
+		await page.evaluate(() => window.__stores.characterModalOpen.set(true));
+		await page.waitForSelector('#character-panel');
+		await page.waitForTimeout(900);
+		await page.mouse.move(300, 360);
+		await page.mouse.down();
+		for (let i = 1; i <= 8; i++) await page.mouse.move(300 + i * 25, 360 + i * 4);
+		await page.mouse.up();
+		await page.click('#character-cancel');
+		await page.waitForSelector('#character-panel', { state: 'detached' });
+		await page.waitForTimeout(1200);
+		const afterOrbit = await camPose();
+		h.check(poseOff(afterOrbit, homePose) < 1e-4, t(`5.6 Cancel after an orbit drag lands EXACTLY home (off ${poseOff(afterOrbit, homePose).toExponential(1)})`));
+
+		// ---- 5d. NOTES-38 #2: the drawer resizes by its inner edge; the size is remembered and
+		// the camera re-frames the character into the space the drawer leaves free ----
+		await page.evaluate(() => window.__stores.characterModalOpen.set(true));
+		await page.waitForSelector('#character-panel');
+		await page.waitForTimeout(900);
+		const w0 = await page.locator('#character-panel').evaluate((el) => el.getBoundingClientRect().width);
+		const aim0 = await camPose();
+		const grip = await page.locator('#character-resize').boundingBox();
+		await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+		await page.mouse.down();
+		for (let i = 1; i <= 6; i++) await page.mouse.move(grip.x + grip.width / 2 - i * 20, grip.y + grip.height / 2);
+		await page.mouse.up();
+		await page.waitForTimeout(700);
+		const w1 = await page.locator('#character-panel').evaluate((el) => el.getBoundingClientRect().width);
+		h.check(Math.abs(w1 - w0 - 120) < 3, t(`5.7 dragging the edge 120px left widens the drawer (${Math.round(w0)} -> ${Math.round(w1)})`));
+		const stored5 = await page.evaluate(() => JSON.parse(localStorage.getItem('characterDrawer:size') || 'null'));
+		h.check(Math.abs((stored5?.w ?? 0) - w1) < 3, t('5.8 ...the width is remembered'));
+		h.check(poseOff(await camPose(), aim0) > 0.01, t('5.9 ...and the camera re-frames the character'));
+		await page.click('#character-cancel');
+		await page.waitForSelector('#character-panel', { state: 'detached' });
+		await page.waitForTimeout(1200);
+		h.check(poseOff(await camPose(), homePose) < 1e-4, t('5.10 ...and Cancel still lands exactly home'));
+		await page.evaluate(() => window.__stores.characterModalOpen.set(true));
+		await page.waitForSelector('#character-panel');
+		const w2 = await page.locator('#character-panel').evaluate((el) => el.getBoundingClientRect().width);
+		h.check(Math.abs(w2 - w1) < 3, t('5.11 reopening keeps the width'));
+		await page.click('#character-cancel');
+		await page.waitForSelector('#character-panel', { state: 'detached' });
+		await page.evaluate(() => localStorage.removeItem('characterDrawer:size'));
+		await page.waitForTimeout(800);
 		// ---- 6. Settings ▸ Avatars: the local classic switch + search ----
 		if (theme === 'dark') {
 			await page.evaluate(() => {

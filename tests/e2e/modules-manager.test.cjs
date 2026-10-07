@@ -66,7 +66,7 @@ h.run(async () => {
 	);
 
 	// disable button -> unloads live -> persists -> still gone after reload
-	await A.page.locator('#module-card-button input[type="checkbox"]').click({ force: true });
+	await A.page.locator('#enable-module-button').click();
 	await A.page.waitForTimeout(300);
 	const disabled = await A.page.evaluate(() => localStorage.getItem('disabledModules'));
 	h.check(disabled?.includes("button"), "disable persisted");
@@ -92,7 +92,7 @@ h.run(async () => {
 	// live re-enable (no reload needed)
 	await A.page.evaluate(() => window.__stores.modulesOpen.set(true));
 	await A.page.waitForTimeout(400);
-	await A.page.locator('#module-card-button input[type="checkbox"]').click({ force: true });
+	await A.page.locator('#enable-module-button').click();
 	await A.page.waitForTimeout(500);
 	ids = await loadedIds(A.page);
 	h.check(ids.includes('button'), 'live re-enable registers the module again');

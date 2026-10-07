@@ -300,10 +300,9 @@ export default {
 		um.setDevPoll({ id: 'devmod' }, false);
 	});
 
-	// live disable genuinely deactivates (no page reload needed anymore) —
-	// flowbite's Toggle checkbox is sr-only, so click the label wrapping THIS
-	// toggle (the card also carries the Auto-poll toggle now)
-	await A.page.locator('label:has(#enable-user-module-devmod)').click();
+	// live disable genuinely deactivates (no page reload needed anymore) — the row's
+	// enable Toggle (38 R7: a kit <button aria-pressed>, id kept)
+	await A.page.locator('#enable-user-module-devmod').click();
 	await h.eventually(() => loadedIds(A.page), (ids) => !ids.includes('devmod'), 'disable deactivates live');
 	const afterDisable = await sdkCounts(A.page);
 	h.check(afterDisable.menu === 0 && afterDisable.effects === '', 'disable tears the registries down');

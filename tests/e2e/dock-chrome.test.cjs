@@ -591,10 +591,11 @@ h.run(async () => {
 		b.btns.every((x) => x.h === b.maxH),
 		`9.2 ...tabs and chrome icons alike (${b.btns.map((x) => `${x.label}:${x.h}`).join(' ')})`
 	);
-	// the tab WIDTH never changed on this branch; pin it so a padding edit is visible
+	// the tab WIDTH is pinned so a padding edit is visible. 38: the dock tab gained its view
+	// icon (NOTES-38 #23) at the R10 icon size (16, the smallest UI size) — ~103px now
 	h.check(
-		b.nodeTabW > 90 && b.nodeTabW <= 100,
-		`9.3 a 'Node editor' tab stays ~98px wide (${b.nodeTabW})`
+		b.nodeTabW > 95 && b.nodeTabW <= 108,
+		`9.3 a 'Node editor' tab stays ~103px wide (${b.nodeTabW})`
 	);
 	// the band hangs at -top-6 (24px). At 22px it ends 2px ABOVE the panel; at 34px it
 	// reached 10px inside it, which is what buried the hot-zone.

@@ -205,11 +205,10 @@ async function fieldContract(page, f) {
 	await page.keyboard.press('Escape');
 	await page.waitForTimeout(150);
 	h.check(!near(during, vEsc), `${t} (premise) the typed 7 was live before Escape: ${fmt(during)}`);
-	// KNOWN (QUESTIONS-38-lock Q1): DragRow's Escape commits the entry value and blurs — and
-	// the blur fires the browser's `change` with the TYPED text still in the box (the reset
-	// of the text lands a render later), so a typed edit is re-committed. Escape reverts
-	// ARROW steps (asserted below) and not typing. Locked as it behaves today.
-	h.check(near(await f.read(), during, 1e-6), `${t} KNOWN Q1: Escape after TYPING keeps the typed value (change-on-blur re-commits it): ${fmt(await f.read())}`);
+	// was KNOWN Q1 (QUESTIONS-38-lock): since 1.26.0 (37 R1 stopped DragRow's blur re-commit;
+	// the behaviour 37 R26 names) Escape after TYPING restores the value the field was focused
+	// with, exactly as it reverts arrow steps (asserted below)
+	h.check(near(await f.read(), vEsc, 1e-6), `${t} Escape after TYPING restores the value before editing: ${fmt(await f.read())} (was ${fmt(vEsc)})`);
 	h.check((await activeId(page))?.dn !== true, `${t} Escape leaves the field`);
 	await page.waitForTimeout(650);
 

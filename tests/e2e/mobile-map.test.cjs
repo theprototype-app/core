@@ -388,8 +388,13 @@ h.run(async () => {
 	await P.locator('#sidebar70 .side-row', { hasText: 'Settings' }).first().tap();
 	await P.waitForTimeout(800);
 	row(34, (await read(store('settingsOpen'))) && (await visible('#settings-main')), 'Settings opens from the main menu');
-	const footer = await read(() => ['Reset', "What's new"].map((t) => [...document.querySelectorAll('dialog button, dialog a')].some((b) => b.offsetParent && b.textContent.includes(t))));
-	row(35, footer.every(Boolean), `Reset settings / What's new are reachable in Settings (${JSON.stringify(footer)})`);
+	// 1.26 (37-settings) + the design map row 35: "About & what's new" on the Settings list, and
+	// Reset all settings in About ▸ Danger zone (each category also has its own Reset at the end)
+	const about = await read(() => [...document.querySelectorAll('dialog button, dialog a')].some((b) => b.offsetParent && /what.s new/i.test(b.textContent || '')));
+	await P.evaluate(() => window.__stores.settingsSection.set('about'));
+	await P.waitForTimeout(600);
+	const reset = await read(() => [...document.querySelectorAll('dialog button, dialog a')].some((b) => b.offsetParent && /reset/i.test(b.textContent || '')));
+	row(35, about && reset, `Reset settings / What's new are reachable in Settings (about row ${about}, reset in About ${reset})`);
 
 	const errs = h.pageErrors(A);
 	h.check(errs.length === 0, `no page errors (${JSON.stringify(errs.slice(0, 2))})`);

@@ -1898,7 +1898,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	// the channel list rows are buttons labelled by channel — click the stepped one
 	// so the graph plots IT
-	await A.page.getByRole('button', { name: 'Visible', exact: true }).click();
+	// (the channel row, not the Inspector's Visible switch — a <button> too since 38 R5)
+	await A.page.locator('button[title="Visible"]').first().click();
 	await A.page.waitForTimeout(400);
 	const afterStepped = await A.page.evaluate(() => ({
 		tangents: !!document.getElementById('animation-tangent-1'),

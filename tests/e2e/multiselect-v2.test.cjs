@@ -141,7 +141,13 @@ h.run(async () => {
 	// a slider edit on the set: roughness 0.6 lands everywhere, one batch, B agrees
 	await wire(A.page);
 	await A.page.evaluate(() => window.__stores.objectActions && null);
-	const roughRow = A.page.locator('.ui-row', { hasText: 'Roughness' }).locator('input').first();
+	// 38 R5: the Roughness row is a PropRow — its typeable field is the DragRow labelled
+	// "Roughness" that shows the dash (1.3); the old `.ui-row` wrapper is gone
+	await A.page.evaluate(() => {
+		const f = [...document.querySelectorAll('input[aria-label="Roughness"]')].find((i) => /** @type {HTMLInputElement} */ (i).value === '—');
+		f?.setAttribute('data-ms-rough', '1');
+	});
+	const roughRow = A.page.locator('input[data-ms-rough="1"]');
 	if (await roughRow.count()) {
 		await roughRow.click();
 		await roughRow.fill('0.6');

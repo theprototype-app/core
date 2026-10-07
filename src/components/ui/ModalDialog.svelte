@@ -15,7 +15,9 @@
 	//   - `cancel` (Esc on a modal dialog, the close button, an outside click) closes unless
 	//     `permanent`; an outside click is a click on the <dialog> itself outside its box (the
 	//     ::before dim of .tp-modal-frame targets the dialog), honoured when `outsideclose`.
-	//   - `toggle` keeps `open` in step; a 100 ms fade in and out (|global).
+	//   - `toggle` keeps `open` in step; a 100 ms fade IN (|global). Closing removes the
+	//     dialog at once: an outro kept a decided dialog on screen for 100 ms after the
+	//     store that owns it had moved on (import-duplicates' Reveal check saw it).
 	//   - Escape on a NON-modal dialog fires no cancel event — callers pass their own
 	//     `onkeydown`, which lands on the <dialog> exactly as before.
 	//   - the close button keeps flowbite's accessible name, "Close".
@@ -129,7 +131,7 @@
 		oncancel={onCancel}
 		onclick={onClick}
 		ontoggle={onToggle}
-		transition:fade|global={{ duration: 100, easing: sineIn }}
+		in:fade|global={{ duration: 100, easing: sineIn }}
 		{...rest}
 	>
 		{#if title || dismissable}

@@ -146,9 +146,19 @@
 
 /* ---- the Controls toolbar (#controls-pill, Controls.svelte) ---- */
 .hud-bar {
+	display: flex;
+	align-items: center;
+	gap: 2px;
 	height: var(--hud-bar-h);
 	padding: 0 6px;
 	border-radius: var(--radius-modal);
+}
+/* the "…" (Customize toolbar) after the cells: a wide-window extra — a narrow bar keeps
+   every pixel for its cells (toolbar-position), and the right-click menu still has it */
+@media (max-width: 719.98px) {
+	.hud-bar .hud-bar-more {
+		display: none;
+	}
 }
 .hud-bar-row {
 	display: flex;

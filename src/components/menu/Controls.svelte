@@ -2214,6 +2214,15 @@
 			{/if}
 		{/each}
 	</div>
+	{#if !controlsLayout.collapsed}
+		<!-- 38 R8 (design page): the bar's own "…" opens Customize toolbar — the same checklist as
+		     the right-click menu's last row. Outside the cell row on purpose: the roster suites read
+		     the row's children as the bar's cells. Hidden on a narrow window (hud.css). -->
+		<span class="hud-sep hud-bar-more" aria-hidden="true"></span>
+		<button id="toolbar-customize" type="button" class="hud-cell hud-bar-more" title="Customize toolbar…" aria-label="Customize toolbar" on:click={openCustomize}
+			><Icon name="ellipsis" size={20} aria-hidden="true" /></button
+		>
+	{/if}
 </nav>
 
 <!-- chat toggle lives bottom-right under the mic (93); z under the bottom

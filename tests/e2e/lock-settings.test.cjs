@@ -123,7 +123,10 @@ async function readState(page, sel) {
 			const type = (el.getAttribute('type') || '').toLowerCase();
 			if ((el.tagName === 'INPUT' && type === 'checkbox') || role === 'switch' || role === 'checkbox')
 				return el.checked === true || el.getAttribute('aria-checked') === 'true' || el.getAttribute('aria-pressed') === 'true';
-			if (el.hasAttribute('aria-pressed') && el.tagName === 'BUTTON' && el.closest('[role=group], [role=radiogroup], .tp-seg'))
+			// the kit (1.26 Settings, 38): a Toggle is a <button aria-pressed>, a Segmented option a
+			// role=radio with aria-checked — both read as on/off, never as their label text
+			if (role === 'radio') return el.getAttribute('aria-checked') === 'true';
+			if (el.hasAttribute('aria-pressed') && el.tagName === 'BUTTON')
 				return el.getAttribute('aria-pressed') === 'true';
 			if (el.tagName === 'SELECT') return el.options[el.selectedIndex]?.text?.trim() ?? '';
 			if (el.getAttribute('aria-haspopup') === 'listbox') return (el.textContent || '').replace(/▾/g, '').trim();

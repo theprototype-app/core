@@ -92,7 +92,9 @@ h.run(async () => {
 	// ---- 3. the toolbar cells ----------------------------------------------------------------------
 	const cells = await page.evaluate(() =>
 		[...document.querySelectorAll('#controls-pill [title]')]
-			.filter((e) => e.id !== 'play-button' && e.getClientRects().length)
+			// (not the bar's "…": it opens the Customize toolbar menu — the right-click menu's row —
+			// and is no roster cell)
+			.filter((e) => e.id !== 'play-button' && e.id !== 'toolbar-customize' && e.getClientRects().length)
 			// cells are keyed by their tooltip (most carry no id); the title is also the
 			// accessible name the redesign keeps (SPEC §5: icon buttons with tooltips)
 			.map((e) => ({ id: e.getAttribute('title') || '', title: e.getAttribute('title') }))

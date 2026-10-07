@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { ChevronDown, Copy, Globe } from '@lucide/svelte';
+	import { ChevronDown, ChevronsLeftRight, Copy, Globe, Mic, MicOff } from '@lucide/svelte';
+	import { micActive, pttActive, toggleMic, speakingPeers } from '$lib/voiceChat';
+	import { peerColor } from '$lib/lockControl';
 	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight, toastStore, toastsInDrawerOnly } from '../../stores/appStore'
-	import { Input, Button } from 'flowbite-svelte';
+	import Badge from '../ui/Badge.svelte';
 	import { onMount, tick } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
 	// 27-F: the signaling link's retry state (audit H2). A chip, not a toast per attempt.
-	import { signalingRetry, approvalStartedAt, approvalRemaining, APPROVAL_WINDOW_MS, joinRefusal, clearJoinRefusal, HARD_PEER_CAP } from '$lib/connectionState';
+	import { signalingRetry, formatElapsed, approvalStartedAt, approvalRemaining, APPROVAL_WINDOW_MS, joinRefusal, clearJoinRefusal, HARD_PEER_CAP } from '$lib/connectionState';
 	import { cancelOutboundRequest, requestConnect } from '$lib/peerApproval';
 	import { sessionHost } from '$lib/connectionState';
 	import { connectSlot, drawerSlot } from '$lib/cloudHooks';
@@ -84,6 +86,14 @@
 	const connState = $derived(
 		remoteOpen.length > 0 ? 'connected' : pendingOut.length > 0 ? 'pending' : 'idle'
 	);
+	// 38 R8 (NOTES-38 #16): the retry chip reads elapsed time — a 1 s clock, only while retrying
+	let retryNow = $state(Date.now());
+	$effect(() => {
+		if (!$signalingRetry.retrying) return;
+		retryNow = Date.now();
+		const t = setInterval(() => (retryNow = Date.now()), 1000);
+		return () => clearInterval(t);
+	});
 	// the drawer is visible when open OR pinned (pinned keeps the tab bar under the pill)
 	const drawerVisible = $derived($connectDrawerOpen || $connectDrawerPinned);
 	// 15-B4: toasts routed drawer-only are INVISIBLE while the drawer is closed —
@@ -173,6 +183,24 @@
 	const connectedText = $derived(
 		$sessionHost ? 'Connected to ' + hostLabel : 'Hosting · ' + remoteOpen.length + ' peer' + (remoteOpen.length === 1 ? '' : 's')
 	);
+
+	// 38 R8 (NOTES-38 #10): once CONNECTED the bar collapses to a chip — status dot · who ·
+	// peer avatars · mic — and a click expands it back to the full bar. Every connect resets
+	// it to the chip; disconnected / connecting always show the full bar.
+	let expanded = $state(false);
+	$effect(() => {
+		if (connState !== 'connected') expanded = false;
+	});
+	const compact = $derived(connState === 'connected' && !expanded);
+	const chipLabel = $derived($sessionHost ? hostLabel : 'Hosting');
+	/** up to three peers on the chip, the rest as +N (NOTES-38 #12: a speaker gets the ring) */
+	const chipPeers = $derived(
+		remoteOpen.slice(0, 3).map((id) => {
+			const name = $userdata.find((u) => u[0] === id)?.[1] || String(id);
+			return { id, name, initial: String(name).trim().charAt(0).toUpperCase() || '?' };
+		})
+	);
+	const selfSpeaking = $derived(!!$peers?.peer?.id && $speakingPeers.includes($peers.peer.id));
 
 	function updateDisplayId(id) {
 		displayid = id;
@@ -274,86 +302,116 @@
 	 re-enables them. Narrow screens drop the bar to its own row BELOW the logo
 	 (left) and the peers/profile chrome (right) instead of squeezing between them. -->
 <div class="connect-wrap" data-key-scope="keep" class:docked class:body-open={$connectDrawerOpen}>
-	<div class="connect-pill" class:drawer-open={drawerVisible} class:docked bind:this={pillEl} role="group" data-state={connState}>
-		<!-- your invite id (click to copy the share link) -->
-		<Button
-			color="primary"
-			class="nob shrink-0 rounded-lg bg-gray-600 text-gray-900 ring-0 dark:bg-gray-600 dark:text-gray-200"
-			onclick={copy}
-			title="Copy your invite link"><span class="inline-flex items-center gap-1.5" style="white-space: nowrap;"><Copy size={14} aria-hidden="true" />{myidcap}</span></Button
+	<!-- 38 R8: one glass bar (styles/hud.css) — your invite id as a mono chip, the dial field
+	     with ONE primary button, status as a Badge, icon buttons for the rest. Every id,
+	     testid, placeholder and button name the suites and the tour read is unchanged. -->
+	<div class="connect-pill tp-ui hud-glass" class:drawer-open={drawerVisible} class:compact class:docked bind:this={pillEl} role="group" data-state={connState}>
+		{#if compact}
+			<!-- NOTES-38 #10: the connected chip. Click it for the full bar. -->
+			<button
+				type="button"
+				class="cx-chip"
+				title={connectedText + ' — click for the full bar'}
+				aria-label={connectedText + '. Show the full connection bar'}
+				aria-expanded="false"
+				onclick={() => (expanded = true)}
+			>
+				<span class="cx-dot" aria-hidden="true"></span>
+				<span class="cx-chip-label">{chipLabel}</span>
+				<span class="cx-avatars" aria-hidden="true">
+					{#each chipPeers as p (p.id)}
+						<span class="cx-av" class:speaking={$speakingPeers.includes(p.id)} style:background={peerColor(p.id)} title={p.name}>{p.initial}</span>
+					{/each}
+					{#if remoteOpen.length > 3}<span class="cx-av cx-av-more">+{remoteOpen.length - 3}</span>{/if}
+				</span>
+			</button>
+			<button
+				type="button"
+				class="hud-cell cx-mic"
+				class:on={$micActive || $pttActive}
+				class:speaking={selfSpeaking}
+				title={$micActive ? 'Microphone on — click to mute' : 'Microphone off — click to talk, or hold V for push-to-talk'}
+				aria-label={$micActive ? 'Mute microphone' : 'Unmute microphone'}
+				onclick={() => toggleMic()}
+			>
+				{#if $micActive || $pttActive}<Mic size={20} strokeWidth={1.75} aria-hidden="true" />{:else}<MicOff size={20} strokeWidth={1.75} aria-hidden="true" />{/if}
+			</button>
+		{:else}
+		<!-- your invite id (click to copy the share link) — the FIRST button in the pill -->
+		<button type="button" class="cx-id" onclick={copy} title="Copy your invite link"
+			><span class="cx-id-text">{myidcap}</span><Copy size={16} strokeWidth={1.75} aria-hidden="true" /></button
 		>
-		<span class="connect-divider"></span>
+		<span class="hud-sep"></span>
 
 		{#if connState === 'connected'}
-			<!-- connected: a GRAY disabled input keeps the row the SAME width as idle (so
-				 the drawer, which matches the pill width, never reflows), + red Disconnect.
-				 Connection status lives in the drawer header. -->
-			<div class="cx-connect inline-flex rounded-md shadow-xs">
-				<Input type="text" disabled title={connectedText} class="nob cx-input rounded-r-none border-0 opacity-70" value={connectedText} />
-				<Button
-					color="red"
+			<!-- connected: a disabled field keeps the row the SAME width as idle (the drawer
+				 matches the pill width) + Disconnect. Status lives in the drawer header. -->
+			<div class="cx-connect">
+				<input type="text" disabled title={connectedText} class="cx-input" value={connectedText} />
+				<button
+					type="button"
 					id="disconnect-button"
-					class="nob shrink-0 rounded-l-none rounded-r-lg bg-red-600 text-white hover:bg-red-700 dark:bg-red-700 dark:text-gray-100 dark:hover:bg-red-800"
+					class="cx-btn cx-btn-leave"
 					onclick={disconnect}
-					title="Leave the session (your local scene is kept)">Disconnect</Button
+					title="Leave the session (your local scene is kept)">Disconnect</button
 				>
 			</div>
 		{:else if connState === 'pending'}
-			<!-- pending: same gray disabled input for a stable width + amber Cancel -->
-			<div class="cx-connect inline-flex rounded-md shadow-xs">
-				<Input
+			<!-- pending: the same disabled field for a stable width + Cancel -->
+			<div class="cx-connect">
+				<input
 					type="text"
 					disabled
 					title="Waiting for approval — the request ends by itself if they do not answer"
-					class="nob cx-input rounded-r-none border-0 opacity-70"
+					class="cx-input"
 					value={'Requesting ' +
 						String(pendingOut[0]?.[0] ?? peerIdToConnect ?? '').toUpperCase() +
 						(pendingLeft > 0 ? ' · ' + Math.floor(pendingLeft / 60) + ':' + String(pendingLeft % 60).padStart(2, '0') : '')}
 				/>
-				<Button
-					color="yellow"
+				<button
+					type="button"
 					id="cancel-request-button"
-					class="nob shrink-0 rounded-l-none rounded-r-lg bg-amber-500 text-white hover:bg-amber-600 dark:bg-amber-600 dark:text-gray-900 dark:hover:bg-amber-500"
+					class="cx-btn cx-btn-quiet"
 					onclick={cancelPending}
-					title="Cancel the connection request">Cancel</Button
+					title="Cancel the connection request">Cancel</button
 				>
 			</div>
 		{:else}
-			<!-- idle: dial a peer — the input shrinks (down to cx-input min-width) so
-				 the Connect button stays visible when the row is tight -->
-			<div class="cx-connect inline-flex rounded-md shadow-xs">
-				<!-- autocomplete off + a non-loginish name: Chrome's password manager was
-					 autofilling a saved Settings api-base/key pair into this box -->
-				<Input
+			<!-- idle: dial a peer — the field shrinks (down to cx-input's min-width) so the
+				 Connect button stays visible when the row is tight. autocomplete off + a
+				 non-loginish name: Chrome's password manager autofilled Settings keys here -->
+			<div class="cx-connect">
+				<input
 					type="text"
 					name="peer-id"
 					autocomplete="off"
 					placeholder="Enter peer ID to connect"
-					class="nob cx-input rounded-r-none border-0"
-					bind:value="{peerIdToConnect}"
+					class="cx-input"
+					bind:value={peerIdToConnect}
 					onkeydown={onDialKey}
 				/>
-				<Button
-					color="primary"
-					class="nob shrink-0 rounded-l-none rounded-r-lg bg-blue-500 text-white dark:bg-blue-700 dark:text-gray-200"
-					onclick={() => {connectToPeer(peerIdToConnect)}}
-					>Connect</Button
-				>
+				<button type="button" class="cx-btn cx-btn-primary" onclick={() => {connectToPeer(peerIdToConnect)}}>Connect</button>
 			</div>
 		{/if}
 
-		{#if $signalingRetry.retrying}
-			<!-- 27-F: the signaling link is down and retrying. This is a STATE you can look
-				 at, which is why it is a chip and not a toast per attempt — the retry is
-				 unbounded now. It never replaces the pill's own state: your live peers are
-				 unaffected by a dead signaling link, only NEW joins are. -->
-			<span
-				id="connect-retry-chip"
-				class="cx-retry"
-				data-testid="connect-retry-chip"
-				title="Reconnecting to the signaling server — peers you are already connected to are unaffected"
-				>Reconnecting… {$signalingRetry.attempt}</span
+		{#if connState === 'connected'}
+			<!-- back to the chip -->
+			<button type="button" class="hud-cell cx-collapse" title="Collapse to the chip" aria-label="Collapse the connection bar" onclick={() => (expanded = false)}
+				><ChevronsLeftRight size={20} strokeWidth={1.75} aria-hidden="true" /></button
 			>
+		{/if}
+		{/if}
+
+		{#if $signalingRetry.retrying}
+			<!-- 27-F: the signaling link is down and retrying — a STATE you can look at, so a
+				 Badge (SPEC §5), not a toast per attempt. Live peers are unaffected. -->
+			<Badge
+				tone="warn"
+				id="connect-retry-chip"
+				data-testid="connect-retry-chip"
+				title={'Reconnecting to the signaling server (attempt ' + $signalingRetry.attempt + ') — peers you are already connected to are unaffected'}
+				text={'Reconnecting · ' + formatElapsed(retryNow - ($signalingRetry.since ?? retryNow))}
+			/>
 		{/if}
 
 		{#if $joinRefusal && connState === 'idle'}
@@ -368,12 +426,26 @@
 			>
 		{/if}
 
-		<!-- connection/server info disclosure — a chevron that rotates 180° on open;
-			 the panel slides down from under the pill. Present in every state; the
-			 amber badge surfaces a signaling fallback without a permanent label. -->
+		<!-- Rooms shortcut → opens the drawer on its Rooms tab. Shown only when the cloud
+			 plugin provides room content ($drawerSlot) and Settings ▸ Show Rooms button is on. -->
+		{#if $drawerSlot && $showRoomsButton}
+			<button
+				id="connect-rooms-button"
+				class="hud-cell cx-rooms"
+				class:on={$connectDrawerOpen && $connectDrawerTab === 'rooms'}
+				data-testid="connect-rooms-button"
+				title="Browse public rooms"
+				aria-label="Browse public rooms"
+				onclick={openRooms}
+			><Globe size={20} strokeWidth={1.75} aria-hidden="true" /></button>
+		{/if}
+
+		<!-- connection/server info disclosure — a chevron that turns on open; the drawer
+			 hangs flush under the pill. Present in every state; the warn dot surfaces a
+			 signaling fallback without a permanent label. -->
 		<button
 			id="connect-info-button"
-			class="cx-toggle"
+			class="hud-cell cx-toggle"
 			class:open={$connectDrawerOpen}
 			data-testid="connect-info-button"
 			title={$connectDrawerOpen ? 'Close drawer' : 'Open drawer'}
@@ -381,11 +453,11 @@
 			aria-expanded={$connectDrawerOpen}
 			onclick={toggleInfo}
 		>
-			<ChevronDown size={16} class="cx-chevron" aria-hidden="true" />
-			<!-- 15-B4: with toasts routed drawer-only, a CLOSED drawer hid them
-				 entirely — surface the same count the Toasts tab shows. -->
+			<ChevronDown size={20} strokeWidth={1.75} class="cx-chevron" aria-hidden="true" />
+			<!-- 15-B4: with toasts routed drawer-only, a CLOSED drawer hid them — surface the
+				 same count the Toasts tab shows -->
 			{#if hiddenToastCount > 0}
-				<span class="cx-toast-badge" class:req={$pendingApprovals.length > 0} data-testid="connect-toast-badge"
+				<span class="hud-count cx-toast-badge" class:req={$pendingApprovals.length > 0} data-testid="connect-toast-badge"
 					>{hiddenToastCount > 9 ? '9+' : hiddenToastCount}</span
 				>
 			{/if}
@@ -394,25 +466,9 @@
 			{/if}
 		</button>
 
-		<!-- Rooms shortcut → opens the drawer on its Rooms tab. Shown only when the
-			 cloud plugin provides room content ($drawerSlot) and the user hasn't hidden
-			 it (Settings ▸ Show Rooms button, default on for discoverability). -->
-		{#if $drawerSlot && $showRoomsButton}
-			<button
-				id="connect-rooms-button"
-				class="cx-rooms"
-				class:active={$connectDrawerOpen && $connectDrawerTab === 'rooms'}
-				data-testid="connect-rooms-button"
-				title="Browse public rooms"
-				aria-label="Browse public rooms"
-				onclick={openRooms}
-			><Globe size={16} class="mr-1" aria-hidden="true" />Rooms</button>
-		{/if}
-
-		<!-- open-core (M1d): cloud plugin mount point. Empty in the OSS build; the
-			 cloud plugin may fill it via cloudApi.mountConnect(). -->
+		<!-- open-core (M1d): cloud plugin mount point. Empty in the OSS build. -->
 		{#if $connectSlot}
-			<span class="connect-divider"></span>
+			<span class="hud-sep"></span>
 			<CloudSlot mount={$connectSlot} />
 		{/if}
 	</div>
@@ -433,168 +489,171 @@
 		max-width: 100vw;
 	}
 	/* when the drawer BODY is open, lift the whole pill+drawer above the corner chrome
-	   (logo/profile/notifications/notes all sit at or below --z-menu) so the open
-	   drawer reads on top of them instead of being covered. */
+	   (logo/profile/notifications/notes all sit at or below --z-menu) */
 	.connect-wrap.body-open {
 		z-index: calc(var(--z-menu) + 5);
 	}
-	.cx-connect {
-		min-width: 0; /* allow the group to shrink so its input can shrink */
-	}
-	/* the input is comfortable by default but shrinks when the row is tight (so the
-	   Connect button is never pushed off-screen); the button itself keeps its size */
-	:global(.cx-input) {
-		width: 12rem;
-		min-width: 2.5rem;
-	}
+	/* 38 R8: the bar (hud-glass gives the surface, border, shadow, blur) */
 	.connect-pill {
 		pointer-events: auto;
 		display: inline-flex;
 		align-items: center;
-		gap: 10px;
-		/* moderate rounding (matches the buttons inside) — not a full pill */
-		border-radius: 14px;
-		border: 1px solid rgb(55 65 81 / 0.6);
-		background: var(--color-form, rgb(31 41 55 / 0.9));
-		padding: 6px 8px;
-		box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
-		backdrop-filter: blur(6px);
+		gap: 6px;
+		box-sizing: border-box;
+		height: var(--hud-row-h);
+		border-radius: var(--radius-window);
+		padding: 0 5px 0 6px;
 		white-space: nowrap;
 		/* reserve room for the logo (left) + peers/profile (right) so the centred pill
-		   shrinks its input instead of sliding under that chrome */
+		   shrinks its field instead of sliding under that chrome */
 		max-width: calc(100vw - 280px);
 	}
 	/* while the tabbed drawer is open, square the pill's BOTTOM corners and drop its
-	   bottom border so the drawer (which hangs flush below) reads as one surface —
-	   no rounded-corner notches at the sides. */
+	   bottom border so the drawer (hanging flush below) reads as one surface */
 	.connect-pill.drawer-open {
 		border-bottom-left-radius: 0;
 		border-bottom-right-radius: 0;
 		border-bottom-color: transparent;
 	}
-	/* Rooms shortcut button (core-owned; togglable in Settings) */
-	.cx-rooms {
-		flex: 0 0 auto;
-		font-size: 12px;
-		padding: 4px 10px;
-		border-radius: 8px;
-		border: 1px solid rgb(255 255 255 / 0.15);
-		background: rgb(255 255 255 / 0.06);
-		color: rgb(229 231 235);
-		cursor: pointer;
-		white-space: nowrap;
-	}
-	.cx-rooms:hover {
-		background: rgb(255 255 255 / 0.14);
-		color: #fff;
-	}
-	.cx-rooms.active {
-		background: #2563eb;
-		border-color: #2563eb;
-		color: #fff;
-	}
-	.connect-divider {
-		width: 1px;
-		align-self: stretch;
-		margin: 2px 0;
-		background: rgb(255 255 255 / 0.12);
-	}
-	/* chevron disclosure — rotates 180° on open; drives the slide-down info panel */
-	.cx-toggle {
-		position: relative;
-		flex: 0 0 auto;
-		width: 26px;
-		height: 26px;
-		border-radius: 9999px;
-		border: 1px solid rgb(255 255 255 / 0.15);
-		background: rgb(255 255 255 / 0.06);
-		color: rgb(209 213 219 / 0.9);
-		cursor: pointer;
+	/* your invite id: mono, copy on click */
+	.cx-id {
 		display: inline-flex;
 		align-items: center;
-		justify-content: center;
-	}
-	.cx-toggle:hover {
-		background: rgb(255 255 255 / 0.14);
-		color: #fff;
-	}
-	/* the chevron is a lucide component's svg — the class lands OUTSIDE this
-	   component's scope hash, so these selectors must be :global to reach it */
-	/* 27-F: the signaling retry chip. Amber like the pending state, compact, and only
-	   present while the link is down — so it costs the pill no width the rest of the time. */
-	.cx-retry {
-		align-self: center;
-		white-space: nowrap;
-		border-radius: 9999px;
-		padding: 2px 8px;
-		font-size: 11px;
-		font-weight: 600;
-		color: #78350f;
-		background: #fbbf24;
-	}
-
-	/* 25-F: the refusal chip — red for declined, amber for a full room (a wait, not a no) */
-	.cx-refused {
-		align-self: center;
-		white-space: nowrap;
+		gap: 8px;
+		flex: 0 0 auto;
+		height: var(--control-h-sm);
+		padding: 0 8px 0 10px;
 		border: 0;
-		border-radius: 9999px;
-		padding: 2px 8px;
-		font-size: 11px;
+		border-radius: var(--radius-button);
+		background: transparent;
+		color: var(--text-faint);
+		cursor: pointer;
+	}
+	.cx-id:hover {
+		background: var(--surface-hover);
+		color: var(--text-2);
+	}
+	.cx-id-text {
+		font: 500 0.78rem var(--font-ui-mono);
+		color: var(--text);
+		letter-spacing: 0.02em;
+	}
+	/* the dial field + its one button, joined */
+	.cx-connect {
+		display: inline-flex;
+		align-items: stretch;
+		min-width: 0; /* the group shrinks so its field can */
+		height: var(--control-h-sm);
+		border: 1px solid var(--border-input);
+		border-radius: var(--radius-button);
+		background: var(--surface-inset);
+		overflow: hidden;
+	}
+	.cx-connect:focus-within {
+		border-color: var(--accent);
+	}
+	.cx-input {
+		width: 12rem;
+		min-width: 2.5rem;
+		height: 100%;
+		padding: 0 10px;
+		border: 0;
+		outline: none;
+		background: transparent;
+		color: var(--text);
+		font-size: var(--fs-desc);
+	}
+	.cx-input::placeholder {
+		color: var(--text-faint);
+	}
+	.cx-input:disabled {
+		color: var(--text-muted);
+	}
+	.cx-btn {
+		flex: 0 0 auto;
+		padding: 0 12px;
+		border: 0;
+		font-size: var(--fs-desc);
 		font-weight: 600;
-		color: #fff;
-		background: #dc2626;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	.cx-btn-primary {
+		background: var(--accent-fill);
+		color: var(--on-accent);
+	}
+	.cx-btn-primary:hover {
+		filter: brightness(1.1);
+	}
+	/* leaving keeps your scene: a soft action in the warn ink, not a destructive red fill */
+	.cx-btn-leave {
+		background: transparent;
+		border-left: 1px solid var(--border-input);
+		color: var(--warn-text);
+	}
+	.cx-btn-quiet {
+		background: transparent;
+		border-left: 1px solid var(--border-input);
+		color: var(--text-2);
+	}
+	.cx-btn-leave:hover,
+	.cx-btn-quiet:hover {
+		background: var(--surface-hover);
+	}
+	.cx-btn:focus-visible,
+	.cx-id:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+	}
+	/* 25-F: the refusal answer, dismissable — a status pill in the theme's state inks */
+	.cx-refused {
+		flex: 0 0 auto;
+		display: inline-flex;
+		align-items: center;
+		height: 20px;
+		padding: 0 8px;
+		border: 0;
+		border-radius: var(--radius-pill);
+		font-size: var(--fs-badge);
+		font-weight: 600;
+		color: var(--ink-bad);
+		background: color-mix(in srgb, var(--ink-bad) 16%, transparent);
 		cursor: pointer;
 	}
 	.cx-refused[data-result='full'] {
-		color: #78350f;
-		background: #fbbf24;
+		color: var(--ink-warn);
+		background: color-mix(in srgb, var(--ink-warn) 16%, transparent);
 	}
-
 	.cx-toggle :global(.cx-chevron) {
 		transition: transform 0.2s ease;
 	}
 	.cx-toggle.open :global(.cx-chevron) {
 		transform: rotate(180deg);
 	}
-	/* B4: live count of toasts the closed drawer is holding (mirrors the drawer's
-	   own .cxd-tab-badge); sits opposite the amber server dot so both can show */
+	/* B4: the count of toasts the closed drawer holds; a pending approval reads warn */
 	.cx-toast-badge {
-		position: absolute;
-		top: -5px;
-		left: -5px;
-		min-width: 15px;
-		height: 15px;
-		padding: 0 3px;
-		border-radius: 9999px;
-		background: var(--color-primary-600, #2563eb);
-		color: #fff;
-		border: 1.5px solid rgb(31 41 55);
-		font-size: 9px;
-		font-weight: 700;
-		line-height: 1;
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
+		top: -4px;
+		right: auto;
+		left: -4px;
 	}
 	.cx-toast-badge.req {
-		background: #f59e0b;
-		color: #1f2937;
+		background: var(--ink-warn);
+		color: var(--bg-app);
 	}
 	.cx-info-warn {
 		position: absolute;
-		top: -2px;
-		right: -2px;
-		width: 9px;
-		height: 9px;
-		border-radius: 9999px;
-		background: #f59e0b;
-		border: 1.5px solid rgb(31 41 55);
+		top: 2px;
+		right: 2px;
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--ink-warn);
+		box-shadow: 0 0 0 2px var(--surface-1);
 	}
 	/* Connect stays centred while it fits between the logo (left) and the peers/profile
 	   chrome (right). The moment the centred pill would COVER that chrome, Connect.svelte
 	   flips to DOCKED (measured in script): a full-width bar stuck to the top edge — the
-	   input flexes to fill, the buttons stay visible, the Rooms shortcut hides, and the
+	   field flexes to fill, the buttons stay visible, the Rooms shortcut hides, and the
 	   corner chrome drops below the bar (Sidebar/Users read connectDocked/BarHeight). */
 	.connect-wrap.docked {
 		top: 0;
@@ -605,13 +664,11 @@
 	}
 	.connect-pill.docked {
 		width: 100%;
-		max-width: none; /* the reserve-room cap is for the centred pill, not the full bar */
-		border-radius: 0 0 14px 14px;
+		max-width: none;
+		border-radius: 0 0 var(--radius-window) var(--radius-window);
+		border-top: 0;
 		white-space: normal;
 	}
-	/* docked bar WITH the drawer expanded below it: square the bottom corners so the
-	   drawer reads flush (the .docked rule above would otherwise re-round them, beating
-	   the .drawer-open rule on source order) */
 	.connect-pill.docked.drawer-open {
 		border-bottom-left-radius: 0;
 		border-bottom-right-radius: 0;
@@ -619,15 +676,96 @@
 	.connect-pill.docked .cx-connect {
 		flex: 1 1 auto;
 	}
-	/* hide the Rooms shortcut in the tight docked bar (still reachable via the chevron
-	   drawer's Rooms tab) */
+	/* the Rooms shortcut hides in the tight docked bar (the drawer's Rooms tab has it) */
 	.connect-pill.docked .cx-rooms {
 		display: none;
 	}
-	/* :global — the class lands on the flowbite Input's inner <input> */
-	.connect-pill.docked :global(.cx-input) {
+	.connect-pill.docked .cx-input {
 		width: auto;
 		flex: 1 1 auto;
 		min-width: 0;
+	}
+	/* touch: the field and its button reach the touch height too */
+	@media (pointer: coarse) {
+		.cx-connect,
+		.cx-id {
+			height: 44px;
+		}
+		.cx-input {
+			font-size: 16px; /* no iOS zoom */
+		}
+	}
+	/* NOTES-38 #10: the connected chip */
+	.cx-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 8px;
+		height: var(--control-h-sm);
+		padding: 0 8px 0 10px;
+		border: 0;
+		border-radius: var(--radius-button);
+		background: transparent;
+		color: var(--text);
+		font-size: var(--fs-desc);
+		font-weight: 500;
+		cursor: pointer;
+		min-width: 0;
+	}
+	.cx-chip:hover {
+		background: var(--surface-hover);
+	}
+	.cx-chip:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+	}
+	.cx-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: var(--ink-good);
+		flex: 0 0 auto;
+	}
+	.cx-chip-label {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		max-width: 14rem;
+	}
+	.cx-avatars {
+		display: inline-flex;
+		padding-left: 6px;
+	}
+	.cx-av {
+		display: grid;
+		place-items: center;
+		width: 24px;
+		height: 24px;
+		margin-left: -6px;
+		border-radius: 50%;
+		color: var(--bg-app);
+		font: 600 11px var(--font-ui);
+		box-shadow: 0 0 0 2px var(--surface-1);
+	}
+	.cx-av-more {
+		background: var(--surface-inset);
+		color: var(--text-2);
+		font-family: var(--font-ui-mono);
+		font-size: 10px;
+	}
+	/* NOTES-38 #12: speaking = a soft pulsing ring in --speaking, never --live */
+	.cx-av.speaking,
+	.cx-mic.speaking {
+		box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--speaking);
+		animation: cx-speak 1.4s ease-in-out infinite;
+	}
+	@keyframes cx-speak {
+		50% {
+			box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 4px color-mix(in srgb, var(--speaking) 35%, transparent);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.cx-av.speaking,
+		.cx-mic.speaking {
+			animation: none;
+		}
 	}
 </style>

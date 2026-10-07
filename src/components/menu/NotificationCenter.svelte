@@ -33,16 +33,16 @@
 <div class="relative">
 	<button
 		id="notif-bell"
-		class="relative flex h-8 w-8 items-center justify-center rounded-full border border-gray-700/60 bg-gray-800/85 text-gray-200 backdrop-blur-sm hover:bg-gray-700/85"
+		class="hud-cell"
+		class:on={$notificationCenterOpen}
 		title="Notifications"
 		aria-label="Notifications"
 		onclick={toggle}
 	>
-		<Bell size={16} class="text-xs" aria-hidden="true" />
+		<Bell size={20} strokeWidth={1.75} aria-hidden="true" />
 		{#if $notificationsUnread > 0}
-			<span
-				class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
-			>
+			<!-- 38 R8: an unread count is information, not an alarm — the accent, not red -->
+			<span class="hud-count">
 				{$notificationsUnread > 9 ? '9+' : $notificationsUnread}
 			</span>
 		{/if}

@@ -2,6 +2,10 @@
 @import './styles/ui.css' layer(utilities);
 @import './styles/ui.utilities.css';
 @import './styles/theme.css' layer(utilities);
+/* 38 R2: the redesign tokens (SPEC §1) — after theme.css, whose legacy blocks they derive from */
+@import './styles/tokens.css' layer(utilities);
+/* 38 R8: the main HUD's shared look (Controls, Connect, top-right, corner buttons, toasts) */
+@import './styles/hud.css' layer(utilities);
 
 @plugin 'flowbite/plugin';
 
@@ -20,6 +24,59 @@
   --color-primary-700: #eb4f27;
   --color-primary-800: #cc4522;
   --color-primary-900: #a5371b;
+}
+
+/* 38 R2: the redesign tokens as Tailwind utilities. `inline` so a utility emits
+   var(--surface-2) itself (resolved per ELEMENT): the colliding names only carry their
+   SPEC values inside `.tp-ui`, and a theme switch must repaint without a rebuild.
+   Names: bg-app, bg-surface-1/2/inset, border-border/-strong/-input, text-text/-2/-muted/
+   -faint, bg-accent, bg-accent-soft, text-accent-text, bg-live, text-warn-text, bg-danger,
+   bg-badge text-badge-text; sizes text-badge … text-page-title; rounded-input … rounded-pill;
+   font-ui / font-ui-mono. (Never --font-mono / --radius-lg here: those would restyle the
+   existing UI's font-mono / rounded-lg.) */
+@theme inline {
+  --color-app: var(--bg-app);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-inset: var(--surface-inset);
+  --color-surface-hover: var(--surface-hover);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-border-input: var(--border-input);
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-muted: var(--text-muted);
+  --color-text-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-soft-text: var(--accent-soft-text);
+  --color-accent-text: var(--accent-text);
+  --color-live: var(--live);
+  --color-warn-text: var(--warn-text);
+  --color-danger: var(--danger);
+  --color-badge: var(--badge-bg);
+  --color-badge-text: var(--badge-text);
+  --text-badge: var(--fs-badge);
+  --text-section: var(--fs-section);
+  --text-desc: var(--fs-desc);
+  --text-body: var(--fs-body);
+  --text-panel-title: var(--fs-panel-title);
+  --text-modal-title: var(--fs-modal-title);
+  --text-page-title: var(--fs-page-title);
+}
+/* radii + the two UI fonts are plain values, so they live HERE (one name for the CSS var and
+   the utility; `static` emits them on :root even before a utility uses them). The green and
+   8-bit themes override --font-ui/--font-ui-mono in tokens.css. */
+@theme static {
+  --radius-input: 6px;
+  --radius-button: 8px;
+  --radius-card: 10px;
+  --radius-window: 12px;
+  --radius-modal: 14px;
+  --radius-pill: 999px;
+  --font-ui: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-ui-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
 }
 
 /*

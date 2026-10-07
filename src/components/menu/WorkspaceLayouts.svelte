@@ -208,6 +208,13 @@
 	.wl-rename {
 		margin: 2px 0;
 	}
+	/* 1.26 union (37 R21 phone rule): inputs read 16 px on a phone — smaller text makes the
+	   mobile browser zoom the page on focus (settings-layout checks every Settings input) */
+	@media (max-width: 639.98px) {
+		.wl-input {
+			font-size: 16px;
+		}
+	}
 	.wl-btn {
 		flex: none;
 		display: inline-flex;

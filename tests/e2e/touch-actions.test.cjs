@@ -260,9 +260,11 @@ h.run(async () => {
 	}
 
 	// ---- 4. the layout editor from Settings; a saved layout survives a reload -------------
-	// a fresh page is a blank (fly) scene again: its id is 'untitled' before and after the reload
+	// a fresh page is a blank scene again (Flying allowed once more, 37 R24): its id is 'untitled'
+	// before and after the reload
 	await h.freshReload(A);
 	await page.waitForTimeout(800);
+	await allowFlying(page);
 	await page.evaluate(() => {
 		window.__stores.settingsSection.set('touch');
 		window.__stores.settingsOpen.set(true);
@@ -292,6 +294,7 @@ h.run(async () => {
 	const saved = await g(page, () => window.__stores.touchActions.touchActionsDebug().layouts);
 	h.check(!!saved.games.untitled?.items['btn:up'], `the layout is saved for this game (${Object.keys(saved.games)})`);
 	await h.freshReload(A);
+	await allowFlying(page);
 	await page.locator('#play-button').click();
 	await h.eventually(() => locked(page), (v) => v === true, 'play again after the reload');
 	await h.eventually(() => rectOf(page, '#touch-btn-up'), (r) => !!r && Math.abs(r.x - dragged.x) < 6 && Math.abs(r.y - dragged.y) < 6 && Math.abs(r.w - 110) < 2, 'after a RELOAD the Up button is where it was dragged, at the new size', 5000);

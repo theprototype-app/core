@@ -1344,8 +1344,23 @@
 
 	// The cells the bar renders. Collapsed, that is the well ALONE — the play button
 	// is the whole toolbar, and its own menu is the way back.
+	// 37 R1 × R21 (1.26 union): the Pivot cell made the default bar 402 px — wider than a
+	// 393 px phone, so every page scrolled sideways. Below NARROW_BAR it stays off the bar
+	// (the record keeps it; the Inspector and the object menu still set the pivot there) —
+	// the multiselect lane's own fallback (QUESTIONS-37-multiselect #1).
+	const NARROW_BAR = 440;
+	let viewportW = $state(typeof window === 'undefined' ? 1280 : window.innerWidth);
+	onMount(() => {
+		const read = () => (viewportW = window.innerWidth);
+		window.addEventListener('resize', read);
+		return () => window.removeEventListener('resize', read);
+	});
 	const visibleCells = $derived.by(() =>
-		controlsLayout.collapsed ? [{ id: SPACER }] : visualIds().map((id) => ({ id }))
+		controlsLayout.collapsed
+			? [{ id: SPACER }]
+			: visualIds()
+					.filter((id) => !(id === 'pivot' && viewportW < NARROW_BAR))
+					.map((id) => ({ id }))
 	);
 
 	/** A cell press. It needs no "was that a drag?" guard of its own: a move that ends

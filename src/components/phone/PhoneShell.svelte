@@ -297,7 +297,7 @@
 		let raf = 0;
 		const measure = () => {
 			let occ = 0;
-			for (const el of document.querySelectorAll('.ps-sheet, #inspector, .tp-dock-panel, :root.ps-add-open .ctx-scroll')) {
+			for (const el of document.querySelectorAll('.ps-sheet, #inspector, .tp-dock-panel, .tp-dock-panel .dt-row, :root.ps-add-open .ctx-scroll')) {
 				const r = /** @type {HTMLElement} */ (el).getBoundingClientRect();
 				if (!r.height || getComputedStyle(el).display === 'none' || getComputedStyle(el).visibility === 'hidden') continue;
 				occ = Math.max(occ, window.innerHeight - r.top);

@@ -29,6 +29,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
+import { holdForWireBatch } from '$lib/wireBatch';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError } from '$lib/wireErrors';
 import { noteWire } from '$lib/sceneBudget';
@@ -267,6 +268,10 @@ export class PeerConnection {
 		/** 25-F: peers whose NEXT dial is an approval dial-back, so its handshake opens with
 		 * `joinresult: approved` @type {Set<string>} */
 		this.approvedDialBacks = new Set();
+		// 37 R1: peers that advertised `wb: 1` (the `modules` handshake) and so understand a
+		// `{type:'batch'}` envelope; everyone else gets the envelope's items one by one
+		/** @type {Set<string>} */
+		this.wireBatchPeers = new Set();
 		/** @type {Map<string, any>} 29 (rooms access): a cloud plugin's dial data per peer we
 		 * are joining — read by every join dial and its restore re-dials (dialOptions) */
 		this.dialCloud = new Map();
@@ -720,6 +725,26 @@ export class PeerConnection {
 				if(data.type == 'cloud') {
 					// open-core (M1): the cloud plugin's own replicated channel
 					dispatchCloudMessage(conn.peer, data.payload);
+				} else if(data.type == 'batch') {
+					// 37 R1: ONE multi-object edit (wireBatch.js). Every item goes back through
+					// the WHOLE chain — the shape table, canApply, the room and share-or-stash
+					// gates — exactly as if it had arrived alone, so an envelope can never carry
+					// what its items could not. Envelopes do not nest.
+					for (const item of data.items) {
+						if (!item || typeof item !== 'object' || item.type === 'batch') {
+							noteWireError(conn.peer, 'shape', 'batch-item');
+							continue;
+						}
+						if (!validateWireMessage(item)) {
+							noteWireError(conn.peer, 'invalid:' + item.type);
+							continue;
+						}
+						try {
+							dispatch(item);
+						} catch (error) {
+							noteWireError(conn.peer, item.type, error);
+						}
+					}
 				} else if(data.type == 'hosts') {
 					console.log('Connecting to received hosts');
 					data.hosts.forEach( id =>
@@ -1133,6 +1158,9 @@ export class PeerConnection {
 				} else if(data.type == 'module') {
 					applyModuleMessage(data);
 				} else if(data.type == 'modules') {
+					// 37 R1: `wb` is ADDITIVE — an older peer omits it and keeps getting bare messages
+					if (data.wb === 1) this.wireBatchPeers.add(conn.peer);
+					else this.wireBatchPeers.delete(conn.peer);
 					checkModuleVersions(data.versions);
 					checkPeerAppVersion(data.appVersion);
 				} else if(data.type == 'getmodulestate') {
@@ -1373,7 +1401,7 @@ export class PeerConnection {
 		conn.send({type: 'userdata', userdata: users})
 		// V3: app version rides the modules handshake — old peers ignore the extras,
 		// old senders omit them (checkPeerAppVersion is silent on absence)
-		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA})
+		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1})
 		// R22 round 33 — NOTHING MOVES UNTIL THE DECISION, INCLUDING WHAT WE ASK FOR.
 		//
 		// When this handshake is the one that will put the connect decision on screen (we
@@ -1771,6 +1799,9 @@ export class PeerConnection {
 	// conn can't throw mid-loop and starve the rest of the mesh (172).
 	/** @param {any} payload */
 	broadcast(payload) {
+		// 37 R1: inside a multi-object edit, room content is HELD and leaves as one envelope
+		// when the edit closes (wireBatch.js); anything else flushes the held edit first
+		if (holdForWireBatch(payload, ROOM_SCOPED.has(payload?.type), (out) => this.broadcast(out))) return;
 		noteWire('out', payload);
 		// TWO REASONS TO WITHHOLD, and they are different arguments about the same peer.
 		//
@@ -1824,7 +1855,10 @@ export class PeerConnection {
 			if (gated && elsewhereThan(where, mine, peerId, host)) return;
 			if (roomScoped && gateHolds(peerId)) return;
 			try {
-				conn.send(payload);
+				// 37 R1: a peer that never said `wb: 1` gets the envelope's items one by one
+				if (payload?.type === 'batch' && !this.wireBatchPeers.has(peerId))
+					for (const item of payload.items) conn.send(item);
+				else conn.send(payload);
 			} catch (err) {
 				log('error', 'net', 'send failed', { peer: peerId, error: String(err) });
 			}

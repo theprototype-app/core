@@ -38,7 +38,7 @@
     import { withExpanded } from '$lib/objectListNav';
     import { objectsGroup, TControls, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
     import { sceneCommand } from '$lib/commandsHandler.svelte';
-    import { selectObject, renameObject, moveObjectToGroup, toggleObjectVisibility } from '$lib/objectActions';
+    import { selectObject, renameObject, toggleObjectVisibility, dragUuidsFor, moveObjectsToParent } from '$lib/objectActions';
     import { nameOf, peerColor } from '$lib/lockControl';
     import {
         showSidebar,
@@ -144,13 +144,16 @@
 
     function onRowDragStart(event) {
         event.dataTransfer.setData('application/x-object-uuid', element.uuid);
+        // 37 R1: a row that is part of a multi-selection drags the whole selection
+        event.dataTransfer.setData('application/x-object-uuids', JSON.stringify(dragUuidsFor(element.uuid)));
         event.dataTransfer.effectAllowed = 'move';
         // rows live inside the draggable object-list window; don't drag the window too
         event.stopPropagation();
     }
 
+    // 37 R1: any row is a drop target — a group takes the objects in, any other object
+    // becomes their parent (Blender's drop-onto)
     function onRowDragOver(event) {
-        if (element.type !== 'Group') return;
         if (!event.dataTransfer.types.includes('application/x-object-uuid')) return;
         event.preventDefault();
         event.stopPropagation();
@@ -163,6 +166,17 @@
             }, 600);
     }
 
+    /** the dragged set (37 R1), falling back to the single-row key older drags carry
+     * @param {DragEvent} event @returns {string[]} */
+    function droppedUuids(event) {
+        try {
+            const list = JSON.parse(event.dataTransfer?.getData('application/x-object-uuids') || 'null');
+            if (Array.isArray(list) && list.length) return list.filter((id) => typeof id === 'string');
+        } catch {}
+        const one = event.dataTransfer?.getData('application/x-object-uuid');
+        return one ? [one] : [];
+    }
+
     function clearHoverExpand() {
         dropHover = false;
         clearTimeout(hoverExpandTimer);
@@ -171,18 +185,19 @@
 
     function onRowDrop(event) {
         clearHoverExpand();
-        if (element.type !== 'Group') return;
-        const uuid = event.dataTransfer.getData('application/x-object-uuid');
-        if (!uuid || uuid === element.uuid) return;
+        const uuids = droppedUuids(event);
+        if (!uuids.length || uuids.includes(element.uuid)) return;
         event.preventDefault();
         event.stopPropagation();
-        const dragged = $objectsGroup.getObjectByProperty('uuid', uuid);
-        // a LOCAL object dropped into a SHARED group is SHARED into that group (a bare
-        // reparent would never reach peers); local->local group stays local
-        if (dragged?.userData?.__localOnly && !element.userData?.__localOnly)
-            shareObject(dragged, element.uuid);
-        else
-            moveObjectToGroup(uuid, element.uuid);
+        // a LOCAL object dropped onto a SHARED parent is SHARED into it (a bare reparent
+        // would never reach peers); local->local stays local
+        const moves = [];
+        for (const uuid of uuids) {
+            const dragged = $objectsGroup.getObjectByProperty('uuid', uuid);
+            if (dragged?.userData?.__localOnly && !element.userData?.__localOnly) shareObject(dragged, element.uuid);
+            else moves.push(uuid);
+        }
+        moveObjectsToParent(moves, element.uuid);
         setExpanded(true);
     }
 

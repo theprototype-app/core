@@ -40,6 +40,8 @@
 		setObjectsTexture
 	} from '$lib/materialsHandler';
 	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet } from '$lib/history';
+	import { withWireBatch, withWireBatchAsync } from '$lib/wireBatch';
+	import { setObjectFlag, lightStateOf, recordLightChange, sendLight, allMembers } from '$lib/multiEdit';
 	import { deviceOf, deviceSpec, isDeviceObject, setDeviceFor, previewDeviceParams } from '$lib/audioDevices';
 	import { MUSIC_TOOLBOX_ID, musicToolboxPick } from '$lib/musicToolbox';
 	import { openModuleToolbox, moduleToolboxes } from '$lib/moduleToolboxes';
@@ -589,7 +591,10 @@
 		}
 		beginHistoryBatch();
 		try {
-			for (const object of list) fn(object);
+			// 37 R1: ONE replicated batch too — peers apply the whole set at once
+			withWireBatch(() => {
+				for (const object of list) fn(object);
+			});
 		} finally {
 			endHistoryBatch(`${label} (${list.length})`);
 		}
@@ -650,6 +655,14 @@
 	}
 	/** @param {(object:any)=>any} read */
 	const matMixed = (read) => mixed(read, matTargets);
+	/** 37 R1: a checkbox over the set reads checked only when EVERY member is (a mixed set
+	 * reads unchecked + indeterminate; ticking it marks them all)
+	 * @param {(object:any)=>any} read @param {any[]} [list] */
+	function allOf(read, list) {
+		void $objectsGroup;
+		void $selectedObject;
+		return allMembers(read, list ?? insTargets);
+	}
 
 	// ---- 17-D: the single object's own ORIGIN -------------------------------
 	// Shown in WORLD space (where the pivot sits), stored as a local offset. 24-E1:
@@ -1190,38 +1203,67 @@
 		autoKeyAfterEdit([$selectedObject]); // a typed transform keys too (17-E)
 	}
 
-	/** lights resend their whole object — same as the old light panel */
-	function sendLightUpdate() {
-		$peers.send({ type: 'object', element: $selectedObject.toJSON(), override: true });
+	// ---- 37 R1: LIGHTS edit as a set too ---------------------------------------
+	// Every Light row fans over the selected LIGHTS (a mixed selection's meshes are not
+	// lights; a type-specific row reaches the lights that have that field). Replication is
+	// the light panel's own full-object resend, one per light, in ONE wire batch; undo is
+	// one `light` entry per light sealed per GESTURE (a scrub fires on every pixel), all in
+	// one history batch — so a set of N lights is one undo step, like every other row.
+	const lightTargets = $derived(insTargets.filter((/** @type {any} */ o) => o?.isLight));
+	/** @param {(light:any)=>any} read */
+	const lightMixed = (read) => mixed(read, lightTargets);
+	/** @type {Map<string, any>|null} */
+	let lightGestureStart = null;
+	/** @type {any} */
+	let lightGestureTimer;
+	/** @param {any[]} list */
+	function trackLightGesture(list) {
+		if (lightGestureStart == null) lightGestureStart = new Map();
+		for (const light of list) if (!lightGestureStart.has(light.uuid)) lightGestureStart.set(light.uuid, { light, before: lightStateOf(light) });
+		clearTimeout(lightGestureTimer);
+		lightGestureTimer = setTimeout(sealLightGesture, 500);
+	}
+	function sealLightGesture() {
+		const started = lightGestureStart;
+		lightGestureStart = null;
+		if (!started?.size) return;
+		const many = started.size > 1;
+		if (many) beginHistoryBatch();
+		try {
+			for (const { light, before } of started.values()) recordLightChange(light, before);
+		} finally {
+			if (many) endHistoryBatch(`Lights (${started.size})`);
+		}
+	}
+	/**
+	 * One Light-row write over the selected lights.
+	 * @param {(light:any)=>void} fn @param {(light:any)=>boolean} [has] which lights carry the field
+	 */
+	function setLights(fn, has) {
+		const list = has ? lightTargets.filter(has) : lightTargets;
+		if (!list.length) return;
+		trackLightGesture(list);
+		withWireBatch(() => {
+			for (const light of list) {
+				fn(light);
+				sendLight(light);
+			}
+		});
+		selectedObject.update((s) => s);
+		pokeScene();
 	}
 
-	/** Object flag → the whole selection. The checkbox/row has already written the
-	 * PRIMARY (bind:checked), so the rest of the set is set to that same value and
-	 * every member replicates its own message. No history kind covers these flags,
-	 * so the batch stays empty and records nothing (endHistoryBatch no-ops).
-	 * @param {string} parameter */
-	function sendParam(parameter) {
-		const value = $selectedObject[parameter];
-		fan(parameter, (object) => {
-			if (object !== $selectedObject) object[parameter] = value;
-			$peers.send({
-				type: 'objectParameters',
-				parameter,
-				uuid: object.uuid,
-				[parameter]: object[parameter]
-			});
-		});
-	}
-
-	// Cast toggle also stamps userData.shadow so the opt-out survives GLTF sync
-	// (the bare castShadow flag does not round-trip through GLTFExporter) — V-1
-	function setCastShadow() {
-		const on = $selectedObject.castShadow;
-		fan('Cast shadow', (object) => {
-			object.castShadow = on;
-			object.userData.shadow = on ? undefined : false;
-		});
-		sendParam('castShadow');
+	/**
+	 * 37 R1: an object FLAG (visible, cast/receive shadow, render order, culling) → every
+	 * member of the set. Each member records its own `flags` entry (multiEdit.js — these
+	 * had no undo at all before), all inside fan's ONE history batch and ONE wire batch.
+	 * The checkboxes no longer `bind:` the primary: binding wrote the clicked value onto
+	 * the primary before the handler could read its old one.
+	 * @param {string} parameter @param {any} value
+	 */
+	function setFlag(parameter, value) {
+		fan(parameter, (object) => setObjectFlag(object, parameter, value));
+		selectedObject.update((v) => v);
 	}
 
 	// P-A: physics body params live on userData.physics (replicates free via
@@ -1264,7 +1306,9 @@
 		} else {
 			beginHistoryBatch();
 			try {
-				for (const object of targets) await apply(object.uuid);
+				await withWireBatchAsync(async () => {
+					for (const object of targets) await apply(object.uuid);
+				});
 			} finally {
 				endHistoryBatch(`${label} (${targets.length})`);
 			}
@@ -1279,7 +1323,7 @@
 		if (!uuids.length) return;
 		if (uuids.length > 1) beginHistoryBatch();
 		try {
-			await setObjectsTexture(uuids, file);
+			await withWireBatchAsync(() => setObjectsTexture(uuids, file));
 		} finally {
 			if (uuids.length > 1) endHistoryBatch(`Texture (${uuids.length})`);
 		}
@@ -1299,10 +1343,14 @@
 
 	/** CL-A A5: toggle one freeze-axis flag @param {string} key @param {boolean} on */
 	function setFreeze(key, on) {
-		const freeze = { ...($selectedObject.userData.physics?.freeze ?? {}) };
-		if (on) freeze[key] = true;
-		else delete freeze[key];
-		setPhysics({ freeze: Object.keys(freeze).length ? freeze : null });
+		// 37 R1: each member keeps its OWN other axes (the primary's map used to overwrite them)
+		fan('Physics', (object) => {
+			const freeze = { ...(object.userData.physics?.freeze ?? {}) };
+			if (on) freeze[key] = true;
+			else delete freeze[key];
+			setPhysicsFor(object.uuid, { freeze: Object.keys(freeze).length ? freeze : null });
+		});
+		selectedObject.update((v) => v);
 	}
 
 	function sendName() {
@@ -1310,11 +1358,34 @@
 		$peers.send({ type: 'name', name: $selectedObject.name, uuid: $selectedObject.uuid });
 	}
 
-	/** Object-level property (renderOrder/frustumCulled): local apply + replicate (147) @param {string} parameter @param {any} value */
-	function setObjectParam(parameter, value) {
-		$selectedObject[parameter] = value;
+	/** 37 R1: the render-order SCRUB — previews unrecorded while it runs, then ONE sealed
+	 * flags entry per member (from its own start value) 500 ms after the last step
+	 * @type {Map<string, {object: any, before: any}>|null} */
+	let orderGestureStart = null;
+	/** @type {any} */
+	let orderGestureTimer;
+	/** @param {number} value */
+	function setRenderOrder(value) {
+		if (orderGestureStart == null) {
+			orderGestureStart = new Map();
+			for (const object of insTargets) orderGestureStart.set(object.uuid, { object, before: object.renderOrder });
+		}
+		withWireBatch(() => {
+			for (const { object } of orderGestureStart?.values() ?? []) setObjectFlag(object, 'renderOrder', value, { record: false });
+		});
 		selectedObject.update((v) => v);
-		sendParam(parameter); // fans the value + messages over the selection
+		clearTimeout(orderGestureTimer);
+		orderGestureTimer = setTimeout(() => {
+			const started = orderGestureStart;
+			orderGestureStart = null;
+			if (!started?.size) return;
+			const list = [...started.values()].filter((entry) => entry.before !== entry.object.renderOrder);
+			fanOn(
+				list.map((entry) => entry.object),
+				'Render order',
+				(object) => setObjectFlag(object, 'renderOrder', object.renderOrder, { before: started.get(object.uuid)?.before })
+			);
+		}, 500);
 	}
 
 	// ---- move to group (shared by mesh and light targets) -------------------
@@ -3190,17 +3261,20 @@
 							<DragRow
 								id="inspector-render-order"
 								value={$selectedObject.renderOrder}
+								mixed={mixed((o) => o.renderOrder)}
 								decimals={0}
 								step={0.2}
 								snap={5}
 								ariaLabel="Render order"
-								onchange={(v) => setObjectParam('renderOrder', Math.round(v) || 0)}
+								onchange={(v) => setRenderOrder(Math.round(v) || 0)}
 							/>
 						</div>
 					</div>
 					<Checkbox
-						checked={$selectedObject.frustumCulled}
-						onchange={(/** @type {any} */ e) => setObjectParam('frustumCulled', e.target.checked)}
+						id="inspector-frustum-culled"
+						checked={allOf((o) => o.frustumCulled)}
+						indeterminate={mixed((o) => o.frustumCulled)}
+						onchange={(/** @type {any} */ e) => setFlag('frustumCulled', e.target.checked)}
 					>
 						Frustum culled
 					</Checkbox>
@@ -3210,6 +3284,7 @@
 					<Checkbox
 						id="inspector-pick-through"
 						checked={pickThroughAll}
+						indeterminate={mixed((o) => o.userData?.pick === 'through')}
 						onchange={(/** @type {any} */ e) => {
 							const on = e.target.checked;
 							fan('Click-through', (/** @type {any} */ object) => setPickThrough(object.uuid, on));
@@ -3385,6 +3460,11 @@
 
 			{#if isLight}
 				<Section label="Light">
+					{#if lightTargets.length > 1}
+						<p id="light-multi-note" class="text-[10px] italic text-text-muted">
+							Applies to {lightTargets.length} selected lights{lightMixed((l) => l.color?.getHex?.()) ? ' — their colours differ (—); picking one sets all' : ''}.
+						</p>
+					{/if}
 					<ColorPicker
 						isAlpha={false}
 						isTextInput={true}
@@ -3402,9 +3482,8 @@
 						hex={color}
 						onInput={(/** @type {any} */ c) => {
 							if (sameHex(c.hex, color)) return; // mount echo, not an edit
-							$selectedObject.color.set(c.hex);
 							color = c.hex;
-							sendLightUpdate();
+							setLights((light) => light.color.set(c.hex), (light) => !!light.color);
 						}}
 					/>
 					{#if $selectedObject.type === 'HemisphereLight'}
@@ -3426,9 +3505,8 @@
 							hex={groundColor}
 							onInput={(/** @type {any} */ c) => {
 								if (sameHex(c.hex, groundColor)) return; // mount echo, not an edit
-								$selectedObject.groundColor.set(c.hex);
 								groundColor = c.hex;
-								sendLightUpdate();
+								setLights((light) => light.groundColor.set(c.hex), (light) => !!light.groundColor);
 							}}
 						/>
 					{/if}
@@ -3437,11 +3515,8 @@
 						<div id="inspector-intensity">
 							<DragRow label="I" accent="text-yellow-300" step={0.02} min={0} snap={0.5}
 								value={$selectedObject.intensity}
-								onchange={(v) => {
-									$selectedObject.intensity = v;
-									selectedObject.update((s) => s);
-									sendLightUpdate();
-								}} />
+								mixed={lightMixed((l) => l.intensity)}
+								onchange={(v) => setLights((light) => (light.intensity = v))} />
 						</div>
 					</div>
 					{#each LIGHT_PARAMS[$selectedObject.type] ?? [] as spec (spec.key)}
@@ -3451,11 +3526,8 @@
 							max={spec.max ?? 10}
 							step={spec.step ?? 0.05}
 							value={Number($selectedObject[spec.key] ?? 0)}
-							onchange={(v) => {
-								$selectedObject[spec.key] = v;
-								selectedObject.update((s) => s);
-								sendLightUpdate();
-							}} />
+							mixed={mixed((l) => l[spec.key], lightTargets.filter((l) => typeof l[spec.key] === 'number'))}
+							onchange={(v) => setLights((light) => (light[spec.key] = v), (light) => typeof light[spec.key] === 'number')} />
 					{/each}
 
 					{#if aimsByRotation}
@@ -3495,7 +3567,15 @@
 
 					{#if SHADOW_TYPES.includes($selectedObject.type)}
 						<p class="ui-section-label">Shadow</p>
-						<Checkbox bind:checked={$selectedObject.castShadow} onchange={() => sendLightUpdate()}>
+						<Checkbox
+							id="light-cast-shadow"
+							checked={allOf((l) => l.castShadow, lightTargets)}
+							indeterminate={lightMixed((l) => !!l.castShadow)}
+							onchange={(/** @type {any} */ e) => {
+								const on = e.currentTarget.checked;
+								setLights((light) => (light.castShadow = on), (light) => !!light.shadow);
+							}}
+						>
 							Cast Shadow
 						</Checkbox>
 						<div class="ui-row">
@@ -3504,11 +3584,8 @@
 								class="flex-1"
 								items={SHADOW_SIZES.map((size) => ({ value: size, name: size + ' px' }))}
 								value={$selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x}
-								onchange={(/** @type {any} */ val) => {
-									setShadowMapSize($selectedObject, +val);
-									selectedObject.update((s) => s);
-									sendLightUpdate();
-								}}
+								mixed={lightMixed((l) => l.userData.shadowMapSize ?? l.shadow?.mapSize?.x)}
+								onchange={(/** @type {any} */ val) => setLights((light) => setShadowMapSize(light, +val), (light) => !!light.shadow)}
 							/>
 						</div>
 						{#if cappedShadowSize($selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x) < ($selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x)}
@@ -3516,18 +3593,22 @@
 						{/if}
 						<SliderRow label="Bias" min={-0.01} max={0.01} step={0.0005} decimals={4}
 							value={$selectedObject.shadow.bias}
-							onchange={(v) => {
-								$selectedObject.shadow.bias = v;
-								sendLightUpdate();
-							}} />
+							mixed={lightMixed((l) => l.shadow?.bias)}
+							onchange={(v) => setLights((light) => (light.shadow.bias = v), (light) => !!light.shadow)} />
 						<SliderRow label="Softness" min={0} max={10} step={0.1} decimals={1}
 							value={$selectedObject.shadow.radius}
-							onchange={(v) => {
-								$selectedObject.shadow.radius = v;
-								sendLightUpdate();
-							}} />
+							mixed={lightMixed((l) => l.shadow?.radius)}
+							onchange={(v) => setLights((light) => (light.shadow.radius = v), (light) => !!light.shadow)} />
 					{/if}
-					<Checkbox bind:checked={$selectedObject.visible} onchange={() => sendLightUpdate()}>
+					<Checkbox
+						id="light-visible"
+						checked={allOf((l) => l.visible, lightTargets)}
+						indeterminate={lightMixed((l) => l.visible)}
+						onchange={(/** @type {any} */ e) => {
+							const on = e.currentTarget.checked;
+							setLights((light) => (light.visible = on));
+						}}
+					>
 						Visible
 					</Checkbox>
 					{#if $selectedObject.type === 'RectAreaLight'}
@@ -3545,7 +3626,12 @@
 							Applies to {matCount} selected objects.
 						</p>
 					{/if}
-					<Checkbox bind:checked={$selectedObject.visible} onchange={() => sendParam('visible')}>
+					<Checkbox
+						id="inspector-visible"
+						checked={allOf((o) => o.visible)}
+						indeterminate={mixed((o) => o.visible)}
+						onchange={(/** @type {any} */ e) => setFlag('visible', e.currentTarget.checked)}
+					>
 						Visible
 					</Checkbox>
 
@@ -3617,6 +3703,7 @@
 						id="select-material"
 						items={materials}
 						value={material.type}
+						mixed={matMixed((o) => o.material.type)}
 						onchange={(/** @type {any} */ val) => {
 							// switches type but keeps color/texture/opacity, locally and on peers
 							fanMat('Material type', (object) => switchMaterialType(object.uuid, val));
@@ -3625,6 +3712,12 @@
 					/>
 
 					{#if material.color && material.type !== 'MeshNormalMaterial'}
+						{#if matMixed((o) => o.material.color?.getHex?.())}
+							<!-- 37 R1: the picker can only show ONE colour; say the set differs -->
+							<p id="material-color-mixed" class="text-[10px] italic text-text-muted">
+								Colour — (mixed): picking one sets all {matCount}.
+							</p>
+						{/if}
 						<ColorPicker
 							isAlpha={false}
 							isTextInput={true}
@@ -3648,11 +3741,14 @@
 								// remembers each target's own before-colour.
 								color = c.hex;
 								trackColorGesture(c.hex);
-								for (const object of matTargets) {
-									object.material.color.set(c.hex);
-									object.material.needsUpdate = true;
-									$peers.send({ type: 'color', uuid: object.uuid, color: c.hex });
-								}
+								// 37 R1: the whole set's colour leaves as ONE replicated batch
+								withWireBatch(() => {
+									for (const object of matTargets) {
+										object.material.color.set(c.hex);
+										object.material.needsUpdate = true;
+										$peers.send({ type: 'color', uuid: object.uuid, color: c.hex });
+									}
+								});
 								pokeScene();
 							}}
 						/>
@@ -3768,7 +3864,9 @@
 					{/if}
 					{#if typeof material.wireframe !== 'undefined'}
 						<Checkbox
-							checked={material.wireframe}
+							id="inspector-wireframe"
+							checked={allOf((o) => o.material.wireframe, matTargets)}
+							indeterminate={matMixed((o) => !!o.material.wireframe)}
 							onchange={(/** @type {any} */ e) => setMat('wireframe', e.target.checked)}
 						>
 							Wireframe
@@ -3776,7 +3874,9 @@
 					{/if}
 					{#if 'flatShading' in material}
 						<Checkbox
-							checked={material.flatShading}
+							id="inspector-flat-shading"
+							checked={allOf((o) => o.material.flatShading, matTargets)}
+							indeterminate={matMixed((o) => !!o.material.flatShading)}
 							onchange={(/** @type {any} */ e) => setMat('flatShading', e.target.checked)}
 						>
 							Flat shading
@@ -3793,6 +3893,7 @@
 									{ value: 2, name: 'Double' }
 								]}
 								value={material.side}
+								mixed={matMixed((o) => o.material.side)}
 								onchange={(/** @type {any} */ v) => setMat('side', +v)}
 							/>
 						</div>
@@ -3818,7 +3919,7 @@
 								value={'#' + material.emissive.getHexString()}
 								oninput={(/** @type {any} */ e) => setMat('emissive', e.currentTarget.value)}
 							/>
-							<span class="text-[10px] italic text-gray-400">black = no glow</span>
+							<span class="text-[10px] italic text-text-muted">{matMixed((o) => o.material.emissive?.getHex?.()) ? '— (mixed) · ' : ''}black = no glow</span>
 						</div>
 					{/if}
 
@@ -3828,12 +3929,19 @@
 					     properties, so they stay editable on a shader-driven object -->
 					<p class="ui-section-label">Shadow</p>
 					<div class="flex gap-4 px-1">
-						<Checkbox bind:checked={$selectedObject.castShadow} onchange={() => setCastShadow()}>
+						<Checkbox
+							id="inspector-cast-shadow"
+							checked={allOf((o) => o.castShadow)}
+							indeterminate={mixed((o) => !!o.castShadow)}
+							onchange={(/** @type {any} */ e) => setFlag('castShadow', e.currentTarget.checked)}
+						>
 							Cast
 						</Checkbox>
 						<Checkbox
-							bind:checked={$selectedObject.receiveShadow}
-							onchange={() => sendParam('receiveShadow')}
+							id="inspector-receive-shadow"
+							checked={allOf((o) => o.receiveShadow)}
+							indeterminate={mixed((o) => !!o.receiveShadow)}
+							onchange={(/** @type {any} */ e) => setFlag('receiveShadow', e.currentTarget.checked)}
 						>
 							Receive
 						</Checkbox>
@@ -3861,6 +3969,7 @@
 								{ value: 'dynamic', name: 'Dynamic' }
 							]}
 							value={$selectedObject.userData.physics?.mode ?? 'auto'}
+							mixed={mixed((o) => o.userData.physics?.mode ?? 'auto')}
 							onchange={(/** @type {any} */ v) => setPhysics({ mode: v })}
 						/>
 					</div>
@@ -3881,6 +3990,7 @@
 								{ value: 'metal', name: 'Metal' }
 							]}
 							value={physicsMaterialOf($selectedObject.userData.physics)}
+							mixed={mixed((o) => physicsMaterialOf(o.userData.physics))}
 							onchange={(/** @type {any} */ v) => {
 								const m = PHYSICS_MATERIALS[v];
 								if (m) setPhysics({ restitution: m.restitution, friction: m.friction });
@@ -3911,6 +4021,7 @@
 							{ value: 'custom', name: 'Custom (edit…)' }
 							]}
 							value={$selectedObject.userData.physics?.collider ?? inferredColliderKind($selectedObject) ?? 'box'}
+							mixed={mixed((o) => o.userData.physics?.collider ?? inferredColliderKind(o) ?? 'box')}
 							onchange={(/** @type {any} */ v) => {
 							// A8: picking Custom opens the edit session; Done writes the verts
 							if (v === 'custom') enterColliderEdit($selectedObject.uuid);
@@ -3931,7 +4042,8 @@
 					<!-- CL-A A3: sensor = trigger volume; overlaps fire On Enter / On Exit -->
 					<Checkbox
 						id="physics-sensor"
-						checked={!!$selectedObject.userData.physics?.sensor}
+						checked={allOf((o) => o.userData.physics?.sensor)}
+						indeterminate={mixed((o) => !!o.userData.physics?.sensor)}
 						onchange={(/** @type {any} */ e) => setPhysics({ sensor: e.currentTarget.checked || null })}
 						>Sensor — no collision, fires On Enter / On Exit</Checkbox
 					>
@@ -3942,7 +4054,8 @@
 							<span class="w-20 shrink-0 text-gray-400">Lock rotation</span>
 							{#each [['rx', 'X'], ['ry', 'Y'], ['rz', 'Z']] as [key, label] (key)}
 								<Checkbox
-									checked={!!$selectedObject.userData.physics?.freeze?.[key]}
+									checked={allOf((o) => o.userData.physics?.freeze?.[key])}
+									indeterminate={mixed((o) => !!o.userData.physics?.freeze?.[key])}
 									onchange={(/** @type {any} */ e) => setFreeze(key, e.currentTarget.checked)}
 									>{label}</Checkbox
 								>
@@ -3952,7 +4065,8 @@
 							<span class="w-20 shrink-0 text-gray-400">Lock position</span>
 							{#each [['px', 'X'], ['py', 'Y'], ['pz', 'Z']] as [key, label] (key)}
 								<Checkbox
-									checked={!!$selectedObject.userData.physics?.freeze?.[key]}
+									checked={allOf((o) => o.userData.physics?.freeze?.[key])}
+									indeterminate={mixed((o) => !!o.userData.physics?.freeze?.[key])}
 									onchange={(/** @type {any} */ e) => setFreeze(key, e.currentTarget.checked)}
 									>{label}</Checkbox
 								>

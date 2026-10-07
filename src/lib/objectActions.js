@@ -4,6 +4,7 @@ import { dropToSurface } from './snapping';
 import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, beginHistoryBatch, endHistoryBatch } from './history';
 import { cascadeJointDeletes } from './joints';
 import { createGroup } from './geometries.svelte';
+import { withWireBatch } from './wireBatch'; // 37 R1: a set's edit = ONE replicated batch
 import { suspendAnimation, resumeAnimation, parkAnimatedAtBase } from './flowRuntime';
 import {
 	objectsGroup,
@@ -433,19 +434,21 @@ export function selectionUuids() {
 export function deleteObjectsByUuid(uuids) {
 	if (!uuids.length) return 0;
 	deselectObject();
-	// P-B: cascade joint deletes at the SENDER (each jointdelete replicates;
-	// receivers only apply)
-	cascadeJointDeletes(uuids);
 	/** @type {any} */
 	const peer = get(peers);
 	const group = get(objectsGroup);
-	for (const uuid of uuids) {
-		const object = group?.getObjectByProperty('uuid', uuid);
-		if (!object) continue;
-		recordObjectPresence('delete', object);
-		object.parent?.remove(object);
-		if (peer) peer.send({ type: 'delete', uuid, peerId: peer.peer.id });
-	}
+	withWireBatch(() => {
+		// P-B: cascade joint deletes at the SENDER (each jointdelete replicates;
+		// receivers only apply)
+		cascadeJointDeletes(uuids);
+		for (const uuid of uuids) {
+			const object = group?.getObjectByProperty('uuid', uuid);
+			if (!object) continue;
+			recordObjectPresence('delete', object);
+			object.parent?.remove(object);
+			if (peer) peer.send({ type: 'delete', uuid, peerId: peer.peer.id });
+		}
+	});
 	pokeScene();
 	return uuids.length;
 }
@@ -828,7 +831,8 @@ registerHistoryKind('group', (entry, state) => {
 		showToast('Cannot undo/redo: the object no longer exists');
 		return false;
 	}
-	moveObjectToGroup(entry.uuid, state.parent);
+	// 37 R1: the recorded parent was reached legitimately, so a replay may be any object
+	moveObjectToGroup(entry.uuid, state.parent, { anyParent: true });
 	return true;
 });
 
@@ -896,7 +900,7 @@ export function renameObject(uuid, name) {
  * differs per client.
  * @param {string} uuid @param {string} target - group uuid | 'up' | 'root'
  */
-export function moveObjectToGroup(uuid, target) {
+export function moveObjectToGroup(uuid, target, opts = /** @type {{anyParent?: boolean}} */ ({})) {
 	const group = get(objectsGroup);
 	const object = group?.getObjectByProperty('uuid', uuid);
 	if (!object) return;
@@ -917,7 +921,9 @@ export function moveObjectToGroup(uuid, target) {
 		object.parent.parent.attach(object);
 	} else {
 		const destination = group.getObjectByProperty('uuid', target);
-		if (!destination || destination.type !== 'Group') return;
+		// 37 R1: `anyParent` lets the object list parent onto ANY object (Blender's drop-onto);
+		// receivers' createGroup already attaches to whatever the uuid names
+		if (!destination || (destination.type !== 'Group' && !opts.anyParent)) return;
 		if (destination.uuid === object.uuid || object.parent === destination) return;
 		// never drop a group into its own descendant
 		let ancestor = destination;
@@ -936,6 +942,57 @@ export function moveObjectToGroup(uuid, target) {
 }
 
 /**
+ * 37 R1: the objects a row drag in the object list carries. Dragging a row that is PART of
+ * a multi-selection drags the whole selection (its top-level members only — a child whose
+ * ancestor is also selected rides along inside it); any other row drags just itself.
+ * @param {string} uuid the dragged row @returns {string[]}
+ */
+export function dragUuidsFor(uuid) {
+	const set = get(selectedObjects);
+	if (set.length < 2 || !set.includes(uuid)) return [uuid];
+	const group = get(objectsGroup);
+	const chosen = new Set(set);
+	return set.filter((id) => {
+		let parent = group?.getObjectByProperty('uuid', id)?.parent;
+		while (parent && parent !== group) {
+			if (chosen.has(parent.uuid)) return false;
+			parent = parent.parent;
+		}
+		return true;
+	});
+}
+
+/**
+ * 37 R1: drop a set of objects onto a parent in the object list — a group (move into it),
+ * any other object (parent to it) or 'root'. Members that would land inside themselves are
+ * skipped. ONE undo step and ONE replicated batch for the whole set. Returns how many moved.
+ * @param {string[]} uuids @param {string} target a uuid or 'root'
+ */
+export function moveObjectsToParent(uuids, target) {
+	const group = get(objectsGroup);
+	const destination = target === 'root' ? group : group?.getObjectByProperty('uuid', target);
+	if (!group || !destination) return 0;
+	const movable = uuids.filter((uuid) => {
+		const object = group.getObjectByProperty('uuid', uuid);
+		if (!object || object === destination || object.parent === destination) return false;
+		for (let up = destination; up; up = up.parent) if (up === object) return false; // into itself
+		return canEditObject(object);
+	});
+	if (!movable.length) return 0;
+	const many = movable.length > 1;
+	if (many) beginHistoryBatch();
+	try {
+		withWireBatch(() => {
+			for (const uuid of movable) moveObjectToGroup(uuid, target, { anyParent: true });
+		});
+	} finally {
+		if (many) endHistoryBatch(`Move ${movable.length} objects`);
+	}
+	pokeScene();
+	return movable.length;
+}
+
+/**
  * Ungroup (216): move every child up to the group's parent (world transform kept
  * via moveObjectToGroup 'up', which replicates + records undo per child), then
  * delete the now-empty group. Peers apply the child moves BEFORE the delete, so
@@ -948,8 +1005,10 @@ export function ungroupObject(groupUuid) {
 	const children = [...grp.children]; // snapshot: attach() mutates .children
 	// 15-G: one undo step, not N+1 (a move per child plus the group delete)
 	beginHistoryBatch();
-	for (const child of children) moveObjectToGroup(child.uuid, 'up');
-	deleteObjectsByUuid([groupUuid]); // now empty -> removes just the group
+	withWireBatch(() => {
+		for (const child of children) moveObjectToGroup(child.uuid, 'up');
+		deleteObjectsByUuid([groupUuid]); // now empty -> removes just the group
+	});
 	endHistoryBatch('Ungroup');
 	return true;
 }
@@ -982,25 +1041,29 @@ export function groupSelection() {
 	/** @type {any} */
 	const peer = get(peers);
 	beginHistoryBatch();
-	// empty group (replicated via the same message the /group command uses)
-	const groupUuid = createGroup('/group Selection');
-	const newGroup = group?.getObjectByProperty('uuid', groupUuid);
-	if (peer) peer.send({ type: 'group', command: '/group Selection', uuid: groupUuid });
-	recordObjectPresence('create', newGroup);
-	// move the empty group to the centroid BEFORE attaching (both peers attach
-	// with the group already at the pivot, so member local coords match)
-	if (newGroup) {
-		newGroup.position.copy(centroid);
-		if (peer)
-			peer.send({
-				type: 'move',
-				uuid: groupUuid,
-				pos: newGroup.position.toArray(),
-				rot: newGroup.rotation.toArray(),
-				scale: newGroup.scale.toArray()
-			});
-	}
-	for (const uuid of uuids) moveObjectToGroup(uuid, groupUuid);
+	// 37 R1: the new group, its pose and every member's move leave as ONE replicated batch
+	const groupUuid = withWireBatch(() => {
+		// empty group (replicated via the same message the /group command uses)
+		const made = createGroup('/group Selection');
+		const newGroup = group?.getObjectByProperty('uuid', made);
+		if (peer) peer.send({ type: 'group', command: '/group Selection', uuid: made });
+		recordObjectPresence('create', newGroup);
+		// move the empty group to the centroid BEFORE attaching (both peers attach
+		// with the group already at the pivot, so member local coords match)
+		if (newGroup) {
+			newGroup.position.copy(centroid);
+			if (peer)
+				peer.send({
+					type: 'move',
+					uuid: made,
+					pos: newGroup.position.toArray(),
+					rot: newGroup.rotation.toArray(),
+					scale: newGroup.scale.toArray()
+				});
+		}
+		for (const uuid of uuids) moveObjectToGroup(uuid, made);
+		return made;
+	});
 	endHistoryBatch('Group objects');
 	pokeScene();
 	applySelectionSet([groupUuid]);

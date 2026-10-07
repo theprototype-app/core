@@ -84,11 +84,12 @@ h.run(async () => {
 	// ---- premise: the default roster, in the default order ------------------------
 	// 33 E1: the user's order — transforms, Interact, Play (the well), object list, node
 	// editor, Explorer, Animation (Animation was an opt-in view before)
-	const DEFAULT = ['Move (1)', 'Rotate (2)', 'Scale (3)', 'Interact mode (I)', '—', 'Object list (O)', 'Node editor (N)', 'Explorer', 'Animation'];
+	// 37 R1: the Pivot cell sits with the transforms (its title names the current mode)
+	const DEFAULT = ['Move (1)', 'Rotate (2)', 'Scale (3)', 'Pivot: Median point (click to change)', 'Interact mode (I)', '—', 'Object list (O)', 'Node editor (N)', 'Explorer', 'Animation'];
 	let titles = await barTitles(A.page);
 	h.check(
 		titles.join(' | ') === DEFAULT.join(' | '),
-		`premise: eight buttons around the play well, in order (${titles.join(' | ')})`
+		`premise: nine buttons around the play well, in order (${titles.join(' | ')})`
 	);
 	h.check(
 		await A.page.evaluate(() => !!document.querySelector('#controls-pill #play-button')),
@@ -117,8 +118,8 @@ h.run(async () => {
 	// plus Play. It reads checked (it IS on the bar) and carries no toggle, because
 	// there is no toolbar without a way to press play.
 	h.check(
-		menu.filter((r) => r.checked).length === 9,
-		`Customize lists the eight buttons AND the play well as on the bar (${menu.filter((r) => r.checked).length})`
+		menu.filter((r) => r.checked).length === 10, // 37 R1: + Pivot
+		`Customize lists the nine buttons AND the play well as on the bar (${menu.filter((r) => r.checked).length})`
 	);
 	h.check(
 		menu.some((r) => r.label === 'Play' && r.checked),
@@ -137,14 +138,14 @@ h.run(async () => {
 	await pick(A.page, 'Rotate (2)');
 	titles = await barTitles(A.page);
 	h.check(!titles.includes('Rotate (2)'), `Rotate left the bar (${titles.join(' | ')})`);
-	h.check(titles.length === 8, `the bar lost exactly one cell (${titles.length})`);
+	h.check(titles.length === 9, `the bar lost exactly one cell (${titles.length})`);
 	h.check(
-		titles.indexOf('—') === 3,
+		titles.indexOf('—') === 4,
 		`the well stayed between the same neighbours — spacerIndex followed the hide (${titles.indexOf('—')})`
 	);
 	let saved = await layout(A.page);
 	h.check(
-		saved && saved.hidden.join(',') === 'rotate' && saved.spacerIndex === 3,
+		saved && saved.hidden.join(',') === 'rotate' && saved.spacerIndex === 4,
 		`the layout persisted (hidden=${saved?.hidden} spacerIndex=${saved?.spacerIndex})`
 	);
 
@@ -153,10 +154,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	titles = await barTitles(A.page);
 	h.check(
-		!titles.includes('Rotate (2)') && titles.length === 8,
+		!titles.includes('Rotate (2)') && titles.length === 9,
 		`the hidden button is still hidden after a reload (${titles.join(' | ')})`
 	);
-	h.check(titles.indexOf('—') === 3, 'the well came back where it was left');
+	h.check(titles.indexOf('—') === 4, 'the well came back where it was left');
 
 	// ---- REORDER: Move right on Move ----------------------------------------------
 	await cellMenu(A.page, 'Move (1)');
@@ -222,7 +223,7 @@ h.run(async () => {
 	await pick(A.page, 'Expand toolbar');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.length === 8 && titles.includes('Explorer'),
+		titles.length === 9 && titles.includes('Explorer'),
 		`the FAB menu brings the bar back exactly as it was (${titles.join(' | ')})`
 	);
 	h.check((await layout(A.page))?.collapsed === false, 'expanding persisted too');
@@ -231,15 +232,15 @@ h.run(async () => {
 	await cellMenu(A.page, 'Explorer');
 	await pick(A.page, 'Customize toolbar…');
 	h.check(
-		(await rows(A.page)).filter((r) => r.checked).length === 8,
-		'premise: Customize opens showing the hidden button unchecked (7 buttons + Play)'
+		(await rows(A.page)).filter((r) => r.checked).length === 9,
+		'premise: Customize opens showing the hidden button unchecked (8 buttons + Play)'
 	);
 	await pick(A.page, 'Reset toolbar');
 	// W1: Reset is `keepOpen` too, so the list itself has to show the restored roster
 	h.check(await menuOpen(A.page), 'Reset toolbar leaves the Customize list up');
 	h.check(
-		(await rows(A.page)).filter((r) => r.checked).length === 9,
-		`and the rows re-rendered IN PLACE — all eight read checked again (${(await rows(A.page)).filter((r) => r.checked).length})`
+		(await rows(A.page)).filter((r) => r.checked).length === 10,
+		`and the rows re-rendered IN PLACE — all nine read checked again (${(await rows(A.page)).filter((r) => r.checked).length})`
 	);
 	titles = await barTitles(A.page);
 	h.check(
@@ -269,7 +270,7 @@ h.run(async () => {
 	await pick(A.page, 'Move right');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('—') === 3 && titles[4] === 'Interact mode (I)',
+		titles.indexOf('—') === 4 && titles[5] === 'Interact mode (I)',
 		`Interact crossed the play button in ONE step (${titles.join(' | ')})`
 	);
 	h.check(
@@ -278,7 +279,7 @@ h.run(async () => {
 	);
 	saved = await layout(A.page);
 	h.check(
-		saved && saved.spacerIndex === 3 && saved.order.join(',') === 'move,rotate,scale,mode,objects,flow,explorer,animation',
+		saved && saved.spacerIndex === 4 && saved.order.join(',') === 'move,rotate,scale,pivot,mode,objects,flow,explorer,animation',
 		`the RECORD is derived from the row: the well moved, the order did not (spacerIndex=${saved?.spacerIndex} order=${saved?.order.join(',')})`
 	);
 	await cellMenu(A.page, 'Interact mode (I)');
@@ -291,7 +292,7 @@ h.run(async () => {
 	await pick(A.page, 'Move left');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('—') === 3 && noWell(titles).join(' | ') === noWell(DEFAULT).join(' | '),
+		titles.indexOf('—') === 4 && noWell(titles).join(' | ') === noWell(DEFAULT).join(' | '),
 		`the play button's own Move left walks the well one place (${titles.join(' | ')})`
 	);
 	await fabMenu(A.page);
@@ -585,7 +586,7 @@ h.run(async () => {
 	// pins the exact cells, their order AND the well's index — not just a count.
 	titles = await barTitles(A.page);
 	h.check(
-		titles.join(' | ') === DEFAULT.join(' | ') && titles.indexOf('—') === 4,
+		titles.join(' | ') === DEFAULT.join(' | ') && titles.indexOf('—') === 5,
 		`W8b: the default bar is the roster's default — same cells, same order, same well slot (${titles.join(' | ')})`
 	);
 	h.check(
@@ -702,15 +703,22 @@ h.run(async () => {
 	);
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('Move (1)') === 2 && titles.indexOf('—') === 3,
-		`a second press walked it one further, past Interact (${titles.join(' | ')})`
+		titles.indexOf('Move (1)') === 2 && titles.indexOf('—') === 4,
+		`a second press walked it one further, past Scale (${titles.join(' | ')})`
 	);
-	// 33 E1: Interact sits before the well now, so the THIRD press is the one that crosses it
+	// 33 E1 + 37 R1 (Rotate is hidden here): Pivot and Interact sit before the well, so the
+	// FOURTH press is the one that crosses it
 	await rowArrow(A.page, 'Move Move (1) down');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.indexOf('Move (1)') === 3 && titles.indexOf('—') === 2,
-		`a third press walked it across the play well (${titles.join(' | ')})`
+		titles.indexOf('Move (1)') === 3 && titles.indexOf('—') === 4,
+		`a third press walked it past Interact (${titles.join(' | ')})`
+	);
+	await rowArrow(A.page, 'Move Move (1) down');
+	titles = await barTitles(A.page);
+	h.check(
+		titles.indexOf('Move (1)') === 4 && titles.indexOf('—') === 3,
+		`a fourth press walked it across the play well (${titles.join(' | ')})`
 	);
 	// the two controls must be DISTINGUISHABLE: `Icon`'s map is `MAP[name] ?? Box`, and
 	// `chevron-left`/`chevron-right` were in no map at all, so both reorder controls had
@@ -732,7 +740,7 @@ h.run(async () => {
 	await pick(A.page, 'Flow Code');
 	titles = await barTitles(A.page);
 	h.check(
-		titles.includes('Flow Code') && titles.length === 10,
+		titles.includes('Flow Code') && titles.length === 11,
 		`enabling Flow Code put it on the bar (${titles.join(' | ')})`
 	);
 	h.check(

@@ -161,6 +161,9 @@ export const VALIDATORS = {
 	clearscene: (d) => typeof d.peerId === 'string',
 	delete: (d) => isUuid(d.uuid),
 	name: (d) => isUuid(d.uuid) && typeof d.name === 'string',
+	// 37 R1: a multi-object edit's envelope (wireBatch.js); each item is validated again
+	// on its own before it is applied, so only the envelope's shape is checked here
+	batch: (d) => isArray(d.items) && d.items.length > 0 && d.items.length <= 500,
 	move: (d) => isUuid(d.uuid) && isVec3(d.pos) && isQuatOrEuler(d.rot) && isVec3(d.scale),
 	throw: (d) => isUuid(d.uuid),
 	// 24-A: a knock. The velocities are applied to a body the moment this lands, so the

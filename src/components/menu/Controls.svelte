@@ -15,7 +15,7 @@
 	import { ENV_ROOT } from '$lib/environment';
 	import { flyTo } from '$lib/objectActions';
 	import { mutedFlowObjects } from '../../stores/flowStore';
-	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectToGroup, setTransformMode, selectObject, toggleEditorMode } from '$lib/objectActions';
+	import { focusObject, duplicateObject, toggleObjectVisibility, moveObjectsToParent, setTransformMode, selectObject, toggleEditorMode } from '$lib/objectActions';
 	import { registerWindowReset } from '$lib/dragWindow';
 	import { enterEditMode } from '$lib/meshEdit';
 	import { addAnnotation } from '$lib/annotationsHandler';
@@ -47,6 +47,8 @@
 	import { hudIsGame } from '$lib/hudDocs';
 	import { DOCK_VIEWS } from '$lib/dockMenu';
 	import { safeStorage } from '$lib/safeStorage';
+	import { pivotMode, pivotParentAvailable } from '$lib/multiTransform'; // 37 R1: the toolbar Pivot cell
+	import Icon from '../ui/Icon.svelte';
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -108,6 +110,8 @@
 	// 151: tint follows the ACTIVE selection set (cleared on deselect), not the
 	// sticky selectedObject (which keeps the last object for the inspector bind)
 	const hasSel = $derived($selectedObjects.length > 0);
+	// 37 R1: the pivot point only means something for a SET (one object turns about its own origin)
+	const multiSel = $derived($selectedObjects.length > 1);
 	const ICON_ON = 'text-primary-500';
 	const ICON_OFF = 'text-black dark:text-slate-200';
 
@@ -390,6 +394,25 @@
 	// Drop-to-share: dragging a LOCAL object anywhere over the shared object-list body
 	// shares it to the scene root (a shared object just moves to root). Uses an action
 	// so it adds no on:-directive/a11y warnings in this on:-style component.
+	/** 37 R1: the set a row drag carries (Objects.svelte), else its single uuid */
+	function listDropUuids(e: DragEvent): string[] {
+		try {
+			const list = JSON.parse(e.dataTransfer?.getData('application/x-object-uuids') || 'null');
+			if (Array.isArray(list) && list.length) return list.filter((id: any) => typeof id === 'string');
+		} catch {}
+		const one = e.dataTransfer?.getData('application/x-object-uuid');
+		return one ? [one] : [];
+	}
+	/** a list-body drop: local objects are shared to the root, the rest move there as ONE undo + batch */
+	function dropToRoot(uuids: string[]) {
+		const moves: string[] = [];
+		for (const uuid of uuids) {
+			const obj: any = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
+			if (obj?.userData?.__localOnly) shareObject(obj);
+			else moves.push(uuid);
+		}
+		moveObjectsToParent(moves, 'root');
+	}
 	function shareDropZone(node: HTMLElement) {
 		const setActive = (on: boolean) => {
 			node.style.boxShadow = on ? 'inset 0 0 0 2px rgb(59 130 246 / 0.7)' : '';
@@ -405,13 +428,11 @@
 		const leave = () => setActive(false);
 		const drop = (e: DragEvent) => {
 			setActive(false);
-			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
-			if (!uuid) return;
+			const uuids = listDropUuids(e);
+			if (!uuids.length) return;
 			e.preventDefault();
 			e.stopPropagation();
-			const obj: any = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
-			if (obj?.userData?.__localOnly) shareObject(obj);
-			else moveObjectToGroup(uuid, 'root');
+			dropToRoot(uuids);
 		};
 		node.addEventListener('dragover', over);
 		node.addEventListener('dragleave', leave);
@@ -1011,7 +1032,17 @@
 	};
 	// 30 P1: `pressed` makes the cell a TOGGLE — it renders as a real <button> carrying
 	// aria-pressed (a <p> cannot: the attribute is not supported on its role)
-	type CellButton = { title: string; slot?: string; icon: any; tint: () => string; run: () => void; pressed?: () => boolean };
+	const PIVOT_NAMES: Record<string, string> = { median: 'Median point', active: 'Active object', individual: 'Individual origins', parent: 'Parent origin' };
+	// 38 rule: a NEW glyph goes through ui/Icon.svelte (names, sizes 16/20)
+	const PIVOT_ICONS: Record<string, string> = { median: 'crosshair', active: 'locate-fixed', individual: 'boxes', parent: 'network' };
+	/** the next pivot mode; Parent origin only when the set shares a parent */
+	function cyclePivotMode() {
+		const order = ['median', 'active', 'individual', ...(pivotParentAvailable() ? ['parent'] : [])];
+		const next = order[(order.indexOf($pivotMode) + 1) % order.length] as any;
+		pivotMode.set(next);
+		showQualityToast('Pivot: ' + PIVOT_NAMES[next]);
+	}
+	type CellButton = { title: string; slot?: string; icon?: any; iconName?: string; tint: () => string; run: () => void; pressed?: () => boolean };
 
 	/** the one PSEUDO-cell: the transparent well the play FAB sits in. It is not a
 	 *  roster entry (play is never hideable) but it IS a cell of the row, which is
@@ -1026,8 +1057,9 @@
 	// the views they open most: object list, node editor, Explorer, Animation. Interact
 	// sits beside Play because the two answer one question ("how am I touching the scene
 	// right now"), and Animation joined the default bar (it was an opt-in view before).
-	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'mode', 'objects', 'flow', 'explorer', 'animation'];
-	const DEFAULT_SPACER = 4;
+	// 37 R1: the PIVOT POINT sits with the transforms it changes (Blender's header place)
+	const DEFAULT_ORDER = ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation'];
+	const DEFAULT_SPACER = 5;
 	/** 33 E1: the bars a profile could hold WITHOUT ever customizing — the default rows the
 	 *  app has shipped, read as the VISUAL row (the well as `__spacer`). A stored record
 	 *  that still IS one of these is a default nobody chose, so it migrates to the new
@@ -1035,7 +1067,9 @@
 	 *  a custom bar and wins as saved. Pre-30 had no 'mode'; 30-31 appended it last. */
 	const LEGACY_DEFAULT_ROWS = [
 		'move,rotate,scale,__spacer,objects,flow,explorer',
-		'move,rotate,scale,__spacer,objects,flow,explorer,mode'
+		'move,rotate,scale,__spacer,objects,flow,explorer,mode',
+		// 37 R1: the 33 E1 default, before the Pivot cell joined it
+		'move,rotate,scale,mode,__spacer,objects,flow,explorer,animation'
 	];
 	/** 33 E1: ids that became DEFAULT after having been opt-in. A custom record that does
 	 *  not list one LEFT it off on purpose (it was unticked), so it is not appended there —
@@ -1095,6 +1129,19 @@
 			tint: () => ($editorMode === 'interact' ? ICON_ON : ICON_OFF),
 			pressed: () => $editorMode === 'interact',
 			run: () => toggleEditorMode()
+		},
+		// 37 R1: Median / Active / Individual (/ Parent) — a click steps to the next mode; the
+		// glyph and title say which is on. Shared with the Inspector's Pivot row and the object
+		// menu (one `pivotMode` store), so all three always agree.
+		pivot: {
+			get title() {
+				return 'Pivot: ' + PIVOT_NAMES[$pivotMode] + ' (click to change)';
+			},
+			get iconName() {
+				return PIVOT_ICONS[$pivotMode] ?? 'crosshair';
+			},
+			tint: () => (multiSel ? ICON_ON : ICON_OFF),
+			run: () => cyclePivotMode()
 		},
 		move: {
 			title: 'Move (1)',
@@ -2161,7 +2208,7 @@
 					use:cellClick={cell.id}
 					use:cellMenu={cell.id}
 				>
-					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
+					{#if btn.iconName}<Icon name={btn.iconName} size={20} class={btn.tint()} />{:else}<Glyph size={18} class={btn.tint()} aria-hidden="true" />{/if}
 				</button>
 				{:else}
 				<!-- ONE template for every roster button: the six hand-written cells each
@@ -2177,7 +2224,7 @@
 					on:click={() => runCell(cell.id)}
 					use:cellMenu={cell.id}
 				>
-					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
+					{#if btn.iconName}<Icon name={btn.iconName} size={20} class={btn.tint()} />{:else}<Glyph size={18} class={btn.tint()} aria-hidden="true" />{/if}
 				</p>
 				{/if}
 			{/if}
@@ -2282,12 +2329,10 @@
 		use:objHeaderWidth
 		on:dragover={(e) => { if (e.dataTransfer?.types.includes('application/x-object-uuid')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
 		on:drop={(e) => {
-			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
-			if (!uuid) return;
+			const uuids = listDropUuids(e);
+			if (!uuids.length) return;
 			e.preventDefault();
-			const obj = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
-			if (obj?.userData?.__localOnly) shareObject(obj);
-			else moveObjectToGroup(uuid, 'root');
+			dropToRoot(uuids);
 		}}
 	>
 		<span class="flex shrink-0 items-center" title="Objects"

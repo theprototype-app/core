@@ -18,6 +18,9 @@ export const FLOW_FAMILY = ['flow', 'flowcode', 'animation', 'uv', 'shader', 'hu
 export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code'];
 /** @type {Record<string, string>} */
 export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', explorer: 'Explorer', profiler: 'Profiler', code: 'Code' };
+/** 38 NOTES-38 #23: the view icon each dock tab shows before its name (ui/Icon names) */
+/** @type {Record<string, string>} */
+export const DOCK_ICONS = { flow: 'workflow', flowcode: 'code', animation: 'clapperboard', uv: 'grid-3x3', shader: 'sparkles', hud: 'app-window', explorer: 'folder-open', profiler: 'activity', code: 'code' };
 
 const ls = typeof localStorage !== 'undefined' ? localStorage : null;
 
@@ -101,7 +104,7 @@ export function setDockOccupant(key, present, height = 0) {
 /** the Flow-family panels currently open+docked (the Node editor button owns this
  * group, and the flow-dock suites read it — it is NOT the tab strip) */
 export const flowTabs = derived(dockOccupants, ($o) =>
-	FLOW_FAMILY.filter((k) => $o[k]?.present).map((k) => ({ key: k, title: DOCK_TITLES[k] }))
+	FLOW_FAMILY.filter((k) => $o[k]?.present).map((k) => ({ key: k, title: DOCK_TITLES[k], icon: DOCK_ICONS[k] }))
 );
 
 /**
@@ -185,7 +188,7 @@ export const dockTabs = derived([dockOccupants, dockTabOrder], ([$o, $order]) =>
 	inOrder(
 		DOCK_FAMILY.filter((k) => $o[k]?.present),
 		$order
-	).map((k) => ({ key: k, title: DOCK_TITLES[k] }))
+	).map((k) => ({ key: k, title: DOCK_TITLES[k], icon: DOCK_ICONS[k] }))
 );
 
 /**

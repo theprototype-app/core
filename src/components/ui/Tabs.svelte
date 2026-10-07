@@ -5,15 +5,20 @@
 	// ($lib/ui/roving.js). `actions` renders at the right end of the strip (a filter field).
 	// Pass `panel` to have the active view rendered in a role="tabpanel" wired to its tab;
 	// without it, the consumer renders the panel and uses tabId(id) / panelId(id) itself.
+	// 38 NOTES-38 #23: `variant="dock"` is the window tab strip from the design page's dock — an
+	// inset bar of pill tabs with a view icon (windows.css .tp-dtabs / .tp-dtab, the same classes
+	// the bottom dock's strip and a floating window group's strip wear).
 	import { rovingIndex } from '$lib/ui/roving.js';
+	import Icon from './Icon.svelte';
 
-	/** @typedef {{id: string, label: string, count?: number|string, disabled?: boolean, kitState?: string}} TabDef */
-	/** @type {{tabs?: TabDef[], value?: string, label?: string, idPrefix?: string, onchange?: (next: string) => void, actions?: import('svelte').Snippet, panel?: import('svelte').Snippet<[string]>} & Record<string, any>} */
+	/** @typedef {{id: string, label: string, count?: number|string, disabled?: boolean, kitState?: string, icon?: string}} TabDef */
+	/** @type {{tabs?: TabDef[], value?: string, label?: string, idPrefix?: string, variant?: 'underline'|'dock', onchange?: (next: string) => void, actions?: import('svelte').Snippet, panel?: import('svelte').Snippet<[string]>} & Record<string, any>} */
 	let {
 		tabs = [],
 		value = $bindable(''),
 		label = '',
 		idPrefix = 'tabs',
+		variant = 'underline',
 		onchange = () => {},
 		actions = undefined,
 		panel = undefined,
@@ -52,8 +57,8 @@
 	}
 </script>
 
-<div class="tp-ui tabs" {...rest}>
-	<div class="tabs-strip">
+<div class="tp-ui tabs" class:tabs-dock={variant === 'dock'} {...rest}>
+	<div class="tabs-strip" class:tp-dtabs={variant === 'dock'}>
 		<div class="tabs-list" role="tablist" aria-label={label || undefined}>
 			{#each tabs as t, i (t.id)}
 				<button
@@ -61,7 +66,7 @@
 					type="button"
 					role="tab"
 					id={tabId(t.id)}
-					class="tab"
+					class={variant === 'dock' ? 'tp-dtab' : 'tab'}
 					aria-selected={t.id === value}
 					aria-controls={panel ? panelId(t.id) : undefined}
 					tabindex={i === tabStop ? 0 : -1}
@@ -70,7 +75,7 @@
 					onclick={() => select(i)}
 					onkeydown={(e) => onKey(e, i)}
 				>
-					{t.label}{#if t.count !== undefined && t.count !== null && t.count !== ''}<span class="tab-count">{t.count}</span>{/if}
+					{#if variant === 'dock' && t.icon}<span class="tp-dtab-ico"><Icon name={t.icon} size={14} /></span>{/if}{t.label}{#if t.count !== undefined && t.count !== null && t.count !== ''}<span class="tab-count">{t.count}</span>{/if}
 				</button>
 			{/each}
 		</div>
@@ -142,6 +147,27 @@
 		color: var(--text-faint);
 		font-weight: 400;
 		font-variant-numeric: tabular-nums;
+	}
+	/* the dock variant: the bar is .tp-dtabs (windows.css); the strip spans the window */
+	.tabs-dock .tabs-strip {
+		display: flex;
+		gap: var(--space-2);
+	}
+	.tabs-dock .tabs-list {
+		gap: 2px;
+		align-items: center;
+	}
+	.tp-dtab[data-kit-state='hover'] {
+		color: var(--text);
+		background: var(--surface-hover);
+	}
+	.tp-dtab[data-kit-state='focus'] {
+		outline: 2px solid var(--accent);
+		outline-offset: -2px;
+	}
+	.tp-dtab:disabled {
+		opacity: 0.45;
+		cursor: not-allowed;
 	}
 	.tabs-actions {
 		margin-left: auto;

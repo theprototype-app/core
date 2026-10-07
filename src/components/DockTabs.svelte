@@ -183,21 +183,35 @@
 
 </script>
 
-<div bind:this={stripEl} class="absolute -top-6 left-3 right-24 z-20 flex gap-0.5 overflow-x-auto">
-	{#each $dockTabs as tab (tab.key)}
+<!-- 38 NOTES-38 #23: the strip wears the ONE dock-tab look (windows.css .tp-dtabs / .tp-dtab,
+     the design page's dock) — an inset bar of pill tabs with the view icon. `stripEl` stays the
+     full-width, transparent scroll box the W7 drag measures (its rect decides reorder vs
+     undock), so the bar is an inner wrapper and only the paint changed. -->
+<div bind:this={stripEl} class="absolute -top-6 left-3 right-24 z-20 flex overflow-x-auto">
+	<div class="tp-ui tp-dtabs tp-dtabs-slim" role="tablist" aria-label="Docked views">
+		{#each $dockTabs as tab (tab.key)}
+			<button
+				data-dock-tab={tab.key}
+				role="tab"
+				aria-selected={$bottomDockActive === tab.key}
+				class="tab-note tp-dtab select-none {$bottomDockActive === tab.key ? 'dt-on' : 'dt-off'} {dragKey === tab.key
+					? 'dt-dragging opacity-40'
+					: ''}"
+				title="{tab.title} — drag to reorder, or out of the strip to undock"
+				use:tabDrag={{ key: tab.key }}
+				oncontextmenu={(/** @type {MouseEvent} */ e) => openTabMenu(e, tab.key)}
+				onclick={() => tabClick(tab.key)}
+				>{#if tab.icon}<span class="tp-dtab-ico"><Icon name={tab.icon} size={12} /></span>{/if}{tab.title}</button
+			>
+		{/each}
 		<button
-			data-dock-tab={tab.key}
-			class="tab-note h-5.5 shrink-0 select-none px-4 pb-0.5 pt-1 text-xs font-semibold {$bottomDockActive === tab.key
-				? 'dt-on'
-				: 'dt-off'} {dragKey === tab.key
-				? 'dt-dragging opacity-40'
-				: ''}"
-			title="{tab.title} — drag to reorder, or out of the strip to undock"
-			use:tabDrag={{ key: tab.key }}
-			oncontextmenu={(/** @type {MouseEvent} */ e) => openTabMenu(e, tab.key)}
-			onclick={() => tabClick(tab.key)}>{tab.title}</button
+			id="dock-add-view"
+			class="tab-note dt-btn tp-dtab tp-dtab-icon"
+			title="Add a view (Flow Code, Animation, UV editor, Shader editor, HUD editor, Explorer)"
+			aria-label="Add a view to the dock"
+			onclick={openAdd}><Icon name="plus" size={14} /></button
 		>
-	{/each}
+	</div>
 	<!-- the insertion bar: where the dragged tab would land. Hidden once the pointer is
 	     clear of the strip, because there the drop means UNDOCK, not "put it here". -->
 	{#if dragKey && !dropOut}
@@ -207,24 +221,19 @@
 			style="left: {dropX}px"
 		></div>
 	{/if}
-	<button
-		id="dock-add-view"
-		class="tab-note dt-btn flex h-5.5 shrink-0 items-center justify-center px-3"
-		title="Add a view (Flow Code, Animation, UV editor, Shader editor, HUD editor, Explorer)"
-		aria-label="Add a view to the dock"
-		onclick={openAdd}><Icon name="plus" size={14} /></button
-	>
 </div>
 
 <!-- the dock's OWN chrome, pinned to the right edge of the dock (= of the window) -->
-<div class="absolute -top-6 right-3 z-20 flex gap-0.5">
-	<button
-		id="dock-minimize"
-		class="tab-note dt-btn flex h-5.5 items-center justify-center px-3"
-		title="Minimize the dock"
-		aria-label="Minimize the dock"
-		onclick={() => dockMinimized.set(true)}><Icon name="panel-bottom" size={14} /></button
-	>
+<div class="absolute -top-6 right-3 z-20 flex">
+	<div class="tp-ui tp-dtabs tp-dtabs-slim">
+		<button
+			id="dock-minimize"
+			class="tab-note dt-btn tp-dtab tp-dtab-icon"
+			title="Minimize the dock"
+			aria-label="Minimize the dock"
+			onclick={() => dockMinimized.set(true)}><Icon name="panel-bottom" size={14} /></button
+		>
+	</div>
 </div>
 
 {#if addMenu}
@@ -235,28 +244,8 @@
 {/if}
 
 <style>
-	/* 38 R6: the strip in the redesign tokens — the active tab is the dock's own surface
-	   (it reads as the top of the panel below it), the rest sit on the inset well. The
-	   22px band, its -top-6 seat and every gesture are W6/W7's, unchanged. */
-	.tab-note {
-		border-radius: var(--radius-input) var(--radius-input) 0 0;
-		font-family: var(--font-ui);
-		font-weight: 500;
-	}
-	.dt-on {
-		background: var(--surface-1);
-		color: var(--text);
-		box-shadow: inset 0 1px 0 var(--border), inset 1px 0 0 var(--border), inset -1px 0 0 var(--border);
-	}
-	.dt-off,
-	.dt-btn {
-		background: var(--surface-inset);
-		color: var(--text-muted);
-	}
-	.dt-off:hover,
-	.dt-btn:hover {
-		color: var(--text);
-	}
+	/* 38 R6 + NOTES-38 #23: the look is windows.css .tp-dtabs / .tp-dtab (shared with the kit's
+	   dock Tabs and the floating group strip). Only the drag states are local. */
 	.dt-dragging {
 		box-shadow: 0 0 0 1px var(--accent);
 	}

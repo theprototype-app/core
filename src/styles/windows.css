@@ -110,9 +110,12 @@
 	background: var(--surface-hover);
 	color: var(--text);
 }
-/* a docked view's title (its row under the dock tabs) */
+/* a docked view's title (its row under the dock tabs). 38 NOTES-38 #24 (design page: "dock
+   tabs and panel header unified"): the dock TAB above already names the view with its icon,
+   so the row below no longer repeats it — the element stays (callers and the panel's own
+   structure are unchanged), it just takes no room */
 .tp-dock-title {
-	display: inline-flex;
+	display: none;
 	align-items: center;
 	gap: 6px;
 	flex-shrink: 0;
@@ -261,4 +264,91 @@
 .tp-window > .ui-panel-header button svg,
 .tp-dock-btn svg {
 	pointer-events: none;
+}
+
+/* 38 NOTES-38 #23 — THE DOCK TABS, ONE LOOK (the design page's dock: `.docktabs` / `.dtab`).
+   A window's tab strip is an inset BAR holding pill tabs: the active one a raised surface with
+   a hairline ring (it reads as the panel it shows), the rest muted text on the well, a 14px
+   view icon before the name. Worn by ui/Tabs variant="dock" (the kit), the bottom dock's strip
+   (DockTabs) and a floating window group's strip (TabStrips) — so there is one tab look for
+   every docked and floating window. `tp-dtabs-slim` is the bottom dock's band: W6 pinned its
+   tabs at 22px in a 24px slot above the panel (dock-chrome 9.1-9.4 + the top-edge resize), so
+   the slim bar keeps that metric and changes only the look. */
+.tp-dtabs {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	box-sizing: border-box;
+	min-width: 0;
+	height: 36px;
+	padding: 0 4px;
+	background: var(--surface-inset);
+	border-bottom: 1px solid var(--border);
+}
+.tp-dtab {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+	box-sizing: border-box;
+	height: 28px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 7px;
+	background: transparent;
+	color: var(--text-muted);
+	font-family: var(--font-ui);
+	font-size: var(--fs-desc);
+	font-weight: 500;
+	line-height: 1;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.tp-dtab:hover {
+	color: var(--text);
+	background: var(--surface-hover);
+}
+.tp-dtab[aria-selected='true'],
+.tp-dtab.tp-dtab-on {
+	background: var(--surface-1);
+	color: var(--text);
+	box-shadow: 0 0 0 1px var(--border);
+}
+.tp-dtab:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: -2px;
+}
+.tp-dtab > .tp-dtab-ico {
+	display: inline-flex;
+	color: var(--text-faint);
+}
+.tp-dtab[aria-selected='true'] > .tp-dtab-ico,
+.tp-dtab.tp-dtab-on > .tp-dtab-ico {
+	color: var(--accent-text, var(--accent));
+}
+/* an icon-only member of a strip (+, minimize, close): the same pill, square */
+.tp-dtab.tp-dtab-icon {
+	justify-content: center;
+	width: 28px;
+	padding: 0;
+}
+/* the bottom dock's slot: a 24px bar (1px top border + 22px tabs + 1px padding), its top
+   corners rounded, flush on the panel's top edge */
+.tp-dtabs.tp-dtabs-slim {
+	height: 24px;
+	padding: 0 1px;
+	border: 1px solid var(--border);
+	border-bottom: 0;
+	border-radius: var(--radius-button) var(--radius-button) 0 0;
+}
+.tp-dtabs-slim .tp-dtab {
+	height: 22px;
+	padding: 0 8px;
+	gap: 5px;
+	border-radius: var(--radius-input);
+	font-size: var(--fs-section);
+}
+.tp-dtabs-slim .tp-dtab.tp-dtab-icon {
+	width: 30px;
+	padding: 0;
 }

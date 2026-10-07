@@ -14,6 +14,7 @@ import { setMicMode, vrMicMode } from './voiceChat';
 import { duplicateSelection, deleteSelection, groupSelection, selectionUuids } from './objectActions';
 import { savePrefab, savePrefabSelection } from './prefabs';
 import { perfContext } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
+import { vrDollhouseOpen, vrSculptActive } from './vr/worldStores.js'; // 37: a leaf
 
 // D4 (roadmap 13): selection-set helpers for the Edit ring — counted labels
 // act on the whole SET (parity with the desktop object menu, U-2)
@@ -316,6 +317,17 @@ function registerBuiltins() {
 	);
 	registerVRMenuEntry({ id: 'grid', group: 'scene', label: 'Grid', icon: 'grid-3x3', order: 3, active: () => !!get(showGrid) });
 	registerVRMenuEntry({ id: 'world', group: 'scene', label: 'World 1:1', icon: 'maximize', order: 4 });
+	// 37 R10: the whole scene as a model on a table; point into it and pull the trigger to stand there
+	registerVRMenuEntry({
+		id: 'dollhouse',
+		group: 'scene',
+		label: 'Dollhouse',
+		icon: 'house',
+		order: 5,
+		closes: true,
+		active: () => get(vrDollhouseOpen),
+		action: () => void import('./vr/dollhouse.js').then((m) => m.toggleDollhouse())
+	});
 
 	// Mic modes — explicit (kept registered: Settings ▸ Microphone cycles them; the ids still resolve)
 	[

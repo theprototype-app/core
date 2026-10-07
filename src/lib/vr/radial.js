@@ -107,6 +107,7 @@ import {
 import { controllerRay } from './pointer.js';
 import { boxSelectEnd, beginStretch, commitStretch } from './tools.js';
 import { handleAiAction } from './aiPanel.js';
+import { closeDollhouse } from './dollhouse.js';
 // 36 X4: the collider session, PRIMED (colliderEdit reaches faceEdit/history — a static
 // edge from here is the documented cycle family); every use below is null-safe
 /** @type {any} */ let colliderEditRef = null;
@@ -699,6 +700,7 @@ export function executeVRMenuAction(name) {
 	} else if (name === 'mic') {
 		cycleMicMode();
 	} else if (name === 'world') {
+		closeDollhouse(false); // 37: 1:1 also ends a dollhouse (without putting its model back)
 		resetWorldRig(); // back to 1:1 mid-session
 	} else if (name === 'settings') {
 		// 187: Settings ▸ All settings opens the VR settings panel. 36 (R9): it REPLACES the ring on

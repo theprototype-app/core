@@ -42,6 +42,7 @@
   // budget meter. `renderer.info` had exactly one reader before this (the VR plate).
   import StatsOverlay from './components/menu/StatsOverlay.svelte'
   import MomentReport from './components/menu/MomentReport.svelte'
+  import ProblemReport from './components/menu/ProblemReport.svelte' // 37 R20
   import ProfilerLive from './components/menu/ProfilerLive.svelte'
   import { startSceneMetrics, budgetSummary } from './lib/sceneBudget'
   import { startPerfRecorder } from './lib/perf/recorder'
@@ -424,6 +425,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <DungeonMinimap />
 <StatsOverlay />
 <MomentReport />
+<ProblemReport />
 <ProfilerLive />
 <PlayReticle />
 <!-- W4: the touch play controls (virtual stick, look drag, exit). Beside PlayReticle

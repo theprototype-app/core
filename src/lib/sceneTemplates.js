@@ -11,6 +11,7 @@ import { communityProvider, notifyTemplateOpen } from './cloudHooks';
 import { primeLoadOrigin } from './gameIdentity.js';
 // 33 (L3): the Clear scene modal's setup check and full clear (see confirmClearScene)
 import * as sceneSwitch from './sceneSwitch';
+import { offerUndo } from './undoToast';
 
 // Templates modal content (roadmap: "Templates" sidebar row → General/Examples/
 // Community tabs). Two content sources, no bytes in this repo beyond the bundled
@@ -456,7 +457,7 @@ export async function confirmClearScene(opts = {}) {
 		});
 		if (!reply) return null;
 		closeSelectionInspector();
-		await sw.clearSceneEverything(mods);
+		await clearEverythingUndoable(mods, 'Started a blank scene.');
 		return 'everything';
 	}
 	if (!count && !extra) {
@@ -475,17 +476,89 @@ export async function confirmClearScene(opts = {}) {
 	if (!reply) return null;
 	closeSelectionInspector();
 	if (reply.checked) {
-		await sw.clearSceneEverything(mods);
+		await clearEverythingUndoable(mods, 'Scene cleared.');
 		return 'everything';
 	}
-	await clearObjects();
-	if (extra) {
-		const left = [...parts, ...mods.map((m) => m.name)];
-		showToast('Objects cleared. Still here: ' + left.join(', ') + '.', [
-			{ label: 'Clear those too', action: () => void sw.clearSceneEverything(sw.sceneUserModules()) }
-		]);
+	const left = extra ? [...parts, ...mods.map((m) => m.name)] : [];
+	if (!count) {
+		// nothing to take back: only module content was cleared
+		await clearObjects();
+		if (left.length)
+			showToast('Objects cleared. Still here: ' + left.join(', ') + '.', [
+				{ label: 'Clear those too', action: () => void clearEverythingUndoable(sw.sceneUserModules(), 'Scene cleared.') }
+			]);
+		return 'objects';
 	}
+	const before = await snapshotForUndo();
+	await clearObjects();
+	offerClearUndo(
+		before,
+		[],
+		count + ' object' + (count === 1 ? '' : 's') + ' cleared.' + (left.length ? ' Still here: ' + left.join(', ') + '.' : ''),
+		// the old follow-up toast's offer rides the same card, after Undo
+		left.length
+			? [{ label: 'Clear those too', action: () => void clearEverythingUndoable(sw.sceneUserModules(), 'Scene cleared.') }]
+			: []
+	);
 	return 'objects';
+}
+
+/* ------------------------------------------------- 37 R25: Undo after a Clear --- */
+//
+// A Clear happens at once and a toast offers Undo for ~8 s (undoToast.js). THE SNAPSHOT IS A
+// SESSION PAYLOAD taken just before the clear — the format sessions save and checkpoints
+// restore — so the Undo re-applies it through `applySession`, the one path that already knows
+// how to replace a world and REPLICATES it: every peer gets the objects, flow, HUD, game state,
+// sky and look back, exactly as the Clear reached every peer. No proposal (unlike a checkpoint
+// restore): the Clear did not ask the room either, and an Undo is its other half. The modules
+// a Clear-everything unloaded are switched back on FIRST, so the restored nodes find them.
+// Not stashed anywhere: the payload lives in the toast's closure and dies with the offer.
+
+/** the current scene as a session payload, or null when it cannot be read */
+async function snapshotForUndo() {
+	try {
+		const [{ buildSessionPayload }, { currentLevel }, { sceneFileName }] = await Promise.all([
+			import('./sessions'),
+			import('./levels'),
+			import('./gameSettings')
+		]);
+		const name = get(currentLevel)?.name || sceneFileName() || 'Untitled';
+		return buildSessionPayload(name, { thumbnail: false });
+	} catch (error) {
+		console.warn('[undo] could not snapshot the scene', error);
+		return null;
+	}
+}
+
+/** Clear everything (sceneSwitch's path) and offer the Undo. @param {{id: string, name: string}[]} mods @param {string} text */
+async function clearEverythingUndoable(mods, text) {
+	const before = await snapshotForUndo();
+	await sceneSwitch.clearSceneEverything(mods);
+	// sceneSwitch.unloadModules already says which modules went (with a Modules link)
+	offerClearUndo(before, mods, text);
+}
+
+/**
+ * @param {any} before the payload to put back (null = nothing to offer)
+ * @param {{id: string}[]} mods modules the clear unloaded (re-enabled first)
+ * @param {string} text @param {{label: string, action: () => void}[]} [actions]
+ */
+function offerClearUndo(before, mods, text, actions = []) {
+	if (!before) return;
+	offerUndo({
+		id: 'clear-scene',
+		text,
+		actions,
+		done: 'Scene restored',
+		undo: async () => {
+			const { applySession, enableRequired } = await import('./sessions');
+			if (mods.length) await enableRequired(mods, { quiet: true });
+			const ok = await applySession(before, { backup: false, workspace: false, quiet: true });
+			// a load restores notes locally only; the Clear removed them for everyone
+			if (ok) (await import('./annotationsHandler')).broadcastAllAnnotations();
+			return ok;
+		}
+	});
 }
 
 // 28-A6: a provider swap (install, or null on logout) invalidates the memo — the tab

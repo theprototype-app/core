@@ -1,4 +1,5 @@
 <script>
+	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	// UV editor (UV1). A 2D view of the selected mesh's `uv` attribute: the slot's
 	// texture underneath, its UV triangles on top, draggable vertices. DOCKED mode
 	// is a Flow-family tab in the bottom dock; UNDOCKED is a floating window —
@@ -140,6 +141,18 @@
 		winW = savedWin.w;
 		winH = savedWin.h;
 	}
+	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
+	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	$effect(() =>
+		onLayoutRestore(() => {
+			const stored = storedPanelLayout(safeStorage.getItem, 'uv', 640, 460);
+			docked = !!(stored.docked);
+			const fit = clampWinSize(stored.w, stored.h, WIN_MIN);
+			winW = fit.w;
+			winH = fit.h;
+		})
+	);
+
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
 		safeStorage.setItem('uvDocked', String(v));

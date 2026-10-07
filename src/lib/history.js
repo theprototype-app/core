@@ -62,6 +62,37 @@ export function endHistoryBatch(label = 'AI edit') {
 	}
 }
 
+/** 37 R25: is a batch collecting entries right now (a caller that wants its own ONE entry
+ * must not open a second batch inside somebody else's — beginHistoryBatch flushes) */
+export function historyBatchOpen() {
+	return batch !== null;
+}
+
+/**
+ * 37 R25: undo ONE specific entry — the Undo button on a toast, which names the action it
+ * offered rather than "whatever is on top now". On top of the stack it is an ordinary undo
+ * (it moves to redo, so Ctrl+Y does the action again). Deeper down (something was done
+ * since) it is applied out of order and dropped — no redo, because its place in the redo
+ * order would be a lie. False when the entry is gone (already undone, or evicted).
+ * @param {any} entry
+ */
+export function undoEntry(entry) {
+	const stack = get(undoStack);
+	const at = stack.indexOf(entry);
+	if (at < 0) return false;
+	if (at === stack.length - 1) {
+		undo();
+		return !get(undoStack).includes(entry);
+	}
+	undoStack.update((list) => list.filter((e) => e !== entry));
+	applying = true;
+	try {
+		return applyState(entry, entry.before);
+	} finally {
+		applying = false;
+	}
+}
+
 /** @param {any} entry */
 export function recordEntry(entry) {
 	if (applying) return;

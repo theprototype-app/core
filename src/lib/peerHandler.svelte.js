@@ -105,7 +105,7 @@ import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
 import { applyRemoteBehavior } from '$lib/packBehavior';
 import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
-import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast } from '../stores/appStore';
+import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast, chatHistory, mergeChatHistory } from '../stores/appStore';
 import { get } from 'svelte/store';
 import { exportMode } from './export/exportBoot.js';
 
@@ -765,7 +765,16 @@ export class PeerConnection {
 					}
 					);
 				} else if(data.type == 'sent') {
-					addMessage({message: data.message, type: 'received', sender: data.sender});
+					// 37 R15: `id` + `at` are additive (an older peer sends neither; addMessage mints)
+					addMessage({message: data.message, type: 'received', sender: data.sender, id: data.id, at: data.at});
+				} else if(data.type == 'getchat') {
+					// 37 R15: a joiner's chat history. MESH-WIDE like chat itself (never room-gated)
+					// and answered over the stable channel; empty history = no reply at all.
+					const history = chatHistory();
+					const back = this.connections[conn.peer] ?? conn;
+					if (history.length && back?.open) back.send({type: 'chathistory', messages: history});
+				} else if(data.type == 'chathistory') {
+					mergeChatHistory(data.messages);
 				} else if(data.type == 'info') {
 					addMessage({message: data.message, type: data.type, sender: data.sender});
 				} else if(data.type == 'create') {
@@ -1406,6 +1415,9 @@ export class PeerConnection {
 		// V3: app version rides the modules handshake — old peers ignore the extras,
 		// old senders omit them (checkPeerAppVersion is silent on absence)
 		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1})
+		// 37 R15: the chat so far. Chat is MESH-WIDE (not a room's content), so this goes out
+		// whatever the connect decision / privacy hold below decides about the scene.
+		conn.send({type: 'getchat', sender: this.peer.id})
 		// R22 round 33 — NOTHING MOVES UNTIL THE DECISION, INCLUDING WHAT WE ASK FOR.
 		//
 		// When this handshake is the one that will put the connect decision on screen (we
@@ -1878,8 +1890,11 @@ export class PeerConnection {
 			sceneCommand(message);
 		} else {
 			if(type === undefined) type = 'sent';
-			addMessage({message: message, type: type, sender: this.peer.id});
-			this.broadcast({message: message, type: type, sender: this.peer.id});
+			// 37 R15: a stable id (the history merge keys on it) and the sender's clock
+			const at = Date.now();
+			const id = this.peer.id + '-' + at.toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+			addMessage({message: message, type: type, sender: this.peer.id, id, at});
+			this.broadcast({message: message, type: type, sender: this.peer.id, id, at});
 		}
 	}
 

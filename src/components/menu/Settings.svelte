@@ -20,6 +20,7 @@
 	import LoadingSettings from './settings/LoadingSettings.svelte';
 	import CheckpointSettings from './settings/CheckpointSettings.svelte'; // 36 B14
 	import NodeEditorViewSettings from './settings/NodeEditorViewSettings.svelte'; // 36 F10
+	import WorkspaceLayoutsSettings from './settings/WorkspaceLayoutsSettings.svelte'; // 37 R14
 	import SettingRow from './SettingRow.svelte';
 	import TextSelectionSettings from './settings/TextSelectionSettings.svelte'; // 36 U6
 	import AvatarSettings from './settings/AvatarSettings.svelte'; // 36-avatars
@@ -154,6 +155,22 @@
 	import { peers } from '../../stores/appStore.js';
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
 	import { safeStorage } from '$lib/safeStorage';
+	import { offerUndo } from '$lib/undoToast';
+	// 37 R25: Reset settings happens at once (its values apply on the next reload, as before)
+	// and a toast offers Undo for ~8 s — every stored key and value is held by the offer and
+	// written back, so an accidental press costs nothing. LOCAL, like the settings.
+	function resetSettings() {
+		const saved = safeStorage.keys().map((key) => [key, safeStorage.getItem(key)] as const);
+		safeStorage.clear();
+		offerUndo({
+			id: 'reset-settings',
+			text: 'Settings reset — the defaults apply after a reload.',
+			done: 'Settings restored',
+			undo: () => {
+				for (const [key, value] of saved) if (value !== null) safeStorage.setItem(key, value);
+			}
+		});
+	}
 
 	// 24-D2: Settings ▸ Connection applies WITHOUT a reload — PeerConnection.switchServer
 	// rebuilds the Peer on the configured server, keeping the session id (an open session
@@ -950,6 +967,7 @@
 						</svelte:fragment>
 						Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI
 					</SettingRow>
+					<WorkspaceLayoutsSettings />
 					<SettingRow name="Touch tools">
 						<svelte:fragment slot="control"><Toggle bind:checked={$touchTools} /></svelte:fragment>
 						Undo / Redo / Multi-select buttons beside the logo, for touch — no <kbd>Ctrl+Z</kbd> or <kbd>Shift</kbd> needed. Multi-select adds on tap and boxes on drag, for objects and for mesh vertices, edges and faces. On by default on phones
@@ -2286,7 +2304,7 @@
 	</WindowShell>
 	</div>
 	{#snippet footer()}
-		<Button onclick={() => safeStorage.clear()}>Reset settings</Button>
+		<Button id="settings-reset" onclick={resetSettings}>Reset settings</Button>
 		<Button color="alternative" onclick={() => clearSavedSession()}>Clear saved session</Button>
 		<Button id="about-whats-new" color="alternative" onclick={() => { settingsOpen.set(false); openWhatsNew(); }}>What's new</Button>
 	{/snippet}

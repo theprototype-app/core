@@ -117,4 +117,40 @@ export function startViewMode() {
 	// 18-A: the override material is a singleton, so a colour change is a live
 	// write — no rebuild, and nothing to do when wireframe isn't the active mode.
 	viewPrefs.subscribe((prefs) => wireMaterial?.color.set(prefs.wireColor));
+	import('./scenePost').then((m) => (postRef = m)).catch(() => {}); // 37 R18 (see cycleViewMode)
+}
+
+// 37 R18: the view-mode QUICK TOGGLE (key Z, the Blender shading key). The cycle order is
+// the Configure Scene ▸ View chips' order, and it skips Shaded + AO exactly when that chip
+// is disabled (the scene's own look sets AO, so the personal pass would not apply).
+/** the modes in cycle order, with the chip labels */
+export const VIEW_MODES = [
+	{ id: 'shaded', label: 'Shaded' },
+	{ id: 'shaded-ao', label: 'Shaded + AO' },
+	{ id: 'wireframe', label: 'Wireframe' }
+];
+
+/** @param {string} current @param {boolean} skipAo @returns {string} */
+export function nextViewMode(current, skipAo) {
+	const ids = VIEW_MODES.map((m) => m.id).filter((id) => !(skipAo && id === 'shaded-ao'));
+	const at = ids.indexOf(current);
+	return ids[(at + 1) % ids.length];
+}
+
+/** scenePost, PRIMED at boot (startViewMode): it imports history, and the shortcuts module
+ *  that calls cycleViewMode sits in history's import family (the TDZ cycle rule). Primed, not
+ *  awaited per press — an await made each press land a frame late, so quick presses read a
+ *  stale mode and raced each other (measured: shaded, shaded, shaded-ao for three presses).
+ *  @type {any} */
+let postRef = null;
+
+/** Advance this viewer's view mode one step; returns the label of the mode it lands on. */
+export function cycleViewMode() {
+	let skipAo = false;
+	try {
+		skipAo = !!postRef && postRef.sceneProvidesAo(get(postRef.scenePost));
+	} catch {}
+	const next = nextViewMode(get(viewMode), skipAo);
+	viewMode.set(next);
+	return VIEW_MODES.find((m) => m.id === next)?.label ?? next;
 }

@@ -1,4 +1,5 @@
 <script>
+	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	// A4 — the HUD dock tab: a 2D layout editor and the SIXTH FLOW_FAMILY member.
 	//
 	// ONE DELIBERATE DIVERGENCE FROM UvEditor: the artboard is REAL DOM reusing
@@ -126,6 +127,18 @@
 		winW = saved.w;
 		winH = saved.h;
 	}
+	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
+	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	$effect(() =>
+		onLayoutRestore(() => {
+			const stored = storedPanelLayout(safeStorage.getItem, 'hud', 680, 480);
+			docked = !!(stored.docked);
+			const fit = clampWinSize(stored.w, stored.h, WIN_MIN);
+			winW = fit.w;
+			winH = fit.h;
+		})
+	);
+
 	function setDocked(/** @type {boolean} */ v) {
 		docked = v;
 		safeStorage.setItem('hudDocked', String(v));

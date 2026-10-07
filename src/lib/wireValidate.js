@@ -154,6 +154,8 @@ export function isKitEntityRow(row) {
  */
 export const VALIDATORS = {
 	hosts: (d) => isArray(d.hosts),
+	// 37 R15: a chat history reply — a bounded list (each entry is checked again on merge)
+	chathistory: (d) => isArray(d.messages) && d.messages.length <= 500,
 	userdata: (d) => isArray(d.userdata),
 	locked: (d) => isArray(d.lockeditems),
 	lock: (d) => isUuid(d.uuid) && (d.uuids === undefined || isArray(d.uuids)),

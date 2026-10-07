@@ -380,6 +380,19 @@ function registerBuiltins() {
 			void Promise.all([import('./perf/moment.js'), import('./vrKeyboard.js')]).then(([m, k]) => m.vrReportMoment(k.openVRKeyboard));
 		}
 	});
+	// 37 R20: the headset's "Report a problem" — the eye picture + a note from the VR keyboard,
+	// sent to the team when signed in (the keyboard's title says so), else kept on this device
+	registerVRMenuEntry({
+		id: 'problem',
+		group: 'profile',
+		label: 'Report a problem',
+		icon: 'flag',
+		order: 3,
+		closes: true,
+		action: () => {
+			void Promise.all([import('./problemReport.js'), import('./vrKeyboard.js')]).then(([p, k]) => p.vrReportProblem(k.openVRKeyboard));
+		}
+	});
 
 	// Settings ▸ — its category rings come from the settings table (vr/settingsRings.js); these two are
 	// not settings: the whole list as a panel, and leaving the headset

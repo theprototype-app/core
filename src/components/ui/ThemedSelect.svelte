@@ -111,8 +111,27 @@
 		if (btn?.contains(t) || listEl?.contains(t)) return
 		open = false
 	}
+	// 37 R18: a TRUE modal dialog (showModal) puts itself in the top layer and makes the rest
+	// of the page inert, so a list portaled to <body> painted UNDER it and took no clicks.
+	// Inside such a dialog the list portals into the dialog instead; `origin` corrects for a
+	// containing block that is not the viewport (a transformed dialog), measured once.
+	let origin = $state({ x: 0, y: 0 })
+	function modalHost(): HTMLElement | null {
+		const dlg = btn?.closest('dialog[open]') as HTMLElement | null
+		try {
+			return dlg && dlg.matches(':modal') ? dlg : null
+		} catch {
+			return null
+		}
+	}
 	function portal(node: HTMLElement) {
-		document.body.appendChild(node)
+		const host = modalHost()
+		;(host ?? document.body).appendChild(node)
+		origin = { x: 0, y: 0 }
+		if (host) {
+			const r = node.getBoundingClientRect()
+			origin = { x: r.left - pos.left, y: r.top - pos.top }
+		}
 		return {
 			destroy() {
 				node.remove()
@@ -159,7 +178,7 @@
 		class="ts-list"
 		role="listbox"
 		tabindex="-1"
-		style="left:{pos.left}px; top:{pos.top}px; min-width:{pos.width}px;"
+		style="left:{pos.left - origin.x}px; top:{pos.top - origin.y}px; min-width:{pos.width}px;"
 	>
 		{#each items as item, i (item.value)}
 			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->

@@ -130,11 +130,14 @@
 			}
 			pin.visible = true
 			owner.localToWorld(local.fromArray(annotation.offset))
+			// 37 R18: this layer rides world-grab-rig, so `pin.position` is in the RIG's frame,
+			// while localToWorld answered in WORLD coords — copying it straight in applied the
+			// rig's offset/rotation/scale a SECOND time (a grabbed or colocated world drew every
+			// pin away from its object until the rig reset). Bring the point into this layer's
+			// frame; a scene-root owner (outside the rig) lands right by the same line.
+			if (root) root.worldToLocal(local)
 			pin.position.copy(local)
 			pin.lookAt(cameraPosition)
-			// NOTE: pins are positioned in WORLD coords but this layer rides
-			// world-grab-rig, so an ACTIVE VR world-grab would double-count. Left as a
-			// separate follow-up (pre-existing; desktop + normal VR are unaffected).
 		})
 	})
 

@@ -5,6 +5,16 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.29.0 — Groundwork for cloud saves and rooms that stay ☁️
+
+- ☁️ **Groundwork for cloud saves and kept rooms** on theprototype.app: the app can now tell the cloud plugin when the
+  scene changes, fingerprint what is in it, and hand over or open a whole project. Saving scenes and projects to your
+  account with versions, and rooms that stay when everyone leaves, switch on on theprototype.app separately — the
+  open-source app is unchanged.
+- 🧩 **For plugin authors**: `cloudApi.sceneRevision()`, `onSceneChange(fn)`, `sceneSignature()`,
+  `buildProjectBundle()` and `openRemoteProject({url})`; `buildSceneBundle({signature: true})` adds `meta.signature`
+  (opt-in). All additive, nothing listens until a plugin asks (OPEN-CORE.md § 5).
+
 ## 1.28.0 — Sculpt and snap the world from the headset, cut with a polyline knife 🔪
 
 ### 🥽 VR

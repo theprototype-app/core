@@ -27,11 +27,11 @@
     const objectFilter = getContext('objectFilter');
     const rowVisible = $derived(!objectFilter || !$objectFilter || $objectFilter.has(element.uuid));
     // THREE children/userData aren't reactive — re-derive on each objectsGroup poke
-    const kids = $derived.by(() => { void $objectsGroup; return [...(element?.children ?? [])]; });
+    const kids = $derived.by(() => { void $objectsGroup; return (element?.children ?? []).filter((/** @type {any} */ c) => !c.userData?.archPart); }); // 37 R3: a door's leaf is not a row
     const isLocal = $derived.by(() => { void $objectsGroup; return !!element?.userData?.__localOnly; });
     // groups on the path to a match auto-expand while filtering
     $effect(() => {
-        if ($objectFilter && element.children.length > 0 && $objectFilter.has(element.uuid))
+        if ($objectFilter && kids.length > 0 && $objectFilter.has(element.uuid))
             setExpanded(true);
     });
     import { toggleExpand, objectContextMenu, renamingObject, expandedObjects } from '../../stores/appStore';
@@ -159,7 +159,7 @@
         event.stopPropagation();
         event.dataTransfer.dropEffect = 'move';
         dropHover = true;
-        if (!isExpanded && element.children.length > 0 && !hoverExpandTimer)
+        if (!isExpanded && kids.length > 0 && !hoverExpandTimer)
             hoverExpandTimer = setTimeout(() => {
                 setExpanded(true);
                 hoverExpandTimer = null;
@@ -243,7 +243,7 @@
         role="treeitem"
         tabindex="-1"
         aria-selected={isSelected}
-        aria-expanded={element.children.length > 0 ? isExpanded : undefined}
+        aria-expanded={kids.length > 0 ? isExpanded : undefined}
         draggable={!lockEntry}
         ondragstart={onRowDragStart}
         ondragover={onRowDragOver}
@@ -264,7 +264,7 @@
             onclick={(e) => { select(element.uuid, e.shiftKey); }}
         >
             <!-- caret column -->
-            {#if element.children.length > 0}
+            {#if kids.length > 0}
                 <button
                     class="w-4 shrink-0 text-center text-[10px] text-gray-400 hover:text-gray-100"
                     title={isExpanded ? 'Collapse group' : 'Expand group'}

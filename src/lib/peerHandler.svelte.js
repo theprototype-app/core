@@ -104,6 +104,7 @@ import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
 import { applyRemoteBehavior } from '$lib/packBehavior';
+import { sendArchBehaviorStates } from '$lib/arch/archParts.js';
 import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast, chatHistory, mergeChatHistory } from '../stores/appStore';
 import { get } from 'svelte/store';
@@ -850,6 +851,8 @@ export class PeerConnection {
 					applyAnimationsSnapshot(data);
 				} else if(data.type == 'getanim') {
 					if (sameRoomOrUnknown(conn.peer)) sendAnimations(data.sender);
+					// 37 R3: procedural doors have no objectfile to carry their open/shut state
+					if (sameRoomOrUnknown(conn.peer)) sendArchBehaviorStates(conn);
 				} else if(data.type == 'handmodel') {
 					applyHandModel(data);
 				} else if(data.type == 'environment') {

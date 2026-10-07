@@ -1732,8 +1732,9 @@
 		border-radius: 0.25rem;
 	}
 	.hud-screen-on {
-		/* 36 U1: the theme's hover fill (the sidebar follows the theme since WindowShell does) */
-		background: var(--surface-active);
+		/* the selected screen is a SELECTION, so the one selection fill (38 R11). --surface-active
+		   read the red delete ✕ beside it at 2.3-2.9:1 in Green, 8-bit and High contrast */
+		background: var(--accent-soft);
 	}
 	.hud-screen-name {
 		display: flex;

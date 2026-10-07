@@ -215,6 +215,8 @@
 			--picker-indicator-size="18px"
 			--cp-bg-color="var(--surface-1)"
 			--cp-border-color="var(--border)"
+			--cp-input-color="var(--surface-inset)"
+			--cp-text-color="var(--text)"
 			--picker-height="70px"
 			--picker-width="50px"
 			--slider-width="10px"

@@ -361,8 +361,9 @@
 {/if}
 
 <style>
+	/* (no background here: an undefined --color-form blanked the utility's surface fill — a
+	   scoped rule beats every utility — which theme.css's !important remap used to hide) */
 	.burger {
-		background-color: var(--color-form);
 		top: 8px;
 		left: 8px;
 		/* .burger is position:absolute in menu.css — that already anchors .update-dot */

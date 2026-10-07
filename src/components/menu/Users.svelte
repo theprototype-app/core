@@ -520,9 +520,18 @@
 			node.showPopover?.();
 		} catch {}
 		placeDropdown();
+		// "outside" is decided by where the PRESS started: the panel's own avatar circle sits
+		// in the top layer exactly over the trigger, so the press that opens the menu ends on
+		// that circle and Chrome targets its click at the two elements' common ancestor —
+		// outside both, which closed the menu it had just opened.
+		// (true at mount: the press that opened us happened before this listener existed)
+		let pressInside = true;
+		const inside = (path: EventTarget[]) => path.includes(node) || (!!triggerEl && path.includes(triggerEl));
+		const onDocDown = (e: PointerEvent) => {
+			pressInside = inside(e.composedPath());
+		};
 		const onDocClick = (e: MouseEvent) => {
-			const path = e.composedPath();
-			if (path.includes(node) || (triggerEl && path.includes(triggerEl))) return;
+			if (pressInside || inside(e.composedPath())) return;
 			openDropdown = false;
 		};
 		const onKey = (e: KeyboardEvent) => {
@@ -531,11 +540,13 @@
 		const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(placeDropdown) : null;
 		if (triggerEl) ro?.observe(triggerEl);
 		window.addEventListener('resize', placeDropdown);
+		document.addEventListener('pointerdown', onDocDown, true);
 		document.addEventListener('click', onDocClick);
 		document.addEventListener('keydown', onKey);
 		return () => {
 			ro?.disconnect();
 			window.removeEventListener('resize', placeDropdown);
+			document.removeEventListener('pointerdown', onDocDown, true);
 			document.removeEventListener('click', onDocClick);
 			document.removeEventListener('keydown', onKey);
 			if (dropdownEl === node) dropdownEl = null;
@@ -561,11 +572,14 @@
 -->
 <!-- 38 R11: the avatar circle (was flowbite's <Avatar>): an <img> when there is a picture,
 	 else the same silhouette in a circle — same element shapes the suites and phone.css read -->
+<!-- `cls` carries the FILL: a list row takes the translucent --surface-active, the profile
+     circle over the 3D viewport an opaque one (translucent, the light theme's dark silhouette
+     vanished into the scene) -->
 {#snippet avatarImg(src: string | undefined, cls: string)}
 	{#if src}
-		<img alt="" {src} class="relative flex items-center justify-center rounded-full bg-surface-active text-text-2 {cls}" />
+		<img alt="" {src} class="relative flex items-center justify-center rounded-full text-text-2 {cls}" />
 	{:else}
-		<div class="relative flex items-center justify-center rounded-full bg-surface-active text-text-2 {cls}">
+		<div class="relative flex items-center justify-center rounded-full text-text-2 {cls}">
 			<svg class="h-full w-full rounded-full" fill="currentColor" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
 				><path fill-rule="evenodd" d="M8 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path></svg
 			>
@@ -579,7 +593,7 @@
 			? 'bg-accent-soft'
 			: 'hover:bg-surface-hover'}"
 	>
-		{@render avatarImg(user[2], 'h-8 w-8 shrink-0')}
+		{@render avatarImg(user[2], 'bg-surface-active h-8 w-8 shrink-0')}
 		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-1 truncate text-sm text-text">
 				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || 'Peer'}</span>
@@ -761,7 +775,7 @@
 		>
 			<div class="flex -space-x-2">
 				{#each $userdata.slice(1, 4) as user (user[0])}
-					{@render avatarImg(user[2], 'border-2 border-surface-1 not-first:-ms-4 hud-tr-av h-6 w-6')}
+					{@render avatarImg(user[2], 'bg-surface-active border-2 border-surface-1 not-first:-ms-4 hud-tr-av h-6 w-6')}
 				{/each}
 			</div>
 			<span class="hud-tr-count">{$userdata.length}</span>
@@ -949,7 +963,7 @@
 				onfocusin={() => (openDropdown = true)}
 				onfocusout={dropdownFocusOut}
 			>
-				{@render avatarImg(effAvatar || undefined, 'h-12 w-12 border-2 border-border-strong')}
+				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-12 w-12 border-2 border-border-strong')}
 			</div>
 		</div>
 	</div>
@@ -981,7 +995,7 @@
 			aria-label="Close profile menu"
 			onclick={() => (openDropdown = false)}
 		>
-			{@render avatarImg(effAvatar || undefined, 'h-12 w-12 border-2 border-border-strong')}
+			{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-12 w-12 border-2 border-border-strong')}
 		</button>
 		<!-- PM (roadmap #14): identity header — name, then the cloud email on a new line
 			 when signed in. No avatar here (it's already the profile button). The rounded

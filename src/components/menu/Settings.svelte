@@ -699,7 +699,11 @@
 		padding: 0 !important;
 		overflow: hidden !important;
 	}
+	/* its OWN surface: the dialog's dim layer (ui.css, a ::before at z-index -1) paints inside the dialog's
+	   stacking context, above the dialog background, so every transparent part of the window (the header,
+	   the content column) showed it — invisible in dark, a grey window in light */
 	.settings-shell {
+		background: var(--surface-1);
 		display: flex;
 		flex-direction: column;
 		height: min(80vh, 760px);

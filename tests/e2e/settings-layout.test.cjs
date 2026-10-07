@@ -131,6 +131,24 @@ h.run(async () => {
 			if (w.ratio < worst.ratio) worst = w;
 		}
 		h.check(worst.ratio >= 4.5, `${theme}: descriptions read at >= 4.5:1 (worst ${worst.ratio.toFixed(2)} on "${worst.text}")`);
+		// what is PAINTED behind the content column is the window's own surface: the dialog's dim layer
+		// (a ::before at z-index -1) paints inside the dialog, so a transparent column showed it — a grey
+		// window in light that every computed-style read called white. A strip of the column's empty top
+		// padding, screenshotted, against the dialog's background colour.
+		const strip = await page.evaluate(() => {
+			const m = document.querySelector('dialog.settings-dialog .settings-main');
+			const d = document.querySelector('dialog.settings-dialog');
+			if (!m || !d) return null;
+			m.scrollTop = 0;
+			const r = m.getBoundingClientRect();
+			const bg = getComputedStyle(d).backgroundColor.match(/[\d.]+/g)?.slice(0, 3).map(Number) ?? [];
+			return { clip: { x: Math.round(r.x + 8), y: Math.round(r.y + 3), width: Math.round(r.width - 16), height: 12 }, bg };
+		});
+		if (strip) {
+			const frame = await page.screenshot({ clip: strip.clip });
+			const off = await h.framePixelsOffColor(page, frame, strip.bg, 6);
+			h.check(off.fraction < 0.02, `${theme}: the content column paints the window surface (${(off.fraction * 100).toFixed(1)}% off rgb(${strip.bg}))`);
+		} else h.check(false, `${theme}: the content column paints the window surface (no column)`);
 	}
 	await page.evaluate(() => /** @type {any} */ (window).__stores.themes.theme.set('dark'));
 
@@ -169,9 +187,28 @@ h.run(async () => {
 		segs: [...document.querySelectorAll('#settings-sections .seg')].every((s) => s.getAttribute('role') === 'radiogroup')
 	}));
 	h.check(roles.toggles && roles.segs, 'toggles carry aria-pressed, segmented controls are radiogroups');
+	// where Escape travels, so a red says WHY (a fresh page passes; this one follows sections 1-3)
+	await page.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		w.__escLog = [];
+		const note = (phase) => (/** @type {KeyboardEvent} */ e) => {
+			if (e.key !== 'Escape') return;
+			const t = /** @type {HTMLElement} */ (e.target);
+			w.__escLog.push(`${phase}:${t?.tagName}#${t?.id}${e.defaultPrevented ? ':prevented' : ''}`);
+		};
+		window.addEventListener('keydown', note('capture'), { capture: true, once: true });
+		window.addEventListener('keydown', note('bubble'), { once: true });
+	});
+	const escFrom = await page.evaluate(() => `${document.activeElement?.tagName}#${document.activeElement?.id}`);
+	const escAt = Date.now();
 	await page.keyboard.press('Escape');
-	await page.waitForTimeout(300);
-	h.check(!(await page.locator('dialog.settings-dialog').isVisible().catch(() => false)), 'Esc closes Settings');
+	// wait for the dialog to go, not a timer: on a loaded box the close (a transition) outlasted 300 ms
+	await page.locator('dialog.settings-dialog').waitFor({ state: 'hidden', timeout: 3000 }).catch(() => {});
+	const escMs = Date.now() - escAt;
+	const escAfter = await page.evaluate(() => ({ log: /** @type {any} */ (window).__escLog }));
+	const storeOpen = await page.evaluate(() => new Promise((r) => /** @type {any} */ (window).__stores.settingsOpen.subscribe((v) => r(v))()));
+	const stillVisible = await page.locator('dialog.settings-dialog').isVisible().catch(() => false);
+	h.check(!stillVisible, `Esc closes Settings (from ${escFrom}; store ${storeOpen}; ${escMs} ms; ${JSON.stringify(escAfter.log)})`);
 
 	// ---- 5. a phone: touch targets and inputs ---------------------------------------------------
 	const P = await h.setupPage(browser, 'P', { context: { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } });

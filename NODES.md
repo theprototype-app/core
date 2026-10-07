@@ -10,7 +10,7 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 |---|---|---|---|---|
 | slider | Input | number | — | FIX: adjustable min/max (data-seeded, runtime-clamped; editors in the ⓘ tab). Legacy `/20` scale when wired straight to an Object Selector — DOC. |
 | colorpicker | Input | color | — | OK |
-| switcher | Input | number (was effect) | — | FIX: adjustable items list (ⓘ) + becomes a real value source (selected INDEX). The cube/pyramid geometry swap keeps working (keyed on items[index]). |
+| switcher | Input | number (was effect) + `value` | index, in0..inN | 37 R6: N-way MULTIPLEXER — one `in<i>` socket per item typed by `data.vtype` (number/boolean/vector3/color/object), the named `value` output = the selected item's input, a wired `index` overrides the radio; the unnamed output stays the index. FIX: adjustable items list (ⓘ) + becomes a real value source (selected INDEX). The cube/pyramid geometry swap keeps working (keyed on items[index]). |
 | number | Input | number | — | FIX: `step` gets an editor (ⓘ); it was stored + used as the input's step attr but uneditable. |
 | vector3 | Input | vector3 | — | OK |
 | toggle | Input | boolean | — | OK |
@@ -19,9 +19,9 @@ Verdicts: OK · FIX(ed this batch) · DOC(umented quirk).
 | objectselector | Scene | — (sink) | effect | OK — THE effect sink; anything not ending here is silently inert (DOC). |
 | script | Logic | effect (drives a Selector; value readable) | a b c | OK (side panel editor; deterministic pure fn) |
 | behaviour | Logic | — (no sockets) | — | NEW (34 R3): game logic as ONE .js file in `data.code` (`export default behaviour({params, state, on, …methods})`), run on the kit's authority with replicated state; its card opens the DERIVED live node view (events, params as knobs that rewrite the source literal, handlers, state, kit calls). See MODULES.md "Behaviours". |
-| math | Logic | number | a b | OK (BinaryNode) |
+| math | Logic | number | a b (c..h) | OK (BinaryNode). 37 R6: VARIADIC — `data.sockets` 2..8 (absent = 2); add/sub/mul/div/min/max fold over every WIRED extra (left fold, /0 = 0); other ops read a/b only. Removing a socket moves later wires down one name (one undo step). |
 | compare | Logic | boolean | a b | OK |
-| gate | Logic | boolean | a b | DOC: op NOT ignores `b` (vestigial handle; harmless). 21-E4 AUDIT: `not` was on the SPEC's wanted list and is in fact ALREADY SHIPPED — the runtime case, the BinaryNode option and the hidden `b` checkbox all predate it, so the "inverting a boolean takes a compare trick" premise is stale. The socket is deliberately still drawn for `not`: hiding a handle that a saved edge might target strands that edge, and the value is ignored either way. |
+| gate | Logic | boolean | a b (c..h) | 37 R6: VARIADIC like math — and/or/xor fold over wired extras (xor = odd parity). DOC: op NOT ignores `b` (vestigial handle; harmless). 21-E4 AUDIT: `not` was on the SPEC's wanted list and is in fact ALREADY SHIPPED — the runtime case, the BinaryNode option and the hidden `b` checkbox all predate it, so the "inverting a boolean takes a compare trick" premise is stale. The socket is deliberately still drawn for `not`: hiding a handle that a saved edge might target strands that edge, and the value is ignored either way. |
 | loop | Logic | number | — | OK (wrap/pingpong) |
 | timer | Logic | number | a | OK (delayed passthrough) |
 | distance | Logic | number | a b (object) | FIX: now also accepts a wired **vector3 literal** as a world point (coercion allowed it; runtime returned 0). |

@@ -37,7 +37,8 @@
 		const v = e ? ($flowValues as any)[e.source] : undefined;
 		if (v === undefined || v === null) return '…';
 		if (typeof v === 'number') return (+v).toFixed(2);
-		if (typeof v === 'object' && v.__handles) return String(v.__handles[e.sourceHandle] ?? '…');
+		// 37 (R6): an UNNAMED wire from a handle-map source reads its `__default` (the Switcher's index)
+		if (typeof v === 'object' && v.__handles) return String((e.sourceHandle ? v.__handles[e.sourceHandle] : v.__default) ?? '…');
 		return String(v);
 	}
 

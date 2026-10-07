@@ -18,6 +18,14 @@
 	// value is overridden anyway); a flowValues lookup — no new evaluation
 	$: wiredSource = (key: string) =>
 		($flowEdges as any[]).find((e) => e.target === id && e.targetHandle === key)?.source ?? null;
+	// 37 (R6): the live value ON THAT WIRE — a handle-map source (the Switcher multiplexer, a
+	// Sequence) is read through the edge's own source handle, the runtime's unwrapHandle rule
+	$: wiredLive = (key: string, values: Record<string, any>) => {
+		const e = ($flowEdges as any[]).find((x) => x.target === id && x.targetHandle === key);
+		const v = e ? values[e.source] : undefined;
+		if (v && typeof v === 'object' && v.__handles && (e.sourceHandle || '__default' in v)) return e.sourceHandle ? v.__handles[e.sourceHandle] : v.__default;
+		return v;
+	};
 	function fmt(v: any) {
 		if (v === undefined || v === null) return '…';
 		if (typeof v === 'number') return (+v).toFixed(2);
@@ -47,7 +55,7 @@
 					</span>
 					{#if param.kind === 'range' && wiredSource(param.key)}
 						<span class="wired-value rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300" title="Driven by the wired input">
-							◈ {fmt($flowValues[wiredSource(param.key)])}
+							◈ {fmt(wiredLive(param.key, $flowValues))}
 						</span>
 					{:else if param.kind === 'range'}
 						<input

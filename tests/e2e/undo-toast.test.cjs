@@ -199,9 +199,15 @@ h.run(async () => {
 	// ---- 5. Reset settings, then Undo (every stored key back) ----------------------------
 	await pa.evaluate(() => localStorage.setItem('r25:probe', 'kept'));
 	const keysBefore = await pa.evaluate(() => Object.keys(localStorage).length);
-	await pa.evaluate(() => window.__stores.settingsOpen.set(true));
-	await pa.locator('#settings-reset').click();
-	h.check((await pa.evaluate(() => localStorage.getItem('r25:probe'))) === null, '5.1 Reset settings clears the stored settings');
+	// 1.26 union with 37-settings (R21): the reset lives in About › Danger zone and asks first
+	await pa.evaluate(() => {
+		window.__stores.settingsSection.set('about');
+		window.__stores.settingsOpen.set(true);
+	});
+	await pa.locator('#settings-reset-all').click();
+	await pa.locator('#confirm-dialog-ok').click();
+	await pa.waitForTimeout(200);
+	h.check((await pa.evaluate(() => localStorage.getItem('r25:probe'))) === null, '5.1 Reset all settings (after its question) clears the stored settings');
 	await h.eventually(() => undoCard().textContent(), (t) => /Settings reset/.test(t ?? ''), '5.2 a toast offers Undo');
 	h.check(await onTop(), '5.2b with Settings still open, the Undo is above it (not covered by the dialog it came from)');
 	await pressUndo();

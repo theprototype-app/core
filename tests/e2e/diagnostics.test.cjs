@@ -139,7 +139,7 @@ h.run(async () => {
 	// ---- 6. Settings ▸ About offers it too ------------------------------------------
 	await page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await page.waitForTimeout(700);
-	await page.getByText('About', { exact: true }).first().click().catch(() => {});
+	await page.locator('#settings-nav .sn-row', { hasText: 'About' }).first().click().catch(() => {});
 	await page.waitForTimeout(500);
 	h.check(
 		await page.locator('#about-copy-diagnostics').isVisible().catch(() => false),

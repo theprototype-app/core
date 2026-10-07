@@ -99,7 +99,7 @@ h.run(async () => {
 		h.check(!(await toastIds(page)).includes('perf-reports-offer'), 'B1 production (theprototype.app) is never prompted');
 		await openInterface(page);
 		const toggle = page.locator('#send-perf-reports');
-		h.check((await toggle.count()) === 1 && !(await toggle.isChecked()), 'B2 the row exists and is OFF by default');
+		h.check((await toggle.count()) === 1 && (await toggle.getAttribute('aria-pressed')) === 'false', 'B2 the row exists and is OFF by default');
 		await page.evaluate(() => window.__stores.settingsOpen.set(false));
 		await page.waitForTimeout(11000);
 		h.check(requests.length === 0, `B3 off = nothing sent in 11 s of real time (${requests.length} requests)`);

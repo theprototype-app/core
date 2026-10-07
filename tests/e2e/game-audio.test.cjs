@@ -164,7 +164,7 @@ h.run(async () => {
 	await page.waitForTimeout(600);
 	// the Interface section holds the rows; open it if it is collapsed
 	const hasRow = await page.evaluate(() => !!document.querySelector('#setting-game-sound-volume'));
-	if (!hasRow) await page.getByText('Interface', { exact: true }).first().click().catch(() => {});
+	if (!hasRow) await page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click().catch(() => {});
 	await page.waitForSelector('#setting-game-sound-volume', { timeout: 5000 }).catch(() => {});
 	const rows = await page.evaluate(() => {
 		const s = window.__stores.gameKit;

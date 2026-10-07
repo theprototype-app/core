@@ -456,7 +456,7 @@ h.run(async () => {
 	// the button lives under INTERFACE ▸ Windows & chrome, and a collapsed
 	// AccordionItem renders no body at all in flowbite 1.x — so the section has to be
 	// opened before anything can be found inside it
-	await A.page.getByText('Interface', { exact: true }).first().click();
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
 	await A.page.waitForTimeout(300);
 	h.check(
 		await A.page.evaluate(() => !!document.querySelector('#reset-windows')),

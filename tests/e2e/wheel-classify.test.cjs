@@ -159,7 +159,10 @@ h.run(async () => {
 		window.__stores.settingsSection.set('controls');
 		window.__stores.settingsOpen.set(true);
 	});
-	await A.page.waitForSelector('#wheel-diagnostics', { timeout: 15000 });
+	// 37-settings: the readout is a collapsed Diagnostics block — Show opens it
+	await A.page.waitForSelector('#wheel-diagnostics-toggle', { timeout: 15000 });
+	await A.page.locator('#wheel-diagnostics-toggle').click();
+	await A.page.waitForSelector('#wheel-diagnostics', { timeout: 5000 });
 	const rows = await A.page.evaluate(() => document.querySelectorAll('#wheel-diagnostics tbody tr').length);
 	h.check(rows === 8, `Settings ▸ Controls ▸ Wheel diagnostics renders the ring (${rows} rows)`);
 	const head = await A.page.evaluate(() => document.querySelector('#wheel-diagnostics p')?.textContent?.trim());

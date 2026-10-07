@@ -1,319 +1,65 @@
 <script lang="ts">
-	import { Modal, Button, Checkbox, Toggle } from 'flowbite-svelte';
-	// 36 B14: Settings on WindowShell. The sections REGISTER into the sidebar (settingsNav); the two
-	// components keep flowbite's names, so every `<AccordionItem>` block below is untouched and a
-	// section another lane adds appears in the sidebar with no second edit
+	import { Modal } from 'flowbite-svelte';
+	// 36 B14: the sections REGISTER into the sidebar (settingsNav); the two components keep
+	// flowbite's names, so every `<AccordionItem>` block below is untouched and a section another
+	// lane adds appears in the sidebar with no second edit.
+	// 37-settings (R21): the window is the redesign's — the kit's modal header with the search in it,
+	// a GROUPED sidebar (General / Workspace / Devices & services, About pinned), one content column
+	// (~660 px) with the app's minimal scrollbar, sub-pages with a breadcrumb, and a quiet footer
+	// ("Reset <Category> to defaults" · "Changes save automatically" · Done). Under 640 px: the
+	// category LIST first, then a pushed page with "‹ Settings" (and "‹ <Category>" on a sub-page).
 	import Accordion from './settings/SettingsSections.svelte';
 	import AccordionItem from './settings/SettingsSection.svelte';
 	import SettingsNav from './settings/SettingsNav.svelte';
-	import WindowShell from '../shared/WindowShell.svelte';
-	import { setContext } from 'svelte';
-	import { createSettingsNav, NAV_CONTEXT } from '$lib/settingsNav';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import SearchField from '../ui/SearchField.svelte';
+	import KitButton from '../ui/Button.svelte';
+	import NavRow from '../ui/NavRow.svelte';
+	import KitRow from '../ui/SettingRow.svelte';
+	import ChangelogBody from './settings/ChangelogBody.svelte';
+	import { showConfirm, confirmDialog } from '$lib/confirmDialog';
+	import Section from '../ui/Section.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
+	import '$lib/uiDensity'; // NOTES-38 #19: applies the stored density at boot
+	import { setContext, tick } from 'svelte';
+	import { get } from 'svelte/store';
+	import { createSettingsNav, NAV_CONTEXT, sectionKeyOf } from '$lib/settingsNav';
+	import { canResetCategory, askResetCategory, askResetAllSettings } from '$lib/settings/resetCategory.js';
+	import { whatsNewUnseen } from '$lib/whatsNew';
 	const settingsNav = createSettingsNav();
 	setContext(NAV_CONTEXT, settingsNav);
-	// a phone shows the sections as a chip strip over the rows instead of a sidebar beside them
-	const narrowQuery = typeof window === 'undefined' ? null : window.matchMedia?.('(max-width: 640px)');
+	const { active: navActive, sub: navSub, home: navHome } = settingsNav;
+	// a phone (< 640 px) gets the category list + pushed pages instead of a sidebar
+	const narrowQuery = typeof window === 'undefined' ? null : window.matchMedia?.('(max-width: 639.98px)');
 	let narrowSettings = !!narrowQuery?.matches;
 	narrowQuery?.addEventListener?.('change', (e) => (narrowSettings = e.matches));
-	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
-	import ThemedSelect from '../ui/ThemedSelect.svelte';
-	import LoadingSettings from './settings/LoadingSettings.svelte';
-	import CheckpointSettings from './settings/CheckpointSettings.svelte'; // 36 B14
-	import NodeEditorViewSettings from './settings/NodeEditorViewSettings.svelte'; // 36 F10
-	import WorkspaceLayoutsSettings from './settings/WorkspaceLayoutsSettings.svelte'; // 37 R14
-	import SettingRow from './SettingRow.svelte';
-	import TextSelectionSettings from './settings/TextSelectionSettings.svelte'; // 36 U6
-	import AvatarSettings from './settings/AvatarSettings.svelte'; // 36-avatars
 	// 36 I4: what a row is known by (its text, group, section, keywords) + the highlight spans
 	import { rowMatches, matchSpans } from '$lib/settingsSearch';
-	import TouchControlsSettings from './TouchControlsSettings.svelte'; // 36 U8
-	// 36-export: the export defaults section (its own file; also the Publish / Export modal's Settings tab)
-	import ExportSettingsSection from './ExportSettingsSection.svelte';
+	// 37-settings: one file per category page (the redesign kit); the sections another lane adds
+	// still drop in here with one import + one line (a legacy `<SettingRow>` draws the new row too)
+	import InterfaceSettings from './settings/InterfaceSettings.svelte'; // absorbs text selection, avatars, tours
+	import ControlsSettings from './settings/ControlsSettings.svelte';
+	import InputSettings from './settings/InputSettings.svelte'; // absorbs NodeEditorViewSettings
+	import TouchControlsSettings from './TouchControlsSettings.svelte'; // 36 U8 (its own section)
+	import ShortcutsSettings from './settings/ShortcutsSettings.svelte';
+	import SceneSettings from './settings/SceneSettings.svelte'; // checkpoints, loading, water render inside
+	import ExplorerSettings from './settings/ExplorerSettings.svelte';
 	import NodeTypesSection from './NodeTypesSection.svelte'; // 36 B7
-	import AiSttSettings from './AiSttSettings.svelte';
-	import WaterSettings from '../water/WaterSettings.svelte';
-	import ToursSettings from './settings/ToursSettings.svelte'; // 36 U3b/I5
-	import VRSettingsSection from './VRSettingsSection.svelte';
-	// 30b (vr-play) C5: the two LOCAL game-audio volumes
-	import { gameSoundVolume } from '$lib/gameSfx';
-	import { gameMusicVolume } from '$lib/gameMusic';
-	import { showGrid, vrOverride } from '../../stores/sceneStore.js';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
-	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
-	import { lightHelperLength } from '$lib/lightHelpers';
-	import { flowMouseBindings, FLOW_MOUSE_BINDINGS } from '$lib/flowPrefs';
-	import { helpersInPlay } from '$lib/helperLayer';
-	import { perfStatsShown } from '$lib/fpsMeter';
-	import { perfReportsOn, perfReportsAvailable } from '$lib/perf/beacon';
-	import { gamepadPrefs, setGamepadPrefs, DEADZONE_RANGE, SENSITIVITY_RANGE } from '$lib/gamepadPrefs';
-	import { drawerSlot, cloudPluginInfo } from '$lib/cloudHooks';
+	// 36-export: the export defaults (its own file; also the Publish / Export modal's Settings tab)
+	import ExportSettingsSection from './ExportSettingsSection.svelte';
+	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
+	import AiSettings from './settings/AiSettings.svelte';
+	import ConnectionSettings from './settings/ConnectionSettings.svelte';
+	import { settingsOpen, settingsSection, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
+	import { cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
 	// 27-B: the diagnostics bundle — clipboard only, nothing leaves the browser
 	import { copyDiagnostics } from '$lib/diagnostics';
-	// 27-E: session size. LOCAL, like every other connection preference.
-	import { softPeerCap, HARD_PEER_CAP, SOFT_PEER_CAP_DEFAULT } from '$lib/connectionState';
-	const appVersionString = versionString();
-	import { doubleClickAction, DOUBLE_CLICK_ACTIONS } from '$lib/selectionPrefs';
-	import { shareDuplicatedMaterials } from '$lib/materialSharing';
-	import { lengthUnit, angleUnit, LENGTH_UNIT_KEYS } from '$lib/units';
-	import { syncedAnimations } from '../../stores/flowStore';
-	import { spatialVoice } from '$lib/voiceChat';
-	import { shadowQuality } from '$lib/lightParams';
-	import { autoQuality } from '$lib/qualityGovernor';
-	import { lodEnabled } from '$lib/lod';
-	import { kitInstancingEnabled } from '$lib/kitInstancing';
-	import { myHandModel, setMyHandModel } from '$lib/handModels';
-	import { explorerItems } from '$lib/explorer';
-	import { pingColor, pingSound } from '$lib/ping';
-	import { PING_SOUNDS, playPing } from '$lib/pingAudio';
-	import {
-		THEMES,
-		theme,
-		customThemes,
-		exportActiveTheme,
-		importThemeFile,
-		removeCustomTheme
-	} from '$lib/themes';
-	import { autosaveEnabled, autoRestoreEnabled, clearSavedSession } from '$lib/autosave';
-	// 33 (L2): keep / unload a scene's modules when another scene opens
-	import { modulesOnOpen } from '$lib/sceneSwitch';
-	// 21-G7: how many past versions of each scene keep their bytes on this machine (0 = off)
-	import { keepVersionsSetting } from '$lib/projectManifest';
-	// R22 round 2: who may take a file out of the shared library (locked answer: anyone,
-	// with the owner-only rule kept as the second option)
-	import {
-		unshareAuthority,
-		shareNewFiles,
-		autoDownload,
-		recycleBinEnabled,
-		keepRecycleBin,
-		deletedLogEnabled,
-		deleteWithoutConfirm
-	} from '$lib/sharedLibrary';
-	// R22 round 13 P2: the storage breakdown, reachable from where somebody looks for it
-	import { openStorageModal } from '$lib/storageUsage';
-	// R22 round 33: the classic Share/Stash merge, kept as an opt-in beside the sharing
-	// prefs. It lives in connectionState because it is a fact about CONNECTING.
-	import { mergeOnConnect } from '$lib/connectionState';
-	// 21-I5 (locked answer 5): the save-name template — one rule for every download
-	import { saveNameTemplate } from '$lib/saveName';
-	// loose-scenes fix (bug 2a): what an import does with bytes already in the library.
-	// It lives HERE and not in the Explorer's cog because that cog holds view and
-	// interaction prefs, while this governs what importing DOES — a file rule, beside
-	// the other file rules.
-	import { duplicateImportMode } from '$lib/importDuplicates';
-	import { viewPrefs, setViewPrefs, resetViewPrefs, DEFAULT_VIEW_PREFS } from '$lib/viewPrefs';
-	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome, openWhatsNew } from '$lib/whatsNew';
-	import { probeFindings, probeRunning, probeSupport, runArProbe, clearProbeState } from '$lib/arProbe';
-	import { roomAlignment } from '$lib/colocation';
-	import { roomNudge, nudgeIsZero, NUDGE_MAX_M } from '$lib/colocation';
-	import { setRoomNudge, resetRoomNudge } from '$lib/colocationNudge';
-	import DragRow from '../ui/DragRow.svelte';
-	import { colocatedGhostHands } from '$lib/colocationPresence';
-	import { colocateHereFromView, stopColocation } from '$lib/colocationCalibrate';
-	import { anchorRecords, forgetRoom, forgetCandidate } from '$lib/colocationAnchors';
-	import { resetWindowLayout } from '$lib/dragWindow';
-	import {
-		shortcuts,
-		comboOf,
-		isRebindable,
-		rebindShortcut,
-		resetShortcut,
-		resetAllShortcuts,
-		setOverride,
-		setShortcutCapture,
-		nonLatinLayoutSeen
-	} from '$lib/shortcuts';
-	import { scopeLabel } from '$lib/keyScope';
-	import {
-		aiEnabled,
-		setAiEnabled,
-		aiProviders,
-		aiActiveProvider,
-		setAiActiveProvider,
-		addAiProvider,
-		updateAiProvider,
-		removeAiProvider,
-		PROVIDER_PRESETS,
-		presetFor,
-		normalizeBaseUrl
-	} from '$lib/ai/providers';
-	import { testConnection, listModels } from '$lib/ai/client';
-	import {
-		meshGenEnabled,
-		setMeshGenEnabled,
-		meshProviders,
-		meshActiveProvider,
-		setMeshActiveProvider,
-		addMeshProvider,
-		updateMeshProvider,
-		removeMeshProvider,
-		MESH_PRESETS,
-		meshPresetFor
-	} from '$lib/ai/meshProviders';
-	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST, peerServerStatus } from '$lib/peerServer';
-	import { peers } from '../../stores/appStore.js';
+	import { clearSavedSession } from '$lib/autosave';
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
-	import { safeStorage } from '$lib/safeStorage';
-	import { offerUndo } from '$lib/undoToast';
-	// 37 R25: Reset settings happens at once (its values apply on the next reload, as before)
-	// and a toast offers Undo for ~8 s — every stored key and value is held by the offer and
-	// written back, so an accidental press costs nothing. LOCAL, like the settings.
-	function resetSettings() {
-		const saved = safeStorage.keys().map((key) => [key, safeStorage.getItem(key)] as const);
-		safeStorage.clear();
-		offerUndo({
-			id: 'reset-settings',
-			text: 'Settings reset — the defaults apply after a reload.',
-			done: 'Settings restored',
-			undo: () => {
-				for (const [key, value] of saved) if (value !== null) safeStorage.setItem(key, value);
-			}
-		});
-	}
+	const appVersionString = versionString();
 
-	// 24-D2: Settings ▸ Connection applies WITHOUT a reload — PeerConnection.switchServer
-	// rebuilds the Peer on the configured server, keeping the session id (an open session
-	// is left first). The reload link stays for the paranoid.
-	let applyingServer = false;
-	async function applyPeerServer() {
-		const p: any = $peers;
-		if (!p?.switchServer) {
-			location.reload();
-			return;
-		}
-		applyingServer = true;
-		const ok = await p.switchServer(null);
-		applyingServer = false;
-		if (ok) showToast('Connected to ' + ($peerServerStatus?.label ?? 'the peer server') + ' — your session id is unchanged.');
-	}
-	let shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 	let shortcutsExpanded = false;
-	// 24-A2.1: the wheel diagnostics readout's static half — WHAT machine this is. The
-	// Steam Deck report ("scrolling does nothing") had never been measured; this row plus
-	// `lastWheelEvents` turns it into numbers in one minute.
-	const wheelPlatform =
-		typeof navigator === 'undefined'
-			? ''
-			: String((navigator as any).userAgentData?.platform || navigator.platform || '') +
-				(/Firefox/.test(navigator.userAgent) ? ' · Firefox' : /Chrom/.test(navigator.userAgent) ? ' · Chromium' : /Safari/.test(navigator.userAgent) ? ' · Safari' : '');
-	const wheelCoarse = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
-	const fmt = (n: number | null) => (n === null || n === undefined ? '—' : Number.isInteger(n) ? String(n) : n.toFixed(2));
-	/**
-	 * 24-A1: what the CURRENT layout prints on each physical key (Chromium's
-	 * `navigator.keyboard.getLayoutMap`; null where the API is missing — Firefox,
-	 * Safari). Letter shortcuts resolve by physical position on a non-Latin layout, so
-	 * the list says which printed key that is ("G · п on your layout"). Loaded when the
-	 * section opens; the map is tiny and the call is async, hence the store-free `let`.
-	 */
-	let layoutLabels: Map<string, string> | null = null;
-	let layoutLabelsAsked = false;
-	function loadLayoutMap() {
-		if (layoutLabelsAsked) return;
-		layoutLabelsAsked = true;
-		const kb = (navigator as any)?.keyboard;
-		if (!kb?.getLayoutMap) return;
-		kb.getLayoutMap()
-			.then((map: Map<string, string>) => {
-				layoutLabels = map;
-			})
-			.catch(() => {});
-	}
-	$: if (shortcutsExpanded) loadLayoutMap();
-	/** The printed label for a combo's letter when the layout prints something that is
-	 * NOT that Latin letter — the only case where the hybrid rule falls back to the
-	 * physical key and a hint helps. AZERTY/Dvorak print Latin letters and need none. */
-	function layoutHint(keys: string, labels: Map<string, string> | null): string {
-		if (!labels) return '';
-		const last = String(keys || '').split('+').pop() || '';
-		if (!/^[A-Z]$/.test(last)) return '';
-		const printed = labels.get('Key' + last) || '';
-		if (!printed || /^[a-z]$/i.test(printed)) return '';
-		return printed;
-	}
-
-	// --- Phase 5: rebinding ------------------------------------------------
-	// The registry is a plain array, so nothing here re-renders when a combo
-	// moves. `shortcutsVersion` is the redraw signal and the rows sit inside a
-	// {#key} on it. LEGACY-MODE FILE: a plain `let` is reactive on reassignment;
-	// a `$state` here would flip the whole component to runes and break the build.
-	let shortcutsVersion = 0;
-	/** the row currently listening for a combo */
-	let capturingId: string | null = null;
-	/** a refused rebind, offering the swap */
-	let shortcutConflict: { id: string; keys: string; other: any } | null = null;
-	let captureListener: ((e: KeyboardEvent) => void) | null = null;
-
-	function stopCapture() {
-		if (captureListener) window.removeEventListener('keydown', captureListener, true);
-		captureListener = null;
-		capturingId = null;
-		setShortcutCapture(false);
-	}
-
-	function startCapture(id: string) {
-		stopCapture();
-		shortcutConflict = null;
-		capturingId = id;
-		// the registry stands down for the press we are about to record
-		setShortcutCapture(true);
-		captureListener = (e: KeyboardEvent) => {
-			// a bare modifier is the user still BUILDING the combo, not the combo
-			if (e.key === 'Control' || e.key === 'Alt' || e.key === 'Shift' || e.key === 'Meta') return;
-			e.preventDefault();
-			// Capture phase on window, so this is the first listener in the app to see
-			// the press. Stopping it here is what keeps voiceChat's bare-V push-to-talk
-			// (which consults no registry of any kind) from opening the mic while a user
-			// binds V to something, and Escape from closing the dialog underneath us.
-			e.stopPropagation();
-			if (e.key === 'Escape') {
-				stopCapture();
-				shortcutsVersion++;
-				return;
-			}
-			const combo = comboOf(e);
-			const result = rebindShortcut(id, combo);
-			if (!result.ok && result.conflict) shortcutConflict = { id, keys: combo, other: result.conflict };
-			else if (!result.ok) showToast(result.reason || 'That key cannot be bound');
-			else if (result.meshEdit)
-				showToast(combo + ' is also a mesh-edit key, so it will do nothing while an Edit Mesh session is open');
-			stopCapture();
-			shortcutsVersion++;
-		};
-		window.addEventListener('keydown', captureListener, true);
-	}
-
-	/** Take the combo anyway and hand the loser this row's previous keys. Both
-	 * writes go through setOverride, the path that does NOT re-check for a
-	 * conflict — we have already decided. Free the other row FIRST. */
-	function swapConflict() {
-		const c = shortcutConflict;
-		if (!c) return;
-		const mine = shortcuts.find((s) => s.id === c.id);
-		if (mine) setOverride(c.other.id, mine.keys);
-		setOverride(c.id, c.keys);
-		shortcutConflict = null;
-		shortcutsVersion++;
-	}
-
-	function resetOneShortcut(id: string) {
-		resetShortcut(id);
-		shortcutConflict = null;
-		shortcutsVersion++;
-	}
-
-	/** 36 U11: where a group's keys fire (its rows' scope), for the group header */
-	function groupScope(group: string) {
-		const scopes = [...new Set(shortcuts.filter((s) => s.group === group).map((s) => s.scope || 'global'))];
-		if (scopes.length !== 1 || scopes[0] === 'global') return '';
-		return scopes[0] === 'mesh' ? 'in an Edit Mesh session' : 'in the ' + scopeLabel(scopes[0]);
-	}
-
-	function resetEveryShortcut() {
-		resetAllShortcuts();
-		shortcutConflict = null;
-		shortcutsVersion++;
-	}
 	let aiExpanded = false;
 	// 36-export: Settings ▸ Export — opened by a search (the filter needs mounted rows) or a deep link
 	let exportExpanded = false;
@@ -330,254 +76,11 @@
 	let controlsExpanded = false;
 	let inputExpanded = false; // 21-E5: gamepad (the shortcuts-registry precedent: LOCAL prefs)
 
-	// D7: sanitize a cap edit — an empty/garbage field falls back to the default
-
-	// AI provider add/edit form state (roadmap #10). Legacy-mode file — plain lets.
-	let aiFormOpen = false;
-	let aiEditId: string | null = null;
-	let aiFormPreset = 'grok';
-	let aiFormLabel = '';
-	let aiFormBaseUrl = '';
-	let aiFormKey = '';
-	let aiFormModel = '';
-	let aiFormStream = true;
-	let aiFormPhysics = false;
-	let aiFormTemp = '';
-	let aiTesting = false;
-	let aiTestResult: { ok: boolean; detail: string; modelOk?: boolean | null; model?: string } | null = null;
-	// model picker: suggestions from the endpoint's GET /models (persisted on the
-	// provider so Edit works after a reload); free text stays allowed — aliases and
-	// unlisted/custom ids are legitimate
-	let aiFormModels: string[] = [];
-	let aiModelListOpen = false;
-	let aiModelsFetching = false;
-	// per-preset API-key entries while the form is OPEN (switching Grok→Gemini must
-	// not carry the Grok key into the Gemini box); scoped to the form session — only
-	// Save persists a key
-	let aiFormKeys: Record<string, string> = {};
-	let aiFormPresetPrev = 'grok';
-	$: aiModelFiltered = (() => {
-		const q = (aiFormModel || '').trim().toLowerCase();
-		return q ? aiFormModels.filter((m) => m.toLowerCase().includes(q)) : aiFormModels;
-	})();
-
-	/** Silent best-effort refresh of the model suggestions. Fires on Edit open, on
-	 * leaving the key/base-url fields, and on preset switch — so the picker fills
-	 * without needing a Test connection click. Sequence guard: a slow response for
-	 * a PREVIOUS endpoint must not populate the current one. */
-	let aiFetchSeq = 0;
-	async function aiRefreshModels() {
-		const baseUrl = normalizeBaseUrl(aiFormBaseUrl);
-		if (!baseUrl) return;
-		const seq = ++aiFetchSeq;
-		aiModelsFetching = true;
-		const list = await listModels({ id: 'probe', preset: aiFormPreset, label: '', baseUrl, apiKey: aiFormKey.trim(), model: '' });
-		if (seq !== aiFetchSeq) return;
-		aiModelsFetching = false;
-		if (list && list.length) aiFormModels = list;
-	}
-
-	/** Preset switch: stash the old preset's key, restore the new one's, reset
-	 * endpoint-specific state, and refetch suggestions if a key is already there. */
-	function aiPresetChanged() {
-		aiFormKeys[aiFormPresetPrev] = aiFormKey;
-		aiApplyPreset();
-		aiFormKey = aiFormKeys[aiFormPreset] ?? '';
-		aiFormModels = [];
-		aiModelListOpen = false;
-		aiTestResult = null;
-		aiFormPresetPrev = aiFormPreset;
-		if (aiFormKey.trim() || aiFormPreset === 'custom') aiRefreshModels();
-	}
-
-	function aiApplyPreset() {
-		const preset = presetFor(aiFormPreset);
-		aiFormLabel = preset.label;
-		aiFormBaseUrl = preset.baseUrl;
-		aiFormModel = preset.defaultModel;
-	}
-	function aiStartAdd() {
-		aiEditId = null;
-		aiFormPreset = 'grok';
-		aiApplyPreset();
-		aiFormKey = '';
-		aiFormStream = true;
-		aiFormPhysics = false;
-		aiFormTemp = '';
-		aiTestResult = null;
-		aiFormModels = [];
-		aiModelListOpen = false;
-		aiFormKeys = {};
-		aiFormPresetPrev = aiFormPreset;
-		aiFormOpen = true;
-	}
-	function aiStartEdit(p: any) {
-		aiEditId = p.id;
-		aiFormPreset = p.preset;
-		aiFormLabel = p.label;
-		aiFormBaseUrl = p.baseUrl;
-		aiFormKey = p.apiKey;
-		aiFormModel = p.model;
-		aiFormStream = p.stream !== false;
-		aiFormPhysics = p.physicsTools === true;
-		aiFormTemp = typeof p.temperature === 'number' ? String(p.temperature) : '';
-		aiTestResult = null;
-		aiFormModels = Array.isArray(p.models) ? p.models : [];
-		aiModelListOpen = false;
-		aiFormKeys = { [p.preset]: p.apiKey };
-		aiFormPresetPrev = p.preset;
-		aiFormOpen = true;
-		aiRefreshModels(); // silent; keeps the picker current without a Test click
-	}
-	function aiSaveProvider() {
-		if (!aiFormBaseUrl.trim() || !aiFormModel.trim()) {
-			showToast('Base URL and model are required');
-			return;
-		}
-		const temp = parseFloat(aiFormTemp);
-		const config = {
-			preset: aiFormPreset,
-			label: aiFormLabel,
-			baseUrl: aiFormBaseUrl,
-			apiKey: aiFormKey,
-			model: aiFormModel,
-			stream: aiFormStream,
-			physicsTools: aiFormPhysics,
-			temperature: Number.isFinite(temp) ? temp : undefined,
-			models: aiFormModels
-		};
-		if (aiEditId) updateAiProvider(aiEditId, config);
-		else addAiProvider(config);
-		aiFormOpen = false;
-		aiEditId = null;
-	}
-	async function aiTest() {
-		if (!aiFormBaseUrl.trim()) {
-			aiTestResult = { ok: false, detail: 'Enter a base URL first' };
-			return;
-		}
-		aiTesting = true;
-		aiTestResult = null;
-		const result = await testConnection({
-			id: 'test',
-			preset: aiFormPreset,
-			label: aiFormLabel,
-			baseUrl: normalizeBaseUrl(aiFormBaseUrl),
-			apiKey: aiFormKey.trim(),
-			model: aiFormModel.trim()
-		});
-		if (result.models && result.models.length) aiFormModels = result.models;
-		// pin the tested model into the result so later typing can't mislabel it
-		aiTestResult = { ok: result.ok, detail: result.detail, modelOk: result.modelOk, model: aiFormModel.trim() };
-		aiTesting = false;
-	}
-
-	// Mesh-generation provider add/edit form (roadmap #11)
-	let meshFormOpen = false;
-	let meshEditId: string | null = null;
-	let meshFormKind = 'comfyui';
-	let meshFormLabel = '';
-	let meshFormBaseUrl = '';
-	let meshFormKey = '';
-	let meshFormWorkflow = '';
-	let meshFormOutputNode = '';
-	let meshFormMode = 'preview';
-	let meshFormAssetProxy = '';
-
-	function meshApplyPreset() {
-		const preset = meshPresetFor(meshFormKind);
-		meshFormLabel = preset.label;
-		meshFormBaseUrl = preset.baseUrl;
-	}
-	function meshStartAdd() {
-		meshEditId = null;
-		meshFormKind = 'comfyui';
-		meshApplyPreset();
-		meshFormKey = '';
-		meshFormWorkflow = '';
-		meshFormOutputNode = '';
-		meshFormMode = 'preview';
-		meshFormAssetProxy = '';
-		meshFormOpen = true;
-	}
-	function meshStartEdit(p: any) {
-		meshEditId = p.id;
-		meshFormKind = p.kind;
-		meshFormLabel = p.label;
-		meshFormBaseUrl = p.baseUrl;
-		meshFormKey = p.apiKey ?? '';
-		meshFormWorkflow = p.workflowJson ?? '';
-		meshFormOutputNode = p.outputNodeId ?? '';
-		meshFormMode = p.mode ?? 'preview';
-		meshFormAssetProxy = p.assetProxy ?? '';
-		meshFormOpen = true;
-	}
-	function meshSaveProvider() {
-		if (!meshFormBaseUrl.trim()) {
-			showToast('A base URL is required');
-			return;
-		}
-		if (meshFormKind === 'comfyui' && meshFormWorkflow.trim()) {
-			try {
-				JSON.parse(meshFormWorkflow);
-			} catch {
-				showToast('The ComfyUI workflow is not valid JSON — re-export it in API format');
-				return;
-			}
-		}
-		const config: any = {
-			kind: meshFormKind,
-			label: meshFormLabel,
-			baseUrl: meshFormBaseUrl,
-			apiKey: meshFormKey
-		};
-		if (meshFormKind === 'comfyui') {
-			config.workflowJson = meshFormWorkflow;
-			config.outputNodeId = meshFormOutputNode;
-		} else {
-			config.mode = meshFormMode;
-			config.assetProxy = meshFormAssetProxy;
-		}
-		if (meshEditId) updateMeshProvider(meshEditId, config);
-		else addMeshProvider(config);
-		meshFormOpen = false;
-		meshEditId = null;
-	}
-
-	// Peer signaling-server selection (default self-hosted+fallback / public / custom)
-	function setPeerMode(v: any) {
-		peerServerConfig.update((c) => ({ ...c, mode: v }));
-	}
-	function setPeerCustom(k: string, v: any) {
-		peerServerConfig.update((c) => ({ ...c, custom: { ...c.custom, [k]: v } }));
-	}
-
-	// custom theme import (149): a hidden file input + a validating handler
-	let themeFileInput: any;
-	async function onThemeFile(e: any) {
-		const file = e.currentTarget.files?.[0];
-		e.currentTarget.value = '';
-		if (!file) return;
-		const id = await importThemeFile(file);
-		showToast(id ? 'Theme imported' : 'Not a valid .theme.json file');
-	}
-
-	// passthrough capability probe (90): the setting stays visible with a hint
-	let arSupport: boolean | null = null;
-	if (typeof navigator !== 'undefined') {
-		(navigator as any).xr
-			?.isSessionSupported?.('immersive-ar')
-			.then((ok: boolean) => (arSupport = ok))
-			.catch(() => (arSupport = false));
-	}
-
 
 	// Hide open panels while settings is shown, restore them after (initial value is null,
 	// so nothing happens until the modal is opened the first time)
 	$: if ($settingsOpen) {
 		hidePanels();
-		// refresh the group list — later phases register more shortcuts at runtime
-		shortcutGroups = [...new Set(shortcuts.map((s) => s.group))];
 		shortcutsExpanded = $settingsSection === 'shortcuts';
 		aiExpanded = $settingsSection === 'ai';
 		sceneExpanded = $settingsSection === 'scene';
@@ -590,12 +93,11 @@
 		// this line — the section existed, the store existed, and nothing mapped one onto
 		// the other. The delete strip's "File settings" button is the first caller.
 		explorerExpanded = $settingsSection === 'explorer';
+		// 37-settings: a phone opens on the category LIST unless a deep link names a page
+		if (narrowSettings && !$settingsSection) settingsNav.showHome();
 	} else if ($settingsOpen === false) {
 		restorePanels();
 		$settingsSection = null;
-		// closing mid-capture would leave the registry muted for the whole session
-		stopCapture();
-		shortcutConflict = null;
 	}
 
 	// U-3: filter the (numerous) settings rows by a search query. A `use:` action
@@ -603,7 +105,7 @@
 	// the heterogeneous markup. Rows carry the `.setting-row` class; inner controls
 	// live in <p>, so hiding a row never hides a control inside a shown row.
 	let settingsQuery = '';
-	let searchInput: any; // the search box, for refocus after the clear (X) button
+	let searchInput: any = null; // the search box (bound to SearchField.inputEl — never undefined: props_invalid_value)
 	/**
 	 * Searching must EXPAND every section first. flowbite-svelte 1.x renders an
 	 * AccordionItem's body only while it is open, so with the sections collapsed
@@ -617,9 +119,6 @@
 	$: syncSearchExpansion(settingsQuery);
 	$: settingsNav.setSearching(!!(settingsQuery || '').trim()); // 36 B14
 
-	// CO3: which stored room anchor the Forget button offers — the current room when
-	// aligned (only if it has a record), else the newest record (the LAST room)
-	$: forgetKey = forgetCandidate($anchorRecords, $roomAlignment);
 	/** @param {string} query */
 	function syncSearchExpansion(query: string) {
 		const searching = !!(query || '').trim();
@@ -663,10 +162,13 @@
 		}
 	}
 	/**
-	 * Walk the SECTIONS, not the rows: flowbite mounts an item's body only after it
-	 * opens, so a row-first pass sees a partial DOM — and a header hidden on that
-	 * partial view could never be shown again (no rows left to walk back from).
-	 * A MutationObserver re-applies as the bodies arrive, which beats guessing frames.
+	 * Walk the PAGES, not the rows: a section's body is mounted only while it is open, so a
+	 * row-first pass sees a partial DOM — and a page hidden on that partial view could never be
+	 * shown again (no rows left to walk back from). A MutationObserver re-applies as the bodies
+	 * arrive, which beats guessing frames.
+	 * 37-settings: a page is `.ss-page` (SettingsSection); its groups are the kit's card labels
+	 * (`[data-section-label]`) or a legacy `.ui-section-label`; a row is a `.setting-row` or a kit
+	 * NavRow (a submenu is found by its name too); a card left with no row is hidden.
 	 * @param {HTMLElement} node @param {string} query
 	 */
 	function filterSettings(node: HTMLElement, query: string) {
@@ -683,40 +185,39 @@
 		const apply = () => {
 			/** @type {Element[]} what the highlight walks: visible rows, group labels, headers */
 			const shown: Element[] = [];
-			// every row with what it is known by; each section is an <h2> header + its body
 			type RowInfo = { el: HTMLElement; info: { text: string; name: string; group: string; section: string; extra: string[] } };
-			const sections: { header: HTMLElement; body: HTMLElement; rows: RowInfo[] }[] = [];
-			node.querySelectorAll('h2').forEach((header) => {
-				const body = header.nextElementSibling;
-				if (!(body instanceof HTMLElement) || !(header instanceof HTMLElement)) return;
-				const section = header.textContent || '';
+			const pages: { page: HTMLElement; rows: RowInfo[] }[] = [];
+			node.querySelectorAll<HTMLElement>('.ss-page').forEach((page) => {
+				const section = (page.querySelector('.ss-title')?.textContent || '').replace(/›\s*$/, '').trim();
 				const rows: RowInfo[] = [];
-				let group = ''; // nearest `ui-section-label` above the row ("GRID", "SNAPPING"…)
-				body.querySelectorAll('.ui-section-label, .setting-row').forEach((el) => {
-					if (!el.classList.contains('setting-row')) {
+				let group = ''; // nearest card / group label above the row ("Sound", "Grid"…)
+				page.querySelectorAll('[data-section-label], .ui-section-label, .setting-row, .tp-ui.nr').forEach((el) => {
+					if (!el.classList.contains('setting-row') && !el.classList.contains('nr')) {
 						group = el.textContent || '';
 						return;
 					}
+					// a NavRow inside a row (an AI provider list) belongs to that row
+					if (el.classList.contains('nr') && el.parentElement?.closest('.setting-row')) return;
 					rows.push({
 						el: el as HTMLElement,
 						info: {
 							text: el.textContent || '',
-							name: el.querySelector('.sr-name')?.textContent || '',
+							name: (el.querySelector('.sr-name, .nr-label')?.textContent || '').trim(),
 							group,
 							section,
 							extra: ancestorKeywords(el)
 						}
 					});
 				});
-				sections.push({ header, body, rows });
+				pages.push({ page, rows });
 			});
 			// searching "grid" finds the whole Grid group and "vr" the VR section; 36 I4: "dark" finds
 			// the Theme row (its keywords), and a SECTION's own words count only when no row
 			// matched directly — a section-wide word would otherwise list the whole section
 			const direct = (r: RowInfo) => rowMatches(needle, r.info);
-			const anyDirect = !!needle && sections.some((sec) => sec.rows.some(direct));
+			const anyDirect = !!needle && pages.some((pg) => pg.rows.some(direct));
 			const match = (r: RowInfo) => !needle || (anyDirect ? direct(r) : rowMatches(needle, r.info, { fallback: true }));
-			for (const { header, body, rows } of sections) {
+			for (const { page, rows } of pages) {
 				let visible = 0;
 				for (const r of rows) {
 					const show = match(r);
@@ -726,15 +227,16 @@
 						if (needle) shown.push(r.el);
 					}
 				}
-				// hide a section only when we KNOW it has rows and none of them matched;
+				// a card whose rows all went: hide the card too (its label would stand alone)
+				page.querySelectorAll<HTMLElement>('.sec-card-wrap').forEach((card) => {
+					const any = [...card.querySelectorAll<HTMLElement>('.setting-row, .tp-ui.nr')].some((r) => r.style.display !== 'none');
+					card.style.display = needle && !any ? 'none' : '';
+				});
+				// hide a page only when we KNOW it has rows and none of them matched;
 				// an unmounted body (0 rows) is unknown, and the observer will revisit it
 				const hide = !!needle && rows.length > 0 && visible === 0;
-				body.style.display = hide ? 'none' : '';
-				header.style.display = hide ? 'none' : '';
-				if (needle && !hide) {
-					shown.push(header);
-					body.querySelectorAll('.ui-section-label').forEach((l) => shown.push(l));
-				}
+				page.style.display = hide ? 'none' : '';
+				if (needle && !hide) page.querySelectorAll('[data-section-label], .ui-section-label').forEach((l) => shown.push(l));
 			}
 			highlight(shown);
 		};
@@ -786,14 +288,15 @@
 	}
 
 	/**
-	 * flowbite's Modal focuses the first focusable child when it opens — on a phone
-	 * that slides the on-screen keyboard over the settings the user just opened. Keep
-	 * the autofocus on pointer devices (it is genuinely nice there), undo it on touch,
-	 * and let a real keyboard opt in by typing (see inputDevice.typeToFocus).
+	 * flowbite's Modal focuses the first focusable child when it opens — on a phone that slides
+	 * the on-screen keyboard over the settings the user just opened. Keep the autofocus on pointer
+	 * devices (it is genuinely nice there), undo it on touch, and let a real keyboard opt in by
+	 * typing (see inputDevice.typeToFocus). The kit's SearchField owns its <input>, so this runs on
+	 * the bound element instead of as a `use:` action.
 	 * @param {HTMLInputElement} node
 	 */
 	function searchFocus(node: HTMLInputElement) {
-		if (autofocusOk()) return;
+		if (autofocusOk()) return () => {};
 		const stop = typeToFocus(() => node);
 		// two frames is after the modal's own focus call and long before any tap
 		const a = requestAnimationFrame(() =>
@@ -801,21 +304,112 @@
 				if (document.activeElement === node) node.blur();
 			})
 		);
-		return {
-			destroy: () => {
-				cancelAnimationFrame(a);
-				stop();
-			}
+		return () => {
+			cancelAnimationFrame(a);
+			stop();
 		};
 	}
-</script>
+	let focusedInput: HTMLInputElement | null = null;
+	let stopSearchFocus: () => void = () => {};
+	$: if (searchInput !== focusedInput) {
+		stopSearchFocus();
+		focusedInput = searchInput;
+		stopSearchFocus = searchInput ? searchFocus(searchInput) : () => {};
+	}
 
-<Modal
-	title="Settings"
-	bind:open={$settingsOpen}
-	modal={false} onkeydown={(e) => {
+	// 37-settings: the active section's key + title (the footer's reset, the phone's nav bar)
+	$: activeKey = sectionKeyOf($navActive?.label ?? '');
+	$: activeLabel = $navActive?.label ?? '';
+	$: searching = !!(settingsQuery || '').trim();
+
+	/**
+	 * Jump from a search result to where it lives: end the search, show its page (and sub-page),
+	 * bring the row into view and flash it. The spec: "search results show the matching row with
+	 * its path and jump to it".
+	 * @param {string} key the page @param {string | null} [rowLabel] @param {{id: string, label: string} | null} [sub]
+	 */
+	async function jumpTo(key: string, rowLabel: string | null = null, sub: { id: string; label: string } | null = null) {
+		settingsQuery = '';
+		await tick();
+		await new Promise((r) => setTimeout(r, 0)); // after the search's own restore (a microtask)
+		settingsNav.activateKey(key);
+		if (sub) baseOpenSub(sub.id, sub.label);
+		await tick();
+		await tick();
+		if (!rowLabel) return;
+		const page = document.querySelector(`#settings-sections .ss-page[data-section="${key}"]`);
+		const row = [...(page?.querySelectorAll<HTMLElement>('.setting-row, .tp-ui.nr') ?? [])].find(
+			(r) => (r.querySelector('.sr-name, .nr-label')?.textContent || '').trim() === rowLabel
+		);
+		if (!row) return;
+		row.scrollIntoView({ block: 'center' });
+		row.classList.add('sr-flash');
+		setTimeout(() => row.classList.remove('sr-flash'), 1600);
+		const control = row.matches('button') ? row : row.querySelector<HTMLElement>('.sr-control button, .sr-control input, .sr-control select, .sr-control [tabindex="0"]');
+		control?.focus({ preventScroll: true });
+	}
+	(settingsNav as any).jumpTo = jumpTo;
+	// a page opens its sub-pages through the nav; while searching that is a jump first
+	const baseOpenSub = settingsNav.openSub;
+	settingsNav.openSub = (id: string, label: string, key?: string) => {
+		if (get(settingsNav.searching) && key) void jumpTo(key, null, { id, label });
+		else baseOpenSub(id, label);
+		keepFocusInside();
+	};
+	const baseCloseSub = settingsNav.closeSub;
+	settingsNav.closeSub = () => {
+		baseCloseSub();
+		keepFocusInside();
+	};
+	/** the button that opened (or closed) a sub-page unmounts with it: hand the focus to the content
+	 * column so the keyboard — Esc included — stays inside Settings */
+	function keepFocusInside() {
+		void tick().then(() => {
+			const a = document.activeElement;
+			if (!a || a === document.body || !a.closest('dialog.settings-dialog')) document.getElementById('settings-main')?.focus({ preventScroll: true });
+		});
+	}
+	/** Esc with the focus lost to <body> (a control that was pressed has unmounted) still belongs to Settings */
+	function onWindowKey(e: KeyboardEvent) {
+		if (!$settingsOpen || e.key !== 'Escape' || e.defaultPrevented) return;
+		const t = e.target as HTMLElement | null;
+		if (t && t !== document.body && t !== document.documentElement) return;
+		if (get(confirmDialog)) return;
+		onDialogKey(e);
+	}
+
+	/** searching: a click on a row's NAME jumps to it (the controls keep working in place) */
+	function onMainClick(e: MouseEvent) {
+		if (!searching) return;
+		const name = (e.target as HTMLElement)?.closest?.('.sr-name');
+		const page = name?.closest<HTMLElement>('.ss-page');
+		if (!name || !page) return;
+		void jumpTo(page.dataset.section || '', (name.textContent || '').trim());
+	}
+
+	/** About › Danger zone: 1.25.0's footer button, now behind a confirmation */
+	async function askClearSavedSession() {
+		const ok = await showConfirm({
+			title: 'Clear the saved session?',
+			message: 'The autosaved copy of your work on this device is deleted and no restore is offered next time. Your library, saved sessions and the scene on screen stay.',
+			confirmLabel: 'Clear',
+			cancelLabel: 'Cancel'
+		});
+		if (ok) await clearSavedSession();
+	}
+
+	function closeSettings() {
+		settingsOpen.set(false);
+	}
+
+	/** Esc: a sub-page first, then the search (36 I4: it keeps you where you are), then the window */
+	function onDialogKey(e: KeyboardEvent) {
 		if (e.key !== 'Escape') return;
-		// 36 I4: Esc first CLEARS a search (and keeps you where you are); the next one closes
+		if (get(navSub)) {
+			e.stopPropagation();
+			settingsNav.closeSub();
+			return;
+		}
 		if ((settingsQuery || '').trim()) {
 			e.stopPropagation();
 			settingsQuery = '';
@@ -823,1238 +417,118 @@
 			return;
 		}
 		settingsOpen.set(false);
-	}}
+	}
+
+	/** the phone's nav bar: "‹ Settings" on a page, "‹ <Category>" on a sub-page */
+	$: mobileBack = narrowSettings && !searching ? ($navSub ? () => settingsNav.closeSub() : !$navHome ? () => settingsNav.showHome() : null) : null;
+	$: mobileTitle = !narrowSettings || searching || $navHome ? 'Settings' : $navSub ? $navSub.label : activeLabel;
+	$: mobileBackLabel = $navSub ? activeLabel : 'Settings';
+</script>
+
+<svelte:window on:keydown={onWindowKey} />
+
+<Modal
+	bind:open={$settingsOpen}
+	modal={false}
+	dismissable={false}
+	onkeydown={onDialogKey}
 	outsideclose
-	size="xl"
-	class="tp-modal-frame"
-	classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
+	size="none"
+	class="tp-modal-frame tp-ui settings-dialog"
+	classes={{ body: 'tp-modal-body settings-dialog-body' }}
+	aria-label="Settings"
 >
-	<div class="modal-content settings-shell">
-	<WindowShell key="settings" primaryLabel="sections" primaryDefaultWidth={168} secondaryModes={[]} hidePrimary={narrowSettings}>
-	{#snippet topbar()}
-		<div class="relative mb-2 px-3 pt-2">
-			<input
-				id="settings-search"
-				type="text"
-				class="ui-input w-full pr-8"
-				placeholder="Search settings…"
-				bind:value={settingsQuery}
-				bind:this={searchInput}
-				use:searchFocus
-			/>
-			{#if settingsQuery}
-				<button
-					id="settings-search-clear"
-					class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-					aria-label="Clear search"
-					on:click={() => {
-						settingsQuery = '';
-						searchInput?.focus();
-					}}
-				>
-					<X size={14} aria-hidden="true" />
-				</button>
+	<div class="settings-shell" class:settings-narrow={narrowSettings} class:settings-searching={searching}>
+		<WindowChrome
+			size="modal"
+			body={false}
+			title={mobileTitle}
+			titleId="settings-title"
+			closeLabel="Close"
+			onclose={closeSettings}
+			onback={mobileBack}
+			backLabel={mobileBackLabel}
+		>
+			{#snippet actions()}
+				{#if !narrowSettings}
+					<div class="settings-search-head">
+						<SearchField
+							id="settings-search"
+							clearId="settings-search-clear"
+							size="sm"
+							placeholder="Search settings"
+							label="Search settings"
+							bind:value={settingsQuery}
+							bind:inputEl={searchInput}
+						/>
+					</div>
+				{/if}
+			{/snippet}
+		</WindowChrome>
+		{#if narrowSettings && ($navHome || searching)}
+			<div class="settings-msearch">
+				<SearchField
+					id="settings-search"
+					clearId="settings-search-clear"
+					placeholder="Search settings"
+					label="Search settings"
+					bind:value={settingsQuery}
+					bind:inputEl={searchInput}
+				/>
+			</div>
+		{/if}
+		<div class="settings-split">
+			{#if !narrowSettings}
+				<aside class="settings-side" use:minimalScroll>
+					<SettingsNav nav={settingsNav} />
+				</aside>
 			{/if}
-		</div>
-		{#if narrowSettings}<div class="px-3"><SettingsNav nav={settingsNav} layout="chips" /></div>{/if}
-	{/snippet}
-	{#snippet primary()}<SettingsNav nav={settingsNav} />{/snippet}
-	{#snippet main()}
-		<div id="settings-main" class="settings-main" use:filterSettings={settingsQuery}>
-		<!-- 36 B14: a section's open flag is still its MOUNT switch (the filter can only see
-		     mounted rows, so a search opens them all). Outside a search the sidebar keeps
-		     exactly one open — the one on screen (settingsNav). -->
-		<Accordion multiple>
+			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+			<div id="settings-main" class="settings-main" tabindex="-1" data-autofocus={narrowSettings ? '' : undefined} use:filterSettings={settingsQuery} use:minimalScroll on:click={onMainClick}>
+			<!-- ONE nav per layout (each row renders its section's header snippet, ids and tour anchors
+			     included): the phone's list stays mounted while a page is shown, so labels resolve -->
+			{#if narrowSettings}
+				<div class="settings-home" class:settings-pages-hidden={!$navHome || searching}>
+					<SettingsNav nav={settingsNav} layout="home" />
+				</div>
+			{/if}
+			<div class="settings-pages" class:settings-pages-hidden={narrowSettings && $navHome && !searching}>
+			<!-- 36 B14: a section's open flag is still its MOUNT switch (the filter can only see
+			     mounted rows, so a search opens them all). Outside a search the sidebar keeps
+			     exactly one open — the one on screen (settingsNav). -->
+			<Accordion multiple>
 				<AccordionItem bind:open={interfaceExpanded}>
 					{#snippet header()}Interface{/snippet}
-					<p class="ui-section-label">Appearance</p>
-					<TextSelectionSettings />
-					<AvatarSettings />
-					<SettingRow name="Theme">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="theme-select"
-								items={[...THEMES, ...$customThemes].map((t) => ({ value: t.id, name: t.name }))}
-								bind:value={$theme}
-							/>
-						</svelte:fragment>
-						UI theme for THIS device (the 3D viewport follows the environment, not the theme)
-					</SettingRow>
-					<SettingRow name="Custom theme">
-						<svelte:fragment slot="control">
-							<span class="sr-stack">
-								<button
-									id="theme-export"
-									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-									on:click={() => exportActiveTheme()}>Export template</button
-								>
-								<button
-									id="theme-browse"
-									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-									on:click={() => themeFileInput?.click()}>Browse…</button
-								>
-								<input
-									type="file"
-									accept=".json,application/json"
-									bind:this={themeFileInput}
-									style="display: none"
-									on:change={onThemeFile}
-								/>
-							</span>
-						</svelte:fragment>
-						Export the active theme as an editable .theme.json, tweak the colors, then Browse to load it back
-						{#if $customThemes.length}
-							<span class="mt-1 flex flex-wrap gap-1">
-								{#each $customThemes as ct (ct.id)}
-									<span class="inline-flex items-center gap-1 rounded-sm bg-gray-800 px-1.5 py-0.5 text-[11px]">
-										{ct.name}
-										<button
-											class="text-gray-400 hover:text-red-400"
-											title="Remove theme"
-											on:click={() => removeCustomTheme(ct.id)}>✕</button
-										>
-									</span>
-								{/each}
-							</span>
-						{/if}
-					</SettingRow>
-					<p class="ui-section-label">Sound</p>
-					<SettingRow name="Game sounds">
-						<svelte:fragment slot="control"><input id="setting-game-sound-volume" type="range" style="width: 100%" min="0" max="1" step="0.05" bind:value={$gameSoundVolume} aria-label="Game sounds volume" /></svelte:fragment>
-						How loud a game's effects are on this device — coins, goals, hits, the clicks a
-						game makes. Local to you; {Math.round($gameSoundVolume * 100)}%
-					</SettingRow>
-					<SettingRow name="Music">
-						<svelte:fragment slot="control"><input id="setting-game-music-volume" type="range" style="width: 100%" min="0" max="1" step="0.05" bind:value={$gameMusicVolume} aria-label="Game music volume" /></svelte:fragment>
-						The background music a game plays while you are in Interact or Play (it stops when
-						you go back to editing). Local to you; {Math.round($gameMusicVolume * 100)}%
-					</SettingRow>
-					<p class="ui-section-label">Notifications</p>
-					<SettingRow name="Welcome on start">
-						<svelte:fragment slot="control"><Toggle bind:checked={$showWelcomeOnStart} /></svelte:fragment>
-						Show the welcome card every time the app opens. It normally appears only on your first
-						visit — turn this on to keep its quick links handy, or
-						<button class="underline" on:click={() => { settingsOpen.set(false); openWelcome(); }}>open it now</button>
-					</SettingRow>
-					<SettingRow name="Announce new versions">
-						<svelte:fragment slot="control"><Toggle bind:checked={$showWhatsNewNotice} /></svelte:fragment>
-						After an update, mark the logo menu with a dot and show one toast linking to the
-						changelog. Off means updates arrive silently — What's new stays in the logo menu
-					</SettingRow>
-					<SettingRow name="Toasts in drawer only">
-						<svelte:fragment slot="control"><Toggle bind:checked={$toastsInDrawerOnly} /></svelte:fragment>
-						Hide ALL pop-up toasts in the viewport — including connection requests — so they appear only in the connection drawer's Toasts tab (the notification bell still keeps the full history). Pin the drawer to keep the Toasts tab handy
-					</SettingRow>
-					<ToursSettings />
-					<p class="ui-section-label">Windows & chrome</p>
-					{#if $drawerSlot}
-						<SettingRow name="Show Rooms button">
-							<svelte:fragment slot="control"><Toggle bind:checked={$showRoomsButton} /></svelte:fragment>
-							Show the "Rooms" shortcut in the Connect bar. Off makes the bar cleaner — you can still open rooms from the connection info drawer (the chevron) ▸ Rooms tab
-						</SettingRow>
-					{/if}
-					<SettingRow name="Floating toolbar">
-						<svelte:fragment slot="control"><Toggle bind:checked={$floatingToolbar} /></svelte:fragment>
-						The bottom toolbar lifts above the docked Node editor or Explorer when one opens, so it never sits over their content (the default). Off, it stays down on the viewport floor beside the chat and simulation buttons — whether an open panel then covers it is "Toolbar always on top" below
-					</SettingRow>
-					<SettingRow name="Toolbar always on top">
-						<svelte:fragment slot="control"><Toggle bind:checked={$toolbarAlwaysOnTop} /></svelte:fragment>
-						The bottom toolbar paints over the docked panels and over floating windows, so it is always reachable. Off (the default), a window or an open panel covers it instead — the toolbar gets out of the way. Also in the toolbar's own right-click menu; drag the bar itself to slide it left or right
-					</SettingRow>
-					<SettingRow name="Window positions">
-						<svelte:fragment slot="control">
-							<button id="reset-windows" class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={() => { resetWindowLayout(); showToast('Window positions reset'); }}>Reset</button>
-						</svelte:fragment>
-						Bring back any floating window (object list, chat, Explorer, editors) that drifted off-screen or behind the UI
-					</SettingRow>
-					<WorkspaceLayoutsSettings />
-					<SettingRow name="Touch tools">
-						<svelte:fragment slot="control"><Toggle bind:checked={$touchTools} /></svelte:fragment>
-						Undo / Redo / Multi-select buttons beside the logo, for touch — no <kbd>Ctrl+Z</kbd> or <kbd>Shift</kbd> needed. Multi-select adds on tap and boxes on drag, for objects and for mesh vertices, edges and faces. On by default on phones
-					</SettingRow>
-					<SettingRow name="Allow undocking (touch)">
-						<svelte:fragment slot="control"><Toggle bind:checked={$mobileUndockAllowed} /></svelte:fragment>
-						On touch / small screens the Flow and Explorer panels stay docked and their "undock" buttons are hidden (floating windows are cramped on a phone). Turn this on to allow undocking them into floating windows anyway
-					</SettingRow>
-					<p class="ui-section-label">Lists & menus</p>
-					<SettingRow name="Advanced mode">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$advancedMode} /></svelte:fragment>
-						Show system objects (module content, environment rig) as a System filter in the object list
-					</SettingRow>
-					<SettingRow name="Environment in list">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$showEnvInList} /></svelte:fragment>
-						Show the environment group as an Environment filter in the object list
-					</SettingRow>
-					<SettingRow name="Object search in menu">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$objectSearchEnabled} /></svelte:fragment>
-						Add a "Search objects…" entry to the viewport right-click menu — find a scene object and fly the camera to it
-					</SettingRow>
-					<p class="ui-section-label">Viewport</p>
-					<SettingRow name="Show FPS + draw calls">
-						<svelte:fragment slot="control"><Toggle id="show-perf-stats" bind:checked={$perfStatsShown} /></svelte:fragment>
-						A small counter with the frame rate, frame time, draw calls and triangles — in the
-						corner of the viewport and, in a headset, on a strip at the top of the view. The draw
-						calls turn amber past 120 and red past 150, the practical limit on a Quest
-					</SettingRow>
-					{#if $perfReportsAvailable}
-						<SettingRow name="Send performance reports">
-							<svelte:fragment slot="control"><Toggle id="send-perf-reports" bind:checked={$perfReportsOn} /></svelte:fragment>
-							Every 10 seconds, send this device's frame times, draw calls, triangles, quality level and
-							module versions (no account, no scene content) so slow spots on real devices get fixed.
-							A dot on the FPS counter shows it is on. Off by default
-						</SettingRow>
-					{/if}
-					<SettingRow name="Dock resizes the viewport">
-						<svelte:fragment slot="control">
-							<Toggle
-								id="dock-pushes-viewport"
-								checked={$viewPrefs.dockPushesViewport}
-								onchange={(e) => setViewPrefs({ dockPushesViewport: e.currentTarget.checked })}
-							/>
-						</svelte:fragment>
-						On, the 3D view ends where an open bottom panel begins — the way every editor lays out
-						its viewport, so nothing you are working on sits behind the Node editor or the
-						Explorer. Off, the view stays full-window and the panel is drawn over it
-					</SettingRow>
+					<InterfaceSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={controlsExpanded}>
 					{#snippet header()}Controls{/snippet}
-					<p class="ui-section-label">Keyboard & mouse</p>
-					<SettingRow name="Shift+A quick add">
-						<svelte:fragment slot="control"><Toggle bind:checked={$enableShiftAdd} /></svelte:fragment>
-						Pressing Shift+A opens the Add menu at the cursor and spawns the picked object
-						under it. Off by default — Shift also strafes the camera in fly mode
-					</SettingRow>
-					<SettingRow name="Show helpers in Play (debug)">
-						<svelte:fragment slot="control"><Toggle id="helpers-in-play" bind:checked={$helpersInPlay} /></svelte:fragment>
-						Light helpers, camera frustums and camera markers hide when Play starts (camera
-						previews and captures never show them). On, they render inside Play with a DEBUG
-						chip so a screenshot cannot be mistaken for the game
-					</SettingRow>
-					<SettingRow name="Double-click to open notes">
-						<svelte:fragment slot="control"><Toggle bind:checked={$noteDoubleClickToOpen} /></svelte:fragment>
-						A single click on a note marker — and the notes drawer's ‹ › group arrows — then only
-						flies the camera to the note; the card opens on a double click. Handy for reviewing a
-						scene full of notes without a card in the way
-					</SettingRow>
-					<p class="ui-section-label">Trackpad</p>
-					<SettingRow name="Trackpad gestures">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="trackpad-mode"
-								items={[
-									{ value: 'auto', name: 'Auto' },
-									{ value: 'on', name: 'On' },
-									{ value: 'off', name: 'Off' }
-								]}
-								bind:value={$trackpadMode}
-							/>
-						</svelte:fragment>
-						Two-finger swipes on a laptop trackpad pan the camera; pinch zooms. Auto detects trackpads and leaves mouse wheels zooming as usual — pick On/Off if the detection guesses wrong on your hardware
-					</SettingRow>
-					<SettingRow name="Two-finger pan">
-						<svelte:fragment slot="control"><Toggle bind:checked={$panEnabled} /></svelte:fragment>
-						Two-finger swipes pan the camera. Off: swipes zoom like a mouse wheel, and panning stays available with a right-click drag
-					</SettingRow>
-					<SettingRow name="Reverse trackpad pan">
-						<svelte:fragment slot="control"><Toggle bind:checked={$reversePan} /></svelte:fragment>
-						Flip the two-finger pan direction (default: the scene follows your fingers, like touch scrolling)
-					</SettingRow>
-					<SettingRow name="Pinch zoom">
-						<svelte:fragment slot="control"><Toggle bind:checked={$pinchZoomEnabled} /></svelte:fragment>
-						Pinching in/out on the viewport zooms the camera. Off: pinch does nothing (the page still never zooms) and zooming stays on the mouse wheel
-					</SettingRow>
-					<SettingRow name="Allow browser pinch zoom">
-						<svelte:fragment slot="control"><Toggle bind:checked={$allowBrowserZoom} /></svelte:fragment>
-						Accessibility: let pinch / Ctrl+scroll zoom the whole PAGE again (off keeps pinch as an app gesture and stops accidental page zoom over panels, on desktop and mobile)
-					</SettingRow>
-					<!-- 24-A2.1: the readout. A wheel is classified by DEVICE SIGNATURE now
-					     (trackpadNav.js); when a machine still guesses wrong, these are the numbers
-					     that tune the constants — and the Viewport menu ▸ View ▸ Mouse wheel row is
-					     the one-click fix meanwhile. -->
-					<SettingRow name="Wheel diagnostics" noControl>
-						<div id="wheel-diagnostics" class="text-xs">
-							<p class="mb-1 text-gray-500 dark:text-gray-400">
-								{wheelPlatform || 'unknown platform'} · pointer: {wheelCoarse ? 'coarse' : 'fine'} · wheel mode: {$trackpadMode === 'off' ? 'zoom' : $trackpadMode === 'on' ? 'pan' : 'auto'}
-							</p>
-							{#if $lastWheelEvents.length}
-								<div class="overflow-x-auto">
-									<table class="wheel-diag w-full text-left font-mono">
-										<thead><tr><th>Δt ms</th><th>mode</th><th>ΔX</th><th>ΔY</th><th>wheelΔY</th><th>ctrl</th><th>as</th><th>why</th></tr></thead>
-										<tbody>
-											{#each $lastWheelEvents as s, i (s.t + ':' + i)}
-												<tr data-kind={s.kind}>
-													<td>{s.dt}</td><td>{s.deltaMode}</td><td>{fmt(s.deltaX)}</td><td>{fmt(s.deltaY)}</td><td>{fmt(s.wheelDeltaY)}</td><td>{s.ctrl ? '✓' : ''}</td><td>{s.kind}</td><td>{s.why}</td>
-												</tr>
-											{/each}
-										</tbody>
-									</table>
-								</div>
-							{:else}
-								<p class="text-gray-500 dark:text-gray-400">Scroll over the viewport — the last 8 wheel events land here, with how each was classified.</p>
-							{/if}
-							<p class="mt-1 text-gray-500 dark:text-gray-400">If a mouse wheel pans instead of zooming (or a trackpad zooms), pick Viewport menu ▸ View ▸ Mouse wheel, or "Trackpad gestures" above.</p>
-						</div>
-					</SettingRow>
+					<ControlsSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={inputExpanded}>
 					{#snippet header()}Input{/snippet}
-					<p class="ui-section-label">Gamepad</p>
-					<!-- 21-E5: LOCAL prefs (the shortcuts-registry / viewPrefs precedent) - never
-					     replicated and never saved into a scene. Which stick I hold in which hand is a
-					     fact about MY hardware. What they configure is the DEFAULT mapping, i.e. the
-					     no-nodes case; a game that binds its own controls overrides it. -->
-					<SettingRow name="Gamepad">
-						<svelte:fragment slot="control">
-							<Toggle
-								id="gamepad-enabled"
-								checked={$gamepadPrefs.enabled}
-								onchange={(e) => setGamepadPrefs({ enabled: e.currentTarget.checked })} />
-						</svelte:fragment>
-						<span>A connected controller drives the game with no setup: the left stick walks, the right stick looks, and the d-pad + <strong>A</strong> work a HUD menu. Off ignores the pad entirely</span>
-					</SettingRow>
-					<SettingRow name="Swap sticks">
-						<svelte:fragment slot="control">
-							<Toggle
-								id="gamepad-swap"
-								checked={$gamepadPrefs.swapSticks}
-								onchange={(e) => setGamepadPrefs({ swapSticks: e.currentTarget.checked })} />
-						</svelte:fragment>
-						<span>Move with the RIGHT stick and look with the left — the southpaw layout</span>
-					</SettingRow>
-					<SettingRow name="Invert look Y">
-						<svelte:fragment slot="control">
-							<Toggle
-								id="gamepad-invert-y"
-								checked={$gamepadPrefs.invertY}
-								onchange={(e) => setGamepadPrefs({ invertY: e.currentTarget.checked })} />
-						</svelte:fragment>
-						<span>Push the look stick up to look DOWN (the flight-stick convention)</span>
-					</SettingRow>
-					<SettingRow name="Stick deadzone">
-						<svelte:fragment slot="control">
-							<input
-								id="gamepad-deadzone"
-								type="number"
-								min={DEADZONE_RANGE.min}
-								max={DEADZONE_RANGE.max}
-								step="0.01"
-								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$gamepadPrefs.deadzone}
-								on:change={(e: any) => setGamepadPrefs({ deadzone: parseFloat(e.target.value) })} />
-						</svelte:fragment>
-						<span>How far a stick may drift at rest before it counts as pushed ({DEADZONE_RANGE.min}–{DEADZONE_RANGE.max}). Raise it if the camera creeps with your hands off the pad; the range beyond it is rescaled, so nothing jumps</span>
-					</SettingRow>
-					<SettingRow name="Look sensitivity">
-						<svelte:fragment slot="control">
-							<input
-								id="gamepad-sensitivity"
-								type="number"
-								min={SENSITIVITY_RANGE.min}
-								max={SENSITIVITY_RANGE.max}
-								step="0.1"
-								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$gamepadPrefs.lookSensitivity}
-								on:change={(e: any) => setGamepadPrefs({ lookSensitivity: parseFloat(e.target.value) })} />
-						</svelte:fragment>
-						<span>How fast the look stick turns ({SENSITIVITY_RANGE.min}–{SENSITIVITY_RANGE.max}×). Mouse look has its own speed and is unaffected</span>
-					</SettingRow>
-					<p class="ui-section-label">Bindings</p>
-					<SettingRow name="Per-game controls" noControl={true}>
-						<span>A scene can bind the pad itself with the <strong>Gamepad Button</strong> and <strong>Gamepad Axis</strong> nodes in the node editor (Input group) — button presses replicate like a key press, while a stick value stays local to the player holding it. Module bindings are listed under Shortcuts</span>
-					</SettingRow>
-					<p class="ui-section-label">Node editor</p>
-					<SettingRow name="Mouse bindings">
-						<svelte:fragment slot="control">
-							<ThemedSelect id="flow-mouse-bindings" items={FLOW_MOUSE_BINDINGS} bind:value={$flowMouseBindings} />
-						</svelte:fragment>
-						<span>Classic (the default): a left drag on the node editor's canvas pans and <kbd>Shift</kbd>+drag draws a selection box. Select-first: a left drag selects, dragging any selected node moves the whole selection, <kbd>Shift</kbd>+click adds to or removes from it, and the middle or right button pans — a right click that does not move still opens the menu</span>
-					</SettingRow>
-					<NodeEditorViewSettings />
+					<InputSettings />
 				</AccordionItem>
 				<TouchControlsSettings searching={!!settingsQuery.trim()} />
 				<AccordionItem bind:open={sceneExpanded}>
 					{#snippet header()}Scene{/snippet}
-					<SettingRow name="Show grid">
-						<svelte:fragment slot="control">
-							<Checkbox
-								bind:checked={$showGrid}
-								onclick={() => {
-									if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
-									else safeStorage.setItem('showGrid', 'false');
-								}} />
-						</svelte:fragment>
-						Display grid on floor
-					</SettingRow>
-					<SettingRow name="Light helper length">
-						<svelte:fragment slot="control">
-							<input
-								id="light-helper-length"
-								type="number"
-								min="0.2"
-								max="50"
-								step="0.5"
-								class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$lightHelperLength}
-								on:change={(e: any) => lightHelperLength.set(Math.max(0.2, Number(e.target.value) || 2))} />
-						</svelte:fragment>
-						How far a directional or spot light's helper line reaches along its direction (display only — a directional light has a direction, not a distance)
-					</SettingRow>
-					<SettingRow name="Shadow quality">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="shadow-quality"
-								items={[
-									{ value: 'off', name: 'Off' },
-									{ value: 'low', name: 'Low' },
-									{ value: 'medium', name: 'Medium' },
-									{ value: 'high', name: 'High' }
-								]}
-								bind:value={$shadowQuality}
-							/>
-						</svelte:fragment>
-						Caps every light's shadow map size on THIS machine (Off disables shadows entirely; per-light sizes still replicate)
-					</SettingRow>
-					<SettingRow name="Reduce quality when the scene is heavy">
-						<svelte:fragment slot="control"><Checkbox id="auto-quality" bind:checked={$autoQuality} /></svelte:fragment>
-						When a heavy scene cannot keep 30 frames a second on THIS machine, drop shadows, then resolution, then effects, one step at a time, and give each back when frames recover. Never changes the scene for anyone else; the chip beside the object count says when it is active
-					</SettingRow>
-					<SettingRow name="Simplify distant models">
-						<svelte:fragment slot="control"><Checkbox id="lod-enabled" bind:checked={$lodEnabled} /></svelte:fragment>
-						Draw a lighter version of a dense model (a few thousand triangles or more) when it is far from you, built once per model on THIS machine. Nothing in the scene changes — the full model is what is saved, sent and edited
-					</SettingRow>
-					<SettingRow name="Draw repeated kit pieces together">
-						<svelte:fragment slot="control"><Checkbox id="kit-instancing" bind:checked={$kitInstancingEnabled} /></svelte:fragment>
-						Every copy of one pack piece (a wall, a floor tile, a battlement) is drawn in one go instead of one by one, which is what keeps a level built from the kits inside a headset's budget. Only on THIS machine; an edited or selected piece is always drawn on its own
-					</SettingRow>
-					<WaterSettings />
-					<SettingRow name="Simulation controls">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$showSimControls} /></svelte:fragment>
-						Show the physics transport (play/pause/stop/reset) at bottom-right. Off by default to avoid confusion with the main play button; the P key still starts/stops the simulation
-					</SettingRow>
-					<SettingRow name="Sync animations">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$syncedAnimations} /></svelte:fragment>
-						Node animations use wall-clock time so all peers see the same phase
-					</SettingRow>
-					<SettingRow name="Spatial voice">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$spatialVoice} /></svelte:fragment>
-						Voices come from where each peer is (pan + distance falloff)
-					</SettingRow>
-					<SettingRow name="Ping color + sound">
-						<svelte:fragment slot="control">
-							<span class="sr-stack">
-								<input
-									type="color"
-									id="ping-color"
-									class="h-7 w-full cursor-pointer rounded-sm border border-gray-500 bg-transparent"
-									value={$pingColor || '#4f83cc'}
-									on:change={(e) => pingColor.set(e.currentTarget.value)}
-								/>
-								<ThemedSelect
-									items={PING_SOUNDS.map((s) => ({ value: s.id, name: s.name }))}
-									bind:value={$pingSound}
-								/>
-								<button
-									id="ping-preview"
-									class="rounded-sm bg-gray-600 px-1.5 py-1 text-white"
-									title="Preview the ping chime"
-									on:click={() => playPing($pingSound)}
-								>
-									▶ Preview
-								</button>
-							</span>
-						</svelte:fragment>
-						Your ping color + sound — peers see and hear YOUR pings this way (color empty = your peer color)
-					</SettingRow>
-					<SettingRow name="Autosave">
-						<svelte:fragment slot="control"><Checkbox bind:checked={$autosaveEnabled} /></svelte:fragment>
-						Keep a local session snapshot (restore offered after a crash/reload)
-					</SettingRow>
-					<SettingRow name="Auto-restore on load">
-						<svelte:fragment slot="control">
-							<Checkbox id="auto-restore" bind:checked={$autoRestoreEnabled} />
-						</svelte:fragment>
-						Restore that snapshot automatically at startup instead of asking. Only ever runs when the scene is still empty; a message tells you what was restored
-					</SettingRow>
-					<CheckpointSettings />
-					<!-- 33 (L2): what a scene switch does with the modules the scene being left brought along -->
-					<SettingRow name="When opening another scene">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="modules-on-open"
-								items={[
-									{ value: 'ask', name: 'Ask' },
-									{ value: 'keep', name: 'Keep modules' },
-									{ value: 'unload', name: 'Unload modules' }
-								]}
-								bind:value={$modulesOnOpen}
-							/>
-						</svelte:fragment>
-						<span>Modules that came with the scene you are leaving (a game's Waves or Untangle) and that the next scene does not use. Ask (the default) shows them and lets you choose; Unload switches them off (back on any time in Modules, and a scene that needs them offers to). A new blank scene always unloads them</span>
-					</SettingRow>
-					<p class="ui-section-label">Selection</p>
-					<SettingRow name="Double-click action">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="double-click-action"
-								items={DOUBLE_CLICK_ACTIONS.map((a) => ({ value: a.value, name: a.label }))}
-								bind:value={$doubleClickAction}
-							/>
-						</svelte:fragment>
-						What a double-click on an object does in the viewport. A single click always just selects it; <kbd>Ctrl+A</kbd> selects everything
-					</SettingRow>
-					<p class="ui-section-label">Units</p>
-					<SettingRow name="Length">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="length-unit"
-								items={LENGTH_UNIT_KEYS.map((u) => ({ value: u, name: u }))}
-								bind:value={$lengthUnit}
-							/>
-						</svelte:fragment>
-						How distances are shown and typed — positions, snapping steps, bevel widths. The
-						scene is always metres underneath, so this changes nothing but the display. You can
-						also type a unit into any of those fields directly (<kbd>12cm</kbd>,
-						<kbd>4in</kbd>, <kbd>1.5ft</kbd>) and it converts on entry
-					</SettingRow>
-					<SettingRow name="Angle">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="angle-unit"
-								items={[
-									{ value: 'deg', name: 'degrees' },
-									{ value: 'rad', name: 'radians' }
-								]}
-								bind:value={$angleUnit}
-							/>
-						</svelte:fragment>
-						The same for rotations and angular snapping. <kbd>90deg</kbd> and
-						<kbd>1.57rad</kbd> both parse whichever is on display
-					</SettingRow>
-					<p class="ui-section-label">Duplicate</p>
-					<SettingRow name="Carry animation clips">
-						<svelte:fragment slot="control"><Toggle bind:checked={$duplicateCarriesAnimation} /></svelte:fragment>
-						A duplicate gets its own copy of the object's animation clips, so the copy plays
-						independently. Off leaves the copy unanimated
-					</SettingRow>
-					<SettingRow name="Carry object flow">
-						<svelte:fragment slot="control"><Toggle bind:checked={$duplicateCarriesFlow} /></svelte:fragment>
-						A duplicate gets its own copy of the object's flow graph, with fresh node ids. An
-						embedded Object Flow node keeps pointing at the object it referenced — re-aiming it at
-						the copy is your call. Off leaves the copy without a graph
-					</SettingRow>
-					<SettingRow name="Carry shader graph">
-						<svelte:fragment slot="control"><Toggle bind:checked={$duplicateCarriesShader} /></svelte:fragment>
-						A duplicate of a shader-driven object gets its own copy of the graph. Off leaves the copy
-						with a frozen snapshot of the compiled material and nothing to edit. An object inheriting
-						the scene default keeps inheriting it either way
-					</SettingRow>
-					<SettingRow name="Share materials">
-						<svelte:fragment slot="control"><Toggle bind:checked={$shareDuplicatedMaterials} /></svelte:fragment>
-						<span>
-							Off (the default), a duplicate gets its own copy of the material, so editing one
-							leaves the other alone. On, the copy and the original share ONE material and an
-							edit to either changes both — for everyone in the session. Geometry is always
-							copied either way. Use the Material section's <strong>Unlink</strong> to give one
-							object its own material back
-						</span>
-					</SettingRow>
-					<p class="ui-section-label">Wireframe &amp; outline</p>
-					<SettingRow name="Wireframe color">
-						<svelte:fragment slot="control">
-							<input
-								type="color"
-								id="wire-color"
-								class="h-7 w-full cursor-pointer rounded-sm border border-gray-500 bg-transparent"
-								value={$viewPrefs.wireColor}
-								on:input={(e) => setViewPrefs({ wireColor: e.currentTarget.value })}
-							/>
-						</svelte:fragment>
-						Line color of the Wireframe view mode (Configure Scene ▸ View mode)
-					</SettingRow>
-					<SettingRow name="Selection outline color">
-						<svelte:fragment slot="control">
-							<input
-								type="color"
-								id="outline-color"
-								class="h-7 w-full cursor-pointer rounded-sm border border-gray-500 bg-transparent"
-								value={$viewPrefs.outlineColor}
-								on:input={(e) => setViewPrefs({ outlineColor: e.currentTarget.value })}
-							/>
-						</svelte:fragment>
-						Outline drawn around your selected objects (objects a peer has locked keep their own color)
-					</SettingRow>
-					<SettingRow name="Edit Mesh wireframe">
-						<svelte:fragment slot="control">
-							<span class="sr-stack">
-								<label class="flex items-center gap-1.5 text-xs whitespace-nowrap">
-									<Checkbox
-										id="edit-wire-auto"
-										checked={$viewPrefs.editWireColor === 'auto'}
-										onchange={(e) =>
-											setViewPrefs({
-												editWireColor: e.currentTarget.checked ? 'auto' : '#2f81f7'
-											})}
-									/>
-									Auto
-								</label>
-								<input
-									type="color"
-									id="edit-wire-color"
-									class="h-7 w-full cursor-pointer rounded-sm border border-gray-500 bg-transparent disabled:opacity-40"
-									disabled={$viewPrefs.editWireColor === 'auto'}
-									value={$viewPrefs.editWireColor === 'auto' ? '#2f81f7' : $viewPrefs.editWireColor}
-									on:input={(e) => setViewPrefs({ editWireColor: e.currentTarget.value })}
-								/>
-							</span>
-						</svelte:fragment>
-						Edge overlay while editing a mesh. Auto picks dark or light from the object's own color; turn it off to pin one color
-					</SettingRow>
-					<SettingRow name="Reset line colors">
-						<svelte:fragment slot="control">
-							<button
-								id="reset-view-colors"
-								class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-								on:click={() => { resetViewPrefs(); showToast('Line colors reset'); }}
-							>Reset</button>
-						</svelte:fragment>
-						Back to the defaults ({DEFAULT_VIEW_PREFS.wireColor} / {DEFAULT_VIEW_PREFS.outlineColor} / auto). Per-device, never shared
-					</SettingRow>
-					<LoadingSettings />
+					<SceneSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={explorerExpanded}>
 					{#snippet header()}Explorer{/snippet}
-					<!--
-						R22 round 5 (user): the file settings were rows inside SCENE, which is where
-						they started when there were two of them. There are eleven now and they are
-						about the library rather than the world, so they get the panel they name.
-					-->
-					<SettingRow name="When you add files during a session">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="share-new-files"
-								items={[
-									{ value: 'ask', name: 'Ask each time' },
-									{ value: 'always', name: 'Share automatically' },
-									{ value: 'never', name: 'Keep them local' }
-								]}
-								bind:value={$shareNewFiles}
-							/>
-						</svelte:fragment>
-						<span>
-							A file is local until somebody says otherwise, so this is what happens when you
-							add one while connected. <strong>Ask each time</strong> puts the question in the
-							Explorer, above the files it is about — and asks once about the library you
-							brought with you when a session starts. <strong>Share automatically</strong>
-							publishes everything with no gesture at all. <strong>Keep them local</strong> is
-							silence: nothing is shared and nothing is asked. A file you
-							<strong>explicitly unshared</strong> stays unshared whatever this says — a
-							setting is a preference and that was a decision. This one is yours alone; peers
-							choose for themselves.
-						</span>
-					</SettingRow>
-					<SettingRow name="Download shared files automatically">
-						<svelte:fragment slot="control">
-							<input
-								id="auto-download"
-								class="tp-check"
-								type="checkbox"
-								checked={$autoDownload}
-								on:change={(e: any) => autoDownload.set(!!e.target.checked)} />
-						</svelte:fragment>
-						<span>
-							When somebody shares a file or a folder, fetch it straight away. <strong>On by
-							default</strong>: without it every shared file costs each peer a right-click,
-							which is an extra step per file per person for something they already agreed to
-							by being here. Turn it off on a metered connection or a very large project —
-							shared files still appear, greyed, and download when you open them.
-						</span>
-					</SettingRow>
-					<SettingRow name="Offer to merge unsaved work on connect">
-						<svelte:fragment slot="control">
-							<input
-								id="merge-on-connect"
-								class="tp-check"
-								type="checkbox"
-								checked={$mergeOnConnect}
-								on:change={(e: any) => mergeOnConnect.set(!!e.target.checked)} />
-						</svelte:fragment>
-						<span>
-							When you connect with work in a scene that was never saved, this app asks you to
-							<strong>save it or dismiss it</strong> — an unsaved scene has no identity, so
-							there is nothing for the other world to merge into. Turn this on to get the
-							older question back instead: <strong>Share</strong> your objects into their
-							world, or <strong>Stash</strong> them to a session first. Per device, and it
-							changes nothing about what the session allows — only which question is put.
-						</span>
-					</SettingRow>
-					<SettingRow name="Who can unshare a file">
-						<svelte:fragment slot="control">
-							<select
-								id="unshare-authority"
-								class="rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$unshareAuthority}
-								on:change={(e: any) =>
-									unshareAuthority.set(e.target.value === 'owner' ? 'owner' : 'anyone')}>
-								<option value="anyone">Anyone in the session</option>
-								<option value="owner">Only whoever shared it</option>
-							</select>
-						</svelte:fragment>
-						<span>
-							A shared file is part of the project, so by default any editor can take it
-							out again — the same way anyone can delete an object. Choose
-							<strong>Only whoever shared it</strong> for a session where one person owns the
-							library and the rest are guests. Either way, <strong>nobody ever loses a copy
-							they already downloaded</strong> — unsharing removes the offer, never the file.
-							This is a preference for <em>this machine's menus</em>, not a rule the session
-							enforces.
-						</span>
-					</SettingRow>
-					<SettingRow name="Keep versions per scene">
-						<svelte:fragment slot="control">
-							<input
-								id="keep-versions"
-								type="number"
-								min="0"
-								max="200"
-								step="1"
-								class="w-20 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$keepVersionsSetting}
-								on:change={(e: any) =>
-									keepVersionsSetting.set(Math.max(0, Math.floor(Number(e.target.value) || 0)))} />
-						</svelte:fragment>
-						How many past versions of each scene keep their bytes on this machine — browse
-						them under <strong>Version history</strong> in a scene file's properties. Pinned
-						versions are always kept. <strong>0 turns auto-versioning off</strong>: leaving a
-						scene stops cutting one behind your back, and only the current version plus your
-						pins keep their bytes — saving a scene and <kbd>Save version…</kbd> still work
-					</SettingRow>
-					<SettingRow name="When importing files already in your library">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="import-duplicate-mode"
-								items={[
-									{ value: 'ask', name: 'Ask' },
-									{ value: 'skip', name: 'Skip them' },
-									{ value: 'copy', name: 'Import as copies' }
-								]}
-								bind:value={$duplicateImportMode}
-							/>
-						</svelte:fragment>
-						<span>
-							Rule for importing same files which already in your library.
-							<strong>Ask</strong> lets you decide file by file. <strong>Skip</strong>
-							keeps what you have and tells you how many it left out.
-							<strong>Import as copies</strong> brings them in as new files beside the
-							originals - scenes get a fresh copy, while identical files of other kinds
-							stay as one
-						</span>
-					</SettingRow>
-					<SettingRow name="Save name">
-						<svelte:fragment slot="control">
-							<input
-								id="save-name-template"
-								type="text"
-								class="w-40 rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$saveNameTemplate}
-								on:change={(e: any) => saveNameTemplate.set(String(e.target.value ?? ''))} />
-						</svelte:fragment>
-						<span>
-							What a downloaded scene, project or GLTF file is called. <kbd>[name]</kbd> is
-							the scene's name (the project's, for a <kbd>.tp</kbd>); the date parts are
-							<kbd>[YYYY]</kbd> <kbd>[YY]</kbd> <kbd>[MM]</kbd> <kbd>[DD]</kbd>
-							<kbd>[HH]</kbd> <kbd>[mm]</kbd> <kbd>[ss]</kbd> <kbd>[ms]</kbd>, in UTC — so
-							<kbd>[name]-[DD]-[MM]-[YY]</kbd> gives <strong>Arena-22-08-26</strong>.
-							Something with no name yet falls back to a timestamp, so a save is never
-							nameless
-						</span>
-					</SettingRow>
-					<p class="ui-section-label">Deleted files</p>
-					<SettingRow name="Keep a recycle bin">
-						<svelte:fragment slot="control">
-							<input
-								id="recycle-bin"
-								class="tp-check"
-								type="checkbox"
-								checked={$recycleBinEnabled}
-								on:change={(e: any) => recycleBinEnabled.set(!!e.target.checked)} />
-						</svelte:fragment>
-						<span>
-							Deleting a shared file removes it from the project for everyone, so each peer
-							keeps its own copy in <strong>Deleted files</strong> where it can be restored.
-							Turn this off and a delete is immediate on <em>this</em> machine — peers still
-							get their own bin, because their copy is theirs.
-						</span>
-					</SettingRow>
-					<SettingRow name="Delete without asking">
-						<svelte:fragment slot="control">
-							<input
-								id="delete-no-confirm"
-								class="tp-check"
-								type="checkbox"
-								checked={$deleteWithoutConfirm}
-								on:change={(e: any) => deleteWithoutConfirm.set(!!e.target.checked)} />
-						</svelte:fragment>
-						<span>
-							Skip the confirmation when deleting files and folders. Reasonable only
-							<em>because</em> the recycle bin exists — with the bin also off, a delete is
-							immediate and final, which is why these two sit together.
-						</span>
-					</SettingRow>
-					<SettingRow name="Keep deleted files after a reload">
-						<svelte:fragment slot="control">
-							<input
-								id="keep-recycle-bin"
-								class="tp-check"
-								type="checkbox"
-								checked={$keepRecycleBin}
-								on:change={(e: any) => keepRecycleBin.set(!!e.target.checked)} />
-						</svelte:fragment>
-						<span>
-							Off by default: the bin is a safety net for the minutes after a delete, not
-							storage, so its files are reclaimed the next time you load. The file then
-							leaves <strong>Deleted</strong> for the <strong>Deleted log</strong> beside
-							it — the record survives, only the bytes on this device go.
-						</span>
-					</SettingRow>
-					<SettingRow name="Deleted files log">
-						<svelte:fragment slot="control">
-							<input
-								id="deleted-log"
-								class="tp-check"
-								type="checkbox"
-								checked={$deletedLogEnabled}
-								on:change={(e: any) => deletedLogEnabled.set(!!e.target.checked)} />
-						</svelte:fragment>
-						<span>
-							Keep a record of what was deleted from this project — the name, who removed
-							it, when, and the thumbnail taken at the time — in a
-							<strong>Deleted log</strong> beside the bin. On by default. Turning it off
-							hides the log here and stops writing a record for a delete that keeps no
-							file; it does not erase what is already there, because the record belongs to
-							the project and every peer holds the same one. To erase it, open
-							<strong>Deleted</strong> and empty it.
-						</span>
-					</SettingRow>
-					<p class="ui-section-label">Disk</p>
-					<!--
-						R22 round 13 P2: the THIRD entry point to the storage breakdown. The Explorer
-						header chip is the first, its background menu the second — and the chip yields
-						below a 700px header, so the action needs a home that a narrow screen keeps.
-						Settings is also where somebody goes LOOKING for it, which the two Explorer
-						surfaces cannot claim.
-					-->
-					<SettingRow name="Storage used">
-						<svelte:fragment slot="control">
-							<Button id="settings-storage" size="xs" color="alternative" onclick={openStorageModal}>
-								<HardDrive size={14} class="mr-1" aria-hidden="true" />Show breakdown
-							</Button>
-						</svelte:fragment>
-						<span>
-							What is using this device’s storage — your library files, saved scenes and
-							projects, old scene versions, the recycle bin and the caches — with a tick beside
-							each one so you can reclaim what you no longer want. Every number is an
-							<em>estimate</em>: the browser reports one figure for everything this app
-							stores, so the breakdown adds ours up and says what is left over. Nothing here
-							touches your peers — their copies are theirs.
-						</span>
-					</SettingRow>
+					<ExplorerSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={vrExpanded}>
 					{#snippet header()}VR{/snippet}
-					<SettingRow name="VR override">
-						<svelte:fragment slot="control">
-							<Checkbox
-								bind:checked={$vrOverride}
-								onclick={() => {
-									if (safeStorage.getItem('vrOverride')) safeStorage.removeItem('vrOverride');
-									else safeStorage.setItem('vrOverride', 'true');
-								}} />
-						</svelte:fragment>
-						Forces normal play even if immersive-vr is enabled
-					</SettingRow>
-					<!-- 36-vr: every VR setting, from the one table the headset uses (vr/settingsSchema.js) -->
-					<VRSettingsSection {arSupport} />
-					<SettingRow name="My hand model">
-						<svelte:fragment slot="control">
-							<select
-								id="my-hand-model"
-								class="rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$myHandModel}
-								on:change={(e: any) => setMyHandModel(e.target.value)}
-							>
-								<option value="">Default</option>
-								{#each $explorerItems.filter((i: any) => i.kind === 'object') as item (item.id)}
-									<option value={item.hash}>{item.name}</option>
-								{/each}
-							</select>
-						</svelte:fragment>
-						<span class="font-semibold">Custom hands (identity)</span> — a GLB from your Explorer library that OTHER peers see as your hands in VR (bytes push automatically; renders rigid at the wrist)
-					</SettingRow>
-					<SettingRow name="Colocation probe (dev)">
-						<svelte:fragment slot="control">
-							<span class="sr-stack">
-								<button
-									id="ar-probe-run"
-									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
-									disabled={$probeRunning}
-									on:click={() => {
-										// USER ACTIVATION, and this ORDER is the whole reason for the comment:
-										// probeSupport() is STARTED and deliberately NOT awaited, so runArProbe()
-										// — whose first statement is the requestSession call, with no await
-										// ahead of it — runs in the SAME task as this click. Awaiting the
-										// isSessionSupported pre-checks first would push requestSession into a
-										// later task, which is exactly the shape a runtime refuses with
-										// "requires user activation". Nothing is lost: probeSupport records its
-										// synchronous surface checks before it returns and its two async lines a
-										// moment later, and every finding carries its own step name.
-										probeSupport();
-										runArProbe();
-									}}>{$probeRunning ? 'Probing…' : 'Probe AR capabilities'}</button
-								>
-								<button
-									id="ar-probe-clear"
-									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
-									disabled={$probeRunning}
-									on:click={() => clearProbeState()}>Clear stored anchor</button
-								>
-							</span>
-						</svelte:fragment>
-						<span class="font-semibold">CO0 on-device probe</span> — run this <em>inside the headset</em>: it opens an
-						immersive-ar session, creates an anchor at your feet, persists the handle and reports what the runtime
-						actually supports. Run it once, fully restart the browser, run it again — the second run's
-						<em>restore delta</em> line is the answer. The report survives the session, a reload and a restart{arSupport ===
-						false
-							? '. This device reports no immersive-ar support'
-							: ''}
-					</SettingRow>
-					{#if $probeFindings.length}
-						<SettingRow name="Probe report" noControl>
-							<div class="flex max-h-72 flex-col gap-0.5 overflow-y-auto font-mono text-[11px] leading-snug">
-								{#each $probeFindings as finding, i (i)}
-									<div class="flex gap-1.5">
-										<span class={finding.ok ? 'text-green-400' : 'text-red-400'}>{finding.ok ? '✓' : '✗'}</span>
-										<span class="whitespace-nowrap font-semibold">{finding.step}</span>
-										<span class="min-w-0 break-words text-gray-400">{finding.detail}</span>
-									</div>
-								{/each}
-							</div>
-						</SettingRow>
-					{/if}
-					<SettingRow name="Colocation">
-						<svelte:fragment slot="control">
-							<span class="sr-stack">
-								<button
-									id="colocate-here"
-									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-									on:click={() => colocateHereFromView()}>Colocate here</button
-								>
-								<button
-									id="colocate-stop"
-									class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
-									disabled={!$roomAlignment}
-									on:click={() => stopColocation()}>Stop</button
-								>
-								{#if forgetKey}
-									<button
-										id="colocate-forget"
-										class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-										title={'Forget the saved room anchor for ' + forgetKey + ' — the next visit needs the ritual again. Stop does NOT forget.'}
-										on:click={() => forgetRoom(forgetKey)}>Forget {forgetKey}</button
-									>
-								{/if}
-							</span>
-						</svelte:fragment>
-						<span class="font-semibold" id="colocation-state"
-							>{$roomAlignment ? 'Colocated · ' + ($roomAlignment.roomKey ?? 'room') : 'Not colocated'}</span
-						>
-						— share one physical room with a co-present peer. <em>Colocate here</em> uses the current
-						viewpoint (both of you stand on the agreed spot facing the agreed way and press it); in VR the
-						radial menu's Scene ▸ Colocate offers the more accurate point + aim ritual. While colocated the
-						world stays 1:1 and a world-grab moves the SHARED room anchor, so your partner sees the scene
-						move too. Expect ~1–3 cm of agreement, not millimetres. A calibration made in-headset is
-							REMEMBERED per room (a persistent anchor): the next VR/AR session in that room re-aligns
-							with no ritual. <em>Stop</em> keeps that memory; <em>Forget</em> drops it
-					</SettingRow>
-					{#if $roomAlignment}
-						<!-- CO7: the fine-tune. Only offered while colocated — a correction has no
-						     frame to be expressed in otherwise. Room axes: +X right of the aim
-						     direction, +Y up, -Z along it. -->
-						<SettingRow name="Fine-tune" noControl>
-							<div class="flex flex-col gap-1.5">
-								<div class="flex flex-wrap items-center gap-2">
-									<DragRow
-										id="nudge-dx"
-										label="X"
-										value={$roomNudge?.dx ?? 0}
-										unit="length"
-										step={0.002}
-										snap={0.01}
-										decimals={3}
-										min={-NUDGE_MAX_M}
-										max={NUDGE_MAX_M}
-										onchange={(v) => setRoomNudge({ dx: v })}
-									/>
-									<DragRow
-										id="nudge-dy"
-										label="Y"
-										value={$roomNudge?.dy ?? 0}
-										unit="length"
-										step={0.002}
-										snap={0.01}
-										decimals={3}
-										min={-NUDGE_MAX_M}
-										max={NUDGE_MAX_M}
-										onchange={(v) => setRoomNudge({ dy: v })}
-									/>
-									<DragRow
-										id="nudge-dz"
-										label="Z"
-										value={$roomNudge?.dz ?? 0}
-										unit="length"
-										step={0.002}
-										snap={0.01}
-										decimals={3}
-										min={-NUDGE_MAX_M}
-										max={NUDGE_MAX_M}
-										onchange={(v) => setRoomNudge({ dz: v })}
-									/>
-									<DragRow
-										id="nudge-dyaw"
-										label="Yaw"
-										value={($roomNudge?.dyaw ?? 0) * (180 / Math.PI)}
-										unit="angleDeg"
-										step={0.05}
-										snap={0.5}
-										decimals={2}
-										min={-15}
-										max={15}
-										onchange={(v) => setRoomNudge({ dyaw: (v * Math.PI) / 180 })}
-									/>
-									<button
-										id="nudge-reset"
-										class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
-										disabled={nudgeIsZero($roomNudge)}
-										on:click={() => resetRoomNudge()}>Reset</button
-									>
-								</div>
-								<span>
-									Nudge the world so it lines up with what you actually see — a box that should
-									sit ON the table corner but hovers a centimetre off it. This is YOURS alone
-									(each headset's calibration has its own small error, so each corrects its
-									own), it is remembered per room, and it survives the automatic drift
-									correction. In VR, arm <em>Fine-tune</em> in the Scene ▸ Colocate radial: the
-									left stick slides the world, the right stick lifts and turns it. To move the
-									scene for <em>everyone</em>, two-grip grab it instead.
-								</span>
-							</div>
-						</SettingRow>
-					{/if}
-					<SettingRow name="Ghost hands">
-						<svelte:fragment slot="control"
-							><Toggle id="colocated-ghost-hands" bind:checked={$colocatedGhostHands} /></svelte:fragment
-						>
-						<span
-							>While colocated, a room-mate's avatar body, name label and voice are hidden — you are
-							looking at and listening to the real person. Their HANDS stay, drawn faint, because a
-							controller is how somebody points at a virtual object standing on a real table; turn this
-							off to hide those too. Local preference — it changes nothing for anyone else, and a REMOTE
-							peer always sees and hears you both in full</span
-						>
-					</SettingRow>
+					<VRSettingsSection />
 				</AccordionItem>
 				<AccordionItem bind:open={aiExpanded}>
 					{#snippet header()}AI{/snippet}
-					<SettingRow name="Enable assistant">
-						<svelte:fragment slot="control"><Toggle bind:checked={$aiEnabled} onchange={() => setAiEnabled($aiEnabled)} /></svelte:fragment>
-						<span class="font-semibold">AI scene assistant</span> — build and edit the scene with prompts. Press
-						<kbd class="rounded-sm border border-gray-500 px-1 text-[11px]">`</kbd> for the quick prompt bar, or open the AI Assistant window. Edits replicate to peers and undo as one step.
-					</SettingRow>
-					<SettingRow name="Providers" noControl>
-						{#if $aiProviders.length}
-							<span class="flex flex-col gap-1">
-								{#each $aiProviders as p (p.id)}
-									<span class="inline-flex items-center gap-2 rounded-sm bg-gray-800 px-2 py-1 text-[13px]">
-										<input
-											type="radio"
-											name="ai-active"
-											checked={$aiActiveProvider === p.id}
-											on:change={() => setAiActiveProvider(p.id)}
-											title="Use this provider"
-										/>
-										<span class="font-semibold">{p.label}</span>
-										<span class="text-gray-400">{p.model}</span>
-										<span class="flex-1"></span>
-										<button class="text-gray-300 hover:text-white" on:click={() => aiStartEdit(p)}>Edit</button>
-										<button class="text-gray-400 hover:text-red-400" title="Remove" on:click={() => removeAiProvider(p.id)}>✕</button>
-									</span>
-								{/each}
-							</span>
-						{:else}
-							<span class="text-gray-400">No providers yet.</span>
-						{/if}
-						<button
-							class="mt-1.5 self-start rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-							on:click={aiStartAdd}>+ Add provider</button
-						>
-					</SettingRow>
-					{#if aiFormOpen}
-						<SettingRow name={aiEditId ? 'Edit provider' : 'New provider'} noControl>
-							<span class="flex flex-col gap-1.5">
-								<select class="ui-input" bind:value={aiFormPreset} on:change={aiPresetChanged}>
-									{#each PROVIDER_PRESETS as preset}
-										<option value={preset.preset}>{preset.label}</option>
-									{/each}
-								</select>
-								<input class="ui-input" placeholder="Label" autocomplete="off" bind:value={aiFormLabel} />
-								<!-- on:change (fires when leaving an edited field) auto-fetches the model list
-								     so the picker fills without a Test connection click -->
-								<input class="ui-input" placeholder="Base URL (…/v1)" autocomplete="off" bind:value={aiFormBaseUrl} on:change={aiRefreshModels} />
-								<!-- new-password: keeps Chrome's password manager from saving base-url + key as a
-								     login pair and autofilling them into unrelated text inputs (Connect peer id) -->
-								<input class="ui-input" type="password" placeholder="API key / bearer token" autocomplete="new-password" bind:value={aiFormKey} on:change={aiRefreshModels} />
-								<!-- model combobox: free text + suggestions from the endpoint's /models
-								     (fetched on Test connection / Edit open, persisted on the provider).
-								     Selection uses mousedown so it lands before the input's blur. -->
-								<input
-									id="ai-model-input"
-									class="ui-input"
-									placeholder={aiModelsFetching ? 'Model id — fetching list…' : aiFormModels.length ? 'Model id — ' + aiFormModels.length + ' available' : 'Model id'}
-									autocomplete="off"
-									bind:value={aiFormModel}
-									on:focus={() => (aiModelListOpen = true)}
-									on:input={() => (aiModelListOpen = true)}
-									on:keydown={(e: any) => { if (e.key === 'Escape' || e.key === 'Enter') aiModelListOpen = false; }}
-									on:blur={() => setTimeout(() => (aiModelListOpen = false), 150)}
-								/>
-								{#if aiModelListOpen && aiFormModels.length}
-									<div id="ai-model-list" class="max-h-40 overflow-y-auto rounded-sm border border-gray-600 bg-gray-800">
-										{#each aiModelFiltered as m (m)}
-											<button
-												class="block w-full px-2 py-1 text-left font-mono text-[12px] {m === aiFormModel.trim() ? 'bg-primary-700 text-white' : 'text-gray-200 hover:bg-gray-700'}"
-												on:mousedown|preventDefault={() => { aiFormModel = m; aiModelListOpen = false; }}
-											>{m}</button>
-										{/each}
-										{#if !aiModelFiltered.length}
-											<div class="px-2 py-1 text-[12px] text-gray-400">no match — free text works too (aliases / custom ids)</div>
-										{/if}
-									</div>
-								{/if}
-								<label class="flex items-center gap-2 text-[13px] text-gray-300">
-									<input class="tp-check" type="checkbox" bind:checked={aiFormStream} />
-									Stream responses
-								</label>
-								<label class="flex items-center gap-2 text-[13px] text-gray-300">
-									<input id="ai-physics-tools" class="tp-check" type="checkbox" bind:checked={aiFormPhysics} />
-									Physics tools (advanced)
-								</label>
-								<span class="text-[11px] leading-snug text-gray-400">
-									Lets the assistant set physics bodies, attach joints and start the simulation.
-									Multi-step physics is hard for small local models (4B) — recommended for 14B+
-									or hosted models.
-									<button
-										class="underline hover:text-gray-200"
-										on:click={() => window.open('https://docs.theprototype.app/ai/local-models/', '_blank')}
-									>Local &amp; small models guide</button>
-								</span>
-								<input class="ui-input" placeholder="Temperature (blank = server default)" bind:value={aiFormTemp} />
-								<span class="text-[11px] leading-snug text-gray-400">
-									Turn streaming OFF for a self-hosted server whose tool calls only work unstreamed —
-									vLLM with a mismatched <span class="font-mono">--tool-call-parser</span> (e.g. hermes
-									for a Qwen3.5 model, which needs qwen3_xml) mangles streamed tool calls. The
-									assistant also detects that at runtime and falls back on its own.
-								</span>
-								<span class="flex gap-1.5">
-									<button class="rounded-sm bg-primary-700 px-2 py-1 text-xs text-white hover:bg-primary-600" on:click={aiSaveProvider}>Save</button>
-									<button class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50" disabled={aiTesting} on:click={aiTest}>{aiTesting ? 'Testing…' : 'Test connection'}</button>
-									<button class="rounded-sm bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600" on:click={() => { aiFormOpen = false; aiEditId = null; }}>Cancel</button>
-								</span>
-								{#if aiTestResult}
-									<span id="ai-test-result" class="text-[12px] leading-snug">
-										{#if aiTestResult.ok}
-											<span class="text-emerald-400">✓ {aiTestResult.detail}</span>
-											{#if !aiTestResult.model}
-												<span class="text-red-400"> · no model selected</span>
-											{:else if aiTestResult.modelOk}
-												<span class="text-emerald-400"> · model <span class="font-mono">{aiTestResult.model}</span> — Configuration OK</span>
-											{:else if aiTestResult.modelOk === false}
-												<span class="text-red-400"> · model "{aiTestResult.model}" did not respond — pick one from the list</span>
-											{/if}
-										{:else}
-											<span class="text-red-400">✗ {aiTestResult.detail}</span>
-										{/if}
-									</span>
-								{/if}
-							</span>
-						</SettingRow>
-					{/if}
-					<AiSttSettings />
-					<SettingRow name="Mesh generation">
-						<svelte:fragment slot="control"><Toggle bind:checked={$meshGenEnabled} onchange={() => setMeshGenEnabled($meshGenEnabled)} /></svelte:fragment>
-						<span class="font-semibold">Text → 3D mesh</span> — generate custom models from prompts (Add menu → “✨ Generate 3D model”, or the assistant). Backends: a self-hosted <span class="font-mono">ComfyUI</span> running TRELLIS, or a hosted API (Meshy). See the Console/AI docs for setup.
-					</SettingRow>
-					<SettingRow name="Mesh providers" noControl>
-						{#if $meshProviders.length}
-							<span class="flex flex-col gap-1">
-								{#each $meshProviders as p (p.id)}
-									<span class="inline-flex items-center gap-2 rounded-sm bg-gray-800 px-2 py-1 text-[13px]">
-										<input type="radio" name="mesh-active" checked={$meshActiveProvider === p.id} on:change={() => setMeshActiveProvider(p.id)} title="Use this provider" />
-										<span class="font-semibold">{p.label}</span>
-										<span class="text-gray-400">{p.kind}</span>
-										<span class="flex-1"></span>
-										<button class="text-gray-300 hover:text-white" on:click={() => meshStartEdit(p)}>Edit</button>
-										<button class="text-gray-400 hover:text-red-400" title="Remove" on:click={() => removeMeshProvider(p.id)}>✕</button>
-									</span>
-								{/each}
-							</span>
-						{:else}
-							<span class="text-gray-400">No mesh providers yet.</span>
-						{/if}
-						<button class="mt-1.5 self-start rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500" on:click={meshStartAdd}>+ Add mesh provider</button>
-					</SettingRow>
-					{#if meshFormOpen}
-						<SettingRow name={meshEditId ? 'Edit mesh provider' : 'New mesh provider'} noControl>
-							<span class="flex flex-col gap-1.5">
-								<select class="ui-input" bind:value={meshFormKind} on:change={meshApplyPreset}>
-									{#each MESH_PRESETS as preset}
-										<option value={preset.kind}>{preset.label}</option>
-									{/each}
-								</select>
-								<input class="ui-input" placeholder="Label" autocomplete="off" bind:value={meshFormLabel} />
-								<input class="ui-input" placeholder={meshFormKind === 'comfyui' ? 'ComfyUI URL (http://host:8188)' : 'API base (https://api.meshy.ai)'} autocomplete="off" bind:value={meshFormBaseUrl} />
-								<!-- new-password: don't let Chrome save base-url + key as a login pair (it then
-								     autofills them into unrelated text inputs like the Connect peer id) -->
-								<input class="ui-input" type="password" placeholder={meshFormKind === 'comfyui' ? 'Bearer token (only if proxied; blank for LAN)' : 'API key'} autocomplete="new-password" bind:value={meshFormKey} />
-								{#if meshFormKind === 'comfyui'}
-									<textarea class="ui-input min-h-[80px] resize-y font-mono text-[11px]" placeholder={'Workflow JSON (API format). Put {{PROMPT}} in the text node and {{SEED}} in the sampler seed.'} bind:value={meshFormWorkflow}></textarea>
-									<input class="ui-input" placeholder="Output node id (optional — auto-detects the SaveGLB node)" bind:value={meshFormOutputNode} />
-								{:else}
-									<select class="ui-input" bind:value={meshFormMode}>
-										<option value="preview">preview (geometry only — faster, cheaper)</option>
-										<option value="refine">refine (adds textures — more credits)</option>
-									</select>
-									<input class="ui-input" placeholder="Asset proxy URL (optional — blank uses the built-in default)" bind:value={meshFormAssetProxy} />
-									<span class="text-[11px] leading-snug text-gray-400">
-										Meshy's assets CDN sends no CORS headers, so the finished model can't be
-										downloaded by the browser directly — downloads go through a proxy
-										(e.g. <span class="font-mono">https://proxy.theprototype.app</span>; blank
-										tries the built-in defaults, falling back automatically).
-									</span>
-								{/if}
-								<span class="flex gap-1.5">
-									<button class="rounded-sm bg-primary-700 px-2 py-1 text-xs text-white hover:bg-primary-600" on:click={meshSaveProvider}>Save</button>
-									<button class="rounded-sm bg-gray-700 px-2 py-1 text-xs text-white hover:bg-gray-600" on:click={() => { meshFormOpen = false; meshEditId = null; }}>Cancel</button>
-								</span>
-							</span>
-						</SettingRow>
-					{/if}
-					<SettingRow name="Storage" noControl>
-						API keys are stored <span class="font-semibold">unencrypted</span> in this browser's local storage (like all settings) and never leave your device except in requests to the provider you configure. "Reset settings" clears them.
-					</SettingRow>
+					<AiSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={exportExpanded}>
 					{#snippet header()}Export{/snippet}
-					<ExportSettingsSection />
+					<Section variant="card" label="Defaults for the next export" badge="This device"><ExportSettingsSection /></Section>
 				</AccordionItem>
 				<AccordionItem bind:open={nodeTypesExpanded}>
 					{#snippet header()}Node types{/snippet}
@@ -2062,270 +536,302 @@
 				</AccordionItem>
 				<AccordionItem bind:open={connectionExpanded}>
 					{#snippet header()}Connection{/snippet}
-					<SettingRow name="Session size">
-						<svelte:fragment slot="control">
-							<input
-								id="soft-peer-cap"
-								type="number"
-								min="2"
-								max={HARD_PEER_CAP}
-								class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-								value={$softPeerCap}
-								on:change={(e: any) => {
-									const n = Number(e.target.value);
-									softPeerCap.set(Number.isFinite(n) ? Math.min(HARD_PEER_CAP, Math.max(2, Math.round(n))) : SOFT_PEER_CAP_DEFAULT);
-								}}
-							/>
-						</svelte:fragment>
-						How many people you expect in a session. Everyone connects to everyone, so each
-						extra person costs every other person bandwidth — voice and live gestures are the
-						hungry parts. Past this number an approval still works but warns; the hard limit
-						is <span class="font-mono">{HARD_PEER_CAP}</span>, where approving would degrade
-						the session for everybody rather than just for whoever joined last.
-					</SettingRow>
-					<SettingRow name="Signaling server">
-						<svelte:fragment slot="control">
-							<ThemedSelect
-								id="peer-server-mode"
-								items={[
-									{ value: 'default', name: HAS_SELF_HOSTED ? 'Default (self-hosted + fallback)' : 'Default (public cloud)' },
-									{ value: 'public', name: 'Public PeerJS cloud' },
-									{ value: 'custom', name: 'Custom server' },
-									{ value: 'local', name: 'Local dev (localhost:9001)' }
-								]}
-								value={$peerServerConfig.mode}
-								onchange={(v) => setPeerMode(v)}
-							/>
-						</svelte:fragment>
-						Where peers discover each other.
-						{#if HAS_SELF_HOSTED}Default uses <span class="font-mono">{SELF_HOSTED_HOST}</span> and falls back to the public PeerJS cloud if it's unreachable.{:else}Default is the public PeerJS cloud.{/if}
-						Custom pins your own server (no fallback). Local dev is the <span class="font-mono">npm run peer</span> server on this machine — R22 round 9 made it an explicit choice, because a configured <span class="font-mono">.env</span> host now wins on localhost instead of being overridden by the hostname. Takes effect on reload.
-					</SettingRow>
-					{#if $peerServerConfig.mode === 'custom'}
-						<SettingRow name="Server host">
-							<svelte:fragment slot="control">
-								<input
-									class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-									placeholder="peer.example.com"
-									value={$peerServerConfig.custom.host}
-									on:change={(e: any) => setPeerCustom('host', e.target.value)}
-								/>
-							</svelte:fragment>
-							Your PeerJS server host (no https://, no path)
-						</SettingRow>
-						<SettingRow name="Port + path">
-							<svelte:fragment slot="control">
-								<span class="sr-stack">
-									<input
-										class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-										placeholder="443"
-										value={$peerServerConfig.custom.port}
-										on:change={(e: any) => setPeerCustom('port', e.target.value)}
-									/>
-									<input
-										class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-										placeholder="/peerjs"
-										value={$peerServerConfig.custom.path}
-										on:change={(e: any) => setPeerCustom('path', e.target.value)}
-									/>
-								</span>
-							</svelte:fragment>
-							Port + path (Caddy/TLS defaults: 443 and /peerjs) — each on its own line
-						</SettingRow>
-						<SettingRow name="Secure (wss)">
-							<svelte:fragment slot="control">
-								<Checkbox
-									checked={$peerServerConfig.custom.secure}
-									onchange={(e: any) => setPeerCustom('secure', e.target.checked)} />
-							</svelte:fragment>
-							Use TLS — leave on unless testing a plain-ws server
-						</SettingRow>
-						<SettingRow name="TURN URLs">
-							<svelte:fragment slot="control">
-								<input
-									class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-									placeholder="turn:host:3478?transport=udp,…"
-									value={$peerServerConfig.custom.turnUrls}
-									on:change={(e: any) => setPeerCustom('turnUrls', e.target.value)}
-								/>
-							</svelte:fragment>
-							TURN URLs (comma-separated) — the NAT relay; blank = STUN-only, direct connections only
-						</SettingRow>
-						<SettingRow name="TURN credentials">
-							<svelte:fragment slot="control">
-								<span class="sr-stack">
-									<input
-										class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-										placeholder="turn user"
-										value={$peerServerConfig.custom.turnUsername}
-										on:change={(e: any) => setPeerCustom('turnUsername', e.target.value)}
-									/>
-									<input
-										class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-										placeholder="turn credential"
-										value={$peerServerConfig.custom.turnCredential}
-										on:change={(e: any) => setPeerCustom('turnCredential', e.target.value)}
-									/>
-								</span>
-							</svelte:fragment>
-							TURN username + credential — each on its own line
-						</SettingRow>
-						<SettingRow name="STUN URLs">
-							<svelte:fragment slot="control">
-								<input
-									class="w-full rounded-sm bg-gray-700 px-1 py-0.5 text-xs text-white"
-									placeholder="stun:host:3478"
-									value={$peerServerConfig.custom.stunUrls}
-									on:change={(e: any) => setPeerCustom('stunUrls', e.target.value)}
-								/>
-							</svelte:fragment>
-							STUN URLs (comma-separated) — optional
-						</SettingRow>
-					{/if}
-					<SettingRow name="Apply changes">
-						<svelte:fragment slot="control">
-							<button
-								id="peer-server-apply"
-								class="rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500 disabled:opacity-50"
-								disabled={applyingServer}
-								on:click={applyPeerServer}>{applyingServer ? 'Switching…' : 'Apply'}</button>
-						</svelte:fragment>
-						Switches the signaling server now and keeps your session id; an open session is left
-						first. <button id="peer-server-reload" class="underline" on:click={() => location.reload()}>Reload</button> if anything looks stuck
-					</SettingRow>
+					<ConnectionSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={shortcutsExpanded}>
 					{#snippet header()}Shortcuts{/snippet}
-					<!-- Phase 5: the list is also the EDITOR (the Unity Shortcut Manager model)
-					     - click a row's keys and press the combo you want. A row with no action
-					     of its own (fly keys, push-to-talk, the mesh-edit bundles, a module's
-					     declared bindings) is listed for discoverability and locked. -->
-					{#if $nonLatinLayoutSeen && !layoutLabels}
-						<!-- 24-A1: the browser cannot tell us the printed labels (no getLayoutMap), but
-						     a keydown already showed a non-Latin layout — say how letters resolve -->
-						<p id="shortcut-layout-note" class="mb-1 text-xs text-amber-600 dark:text-amber-400">
-							Letter shortcuts use the physical key position on this layout (the key where the letter sits on a QWERTY keyboard).
-						</p>
-					{/if}
-					<div class="mb-1 flex items-center justify-between gap-3">
-						<p class="text-xs text-gray-500 dark:text-gray-400">Click a shortcut's keys to rebind it - Esc cancels.</p>
-						<button
-							id="shortcut-reset-all"
-							class="shrink-0 rounded-sm bg-gray-600 px-2 py-1 text-xs text-white hover:bg-gray-500"
-							on:click={resetEveryShortcut}>Reset all</button>
-					</div>
-					{#key shortcutsVersion}
-						<!-- 131: borderless multi-column grid; group headers span all columns -->
-						<div id="shortcut-grid" class="grid grid-cols-1 gap-x-8 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
-							{#each shortcutGroups as group}
-								<p class="col-span-full mb-1 mt-3 text-xs font-semibold uppercase text-gray-400">
-									{group}{#if groupScope(group)}<span class="shortcut-scope ml-2 font-normal normal-case text-gray-500">· keys work {groupScope(group)}</span>{/if}
-								</p>
-								{#each shortcuts.filter((s) => s.group === group) as shortcut}
-									<div class="flex flex-col py-1" data-shortcut={shortcut.id}>
-										<div class="flex items-center gap-2">
-											{#if isRebindable(shortcut)}
-												<button
-													class="shortcut-keys min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100 {capturingId === shortcut.id ? 'bg-amber-100 text-amber-900 dark:bg-amber-600 dark:text-white' : 'hover:border-gray-400 dark:hover:border-gray-300'}"
-													title="Click to rebind"
-													aria-label={'Rebind ' + shortcut.label}
-													on:click={() => startCapture(shortcut.id)}
-													>{capturingId === shortcut.id ? 'Press keys... Esc cancels' : shortcut.keys}</button>
-											{:else}
-												<span class="inline-flex shrink-0 items-center gap-1" title={shortcut.fixedReason || 'listed for reference'}>
-													<kbd class="min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100">{shortcut.keys}</kbd>
-													<Lock class="h-3 w-3 text-gray-400" aria-hidden="true" />
-												</span>
-											{/if}
-											<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
-											{#if layoutHint(shortcut.keys, layoutLabels)}
-												<span class="shortcut-layout shrink-0 text-xs text-gray-400" title="Your keyboard layout prints this on that key">· {layoutHint(shortcut.keys, layoutLabels)} on your layout</span>
-											{/if}
-											{#if isRebindable(shortcut) && shortcut.keys !== shortcut.defaultKeys}
-												<button
-													class="shortcut-reset ml-auto shrink-0 rounded-sm p-1 text-gray-400 hover:text-gray-200"
-													title={'Reset to ' + shortcut.defaultKeys}
-													aria-label={'Reset ' + shortcut.label + ' to ' + shortcut.defaultKeys}
-													on:click={() => resetOneShortcut(shortcut.id)}>
-													<RotateCcw class="h-3 w-3" aria-hidden="true" />
-												</button>
-											{/if}
-										</div>
-										{#if shortcutConflict && shortcutConflict.id === shortcut.id}
-											<div class="shortcut-conflict mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
-												<span><kbd class="font-semibold">{shortcutConflict.keys}</kbd> is bound to {shortcutConflict.other.label}</span>
-												<button class="shortcut-swap rounded-sm bg-gray-600 px-2 py-0.5 text-white hover:bg-gray-500" on:click={swapConflict}>Swap</button>
-												<button class="shortcut-cancel rounded-sm px-2 py-0.5 underline" on:click={() => (shortcutConflict = null)}>Cancel</button>
-											</div>
-										{/if}
-									</div>
-								{/each}
-							{/each}
-						</div>
-					{/key}
+					<ShortcutsSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={aboutExpanded}>
-					{#snippet header()}About{/snippet}
-					<SettingRow name="Version" noControl>{appVersionString}</SettingRow>
-					<SettingRow name="Diagnostics">
-						<svelte:fragment slot="control">
-							<Button
-								id="about-copy-diagnostics"
-								size="xs"
-								color="alternative"
-								onclick={async () => {
-									const ok = await copyDiagnostics();
-									showToast(ok ? 'Diagnostics copied to the clipboard' : 'Could not copy the diagnostics');
-								}}>Copy diagnostics</Button
-							>
-						</svelte:fragment>
-						What the app has been doing: version, this session's peer and scene counts, and the last
-						300 log lines. It goes to your clipboard and nowhere else — paste it into a bug report.
-					</SettingRow>
-					{#if $cloudPluginInfo}
-						<SettingRow name="Cloud plugin" noControl>{$cloudPluginInfo.name} {$cloudPluginInfo.version}</SettingRow>
+					{#snippet header()}About & what’s new{/snippet}
+					{#if $navSub?.id === 'whatsnew'}
+						<ChangelogBody />
+					{:else}
+						<Section variant="card" label="About">
+							<KitRow id="about-version" label="Version"><span class="settings-mono">{appVersionString}</span></KitRow>
+							{#if $cloudPluginInfo}
+								<KitRow id="about-cloud-plugin" label="Cloud plugin"><span class="settings-mono">{$cloudPluginInfo.name} {$cloudPluginInfo.version}</span></KitRow>
+							{/if}
+							<KitRow label="Diagnostics" description="Copies the version, this session’s peer and scene counts and the last 300 log lines to your clipboard — for a bug report.">
+								<KitButton
+									id="about-copy-diagnostics"
+									size="sm"
+									onclick={async () => {
+										const ok = await copyDiagnostics();
+										showToast(ok ? 'Diagnostics copied to the clipboard' : 'Could not copy the diagnostics');
+									}}>Copy</KitButton
+								>
+							</KitRow>
+						</Section>
+						<Section variant="card" label="What’s new">
+							<NavRow
+								id="about-whats-new"
+								label="What’s new"
+								description="What changed in each release."
+								dot={$whatsNewUnseen}
+								onclick={() => settingsNav.openSub('whatsnew', 'What’s new', 'aboutwhatsnew')}
+							/>
+						</Section>
+						<Section variant="card" label="Links">
+							<NavRow id="about-link-dev" label="Dev builds" href="https://alexz005.github.io/theprototype" external />
+							<NavRow id="about-link-source" label="Source code" href="https://github.com/theprototype-app/core" external />
+							<NavRow id="about-link-modules" label="Modules" href="https://github.com/theprototype-app/modules" external />
+							<NavRow id="about-link-docs" label="Docs" href="https://github.com/theprototype-app/docs" external />
+						</Section>
+						<Section variant="card" label="Danger zone">
+							<KitRow label="Clear saved session" description="Deletes the autosaved copy of your work on this device, so no restore is offered next time.">
+								<KitButton id="settings-clear-session" variant="warn-text" size="sm" onclick={askClearSavedSession}>Clear</KitButton>
+							</KitRow>
+							<KitRow label="Reset all settings" description="Every setting on this device goes back to its default, in every category at once.">
+								<KitButton id="settings-reset-all" variant="warn-text" size="sm" onclick={() => askResetAllSettings()}>Reset all</KitButton>
+							</KitRow>
+						</Section>
 					{/if}
-					<SettingRow name="Dev Builds" noControl>
-						<a href="https://alexz005.github.io/theprototype">https://alexz005.github.io/theprototype</a>
-					</SettingRow>
-					<SettingRow name="Source Code" noControl>
-						<a href="https://github.com/theprototype-app/core" target="_blank">github.com/theprototype-app/core</a>
-					</SettingRow>
-					<SettingRow name="Modules" noControl>
-						<a href="https://github.com/theprototype-app/modules" target="_blank">github.com/theprototype-app/modules</a>
-					</SettingRow>
-					<SettingRow name="Docs" noControl>
-						<a href="https://github.com/theprototype-app/docs" target="_blank">github.com/theprototype-app/docs</a>
-					</SettingRow>
 				</AccordionItem>
 			</Accordion>
+			</div>
+			</div>
 		</div>
-	{/snippet}
-	</WindowShell>
+		{#if !narrowSettings}
+			<footer class="settings-foot">
+				{#if !searching && canResetCategory(activeKey) && !$navSub}
+					<KitButton variant="warn-text" size="sm" id="settings-reset-category" onclick={() => askResetCategory(activeKey, activeLabel)}>Reset {activeLabel} to defaults</KitButton>
+				{/if}
+				<span class="settings-foot-note">Changes save automatically</span>
+				<KitButton variant="primary" size="sm" id="settings-done" onclick={closeSettings}>Done</KitButton>
+			</footer>
+		{/if}
 	</div>
-	{#snippet footer()}
-		<Button id="settings-reset" onclick={resetSettings}>Reset settings</Button>
-		<Button color="alternative" onclick={() => clearSavedSession()}>Clear saved session</Button>
-		<Button id="about-whats-new" color="alternative" onclick={() => { settingsOpen.set(false); openWhatsNew(); }}>What's new</Button>
-	{/snippet}
 </Modal>
 
 <style>
-	/* 36 B14: the WindowShell needs a definite height; the main pane scrolls, the sidebar stays */
+	/* a muted note under a card ("Storage" in AI, "Per-game controls" in Input) */
+	.settings-main :global(.settings-footnote) {
+		margin: -12px 2px 0;
+		font-size: var(--fs-desc);
+		line-height: 1.45;
+		color: var(--text-faint);
+	}
+	/* the small form controls the redesigned pages share (a number with its unit, a colour swatch,
+	   an inline text link) — tokens only, so a custom .theme.json restyles them */
+	.settings-main :global(.settings-num) {
+		box-sizing: border-box;
+		width: 84px;
+		height: var(--control-h-sm);
+		padding: 0 8px;
+		border: 1px solid var(--border-input);
+		border-radius: 6px;
+		background: var(--surface-inset);
+		color: var(--text);
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-input);
+	}
+	.settings-main :global(.settings-text) {
+		box-sizing: border-box;
+		width: 220px;
+		max-width: 100%;
+		height: var(--control-h-sm);
+		padding: 0 10px;
+		border: 1px solid var(--border-input);
+		border-radius: 6px;
+		background: var(--surface-inset);
+		color: var(--text);
+		font: inherit;
+		font-size: var(--fs-input);
+	}
+	.settings-main :global(.settings-num:disabled),
+	.settings-main :global(.settings-color:disabled) {
+		opacity: 0.45;
+	}
+	.settings-main :global(.settings-unit) {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		font-size: var(--fs-desc);
+		color: var(--text-faint);
+	}
+	.settings-main :global(.settings-color) {
+		width: 40px;
+		height: 28px;
+		padding: 2px;
+		border: 1px solid var(--border-input);
+		border-radius: 6px;
+		background: var(--surface-inset);
+		cursor: pointer;
+	}
+	.settings-main :global(.settings-link) {
+		padding: 0;
+		border: 0;
+		background: transparent;
+		font: inherit;
+		color: var(--accent-text);
+		text-decoration: underline;
+		text-underline-offset: 2px;
+		cursor: pointer;
+	}
+	@media (max-width: 639.98px) {
+		.settings-main :global(.settings-num),
+		.settings-main :global(.settings-text) {
+			height: 44px;
+			font-size: 16px;
+		}
+	}
+	.settings-mono {
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-desc);
+		color: var(--text-2);
+	}
+	/* 37-settings: the window. Its own width (the content column is ~660 px beside a 220 px menu),
+	   one definite height so the menu stays while the content column scrolls. */
+	:global(dialog.settings-dialog) {
+		width: min(960px, 94vw) !important;
+		max-width: min(960px, 94vw) !important;
+		padding: 0 !important;
+		background: var(--surface-1) !important;
+		border: 1px solid var(--border) !important;
+		border-radius: var(--radius-modal) !important;
+		box-shadow: var(--shadow-window);
+		color: var(--text);
+		font-family: var(--font-ui);
+		overflow: hidden;
+	}
+	:global(.settings-dialog-body) {
+		padding: 0 !important;
+		overflow: hidden !important;
+	}
+	/* its OWN surface: the dialog's dim layer (ui.css, a ::before at z-index -1) paints inside the dialog's
+	   stacking context, above the dialog background, so every transparent part of the window (the header,
+	   the content column) showed it — invisible in dark, a grey window in light */
 	.settings-shell {
-		height: min(78vh, 880px);
+		background: var(--surface-1);
+		display: flex;
+		flex-direction: column;
+		height: min(80vh, 760px);
+		min-height: 0;
+	}
+	/* the header is the dialog's own: no second frame around it */
+	.settings-shell > :global(.wc) {
+		flex-shrink: 0;
+		background: transparent;
+		border: 0;
+		border-radius: 0;
+	}
+	.settings-search-head {
+		width: 260px;
+		margin-right: 4px;
+	}
+	.settings-split {
+		display: flex;
+		flex: 1 1 auto;
+		min-height: 0;
+	}
+	.settings-side {
+		flex: 0 0 220px;
+		min-height: 0;
+		overflow-y: auto;
+		border-right: 1px solid var(--border);
+		background: color-mix(in srgb, var(--surface-1) 70%, var(--bg-app));
 	}
 	.settings-main {
-		height: 100%;
+		flex: 1 1 auto;
+		min-width: 0;
+		min-height: 0;
 		overflow-y: auto;
-		padding: 4px 16px 16px;
+		overscroll-behavior: contain;
+		padding: 24px 28px 28px;
 	}
-	@media (max-width: 640px) {
+	.settings-main:focus {
+		outline: none;
+	}
+	.settings-pages-hidden {
+		display: none;
+	}
+	/* searching: every matching page, one after the other */
+	.settings-searching :global(.ss-page + .ss-page) {
+		margin-top: 28px;
+	}
+	/* searching: the card labels carry their page ("INTERFACE › SOUND") */
+	.settings-searching :global(.ss-page [data-section-label]::before) {
+		content: var(--ss-path);
+	}
+	/* searching: a row's name is the way to its place */
+	.settings-searching :global(.setting-row .sr-name) {
+		cursor: pointer;
+	}
+	.settings-searching :global(.setting-row .sr-name:hover) {
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	/* a search result we jumped to */
+	:global(.setting-row.sr-flash),
+	:global(.tp-ui.nr.sr-flash) {
+		animation: settings-flash 1.6s ease-out;
+	}
+	@keyframes -global-settings-flash {
+		0%,
+		35% {
+			background: var(--accent-soft);
+		}
+		100% {
+			background: transparent;
+		}
+	}
+	/* dividers between rows at ANY depth inside a card (legacy sections wrap their rows in a
+	   `display: contents` div, which the card's own child rule cannot see) */
+	.settings-main :global(.sec-card .setting-row + .setting-row),
+	.settings-main :global(.sec-card .contents + .setting-row),
+	.settings-main :global(.sec-card .setting-row + .contents > .setting-row:first-child),
+	.settings-main :global(.sec-card .tp-ui.nr + .setting-row),
+	.settings-main :global(.sec-card .setting-row + .tp-ui.nr) {
+		border-top: 1px solid var(--border);
+	}
+	.settings-foot {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		flex-shrink: 0;
+		padding: 10px 16px 10px 20px;
+		border-top: 1px solid var(--border);
+	}
+	.settings-foot-note {
+		margin-left: auto;
+		font-size: var(--fs-desc);
+		color: var(--text-faint);
+	}
+	.settings-msearch {
+		flex-shrink: 0;
+		padding: 10px 16px 6px;
+	}
+	@media (max-width: 639.98px) {
 		.settings-shell {
-			height: calc(100dvh - var(--connect-bottom, 0px) - 72px);
+			height: calc(100dvh - var(--connect-bottom, 0px));
+		}
+		:global(dialog.settings-dialog) {
+			width: 100vw !important;
+			max-width: 100vw !important;
+			border-radius: 0 !important;
+			border-left: 0 !important;
+			border-right: 0 !important;
 		}
 		.settings-main {
-			padding: 4px 8px 12px;
+			padding: 12px 16px 24px;
+		}
+		/* the app logo floats top-left over every screen: the title on the list, and "‹ Back" on a
+		   page, both start clear of it */
+		.settings-shell > :global(.wc .wc-head) {
+			padding-left: 62px;
+		}
+		/* a segmented control on its own line under the label (a wide row) fills that line in
+		   equal columns — the kit's `full` form */
+		/* SPEC: touch targets >= 44 px on a phone — a segmented option too */
+		.settings-main :global(.seg-opt) {
+			min-height: 44px;
+		}
+		.settings-main :global(.sr-control > .seg) {
+			display: grid;
+			grid-template-columns: repeat(var(--seg-cols), minmax(0, 1fr));
+			width: 100%;
+			box-sizing: border-box;
 		}
 	}
 </style>

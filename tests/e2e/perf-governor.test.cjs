@@ -255,7 +255,7 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 	const box = A.page.locator('#auto-quality');
 	const found = (await box.count()) > 0 && (await box.isVisible());
-	const had = found ? await box.isChecked() : null;
+	const had = found ? (await box.getAttribute('aria-pressed')) === 'true' : null; // 37-settings: a kit Toggle
 	if (found) await box.click();
 	await A.page.waitForTimeout(250);
 	const afterSetting = await A.page.evaluate(() => ({

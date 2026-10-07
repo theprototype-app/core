@@ -113,9 +113,10 @@ h.run(async () => {
 	// --- the Settings rows exist and are wired -------------------------------
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(500);
-	await A.page.getByText('Scene', { exact: true }).first().click();
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'Scene' }).first().click();
 	await A.page.waitForTimeout(400);
-	for (const id of ['#auto-restore', '#wire-color', '#outline-color', '#edit-wire-auto', '#edit-wire-color', '#reset-view-colors'])
+	// 37-settings: Edit mesh wireframe colour is a segmented Auto · Custom (the swatch shows with Custom)
+	for (const id of ['#auto-restore', '#wire-color', '#outline-color', '#edit-wire-mode', '#reset-view-colors'])
 		h.check(await A.page.locator(id).count() > 0, `Settings ▸ Scene has ${id}`);
 
 	// the colour input writes the store (drive the real input path, not the setter)
@@ -131,15 +132,16 @@ h.run(async () => {
 	});
 	h.check(fromInput === '#123456', `the Settings swatch writes the pref (${fromInput})`);
 
-	// the Auto checkbox flips editWireColor between 'auto' and a hex
-	await A.page.locator('#edit-wire-auto').uncheck();
+	// Auto · Custom flips editWireColor between 'auto' and a hex
+	h.check((await A.page.locator('#edit-wire-color').count()) === 0, 'no swatch while Auto is picked');
+	await A.page.locator('#edit-wire-mode-custom').click();
 	await A.page.waitForTimeout(200);
 	const unchecked = await A.page.evaluate(() => {
 		let prefs = null;
 		window.__stores.viewPrefs.viewPrefs.subscribe((v) => (prefs = v))();
 		return prefs?.editWireColor;
 	});
-	h.check(unchecked !== 'auto' && /^#/.test(unchecked ?? ''), `unticking Auto pins a hex (${unchecked})`);
+	h.check(unchecked !== 'auto' && /^#/.test(unchecked ?? ''), `picking Custom pins a hex (${unchecked})`);
 	const colorDisabled = await A.page.locator('#edit-wire-color').isDisabled();
 	h.check(colorDisabled === false, 'the swatch is enabled once Auto is off');
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));

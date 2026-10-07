@@ -32,7 +32,7 @@ h.run(async () => {
 	h.check(await A.page.locator('#settings-search').isVisible(), 'settings search box is present');
 
 	// expand the Scene section (holds the "Shadow quality" row) then search
-	await A.page.getByText('Scene', { exact: true }).first().click();
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'Scene' }).first().click();
 	await A.page.waitForTimeout(300);
 	await A.page.locator('#settings-search').fill('shadow');
 	await A.page.waitForTimeout(300);

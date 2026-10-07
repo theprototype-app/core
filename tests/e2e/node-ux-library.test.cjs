@@ -40,8 +40,11 @@ h.run(async () => {
 	});
 	await p.waitForTimeout(800);
 	h.check(await p.locator('#node-types-section').isVisible(), 'Settings ▸ Node types lists the node types');
-	h.check((await p.locator('[data-node-type="number"]').textContent()).includes('in use'), 'a type in use says so');
-	await p.locator('[data-node-type="number"] input').uncheck();
+	// 37-settings: one sub-page per group, and the filter lists matching types inline
+	await p.locator('#node-types-filter').fill('Number');
+	await p.waitForTimeout(300);
+	h.check((await p.locator('[data-node-type="number"]').first().textContent()).includes('in use'), 'a type in use says so');
+	await p.locator('[data-node-type="number"] [data-nt="type-toggle"]').first().click();
 	await p.waitForTimeout(300);
 	h.check((await p.evaluate(() => localStorage.getItem('disabledNodeTypes'))) === '["number"]', 'switching a type off is remembered on this device');
 	await p.evaluate(() => window.__stores.settingsOpen.set(false));
@@ -65,7 +68,9 @@ h.run(async () => {
 		window.__stores.settingsOpen.set(true);
 	});
 	await p.waitForTimeout(600);
-	await p.locator('#node-types-enable-all').click();
+	// "Turn all on" is the footer's "Reset Node types to defaults" now (it asks first)
+	await p.locator('#settings-reset-category').click();
+	await p.locator('#confirm-dialog-ok').click();
 	await p.waitForTimeout(200);
 	await p.evaluate(() => window.__stores.settingsOpen.set(false));
 	await p.waitForTimeout(400);

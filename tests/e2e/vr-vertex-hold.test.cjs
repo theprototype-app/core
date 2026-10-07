@@ -56,13 +56,14 @@ h.run(async () => {
 	// Settings VR toggle
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(400);
-	await A.page.getByText('VR', { exact: true }).first().click();
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();
 	await A.page.waitForTimeout(300);
-	h.check(await A.page.locator('#vr-vertex-hold').count() > 0, 'Settings VR has a Hold-to-move-vertex toggle');
-	h.check((await A.page.evaluate(() => document.querySelector('#vr-vertex-hold')?.checked)) === true, 'the toggle is on by default');
+	// 37-settings: the schema row's id (vr-set-<id>) on a kit Toggle
+	h.check(await A.page.locator('#vr-set-vertexHold').count() > 0, 'Settings VR has a Hold-to-move-vertex toggle');
+	h.check((await A.page.evaluate(() => document.querySelector('#vr-set-vertexHold')?.getAttribute('aria-pressed'))) === 'true', 'the toggle is on by default');
 
 	// uncheck -> toggle style + persisted
-	await A.page.evaluate(() => document.querySelector('#vr-vertex-hold').click());
+	await A.page.evaluate(() => document.querySelector('#vr-set-vertexHold').click());
 	await A.page.waitForTimeout(200);
 	const off = await A.page.evaluate(() => ({
 		ls: localStorage.getItem('vrVertexHold'),
@@ -75,7 +76,7 @@ h.run(async () => {
 	h.check(off.ls === 'false' && off.store === false, 'unchecking switches to the toggle style + persists');
 
 	// re-check -> hold again
-	await A.page.evaluate(() => document.querySelector('#vr-vertex-hold').click());
+	await A.page.evaluate(() => document.querySelector('#vr-set-vertexHold').click());
 	await A.page.waitForTimeout(200);
 	h.check((await store(A.page, 'vrVertexHold')) === true, 're-checking restores hold mode');
 

@@ -3,6 +3,7 @@
 	// windows — ui-panel + dragWindow + focusStack). Opened by the logo-menu row, the
 	// update toast, or Settings ▸ About. Opening it marks the version seen.
 	import { whatsNewOpen, closeWhatsNew, CHANGELOG } from '$lib/whatsNew';
+	import { changelogReleases } from '$lib/changelog.js';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 
@@ -40,82 +41,10 @@
 		}
 	}
 
-	// Deliberately tiny markdown subset instead of a dependency: the input is our own
-	// bundled CHANGELOG.md, and everything is HTML-escaped BEFORE the inline rules run,
-	// so the {@html} below cannot inject markup even if the file grows odd characters.
-	function esc(s: string) {
-		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-	}
-	function inline(s: string) {
-		return esc(s)
-			.replace(/`([^`]+)`/g, '<code>$1</code>')
-			.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-			.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-	}
-	/** Markdown -> a flat block list the template renders. */
-	function blocks(source: string) {
-		// HTML comments carry maintainer notes for the GitHub view — never render them
-		const md = source.replace(/<!--[\s\S]*?-->/g, '');
-		/** @type {{kind: string, html: string, items?: string[]}[]} */
-		const out: { kind: string; html: string; items?: string[] }[] = [];
-		let para: string[] = [];
-		let list: string[] = [];
-		const flushPara = () => {
-			if (para.length) out.push({ kind: 'p', html: inline(para.join(' ')) });
-			para = [];
-		};
-		const flushList = () => {
-			if (list.length) out.push({ kind: 'ul', html: '', items: list.map(inline) });
-			list = [];
-		};
-		const flush = () => {
-			flushPara();
-			flushList();
-		};
-		for (const raw of md.split(/\r?\n/)) {
-			const line = raw.trim();
-			if (!line) {
-				flush();
-				continue;
-			}
-			const heading = /^(#{1,4})\s+(.*)$/.exec(line);
-			if (heading) {
-				flush();
-				out.push({ kind: 'h' + heading[1].length, html: inline(heading[2]) });
-				continue;
-			}
-			const bullet = /^[-*]\s+(.*)$/.exec(line);
-			if (bullet) {
-				flushPara();
-				list.push(bullet[1]);
-				continue;
-			}
-			// a wrapped bullet continues the previous item
-			if (list.length) list[list.length - 1] += ' ' + line;
-			else para.push(line);
-		}
-		flush();
-		return out;
-	}
-
-	// The leading "# Changelog" title is for the GitHub view — in here the window
-	// header already says it, so h1s are dropped rather than duplicating it.
-	const parsed = blocks(CHANGELOG).filter((b) => b.kind !== 'h1');
-
-	/**
-	 * Group the flat blocks into one FOLDABLE section per release (h2), so the
-	 * window opens on the newest release instead of a wall of every version ever
-	 * shipped. Anything before the first h2 (an intro paragraph) stays loose above
-	 * them. `<details>` does the folding natively — keyboard and screen readers get
-	 * it for free, and there is no open/closed state to keep in sync.
-	 */
-	const intro: typeof parsed = [];
-	const releases: { title: string; body: typeof parsed }[] = [];
-	for (const block of parsed) {
-		if (block.kind === 'h2') releases.push({ title: block.html, body: [] });
-		else if (releases.length) releases[releases.length - 1].body.push(block);
-		else intro.push(block);
-	}
+	// the changelog as releases (one foldable section each) — $lib/changelog.js, shared with
+	// Settings ▸ About ▸ What's new (37-settings)
+	const { intro, releases } = changelogReleases(CHANGELOG);
+	type Block = (typeof intro)[number];
 </script>
 
 {#if $whatsNewOpen}
@@ -136,7 +65,7 @@
 			<button id="whats-new-close" class="ui-button-quiet" title="Close" onclick={closeWhatsNew}>✕</button>
 		</div>
 		<div class="wn-body min-h-0 flex-1 overflow-y-auto px-4 py-3">
-			{#snippet body(list: typeof parsed)}
+			{#snippet body(list: Block[])}
 				{#each list as block}
 					{#if block.kind === 'h3'}
 						<h3>{@html block.html}</h3>

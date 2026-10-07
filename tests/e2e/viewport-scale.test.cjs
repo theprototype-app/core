@@ -254,13 +254,13 @@ h.run(async () => {
 	// --------------------------------- 7. the pref, through the REAL Settings row
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(true));
 	await A.page.waitForTimeout(600);
-	await A.page.getByText('Interface', { exact: true }).first().click();
+	await A.page.locator('#settings-nav .sn-row', { hasText: 'Interface' }).first().click();
 	await A.page.waitForTimeout(500);
 	const row = A.page.locator('.setting-row').filter({ hasText: 'Dock resizes the viewport' }).first();
 	h.check((await row.count()) === 1, '7.1 Settings ▸ Interface has a "Dock resizes the viewport" row');
-	const toggle = row.locator('input[type="checkbox"]');
+	const toggle = row.locator('button[aria-pressed]'); // 37-settings: a kit Toggle
 	h.check((await toggle.count()) === 1, '7.2 ...with a real toggle');
-	h.check(await toggle.isChecked(), '7.3 ...which is ON by default');
+	h.check((await toggle.getAttribute('aria-pressed')) === 'true', '7.3 ...which is ON by default');
 	// flowbite keeps the real input `sr-only` under a painted track, so click the
 	// control itself rather than its coordinates (dock-chrome's idiom)
 	await toggle.evaluate((el) => el.click());

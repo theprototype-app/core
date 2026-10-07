@@ -56,11 +56,8 @@
 	import { startSnapEngine, setSnapPointer, beginSnapDrag, endSnapDrag, maybeSnapGizmo, snapAnchorPicking, snapAnchorClick, updateSnapAnchor } from '$lib/snapEngine';
 	import { meshPivotPicking, meshPivotClick, tickMeshPivotMarker } from '$lib/meshPivot';
 	import { editingObject, enterEditMode, exitEditMode, raycastHandles, clearVertexSelection, onProxyMoved, onProxyDragChanged, tickMeshEdit, selectVerticesInRect } from '$lib/meshEdit';
-	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, faceEditSelectedTris, setFaceSubmode, selectElementsInRect, pickEdge, pickEdgeAt, clearEdgeSelection, knifeCut, setFaceOp, knifePreview, cancelKnife, tickEditWireframe } from '$lib/faceEdit';
+	import { faceEditObject, enterFaceEdit, faceEditOp, commitArmedFaceOp, exitFaceEdit, highlightFaceByTriangle, attachFaceGizmo, detachFaceGizmo, onFaceGizmoMoved, onFaceGizmoDragChanged, autoApplyFaceOp, faceEditMulti, toggleFaceSelection, clearFaceSelection, pickFaceUnit, lookupEditable, faceEditSubmode, faceEditSelectedTris, setFaceSubmode, selectElementsInRect, pickEdge, pickEdgeAt, clearEdgeSelection, knifeClick, knifeHover, knifePreview, tickEditWireframe } from '$lib/faceEdit';
 	import { fireObjectClick } from '$lib/flowRuntime';
-	// M9b: the first click of a knife cut, in CSS pixels. This component is lang="ts", so
-	// the annotation is TS syntax — a JSDoc @type cast is ignored here (the documented trap).
-	let knifeFrom: number[] | null = null;
 	import { peerScenes } from '$lib/peerScenes';
 	import { initVRControls, updateVRControls, raycastMenu, radialStickSelection, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuids, hapticKnock, hapticPulse, onVRSessionStart } from '$lib/vrControls';
 	// 30b (vr-play): the game in your hands — hover/press haptics (P1), the sweep (P4)
@@ -918,8 +915,8 @@
 			// 19-B: the element-snap search is cursor-based — track the pointer while a
 			// gizmo drag runs (this listener is on window, so mid-gesture moves arrive)
 			if ($TControls?.dragging) setSnapPointer(event.clientX, event.clientY);
-			// M9b: the knife's rubber band follows the pointer between the two clicks
-			if (knifeFrom) $knifePreview = { from: knifeFrom, to: [event.clientX, event.clientY] };
+			// M9b: the knife's rubber band follows the pointer while a cut is pending
+			if ($knifePreview) knifeHover([event.clientX, event.clientY]);
 			if (marqueeStart) {
 				$marqueeRect = {
 					x0: Math.min(marqueeStart[0], event.clientX),
@@ -1140,21 +1137,12 @@
 			// face edit mode (135 desktop): a click highlights the face under it,
 			// and 163 attaches the transform gizmo to it (drag = move/rotate/scale)
 			if ($faceEditObject) {
-				// M9b KNIFE: two clicks, anywhere — the cut is a SCREEN line, so it does not need
-				// to hit the mesh at all (that is the point: you cut across a silhouette). The
-				// first click only records; the second cuts and disarms.
+				// M9b KNIFE: clicks anywhere — the cut is a SCREEN line, so it does not need to hit
+				// the mesh at all (that is the point: you cut across a silhouette). The first click
+				// only records; 37 R11: an ADDITIVE click (the selection's add gesture) places a
+				// polyline corner, a plain one ends the cut, cuts and disarms.
 				if ($faceEditOp === 'knife') {
-					if (!knifeFrom) {
-						knifeFrom = [event.clientX, event.clientY];
-						$knifePreview = { from: knifeFrom, to: [event.clientX, event.clientY] };
-						showToast('Knife: click the far end of the cut (Esc cancels)');
-					} else {
-						const from = knifeFrom;
-						knifeFrom = null;
-						cancelKnife();
-						knifeCut(from, [event.clientX, event.clientY]);
-						setFaceOp('move'); // a one-shot tool: back to the default after a cut
-					}
+					knifeClick([event.clientX, event.clientY], event.ctrlKey || event.shiftKey || event.metaKey || $multiSelectMode);
 					return;
 				}
 				// A8: lookupEditable also finds the scene-root collider-edit proxy

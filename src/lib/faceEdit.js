@@ -4235,13 +4235,14 @@ function segmentCross(a, b, c, d) {
 	return { onCut, onEdge };
 }
 
-/** M9b: the live rubber band while a cut is being placed, in CSS pixels. A store rather than
- * component state because the two ends come from different places — the first CLICK (kept in
- * Scene.svelte) and the moving pointer.
- * @type {import('svelte/store').Writable<{from: number[], to: number[]}|null>} */
+/** M9b + 37 R11: the cut being placed, in CSS pixels. `points` are the corners clicked so far
+ * (points[0] is the first click), `from` is the LAST of them — the start of the live segment —
+ * and `to` follows the pointer. A store rather than component state because the clicks come
+ * from Scene.svelte and the keys (Enter, Backspace, Escape) from this module's listener.
+ * @type {import('svelte/store').Writable<{points: number[][], from: number[], to: number[]}|null>} */
 export const knifePreview = writable(null);
 
-/** Drop a pending cut: the first point is forgotten and the band disappears. */
+/** Drop a pending cut: every placed corner is forgotten and the band disappears. */
 export function cancelKnife() {
 	knifePreview.set(null);
 }
@@ -4265,81 +4266,277 @@ export function escapeConsumedByKnife(event) {
 }
 
 /**
- * M9b KNIFE: cut the edited mesh along a screen-space line.
- *
- * Both points are in CSS pixels, as a click gives them. Everything the cut crosses is split;
- * everything else is untouched, and a triangle the line only clips at a corner is left whole
- * rather than turned into slivers.
- * @param {number[]} from [x, y] in pixels @param {number[]} to [x, y]
- * @returns {boolean}
+ * 37 R11: one click of the armed knife. The first click starts a cut. After that a PLAIN click
+ * ends the cut there and cuts (the two-click knife, unchanged), while an ADDITIVE click — Shift
+ * or Ctrl, or the touch multi-select toggle, the selection's own "add to" gesture — places a
+ * CORNER and keeps going. So a polyline is Shift+click ... Shift+click, then a plain click (or
+ * Enter, which ends at the last corner). Finishing disarms the knife: it is a one-shot tool.
+ * @param {number[]} point [x, y] client pixels @param {boolean} [add] keep going
+ * @returns {'started'|'corner'|'cut'|'refused'}
  */
-export function knifeCut(from, to) {
-	interruptOpAdjust(); // 19-A P2: the knife's commit ends any live adjust first
-	if (!faceEdited) return false;
-	const camera = get(globalCamera);
-	if (!camera) return false;
-	// W9: the cut line arrives in CLIENT pixels, so the mesh has to be projected into
-	// the same space — against the CANVAS, offset by where it sits. With the bottom
-	// dock open a window-sized projection puts the mesh and the line in two different
-	// spaces and the cut lands somewhere else entirely.
-	const rect = canvasRect();
-	if (Math.hypot(to[0] - from[0], to[1] - from[1]) < 4) {
-		showToast('Knife: drag a line across the mesh — that cut was too short');
-		return false;
+export function knifeClick(point, add = false) {
+	const pending = get(knifePreview);
+	if (!pending) {
+		knifePreview.set({ points: [point], from: point, to: point });
+		showToast('Knife: click the far end — Shift+click adds a corner, Enter ends, Esc cancels');
+		return 'started';
 	}
-	faceEdited.updateMatrixWorld(true);
-	const tris = readTriangles(faceEdited.geometry);
-	if (!tris.length) return false;
-	/** project a LOCAL point to screen pixels, keeping the clip w for the perspective fix
-	 * @param {any} local @returns {{px: number[], w: number}} */
-	const project = (local) => {
-		const world = faceEdited.localToWorld(local.clone());
-		const ndc = world.clone().project(camera);
-		// project() has already divided by w; recover it from the view-space depth, which is
-		// what the perspective correction needs (1 for an orthographic camera)
-		const view = world.clone().applyMatrix4(camera.matrixWorldInverse);
-		const w = camera.isOrthographicCamera ? 1 : Math.max(-view.z, 1e-6);
-		return {
-			px: [
-				rect.left + ((ndc.x + 1) / 2) * rect.width,
-				rect.top + ((1 - ndc.y) / 2) * rect.height
-			],
-			w
+	const last = pending.points[pending.points.length - 1];
+	// a double click must not place the same corner twice (a zero-length segment)
+	const repeat = Math.hypot(point[0] - last[0], point[1] - last[1]) < 3;
+	if (add) {
+		if (!repeat) knifePreview.set({ points: [...pending.points, point], from: point, to: point });
+		return 'corner';
+	}
+	const points = repeat && pending.points.length > 1 ? pending.points : [...pending.points, point];
+	cancelKnife();
+	const ok = knifePolyline(points);
+	setFaceOp('move');
+	return ok ? 'cut' : 'refused';
+}
+
+/** the band follows the pointer @param {number[]} point */
+export function knifeHover(point) {
+	const pending = get(knifePreview);
+	if (pending) knifePreview.set({ ...pending, to: point });
+}
+
+/** Enter: cut through the corners placed so far. The pointer is NOT a corner — Enter ends where
+ * you last clicked. @returns {boolean} */
+export function knifeFinish() {
+	const pending = get(knifePreview);
+	if (!pending || pending.points.length < 2) return false;
+	cancelKnife();
+	const ok = knifePolyline(pending.points);
+	setFaceOp('move');
+	return ok;
+}
+
+/** Backspace: take the last corner back; taking back the first one cancels the cut.
+ * @returns {boolean} */
+export function knifeDropCorner() {
+	const pending = get(knifePreview);
+	if (!pending) return false;
+	const points = pending.points.slice(0, -1);
+	if (!points.length) cancelKnife();
+	else knifePreview.set({ points, from: points[points.length - 1], to: pending.to });
+	return true;
+}
+
+/**
+ * Enter and Backspace belong to a PENDING cut (the Escape rule: the verdict rides the event).
+ * @param {KeyboardEvent} event @returns {boolean} consumed
+ */
+export function knifeKeyConsumed(event) {
+	if (event.defaultPrevented || !get(knifePreview)) return false;
+	if (event.key === 'Enter') {
+		event.preventDefault();
+		if (!knifeFinish()) showToast('Knife: place at least two points first');
+		return true;
+	}
+	if (event.key === 'Backspace') {
+		event.preventDefault();
+		knifeDropCorner();
+		return true;
+	}
+	return false;
+}
+
+/** How far (pixels) a knife point reaches for an existing vertex / edge of the face under it.
+ * Without the pull a click a pixel off a corner makes a needle triangle there. */
+const KNIFE_SNAP_VERTEX = 6;
+const KNIFE_SNAP_EDGE = 3;
+/** after snapping, "on" a corner or an edge means within this many pixels */
+const KNIFE_ON = 0.05;
+
+/** 2D barycentric coordinates of p in the screen triangle a, b, c (null when it has no area)
+ * @param {number[]} p @param {number[]} a @param {number[]} b @param {number[]} c
+ * @returns {number[]|null} */
+function screenBary(p, a, b, c) {
+	const area = (b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1]);
+	if (Math.abs(area) < 1e-9) return null;
+	const l1 = ((c[0] - b[0]) * (p[1] - b[1]) - (p[0] - b[0]) * (c[1] - b[1])) / area;
+	const l2 = ((a[0] - c[0]) * (p[1] - c[1]) - (p[0] - c[0]) * (a[1] - c[1])) / area;
+	return [l1, l2, 1 - l1 - l2];
+}
+
+/** the parameter of p's foot on segment a-b and its distance from it, in pixels
+ * @param {number[]} p @param {number[]} a @param {number[]} b */
+function screenFoot(p, a, b) {
+	const dx = b[0] - a[0];
+	const dy = b[1] - a[1];
+	const length2 = dx * dx + dy * dy;
+	const t = length2 > 1e-12 ? ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length2 : 0;
+	const clamped = Math.min(Math.max(t, 0), 1);
+	const x = a[0] + dx * clamped;
+	const y = a[1] + dy * clamped;
+	return { t, distance: Math.hypot(p[0] - x, p[1] - y), at: [x, y] };
+}
+
+/**
+ * Pull a knife point onto a corner or an edge of the FRONT-MOST triangle under it — snapping is
+ * about what the user sees, so the nearest layer decides.
+ * @param {any[]} tris @param {number[]} p
+ * @param {(v: any) => {px: number[], w: number}} screenOf @returns {number[]}
+ */
+function snapKnifePoint(tris, p, screenOf) {
+	/** @type {{px: number[], w: number}[]|null} */
+	let front = null;
+	let frontDepth = Infinity;
+	for (const tri of tris) {
+		const s = tri.map(screenOf);
+		const bary = screenBary(p, s[0].px, s[1].px, s[2].px);
+		if (!bary) continue;
+		let near = Math.min(...bary) >= 0;
+		if (!near)
+			for (let e = 0; e < 3 && !near; e++)
+				near = screenFoot(p, s[e].px, s[(e + 1) % 3].px).distance < KNIFE_SNAP_EDGE;
+		if (!near) continue;
+		// the view depth AT the point, interpolated perspective-correctly (1/w is linear on screen)
+		const inverse = bary.reduce((sum, l, i) => sum + Math.max(l, 0) / s[i].w, 0);
+		const depth = inverse > 0 ? 1 / inverse : Infinity;
+		if (depth < frontDepth) {
+			frontDepth = depth;
+			front = s;
+		}
+	}
+	if (!front) return p;
+	let best = null;
+	let bestDistance = KNIFE_SNAP_VERTEX;
+	for (const corner of front) {
+		const distance = Math.hypot(p[0] - corner.px[0], p[1] - corner.px[1]);
+		if (distance < bestDistance) {
+			bestDistance = distance;
+			best = corner.px;
+		}
+	}
+	if (best) return [best[0], best[1]];
+	bestDistance = KNIFE_SNAP_EDGE;
+	for (let e = 0; e < 3; e++) {
+		const foot = screenFoot(p, front[e].px, front[(e + 1) % 3].px);
+		if (foot.distance < bestDistance) {
+			bestDistance = foot.distance;
+			best = foot.at;
+		}
+	}
+	return best ? [best[0], best[1]] : p;
+}
+
+/**
+ * Make a knife CORNER a real vertex of every triangle it falls in — every layer, like the cut.
+ *
+ * Classified per WELDED EDGE first: a point lying on an edge is the SAME 3D point for both
+ * triangles sharing it (computed once, with the perspective parameter), so the insert cannot
+ * open a crack; a point strictly inside a triangle splits just that triangle three ways.
+ * New corners keep the parent's winding because they keep its cyclic order.
+ * @param {any[]} tris @param {number[]} p
+ * @param {(v: any) => {px: number[], w: number}} screenOf
+ * @returns {any[]|null} the new triangles, or null when the point is on no triangle
+ */
+function insertKnifeCorner(tris, p, screenOf) {
+	/** @type {Map<string, any>} welded edge key -> the 3D point on it */
+	const onEdge = new Map();
+	/** @type {Map<number, any>} triangle index -> the 3D point inside it */
+	const inside = new Map();
+	tris.forEach((/** @type {any[]} */ tri, /** @type {number} */ ti) => {
+		const s = tri.map(screenOf);
+		if (s.some((corner) => Math.hypot(p[0] - corner.px[0], p[1] - corner.px[1]) < KNIFE_ON)) return;
+		let edgeHit = false;
+		for (let e = 0; e < 3; e++) {
+			const foot = screenFoot(p, s[e].px, s[(e + 1) % 3].px);
+			if (foot.distance >= KNIFE_ON || foot.t <= 1e-4 || foot.t >= 1 - 1e-4) continue;
+			edgeHit = true;
+			const key = edgeKeyOf(tri[e], tri[(e + 1) % 3]);
+			if (onEdge.has(key)) continue;
+			const u = perspectiveParam(foot.t, s[e].w, s[(e + 1) % 3].w);
+			onEdge.set(key, tri[e].clone().lerp(tri[(e + 1) % 3], u));
+		}
+		if (edgeHit) return;
+		const bary = screenBary(p, s[0].px, s[1].px, s[2].px);
+		if (!bary || Math.min(...bary) <= 0) return;
+		// screen barycentrics -> SPACE barycentrics: each weight divided by its corner's w
+		const weights = bary.map((l, i) => l / s[i].w);
+		const total = weights[0] + weights[1] + weights[2];
+		const point = tri[0].clone().multiplyScalar(weights[0] / total);
+		point.addScaledVector(tri[1], weights[1] / total).addScaledVector(tri[2], weights[2] / total);
+		inside.set(ti, point);
+	});
+	if (!onEdge.size && !inside.size) return null;
+	/** @type {any[]} */
+	const out = [];
+	tris.forEach((/** @type {any} */ tri, /** @type {number} */ ti) => {
+		const uvOf = (/** @type {any} */ point) => {
+			if (!tri.uv) return undefined;
+			const bary = barycentricOf(point, tri);
+			return [
+				tri.uv[0][0] * bary[0] + tri.uv[1][0] * bary[1] + tri.uv[2][0] * bary[2],
+				tri.uv[0][1] * bary[0] + tri.uv[1][1] * bary[1] + tri.uv[2][1] * bary[2]
+			];
 		};
-	};
-	/** @type {Map<string, {px: number[], w: number, point: any}>} */
-	const projected = new Map();
-	const pointOf = (/** @type {any} */ v) => {
-		const key = keyOf(v.x, v.y, v.z);
-		let hit = projected.get(key);
-		if (!hit) projected.set(key, (hit = { ...project(v), point: v.clone() }));
-		return hit;
-	};
+		/** the polygon round the triangle's boundary, with any edge points in their places */
+		/** @type {{pos: any, uv: number[]|undefined, added: boolean}[]} */
+		const ring = [];
+		for (let e = 0; e < 3; e++) {
+			ring.push({ pos: tri[e], uv: tri.uv?.[e], added: false });
+			const mid = onEdge.get(edgeKeyOf(tri[e], tri[(e + 1) % 3]));
+			if (mid) ring.push({ pos: mid, uv: uvOf(mid), added: true });
+		}
+		const centre = inside.get(ti);
+		if (ring.length === 3 && !centre) {
+			out.push(withSlot([tri[0].clone(), tri[1].clone(), tri[2].clone()], tri.mi, tri.uv));
+			return;
+		}
+		if (centre) {
+			// strictly inside: three triangles round the new vertex
+			const uv = uvOf(centre);
+			for (let e = 0; e < 3; e++) {
+				const n = (e + 1) % 3;
+				out.push(
+					withSlot([centre.clone(), tri[e].clone(), tri[n].clone()], tri.mi, tri.uv && [uv, tri.uv[e], tri.uv[n]])
+				);
+			}
+			return;
+		}
+		// on an edge: fan the (convex) boundary polygon from the first added point. Its two ring
+		// neighbours are collinear with it, so they are exactly the pair the fan skips.
+		const start = ring.findIndex((entry) => entry.added);
+		const apex = ring[start];
+		for (let i = 1; i < ring.length - 1; i++) {
+			const b = ring[(start + i) % ring.length];
+			const c = ring[(start + i + 1) % ring.length];
+			out.push(
+				withSlot([apex.pos.clone(), b.pos.clone(), c.pos.clone()], tri.mi, tri.uv && [apex.uv, b.uv, c.uv])
+			);
+		}
+	});
+	return out;
+}
+
+/**
+ * One STRAIGHT knife segment across the triangles — the M9b cut: crossings once per welded
+ * edge, the perspective parameter, one-crossing triangles fanned to the opposite corner, and
+ * two-crossing ones split by walking the boundary.
+ * @param {any[]} tris @param {number[]} from @param {number[]} to
+ * @param {(v: any) => {px: number[], w: number}} screenOf
+ * @returns {{tris: any[], cut: number}|null} null = the segment crossed no edge
+ */
+function knifeSegment(tris, from, to, screenOf) {
 	// crossings are computed ONCE PER WELDED EDGE, so the two triangles sharing one get the
 	// SAME 3D point and the cut cannot open a crack along a crease
 	/** @type {Map<string, any>} */
 	const crossings = new Map();
 	for (const tri of tris)
 		for (let e = 0; e < 3; e++) {
-			const a = pointOf(tri[e]);
-			const b = pointOf(tri[(e + 1) % 3]);
 			const key = edgeKeyOf(tri[e], tri[(e + 1) % 3]);
 			if (crossings.has(key)) continue;
+			const a = screenOf(tri[e]);
+			const b = screenOf(tri[(e + 1) % 3]);
 			const hit = segmentCross(from, to, a.px, b.px);
 			if (!hit) continue;
 			const u = perspectiveParam(hit.onEdge, a.w, b.w);
-			crossings.set(key, { point: a.point.clone().lerp(b.point, u), u, from: a, to: b });
+			crossings.set(key, { point: tri[e].clone().lerp(tri[(e + 1) % 3], u) });
 		}
-	if (!crossings.size) {
-		showToast('Knife: that line did not cross the mesh');
-		return false;
-	}
-	const before = {
-		positions: trisToPositions(tris),
-		groups: trisToGroups(tris),
-		uvs: trisToUVs(tris),
-		faces: readStoredFaces(faceEdited.geometry)
-	};
+	if (!crossings.size) return null;
 	/** @type {any[]} */
 	const out = [];
 	let cut = 0;
@@ -4375,11 +4572,13 @@ export function knifeCut(from, to) {
 			);
 		};
 		if (hits.length === 1) {
-			// ONE crossing means the cut ends inside this triangle (or leaves through a corner).
-			// It still has to be split: its neighbour across that edge has the same crossing as a
-			// real vertex, and leaving this side whole is a T-JUNCTION — the mesh reads as
-			// non-manifold there (measured: 10 odd edges from a single cut across a box).
-			// A fan to the opposite corner is the minimal honest split.
+			// ONE crossing means the cut ends inside this triangle, leaves through a corner, or
+			// starts at a corner the polyline inserted (37 R11). It still has to be split: its
+			// neighbour across that edge has the same crossing as a real vertex, and leaving this
+			// side whole is a T-JUNCTION — the mesh reads as non-manifold there (measured: 10 odd
+			// edges from a single cut across a box). A fan to the opposite corner is the minimal
+			// honest split — and when the cut ends at an inserted corner, that corner IS the
+			// opposite one, so the fan edge lies exactly on the cut.
 			const e = hits[0].e;
 			const point = hits[0].crossing.point;
 			const pointUv = uvOf(point);
@@ -4423,6 +4622,135 @@ export function knifeCut(from, to) {
 		push([q.crossing.point, other1, p.crossing.point], tri.uv && [qUv, uv1, pUv]);
 		cut++;
 	}
+	return { tris: out, cut };
+}
+
+/**
+ * 37 R11: the knife's PURE core — triangles in, triangles out, so the polyline cases run in
+ * node (tests/unit/meshKnife.test.js). `project(local)` puts a LOCAL point on screen and
+ * returns its view depth `w` for the perspective correction (1 for an orthographic camera).
+ *
+ * A polyline needs what the straight cut never did: a triangle can hold a CORNER of the cut and
+ * be crossed by 3+ cut pieces from different segments. Rather than solving a cut graph per
+ * triangle (a constrained triangulation of each one), the cut is BUILT UP:
+ *   1. every point that lands on the mesh becomes a real VERTEX first — snapped onto the corner
+ *      or edge of the face under it when it is that close, then inserted into every triangle it
+ *      falls in (all layers, like the cut itself) or onto the welded EDGE it sits on;
+ *   2. then each segment is a straight cut on the result of the previous one. A segment that
+ *      starts or ends at an inserted vertex leaves the triangles round it through ONE crossing,
+ *      and the one-crossing split fans to the opposite corner — which IS that vertex. Where a
+ *      later segment crosses an earlier one it crosses that cut's EDGE and splits it like any
+ *      other, so the many-crossings triangle resolves one segment at a time, and every step
+ *      keeps the per-welded-edge crossing rule: watertight by construction.
+ * The ends become vertices too, so a two-point cut that stops inside the mesh now ends exactly
+ * where it was clicked instead of fanning to the far corner.
+ * @param {any[]} tris @param {number[][]} points the polyline in pixels, at least two
+ * @param {(local: any) => {px: number[], w: number}} project
+ * @returns {{tris: any[], cut: number, corners: number}|null} null = it touched nothing
+ */
+export function knifeCutCore(tris, points, project) {
+	/** @type {Map<string, {px: number[], w: number}>} */
+	const screen = new Map();
+	const screenOf = (/** @type {any} */ v) => {
+		const key = keyOf(v.x, v.y, v.z);
+		let hit = screen.get(key);
+		if (!hit) screen.set(key, (hit = project(v)));
+		return hit;
+	};
+	let work = tris;
+	let corners = 0;
+	/** @type {number[][]} */
+	const placed = [];
+	for (const point of points) {
+		const snapped = snapKnifePoint(work, point, screenOf);
+		placed.push(snapped);
+		const inserted = insertKnifeCorner(work, snapped, screenOf);
+		if (inserted) {
+			work = inserted;
+			corners++;
+		}
+	}
+	let cut = 0;
+	for (let i = 0; i + 1 < placed.length; i++) {
+		const a = placed[i];
+		const b = placed[i + 1];
+		if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 1) continue;
+		const result = knifeSegment(work, a, b, screenOf);
+		if (!result) continue;
+		work = result.tris;
+		cut += result.cut;
+	}
+	if (!cut && !corners) return null;
+	return { tris: work, cut, corners };
+}
+
+/**
+ * M9b KNIFE: cut the edited mesh along a screen-space line.
+ *
+ * Both points are in CSS pixels, as a click gives them. Everything the cut crosses is split;
+ * everything else is untouched. The two-point form of `knifePolyline`.
+ * @param {number[]} from [x, y] in pixels @param {number[]} to [x, y]
+ * @returns {boolean}
+ */
+export function knifeCut(from, to) {
+	return knifePolyline([from, to]);
+}
+
+/**
+ * 37 R11: cut the edited mesh along a screen-space POLYLINE — ONE undo entry, ONE broadcast for
+ * the whole cut, however many segments it has.
+ * @param {number[][]} points [x, y] client pixels, at least two
+ * @returns {boolean}
+ */
+export function knifePolyline(points) {
+	interruptOpAdjust(); // 19-A P2: the knife's commit ends any live adjust first
+	if (!faceEdited || points.length < 2) return false;
+	const camera = get(globalCamera);
+	if (!camera) return false;
+	// W9: the cut line arrives in CLIENT pixels, so the mesh has to be projected into
+	// the same space — against the CANVAS, offset by where it sits. With the bottom
+	// dock open a window-sized projection puts the mesh and the line in two different
+	// spaces and the cut lands somewhere else entirely.
+	const rect = canvasRect();
+	let length = 0;
+	for (let i = 1; i < points.length; i++)
+		length += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
+	if (length < 4) {
+		showToast('Knife: drag a line across the mesh — that cut was too short');
+		return false;
+	}
+	faceEdited.updateMatrixWorld(true);
+	const tris = readTriangles(faceEdited.geometry);
+	if (!tris.length) return false;
+	/** project a LOCAL point to screen pixels, keeping the clip w for the perspective fix
+	 * @param {any} local @returns {{px: number[], w: number}} */
+	const project = (local) => {
+		const world = faceEdited.localToWorld(local.clone());
+		const ndc = world.clone().project(camera);
+		// project() has already divided by w; recover it from the view-space depth, which is
+		// what the perspective correction needs (1 for an orthographic camera)
+		const view = world.clone().applyMatrix4(camera.matrixWorldInverse);
+		const w = camera.isOrthographicCamera ? 1 : Math.max(-view.z, 1e-6);
+		return {
+			px: [
+				rect.left + ((ndc.x + 1) / 2) * rect.width,
+				rect.top + ((1 - ndc.y) / 2) * rect.height
+			],
+			w
+		};
+	};
+	const result = knifeCutCore(tris, points, project);
+	if (!result) {
+		showToast('Knife: that line did not cross the mesh');
+		return false;
+	}
+	const before = {
+		positions: trisToPositions(tris),
+		groups: trisToGroups(tris),
+		uvs: trisToUVs(tris),
+		faces: readStoredFaces(faceEdited.geometry)
+	};
+	const out = result.tris;
 	const positions = trisToPositions(out);
 	if (positions.length > MAX_SNAPSHOT) {
 		showToast(tooLargeMessage(positions.length, 'cut'));
@@ -4446,7 +4774,12 @@ export function knifeCut(from, to) {
 		before,
 		after: withFaces({ positions: after.positions, groups: after.groups, uvs: after.uvs })
 	});
-	showToast('Knife: cut ' + cut + (cut === 1 ? ' triangle' : ' triangles'));
+	showToast(
+		'Knife: cut ' +
+			result.cut +
+			(result.cut === 1 ? ' triangle' : ' triangles') +
+			(points.length > 2 ? ' along ' + (points.length - 1) + ' segments' : '')
+	);
 	return true;
 }
 
@@ -7079,6 +7412,7 @@ export function enterFaceEdit(uuid) {
 /** @param {KeyboardEvent} event */
 function onFaceKeydown(event) {
 	if (!viewportHasKeys(event)) return; // 36 U11: Esc in the node editor leaves a GROUP, not the session
+	if (knifeKeyConsumed(event)) return; // 37 R11: Enter ends a pending cut, Backspace drops a corner
 	if (event.key === 'Escape') {
 		if (escapeConsumedByKnife(event)) return;
 		if (escapeConsumedByPivotPick(event)) return; // an armed pivot pick first

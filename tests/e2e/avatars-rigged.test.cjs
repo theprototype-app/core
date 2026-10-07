@@ -56,13 +56,20 @@ h.run(async () => {
 	h.check(s1.visible, '1.2 the body is visible once B has a camera pose');
 	// (1.241 + 0.42) * 0.95 = 1.578 m from the feet to the head centre (catalog.feetBelowHead), under
 	// the head A RECEIVED (B's camera may still be flying back from the panel when this samples)
-	const headY = await A.page.evaluate((id) => {
-		let scene;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
-		return scene.getObjectByName(id).position.y;
-	}, B.id);
-	const s13 = await stateOn(A.page, B.id);
-	h.check(Math.abs(s13.feet[1] - (headY - 1.578)) < 0.05, `1.3 the feet hang a body-height under B's head (head ${headY.toFixed(2)}, feet ${s13.feet[1].toFixed(2)})`);
+	// head and feet in ONE page call (the same frame), waited for: B's camera can still be flying
+	// back from the panel, and two separate reads straddled that move (1.26 union: head 1.23 / feet -0.29)
+	const headFeet = () =>
+		A.page.evaluate((id) => {
+			let scene;
+			window.__stores.globalScene.subscribe((x) => (scene = x))();
+			return { head: scene.getObjectByName(id).position.y, feet: window.__stores.avatars.avatarsDebug()[id]?.feet?.[1] ?? NaN };
+		}, B.id);
+	await h.eventually(
+		headFeet,
+		(v) => Math.abs(v.feet - (v.head - 1.578)) < 0.05,
+		'1.3 the feet hang a body-height under B\'s head',
+		8000
+	);
 	const hat = await A.page.evaluate((id) => {
 		let scene;
 		window.__stores.globalScene.subscribe((x) => (scene = x))();

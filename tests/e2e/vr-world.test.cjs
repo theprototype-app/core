@@ -130,10 +130,12 @@ h.run(async () => {
 		window.__stores.vrMenuOpen.subscribe((x) => (v = x))();
 		return v;
 	});
-	h.check(r.scale < 0.2 && r.scale === st.scale, `the world rig is the model: scale ${r.scale.toFixed(4)}`);
-	h.check(!menuOpen, 'the radial closed as the dollhouse opened');
+	// one 2 m box: the 4 m minimum frame applies (a lone cube still reads as a room), so 0.9 / 4
 	const extent = Math.max(st.box.max[0] - st.box.min[0], st.box.max[2] - st.box.min[2]);
-	h.check(Math.abs(extent * r.scale - 0.9) < 0.01, `its longest side is 0.9 m (${(extent * r.scale).toFixed(3)})`);
+	const framed = Math.max(extent, 4);
+	h.check(r.scale <= 0.25 && r.scale === st.scale && Math.abs(r.scale - 0.9 / framed) < 1e-9, `the world rig is the model: scale ${r.scale.toFixed(4)} (0.9 / ${framed.toFixed(2)})`);
+	h.check(!menuOpen, 'the radial closed as the dollhouse opened');
+	h.check(Math.abs(framed * r.scale - 0.9) < 0.01 && extent * r.scale <= 0.9 + 1e-6, `the framed area is 0.9 m across, the box inside it (${(framed * r.scale).toFixed(3)} m, box ${(extent * r.scale).toFixed(3)} m)`);
 	h.check(st.marker && Math.abs(st.marker[0]) < 1e-6 && Math.abs(st.marker[2]) < 1e-6 && Math.abs(st.marker[1]) < 1e-6, `the pin sits at your feet in the model (${JSON.stringify(st.marker)})`);
 	// aim the pointer hand straight down onto the box top in the model
 	const boxTopW = await g((uuid) => {
@@ -215,17 +217,27 @@ h.run(async () => {
 		});
 	const ring = await g(() => window.__stores.vrRadialMenu.ringEntries('add').map((e) => e.id));
 	h.check(ring.includes('terrain') && ring.indexOf('terrain') < ring.indexOf('prefabs'), `the Add ring has Terrain (before Prefabs): ${ring.join(' ')}`);
-	await g(() => {
+	// fakeXR's frame carries no views, so three never drives the camera from the fake head: "ahead" is measured
+	// from the camera the app placed it from (on a headset that camera IS the head)
+	const ahead = await g(() => {
 		const s = window.__stores;
+		let cam;
+		s.globalCamera.subscribe((v) => (cam = v))();
+		const THREE = s.THREE;
+		const d = cam.getWorldDirection(new THREE.Vector3());
+		d.y = 0;
+		d.normalize().multiplyScalar(6);
+		const p = cam.getWorldPosition(new THREE.Vector3());
 		s.vrMenuOpen.set(true);
 		s.vrControls.executeVRMenuAction('nav:add');
 		s.vrControls.executeVRMenuAction('terrain');
+		return [p.x + d.x, p.z + d.z];
 	});
 	await h.eventually(sc, (x) => x.active && !!x.uuid, 'Add > Terrain starts a VR sculpt session');
 	let t = await terrainState();
 	let s3 = await sc();
 	h.check(t && s3.uuid === t.uuid, 'on the new terrain');
-	h.check(t && Math.abs(t.pos[2] + 6) < 0.3 && Math.abs(t.pos[0]) < 0.3, `the terrain's centre lands 6 m ahead (${t?.pos.map((v) => v.toFixed(2))})`);
+	h.check(t && Math.abs(t.pos[0] - ahead[0]) < 0.05 && Math.abs(t.pos[2] - ahead[1]) < 0.05, `the terrain's centre lands 6 m ahead of the view, level (${t?.pos.map((v) => v.toFixed(2))} vs ${ahead.map((v) => v.toFixed(2))})`);
 	await g(() => window.__stores.vrMenuOpen.set(true));
 	await wait(100);
 	const activeRing = await g(() => {

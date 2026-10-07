@@ -550,7 +550,29 @@ registerHistoryKind('aibatch', applyComposite);
 registerHistoryKind('session', applyComposite); // 15-F mixed-kind seals
 registerHistoryKind('gesture', applyComposite); // 37 R26: one gesture's mixed entries
 
+// 37-int-127: a recorder that seals LATER than its change (the Inspector's 500 ms transform /
+// light / render-order seals) registers a flush here. Undo and redo run every flush first, so
+// a Ctrl+Z pressed right after a drag undoes THAT drag instead of the step before it (which
+// was the 1.26 behaviour: the drag's step landed after the undo had already run).
+/** @type {Set<() => void>} */
+const pendingSeals = new Set();
+/** @param {() => void} flush @returns {() => void} unregister */
+export function registerPendingSeal(flush) {
+	pendingSeals.add(flush);
+	return () => pendingSeals.delete(flush);
+}
+function flushPendingSeals() {
+	for (const flush of [...pendingSeals]) {
+		try {
+			flush();
+		} catch (error) {
+			console.log('pending history seal failed', error);
+		}
+	}
+}
+
 export function undo() {
+	flushPendingSeals();
 	const stack = get(undoStack);
 	// 15-F: inside an edit session, undo stops at the session's first step
 	if (sessionBase >= 0 && stack.length <= sessionBase) {
@@ -576,6 +598,7 @@ export function undo() {
 }
 
 export function redo() {
+	flushPendingSeals();
 	const stack = get(redoStack);
 	// 15-F: pre-session redo entries are protected while a session is open
 	if (sessionBase >= 0 && stack.length <= sessionRedoBase) {

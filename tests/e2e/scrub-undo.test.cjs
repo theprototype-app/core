@@ -259,7 +259,8 @@ h.run(async () => {
 	await page.mouse.down();
 	await page.mouse.move(rb.x + rb.width * 0.6, rb.y + rb.height / 2, { steps: 10 });
 	await page.mouse.up();
-	await page.waitForTimeout(300);
+	// 37-int-127: the light rows record through 1.26's (R1) multi-light seal, 500 ms after the last change
+	await page.waitForTimeout(800);
 	h.check(!near(await distance(), dist0), `light distance slider: (premise) the drag moved it: ${fmt(dist0)} -> ${fmt(await distance())}`);
 	const rangeSteps = (await undoEntries(page)) - dr0;
 	h.check(rangeSteps === 1, `light distance slider: a whole drag of the range is ONE undo step (recorded ${rangeSteps})`);
@@ -267,6 +268,24 @@ h.run(async () => {
 	await page.keyboard.press('Control+z');
 	await page.waitForTimeout(150);
 	h.check(near(await distance(), dist0), `light distance slider: one Ctrl+Z puts it back: ${fmt(await distance())} (was ${fmt(dist0)})`);
+	// 37-int-127: Ctrl+Z pressed BEFORE that seal fires undoes the drag just made (history runs the
+	// pending seals first) — not the step before it (the light's creation)
+	{
+		const before = await distance();
+		const stackLen = () => page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((/** @type {any[]} */ st) => r(st.length))()));
+		const stack0 = await stackLen();
+		const rb2 = await range.boundingBox();
+		await page.mouse.move(rb2.x + rb2.width * 0.2, rb2.y + rb2.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(rb2.x + rb2.width * 0.7, rb2.y + rb2.height / 2, { steps: 8 });
+		await page.mouse.up();
+		const moved = await distance();
+		await page.evaluate(() => window.__stores.history.undo());
+		await page.waitForTimeout(700);
+		h.check(!near(moved, before) && near(await distance(), before), `light distance slider: an immediate Ctrl+Z undoes the drag just made: ${fmt(before)} -> ${fmt(moved)} -> ${fmt(await distance())}`);
+		const stack1 = await stackLen();
+		h.check(stack1 === stack0 && (await range.count()) === 1, `light distance slider: and nothing older was undone (undo stack ${stack1} vs ${stack0} before the drag; the light is still there)`);
+	}
 	await contract(page, {
 		name: 'light distance box', root: '.ui-row:has(> input[type=range][aria-label="Distance"])', index: 0, typed: '12', typedValue: 12,
 		read: distance, shows: (v) => v

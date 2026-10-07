@@ -43,7 +43,7 @@
 		setObjectColor,
 		setObjectsTexture
 	} from '$lib/materialsHandler';
-	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet } from '$lib/history';
+	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet, registerPendingSeal } from '$lib/history';
 	import { withWireBatch, withWireBatchAsync } from '$lib/wireBatch';
 	import { setObjectFlag, lightStateOf, recordLightChange, sendLight, allMembers } from '$lib/multiEdit';
 	import { currentHistoryGesture, withHistoryGesture } from '$lib/historyGesture';
@@ -1428,6 +1428,22 @@
 		clearTimeout(orderGestureTimer);
 		orderGestureTimer = setTimeout(sealRenderOrder, 500);
 	}
+	// 37-int-127: Ctrl+Z / redo seal whatever is still pending first (history.registerPendingSeal)
+	function flushInspectorSeals() {
+		if (xformGestureStart != null) {
+			clearTimeout(xformGestureTimer);
+			sealTransformGesture();
+		}
+		if (lightGestureStart != null) {
+			clearTimeout(lightGestureTimer);
+			sealLightGesture();
+		}
+		if (orderGestureStart != null) {
+			clearTimeout(orderGestureTimer);
+			sealRenderOrder();
+		}
+	}
+	$effect(() => registerPendingSeal(flushInspectorSeals));
 	function sealRenderOrder() {
 		const started = orderGestureStart;
 		const token = orderGestureToken;

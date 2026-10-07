@@ -364,7 +364,7 @@ h.run(async () => {
 		window.__stores.meshToolParams.focusTool('knife');
 		return window.__stores.faceEdit.readTriangles(window.__box.geometry).length;
 	});
-	const cutPts = await facePx([[-1.6, -0.5], [1.6, -0.45]]);
+	const cutPts = await facePx([[-1.2, 0.25], [0.15, 0.3]]); // the toolbox floats over the right
 	h.check(cutPts.every((p) => p.canvas), `the Cut-section points are on the canvas (${cutPts.map((p) => p.under).join(', ')})`);
 	await A.page.mouse.click(...cutPts[0].px);
 	await A.page.keyboard.down('Shift');
@@ -374,13 +374,27 @@ h.run(async () => {
 	const cutButton = A.page.locator('#knife-finish');
 	const buttonShown = (await cutButton.count()) > 0;
 	h.check(buttonShown, 'the Tool options pane offers a Cut button while a cut is pending (the touch path)');
+	const where = await A.page.evaluate(() => {
+		const b = document.querySelector('#knife-finish');
+		const r = b?.getBoundingClientRect();
+		const hidden = [];
+		for (let el = b; el; el = el.parentElement) {
+			const cs = getComputedStyle(el);
+			if (cs.display === 'none' || cs.visibility === 'hidden') hidden.push(el.tagName + '#' + el.id + '.' + String(el.className).slice(0, 30));
+		}
+		return { rect: r ? [r.x, r.y, r.width, r.height].map(Math.round) : null, hidden, disabled: b?.disabled, vw: innerWidth, vh: innerHeight };
+	});
 	if (buttonShown) {
-		await cutButton.scrollIntoViewIfNeeded().catch(() => {});
-		await cutButton.click();
+		await cutButton.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {});
+		await cutButton.click({ timeout: 5000 }).catch(async () => {
+			h.check(false, `the Cut button could not be clicked (${JSON.stringify(where)})`);
+			await A.page.evaluate(() => window.__stores.faceEdit.knifeFinish());
+		});
 		await A.page.waitForTimeout(250);
 		const buttonCut = await A.page.evaluate(() => window.__stores.faceEdit.readTriangles(window.__box.geometry).length);
 		h.check(buttonCut > buttonCut0, `...and pressing it cuts (${buttonCut0} -> ${buttonCut})`);
 	}
+	await A.page.evaluate(() => window.__stores.faceEdit.cancelKnife());
 	const finalOdd = await oddEdges(A.page);
 	h.check(finalOdd === 0, `still watertight after three polyline cuts (${finalOdd} odd edges)`);
 

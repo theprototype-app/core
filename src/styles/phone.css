@@ -214,7 +214,6 @@
 	max-height: none !important;
 }
 /* a window's own resize grip / drag affordances mean nothing inside a sheet */
-:root.phone-shell [data-ps-host] .resize-grip,
 :root.phone-shell [data-ps-host] [data-window-grip] {
 	display: none !important;
 }

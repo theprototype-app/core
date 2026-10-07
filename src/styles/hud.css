@@ -134,17 +134,6 @@
 	box-shadow: 0 0 0 2px var(--surface-1);
 	pointer-events: none;
 }
-.hud-dot {
-	position: absolute;
-	top: 5px;
-	right: 5px;
-	width: 7px;
-	height: 7px;
-	border-radius: 50%;
-	background: var(--accent);
-	box-shadow: 0 0 0 2px var(--surface-1);
-	pointer-events: none;
-}
 
 /* the vertical rule between HUD groups */
 .hud-sep {

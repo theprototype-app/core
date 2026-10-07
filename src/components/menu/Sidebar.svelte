@@ -149,7 +149,7 @@
 <!-- 94: the logo IS the menu button. Open state = accent ring. -->
 <button
 	id="logo-menu"
-	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur-sm transition-transform hover:scale-105 {$closeMenu
+	class="burger tp-ui flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur-sm transition-transform hover:scale-105 {$closeMenu
 		? 'border-gray-700/60'
 		: 'logo-open'}"
 	style="height: 48px; width: 48px; {$connectDocked ? `top: ${$connectBarHeight + 8}px` : ''}"
@@ -538,7 +538,9 @@
 		width: 30px;
 		padding: 0;
 	}
-	.logo-open {
+	/* the id: a click leaves the logo FOCUSED, and the forms plugin's :focus rule (box-shadow
+	   from empty ring vars, a black border) ties a plain class and wins on order */
+	#logo-menu.logo-open {
 		border-color: var(--accent);
 		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 	}

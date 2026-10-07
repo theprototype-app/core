@@ -16,6 +16,7 @@ import { savePrefab, savePrefabSelection } from './prefabs';
 import { perfContext } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
 import { vrDollhouseOpen, vrSculptActive } from './vr/worldStores.js'; // 37: a leaf
 import { sculptOp } from './terrainSculpt';
+import { primitivesCatalog } from './primitivesCatalog';
 
 // D4 (roadmap 13): selection-set helpers for the Edit ring — counted labels
 // act on the whole SET (parity with the desktop object menu, U-2)
@@ -27,6 +28,16 @@ function isSplineSelection() {
 	const object = /** @type {any} */ (get(selectedObject));
 	return !!object?.userData?.spline?.points?.length;
 }
+/** 37 R3: the Add menu's Architecture items (label + /create command), shared by the VR Architecture ▸ ring */
+export function archCatalogItems() {
+	return primitivesCatalog.find((g) => g.group === 'Architecture')?.items ?? [];
+}
+
+/** @param {string} label */
+function archIcon(label) {
+	return label.startsWith('Wall') ? 'brick-wall' : label.includes('oor') ? 'door-open' : label.includes('indow') ? 'grid-2x2' : 'door-stairwell';
+}
+
 /** 37 R9: is the lone selection a Terrain (its Selected ring offers Sculpt terrain instead of Edit mesh)? */
 function isTerrainSelection() {
 	return !!(/** @type {any} */ (get(selectedObject))?.userData?.terrain);
@@ -308,6 +319,12 @@ function registerBuiltins() {
 	].forEach(([id, label, icon], order) => registerVRMenuEntry({ id, group: 'add', label, icon, order }));
 	// 37 R9: Terrain lands ahead of you and starts a sculpt session on it (the desktop Add menu's Terrain)
 	registerVRMenuEntry({ id: 'terrain', group: 'add', label: 'Terrain', icon: 'mountain', order: 5.5 });
+	// 37 R3 (1.28 union): Architecture ▸ — the desktop Add menu's 12 parametric walls / doors / windows / stairs,
+	// same names and /create commands (primitivesCatalog); ids arch:<n> resolve in executeVRMenuAction
+	registerVRMenuEntry({ id: 'nav:architecture', group: 'add', label: 'Architecture', icon: 'brick-wall', order: 5.7, ring: 'architecture' });
+	archCatalogItems().forEach((item, order) =>
+		registerVRMenuEntry({ id: 'arch:' + order, group: 'architecture', label: item.label, icon: archIcon(item.label), order })
+	);
 	// Prefabs opens the thumbnail window (115)
 	registerVRMenuEntry({ id: 'prefabs', group: 'add', label: 'Prefabs', icon: 'package', order: 6 });
 

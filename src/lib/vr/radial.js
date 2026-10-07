@@ -36,7 +36,7 @@ import {
 	peerHandStyle,
 	pokeScene
 } from '../../stores/sceneStore';
-import { activeRing, findMenuEntry, pushRing, popRing, vrMenuPressed } from '../vrRadialMenu';
+import { activeRing, findMenuEntry, pushRing, popRing, vrMenuPressed, archCatalogItems } from '../vrRadialMenu';
 import { registerSettingsRings } from './settingsRings.js';
 import { activateVRSetting, vrSettingsPage, openVRSettingsPage, cycleBinding, vrSettingsCursor, openVRSettingsSearch } from './settingsSchema.js';
 import { perfStatsShown } from '../fpsMeter';
@@ -697,6 +697,11 @@ export function executeVRMenuAction(name) {
 		spawnPrimitive('/create Terrain 24 48', 6);
 		const uuid = /** @type {any} */ (get(selectedObject))?.uuid;
 		if (uuid && /** @type {any} */ (get(selectedObject))?.userData?.terrain) startVRSculpt(uuid);
+	}
+	else if (name.startsWith('arch:')) {
+		// 37 R3: an Architecture ▸ entry spawns the desktop's piece 3 m ahead (a 4-6 m wall needs the room)
+		const item = archCatalogItems()[Number(name.slice('arch:'.length))];
+		if (item) spawnPrimitive(item.command, 3);
 	}
 	else if (name === 'hand') {
 		vrMenuHand.update((hand) => {

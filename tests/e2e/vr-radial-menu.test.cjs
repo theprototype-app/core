@@ -63,6 +63,7 @@ h.run(async () => {
 			system: m.ringEntries('system').map((e) => e.id),
 			settings: m.ringEntries('settings').map((e) => e.id),
 			addCount: m.ringEntries('add').length,
+			archRing: m.ringEntries('architecture').map((e) => e.label),
 			tools: m.ringEntries('tools').map((e) => e.id),
 			// PFX-C follow-up: presets moved into the nested Environment ▸ ring;
 			// the Scene ring gained the nav entry + the Physics sim toggle
@@ -111,7 +112,11 @@ h.run(async () => {
 	);
 	h.check(registry.system.length === 0, 'no System ring is left (a module filing under "system" lands in Settings)');
 	h.check(registry.objectOps.includes('snap'), 'Selected ring keeps Snapping');
-	h.check(registry.addCount === 8 && registry.sceneHasEnv, `Add ring: 6 primitives + Terrain (37 R9) + Prefabs (115) (${registry.addCount})`);
+	h.check(registry.addCount === 9 && registry.sceneHasEnv, `Add ring: 6 primitives + Terrain (37 R9) + Architecture ▸ (37 R3) + Prefabs (115) (${registry.addCount})`);
+	h.check(
+		registry.archRing.length === 12 && registry.archRing[0] === 'Wall' && registry.archRing.includes('Stairs (spiral)'),
+		`Architecture ▸ ring = the desktop Add menu's 12 pieces (${registry.archRing.join(', ')})`
+	);
 	h.check(
 		registry.sceneRing.includes('nav:environment') &&
 			registry.sceneRing.includes('grid') &&
@@ -207,6 +212,21 @@ h.run(async () => {
 		names.includes('box') && names.includes('torus') && names.includes('back'),
 		'nav:add opens the Add ring with a back hub'
 	);
+	// 37 R3 (1.28 union): Add ▸ Architecture ▸ lists the 12 pieces; one spawns the desktop's parametric Wall
+	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('nav:architecture'));
+	await A.page.waitForTimeout(300);
+	names = await meshNames();
+	h.check(names.includes('arch:0') && names.includes('arch:11') && names.includes('back'), `Architecture ▸ renders its 12 pieces + back (${names.length})`);
+	const archSpawn = await A.page.evaluate(async () => {
+		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
+		const before = group.children.length;
+		window.__stores.vrControls.executeVRMenuAction('arch:2');
+		const added = group.children[group.children.length - 1];
+		return { grew: group.children.length - before, type: added?.userData?.geometryParams?.gtype ?? null };
+	});
+	h.check(archSpawn.grew === 1 && archSpawn.type === 'Wall', `Architecture ▸ Wall with windows spawns a parametric Wall (${JSON.stringify(archSpawn)})`);
+	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('back'));
+	await A.page.waitForTimeout(300);
 	await A.page.evaluate(() => window.__stores.vrControls.executeVRMenuAction('back'));
 	await A.page.waitForTimeout(300);
 	names = await meshNames();

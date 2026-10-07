@@ -1293,7 +1293,7 @@
 			tooltip: pickedTris
 				? 'Applies to the ' + pickedTris + ' face triangles selected in Edit Mesh'
 				: 'Applies to the whole mesh',
-			children: backends.map((backend) => ({
+			children: unwrapBackends().map((backend) => ({
 				label: backend.label,
 				action: () => runUnwrap(backend.key)
 			}))
@@ -1431,7 +1431,9 @@
 	}
 
 	let unwrapOpen = $state(false);
-	const backends = unwrapBackends();
+	// re-read whenever a menu opens: a module (37 R11's Smart unwrap) can register a backend
+	// while this editor is already mounted, and a list read once at mount never showed it
+	let backends = $state(unwrapBackends());
 
 	/** @param {string} key */
 	async function runUnwrap(key) {
@@ -1732,7 +1734,10 @@
 							? 'Generate new UVs for this mesh, or just the faces selected in Edit Mesh'
 							: editable.reason}
 						disabled={!editable.ok}
-						onclick={() => (unwrapOpen = !unwrapOpen)}
+						onclick={() => {
+							if (!unwrapOpen) backends = unwrapBackends();
+							unwrapOpen = !unwrapOpen;
+						}}
 					>Unwrap ▾</button>
 					{#if unwrapOpen}
 						<div id="uv-unwrap-menu" class="absolute left-0 top-full z-30 mt-1 w-44 rounded-sm border border-gray-600 bg-gray-800 py-1 shadow-lg">

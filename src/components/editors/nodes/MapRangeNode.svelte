@@ -26,7 +26,7 @@
 		<div class="flex justify-between"><span>out</span><span class="font-mono">{readout}</span></div>
 		{#each FIELDS as [key, label]}
 			<label class="flex items-center gap-1">
-				<span class="w-12 text-gray-400">{label}</span>
+				<span class="w-12 text-text-muted">{label}</span>
 				<DragRow nodrag step={0.01} decimals={2} value={data[key] ?? DEFAULTS[key]} onchange={(/** @type {number} */ v) => setNodeData(id, { [key]: v })} />
 			</label>
 		{/each}

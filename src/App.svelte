@@ -53,6 +53,8 @@
   import { startLodGroups } from './lib/lodGroup'
   import { startKitInstancing } from './lib/kitInstancing'
   import PlayReticle from './components/play/PlayReticle.svelte'
+  import PlayBanner from './components/play/PlayBanner.svelte'
+  import CommandPalette from './components/menu/CommandPalette.svelte'
   import TouchPlayControls from './components/play/TouchPlayControls.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
   import SculptToolbar from './components/menu/SculptToolbar.svelte'
@@ -426,6 +428,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <MomentReport />
 <ProfilerLive />
 <PlayReticle />
+<!-- 38 R8 (NOTES-38 #4): "Playing · Press Esc to stop" — scene-configurable, play-only -->
+<PlayBanner />
 <!-- W4: the touch play controls (virtual stick, look drag, exit). Beside PlayReticle
      and outside the {#if !$isLocked} block for the same reason: they exist ONLY while
      playing, which is exactly where that block draws nothing. -->
@@ -443,6 +447,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <GameChip />
 <SimplifiedWaterNotice />
 <ShortcutSheet />
+<!-- 38 R8 (NOTES-38 #14): Ctrl+K -->
+<CommandPalette />
 <!-- 31 K3: the pause menu every game shares (Esc / the corner Menu button) -->
 <GameShellMenu />
 <FpsCounter />

@@ -19,6 +19,7 @@
 	import CodeEditor from '../CodeEditor.svelte';
 	import { codeIsReadOnly, forkNodeSource } from '$lib/codeOpen'; // 36 (G1): module-bound source
 	import BViewNode from './BViewNode.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	const nodeTypes = { bview: BViewNode };
 	const GLOW_MS = 900;
@@ -186,24 +187,24 @@
 </script>
 
 {#if open}
-	<div id="behaviour-view" data-key-scope="panel" role="region" aria-label="Behaviour graph view" class="absolute inset-0 z-20 flex flex-col bg-gray-900" data-behaviour-view={open.id}>
-		<div class="flex shrink-0 items-center gap-2 border-b border-gray-700 px-2 py-1 text-xs text-gray-200">
+	<div id="behaviour-view" data-key-scope="panel" role="region" aria-label="Behaviour graph view" class="absolute inset-0 z-20 flex flex-col bg-app" data-behaviour-view={open.id}>
+		<div class="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1 text-xs text-text-2">
 			<button id="behaviour-view-back" class="ui-button-quiet" title="Back to the graph" onclick={() => behaviourViewOpen.set(null)}>← Graph</button>
 			<span class="font-semibold">{graphNode?.data?.name || status?.name || 'Behaviour'}</span>
-			<span class="text-gray-400" data-behaviour-view-status>{graphNode?.data?.enabled === false ? 'off' : (status?.status ?? '…')}</span>
+			<span class="text-text-muted" data-behaviour-view-status>{graphNode?.data?.enabled === false ? 'off' : (status?.status ?? '…')}</span>
 			{#if live}
-				<span class="text-gray-400" title="Handlers run on ONE peer (the kit's authority); state reaches everyone">
+				<span class="text-text-muted" title="Handlers run on ONE peer (the kit's authority); state reaches everyone">
 					· {live.authority ? 'runs here (authority)' : 'runs on the authority'}
 				</span>
 			{/if}
 			<span class="flex-1"></span>
-			<span class="text-gray-500">derived from the code · read-only · knobs write the source</span>
+			<span class="text-text-faint">derived from the code · read-only · knobs write the source</span>
 			<button id="behaviour-view-code" class="ui-button-quiet" aria-pressed={showCode} onclick={() => (showCode = !showCode)}>{showCode ? 'Hide code' : 'Code'}</button>
 		</div>
 		<div class="flex min-h-0 flex-1">
 			<div class="relative min-w-0 flex-1">
 				{#if !graphNode}
-					<p class="p-4 text-sm text-gray-400">This behaviour node is gone.</p>
+					<p class="p-4 text-sm text-text-muted">This behaviour node is gone.</p>
 				{:else}
 					<!-- bind: xyflow writes each node's `measured` size back, so a live update keeps it -->
 					<SvelteFlow
@@ -224,11 +225,11 @@
 				{/if}
 			</div>
 			{#if showCode && graphNode}
-				<div class="flex w-[44%] min-w-[280px] flex-col border-l border-gray-700">
+				<div class="flex w-[44%] min-w-[280px] flex-col border-l border-border">
 					{#if readOnly}
-						<div id="behaviour-readonly" class="flex items-center gap-2 bg-gray-800 px-2 py-1 text-xs text-gray-200">
+						<div id="behaviour-readonly" class="flex items-center gap-2 bg-surface-1 px-2 py-1 text-xs text-text-2">
 							<span class="flex-1">Module source ({graphNode.data.src?.module}/{graphNode.data.src?.file}) — read-only</span>
-							<button id="behaviour-make-editable" class="rounded-sm bg-primary-700 px-2 py-0.5 text-white" disabled={forking} onclick={makeEditable}>Make editable copy</button>
+							<button id="behaviour-make-editable" class="rounded-sm bg-accent-fill px-2 py-0.5 text-on-accent hover:brightness-110" disabled={forking} onclick={makeEditable}>Make editable copy</button>
 						</div>
 					{/if}
 					<div class="min-h-0 flex-1" id="behaviour-view-editor">
@@ -240,9 +241,9 @@
 			{/if}
 		</div>
 		{#if errors.length || warnings.length}
-			<div class="max-h-24 shrink-0 overflow-auto border-t border-gray-700 px-2 py-1 text-[11px]" id="behaviour-view-problems">
-				{#each errors as e}<div class="text-red-400">⚠ {e.line ? 'line ' + e.line + ': ' : ''}{e.message}</div>{/each}
-				{#each warnings as w}<div class="text-amber-300">△ {w.line ? 'line ' + w.line + ': ' : ''}{w.message}</div>{/each}
+			<div class="max-h-24 shrink-0 overflow-auto border-t border-border px-2 py-1 text-[11px]" use:minimalScroll id="behaviour-view-problems">
+				{#each errors as e}<div class="text-ink-bad">⚠ {e.line ? 'line ' + e.line + ': ' : ''}{e.message}</div>{/each}
+				{#each warnings as w}<div class="text-ink-warn">△ {w.line ? 'line ' + w.line + ': ' : ''}{w.message}</div>{/each}
 			</div>
 		{/if}
 	</div>

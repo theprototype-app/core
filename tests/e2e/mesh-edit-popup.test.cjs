@@ -29,8 +29,8 @@ h.run(async () => {
 			hasVertices: !!document.querySelector('#mesh-mode-vertices'),
 			hasFaces: !!document.querySelector('#mesh-mode-faces'),
 			hasDone: !!document.querySelector('#mesh-edit-done'),
-			verticesActive: document.querySelector('#mesh-mode-vertices')?.className.includes('bg-primary'),
-			facesActive: document.querySelector('#mesh-mode-faces')?.className.includes('bg-primary')
+			verticesActive: document.querySelector('#mesh-mode-vertices')?.className.includes('bg-accent-fill'),
+			facesActive: document.querySelector('#mesh-mode-faces')?.className.includes('bg-accent-fill')
 		};
 	});
 	h.check(popup.present && popup.hasVertices && popup.hasFaces, 'toolbar shows on mesh edit with both modes');

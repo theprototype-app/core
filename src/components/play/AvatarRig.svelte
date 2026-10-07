@@ -89,6 +89,7 @@
 		if (avatar && root) avatar.update(Math.min(delta, 0.1), performance.now() / 1000, root, preview ? null : $peerHands[user[0]], viewer)
 	})
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a peer avatar in the 3D view (meshes cannot read CSS var()) -->
 
 <T.Group bind:ref={root} position={[0, 1000, 0]} name={user[0]}>
 	{#if !look}
@@ -201,3 +202,4 @@
 		{/if}
 	</T>
 {/if}
+<!-- tokens-ok-end -->

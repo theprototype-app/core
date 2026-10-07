@@ -14,7 +14,7 @@
 	// handlers die in panel chrome; a drag must survive leaving its element).
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { X, RotateCcw, Check } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { gameId } from '$lib/gameSettings';
 	import {
 		touchPrefs,
@@ -284,10 +284,10 @@
 			<p class="tle-hint">Drag a control to move it. Select one to resize it (or pinch it with a second finger).</p>
 		{/if}
 		<div class="tle-row tle-actions">
-			<button type="button" class="tle-btn" id="touch-layout-reset" data-tour="touch-layout-reset" onclick={reset}><RotateCcw size={14} aria-hidden="true" /> Reset</button>
+			<button type="button" class="tle-btn" id="touch-layout-reset" data-tour="touch-layout-reset" onclick={reset}><Icon name="rotate-ccw" size={16} aria-hidden="true" /> Reset</button>
 			<span class="tle-spacer"></span>
-			<button type="button" class="tle-btn" id="touch-layout-cancel" onclick={() => closeTouchLayoutEditor()}><X size={14} aria-hidden="true" /> Cancel</button>
-			<button type="button" class="tle-btn tle-primary" id="touch-layout-save" data-tour="touch-layout-save" onclick={save}><Check size={14} aria-hidden="true" /> Save</button>
+			<button type="button" class="tle-btn" id="touch-layout-cancel" onclick={() => closeTouchLayoutEditor()}><Icon name="x" size={16} aria-hidden="true" /> Cancel</button>
+			<button type="button" class="tle-btn tle-primary" id="touch-layout-save" data-tour="touch-layout-save" onclick={save}><Icon name="check" size={16} aria-hidden="true" /> Save</button>
 		</div>
 	</div>
 </div>
@@ -297,19 +297,19 @@
 		position: fixed;
 		inset: 0;
 		z-index: calc(var(--z-modal, 1100) + 10);
-		background: rgb(var(--surface-deep-rgb, 0 0 0) / 0.42);
+		background: var(--scrim);
 		touch-action: none;
 		user-select: none;
 		-webkit-user-select: none;
-		color: var(--text, #f3f4f6);
+		color: var(--text);
 	}
 	.tle-grid {
 		position: absolute;
 		inset: 0;
 		pointer-events: none;
 		background-image:
-			linear-gradient(to right, rgb(var(--surface-rgb, 255 255 255) / 0.08) 1px, transparent 1px),
-			linear-gradient(to bottom, rgb(var(--surface-rgb, 255 255 255) / 0.08) 1px, transparent 1px);
+			linear-gradient(to right, color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1px),
+			linear-gradient(to bottom, color-mix(in srgb, var(--text) 8%, transparent) 1px, transparent 1px);
 		background-size: 40px 40px;
 	}
 	.tle-item {
@@ -324,7 +324,7 @@
 		outline-offset: 3px;
 	}
 	.tle-item.selected {
-		outline-color: var(--accent, #3b82f6);
+		outline-color: var(--accent);
 	}
 	.tle-item.hidden-item {
 		filter: grayscale(1);
@@ -339,7 +339,7 @@
 		white-space: nowrap;
 		padding: 1px 6px;
 		border-radius: 4px;
-		background: rgb(var(--surface-deep-rgb, 0 0 0) / 0.7);
+		background: color-mix(in srgb, var(--bg-app) 70%, transparent);
 		pointer-events: none;
 	}
 	.tle-stick {
@@ -347,8 +347,8 @@
 		width: 100%;
 		height: 100%;
 		border-radius: 9999px;
-		border: 2px solid rgb(var(--surface-rgb, 255 255 255) / 0.5);
-		background: rgb(var(--surface-deep-rgb, 0 0 0) / 0.3);
+		border: 2px solid color-mix(in srgb, var(--text) 50%, transparent);
+		background: color-mix(in srgb, var(--bg-app) 30%, transparent);
 		box-sizing: border-box;
 		pointer-events: none;
 	}
@@ -360,7 +360,7 @@
 		height: 41%;
 		transform: translate(-50%, -50%);
 		border-radius: 9999px;
-		background: color-mix(in srgb, var(--text, #fff) 55%, transparent);
+		background: color-mix(in srgb, var(--text) 55%, transparent);
 	}
 	.tle-grip {
 		position: absolute;
@@ -369,8 +369,8 @@
 		width: 22px;
 		height: 22px;
 		border-radius: 9999px;
-		background: var(--accent, #3b82f6);
-		border: 2px solid var(--text, #fff);
+		background: var(--accent-fill);
+		border: 2px solid var(--on-accent);
 		cursor: nwse-resize;
 		transform: translate(50%, 50%);
 	}
@@ -383,10 +383,10 @@
 		box-sizing: border-box;
 		padding: 10px 12px;
 		border-radius: 10px;
-		border: 1px solid var(--border, #374151);
-		background: var(--surface, #1f2937);
-		color: var(--text, #f3f4f6);
-		box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+		border: 1px solid var(--border);
+		background: var(--surface-1);
+		color: var(--text);
+		box-shadow: var(--shadow-window);
 		user-select: auto;
 		touch-action: manipulation;
 		display: flex;
@@ -405,7 +405,7 @@
 	}
 	.tle-slider span:first-child {
 		width: 58px;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 	}
 	.tle-slider input {
 		flex: 1;
@@ -415,7 +415,7 @@
 		width: 44px;
 		text-align: right;
 		font-variant-numeric: tabular-nums;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 	}
 	.tle-sel {
 		font-weight: 600;
@@ -429,7 +429,7 @@
 	.tle-hint {
 		margin: 0;
 		font-size: 12px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.tle-spacer {
 		flex: 1;
@@ -440,21 +440,22 @@
 		gap: 4px;
 		padding: 5px 10px;
 		border-radius: 6px;
-		border: 1px solid var(--border, #374151);
-		background: var(--surface-2, #374151);
-		color: var(--text, #f3f4f6);
+		border: 1px solid var(--border);
+		background: var(--surface-2);
+		color: var(--text);
 		font-size: 12px;
 		cursor: pointer;
 	}
 	.tle-btn:hover {
-		background: var(--hover, #4b5563);
+		background: var(--surface-active);
 	}
 	.tle-primary {
-		background: var(--accent, #3b82f6);
-		border-color: var(--accent, #3b82f6);
-		color: #fff;
+		background: var(--accent-fill);
+		border-color: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.tle-primary:hover {
-		background: var(--accent-2, #2563eb);
+		background: var(--accent-fill);
+		filter: brightness(0.92);
 	}
 </style>

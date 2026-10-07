@@ -3,7 +3,7 @@
 	// water (no refraction) or a fluid tank (drops instead of a smooth surface): what happened and
 	// where to give it back. Once per session (sessionStorage), never in Play, never in a headset.
 	// Theme tokens only. Its own file; App.svelte mounts it with one line.
-	import { X } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { simplifiedWater } from '$lib/water/simplifiedNotice.js';
 	import { isLocked, globalRenderer } from '../../stores/sceneStore';
 	import { settingsOpen, settingsSection } from '../../stores/appStore';
@@ -51,7 +51,7 @@
 			<button type="button" class="sw-link" onclick={openSetting}>Settings ▸ Scene ▸ Water quality ▸ High</button>
 			shows refraction.
 		</span>
-		<button type="button" class="sw-x" aria-label="Dismiss" onclick={finish}><X size={14} aria-hidden="true" /></button>
+		<button type="button" class="sw-x" aria-label="Dismiss" onclick={finish}><Icon name="x" size={16} aria-hidden="true" /></button>
 	</div>
 {/if}
 
@@ -70,13 +70,13 @@
 		border-radius: 0.5rem;
 		font-size: 0.75rem;
 		line-height: 1.3;
-		color: var(--text, #e5e7eb);
-		background: var(--surface, #1f2937);
-		border: 1px solid var(--border, #374151);
-		box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+		color: var(--text);
+		background: var(--surface-1);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow-window);
 	}
 	.sw-link {
-		color: var(--accent, #f97316);
+		color: var(--accent-text);
 		text-decoration: underline;
 		background: none;
 		border: 0;
@@ -90,13 +90,13 @@
 		justify-content: center;
 		min-width: 1.75rem;
 		min-height: 1.75rem;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		background: none;
 		border: 0;
 		border-radius: 0.25rem;
 		cursor: pointer;
 	}
 	.sw-x:hover {
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 	}
 </style>

@@ -1,5 +1,5 @@
 <script>
-	import { Box, ChevronDown, ChevronRight, Eye, EyeOff, Layers, Lock, PersonStanding, Settings, Share2, Sun, UserLock } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
     /** 26-B: `flat` renders ONE row and no recursion — the virtualised list in
      * Controls draws the flattened `visibleObjectRows` itself and supplies the
      * indent, so the same component (and the same nine handlers) serve both the
@@ -19,7 +19,6 @@
     /** @type {any} the row's own element, for the keyboard scroll-follow */
     let rowEl = $state(null);
     import { getContext } from 'svelte';
-    import { Tooltip } from 'flowbite-svelte';
     // recursive tree — svelte 5 self-import replaces the deprecated <svelte:self>
     import Objects from './Objects.svelte';
 
@@ -223,7 +222,7 @@
     <div id={element.uuid} oncontextmenu={openContextMenu}
         bind:this={rowEl}
         class={'group/row select-none ' +
-            (dropHover ? 'rounded-sm outline-solid outline-2 outline-primary-400 bg-primary-900/20 ' : '') +
+            (dropHover ? 'obj-drop rounded-sm outline-solid outline-2 ' : '') +
             (lockEntry ? '' : 'cursor-grab active:cursor-grabbing')}
         role="treeitem"
         tabindex="-1"
@@ -240,10 +239,8 @@
         onpointercancel={cancelHold}
         onpointerleave={cancelHold}>
         <div
-            class={'flex w-full items-center gap-1 rounded-sm px-1 py-0.5 text-sm ' +
-                (isSelected
-                    ? 'bg-primary-900/50 text-primary-100'
-                    : 'text-gray-800 hover:bg-gray-200 dark:text-gray-200 dark:hover:bg-gray-600/50')}
+            class="obj-row flex w-full items-center gap-1 px-1 py-0.5 text-sm"
+            class:obj-row-on={isSelected}
             style={depth ? 'padding-left:' + (depth * 12 + 4) + 'px' : ''}
             role="presentation"
             onclick={(e) => { select(element.uuid, e.shiftKey); }}
@@ -251,11 +248,11 @@
             <!-- caret column -->
             {#if element.children.length > 0}
                 <button
-                    class="w-4 shrink-0 text-center text-[10px] text-gray-400 hover:text-gray-100"
+                    class="obj-ico obj-caret w-4 shrink-0 text-center text-[10px]"
                     title={isExpanded ? 'Collapse group' : 'Expand group'}
                     onclick={(e) => { e.stopPropagation(); setExpanded(!isExpanded); }}
                 >
-                    {#if isExpanded}<ChevronDown size={14} aria-hidden="true" />{:else}<ChevronRight size={14} aria-hidden="true" />{/if}
+                    {#if isExpanded}<Icon name="chevron-down" size={16} aria-hidden="true" />{:else}<Icon name="chevron-right" size={16} aria-hidden="true" />{/if}
                 </button>
             {:else}
                 <span class="w-4 shrink-0"></span>
@@ -263,30 +260,30 @@
 
             <!-- type icon column -->
             {#if element.userData?.animatedClips}
-                <PersonStanding size={16} class="w-4 shrink-0 text-center text-purple-300" aria-hidden="true" title="Animated model" />
+                <Icon name="person-standing" size={16} class="obj-ico obj-type shrink-0 text-center" aria-hidden="true" title="Animated model" />
             {:else if element.type.endsWith('Group')}
-                <Layers size={16} class="w-4 shrink-0 text-center text-sky-300" aria-hidden="true" title="Group" />
+                <Icon name="layers" size={16} class="obj-ico obj-type shrink-0 text-center" aria-hidden="true" title="Group" />
             {:else if element.type.endsWith('Light')}
-                <Sun size={16} class="w-4 shrink-0 text-center text-yellow-300" aria-hidden="true" title="Light" />
+                <Icon name="sun" size={16} class="obj-ico obj-type shrink-0 text-center" aria-hidden="true" title="Light" />
             {:else}
-                <Box size={16} class="w-4 shrink-0 text-center text-gray-400" aria-hidden="true" title="Object" />
+                <Icon name="box" size={16} class="obj-ico obj-type shrink-0 text-center" aria-hidden="true" title="Object" />
             {/if}
 
             {#if isLocal}
-                <UserLock size={16} class="w-3 shrink-0 text-center text-[10px] text-amber-400" aria-hidden="true" title="Local only (not shared with peers)" />
+                <Icon name="user-lock" size={16} class="obj-local shrink-0 text-center text-[10px]" aria-hidden="true" title="Local only (not shared with peers)" />
             {/if}
 
             <!-- 171: a persistent hidden marker so hidden rows read at a glance
                  (the eye toggle only shows on hover) -->
             {#if element.visible === false}
-                <EyeOff size={16} class="hidden-marker w-3 shrink-0 text-center text-[10px] text-gray-500" aria-hidden="true" title="Hidden" />
+                <Icon name="eye-off" size={16} class="hidden-marker obj-ico shrink-0 text-center text-[10px]" aria-hidden="true" title="Hidden" />
             {/if}
 
             <!-- name / inline rename -->
             {#if $renamingObject === element.uuid}
                 <!-- svelte-ignore a11y_autofocus -->
                 <input
-                    class="row-rename ui-input min-w-0 flex-1 px-1 py-0 text-sm"
+                    class="row-rename tp-field obj-rename flex-1"
                     value={element.name}
                     autofocus
                     use:focusRename
@@ -307,32 +304,31 @@
 
             <!-- quick actions: appear on hover; lock badge when held by a peer -->
             {#if lockEntry}
-                <span class="flex shrink-0 items-center gap-1 pr-1">
+                <span class="flex shrink-0 items-center gap-1 pr-1" title="Locked by {nameOf(lockEntry[0])} — right-click to request control">
                     <span class="h-2 w-2 rounded-full" style={'background:' + peerColor(lockEntry[0])}></span>
-                    <Lock size={16} class="text-gray-400" aria-hidden="true" />
+                    <Icon name="lock" size={16} class="obj-ico" aria-hidden="true" />
                 </span>
-                <Tooltip placement='left' arrow={false}>Locked by {nameOf(lockEntry[0])} — right-click to request control</Tooltip>
             {:else}
                 <span class="row-actions hidden shrink-0 items-center gap-1.5 pr-1 group-hover/row:flex">
                     <button
-                        class="text-gray-400 hover:text-gray-100"
+                        class="obj-act"
                         title={element.visible === false ? 'Show' : 'Hide'}
                         onclick={(e) => { e.stopPropagation(); toggleObjectVisibility(element.uuid); }}
                     >
-                        {#if element.visible === false}<EyeOff size={14} aria-hidden="true" />{:else}<Eye size={14} aria-hidden="true" />{/if}
+                        {#if element.visible === false}<Icon name="eye-off" size={16} aria-hidden="true" />{:else}<Icon name="eye" size={16} aria-hidden="true" />{/if}
                     </button>
-                    <button class="configure hover:brightness-200" title="Properties" onclick={(e) => { e.stopPropagation(); configure(element); }}><Settings size={14} aria-hidden="true" /></button>
+                    <button class="configure obj-act" title="Properties" onclick={(e) => { e.stopPropagation(); configure(element); }}><Icon name="settings" size={16} aria-hidden="true" /></button>
                     {#if isLocal && !isViewer()}
-                        <button class="share-local hover:brightness-200" title="Share with peers" aria-label="Share with peers" onclick={(e) => { e.stopPropagation(); shareLocal(element); }}><Share2 size={16} class="text-primary-300" aria-hidden="true" /></button>
+                        <button class="share-local obj-act" title="Share with peers" aria-label="Share with peers" onclick={(e) => { e.stopPropagation(); shareLocal(element); }}><Icon name="share-2" size={16} aria-hidden="true" /></button>
                     {/if}
-                    <button class="delete hover:brightness-200" title="Delete" onclick={(e) => { e.stopPropagation(); deleteItem(element); }}>✖️</button>
+                    <button class="delete obj-act obj-del" title="Delete" aria-label="Delete" onclick={(e) => { e.stopPropagation(); deleteItem(element); }}><Icon name="x" size={16} aria-hidden="true" /></button>
                 </span>
             {/if}
         </div>
     </div>
 
     {#if isExpanded && !flat}
-    <div class="ml-3 border-l border-gray-600/40 pl-1" role="group">
+    <div class="obj-kids ml-3 border-l pl-1" role="group">
         {#each kids as item (item.uuid)}
             <Objects element={item} />
         {/each}
@@ -342,6 +338,52 @@
 
 
 <style>
+    /* 38 R6: rows in the tokens — one accent for the selection (SPEC §1), quiet type icons */
+    .obj-row {
+        border-radius: var(--radius-input);
+        color: var(--text-2);
+    }
+    .obj-row:hover {
+        background: var(--surface-hover);
+    }
+    .obj-row-on,
+    .obj-row-on:hover {
+        background: var(--accent-soft);
+        color: var(--text);
+    }
+    .obj-row :global(.obj-ico) {
+        color: var(--text-faint);
+    }
+    .obj-row-on :global(.obj-type) {
+        color: var(--accent-text);
+    }
+    .obj-row :global(.obj-local) {
+        color: var(--warn-text);
+    }
+    .obj-caret:hover {
+        color: var(--text);
+    }
+    .obj-act {
+        display: inline-flex;
+        color: var(--text-muted);
+    }
+    .obj-act:hover {
+        color: var(--text);
+    }
+    .obj-del:hover {
+        color: var(--warn-text);
+    }
+    .obj-rename {
+        height: 22px;
+        padding: 0 4px;
+    }
+    .obj-drop {
+        outline-color: var(--accent);
+        background: color-mix(in srgb, var(--accent-soft) 60%, transparent);
+    }
+    .obj-kids {
+        border-color: var(--border);
+    }
 	/* TOUCH: the row's eye / properties / share / delete buttons were reachable only
 	   on HOVER, which a touch screen never produces — so on a phone they did not
 	   exist at all. Show them permanently where there is no hover. Unlayered

@@ -2,7 +2,7 @@
 	// 36-fb F23: Inspector ▸ Fluid emitter — every setting of `userData.fluidEmitter`. Its own
 	// component (one Inspector line, the settings merge rule). Writes go through
 	// setFluidEmitterFor: replicated, one undo entry each; the particles stay each peer's own.
-	import { Checkbox } from 'flowbite-svelte';
+	import InsToggle from '../menu/inspector/InsToggle.svelte';
 	import Section from '../ui/Section.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
@@ -35,11 +35,11 @@
 </script>
 
 <div data-keywords={keywords} class="contents">
-	<Section label="Fluid emitter">
+	<Section variant="panel" label="Fluid emitter">
 		<div data-tour="fluid-emitter" class="contents">
-			<Checkbox id="fluid-emitter-on" checked={f.on} onchange={(/** @type {any} */ e) => set({ on: e.currentTarget.checked })}>Emitting</Checkbox>
+			<InsToggle id="fluid-emitter-on" checked={f.on} onchange={(/** @type {any} */ e) => set({ on: e.currentTarget.checked })}>Emitting</InsToggle>
 			<div class="ui-row items-center gap-2" title="Stream pours continuously; Spill releases the spill amount once">
-				<span class="w-20 shrink-0 text-xs text-gray-400">Mode</span>
+				<span class="w-20 shrink-0 text-xs text-text-muted">Mode</span>
 				<ThemedSelect
 					id="fluid-emitter-mode"
 					items={[
@@ -57,7 +57,7 @@
 			<SliderRow id="fluid-emitter-speed" label="Speed" min={0} max={12} step={0.1} value={f.speed} onchange={(v) => set({ speed: v })} />
 			<SliderRow id="fluid-emitter-spread" label="Spread °" min={0} max={90} step={1} decimals={0} value={f.spread} onchange={(v) => set({ spread: v })} />
 			<div class="ui-row items-center gap-2">
-				<span class="w-20 shrink-0 text-xs text-gray-400">Aim</span>
+				<span class="w-20 shrink-0 text-xs text-text-muted">Aim</span>
 				<ThemedSelect
 					id="fluid-emitter-aim"
 					items={[
@@ -71,26 +71,26 @@
 					onchange={(/** @type {any} */ v) => AIMS[v] && set({ dir: AIMS[v] })}
 				/>
 			</div>
-			<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Hard caps</p>
+			<p class="text-[length:var(--fs-badge)] font-semibold uppercase tracking-wide text-text-muted">Hard caps</p>
 			<SliderRow id="fluid-emitter-max" label="Max particles" min={64} max={EMITTER_MAX_PARTICLES} step={50} decimals={0} value={f.maxParticles} onchange={(v) => set({ maxParticles: v })} />
 			<SliderRow id="fluid-emitter-lifetime" label="Lifetime s" min={0.5} max={600} step={0.5} value={f.lifetime} onchange={(v) => set({ lifetime: v })} />
 			{#each ['Width', 'Height', 'Depth'] as label, i (label)}
 				<SliderRow id={'fluid-emitter-area-' + i} label={'Area ' + label.toLowerCase()} min={0.3} max={MAX_AREA_SIDE} step={0.1} value={f.area.size[i]} onchange={(v) => setSize(i, v)} />
 			{/each}
 			<SliderRow id="fluid-emitter-area-drop" label="Area below" min={-MAX_AREA_SIDE} max={MAX_AREA_SIDE} step={0.1} value={f.area.offset[1]} onchange={(v) => setOffset(1, v)} />
-			<Checkbox id="fluid-emitter-floor" checked={f.floor} onchange={(/** @type {any} */ e) => set({ floor: e.currentTarget.checked })}>Area floor holds water</Checkbox>
-			<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Fluid</p>
+			<InsToggle id="fluid-emitter-floor" checked={f.floor} onchange={(/** @type {any} */ e) => set({ floor: e.currentTarget.checked })}>Area floor holds water</InsToggle>
+			<p class="text-[length:var(--fs-badge)] font-semibold uppercase tracking-wide text-text-muted">Fluid</p>
 			<SliderRow id="fluid-emitter-size" label="Drop size" min={0.025} max={0.12} step={0.005} decimals={3} value={f.particleSize} onchange={(v) => set({ particleSize: v })} />
 			<SliderRow id="fluid-emitter-viscosity" label="Viscosity" min={0} max={1} step={0.01} value={f.viscosity} onchange={(v) => set({ viscosity: v })} />
 			<SliderRow id="fluid-emitter-tension" label="Surface tension" min={0} max={2} step={0.05} value={f.surfaceTension} onchange={(v) => set({ surfaceTension: v })} />
 			<SliderRow id="fluid-emitter-cohesion" label="Cohesion" min={0} max={1} step={0.05} value={f.cohesion} onchange={(v) => set({ cohesion: v })} />
 			<SliderRow id="fluid-emitter-friction" label="Friction" min={0} max={1} step={0.05} value={f.friction} onchange={(v) => set({ friction: v })} />
 			<div class="ui-row items-center gap-2">
-				<span class="w-20 shrink-0 text-xs text-gray-400">Colour</span>
+				<span class="w-20 shrink-0 text-xs text-text-muted">Colour</span>
 				<input
 					id="fluid-emitter-color"
 					type="color"
-					class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent"
+					class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
 					aria-label="Fluid colour"
 					value={f.color}
 					onchange={(/** @type {any} */ e) => set({ color: e.currentTarget.value })}
@@ -98,7 +98,7 @@
 			</div>
 			<SliderRow id="fluid-emitter-clarity" label="Clarity" min={0} max={1} step={0.05} value={f.clarity} onchange={(v) => set({ clarity: v })} />
 			<div class="ui-row items-center gap-2">
-				<span class="w-20 shrink-0 text-xs text-gray-400">Look</span>
+				<span class="w-20 shrink-0 text-xs text-text-muted">Look</span>
 				<ThemedSelect
 					id="fluid-emitter-quality"
 					items={[
@@ -110,10 +110,10 @@
 					onchange={(/** @type {any} */ v) => set({ quality: v })}
 				/>
 			</div>
-			<Checkbox id="fluid-emitter-interact" checked={f.interact} onchange={(/** @type {any} */ e) => set({ interact: e.currentTarget.checked })}>Collide with the scene</Checkbox>
-			<Checkbox id="fluid-emitter-join" checked={f.joinPools} onchange={(/** @type {any} */ e) => set({ joinPools: e.currentTarget.checked })}>Pouring into water joins it</Checkbox>
-			<button id="fluid-emitter-restart" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => set({ generation: f.generation + 1 })}>Restart</button>
-			<p class="mt-1 text-[10px] text-gray-400">
+			<InsToggle id="fluid-emitter-interact" checked={f.interact} onchange={(/** @type {any} */ e) => set({ interact: e.currentTarget.checked })}>Collide with the scene</InsToggle>
+			<InsToggle id="fluid-emitter-join" checked={f.joinPools} onchange={(/** @type {any} */ e) => set({ joinPools: e.currentTarget.checked })}>Pouring into water joins it</InsToggle>
+			<button id="fluid-emitter-restart" class="ui-chip bg-surface-active text-text-2 hover:bg-surface-hover" onclick={() => set({ generation: f.generation + 1 })}>Restart</button>
+			<p class="mt-1 text-[length:var(--fs-badge)] text-text-muted">
 				Each player simulates their own splash; these settings are shared. Pauses when off-screen. Quest shows drops (max {QUEST_EMITTER_CAP}). Water
 				leaving the area is gone; pouring into a pool joins it.
 			</p>

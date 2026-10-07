@@ -1,0 +1,283 @@
+/* 38 R8 — THE MAIN HUD's shared look (cloud docs/design/redesign/SPEC.md §5 + the design
+   review page's desktop shell): the Controls toolbar, the Connect bar, the top-right group,
+   the corner buttons and the toast stack. Look only — every id, handler, store and position
+   rule stays in its component.
+
+   Colours, radii and type come from tokens.css only. Every HUD root also wears `tp-ui`, so
+   the five scoped names (--text, --text-2, --border, --accent, --surface-2) carry their SPEC
+   values in the default theme.
+
+   Sizes (SPEC §5): icon buttons 36-38 px on a fine pointer, 44 px on touch; one container
+   style (`hud-glass`); Play is the only `--live` control. */
+
+:root {
+	/* the glass every HUD container floats on: the window surface, slightly see-through */
+	--hud-glass: color-mix(in srgb, var(--surface-1) 88%, transparent);
+	--hud-shadow: var(--shadow-window);
+	--hud-cell: 38px; /* toolbar cells */
+	--hud-icon-button: 34px; /* top-right / Connect icon buttons */
+	--hud-fab: 44px; /* the corner buttons (already a touch size) */
+	--hud-bar-h: 48px; /* the toolbar: at most 48 so it never shares a row with the mic/AI buttons above the bottom pair (toolbar-position) */
+	--hud-row-h: 44px; /* Connect bar, top-right group */
+}
+/* touch: every HUD hit target reaches 44 px (SPEC §6) */
+@media (pointer: coarse) {
+	:root {
+		--hud-cell: 44px;
+		--hud-icon-button: 44px;
+		--hud-bar-h: 56px;
+		--hud-row-h: 52px;
+	}
+}
+
+/* ONE container style: the toolbar, the Connect bar, the top-right group */
+.hud-glass {
+	background: var(--hud-glass);
+	border: 1px solid var(--border);
+	box-shadow: var(--hud-shadow);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	color: var(--text);
+	font-family: var(--font-ui);
+}
+
+/* an icon button inside a HUD container (toolbar cell, top-right button) */
+.hud-cell {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	box-sizing: border-box;
+	width: var(--hud-icon-button);
+	height: var(--hud-icon-button);
+	padding: 0;
+	border: 0;
+	border-radius: var(--radius-button);
+	background: transparent;
+	color: var(--text-2);
+	cursor: pointer;
+	transition: background-color 0.12s, color 0.12s;
+}
+.hud-cell:hover {
+	background: var(--surface-hover);
+	color: var(--text);
+}
+/* armed / open: the accent's soft fill (SPEC §1 one accent — orange is Play's alone) */
+.hud-cell.on,
+.hud-cell[aria-pressed='true'],
+.hud-cell[aria-expanded='true'] {
+	background: var(--accent-soft);
+	color: var(--accent-text);
+}
+.hud-cell:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+.hud-cell:disabled,
+.hud-cell[aria-disabled='true'] {
+	opacity: 0.4;
+	cursor: default;
+}
+
+/* a corner button (bottom-left Add / AI, bottom-right mic / chat / sim) */
+.hud-fab {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	width: var(--hud-fab);
+	height: var(--hud-fab);
+	padding: 0;
+	border-radius: var(--radius-window);
+	background: var(--hud-glass);
+	border: 1px solid var(--border);
+	box-shadow: var(--hud-shadow);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	color: var(--text-2);
+	cursor: pointer;
+	transition: background-color 0.12s, color 0.12s, border-color 0.12s;
+}
+.hud-fab:hover {
+	color: var(--text);
+	background: color-mix(in srgb, var(--surface-1) 96%, var(--text));
+}
+.hud-fab.on,
+.hud-fab[aria-pressed='true'] {
+	color: var(--accent-text);
+	border-color: var(--accent);
+}
+.hud-fab:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.hud-fab:disabled {
+	opacity: 0.45;
+	cursor: default;
+}
+
+/* a count on a HUD button (unread notifications, hidden toasts) — the accent, never red */
+.hud-count {
+	position: absolute;
+	top: 1px;
+	right: 0;
+	min-width: 16px;
+	height: 16px;
+	padding: 0 4px;
+	box-sizing: border-box;
+	border-radius: var(--radius-pill);
+	background: var(--accent-fill);
+	color: var(--on-accent);
+	font: 600 10px/16px var(--font-ui-mono);
+	text-align: center;
+	box-shadow: 0 0 0 2px var(--surface-1);
+	pointer-events: none;
+}
+
+/* the vertical rule between HUD groups */
+.hud-sep {
+	flex: 0 0 auto;
+	width: 1px;
+	height: 22px;
+	margin: 0 2px;
+	background: var(--border);
+}
+
+/* ---- the Controls toolbar (#controls-pill, Controls.svelte) ---- */
+.hud-bar {
+	height: var(--hud-bar-h);
+	padding: 0 6px;
+	border-radius: var(--radius-modal);
+}
+.hud-bar-row {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	height: 100%;
+}
+.hud-bar .hud-cell {
+	width: var(--hud-cell);
+	height: var(--hud-cell);
+	border-radius: 9px;
+}
+/* the glyph's `text-primary-500` is only the armed MARKER (suites read it): the cell's own
+   colour wins, so an armed cell is accent, never the theme's orange */
+#controls-pill .hud-cell svg.lucide {
+	color: inherit;
+}
+/* the well Play sits in, and Play itself: the one --live control */
+.hud-play-well {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: calc(var(--hud-fab) + 12px);
+	height: 100%;
+}
+.hud-play {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--hud-fab);
+	height: var(--hud-fab);
+	margin: 0;
+	border-radius: 50%;
+	background: var(--live);
+	color: var(--on-live);
+	box-shadow: 0 4px 14px color-mix(in srgb, var(--live) 45%, transparent);
+	cursor: pointer;
+	z-index: var(--z-hud);
+	transition: transform 100ms;
+}
+.hud-play:hover {
+	transform: scale(1.06);
+}
+.hud-play:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+.hud-play .hud-play-tri {
+	margin-left: 2px; /* optical centring of a triangle */
+}
+.hud-play-lens {
+	position: absolute;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	font-size: 10px;
+	font-weight: 700;
+	line-height: 1;
+}
+
+/* a corner button whose action stops something (the sim transport's Stop): the soft
+   destructive ink, not a red fill (red is a destructive CONFIRM, SPEC §2 Button) */
+.hud-fab.hud-fab-warn {
+	color: var(--warn-text);
+}
+
+/* a phone: nine tools + Play cannot all be 44 px wide in 390 px. The bar takes the screen
+   width and the cells share it (they stay 44 px TALL); the phone's own bottom bar is R9's
+   redesign (38-mobile). Id selectors beat the nav's `min-w-max` utility. */
+@media (max-width: 520px) {
+	#controls-pill {
+		min-width: 0;
+		max-width: calc(100vw - 12px);
+		padding: 0 4px;
+	}
+	#controls-pill .hud-bar-row {
+		gap: 0;
+	}
+	#controls-pill .hud-cell {
+		flex: 0 1 var(--hud-cell);
+		width: auto;
+		min-width: 30px;
+	}
+	#controls-pill .hud-play-well {
+		width: calc(var(--hud-fab) + 6px);
+	}
+}
+
+/* ---- the top-right group (Users.svelte: notes, notifications, peers) ---- */
+.hud-tr {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	height: var(--hud-row-h);
+	padding: 0 5px;
+	border-radius: var(--radius-window);
+}
+/* The top-right group HOSTS fixed-position panels (#notif-panel, which the phone shell turns
+   into a full-width sheet, and #peers-popover under a docked Connect bar), and a
+   backdrop-filter makes its element the containing block for fixed descendants (the CLAUDE.md
+   transform/filter trap): the notifications sheet came out 44 px wide inside this group. So
+   the glass (fill + blur) lives on a pseudo-element here; the group itself filters nothing. */
+.hud-tr.hud-glass {
+	background: transparent;
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+	isolation: isolate;
+}
+.hud-tr.hud-glass::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	z-index: -1;
+	border-radius: inherit;
+	background: var(--hud-glass);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	pointer-events: none;
+}
+.hud-tr .hud-tr-peers {
+	width: auto;
+	gap: 6px;
+	padding: 0 8px 0 6px;
+}
+.hud-tr .hud-tr-av {
+	box-shadow: 0 0 0 2px var(--surface-1);
+}
+.hud-tr-count {
+	font: 600 0.75rem var(--font-ui-mono);
+	color: var(--text-2);
+}

@@ -1,0 +1,305 @@
+{
+	"recordedAt": "2026-10-05T23:01:46.168Z",
+	"surfaces": {
+		"logo-menu": {
+			"shown": true,
+			"closer": true,
+			"escape": false
+		},
+		"connect-drawer": {
+			"shown": true,
+			"closer": true,
+			"escape": false
+		},
+		"notifications": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"notes": {
+			"shown": true,
+			"closer": true,
+			"escape": false
+		},
+		"chat": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"ai": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"objects": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"addmenu": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"viewportmenu": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"shortcut-sheet": {
+			"shown": true,
+			"closer": true,
+			"escape": true
+		},
+		"inspector-object": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"inspector-light": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"inspector-scene": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"explorer": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"flow": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"flowcode": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"animation": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"uv": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"shader": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"hud": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"profiler": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"code": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"modules": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"sessions": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"checkpoints": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"templates": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"character": {
+			"shown": true,
+			"closer": true,
+			"escape": true
+		},
+		"profile": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"storage": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"meshgen": {
+			"shown": true,
+			"closer": null,
+			"escape": false
+		},
+		"settings-interface": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-controls": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-input": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-touchcontrols": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-scene": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-explorer": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-vr": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-ai": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-export": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-nodetypes": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-connection": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-shortcuts": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		},
+		"settings-about": {
+			"shown": true,
+			"closer": null,
+			"escape": true
+		}
+	},
+	"toolbar": {
+		"Move (1)": {
+			"title": "Move (1)",
+			"stores": {},
+			"storage": [],
+			"dialogs": []
+		},
+		"Rotate (2)": {
+			"title": "Rotate (2)",
+			"stores": {
+				"transformMode": "rotate"
+			},
+			"storage": [],
+			"dialogs": []
+		},
+		"Scale (3)": {
+			"title": "Scale (3)",
+			"stores": {
+				"transformMode": "scale"
+			},
+			"storage": [],
+			"dialogs": []
+		},
+		"Interact mode (I)": {
+			"title": "Interact mode (I)",
+			"stores": {
+				"editorMode": "interact",
+				"helperLayer.editorHelpersShown": false
+			},
+			"storage": [],
+			"dialogs": []
+		},
+		"Object list (O)": {
+			"title": "Object list (O)",
+			"stores": {
+				"objectListClose": false
+			},
+			"storage": [],
+			"dialogs": []
+		},
+		"Node editor (N)": {
+			"title": "Node editor (N)",
+			"stores": {
+				"bottomDock.bottomDockActive": "flow",
+				"bottomDock.dockOccupants": "<object>",
+				"bottomDock.dockTabs": "<object>",
+				"bottomDock.flowTabs": "<object>",
+				"bottomDock.visibleDockKey": "flow",
+				"flowGraphClose": false
+			},
+			"storage": [
+				"bottomDockActive"
+			],
+			"dialogs": []
+		},
+		"Explorer": {
+			"title": "Explorer",
+			"stores": {
+				"bottomDock.bottomDockActive": "explorer",
+				"bottomDock.dockOccupants": "<object>",
+				"bottomDock.dockTabs": "<object>",
+				"bottomDock.visibleDockKey": "explorer",
+				"explorerClose": false
+			},
+			"storage": [
+				"bottomDockActive"
+			],
+			"dialogs": []
+		},
+		"Animation": {
+			"title": "Animation",
+			"stores": {
+				"animationClose": false,
+				"bottomDock.bottomDockActive": "animation",
+				"bottomDock.dockOccupants": "<object>",
+				"bottomDock.dockTabs": "<object>",
+				"bottomDock.flowTabs": "<object>",
+				"bottomDock.visibleDockKey": "animation"
+			},
+			"storage": [
+				"bottomDockActive"
+			],
+			"dialogs": []
+		}
+	}
+}

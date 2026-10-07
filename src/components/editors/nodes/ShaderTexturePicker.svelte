@@ -14,7 +14,7 @@
 	// nodes size to their content). The full name, a scaled PREVIEW and the details live in
 	// a hover card instead.
 	import { onDestroy } from 'svelte';
-	import { Image, X } from '@lucide/svelte';
+	import Icon from '../../ui/Icon.svelte';
 	import { explorerItems, importFiles, itemByHash } from '$lib/explorer';
 	import {
 		shareShaderTexture,
@@ -171,7 +171,7 @@
 		{#if item?.thumbnail}
 			<img src={item.thumbnail} alt={item.name} />
 		{:else}
-			<Image size={compact ? 12 : 14} aria-hidden="true" />
+			<Icon name="image" size={16} aria-hidden="true" />
 		{/if}
 		<input
 			class="shader-tex-file"
@@ -203,7 +203,7 @@
 			aria-label="Remove this texture"
 			onclick={() => assign('')}
 		>
-			<X size={11} aria-hidden="true" />
+			<Icon name="x" size={16} aria-hidden="true" />
 		</button>
 	{/if}
 </div>
@@ -266,8 +266,8 @@
 		min-width: 0;
 	}
 	.shader-tex.drag-over .shader-tex-slot {
-		border-color: var(--color-primary-500, #3b82f6);
-		box-shadow: 0 0 0 2px rgb(59 130 246 / 0.35);
+		border-color: var(--accent);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 	}
 	.shader-tex-slot {
 		position: relative;
@@ -277,10 +277,10 @@
 		height: 20px;
 		flex: 0 0 auto;
 		overflow: hidden;
-		border: 1px solid rgba(255, 255, 255, 0.18);
+		border: 1px solid var(--border-strong);
 		border-radius: 3px;
-		background: rgba(0, 0, 0, 0.35);
-		color: #9ca3af;
+		background: var(--surface-inset);
+		color: var(--text-muted);
 		cursor: pointer;
 	}
 	.shader-tex.compact .shader-tex-slot {
@@ -288,7 +288,7 @@
 		height: 16px;
 	}
 	.shader-tex-slot:hover {
-		border-color: rgba(255, 255, 255, 0.45);
+		border-color: var(--text-faint);
 	}
 	.shader-tex-slot img {
 		width: 100%;
@@ -309,7 +309,7 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		font-size: 9px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	/* CLAMPED on the node card: xyflow sizes a node to its content, so an unbounded
 	   filename would stretch the whole card. The hover card carries the full name. */
@@ -317,15 +317,15 @@
 		max-width: 58px;
 	}
 	.shader-tex[data-state='missing'] .shader-tex-state {
-		color: #fbbf24;
+		color: var(--ink-warn);
 	}
 	.shader-tex-clear {
 		flex: 0 0 auto;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		line-height: 1;
 	}
 	.shader-tex-clear:hover {
-		color: var(--text, #f3f4f6);
+		color: var(--text);
 	}
 
 	/* the portaled hover card sits above every panel: it is transient and pointer-inert */
@@ -338,10 +338,10 @@
 		gap: 5px;
 		padding: 7px;
 		overflow: hidden;
-		border: 1px solid rgba(255, 255, 255, 0.14);
+		border: 1px solid var(--border);
 		border-radius: 7px;
-		background: var(--surface, #1f2937);
-		box-shadow: 0 12px 30px rgb(0 0 0 / 0.55);
+		background: var(--surface-1);
+		box-shadow: var(--shadow-window);
 	}
 	.shader-tex-card-img {
 		display: grid;
@@ -352,11 +352,11 @@
 		flex: 0 1 168px;
 		min-height: 54px;
 		/* a checkerboard, so a texture with alpha reads as transparent rather than dark */
-		background-color: #1a1f2a;
-		background-image: linear-gradient(45deg, #232936 25%, transparent 25%),
-			linear-gradient(-45deg, #232936 25%, transparent 25%),
-			linear-gradient(45deg, transparent 75%, #232936 75%),
-			linear-gradient(-45deg, transparent 75%, #232936 75%);
+		background-color: var(--surface-inset);
+		background-image: linear-gradient(45deg, var(--surface-2) 25%, transparent 25%),
+			linear-gradient(-45deg, var(--surface-2) 25%, transparent 25%),
+			linear-gradient(45deg, transparent 75%, var(--surface-2) 75%),
+			linear-gradient(-45deg, transparent 75%, var(--surface-2) 75%);
 		background-size: 12px 12px;
 		background-position: 0 0, 0 6px, 6px -6px, -6px 0;
 	}
@@ -373,12 +373,12 @@
 	}
 	.shader-tex-card-empty {
 		font-size: 10px;
-		color: var(--muted, #6b7280);
+		color: var(--text-faint);
 	}
 	.shader-tex-card-name {
 		font-size: 11px;
 		font-weight: 600;
-		color: var(--text, #f3f4f6);
+		color: var(--text);
 		/* the FULL name, wrapped rather than clipped — this is where it is readable */
 		overflow-wrap: anywhere;
 		line-height: 1.25;
@@ -391,11 +391,11 @@
 		font-size: 9.5px;
 	}
 	.shader-tex-card-meta dt {
-		color: var(--muted, #6b7280);
+		color: var(--text-faint);
 	}
 	.shader-tex-card-meta dd {
 		margin: 0;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 		text-align: right;
 	}
 	.shader-tex-card-hash {
@@ -403,6 +403,6 @@
 	}
 	.shader-tex-card-note {
 		font-size: 9px;
-		color: #fbbf24;
+		color: var(--ink-warn);
 	}
 </style>

@@ -4,7 +4,7 @@
 	// detailed, a moment, a beacon sample — and its headline numbers; its buttons pin, rename,
 	// export (.tpprof) and delete (a second press confirms). In compare mode each row also
 	// takes the A or B slot.
-	import { Pin, PinOff, Pencil, Download, Trash2 } from '@lucide/svelte';
+	import Icon from '../../ui/Icon.svelte';
 	import { fmtSec } from '$lib/perf/profilerModel.js';
 
 	/**
@@ -119,7 +119,7 @@
 					aria-label="Save a copy of {src.label} as a recording"
 					title="Save a copy"
 					disabled={!src.doc}
-					onclick={() => onexport(key)}><Download size={13} aria-hidden="true" /></button
+					onclick={() => onexport(key)}><Icon name="download" size={16} aria-hidden="true" /></button
 				>
 			</div>
 		</li>
@@ -154,8 +154,8 @@
 					onclick={() => onselect(key)}
 				>
 					<span class="pf-rec-name"
-						>{#if row.pinned}<Pin
-								size={11}
+						>{#if row.pinned}<Icon name="pin"
+								size={16}
 								aria-label="pinned"
 								class="pf-pin-mark"
 							/>{/if}{row.name}</span
@@ -166,7 +166,7 @@
 						{#if row.summary?.fpsP50}· {Math.round(row.summary.fpsP50)} fps{/if}
 						{#if row.summary?.callsP50 !== null && row.summary?.callsP50 !== undefined}· {row
 								.summary.callsP50} calls{/if}
-						{#if row.summary?.stalls}· <span class="text-red-400"
+						{#if row.summary?.stalls}· <span class="text-ink-bad"
 								>{row.summary.stalls} stall{row.summary.stalls === 1 ? '' : 's'}</span
 							>{/if}
 						· {when(row.startedAt)}{#if row.xr}
@@ -198,18 +198,18 @@
 					aria-pressed={!!row.pinned}
 					onclick={() => onpin(row.id, !row.pinned)}
 				>
-					{#if row.pinned}<PinOff size={13} aria-hidden="true" />{:else}<Pin
-							size={13}
+					{#if row.pinned}<Icon name="pin-off" size={16} aria-hidden="true" />{:else}<Icon name="pin"
+							size={16}
 							aria-hidden="true"
 						/>{/if}
 				</button>
 				<button class="pf-icon" aria-label="Rename {row.name}" onclick={() => startRename(row)}
-					><Pencil size={13} aria-hidden="true" /></button
+					><Icon name="pencil" size={16} aria-hidden="true" /></button
 				>
 				<button
 					class="pf-icon"
 					aria-label="Export {row.name} as .tpprof"
-					onclick={() => onexport(key)}><Download size={13} aria-hidden="true" /></button
+					onclick={() => onexport(key)}><Icon name="download" size={16} aria-hidden="true" /></button
 				>
 				<button
 					class="pf-icon"
@@ -220,7 +220,7 @@
 					onclick={() => askDelete(row.id)}
 				>
 					{#if confirmDelete === row.id}<span class="text-[10px] font-semibold">Delete?</span
-						>{:else}<Trash2 size={13} aria-hidden="true" />{/if}
+						>{:else}<Icon name="trash-2" size={16} aria-hidden="true" />{/if}
 				</button>
 			</div>
 		</li>
@@ -316,8 +316,8 @@
 		opacity: 0.4;
 	}
 	.pf-danger {
-		color: #fff;
-		background: #b91c1c;
+		color: var(--on-danger);
+		background: var(--danger);
 	}
 	.pf-ab {
 		font-size: 10px;
@@ -325,8 +325,8 @@
 		border: 1px solid var(--tp-line);
 	}
 	.pf-ab[aria-pressed='true'] {
-		background: var(--accent-fill, #2563eb);
-		color: var(--on-accent, #fff);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.pf-badge {
 		display: inline-block;
@@ -339,7 +339,7 @@
 		color: var(--tp-ink);
 	}
 	.pf-badge-detailed {
-		background: color-mix(in srgb, #a855f7 38%, transparent);
+		background: color-mix(in srgb, var(--icon-image) 38%, transparent);
 	}
 	.pf-live {
 		display: inline-block;

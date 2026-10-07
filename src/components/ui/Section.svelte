@@ -4,7 +4,18 @@
 	// while $inspectorFilter is non-empty every section force-renders its
 	// content (so hidden rows are searchable), matches the query against its
 	// rendered TEXT, and hides itself when nothing matches.
+	//
+	// 38 R3 (SPEC §2 Section): two redesign variants beside the legacy look (the DEFAULT —
+	// every existing caller renders byte-identical until its lane opts in):
+	//   variant="card"   Settings: uppercase header + optional scope badge + ONE card whose
+	//                    rows are split by 1px dividers. Never collapses, and is NOT wired to
+	//                    the Inspector's filter or deep links (a Settings card named "Grid"
+	//                    must not answer — and clear — the Inspector's "Grid" request).
+	//   variant="panel"  Inspector / panels: collapsible uppercase header with a chevron and
+	//                    an optional badge; same filter + deep-link + persisted collapse as legacy.
 	import { inspectorFilter, inspectorScrollTo } from '../../stores/appStore';
+	import Icon from './Icon.svelte';
+	import Badge from './Badge.svelte';
 
 	/**
 	 * P6: `aliases` are OLD deep-link names this section still answers to. A section's
@@ -12,15 +23,18 @@
 	 * menus, other components and suites — the 21-G1 rule is that the word may change and
 	 * the identifier may not, so a rename lists what it used to be called instead of
 	 * hunting every caller (and silently missing one).
-	 * @type {{label?: string, aliases?: string[], collapsible?: boolean, open?: boolean, children?: any}}
+	 * @type {{label?: string, aliases?: string[], collapsible?: boolean, open?: boolean, variant?: 'legacy'|'card'|'panel', badge?: string, children?: any}}
 	 */
 	let {
 		label = '',
 		aliases = [],
 		collapsible = true,
 		open = $bindable(true),
+		variant = 'legacy',
+		badge = '',
 		children = null
 	} = $props();
+	const isCard = $derived(variant === 'card');
 
 	const LS = typeof localStorage !== 'undefined' ? localStorage : null;
 	// persisted collapse, keyed by the section label (static per instance — a
@@ -37,16 +51,19 @@
 	/** @type {any} */ let root = $state(null);
 	let match = $state(true);
 	$effect(() => {
-		const q = $inspectorFilter.trim().toLowerCase();
+		const q = isCard ? '' : $inspectorFilter.trim().toLowerCase();
 		if (!q) {
 			match = true;
 			return;
 		}
-		// the rendered text IS the search index — labels, values, hints all count
-		match = (label + ' ' + (root?.textContent ?? '')).toLowerCase().includes(q);
+		// the rendered text IS the search index — labels, values, hints all count. A panel
+		// section's scope badge is chrome, not content: match the label and the BODY, so a
+		// "This device" badge does not answer a query its rows never did
+		const text = variant === 'panel' ? root?.querySelector('.sec-panel-body')?.textContent : root?.textContent;
+		match = (label + ' ' + (text ?? '')).toLowerCase().includes(q);
 	});
 
-	const filtering = $derived($inspectorFilter.trim().length > 0);
+	const filtering = $derived(!isCard && $inspectorFilter.trim().length > 0);
 	const showContent = $derived(filtering ? true : !collapsible || (open && !collapsed));
 
 	// 16-Q2: a menu deep link ("More snapping settings…") names a section — expand it
@@ -56,7 +73,7 @@
 		const request = $inspectorScrollTo;
 		// a request is either "Grid" or "Camera:Saved views" (section:sub-anchor)
 		const [wanted, anchor] = String(request ?? '').split(':');
-		if (!request || (wanted !== label && !aliases.includes(wanted))) return;
+		if (isCard || !request || (wanted !== label && !aliases.includes(wanted))) return;
 		collapsed = false;
 		try {
 			LS?.setItem('inspector:sec:' + label, 'open');
@@ -105,14 +122,45 @@
 	});
 </script>
 
-<div class="border-b border-gray-700/40 pb-2" class:hidden={filtering && !match} bind:this={root}>
+{#if variant === 'card'}
+	<section class="tp-ui sec-card-wrap" bind:this={root}>
+		<div class="sec-card-head">
+			<h3 class="sec-title" data-section-label>{label}</h3>
+			{#if badge}<Badge tone="scope" text={badge} />{/if}
+		</div>
+		<div class="sec-card">
+			{@render children?.()}
+		</div>
+	</section>
+{:else if variant === 'panel'}
+	<section class="tp-ui sec-panel" class:hidden={filtering && !match} bind:this={root}>
+		{#if collapsible && !filtering}
+			<button type="button" class="sec-panel-head" aria-expanded={showContent} onclick={toggle}>
+				<span class="sec-chev" class:sec-chev-open={showContent} aria-hidden="true"><Icon name="chevron-right" size={16} /></span>
+				<span class="sec-title ui-section-label">{label}</span>
+				{#if badge}<Badge tone="scope" text={badge} />{/if}
+			</button>
+		{:else}
+			<div class="sec-panel-head sec-static">
+				<span class="sec-title ui-section-label">{label}</span>
+				{#if badge}<Badge tone="scope" text={badge} />{/if}
+			</div>
+		{/if}
+		{#if showContent}
+			<div class="sec-panel-body">
+				{@render children?.()}
+			</div>
+		{/if}
+	</section>
+{:else}
+<div class="border-b border-border pb-2" class:hidden={filtering && !match} bind:this={root}>
 	{#if collapsible && !filtering}
 		<button
-			class="ui-section-label flex w-full items-center justify-between hover:text-gray-200"
+			class="ui-section-label flex w-full items-center justify-between hover:text-text-2"
 			onclick={toggle}
 		>
 			<span>{label}</span>
-			<span class="text-gray-500">{showContent ? '−' : '+'}</span>
+			<span class="text-text-faint">{showContent ? '−' : '+'}</span>
 		</button>
 	{:else}
 		<p class="ui-section-label">{label}</p>
@@ -123,3 +171,96 @@
 		</div>
 	{/if}
 </div>
+{/if}
+
+<style>
+	/* ---- variant="card" (Settings) ---- */
+	.sec-card-wrap {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+	.sec-card-head {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		padding: 0 2px;
+	}
+	/* a panel title also wears `ui-section-label` — the HOOK the Inspector's deep links,
+	   the behaviour lock and the suites read section names through (its utility look is
+	   overridden here: these scoped rules are unlayered, so they win) */
+	.sec-title {
+		margin: 0;
+		padding: 0;
+		font-size: var(--fs-section);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+	.sec-card {
+		background: var(--surface-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		overflow: hidden;
+	}
+	/* 1px dividers between the card's rows, whatever they are (SettingRow, NavRow …) */
+	.sec-card > :global(* + *) {
+		border-top: 1px solid var(--border);
+	}
+	@media (max-width: 639.98px) {
+		.sec-card {
+			border-radius: var(--radius-window);
+		}
+	}
+
+	/* ---- variant="panel" (Inspector / panels) ---- */
+	.sec-panel {
+		display: flex;
+		flex-direction: column;
+		padding-bottom: var(--space-2);
+		border-bottom: 1px solid var(--border);
+	}
+	/* the filter's `hidden` (a Tailwind utility, LAYERED) loses to this file's unlayered
+	   `display: flex` — say it here, or a filtered-out panel section never hides */
+	.sec-panel.hidden {
+		display: none;
+	}
+	.sec-panel-head {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		width: 100%;
+		height: var(--row-h);
+		padding: 0;
+		border: 0;
+		background: transparent;
+		color: var(--text-faint);
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+	.sec-panel-head:hover .sec-title {
+		color: var(--text-2);
+	}
+	.sec-static {
+		cursor: default;
+	}
+	.sec-chev {
+		display: inline-flex;
+		transition: transform 0.15s ease;
+	}
+	.sec-chev-open {
+		transform: rotate(90deg);
+	}
+	.sec-panel-body {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.sec-chev {
+			transition: none;
+		}
+	}
+</style>

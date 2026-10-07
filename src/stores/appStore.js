@@ -6,6 +6,11 @@ export const settingsOpen = writable(null);
 // section to expand when the settings modal opens (e.g. 'shortcuts' via Ctrl+/)
 /** @type {import('svelte/store').Writable<any>} */
 export const settingsSection = writable(null);
+/** 38 R8 (NOTES-38 #14): text to put in Settings' own search when it opens (the command
+ *  palette's settings rows); Settings takes it once and clears it. */
+export const settingsSearchSeed = writable('');
+/** 38 R8 (NOTES-38 #14): the Ctrl+K command palette (CommandPalette.svelte) */
+export const commandPaletteOpen = writable(false);
 // unified inspector (phase 64): one drawer serves the selection (mesh/light/
 // group) and the scene. `inspectorKind` picks the content, `inspectorClose`
 // the visibility — the legacy per-panel flags collapsed into this pair.

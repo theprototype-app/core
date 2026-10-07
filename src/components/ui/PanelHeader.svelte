@@ -3,7 +3,7 @@
 	// onclose optional — omit it to hide the close button. 15-O: `onpin` adds a
 	// pin TOGGLE left of the close button (a pinned panel stays open and follows
 	// the selection); omit it and nothing extra renders.
-	import { Pin, PinOff } from '@lucide/svelte';
+	import Icon from './Icon.svelte';
 	/** @type {{title?: string, badge?: string, onclose?: (() => void) | null, onpin?: (() => void) | null, pinned?: boolean, children?: any}} */
 	let {
 		title = '',
@@ -33,9 +33,9 @@
 			onclick={onpin}
 		>
 			{#if pinned}
-				<Pin size={14} aria-hidden="true" />
+				<Icon name="pin" size={16} aria-hidden="true" />
 			{:else}
-				<PinOff size={14} aria-hidden="true" />
+				<Icon name="pin-off" size={16} aria-hidden="true" />
 			{/if}
 		</button>
 	{/if}
@@ -47,6 +47,6 @@
 <style>
 	/* engaged pin reads as active; unpinned stays quiet like the ✕ */
 	.pin-on {
-		color: var(--color-primary-400, #60a5fa);
+		color: var(--accent-text);
 	}
 </style>

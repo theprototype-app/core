@@ -3,7 +3,7 @@
 	// and "shape it from a spline" (the app's spline tool is the place to draw a curve; this
 	// copies its points into the path). Writes go through setFlowPathFor: replicated, one undo
 	// entry each, and every peer rebuilds the same ribbon from the record.
-	import { Checkbox } from 'flowbite-svelte';
+	import InsToggle from '../menu/inspector/InsToggle.svelte';
 	import Section from '../ui/Section.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import DragRow from '../ui/DragRow.svelte';
@@ -69,10 +69,10 @@
 </script>
 
 <div data-keywords={keywords} class="contents">
-	<Section label="Flow path">
+	<Section variant="panel" label="Flow path">
 		<div data-tour="flow-path" class="contents">
 			<div class="ui-row items-center gap-2">
-				<span class="w-20 shrink-0 text-xs text-gray-400">Kind</span>
+				<span class="w-20 shrink-0 text-xs text-text-muted">Kind</span>
 				<ThemedSelect
 					id="flow-path-kind"
 					items={[
@@ -88,20 +88,20 @@
 			{#if f.kind === 'river'}
 				<SliderRow id="flow-path-depth" label="Depth" min={0.02} max={5} step={0.02} value={f.depth} onchange={(v) => set({ depth: v })} />
 				<SliderRow id="flow-path-strength" label="Pull /s" min={0} max={40} step={0.5} value={f.strength} onchange={(v) => set({ strength: v })} />
-				<Checkbox id="flow-path-recycle" checked={f.recycle} onchange={(/** @type {any} */ e) => set({ recycle: e.currentTarget.checked })}
-					>Loop: water reaching the end starts again</Checkbox
+				<InsToggle id="flow-path-recycle" checked={f.recycle} onchange={(/** @type {any} */ e) => set({ recycle: e.currentTarget.checked })}
+					>Loop: water reaching the end starts again</InsToggle
 				>
 			{/if}
-			<Checkbox id="flow-path-show" checked={f.show} onchange={(/** @type {any} */ e) => set({ show: e.currentTarget.checked })}
-				>{f.kind === 'pipe' ? 'Show the pipe' : 'Show the water surface'}</Checkbox
+			<InsToggle id="flow-path-show" checked={f.show} onchange={(/** @type {any} */ e) => set({ show: e.currentTarget.checked })}
+				>{f.kind === 'pipe' ? 'Show the pipe' : 'Show the water surface'}</InsToggle
 			>
 			{#if f.kind === 'river'}
 				<div class="ui-row items-center gap-2">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Colour</span>
+					<span class="w-20 shrink-0 text-xs text-text-muted">Colour</span>
 					<input
 						id="flow-path-color"
 						type="color"
-						class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent"
+						class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
 						aria-label="Water colour"
 						value={f.color}
 						onchange={(/** @type {any} */ e) => set({ color: e.currentTarget.value })}
@@ -109,19 +109,19 @@
 				</div>
 				<SliderRow id="flow-path-opacity" label="Opacity" min={0.05} max={1} step={0.05} value={f.opacity} onchange={(v) => set({ opacity: v })} />
 			{/if}
-			<p class="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Points ({length.toFixed(2)} m)</p>
+			<p class="text-[length:var(--fs-badge)] font-semibold uppercase tracking-wide text-text-muted">Points ({length.toFixed(2)} m)</p>
 			{#each f.points as p, i (i)}
 				<!-- a GRID with min-width-0 cells: three DragRows in a flex row were wider than the
 				     Inspector and scrolled the whole panel sideways (seen in the light-theme shot) -->
 				<div class="grid items-center gap-1" style="grid-template-columns: 1rem repeat(3, minmax(0, 1fr)) auto" data-flow-point={i}>
-					<span class="text-[10px] text-gray-400">{i + 1}</span>
+					<span class="text-[length:var(--fs-badge)] text-text-muted">{i + 1}</span>
 					{#each ['X', 'Y', 'Z'] as axis, a (axis)}
 						<div class="min-w-0 overflow-hidden">
 							<DragRow id={'flow-point-' + i + '-' + a} label={axis} value={p[a]} step={0.05} decimals={2} unit="length" onchange={(v) => setPoint(i, a, v)} />
 						</div>
 					{/each}
 					<button
-						class="ui-chip shrink-0 px-1 text-gray-300 hover:text-[var(--ink-bad,#f87171)]"
+						class="ui-chip shrink-0 px-1 text-text-2 hover:text-ink-bad"
 						title="Remove this point"
 						aria-label={'Remove point ' + (i + 1)}
 						disabled={f.points.length <= 2}
@@ -130,7 +130,7 @@
 				</div>
 			{/each}
 			<div class="ui-row items-center gap-2">
-				<button id="flow-path-add-point" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" disabled={f.points.length >= MAX_FLOW_POINTS} onclick={addPoint}
+				<button id="flow-path-add-point" class="ui-chip bg-surface-active text-text-2 hover:bg-surface-hover" disabled={f.points.length >= MAX_FLOW_POINTS} onclick={addPoint}
 					>Add point</button
 				>
 				{#if splines.length}
@@ -142,7 +142,7 @@
 					/>
 				{/if}
 			</div>
-			<p class="mt-1 text-[10px] text-gray-400">
+			<p class="mt-1 text-[length:var(--fs-badge)] text-text-muted">
 				Water from a Fluid emitter whose area reaches this path is carried along it. Objects with a "Float along flow" node ride it. Physics bodies pass through the
 				surface (it is a sensor).
 			</p>

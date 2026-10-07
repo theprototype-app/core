@@ -11,7 +11,7 @@
 	import DragRow from '../ui/DragRow.svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
-	import { Checkbox } from 'flowbite-svelte';
+	import InsToggle from './inspector/InsToggle.svelte';
 	import { onMount } from 'svelte';
 	import { viewMode } from '../../stores/sceneStore';
 	import { explorerItems, loadExplorer, kindOf } from '$lib/explorer';
@@ -286,7 +286,7 @@
 	 switches the grade. Same picker shape as the HUD editor, because it is the same
 	 idea: the document is keyed 'scene' | cameraUuid. -->
 <div class="ui-row items-center gap-2">
-	<span class="w-20 shrink-0 text-xs text-gray-300">Look for</span>
+	<span class="w-20 shrink-0 text-xs text-text-2">Look for</span>
 	<ThemedSelect
 		id="post-doc-key"
 		class="min-w-0 flex-1"
@@ -303,7 +303,7 @@
 </div>
 {#if onCamera}
 	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-gray-300">Combine</span>
+		<span class="w-20 shrink-0 text-xs text-text-2">Combine</span>
 		<ThemedSelect
 			id="post-doc-mode"
 			class="min-w-0 flex-1"
@@ -315,19 +315,19 @@
 			onchange={(v) => setCameraLookMode(docKey, String(v))}
 		/>
 	</div>
-	<p class="text-[10px] italic text-gray-400">
+	<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 		This look applies while anyone is looking through that camera — switch camera (a Set
 		Active Camera node, or Control on the camera) and the grade switches with it.
 	</p>
 {/if}
 
-<Checkbox id="post-enabled" checked={doc.enabled} onchange={(e) => setScenePostEnabled(e.currentTarget.checked, docKey)}>
+<InsToggle id="post-enabled" checked={doc.enabled} onchange={(e) => setScenePostEnabled(e.currentTarget.checked, docKey)}>
 	{onCamera ? 'This camera’s look enabled' : 'Scene look enabled'} (shared)
-</Checkbox>
+</InsToggle>
 
 <!-- the cost model, visible: the gap between enabled entries and PASSES is the
 	 Effect-merging rule doing its job, and an author has no other way to see it -->
-<p id="post-counts" class="text-[10px] text-gray-400">
+<p id="post-counts" class="text-[length:var(--fs-badge)] text-text-muted">
 	Effects: {counts.enabled}{counts.effects !== counts.enabled ? ' of ' + counts.effects : ''}, passes: {counts.passes}{counts.merged >
 	0
 		? ' (' + counts.merged + ' merged into a shared pass)'
@@ -335,7 +335,7 @@
 </p>
 
 {#if doc.effects.length === 0}
-	<p class="text-xs text-gray-400">
+	<p class="text-xs text-text-muted">
 		No look yet. Add ambient occlusion, colour grading or a camera effect below — the stack runs top
 		to bottom over the finished frame, and everyone in the session sees it.
 	</p>
@@ -345,19 +345,19 @@
 			<div data-post-row class:post-drop={drag && drag.to === index && drag.from !== index}>
 				<div
 					id={'post-row-' + entry.id}
-					class="flex items-center gap-1 rounded-sm bg-gray-700/60 px-1 py-0.5"
+					class="flex items-center gap-1 rounded-sm bg-surface-2 px-1 py-0.5"
 					class:opacity-50={drag && drag.id === entry.id}
 				>
 					<span
 						id={'post-grip-' + entry.id}
-						class="cursor-grab select-none px-1 text-gray-400 hover:text-gray-200"
+						class="cursor-grab select-none px-1 text-text-muted hover:text-text-2"
 						title="Drag to reorder — the stack runs top to bottom"
 						use:grip={{ id: entry.id, index }}>⠿</span
 					>
 					<input
 						id={'post-toggle-' + entry.id}
 						type="checkbox"
-						class="h-3 w-3 shrink-0 accent-primary-600"
+						class="h-3 w-3 shrink-0 accent-accent"
 						checked={entry.enabled}
 						title="Render this effect"
 						aria-label={'Enable ' + labelOf(entry)}
@@ -365,18 +365,18 @@
 					/>
 					<button
 						id={'post-open-' + entry.id}
-						class="flex-1 truncate text-left text-xs text-gray-200 hover:text-white"
+						class="flex-1 truncate text-left text-xs text-text-2 hover:text-text"
 						title={isUnknown(entry)
 							? 'This effect comes from a newer version — it is kept and shared, but this build cannot render it'
 							: 'Show parameters'}
 						onclick={() => (openId = openId === entry.id ? '' : entry.id)}
 					>
-						{labelOf(entry)}{#if isUnknown(entry)}<span class="ml-1 text-[10px] text-amber-400">unsupported</span
+						{labelOf(entry)}{#if isUnknown(entry)}<span class="ml-1 text-[length:var(--fs-badge)] text-warn-text">unsupported</span
 							>{/if}
 					</button>
 					<button
 						id={'post-up-' + entry.id}
-						class="px-1 text-[10px] text-gray-400 hover:text-gray-100 disabled:opacity-30"
+						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-text disabled:opacity-30"
 						title="Move earlier in the stack"
 						aria-label="Move up"
 						disabled={index === 0}
@@ -384,7 +384,7 @@
 					>
 					<button
 						id={'post-down-' + entry.id}
-						class="px-1 text-[10px] text-gray-400 hover:text-gray-100 disabled:opacity-30"
+						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-text disabled:opacity-30"
 						title="Move later in the stack"
 						aria-label="Move down"
 						disabled={index === doc.effects.length - 1}
@@ -392,7 +392,7 @@
 					>
 					<button
 						id={'post-remove-' + entry.id}
-						class="px-1 text-[10px] text-gray-400 hover:text-red-400"
+						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-ink-bad"
 						title="Remove from the stack"
 						aria-label={'Remove ' + labelOf(entry)}
 						onclick={() => removePostEffect(entry.id, docKey)}>✕</button
@@ -401,18 +401,18 @@
 				{#if openId === entry.id}
 					<div id={'post-params-' + entry.id} class="flex flex-col gap-1 px-2 pb-1 pt-1">
 						{#if isUnknown(entry)}
-							<p class="text-[10px] italic text-amber-400">
+							<p class="text-[length:var(--fs-badge)] italic text-warn-text">
 								Saved and shared as-is. Open this scene in a build that has "{entry.kind}" to edit it.
 							</p>
 						{:else if (postEffectDef(entry.kind)?.params ?? []).length === 0}
-							<p class="text-[10px] italic text-gray-400">No parameters.</p>
+							<p class="text-[length:var(--fs-badge)] italic text-text-muted">No parameters.</p>
 						{:else}
 							{#each postEffectDef(entry.kind).params as param (param.key)}
 								{#if param.type === 'select'}
 									<!-- min-w-0 + flex-1: without it a long option name makes the select
 										 refuse to shrink and pushes the row past the panel edge -->
 									<div class="ui-row items-center gap-2">
-										<span class="w-20 shrink-0 text-xs text-gray-300">{param.label}</span>
+										<span class="w-20 shrink-0 text-xs text-text-2">{param.label}</span>
 										<ThemedSelect
 											id={'post-param-' + entry.id + '-' + param.key}
 											class="min-w-0 flex-1"
@@ -423,7 +423,7 @@
 									</div>
 								{:else if param.type === 'graph'}
 									<div class="ui-row items-center gap-2">
-										<span class="w-20 shrink-0 text-xs text-gray-300">{param.label}</span>
+										<span class="w-20 shrink-0 text-xs text-text-2">{param.label}</span>
 										<ThemedSelect
 											id={'post-param-' + entry.id + '-' + param.key}
 											class="min-w-0 flex-1"
@@ -434,18 +434,18 @@
 										/>
 										<button
 											id={'post-edit-' + entry.id}
-											class="ui-chip shrink-0 bg-gray-600 text-gray-200 hover:bg-gray-500"
+											class="ui-chip shrink-0 bg-surface-active text-text-2 hover:bg-surface-hover"
 											title="Open this graph in the shader editor"
 											disabled={!entry.params[param.key]}
 											onclick={() => openPostGraph(entry.params[param.key])}>Edit</button
 										>
 									</div>
 									{#each graphErrorsOf(entry, $shaderErrors) as message, i (i)}
-										<p class="text-[10px] italic text-amber-400">{message}</p>
+										<p class="text-[length:var(--fs-badge)] italic text-warn-text">{message}</p>
 									{/each}
 								{:else if param.type === 'asset'}
 									<div class="ui-row items-center gap-2">
-										<span class="w-20 shrink-0 text-xs text-gray-300">{param.label}</span>
+										<span class="w-20 shrink-0 text-xs text-text-2">{param.label}</span>
 										<ThemedSelect
 											id={'post-param-' + entry.id + '-' + param.key}
 											class="min-w-0 flex-1"
@@ -456,13 +456,13 @@
 										/>
 									</div>
 								{:else if param.type === 'bool'}
-									<Checkbox
+									<InsToggle
 										id={'post-param-' + entry.id + '-' + param.key}
 										checked={!!entry.params[param.key]}
 										onchange={(e) => setPostEffectParams(entry.id, { [param.key]: e.currentTarget.checked }, docKey)}
 									>
 										{param.label}
-									</Checkbox>
+									</InsToggle>
 								{:else}
 									<DragRow
 										id={'post-param-' + entry.id + '-' + param.key}
@@ -479,7 +479,7 @@
 									/>
 								{/if}
 								{#if param.hint}
-									<p class="text-[10px] italic text-gray-500">{param.hint}</p>
+									<p class="text-[length:var(--fs-badge)] italic text-text-faint">{param.hint}</p>
 								{/if}
 							{/each}
 						{/if}
@@ -492,7 +492,7 @@
 
 <button
 	id="post-add"
-	class="ui-chip w-full justify-center bg-gray-600 text-gray-200 hover:bg-gray-500"
+	class="ui-chip w-full justify-center bg-surface-active text-text-2 hover:bg-surface-hover"
 	title="Add a post-processing effect to the scene's look"
 	onclick={openAddMenu}
 >
@@ -508,21 +508,21 @@
 	/>
 {/if}
 
-<p class="text-[10px] italic text-gray-400">
+<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 	The stack is part of the scene: everyone in the session sees it as soon as you change it, and it
 	is saved with the file. Nobody has to switch anything on.
 </p>
 {#if $scenePost.effects.length && $viewMode === 'wireframe'}
-	<p class="text-[10px] text-amber-400">
+	<p class="text-[length:var(--fs-badge)] text-warn-text">
 		Your viewport is in Wireframe, which skips post-processing — the look is still there for
 		everyone else.
 	</p>
 {:else if $scenePost.effects.length && !$postEnabledLocal}
-	<p class="text-[10px] text-amber-400">
+	<p class="text-[length:var(--fs-badge)] text-warn-text">
 		You have switched the scene look off on this device (View ▸ Overrides). Peers still see it.
 	</p>
 {/if}
-<p class="text-[10px] italic text-gray-400">
+<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 	Post-processing does not run in VR — the effects are skipped in a headset, and objects still look
 	the same.
 </p>
@@ -530,6 +530,6 @@
 <style>
 	/* the drop target during a pointer reorder */
 	.post-drop {
-		box-shadow: inset 0 2px 0 0 var(--accent, #3b82f6);
+		box-shadow: inset 0 2px 0 0 var(--accent);
 	}
 </style>

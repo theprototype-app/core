@@ -2,6 +2,7 @@
 	// Add-object SEARCH popover (phase 77): opened from the viewport menu's
 	// 🔍 entry or Shift+A. Results are Category · Label over the full catalog;
 	// Enter/click spawns at the menu's ground point and replicates.
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { untrack } from 'svelte';
 	import { addMenu } from '../../stores/appStore.js';
 	import { primitivesCatalog } from '$lib/primitivesCatalog';
@@ -152,7 +153,7 @@
 	<div
 		id="add-search-box"
 		bind:this={boxEl}
-		class="fixed w-64 rounded-lg border border-gray-600 bg-gray-800 p-1.5 text-xs text-gray-200 shadow-xl"
+		class="tp-ui tp-menu fixed w-64"
 		style="left: {pos.left}px; top: {pos.top}px; z-index: 1000;"
 		use:rightDragMove={{ onMove: onDragMove }}
 	>
@@ -160,29 +161,78 @@
 			id="add-search-input"
 			bind:this={inputEl}
 			type="text"
-			class="ui-input w-full"
+			class="tp-field w-full"
 			placeholder="Search objects…"
 			value={query}
 			use:inputContextMenu
 			oninput={(e) => { query = e.currentTarget.value; selectedIndex = 0; }}
 			onkeydown={onSearchKeydown}
 		/>
-		<div class="mt-1 max-h-64 overflow-y-auto">
+		<div class="mt-1 max-h-64 overflow-y-auto" use:minimalScroll>
+			<!-- 38 R6: menu rows (32px, the shared hover = the keyboard cursor), group on the right -->
 			{#each results as entry, index (entry.command)}
 				<button
-					class={'flex w-full items-baseline gap-2 rounded-sm px-2 py-1 text-left ' +
-						(index === selectedIndex ? 'bg-primary-700 text-white' : 'hover:bg-gray-700')}
+					class="add-row"
+					class:add-row-on={index === selectedIndex}
 					data-selected={index === selectedIndex}
 					onmouseenter={() => (selectedIndex = index)}
 					onclick={() => spawn(entry.command)}
 				>
-					<span class="text-[10px] uppercase tracking-wider text-gray-400">{entry.group}</span>
-					<span>{entry.label}</span>
+					<span class="add-label">{entry.label}</span>
+					<span class="add-group">{entry.group}</span>
 				</button>
 			{/each}
 			{#if !results.length}
-				<p class="px-2 py-1 italic text-gray-400">No matches for “{query}”</p>
+				<p class="add-empty">No matches for “{query}”</p>
 			{/if}
 		</div>
 	</div>
 {/if}
+
+<style>
+	/* 38 R6: the Add search box is a menu (.tp-menu) with menu rows */
+	.add-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		width: 100%;
+		min-height: 32px;
+		padding: 0 10px;
+		border: 0;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text);
+		font-size: var(--fs-desc);
+		text-align: left;
+		cursor: pointer;
+	}
+	.add-row-on {
+		background: var(--surface-hover);
+	}
+	.add-label {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.add-group {
+		flex-shrink: 0;
+		font-size: var(--fs-badge);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+	.add-empty {
+		padding: 8px 10px;
+		font-size: var(--fs-section);
+		color: var(--text-faint);
+	}
+	@media (max-width: 639.98px) {
+		.add-row {
+			min-height: 44px;
+			font-size: var(--fs-body);
+		}
+	}
+</style>

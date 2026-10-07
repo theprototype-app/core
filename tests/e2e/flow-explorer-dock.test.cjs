@@ -11,7 +11,7 @@ const state = (page) =>
 	page.evaluate(() => {
 		const flowI = document.querySelector('p[title="Node editor (N)"] svg');
 		const explI = document.querySelector('#explorer-slot svg');
-		const ON = 'text-primary-500';
+		const ON = 'text-accent';
 		let active, flowClosed, explClosed, occ;
 		window.__stores.bottomDock.bottomDockActive.subscribe((v) => (active = v))();
 		window.__stores.bottomDock.dockOccupants.subscribe((v) => (occ = v))();

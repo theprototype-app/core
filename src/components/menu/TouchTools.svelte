@@ -11,7 +11,7 @@
 	// there is one thing to learn and one mode to see. Scene.svelte reads
 	// `multiSelectMode` in the same two places it reads `event.shiftKey`, which is what
 	// keeps this from being a second selection implementation.
-	import { Undo2, Redo2, BoxSelect } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { touchTools, multiSelectMode, connectDocked, connectBarHeight } from '../../stores/appStore';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 
@@ -118,7 +118,7 @@
 			aria-label="Undo"
 			onclick={() => undo()}
 		>
-			<Undo2 size={20} aria-hidden="true" />
+			<Icon name="undo-2" size={20} aria-hidden="true" />
 		</button>
 		<button
 			id="touch-redo"
@@ -128,7 +128,7 @@
 			aria-label="Redo"
 			onclick={() => redo()}
 		>
-			<Redo2 size={20} aria-hidden="true" />
+			<Icon name="redo-2" size={20} aria-hidden="true" />
 		</button>
 		<button
 			id="touch-multiselect"
@@ -141,7 +141,7 @@
 			aria-label="Multi-select"
 			onclick={() => multiSelectMode.update((v) => !v)}
 		>
-			<BoxSelect size={20} aria-hidden="true" />
+			<Icon name="box-select" size={20} aria-hidden="true" />
 		</button>
 	</div>
 {/if}
@@ -178,12 +178,10 @@
 		height: 48px;
 		width: 48px;
 		border-radius: 9999px;
-		border: 1px solid rgb(55 65 81 / 0.6);
-		background: var(--surface, rgb(31 41 55 / 0.9));
-		color: var(--text, rgb(229 231 235));
-		box-shadow:
-			0 10px 15px -3px rgb(0 0 0 / 0.1),
-			0 4px 6px -4px rgb(0 0 0 / 0.1);
+		border: 1px solid var(--border);
+		background: var(--surface-1);
+		color: var(--text);
+		box-shadow: var(--shadow-window);
 		backdrop-filter: blur(4px);
 		transition: transform 0.12s ease;
 	}
@@ -197,9 +195,9 @@
 	   a scoped style beats every utility, which is how the mesh toolbox lost its
 	   armed colour in the dark theme */
 	.tt-on {
-		background: var(--accent, #2563eb);
-		border-color: var(--accent, #2563eb);
-		color: #fff;
+		background: var(--accent-fill);
+		border-color: var(--accent-fill);
+		color: var(--on-accent);
 	}
 
 	/* No width media query on purpose: the stack is decided by MEASUREMENT (see the script).

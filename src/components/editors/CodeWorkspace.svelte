@@ -8,7 +8,7 @@
 	// here for the tab that edits ONE script node (same element ids, so its suites carry over).
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { Save, RotateCcw, Crosshair, FileCode, Unlink, Link, Copy, Lock, FolderOpen, Braces, PanelLeft, PanelRight } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import CodeEditor from './CodeEditor.svelte';
 	import CodeSidebarLeft from './CodeSidebarLeft.svelte';
 	import CodeSidebarRight from './CodeSidebarRight.svelte';
@@ -16,6 +16,7 @@
 	import { quickItems } from '$lib/codeProject';
 	import { outlineOf } from '$lib/codeOutline';
 	import DockTabs from '../DockTabs.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { codeWorkspaceClose, showToast } from '../../stores/appStore.js';
 	import { objectsGroup } from '../../stores/sceneStore';
@@ -51,6 +52,7 @@
 	} from '$lib/codeWorkspace';
 	import { codeLeftOpen, codeLeftWidth, codeRightOpen, codeRightWidth, sidebarKey, focusFind, clampSidebarWidth } from '$lib/codeSidebars';
 	import { dragReorder } from '$lib/dragReorder';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { arrowNav } from '$lib/arrowNav';
 	import { isDirty } from '$lib/codeTabs';
 	import { BUILTIN_CODE } from '$lib/builtinCode.js';
@@ -481,7 +483,7 @@
 	<div
 		id="code-ws-tabs"
 		data-tour="code-tabs"
-		class="code-strip"
+		class="code-strip tp-noscrollbar"
 		role="tablist"
 		tabindex="-1"
 		aria-label="Open sources"
@@ -510,7 +512,7 @@
 				onkeydown={(e) => e.key === 'Enter' && activeCodeTab.set(tab.id)}
 				onauxclick={(e) => e.button === 1 && requestClose(tab.id)}
 			>
-				{#if tab.readOnly}<Lock size={11} aria-hidden="true" />{/if}
+				{#if tab.readOnly}<Icon name="lock" size={16} aria-hidden="true" />{/if}
 				<span class="code-tab-name">{tab.title}</span>
 				{#if bad}<span class="code-tab-bad" aria-label="has errors">!</span>{/if}
 				{#if dirty}<span class="code-tab-dirty" aria-label="unsaved">●</span>{/if}
@@ -525,7 +527,7 @@
 		id="code-ws-open-graph"
 		class="ui-button-quiet"
 		title="Open the graph the Node editor shows as JSON — edit it and Ctrl+S applies it"
-		onclick={() => openCode({ source: 'graph', ref: { graphId: $activeGraphId } })}><Braces size={14} aria-hidden="true" />Graph JSON</button
+		onclick={() => openCode({ source: 'graph', ref: { graphId: $activeGraphId } })}><Icon name="braces" size={16} aria-hidden="true" />Graph JSON</button
 	>
 {/snippet}
 
@@ -536,40 +538,40 @@
 			<span class="flex-1"></span>
 			{#if active.readOnly && (active.kind === 'node' || active.kind === 'behaviour')}
 				<span id="script-readonly" class="code-muted">a module's code — read-only</span>
-				<button id="script-make-editable" class="ui-button-quiet" title="Copy this code into a script file you own; the node then runs your copy" onclick={() => forkNodeTab(active.id)}><Copy size={14} aria-hidden="true" />Make editable copy</button>
+				<button id="script-make-editable" class="ui-button-quiet" title="Copy this code into a script file you own; the node then runs your copy" onclick={() => forkNodeTab(active.id)}><Icon name="copy" size={16} aria-hidden="true" />Make editable copy</button>
 				{#if bound.length}
-					<button id="code-ws-goto" class="ui-button-quiet" title="Show the node in the Node editor" onclick={openGoto}><Crosshair size={14} aria-hidden="true" />Go to node</button>
+					<button id="code-ws-goto" class="ui-button-quiet" title="Show the node in the Node editor" onclick={openGoto}><Icon name="crosshair" size={16} aria-hidden="true" />Go to node</button>
 				{/if}
 			{:else if active.kind === 'module'}
 				{#if canFork('module') && active.moduleId !== 'core'}
-					<button id="code-ws-fork" class="ui-button-quiet" title="Copy this source into an editable script the scene owns" onclick={() => forkCodeTab(active.id)}><Copy size={14} aria-hidden="true" />Make editable copy</button>
+					<button id="code-ws-fork" class="ui-button-quiet" title="Copy this source into an editable script the scene owns" onclick={() => forkCodeTab(active.id)}><Icon name="copy" size={16} aria-hidden="true" />Make editable copy</button>
 				{/if}
 			{:else}
 				{#if bound.length}
-					<button id="code-ws-goto" class="ui-button-quiet" title={bound.length === 1 ? 'Show the node in the Node editor' : 'Show one of the ' + bound.length + ' nodes that run this'} onclick={openGoto}><Crosshair size={14} aria-hidden="true" />Go to node{bound.length > 1 ? ' (' + bound.length + ')' : ''}</button>
+					<button id="code-ws-goto" class="ui-button-quiet" title={bound.length === 1 ? 'Show the node in the Node editor' : 'Show one of the ' + bound.length + ' nodes that run this'} onclick={openGoto}><Icon name="crosshair" size={16} aria-hidden="true" />Go to node{bound.length > 1 ? ' (' + bound.length + ')' : ''}</button>
 				{/if}
 				{#if active.nodeType}
 					<span id="code-ws-builtin-help" class="code-muted" title="What this code receives and returns">{BUILTIN_CODE[active.nodeType]?.help}</span>
-					<button id="code-ws-engine" class="ui-button-quiet" title="Read the engine code this node steers (read-only)" onclick={() => openEngineSource(active.id)}><FileCode size={14} aria-hidden="true" />Engine source</button>
+					<button id="code-ws-engine" class="ui-button-quiet" title="Read the engine code this node steers (read-only)" onclick={() => openEngineSource(active.id)}><Icon name="file-code" size={16} aria-hidden="true" />Engine source</button>
 				{:else if active.kind === 'node' || active.kind === 'behaviour'}
-					<button id="code-ws-to-file" class="ui-button-quiet" title="Save this code as a .js file in the Explorer; the node then runs that file" onclick={() => convertTabToFile(active.id)}><FileCode size={14} aria-hidden="true" />Save as file</button>
-					<button id="code-ws-bind" class="ui-button-quiet" title="Run a .js file from your Library instead of this inline code" onclick={openBind}><Link size={14} aria-hidden="true" />Use file…</button>
+					<button id="code-ws-to-file" class="ui-button-quiet" title="Save this code as a .js file in the Explorer; the node then runs that file" onclick={() => convertTabToFile(active.id)}><Icon name="file-code" size={16} aria-hidden="true" />Save as file</button>
+					<button id="code-ws-bind" class="ui-button-quiet" title="Run a .js file from your Library instead of this inline code" onclick={openBind}><Icon name="link" size={16} aria-hidden="true" />Use file…</button>
 				{/if}
 				{#if active.kind === 'file'}
 					{#if active.itemId}
-						<button id="code-ws-reveal" class="ui-button-quiet" title="Show this file in the Explorer" onclick={showInExplorer}><FolderOpen size={14} aria-hidden="true" />Explorer</button>
+						<button id="code-ws-reveal" class="ui-button-quiet" title="Show this file in the Explorer" onclick={showInExplorer}><Icon name="folder-open" size={16} aria-hidden="true" />Explorer</button>
 					{/if}
 					{#if active.fromNode || bound.length}
-						<button id="code-ws-unbind" class="ui-button-quiet" title="The node keeps this code inline and forgets the file" onclick={() => unbindTab(active.id)}><Unlink size={14} aria-hidden="true" />Unbind</button>
+						<button id="code-ws-unbind" class="ui-button-quiet" title="The node keeps this code inline and forgets the file" onclick={() => unbindTab(active.id)}><Icon name="unlink" size={16} aria-hidden="true" />Unbind</button>
 					{/if}
 				{/if}
 				{#if active.kind === 'node' || active.kind === 'behaviour'}
 					<label class="code-live" title="Apply inline node edits as you type (otherwise Ctrl+S)"><input id="code-ws-live" type="checkbox" class="tp-check" bind:checked={$codeApplyLive} />Live</label>
 				{/if}
 				{#if active.stale || isDirty(active)}
-					<button id="code-ws-reload" class="ui-button-quiet" title="Throw away your edits and show the source as it is now" onclick={() => reloadCodeTab(active.id)}><RotateCcw size={14} aria-hidden="true" />Revert</button>
+					<button id="code-ws-reload" class="ui-button-quiet" title="Throw away your edits and show the source as it is now" onclick={() => reloadCodeTab(active.id)}><Icon name="rotate-ccw" size={16} aria-hidden="true" />Revert</button>
 				{/if}
-				<button id="code-ws-save" class="ui-button-quiet" class:code-save-armed={isDirty(active)} title={active.kind === 'graph' ? 'Apply the JSON to the graph (Ctrl+S)' : 'Save and reload what runs it (Ctrl+S)'} onclick={save}><Save size={14} aria-hidden="true" />{active.kind === 'graph' ? 'Apply' : 'Save'}</button>
+				<button id="code-ws-save" class="ui-button-quiet" class:code-save-armed={isDirty(active)} title={active.kind === 'graph' ? 'Apply the JSON to the graph (Ctrl+S)' : 'Save and reload what runs it (Ctrl+S)'} onclick={save}><Icon name="save" size={16} aria-hidden="true" />{active.kind === 'graph' ? 'Apply' : 'Save'}</button>
 			{/if}
 			{#if $popOutAvailable}
 				<button id="code-ws-popout" class="ui-button-quiet" title="Open this tab in its own browser window (experimental)" onclick={() => popOutCode(active.id)}>⧉ Window</button>
@@ -594,7 +596,7 @@
 		</div>
 	{/if}
 	{#if sNode && active && !active.readOnly}
-		<div id="script-sockets" class="flex max-h-[30%] shrink-0 flex-col gap-1 overflow-auto px-1 pb-1 text-xs">
+		<div id="script-sockets" class="flex max-h-[30%] shrink-0 flex-col gap-1 overflow-auto px-1 pb-1 text-xs" use:minimalScroll>
 			{#if !sV2}
 				<div class="flex items-center gap-2">
 					<span class="code-muted flex-1">Inputs a, b, c (numbers) — no outputs.</span>
@@ -645,7 +647,7 @@
 			<p class="code-muted p-4">No open sources. Pick one in Project (Ctrl+B), "Edit code" or double-click a code node, double-click a .js file in the Explorer, or open the graph as JSON with "Graph JSON".</p>
 		{/if}
 		{#if confirmClose}
-			<div id="code-ws-confirm" class="absolute inset-0 z-10 flex items-center justify-center bg-black/50">
+			<div id="code-ws-confirm" class="absolute inset-0 z-10 flex items-center justify-center bg-scrim">
 				<div class="ui-panel w-80 rounded-lg p-4 text-sm shadow-2xl">
 					<p class="mb-3 font-semibold">Save changes to {tabById(confirmClose)?.title}?</p>
 					<p class="code-muted mb-4 text-xs">Your edits are lost if you close without saving.</p>
@@ -669,7 +671,7 @@
 		aria-label={side === 'left' ? 'Toggle the files sidebar' : 'Toggle the tools sidebar'}
 		onclick={() => toggleSide(side)}
 	>
-		{#if side === 'left'}<PanelLeft size={14} aria-hidden="true" />{:else}<PanelRight size={14} aria-hidden="true" />{/if}
+		{#if side === 'left'}<Icon name="panel-left" size={16} aria-hidden="true" />{:else}<Icon name="panel-right" size={16} aria-hidden="true" />{/if}
 	</button>
 {/snippet}
 
@@ -696,10 +698,10 @@
 			/>
 		{/if}
 		{#if confirmCloseAll}
-			<div id="code-ws-confirm-all" class="absolute inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" aria-label="Unsaved changes">
+			<div id="code-ws-confirm-all" class="absolute inset-0 z-50 flex items-center justify-center bg-scrim" role="dialog" aria-modal="true" aria-label="Unsaved changes">
 				<div class="ui-panel w-96 rounded-lg p-4 text-sm shadow-2xl">
 					<p class="mb-2 font-semibold">{dirtyTabs().length === 1 ? '1 file has' : dirtyTabs().length + ' files have'} unsaved changes</p>
-					<ul class="code-muted mb-3 max-h-24 overflow-auto text-xs">
+					<ul class="code-muted mb-3 max-h-24 overflow-auto text-xs" use:minimalScroll>
 						{#each dirtyTabs() as t (t.id)}<li>● {t.title}</li>{/each}
 					</ul>
 					{#if closeFailed}<p class="code-bad mb-3 text-xs">{closeFailed} could not be saved — their code has an error (shown in the editor). Fix it, or close without saving.</p>{/if}
@@ -725,7 +727,7 @@
 	<div
 		id="code-ws-dock"
 		data-tour="code-workspace"
-		class="code-ws fixed inset-x-0 bottom-0 flex flex-col p-2 {dockVisible ? '' : 'hidden'}"
+		class="code-ws tp-ui tp-dock-panel fixed inset-x-0 bottom-0 flex flex-col p-2 {dockVisible ? '' : 'hidden'}"
 		style="z-index: var(--z-bottom); height: {$dockHeight}px"
 		data-key-scope="panel"
 		role="region"
@@ -734,7 +736,7 @@
 	>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
+			class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
 			style="touch-action: none"
 			title="Drag to resize"
 			onpointerdown={startResize}
@@ -744,12 +746,12 @@
 		<DockTabs />
 		<div class="flex shrink-0 items-center gap-1 pb-1">
 			{@render sideToggle('left')}
-			<span class="text-xs font-semibold">Code</span>
+			<span class="tp-dock-title">Code</span>
 			<span class="flex-1"></span>
 			{@render openGraph()}
 			{@render sideToggle('right')}
-			<button class="ui-button-quiet" title="Undock into a floating window" onclick={() => setDocked(false)}>⧉</button>
-			<button id="code-ws-close" class="ui-button-quiet" title="Close the code workspace" onclick={requestCloseWorkspace}>✕</button>
+			<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock into a floating window" onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button>
+			<button id="code-ws-close" class="tp-dock-btn" title="Close the code workspace" aria-label="Close the code workspace" onclick={requestCloseWorkspace}><Icon name="x" size={16} /></button>
 		</div>
 		{@render main()}
 	</div>
@@ -757,7 +759,7 @@
 	<div
 		id="code-ws-window"
 		data-tour="code-workspace"
-		class="code-ws ui-panel fixed flex flex-col overflow-hidden"
+		class="code-ws ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 		use:dragWindow={{ key: 'codeWin', defaultRect: { left: 200, top: 110 } }}
 		use:focusStack={'code'}
 		use:tabbable={{ key: 'code', title: 'Code', openStore: codeWorkspaceClose, isOpen: (v) => !v, close: requestCloseWorkspace, minW: 360, minH: 260 }}
@@ -767,19 +769,32 @@
 		style:width="{effW}px"
 		style:height="{effH}px"
 	>
-		<div class="ui-panel-header move-handle flex shrink-0 cursor-move select-none items-center gap-1 py-1.5">
-			{@render sideToggle('left')}
-			<span>Code</span>
-			<span class="flex-1"></span>
-			{@render openGraph()}
-			{@render sideToggle('right')}
-			<button class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}>⇩ Dock</button>
-			<button id="code-ws-close" class="ui-button-quiet" title="Close the code workspace" onclick={requestCloseWorkspace}>✕</button>
-		</div>
+		<!-- 38 R6: the one window header (ui/WindowChrome, tool) -->
+		<WindowChrome
+			size="tool"
+			bare
+			body={false}
+			title="Code"
+			headerClass="ui-panel-header move-handle cursor-move select-none"
+			onclose={requestCloseWorkspace}
+			closeLabel="Close the code workspace"
+			closeAttrs={{ id: 'code-ws-close', title: 'Close the code workspace' }}
+		>
+			{#snippet heading()}
+				{@render sideToggle('left')}
+				<span class="wc-label">Code</span>
+				<span class="flex-1"></span>
+			{/snippet}
+			{#snippet actions()}
+				{@render openGraph()}
+				{@render sideToggle('right')}
+				<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+			{/snippet}
+		</WindowChrome>
 		<div class="flex min-h-0 flex-1 flex-col p-1">{@render main()}</div>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+			class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-border-strong/40"
 			style="touch-action: none"
 			title="Drag to resize"
 			onpointerdown={startWinResize}
@@ -799,17 +814,8 @@
 		align-items: center;
 		gap: 4px;
 	}
-	/* the window paints its own surface from the tokens, so its header follows the same ink
-	   (ui-panel-header's @apply'd gray-100 assumes a dark ui-panel; on light it read washed out) */
-	.code-ws :global(.ui-panel-header) {
-		color: var(--text, #f3f4f6);
-		border-color: var(--border, rgb(55 65 81 / 0.6));
-	}
-	.code-ws {
-		background: var(--surface, #1f2937);
-		color: var(--text, #e5e7eb);
-		border-top: 1px solid var(--border, rgb(55 65 81 / 0.6));
-	}
+	/* 38 R6: the surface is the shared window / dock panel (src/styles/windows.css) and the
+	   header is WindowChrome — this file paints neither any more */
 	.code-main {
 		position: relative;
 		display: flex;
@@ -835,7 +841,7 @@
 		top: 0;
 		bottom: 0;
 		z-index: 20;
-		box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+		box-shadow: var(--shadow-window);
 	}
 	.code-narrow .code-side-left {
 		left: 0;
@@ -853,7 +859,7 @@
 		touch-action: none;
 	}
 	.code-side-grip:hover {
-		background: color-mix(in srgb, var(--accent-fill, #2563eb) 35%, transparent);
+		background: color-mix(in srgb, var(--accent) 35%, transparent);
 	}
 	.code-side-grip-l {
 		right: -3px;
@@ -862,10 +868,10 @@
 		left: -3px;
 	}
 	.code-side-toggle[aria-pressed='true'] {
-		color: var(--text, #f3f4f6);
-		background: color-mix(in srgb, var(--accent-fill, #2563eb) 25%, transparent);
+		color: var(--accent-soft-text);
+		background: var(--accent-soft);
 	}
-	/* 36-fb-code (F8): the strip scrolls — the wheel (stripWheel) and a THIN visible scrollbar */
+	/* 36-fb-code (F8): the strip scrolls — the wheel (stripWheel); 38 R11: no bar (tp-noscrollbar) */
 	.code-strip {
 		display: flex;
 		flex-shrink: 0;
@@ -875,32 +881,17 @@
 		padding-bottom: 3px;
 		overflow-x: auto;
 		overflow-y: hidden;
-		scrollbar-width: thin;
-		scrollbar-color: var(--scrollbar-thumb, #4b5563) transparent;
-		border-bottom: 1px solid var(--border, rgb(55 65 81 / 0.6));
-	}
-	.code-strip::-webkit-scrollbar {
-		height: 4px;
-	}
-	.code-strip::-webkit-scrollbar-thumb {
-		border-radius: 2px;
-		background: var(--scrollbar-thumb, #4b5563);
-	}
-	.code-strip::-webkit-scrollbar-thumb:hover {
-		background: var(--scrollbar-thumb-hover, #6b7280);
-	}
-	.code-strip::-webkit-scrollbar-track {
-		background: transparent;
+		border-bottom: 1px solid var(--border);
 	}
 	/* drag to reorder (dragReorder.js) */
 	.code-tab:global([data-dragging]) {
 		opacity: 0.45;
 	}
 	.code-tab:global([data-drop='before']) {
-		box-shadow: inset 2px 0 0 var(--accent-fill, #2563eb);
+		box-shadow: inset 2px 0 0 var(--accent);
 	}
 	.code-tab:global([data-drop='after']) {
-		box-shadow: inset -2px 0 0 var(--accent-fill, #2563eb);
+		box-shadow: inset -2px 0 0 var(--accent);
 	}
 	.code-tab {
 		display: flex;
@@ -913,14 +904,14 @@
 		border-radius: 4px 4px 0 0;
 		font-size: 11px;
 		cursor: pointer;
-		color: var(--muted, #9ca3af);
-		background: var(--surface-2, #374151);
+		color: var(--text-muted);
+		background: var(--surface-2);
 		user-select: none;
 	}
 	.code-tab-on {
-		color: var(--text, #f3f4f6);
-		background: var(--surface-3, #4b5563);
-		box-shadow: inset 0 -2px 0 var(--accent-fill, #2563eb);
+		color: var(--text);
+		background: var(--surface-active);
+		box-shadow: inset 0 -2px 0 var(--accent);
 	}
 	.code-tab-name {
 		overflow: hidden;
@@ -928,7 +919,7 @@
 		white-space: nowrap;
 	}
 	.code-tab-dirty {
-		color: var(--ink-warn, #fbbf24);
+		color: var(--ink-warn);
 	}
 	.code-tab-bad {
 		display: inline-flex;
@@ -939,30 +930,30 @@
 		border-radius: 9999px;
 		font-size: 9px;
 		font-weight: 700;
-		color: var(--on-accent, #fff);
-		background: var(--ink-bad, #f87171);
+		color: var(--on-danger);
+		background: var(--danger);
 	}
 	.code-tab-close {
 		padding: 0 3px;
 		border-radius: 3px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.code-tab-close:hover {
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 	.code-kind {
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.code-live {
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
 		padding: 0 4px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.code-save-armed {
-		color: var(--on-accent, #fff);
-		background: var(--accent-fill, #2563eb);
+		color: var(--on-accent);
+		background: var(--accent-fill);
 	}
 	.code-banner {
 		display: flex;
@@ -975,33 +966,33 @@
 		font-size: 11px;
 	}
 	.code-banner-bad {
-		color: var(--ink-bad, #fca5a5);
-		background: color-mix(in srgb, var(--ink-bad, #f87171) 14%, transparent);
+		color: var(--ink-bad);
+		background: color-mix(in srgb, var(--ink-bad) 14%, transparent);
 	}
 	.code-banner-warn {
-		color: var(--ink-warn, #fbbf24);
-		background: color-mix(in srgb, var(--ink-warn, #fbbf24) 14%, transparent);
+		color: var(--ink-warn);
+		background: color-mix(in srgb, var(--ink-warn) 14%, transparent);
 	}
 	.code-banner-text {
 		text-align: left;
 		color: inherit;
 	}
 	.code-muted {
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		font-size: 11px;
 	}
 	.code-warn {
-		color: var(--ink-warn, #fbbf24);
+		color: var(--ink-warn);
 		font-size: 11px;
 	}
 	.code-bad {
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 	.code-field {
 		padding: 0 4px;
 		border-radius: 3px;
-		color: var(--text, #e5e7eb);
-		background: var(--field, #111827);
-		border: 1px solid var(--border, #374151);
+		color: var(--text);
+		background: var(--surface-inset);
+		border: 1px solid var(--border);
 	}
 </style>

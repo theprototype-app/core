@@ -65,6 +65,6 @@
 	}
 	.bar {
 		position: absolute;
-		background: rgb(2 6 23 / 0.82);
+		background: color-mix(in srgb, var(--bg-app) 82%, transparent);
 	}
 </style>

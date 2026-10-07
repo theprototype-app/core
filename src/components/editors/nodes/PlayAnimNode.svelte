@@ -72,7 +72,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>speed</span><span>{(data.speed ?? 1).toFixed(1)}×</span></span>
 			<input
-				class="nodrag nopan accent-[#ff4000]"
+				class="nodrag nopan accent-accent"
 				type="range"
 				min="0.1"
 				max="4"
@@ -82,8 +82,8 @@
 			/>
 		</label>
 		<div class="flex items-center gap-2">
-			<span class="h-2.5 w-2.5 rounded-full" style="background: {running ? '#22c55e' : '#374151'}"></span>
-			<span class="text-[10px] text-gray-400">{running ? 'playing' : 'idle'}</span>
+			<span class="h-2.5 w-2.5 rounded-full" style="background: {running ? 'var(--ink-good)' : 'var(--control-off)'}"></span>
+			<span class="text-[10px] text-text-muted">{running ? 'playing' : 'idle'}</span>
 		</div>
 	</div>
 </NodeWrapper>

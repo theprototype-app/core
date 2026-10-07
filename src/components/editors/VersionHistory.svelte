@@ -12,7 +12,7 @@
 	// a re-append plus a local load. A peer learns where the pointer went because the
 	// manifest replicates — which is the whole "offer travel for the session" half of
 	// fork 13, and why the toast says so instead of a message type saying it.
-	import { ArrowDownToLine, History, Pin, RotateCcw, Trash2 } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { explorerItems, hiddenItems, deleteItem, itemBlob } from '$lib/explorer';
 	import { projectManifest, sceneOfHash, pinSceneVersion } from '$lib/projectManifest';
 	import { restoreSceneVersion, saveSceneVersion, currentLevel, levelSceneName } from '$lib/levels';
@@ -141,7 +141,7 @@
 {#if scene}
 	<div id="version-history" class="vh-wrap">
 		<div class="vh-head">
-			<History size={14} aria-hidden="true" />
+			<Icon name="history" size={16} aria-hidden="true" />
 			<span class="flex-1">Version history</span>
 			<!-- user: the all-versions archive lives HERE now, before the count it acts on.
 			     Icon-only and 18px so it cannot grow the header line, and offered only when
@@ -155,7 +155,7 @@
 					aria-label="Download all versions (.zip)"
 					title="Every version of this scene as one .zip of .tpscene files — versions whose bytes are no longer here are reported"
 					onclick={() => onDownloadAll?.(item)}
-				><ArrowDownToLine size={13} aria-hidden="true" /></button>
+				><Icon name="arrow-down-to-line" size={16} aria-hidden="true" /></button>
 			{/if}
 			<span class="vh-count">{rows.length}</span>
 		</div>
@@ -205,7 +205,7 @@
 					title={row.item
 						? 'Save this version to your computer as a .tpscene'
 						: 'The bytes of this version are not on this machine — nothing to download'}
-					onclick={() => download(row)}><ArrowDownToLine size={13} aria-hidden="true" /></button
+					onclick={() => download(row)}><Icon name="arrow-down-to-line" size={16} aria-hidden="true" /></button
 				>
 				<button
 					class="ui-button-quiet vh-pin shrink-0"
@@ -213,7 +213,7 @@
 					aria-label={row.pinned ? 'Unpin this version' : 'Pin this version so it is never pruned'}
 					title={row.pinned ? 'Pinned — the prune never drops it' : 'Pin so the prune never drops it'}
 					onclick={() => pinSceneVersion(scene ?? '', row.hash, !row.pinned)}
-					><Pin size={13} aria-hidden="true" /></button
+					><Icon name="pin" size={16} aria-hidden="true" /></button
 				>
 				{#if !row.pointer}
 					<button
@@ -221,7 +221,7 @@
 						disabled={busy}
 						aria-label="Restore this version"
 						title="Save what is open as a checkpoint, then load this version"
-						onclick={() => restore(row.hash)}><RotateCcw size={13} aria-hidden="true" /></button
+						onclick={() => restore(row.hash)}><Icon name="rotate-ccw" size={16} aria-hidden="true" /></button
 					>
 					{#if row.item}
 						<button
@@ -229,7 +229,7 @@
 							aria-label="Delete this version's local copy"
 							title="Free the bytes here. The version stays in the project — a peer who still holds it can serve it back"
 							onclick={() => deleteItem(row.item.id)}
-							><Trash2 size={13} class="ico-danger" aria-hidden="true" /></button
+							><Icon name="trash-2" size={16} class="ico-danger" aria-hidden="true" /></button
 						>
 					{/if}
 				{/if}
@@ -245,7 +245,7 @@
 		gap: 4px;
 		margin-top: 8px;
 		padding-top: 8px;
-		border-top: 1px solid rgba(255, 255, 255, 0.12);
+		border-top: 1px solid var(--border);
 	}
 	.vh-head {
 		display: flex;
@@ -271,7 +271,7 @@
 	}
 	.vh-archive:hover {
 		opacity: 1;
-		background: rgba(255, 255, 255, 0.1);
+		background: var(--surface-active);
 	}
 	.vh-save {
 		display: flex;
@@ -282,8 +282,8 @@
 		min-width: 0;
 		flex: 1;
 		border-radius: 3px;
-		border: 1px solid rgba(255, 255, 255, 0.16);
-		background: rgba(0, 0, 0, 0.25);
+		border: 1px solid var(--border-input);
+		background: var(--surface-inset);
 		padding: 2px 5px;
 		font-size: 0.72rem;
 		color: inherit;
@@ -293,7 +293,7 @@
 		align-items: center;
 		gap: 0.3rem;
 		border-radius: 4px;
-		background: rgba(255, 255, 255, 0.05);
+		background: var(--surface-hover);
 		padding: 3px 4px;
 	}
 	.vh-thumb {
@@ -301,12 +301,12 @@
 		height: 26px;
 		flex: none;
 		border-radius: 3px;
-		border: 1px solid rgba(255, 255, 255, 0.15);
+		border: 1px solid var(--border);
 		object-fit: cover;
 	}
 	.vh-thumb-empty {
 		display: inline-block;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--surface-hover);
 	}
 	.vh-label {
 		display: block;
@@ -326,21 +326,21 @@
 	.vh-badge {
 		flex: none;
 		border-radius: 999px;
-		background: var(--accent, #3b82f6);
+		background: var(--accent-fill);
 		padding: 1px 5px;
 		font-size: 0.58rem;
-		color: #fff;
+		color: var(--on-accent);
 	}
 	.vh-hint {
 		font-size: 0.68rem;
 		opacity: 0.65;
 	}
 	.vh-badge-prev {
-		background: rgba(255, 255, 255, 0.22);
+		background: var(--border-strong);
 		color: inherit;
 	}
 	.vh-badge-away {
-		background: rgba(255, 255, 255, 0.16);
+		background: var(--surface-active);
 		color: inherit;
 	}
 </style>

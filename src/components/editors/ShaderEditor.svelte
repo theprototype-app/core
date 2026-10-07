@@ -14,7 +14,8 @@
 	// arrays, not stores, so the two are mirrored both ways behind a re-entrancy guard.
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { Info, Settings, Trash2 } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		SvelteFlow,
 		Background,
@@ -68,6 +69,7 @@
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { clampWinSize, clampResize, anchorOf } from '$lib/windowSize';
 	import DockTabs from '../DockTabs.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ShaderNode from './nodes/ShaderNode.svelte';
 	import ShaderSidebar from './ShaderSidebar.svelte';
@@ -237,7 +239,7 @@
 		setShaderGraphFor(scope, {
 			nodes: [
 				{ id: 'surface', type: SURFACE_NODE, position: { x: 380, y: 120 }, data: {} },
-				{ id: 'colour', type: 'color', position: { x: 90, y: 130 }, data: { value: '#cccccc' } }
+				{ id: 'colour', type: 'color', position: { x: 90, y: 130 }, data: { value: '#cccccc' } } // tokens-ok: the new graph's starting albedo (user-editable shader data)
 			],
 			edges: [
 				{
@@ -610,7 +612,7 @@
 	{/if}
 {/snippet}
 
-{#snippet actions()}
+{#snippet editorActions()}
 	{#if doc}
 		<button
 			class="ui-button-quiet"
@@ -619,21 +621,20 @@
 			aria-label="Remove this shader graph"
 			onclick={removeGraph}
 		>
-			<Trash2 size={14} aria-hidden="true" />
+			<Icon name="trash-2" size={16} aria-hidden="true" />
 		</button>
 	{/if}
-	<button
-		class="ui-button-quiet"
+	<button class="tp-dock-btn"
 		id="shader-close"
 		title="Close"
 		aria-label="Close the shader editor"
-		onclick={() => shaderEditorClose.set(true)}>✕</button
+		onclick={() => shaderEditorClose.set(true)}><Icon name="x" size={16} /></button
 	>
 {/snippet}
 
 {#snippet body()}
 	{#if errors.length}
-			<div class="shader-errors" id="shader-errors">
+			<div class="shader-errors" id="shader-errors" use:minimalScroll>
 				{#each errors as message, i (i)}<div>{message}</div>{/each}
 			</div>
 		{/if}
@@ -652,7 +653,7 @@
 						label={isPost ? 'Post effects' : 'Shaders'}
 						paneHeight={paletteColH}
 					/>
-					<div class="shader-side-scroll">
+					<div class="shader-side-scroll" use:minimalScroll>
 						<ShaderSidebar onPick={addNodeAtCentre} entries={catalog} />
 					</div>
 				</div>
@@ -700,11 +701,11 @@
 				{:else}
 					<!-- the `#flow-empty-state` shape: ONE centred call to action -->
 					<div id="shader-empty-state" class="shader-empty">
-						<p class="text-sm text-gray-300">
+						<p class="text-sm text-text-2">
 							{#if isPost}
 								No post effect to edit yet
 							{:else}
-								<span class="font-semibold text-gray-100">{ownerName}</span> has no shader yet
+								<span class="font-semibold text-text">{ownerName}</span> has no shader yet
 							{/if}
 						</p>
 						<button id="shader-create-btn" class="shader-create" onclick={createGraph}>
@@ -723,12 +724,12 @@
 									>
 								{/each}
 							</div>
-							<p class="text-[11px] text-gray-500">
+							<p class="text-[11px] text-text-faint">
 								A post effect runs over the finished frame — add it to a look in Configure
 								Scene ▸ Post-processing
 							</p>
 						{:else}
-							<p class="text-[11px] text-gray-500">
+							<p class="text-[11px] text-text-faint">
 								{scope === SCENE_GRAPH_KEY
 									? 'A scene shader drives every object that has no shader of its own'
 									: 'Deselect to edit the scene-wide shader instead'}
@@ -746,20 +747,20 @@
 				onclick={() => (propsOpen = !propsOpen)}>{propsOpen ? '›' : '‹'}</button
 			>
 			{#if propsOpen}
-				<div class="shader-side shader-side-right" id="shader-props">
+				<div class="shader-side shader-side-right" id="shader-props" use:minimalScroll>
 					<div class="shader-props-tabs">
 						<button
 							class:active={propsTab === 'info'}
 							title="Selected node"
 							aria-label="Selected node properties"
-							onclick={() => (propsTab = 'info')}><Info size={13} aria-hidden="true" /></button
+							onclick={() => (propsTab = 'info')}><Icon name="info" size={16} aria-hidden="true" /></button
 						>
 						<button
 							class:active={propsTab === 'settings'}
 							title="Graph settings"
 							aria-label="Graph settings"
 							onclick={() => (propsTab = 'settings')}
-							><Settings size={13} aria-hidden="true" /></button
+							><Icon name="settings" size={16} aria-hidden="true" /></button
 						>
 					</div>
 
@@ -904,12 +905,12 @@
      `docked`; the FLOATING branch is UvEditor's window verbatim — dragWindow, a KEYED
      focusStack, tabbable, bottomDockable and a corner grip. -->
 {#if !$shaderEditorClose && docked && dockVisible}
-	<div id="shader-editor" data-key-scope="panel" role="region" aria-label="Shader editor (docked)" class="shader-editor ui-panel" style:height={$dockHeight + 'px'}>
+	<div id="shader-editor" data-key-scope="panel" role="region" aria-label="Shader editor (docked)" class="shader-editor ui-panel tp-ui tp-dock-panel" style:height={$dockHeight + 'px'}>
 		<!-- top-edge resize hot zone (above the tab strip's z-20, so the band can never
 		     swallow the drag) -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
+			class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
 			style="touch-action: none"
 			title="Drag to resize"
 			onpointerdown={startResize}
@@ -921,14 +922,13 @@
 			{@render domainSwitch()}
 			<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
 			<div class="shader-actions">
-				<button
-					class="ui-button-quiet"
+				<button class="tp-dock-btn"
 					id="shader-undock"
 					title="Undock into a floating window"
 					aria-label="Undock the shader editor"
-					onclick={() => setDocked(false)}>⧉</button
+					onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button
 				>
-				{@render actions()}
+				{@render editorActions()}
 			</div>
 		</div>
 		{@render body()}
@@ -936,7 +936,7 @@
 {:else if !$shaderEditorClose && !docked}
 	<div
 		id="shader-window"
-		class="ui-panel fixed flex flex-col overflow-hidden"
+		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden"
 		use:dragWindow={{ key: 'shader', defaultRect: { left: 240, top: 150 } }}
 		use:focusStack={'shader'}
 		use:tabbable={{
@@ -951,24 +951,29 @@
 		style:width="{effW}px"
 		style:height="{effH}px"
 	>
-		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span>Shader editor</span>
-			{@render domainSwitch()}
-			<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
-			<span class="flex-1"></span>
-			<button
-				class="ui-button-quiet"
-				id="shader-dock"
-				title="Dock to the bottom"
-				aria-label="Dock the shader editor"
-				onclick={() => setDocked(true)}>⇩ Dock</button
-			>
-			{@render actions()}
-		</div>
+		<!-- 38 R6: the one window header (ui/WindowChrome, tool) -->
+		<WindowChrome
+			size="tool"
+			bare
+			body={false}
+			title="Shader editor"
+			headerClass="ui-panel-header move-handle cursor-move select-none"
+		>
+			{#snippet heading()}
+				<span class="wc-label">Shader editor</span>
+				{@render domainSwitch()}
+				<span class="shader-scope" id="shader-scope">{scopeLabel}</span>
+				<span class="flex-1"></span>
+			{/snippet}
+			{#snippet actions()}
+				<button class="wc-act-text" id="shader-dock" title="Dock to the bottom" aria-label="Dock the shader editor" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+				{@render editorActions()}
+			{/snippet}
+		</WindowChrome>
 		{@render body()}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+			class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-border-strong/40"
 			style="touch-action: none"
 			title="Drag to resize · double-click to reset size"
 			onpointerdown={startWinResize}
@@ -998,20 +1003,22 @@
 		z-index: var(--z-bottom, 35);
 		display: flex;
 		flex-direction: column;
-		background: var(--surface, #1f2937);
-		border-top: 1px solid rgba(255, 255, 255, 0.1);
+		/* 38 R6: surface + top line from .tp-dock-panel (src/styles/windows.css); a docked
+		   view sits flush, so no window corners or shadow from ui-panel */
+		border-radius: 0;
+		box-shadow: none;
 	}
 	.shader-topbar {
 		display: flex;
 		align-items: center;
 		gap: 8px;
 		padding: 4px 8px;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+		border-bottom: 1px solid var(--border);
 		flex: 0 0 auto;
 	}
 	.shader-scope {
 		font-size: 11px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -1029,10 +1036,10 @@
 	.shader-side {
 		flex: 0 0 148px;
 		overflow-y: auto;
-		background: rgba(0, 0, 0, 0.18);
+		background: color-mix(in srgb, var(--bg-app) 18%, transparent);
 	}
 	.shader-side-left {
-		border-right: 1px solid rgba(255, 255, 255, 0.07);
+		border-right: 1px solid var(--border);
 		/* #20 P7: the tree is a fixed-height section and the palette scrolls under it,
 		   so the COLUMN owns the layout and the palette owns the scrolling */
 		display: flex;
@@ -1046,17 +1053,17 @@
 	}
 	.shader-side-right {
 		flex-basis: 172px;
-		border-left: 1px solid rgba(255, 255, 255, 0.07);
+		border-left: 1px solid var(--border);
 	}
 	.shader-divider {
 		flex: 0 0 12px;
-		background: rgba(255, 255, 255, 0.04);
-		color: var(--muted, #9ca3af);
+		background: color-mix(in srgb, var(--text) 4%, transparent);
+		color: var(--text-muted);
 		font-size: 10px;
 	}
 	.shader-divider:hover {
-		background: rgba(255, 255, 255, 0.1);
-		color: var(--text, #e5e7eb);
+		background: var(--surface-hover);
+		color: var(--text);
 	}
 	.shader-canvas {
 		position: relative;
@@ -1065,9 +1072,9 @@
 	}
 	.shader-errors {
 		flex: 0 0 auto;
-		background: rgba(180, 40, 40, 0.18);
-		border-bottom: 1px solid rgba(220, 60, 60, 0.4);
-		color: var(--ink-bad, #fca5a5);
+		background: color-mix(in srgb, var(--ink-bad) 15%, transparent);
+		border-bottom: 1px solid color-mix(in srgb, var(--ink-bad) 40%, transparent);
+		color: var(--ink-bad);
 		font-size: 11px;
 		padding: 3px 8px;
 		max-height: 64px;
@@ -1080,11 +1087,11 @@
 		max-width: 11rem;
 		flex-shrink: 1;
 		border-radius: 0.25rem;
-		border: 1px solid var(--border, #374151);
-		background: var(--surface, #1f2937);
+		border: 1px solid var(--border);
+		background: var(--surface-inset);
 		padding: 0 0.35rem;
 		font-size: 0.7rem;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 	}
 	.shader-preset-row {
 		display: flex;
@@ -1094,13 +1101,13 @@
 	}
 	.shader-preset {
 		border-radius: 0.25rem;
-		background: #374151;
+		background: var(--surface-2);
 		padding: 0.15rem 0.45rem;
 		font-size: 0.7rem;
-		color: #e5e7eb;
+		color: var(--text);
 	}
 	.shader-preset:hover {
-		background: #4b5563;
+		background: var(--surface-active);
 	}
 	.shader-empty {
 		position: absolute;
@@ -1115,29 +1122,29 @@
 	}
 	.shader-create {
 		border-radius: 8px;
-		background: var(--color-primary-700, #1d4ed8);
+		background: var(--accent-fill);
 		padding: 8px 16px;
 		font-size: 13px;
 		font-weight: 500;
-		color: #fff;
+		color: var(--on-accent);
 	}
 	.shader-create:hover {
-		background: var(--color-primary-600, #2563eb);
+		filter: brightness(0.92);
 	}
 	.shader-props-tabs {
 		display: flex;
 		gap: 2px;
 		padding: 4px;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+		border-bottom: 1px solid var(--border);
 	}
 	.shader-props-tabs button {
 		padding: 3px 7px;
 		border-radius: 3px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.shader-props-tabs button.active {
-		background: var(--hover, rgba(255, 255, 255, 0.1));
-		color: var(--text, #f3f4f6);
+		background: var(--surface-hover);
+		color: var(--text);
 	}
 	.shader-props-body {
 		display: flex;
@@ -1148,7 +1155,7 @@
 	.shader-props-title {
 		font-size: 11px;
 		font-weight: 600;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 	}
 	.shader-field {
 		display: flex;
@@ -1156,36 +1163,36 @@
 		justify-content: space-between;
 		gap: 6px;
 		font-size: 10px;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 	}
 	.shader-field input[type='text'],
 		.shader-field select {
 		width: 88px;
-		background: var(--field, rgba(0, 0, 0, 0.35));
-		border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+		background: var(--surface-inset);
+		border: 1px solid var(--border-input);
 		border-radius: 3px;
 		padding: 1px 3px;
 		font-size: 10px;
-		color: var(--text, #f3f4f6);
+		color: var(--text);
 	}
 	.shader-field input[type='color'] {
 		width: 34px;
 		height: 18px;
 		padding: 0;
-		border: 1px solid rgba(255, 255, 255, 0.15);
+		border: 1px solid var(--border-strong);
 		background: transparent;
 	}
 	.shader-hint {
 		font-size: 9px;
 		line-height: 1.35;
-		color: var(--muted, #6b7280);
+		color: var(--text-faint);
 	}
 	.shader-doc {
 		font-size: 10px;
 		line-height: 1.4;
-		color: var(--text-2, #cbd5e1);
-		background: rgba(255, 255, 255, 0.04);
-		border-left: 2px solid rgba(255, 255, 255, 0.18);
+		color: var(--text-2);
+		background: color-mix(in srgb, var(--text) 4%, transparent);
+		border-left: 2px solid var(--border-strong);
 		border-radius: 0 3px 3px 0;
 		padding: 4px 6px;
 	}
@@ -1193,8 +1200,8 @@
 		display: block;
 		font-family: ui-monospace, monospace;
 		font-size: 9px;
-		color: #a5b4fc;
-		background: rgba(0, 0, 0, 0.3);
+		color: var(--accent-text);
+		background: var(--surface-inset);
 		border-radius: 3px;
 		padding: 1px 4px;
 		/* selectable, so it can be copied: the graph canvas otherwise eats the drag */

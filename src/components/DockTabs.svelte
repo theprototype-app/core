@@ -38,7 +38,7 @@
 	import { dockTabs, bottomDockActive, activateDock, dockMinimized, reorderDockTabs, armDockMode } from '$lib/bottomDock';
 	import { dockAddItems, dockTabItems } from '$lib/dockMenu';
 	import ContextMenu from './ContextMenu.svelte';
-	import { Plus, PanelBottom } from '@lucide/svelte';
+	import Icon from './ui/Icon.svelte';
 
 	let addMenu = $state(/** @type {{x:number,y:number}|null} */ (null));
 	// Rebuilt per OPEN, not once at init: the list drops views that are already docked,
@@ -183,14 +183,14 @@
 
 </script>
 
-<div bind:this={stripEl} class="absolute -top-6 left-3 right-24 z-20 flex gap-0.5 overflow-x-auto">
+<div bind:this={stripEl} class="tp-noscrollbar absolute -top-6 left-3 right-24 z-20 flex gap-0.5 overflow-x-auto">
 	{#each $dockTabs as tab (tab.key)}
 		<button
 			data-dock-tab={tab.key}
 			class="tab-note h-5.5 shrink-0 select-none px-4 pb-0.5 pt-1 text-xs font-semibold {$bottomDockActive === tab.key
 				? 'dt-on'
 				: 'dt-off'} {dragKey === tab.key
-				? 'opacity-40 ring-1 ring-primary-400'
+				? 'dt-dragging opacity-40'
 				: ''}"
 			title="{tab.title} — drag to reorder, or out of the strip to undock"
 			use:tabDrag={{ key: tab.key }}
@@ -203,16 +203,16 @@
 	{#if dragKey && !dropOut}
 		<div
 			id="dock-tab-drop"
-			class="pointer-events-none absolute bottom-0 top-0 w-0.5 bg-primary-400"
+			class="dt-drop pointer-events-none absolute bottom-0 top-0 w-0.5"
 			style="left: {dropX}px"
 		></div>
 	{/if}
 	<button
 		id="dock-add-view"
-		class="tab-note flex h-5.5 shrink-0 items-center justify-center bg-gray-900/70 px-3 text-gray-300 hover:text-white"
+		class="tab-note dt-btn flex h-5.5 shrink-0 items-center justify-center px-3"
 		title="Add a view (Flow Code, Animation, UV editor, Shader editor, HUD editor, Explorer)"
 		aria-label="Add a view to the dock"
-		onclick={openAdd}><Plus size={14} aria-hidden="true" /></button
+		onclick={openAdd}><Icon name="plus" size={16} aria-hidden="true" /></button
 	>
 </div>
 
@@ -220,10 +220,10 @@
 <div class="absolute -top-6 right-3 z-20 flex gap-0.5">
 	<button
 		id="dock-minimize"
-		class="tab-note flex h-5.5 items-center justify-center bg-gray-900/70 px-3 text-gray-300 hover:text-white"
+		class="tab-note dt-btn flex h-5.5 items-center justify-center px-3"
 		title="Minimize the dock"
 		aria-label="Minimize the dock"
-		onclick={() => dockMinimized.set(true)}><PanelBottom size={14} aria-hidden="true" /></button
+		onclick={() => dockMinimized.set(true)}><Icon name="panel-bottom" size={16} aria-hidden="true" /></button
 	>
 </div>
 
@@ -235,18 +235,32 @@
 {/if}
 
 <style>
-	/* 36 U1: the strip's two states in theme tokens (dark keeps its exact grays). The idle tab
-	   was gray-900/70 — a class no light remap covers — under the light theme's muted ink:
-	   1.4:1. Opaque fills, because the strip floats over the 3D view. */
+	/* 38 R6: the strip in the redesign tokens — the active tab is the dock's own surface
+	   (it reads as the top of the panel below it), the rest sit on the inset well. The
+	   22px band, its -top-6 seat and every gesture are W6/W7's, unchanged. */
+	.tab-note {
+		border-radius: var(--radius-input) var(--radius-input) 0 0;
+		font-family: var(--font-ui);
+		font-weight: 500;
+	}
 	.dt-on {
-		background: var(--surface-3, #374151);
-		color: var(--text, #fff);
+		background: var(--surface-1);
+		color: var(--text);
+		box-shadow: inset 0 1px 0 var(--border), inset 1px 0 0 var(--border), inset -1px 0 0 var(--border);
 	}
-	.dt-off {
-		background: var(--surface-2, rgb(17 24 39 / 0.7));
-		color: var(--text-2, #9ca3af);
+	.dt-off,
+	.dt-btn {
+		background: var(--surface-inset);
+		color: var(--text-muted);
 	}
-	.dt-off:hover {
-		color: var(--text, #e5e7eb);
+	.dt-off:hover,
+	.dt-btn:hover {
+		color: var(--text);
+	}
+	.dt-dragging {
+		box-shadow: 0 0 0 1px var(--accent);
+	}
+	.dt-drop {
+		background: var(--accent);
 	}
 </style>

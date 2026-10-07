@@ -67,7 +67,7 @@
 	}
 	.shader-vec-part span {
 		font-size: 8px;
-		color: #6b7280;
+		color: var(--text-faint);
 	}
 	/* narrow enough that three of them still fit a ~150px node card. DragRow adds
 	   its own border + padding, so the FIELD is narrower than the old bare input. */

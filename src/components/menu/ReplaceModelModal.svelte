@@ -2,7 +2,8 @@
 	// 36 U9 — "Replace model…" for a loading/failed placeholder: pick a pack item (replaces
 	// IN PLACE — same object, same pose, refilled on every peer) or a library model (imported
 	// at the placeholder's pose; a new object). Non-modal like every panel-shaped dialog.
-	import { Modal } from 'flowbite-svelte';
+	import ModalDialog from '../ui/ModalDialog.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { packs, loadPacks, listPackItems } from '$lib/packs';
 	import { explorerItems } from '$lib/explorer';
 	import { replaceModelTarget, replaceWithPackItem, replaceWithLibraryItem } from '$lib/replaceModel';
@@ -80,18 +81,16 @@
 	}
 </script>
 
-<Modal
+<ModalDialog
 	title="Replace model"
 	bind:open
 	modal={false}
 	onkeydown={(/** @type {KeyboardEvent} */ e) => {
 		if (e.key === 'Escape') close();
 	}}
-	onclose={close}
+	oncancel={close}
 	outsideclose
-	size="md"
-	class="tp-modal-frame"
-	classes={{ header: 'tp-modal-header', body: 'tp-modal-body flex-1' }}
+	width="md"
 >
 	<div id="replace-model" class="flex flex-col gap-2 text-sm">
 		<p class="text-xs opacity-80">
@@ -103,7 +102,7 @@
 			</div>
 			<input id="replace-model-search" class="ui-input w-1/2" type="text" placeholder="Search…" bind:value={query} />
 		</div>
-		<div class="replace-grid" data-count={rows.length}>
+		<div class="replace-grid" data-count={rows.length} use:minimalScroll>
 			{#if loading}
 				<p class="col-span-full p-2 text-xs opacity-70">Loading the pack…</p>
 			{:else if !rows.length}
@@ -121,7 +120,7 @@
 			{/each}
 		</div>
 	</div>
-</Modal>
+</ModalDialog>
 
 <style>
 	.replace-grid {
@@ -138,9 +137,9 @@
 		gap: 4px;
 		padding: 6px;
 		border-radius: 6px;
-		border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
-		background: var(--field, transparent);
-		color: var(--text, inherit);
+		border: 1px solid var(--border);
+		background: var(--surface-inset);
+		color: var(--text);
 		cursor: pointer;
 	}
 	.replace-card:hover:not(:disabled) {
@@ -152,7 +151,7 @@
 		height: 72px;
 		object-fit: contain;
 		border-radius: 4px;
-		background: var(--surface-deep, rgba(0, 0, 0, 0.15));
+		background: var(--bg-app);
 	}
 	.replace-label {
 		font-size: 11px;

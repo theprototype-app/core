@@ -215,7 +215,8 @@ h.run(async () => {
 		await P.page.evaluate(() => window.__stores.openSceneSection('Camera:Start view'));
 		await P.page.locator('#hold-camera-until-loaded').waitFor({ state: 'visible', timeout: 10000 });
 		h.check((await P.page.locator('[data-tour="hold-camera-until-loaded"]').count()) === 1, '7: the setting carries its data-tour id');
-		h.check(!(await P.page.locator('#hold-camera-until-loaded').isChecked()), '7: off by default');
+		// 38 R5: the setting is a Toggle; its state is aria-pressed
+		h.check((await P.page.locator('#hold-camera-until-loaded').getAttribute('aria-pressed')) !== 'true', '7: off by default');
 		await P.page.locator('#hold-camera-until-loaded').click();
 		await P.page.waitForTimeout(300);
 		await S.shot(P.page, '05-hold-setting-dark.png');
@@ -228,7 +229,7 @@ h.run(async () => {
 		await h.eventually(() => Q.page.evaluate(() => window.__stores.scenePhysics.scenePhysicsDebug().holdCamera === true), (v) => v, '7: the other peer has it');
 		await Q.page.evaluate(() => window.__stores.openSceneSection('Camera:Start view'));
 		await Q.page.locator('#hold-camera-until-loaded').waitFor({ state: 'visible', timeout: 10000 });
-		h.check(await Q.page.locator('#hold-camera-until-loaded').isChecked(), "7: …and its own toggle shows it");
+		h.check((await Q.page.locator('#hold-camera-until-loaded').getAttribute('aria-pressed')) === 'true', "7: …and its own toggle shows it");
 		// the loader holds; the other peer's camera is the other peer's
 		const qBefore = await S.camPose(Q.page);
 		await Q.page.evaluate(S.ARM);

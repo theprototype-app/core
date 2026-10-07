@@ -113,6 +113,7 @@
 	// `s` alone — so a $vrHovered read in here registered nothing and no sector ever lit up
 	// under the stick or the ray (the hub, which reads it inline, did). The Quest report.
 	function sectorColor(entry: any, hovered: string | null, flash: string) {
+		// tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var())
 		if (entry.disabled?.()) return '#1b1f26' // D4: greyed out, hover never lights it
 		if (flash === entry.id) return '#ffd2bf' // 36: the press flash
 		if (hovered === entry.id) return '#ff4000'
@@ -123,6 +124,7 @@
 		if (entry.disabled?.()) return '#6b7280'
 		return hovered === entry.id ? '#ffffff' : '#e8ecf2'
 	}
+	// tokens-ok-end
 
 	const controllerPosition = new THREE.Vector3()
 	const controllerQuaternion = new THREE.Quaternion()
@@ -149,6 +151,7 @@
 		applyWindowPose(group, 'menu', pose, s)
 	})
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if $vrMenuOpen}
 	<T.Group bind:ref={group} name="vr-quick-menu">
@@ -259,3 +262,4 @@
 		/>
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

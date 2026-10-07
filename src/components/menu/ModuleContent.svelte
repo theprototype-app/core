@@ -7,7 +7,7 @@
 	// is. Module content changes without a poke (a module adds children on its own clock),
 	// so the rows re-derive on every pokeScene AND once a second while the list is shown —
 	// the System view's precedent.
-	import { ChevronDown, ChevronRight, Boxes, Eye, EyeOff } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { get } from 'svelte/store';
 	import * as THREE from 'three';
 	import { globalScene, sceneRevision } from '../../stores/sceneStore';
@@ -125,35 +125,35 @@
 </script>
 
 {#if rows.length}
-	<div id="module-content" class="mt-1 border-t border-gray-300 pt-1 dark:border-gray-600">
+	<div id="module-content" class="mt-1 border-t border-border pt-1">
 		<button
 			id="module-content-head"
 			type="button"
-			class="flex w-full items-center gap-1 px-1 py-0.5 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400"
+			class="flex w-full items-center gap-1 px-1 py-0.5 text-left text-[11px] font-semibold uppercase tracking-wide text-text-faint"
 			title="Content built by modules — listed read-only; the module owns it"
 			aria-expanded={open}
 			onclick={toggleOpen}
 		>
-			{#if open}<ChevronDown size={14} aria-hidden="true" />{:else}<ChevronRight size={14} aria-hidden="true" />{/if}
+			{#if open}<Icon name="chevron-down" size={16} aria-hidden="true" />{:else}<Icon name="chevron-right" size={16} aria-hidden="true" />{/if}
 			Module content
-			<span class="ml-auto font-normal normal-case text-gray-400">{rows.length}</span>
+			<span class="ml-auto font-normal normal-case text-text-muted">{rows.length}</span>
 		</button>
 		{#if open}
 			{#each rows as row (row.name)}
 				<div class="module-content-row" data-group={row.name} data-module={row.moduleId} use:rowMenu={row}>
 					<div
-						class={'flex items-center gap-1 rounded-sm px-1 py-0.5 text-sm text-gray-800 dark:text-gray-200 ' +
-							($moduleSelection?.name === row.name ? 'bg-primary-600/30' : 'hover:bg-gray-200 dark:hover:bg-gray-600')}
+						class={'flex items-center gap-1 rounded-sm px-1 py-0.5 text-sm text-text-2 ' +
+							($moduleSelection?.name === row.name ? 'bg-accent-soft text-accent-soft-text' : 'hover:bg-surface-hover')}
 					>
 						<button
 							type="button"
-							class="w-4 shrink-0 text-gray-400"
+							class="w-4 shrink-0 text-text-muted"
 							aria-label={expanded[row.name] ? 'Hide children' : 'Show children'}
 							onclick={() => (expanded = { ...expanded, [row.name]: !expanded[row.name] })}
 						>
-							{#if expanded[row.name]}<ChevronDown size={14} aria-hidden="true" />{:else}<ChevronRight size={14} aria-hidden="true" />{/if}
+							{#if expanded[row.name]}<Icon name="chevron-down" size={16} aria-hidden="true" />{:else}<Icon name="chevron-right" size={16} aria-hidden="true" />{/if}
 						</button>
-						<Boxes size={14} class="shrink-0 text-gray-400" aria-hidden="true" />
+						<Icon name="boxes" size={16} class="shrink-0 text-text-muted" aria-hidden="true" />
 						<button
 							type="button"
 							class="module-content-name min-w-0 flex-1 truncate text-left"
@@ -163,28 +163,28 @@
 						>
 							{row.label}
 						</button>
-						<span class="module-content-badge shrink-0 rounded-sm bg-gray-200 px-1 text-[10px] text-gray-600 dark:bg-gray-600 dark:text-gray-200">{row.moduleName}</span>
+						<span class="module-content-badge shrink-0 rounded-sm bg-badge px-1 text-[10px] text-badge-text">{row.moduleName}</span>
 						<button
 							type="button"
-							class="shrink-0 text-gray-400"
+							class="shrink-0 text-text-muted"
 							title={row.visible ? 'Hide in the viewport (this device only)' : 'Show in the viewport'}
 							aria-label={row.visible ? 'Hide in the viewport' : 'Show in the viewport'}
 							onclick={() => toggleHidden(row)}
 						>
-							{#if row.visible}<Eye size={14} aria-hidden="true" />{:else}<EyeOff size={14} aria-hidden="true" />{/if}
+							{#if row.visible}<Icon name="eye" size={16} aria-hidden="true" />{:else}<Icon name="eye-off" size={16} aria-hidden="true" />{/if}
 						</button>
 					</div>
 					{#if expanded[row.name]}
 						{#each row.children as child (child.uuid)}
-							<p class="module-content-child truncate text-xs text-gray-400" style={'padding-left:' + (child.depth * 12 + 20) + 'px'}>
+							<p class="module-content-child truncate text-xs text-text-muted" style={'padding-left:' + (child.depth * 12 + 20) + 'px'}>
 								{child.name}
 							</p>
 						{/each}
 						{#if row.more}
-							<p class="module-content-more pl-8 text-xs italic text-gray-400">+{row.more} more</p>
+							<p class="module-content-more pl-8 text-xs italic text-text-muted">+{row.more} more</p>
 						{/if}
 						{#if !row.children.length && !row.more}
-							<p class="pl-8 text-xs italic text-gray-400">No named parts</p>
+							<p class="pl-8 text-xs italic text-text-muted">No named parts</p>
 						{/if}
 					{/if}
 				</div>

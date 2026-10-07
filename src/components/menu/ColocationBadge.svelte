@@ -29,9 +29,9 @@
 		gap: 6px;
 		padding: 4px 10px;
 		border-radius: 999px;
-		background: rgba(17, 24, 39, 0.78);
-		border: 1px solid rgba(107, 114, 128, 0.35);
-		color: #d1d5db;
+		background: color-mix(in srgb, var(--surface-1) 85%, transparent);
+		border: 1px solid var(--border);
+		color: var(--text-2);
 		font-size: 12px;
 		line-height: 1;
 		pointer-events: none;
@@ -40,6 +40,6 @@
 		width: 8px;
 		height: 8px;
 		border-radius: 50%;
-		background: #34d399;
+		background: var(--ink-good);
 	}
 </style>

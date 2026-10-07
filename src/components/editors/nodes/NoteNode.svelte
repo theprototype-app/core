@@ -27,7 +27,7 @@
 	isVisible={selected}
 	minWidth={120}
 	minHeight={60}
-	color="var(--accent, #60a5fa)"
+	color="var(--accent)"
 	onResize={(_e, p) => (live = { w: p.width, h: p.height })}
 	onResizeEnd={(_e, p) => {
 		live = null;
@@ -77,11 +77,10 @@
 		--note-purple: 168 85 247;
 		--note-gray: 148 163 184;
 		--note-fill-alpha: 0.16;
-		--note-ink: var(--text, #e5e7eb);
+		--note-ink: var(--text);
 	}
 	:global(:root[data-theme='light']) {
 		--note-fill-alpha: 0.22;
-		--note-ink: var(--text, #111827);
 	}
 	.tp-note {
 		display: flex;
@@ -90,7 +89,7 @@
 		border: 1px solid rgb(var(--note-rgb) / 0.75);
 		background: rgb(var(--note-rgb) / var(--note-fill-alpha));
 		color: var(--note-ink);
-		box-shadow: 0 6px 16px rgb(0 0 0 / 0.25);
+		box-shadow: 0 6px 16px color-mix(in srgb, var(--bg-app) 25%, transparent);
 		overflow: hidden;
 	}
 	.tp-note-frame {
@@ -138,7 +137,7 @@
 	}
 	.tp-note-body :global(code) {
 		font-family: ui-monospace, monospace;
-		background: rgb(0 0 0 / 0.2);
+		background: color-mix(in srgb, var(--bg-app) 20%, transparent);
 		border-radius: 3px;
 		padding: 0 3px;
 	}

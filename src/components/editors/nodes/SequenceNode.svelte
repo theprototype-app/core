@@ -29,11 +29,11 @@
 	<div class="flex w-full flex-col gap-0.5">
 		<div class="relative -mx-3 flex h-5 items-center px-3">
 			<Socket kind="target" nodeType={data.type} position={Position.Left} id="trigger" style="top: 50%;" />
-			<span class="text-[10px] text-gray-300">trigger</span>
+			<span class="text-[10px] text-text-2">trigger</span>
 		</div>
 		{#each STEPS as step (step)}
 			<div class="relative -mx-3 flex h-6 items-center gap-1 px-3">
-				<span class="w-10 shrink-0 text-[10px] text-gray-400">wait</span>
+				<span class="w-10 shrink-0 text-[10px] text-text-muted">wait</span>
 				<DragRow
 					nodrag
 					step={0.05}
@@ -44,14 +44,14 @@
 				/>
 				<span
 					class="w-12 shrink-0 text-right text-[10px]"
-					class:text-primary-300={!!handles['step' + step]}
-					class:text-gray-300={!handles['step' + step]}
+					class:text-accent-text={!!handles['step' + step]}
+					class:text-text-2={!handles['step' + step]}
 				>
 					{handles['step' + step] ? '● ' : ''}step{step}
 				</span>
 				<Socket kind="source" nodeType={data.type} position={Position.Right} id={`step${step}`} style="top: 50%;" />
 			</div>
 		{/each}
-		<p class="text-[10px] text-gray-400">delays add up from the trigger</p>
+		<p class="text-[10px] text-text-muted">delays add up from the trigger</p>
 	</div>
 </NodeWrapper>

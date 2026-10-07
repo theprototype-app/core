@@ -35,6 +35,7 @@
 	import { userdata, peers } from '../../stores/appStore';
 	import Icon from '../ui/Icon.svelte';
 	import { onDestroy } from 'svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	/** @type {{ element: any, runtime?: any, editor?: boolean, onpress?: (id: string) => void }} */
 	let { element, runtime = null, editor = false, onpress = undefined } = $props();
@@ -42,9 +43,10 @@
 	const style = $derived(element?.style ?? {});
 	const kind = $derived(element?.kind ?? 'text');
 
-	// Every var() chain ENDS IN A LITERAL. Neither the dark nor the light theme defines
-	// --surface/--accent, so a token-only chain silently resolves to nothing (the
-	// ToolboxWindow rule). A style value may itself be a token NAME, which is why the
+	// An authored token NAME gets a literal fallback: not every name an author types is a
+	// defined token, and an undefined chain silently resolves to nothing (38 R11: the
+	// redesign tokens — --accent, --surface-1 … — are defined in every theme, so the app's
+	// own defaults use them bare). A style value may itself be a token NAME, which is why the
 	// authored value is wrapped rather than used raw.
 	/** @param {any} value @param {string} fallback */
 	function paint(value, fallback) {
@@ -56,6 +58,11 @@
 			? `var(--${text}, ${fallback})`
 			: text;
 	}
+	// the GAME HUD's default look when the author set no colour — game content, the same for
+	// every player in every theme (it sits over the 3D view, not on app chrome)
+	const HUD_INK = '#f3f4f6'; // tokens-ok: game HUD default text/crosshair colour (game content, theme-independent)
+	const HUD_TRACK = 'rgb(17 24 39 / 0.55)'; // tokens-ok: game HUD radial track default (game content, theme-independent)
+	const HUD_FLASH = '#ef4444'; // tokens-ok: game HUD damage-flash default (game content, theme-independent)
 	const CSS_KEYWORDS = new Set(['transparent', 'currentcolor', 'inherit', 'none', 'white', 'black', 'red', 'green', 'blue', 'gray', 'grey', 'yellow', 'orange']);
 
 	// what the element SAYS right now. `runtime` comes from the flow graph (A3) and is
@@ -352,9 +359,9 @@
 
 	const boxStyle = $derived(
 		[
-			`color: ${paint(style.color, '#f3f4f6')}`,
+			`color: ${paint(style.color, HUD_INK)}`,
 			`background: ${paint(style.bg, 'transparent')}`,
-			style.border ? `border: 1px solid ${paint(style.border, 'rgb(75 85 99 / 0.7)')}` : 'border: 0',
+			style.border ? `border: 1px solid ${paint(style.border, 'rgb(75 85 99 / 0.7)')}` : 'border: 0', // tokens-ok: game HUD default border (game content, theme-independent)
 			`border-radius: ${Number(style.radius ?? 0)}px`,
 			`padding: ${Number(style.pad ?? 0)}px`,
 			`font-size: ${Number(style.size ?? 14)}px`,
@@ -401,7 +408,7 @@
 		<div
 			class="hud-bar-fill"
 			class:hud-bar-fill-v={vertical}
-			style="{vertical ? 'height' : 'width'}: {pct}%; background: {paint(style.color, 'var(--accent, #ef562f)')}"
+			style="{vertical ? 'height' : 'width'}: {pct}%; background: {paint(style.color, 'var(--accent)')}"
 		></div>
 		{#if element?.showPercent}
 			<span class="hud-bar-label">{Math.round(pct)}%</span>
@@ -425,11 +432,11 @@
 		{#each ['t', 'b', 'l', 'r'] as arm (arm)}
 			<span
 				class="hud-cross-arm hud-cross-{arm}"
-				style="background: {paint(style.color, '#f3f4f6')}; --cw: {Number(element?.thickness ?? 2)}px; --cg: {Number(element?.gap ?? 4)}px"
+				style="background: {paint(style.color, HUD_INK)}; --cw: {Number(element?.thickness ?? 2)}px; --cg: {Number(element?.gap ?? 4)}px"
 			></span>
 		{/each}
 		{#if element?.dot !== false}
-			<span class="hud-cross-dot" style="background: {paint(style.color, '#f3f4f6')}; width: {Number(element?.thickness ?? 2)}px; height: {Number(element?.thickness ?? 2)}px"></span>
+			<span class="hud-cross-dot" style="background: {paint(style.color, HUD_INK)}; width: {Number(element?.thickness ?? 2)}px; height: {Number(element?.thickness ?? 2)}px"></span>
 		{/if}
 	</div>
 {:else if kind === 'slider'}
@@ -510,7 +517,7 @@
 	<div class="hud-el hud-rich" style={boxStyle}>
 		{#each richRuns as run, i (i)}{#if run.kind === 'br'}<br />{:else if run.kind === 'icon'}<span
 					class="hud-rich-icon"
-					style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}><Icon name={run.name} size={14} /></span
+					style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}><Icon name={run.name} size={14} snap={false} /></span
 				>{:else}<span
 					class="hud-rich-run"
 					class:hud-rich-b={run.bold}
@@ -523,10 +530,10 @@
 	     cannot scroll is not a scroll panel, and the layer is pointer-events: none. -->
 	<div class="hud-el hud-scroll" style={boxStyle}>
 		{#if element?.title}<div class="hud-list-title">{element.title}</div>{/if}
-		<div class="hud-scroll-body">
+		<div class="hud-scroll-body" use:minimalScroll>
 			{#each richRuns as run, i (i)}{#if run.kind === 'br'}<br />{:else if run.kind === 'icon'}<span
 						class="hud-rich-icon"
-						style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}><Icon name={run.name} size={14} /></span
+						style={run.color ? `color: ${paint(run.color, 'inherit')}` : ''}><Icon name={run.name} size={14} snap={false} /></span
 					>{:else}<span
 						class="hud-rich-run"
 						class:hud-rich-b={run.bold}
@@ -596,7 +603,7 @@
 		{#each Array(slotCount) as _, i (i)}
 			{#if i < filled || element?.empty !== false}
 				<span class="hud-icon-slot" class:hud-icon-empty={i >= filled}
-					><Icon name={String(element?.icon ?? 'heart')} size={Number(style.size ?? 18)} /></span
+					><Icon name={String(element?.icon ?? 'heart')} size={Number(style.size ?? 18)} snap={false} /></span
 				>
 			{/if}
 		{/each}
@@ -611,7 +618,7 @@
 				cy="50"
 				r={RADIAL_R}
 				fill="none"
-				stroke={paint(style.bg, 'rgb(17 24 39 / 0.55)')}
+				stroke={paint(style.bg, HUD_TRACK)}
 				stroke-width={Number(element?.thickness ?? 6)}
 			/>
 			<circle
@@ -619,7 +626,7 @@
 				cy="50"
 				r={RADIAL_R}
 				fill="none"
-				stroke={paint(style.color, 'var(--accent, #ef562f)')}
+				stroke={paint(style.color, 'var(--accent)')}
 				stroke-width={Number(element?.thickness ?? 6)}
 				stroke-linecap="round"
 				stroke-dasharray={RADIAL_C}
@@ -646,7 +653,7 @@
 			{#if pulse > 0}
 				<div
 					class="hud-flash-run"
-					style="background: {paint(style.bg, '#ef4444')}; --hud-flash-peak: {Number(style.opacity ?? 0.45)}; --hud-flash-fade: {Math.max(0.05, Number(element?.fade ?? 0.45))}s"
+					style="background: {paint(style.bg, HUD_FLASH)}; --hud-flash-peak: {Number(style.opacity ?? 0.45)}; --hud-flash-fade: {Math.max(0.05, Number(element?.fade ?? 0.45))}s"
 				></div>
 			{/if}
 		{/key}
@@ -781,6 +788,7 @@
 		white-space: nowrap;
 		opacity: 0.85;
 	}
+	/* tokens-ok-begin: game HUD debug-pill chips (game content over the 3D view, theme-independent) */
 	.hud-debug-chip {
 		margin-left: 6px;
 		padding: 0 4px;
@@ -791,6 +799,7 @@
 	.hud-debug-playing {
 		background: rgb(34 197 94 / 0.35);
 	}
+	/* tokens-ok-end */
 	/* ---- 21-E7.6 the game pack ---------------------------------------------------- */
 	.hud-map {
 		padding: 0;
@@ -839,14 +848,14 @@
 		flex: 1;
 		align-items: center;
 		justify-content: center;
-		border: 1px solid rgb(148 163 184 / 0.35);
+		border: 1px solid rgb(148 163 184 / 0.35); /* tokens-ok: game HUD hotbar slot default (game content, theme-independent) */
 		border-radius: 4px;
-		background: rgb(0 0 0 / 0.25);
+		background: rgb(0 0 0 / 0.25); /* tokens-ok: game HUD hotbar slot default (game content, theme-independent) */
 		overflow: hidden;
 	}
 	.hud-hot-on {
-		border-color: var(--accent, #ef562f);
-		background: rgb(255 255 255 / 0.12);
+		border-color: var(--accent);
+		background: rgb(255 255 255 / 0.12); /* tokens-ok: game HUD selected-slot tint (game content, theme-independent) */
 	}
 	.hud-hot-num {
 		position: absolute;
@@ -912,15 +921,15 @@
 		cursor: pointer;
 		overflow: hidden;
 		border-radius: 3px;
-		background: rgb(0 0 0 / 0.2);
+		background: rgb(0 0 0 / 0.2); /* tokens-ok: game HUD tab default (game content, theme-independent) */
 		color: inherit;
 		font: inherit;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 	.hud-tab-on {
-		background: var(--accent, #38bdf8);
-		color: #0b1220;
+		background: var(--accent);
+		color: var(--on-accent);
 	}
 	.hud-tab:disabled {
 		cursor: not-allowed;
@@ -943,13 +952,13 @@
 	}
 	.hud-confirm-btn {
 		flex: 1;
-		border: 1px solid rgb(148 163 184 / 0.45);
+		border: 1px solid rgb(148 163 184 / 0.45); /* tokens-ok: game HUD confirm button default (game content, theme-independent) */
 		border-radius: 4px;
-		background: rgb(0 0 0 / 0.25);
+		background: rgb(0 0 0 / 0.25); /* tokens-ok: game HUD confirm button default (game content, theme-independent) */
 		padding: 1px 4px;
 	}
 	.hud-confirm-yes {
-		border-color: var(--accent, #ef562f);
+		border-color: var(--accent);
 	}
 	/* ---- 21-E7.4 / E7.5 the hosted kinds ------------------------------------------ */
 	.hud-custom,
@@ -968,10 +977,10 @@
 		right: 2px;
 		bottom: 1px;
 		border-radius: 3px;
-		background: rgb(127 29 29 / 0.85);
+		background: var(--danger);
 		padding: 0 4px;
 		font-size: 9px;
-		color: #fecaca;
+		color: var(--on-danger);
 	}
 	.hud-input {
 		display: flex;
@@ -986,7 +995,7 @@
 	.hud-in-range {
 		min-width: 0;
 		flex: 1;
-		accent-color: var(--accent, #38bdf8);
+		accent-color: var(--accent);
 	}
 	.hud-in-read {
 		flex-shrink: 0;
@@ -1001,7 +1010,7 @@
 		flex: 1;
 		border: 0;
 		border-radius: 3px;
-		background: rgb(0 0 0 / 0.25);
+		background: rgb(0 0 0 / 0.25); /* tokens-ok: game HUD input field default (game content, theme-independent) */
 		color: inherit;
 		font: inherit;
 		padding: 1px 4px;
@@ -1021,8 +1030,8 @@
 		opacity: 0.7;
 	}
 	.hud-toggle-on .hud-toggle-box {
-		background: var(--accent, #38bdf8);
-		border-color: var(--accent, #38bdf8);
+		background: var(--accent);
+		border-color: var(--accent);
 		opacity: 1;
 	}
 	.hud-el {

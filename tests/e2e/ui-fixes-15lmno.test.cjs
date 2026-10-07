@@ -32,7 +32,7 @@ h.run(async () => {
 	// value, and must follow it when the material changes.
 	const readRoughness = () =>
 		A.page.evaluate(() => {
-			const row = [...document.querySelectorAll('.ui-row')].find((r) =>
+			const row = [...document.querySelectorAll('.ui-row, .pr')].find((r) =>
 				r.textContent?.trim().startsWith('Roughness')
 			);
 			const num = row?.querySelector('input.dn-input');
@@ -218,7 +218,7 @@ h.run(async () => {
 		const sticky = all.filter((t) => t?.sticky).length;
 		w.appNotice.set(null);
 		w.toastStore.set([]);
-		return { shown, label, expected: Math.max(0, transient - 4), sticky };
+		return { shown, label, expected: Math.max(0, transient - 3), sticky }; // 38 R8: the cap is 3 (SPEC §5)
 	});
 	h.check(stickySurvives.shown, 'a sticky prompt is never folded away by a burst');
 	h.check(

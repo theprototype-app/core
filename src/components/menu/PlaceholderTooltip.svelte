@@ -44,7 +44,7 @@
 			title: (hit.object.name || info.item) + (state === VIS_FAILED ? ' — failed' : state === VIS_STUCK ? ' — stuck' : ' — loading'),
 			text: describeLoad(info.load),
 			hint: state === VIS_FAILED ? 'Double-click or right-click ▸ Retry loading · Replace model…' : 'You can already move it — the model lands where the box is',
-			tone: state === VIS_FAILED ? 'var(--icon-danger)' : state === VIS_STUCK ? 'var(--icon-warning, var(--icon-danger))' : 'var(--accent)'
+			tone: state === VIS_FAILED ? 'var(--icon-danger)' : state === VIS_STUCK ? 'var(--icon-warning)' : 'var(--accent)'
 		};
 	}
 </script>
@@ -68,12 +68,12 @@
 		border-radius: 6px;
 		border: 1px solid var(--border);
 		border-left-width: 3px;
-		background: var(--surface, #1f2937);
-		color: var(--text, #e5e7eb);
+		background: var(--surface-1);
+		color: var(--text);
 		font-size: 11px;
 		line-height: 1.35;
 		pointer-events: none;
-		box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+		box-shadow: var(--shadow-window);
 		word-break: break-all;
 	}
 	.ph-title {

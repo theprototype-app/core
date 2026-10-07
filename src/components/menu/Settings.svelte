@@ -15,7 +15,7 @@
 	const narrowQuery = typeof window === 'undefined' ? null : window.matchMedia?.('(max-width: 640px)');
 	let narrowSettings = !!narrowQuery?.matches;
 	narrowQuery?.addEventListener?.('change', (e) => (narrowSettings = e.matches));
-	import { HardDrive, Lock, RotateCcw, X } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import LoadingSettings from './settings/LoadingSettings.svelte';
 	import CheckpointSettings from './settings/CheckpointSettings.svelte'; // 36 B14
@@ -37,7 +37,7 @@
 	import { gameSoundVolume } from '$lib/gameSfx';
 	import { gameMusicVolume } from '$lib/gameMusic';
 	import { showGrid, vrOverride } from '../../stores/sceneStore.js';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, settingsSearchSeed, hidePanels, restorePanels, advancedMode, showEnvInList, objectSearchEnabled, showSimControls, showToast, showRoomsButton, toastsInDrawerOnly, mobileUndockAllowed, enableShiftAdd, noteDoubleClickToOpen, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, touchTools, floatingToolbar, toolbarAlwaysOnTop } from '../../stores/appStore.js';
 	import { trackpadMode, allowBrowserZoom, reversePan, panEnabled, pinchZoomEnabled, lastWheelEvents } from '$lib/trackpadNav';
 	import { lightHelperLength } from '$lib/lightHelpers';
 	import { flowMouseBindings, FLOW_MOUSE_BINDINGS } from '$lib/flowPrefs';
@@ -586,6 +586,11 @@
 	// the heterogeneous markup. Rows carry the `.setting-row` class; inner controls
 	// live in <p>, so hiding a row never hides a control inside a shown row.
 	let settingsQuery = '';
+	// 38 R8 (NOTES-38 #14): the command palette opens Settings already searching for a row
+	$: if ($settingsOpen && $settingsSearchSeed) {
+		settingsQuery = $settingsSearchSeed;
+		settingsSearchSeed.set('');
+	}
 	let searchInput: any; // the search box, for refocus after the clear (X) button
 	/**
 	 * Searching must EXPAND every section first. flowbite-svelte 1.x renders an
@@ -835,7 +840,7 @@
 						searchInput?.focus();
 					}}
 				>
-					<X size={14} aria-hidden="true" />
+					<Icon name="x" size={16} aria-hidden="true" />
 				</button>
 			{/if}
 		</div>
@@ -1629,7 +1634,7 @@
 					<SettingRow name="Storage used">
 						<svelte:fragment slot="control">
 							<Button id="settings-storage" size="xs" color="alternative" onclick={openStorageModal}>
-								<HardDrive size={14} class="mr-1" aria-hidden="true" />Show breakdown
+								<Icon name="hard-drive" size={16} class="mr-1" aria-hidden="true" />Show breakdown
 							</Button>
 						</svelte:fragment>
 						<span>
@@ -2216,7 +2221,7 @@
 											{:else}
 												<span class="inline-flex shrink-0 items-center gap-1" title={shortcut.fixedReason || 'listed for reference'}>
 													<kbd class="min-w-16 rounded-lg border border-gray-200 bg-gray-100 px-2 py-1 text-center text-xs font-semibold text-gray-800 dark:border-gray-500 dark:bg-gray-600 dark:text-gray-100">{shortcut.keys}</kbd>
-													<Lock class="h-3 w-3 text-gray-400" aria-hidden="true" />
+													<Icon name="lock" class="text-gray-400" aria-hidden="true" />
 												</span>
 											{/if}
 											<span class="text-sm text-gray-600 dark:text-gray-300">{shortcut.label}</span>
@@ -2229,7 +2234,7 @@
 													title={'Reset to ' + shortcut.defaultKeys}
 													aria-label={'Reset ' + shortcut.label + ' to ' + shortcut.defaultKeys}
 													on:click={() => resetOneShortcut(shortcut.id)}>
-													<RotateCcw class="h-3 w-3" aria-hidden="true" />
+													<Icon name="rotate-ccw" aria-hidden="true" />
 												</button>
 											{/if}
 										</div>

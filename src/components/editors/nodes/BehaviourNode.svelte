@@ -58,49 +58,49 @@
 
 <NodeWrapper type={data.type} label={data.label}>
 	<div class="flex w-full flex-col gap-1" data-behaviour-card={id}>
-		<span class="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-200" title={data.name}>{data.name || 'Behaviour'}</span>
+		<span class="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-text-2" title={data.name}>{data.name || 'Behaviour'}</span>
 		{#each sockets.inputs as socket (socket.name)}
 			<div class="behaviour-in relative -mx-3 flex h-5 items-center px-3" data-socket={socket.name}>
 				<Socket kind="target" nodeType="behaviour" id={socket.name} position={Position.Left} forceType="event" style="top: 50%;" />
-				<span class="max-w-full truncate text-[10px] text-gray-300">▸ {socket.name}</span>
+				<span class="max-w-full truncate text-[10px] text-text-2">▸ {socket.name}</span>
 			</div>
 		{/each}
 		{#each sockets.outputs as socket (socket.name)}
 			<div class="behaviour-out relative -mx-3 flex h-5 items-center justify-end gap-1 px-3" data-socket={socket.name}>
 				{#if socket.kind === 'value'}
-					<span class="max-w-[110px] truncate font-mono text-[10px] text-sky-300" title="live value (replicated)">{fmt(live?.[socket.name])}</span>
+					<span class="max-w-[110px] truncate font-mono text-[10px] text-accent-text" title="live value (replicated)">{fmt(live?.[socket.name])}</span>
 				{/if}
-				<span class="truncate text-[10px] text-gray-300">{socket.name}{socket.kind === 'event' ? ' ⚡' : ''}</span>
+				<span class="truncate text-[10px] text-text-2">{socket.name}{socket.kind === 'event' ? ' ⚡' : ''}</span>
 				<Socket kind="source" nodeType="behaviour" id={socket.name} position={Position.Right} forceType={socket.type} style="top: 50%;" />
 			</div>
 		{/each}
-		<span class="flex items-center gap-1 text-[10px] text-gray-400">
+		<span class="flex items-center gap-1 text-[10px] text-text-muted">
 			<span
 				class="inline-block h-2 w-2 rounded-full"
-				class:bg-emerald-400={state === 'running'}
-				class:bg-amber-400={state === 'loading'}
-				class:bg-red-500={state === 'error'}
-				class:bg-gray-500={state === 'off'}
+				class:bg-ink-good={state === 'running'}
+				class:bg-ink-warn={state === 'loading'}
+				class:bg-ink-bad={state === 'error'}
+				class:bg-control-off={state === 'off'}
 			></span>
 			<span data-behaviour-state>{state}</span>
 			{#if state === 'running'}· {handlers} handler{handlers === 1 ? '' : 's'}{/if}
 		</span>
 		<div class="flex gap-1">
 			<button
-				class="nodrag nopan behaviour-open rounded-sm bg-[#ff4000] px-2 py-0.5 text-white"
+				class="nodrag nopan behaviour-open rounded-sm bg-accent-fill px-2 py-0.5 text-on-accent hover:brightness-110"
 				on:click={() => behaviourViewOpen.set({ id, graphId: $activeGraphId })}
 			>
 				Open view
 			</button>
 			<button
-				class="nodrag nopan behaviour-code rounded-sm bg-gray-600 px-2 py-0.5 text-white"
+				class="nodrag nopan behaviour-code rounded-sm bg-surface-active px-2 py-0.5 text-text hover:bg-border-strong"
 				title="Edit this behaviour's source in the code workspace (Ctrl+S reloads it)"
 				on:click={() => import('$lib/codeWorkspace').then((m) => m.openCode({ source: 'behaviour', ref: { nodeId: id, graphId: $activeGraphId } }))}
 			>
 				Code
 			</button>
 			<button
-				class="nodrag nopan rounded-sm bg-gray-600 px-2 py-0.5 text-white"
+				class="nodrag nopan rounded-sm bg-surface-active px-2 py-0.5 text-text hover:bg-border-strong"
 				title={data.enabled === false ? 'Run this behaviour' : 'Stop this behaviour (its state is kept)'}
 				on:click={() => setNodeData(id, { enabled: data.enabled === false })}
 			>
@@ -108,10 +108,10 @@
 			</button>
 		</div>
 		{#if pending}
-			<span class="max-w-[200px] wrap-break-word text-[10px] text-amber-400" title={pending}>⚠ {pending}</span>
+			<span class="max-w-[200px] wrap-break-word text-[10px] text-ink-warn" title={pending}>⚠ {pending}</span>
 		{/if}
 		{#if firstError}
-			<span class="max-w-[200px] wrap-break-word text-[10px] text-red-500" title={firstError.message}>⚠ {firstError.line ? 'line ' + firstError.line + ': ' : ''}{firstError.message}</span>
+			<span class="max-w-[200px] wrap-break-word text-[10px] text-ink-bad" title={firstError.message}>⚠ {firstError.line ? 'line ' + firstError.line + ': ' : ''}{firstError.message}</span>
 		{/if}
 	</div>
 </NodeWrapper>

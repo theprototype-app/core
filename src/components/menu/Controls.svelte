@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { Activity, Braces, Clapperboard, Code, Cog, Eye, FolderOpen, Grid2x2, Hand, List, Maximize2, MessageSquare, Monitor, Move, Palette, Pin, Play, RectangleGoggles, RotateCcw, SquarePen, Sun, Workflow } from '@lucide/svelte';
-	import { Listgroup } from 'flowbite-svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
@@ -32,6 +31,10 @@
 	import LocalObjects from './LocalObjects.svelte';
 	import ModuleContent from './ModuleContent.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import SearchField from '../ui/SearchField.svelte';
+	import Icon from '../ui/Icon.svelte';
+	import { createAttachmentKey, fromAction } from 'svelte/attachments';
 	import MobileAddButton from './MobileAddButton.svelte';
 	import AiHudButton from './AiHudButton.svelte';
 	import SimControls from './SimControls.svelte';
@@ -108,8 +111,11 @@
 	// 151: tint follows the ACTIVE selection set (cleared on deselect), not the
 	// sticky selectedObject (which keeps the last object for the inspector bind)
 	const hasSel = $derived($selectedObjects.length > 0);
-	const ICON_ON = 'text-primary-500';
-	const ICON_OFF = 'text-black dark:text-slate-200';
+	// 38 R8: the armed state is painted on the CELL (`.hud-cell.on`, the accent's soft fill);
+	// the glyph keeps `text-accent` only as the MARKER the controls/dock suites read
+	// (hud.css lets the cell's colour win over it). ICON_OFF adds nothing.
+	const ICON_ON = 'text-accent';
+	const ICON_OFF = '';
 
 	// --- object list search/filter: rows read the visible-uuid set via context ---
 	// 80: type chips MULTI-select (union); All clears and, clicked again,
@@ -392,8 +398,8 @@
 	// so it adds no on:-directive/a11y warnings in this on:-style component.
 	function shareDropZone(node: HTMLElement) {
 		const setActive = (on: boolean) => {
-			node.style.boxShadow = on ? 'inset 0 0 0 2px rgb(59 130 246 / 0.7)' : '';
-			node.style.background = on ? 'rgb(59 130 246 / 0.08)' : '';
+			node.style.boxShadow = on ? 'inset 0 0 0 2px var(--accent)' : '';
+			node.style.background = on ? 'var(--accent-soft)' : '';
 		};
 		const over = (e: DragEvent) => {
 			if (e.dataTransfer?.types.includes('application/x-object-uuid')) {
@@ -486,7 +492,7 @@
 	});
 
 	/** Find the real scrolling ancestor by SCROLLABILITY, never by class name — the
-	 * scroller is flowbite's `Listgroup`, whose element we do not own (the deep-link
+	 * scroller is the `.obj-scroller` (was flowbite's `Listgroup`, whose element we did not own; the deep-link
 	 * ruling in Section.svelte, same reason). */
 	function trackTreeScroll(node: HTMLElement) {
 		let ro: any = null;
@@ -681,11 +687,6 @@
 		const timer = setInterval(refreshEnvRows, 1000);
 		return () => clearInterval(timer);
 	});
-	let classActive =
-		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-hidden focus:ring-4 focus:ring-primary-300';
-	// 33 E2: the toggle cell's twin of classActive — same hover, no click-focus ring
-	const cellToggleClass =
-		'group inline-flex items-center justify-center hover:bg-primary-700 focus:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-300';
 
 	// 18-B: object-list window size limits, shared with the clamp helpers
 	const OBJ_WIN_MIN = { minW: 250, minH: 200 };
@@ -717,6 +718,26 @@
 	}
 	const objHideSearch = $derived(objHeaderW < 260);
 	const objHideLabel = $derived(objHeaderW < 190);
+	// 38 R6: what the header element carries now that WindowChrome draws it — the width
+	// probe above (as an attachment) and the drop-to-root target
+	const objHeaderAttrs = {
+		[createAttachmentKey()]: fromAction(objHeaderWidth),
+		role: 'list',
+		ondragover: (e: DragEvent) => {
+			if (e.dataTransfer?.types.includes('application/x-object-uuid')) {
+				e.preventDefault();
+				e.dataTransfer.dropEffect = 'move';
+			}
+		},
+		ondrop: (e: DragEvent) => {
+			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
+			if (!uuid) return;
+			e.preventDefault();
+			const obj = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
+			if (obj?.userData?.__localOnly) shareObject(obj);
+			else moveObjectToGroup(uuid, 'root');
+		}
+	};
 
 	function dragMe(node) {
 		startWindowDragGuard(); // 36 F3: no browser menu from a right press mid-drag
@@ -1069,15 +1090,15 @@
 	 *  unmistakable; `clapperboard` beats `film`, whose plain rectangle muddles against
 	 *  every other boxy glyph; `palette` says materials where `sparkles` says nothing. */
 	const VIEW_ICONS: Record<string, any> = {
-		flowcode: Code,
-		animation: Clapperboard,
-		uv: Grid2x2,
-		shader: Palette,
-		hud: Monitor,
+		flowcode: 'code',
+		animation: 'clapperboard',
+		uv: 'grid-2x2',
+		shader: 'palette',
+		hud: 'monitor',
 		// 34 PF: a pulse trace reads as "performance" beside the five editor glyphs
-		profiler: Activity,
+		profiler: 'activity',
 		// 36-code: `{}` — the code workspace, distinct from Flow Code's `</>`
-		code: Braces
+		code: 'braces'
 	};
 
 	// The six roster buttons. Every title and every handler is VERBATIM what the
@@ -1091,45 +1112,45 @@
 		mode: {
 			title: 'Interact mode (I)',
 			slot: 'editor-mode-toggle',
-			icon: Hand,
+			icon: 'tool:interact',
 			tint: () => ($editorMode === 'interact' ? ICON_ON : ICON_OFF),
 			pressed: () => $editorMode === 'interact',
 			run: () => toggleEditorMode()
 		},
 		move: {
 			title: 'Move (1)',
-			icon: Move,
+			icon: 'move',
 			tint: () => (hasSel && $transformMode === 'translate' ? ICON_ON : ICON_OFF),
 			run: () => setTransformMode('translate')
 		},
 		rotate: {
 			title: 'Rotate (2)',
-			icon: RotateCcw,
+			icon: 'rotate-ccw',
 			tint: () => (hasSel && $transformMode === 'rotate' ? ICON_ON : ICON_OFF),
 			run: () => setTransformMode('rotate')
 		},
 		scale: {
 			title: 'Scale (3)',
-			icon: Maximize2,
+			icon: 'maximize-2',
 			tint: () => (hasSel && $transformMode === 'scale' ? ICON_ON : ICON_OFF),
 			run: () => setTransformMode('scale')
 		},
 		objects: {
 			title: 'Object list (O)',
-			icon: List,
+			icon: 'list',
 			tint: () => (!$objectListClose ? ICON_ON : ICON_OFF),
 			run: () => togglePanel('objects')
 		},
 		flow: {
 			title: 'Node editor (N)',
-			icon: Workflow,
+			icon: 'workflow',
 			tint: () => (flowShown ? ICON_ON : ICON_OFF),
 			run: () => togglePanel('flow')
 		},
 		explorer: {
 			title: 'Explorer',
 			slot: 'explorer-slot',
-			icon: FolderOpen,
+			icon: 'folder-open',
 			tint: () => (panelShown.explorer ? ICON_ON : ICON_OFF),
 			run: () => togglePanel('explorer')
 		},
@@ -2034,55 +2055,23 @@
      `fr` columns used to take their width from the spacer, and a flex row has to say
      it out loud. -->
 <!-- 36 F2: a toolbar never takes the keyboard (keyScope `keep`) -->
+<!-- 38 R8: the toolbar is one glass bar (styles/hud.css): icon cells 38 px on a fine pointer,
+     44 px on touch, the accent's soft fill on an armed cell, and Play — the only `--live`
+     control — a 44 px circle sitting IN the bar instead of overhanging it. Ids, titles, the
+     roster, the drag and every handler are unchanged. -->
 <nav
 	id="controls-pill"
 	data-key-scope="keep"
-	class="border-gray-200 dark:border-gray-600 absolute max-w-lg -translate-x-1/2 rtl:translate-x-1/2 border bottom-4 start-1/2 h-10 w-max min-w-max shrink-0 bg-white rounded-full dark:bg-gray-700 {pillZClass}"
+	class="tp-ui hud-glass hud-bar absolute -translate-x-1/2 rtl:translate-x-1/2 bottom-4 start-1/2 w-max min-w-max shrink-0 {pillZClass}"
 	style={pillStyle}
 	use:toolbarDrag
 >
-	<div class="mx-auto flex h-full max-w-lg">
-		{#each visibleCells as cell, i (cell.id)}
+	<div class="hud-bar-row">
+		{#each visibleCells as cell (cell.id)}
 			{#if cell.id === SPACER}
-				<!-- QW (Controls Option A): the transparent WELL the floating play button
-				     sits in — the old filled square peeked out around the circle. Hovering
-				     either NEIGHBOR paints it too (the arbitrary variants below), so the
-				     hover red runs continuously up to the round button instead of leaving
-				     pill-colored notches above/below the circle.
-				       TWO HALVES so each neighbor's hover paints only ITS side up to the
-				     circle (a full-width paint peeked out red on the opposite side of the
-				     FAB). No transition — the neighbors' own hover backgrounds are instant,
-				     a fade here lagged visibly.
-				       4b: the FAB is the well's own THIRD child now (see below), which is
-				     why the right half is addressed as `:nth-child(2)` rather than
-				     `:last-child` — the FAB would otherwise steal that position and the
-				     right-hand hover paint would silently stop appearing.
-				       33 E3: the neighbour test is `*:hover`, never `p:hover` — the Interact
-				     toggle is a <button> (it carries aria-pressed), so beside the well it lit
-				     itself and left the two pill-coloured corners this paint exists to fill. -->
-				<div class="relative flex h-full w-10 items-stretch justify-center">
-					<div
-						class={'h-full w-5 [*:hover+div>&:first-child]:bg-primary-700' + (i === 0 ? ' rounded-l-full' : '')}
-					></div>
-					<div
-						class={'h-full w-5 [div:has(+*:hover)>&:nth-child(2)]:bg-primary-700' +
-							(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}
-					></div>
-					<!-- QW (Controls Option A): the WHOLE button scales on hover anywhere on
-					     it (the centering translate lives in a tailwind class so the two
-					     transforms compose instead of fighting). clip-path circles the HIT
-					     AREA too: the 50px square box used to intercept clicks/hovers meant
-					     for the cells it overlaps. fill=currentColor keeps the play triangle
-					     SOLID (lucide is stroke-only by default); the 2px nudge is the
-					     classic optical centering.
-					       4b: the FAB LIVES IN THE BAR now instead of being an absolutely
-					     positioned sibling with its own `--bottom-inset` arithmetic. It
-					     inherits the pill's ride for free (one anchor, one transition, no
-					     chance of the two drifting apart mid-animation) and it TRACKS THE
-					     WELL, so moving the well moves the play button. `top: -5px` against
-					     the 38px inner row reproduces the old geometry exactly: a 50px
-					     circle 5px proud of the bar's top and 7px below its bottom, which is
-					     the 4px/6px overhang measured against the bordered 40px pill. -->
+				<!-- the WELL Play sits in. 4b: the play button is the well's own child, so it
+				     rides the bar's position (one anchor) and moving the well moves Play. -->
+				<div class="hud-play-well">
 					<p
 						id="play-button"
 						title={$willEnterAR
@@ -2090,95 +2079,62 @@
 							: $willEnterXR
 								? 'Enter VR'
 								: 'Play'}
-						class={classActive +
-							' -translate-x-1/2 rounded-full bg-primary-600 font-medium hover:scale-110 dark:focus:ring-primary-800'}
-						style="position: absolute; height: 50px; width: 50px; top: -5px; left: 50%; z-index: var(--z-hud);
-	        display: flex; transition: transform 100ms"
+						class="hud-play"
 						on:click={() => {
 							requestPlay();
 						}}
 						use:playModeMenu
 					>
-						<!-- CO4b: ONE entry point that SHOWS its destination. The FAB already
-						     starts play mode on desktop and an immersive session in a headset,
-						     and `$vrPassthrough` decides which KIND (both hidden XR buttons
-						     mount below; `data-aim` says which one a press clicks) — so the
-						     honest thing is to say so ON this button rather than grow a second
-						     one beside it. Right-click picks the mode explicitly.
-						       desktop  the play triangle, unchanged
-						       VR       a headset (rectangle-goggles): press this and you are
-						                IN there
-						       AR       the same headset with A and R in its two lens halves,
-						                and a slightly bigger glyph to carry them
-						     The visor is ONE path with a nose notch at the bottom centre, so
-						     its halves sit at x 7.5 and 16.5 of the 24-unit box — 31.25% and
-						     68.75% — which is where the letters are anchored
-						     (translate(-50%,-50%) centres them on that point, so they stay put
-						     at any icon size). The overlay is `pointer-events: none` and
-						     unselectable: the circle stays ONE hit target, which
-						     #play-button's clip-path was tuned for. No `ml-0.5` on the goggles
-						     — that 2px nudge is optical centering for a TRIANGLE, and a
-						     symmetric visor with it looks off-centre. -->
+						<!-- CO4b: ONE entry point that SHOWS its destination — the play triangle,
+						     a headset for VR, the headset with A and R in its lenses for AR. The
+						     overlay is pointer-events none, so the circle stays ONE hit target
+						     (#play-button's clip-path in ui.css). -->
 						{#if $willEnterAR}
 							<span class="pointer-events-none relative inline-flex select-none items-center justify-center">
-								<RectangleGoggles size={30} class="text-white" aria-hidden="true" />
-								<span
-									class="absolute text-[10px] font-bold leading-none text-white"
-									style="left: 29%; top: 50%; transform: translate(-50%, -50%)">A</span
-								>
-								<span
-									class="absolute text-[10px] font-bold leading-none text-white"
-									style="left: 71%; top: 50%; transform: translate(-50%, -50%)">R</span
-								>
+								<Icon name="tool:vr" size={24} aria-hidden="true" />
+								<span class="hud-play-lens" style="left: 29%">A</span>
+								<span class="hud-play-lens" style="left: 71%">R</span>
 							</span>
 						{:else if $willEnterXR}
-							<RectangleGoggles size={26} class="text-white" aria-hidden="true" />
+							<Icon name="tool:vr" size={20} aria-hidden="true" />
 						{:else}
-							<Play size={24} class="ml-0.5 text-white" fill="currentColor" aria-hidden="true" />
+							<Icon name="play" size={20} class="hud-play-tri" fill="currentColor" aria-hidden="true" />
 						{/if}
 					</p>
 				</div>
 			{:else}
 				{@const btn = BUTTONS[cell.id]}
-				{@const Glyph = btn.icon}
+				{@const glyph = btn.icon}
+				{@const tint = btn.tint()}
 				{#if btn.pressed}
-				<!-- 30 P1: a TOGGLE cell is a real button, so it can say aria-pressed.
-				     33 E2: a <button> TAKES FOCUS on click where the <p> cells cannot, so
-				     classActive's `focus:ring-4` drew the theme's red ring on every press —
-				     the only cell that ever showed one. The ring is keyboard-only here
-				     (`focus-visible`, which a mouse press never matches), so a click looks
-				     like every other cell's. -->
-				<button
-					type="button"
-					id={btn.slot}
-					class={cellToggleClass +
-						' w-10' +
-						(i === 0 ? ' rounded-l-full' : '') +
-						(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}
-					title={btn.title}
-					aria-label={btn.title}
-					aria-pressed={btn.pressed()}
-					use:cellClick={cell.id}
-					use:cellMenu={cell.id}
-				>
-					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
-				</button>
+					<!-- 30 P1: a TOGGLE cell is a real button, so it can say aria-pressed; the
+					     focus ring is keyboard-only (33 E2). -->
+					<button
+						type="button"
+						id={btn.slot}
+						class="hud-cell"
+						class:on={tint === ICON_ON}
+						title={btn.title}
+						aria-label={btn.title}
+						aria-pressed={btn.pressed()}
+						use:cellClick={cell.id}
+						use:cellMenu={cell.id}
+					>
+						<Icon name={glyph} size={20} class={tint} aria-hidden="true" />
+					</button>
 				{:else}
-				<!-- ONE template for every roster button: the six hand-written cells each
-				     carried their own copy of this element, so each one also carried its own
-				     copy of the same three a11y/deprecation warnings. -->
-				<p
-					id={btn.slot}
-					class={classActive +
-						' w-10' +
-						(i === 0 ? ' rounded-l-full' : '') +
-						(i === visibleCells.length - 1 ? ' rounded-r-full' : '')}
-					title={btn.title}
-					on:click={() => runCell(cell.id)}
-					use:cellMenu={cell.id}
-				>
-					<Glyph size={18} class={btn.tint()} aria-hidden="true" />
-				</p>
+					<!-- ONE template for every roster button (`p[title=…]` is what suites and
+					     the panel toggles select on). -->
+					<p
+						id={btn.slot}
+						class="hud-cell"
+						class:on={tint === ICON_ON}
+						title={btn.title}
+						on:click={() => runCell(cell.id)}
+						use:cellMenu={cell.id}
+					>
+						<Icon name={glyph} size={20} class={tint} aria-hidden="true" />
+					</p>
 				{/if}
 			{/if}
 		{/each}
@@ -2189,11 +2145,12 @@
      dock so an open flow editor / Explorer covers the stack -->
 <button
 	id="chat-button"
-	class="fixed bottom-4 right-4 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-gray-700 shadow-lg transition-colors hover:bg-gray-600"
+	class="tp-ui hud-fab fixed bottom-4 right-4 z-30"
+	class:on={$chatHidden !== 'hidden'}
 	title="Chat (C)"
 	on:click={() => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')}
 >
-	<MessageSquare size={16} class="text-white" aria-hidden="true" />
+	<Icon name="message-square" size={20} aria-hidden="true" />
 </button>
 
 <!-- mobile "+" (bottom-left): opens the same create/context menu as a right-click
@@ -2269,55 +2226,47 @@
 	/>
 {/if}
 
-<div id="object-list" data-key-scope="objects" role="region" aria-label="Object list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel overflow-hidden'} use:dragMe use:focusStack={'objects'}
-	use:tabbable={{ key: 'objects', title: '☰ Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
+<div id="object-list" data-key-scope="objects" role="region" aria-label="Object list" class={($objectListClose ? 'hidden' : 'flex') + ' flex-col ui-panel tp-ui tp-window overflow-hidden'} use:dragMe use:focusStack={'objects'}
+	use:tabbable={{ key: 'objects', title: 'Objects', openStore: objectListClose, isOpen: (v) => !v, close: () => objectListClose.set(true) }}
 	use:dockable={{ key: 'objects' }}
 	style="z-index: var(--z-window)">
 	<!-- dropping a row on the header moves the object back to the scene root -->
-	<!-- header matches the Explorer chrome (104): title + inline search + close;
-	     still the move handle AND the drop-to-root target -->
-	<div
-		role="list"
-		class="ui-panel-header move-handle shrink-0 cursor-move select-none rounded-tl-lg rounded-tr-lg py-1.5"
-		use:objHeaderWidth
-		on:dragover={(e) => { if (e.dataTransfer?.types.includes('application/x-object-uuid')) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; } }}
-		on:drop={(e) => {
-			const uuid = e.dataTransfer?.getData('application/x-object-uuid');
-			if (!uuid) return;
-			e.preventDefault();
-			const obj = ($objectsGroup as any)?.getObjectByProperty('uuid', uuid);
-			if (obj?.userData?.__localOnly) shareObject(obj);
-			else moveObjectToGroup(uuid, 'root');
-		}}
+	<!-- 38 R6: the one window header (ui/WindowChrome, tool size). It is still the move
+	     handle AND the drop-to-root target, and keeps its R22 ranking: the search leaves
+	     first, then the word "Objects" (the icon stands in), the ✕ never -->
+	<WindowChrome
+		size="tool"
+		bare
+		body={false}
+		title="Objects"
+		headerClass="ui-panel-header move-handle cursor-move select-none"
+		headerAttrs={objHeaderAttrs}
+		onclose={() => objectListClose.set(true)}
+		closeAttrs={{ title: 'Close (O)' }}
 	>
-		<span class="flex shrink-0 items-center" title="Objects"
-			><List size={16} class={objHideLabel ? '' : 'mr-1'} aria-hidden="true" />{objHideLabel
-				? ''
-				: 'Objects'}</span
-		>
-		{#if !objHideSearch}
-			<input
-				id="object-search"
-				class="ui-input w-36 py-0.5 font-normal normal-case tracking-normal"
-				placeholder="Search objects…"
-				value={searchTerm}
-				on:pointerdown={(e) => e.stopPropagation()}
-				on:input={(e) => (searchTerm = e.currentTarget.value)}
-				on:keydown={searchKeydown}
-			/>
-		{/if}
-		<span class="flex-1"></span>
-		<button class="ui-button-quiet" title="Close (O)" on:click={() => objectListClose.set(true)}>✕</button>
-	</div>
-	<div class="flex flex-col gap-1 bg-gray-100 p-1 text-xs dark:bg-gray-700">
+		{#snippet heading()}
+			<span class="wc-label" title="Objects">{#if objHideLabel}<Icon name="list" size={16} />{:else}Objects{/if}</span>
+			{#if !objHideSearch}
+				<span class="obj-search" on:pointerdown={(e) => e.stopPropagation()} role="presentation">
+					<SearchField
+						id="object-search"
+						size="sm"
+						placeholder="Search objects…"
+						bind:value={searchTerm}
+						onkeydown={searchKeydown}
+					/>
+				</span>
+			{/if}
+			<span class="flex-1"></span>
+		{/snippet}
+	</WindowChrome>
+	<div class="obj-filters flex flex-col gap-1">
 		<div class="relative flex items-center gap-1">
 			<!-- 80.2: one scrollable chip row that never overflows the window -->
-			<div id="filter-chips" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll>
+			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll>
 				<button
-					class={'shrink-0 rounded-full px-2 py-0.5 ' +
-						(!searchTypes.size && !viewMode
-							? 'bg-primary-600 text-white'
-							: 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200')}
+					class="obj-chip"
+					aria-pressed={!searchTypes.size && !viewMode}
 					title="Show everything — click again to restore the previous chips"
 					on:click={clickAll}
 				>
@@ -2326,10 +2275,8 @@
 				{#each [['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes']] as [value, label]}
 					{#if !hiddenChips.has(value)}
 						<button
-							class={'shrink-0 rounded-full px-2 py-0.5 ' +
-								(searchTypes.has(value)
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200')}
+							class="obj-chip"
+							aria-pressed={searchTypes.has(value)}
 							on:click={() => toggleTypeChip(value)}
 						>
 							{label}
@@ -2339,10 +2286,8 @@
 				{#each [...($showEnvInList ? [['environment', 'Environment']] : []), ...($advancedMode ? [['system', 'System']] : [])] as [value, label]}
 					{#if !hiddenChips.has(value)}
 						<button
-							class={'shrink-0 rounded-full px-2 py-0.5 ' +
-								(viewMode === value
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-200')}
+							class="obj-chip"
+							aria-pressed={viewMode === value}
 							on:click={() => { viewMode = viewMode === value ? '' : value; searchTypes = new Set(); }}
 						>
 							{label}
@@ -2350,25 +2295,27 @@
 					{/if}
 				{/each}
 				{#if $objectFilter}
-					<span class="shrink-0 text-gray-500 dark:text-gray-300">{matchCount} match{matchCount === 1 ? '' : 'es'}</span>
+					<span class="obj-matches shrink-0">{matchCount} match{matchCount === 1 ? '' : 'es'}</span>
 				{/if}
 			</div>
 			<!-- 80.3: chip visibility popover + reset -->
 			<button
 				id="chip-config"
-				class="shrink-0 rounded-sm bg-gray-200 px-1.5 py-0.5 text-gray-600 dark:bg-gray-600 dark:text-gray-200"
+				class="obj-cfg"
 				title="Choose which filters show here"
+				aria-label="Choose which filters show here"
+				aria-expanded={chipPopup}
 				on:click={() => (chipPopup = !chipPopup)}
 			>
-				⚙
+				<Icon name="sliders-horizontal" size={16} />
 			</button>
 			{#if chipPopup}
 				<div
 					id="chip-popup"
-					class="absolute right-0 top-6 z-10 flex w-44 flex-col gap-1 rounded-lg border border-gray-300 bg-white p-2 shadow-xl dark:border-gray-600 dark:bg-gray-800"
+					class="obj-pop absolute right-0 top-8 z-10 flex w-48 flex-col gap-0.5"
 				>
 					{#each [['mesh', 'Meshes'], ['light', 'Lights'], ['group', 'Groups'], ['stroke', 'Strokes'], ...($showEnvInList ? [['environment', 'Environment']] : []), ...($advancedMode ? [['system', 'System']] : [])] as [value, label]}
-						<label class="flex cursor-pointer items-center gap-2 text-gray-700 dark:text-gray-200">
+						<label class="obj-pop-row">
 							<input
 								type="checkbox"
 								checked={!hiddenChips.has(value)}
@@ -2379,12 +2326,12 @@
 					{/each}
 					<button
 						id="reset-filters"
-						class="mt-1 rounded-sm bg-gray-200 px-2 py-1 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500"
+						class="obj-pop-reset"
 						on:click={resetAllFilters}
 					>
 						Reset all filters
 					</button>
-					<label class="mt-1 flex cursor-pointer items-center gap-2 border-t border-gray-300 pt-1.5 text-gray-700 dark:border-gray-600 dark:text-gray-200">
+					<label class="obj-pop-row obj-pop-sep">
 						<input type="checkbox" bind:checked={$showLocalObjects} />
 						Show local objects
 					</label>
@@ -2392,12 +2339,12 @@
 			{/if}
 		</div>
 	</div>
-	<Listgroup active class="min-h-0 flex-1 overflow-y-auto -rounded rounded-br rounded-bl">
+	<div class="obj-scroller flex min-h-0 flex-1 flex-col overflow-y-auto rounded-lg rounded-br rounded-bl bg-transparent text-text-muted" use:minimalScroll>
 		<!-- 24-B2: the tree is the keyboard surface — focusable, arrows/Enter/F2/type-ahead
 		     walk the VISIBLE rows (see listKeydown); a subtle ring says it has focus -->
 		<div
 			id="object-tree"
-			class="container outline-none focus-visible:ring-1 focus-visible:ring-primary-500"
+			class="container outline-none focus-visible:ring-1 focus-visible:ring-accent"
 			role="tree"
 			tabindex="0"
 			aria-label="Objects"
@@ -2405,13 +2352,13 @@
 			use:treeKeys>
 			{#if viewMode === 'system'}
 				{#if !systemNoticeDismissed}
-					<div class="flex items-start gap-1 bg-yellow-900/40 p-2 text-[11px] text-yellow-200">
+					<div class="flex items-start gap-1 bg-ink-warn/15 p-2 text-[11px] text-ink-warn">
 						<span class="flex-1">
 							System objects are managed by modules and the environment — they regenerate
 							from their state and are not editable here.
 						</span>
 						<button
-							class="rounded-sm bg-gray-600 px-1 text-white"
+							class="rounded-sm bg-surface-active px-1 text-text hover:bg-border-strong"
 							on:click={() => {
 								systemNoticeDismissed = true;
 								safeStorage.setItem('systemNoticeDismissed', 'true');
@@ -2419,52 +2366,52 @@
 					</div>
 				{/if}
 				{#each systemRows as row (row.name)}
-					<div class="border-b border-gray-600/40 px-2 py-1 text-sm text-gray-800 dark:text-gray-200">
+					<div class="border-b border-border px-2 py-1 text-sm text-text-2">
 						<div class="flex items-center gap-2">
 							<button
-								class="w-4 text-gray-400"
+								class="w-4 text-text-muted"
 								title="Show children"
 								on:click={() => (expandedSystem = { ...expandedSystem, [row.name]: !expandedSystem[row.name] })}
 							>
 								{expandedSystem[row.name] ? '−' : '+'}
 							</button>
-							<Cog size={16} class="text-gray-400" aria-hidden="true" title="System object" />
+							<Icon name="cog" size={16} class="text-text-muted" aria-hidden="true" title="System object" />
 							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title="Managed by a module / the environment">
 								{row.name}
 							</span>
-							<span class="text-[10px] text-gray-400">{row.children.length}</span>
+							<span class="text-[10px] text-text-muted">{row.children.length}</span>
 							<button
-								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-surface-active px-1.5 text-xs text-text hover:bg-border-strong"
 								title="Ping it for everyone"
-								on:click={() => pingObject(row.object)}><Pin size={16} aria-hidden="true" /></button>
+								on:click={() => pingObject(row.object)}><Icon name="pin" size={16} aria-hidden="true" /></button>
 							<button
-								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-surface-active px-1.5 text-xs text-text hover:bg-border-strong"
 								title="Pin a synced note to it"
-								on:click={() => addAnnotation(row.object.uuid)}><SquarePen size={16} aria-hidden="true" /></button>
+								on:click={() => addAnnotation(row.object.uuid)}><Icon name="square-pen" size={16} aria-hidden="true" /></button>
 							<button
-								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-surface-active px-1.5 text-xs text-text hover:bg-border-strong"
 								title="Focus the camera on it"
-								on:click={() => focusSystemObject(row.object)}><Eye size={16} aria-hidden="true" /></button>
+								on:click={() => focusSystemObject(row.object)}><Icon name="eye" size={16} aria-hidden="true" /></button>
 						</div>
 						{#if expandedSystem[row.name]}
 							{#each row.children as childName}
-								<p class="pl-8 text-xs text-gray-400">{childName}</p>
+								<p class="pl-8 text-xs text-text-muted">{childName}</p>
 							{/each}
 						{/if}
 					</div>
 				{/each}
 				{#if systemRows.length === 0}
-					<p class="p-2 text-xs italic text-gray-400">No system objects right now — spawn a module (pong, dungeon) to see its content here.</p>
+					<p class="p-2 text-xs italic text-text-muted">No system objects right now — spawn a module (pong, dungeon) to see its content here.</p>
 				{/if}
 			{:else if viewMode === 'environment'}
 				{#if !envNoticeDismissed}
-					<div class="flex items-start gap-1 bg-yellow-900/40 p-2 text-[11px] text-yellow-200">
+					<div class="flex items-start gap-1 bg-ink-warn/15 p-2 text-[11px] text-ink-warn">
 						<span class="flex-1">
 							Environment objects are managed from Scene settings — switching presets
 							replaces them. Edit them there, not here.
 						</span>
 						<button
-							class="rounded-sm bg-gray-600 px-1 text-white"
+							class="rounded-sm bg-surface-active px-1 text-text hover:bg-border-strong"
 							on:click={() => {
 								envNoticeDismissed = true;
 								safeStorage.setItem('envNoticeDismissed', 'true');
@@ -2472,26 +2419,26 @@
 					</div>
 				{/if}
 				{#each envRows as row (row.name)}
-					<div class="border-b border-gray-600/40 px-2 py-1 text-sm text-gray-800 dark:text-gray-200">
+					<div class="border-b border-border px-2 py-1 text-sm text-text-2">
 						<div class="flex items-center gap-2">
-							<Sun size={16} class="w-4 text-center text-yellow-300/80" aria-hidden="true" title="Environment light" />
+							<Icon name="sun" size={16} class="text-ink-warn/80" aria-hidden="true" title="Environment light" />
 							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title="Managed from Scene settings">
 								{row.name}
 							</span>
-							<span class="text-[10px] text-gray-400">{row.type}</span>
+							<span class="text-[10px] text-text-muted">{row.type}</span>
 							<button
-								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-surface-active px-1.5 text-xs text-text hover:bg-border-strong"
 								title="Ping it for everyone"
-								on:click={() => pingObject(row.object)}><Pin size={16} aria-hidden="true" /></button>
+								on:click={() => pingObject(row.object)}><Icon name="pin" size={16} aria-hidden="true" /></button>
 							<button
-								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-surface-active px-1.5 text-xs text-text hover:bg-border-strong"
 								title="Focus the camera on it"
-								on:click={() => focusSystemObject(row.object)}><Eye size={16} aria-hidden="true" /></button>
+								on:click={() => focusSystemObject(row.object)}><Icon name="eye" size={16} aria-hidden="true" /></button>
 						</div>
 					</div>
 				{/each}
 				{#if envRows.length === 0}
-					<p class="p-2 text-xs italic text-gray-400">The environment group is empty — pick a preset or add environment lights in Scene settings.</p>
+					<p class="p-2 text-xs italic text-text-muted">The environment group is empty — pick a preset or add environment lights in Scene settings.</p>
 				{/if}
 			{:else}
 			  {#if $objectsGroup}
@@ -2515,14 +2462,14 @@
 			  {/if}
 			{/if}
 		</div>
-	</Listgroup>
+	</div>
 	<!-- 26-A: THE BUDGET METER. One dot beside the count that a person can learn in a
 	     second, next to the one number that already says how big the scene is. It opens
 	     the Statistics window, because a warning you cannot act on is a decoration. -->
 	{#if $qualityState.level > 0 || $qualityState.pinned}
 		<button
 			id="quality-chip"
-			class="shrink-0 bg-amber-100 px-2 py-0.5 text-left text-[10px] text-amber-800 dark:bg-amber-900/60 dark:text-amber-200"
+			class="shrink-0 bg-ink-warn/15 px-2 py-0.5 text-left text-[10px] text-ink-warn"
 			data-level={$qualityState.level}
 			data-pinned={$qualityState.pinned ? 'true' : 'false'}
 			title={qualityTitle}
@@ -2533,7 +2480,7 @@
 	{/if}
 	<button
 		id="object-count"
-		class="shrink-0 rounded-bl rounded-br bg-gray-100 px-2 py-0.5 text-left text-[10px] text-gray-500 dark:bg-gray-700 dark:text-gray-300"
+		class="obj-foot shrink-0 text-left"
 		title={budgetTitle}
 		use:openStats
 	>
@@ -2556,3 +2503,124 @@
 		on:close={() => ($objectContextMenu = null)}
 	/>
 {/if}
+
+<style>
+	/* 38 R6: the object list's filter row, footer and chip popover in the tokens — chips are
+	   the kit's Chips look (pill, border-strong, the accent-soft fill when on); the row logic
+	   (All restores the previous set, Environment / System are exclusive views) is unchanged */
+	.obj-search {
+		display: flex;
+		min-width: 0;
+		width: 168px;
+		flex-shrink: 1;
+	}
+	.obj-search :global(.sf) {
+		width: 100%;
+	}
+	.obj-filters {
+		padding: 8px 10px;
+		border-bottom: 1px solid var(--border);
+		font-size: var(--fs-section);
+	}
+	.obj-chip {
+		display: inline-flex;
+		align-items: center;
+		flex-shrink: 0;
+		height: 26px;
+		padding: 0 10px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-pill);
+		background: transparent;
+		color: var(--text-2);
+		font-size: var(--fs-section);
+		cursor: pointer;
+	}
+	.obj-chip:hover {
+		border-color: var(--text-faint);
+	}
+	.obj-chip[aria-pressed='true'] {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+		color: var(--text);
+	}
+	.obj-matches {
+		color: var(--text-faint);
+	}
+	.obj-cfg {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		flex-shrink: 0;
+		width: 26px;
+		height: 26px;
+		border: 0;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+	.obj-cfg:hover,
+	.obj-cfg[aria-expanded='true'] {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.obj-pop {
+		padding: 6px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-1);
+		box-shadow: var(--shadow-window);
+		color: var(--text);
+	}
+	.obj-pop-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		height: 30px;
+		padding: 0 6px;
+		border-radius: var(--radius-input);
+		font-size: var(--fs-desc);
+		cursor: pointer;
+	}
+	.obj-pop-row:hover {
+		background: var(--surface-hover);
+	}
+	.obj-pop-row input {
+		accent-color: var(--accent);
+	}
+	.obj-pop-sep {
+		margin-top: 4px;
+		border-top: 1px solid var(--border);
+		border-radius: 0;
+	}
+	.obj-pop-reset {
+		height: 30px;
+		margin-top: 4px;
+		padding: 0 6px;
+		border: 0;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--warn-text);
+		font-size: var(--fs-desc);
+		text-align: left;
+		cursor: pointer;
+	}
+	.obj-pop-reset:hover {
+		background: var(--surface-hover);
+	}
+	.obj-foot {
+		display: flex;
+		align-items: center;
+		height: 26px;
+		padding: 0 12px;
+		border: 0;
+		border-top: 1px solid var(--border);
+		background: transparent;
+		color: var(--text-faint);
+		font-size: var(--fs-badge);
+		cursor: pointer;
+	}
+	.obj-foot:hover {
+		color: var(--text-2);
+	}
+</style>

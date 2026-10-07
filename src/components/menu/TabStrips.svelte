@@ -6,6 +6,7 @@
 	import { tabGroups, activateTab, moveGroup, tearOff, titleOf, closeGroup, closeMember, nodeOf } from '$lib/windowTabs';
 	import { focusTick, raiseWindowNode } from '$lib/windowFocus';
 	import ContextMenu from '../ContextMenu.svelte';
+	import Icon from '../ui/Icon.svelte';
 
 	// The strip must sit at its group's z-order, not a fixed top value, so another
 	// floating window dragged in front of the group also covers the group's strip.
@@ -72,8 +73,8 @@
 
 {#each $tabGroups as group (group.id)}
 	<div
-		class="tab-strip fixed flex items-end gap-0.5 overflow-hidden rounded-t-lg border-b border-gray-700/60 bg-gray-900 px-1.5 pt-1"
-		style="left: {group.rect.left}px; top: {group.rect.top}px; width: {group.rect.width}px; height: 34px; z-index: {[$focusTick, stripZ(group)][1]}; cursor: move"
+		class="tab-strip tp-ui fixed flex items-center gap-0.5 overflow-hidden"
+		style="left: {group.rect.left}px; top: {group.rect.top}px; width: {group.rect.width}px; z-index: {[$focusTick, stripZ(group)][1]}; cursor: move"
 		role="tablist"
 		tabindex="-1"
 		data-key-scope="panel"
@@ -81,10 +82,7 @@
 	>
 		{#each group.members as key (key)}
 			<button
-				class={'tab-note relative px-4 pb-1 pt-0.5 text-xs ' +
-					(key === group.active
-						? 'bg-gray-800 text-gray-100'
-						: 'bg-gray-700/70 text-gray-400 hover:text-gray-200')}
+				class="tab-note ts-tab relative"
 				role="tab"
 				aria-selected={key === group.active}
 				title="Click to switch — drag out to detach — right-click to hide"
@@ -103,11 +101,12 @@
 		{/each}
 		<span class="flex-1"></span>
 		<button
-			class="ui-button-quiet mb-1 shrink-0"
+			class="ts-close shrink-0"
 			title="Close all tabs in this window"
+			aria-label="Close all tabs in this window"
 			onclick={() => closeGroup(group.active)}
 		>
-			✕
+			<Icon name="x" size={16} />
 		</button>
 	</div>
 {/each}
@@ -122,9 +121,58 @@
 {/if}
 
 <style>
-	/* notebook look: slightly narrower at the top, curvy shoulders */
-	.tab-note {
-		clip-path: polygon(7% 0, 93% 0, 100% 100%, 0 100%);
-		border-radius: 8px 8px 0 0;
+	/* 38 R6: the strip IS the group's window header, so it has the header's box — the tool
+	   header's height (40px; 56 on a phone, like WindowChrome) so it covers the active
+	   member's header exactly, the window's top corners, and the kit's dock-tab look (the
+	   active tab a raised surface, the rest muted) instead of the notebook shoulders */
+	.tab-strip {
+		box-sizing: border-box;
+		height: 40px;
+		padding: 0 6px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-window) var(--radius-window) 0 0;
+		background: var(--surface-inset);
+	}
+	@media (max-width: 639.98px) {
+		.tab-strip {
+			height: 56px;
+		}
+	}
+	.ts-tab {
+		height: 28px;
+		padding: 0 12px;
+		border: 0;
+		border-radius: 7px;
+		background: transparent;
+		color: var(--text-muted);
+		font-size: var(--fs-desc);
+		font-weight: 500;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+	.ts-tab:hover {
+		color: var(--text);
+		background: var(--surface-hover);
+	}
+	.ts-tab[aria-selected='true'] {
+		background: var(--surface-1);
+		color: var(--text);
+		box-shadow: 0 0 0 1px var(--border);
+	}
+	.ts-close {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 28px;
+		height: 28px;
+		border: 0;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+	.ts-close:hover {
+		background: var(--surface-hover);
+		color: var(--text);
 	}
 </style>

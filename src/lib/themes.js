@@ -21,7 +21,62 @@ export const THEMES = [
 	{ id: 'contrast', name: 'High contrast' }
 ];
 
-// the full token set a theme file carries (semantic + 146 dropdown + 148 scrollbar)
+// 38 R2: the redesign's own keys (styles/tokens.css). DERIVED ones are computed from the
+// theme's base colours in a custom theme, so an EXPORT leaves them out unless the theme set
+// them itself — otherwise editing --accent in the file would leave a frozen copy of the old
+// accent in --accent-soft, --badge-bg … .
+export const REDESIGN_TOKENS = [
+	'--bg-app',
+	'--surface-1',
+	'--surface-inset',
+	'--border-strong',
+	'--border-input',
+	'--text-muted',
+	'--text-faint',
+	'--accent-soft',
+	'--accent-muted',
+	'--segment-on',
+	'--accent-soft-text',
+	'--accent-text',
+	'--live',
+	'--on-live',
+	'--speaking',
+	'--warn-text',
+	'--danger',
+	'--on-danger',
+	'--badge-bg',
+	'--badge-text',
+	'--control-off',
+	'--knob',
+	'--axis-x',
+	'--axis-y',
+	'--axis-z',
+	'--surface-hover',
+	'--surface-active',
+	'--scrim'
+];
+export const DERIVED_TOKENS = [
+	'--bg-app',
+	'--surface-1',
+	'--surface-inset',
+	'--border-strong',
+	'--border-input',
+	'--text-muted',
+	'--text-faint',
+	'--accent-soft',
+	'--accent-muted',
+	'--segment-on',
+	'--accent-soft-text',
+	'--accent-text',
+	'--warn-text',
+	'--badge-bg',
+	'--badge-text',
+	'--control-off',
+	'--surface-hover',
+	'--surface-active'
+];
+
+// the full token set a theme file carries (semantic + 146 dropdown + 148 scrollbar + 38)
 export const THEME_TOKENS = [
 	'--surface-deep',
 	'--surface-deep-rgb',
@@ -66,7 +121,12 @@ export const THEME_TOKENS = [
 	'--ink-warn',
 	'--ink-good',
 	'--accent-fill',
-	'--on-accent'
+	'--on-accent',
+	// 38 R2: the redesign tokens (styles/tokens.css, SPEC §1). A custom theme may set any of
+	// them; one that does not DERIVES them from the legacy keys above (tokens.css "EXOTIC +
+	// CUSTOM"), so every .theme.json written before 38 keeps restyling the redesigned UI.
+	// (--text/--text-2/--border/--accent/--surface-2 are already listed: same names.)
+	...REDESIGN_TOKENS
 ];
 
 function loadCustomThemes() {
@@ -142,9 +202,13 @@ export function activeThemeName() {
 
 /** Download the ACTIVE theme as an editable .theme.json file (149). */
 export function exportActiveTheme() {
+	const tokens = activeThemeTokens();
+	// 38 R2: derived tokens stay derived (see DERIVED_TOKENS) unless this theme set them
+	const own = get(customThemes).find((/** @type {any} */ t) => t.id === get(theme))?.tokens ?? {};
+	for (const token of DERIVED_TOKENS) if (!(token in own)) delete tokens[token];
 	const payload = {
 		name: activeThemeName() + ' (copy)',
-		tokens: activeThemeTokens()
+		tokens
 	};
 	const json = JSON.stringify(payload, null, 2);
 	const blob = new Blob([json], { type: 'application/json' });

@@ -55,9 +55,9 @@
 			</label>
 		{/if}
 		<div class="flex items-center gap-2">
-			<span class="h-2.5 w-2.5 rounded-full" style="background: {pulsing ? '#22c55e' : '#374151'}"></span>
+			<span class="h-2.5 w-2.5 rounded-full" style="background: {pulsing ? 'var(--ink-good)' : 'var(--control-off)'}"></span>
 			<span>{pulsing ? copy[0] : 'idle'}</span>
 		</div>
-		<p class="text-[10px] text-gray-400">{copy[1]}</p>
+		<p class="text-[10px] text-text-muted">{copy[1]}</p>
 	</div>
 </NodeWrapper>

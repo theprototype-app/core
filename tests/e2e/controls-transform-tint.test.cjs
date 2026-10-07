@@ -29,9 +29,9 @@ h.run(async () => {
 				mode: tm,
 				gizmoMode: tc && tc.mode,
 				attached: !!(tc && tc.object),
-				moveOn: cls('Move (1)').includes('text-primary-500'),
-				rotateOn: cls('Rotate (2)').includes('text-primary-500'),
-				scaleOn: cls('Scale (3)').includes('text-primary-500')
+				moveOn: cls('Move (1)').includes('text-accent'),
+				rotateOn: cls('Rotate (2)').includes('text-accent'),
+				scaleOn: cls('Scale (3)').includes('text-accent')
 			};
 		});
 

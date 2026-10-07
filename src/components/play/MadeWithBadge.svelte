@@ -96,9 +96,9 @@
 		overflow: hidden;
 		white-space: nowrap;
 		border-radius: 9999px;
-		border: 1px solid var(--border, rgba(255, 255, 255, 0.2));
-		background: rgb(var(--surface-rgb, 17 24 39) / 0.72);
-		color: var(--text, #e5e7eb);
+		border: 1px solid var(--border);
+		background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+		color: var(--text);
 		text-decoration: none;
 		font: 600 12px/1 system-ui, sans-serif;
 		opacity: 0.4;
@@ -124,7 +124,7 @@
 	   the theme's ink/surface: that mix comes out light grey on Light and green on Green. The
 	   badge-level opacity above (0.4 rest / 0.85 hover) still applies to the whole badge. */
 	.mwt-accent {
-		fill: rgb(88 88 88);
+		fill: rgb(88 88 88); /* tokens-ok: logo artwork — the user-set opaque neutral grey of the mark (1.21.0; export-zip asserts it), never theme-mixed */
 		opacity: 1;
 	}
 	.mwt-text {

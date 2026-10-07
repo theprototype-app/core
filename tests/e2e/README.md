@@ -30,3 +30,43 @@ in the same commit.
 
 Files are `.cjs` because the package is `"type": "module"` and the suite uses
 CommonJS `require`.
+
+## Behaviour lock (roadmap 38, R1)
+
+The UI redesign (cloud `docs/design/redesign/SPEC.md` §0) may change how everything LOOKS and
+must not change what anything DOES. `npm run e2e:lock` (= `npm run e2e -- @lock`) runs the
+lock: the suites listed in `tests/e2e/lock.json`. Every roadmap-38 PR keeps it green.
+
+| Suite | Locks |
+|---|---|
+| `lock-settings` | every settings row of the handoff's `settings-inventory.json`: its storage key, default, scope (device vs shared = does it broadcast), side effects (stores, `<html>` attributes, dialogs, downloads), and that it reads its default again after being put back |
+| `lock-dragrow` | the DragRow contract on every kind of scrub field (transforms + units, inspector values, shader vectors, Animation fields): scrub, Shift/Ctrl, dead zone, click-to-type live, Enter/Escape/Tab, arrows, wheel, undo steps, live broadcast, min/max clamp |
+| `lock-dragrow-sync` | two peers (local signaling): a scrub reaches the peer WHILE dragging, typed values and undo replicate |
+| `lock-shortcuts` | the keymap registry (= the `?` sheet), the sheet itself, and the FOCUS RULES as a routing table: for each focus scope (viewport, node editor, UV, Animation, Shader, HUD, text field, open modal) which command every key fires |
+| `lock-panels` | every window/drawer/dock view/modal/menu/Settings section opens, shows its content, and closes through its own control and Escape; the Properties pin; every toolbar cell's effect; dock tabs |
+| `lock-search` | what Settings › search and the Inspector filter find, query by query |
+
+The `adopted` suites in `lock.json` (dock-*, panel-*, settings-*, shortcut-rebind, …) already
+covered parts of SPEC §0 and are part of the lock as they are.
+
+**Recorded fixtures.** The `lock-*` suites compare against `tests/e2e/fixtures/lock/*.json`,
+recorded on the pre-redesign UI with `LOCK_RECORD=1 node tests/e2e/lock-<name>.test.cjs`
+(settings records two fresh passes and keeps only what both saw). A redesign PR NEVER
+re-records them: a red lock check means behaviour changed, and SPEC §0 says to split that
+change out. What a redesign MAY change is a locator — `ROW_SEL`/`NAME_SEL`/`CONTROL_SEL`/
+`DRAG_WRAP` in `lockHelpers.cjs`, `shown`/`closer` in `lockSurfaces.cjs` — when a primitive
+renames its classes or ids. Controls are found by ROLE (checkbox / switch / aria-pressed /
+listbox / range …), so a checkbox becoming a Toggle or a select becoming Segmented needs no
+edit at all.
+
+**`KNOWN Qn` checks** assert today's behaviour where it differs from what SPEC §0 or DragRow's
+own comment says (Escape after typing, stale fields after undo, per-change undo entries);
+they are listed in the lane's QUESTIONS file and flip on purpose in the PR that fixes them.
+
+**Baselines.** `node tests/e2e/tools/lock-baselines.cjs` (with `APP_URL`, `SHOTS=<dir>`)
+screenshots every surface of `lockSurfaces.cjs` at 1440×900 and 390×844 (touch) in the dark,
+light and custom (`fixtures/lock/lock-custom.theme.json`) themes, named
+`<surface>-<size>-<theme>-before.png`, plus an `index.html` contact sheet.
+
+All lock suites launch on the GPU backend (`lockHelpers.launch`): on SwiftShader the 3D view
+behind the panels starves the page (a CDP round trip measured 271 ms vs 2 ms).

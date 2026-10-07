@@ -3,6 +3,7 @@
 	import ContextMenuItems from './ContextMenuItems.svelte';
 	import Icon from './ui/Icon.svelte';
 	import { collectLeaves, rankMatches } from '$lib/menuFilter';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
 	import { safeStorage } from '$lib/safeStorage';
 
@@ -107,6 +108,16 @@
 	 *  opened. Requiring the pointerdown too makes the backdrop dismiss only real
 	 *  outside taps. */
 	let backdropPressed = false;
+	/** 38 R9: the same rule for the MENU itself. On a phone the menu is a bottom sheet,
+	 *  so a long press low on the screen opens it UNDER the finger and the lift used to
+	 *  tap whatever row landed there. A touch click counts only when its press also
+	 *  landed in the menu (keyboard and synthetic clicks carry no pointerType). */
+	let menuPressed = false;
+	function guardLift(e: MouseEvent) {
+		if ((e as PointerEvent).pointerType !== 'touch' || menuPressed) return;
+		e.stopPropagation();
+		e.preventDefault();
+	}
 	/** how many rows the empty-query browse list shows (it scrolls) */
 	const BROWSE_CAP = 200;
 	/** 16-Q5: default height of the SEARCH list. A menu that unfolds down the whole
@@ -401,14 +412,17 @@
      exists, this menu is already mounted under the cursor and IS its target. No
      blocker on the surface that was right-clicked can help: the event never reaches
      it, in either phase. Submenus are DOM children here, so they bubble to this. -->
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_interactive_supports_focus -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_interactive_supports_focus, a11y_click_events_have_key_events -->
 <div
 	use:portal
 	use:place
-	class="ctx-scroll fixed min-w-36 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-white py-1 text-xs shadow-lg dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200"
+	use:minimalScroll
+	class="ctx-scroll tp-ui tp-menu fixed min-w-36 overflow-y-auto overflow-x-hidden"
 	style="left: 0; top: 0; z-index: calc(var(--z-menu) + 1);"
 	role="menu"
 	on:mousedown={keepFocus}
+	on:pointerdown|capture={() => (menuPressed = true)}
+	on:click|capture={guardLift}
 	on:contextmenu|preventDefault
 >
 	{#if headerItem}
@@ -416,7 +430,7 @@
 	{/if}
 	<!-- always mounted (it owns the keyboard) but collapsed until there's a query -->
 	<div class="ctx-filter" class:on={listMode} role="presentation">
-		<Icon name="search" size={12} />
+		<Icon name="search" size={16} />
 		<input
 			class="ctx-filter-input"
 			type="text"
@@ -438,8 +452,8 @@
 			<!-- svelte-ignore a11y_interactive_supports_focus, a11y_click_events_have_key_events -->
 			<div
 				class="ctx-match {match.item.disabled
-					? 'cursor-default text-gray-400 dark:text-gray-500'
-					: 'cursor-pointer'} {match.item.danger && !match.item.disabled ? 'text-red-500' : ''}"
+					? 'ctx-match-off cursor-default'
+					: 'cursor-pointer'} {match.item.danger && !match.item.disabled ? 'ctx-match-danger' : ''}"
 				class:ctx-active={index === highlight}
 				data-ctx-active={index === highlight}
 				role="menuitem"
@@ -454,7 +468,7 @@
 			</div>
 		{/each}
 		{#if !matches.length}
-			<div class="px-3 py-2 text-[11px] italic text-gray-400" role="presentation">
+			<div class="ctx-empty" role="presentation">
 				{query ? 'No matching action' : 'Nothing to search here'}
 			</div>
 		{/if}
@@ -510,20 +524,8 @@
 </div>
 
 <style>
-	/* a slim but VISIBLE vertical scrollbar for a too-tall menu/submenu */
-	:global(.ctx-scroll) {
-		scrollbar-width: thin;
-	}
-	:global(.ctx-scroll::-webkit-scrollbar) {
-		width: 8px;
-	}
-	:global(.ctx-scroll::-webkit-scrollbar-thumb) {
-		background: rgb(148 163 184 / 0.7);
-		border-radius: 4px;
-	}
-	:global(.ctx-scroll::-webkit-scrollbar-track) {
-		background: transparent;
-	}
+	/* NOTES-38 #1: a too-tall menu scrolls with the app's minimal auto-hiding thumb
+	   (src/styles/windows.css) — no native bar of its own */
 	/* 16-P1: collapsed by default — mounted + focused, but taking no space. NOT
 	   display:none / hidden: the input must stay focusable to own the keyboard. */
 	.ctx-filter {
@@ -534,16 +536,18 @@
 		padding: 0 12px;
 		opacity: 0;
 		overflow: hidden;
-		color: rgb(148 163 184);
+		color: var(--text-faint);
 	}
 	/* typing reveals it as a normal menu ROW (same padding/size as an item) */
 	.ctx-filter.on {
 		height: auto;
-		padding: 5px 12px;
+		padding: 0 10px;
+		height: 32px;
 		opacity: 1;
-		margin-bottom: 2px;
-		background: rgb(148 163 184 / 0.1);
-		border-bottom: 1px solid rgb(148 163 184 / 0.25);
+		margin-bottom: 4px;
+		border-radius: var(--radius-input);
+		background: var(--surface-inset);
+		border: 1px solid var(--border-input);
 	}
 	.ctx-filter-input {
 		flex: 1 1 auto;
@@ -552,9 +556,9 @@
 		padding: 0;
 		background: transparent;
 		border: 0;
-		font-size: 12px;
+		font-size: var(--fs-desc);
 		line-height: 1.25;
-		color: inherit;
+		color: var(--text);
 	}
 	/* the app's global input styling paints a heavy focus ring — the row's own
 	   tint is the affordance here */
@@ -575,26 +579,44 @@
 		background: linear-gradient(
 			135deg,
 			transparent 42%,
-			rgb(148 163 184 / 0.55) 42%,
-			rgb(148 163 184 / 0.55) 58%,
+			var(--border-strong) 42%,
+			var(--border-strong) 58%,
 			transparent 58%
 		);
 	}
+	/* 38 R6: the search list's rows are menu rows (see ContextMenuItems' .ctx-row) */
 	.ctx-match {
-		padding: 5px 12px;
+		display: flex;
+		align-items: center;
+		min-height: 32px;
+		padding: 0 10px;
+		border-radius: var(--radius-input);
 		white-space: nowrap;
+		color: var(--text);
+	}
+	.ctx-match-off {
+		color: var(--text-faint);
+	}
+	.ctx-match-danger {
+		color: var(--warn-text);
 	}
 	/* ONE highlight for mouse and keyboard (they always agree) */
 	.ctx-match.ctx-active {
-		background: rgb(148 163 184 / 0.18);
+		background: var(--surface-hover);
 	}
 	.ctx-match-path {
-		color: rgb(148 163 184 / 0.85);
+		margin-right: 4px;
+		color: var(--text-faint);
 	}
 	.ctx-hint-inline {
-		margin-left: 10px;
-		font-family: ui-monospace, monospace;
-		font-size: 10px;
-		color: rgb(148 163 184 / 0.8);
+		margin-left: 16px;
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
+		color: var(--text-faint);
+	}
+	.ctx-empty {
+		padding: 8px 10px;
+		font-size: var(--fs-section);
+		color: var(--text-faint);
 	}
 </style>

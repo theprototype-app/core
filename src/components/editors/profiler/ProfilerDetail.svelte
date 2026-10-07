@@ -25,6 +25,7 @@
 		spanOf
 	} from '$lib/perf/profilerModel.js';
 	import { liveSourceTris } from './profilerScene.js';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	/**
 	 * @type {{
@@ -143,6 +144,7 @@
 			: [];
 		return g.length ? g.reduce((n, f) => n + /** @type {number} */ (f.gpu), 0) / g.length : null;
 	});
+	// tokens-ok-begin: per-phase hues of the CPU stack bar and its legend dots (graph data, same in every theme)
 	const PHASE_COLORS = /** @type {Record<string, string>} */ ({
 		input: '#60a5fa',
 		physics: '#f59e0b',
@@ -151,6 +153,9 @@
 		render: '#f472b6',
 		other: '#9ca3af'
 	});
+	/** @param {string} phase */
+	const phaseColor = (phase) => PHASE_COLORS[phase] ?? '#6b7280';
+	// tokens-ok-end
 
 	const evs = $derived(stats.events);
 	const notes = $derived(
@@ -172,7 +177,7 @@
 			{/each}
 		</div>
 		<span class="flex-1"></span>
-		<span id="profiler-sel-summary" class="truncate text-[11px] text-gray-400" aria-live="polite">
+		<span id="profiler-sel-summary" class="truncate text-[11px] text-text-muted" aria-live="polite">
 			{sel ? (stats.frames === 1 ? 'Frame' : `${stats.frames} frames`) : 'Whole recording'} · {fmtSec(
 				Math.max(0, stats.to - stats.from)
 			)} · p50 {fmtMs(stats.msP50)} · {stats.callsP50 ?? '–'} calls · {fmtCount(stats.trisP50)} tris
@@ -184,6 +189,7 @@
 		role="region"
 		aria-labelledby="profiler-tab-{tab}"
 		class="min-h-0 flex-1 overflow-auto"
+		use:minimalScroll
 	>
 		{#if tab === 'tree' || tab === 'ranked'}
 			{#if !detailed}
@@ -381,7 +387,7 @@
 						{#each stats.cpu.phases as p (p.phase)}
 							{#if p.share > 0}<span
 									style:flex-grow={p.share}
-									style:background={PHASE_COLORS[p.phase] ?? '#6b7280'}
+									style:background={phaseColor(p.phase)}
 									title="{p.phase} {fmtMs(p.mean)}"
 								></span>{/if}
 						{/each}
@@ -398,7 +404,7 @@
 							{#each stats.cpu.phases as p (p.phase)}
 								<tr data-phase={p.phase}>
 									<td
-										><span class="pf-dot" style:background={PHASE_COLORS[p.phase] ?? '#6b7280'}
+										><span class="pf-dot" style:background={phaseColor(p.phase)}
 										></span>{p.phase}</td
 									>
 									<td class="num">{fmtMs(p.mean)}</td>

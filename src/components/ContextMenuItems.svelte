@@ -46,6 +46,7 @@
 	// and keyboard. Hover-intent lives here: 120ms to open, 150ms to close.
 	import { tick } from 'svelte';
 	import Icon from './ui/Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	export let items: any[] = [];
 	export let onrun: (item: any) => void;
 	/** this level's submenu chain from the root ([] at the top level) */
@@ -107,15 +108,36 @@
 			clearTimeout(closeTimer);
 			if (openChild === item.label) return; // already open — just cancel any close
 			openTimer = setTimeout(() => onopen([...path, item.label]), 120);
-		} else if (openChild) {
+		} else if (openChild && tapOpened !== openChild) {
 			// grazing a leaf on the way INTO an open submenu must not slam it shut
 			clearTimeout(closeTimer);
 			closeTimer = setTimeout(() => onopen(path), 150);
 		}
 	}
+	/** 38 R9: a finger has no hover — a TAP on a submenu row opens it at once (a mouse
+	 *  click keeps the hover-intent behaviour; a click inside the open submenu bubbles
+	 *  here too, so only a press on this row itself counts) */
+	function tapRow(e: MouseEvent, item: any) {
+		const kind = (e as PointerEvent).pointerType;
+		if (kind !== 'touch' && kind !== 'pen') return;
+		if ((e.target as HTMLElement)?.closest('.ctx-scroll') !== (e.currentTarget as HTMLElement).closest('.ctx-scroll')) return;
+		clearTimeout(openTimer);
+		clearTimeout(closeTimer);
+		tapOpened = item.label;
+		if (openChild !== item.label) onopen([...path, item.label]);
+	}
+	/** a submenu a finger opened stays open until a tap elsewhere or Back: the
+	 *  compatibility mouse events a tap leaves behind must not hover it shut */
+	let tapOpened: string | null = null;
+	// only openChild is a dependency here: the pin is forgotten when the open submenu
+	// CHANGES, never in the instant between the tap and the open it asked for
+	const childChanged = (child: string | null) => {
+		if (child !== tapOpened) tapOpened = null;
+	};
+	$: childChanged(openChild);
 	function leaveRow() {
 		clearTimeout(openTimer);
-		if (!openChild) return;
+		if (!openChild || tapOpened === openChild) return;
 		clearTimeout(closeTimer);
 		closeTimer = setTimeout(() => onopen(path), 150);
 	}
@@ -156,8 +178,9 @@
 	// an icon, so labels align into one column instead of ragged starts
 	$: hasIcons = items.some((item) => item?.icon);
 
-	const itemClass = 'cursor-pointer px-3 py-1.5 whitespace-nowrap';
-	const disabledClass = 'cursor-default px-3 py-1.5 text-gray-400 dark:text-gray-500 whitespace-nowrap';
+	// 38 R6: the row's box (32px, 6px corners) lives in .ctx-row below — one menu style
+	const itemClass = 'cursor-pointer whitespace-nowrap';
+	const disabledClass = 'ctx-disabled cursor-default whitespace-nowrap';
 </script>
 
 {#each items as item, rowAt (item?.key != null ? 'k:' + item.key : 'i:' + rowAt)}
@@ -172,7 +195,7 @@
 				{/if}
 			</div>
 			{#if item.header.locked}
-				<div class="ctx-locked"><Icon name="lock" size={11} /> locked by {item.header.locked}</div>
+				<div class="ctx-locked"><Icon name="lock" size={16} /> locked by {item.header.locked}</div>
 			{/if}
 		</div>
 	{:else if item.section}
@@ -184,6 +207,9 @@
 			<div class="ctx-divider" role="presentation"></div>
 		{/if}
 	{:else if item.children}
+		<!-- the click is the TOUCH open (tapRow); the keyboard opens submenus through
+		     ContextMenu's arrow/Enter navigation -->
+		<!-- svelte-ignore a11y_interactive_supports_focus, a11y_click_events_have_key_events -->
 		<div
 			class="relative {itemClass} ctx-row"
 			class:ctx-active={atNav && indexOf.get(item) === highlight}
@@ -192,16 +218,17 @@
 			role="menuitem"
 			on:mouseenter={() => hoverRow(item, indexOf.get(item) ?? -1)}
 			on:mouseleave={leaveRow}
+			on:click={(e) => tapRow(e, item)}
 		>
 			<span class="flex items-center gap-2">
 				{#if hasIcons}
-					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={15} />{/if}</span>
+					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={16} />{/if}</span>
 				{/if}
 				<span class="flex-1">{item.label}</span>
 				{#if item.hint}
 					<span class="ctx-hint">{item.hint}</span>
 				{/if}
-				<span class="text-[10px] text-gray-400">▸</span>
+				<span class="ctx-chev" aria-hidden="true">▸</span>
 			</span>
 			{#if openChild === item.label}
 				<!-- NOTE: deliberately NO role attribute — the menu suites locate submenu
@@ -209,10 +236,17 @@
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					use:placeSubmenu
+					use:minimalScroll
 					on:mouseenter={() => clearTimeout(closeTimer)}
-					class="ctx-scroll fixed min-w-36 overflow-y-auto overflow-x-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-700"
+					class="ctx-scroll tp-ui tp-menu fixed min-w-36 overflow-y-auto overflow-x-hidden"
 					style="z-index: calc(var(--z-menu) + 2);"
 				>
+					<!-- 38 R9: on the phone shell a submenu is a sheet laid OVER its parent
+					     (drill in place), so it needs a way back; hidden everywhere else
+					     (phone.css). Not a menuitem: keyboard nav and the suites skip it. -->
+					<button type="button" class="ctx-back" on:click|stopPropagation={() => onopen(path)}>
+						<Icon name="chevron-left" size={16} /><span>{item.label}</span>
+					</button>
 					<svelte:self
 						items={item.children}
 						{onrun}
@@ -228,7 +262,7 @@
 		</div>
 	{:else}
 		<div
-			class="{item.disabled ? disabledClass : itemClass} ctx-row {item.danger && !item.disabled ? 'text-red-500' : ''}"
+			class="{item.disabled ? disabledClass : itemClass} ctx-row {item.danger && !item.disabled ? 'ctx-danger' : ''}"
 			class:ctx-active={atNav && indexOf.get(item) === highlight}
 			class:ctx-checked={item.checked}
 			data-ctx-active={atNav && indexOf.get(item) === highlight}
@@ -241,7 +275,7 @@
 		>
 			<span class="flex items-center gap-2">
 				{#if hasIcons}
-					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={15} />{/if}</span>
+					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={16} />{/if}</span>
 				{/if}
 				<span class="flex-1">{item.label}</span>
 				{#if item.hint}
@@ -258,7 +292,7 @@
 								disabled={act.disabled}
 								on:click|stopPropagation={(e) => runRowAction(act, e.currentTarget)}
 							>
-								<Icon name={act.icon} size={13} />
+								<Icon name={act.icon} size={16} />
 							</button>
 						{/each}
 					</span>
@@ -269,69 +303,98 @@
 {/each}
 
 <style>
+	/* 38 R6 — ONE menu style (SPEC §4, ui/Menu): 32px rows with 6px corners, a 16px icon
+	   column, the shortcut in mono right-aligned, section labels in faint uppercase. The
+	   container (.tp-menu) is in src/styles/windows.css. Look only: hover-intent, the
+	   keyboard cursor, submenu placement and every handler above are unchanged. */
+	.ctx-row {
+		display: flex;
+		align-items: center;
+		min-height: 32px;
+		padding: 0 10px;
+		border-radius: var(--radius-input);
+		color: var(--text);
+	}
+	.ctx-row > span:first-child {
+		flex: 1 1 auto;
+		min-width: 0;
+		gap: 10px;
+	}
+	@media (max-width: 639.98px) {
+		.ctx-row {
+			min-height: 44px;
+		}
+	}
+	.ctx-disabled {
+		color: var(--text-faint);
+	}
+	.ctx-danger,
+	.ctx-danger .ctx-ico {
+		color: var(--warn-text);
+	}
+	/* 38 R9: the submenu Back row exists for the phone sheet only (phone.css shows it) */
+	.ctx-back {
+		display: none;
+	}
 	/* ONE highlight for mouse and keyboard — they can never disagree (16-P1) */
 	.ctx-row.ctx-active,
 	.ctx-row.ctx-open {
-		background-color: rgb(243 244 246);
+		background-color: var(--surface-hover);
 	}
-	:global(.dark) .ctx-row.ctx-active,
-	:global(.dark) .ctx-row.ctx-open {
-		background-color: rgb(75 85 99);
-	}
-	/* 16-P3: the ACTIVE choice of a group (replaces the '● ' prefix that used to
-	   shift the label sideways as it appeared). Bold + white on a brand-tinted
-	   pill: the app's accent is a SALMON (#fe795d), so tinting the text itself
-	   would sit uncomfortably close to the red `danger` rows in the same menu. */
+	/* 16-P3: the ACTIVE choice of a group — bold on the accent tint (SPEC §1: one accent) */
 	.ctx-checked {
 		font-weight: 600;
-		color: #fff;
-		background-color: color-mix(in srgb, var(--color-primary-500, #3b82f6) 22%, transparent);
+		color: var(--text);
+		background-color: var(--accent-soft);
 	}
 	.ctx-header {
-		padding: 6px 12px 5px;
-		margin-bottom: 3px;
-		border-bottom: 1px solid rgb(148 163 184 / 0.25);
-		font-size: 12px;
-		max-width: 240px;
+		padding: 6px 10px 8px;
+		margin-bottom: 4px;
+		border-bottom: 1px solid var(--border);
+		font-size: var(--fs-desc);
+		color: var(--text);
+		max-width: 260px;
 	}
 	.ctx-badge {
 		flex: 0 0 auto;
-		font-size: 9px;
-		letter-spacing: 0.06em;
-		text-transform: uppercase;
-		padding: 1px 6px;
-		border-radius: 999px;
-		background: rgb(148 163 184 / 0.18);
-		color: rgb(148 163 184);
+		font-size: var(--fs-badge);
+		padding: 1px 8px;
+		border-radius: var(--radius-pill);
+		background: var(--badge-bg);
+		color: var(--badge-text);
 	}
 	.ctx-locked {
 		display: flex;
 		align-items: center;
 		gap: 4px;
-		margin-top: 2px;
-		font-size: 10px;
-		color: #f59e0b;
+		margin-top: 3px;
+		font-size: var(--fs-badge);
+		color: var(--warn-text);
 	}
 	.ctx-section {
 		margin-top: 4px;
-		padding: 5px 12px 2px;
-		border-top: 1px solid rgb(148 163 184 / 0.2);
-		font-size: 9.5px;
+		padding: 8px 10px 4px;
+		font-size: var(--fs-badge);
 		font-weight: 600;
-		letter-spacing: 0.08em;
+		letter-spacing: var(--tracking-section);
 		text-transform: uppercase;
-		color: rgb(148 163 184 / 0.9);
+		color: var(--text-faint);
 		cursor: default;
 	}
 	.ctx-divider {
-		margin: 4px 0 3px;
-		border-top: 1px solid rgb(148 163 184 / 0.2);
+		height: 1px;
+		margin: 5px 4px;
+		background: var(--border);
 	}
 	.ctx-ico {
 		flex: 0 0 auto;
-		width: 15px;
+		width: 16px;
 		display: inline-flex;
-		color: rgb(148 163 184);
+		color: var(--text-muted);
+	}
+	.ctx-chev {
+		font-size: var(--fs-badge);
+		color: var(--text-faint);
 	}
 	/* W1: inline controls at the end of a row (the Customize list's reorder pair).
 	   Muted until hovered so the row still reads as its label first. */
@@ -346,15 +409,15 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 18px;
-		height: 18px;
-		border-radius: 4px;
-		color: rgb(148 163 184);
+		width: 20px;
+		height: 20px;
+		border-radius: var(--radius-input);
+		color: var(--text-muted);
 		background: transparent;
 	}
 	.ctx-act:hover:not(:disabled) {
-		color: inherit;
-		background: rgb(148 163 184 / 0.25);
+		color: var(--text);
+		background: var(--surface-active);
 	}
 	.ctx-act:disabled {
 		opacity: 0.35;
@@ -362,9 +425,9 @@
 	}
 	.ctx-hint {
 		flex: 0 0 auto;
-		margin-left: 12px;
-		font-family: ui-monospace, monospace;
-		font-size: 10px;
-		color: rgb(148 163 184 / 0.8);
+		margin-left: 16px;
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
+		color: var(--text-faint);
 	}
 </style>

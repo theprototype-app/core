@@ -32,7 +32,7 @@
 	// one thing that catches: a press on it is the button's, end to end — stopped in the
 	// window's capture phase, so playInteract never reads the same finger as a world tap.
 	import { onMount, untrack } from 'svelte';
-	import { X } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { isLocked, isVRMode, playPointerFree, globalRenderer } from '../../stores/sceneStore';
 	import { coarsePointer } from '$lib/inputDevice';
 	import { inputClaims } from '$lib/inputRuntime';
@@ -383,7 +383,7 @@
 		title="Exit play"
 		onclick={exitPlay}
 	>
-		<X size={20} aria-hidden="true" />
+		<Icon name="x" size={20} aria-hidden="true" />
 	</button>
 {/if}
 
@@ -442,9 +442,9 @@
 		position: absolute;
 		transform: translate(-50%, -50%);
 		border-radius: 9999px;
-		border: 2px solid rgb(var(--surface-rgb, 255 255 255) / 0.45);
-		background: rgb(var(--surface-deep-rgb, 0 0 0) / 0.22);
-		box-shadow: 0 0 6px rgb(0 0 0 / 0.4);
+		border: 2px solid color-mix(in srgb, var(--text) 45%, transparent);
+		background: color-mix(in srgb, var(--bg-app) 22%, transparent);
+		box-shadow: 0 0 6px color-mix(in srgb, var(--bg-app) 40%, transparent);
 		box-sizing: border-box;
 	}
 	.touch-stick-rest {
@@ -457,8 +457,8 @@
 		width: 41%;
 		height: 41%;
 		border-radius: 9999px;
-		background: color-mix(in srgb, var(--text, #fff) 55%, transparent);
-		box-shadow: 0 0 6px rgb(0 0 0 / 0.5);
+		background: color-mix(in srgb, var(--text) 55%, transparent);
+		box-shadow: 0 0 6px color-mix(in srgb, var(--bg-app) 50%, transparent);
 	}
 	.touch-actions {
 		position: fixed;
@@ -489,7 +489,7 @@
 		justify-content: center;
 	}
 	.touch-btn:focus-visible {
-		outline: 2px solid var(--accent, #3b82f6);
+		outline: 2px solid var(--accent);
 		outline-offset: 2px;
 		border-radius: 9999px;
 	}
@@ -503,9 +503,9 @@
 		align-items: center;
 		justify-content: center;
 		border-radius: 9999px;
-		border: 1px solid rgba(255, 255, 255, 0.25);
-		background: rgba(17, 24, 39, 0.72);
-		color: var(--icon-strong, #e5e7eb);
+		border: 1px solid var(--border);
+		background: color-mix(in srgb, var(--surface-1) 72%, transparent);
+		color: var(--text);
 		backdrop-filter: blur(4px);
 		/* ONE above the HUD: this is the only piece of play chrome that must outrank an
 		   authored overlay, because a game whose menu covers it leaves the player with no
@@ -521,6 +521,6 @@
 		left: max(12px, env(safe-area-inset-left));
 	}
 	.play-exit:active {
-		background: rgba(31, 41, 55, 0.9);
+		background: color-mix(in srgb, var(--surface-2) 90%, transparent);
 	}
 </style>

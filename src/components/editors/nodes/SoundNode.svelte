@@ -42,7 +42,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>volume</span><span>{(data.volume ?? 0.8).toFixed(2)}</span></span>
 			<input
-				class="nodrag nopan accent-[#ff4000]"
+				class="nodrag nopan accent-accent"
 				type="range"
 				min="0"
 				max="1"
@@ -54,7 +54,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>radius</span><span>{data.radius ?? 5}m</span></span>
 			<input
-				class="nodrag nopan accent-[#ff4000]"
+				class="nodrag nopan accent-accent"
 				type="range"
 				min="1"
 				max="60"
@@ -66,7 +66,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>rolloff</span><span>{(data.rolloff ?? 1).toFixed(1)}</span></span>
 			<input
-				class="nodrag nopan accent-[#ff4000]"
+				class="nodrag nopan accent-accent"
 				type="range"
 				min="0.5"
 				max="4"
@@ -77,7 +77,7 @@
 		</label>
 		<div class="flex items-center gap-2">
 			<button
-				class="nodrag nopan flex-1 rounded-sm px-1 py-0.5 text-white {data.playing ? 'bg-green-600' : 'bg-[#ff4000]'}"
+				class="nodrag nopan flex-1 rounded-sm px-1 py-0.5 {data.playing ? 'bg-accent-soft text-accent-soft-text ring-1 ring-inset ring-accent' : 'bg-accent-fill text-on-accent'}"
 				on:click={() => setNodeData(id, { playing: !data.playing })}
 			>
 				{data.playing ? '■ Stop' : '▶ Play'}

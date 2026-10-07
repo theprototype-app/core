@@ -106,17 +106,17 @@
 <aside class="flex flex-col gap-2 p-2">
 	<input
 		id="palette-filter"
-		class="rounded-sm border border-gray-300 bg-transparent px-2 py-1 text-xs focus:outline-hidden focus:ring-1 focus:ring-primary-500 dark:border-gray-600 dark:text-gray-200"
+		class="rounded-sm border border-border-input bg-transparent px-2 py-1 text-xs text-text-2 placeholder:text-text-faint focus:outline-hidden focus:ring-1 focus:ring-accent"
 		placeholder="Filter nodes…"
 		bind:value={filter}
 	/>
-	<p class="text-center text-xs italic text-gray-400">Drag a node to the canvas, or tap to add it</p>
+	<p class="text-center text-xs italic text-text-muted">Drag a node to the canvas, or tap to add it</p>
 	{#each catalog as group}
-		<p class="mt-1 text-xs font-semibold uppercase text-gray-400">{group.group}</p>
+		<p class="mt-1 text-xs font-semibold uppercase text-text-muted">{group.group}</p>
 		{#each group.items as node}
 			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_noninteractive_element_interactions -->
 			<div
-				class="touch-pan-y cursor-grab rounded-2xl border border-solid border-gray-200 bg-white/70 shadow-[0_7px_9px_0_rgba(0,0,0,0.02)]"
+				class="touch-pan-y cursor-grab rounded-2xl border border-solid border-border bg-surface-2 hover:border-border-strong"
 				role="listitem"
 				title={nodeDoc(node.type)}
 				on:dragstart={(event) => onDragStart(event, node.type)}
@@ -127,7 +127,7 @@
 				draggable={true}
 			>
 				<div
-					class="family-mono rounded-2xl px-3 py-2 text-center font-mono text-xs font-semibold text-[#0F172A] dark:bg-gray-700 dark:text-gray-200"
+					class="family-mono rounded-2xl px-3 py-2 text-center font-mono text-xs font-semibold text-text-2"
 				>
 					{node.label}
 				</div>
@@ -139,7 +139,7 @@
 <!-- drag ghost that follows the finger while touch-dragging a node onto the canvas -->
 {#if dragging}
 	<div
-		class="pointer-events-none fixed z-1400 -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-primary-400 bg-gray-800 px-3 py-2 text-center font-mono text-xs font-semibold text-gray-100 shadow-lg"
+		class="pointer-events-none fixed z-1400 -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-accent bg-surface-1 px-3 py-2 text-center font-mono text-xs font-semibold text-text shadow-lg"
 		style="left: {ghostX}px; top: {ghostY}px;"
 	>
 		{ghostLabel}

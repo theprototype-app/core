@@ -229,34 +229,34 @@
 	}
 </script>
 
-<div id="lod-group" class="flex flex-col gap-2 text-xs text-gray-300">
+<div id="lod-group" class="flex flex-col gap-2 text-xs text-text-2">
 	{#if !info}
-		<p id="lod-none" class="text-[11px] text-gray-400">
+		<p id="lod-none" class="text-[11px] text-text-muted">
 			{#if auto && auto.meshes}
 				Automatic: {auto.meshes} mesh{auto.meshes === 1 ? '' : 'es'} simplified at a distance
 				({auto.levels.map((l) => l.join(' → ')).join('; ')} tris).
 			{:else}
 				No LOD group — the object always draws in full detail.
 			{/if}
-			{#if !$lodEnabled}<span class="block text-amber-400">"Simplify distant models" is off in Settings.</span>{/if}
+			{#if !$lodEnabled}<span class="block text-ink-warn">"Simplify distant models" is off in Settings.</span>{/if}
 		</p>
 		<div class="flex flex-wrap gap-1">
 			<button id="lod-generate" type="button" class="ui-button" onclick={() => generateLodLevels(uuid)}>Generate levels</button>
 		</div>
-		<p class="text-[10px] text-gray-500">Builds simplified copies (50% / 25% / 10% of the triangles) that draw when the object is small on screen.</p>
+		<p class="text-[10px] text-text-faint">Builds simplified copies (50% / 25% / 10% of the triangles) that draw when the object is small on screen.</p>
 	{:else}
 		{#if info.implicit}
-			<p id="lod-implicit" class="text-[10px] italic text-gray-400">From the pack — saved with the scene once you change it.</p>
+			<p id="lod-implicit" class="text-[10px] italic text-text-muted">From the pack — saved with the scene once you change it.</p>
 		{/if}
 		<!-- the level bar -->
-		<div class="flex items-center justify-between text-[10px] text-gray-500">
+		<div class="flex items-center justify-between text-[10px] text-text-faint">
 			<span>100%</span><span>screen height</span><span>0%</span>
 		</div>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			id="lod-bar"
 			bind:this={barEl}
-			class="relative h-9 w-full select-none overflow-hidden rounded-sm border border-gray-600"
+			class="relative h-9 w-full select-none overflow-hidden rounded-sm border border-border"
 			ondragover={(e) => e.preventDefault()}
 			ondrop={onDrop}
 		>
@@ -273,13 +273,13 @@
 					title={'LOD' + seg.level + (seg.tris != null ? ' · ' + seg.tris + ' tris' : '') + ' — click to select and preview'}
 					onclick={() => selectLevel(seg.level)}
 				>
-					<span class="font-semibold text-white">LOD{seg.level}</span>
-					<span class="text-[9px] text-gray-100">{seg.tris != null ? seg.tris + ' tris' : seg.status === 'loading' ? '…' : seg.status === 'failed' ? 'failed' : 'not built'}</span>
+					<span class="font-semibold text-text">LOD{seg.level}</span>
+					<span class="text-[9px] text-text-2">{seg.tris != null ? seg.tris + ' tris' : seg.status === 'loading' ? '…' : seg.status === 'failed' ? 'failed' : 'not built'}</span>
 				</button>
 			{/each}
 			{#if info.block.cull}
 				<div
-					class="lod-seg-culled absolute top-0 flex h-full items-center justify-center bg-gray-700 text-[9px] text-gray-300"
+					class="lod-seg-culled absolute top-0 flex h-full items-center justify-center bg-surface-2 text-[9px] text-text-2"
 					style:left={xOf(info.levels[info.levels.length - 1].screenSize) + '%'}
 					style:right="0"
 				>
@@ -295,14 +295,14 @@
 						title={'LOD' + i + ' → ' + (i < info.levels.length - 1 ? 'LOD' + (i + 1) : 'culled') + ' at ' + pct(l.screenSize) + ' — drag'}
 						use:edgeDrag={i}
 					>
-						<div class="mx-auto h-full w-[2px] bg-white/80"></div>
+						<div class="mx-auto h-full w-[2px] bg-text/80"></div>
 					</div>
 				{/if}
 			{/each}
 			<!-- where the object is on screen right now -->
-			<div id="lod-marker" class="pointer-events-none absolute bottom-0 h-1.5 w-0.5 bg-white" style:left={xOf(Math.min(1, info.size)) + '%'}></div>
+			<div id="lod-marker" class="pointer-events-none absolute bottom-0 h-1.5 w-0.5 bg-text" style:left={xOf(Math.min(1, info.size)) + '%'}></div>
 		</div>
-		<div class="flex flex-wrap gap-x-3 text-[10px] text-gray-400">
+		<div class="flex flex-wrap gap-x-3 text-[10px] text-text-muted">
 			{#each info.levels as l, i (i)}
 				<span>LOD{i} &lt; {pct(l.screenSize)}</span>
 			{/each}
@@ -310,7 +310,7 @@
 		</div>
 
 		<div class="ui-row items-center gap-2">
-			<span class="w-24 shrink-0 text-xs text-gray-400">Force LOD</span>
+			<span class="w-24 shrink-0 text-xs text-text-muted">Force LOD</span>
 			<ThemedSelect
 				id="lod-force"
 				items={forceItems}
@@ -335,15 +335,15 @@
 		</label>
 
 		{#if level && sel !== null}
-			<div id="lod-level-detail" class="flex flex-col gap-1.5 rounded-sm border border-gray-600/60 p-2" data-level={sel}>
+			<div id="lod-level-detail" class="flex flex-col gap-1.5 rounded-sm border border-border p-2" data-level={sel}>
 				<div class="flex items-center justify-between">
-					<span class="font-semibold text-gray-100">LOD{sel}</span>
-					<span class="text-[10px] text-gray-400">previewing on this screen</span>
+					<span class="font-semibold text-text">LOD{sel}</span>
+					<span class="text-[10px] text-text-muted">previewing on this screen</span>
 				</div>
 				<p id="lod-level-source" class="text-[11px]">{sourceLabel(level)} · {level.tris != null ? level.tris + ' tris' : level.status}</p>
-				{#if level.error}<p class="text-[10px] text-amber-400">{level.error}</p>{/if}
+				{#if level.error}<p class="text-[10px] text-ink-warn">{level.error}</p>{/if}
 				{#if sel === 0}
-					<p class="text-[10px] text-gray-500">LOD0 is the object itself — edit it with the rest of this panel.</p>
+					<p class="text-[10px] text-text-faint">LOD0 is the object itself — edit it with the rest of this panel.</p>
 				{:else}
 					{#if level.source === 'generated'}
 						<DragRow
@@ -360,7 +360,7 @@
 						<button id="lod-level-apply-ratio" type="button" class="ui-button-quiet self-start" onclick={() => updateLodLevel(uuid, /** @type {number} */ (sel), { ratio: ratioDraft })}>Rebuild at {Math.round(ratioDraft * 100)}%</button>
 					{/if}
 					<div class="ui-row items-center gap-2">
-						<span class="w-24 shrink-0 text-xs text-gray-400">Replace with</span>
+						<span class="w-24 shrink-0 text-xs text-text-muted">Replace with</span>
 						<ThemedSelect
 							id="lod-level-replace"
 							items={[{ value: '', name: 'Choose an object…' }, { value: '__generated', name: 'Generated (meshopt)' }, ...replaceItems]}
@@ -372,7 +372,7 @@
 							}}
 						/>
 					</div>
-					<p class="text-[10px] text-gray-500">…or drop a model from the Explorer on the bar.</p>
+					<p class="text-[10px] text-text-faint">…or drop a model from the Explorer on the bar.</p>
 					<div class="flex flex-wrap gap-1">
 						{#if $lodLevelGizmo?.uuid === uuid && $lodLevelGizmo?.level === sel}
 							<button id="lod-level-move" type="button" class="ui-button tbx-on" aria-pressed="true" onclick={() => stopLevelGizmo()}>Done moving</button>
@@ -394,17 +394,17 @@
 							type="checkbox"
 							class="tp-check"
 							checked={!!level.material}
-							onchange={(/** @type {any} */ e) => updateLodLevel(uuid, /** @type {number} */ (sel), { material: e.currentTarget.checked ? { color: '#ffffff' } : undefined })}
+							onchange={(/** @type {any} */ e) => updateLodLevel(uuid, /** @type {number} */ (sel), { material: e.currentTarget.checked ? { color: '#ffffff' /* tokens-ok: a LOD material override's starting colour (data the user then picks) */ } : undefined })}
 						/>
 						Own material for this level
 					</label>
 					{#if level.material}
 						<div class="ui-row items-center gap-2">
-							<span class="w-24 shrink-0 text-xs text-gray-400">Colour</span>
+							<span class="w-24 shrink-0 text-xs text-text-muted">Colour</span>
 							<input
 								id="lod-level-color"
 								type="color"
-								value={level.material.color ?? '#ffffff'}
+								value={level.material.color ?? '#ffffff' /* tokens-ok: colour-picker fallback value (material data) */}
 								onchange={(/** @type {any} */ e) => updateLodLevel(uuid, /** @type {number} */ (sel), { material: { ...level.material, color: e.currentTarget.value } })}
 							/>
 						</div>
@@ -432,7 +432,7 @@
 				{/if}
 			</div>
 		{:else}
-			<p class="text-[10px] text-gray-500">Click a level on the bar to select it: the viewport shows that level while it is selected.</p>
+			<p class="text-[10px] text-text-faint">Click a level on the bar to select it: the viewport shows that level while it is selected.</p>
 		{/if}
 
 		<div class="flex flex-wrap gap-1">
@@ -451,10 +451,10 @@
 
 <style>
 	.lod-seg {
-		border-right: 1px solid rgb(0 0 0 / 0.35);
+		border-right: 1px solid color-mix(in srgb, var(--bg-app) 35%, transparent);
 	}
 	.lod-seg-sel {
-		outline: 2px solid #fff;
+		outline: 2px solid var(--text);
 		outline-offset: -2px;
 	}
 	.lod-seg-active span:first-child::after {

@@ -84,14 +84,14 @@ export function inputContextMenu(input) {
 		menu = document.createElement('div');
 		menu.id = 'input-context-menu';
 		menu.className =
-			'fixed z-1001 flex overflow-hidden rounded-lg border border-gray-600 bg-gray-800 text-xs text-gray-200 shadow-xl';
+			'tp-ui fixed z-1001 flex overflow-hidden rounded-lg border border-border-strong bg-surface-1 text-xs text-text-2 shadow-xl';
 		menu.style.left = e.clientX + 'px';
 		menu.style.top = e.clientY + 'px';
 		/** @param {string} label @param {() => any} fn */
 		const mk = (label, fn) => {
 			const button = document.createElement('button');
 			button.textContent = label;
-			button.className = 'px-2.5 py-1 hover:bg-gray-600';
+			button.className = 'px-2.5 py-1 hover:bg-surface-hover';
 			button.addEventListener('click', async () => {
 				await fn();
 				closeMenu();

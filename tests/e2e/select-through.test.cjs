@@ -146,7 +146,7 @@ h.run(async () => {
 	await page.waitForTimeout(700);
 	const box = page.locator('#inspector-pick-through');
 	h.check((await box.count()) === 1, '3.3 the Inspector carries "Click-through in the viewport"');
-	await box.check();
+	await box.click(); // 38 R5: a Toggle (aria-pressed), not a checkbox
 	await page.waitForTimeout(400);
 	const flag = await page.evaluate((uuid) => {
 		let group;

@@ -86,6 +86,18 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					}
 				]
 			: []),
+		// 38 NOTES-38 #5 (user): Properties is the FIRST action — in the long menu it read as
+		// missing from the bottom of Edit. 15-O: an explicit way in — a plain click only selects now, so this and a
+		// double-click are how the panel opens when it is not pinned
+		{
+			label: 'Properties',
+			icon: 'sliders-horizontal',
+			tooltip: 'Open the properties panel (double-click does this too)',
+			// 15-G audit: during a multi-select, selectObject(uuid) would COLLAPSE the
+			// set to the clicked object — re-apply the set instead so the panel opens
+			// on what the header says it acts on
+			action: () => (multi ? applySelectionSet(targets, true) : selectObject(uuid, true))
+		},
 		{ label: 'Focus camera' + suffix, icon: 'focus', hint: 'F', action: () => focusObject(multi ? undefined : uuid) },
 		{
 			label: 'Duplicate' + suffix,
@@ -255,17 +267,6 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 				]
 			: []),
 		{ section: 'Edit' },
-		// 15-O: an explicit way in — a plain click only selects now, so this and a
-		// double-click are how the panel opens when it is not pinned
-		{
-			label: 'Properties',
-			icon: 'sliders-horizontal',
-			tooltip: 'Open the properties panel (double-click does this too)',
-			// 15-G audit: during a multi-select, selectObject(uuid) would COLLAPSE the
-			// set to the clicked object — re-apply the set instead so the panel opens
-			// on what the header says it acts on
-			action: () => (multi ? applySelectionSet(targets, true) : selectObject(uuid, true))
-		},
 		// 15-G audit: renaming is inherently single-target (one name field)
 		...(multi
 			? []
@@ -428,17 +429,19 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			? [
 					{
 						label: 'Physics',
-						icon: 'magnet',
+						icon: 'tool:physics',
 						children: [
 							...(targets.length === 2
 								? [
 										{
 											label: 'Weld together',
+											icon: 'tool:joint-weld',
 											tooltip: 'Fixed joint — they move as one during simulations',
 											action: () => createJoint('fixed', targets[0], targets[1])
 										},
 										...['x', 'y', 'z'].map((axis) => ({
 											label: `Hinge (${axis.toUpperCase()} axis)`,
+											icon: 'tool:joint-hinge',
 											tooltip: 'Revolute joint about the first object’s local ' + axis.toUpperCase() + ' axis, anchored at the second object',
 											action: () => createJoint('revolute', targets[0], targets[1], /** @type {'x'|'y'|'z'} */ (axis))
 										}))

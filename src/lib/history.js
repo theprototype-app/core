@@ -6,6 +6,7 @@ import { notifyExternalMove } from '$lib/flowRuntime';
 import { parkEditOverlays, stripEditOverlays } from '$lib/editOverlays';
 import { HISTORY_BYTES, entryBytes } from '$lib/meshBudget';
 import { withWireBatch } from '$lib/wireBatch';
+import { currentHistoryGesture } from '$lib/historyGesture';
 
 // Undo/redo for local edits; remote peers' changes are not recorded, so
 // histories stay per-user.
@@ -26,6 +27,129 @@ const kindHandlers = {};
 export function registerHistoryKind(kind, apply) {
 	kindHandlers[kind] = apply;
 }
+
+// --- 37 R26: one gesture = ONE undo step -------------------------------------
+// An entry recorded while a gesture is current (historyGesture.js — DragRow opens one per
+// scrub and per typing session) is FOLDED into the stack top when the top belongs to the
+// same gesture: a kind that registers a merge makes the top span both (first before, last
+// after); any other pair becomes a 'gesture' composite. The top is mutated IN PLACE so its
+// identity survives (retractEntry and the 38 lock's undo counter both key on identity),
+// and a fold that lands back where the gesture started (Escape after typing) leaves no step.
+
+/** @type {WeakMap<object, object>} entry -> the gesture it was recorded in */
+const gestureOf = new WeakMap();
+
+/**
+ * @typedef {{merge: (top: any, next: any) => boolean, noop?: (entry: any) => boolean}} HistoryMerge
+ * `merge` mutates `top` to span both and returns true, or returns false to keep them
+ * apart; `noop` says when a merged entry changes nothing.
+ */
+/** @type {Record<string, HistoryMerge>} */
+const mergeHandlers = {};
+
+/** @param {string} kind @param {HistoryMerge} handler */
+export function registerHistoryMerge(kind, handler) {
+	mergeHandlers[kind] = handler;
+}
+
+/** @param {string} key @param {any} value */
+const dropStamps = (key, value) => (key === 'changedAt' ? undefined : value);
+/**
+ * Same content? A latest-wins document re-stamps `changedAt` on every write, so a revert
+ * to the starting value still differs by its stamp — compare without them.
+ * @param {any} a @param {any} b
+ */
+export const sameJson = (a, b) => JSON.stringify(a ?? null, dropStamps) === JSON.stringify(b ?? null, dropStamps);
+/** the plain transform entry (no kind) */
+const KIND_TRANSFORM = 'transform';
+/** @param {any} entry */
+const kindOf = (entry) => entry?.kind ?? KIND_TRANSFORM;
+/** what an entry edits, so a composite folds a later edit into the right member @param {any} entry */
+const targetOf = (entry) => entry?.uuid ?? entry?.key ?? null;
+
+/** @param {any} top @param {any} next */
+function mergeSame(top, next) {
+	if (kindOf(top) !== kindOf(next)) return false;
+	const handler = mergeHandlers[kindOf(top)];
+	return !!handler && handler.merge(top, next);
+}
+
+/** @param {any} entry @returns {boolean} */
+function isNoop(entry) {
+	if (entry?.kind === 'gesture') return entry.entries.every(isNoop);
+	return !!mergeHandlers[kindOf(entry)]?.noop?.(entry);
+}
+
+/** Fold `next` into `top` (both of one gesture). Mutates `top`. @param {any} top @param {any} next */
+function foldIntoGesture(top, next) {
+	if (top.kind === 'gesture') {
+		// the newest member editing the same target takes it; a member in between that
+		// edits the same target ends the search (folding past it would reorder the replay)
+		const target = targetOf(next);
+		for (let i = top.entries.length - 1; i >= 0; i--) {
+			const member = top.entries[i];
+			if (mergeSame(member, next)) return;
+			if (target === null || targetOf(member) === target) break;
+		}
+		top.entries.push(next);
+		return;
+	}
+	if (mergeSame(top, next)) return;
+	const first = { ...top };
+	for (const key of Object.keys(top)) delete top[key];
+	Object.assign(top, { kind: 'gesture', label: 'Edit', entries: [first, next], before: 'before', after: 'after' });
+}
+
+/**
+ * Record `entry` into `list` (the undo stack's array or the open batch) as part of the
+ * current gesture. Returns true when it folded into the top, plus whether the top is now
+ * a no-op the caller should drop.
+ * @param {any[]} list @param {any} entry @param {object} gesture
+ */
+function foldIntoTop(list, entry, gesture) {
+	const top = list[list.length - 1];
+	if (!top || gestureOf.get(top) !== gesture) return null;
+	// never reach below a mesh-edit session's barrier
+	if (!batch && sessionBase >= 0 && list.length <= sessionBase) return null;
+	foldIntoGesture(top, entry);
+	return { drop: isNoop(top) };
+}
+
+/** @param {any} top @param {any} next */
+function mergeTransform(top, next) {
+	if (!top.uuid || top.uuid !== next.uuid) return false;
+	top.after = next.after;
+	return true;
+}
+registerHistoryMerge(KIND_TRANSFORM, { merge: mergeTransform, noop: (e) => sameJson(e.before, e.after) });
+
+registerHistoryMerge('transformSet', {
+	merge(top, next) {
+		// per object: the first before, the latest after
+		for (const item of next.items) {
+			const mine = top.items.find((/** @type {any} */ i) => i.uuid === item.uuid);
+			if (mine) mine.after = item.after;
+			else top.items.push({ ...item });
+		}
+		return true;
+	},
+	noop: (e) => e.items.every((/** @type {any} */ i) => sameJson(i.before, i.after))
+});
+
+// a fan over a selection records one batch per change: fold them member by member
+registerHistoryMerge('aibatch', {
+	merge(top, next) {
+		if (top.entries.length !== next.entries.length) return false;
+		/** @type {[any, any][]} */
+		const pairs = top.entries.map((/** @type {any} */ e, /** @type {number} */ i) => [e, next.entries[i]]);
+		if (!pairs.every(([a, b]) => kindOf(a) === kindOf(b) && targetOf(a) === targetOf(b))) return false;
+		// dry run on shallow copies first, so a member that refuses leaves the batch untouched
+		if (!pairs.every(([a, b]) => mergeSame({ ...a }, b))) return false;
+		for (const [a, b] of pairs) mergeSame(a, b);
+		return true;
+	},
+	noop: (e) => e.entries.every(isNoop)
+});
 
 /** @type {import('svelte/store').Writable<any[]>} exported READ-ONLY (tests/debug) */
 export const undoStack = writable([]);
@@ -96,6 +220,21 @@ export function undoEntry(entry) {
 /** @param {any} entry */
 export function recordEntry(entry) {
 	if (applying) return;
+	const gesture = currentHistoryGesture();
+	if (gesture) {
+		const folded = foldIntoTop(batch ?? get(undoStack), entry, gesture);
+		if (folded) {
+			if (batch) {
+				if (folded.drop) batch.pop();
+				return;
+			}
+			// same identity on top, so notify by hand (or drop a step that changes nothing)
+			undoStack.update((stack) => (folded.drop ? stack.slice(0, -1) : [...stack]));
+			redoStack.set([]);
+			return;
+		}
+		gestureOf.set(entry, gesture);
+	}
 	if (batch) {
 		batch.push(entry);
 		return; // deferred — redoStack stays until the batch commits
@@ -409,6 +548,7 @@ function applyComposite(entry, state) {
 }
 registerHistoryKind('aibatch', applyComposite);
 registerHistoryKind('session', applyComposite); // 15-F mixed-kind seals
+registerHistoryKind('gesture', applyComposite); // 37 R26: one gesture's mixed entries
 
 export function undo() {
 	const stack = get(undoStack);
@@ -423,6 +563,8 @@ export function undo() {
 	}
 	const entry = stack[stack.length - 1];
 	undoStack.update((s) => s.slice(0, -1));
+	// a step that left the stack is sealed: a later edit of its gesture is a new step
+	gestureOf.delete(entry);
 	applying = true;
 	try {
 		// 37 R1: a multi-object step undoes as ONE replicated batch, the way it was made
@@ -430,6 +572,7 @@ export function undo() {
 	} finally {
 		applying = false;
 	}
+	refreshSelection();
 }
 
 export function redo() {
@@ -451,4 +594,15 @@ export function redo() {
 	} finally {
 		applying = false;
 	}
+	refreshSelection();
+}
+
+/**
+ * 37 R26 (Q2): the Inspector's rows read the selected object through `selectedObject`, and
+ * THREE objects are not reactive — an undo rewrote the pose and the rows kept showing the
+ * pre-undo number (a scrub started from it then jumped). Every kind's replay mutates in
+ * place, so poke the selection after any replay rather than in each kind.
+ */
+function refreshSelection() {
+	if (get(selectedObject)?.uuid) selectedObject.update((v) => v);
 }

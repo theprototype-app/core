@@ -1794,7 +1794,7 @@
 						min={0.1}
 						max={8}
 						value={speed}
-						onchange={(/** @type {number} */ v) => target && setSpeed(target.uuid, v || 1)}
+						onchange={(/** @type {number} */ v) => target && setSpeed(target.uuid, v || 1, { record: true })}
 					/>
 				</label>
 				<label

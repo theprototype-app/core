@@ -7,6 +7,7 @@
 		displayDecimals,
 		parseValue
 	} from '$lib/units';
+	import { withHistoryGesture } from '$lib/historyGesture';
 
 	// THE numeric field (phase 64.2, rebuilt in 16-Q3). One control everywhere:
 	// transform rows, the boxes beside sliders, and the loose number inputs that
@@ -18,6 +19,10 @@
 	//                      Shift x100; integer fields (decimals 0) step by 1/10/100
 	//   Esc                back to the value you started with, then blur
 	//
+	// 37 R26: each scrub, and each typing session (focus -> Enter / Esc / blur, arrows
+	// included), is ONE history gesture ($lib/historyGesture): whatever the consumer records
+	// while it runs folds into one undo step, and an Esc that lands back where it started
+	// leaves none.
 	// It stays a real <input> the whole time (no button/typing mode swap): the caret
 	// is always available, ids keep working for tests and labels, and touch gets the
 	// numeric keypad via inputmode. type="text" on purpose — the native number
@@ -110,6 +115,11 @@
 	let entryValue = 0;
 	let startValue = 0;
 	let startX = 0;
+	/** the history gesture the next commit belongs to (37 R26); null = none open
+	 * @type {object|null} */
+	let gesture = null;
+	/** true while Esc blurs the field, so the blur's `change` cannot re-commit the typed text */
+	let reverting = false;
 
 	// while typing show exactly what was typed; otherwise render the live value
 	// (or an em-dash when the selection holds several different values)
@@ -118,7 +128,14 @@
 	/** @param {number} next */
 	function commit(next) {
 		if (!Number.isFinite(next)) return;
-		onchange(clamp(next));
+		withHistoryGesture(gesture, () => onchange(clamp(next)));
+	}
+
+	/** `change` fires on blur with the box's text; while Esc reverts that text is stale
+	 * @param {any} event */
+	function onChange(event) {
+		if (reverting) return;
+		onInput(event);
 	}
 
 	/** @param {any} event */
@@ -181,7 +198,17 @@
 		if (event.key === 'Escape') {
 			commit(entryValue);
 			typed = fmt(entryValue);
-			inputEl?.blur();
+			// 37 R26 (Q1): the blur below fires the browser's `change` with the TYPED text still
+			// in the box (the reset of the text lands a render later), and that re-committed
+			// the typed value — so Esc reverted arrow steps and not typing. Put the text back
+			// now and ignore that one `change`.
+			if (inputEl) inputEl.value = typed;
+			reverting = true;
+			try {
+				inputEl?.blur();
+			} finally {
+				reverting = false;
+			}
 			event.preventDefault();
 			event.stopPropagation();
 		} else if (event.key === 'Enter') {
@@ -192,6 +219,7 @@
 	/** @param {any} event */
 	function onFocus(event) {
 		focused = true;
+		gesture = {}; // a typing session
 		entryValue = Number(value) || 0;
 		typed = fmt(value);
 		// select all so typing REPLACES, the usual expectation for a value field
@@ -202,6 +230,7 @@
 	function onBlur() {
 		focused = false;
 		scrubbing = false;
+		gesture = null;
 	}
 
 	/** @param {any} event */
@@ -226,7 +255,8 @@
 			if (Math.abs(dx) < 3) return; // dead zone keeps a click a click
 			scrubbing = true;
 			event.currentTarget.setPointerCapture?.(event.pointerId);
-			onscrubstart();
+			gesture = {}; // a scrub is its own step, even on a field you were typing in
+			withHistoryGesture(gesture, onscrubstart);
 		}
 		// dragging must not smear a text selection across the field
 		document.getSelection?.()?.removeAllRanges?.();
@@ -252,7 +282,9 @@
 		scrubbing = false;
 		if (wasScrubbing) {
 			event.currentTarget.releasePointerCapture?.(event.pointerId);
-			onscrubend();
+			withHistoryGesture(gesture, onscrubend);
+			// typing after a scrub on a focused field is the next step
+			gesture = focused ? {} : null;
 			return;
 		}
 		// a click that did not scrub = "let me type it" (anywhere on the field)
@@ -281,7 +313,7 @@
 		{disabled}
 		use:keys
 		oninput={onInput}
-		onchange={onInput}
+		onchange={onChange}
 		onfocus={onFocus}
 		onblur={onBlur}
 	/>

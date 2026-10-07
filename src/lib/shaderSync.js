@@ -13,7 +13,7 @@
 import { get } from 'svelte/store';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers } from '../stores/appStore';
-import { registerHistoryKind, recordEntry } from './history';
+import { registerHistoryKind, registerHistoryMerge, recordEntry, sameJson } from './history';
 import {
 	shaderGraphs,
 	shaderGraphOf,
@@ -126,6 +126,16 @@ export function endShaderGesture(key) {
 export function shaderGestureActive(key) {
 	return gestures.has(key);
 }
+
+// 37 R26: one scrub/typing gesture on a graph field is ONE step (historyGesture.js)
+registerHistoryMerge('shadergraph', {
+	merge(top, next) {
+		if (top.key !== next.key) return false;
+		top.after = next.after;
+		return true;
+	},
+	noop: (e) => sameJson(e.before, e.after)
+});
 
 registerHistoryKind('shadergraph', (/** @type {any} */ entry, /** @type {any} */ state) => {
 	// `state` IS the doc history hands us (applyState passes entry.before or entry.after),

@@ -40,6 +40,7 @@
 		setObjectsTexture
 	} from '$lib/materialsHandler';
 	import { recordEntry, beginHistoryBatch, endHistoryBatch, recordTransformSet } from '$lib/history';
+	import { currentHistoryGesture, withHistoryGesture } from '$lib/historyGesture';
 	import { deviceOf, deviceSpec, isDeviceObject, setDeviceFor, previewDeviceParams } from '$lib/audioDevices';
 	import { MUSIC_TOOLBOX_ID, musicToolboxPick } from '$lib/musicToolbox';
 	import { openModuleToolbox, moduleToolboxes } from '$lib/moduleToolboxes';
@@ -1097,17 +1098,34 @@
 	// same one a multi-gizmo drag records, so replay + replication come free.
 	// Typed transforms recorded nothing at all before; with a selection they must,
 	// because setting an absolute value collapses the whole set onto one plane.
+	// 37 R26: the seal also carries the field's history GESTURE (one scrub, or one typing
+	// session — $lib/historyGesture). Typing slower than the 500ms seal records twice, and
+	// the second entry folds into the first; a NEW gesture seals the pending one first, so
+	// two gestures never share an entry.
 	/** @type {Map<string, any>|null} */
 	let xformGestureStart = null;
+	/** @type {object|null} */
+	let xformGestureToken = null;
 	/** @type {any} */
 	let xformGestureTimer;
 	function trackTransformGesture() {
+		const token = currentHistoryGesture();
+		if (xformGestureStart != null && token !== xformGestureToken) {
+			clearTimeout(xformGestureTimer);
+			sealTransformGesture();
+		}
 		if (xformGestureStart == null) {
 			xformGestureStart = new Map();
+			xformGestureToken = token;
 			for (const object of insTargets) xformGestureStart.set(object.uuid, poseOf(object));
 		}
 		clearTimeout(xformGestureTimer);
-		xformGestureTimer = setTimeout(() => {
+		xformGestureTimer = setTimeout(sealTransformGesture, 500);
+	}
+	function sealTransformGesture() {
+		const token = xformGestureToken;
+		xformGestureToken = null;
+		withHistoryGesture(token, () => {
 			const keepOrigin = true; // a hand-placed origin survives the re-seat
 			const befores = xformGestureStart;
 			xformGestureStart = null;
@@ -1135,7 +1153,7 @@
 					keepOrigin
 				);
 			else if (items.length === 1 && originTarget && originSet) reseatPivot(); // 24-E3: the single-object pivot too
-		}, 500);
+		});
 	}
 
 	/**
@@ -1193,6 +1211,21 @@
 	/** lights resend their whole object — same as the old light panel */
 	function sendLightUpdate() {
 		$peers.send({ type: 'object', element: $selectedObject.toJSON(), override: true });
+	}
+
+	/**
+	 * 37 R26: a light's own number (intensity, distance, angle…) — the fields recorded no
+	 * undo at all. One step per scrub/typing session; the props kind's `light` key replays it.
+	 * @param {string} key @param {number} value
+	 */
+	function setLightValue(key, value) {
+		const light = $selectedObject;
+		const before = light[key];
+		light[key] = value;
+		selectedObject.update((s) => s);
+		sendLightUpdate();
+		if (before !== value)
+			recordEntry({ kind: 'props', uuid: light.uuid, before: { light: { [key]: before } }, after: { light: { [key]: value } } });
 	}
 
 	/** Object flag → the whole selection. The checkbox/row has already written the
@@ -1310,11 +1343,21 @@
 		$peers.send({ type: 'name', name: $selectedObject.name, uuid: $selectedObject.uuid });
 	}
 
-	/** Object-level property (renderOrder/frustumCulled): local apply + replicate (147) @param {string} parameter @param {any} value */
-	function setObjectParam(parameter, value) {
+	/** Object-level property (renderOrder/frustumCulled): local apply + replicate (147) @param {string} parameter @param {any} value @param {boolean} [record] */
+	function setObjectParam(parameter, value, record = false) {
+		// 37 R26: `record` = an undo step per changed object (the props kind replays
+		// `renderOrder`); one batch for a set, and one step per scrub/typing session
+		/** @type {[any, any][]} */
+		const befores = record ? insTargets.map((/** @type {any} */ o) => [o, o[parameter]]) : [];
 		$selectedObject[parameter] = value;
 		selectedObject.update((v) => v);
 		sendParam(parameter); // fans the value + messages over the selection
+		const changed = befores.filter(([o, before]) => o[parameter] !== before);
+		if (!changed.length) return;
+		if (changed.length > 1) beginHistoryBatch();
+		for (const [o, before] of changed)
+			recordEntry({ kind: 'props', uuid: o.uuid, before: { [parameter]: before }, after: { [parameter]: o[parameter] } });
+		if (changed.length > 1) endHistoryBatch(parameter);
 	}
 
 	// ---- move to group (shared by mesh and light targets) -------------------
@@ -3194,7 +3237,7 @@
 								step={0.2}
 								snap={5}
 								ariaLabel="Render order"
-								onchange={(v) => setObjectParam('renderOrder', Math.round(v) || 0)}
+								onchange={(v) => setObjectParam('renderOrder', Math.round(v) || 0, true)}
 							/>
 						</div>
 					</div>
@@ -3437,11 +3480,7 @@
 						<div id="inspector-intensity">
 							<DragRow label="I" accent="text-yellow-300" step={0.02} min={0} snap={0.5}
 								value={$selectedObject.intensity}
-								onchange={(v) => {
-									$selectedObject.intensity = v;
-									selectedObject.update((s) => s);
-									sendLightUpdate();
-								}} />
+								onchange={(v) => setLightValue('intensity', v)} />
 						</div>
 					</div>
 					{#each LIGHT_PARAMS[$selectedObject.type] ?? [] as spec (spec.key)}
@@ -3451,11 +3490,7 @@
 							max={spec.max ?? 10}
 							step={spec.step ?? 0.05}
 							value={Number($selectedObject[spec.key] ?? 0)}
-							onchange={(v) => {
-								$selectedObject[spec.key] = v;
-								selectedObject.update((s) => s);
-								sendLightUpdate();
-							}} />
+							onchange={(v) => setLightValue(spec.key, v)} />
 					{/each}
 
 					{#if aimsByRotation}

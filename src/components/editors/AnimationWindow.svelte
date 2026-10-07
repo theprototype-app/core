@@ -1025,11 +1025,16 @@
 	const touches = new Map();
 	/** @type {{d0: number, t0: number, span0: number}|null} */
 	let pinch = null;
+	/** the selection when the FIRST finger went down: a pinch puts it back, so zooming never
+	 *  costs you the keys you had picked (the first finger may have started a marquee or
+	 *  picked a key on its way down) @type {[string, number][]} */
+	let touchSel = [];
 	function touchDownCapture(/** @type {PointerEvent} */ e) {
 		if (e.pointerType !== 'touch' || !plotEl) return;
 		touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
 		if (touches.size < 2) {
 			if (touches.size === 1) {
+				touchSel = [...selKeys];
 				window.addEventListener('pointermove', touchMove);
 				window.addEventListener('pointerup', touchUp);
 				window.addEventListener('pointercancel', touchUp);
@@ -1041,7 +1046,6 @@
 		e.stopPropagation();
 		if (grab.active()) grab.cancel();
 		if (marq || lasso.length) {
-			selKeys = marqBase;
 			marq = null;
 			lasso = [];
 			marqMoved = false;
@@ -1050,6 +1054,7 @@
 		}
 		if (scrubbing) rulerUp();
 		if (tanDrag >= 0) tangentUp();
+		selKeys = touchSel;
 		startPinch();
 	}
 	function startPinch() {

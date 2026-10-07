@@ -30,6 +30,8 @@ function excluded(rel) {
 		/^llms(-full)?\.txt$/.test(rel) ||
 		/^cloud-plugin.*\.js$/.test(rel) ||
 		rel.startsWith('templates/') ||
+		// 37-hdri: ~7.5 MB of bundled HDRIs — buildExport copies only the one the scene shows
+		rel.startsWith('hdri/') ||
 		rel.startsWith('.')
 	);
 }

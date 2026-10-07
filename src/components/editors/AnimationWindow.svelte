@@ -39,6 +39,8 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
+	import ScrollStrip from '../ui/ScrollStrip.svelte';
+	import Segmented from '../ui/Segmented.svelte';
 	import { createGesture } from '$lib/modalGrab';
 	// W5: the BINDING for this pane's grab key lives in the shortcut registry (an
 	// `external` row), so Settings can move it; the key itself is answered here.
@@ -915,7 +917,10 @@
 		if (!target) return;
 		e.preventDefault();
 		e.stopPropagation();
-		if (grab.active()) return grab.finish(true);
+		// a finger's long press arrives while the press it began is still a (motionless)
+		// drag: settle that drag and open the menu, which is what the long press asked for
+		if (coarse && grab.active() && !grab.isModal()) grab.finish(true);
+		else if (grab.active()) return grab.finish(true);
 		selId = trackId;
 		if (!isKeySelected(trackId, index)) selKeys = [[trackId, index]];
 		openPlotMenu(e);
@@ -999,6 +1004,93 @@
 		viewStart = from;
 		viewEnd = Math.min(from + pan.span, duration);
 	}
+	// --- 38 NOTES-38 #35: the editor on a PHONE ----------------------------------
+	// Below 640px of its own width the three columns (channels | timeline | key) cannot sit
+	// side by side — they overlapped. COMPACT shows ONE at a time behind a switch. The width
+	// is the editor's own (a docked phone panel, a folded Find N6, a narrowed window), never
+	// the viewport; 0 means "hidden behind another dock tab", which is not narrow.
+	let bodyW = $state(0);
+	const compact = $derived(bodyW > 0 && bodyW < 640);
+	/** which pane a compact editor shows @type {'list'|'plot'|'key'|'clip'} */
+	let phonePane = $state('plot');
+	// a coarse pointer (a finger) gets invisible hit areas around keys and easing handles: an
+	// 8px diamond is a mouse target. Rendered only for touch, so the desktop DOM is unchanged.
+	const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+
+	// TOUCH on the timeline: one finger keeps every desktop meaning (drag a key or a handle,
+	// sweep the ruler, draw a marquee); TWO fingers pan the time axis and pinch-zoom it — a
+	// touch screen has no wheel and no right/middle button. The second finger CANCELS whatever
+	// the first one started (a key drag reverts, a marquee drops), the way a map does.
+	/** @type {Map<number, {x: number, y: number}>} */
+	const touches = new Map();
+	/** @type {{d0: number, t0: number, span0: number}|null} */
+	let pinch = null;
+	function touchDownCapture(/** @type {PointerEvent} */ e) {
+		if (e.pointerType !== 'touch' || !plotEl) return;
+		touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (touches.size < 2) {
+			if (touches.size === 1) {
+				window.addEventListener('pointermove', touchMove);
+				window.addEventListener('pointerup', touchUp);
+				window.addEventListener('pointercancel', touchUp);
+			}
+			return;
+		}
+		// the second finger: this is a view gesture, not an edit
+		e.preventDefault();
+		e.stopPropagation();
+		if (grab.active()) grab.cancel();
+		if (marq || lasso.length) {
+			selKeys = marqBase;
+			marq = null;
+			lasso = [];
+			marqMoved = false;
+			window.removeEventListener('pointermove', marqueeMove);
+			window.removeEventListener('pointerup', marqueeUp);
+		}
+		if (scrubbing) rulerUp();
+		if (tanDrag >= 0) tangentUp();
+		startPinch();
+	}
+	function startPinch() {
+		if (!plotEl) return;
+		const [a, b] = [...touches.values()];
+		const r = plotEl.getBoundingClientRect();
+		pinch = { d0: Math.max(Math.abs(a.x - b.x), 24), t0: xt((a.x + b.x) / 2 - r.left), span0: viewSpan };
+	}
+	function touchMove(/** @type {PointerEvent} */ e) {
+		if (!touches.has(e.pointerId)) return;
+		touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (!pinch || touches.size < 2 || !plotEl) return;
+		const [a, b] = [...touches.values()];
+		const r = plotEl.getBoundingClientRect();
+		const span = Math.min(Math.max(pinch.span0 * (pinch.d0 / Math.max(Math.abs(a.x - b.x), 24)), 0.1), duration);
+		// keep the time first under the fingers' midpoint under it as they move: that one
+		// line is both the pan and the zoom anchor
+		const mid = (a.x + b.x) / 2 - r.left;
+		const from = Math.min(Math.max(pinch.t0 - ((mid - PAD_X) / innerW) * span, 0), Math.max(0, duration - span));
+		viewStart = from;
+		viewEnd = Math.min(from + span, duration);
+	}
+	function touchUp(/** @type {PointerEvent} */ e) {
+		touches.delete(e.pointerId);
+		if (touches.size < 2) pinch = null;
+		else startPinch(); // a third finger lifted: carry on with the two left
+		if (!touches.size) {
+			window.removeEventListener('pointermove', touchMove);
+			window.removeEventListener('pointerup', touchUp);
+			window.removeEventListener('pointercancel', touchUp);
+		}
+	}
+	/** a long press on the plot is a finger's right-click: the plot menu. The marquee the
+	 *  press started is dropped first (a key's long press opens the key's own menu). */
+	function plotContext(/** @type {MouseEvent} */ e) {
+		e.preventDefault();
+		if (!coarse || pinch) return;
+		if (marq || lasso.length) marqueeUp();
+		openPlotMenu(e);
+	}
+
 	// --- the navigator strip -----------------------------------------------------
 	/** @type {{el: any, span: number}|null} */
 	let navDrag = null;
@@ -1695,6 +1787,119 @@
 
 <svelte:window onresize={fitToViewport} />
 
+{#snippet clipSettings(/** @type {boolean} */ stacked)}
+	<div class={stacked ? "an-clip-pane" : "flex items-center gap-1.5"}>
+		<label class="flex items-center gap-1 text-[11px] text-text-muted" title="Clip length. Keys keep their times — use ＋ ▸ Retime to stretch the movement itself.">
+			<span>length</span>
+			<DragRow
+				id="animation-length"
+				step={0.01}
+				decimals={2}
+				min={0.1}
+				value={duration}
+				onchange={(/** @type {number} */ v) => target && updateAnim(target.uuid, { duration: Math.max(0.1, v) })}
+			/>
+		</label>
+		<label class="flex items-center gap-1 text-[11px] text-text-muted" title="Playback rate — how fast it runs, without changing any keys">
+			<span>speed</span>
+			<DragRow
+				id="animation-speed"
+				step={0.01}
+				decimals={2}
+				min={0.1}
+				max={8}
+				value={speed}
+				onchange={(/** @type {number} */ v) => target && setSpeed(target.uuid, v || 1)}
+			/>
+		</label>
+		<label
+			class="flex items-center gap-1 text-[11px] text-text-muted"
+			title="Frames per second for THIS clip — what its key times mean, and the grid the arrows and snapping use"
+		>
+			<span>fps</span>
+			<DragRow
+				id="animation-fps"
+				step={0.25}
+				decimals={0}
+				min={1}
+				max={240}
+				value={FPS}
+				onchange={(/** @type {number} */ v) => target && updateAnim(target.uuid, { fps: Math.round(v) })}
+			/>
+		</label>
+		<label
+			class="flex items-center gap-1 text-[11px] text-text-muted"
+			title="Sample the movement on a COARSER grid than its keys — the stepped 'on twos' look. 0 = smooth."
+		>
+			<span>step</span>
+			<DragRow
+				id="animation-step"
+				step={0.25}
+				decimals={0}
+				min={0}
+				max={240}
+				value={anim?.step ?? 0}
+				onchange={(/** @type {number} */ v) => {
+					const next = Math.round(v);
+					if (target) updateAnim(target.uuid, { step: next >= 1 ? next : 0 });
+				}}
+			/>
+		</label>
+		<select
+			class="rounded-sm border border-border bg-surface-inset px-1 py-0.5 text-xs"
+			aria-label="Loop mode"
+			value={anim?.loop ?? 'loop'}
+			onchange={(e) => target && updateAnim(target.uuid, { loop: /** @type {any} */ (e.currentTarget.value) })}
+		>
+			<option value="loop">Loop</option>
+			<option value="once">Once</option>
+			<option value="pingpong">Ping-pong</option>
+		</select>
+	</div>
+
+{/snippet}
+
+{#snippet recAdd()}
+	<div class="flex items-center gap-1.5">
+		<button
+			id="animation-autokey"
+			class="flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium {recording
+				? 'border-live bg-live/20 text-live'
+				: 'border-border text-text-muted hover:bg-surface-hover'}"
+			title={recording
+				? 'Recording: posing this object writes keys at the playhead'
+				: 'Auto-key: pose the object and keys are written at the playhead'}
+			aria-label="Auto-key"
+			aria-pressed={recording}
+			onclick={() => target && setAutoKey(recording ? null : target.uuid)}
+		>
+			<span class={recording ? 'animate-pulse' : ''}>●</span> REC
+		</button>
+		<button
+			id="animation-add"
+			class="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-text-2 hover:bg-surface-hover"
+			title="Add movements, keys, presets and clips"
+			aria-label="Add"
+			onclick={openAddMenu}>＋</button
+		>
+	</div>
+{/snippet}
+
+{#snippet paneSwitch()}
+	<!-- one pane at a time when the editor is phone-narrow (NOTES-38 #35) -->
+	<Segmented
+		label="Animation pane"
+		id="animation-pane"
+		bind:value={phonePane}
+		options={[
+			{ value: 'list', label: 'Channels' },
+			{ value: 'plot', label: 'Timeline' },
+			{ value: 'key', label: 'Key' },
+			{ value: 'clip', label: 'Clip' }
+		]}
+	/>
+{/snippet}
+
 {#snippet body()}
 	{#if !target}
 		<div class="flex flex-1 items-center justify-center p-6 text-center text-sm text-text-muted">
@@ -1760,6 +1965,8 @@
 				>
 			</div>
 
+			{#if compact}{@render recAdd()}{/if}
+
 			<div class="flex min-w-40 flex-1 items-center gap-2">
 				<input
 					type="range" min="0" max={duration} step="0.01"
@@ -1772,106 +1979,26 @@
 				</span>
 			</div>
 
-			<div class="flex items-center gap-1.5">
-				<label class="flex items-center gap-1 text-[11px] text-text-muted" title="Clip length. Keys keep their times — use ＋ ▸ Retime to stretch the movement itself.">
-					<span>length</span>
-					<DragRow
-						id="animation-length"
-						step={0.01}
-						decimals={2}
-						min={0.1}
-						value={duration}
-						onchange={(/** @type {number} */ v) => target && updateAnim(target.uuid, { duration: Math.max(0.1, v) })}
-					/>
-				</label>
-				<label class="flex items-center gap-1 text-[11px] text-text-muted" title="Playback rate — how fast it runs, without changing any keys">
-					<span>speed</span>
-					<DragRow
-						id="animation-speed"
-						step={0.01}
-						decimals={2}
-						min={0.1}
-						max={8}
-						value={speed}
-						onchange={(/** @type {number} */ v) => target && setSpeed(target.uuid, v || 1)}
-					/>
-				</label>
-				<label
-					class="flex items-center gap-1 text-[11px] text-text-muted"
-					title="Frames per second for THIS clip — what its key times mean, and the grid the arrows and snapping use"
-				>
-					<span>fps</span>
-					<DragRow
-						id="animation-fps"
-						step={0.25}
-						decimals={0}
-						min={1}
-						max={240}
-						value={FPS}
-						onchange={(/** @type {number} */ v) => target && updateAnim(target.uuid, { fps: Math.round(v) })}
-					/>
-				</label>
-				<label
-					class="flex items-center gap-1 text-[11px] text-text-muted"
-					title="Sample the movement on a COARSER grid than its keys — the stepped 'on twos' look. 0 = smooth."
-				>
-					<span>step</span>
-					<DragRow
-						id="animation-step"
-						step={0.25}
-						decimals={0}
-						min={0}
-						max={240}
-						value={anim?.step ?? 0}
-						onchange={(/** @type {number} */ v) => {
-							const next = Math.round(v);
-							if (target) updateAnim(target.uuid, { step: next >= 1 ? next : 0 });
-						}}
-					/>
-				</label>
-				<select
-					class="rounded-sm border border-border bg-surface-inset px-1 py-0.5 text-xs"
-					aria-label="Loop mode"
-					value={anim?.loop ?? 'loop'}
-					onchange={(e) => target && updateAnim(target.uuid, { loop: /** @type {any} */ (e.currentTarget.value) })}
-				>
-					<option value="loop">Loop</option>
-					<option value="once">Once</option>
-					<option value="pingpong">Ping-pong</option>
-				</select>
-			</div>
-
-			<div class="flex items-center gap-1.5">
-				<button
-					id="animation-autokey"
-					class="flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium {recording
-						? 'border-live bg-live/20 text-live'
-						: 'border-border text-text-muted hover:bg-surface-hover'}"
-					title={recording
-						? 'Recording: posing this object writes keys at the playhead'
-						: 'Auto-key: pose the object and keys are written at the playhead'}
-					aria-label="Auto-key"
-					aria-pressed={recording}
-					onclick={() => target && setAutoKey(recording ? null : target.uuid)}
-				>
-					<span class={recording ? 'animate-pulse' : ''}>●</span> REC
-				</button>
-				<button
-					id="animation-add"
-					class="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-text-2 hover:bg-surface-hover"
-					title="Add movements, keys, presets and clips"
-					aria-label="Add"
-					onclick={openAddMenu}>＋</button
-				>
-			</div>
+			{#if !compact}
+				<!-- the clip settings + REC/＋ scroll sideways when they do not fit (NOTES-38 #39) -->
+				<ScrollStrip class="min-w-0" gap="var(--space-3)" label="Clip settings" id="animation-settings">
+					{@render clipSettings(false)}
+					{@render recAdd()}
+				</ScrollStrip>
+			{/if}
 		</div>
 
-		<div class="flex min-h-0 flex-1">
+		<div class="flex min-h-0 flex-1" bind:clientWidth={bodyW} data-phone-pane={compact ? phonePane : undefined}>
 			<!-- LEFT: the object's OWN clips, then authored clips + movement tracks -->
 			<!-- clientHeight is the clip list's resize CEILING: the grip used to clamp at
 			     a flat 360px whatever the pane's own height, so on a short dock it went
 			     straight off the bottom of the window -->
-			<div class="flex w-56 shrink-0 flex-col border-r border-border" bind:clientHeight={sideH}>
+			<div
+				class="flex w-56 shrink-0 flex-col border-r border-border"
+				class:an-pane-full={compact}
+				class:an-pane-off={compact && phonePane !== 'list'}
+				bind:clientHeight={sideH}
+			>
 				{#if clips.length}
 					<div id="animation-clips" class="border-b border-border">
 						<div class="flex items-center justify-between px-2 pt-1.5">
@@ -1990,7 +2117,7 @@
 							<button
 								class="min-w-0 flex-1 truncate px-2 py-1 text-left text-xs hover:bg-surface-hover {selTrack?.id === t.id ? 'text-accent-soft-text' : 'text-text-2'}"
 								title={isMaterialChannel(t.channel) ? channelLabel(t.channel) + ' — a look channel: it drives the material, so a GLTF export cannot carry it' : channelLabel(t.channel)}
-								onclick={() => { selId = t.id; selKeys = []; }}>{channelLabel(t.channel)}</button
+								onclick={() => { selId = t.id; selKeys = []; if (compact) phonePane = 'plot'; }}>{channelLabel(t.channel)}</button
 							>
 							<span class="shrink-0 text-[10px] tabular-nums text-text-faint">{t.keys.length}</span>
 							<button class="ui-button-quiet shrink-0 text-ink-bad" title="Remove" aria-label="Remove channel" onclick={() => { if (target) removeTrack(target.uuid, t.id); }}><Icon name="x" size={16} /></button>
@@ -2046,8 +2173,8 @@
 
 			<!-- CENTRE: the timeline (dope sheet / value graph) -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-			<div class="flex min-w-0 flex-1 flex-col" data-key-scope="animation" tabindex="-1" bind:this={plotHost} use:keyNav>
-				<div class="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1 text-[11px] text-text-muted">
+			<div class="flex min-w-0 flex-1 flex-col" class:an-pane-off={compact && phonePane !== 'plot'} data-key-scope="animation" tabindex="-1" bind:this={plotHost} use:keyNav>
+				<ScrollStrip class="shrink-0 border-b border-border px-2 py-1 text-[11px] text-text-muted" gap="var(--space-2)" label="Timeline tools" id="animation-plot-tools">
 					<button
 						class="rounded-sm border px-1.5 py-0.5 {view === 'sheet' ? 'border-accent text-accent-text' : 'border-border'}"
 						onclick={() => (view = 'sheet')}>Sheet</button
@@ -2171,7 +2298,7 @@
 					<span class="truncate font-mono text-[10px] text-text-faint">
 						{viewStart.toFixed(2)}–{viewEnd.toFixed(2)}s
 					</span>
-				</div>
+				</ScrollStrip>
 				<!-- NAVIGATOR: the whole clip at a glance with the visible window as a
 				     thumb, so a zoomed-in view still shows where it sits and can be
 				     dragged along. A native scrollbar cannot do this job — the plot is
@@ -2234,7 +2361,8 @@
 							ondblclick={plotDblClick}
 							onpointerdown={plotDown}
 							onwheel={onPlotWheel}
-							oncontextmenu={(e) => e.preventDefault()}
+							onpointerdowncapture={touchDownCapture}
+							oncontextmenu={plotContext}
 						>
 							<!-- ruler: drag anywhere along it to sweep the playhead -->
 							<rect
@@ -2309,6 +2437,14 @@
 											onpointerdown={(e) => keyDown(e, track.id, index)}
 											oncontextmenu={(e) => keyContext(e, track.id, index)}
 										/>
+										{#if coarse}
+											<circle
+												cx={tx(key.t)} cy={rowY(row)} r="11"
+												class="an-hit"
+												onpointerdown={(e) => keyDown(e, track.id, index)}
+												oncontextmenu={(e) => keyContext(e, track.id, index)}
+											/>
+										{/if}
 									{/each}
 								{/each}
 							{:else if selTrack}
@@ -2335,12 +2471,14 @@
 											class="an-tangent {tangents.flat ? 'cursor-ew-resize' : 'cursor-grab'}"
 											onpointerdown={(e) => tangentDown(0, e)}
 										/>
+										{#if coarse}<circle cx={tangents.p1.x} cy={tangents.p1.y} r="14" class="an-hit" onpointerdown={(e) => tangentDown(0, e)} />{/if}
 										<circle
 											id="animation-tangent-2"
 											cx={tangents.p2.x} cy={tangents.p2.y} r="4.5"
 											class="an-tangent {tangents.flat ? 'cursor-ew-resize' : 'cursor-grab'}"
 											onpointerdown={(e) => tangentDown(1, e)}
 										/>
+										{#if coarse}<circle cx={tangents.p2.x} cy={tangents.p2.y} r="14" class="an-hit" onpointerdown={(e) => tangentDown(1, e)} />{/if}
 									</g>
 								{/if}
 								{#each selTrack.keys as key, index (index)}
@@ -2351,6 +2489,14 @@
 										onpointerdown={(e) => keyDown(e, selTrack.id, index)}
 										oncontextmenu={(e) => keyContext(e, selTrack.id, index)}
 									/>
+									{#if coarse}
+										<circle
+											cx={tx(key.t)} cy={vy(key.v)} r="14"
+											class="an-hit"
+											onpointerdown={(e) => keyDown(e, selTrack.id, index)}
+											oncontextmenu={(e) => keyContext(e, selTrack.id, index)}
+										/>
+									{/if}
 								{/each}
 								<text x={PAD_X} y={TOP_H + 10} font-size="9" class="an-faint">
 									{dispVal(range.hi, selTrack.channel)}
@@ -2390,8 +2536,16 @@
 
 			</div>
 
+			{#if compact && phonePane === 'clip'}
+				<div class="min-w-0 flex-1 overflow-y-auto p-2" use:minimalScroll>{@render clipSettings(true)}</div>
+			{/if}
 			<!-- RIGHT: selected key + the easing that leaves it -->
-			<div class="w-52 shrink-0 overflow-y-auto border-l border-border p-2" use:minimalScroll>
+			<div
+				class="w-52 shrink-0 overflow-y-auto border-l border-border p-2"
+				class:an-pane-full={compact}
+				class:an-pane-off={compact && phonePane !== 'key'}
+				use:minimalScroll
+			>
 				{#if selTrack}
 					<div class="ui-section-label">Movement</div>
 					<label class="mb-2 block text-[11px] text-text-muted">
@@ -2510,6 +2664,7 @@
 			<div class="flex shrink-0 items-center gap-2 pb-1">
 				<span class="tp-dock-title">Animation</span>
 				<span class="tp-dock-sub">{target ? target.name || 'object' : 'no selection'}</span>
+				{#if compact && target}{@render paneSwitch()}{/if}
 				<span class="flex-1"></span>
 				<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock" onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button>
 				<button class="tp-dock-btn" title="Close" aria-label="Close" onclick={() => animationClose.set(true)}><Icon name="x" size={16} /></button>
@@ -2545,6 +2700,7 @@
 				{#snippet heading()}
 					<span class="wc-label">Animation</span>
 					<span class="wc-sub">{target ? target.name || 'object' : 'no selection'}</span>
+					{#if compact && target}{@render paneSwitch()}{/if}
 					<span class="flex-1"></span>
 				{/snippet}
 				{#snippet actions()}
@@ -2602,4 +2758,11 @@
 	.an-ease-arm { stroke: color-mix(in srgb, var(--accent-text) 50%, transparent); }
 	.an-ease-end { fill: var(--text-faint); }
 	.an-ease-handle { fill: var(--accent); }
+	/* a finger's hit area around a key or handle: painted nowhere, hit everywhere inside */
+	.an-hit { fill: transparent; pointer-events: all; }
+	/* compact (NOTES-38 #35): the one visible pane takes the whole width */
+	.an-pane-full { width: auto; flex: 1 1 auto; border-left: 0; border-right: 0; }
+	.an-pane-off { display: none; }
+	/* the Clip pane: the transport's clip settings, wrapped into rows instead of one strip */
+	.an-clip-pane { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); align-items: center; gap: var(--space-2) var(--space-3); }
 </style>

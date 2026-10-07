@@ -62,6 +62,31 @@
   --color-danger: var(--danger);
   --color-badge: var(--badge-bg);
   --color-badge-text: var(--badge-text);
+  /* 38 R11: the rest of the semantic set, so no component needs a palette colour */
+  --color-surface-active: var(--surface-active);
+  --color-accent-fill: var(--accent-fill);
+  --color-on-accent: var(--on-accent);
+  --color-on-live: var(--on-live);
+  --color-on-danger: var(--on-danger);
+  --color-ink-bad: var(--ink-bad);
+  --color-ink-warn: var(--ink-warn);
+  --color-ink-good: var(--ink-good);
+  --color-control-off: var(--control-off);
+  --color-scrim: var(--scrim);
+  --color-knob: var(--knob);
+  --color-speaking: var(--speaking);
+  --color-axis-x: var(--axis-x);
+  --color-axis-y: var(--axis-y);
+  --color-axis-z: var(--axis-z);
+  --color-icon-folder: var(--icon-folder);
+  --color-icon-image: var(--icon-image);
+  --color-icon-audio: var(--icon-audio);
+  --color-icon-doc: var(--icon-doc);
+  --color-icon-object: var(--icon-object);
+  --color-icon-prefab: var(--icon-prefab);
+  --color-icon-danger: var(--icon-danger);
+  --color-icon-warning: var(--icon-warning);
+  --color-icon-accent: var(--icon-accent);
   --text-badge: var(--fs-badge);
   --text-section: var(--fs-section);
   --text-desc: var(--fs-desc);
@@ -102,26 +127,22 @@
   }
 }
 
-/* width */
-::-webkit-scrollbar {
-    width: 10px;
+/* 38 R11 (NOTES-38 #1): NO native scrollbar anywhere in the app. Every element that scrolls
+   draws the app's minimal overlay thumb (`use:minimalScroll`, $lib/ui/minimalScroll.js) or
+   scrolls with no bar by design (`tp-noscrollbar`: chip/tab strips, the burger menu);
+   tests/unit/noNativeScrollbars.test.js fails on a scroller that says neither, and on any
+   stylesheet that styles a native bar back in. This rule is the safety net under that lint
+   (a third-party or dynamic scroller still shows no platform bar). */
+* {
+	scrollbar-width: none;
 }
- 
-/* Track */
-::-webkit-scrollbar-track {
-    background: #888;
-    border-radius: 5px;
+*::-webkit-scrollbar {
+	display: none;
+	width: 0;
+	height: 0;
 }
- 
-/* Handle */
-::-webkit-scrollbar-thumb {
-    background: #000;
-    border-radius: 5px;
-}
- 
-/* Handle on hover */
-::-webkit-scrollbar-thumb:hover {
-    background: #555;
+.tp-noscrollbar {
+	scrollbar-width: none;
 }
 
 /* Removes Flowbite button borders */

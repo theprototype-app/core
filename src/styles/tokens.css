@@ -5,19 +5,16 @@
    CSS uses them directly (var(--surface-2)). Primitives in components/ui are built ONLY
    from these.
 
-   THE ONE TRAP, and why `.tp-ui` exists. Five SPEC names were already phase-89 theme
-   tokens: --text, --text-2, --border, --accent, --surface-2. The DEFAULT (dark) theme
-   leaves those five UNDEFINED on purpose, and ~400 call sites in 68 components render
-   their own per-site fallback (`var(--text, #e5e7eb)`, `var(--accent, #ef562f)`,
-   `var(--surface-2, #374151)` …). Defining them on :root would repaint the whole default
-   theme (20 orange accents turn blue), which R2 forbids. So:
-     - every OTHER SPEC token is global (:root, every theme);
-     - the five colliding names carry their SPEC values inside `.tp-ui` — the class every
-       primitive's root wears (WindowChrome too, so a migrated window's whole body is in
-       it). Outside `.tp-ui` they keep their legacy meaning until R11 moves this block to
-       :root, when the last legacy fallback is gone.
-   Custom and exotic themes (green / 8-bit / contrast / custom-*) need no scope: they
-   DEFINE the five on :root already, and `.tp-ui` leaves them alone there.
+   THE FIVE COLLIDING NAMES. --text, --text-2, --border, --accent and --surface-2 were
+   already phase-89 theme tokens, which the default (dark) theme left UNDEFINED while ~400
+   call sites rendered their own per-site fallback (`var(--accent, #ef562f)` …). R2-R10 kept
+   the SPEC values of those five inside `.tp-ui` (the class every primitive's root wears) so
+   the un-migrated UI did not repaint. R11 migrated the last component to the tokens and
+   dropped every fallback, so the five are on :root now like every other token; `npm run
+   check:tokens` (strict in CI) keeps raw colours from coming back. `.tp-ui` remains the
+   redesign scope for type and the focus ring (below).
+   Custom and exotic themes (green / 8-bit / contrast / custom-*) DEFINE the five on :root
+   themselves.
 
    THEMES. Dark = the mockup values (the default). Light = its own block below.
    Green / 8-bit / contrast / a custom .theme.json DERIVE every token from the legacy set
@@ -143,9 +140,11 @@
 	}
 }
 
-/* ---- DARK: the five colliding names, inside the redesign scope only (see the header) ---- */
-:root:not([data-theme]) .tp-ui,
-:root[data-theme='dark'] .tp-ui {
+/* ---- DARK: the five colliding names. R2-R10 kept them inside `.tp-ui` while the legacy
+   per-site fallbacks (`var(--accent, #ef562f)` …) still painted the rest; R11 removed the last
+   of those, so they are global now (see the header). ---- */
+:root:not([data-theme]),
+:root[data-theme='dark'] {
 	--text: #e6e9ef;
 	--text-2: #c6cdda;
 	--border: #262d3b;
@@ -184,9 +183,9 @@
 	--shadow-window: 0 12px 32px rgb(24 32 48 / 0.18), 0 2px 6px rgb(24 32 48 / 0.1);
 	--shadow-knob: 0 1px 3px rgb(15 23 42 / 0.3);
 }
-/* light's legacy block (theme.css) defines the five for the phase-89 remaps; the redesign
-   scope states its own */
-:root[data-theme='light'] .tp-ui {
+/* light: the five (theme.css's legacy light block also names them; this file loads after it
+   and wins, so the whole app paints from the redesign values) */
+:root[data-theme='light'] {
 	--text: #141922;
 	--text-2: #2b3342;
 	--border: #dde2ea;

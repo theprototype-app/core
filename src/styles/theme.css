@@ -191,6 +191,29 @@
 	--on-accent: #000000;
 }
 
+/* ---- 38 R11: the code editor's DARK values (CodeEditor.svelte used to carry them as per-site
+        fallbacks; light states its own above). The chrome follows the redesign tokens, the
+        syntax hues are the editor's palette. ---- */
+:root:not([data-theme='light']) {
+	--code-bg: var(--surface-inset);
+	--code-text: var(--text);
+	--code-gutter-bg: var(--surface-1);
+	--code-gutter-text: var(--text-faint);
+	--code-active-line: color-mix(in srgb, var(--accent) 8%, transparent);
+	--code-active-gutter: color-mix(in srgb, var(--accent) 12%, transparent);
+	--code-caret: var(--accent);
+	--code-selection: color-mix(in srgb, var(--accent) 28%, transparent);
+	--code-ident: var(--text);
+	--code-op: var(--text-muted);
+	--code-keyword: #c792ea;
+	--code-def: #82aaff;
+	--code-number: #f78c6c;
+	--code-string: #c3e88d;
+	--code-comment: #7c8799;
+	--code-type: #ffcb6b;
+	--icon-strong: var(--text);
+}
+
 /* ---- themed dropdown + scrollbar tokens (146/148) — feed the ThemedSelect
         popup + the global scrollbar style so both recolor per theme instead of
         the white/OS native chrome. Base = the dark-authored look; each theme
@@ -241,32 +264,8 @@
 	--scrollbar-thumb-hover: #ffd400;
 }
 
-/* global scrollbar style reads the tokens so panels/menus/lists scroll in-theme
-   (148). Dark's tokens mirror the old gray, so the default look is unchanged. */
-* {
-	scrollbar-width: thin;
-	scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-}
-::-webkit-scrollbar {
-	width: 10px;
-	height: 10px;
-}
-::-webkit-scrollbar-track {
-	background: var(--scrollbar-track);
-}
-::-webkit-scrollbar-thumb {
-	background: var(--scrollbar-thumb);
-	border-radius: 6px;
-	border: 2px solid var(--scrollbar-track);
-}
-::-webkit-scrollbar-thumb:hover {
-	background: var(--scrollbar-thumb-hover);
-}
-/* 8-bit: blocky square thumb to match the pixel personality */
-:root[data-theme='bit8'] ::-webkit-scrollbar-thumb {
-	border-radius: 0;
-	border-width: 0;
-}
+/* (148's global native scrollbar style is gone: 38 R11 draws no native bar anywhere — see app.css.
+   The --scrollbar-* tokens stay theme keys a .theme.json may carry.) */
 
 /* ---- shared remap: unprefixed dark-authored utilities (all non-dark themes) ---- */
 

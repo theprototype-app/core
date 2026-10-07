@@ -1,85 +1,37 @@
 #!/usr/bin/env node
-// 38 R2 — `npm run check:tokens`: colours in components come from the redesign tokens only
+// 38 R2/R11 — `npm run check:tokens`: colours come from the redesign tokens only
 // (cloud docs/design/redesign/SPEC.md §1; the tokens live in src/styles/tokens.css and app.css).
 //
-// What counts as a raw colour in src/components/**:
+// What counts as a raw colour (src/components/**, src/routes/**, src/styles/** minus the files
+// that DEFINE the tokens):
 //   - a hex literal            #fff  #1b212d  #1b212dcc      (also inside a var() fallback)
 //   - an rgb()/rgba()/hsl()/hsla() literal
 //   - a Tailwind PALETTE utility   bg-gray-800  text-red-400  hover:border-blue-500/50
 //     bg-white  text-black …       (token utilities — bg-surface-2, text-text-muted — are fine)
 // Comments are stripped first, so a note that NAMES a colour is not a violation.
 //
-// MODES. The redesign migrates the app area by area (R4-R10), so this starts as a WARNING:
-//   node scripts/check-tokens.cjs            report per file, exit 0
-//   node scripts/check-tokens.cjs --strict   exit 1 on any violation (R11 flips CI to this)
+// R11: a HARD FAIL (CI runs it as is). The redesign migrated every component; a colour that is
+// DATA, not chrome — a default the user edits in a colour picker, a three.js material, pixels a
+// canvas draws for the 3D view or a headset — says so where it stands:
+//     const DEFAULT_TINT = '#ffffff'; // tokens-ok: the picker's starting value (user data)
+//     /* tokens-ok-begin: node category hues (graph data, same in every theme) */ … /* tokens-ok-end */
+// The reason after `tokens-ok:` is required (a bare `tokens-ok` is itself a violation), so
+// every exemption reads as a decision in review.
+//
+//   node scripts/check-tokens.cjs            report per file, exit 1 on any raw colour
+//   node scripts/check-tokens.cjs --warn     report only, exit 0
 //   node scripts/check-tokens.cjs --json     machine-readable { total, files: {rel: n} }
 //   node scripts/check-tokens.cjs <files…>   only these files (a lane checking its own diff)
-// …except CLEAN: files already built from tokens fail even in warning mode. A lane that
-// migrates a component adds it here — that is the ratchet, and why it is a list.
 
 const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const COMPONENTS = path.join(ROOT, 'src', 'components');
-
-/** files that must stay token-clean (relative to the repo root, forward slashes) */
-const CLEAN = [
-	'src/components/menu/inspector/InsToggle.svelte',
-	'src/components/menu/inspector/InspectorHead.svelte',
-	'src/components/menu/inspector/MenuButton.svelte',
-	// 38 R7 (38-modals)
-	'src/components/menu/CharacterPanel.svelte',
-	'src/components/menu/ConfirmModal.svelte',
-	'src/components/menu/checkpoints/CheckpointSaveDialog.svelte',
-	'src/components/menu/checkpoints/CheckpointTimeline.svelte',
-	'src/components/menu/ExportPanel.svelte',
-	'src/components/menu/ImportDuplicatesModal.svelte',
-	'src/components/menu/ModulesManager.svelte',
-	'src/components/menu/PublishExportModal.svelte',
-	'src/components/menu/SessionsManager.svelte',
-	'src/components/menu/StorageModal.svelte',
-	'src/components/menu/TemplatesModal.svelte',
-	'src/components/ui/ModalDialog.svelte',
-	'src/components/ui/Badge.svelte',
-	'src/components/ui/Button.svelte',
-	'src/components/ui/Checkbox.svelte',
-	'src/components/ui/Chips.svelte',
-	'src/components/ui/EmptyState.svelte',
-	'src/components/ui/Menu.svelte',
-	'src/components/ui/NavRow.svelte',
-	'src/components/ui/PropRow.svelte',
-	'src/components/ui/SearchField.svelte',
-	'src/components/ui/Segmented.svelte',
-	'src/components/ui/SettingRow.svelte',
-	'src/components/ui/SliderRow.svelte',
-	'src/components/ui/Sheet.svelte',
-	'src/components/ui/Slider.svelte',
-	'src/components/ui/Tabs.svelte',
-	'src/components/ui/Toast.svelte',
-	'src/components/ui/Toggle.svelte',
-	'src/components/ui/WindowChrome.svelte',
-	'src/components/ui/kit/KitPage.svelte',
-	// 38 R6 (windows + menus)
-	'src/components/ContextMenu.svelte',
-	'src/components/ContextMenuItems.svelte',
-	'src/components/DockTabs.svelte',
-	'src/components/menu/AddMenu.svelte',
-	'src/components/menu/AiAssistant.svelte',
-	'src/components/menu/Chat.svelte',
-	'src/components/menu/Objects.svelte',
-	'src/components/menu/TabStrips.svelte',
-	// 38 R8 (38-hud): the main HUD
-	'src/components/menu/AiHudButton.svelte',
-	'src/components/menu/CommandPalette.svelte',
-	'src/components/menu/Connect.svelte',
-	'src/components/menu/ConnectInfoDrawer.svelte',
-	'src/components/menu/MobileAddButton.svelte',
-	'src/components/menu/SimControls.svelte',
-	'src/components/menu/Toasts.svelte',
-	'src/components/menu/VoiceChat.svelte',
-	'src/components/play/PlayBanner.svelte'
-];
+const SCOPE = ['src/components', 'src/routes', 'src/styles'].map((d) => path.join(ROOT, d));
+/** the files that DEFINE the tokens (and the legacy palette they derive from) */
+const DEFINITIONS = new Set(['src/styles/tokens.css', 'src/styles/theme.css']);
+/** files another branch is redesigning (scripts/redesign-pending.json says which and why) */
+const PENDING = new Set(require('./redesign-pending.json').files);
 
 const PALETTE =
 	'slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|primary';
@@ -108,16 +60,31 @@ function stripComments(text) {
 		.replace(/(^|[\s;{}])\/\/[^\n]*/g, (m, lead) => lead + blank(m.slice(lead.length)));
 }
 
+/** `tokens-ok: <reason>` on a line, or a `tokens-ok-begin: <reason>` … `tokens-ok-end` block */
+const PRAGMA = /tokens-ok(?:-begin)?\s*:\s*\S.{2,}/;
+const BARE = /tokens-ok(?!-end)(?!-begin\s*:\s*\S)(?!\s*:\s*\S)/;
+
 /**
- * Every raw colour in one file's text.
+ * Every raw colour in one file's text, minus the lines an exemption pragma covers. A pragma
+ * with no reason is reported as kind `pragma`.
  * @param {string} text
  * @returns {{line: number, kind: string, match: string}[]}
  */
 function scanText(text) {
 	/** @type {{line: number, kind: string, match: string}[]} */
 	const out = [];
+	const raw = text.split('\n');
 	const lines = stripComments(text).split('\n');
+	let block = false;
 	lines.forEach((line, i) => {
+		const src = raw[i] ?? '';
+		if (BARE.test(src)) out.push({ line: i + 1, kind: 'pragma', match: 'tokens-ok without a reason' });
+		const opens = /tokens-ok-begin\s*:/.test(src);
+		const closes = /tokens-ok-end/.test(src);
+		if (opens) block = true;
+		const exempt = block || PRAGMA.test(src);
+		if (closes) block = false;
+		if (exempt) return;
 		for (const { kind, re } of RULES) {
 			re.lastIndex = 0;
 			let m;
@@ -142,15 +109,17 @@ const relOf = (file) => path.relative(ROOT, path.resolve(file)).split(path.sep).
 
 function main() {
 	const args = process.argv.slice(2);
-	const strict = args.includes('--strict');
+	const warn = args.includes('--warn');
 	const json = args.includes('--json');
 	const only = args.filter((a) => !a.startsWith('--'));
-	const files = only.length ? only.map((f) => path.resolve(ROOT, f)) : walk(COMPONENTS);
+	const files = only.length
+		? only.map((f) => path.resolve(ROOT, f))
+		: SCOPE.flatMap((d) => walk(d)).filter((f) => !DEFINITIONS.has(relOf(f)) && !PENDING.has(relOf(f)));
 
 	/** @type {Record<string, number>} */
 	const perFile = {};
 	/** @type {string[]} */
-	const cleanBroken = [];
+	const lines = [];
 	let total = 0;
 	for (const file of files) {
 		if (!fs.existsSync(file)) continue;
@@ -159,29 +128,26 @@ function main() {
 		if (!hits.length) continue;
 		perFile[rel] = hits.length;
 		total += hits.length;
-		if (CLEAN.includes(rel))
-			for (const h of hits) cleanBroken.push(`  ${rel}:${h.line}  ${h.kind}  ${h.match}`);
+		for (const h of hits) lines.push(`  ${rel}:${h.line}  ${h.kind}  ${h.match}`);
 	}
 
 	if (json) {
-		console.log(JSON.stringify({ total, files: perFile, cleanBroken: cleanBroken.length }, null, 2));
+		console.log(JSON.stringify({ total, files: perFile }, null, 2));
+	} else if (!total) {
+		console.log(`check:tokens — clean (${files.length} files${only.length ? '' : `; ${PENDING.size} pending another branch`})`);
 	} else {
 		const ranked = Object.entries(perFile).sort((a, b) => b[1] - a[1]);
-		console.log(
-			`check:tokens — ${total} raw colour(s) in ${ranked.length} file(s)` +
-				(strict ? '' : ' (WARNING mode: R11 makes this a hard fail)')
+		console.error(`check:tokens — ${total} raw colour(s) in ${ranked.length} file(s)` + (warn ? ' (--warn: not failing)' : ''));
+		for (const l of lines.slice(0, 200)) console.error(l);
+		if (lines.length > 200) console.error(`  … and ${lines.length - 200} more (--json for the per-file counts)`);
+		console.error(
+			'\nUse the tokens (src/styles/tokens.css; Tailwind: bg-surface-2, text-text-muted, text-ink-bad …). A colour that is' +
+				'\nDATA (a picker default, a three.js / canvas colour) takes `// tokens-ok: <why>` on its line.'
 		);
-		for (const [rel, n] of ranked.slice(0, only.length ? ranked.length : 25)) console.log(`  ${String(n).padStart(4)}  ${rel}`);
-		if (!only.length && ranked.length > 25) console.log(`  … and ${ranked.length - 25} more (--json for all)`);
-		if (cleanBroken.length) {
-			console.error(`\ncheck:tokens — ${cleanBroken.length} raw colour(s) in a token-CLEAN file:`);
-			for (const l of cleanBroken) console.error(l);
-			console.error('\nUse the tokens (src/styles/tokens.css; Tailwind: bg-surface-2, text-text-muted …).');
-		}
 	}
-	process.exit(cleanBroken.length || (strict && total) ? 1 : 0);
+	process.exit(total && !warn ? 1 : 0);
 }
 
 if (require.main === module) main();
 
-module.exports = { scanText, stripComments, CLEAN };
+module.exports = { scanText, stripComments, DEFINITIONS, PENDING };

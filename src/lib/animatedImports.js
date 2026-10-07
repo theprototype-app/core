@@ -188,6 +188,55 @@ export function registerAnimatedImport(root, animations, bytes, kind = 'gltf') {
 	if (behaviors.has(root.uuid)) behaviorHooks.registered?.(root.uuid);
 }
 
+/**
+ * 37 R3: a PROCEDURAL functional item — a parametric door or casement window whose moving
+ * parts are BUILT from its params (arch/archParts.js), not parsed from a file. It joins the 33
+ * behaviour runtime exactly like a pack door (packBehavior poses it, the `behavior` message
+ * carries its state, the frame collider is cut round its opening) but it has NO bytes, so it is
+ * never sent, saved or undone as an animated import: every peer rebuilds the parts from the
+ * replicated params. Registering again (a param edit rebuilt the parts) replaces the mixer.
+ * @param {any} root @param {any[]} animations @param {any} rawSpec
+ * @returns {boolean} registered
+ */
+export function registerProceduralBehavior(root, animations, rawSpec) {
+	if (fileBytes.has(root.uuid)) return false; // a real import keeps its own registration
+	const old = mixers.get(root.uuid);
+	if (old) {
+		old.mixer.stopAllAction();
+		old.mixer.uncacheRoot(old.mixer.getRoot());
+	}
+	const spec = normalizeBehavior(rawSpec);
+	const mixer = new THREE.AnimationMixer(root);
+	/** @type {Record<string, any>} */
+	const actions = {};
+	/** @type {Record<string, number>} */
+	const durations = {};
+	for (const clip of animations) {
+		actions[clip.name] = mixer.clipAction(clip);
+		durations[clip.name] = clip.duration;
+	}
+	if (!spec || !actions[spec.clip]) {
+		dropProceduralBehavior(root.uuid);
+		return false;
+	}
+	mixers.set(root.uuid, { mixer, actions, durations });
+	behaviors.set(root.uuid, spec);
+	animatedObjects.update((map) => ({
+		...map,
+		[root.uuid]: { clips: animations.map((c) => c.name), clip: spec.clip, playing: false, speed: 1 }
+	}));
+	behaviorHooks.registered?.(root.uuid);
+	return true;
+}
+
+/** forget a procedural item (deleted, or no longer moves); a file-backed import is left alone @param {string} uuid */
+export function dropProceduralBehavior(uuid) {
+	if (fileBytes.has(uuid)) return;
+	const record = mixers.get(uuid);
+	if (record) record.mixer.stopAllAction();
+	dropAnimatedImport(uuid);
+}
+
 /** Per-frame from the scene loop: pose = pure function of the synced clock */
 export function tickAnimatedMixers() {
 	const states = get(animatedObjects);

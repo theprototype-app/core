@@ -297,7 +297,7 @@ export async function installZip(file) {
 /** Install from a URL serving manifest.json (+ listed files) @param {string} url
  *
  * 1.19.1: the manifest AND its files are revalidated (`no-cache`). A Browse install reads
- * `modules@main/<id>/`, a branch ref jsDelivr lets the browser keep for 7 days, and the
+ * `modules@format-1/<id>/` (`@main` before 1.27), a moving ref jsDelivr lets the browser keep for 7 days, and the
  * files change IN PLACE between versions — a cached manifest installed last week's
  * version, a cached entry under a fresh manifest a mix of two. */
 export async function installUrl(url) {

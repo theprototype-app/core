@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { dropToSurface } from './snapping';
-import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, beginHistoryBatch, endHistoryBatch, historyBatchOpen, undoEntry, undoStack } from './history';
+import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, registerHistoryMerge, sameJson, beginHistoryBatch, endHistoryBatch, historyBatchOpen, undoEntry, undoStack } from './history';
 import { offerUndo } from './undoToast'; // 37 R25 (a leaf)
-import { cascadeJointDeletes } from './joints';
+import { cascadeJointDeletes, copyJointsWithin } from './joints';
 import { createGroup } from './geometries.svelte';
 import { withWireBatch } from './wireBatch'; // 37 R1: a set's edit = ONE replicated batch
 import { suspendAnimation, resumeAnimation, parkAnimatedAtBase } from './flowRuntime';
@@ -684,6 +684,10 @@ export function duplicateObject(uuid, options = {}) {
 
 	if (options.select !== false) selectObject(clone.uuid);
 	if (options.history !== false) recordObjectPresence('create', clone);
+	// 37-fx: joints inside THIS object's tree (a jointed group) come along, after the create
+	// entry so one undo walk drops the joints before the object. A set duplicate passes
+	// carryCables:false and clones across the whole set once (duplicateSelection).
+	if (!options.transient && options.carryCables !== false) copyJointsWithin(uuidMapOf(source, clone));
 	return clone;
 }
 
@@ -729,6 +733,8 @@ export function duplicateSelection() {
 		.map((clone) => clone.uuid);
 	// 23-A4: the cables internal to the SET, once, with every member's uuids remapped
 	if (clones.length) patchModule?.copyCablesWithin(uuidMap);
+	// 37-fx: a joint whose BOTH ends were in the set is cloned onto the copies
+	if (clones.length) copyJointsWithin(uuidMap);
 	if (clones.length) applySelectionSet(clones);
 	return clones;
 }
@@ -877,8 +883,33 @@ registerHistoryKind('props', (entry, state) => {
 		if (peer)
 			peer.send({ type: 'objectParameters', parameter: 'origin', uuid: entry.uuid, origin: state.origin });
 	}
+	if ('renderOrder' in state) {
+		// 37 R26: the Inspector's Render order field (it recorded nothing before)
+		object.renderOrder = state.renderOrder;
+		if (peer)
+			peer.send({ type: 'objectParameters', parameter: 'renderOrder', uuid: entry.uuid, renderOrder: state.renderOrder });
+	}
+	if ('light' in state && state.light) {
+		// 37 R26: a light's own numbers (intensity, distance, angle…) — replicated the way the
+		// Inspector sends them, the whole light resent with override
+		Object.assign(object, state.light);
+		if (peer) peer.send({ type: 'object', element: object.toJSON(), override: true });
+	}
 	pokeScene();
 	return true;
+});
+
+/** the keys a props state touches, one level into `light` @param {any} state */
+const propsShape = (state) =>
+	JSON.stringify(Object.keys(state ?? {}).sort().map((k) => (k === 'light' ? [k, Object.keys(state.light ?? {}).sort()] : k)));
+// 37 R26: two edits of one gesture on the same object and the same keys are one step
+registerHistoryMerge('props', {
+	merge(top, next) {
+		if (top.uuid !== next.uuid || propsShape(top.before) !== propsShape(next.before)) return false;
+		top.after = next.after;
+		return true;
+	},
+	noop: (e) => sameJson(e.before, e.after)
 });
 
 // group moves replay through moveObjectToGroup (recordEntry no-ops during replay)

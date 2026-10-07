@@ -13,6 +13,9 @@
 // Then a DESKTOP page (1440x900, mouse) proves none of the phone layout leaks there.
 const h = require('./helpers.cjs');
 
+/** the fade a strip shows, from $lib/ui/stripScroll's classes: '' | 'start' | 'end' | 'both' */
+const FADE_OF = `(el) => { const l = !!el?.classList.contains('strip-fade-l'), r = !!el?.classList.contains('strip-fade-r'); return l && r ? 'both' : l ? 'start' : r ? 'end' : ''; }`;
+
 /** @param {import('playwright').Page} page */
 async function touchApi(page) {
 	const cdp = await page.context().newCDPSession(page);
@@ -51,12 +54,13 @@ async function touchApi(page) {
 /** the strip's state + whether `sel` is fully inside it and is what a finger would hit */
 const stripState = (/** @type {import('playwright').Page} */ page, /** @type {string} */ strip, /** @type {string} */ sel) =>
 	page.evaluate(
-		([strip, sel]) => {
+		([strip, sel, FADE_OF]) => {
+			const fadeOf = new Function('return ' + FADE_OF)();
 			const s = /** @type {HTMLElement} */ (document.querySelector(strip));
 			const t = /** @type {HTMLElement|null} */ (sel ? document.querySelector(sel) : null);
 			if (!s) return null;
 			const sr = s.getBoundingClientRect();
-			const out = { scrollLeft: s.scrollLeft, overflow: s.scrollWidth - s.clientWidth, fade: s.dataset.fade ?? '', inside: false, hit: false, cx: 0, cy: 0, stripY: sr.top + sr.height / 2, stripL: sr.left, stripR: sr.right };
+			const out = { scrollLeft: s.scrollLeft, overflow: s.scrollWidth - s.clientWidth, fade: fadeOf(s), inside: false, hit: false, cx: 0, cy: 0, stripY: sr.top + sr.height / 2, stripL: sr.left, stripR: sr.right };
 			if (t) {
 				const r = t.getBoundingClientRect();
 				out.inside = r.left >= sr.left - 1 && r.right <= sr.right + 1;
@@ -67,7 +71,7 @@ const stripState = (/** @type {import('playwright').Page} */ page, /** @type {st
 			}
 			return out;
 		},
-		[strip, sel]
+		[strip, sel, FADE_OF]
 	);
 
 /** drag a strip sideways until `sel` is inside it (a finger needs a few swipes on a long row) */
@@ -412,12 +416,12 @@ h.run(async () => {
 	await dOpen('animation', 'animationClose');
 	await dp.waitForSelector('#animation-timeline', { timeout: 10000 });
 	await dp.waitForTimeout(500);
-	const dAnim = await dp.evaluate(() => ({
+	const dAnim = await dp.evaluate((FADE_OF) => ({
 		switch: !!document.getElementById('animation-pane'),
 		keyCol: !!document.getElementById('animation-length'),
 		hit: document.querySelectorAll('.an-hit').length,
-		fade: document.getElementById('animation-plot-tools')?.dataset.fade ?? ''
-	}));
+		fade: new Function('return ' + FADE_OF)()(document.getElementById('animation-plot-tools'))
+	}), FADE_OF);
 	h.check(!dAnim.switch && dAnim.keyCol && dAnim.hit === 0, `desktop: the animation window keeps its columns, no pane switch, no touch hit areas (${JSON.stringify(dAnim)})`);
 	h.check(dAnim.fade === '', `desktop: a timeline toolbar that fits shows no fade ("${dAnim.fade}")`);
 	await dOpen('shader', 'shaderEditorClose');
@@ -431,10 +435,10 @@ h.run(async () => {
 	await dOpen('profiler', 'profilerClose');
 	await dp.waitForSelector('#profiler-toolbar', { timeout: 10000 });
 	await dp.waitForTimeout(500);
-	const dProf = await dp.evaluate(() => {
+	const dProf = await dp.evaluate((FADE_OF) => {
 		const s = document.getElementById('profiler-toolbar');
-		return { overflow: s ? s.scrollWidth - s.clientWidth : -1, fade: s?.dataset.fade ?? '' };
-	});
+		return { overflow: s ? s.scrollWidth - s.clientWidth : -1, fade: new Function('return ' + FADE_OF)()(s) };
+	}, FADE_OF);
 	h.check(dProf.overflow <= 1 && dProf.fade === '', `desktop: the profiler toolbar fits, nothing scrolls or fades (${JSON.stringify(dProf)})`);
 
 	h.check(h.pageErrors(P).length === 0 && h.pageErrors(D).length === 0, 'no page errors on either page');

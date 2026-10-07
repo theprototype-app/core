@@ -135,12 +135,22 @@
 		const camPos = [head[0] + fx * dist - fz * dist * 0.3, midY + 0.25, head[2] + fz * dist + fx * dist * 0.3];
 		// world metres per screen pixel at the body's distance
 		const perPx = (2 * dist * Math.tan(fov / 2)) / H;
-		// the camera's right (looking back at the body) is the body's left: shift the target that way
-		// by half the drawer so the body sits centred in the free part, not under the drawer
-		const side = narrow ? 0 : Math.min(dist * 0.6, (panelW() / 2) * perPx);
+		// NOTES-38 #34: centre the body in the FREE part of the viewport. A pure screen-space PAN —
+		// camera and target move together along the camera's own right (and up) axes — puts the
+		// body exactly half the drawer to the left of the screen centre (half the sheet higher on a
+		// phone). Shifting only the target along the body's side axis (as before) turned the
+		// camera instead, and with the 3/4 view left the body half under the drawer.
+		const fwdX = head[0] - camPos[0];
+		const fwdZ = head[2] - camPos[2];
+		const len = Math.hypot(fwdX, fwdZ) || 1;
+		const rightX = -fwdZ / len;
+		const rightZ = fwdX / len;
+		const side = narrow ? 0 : (panelW() / 2) * perPx;
 		const drop = narrow ? (sheetH() / 2) * perPx : 0;
-		const target = [head[0] - fz * side, midY - drop, head[2] + fx * side];
-		flyTo(camPos, target, ms);
+		const pan = [rightX * side, -drop, rightZ * side];
+		const target = [head[0] + pan[0], midY + pan[1], head[2] + pan[2]];
+		const from = [camPos[0] + pan[0], camPos[1] + pan[1], camPos[2] + pan[2]];
+		flyTo(from, target, ms);
 	}
 
 	/** @param {PointerEvent} e */

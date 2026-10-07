@@ -1,4 +1,5 @@
 <script>
+	import { withHistoryGesture } from '$lib/historyGesture';
 	// 38 R3 — the Inspector / panel property row (SPEC §2 PropRow):
 	//     label | slider or control | value box
 	// with a FIXED label column (--prop-label-w); long labels WRAP, never ellipsis.
@@ -52,10 +53,17 @@
 	const hasMiddle = $derived(slider || !!control);
 	const fieldLabel = $derived(ariaLabel || label);
 
+	// 37 R26 (1.27, from SliderRow): a drag of the range is ONE history gesture, like a scrub of
+	// the box — whatever the consumer records per tick folds into one undo step
+	// ($lib/historyGesture). It ends with the range's `change` (the release); a keyboard step has
+	// none open, so each is its own.
+	/** @type {object|null} */
+	let rangeGesture = null;
+
 	/** @param {Event & {currentTarget: HTMLInputElement}} e */
 	function onRange(e) {
 		const next = parseFloat(e.currentTarget.value);
-		if (!Number.isNaN(next) && !disabled) onchange(next);
+		if (!Number.isNaN(next) && !disabled) withHistoryGesture(rangeGesture, () => onchange(next));
 	}
 </script>
 
@@ -75,7 +83,9 @@
 			{value}
 			{disabled}
 			aria-label={fieldLabel}
+			onpointerdown={() => (rangeGesture = {})}
 			oninput={onRange}
+			onchange={() => (rangeGesture = null)}
 		/>
 	{:else if control}
 		<div class="pr-control">{@render control()}</div>

@@ -62,6 +62,9 @@ edit at all.
 **`KNOWN Qn` checks** assert today's behaviour where it differs from what SPEC §0 or DragRow's
 own comment says (Escape after typing, stale fields after undo, per-change undo entries);
 they are listed in the lane's QUESTIONS file and flip on purpose in the PR that fixes them.
+Q1-Q3 (Escape after typing, stale transform rows after Ctrl+Z, more or fewer than one undo
+step per scrub/typed edit) were fixed by roadmap 37 R26 (`feat/37-bugs`, release 1.27) and
+`lock-dragrow` asserts the fixed behaviour since `feat/37-bugs-lock`; Q4 is still a note.
 
 **Baselines.** `node tests/e2e/tools/lock-baselines.cjs` (with `APP_URL`, `SHOTS=<dir>`)
 screenshots every surface of `lockSurfaces.cjs` at 1440×900 and 390×844 (touch) in the dark,

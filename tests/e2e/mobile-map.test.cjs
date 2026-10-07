@@ -58,7 +58,7 @@ h.run(async () => {
 	h.check(shell.cls && shell.bar, `the phone shell is mounted at 390x844 (${JSON.stringify(shell)})`);
 	h.check(shell.oldPill === 'none', `the desktop toolbar pill stands down on a phone (${shell.oldPill})`);
 	const atRest = await read(() =>
-		['#logo-menu', '#ps-connect-chip', '#notif-bell', '#avatar-trigger', '#ps-strip', '#ps-add', '#ps-objects', '#ps-play', '#ps-explorer', '#ps-more']
+		['#logo-menu', '#ps-connect-chip', '#notif-bell', '#avatar-trigger', '#ps-add', '#ps-objects', '#ps-play', '#ps-explorer', '#ps-more']
 			.filter((s) => {
 				const el = document.querySelector(s);
 				if (!el) return true;
@@ -124,19 +124,23 @@ h.run(async () => {
 	await tap('#ps-sheet-close');
 	h.check((await read(store('phoneShell.phoneSheet'))) === null && (await read(store('connectDrawerOpen'))) === false, 'Close on the Connect sheet closes it and its drawer');
 
-	// ---- rows 11-13 + 24: the strip at rest ------------------------------------------
+	// ---- rows 11-13 + 24 (NOTES-38 #31): nothing selected = no toolbar; More ▸ Edit has them -----
 	await rest();
-	row(11, await visible('#ps-undo'), 'Undo is in the context strip at rest');
-	row(12, await visible('#ps-redo'), 'Redo is in the context strip at rest');
-	row(13, await visible('#ps-multiselect'), 'Multi-select is in the context strip at rest');
-	await tap('#ps-multiselect');
+	h.check(!(await visible('#ps-strip')), 'with nothing selected there is no selection toolbar (just looking)');
+	await tap('#ps-more');
+	row(11, await visible('#ps-more-undo'), 'Undo is in More ▸ Edit');
+	row(12, await visible('#ps-more-redo'), 'Redo is in More ▸ Edit');
+	row(13, await visible('#ps-more-multiselect'), 'Multi-select is in More ▸ Edit');
+	await tap('#ps-more-multiselect');
 	h.check((await read(store('multiSelectMode'))) === true, 'Multi-select toggles the same mode the touch cluster did');
-	await tap('#ps-multiselect');
-	row(24, await visible('#ps-interact'), 'Interact mode is in the context strip at rest');
-	await tap('#ps-interact');
+	await tap('#ps-more-multiselect');
+	row(24, await visible('#ps-more-interact'), 'Interact mode is in More ▸ Edit');
+	await tap('#ps-more-interact');
 	h.check((await read(store('editorMode'))) === 'interact', 'Interact toggles editorMode');
-	await tap('#ps-interact');
+	await tap('#ps-more-interact');
 	h.check((await read(store('editorMode'))) === 'edit', 'and back to Edit');
+	await P.evaluate(() => window.__stores.phoneShell?.phoneSheet?.set(null));
+	await P.waitForTimeout(300);
 
 	// undo/redo drive the real history
 	const before = await P.evaluate(async () => {
@@ -149,20 +153,23 @@ h.run(async () => {
 	});
 	await P.evaluate(() => window.__stores.deselectObject?.());
 	await P.waitForTimeout(300);
-	await tap('#ps-undo');
+	await tap('#ps-more');
+	await tap('#ps-more-undo');
 	const afterUndo = await read(() => {
 		let g;
 		window.__stores.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
-	h.check(afterUndo === before - 1, `the strip's Undo undoes (${before} -> ${afterUndo})`);
-	await tap('#ps-redo');
+	h.check(afterUndo === before - 1, `More ▸ Undo undoes (${before} -> ${afterUndo})`);
+	await tap('#ps-more-redo');
 	const afterRedo = await read(() => {
 		let g;
 		window.__stores.objectsGroup.subscribe((v) => (g = v))();
 		return g.children.length;
 	});
 	h.check(afterRedo === before, `and Redo redoes (${afterRedo})`);
+	await P.evaluate(() => window.__stores.phoneShell?.phoneSheet?.set(null));
+	await P.waitForTimeout(300);
 
 	// ---- rows 21-23 + 32: the strip with something selected --------------------------
 	await P.evaluate(() => {
@@ -185,6 +192,18 @@ h.run(async () => {
 	await P.waitForTimeout(300);
 	row(32, (await read(store('inspectorClose'))) === false && (await read(store('inspectorKind'))) === 'selection', 'Inspector: Inspect in the strip opens the Inspector for the selection');
 	h.check(await visible('#inspector .ins-resize'), 'the Inspector opens as a sheet with its handle');
+	// NOTES-38 #32: the Inspector sheet sits ABOVE the bar (Play stays tappable) and the selection
+	// strip rides on top of it
+	await P.waitForTimeout(500);
+	const layer = await read(() => {
+		const play = document.querySelector('#ps-play')?.getBoundingClientRect();
+		const ins = document.querySelector('#inspector')?.getBoundingClientRect();
+		const strip = document.querySelector('#ps-strip')?.getBoundingClientRect();
+		const hit = play ? document.elementFromPoint(play.left + play.width / 2, play.top + play.height / 2) : null;
+		return { playFree: !!hit?.closest('#ps-play'), insAboveBar: !!(ins && play && ins.bottom <= play.top + 2), stripOnTop: !!(strip && ins && strip.bottom <= ins.top + 2) };
+	});
+	h.check(layer.playFree && layer.insAboveBar, `#32 (a): the Inspector sheet ends at the bar, Play stays tappable (${JSON.stringify(layer)})`);
+	h.check(layer.stripOnTop, `#32 (b): the selection strip rides on top of the open sheet (${JSON.stringify(layer)})`);
 	await P.evaluate(() => window.__stores.deselectObject?.());
 
 	// ---- rows 14-16: top right + More › Notes ----------------------------------------

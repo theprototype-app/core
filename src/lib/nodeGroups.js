@@ -157,7 +157,7 @@ export function representative(parents, id, level) {
  * list); an entry whose inner node left the group or the graph is dropped. An entry with
  * no crossing wire left is KEPT (Blender keeps an unconnected group socket too).
  * @param {any[]} nodes @param {any[]} edges @param {any} group
- * @param {{typeOf?: (node: any, socket: string|null, dir: 'in'|'out') => string, parents?: Map<string,string>}} [opts]
+ * @param {{typeOf?: (node: any, socket: string|null, dir: 'in'|'out') => string, parents?: Map<string,string>, socketExists?: (node: any, socket: string|null, dir: 'in'|'out') => boolean}} [opts]
  * @returns {{inputs: any[], outputs: any[]}}
  */
 export function computeGroupIO(nodes, edges, group, opts = {}) {
@@ -170,7 +170,14 @@ export function computeGroupIO(nodes, edges, group, opts = {}) {
 	const keep = (prev, dir) =>
 		(prev ?? []).filter((e) => {
 			const ref = dir === 'in' ? e.to : e.from;
-			return Array.isArray(ref) && inside.has(ref[0]) && byId.has(ref[0]) && !isEditorOnly(byId.get(ref[0]));
+			return (
+				Array.isArray(ref) &&
+				inside.has(ref[0]) &&
+				byId.has(ref[0]) &&
+				!isEditorOnly(byId.get(ref[0])) &&
+				// 37 (R6): a socket the node no longer HAS (a removed variadic input) drops its entry
+				(!opts.socketExists || opts.socketExists(byId.get(ref[0]), ref[1] ?? null, dir))
+			);
 		});
 	const inputs = keep(group.data?.inputs, 'in').map((e) => ({ ...e }));
 	const outputs = keep(group.data?.outputs, 'out').map((e) => ({ ...e }));

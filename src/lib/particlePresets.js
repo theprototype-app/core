@@ -24,6 +24,12 @@
 //  36 B3 (weather): shape 'box' + area [w, d] (emit anywhere on the rectangle, falling
 //  down), wind [x, y, z] m/s, fall = metres to the ground below the emitter (0 = none),
 //  ground 'splash' (a growing, fading ring — rain) | 'settle' (lies there and fades — snow)
+//  37-fx: render 'points' (sprites) | 'stretch' (quads stretched along the motion — sparks;
+//  `stretch` = seconds of path each covers) | 'trails' (each particle draws its own path,
+//  `trail` seconds long in `trailSegments` pieces) | 'ribbon' (one band through the
+//  particles in birth order — with space 'world', the path the emitter took; continuous
+//  emitters only, a burst falls back to trails); inherit = share of the emitter's velocity
+//  a particle is born with (world space; 1 = all of it)
 
 /** @type {any} */
 export const PARTICLE_DEFAULTS = {
@@ -51,7 +57,12 @@ export const PARTICLE_DEFAULTS = {
 	sprite: 'dot',
 	blending: 'additive',
 	spin: 0,
-	space: 'local'
+	space: 'local',
+	render: 'points',
+	inherit: 0,
+	stretch: 0.04,
+	trail: 0.4,
+	trailSegments: 8
 };
 
 // The Core 6 (user-locked lineup). Names show in menus; keys are stable ids.
@@ -132,10 +143,43 @@ export const PARTICLE_PRESETS = [
 			count: 120, lifetime: 0.7, lifeJitter: 0.5,
 			shape: 'sphere', radius: 0.05,
 			speed: 6, speedJitter: 0.7, gravity: -6, drag: 1.6, turbulence: 0.1,
-			sizeStart: 0.1, sizeEnd: 0.02,
+			sizeStart: 0.05, sizeEnd: 0.015,
 			colorStart: '#fff6c8', colorEnd: '#ff7a1a',
 			opacity: 1, fadeIn: 0.02, fadeOut: 0.4,
-			sprite: 'streak', blending: 'additive', spin: 0, space: 'world'
+			// 37-fx: each spark is a quad stretched along its motion (the streak sprite was a
+			// fixed vertical bar); inherit half of a moving emitter's speed
+			sprite: 'dot', blending: 'additive', spin: 0, space: 'world',
+			render: 'stretch', stretch: 0.05, inherit: 0.5
+		}
+	},
+	{
+		// 37-fx: a band behind whatever carries it — a thrown ball, a sword, a car's tail light
+		key: 'trail',
+		name: 'Ribbon trail',
+		config: {
+			count: 48, lifetime: 0.7, lifeJitter: 0,
+			shape: 'cone', angle: 0, radius: 0,
+			speed: 0, speedJitter: 0, gravity: 0, drag: 0, turbulence: 0,
+			sizeStart: 0.22, sizeEnd: 0.02,
+			colorStart: '#9ef0ff', colorEnd: '#3b5bff',
+			opacity: 0.85, fadeIn: 0, fadeOut: 0.7,
+			sprite: 'dot', blending: 'additive', spin: 0, space: 'world',
+			render: 'ribbon'
+		}
+	},
+	{
+		// 37-fx: every particle draws its own path — wisps that curl off a moving object
+		key: 'wisps',
+		name: 'Magic wisps',
+		config: {
+			count: 40, lifetime: 1.6, lifeJitter: 0.3,
+			shape: 'sphere', radius: 0.2,
+			speed: 0.6, speedJitter: 0.6, gravity: 0.4, drag: 0.8, turbulence: 0.9,
+			sizeStart: 0.05, sizeEnd: 0.01,
+			colorStart: '#e9d7ff', colorEnd: '#8a5cff',
+			opacity: 0.9, fadeIn: 0.1, fadeOut: 0.5,
+			sprite: 'dot', blending: 'additive', spin: 0, space: 'world',
+			render: 'trails', trail: 0.5, trailSegments: 10, inherit: 0.3
 		}
 	},
 	{

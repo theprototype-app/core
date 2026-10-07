@@ -61,6 +61,13 @@ function terrainParamsOf(object) {
 	return { gtype: 'Terrain', params };
 }
 
+/** 37 R3: a spec with a `clean` hook stores only what its builder reads (clamped, known keys)
+ * @param {string} gtype @param {any} params */
+function cleanFor(gtype, params) {
+	const clean = geometrySpec(gtype)?.clean;
+	return clean ? clean(params) : params;
+}
+
 /** Current editable params for a mesh (userData first, live geometry second)
  * @param {any} object */
 export function geometryParamsOf(object) {
@@ -101,7 +108,7 @@ export function applyGeometry(uuid, patch, options = {}) {
 	const current = geometryParamsOf(object);
 	if (!current) return false;
 	const before = { gtype: current.gtype, params: { ...current.params } };
-	const params = { ...current.params, ...patch };
+	const params = cleanFor(current.gtype, { ...current.params, ...patch });
 	const fresh = buildGeometry(current.gtype, params);
 	if (!fresh) return false;
 	object.geometry.dispose();
@@ -134,7 +141,7 @@ export function applyRemoteGeometry(data) {
 	if (!fresh) return;
 	object.geometry.dispose();
 	object.geometry = fresh;
-	object.userData.geometryParams = { gtype: data.gtype, params: { ...data.params } };
+	object.userData.geometryParams = { gtype: data.gtype, params: cleanFor(data.gtype, { ...data.params }) };
 	delete object.userData.vertexEdited;
 	delete object.userData.faceEdited; // same lock, same reset as the local path
 	pokeScene();

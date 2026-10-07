@@ -3,6 +3,7 @@ import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUnifo
 import { toggleExpand, fixLight } from '../stores/appStore.js';
 import { customGeometryBuilders } from '$lib/customGeometries';
 import { stampGeometryParams } from '$lib/geometryEdit';
+import { GEOMETRY_PARAMS } from '$lib/geometryParams';
 import { paletteColorFor } from '$lib/palette';
 import { stampFluidTank } from '$lib/sim/fluidTank.js';
 import { stampFluidEmitter } from '$lib/sim/fluidEmitterObject.js';
@@ -68,10 +69,17 @@ export function createGeometry(command, uuid) {
         return Number.isNaN(value) ? undefined : value;
     });
     let geometryList = ["Box","Capsule","Circle","Cone","Cylinder","Dodecahedron","Edges","Extrude","Icosahedron","Lathe","Octahedron","Plane","Polyhedron","Ring","Shape","Sphere","Tetrahedron","Torus","TorusKnot","Tube","Wireframe"]
-    if (customGeometryBuilders[geometry] || geometryList.includes(geometry)) {
+    // 37 R3: a parametric architecture primitive maps its /create numbers to PARAMS
+    // (fromArgs) and builds from them, so the variant (a door in the wall, an L stair)
+    // is decided here on every peer and the params are stamped as they were built
+    const archSpec = GEOMETRY_PARAMS[geometry]?.fromArgs ? GEOMETRY_PARAMS[geometry] : null;
+    const archParams = archSpec?.fromArgs?.(options) ?? null;
+    if (archSpec || customGeometryBuilders[geometry] || geometryList.includes(geometry)) {
         /** @type {any} */
         let mesh;
-        if (customGeometryBuilders[geometry]) {
+        if (archSpec?.build) {
+            mesh = archSpec.build(archParams);
+        } else if (customGeometryBuilders[geometry]) {
             // Custom builders (Stairs/Wedge/Arch/Corner/Terrain, + SDK ones) bake
             // post-construction rotateY/rotateX/translate into a PARAMETRIC geometry
             // (ExtrudeGeometry/PlaneGeometry). Their toJSON serializes only the shape +
@@ -134,7 +142,12 @@ export function createGeometry(command, uuid) {
         // same builder from the replicated /create, and the stamp rides
         // userData.physics like an Inspector edit (Body: Auto reverts it).
         if (FUN_PRIMITIVES.includes(geometry)) object.userData.physics = { mode: 'dynamic', mass: 1 };
+        if (archSpec) object.userData.geometryParams = { gtype: geometry, params: archParams };
         stampGeometryParams(object); // editable params survive sync (78)
+        // 37 R3: walls and stairs are concave (an opening, the step profile) -> the exact mesh
+        // for a static body (36 X2); a window is a slab -> its box. A door's frame collider is
+        // stamped by the 33 behaviour runtime when its leaf registers (arch/archParts.js).
+        if (archSpec?.colliderHint) object.userData.colliderHint = archSpec.colliderHint;
         // 15-A3: the baked building blocks have no geometryParams to infer a
         // collider from — stamp an explicit hint (rides toJSON/GLTF extras like
         // the terrain flag) so a rename can't flip their inferred hull to a box.

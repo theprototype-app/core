@@ -20,6 +20,7 @@ import { bindingOf, bindingLabel, vrBindings } from '../vr/bindings.js';
 import { templatesModalOpen, showToast } from '../../stores/appStore.js';
 import { welcomeOpen } from '../whatsNew';
 import { coarsePointer } from '../inputDevice';
+import { HDRI_TOUR, HDRI_STEPS } from '../hdri/hdriTour.js'; // 37-hdri
 
 export const VR_TOUR = 'vr-welcome';
 export const EDITOR_TOUR = 'editor';
@@ -250,6 +251,7 @@ export function installTours() {
 	teardown.push(tours.register(VR_TOUR, { title: 'Welcome to ThePrototype VR', surface: 'vr', steps: VR_STEPS }));
 	teardown.push(tours.register(EDITOR_TOUR, { title: 'Editor tour', surface: 'card', steps: EDITOR_STEPS }));
 	teardown.push(tours.register(TOUCH_TOUR, { title: 'Editor tour', surface: 'card', steps: TOUCH_STEPS }));
+	teardown.push(tours.register(HDRI_TOUR, { title: 'Sky images (HDRI)', surface: 'card', steps: HDRI_STEPS }));
 
 	// ---- the VR welcome: the first session, a beat after it starts (controllers enumerate) ----
 	/** @type {any} */ let vrTimer = null;

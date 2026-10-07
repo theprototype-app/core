@@ -20,6 +20,7 @@
 	// that class, so CSS and markup always agree about which shell is on screen.
 	import { onDestroy, tick } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		phoneSheet,
@@ -67,7 +68,10 @@
 
 	// ---- the <html> class + the sheet geometry --------------------------------------
 	let viewportH = $state(typeof window === 'undefined' ? 844 : window.innerHeight);
-	const heights = $derived(/** @type {Record<string, number>} */ (phoneDetentHeights(viewportH)));
+	// NOTES-38 #32 (a): a sheet sits ABOVE the bottom bar (Play stays visible and tappable), so
+	// its detents are fractions of the room above the bar, not of the window
+	const BAR_H = 76; // .ps-bar (+ the safe-area inset, which CSS adds)
+	const heights = $derived(/** @type {Record<string, number>} */ (phoneDetentHeights(viewportH - BAR_H)));
 
 	$effect(() => {
 		const root = document.documentElement;
@@ -136,7 +140,7 @@
 	$effect(() => {
 		const root = document.documentElement.style;
 		root.setProperty('--ps-sheet-h', sheetH + 'px');
-		root.setProperty('--ps-body-top', `${viewportH - sheetH + STRIP_H + (titled ? HEAD_H : 0)}px`);
+		root.setProperty('--ps-body-top', `${viewportH - BAR_H - sheetH + STRIP_H + (titled ? HEAD_H : 0)}px`);
 		document.documentElement.classList.toggle('ps-sheet-open', !!top);
 	});
 
@@ -277,6 +281,40 @@
 		// viewport menu — that one stays on the canvas long-press and More › Viewport tools
 		viewportMenu.update((m) => (m ? { ...m, only: 'add' } : m));
 	}
+	// NOTES-38 #32 (a): the Add LIST opened from the bar sits above the bar like the other
+	// sheets; the canvas long-press menus (c) may still cover it — phone.css reads this class
+	$effect(() => {
+		document.documentElement.classList.toggle('ps-add-open', $viewportMenu?.only === 'add');
+		return () => document.documentElement.classList.remove('ps-add-open');
+	});
+
+	// NOTES-38 #32 (b): the selection strip rides on TOP of whatever is open along the bottom —
+	// a sheet, the Inspector, a docked view, the Add list — so Move / Undo work without closing
+	// it. Measured, not computed: those panels belong to other components.
+	let stripLift = $state(0);
+	$effect(() => {
+		if (!hasSel) return;
+		let raf = 0;
+		const measure = () => {
+			let occ = 0;
+			for (const el of document.querySelectorAll('.ps-sheet, #inspector, .tp-dock-panel, .tp-dock-panel .dt-row, :root.ps-add-open .ctx-scroll')) {
+				const r = /** @type {HTMLElement} */ (el).getBoundingClientRect();
+				if (!r.height || getComputedStyle(el).display === 'none' || getComputedStyle(el).visibility === 'hidden') continue;
+				occ = Math.max(occ, window.innerHeight - r.top);
+			}
+			stripLift = occ;
+		};
+		const id = setInterval(() => {
+			cancelAnimationFrame(raf);
+			raf = requestAnimationFrame(measure);
+		}, 120);
+		measure();
+		return () => {
+			clearInterval(id);
+			cancelAnimationFrame(raf);
+		};
+	});
+
 	// unread chat: messages that arrived while the chat sheet was closed
 	let seenChat = $state(0);
 	const chatOpen = $derived($chatHidden === '');
@@ -446,28 +484,20 @@
 		</div>
 	</div>
 
-	<!-- CONTEXT STRIP: hidden while a sheet is up (it would sit on the sheet) -->
-	{#if !top}
-		<div class="ps-strip" role="toolbar" aria-label={hasSel ? 'Edit selection' : 'Tools'} id="ps-strip" data-tour="tools">
-			{#if hasSel}
-				<button type="button" class="ps-cell" id="ps-move" aria-label="Move (1)" aria-pressed={$transformMode === 'translate'} onclick={() => setTransformMode('translate')}><Icon name="move" size={20} /></button>
-				<button type="button" class="ps-cell" id="ps-rotate" aria-label="Rotate (2)" aria-pressed={$transformMode === 'rotate'} onclick={() => setTransformMode('rotate')}><Icon name="rotate-ccw" size={20} /></button>
-				<button type="button" class="ps-cell" id="ps-scale" aria-label="Scale (3)" aria-pressed={$transformMode === 'scale'} onclick={() => setTransformMode('scale')}><Icon name="maximize-2" size={20} /></button>
-				<span class="ps-sep" aria-hidden="true"></span>
-				<button type="button" class="ps-inspect" id="ps-inspect" onclick={() => showSidebar('properties')}><Icon name="sliders-horizontal" size={16} />Inspect</button>
-				{#if $touchTools}<span class="ps-sep" aria-hidden="true"></span>{/if}
-			{/if}
-			{#if $touchTools}
-				<button type="button" class="ps-cell" id="ps-undo" aria-label="Undo" disabled={!$canUndo} onclick={() => undo()}><Icon name="undo-2" size={20} /></button>
-				<button type="button" class="ps-cell" id="ps-redo" aria-label="Redo" disabled={!$canRedo} onclick={() => redo()}><Icon name="redo-2" size={20} /></button>
-			{/if}
-			{#if !hasSel}
-				{#if $touchTools}
-					<span class="ps-sep" aria-hidden="true"></span>
-					<button type="button" class="ps-cell" id="ps-multiselect" aria-label="Select multiple" aria-pressed={$multiSelectMode} onclick={() => multiSelectMode.update((v) => !v)}><Icon name="square-dashed" size={20} /></button>
-				{/if}
-				<button type="button" class="ps-cell" id="ps-interact" aria-label="Interact mode (I)" aria-pressed={$editorMode === 'interact'} onclick={() => toggleEditorMode()}><Icon name="hand" size={20} /></button>
-			{/if}
+	<!-- SELECTION STRIP (NOTES-38 #31 / #32 b): only while something is selected — just looking
+	     or panning shows no toolbar. It rides above whatever is open along the bottom (a sheet,
+	     the Inspector, a docked view), so Move / Undo work without closing it. Undo, Redo, Select
+	     multiple and Interact live in More ▸ Edit when nothing is selected. -->
+	{#if hasSel}
+		<div class="ps-strip tp-noscrollbar" role="toolbar" aria-label="Edit selection" id="ps-strip" style:bottom={stripLift ? `${stripLift + 8}px` : null} use:stripScroll>
+			<button type="button" class="ps-cell" id="ps-move" aria-label="Move (1)" aria-pressed={$transformMode === 'translate'} onclick={() => setTransformMode('translate')}><Icon name="move" size={20} /></button>
+			<button type="button" class="ps-cell" id="ps-rotate" aria-label="Rotate (2)" aria-pressed={$transformMode === 'rotate'} onclick={() => setTransformMode('rotate')}><Icon name="rotate-ccw" size={20} /></button>
+			<button type="button" class="ps-cell" id="ps-scale" aria-label="Scale (3)" aria-pressed={$transformMode === 'scale'} onclick={() => setTransformMode('scale')}><Icon name="maximize-2" size={20} /></button>
+			<span class="ps-sep" aria-hidden="true"></span>
+			<button type="button" class="ps-inspect" id="ps-inspect" onclick={() => showSidebar('properties')}><Icon name="sliders-horizontal" size={16} />Inspect</button>
+			<span class="ps-sep" aria-hidden="true"></span>
+			<button type="button" class="ps-cell" id="ps-undo" aria-label="Undo" disabled={!$canUndo} onclick={() => undo()}><Icon name="undo-2" size={20} /></button>
+			<button type="button" class="ps-cell" id="ps-redo" aria-label="Redo" disabled={!$canRedo} onclick={() => redo()}><Icon name="redo-2" size={20} /></button>
 		</div>
 	{/if}
 
@@ -480,7 +510,7 @@
 				type="button"
 				class="ps-tab"
 				id="ps-{key}"
-				data-tour={key === 'add' ? 'add' : undefined}
+				data-tour={key === 'add' ? 'add' : key === 'more' ? 'tools' : undefined /* #31: the tools live in More at rest */}
 				aria-pressed={key === 'add' ? undefined : act.pressed()}
 				onclick={act.run}
 				oncontextmenu={editBarFromTab}
@@ -574,6 +604,14 @@
 								{#if n > 0}<span class="ps-nb ps-nb-tile">{n > 99 ? '99+' : n}</span>{/if}
 							</button>
 						{/each}
+					</div>
+					<!-- NOTES-38 #31: what the strip offered with nothing selected lives here now -->
+					<h3 class="ps-sec">Edit</h3>
+					<div class="ps-rows">
+						<button type="button" class="ps-row" id="ps-more-undo" disabled={!$canUndo} onclick={() => undo()}><Icon name="undo-2" size={20} /><span>Undo</span></button>
+						<button type="button" class="ps-row" id="ps-more-redo" disabled={!$canRedo} onclick={() => redo()}><Icon name="redo-2" size={20} /><span>Redo</span></button>
+						<button type="button" class="ps-row" id="ps-more-multiselect" aria-pressed={$multiSelectMode} onclick={() => multiSelectMode.update((v) => !v)}><Icon name="square-dashed" size={20} /><span>Select multiple</span>{#if $multiSelectMode}<span class="ps-row-on">On</span>{/if}</button>
+						<button type="button" class="ps-row" id="ps-more-interact" aria-pressed={$editorMode === 'interact'} onclick={() => toggleEditorMode()}><Icon name="hand" size={20} /><span>Interact mode</span>{#if $editorMode === 'interact'}<span class="ps-row-on">On</span>{/if}</button>
 					</div>
 					<h3 class="ps-sec">Tools &amp; view</h3>
 					<div class="ps-rows">
@@ -670,7 +708,7 @@
 		left: 50%;
 		transform: translateX(-50%);
 		bottom: calc(84px + env(safe-area-inset-bottom, 0px));
-		z-index: 28;
+		z-index: 41; /* above the sheets (38), a hosted window (40) and the Inspector */
 		display: flex;
 		align-items: center;
 		gap: 2px;
@@ -681,6 +719,15 @@
 		border: 1px solid var(--border);
 		box-shadow: var(--shadow-window);
 		max-width: calc(100vw - 16px);
+	}
+	.ps-row:disabled {
+		opacity: 0.45;
+		cursor: default;
+	}
+	.ps-row-on {
+		margin-left: auto;
+		font-size: var(--fs-desc);
+		color: var(--accent-text);
 	}
 	.ps-cell {
 		display: inline-flex;
@@ -781,7 +828,7 @@
 
 	.ps-scrim {
 		position: fixed;
-		inset: 0;
+		inset: 0 0 calc(76px + env(safe-area-inset-bottom, 0px)) 0; /* #32: the bar stays live */
 		z-index: 37;
 		border: 0;
 		padding: 0;
@@ -792,7 +839,7 @@
 		position: fixed;
 		left: 0;
 		right: 0;
-		bottom: 0;
+		bottom: calc(76px + env(safe-area-inset-bottom, 0px)); /* #32 (a): above the bar */
 		z-index: 38;
 		display: flex;
 		flex-direction: column;

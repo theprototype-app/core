@@ -38,7 +38,7 @@ function coreScenesBase() {
 	}
 }
 const SCENES_BASE = (process.env.WAVES_SCENES_BASE || coreScenesBase() || 'https://cdn.jsdelivr.net/gh/theprototype-app/scenes@main').replace(/\/$/, '');
-const MODULES_BASE = (process.env.WAVES_MODULES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@main').replace(/\/$/, '');
+const MODULES_BASE = (process.env.WAVES_MODULES_BASE || 'https://cdn.jsdelivr.net/gh/theprototype-app/modules@format-1').replace(/\/$/, '');
 const ROOT = path.resolve(__dirname, '../../..');
 const ENEMIES = ['Enemy 01', 'Enemy 02', 'Enemy 03', 'Enemy 04', 'Enemy 05 Runner', 'Enemy 06 Runner', 'Enemy 07', 'Enemy 08 Tank', 'Enemy 09 Runner', 'Enemy 10 Tank'];
 const OBJECTS = ['Ground', 'Goal', 'Spawn 1', 'Spawn 2', 'Spawn 3', ...ENEMIES, 'Home', 'Arena'];

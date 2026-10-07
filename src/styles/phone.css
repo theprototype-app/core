@@ -142,7 +142,7 @@
 	left: 0 !important;
 	right: 0 !important;
 	top: var(--ps-body-top) !important;
-	bottom: 0 !important;
+	bottom: var(--ps-bar-h) !important; /* NOTES-38 #32 (a): the sheet ends at the bar */
 	width: auto !important;
 	height: auto !important;
 	min-width: 0 !important;
@@ -315,4 +315,52 @@
 /* physics transport (SimControls) rides above the strip, not over the bar */
 :root.phone-shell #sim-controls {
 	bottom: calc(148px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+/* ---- 38 NOTES-38 #30: full-screen Settings and every full-screen modal HIDE the logo ------
+   (the user's final call; supersedes #25's "keep it"). A full-screen dialog is the whole
+   screen, so the logo floating over its header only crowded the title. The headers then drop
+   the 62 px they kept clear for it. Drawers and sheets (Character, the main menu) keep it. */
+:root.phone-shell:has(dialog.tp-modal-frame[open]) #logo-menu {
+	visibility: hidden !important;
+	pointer-events: none !important;
+}
+:root.phone-shell dialog.tp-modal-frame .wc-head:not(.wc-nav),
+:root.phone-shell dialog.tp-modal-frame .tp-modal-header {
+	padding-left: 16px !important;
+}
+:root.phone-shell dialog.tp-modal-frame .wc-head.wc-nav {
+	padding-left: 6px !important;
+}
+
+/* ---- 38 NOTES-38 #32: ONE layering rule for the phone ------------------------------------
+   (a) persistent views opened from the bottom bar — Objects, Explorer and every docked view,
+       the Inspector, the Notification centre, Add, More (and the other framed windows) — are
+       sheets ABOVE the bar: Play and the tabs stay visible and tappable;
+   (b) the selection strip rides on top of whichever sheet is open (PhoneShell measures);
+   (c) the canvas long-press menus (object / viewport menu) stay modal action sheets that may
+       cover the bar while open;
+   (d) the logo and profile menus stay where they open; (e) full-screen dialogs cover all. */
+:root.phone-shell {
+	--ps-bar-h: calc(76px + env(safe-area-inset-bottom, 0px));
+}
+:root.phone-shell #inspector {
+	bottom: var(--ps-bar-h) !important;
+	padding-bottom: 16px !important;
+	max-height: calc(100vh - var(--ps-bar-h) - 64px) !important;
+}
+:root.phone-shell .tp-dock-panel {
+	bottom: var(--ps-bar-h) !important;
+	max-height: calc(100vh - var(--ps-bar-h) - 64px) !important;
+}
+:root.phone-shell #notes-drawer {
+	bottom: var(--ps-bar-h) !important;
+}
+:root.phone-shell.ps-add-open .ctx-scroll {
+	bottom: var(--ps-bar-h) !important;
+	padding-bottom: 10px !important;
+}
+
+:root.phone-shell #notes-drawer {
+	padding-bottom: 12px !important;
 }

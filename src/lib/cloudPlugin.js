@@ -29,7 +29,7 @@ import { safeStorage } from './safeStorage';
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
 import { aiProviders, aiActiveProvider, aiEnabled, addAiProvider, updateAiProvider, removeAiProvider, setAiActiveProvider, setAiEnabled } from './ai/providers';
 import { meshProviders, meshActiveProvider, meshGenEnabled, addMeshProvider, updateMeshProvider, removeMeshProvider, setMeshActiveProvider, setMeshGenEnabled } from './ai/meshProviders';
-import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart, problemReporter } from './cloudHooks';
+import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart, problemReporter, setWhatsNewCloud } from './cloudHooks';
 // 36-community (C4): a leaf (svelte/store only) — safe as a static edge
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
@@ -495,6 +495,10 @@ export function makeCloudApi() {
 		/** 37 R20: "Report a problem" — `{submit(report), account()}` (see cloudHooks.problemReporter)
 		 *  or null. ADDITIVE and typeof-probed: an older engine has no Send, only "Save". */
 		setProblemReporter: (/** @type {any} */ r) => problemReporter.set(r && typeof r.submit === 'function' ? r : null),
+		/** 37-fx: the cloud's section in What's New — `{title, markdown}` (an escaped markdown
+		 * subset: headings, bullets, **bold**, `code`, https links) or null to remove it.
+		 * Additive and typeof-probed, like setMeshJobStatus. */
+		setWhatsNewSection: (/** @type {any} */ section) => setWhatsNewCloud(section),
 
 		// --- 36-community (C4/C2/C6): ADDITIVE, typeof-probed, no bump ---
 		/** The open scene's GAME identity (the scene file's permanent `gameId`). `current()` →

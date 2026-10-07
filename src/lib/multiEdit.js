@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
-import { registerHistoryKind, recordEntry } from './history';
+import { registerHistoryKind, registerHistoryMerge, recordEntry, sameJson } from './history';
 import { setShadowMapSize } from './lightParams';
 
 // 37 R1 — MULTI-SELECT v2: the Inspector writes that had NO undo before.
@@ -68,6 +68,16 @@ registerHistoryKind('flags', (entry, state) => {
 	return true;
 });
 
+// 37-int-127 (R26's gesture folding): two seals of one gesture on the same object + key are one step
+registerHistoryMerge('flags', {
+	merge(top, next) {
+		if (top.uuid !== next.uuid || Object.keys(top.before ?? {}).join() !== Object.keys(next.before ?? {}).join()) return false;
+		top.after = next.after;
+		return true;
+	},
+	noop: (e) => sameJson(e.before, e.after)
+});
+
 // ---- lights ------------------------------------------------------------------------
 
 /** numeric light fields any light type may carry (LIGHT_PARAMS' keys + intensity) */
@@ -126,6 +136,16 @@ export function recordLightChange(light, before) {
 	recordEntry({ kind: 'light', uuid: light.uuid, before, after });
 	return true;
 }
+
+// 37-int-127: a light's seals within one gesture fold (first before, last after)
+registerHistoryMerge('light', {
+	merge(top, next) {
+		if (top.uuid !== next.uuid) return false;
+		top.after = next.after;
+		return true;
+	},
+	noop: (e) => sameLightState(e.before, e.after)
+});
 
 registerHistoryKind('light', (entry, state) => {
 	const light = objectOf(entry.uuid);

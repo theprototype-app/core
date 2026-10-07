@@ -4,7 +4,7 @@
 	// playing, a small glass bar top-centre says so — the `Playing` badge (--live), a hint
 	// and, outside a game, a Stop button. Esc still does what it always did; this only says it.
 	//
-	// The hint is SCENE data (Configure Scene ▸ Physics ▸ Play mode ▸ Top banner, the play
+	// The hint is SCENE data (Configure Scene ▸ Play ▸ Playing banner, the play
 	// block's `banner`): the default hint, Hide, or the scene's own words. In a GAME (the
 	// game shell offers its menu) Esc opens that menu, so the default hint says so and the
 	// corner "Menu · Esc" button (GameShellMenu) stays the way out — no Stop here.

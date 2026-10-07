@@ -2,6 +2,7 @@
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		annotations,
 		activeAnnotation,
@@ -240,7 +241,7 @@
 		</div>
 
 		{#if editing}
-			<div class="note-body">
+			<div class="note-body" use:minimalScroll>
 				<input
 					bind:this={nameInput}
 					class="ui-input w-full"
@@ -352,7 +353,7 @@
 				</button>
 			</div>
 		{:else}
-			<div class="note-body">
+			<div class="note-body" use:minimalScroll>
 				{#if note.name?.trim() && note.text?.trim()}
 					<p class="note-desc">{note.text}</p>
 				{:else if !note.text?.trim()}
@@ -410,7 +411,7 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		border-bottom: 1px solid rgb(55 65 81 / 0.6);
+		border-bottom: 1px solid var(--border);
 		padding: 0.4rem 0.5rem;
 	}
 	.note-num {
@@ -423,7 +424,7 @@
 		padding: 0 0.25rem;
 		font-size: 10px;
 		font-weight: 700;
-		color: #1c1917;
+		color: #1c1917; /* tokens-ok: dark ink on the user-picked note colour (data), same in every theme */
 	}
 	.note-title {
 		flex: 1 1 auto;
@@ -433,7 +434,7 @@
 		white-space: nowrap;
 		font-size: 0.8125rem;
 		font-weight: 600;
-		color: rgb(243 244 246);
+		color: var(--text);
 	}
 	.note-icon {
 		display: inline-flex;
@@ -442,11 +443,11 @@
 		justify-content: center;
 		border-radius: 0.25rem;
 		padding: 0.15rem;
-		color: rgb(156 163 175);
+		color: var(--text-muted);
 	}
 	.note-icon:hover {
-		background: rgb(55 65 81 / 0.7);
-		color: rgb(243 244 246);
+		background: var(--surface-hover);
+		color: var(--text);
 	}
 	.note-body {
 		display: flex;
@@ -459,12 +460,12 @@
 	.note-desc {
 		font-size: 0.8125rem;
 		line-height: 1.35;
-		color: rgb(229 231 235);
+		color: var(--text-2);
 		white-space: pre-wrap;
 		overflow-wrap: anywhere;
 	}
 	.note-muted {
-		color: rgb(107 114 128);
+		color: var(--text-faint);
 		font-style: italic;
 	}
 	.note-meta {
@@ -472,13 +473,13 @@
 		align-items: center;
 		gap: 0.375rem;
 		font-size: 10px;
-		color: rgb(107 114 128);
+		color: var(--text-faint);
 	}
 	.note-chip {
 		border-radius: 9999px;
-		background: rgb(55 65 81 / 0.7);
+		background: var(--surface-active);
 		padding: 0 0.375rem;
-		color: rgb(209 213 219);
+		color: var(--text-2);
 	}
 	.note-dot {
 		height: 0.5rem;
@@ -492,7 +493,7 @@
 		font-weight: 600;
 		letter-spacing: 0.04em;
 		text-transform: uppercase;
-		color: rgb(107 114 128);
+		color: var(--text-faint);
 	}
 	.note-swatches {
 		display: flex;
@@ -504,10 +505,10 @@
 		width: 1.15rem;
 		border-radius: 9999px;
 		border: 2px solid transparent;
-		outline: 1px solid rgb(0 0 0 / 0.35);
+		outline: 1px solid color-mix(in srgb, var(--bg-app) 35%, transparent);
 	}
 	.note-swatch.is-on {
-		border-color: rgb(243 244 246);
+		border-color: var(--text);
 	}
 	.note-shapes {
 		display: flex;
@@ -519,20 +520,20 @@
 		align-items: center;
 		justify-content: center;
 		gap: 0.25rem;
-		border: 1px solid rgb(75 85 99 / 0.8);
+		border: 1px solid var(--border-strong);
 		border-radius: 0.25rem;
 		padding: 0.15rem 0.25rem;
 		font-size: 10px;
 		text-transform: capitalize;
-		color: rgb(156 163 175);
+		color: var(--text-muted);
 	}
 	.note-shape:hover {
-		color: rgb(243 244 246);
+		color: var(--text);
 	}
 	.note-shape.is-on {
-		border-color: rgb(249 115 22);
-		background: rgb(249 115 22 / 0.15);
-		color: rgb(243 244 246);
+		border-color: var(--accent);
+		background: var(--accent-soft);
+		color: var(--accent-soft-text);
 	}
 	.note-camera {
 		display: flex;
@@ -545,7 +546,7 @@
 		align-items: center;
 		gap: 0.45rem;
 		font-size: 11px;
-		color: rgb(209 213 219);
+		color: var(--text-2);
 	}
 	/* A compact switch built from the checkbox itself — same visual language as the
 	   flowbite Toggle in Settings, without pulling the component into this card.
@@ -561,8 +562,8 @@
 		flex: 0 0 auto;
 		appearance: none;
 		border-radius: 9999px;
-		color: rgb(75 85 99);
-		background-color: rgb(75 85 99);
+		color: var(--control-off);
+		background-color: var(--control-off);
 		transition:
 			color 120ms ease,
 			background-color 120ms ease;
@@ -576,25 +577,26 @@
 		height: 10px;
 		width: 10px;
 		border-radius: 9999px;
-		background: rgb(243 244 246);
+		background: var(--knob);
+		box-shadow: var(--shadow-knob);
 		transition: transform 120ms ease;
 	}
 	input[type='checkbox'].note-switch:checked {
 		/* the !important rule above paints background-color: currentColor */
-		color: rgb(249 115 22);
+		color: var(--accent);
 	}
 	input[type='checkbox'].note-switch:checked::after {
 		transform: translateX(12px);
 	}
 	input[type='checkbox'].note-switch:focus-visible {
-		outline: 2px solid rgb(249 115 22 / 0.6);
+		outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
 		outline-offset: 2px;
 	}
 	.note-actions {
 		display: flex;
 		align-items: center;
 		gap: 0.375rem;
-		border-top: 1px solid rgb(55 65 81 / 0.6);
+		border-top: 1px solid var(--border);
 		padding: 0.4rem 0.5rem;
 	}
 	.note-flat {
@@ -603,20 +605,20 @@
 		align-items: center;
 		justify-content: center;
 		gap: 0.25rem;
-		border: 1px solid rgb(75 85 99 / 0.8);
+		border: 1px solid var(--border-strong);
 		border-radius: 0.25rem;
 		padding: 0.15rem 0.4rem;
 		font-size: 0.75rem;
-		color: rgb(209 213 219);
+		color: var(--text-2);
 	}
 	.note-flat:hover {
-		border-color: rgb(148 163 184 / 0.9);
-		color: rgb(243 244 246);
+		border-color: var(--text-faint);
+		color: var(--text);
 	}
 	.note-flat.is-on {
-		border-color: rgb(249 115 22);
-		background: rgb(249 115 22 / 0.18);
-		color: rgb(253 230 138);
+		border-color: var(--accent);
+		background: var(--accent-soft);
+		color: var(--accent-soft-text);
 	}
 	.note-primary,
 	.note-danger {
@@ -628,17 +630,17 @@
 		font-size: 0.75rem;
 	}
 	.note-primary {
-		background: rgb(249 115 22);
-		color: white;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.note-primary:hover {
-		background: rgb(234 88 12);
+		filter: brightness(0.92);
 	}
 	.note-danger {
-		color: rgb(248 113 113);
+		color: var(--ink-bad);
 	}
 	.note-danger:hover {
-		background: rgb(127 29 29 / 0.35);
+		background: color-mix(in srgb, var(--ink-bad) 15%, transparent);
 	}
 	/* Narrow / folded: a bottom sheet like the Inspector and notes drawer. */
 	.note-card.note-sheet {

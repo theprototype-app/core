@@ -31,7 +31,6 @@
 	// unreachable — `libraryClose` is writable(true) and nothing in the app ever set it
 	// false, so no menu entry, button or store write could open it. The Explorer owns
 	// prefabs now, carrying the CRUD that drawer had.
-	import { DarkMode } from 'flowbite-svelte';
 	import Users from './menu/Users.svelte';
 	// RW: replaced the gutted News.svelte stub (empty body, inverted hasSeenModal flag)
 	import Welcome from './menu/Welcome.svelte';
@@ -92,4 +91,3 @@
 	<PhoneShell />
 {/if}
 
-<div class="dark-mode hidden"><DarkMode /></div>

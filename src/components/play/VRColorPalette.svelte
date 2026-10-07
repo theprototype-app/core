@@ -30,7 +30,7 @@
 	const controllerPosition = new THREE.Vector3()
 	const controllerQuaternion = new THREE.Quaternion()
 	const LIFT = new THREE.Vector3(0, 0.16, 0)
-	let liveHex = $state('#ffffff')
+	let liveHex = $state('#ffffff') // tokens-ok: the swatch's placeholder before the selection's material colour is read (three.js data)
 
 	useTask(() => {
 		if (!group || !$vrPaletteOpen || !renderer.xr.isPresenting) return
@@ -49,6 +49,7 @@
 		if (material?.color) liveHex = '#' + material.color.getHexString()
 	})
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if $vrPaletteOpen}
 	<T.Group bind:ref={group} name="vr-color-palette">
@@ -100,3 +101,4 @@
 		/>
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

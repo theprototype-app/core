@@ -52,6 +52,7 @@
 	} from '$lib/codeWorkspace';
 	import { codeLeftOpen, codeLeftWidth, codeRightOpen, codeRightWidth, sidebarKey, focusFind, clampSidebarWidth } from '$lib/codeSidebars';
 	import { dragReorder } from '$lib/dragReorder';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { arrowNav } from '$lib/arrowNav';
 	import { isDirty } from '$lib/codeTabs';
 	import { BUILTIN_CODE } from '$lib/builtinCode.js';
@@ -482,7 +483,7 @@
 	<div
 		id="code-ws-tabs"
 		data-tour="code-tabs"
-		class="code-strip"
+		class="code-strip tp-noscrollbar"
 		role="tablist"
 		tabindex="-1"
 		aria-label="Open sources"
@@ -595,7 +596,7 @@
 		</div>
 	{/if}
 	{#if sNode && active && !active.readOnly}
-		<div id="script-sockets" class="flex max-h-[30%] shrink-0 flex-col gap-1 overflow-auto px-1 pb-1 text-xs">
+		<div id="script-sockets" class="flex max-h-[30%] shrink-0 flex-col gap-1 overflow-auto px-1 pb-1 text-xs" use:minimalScroll>
 			{#if !sV2}
 				<div class="flex items-center gap-2">
 					<span class="code-muted flex-1">Inputs a, b, c (numbers) — no outputs.</span>
@@ -646,7 +647,7 @@
 			<p class="code-muted p-4">No open sources. Pick one in Project (Ctrl+B), "Edit code" or double-click a code node, double-click a .js file in the Explorer, or open the graph as JSON with "Graph JSON".</p>
 		{/if}
 		{#if confirmClose}
-			<div id="code-ws-confirm" class="absolute inset-0 z-10 flex items-center justify-center bg-black/50">
+			<div id="code-ws-confirm" class="absolute inset-0 z-10 flex items-center justify-center bg-scrim">
 				<div class="ui-panel w-80 rounded-lg p-4 text-sm shadow-2xl">
 					<p class="mb-3 font-semibold">Save changes to {tabById(confirmClose)?.title}?</p>
 					<p class="code-muted mb-4 text-xs">Your edits are lost if you close without saving.</p>
@@ -697,10 +698,10 @@
 			/>
 		{/if}
 		{#if confirmCloseAll}
-			<div id="code-ws-confirm-all" class="absolute inset-0 z-50 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true" aria-label="Unsaved changes">
+			<div id="code-ws-confirm-all" class="absolute inset-0 z-50 flex items-center justify-center bg-scrim" role="dialog" aria-modal="true" aria-label="Unsaved changes">
 				<div class="ui-panel w-96 rounded-lg p-4 text-sm shadow-2xl">
 					<p class="mb-2 font-semibold">{dirtyTabs().length === 1 ? '1 file has' : dirtyTabs().length + ' files have'} unsaved changes</p>
-					<ul class="code-muted mb-3 max-h-24 overflow-auto text-xs">
+					<ul class="code-muted mb-3 max-h-24 overflow-auto text-xs" use:minimalScroll>
 						{#each dirtyTabs() as t (t.id)}<li>● {t.title}</li>{/each}
 					</ul>
 					{#if closeFailed}<p class="code-bad mb-3 text-xs">{closeFailed} could not be saved — their code has an error (shown in the editor). Fix it, or close without saving.</p>{/if}
@@ -735,7 +736,7 @@
 	>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
+			class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
 			style="touch-action: none"
 			title="Drag to resize"
 			onpointerdown={startResize}
@@ -793,7 +794,7 @@
 		<div class="flex min-h-0 flex-1 flex-col p-1">{@render main()}</div>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+			class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-border-strong/40"
 			style="touch-action: none"
 			title="Drag to resize"
 			onpointerdown={startWinResize}
@@ -840,7 +841,7 @@
 		top: 0;
 		bottom: 0;
 		z-index: 20;
-		box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+		box-shadow: var(--shadow-window);
 	}
 	.code-narrow .code-side-left {
 		left: 0;
@@ -858,7 +859,7 @@
 		touch-action: none;
 	}
 	.code-side-grip:hover {
-		background: color-mix(in srgb, var(--accent-fill, #2563eb) 35%, transparent);
+		background: color-mix(in srgb, var(--accent) 35%, transparent);
 	}
 	.code-side-grip-l {
 		right: -3px;
@@ -867,10 +868,10 @@
 		left: -3px;
 	}
 	.code-side-toggle[aria-pressed='true'] {
-		color: var(--text, #f3f4f6);
-		background: color-mix(in srgb, var(--accent-fill, #2563eb) 25%, transparent);
+		color: var(--accent-soft-text);
+		background: var(--accent-soft);
 	}
-	/* 36-fb-code (F8): the strip scrolls — the wheel (stripWheel) and a THIN visible scrollbar */
+	/* 36-fb-code (F8): the strip scrolls — the wheel (stripWheel); 38 R11: no bar (tp-noscrollbar) */
 	.code-strip {
 		display: flex;
 		flex-shrink: 0;
@@ -880,32 +881,17 @@
 		padding-bottom: 3px;
 		overflow-x: auto;
 		overflow-y: hidden;
-		scrollbar-width: thin;
-		scrollbar-color: var(--scrollbar-thumb, #4b5563) transparent;
-		border-bottom: 1px solid var(--border, rgb(55 65 81 / 0.6));
-	}
-	.code-strip::-webkit-scrollbar {
-		height: 4px;
-	}
-	.code-strip::-webkit-scrollbar-thumb {
-		border-radius: 2px;
-		background: var(--scrollbar-thumb, #4b5563);
-	}
-	.code-strip::-webkit-scrollbar-thumb:hover {
-		background: var(--scrollbar-thumb-hover, #6b7280);
-	}
-	.code-strip::-webkit-scrollbar-track {
-		background: transparent;
+		border-bottom: 1px solid var(--border);
 	}
 	/* drag to reorder (dragReorder.js) */
 	.code-tab:global([data-dragging]) {
 		opacity: 0.45;
 	}
 	.code-tab:global([data-drop='before']) {
-		box-shadow: inset 2px 0 0 var(--accent-fill, #2563eb);
+		box-shadow: inset 2px 0 0 var(--accent);
 	}
 	.code-tab:global([data-drop='after']) {
-		box-shadow: inset -2px 0 0 var(--accent-fill, #2563eb);
+		box-shadow: inset -2px 0 0 var(--accent);
 	}
 	.code-tab {
 		display: flex;
@@ -918,14 +904,14 @@
 		border-radius: 4px 4px 0 0;
 		font-size: 11px;
 		cursor: pointer;
-		color: var(--muted, #9ca3af);
-		background: var(--surface-2, #374151);
+		color: var(--text-muted);
+		background: var(--surface-2);
 		user-select: none;
 	}
 	.code-tab-on {
-		color: var(--text, #f3f4f6);
-		background: var(--surface-3, #4b5563);
-		box-shadow: inset 0 -2px 0 var(--accent-fill, #2563eb);
+		color: var(--text);
+		background: var(--surface-active);
+		box-shadow: inset 0 -2px 0 var(--accent);
 	}
 	.code-tab-name {
 		overflow: hidden;
@@ -933,7 +919,7 @@
 		white-space: nowrap;
 	}
 	.code-tab-dirty {
-		color: var(--ink-warn, #fbbf24);
+		color: var(--ink-warn);
 	}
 	.code-tab-bad {
 		display: inline-flex;
@@ -944,30 +930,30 @@
 		border-radius: 9999px;
 		font-size: 9px;
 		font-weight: 700;
-		color: var(--on-accent, #fff);
-		background: var(--ink-bad, #f87171);
+		color: var(--on-danger);
+		background: var(--danger);
 	}
 	.code-tab-close {
 		padding: 0 3px;
 		border-radius: 3px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.code-tab-close:hover {
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 	.code-kind {
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.code-live {
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
 		padding: 0 4px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.code-save-armed {
-		color: var(--on-accent, #fff);
-		background: var(--accent-fill, #2563eb);
+		color: var(--on-accent);
+		background: var(--accent-fill);
 	}
 	.code-banner {
 		display: flex;
@@ -980,33 +966,33 @@
 		font-size: 11px;
 	}
 	.code-banner-bad {
-		color: var(--ink-bad, #fca5a5);
-		background: color-mix(in srgb, var(--ink-bad, #f87171) 14%, transparent);
+		color: var(--ink-bad);
+		background: color-mix(in srgb, var(--ink-bad) 14%, transparent);
 	}
 	.code-banner-warn {
-		color: var(--ink-warn, #fbbf24);
-		background: color-mix(in srgb, var(--ink-warn, #fbbf24) 14%, transparent);
+		color: var(--ink-warn);
+		background: color-mix(in srgb, var(--ink-warn) 14%, transparent);
 	}
 	.code-banner-text {
 		text-align: left;
 		color: inherit;
 	}
 	.code-muted {
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		font-size: 11px;
 	}
 	.code-warn {
-		color: var(--ink-warn, #fbbf24);
+		color: var(--ink-warn);
 		font-size: 11px;
 	}
 	.code-bad {
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 	}
 	.code-field {
 		padding: 0 4px;
 		border-radius: 3px;
-		color: var(--text, #e5e7eb);
-		background: var(--field, #111827);
-		border: 1px solid var(--border, #374151);
+		color: var(--text);
+		background: var(--surface-inset);
+		border: 1px solid var(--border);
 	}
 </style>

@@ -216,14 +216,14 @@
 		/* it sits over a rendered picture rather than a panel, so it carries its own
 		   backdrop — the surface token alone is opaque enough to lose the model behind it
 		   in light themes and too transparent to read against a bright one */
-		border-color: rgb(255 255 255 / 12%);
-		background: rgb(17 24 39 / 82%);
+		border-color: color-mix(in srgb, var(--text) 12%, transparent);
+		background: color-mix(in srgb, var(--bg-app) 82%, transparent);
 		backdrop-filter: blur(4px);
 	}
 	.an-frames {
 		min-width: 46px;
 		text-align: right;
-		color: #e5e7eb;
+		color: var(--text);
 	}
 	.an-clock {
 		flex: 0 0 auto;
@@ -231,12 +231,12 @@
 	.an-clip {
 		max-width: 92px;
 		flex: 0 0 auto;
-		border: 1px solid var(--border, #374151);
+		border: 1px solid var(--border);
 		border-radius: 3px;
-		background: var(--surface, #1f2937);
+		background: var(--surface-1);
 		padding: 1px 4px;
 		font-size: 10px;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 	}
 	/* the two readings are the first thing to go when there is no room for them: the
 	   transport itself has to survive a narrow window, the numbers beside it need not */

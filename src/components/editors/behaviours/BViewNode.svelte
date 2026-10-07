@@ -71,13 +71,14 @@
 		max-width: 230px;
 		padding: 5px 8px;
 		border-radius: 6px;
-		border: 1px solid #4b5563;
-		background: #1f2937;
-		color: #e5e7eb;
+		border: 1px solid var(--border-strong);
+		background: var(--surface-2);
+		color: var(--text-2);
 		font-size: 11px;
 		line-height: 1.25;
 		transition: box-shadow 0.25s, border-color 0.25s;
 	}
+	/* tokens-ok-begin: node KIND hues are graph data — distinguishable and identical in every theme */
 	.bview-event { border-left: 3px solid #facc15; }
 	.bview-param { border-left: 3px solid #38bdf8; }
 	.bview-fn { border-left: 3px solid #2dd4bf; }
@@ -85,17 +86,18 @@
 	.bview-kit { border-left: 3px solid #34d399; }
 	.bview-timer { border-left: 3px solid #c084fc; }
 	.bview-action { border-left: 3px solid #f87171; }
+	/* tokens-ok-end */
 	.bview-glow {
-		border-color: #fde047;
-		box-shadow: 0 0 10px 2px rgba(253, 224, 71, 0.65);
+		border-color: var(--accent);
+		box-shadow: 0 0 10px 2px color-mix(in srgb, var(--accent) 65%, transparent);
 	}
-	.bview-error { border-color: #ef4444; }
+	.bview-error { border-color: var(--ink-bad); }
 	.bview-head { display: flex; gap: 5px; align-items: center; font-weight: 600; }
 	.bview-icon { opacity: 0.85; }
 	.bview-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.bview-tag { margin-left: auto; }
-	.bview-sub { color: #9ca3af; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-	.bview-value { font-family: ui-monospace, monospace; color: #fef3c7; font-size: 12px; margin-top: 2px; }
-	.bview-knob { width: 100%; margin-top: 3px; accent-color: #38bdf8; }
-	.bview-err { color: #fca5a5; font-size: 10px; white-space: normal; }
+	.bview-sub { color: var(--text-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.bview-value { font-family: ui-monospace, monospace; color: var(--text); font-size: 12px; margin-top: 2px; }
+	.bview-knob { width: 100%; margin-top: 3px; accent-color: var(--accent); }
+	.bview-err { color: var(--ink-bad); font-size: 10px; white-space: normal; }
 </style>

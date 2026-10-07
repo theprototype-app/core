@@ -128,9 +128,9 @@
 		align-items: center;
 		justify-content: center;
 		overflow: hidden;
-		border: 1px solid rgb(75 85 99 / 0.7);
+		border: 1px solid var(--border-input);
 		border-radius: 2px;
-		background: rgb(17 24 39 / 0.6);
+		background: var(--surface-inset);
 	}
 	.hud-pick-swatch img {
 		height: 100%;
@@ -158,7 +158,7 @@
 	/* a hash with no local item: assetShare has been asked and we are waiting. Saying so
 	   beats an empty swatch that looks like a broken picker. */
 	.hud-pick[data-state='missing'] .hud-pick-name {
-		color: #fbbf24;
+		color: var(--ink-warn);
 	}
 	.hud-pick-clear {
 		display: flex;

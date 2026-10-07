@@ -66,7 +66,7 @@
 			<SliderRow id="fluid-spill-max" label="Max spilled drops" min={10} max={2000} step={10} decimals={0} value={f.spill.maxDrops} onchange={(v) => set({ spill: { maxDrops: v } })} />
 			<SliderRow id="fluid-spill-life" label="Drop lifetime (s)" min={0.5} max={30} step={0.5} value={f.spill.lifetime} onchange={(v) => set({ spill: { lifetime: v } })} />
 		{/if}
-		<button id="fluid-refill" class="ui-chip bg-gray-600 text-text-2 hover:bg-gray-500" onclick={() => set({ generation: f.generation + 1 })}>
+		<button id="fluid-refill" class="ui-chip bg-surface-active text-text-2 hover:bg-surface-hover" onclick={() => set({ generation: f.generation + 1 })}>
 			Refill
 		</button>
 		<p class="mt-1 text-[length:var(--fs-badge)] text-text-muted">

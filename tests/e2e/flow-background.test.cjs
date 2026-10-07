@@ -37,13 +37,14 @@ h.run(async () => {
 	await selectBg('Dots');
 	h.check((await bgKind()) === 'dots', 'switching Lines -> Dots applies immediately');
 
-	// softer grid: the pattern uses our low-alpha grey (128), not a high-contrast default
+	// softer grid: the pattern is a low-alpha mix of the --text-faint token (38 R11; it was a
+	// literal rgba(128,128,128,0.18)), not xyflow's high-contrast default
 	const patternColor = await A.page.evaluate(() => {
 		const bg = document.querySelector('.svelte-flow__background');
 		const el = bg?.querySelector('circle') || bg?.querySelector('path');
 		return el ? el.getAttribute('fill') || el.getAttribute('stroke') || getComputedStyle(el).fill : '';
 	});
-	h.check(/128/.test(patternColor), `the grid uses a soft grey pattern colour (${patternColor})`);
+	h.check(/0\.18\b|var\(--text-faint\) 18%/.test(patternColor), `the grid uses a soft (18%) token pattern colour (${patternColor})`);
 
 	await selectBg('None');
 	h.check((await bgKind()) === 'none', 'None removes the background');

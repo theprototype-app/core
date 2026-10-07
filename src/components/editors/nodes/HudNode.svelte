@@ -108,7 +108,7 @@
 							</span>
 						{:else if param.kind === 'range'}
 							<input
-								class="nodrag nopan accent-[#ff4000]"
+								class="nodrag nopan accent-accent"
 								type="range"
 								min={param.min}
 								max={param.max}
@@ -170,13 +170,13 @@
 		margin-top: 2px;
 		overflow: hidden;
 		border-radius: 2px;
-		background: rgb(17 24 39 / 0.7);
+		background: var(--surface-inset);
 		padding: 1px 5px;
 		font-family: ui-monospace, monospace;
 		font-size: 11px;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		color: #7dd3fc;
+		color: var(--accent-text);
 	}
 	.hud-live em {
 		font-style: normal;
@@ -184,10 +184,10 @@
 	}
 	.wired-value {
 		border-radius: 2px;
-		background: rgb(17 24 39 / 0.7);
+		background: var(--surface-inset);
 		padding: 1px 5px;
 		font-family: ui-monospace, monospace;
 		font-size: 11px;
-		color: #7dd3fc;
+		color: var(--accent-text);
 	}
 </style>

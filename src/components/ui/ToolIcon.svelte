@@ -289,7 +289,7 @@
 		const raw = PATHS[name] ?? PATHS.wireframe;
 		return Array.isArray(raw) ? { base: raw } : raw;
 	});
-	const ACCENT = 'var(--icon-accent, var(--accent, var(--color-primary-500, #60a5fa)))';
+	const ACCENT = 'var(--icon-accent, var(--accent))';
 </script>
 
 <svg

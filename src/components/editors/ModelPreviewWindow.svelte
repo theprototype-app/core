@@ -77,7 +77,7 @@
 			<span class="flex-1"></span>
 			<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={close}><Icon name="x" size={16} /></button>
 		</div>
-		<div class="relative min-h-0 flex-1 bg-[#0d1117]">
+		<div class="relative min-h-0 flex-1 bg-app">
 			<!-- 21-H2: keyed on BOTH sources — an item id and a prefab id are different
 			     things, so re-keying on one alone leaves the canvas showing the other -->
 			{#key ($modelPreviewTarget.itemId ?? '') + '|' + ($modelPreviewTarget.prefabId ?? '')}
@@ -91,14 +91,14 @@
 			{#if stats}
 				<div
 					id="model-preview-stats"
-					class="pointer-events-none absolute right-2 top-2 rounded-sm bg-black/60 px-2 py-1 text-right text-[11px] leading-tight text-gray-200"
+					class="pointer-events-none absolute right-2 top-2 rounded-sm bg-app/60 px-2 py-1 text-right text-[11px] leading-tight text-text-2"
 				>
 					<div>{stats.tris.toLocaleString()} tris</div>
 					<div>{stats.verts.toLocaleString()} verts</div>
 					<div>{stats.meshes} mesh{stats.meshes === 1 ? '' : 'es'}</div>
 				</div>
 			{/if}
-			<div class="pointer-events-none absolute bottom-2 left-2 text-[10px] text-gray-500">drag to rotate</div>
+			<div class="pointer-events-none absolute bottom-2 left-2 text-[10px] text-text-faint">drag to rotate</div>
 		</div>
 	</div>
 {/if}

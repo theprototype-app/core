@@ -23,17 +23,17 @@
 			<span class="font-mono">{typeof live === 'number' ? live.toFixed(2) : '—'}</span>
 		</div>
 		<label class="flex items-center gap-1">
-			<span class="w-12 text-gray-400">min</span>
+			<span class="w-12 text-text-muted">min</span>
 			<DragRow nodrag step={0.01} decimals={2} value={data.min ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { min: v })} />
 		</label>
 		<label class="flex items-center gap-1">
-			<span class="w-12 text-gray-400">max</span>
+			<span class="w-12 text-text-muted">max</span>
 			<DragRow nodrag step={0.01} decimals={2} value={data.max ?? 1} onchange={(/** @type {number} */ v) => setNodeData(id, { max: v })} />
 		</label>
 		<label class="flex items-center gap-1">
-			<span class="w-12 text-gray-400">every</span>
+			<span class="w-12 text-text-muted">every</span>
 			<DragRow nodrag step={0.01} decimals={2} min={0} value={data.interval ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { interval: v })} />
-			<span class="text-gray-400">s</span>
+			<span class="text-text-muted">s</span>
 		</label>
 	</div>
 </NodeWrapper>

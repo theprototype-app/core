@@ -144,7 +144,7 @@
 
 {#snippet hintLine()}
 	{#if hint && !adjusting}
-		<div id="mesh-op-hint" class="tbx-row text-xs text-amber-300">{hint}</div>
+		<div id="mesh-op-hint" class="tbx-row text-xs text-ink-warn">{hint}</div>
 	{/if}
 {/snippet}
 
@@ -161,7 +161,7 @@
 	<!-- 176: the amount row keeps its id — it is the toolbox's oldest e2e contract -->
 	<span class="tbx-label">{adjusting ? `Adjusting ${focus}` : `${focus} options`}</span>
 	{@render hintLine()}
-	<div id="mesh-op-params" class="tbx-row text-xs text-gray-300">
+	<div id="mesh-op-params" class="tbx-row text-xs text-text-2">
 		<DragRow
 			id="mesh-op-amount"
 			label="amount"
@@ -231,7 +231,7 @@
 {:else if focus === 'bevel'}
 	<span class="tbx-label">{adjusting ? 'Adjusting bevel' : 'Bevel options'}</span>
 	{@render hintLine()}
-	<div id="bevel-params" class="tbx-row text-xs text-gray-300">
+	<div id="bevel-params" class="tbx-row text-xs text-text-2">
 		<DragRow
 			id="bevel-width"
 			label="width"
@@ -278,12 +278,12 @@
 		>
 			<button
 				id="bevel-dir-out"
-				class="px-2 py-0.5 {$bevelDirection === 'out' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+				class="px-2 py-0.5 {$bevelDirection === 'out' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-hover'}"
 				onclick={() => setDirection('out')}>Out</button
 			>
 			<button
 				id="bevel-dir-in"
-				class="px-2 py-0.5 {$bevelDirection === 'in' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+				class="px-2 py-0.5 {$bevelDirection === 'in' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-hover'}"
 				onclick={() => setDirection('in')}>In</button
 			>
 		</div>
@@ -356,7 +356,7 @@
 {:else if focus === 'loopcut'}
 	<span class="tbx-label">{adjusting ? 'Adjusting loop cut' : 'Loop cut options'}</span>
 	{@render hintLine()}
-	<div id="loopcut-params" class="tbx-row text-xs text-gray-300">
+	<div id="loopcut-params" class="tbx-row text-xs text-text-2">
 		<DragRow
 			id="mesh-loop-cuts"
 			label="cuts"
@@ -405,13 +405,13 @@
 			>
 				<button
 					id="loopcut-axis-along"
-					class="px-2 py-0.5 {loopAxis === 0 ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					class="px-2 py-0.5 {loopAxis === 0 ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-hover'}"
 					title="Cut across the ring the pick chose"
 					onclick={() => setLoopAxis(0)}>Along</button
 				>
 				<button
 					id="loopcut-axis-across"
-					class="px-2 py-0.5 {loopAxis === 1 ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+					class="px-2 py-0.5 {loopAxis === 1 ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-hover'}"
 					disabled={!loopAxisAlt}
 					title={loopAxisAlt
 						? 'Cut across the PERPENDICULAR ring instead'
@@ -434,7 +434,7 @@
 {:else if focus === 'bridge'}
 	<span class="tbx-label">{adjusting ? 'Adjusting bridge' : 'Bridge options'}</span>
 	{@render hintLine()}
-	<div id="bridge-params" class="tbx-row text-xs text-gray-300">
+	<div id="bridge-params" class="tbx-row text-xs text-text-2">
 		<DragRow
 			id="mesh-bridge-cuts"
 			label="cuts"
@@ -503,7 +503,7 @@
 {:else if focus === 'subdivide'}
 	<span class="tbx-label">{adjusting ? 'Adjusting subdivide' : 'Subdivide options'}</span>
 	{@render hintLine()}
-	<div id="subdivide-params" class="tbx-row text-xs text-gray-300">
+	<div id="subdivide-params" class="tbx-row text-xs text-text-2">
 		<DragRow
 			id="subdivide-levels"
 			label="levels"
@@ -534,7 +534,7 @@
 {:else if focus === 'edge-extrude'}
 	<span class="tbx-label">{adjusting ? 'Adjusting edge extrude' : 'Edge extrude options'}</span>
 	{@render hintLine()}
-	<div id="edge-extrude-params" class="tbx-row text-xs text-gray-300">
+	<div id="edge-extrude-params" class="tbx-row text-xs text-text-2">
 		<DragRow
 			id="edge-extrude-distance"
 			label="distance"
@@ -565,7 +565,7 @@
 {:else if focus === 'edge-slide'}
 	<span class="tbx-label">{adjusting ? 'Adjusting edge slide' : 'Edge slide options'}</span>
 	{@render hintLine()}
-	<div id="edge-slide-params" class="tbx-row text-xs text-gray-300">
+	<div id="edge-slide-params" class="tbx-row text-xs text-text-2">
 		<DragRow
 			id="edge-slide-factor"
 			label="factor"
@@ -596,7 +596,7 @@
 {:else if focus === 'solidify'}
 	<span class="tbx-label">{adjusting ? 'Adjusting solidify' : 'Solidify options'}</span>
 	{@render hintLine()}
-	<div id="solidify-params" class="tbx-row text-xs text-gray-300">
+	<div id="solidify-params" class="tbx-row text-xs text-text-2">
 		<DragRow
 			id="solidify-thickness"
 			label="thickness"
@@ -627,7 +627,7 @@
 {:else if focus === 'smooth'}
 	<span class="tbx-label">Smooth options</span>
 	{@render hintLine()}
-	<div id="smooth-params" class="tbx-row text-xs text-gray-300">
+	<div id="smooth-params" class="tbx-row text-xs text-text-2">
 		<DragRow
 			id="smooth-factor"
 			label="factor"
@@ -659,7 +659,7 @@
 	</div>
 {:else if focus === 'proportional'}
 	<span class="tbx-label">Proportional options</span>
-	<div class="tbx-row text-xs text-gray-300">
+	<div class="tbx-row text-xs text-text-2">
 		<DragRow
 			id="mesh-proportional-radius"
 			label="radius"
@@ -675,7 +675,7 @@
 	</div>
 {:else if focus === 'slide'}
 	<span class="tbx-label">Slide options</span>
-	<div id="slide-params" class="tbx-row text-xs text-gray-300">
+	<div id="slide-params" class="tbx-row text-xs text-text-2">
 		<label
 			class="flex items-center gap-1"
 			title="ON (default): the vertex stops at the edge's ends. OFF: it may slide PAST either end, continuing the edge's direction — a marker shows where it will land while it is off the edge."
@@ -692,7 +692,7 @@
 	</div>
 {:else if focus === 'knife'}
 	<span class="tbx-label">Knife options</span>
-	<div class="tbx-row text-xs text-gray-400">
+	<div class="tbx-row text-xs text-text-muted">
 		Click one end of the cut, then the other. Esc drops a pending cut.
 	</div>
 {/if}

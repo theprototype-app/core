@@ -187,7 +187,7 @@
 					cy={marker.py}
 					r="4"
 					fill="none"
-					stroke="var(--marker-outline, rgba(255,255,255,0.85))"
+					style="stroke: color-mix(in srgb, var(--text) 85%, transparent)"
 					stroke-width="1"
 					stroke-dasharray="none"
 				/>
@@ -264,7 +264,11 @@
 		height: 26px;
 		padding: 0 0.5rem 0 0.4rem;
 		border-radius: 9999px;
-		border: 1.5px solid var(--marker-outline, rgba(255, 255, 255, 0.9));
+		/* adaptive outline: --text is light on dark themes (reads on dark scenes) and dark
+		   on light ones (reads on bright skies) */
+		--marker-outline: color-mix(in srgb, var(--text) 90%, transparent);
+		--marker-outline-dim: color-mix(in srgb, var(--text) 55%, transparent);
+		border: 1.5px solid var(--marker-outline);
 		background: var(--fill);
 		color: var(--ink);
 		font-size: 13.5px;
@@ -272,8 +276,8 @@
 		line-height: 1;
 		letter-spacing: -0.01em;
 		box-shadow:
-			0 1px 2px rgb(0 0 0 / 0.45),
-			0 4px 10px rgb(0 0 0 / 0.35);
+			0 1px 2px color-mix(in srgb, var(--bg-app) 45%, transparent),
+			0 4px 10px color-mix(in srgb, var(--bg-app) 35%, transparent);
 		transform: translate(-50%, -50%);
 		transition:
 			transform 120ms ease,
@@ -290,31 +294,31 @@
 	}
 	.marker-badge:hover {
 		transform: translate(-50%, -50%) scale(1.12);
-		border-color: #fff;
+		border-color: var(--text);
 		box-shadow:
-			0 1px 2px rgb(0 0 0 / 0.5),
-			0 6px 16px rgb(0 0 0 / 0.45);
+			0 1px 2px color-mix(in srgb, var(--bg-app) 50%, transparent),
+			0 6px 16px color-mix(in srgb, var(--bg-app) 45%, transparent);
 		z-index: 1;
 	}
 	.marker-badge.is-occluded {
 		/* the fill fades (see --fill) but the number must stay readable */
-		box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
-		border-color: var(--marker-outline-dim, rgba(255, 255, 255, 0.55));
+		box-shadow: 0 1px 3px color-mix(in srgb, var(--bg-app) 35%, transparent);
+		border-color: var(--marker-outline-dim);
 	}
 	.marker-badge.is-active {
 		box-shadow:
 			0 0 0 2px var(--ring),
-			0 0 0 4px rgb(0 0 0 / 0.45),
-			0 4px 12px rgb(0 0 0 / 0.4);
+			0 0 0 4px color-mix(in srgb, var(--bg-app) 45%, transparent),
+			0 4px 12px color-mix(in srgb, var(--bg-app) 40%, transparent);
 	}
 	.marker-badge.is-cluster {
 		/* a small pile: two offset plates behind the badge */
 		box-shadow:
 			2px 2px 0 0 var(--fill),
-			2px 2px 0 1.5px var(--marker-outline, rgba(255, 255, 255, 0.55)),
+			2px 2px 0 1.5px var(--marker-outline-dim),
 			4px 4px 0 0 var(--fill),
-			4px 4px 0 1.5px var(--marker-outline-dim, rgba(255, 255, 255, 0.35)),
-			0 4px 12px rgb(0 0 0 / 0.4);
+			4px 4px 0 1.5px color-mix(in srgb, var(--text) 35%, transparent),
+			0 4px 12px color-mix(in srgb, var(--bg-app) 40%, transparent);
 	}
 	.marker-tip {
 		position: fixed;
@@ -323,16 +327,16 @@
 		flex-direction: column;
 		gap: 0.15rem;
 		border-radius: 0.375rem;
-		border: 1px solid rgb(55 65 81 / 0.8);
-		background: rgb(17 24 39 / 0.96);
+		border: 1px solid var(--border);
+		background: color-mix(in srgb, var(--surface-1) 96%, transparent);
 		padding: 0.3rem 0.45rem;
-		box-shadow: 0 6px 18px rgb(0 0 0 / 0.5);
+		box-shadow: var(--shadow-window);
 		pointer-events: none;
 	}
 	.marker-tip-title {
 		font-size: 11px;
 		font-weight: 600;
-		color: rgb(243 244 246);
+		color: var(--text);
 	}
 	.marker-tip-text {
 		display: -webkit-box;
@@ -341,23 +345,10 @@
 		-webkit-line-clamp: 2;
 		line-clamp: 2;
 		font-size: 10px;
-		color: rgb(209 213 219);
+		color: var(--text-2);
 	}
 	.marker-tip-meta {
 		font-size: 9px;
-		color: rgb(107 114 128);
-	}
-	/* adaptive outline: a light hairline reads on dark scenes, a dark one on bright
-	   skies / light themes */
-	@media (prefers-color-scheme: light) {
-		.marker-badge {
-			--marker-outline: rgb(15 23 42 / 0.55);
-			--marker-outline-dim: rgb(15 23 42 / 0.3);
-		}
-	}
-	:global(:root[data-theme='light']) .marker-badge,
-	:global(:root[data-theme='contrast']) .marker-badge {
-		--marker-outline: rgb(15 23 42 / 0.6);
-		--marker-outline-dim: rgb(15 23 42 / 0.35);
+		color: var(--text-faint);
 	}
 </style>

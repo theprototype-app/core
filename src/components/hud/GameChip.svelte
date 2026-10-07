@@ -64,10 +64,10 @@
 		gap: 6px;
 		padding: 4px 4px 4px 10px;
 		border-radius: 9999px;
-		background: var(--surface, #1f2937);
-		color: var(--icon-strong, #e5e7eb);
-		border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+		background: var(--surface-1);
+		color: var(--text);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow-window);
 		font-size: 12px;
 		line-height: 1;
 		user-select: none;
@@ -92,7 +92,7 @@
 	.game-chip-icon:hover,
 	.game-chip-icon[aria-pressed='true'] {
 		opacity: 1;
-		background: rgba(255, 255, 255, 0.08);
+		background: var(--surface-hover);
 	}
 	.game-chip-test {
 		display: inline-flex;
@@ -100,8 +100,8 @@
 		gap: 4px;
 		padding: 5px 10px 5px 8px;
 		border-radius: 9999px;
-		background: var(--accent, #ef562f);
-		color: #fff;
+		background: var(--live);
+		color: var(--on-live);
 		font-weight: 600;
 		white-space: nowrap;
 	}

@@ -183,7 +183,7 @@
 
 </script>
 
-<div bind:this={stripEl} class="absolute -top-6 left-3 right-24 z-20 flex gap-0.5 overflow-x-auto">
+<div bind:this={stripEl} class="tp-noscrollbar absolute -top-6 left-3 right-24 z-20 flex gap-0.5 overflow-x-auto">
 	{#each $dockTabs as tab (tab.key)}
 		<button
 			data-dock-tab={tab.key}

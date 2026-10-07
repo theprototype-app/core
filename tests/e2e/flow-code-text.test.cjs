@@ -71,7 +71,7 @@ h.run(async () => {
 	h.check(!!n2 && Number.isFinite(n2.position?.x) && Number.isFinite(n2.position?.y) && n2.position.y > 20, 'a new line with no @x,y got a position below the graph: ' + JSON.stringify(n2?.position));
 	h.check(n2?.class === 'w-[150px]' && n2?.data.label === 'Two', 'with the default class and its label');
 	await h.eventually(() => graph(B), (g) => g.nodes.some((n) => n.id === 'n2'), 'B received the new node');
-	const errA = await A.page.locator('#flow-code-window .bg-red-900\\/40').count();
+	const errA = await A.page.locator('#flow-code-window .bg-ink-bad\\/15').count();
 	h.check(errA === 0, 'no error banner after a good apply');
 
 	// --- 4 ---
@@ -79,7 +79,7 @@ h.run(async () => {
 	await setEditor(A, 'n1 = number "Number" {value: 3}\nbroken = spin {speed: }\n');
 	await apply(A);
 	await A.page.waitForTimeout(300);
-	const banner = await A.page.evaluate(() => document.querySelector('#flow-code-window .bg-red-900\\/40')?.textContent ?? '');
+	const banner = await A.page.evaluate(() => document.querySelector('#flow-code-window .bg-ink-bad\\/15')?.textContent ?? '');
 	h.check(/line 2/.test(banner), 'a bad line is reported with its line number: ' + JSON.stringify(banner));
 	h.check(JSON.stringify(await graph(A)) === before, 'and the graph is left untouched');
 

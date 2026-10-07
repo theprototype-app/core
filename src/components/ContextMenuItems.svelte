@@ -46,6 +46,7 @@
 	// and keyboard. Hover-intent lives here: 120ms to open, 150ms to close.
 	import { tick } from 'svelte';
 	import Icon from './ui/Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	export let items: any[] = [];
 	export let onrun: (item: any) => void;
 	/** this level's submenu chain from the root ([] at the top level) */
@@ -235,6 +236,7 @@
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
 					use:placeSubmenu
+					use:minimalScroll
 					on:mouseenter={() => clearTimeout(closeTimer)}
 					class="ctx-scroll tp-ui tp-menu fixed min-w-36 overflow-y-auto overflow-x-hidden"
 					style="z-index: calc(var(--z-menu) + 2);"

@@ -345,12 +345,12 @@
 			<div data-post-row class:post-drop={drag && drag.to === index && drag.from !== index}>
 				<div
 					id={'post-row-' + entry.id}
-					class="flex items-center gap-1 rounded-sm bg-gray-700/60 px-1 py-0.5"
+					class="flex items-center gap-1 rounded-sm bg-surface-2 px-1 py-0.5"
 					class:opacity-50={drag && drag.id === entry.id}
 				>
 					<span
 						id={'post-grip-' + entry.id}
-						class="cursor-grab select-none px-1 text-text-muted hover:text-gray-200"
+						class="cursor-grab select-none px-1 text-text-muted hover:text-text-2"
 						title="Drag to reorder — the stack runs top to bottom"
 						use:grip={{ id: entry.id, index }}>⠿</span
 					>
@@ -365,7 +365,7 @@
 					/>
 					<button
 						id={'post-open-' + entry.id}
-						class="flex-1 truncate text-left text-xs text-text-2 hover:text-white"
+						class="flex-1 truncate text-left text-xs text-text-2 hover:text-text"
 						title={isUnknown(entry)
 							? 'This effect comes from a newer version — it is kept and shared, but this build cannot render it'
 							: 'Show parameters'}
@@ -376,7 +376,7 @@
 					</button>
 					<button
 						id={'post-up-' + entry.id}
-						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-gray-100 disabled:opacity-30"
+						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-text disabled:opacity-30"
 						title="Move earlier in the stack"
 						aria-label="Move up"
 						disabled={index === 0}
@@ -384,7 +384,7 @@
 					>
 					<button
 						id={'post-down-' + entry.id}
-						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-gray-100 disabled:opacity-30"
+						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-text disabled:opacity-30"
 						title="Move later in the stack"
 						aria-label="Move down"
 						disabled={index === doc.effects.length - 1}
@@ -392,7 +392,7 @@
 					>
 					<button
 						id={'post-remove-' + entry.id}
-						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-red-400"
+						class="px-1 text-[length:var(--fs-badge)] text-text-muted hover:text-ink-bad"
 						title="Remove from the stack"
 						aria-label={'Remove ' + labelOf(entry)}
 						onclick={() => removePostEffect(entry.id, docKey)}>✕</button
@@ -434,7 +434,7 @@
 										/>
 										<button
 											id={'post-edit-' + entry.id}
-											class="ui-chip shrink-0 bg-gray-600 text-text-2 hover:bg-gray-500"
+											class="ui-chip shrink-0 bg-surface-active text-text-2 hover:bg-surface-hover"
 											title="Open this graph in the shader editor"
 											disabled={!entry.params[param.key]}
 											onclick={() => openPostGraph(entry.params[param.key])}>Edit</button
@@ -492,7 +492,7 @@
 
 <button
 	id="post-add"
-	class="ui-chip w-full justify-center bg-gray-600 text-text-2 hover:bg-gray-500"
+	class="ui-chip w-full justify-center bg-surface-active text-text-2 hover:bg-surface-hover"
 	title="Add a post-processing effect to the scene's look"
 	onclick={openAddMenu}
 >
@@ -530,6 +530,6 @@
 <style>
 	/* the drop target during a pointer reorder */
 	.post-drop {
-		box-shadow: inset 0 2px 0 0 var(--accent, #3b82f6);
+		box-shadow: inset 0 2px 0 0 var(--accent);
 	}
 </style>

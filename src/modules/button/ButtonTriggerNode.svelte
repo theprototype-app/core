@@ -47,7 +47,7 @@
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>height</span><span>{data.height ?? 2}</span></span>
 			<input
-				class="nodrag nopan accent-[#ff4000]"
+				class="nodrag nopan accent-accent"
 				type="range"
 				min="-4"
 				max="4"
@@ -60,12 +60,12 @@
 			<span class="flex items-center gap-1">
 				<span
 					class="inline-block h-2 w-2 rounded-full"
-					style="background-color: {data.pressed ? '#22c55e' : '#6b7280'}"
+					style="background-color: {data.pressed ? 'var(--ink-good)' : 'var(--text-faint)'}"
 				></span>
 				{data.pressed ? 'pressed' : 'released'}
 			</span>
 			<button
-				class="nodrag nopan rounded-sm bg-[#ff4000] px-2 text-white"
+				class="nodrag nopan rounded-sm bg-accent-fill px-2 text-on-accent"
 				on:click={() => pressTriggerNode({ id, data })}
 			>
 				Press

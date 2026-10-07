@@ -245,7 +245,7 @@
 		gap: 4px;
 		margin-top: 8px;
 		padding-top: 8px;
-		border-top: 1px solid rgba(255, 255, 255, 0.12);
+		border-top: 1px solid var(--border);
 	}
 	.vh-head {
 		display: flex;
@@ -271,7 +271,7 @@
 	}
 	.vh-archive:hover {
 		opacity: 1;
-		background: rgba(255, 255, 255, 0.1);
+		background: var(--surface-active);
 	}
 	.vh-save {
 		display: flex;
@@ -282,8 +282,8 @@
 		min-width: 0;
 		flex: 1;
 		border-radius: 3px;
-		border: 1px solid rgba(255, 255, 255, 0.16);
-		background: rgba(0, 0, 0, 0.25);
+		border: 1px solid var(--border-input);
+		background: var(--surface-inset);
 		padding: 2px 5px;
 		font-size: 0.72rem;
 		color: inherit;
@@ -293,7 +293,7 @@
 		align-items: center;
 		gap: 0.3rem;
 		border-radius: 4px;
-		background: rgba(255, 255, 255, 0.05);
+		background: var(--surface-hover);
 		padding: 3px 4px;
 	}
 	.vh-thumb {
@@ -301,12 +301,12 @@
 		height: 26px;
 		flex: none;
 		border-radius: 3px;
-		border: 1px solid rgba(255, 255, 255, 0.15);
+		border: 1px solid var(--border);
 		object-fit: cover;
 	}
 	.vh-thumb-empty {
 		display: inline-block;
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--surface-hover);
 	}
 	.vh-label {
 		display: block;
@@ -326,21 +326,21 @@
 	.vh-badge {
 		flex: none;
 		border-radius: 999px;
-		background: var(--accent, #3b82f6);
+		background: var(--accent-fill);
 		padding: 1px 5px;
 		font-size: 0.58rem;
-		color: #fff;
+		color: var(--on-accent);
 	}
 	.vh-hint {
 		font-size: 0.68rem;
 		opacity: 0.65;
 	}
 	.vh-badge-prev {
-		background: rgba(255, 255, 255, 0.22);
+		background: var(--border-strong);
 		color: inherit;
 	}
 	.vh-badge-away {
-		background: rgba(255, 255, 255, 0.16);
+		background: var(--surface-active);
 		color: inherit;
 	}
 </style>

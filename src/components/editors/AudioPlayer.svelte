@@ -313,9 +313,9 @@
 		font-size: 10px;
 	}
 	.ap-name {
-		color: #6b7280;
+		color: var(--text-faint);
 	}
 	.ap-error {
-		color: #f87171;
+		color: var(--ink-bad);
 	}
 </style>

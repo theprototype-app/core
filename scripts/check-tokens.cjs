@@ -3,7 +3,7 @@
 // (cloud docs/design/redesign/SPEC.md §1; the tokens live in src/styles/tokens.css and app.css).
 //
 // What counts as a raw colour (src/components/**, src/routes/**, src/styles/** minus the files
-// that DEFINE the tokens):
+// that DEFINE the tokens, and the core modules' .svelte components):
 //   - a hex literal            #fff  #1b212d  #1b212dcc      (also inside a var() fallback)
 //   - an rgb()/rgba()/hsl()/hsla() literal
 //   - a Tailwind PALETTE utility   bg-gray-800  text-red-400  hover:border-blue-500/50
@@ -27,7 +27,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const SCOPE = ['src/components', 'src/routes', 'src/styles'].map((d) => path.join(ROOT, d));
+const SCOPE = ['src/components', 'src/routes', 'src/styles', 'src/modules'].map((d) => path.join(ROOT, d));
 /** the files that DEFINE the tokens (and the legacy palette they derive from) */
 const DEFINITIONS = new Set(['src/styles/tokens.css', 'src/styles/theme.css']);
 /** files another branch is redesigning (scripts/redesign-pending.json says which and why) */
@@ -99,7 +99,8 @@ function walk(dir, out = []) {
 	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
 		const full = path.join(dir, entry.name);
 		if (entry.isDirectory()) walk(full, out);
-		else if (/\.(svelte|css|js|ts)$/.test(entry.name)) out.push(full);
+		// src/modules: only the components (module.js files build three.js content, whose colours are data)
+		else if (/\.(svelte|css|js|ts)$/.test(entry.name) && (entry.name.endsWith('.svelte') || !relOf(full).startsWith('src/modules/'))) out.push(full);
 	}
 	return out;
 }

@@ -112,7 +112,7 @@
 			</div>
 			<InsToggle id="fluid-emitter-interact" checked={f.interact} onchange={(/** @type {any} */ e) => set({ interact: e.currentTarget.checked })}>Collide with the scene</InsToggle>
 			<InsToggle id="fluid-emitter-join" checked={f.joinPools} onchange={(/** @type {any} */ e) => set({ joinPools: e.currentTarget.checked })}>Pouring into water joins it</InsToggle>
-			<button id="fluid-emitter-restart" class="ui-chip bg-gray-600 text-text-2 hover:bg-gray-500" onclick={() => set({ generation: f.generation + 1 })}>Restart</button>
+			<button id="fluid-emitter-restart" class="ui-chip bg-surface-active text-text-2 hover:bg-surface-hover" onclick={() => set({ generation: f.generation + 1 })}>Restart</button>
 			<p class="mt-1 text-[length:var(--fs-badge)] text-text-muted">
 				Each player simulates their own splash; these settings are shared. Pauses when off-screen. Quest shows drops (max {QUEST_EMITTER_CAP}). Water
 				leaving the area is gone; pouring into a pool joins it.

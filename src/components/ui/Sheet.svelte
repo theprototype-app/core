@@ -17,6 +17,7 @@
 	// Persisting the user's height is the CALLER's (bind:detent) — this owns no storage key.
 	import { detentHeights, snapDetent, stepDetent } from '$lib/ui/sheetSnap.js';
 	import Icon from './Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	/** @type {{open?: boolean, detent?: string, detents?: string[], dismissible?: boolean, modal?: boolean, title?: string, peek?: number, topInset?: number, onclose?: () => void, ondetent?: (d: string) => void, header?: import('svelte').Snippet, children?: import('svelte').Snippet} & Record<string, any>} */
 	let {
@@ -188,7 +189,7 @@
 				</div>
 			{/if}
 		</div>
-		<div class="sh-body" style:max-height="{Math.max(0, height - 56)}px">
+		<div class="sh-body" style:max-height="{Math.max(0, height - 56)}px" use:minimalScroll>
 			{@render children?.()}
 		</div>
 	</div>

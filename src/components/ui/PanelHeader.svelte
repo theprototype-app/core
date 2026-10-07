@@ -47,6 +47,6 @@
 <style>
 	/* engaged pin reads as active; unpinned stays quiet like the ✕ */
 	.pin-on {
-		color: var(--color-primary-400, #60a5fa);
+		color: var(--accent-text);
 	}
 </style>

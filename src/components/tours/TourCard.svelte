@@ -11,6 +11,7 @@
 	import { controllerSvg, litFor, familyLabel } from '$lib/tours/controllerArt.js'
 	import { isVRMode } from '../../stores/sceneStore'
 	import { safeStorage } from '$lib/safeStorage'
+	import { minimalScroll } from '$lib/ui/minimalScroll.js'
 
 	let uninstall: (() => void) | null = null
 	onMount(() => {
@@ -86,12 +87,12 @@
 	}
 
 	const artColors = {
-		line: 'var(--muted, #9ca3af)',
-		fill: 'var(--surface-2, #374151)',
-		accent: 'var(--accent, #3b82f6)',
-		accentFill: 'var(--accent, #3b82f6)',
-		text: 'var(--text, #f3f4f6)',
-		label: '#ffffff'
+		line: 'var(--text-muted)',
+		fill: 'var(--surface-2)',
+		accent: 'var(--accent)',
+		accentFill: 'var(--accent-fill)',
+		text: 'var(--text)',
+		label: 'var(--on-accent)'
 	}
 </script>
 
@@ -108,6 +109,7 @@
 	<div
 		id="tour-card"
 		bind:this={cardEl}
+		use:minimalScroll
 		class="tour-card"
 		class:sheet={pos.side.startsWith('sheet')}
 		style="left: {pos.x}px; top: {pos.y}px; width: {pos.w}px;"
@@ -160,9 +162,9 @@
 		z-index: calc(var(--z-modal) - 6);
 		border-radius: 12px;
 		pointer-events: none;
-		outline: 2px solid var(--accent, #3b82f6);
+		outline: 2px solid var(--accent);
 		outline-offset: 0;
-		box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.38);
+		box-shadow: 0 0 0 9999px var(--scrim);
 		transition: left 0.25s ease, top 0.25s ease, width 0.25s ease, height 0.25s ease;
 		animation: tour-pulse 1.8s ease-in-out infinite;
 	}
@@ -178,10 +180,10 @@
 		overflow-y: auto;
 		padding: 14px 16px 12px;
 		border-radius: 14px;
-		border: 1px solid var(--border, #374151);
-		background: var(--surface, #1f2937);
-		color: var(--text, #f3f4f6);
-		box-shadow: 0 12px 40px rgb(0 0 0 / 0.35);
+		border: 1px solid var(--border);
+		background: var(--surface-1);
+		color: var(--text);
+		box-shadow: var(--shadow-window);
 		transition: left 0.25s ease, top 0.25s ease;
 		outline: none;
 		user-select: none;
@@ -193,7 +195,7 @@
 		font-size: 11px;
 		letter-spacing: 0.04em;
 		text-transform: uppercase;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.tour-title {
 		margin: 4px 0 6px;
@@ -205,7 +207,7 @@
 		margin: 0;
 		font-size: 13.5px;
 		line-height: 1.45;
-		color: var(--text-2, #e5e7eb);
+		color: var(--text-2);
 	}
 	.tour-art {
 		margin: 10px auto 2px;
@@ -220,7 +222,7 @@
 		margin: 0;
 		text-align: center;
 		font-size: 11px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.tour-family {
 		display: flex;
@@ -232,18 +234,18 @@
 		font-size: 11px;
 		padding: 2px 8px;
 		border-radius: 999px;
-		border: 1px solid var(--border, #374151);
-		color: var(--muted, #9ca3af);
+		border: 1px solid var(--border);
+		color: var(--text-muted);
 	}
 	.tour-family button.on {
-		color: var(--text, #f3f4f6);
-		border-color: var(--accent, #3b82f6);
+		color: var(--text);
+		border-color: var(--accent);
 	}
 	.tour-hint {
 		margin: 8px 0 0;
 		font-size: 13px;
 		font-weight: 600;
-		color: var(--accent, #3b82f6);
+		color: var(--accent-text);
 	}
 	.tour-actions {
 		display: flex;
@@ -257,31 +259,32 @@
 	}
 	.tour-link {
 		font-size: 12px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		padding: 4px 2px;
 	}
 	.tour-link:hover {
-		color: var(--text, #f3f4f6);
+		color: var(--text);
 		text-decoration: underline;
 	}
 	.tour-btn {
 		font-size: 13px;
 		padding: 5px 12px;
 		border-radius: 8px;
-		border: 1px solid var(--border, #374151);
-		background: var(--surface-2, #374151);
-		color: var(--text, #f3f4f6);
+		border: 1px solid var(--border);
+		background: var(--surface-2);
+		color: var(--text);
 	}
 	.tour-btn:hover {
-		background: var(--hover, #4b5563);
+		background: var(--surface-hover);
 	}
 	.tour-primary {
-		background: var(--accent, #2563eb);
-		border-color: var(--accent, #2563eb);
-		color: #fff;
+		background: var(--accent-fill);
+		border-color: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.tour-primary:hover {
-		background: var(--accent-2, #1d4ed8);
+		background: var(--accent-fill);
+		filter: brightness(0.92);
 	}
 	.tour-card.sheet {
 		border-radius: 16px;

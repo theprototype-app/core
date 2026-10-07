@@ -103,10 +103,10 @@
 		width: min(420px, 94vw);
 		padding: 8px 10px 9px 12px;
 		border-radius: 12px;
-		background: var(--color-form, rgb(31 41 55 / 0.97));
-		border: 1px solid rgb(255 255 255 / 0.1);
-		border-left: 3px solid #60a5fa;
-		box-shadow: 0 10px 26px rgb(0 0 0 / 0.4);
+		background: var(--surface-1);
+		border: 1px solid var(--border);
+		border-left: 3px solid var(--accent);
+		box-shadow: var(--shadow-window);
 		backdrop-filter: blur(6px);
 	}
 	.scene-load-row {
@@ -120,17 +120,17 @@
 		margin: 0;
 		font-size: 12.5px;
 		line-height: 1.35;
-		color: #e5e7eb;
+		color: var(--text-2);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 	.scene-load-text strong {
-		color: #fff;
+		color: var(--text);
 		font-weight: 650;
 	}
 	.scene-load-count {
-		color: #9ca3af;
+		color: var(--text-muted);
 		font-variant-numeric: tabular-nums;
 	}
 	.scene-load-track {
@@ -138,13 +138,13 @@
 		margin-top: 7px;
 		height: 4px;
 		border-radius: 999px;
-		background: rgb(255 255 255 / 0.1);
+		background: var(--surface-inset);
 		overflow: hidden;
 	}
 	.scene-load-fill {
 		height: 100%;
 		border-radius: inherit;
-		background: #60a5fa;
+		background: var(--accent);
 		transition: width 0.15s linear;
 	}
 	.indeterminate .scene-load-fill {

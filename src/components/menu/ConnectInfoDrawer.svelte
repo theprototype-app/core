@@ -1,4 +1,5 @@
 <script>
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import Icon from '../ui/Icon.svelte';
 	// CN-2 (roadmap #14): the connection & server info drawer, anchored under the
 	// Connect pill ((i) button). NotificationCenter pattern: a fixed click-catcher
@@ -198,14 +199,14 @@
 	{#if $connectDrawerOpen}
 	<!-- ROOMS tab: the cloud plugin renders Browse + host settings here -->
 	{#if $connectDrawerTab === 'rooms' && hasRooms}
-		<div class="cxd-body cxd-rooms">
+		<div class="cxd-body cxd-rooms" use:minimalScroll>
 			<CloudSlot mount={$drawerSlot} />
 		</div>
 	{:else if $connectDrawerTab === 'toasts'}
 		<!-- TOASTS tab: the LIVE toasts (routed here while the drawer is open) — pending
 		     connection requests you can act on, plus current messages. The full HISTORY
 		     lives in the top-right notification bell. -->
-		<div class="cxd-body">
+		<div class="cxd-body" use:minimalScroll>
 			{#if !$pendingApprovals.length && !$toastStore.length && !pendingOut.length}
 				<p class="cxd-empty">No active toasts. New requests and messages appear here while the drawer is open.</p>
 			{:else}
@@ -252,7 +253,7 @@
 			{/if}
 		</div>
 	{:else}
-	<div class="cxd-body">
+	<div class="cxd-body" use:minimalScroll>
 		<!-- Session -->
 		<p class="ui-section-label">Session</p>
 		<div class="cxd-row">
@@ -571,8 +572,6 @@
 		padding: var(--space-1) var(--space-3) var(--space-3);
 		max-height: min(60vh, 480px);
 		overflow-y: auto;
-		scrollbar-width: thin;
-		scrollbar-color: var(--border-strong) transparent;
 	}
 	/* the section labels (.ui-section-label) on the kit's section style */
 	.cxd-body :global(.ui-section-label) {

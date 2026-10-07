@@ -81,7 +81,7 @@
 				{/if}
 			</select>
 		</label>
-		<span class="text-[10px] text-gray-400"
+		<span class="text-[10px] text-text-muted"
 			>everyone travels — peers pull the scene and load it themselves; the game state carries</span
 		>
 	</div>

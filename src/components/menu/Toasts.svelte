@@ -35,10 +35,11 @@
     import { rolesInfo } from '$lib/cloudHooks'
     import { sceneCommand } from '$lib/commandsHandler.svelte';
 	import { objectsGroup, camSave, globalCamera, globalScene } from '../../stores/sceneStore.js';
-	import { Progressbar } from 'flowbite-svelte';
 	// the "no light" card's ✕ hides this appearance; the next time the scene loses its
 	// light the card shows again (what flowbite's self-dismissing Toast did on remount)
 	let fixLightClosed = $state(false);
+	// "Receiving objects" progress (was flowbite's Progressbar)
+	const loadPct = $derived($loadingcount ? (100 * ($loadingcount - $loading.length)) / $loadingcount : 0);
 	$effect(() => {
 		if (!$fixLight) fixLightClosed = false;
 	});
@@ -612,7 +613,9 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
 		<Icon name="download" size={16} class="tp-toast-icon" aria-hidden="true" />
 		<div class="tp-toast-main">
 			<div class="tp-toast-text">Receiving objects: {($loadingcount-$loading.length)}/{$loadingcount}</div>
-			<Progressbar progress={100 * (($loadingcount-$loading.length) - 0) / ($loadingcount - 0)} color="green" size="h-1.5" class="mt-1.5" />
+			<div class="tp-toast-progress" role="progressbar" aria-label="Receiving objects" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(loadPct)}>
+				<div class="tp-toast-progress-fill" style:width="{loadPct}%"></div>
+			</div>
 		</div>
 	</div>
 </div>
@@ -794,6 +797,8 @@ style="z-index: var(--z-toast-low); pointer-events: none;"
     .tp-toast-body :global(.tp-toast-icon) { color: var(--accent-text); margin-top: 1px; flex: 0 0 auto; }
     .tp-toast-main { min-width: 0; flex: 1 1 auto; }
     .tp-toast-text { font-size: var(--fs-desc); color: var(--text-2); line-height: 1.45; }
+    .tp-toast-progress { margin-top: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--surface-inset); overflow: hidden; }
+    .tp-toast-progress-fill { height: 100%; border-radius: inherit; background: var(--ink-good); transition: width 0.2s ease; }
     .tp-toast-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; }
     .tp-toast-action { font-size: var(--fs-desc); font-weight: 500; color: var(--accent-text); background: transparent; border: 0; cursor: pointer; padding: 0; }
     .tp-toast-action:hover { text-decoration: underline; }

@@ -64,7 +64,7 @@
 		<div class="mt-1 flex flex-wrap gap-1">
 			<button
 				id="load-retry"
-				class="ui-chip inline-flex items-center gap-1 bg-gray-600 text-gray-200 hover:bg-gray-500"
+				class="ui-chip inline-flex items-center gap-1 bg-surface-active text-text-2 hover:bg-surface-hover"
 				title="Fetch the file again now (every copy of this piece comes back with it)"
 				onclick={() => retryPlaceholder(object)}
 			>
@@ -72,7 +72,7 @@
 			</button>
 			<button
 				id="load-replace"
-				class="ui-chip inline-flex items-center gap-1 bg-gray-600 text-gray-200 hover:bg-gray-500"
+				class="ui-chip inline-flex items-center gap-1 bg-surface-active text-text-2 hover:bg-surface-hover"
 				title="Put a different pack item or library model here, keeping the position, rotation and scale"
 				onclick={() => openReplaceModel(object.uuid)}
 			>
@@ -80,7 +80,7 @@
 			</button>
 			<button
 				id="load-remove"
-				class="ui-chip inline-flex items-center gap-1 bg-gray-600 text-gray-200 hover:bg-gray-500"
+				class="ui-chip inline-flex items-center gap-1 bg-surface-active text-text-2 hover:bg-surface-hover"
 				title="Delete this piece (undoable)"
 				onclick={() => deleteObjectsByUuid([object.uuid])}
 			>
@@ -101,7 +101,7 @@
 	.load-track {
 		height: 4px;
 		border-radius: 2px;
-		background: var(--field, rgba(127, 127, 127, 0.25));
+		background: var(--surface-inset);
 		overflow: hidden;
 	}
 	.load-fill {

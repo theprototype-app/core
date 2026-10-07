@@ -6,7 +6,7 @@
 
 {#if $marqueeRect}
 	<div
-		class="pointer-events-none fixed border border-primary-400 bg-primary-500/10"
+		class="pointer-events-none fixed border border-accent bg-accent/10"
 		style="left: {$marqueeRect.x0}px; top: {$marqueeRect.y0}px;
 			width: {$marqueeRect.x1 - $marqueeRect.x0}px; height: {$marqueeRect.y1 - $marqueeRect.y0}px;
 			z-index: var(--z-hud)"

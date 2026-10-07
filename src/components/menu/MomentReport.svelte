@@ -88,8 +88,8 @@
 		flex-direction: column;
 		gap: 8px;
 		padding: 14px;
-		background: var(--surface, #1f2937);
-		color: var(--text, #e5e7eb);
+		background: var(--surface-1);
+		color: var(--text);
 		font-size: 13px;
 	}
 	.title {
@@ -101,10 +101,10 @@
 		max-height: 220px;
 		object-fit: contain;
 		border-radius: 6px;
-		background: #000;
+		background: var(--bg-app);
 	}
 	.muted {
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		font-size: 12px;
 	}
 	.field {
@@ -116,9 +116,9 @@
 		width: 100%;
 		resize: vertical;
 		border-radius: 6px;
-		background: rgba(0, 0, 0, 0.3);
+		background: var(--surface-inset);
 		color: inherit;
-		border: 1px solid #4b5563;
+		border: 1px solid var(--border-input);
 		padding: 6px;
 	}
 	.check {
@@ -134,10 +134,10 @@
 	.btn {
 		padding: 5px 12px;
 		border-radius: 6px;
-		background: #374151;
+		background: var(--surface-2);
 	}
 	.btn.primary {
-		background: var(--accent, #2563eb);
-		color: #fff;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 </style>

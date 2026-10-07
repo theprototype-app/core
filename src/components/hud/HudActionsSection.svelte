@@ -123,7 +123,7 @@
 		align-items: center;
 		gap: 0.3rem;
 		border-radius: 0.2rem;
-		background: rgb(17 24 39 / 0.5);
+		background: var(--surface-inset);
 		padding: 0.15rem 0.3rem;
 	}
 	.ha-role {
@@ -151,7 +151,7 @@
 		opacity: 1;
 	}
 	.ha-danger {
-		color: #f87171;
+		color: var(--ink-bad);
 	}
 	.ha-add {
 		display: flex;
@@ -159,13 +159,13 @@
 		justify-content: center;
 		gap: 0.25rem;
 		border-radius: 0.25rem;
-		border: 1px dashed rgb(107 114 128 / 0.7);
+		border: 1px dashed var(--border-strong);
 		padding: 0.2rem;
 		font-size: 11px;
 		opacity: 0.85;
 	}
 	.ha-add:hover {
-		border-color: var(--accent, #ef562f);
+		border-color: var(--accent);
 		opacity: 1;
 	}
 </style>

@@ -30,7 +30,7 @@ h.run(async () => {
 		let ec, k;
 		s.explorerClose.subscribe((v) => (ec = v))();
 		s.bottomDock.visibleDockKey.subscribe((v) => (k = v))();
-		const ON = 'text-primary-500';
+		const ON = 'text-accent';
 		const flowI = document.querySelector('p[title="Node editor (N)"] svg');
 		const explI = document.querySelector('#explorer-slot svg');
 		return {

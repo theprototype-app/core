@@ -413,8 +413,9 @@
 		text-align: center;
 		padding: 18px 40px;
 		border-radius: 18px;
-		background: rgb(10 14 22 / 0.72);
-		box-shadow: 0 10px 40px rgb(0 0 0 / 0.45);
+		background: color-mix(in srgb, var(--bg-app) 72%, transparent);
+		color: var(--text);
+		box-shadow: var(--shadow-window);
 		animation: game-announce-in 220ms ease-out, game-announce-out 300ms ease-in calc(var(--announce-ms, 1800ms) - 300ms) forwards;
 	}
 	.game-announce-title {
@@ -422,12 +423,12 @@
 		font-weight: 800;
 		letter-spacing: 0.02em;
 		line-height: 1.05;
-		text-shadow: 0 2px 12px rgb(0 0 0 / 0.6);
+		text-shadow: 0 2px 12px color-mix(in srgb, var(--bg-app) 60%, transparent);
 	}
 	.game-announce-sub {
 		margin-top: 6px;
 		font-size: clamp(14px, 2vw, 22px);
-		color: #e5e7eb;
+		color: var(--text-2);
 	}
 	@keyframes game-announce-in {
 		from {
@@ -453,7 +454,7 @@
 	}
 	/* the keyboard ring, so a player under pointer lock can see where they are */
 	.hud-focused {
-		outline: 2px solid var(--accent, #ef562f);
+		outline: 2px solid var(--accent);
 		outline-offset: 2px;
 		border-radius: 6px;
 	}

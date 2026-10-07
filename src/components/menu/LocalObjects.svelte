@@ -93,25 +93,25 @@
 {#if $showLocalObjects}
 	<div
 		class={'local-objs mb-1 rounded-sm border ' +
-			(dropHover ? 'border-primary-400 bg-primary-900/20' : 'border-amber-500/30 bg-amber-500/5')}
+			(dropHover ? 'border-accent bg-accent-soft' : 'border-ink-warn/30 bg-ink-warn/5')}
 		role="group"
 		ondragover={onDragOver}
 		ondragleave={() => (dropHover = false)}
 		ondrop={onDrop}
 	>
 		<div class="flex items-center gap-1.5 px-1.5 py-1">
-			<Icon name="user-lock" size={16} class="text-amber-300" aria-hidden="true" style="font-size:10px" />
-			<span class="min-w-0 flex-1 text-xs font-medium text-amber-200">
+			<Icon name="user-lock" size={16} class="text-ink-warn" aria-hidden="true" style="font-size:10px" />
+			<span class="min-w-0 flex-1 text-xs font-medium text-ink-warn">
 				Local objects
-				<span class="rounded-full bg-amber-500/30 px-1.5 text-[10px]">{local.length}</span>
+				<span class="rounded-full bg-ink-warn/20 px-1.5 text-[10px]">{local.length}</span>
 			</span>
 			{#if local.length > 0 && !isViewerNow}
-				<button class="rounded-sm bg-primary-700 px-1.5 py-0.5 text-[10px] text-white hover:bg-primary-600" title="Share all with peers" onclick={shareAll}>Share all</button>
+				<button class="rounded-sm bg-accent-fill px-1.5 py-0.5 text-[10px] text-on-accent hover:brightness-110" title="Share all with peers" onclick={shareAll}>Share all</button>
 			{/if}
 		</div>
 
 		{#if local.length === 0}
-			<p class="px-2 pb-1.5 text-[10px] italic text-gray-400">
+			<p class="px-2 pb-1.5 text-[10px] italic text-text-muted">
 				{isViewerNow
 					? 'Objects you create stay here (view-only). Drag a shared object here to make a local copy.'
 					: 'Drag an object here to keep it on your machine only (removes it for peers).'}

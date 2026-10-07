@@ -336,6 +336,7 @@
 		ctx.clearRect(0, 0, viewW, viewH);
 		const box = span * zoom;
 
+		/* tokens-ok-begin: pixels the UV canvas draws (checker, UV wire, handles, origin, cursor, marquee); a 2D canvas cannot read var() and this runs on every pointer move */
 		// checkerboard behind the image, so a transparent texture reads as transparent
 		const cell = 8;
 		ctx.save();
@@ -447,6 +448,7 @@
 			ctx.stroke();
 		}
 		ctx.setLineDash([]);
+		/* tokens-ok-end */
 	}
 
 	// --- pointer gestures ---
@@ -1578,12 +1580,12 @@
 		ondrop={(e) => onSlotDrop(e, index)}
 	>
 		<button
-			class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-xs {index === slot ? 'text-primary-200' : 'text-gray-300'}"
+			class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-xs {index === slot ? 'text-accent-soft-text' : 'text-text-2'}"
 			title={material?.name || `Material slot ${index}`}
 			onclick={() => uvActiveSlot.set(index)}
 		>
 			<span
-				class="h-7 w-7 shrink-0 rounded-sm border border-gray-600 bg-gray-900 bg-cover bg-center"
+				class="h-7 w-7 shrink-0 rounded-sm border border-border bg-surface-inset bg-cover bg-center"
 				style={material.mapUrl ? `background-image:url(${material.mapUrl})` : ''}
 			></span>
 			<span class="min-w-0 flex-1 truncate">{material?.name || material?.type || `Slot ${index}`}</span>
@@ -1611,7 +1613,7 @@
 		</button>
 		{#if material.mapUrl}
 			<button
-				class="uv-slot-btn text-red-400"
+				class="uv-slot-btn text-ink-bad"
 				id="uv-slot-remove-{index}"
 				title="Remove this image"
 				aria-label="Remove this image"
@@ -1630,7 +1632,7 @@
 		secondaryModes={[{ key: 'tool', icon: '🖌', label: 'Tool' }, { key: 'settings', icon: '⚙', label: 'Settings' }]}
 	>
 		{#snippet topbar()}
-			<div class="flex items-center gap-1 border-b border-gray-700/60 px-2 py-1">
+			<div class="flex items-center gap-1 border-b border-border px-2 py-1">
 				<!-- tools: pointer / box / lasso -->
 				<div class="flex shrink-0 items-center gap-0.5">
 					{#each TOOLS as t (t.key)}
@@ -1659,7 +1661,7 @@
 				</button>
 				<!-- selection ops: they act on the UV selection, so they live next to the
 				     selection tools rather than in a panel -->
-				<div class="flex shrink-0 items-center overflow-hidden rounded-sm border border-gray-600 text-[10px] uppercase tracking-wide text-gray-300">
+				<div class="flex shrink-0 items-center overflow-hidden rounded-sm border border-border text-[10px] uppercase tracking-wide text-text-2">
 					<!-- The armed TRANSFORM, on 1/2/3 — the digits the mesh tools and the
 					     animation timeline already use for "pick a tool". Words, not icons:
 					     a second rotate glyph beside the Rotate-90 command would be
@@ -1668,7 +1670,7 @@
 					{#each MODES as [mode, label, key] (mode)}
 						<button
 							id="uv-mode-{mode}"
-							class="px-1.5 py-0.5 {xform === mode ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							class="px-1.5 py-0.5 {xform === mode ? 'bg-accent-soft text-accent-soft-text' : 'hover:bg-surface-hover'}"
 							title="{label} the selection ({key}) — drag it, middle-press a selected vertex to grab it, or nudge with the arrows"
 							aria-pressed={xform === mode}
 							onclick={() => armXform(/** @type {any} */ (mode))}>{label}</button
@@ -1697,7 +1699,7 @@
 				>
 					<Icon name="crosshair" size={16} aria-hidden="true" />
 				</button>
-				<div class="flex shrink-0 items-center gap-0.5 border-l border-gray-700/60 pl-1">
+				<div class="flex shrink-0 items-center gap-0.5 border-l border-border pl-1">
 					<button
 						class="uv-tool"
 						id="uv-op-linked"
@@ -1733,40 +1735,40 @@
 						onclick={() => (unwrapOpen = !unwrapOpen)}
 					>Unwrap ▾</button>
 					{#if unwrapOpen}
-						<div id="uv-unwrap-menu" class="absolute left-0 top-full z-30 mt-1 w-44 rounded-sm border border-gray-600 bg-gray-800 py-1 shadow-lg">
+						<div id="uv-unwrap-menu" class="absolute left-0 top-full z-30 mt-1 w-44 rounded-sm border border-border bg-surface-1 py-1 shadow-lg">
 							{#each backends as backend (backend.key)}
 								<button
-									class="block w-full px-2 py-1 text-left text-[11px] text-gray-200 hover:bg-gray-700"
+									class="block w-full px-2 py-1 text-left text-[11px] text-text-2 hover:bg-surface-hover"
 									id="uv-unwrap-{backend.key}"
 									onclick={() => runUnwrap(backend.key)}
 								>{backend.label}</button>
 							{/each}
-							<p class="border-t border-gray-700 px-2 pt-1 text-[10px] leading-relaxed text-gray-500">
+							<p class="border-t border-border px-2 pt-1 text-[10px] leading-relaxed text-text-faint">
 								{pickedTris ? `Applies to the ${pickedTris} selected face triangles.` : 'Applies to the whole mesh.'}
 							</p>
 						</div>
 					{/if}
 				</div>
-				<span class="truncate text-[11px] text-gray-400">{target ? target.name || 'object' : 'no selection'}</span>
+				<span class="truncate text-[11px] text-text-muted">{target ? target.name || 'object' : 'no selection'}</span>
 				{#if $selectedObjects.length > 1}
-					<span id="uv-multi-note" class="shrink-0 text-[10px] text-amber-400">1 of {$selectedObjects.length} selected</span>
+					<span id="uv-multi-note" class="shrink-0 text-[10px] text-ink-warn">1 of {$selectedObjects.length} selected</span>
 				{/if}
 				{#if !editable.ok && viewable.ok}
-					<span id="uv-paint-only" class="shrink-0 text-[10px] text-amber-400" title={editable.reason}>paint only</span>
+					<span id="uv-paint-only" class="shrink-0 text-[10px] text-ink-warn" title={editable.reason}>paint only</span>
 				{:else if wireTooDense}
-					<span id="uv-dense-note" class="shrink-0 text-[10px] text-amber-400">UV wireframe hidden (dense mesh)</span>
+					<span id="uv-dense-note" class="shrink-0 text-[10px] text-ink-warn">UV wireframe hidden (dense mesh)</span>
 				{/if}
 				{#if $uvFaceFilter === 'selection'}
-					<span id="uv-filter-note" class="shrink-0 text-[10px] {faceScope ? 'text-primary-300' : 'text-amber-400'}">
+					<span id="uv-filter-note" class="shrink-0 text-[10px] {faceScope ? 'text-accent-text' : 'text-ink-warn'}">
 						{faceScope ? `${faceScope.size} face tris` : 'no face selection'}
 					</span>
 				{/if}
 				<span class="flex-1"></span>
 				{#if selCluster.length}
-					<span id="uv-sel-count" class="shrink-0 text-[11px] tabular-nums text-amber-400">{selCluster.length} selected</span>
+					<span id="uv-sel-count" class="shrink-0 text-[11px] tabular-nums text-ink-warn">{selCluster.length} selected</span>
 				{/if}
 				<button class="ui-button-quiet" title="Zoom out" aria-label="Zoom out" onclick={() => zoomBy(1 / 1.25)}>−</button>
-				<span class="w-12 text-center text-[11px] tabular-nums text-gray-400">{Math.round(zoom * 100)}%</span>
+				<span class="w-12 text-center text-[11px] tabular-nums text-text-muted">{Math.round(zoom * 100)}%</span>
 				<button class="ui-button-quiet" title="Zoom in" aria-label="Zoom in" onclick={() => zoomBy(1.25)}>＋</button>
 				<button class="ui-button-quiet" title="Fit the UV square" onclick={fitView}>Fit</button>
 			</div>
@@ -1775,21 +1777,21 @@
 		{#snippet primary()}
 			<div class="ui-section-label px-2 pt-2">Materials</div>
 			{#if !slots.length}
-				<p class="p-2 text-[11px] text-gray-500">No material on this object.</p>
+				<p class="p-2 text-[11px] text-text-faint">No material on this object.</p>
 			{:else}
 				{#each slots as material, index (index)}
 					{@render slotRow(material, index)}
 				{/each}
 				<button
 					id="uv-add-slot"
-					class="mt-1 flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-[11px] text-gray-300 hover:bg-gray-700/60"
+					class="mt-1 flex w-full items-center gap-1.5 px-2 py-1.5 text-left text-[11px] text-text-2 hover:bg-surface-hover"
 					title="Add a material slot (a copy of the last one), then assign faces to it"
 					onclick={addSlot}
 				>
 					<Icon name="plus" size={16} aria-hidden="true" />
 					Add material slot
 				</button>
-				<p class="px-2 pt-1.5 text-[10px] leading-relaxed text-gray-500">
+				<p class="px-2 pt-1.5 text-[10px] leading-relaxed text-text-faint">
 					Drop an image on a slot, or use its image button, to texture it. To give
 					one part of the model its own texture: select faces in Edit Mesh, add a
 					slot, then use that slot's ◎ button to assign them. All of it is shared
@@ -1815,17 +1817,17 @@
 			<div
 				bind:this={wrapEl}
 				id="uv-canvas-wrap"
-				class="relative h-full w-full overflow-hidden bg-gray-900 outline-none"
+				class="relative h-full w-full overflow-hidden bg-app outline-none"
 				data-key-scope="uv"
 				tabindex="-1"
 				use:uvSurface
 			>
 				{#if !target}
-					<div class="flex h-full items-center justify-center p-6 text-center text-sm text-gray-400">
+					<div class="flex h-full items-center justify-center p-6 text-center text-sm text-text-muted">
 						Select a mesh in the viewport to see and edit its UV map.
 					</div>
 				{:else if !viewable.ok}
-					<div class="flex h-full items-center justify-center p-6 text-center text-sm text-gray-400">
+					<div class="flex h-full items-center justify-center p-6 text-center text-sm text-text-muted">
 						{viewable.reason}
 					</div>
 				{:else}
@@ -1838,13 +1840,13 @@
 					></canvas>
 					{#if navMode && !grabbing}
 					<!-- a mode the arrows belong to has to announce itself -->
-					<div id="uv-nav-badge" class="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-sm bg-gray-900/85 px-2 py-0.5 text-[11px] text-amber-300">
+					<div id="uv-nav-badge" class="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-sm bg-app/85 px-2 py-0.5 text-[11px] text-ink-warn">
 						Picking with the keyboard — arrows move the cursor, Ctrl+Space selects, Esc leaves
 					</div>
 				{/if}
 				{#if grabbing}
 						<!-- a modal grab has no button held, so it needs to SAY it is running -->
-						<div id="uv-grab-badge" class="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-sm bg-amber-500/90 px-2 py-0.5 text-[11px] font-medium text-gray-900">
+						<div id="uv-grab-badge" class="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-sm bg-ink-warn/90 px-2 py-0.5 text-[11px] font-medium text-app">
 							{xform === 'rotate' ? 'Rotating' : xform === 'scale' ? 'Scaling' : 'Moving'}
 							{selCluster.length === 1 ? '1 point' : selCluster.length + ' points'} — click or Enter to place, Esc to cancel
 						</div>
@@ -1856,33 +1858,33 @@
 		{#snippet secondary(mode)}
 			{#if mode === 'tool'}
 				{#if $uvTool === 'paint'}
-					<div class="border-b border-gray-700/60 p-2">
+					<div class="border-b border-border p-2">
 						<div class="ui-section-label">Brush</div>
-						<label class="mb-2 block text-[11px] text-gray-400">
+						<label class="mb-2 block text-[11px] text-text-muted">
 							Colour
 							<input
 								id="uv-brush-color"
 								type="color"
-								class="mt-1 h-7 w-full cursor-pointer rounded-sm border border-gray-600 bg-gray-900"
+								class="mt-1 h-7 w-full cursor-pointer rounded-sm border border-border bg-surface-inset"
 								value={$uvBrushColor}
 								oninput={(e) => uvBrushColor.set(e.currentTarget.value)}
 							/>
 						</label>
-						<label class="block text-[11px] text-gray-400">
-							Size <span class="tabular-nums text-gray-200">{$uvBrushSize}px</span>
+						<label class="block text-[11px] text-text-muted">
+							Size <span class="tabular-nums text-text-2">{$uvBrushSize}px</span>
 							<input
 								id="uv-brush-size"
 								type="range"
 								min="1"
 								max="128"
 								step="1"
-								class="mt-1 w-full accent-primary-500"
+								class="mt-1 w-full accent-accent"
 								value={$uvBrushSize}
 								oninput={(e) => uvBrushSize.set(parseInt(e.currentTarget.value) || 1)}
 							/>
 						</label>
 						<!-- 24-F1: pen pressure — size (default) · opacity · off -->
-						<div class="mt-2 text-[11px] text-gray-400">Pen pressure</div>
+						<div class="mt-2 text-[11px] text-text-muted">Pen pressure</div>
 						<div id="uv-pen-pressure" class="mt-1 flex gap-1" role="radiogroup" aria-label="Pen pressure">
 							{#each [['size', 'Size'], ['opacity', 'Opacity'], ['off', 'Off']] as [value, label] (value)}
 								<button
@@ -1890,36 +1892,36 @@
 									role="radio"
 									aria-checked={$uvPenPressure === value}
 									data-value={value}
-									class={'flex-1 rounded-sm px-2 py-0.5 text-[11px] ' + ($uvPenPressure === value ? 'bg-primary-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600')}
+									class={'flex-1 rounded-sm px-2 py-0.5 text-[11px] ' + ($uvPenPressure === value ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 text-text-2 hover:bg-surface-active')}
 									onclick={() => uvPenPressure.set(/** @type {any} */ (value))}>{label}</button>
 							{/each}
 						</div>
-						<p class="mt-1 text-[10px] leading-relaxed text-gray-500">
+						<p class="mt-1 text-[10px] leading-relaxed text-text-faint">
 							Size is in texture pixels, so it paints the same width at any zoom.
 							Each stroke is one undo step; peers watch it live. A pen's pressure varies the
 							width (or the opacity); a mouse stroke is unchanged.
 						</p>
 					</div>
 				{/if}
-				<div class="p-2 text-[11px] leading-relaxed text-gray-400">
+				<div class="p-2 text-[11px] leading-relaxed text-text-muted">
 					<p class="mb-2">Drag a vertex to move its UV corner. Corners that share a point move together, and dragging any selected vertex moves the whole selection.</p>
-					<p class="mb-2"><span class="text-gray-200">Shift</span> (or Ctrl) adds to the selection — clicking a vertex, or with box and lasso.</p>
-					<p class="mb-2"><span class="text-gray-200">Box</span> and <span class="text-gray-200">Lasso</span> select everything they enclose. Middle-drag pans in any tool; in Select, dragging the background pans and clicking it deselects.</p>
-					<p class="mb-2"><span class="text-gray-200">1 / 2 / 3</span> arm Move, Rotate and Scale.</p>
-					<p class="mb-2">Rotate and scale turn about the selection's centre. The <span class="text-gray-200">origin</span> button places one you can <span class="text-gray-200">drag</span> instead — it snaps onto a point when you come near one, Alt places it freely — and right-click ▸ Origin puts it under the pointer. <span class="text-gray-200">Alt</span> while STARTING a gesture uses the cursor for that gesture alone.</p>
-					<p class="mb-2"><span class="text-gray-200">Middle-press a selected point</span> to grab the selection: it follows the pointer with no button held until a click or <span class="text-gray-200">Enter</span> places it, and <span class="text-gray-200">Esc</span> puts it back.</p>
-					<p class="mb-2"><span class="text-gray-200">Arrows</span> apply the armed transform about the origin: one texture pixel, one degree, or 1% — <span class="text-gray-200">Ctrl</span> ×10 and <span class="text-gray-200">Shift</span> ×100. Scaling works per axis (left/right in U, up/down in V); Alt scales both.</p>
-					<p class="mb-2"><span class="text-gray-200">Ctrl+Space</span> picks with the keyboard: a cursor appears, the arrows walk it vertex to vertex, each Ctrl+Space takes the one under it into the selection (or out again), Esc leaves. <span class="text-gray-200">Ctrl+Shift+arrow</span> grows the selection in a direction, <span class="text-gray-200">Ctrl+A</span> / <span class="text-gray-200">Ctrl+I</span> select all and invert, <span class="text-gray-200">L</span> takes the whole island.</p>
-					<p class="mb-2"><span class="text-gray-200">Right-click</span> for everything above on the point under the pointer.</p>
-					<p class="text-gray-500">Each drag, nudge and menu action is one undo step and is shared with connected peers.</p>
+					<p class="mb-2"><span class="text-text-2">Shift</span> (or Ctrl) adds to the selection — clicking a vertex, or with box and lasso.</p>
+					<p class="mb-2"><span class="text-text-2">Box</span> and <span class="text-text-2">Lasso</span> select everything they enclose. Middle-drag pans in any tool; in Select, dragging the background pans and clicking it deselects.</p>
+					<p class="mb-2"><span class="text-text-2">1 / 2 / 3</span> arm Move, Rotate and Scale.</p>
+					<p class="mb-2">Rotate and scale turn about the selection's centre. The <span class="text-text-2">origin</span> button places one you can <span class="text-text-2">drag</span> instead — it snaps onto a point when you come near one, Alt places it freely — and right-click ▸ Origin puts it under the pointer. <span class="text-text-2">Alt</span> while STARTING a gesture uses the cursor for that gesture alone.</p>
+					<p class="mb-2"><span class="text-text-2">Middle-press a selected point</span> to grab the selection: it follows the pointer with no button held until a click or <span class="text-text-2">Enter</span> places it, and <span class="text-text-2">Esc</span> puts it back.</p>
+					<p class="mb-2"><span class="text-text-2">Arrows</span> apply the armed transform about the origin: one texture pixel, one degree, or 1% — <span class="text-text-2">Ctrl</span> ×10 and <span class="text-text-2">Shift</span> ×100. Scaling works per axis (left/right in U, up/down in V); Alt scales both.</p>
+					<p class="mb-2"><span class="text-text-2">Ctrl+Space</span> picks with the keyboard: a cursor appears, the arrows walk it vertex to vertex, each Ctrl+Space takes the one under it into the selection (or out again), Esc leaves. <span class="text-text-2">Ctrl+Shift+arrow</span> grows the selection in a direction, <span class="text-text-2">Ctrl+A</span> / <span class="text-text-2">Ctrl+I</span> select all and invert, <span class="text-text-2">L</span> takes the whole island.</p>
+					<p class="mb-2"><span class="text-text-2">Right-click</span> for everything above on the point under the pointer.</p>
+					<p class="text-text-faint">Each drag, nudge and menu action is one undo step and is shared with connected peers.</p>
 				</div>
 			{:else}
-				<div class="p-2 text-[11px] text-gray-400">
+				<div class="p-2 text-[11px] text-text-muted">
 					<div class="ui-section-label">Texture</div>
 					{#if texInfo}
 						<div id="uv-tex-size" class="mb-1">
-							Size <span class="tabular-nums text-gray-200">{texInfo.w} × {texInfo.h}</span>
-							<span class="text-gray-500">(~{texMb} MB on the GPU)</span>
+							Size <span class="tabular-nums text-text-2">{texInfo.w} × {texInfo.h}</span>
+							<span class="text-text-faint">(~{texMb} MB on the GPU)</span>
 						</div>
 						<div class="mb-2 flex flex-wrap gap-1">
 							<button
@@ -1932,11 +1934,11 @@
 								<button class="uv-chip" id="uv-tex-{size}" title="Resize the longest side to {size}px" onclick={() => resizeTo(size)}>{size}</button>
 							{/each}
 						</div>
-						<p class="mb-2 text-[10px] leading-relaxed text-gray-500">
+						<p class="mb-2 text-[10px] leading-relaxed text-text-faint">
 							Resizing keeps the aspect and is shared with peers as one undo step.
 						</p>
 					{:else}
-						<div class="mb-2 text-gray-500">This slot has no texture yet.</div>
+						<div class="mb-2 text-text-faint">This slot has no texture yet.</div>
 					{/if}
 					<button
 						class="uv-tool mb-2 w-auto gap-1.5 px-2 {$uvCheckerOn ? 'uv-tool-active' : ''}"
@@ -1949,14 +1951,14 @@
 						<span class="text-[11px]">UV test grid</span>
 					</button>
 					{#if $uvCheckerOn}
-						<p class="mb-2 text-[10px] leading-relaxed text-amber-400">
+						<p class="mb-2 text-[10px] leading-relaxed text-ink-warn">
 							The grid replaces every material in the scene while it is on. It is local
 							to you and is never saved or sent.
 						</p>
 					{/if}
 					<div class="ui-section-label">Mesh</div>
-					<div class="mb-1">Triangles in this slot: <span class="tabular-nums text-gray-200">{tris.length}</span></div>
-					<div>Material slots: <span class="tabular-nums text-gray-200">{slotTotal}</span></div>
+					<div class="mb-1">Triangles in this slot: <span class="tabular-nums text-text-2">{tris.length}</span></div>
+					<div>Material slots: <span class="tabular-nums text-text-2">{slotTotal}</span></div>
 				</div>
 			{/if}
 		{/snippet}
@@ -1975,7 +1977,7 @@
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
+				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -2029,7 +2031,7 @@
 			</div>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-border-strong/40"
 				style="touch-action: none"
 				title="Drag to resize · double-click to reset size"
 				onpointerdown={startWinResize}
@@ -2053,14 +2055,14 @@
 		align-items: center;
 		justify-content: center;
 		border-radius: 0.25rem;
-		color: rgb(203 213 225);
+		color: var(--text-2);
 	}
 	.uv-tool:hover {
-		background: rgb(255 255 255 / 0.1);
+		background: var(--surface-hover);
 	}
 	.uv-tool-active {
-		background: rgb(37 99 235);
-		color: white;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.uv-tool:disabled {
 		opacity: 0.35;
@@ -2071,13 +2073,13 @@
 	}
 	.uv-chip {
 		border-radius: 0.25rem;
-		border: 1px solid rgb(75 85 99);
+		border: 1px solid var(--border-strong);
 		padding: 0.1rem 0.4rem;
 		font-size: 0.65rem;
-		color: rgb(203 213 225);
+		color: var(--text-2);
 	}
 	.uv-chip:hover {
-		background: rgb(255 255 255 / 0.1);
+		background: var(--surface-hover);
 	}
 	.uv-slot {
 		display: flex;
@@ -2087,16 +2089,16 @@
 		padding-right: 0.25rem;
 	}
 	.uv-slot:hover {
-		background: rgb(55 65 81 / 0.6);
+		background: var(--surface-hover);
 	}
 	.uv-slot-active {
-		background: rgb(30 58 138 / 0.4);
+		background: var(--accent-soft);
 	}
 	/* dashed ring while an image hovers the row (the Inspector drop-zone cue) */
 	.uv-slot-drop {
-		outline: 1px dashed rgb(96 165 250);
+		outline: 1px dashed var(--accent);
 		outline-offset: -1px;
-		background: rgb(30 58 138 / 0.35);
+		background: var(--accent-soft);
 	}
 	.uv-slot-btn {
 		display: inline-flex;
@@ -2107,10 +2109,10 @@
 		justify-content: center;
 		border-radius: 0.25rem;
 		font-size: 0.7rem;
-		color: rgb(203 213 225);
+		color: var(--text-2);
 	}
 	.uv-slot-btn:hover {
-		background: rgb(255 255 255 / 0.12);
+		background: var(--surface-active);
 	}
 	/* keyboard users need the row buttons without a hover */
 	.uv-slot:focus-within .uv-slot-btn {

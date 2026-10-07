@@ -4,7 +4,7 @@
 	// preset, Remove. Or a standalone bubble emitter on an object that is not water.
 	// Every write goes through waterActions (local apply + objectParameters + ONE props undo
 	// entry per settled gesture); the panel only renders from the object's userData.
-	import { Button } from 'flowbite-svelte';
+	import Button from '../ui/Button.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
@@ -99,10 +99,10 @@
 </script>
 
 {#if !object}
-	<p class="text-xs text-gray-400">No object.</p>
+	<p class="text-xs text-text-muted">No object.</p>
 {:else if !water}
 	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-gray-400">Water</span>
+		<span class="w-20 shrink-0 text-xs text-text-muted">Water</span>
 		<ThemedSelect
 			id="water-add"
 			items={[{ value: 'none', name: 'Make it water…' }, ...presetItems]}
@@ -110,7 +110,7 @@
 			onchange={(/** @type {any} */ v) => pickPreset(v)}
 		/>
 	</div>
-	<p class="text-[10px] text-gray-500">
+	<p class="text-[10px] text-text-faint">
 		The object's shape becomes a water volume (its box is the tank). Buoyancy and splashes come from
 		the physics simulation.
 	</p>
@@ -118,17 +118,17 @@
 		<div class="ui-row items-center gap-2">
 			<Button
 				id="bubbles-add"
-				size="xs"
-				color="alternative"
+				variant="outline"
+				size="sm"
 				onclick={() => setObjectBubbles(uuid, { spread: 0.3 })}
 			>
-				<Icon name="sparkles" size={16} class="mr-1" aria-hidden="true" />Add bubble emitter
+				<Icon name="sparkles" size={16} aria-hidden="true" />Add bubble emitter
 			</Button>
 		</div>
 	{/if}
 {:else}
 	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-gray-400">Preset</span>
+		<span class="w-20 shrink-0 text-xs text-text-muted">Preset</span>
 		<ThemedSelect
 			id="water-preset"
 			items={presetItems}
@@ -149,17 +149,17 @@
 					if (e.key === 'Escape') saving = false;
 				}}
 			/>
-			<Button size="xs" color="alternative" onclick={commitSave} disabled={!presetName.trim()}
+			<Button variant="outline" size="sm" onclick={commitSave} disabled={!presetName.trim()}
 				>Save</Button
 			>
 		{:else}
-			<Button id="water-save-preset" size="xs" color="alternative" onclick={() => (saving = true)}>
-				<Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save as preset…
+			<Button id="water-save-preset" variant="outline" size="sm" onclick={() => (saving = true)}>
+				<Icon name="save" size={16} aria-hidden="true" />Save as preset…
 			</Button>
 			{#if water.preset?.startsWith('user:')}
 				<Button
-					size="xs"
-					color="alternative"
+					variant="outline"
+					size="sm"
 					onclick={() => {
 						deleteWaterPreset(water.preset.slice(5));
 						userPresets = userWaterPresets();
@@ -169,7 +169,7 @@
 		{/if}
 	</div>
 	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-gray-400">Shape</span>
+		<span class="w-20 shrink-0 text-xs text-text-muted">Shape</span>
 		<ThemedSelect
 			id="water-shape"
 			items={[
@@ -183,7 +183,7 @@
 		/>
 	</div>
 	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-gray-400">Level</span>
+		<span class="w-20 shrink-0 text-xs text-text-muted">Level</span>
 		<div class="w-24 shrink-0">
 			<DragRow
 				id="water-level"
@@ -197,15 +197,15 @@
 			/>
 		</div>
 		<Button
-			size="xs"
-			color="alternative"
+			variant="outline"
+			size="sm"
 			onclick={() => updateObjectWater(uuid, { level: null }, { immediate: true })}>Top</Button
 		>
 	</div>
 
-	<h4 class="mt-2 text-[11px] font-semibold text-gray-300">Waves</h4>
+	<h4 class="mt-2 text-[11px] font-semibold text-text-2">Waves</h4>
 	{#if look.frozen}
-	<p class="text-[10px] text-gray-500">Frozen: the surface holds still — no waves, foam or ripple motion. Untick Frozen (under Underwater) to use these.</p>
+	<p class="text-[10px] text-text-faint">Frozen: the surface holds still — no waves, foam or ripple motion. Untick Frozen (under Underwater) to use these.</p>
 	{/if}
 	<!-- 36-fb-water F13: Frozen locks these (resolveLook) — say so instead of a dead slider -->
 	<div class="contents" inert={look.frozen} class:frozen-locked={look.frozen}>
@@ -263,9 +263,9 @@
 	/>
 
 	</div>
-	<h4 class="mt-2 text-[11px] font-semibold text-gray-300">Look</h4>
+	<h4 class="mt-2 text-[11px] font-semibold text-text-2">Look</h4>
 	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-gray-400">Colour</span>
+		<span class="w-20 shrink-0 text-xs text-text-muted">Colour</span>
 		<input
 			type="color"
 			aria-label="Shallow colour"
@@ -274,7 +274,7 @@
 			value={look.shallowColor}
 			oninput={(e) => setLook({ shallowColor: hex(e) })}
 		/>
-		<span class="text-xs text-gray-400">→</span>
+		<span class="text-xs text-text-muted">→</span>
 		<input
 			type="color"
 			aria-label="Deep colour"
@@ -283,7 +283,7 @@
 			value={look.deepColor}
 			oninput={(e) => setLook({ deepColor: hex(e) })}
 		/>
-		<span class="text-[10px] text-gray-500">shallow → deep</span>
+		<span class="text-[10px] text-text-faint">shallow → deep</span>
 	</div>
 	<SliderRow
 		label="Clarity (m)"
@@ -318,7 +318,7 @@
 		onchange={(v) => setLook({ chromatic: v })}
 	/>
 	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-gray-400">Reflection</span>
+		<span class="w-20 shrink-0 text-xs text-text-muted">Reflection</span>
 		<ThemedSelect
 			id="water-reflection"
 			items={[
@@ -366,7 +366,7 @@
 		onchange={(v) => setLook({ foam: v })}
 	/>
 	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-gray-400">Foam colour</span>
+		<span class="w-20 shrink-0 text-xs text-text-muted">Foam colour</span>
 		<input
 			type="color"
 			aria-label="Foam colour"
@@ -435,7 +435,7 @@
 	/>
 	</div>
 	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-gray-400">Glow</span>
+		<span class="w-20 shrink-0 text-xs text-text-muted">Glow</span>
 		<input
 			type="color"
 			aria-label="Glow colour"
@@ -453,7 +453,7 @@
 		onchange={(v) => setLook({ emissiveStrength: v })}
 	/>
 	<div class="ui-row items-center gap-2">
-		<span class="w-20 shrink-0 text-xs text-gray-400">Underwater</span>
+		<span class="w-20 shrink-0 text-xs text-text-muted">Underwater</span>
 		<input
 			type="color"
 			aria-label="Underwater fog colour"
@@ -461,7 +461,7 @@
 			value={look.fogColor}
 			oninput={(e) => setLook({ fogColor: hex(e) })}
 		/>
-		<span class="text-[10px] text-gray-500">fog when the camera is inside</span>
+		<span class="text-[10px] text-text-faint">fog when the camera is inside</span>
 	</div>
 	<SliderRow
 		label="Visibility (m)"
@@ -472,7 +472,7 @@
 		value={look.fogDistance}
 		onchange={(v) => setLook({ fogDistance: v })}
 	/>
-	<label class="ui-row items-center gap-2 text-xs text-gray-300">
+	<label class="ui-row items-center gap-2 text-xs text-text-2">
 		<input
 			id="water-frozen"
 			type="checkbox"
@@ -484,7 +484,7 @@
 		Frozen (still, frosted)
 	</label>
 
-	<h4 class="mt-2 text-[11px] font-semibold text-gray-300">Flow &amp; physics</h4>
+	<h4 class="mt-2 text-[11px] font-semibold text-text-2">Flow &amp; physics</h4>
 	<SliderRow
 		label="Flow X (m/s)"
 		min={-5}
@@ -546,8 +546,8 @@
 {/if}
 
 {#if bubbles && (water || standalone)}
-	<h4 class="mt-2 text-[11px] font-semibold text-gray-300">Bubbles</h4>
-	<label class="ui-row items-center gap-2 text-xs text-gray-300">
+	<h4 class="mt-2 text-[11px] font-semibold text-text-2">Bubbles</h4>
+	<label class="ui-row items-center gap-2 text-xs text-text-2">
 		<input
 			id="water-bubbles-on"
 			type="checkbox"
@@ -559,7 +559,7 @@
 	</label>
 	{#if bubbles.enabled}
 		<div class="ui-row items-center gap-2">
-			<span class="w-20 shrink-0 text-xs text-gray-400">Emission</span>
+			<span class="w-20 shrink-0 text-xs text-text-muted">Emission</span>
 			<ThemedSelect
 				id="water-bubbles-mode"
 				items={[
@@ -574,13 +574,13 @@
 			<div class="ui-row items-center gap-2">
 				<Button
 					id="water-bubbles-burst"
-					size="xs"
-					color="alternative"
+					variant="outline"
+					size="sm"
 					onclick={() => burstWaterBubbles(uuid)}
 				>
-					<Icon name="droplets" size={16} class="mr-1" aria-hidden="true" />Burst now
+					<Icon name="droplets" size={16} aria-hidden="true" />Burst now
 				</Button>
-				<span class="text-xs text-gray-400">for every peer</span>
+				<span class="text-xs text-text-muted">for every peer</span>
 			</div>
 		{/if}
 		<SliderRow
@@ -654,7 +654,7 @@
 			/>
 		{/if}
 		<div class="ui-row items-center gap-2">
-			<span class="w-20 shrink-0 text-xs text-gray-400">Colour</span>
+			<span class="w-20 shrink-0 text-xs text-text-muted">Colour</span>
 			<input
 				type="color"
 				aria-label="Bubble colour"
@@ -671,7 +671,7 @@
 			value={bubbles.opacity}
 			onchange={(v) => setBubbles({ opacity: v })}
 		/>
-		<label class="ui-row items-center gap-2 text-xs text-gray-300">
+		<label class="ui-row items-center gap-2 text-xs text-text-2">
 			<input
 				type="checkbox"
 				class="tp-check"
@@ -683,8 +683,8 @@
 	{/if}
 	{#if standalone}
 		<div class="ui-row items-center gap-2">
-			<Button size="xs" color="alternative" onclick={() => setObjectBubbles(uuid, null)}>
-				<Icon name="trash-2" size={16} class="mr-1" aria-hidden="true" />Remove bubble emitter
+			<Button variant="outline" size="sm" onclick={() => setObjectBubbles(uuid, null)}>
+				<Icon name="trash-2" size={16} aria-hidden="true" />Remove bubble emitter
 			</Button>
 		</div>
 	{/if}
@@ -696,8 +696,8 @@
 
 {#if water}
 	<div class="ui-row mt-2 items-center gap-2">
-		<Button id="water-remove" size="xs" color="alternative" onclick={() => removeObjectWater(uuid)}>
-			<Icon name="trash-2" size={16} class="mr-1" aria-hidden="true" />Remove water
+		<Button id="water-remove" variant="outline" size="sm" onclick={() => removeObjectWater(uuid)}>
+			<Icon name="trash-2" size={16} aria-hidden="true" />Remove water
 		</Button>
 	</div>
 {/if}
@@ -712,7 +712,7 @@
 		width: 2rem;
 		cursor: pointer;
 		border-radius: 0.125rem;
-		border: 1px solid var(--border, #6b7280);
+		border: 1px solid var(--border-strong);
 		background: transparent;
 	}
 </style>

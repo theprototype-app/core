@@ -65,6 +65,7 @@
 	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { safeStorage } from '$lib/safeStorage';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	// 21-D5: WHICH document is being authored. `hudDocs` was already keyed
 	// `'scene' | objectUuid`, so "attach this HUD to a camera" is simply authoring the
@@ -1086,7 +1087,7 @@
 					{/each}
 				</select>
 			</label>
-			<div class="hud-screens" style="max-height: {screensH}px">
+			<div class="hud-screens" style="max-height: {screensH}px" use:minimalScroll>
 				{#each screens as s (s.id)}
 					<div class="hud-screen-row" class:hud-screen-on={s.id === screenId}>
 						<button class="hud-screen-name" onclick={() => { screenId = s.id; setPicks(picks[s.id] ?? []); }}>
@@ -1161,7 +1162,7 @@
 				onpointerup={endScreensResize}
 			></div>
 			<!-- D2: the ADD palette, below the screens like the shader/node editors' -->
-			<div class="hud-side-scroll">
+			<div class="hud-side-scroll" use:minimalScroll>
 				<HudPalette onPick={add} />
 			</div>
 			</div>
@@ -1429,7 +1430,7 @@
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
+				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -1483,7 +1484,7 @@
 			</div>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-border-strong/40"
 				style="touch-action: none"
 				title="Drag to resize · double-click to reset size"
 				onpointerdown={startWinResize}
@@ -1524,7 +1525,7 @@
 		flex: 0 0 auto;
 		align-items: center;
 		gap: 0.3rem;
-		border-bottom: 1px solid rgb(75 85 99 / 0.5);
+		border-bottom: 1px solid var(--border);
 		padding: 0.3rem 0.375rem;
 	}
 	.hud-screens {
@@ -1544,13 +1545,13 @@
 		height: 6px;
 		flex: 0 0 auto;
 		cursor: ns-resize;
-		border-top: 1px solid rgb(75 85 99 / 0.6);
-		border-bottom: 1px solid rgb(75 85 99 / 0.6);
-		background: rgb(31 41 55 / 0.4);
+		border-top: 1px solid var(--border);
+		border-bottom: 1px solid var(--border);
+		background: var(--surface-2);
 	}
 	.hud-grip:hover,
 	.hud-grip-on {
-		background: var(--accent, rgb(29 78 216 / 0.4));
+		background: var(--accent);
 	}
 	.hud-board-wrap {
 		position: relative;
@@ -1562,7 +1563,7 @@
 		min-height: 0;
 		overflow: hidden;
 		background:
-			repeating-conic-gradient(rgb(55 65 81 / 0.35) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px;
+			repeating-conic-gradient(color-mix(in srgb, var(--border) 60%, transparent) 0% 25%, transparent 0% 50%) 0 0 / 16px 16px;
 		outline: none;
 	}
 	/* absolute, so the stage never feeds its size back into the wrap it is measured from */
@@ -1582,8 +1583,8 @@
 		   it, leaving the gesture hung. */
 		user-select: none;
 		-webkit-user-select: none;
-		background: rgb(17 24 39 / 0.85);
-		box-shadow: 0 0 0 1px rgb(75 85 99 / 0.7);
+		background: color-mix(in srgb, var(--bg-app) 85%, transparent);
+		box-shadow: 0 0 0 1px var(--border-strong);
 		/* E1.3: the runtime layer clips at the WINDOW, so the artboard clips at the stage.
 		   Without this an element dragged past the edge spilled across the whole wrap, which
 		   is the one thing the artboard is supposed to predict. */
@@ -1602,22 +1603,22 @@
 		cursor: move;
 		/* editor chrome inside a scaled stage: * var(--hud-inv) keeps its SCREEN thickness,
 		   so a selection outline does not fade to a third of a pixel on a small dock */
-		outline: calc(1px * var(--hud-inv, 1)) dashed rgb(148 163 184 / 0.45);
+		outline: calc(1px * var(--hud-inv, 1)) dashed color-mix(in srgb, var(--text-muted) 45%, transparent);
 	}
 	.hud-item-on {
-		outline: calc(2px * var(--hud-inv, 1)) solid var(--accent, #ef562f);
+		outline: calc(2px * var(--hud-inv, 1)) solid var(--accent);
 		outline-offset: calc(1px * var(--hud-inv, 1));
 	}
 	.hud-item-unknown {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		background: rgb(250 204 21 / 0.12);
-		outline: calc(1px * var(--hud-inv, 1)) dashed rgb(250 204 21 / 0.8);
+		background: color-mix(in srgb, var(--ink-warn) 12%, transparent);
+		outline: calc(1px * var(--hud-inv, 1)) dashed color-mix(in srgb, var(--ink-warn) 80%, transparent);
 	}
 	.hud-unknown-tag {
 		font-size: 10px;
-		color: #facc15;
+		color: var(--ink-warn);
 	}
 	/* the wired badge: a small dot in the corner, so a dead button reads as dead */
 	.hud-wired {
@@ -1627,7 +1628,7 @@
 		height: 6px;
 		width: 6px;
 		border-radius: 999px;
-		background: #34d399;
+		background: var(--ink-good);
 	}
 	.hud-size-grip {
 		position: absolute;
@@ -1635,13 +1636,13 @@
 		width: 10px;
 		cursor: se-resize;
 		border-radius: 2px;
-		background: var(--accent, #ef562f);
+		background: var(--accent);
 	}
 	/* E1.7: the guide the gesture is sitting on. Outside the scaled stage, so 1px is 1px. */
 	.hud-guide {
 		position: absolute;
 		pointer-events: none;
-		background: #38bdf8;
+		background: var(--accent-text);
 		opacity: 0.85;
 	}
 	.hud-guide-v {
@@ -1658,18 +1659,18 @@
 	.hud-marquee {
 		position: absolute;
 		pointer-events: none;
-		border: 1px solid var(--accent, #ef562f);
-		background: rgb(239 86 47 / 0.12);
+		border: 1px solid var(--accent);
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
 	}
 	/* E1.4: the real window's shape on the reference stage. Faint on purpose — it is a
 	   fact about your screen, not part of the design. */
 	.hud-ghost {
 		position: absolute;
 		pointer-events: none;
-		border: 1px dashed rgb(148 163 184 / 0.5);
+		border: 1px dashed color-mix(in srgb, var(--text-muted) 50%, transparent);
 	}
 	.hud-ghost-same {
-		border-color: rgb(148 163 184 / 0.22);
+		border-color: color-mix(in srgb, var(--text-muted) 22%, transparent);
 	}
 	/* E1.1: where a palette drop will land */
 	.hud-drop-cue {
@@ -1679,11 +1680,11 @@
 		width: 10px;
 		border-radius: 999px;
 		pointer-events: none;
-		background: var(--accent, #ef562f);
-		box-shadow: 0 0 0 3px rgb(239 86 47 / 0.25);
+		background: var(--accent);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
 	}
 	.hud-board-drop {
-		box-shadow: 0 0 0 2px var(--accent, #ef562f);
+		box-shadow: 0 0 0 2px var(--accent);
 	}
 	.hud-btn {
 		display: inline-flex;
@@ -1692,11 +1693,11 @@
 		align-items: center;
 		justify-content: center;
 		border-radius: 0.25rem;
-		background: rgb(55 65 81 / 0.55);
+		background: var(--surface-2);
 		color: inherit;
 	}
 	.hud-btn:hover:not(:disabled) {
-		background: rgb(75 85 99 / 0.8);
+		background: var(--surface-active);
 	}
 	.hud-btn:disabled {
 		opacity: 0.4;
@@ -1705,16 +1706,16 @@
 	   (unlayered component CSS does), which is the toolbox lesson — so the armed fill is
 	   declared here too rather than added as a class. */
 	.hud-btn[aria-pressed='true'] {
-		background: var(--accent, #ef562f);
-		color: #fff;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.hud-danger {
-		color: #f87171;
+		color: var(--ink-bad);
 	}
 	.hud-sep {
 		height: 1rem;
 		width: 1px;
-		background: rgb(75 85 99 / 0.6);
+		background: var(--border);
 	}
 	.hud-check,
 	.hud-hint {
@@ -1732,7 +1733,7 @@
 	}
 	.hud-screen-on {
 		/* 36 U1: the theme's hover fill (the sidebar follows the theme since WindowShell does) */
-		background: var(--hover, rgb(75 85 99 / 0.5));
+		background: var(--surface-active);
 	}
 	.hud-screen-name {
 		display: flex;
@@ -1752,26 +1753,26 @@
 	.hud-mini[aria-pressed='true'] {
 		/* 36 U1: the start-screen star in the theme's gold at full strength — the accent read
 		   2.3:1 on the selected row */
-		color: var(--ink-warn, #fbbf24);
+		color: var(--ink-warn);
 		opacity: 1;
 	}
 	/* 36 U1: a faded red ✕ on the selected row was 2.6:1 — destructive, so legible */
 	.hud-mini.hud-danger {
-		color: var(--ink-bad, #f87171);
+		color: var(--ink-bad);
 		opacity: 1;
 	}
 	.hud-add-screen {
 		border-radius: 0.25rem;
-		border: 1px dashed rgb(107 114 128 / 0.7);
+		border: 1px dashed var(--border-strong);
 		padding: 0.2rem;
 		font-size: 11px;
 		opacity: 0.8;
 	}
 	.hud-arm {
 		border-radius: 4px;
-		background: rgb(56 189 248 / 0.15);
+		background: color-mix(in srgb, var(--accent) 15%, transparent);
 		padding: 4px 6px;
-		color: #7dd3fc;
+		color: var(--accent-text);
 	}
 	.hud-note {
 		font-size: 10px;
@@ -1799,8 +1800,8 @@
 		min-width: 0;
 		flex: 1;
 		border-radius: 0.2rem;
-		background: var(--field, rgb(17 24 39 / 0.6));
-		color: var(--text, inherit);
+		background: var(--surface-inset);
+		color: var(--text);
 		padding: 0.1rem 0.3rem;
 		font-size: 11px;
 	}

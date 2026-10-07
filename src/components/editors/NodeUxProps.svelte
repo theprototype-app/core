@@ -46,12 +46,12 @@
 			onchange={(e) => commit({ label: e.currentTarget.value.trim() || 'Group' })}
 		/></label
 	>
-	<p class="text-[11px] text-gray-400">{(node.data?.children ?? []).length} nodes inside</p>
+	<p class="text-[11px] text-text-muted">{(node.data?.children ?? []).length} nodes inside</p>
 	<div class="flex gap-1">
-		<button id="flow-group-open" class="flex-1 rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500" onclick={() => onOpen(node.id)}
+		<button id="flow-group-open" class="flex-1 rounded-sm bg-surface-active px-2 py-1 hover:bg-border-strong" onclick={() => onOpen(node.id)}
 			>Open</button
 		>
-		<button id="flow-group-ungroup" class="flex-1 rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500" onclick={() => onUngroup(node.id)}
+		<button id="flow-group-ungroup" class="flex-1 rounded-sm bg-surface-active px-2 py-1 hover:bg-border-strong" onclick={() => onUngroup(node.id)}
 			>Ungroup</button
 		>
 	</div>
@@ -66,16 +66,16 @@
 					title={'Stands for ' + (list === 'inputs' ? entry.to?.join('.') : entry.from?.join('.'))}
 					onchange={(e) => renameSocket(/** @type {any} */ (list), i, e.currentTarget.value)}
 				/>
-				<span class="text-[10px] text-gray-500">{entry.type ?? 'any'}</span>
+				<span class="text-[10px] text-text-faint">{entry.type ?? 'any'}</span>
 				<button
-					class="rounded-sm bg-gray-700 px-1.5 hover:bg-red-700"
+					class="rounded-sm bg-surface-active px-1.5 hover:bg-danger hover:text-on-danger"
 					title="Hide this socket (a wire still crossing the boundary brings it back)"
 					aria-label="Remove socket"
 					onclick={() => removeSocket(/** @type {any} */ (list), i)}>✕</button
 				>
 			</div>
 		{:else}
-			<p class="text-[11px] text-gray-500">None — wires that cross the group's edge appear here.</p>
+			<p class="text-[11px] text-text-faint">None — wires that cross the group's edge appear here.</p>
 		{/each}
 	{/each}
 {:else}
@@ -115,7 +115,7 @@
 		{/each}
 	</div>
 	{#if node.data?.frame?.length}
-		<p class="text-[11px] text-gray-400">Frames {node.data.frame.length} node{node.data.frame.length === 1 ? '' : 's'} — dragging the note carries them.</p>
+		<p class="text-[11px] text-text-muted">Frames {node.data.frame.length} node{node.data.frame.length === 1 ? '' : 's'} — dragging the note carries them.</p>
 	{/if}
 {/if}
 
@@ -124,12 +124,12 @@
 		width: 20px;
 		height: 20px;
 		border-radius: 9999px;
-		border: 2px solid var(--border, #4b5563);
+		border: 2px solid var(--border-strong);
 		background: rgb(var(--note-rgb) / 0.85);
 	}
 	.note-swatch.active {
-		border-color: var(--text, #f9fafb);
-		box-shadow: 0 0 0 2px var(--accent, #60a5fa);
+		border-color: var(--text);
+		box-shadow: 0 0 0 2px var(--accent);
 	}
 	.tp-note-yellow { --note-rgb: var(--note-yellow, 234 179 8); }
 	.tp-note-blue { --note-rgb: var(--note-blue, 59 130 246); }

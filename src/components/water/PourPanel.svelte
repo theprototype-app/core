@@ -3,7 +3,7 @@
 	// Water tank included): add it, then rate, speed, spread, aim, colour, drop size and the two
 	// LIMITS (max drops, lifetime) that keep it from growing without bound. Every write goes
 	// through waterActions (local apply + objectParameters 'pour' + one props undo entry).
-	import { Button } from 'flowbite-svelte';
+	import Button from '../ui/Button.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
 	import { objectsGroup } from '../../stores/sceneStore';
@@ -38,13 +38,13 @@
 <div data-keywords="pour emitter spout drops stream water jug tap fountain spill splash">
 	{#if !pour}
 		<div class="ui-row items-center gap-2">
-			<Button id="pour-add" size="xs" color="alternative" onclick={() => setObjectPour(uuid, {})}>
-				<Icon name="tool:fluid" size={16} class="mr-1" aria-hidden="true" />Add pour emitter
+			<Button id="pour-add" variant="outline" size="sm" onclick={() => setObjectPour(uuid, {})}>
+				<Icon name="tool:fluid" size={16} aria-hidden="true" />Add pour emitter
 			</Button>
 		</div>
 	{:else}
-		<h4 class="mt-2 text-[11px] font-semibold text-gray-300">Pour</h4>
-		<label class="ui-row items-center gap-2 text-xs text-gray-300">
+		<h4 class="mt-2 text-[11px] font-semibold text-text-2">Pour</h4>
+		<label class="ui-row items-center gap-2 text-xs text-text-2">
 			<input
 				id="pour-on"
 				type="checkbox"
@@ -61,7 +61,7 @@
 		<SliderRow label="Tilt (°)" min={-90} max={90} step={1} decimals={0} value={tilt} onchange={(v) => aim(heading, v)} />
 		<SliderRow label="Spout height" min={0} max={1.2} step={0.01} value={pour.at[1]} onchange={(v) => set({ at: [pour.at[0], v, pour.at[2]] })} />
 		<div class="ui-row items-center gap-2">
-			<span class="w-20 shrink-0 text-xs text-gray-400">Colour</span>
+			<span class="w-20 shrink-0 text-xs text-text-muted">Colour</span>
 			<input
 				type="color"
 				aria-label="Pour colour"
@@ -73,13 +73,13 @@
 		<SliderRow label="Drop size (m)" min={0.01} max={0.2} step={0.005} value={pour.size} onchange={(v) => set({ size: v })} />
 		<SliderRow label="Max drops" min={10} max={2000} step={10} decimals={0} value={pour.maxParticles} onchange={(v) => set({ maxParticles: v })} />
 		<SliderRow label="Lifetime (s)" min={0.5} max={30} step={0.5} value={pour.lifetime} onchange={(v) => set({ lifetime: v })} />
-		<p class="text-[10px] text-gray-500">
+		<p class="text-[10px] text-text-faint">
 			Drops splash into water and settle where they land, then dry up. Max drops and Lifetime cap it, so
 			it never builds up. Each player sees their own drops.
 		</p>
 		<div class="ui-row items-center gap-2">
-			<Button id="pour-remove" size="xs" color="alternative" onclick={() => setObjectPour(uuid, null)}>
-				<Icon name="trash-2" size={16} class="mr-1" aria-hidden="true" />Remove pour emitter
+			<Button id="pour-remove" variant="outline" size="sm" onclick={() => setObjectPour(uuid, null)}>
+				<Icon name="trash-2" size={16} aria-hidden="true" />Remove pour emitter
 			</Button>
 		</div>
 	{/if}
@@ -91,7 +91,7 @@
 		width: 2rem;
 		cursor: pointer;
 		border-radius: 0.125rem;
-		border: 1px solid var(--border, #6b7280);
+		border: 1px solid var(--border-strong);
 		background: transparent;
 	}
 </style>

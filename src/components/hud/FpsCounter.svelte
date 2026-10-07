@@ -50,8 +50,8 @@
 		gap: 1px;
 		padding: 4px 8px;
 		border-radius: 6px;
-		background: rgba(0, 0, 0, 0.62);
-		color: #a7f3d0;
+		background: color-mix(in srgb, var(--bg-app) 72%, transparent);
+		color: var(--ink-good);
 		font: 600 12px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace;
 		pointer-events: none;
 		user-select: none;
@@ -73,26 +73,26 @@
 		margin-right: 5px;
 		border-radius: 50%;
 		vertical-align: 1px;
-		background: #9ca3af;
+		background: var(--text-faint);
 	}
 	.report-dot[data-state='sent'] {
-		background: #34d399;
+		background: var(--ink-good);
 	}
 	.report-dot[data-state='failed'] {
-		background: #fbbf24;
+		background: var(--ink-warn);
 	}
 	.fps-detail {
-		color: #d1d5db;
+		color: var(--text-2);
 		font-weight: 500;
 		font-size: 11px;
 	}
 	/* 33 Q1: the draw-call budget — TIER_COLORS in fpsMeter.js holds the same three */
 	.fps-calls[data-tier='warn'] {
-		color: #fbbf24;
+		color: var(--ink-warn);
 		font-weight: 700;
 	}
 	.fps-calls[data-tier='over'] {
-		color: #f87171;
+		color: var(--ink-bad);
 		font-weight: 700;
 	}
 </style>

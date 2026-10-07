@@ -30,11 +30,11 @@
 	<Socket kind="source" nodeType={data.type} position={Position.Right} />
 	<div class="flex w-full flex-col gap-1">
 		<div class="flex items-center gap-2">
-			<span class="h-2.5 w-2.5 rounded-full" style="background: {pulsing ? '#22c55e' : '#374151'}"></span>
+			<span class="h-2.5 w-2.5 rounded-full" style="background: {pulsing ? 'var(--ink-good)' : 'var(--control-off)'}"></span>
 			<span>{pulsing ? 'hit!' : 'idle'}</span>
 		</div>
 		<div class="flex items-center gap-1">
-			<span class="w-14 shrink-0 text-[10px] text-gray-400">min m/s</span>
+			<span class="w-14 shrink-0 text-[10px] text-text-muted">min m/s</span>
 			<DragRow
 				nodrag
 				step={0.1}
@@ -46,9 +46,9 @@
 			/>
 		</div>
 		<label class="flex items-center gap-1">
-			<span class="w-14 shrink-0 text-[10px] text-gray-400">who</span>
+			<span class="w-14 shrink-0 text-[10px] text-text-muted">who</span>
 			<select
-				class="nodrag nopan flex-1 rounded bg-gray-700 px-1 text-[11px]"
+				class="nodrag nopan flex-1 rounded bg-surface-inset px-1 text-[11px]"
 				value={data.who ?? 'anyone'}
 				on:change={(e) => setNodeData(id, { who: e.currentTarget.value })}
 			>
@@ -56,17 +56,17 @@
 			</select>
 		</label>
 		<div class="relative -mx-3 flex h-5 items-center gap-1 px-3">
-			<span class="text-[10px] text-gray-300">speed</span>
-			<span class="ml-auto font-mono text-[10px] text-gray-400">{(+(handles.speed ?? 0)).toFixed(2)}</span>
+			<span class="text-[10px] text-text-2">speed</span>
+			<span class="ml-auto font-mono text-[10px] text-text-muted">{(+(handles.speed ?? 0)).toFixed(2)}</span>
 			<Socket kind="source" nodeType={data.type} position={Position.Right} id="speed" forceType="number" style="top: 50%;" />
 		</div>
 		<div class="relative -mx-3 flex h-5 items-center gap-1 px-3">
-			<span class="text-[10px] text-gray-300">by me</span>
-			<span class="ml-auto font-mono text-[10px]" class:text-primary-300={!!handles.byMe} class:text-gray-400={!handles.byMe}>
+			<span class="text-[10px] text-text-2">by me</span>
+			<span class="ml-auto font-mono text-[10px]" class:text-accent-text={!!handles.byMe} class:text-text-muted={!handles.byMe}>
 				{handles.byMe ? 'yes' : 'no'}
 			</span>
 			<Socket kind="source" nodeType={data.type} position={Position.Right} id="byMe" forceType="boolean" style="top: 50%;" />
 		</div>
-		<p class="text-[10px] text-gray-400">connect to the object; pulses when a hand or player knocks it</p>
+		<p class="text-[10px] text-text-muted">connect to the object; pulses when a hand or player knocks it</p>
 	</div>
 </NodeWrapper>

@@ -149,14 +149,14 @@
 		/* 16-Q6: BELOW every panel and HUD (viewport 0 < this < drawer 30) — the frame
 		   is a viewport overlay, not chrome, so nothing of the UI hides behind it */
 		z-index: 2;
-		border: 1px solid rgb(138 180 248 / 0.55);
+		border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
 		border-radius: 6px;
-		box-shadow: 0 6px 20px rgb(0 0 0 / 0.45);
+		box-shadow: var(--shadow-window);
 		pointer-events: auto;
 		overflow: hidden;
 	}
 	.pip-drag {
-		border-color: #8ab4f8;
+		border-color: var(--accent);
 		cursor: grabbing;
 	}
 	.pip-bar {
@@ -164,9 +164,9 @@
 		align-items: center;
 		gap: 4px;
 		padding: 2px 4px 2px 6px;
-		background: rgb(15 23 42 / 0.72);
+		background: color-mix(in srgb, var(--bg-app) 72%, transparent);
 		font-size: 10px;
-		color: #e5e7eb;
+		color: var(--text);
 	}
 	.pip-title {
 		flex: 1 1 auto;
@@ -181,19 +181,19 @@
 		height: 16px;
 		border-radius: 3px;
 		line-height: 1;
-		color: #cbd5e1;
-		background: rgb(148 163 184 / 0.2);
+		color: var(--text-2);
+		background: color-mix(in srgb, var(--text-faint) 20%, transparent);
 	}
 	.pip-btn:hover {
-		background: rgb(148 163 184 / 0.45);
-		color: #fff;
+		background: color-mix(in srgb, var(--text-faint) 45%, transparent);
+		color: var(--text);
 	}
 	.pip-hint {
 		position: absolute;
 		bottom: 2px;
 		right: 5px;
 		font-size: 9px;
-		color: rgb(226 232 240 / 0.5);
+		color: color-mix(in srgb, var(--text) 50%, transparent);
 		pointer-events: none;
 	}
 </style>

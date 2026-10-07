@@ -23,7 +23,7 @@
 			<span>{data.value ?? 20}</span>
 		</span>
 		<input
-			class="nodrag nopan accent-[#ff4000]"
+			class="nodrag nopan accent-accent"
 			style="direction: rtl;"
 			type="range"
 			{min}

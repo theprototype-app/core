@@ -20,6 +20,7 @@
 	// that class, so CSS and markup always agree about which shell is on screen.
 	import { onDestroy, tick } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		phoneSheet,
 		phoneDetents,
@@ -532,7 +533,7 @@
 				</div>
 			{/if}
 			{#if top === 'more' && editingBar}
-				<div class="ps-body" id="ps-edit-bar">
+				<div class="ps-body" id="ps-edit-bar" use:minimalScroll>
 					<p class="ps-hint">Pick up to {MAX_SLOTS} for the bar on this device. Play stays in the middle; More always stays.</p>
 					<div class="ps-preview" aria-label="Bar preview">
 						{#each bar.left as key (key)}<span class="ps-pv"><Icon name={ACTIONS[key].icon} size={20} />{ACTIONS[key].label}</span>{/each}
@@ -562,7 +563,7 @@
 					</div>
 				</div>
 			{:else if top === 'more'}
-				<div class="ps-body" id="ps-more-sheet">
+				<div class="ps-body" id="ps-more-sheet" use:minimalScroll>
 					<h3 class="ps-sec">Windows</h3>
 					<div class="ps-tiles">
 						{#each TILES as key (key)}
@@ -762,7 +763,7 @@
 		padding-left: 3px;
 		border-radius: 50%;
 		background: var(--live);
-		color: var(--on-live, #fff);
+		color: var(--on-live);
 		box-shadow: 0 0 0 5px var(--surface-1), 0 6px 16px color-mix(in srgb, var(--live) 45%, transparent);
 	}
 	.ps-nb {
@@ -773,8 +774,8 @@
 		height: 17px;
 		padding: 0 4px;
 		border-radius: 999px;
-		background: var(--accent-fill, var(--accent));
-		color: #fff;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 		font: 600 10px/17px var(--font-ui-mono, monospace);
 	}
 
@@ -801,7 +802,7 @@
 		border: 1px solid var(--border);
 		border-bottom: 0;
 		border-radius: 18px 18px 0 0;
-		box-shadow: 0 -10px 30px rgb(0 0 0 / 0.35);
+		box-shadow: var(--shadow-window);
 		transition: height 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 	}
 	.ps-dragging {
@@ -945,7 +946,7 @@
 	.ps-pv-play {
 		background: var(--live);
 		border-color: var(--live);
-		color: var(--on-live, #fff);
+		color: var(--on-live);
 	}
 	.ps-pick[aria-checked='true'] {
 		color: var(--accent-text);
@@ -963,9 +964,9 @@
 		border: 1.5px solid var(--border-strong);
 	}
 	.ps-pick[aria-checked='true'] .ps-check {
-		background: var(--accent-fill, var(--accent));
-		border-color: var(--accent-fill, var(--accent));
-		color: var(--on-accent, #fff);
+		background: var(--accent-fill);
+		border-color: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.ps-edit-foot {
 		display: flex;
@@ -989,8 +990,8 @@
 	}
 	.ps-btn-primary {
 		border-color: transparent;
-		background: var(--accent-fill, var(--accent));
-		color: var(--on-accent, #fff);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 		font-weight: 600;
 	}
 	.ps-row {

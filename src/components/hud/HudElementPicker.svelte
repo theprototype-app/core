@@ -221,15 +221,15 @@
 		flex: 1;
 		align-items: center;
 		gap: 4px;
-		border: 1px solid rgb(75 85 99 / 0.7);
+		border: 1px solid var(--border-input);
 		border-radius: 4px;
-		background: rgb(17 24 39 / 0.6);
+		background: var(--surface-inset);
 		padding: 2px 4px;
 		font-size: 11px;
 		text-align: left;
 	}
 	.hud-ep-field:hover {
-		border-color: rgb(148 163 184 / 0.8);
+		border-color: var(--border-strong);
 	}
 	.hud-ep-name {
 		min-width: 0;
@@ -250,10 +250,10 @@
 	   id, a deleted element, a typo. Say so, in the colour the app already uses for
 	   "waiting / not right yet". */
 	.hud-ep[data-state='unresolved'] .hud-ep-field {
-		border-color: #b45309;
+		border-color: var(--ink-warn);
 	}
 	.hud-ep[data-state='unresolved'] .hud-ep-name {
-		color: #fbbf24;
+		color: var(--ink-warn);
 	}
 	.hud-ep-icon {
 		display: flex;
@@ -268,8 +268,8 @@
 	}
 	.hud-ep-armed {
 		opacity: 1;
-		background: rgb(56 189 248 / 0.25);
-		color: #7dd3fc;
+		background: var(--accent-soft);
+		color: var(--accent-soft-text);
 	}
 	.hud-ep-manual {
 		width: 100%;

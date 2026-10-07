@@ -72,11 +72,13 @@
 	// cursor-row action buttons (116/120): focus, visibility, rename, props, delete
 	function rowActions(child: any) {
 		return [
+			// tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var())
 			{ act: 'focus', glyph: '⊕', base: '#39404d' },
 			{ act: 'visible', glyph: child.visible === false ? '◎' : '◉', base: '#39404d' },
 			{ act: 'rename', glyph: '✎', base: '#39404d' },
 			{ act: 'props', glyph: 'ⓘ', base: '#39404d' },
 			{ act: 'delete', glyph: '✕', base: '#5a2a2a' }
+			// tokens-ok-end
 		]
 	}
 
@@ -100,6 +102,7 @@
 		applyWindowPose(group, 'objects', pose)
 	})
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if $vrObjectsPanelOpen}
 	<T.Group bind:ref={group} name="vr-objects-panel">
@@ -199,3 +202,4 @@
 		/>
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

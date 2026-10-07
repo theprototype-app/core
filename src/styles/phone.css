@@ -130,7 +130,7 @@
 	height: 5px;
 	margin-left: -20px;
 	border-radius: 3px;
-	background: var(--border-strong, rgb(148 163 184 / 0.6));
+	background: var(--border-strong);
 }
 :root.phone-shell #sidebar70 .side-row {
 	min-height: 48px;
@@ -155,7 +155,7 @@
 	border-radius: 0 !important;
 	box-shadow: none !important;
 	z-index: 40 !important;
-	background: var(--surface-1, #151a24);
+	background: var(--surface-1);
 }
 :root.phone-shell [data-ps-host='top'] {
 	z-index: 41 !important;
@@ -209,7 +209,7 @@
 :root.phone-shell .connect-wrap[data-ps-host] .cxd-panel {
 	position: static !important;
 	margin-top: 12px;
-	border: 1px solid var(--border, rgb(55 65 81 / 0.6)) !important;
+	border: 1px solid var(--border) !important;
 	border-radius: 12px !important;
 	max-height: none !important;
 }
@@ -239,7 +239,7 @@
 	border-radius: 18px 18px 0 0 !important;
 	border-width: 1px 0 0 !important;
 	font-size: 15px !important;
-	box-shadow: 0 -12px 32px rgb(0 0 0 / 0.35) !important;
+	box-shadow: 0 -12px 32px color-mix(in srgb, var(--bg-app) 35%, transparent) !important;
 }
 /* the sheet's grabber: a visual cue that this is a sheet (the backdrop closes it) */
 :root.phone-shell .ctx-scroll[role='menu']::before {
@@ -251,7 +251,7 @@
 	height: 4px;
 	margin-left: -18px;
 	border-radius: 2px;
-	background: var(--text-faint, rgb(148 163 184 / 0.6));
+	background: var(--text-faint);
 }
 :root.phone-shell .ctx-scroll .ctx-row {
 	display: flex;
@@ -273,9 +273,9 @@
 	margin: -8px 0 4px;
 	padding: 0 8px;
 	border: 0;
-	border-bottom: 1px solid var(--border, rgb(55 65 81 / 0.6));
+	border-bottom: 1px solid var(--border);
 	background: transparent;
-	color: var(--text, inherit);
+	color: var(--text);
 	font-weight: 600;
 	font-size: 16px;
 	text-align: left;

@@ -752,7 +752,7 @@ h.run(async () => {
 	await h.eventually(dockKey, (k) => k === 'flowcode', 'pressing it opens the Flow Code dock tab');
 	await A.page.locator('#controls-pill p[title="Flow Code"]').click();
 	await h.eventually(
-		() => A.page.evaluate(() => !!document.querySelector('#controls-pill p[title="Flow Code"] .text-primary-500')),
+		() => A.page.evaluate(() => !!document.querySelector('#controls-pill p[title="Flow Code"] .text-accent')),
 		(v) => v === false,
 		'...and pressing it again hides the panel, which the "+" list can never do'
 	);

@@ -153,14 +153,14 @@
 		{/if}
 	</section>
 {:else}
-<div class="border-b border-gray-700/40 pb-2" class:hidden={filtering && !match} bind:this={root}>
+<div class="border-b border-border pb-2" class:hidden={filtering && !match} bind:this={root}>
 	{#if collapsible && !filtering}
 		<button
-			class="ui-section-label flex w-full items-center justify-between hover:text-gray-200"
+			class="ui-section-label flex w-full items-center justify-between hover:text-text-2"
 			onclick={toggle}
 		>
 			<span>{label}</span>
-			<span class="text-gray-500">{showContent ? '−' : '+'}</span>
+			<span class="text-text-faint">{showContent ? '−' : '+'}</span>
 		</button>
 	{:else}
 		<p class="ui-section-label">{label}</p>

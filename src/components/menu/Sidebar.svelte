@@ -147,9 +147,9 @@
 <!-- 94: the logo IS the menu button. Open state = accent ring. -->
 <button
 	id="logo-menu"
-	class="burger flex items-center justify-center rounded-lg border bg-gray-800/90 shadow-lg backdrop-blur-sm transition-transform hover:scale-105 {$closeMenu
-		? 'border-gray-700/60'
-		: 'border-primary-500 ring-2 ring-primary-500/50'}"
+	class="burger flex items-center justify-center rounded-lg border bg-surface-1/90 shadow-lg backdrop-blur-sm transition-transform hover:scale-105 {$closeMenu
+		? 'border-border'
+		: 'border-accent ring-2 ring-accent/50'}"
 	style="height: 48px; width: 48px; {$connectDocked ? `top: ${$connectBarHeight + 8}px` : ''}"
 	title={$closeMenu ? 'Open menu' : 'Close menu'}
 	onclick={toggleMenu}
@@ -165,7 +165,7 @@
 	<nav
 		id="sidebar70"
 		transition:fade={{ duration: 130 }}
-		class="app-sidebar fixed rounded-xl border border-gray-200 bg-white/95 p-1.5 text-gray-900 shadow-xl backdrop-blur-sm dark:border-gray-700 dark:bg-gray-800/95 dark:text-gray-100"
+		class="app-sidebar tp-noscrollbar fixed rounded-xl border border-border bg-surface-1/95 p-1.5 text-text shadow-xl backdrop-blur-sm"
 		style="--side-top: {$connectDocked ? $connectBarHeight + 64 : 64}px"
 	>
 		<!-- multiple + the companion types so an .obj can be picked TOGETHER with its
@@ -314,18 +314,18 @@
 	     whose backdrop-blur-sm would make this fixed panel center on the sidebar and
 	     spill off the left edge). Modal tier so it clears the avatar/Connect chrome. -->
 	<button
-		class="fixed inset-0 cursor-default bg-black/40"
+		class="fixed inset-0 cursor-default bg-scrim"
 		style="z-index: calc(var(--z-menu) + 1)"
 		aria-label="Close export settings"
 		onclick={() => (exportSettingsOpen = false)}
 	></button>
 	<div
 		id="export-settings-modal"
-		class="fixed w-64 max-w-[92vw] rounded-lg border border-gray-700 bg-gray-800 p-4 text-sm text-gray-100 shadow-2xl"
+		class="fixed w-64 max-w-[92vw] rounded-lg border border-border bg-surface-1 p-4 text-sm text-text shadow-2xl"
 		style="z-index: calc(var(--z-menu) + 2); top: {exportPos.top}px; left: {exportPos.left}px;"
 	>
 		<p class="mb-2 font-semibold">Export settings</p>
-		<p class="mb-1 text-[11px] text-gray-400">Scene (.tpscene) includes:</p>
+		<p class="mb-1 text-[11px] text-text-muted">Scene (.tpscene) includes:</p>
 		<label class="flex items-center gap-2 py-0.5">
 			<input class="tp-check" type="checkbox" checked={tpAssets} onchange={(e: any) => { tpAssets = e.target.checked; safeStorage.setItem('tpsceneAssets', String(tpAssets)); }} />
 			Assets (audio, textures, configs)
@@ -338,13 +338,13 @@
 			<input id="tpscene-flow" class="tp-check" type="checkbox" checked={tpFlow} onchange={(e: any) => { tpFlow = e.target.checked; safeStorage.setItem('tpsceneFlow', String(tpFlow)); }} />
 			Flow graph (nodes + edges)
 		</label>
-		<div class="my-2 border-t border-gray-700"></div>
-		<p class="mb-1 text-[11px] text-gray-400">Project (.tp) includes:</p>
+		<div class="my-2 border-t border-border"></div>
+		<p class="mb-1 text-[11px] text-text-muted">Project (.tp) includes:</p>
 		<label class="flex items-center gap-2 py-0.5">
 			<input id="tp-project-versions" class="tp-check" type="checkbox" checked={tpProjectVersions} onchange={(e: any) => { tpProjectVersions = e.target.checked; safeStorage.setItem('tpProjectVersions', String(tpProjectVersions)); }} />
 			<span title="Every kept version of every scene. Off exports each scene's current version only.">Scene version history</span>
 		</label>
-		<div class="my-2 border-t border-gray-700"></div>
+		<div class="my-2 border-t border-border"></div>
 		<!-- 21-H1: both optional formats, same shape, both OFF by default -->
 		<label class="flex items-center gap-2 py-0.5">
 			<input id="show-gltf-format" class="tp-check" type="checkbox" checked={showGltf} onchange={(e: any) => { showGltf = e.target.checked; safeStorage.setItem('showGltfFormat', String(showGltf)); syncFormatVisibility(); }} />
@@ -355,7 +355,7 @@
 			Show JSON format
 		</label>
 		<div class="mt-3 flex justify-end">
-			<button class="rounded-sm bg-gray-600 px-2 py-1 text-xs hover:bg-gray-500" onclick={() => (exportSettingsOpen = false)}>Close</button>
+			<button class="rounded-sm bg-surface-active px-2 py-1 text-xs text-text hover:bg-border-strong" onclick={() => (exportSettingsOpen = false)}>Close</button>
 		</div>
 	</div>
 {/if}
@@ -375,8 +375,8 @@
 		width: 9px;
 		height: 9px;
 		border-radius: 50%;
-		background: #60a5fa;
-		box-shadow: 0 0 0 2px var(--color-form, #1f2937);
+		background: var(--accent);
+		box-shadow: 0 0 0 2px var(--surface-1);
 		visibility: hidden;
 	}
 	.update-dot-on {
@@ -386,7 +386,7 @@
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
-		background: #60a5fa;
+		background: var(--accent);
 		flex: 0 0 auto;
 		visibility: hidden;
 	}
@@ -440,18 +440,14 @@
 	}
 	.side-row:hover,
 	.side-cloud :global(.side-row:hover) {
-		background-color: rgb(0 0 0 / 0.06);
-	}
-	:global(.dark) .side-row:hover,
-	:global(.dark) .side-cloud :global(.side-row:hover) {
-		background-color: rgb(255 255 255 / 0.08);
+		background-color: var(--surface-hover);
 	}
 	/* 15-O: active nav row (Configure Scene while its panel is open) — a tinted
 	   row + accent rule, replacing the "●" that used to shift the label */
 	/* 16-P6: tint + accent text only — the inset accent bar read as a stray border */
 	.side-row.active {
-		background-color: rgb(59 130 246 / 0.12);
-		color: var(--color-primary-400, #60a5fa);
+		background-color: var(--accent-soft);
+		color: var(--accent-soft-text);
 	}
 	.side-ico,
 	.side-cloud :global(.side-ico) {
@@ -472,10 +468,7 @@
 	}
 	.side-div {
 		margin: 0.35rem 0.25rem;
-		border-top: 1px solid rgb(0 0 0 / 0.1);
-	}
-	:global(.dark) .side-div {
-		border-top-color: rgb(255 255 255 / 0.1);
+		border-top: 1px solid var(--border);
 	}
 	.side-seg {
 		flex: 1;
@@ -483,16 +476,12 @@
 		padding: 0.1rem 0.4rem;
 		font-size: 0.625rem;
 		font-weight: 600;
-		background-color: rgb(0 0 0 / 0.06);
-		color: rgb(75 85 99);
-	}
-	:global(.dark) .side-seg {
-		background-color: rgb(255 255 255 / 0.08);
-		color: rgb(209 213 219);
+		background-color: var(--surface-hover);
+		color: var(--text-2);
 	}
 	.side-seg.on {
-		background-color: var(--color-primary-600, #2563eb);
-		color: #fff;
+		background-color: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	/* When the Connect bar docks to a full-width top strip, the logo + its menu drop
 	   below it — driven dynamically by connectDocked/connectBarHeight (inline `top`),

@@ -40,10 +40,12 @@
 			<svg width="18" height="18" viewBox="0 0 24 24" style="color: {colorOf(id)}">
 				<path fill="currentColor" stroke="white" stroke-width="1.5" d="M4 2 L20 12 L12 13.5 L8.5 21 Z" />
 			</svg>
+			<!-- tokens-ok-begin: the name tag is filled with the peer's own colour (data, same in every theme); white keeps it legible on any peer hue -->
 			<span
 				class="ml-1 mt-3 whitespace-nowrap rounded-sm px-1.5 py-0.5 text-xs text-white"
 				style="background: {colorOf(id)}">{cursor.name}</span
 			>
+			<!-- tokens-ok-end -->
 		</div>
 	{/each}
 </div>

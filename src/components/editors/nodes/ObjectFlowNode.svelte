@@ -78,12 +78,12 @@
 			{#each iface.inputs as socket (socket.name)}
 				<div class="relative -mx-3 flex h-5 items-center px-3">
 					<Socket kind="target" nodeType="objectflow" id={socket.name} position={Position.Left} forceType={socket.vtype} style="top: 50%;" />
-					<span class="max-w-full truncate text-[10px] text-gray-300">{socket.name}</span>
+					<span class="max-w-full truncate text-[10px] text-text-2">{socket.name}</span>
 				</div>
 			{/each}
 			{#each iface.outputs as socket (socket.name)}
 				<div class="relative -mx-3 flex h-5 items-center justify-end px-3">
-					<span class="max-w-full truncate text-[10px] text-gray-300">{socket.name}</span>
+					<span class="max-w-full truncate text-[10px] text-text-2">{socket.name}</span>
 					<!-- outputs carry whatever the flow computes — the neutral 'any' socket -->
 					<Socket kind="source" nodeType="objectflow" id={socket.name} position={Position.Right} forceType="any" style="top: 50%;" />
 				</div>
@@ -92,7 +92,7 @@
 				<div class="text-center text-[10px] opacity-60">no Flow Input/Output declared</div>
 			{/if}
 			{#if data.flowUuid}
-				<div class="text-center text-[9px] text-gray-500">double-click to open</div>
+				<div class="text-center text-[9px] text-text-faint">double-click to open</div>
 			{/if}
 		</div>
 	</NodeWrapper>

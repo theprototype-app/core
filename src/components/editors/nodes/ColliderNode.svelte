@@ -34,12 +34,12 @@
 			</select>
 		</label>
 		{#if (data.shape ?? 'box') === 'object'}
-			<p class="text-[10px] text-gray-400">◄ wire an Object Selector into source</p>
+			<p class="text-[10px] text-text-muted">◄ wire an Object Selector into source</p>
 		{/if}
 		<label class="flex flex-col">
 			<span class="flex justify-between"><span>scale</span><span>{(+(data.scale ?? 1)).toFixed(2)}</span></span>
 			<input
-				class="nodrag nopan accent-[#ff4000]"
+				class="nodrag nopan accent-accent"
 				type="range"
 				min="0.25"
 				max="4"
@@ -56,6 +56,6 @@
 			/>
 			<span>sensor</span>
 		</label>
-		<p class="text-[10px] text-gray-400">overrides the Inspector collider; applies live</p>
+		<p class="text-[10px] text-text-muted">overrides the Inspector collider; applies live</p>
 	</div>
 </NodeWrapper>

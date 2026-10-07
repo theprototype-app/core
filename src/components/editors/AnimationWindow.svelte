@@ -34,6 +34,7 @@
 	// reachable only from the Inspector.
 	import { animatedObjects, setAnimationState, clipInfo, behaviorOf } from '$lib/animatedImports';
 	import Icon from '../ui/Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import ContextMenu from '../ContextMenu.svelte';
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
@@ -1683,7 +1684,7 @@
 
 {#snippet body()}
 	{#if !target}
-		<div class="flex flex-1 items-center justify-center p-6 text-center text-sm text-gray-400">
+		<div class="flex flex-1 items-center justify-center p-6 text-center text-sm text-text-muted">
 			Select an object in the viewport to see and edit its animation.
 		</div>
 	{:else}
@@ -1691,8 +1692,8 @@
 		     one segmented control, the playhead owns the whole middle with a monospaced
 		     readout beside it, and the clip settings are a second group on the right so
 		     "how long is this clip" never reads as part of "where am I in it". -->
-		<div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-gray-700/60 px-2 py-1.5">
-			<div class="flex items-center overflow-hidden rounded-md border border-gray-600/80 bg-gray-900/60 text-gray-300 [&>button]:px-1.5 [&>button]:py-1 [&>button:hover]:bg-gray-700/70">
+		<div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border px-2 py-1.5">
+			<div class="flex items-center overflow-hidden rounded-md border border-border bg-surface-inset text-text-2 [&>button]:px-1.5 [&>button]:py-1 [&>button:hover]:bg-surface-hover">
 				<button
 					id="animation-rewind"
 					title="Go to the start of the clip"
@@ -1707,7 +1708,7 @@
 				>
 				<button
 					id="animation-play-back"
-					class="border-l border-gray-600/80 {isPlaying && pb?.reverse ? 'bg-primary-600/30 text-primary-200' : 'text-primary-300'}"
+					class="border-l border-border {isPlaying && pb?.reverse ? 'bg-live/25 text-live' : 'text-live'}"
 					title="Play backwards from here"
 					aria-label="Play backwards"
 					aria-pressed={!!(isPlaying && pb?.reverse)}
@@ -1715,9 +1716,9 @@
 				>
 				<button
 					id="animation-play"
-					class="border-x border-gray-600/80 {isPlaying && !pb?.reverse
-						? 'bg-primary-600/30 text-primary-200'
-						: 'text-primary-300'}"
+					class="border-x border-border {isPlaying && !pb?.reverse
+						? 'bg-live/25 text-live'
+						: 'text-live'}"
 					title={isPlaying ? 'Pause' : 'Play from here'}
 					aria-label={isPlaying ? 'Pause' : 'Play'}
 					aria-pressed={isPlaying}
@@ -1733,7 +1734,7 @@
 				>
 				<button
 					id="animation-next-key"
-					class="border-l border-gray-600/80"
+					class="border-l border-border"
 					title="Next key"
 					aria-label="Next key"
 					onclick={() => stepKey(1)}><Icon name="step-forward" size={16} /></button
@@ -1749,17 +1750,17 @@
 			<div class="flex min-w-40 flex-1 items-center gap-2">
 				<input
 					type="range" min="0" max={duration} step="0.01"
-					class="min-w-0 flex-1 accent-primary-500"
+					class="min-w-0 flex-1 accent-accent"
 					aria-label="Playhead"
 					value={curTime} oninput={(e) => target && scrub(target.uuid, parseFloat(e.currentTarget.value))}
 				/>
-				<span class="shrink-0 font-mono text-[11px] tabular-nums text-gray-300">
-					{curTime.toFixed(2)}<span class="text-gray-500">/{duration.toFixed(2)}s</span>
+				<span class="shrink-0 font-mono text-[11px] tabular-nums text-text-2">
+					{curTime.toFixed(2)}<span class="text-text-faint">/{duration.toFixed(2)}s</span>
 				</span>
 			</div>
 
 			<div class="flex items-center gap-1.5">
-				<label class="flex items-center gap-1 text-[11px] text-gray-400" title="Clip length. Keys keep their times — use ＋ ▸ Retime to stretch the movement itself.">
+				<label class="flex items-center gap-1 text-[11px] text-text-muted" title="Clip length. Keys keep their times — use ＋ ▸ Retime to stretch the movement itself.">
 					<span>length</span>
 					<DragRow
 						id="animation-length"
@@ -1770,7 +1771,7 @@
 						onchange={(/** @type {number} */ v) => target && updateAnim(target.uuid, { duration: Math.max(0.1, v) })}
 					/>
 				</label>
-				<label class="flex items-center gap-1 text-[11px] text-gray-400" title="Playback rate — how fast it runs, without changing any keys">
+				<label class="flex items-center gap-1 text-[11px] text-text-muted" title="Playback rate — how fast it runs, without changing any keys">
 					<span>speed</span>
 					<DragRow
 						id="animation-speed"
@@ -1783,7 +1784,7 @@
 					/>
 				</label>
 				<label
-					class="flex items-center gap-1 text-[11px] text-gray-400"
+					class="flex items-center gap-1 text-[11px] text-text-muted"
 					title="Frames per second for THIS clip — what its key times mean, and the grid the arrows and snapping use"
 				>
 					<span>fps</span>
@@ -1798,7 +1799,7 @@
 					/>
 				</label>
 				<label
-					class="flex items-center gap-1 text-[11px] text-gray-400"
+					class="flex items-center gap-1 text-[11px] text-text-muted"
 					title="Sample the movement on a COARSER grid than its keys — the stepped 'on twos' look. 0 = smooth."
 				>
 					<span>step</span>
@@ -1816,7 +1817,7 @@
 					/>
 				</label>
 				<select
-					class="rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-xs"
+					class="rounded-sm border border-border bg-surface-inset px-1 py-0.5 text-xs"
 					aria-label="Loop mode"
 					value={anim?.loop ?? 'loop'}
 					onchange={(e) => target && updateAnim(target.uuid, { loop: /** @type {any} */ (e.currentTarget.value) })}
@@ -1831,8 +1832,8 @@
 				<button
 					id="animation-autokey"
 					class="flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium {recording
-						? 'border-red-500 bg-red-500/20 text-red-300'
-						: 'border-gray-600 text-gray-400 hover:bg-gray-700/70'}"
+						? 'border-live bg-live/20 text-live'
+						: 'border-border text-text-muted hover:bg-surface-hover'}"
 					title={recording
 						? 'Recording: posing this object writes keys at the playhead'
 						: 'Auto-key: pose the object and keys are written at the playhead'}
@@ -1844,7 +1845,7 @@
 				</button>
 				<button
 					id="animation-add"
-					class="shrink-0 rounded-md border border-gray-600 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700/70"
+					class="shrink-0 rounded-md border border-border px-2 py-1 text-xs text-text-2 hover:bg-surface-hover"
 					title="Add movements, keys, presets and clips"
 					aria-label="Add"
 					onclick={openAddMenu}>＋</button
@@ -1857,27 +1858,27 @@
 			<!-- clientHeight is the clip list's resize CEILING: the grip used to clamp at
 			     a flat 360px whatever the pane's own height, so on a short dock it went
 			     straight off the bottom of the window -->
-			<div class="flex w-56 shrink-0 flex-col border-r border-gray-700/60" bind:clientHeight={sideH}>
+			<div class="flex w-56 shrink-0 flex-col border-r border-border" bind:clientHeight={sideH}>
 				{#if clips.length}
-					<div id="animation-clips" class="border-b border-gray-700/60">
+					<div id="animation-clips" class="border-b border-border">
 						<div class="flex items-center justify-between px-2 pt-1.5">
-							<span class="text-[10px] uppercase tracking-wider text-gray-500">Imported clips</span>
-							<span class="text-[10px] text-gray-500">{clips.length}</span>
+							<span class="text-[10px] uppercase tracking-wider text-text-faint">Imported clips</span>
+							<span class="text-[10px] text-text-faint">{clips.length}</span>
 						</div>
-						<div class="max-h-24 overflow-y-auto p-1">
+						<div class="max-h-24 overflow-y-auto p-1" use:minimalScroll>
 							{#each clips as clip (clip.name)}
 								<button
-									class="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs hover:bg-gray-700/60 {clipState?.clip === clip.name ? 'bg-primary-900/40 text-primary-200' : 'text-gray-300'}"
+									class="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-hover {clipState?.clip === clip.name ? 'bg-accent-soft text-accent-soft-text' : 'text-text-2'}"
 									title={behavior ? 'Preview this clip here — not sent, not saved' : 'Play this clip — on every peer'}
 									onclick={() => target && setAnimationState(target.uuid, { clip: clip.name, playing: true })}
 								>
 									<span class="min-w-0 truncate">{clip.name}</span>
-									<span class="shrink-0 text-[10px] tabular-nums text-gray-500">{clip.duration.toFixed(2)}s</span>
+									<span class="shrink-0 text-[10px] tabular-nums text-text-faint">{clip.duration.toFixed(2)}s</span>
 								</button>
 							{/each}
 						</div>
 						{#if behavior}
-							<p id="animation-behavior-note" class="px-2 pb-1 text-[10px] leading-snug text-amber-300/90">
+							<p id="animation-behavior-note" class="px-2 pb-1 text-[10px] leading-snug text-ink-warn">
 								{behavior.type === 'loop' && behavior.autoplay ? 'Ambient loop' : 'Functional item'} — runs in
 								Interact or Play{behavior.type === 'loop' && behavior.autoplay ? '' : ' on its ' + behavior.trigger}.
 								Here ▶ previews it once; nothing is sent or saved.
@@ -1886,7 +1887,7 @@
 						<div class="flex items-center gap-2 px-2 pb-1">
 							<button
 								id="clip-play"
-								class="ui-button-quiet text-primary-400"
+								class="ui-button-quiet text-accent-text"
 								title={clipState?.playing ? 'Pause the clip' : 'Play the clip'}
 								onclick={() => target && setAnimationState(target.uuid, { playing: !clipState?.playing })}
 							>
@@ -1894,29 +1895,29 @@
 							</button>
 							<input
 								type="range" min="0.1" max="3" step="0.1"
-								class="min-w-0 flex-1 accent-primary-600"
+								class="min-w-0 flex-1 accent-accent"
 								aria-label="Clip speed"
 								value={clipState?.speed ?? 1}
 								oninput={(e) => target && setAnimationState(target.uuid, { speed: parseFloat(e.currentTarget.value) })}
 							/>
-							<span class="shrink-0 text-[10px] tabular-nums text-gray-400">{(clipState?.speed ?? 1).toFixed(1)}×</span>
+							<span class="shrink-0 text-[10px] tabular-nums text-text-muted">{(clipState?.speed ?? 1).toFixed(1)}×</span>
 						</div>
 					</div>
 				{/if}
 
 				<!-- authored clips -->
 				{#if authoredClips.length}
-					<div id="authored-clips" class="border-b border-gray-700/60">
+					<div id="authored-clips" class="border-b border-border">
 						<div class="flex items-center justify-between px-2 pt-1.5">
-							<span class="text-[10px] uppercase tracking-wider text-gray-500">Clips</span>
-							<span class="text-[10px] text-gray-500">{authoredClips.length}</span>
+							<span class="text-[10px] uppercase tracking-wider text-text-faint">Clips</span>
+							<span class="text-[10px] text-text-faint">{authoredClips.length}</span>
 						</div>
-						<div class="overflow-y-auto p-1" style="max-height: {clipsH}px">
+						<div class="overflow-y-auto p-1" style="max-height: {clipsH}px" use:minimalScroll>
 							{#each authoredClips as clip (clip.id)}
 								{#if renaming === clip.id}
 									<!-- svelte-ignore a11y_autofocus -->
 									<input
-										class="w-full rounded-sm border border-primary-500 bg-gray-900 px-1 py-0.5 text-xs text-gray-100"
+										class="w-full rounded-sm border border-accent bg-surface-inset px-1 py-0.5 text-xs text-text"
 										autofocus
 										value={clip.name}
 										aria-label="Clip name"
@@ -1928,13 +1929,13 @@
 									/>
 								{:else}
 									<button
-										class="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs hover:bg-gray-700/60 {clip.active ? 'bg-primary-900/40 text-primary-200' : 'text-gray-300'}"
+										class="flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs hover:bg-surface-hover {clip.active ? 'bg-accent-soft text-accent-soft-text' : 'text-text-2'}"
 										title="Edit this clip (and make it the object's default)"
 										onclick={() => { if (target) { setActiveClip(target.uuid, clip.id); selId = null; selKeys = []; } }}
 										ondblclick={() => (renaming = clip.id)}
 									>
 										<span class="min-w-0 truncate">{clip.name}</span>
-										<span class="shrink-0 text-[10px] tabular-nums text-gray-500">{clip.tracks}▪{clip.duration.toFixed(1)}s</span>
+										<span class="shrink-0 text-[10px] tabular-nums text-text-faint">{clip.tracks}▪{clip.duration.toFixed(1)}s</span>
 									</button>
 								{/if}
 							{/each}
@@ -1943,7 +1944,7 @@
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 							id="animation-clips-resize"
-							class="group h-1.5 cursor-ns-resize border-t border-gray-700/60 bg-gray-800/40 hover:bg-primary-700/40"
+							class="group h-1.5 cursor-ns-resize border-t border-border bg-surface-1/40 hover:bg-accent/40"
 							style="touch-action: none"
 							title="Drag to resize the clip list"
 							onpointerdown={startClipsResize}
@@ -1954,32 +1955,32 @@
 				{/if}
 
 				<div class="flex items-center justify-between px-2 pt-1.5">
-					<span class="text-[10px] uppercase tracking-wider text-gray-500">Channels</span>
-					<span class="text-[10px] text-gray-500">{tracks.length}</span>
+					<span class="text-[10px] uppercase tracking-wider text-text-faint">Channels</span>
+					<span class="text-[10px] text-text-faint">{tracks.length}</span>
 				</div>
-				<div class="flex items-center gap-1 border-b border-gray-700/60 p-1.5">
-					<select class="min-w-0 flex-1 rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-xs" aria-label="Channel to animate" value={newChannel} onchange={(e) => (newChannel = e.currentTarget.value)}>
+				<div class="flex items-center gap-1 border-b border-border p-1.5">
+					<select class="min-w-0 flex-1 rounded-sm border border-border bg-surface-inset px-1 py-0.5 text-xs" aria-label="Channel to animate" value={newChannel} onchange={(e) => (newChannel = e.currentTarget.value)}>
 						{#each addableChannels as c}<option value={c}>{channelLabel(c)}</option>{/each}
 					</select>
 					<button class="ui-button-quiet shrink-0" title="Animate this channel" aria-label="Add channel" onclick={add}>＋</button>
 				</div>
-				<div class="min-h-0 flex-1 overflow-y-auto">
+				<div class="min-h-0 flex-1 overflow-y-auto" use:minimalScroll>
 					{#if !tracks.length}
-						<div class="p-3 text-center text-[11px] text-gray-500">
+						<div class="p-3 text-center text-[11px] text-text-faint">
 							{clips.length
 								? 'This clip is empty. The model’s own clips are listed above.'
 								: 'Nothing animated yet. Pick a channel and add it, or use ＋ ▸ Presets.'}
 						</div>
 					{/if}
 					{#each tracks as t (t.id)}
-						<div class="flex items-center gap-1 {selTrack?.id === t.id ? 'bg-primary-900/40' : ''}">
+						<div class="flex items-center gap-1 {selTrack?.id === t.id ? 'bg-accent-soft' : ''}">
 							<button
-								class="min-w-0 flex-1 truncate px-2 py-1 text-left text-xs hover:bg-gray-700/60 {selTrack?.id === t.id ? 'text-primary-200' : 'text-gray-300'}"
+								class="min-w-0 flex-1 truncate px-2 py-1 text-left text-xs hover:bg-surface-hover {selTrack?.id === t.id ? 'text-accent-soft-text' : 'text-text-2'}"
 								title={isMaterialChannel(t.channel) ? channelLabel(t.channel) + ' — a look channel: it drives the material, so a GLTF export cannot carry it' : channelLabel(t.channel)}
 								onclick={() => { selId = t.id; selKeys = []; }}>{channelLabel(t.channel)}</button
 							>
-							<span class="shrink-0 text-[10px] tabular-nums text-gray-500">{t.keys.length}</span>
-							<button class="ui-button-quiet shrink-0 text-red-400" title="Remove" aria-label="Remove channel" onclick={() => { if (target) removeTrack(target.uuid, t.id); }}><Icon name="x" size={16} /></button>
+							<span class="shrink-0 text-[10px] tabular-nums text-text-faint">{t.keys.length}</span>
+							<button class="ui-button-quiet shrink-0 text-ink-bad" title="Remove" aria-label="Remove channel" onclick={() => { if (target) removeTrack(target.uuid, t.id); }}><Icon name="x" size={16} /></button>
 						</div>
 					{/each}
 				</div>
@@ -1988,17 +1989,17 @@
 				     them; this is where they are NAMED, with the same inline rename the
 				     clip list uses. Hidden entirely while the clip has none. -->
 				{#if clipMarkers.length}
-					<div id="animation-marker-list" class="shrink-0 border-t border-gray-700/60">
+					<div id="animation-marker-list" class="shrink-0 border-t border-border">
 						<div class="flex items-center justify-between px-2 pt-1.5">
-							<span class="text-[10px] uppercase tracking-wider text-gray-500">Markers</span>
-							<span class="text-[10px] text-gray-500">{clipMarkers.length}</span>
+							<span class="text-[10px] uppercase tracking-wider text-text-faint">Markers</span>
+							<span class="text-[10px] text-text-faint">{clipMarkers.length}</span>
 						</div>
-						<div class="overflow-y-auto p-1" style="max-height: 96px">
+						<div class="overflow-y-auto p-1" style="max-height: 96px" use:minimalScroll>
 							{#each clipMarkers as marker, index (index)}
 								{#if markEdit === index}
 									<!-- svelte-ignore a11y_autofocus -->
 									<input
-										class="w-full rounded-sm border border-primary-500 bg-gray-900 px-1 py-0.5 text-xs text-gray-100"
+										class="w-full rounded-sm border border-accent bg-surface-inset px-1 py-0.5 text-xs text-text"
 										autofocus
 										value={marker.name}
 										aria-label="Marker name"
@@ -2011,13 +2012,13 @@
 								{:else}
 									<div class="flex items-center gap-1">
 										<button
-											class="min-w-0 flex-1 truncate px-2 py-1 text-left text-xs text-gray-300 hover:bg-gray-700/60"
+											class="min-w-0 flex-1 truncate px-2 py-1 text-left text-xs text-text-2 hover:bg-surface-hover"
 											title="Go to this marker (double-click to rename)"
 											onclick={() => { if (target) scrub(target.uuid, marker.t); }}
 											ondblclick={() => (markEdit = index)}>{marker.name}</button
 										>
-										<span class="shrink-0 text-[10px] tabular-nums text-gray-500">{marker.t.toFixed(2)}s</span>
-										<button class="ui-button-quiet shrink-0 text-red-400"
+										<span class="shrink-0 text-[10px] tabular-nums text-text-faint">{marker.t.toFixed(2)}s</span>
+										<button class="ui-button-quiet shrink-0 text-ink-bad"
 											title="Remove marker"
 											aria-label="Remove marker"
 											onclick={() => { if (target) removeMarker(target.uuid, index); }}><Icon name="x" size={16} /></button
@@ -2033,28 +2034,28 @@
 			<!-- CENTRE: the timeline (dope sheet / value graph) -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 			<div class="flex min-w-0 flex-1 flex-col" data-key-scope="animation" tabindex="-1" bind:this={plotHost} use:keyNav>
-				<div class="flex shrink-0 items-center gap-2 border-b border-gray-700/60 px-2 py-1 text-[11px] text-gray-400">
+				<div class="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1 text-[11px] text-text-muted">
 					<button
-						class="rounded-sm border px-1.5 py-0.5 {view === 'sheet' ? 'border-primary-500 text-primary-300' : 'border-gray-600'}"
+						class="rounded-sm border px-1.5 py-0.5 {view === 'sheet' ? 'border-accent text-accent-text' : 'border-border'}"
 						onclick={() => (view = 'sheet')}>Sheet</button
 					>
 					<button
-						class="rounded-sm border px-1.5 py-0.5 {view === 'graph' ? 'border-primary-500 text-primary-300' : 'border-gray-600'}"
+						class="rounded-sm border px-1.5 py-0.5 {view === 'graph' ? 'border-accent text-accent-text' : 'border-border'}"
 						onclick={() => (view = 'graph')}>Graph</button
 					>
 				<!-- 1 / 2 arm the transform, the way the digits pick a tool in the mesh
 					     editor; they drive both the drag and Shift+arrows -->
-					<div class="flex items-center overflow-hidden rounded-sm border border-gray-600">
+					<div class="flex items-center overflow-hidden rounded-sm border border-border">
 						<button
 							id="animation-mode-move"
-							class="px-1.5 py-0.5 {xform === 'move' ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							class="px-1.5 py-0.5 {xform === 'move' ? 'bg-accent-soft text-accent-soft-text' : 'hover:bg-surface-hover'}"
 							title="Move keys (1)"
 							aria-pressed={xform === 'move'}
 							onclick={() => (xform = 'move')}>Move</button
 						>
 						<button
 							id="animation-mode-scale"
-							class="border-l border-gray-600 px-1.5 py-0.5 {xform === 'scale' ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							class="border-l border-border px-1.5 py-0.5 {xform === 'scale' ? 'bg-accent-soft text-accent-soft-text' : 'hover:bg-surface-hover'}"
 							title="Scale keys about the playhead (2)"
 							aria-pressed={xform === 'scale'}
 							onclick={() => (xform = 'scale')}>Scale</button
@@ -2062,10 +2063,10 @@
 					</div>
 					<!-- marquee tools, the pair the UV editor offers: a LEFT drag on the plot
 					     body draws one over the keys -->
-					<div class="flex items-center overflow-hidden rounded-sm border border-gray-600">
+					<div class="flex items-center overflow-hidden rounded-sm border border-border">
 						<button
 							id="animation-marquee-box"
-							class="px-1.5 py-0.5 {marqMode === 'box' ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							class="px-1.5 py-0.5 {marqMode === 'box' ? 'bg-accent-soft text-accent-soft-text' : 'hover:bg-surface-hover'}"
 							title="Box select keys (drag a rectangle on the plot; Shift adds)"
 							aria-label="Box select"
 							aria-pressed={marqMode === 'box'}
@@ -2073,7 +2074,7 @@
 						>
 						<button
 							id="animation-marquee-lasso"
-							class="border-l border-gray-600 px-1.5 py-0.5 {marqMode === 'lasso' ? 'bg-primary-600/30 text-primary-200' : 'hover:bg-gray-700/70'}"
+							class="border-l border-border px-1.5 py-0.5 {marqMode === 'lasso' ? 'bg-accent-soft text-accent-soft-text' : 'hover:bg-surface-hover'}"
 							title="Lasso select keys (draw around them on the plot; Shift adds)"
 							aria-label="Lasso select"
 							aria-pressed={marqMode === 'lasso'}
@@ -2084,7 +2085,7 @@
 					     showColliders — nothing about it replicates or reaches a save. -->
 					<button
 						id="animation-onion"
-						class="rounded-sm border px-1.5 py-0.5 {$showOnionSkin ? 'border-primary-500 text-primary-300' : 'border-gray-600'}"
+						class="rounded-sm border px-1.5 py-0.5 {$showOnionSkin ? 'border-accent text-accent-text' : 'border-border'}"
 						title="Onion skin: faint copies of the object at the keys either side of the playhead (local only)"
 						aria-label="Onion skin"
 						aria-pressed={$showOnionSkin}
@@ -2094,7 +2095,7 @@
 						snap
 						<select
 							id="animation-snap"
-							class="rounded-sm border border-gray-600 bg-gray-900 px-1 py-0.5 text-[11px]"
+							class="rounded-sm border border-border bg-surface-inset px-1 py-0.5 text-[11px]"
 							value={snapMode}
 							onchange={(e) => {
 								snapMode = e.currentTarget.value;
@@ -2113,14 +2114,14 @@
 					<div class="flex items-center gap-1">
 						<button
 							id="animation-mark-in"
-							class="rounded-sm border border-gray-600 px-1.5 py-0.5 hover:bg-gray-700/70"
+							class="rounded-sm border border-border px-1.5 py-0.5 hover:bg-surface-hover"
 							title="Set the loop START here (A)"
 							onclick={() => target && setRange(target.uuid, curTime, rangeOut > curTime ? rangeOut : null)}
 							>A</button
 						>
 						<button
 							id="animation-mark-out"
-							class="rounded-sm border border-gray-600 px-1.5 py-0.5 hover:bg-gray-700/70"
+							class="rounded-sm border border-border px-1.5 py-0.5 hover:bg-surface-hover"
 							title="Set the loop END here (B)"
 							onclick={() => target && setRange(target.uuid, rangeIn < curTime ? rangeIn : null, curTime)}
 							>B</button
@@ -2128,7 +2129,7 @@
 						{#if ranged}
 							<button
 								id="animation-clear-range"
-								class="rounded-sm border border-primary-600 px-1.5 py-0.5 text-primary-300 hover:bg-gray-700/70"
+								class="rounded-sm border border-accent px-1.5 py-0.5 text-accent-text hover:bg-surface-hover"
 								title="Play the whole clip again ({rangeIn.toFixed(2)}–{rangeOut.toFixed(2)}s now)"
 								onclick={() => target && setRange(target.uuid, null, null)}
 								>A/B ✕</button
@@ -2137,24 +2138,24 @@
 					</div>
 
 					<span
-						class="cursor-help text-gray-500"
+						class="cursor-help text-text-faint"
 						title="Double-click empty space adds a key · drag moves it · shift-click builds a selection · RIGHT-CLICK locks the selection to the pointer (click to place, Esc to cancel) · Del removes · ctrl+wheel zooms, wheel pans"
 						>?</span
 					>
 					<div class="flex items-center gap-0.5">
-						<button class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Zoom out" aria-label="Zoom out" onclick={() => zoomView(1.4)}><Icon name="zoom-out" size={16} /></button>
-						<button class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Zoom in" aria-label="Zoom in" onclick={() => zoomView(1 / 1.4)}><Icon name="zoom-in" size={16} /></button>
-						<button id="animation-fit" class="rounded-sm border border-gray-600 p-0.5 hover:bg-gray-700/70" title="Fit the whole clip" aria-label="Fit" onclick={fitView}><Icon name="maximize-2" size={16} /></button>
+						<button class="rounded-sm border border-border p-0.5 hover:bg-surface-hover" title="Zoom out" aria-label="Zoom out" onclick={() => zoomView(1.4)}><Icon name="zoom-out" size={16} /></button>
+						<button class="rounded-sm border border-border p-0.5 hover:bg-surface-hover" title="Zoom in" aria-label="Zoom in" onclick={() => zoomView(1 / 1.4)}><Icon name="zoom-in" size={16} /></button>
+						<button id="animation-fit" class="rounded-sm border border-border p-0.5 hover:bg-surface-hover" title="Fit the whole clip" aria-label="Fit" onclick={fitView}><Icon name="maximize-2" size={16} /></button>
 					</div>
 					<span class="flex-1"></span>
 					{#if grabbing}
-						<span class="shrink-0 rounded-sm bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+						<span class="shrink-0 rounded-sm bg-ink-warn/15 px-1.5 py-0.5 text-[10px] font-medium text-ink-warn">
 							moving {selKeys.length > 1 ? selKeys.length + ' keys' : 'key'} — click to place, Esc to cancel
 						</span>
 					{:else if selKeys.length > 1}
-						<span class="shrink-0 text-[10px] text-primary-300">{selKeys.length} keys selected</span>
+						<span class="shrink-0 text-[10px] text-accent-text">{selKeys.length} keys selected</span>
 					{/if}
-					<span class="truncate font-mono text-[10px] text-gray-500">
+					<span class="truncate font-mono text-[10px] text-text-faint">
 						{viewStart.toFixed(2)}–{viewEnd.toFixed(2)}s
 					</span>
 				</div>
@@ -2167,7 +2168,7 @@
 					<!-- svelte-ignore a11y_no_static_element_interactions -->
 					<div
 						id="animation-navigator"
-						class="relative mx-2 mt-1.5 mb-1 h-3 shrink-0 cursor-pointer rounded-full bg-gray-900/70"
+						class="relative mx-2 mt-1.5 mb-1 h-3 shrink-0 cursor-pointer rounded-full bg-surface-inset"
 						style="touch-action: none"
 						title="The whole clip — drag the bar to move the visible window"
 						onpointerdown={navDown}
@@ -2179,31 +2180,32 @@
 						{#each tracks as track (track.id)}
 							{#each track.keys as key, ki (ki)}
 								<span
-									class="pointer-events-none absolute top-1/2 h-1 w-px -translate-y-1/2 bg-gray-500/70"
+									class="pointer-events-none absolute top-1/2 h-1 w-px -translate-y-1/2 bg-text-faint/70"
 									style="left: {(key.t / Math.max(duration, 0.001)) * 100}%"
 								></span>
 							{/each}
 						{/each}
 						<span
-							class="pointer-events-none absolute inset-y-0 rounded-full border border-primary-500/70 bg-primary-500/25"
+							class="pointer-events-none absolute inset-y-0 rounded-full border border-accent/70 bg-accent/25"
 							style="left: {(viewStart / Math.max(duration, 0.001)) * 100}%; width: {Math.max(
 								2,
 								(viewSpan / Math.max(duration, 0.001)) * 100
 							)}%"
 						></span>
 						<span
-							class="pointer-events-none absolute inset-y-0 w-px bg-amber-400"
+							class="pointer-events-none absolute inset-y-0 w-px bg-ink-warn"
 							style="left: {(Math.min(curTime, duration) / Math.max(duration, 0.001)) * 100}%"
 						></span>
 					</div>
 				{/if}
 				<div
 					class="min-h-0 flex-1 overflow-x-hidden {view === 'graph' ? 'overflow-y-hidden' : 'overflow-y-auto'} p-2"
+					use:minimalScroll
 					bind:clientWidth={plotW}
 					bind:clientHeight={plotVH}
 				>
 					{#if !tracks.length}
-						<div class="flex h-full items-center justify-center text-center text-sm text-gray-500">
+						<div class="flex h-full items-center justify-center text-center text-sm text-text-faint">
 							Add a movement to build a timeline.
 						</div>
 					{:else}
@@ -2213,7 +2215,7 @@
 							id="animation-timeline"
 							width={plotAvail}
 							height={plotH}
-							class="touch-none select-none rounded-sm bg-gray-900/60"
+							class="touch-none select-none rounded-sm bg-surface-inset"
 							role="application"
 							aria-label="Timeline"
 							ondblclick={plotDblClick}
@@ -2224,11 +2226,11 @@
 							<!-- ruler: drag anywhere along it to sweep the playhead -->
 							<rect
 								x="0" y="0" width={plotAvail} height={RULER_H}
-								fill="rgb(31 41 55 / 0.8)" class="cursor-ew-resize"
+								class="cursor-ew-resize an-ruler"
 							/>
 							{#each ticks as t (t)}
-								<line x1={tx(t)} y1={0} x2={tx(t)} y2={plotH} stroke="rgb(75 85 99 / 0.35)" pointer-events="none" />
-								<text x={tx(t) + 2} y={11} font-size="9" fill="rgb(107 114 128)" pointer-events="none">{t}s</text>
+								<line x1={tx(t)} y1={0} x2={tx(t)} y2={plotH} class="an-tick" pointer-events="none" />
+								<text x={tx(t) + 2} y={11} font-size="9" class="an-faint" pointer-events="none">{t}s</text>
 							{/each}
 
 							<!-- F5: the MARKER band. Only rendered when the clip has markers, so
@@ -2238,12 +2240,12 @@
 								<rect
 									id="animation-markers"
 									x="0" y={RULER_H} width={plotAvail} height={MARK_H}
-									fill="rgb(17 24 39 / 0.7)" pointer-events="none"
+									class="an-band" pointer-events="none"
 								/>
 								{#each clipMarkers as marker, index (index)}
 									<line
 										x1={tx(marker.t)} y1={RULER_H} x2={tx(marker.t)} y2={plotH}
-										stroke="rgb(45 212 191 / 0.55)" stroke-width="1" stroke-dasharray="3 2"
+										class="an-marker-line" stroke-width="1" stroke-dasharray="3 2"
 										pointer-events="none"
 									/>
 									<!-- a wide-enough flag to grab on a touchscreen; the label sits
@@ -2251,14 +2253,14 @@
 									<rect
 										data-marker={index}
 										x={tx(marker.t) - 3} y={RULER_H} width="7" height={MARK_H}
-										class="cursor-ew-resize"
-										fill={markDrag === index ? 'rgb(250 204 21)' : 'rgb(45 212 191)'}
+										class="cursor-ew-resize an-marker"
+										class:an-sel={markDrag === index}
 										onpointerdown={(e) => markerDown(index, e)}
 										oncontextmenu={(e) => markerContext(index, e)}
 									/>
 									<text
 										x={tx(marker.t) + 6} y={RULER_H + MARK_H - 3}
-										font-size="8" fill="rgb(153 246 228)" pointer-events="none"
+										font-size="8" class="an-marker-text" pointer-events="none"
 									>{marker.name}</text>
 								{/each}
 							{/if}
@@ -2267,37 +2269,37 @@
 							     editor shades the part it will not play -->
 							{#if ranged}
 								{#if rangeIn > viewStart}
-									<rect x={tx(viewStart)} y={TOP_H} width={Math.max(0, tx(Math.min(rangeIn, viewEnd)) - tx(viewStart))} height={plotH - TOP_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
+									<rect x={tx(viewStart)} y={TOP_H} width={Math.max(0, tx(Math.min(rangeIn, viewEnd)) - tx(viewStart))} height={plotH - TOP_H} class="an-dim" pointer-events="none" />
 								{/if}
 								{#if rangeOut < viewEnd}
-									<rect x={tx(Math.max(rangeOut, viewStart))} y={TOP_H} width={Math.max(0, tx(viewEnd) - tx(Math.max(rangeOut, viewStart)))} height={plotH - TOP_H} fill="rgb(17 24 39 / 0.55)" pointer-events="none" />
+									<rect x={tx(Math.max(rangeOut, viewStart))} y={TOP_H} width={Math.max(0, tx(viewEnd) - tx(Math.max(rangeOut, viewStart)))} height={plotH - TOP_H} class="an-dim" pointer-events="none" />
 								{/if}
-								<line x1={tx(rangeIn)} y1={0} x2={tx(rangeIn)} y2={plotH} stroke="rgb(34 197 94 / 0.9)" stroke-width="1.5" pointer-events="none" />
-								<line x1={tx(rangeOut)} y1={0} x2={tx(rangeOut)} y2={plotH} stroke="rgb(239 68 68 / 0.9)" stroke-width="1.5" pointer-events="none" />
-								<text x={tx(rangeIn) + 2} y={TOP_H + 9} font-size="8" fill="rgb(34 197 94)" pointer-events="none">A</text>
-								<text x={tx(rangeOut) - 8} y={TOP_H + 9} font-size="8" fill="rgb(239 68 68)" pointer-events="none">B</text>
+								<line x1={tx(rangeIn)} y1={0} x2={tx(rangeIn)} y2={plotH} class="an-range-a" stroke-width="1.5" pointer-events="none" />
+								<line x1={tx(rangeOut)} y1={0} x2={tx(rangeOut)} y2={plotH} class="an-range-b" stroke-width="1.5" pointer-events="none" />
+								<text x={tx(rangeIn) + 2} y={TOP_H + 9} font-size="8" class="an-range-a-text" pointer-events="none">A</text>
+								<text x={tx(rangeOut) - 8} y={TOP_H + 9} font-size="8" class="an-range-b-text" pointer-events="none">B</text>
 							{/if}
 
 							{#if view === 'sheet'}
 								{#each tracks as track, row (track.id)}
 									<line
 										x1={tx(viewStart)} y1={rowY(row)} x2={tx(viewEnd)} y2={rowY(row)}
-										stroke={selTrack?.id === track.id ? 'rgb(129 140 248 / 0.5)' : 'rgb(75 85 99 / 0.5)'}
+										class="an-row"
+										class:an-row-sel={selTrack?.id === track.id}
 									/>
 									{#each track.keys as key, index (index)}
 										<rect
 											x={tx(key.t) - 4} y={rowY(row) - 4} width="8" height="8"
 											transform="rotate(45 {tx(key.t)} {rowY(row)})"
-											class="cursor-ew-resize"
-											fill={isKeySelected(track.id, index) ? 'rgb(250 204 21)' : 'rgb(99 102 241)'}
-											stroke="rgb(17 24 39)"
+											class="cursor-ew-resize an-key"
+											class:an-sel={isKeySelected(track.id, index)}
 											onpointerdown={(e) => keyDown(e, track.id, index)}
 											oncontextmenu={(e) => keyContext(e, track.id, index)}
 										/>
 									{/each}
 								{/each}
 							{:else if selTrack}
-								<path d={curve} fill="none" stroke="rgb(129 140 248)" stroke-width="2" />
+								<path d={curve} fill="none" class="an-curve" stroke-width="2" />
 								<!-- F4: the easing of the segment leaving the edited key, dragged in
 								     place. Drawn BEFORE the keys deliberately: an ease of [0, 0] puts P1
 								     exactly ON its key, and the later sibling wins the press (the SVG
@@ -2308,24 +2310,22 @@
 									<g data-anim-tangents="1">
 										<line
 											x1={tangents.from.x} y1={tangents.from.y} x2={tangents.p1.x} y2={tangents.p1.y}
-											stroke="rgb(56 189 248 / 0.7)" stroke-width="1" stroke-dasharray="2 2" pointer-events="none"
+											class="an-tangent-line" stroke-width="1" stroke-dasharray="2 2" pointer-events="none"
 										/>
 										<line
 											x1={tangents.to.x} y1={tangents.to.y} x2={tangents.p2.x} y2={tangents.p2.y}
-											stroke="rgb(56 189 248 / 0.7)" stroke-width="1" stroke-dasharray="2 2" pointer-events="none"
+											class="an-tangent-line" stroke-width="1" stroke-dasharray="2 2" pointer-events="none"
 										/>
 										<circle
 											id="animation-tangent-1"
 											cx={tangents.p1.x} cy={tangents.p1.y} r="4.5"
-											class={tangents.flat ? 'cursor-ew-resize' : 'cursor-grab'}
-											fill="rgb(56 189 248)" stroke="rgb(17 24 39)"
+											class="an-tangent {tangents.flat ? 'cursor-ew-resize' : 'cursor-grab'}"
 											onpointerdown={(e) => tangentDown(0, e)}
 										/>
 										<circle
 											id="animation-tangent-2"
 											cx={tangents.p2.x} cy={tangents.p2.y} r="4.5"
-											class={tangents.flat ? 'cursor-ew-resize' : 'cursor-grab'}
-											fill="rgb(56 189 248)" stroke="rgb(17 24 39)"
+											class="an-tangent {tangents.flat ? 'cursor-ew-resize' : 'cursor-grab'}"
 											onpointerdown={(e) => tangentDown(1, e)}
 										/>
 									</g>
@@ -2333,17 +2333,16 @@
 								{#each selTrack.keys as key, index (index)}
 									<circle
 										cx={tx(key.t)} cy={vy(key.v)} r="5"
-										class="cursor-move"
-										fill={isKeySelected(selTrack.id, index) ? 'rgb(250 204 21)' : 'rgb(99 102 241)'}
-										stroke="rgb(17 24 39)"
+										class="cursor-move an-key"
+										class:an-sel={isKeySelected(selTrack.id, index)}
 										onpointerdown={(e) => keyDown(e, selTrack.id, index)}
 										oncontextmenu={(e) => keyContext(e, selTrack.id, index)}
 									/>
 								{/each}
-								<text x={PAD_X} y={TOP_H + 10} font-size="9" fill="rgb(107 114 128)">
+								<text x={PAD_X} y={TOP_H + 10} font-size="9" class="an-faint">
 									{dispVal(range.hi, selTrack.channel)}
 								</text>
-								<text x={PAD_X} y={TOP_H + GRAPH_H - 2} font-size="9" fill="rgb(107 114 128)">
+								<text x={PAD_X} y={TOP_H + GRAPH_H - 2} font-size="9" class="an-faint">
 									{dispVal(range.lo, selTrack.channel)}
 								</text>
 							{/if}
@@ -2352,7 +2351,7 @@
 							<line
 								x1={tx(Math.min(curTime, duration))} y1={0}
 								x2={tx(Math.min(curTime, duration))} y2={plotH}
-							stroke="rgb(250 204 21 / 0.9)" stroke-width="1.5"
+							class="an-playhead" stroke-width="1.5"
 							/>
 
 							<!-- the live marquee, on top of everything and never a pointer target -->
@@ -2361,14 +2360,14 @@
 									id="animation-marquee"
 									x={Math.min(marq.x0, marq.x1)} y={Math.min(marq.y0, marq.y1)}
 									width={Math.abs(marq.x1 - marq.x0)} height={Math.abs(marq.y1 - marq.y0)}
-									fill="rgb(129 140 248 / 0.12)" stroke="rgb(129 140 248 / 0.9)"
+									class="an-marquee"
 									stroke-width="1" stroke-dasharray="4 3" pointer-events="none"
 								/>
 							{:else if lasso.length > 1 && marqMoved}
 								<polygon
 									id="animation-lasso"
 									points={lasso.map(([x, y]) => x + ',' + y).join(' ')}
-									fill="rgb(129 140 248 / 0.12)" stroke="rgb(129 140 248 / 0.9)"
+									class="an-marquee"
 									stroke-width="1" stroke-dasharray="4 3" pointer-events="none"
 								/>
 							{/if}
@@ -2379,13 +2378,13 @@
 			</div>
 
 			<!-- RIGHT: selected key + the easing that leaves it -->
-			<div class="w-52 shrink-0 overflow-y-auto border-l border-gray-700/60 p-2">
+			<div class="w-52 shrink-0 overflow-y-auto border-l border-border p-2" use:minimalScroll>
 				{#if selTrack}
 					<div class="ui-section-label">Movement</div>
-					<label class="mb-2 block text-[11px] text-gray-400">
+					<label class="mb-2 block text-[11px] text-text-muted">
 						Channel
 						<select
-							class="mt-0.5 w-full rounded-sm border border-gray-600 bg-gray-900 px-1 py-1 text-xs text-gray-200"
+							class="mt-0.5 w-full rounded-sm border border-border bg-surface-inset px-1 py-1 text-xs text-text-2"
 							value={selTrack.channel}
 							onchange={(e) => target && updateTrack(target.uuid, selTrack.id, { channel: e.currentTarget.value })}
 						>
@@ -2396,7 +2395,7 @@
 					{#if selKeyObj && selKey}
 						<div class="ui-section-label">Key {selKey[1] + 1} / {selTrack.keys.length}</div>
 						<div class="mb-2 grid grid-cols-2 gap-2">
-							<label class="text-[11px] text-gray-400">
+							<label class="text-[11px] text-text-muted">
 								Time (s)
 								<DragRow
 									id="animation-key-time"
@@ -2409,7 +2408,7 @@
 									onchange={(/** @type {number} */ v) => selKey && setKeyTime(selKey[1], String(v))}
 								/>
 							</label>
-							<label class="text-[11px] text-gray-400">
+							<label class="text-[11px] text-text-muted">
 								Value{isRot(selTrack.channel) ? ' (deg)' : ''}
 								<DragRow
 									id="animation-key-value"
@@ -2423,11 +2422,11 @@
 							</label>
 						</div>
 						<button
-							class="mb-2 w-full rounded-sm border border-gray-600 px-1.5 py-0.5 text-[11px] text-gray-300 hover:bg-gray-700"
+							class="mb-2 w-full rounded-sm border border-border px-1.5 py-0.5 text-[11px] text-text-2 hover:bg-surface-hover"
 							onclick={() => { if (target && selKey) { removeKey(target.uuid, selKey[0], selKey[1]); selKeys = []; } }}
 						>Remove key</button>
 					{:else}
-						<div class="mb-2 text-[11px] text-gray-500">
+						<div class="mb-2 text-[11px] text-text-faint">
 							{selTrack.keys.length} keys — click one to edit its time and value.
 						</div>
 					{/if}
@@ -2437,38 +2436,38 @@
 							Easing out of key {selKey ? selKey[1] + 1 : 1}
 						</div>
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
-						<svg bind:this={svgEl} width={SIZE} height={SIZE} viewBox="0 0 {SIZE} {SIZE}" class="touch-none rounded-sm bg-gray-900/60">
-							<rect x={PAD} y={PAD} width={INNER} height={INNER} fill="none" stroke="rgb(75 85 99 / 0.6)" />
+						<svg bind:this={svgEl} width={SIZE} height={SIZE} viewBox="0 0 {SIZE} {SIZE}" class="touch-none rounded-sm bg-surface-inset">
+							<rect x={PAD} y={PAD} width={INNER} height={INNER} fill="none" class="an-ease-box" />
 							<!-- the box spans the OVERSHOOT range, so mark the unit band: without
 							     these two lines a control point at y=1 looks like an arbitrary
 							     spot rather than "level with the next key" -->
-							<line x1={PAD} y1={sy(0)} x2={PAD + INNER} y2={sy(0)} stroke="rgb(75 85 99 / 0.45)" />
-							<line x1={PAD} y1={sy(1)} x2={PAD + INNER} y2={sy(1)} stroke="rgb(75 85 99 / 0.45)" />
-							<line x1={sx(0)} y1={sy(0)} x2={sx(1)} y2={sy(1)} stroke="rgb(75 85 99 / 0.35)" stroke-dasharray="3 3" />
-							<line x1={sx(0)} y1={sy(0)} x2={sx(segEase[0])} y2={sy(segEase[1])} stroke="rgb(129 140 248 / 0.5)" />
-							<line x1={sx(1)} y1={sy(1)} x2={sx(segEase[2])} y2={sy(segEase[3])} stroke="rgb(129 140 248 / 0.5)" />
+							<line x1={PAD} y1={sy(0)} x2={PAD + INNER} y2={sy(0)} class="an-ease-guide" />
+							<line x1={PAD} y1={sy(1)} x2={PAD + INNER} y2={sy(1)} class="an-ease-guide" />
+							<line x1={sx(0)} y1={sy(0)} x2={sx(1)} y2={sy(1)} class="an-ease-guide" stroke-dasharray="3 3" />
+							<line x1={sx(0)} y1={sy(0)} x2={sx(segEase[0])} y2={sy(segEase[1])} class="an-ease-arm" />
+							<line x1={sx(1)} y1={sy(1)} x2={sx(segEase[2])} y2={sy(segEase[3])} class="an-ease-arm" />
 							<path
 								d="M {sx(0)} {sy(0)} C {sx(segEase[0])} {sy(segEase[1])} {sx(segEase[2])} {sy(segEase[3])} {sx(1)} {sy(1)}"
-								fill="none" stroke="rgb(129 140 248)" stroke-width="2"
+								fill="none" class="an-curve" stroke-width="2"
 							/>
-							<circle cx={sx(0)} cy={sy(0)} r="3" fill="rgb(148 163 184)" />
-							<circle cx={sx(1)} cy={sy(1)} r="3" fill="rgb(148 163 184)" />
-							<circle class="cursor-grab" cx={sx(segEase[0])} cy={sy(segEase[1])} r="6" fill="rgb(99 102 241)" onpointerdown={(e) => onHandleDown(0, e)} />
-							<circle class="cursor-grab" cx={sx(segEase[2])} cy={sy(segEase[3])} r="6" fill="rgb(99 102 241)" onpointerdown={(e) => onHandleDown(1, e)} />
+							<circle cx={sx(0)} cy={sy(0)} r="3" class="an-ease-end" />
+							<circle cx={sx(1)} cy={sy(1)} r="3" class="an-ease-end" />
+							<circle class="cursor-grab an-ease-handle" cx={sx(segEase[0])} cy={sy(segEase[1])} r="6" onpointerdown={(e) => onHandleDown(0, e)} />
+							<circle class="cursor-grab an-ease-handle" cx={sx(segEase[2])} cy={sy(segEase[3])} r="6" onpointerdown={(e) => onHandleDown(1, e)} />
 						</svg>
 						<div class="mt-1 flex flex-wrap gap-1">
 							{#each Object.keys(EASINGS) as name}
-								<button class="rounded-sm border border-gray-600 px-1.5 py-0.5 text-[10px] text-gray-300 hover:bg-gray-700" onclick={() => applyEasing(name)}>{name}</button>
+								<button class="rounded-sm border border-border px-1.5 py-0.5 text-[10px] text-text-2 hover:bg-surface-hover" onclick={() => applyEasing(name)}>{name}</button>
 							{/each}
 						</div>
 					{:else}
-						<div class="text-[11px] text-gray-500">
+						<div class="text-[11px] text-text-faint">
 							{channelLabel(selTrack.channel)} is stepped: it holds each key's value until the next
 							one, so there is no curve to shape.
 						</div>
 					{/if}
 				{:else}
-					<div class="text-[11px] text-gray-500">Select a movement on the left.</div>
+					<div class="text-[11px] text-text-faint">Select a movement on the left.</div>
 				{/if}
 			</div>
 		</div>
@@ -2487,7 +2486,7 @@
 			aria-label="Animation (docked)"
 		>
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-primary-600/30"
+				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -2541,7 +2540,7 @@
 			</WindowChrome>
 			{@render body()}
 			<div
-				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-border-strong/40"
 				style="touch-action: none"
 				title="Drag to resize · double-click to reset size"
 				onpointerdown={startWinResize}
@@ -2556,3 +2555,38 @@
 {#if menu}
 	<ContextMenu x={menu.x} y={menu.y} items={menu.items} sizeKey="animation" on:close={() => (menu = null)} />
 {/if}
+
+<style>
+	/* 38 R11: the timeline and easing-curve chrome paint from the tokens (SVG presentation
+	   attributes cannot take var(), so the colours live here as CSS fill/stroke). */
+	.an-ruler { fill: color-mix(in srgb, var(--surface-1) 80%, transparent); }
+	.an-tick { stroke: color-mix(in srgb, var(--border-strong) 60%, transparent); }
+	.an-faint { fill: var(--text-faint); }
+	.an-band { fill: color-mix(in srgb, var(--bg-app) 70%, transparent); }
+	.an-dim { fill: color-mix(in srgb, var(--bg-app) 55%, transparent); }
+	.an-marker-line { stroke: color-mix(in srgb, var(--icon-audio) 55%, transparent); }
+	.an-marker { fill: var(--icon-audio); }
+	.an-marker-text { fill: var(--icon-audio); }
+	.an-range-a { stroke: color-mix(in srgb, var(--ink-good) 90%, transparent); }
+	.an-range-b { stroke: color-mix(in srgb, var(--ink-bad) 90%, transparent); }
+	.an-range-a-text { fill: var(--ink-good); }
+	.an-range-b-text { fill: var(--ink-bad); }
+	.an-row { stroke: color-mix(in srgb, var(--border-strong) 80%, transparent); }
+	.an-row-sel { stroke: color-mix(in srgb, var(--accent) 50%, transparent); }
+	.an-key { fill: var(--accent-text); stroke: var(--bg-app); }
+	/* a selected key (and a marker being dragged) — the state animation-curves reads */
+	.an-sel { fill: var(--ink-warn); }
+	.an-curve { stroke: var(--accent-text); }
+	.an-tangent-line { stroke: color-mix(in srgb, var(--accent) 70%, transparent); }
+	.an-tangent { fill: var(--accent); stroke: var(--bg-app); }
+	.an-playhead { stroke: color-mix(in srgb, var(--ink-warn) 90%, transparent); }
+	.an-marquee {
+		fill: color-mix(in srgb, var(--accent) 12%, transparent);
+		stroke: color-mix(in srgb, var(--accent) 90%, transparent);
+	}
+	.an-ease-box { stroke: color-mix(in srgb, var(--border-strong) 90%, transparent); }
+	.an-ease-guide { stroke: color-mix(in srgb, var(--border-strong) 60%, transparent); }
+	.an-ease-arm { stroke: color-mix(in srgb, var(--accent-text) 50%, transparent); }
+	.an-ease-end { fill: var(--text-faint); }
+	.an-ease-handle { fill: var(--accent); }
+</style>

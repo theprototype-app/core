@@ -3,6 +3,7 @@
 	import ContextMenuItems from './ContextMenuItems.svelte';
 	import Icon from './ui/Icon.svelte';
 	import { collectLeaves, rankMatches } from '$lib/menuFilter';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
 	import { safeStorage } from '$lib/safeStorage';
 
@@ -415,6 +416,7 @@
 <div
 	use:portal
 	use:place
+	use:minimalScroll
 	class="ctx-scroll tp-ui tp-menu fixed min-w-36 overflow-y-auto overflow-x-hidden"
 	style="left: 0; top: 0; z-index: calc(var(--z-menu) + 1);"
 	role="menu"

@@ -4,7 +4,7 @@
 	// light (from the selection) and the scene itself ($inspectorKind = 'scene').
 	// Replication messages are byte-identical to the old three panels.
 	import * as THREE from 'three';
-	import { Tooltip } from 'flowbite-svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { fly } from 'svelte/transition';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
 	import InspectorHead from './inspector/InspectorHead.svelte';
@@ -1003,9 +1003,13 @@
 
 	// color swatches mirror the target when the selection changes
 	/** @type {any} */
-	let color = $state('#ffffff');
+	let color = $state('#ffffff'); // tokens-ok: colour-picker starting value (user data)
 	/** @type {any} */
-	let groundColor = $state('#ffffff');
+	let groundColor = $state('#ffffff'); // tokens-ok: colour-picker starting value (user data)
+	// fallbacks the pickers show for a value the scene has not authored yet (DATA, not chrome)
+	const FOG_DEFAULT = '#ffffff'; // tokens-ok: fog colour default shown by the picker (scene data)
+	const PARTICLE_START_DEFAULT = '#ffffff'; // tokens-ok: particle start colour default (emitter data)
+	const PARTICLE_END_DEFAULT = '#8899aa'; // tokens-ok: particle end colour default (emitter data)
 	$effect(() => {
 		const obj = $selectedObject;
 		if (!obj) return;
@@ -1460,6 +1464,7 @@
 	style={drawerStyle + '; --inspector-h: ' + inspectorH + 'px'}
 	transition:fly={insTransition}
 	class={'tp-ui ins-shell fixed inset-e-0 top-16 z-50 w-80 overflow-y-auto p-4 pt-0' + (bottomRounded ? ' ins-rounded-bl' : '')}
+	use:minimalScroll
 	id="inspector"
 	data-key-scope="panel"
 	role="region"
@@ -2526,7 +2531,7 @@
 						then press ▶ / P to simulate.
 					</p>
 				{:else}
-					<div id="physics-objects" class="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
+					<div id="physics-objects" class="flex max-h-48 flex-col gap-0.5 overflow-y-auto" use:minimalScroll>
 						{#each physicsRows as row (row.uuid)}
 							<button
 								class={'flex items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs transition-colors ' +
@@ -2730,8 +2735,8 @@
 					isOpen={true}
 					sliderDirection="horizontal"
 					--picker-indicator-size="20px"
-					--cp-bg-color="#1f2937"
-					--cp-border-color="#353f4e"
+					--cp-bg-color="var(--surface-1)"
+					--cp-border-color="var(--border)"
 					--picker-height="70px"
 					--picker-width="50px"
 					--slider-width="10px"
@@ -2750,14 +2755,14 @@
 					isOpen={true}
 					sliderDirection="horizontal"
 					--picker-indicator-size="20px"
-					--cp-bg-color="#1f2937"
-					--cp-border-color="#353f4e"
+					--cp-bg-color="var(--surface-1)"
+					--cp-border-color="var(--border)"
 					--picker-height="70px"
 					--picker-width="50px"
 					--slider-width="10px"
-					hex={envFog?.color ?? '#ffffff'}
+					hex={envFog?.color ?? FOG_DEFAULT}
 					onInput={(/** @type {any} */ c) => {
-						if (sameHex(c.hex, envFog?.color ?? '#ffffff')) return; // mount echo, not an edit
+						if (sameHex(c.hex, envFog?.color ?? FOG_DEFAULT)) return; // mount echo, not an edit
 						editEnvSky({ fog: { color: c.hex } });
 					}}
 				/>
@@ -2819,6 +2824,7 @@
 			<div class="flex flex-col gap-1">
 				<input
 					id="name"
+					title="Name"
 					type="text"
 					class="ui-input w-full"
 					value={$selectedObject.name}
@@ -2827,8 +2833,8 @@
 						sendName();
 					}}
 				/>
-				<Tooltip placement="top" arrow={false} triggeredBy="#name">Name</Tooltip>
-				<p id="uuid" class="truncate px-1 text-[length:var(--fs-badge)] text-text-faint" title={$selectedObject.uuid}>
+				<!-- 38 R11: the flowbite hover Tooltip "Name" is the input's own title now -->
+<p id="uuid" class="truncate px-1 text-[length:var(--fs-badge)] text-text-faint" title={$selectedObject.uuid}>
 					{$selectedObject.uuid}
 				</p>
 				<div onclick={refreshGroups} role="presentation">
@@ -3432,8 +3438,8 @@
 						isOpen={true}
 						sliderDirection="horizontal"
 						--picker-indicator-size="20px"
-						--cp-bg-color="#1f2937"
-						--cp-border-color="#353f4e"
+						--cp-bg-color="var(--surface-1)"
+						--cp-border-color="var(--border)"
 						--picker-height="70px"
 						--picker-width="50px"
 						--slider-width="10px"
@@ -3456,8 +3462,8 @@
 							isOpen={true}
 							sliderDirection="horizontal"
 							--picker-indicator-size="20px"
-							--cp-bg-color="#1f2937"
-							--cp-border-color="#353f4e"
+							--cp-bg-color="var(--surface-1)"
+							--cp-border-color="var(--border)"
 							--picker-height="70px"
 							--picker-width="50px"
 							--slider-width="10px"
@@ -3673,8 +3679,8 @@
 							isOpen={true}
 							sliderDirection="horizontal"
 							--picker-indicator-size="20px"
-							--cp-bg-color="#1f2937"
-							--cp-border-color="#353f4e"
+							--cp-bg-color="var(--surface-1)"
+							--cp-border-color="var(--border)"
 							--picker-height="70px"
 							--picker-width="50px"
 							--slider-width="10px"
@@ -4269,7 +4275,7 @@
 								type="color"
 								aria-label="Particle start color"
 								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
-								value={p.colorStart ?? '#ffffff'}
+								value={p.colorStart ?? PARTICLE_START_DEFAULT}
 								oninput={(/** @type {any} */ e) => setParticles({ colorStart: e.currentTarget.value })}
 							/>
 							<span class="text-xs text-text-muted">→</span>
@@ -4277,7 +4283,7 @@
 								type="color"
 								aria-label="Particle end color"
 								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
-								value={p.colorEnd ?? '#8899aa'}
+								value={p.colorEnd ?? PARTICLE_END_DEFAULT}
 								oninput={(/** @type {any} */ e) => setParticles({ colorEnd: e.currentTarget.value })}
 							/>
 						</div>
@@ -4610,7 +4616,7 @@
 		font-size: 10px;
 		font-style: italic;
 		/* 36 U1: theme ink (2.5:1 on the light theme's white drawer) */
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 	}
 	/* five PEER toggles, not presets: right-aligning them in the numeric grid
 	   stranded the fifth chip on a line of its own against the right edge */
@@ -4633,21 +4639,21 @@
 		width: 100%;
 		padding: 0.3rem 0.5rem;
 		border-radius: 0.375rem;
-		border: 1px dashed var(--border, rgb(255 255 255 / 0.25));
-		background: rgb(255 255 255 / 0.04);
-		color: var(--text-2, rgb(209 213 219));
+		border: 1px dashed var(--border-strong);
+		background: color-mix(in srgb, var(--surface-hover) 45%, transparent);
+		color: var(--text-2);
 		font-size: 11px;
 	}
 	.snap-action:hover {
-		background: rgb(255 255 255 / 0.09);
-		color: var(--text, #fff);
+		background: var(--surface-hover);
+		color: var(--text);
 	}
 	.snap-action-armed,
 	.snap-action-armed:hover {
-		background: #d97706;
+		background: var(--accent-fill);
 		border-style: solid;
-		border-color: #f59e0b;
-		color: #fff;
+		border-color: var(--accent);
+		color: var(--on-accent);
 	}
 	.snap-group {
 		display: flex;
@@ -4656,12 +4662,12 @@
 		gap: 0.5rem;
 		margin-top: 0.35rem;
 		padding-top: 0.4rem;
-		border-top: 1px solid rgb(255 255 255 / 0.08);
+		border-top: 1px solid var(--border);
 	}
 	.snap-group-hint {
 		font-size: 10px;
 		font-style: italic;
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 	}
 	.snap-status {
 		display: flex;
@@ -4680,21 +4686,21 @@
 		min-width: 0;
 		font-size: 10px;
 		font-style: italic;
-		color: rgb(156 163 175);
+		color: var(--text-muted);
 	}
 	.snap-status-armed {
-		background: rgb(217 119 6 / 0.14);
-		border-color: rgb(217 119 6 / 0.45);
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 	}
 	.snap-status-armed .snap-status-text {
-		color: #fbbf24;
+		color: var(--accent-text);
 	}
 	.snap-status-picked {
-		background: rgb(16 185 129 / 0.12);
-		border-color: rgb(16 185 129 / 0.35);
+		background: color-mix(in srgb, var(--ink-good) 12%, transparent);
+		border-color: color-mix(in srgb, var(--ink-good) 35%, transparent);
 	}
 	.snap-status-picked .snap-status-text {
-		color: #34d399;
+		color: var(--ink-good);
 		margin-right: auto;
 	}
 
@@ -4706,14 +4712,14 @@
 		gap: 5px;
 		margin: 2px 0;
 		padding: 6px 7px;
-		border: 1px solid rgb(168 85 247 / 0.4);
+		border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
 		border-radius: 5px;
-		background: rgb(168 85 247 / 0.1);
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
 	}
 	.shader-driven-text {
 		font-size: 10px;
 		line-height: 1.35;
-		color: #d8b4fe;
+		color: var(--accent-text);
 	}
 	.shader-driven-actions {
 		display: flex;

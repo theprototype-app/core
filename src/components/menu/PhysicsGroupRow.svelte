@@ -28,7 +28,7 @@
 </script>
 
 <div id="physics-group-row" class="ui-row items-center gap-2">
-	<span class="w-20 shrink-0 text-xs text-gray-400">Group</span>
+	<span class="w-20 shrink-0 text-xs text-text-muted">Group</span>
 	<div class="tp-seg flex-wrap" role="group" aria-label="Collision group">
 		{#each COLLISION_GROUPS as g (g.id)}
 			<button
@@ -43,7 +43,7 @@
 	</div>
 </div>
 <div id="physics-collides-row" class="ui-row items-center gap-2">
-	<span class="w-20 shrink-0 text-xs text-gray-400">Collides with</span>
+	<span class="w-20 shrink-0 text-xs text-text-muted">Collides with</span>
 	<div class="tp-seg flex-wrap" role="group" aria-label="Collides with">
 		{#each COLLIDES_WITH_GROUPS as g (g.id)}
 			<button

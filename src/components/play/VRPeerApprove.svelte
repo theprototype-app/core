@@ -54,6 +54,7 @@
 		applyWindowPose(group, 'approve', pose)
 	})
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if show}
 	<T.Group bind:ref={group} name="vr-approve-panel">
@@ -107,3 +108,4 @@
 			position={[WIDTH / 4, -HEIGHT / 2 + 0.03, 0.002]} />
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

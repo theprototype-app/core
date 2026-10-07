@@ -17,6 +17,7 @@
 	export let data: any;
 
 	const set = (patch: any) => setNodeData(id, patch);
+	const DEFAULT_START = '#ffffff'; // tokens-ok: the picker's starting value (user data)
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
@@ -47,45 +48,45 @@
 		<div class="relative -mx-3 flex flex-col px-3">
 			<Socket kind="target" nodeType={data.type} id="offset" position={Position.Left} style="top: 50%;" />
 			<span>offset</span>
-			<span class="text-[10px] text-gray-400">wire a Vector3 (spawn point)</span>
+			<span class="text-[10px] text-text-muted">wire a Vector3 (spawn point)</span>
 		</div>
 		<label class="relative -mx-3 flex flex-col px-3">
 			<Socket kind="target" nodeType={data.type} id="count" position={Position.Left} style="top: 50%;" />
 			<span class="flex justify-between"><span>count</span><span>{data.count ?? 80}</span></span>
-			<input class="nodrag nopan accent-[#c084fc]" type="range" min="1" max="500" step="1"
+			<input class="nodrag nopan accent-accent" type="range" min="1" max="500" step="1"
 				value={data.count ?? 80} on:input={(e) => set({ count: +e.currentTarget.value })} />
 		</label>
 		<label class="relative -mx-3 flex flex-col px-3">
 			<Socket kind="target" nodeType={data.type} id="speed" position={Position.Left} style="top: 50%;" />
 			<span class="flex justify-between"><span>speed</span><span>{data.speed ?? 1}</span></span>
-			<input class="nodrag nopan accent-[#c084fc]" type="range" min="0" max="8" step="0.1"
+			<input class="nodrag nopan accent-accent" type="range" min="0" max="8" step="0.1"
 				value={data.speed ?? 1} on:input={(e) => set({ speed: +e.currentTarget.value })} />
 		</label>
 		<label class="relative -mx-3 flex flex-col px-3">
 			<Socket kind="target" nodeType={data.type} id="gravity" position={Position.Left} style="top: 50%;" />
 			<span class="flex justify-between"><span>gravity</span><span>{data.gravity ?? 0}</span></span>
-			<input class="nodrag nopan accent-[#c084fc]" type="range" min="-10" max="10" step="0.1"
+			<input class="nodrag nopan accent-accent" type="range" min="-10" max="10" step="0.1"
 				value={data.gravity ?? 0} on:input={(e) => set({ gravity: +e.currentTarget.value })} />
 		</label>
 		<label class="relative -mx-3 flex flex-col px-3">
 			<Socket kind="target" nodeType={data.type} id="size" position={Position.Left} style="top: 50%;" />
 			<span class="flex justify-between"><span>size</span><span>{data.sizeStart ?? 0.1}</span></span>
-			<input class="nodrag nopan accent-[#c084fc]" type="range" min="0.01" max="1" step="0.01"
+			<input class="nodrag nopan accent-accent" type="range" min="0.01" max="1" step="0.01"
 				value={data.sizeStart ?? 0.1} on:input={(e) => set({ sizeStart: +e.currentTarget.value })} />
 		</label>
 		<label class="relative -mx-3 flex flex-col px-3">
 			<Socket kind="target" nodeType={data.type} id="color" position={Position.Left} style="top: 50%;" />
 			<span>color</span>
 			<span class="flex items-center gap-2">
-				<input class="nodrag nopan h-5 w-7" type="color" value={data.colorStart ?? '#ffffff'}
+				<input class="nodrag nopan h-5 w-7" type="color" value={data.colorStart ?? DEFAULT_START}
 					on:input={(e) => set({ colorStart: e.currentTarget.value })} />
-				<span class="text-[10px] text-gray-400">or wire a color</span>
+				<span class="text-[10px] text-text-muted">or wire a color</span>
 			</span>
 		</label>
 		<div class="relative -mx-3 flex flex-col px-3">
 			<Socket kind="target" nodeType={data.type} id="trigger" position={Position.Left} style="top: 50%;" />
 			<span>trigger</span>
-			<span class="text-[10px] text-gray-400">wire an event to burst</span>
+			<span class="text-[10px] text-text-muted">wire an event to burst</span>
 		</div>
 
 		<!-- sprite + space (no socket) -->

@@ -5,6 +5,7 @@
 	// listed first and marked; the rest follow in a fixed order.
 	import { cheatSheetOpen, shortcuts } from '$lib/shortcuts';
 	import { lastScope, scopeLabel, SCOPE_LABELS } from '$lib/keyScope';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	let query = $state('');
 	/** @type {string} */
@@ -116,7 +117,7 @@
 				Keys fire in the panel that has focus — click a panel to give it the keyboard. Rebind them in
 				Settings ▸ Shortcuts.
 			</p>
-			<div class="sheet-body">
+			<div class="sheet-body" use:minimalScroll>
 				{#each visible as section (section.scope)}
 					<section class="sheet-scope" data-scope={section.scope}>
 						<h3 class:focused={section.scope === focusedScope}>
@@ -149,7 +150,7 @@
 		position: fixed;
 		inset: 0;
 		z-index: var(--z-modal);
-		background: rgb(0 0 0 / 0.45);
+		background: var(--scrim);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -160,11 +161,11 @@
 		max-height: min(86vh, 100%);
 		display: flex;
 		flex-direction: column;
-		background: var(--surface, #1f2937);
-		color: var(--text, #e5e7eb);
-		border: 1px solid var(--border, #374151);
+		background: var(--surface-1);
+		color: var(--text);
+		border: 1px solid var(--border);
 		border-radius: 12px;
-		box-shadow: 0 20px 50px rgb(0 0 0 / 0.45);
+		box-shadow: var(--shadow-window);
 		outline: none;
 	}
 	.sheet-head {
@@ -181,23 +182,23 @@
 	.sheet-filter {
 		flex: 1;
 		min-width: 0;
-		background: var(--field, #111827);
-		color: var(--text, #e5e7eb);
-		border-color: var(--border, #374151);
+		background: var(--surface-inset);
+		color: var(--text);
+		border-color: var(--border-input);
 	}
 	.sheet-close {
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		padding: 2px 8px;
 		border-radius: 6px;
 	}
 	.sheet-close:hover {
-		background: var(--hover, #374151);
-		color: var(--text, #e5e7eb);
+		background: var(--surface-hover);
+		color: var(--text);
 	}
 	.sheet-note {
 		padding: 0 14px 8px;
 		font-size: 11px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.sheet-body {
 		overflow-y: auto;
@@ -214,14 +215,14 @@
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		color: var(--text-2, #d1d5db);
-		border-bottom: 1px solid var(--border, #374151);
+		color: var(--text-2);
+		border-bottom: 1px solid var(--border);
 		padding-bottom: 3px;
 		margin-bottom: 4px;
 	}
 	.sheet-scope h3.focused {
-		color: var(--accent, #60a5fa);
-		border-bottom-color: var(--accent, #60a5fa);
+		color: var(--accent-text);
+		border-bottom-color: var(--accent);
 	}
 	.sheet-here {
 		text-transform: none;
@@ -234,7 +235,7 @@
 	}
 	.sheet-group h4 {
 		font-size: 11px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		margin: 4px 0 2px;
 	}
 	.sheet-row {
@@ -256,16 +257,16 @@
 		line-height: 1.4;
 		padding: 0 5px;
 		border-radius: 4px;
-		border: 1px solid var(--border, #4b5563);
-		background: var(--surface-2, #111827);
-		color: var(--text, #e5e7eb);
+		border: 1px solid var(--border-strong);
+		background: var(--surface-inset);
+		color: var(--text);
 		white-space: nowrap;
 	}
 	.sheet-label {
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 	}
 	.sheet-empty {
 		font-size: 12px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 </style>

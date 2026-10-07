@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Listgroup } from 'flowbite-svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { objectsGroup, TControls, transformMode, editorMode, isLocked, lockedObjects, globalScene, vrPassthrough, vrOverride, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { chatHidden, flowGraphClose, flowCodeClose, animationClose, uvEditorClose, shaderEditorClose, hudEditorClose, explorerClose, profilerClose, codeWorkspaceClose, objectListClose, objectContextMenu, renamingObject, advancedMode, showEnvInList, showLocalObjects, floatingToolbar, toolbarAlwaysOnTop, showSimControls, expandedObjects } from '../../stores/appStore.js';
 	// 24-B2: keyboard navigation in the object list (the Explorer's gridKeydown shape)
@@ -112,9 +112,9 @@
 	// sticky selectedObject (which keeps the last object for the inspector bind)
 	const hasSel = $derived($selectedObjects.length > 0);
 	// 38 R8: the armed state is painted on the CELL (`.hud-cell.on`, the accent's soft fill);
-	// the glyph keeps `text-primary-500` only as the MARKER the controls/dock suites read
+	// the glyph keeps `text-accent` only as the MARKER the controls/dock suites read
 	// (hud.css lets the cell's colour win over it). ICON_OFF adds nothing.
-	const ICON_ON = 'text-primary-500';
+	const ICON_ON = 'text-accent';
 	const ICON_OFF = '';
 
 	// --- object list search/filter: rows read the visible-uuid set via context ---
@@ -492,7 +492,7 @@
 	});
 
 	/** Find the real scrolling ancestor by SCROLLABILITY, never by class name — the
-	 * scroller is flowbite's `Listgroup`, whose element we do not own (the deep-link
+	 * scroller is the `.obj-scroller` (was flowbite's `Listgroup`, whose element we did not own; the deep-link
 	 * ruling in Section.svelte, same reason). */
 	function trackTreeScroll(node: HTMLElement) {
 		let ro: any = null;
@@ -2263,7 +2263,7 @@
 	<div class="obj-filters flex flex-col gap-1">
 		<div class="relative flex items-center gap-1">
 			<!-- 80.2: one scrollable chip row that never overflows the window -->
-			<div id="filter-chips" class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll>
+			<div id="filter-chips" class="tp-noscrollbar flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none" use:chipScroll>
 				<button
 					class="obj-chip"
 					aria-pressed={!searchTypes.size && !viewMode}
@@ -2339,12 +2339,12 @@
 			{/if}
 		</div>
 	</div>
-	<Listgroup active class="obj-scroller min-h-0 flex-1 overflow-y-auto -rounded rounded-br rounded-bl border-0 bg-transparent dark:bg-transparent">
+	<div class="obj-scroller flex min-h-0 flex-1 flex-col overflow-y-auto rounded-lg rounded-br rounded-bl bg-transparent text-text-muted" use:minimalScroll>
 		<!-- 24-B2: the tree is the keyboard surface — focusable, arrows/Enter/F2/type-ahead
 		     walk the VISIBLE rows (see listKeydown); a subtle ring says it has focus -->
 		<div
 			id="object-tree"
-			class="container outline-none focus-visible:ring-1 focus-visible:ring-primary-500"
+			class="container outline-none focus-visible:ring-1 focus-visible:ring-accent"
 			role="tree"
 			tabindex="0"
 			aria-label="Objects"
@@ -2352,13 +2352,13 @@
 			use:treeKeys>
 			{#if viewMode === 'system'}
 				{#if !systemNoticeDismissed}
-					<div class="flex items-start gap-1 bg-yellow-900/40 p-2 text-[11px] text-yellow-200">
+					<div class="flex items-start gap-1 bg-ink-warn/15 p-2 text-[11px] text-ink-warn">
 						<span class="flex-1">
 							System objects are managed by modules and the environment — they regenerate
 							from their state and are not editable here.
 						</span>
 						<button
-							class="rounded-sm bg-gray-600 px-1 text-white"
+							class="rounded-sm bg-surface-active px-1 text-text hover:bg-border-strong"
 							on:click={() => {
 								systemNoticeDismissed = true;
 								safeStorage.setItem('systemNoticeDismissed', 'true');
@@ -2366,52 +2366,52 @@
 					</div>
 				{/if}
 				{#each systemRows as row (row.name)}
-					<div class="border-b border-gray-600/40 px-2 py-1 text-sm text-gray-800 dark:text-gray-200">
+					<div class="border-b border-border px-2 py-1 text-sm text-text-2">
 						<div class="flex items-center gap-2">
 							<button
-								class="w-4 text-gray-400"
+								class="w-4 text-text-muted"
 								title="Show children"
 								on:click={() => (expandedSystem = { ...expandedSystem, [row.name]: !expandedSystem[row.name] })}
 							>
 								{expandedSystem[row.name] ? '−' : '+'}
 							</button>
-							<Icon name="cog" size={16} class="text-gray-400" aria-hidden="true" title="System object" />
+							<Icon name="cog" size={16} class="text-text-muted" aria-hidden="true" title="System object" />
 							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title="Managed by a module / the environment">
 								{row.name}
 							</span>
-							<span class="text-[10px] text-gray-400">{row.children.length}</span>
+							<span class="text-[10px] text-text-muted">{row.children.length}</span>
 							<button
-								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-surface-active px-1.5 text-xs text-text hover:bg-border-strong"
 								title="Ping it for everyone"
 								on:click={() => pingObject(row.object)}><Icon name="pin" size={16} aria-hidden="true" /></button>
 							<button
-								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-surface-active px-1.5 text-xs text-text hover:bg-border-strong"
 								title="Pin a synced note to it"
 								on:click={() => addAnnotation(row.object.uuid)}><Icon name="square-pen" size={16} aria-hidden="true" /></button>
 							<button
-								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-surface-active px-1.5 text-xs text-text hover:bg-border-strong"
 								title="Focus the camera on it"
 								on:click={() => focusSystemObject(row.object)}><Icon name="eye" size={16} aria-hidden="true" /></button>
 						</div>
 						{#if expandedSystem[row.name]}
 							{#each row.children as childName}
-								<p class="pl-8 text-xs text-gray-400">{childName}</p>
+								<p class="pl-8 text-xs text-text-muted">{childName}</p>
 							{/each}
 						{/if}
 					</div>
 				{/each}
 				{#if systemRows.length === 0}
-					<p class="p-2 text-xs italic text-gray-400">No system objects right now — spawn a module (pong, dungeon) to see its content here.</p>
+					<p class="p-2 text-xs italic text-text-muted">No system objects right now — spawn a module (pong, dungeon) to see its content here.</p>
 				{/if}
 			{:else if viewMode === 'environment'}
 				{#if !envNoticeDismissed}
-					<div class="flex items-start gap-1 bg-yellow-900/40 p-2 text-[11px] text-yellow-200">
+					<div class="flex items-start gap-1 bg-ink-warn/15 p-2 text-[11px] text-ink-warn">
 						<span class="flex-1">
 							Environment objects are managed from Scene settings — switching presets
 							replaces them. Edit them there, not here.
 						</span>
 						<button
-							class="rounded-sm bg-gray-600 px-1 text-white"
+							class="rounded-sm bg-surface-active px-1 text-text hover:bg-border-strong"
 							on:click={() => {
 								envNoticeDismissed = true;
 								safeStorage.setItem('envNoticeDismissed', 'true');
@@ -2419,26 +2419,26 @@
 					</div>
 				{/if}
 				{#each envRows as row (row.name)}
-					<div class="border-b border-gray-600/40 px-2 py-1 text-sm text-gray-800 dark:text-gray-200">
+					<div class="border-b border-border px-2 py-1 text-sm text-text-2">
 						<div class="flex items-center gap-2">
-							<Icon name="sun" size={16} class="text-yellow-300/80" aria-hidden="true" title="Environment light" />
+							<Icon name="sun" size={16} class="text-ink-warn/80" aria-hidden="true" title="Environment light" />
 							<span class="flex-1 overflow-hidden text-ellipsis whitespace-nowrap" title="Managed from Scene settings">
 								{row.name}
 							</span>
-							<span class="text-[10px] text-gray-400">{row.type}</span>
+							<span class="text-[10px] text-text-muted">{row.type}</span>
 							<button
-								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-surface-active px-1.5 text-xs text-text hover:bg-border-strong"
 								title="Ping it for everyone"
 								on:click={() => pingObject(row.object)}><Icon name="pin" size={16} aria-hidden="true" /></button>
 							<button
-								class="rounded-sm bg-gray-600 px-1.5 text-xs text-white"
+								class="rounded-sm bg-surface-active px-1.5 text-xs text-text hover:bg-border-strong"
 								title="Focus the camera on it"
 								on:click={() => focusSystemObject(row.object)}><Icon name="eye" size={16} aria-hidden="true" /></button>
 						</div>
 					</div>
 				{/each}
 				{#if envRows.length === 0}
-					<p class="p-2 text-xs italic text-gray-400">The environment group is empty — pick a preset or add environment lights in Scene settings.</p>
+					<p class="p-2 text-xs italic text-text-muted">The environment group is empty — pick a preset or add environment lights in Scene settings.</p>
 				{/if}
 			{:else}
 			  {#if $objectsGroup}
@@ -2462,14 +2462,14 @@
 			  {/if}
 			{/if}
 		</div>
-	</Listgroup>
+	</div>
 	<!-- 26-A: THE BUDGET METER. One dot beside the count that a person can learn in a
 	     second, next to the one number that already says how big the scene is. It opens
 	     the Statistics window, because a warning you cannot act on is a decoration. -->
 	{#if $qualityState.level > 0 || $qualityState.pinned}
 		<button
 			id="quality-chip"
-			class="shrink-0 bg-amber-100 px-2 py-0.5 text-left text-[10px] text-amber-800 dark:bg-amber-900/60 dark:text-amber-200"
+			class="shrink-0 bg-ink-warn/15 px-2 py-0.5 text-left text-[10px] text-ink-warn"
 			data-level={$qualityState.level}
 			data-pinned={$qualityState.pinned ? 'true' : 'false'}
 			title={qualityTitle}

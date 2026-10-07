@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack, tick, onMount } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		SvelteFlow,
 		Background,
@@ -1628,7 +1629,7 @@
 		for (const n of nodes as any[]) {
 			if (n.hidden) continue;
 			const sel = `.svelteFlow .svelte-flow__node[data-id="${esc(n.id)}"]`;
-			if (n.data?.muted) rules.push(`${sel} .node-card{opacity:.45;filter:grayscale(.7)}${sel}::after{content:'muted';position:absolute;top:-9px;right:6px;font-size:9px;padding:0 4px;border-radius:4px;background:var(--surface-3,#374151);color:var(--text-2,#d1d5db)}`);
+			if (n.data?.muted) rules.push(`${sel} .node-card{opacity:.45;filter:grayscale(.7)}${sel}::after{content:'muted';position:absolute;top:-9px;right:6px;font-size:9px;padding:0 4px;border-radius:4px;background:var(--border-strong);color:var(--text-2)}`);
 			if (n.data?.collapsed && !isNote(n))
 				rules.push(
 					`${sel} .node-card>:last-child{position:absolute;inset:0 0 auto 0;height:0;padding:0;overflow:visible;visibility:hidden}${sel} .node-card>:last-child *{position:static}${sel} .node-card>:last-child .svelte-flow__handle{position:absolute!important;visibility:visible;top:14px!important}${sel} .node-card>:first-child{border-bottom:0}`
@@ -1825,7 +1826,7 @@
 				label="Flows"
 				paneHeight={paletteColH}
 			/>
-			<div class="min-h-0 flex-1 overflow-y-auto">
+			<div class="min-h-0 flex-1 overflow-y-auto" use:minimalScroll>
 				<Sidebar onPick={addNodeAtCenter} onPlaceAt={addNodeAtScreen} />
 			</div>
 		</div>
@@ -1834,7 +1835,7 @@
 	<div class="relative z-10 w-0" style="order: 2">
 		<button
 			id="palette-toggle"
-			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-8 flex h-14 w-4 items-center justify-center bg-gray-700 text-[10px] text-gray-200 hover:bg-gray-600"
+			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-8 flex h-14 w-4 items-center justify-center bg-surface-2 text-[10px] text-text-2 hover:bg-surface-active"
 			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
 			title={paletteOpen ? 'Hide the node palette' : 'Show the node palette'}
 			onclick={() => {
@@ -1846,7 +1847,7 @@
 		</button>
 		<button
 			id="palette-side"
-			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-24 flex h-9 w-4 items-center justify-center bg-gray-700 text-[9px] text-gray-300 hover:bg-gray-600"
+			class="palette-tab {paletteSide === 'right' ? 'palette-tab-mirrored' : ''} absolute top-24 flex h-9 w-4 items-center justify-center bg-surface-2 text-[9px] text-text-2 hover:bg-surface-active"
 			style="{paletteSide === 'right' ? 'right' : 'left'}: -1px"
 			title="Move the palette to the other side"
 			onclick={() => {
@@ -1879,7 +1880,7 @@
 				<!-- explicit way back: show the Scene flow AND deselect the object -->
 				<button
 					id="flow-scope-scene"
-					class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-0.5 text-xs text-gray-400 backdrop-blur-sm hover:text-gray-100"
+					class="pointer-events-auto rounded-full border border-border bg-surface-1/85 px-2 py-0.5 text-xs text-text-muted backdrop-blur-sm hover:text-text"
 					title="Back to the Scene flow (deselects the object)"
 					onclick={() => deselectObject()}
 				>
@@ -1887,29 +1888,29 @@
 				</button>
 			{/if}
 			<span
-				class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2.5 py-0.5 text-xs text-gray-200 backdrop-blur-sm"
+				class="pointer-events-auto rounded-full border border-border bg-surface-1/85 px-2.5 py-0.5 text-xs text-text-2 backdrop-blur-sm"
 			>
 				{activeId === SCENE_GRAPH ? MAIN_GRAPH_LABEL + ' graph' : activeOwnerName + ' — object flow'}
 			</span>
 			<!-- 36 U11: inside a group — the breadcrumb back out (Esc / Tab leave one level) -->
 			{#if crumbs.length}
-				<nav id="flow-group-crumbs" class="pointer-events-auto flex items-center gap-1 rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-0.5 text-xs text-gray-300 backdrop-blur-sm" aria-label="Open groups">
-					<button class="hover:text-gray-100" title="Back to the top of this flow" onclick={() => (level = null)}>Top</button>
+				<nav id="flow-group-crumbs" class="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-surface-1/85 px-2 py-0.5 text-xs text-text-2 backdrop-blur-sm" aria-label="Open groups">
+					<button class="hover:text-text" title="Back to the top of this flow" onclick={() => (level = null)}>Top</button>
 					{#each crumbs as crumb, i (crumb.id)}
-						<span class="text-gray-500">›</span>
+						<span class="text-text-faint">›</span>
 						{#if i === crumbs.length - 1}
-							<span class="font-semibold text-gray-100" data-group-id={crumb.id}>⧉ {crumb.label}</span>
+							<span class="font-semibold text-text" data-group-id={crumb.id}>⧉ {crumb.label}</span>
 						{:else}
-							<button class="hover:text-gray-100" data-group-id={crumb.id} onclick={() => (level = crumb.id)}>⧉ {crumb.label}</button>
+							<button class="hover:text-text" data-group-id={crumb.id} onclick={() => (level = crumb.id)}>⧉ {crumb.label}</button>
 						{/if}
 					{/each}
-					<button id="flow-group-leave" class="ml-1 rounded-sm px-1 text-gray-400 hover:bg-gray-700 hover:text-gray-100" title="Leave the group (Esc)" onclick={leaveGroup}>⤴</button>
+					<button id="flow-group-leave" class="ml-1 rounded-sm px-1 text-text-muted hover:bg-surface-hover hover:text-text" title="Leave the group (Esc)" onclick={leaveGroup}>⤴</button>
 				</nav>
 			{/if}
 			{#if activeId !== SCENE_GRAPH && hasActiveGraph}
 				<button
 					id="flow-scope-delete"
-					class="pointer-events-auto rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-0.5 text-xs text-gray-400 backdrop-blur-sm hover:text-red-400"
+					class="pointer-events-auto rounded-full border border-border bg-surface-1/85 px-2 py-0.5 text-xs text-text-muted backdrop-blur-sm hover:text-ink-bad"
 					title="Delete this object's flow"
 					onclick={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
 				>
@@ -1923,7 +1924,7 @@
 			{#if unknownHere}
 				<button
 					id="flow-unknown-badge"
-					class="pointer-events-auto rounded-full border border-yellow-600/60 bg-yellow-900/40 px-2.5 py-0.5 text-xs font-semibold text-yellow-300 backdrop-blur-sm hover:bg-yellow-900/70"
+					class="pointer-events-auto rounded-full border border-ink-warn/60 bg-ink-warn/15 px-2.5 py-0.5 text-xs font-semibold text-ink-warn backdrop-blur-sm hover:bg-ink-warn/25"
 					title="These nodes come from a module that isn't installed — click to open Modules"
 					onclick={() => modulesOpen.set(true)}
 				>
@@ -1942,20 +1943,20 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				id="flow-empty-state"
-				class="absolute inset-0 z-5 flex flex-col items-center justify-center gap-3 bg-gray-900/60 backdrop-blur-[2px]"
+				class="absolute inset-0 z-5 flex flex-col items-center justify-center gap-3 bg-app/60 backdrop-blur-[2px]"
 				oncontextmenu={(event) => onPaneContextMenu({ event })}
 			>
-				<p class="text-sm text-gray-300">
-					<span class="font-semibold text-gray-100">{activeOwnerName}</span> has no flow yet
+				<p class="text-sm text-text-2">
+					<span class="font-semibold text-text">{activeOwnerName}</span> has no flow yet
 				</p>
 				<button
 					id="flow-create-btn"
-					class="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-600"
+					class="rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-on-accent hover:brightness-110"
 					onclick={() => createObjectGraph(activeId)}
 				>
 					Create flow
 				</button>
-				<p class="text-[11px] text-gray-500">Nodes here will drive this object (no Object Selector needed)</p>
+				<p class="text-[11px] text-text-faint">Nodes here will drive this object (no Object Selector needed)</p>
 			</div>
 		{/if}
 		<SvelteFlow
@@ -1995,7 +1996,7 @@
 				     once (xyflow ignores a live variant change); softer low-alpha
 				     colour so the grid stops reading like a high-contrast notebook -->
 				{#key bgPattern}
-					<Background bgColor="transparent" variant={bgVariant} lineWidth={0.6} patternColor="rgba(128,128,128,0.18)" />
+					<Background bgColor="transparent" variant={bgVariant} lineWidth={0.6} patternColor="color-mix(in srgb, var(--text-faint) 18%, transparent)" />
 				{/key}
 			{/if}
 			<Controls showLock={false}>
@@ -2010,8 +2011,8 @@
 					zoomable
 					width={140}
 					height={90}
-					nodeColor={() => '#475569'}
-					maskColor="rgb(17 24 39 / 0.65)"
+					nodeColor={() => 'var(--border-strong)'}
+					maskColor="color-mix(in srgb, var(--bg-app) 65%, transparent)"
 				/>
 			{/if}
 		</SvelteFlow>
@@ -2021,7 +2022,7 @@
 	<div class="relative z-10 w-0" style="order: {propsSide === 'left' ? 0 : 4}">
 		<button
 			id="flow-props-toggle"
-			class="palette-tab {propsSide === 'left' ? '' : 'palette-tab-mirrored'} absolute top-8 flex h-14 w-4 items-center justify-center bg-gray-700 text-xs text-gray-200 hover:bg-gray-600"
+			class="palette-tab {propsSide === 'left' ? '' : 'palette-tab-mirrored'} absolute top-8 flex h-14 w-4 items-center justify-center bg-surface-2 text-xs text-text-2 hover:bg-surface-active"
 			style="{propsSide === 'left' ? 'left' : 'right'}: -1px"
 			title={propsOpen ? 'Hide properties' : 'Show properties'}
 			onclick={() => { propsOpen = !propsOpen; LS?.setItem('flowPropsOpen', String(propsOpen)); }}
@@ -2030,20 +2031,20 @@
 		</button>
 	</div>
 	{#if propsOpen}
-		<div id="flow-props" class="flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-gray-800 p-2 text-xs text-gray-200" style="order: {propsSide === 'left' ? -1 : 5}">
+		<div id="flow-props" class="relative flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto bg-surface-1 p-2 text-xs text-text-2" use:minimalScroll style="order: {propsSide === 'left' ? -1 : 5}">
 			<!-- 4.3: Explorer-style tabs — ⓘ = the selected node's PARAMETERS,
 			     ⚙ = graph settings + node name/note (as before) -->
 			<div class="flex gap-1">
-				<button id="flow-tab-info" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'info' ? 'bg-primary-700 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+				<button id="flow-tab-info" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'info' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
 					onclick={() => { propsTab = 'info'; LS?.setItem('flowPropsTab', 'info'); }}>ⓘ Params</button>
-				<button id="flow-tab-settings" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'settings' ? 'bg-primary-700 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+				<button id="flow-tab-settings" class="flex-1 rounded-sm px-2 py-1 {propsTab === 'settings' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
 					onclick={() => { propsTab = 'settings'; LS?.setItem('flowPropsTab', 'settings'); }}>⚙ Settings</button>
 			</div>
 			{#if propsTab === 'info'}
 				{#if selectedNode}
 					<p class="ui-section-label">{selectedNode.data?.label ?? selectedNode.type}</p>
 					{#if nodeDoc(selectedNode.type)}
-						<p id="flow-node-doc" class="text-[11px] leading-snug text-gray-400">{nodeDoc(selectedNode.type)}</p>
+						<p id="flow-node-doc" class="text-[11px] leading-snug text-text-muted">{nodeDoc(selectedNode.type)}</p>
 					{/if}
 					{#if selectedNode.type === 'slider'}
 						<label class="flex items-center justify-between gap-2">Min
@@ -2061,14 +2062,14 @@
 										items[i] = e.currentTarget.value;
 										setNodeData(selectedNode.id, { items });
 									}} />
-								<button class="rounded-sm bg-gray-600 px-1.5 hover:bg-red-700" title="Remove item"
+								<button class="rounded-sm bg-surface-active px-1.5 hover:bg-danger hover:text-on-danger" title="Remove item"
 									onclick={() => {
 										const items = (selectedNode.data?.items ?? ['cube', 'pyramid']).filter((_: any, x: number) => x !== i);
 										if (items.length) setNodeData(selectedNode.id, { items, index: 0, shape: items[0] });
 									}}>✕</button>
 							</div>
 						{/each}
-						<button id="param-switcher-add" class="rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500"
+						<button id="param-switcher-add" class="rounded-sm bg-surface-active px-2 py-1 hover:bg-border-strong"
 							onclick={() => {
 								const items = [...(selectedNode.data?.items ?? ['cube', 'pyramid']), 'item ' + ((selectedNode.data?.items?.length ?? 2) + 1)];
 								setNodeData(selectedNode.id, { items });
@@ -2081,7 +2082,7 @@
 						<NodeProperties node={selectedNode} /><!-- 36: every node's property schema -->
 					{/if}
 				{:else}
-					<p class="text-gray-400">Select a node to edit its parameters.</p>
+					<p class="text-text-muted">Select a node to edit its parameters.</p>
 				{/if}
 			{:else}
 			{#if selectedNode && (isGroup(selectedNode) || isNote(selectedNode))}
@@ -2119,12 +2120,12 @@
 					<input class="ui-input w-16" type="number" min="1" value={gridSize}
 						onchange={(e) => { gridSize = +e.currentTarget.value || 25; LS?.setItem('flowGridSize', String(gridSize)); }} /></label>
 				<div class="mt-1 flex gap-1">
-					<button id="flow-fit" class="rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500" onclick={() => fitView()}>Fit</button>
-					<button id="flow-reset-view" class="rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500" onclick={() => setViewport({ x: 0, y: 0, zoom: 1 })}>Reset view</button>
+					<button id="flow-fit" class="rounded-sm bg-surface-active px-2 py-1 hover:bg-border-strong" onclick={() => fitView()}>Fit</button>
+					<button id="flow-reset-view" class="rounded-sm bg-surface-active px-2 py-1 hover:bg-border-strong" onclick={() => setViewport({ x: 0, y: 0, zoom: 1 })}>Reset view</button>
 				</div>
 				<!-- B4.2: socket type -> color legend (sockets are painted by TYPE now) -->
 				<p class="ui-section-label mt-1">Socket types</p>
-				<div id="socket-legend" class="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-gray-300">
+				<div id="socket-legend" class="flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-text-2">
 					{#each ['number', 'vector3', 'boolean', 'color', 'object', 'event', 'effect'] as t}
 						<span class="flex items-center gap-1">
 							<span class="inline-block h-2 w-2 rounded-full" style="background: {typeColor(t)}"></span>{t}
@@ -2150,7 +2151,7 @@
 	}
 	/* 36 U11: the pane that holds the keyboard says so (a hairline, the accent) */
 	.svelteFlow.tp-has-keys {
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent, #60a5fa) 55%, transparent);
+		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
 	}
 	/* xyflow ships chrome for its own built-in 'group' type (padding, border, a pale fill,
 	   a hover shadow); our group draws its own card, so the wrapper must be bare */

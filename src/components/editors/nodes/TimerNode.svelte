@@ -21,8 +21,8 @@
 		<div class="flex justify-between">
 			<span>delayed</span><span class="font-mono">{typeof live === 'number' ? live.toFixed(2) : '—'}</span>
 		</div>
-		<label class="flex items-center gap-1"><span class="w-12 text-gray-400">delay</span>
+		<label class="flex items-center gap-1"><span class="w-12 text-text-muted">delay</span>
 			<DragRow nodrag step={0.01} decimals={2} min={0} value={data.delay ?? 1} onchange={(/** @type {number} */ v) => setNodeData(id, { delay: v })} />
-			<span class="text-gray-400">s</span></label>
+			<span class="text-text-muted">s</span></label>
 	</div>
 </NodeWrapper>

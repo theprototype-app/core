@@ -3,6 +3,7 @@
 	// plus a shortcut-toggled quick prompt pill. The pill is hidden by default and
 	// opened with the backquote (`) key; submitting from it opens the window. Edits
 	// go out as normal replicated edits from this peer, undoable as one step.
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		aiAssistantHidden,
 		aiPromptBarOpen,
@@ -137,7 +138,7 @@
 			onclose={() => aiAssistantHidden.set('hidden')}
 		/>
 
-		<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+		<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto px-2 py-2" use:minimalScroll>
 			{#if !$aiMessages.length}
 				<EmptyState
 					icon="sparkles"

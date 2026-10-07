@@ -26,6 +26,7 @@
 	//                 an inline search field — the header rankings stay the caller's)
 	//   closeAttrs    on the close button (an id, the tooltip with its shortcut "Close (O)")
 	import Icon from './Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	/** @type {{size?: 'modal'|'panel'|'tool', title?: string, icon?: string, count?: number|string, titleId?: string, onclose?: (() => void) | null, closeLabel?: string, onpin?: (() => void) | null, pinned?: boolean, pinAttrs?: Record<string, any>, onpopout?: (() => void) | null, onback?: (() => void) | null, backLabel?: string, bare?: boolean, headerClass?: string, closeAttrs?: Record<string, any>, heading?: import('svelte').Snippet, body?: boolean, padded?: boolean, elevated?: boolean, headerEl?: HTMLElement | null, headerAttrs?: Record<string, any>, actions?: import('svelte').Snippet, footer?: import('svelte').Snippet, children?: import('svelte').Snippet} & Record<string, any>} */
 	let {
@@ -104,7 +105,7 @@
 		{/if}
 	</header>
 	{#if body}
-		<div class="wc-body" class:wc-padded={padded}>
+		<div class="wc-body" class:wc-padded={padded} use:minimalScroll>
 			{@render children?.()}
 		</div>
 		{#if footer}

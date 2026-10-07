@@ -4,6 +4,7 @@
 	// rank), ↑/↓ to move, Enter to take, Esc to leave. A combobox over a listbox, so a screen
 	// reader hears the highlighted row (aria-activedescendant).
 	import { rankQuick } from '$lib/codeQuick';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	/** @type {{ id: string, placeholder: string, items: {key: string, label: string, detail?: string, mark?: string}[],
 	 *   textOf?: (item: any) => string, onPick: (item: any) => void, onClose: () => void }} */
@@ -59,7 +60,7 @@
 		aria-autocomplete="list"
 		onkeydown={keys}
 	/>
-	<ul id="{id}-list" class="qp-list" role="listbox" bind:this={listEl}>
+	<ul id="{id}-list" class="qp-list" role="listbox" bind:this={listEl} use:minimalScroll>
 		{#each shown as item, i (item.key)}
 			<li
 				id="{id}-opt-{i}"
@@ -99,10 +100,10 @@
 		max-height: min(360px, calc(100% - 12px));
 		transform: translateX(-50%);
 		border-radius: 6px;
-		color: var(--text, #e5e7eb);
-		background: var(--surface, #1f2937);
-		border: 1px solid var(--border, #374151);
-		box-shadow: 0 10px 30px rgb(0 0 0 / 0.4);
+		color: var(--text);
+		background: var(--surface-1);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow-window);
 		font-size: 12px;
 	}
 	.qp-input {
@@ -110,9 +111,9 @@
 		padding: 4px 8px;
 		border-radius: 4px;
 		font-size: 12px;
-		color: var(--text, #e5e7eb);
-		background: var(--field, #111827);
-		border: 1px solid var(--accent-fill, #2563eb);
+		color: var(--text);
+		background: var(--surface-inset);
+		border: 1px solid var(--accent);
 		outline: none;
 		box-shadow: none;
 	}
@@ -121,7 +122,6 @@
 		min-height: 0;
 		overflow: auto;
 		padding-bottom: 4px;
-		scrollbar-width: thin;
 	}
 	.qp-row {
 		display: flex;
@@ -131,13 +131,13 @@
 		cursor: pointer;
 	}
 	.qp-on {
-		color: var(--text, #f3f4f6);
-		background: color-mix(in srgb, var(--accent-fill, #2563eb) 28%, transparent);
+		color: var(--accent-soft-text);
+		background: var(--accent-soft);
 	}
 	.qp-mark {
 		width: 12px;
 		text-align: center;
-		color: var(--icon-accent, #60a5fa);
+		color: var(--icon-accent);
 	}
 	.qp-label {
 		overflow: hidden;
@@ -151,10 +151,10 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		font-size: 11px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.qp-empty {
 		padding: 6px 10px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 </style>

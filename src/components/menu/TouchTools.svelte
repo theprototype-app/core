@@ -178,12 +178,10 @@
 		height: 48px;
 		width: 48px;
 		border-radius: 9999px;
-		border: 1px solid rgb(55 65 81 / 0.6);
-		background: var(--surface, rgb(31 41 55 / 0.9));
-		color: var(--text, rgb(229 231 235));
-		box-shadow:
-			0 10px 15px -3px rgb(0 0 0 / 0.1),
-			0 4px 6px -4px rgb(0 0 0 / 0.1);
+		border: 1px solid var(--border);
+		background: var(--surface-1);
+		color: var(--text);
+		box-shadow: var(--shadow-window);
 		backdrop-filter: blur(4px);
 		transition: transform 0.12s ease;
 	}
@@ -197,9 +195,9 @@
 	   a scoped style beats every utility, which is how the mesh toolbox lost its
 	   armed colour in the dark theme */
 	.tt-on {
-		background: var(--accent, #2563eb);
-		border-color: var(--accent, #2563eb);
-		color: #fff;
+		background: var(--accent-fill);
+		border-color: var(--accent-fill);
+		color: var(--on-accent);
 	}
 
 	/* No width media query on purpose: the stack is decided by MEASUREMENT (see the script).

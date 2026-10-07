@@ -65,9 +65,9 @@
 	<div class="flex w-full flex-col gap-1">
 		{#if data.type === 'gamepadbutton'}
 			<label class="flex w-full flex-col">
-				<span class="text-gray-400">button</span>
+				<span class="text-text-muted">button</span>
 				<select
-					class="nodrag nopan rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
+					class="nodrag nopan rounded-sm border border-border-input bg-transparent px-1 py-0.5 text-xs"
 					value={data.button ?? 'GamepadA'}
 					on:change={(e) => setNodeData(id, { button: e.currentTarget.value })}
 				>
@@ -75,20 +75,20 @@
 				</select>
 			</label>
 			<button
-				class="nodrag nopan w-full rounded-sm border border-gray-600 px-1 py-0.5 text-xs {capturing
-					? 'bg-primary-700 text-white'
+				class="nodrag nopan w-full rounded-sm border border-border-input px-1 py-0.5 text-xs {capturing
+					? 'bg-accent-fill text-on-accent'
 					: ''}"
 				on:click={beginCapture}
 			>
 				{capturing ? 'press a button…' : 'capture'}
 			</button>
 			<label class="flex w-full flex-col">
-				<span class="text-gray-400">edge</span>
+				<span class="text-text-muted">edge</span>
 				<!-- the Key Press vocabulary verbatim: down = the pulse on press (a held button
 				     keeps it high through the re-stamp), up = the falling edge, held = the same
 				     read said as a level -->
 				<select
-					class="nodrag nopan rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
+					class="nodrag nopan rounded-sm border border-border-input bg-transparent px-1 py-0.5 text-xs"
 					value={data.edge ?? 'down'}
 					on:change={(e) => setNodeData(id, { edge: e.currentTarget.value })}
 				>
@@ -96,7 +96,7 @@
 				</select>
 			</label>
 			<label class="flex w-full flex-col">
-				<span class="text-gray-400">pulse (s)</span>
+				<span class="text-text-muted">pulse (s)</span>
 				<DragRow
 					nodrag
 					step={0.01}
@@ -106,25 +106,25 @@
 					onchange={(v: number) => setNodeData(id, { pulse: v })}
 				/>
 			</label>
-			<p class="text-[10px] text-gray-400">
+			<p class="text-[10px] text-text-muted">
 				presses replicate as trigger stamps, like a key
 			</p>
 		{:else}
 			<label class="flex w-full flex-col">
-				<span class="text-gray-400">axis</span>
+				<span class="text-text-muted">axis</span>
 				<select
-					class="nodrag nopan rounded-sm border border-gray-600 bg-transparent px-1 py-0.5 text-xs"
+					class="nodrag nopan rounded-sm border border-border-input bg-transparent px-1 py-0.5 text-xs"
 					value={data.axis ?? 'lx'}
 					on:change={(e) => setNodeData(id, { axis: e.currentTarget.value })}
 				>
 					{#each GAMEPAD_AXES as axis (axis)}<option value={axis}>{axis}</option>{/each}
 				</select>
 			</label>
-			<span class="rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300"
+			<span class="rounded-sm bg-surface-inset px-1.5 py-0.5 font-mono text-[11px] text-accent-text"
 				>{live.toFixed(2)}</span
 			>
 			<label class="flex w-full flex-col">
-				<span class="text-gray-400">deadzone</span>
+				<span class="text-text-muted">deadzone</span>
 				<DragRow
 					nodrag
 					step={0.01}
@@ -136,7 +136,7 @@
 				/>
 			</label>
 			<label class="flex w-full flex-col">
-				<span class="text-gray-400">scale</span>
+				<span class="text-text-muted">scale</span>
 				<DragRow
 					nodrag
 					step={0.1}
@@ -152,18 +152,18 @@
 					checked={!!data.invert}
 					on:change={(e) => setNodeData(id, { invert: e.currentTarget.checked })}
 				/>
-				<span class="text-gray-400">invert</span>
+				<span class="text-text-muted">invert</span>
 			</label>
 			<!-- SAY IT ON THE CARD. A stick is local hardware, so every peer evaluates this
 			     node against ITS OWN pad and gets a different number — that is the design
 			     (never stream local state), but without the notice it gets filed as a sync
 			     bug. A shared axis goes through the controller/possess authority instead. -->
-			<p class="text-[10px] text-gray-400">
+			<p class="text-[10px] text-text-muted">
 				local to this player — peers do not see this value
 			</p>
 		{/if}
 		{#if !pad}
-			<p class="text-[10px] text-amber-400">no gamepad detected</p>
+			<p class="text-[10px] text-ink-warn">no gamepad detected</p>
 		{/if}
 	</div>
 </NodeWrapper>

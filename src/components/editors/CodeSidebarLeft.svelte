@@ -10,6 +10,7 @@
 	import { codeLeftSplit } from '$lib/codeSidebars';
 	import { projectTree, filterTree, keyOfTab, moduleLeaf } from '$lib/codeProject';
 	import { dragReorder } from '$lib/dragReorder';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { arrowNav } from '$lib/arrowNav';
 	import { flowGraphs } from '../../stores/flowStore';
 	import { objectsGroup } from '../../stores/sceneStore';
@@ -220,6 +221,7 @@
 		<div
 			id="code-ws-open-editors"
 			class="cs-scroll"
+			use:minimalScroll
 			role="group"
 			aria-label="Open editors"
 			use:dragReorder={{ axis: 'y', item: '[data-open-tab]', idAttr: 'data-open-tab', onMove: moveCodeTab, handleIgnore: '.cs-act' }}
@@ -265,6 +267,7 @@
 		<div
 			id="code-ws-project"
 			class="cs-scroll"
+			use:minimalScroll
 			role="tree"
 			tabindex="-1"
 			aria-label="Project scripts"
@@ -283,9 +286,9 @@
 		min-height: 0;
 		height: 100%;
 		font-size: 11px;
-		color: var(--text, #e5e7eb);
-		background: var(--surface-deep, #111827);
-		border-right: 1px solid var(--border, rgb(55 65 81 / 0.6));
+		color: var(--text);
+		background: var(--bg-app);
+		border-right: 1px solid var(--border);
 		user-select: none;
 	}
 	.cs-section {
@@ -307,24 +310,22 @@
 		font-weight: 600;
 		letter-spacing: 0.04em;
 		text-transform: uppercase;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.cs-scroll {
 		flex: 1;
 		min-height: 0;
 		overflow: auto;
-		scrollbar-width: thin;
-		scrollbar-color: var(--scrollbar-thumb, #4b5563) transparent;
 	}
 	.cs-split {
 		flex-shrink: 0;
 		height: 5px;
 		cursor: ns-resize;
 		touch-action: none;
-		border-top: 1px solid var(--border, rgb(55 65 81 / 0.6));
+		border-top: 1px solid var(--border);
 	}
 	.cs-split:hover {
-		background: color-mix(in srgb, var(--accent-fill, #2563eb) 40%, transparent);
+		background: color-mix(in srgb, var(--accent) 40%, transparent);
 	}
 	.cs-search {
 		display: flex;
@@ -333,16 +334,16 @@
 		margin: 0 6px 4px;
 		padding: 0 6px;
 		border-radius: 4px;
-		color: var(--muted, #9ca3af);
-		background: var(--field, #1f2937);
-		border: 1px solid var(--border, #374151);
+		color: var(--text-muted);
+		background: var(--surface-inset);
+		border: 1px solid var(--border);
 	}
 	.cs-search input {
 		flex: 1;
 		min-width: 0;
 		padding: 2px 0;
 		font-size: 11px;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 		background: transparent;
 		border: none;
 		outline: none;
@@ -360,12 +361,12 @@
 		color: inherit;
 	}
 	.cs-group {
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 		font-weight: 600;
 	}
 	.cs-row:hover,
 	.cs-leaf-wrap:hover {
-		background: var(--hover, rgb(55 65 81 / 0.5));
+		background: var(--surface-hover);
 	}
 	.cs-leaf-wrap {
 		display: flex;
@@ -379,9 +380,9 @@
 		padding-left: 8px;
 	}
 	.cs-on {
-		color: var(--text, #f3f4f6);
-		background: color-mix(in srgb, var(--accent-fill, #2563eb) 22%, transparent);
-		box-shadow: inset 2px 0 0 var(--accent-fill, #2563eb);
+		color: var(--accent-soft-text);
+		background: var(--accent-soft);
+		box-shadow: inset 2px 0 0 var(--accent);
 	}
 	.cs-name {
 		overflow: hidden;
@@ -394,12 +395,12 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		font-size: 10px;
 	}
 	.cs-count {
 		margin-left: auto;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		font-weight: 400;
 	}
 	.cs-act {
@@ -411,7 +412,7 @@
 		height: 18px;
 		margin-right: 3px;
 		border-radius: 3px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.cs-leaf-wrap:hover .cs-act,
 	.cs-on .cs-act,
@@ -419,11 +420,11 @@
 		display: inline-flex;
 	}
 	.cs-act:hover {
-		color: var(--text, #f3f4f6);
-		background: var(--surface-3, #4b5563);
+		color: var(--text);
+		background: var(--surface-active);
 	}
 	.cs-dirty {
-		color: var(--ink-warn, #fbbf24);
+		color: var(--ink-warn);
 	}
 	.cs-bad {
 		display: inline-flex;
@@ -434,21 +435,21 @@
 		border-radius: 9999px;
 		font-size: 9px;
 		font-weight: 700;
-		color: var(--on-accent, #fff);
-		background: var(--ink-bad, #f87171);
+		color: var(--on-danger);
+		background: var(--danger);
 	}
 	.cs-empty {
 		padding: 6px 10px;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	/* drag to reorder (dragReorder.js): the dragged row fades, the gap shows as a line */
 	.cs-open:global([data-dragging]) {
 		opacity: 0.45;
 	}
 	.cs-open:global([data-drop='before']) {
-		box-shadow: inset 0 2px 0 var(--accent-fill, #2563eb);
+		box-shadow: inset 0 2px 0 var(--accent);
 	}
 	.cs-open:global([data-drop='after']) {
-		box-shadow: inset 0 -2px 0 var(--accent-fill, #2563eb);
+		box-shadow: inset 0 -2px 0 var(--accent);
 	}
 </style>

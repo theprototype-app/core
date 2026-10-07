@@ -11,6 +11,7 @@
 	// never in the editor.
 	import { tick } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { isLocked, isVRMode, editorMode } from '../../stores/sceneStore';
 	import { hudDocs } from '$lib/hudDocs';
 	import {
@@ -130,7 +131,7 @@
 
 {#if open}
 	<div id="game-shell-menu" class="gs-backdrop" data-page={page}>
-		<div class="gs-card" bind:this={card} role="dialog" aria-label={shellPageTitle(page)}>
+		<div class="gs-card" bind:this={card} use:minimalScroll role="dialog" aria-label={shellPageTitle(page)}>
 			<header class="gs-head">
 				{#if page !== 'main'}
 					<button type="button" class="gs-back" aria-label="Back" onclick={() => runShellItem('back')}>
@@ -286,13 +287,13 @@
 		gap: 6px;
 		padding: 6px 12px 6px 10px;
 		border-radius: 9999px;
-		background: rgba(17, 24, 39, 0.82);
-		color: #f3f4f6;
-		border: 1px solid rgba(255, 255, 255, 0.16);
+		background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+		color: var(--text);
+		border: 1px solid var(--border-strong);
 		font-size: 13px;
 		font-weight: 600;
 		pointer-events: auto;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+		box-shadow: var(--shadow-window);
 	}
 	.gs-corner-play {
 		top: 16px;
@@ -303,7 +304,7 @@
 		font-size: 10px;
 		padding: 1px 5px;
 		border-radius: 4px;
-		background: rgba(255, 255, 255, 0.12);
+		background: var(--surface-active);
 		font-family: inherit;
 	}
 	.gs-backdrop {
@@ -314,7 +315,7 @@
 		align-items: center;
 		justify-content: center;
 		padding: 16px;
-		background: rgba(3, 7, 18, 0.55);
+		background: var(--scrim);
 		backdrop-filter: blur(2px);
 	}
 	.gs-card {
@@ -323,10 +324,10 @@
 		overflow-y: auto;
 		padding: 20px 22px 22px;
 		border-radius: 16px;
-		background: var(--surface, #111827);
-		color: var(--icon-strong, #f3f4f6);
-		border: 1px solid rgba(255, 255, 255, 0.12);
-		box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+		background: var(--surface-1);
+		color: var(--text);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow-window);
 	}
 	.gs-card:has(.gs-levels),
 	.gs-card:has(.gs-settings) {
@@ -362,7 +363,7 @@
 		width: 34px;
 		height: 34px;
 		border-radius: 9999px;
-		background: rgba(255, 255, 255, 0.08);
+		background: var(--surface-2);
 	}
 	.gs-list {
 		display: flex;
@@ -372,7 +373,7 @@
 	.gs-item {
 		padding: 12px 16px;
 		border-radius: 10px;
-		background: rgba(255, 255, 255, 0.07);
+		background: var(--surface-2);
 		font-size: 16px;
 		font-weight: 600;
 		text-align: center;
@@ -384,17 +385,17 @@
 	.gs-tab:focus-visible,
 	.gs-level:hover:not(:disabled),
 	.gs-level:focus-visible {
-		border-color: #5fd0ff;
+		border-color: var(--accent);
 		outline: none;
-		background: rgba(95, 208, 255, 0.12);
+		background: var(--accent-soft);
 	}
 	.gs-primary {
-		background: var(--accent, #ef562f);
-		color: #fff;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.gs-primary:hover,
 	.gs-primary:focus-visible {
-		background: var(--accent, #ef562f);
+		background: var(--accent-fill);
 		filter: brightness(1.08);
 	}
 	.gs-quiet {
@@ -421,13 +422,13 @@
 		min-height: 40px;
 		padding: 6px 12px;
 		border-radius: 10px;
-		background: rgba(255, 255, 255, 0.07);
+		background: var(--surface-2);
 		border: 1px solid transparent;
 		font-weight: 600;
 	}
 	.gs-tab-on {
-		background: var(--accent, #ef562f);
-		color: #fff;
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.gs-levels {
 		display: grid;
@@ -443,7 +444,7 @@
 		min-height: 72px;
 		padding: 8px;
 		border-radius: 10px;
-		background: rgba(255, 255, 255, 0.07);
+		background: var(--surface-2);
 		border: 1px solid transparent;
 		font-weight: 600;
 	}
@@ -452,7 +453,7 @@
 		cursor: not-allowed;
 	}
 	.gs-level-current {
-		border-color: var(--accent, #ef562f);
+		border-color: var(--accent);
 	}
 	.gs-level-sub {
 		display: inline-flex;
@@ -463,7 +464,7 @@
 		opacity: 0.85;
 	}
 	.gs-stars {
-		color: #fbbf24;
+		color: var(--ink-warn);
 	}
 	.gs-settings {
 		display: flex;
@@ -487,10 +488,10 @@
 		border-radius: 8px;
 	}
 	.gs-row:hover {
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--surface-hover);
 	}
 	.gs-row-game .gs-row-label {
-		color: #fde68a;
+		color: var(--ink-warn);
 	}
 	.gs-range {
 		display: inline-flex;
@@ -517,7 +518,7 @@
 		align-items: center;
 		justify-content: center;
 		border-radius: 8px;
-		background: rgba(255, 255, 255, 0.08);
+		background: var(--surface-2);
 	}
 	.gs-choice-value {
 		min-width: 8.5em;
@@ -529,6 +530,6 @@
 	}
 	.gs-help hr {
 		margin: 10px 0;
-		border-color: rgba(255, 255, 255, 0.12);
+		border-color: var(--border);
 	}
 </style>

@@ -121,7 +121,7 @@
 						</div>
 					{/each}
 					<button
-						class="ui-chip shrink-0 px-1 text-text-2 hover:text-[var(--ink-bad,#f87171)]"
+						class="ui-chip shrink-0 px-1 text-text-2 hover:text-ink-bad"
 						title="Remove this point"
 						aria-label={'Remove point ' + (i + 1)}
 						disabled={f.points.length <= 2}
@@ -130,7 +130,7 @@
 				</div>
 			{/each}
 			<div class="ui-row items-center gap-2">
-				<button id="flow-path-add-point" class="ui-chip bg-gray-600 text-text-2 hover:bg-gray-500" disabled={f.points.length >= MAX_FLOW_POINTS} onclick={addPoint}
+				<button id="flow-path-add-point" class="ui-chip bg-surface-active text-text-2 hover:bg-surface-hover" disabled={f.points.length >= MAX_FLOW_POINTS} onclick={addPoint}
 					>Add point</button
 				>
 				{#if splines.length}

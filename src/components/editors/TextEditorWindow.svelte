@@ -86,22 +86,22 @@
 
 		<!-- 219: in-window unsaved-changes dialog (was a toast) -->
 		{#if showSavePrompt}
-			<div class="absolute inset-0 z-10 flex items-center justify-center bg-black/50">
+			<div class="absolute inset-0 z-10 flex items-center justify-center bg-scrim">
 				<div class="ui-panel w-72 rounded-lg p-4 text-sm shadow-2xl">
-					<p class="mb-3 font-semibold text-gray-100">Save changes to {$textEditorTarget.title}?</p>
-					<p class="mb-4 text-xs text-gray-400">Your edits will be lost if you don't save them.</p>
+					<p class="mb-3 font-semibold text-text">Save changes to {$textEditorTarget.title}?</p>
+					<p class="mb-4 text-xs text-text-muted">Your edits will be lost if you don't save them.</p>
 					<div class="flex justify-end gap-2">
 						<button
 							id="text-editor-cancel"
 							class="ui-button-quiet"
 							onclick={() => (showSavePrompt = false)}>Cancel</button
 						>
-						<button id="text-editor-discard" class="ui-button-quiet text-red-300" onclick={close}
+						<button id="text-editor-discard" class="ui-button-quiet text-warn-text" onclick={close}
 							>Don't save</button
 						>
 						<button
 							id="text-editor-savenclose"
-							class="ui-button-quiet bg-primary-700 text-white"
+							class="ui-button-quiet bg-accent-fill text-on-accent"
 							onclick={() => {
 								save();
 								close();

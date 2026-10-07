@@ -13,7 +13,7 @@
 :root {
 	/* the glass every HUD container floats on: the window surface, slightly see-through */
 	--hud-glass: color-mix(in srgb, var(--surface-1) 88%, transparent);
-	--hud-shadow: 0 6px 18px rgb(0 0 0 / 0.22);
+	--hud-shadow: var(--shadow-window);
 	--hud-cell: 38px; /* toolbar cells */
 	--hud-icon-button: 34px; /* top-right / Connect icon buttons */
 	--hud-fab: 44px; /* the corner buttons (already a touch size) */
@@ -127,8 +127,8 @@
 	padding: 0 4px;
 	box-sizing: border-box;
 	border-radius: var(--radius-pill);
-	background: var(--accent-fill, var(--accent));
-	color: var(--on-accent, #fff);
+	background: var(--accent-fill);
+	color: var(--on-accent);
 	font: 600 10px/16px var(--font-ui-mono);
 	text-align: center;
 	box-shadow: 0 0 0 2px var(--surface-1);

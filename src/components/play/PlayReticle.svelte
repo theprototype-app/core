@@ -70,8 +70,8 @@
 		width: 4px;
 		height: 4px;
 		border-radius: 9999px;
-		background: var(--icon-strong, #e5e7eb);
-		box-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+		background: var(--text);
+		box-shadow: 0 0 2px color-mix(in srgb, var(--bg-app) 90%, transparent);
 		transition:
 			width 90ms ease,
 			height 90ms ease,
@@ -82,23 +82,23 @@
 		width: 16px;
 		height: 16px;
 		background: transparent;
-		border: 2px solid var(--icon-accent, var(--accent, #38bdf8));
+		border: 2px solid var(--icon-accent);
 	}
 	.reticle.carrying {
-		border-color: var(--icon-strong, #e5e7eb);
+		border-color: var(--text);
 	}
 	/* 31-towers P1: grabbable, but out of reach — a smaller, dashed, warm ring */
 	.reticle.toofar {
 		width: 12px;
 		height: 12px;
 		background: transparent;
-		border: 2px dashed var(--icon-warning, #f59e0b);
+		border: 2px dashed var(--icon-warning);
 		opacity: 0.85;
 	}
 	.reticle-note {
 		font-size: 11px;
-		color: var(--icon-strong, #e5e7eb);
-		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+		color: var(--text);
+		text-shadow: 0 1px 2px color-mix(in srgb, var(--bg-app) 90%, transparent);
 	}
 	.hint {
 		opacity: 0.75;

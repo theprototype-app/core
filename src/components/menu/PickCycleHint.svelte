@@ -38,18 +38,18 @@
 		border-radius: 8px;
 		font-size: 11.5px;
 		line-height: 1.3;
-		background: var(--surface, #1f2937);
-		color: var(--text, #e5e7eb);
-		border: 1px solid var(--border, #4b5563);
-		box-shadow: 0 6px 16px rgb(0 0 0 / 0.3);
+		background: var(--surface-1);
+		color: var(--text);
+		border: 1px solid var(--border);
+		box-shadow: var(--shadow-window);
 	}
 	.pick-cycle-hint.picked {
-		border-color: var(--accent, #60a5fa);
+		border-color: var(--accent);
 	}
 	.pick-cycle-count {
 		font-weight: 650;
 		font-variant-numeric: tabular-nums;
-		color: var(--accent, #60a5fa);
+		color: var(--accent-text);
 		white-space: nowrap;
 	}
 	.pick-cycle-name {
@@ -58,7 +58,7 @@
 		white-space: nowrap;
 	}
 	.pick-cycle-key {
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		white-space: nowrap;
 	}
 	.sr-only {

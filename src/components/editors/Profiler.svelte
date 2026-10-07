@@ -39,6 +39,7 @@
 	} from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { safeStorage } from '$lib/safeStorage';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		perfState,
 		startRecording,
@@ -689,7 +690,7 @@
 
 {#snippet body()}
 	<div class="pf-body" class:pf-dropping={dropping} use:fileDrop>
-		<aside class="pf-side">
+		<aside class="pf-side" use:minimalScroll>
 			<ProfilerRecordings
 				{rows}
 				live={$liveSources}
@@ -800,7 +801,7 @@
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue hover:bg-primary-600/30 absolute -top-1 right-0 left-0 z-30 h-2 cursor-ns-resize"
+				class="resize-cue hover:bg-accent/30 absolute -top-1 right-0 left-0 z-30 h-2 cursor-ns-resize"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -869,7 +870,7 @@
 			</WindowChrome>
 			{#if myGroup}
 				<div
-					class="flex shrink-0 flex-wrap items-center gap-1 border-b border-gray-700/60 px-2 py-1"
+					class="flex shrink-0 flex-wrap items-center gap-1 border-b border-border px-2 py-1"
 				>
 					{@render controls()}
 				</div>
@@ -879,7 +880,7 @@
 			</div>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue absolute right-0 bottom-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+				class="resize-cue absolute right-0 bottom-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-border-strong/40"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startWinResize}
@@ -901,7 +902,7 @@
 		border-radius: 4px;
 	}
 	.pf-dropping {
-		outline: 2px dashed var(--accent, #3b82f6);
+		outline: 2px dashed var(--accent);
 		outline-offset: -2px;
 	}
 	.pf-side {
@@ -1001,11 +1002,10 @@
 		}
 	}
 	.pf-on {
-		background: var(--accent-fill, #2563eb);
-		color: var(--on-accent, #fff);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
-	/* 36 U1: `ui-panel` is `@apply bg-gray-800`, which no theme remap reaches — the floating
-	   window owns its surface like the toolbox shell does */
+	/* 36 U1: the floating window owns its surface like the toolbox shell does (tp-themed) */
 	.pf-surface {
 		background: var(--tp-surface);
 		color: var(--tp-ink);

@@ -15,6 +15,7 @@
 	// THREE trees are not reactive, so the rows list `objectsGroup` as a dependency —
 	// without it a rename or a delete leaves a stale name in the tree.
 	import Icon from '../ui/Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { objectsGroup, selectedObjects } from '../../stores/sceneStore';
 	import { applySelectionSet, deselectObject } from '$lib/objectActions';
 
@@ -101,7 +102,7 @@
 		<span class="gt-count">{rows.length + (sceneNodes ? 1 : 0)}</span>
 	</button>
 	{#if open}
-		<div class="gt-body" role="tree" aria-label={label} style="max-height: {treeH}px">
+		<div class="gt-body" use:minimalScroll role="tree" aria-label={label} style="max-height: {treeH}px">
 			<!-- Scene is ALWAYS the root, whether or not it owns a document: it is where a
 			     deselect takes you, so it must be reachable even when empty -->
 			<button
@@ -156,7 +157,7 @@
 
 <style>
 	.gt-wrap {
-		border-bottom: 1px solid var(--border, rgb(75 85 99 / 0.5));
+		border-bottom: 1px solid var(--border);
 		flex: 0 0 auto;
 	}
 	.gt-head {
@@ -169,26 +170,29 @@
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		/* 36 U1: theme tokens with the dark-authored fallbacks (dark defines none) */
-		color: var(--muted, rgb(156 163 175));
+		/* 38 R11: semantic tokens, defined in every theme */
+		color: var(--text-muted);
 	}
 	.gt-head:hover {
-		color: var(--text, rgb(229 231 235));
+		color: var(--text);
 	}
 	.gt-body {
 		/* bounded by the grip's height (inline), so a scene with fifty flows can never
 		   push the palette off the pane */
 		overflow-y: auto;
+		/* the minimal-scroll thumb is placed against this box; the inline max-height is
+		   re-rendered, so `relative` lives here rather than in the action's inline style */
+		position: relative;
 	}
 	.gt-grip {
 		height: 6px;
 		cursor: ns-resize;
-		border-top: 1px solid var(--border, rgb(75 85 99 / 0.6));
-		background: var(--surface-2, rgb(31 41 55 / 0.4));
+		border-top: 1px solid var(--border);
+		background: var(--surface-2);
 	}
 	.gt-grip:hover,
 	.gt-grip-on {
-		background: var(--accent, rgb(29 78 216 / 0.4));
+		background: color-mix(in srgb, var(--accent) 40%, transparent);
 	}
 	.gt-row {
 		display: flex;
@@ -197,18 +201,18 @@
 		width: 100%;
 		padding: 2px 6px;
 		font-size: 11px;
-		color: var(--text-2, rgb(209 213 219));
+		color: var(--text-2);
 		min-width: 0;
 	}
 	.gt-row:hover:not(:disabled) {
-		background: var(--hover, rgb(55 65 81 / 0.7));
+		background: var(--surface-hover);
 	}
 	.gt-child {
 		padding-left: 20px;
 	}
 	.gt-active {
-		background: color-mix(in srgb, var(--accent, rgb(37 99 235)) 25%, transparent);
-		color: var(--text, #fff);
+		background: var(--accent-soft);
+		color: var(--accent-soft-text);
 	}
 	.gt-missing {
 		opacity: 0.45;
@@ -216,16 +220,16 @@
 	}
 	.gt-ico {
 		display: inline-flex;
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 	}
 	.gt-count {
 		font-size: 9px;
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 		font-variant-numeric: tabular-nums;
 	}
 	.gt-empty {
 		padding: 4px 8px 6px 20px;
 		font-size: 10px;
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 	}
 </style>

@@ -5,6 +5,7 @@
 	// FIRST and then runs the command, so a command that opens a modal never fights it.
 	// ↑/↓ move, Enter runs, Esc (or a click outside) closes. Built fresh on every open, so a
 	// shortcut rebound or a tool that is unavailable right now is always current.
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { tick } from 'svelte';
 	import { commandPaletteOpen } from '../../stores/appStore';
 	import { buildCommands } from '$lib/commandPalette';
@@ -89,7 +90,7 @@
 			/>
 			<kbd class="cp-kbd">Esc</kbd>
 		</div>
-		<div id="command-palette-list" class="cp-list" role="listbox" bind:this={list}>
+		<div id="command-palette-list" class="cp-list" role="listbox" bind:this={list} use:minimalScroll>
 			{#each results as cmd, i (cmd.id)}
 				<button
 					type="button"
@@ -182,8 +183,6 @@
 	.cp-list {
 		overflow-y: auto;
 		padding: 6px;
-		scrollbar-width: thin;
-		scrollbar-color: var(--border-strong) transparent;
 	}
 	.cp-item {
 		display: flex;

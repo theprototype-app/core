@@ -24,6 +24,7 @@
 	} from '$lib/annotationsHandler';
 	import { objectsGroup } from '../../stores/sceneStore.js';
 	import { safeStorage } from '$lib/safeStorage';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	// One bottom sheet at a time on narrow: opening scene notes closes the object/scene
 	// settings sheet (they'd otherwise stack at the bottom).
@@ -166,7 +167,7 @@
 				</button>
 			{/snippet}
 		</WindowChrome>
-		<div class="notes-body min-h-0 flex-1 overflow-y-auto p-2">
+		<div class="notes-body min-h-0 flex-1 overflow-y-auto p-2" use:minimalScroll>
 			{#if !$annotations.length}
 				<EmptyState
 					icon="sticky-note"
@@ -384,7 +385,7 @@
 		padding: 0 0.2rem;
 		font-size: 9px;
 		font-weight: 700;
-		color: #1c1917;
+		color: #1c1917; /* tokens-ok: ink on the USER's note colour (data swatch, same in every theme; the pins' contrastOn dark ink) */
 	}
 	/* description rides the same line, grey and single-line truncated */
 	.notes-desc {

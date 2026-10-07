@@ -44,24 +44,26 @@
 	let at = $state(/** @type {{x: number, top: number|null, bottom: number|null}|null} */ (null));
 
 	const text = $derived(String(value ?? ""));
+	const TOKEN_FALLBACK = '#888'; // tokens-ok: a theme-token chip's literal fallback (HudElement's rule for authored names)
+	const VALUE_EXAMPLE = '#f3f4f6 or accent'; // tokens-ok: placeholder TEXT showing an example value, not a paint
 	/** a literal (#hex / rgb() / a CSS keyword) is used as authored; a bare word is a
 	 * token name, resolved through the theme with a fallback (HudElement's own rule) */
 	const isLiteral = $derived(text.startsWith("#") || text.startsWith("rgb"));
-	const swatchPaint = $derived(!text ? "" : isLiteral ? text : `var(--${text}, #888)`);
+	const swatchPaint = $derived(!text ? "" : isLiteral ? text : `var(--${text}, #888)`); // tokens-ok: preview of the AUTHORED token name, with HudElement's literal fallback (game data)
 	// the picker needs a real colour. A token has no hex until the theme resolves it, so
 	// it seeds from the RESOLVED value rather than from the token name.
 	const seedHex = $derived(isLiteral && text.startsWith("#") ? text : resolvedHex());
 
 	function resolvedHex() {
-		if (typeof window === 'undefined') return '#f3f4f6';
+		if (typeof window === 'undefined') return '#f3f4f6'; // tokens-ok: the colour picker's starting value (user data)
 		try {
 			const probe = swatchEl && getComputedStyle(swatchEl).backgroundColor;
 			const m = probe && probe.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-			if (!m) return "#f3f4f6";
+			if (!m) return "#f3f4f6"; // tokens-ok: the colour picker's starting value (user data)
 			const hex = (/** @type {string} */ n) => Number(n).toString(16).padStart(2, "0");
 			return "#" + hex(m[1]) + hex(m[2]) + hex(m[3]);
 		} catch {
-			return "#f3f4f6";
+			return "#f3f4f6"; // tokens-ok: the colour picker's starting value (user data)
 		}
 	}
 
@@ -185,7 +187,7 @@
 			></button>
 			<input
 				class="hud-input"
-				placeholder="#f3f4f6 or accent"
+				placeholder={VALUE_EXAMPLE}
 				value={text}
 				onchange={(/** @type {any} */ e) => onchange(e.currentTarget.value)}
 			/>
@@ -211,8 +213,8 @@
 			isOpen={true}
 			sliderDirection="horizontal"
 			--picker-indicator-size="18px"
-			--cp-bg-color="#1f2937"
-			--cp-border-color="#353f4e"
+			--cp-bg-color="var(--surface-1)"
+			--cp-border-color="var(--border)"
 			--picker-height="70px"
 			--picker-width="50px"
 			--slider-width="10px"
@@ -235,7 +237,7 @@
 					data-hud-token={token}
 					title={token}
 					aria-label="Use the {token} theme token"
-					style="background: var(--{token}, #888)"
+					style="background: var(--{token}, {TOKEN_FALLBACK})"
 					onclick={() => onchange(token)}
 				></button>
 			{/each}
@@ -355,7 +357,7 @@
 		min-width: 0;
 		flex: 1;
 		border-radius: 0.2rem;
-		background: rgb(17 24 39 / 0.6);
+		background: var(--surface-inset);
 		padding: 0.1rem 0.3rem;
 		font-size: 11px;
 	}
@@ -374,7 +376,7 @@
 		height: 12px;
 		width: 12px;
 		flex-shrink: 0;
-		border: 1px solid rgb(75 85 99 / 0.8);
+		border: 1px solid var(--border-strong);
 		border-radius: 2px;
 	}
 	/* 21-E1.6: the swatch is the picker's opener now, so it is always there — a colour
@@ -384,11 +386,11 @@
 		padding: 0;
 	}
 	.hud-swatch-btn:hover {
-		border-color: var(--accent, #ef562f);
+		border-color: var(--accent);
 	}
 	.hud-swatch-empty {
 		border-style: dashed;
-		background-image: linear-gradient(135deg, transparent 45%, rgb(148 163 184 / 0.7) 45% 55%, transparent 55%);
+		background-image: linear-gradient(135deg, transparent 45%, var(--text-faint) 45% 55%, transparent 55%);
 	}
 	/* portaled to body, so it clears the dock and any transformed ancestor */
 	.hud-cp {
@@ -398,11 +400,11 @@
 		width: 232px;
 		flex-direction: column;
 		gap: 4px;
-		border: 1px solid rgba(255, 255, 255, 0.14);
+		border: 1px solid var(--border);
 		border-radius: 7px;
-		background: var(--surface, #1f2937);
+		background: var(--surface-1);
 		padding: 7px 7px 6px;
-		box-shadow: 0 12px 30px rgb(0 0 0 / 0.55);
+		box-shadow: var(--shadow-window);
 	}
 	.hud-cp-head {
 		font-size: 10px;
@@ -418,12 +420,12 @@
 	.hud-cp-chip {
 		height: 18px;
 		width: 18px;
-		border: 1px solid rgb(75 85 99 / 0.8);
+		border: 1px solid var(--border-strong);
 		border-radius: 3px;
 	}
 	.hud-cp-chip:hover,
 	.hud-cp-chip-on {
-		border-color: var(--accent, #ef562f);
+		border-color: var(--accent);
 	}
 	.hud-cp-note {
 		font-size: 10px;
@@ -437,11 +439,11 @@
 	}
 	.hud-cp-cmd {
 		border-radius: 3px;
-		background: rgb(55 65 81 / 0.6);
+		background: var(--surface-2);
 		padding: 1px 7px;
 		font-size: 11px;
 	}
 	.hud-cp-cmd:hover {
-		background: rgb(75 85 99 / 0.85);
+		background: var(--surface-active);
 	}
 </style>

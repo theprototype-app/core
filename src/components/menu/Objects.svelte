@@ -19,7 +19,6 @@
     /** @type {any} the row's own element, for the keyboard scroll-follow */
     let rowEl = $state(null);
     import { getContext } from 'svelte';
-    import { Tooltip } from 'flowbite-svelte';
     // recursive tree — svelte 5 self-import replaces the deprecated <svelte:self>
     import Objects from './Objects.svelte';
 
@@ -305,11 +304,10 @@
 
             <!-- quick actions: appear on hover; lock badge when held by a peer -->
             {#if lockEntry}
-                <span class="flex shrink-0 items-center gap-1 pr-1">
+                <span class="flex shrink-0 items-center gap-1 pr-1" title="Locked by {nameOf(lockEntry[0])} — right-click to request control">
                     <span class="h-2 w-2 rounded-full" style={'background:' + peerColor(lockEntry[0])}></span>
                     <Icon name="lock" size={16} class="obj-ico" aria-hidden="true" />
                 </span>
-                <Tooltip placement='left' arrow={false}>Locked by {nameOf(lockEntry[0])} — right-click to request control</Tooltip>
             {:else}
                 <span class="row-actions hidden shrink-0 items-center gap-1.5 pr-1 group-hover/row:flex">
                     <button

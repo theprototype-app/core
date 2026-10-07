@@ -34,7 +34,7 @@ const cardStates = (page) =>
 				id: el.dataset.cardId,
 				name: (el.textContent || '').trim(),
 				picked: cls.includes('explorer-selected'),
-				anchor: cls.includes('bg-primary-600/10')
+				anchor: cls.includes('bg-accent-soft')
 			});
 		}
 		return rows;

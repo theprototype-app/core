@@ -821,7 +821,7 @@
 				: o.param && $optionsFocus === o.op
 					? 'tbx-sel'
 					: !o.oneShot && o.op === $faceEditOp
-						? 'tbx-on bg-primary-600 text-white'
+						? 'tbx-on bg-accent-fill text-on-accent'
 						: ''}"
 			class:mesh-op-active={!o.oneShot && o.op === $faceEditOp}
 			class:tbx-flash={flashOp === o.op}
@@ -843,7 +843,7 @@
 {#snippet proportionalBtn()}
 	<button
 		id="mesh-proportional"
-		class="tbx-btn {$proportionalEdit ? 'tbx-on bg-primary-600 text-white' : ''}"
+		class="tbx-btn {$proportionalEdit ? 'tbx-on bg-accent-fill text-on-accent' : ''}"
 		aria-pressed={$proportionalEdit}
 		aria-label="Proportional editing"
 		title="Proportional editing — drag a vertex, edge or face and its neighbourhood follows, weighted by distance (radius below). For smooth bulges and dips instead of a crease."
@@ -932,14 +932,14 @@
 
 		<!-- 18-C1: element MODE is the toolbox's primary navigation, so it reads as
 		     a TAB BAR pinned under the header rather than one control among the
-		     rows. The active tab keeps the literal `bg-primary-600` (e2e contract +
-		     the theme remap) alongside the `tbx-tab-on` marker the shell paints. -->
+		     rows. The active tab keeps the literal `bg-accent-fill` (e2e contract)
+		     alongside the `tbx-tab-on` marker the shell paints. -->
 		{#snippet tabs()}
 			<button
 				id="mesh-mode-vertices"
 				role="tab"
 				aria-selected={mode === 'vertices'}
-				class="tbx-tab {mode === 'vertices' ? 'tbx-tab-on bg-primary-600 text-white' : ''}"
+				class="tbx-tab {mode === 'vertices' ? 'tbx-tab-on bg-accent-fill text-on-accent' : ''}"
 				title="Vertices (1) — drag single points"
 				onclick={() => setMode('vertices')}>Vertices</button
 			>
@@ -947,7 +947,7 @@
 				id="mesh-mode-edges"
 				role="tab"
 				aria-selected={mode === 'edges'}
-				class="tbx-tab {mode === 'edges' ? 'tbx-tab-on bg-primary-600 text-white' : ''}"
+				class="tbx-tab {mode === 'edges' ? 'tbx-tab-on bg-accent-fill text-on-accent' : ''}"
 				title="Edges (2) — loops, rings, bevel and dissolve act on them"
 				onclick={() => setMode('edges')}>Edges</button
 			>
@@ -955,7 +955,7 @@
 				id="mesh-mode-faces"
 				role="tab"
 				aria-selected={mode === 'faces'}
-				class="tbx-tab {mode === 'faces' ? 'tbx-tab-on bg-primary-600 text-white' : ''}"
+				class="tbx-tab {mode === 'faces' ? 'tbx-tab-on bg-accent-fill text-on-accent' : ''}"
 				title="Faces (3) — extrude, inset, bridge and the rest"
 				onclick={() => setMode('faces')}>Faces</button
 			>
@@ -963,7 +963,7 @@
 
 		{#if confirmCancel}
 			<div id="mesh-cancel-confirm" class="tbx-row text-xs">
-				<span class="text-gray-200">Revert all mesh edits?</span>
+				<span class="text-text-2">Revert all mesh edits?</span>
 				<button id="mesh-cancel-yes" class="tbx-cmd tbx-danger" onclick={doCancel}>Revert</button>
 				<button id="mesh-cancel-no" class="tbx-cmd" onclick={() => (confirmCancel = false)}>Keep</button>
 			</div>
@@ -980,7 +980,7 @@
 					{#each GRANULARITIES as g (g.value)}
 						<button
 							id={`mesh-gran-${g.value}`}
-							class="px-2 py-0.5 {$faceEditGranularity === g.value ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+							class="px-2 py-0.5 {$faceEditGranularity === g.value ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-hover'}"
 							title={g.title}
 							onclick={() => setFaceGranularity(/** @type {any} */ (g.value))}>{g.label}</button
 						>
@@ -1009,7 +1009,7 @@
 			<span class="tbx-label">Tools</span>
 			<button
 				id="edge-move"
-				class="tbx-btn {$faceEditOp === 'move' ? 'tbx-on bg-primary-600 text-white' : ''}"
+				class="tbx-btn {$faceEditOp === 'move' ? 'tbx-on bg-accent-fill text-on-accent' : ''}"
 				aria-label="Move edges with the gizmo"
 				title="Move — seat the gizmo on the selected edges (X runs along the edge, Z out of the surface). The welded neighbours stretch with it."
 				onclick={() => setFaceOp('move')}
@@ -1108,7 +1108,7 @@
 			<span class="tbx-label">Tools</span>
 			<button
 				id="mesh-weld"
-				class="tbx-btn {$vertexSelectionSize >= 2 ? 'tbx-on bg-primary-600 text-white' : 'tbx-disabled'}"
+				class="tbx-btn {$vertexSelectionSize >= 2 ? 'tbx-on bg-accent-fill text-on-accent' : 'tbx-disabled'}"
 				aria-label="Weld the selected vertices"
 				title="Weld (W) — merge the selected vertices into one (Ctrl+click adds)"
 				onclick={weld}><Icon name="tool:weld" size={20} /></button
@@ -1116,7 +1116,7 @@
 			<button
 				id="mesh-create-face"
 				class="tbx-btn {$vertexSelectionSize >= 3 && $vertexSelectionSize <= 4
-					? 'tbx-on bg-primary-600 text-white'
+					? 'tbx-on bg-accent-fill text-on-accent'
 					: 'tbx-disabled'}"
 				aria-label="Create a face from the selected vertices"
 				title="Create face — select 3-4 vertices (Ctrl+click adds) first"
@@ -1167,7 +1167,7 @@
 			{@render proportionalBtn()}
 			<button
 				id="mesh-slide"
-				class="tbx-btn {$vertexSlide ? 'tbx-on bg-primary-600 text-white' : ''} {$vertexSelectionSize === 1
+				class="tbx-btn {$vertexSlide ? 'tbx-on bg-accent-fill text-on-accent' : ''} {$vertexSelectionSize === 1
 					? ''
 					: 'tbx-disabled'}"
 				aria-pressed={$vertexSlide}
@@ -1232,7 +1232,7 @@
 			<div class="tbx-row" id="mesh-gizmo-row">
 				<button
 					id="mesh-gizmo-toggle"
-					class="tbx-btn {$meshGizmoEnabled ? 'tbx-on bg-primary-600 text-white' : ''}"
+					class="tbx-btn {$meshGizmoEnabled ? 'tbx-on bg-accent-fill text-on-accent' : ''}"
 					aria-pressed={$meshGizmoEnabled}
 					aria-label="Show the transform gizmo"
 					title={$meshGizmoEnabled
@@ -1248,13 +1248,13 @@
 				>
 					<button
 						id="mesh-space-local"
-						class="px-2 py-0.5 {$faceGizmoSpace === 'local' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+						class="px-2 py-0.5 {$faceGizmoSpace === 'local' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-hover'}"
 						disabled={!$meshGizmoEnabled}
 						onclick={() => faceGizmoSpace.set('local')}>Local</button
 					>
 					<button
 						id="mesh-space-world"
-						class="px-2 py-0.5 {$faceGizmoSpace === 'world' ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+						class="px-2 py-0.5 {$faceGizmoSpace === 'world' ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-hover'}"
 						disabled={!$meshGizmoEnabled}
 						onclick={() => faceGizmoSpace.set('world')}>World</button
 					>
@@ -1306,7 +1306,7 @@
 					onchange={(v) => snapSettings.update((s) => ({ ...s, rotateDeg: v || s.rotateDeg }))}
 				/>
 			</div>
-			<div id="mesh-snap-note" class="tbx-row text-[10px] italic text-gray-400">
+			<div id="mesh-snap-note" class="tbx-row text-[10px] italic text-text-muted">
 				App-wide — the same setting as Configure Scene ▸ Snapping.
 			</div>
 			<!-- PIVOT: where the gizmo sits, and what rotate/scale turn around. Without
@@ -1325,7 +1325,7 @@
 				>
 				<button
 					id="mesh-pivot-pick"
-					class="tbx-cmd {$meshPivotPicking ? 'tbx-on bg-primary-600 text-white' : ''}"
+					class="tbx-cmd {$meshPivotPicking ? 'tbx-on bg-accent-fill text-on-accent' : ''}"
 					aria-pressed={$meshPivotPicking}
 					title="Click a point on the mesh to place the pivot (a nearby vertex wins; Esc cancels)"
 					onclick={() => ($meshPivotPicking ? cancelMeshPivotPick() : startMeshPivotPick())}
@@ -1333,7 +1333,7 @@
 				>
 				<button
 					id="mesh-pivot-move"
-					class="tbx-cmd {$meshPivotMoving ? 'tbx-on bg-primary-600 text-white' : ''}"
+					class="tbx-cmd {$meshPivotMoving ? 'tbx-on bg-accent-fill text-on-accent' : ''}"
 					aria-pressed={$meshPivotMoving}
 					title="Drag the transform gizmo to place the pivot — the mesh does not move (Esc leaves)"
 					onclick={() => toggleMeshPivotMove()}>{$meshPivotMoving ? 'Moving…' : 'Move'}</button
@@ -1346,7 +1346,7 @@
 					onclick={() => clearMeshPivot(editedUuid)}>Clear</button
 				>
 			</div>
-			<div id="mesh-pivot-state" class="tbx-row text-[11px] text-gray-400">
+			<div id="mesh-pivot-state" class="tbx-row text-[11px] text-text-muted">
 				{$meshPivotMoving
 					? 'Drag the gizmo to place the pivot — the mesh stays put.'
 					: pivotSet
@@ -1387,7 +1387,7 @@
 					})}><Icon name="tool:shading" size={20} /></button
 			>
 			<!-- the merge threshold sits with its own button now -->
-			<div class="tbx-row text-xs text-gray-300">
+			<div class="tbx-row text-xs text-text-2">
 				<DragRow
 					id="mesh-merge-dist"
 					label="merge dist"
@@ -1405,13 +1405,13 @@
 		</ToolboxSection>
 
 		<ToolboxSection key="symmetry" label="Symmetry" id="mesh-sec-symmetry">
-			<div id="mesh-symmetrize" class="tbx-row text-xs text-gray-300">
+			<div id="mesh-symmetrize" class="tbx-row text-xs text-text-2">
 				<span title="Keep one half and replace the other with its mirror image, across an object-local axis through the origin">mirror</span>
 				<div class="tbx-seg">
 					{#each ['x', 'y', 'z'] as a (a)}
 						<button
 							id={`mesh-sym-${a}`}
-							class="px-2 py-0.5 {$symAxis === a ? 'bg-primary-600 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+							class="px-2 py-0.5 {$symAxis === a ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-hover'}"
 							title={`Mirror across the ${a.toUpperCase()} plane`}
 							onclick={() => symAxis.set(/** @type {'x'|'y'|'z'} */ (a))}>{a.toUpperCase()}</button
 						>
@@ -1482,7 +1482,7 @@
 			>
 			{#if mode === 'vertices'}
 				<!-- vertex HANDLE size is a display preference, not a tool -->
-				<div class="tbx-row text-xs text-gray-300">
+				<div class="tbx-row text-xs text-text-2">
 					<label class="flex items-center gap-1" title="Vertex dot size — a multiplier over the size derived from the object, so it stays sane on a terrain and on a cube">
 						dots
 						<input
@@ -1539,7 +1539,7 @@
 				<!-- E10: Multi button retired — ctrl-click always adds; live counts here -->
 				<span id="mesh-sel-counts" title="Selected faces · triangles (Ctrl+click adds)">
 					{selInfo.faces} face{selInfo.faces === 1 ? '' : 's'} · {selInfo.tris} tri{selInfo.tris === 1 ? '' : 's'}{#if selInfo.loops}<span
-							class={selInfo.loops[0] === selInfo.loops[1] ? '' : 'text-red-400'}
+							class={selInfo.loops[0] === selInfo.loops[1] ? '' : 'text-ink-bad'}
 							title="Boundary edges of the two selected pieces — Bridge needs them EQUAL"
 						>
 							· {selInfo.loops[0]} ↔ {selInfo.loops[1]} edges</span
@@ -1551,7 +1551,7 @@
 			{#if $colliderEditObject}
 				<span
 					id="collider-shell-count"
-					class="text-emerald-300"
+					class="text-ink-good"
 					title="Disconnected shells — each becomes one convex piece"
 					>{shellCount} shell{shellCount === 1 ? '' : 's'}</span
 				>
@@ -1585,18 +1585,18 @@
 					<div
 						class="mt-1.5 mb-0.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider first:mt-0 {section.id ===
 						mode
-							? 'text-primary-300'
-							: 'text-gray-500'}"
+							? 'text-accent-text'
+							: 'text-text-faint'}"
 					>
 						{section.title}
-						{#if section.id === mode}<span class="rounded-sm bg-primary-600 px-1 text-[9px] text-white"
+						{#if section.id === mode}<span class="rounded-sm bg-accent-fill px-1 text-[9px] text-on-accent"
 								>active</span
 							>{/if}
 					</div>
 					{#each section.rows as [keys, what] (keys)}
 						<div class="flex items-baseline justify-between gap-3 py-0.5">
-							<span class="shrink-0 font-mono text-primary-300">{keys}</span>
-							<span class="text-right text-gray-300">{what}</span>
+							<span class="shrink-0 font-mono text-accent-text">{keys}</span>
+							<span class="text-right text-text-2">{what}</span>
 						</div>
 					{/each}
 				{/each}

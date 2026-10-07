@@ -166,7 +166,7 @@
 						{#if row.summary?.fpsP50}· {Math.round(row.summary.fpsP50)} fps{/if}
 						{#if row.summary?.callsP50 !== null && row.summary?.callsP50 !== undefined}· {row
 								.summary.callsP50} calls{/if}
-						{#if row.summary?.stalls}· <span class="text-red-400"
+						{#if row.summary?.stalls}· <span class="text-ink-bad"
 								>{row.summary.stalls} stall{row.summary.stalls === 1 ? '' : 's'}</span
 							>{/if}
 						· {when(row.startedAt)}{#if row.xr}
@@ -316,8 +316,8 @@
 		opacity: 0.4;
 	}
 	.pf-danger {
-		color: #fff;
-		background: #b91c1c;
+		color: var(--on-danger);
+		background: var(--danger);
 	}
 	.pf-ab {
 		font-size: 10px;
@@ -325,8 +325,8 @@
 		border: 1px solid var(--tp-line);
 	}
 	.pf-ab[aria-pressed='true'] {
-		background: var(--accent-fill, #2563eb);
-		color: var(--on-accent, #fff);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.pf-badge {
 		display: inline-block;
@@ -339,7 +339,7 @@
 		color: var(--tp-ink);
 	}
 	.pf-badge-detailed {
-		background: color-mix(in srgb, #a855f7 38%, transparent);
+		background: color-mix(in srgb, var(--icon-image) 38%, transparent);
 	}
 	.pf-live {
 		display: inline-block;

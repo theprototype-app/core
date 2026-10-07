@@ -43,6 +43,7 @@
 	import AudioPlayer from './AudioPlayer.svelte';
 	import AnimationPlayer from './AnimationPlayer.svelte';
 	import { keyOf } from '$lib/keyOf';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	/**
 	 * R22 round 12 — ONE INSTANCE PER OPEN WINDOW. `winId` addresses this window's entry in
@@ -590,7 +591,7 @@
 			-->
 			<span
 				id="preview-place"
-				class="pv-place text-xs text-gray-400"
+				class="pv-place text-xs text-text-muted"
 				style:min-width="{String(place.of ?? 0).length * 2 + 1}ch">{place.at || '–'}/{place.of}</span
 			>
 			<button
@@ -620,7 +621,7 @@
 			>
 			<span class="flex-1"></span>
 			{#if face === 'image' && !hideZoom}
-				<span id="image-zoom" class="text-xs text-gray-400">{Math.round(zoom * 100)}%</span>
+				<span id="image-zoom" class="text-xs text-text-muted">{Math.round(zoom * 100)}%</span>
 				<button class="ui-button-quiet" title="Zoom out" onclick={() => (zoom = clamp(zoom * 0.8))}>−</button>
 				<button class="ui-button-quiet" title="Zoom in" onclick={() => (zoom = clamp(zoom * 1.25))}>＋</button>
 				<button class="ui-button-quiet" title="Reset" onclick={() => ((zoom = 1), (panX = 0), (panY = 0))}>1:1</button>
@@ -648,7 +649,7 @@
 				and every measurement of the thing you opened it to adjust moved with it. It is
 				absolutely positioned over the body now, anchored under the cog.
 			-->
-			<div id="preview-settings" class="pv-settings">
+			<div id="preview-settings" class="pv-settings" use:minimalScroll>
 				<!--
 					R22 round 14: the cog holds settings of TWO scopes now, so it says which is
 					which. Without the headings the same panel silently means "here" for its top
@@ -932,7 +933,7 @@
 		font-variant-numeric: tabular-nums;
 	}
 	.pv-body {
-		background: #0d1117;
+		background: var(--bg-app);
 	}
 	/*
 		R22 rounds 12 and 13 (user): "opacity should show what is behind window, not just make
@@ -959,7 +960,7 @@
 		background: transparent;
 	}
 	.pv-faded .ui-panel-header {
-		background: var(--surface, #1f2937);
+		background: var(--surface-1);
 	}
 	/* the mesh facts, along the VERY bottom (user: the two were swapped) — the reading is
 	   the thing you keep coming back to, so it gets the edge, and the tip sits above it */
@@ -984,7 +985,7 @@
 		font-weight: 600;
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
-		color: var(--text-muted, #9ca3af);
+		color: var(--text-muted);
 		opacity: 0.85;
 	}
 	.pv-scope:first-child {
@@ -996,12 +997,12 @@
 		bottom: 2px;
 		left: 0;
 		right: 0;
-		background: rgb(0 0 0 / 55%);
+		background: color-mix(in srgb, var(--bg-app) 55%, transparent);
 		padding: 2px 6px;
 		text-align: center;
 		font-size: 10px;
 		font-variant-numeric: tabular-nums;
-		color: #d1d5db;
+		color: var(--text-2);
 		pointer-events: none;
 	}
 	/* ...and the gesture hint under it, bottom left. Not a control: the MODEL is the
@@ -1016,7 +1017,7 @@
 		align-items: center;
 		gap: 4px;
 		font-size: 10px;
-		color: var(--muted, #6b7280);
+		color: var(--text-faint);
 		pointer-events: none;
 	}
 	/*
@@ -1042,7 +1043,7 @@
 		opacity: 0.72;
 	}
 	.pv-cog-on {
-		color: var(--accent, #3b82f6);
+		color: var(--accent);
 	}
 	/*
 		R22 round 12: it OVERLAYS the body instead of pushing it down. Absolute against the
@@ -1061,12 +1062,12 @@
 		flex-direction: column;
 		gap: 4px;
 		overflow-y: auto;
-		border: 1px solid var(--border, #374151);
+		border: 1px solid var(--border);
 		border-radius: 4px;
-		background: var(--surface, #1f2937);
+		background: var(--surface-1);
 		padding: 6px 8px;
 		font-size: 11px;
-		box-shadow: 0 6px 18px rgb(0 0 0 / 45%);
+		box-shadow: var(--shadow-window);
 	}
 	.pv-row {
 		display: flex;
@@ -1075,7 +1076,7 @@
 	}
 	.pv-label {
 		flex: 0 0 auto;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 	}
 	.pv-grow {
 		flex: 1;
@@ -1084,7 +1085,7 @@
 		flex: 0 0 34px;
 		text-align: right;
 		font-variant-numeric: tabular-nums;
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 	}
 	.pv-row input[type='range'] {
 		height: 4px;
@@ -1092,7 +1093,7 @@
 		flex: 1;
 		appearance: none;
 		border-radius: 2px;
-		background: #4b5563;
+		background: var(--border-strong);
 		cursor: pointer;
 	}
 	.pv-row input[type='range']::-webkit-slider-thumb {
@@ -1100,10 +1101,10 @@
 		width: 11px;
 		appearance: none;
 		border-radius: 50%;
-		background: var(--accent, #3b82f6);
+		background: var(--accent);
 	}
 	.pv-note {
-		color: var(--muted, #6b7280);
+		color: var(--text-faint);
 	}
 	.pv-video {
 		position: absolute;
@@ -1111,7 +1112,7 @@
 		width: 100%;
 		height: 100%;
 		object-fit: contain;
-		background: var(--surface-2, #000);
+		background: var(--surface-2);
 	}
 	.pv-audio {
 		display: flex;
@@ -1128,7 +1129,7 @@
 		flex: 1;
 		align-items: center;
 		justify-content: center;
-		color: #374151;
+		color: var(--border-strong);
 	}
 	.pv-folder {
 		display: flex;
@@ -1137,10 +1138,10 @@
 		align-items: center;
 		justify-content: center;
 		gap: 8px;
-		color: var(--muted, #6b7280);
+		color: var(--text-faint);
 	}
 	.pv-folder-name {
 		font-size: 12px;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 	}
 </style>

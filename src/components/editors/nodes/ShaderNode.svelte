@@ -29,6 +29,7 @@
 
 	// group accents deliberately echo the node editor's language (flow's Input blue,
 	// Logic teal, Effects purple) so the two editors read as one app
+	/* tokens-ok-begin: node category + socket type hues (graph data, same in every theme) */
 	/** @type {Record<string, string>} */
 	const GROUP_ACCENT = {
 		Input: '#38bdf8',
@@ -38,7 +39,7 @@
 		Utility: '#c084fc',
 		Output: '#fb923c'
 	};
-	const accent = $derived(GROUP_ACCENT[def?.group ?? ''] ?? '#94a3b8');
+	const accent = $derived(GROUP_ACCENT[def?.group ?? ''] ?? 'var(--text-faint)');
 
 	// GLSL type -> socket colour. Distinct per width so a mis-wire is visible before
 	// the coercion silently reinterprets it.
@@ -50,10 +51,11 @@
 		vec4: '#c084fc',
 		sampler2D: '#fbbf24'
 	};
+	/* tokens-ok-end */
 
 	/** @param {any} socket */
 	function socketStyle(socket) {
-		return '--socket-color: ' + (TYPE_COLOUR[socket?.type] ?? '#9ca3af') + '; top: 50%;';
+		return '--socket-color: ' + (TYPE_COLOUR[socket?.type] ?? 'var(--text-muted)') + '; top: 50%;';
 	}
 
 	/** @param {string} name @param {any} value */
@@ -71,11 +73,11 @@
 </script>
 
 <div
-	class="node-card flex h-full flex-col rounded-lg border border-gray-600/70 bg-gray-800/95 text-gray-200 shadow-lg"
+	class="node-card flex h-full flex-col rounded-lg border border-border bg-surface-1/95 text-text-2 shadow-lg"
 	style={`--node-accent: ${accent}; border-top: 2px solid ${accent}`}
 >
 	<div
-		class="flex items-center gap-1.5 rounded-t-md border-b border-gray-700/60 bg-gray-900/50 px-3 py-1.5 font-mono text-xs font-semibold text-gray-100"
+		class="flex items-center gap-1.5 rounded-t-md border-b border-border bg-app/50 px-3 py-1.5 font-mono text-xs font-semibold text-text"
 	>
 		<span class="h-2 w-2 shrink-0 rounded-full" style="background: var(--node-accent)"></span>
 		<span class="overflow-hidden text-ellipsis whitespace-nowrap">
@@ -83,7 +85,7 @@
 		</span>
 	</div>
 
-	<div class="relative flex flex-col gap-1 rounded-b-lg p-3 text-xs text-gray-300">
+	<div class="relative flex flex-col gap-1 rounded-b-lg p-3 text-xs text-text-2">
 		{#each def?.inputs ?? [] as socket (socket.name)}
 			<div class="socket-row relative -mx-3 px-3">
 				<Handle
@@ -170,7 +172,7 @@
 		{/each}
 
 		{#if type === SURFACE_NODE}
-			<p class="mt-1 text-[9px] leading-tight text-gray-500">
+			<p class="mt-1 text-[9px] leading-tight text-text-faint">
 				Unconnected inputs keep the material's own value
 			</p>
 		{/if}
@@ -185,7 +187,7 @@
 	}
 	.socket-label {
 		font-size: 10px;
-		color: #d1d5db;
+		color: var(--text-2);
 	}
 	.shader-param {
 		display: flex;
@@ -203,13 +205,13 @@
 		width: 34px;
 		height: 18px;
 		padding: 0;
-		border: 1px solid rgba(255, 255, 255, 0.15);
+		border: 1px solid var(--border-strong);
 		border-radius: 3px;
 		background: transparent;
 	}
 	:global(.svelte-flow__node.selected) .node-card {
 		border-color: var(--node-accent);
-		box-shadow: 0 0 0 1px var(--node-accent), 0 8px 18px rgb(0 0 0 / 0.45);
+		box-shadow: 0 0 0 1px var(--node-accent), 0 8px 18px color-mix(in srgb, var(--bg-app) 45%, transparent);
 	}
 	:global(.svelte-flow__node.dragging) .node-card {
 		opacity: 0.85;

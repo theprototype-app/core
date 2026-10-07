@@ -8,7 +8,7 @@
 	// here for the tab that edits ONE script node (same element ids, so its suites carry over).
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { Save, RotateCcw, Crosshair, FileCode, Unlink, Link, Copy, Lock, FolderOpen, Braces, PanelLeft, PanelRight } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import CodeEditor from './CodeEditor.svelte';
 	import CodeSidebarLeft from './CodeSidebarLeft.svelte';
 	import CodeSidebarRight from './CodeSidebarRight.svelte';
@@ -512,7 +512,7 @@
 				onkeydown={(e) => e.key === 'Enter' && activeCodeTab.set(tab.id)}
 				onauxclick={(e) => e.button === 1 && requestClose(tab.id)}
 			>
-				{#if tab.readOnly}<Lock size={11} aria-hidden="true" />{/if}
+				{#if tab.readOnly}<Icon name="lock" size={16} aria-hidden="true" />{/if}
 				<span class="code-tab-name">{tab.title}</span>
 				{#if bad}<span class="code-tab-bad" aria-label="has errors">!</span>{/if}
 				{#if dirty}<span class="code-tab-dirty" aria-label="unsaved">●</span>{/if}
@@ -527,7 +527,7 @@
 		id="code-ws-open-graph"
 		class="ui-button-quiet"
 		title="Open the graph the Node editor shows as JSON — edit it and Ctrl+S applies it"
-		onclick={() => openCode({ source: 'graph', ref: { graphId: $activeGraphId } })}><Braces size={14} aria-hidden="true" />Graph JSON</button
+		onclick={() => openCode({ source: 'graph', ref: { graphId: $activeGraphId } })}><Icon name="braces" size={16} aria-hidden="true" />Graph JSON</button
 	>
 {/snippet}
 
@@ -538,40 +538,40 @@
 			<span class="flex-1"></span>
 			{#if active.readOnly && (active.kind === 'node' || active.kind === 'behaviour')}
 				<span id="script-readonly" class="code-muted">a module's code — read-only</span>
-				<button id="script-make-editable" class="ui-button-quiet" title="Copy this code into a script file you own; the node then runs your copy" onclick={() => forkNodeTab(active.id)}><Copy size={14} aria-hidden="true" />Make editable copy</button>
+				<button id="script-make-editable" class="ui-button-quiet" title="Copy this code into a script file you own; the node then runs your copy" onclick={() => forkNodeTab(active.id)}><Icon name="copy" size={16} aria-hidden="true" />Make editable copy</button>
 				{#if bound.length}
-					<button id="code-ws-goto" class="ui-button-quiet" title="Show the node in the Node editor" onclick={openGoto}><Crosshair size={14} aria-hidden="true" />Go to node</button>
+					<button id="code-ws-goto" class="ui-button-quiet" title="Show the node in the Node editor" onclick={openGoto}><Icon name="crosshair" size={16} aria-hidden="true" />Go to node</button>
 				{/if}
 			{:else if active.kind === 'module'}
 				{#if canFork('module') && active.moduleId !== 'core'}
-					<button id="code-ws-fork" class="ui-button-quiet" title="Copy this source into an editable script the scene owns" onclick={() => forkCodeTab(active.id)}><Copy size={14} aria-hidden="true" />Make editable copy</button>
+					<button id="code-ws-fork" class="ui-button-quiet" title="Copy this source into an editable script the scene owns" onclick={() => forkCodeTab(active.id)}><Icon name="copy" size={16} aria-hidden="true" />Make editable copy</button>
 				{/if}
 			{:else}
 				{#if bound.length}
-					<button id="code-ws-goto" class="ui-button-quiet" title={bound.length === 1 ? 'Show the node in the Node editor' : 'Show one of the ' + bound.length + ' nodes that run this'} onclick={openGoto}><Crosshair size={14} aria-hidden="true" />Go to node{bound.length > 1 ? ' (' + bound.length + ')' : ''}</button>
+					<button id="code-ws-goto" class="ui-button-quiet" title={bound.length === 1 ? 'Show the node in the Node editor' : 'Show one of the ' + bound.length + ' nodes that run this'} onclick={openGoto}><Icon name="crosshair" size={16} aria-hidden="true" />Go to node{bound.length > 1 ? ' (' + bound.length + ')' : ''}</button>
 				{/if}
 				{#if active.nodeType}
 					<span id="code-ws-builtin-help" class="code-muted" title="What this code receives and returns">{BUILTIN_CODE[active.nodeType]?.help}</span>
-					<button id="code-ws-engine" class="ui-button-quiet" title="Read the engine code this node steers (read-only)" onclick={() => openEngineSource(active.id)}><FileCode size={14} aria-hidden="true" />Engine source</button>
+					<button id="code-ws-engine" class="ui-button-quiet" title="Read the engine code this node steers (read-only)" onclick={() => openEngineSource(active.id)}><Icon name="file-code" size={16} aria-hidden="true" />Engine source</button>
 				{:else if active.kind === 'node' || active.kind === 'behaviour'}
-					<button id="code-ws-to-file" class="ui-button-quiet" title="Save this code as a .js file in the Explorer; the node then runs that file" onclick={() => convertTabToFile(active.id)}><FileCode size={14} aria-hidden="true" />Save as file</button>
-					<button id="code-ws-bind" class="ui-button-quiet" title="Run a .js file from your Library instead of this inline code" onclick={openBind}><Link size={14} aria-hidden="true" />Use file…</button>
+					<button id="code-ws-to-file" class="ui-button-quiet" title="Save this code as a .js file in the Explorer; the node then runs that file" onclick={() => convertTabToFile(active.id)}><Icon name="file-code" size={16} aria-hidden="true" />Save as file</button>
+					<button id="code-ws-bind" class="ui-button-quiet" title="Run a .js file from your Library instead of this inline code" onclick={openBind}><Icon name="link" size={16} aria-hidden="true" />Use file…</button>
 				{/if}
 				{#if active.kind === 'file'}
 					{#if active.itemId}
-						<button id="code-ws-reveal" class="ui-button-quiet" title="Show this file in the Explorer" onclick={showInExplorer}><FolderOpen size={14} aria-hidden="true" />Explorer</button>
+						<button id="code-ws-reveal" class="ui-button-quiet" title="Show this file in the Explorer" onclick={showInExplorer}><Icon name="folder-open" size={16} aria-hidden="true" />Explorer</button>
 					{/if}
 					{#if active.fromNode || bound.length}
-						<button id="code-ws-unbind" class="ui-button-quiet" title="The node keeps this code inline and forgets the file" onclick={() => unbindTab(active.id)}><Unlink size={14} aria-hidden="true" />Unbind</button>
+						<button id="code-ws-unbind" class="ui-button-quiet" title="The node keeps this code inline and forgets the file" onclick={() => unbindTab(active.id)}><Icon name="unlink" size={16} aria-hidden="true" />Unbind</button>
 					{/if}
 				{/if}
 				{#if active.kind === 'node' || active.kind === 'behaviour'}
 					<label class="code-live" title="Apply inline node edits as you type (otherwise Ctrl+S)"><input id="code-ws-live" type="checkbox" class="tp-check" bind:checked={$codeApplyLive} />Live</label>
 				{/if}
 				{#if active.stale || isDirty(active)}
-					<button id="code-ws-reload" class="ui-button-quiet" title="Throw away your edits and show the source as it is now" onclick={() => reloadCodeTab(active.id)}><RotateCcw size={14} aria-hidden="true" />Revert</button>
+					<button id="code-ws-reload" class="ui-button-quiet" title="Throw away your edits and show the source as it is now" onclick={() => reloadCodeTab(active.id)}><Icon name="rotate-ccw" size={16} aria-hidden="true" />Revert</button>
 				{/if}
-				<button id="code-ws-save" class="ui-button-quiet" class:code-save-armed={isDirty(active)} title={active.kind === 'graph' ? 'Apply the JSON to the graph (Ctrl+S)' : 'Save and reload what runs it (Ctrl+S)'} onclick={save}><Save size={14} aria-hidden="true" />{active.kind === 'graph' ? 'Apply' : 'Save'}</button>
+				<button id="code-ws-save" class="ui-button-quiet" class:code-save-armed={isDirty(active)} title={active.kind === 'graph' ? 'Apply the JSON to the graph (Ctrl+S)' : 'Save and reload what runs it (Ctrl+S)'} onclick={save}><Icon name="save" size={16} aria-hidden="true" />{active.kind === 'graph' ? 'Apply' : 'Save'}</button>
 			{/if}
 			{#if $popOutAvailable}
 				<button id="code-ws-popout" class="ui-button-quiet" title="Open this tab in its own browser window (experimental)" onclick={() => popOutCode(active.id)}>⧉ Window</button>
@@ -671,7 +671,7 @@
 		aria-label={side === 'left' ? 'Toggle the files sidebar' : 'Toggle the tools sidebar'}
 		onclick={() => toggleSide(side)}
 	>
-		{#if side === 'left'}<PanelLeft size={14} aria-hidden="true" />{:else}<PanelRight size={14} aria-hidden="true" />{/if}
+		{#if side === 'left'}<Icon name="panel-left" size={16} aria-hidden="true" />{:else}<Icon name="panel-right" size={16} aria-hidden="true" />{/if}
 	</button>
 {/snippet}
 
@@ -750,8 +750,8 @@
 			<span class="flex-1"></span>
 			{@render openGraph()}
 			{@render sideToggle('right')}
-			<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock into a floating window" onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button>
-			<button id="code-ws-close" class="tp-dock-btn" title="Close the code workspace" aria-label="Close the code workspace" onclick={requestCloseWorkspace}><Icon name="x" size={14} /></button>
+			<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock into a floating window" onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button>
+			<button id="code-ws-close" class="tp-dock-btn" title="Close the code workspace" aria-label="Close the code workspace" onclick={requestCloseWorkspace}><Icon name="x" size={16} /></button>
 		</div>
 		{@render main()}
 	</div>
@@ -788,7 +788,7 @@
 			{#snippet actions()}
 				{@render openGraph()}
 				{@render sideToggle('right')}
-				<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+				<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
 			{/snippet}
 		</WindowChrome>
 		<div class="flex min-h-0 flex-1 flex-col p-1">{@render main()}</div>

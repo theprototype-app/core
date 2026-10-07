@@ -193,7 +193,7 @@
 				class="tp-dock-btn absolute right-2 top-2 z-10"
 				title="Undock into a floating window"
 				aria-label="Undock into a floating window"
-				onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button
+				onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button
 			>
 			<div class="relative" style="height: {$dockHeight - 16}px">
 				<SvelteFlowProvider>
@@ -236,8 +236,8 @@
 				closeAttrs={{ title: 'Close (N)' }}
 			>
 				{#snippet actions()}
-					<button id="flow-add-view" class="wc-act" title="Add a view (Flow Code, Animation, UV editor, Shader editor)" aria-label="Add a view" onclick={openAddMenu}><Icon name="plus" size={14} /></button>
-					<button id="flow-dock" class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+					<button id="flow-add-view" class="wc-act" title="Add a view (Flow Code, Animation, UV editor, Shader editor)" aria-label="Add a view" onclick={openAddMenu}><Icon name="plus" size={16} /></button>
+					<button id="flow-dock" class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
 				{/snippet}
 			</WindowChrome>
 			<div class="relative min-h-0 flex-1">

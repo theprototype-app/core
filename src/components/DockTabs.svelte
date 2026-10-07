@@ -212,7 +212,7 @@
 		class="tab-note dt-btn flex h-5.5 shrink-0 items-center justify-center px-3"
 		title="Add a view (Flow Code, Animation, UV editor, Shader editor, HUD editor, Explorer)"
 		aria-label="Add a view to the dock"
-		onclick={openAdd}><Icon name="plus" size={14} /></button
+		onclick={openAdd}><Icon name="plus" size={16} aria-hidden="true" /></button
 	>
 </div>
 
@@ -223,7 +223,7 @@
 		class="tab-note dt-btn flex h-5.5 items-center justify-center px-3"
 		title="Minimize the dock"
 		aria-label="Minimize the dock"
-		onclick={() => dockMinimized.set(true)}><Icon name="panel-bottom" size={14} /></button
+		onclick={() => dockMinimized.set(true)}><Icon name="panel-bottom" size={16} aria-hidden="true" /></button
 	>
 </div>
 

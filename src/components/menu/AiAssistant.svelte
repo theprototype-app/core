@@ -10,7 +10,7 @@
 		settingsOpen,
 		settingsSection
 	} from '../../stores/appStore';
-		import WindowChrome from '../ui/WindowChrome.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import Button from '../ui/Button.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';

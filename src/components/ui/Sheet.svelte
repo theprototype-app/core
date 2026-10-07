@@ -182,7 +182,7 @@
 					<h2 class="sh-title">{title}</h2>
 					{#if dismissible}
 						<button type="button" class="sh-close" aria-label={`Close ${title}`} onclick={close}>
-							<Icon name="x" size={20} strokeWidth={1.75} />
+							<Icon name="x" size={20} />
 						</button>
 					{/if}
 				</div>

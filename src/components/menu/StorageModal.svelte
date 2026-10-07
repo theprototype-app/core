@@ -19,7 +19,7 @@
 	// asking and it cannot be inferred from a byte count.
 	import { untrack } from 'svelte';
 	import { Modal, Button } from 'flowbite-svelte';
-	import { HardDrive, RefreshCw, Trash2, Info, ChevronRight } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { showConfirm } from '$lib/confirmDialog';
 	import { showToast } from '../../stores/appStore';
 	// 27-H (audit M5): autosave backs its own cadence off when an export gets expensive,
@@ -205,7 +205,7 @@
 		<div class="mb-3">
 			<div class="mb-1 flex flex-wrap items-center gap-2">
 				<span class="flex items-center gap-1.5 text-sm font-semibold text-gray-200">
-					<HardDrive size={16} aria-hidden="true" />
+					<Icon name="hard-drive" size={16} aria-hidden="true" />
 					{#if scan?.estimate}
 						{fmtBytes(scan.estimate.used)} used of {fmtBytes(scan.estimate.quota)} granted
 					{:else}
@@ -219,7 +219,7 @@
 					disabled={$storageScanning || busy}
 					onclick={() => void scanStorage()}
 				>
-					<RefreshCw size={14} class="mr-1" aria-hidden="true" />{$storageScanning ? 'Reading…' : 'Rescan'}
+					<Icon name="refresh-cw" size={16} class="mr-1" aria-hidden="true" />{$storageScanning ? 'Reading…' : 'Rescan'}
 				</Button>
 			</div>
 			{#if scan?.estimate?.quota}
@@ -313,7 +313,7 @@
 							aria-controls={'storage-group-body-' + cat.key}
 							onclick={() => toggleOpen(cat.key)}
 						>
-							<ChevronRight size={12} class="storage-group-chev" aria-hidden="true" />
+							<Icon name="chevron-right" size={16} class="storage-group-chev" aria-hidden="true" />
 							<span class="storage-group-name">{cat.label}</span>
 							<span class="storage-group-count" data-picked={picks}
 								>{cat.rows.length}{#if picks}<span class="storage-group-picked"
@@ -347,7 +347,7 @@
 									-->
 									{#if !row.removable && row.reason}
 										<span class="storage-row-reason"
-											><Info size={12} class="storage-row-reason-icon" aria-hidden="true" />{row.reason}</span
+											><Icon name="info" size={16} class="storage-row-reason-icon" aria-hidden="true" />{row.reason}</span
 										>
 									{/if}
 								</span>
@@ -383,7 +383,7 @@
 				disabled={!pickedRows.length || busy}
 				onclick={reclaim}
 			>
-				<Trash2 size={14} class="mr-1" aria-hidden="true" />{busy ? 'Reclaiming…' : 'Reclaim'}
+				<Icon name="trash-2" size={16} class="mr-1" aria-hidden="true" />{busy ? 'Reclaiming…' : 'Reclaim'}
 			</Button>
 			<Button id="storage-close" size="xs" color="alternative" onclick={() => storageModalOpen.set(false)}>
 				Close

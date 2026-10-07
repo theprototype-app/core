@@ -10,10 +10,7 @@
 	// {zoom, panX, panY} and projects UV space itself. v is UP in UV space and
 	// DOWN in canvas space, so every mapping flips Y.
 	import { onMount, untrack } from 'svelte';
-	import {
-		Brush, Crosshair, Filter, FlipHorizontal, FlipVertical, Grid3x3, ImagePlus, Keyboard,
-		Lasso, Link2, Maximize2, MousePointer2, Plus, RotateCw, SquareDashed, Target
-	} from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { selectedObject, selectedObjects, objectsGroup, globalScene } from '../../stores/sceneStore';
 	import { uvEditorClose, showToast } from '../../stores/appStore.js';
 	import { setObjectTexture, removeObjectTexture, addMaterialSlot } from '$lib/materialsHandler';
@@ -59,10 +56,10 @@
 	]);
 
 	const TOOLS = [
-		{ key: 'select', icon: MousePointer2, title: 'Select (click a vertex; Shift adds)' },
-		{ key: 'box', icon: SquareDashed, title: 'Box select (drag a rectangle; Shift adds)' },
-		{ key: 'lasso', icon: Lasso, title: 'Lasso select (draw around vertices; Shift adds)' },
-		{ key: 'paint', icon: Brush, title: 'Paint on the texture' }
+		{ key: 'select', icon: 'mouse-pointer-2', title: 'Select (click a vertex; Shift adds)' },
+		{ key: 'box', icon: 'square-dashed', title: 'Box select (drag a rectangle; Shift adds)' },
+		{ key: 'lasso', icon: 'lasso', title: 'Lasso select (draw around vertices; Shift adds)' },
+		{ key: 'paint', icon: 'brush', title: 'Paint on the texture' }
 	];
 
 	// The SET decides whether anything is selected ($selectedObject is sticky and
@@ -1602,7 +1599,7 @@
 			disabled={!pickedTris}
 			onclick={() => assignSelectionTo(index)}
 		>
-			<Target size={14} aria-hidden="true" />
+			<Icon name="target" size={16} aria-hidden="true" />
 		</button>
 		<button
 			class="uv-slot-btn"
@@ -1611,7 +1608,7 @@
 			aria-label={material.mapUrl ? 'Replace this image' : 'Add an image'}
 			onclick={() => pickImageFor(index)}
 		>
-			<ImagePlus size={14} aria-hidden="true" />
+			<Icon name="image-plus" size={16} aria-hidden="true" />
 		</button>
 		{#if material.mapUrl}
 			<button
@@ -1638,7 +1635,7 @@
 				<!-- tools: pointer / box / lasso -->
 				<div class="flex shrink-0 items-center gap-0.5">
 					{#each TOOLS as t (t.key)}
-						{@const ToolIcon = t.icon}
+						{@const toolIcon = t.icon}
 						<button
 							class="uv-tool {$uvTool === t.key ? 'uv-tool-active' : ''}"
 							id="uv-tool-{t.key}"
@@ -1647,7 +1644,7 @@
 							aria-pressed={$uvTool === t.key}
 							onclick={() => uvTool.set(t.key)}
 						>
-							<ToolIcon size={15} aria-hidden="true" />
+							<Icon name={toolIcon} size={16} aria-hidden="true" />
 						</button>
 					{/each}
 				</div>
@@ -1659,7 +1656,7 @@
 					aria-pressed={$uvFaceFilter === 'selection'}
 					onclick={() => uvFaceFilter.set($uvFaceFilter === 'selection' ? 'all' : 'selection')}
 				>
-					<Filter size={15} aria-hidden="true" />
+					<Icon name="filter" size={16} aria-hidden="true" />
 				</button>
 				<!-- selection ops: they act on the UV selection, so they live next to the
 				     selection tools rather than in a panel -->
@@ -1687,7 +1684,7 @@
 					aria-pressed={navMode}
 					onclick={() => (navMode ? leaveNav() : navSelect())}
 				>
-					<Keyboard size={15} aria-hidden="true" />
+					<Icon name="keyboard" size={16} aria-hidden="true" />
 				</button>
 				<button
 					class="uv-tool {pivotPlaced ? 'uv-tool-active' : ''}"
@@ -1699,7 +1696,7 @@
 					aria-pressed={!!pivotPlaced}
 					onclick={toggleOrigin}
 				>
-					<Crosshair size={15} aria-hidden="true" />
+					<Icon name="crosshair" size={16} aria-hidden="true" />
 				</button>
 				<div class="flex shrink-0 items-center gap-0.5 border-l border-gray-700/60 pl-1">
 					<button
@@ -1710,19 +1707,19 @@
 						disabled={!editable.ok || !selCluster.length}
 						onclick={selectLinked}
 					>
-						<Link2 size={15} aria-hidden="true" />
+						<Icon name="link-2" size={16} aria-hidden="true" />
 					</button>
 					<button class="uv-tool" id="uv-op-rotate" title="Rotate the selection 90 degrees" aria-label="Rotate the selection 90 degrees" disabled={!canTransform} onclick={rotateSelection}>
-						<RotateCw size={15} aria-hidden="true" />
+						<Icon name="rotate-cw" size={16} aria-hidden="true" />
 					</button>
 					<button class="uv-tool" id="uv-op-flip-u" title="Flip the selection horizontally" aria-label="Flip the selection horizontally" disabled={!canTransform} onclick={flipSelectionU}>
-						<FlipHorizontal size={15} aria-hidden="true" />
+						<Icon name="flip-horizontal" size={16} aria-hidden="true" />
 					</button>
 					<button class="uv-tool" id="uv-op-flip-v" title="Flip the selection vertically" aria-label="Flip the selection vertically" disabled={!canTransform} onclick={flipSelectionV}>
-						<FlipVertical size={15} aria-hidden="true" />
+						<Icon name="flip-vertical" size={16} aria-hidden="true" />
 					</button>
 					<button class="uv-tool" id="uv-op-fit" title="Fit the selection to the 0..1 square (keeps its aspect)" aria-label="Fit the selection to the UV square" disabled={!canTransform} onclick={fitSelection}>
-						<Maximize2 size={15} aria-hidden="true" />
+						<Icon name="maximize-2" size={16} aria-hidden="true" />
 					</button>
 				</div>
 				<!-- unwrap is a destructive whole-mesh action, so it is a labelled menu -->
@@ -1790,7 +1787,7 @@
 					title="Add a material slot (a copy of the last one), then assign faces to it"
 					onclick={addSlot}
 				>
-					<Plus size={13} aria-hidden="true" />
+					<Icon name="plus" size={16} aria-hidden="true" />
 					Add material slot
 				</button>
 				<p class="px-2 pt-1.5 text-[10px] leading-relaxed text-gray-500">
@@ -1949,7 +1946,7 @@
 						aria-pressed={$uvCheckerOn}
 						onclick={() => uvCheckerOn.set(!$uvCheckerOn)}
 					>
-						<Grid3x3 size={14} aria-hidden="true" />
+						<Icon name="grid-3x3" size={16} aria-hidden="true" />
 						<span class="text-[11px]">UV test grid</span>
 					</button>
 					{#if $uvCheckerOn}
@@ -1990,8 +1987,8 @@
 			<div class="flex shrink-0 items-center gap-2 pb-1">
 				<span class="tp-dock-title">UV editor</span>
 				<span class="flex-1"></span>
-				<button class="tp-dock-btn" title="Undock into a floating window" onclick={() => setDocked(false)} aria-label="Undock into a floating window"><Icon name="app-window" size={14} /></button>
-				<button class="tp-dock-btn" title="Close" onclick={() => uvEditorClose.set(true)} aria-label="Close"><Icon name="x" size={14} /></button>
+				<button class="tp-dock-btn" title="Undock into a floating window" onclick={() => setDocked(false)} aria-label="Undock into a floating window"><Icon name="app-window" size={16} /></button>
+				<button class="tp-dock-btn" title="Close" onclick={() => uvEditorClose.set(true)} aria-label="Close"><Icon name="x" size={16} /></button>
 			</div>
 			<div class="flex min-h-0 flex-1 flex-col">
 				{@render body()}
@@ -2025,7 +2022,7 @@
 					<span class="flex-1"></span>
 				{/snippet}
 				{#snippet actions()}
-					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
 				{/snippet}
 			</WindowChrome>
 			<div class="flex min-h-0 flex-1 flex-col">

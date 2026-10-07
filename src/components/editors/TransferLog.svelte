@@ -177,7 +177,7 @@
 		>
 			<Icon
 				name={justDone && pill === 'idle' ? 'check' : ICON[pill]}
-				size={12}
+				size={16}
 				aria-hidden="true"
 			/>
 			{#if label}<span class="tx-label">{label}</span>{/if}
@@ -301,7 +301,7 @@
 										: t.state === 'active'
 											? 'arrow-down-to-line'
 											: 'clock'}
-								size={12}
+								size={16}
 								aria-hidden="true"
 							/>
 						</span>

@@ -162,7 +162,7 @@
 					aria-pressed={$showNotePins}
 					onclick={() => showNotePins.set(!$showNotePins)}
 				>
-					{#if $showNotePins}<Icon name="eye" size={14} />{:else}<Icon name="eye-off" size={14} />{/if}
+					{#if $showNotePins}<Icon name="eye" size={16} aria-hidden="true" />{:else}<Icon name="eye-off" size={16} aria-hidden="true" />{/if}
 				</button>
 			{/snippet}
 		</WindowChrome>
@@ -183,9 +183,9 @@
 								onclick={() => (collapsed = { ...collapsed, [group.label]: !collapsed[group.label] })}
 							>
 								{#if collapsed[group.label]}
-									<Icon name="chevron-right" size={14} />
+									<Icon name="chevron-right" size={16} aria-hidden="true" />
 								{:else}
-									<Icon name="chevron-down" size={14} />
+									<Icon name="chevron-down" size={16} aria-hidden="true" />
 								{/if}
 								<span class="truncate">{group.label}</span>
 								<span class="notes-count">{group.rows.length}</span>
@@ -196,7 +196,7 @@
 								aria-label={'Previous note in ' + group.label}
 								onclick={() => step(group, -1)}
 							>
-								<Icon name="chevron-left" size={14} />
+								<Icon name="chevron-left" size={16} aria-hidden="true" />
 							</button>
 							<button
 								class="notes-icon"
@@ -204,7 +204,7 @@
 								aria-label={'Next note in ' + group.label}
 								onclick={() => step(group, 1)}
 							>
-								<Icon name="chevron-right" size={14} />
+								<Icon name="chevron-right" size={16} aria-hidden="true" />
 							</button>
 						</div>
 						{#if !collapsed[group.label]}
@@ -244,14 +244,14 @@
 												aria-label="Edit note"
 												onclick={() => openAnnotation(row.a.id, 'edit')}
 											>
-												<Icon name="pencil" size={14} />
+												<Icon name="pencil" size={16} aria-hidden="true" />
 											</button>
 											<button
 												class="notes-icon notes-del shrink-0"
 												title="Delete note"
 												aria-label="Delete note"
 												onclick={() => deleteAnnotation(row.a.id)}
-											><Icon name="x" size={14} /></button>
+											><Icon name="x" size={16} /></button>
 										</div>
 									</li>
 								{/each}

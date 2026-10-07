@@ -106,7 +106,7 @@
 			aria-label="Close all tabs in this window"
 			onclick={() => closeGroup(group.active)}
 		>
-			<Icon name="x" size={14} />
+			<Icon name="x" size={16} />
 		</button>
 	</div>
 {/each}

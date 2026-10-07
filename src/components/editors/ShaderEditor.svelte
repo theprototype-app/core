@@ -14,7 +14,7 @@
 	// arrays, not stores, so the two are mirrored both ways behind a re-entrancy guard.
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { Info, Settings, Trash2 } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import {
 		SvelteFlow,
 		Background,
@@ -621,14 +621,14 @@
 			aria-label="Remove this shader graph"
 			onclick={removeGraph}
 		>
-			<Trash2 size={14} aria-hidden="true" />
+			<Icon name="trash-2" size={16} aria-hidden="true" />
 		</button>
 	{/if}
 	<button class="tp-dock-btn"
 		id="shader-close"
 		title="Close"
 		aria-label="Close the shader editor"
-		onclick={() => shaderEditorClose.set(true)}><Icon name="x" size={14} /></button
+		onclick={() => shaderEditorClose.set(true)}><Icon name="x" size={16} /></button
 	>
 {/snippet}
 
@@ -753,14 +753,14 @@
 							class:active={propsTab === 'info'}
 							title="Selected node"
 							aria-label="Selected node properties"
-							onclick={() => (propsTab = 'info')}><Info size={13} aria-hidden="true" /></button
+							onclick={() => (propsTab = 'info')}><Icon name="info" size={16} aria-hidden="true" /></button
 						>
 						<button
 							class:active={propsTab === 'settings'}
 							title="Graph settings"
 							aria-label="Graph settings"
 							onclick={() => (propsTab = 'settings')}
-							><Settings size={13} aria-hidden="true" /></button
+							><Icon name="settings" size={16} aria-hidden="true" /></button
 						>
 					</div>
 
@@ -926,7 +926,7 @@
 					id="shader-undock"
 					title="Undock into a floating window"
 					aria-label="Undock the shader editor"
-					onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button
+					onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button
 				>
 				{@render editorActions()}
 			</div>
@@ -966,7 +966,7 @@
 				<span class="flex-1"></span>
 			{/snippet}
 			{#snippet actions()}
-				<button class="wc-act-text" id="shader-dock" title="Dock to the bottom" aria-label="Dock the shader editor" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+				<button class="wc-act-text" id="shader-dock" title="Dock to the bottom" aria-label="Dock the shader editor" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
 				{@render editorActions()}
 			{/snippet}
 		</WindowChrome>

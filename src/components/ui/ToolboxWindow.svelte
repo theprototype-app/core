@@ -43,7 +43,7 @@
 	//   re-applied it (reported as "the keys window appears in the corner first").
 	//   `style:` writes ONE property via setProperty and leaves the rest alone —
 	//   the pattern Flow.svelte already uses for its width/height.
-	import { GripVertical } from '@lucide/svelte';
+	import Icon from './Icon.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore';
@@ -149,7 +149,7 @@
 		</div>
 	{/if}
 	<div class="toolbox-header move-handle">
-		<GripVertical size={14} aria-hidden="true" />
+		<Icon name="grip-vertical" size={16} aria-hidden="true" />
 		<span class="toolbox-title">{title}</span>
 		<span class="toolbox-spacer"></span>
 		{@render actions?.()}

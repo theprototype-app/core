@@ -9,7 +9,7 @@
 	// things for a button and for a readout:
 	//   * a button  — "On press → Set game state → playing"
 	//   * a readout — "Driven by → Variable “score”"
-	import { Plus, Trash2, ExternalLink } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { flowGraphs } from '../../stores/flowStore';
 	import { focusFlowNode, showToast } from '../../stores/appStore.js';
@@ -80,10 +80,10 @@
 					aria-label="Show in the node editor"
 					onclick={() => focusFlowNode(binding.actionNodeId ?? binding.hudNodeId)}
 				>
-					<ExternalLink size={11} aria-hidden="true" />
+					<Icon name="external-link" size={16} aria-hidden="true" />
 				</button>
 				<button class="ha-btn ha-danger" title="Unbind" aria-label="Unbind" onclick={() => drop(binding)}>
-					<Trash2 size={11} aria-hidden="true" />
+					<Icon name="trash-2" size={16} aria-hidden="true" />
 				</button>
 			</div>
 		{/each}
@@ -100,7 +100,7 @@
 
 {#if groups.length}
 	<button id="hud-add-action" class="ha-add" onclick={openAdd}>
-		<Plus size={12} aria-hidden="true" /> Add action
+		<Icon name="plus" size={16} aria-hidden="true" /> Add action
 	</button>
 {:else}
 	<!-- an explanation, not a dead button: this kind has nothing to offer, and saying which

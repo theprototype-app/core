@@ -1,6 +1,5 @@
 <script lang="ts">
 	import Icon from '../ui/Icon.svelte';
-	import { Save, SquarePen } from '@lucide/svelte';
 	// Floating professional code editor (107): Explorer text files and the
 	// custom-node definition editor share this window. Ctrl+S saves; the title
 	// carries a dirty dot. Esc / ✕ close, prompting to save unsaved edits via an
@@ -65,15 +64,15 @@
 		onkeydown={onKeydown}
 	>
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
-			<span><SquarePen size={16} class="mr-1" aria-hidden="true" />{$textEditorTarget.title}{dirty ? ' ●' : ''}</span>
+			<span><Icon name="square-pen" size={16} class="mr-1" aria-hidden="true" />{$textEditorTarget.title}{dirty ? ' ●' : ''}</span>
 			<span class="flex-1"></span>
 			<button
 				id="text-editor-save"
 				class="ui-button-quiet {dirty ? 'tp-dirty' : ''}"
 				title="Save (Ctrl+S)"
-				onclick={save}><Save size={16} class="mr-1" aria-hidden="true" />Save</button
+				onclick={save}><Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save</button
 			>
-			<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={requestClose}><Icon name="x" size={14} /></button>
+			<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={requestClose}><Icon name="x" size={16} /></button>
 		</div>
 		<div class="min-h-0 flex-1 p-1.5">
 			<CodeEditor

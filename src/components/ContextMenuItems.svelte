@@ -173,7 +173,7 @@
 				{/if}
 			</div>
 			{#if item.header.locked}
-				<div class="ctx-locked"><Icon name="lock" size={11} /> locked by {item.header.locked}</div>
+				<div class="ctx-locked"><Icon name="lock" size={16} /> locked by {item.header.locked}</div>
 			{/if}
 		</div>
 	{:else if item.section}
@@ -196,7 +196,7 @@
 		>
 			<span class="flex items-center gap-2">
 				{#if hasIcons}
-					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={15} />{/if}</span>
+					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={16} />{/if}</span>
 				{/if}
 				<span class="flex-1">{item.label}</span>
 				{#if item.hint}
@@ -242,7 +242,7 @@
 		>
 			<span class="flex items-center gap-2">
 				{#if hasIcons}
-					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={15} />{/if}</span>
+					<span class="ctx-ico">{#if item.icon}<Icon name={item.icon} size={16} />{/if}</span>
 				{/if}
 				<span class="flex-1">{item.label}</span>
 				{#if item.hint}
@@ -259,7 +259,7 @@
 								disabled={act.disabled}
 								on:click|stopPropagation={(e) => runRowAction(act, e.currentTarget)}
 							>
-								<Icon name={act.icon} size={13} />
+								<Icon name={act.icon} size={16} />
 							</button>
 						{/each}
 					</span>

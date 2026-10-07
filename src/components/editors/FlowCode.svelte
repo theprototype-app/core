@@ -220,8 +220,8 @@
 				<span class="tp-dock-title">Flow Code</span>
 				<span class="flex-1"></span>
 				{@render editorActions()}
-				<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock into a floating window" onclick={() => setDocked(false)}><Icon name="app-window" size={14} /></button>
-				<button class="tp-dock-btn" title="Close" aria-label="Close Flow Code" onclick={() => flowCodeClose.set(true)}><Icon name="x" size={14} /></button>
+				<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock into a floating window" onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button>
+				<button class="tp-dock-btn" title="Close" aria-label="Close Flow Code" onclick={() => flowCodeClose.set(true)}><Icon name="x" size={16} /></button>
 			</div>
 			<div class="flex min-h-0 flex-1 flex-col">
 				{@render body()}
@@ -259,7 +259,7 @@
 			>
 				{#snippet actions()}
 					{#if !myGroup}{@render editorActions()}{/if}
-					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={14} />Dock</button>
+					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
 				{/snippet}
 			</WindowChrome>
 			{@render body()}

@@ -7,7 +7,7 @@
 	//
 	// Presentation only: the stream, the document it builds and the bandwidth figure all live
 	// in perf/liveSink.js.
-	import { X, Activity } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { peers, userdata } from '../../stores/appStore';
@@ -119,10 +119,10 @@
 		style="z-index: var(--z-window); width: 420px; height: 520px"
 	>
 		<div class="ui-panel-header move-handle flex shrink-0 cursor-move select-none items-center gap-2 py-1.5">
-			<Activity size={16} aria-hidden="true" />
+			<Icon name="activity" size={16} aria-hidden="true" />
 			<span class="flex-1 text-sm font-semibold">Live profiler</span>
 			<button id="profiler-live-close" class="rounded-sm p-1 hover:brightness-150" title="Close" aria-label="Close live profiler" onclick={() => profilerLiveOpen.set(false)}
-				><X size={16} aria-hidden="true" /></button
+				><Icon name="x" size={16} aria-hidden="true" /></button
 			>
 		</div>
 

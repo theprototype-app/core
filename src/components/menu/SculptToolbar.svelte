@@ -14,9 +14,8 @@
 		exitSculpt,
 		setSculptGizmo
 	} from '$lib/terrainSculpt';
-	import { Check, Move3d } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
-	import ToolIcon from '../ui/ToolIcon.svelte';
 	import { gizmoSuppressed } from '../../stores/sceneStore';
 
 	const OPS = [
@@ -47,7 +46,7 @@
 				class="tbx-hbtn tbx-done"
 				aria-label="Done"
 				title="Finish sculpting (Esc)"
-				onclick={() => exitSculpt()}><Check size={14} aria-hidden="true" /></button
+				onclick={() => exitSculpt()}><Icon name="check" size={16} aria-hidden="true" /></button
 			>
 		{/snippet}
 
@@ -59,7 +58,7 @@
 				class="tbx-btn {o.op === $sculptOp ? 'tbx-on bg-primary-600 text-white' : ''}"
 				aria-label={o.label}
 				title={`${o.label} — ${o.desc}`}
-				onclick={() => sculptOp.set(/** @type {any} */ (o.op))}><ToolIcon name={o.icon} /></button
+				onclick={() => sculptOp.set(/** @type {any} */ (o.op))}><Icon name={'tool:' + o.icon} size={20} /></button
 			>
 		{/each}
 
@@ -105,7 +104,7 @@
 			aria-label="Toggle the move gizmo"
 			aria-pressed={!$gizmoSuppressed}
 			title={$gizmoSuppressed ? 'Show the move gizmo (off to avoid accidental moves)' : 'Hide the move gizmo'}
-			onclick={() => setSculptGizmo($gizmoSuppressed)}><Move3d size={18} aria-hidden="true" /></button
+			onclick={() => setSculptGizmo($gizmoSuppressed)}><Icon name="move-3d" size={20} aria-hidden="true" /></button
 		>
 
 		{#snippet status()}

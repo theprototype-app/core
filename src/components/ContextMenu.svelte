@@ -416,7 +416,7 @@
 	{/if}
 	<!-- always mounted (it owns the keyboard) but collapsed until there's a query -->
 	<div class="ctx-filter" class:on={listMode} role="presentation">
-		<Icon name="search" size={12} />
+		<Icon name="search" size={16} />
 		<input
 			class="ctx-filter-input"
 			type="text"

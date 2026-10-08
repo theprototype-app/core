@@ -59,7 +59,8 @@ export const ingestDrawGap = writable(0);
 
 /**
  * For the chip and the suite.
- * @type {import('svelte/store').Writable<{level: number, max: number, pinned: boolean, labels: string[], reason: string, at: number, snoozedUntil: number}>}
+ * `held` (40 F12): recovery is held at this level because coming back from it flapped.
+ * @type {import('svelte/store').Writable<{level: number, max: number, pinned: boolean, labels: string[], reason: string, at: number, snoozedUntil: number, held: boolean}>}
  */
 export const qualityState = writable({
 	level: 0,
@@ -68,7 +69,8 @@ export const qualityState = writable({
 	labels: /** @type {string[]} */ ([]),
 	reason: '',
 	at: 0,
-	snoozedUntil: 0
+	snoozedUntil: 0,
+	held: false
 });
 
 /** The opt-out. LOCAL preference, default ON. */
@@ -132,7 +134,8 @@ function publish(level, reason) {
 		labels: stepLabelsAt(level),
 		reason,
 		at,
-		snoozedUntil
+		snoozedUntil,
+		held: level > 0 && governor.flapLock() >= level
 	});
 }
 
@@ -189,6 +192,7 @@ export function noteFrameForQuality(ms) {
 		governor.settleFor(t);
 		// 40 F12: a new scene is new evidence — the last scene's flap lock does not carry over
 		governor.clearFlapLock();
+		if (get(qualityState).held) qualityState.update((s) => ({ ...s, held: false }));
 	}
 	governor.noteFrame(ms, t);
 	if (phone) notePhoneFrame(ms);
@@ -348,9 +352,9 @@ export const governorForTest = {
 	longTask(t) {
 		governor.noteLongTask(t);
 	},
-	/** @param {number} level */
-	setLevel(level) {
-		governor.setLevel(level, now());
+	/** @param {number} level @param {number} [t] (40 F12: a synthetic clock, so real frames stay inert) */
+	setLevel(level, t) {
+		governor.setLevel(level, t ?? now());
 		publish(governor.level(), 'test');
 	},
 	reset() {
@@ -364,7 +368,10 @@ export const governorForTest = {
 		ingestDrawGap.set(0);
 		publish(0, 'reset');
 	},
-	level: () => governor.level()
+	level: () => governor.level(),
+	/** 40 F12: the flap lock, and the pre-F12 rule (clear it after every decision) */
+	flapLock: () => governor.flapLock(),
+	clearFlapLock: () => governor.clearFlapLock()
 };
 
 registerFrameObserver(noteFrameForQuality);

@@ -4,8 +4,8 @@
 //      left the Quest tier) — 36-int-124's regression probe as a check;
 //   2. every quality level (pinned through the game-quality seam): a screenshot of both scenes
 //      and a perf row (calls, triangles, p50/p95 at CPU x4) -> PHONE_OUT/perf-phone.md;
-//   3. the one-time "Simplified water" notice: shown when quality takes refraction away, dismiss
-//      works, once per session, never in Play.
+//   3. a game's Quality preset that simplifies the water is not announced (40 F12: the automatic
+//      drops are AutoQualityNotice's, suite auto-quality-notice).
 const h = require('./helpers.cjs');
 const fs = require('fs');
 const path = require('path');
@@ -95,42 +95,19 @@ h.run(async () => {
 		);
 	console.log(rows.join('\n'));
 
-	// ── 3. the one-time notice — on a FRESH page: the level sweep above already used this
-	// session's one notice (correctly), and the component remembers that for the page's life
-	h.check((await A.page.evaluate(() => sessionStorage.getItem('water:simplifiedNoticeSeen'))) === '1', 'the sweep\'s first simplified level used the session\'s notice');
+	// ── 3. 40 F12: the old "Simplified water" strip became AutoQualityNotice (one toast per
+	// automatic drop, suite auto-quality-notice). What stays here: a game's own Quality preset is
+	// an explicit choice, so pinning a level that simplifies the water is NOT announced
 	await A.ctx.close();
-	const B = await h.setupPage(browser, 'phone-notice', { context: PHONE });
-	const A2 = B;
+	const A2 = await h.setupPage(browser, 'phone-notice', { context: PHONE });
 	await load(A2.page, 'aquarium');
 	await A2.page.waitForTimeout(3000);
-	// in Play first: never shown there
-	await A2.page.evaluate(() => {
-		window.__stores.isLocked.set(true);
-		window.__stores.qualityGovernor.applyGameQuality(6, 'test');
-	});
-	await A2.page.waitForTimeout(1500);
-	h.check((await A2.page.$('#simplified-water-notice')) === null, 'no notice while playing');
-	await A2.page.evaluate(() => window.__stores.isLocked.set(null));
-	const note = await A2.page.waitForSelector('#simplified-water-notice', { timeout: 5000 }).catch(() => null);
-	h.check(!!note, 'leaving Play, the notice says the water was simplified');
-	const text = note ? await note.textContent() : '';
-	h.check(/Simplified water for this device/.test(text) && /Water quality/.test(text), `...and where to give refraction back ("${text?.trim()}")`);
-	if (OUT && note)
-		for (const t of ['dark', 'light']) {
-			await A2.page.evaluate((th) => window.__stores.themes.theme.set(th), t);
-			await A2.page.waitForTimeout(300);
-			await A2.page.screenshot({ path: path.join(OUT, `72-phone-simplified-notice-${t}.png`) });
-		}
-	await A2.page.evaluate(() => window.__stores.themes.theme.set('dark'));
-	await A2.page.click('#simplified-water-notice .sw-x').catch(() => {});
-	await A2.page.waitForTimeout(400);
-	h.check((await A2.page.$('#simplified-water-notice')) === null, 'dismiss hides it');
-	// once per session: down to full and back to simplified -> no second notice
-	await A2.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(0, 'test'));
-	await A2.page.waitForTimeout(1000);
 	await A2.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(6, 'test'));
+	await h.eventually(() => state(A2.page), (s) => s.water === 'quest', 'a pinned level 6: the water is simplified', 8000);
 	await A2.page.waitForTimeout(1500);
-	h.check((await A2.page.$('#simplified-water-notice')) === null, 'once per session: it does not come back');
+	h.check((await A2.page.$('#simplified-water-notice')) === null, 'the old strip is gone');
+	h.check(!(await A2.page.evaluate(() => [...document.querySelectorAll('.tp-toast-text')].some((e) => /^Lowered water quality/.test(e.textContent ?? '')))), 'a game preset is not announced as an automatic drop');
+	if (OUT) await A2.page.screenshot({ path: path.join(OUT, '72-phone-game-preset-no-notice.png') });
 	await A2.page.evaluate(() => window.__stores.qualityGovernor.applyGameQuality(null));
 	h.check((await h.pageErrors(A2)).length === 0, 'no page errors');
 	await h.finish(browser);

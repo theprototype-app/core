@@ -610,7 +610,7 @@ h.run(async () => {
 	);
 
 	// undock / redock keeps working
-	await page.click('button[aria-label="Undock the Profiler"]');
+	await page.locator('#dock-undock:visible').click();
 	await page.waitForSelector('#profiler-window', { timeout: 5000 });
 	await shot('7-floating');
 	await page.click('#profiler-window button:text("Dock")');

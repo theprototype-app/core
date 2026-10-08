@@ -87,7 +87,7 @@ h.run(async () => {
 	if (third) {
 		await A.page.evaluate(() => window.__stores.explorerClose.set(false));
 		await A.page.waitForTimeout(600);
-		const undockBtn = A.page.locator('#explorer-undock');
+		const undockBtn = A.page.locator('#dock-undock:visible');
 		if (await undockBtn.count()) {
 			await undockBtn.first().click();
 			await A.page.waitForTimeout(400);

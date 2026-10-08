@@ -105,7 +105,7 @@ h.run(async () => {
 	// 36-code: "Edit code" opens the node's tab in the code workspace (ScriptPanel retired)
 	await A.page.locator('#code-ws-dock .cm-editor, #code-ws-window .cm-editor').first().waitFor({ timeout: 45000 }).catch(() => {});
 	h.check((await A.page.locator('.cm-editor').count()) > 0, 'CodeMirror editor panel mounts');
-	await A.page.locator('#code-ws-close').click();
+	await A.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click();
 	await A.page.locator('p[title="Node editor (N)"]').click();
 
 	await A.page.evaluate(async () => {

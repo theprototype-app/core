@@ -379,7 +379,7 @@ h.run(async () => {
 	// Undock the HUD editor: that is a real floating window at --z-window, and the one
 	// guaranteed to be on screen.
 	await page.evaluate(() => {
-		const btn = document.querySelector('#hud-dock button[title="Undock into a floating window"]');
+		const btn = document.querySelector('#hud-dock #dock-undock');
 		btn?.click();
 	});
 	await page.waitForTimeout(1200);

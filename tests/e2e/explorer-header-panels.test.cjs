@@ -555,7 +555,7 @@ h.run(async () => {
 	// The header exists TWICE -- the bottom dock and the floating window -- so the chip
 	// is one snippet rendered from both. A second call site nobody drives is a second
 	// call site that can quietly be wrong (and it is where duplicate ids would show up).
-	await A.page.locator('#explorer-undock').click();
+	await A.page.locator('#dock-undock:visible').click();
 	await A.page.waitForTimeout(900);
 	const floated = await A.page.evaluate(() => ({
 		windowed: !!document.querySelector('#explorer-window'),

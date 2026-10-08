@@ -30,7 +30,7 @@
 </script>
 
 <div use:portal>
-	<Sheet bind:open title="Windows" detents={['half', 'full']} id="dock-views-sheet" modal>
+	<Sheet bind:open title="Windows" detents={['half', 'full']} id="dock-views-sheet" modal topInset={124}>
 		<ul class="dvs-list" aria-label="Windows">
 			{#each rows as row (row.key)}
 				<li class="dvs-row" data-dock-view={row.key}>
@@ -52,8 +52,16 @@
 </div>
 
 <style>
+	/* NOTES-38 #32 / 40 F1: a sheet ends at the phone bar — Play stays visible and tappable
+	   (the bar's height is the phone shell's --ps-bar-h; 0 when there is no bar) */
+	:global(.sh#dock-views-sheet) {
+		bottom: var(--ps-bar-h, 0px) !important;
+	}
 	.dvs-list {
 		display: grid;
+		/* a track sizes to its widest unwrapped description otherwise, and pushes the switches
+		   off the sheet's right edge */
+		grid-template-columns: minmax(0, 1fr);
 		gap: var(--space-1);
 		margin: 0;
 		padding: 0 var(--space-2) var(--space-4);
@@ -61,6 +69,7 @@
 	}
 	.dvs-row {
 		display: flex;
+		min-width: 0;
 		align-items: center;
 		gap: var(--space-3);
 		min-height: 52px;

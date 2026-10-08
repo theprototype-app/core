@@ -12,11 +12,16 @@
 	const close = () => layoutsMenuOpen.set(false);
 </script>
 
-<!-- Escape on the WINDOW too: a non-modal dialog only hears keys while focus is inside it, and
-     deleting a row unmounts the button that had focus (focus falls to <body>) -->
+<!-- Escape in the window's CAPTURE phase: the dialog autofocuses its name field, and the burger
+     menu's tree it renders in stops keydown on the way up, so neither the dialog's own handler
+     nor a bubbling window listener ever heard it; and deleting a row unmounts the button that
+     had focus (focus falls to <body>), so it must not depend on focus being inside either.
+     A rename field's own Escape (it cancels the rename) is left alone. -->
 <svelte:window
-	onkeydown={(e) => {
-		if ($layoutsMenuOpen && e.key === 'Escape') close();
+	onkeydowncapture={(e) => {
+		if (!$layoutsMenuOpen || e.key !== 'Escape') return;
+		if (/** @type {HTMLElement} */ (e.target)?.classList?.contains('wl-rename')) return;
+		close();
 	}}
 />
 

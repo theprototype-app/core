@@ -239,7 +239,7 @@ const CANDIDATES = [
 	await page.keyboard.insertText(edited);
 	await page.keyboard.press('Control+S');
 	await h.eventually(codeNow, (c) => /name: 'Gentle roll'/.test(c), "Ctrl+S saved the code onto the node (maze 1 is 'Gentle roll')", 6000);
-	await page.locator('#code-ws-close').click().catch(() => {});
+	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
 	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
 	const feel = async (when) => {
 		await page.evaluate(() => window.__stores.isLocked.set(true));

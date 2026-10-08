@@ -100,6 +100,8 @@ registerHistoryKind('material', (entry, state) => {
 	if (entry.param === 'type') {
 		switchMaterialType(entry.uuid, state.value, true);
 	} else if (entry.param === 'map') {
+		// 40-image: an undone/redone texture is no longer known to BE a library image, so it
+		// carries no source — a later image save must not paint over the step it reverted to
 		applyMap(object, state.value, entry.slot ?? 0);
 		broadcast({
 			type: 'objectParameters',
@@ -162,6 +164,9 @@ export function applyMaterials(object, payload, replicate = false) {
 	next.forEach((/** @type {any} */ material, /** @type {number} */ i) => {
 		const url = payload.mapDataUrls?.[i];
 		if (url) material.userData.mapDataUrl = url;
+		// 40-image: and which library image it came from (absent on an older peer's payload)
+		const source = payload.mapSources?.[i];
+		if (source) material.userData.mapSource = source;
 	});
 	object.material = next.length === 1 ? next[0] : next;
 	if (payload.groups && object.geometry) {
@@ -217,6 +222,7 @@ export function materialsPayload(object) {
 		...serialized,
 		// toJSON drops userData.mapDataUrl, and the Inspector/UV sidebar read it
 		mapDataUrls: materials.map((m) => m.userData?.mapDataUrl ?? null),
+		mapSources: materials.map((m) => m.userData?.mapSource ?? null),
 		groups: (object.geometry?.groups ?? []).map((/** @type {any} */ g) => ({
 			start: g.start,
 			count: g.count,
@@ -392,11 +398,19 @@ export function copyTextureParams(from, to) {
  * thumbnail. UV2: `slot` addresses a material ARRAY (an imported .obj/.mtl, a
  * merged mesh); omitted means slot 0, which for a single-material object is
  * exactly the old behaviour — so older peers' slot-less messages still land.
- * @param {any} object @param {string | null} dataURL @param {number} [slot]
+ *
+ * 40-image: `source` is the content HASH of the Explorer image the texture was made from,
+ * kept on `userData.mapSource` so saving that image in the Image editor can find every
+ * material showing it. Any write WITHOUT one (a paint stroke, an undo, a file picked from
+ * disk, an older peer) drops the link: the texture is no longer known to be that image,
+ * and a later save must not paint over it.
+ * @param {any} object @param {string | null} dataURL @param {number} [slot] @param {string | null} [source]
  */
-export function applyMap(object, dataURL, slot = 0) {
+export function applyMap(object, dataURL, slot = 0, source = null) {
 	const material = materialAt(object, slot);
 	if (!material || !('map' in material)) return;
+	if (source && dataURL != null) material.userData.mapSource = String(source);
+	else delete material.userData.mapSource;
 	if (dataURL == null) {
 		material.map?.dispose();
 		material.map = null;
@@ -429,7 +443,7 @@ export function applyMap(object, dataURL, slot = 0) {
 
 /** Downscale an image file to maxSize px and encode as a compact dataURL
  * (exported since 17-D2 — the OBJ/.mtl import path reuses it for its textures)
- * @param {File} file @param {number} maxSize */
+ * @param {File | Blob} file @param {number} maxSize */
 export async function downscaleImage(file, maxSize) {
 	const bitmap = await createImageBitmap(file);
 	const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
@@ -443,6 +457,16 @@ export async function downscaleImage(file, maxSize) {
 }
 
 /**
+ * 40-image (F13, the user's image-large report): the texture is DOWNSCALED to 1024 px
+ * whatever comes in, so refusing a big file at 8 MB refused photos the path was already
+ * built to shrink. The only limit left is a decode-safety one — a file this size is not
+ * an image a phone can decode at all.
+ */
+export const MAX_TEXTURE_SOURCE_BYTES = 64 * 1024 * 1024;
+/** the longest side a texture is stored at (the dataURL rides the wire and every save) */
+export const TEXTURE_MAX_SIDE = 1024;
+
+/**
  * Set one image file as the texture of MANY objects (17-D1) and replicate.
  * The file is decoded and downscaled ONCE and the resulting dataURL applied per
  * uuid — same per-object history entry and `objectParameters` message as the
@@ -451,18 +475,20 @@ export async function downscaleImage(file, maxSize) {
  * unreliable (the third `createImageBitmap` of one picked file can reject).
  * UV2: `slot` picks the material slot, so a multi-material mesh is no longer
  * refused — it used to toast "not supported yet" and skip.
- * @param {string[]} uuids @param {File} file @param {number} [slot]
+ * 40-image: `opts.source` = the content hash of the Explorer image `file` holds (see applyMap).
+ * @param {string[]} uuids @param {File | Blob} file @param {number} [slot] @param {{source?: string | null}} [opts]
  * @returns {Promise<number>} how many were textured
  */
-export async function setObjectsTexture(uuids, file, slot = 0) {
-	if (file.size > 8 * 1024 * 1024) {
-		showToast('Image is too large (max 8 MB)');
+export async function setObjectsTexture(uuids, file, slot = 0, opts = {}) {
+	if (file.size > MAX_TEXTURE_SOURCE_BYTES) {
+		showToast('That image is too big to read (' + Math.round(file.size / 1048576) + ' MB) — save it smaller first');
 		return 0;
 	}
+	const source = opts.source ? String(opts.source) : null;
 	/** @type {string} */
 	let dataURL;
 	try {
-		dataURL = await downscaleImage(file, 1024);
+		dataURL = await downscaleImage(file, TEXTURE_MAX_SIDE);
 	} catch (error) {
 		console.log(error);
 		showToast('Could not read the image file');
@@ -478,13 +504,15 @@ export async function setObjectsTexture(uuids, file, slot = 0) {
 			continue;
 		}
 		recordMaterialChange(uuid, 'map', null, material.userData?.mapDataUrl ?? null, dataURL, slot);
-		applyMap(object, dataURL, slot);
+		applyMap(object, dataURL, slot, source);
 		broadcast({
 			type: 'objectParameters',
 			parameter: 'map',
 			uuid: uuid,
 			map: dataURL,
-			...(slot ? { slot } : {})
+			...(slot ? { slot } : {}),
+			// additive: an older peer ignores it, and a message without it drops the link
+			...(source ? { source } : {})
 		});
 		applied++;
 	}
@@ -493,9 +521,50 @@ export async function setObjectsTexture(uuids, file, slot = 0) {
 }
 
 /** Set an image file as the object's texture and replicate
- * @param {string} uuid @param {File} file @param {number} [slot] */
-export async function setObjectTexture(uuid, file, slot = 0) {
-	await setObjectsTexture([uuid], file, slot);
+ * @param {string} uuid @param {File | Blob} file @param {number} [slot] @param {{source?: string | null}} [opts] */
+export async function setObjectTexture(uuid, file, slot = 0, opts = {}) {
+	await setObjectsTexture([uuid], file, slot, opts);
+}
+
+/**
+ * 40-image: every material slot in the scene whose texture was made from the library image
+ * with this content hash — what a save in the Image editor re-textures.
+ * @param {string} hash @returns {{uuid: string, slot: number}[]}
+ */
+export function texturesFromSource(hash) {
+	const want = String(hash ?? '');
+	/** @type {{uuid: string, slot: number}[]} */
+	const out = [];
+	if (!want) return out;
+	get(objectsGroup)?.traverse?.((/** @type {any} */ node) => {
+		materialsOf(node).forEach((/** @type {any} */ m, /** @type {number} */ slot) => {
+			if (m?.userData?.mapSource === want && m.userData.mapDataUrl) out.push({ uuid: node.uuid, slot });
+		});
+	});
+	return out;
+}
+
+/**
+ * 40-image: name the library image a texture already IS, without re-encoding it (the Image
+ * editor imported a texture that had no source). The texture is unchanged, so no history
+ * entry; the message carries the same pixels plus the link so every peer agrees.
+ * @param {string} uuid @param {number} slot @param {string} hash
+ */
+export function linkTextureSource(uuid, slot, hash) {
+	const object = objectOf(uuid);
+	const material = materialAt(object, slot);
+	const url = material?.userData?.mapDataUrl;
+	if (!material || !url || !hash) return false;
+	material.userData.mapSource = String(hash);
+	broadcast({
+		type: 'objectParameters',
+		parameter: 'map',
+		uuid,
+		map: url,
+		...(slot ? { slot } : {}),
+		source: String(hash)
+	});
+	return true;
 }
 
 /** @param {string} uuid @param {number} [slot] */
@@ -542,6 +611,7 @@ export function switchMaterialType(uuid, type, replicate = true) {
 		if ('map' in fresh && old.map) {
 			fresh.map = old.map;
 			fresh.userData.mapDataUrl = old.userData?.mapDataUrl;
+			if (old.userData?.mapSource) fresh.userData.mapSource = old.userData.mapSource;
 		}
 		fresh.transparent = old.transparent;
 		if ('wireframe' in fresh && old.wireframe !== undefined) fresh.wireframe = old.wireframe;

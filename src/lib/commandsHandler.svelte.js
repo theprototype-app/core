@@ -575,7 +575,8 @@ export async function objectParameters(data) {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         // UV2: `slot` addresses one material of an ARRAY. Absent (an older peer,
         // or any single-material object) means slot 0 = today's behaviour.
-        if (mesh) applyMap(mesh, data.map, data.slot ?? 0);
+        // 40-image: `source` (additive) = the library image the texture was made from
+        if (mesh) applyMap(mesh, data.map, data.slot ?? 0, typeof data.source === 'string' ? data.source : null);
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
     } else if (data.parameter == 'animation') {

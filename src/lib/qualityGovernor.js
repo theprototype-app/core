@@ -187,6 +187,8 @@ export function noteFrameForQuality(ms) {
 	if (wasLoading) {
 		wasLoading = false;
 		governor.settleFor(t);
+		// 40 F12: a new scene is new evidence — the last scene's flap lock does not carry over
+		governor.clearFlapLock();
 	}
 	governor.noteFrame(ms, t);
 	if (phone) notePhoneFrame(ms);
@@ -254,8 +256,23 @@ export function pinQuality() {
 export function releaseQuality() {
 	pinned = false;
 	snoozedUntil = Date.now() + RELEASE_SNOOZE_MS;
+	governor.clearFlapLock();
 	governor.setLevel(0, now());
 	publish(0, 'released');
+}
+
+/** 40 F12 — "Keep full quality" (the auto-quality notice): full quality now and NO automatic
+ * step for the rest of this page session. Not saved — Settings' auto switch stays on, so the
+ * next visit is protected again; turning that switch off and on ends the hold too. */
+export function keepFullQuality() {
+	releaseQuality();
+	snoozedUntil = Infinity;
+	publish(0, 'kept full quality');
+}
+
+/** 40 F12: the level recovery is held at because it flapped there (-1 = none). For the suite. */
+export function qualityFlapLock() {
+	return governor.flapLock();
 }
 
 /** @param {boolean} on */
@@ -273,6 +290,9 @@ autoQuality.subscribe((on) => {
 		return;
 	}
 	safeStorage.setItem('autoQuality', on ? 'true' : 'false');
+	// 40 F12: either way the switch is a fresh start — no flap lock, no "keep full quality" hold
+	governor.clearFlapLock();
+	snoozedUntil = 0;
 	if (!on) {
 		pinned = false;
 		governor.setLevel(0, now());
@@ -338,6 +358,7 @@ export const governorForTest = {
 		snoozedUntil = 0;
 		drawGapEngaged = false;
 		lastDecideAt = 0;
+		governor.clearFlapLock();
 		governor.setLevel(0, -1e9);
 		governor.forget();
 		ingestDrawGap.set(0);

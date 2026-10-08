@@ -67,6 +67,20 @@ export function dropTarget(clientX, clientY) {
 	return { point: planePoint.toArray(), object: null, normal: [0, 1, 0], hit: null };
 }
 
+const _down = new THREE.Raycaster();
+/**
+ * 39 P6: the surface straight BELOW a world point (the camera's focus point is usually in the
+ * air): `{point, normal}` of the first hit going down, else the ground plane, else null.
+ * @param {number[]} at @returns {{point: number[], normal: number[]} | null}
+ */
+export function surfaceBelow(at) {
+	_down.set(new THREE.Vector3(at[0], at[1] + 0.01, at[2]), new THREE.Vector3(0, -1, 0));
+	const hit = sceneHits(_down)[0];
+	if (hit) return { point: hit.point.toArray(), normal: hitWorldNormal(hit)?.toArray() ?? [0, 1, 0] };
+	if (at[1] >= 0) return { point: [at[0], 0, at[2]], normal: [0, 1, 0] };
+	return null;
+}
+
 const _dropUp = new THREE.Vector3(0, 1, 0);
 const _dropNormal = new THREE.Vector3();
 const _dropQuat = new THREE.Quaternion();

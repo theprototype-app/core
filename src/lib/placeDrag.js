@@ -358,7 +358,12 @@ function place(x, y) {
 	/** @type {any} */
 	const controls = get(orbitControls);
 	if (drag.alt && controls?.target) {
-		point = controls.target.clone();
+		// the focus point is usually in the air: drop it onto whatever is below it
+		const below = dropRef.surfaceBelow(controls.target.toArray());
+		if (below) {
+			point = new THREE.Vector3().fromArray(below.point);
+			normal = new THREE.Vector3().fromArray(below.normal).normalize();
+		}
 	} else {
 		const t = dropRef.dropTarget(x, y);
 		if (t.point) {

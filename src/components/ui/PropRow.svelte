@@ -194,4 +194,11 @@
 			font-size: var(--fs-input);
 		}
 	}
+	/* an Inspector row's segmented control keeps the Inspector's 13 px text on a phone too (the
+	   Settings rows take 16 px): three options fit beside a label at 390 px */
+	@media (max-width: 639.98px) {
+		.pr :global(.seg-opt) {
+			font-size: var(--fs-desc);
+		}
+	}
 </style>

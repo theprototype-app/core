@@ -114,7 +114,8 @@
 		padding: 3px 14px;
 		line-height: 1.2;
 		text-align: center;
-		overflow-wrap: anywhere;
+		overflow-wrap: break-word;
+		hyphens: auto; /* a word that must break does so at a syllable, with a hyphen */
 		border: 0;
 		border-radius: var(--radius-input);
 		background: transparent;
@@ -142,7 +143,7 @@
 	@media (max-width: 639.98px) {
 		.seg-opt {
 			min-height: 38px;
-			padding: 3px 10px;
+			padding: 3px 6px;
 			font-size: var(--fs-body);
 		}
 	}

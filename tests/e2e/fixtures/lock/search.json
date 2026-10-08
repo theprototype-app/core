@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-07T14:34:16.872Z",
+	"recordedAt": "2026-10-08T00:15:17.731Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -456,7 +456,8 @@
 			"rows": [
 				"Grab style",
 				"Pivot point",
-				"Rotate"
+				"Rotate",
+				"World grab snapping"
 			],
 			"sections": [
 				"Shortcuts",
@@ -467,7 +468,8 @@
 			"rows": [
 				"Grab style",
 				"Pivot point",
-				"Scale"
+				"Scale",
+				"World grab snapping"
 			],
 			"sections": [
 				"Shortcuts",
@@ -1796,6 +1798,7 @@
 				"Show the Made with ThePrototype badge",
 				"Show the simulation controls",
 				"Simplify distant models",
+				"Sky image quality",
 				"Spatial voice",
 				"Start fullscreen",
 				"Stuck after",
@@ -2215,6 +2218,7 @@
 				"Show helpers in Play",
 				"Show others as classic heads",
 				"Simplify distant models",
+				"Sky image quality",
 				"Theme"
 			],
 			"sections": [
@@ -2363,6 +2367,7 @@
 				"Show grid",
 				"Show the simulation controls",
 				"Simplify distant models",
+				"Sky image quality",
 				"Spatial voice",
 				"Stuck after",
 				"Sync animations",
@@ -2610,7 +2615,8 @@
 			"rows": [
 				"Grab style",
 				"Pivot point",
-				"Rotate"
+				"Rotate",
+				"World grab snapping"
 			],
 			"sections": [
 				"Shortcuts",
@@ -2949,7 +2955,6 @@
 				"Back to the scene's start view",
 				"Bridge (faces)",
 				"Collapse / expand the selected nodes",
-				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",
 				"Copy the selection",
 				"Cut the selection",
@@ -3098,6 +3103,7 @@
 				"Show grid",
 				"Show the simulation controls",
 				"Simplify distant models",
+				"Sky image quality",
 				"Spatial voice",
 				"Stuck after",
 				"Sync animations",
@@ -3118,7 +3124,8 @@
 				"Mirror turn",
 				"Snap angle",
 				"Toggle element snapping (vertex/face/surface targets)",
-				"Turning"
+				"Turning",
+				"World grab snapping"
 			],
 			"sections": [
 				"Shortcuts",
@@ -3177,6 +3184,7 @@
 				"Refresh rate",
 				"Show FPS and draw calls",
 				"Show others as classic heads",
+				"Sky image quality",
 				"Water quality"
 			],
 			"sections": [
@@ -3219,7 +3227,8 @@
 				"Statistics card",
 				"Teleport",
 				"Turning",
-				"Vertex edit limit"
+				"Vertex edit limit",
+				"World grab snapping"
 			],
 			"sections": [
 				"VR"
@@ -3247,6 +3256,7 @@
 				"Session size",
 				"Show others as classic heads",
 				"Signaling server",
+				"Sky image quality",
 				"Statistics card"
 			],
 			"sections": [
@@ -3328,7 +3338,6 @@
 				"Back to the scene's start view",
 				"Bridge (faces)",
 				"Collapse / expand the selected nodes",
-				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",
 				"Copy the selection",
 				"Cut the selection",
@@ -3438,7 +3447,6 @@
 				"Back to the scene's start view",
 				"Bridge (faces)",
 				"Collapse / expand the selected nodes",
-				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",
 				"Copy the selection",
 				"Cut the selection",
@@ -3548,7 +3556,6 @@
 				"Back to the scene's start view",
 				"Bridge (faces)",
 				"Collapse / expand the selected nodes",
-				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",
 				"Copy the selection",
 				"Cut the selection",
@@ -3978,7 +3985,8 @@
 				"Use CDN for packs",
 				"VR welcome tour",
 				"Vertex edit limit",
-				"Voice typing provider"
+				"Voice typing provider",
+				"World grab snapping"
 			],
 			"sections": [
 				"Interface",
@@ -4198,6 +4206,7 @@
 				"Scene track (shared)",
 				"Selection passes through",
 				"Shader materials",
+				"Sky image (HDRI)",
 				"Snap to elements",
 				"Snapping",
 				"Start view",
@@ -4207,11 +4216,18 @@
 			],
 			"environment": [
 				"Components",
-				"Environment"
+				"Environment",
+				"Sky image (HDRI)"
+			],
+			"sky image (hdri)": [
+				"Components",
+				"Environment",
+				"Sky image (HDRI)"
 			],
 			"components": [
 				"Components",
-				"Environment"
+				"Environment",
+				"Sky image (HDRI)"
 			],
 			"music": [
 				"Music",
@@ -4352,7 +4368,8 @@
 			],
 			"color": [
 				"Components",
-				"Environment"
+				"Environment",
+				"Sky image (HDRI)"
 			],
 			"colour": [
 				"Grid",
@@ -4383,12 +4400,14 @@
 				"Components",
 				"Environment",
 				"Overrides — this device",
+				"Sky image (HDRI)",
 				"View",
 				"Viewport — this device"
 			],
 			"sky": [
 				"Components",
-				"Environment"
+				"Environment",
+				"Sky image (HDRI)"
 			],
 			"origin": [
 				"Grid",

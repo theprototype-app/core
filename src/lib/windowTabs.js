@@ -324,6 +324,53 @@ export function headerTargetAt(x, y, excludeKey) {
 	return null;
 }
 
+/**
+ * 40 F10 — the floating window whose BOX (not just its header) is under (x, y), the
+ * topmost one: a docked tab dropped onto or into a floating window joins it as a tab.
+ * Read through `elementFromPoint`, so whatever is in front wins by construction.
+ * @param {number} x @param {number} y @param {string=} excludeKey
+ * @returns {string|null}
+ */
+export function windowAt(x, y, excludeKey) {
+	if (typeof document === 'undefined') return null;
+	const hit = document.elementFromPoint(x, y);
+	if (!hit) return null;
+	for (const [key, entry] of registry) {
+		if (key === excludeKey || entry.node.dataset?.docked) continue;
+		if (entry.node.style.display === 'none') continue;
+		if (entry.node.contains(hit)) return key;
+	}
+	return null;
+}
+
+/**
+ * 40 F8/F10 — "group `addKey` into `targetKey`'s window once both are floating". A docked
+ * view becomes a floating window a frame or two AFTER it is asked to (its component swaps
+ * branches and registers through `tabbable`), so the merge cannot run where the gesture
+ * ends; it waits here and runs as soon as both are registered.
+ * @type {{target: string, add: string, at: number}[]}
+ */
+let pendingMerges = [];
+/** @param {string} targetKey @param {string} addKey */
+export function queueMerge(targetKey, addKey) {
+	if (targetKey === addKey) return;
+	pendingMerges = pendingMerges.filter((m) => m.add !== addKey);
+	pendingMerges.push({ target: targetKey, add: addKey, at: Date.now() });
+	runPendingMerges();
+}
+function runPendingMerges() {
+	const now = Date.now();
+	// a merge whose window never arrived (closed meanwhile) is dropped after 5 s
+	pendingMerges = pendingMerges.filter((m) => now - m.at < 5000);
+	const ready = pendingMerges.filter((m) => registry.has(m.target) && registry.has(m.add));
+	if (!ready.length) return;
+	pendingMerges = pendingMerges.filter((m) => !ready.includes(m));
+	// after layout: the new window has to have a box before the group adopts a rect
+	requestAnimationFrame(() => {
+		for (const m of ready) mergeWindows(m.target, m.add);
+	});
+}
+
 /** @param {string} key */
 export function titleOf(key) {
 	return registry.get(key)?.title ?? key;
@@ -442,6 +489,7 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 	window.addEventListener('pointerup', up);
 
 	tryRestore();
+	runPendingMerges();
 
 	return {
 		destroy() {

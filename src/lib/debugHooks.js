@@ -145,6 +145,7 @@ export const DEBUG_HOOKS = [
 	['avatarModel', () => import('./avatarModel')],
 	['explorer', () => import('./explorer')],
 	['bottomDock', () => import('./bottomDock')],
+	['dockMenu', () => import('./dockMenu')], // 40 F8/F9/F10
 	['explorerDrop', () => import('./explorerDrop')],
 	['assetShare', () => import('./assetShare')],
 	['soundRuntime', () => import('./soundRuntime')],

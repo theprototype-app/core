@@ -1,71 +1,46 @@
 <script>
-	// 37 R14 — the Layouts popover the burger menu opens: the saved layouts + "save the
-	// current layout", without going through Settings. Closes on Escape / an outside press.
-	import Icon from '../ui/Icon.svelte';
+	// 37 R14 — the Layouts dialog the burger menu opens: the saved layouts + "save the current
+	// layout", without going through Settings. Closes on Escape / the ✕ / an outside press.
+	// 40 F11: it was a hand-rolled fixed panel painted with `--surface`, a pre-38 theme variable
+	// most themes no longer define, so it rendered see-through over the scene on the phone AND
+	// desktop (layouts-modal). It is the kit modal now (ui/ModalDialog): the dim, the surface, the
+	// modal header, the full-screen-under-640 treatment — the same box as Sessions or Recording.
+	import ModalDialog from '../ui/ModalDialog.svelte';
 	import WorkspaceLayouts from './WorkspaceLayouts.svelte';
 	import { layoutsMenuOpen } from '$lib/uiLayouts';
 
-	/** @type {HTMLElement|null} */
-	let panel = $state(null);
-
-	/** @param {PointerEvent} e */
-	function outside(e) {
-		if (!$layoutsMenuOpen || !panel) return;
-		if (panel.contains(/** @type {Node} */ (e.target))) return;
-		if (/** @type {HTMLElement} */ (e.target)?.closest?.('#open-layouts')) return;
-		layoutsMenuOpen.set(false);
-	}
+	const close = () => layoutsMenuOpen.set(false);
 </script>
 
+<!-- Escape on the WINDOW too: a non-modal dialog only hears keys while focus is inside it, and
+     deleting a row unmounts the button that had focus (focus falls to <body>) -->
 <svelte:window
-	onpointerdown={outside}
 	onkeydown={(e) => {
-		if ($layoutsMenuOpen && e.key === 'Escape') layoutsMenuOpen.set(false);
+		if ($layoutsMenuOpen && e.key === 'Escape') close();
 	}}
 />
 
-{#if $layoutsMenuOpen}
-	<div id="layouts-menu" class="layouts-menu ui-panel" role="region" aria-label="Workspace layouts" bind:this={panel}>
-		<div class="lm-head">
-			<span class="lm-title">Workspace layouts</span>
-			<button class="lm-close" title="Close" aria-label="Close" onclick={() => layoutsMenuOpen.set(false)}><Icon name="x" size={16} aria-hidden="true" /></button>
-		</div>
-		<WorkspaceLayouts idPrefix="layouts-menu" />
-	</div>
-{/if}
+<ModalDialog
+	id="layouts-menu"
+	class="layouts-dialog"
+	title="Workspace layouts"
+	width="sm"
+	outsideclose
+	bind:open={() => $layoutsMenuOpen, (v) => layoutsMenuOpen.set(v)}
+	aria-label="Workspace layouts"
+>
+	<WorkspaceLayouts idPrefix="layouts-menu" />
+</ModalDialog>
 
 <style>
-	.layouts-menu {
-		position: fixed;
-		top: 64px;
-		left: 16px;
-		width: min(300px, calc(100vw - 32px));
-		padding: 10px;
-		z-index: var(--z-modal);
-		background: var(--surface);
-		color: var(--text);
-		border: 1px solid var(--border);
-	}
-	.lm-head {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		margin-bottom: 6px;
-	}
-	.lm-title {
-		font-size: 0.85rem;
-		font-weight: 600;
-	}
-	.lm-close {
-		display: inline-flex;
-		padding: 3px;
-		color: var(--text-muted);
-		background: transparent;
-		border: 0;
-		border-radius: 4px;
-		cursor: pointer;
-	}
-	.lm-close:hover {
-		color: var(--text);
+	/* ModalDialog's `width="sm"` (max-width) loses to .tp-modal-frame's LAYERED !important
+	   max-width (ui.css is imported into layer(utilities), and a layered !important outranks an
+	   unlayered one), so every kit modal renders at the frame's 1200px. A one-field dialog that
+	   wide reads as broken; WIDTH is not a property the frame sets on the desktop, so it holds.
+	   The phone (≤640px) keeps the frame's full-screen sheet. */
+	@media (min-width: 641px) {
+		:global(dialog.md.layouts-dialog) {
+			width: min(480px, 94vw);
+		}
 	}
 </style>

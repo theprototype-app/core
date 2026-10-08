@@ -34,6 +34,8 @@ import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart, problemRep
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
 import { publishSlot, publishedLink, openPublishExport } from './export/exportStores.js';
+// CL-5 (37-continuity): a zero-import leaf — the scene-change feed over autosave's dirtyPulse
+import { sceneChangeFeed } from './sceneChangeFeed.js';
 
 // 28-A (roadmap #28, publish · play · remix): the seams below reach cycle-sensitive
 // modules — sessions is history-family, cameraBookmarks imports objectActions, playMode is
@@ -46,9 +48,15 @@ import { publishSlot, publishedLink, openPublishExport } from './export/exportSt
 let cameraBookmarksLib = null;
 /** @type {any} */
 let playModeLib = null;
+/** CL-5: autosave is history-family (it imports the whole snapshot machinery), so its `dirtyPulse`
+ *  arrives through the same primed dynamic import as the two above. App already loaded it at boot.
+ *  @type {any} */
+let autosaveLib = null;
 async function primeSeams() {
-	[cameraBookmarksLib, playModeLib] = await Promise.all([import('./cameraBookmarks'), import('./playMode')]);
+	[cameraBookmarksLib, playModeLib, autosaveLib] = await Promise.all([import('./cameraBookmarks'), import('./playMode'), import('./autosave')]);
 }
+/** CL-5: `sceneRevision()` / `onSceneChange(fn)` — nothing subscribes until a plugin asks */
+const sceneFeed = sceneChangeFeed(() => autosaveLib?.dirtyPulse ?? null);
 
 /**
  * Open-core plugin loader (roadmap #13 batch M1). At boot, if a cloud plugin URL is
@@ -329,12 +337,13 @@ export function makeCloudApi() {
 		 * or renames anything locally — publish is a COPY OUT, and the "a save names the
 		 * room" rules (rounds 34/35) are untouched. `name` is the file's own name only; it
 		 * defaults to the open scene's name, else 'Untitled'. `packs` are never bundled.
-		 * @param {{assets?: boolean, flow?: boolean, name?: string}} [opts]
+		 * @param {{assets?: boolean, flow?: boolean, name?: string, signature?: boolean}} [opts]
 		 * @returns {Promise<{blob: Blob, meta: {objectCount: number, hasFlow: boolean, hasAudio: boolean,
 		 *   hasGame: boolean, modules: {id: string, version: string}[], appVersion: string, bytes: number,
-		 *   camera: {position: number[], target: number[]} | null, duration: number | null, files: any[]}}>}
+		 *   camera: {position: number[], target: number[]} | null, duration: number | null, files: any[],
+		 *   signature?: string}}>} (`signature` = CL-5's content identity, only with `signature: true`)
 		 */
-		buildSceneBundle: async ({ assets = true, flow = true, name = '' } = {}) => {
+		buildSceneBundle: async ({ assets = true, flow = true, name = '', signature = false } = {}) => {
 			const { buildSessionPayload, exportSessionZip, sessionFileList } = await import('./sessions');
 			// 36-community (C4): a published file carries the scene's permanent game id
 			const { ensureGameId } = await import('./gameIdentity.js');
@@ -343,7 +352,10 @@ export function makeCloudApi() {
 			const zip = await exportSessionZip(payload, { assets: assets !== false, flow: flow !== false, packs: false });
 			const blob = new Blob([/** @type {BlobPart} */ (zip)], { type: 'application/zip' });
 			const meta = await bundleMeta(payload, { flow: flow !== false, bytes: blob.size, files: sessionFileList(payload) });
-			return { blob, meta };
+			// CL-5 (37-continuity): ADDITIVE, opt-in — the content signature of what was just bundled (see
+			// sceneSignature below). Opt-in because it is one more pass over the whole payload: a publish of a
+			// big kit scene must not pay for what only a room keeper reads.
+			return { blob, meta: signature === true ? { ...meta, signature: await contentSignature(payload) } : meta };
 		},
 
 		/**
@@ -522,6 +534,67 @@ export function makeCloudApi() {
 		 *  `{count, liked, toggle() → Promise<{liked, count} | null>}`, or null to remove it. */
 		setSceneHeart: (/** @type {any} */ info) => setSceneHeart(info),
 
+		// --- CL-5 continuity (roadmap 37 / R13, 37-continuity): ADDITIVE, typeof-probed, no bump ---
+		/** A counter that moves on EVERY scene change — objects, graphs, animation, looks, sky, physics,
+		 *  music, HUD, game state; local or replicated from a peer (autosave's own dirty signal). Compare
+		 *  two reads to know whether anything changed in between. 0 before boot. @returns {number} */
+		sceneRevision: () => sceneFeed.revision(),
+		/** `fn(revision)` after every scene change from now on (never for the current value). Returns
+		 *  `off`. What a room keeper autosaves from. @param {(revision: number) => void} fn */
+		onSceneChange: (/** @type {any} */ fn) => sceneFeed.onChange(fn),
+		/** The CONTENT identity of the open scene — a short hash over the meaningful fields only (levels'
+		 *  sceneSignature: no uuid/createdAt/thumbnail, no latest-wins stamps, no game state). The revision
+		 *  counter above moves on every internal refresh too, so "did the scene really change since the
+		 *  version I saved / loaded?" is answered by comparing two of these, never two revisions.
+		 *  `buildSceneBundle({signature: true})` returns the same string as `meta.signature`. One
+		 *  serialization per call.
+		 *  @returns {Promise<string>} */
+		sceneSignature: async () => {
+			const { buildSessionPayload } = await import('./sessions');
+			return contentSignature(buildSessionPayload(String(get(currentLevel)?.name || 'Untitled')));
+		},
+		/** The whole PROJECT as a `.tp` — the Explorer's own "Export project" bytes (exportProject: the
+		 *  manifest, every scene and library item; the stored "include versions" preference unless
+		 *  `versions` says otherwise). Never downloads, names or changes anything locally.
+		 *  @param {{versions?: boolean}} [opts]
+		 *  @returns {Promise<{blob: Blob, meta: {name: string, scenes: number, assets: number, items: number, bytes: number, appVersion: string}}>} */
+		buildProjectBundle: async ({ versions } = {}) => {
+			const { exportProject } = await import('./projectFile');
+			const { projectName } = await import('./projectManifest');
+			const { APP_VERSION } = await import('./version.js');
+			const r = await exportProject(typeof versions === 'boolean' ? { versions } : {});
+			const blob = new Blob([/** @type {BlobPart} */ (r.bytes)], { type: 'application/zip' });
+			return {
+				blob,
+				meta: { name: String(projectName() || ''), scenes: r.scenes, assets: r.assets, items: r.items, bytes: blob.size, appVersion: String(APP_VERSION) }
+			};
+		},
+		/** Fetch a remote `.tp` and OPEN it through core's own path — its format gate and its "This
+		 *  replaces your current project" confirm (openProject). Viewer-gated like loadRemoteScene.
+		 *  Resolves the open's counts, or null when refused / declined / failed (the user saw why).
+		 *  @param {{url: string, title?: string}} entry
+		 *  @returns {Promise<{scenes: number, assets: number, items: number} | null>} */
+		openRemoteProject: async ({ url, title = '' } = /** @type {any} */ ({})) => {
+			if (!url) return null;
+			const { isViewer, warnViewerReadOnly } = await import('./objectPermissions');
+			if (isViewer()) {
+				warnViewerReadOnly('View-only — ask an editor to open a project.');
+				return null;
+			}
+			try {
+				const res = await fetch(String(url));
+				if (!res.ok) {
+					showToast(`Could not fetch "${title || 'the project'}" (${res.status})`);
+					return null;
+				}
+				const { openProject } = await import('./projectFile');
+				return await openProject(await res.arrayBuffer());
+			} catch {
+				showToast(`Could not open "${title || 'the project'}" — check your connection`);
+				return null;
+			}
+		},
+
 		// --- utilities ---
 		toast: showToast
 	};
@@ -555,6 +628,13 @@ function setCameraPose(pose) {
 	controls.update();
 	cameraClaim.update((n) => n + 1);
 	return true;
+}
+
+/** CL-5: fingerprint(sceneSignature(payload)) — both reached dynamically (levels is history-family)
+ * @param {any} payload @returns {Promise<string>} */
+async function contentSignature(payload) {
+	const [{ sceneSignature }, { fingerprint }] = await Promise.all([import('./levels'), import('./checkpointsCore')]);
+	return fingerprint(sceneSignature(payload));
 }
 
 /**

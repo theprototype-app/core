@@ -176,8 +176,10 @@ packs so new ones appear without redeploying the app:
       "file": "assets/duck/model.glb",
       "thumb": "assets/duck/thumb.webp",
       "name": "Duck",
-      "size": 123456,
+      "size": [1.655, 1.541, 1.152],   // [width, height, depth] in metres (39 P4)
+      "box": [-0.693, 0.099, -0.613, 0.962, 1.64, 0.539],  // optional exact bounds
       "tris": 4212,
+      "bytes": 120484,
       "license": "SPDX-or-inherit",
       "author": "…",
       "source": "https://…",
@@ -186,6 +188,26 @@ packs so new ones appear without redeploying the app:
   ]
 }
 ```
+
+### Item dimensions: `size`, `box`, `tris`, `bytes`, `animated` (roadmap 39)
+
+Every item row (a default pack's `default.json` row, or an imported pack's `manifest.json`
+item) MAY say how big the item is, so the app can show it **before downloading it** — dragging
+an item from the Explorer into the viewport draws a ghost box with its W × D × H in metres:
+
+- `size` — `[width, height, depth]` in metres, the GLB as shipped (x, y, z extents).
+- `box` — `[minX, minY, minZ, maxX, maxY, maxZ]`, the exact bounds around the item's own
+  origin (so a top-centre or wall pivot draws right; without it the ghost assumes the
+  bottom-centre pivot).
+- `tris` — LOD0's triangles (the placement preview decides "real model or box" by it).
+- `bytes` — LOD0's file size (the Explorer's download size).
+- `animated: true` — the file carries clips (it places as bytes, not as a kit reference).
+
+The packs repo writes them for you: `node tools/kit-build/kit-build.mjs dims <pack> --write`,
+and its CI fails a row whose dims are missing or stale. A row without them still works: the
+app measures the file the first time it loads and keeps the result on the device; until then
+the ghost is a 1 m box labelled "size unknown". **A NUMBER in `size` is read as the byte count**
+(manifests written before roadmap 39 used `size` for bytes).
 
 ## Conventions
 

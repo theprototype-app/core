@@ -41,7 +41,11 @@
 				<span class="text-ink-warn">Inside another object</span>
 			{/if}
 			<span class="text-text-muted">
-				{#if s.rotation}{s.rotation}° · {/if}{s.alt ? 'At the camera focus' : 'R / wheel turn · Shift free · Alt focus · Esc cancel'}
+				{#if s.rotation}{s.rotation}° · {/if}{s.alt
+					? 'At the camera focus'
+					: s.pointerType === 'mouse'
+						? 'R / wheel turn · Shift free · Alt focus · Esc cancel'
+						: 'Lift to place · back to the Explorer to cancel'}
 			</span>
 		{:else if s.over === 'explorer'}
 			<span class="text-text-muted">Drop on the viewport to place it</span>

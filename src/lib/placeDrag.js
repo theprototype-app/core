@@ -384,7 +384,8 @@ function place(x, y) {
 		const ay = Math.abs(normal.y);
 		const az = Math.abs(normal.z);
 		const along = ay >= ax && ay >= az ? 'y' : ax >= az ? 'x' : 'z';
-		for (const a of ['x', 'y', 'z']) if (a !== along) point[a] = snapTo(point[a], step);
+		const p = /** @type {any} */ (point);
+		for (const a of ['x', 'y', 'z']) if (a !== along) p[a] = snapTo(p[a], step);
 	}
 	_yaw.setFromAxisAngle(UP, THREE.MathUtils.degToRad(drag.rotation));
 	const align = !!get(snapTargets)?.alignNormal && normal.distanceTo(UP) > 1e-6;

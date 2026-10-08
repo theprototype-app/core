@@ -164,7 +164,12 @@ h.run(async () => {
 		return { bytes: json.length, holders: json.includes('lod-group-holders'), kids: fish?.object?.children?.length ?? -1, lod: !!fish?.object?.userData?.lod?.fallback };
 	});
 	h.check(!saved.holders && saved.kids >= 5 && saved.kids <= 9 && saved.lod, '2.5 a SAVE carries only the stand-in (' + saved.kids + ' parts) and its fallback block — no model in the file');
-	h.check(saved.bytes < 2_000_000, '2.6 the whole scene payload stays small (' + Math.round(saved.bytes / 1024) + ' KB)');
+	const zipped = await page.evaluate(async () => {
+		const s = window.__stores.sessions;
+		const bytes = await s.exportSessionZip(s.buildSessionPayload('probe'), { assets: false, packs: false, flow: true });
+		return bytes.byteLength ?? bytes.length ?? bytes.size;
+	});
+	h.check(zipped < 600_000, '2.6 the saved .tpscene stays small with the models drawn (' + Math.round(zipped / 1024) + ' KB zipped; the models are references)');
 	const film = await page.evaluate(() => window.__stores.materialTiers.materialTiersDebug());
 	h.check(film.tier === 'high' && tri.irid > 0.3, '2.7 a desktop draws the fish\'s thin film (tier ' + film.tier + ', iridescence ' + tri.irid + ')');
 	if (SHOTS) await page.screenshot({ path: SHOTS + '-desktop.png' });
@@ -192,7 +197,7 @@ h.run(async () => {
 		const s = window.__stores;
 		const group = window.__aq.read(s.objectsGroup);
 		const box = group.getObjectByName('Rock big');
-		const starter = s.materialPresets.starterPresets().find((p) => p.id === 'fishscale');
+		const starter = s.materialPresets.starterPresets().find((p) => p.id === 'fishscale').preset;
 		const ok = s.materialPresets.applyMaterialPreset(box.uuid, starter);
 		const m = box.material;
 		const high = { ok, type: m.type, irid: m.iridescence, trans: m.transmission, normal: !!m.normalMap, range: m.iridescenceThicknessRange };

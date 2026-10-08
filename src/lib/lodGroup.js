@@ -59,6 +59,12 @@ export const lodGroupTick = writable(0);
 
 /** @type {Map<any, GroupEntry>} */
 const entries = new Map();
+/** render passes run (debug: lodGroupPasses) */
+let passCount = 0;
+/** how many render passes the group runtime has run — a stalled count is a stalled pass */
+export function lodGroupPasses() {
+	return passCount;
+}
 /** every mesh some group draws — lod.js's auto scan stands down for these */
 /** @type {WeakSet<any>} */
 let owned = new WeakSet();
@@ -733,6 +739,7 @@ function nearestBuilt(entry, want) {
  * @param {any} camera @param {number} qualityBias @param {boolean} enabled @param {boolean} overlay
  */
 function before(camera, qualityBias, enabled, overlay) {
+	passCount++;
 	restorePass(); // a render that threw last time left a pass behind
 	if (!entries.size) return;
 	const P = camera.projectionMatrix?.elements;
@@ -784,6 +791,7 @@ function before(camera, qualityBias, enabled, overlay) {
 		if (preview && preview.uuid === root.uuid && preview.level < block.levels.length) want = preview.level;
 		else if (block.mode === 'forced' && block.forced !== undefined) want = block.forced;
 		const drawn = want < 0 ? -1 : nearestBuilt(entry, want);
+		entry.lastWant = want;
 		if (drawn !== entry.current) {
 			entry.current = drawn;
 			tick();
@@ -916,6 +924,8 @@ export function lodGroupStats() {
 		implicit: e.implicit,
 		meshes: e.meshes.length,
 		current: e.current,
+		want: /** @type {any} */ (e).lastWant ?? null,
+		fallback: !!e.block.fallback,
 		size: Number(e.size.toFixed(4)),
 		radius: Number(e.radius.toFixed(4)),
 		levels: e.block.levels.map((l, i) => {

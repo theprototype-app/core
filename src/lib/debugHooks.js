@@ -38,6 +38,11 @@ export const DEBUG_HOOKS = [
 	// 36 U3b/I5: the tour engine (tours, activeTour, toursDebug) + the built-in tours
 	['tours', () => import('./tours/index.js')],
 	['toursBuiltin', () => import('./tours/builtin.js')],
+	// 39: drag to place — the preview setting, the measured dims, the pack downloads, the ghost
+	['placementPrefs', () => import('./placementPrefs.js')],
+	['placementDims', () => import('./placementDims.js')],
+	['packCache', () => import('./packCache.js')],
+	['placeGhost', () => import('./placeGhost.js')],
 	['tourVR', () => import('./tours/vrPanel.js')],
 	// 36-share (B13): the recorder + its stores
 	['recording', () => import('./recording/recorder.js')],

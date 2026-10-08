@@ -362,7 +362,7 @@ function addAnimatedImport(result, buffer, name, kind, position) {
 
 /** Shared tail for every import format: add to the scene, select, replicate.
  * @param {any} imported @param {string=} name @param {number[]=} position drop point (96) */
-function addImported(imported, name, position) {
+export function addImported(imported, name, position) {
 	if (name) imported.name = name;
 	// position BEFORE the sync so peers receive the placed transform (96)
 	if (position) imported.position.fromArray(position);
@@ -680,7 +680,9 @@ function defaultImportName(extension, name) {
  * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
  * @param {number[]=} position - world drop point (Explorer drag-out, 96)
  * @param {any[]=} extras - companion files picked/dropped alongside (.mtl + its textures)
- * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null, lod?: any, behavior?: any}} [opts]
+ * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null, lod?: any, behavior?: any, quaternion?: number[] | null}} [opts]
+ *   `quaternion` (39): the placed root's rotation — a drag-to-place drop turned with R / the wheel
+ *   or aligned to a surface. Set BEFORE the add, so the create entry and the wire carry it.
  *   `behavior` (33 P2): the pack item's functional spec — a door, a lid, a fan
  *   26-F: `reduce` imports REDUCED. 30c: `packRef` names the PACK ITEM this file is — the
  *   placed root then carries the reference (packRefs.js), so a save and the wire write it
@@ -721,6 +723,11 @@ export async function importFile(file, name, ext, position, extras, opts = {}) {
 		return null;
 	}
 	try {
+		// 39: the drop's rotation rides the first sync (one undo step, one replicated add)
+		if (Array.isArray(opts.quaternion) && opts.quaternion.length === 4) {
+			parsed.root?.quaternion?.fromArray(opts.quaternion);
+			parsed.animated?.result?.scene?.quaternion?.fromArray(opts.quaternion);
+		}
 		// 30c: stamp the pack reference BEFORE addImported, which is what replicates it
 		if (opts.packRef && !parsed.animated && typeof file?.arrayBuffer === 'function')
 			stampPackRef(parsed.root, opts.packRef, await hashBytes(await file.arrayBuffer()));

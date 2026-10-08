@@ -389,3 +389,13 @@
 :root.phone-shell .notif-backdrop {
 	display: none !important;
 }
+
+/* 40 F3: in the docked Explorer's sideways-scrolling toolbar the identity chip (project ▸ scene)
+   takes its full width — the strip scrolls rather than squeezing the project name to "Unt…" */
+:root.phone-shell #explorer-dock-strip #explorer-identity {
+	flex: 0 0 auto !important;
+}
+:root.phone-shell #explorer-dock-strip #explorer-identity .truncate {
+	overflow: visible;
+	text-overflow: clip;
+}

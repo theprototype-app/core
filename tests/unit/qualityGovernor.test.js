@@ -146,7 +146,12 @@ describe('createGovernor', () => {
 		expect(g.recoverHoldMs()).toBe(20000);
 		t = run(g, t, 10500, 16.7);
 		expect(g.decide(t, { heavy: true }).moved).toBe(null); // 10s is no longer enough
-		t = run(g, t, 10000, 16.7);
+		// 40 F12: ...and that flap LOCKED level 1 — good frames never walk below it again
+		t = run(g, t, 30000, 16.7);
+		expect(g.decide(t, { heavy: true })).toMatchObject({ moved: null, reason: 'held (flapped)' });
+		expect(g.flapLock()).toBe(1);
+		// a new scene clears the lock; the doubled hold is already served, so it walks down
+		g.clearFlapLock();
 		expect(g.decide(t, { heavy: true }).moved).toBe('down');
 		// much later, a heavier scene: not a flap
 		t = run(g, t + 60000, 2100, 50);

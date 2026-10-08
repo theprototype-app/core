@@ -103,7 +103,10 @@
 
 	// 15-Q: same chrome family as the object menu — icons, shortcut hints, quiet
 	// section labels; functionality unchanged.
-	$: items = [
+	// 38 R9: the phone shell's Add tab opens this menu ROOTED at its Add list
+	// (`only: 'add'`, additive on the store) — the same children the Add submenu shows,
+	// so devices, prefabs and every catalog entry stay one tap away
+	$: items = menu?.only === 'add' ? buildAddChildren(() => menu?.point ?? null) : [
 		// 125: real scene-object search + focus — opt-in via settings, hidden otherwise
 		...($objectSearchEnabled
 			? [

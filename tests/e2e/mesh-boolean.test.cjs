@@ -67,7 +67,7 @@ const runMenu = (page, a, b, label) =>
 	page.evaluate(
 		async ({ a, b, label }) => {
 			const items = window.__stores.objectMenu.buildObjectMenuItems(a, { selection: [a, b] });
-			const boolean = items.find((i) => i.label === 'Boolean');
+			const boolean = window.__stores.objectMenu.findMenuItem(items, 'Boolean');
 			if (!boolean) return { found: false };
 			const entry = boolean.children.find((c) => c.label === label);
 			const result = await entry.action();
@@ -87,8 +87,8 @@ h.run(async () => {
 	const gating = await A.page.evaluate(
 		({ a, b }) => {
 			const m = window.__stores.objectMenu;
-			const one = m.buildObjectMenuItems(a, { selection: [a] }).some((i) => i.label === 'Boolean');
-			const two = m.buildObjectMenuItems(a, { selection: [a, b] }).find((i) => i.label === 'Boolean');
+			const one = !!m.findMenuItem(m.buildObjectMenuItems(a, { selection: [a] }), 'Boolean');
+			const two = m.findMenuItem(m.buildObjectMenuItems(a, { selection: [a, b] }), 'Boolean');
 			return { one, labels: two?.children.map((c) => c.label) ?? [] };
 		},
 		{ a, b }

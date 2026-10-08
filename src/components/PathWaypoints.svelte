@@ -102,6 +102,7 @@
 	on:contextmenu={onContextMenu}
 />
 
+<!-- tokens-ok-begin: three.js waypoint materials + troika labels drawn in the 3D view -->
 {#if node && points.length > 0}
 	<T.Group bind:ref={markersGroup} name="path-waypoints">
 		{#each points as p, index (index)}
@@ -124,3 +125,4 @@
 		</T.Line>
 	{/if}
 {/if}
+<!-- tokens-ok-end -->

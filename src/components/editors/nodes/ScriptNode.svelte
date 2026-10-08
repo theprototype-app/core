@@ -40,7 +40,7 @@
 	{/if}
 	<div class="flex w-full flex-col gap-1">
 		{#if data.name}
-			<span class="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-200" title={data.name}>{data.name}</span>
+			<span class="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-text-2" title={data.name}>{data.name}</span>
 		{/if}
 		{#if inputs}
 			<!-- one labelled ROW per declared socket, the handle anchored to its row (the
@@ -48,32 +48,32 @@
 			{#each inputs as socket (socket.name)}
 				<div class="script-in relative -mx-3 flex h-5 items-center px-3" data-socket={socket.name}>
 					<Socket kind="target" nodeType="script" id={socket.name} position={Position.Left} forceType={socket.type} style="top: 50%;" />
-					<span class="max-w-full truncate text-[10px] text-gray-300">{socket.name} <span class="text-gray-500">{socket.type}</span></span>
+					<span class="max-w-full truncate text-[10px] text-text-2">{socket.name} <span class="text-text-faint">{socket.type}</span></span>
 				</div>
 			{/each}
 		{/if}
 		{#each outputs as socket (socket.name)}
 			<div class="script-out relative -mx-3 flex h-5 items-center justify-end gap-1 px-3" data-socket={socket.name}>
-				<span class="max-w-[90px] truncate font-mono text-[10px] text-sky-300" title="live value">{fmt(live?.[socket.name])}</span>
-				<span class="truncate text-[10px] text-gray-300">{socket.name}</span>
+				<span class="max-w-[90px] truncate font-mono text-[10px] text-accent-text" title="live value">{fmt(live?.[socket.name])}</span>
+				<span class="truncate text-[10px] text-text-2">{socket.name}</span>
 				<Socket kind="source" nodeType="script" id={socket.name} position={Position.Right} forceType={socket.type} style="top: 50%;" />
 			</div>
 		{/each}
-		<span class="text-[10px] text-gray-400">{lines} line{lines === 1 ? '' : 's'} of code</span>
+		<span class="text-[10px] text-text-muted">{lines} line{lines === 1 ? '' : 's'} of code</span>
 		{#if file}
-			<span class="script-file max-w-[180px] truncate text-[10px] text-sky-300" title="Runs the script file {file} — saving the file reloads every node bound to it">📄 {file}</span>
+			<span class="script-file max-w-[180px] truncate text-[10px] text-accent-text" title="Runs the script file {file} — saving the file reloads every node bound to it">📄 {file}</span>
 		{/if}
 		<button
-			class="nodrag nopan rounded-sm bg-[#ff4000] px-2 py-0.5 text-white"
+			class="nodrag nopan rounded-sm bg-accent-fill px-2 py-0.5 text-on-accent hover:brightness-110"
 			on:click={() => scriptEditorOpen.set(id)}
 		>
 			Edit code
 		</button>
 		{#if error}
-			<span class="max-w-[180px] wrap-break-word text-[10px] text-red-500" title={error}>⚠ {error}</span>
+			<span class="max-w-[180px] wrap-break-word text-[10px] text-ink-bad" title={error}>⚠ {error}</span>
 		{/if}
 		{#if pending}
-			<span class="script-pending max-w-[180px] wrap-break-word text-[10px] text-amber-400" title={pending}>⚠ {pending}</span>
+			<span class="script-pending max-w-[180px] wrap-break-word text-[10px] text-ink-warn" title={pending}>⚠ {pending}</span>
 		{/if}
 	</div>
 </NodeWrapper>

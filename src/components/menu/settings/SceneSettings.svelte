@@ -157,7 +157,7 @@
 				id="ping-color"
 				class="settings-color"
 				aria-label="Ping colour"
-				value={$pingColor || '#4f83cc'}
+				value={$pingColor || '#4f83cc' /* tokens-ok: the ping colour's default (user data, same as PingHighlights) */}
 				onchange={(e) => pingColor.set(e.currentTarget.value)}
 			/>
 		</SettingRow>
@@ -223,7 +223,7 @@
 				label="Edit mesh wireframe colour"
 				options={EDIT_WIRE}
 				value={editWireAuto ? 'auto' : 'custom'}
-				onchange={(v) => setViewPrefs({ editWireColor: v === 'auto' ? 'auto' : '#2f81f7' })}
+				onchange={(v) => setViewPrefs({ editWireColor: v === 'auto' ? 'auto' : '#2f81f7' }) /* tokens-ok: the edit-wire colour written into the view prefs (three.js data) */}
 			/>
 			{#if !editWireAuto}
 				<input type="color" id="edit-wire-color" class="settings-color" aria-label="Edit mesh wireframe colour" value={$viewPrefs.editWireColor} oninput={(e) => setViewPrefs({ editWireColor: e.currentTarget.value })} />

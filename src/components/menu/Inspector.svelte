@@ -1,14 +1,13 @@
 <script>
-	import { Download, Save, Search, Sparkles, SquarePen, Trash2, Upload } from '@lucide/svelte';
 	import Icon from '../ui/Icon.svelte';
 	// Unified inspector (phase 64): one drawer serves every target — mesh, group,
 	// light (from the selection) and the scene itself ($inspectorKind = 'scene').
 	// Replication messages are byte-identical to the old three panels.
 	import * as THREE from 'three';
-	import { Checkbox, Button, Tooltip } from 'flowbite-svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { fly } from 'svelte/transition';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
-	import PanelHeader from '../ui/PanelHeader.svelte';
+	import InspectorHead from './inspector/InspectorHead.svelte';
 	import Section from '../ui/Section.svelte';
 	import CameraHoldSetting from './scene/CameraHoldSetting.svelte';
 	import SelectionPassSetting from './scene/SelectionPassSetting.svelte'; // 36 F22 / S8
@@ -18,6 +17,11 @@
 	import LoadStatePanel from './LoadStatePanel.svelte';
 	import WaterPanel from '../water/WaterPanel.svelte';
 	import SliderRow from '../ui/SliderRow.svelte';
+	import PropRow from '../ui/PropRow.svelte';
+	import Chips from '../ui/Chips.svelte';
+	import UiButton from '../ui/Button.svelte';
+	import MenuButton from './inspector/MenuButton.svelte';
+	import InsToggle from './inspector/InsToggle.svelte';
 	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
@@ -25,7 +29,6 @@
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
 	import DragRow from '../ui/DragRow.svelte';
-	import PropRow from '../ui/PropRow.svelte';
 	import Segmented from '../ui/Segmented.svelte';
 	import ParticleMotionRows from '../fx/ParticleMotionRows.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
@@ -369,7 +372,10 @@
 		$objectsGroup;
 		$flowGraphs;
 		$selectedObject;
-		return listPhysicsObjects();
+		// one row per object: a replicated load can hold the same object twice for a frame, and a
+		// keyed list must not throw on that (each_key_duplicate)
+		const seen = new Set();
+		return listPhysicsObjects().filter((/** @type {any} */ r) => !seen.has(r.uuid) && seen.add(r.uuid));
 	});
 
 	// B4: which PHYSICS_MATERIALS preset the scene default matches, so the select
@@ -1021,9 +1027,13 @@
 
 	// color swatches mirror the target when the selection changes
 	/** @type {any} */
-	let color = $state('#ffffff');
+	let color = $state('#ffffff'); // tokens-ok: colour-picker starting value (user data)
 	/** @type {any} */
-	let groundColor = $state('#ffffff');
+	let groundColor = $state('#ffffff'); // tokens-ok: colour-picker starting value (user data)
+	// fallbacks the pickers show for a value the scene has not authored yet (DATA, not chrome)
+	const FOG_DEFAULT = '#ffffff'; // tokens-ok: fog colour default shown by the picker (scene data)
+	const PARTICLE_START_DEFAULT = '#ffffff'; // tokens-ok: particle start colour default (emitter data)
+	const PARTICLE_END_DEFAULT = '#8899aa'; // tokens-ok: particle end colour default (emitter data)
 	$effect(() => {
 		const obj = $selectedObject;
 		if (!obj) return;
@@ -1491,6 +1501,11 @@
 
 	// ---- environment v2 (70) -------------------------------------------------
 	const envPayload = $derived(presetPayload($environment));
+	// 38 R5: the preset chips (a saved custom preset joins the row as 'custom')
+	const envPresetOptions = $derived([
+		...Object.entries(ENVIRONMENT_PRESETS).map(([key, preset]) => ({ value: key, label: preset.label })),
+		...($environment.customPreset ? [{ value: 'custom', label: $environment.customPreset.label ?? 'Custom' }] : [])
+	]);
 	/** @type {any} */
 	const envFog = $derived(envPayload?.fog ?? null);
 	const selectedIsSceneLight = $derived(
@@ -1596,7 +1611,7 @@
 		return '(' + spawn.position.map((/** @type {number} */ v) => v.toFixed(1)).join(', ') + '), facing ' + deg + '°';
 	}
 	/** shared look for the small bookmark row buttons */
-	const bmBtn = 'shrink-0 rounded-sm bg-gray-700 px-1.5 py-0.5 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-40';
+	const bmBtn = 'ins-mini-btn'; // 38 R5: token-styled (this file's style block)
 	function resetView() {
 		// the editor camera's mount defaults (Scene.svelte)
 		flyTo([-10, 10, 10], [0, 1.5, 0]);
@@ -1616,7 +1631,8 @@
 <div
 	style={drawerStyle + '; --inspector-h: ' + inspectorH + 'px'}
 	transition:fly={insTransition}
-	class={'fixed inset-e-0 top-16 z-50 w-80 overflow-y-auto bg-white p-4 dark:bg-gray-800 rounded-tl-lg pt-0' + (bottomRounded ? ' rounded-bl-lg' : '')}
+	class={'tp-ui ins-shell fixed inset-e-0 top-16 z-50 w-80 overflow-y-auto p-4 pt-0' + (bottomRounded ? ' ins-rounded-bl' : '')}
+	use:minimalScroll
 	id="inspector"
 	data-key-scope="panel"
 	role="region"
@@ -1634,23 +1650,21 @@
 	</div>
 	{#if $inspectorKind === 'file'}
 		<!-- Explorer file properties (107) -->
-		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
-			<PanelHeader title={inspectedItem?.name ?? 'File'} badge="File" onclose={() => inspectorClose.set(true)} />
-		</div>
+		<InspectorHead title={inspectedItem?.name ?? 'File'} icon="file-text" badge="File" onclose={() => inspectorClose.set(true)} />
 		{#if inspectedItem}
 			<div id="file-properties" class="flex flex-col gap-3">
 				<div class="flex justify-center">
 					{#if inspectedItem.thumbnail}
-						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded-sm border border-gray-600 object-cover" />
+						<img src={inspectedItem.thumbnail} alt={inspectedItem.name} class="h-24 w-24 rounded-sm border border-border-strong object-cover" />
 					{:else}
-						<span class="flex h-24 w-24 items-center justify-center rounded-sm border border-gray-600 bg-gray-700 text-4xl text-gray-400">
-							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={36} class={inspectedItem.kind === 'audio' ? 'ico-audio' : inspectedItem.kind === 'text' ? 'ico-doc' : ''} />
+						<span class="flex h-24 w-24 items-center justify-center rounded-sm border border-border-strong bg-surface-inset text-4xl text-text-muted">
+							<Icon name={inspectedItem.kind === 'audio' ? 'music' : inspectedItem.kind === 'text' ? 'file-text' : 'package'} size={32} class={inspectedItem.kind === 'audio' ? 'ico-audio' : inspectedItem.kind === 'text' ? 'ico-doc' : ''} />
 						</span>
 					{/if}
 				</div>
-				<Section label="File">
+				<Section variant="panel" label="File">
 					<div class="ui-row">
-						<span class="w-16 text-gray-400">Name</span>
+						<span class="w-16 text-text-muted">Name</span>
 						<input
 							id="file-name"
 							class="ui-input flex-1"
@@ -1658,87 +1672,62 @@
 							onchange={(e) => renameItem(inspectedItem.id, e.currentTarget.value)}
 						/>
 					</div>
-					<div class="ui-row"><span class="w-16 text-gray-400">Kind</span><span class="ui-badge-type">{inspectedItem.kind}</span></div>
-					<div class="ui-row"><span class="w-16 text-gray-400">Size</span><span>{(inspectedItem.size / 1024).toFixed(1)} KB</span></div>
-					<div class="ui-row"><span class="w-16 text-gray-400">Folder</span><span class="truncate">{fileFolderPath}</span></div>
-					<div class="ui-row"><span class="w-16 text-gray-400">Added</span><span>{new Date(inspectedItem.createdAt).toLocaleString()}</span></div>
+					<div class="ui-row"><span class="w-16 text-text-muted">Kind</span><span class="ui-badge-type">{inspectedItem.kind}</span></div>
+					<div class="ui-row"><span class="w-16 text-text-muted">Size</span><span>{(inspectedItem.size / 1024).toFixed(1)} KB</span></div>
+					<div class="ui-row"><span class="w-16 text-text-muted">Folder</span><span class="truncate">{fileFolderPath}</span></div>
+					<div class="ui-row"><span class="w-16 text-text-muted">Added</span><span>{new Date(inspectedItem.createdAt).toLocaleString()}</span></div>
 					<div class="ui-row">
-						<span class="w-16 text-gray-400">Hash</span>
-						<span class="truncate font-mono text-[10px]" title={inspectedItem.hash}>{inspectedItem.hash.slice(0, 16)}…</span>
+						<span class="w-16 text-text-muted">Hash</span>
+						<span class="truncate font-mono text-[length:var(--fs-badge)]" title={inspectedItem.hash}>{inspectedItem.hash.slice(0, 16)}…</span>
 						<button class="ui-button-quiet" title="Copy the full hash" onclick={() => navigator.clipboard?.writeText(inspectedItem.hash)}>⧉</button>
 					</div>
 					{#if fileDetails}
-						<div class="ui-row"><span class="w-16 text-gray-400">Details</span><span>{fileDetails}</span></div>
+						<div class="ui-row"><span class="w-16 text-text-muted">Details</span><span>{fileDetails}</span></div>
 					{/if}
 				</Section>
-				<Section label="Actions">
+				<Section variant="panel" label="Actions">
 					<div class="flex flex-wrap gap-2">
 						{#if inspectedItem.kind === 'text' || inspectedItem.kind === 'image'}
-							<Button size="xs" color="alternative" onclick={() => openInspectedItem()}>
-								{#if inspectedItem.kind === 'text'}<SquarePen size={14} class="mr-1" aria-hidden="true" />{:else}<Search size={14} class="mr-1" aria-hidden="true" />{/if}{inspectedItem.kind === 'text' ? 'Edit' : 'Preview'}
-							</Button>
+							<UiButton size="sm" variant="outline" onclick={() => openInspectedItem()}>
+								{#if inspectedItem.kind === 'text'}<Icon name="square-pen" size={16} class="mr-1" aria-hidden="true" />{:else}<Icon name="search" size={16} class="mr-1" aria-hidden="true" />{/if}{inspectedItem.kind === 'text' ? 'Edit' : 'Preview'}
+							</UiButton>
 						{/if}
-						<Button
-							size="xs"
-							color="alternative"
+						<UiButton
+							size="sm"
+							variant="outline"
 							onclick={() => {
 								deleteItem(inspectedItem.id);
 								inspectorClose.set(true);
-							}}><Trash2 size={16} class="ico-danger mr-1" aria-hidden="true" />Delete</Button
+							}}><Icon name="trash-2" size={16} class="ico-danger mr-1" aria-hidden="true" />Delete</UiButton
 						>
 					</div>
 				</Section>
 			</div>
 		{:else}
-			<p class="p-3 text-sm italic text-gray-400">The file was removed.</p>
+			<p class="p-3 text-sm italic text-text-muted">The file was removed.</p>
 		{/if}
 	{:else if $inspectorKind === 'scene'}
-		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
-			<PanelHeader
-				title="Scene"
-				badge="Scene"
-				pinned={$inspectorPinned}
-				onpin={() => inspectorPinned.update((v) => !v)}
-				onclose={() => inspectorClose.set(true)}
-			/>
-			<!-- PFX-C follow-up: property search — Sections filter by rendered text -->
-			<input
-				id="inspector-search"
-				type="search"
-				class="ui-input mb-2 w-full"
-				placeholder="Filter properties…"
-				value={$inspectorFilter}
-				oninput={(/** @type {any} */ e) => inspectorFilter.set(e.currentTarget.value)}
-				onkeydown={(/** @type {any} */ e) => e.key === 'Escape' && inspectorFilter.set('')}
-			/>
-		</div>
+		<InspectorHead
+			title="Scene"
+			icon="sun"
+			badge="Scene"
+			filter
+			pinned={$inspectorPinned}
+			onpin={() => inspectorPinned.update((v) => !v)}
+			onclose={() => inspectorClose.set(true)}
+		/>
 
 		<div class="flex flex-col gap-3">
-			<Section label="Environment">
-				<div id="environment-presets" class="flex flex-wrap gap-1">
-					{#each Object.entries(ENVIRONMENT_PRESETS) as [key, preset]}
-						<button
-							class={'ui-chip ' +
-								($environment.preset === key
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
-							onclick={() => setEnvironment(key)}
-						>
-							{preset.label}
-						</button>
-					{/each}
-					{#if $environment.customPreset}
-						<button
-							class={'ui-chip ' +
-								($environment.preset === 'custom'
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
-							onclick={() => applyCustomPreset($environment.customPreset)}
-						>
-							{$environment.customPreset.label ?? 'Custom'}
-						</button>
-					{/if}
-				</div>
+			<Section variant="panel" label="Environment" badge="Shared">
+				<!-- 38 R5: the presets are Chips in the one accent; a press re-applies the
+				     preset even when it is already selected, exactly as the old buttons did -->
+				<Chips
+					id="environment-presets"
+					label="Environment preset"
+					options={envPresetOptions}
+					value={$environment.preset}
+					onpress={(key) => (key === 'custom' ? applyCustomPreset($environment.customPreset) : setEnvironment(key))}
+				/>
 				<SliderRow
 					label="Exposure"
 					min={0.4}
@@ -1753,16 +1742,17 @@
 					<p class="ui-section-label">Saved presets</p>
 					<div class="flex flex-wrap gap-1">
 						{#each $envPresets as saved (saved.name)}
-							<span class="inline-flex items-center overflow-hidden rounded-full bg-gray-600">
+							<span class="ins-saved">
 								<button
-									class="px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-gray-200 hover:bg-gray-500"
+									class="ins-saved-apply"
 									title="Apply this preset (replicates to peers)"
 									onclick={() => applyCustomPreset(saved.payload)}
 								>
 									{saved.name}
 								</button>
 								<button
-									class="px-1 text-[10px] text-gray-300 hover:bg-red-700 hover:text-white"
+									class="ins-saved-del"
+									aria-label="Delete saved preset {saved.name}"
 									title="Delete saved preset"
 									onclick={() => deleteEnvPreset(saved.name)}>✕</button>
 							</span>
@@ -1774,7 +1764,7 @@
 					<div class="flex flex-wrap gap-1">
 						{#each list as saved (saved.name)}
 							<button
-								class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+								class="ui-chip"
 								title="Apply this peer preset (replicates to everyone)"
 								onclick={() => applyCustomPreset(saved.payload)}
 							>
@@ -1783,67 +1773,86 @@
 						{/each}
 					</div>
 				{/each}
-				<div class="flex flex-wrap gap-1">
-					<button id="env-save-preset" class="ui-button-quiet" title="Save the current environment as a named preset" onclick={savePresetPrompt}>
-						<Save size={16} class="mr-1" aria-hidden="true" />Save preset
-					</button>
-					<button class="ui-button-quiet" title="Download the current environment as JSON" onclick={exportCurrentPreset}><Download size={16} class="mr-1" aria-hidden="true" />Export</button>
-					<button class="ui-button-quiet" title="Import a .envpreset.json file" onclick={() => document.getElementById('env-import-file')?.click()}>
-						<Upload size={16} class="mr-1" aria-hidden="true" />Import
-					</button>
-					<input type="file" id="env-import-file" style="display: none" accept=".json" onchange={onImportPreset} />
-				</div>
 
 				<p class="ui-section-label">Components</p>
 				{#if envPayload.hemi}
 					<SliderRow label="Sky light" min={0} max={4} step={0.05} value={envPayload.hemi.intensity}
 						onchange={(v) => editRigComponent('hemi', { intensity: v })} />
-					<div class="ui-row">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Sky / ground</span>
-						<input type="color" class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={envPayload.hemi.sky}
-							onchange={(e) => editRigComponent('hemi', { sky: e.currentTarget.value })} />
-						<input type="color" class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={envPayload.hemi.ground}
-							onchange={(e) => editRigComponent('hemi', { ground: e.currentTarget.value })} />
-					</div>
+					<PropRow label="Sky / ground" valueBox={false}>
+						{#snippet control()}
+							<input type="color" class="ins-swatch" aria-label="Sky colour" value={envPayload.hemi.sky}
+								onchange={(e) => editRigComponent('hemi', { sky: e.currentTarget.value })} />
+							<input type="color" class="ins-swatch" aria-label="Ground colour" value={envPayload.hemi.ground}
+								onchange={(e) => editRigComponent('hemi', { ground: e.currentTarget.value })} />
+						{/snippet}
+					</PropRow>
 				{/if}
 				{#if envPayload.sun}
 					<SliderRow label="Sun" min={0} max={4} step={0.05} value={envPayload.sun.intensity}
 						onchange={(v) => editRigComponent('sun', { intensity: v })} />
-					<div class="ui-row">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Sun color</span>
-						<input type="color" class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={envPayload.sun.color}
-							onchange={(e) => editRigComponent('sun', { color: e.currentTarget.value })} />
-					</div>
+					<PropRow label="Sun color" valueBox={false}>
+						{#snippet control()}
+							<input type="color" class="ins-swatch" aria-label="Sun colour" value={envPayload.sun.color}
+								onchange={(e) => editRigComponent('sun', { color: e.currentTarget.value })} />
+						{/snippet}
+					</PropRow>
 				{/if}
 
 				{#each $environment.lights ?? [] as def (def.id)}
-					<div class="env-light rounded-lg border border-gray-700/60 p-1.5">
-						<div class="flex items-center gap-1.5">
-							<span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{def.kind}</span>
-							<input type="color" class="h-5 w-7 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={def.color}
+					<div class="env-light ins-card">
+						<div class="ins-card-head">
+							<span class="ins-card-kind">{def.kind}</span>
+							<input type="color" class="ins-swatch" aria-label="Light colour" value={def.color}
 								onchange={(e) => updateEnvLight(def.id, { color: e.currentTarget.value })} />
 							{#if def.kind === 'hemisphere'}
-								<input type="color" class="h-5 w-7 cursor-pointer rounded-sm border border-gray-600 bg-transparent" value={def.groundColor}
+								<input type="color" class="ins-swatch" aria-label="Ground colour" value={def.groundColor}
 									onchange={(e) => updateEnvLight(def.id, { groundColor: e.currentTarget.value })} />
 							{/if}
 							<span class="flex-1"></span>
-							<button class="ui-button-quiet" title="Convert back into a normal scene object"
-								onclick={() => convertFromEnvironment(def.id)}>⇱ object</button>
-							<button class="ui-button-quiet hover:bg-red-700" title="Remove"
-								onclick={() => removeEnvLight(def.id)}>✕</button>
+							<UiButton variant="ghost" size="sm" title="Convert back into a normal scene object"
+								onclick={() => convertFromEnvironment(def.id)}>⇱ object</UiButton>
+							<UiButton variant="icon" size="sm" icon="x" label="Remove" title="Remove"
+								onclick={() => removeEnvLight(def.id)} />
 						</div>
 						<SliderRow label="Intensity" min={0} max={4} step={0.05} value={def.intensity}
 							onchange={(v) => updateEnvLight(def.id, { intensity: v })} />
 					</div>
 				{/each}
-				<div class="flex flex-wrap gap-1">
-					<button id="env-add-hemisphere" class="ui-button-quiet" onclick={() => addEnvLight('hemisphere')}>+ Hemisphere</button>
-					<button id="env-add-directional" class="ui-button-quiet" onclick={() => addEnvLight('directional')}>+ Directional</button>
-					<button id="env-add-point" class="ui-button-quiet" onclick={() => addEnvLight('point')}>+ Point</button>
+				<!-- 38 R5: one "+ Light" menu instead of three buttons; the items keep the old
+				     ids and actions. Save / Export / Import fold into "Presets". -->
+				<div class="ins-actions">
+					<MenuButton
+						text="+ Light"
+						full
+						items={[
+							{ id: 'env-add-hemisphere', label: 'Hemisphere', value: 'hemisphere' },
+							{ id: 'env-add-directional', label: 'Directional', value: 'directional' },
+							{ id: 'env-add-point', label: 'Point', value: 'point' }
+						]}
+						onselect={(item) => addEnvLight(item.value)}
+					/>
+					<MenuButton
+						text="Presets"
+						align="end"
+						items={[
+							{ id: 'env-save-preset', label: 'Save preset…', icon: 'save' },
+							{ id: 'env-export-preset', label: 'Export', icon: 'download' },
+							{ id: 'env-import-preset', label: 'Import…', icon: 'folder-input' }
+						]}
+						onselect={(item) =>
+							item.id === 'env-save-preset'
+								? savePresetPrompt()
+								: item.id === 'env-export-preset'
+									? exportCurrentPreset()
+									: document.getElementById('env-import-file')?.click()}
+					/>
+					<input type="file" id="env-import-file" style="display: none" accept=".json" onchange={onImportPreset} />
 				</div>
-				<button
+				<UiButton
 					id="env-adopt"
-					class="ui-button-quiet disabled:cursor-not-allowed disabled:opacity-40"
+					variant="outline"
+					size="sm"
+					full
 					disabled={!selectedIsSceneLight}
 					title={selectedIsSceneLight
 						? 'Move the selected light out of the scene objects into the environment'
@@ -1851,17 +1860,17 @@
 					onclick={() => convertToEnvironment($selectedObject.uuid)}
 				>
 					⇲ Adopt selected light into environment
-				</button>
+				</UiButton>
 
-				<p class="text-[10px] italic text-gray-400">
-					Everything here replicates to peers; your own lights automatically dim the default rig.
-				</p>
+				<p class="ins-note">Your own lights dim the default rig automatically.</p>
 			</Section>
 
-			<Section label="Music">
+			<Section variant="panel" label="Music">
 				<p class="ui-section-label">Scene track (shared)</p>
+				<!-- 38 NOTES-38 #24 (design page): the track and its Play/Stop on one row -->
+				<div class="flex items-center gap-2">
 				<select
-					class="ui-input w-full"
+					class="ui-input min-w-0 flex-1"
 					value={$music.hash ?? ''}
 					onchange={(e) => {
 						const hash = e.currentTarget.value || null;
@@ -1877,28 +1886,27 @@
 						<option value={$music.hash}>{$music.name || 'shared track'} (fetching…)</option>
 					{/if}
 				</select>
-				<div class="mt-1 flex items-center gap-2">
 					<button
-						class="ui-chip {$music.playing ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500'}"
+						class="ui-chip shrink-0 {$music.playing ? 'ins-chip-on' : ''}"
 						disabled={!$music.hash}
 						onclick={() => setMusicPlaying(!$music.playing)}
 					>
 						{$music.playing ? '■ Stop' : '▶ Play'}
 					</button>
-					{#if $musicBlocked && $music.playing}
-						<span class="text-xs text-amber-400">click anywhere to enable audio</span>
-					{/if}
 				</div>
+				{#if $musicBlocked && $music.playing}
+					<span class="text-xs text-warn-text">click anywhere to enable audio</span>
+				{/if}
 				<SliderRow label="Shared volume" min={0} max={1} step={0.05} value={$music.volume} onchange={(v) => setMusicVolume(v)} />
 				<p class="ui-section-label">This device</p>
 				<SliderRow label="Local volume" min={0} max={1} step={0.05} value={$musicLocalVolume} onchange={(v) => musicLocalVolume.set(v)} />
-				<Checkbox bind:checked={$musicMuted}>Mute music on this device</Checkbox>
-				<p class="mt-1 text-xs text-gray-400">
+				<InsToggle bind:checked={$musicMuted}>Mute music on this device</InsToggle>
+				<p class="mt-1 text-xs text-text-muted">
 					One background track for everyone, synced to the same moment. Volume is shared; the local trim + mute affect only you.
 				</p>
 			</Section>
 
-			<Section label="View">
+			<Section variant="panel" label="View">
 				<p class="ui-section-label">Viewport — this device</p>
 				<div id="view-mode-switch" class="flex flex-wrap gap-1">
 					{#each [['shaded', 'Shaded'], ['shaded-ao', 'Shaded + AO'], ['wireframe', 'Wireframe']] as [mode, label] (mode)}
@@ -1906,7 +1914,7 @@
 						<button
 							id={'view-mode-' + mode}
 							class={'ui-chip ' +
-								($viewMode === mode ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500') +
+								($viewMode === mode ? 'ins-chip-on' : '') +
 								(aoTaken ? ' cursor-not-allowed opacity-40' : '')}
 							disabled={aoTaken}
 							title={aoTaken
@@ -1918,12 +1926,12 @@
 						</button>
 					{/each}
 				</div>
-				<p class="mb-1 text-xs text-gray-400">
+				<p class="mb-1 text-xs text-text-muted">
 					How YOUR viewport shades the scene — not shown to peers. The scene's own look
 					(post-processing) renders for everyone regardless; switch it off below if you need to.
 				</p>
 				{#if sceneProvidesAo($scenePost)}
-					<p class="mb-1 text-[10px] text-gray-400">
+					<p class="mb-1 text-[length:var(--fs-badge)] text-text-muted">
 						This scene sets its own ambient occlusion, so it is used instead of your personal
 						setting.
 					</p>
@@ -1933,17 +1941,17 @@
 					 "do my peers need to switch this on?" question. -->
 				<p class="ui-section-label" data-anchor="Overrides">Overrides — this device</p>
 				{#each OVERRIDES as override (override.key)}
-					<Checkbox
+					<InsToggle
 						id={'override-' + override.key}
 						checked={$viewportOverrides[override.key] !== false}
 						onchange={(e) => setRenderLayer(override.key, e.currentTarget.checked)}
 					>
 						{override.label}
-					</Checkbox>
-					<p class="mb-1 text-[10px] italic text-gray-400">{override.hint}</p>
+					</InsToggle>
+					<p class="mb-1 text-[length:var(--fs-badge)] italic text-text-muted">{override.hint}</p>
 				{/each}
-				<Checkbox bind:checked={$showLightHelpers}>Show light helpers</Checkbox>
-				<Checkbox bind:checked={$showColliders}>Show colliders — this device</Checkbox>
+				<InsToggle bind:checked={$showLightHelpers}>Show light helpers</InsToggle>
+				<InsToggle bind:checked={$showColliders}>Show colliders — this device</InsToggle>
 			</Section>
 
 			<!-- P6 — ONE STORY, not three. The post stack, the scene default material and
@@ -1955,8 +1963,8 @@
 				 The LABEL changed and the deep-link name did not: `openSceneSection` matches
 				 on it, so both names resolve (the 21-G1 rule — the user-visible word moves,
 				 the identifier already written down does not). -->
-			<Section label="Scene look" aliases={['Post-processing']}>
-				<p class="mb-1 text-[10px] text-gray-400">
+			<Section variant="panel" label="Scene look" badge="Shared" aliases={['Post-processing']}>
+				<p class="mb-1 text-[length:var(--fs-badge)] text-text-muted">
 					Three layers, all of them scene data that everyone sees: effects over the
 					finished frame (below), a default material every object without its own
 					inherits, and a material on one object. Only the right to switch a layer off
@@ -1964,12 +1972,12 @@
 				</p>
 				<PostStack />
 				<p class="ui-section-label" data-anchor="Materials">Shader materials</p>
-				<p id="scene-look-shaders" class="text-[10px] text-gray-400">
+				<p id="scene-look-shaders" class="text-[length:var(--fs-badge)] text-text-muted">
 					{shaderSummaryOf($shaderGraphs, $objectsGroup)}
 				</p>
 				<button
 					id="scene-look-open-shader"
-					class="ui-chip w-full justify-center bg-gray-600 text-gray-200 hover:bg-gray-500"
+					class="ui-chip w-full justify-center"
 					title="Open the shader editor — the scene default with nothing selected, an object's own when one is"
 					onclick={() => openShaderEditor()}
 				>
@@ -1981,14 +1989,14 @@
 			     "Camera lens" sub-label buried in View): lens, clip planes, orbit feel,
 			     framing shortcuts and the saved views. All LOCAL, never replicated —
 			     except 36 L2's start-view hold, which is scene data (CameraHoldSetting). -->
-			<Section label="Camera">
+			<Section variant="panel" label="Camera">
 				<div id="lens-presets" class="flex flex-wrap gap-1">
 					{#each LENS_PRESETS as p (p.label)}
 						<button
 							class={'ui-chip ' +
 								(Math.round($globalCamera?.fov ?? 0) === p.fov
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title={p.mm + 'mm equivalent · ' + p.fov + '° vertical FOV'}
 							onclick={() => {
 								if ($globalCamera) {
@@ -2024,7 +2032,7 @@
 					onchange={(v) => setCameraNear(v)}
 				/>
 				<div class="ui-row">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Far clip</span>
+					<span class="w-20 shrink-0 text-xs text-text-muted">Far clip</span>
 					<div class="w-24 shrink-0">
 						<DragRow
 							id="camera-far"
@@ -2037,9 +2045,9 @@
 							onchange={(v) => setCameraFar(v)}
 						/>
 					</div>
-					<span class="text-[10px] text-gray-500">grows to fit the scene</span>
+					<span class="text-[length:var(--fs-badge)] text-text-faint">grows to fit the scene</span>
 				</div>
-				<p class="text-[10px] italic text-gray-400">Clip planes are per-device (not shared).</p>
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">Clip planes are per-device (not shared).</p>
 				<p class="ui-section-label">Orbit feel</p>
 				<SliderRow
 					label="Rotate speed"
@@ -2068,26 +2076,26 @@
 					value={$orbitPrefs.panSpeed}
 					onchange={(v) => setOrbitPrefs({ panSpeed: v })}
 				/>
-				<Checkbox
+				<InsToggle
 					id="orbit-damping"
 					checked={$orbitPrefs.damping}
 					onchange={(/** @type {any} */ e) => setOrbitPrefs({ damping: e.currentTarget.checked })}
-					>Smooth (damped) orbiting</Checkbox
+					>Smooth (damped) orbiting</InsToggle
 				>
-				<Checkbox
+				<InsToggle
 					id="orbit-invert"
 					checked={$orbitPrefs.invertY}
 					onchange={(/** @type {any} */ e) => setOrbitPrefs({ invertY: e.currentTarget.checked })}
-					>Invert vertical orbit</Checkbox
+					>Invert vertical orbit</InsToggle
 				>
 				<div class="ui-row items-center gap-2">
-					<button id="camera-frame-scene" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => frameScene()}>
+					<button id="camera-frame-scene" class="ui-chip" onclick={() => frameScene()}>
 						Frame scene
 					</button>
-					<button id="camera-reset-view" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetView()}>
+					<button id="camera-reset-view" class="ui-chip" onclick={() => resetView()}>
 						Reset view
 					</button>
-					<button id="orbit-reset" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetOrbitPrefs()}>
+					<button id="orbit-reset" class="ui-chip" onclick={() => resetOrbitPrefs()}>
 						Reset feel
 					</button>
 				</div>
@@ -2095,18 +2103,18 @@
 				<SimOnLoadSetting /><!-- 36-fb-water F14: scene data, saved + replicated -->
 				<p class="ui-section-label" data-anchor="Saved views">Saved views</p>
 				<div class="ui-row items-center gap-2">
-					<button id="bookmark-save" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => saveBookmark()}>
+					<button id="bookmark-save" class="ui-chip" onclick={() => saveBookmark()}>
 						Save current view
 					</button>
-					<span class="text-[10px] text-gray-500">Shift+1..{SHORTCUT_SLOTS} recall the first {SHORTCUT_SLOTS}</span>
+					<span class="text-[length:var(--fs-badge)] text-text-faint">Shift+1..{SHORTCUT_SLOTS} recall the first {SHORTCUT_SLOTS}</span>
 				</div>
 				{#if $bookmarks.length === 0}
-					<p class="text-xs text-gray-400">No saved views yet. Frame something you like, then Save current view.</p>
+					<p class="text-xs text-text-muted">No saved views yet. Frame something you like, then Save current view.</p>
 				{:else}
 					<div id="bookmark-list" class="flex flex-col gap-1">
 						{#each $bookmarks as bookmark, index (bookmark.id)}
 							<div class="bookmark-row flex items-center gap-1">
-								<span class="w-8 shrink-0 text-[10px] text-gray-500">{index < SHORTCUT_SLOTS ? '⇧' + (index + 1) : ''}</span>
+								<span class="w-8 shrink-0 text-[length:var(--fs-badge)] text-text-faint">{index < SHORTCUT_SLOTS ? '⇧' + (index + 1) : ''}</span>
 								<input
 									class="ui-input min-w-0 flex-1 px-1 py-0.5 text-xs"
 									aria-label="View name"
@@ -2114,10 +2122,10 @@
 									onchange={(/** @type {any} */ e) => renameBookmark(bookmark.id, e.currentTarget.value)}
 								/>
 								<button class={bmBtn} title="Recall this view" onclick={() => recallBookmark(index)}>
-									<Icon name="eye" size={13} />
+									<Icon name="eye" size={16} />
 								</button>
 								<button class={bmBtn} title="Overwrite with the current view" onclick={() => overwriteBookmark(bookmark.id)}>
-									<Icon name="camera" size={13} />
+									<Icon name="camera" size={16} />
 								</button>
 								<button class={bmBtn} title="Move up" disabled={index === 0} onclick={() => moveBookmark(bookmark.id, -1)}>↑</button>
 								<button
@@ -2126,13 +2134,13 @@
 									disabled={index === $bookmarks.length - 1}
 									onclick={() => moveBookmark(bookmark.id, 1)}>↓</button
 								>
-								<button class="{bmBtn} text-red-400" title="Delete this view" onclick={() => deleteBookmark(bookmark.id)}>
-									<Icon name="trash-2" size={13} />
+								<button class="{bmBtn} text-warn-text" title="Delete this view" onclick={() => deleteBookmark(bookmark.id)}>
+									<Icon name="trash-2" size={16} />
 								</button>
 							</div>
 						{/each}
 					</div>
-					<p class="text-[10px] italic text-gray-400">
+					<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 						Each view stores its lens (FOV + clip planes) and restores it on recall.
 					</p>
 				{/if}
@@ -2140,23 +2148,23 @@
 
 			<!-- 16-P3: grid + snapping are LOCAL view prefs (like the clip planes and
 			     the render mode above) — peers each get their own. -->
-			<Section label="Grid">
-				<Checkbox
+			<Section variant="panel" label="Grid" badge="This device">
+				<InsToggle
 					id="grid-show"
 					checked={!!$showGrid}
 					onchange={() => {
 						showGrid.update((v) => !v);
 						if (safeStorage.getItem('showGrid')) safeStorage.removeItem('showGrid');
 						else safeStorage.setItem('showGrid', 'false');
-					}}>Show grid</Checkbox
+					}}>Show grid</InsToggle
 				>
-				<Checkbox
+				<InsToggle
 					id="grid-match-snap"
 					checked={$gridSettings.matchSnapStep}
 					onchange={(/** @type {any} */ e) => setGrid({ matchSnapStep: e.currentTarget.checked })}
 				>
 					Match snapping step ({$snapSettings.translate})
-				</Checkbox>
+				</InsToggle>
 				<SliderRow
 					label="Cell size"
 					min={0.05}
@@ -2176,7 +2184,7 @@
 					onchange={(v) => setGrid({ sectionEvery: Math.round(v) })}
 				/>
 				<div class="ui-row items-center gap-2">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Colours</span>
+					<span class="w-20 shrink-0 text-xs text-text-muted">Colours</span>
 					<!-- plain swatches: the full picker is overkill for two grid lines,
 					     and v4 pickers must never take bind:hex (15-C) -->
 					<input
@@ -2195,16 +2203,16 @@
 						value={$gridSettings.sectionColor}
 						oninput={(/** @type {any} */ e) => setGrid({ sectionColor: e.currentTarget.value })}
 					/>
-					<span class="text-[10px] text-gray-500">cell · major</span>
+					<span class="text-[length:var(--fs-badge)] text-text-faint">cell · major</span>
 				</div>
 				<div class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Fade</span>
+					<span class="w-20 shrink-0 text-xs text-text-muted">Fade</span>
 					{#each [['auto', 'Auto'], ['fixed', 'Fixed']] as [mode, label]}
 						<button
 							class={'ui-chip ' +
 								($gridSettings.fadeMode === mode
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title={mode === 'auto' ? 'Fade scales with the camera distance' : 'A fixed fade radius'}
 							onclick={() => setGrid({ fadeMode: mode })}>{label}</button
 						>
@@ -2230,11 +2238,11 @@
 					value={$gridSettings.fadeStrength}
 					onchange={(v) => setGrid({ fadeStrength: v })}
 				/>
-				<Checkbox
+				<InsToggle
 					id="grid-infinite"
 					checked={$gridSettings.infinite}
 					onchange={(/** @type {any} */ e) => setGrid({ infinite: e.currentTarget.checked })}
-					>Infinite grid</Checkbox
+					>Infinite grid</InsToggle
 				>
 				{#if !$gridSettings.infinite}
 					<SliderRow
@@ -2251,13 +2259,13 @@
 				     is not what "follow the camera" should mean while you're looking
 				     somewhere else; Look-at centres the grid under your gaze. -->
 				<div id="grid-follow" class="ui-row items-center gap-1">
-					<span class="w-20 shrink-0 text-xs text-gray-400">Follow</span>
+					<span class="w-20 shrink-0 text-xs text-text-muted">Follow</span>
 					{#each [['off', 'Off'], ['lookat', 'Look-at'], ['camera', 'Camera']] as [mode, label]}
 						<button
 							class={'ui-chip ' +
 								($gridSettings.follow === mode
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title={mode === 'lookat'
 								? 'Centre the grid under what you are looking at (horizontal only)'
 								: mode === 'camera'
@@ -2267,36 +2275,36 @@
 						>
 					{/each}
 				</div>
-				<Checkbox
+				<InsToggle
 					id="grid-axes"
 					checked={$gridSettings.showAxes}
 					onchange={(/** @type {any} */ e) => setGrid({ showAxes: e.currentTarget.checked })}
-					>Show origin axes</Checkbox
+					>Show origin axes</InsToggle
 				>
 				<div class="ui-row items-center gap-2">
-					<button id="grid-reset" class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500" onclick={() => resetGrid()}>
+					<button id="grid-reset" class="ui-chip" onclick={() => resetGrid()}>
 						Reset grid
 					</button>
-					<span class="text-[10px] italic text-gray-400">Per-device (not shared).</span>
+					<span class="text-[length:var(--fs-badge)] italic text-text-muted">Per-device (not shared).</span>
 				</div>
 			</Section>
 
-			<Section label="Snapping">
-				<Checkbox
+			<Section variant="panel" label="Snapping" badge="This device">
+				<InsToggle
 					id="snap-enabled"
 					checked={$snapEnabled}
 					onchange={(/** @type {any} */ e) => snapEnabled.set(e.currentTarget.checked)}
-					>Snap transforms to a grid</Checkbox
+					>Snap transforms to a grid</InsToggle
 				>
 				<div class="snap-row">
-					<span class="text-xs text-gray-400">Position</span>
+					<span class="text-xs text-text-muted">Position</span>
 					<div class="snap-chips">
 					{#each [0.1, 0.25, 0.5, 1] as step}
 						<button
 							class={'ui-chip ' +
 								($snapSettings.translate === step
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							onclick={() => snapSettings.update((s) => ({ ...s, translate: step }))}>{step}</button
 						>
 					{/each}
@@ -2316,14 +2324,14 @@
 					</div>
 				</div>
 				<div class="snap-row">
-					<span class="text-xs text-gray-400">Rotation</span>
+					<span class="text-xs text-text-muted">Rotation</span>
 					<div class="snap-chips">
 					{#each [5, 15, 45, 90] as step}
 						<button
 							class={'ui-chip ' +
 								($snapSettings.rotateDeg === step
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							onclick={() => snapSettings.update((s) => ({ ...s, rotateDeg: step }))}>{step}°</button
 						>
 					{/each}
@@ -2343,14 +2351,14 @@
 					</div>
 				</div>
 				<div class="snap-row">
-					<span class="text-xs text-gray-400">Scale</span>
+					<span class="text-xs text-text-muted">Scale</span>
 					<div class="snap-chips">
 					{#each [0.05, 0.1, 0.25] as step}
 						<button
 							class={'ui-chip ' +
 								($snapSettings.scale === step
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							onclick={() => snapSettings.update((s) => ({ ...s, scale: step }))}>{step}</button
 						>
 					{/each}
@@ -2368,11 +2376,11 @@
 						/>
 					</div>
 				</div>
-				<Checkbox
+				<InsToggle
 					id="snap-surface"
 					checked={$surfaceSnap}
 					onchange={(/** @type {any} */ e) => surfaceSnap.set(e.currentTarget.checked)}
-					>Rest dragged objects on the surface below</Checkbox
+					>Rest dragged objects on the surface below</InsToggle
 				>
 				<!-- 19-B: element snap targets. Same three-column grid as the steps
 				     above (label | chips | number), so every control in the section
@@ -2385,7 +2393,7 @@
 				     in the numeric grid stranded the fifth chip alone against the right
 				     edge. Own line, left-aligned, wrapping naturally. -->
 				<div class="snap-sub">
-					<span class="text-xs text-gray-400">Targets</span>
+					<span class="text-xs text-text-muted">Targets</span>
 					<span class="snap-sub-hint">
 						{activeTargetCount === 0 ? 'none — element snap is idle' : `${activeTargetCount} on`}
 					</span>
@@ -2396,8 +2404,8 @@
 							id={'snap-target-' + target[0]}
 							class={'ui-chip ' +
 								(targetOn($snapTargets, target[0])
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							aria-pressed={targetOn($snapTargets, target[0])}
 							onclick={() => toggleTarget(target[0])}
 							>{target[1]}</button
@@ -2405,14 +2413,14 @@
 					{/each}
 				</div>
 				<div class="snap-row">
-					<span class="text-xs text-gray-400">Radius</span>
+					<span class="text-xs text-text-muted">Radius</span>
 					<div class="snap-chips">
 						{#each [15, 25, 40] as preset}
 							<button
 								class={'ui-chip ' +
 									($snapTargets.radiusPx === preset
-										? 'bg-primary-600 text-white'
-										: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+										? 'ins-chip-on'
+										: '')}
 								onclick={() => snapTargets.update((t) => ({ ...t, radiusPx: preset }))}
 								>{preset}</button
 							>
@@ -2436,25 +2444,25 @@
 					</div>
 				</div>
 				<!-- 19-B P4: align to the candidate normal (face/surface targets only) -->
-				<Checkbox
+				<InsToggle
 					id="snap-align-normal"
 					checked={$snapTargets.alignNormal}
 					onchange={(/** @type {any} */ e) =>
 						snapTargets.update((t) => ({ ...t, alignNormal: e.currentTarget.checked }))}
-					>Rotate to the surface (align to normal)</Checkbox
+					>Rotate to the surface (align to normal)</InsToggle
 				>
 				<!-- Auto/Pivot are the MODE (two chips, so the numeric grid fits them);
 				     picking is an ACTION that arms the next viewport click, so it gets a
 				     full-width button of its own rather than a third, much wider chip -->
 				<div class="snap-row">
-					<span class="text-xs text-gray-400">Snap origin</span>
+					<span class="text-xs text-text-muted">Snap origin</span>
 					<div class="snap-chips">
 						<button
 							id="snap-anchor-auto"
 							class={'ui-chip ' +
 								($snapTargets.anchorMode === 'auto' && $snapAnchor.mode !== 'picked'
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title="Snap from the nearest point on the object's bounding box"
 							onclick={() => {
 								clearSnapAnchor();
@@ -2465,8 +2473,8 @@
 							id="snap-anchor-pivot"
 							class={'ui-chip ' +
 								($snapTargets.anchorMode === 'pivot' && $snapAnchor.mode !== 'picked'
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title="Snap from the object's own origin"
 							onclick={() => {
 								clearSnapAnchor();
@@ -2498,7 +2506,7 @@
 						<span class="snap-status-hint">Esc cancels</span>
 						<button
 							id="snap-anchor-cancel"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							aria-label="cancel picking the snap origin"
 							title="Cancel (Esc)"
 							onclick={() => cancelSnapAnchorPick()}>✕</button
@@ -2509,33 +2517,33 @@
 						<span class="snap-status-text">Picked ✓</span>
 						<button
 							id="snap-anchor-save-origin"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							title="Keep this point for good: it becomes the object's own origin — shared with peers, undoable, and it survives selecting something else"
 							onclick={() => saveSnapAnchorAsOrigin()}>Save as object origin</button
 						>
 						<button
 							id="snap-anchor-clear"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							aria-label="clear the picked snap origin"
 							title="Forget this point"
 							onclick={() => clearSnapAnchor()}>✕</button
 						>
 					</div>
 				{/if}
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					A picked origin is local and lasts until you select something else — save it to keep it.
 				</p>
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					Snapping is per-device; the same steps drive the viewport menu.
 				</p>
 			</Section>
 
-			<Section label="Physics">
+			<Section variant="panel" label="Physics">
 				<!-- B4: ONE section, three labelled sub-blocks (the Snapping section's
 					 internal grouping). Splitting it would break its collapse state, the
 					 openSceneSection('Physics') deep link AND inspectorFilter, all three
 					 of which key off the label. -->
-				<p class="text-[10px] uppercase tracking-wide text-gray-500">World</p>
+				<p class="text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint">World</p>
 				<!-- CL-A A6: shared scene gravity (replicated singleton, applies live) -->
 				<SliderRow label="Gravity" min={-20} max={5} step={0.1} value={$sceneGravity} onchange={(v) => setSceneGravity(v)} />
 				<FluidBudgetSetting /><!-- 36-fb S3: scene data, saved + replicated -->
@@ -2549,7 +2557,7 @@
 					onchange={(v) => setScenePhysics({ timeScale: v })}
 				/>
 				{#if $scenePhysicsDefaults.timeScale > 1.5 && !$scenePhysicsDefaults.ccd}
-					<p class="text-[10px] italic text-amber-400">
+					<p class="text-[length:var(--fs-badge)] italic text-warn-text">
 						Above 1.5x bodies travel further per step — turn Continuous collision on
 						below, or fast objects can pass through thin walls.
 					</p>
@@ -2557,24 +2565,24 @@
 				<div class="ui-row items-center gap-2">
 					<button
 						id="physics-gravity-reset"
-						class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+						class="ui-chip"
 						onclick={() => resetSceneGravity()}
 					>
 						Reset gravity ({DEFAULT_GRAVITY})
 					</button>
 				</div>
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					Shared with everyone and applies to running simulations live.
 				</p>
 
-				<p class="mt-2 text-[10px] uppercase tracking-wide text-gray-500">Ground &amp; bounds</p>
-				<Checkbox
+				<p class="mt-2 text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint">Ground &amp; bounds</p>
+				<InsToggle
 					id="physics-ground-enabled"
 					checked={$scenePhysicsGround.enabled}
 					onchange={(e) => setScenePhysics({ ground: { enabled: e.currentTarget.checked } })}
 				>
 					Ground plane
-				</Checkbox>
+				</InsToggle>
 				{#if $scenePhysicsGround.enabled}
 					<DragRow
 						id="physics-ground-height"
@@ -2604,7 +2612,7 @@
 						onchange={(v) => setScenePhysics({ ground: { restitution: v } })}
 					/>
 				{:else}
-					<p class="text-[10px] italic text-gray-400">
+					<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 						No floor — objects fall until they hit something you placed, then the
 						out-of-bounds rule below.
 					</p>
@@ -2619,7 +2627,7 @@
 					onchange={(/** @type {number} */ v) => setScenePhysics({ bounds: { limit: v } })}
 				/>
 				<div class="ui-row items-center gap-2">
-					<span class="w-24 shrink-0 text-xs text-gray-300">Then</span>
+					<span class="w-24 shrink-0 text-xs text-text-2">Then</span>
 					<ThemedSelect
 						id="physics-bounds-action"
 						class="flex-1"
@@ -2633,9 +2641,9 @@
 					/>
 				</div>
 
-				<p class="mt-2 text-[10px] uppercase tracking-wide text-gray-500">Defaults (advanced)</p>
+				<p class="mt-2 text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint">Defaults (advanced)</p>
 				<div class="ui-row items-center gap-2">
-					<span class="w-24 shrink-0 text-xs text-gray-300">Material</span>
+					<span class="w-24 shrink-0 text-xs text-text-2">Material</span>
 					<ThemedSelect
 						id="physics-scene-material"
 						class="flex-1"
@@ -2654,7 +2662,7 @@
 							})}
 					/>
 				</div>
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					Fills in friction and bounce for every object that does not set its own.
 				</p>
 				<SliderRow
@@ -2675,37 +2683,37 @@
 					value={$scenePhysicsDefaults.damping.angular}
 					onchange={(v) => setScenePhysics({ damping: { angular: v } })}
 				/>
-				<Checkbox
+				<InsToggle
 					id="physics-ccd"
 					checked={$scenePhysicsDefaults.ccd}
 					onchange={(e) => setScenePhysics({ ccd: e.currentTarget.checked })}
 				>
 					Continuous collision (fast objects)
-				</Checkbox>
-				<p class="text-[10px] italic text-gray-400">
+				</InsToggle>
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					Costs a little speed; thrown objects turn it on for themselves either way.
 				</p>
 				<!-- C1: every object that gets a body at sim start; click = select -->
 				{#if physicsRows.length === 0}
-					<p class="text-xs text-gray-400">
+					<p class="text-xs text-text-muted">
 						No objects have physics yet. Select an object and set its Physics mode to
 						Dynamic (or wire a Mass node to an Object Selector in the node editor),
 						then press ▶ / P to simulate.
 					</p>
 				{:else}
-					<div id="physics-objects" class="flex max-h-48 flex-col gap-0.5 overflow-y-auto">
+					<div id="physics-objects" class="flex max-h-48 flex-col gap-0.5 overflow-y-auto" use:minimalScroll>
 						{#each physicsRows as row (row.uuid)}
 							<button
 								class={'flex items-center justify-between gap-2 rounded-sm px-2 py-1 text-left text-xs transition-colors ' +
 									($selectedObject?.uuid === row.uuid
-										? 'bg-primary-600 text-white'
-										: 'bg-gray-700 text-gray-200 hover:bg-gray-600')}
+										? 'ins-chip-on'
+										: '')}
 								title="Click to select"
 								onclick={() => selectObject(row.uuid)}
 							>
 								<span class="truncate">{row.name}</span>
 								<!-- 36 U1: no fade on the selected row's accent fill (2.6:1 with it) -->
-								<span class={'shrink-0 text-[10px] ' + ($selectedObject?.uuid === row.uuid ? '' : 'opacity-75')}>
+								<span class={'shrink-0 text-[length:var(--fs-badge)] ' + ($selectedObject?.uuid === row.uuid ? '' : 'opacity-75')}>
 									{row.mode === 'dynamic'
 										? 'dynamic · ' + row.mass + ' kg'
 										: row.mode === 'static'
@@ -2718,26 +2726,26 @@
 				{/if}
 				<button
 					id="physics-enable-selection"
-					class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+					class="ui-chip"
 					onclick={() => enablePhysicsOnSelection()}
 				>
 					Enable physics on selection
 				</button>
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					Dynamic objects fall and collide while a simulation runs (▶ or P).
 				</p>
 
 				<!-- 24-A A2: the knock block (A1) — an open VR hand or a walking player hitting a
 					 dynamic body. Inside the Physics section (the B4 rule: one section, labelled
 					 sub-blocks), with a data-anchor so a toast can openSceneSection('Physics:Knock'). -->
-				<p class="mt-2 text-[10px] uppercase tracking-wide text-gray-500" data-anchor="Knock">Knock</p>
-				<Checkbox
+				<p class="mt-2 text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint" data-anchor="Knock">Knock</p>
+				<InsToggle
 					id="physics-knock-enabled"
 					checked={$sceneKnock.enabled}
 					onchange={(e) => setScenePhysics({ knock: { enabled: e.currentTarget.checked } })}
 				>
 					Hands and players knock dynamic objects
-				</Checkbox>
+				</InsToggle>
 				{#if $sceneKnock.enabled}
 					<SliderRow
 						id="physics-knock-gain"
@@ -2777,14 +2785,19 @@
 						onchange={(v) => setScenePhysics({ knock: { spin: v } })}
 					/>
 				{/if}
-				<p class="text-[10px] italic text-gray-400">
+				<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 					An open VR hand, or walking into an object on desktop, sends it off at the speed it
 					was hit. Grip still grabs. Shared, and it needs a running simulation.
 				</p>
 
-				<p class="mt-2 text-[10px] uppercase tracking-wide text-gray-500">Play mode</p>
-				<div class="ui-row items-center gap-2">
-					<span class="w-24 shrink-0 text-xs text-gray-300">Pointer</span>
+			</Section>
+
+			<!-- 38 NOTES-38 #33: Play is its own section (it was the "Play mode" block inside Physics):
+			     how the pointer acts, grab reach, flying, the simulation, the Playing banner and where
+			     play starts. Same rows, same ids, same scene data (the play block). -->
+			<Section variant="panel" label="Play" badge="Shared" aliases={['Play mode']}>
+				<PropRow label="Pointer" valueBox={false}>
+					{#snippet control()}
 					<ThemedSelect
 						id="physics-play-interaction"
 						class="flex-1"
@@ -2796,15 +2809,16 @@
 						]}
 						onchange={(/** @type {any} */ val) => setScenePhysics({ play: { interaction: val } })}
 					/>
-				</div>
+					{/snippet}
+				</PropRow>
 				<!-- 31-towers P1: grab REACH, measured from the player's body (absent = no limit) -->
-				<Checkbox
+				<InsToggle
 					id="physics-play-reach-on"
 					checked={$scenePlay.reach != null}
 					onchange={(e) => setScenePhysics({ play: { reach: e.currentTarget.checked ? 1.3 : null } })}
 				>
 					Limit grab reach
-				</Checkbox>
+				</InsToggle>
 				{#if $scenePlay.reach != null}
 					<SliderRow
 						id="physics-play-reach"
@@ -2831,37 +2845,65 @@
 						/>
 					{/snippet}
 				</PropRow>
-				<Checkbox
+				<InsToggle
 					id="physics-sim-on-play"
 					checked={$scenePlay.simOnPlay}
 					onchange={(e) => setScenePhysics({ play: { simOnPlay: e.currentTarget.checked } })}
 				>
 					Start the simulation when play mode opens
-				</Checkbox>
+				</InsToggle>
+				<!-- 38 NOTES-38 #4 / #33: the "Playing · Press Esc to stop" banner — shown by default;
+				     a game or an advanced scene hides it or says its own words (phone too: the
+				     banner reads the same scene setting). A game's Menu · Esc button is not this. -->
+				<PropRow label="Playing banner" valueBox={false} id="physics-play-banner-row">
+					{#snippet control()}
+						<Segmented
+							id="physics-play-banner"
+							label="Playing banner"
+							full
+							options={[
+								{ value: 'hint', label: 'Show' },
+								{ value: 'hide', label: 'Hide' },
+								{ value: 'custom', label: 'Custom' }
+							]}
+							value={$scenePlay.banner?.mode ?? 'hint'}
+							onchange={(/** @type {any} */ val) =>
+								setScenePhysics({
+									play: { banner: val === 'hint' ? null : val === 'hide' ? { mode: 'hide' } : { mode: 'custom', text: $scenePlay.banner?.text ?? '' } }
+								})}
+						/>
+					{/snippet}
+				</PropRow>
+				{#if $scenePlay.banner?.mode === 'custom'}
+					<PropRow label="Banner text" valueBox={false}>
+						{#snippet control()}
+						<input
+							id="physics-play-banner-text"
+							class="tp-field w-full"
+							type="text"
+							maxlength="80"
+							placeholder="e.g. Find the three keys"
+							value={$scenePlay.banner.text}
+							onchange={(e) => setScenePhysics({ play: { banner: { mode: 'custom', text: e.currentTarget.value } } })}
+						/>
+						{/snippet}
+					</PropRow>
+				{/if}
 				<!-- 30c: where desktop play starts — feet position + heading, shared scene data -->
-				<div class="ui-row items-center gap-2">
-					<span class="w-24 shrink-0 text-xs text-gray-300">Spawn point</span>
-					<span id="physics-spawn-readout" class="flex-1 text-xs text-gray-400">{spawnText($scenePlay.spawn)}</span>
-				</div>
-				<div class="ui-row gap-2">
-					<button
-						id="physics-spawn-set"
-						class="ui-button-quiet text-xs"
-						title="Play starts at the point the view orbits around, facing the way the camera looks at it"
-						onclick={setSpawnFromView}>Set to the view's focus</button
-					>
+				<PropRow label="Spawn point" valueBox={false}>
+					{#snippet control()}
+					<span id="physics-spawn-readout" class="text-[length:var(--fs-desc)] text-text-muted">{spawnText($scenePlay.spawn)}</span>
+					{/snippet}
+				</PropRow>
+				<div class="flex flex-wrap gap-2">
+					<UiButton id="physics-spawn-set" variant="outline" size="sm" title="Play starts at the point the view orbits around, facing the way the camera looks at it" onclick={setSpawnFromView}>Set to the view's focus</UiButton>
 					{#if $scenePlay.spawn}
-						<button id="physics-spawn-clear" class="ui-button-quiet text-xs" onclick={() => setScenePhysics({ play: { spawn: null } })}
-							>Clear</button
-						>
+						<UiButton id="physics-spawn-clear" variant="ghost" size="sm" onclick={() => setScenePhysics({ play: { spawn: null } })}>Clear</UiButton>
 					{/if}
 				</div>
-				<p class="text-[10px] italic text-gray-400">
-					Shared: everyone entering play mode in this scene gets these.
-				</p>
 			</Section>
 
-			<Section label="Background">
+			<Section variant="panel" label="Background" badge="Shared">
 				<ColorPicker
 					isAlpha={false}
 					isTextInput={true}
@@ -2871,8 +2913,10 @@
 					isOpen={true}
 					sliderDirection="horizontal"
 					--picker-indicator-size="20px"
-					--cp-bg-color="#1f2937"
-					--cp-border-color="#353f4e"
+					--cp-bg-color="var(--surface-1)"
+					--cp-border-color="var(--border)"
+					--cp-input-color="var(--surface-inset)"
+					--cp-text-color="var(--text)"
 					--picker-height="70px"
 					--picker-width="50px"
 					--slider-width="10px"
@@ -2881,7 +2925,7 @@
 				/>
 			</Section>
 
-			<Section label="Fog">
+			<Section variant="panel" label="Fog" badge="Shared">
 				<ColorPicker
 					isAlpha={false}
 					isTextInput={true}
@@ -2891,14 +2935,16 @@
 					isOpen={true}
 					sliderDirection="horizontal"
 					--picker-indicator-size="20px"
-					--cp-bg-color="#1f2937"
-					--cp-border-color="#353f4e"
+					--cp-bg-color="var(--surface-1)"
+					--cp-border-color="var(--border)"
+					--cp-input-color="var(--surface-inset)"
+					--cp-text-color="var(--text)"
 					--picker-height="70px"
 					--picker-width="50px"
 					--slider-width="10px"
-					hex={envFog?.color ?? '#ffffff'}
+					hex={envFog?.color ?? FOG_DEFAULT}
 					onInput={(/** @type {any} */ c) => {
-						if (sameHex(c.hex, envFog?.color ?? '#ffffff')) return; // mount echo, not an edit
+						if (sameHex(c.hex, envFog?.color ?? FOG_DEFAULT)) return; // mount echo, not an edit
 						editEnvSky({ fog: { color: c.hex } });
 					}}
 				/>
@@ -2906,54 +2952,45 @@
 					onchange={(v) => editEnvSky({ fog: { near: v } })} />
 				<SliderRow id="fog-far" label="Far" min={0} max={Math.max(100, Math.ceil(envFog?.far ?? 0))} step={0.1} decimals={1} value={envFog?.far ?? 0}
 					onchange={(v) => editEnvSky({ fog: { far: v } })} />
-				<Button
-					size="xs"
-					color="alternative"
-					onclick={() => editEnvSky({ fog: null })}>Remove Fog</Button
+				<UiButton
+					size="sm"
+					variant="outline"
+					onclick={() => editEnvSky({ fog: null })}>Remove Fog</UiButton
 				>
 			</Section>
 			<!-- 36 F22 / S8: scene data, saved + replicated -->
-			<Section label="Advanced" aliases={['Selection']}><SelectionPassSetting /></Section>
+			<Section variant="panel" label="Advanced" aliases={['Selection']}><SelectionPassSetting /></Section>
 		</div>
 	{:else if $moduleSelection && !$selectedObjects.length}
 		<!-- 30 P3: a Module content row (a PROXY, not an object): whose it is, and where it
 		     is edited — never transform rows the module would overwrite on its next rebuild -->
-		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
-			<PanelHeader
-				title="Properties"
-				badge="Module content"
-				pinned={$inspectorPinned}
-				onpin={() => inspectorPinned.update((v) => !v)}
-				onclose={() => inspectorClose.set(true)}
-			/>
-		</div>
-		<div id="module-content-card" class="mt-2 flex flex-col gap-2 rounded-sm border border-gray-600/60 p-2 text-xs text-gray-300">
-			<p class="text-sm font-semibold text-gray-100">{$moduleSelection.label}</p>
+		<InspectorHead
+			title="Properties"
+			icon="package"
+			badge="Module content"
+			pinned={$inspectorPinned}
+			onpin={() => inspectorPinned.update((v) => !v)}
+			onclose={() => inspectorClose.set(true)}
+		/>
+		<div id="module-content-card" class="mt-2 flex flex-col gap-2 rounded-sm border border-border p-2 text-xs text-text-2">
+			<p class="text-sm font-semibold text-text">{$moduleSelection.label}</p>
 			<p>Made by the <strong>{$moduleSelection.moduleName}</strong> module — edit it with its toolbox or nodes.</p>
 			{#if moduleToolbox}
 				<button type="button" class="ui-button self-start" onclick={() => openModuleToolbox(moduleToolbox.id)}>Open {moduleToolbox.title}</button>
 			{/if}
 		</div>
 	{:else if $selectedObject?.name !== undefined}
-		<div id="drawer-label" class="sticky top-0 z-10 -mx-4 rounded-tl-lg bg-gray-800 px-4">
-			<PanelHeader
-				title="Properties"
-				badge={multiCount ? `${multiCount} objects` : $selectedObject.type}
-				pinned={$inspectorPinned}
-				onpin={() => inspectorPinned.update((v) => !v)}
-				onclose={() => inspectorClose.set(true)}
-			/>
-			<!-- PFX-C follow-up: property search — Sections filter by rendered text -->
-			<input
-				id="inspector-search"
-				type="search"
-				class="ui-input mb-2 w-full"
-				placeholder="Filter properties…"
-				value={$inspectorFilter}
-				oninput={(/** @type {any} */ e) => inspectorFilter.set(e.currentTarget.value)}
-				onkeydown={(/** @type {any} */ e) => e.key === 'Escape' && inspectorFilter.set('')}
-			/>
-		</div>
+		<!-- 38 NOTES-38 #24 (design page): the header names WHAT is inspected — the object's own
+		     name beside its kind badge; a set keeps the generic title -->
+		<InspectorHead
+			title={multiCount ? 'Properties' : $selectedObject.name || 'Properties'}
+			icon="box"
+			badge={multiCount ? `${multiCount} objects` : $selectedObject.type}
+			filter
+			pinned={$inspectorPinned}
+			onpin={() => inspectorPinned.update((v) => !v)}
+			onclose={() => inspectorClose.set(true)}
+		/>
 
 		<div class="flex flex-col gap-3">
 			{#if multiCount}
@@ -2962,15 +2999,16 @@
 				     last-clicked object's name and id read like the target. Renaming or
 				     re-grouping one member of a selection is what clicking that one
 				     object is for. -->
-				<div id="selection-multi-banner" class="rounded-sm border border-primary-500/40 bg-primary-500/10 px-2 py-1.5">
-					<p class="text-xs font-semibold text-primary-200">Editing {multiCount} objects</p>
-					<p class="text-[10px] text-gray-400">Every value below applies to all of them.</p>
+				<div id="selection-multi-banner" class="ins-banner">
+					<p class="text-xs font-semibold ins-accent-text">Editing {multiCount} objects</p>
+					<p class="text-[length:var(--fs-badge)] text-text-muted">Every value below applies to all of them.</p>
 				</div>
 			{/if}
 			{#if !multiCount}
 			<div class="flex flex-col gap-1">
 				<input
 					id="name"
+					title="Name"
 					type="text"
 					class="ui-input w-full"
 					value={$selectedObject.name}
@@ -2979,8 +3017,8 @@
 						sendName();
 					}}
 				/>
-				<Tooltip placement="top" arrow={false} triggeredBy="#name">Name</Tooltip>
-				<p id="uuid" class="truncate px-1 text-[10px] text-gray-500" title={$selectedObject.uuid}>
+				<!-- 38 R11: the flowbite hover Tooltip "Name" is the input's own title now -->
+<p id="uuid" class="truncate px-1 text-[length:var(--fs-badge)] text-text-faint" title={$selectedObject.uuid}>
 					{$selectedObject.uuid}
 				</p>
 				<div onclick={refreshGroups} role="presentation">
@@ -3006,7 +3044,7 @@
 
 			{#if $animatedObjects[$selectedObject.uuid]}
 				{@const anim = $animatedObjects[$selectedObject.uuid]}
-				<Section label="Animation">
+				<Section variant="panel" label="Animation">
 					<div id="animation-controls">
 						<ThemedSelect
 							class="mb-1"
@@ -3016,16 +3054,17 @@
 								setAnimationState($selectedObject.uuid, { clip: val })}
 						/>
 						<div class="flex items-center gap-2">
-							<button
-								class="rounded-sm bg-primary-700 px-2 py-0.5 text-sm text-white"
+							<UiButton
+								variant="secondary"
+								size="sm"
 								onclick={() => setAnimationState($selectedObject.uuid, { playing: !anim.playing })}
 							>
 								{anim.playing ? '⏸ Pause' : '▶ Play'}
-							</button>
-							<span class="text-xs text-gray-400">speed {anim.speed.toFixed(1)}×</span>
+							</UiButton>
+							<span class="text-xs text-text-muted">speed {anim.speed.toFixed(1)}×</span>
 							<input
 								type="range"
-								class="flex-1 accent-primary-600"
+								class="flex-1 accent-accent"
 								min="0.1"
 								max="3"
 								step="0.1"
@@ -3033,7 +3072,7 @@
 								oninput={(e) => setAnimationState($selectedObject.uuid, { speed: +e.currentTarget.value })}
 							/>
 						</div>
-						<p class="pt-1 text-[10px] italic text-gray-400">
+						<p class="pt-1 text-[length:var(--fs-badge)] italic text-text-muted">
 							Clips run on the synced clock — peers see the same pose.
 						</p>
 					</div>
@@ -3045,12 +3084,12 @@
 			     viz/preview poke) — the setPhysicsFor precedent. -->
 			{#if isCameraObject($selectedObject)}
 				{@const cam = cameraSpec($selectedObject)}
-				<Section label="Camera">
+				<Section variant="panel" label="Camera">
 					<div class="ui-row items-center gap-1">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Kind</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Kind</span>
 						{#each [['perspective', 'Perspective'], ['orthographic', 'Orthographic']] as [kind, label]}
 							<button
-								class={'ui-chip ' + (cam.kind === kind ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+								class={'ui-chip ' + (cam.kind === kind ? 'ins-chip-on' : '')}
 								onclick={() => setCameraFor($selectedObject.uuid, { kind })}>{label}</button
 							>
 						{/each}
@@ -3086,7 +3125,7 @@
 						onchange={(v) => setCameraFor($selectedObject.uuid, { near: v })}
 					/>
 					<div class="ui-row items-center gap-2">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Far</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Far</span>
 						<div class="w-24 shrink-0">
 							<DragRow
 								id="camera-object-far"
@@ -3101,27 +3140,27 @@
 						</div>
 					</div>
 					<div class="ui-row items-center gap-1">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Framing</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Framing</span>
 						{#each ASPECTS as aspect}
 							<button
-								class={'ui-chip ' + (cam.aspect === aspect ? 'bg-primary-600 text-white' : 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+								class={'ui-chip ' + (cam.aspect === aspect ? 'ins-chip-on' : '')}
 								onclick={() => setCameraFor($selectedObject.uuid, { aspect })}>{aspect}</button
 							>
 						{/each}
 					</div>
-					<Checkbox
+					<InsToggle
 						id="camera-guide"
 						checked={cam.guide}
 						onchange={(/** @type {any} */ e) => setCameraFor($selectedObject.uuid, { guide: e.currentTarget.checked })}
-						>Letterbox guide while previewing</Checkbox
+						>Letterbox guide while previewing</InsToggle
 					>
 					<div class="ui-row flex-wrap items-center gap-2">
 						<button
 							id="camera-preview"
 							class={'ui-chip ' +
 								($cameraPreview?.uuid === $selectedObject.uuid
-									? 'bg-primary-600 text-white'
-									: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+									? 'ins-chip-on'
+									: '')}
 							title="Render the scene through this camera (exit from the banner)"
 							onclick={() =>
 								$cameraPreview?.uuid === $selectedObject.uuid
@@ -3131,13 +3170,13 @@
 						>
 						<button
 							id="camera-from-view"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							title="Move this camera to your current viewpoint (and take its FOV)"
 							onclick={() => setCameraFromView($selectedObject.uuid)}>Set from view</button
 						>
 						<button
 							id="camera-align-view"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							title="Fly YOUR view to look through this camera (stays your camera)"
 							onclick={() => alignViewToCamera($selectedObject.uuid)}>Align view</button
 						>
@@ -3146,64 +3185,65 @@
 					<div class="ui-row items-center gap-2">
 						<button
 							id="camera-capture"
-							class="ui-chip inline-flex items-center gap-1 bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip inline-flex items-center gap-1"
 							title="Render one frame through this camera and download it as a PNG"
 							onclick={() => captureThroughCamera($selectedObject.uuid)}
 						>
-							<Icon name="camera" size={13} />Capture
+							<Icon name="camera" size={16} />Capture
 						</button>
-						<span class="text-[10px] text-gray-500">saves a PNG at the framing aspect</span>
+						<span class="text-[length:var(--fs-badge)] text-text-faint">saves a PNG at the framing aspect</span>
 					</div>
-					<Checkbox
+					<InsToggle
 						id="camera-pip"
 						checked={cam.pip !== false}
 						onchange={(/** @type {any} */ e) => setCameraFor($selectedObject.uuid, { pip: e.currentTarget.checked })}
-						>Preview window while selected</Checkbox
+						>Preview window while selected</InsToggle
 					>
-					<Checkbox
+					<InsToggle
 						id="camera-frustums"
 						checked={$showCameraFrustums}
 						onchange={(/** @type {any} */ e) => showCameraFrustums.set(e.currentTarget.checked)}
-						>Show camera frustums — this device</Checkbox
+						>Show camera frustums — this device</InsToggle
 					>
-					<p class="text-[10px] italic text-gray-400">
+					<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 						The camera itself is shared; previewing and the frustum lines are yours alone.
 					</p>
 				</Section>
 			{/if}
 			<!-- 36 U9: a kit piece still loading — its file, its progress, Retry / Replace / Remove -->
 			{#if !multiCount && isLoadingStubOf($selectedObject, $objectsGroup)}
-				<Section label="Loading">
+				<Section variant="panel" label="Loading">
 					<LoadStatePanel object={$selectedObject} />
 				</Section>
 			{/if}
-			<Section label="Transform">
+			<!-- 38 NOTES-38 #24 (design page): a transform is shared, and its section says so -->
+			<Section variant="panel" label="Transform" badge="Shared">
 				{#if multiCount}
 					<!-- 17-D1 follow-up: for a SET these rows drive the selection's origin
 					     (the gizmo's pivot), so every axis has one real value instead of a
 					     dash, and typing moves the group rigidly. -->
 					<div class="mb-1 flex items-center justify-between gap-2">
-						<span class="text-[10px] text-gray-400">
+						<span class="text-[length:var(--fs-badge)] text-text-muted">
 							{$pivotOnly ? 'Moving the origin only' : `Moves all ${multiCount} together`}
 						</span>
 						<div class="flex items-center gap-1">
-							<Button
+							<UiButton
 								id="origin-mode"
-								size="xs"
-								color={$pivotOnly ? 'primary' : 'alternative'}
+								size="sm"
+								variant={$pivotOnly ? 'primary' : 'outline'}
 								onclick={() => pivotOnly.update((v) => !v)}
 							>
 								{$pivotOnly ? 'Done' : 'Move origin'}
-							</Button>
-							<Button id="origin-reset" size="xs" color="alternative" onclick={() => resetPivotOrigin()}>
+							</UiButton>
+							<UiButton id="origin-reset" size="sm" variant="outline" onclick={() => resetPivotOrigin()}>
 								Centre
-							</Button>
+							</UiButton>
 						</div>
 					</div>
 					<!-- 24-E3: the PIVOT POINT of the set — Blender's list minus the 3D cursor
 					     (the snap anchor plays that role). A hand-placed origin overrides any mode. -->
 					<div class="mb-1 grid grid-cols-[3.2rem_1fr] items-center gap-1">
-						<span class="text-[11px] text-gray-400">Pivot</span>
+						<span class="text-[length:var(--fs-badge)] text-text-muted">Pivot</span>
 						<ThemedSelect
 							id="pivot-mode"
 							items={[
@@ -3215,44 +3255,55 @@
 							bind:value={$pivotMode} />
 					</div>
 				{/if}
-				<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
-					<span class="text-[11px] text-gray-400">{multiCount ? 'Origin' : 'Position'}</span>
-					<div id="inspector-position" class="grid grid-cols-3 gap-1">
-						<DragRow label="X" accent="text-red-400" step={0.02} unit="length"
+				<!-- 38 R5: the transform rows are PropRows — a fixed label column and the three
+				     axis fields as its control; every field is the same DragRow as before -->
+				<div class="ins-transform">
+					<PropRow label={multiCount ? 'Origin' : 'Position'} valueBox={false}>
+					{#snippet control()}
+					<div id="inspector-position" class="ins-axes">
+						<DragRow label="X" accent="ins-axis-x" step={0.02} unit="length"
 							value={multiCount ? ($pivotPose?.pos?.[0] ?? 0) : $selectedObject.position.x}
 							onchange={(v) => setTransform('position', 'x', v)} />
-						<DragRow label="Y" accent="text-green-400" step={0.02} unit="length"
+						<DragRow label="Y" accent="ins-axis-y" step={0.02} unit="length"
 							value={multiCount ? ($pivotPose?.pos?.[1] ?? 0) : $selectedObject.position.y}
 							onchange={(v) => setTransform('position', 'y', v)} />
-						<DragRow label="Z" accent="text-blue-400" step={0.02} unit="length"
+						<DragRow label="Z" accent="ins-axis-z" step={0.02} unit="length"
 							value={multiCount ? ($pivotPose?.pos?.[2] ?? 0) : $selectedObject.position.z}
 							onchange={(v) => setTransform('position', 'z', v)} />
 					</div>
+					{/snippet}
+					</PropRow>
 					{#if !isLight && !$pivotOnly}
-						<span class="text-[11px] text-gray-400">Rotation</span>
-						<div id="inspector-rotation" class="grid grid-cols-3 gap-1">
-							<DragRow label="X" accent="text-red-400" step={0.01} snap={RAD_SNAP} unit="angle"
+						<PropRow label="Rotation" valueBox={false}>
+						{#snippet control()}
+						<div id="inspector-rotation" class="ins-axes">
+							<DragRow label="X" accent="ins-axis-x" step={0.01} snap={RAD_SNAP} unit="angle"
 								value={multiCount ? ($pivotPose?.rot?.[0] ?? 0) : $selectedObject.rotation.x}
 								onchange={(v) => setTransform('rotation', 'x', v)} />
-							<DragRow label="Y" accent="text-green-400" step={0.01} snap={RAD_SNAP} unit="angle"
+							<DragRow label="Y" accent="ins-axis-y" step={0.01} snap={RAD_SNAP} unit="angle"
 								value={multiCount ? ($pivotPose?.rot?.[1] ?? 0) : $selectedObject.rotation.y}
 								onchange={(v) => setTransform('rotation', 'y', v)} />
-							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={RAD_SNAP} unit="angle"
+							<DragRow label="Z" accent="ins-axis-z" step={0.01} snap={RAD_SNAP} unit="angle"
 								value={multiCount ? ($pivotPose?.rot?.[2] ?? 0) : $selectedObject.rotation.z}
 								onchange={(v) => setTransform('rotation', 'z', v)} />
 						</div>
-						<span class="text-[11px] text-gray-400">Scale</span>
-						<div id="inspector-scale" class="grid grid-cols-3 gap-1">
-							<DragRow label="X" accent="text-red-400" step={0.01} snap={0.1}
+						{/snippet}
+						</PropRow>
+						<PropRow label="Scale" valueBox={false}>
+						{#snippet control()}
+						<div id="inspector-scale" class="ins-axes">
+							<DragRow label="X" accent="ins-axis-x" step={0.01} snap={0.1}
 								value={multiCount ? ($pivotPose?.scale?.[0] ?? 1) : $selectedObject.scale.x}
 								onchange={(v) => setTransform('scale', 'x', v)} />
-							<DragRow label="Y" accent="text-green-400" step={0.01} snap={0.1}
+							<DragRow label="Y" accent="ins-axis-y" step={0.01} snap={0.1}
 								value={multiCount ? ($pivotPose?.scale?.[1] ?? 1) : $selectedObject.scale.y}
 								onchange={(v) => setTransform('scale', 'y', v)} />
-							<DragRow label="Z" accent="text-blue-400" step={0.01} snap={0.1}
+							<DragRow label="Z" accent="ins-axis-z" step={0.01} snap={0.1}
 								value={multiCount ? ($pivotPose?.scale?.[2] ?? 1) : $selectedObject.scale.z}
 								onchange={(v) => setTransform('scale', 'z', v)} />
 						</div>
+						{/snippet}
+						</PropRow>
 					{/if}
 				</div>
 				{#if originTarget}
@@ -3260,79 +3311,82 @@
 					     move the mesh — it moves the point rotate/scale happen around, which
 					     is what makes hinges, lids and wheels possible. Saved per object, so
 					     switching selections brings each one's origin back. -->
-					<div id="object-origin" class="mt-1 rounded-sm border border-gray-700/60 p-1.5">
+					<div id="object-origin" class="mt-1 rounded-sm border border-border p-1.5">
 						<div class="mb-1 flex items-center justify-between gap-2">
-							<span class="text-[11px] text-gray-300">
+							<span class="text-[length:var(--fs-badge)] text-text-2">
 								Origin {originSet ? '' : '(default)'}
 							</span>
 							<div class="flex items-center gap-1">
-								<Button
+								<UiButton
 									id="origin-mode-single"
-									size="xs"
-									color={$pivotOnly ? 'primary' : 'alternative'}
+									size="sm"
+									variant={$pivotOnly ? 'primary' : 'outline'}
 									onclick={() => {
 										pivotOnly.update((v) => !v);
 										reseatPivot(); // the gizmo has to exist to drag the origin
 									}}
 								>
 									{$pivotOnly ? 'Done' : 'Move origin'}
-								</Button>
-								<Button id="origin-clear" size="xs" color="alternative" onclick={clearOrigin}>
+								</UiButton>
+								<UiButton id="origin-clear" size="sm" variant="outline" onclick={clearOrigin}>
 									Reset
-								</Button>
+								</UiButton>
 							</div>
 						</div>
-						<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
-							<span class="text-[11px] text-gray-400">World</span>
-							<div id="inspector-origin" class="grid grid-cols-3 gap-1">
-								<DragRow label="X" accent="text-red-400" step={0.02} unit="length" value={originPos[0]}
+						<div class="ins-transform">
+							<PropRow label="World" valueBox={false}>
+							{#snippet control()}
+							<div id="inspector-origin" class="ins-axes">
+								<DragRow label="X" accent="ins-axis-x" step={0.02} unit="length" value={originPos[0]}
 									onchange={(v) => setOriginAxis('x', v)} />
-								<DragRow label="Y" accent="text-green-400" step={0.02} unit="length" value={originPos[1]}
+								<DragRow label="Y" accent="ins-axis-y" step={0.02} unit="length" value={originPos[1]}
 									onchange={(v) => setOriginAxis('y', v)} />
-								<DragRow label="Z" accent="text-blue-400" step={0.02} unit="length" value={originPos[2]}
+								<DragRow label="Z" accent="ins-axis-z" step={0.02} unit="length" value={originPos[2]}
 									onchange={(v) => setOriginAxis('z', v)} />
 							</div>
+							{/snippet}
+							</PropRow>
 						</div>
 						<div class="mt-1 flex flex-wrap gap-1">
 							{#if !isLight}
 								<!-- 24-E1: a light has no geometry to measure — World 0 and the rows are its presets -->
-								<Button id="origin-bottom" size="xs" color="alternative" onclick={() => applyOriginPreset('bottom')}>
+								<UiButton id="origin-bottom" size="sm" variant="outline" onclick={() => applyOriginPreset('bottom')}>
 									Bottom
-								</Button>
-								<Button id="origin-center" size="xs" color="alternative" onclick={() => applyOriginPreset('center')}>
+								</UiButton>
+								<UiButton id="origin-center" size="sm" variant="outline" onclick={() => applyOriginPreset('center')}>
 									Centre
-								</Button>
-								<Button id="origin-median" size="xs" color="alternative" onclick={() => applyOriginPreset('median')}>
+								</UiButton>
+								<UiButton id="origin-median" size="sm" variant="outline" onclick={() => applyOriginPreset('median')}>
 									Median
-								</Button>
+								</UiButton>
 							{/if}
-							<Button id="origin-world" size="xs" color="alternative" onclick={() => applyOriginPreset('world')}>
+							<UiButton id="origin-world" size="sm" variant="outline" onclick={() => applyOriginPreset('world')}>
 								World 0
-							</Button>
+							</UiButton>
 							{#if isGroup}
-								<Button id="origin-children" size="xs" color="alternative" onclick={() => applyOriginPreset('children')}>
+								<UiButton id="origin-children" size="sm" variant="outline" onclick={() => applyOriginPreset('children')}>
 									Children
-								</Button>
+								</UiButton>
 							{/if}
 							{#if isLight}
-								<span class="self-center text-[10px] text-gray-500">A light with an origin orbits it under Rotate.</span>
+								<span class="self-center text-[length:var(--fs-badge)] text-text-faint">A light with an origin orbits it under Rotate.</span>
 							{:else if editingThis}
-								<Button id="origin-hinge" size="xs" color="primary" onclick={originFromSelection}>
+								<UiButton id="origin-hinge" size="sm" variant="primary" onclick={originFromSelection}>
 									Set origin here{$vertexSelectionSize > 1 ? ` (${$vertexSelectionSize} verts)` : ''}
-								</Button>
+								</UiButton>
 							{:else}
-								<Button id="origin-pick" size="xs" color="alternative" onclick={pickOriginFromMesh}>
+								<UiButton id="origin-pick" size="sm" variant="outline" onclick={pickOriginFromMesh}>
 									Pick from mesh…
-								</Button>
+								</UiButton>
 							{/if}
 						</div>
 						{#if editingThis}
-							<p class="mt-1 text-[10px] text-primary-200">
+							<p class="mt-1 text-[length:var(--fs-badge)] ins-accent-text">
 								Click a vertex — ctrl-click both ends of an edge to hinge on it — then press Set
 								origin here.
 							</p>
 						{/if}
-						<p class="mt-1 text-[10px] text-gray-500">
+						<p class="mt-1 text-[length:var(--fs-badge)] text-text-faint">
 							{#if $pivotOnly}
 								Drag the gizmo (or type above) to place the origin — the mesh stays put. Grid and
 								surface snapping apply. Press Done to transform around it.
@@ -3343,7 +3397,7 @@
 						</p>
 					</div>
 				{/if}
-				<p class="text-[10px] text-gray-500">
+				<p class="text-[length:var(--fs-badge)] text-text-faint">
 					{#if multiCount && $pivotOnly}
 						Re-place the origin, then press Done to rotate or scale the selection around it. The
 						origin is a local editing aid — peers keep their own.
@@ -3357,10 +3411,10 @@
 			</Section>
 
 			{#if !isLight}
-				<Section label="Object">
-					<div class="ui-row items-center gap-2">
-						<span class="w-24 shrink-0 text-xs text-gray-400">Render order</span>
-						<div class="w-20 shrink-0">
+				<Section variant="panel" label="Object">
+					<PropRow label="Render order" labelFor="inspector-render-order" valueBox={false}>
+					{#snippet control()}
+						<div class="ins-axes ins-solo">
 							<DragRow
 								id="inspector-render-order"
 								value={$selectedObject.renderOrder}
@@ -3372,19 +3426,20 @@
 								onchange={(v) => setRenderOrder(Math.round(v) || 0)}
 							/>
 						</div>
-					</div>
-					<Checkbox
+					{/snippet}
+					</PropRow>
+					<InsToggle
 						id="inspector-frustum-culled"
 						checked={allOf((o) => o.frustumCulled)}
 						indeterminate={mixed((o) => o.frustumCulled)}
 						onchange={(/** @type {any} */ e) => setFlag('frustumCulled', e.target.checked)}
 					>
 						Frustum culled
-					</Checkbox>
-					<p class="text-[10px] text-gray-500">Higher render order draws later (over other objects). Disable culling for objects that vanish at screen edges.</p>
+					</InsToggle>
+					<p class="text-[length:var(--fs-badge)] text-text-faint">Higher render order draws later (over other objects). Disable culling for objects that vanish at screen edges.</p>
 					<!-- 30 P2: a wall, a ceiling or a glass case can stand aside for the editor's
 					     click — it picks the next opaque thing behind (click again to cycle back) -->
-					<Checkbox
+					<InsToggle
 						id="inspector-pick-through"
 						checked={pickThroughAll}
 						indeterminate={mixed((o) => o.userData?.pick === 'through')}
@@ -3395,43 +3450,43 @@
 						}}
 					>
 						Click-through in the viewport
-					</Checkbox>
+					</InsToggle>
 				</Section>
 			{/if}
 
 			{#if !isLight && !multiCount && $selectedObject?.uuid}
 				<!-- 33 (K6): the object's LOD GROUP — levels, transitions, Force LOD, edit a level -->
-				<Section label="LOD">
+				<Section variant="panel" label="LOD">
 					<LodGroupPanel uuid={$selectedObject.uuid} />
 				</Section>
 			{/if}
 
 			{#if !isLight && !multiCount && $selectedObject?.uuid}
 				<!-- 36-water: make any object water (a tank, a pool, an ocean) or a bubble emitter -->
-				<Section label="Water">
+				<Section variant="panel" label="Water">
 					<WaterPanel uuid={$selectedObject.uuid} />
 				</Section>
 			{/if}
 
 			{#if devPrimary}
-				<Section label="Device">
+				<Section variant="panel" label="Device">
 					<!-- 23-B4: the device's declared params, fanned over the selection; presets and
 						 the mixer live in the Music toolbox, which the link below opens on the primary -->
 					{#if devTargets.length > 1}
-						<p id="device-multi-note" class="text-[10px] italic text-gray-400">
+						<p id="device-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
 							Applies to {devTargets.length} selected devices.
 						</p>
 					{/if}
-					<p class="text-[10px] uppercase tracking-wide text-gray-500">
+					<p class="text-[length:var(--fs-badge)] uppercase tracking-wide text-text-faint">
 						{deviceSpec(devPrimary.userData.device.kind)?.label ?? devPrimary.userData.device.kind}
 					</p>
 					{#if !devParams.length}
-						<p class="text-[10px] italic text-gray-400">This device has no settings.</p>
+						<p class="text-[length:var(--fs-badge)] italic text-text-muted">This device has no settings.</p>
 					{/if}
 					{#each devParams as p (p.key)}
 						{#if p.kind === 'select'}
 							<div class="ui-row items-center gap-2">
-								<span class="w-24 shrink-0 text-xs text-gray-400">{p.label ?? p.key}</span>
+								<span class="w-24 shrink-0 text-xs text-text-muted">{p.label ?? p.key}</span>
 								<ThemedSelect
 									id={'device-param-' + p.key}
 									items={[...(devMixed(p.key) ? [{ value: '', name: '—' }] : []), ...(p.options ?? []).map((/** @type {any} */ opt) => ({ value: String(opt.value), name: String(opt.label ?? opt.value) }))]}
@@ -3440,13 +3495,13 @@
 								/>
 							</div>
 						{:else if p.kind === 'toggle'}
-							<Checkbox
+							<InsToggle
 								id={'device-param-' + p.key}
 								checked={!!devValue(p.key)}
 								onchange={(/** @type {any} */ e) => devWrite(p.key, e.target.checked)}
 							>
 								{p.label ?? p.key}{devMixed(p.key) ? ' (mixed)' : ''}
-							</Checkbox>
+							</InsToggle>
 						{:else}
 							<DragRow
 								id={'device-param-' + p.key}
@@ -3469,17 +3524,17 @@
 							Open in Music toolbox
 						</button>
 					</div>
-					<p class="text-[10px] text-gray-500">Presets and the mixer live in the Music toolbox.</p>
+					<p class="text-[length:var(--fs-badge)] text-text-faint">Presets and the mixer live in the Music toolbox.</p>
 				</Section>
 			{/if}
 
 			{#if geoParams && geoSpec}
-				<Section label="Geometry">
-					<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">
+				<Section variant="panel" label="Geometry">
+					<p class="px-1 text-[length:var(--fs-badge)] uppercase tracking-wider text-text-faint">
 						{geoParams.gtype}{geoTargets.length > 1 ? ` · ${geoTargets.length} objects` : ''}
 					</p>
 					{#if geoOtherTypes.length}
-						<p id="geometry-mixed-note" class="rounded-sm bg-gray-700/50 px-2 py-1 text-[10px] text-gray-300">
+						<p id="geometry-mixed-note" class="rounded-sm bg-surface-inset px-2 py-1 text-[length:var(--fs-badge)] text-text-2">
 							Only the {geoTargets.length} {geoParams.gtype} object{geoTargets.length === 1 ? '' : 's'}
 							in this selection change — {geoOtherTypes.join(', ')}
 							{geoOtherTypes.length === 1 ? 'has' : 'have'} different parameters.
@@ -3488,7 +3543,7 @@
 					{#if meshEditedLock}
 						<!-- 164: once the mesh is edited, the parametric controls are LOCKED
 						     (changing one rebuilds the primitive + discards the edits) -->
-						<p id="geometry-locked" class="rounded-sm bg-yellow-900/40 px-2 py-1 text-[10px] text-yellow-200">
+						<p id="geometry-locked" class="rounded-sm bg-surface-inset px-2 py-1 text-[length:var(--fs-badge)] text-warn-text">
 							Mesh edited — geometry parameters are locked (changing them would rebuild the shape and discard your edits).
 						</p>
 						{#if $selectedObject.userData?.terrain}
@@ -3498,11 +3553,11 @@
 							     because someone nudged the seed is the bug that lock prevents. So the way
 							     back is ASKED FOR (the switchMaterialType REFUSES precedent), and it is
 							     one undoable geometry rebuild. -->
-							<Button
+							<UiButton
 								id="terrain-regenerate"
-								size="xs"
-								color="alternative"
-								onclick={() => regenerateTerrain()}>Regenerate (discards the sculpt)</Button
+								size="sm"
+								variant="outline"
+								onclick={() => regenerateTerrain()}>Regenerate (discards the sculpt)</UiButton
 							>
 						{/if}
 					{:else}
@@ -3511,26 +3566,26 @@
 							     with no doors) is hidden, not disabled -->
 							{#each geoSpec.params.filter((p) => !p.show || p.show(geoParams.params)) as spec (spec.key)}
 								{#if spec.kind === 'bool'}
-									<Checkbox
+									<InsToggle
 										checked={!!geoParams.params[spec.key]}
 										onchange={(/** @type {any} */ e) => editGeometry(spec.key, e.target.checked)}
 									>
 										{spec.label}
-									</Checkbox>
+									</InsToggle>
 								{:else if spec.kind === 'choice'}
 									<!-- 21-C1: a param whose value is one of a NAMED set (a terrain's edge
 									     profile). Chips rather than a ThemedSelect: three short words fit, and
 									     a select cannot shrink below its longest option. -->
 									<div class="ui-row items-center gap-2">
-										<span class="w-20 shrink-0 text-xs text-gray-400">{spec.label}</span>
+										<span class="w-20 shrink-0 text-xs text-text-muted">{spec.label}</span>
 										<div class="flex flex-wrap gap-1">
 											{#each spec.options ?? [] as option (option)}
 												<button
 													id={`geo-choice-${spec.key}-${option}`}
 													class={'ui-chip ' +
 														(String(geoParams.params[spec.key] ?? spec.def) === option
-															? 'bg-primary-600 text-white'
-															: 'bg-gray-600 text-gray-200 hover:bg-gray-500')}
+															? 'ins-chip-on'
+															: '')}
 													onclick={() => editGeometry(spec.key, option)}>{option}</button
 												>
 											{/each}
@@ -3555,8 +3610,8 @@
 			{/if}
 
 			{#if isGroup}
-				<Section label="Group">
-					<p class="px-1 text-xs text-gray-400">
+				<Section variant="panel" label="Group">
+					<p class="px-1 text-xs text-text-muted">
 						{$selectedObject.children.length} direct child{$selectedObject.children.length === 1 ? '' : 'ren'},
 						{countTree($selectedObject)} object{countTree($selectedObject) === 1 ? '' : 's'} in total.
 					</p>
@@ -3564,9 +3619,9 @@
 			{/if}
 
 			{#if isLight}
-				<Section label="Light">
+				<Section variant="panel" label="Light">
 					{#if lightTargets.length > 1}
-						<p id="light-multi-note" class="text-[10px] italic text-text-muted">
+						<p id="light-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
 							Applies to {lightTargets.length} selected lights{lightMixed((l) => l.color?.getHex?.()) ? ' — their colours differ (—); picking one sets all' : ''}.
 						</p>
 					{/if}
@@ -3579,8 +3634,10 @@
 						isOpen={true}
 						sliderDirection="horizontal"
 						--picker-indicator-size="20px"
-						--cp-bg-color="#1f2937"
-						--cp-border-color="#353f4e"
+						--cp-bg-color="var(--surface-1)"
+						--cp-border-color="var(--border)"
+						--cp-input-color="var(--surface-inset)"
+						--cp-text-color="var(--text)"
 						--picker-height="70px"
 						--picker-width="50px"
 						--slider-width="10px"
@@ -3602,8 +3659,10 @@
 							isOpen={true}
 							sliderDirection="horizontal"
 							--picker-indicator-size="20px"
-							--cp-bg-color="#1f2937"
-							--cp-border-color="#353f4e"
+							--cp-bg-color="var(--surface-1)"
+							--cp-border-color="var(--border)"
+							--cp-input-color="var(--surface-inset)"
+							--cp-text-color="var(--text)"
 							--picker-height="70px"
 							--picker-width="50px"
 							--slider-width="10px"
@@ -3615,15 +3674,16 @@
 							}}
 						/>
 					{/if}
-					<div class="grid grid-cols-[3.2rem_1fr] items-center gap-1">
-						<span class="text-[11px] text-gray-400">Intensity</span>
-						<div id="inspector-intensity">
-							<DragRow label="I" accent="text-yellow-300" step={0.02} min={0} snap={0.5}
+					<PropRow label="Intensity" valueBox={false}>
+					{#snippet control()}
+						<div id="inspector-intensity" class="ins-axes ins-solo">
+							<DragRow step={0.02} min={0} snap={0.5} ariaLabel="Intensity"
 								value={$selectedObject.intensity}
 								mixed={lightMixed((l) => l.intensity)}
 								onchange={(v) => setLights((light) => (light.intensity = v))} />
 						</div>
-					</div>
+					{/snippet}
+					</PropRow>
 					{#each LIGHT_PARAMS[$selectedObject.type] ?? [] as spec (spec.key)}
 						<SliderRow
 							label={spec.label}
@@ -3642,27 +3702,27 @@
 						     point one helper length along its forward. -->
 						<div class="flex items-center justify-between gap-2">
 							<p class="ui-section-label">Aim at</p>
-							<Button
+							<UiButton
 								id="light-aim-pick"
-								size="xs"
-								color={$lightAimPicking === $selectedObject.uuid ? 'primary' : 'alternative'}
+								size="sm"
+								variant={$lightAimPicking === $selectedObject.uuid ? 'primary' : 'outline'}
 								title="Click a surface in the viewport to aim the light at it"
 								onclick={pickAim}>
 								{$lightAimPicking === $selectedObject.uuid ? 'Picking… (Esc)' : 'Pick in viewport'}
-							</Button>
+							</UiButton>
 						</div>
-						<div id="inspector-light-aim" class="grid grid-cols-3 gap-1">
+						<div id="inspector-light-aim" class="ins-axes">
 							{#each ['X', 'Y', 'Z'] as axis, index (axis)}
 								<DragRow
 									label={axis}
-									accent={['text-red-400', 'text-green-400', 'text-blue-400'][index]}
+									accent={['ins-axis-x', 'ins-axis-y', 'ins-axis-z'][index]}
 									step={0.05}
 									unit="length"
 									value={aimPoint[index]}
 									onchange={(v) => setAimAxis(index, v)} />
 							{/each}
 						</div>
-						<p class="text-[10px] text-gray-500">
+						<p class="text-[length:var(--fs-badge)] text-text-faint">
 							Rotating the light (gizmo or the rotation rows) aims it too. Shadows follow.
 							{#if $selectedObject.isDirectionalLight}
 								A directional light has a direction, not a distance — the helper's line length is Settings ▸ Scene.
@@ -3672,7 +3732,7 @@
 
 					{#if SHADOW_TYPES.includes($selectedObject.type)}
 						<p class="ui-section-label">Shadow</p>
-						<Checkbox
+						<InsToggle
 							id="light-cast-shadow"
 							checked={allOf((l) => l.castShadow, lightTargets)}
 							indeterminate={lightMixed((l) => !!l.castShadow)}
@@ -3682,9 +3742,9 @@
 							}}
 						>
 							Cast Shadow
-						</Checkbox>
+						</InsToggle>
 						<div class="ui-row">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Map size</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Map size</span>
 							<ThemedSelect
 								class="flex-1"
 								items={SHADOW_SIZES.map((size) => ({ value: size, name: size + ' px' }))}
@@ -3694,7 +3754,7 @@
 							/>
 						</div>
 						{#if cappedShadowSize($selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x) < ($selectedObject.userData.shadowMapSize ?? $selectedObject.shadow.mapSize.x)}
-							<p class="text-[10px] italic text-gray-400">Capped by Settings ▸ Shadow quality on this machine.</p>
+							<p class="text-[length:var(--fs-badge)] italic text-text-muted">Capped by Settings ▸ Shadow quality on this machine.</p>
 						{/if}
 						<SliderRow label="Bias" min={-0.01} max={0.01} step={0.0005} decimals={4}
 							value={$selectedObject.shadow.bias}
@@ -3705,7 +3765,7 @@
 							mixed={lightMixed((l) => l.shadow?.radius)}
 							onchange={(v) => setLights((light) => (light.shadow.radius = v), (light) => !!light.shadow)} />
 					{/if}
-					<Checkbox
+					<InsToggle
 						id="light-visible"
 						checked={allOf((l) => l.visible, lightTargets)}
 						indeterminate={lightMixed((l) => l.visible)}
@@ -3715,9 +3775,9 @@
 						}}
 					>
 						Visible
-					</Checkbox>
+					</InsToggle>
 					{#if $selectedObject.type === 'RectAreaLight'}
-						<p class="text-[10px] italic text-gray-400">
+						<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 							Rect area lights only affect Standard/Physical materials and cast no shadows.
 						</p>
 					{/if}
@@ -3725,20 +3785,20 @@
 			{/if}
 
 			{#if material}
-				<Section label="Material">
+				<Section variant="panel" label="Material">
 					{#if matCount}
-						<p id="material-multi-note" class="text-[10px] italic text-gray-400">
+						<p id="material-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
 							Applies to {matCount} selected objects.
 						</p>
 					{/if}
-					<Checkbox
+					<InsToggle
 						id="inspector-visible"
 						checked={allOf((o) => o.visible)}
 						indeterminate={mixed((o) => o.visible)}
 						onchange={(/** @type {any} */ e) => setFlag('visible', e.currentTarget.checked)}
 					>
 						Visible
-					</Checkbox>
+					</InsToggle>
 
 					<!-- SH5: a shader graph OWNS this material, so say so and offer the two things
 					     that make sense here. The editors below are hidden rather than disabled:
@@ -3833,8 +3893,10 @@
 							isOpen={true}
 							sliderDirection="horizontal"
 							--picker-indicator-size="20px"
-							--cp-bg-color="#1f2937"
-							--cp-border-color="#353f4e"
+							--cp-bg-color="var(--surface-1)"
+							--cp-border-color="var(--border)"
+							--cp-input-color="var(--surface-inset)"
+							--cp-text-color="var(--text)"
 							--picker-height="70px"
 							--picker-width="50px"
 							--slider-width="10px"
@@ -3868,7 +3930,7 @@
 						<!-- svelte-ignore a11y_no_static_element_interactions -->
 						<div
 							id="texture-drop"
-							class="rounded-sm border border-dashed {textureDropActive ? 'border-primary-500 bg-primary-500/10' : 'border-transparent'}"
+							class="rounded-sm border border-dashed {textureDropActive ? 'ins-drop-on' : 'border-transparent'}"
 							ondragover={(e) => {
 								if (e.dataTransfer?.types.includes('application/x-explorer-item')) {
 									e.preventDefault();
@@ -3902,26 +3964,26 @@
 								<img
 									src={material.userData.mapDataUrl}
 									alt="texture"
-									class="h-10 w-10 cursor-pointer rounded-sm border border-gray-500 object-cover"
+									class="h-10 w-10 cursor-pointer rounded-sm border border-border-strong object-cover"
 									role="presentation"
 									onclick={() => document.getElementById('texture-file')?.click()}
 								/>
-								<Button
-									size="xs"
-									color="alternative"
+								<UiButton
+									size="sm"
+									variant="outline"
 									onclick={() =>
 										fanTexture(async (uuid) => removeObjectTexture(uuid), 'Remove texture')}
-										>Remove</Button
+										>Remove</UiButton
 								>
 							{:else}
-								<Button
-									size="xs"
-									color="alternative"
+								<UiButton
+									size="sm"
+									variant="outline"
 									onclick={() => document.getElementById('texture-file')?.click()}
 								>
 									Set texture...
-								</Button>
-								<span class="text-[10px] text-gray-500">or drop an Explorer image</span>
+								</UiButton>
+								<span class="text-[length:var(--fs-badge)] text-text-faint">or drop an Explorer image</span>
 							{/if}
 						</div>
 						</div>
@@ -3955,7 +4017,7 @@
 							onchange={(v) => setMat('shininess', v)} />
 					{/if}
 					{#if material.type === 'MeshNormalMaterial' || material.type === 'MeshDepthMaterial'}
-						<p class="text-[11px] italic text-gray-400">
+						<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 							This material type derives its look from geometry — no color or surface parameters.
 						</p>
 					{/if}
@@ -3969,28 +4031,28 @@
 								})} />
 					{/if}
 					{#if typeof material.wireframe !== 'undefined'}
-						<Checkbox
+						<InsToggle
 							id="inspector-wireframe"
 							checked={allOf((o) => o.material.wireframe, matTargets)}
 							indeterminate={matMixed((o) => !!o.material.wireframe)}
 							onchange={(/** @type {any} */ e) => setMat('wireframe', e.target.checked)}
 						>
 							Wireframe
-						</Checkbox>
+						</InsToggle>
 					{/if}
 					{#if 'flatShading' in material}
-						<Checkbox
+						<InsToggle
 							id="inspector-flat-shading"
 							checked={allOf((o) => o.material.flatShading, matTargets)}
 							indeterminate={matMixed((o) => !!o.material.flatShading)}
 							onchange={(/** @type {any} */ e) => setMat('flatShading', e.target.checked)}
 						>
 							Flat shading
-						</Checkbox>
+						</InsToggle>
 					{/if}
 					{#if typeof material.side !== 'undefined'}
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Side</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Side</span>
 							<ThemedSelect
 								class="flex-1"
 								items={[
@@ -4016,16 +4078,16 @@
 							mixed={matMixed((o) => o.material.emissiveIntensity)}
 							onchange={(v) => setMat('emissiveIntensity', v)} />
 						<div id="inspector-emissive" class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Color</span>
 							<input
 								type="color"
 								id="emissive-color"
 								aria-label="Emission colour"
-								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
+								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
 								value={'#' + material.emissive.getHexString()}
 								oninput={(/** @type {any} */ e) => setMat('emissive', e.currentTarget.value)}
 							/>
-							<span class="text-[10px] italic text-text-muted">{matMixed((o) => o.material.emissive?.getHex?.()) ? '— (mixed) · ' : ''}black = no glow</span>
+							<span class="text-[length:var(--fs-badge)] italic text-text-muted">{matMixed((o) => o.material.emissive?.getHex?.()) ? '— (mixed) · ' : ''}black = no glow</span>
 						</div>
 					{/if}
 
@@ -4035,22 +4097,22 @@
 					     properties, so they stay editable on a shader-driven object -->
 					<p class="ui-section-label">Shadow</p>
 					<div class="flex gap-4 px-1">
-						<Checkbox
+						<InsToggle
 							id="inspector-cast-shadow"
 							checked={allOf((o) => o.castShadow)}
 							indeterminate={mixed((o) => !!o.castShadow)}
 							onchange={(/** @type {any} */ e) => setFlag('castShadow', e.currentTarget.checked)}
 						>
 							Cast
-						</Checkbox>
-						<Checkbox
+						</InsToggle>
+						<InsToggle
 							id="inspector-receive-shadow"
 							checked={allOf((o) => o.receiveShadow)}
 							indeterminate={mixed((o) => !!o.receiveShadow)}
 							onchange={(/** @type {any} */ e) => setFlag('receiveShadow', e.currentTarget.checked)}
 						>
 							Receive
-						</Checkbox>
+						</InsToggle>
 					</div>
 				</Section>
 			{/if}
@@ -4059,14 +4121,14 @@
 			{#if $selectedObject.userData?.fluidEmitter}<FluidEmitterSection object={$selectedObject} />{/if}<!-- 36-fb F23 -->
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
 			{#if !$selectedObject.isLight}
-				<Section label="Physics">
+				<Section variant="panel" label="Physics">
 					{#if multiCount}
-						<p id="physics-multi-note" class="text-[10px] italic text-gray-400">
+						<p id="physics-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
 							Applies to {multiCount} selected objects.
 						</p>
 					{/if}
 					<div class="ui-row items-center gap-2">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Body</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Body</span>
 						<ThemedSelect
 							id="physics-mode"
 							items={[
@@ -4085,7 +4147,7 @@
 							onchange={(v) => setPhysics({ mass: v })} />
 					{/if}
 					<div class="ui-row items-center gap-2">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Material</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Material</span>
 						<ThemedSelect
 							id="physics-material"
 							items={[
@@ -4110,7 +4172,7 @@
 						mixed={mixed((o) => o.userData.physics?.friction ?? 0.5)}
 						onchange={(v) => setPhysics({ friction: v })} />
 					<div class="ui-row items-center gap-2">
-						<span class="w-20 shrink-0 text-xs text-gray-400">Collider</span>
+						<span class="w-20 shrink-0 text-xs text-text-muted">Collider</span>
 						<ThemedSelect
 							id="physics-collider"
 							items={[
@@ -4138,7 +4200,7 @@
 					{#if ($selectedObject.userData.physics?.collider ?? 'box') === 'custom'}
 						<button
 							id="physics-edit-collider"
-							class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+							class="ui-chip"
 							onclick={() => enterColliderEdit($selectedObject.uuid)}
 						>
 							Edit collider…
@@ -4146,35 +4208,35 @@
 					{/if}
 					{#if $selectedObject.isMesh || $selectedObject.children?.length}<ColliderDecomposeRow uuid={$selectedObject.uuid} />{/if}
 					<!-- CL-A A3: sensor = trigger volume; overlaps fire On Enter / On Exit -->
-					<Checkbox
+					<InsToggle
 						id="physics-sensor"
 						checked={allOf((o) => o.userData.physics?.sensor)}
 						indeterminate={mixed((o) => !!o.userData.physics?.sensor)}
 						onchange={(/** @type {any} */ e) => setPhysics({ sensor: e.currentTarget.checked || null })}
-						>Sensor — no collision, fires On Enter / On Exit</Checkbox
+						>Sensor — no collision, fires On Enter / On Exit</InsToggle
 					>
 					<PhysicsGroupRow physics={$selectedObject.userData.physics} water={$selectedObject.userData.water} onchange={setPhysics} />
 					{#if ($selectedObject.userData.physics?.mode ?? 'auto') === 'dynamic'}
 						<!-- CL-A A5: freeze axes (dynamic bodies only) -->
-						<div id="physics-freeze-rot" class="ui-row items-center gap-2 text-xs text-gray-300">
-							<span class="w-20 shrink-0 text-gray-400">Lock rotation</span>
+						<div id="physics-freeze-rot" class="ui-row items-center gap-2 text-xs text-text-2">
+							<span class="w-20 shrink-0 text-text-muted">Lock rotation</span>
 							{#each [['rx', 'X'], ['ry', 'Y'], ['rz', 'Z']] as [key, label] (key)}
-								<Checkbox
+								<InsToggle
 									checked={allOf((o) => o.userData.physics?.freeze?.[key])}
 									indeterminate={mixed((o) => !!o.userData.physics?.freeze?.[key])}
 									onchange={(/** @type {any} */ e) => setFreeze(key, e.currentTarget.checked)}
-									>{label}</Checkbox
+									>{label}</InsToggle
 								>
 							{/each}
 						</div>
-						<div id="physics-freeze-pos" class="ui-row items-center gap-2 text-xs text-gray-300">
-							<span class="w-20 shrink-0 text-gray-400">Lock position</span>
+						<div id="physics-freeze-pos" class="ui-row items-center gap-2 text-xs text-text-2">
+							<span class="w-20 shrink-0 text-text-muted">Lock position</span>
 							{#each [['px', 'X'], ['py', 'Y'], ['pz', 'Z']] as [key, label] (key)}
-								<Checkbox
+								<InsToggle
 									checked={allOf((o) => o.userData.physics?.freeze?.[key])}
 									indeterminate={mixed((o) => !!o.userData.physics?.freeze?.[key])}
 									onchange={(/** @type {any} */ e) => setFreeze(key, e.currentTarget.checked)}
-									>{label}</Checkbox
+									>{label}</InsToggle
 								>
 							{/each}
 						</div>
@@ -4182,13 +4244,13 @@
 					{/if}
 					<FluidInteractionRow targets={insTargets} /><!-- 36-fb F23 -->
 					<!-- CL-A A7: per-object collider preview (local, this device) -->
-					<Checkbox
+					<InsToggle
 						id="physics-show-collider"
 						checked={$colliderVizObjects.has($selectedObject.uuid)}
 						onchange={(/** @type {any} */ e) => setColliderViz($selectedObject.uuid, e.currentTarget.checked)}
-						>Show collider — this device</Checkbox
+						>Show collider — this device</InsToggle
 					>
-					<p class="mt-1 text-xs text-gray-400">
+					<p class="mt-1 text-xs text-text-muted">
 						Dynamic bodies fall and collide when a simulation runs; flow Mass/Bounciness/Friction nodes override these.
 					</p>
 				</Section>
@@ -4196,16 +4258,16 @@
 				<!-- 57.5: SPLINE — the record is the source of truth, so these rows edit
 				     it and let every peer rebuild the tube (never the geometry directly) -->
 				{#if spline}
-					<Section label="Spline">
-						<p class="px-1 text-[10px] uppercase tracking-wider text-gray-500">
+					<Section variant="panel" label="Spline">
+						<p class="px-1 text-[length:var(--fs-badge)] uppercase tracking-wider text-text-faint">
 							{spline.points.length} control points
 						</p>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Color</span>
 							<input
 								id="spline-color"
 								type="color"
-								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-600 bg-transparent"
+								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
 								aria-label="Spline color"
 								value={spline.color}
 								onchange={(/** @type {any} */ e) => setSplineColor($selectedObject.uuid, e.currentTarget.value)}
@@ -4223,14 +4285,14 @@
 						/>
 						{#if splineRadius === null}
 							<div class="ui-row items-center gap-2">
-								<span class="flex-1 text-[10px] text-yellow-200/80"
+								<span class="flex-1 text-[length:var(--fs-badge)] text-warn-text"
 									>Points have different radii — Thickness flattens them.</span
 								>
-								<Button size="xs" color="alternative" onclick={() => scaleSplineRadii($selectedObject.uuid, 1.25)}
-									>Thicker</Button
+								<UiButton size="sm" variant="outline" onclick={() => scaleSplineRadii($selectedObject.uuid, 1.25)}
+									>Thicker</UiButton
 								>
-								<Button size="xs" color="alternative" onclick={() => scaleSplineRadii($selectedObject.uuid, 0.8)}
-									>Thinner</Button
+								<UiButton size="sm" variant="outline" onclick={() => scaleSplineRadii($selectedObject.uuid, 0.8)}
+									>Thinner</UiButton
 								>
 							</div>
 						{/if}
@@ -4254,54 +4316,54 @@
 							value={spline.segmentsPerSpan}
 							onchange={(v) => setSplineSmoothness($selectedObject.uuid, Math.round(v))}
 						/>
-						<Checkbox
+						<InsToggle
 							checked={spline.closed}
 							onchange={(/** @type {any} */ e) => setSplineClosed($selectedObject.uuid, e.target.checked)}
 						>
 							Closed loop
-						</Checkbox>
-						<Button
+						</InsToggle>
+						<UiButton
 							id="spline-edit-open"
-							size="xs"
-							color="alternative"
+							size="sm"
+							variant="outline"
 							onclick={() =>
 								$splineEditObject === $selectedObject.uuid ? exitSplineEdit() : enterSplineEdit($selectedObject.uuid)}
 						>
 							{$splineEditObject === $selectedObject.uuid ? 'Close spline editor' : 'Edit control points'}
-						</Button>
-						<p class="text-[10px] text-gray-500">
+						</UiButton>
+						<p class="text-[length:var(--fs-badge)] text-text-faint">
 							Per-point thickness lives on the handles — open the editor and drag the amber dot above a point.
 						</p>
 						<!-- the same two directions the context menu offers, and the same
 						     interaction: press, then click the partner in the viewport. A
 						     list of terrain NAMES was the first version and it does not
 						     survive a scene with a ring of tiles. -->
-						<span class="px-1 text-[10px] uppercase tracking-wider text-gray-500">Flatten</span>
+						<span class="px-1 text-[length:var(--fs-badge)] uppercase tracking-wider text-text-faint">Flatten</span>
 						<div class="flex flex-wrap gap-1">
-							<Button
+							<UiButton
 								id="spline-carve-pick"
-								size="xs"
-								color="alternative"
+								size="sm"
+								variant="outline"
 								onclick={() =>
 									import('$lib/flattenActions').then((m) =>
 										m.startFlattenPick('carve', $selectedObject.uuid)
 									)}
 							>
 								Terrain to this…
-							</Button>
-							<Button
+							</UiButton>
+							<UiButton
 								id="spline-drape-pick"
-								size="xs"
-								color="alternative"
+								size="sm"
+								variant="outline"
 								onclick={() =>
 									import('$lib/flattenActions').then((m) =>
 										m.startFlattenPick('drape', $selectedObject.uuid)
 									)}
 							>
 								This onto a surface…
-							</Button>
+							</UiButton>
 						</div>
-						<p class="text-[10px] text-gray-500">
+						<p class="text-[length:var(--fs-badge)] text-text-faint">
 							{#if $flattenPicking}
 								Click the {$flattenPicking.kind === 'carve' ? 'terrain' : 'surface'} in the viewport — Esc cancels.
 							{:else}
@@ -4322,18 +4384,18 @@
 				     Particles ▸ Add / Burst / Remove for a whole selection, which are
 				     the operations that are safe to apply blind. -->
 				{#if multiCount}
-					<Section label="Particles">
-						<p id="particles-multi-note" class="text-[10px] text-gray-400">
+					<Section variant="panel" label="Particles">
+						<p id="particles-multi-note" class="text-[length:var(--fs-badge)] text-text-muted">
 							{multiCount} objects selected — an emitter is edited one object at a time so tuned
 							configs are not overwritten. Right-click the selection for Particles ▸ Add, Burst or
 							Remove across all {multiCount}.
 						</p>
 					</Section>
 				{:else}
-				<Section label="Particles">
+				<Section variant="panel" label="Particles">
 					{#if !$selectedObject.userData.particles}
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Emitter</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Emitter</span>
 							<ThemedSelect
 								id="particles-add"
 								items={[
@@ -4349,7 +4411,7 @@
 					{:else}
 						{@const p = $selectedObject.userData.particles}
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Preset</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Preset</span>
 							<ThemedSelect
 								id="particles-preset"
 								items={PARTICLE_PRESETS.map((item) => ({ value: item.key, name: item.name }))}
@@ -4358,7 +4420,7 @@
 							/>
 						</div>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Emission</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Emission</span>
 							<ThemedSelect
 								id="particles-mode"
 								items={[
@@ -4371,16 +4433,16 @@
 							/>
 						</div>
 						{#if (p.mode ?? 'continuous') === 'impact'}
-							<p class="text-xs text-gray-400">
+							<p class="text-xs text-text-muted">
 								Fires when a physics simulation lands this object on the ground or another object (needs a Dynamic body + a running sim).
 							</p>
 						{/if}
 						{#if (p.mode ?? 'continuous') !== 'continuous'}
 							<div class="ui-row items-center gap-2">
-								<Button size="xs" color="alternative" onclick={() => burstObjectParticles($selectedObject.uuid)}>
-									<Sparkles size={16} class="mr-1" aria-hidden="true" />Burst now
-								</Button>
-								<span class="text-xs text-gray-400">fires for every peer</span>
+								<UiButton size="sm" variant="outline" onclick={() => burstObjectParticles($selectedObject.uuid)}>
+									<Icon name="sparkles" size={16} class="mr-1" aria-hidden="true" />Burst now
+								</UiButton>
+								<span class="text-xs text-text-muted">fires for every peer</span>
 							</div>
 						{/if}
 						<SliderRow label="Count" min={1} max={500} step={1} value={p.count ?? 80}
@@ -4404,7 +4466,7 @@
 							<SliderRow label="Ground below" min={0} max={40} step={0.1} value={p.fall ?? 0}
 								onchange={(v) => setParticles({ fall: v })} />
 							<div class="ui-row items-center gap-2">
-								<span class="w-20 shrink-0 text-xs text-gray-400">On landing</span>
+								<span class="w-20 shrink-0 text-xs text-text-muted">On landing</span>
 								<ThemedSelect
 									id="particles-ground"
 									items={[
@@ -4426,7 +4488,7 @@
 						<SliderRow label="Opacity" min={0} max={1} step={0.05} value={p.opacity ?? 0.9}
 							onchange={(v) => setParticles({ opacity: v })} />
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400" title="Where particles spawn, relative to the object center (local axes)">Emit from</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted" title="Where particles spawn, relative to the object center (local axes)">Emit from</span>
 							{#each ['x', 'y', 'z'] as axis, i}
 								<div class="w-14 shrink-0">
 									<DragRow
@@ -4445,25 +4507,25 @@
 							{/each}
 						</div>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Color</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Color</span>
 							<input
 								type="color"
 								aria-label="Particle start color"
-								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
-								value={p.colorStart ?? '#ffffff'}
+								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
+								value={p.colorStart ?? PARTICLE_START_DEFAULT}
 								oninput={(/** @type {any} */ e) => setParticles({ colorStart: e.currentTarget.value })}
 							/>
-							<span class="text-xs text-gray-400">→</span>
+							<span class="text-xs text-text-muted">→</span>
 							<input
 								type="color"
 								aria-label="Particle end color"
-								class="h-6 w-8 cursor-pointer rounded-sm border border-gray-500 bg-transparent"
-								value={p.colorEnd ?? '#8899aa'}
+								class="h-6 w-8 cursor-pointer rounded-sm border border-border-strong bg-transparent"
+								value={p.colorEnd ?? PARTICLE_END_DEFAULT}
 								oninput={(/** @type {any} */ e) => setParticles({ colorEnd: e.currentTarget.value })}
 							/>
 						</div>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Sprite</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Sprite</span>
 							<ThemedSelect
 								id="particles-sprite"
 								items={[
@@ -4478,7 +4540,7 @@
 							/>
 						</div>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Blending</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Blending</span>
 							<ThemedSelect
 								id="particles-blending"
 								items={[
@@ -4490,7 +4552,7 @@
 							/>
 						</div>
 						<div class="ui-row items-center gap-2">
-							<span class="w-20 shrink-0 text-xs text-gray-400">Space</span>
+							<span class="w-20 shrink-0 text-xs text-text-muted">Space</span>
 							<ThemedSelect
 								id="particles-space"
 								items={[
@@ -4503,9 +4565,9 @@
 						</div>
 						<ParticleMotionRows {p} set={setParticles} />
 						<div class="ui-row items-center gap-2">
-							<Button size="xs" color="red" onclick={() => removeObjectParticles($selectedObject.uuid)}>
+							<UiButton size="sm" variant="warn-text" onclick={() => removeObjectParticles($selectedObject.uuid)}>
 								Remove emitter
-							</Button>
+							</UiButton>
 						</div>
 					{/if}
 				</Section>
@@ -4517,6 +4579,246 @@
 {/if}
 
 <style>
+	/* 38 R5: the Inspector is a migrated surface — `.tp-ui` gives its whole body the SPEC
+	   tokens (one blue accent, the surface-2 panel, the UI sans); the chrome is the panel
+	   window's (WindowChrome in InspectorHead) */
+	.ins-shell {
+		background: var(--surface-2);
+		color: var(--text);
+		border: 1px solid var(--border);
+		border-right: 0;
+		border-top-left-radius: var(--radius-window);
+		box-shadow: var(--shadow-window);
+	}
+	.ins-rounded-bl {
+		border-bottom-left-radius: var(--radius-window);
+	}
+	.ins-shell {
+		padding-inline: 14px;
+	}
+	/* sub-headings inside a section ("Saved presets", "Shadow") in the section-header
+	   type, one step smaller; still `.ui-section-label` for the filter and deep links */
+	.ins-shell :global(p.ui-section-label) {
+		margin: 8px 0 0;
+		padding: 0;
+		font-size: var(--fs-badge);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		color: var(--text-faint);
+	}
+	/* the panel's legacy controls, drawn in the kit's look through the tokens (their markup,
+	   ids and handlers unchanged): choice chips with ONE accent for the selected state
+	   (orange stays for Play/live only), quiet buttons as small outline buttons, inset inputs */
+	/* heights follow the density tokens (NOTES-38 #19: Compact reaches the Inspector) */
+	.ins-shell :global(.ui-chip) {
+		display: inline-flex;
+		align-items: center;
+		min-height: calc(var(--control-h-sm) - 6px);
+		padding: 0 10px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-pill);
+		background: transparent;
+		color: var(--text-2);
+		font-size: var(--fs-section);
+		font-weight: 500;
+		letter-spacing: 0;
+		text-transform: none;
+		cursor: pointer;
+	}
+	.ins-shell :global(.ui-chip:hover:not(:disabled):not(.ins-chip-on)) {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.ins-shell :global(.ui-chip.ins-chip-on) {
+		border-color: var(--accent);
+		background: var(--accent-soft);
+		color: var(--accent-soft-text);
+	}
+	.ins-shell :global(.ui-chip:disabled) {
+		opacity: 0.45;
+		cursor: not-allowed;
+	}
+	.ins-shell :global(.ui-button-quiet),
+	.ins-shell :global(.ins-mini-btn) {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		min-height: calc(var(--control-h-sm) - 6px);
+		padding: 0 8px;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text-2);
+		font-size: var(--fs-section);
+		cursor: pointer;
+	}
+	.ins-shell :global(.ui-button-quiet:hover:not(:disabled)),
+	.ins-shell :global(.ins-mini-btn:hover:not(:disabled)) {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.ins-shell :global(.ins-mini-btn:disabled) {
+		opacity: 0.4;
+	}
+	.ins-shell :global(.ui-input) {
+		min-height: calc(var(--control-h-sm) - 2px);
+		border: 1px solid var(--border-input);
+		border-radius: var(--radius-input);
+		background: var(--surface-inset);
+		color: var(--text);
+		font-size: var(--fs-desc);
+	}
+	.ins-shell :global(.ui-input:focus) {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+		outline: none;
+	}
+	.ins-shell :global(.ui-row) {
+		color: var(--text-2);
+	}
+	/* colour swatches (a native colour input, drawn as a 28px tile) */
+	.ins-shell :global(.ins-swatch) {
+		width: calc(var(--control-h-sm) - 4px);
+		height: calc(var(--control-h-sm) - 4px);
+		padding: 0;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-input);
+		background: transparent;
+		cursor: pointer;
+	}
+	.ins-shell :global(.ins-swatch::-webkit-color-swatch-wrapper) {
+		padding: 2px;
+	}
+	.ins-shell :global(.ins-swatch::-webkit-color-swatch) {
+		border: 0;
+		border-radius: 4px;
+	}
+	.ins-actions {
+		display: flex;
+		gap: 8px;
+		margin-top: 6px;
+	}
+	.ins-note {
+		margin: 2px 0 0;
+		font-size: var(--fs-badge);
+		line-height: 1.45;
+		color: var(--text-faint);
+	}
+	.ins-card {
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+		padding: 6px 8px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-inset);
+	}
+	.ins-card-head {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+	.ins-card-kind {
+		font-size: var(--fs-badge);
+		font-weight: 600;
+		letter-spacing: var(--tracking-section);
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+	.ins-saved {
+		display: inline-flex;
+		align-items: center;
+		overflow: hidden;
+		border: 1px solid var(--border-strong);
+		border-radius: var(--radius-pill);
+	}
+	.ins-saved-apply,
+	.ins-saved-del {
+		min-height: calc(var(--control-h-sm) - 6px);
+		padding: 0 6px 0 10px;
+		background: transparent;
+		color: var(--text-2);
+		font-size: var(--fs-section);
+		cursor: pointer;
+	}
+	.ins-saved-del {
+		padding: 0 8px;
+		color: var(--text-faint);
+	}
+	.ins-saved-apply:hover,
+	.ins-saved-del:hover {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.ins-shell :global(.ins-banner) {
+		padding: 6px 8px;
+		border: 1px solid var(--accent);
+		border-radius: var(--radius-input);
+		background: var(--accent-soft);
+	}
+	.ins-shell :global(.ins-accent-text) {
+		color: var(--accent-soft-text);
+	}
+	.ins-shell :global(.ins-drop-on) {
+		border-color: var(--accent) !important;
+		background: var(--accent-soft);
+	}
+	/* transform rows: a narrower label column so three axis fields fit the panel */
+	.ins-transform {
+		display: flex;
+		flex-direction: column;
+		--prop-label-w: 56px;
+	}
+	/* axis fields (and a lone value box) drawn like PropRow's value box: the inset well,
+	   the input border, mono numbers — DragRow restyled from outside, behaviour untouched */
+	.ins-shell :global(.ins-axes) {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 4px;
+		flex: 1;
+		min-width: 0;
+		--field: var(--surface-inset);
+		--border: var(--border-input);
+		--color-primary-400: var(--accent);
+		--color-primary-500: var(--accent);
+	}
+	.ins-shell :global(.ins-axes.ins-solo) {
+		grid-template-columns: 64px;
+		justify-content: end;
+	}
+	.ins-shell :global(.ins-axes .dn-wrap) {
+		box-sizing: border-box;
+		min-height: calc(var(--control-h-sm) - 4px);
+		gap: 3px;
+		padding-inline: 4px;
+		border-radius: var(--radius-input);
+	}
+	.ins-shell :global(.ins-axes .dn-wrap:not(.dn-focus):not(.dn-scrub):hover) {
+		border-color: var(--border-strong);
+	}
+	.ins-shell :global(.ins-axes .dn-input) {
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
+		color: var(--text);
+	}
+	.ins-shell :global(.ins-axis-x) {
+		color: var(--axis-x);
+	}
+	.ins-shell :global(.ins-axis-y) {
+		color: var(--axis-y);
+	}
+	.ins-shell :global(.ins-axis-z) {
+		color: var(--axis-z);
+	}
+	@media (max-width: 639.98px) {
+		/* 16px labels on a phone: a wider label column so "Position" never breaks */
+		.ins-transform {
+			--prop-label-w: 76px;
+		}
+		.ins-shell :global(.ins-axes .dn-input) {
+			font-size: var(--fs-input);
+		}
+	}
 	/* 16-Q6: the three snapping rows line up — label | chips | field in ONE grid, so
 	   the numeric boxes share an edge no matter how many preset chips a row has */
 	.snap-row {
@@ -4552,7 +4854,7 @@
 		font-size: 10px;
 		font-style: italic;
 		/* 36 U1: theme ink (2.5:1 on the light theme's white drawer) */
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 	}
 	/* five PEER toggles, not presets: right-aligning them in the numeric grid
 	   stranded the fifth chip on a line of its own against the right edge */
@@ -4575,21 +4877,21 @@
 		width: 100%;
 		padding: 0.3rem 0.5rem;
 		border-radius: 0.375rem;
-		border: 1px dashed var(--border, rgb(255 255 255 / 0.25));
-		background: rgb(255 255 255 / 0.04);
-		color: var(--text-2, rgb(209 213 219));
+		border: 1px dashed var(--border-strong);
+		background: color-mix(in srgb, var(--surface-hover) 45%, transparent);
+		color: var(--text-2);
 		font-size: 11px;
 	}
 	.snap-action:hover {
-		background: rgb(255 255 255 / 0.09);
-		color: var(--text, #fff);
+		background: var(--surface-hover);
+		color: var(--text);
 	}
 	.snap-action-armed,
 	.snap-action-armed:hover {
-		background: #d97706;
+		background: var(--accent-fill);
 		border-style: solid;
-		border-color: #f59e0b;
-		color: #fff;
+		border-color: var(--accent);
+		color: var(--on-accent);
 	}
 	.snap-group {
 		display: flex;
@@ -4598,12 +4900,12 @@
 		gap: 0.5rem;
 		margin-top: 0.35rem;
 		padding-top: 0.4rem;
-		border-top: 1px solid rgb(255 255 255 / 0.08);
+		border-top: 1px solid var(--border);
 	}
 	.snap-group-hint {
 		font-size: 10px;
 		font-style: italic;
-		color: var(--muted, rgb(156 163 175));
+		color: var(--text-muted);
 	}
 	.snap-status {
 		display: flex;
@@ -4622,21 +4924,21 @@
 		min-width: 0;
 		font-size: 10px;
 		font-style: italic;
-		color: rgb(156 163 175);
+		color: var(--text-muted);
 	}
 	.snap-status-armed {
-		background: rgb(217 119 6 / 0.14);
-		border-color: rgb(217 119 6 / 0.45);
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
 	}
 	.snap-status-armed .snap-status-text {
-		color: #fbbf24;
+		color: var(--accent-text);
 	}
 	.snap-status-picked {
-		background: rgb(16 185 129 / 0.12);
-		border-color: rgb(16 185 129 / 0.35);
+		background: color-mix(in srgb, var(--ink-good) 12%, transparent);
+		border-color: color-mix(in srgb, var(--ink-good) 35%, transparent);
 	}
 	.snap-status-picked .snap-status-text {
-		color: #34d399;
+		color: var(--ink-good);
 		margin-right: auto;
 	}
 
@@ -4648,14 +4950,14 @@
 		gap: 5px;
 		margin: 2px 0;
 		padding: 6px 7px;
-		border: 1px solid rgb(168 85 247 / 0.4);
+		border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
 		border-radius: 5px;
-		background: rgb(168 85 247 / 0.1);
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
 	}
 	.shader-driven-text {
 		font-size: 10px;
 		line-height: 1.35;
-		color: #d8b4fe;
+		color: var(--accent-text);
 	}
 	.shader-driven-actions {
 		display: flex;

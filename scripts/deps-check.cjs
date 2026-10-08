@@ -10,8 +10,8 @@ const FROZEN = [
 	// TS 7 until svelte-check peers ^7; rapier held for solver-behavior stability
 	'typescript',
 	'@dimforge/rapier3d-compat',
-	// flowbite 4 until flowbite-svelte 2.0 stable (fs 1.33 deps flowbite ^3; the
-	// 2.0.0-next line is the flowbite-4 pairing) - migrate both together
+	// flowbite: only its Tailwind plugin is left (form-control base styles; flowbite-svelte
+	// left in 38 R11) — move to 4 when that base is replaced or re-checked
 	'flowbite'
 ];
 

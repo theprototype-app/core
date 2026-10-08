@@ -187,7 +187,8 @@ h.run(async () => {
 	const strip = page.locator('#code-ws-tabs');
 	const sm = await strip.evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth, sl: el.scrollLeft, sbw: getComputedStyle(el).scrollbarWidth, ox: getComputedStyle(el).overflowX }));
 	h.check(sm.sw > sm.cw, 'F8: with ' + (await tabs(page)).length + ' tabs the strip overflows (' + sm.sw + ' > ' + sm.cw + ')');
-	h.check(sm.sbw === 'thin' && sm.ox === 'auto', 'F8: the strip shows a THIN scrollbar (scrollbar-width ' + sm.sbw + ')');
+	// 38 R11 (NOTES-38 #1, no native scrollbars): the strip still scrolls sideways, with no bar
+	h.check(sm.sbw === 'none' && sm.ox === 'auto', 'F8: the strip scrolls sideways with no native scrollbar (scrollbar-width ' + sm.sbw + ', overflow-x ' + sm.ox + ')');
 	const inView = () =>
 		strip.evaluate((el) => {
 			let active;

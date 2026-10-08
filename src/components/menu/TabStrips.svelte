@@ -3,9 +3,17 @@
 	// the active window's header area — notebook tabs (narrower on top, curvy),
 	// drag the strip background to move the whole group, drag a tab out to
 	// re-float it, ✕ closes the active member through its own path.
+	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import { tabGroups, activateTab, moveGroup, tearOff, titleOf, closeGroup, closeMember, nodeOf } from '$lib/windowTabs';
 	import { focusTick, raiseWindowNode } from '$lib/windowFocus';
 	import ContextMenu from '../ContextMenu.svelte';
+	import Icon from '../ui/Icon.svelte';
+	import { DOCK_ICONS } from '$lib/bottomDock';
+
+	// 38 NOTES-38 #23: the view icon before each tab's name — the dock's icons plus the
+	// windows that only ever float
+	/** @type {Record<string, string>} */
+	const TAB_ICONS = { ...DOCK_ICONS, objects: 'list', chat: 'message-square', aiAssistant: 'sparkles' };
 
 	// The strip must sit at its group's z-order, not a fixed top value, so another
 	// floating window dragged in front of the group also covers the group's strip.
@@ -72,42 +80,55 @@
 
 {#each $tabGroups as group (group.id)}
 	<div
-		class="tab-strip fixed flex items-end gap-0.5 overflow-hidden rounded-t-lg border-b border-gray-700/60 bg-gray-900 px-1.5 pt-1"
-		style="left: {group.rect.left}px; top: {group.rect.top}px; width: {group.rect.width}px; height: 34px; z-index: {[$focusTick, stripZ(group)][1]}; cursor: move"
+		class="tab-strip tp-ui tp-dtabs fixed flex items-center overflow-hidden"
+		style="left: {group.rect.left}px; top: {group.rect.top}px; width: {group.rect.width}px; z-index: {[$focusTick, stripZ(group)][1]}; cursor: move"
 		role="tablist"
 		tabindex="-1"
 		data-key-scope="panel"
 		onpointerdown={(e) => onStripDown(e, group)}
 	>
-		{#each group.members as key (key)}
-			<button
-				class={'tab-note relative px-4 pb-1 pt-0.5 text-xs ' +
-					(key === group.active
-						? 'bg-gray-800 text-gray-100'
-						: 'bg-gray-700/70 text-gray-400 hover:text-gray-200')}
-				role="tab"
-				aria-selected={key === group.active}
-				title="Click to switch — drag out to detach — right-click to hide"
-				onpointerdown={(e) => {
-					e.stopPropagation();
-					onTabDown(e, group.id, key);
-				}}
-				oncontextmenu={(e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					tabMenu = { x: e.clientX, y: e.clientY, key };
-				}}
-			>
-				{titleOf(key)}
-			</button>
-		{/each}
+		<!-- NOTES-38 #39: more tabs than width scroll sideways (wheel / swipe, fade edge); the
+		     close-all ✕ stays pinned at the end -->
+		<div class="tp-noscrollbar flex min-w-0 items-center overflow-x-auto" use:stripScroll>
+			{#each group.members as key (key)}
+				<!-- 38 NOTES-38 #29: the tab carries its own ✕ (= right-click ▸ Hide tab) -->
+				<span class="tp-dtab-group" class:tp-dtab-group-on={key === group.active}>
+					<button
+						class="tab-note tp-dtab ts-tab relative"
+						role="tab"
+						aria-selected={key === group.active}
+						title="Click to switch — drag out to detach — right-click to hide"
+						onpointerdown={(e) => {
+							e.stopPropagation();
+							onTabDown(e, group.id, key);
+						}}
+						oncontextmenu={(e) => {
+							e.preventDefault();
+							e.stopPropagation();
+							tabMenu = { x: e.clientX, y: e.clientY, key };
+						}}
+					>
+						{#if TAB_ICONS[key]}<span class="tp-dtab-ico"><Icon name={TAB_ICONS[key]} size={16} /></span>{/if}{titleOf(key)}
+					</button>
+					<button
+						class="tp-dtab-x ts-tab-x"
+						data-tab-close={key}
+						title="Hide {titleOf(key)}"
+						aria-label="Hide {titleOf(key)}"
+						onpointerdown={(e) => e.stopPropagation()}
+						onclick={() => closeMember(key)}><Icon name="x" size={16} aria-hidden="true" /></button
+					>
+				</span>
+			{/each}
+		</div>
 		<span class="flex-1"></span>
 		<button
-			class="ui-button-quiet mb-1 shrink-0"
+			class="ts-close tp-dtab tp-dtab-icon shrink-0"
 			title="Close all tabs in this window"
+			aria-label="Close all tabs in this window"
 			onclick={() => closeGroup(group.active)}
 		>
-			✕
+			<Icon name="x" size={16} />
 		</button>
 	</div>
 {/each}
@@ -122,9 +143,24 @@
 {/if}
 
 <style>
-	/* notebook look: slightly narrower at the top, curvy shoulders */
-	.tab-note {
-		clip-path: polygon(7% 0, 93% 0, 100% 100%, 0 100%);
-		border-radius: 8px 8px 0 0;
+	/* 38 R6: the strip IS the group's window header, so it has the header's box — the tool
+	   header's height (40px; 56 on a phone, like WindowChrome) so it covers the active
+	   member's header exactly, the window's top corners, and the kit's dock-tab look (the
+	   active tab a raised surface, the rest muted) instead of the notebook shoulders */
+	.tab-strip {
+		box-sizing: border-box;
+		height: 40px;
+		padding: 0 6px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-window) var(--radius-window) 0 0;
+		background: var(--surface-inset);
+		gap: 2px;
 	}
+	@media (max-width: 639.98px) {
+		.tab-strip {
+			height: 56px;
+		}
+	}
+	/* the tabs and the close button are windows.css .tp-dtab (NOTES-38 #23 — one tab look for
+	   docked and floating windows, the kit's dock Tabs) */
 </style>

@@ -14,6 +14,7 @@
 
 	let canvas: HTMLCanvasElement | undefined = $state();
 	let visible = $state(false);
+	// tokens-ok-begin: minimap marker hues (canvas pixels over the 3D view, same in every theme)
 	// B3: marker colours by KIND — a publisher names the kind, core picks the paint
 	const MARKER_COLORS: Record<string, string> = {
 		key: '#ffc93d',
@@ -21,6 +22,7 @@
 		goal: '#f472b6',
 		spawn: '#4ade80'
 	};
+	// tokens-ok-end
 	const SCALE = 3;
 	const worldPos = new THREE.Vector3();
 
@@ -40,6 +42,7 @@
 		canvas.height = height * SCALE;
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return;
+		// tokens-ok-begin: minimap canvas pixels (floor raster + dots; a canvas cannot read CSS var())
 		ctx.fillStyle = 'rgba(10, 12, 16, 0.92)';
 		ctx.fillRect(0, 0, canvas.width, canvas.height);
 		ctx.fillStyle = '#5c6470';
@@ -62,6 +65,7 @@
 			($playerCam as any).getWorldPosition(worldPos);
 			dot(ctx, data, worldPos.x, worldPos.z, '#4ade80');
 		}
+		// tokens-ok-end
 		// peers = their avatar groups
 		const myId = ($peers as any)?.peer?.id;
 		for (const user of $userdata ?? []) {
@@ -81,6 +85,6 @@
 <canvas
 	bind:this={canvas}
 	id="dungeon-minimap"
-	class="fixed bottom-4 left-4 rounded-lg border border-gray-600/70 shadow-lg {visible ? '' : 'hidden'}"
+	class="fixed bottom-4 left-4 rounded-lg border border-border shadow-lg {visible ? '' : 'hidden'}"
 	style="z-index: var(--z-hud); image-rendering: pixelated; max-width: 260px; max-height: 220px;"
 ></canvas>

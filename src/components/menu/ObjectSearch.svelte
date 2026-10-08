@@ -8,6 +8,7 @@
 	import { selectObject, focusObject } from '$lib/objectActions';
 	import { nameOf } from '$lib/lockControl';
 	import { rightDragMove, inputContextMenu } from '$lib/searchMenuUx';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	let query = $state('');
 	let selectedIndex = $state(0);
@@ -71,7 +72,7 @@
 	<div class="fixed inset-0" style="z-index: 999" role="presentation" onclick={close} oncontextmenu={(e) => { e.preventDefault(); close(); }}></div>
 	<div
 		id="object-search-box"
-		class="fixed w-64 rounded-lg border border-gray-600 bg-gray-800 p-1.5 text-xs text-gray-200 shadow-xl"
+		class="fixed w-64 rounded-lg border border-border bg-surface-1 p-1.5 text-xs text-text-2 shadow-xl"
 		style="left: {Math.min($objectSearch.x, window.innerWidth - 270)}px; top: {Math.min($objectSearch.y, window.innerHeight - 320)}px; z-index: 1000;"
 		use:rightDragMove
 	>
@@ -86,22 +87,22 @@
 			oninput={(/** @type {any} */ e) => { query = e.currentTarget.value; selectedIndex = 0; }}
 			onkeydown={onKeydown}
 		/>
-		<div class="mt-1 max-h-64 overflow-y-auto">
+		<div class="mt-1 max-h-64 overflow-y-auto" use:minimalScroll>
 			{#each results as entry, index (entry.child.uuid)}
 				<button
 					class={'flex w-full items-baseline gap-2 rounded-sm px-2 py-1 text-left ' +
-						(index === selectedIndex ? 'bg-primary-700 text-white' : 'hover:bg-gray-700')}
+						(index === selectedIndex ? 'bg-accent-soft text-accent-soft-text' : 'hover:bg-surface-hover')}
 					data-selected={index === selectedIndex}
 					onmouseenter={() => (selectedIndex = index)}
 					onclick={() => pick(entry.child)}
 				>
-					<span class="text-gray-400">{iconFor(entry.child)}</span>
-					<span class="flex-1 truncate {entry.lock ? 'text-red-300' : ''}">{entry.label}</span>
-					{#if entry.lock}<span class="text-[9px] text-red-300">{nameOf(entry.lock)}</span>{/if}
+					<span class="text-text-muted">{iconFor(entry.child)}</span>
+					<span class="flex-1 truncate {entry.lock ? 'text-ink-bad' : ''}">{entry.label}</span>
+					{#if entry.lock}<span class="text-[9px] text-ink-bad">{nameOf(entry.lock)}</span>{/if}
 				</button>
 			{/each}
 			{#if !results.length}
-				<p class="px-2 py-1 italic text-gray-400">No objects match “{query}”</p>
+				<p class="px-2 py-1 italic text-text-muted">No objects match “{query}”</p>
 			{/if}
 		</div>
 	</div>

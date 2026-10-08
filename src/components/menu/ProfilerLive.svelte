@@ -7,7 +7,7 @@
 	//
 	// Presentation only: the stream, the document it builds and the bandwidth figure all live
 	// in perf/liveSink.js.
-	import { X, Activity } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { peers, userdata } from '../../stores/appStore';
@@ -17,6 +17,7 @@
 	import { LIGHT_BUDGET_BPS } from '$lib/perf/liveWire';
 	// 36 U1: the graphs read their ink from the theme; the theme rides the action arg so a switch redraws
 	import { theme } from '$lib/themes';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	/** the Quest budget lines (roadmap 34 PF): 72 Hz frame time and 150 draw calls */
 	const MS_BUDGET = 13.9;
@@ -83,14 +84,14 @@
 			const y = (/** @type {number} */ v) => H - (v / max) * (H - 2) - 1;
 			// 36 U1: theme ink, read off the canvas (custom properties inherit; a canvas takes no var())
 			const css = getComputedStyle(canvas);
-			g.strokeStyle = css.getPropertyValue('--ink-bad').trim() || '#f87171';
+			g.strokeStyle = css.getPropertyValue('--ink-bad').trim() || '#f87171'; // tokens-ok: canvas fallback when the token cannot be read (profiler graph pixels)
 			g.setLineDash([4, 3]);
 			g.beginPath();
 			g.moveTo(0, y(a.budget));
 			g.lineTo(W, y(a.budget));
 			g.stroke();
 			g.setLineDash([]);
-			g.strokeStyle = (a.key === 'ms' ? css.getPropertyValue('--tp-accent') : css.getPropertyValue('--ink-good')).trim() || (a.key === 'ms' ? '#60a5fa' : '#a7f3d0');
+			g.strokeStyle = (a.key === 'ms' ? css.getPropertyValue('--accent') : css.getPropertyValue('--ink-good')).trim() || (a.key === 'ms' ? '#60a5fa' : '#a7f3d0'); // tokens-ok: canvas fallback when the token cannot be read (profiler graph pixels)
 			g.lineWidth = 1;
 			g.beginPath();
 			let started = false;
@@ -112,21 +113,21 @@
 {#if $profilerLiveOpen}
 	<div
 		id="profiler-live"
-		class="ui-panel tp-themed live-surface fixed flex flex-col overflow-hidden outline-hidden"
+		class="ui-panel tp-ui tp-window tp-themed live-surface fixed flex flex-col overflow-hidden outline-hidden"
 		tabindex="-1"
 		use:dragWindow={{ key: 'profilerLiveWindow', defaultRect: { left: 140, top: 110 }, resizable: true }}
 		use:focusStack={'profilerLive'}
 		style="z-index: var(--z-window); width: 420px; height: 520px"
 	>
 		<div class="ui-panel-header move-handle flex shrink-0 cursor-move select-none items-center gap-2 py-1.5">
-			<Activity size={16} aria-hidden="true" />
+			<Icon name="activity" size={16} aria-hidden="true" />
 			<span class="flex-1 text-sm font-semibold">Live profiler</span>
 			<button id="profiler-live-close" class="rounded-sm p-1 hover:brightness-150" title="Close" aria-label="Close live profiler" onclick={() => profilerLiveOpen.set(false)}
-				><X size={16} aria-hidden="true" /></button
+				><Icon name="x" size={16} aria-hidden="true" /></button
 			>
 		</div>
 
-		<div class="min-h-0 flex-1 overflow-y-auto px-2 py-1.5 text-xs">
+		<div class="min-h-0 flex-1 overflow-y-auto px-2 py-1.5 text-xs" use:minimalScroll>
 			<p class="live-muted mb-1.5 text-[11px]">
 				Watch a peer in your room — a headset, usually — and see its frame time and draw calls here as it plays.
 				<strong>Detailed</strong> also asks for CPU phases and per-object captures; it costs that device frame time.

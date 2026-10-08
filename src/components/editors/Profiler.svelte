@@ -16,9 +16,11 @@
 	// the headset lane streams into `liveSources` (profilerView.js).
 	import { onMount, untrack } from 'svelte';
 	import { get } from 'svelte/store';
-	import { Circle, Square, History, Upload, GitCompare, Camera, Activity } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { profilerLiveOpen } from '$lib/perf/liveSink';
 	import DockTabs from '../DockTabs.svelte';
+	import WindowChrome from '../ui/WindowChrome.svelte';
+	import ScrollStrip from '../ui/ScrollStrip.svelte';
 	import ProfilerTimeline from './profiler/ProfilerTimeline.svelte';
 	import ProfilerDetail from './profiler/ProfilerDetail.svelte';
 	import ProfilerRecordings from './profiler/ProfilerRecordings.svelte';
@@ -39,6 +41,7 @@
 	} from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { safeStorage } from '$lib/safeStorage';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		perfState,
 		startRecording,
@@ -618,11 +621,11 @@
 				class="ui-button-quiet"
 				title="Take a per-object capture now"
 				onclick={() => void captureNow()}
-				><Camera size={12} class="inline" aria-hidden="true" /> Capture</button
+				><Icon name="camera" size={16} class="inline" aria-hidden="true" /> Capture</button
 			>
 		{/if}
 		<button id="profiler-stop" class="ui-button-quiet pf-stop" onclick={stop}
-			><Square size={11} class="inline" aria-hidden="true" /> Stop</button
+			><Icon name="square" size={16} class="inline" aria-hidden="true" /> Stop</button
 		>
 	{:else}
 		<div class="tp-seg" role="group" aria-label="Recording mode">
@@ -650,13 +653,13 @@
 			</select>
 		{/if}
 		<button id="profiler-record" class="ui-button-quiet pf-record" onclick={record}
-			><Circle size={11} class="inline" aria-hidden="true" /> Record</button
+			><Icon name="circle" size={16} class="inline" aria-hidden="true" /> Record</button
 		>
 		<button
 			id="profiler-last30"
 			class="ui-button-quiet"
 			title="Save the last 30 seconds the app always keeps (light)"
-			onclick={lastThirty}><History size={12} class="inline" aria-hidden="true" /> Last 30 s</button
+			onclick={lastThirty}><Icon name="history" size={16} class="inline" aria-hidden="true" /> Last 30 s</button
 		>
 	{/if}
 	<button
@@ -664,7 +667,7 @@
 		class="ui-button-quiet"
 		title="Open .tpprof recordings or beacon exports (or drop them on the panel)"
 		onclick={() => fileInput?.click()}
-		><Upload size={12} class="inline" aria-hidden="true" /> Import</button
+		><Icon name="upload" size={16} class="inline" aria-hidden="true" /> Import</button
 	>
 	<button
 		id="profiler-compare-toggle"
@@ -672,7 +675,7 @@
 		aria-pressed={compareOn}
 		class:pf-on={compareOn}
 		onclick={toggleCompare}
-		><GitCompare size={12} class="inline" aria-hidden="true" /> Compare</button
+		><Icon name="git-compare" size={16} class="inline" aria-hidden="true" /> Compare</button
 	>
 	<!-- 36 U5: the Live view (a peer's frames as they arrive) opens from here now — it used to be
 	     a burger-menu row, away from the tool it belongs to -->
@@ -681,7 +684,7 @@
 		class="ui-button-quiet"
 		title="Watch a peer's frames live (a headset in your room)"
 		onclick={() => profilerLiveOpen.set(true)}
-		><Activity size={12} class="inline" aria-hidden="true" /> Live</button
+		><Icon name="activity" size={16} class="inline" aria-hidden="true" /> Live</button
 	>
 	<input
 		bind:this={fileInput}
@@ -700,7 +703,7 @@
 
 {#snippet body()}
 	<div class="pf-body" class:pf-dropping={dropping} use:fileDrop>
-		<aside class="pf-side">
+		<aside class="pf-side" use:minimalScroll>
 			<ProfilerRecordings
 				{rows}
 				live={$liveSources}
@@ -801,7 +804,7 @@
 		<div
 			id="profiler-dock"
 			use:ownKeys
-			class="tp-themed fixed inset-x-0 bottom-0 flex flex-col bg-white p-2 dark:bg-gray-800 {dockVisible
+			class="tp-themed fixed inset-x-0 bottom-0 tp-ui tp-dock-panel flex flex-col p-2 {dockVisible
 				? ''
 				: 'hidden'}"
 			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid var(--tp-line)"
@@ -811,7 +814,7 @@
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue hover:bg-primary-600/30 absolute -top-1 right-0 left-0 z-30 h-2 cursor-ns-resize"
+				class="resize-cue hover:bg-accent/30 absolute -top-1 right-0 left-0 z-30 h-2 cursor-ns-resize"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -820,21 +823,19 @@
 			></div>
 			<DockTabs />
 			<div class="pf-head flex shrink-0 items-center gap-1 pb-1">
-				<span class="text-xs font-semibold text-gray-200">Profiler</span>
+				<span class="tp-dock-title">Profiler</span>
 				<span class="w-2"></span>
-				{@render controls()}
-				<span class="flex-1"></span>
-				<button
-					class="ui-button-quiet"
+				<!-- 38 NOTES-38 #38/#39: the controls scroll sideways on a phone; undock/close stay pinned -->
+				<ScrollStrip class="pf-strip" label="Profiler tools" id="profiler-toolbar">{@render controls()}</ScrollStrip>
+				<button class="tp-dock-btn"
 					title="Undock into a floating window"
 					aria-label="Undock the Profiler"
-					onclick={() => setDocked(false)}>⧉</button
+					onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button
 				>
-				<button
-					class="ui-button-quiet"
+				<button class="tp-dock-btn"
 					title="Close"
 					aria-label="Close the Profiler"
-					onclick={() => profilerClose.set(true)}>✕</button
+					onclick={() => profilerClose.set(true)}><Icon name="x" size={16} /></button
 				>
 			</div>
 			<div class="flex min-h-0 flex-1 flex-col">
@@ -860,33 +861,38 @@
 			style:width="{effW}px"
 			style:height="{effH}px"
 		>
-			<div class="ui-panel-header move-handle shrink-0 cursor-move flex-wrap py-1.5 select-none">
-				<span>Profiler</span>
-				{#if !myGroup}{@render controls()}{/if}
-				<span class="flex-1"></span>
-				<button class="ui-button-quiet" title="Dock to the bottom" onclick={() => setDocked(true)}
-					>⇩ Dock</button
-				>
-				<button
-					class="ui-button-quiet"
-					title="Close"
-					aria-label="Close the Profiler"
-					onclick={() => profilerClose.set(true)}>✕</button
-				>
-			</div>
+			<!-- 38 R6: the one window header (ui/WindowChrome, tool) -->
+			<WindowChrome
+				size="tool"
+				bare
+				body={false}
+				title="Profiler"
+				headerClass="ui-panel-header move-handle cursor-move select-none"
+				onclose={() => profilerClose.set(true)}
+				closeLabel="Close the Profiler"
+				closeAttrs={{ title: 'Close' }}
+			>
+				{#snippet heading()}
+					<span class="wc-label">Profiler</span>
+					{#if !myGroup}<ScrollStrip class="pf-strip" label="Profiler tools" id="profiler-toolbar">{@render controls()}</ScrollStrip>{:else}<span class="flex-1"></span>{/if}
+				{/snippet}
+				{#snippet actions()}
+					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+				{/snippet}
+			</WindowChrome>
 			{#if myGroup}
-				<div
-					class="flex shrink-0 flex-wrap items-center gap-1 border-b border-gray-700/60 px-2 py-1"
+				<ScrollStrip
+					class="shrink-0 border-b border-border px-2 py-1"
+					label="Profiler tools"
+					id="profiler-toolbar">{@render controls()}</ScrollStrip
 				>
-					{@render controls()}
-				</div>
 			{/if}
 			<div class="flex min-h-0 flex-1 flex-col p-2">
 				{@render body()}
 			</div>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue absolute right-0 bottom-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-gray-500/40"
+				class="resize-cue absolute right-0 bottom-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-border-strong/40"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startWinResize}
@@ -908,7 +914,7 @@
 		border-radius: 4px;
 	}
 	.pf-dropping {
-		outline: 2px dashed var(--accent, #3b82f6);
+		outline: 2px dashed var(--accent);
 		outline-offset: -2px;
 	}
 	.pf-side {
@@ -973,6 +979,11 @@
 		color: var(--tp-muted);
 		margin-top: 6px;
 	}
+	/* the toolbar strip takes the row's free width (the old flex-1 spacer's job) and keeps the
+	   trailing buttons pinned at the right */
+	:global(.pf-strip) {
+		flex: 1 1 auto;
+	}
 	.pf-select {
 		width: auto;
 		height: 20px;
@@ -1008,11 +1019,10 @@
 		}
 	}
 	.pf-on {
-		background: var(--accent-fill, #2563eb);
-		color: var(--on-accent, #fff);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
-	/* 36 U1: `ui-panel` is `@apply bg-gray-800`, which no theme remap reaches — the floating
-	   window owns its surface like the toolbox shell does */
+	/* 36 U1: the floating window owns its surface like the toolbox shell does (tp-themed) */
 	.pf-surface {
 		background: var(--tp-surface);
 		color: var(--tp-ink);

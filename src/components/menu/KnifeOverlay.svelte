@@ -10,6 +10,7 @@
 	// child away (the documented trap).
 </script>
 
+<!-- tokens-ok-begin: viewport overlay drawn in faceEdit's three.js mesh-edit overlay orange (0xff7a1a), so the rubber band matches the 3D edit lines -->
 {#if $knifePreview}
 	<svg class="knife-overlay" width="100%" height="100%" aria-hidden="true">
 		<!-- 37 R11: the corners placed so far (a polyline cut), then the live segment -->
@@ -44,6 +45,7 @@
 		/>
 	</svg>
 {/if}
+<!-- tokens-ok-end -->
 
 <style>
 	.knife-overlay {

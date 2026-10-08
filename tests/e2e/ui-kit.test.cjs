@@ -48,17 +48,19 @@ h.run(async () => {
 	// ---------------- tokens ----------------
 	await open('dark');
 	let t = await tokens(['--text', '--border', '--accent', '--surface-2', '--text-2', '--bg-app', '--surface-1', '--accent-fill']);
-	h.check(['--text', '--border', '--accent', '--surface-2', '--text-2'].every((n) => t[n].root === ''), 'dark: the five colliding names stay UNDEFINED on :root (legacy fallbacks keep the default look)');
+	// 38 R11 (38-cleanup): the tokens moved onto :root — every component paints from them, so the
+	// five once-colliding names carry the SPEC values everywhere, not only inside .tp-ui
+	h.check(['--text', '--border', '--accent', '--surface-2', '--text-2'].every((n) => t[n].root === t[n].ui), 'dark: the five once-colliding names carry the same SPEC values on :root as in .tp-ui (R11)' + JSON.stringify(Object.fromEntries(['--text', '--accent'].map((n) => [n, t[n].root]))));
 	h.check(t['--text'].ui === '#e6e9ef' && t['--accent'].ui === '#3b7cf0' && t['--surface-2'].ui === '#1b212d', `dark: .tp-ui carries the SPEC values (${t['--text'].ui} ${t['--accent'].ui} ${t['--surface-2'].ui})`);
 	h.check(t['--bg-app'].root === '#0b0e14' && t['--surface-1'].root === '#151a24', 'dark: the other SPEC tokens are global');
 	h.check(t['--accent-fill'].ui === '#2f6fe0', `dark: filled buttons use #2f6fe0 inside the scope (${t['--accent-fill'].ui})`);
-	h.check(t['--accent-fill'].root === '#2563eb', 'dark: the legacy --accent-fill outside the scope is unchanged');
+	h.check(t['--accent-fill'].root === t['--accent-fill'].ui, `dark: --accent-fill is the same on :root (R11: ${t['--accent-fill'].root})`);
 	let low = await lowContrast();
 	h.check(low.length === 0, 'dark: every kit text pair >= 4.5:1' + (low.length ? ' — ' + low.join(' | ') : ''));
 
 	await open('light');
 	t = await tokens(['--text', '--surface-2', '--bg-app', '--surface-1']);
-	h.check(t['--text'].root === '#111827' && t['--surface-2'].root === '#e5e7eb', 'light: the phase-89 legacy values on :root are untouched');
+	h.check(t['--text'].root === t['--text'].ui && t['--surface-2'].root === t['--surface-2'].ui, `light: :root carries the redesign values too (R11: ${t['--text'].root} ${t['--surface-2'].root})`);
 	h.check(t['--text'].ui === '#141922' && t['--surface-2'].ui === '#f5f7fa' && t['--surface-1'].root === '#ffffff', 'light: the redesign values inside .tp-ui');
 	low = await lowContrast();
 	h.check(low.length === 0, 'light: every kit text pair >= 4.5:1' + (low.length ? ' — ' + low.join(' | ') : ''));

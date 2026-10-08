@@ -1053,18 +1053,28 @@ h.run(async () => {
 			pressed: pick?.getAttribute('aria-pressed'),
 			statusText: text?.textContent?.trim() ?? null,
 			statusColor: text ? getComputedStyle(text).color : null,
-			hasCancel: !!document.querySelector('#snap-anchor-cancel')
+			hasCancel: !!document.querySelector('#snap-anchor-cancel'),
+			// 38 R11: the armed state paints from the tokens (one accent); resolve them the same way
+			want: (() => {
+				const probe = document.createElement('span');
+				probe.style.cssText = 'background: var(--accent-fill); color: var(--accent-text)';
+				document.body.appendChild(probe);
+				const cs = getComputedStyle(probe);
+				const out = { bg: cs.backgroundColor, text: cs.color };
+				probe.remove();
+				return out;
+			})()
 		};
 	});
 	h.check(
-		armedUi.bg === 'rgb(217, 119, 6)',
-		`the armed pick button is amber, not the accent (${armedUi.bg})`
+		armedUi.bg === armedUi.want.bg,
+		`the armed pick button wears the accent fill (${armedUi.bg} vs ${armedUi.want.bg})`
 	);
 	h.check(armedUi.pressed === 'true', 'the armed button reports aria-pressed');
 	h.check(armedUi.statusText === 'Selecting…', `the status line reads "Selecting…" (${armedUi.statusText})`);
 	h.check(
-		armedUi.statusColor === 'rgb(251, 191, 36)',
-		`and it is yellow (${armedUi.statusColor})`
+		armedUi.statusColor === armedUi.want.text,
+		`and it reads in the accent text colour (${armedUi.statusColor} vs ${armedUi.want.text})`
 	);
 	h.check(armedUi.hasCancel, 'a ✕ cancels the selecting mode');
 	const toastUp = await A.page.evaluate(

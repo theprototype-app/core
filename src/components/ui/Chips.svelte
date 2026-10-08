@@ -5,10 +5,13 @@
 	// chip is a toggle button (aria-pressed) in a labelled group, which reads right for both a
 	// preset row and a filter set. Selection = the one accent style: accent-soft fill + accent
 	// border.
+	// `onpress(value)` fires on EVERY press, the selected chip included — for a preset row whose
+	// re-press re-applies the preset (the Inspector's environment chips). An option may carry
+	// its own `id`.
 	import Icon from './Icon.svelte';
 
-	/** @typedef {{value: string, label: string, icon?: string, count?: number|string, disabled?: boolean, title?: string, kitState?: string}} ChipOption */
-	/** @type {{options?: ChipOption[], value?: string|null, values?: string[], multiple?: boolean, deselectable?: boolean, label?: string, size?: 'md'|'sm', disabled?: boolean, onchange?: (next: any) => void} & Record<string, any>} */
+	/** @typedef {{value: string, label: string, id?: string, icon?: string, count?: number|string, disabled?: boolean, title?: string, kitState?: string}} ChipOption */
+	/** @type {{options?: ChipOption[], value?: string|null, values?: string[], multiple?: boolean, deselectable?: boolean, label?: string, size?: 'md'|'sm', disabled?: boolean, onchange?: (next: any) => void, onpress?: (value: string) => void} & Record<string, any>} */
 	let {
 		options = [],
 		value = $bindable(null),
@@ -19,6 +22,7 @@
 		size = 'md',
 		disabled = false,
 		onchange = () => {},
+		onpress = () => {},
 		...rest
 	} = $props();
 
@@ -28,6 +32,7 @@
 	/** @param {ChipOption} o */
 	function press(o) {
 		if (o.disabled || disabled) return;
+		onpress(o.value);
 		if (multiple) {
 			values = values.includes(o.value) ? values.filter((v) => v !== o.value) : [...values, o.value];
 			onchange(values);
@@ -45,6 +50,7 @@
 	{#each options as o (o.value)}
 		<button
 			type="button"
+			id={o.id}
 			class="chip"
 			aria-pressed={isOn(o.value)}
 			disabled={disabled || o.disabled}
@@ -52,7 +58,7 @@
 			data-kit-state={o.kitState}
 			onclick={() => press(o)}
 		>
-			{#if o.icon}<Icon name={o.icon} size={16} strokeWidth={1.75} />{/if}
+			{#if o.icon}<Icon name={o.icon} size={16} />{/if}
 			<span>{o.label}</span>
 			{#if o.count !== undefined && o.count !== null && o.count !== ''}<span class="chip-count">{o.count}</span>{/if}
 		</button>

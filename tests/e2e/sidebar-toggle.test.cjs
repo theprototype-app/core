@@ -34,9 +34,12 @@ h.run(async () => {
 		() => new Promise((r) => window.__stores.closeMenu.subscribe((v) => r(v === false))())
 	);
 	h.check(menuOpen, 'clicking the logo opens the sidebar');
-	const ringed = await A.page.evaluate(() =>
-		document.querySelector('#logo-menu')?.className.includes('ring-2')
-	);
+	// 38 NOTES-38 #24: the ring is the accent `.logo-open` state now (was Tailwind ring-2 in the
+	// orange primary) — assert what is DRAWN, not a class string
+	const ringed = await A.page.evaluate(() => {
+		const el = document.querySelector('#logo-menu');
+		return !!el && el.classList.contains('logo-open') && getComputedStyle(el).boxShadow !== 'none';
+	});
 	h.check(!!ringed, 'open state shows the accent ring on the logo');
 	await A.page.locator('#logo-menu').click();
 	await A.page.waitForTimeout(400);

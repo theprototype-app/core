@@ -2,7 +2,7 @@
 	// 36-share (B13) — Tools ▸ Recording…: the options, then a slim progress bar over the viewport
 	// while it records (a modal would cover the very thing being filmed), then the finished file.
 	// App mounts this lazily while the dialog is open OR a recording is under way.
-	import { Modal } from 'flowbite-svelte';
+	import ModalDialog from '../ui/ModalDialog.svelte';
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
 	import { recordingOpen, recordingState, recordingPrefs, setRecordingPrefs } from '$lib/recording/recordingStores.js';
@@ -80,18 +80,15 @@
 	</div>
 {/if}
 
-<Modal
+<ModalDialog
 	title="Recording"
 	open={$recordingOpen && !busy}
-	modal={false}
 	outsideclose
-	size="sm"
+	width="sm"
 	onclose={close}
 	onkeydown={(/** @type {KeyboardEvent} */ e) => {
 		if (e.key === 'Escape') close();
 	}}
-	class="tp-modal-frame"
-	classes={{ header: 'tp-modal-header', body: 'tp-modal-body' }}
 >
 	{#if $recordingOpen && !busy}
 		<div id="recording-dialog" class="rec-wrap" data-mode={p.mode}>
@@ -177,7 +174,7 @@
 			{/if}
 		</div>
 	{/if}
-</Modal>
+</ModalDialog>
 
 <style>
 	.rec-wrap {
@@ -185,14 +182,14 @@
 		flex-direction: column;
 		gap: 8px;
 		font-size: 13px;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 	}
 	.rec-label-row {
 		font-size: 11px;
 		font-weight: 700;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 		margin-top: 4px;
 	}
 	.rec-seg {
@@ -222,13 +219,13 @@
 	.rec-dim {
 		margin: 0;
 		font-size: 11px;
-		color: var(--text-2, #d1d5db);
+		color: var(--text-2);
 		line-height: 1.4;
 	}
 	.rec-warn {
 		margin: 0;
 		font-size: 12px;
-		color: var(--ink-bad, #fca5a5);
+		color: var(--ink-bad);
 	}
 	.rec-go,
 	.rec-ghost {
@@ -239,17 +236,17 @@
 	}
 	.rec-go {
 		border: 0;
-		background: var(--accent-fill, var(--accent, #2563eb));
-		color: var(--on-accent, #fff);
+		background: var(--accent-fill);
+		color: var(--on-accent);
 	}
 	.rec-go:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
 	.rec-ghost {
-		border: 1px solid var(--border, rgb(75 85 99 / 0.6));
+		border: 1px solid var(--border);
 		background: transparent;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 	}
 	.rec-result {
 		display: flex;
@@ -260,7 +257,7 @@
 		width: 100%;
 		max-height: 50vh;
 		border-radius: 8px;
-		background: var(--surface-3, #111);
+		background: var(--bg-app);
 	}
 	.rec-name {
 		word-break: break-all;
@@ -282,18 +279,18 @@
 		gap: 10px;
 		padding: 8px 12px;
 		border-radius: 999px;
-		background: var(--surface, #1f2937);
-		border: 1px solid var(--border, rgb(75 85 99 / 0.6));
-		color: var(--text, #e5e7eb);
+		background: var(--surface-1);
+		border: 1px solid var(--border);
+		color: var(--text);
 		font-size: 12px;
-		box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
+		box-shadow: var(--shadow-window);
 		max-width: calc(100vw - 32px);
 	}
 	.rec-dot {
 		width: 10px;
 		height: 10px;
 		border-radius: 50%;
-		background: var(--ink-bad, #ef4444);
+		background: var(--live);
 		animation: rec-pulse 1.2s ease-in-out infinite;
 		flex: none;
 	}
@@ -311,22 +308,22 @@
 		width: 140px;
 		height: 6px;
 		border-radius: 3px;
-		background: var(--surface-3, #374151);
+		background: var(--border-strong);
 		overflow: hidden;
 		flex: 1 1 80px;
 	}
 	.rec-fill {
 		height: 100%;
-		background: var(--accent, #2563eb);
+		background: var(--accent);
 	}
 	.rec-time {
 		font-variant-numeric: tabular-nums;
 		white-space: nowrap;
 	}
 	.rec-cancel {
-		border: 1px solid var(--border, rgb(75 85 99 / 0.6));
+		border: 1px solid var(--border);
 		background: transparent;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 		border-radius: 999px;
 		padding: 3px 10px;
 		cursor: pointer;

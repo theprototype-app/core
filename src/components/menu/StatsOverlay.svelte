@@ -11,9 +11,10 @@
 	//
 	// Presentation only. Every reading comes from `sceneBudget`'s sampler, which is where
 	// the arithmetic lives and where it is tested.
-	import { X, Gauge, RefreshCw } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		statsOpen,
 		sceneMetrics,
@@ -48,31 +49,31 @@
 {#if $statsOpen}
 	<div
 		id="stats-window"
-		class="ui-panel fixed flex flex-col overflow-hidden outline-hidden"
+		class="ui-panel tp-ui tp-window fixed flex flex-col overflow-hidden outline-hidden"
 		tabindex="-1"
 		use:dragWindow={{ key: 'statsWindow', defaultRect: { left: 120, top: 120 }, resizable: true }}
 		use:focusStack={'stats'}
 		style="z-index: var(--z-window); width: 380px; height: 460px"
 	>
 		<div class="ui-panel-header move-handle flex shrink-0 cursor-move select-none items-center gap-2 py-1.5">
-			<Gauge size={16} aria-hidden="true" />
+			<Icon name="gauge" size={16} aria-hidden="true" />
 			<span class="flex-1 text-sm font-semibold">Statistics</span>
 			<span id="stats-overall" class="budget-dot" data-tier={overall} title={'Scene budget: ' + overall}></span>
 			<button
 				class="rounded-sm p-1 hover:brightness-150"
 				title="Re-read now"
 				aria-label="Re-read now"
-				onclick={() => { sampleSceneMetrics(); resetWireStats(); }}><RefreshCw size={14} aria-hidden="true" /></button>
+				onclick={() => { sampleSceneMetrics(); resetWireStats(); }}><Icon name="refresh-cw" size={16} aria-hidden="true" /></button>
 			<button
 				id="stats-close"
 				class="rounded-sm p-1 hover:brightness-150"
 				title="Close"
 				aria-label="Close statistics"
-				onclick={() => statsOpen.set(false)}><X size={16} aria-hidden="true" /></button>
+				onclick={() => statsOpen.set(false)}><Icon name="x" size={16} aria-hidden="true" /></button>
 		</div>
 
-		<div class="min-h-0 flex-1 overflow-y-auto px-2 py-1.5 text-xs">
-			<p class="mb-1.5 text-[11px] text-gray-400">
+		<div class="min-h-0 flex-1 overflow-y-auto px-2 py-1.5 text-xs" use:minimalScroll>
+			<p class="mb-1.5 text-[11px] text-text-muted">
 				Judged against the <strong>{profile === 'vr' ? 'VR / mobile' : 'desktop'}</strong> budget.
 				Nothing here leaves this device.
 			</p>
@@ -80,13 +81,13 @@
 			<table id="stats-budgets" class="w-full">
 				<tbody>
 					{#each rows as row (row.key)}
-						<tr class="border-b border-gray-600/30" data-budget={row.key} data-tier={row.tier}>
+						<tr class="border-b border-border" data-budget={row.key} data-tier={row.tier}>
 							<td class="py-0.5 pr-1 align-top">
 								<span class="budget-dot mr-1" data-tier={row.tier}></span>
 								<span title={row.why}>{row.label}</span>
 							</td>
 							<td class="py-0.5 text-right font-mono tabular-nums">{num(row.value)}{row.unit}</td>
-							<td class="py-0.5 pl-2 text-right text-[10px] text-gray-500 tabular-nums">
+							<td class="py-0.5 pl-2 text-right text-[10px] text-text-faint tabular-nums">
 								{num(row.green)} / {num(row.amber)}
 							</td>
 						</tr>
@@ -94,13 +95,13 @@
 				</tbody>
 			</table>
 
-			<h4 class="mt-2 mb-0.5 text-[11px] font-semibold text-gray-300">Frame</h4>
+			<h4 class="mt-2 mb-0.5 text-[11px] font-semibold text-text-2">Frame</h4>
 			<div id="stats-frame" class="grid grid-cols-2 gap-x-2 font-mono text-[11px] tabular-nums">
-				<span class="text-gray-400">p50 / p95 / p99</span>
+				<span class="text-text-muted">p50 / p95 / p99</span>
 				<span class="text-right">
 					{num($sceneMetrics.frameP50)} / {num($sceneMetrics.frameP95)} / {num($sceneMetrics.frameP99)} ms
 				</span>
-				<span class="text-gray-400">Long tasks (1 min)</span>
+				<span class="text-text-muted">Long tasks (1 min)</span>
 				<span class="text-right">
 					{#if $sceneMetrics.longTasksAvailable}
 						{num($sceneMetrics.longTasks)} · worst {num($sceneMetrics.longestTask)} ms
@@ -108,31 +109,31 @@
 						not available in this browser
 					{/if}
 				</span>
-				<span class="text-gray-400">JS heap</span>
+				<span class="text-text-muted">JS heap</span>
 				<span class="text-right">{$sceneMetrics.heap == null ? 'not available' : mb($sceneMetrics.heap)}</span>
-				<span class="text-gray-400">Meshes / hidden</span>
+				<span class="text-text-muted">Meshes / hidden</span>
 				<span class="text-right">{num($sceneMetrics.meshes)} / {num($sceneMetrics.hidden)}</span>
 				{#if $sceneMetrics.ingestBacklog}
-					<span class="text-gray-400">Objects still arriving</span>
+					<span class="text-text-muted">Objects still arriving</span>
 					<span class="text-right">{num($sceneMetrics.ingestBacklog)}</span>
 				{/if}
 			</div>
 
-			<h4 class="mt-2 mb-0.5 text-[11px] font-semibold text-gray-300">
+			<h4 class="mt-2 mb-0.5 text-[11px] font-semibold text-text-2">
 				Wire, last {Math.round(wire.seconds)}s
 			</h4>
 			{#if wire.rows.length === 0}
-				<p class="text-[11px] italic text-gray-500">Nothing sent or received yet.</p>
+				<p class="text-[11px] italic text-text-faint">Nothing sent or received yet.</p>
 			{:else}
 				<table id="stats-wire" class="w-full font-mono text-[11px] tabular-nums">
 					<tbody>
 						{#each wire.rows.slice(0, 10) as row (row.type)}
 							<tr data-wire={row.type}>
 								<td class="pr-1">{row.type}</td>
-								<td class="text-right text-gray-400">{num(row.in)} in</td>
-								<td class="text-right text-gray-400">{num(row.out)} out</td>
+								<td class="text-right text-text-muted">{num(row.in)} in</td>
+								<td class="text-right text-text-muted">{num(row.out)} out</td>
 								<td class="text-right">{row.perSecond.toFixed(1)}/s</td>
-								<td class="text-right text-gray-500">{row.bytes == null ? '' : '≈' + num(row.bytes) + 'B'}</td>
+								<td class="text-right text-text-faint">{row.bytes == null ? '' : '≈' + num(row.bytes) + 'B'}</td>
 							</tr>
 						{/each}
 					</tbody>
@@ -152,16 +153,16 @@
 		width: 8px;
 		height: 8px;
 		border-radius: 9999px;
-		background: #6b7280;
+		background: var(--text-faint);
 		vertical-align: middle;
 	}
 	:global(.budget-dot[data-tier='green']) {
-		background: #22c55e;
+		background: var(--ink-good);
 	}
 	:global(.budget-dot[data-tier='amber']) {
-		background: #f59e0b;
+		background: var(--ink-warn);
 	}
 	:global(.budget-dot[data-tier='red']) {
-		background: #ef4444;
+		background: var(--ink-bad);
 	}
 </style>

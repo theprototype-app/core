@@ -45,16 +45,16 @@
 	<div
 		id="module-source-window"
 		use:focusStack
-		class="fixed right-0 top-16 z-40 flex h-[70%] w-[520px] max-w-[92vw] flex-col gap-2 rounded-bl-lg bg-gray-800 p-3 text-xs text-gray-200 shadow-xl"
+		class="fixed right-0 top-16 z-40 flex h-[70%] w-[520px] max-w-[92vw] flex-col gap-2 rounded-bl-lg bg-surface-1 p-3 text-xs text-text-2 shadow-xl"
 	>
 		<div class="flex items-center gap-2">
-			<span class="text-sm font-semibold text-gray-100">Module source — {open.module}</span>
-			<span id="module-source-readonly" class="rounded-sm bg-gray-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-300">read-only</span>
+			<span class="text-sm font-semibold text-text">Module source — {open.module}</span>
+			<span id="module-source-readonly" class="rounded-sm bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-text-2">read-only</span>
 			<span class="flex-1"></span>
-			<button id="module-source-close" class="rounded-sm bg-gray-600 px-2" onclick={close} aria-label="Close">✕</button>
+			<button id="module-source-close" class="rounded-sm bg-surface-active px-2" onclick={close} aria-label="Close">✕</button>
 		</div>
 		{#if files.length === 0}
-			<p class="text-gray-400">This module's source is not available here — it is not installed on this device.</p>
+			<p class="text-text-muted">This module's source is not available here — it is not installed on this device.</p>
 		{:else}
 			<div class="flex flex-wrap gap-1" role="tablist" aria-label="Files">
 				{#each files as f (f.file)}
@@ -62,7 +62,7 @@
 						role="tab"
 						aria-selected={f.file === current}
 						data-file={f.file}
-						class="rounded-sm px-2 py-0.5 {f.file === current ? 'bg-primary-700 text-white' : 'bg-gray-700 hover:bg-gray-600'}"
+						class="rounded-sm px-2 py-0.5 {f.file === current ? 'bg-accent-fill text-on-accent' : 'bg-surface-2 hover:bg-surface-active'}"
 						onclick={() => (current = f.file)}>{f.file}</button
 					>
 				{/each}
@@ -73,11 +73,11 @@
 				{/key}
 			</div>
 			<div class="flex items-center gap-2">
-				<button id="module-source-save-copy" class="rounded-sm bg-gray-600 px-2 py-1 hover:bg-gray-500" onclick={saveCopy}
+				<button id="module-source-save-copy" class="rounded-sm bg-surface-active px-2 py-1 hover:bg-border-strong" onclick={saveCopy}
 					title="Save this file to your Explorer as your own copy">Save a copy to Explorer</button>
-				{#if saved}<span class="text-gray-400">Saved as “{saved}”</span>{/if}
+				{#if saved}<span class="text-text-muted">Saved as “{saved}”</span>{/if}
 			</div>
-			<p class="text-[11px] leading-snug text-gray-400">
+			<p class="text-[11px] leading-snug text-text-muted">
 				This is the module's own file: it runs the same for everyone, so it cannot be edited here. A node bound to a
 				module file offers <em>Make editable copy</em> in its code panel.
 			</p>

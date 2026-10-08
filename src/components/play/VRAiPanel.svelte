@@ -28,8 +28,10 @@
 	const HEADER_H = 0.03
 	// two lines of the row font fit a row; a longer message shows its start (its END while it streams)
 	const ROW_CHARS = 110
+	// tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var())
 	const AI_ACCENT = '#7c5cff'
 	const AI_HEADER = '#2b2257'
+	// tokens-ok-end
 
 	let group: any = $state(null)
 
@@ -49,6 +51,7 @@
 		if (m.role === 'error') return '⚠ ' + text
 		return text + (m.streaming ? ' ▋' : '')
 	}
+	// tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var())
 	const ROW_COLORS: Record<string, string> = {
 		user: '#f2efff',
 		assistant: '#e8ecf2',
@@ -56,6 +59,7 @@
 		summary: '#5fd39a',
 		error: '#ff8a80'
 	}
+	// tokens-ok-end
 
 	const controllerPosition = new THREE.Vector3()
 	const controllerQuaternion = new THREE.Quaternion()
@@ -80,6 +84,7 @@
 	const statusY = bottom + 0.05
 	const MIC_W = 0.03
 
+	// tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var())
 	// the hovered state passed in so the template re-renders on it (a helper reading a store is untracked)
 	function micColor(state: string, hovered: string | null, ready: boolean) {
 		if (state === 'recording') return '#d93025'
@@ -87,8 +92,10 @@
 		if (!ready) return '#30343c'
 		return hovered === 'ai:mic' ? '#4b3aa8' : '#3a3f4a'
 	}
+	// tokens-ok-end
 	const inputY = bottom + 0.018
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if $vrAiPanelOpen}
 	<T.Group bind:ref={group} name="vr-ai-panel">
@@ -234,3 +241,4 @@
 		{/if}
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

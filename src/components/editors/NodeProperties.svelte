@@ -63,6 +63,7 @@
 		recordFlowNodesEntry({ op: 'data', graphId, items: [{ id: node.id, before, after: patch }] });
 	}
 	const id = (row: PropRow) => 'flow-prop-' + row.key;
+	const DEFAULT_COLOR = '#ffffff'; // tokens-ok: the picker's starting value (user data)
 </script>
 
 {#if rows.length}
@@ -74,11 +75,11 @@
 					<span class="flex items-center justify-between gap-2">
 						<span class="truncate">{row.label}</span>
 						{#if row.wired}
-							<span class="wired-value font-mono text-[11px] text-primary-300" data-prop-wired={row.key} title="Driven by the wired input">◈ {wiredValue(row.key)}</span>
+							<span class="wired-value font-mono text-[11px] text-accent-text" data-prop-wired={row.key} title="Driven by the wired input">◈ {wiredValue(row.key)}</span>
 						{:else if row.kind === 'toggle'}
 							<input id={id(row)} type="checkbox" checked={!!row.value} onchange={(e) => commit(row, e.currentTarget.checked)} />
 						{:else if row.kind === 'color'}
-							<input id={id(row)} type="color" value={row.value ?? '#ffffff'} onchange={(e) => commit(row, e.currentTarget.value)} />
+							<input id={id(row)} type="color" value={row.value ?? DEFAULT_COLOR} onchange={(e) => commit(row, e.currentTarget.value)} />
 						{:else if row.kind === 'number' || row.kind === 'range'}
 							<input id={id(row)} class="ui-input w-20" type="number" min={row.min} max={row.max} step={row.step ?? 'any'}
 								value={row.value ?? 0} onchange={(e) => commit(row, e.currentTarget.value)} />
@@ -100,11 +101,11 @@
 								onchange={(e) => commit(row, e.currentTarget.value)} />
 						{/if}
 					{/if}
-					{#if row.doc}<span class="text-[10px] leading-snug text-gray-400">{row.doc}</span>{/if}
+					{#if row.doc}<span class="text-[10px] leading-snug text-text-muted">{row.doc}</span>{/if}
 				</label>
 			{/each}
 		{/each}
 	</div>
 {:else}
-	<p class="text-gray-400">This node has no properties to edit.</p>
+	<p class="text-text-muted">This node has no properties to edit.</p>
 {/if}

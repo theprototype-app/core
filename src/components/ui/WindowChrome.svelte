@@ -14,9 +14,21 @@
 	// The root wears `.tp-ui`, so the whole window body paints from the SPEC tokens.
 	// `body={false}` renders the header alone (a caller that keeps its own scroller).
 	// Mobile (SPEC §6): `onback` turns the header into the nav bar "‹ Back · Title · Close".
+	//
+	// 38 R6 — wearing it on a window that already exists. A floating/docked window's ROOT is
+	// its behaviour (dragWindow, dockable, tabbable, focusStack act on it), so it keeps that
+	// element and takes only the header from here:
+	//   bare          no box of its own — the header row alone (the caller's root is the
+	//                 window, painted by the global `.tp-window` surface)
+	//   headerClass   extra classes on the header: `ui-panel-header move-handle` is what
+	//                 dragWindow / windowGrip / docking grip on and what suites query
+	//   heading       replaces icon + title (a label that sheds its text at narrow widths,
+	//                 an inline search field — the header rankings stay the caller's)
+	//   closeAttrs    on the close button (an id, the tooltip with its shortcut "Close (O)")
 	import Icon from './Icon.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
-	/** @type {{size?: 'modal'|'panel'|'tool', title?: string, icon?: string, count?: number|string, titleId?: string, onclose?: (() => void) | null, closeLabel?: string, onpin?: (() => void) | null, pinned?: boolean, onpopout?: (() => void) | null, onback?: (() => void) | null, backLabel?: string, body?: boolean, padded?: boolean, elevated?: boolean, headerEl?: HTMLElement | null, headerAttrs?: Record<string, any>, actions?: import('svelte').Snippet, footer?: import('svelte').Snippet, children?: import('svelte').Snippet} & Record<string, any>} */
+	/** @type {{size?: 'modal'|'panel'|'tool', title?: string, icon?: string, count?: number|string, titleId?: string, onclose?: (() => void) | null, closeLabel?: string, onpin?: (() => void) | null, pinned?: boolean, pinAttrs?: Record<string, any>, onpopout?: (() => void) | null, onback?: (() => void) | null, backLabel?: string, bare?: boolean, headerClass?: string, closeAttrs?: Record<string, any>, heading?: import('svelte').Snippet, body?: boolean, padded?: boolean, elevated?: boolean, headerEl?: HTMLElement | null, headerAttrs?: Record<string, any>, actions?: import('svelte').Snippet, footer?: import('svelte').Snippet, children?: import('svelte').Snippet} & Record<string, any>} */
 	let {
 		size = 'panel',
 		title = '',
@@ -27,9 +39,14 @@
 		closeLabel = '',
 		onpin = null,
 		pinned = false,
+		pinAttrs = {},
 		onpopout = null,
 		onback = null,
 		backLabel = 'Back',
+		bare = false,
+		headerClass = '',
+		closeAttrs = {},
+		heading = undefined,
 		body = true,
 		padded = true,
 		elevated = false,
@@ -41,27 +58,31 @@
 		...rest
 	} = $props();
 
-	const iconSize = $derived(size === 'tool' ? 14 : 16);
+	const iconSize = $derived(size === 'tool' ? 16 : 20);
 	const hasCount = $derived(count !== undefined && count !== null && count !== '');
 </script>
 
-<div class="tp-ui wc wc-{size}" class:wc-elevated={elevated} class:wc-headless-body={!body} {...rest}>
-	<header class="wc-head" class:wc-nav={!!onback} bind:this={headerEl} {...headerAttrs}>
+<div class="tp-ui wc wc-{size}" class:wc-elevated={elevated} class:wc-headless-body={!body} class:wc-bare={bare} {...rest}>
+	<header class="wc-head {headerClass}" class:wc-nav={!!onback} bind:this={headerEl} {...headerAttrs}>
 		{#if onback}
 			<button type="button" class="wc-back" onclick={onback}>
-				<Icon name="chevron-left" size={20} strokeWidth={1.75} />
+				<Icon name="chevron-left" size={20} />
 				<span>{backLabel}</span>
 			</button>
 		{/if}
-		{#if icon && size === 'panel' && !onback}
-			<span class="wc-icon" aria-hidden="true"><Icon name={icon} size={16} strokeWidth={1.75} /></span>
+		{#if heading}
+			{@render heading()}
+		{:else}
+			{#if icon && size === 'panel' && !onback}
+				<span class="wc-icon" aria-hidden="true"><Icon name={icon} size={16} /></span>
+			{/if}
+			<h2 class="wc-title" id={titleId}>{title}</h2>
 		{/if}
-		<h2 class="wc-title" id={titleId}>{title}</h2>
 		{#if hasCount}<span class="wc-count">{count}</span>{/if}
 		{#if actions}<div class="wc-actions">{@render actions()}</div>{/if}
 		{#if onpopout}
 			<button type="button" class="wc-btn" aria-label="Pop out" title="Pop out" onclick={onpopout}>
-				<Icon name="external-link" size={iconSize} strokeWidth={1.75} />
+				<Icon name="external-link" size={iconSize} />
 			</button>
 		{/if}
 		{#if onpin}
@@ -72,18 +93,19 @@
 				title={pinned ? 'Unpin' : 'Pin'}
 				aria-pressed={pinned}
 				onclick={onpin}
+				{...pinAttrs}
 			>
-				<Icon name={pinned ? 'pin' : 'pin-off'} size={iconSize} strokeWidth={1.75} />
+				<Icon name={pinned ? 'pin' : 'pin-off'} size={iconSize} />
 			</button>
 		{/if}
 		{#if onclose}
-			<button type="button" class="wc-btn wc-close" aria-label={closeLabel || (title ? `Close ${title}` : 'Close')} title="Close" onclick={onclose}>
-				<Icon name="x" size={size === 'tool' ? 14 : 18} strokeWidth={1.75} />
+			<button type="button" class="wc-btn wc-close" aria-label={closeLabel || (title ? `Close ${title}` : 'Close')} title="Close" onclick={onclose} {...closeAttrs}>
+				<Icon name="x" size={size === 'tool' ? 16 : 20} />
 			</button>
 		{/if}
 	</header>
 	{#if body}
-		<div class="wc-body" class:wc-padded={padded}>
+		<div class="wc-body" class:wc-padded={padded} use:minimalScroll>
 			{@render children?.()}
 		</div>
 		{#if footer}
@@ -115,6 +137,14 @@
 	.wc-headless-body {
 		border-bottom-left-radius: 0;
 		border-bottom-right-radius: 0;
+	}
+	/* header only, inside a window that owns its own box (see `bare`) */
+	.wc-bare {
+		flex-shrink: 0;
+		overflow: visible;
+		background: transparent;
+		border: 0;
+		border-radius: 0;
 	}
 
 	.wc-head {
@@ -199,19 +229,144 @@
 	.wc-btn[aria-pressed='true'] {
 		color: var(--accent-text);
 	}
+	/* an icon is the BUTTON's face, not a target of its own: the press (and a hit test at the
+	   button's centre) lands on the button */
+	.wc-head :global(button svg) {
+		pointer-events: none;
+	}
+	/* a header's ink is the window's, also when the header wears `ui-panel-header` (whose
+	   @apply'd gray-100 would otherwise win over inheritance) */
+	.wc-head {
+		color: var(--text);
+		font-family: var(--font-ui);
+		font-weight: 400;
+	}
 
-	/* mobile nav bar: ‹ Back · Title · Close, title centred */
+	/* Header pieces a CALLER renders (heading / actions snippets compile in the caller's
+	   scope, so these are global under .wc-head): the label that can shed its text, an icon
+	   action with the same box as the built-in pin/close, and a short text action
+	   ("Clear all", "Apply"). */
+	.wc-head :global(.wc-label) {
+		display: inline-flex;
+		align-items: center;
+		gap: 6px;
+		flex-shrink: 0;
+		min-width: 0;
+		white-space: nowrap;
+		font-size: var(--fs-panel-title);
+		font-weight: 600;
+		color: var(--text);
+	}
+	.wc-tool .wc-head :global(.wc-label) {
+		font-size: var(--fs-desc);
+	}
+	.wc-head :global(.wc-label svg) {
+		color: var(--text-muted);
+	}
+	.wc-head :global(.wc-sub) {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--fs-section);
+		color: var(--text-faint);
+	}
+	.wc-head :global(.wc-act) {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 4px;
+		flex-shrink: 0;
+		width: var(--icon-button);
+		height: var(--icon-button);
+		padding: 0;
+		border: 0;
+		border-radius: 7px;
+		background: transparent;
+		color: var(--text-muted);
+		font: inherit;
+		cursor: pointer;
+	}
+	.wc-tool .wc-head :global(.wc-act) {
+		width: 28px;
+		height: 28px;
+		border-radius: var(--radius-input);
+	}
+	.wc-head :global(.wc-act-text) {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		flex-shrink: 0;
+		height: 28px;
+		padding: 0 8px;
+		border: 0;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--accent-text);
+		font: inherit;
+		font-size: var(--fs-desc);
+		font-weight: 500;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+	/* a caller's legacy quiet button (an editor's Apply / Reload riding in its header) takes
+	   the text-action look rather than the old gray-700 chip */
+	:global(:where(.wc-head .ui-button-quiet)) {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		flex-shrink: 0;
+		height: 28px;
+		padding: 0 8px;
+		border: 0;
+		border-radius: var(--radius-input);
+		background: transparent;
+		color: var(--text-2);
+		font-size: var(--fs-desc);
+		font-weight: 500;
+	}
+	:global(:where(.wc-head .ui-button-quiet:hover:not(:disabled))) {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.wc-head :global(:is(.wc-act, .wc-act-text):hover:not(:disabled)) {
+		background: var(--surface-hover);
+		color: var(--text);
+	}
+	.wc-head :global(:is(.wc-act, .wc-act-text)[aria-pressed='true']) {
+		color: var(--accent-text);
+		background: var(--accent-soft);
+	}
+	.wc-head :global(:is(.wc-act, .wc-act-text):disabled) {
+		opacity: 0.45;
+		cursor: default;
+	}
+
+	/* mobile nav bar: ‹ Back · Title · Close. The title is IN the row (NOTES-38 #25): an absolutely
+	   centred title ignored the back label's width and ran under "‹ Settings" whenever either was
+	   long or the bar was padded for the logo. It takes the room between Back and Close, centred
+	   there, and ellipsizes; the back label gives way first (it is the shorter-lived text). */
 	.wc-nav {
 		position: relative;
 		padding: 0 6px;
 	}
 	.wc-nav .wc-title {
-		position: absolute;
-		left: 96px;
-		right: 96px;
-		flex: none;
+		flex: 1 1 auto;
+		min-width: 0;
 		text-align: center;
-		pointer-events: none;
+	}
+	.wc-nav .wc-back {
+		flex: 0 1 auto;
+		min-width: 0;
+		max-width: 42%;
+	}
+	.wc-nav .wc-back > span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.wc-nav .wc-back :global(svg) {
+		flex-shrink: 0;
 	}
 	.wc-nav .wc-close {
 		margin-left: auto;
@@ -262,7 +417,9 @@
 		}
 		.wc-btn,
 		.wc-modal .wc-btn,
-		.wc-tool .wc-btn {
+		.wc-tool .wc-btn,
+		.wc-head :global(.wc-act),
+		.wc-tool .wc-head :global(.wc-act) {
 			width: 44px;
 			height: 44px;
 		}

@@ -1,4 +1,5 @@
 <script>
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	// 37 R20 — "Report a problem" (desktop and the Quest browser). The picture was taken when
 	// the menu row was pressed (problemReport.js captureProblem). Here the person drags boxes
 	// over what is wrong, says what happened, and chooses: Send (only with the consent box
@@ -114,7 +115,7 @@
 
 {#if $problemDraft}
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-	<div id="problem-report" class="problem ui-panel" role="dialog" aria-label="Report a problem" tabindex="-1">
+	<div id="problem-report" class="problem ui-panel" use:minimalScroll role="dialog" aria-label="Report a problem" tabindex="-1">
 		<p class="title">Report a problem</p>
 		{#if $problemDraft.shotUrl}
 			<p class="muted">Drag on the picture to box what is wrong{marks.length ? ` (${marks.length})` : ''}.</p>
@@ -182,8 +183,8 @@
 		flex-direction: column;
 		gap: 8px;
 		padding: 14px;
-		background: var(--surface, #1f2937);
-		color: var(--text, #e5e7eb);
+		background: var(--surface);
+		color: var(--text);
 		font-size: 13px;
 	}
 	.title {
@@ -198,7 +199,7 @@
 		user-select: none;
 		border-radius: 6px;
 		overflow: hidden;
-		background: var(--surface-deep, #000);
+		background: var(--surface-deep);
 	}
 	.shot {
 		width: 100%;
@@ -208,10 +209,10 @@
 	}
 	.problem-mark {
 		position: absolute;
-		border: 2px solid var(--ink-warn, #fbbf24);
+		border: 2px solid var(--ink-warn);
 		border-radius: 3px;
-		box-shadow: 0 0 0 1px rgb(0 0 0 / 0.6);
-		background: rgb(251 191 36 / 0.08);
+		box-shadow: 0 0 0 1px rgb(0 0 0 / 0.6); /* tokens-ok: dark halo so the box reads over any captured screenshot */
+		background: color-mix(in srgb, var(--ink-warn) 8%, transparent);
 	}
 	.problem-mark.drawing {
 		border-style: dashed;
@@ -223,20 +224,20 @@
 		width: 18px;
 		height: 18px;
 		border-radius: 9px;
-		background: var(--ink-warn, #fbbf24);
-		color: #111;
+		background: var(--ink-warn);
+		color: var(--bg-app);
 		font: 700 12px/18px system-ui, sans-serif;
 		cursor: pointer;
 	}
 	.link {
 		align-self: flex-start;
 		font-size: 12px;
-		color: var(--accent, #2563eb);
+		color: var(--accent);
 		text-decoration: underline;
 		background: none;
 	}
 	.muted {
-		color: var(--muted, #9ca3af);
+		color: var(--text-muted);
 		font-size: 12px;
 	}
 	.field {
@@ -248,9 +249,9 @@
 		width: 100%;
 		resize: vertical;
 		border-radius: 6px;
-		background: var(--field, rgba(0, 0, 0, 0.3));
+		background: var(--surface-inset);
 		color: inherit;
-		border: 1px solid var(--border, #4b5563);
+		border: 1px solid var(--border);
 		padding: 6px;
 	}
 	.check {
@@ -270,15 +271,15 @@
 	.btn {
 		padding: 5px 12px;
 		border-radius: 6px;
-		background: var(--surface-3, #374151);
-		color: var(--text, #e5e7eb);
+		background: var(--surface-hover);
+		color: var(--text);
 	}
 	.btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
 	}
 	.btn.primary {
-		background: var(--accent-fill, var(--accent, #2563eb));
-		color: var(--on-accent, #fff);
+		background: var(--accent-fill, var(--accent));
+		color: var(--on-accent);
 	}
 </style>

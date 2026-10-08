@@ -1,18 +1,14 @@
 <script lang="ts">
 	import { cameraPreviews, joinPeerPreview, previewLabel } from '$lib/cameraPreview';
-	import { ArrowRight, Check, ChevronDown, Eye, Glasses, StickyNote, VolumeX, Camera } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import * as THREE from 'three';
 	import { onMount, untrack } from 'svelte';
-	import {
-		Avatar,
-		Modal,
-		Input,
-		Dropdown,
-		DropdownGroup,
-		DropdownHeader,
-		DropdownItem,
-		DropdownDivider
-	} from 'flowbite-svelte';
+	import { fade } from 'svelte/transition';
+	import { sineIn } from 'svelte/easing';
+	import ModalDialog from '../ui/ModalDialog.svelte';
+	import NavRow from '../ui/NavRow.svelte';
+	import UiButton from '../ui/Button.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		chatHidden,
 		specatorMode,
@@ -110,7 +106,7 @@
 
 	// N3: latency-band dot color for a peer's network-quality indicator
 	const qColor = (level: string) =>
-		level === 'good' ? '#4ade80' : level === 'ok' ? '#fbbf24' : level === 'bad' ? '#f87171' : '#9ca3af';
+		level === 'good' ? 'var(--ink-good)' : level === 'ok' ? 'var(--ink-warn)' : level === 'bad' ? 'var(--ink-bad)' : 'var(--text-faint)';
 
     let openDropdown = $state(false);
 	let muteMenu = $state(null);
@@ -133,11 +129,6 @@
 	// 		console.log(element);
 	// 	});
 	// });
-
-	let classProfileSettings = 'z-10 z-10 inline-flex w-40 shrink-0 shrink-0 items-center rounded-s-lg border\
-	 border-gray-300 bg-gray-100 px-4 py-2.5 text-center text-sm font-medium text-gray-500 hover:bg-gray-200 focus:outline-hidden\
-	 focus:ring-4 focus:ring-gray-100 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600\
-	 dark:focus:ring-gray-700';
 
 	 let avatarImage = $state('');
 	 function avatar_load(event) {
@@ -493,6 +484,76 @@
 
 		}
 	 }
+
+	// --- 38 R11: the profile menu (was flowbite's <Dropdown>) ----------------------
+	// KEPT ON PURPOSE from flowbite's Popper: a TOP-LAYER native popover
+	// (`popover="manual"`), so it still paints above every piece of chrome it used to cover
+	// (the CLAUDE.md top-layer gotcha — the profile circle lives INSIDE the panel for that
+	// reason), `[popover]` keeps shortcuts.js letting Tab walk its rows, and the suites'
+	// `[popover]:popover-open` probes keep reading it. The trigger semantics are flowbite's
+	// too: a press TOGGLES, focus arriving OPENS (the later one wins, as the debounce did),
+	// focus leaving to somewhere outside closes, an outside click or Escape closes, and a
+	// script `el.click()` does nothing (suites rely on that). Placement is bottom-end with
+	// the old 2px offset; the horizontal edge stays pinned in CSS (see the style block).
+	let triggerEl: HTMLElement | null = $state(null);
+	let dropdownEl: HTMLElement | null = null;
+	function placeDropdown() {
+		if (!dropdownEl || !triggerEl) return;
+		const r = triggerEl.getBoundingClientRect();
+		dropdownEl.style.top = `${r.bottom + 2}px`;
+	}
+	/** focus moving OUT of the menu or its trigger (to a real element) closes it */
+	function dropdownFocusOut(e: FocusEvent) {
+		const to = e.relatedTarget as Node | null;
+		if (!to) return;
+		if (dropdownEl?.contains(to) || triggerEl?.contains(to)) return;
+		openDropdown = false;
+	}
+	/** mount: enter the top layer, place, and listen for the ways out */
+	function dropdownAttach(node: HTMLElement) {
+		dropdownEl = node;
+		try {
+			node.showPopover?.();
+		} catch {}
+		placeDropdown();
+		// "outside" is decided by where the PRESS started: the panel's own avatar circle sits
+		// in the top layer exactly over the trigger, so the press that opens the menu ends on
+		// that circle and Chrome targets its click at the two elements' common ancestor —
+		// outside both, which closed the menu it had just opened.
+		// (true at mount: the press that opened us happened before this listener existed)
+		let pressInside = true;
+		const inside = (path: EventTarget[]) => path.includes(node) || (!!triggerEl && path.includes(triggerEl));
+		const onDocDown = (e: PointerEvent) => {
+			pressInside = inside(e.composedPath());
+		};
+		const onDocClick = (e: MouseEvent) => {
+			if (pressInside || inside(e.composedPath())) return;
+			openDropdown = false;
+		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === 'Escape') openDropdown = false;
+		};
+		const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(placeDropdown) : null;
+		if (triggerEl) ro?.observe(triggerEl);
+		window.addEventListener('resize', placeDropdown);
+		document.addEventListener('pointerdown', onDocDown, true);
+		document.addEventListener('click', onDocClick);
+		document.addEventListener('keydown', onKey);
+		return () => {
+			ro?.disconnect();
+			window.removeEventListener('resize', placeDropdown);
+			document.removeEventListener('pointerdown', onDocDown, true);
+			document.removeEventListener('click', onDocClick);
+			document.removeEventListener('keydown', onKey);
+			if (dropdownEl === node) dropdownEl = null;
+		};
+	}
+	// the docked Connect bar moves the trigger while the menu may be open
+	$effect(() => {
+		void $connectDocked;
+		void $connectBarHeight;
+		if (openDropdown) queueMicrotask(placeDropdown);
+	});
 </script>
 
 <!--
@@ -505,22 +566,39 @@
 	Rooms view for the same reason a filename is not repeated inside its own folder —
 	the header already names the scene.
 -->
+<!-- 38 R11: the avatar circle (was flowbite's <Avatar>): an <img> when there is a picture,
+	 else the same silhouette in a circle — same element shapes the suites and phone.css read -->
+<!-- `cls` carries the FILL: a list row takes the translucent --surface-active, the profile
+     circle over the 3D viewport an opaque one (translucent, the light theme's dark silhouette
+     vanished into the scene) -->
+{#snippet avatarImg(src: string | undefined, cls: string)}
+	{#if src}
+		<img alt="" {src} class="relative flex items-center justify-center rounded-full text-text-2 {cls}" />
+	{:else}
+		<div class="relative flex items-center justify-center rounded-full text-text-2 {cls}">
+			<svg class="h-full w-full rounded-full" fill="currentColor" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"
+				><path fill-rule="evenodd" d="M8 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path></svg
+			>
+		</div>
+	{/if}
+{/snippet}
+
 {#snippet peerRow(user: any, self: boolean, showScene: boolean)}
 	<div
 		class="peers-row flex items-center gap-2 rounded px-1.5 py-1 {$specatorMode === user[0]
-			? 'bg-primary-800/60'
-			: 'hover:bg-gray-700/60'}"
+			? 'bg-accent-soft'
+			: 'hover:bg-surface-hover'}"
 	>
-		<Avatar src={user[2]} class="h-8 w-8 shrink-0 rounded-full" />
+		{@render avatarImg(user[2], 'bg-surface-active h-8 w-8 shrink-0')}
 		<div class="min-w-0 flex-1">
-			<div class="flex items-center gap-1 truncate text-sm text-gray-100">
+			<div class="flex items-center gap-1 truncate text-sm text-text">
 				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || 'Peer'}</span>
-				{#if self}<span class="text-[10px] text-primary-300">(you)</span>{/if}
+				{#if self}<span class="text-[10px] text-accent-text">(you)</span>{/if}
 			</div>
-			<div class="flex items-center gap-1.5 text-[10px] text-gray-400">
+			<div class="flex items-center gap-1.5 text-[10px] text-text-muted">
 				<span class="truncate">{shortId(user[0])}</span>
-				{#if $mutedPeers.includes(user[0])}<span title="Muted"><VolumeX size={16} aria-hidden="true" /></span>{/if}
-				{#if $peerHands[user[0]]?.active}<span title="In VR"><Glasses size={16} aria-hidden="true" /></span>{/if}
+				{#if $mutedPeers.includes(user[0])}<span title="Muted"><Icon name="volume-x" size={16} aria-hidden="true" /></span>{/if}
+				{#if $peerHands[user[0]]?.active}<span title="In VR"><Icon name="glasses" size={16} aria-hidden="true" /></span>{/if}
 				<!-- 21-F3: play-mode presence. `{@const}` may only be the IMMEDIATE
 					 child of a block, so the mode is resolved in the `{#if}` and
 					 named inside it. -->
@@ -549,14 +627,14 @@
 								: 'In ' + sceneName}>{sceneName}</span
 					>
 				{/if}
-				{#if user[3]}<span class="text-amber-300">▸ {shortId(user[3])}</span>{/if}
+				{#if user[3]}<span class="text-ink-warn">▸ {shortId(user[3])}</span>{/if}
 				{#if !self && $peerQuality[user[0]]}
 					{@const q = $peerQuality[user[0]]}
 					<span
 						title={q.rtt != null ? `${Math.round(q.rtt)} ms round-trip` : 'measuring…'}
 						style="color: {qColor(q.level)}">●{q.rtt != null ? ` ${Math.round(q.rtt)}ms` : ''}</span
 					>
-					{#if q.relayed}<span class="text-orange-300" title="Relayed through a TURN server">relayed</span>{/if}
+					{#if q.relayed}<span class="text-ink-warn" title="Relayed through a TURN server">relayed</span>{/if}
 				{/if}
 			</div>
 		</div>
@@ -564,7 +642,7 @@
 			{#if self}
 				<span class="role-badge" data-role={ri.myRole} title="Your role">{ri.myRole}</span>
 			{:else if ri.amAdmin}
-				<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} aria-haspopup="listbox" aria-expanded={roleMenuFor === user[0]} title="Change role" onclick={(e) => toggleRoleMenu(e, user[0])}>{ri.roleOf(user[0])}<ChevronDown size={10} class="role-caret" aria-hidden="true" /></button>
+				<button type="button" class="role-badge role-btn" data-role={ri.roleOf(user[0])} aria-haspopup="listbox" aria-expanded={roleMenuFor === user[0]} title="Change role" onclick={(e) => toggleRoleMenu(e, user[0])}>{ri.roleOf(user[0])}<Icon name="chevron-down" size={16} class="role-caret" aria-hidden="true" /></button>
 			{:else}
 				<span class="role-badge" data-role={ri.roleOf(user[0])}>{ri.roleOf(user[0])}</span>
 			{/if}
@@ -574,11 +652,11 @@
 			     P2b: not across scenes — the camera MARKER lives in their scene, so
 			     there would be nothing here to look through. -->
 			<button
-				class="peer-watch peer-preview shrink-0 rounded px-2 py-0.5 text-xs bg-gray-600 text-gray-100 hover:bg-gray-500"
+				class="peer-watch peer-preview shrink-0 rounded px-2 py-0.5 text-xs bg-surface-active text-text hover:bg-border-strong"
 				title={`Previewing ${previewLabel($cameraPreviews[user[0]])} — click to look through it too`}
 				onclick={() => { joinPeerPreview(user[0]); peersOpen = false; }}
 			>
-				<Camera size={14} class="mr-1" aria-hidden="true" />{previewLabel($cameraPreviews[user[0]])}
+				<Icon name="camera" size={16} class="mr-1" aria-hidden="true" />{previewLabel($cameraPreviews[user[0]])}
 			</button>
 		{/if}
 		{#if !self}
@@ -597,8 +675,8 @@
 					 button saying nothing. Request access takes its place. -->
 				<button
 					class="peer-request shrink-0 rounded px-2 py-0.5 text-xs {$sceneAccessAsked.includes(user[0])
-						? 'bg-gray-700 text-gray-500'
-						: 'bg-gray-600 text-gray-100 hover:bg-gray-500'}"
+						? 'bg-surface-2 text-text-faint'
+						: 'bg-surface-active text-text hover:bg-border-strong'}"
 					disabled={$sceneAccessAsked.includes(user[0])}
 					title={$sceneAccessAsked.includes(user[0])
 						? 'Asked — they decide'
@@ -615,11 +693,11 @@
 					 named scene, take the session's world back, and ask the peers standing in
 					 it for what it holds. -->
 				<button
-					class="peer-join shrink-0 rounded bg-gray-600 px-2 py-0.5 text-xs text-gray-100 hover:bg-gray-500"
+					class="peer-join shrink-0 rounded bg-surface-active px-2 py-0.5 text-xs text-text hover:bg-border-strong"
 					title="In the session's world — go back there"
 					onclick={() => doJoinWorld()}
 				>
-					<ArrowRight size={14} class="mr-1" aria-hidden="true" />Join
+					<Icon name="arrow-right" size={16} class="mr-1" aria-hidden="true" />Join
 				</button>
 			{:else if away}
 				<!-- R22 round 30 B2: they are demonstrably in ANOTHER SCENE, so Watch cannot
@@ -627,19 +705,19 @@
 					 loaded. The disabled button said so and left you to find that scene
 					 yourself; this offers the one thing that DOES work, which is to go there. -->
 				<button
-					class="peer-goto shrink-0 rounded bg-gray-600 px-2 py-0.5 text-xs text-gray-100 hover:bg-gray-500"
+					class="peer-goto shrink-0 rounded bg-surface-active px-2 py-0.5 text-xs text-text hover:bg-border-strong"
 					title={'In ' + away + ' — travel to their scene'}
 					onclick={() => goToScene(user[0])}
 				>
-					<ArrowRight size={14} class="mr-1" aria-hidden="true" />Go to
+					<Icon name="arrow-right" size={16} class="mr-1" aria-hidden="true" />Go to
 				</button>
 			{:else}
 				<button
 					class="peer-watch shrink-0 rounded px-2 py-0.5 text-xs {away
-						? 'bg-gray-700 text-gray-500'
+						? 'bg-surface-2 text-text-faint'
 						: $specatorMode === user[0]
-							? 'bg-primary-600 text-white'
-							: 'bg-gray-600 text-gray-100 hover:bg-gray-500'}"
+							? 'bg-accent-fill text-on-accent'
+							: 'bg-surface-active text-text hover:bg-border-strong'}"
 					disabled={!!away}
 					title={away
 						? 'In ' + away + ' — open that scene to watch them'
@@ -649,7 +727,7 @@
 					onclick={() => { specate(user[0]); peersOpen = false; }}
 					oncontextmenu={(e) => openMuteMenu(e, user[0])}
 				>
-					<Eye size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
+					<Icon name="eye" size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
 				</button>
 			{/if}
 		{/if}
@@ -659,16 +737,19 @@
 <!-- when Connect docks to a full-width top bar, drop this corner chrome below it (plus
 	 its tab strip when pinned) so nothing overlaps — connectBarHeight is the bar's height -->
 <div class="top-right-chrome" style="position: fixed; right: 0px; z-index: 997; top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
-	<div class="flex items-center gap-2" style=" position: absolute; top: 15px; right: 100px; z-index: 997;">
+	<!-- 38 R8: one glass group (styles/hud.css) — notes, notifications, peers — sitting just
+	     left of the profile circle, which keeps its own place (its dropdown is anchored to it) -->
+	<div class="tp-ui hud-glass hud-tr" style="position: absolute; top: 10px; right: 76px; z-index: 997;">
 	<!-- E2: scene-notes drawer toggle -->
 	<button
 		id="notes-toggle"
-		class="flex h-8 w-8 items-center justify-center rounded-full border border-gray-700/60 bg-gray-800/85 text-gray-200 backdrop-blur-sm hover:bg-gray-700/85 {$notesDrawerOpen ? 'ring-2 ring-primary-500/60' : ''}"
+		class="hud-cell"
+		class:on={$notesDrawerOpen}
 		title="Scene notes"
 		aria-label="Scene notes"
 		onclick={() => notesDrawerOpen.update((v) => !v)}
 	>
-		<StickyNote size={16} class="text-xs" aria-hidden="true" />
+		<Icon name="sticky-note" size={20} aria-hidden="true" />
 	</button>
 	<!-- E1: notifications bell + history panel -->
 	<NotificationCenter />
@@ -683,16 +764,17 @@
 		<!-- compact trigger: a few stacked avatars + the peer count -->
 		<button
 			id="peers-trigger"
-			class="flex items-center gap-2 rounded-full border border-gray-700/60 bg-gray-800/85 px-2 py-1 backdrop-blur-sm hover:bg-gray-700/85"
+			class="hud-cell hud-tr-peers"
+			class:on={peersOpen}
 			title="Connected peers"
 			onclick={() => (peersOpen = !peersOpen)}
 		>
 			<div class="flex -space-x-2">
 				{#each $userdata.slice(1, 4) as user (user[0])}
-					<Avatar stacked src={user[2]} class="h-7 w-7 rounded-full border-2 border-gray-800" />
+					{@render avatarImg(user[2], 'bg-surface-active border-2 border-surface-1 not-first:-ms-4 hud-tr-av h-6 w-6')}
 				{/each}
 			</div>
-			<span class="pr-1 text-xs font-semibold text-gray-200">{$userdata.length}</span>
+			<span class="hud-tr-count">{$userdata.length}</span>
 		</button>
 
 		{#if peersOpen}
@@ -749,7 +831,7 @@
 						</div>
 					</div>
 				{/if}
-				<div class="peers-scroll">
+				<div class="peers-scroll" use:minimalScroll>
 				{#if peersView === 'rooms'}
 					{#each peerGroups as group (group.key)}
 						<!-- an inert header, not a folder: a room is where somebody is standing and
@@ -777,7 +859,7 @@
 					 gated: a node in a replicated graph is the author's intent, not an
 					 administrative act. -->
 				{#if gameInUse}
-					<div class="mt-1 border-t border-gray-700/60 pt-1">
+					<div class="mt-1 border-t border-border pt-1">
 						<button
 							id="reset-game"
 							type="button"
@@ -799,9 +881,9 @@
 					 is how that gets filed as a bug. Invite's transport belongs to the
 					 plugin; the button renders only when it provides one. -->
 				{#if crossRooms.length}
-					<div class="mt-1 border-t border-gray-700/60 pt-1" id="cross-scene-presence">
+					<div class="mt-1 border-t border-border pt-1" id="cross-scene-presence">
 						{#each crossRooms as room (room.id)}
-							<div class="px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-500">
+							<div class="px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-text-faint">
 								in {room.scene || room.name || 'another scene'}
 							</div>
 							{#each room.members ?? [] as m (m.peerId)}
@@ -813,14 +895,14 @@
 										>{m.mode === 'playing' ? 'playing' : 'editor'}</span
 									>
 									<button
-										class="rounded px-1.5 py-0.5 text-xs text-gray-500"
+										class="rounded px-1.5 py-0.5 text-xs text-text-faint"
 										disabled
 										title="In another scene — Watch cannot reach a peer outside your session. Join their room to watch."
 										>Watch</button
 									>
 									{#if typeof $scenePresence?.invite === 'function'}
 										<button
-											class="cross-scene-invite rounded bg-primary-600/80 px-1.5 py-0.5 text-xs text-white hover:bg-primary-500"
+											class="cross-scene-invite rounded bg-accent-fill px-1.5 py-0.5 text-xs text-on-accent hover:brightness-110"
 											title="Ask them to join your scene — they get a toast; accepting connects them to your session"
 											onclick={() => $scenePresence.invite(m.peerId, room)}>Invite</button
 										>
@@ -833,7 +915,7 @@
 				<!-- open-core (M1d): cloud plugin roles section. Empty in the OSS
 					 build; the cloud plugin fills it via cloudApi.mountUsersSection(). -->
 				{#if $usersSlot}
-					<div class="mt-1 border-t border-gray-700/60 pt-1">
+					<div class="mt-1 border-t border-border pt-1">
 						<CloudSlot mount={$usersSlot} />
 					</div>
 				{/if}
@@ -844,7 +926,7 @@
 				{@const pid = roleMenuFor}
 				<div use:portal class="role-menu role-menu-portal" role="listbox" style="top:{roleMenuPos.top}px; right:{roleMenuPos.right}px;">
 					{#each ri.order as r}
-						<button type="button" class="role-menu-item" class:sel={ri.roleOf(pid) === r} role="option" aria-selected={ri.roleOf(pid) === r} onclick={(e) => { e.stopPropagation(); ri.setRole(pid, r); roleMenuFor = null; }}><span class="role-badge" data-role={r} style="pointer-events:none">{r}</span>{#if ri.roleOf(pid) === r}<Check size={16} class="role-check" aria-hidden="true" />{/if}</button>
+						<button type="button" class="role-menu-item" class:sel={ri.roleOf(pid) === r} role="option" aria-selected={ri.roleOf(pid) === r} onclick={(e) => { e.stopPropagation(); ri.setRole(pid, r); roleMenuFor = null; }}><span class="role-badge" data-role={r} style="pointer-events:none">{r}</span>{#if ri.roleOf(pid) === r}<Icon name="check" size={16} class="role-check" aria-hidden="true" />{/if}</button>
 					{/each}
 				</div>
 			{/if}
@@ -864,80 +946,90 @@
 	     top-right corner. -->
 	<div id="avatar-menu" class="mr-5 flex w-52 items-center md:order-2">
 		<div class="flex items-center space-x-3">
+			<!-- tabindex 0 + press/focus semantics: what flowbite's Popper gave the trigger -->
 			<div
 				id="avatar-trigger"
+				bind:this={triggerEl}
+				role="button"
+				tabindex="0"
+				aria-haspopup="true"
+				aria-expanded={openDropdown}
 				style="position: absolute; top: 8px; right: 20px; cursor: pointer; z-index: 999; line-height: 0;"
+				onmousedown={() => (openDropdown = !openDropdown)}
+				onfocusin={() => (openDropdown = true)}
+				onfocusout={dropdownFocusOut}
 			>
-				<Avatar
-					src={effAvatar || undefined}
-					class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600"
-				/>
+				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-12 w-12 border-2 border-border-strong')}
 			</div>
 		</div>
 	</div>
-	<!-- NO z-index will put the profile circle over this panel: flowbite 1.x renders a
-	     Dropdown as a TOP-LAYER popover (`popover="manual"`, `:popover-open`), and the
-	     top layer paints above the entire page whatever the z-index — measured, the panel
-	     at 996 covered an avatar at 2000. Same family as the modal/top-layer trap in
-	     CLAUDE.md. So the circle is drawn INSIDE the panel instead (below), where it
-	     rides the same layer; the z-index here only orders it against ordinary chrome. -->
-	<Dropdown
-    id="avatar-dropdown"
-    placement="bottom-end"
-    bind:isOpen={openDropdown}
-    triggeredBy="#avatar-trigger"
-    class="w-56"
-    style="border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 996; margin-top: -50px;"
-	>
-	<!-- the profile circle, seated in the 1.5rem notch this panel's top-right corner
-	     exists for (24px radius = half of a 48px avatar, so it is exactly inscribed and
-	     the panel's own overflow-hidden does not bite it). Clicking it closes the menu,
-	     the same as clicking the trigger again. -->
-	<button
-		type="button"
-		class="absolute right-0 top-0 z-10 cursor-pointer rounded-full leading-none"
-		aria-label="Close profile menu"
-		onclick={() => (openDropdown = false)}
-	>
-		<Avatar
-			src={effAvatar || undefined}
-			class="h-12 w-12 rounded-full border-2 border-gray-600 dark:border-gray-600"
-		/>
-	</button>
-	<!-- PM (roadmap #14): identity header — name, then the cloud email on a new line
-		 when signed in. No avatar here (it's already the profile button). The rounded
-		 top-right corner is KEPT — it echoes the profile circle. -->
-	<DropdownHeader>
-		<div class="min-w-0">
-			<span class="block truncate text-base font-semibold">{effName}</span>
-			{#if cid?.email}
-				<span class="block truncate text-xs text-gray-400">{cid.email}</span>
-			{/if}
+	<!-- NO z-index will put the profile circle over this panel: it is a TOP-LAYER popover
+	     (`popover="manual"`, `:popover-open` — flowbite 1.x's Dropdown was, and 38 R11 kept
+	     the mechanism when it replaced the component), and the top layer paints above the
+	     entire page whatever the z-index — measured, the panel at 996 covered an avatar at
+	     2000. Same family as the modal/top-layer trap in CLAUDE.md. So the circle is drawn
+	     INSIDE the panel instead (below), where it rides the same layer; the z-index here
+	     only orders it against ordinary chrome. -->
+	{#if openDropdown}
+		<div
+			id="avatar-dropdown"
+			popover="manual"
+			role="tooltip"
+			{@attach dropdownAttach}
+			in:fade|global={{ duration: 100, easing: sineIn }}
+			onfocusout={dropdownFocusOut}
+			class="tp-ui w-72 overflow-visible rounded-lg border border-border bg-surface-2 text-text shadow-sm"
+			style="position: fixed; bottom: auto; left: auto; border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 996; margin-top: -50px;"
+		>
+		<!-- the profile circle, seated in the 1.5rem notch this panel's top-right corner
+		     exists for (24px radius = half of a 48px avatar, so it is exactly inscribed and
+		     the panel's own overflow-hidden does not bite it). Clicking it closes the menu,
+		     the same as clicking the trigger again. -->
+		<button
+			type="button"
+			class="absolute right-0 top-0 z-10 cursor-pointer rounded-full leading-none"
+			aria-label="Close profile menu"
+			onclick={() => (openDropdown = false)}
+		>
+			{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-12 w-12 border-2 border-border-strong')}
+		</button>
+		<!-- PM (roadmap #14): identity header — name, then the cloud email (or "You") under it.
+			 No avatar here (it's already the profile button, seated in the notch on the right).
+			 38 R8 (design page "Profile and peers"): the kit's NavRows below, one card. -->
+		<div class="pm-head">
+			<span class="pm-name">{effName}</span>
+			<span class="pm-sub">{cid?.email || 'You'}</span>
 		</div>
-	</DropdownHeader>
-	<DropdownGroup>
-	<DropdownItem
-		onclick={() => {
-			characterModalOpen.set(true);
-			openDropdown = false;
-		}}>Customize Character</DropdownItem
-	>
-	<DropdownItem
-		onclick={() => {
-			profileSettingsOpen.set(true);
-			openDropdown = false;
-		}}>Profile Settings</DropdownItem>
-	</DropdownGroup>
-	<!-- open-core (PM): cloud account section — the plugin mounts Sign in/out +
-		 preferences here (moved out of the Connect pill). Plain block: the plugin
-		 owns its own clicks, so it is NOT a DropdownItem. -->
-	{#if $profileSlot}
-		<DropdownDivider />
-		<div class="cloud-profile px-3 py-2">
-			<CloudSlot mount={$profileSlot} />
+		<div class="pm-card">
+			<NavRow
+				icon="user"
+				label="Customize character"
+				onclick={() => {
+					characterModalOpen.set(true);
+					openDropdown = false;
+				}}
+			/>
+			<NavRow
+				icon="settings"
+				label="Profile settings"
+				description="Picture and name"
+				onclick={() => {
+					profileSettingsOpen.set(true);
+					openDropdown = false;
+				}}
+			/>
+		</div>
+		<!-- open-core (PM): cloud account section — the plugin mounts Sign in/out +
+			 preferences here (moved out of the Connect pill). Plain block: the plugin
+			 owns its own clicks, so it is NOT a menu row. -->
+		{#if $profileSlot}
+			<div class="my-1 h-px bg-border"></div>
+			<div class="cloud-profile px-3 py-2">
+				<CloudSlot mount={$profileSlot} />
+			</div>
+		{/if}
 		</div>
 	{/if}
-	</Dropdown>
 </div>
 
 
@@ -956,21 +1048,22 @@
 	/>
 {/if}
 
-<Modal title="" bind:open={$profileSettingsOpen} outsideclose modal={false} onkeydown={(e) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }} class="tp-modal-frame">
+<ModalDialog title="Profile settings" bind:open={$profileSettingsOpen} outsideclose width="md" onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }}>
 
-	<center><b>Profile Settings</b></center>
-
-	<div class="modal-content max-h-[90vh] overflow-y-auto p-4">
-		<div class="flex px-10 pf-row">
-			<p
-				class={classProfileSettings}
-			>
-				Avatar
-			</p>
+	<!-- 38 R8: kit rows (label left, control right) instead of the boxed label | input table.
+	     Same ids, same handlers: #avatar-file / #avatar-preview / #avatar-reset / #peer-id /
+	     #update-username. -->
+	<div class="modal-content pf-list">
+		<div class="pf-row">
+			<span class="pf-label">Picture<small>Click it to choose an image</small></span>
 			<input type="file" id="avatar-file" style="display: none" onchange={e => avatar_load(e)}/>
 			<div class="flex items-center gap-3">
+				<!-- reset to the signed-in account's picture (or the default) -->
+				{#if avatarImage || (typeof localStorage !== 'undefined' && safeStorage.getItem('avatar'))}
+				<UiButton id="avatar-reset" variant="ghost" size="sm" onclick={resetAvatarToDefault}>Reset to {cid?.avatar ? 'account picture' : 'default'}</UiButton>
+				{/if}
 				{#if effAvatar}
-				<img id="avatar-preview" src={effAvatar} alt="avatar" class="h-14 w-14 rounded-full border-2 dark:border-gray-800 cursor-pointer object-cover"
+				<img id="avatar-preview" src={effAvatar} alt="avatar" class="pf-avatar"
 				onclick={() => document.getElementById('avatar-file').click()}
 				/>
 				{:else}
@@ -978,98 +1071,82 @@
 				fill="currentColor"
 				viewBox="0 0 16 16"
 				xmlns="http://www.w3.org/2000/svg"
-				class="h-14 w-14 rounded-full border-2 dark:border-gray-400 cursor-pointer"
+				class="pf-avatar"
 				><path
 					fill-rule="evenodd"
 					d="M8 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
 					clip-rule="evenodd"
 				></path></svg>
 				{/if}
-				<!-- reset to the signed-in account's picture (or the default) -->
-				{#if avatarImage || (typeof localStorage !== 'undefined' && safeStorage.getItem('avatar'))}
-				<button id="avatar-reset" class="rounded-sm border border-gray-500 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
-					onclick={resetAvatarToDefault}>Reset to {cid?.avatar ? 'account picture' : 'default'}</button>
-				{/if}
 			</div>
 		</div>
-		<br />
-		<div class="flex px-10 pf-row">
-			<p
-				class={classProfileSettings + " rounded-bl-none"}
-			>
-				Peer ID
-			</p>
-			<Input
-				id="peer-id"
-				class="rounded-s-none! rounded-br-none"
-				placeholder={$peers.peer.id}
-				disabled
-			/>
-		</div>
-
-		<div class="flex px-10 pf-row">
-			<p
-				class={classProfileSettings + " rounded-tl-none"}
-			>
-				Username
-			</p>
-			<Input
+		<div class="pf-row">
+			<label class="pf-label" for="update-username">Name<small>What others see above you and in chat</small></label>
+			<input
 				id="update-username"
-				class="rounded-s-none! rounded-tr-none"
+				class="tp-field pf-input"
 				placeholder={cid?.username ? '' + cid.username : 'Username'}
 				bind:value={$username}
 				onchange={onUsernameEdited}
 			/>
 		</div>
+		<div class="pf-row">
+			<label class="pf-label" for="peer-id">Peer ID<small>Your address in a session</small></label>
+			<input
+				id="peer-id"
+				class="tp-field pf-input pf-mono"
+				placeholder={$peers.peer.id}
+				disabled
+			/>
+		</div>
 	</div>
-	<br />
-</Modal>
+</ModalDialog>
 
 <style>
 	/* Role pill + change-role dropdown (cloud-roles bridge). These MUST live outside
 	   any media query — they previously sat inside @media(max-width:640px) so on a
 	   normal-width screen the "change role" control rendered as an unstyled native
 	   button/list (the bug in the screenshot). */
-	.role-badge { flex: 0 0 auto; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; padding: 2px 9px; border-radius: 9999px; color: #fff; background: #64748b; text-transform: capitalize; line-height: 1.4; }
-	.role-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; cursor: pointer; box-shadow: 0 1px 2px rgb(0 0 0 / 0.35); }
+	.role-badge { flex: 0 0 auto; font-size: 10px; font-weight: 600; letter-spacing: 0.02em; padding: 2px 9px; border-radius: 9999px; color: var(--text-2); background: var(--control-off); text-transform: capitalize; line-height: 1.4; }
+	.role-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; cursor: pointer; box-shadow: 0 1px 2px color-mix(in srgb, var(--bg-app) 35%, transparent); }
 	.role-btn:hover { filter: brightness(1.12); }
 	/* the caret is a lucide svg from a child component — needs :global to match */
 	.role-btn :global(.role-caret) { opacity: 0.85; }
 	/* portaled to <body> — fixed position, anchored via inline top/right */
-	.role-menu { position: fixed; z-index: 1000; min-width: 116px; padding: 4px; border-radius: 10px; background: #1f2937; border: 1px solid rgb(255 255 255 / 0.12); box-shadow: 0 12px 28px rgb(0 0 0 / 0.5); display: flex; flex-direction: column; gap: 2px; }
-	.role-menu-item { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: #e5e7eb; font-size: 11px; cursor: pointer; text-transform: capitalize; text-align: left; }
-	.role-menu-item:hover { background: rgb(255 255 255 / 0.09); }
-	.role-menu-item.sel { background: rgb(255 255 255 / 0.05); }
-	.role-check { font-size: 9px; color: #86efac; }
-	.role-badge[data-role='editor'] { background: #2563eb; }
-	.role-badge[data-role='admin'] { background: #7c3aed; }
+	.role-menu { position: fixed; z-index: 1000; min-width: 116px; padding: 4px; border-radius: 10px; background: var(--surface-1); border: 1px solid var(--border); box-shadow: var(--shadow-window); display: flex; flex-direction: column; gap: 2px; }
+	.role-menu-item { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font-size: 11px; cursor: pointer; text-transform: capitalize; text-align: left; }
+	.role-menu-item:hover { background: var(--surface-hover); }
+	.role-menu-item.sel { background: var(--accent-soft); }
+	.role-check { font-size: 9px; color: var(--accent-text); }
+	.role-badge[data-role='editor'] { background: var(--accent-soft); color: var(--accent-soft-text); }
+	.role-badge[data-role='admin'] { background: var(--accent-fill); color: var(--on-accent); }
 	/* keep the peers list scrollable so it never spills off a short/narrow screen */
 	.peers-scroll { max-height: 264px; overflow-y: auto; }
 	/* 21-F3 play-mode chip. Deliberately quieter than the role badge beside it: a role
 	   is an authority and a mode is a passing fact. */
 	.mode-chip { flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.02em; padding: 0 6px; border-radius: 9999px; text-transform: capitalize; line-height: 1.5; border: 1px solid transparent; }
-	.mode-chip[data-mode='playing'] { color: #86efac; background: rgb(34 197 94 / 0.16); border-color: rgb(34 197 94 / 0.35); }
-	.mode-chip[data-mode='editor'] { color: #cbd5e1; background: rgb(148 163 184 / 0.14); border-color: rgb(148 163 184 / 0.3); }
+	.mode-chip[data-mode='playing'] { color: var(--ink-good); background: color-mix(in srgb, var(--ink-good) 16%, transparent); border-color: color-mix(in srgb, var(--ink-good) 35%, transparent); }
+	.mode-chip[data-mode='editor'] { color: var(--text-2); background: color-mix(in srgb, var(--text-muted) 14%, transparent); border-color: color-mix(in srgb, var(--text-muted) 30%, transparent); }
 	/* P2b: which SCENE a peer is in. Deliberately quieter than the mode chip — a room
 	   is where somebody is, not a state they are in — and highlighted only when it is
 	   the scene YOU have open, which is the one comparison the list is read for. */
-	.scene-chip { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; padding: 0 6px; border-radius: 9999px; line-height: 1.5; color: #cbd5e1; background: rgb(148 163 184 / 0.14); border: 1px solid rgb(148 163 184 / 0.3); }
-	.scene-chip-here { color: #93c5fd; background: rgb(59 130 246 / 0.16); border-color: rgb(59 130 246 / 0.35); }
+	.scene-chip { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; padding: 0 6px; border-radius: 9999px; line-height: 1.5; color: var(--text-2); background: color-mix(in srgb, var(--text-muted) 14%, transparent); border: 1px solid color-mix(in srgb, var(--text-muted) 30%, transparent); }
+	.scene-chip-here { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
 	/* R22 round 30 B2: the Rooms view’s group headers. Inert on purpose — a room is
 	   where somebody is standing, not a place you walk into, so there is nothing to
 	   click; the flat list is one press away. */
 	/* R22 round 35: the private-scene strip. Quieter than a toast and louder than a chip —
 	   it is a standing state, not an event, so it sits under the header for as long as it
 	   is true. The buttons are the peers list's own flat style (reset-game-btn's shape). */
-	.peers-private-note { display: flex; flex-direction: column; gap: 5px; margin: 2px 0 4px; padding: 6px 7px; border-radius: 8px; border: 1px solid rgb(59 130 246 / 0.35); background: rgb(59 130 246 / 0.12); color: #dbeafe; font-size: 11px; line-height: 1.4; }
+	.peers-private-note { display: flex; flex-direction: column; gap: 5px; margin: 2px 0 4px; padding: 6px 7px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-soft-text); font-size: 11px; line-height: 1.4; }
 	.peers-private-actions { display: flex; gap: 6px; }
-	.peers-private-btn { flex: 1 1 auto; padding: 3px 8px; border-radius: 6px; border: 1px solid rgb(255 255 255 / 0.16); background: transparent; color: #e5e7eb; font-size: 11px; cursor: pointer; }
-	.peers-private-btn:hover { background: rgb(255 255 255 / 0.09); }
-	.peers-room-head { display: flex; align-items: baseline; gap: 5px; padding: 7px 6px 2px; font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca3af; }
-	.peers-room-head[data-mine] { color: #93c5fd; }
-	.peers-room-count, .peers-room-mine { flex: 0 0 auto; color: #6b7280; font-weight: 500; letter-spacing: 0; text-transform: none; }
-	.reset-game-btn { width: 100%; padding: 5px 8px; border-radius: 7px; border: 1px solid rgb(255 255 255 / 0.12); background: transparent; color: #e5e7eb; font-size: 11px; text-align: left; cursor: pointer; }
-	.reset-game-btn:hover:not(:disabled) { background: rgb(255 255 255 / 0.09); }
+	.peers-private-btn { flex: 1 1 auto; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border-strong); background: transparent; color: var(--text); font-size: 11px; cursor: pointer; }
+	.peers-private-btn:hover { background: var(--surface-hover); }
+	.peers-room-head { display: flex; align-items: baseline; gap: 5px; padding: 7px 6px 2px; font-size: 9px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+	.peers-room-head[data-mine] { color: var(--accent-text); }
+	.peers-room-count, .peers-room-mine { flex: 0 0 auto; color: var(--text-faint); font-weight: 500; letter-spacing: 0; text-transform: none; }
+	.reset-game-btn { width: 100%; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 11px; text-align: left; cursor: pointer; }
+	.reset-game-btn:hover:not(:disabled) { background: var(--surface-hover); }
 	.reset-game-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 	/* PROFILE PANEL, horizontal edge only. floating-ui places this from the trigger, and
 	   under a MOBILE viewport (page scale != 1) its math drifts right by exactly the
@@ -1084,24 +1161,91 @@
 		left: auto !important;
 		right: 20px !important;
 	}
-	/* Profile Settings modal: on a narrow screen stack each label above its control
-	   (the fixed w-40 label beside the input is too cramped) — matches app Settings. */
+	/* 38 R8: the profile menu's rows (design page "Profile and peers") */
+	.pm-head {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		padding: 14px 64px 10px 14px; /* clear of the circle seated in the top-right notch */
+	}
+	.pm-name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--fs-body);
+		font-weight: 600;
+		color: var(--text);
+	}
+	.pm-sub {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: var(--fs-section);
+		color: var(--text-muted);
+	}
+	.pm-card {
+		margin: 0 8px 8px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-1);
+		overflow: hidden;
+	}
+	.pm-card > :global(* + *) {
+		border-top: 1px solid var(--border);
+	}
+	/* Profile settings: one card of SettingRow-shaped rows (label + hint left, control right) */
+	.pf-list {
+		margin: 4px 0;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-2);
+	}
+	.pf-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		min-height: var(--row-h);
+		padding: 12px 16px;
+	}
+	.pf-row + .pf-row {
+		border-top: 1px solid var(--border);
+	}
+	.pf-label {
+		display: flex;
+		flex-direction: column;
+		font-size: var(--fs-body);
+		color: var(--text);
+	}
+	.pf-label small {
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
+	}
+	.pf-input {
+		width: min(260px, 100%);
+	}
+	.pf-mono {
+		font-family: var(--font-ui-mono);
+	}
+	.pf-avatar {
+		width: 48px;
+		height: 48px;
+		flex-shrink: 0;
+		border-radius: 50%;
+		border: 2px solid var(--border-strong);
+		object-fit: cover;
+		color: var(--text-muted);
+		cursor: pointer;
+	}
+	/* a narrow screen stacks each label above its control (as Settings does) */
 	@media (max-width: 640px) {
 		.pf-row {
 			flex-direction: column;
 			align-items: stretch;
-			gap: 6px;
-			margin-bottom: 6px;
-			padding-left: 1rem;
-			padding-right: 1rem;
+			gap: 8px;
 		}
-		/* each label + its control becomes its own cleanly-rounded box — the desktop
-		   layout's half-rounded seams (rounded-s-none / rounded-*-none) look broken when
-		   stacked, so force full rounding on both */
-		.pf-row > :global(p),
-		.pf-row :global(input) {
+		.pf-input {
 			width: 100%;
-			border-radius: 8px !important;
 		}
 	}
 </style>

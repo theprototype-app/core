@@ -569,7 +569,8 @@ h.run(async () => {
 	await page.waitForTimeout(400);
 	const pickedCards = await page.evaluate(() =>
 		[...document.querySelectorAll('#session-file-list .picker-card')].filter((c) =>
-			(c.getAttribute('class') || '').includes('border-primary-500')
+			// 38 R7: the picked card wears the accent selection class `ss-on`
+			(c.getAttribute('class') || '').includes('ss-on')
 		).length
 	);
 	h.check(pickedCards >= 2, 'thumbnails multiselect too, as asked (' + pickedCards + ' picked)');

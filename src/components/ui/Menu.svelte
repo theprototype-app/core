@@ -55,12 +55,12 @@
 				onclick={() => onselect(it)}
 				onkeydown={(e) => onKey(e, i)}
 			>
-				<span class="menu-icon" aria-hidden="true">{#if it.icon}<Icon name={it.icon} size={16} strokeWidth={1.75} />{/if}</span>
+				<span class="menu-icon" aria-hidden="true">{#if it.icon}<Icon name={it.icon} size={16} />{/if}</span>
 				<span class="menu-text">{it.label}</span>
 				{#if it.dot}<span class="menu-dot" aria-hidden="true"></span>{/if}
 				{#if it.value}<span class="menu-value">{it.value}</span>{/if}
 				{#if it.shortcut}<kbd class="menu-kbd">{it.shortcut}</kbd>{/if}
-				{#if it.submenu}<span class="menu-chev" aria-hidden="true"><Icon name="chevron-right" size={16} strokeWidth={1.75} /></span>{/if}
+				{#if it.submenu}<span class="menu-chev" aria-hidden="true"><Icon name="chevron-right" size={16} /></span>{/if}
 			</button>
 		{/if}
 	{/each}

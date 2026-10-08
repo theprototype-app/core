@@ -74,7 +74,8 @@ async function contract(page, f) {
 	const t = `${f.name}:`;
 	const input = fieldInput(page, f.root, f.index);
 	const tol = f.tol ?? 1e-6;
-	h.check((await input.count()) === 1, `${t} the field is there`);
+	const fieldN = await input.count();
+	h.check(fieldN === 1, `${t} the field is there (${fieldN} match${fieldN === 1 ? '' : 'es'} for ${f.root})`);
 
 	// --- Q3: a scrub is ONE step, and one Ctrl+Z undoes all of it ---------------------------
 	await blurAll(page);
@@ -286,8 +287,10 @@ h.run(async () => {
 		const stack1 = await stackLen();
 		h.check(stack1 === stack0 && (await range.count()) === 1, `light distance slider: and nothing older was undone (undo stack ${stack1} vs ${stack0} before the drag; the light is still there)`);
 	}
+	await page.waitForTimeout(300); // the row re-renders after the undo above; let it settle before finding it
 	await contract(page, {
-		name: 'light distance box', root: '.ui-row:has(> input[type=range][aria-label="Distance"])', index: 0, typed: '12', typedValue: 12,
+		// the row that holds the range (38 R5: SliderRow draws a PropRow, .pr — no .ui-row any more)
+		name: 'light distance box', root: '*:has(> input[type=range][aria-label="Distance"])', index: 0, typed: '12', typedValue: 12,
 		read: distance, shows: (v) => v
 	});
 

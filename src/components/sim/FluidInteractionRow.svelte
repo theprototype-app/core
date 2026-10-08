@@ -24,7 +24,7 @@
 
 {#if hasFluid && targets.length && !targets.some((/** @type {any} */ o) => o?.userData?.fluidEmitter)}
 	<div class="ui-row items-center gap-2" data-keywords="fluid interaction water particles collide float buoyancy">
-		<span class="w-20 shrink-0 text-xs text-gray-400" title="How particle fluid (Fluid emitters) meets this object. Auto: it collides, and a dynamic body is pushed. None: the fluid passes through. Collide: a solid, never pushed. Collide + push + float: pushed, and light objects float on the pools.">Fluid</span>
+		<span class="w-20 shrink-0 text-xs text-text-muted" title="How particle fluid (Fluid emitters) meets this object. Auto: it collides, and a dynamic body is pushed. None: the fluid passes through. Collide: a solid, never pushed. Collide + push + float: pushed, and light objects float on the pools.">Fluid</span>
 		<ThemedSelect
 			id="physics-fluid-interaction"
 			items={[

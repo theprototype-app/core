@@ -341,23 +341,22 @@
 		min-width: 0;
 		flex: 1 1 auto;
 		border-radius: 3px;
-		/* 36 U1: the well follows the theme (dark keeps its exact grays: dark defines no
-		   tokens) and states its own ink — the label used to INHERIT, which read black
+		/* 36 U1: the well follows the theme and states its own ink — the label used to INHERIT, which read black
 		   (1.8:1) wherever a panel set a background and no colour (Configure Scene ▸
 		   Physics ▸ Height). An accent class on the label still wins over the inherited ink. */
-		border: 1px solid var(--border, rgb(75 85 99 / 0.6));
-		background: var(--field, rgb(55 65 81 / 0.6));
-		color: var(--text-2, rgb(209 213 219));
+		border: 1px solid var(--border-input);
+		background: var(--surface-inset);
+		color: var(--text-2);
 		padding: 1px 6px;
 	}
 	.dn-wrap:hover {
-		border-color: rgb(156 163 175);
+		border-color: var(--border-strong);
 	}
 	.dn-wrap.dn-focus {
-		border-color: var(--color-primary-500, #3b82f6);
+		border-color: var(--accent);
 	}
 	.dn-wrap.dn-scrub {
-		border-color: var(--color-primary-400, #60a5fa);
+		border-color: var(--accent-text);
 		/* 16-Q6: a scrub must not smear a selection or show a caret */
 		user-select: none;
 	}
@@ -376,7 +375,7 @@
 		flex: 0 0 auto;
 		font-size: 0.625rem;
 		line-height: 1;
-		color: rgb(156 163 175 / 0.9);
+		color: var(--text-faint);
 		user-select: none;
 		pointer-events: none;
 	}
@@ -390,7 +389,7 @@
 		font-size: 0.75rem;
 		line-height: 1.15rem;
 		text-align: right;
-		color: var(--text, rgb(243 244 246));
+		color: var(--text);
 		/* the field IS the drag handle when you are not typing */
 		cursor: ew-resize;
 		touch-action: none;

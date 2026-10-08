@@ -48,7 +48,7 @@
 			<label class="relative -mx-3 flex h-6 items-center px-3" data-socket={switcherHandle(i)}>
 				<Socket kind="target" nodeType={data.type} id={switcherHandle(i)} position={Position.Left} forceType={vtype} style="top: 50%" />
 				<input
-					class="accent-[var(--accent)]"
+					class="accent-accent"
 					type="radio"
 					name={`shape-${id}`}
 					value={option}

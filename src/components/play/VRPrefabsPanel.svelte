@@ -108,11 +108,14 @@
 	})
 
 	function cellColor(prefab: any) {
+		// tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var())
 		if ($vrHovered === 'prefabs:cell:' + prefab.id) return '#ff4000'
 		if ($vrPrefabGhost?.id === prefab.id) return '#2f81f7'
 		return '#2a2f38'
 	}
+	// tokens-ok-end
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if $vrPrefabsPanelOpen}
 	<T.Group bind:ref={group} name="vr-prefabs-panel">
@@ -197,3 +200,4 @@
 		/>
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

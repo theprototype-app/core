@@ -73,7 +73,7 @@ h.run(async () => {
 				const el = document.querySelector('#mesh-sel-counts');
 				r({
 					text: el?.textContent?.replace(/\s+/g, ' ').trim(),
-					red: !!el?.querySelector('.text-red-400')
+					red: !!el?.querySelector('.text-ink-bad')
 				});
 			}, 150)
 		);
@@ -101,7 +101,7 @@ h.run(async () => {
 				const el = document.querySelector('#mesh-sel-counts');
 				r({
 					text: el?.textContent?.replace(/\s+/g, ' ').trim(),
-					red: !!el?.querySelector('.text-red-400')
+					red: !!el?.querySelector('.text-ink-bad')
 				});
 			}, 150)
 		);

@@ -67,8 +67,8 @@
 			</select>
 		</label>
 		<div class="flex items-center gap-2">
-			<span class="h-2.5 w-2.5 rounded-full" style="background: {running ? '#22c55e' : '#374151'}"></span>
-			<span class="rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300"
+			<span class="h-2.5 w-2.5 rounded-full" style="background: {running ? 'var(--ink-good)' : 'var(--control-off)'}"></span>
+			<span class="rounded-sm bg-surface-inset px-1.5 py-0.5 font-mono text-[11px] text-accent-text"
 				>{shown}</span
 			>
 		</div>

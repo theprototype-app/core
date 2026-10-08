@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Modal } from 'flowbite-svelte';
+	import ModalDialog from '../ui/ModalDialog.svelte';
 	// 36 B14: the sections REGISTER into the sidebar (settingsNav); the two components keep
 	// flowbite's names, so every `<AccordionItem>` block below is untouched and a section another
 	// lane adds appears in the sidebar with no second edit.
@@ -50,7 +50,7 @@
 	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
 	import AiSettings from './settings/AiSettings.svelte';
 	import ConnectionSettings from './settings/ConnectionSettings.svelte';
-	import { settingsOpen, settingsSection, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
+	import { settingsOpen, settingsSection, settingsSearchSeed, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
 	import { cloudPluginInfo } from '$lib/cloudHooks';
 	import { versionString } from '$lib/version.js';
 	// 27-B: the diagnostics bundle — clipboard only, nothing leaves the browser
@@ -105,6 +105,11 @@
 	// the heterogeneous markup. Rows carry the `.setting-row` class; inner controls
 	// live in <p>, so hiding a row never hides a control inside a shown row.
 	let settingsQuery = '';
+	// 38 R8 (NOTES-38 #14): the command palette opens Settings already searching for a row
+	$: if ($settingsOpen && $settingsSearchSeed) {
+		settingsQuery = $settingsSearchSeed;
+		settingsSearchSeed.set('');
+	}
 	let searchInput: any = null; // the search box (bound to SearchField.inputEl — never undefined: props_invalid_value)
 	/**
 	 * Searching must EXPAND every section first. flowbite-svelte 1.x renders an
@@ -427,15 +432,17 @@
 
 <svelte:window on:keydown={onWindowKey} />
 
-<Modal
+<!-- 38 R11: the kit's ModalDialog (flowbite's Dialog behaviour, kept) — no header of its own:
+     Settings draws its WindowChrome inside, so its search is the field focused on open -->
+<ModalDialog
 	bind:open={$settingsOpen}
 	modal={false}
 	dismissable={false}
 	onkeydown={onDialogKey}
 	outsideclose
-	size="none"
-	class="tp-modal-frame tp-ui settings-dialog"
-	classes={{ body: 'tp-modal-body settings-dialog-body' }}
+	padded={false}
+	class="settings-dialog"
+	bodyClass="tp-modal-body settings-dialog-body"
 	aria-label="Settings"
 >
 	<div class="settings-shell" class:settings-narrow={narrowSettings} class:settings-searching={searching}>
@@ -602,7 +609,7 @@
 			</footer>
 		{/if}
 	</div>
-</Modal>
+</ModalDialog>
 
 <style>
 	/* a muted note under a card ("Storage" in AI, "Per-game controls" in Input) */
@@ -683,7 +690,7 @@
 	}
 	/* 37-settings: the window. Its own width (the content column is ~660 px beside a 220 px menu),
 	   one definite height so the menu stays while the content column scrolls. */
-	:global(dialog.settings-dialog) {
+	:global(dialog.settings-dialog.tp-ui) {
 		width: min(960px, 94vw) !important;
 		max-width: min(960px, 94vw) !important;
 		padding: 0 !important;
@@ -806,7 +813,7 @@
 		.settings-shell {
 			height: calc(100dvh - var(--connect-bottom, 0px));
 		}
-		:global(dialog.settings-dialog) {
+		:global(dialog.settings-dialog.tp-ui) {
 			width: 100vw !important;
 			max-width: 100vw !important;
 			border-radius: 0 !important;

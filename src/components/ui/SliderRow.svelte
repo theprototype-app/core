@@ -7,8 +7,13 @@
 	// with live updates, arrow keys stepping by one minor unit (Ctrl ×10, Shift
 	// ×100). It used to be a plain <input type="number"> that only committed on
 	// Enter/blur, which made its arrows look broken.
-	import DragRow from './DragRow.svelte';
-	import { withHistoryGesture } from '$lib/historyGesture';
+	//
+	// 38 R5: drawn as the redesign's PropRow (label | slider | value box, fixed label
+	// column, labels wrap) — every caller is an Inspector row. The value box is the SAME
+	// DragRow with the SAME arguments as before (step, snap = step x 10, decimals,
+	// min/max, mixed, id, ariaLabel), so scrubbing, modifiers, typing and clamping are
+	// unchanged (SPEC §0).
+	import PropRow from './PropRow.svelte';
 
 	/** @type {{label?: string, value?: number, min?: number, max?: number, step?: number, decimals?: number, id?: string, mixed?: boolean, onchange?: (next: number) => void}} */
 	let {
@@ -24,48 +29,19 @@
 		mixed = false,
 		onchange = () => {}
 	} = $props();
-
-	// 37 R26: a drag of the range is ONE history gesture, like a scrub of the box — whatever
-	// the consumer records per tick folds into one undo step ($lib/historyGesture). It ends
-	// with the range's `change` (the release); a keyboard step has none open, so each is its own.
-	/** @type {object|null} */
-	let rangeGesture = null;
-
-	/** @param {any} raw */
-	function commit(raw) {
-		const next = parseFloat(raw);
-		if (!Number.isNaN(next)) withHistoryGesture(rangeGesture, () => onchange(next));
-	}
 </script>
 
-<div class="ui-row">
-	<span class="w-20 shrink-0 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-400" title={label}>
-		{label}
-	</span>
-	<input
-		type="range"
-		class="min-w-0 flex-1 accent-primary-600"
-		aria-label={label}
-		{min}
-		{max}
-		{step}
-		{value}
-		onpointerdown={() => (rangeGesture = {})}
-		oninput={(e) => commit(e.currentTarget.value)}
-		onchange={() => (rangeGesture = null)}
-	/>
-	<div class="w-16 shrink-0">
-		<DragRow
-			{id}
-			{value}
-			{decimals}
-			{min}
-			{max}
-			{mixed}
-			step={step}
-			snap={step * 10}
-			ariaLabel={label}
-			onchange={(next) => onchange(next)}
-		/>
-	</div>
-</div>
+<PropRow
+	{label}
+	slider
+	{id}
+	{value}
+	{decimals}
+	{min}
+	{max}
+	{mixed}
+	{step}
+	snap={step * 10}
+	ariaLabel={label}
+	onchange={(next) => onchange(next)}
+/>

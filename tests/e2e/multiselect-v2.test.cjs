@@ -100,9 +100,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(400);
 
 	// ---- 1. MIXED STATE ------------------------------------------------------------
-	const cast = await A.page.evaluate(() => { const i = document.querySelector('#inspector-cast-shadow'); return i ? { checked: i.checked, ind: i.indeterminate } : null; });
+	// (38 R5: these rows are Toggles now — aria-pressed "mixed" is the old indeterminate box)
+	const cast = await A.page.evaluate(() => { const i = document.querySelector('#inspector-cast-shadow'); return i ? (i.type === 'checkbox' ? { checked: i.checked, ind: i.indeterminate } : { checked: i.getAttribute('aria-pressed') === 'true', ind: i.getAttribute('aria-pressed') === 'mixed' }) : null; });
 	h.check(!!cast && cast.ind && !cast.checked, `1.1 Cast shadow reads INDETERMINATE for a set that disagrees (${JSON.stringify(cast)})`);
-	const recv = await A.page.evaluate(() => { const i = document.querySelector('#inspector-receive-shadow'); return i ? { checked: i.checked, ind: i.indeterminate } : null; });
+	const recv = await A.page.evaluate(() => { const i = document.querySelector('#inspector-receive-shadow'); return i ? (i.type === 'checkbox' ? { checked: i.checked, ind: i.indeterminate } : { checked: i.getAttribute('aria-pressed') === 'true', ind: i.getAttribute('aria-pressed') === 'mixed' }) : null; });
 	h.check(!!recv && !recv.ind, `1.2 ...and Receive (they all agree) is a plain checkbox (${JSON.stringify(recv)})`);
 	// the slider's number box (a DragRow labelled like its row) renders the dash
 	const rough = await A.page.evaluate(() => [...document.querySelectorAll('input[aria-label="Roughness"]')].map((i) => i.value));
@@ -140,7 +141,13 @@ h.run(async () => {
 	// a slider edit on the set: roughness 0.6 lands everywhere, one batch, B agrees
 	await wire(A.page);
 	await A.page.evaluate(() => window.__stores.objectActions && null);
-	const roughRow = A.page.locator('.ui-row', { hasText: 'Roughness' }).locator('input').first();
+	// 38 R5: the Roughness row is a PropRow — its typeable field is the DragRow labelled
+	// "Roughness" that shows the dash (1.3); the old `.ui-row` wrapper is gone
+	await A.page.evaluate(() => {
+		const f = [...document.querySelectorAll('input[aria-label="Roughness"]')].find((i) => /** @type {HTMLInputElement} */ (i).value === '—');
+		f?.setAttribute('data-ms-rough', '1');
+	});
+	const roughRow = A.page.locator('input[data-ms-rough="1"]');
 	if (await roughRow.count()) {
 		await roughRow.click();
 		await roughRow.fill('0.6');

@@ -8,7 +8,7 @@
 	// reminder of which handle does what.
 	import { splineEditObject, splineSelectedPoint, splinePointCount, exitSplineEdit } from '$lib/splineEdit';
 	import { setSplineClosed, setSplineRadiusAll, setSplineSides, splineDataOf, splineObjectOf } from '$lib/splineTool';
-	import { Check } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import DragRow from '../ui/DragRow.svelte';
 	import { isVRMode, objectsGroup } from '../../stores/sceneStore';
@@ -40,13 +40,13 @@
 				class="tbx-hbtn tbx-done"
 				aria-label="Done"
 				title="Finish (Esc)"
-				onclick={() => exitSplineEdit()}><Check size={14} aria-hidden="true" /></button
+				onclick={() => exitSplineEdit()}><Icon name="check" size={16} aria-hidden="true" /></button
 			>
 		{/snippet}
 
 		<span class="tbx-label">Spline</span>
 		<div class="tbx-row text-xs">
-			<span id="spline-point-count" class="text-gray-400">
+			<span id="spline-point-count" class="text-text-muted">
 				{$splinePointCount} point{$splinePointCount === 1 ? '' : 's'}{$splineSelectedPoint >= 0
 					? ` · #${$splineSelectedPoint + 1} selected`
 					: ''}
@@ -58,7 +58,7 @@
 		<div class="tbx-row">
 			<button
 				id="spline-closed"
-				class="tbx-cmd {data?.closed ? 'tbx-on bg-primary-600 text-white' : ''}"
+				class="tbx-cmd {data?.closed ? 'tbx-on bg-accent-fill text-on-accent' : ''}"
 				aria-pressed={!!data?.closed}
 				title="Join the last point back to the first"
 				onclick={() => $splineEditObject && setSplineClosed($splineEditObject, !data?.closed)}
@@ -97,10 +97,10 @@
 			/>
 		</div>
 
-		<p class="tbx-row text-[11px] leading-snug text-gray-400">
-			Drag a <span class="text-[#2f81f7]">blue</span> handle to move a point · drag the
-			<span class="text-[#f59e0b]">amber</span> dot above it up/down for thickness · click a
-			<span class="text-gray-300">grey</span> marker to insert a point · right-click a point to delete it.
+		<p class="tbx-row text-[11px] leading-snug text-text-muted">
+			Drag a <span class="text-[#2f81f7]">blue</span> handle to move a point · drag the <!-- tokens-ok: names the 3D handle's three.js colour -->
+			<span class="text-[#f59e0b]">amber</span> dot above it up/down for thickness · click a <!-- tokens-ok: names the 3D thickness dot's three.js colour -->
+			<span class="text-text-2">grey</span> marker to insert a point · right-click a point to delete it.
 		</p>
 
 		{#snippet status()}

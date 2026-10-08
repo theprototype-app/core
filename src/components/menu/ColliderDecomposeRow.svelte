@@ -23,7 +23,7 @@
 </script>
 
 <div id="physics-decompose-row" class="ui-row items-center gap-2">
-	<span class="w-20 shrink-0 text-xs text-gray-400">Decompose</span>
+	<span class="w-20 shrink-0 text-xs text-text-muted">Decompose</span>
 	<input
 		id="physics-decompose-pieces"
 		type="range"
@@ -35,10 +35,10 @@
 		value={pieces}
 		oninput={setPieces}
 	/>
-	<span class="w-5 text-right font-mono text-xs text-gray-300">{pieces}</span>
+	<span class="w-5 text-right font-mono text-xs text-text-2">{pieces}</span>
 	<button
 		id="physics-decompose"
-		class="ui-chip bg-gray-600 text-gray-200 hover:bg-gray-500"
+		class="ui-chip bg-surface-active text-text-2 hover:bg-surface-hover"
 		disabled={busy}
 		title="Split the mesh into convex pieces (keeps openings; works on dynamic bodies)"
 		onclick={() => decomposeCollider(uuid, pieces)}>{busy ? 'Working…' : 'Run'}</button

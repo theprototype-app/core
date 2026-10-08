@@ -85,12 +85,14 @@
 	}
 	function rowColor(row: Row, hovered: string | null, cursor: string, _p: any): string {
 		const name = row.action
+		// tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var())
 		if (!name) return '#1d2129' // a locked row
 		if (hovered && (hovered === name || hovered.startsWith(name + ':'))) return '#ff4000'
 		if ($vrRemapPending && $vrRemapPending.action === row.rowId) return '#7a5410'
 		if (cursor === name) return '#3b4452'
 		return '#2a2f38'
 	}
+	// tokens-ok-end
 	function rowY(i: number) {
 		return panelH / 2 - 0.034 - TAB_H - ROW_H * (i + 0.5)
 	}
@@ -114,6 +116,7 @@
 		applyWindowPose(group, 'settingspanel', pose)
 	})
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if $vrSettingsPanelOpen}
 	<T.Group bind:ref={group} name="vr-settings-panel" oncreate={tourTag}>
@@ -243,3 +246,4 @@
 		{/each}
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

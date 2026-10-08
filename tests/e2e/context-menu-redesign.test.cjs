@@ -29,6 +29,10 @@ h.run(async () => {
 		const header = menu?.querySelector('.ctx-header');
 		const sections = [...(menu?.querySelectorAll('.ctx-section') ?? [])].map((s) => s.textContent?.trim());
 		const rows = [...(menu?.querySelectorAll('[role="menuitem"]') ?? [])];
+		// 38 NOTES-38 #22: the menu's TOP LEVEL in render order, dividers included
+		const top = [...(menu?.querySelectorAll('[role="menuitem"], .ctx-divider') ?? [])]
+			.filter((el) => !el.parentElement?.closest('[role="menuitem"]'))
+			.map((el) => (el.classList.contains('ctx-divider') ? '|' : (el.textContent?.trim() ?? '')));
 		const focusRow = rows.find((r) => r.textContent?.includes('Focus camera'));
 		const deleteRow = rows.find((r) => r.textContent?.includes('Delete'));
 		return {
@@ -38,19 +42,28 @@ h.run(async () => {
 			focusHasIcon: !!focusRow?.querySelector('.ctx-ico svg'),
 			focusHint: focusRow?.querySelector('.ctx-hint')?.textContent?.trim(),
 			deleteHint: deleteRow?.querySelector('.ctx-hint')?.textContent?.trim(),
-			deleteIsLast: rows[rows.length - 1] === deleteRow,
-			labels: rows.map((r) => r.textContent?.trim() ?? '')
+			labels: rows.map((r) => r.textContent?.trim() ?? ''),
+			top
 		};
 	});
 	h.check(chrome.headerText.includes('Crate 7'), `header names the target ("${chrome.headerText}")`);
 	h.check(chrome.badge === 'Mesh', `header carries the type badge (${chrome.badge})`);
+	// 38 NOTES-38 #22 (user): frequency order, plain dividers between groups, rare work one
+	// level down — Properties · Rename · Duplicate · Delete first, then the submenus
+	const firstGroup = chrome.top.slice(0, chrome.top.indexOf('|'));
 	h.check(
-		['Edit', 'Physics & effects', 'Share'].every((s) => chrome.sections.includes(s)),
-		`section labels render (${chrome.sections.filter(Boolean)})`
+		['Properties', 'Rename', 'Duplicate', 'Delete'].every((l, i) => (firstGroup[i] ?? '').startsWith(l)),
+		`the first group is Properties · Rename · Duplicate · Delete (${firstGroup.join(' · ')})`
 	);
+	h.check(chrome.top.filter((t) => t === '|').length >= 3, `groups are split by dividers (${chrome.top.join(' ')})`);
+	h.check(
+		['Transform', 'Physics & effects', 'Save as'].every((l) => chrome.top.some((t) => t.startsWith(l))),
+		'rare work lives in submenus: Transform ▸, Physics & effects ▸, Save as… ▸'
+	);
+	h.check(chrome.top[0] !== '|' && chrome.top[chrome.top.length - 1] !== '|', 'no divider leads or trails the menu');
+	h.check(chrome.top.length <= 16, `the top level stays short (${chrome.top.length} rows incl. dividers)`);
 	h.check(chrome.focusHasIcon, 'rows carry lucide icons');
 	h.check(chrome.focusHint === 'F' && chrome.deleteHint === 'Del', `shortcut hints render (${chrome.focusHint}/${chrome.deleteHint})`);
-	h.check(chrome.deleteIsLast, 'Delete sits last, after the divider');
 	h.check(
 		!chrome.labels.some((l) => /^(Hide|Show)\b/.test(l)),
 		'Show/Hide is gone (the object-list eye owns visibility)'

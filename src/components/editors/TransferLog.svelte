@@ -43,6 +43,7 @@
 		indicatorState
 	} from '$lib/transferLedger';
 	import { retryDownload, retryDownloads, cancelDownload } from '$lib/sharedLibrary';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	let {
 		mode = 'indicator',
@@ -177,7 +178,7 @@
 		>
 			<Icon
 				name={justDone && pill === 'idle' ? 'check' : ICON[pill]}
-				size={12}
+				size={16}
 				aria-hidden="true"
 			/>
 			{#if label}<span class="tx-label">{label}</span>{/if}
@@ -188,7 +189,7 @@
 			     the next press (the documented backdrop rule) -->
 			<button class="tx-backdrop" aria-label="Close transfers" onpointerdown={() => (peek = false)}
 			></button>
-			<div class="tx-popover" role="status">
+			<div class="tx-popover" role="status" use:minimalScroll>
 				<div class="tx-pop-head">
 					<span>
 						{#if pill === 'active'}
@@ -282,7 +283,7 @@
 				onclick={() => (open = false)}>✕</button
 			>
 		</div>
-		<div class="tx-log-body">
+		<div class="tx-log-body" use:minimalScroll>
 			{#if !rows.length}
 				<p class="tx-log-empty">
 					{connected
@@ -301,7 +302,7 @@
 										: t.state === 'active'
 											? 'arrow-down-to-line'
 											: 'clock'}
-								size={12}
+								size={16}
 								aria-hidden="true"
 							/>
 						</span>
@@ -372,29 +373,29 @@
 	/* the four states. OFFLINE is the quietest on purpose — a solo project is not a
 	   problem, and colouring it like one would be the indicator crying wolf. */
 	.tx-off {
-		border-color: rgb(75 85 99 / 0.5);
-		color: var(--muted, rgb(107 114 128));
+		border-color: var(--border);
+		color: var(--text-faint);
 	}
 	.tx-idle {
-		border-color: rgb(75 85 99 / 0.5);
-		color: rgb(148 163 184);
+		border-color: var(--border);
+		color: var(--text-muted);
 	}
 	.tx-on {
-		border-color: rgb(56 189 248 / 0.45);
-		background: rgb(56 189 248 / 0.14);
-		color: rgb(186 230 253);
+		border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+		background: color-mix(in srgb, var(--accent) 14%, transparent);
+		color: var(--accent-text);
 	}
 	.tx-bad {
-		border-color: rgb(248 113 113 / 0.5);
-		background: rgb(248 113 113 / 0.12);
-		color: rgb(254 202 202);
+		border-color: color-mix(in srgb, var(--ink-bad) 50%, transparent);
+		background: color-mix(in srgb, var(--ink-bad) 12%, transparent);
+		color: var(--ink-bad);
 	}
 	.tx-fresh {
-		border-color: rgb(45 212 191 / 0.5);
-		color: rgb(153 246 228);
+		border-color: color-mix(in srgb, var(--ink-good) 50%, transparent);
+		color: var(--ink-good);
 	}
 	.tx-pill:hover {
-		background: rgb(148 163 184 / 0.16);
+		background: var(--surface-hover);
 	}
 	/* the popover lives INSIDE .tx-wrap, so it needs no portal and cannot be mis-anchored
 	   by a page scale — the floating-ui drift trap, avoided by not using floating-ui for
@@ -410,10 +411,10 @@
 		max-height: calc(100vh - var(--dw-top, 64px) - 24px);
 		overflow-y: auto;
 		border-radius: 6px;
-		border: 1px solid var(--panel-border, rgb(75 85 99));
-		background: var(--surface, #1f2937);
+		border: 1px solid var(--border);
+		background: var(--surface-1);
 		padding: 7px 8px;
-		box-shadow: 0 8px 24px rgb(0 0 0 / 0.4);
+		box-shadow: var(--shadow-window);
 	}
 	.tx-backdrop {
 		position: fixed;
@@ -428,7 +429,7 @@
 		justify-content: space-between;
 		gap: 6px;
 		font-size: 11px;
-		color: var(--text, rgb(229 231 235));
+		color: var(--text);
 	}
 	.tx-pop-pct {
 		font-variant-numeric: tabular-nums;
@@ -439,25 +440,25 @@
 		height: 4px;
 		overflow: hidden;
 		border-radius: 2px;
-		background: rgb(75 85 99 / 0.6);
+		background: var(--surface-inset);
 	}
 	.tx-bar-fill {
 		height: 100%;
 		border-radius: 2px;
-		background: rgb(56 189 248);
+		background: var(--accent);
 		transition: width 160ms linear;
 	}
 	.tx-pop-note {
 		font-size: 9.5px;
 		line-height: 1.35;
-		color: rgb(148 163 184);
+		color: var(--text-muted);
 	}
 	.tx-pop-row {
 		display: flex;
 		gap: 6px;
 		padding-top: 3px;
 		font-size: 10px;
-		color: var(--text-2, rgb(209 213 219));
+		color: var(--text-2);
 	}
 	.tx-pop-name {
 		min-width: 0;
@@ -468,22 +469,22 @@
 	}
 	.tx-pop-sub {
 		font-variant-numeric: tabular-nums;
-		color: rgb(148 163 184);
+		color: var(--text-muted);
 	}
 	.tx-pop-link,
 	.tx-pop-action {
 		margin-top: 6px;
 		width: 100%;
-		border-top: 1px solid rgb(75 85 99 / 0.5);
+		border-top: 1px solid var(--border);
 		padding-top: 5px;
 		font-size: 10px;
 		text-align: left;
 	}
 	.tx-pop-link {
-		color: rgb(125 211 252);
+		color: var(--accent-text);
 	}
 	.tx-pop-action {
-		color: rgb(254 202 202);
+		color: var(--ink-bad);
 	}
 	.tx-pop-link:hover,
 	.tx-pop-action:hover {
@@ -495,22 +496,22 @@
 		height: 100%;
 		min-height: 0;
 		flex-direction: column;
-		border-left: 1px solid var(--panel-border, rgb(55 65 81));
+		border-left: 1px solid var(--border);
 	}
 	.tx-log-head {
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		border-bottom: 1px solid var(--panel-border, rgb(55 65 81));
+		border-bottom: 1px solid var(--border);
 		padding: 4px 6px;
 		font-size: 10.5px;
 	}
 	.tx-log-title {
 		font-weight: 600;
-		color: var(--text, rgb(229 231 235));
+		color: var(--text);
 	}
 	.tx-log-sub {
-		color: rgb(148 163 184);
+		color: var(--text-muted);
 	}
 	.tx-log-body {
 		min-height: 0;
@@ -523,7 +524,7 @@
 		font-size: 10.5px;
 		font-style: italic;
 		line-height: 1.4;
-		color: var(--muted, rgb(107 114 128));
+		color: var(--text-faint);
 	}
 	.tx-row {
 		display: grid;
@@ -532,35 +533,35 @@
 		gap: 5px;
 		padding: 2px 6px;
 		font-size: 10px;
-		color: var(--text-2, rgb(209 213 219));
+		color: var(--text-2);
 	}
 	.tx-row:hover {
-		background: rgb(55 65 81 / 0.5);
+		background: var(--surface-hover);
 	}
 	.tx-row-fail {
-		background: rgb(248 113 113 / 0.07);
+		background: color-mix(in srgb, var(--ink-bad) 7%, transparent);
 	}
 	.tx-row-icon {
 		display: flex;
 		justify-content: center;
 	}
 	.tx-s-queued {
-		color: var(--muted, rgb(107 114 128));
+		color: var(--text-faint);
 	}
 	.tx-s-active {
-		color: rgb(56 189 248);
+		color: var(--accent-text);
 	}
 	.tx-s-done {
-		color: rgb(45 212 191);
+		color: var(--ink-good);
 	}
 	.tx-s-failed {
-		color: rgb(248 113 113);
+		color: var(--ink-bad);
 	}
 	.tx-err {
-		color: rgb(248 113 113);
+		color: var(--ink-bad);
 	}
 	.tx-row-dir {
-		color: rgb(148 163 184);
+		color: var(--text-muted);
 	}
 	.tx-row-name {
 		min-width: 0;
@@ -571,25 +572,25 @@
 	.tx-row-size,
 	.tx-row-state {
 		font-variant-numeric: tabular-nums;
-		color: rgb(148 163 184);
+		color: var(--text-muted);
 	}
 	.tx-row-more {
-		color: var(--muted, rgb(107 114 128));
+		color: var(--text-faint);
 		line-height: 1;
 	}
 	.tx-row-more:hover {
-		color: var(--text, rgb(229 231 235));
+		color: var(--text);
 	}
 	.tx-row-bar {
 		grid-column: 1 / -1;
 		height: 2px;
 		overflow: hidden;
 		border-radius: 1px;
-		background: rgb(75 85 99 / 0.5);
+		background: var(--surface-inset);
 	}
 	.tx-row-fill {
 		height: 100%;
-		background: rgb(56 189 248);
+		background: var(--accent);
 		transition: width 160ms linear;
 	}
 	.tx-sr {

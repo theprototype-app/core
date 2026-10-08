@@ -7,6 +7,7 @@
 	// theme. Forced hover / focus states ride `data-kit-state`, which the primitives style
 	// exactly like the real pseudo-class.
 	import { onMount, tick } from 'svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { THEME_TOKENS } from '$lib/themes.js';
 	import { DENSITIES, DEFAULT_DENSITY, applyDensity } from '$lib/ui/density.js';
 	import { SAMPLE_CUSTOM_THEME, SKY_GROUND } from './kitData.js';
@@ -29,6 +30,7 @@
 	import Menu from '../Menu.svelte';
 	import Toast from '../Toast.svelte';
 	import SearchField from '../SearchField.svelte';
+	import ScrollStrip from '../ScrollStrip.svelte';
 
 	const THEME_CHOICES = [
 		{ value: 'dark', label: 'Dark' },
@@ -170,6 +172,7 @@
 	// ---- interactive demo state ----
 	let tab = $state('core');
 	let tabFilter = $state('');
+	let dockTab = $state('explorer');
 	let touchMode = $state('auto');
 	let view = $state('grid');
 	let themeSeg = $state('dark');
@@ -210,7 +213,7 @@
 	</div>
 {/snippet}
 
-<div class="tp-ui kit" bind:this={probeHost}>
+<div class="tp-ui kit" bind:this={probeHost} use:minimalScroll>
 	<header class="kit-top">
 		<div class="kit-brand">
 			<h1>UI kit</h1>
@@ -343,6 +346,34 @@
 				{/snippet}
 				{@render st('Hover (Toasts)', hoverTabs)}
 				{@render st('Focus (Grid)', focusTabs)}
+			</div>
+			<!-- 38 NOTES-38 #23: the window tab strip (docked + floating windows, the bottom dock) -->
+			<header><b>Dock tabs</b><span>variant="dock" · a docked or floating window's tab strip</span></header>
+			<Tabs
+				variant="dock"
+				label="Docked views"
+				idPrefix="kit-dock"
+				bind:value={dockTab}
+				tabs={[
+					{ id: 'explorer', label: 'Explorer', icon: 'folder-open' },
+					{ id: 'flow', label: 'Node editor', icon: 'workflow' },
+					{ id: 'animation', label: 'Animation', icon: 'clapperboard' },
+					{ id: 'uv', label: 'UV editor', icon: 'grid-3x3', kitState: 'hover' }
+				]}
+				data-testid="kit-dock-tabs"
+			/>
+		</section>
+
+		<!-- ================= ScrollStrip (NOTES-38 #39) ================= -->
+		<section class="kit-card kit-wide" id="kit-scrollstrip">
+			<header><b>ScrollStrip</b><span>a toolbar or tab row that can overflow · drag / swipe / wheel sideways · fades the hidden side</span></header>
+			<p class="kit-note">Nothing is ever unreachable on a phone: the strip scrolls and the edge that still hides tools fades. Keep a pinned control (a "+", a close) outside the strip.</p>
+			<div class="kit-strip-demo" data-testid="kit-scrollstrip">
+				<ScrollStrip label="Demo toolbar">
+					{#each ['Select', 'Box', 'Lasso', 'Paint', 'Move', 'Rotate', 'Scale', 'Unwrap', 'Fit', 'Flip U', 'Flip V', 'Last tool'] as t (t)}
+						<Button variant="secondary" size="sm">{t}</Button>
+					{/each}
+				</ScrollStrip>
 			</div>
 		</section>
 
@@ -838,6 +869,13 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
 		gap: var(--space-3);
+	}
+	.kit-strip-demo {
+		max-width: 340px;
+		padding: var(--space-2);
+		border: 1px solid var(--border);
+		border-radius: var(--radius-input);
+		background: var(--surface-inset);
 	}
 	.kit-note {
 		margin: 0;

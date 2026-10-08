@@ -56,8 +56,11 @@
 			match = true;
 			return;
 		}
-		// the rendered text IS the search index — labels, values, hints all count
-		match = (label + ' ' + (root?.textContent ?? '')).toLowerCase().includes(q);
+		// the rendered text IS the search index — labels, values, hints all count. A panel
+		// section's scope badge is chrome, not content: match the label and the BODY, so a
+		// "This device" badge does not answer a query its rows never did
+		const text = variant === 'panel' ? root?.querySelector('.sec-panel-body')?.textContent : root?.textContent;
+		match = (label + ' ' + (text ?? '')).toLowerCase().includes(q);
 	});
 
 	const filtering = $derived(!isCard && $inspectorFilter.trim().length > 0);
@@ -133,13 +136,13 @@
 	<section class="tp-ui sec-panel" class:hidden={filtering && !match} bind:this={root}>
 		{#if collapsible && !filtering}
 			<button type="button" class="sec-panel-head" aria-expanded={showContent} onclick={toggle}>
-				<span class="sec-chev" class:sec-chev-open={showContent} aria-hidden="true"><Icon name="chevron-right" size={16} strokeWidth={1.75} /></span>
-				<span class="sec-title">{label}</span>
+				<span class="sec-chev" class:sec-chev-open={showContent} aria-hidden="true"><Icon name="chevron-right" size={16} /></span>
+				<span class="sec-title ui-section-label">{label}</span>
 				{#if badge}<Badge tone="scope" text={badge} />{/if}
 			</button>
 		{:else}
 			<div class="sec-panel-head sec-static">
-				<span class="sec-title">{label}</span>
+				<span class="sec-title ui-section-label">{label}</span>
 				{#if badge}<Badge tone="scope" text={badge} />{/if}
 			</div>
 		{/if}
@@ -150,14 +153,14 @@
 		{/if}
 	</section>
 {:else}
-<div class="border-b border-gray-700/40 pb-2" class:hidden={filtering && !match} bind:this={root}>
+<div class="border-b border-border pb-2" class:hidden={filtering && !match} bind:this={root}>
 	{#if collapsible && !filtering}
 		<button
-			class="ui-section-label flex w-full items-center justify-between hover:text-gray-200"
+			class="ui-section-label flex w-full items-center justify-between hover:text-text-2"
 			onclick={toggle}
 		>
 			<span>{label}</span>
-			<span class="text-gray-500">{showContent ? '−' : '+'}</span>
+			<span class="text-text-faint">{showContent ? '−' : '+'}</span>
 		</button>
 	{:else}
 		<p class="ui-section-label">{label}</p>
@@ -183,8 +186,12 @@
 		gap: var(--space-2);
 		padding: 0 2px;
 	}
+	/* a panel title also wears `ui-section-label` — the HOOK the Inspector's deep links,
+	   the behaviour lock and the suites read section names through (its utility look is
+	   overridden here: these scoped rules are unlayered, so they win) */
 	.sec-title {
 		margin: 0;
+		padding: 0;
 		font-size: var(--fs-section);
 		font-weight: 600;
 		letter-spacing: var(--tracking-section);
@@ -213,6 +220,11 @@
 		flex-direction: column;
 		padding-bottom: var(--space-2);
 		border-bottom: 1px solid var(--border);
+	}
+	/* the filter's `hidden` (a Tailwind utility, LAYERED) loses to this file's unlayered
+	   `display: flex` — say it here, or a filtered-out panel section never hides */
+	.sec-panel.hidden {
+		display: none;
 	}
 	.sec-panel-head {
 		display: flex;

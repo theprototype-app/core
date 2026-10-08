@@ -43,7 +43,7 @@
 	{/each}
 	<div class="flex w-full flex-col gap-1">
 		{#if !def}
-			<span class="text-[10px] text-red-500">definition missing</span>
+			<span class="text-[10px] text-ink-bad">definition missing</span>
 		{:else}
 			{#each def.params ?? [] as param}
 				<label class="flex flex-col">
@@ -54,12 +54,12 @@
 						{/if}
 					</span>
 					{#if param.kind === 'range' && wiredSource(param.key)}
-						<span class="wired-value rounded-sm bg-gray-900/70 px-1.5 py-0.5 font-mono text-[11px] text-primary-300" title="Driven by the wired input">
+						<span class="wired-value rounded-sm bg-surface-inset px-1.5 py-0.5 font-mono text-[11px] text-accent-text" title="Driven by the wired input">
 							◈ {fmt(wiredLive(param.key, $flowValues))}
 						</span>
 					{:else if param.kind === 'range'}
 						<input
-							class="nodrag nopan accent-[#ff4000]"
+							class="nodrag nopan accent-accent"
 							type="range"
 							min={param.min}
 							max={param.max}
@@ -81,14 +81,14 @@
 				</label>
 			{/each}
 			<button
-				class="nodrag nopan rounded-sm bg-gray-600 px-2 py-0.5 text-[10px] text-white"
+				class="nodrag nopan rounded-sm bg-surface-active px-2 py-0.5 text-[10px] text-text hover:bg-border-strong"
 				on:click={() => nodeDesignerOpen.set(def)}
 			>
 				Edit definition
 			</button>
 		{/if}
 		{#if error}
-			<span class="max-w-[180px] wrap-break-word text-[10px] text-red-500" title={error}>⚠ {error}</span>
+			<span class="max-w-[180px] wrap-break-word text-[10px] text-ink-bad" title={error}>⚠ {error}</span>
 		{/if}
 	</div>
 </NodeWrapper>

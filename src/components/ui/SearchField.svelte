@@ -29,7 +29,7 @@
 </script>
 
 <label class="tp-ui sf" class:sf-sm={size === 'sm'}>
-	<span class="sf-icon" aria-hidden="true"><Icon name="search" size={16} strokeWidth={1.75} /></span>
+	<span class="sf-icon" aria-hidden="true"><Icon name="search" size={16} /></span>
 	<input
 		bind:this={inputEl}
 		{id}
@@ -40,11 +40,11 @@
 		autocomplete="off"
 		spellcheck="false"
 		bind:value
-		oninput={() => oninput(value)}
+		oninput={(e) => oninput((value = e.currentTarget.value))}
 		{...rest}
 	/>
 	{#if value}
-		<button type="button" id={clearId} class="sf-clear" aria-label="Clear" onclick={clear}><Icon name="x" size={14} strokeWidth={1.75} /></button>
+		<button type="button" id={clearId} class="sf-clear" aria-label="Clear" onclick={clear}><Icon name="x" size={16} /></button>
 	{:else if hint}
 		<kbd class="sf-hint">{hint}</kbd>
 	{/if}

@@ -16,7 +16,7 @@
 
 {#if options.length}
 	<div id="prefab-tag-bar" class="prefab-tag-bar">
-		<span class="prefab-tag-bar-icon" title="Filter prefabs by tag"><Icon name="tag" size={14} /></span>
+		<span class="prefab-tag-bar-icon" title="Filter prefabs by tag"><Icon name="tag" size={16} /></span>
 		<Chips
 			label="Filter prefabs by tag"
 			size="sm"

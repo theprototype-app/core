@@ -3,6 +3,7 @@
 	// numbers always; per owner (module/game) and per object when BOTH were detailed (each
 	// side's captures merged into one mean frame, objects matched by owner + name because uuids
 	// differ between sessions); the CPU phases when both carry them. Green = B is better.
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { compareDocs, fmtCount, fmtMs } from '$lib/perf/profilerModel.js';
 
 	/**
@@ -36,7 +37,7 @@
 	const objects = $derived(showAll ? cmp.objects : cmp.objects.slice(0, 25));
 </script>
 
-<div id="profiler-compare" class="h-full min-h-0 overflow-auto pr-1 text-[11.5px]">
+<div id="profiler-compare" class="h-full min-h-0 overflow-auto pr-1 text-[11.5px]" use:minimalScroll>
 	<table class="pf-cmp" aria-label="Headline numbers, A against B">
 		<thead>
 			<tr

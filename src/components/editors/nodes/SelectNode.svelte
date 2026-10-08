@@ -31,7 +31,7 @@
 		<div class="flex justify-between"><span>out</span><span class="font-mono">{readout}</span></div>
 		{#each [['index', 'idx'], ['a', '0 a'], ['b', '1 b'], ['c', '2 c'], ['d', '3 d']] as [key, label]}
 			<label class="flex items-center gap-1">
-				<span class="w-8 whitespace-nowrap text-gray-400">{label}</span>
+				<span class="w-8 whitespace-nowrap text-text-muted">{label}</span>
 				<DragRow nodrag step={0.01} decimals={2} value={data[key] ?? 0} onchange={(/** @type {number} */ v) => setNodeData(id, { [key]: v })} />
 			</label>
 		{/each}

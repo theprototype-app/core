@@ -469,29 +469,42 @@ h.run(async () => {
 	// cannot go anywhere.
 	await A.page.setViewportSize({ width: 280, height: 700 });
 	await A.page.waitForTimeout(600);
-	g = await geom(A.page);
-	h.check(
-		g.width + 16 > g.vw,
-		`premise: at 280px the bar (${Math.round(g.width)}px) no longer fits the track`
-	);
-	h.check(
-		Math.abs(g.centre - g.vw / 2) <= 2,
-		`...so it falls back to centred (${Math.round(g.centre)} vs ${g.vw / 2})`
-	);
-	await cellMenu(A.page, 'Explorer');
-	menu = await rows(A.page);
-	h.check(
-		menu.some((r) => r.label === 'Move toolbar' && r.disabled),
-		'...and Move toolbar is offered but disabled, with the reason in its tooltip'
-	);
-	await A.page.keyboard.press('Escape');
-	await A.page.waitForTimeout(200);
-	const narrowCentre = (await geom(A.page)).centre;
-	await dragCell(A.page, 'Explorer', 90);
-	h.check(
-		Math.abs((await geom(A.page)).centre - narrowCentre) <= 1,
-		'...and a drag there moves nothing'
-	);
+	// 38 R9: below 640 px the PHONE SHELL takes over the bottom of the screen — the toolbar
+	// stands down (its tools live in the bottom bar, the context strip and More), so there is
+	// no bar to centre or to move. Assert that hand-over instead of the old narrow bar.
+	const phone = await A.page.evaluate(() => document.documentElement.classList.contains('phone-shell'));
+	if (phone) {
+		const shell = await A.page.evaluate(() => {
+			const pill = document.querySelector('#controls-pill');
+			const bar = document.querySelector('#ps-bar');
+			return { pill: !!pill && !!pill.getClientRects().length && getComputedStyle(pill).visibility !== 'hidden', bar: !!bar && !!bar.getClientRects().length };
+		});
+		h.check(!shell.pill && shell.bar, `at 280px the phone shell's bottom bar replaces the toolbar (${JSON.stringify(shell)})`);
+	} else {
+		g = await geom(A.page);
+		h.check(
+			g.width + 16 > g.vw,
+			`premise: at 280px the bar (${Math.round(g.width)}px) no longer fits the track`
+		);
+		h.check(
+			Math.abs(g.centre - g.vw / 2) <= 2,
+			`...so it falls back to centred (${Math.round(g.centre)} vs ${g.vw / 2})`
+		);
+		await cellMenu(A.page, 'Explorer');
+		menu = await rows(A.page);
+		h.check(
+			menu.some((r) => r.label === 'Move toolbar' && r.disabled),
+			'...and Move toolbar is offered but disabled, with the reason in its tooltip'
+		);
+		await A.page.keyboard.press('Escape');
+		await A.page.waitForTimeout(200);
+		const narrowCentre = (await geom(A.page)).centre;
+		await dragCell(A.page, 'Explorer', 90);
+		h.check(
+			Math.abs((await geom(A.page)).centre - narrowCentre) <= 1,
+			'...and a drag there moves nothing'
+		);
+	}
 	await A.page.setViewportSize({ width: 1280, height: 720 });
 	await A.page.waitForTimeout(500);
 

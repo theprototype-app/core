@@ -2,6 +2,7 @@
 	import { nodeDesignerOpen } from '../../stores/flowStore';
 	import { saveNodeDef, deleteNodeDef } from '$lib/customNodes';
 	import CodeEditor from './CodeEditor.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	// Modal for creating/editing a custom node definition. Saving replicates
 	// the def to every peer; existing instances re-render and re-run live.
@@ -65,44 +66,44 @@
 </script>
 
 {#if $nodeDesignerOpen}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-		<div class="flex h-[80vh] w-[640px] max-w-[95vw] flex-col gap-2 rounded-lg bg-gray-800 p-4 text-white shadow-xl">
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim">
+		<div class="flex h-[80vh] w-[640px] max-w-[95vw] flex-col gap-2 rounded-lg bg-surface-1 p-4 text-text shadow-xl">
 			<div class="flex items-center justify-between">
 				<span class="text-lg font-semibold">{editingId ? 'Edit node definition' : 'New custom node'}</span>
-				<button class="rounded-sm bg-gray-600 px-2" on:click={() => nodeDesignerOpen.set(null)}>✕</button>
+				<button class="rounded-sm bg-surface-active px-2 hover:bg-border-strong" on:click={() => nodeDesignerOpen.set(null)}>✕</button>
 			</div>
 
 			<label class="flex items-center gap-2 text-sm">
 				Name
-				<input class="flex-1 rounded-sm bg-gray-700 px-2 py-1" bind:value={name} placeholder="Wobble" />
+				<input class="flex-1 rounded-sm bg-surface-inset px-2 py-1" bind:value={name} placeholder="Wobble" />
 			</label>
 
 			<div class="text-sm">
 				<div class="mb-1 flex items-center justify-between">
 					<span>Controls</span>
-					<button class="rounded-sm bg-gray-600 px-2 text-xs" on:click={addParam}>+ add</button>
+					<button class="rounded-sm bg-surface-active px-2 text-xs hover:bg-border-strong" on:click={addParam}>+ add</button>
 				</div>
-				<div class="flex max-h-40 flex-col gap-1 overflow-y-auto">
+				<div class="flex max-h-40 flex-col gap-1 overflow-y-auto" use:minimalScroll>
 					{#each params as param, index}
 						<div class="flex items-center gap-1 text-xs">
-							<input class="w-24 rounded-sm bg-gray-700 px-1 py-0.5" bind:value={param.key} placeholder="key" />
-							<select class="rounded-sm bg-gray-700 px-1 py-0.5" bind:value={param.kind}>
+							<input class="w-24 rounded-sm bg-surface-inset px-1 py-0.5" bind:value={param.key} placeholder="key" />
+							<select class="rounded-sm bg-surface-inset px-1 py-0.5" bind:value={param.kind}>
 								<option value="range">range</option>
 								<option value="select">select</option>
 							</select>
 							{#if param.kind === 'range'}
-								<input class="w-14 rounded-sm bg-gray-700 px-1 py-0.5" type="number" bind:value={param.min} placeholder="min" />
-								<input class="w-14 rounded-sm bg-gray-700 px-1 py-0.5" type="number" bind:value={param.max} placeholder="max" />
-								<input class="w-14 rounded-sm bg-gray-700 px-1 py-0.5" type="number" bind:value={param.step} placeholder="step" />
+								<input class="w-14 rounded-sm bg-surface-inset px-1 py-0.5" type="number" bind:value={param.min} placeholder="min" />
+								<input class="w-14 rounded-sm bg-surface-inset px-1 py-0.5" type="number" bind:value={param.max} placeholder="max" />
+								<input class="w-14 rounded-sm bg-surface-inset px-1 py-0.5" type="number" bind:value={param.step} placeholder="step" />
 							{:else}
 								<input
-									class="flex-1 rounded-sm bg-gray-700 px-1 py-0.5"
+									class="flex-1 rounded-sm bg-surface-inset px-1 py-0.5"
 									value={param.optionsText ?? (param.options ?? []).join(',')}
 									on:input={(e) => (param.optionsText = e.currentTarget.value)}
 									placeholder="red,green,blue"
 								/>
 							{/if}
-							<button class="rounded-sm bg-gray-600 px-1" on:click={() => removeParam(index)}>✕</button>
+							<button class="rounded-sm bg-surface-active px-1 hover:bg-border-strong" on:click={() => removeParam(index)}>✕</button>
 						</div>
 					{/each}
 				</div>
@@ -115,11 +116,11 @@
 
 			<div class="flex justify-between">
 				{#if editingId}
-					<button class="rounded-sm bg-red-700 px-3 py-1" on:click={remove}>Delete definition</button>
+					<button class="rounded-sm bg-danger px-3 py-1 text-on-danger" on:click={remove}>Delete definition</button>
 				{:else}
 					<span></span>
 				{/if}
-				<button class="rounded-sm bg-[#ff4000] px-3 py-1" on:click={save}>Save for everyone</button>
+				<button class="rounded-sm bg-accent-fill px-3 py-1 text-on-accent hover:brightness-110" on:click={save}>Save for everyone</button>
 			</div>
 		</div>
 	</div>

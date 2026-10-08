@@ -50,10 +50,10 @@
 		align-items: center;
 		justify-content: center;
 		border-radius: 9999px;
-		border: 2px solid rgb(var(--surface-rgb, 17 24 39) / 0.45);
-		background: rgb(var(--surface-deep-rgb, 0 0 0) / 0.38);
-		color: var(--tab-tint, var(--text, #f3f4f6));
-		box-shadow: 0 1px 6px rgb(0 0 0 / 0.35);
+		border: 2px solid color-mix(in srgb, var(--surface-1) 45%, transparent);
+		background: color-mix(in srgb, var(--bg-app) 38%, transparent);
+		color: var(--tab-tint, var(--text));
+		box-shadow: 0 1px 6px color-mix(in srgb, var(--bg-app) 35%, transparent);
 		backdrop-filter: blur(2px);
 		transition: transform 60ms ease-out, background-color 60ms ease-out;
 		user-select: none;
@@ -70,20 +70,20 @@
 	}
 	.tab-face.pressed {
 		transform: scale(0.92);
-		background: color-mix(in srgb, var(--accent, #3b82f6) 55%, transparent);
-		border-color: var(--accent, #3b82f6);
+		background: color-mix(in srgb, var(--accent) 55%, transparent);
+		border-color: var(--accent);
 	}
 	.tab-face.has-image.pressed {
 		background: transparent;
 	}
 	.tab-glyph {
 		display: block;
-		filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.5));
+		filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--bg-app) 50%, transparent));
 	}
 	.tab-label {
 		font-weight: 700;
 		letter-spacing: 0.02em;
-		text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+		text-shadow: 0 1px 2px color-mix(in srgb, var(--bg-app) 60%, transparent);
 		white-space: nowrap;
 		max-width: 90%;
 		overflow: hidden;

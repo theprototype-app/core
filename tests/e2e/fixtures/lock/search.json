@@ -1,0 +1,4437 @@
+{
+	"recordedAt": "2026-10-08T00:28:57.594Z",
+	"settings": {
+		"Theme": {
+			"rows": [
+				"Custom theme",
+				"Theme"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Density": {
+			"rows": [
+				"Density"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Custom theme": {
+			"rows": [
+				"Custom theme"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Allow text selection everywhere": {
+			"rows": [
+				"Allow text selection everywhere"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Your character": {
+			"rows": [
+				"Knocked-off idle",
+				"Show others as classic heads",
+				"Your character"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Show others as classic heads": {
+			"rows": [
+				"Show others as classic heads"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Knocked-off idle": {
+			"rows": [
+				"Knocked-off idle"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Game sounds": {
+			"rows": [
+				"Game sounds"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Music": {
+			"rows": [
+				"Music"
+			],
+			"sections": [
+				"Interface",
+				"Node types"
+			]
+		},
+		"Welcome card on start": {
+			"rows": [
+				"Show tours automatically",
+				"Welcome card on start"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Announce new versions": {
+			"rows": [
+				"Announce new versions"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Show pop-ups only in the drawer": {
+			"rows": [
+				"Show pop-ups only in the drawer"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Show tours automatically": {
+			"rows": [
+				"Show tours automatically"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"VR welcome tour": {
+			"rows": [
+				"Show tours automatically",
+				"VR welcome tour"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Editor tour": {
+			"rows": [
+				"Editor tour",
+				"Show tours automatically"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Offer Enter VR in a headset browser": {
+			"rows": [
+				"Include VR button",
+				"Offer Enter VR in a headset browser"
+			],
+			"sections": [
+				"Interface",
+				"Export"
+			]
+		},
+		"Reset tours": {
+			"rows": [
+				"Reset tours"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Lift the toolbar above docked panels": {
+			"rows": [
+				"Lift the toolbar above docked panels"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Toolbar always on top": {
+			"rows": [
+				"Toolbar always on top"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Window positions": {
+			"rows": [
+				"Reset panel positions",
+				"Window positions"
+			],
+			"sections": [
+				"Interface",
+				"VR"
+			]
+		},
+		"Workspace layouts": {
+			"rows": [
+				"Workspace layouts"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Touch tools": {
+			"rows": [
+				"Touch tools"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Allow undocking on touch screens": {
+			"rows": [
+				"Allow undocking on touch screens"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Show system objects in the object list": {
+			"rows": [
+				"Show system objects in the object list"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Show the environment in the object list": {
+			"rows": [
+				"Show system objects in the object list",
+				"Show the environment in the object list"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Object search in the right-click menu": {
+			"rows": [
+				"Object search in the right-click menu"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Show FPS and draw calls": {
+			"rows": [
+				"Show FPS and draw calls"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Dock resizes the viewport": {
+			"rows": [
+				"Dock resizes the viewport"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"Shift+A opens the Add menu": {
+			"rows": [
+				"Shift+A opens the Add menu"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"Show helpers in Play": {
+			"rows": [
+				"Show helpers in Play"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"Double-click to open notes": {
+			"rows": [
+				"Double-click to open notes"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"Trackpad gestures": {
+			"rows": [
+				"Trackpad gestures"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"Two-finger pan": {
+			"rows": [
+				"Trackpad gestures",
+				"Two-finger pan"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"Reverse trackpad pan": {
+			"rows": [
+				"Reverse trackpad pan"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"Pinch zoom": {
+			"rows": [
+				"Allow browser pinch zoom",
+				"Pinch zoom",
+				"Trackpad gestures"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"Allow browser pinch zoom": {
+			"rows": [
+				"Allow browser pinch zoom"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"Wheel diagnostics": {
+			"rows": [
+				"Wheel diagnostics"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"Use a connected gamepad": {
+			"rows": [
+				"Use a connected gamepad"
+			],
+			"sections": [
+				"Input"
+			]
+		},
+		"Swap sticks": {
+			"rows": [
+				"Swap sticks"
+			],
+			"sections": [
+				"Input"
+			]
+		},
+		"Invert look Y": {
+			"rows": [
+				"Invert look Y"
+			],
+			"sections": [
+				"Input"
+			]
+		},
+		"Stick deadzone": {
+			"rows": [
+				"Stick deadzone"
+			],
+			"sections": [
+				"Input"
+			]
+		},
+		"Look sensitivity": {
+			"rows": [
+				"Look sensitivity"
+			],
+			"sections": [
+				"Input"
+			]
+		},
+		"Node editor mouse": {
+			"rows": [
+				"Node editor mouse"
+			],
+			"sections": [
+				"Input"
+			]
+		},
+		"Node editor opens": {
+			"rows": [
+				"Node editor opens"
+			],
+			"sections": [
+				"Input"
+			]
+		},
+		"Show touch controls": {
+			"rows": [
+				"Show helpers in Play",
+				"Show in edit",
+				"Show touch controls",
+				"Wheel diagnostics"
+			],
+			"sections": [
+				"Controls",
+				"Touch controls"
+			]
+		},
+		"Show in edit": {
+			"rows": [
+				"HUD editor: show / bring to front / hide",
+				"Node editor: show / bring to front / hide",
+				"Shader editor: show / bring to front / hide",
+				"Show in edit",
+				"Show tours automatically",
+				"Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)",
+				"UV editor: show / bring to front / hide"
+			],
+			"sections": [
+				"Interface",
+				"Touch controls",
+				"Shortcuts"
+			]
+		},
+		"Haptic tick": {
+			"rows": [
+				"Button looks",
+				"Haptic tick",
+				"Layout",
+				"Look speed",
+				"Show in edit",
+				"Show touch controls"
+			],
+			"sections": [
+				"Touch controls"
+			]
+		},
+		"Look speed": {
+			"rows": [
+				"Look sensitivity",
+				"Look speed"
+			],
+			"sections": [
+				"Input",
+				"Touch controls"
+			]
+		},
+		"Layout": {
+			"rows": [
+				"Button looks",
+				"Fix overlaps and crossings, keeping the layout",
+				"Haptic tick",
+				"Layout",
+				"Look speed",
+				"Show in edit",
+				"Show touch controls",
+				"Workspace layouts"
+			],
+			"sections": [
+				"Interface",
+				"Touch controls",
+				"Shortcuts"
+			]
+		},
+		"Button looks": {
+			"rows": [
+				"Button looks"
+			],
+			"sections": [
+				"Touch controls"
+			]
+		},
+		"Move (translate)": {
+			"rows": [
+				"Move (translate)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Rotate": {
+			"rows": [
+				"Grab style",
+				"Pivot point",
+				"Rotate",
+				"World grab snapping"
+			],
+			"sections": [
+				"Shortcuts",
+				"VR"
+			]
+		},
+		"Scale": {
+			"rows": [
+				"Grab style",
+				"Pivot point",
+				"Scale",
+				"World grab snapping"
+			],
+			"sections": [
+				"Shortcuts",
+				"VR"
+			]
+		},
+		"Move (grab) — same as 1": {
+			"rows": [
+				"Move (grab) — same as 1"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Arm Move (in the UV editor)": {
+			"rows": [
+				"Arm Move (in the UV editor)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Arm Move (in the timeline)": {
+			"rows": [
+				"Arm Move (in the timeline)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Fly the camera (horizontal)": {
+			"rows": [
+				"Fly the camera (horizontal)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Fly down / up": {
+			"rows": [
+				"Fly down / up"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Fly 3x faster": {
+			"rows": [
+				"Fly 3x faster"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Back to the scene's start view": {
+			"rows": [
+				"Back to the scene's start view"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Focus selected object": {
+			"rows": [
+				"Focus selected object"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Recall camera bookmark 1": {
+			"rows": [
+				"Recall camera bookmark 1"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Recall camera bookmark 2": {
+			"rows": [
+				"Recall camera bookmark 2"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Recall camera bookmark 3": {
+			"rows": [
+				"Recall camera bookmark 3"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Recall camera bookmark 4": {
+			"rows": [
+				"Recall camera bookmark 4"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Recall camera bookmark 5": {
+			"rows": [
+				"Recall camera bookmark 5"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Duplicate selection (whole set)": {
+			"rows": [
+				"Duplicate selection (whole set)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Select all objects": {
+			"rows": [
+				"Select all objects"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Leave isolation (double-click view)": {
+			"rows": [
+				"Leave isolation (double-click view)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Delete selection (a group asks first)": {
+			"rows": [
+				"Delete selection (a group asks first)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Delete selection (Backspace)": {
+			"rows": [
+				"Delete selection (Backspace)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits)": {
+			"rows": [
+				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)": {
+			"rows": [
+				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Add object at the cursor (enable in Settings)": {
+			"rows": [
+				"Add object at the cursor (enable in Settings)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Object list: show / bring to front / hide": {
+			"rows": [
+				"Object list: show / bring to front / hide"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Node editor: show / bring to front / hide": {
+			"rows": [
+				"Node editor: show / bring to front / hide"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)": {
+			"rows": [
+				"Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Explorer: show / bring to front / hide": {
+			"rows": [
+				"Explorer: show / bring to front / hide"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Flow Code: show / bring to front / hide": {
+			"rows": [
+				"Flow Code: show / bring to front / hide"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Animation: show / bring to front / hide": {
+			"rows": [
+				"Animation: show / bring to front / hide"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"UV editor: show / bring to front / hide": {
+			"rows": [
+				"UV editor: show / bring to front / hide"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Shader editor: show / bring to front / hide": {
+			"rows": [
+				"Shader editor: show / bring to front / hide"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"HUD editor: show / bring to front / hide": {
+			"rows": [
+				"HUD editor: show / bring to front / hide"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Toggle chat": {
+			"rows": [
+				"Toggle chat"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Toggle AI prompt bar": {
+			"rows": [
+				"Toggle AI prompt bar"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Save scene": {
+			"rows": [
+				"Autosave",
+				"Keep automatic checkpoints",
+				"Offer to merge unsaved work on connect",
+				"Save checkpoint…",
+				"Save scene"
+			],
+			"sections": [
+				"Shortcuts",
+				"Scene",
+				"Explorer"
+			]
+		},
+		"Simulate physics (toggle)": {
+			"rows": [
+				"Simulate physics (toggle)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Play / Enter VR·AR (right-click the play button for modes)": {
+			"rows": [
+				"Play / Enter VR·AR (right-click the play button for modes)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Toggle element snapping (vertex/face/surface targets)": {
+			"rows": [
+				"Toggle element snapping (vertex/face/surface targets)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Save checkpoint…": {
+			"rows": [
+				"Save checkpoint…"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Undo": {
+			"rows": [
+				"Allow undocking on touch screens",
+				"Enable assistant",
+				"Touch tools",
+				"Undo"
+			],
+			"sections": [
+				"Interface",
+				"Shortcuts",
+				"AI"
+			]
+		},
+		"Redo": {
+			"rows": [
+				"Redo",
+				"Redo (alternative)",
+				"Touch tools"
+			],
+			"sections": [
+				"Interface",
+				"Shortcuts"
+			]
+		},
+		"Redo (alternative)": {
+			"rows": [
+				"Redo (alternative)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Cycle view mode (Shaded / Shaded + AO / Wireframe)": {
+			"rows": [
+				"Cycle view mode (Shaded / Shaded + AO / Wireframe)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Push to talk while the mic toggle is off": {
+			"rows": [
+				"Push to talk while the mic toggle is off"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Next element mode (Vertices - Edges - Faces)": {
+			"rows": [
+				"Next element mode (Vertices - Edges - Faces)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Previous element mode": {
+			"rows": [
+				"Previous element mode"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Select all (any mode)": {
+			"rows": [
+				"Select all (any mode)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Invert the selection (any mode)": {
+			"rows": [
+				"Invert the selection (any mode)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Grow the selection (faces)": {
+			"rows": [
+				"Grow the selection (faces)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Shrink the selection (faces)": {
+			"rows": [
+				"Shrink the selection (faces)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Arm Move (faces)": {
+			"rows": [
+				"Arm Move (faces)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Arm Extrude (faces)": {
+			"rows": [
+				"Arm Extrude (faces)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Arm Inset (faces)": {
+			"rows": [
+				"Arm Inset (faces)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Subdivide (faces)": {
+			"rows": [
+				"Subdivide (faces)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Loop cut (faces)": {
+			"rows": [
+				"Loop cut (faces)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Bridge (faces)": {
+			"rows": [
+				"Bridge (faces)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Flip normals (faces); fill the hole (edges)": {
+			"rows": [
+				"Flip normals (faces); fill the hole (edges)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Delete the selection (faces; Delete too)": {
+			"rows": [
+				"Delete the selection (faces; Delete too)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Loop select (faces: again = perpendicular; edges: the chain)": {
+			"rows": [
+				"Loop select (faces: again = perpendicular; edges: the chain)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Weld the selected vertices (vertices)": {
+			"rows": [
+				"Weld the selected vertices (vertices)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Connect two corners of a face (vertices)": {
+			"rows": [
+				"Connect two corners of a face (vertices)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Frame the selected nodes (all when none are selected)": {
+			"rows": [
+				"Frame the selected nodes (all when none are selected)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Frame all nodes": {
+			"rows": [
+				"Frame all nodes",
+				"Frame all nodes (Home)",
+				"Frame the selected nodes (all when none are selected)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Frame all nodes (Home)": {
+			"rows": [
+				"Frame all nodes (Home)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Add a node at the cursor (search)": {
+			"rows": [
+				"Add a node at the cursor (search)",
+				"Add a node at the cursor (search) — Space"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Add a node at the cursor (search) — Space": {
+			"rows": [
+				"Add a node at the cursor (search) — Space"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Delete the selected nodes and wires": {
+			"rows": [
+				"Delete the selected nodes and wires",
+				"Delete the selected nodes and wires (Backspace)",
+				"Delete the selected nodes and wires (X)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Delete the selected nodes and wires (X)": {
+			"rows": [
+				"Delete the selected nodes and wires (X)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Delete the selected nodes and wires (Backspace)": {
+			"rows": [
+				"Delete the selected nodes and wires (Backspace)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Duplicate the selection (wires between copies kept)": {
+			"rows": [
+				"Duplicate the selection (wires between copies kept)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Select all nodes": {
+			"rows": [
+				"Frame the selected nodes (all when none are selected)",
+				"Select all nodes"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Copy the selection": {
+			"rows": [
+				"Copy the selection"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Cut the selection": {
+			"rows": [
+				"Add a note around the selection (a frame)",
+				"Align the selection into a column (left edges)",
+				"Align the selection into a row (top edges)",
+				"Copy the selection",
+				"Cut the selection",
+				"Delete the selection (faces; Delete too)",
+				"Distribute the selection evenly left to right",
+				"Distribute the selection evenly top to bottom",
+				"Duplicate the selection (wires between copies kept)",
+				"Group the selection",
+				"Grow the selection (faces)",
+				"Invert the selection (any mode)",
+				"Mute / unmute the selection (a muted node does nothing)",
+				"Nudge the selection down",
+				"Nudge the selection down ×5",
+				"Nudge the selection left (Shift: ×5)",
+				"Nudge the selection left ×5",
+				"Nudge the selection right",
+				"Nudge the selection right ×5",
+				"Nudge the selection up",
+				"Nudge the selection up ×5",
+				"Shrink the selection (faces)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Paste at the cursor": {
+			"rows": [
+				"Paste at the cursor"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Mute / unmute the selection (a muted node does nothing)": {
+			"rows": [
+				"Mute / unmute the selection (a muted node does nothing)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Collapse / expand the selected nodes": {
+			"rows": [
+				"Collapse / expand the selected nodes"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Group the selection": {
+			"rows": [
+				"Group the selection"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Ungroup (the selected group, or the one you are in)": {
+			"rows": [
+				"Ungroup (the selected group, or the one you are in)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Enter the selected group / leave the one you are in": {
+			"rows": [
+				"Enter the selected group / leave the one you are in"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Add a note at the cursor": {
+			"rows": [
+				"Add a note at the cursor"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Add a note around the selection (a frame)": {
+			"rows": [
+				"Add a note around the selection (a frame)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card": {
+			"rows": [
+				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Fix overlaps and crossings, keeping the layout": {
+			"rows": [
+				"Fix overlaps and crossings, keeping the layout"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Align the selection into a column (left edges)": {
+			"rows": [
+				"Align the selection into a column (left edges)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Align the selection into a row (top edges)": {
+			"rows": [
+				"Align the selection into a row (top edges)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Distribute the selection evenly top to bottom": {
+			"rows": [
+				"Distribute the selection evenly top to bottom"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Distribute the selection evenly left to right": {
+			"rows": [
+				"Distribute the selection evenly left to right"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Nudge the selection left (Shift: ×5)": {
+			"rows": [
+				"Nudge the selection left (Shift: ×5)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Nudge the selection right": {
+			"rows": [
+				"Nudge the selection right",
+				"Nudge the selection right ×5"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Nudge the selection up": {
+			"rows": [
+				"Nudge the selection up",
+				"Nudge the selection up ×5"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Nudge the selection down": {
+			"rows": [
+				"Nudge the selection down",
+				"Nudge the selection down ×5"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Nudge the selection left ×5": {
+			"rows": [
+				"Nudge the selection left (Shift: ×5)",
+				"Nudge the selection left ×5"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Nudge the selection right ×5": {
+			"rows": [
+				"Nudge the selection right ×5"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Nudge the selection up ×5": {
+			"rows": [
+				"Nudge the selection up ×5"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Nudge the selection down ×5": {
+			"rows": [
+				"Nudge the selection down ×5"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Leave the group you are in": {
+			"rows": [
+				"Enter the selected group / leave the one you are in",
+				"Leave the group you are in"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Keyboard cheat sheet (every scope; the focused one first)": {
+			"rows": [
+				"Keyboard cheat sheet (every scope; the focused one first)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Show this shortcut list": {
+			"rows": [
+				"Show this shortcut list"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Race: drive / brake": {
+			"rows": [
+				"Race: drive / brake"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Race: steer": {
+			"rows": [
+				"Race: steer"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Race: back on the road": {
+			"rows": [
+				"Race: back on the road"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"Show grid": {
+			"rows": [
+				"Grid opacity",
+				"Length",
+				"Placeholder style",
+				"Show grid",
+				"Show the simulation controls"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Light helper length": {
+			"rows": [
+				"Light helper length"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Show the simulation controls": {
+			"rows": [
+				"Show the simulation controls"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Shadow quality": {
+			"rows": [
+				"Reduce quality when the scene is heavy",
+				"Shadow quality"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Reduce quality when the scene is heavy": {
+			"rows": [
+				"Reduce quality when the scene is heavy"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Simplify distant models": {
+			"rows": [
+				"Simplify distant models"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Draw repeated kit pieces together": {
+			"rows": [
+				"Draw repeated kit pieces together"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Water quality": {
+			"rows": [
+				"Water quality"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Sync animations": {
+			"rows": [
+				"Sync animations"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Spatial voice": {
+			"rows": [
+				"Spatial voice"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Ping colour": {
+			"rows": [
+				"Ping colour",
+				"Your character"
+			],
+			"sections": [
+				"Interface",
+				"Scene"
+			]
+		},
+		"Ping sound": {
+			"rows": [
+				"Ping colour",
+				"Ping sound"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Autosave": {
+			"rows": [
+				"Autosave",
+				"Clear saved session",
+				"Keep automatic checkpoints"
+			],
+			"sections": [
+				"Scene",
+				"About & what’s new"
+			]
+		},
+		"Auto-restore on load": {
+			"rows": [
+				"Auto-restore on load"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Keep automatic checkpoints": {
+			"rows": [
+				"Keep automatic checkpoints"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Automatic checkpoint every": {
+			"rows": [
+				"Automatic checkpoint every",
+				"Keep automatic checkpoints"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Checkpoint storage": {
+			"rows": [
+				"Automatic checkpoint every",
+				"Checkpoint storage",
+				"Keep automatic checkpoints"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"When opening another scene": {
+			"rows": [
+				"When opening another scene"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Double-click action": {
+			"rows": [
+				"Double-click action"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Length": {
+			"rows": [
+				"Length",
+				"Light helper length"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Angle": {
+			"rows": [
+				"Angle",
+				"Face edit limit",
+				"Snap angle"
+			],
+			"sections": [
+				"Scene",
+				"VR"
+			]
+		},
+		"Carry animation clips": {
+			"rows": [
+				"Carry animation clips"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Carry object flow": {
+			"rows": [
+				"Carry object flow"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Carry shader graph": {
+			"rows": [
+				"Carry shader graph"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Share materials": {
+			"rows": [
+				"Share materials"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Wireframe colour": {
+			"rows": [
+				"Edit mesh wireframe colour",
+				"Wireframe colour"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Selection outline colour": {
+			"rows": [
+				"Selection outline colour"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Edit mesh wireframe colour": {
+			"rows": [
+				"Edit mesh wireframe colour"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Reset line colours": {
+			"rows": [
+				"Reset line colours"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Placeholder style": {
+			"rows": [
+				"Placeholder style"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Placeholder grid texture": {
+			"rows": [
+				"Placeholder grid texture"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Grid size": {
+			"rows": [
+				"Grid size",
+				"Shadow quality",
+				"Water quality"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Grid colour": {
+			"rows": [
+				"Edit mesh wireframe colour",
+				"Grid colour",
+				"Ping colour",
+				"Reset line colours",
+				"Selection outline colour",
+				"Wireframe colour"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Grid opacity": {
+			"rows": [
+				"Grid opacity"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Animation speed": {
+			"rows": [
+				"Animation speed"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"Stuck after": {
+			"rows": [
+				"Stuck after"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"When you add files during a session": {
+			"rows": [
+				"When you add files during a session"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"Download shared files automatically": {
+			"rows": [
+				"Download shared files automatically"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"Offer to merge unsaved work on connect": {
+			"rows": [
+				"Offer to merge unsaved work on connect"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"Who can unshare a file": {
+			"rows": [
+				"Who can unshare a file"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"Keep versions per scene": {
+			"rows": [
+				"Keep automatic checkpoints",
+				"Keep versions per scene"
+			],
+			"sections": [
+				"Scene",
+				"Explorer"
+			]
+		},
+		"When importing files already in your library": {
+			"rows": [
+				"When importing files already in your library"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"Save name": {
+			"rows": [
+				"Keep automatic checkpoints",
+				"Save name",
+				"Workspace layouts"
+			],
+			"sections": [
+				"Interface",
+				"Scene",
+				"Explorer"
+			]
+		},
+		"Keep a recycle bin": {
+			"rows": [
+				"Keep a recycle bin"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"Delete without asking": {
+			"rows": [
+				"Delete without asking"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"Keep deleted files after a reload": {
+			"rows": [
+				"Keep deleted files after a reload"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"Deleted files log": {
+			"rows": [
+				"Deleted files log",
+				"Keep deleted files after a reload"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"Storage used": {
+			"rows": [
+				"Storage used"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"Show the Made with ThePrototype badge": {
+			"rows": [
+				"Show the Made with ThePrototype badge"
+			],
+			"sections": [
+				"Export"
+			]
+		},
+		"Start fullscreen": {
+			"rows": [
+				"Include VR button",
+				"Quality",
+				"Show FPS",
+				"Start fullscreen"
+			],
+			"sections": [
+				"Export"
+			]
+		},
+		"Show FPS": {
+			"rows": [
+				"Show FPS",
+				"Show FPS and draw calls",
+				"Show the Made with ThePrototype badge"
+			],
+			"sections": [
+				"Interface",
+				"Export"
+			]
+		},
+		"Quality": {
+			"rows": [
+				"Angle",
+				"Animation speed",
+				"Auto-restore on load",
+				"Automatic checkpoint every",
+				"Autosave",
+				"Carry animation clips",
+				"Carry object flow",
+				"Carry shader graph",
+				"Checkpoint storage",
+				"Compress textures",
+				"Double-click action",
+				"Draw repeated kit pieces together",
+				"Edit mesh wireframe colour",
+				"Grid colour",
+				"Grid opacity",
+				"Grid size",
+				"Include VR button",
+				"Keep automatic checkpoints",
+				"Length",
+				"Light helper length",
+				"Ping colour",
+				"Ping sound",
+				"Placeholder grid texture",
+				"Placeholder style",
+				"Quality",
+				"Reduce quality when the scene is heavy",
+				"Reset line colours",
+				"Selection outline colour",
+				"Shadow quality",
+				"Share materials",
+				"Show FPS",
+				"Show grid",
+				"Show the Made with ThePrototype badge",
+				"Show the simulation controls",
+				"Simplify distant models",
+				"Sky image quality",
+				"Spatial voice",
+				"Start fullscreen",
+				"Stuck after",
+				"Sync animations",
+				"Use CDN for packs",
+				"Water quality",
+				"When opening another scene",
+				"Wireframe colour"
+			],
+			"sections": [
+				"Scene",
+				"Export"
+			]
+		},
+		"Include VR button": {
+			"rows": [
+				"Include VR button"
+			],
+			"sections": [
+				"Export"
+			]
+		},
+		"Use CDN for packs": {
+			"rows": [
+				"Use CDN for packs"
+			],
+			"sections": [
+				"Export"
+			]
+		},
+		"Compress textures": {
+			"rows": [
+				"Compress textures"
+			],
+			"sections": [
+				"Export"
+			]
+		},
+		"Play on the screen, even in a headset": {
+			"rows": [
+				"Play on the screen, even in a headset"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Turning": {
+			"rows": [
+				"Turning"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Snap angle": {
+			"rows": [
+				"Angle",
+				"Snap angle"
+			],
+			"sections": [
+				"Scene",
+				"VR"
+			]
+		},
+		"Smooth speed": {
+			"rows": [
+				"Smooth speed"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Mirror turn": {
+			"rows": [
+				"Mirror turn"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Comfort vignette": {
+			"rows": [
+				"Comfort vignette"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Teleport": {
+			"rows": [
+				"Teleport"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Flying": {
+			"rows": [
+				"Flying"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Stance": {
+			"rows": [
+				"Length",
+				"Stance"
+			],
+			"sections": [
+				"Scene",
+				"VR"
+			]
+		},
+		"Height": {
+			"rows": [
+				"Height",
+				"Stance"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Menu hand": {
+			"rows": [
+				"Menu hand"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Hold to open menu": {
+			"rows": [
+				"Hold to open menu"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Left-handed": {
+			"rows": [
+				"Left-handed"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Grab style": {
+			"rows": [
+				"Grab style"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Refresh rate": {
+			"rows": [
+				"Refresh rate"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Statistics card": {
+			"rows": [
+				"Statistics card"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Peer hands": {
+			"rows": [
+				"Peer hands"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Passthrough": {
+			"rows": [
+				"Passthrough"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Selection wireframe": {
+			"rows": [
+				"Selection wireframe"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Reset panel positions": {
+			"rows": [
+				"Reset panel positions"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Game HUD": {
+			"rows": [
+				"Button hints",
+				"Game HUD",
+				"Game HUD size"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Game HUD size": {
+			"rows": [
+				"Game HUD size"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Button hints": {
+			"rows": [
+				"Button hints"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Pivot point": {
+			"rows": [
+				"Pivot point"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Hold to move vertex": {
+			"rows": [
+				"Hold to move vertex"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Sleeve palette": {
+			"rows": [
+				"Sleeve palette"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Face edit limit": {
+			"rows": [
+				"Face edit limit"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Vertex edit limit": {
+			"rows": [
+				"Vertex edit limit"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"My hand model": {
+			"rows": [
+				"My hand model"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Colocation": {
+			"rows": [
+				"Colocation",
+				"Colocation probe",
+				"Ghost hands"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Ghost hands": {
+			"rows": [
+				"Ghost hands"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Colocation probe": {
+			"rows": [
+				"Colocation probe"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"Enable assistant": {
+			"rows": [
+				"Enable assistant"
+			],
+			"sections": [
+				"AI"
+			]
+		},
+		"Voice typing provider": {
+			"rows": [
+				"Voice typing provider"
+			],
+			"sections": [
+				"AI"
+			]
+		},
+		"Mesh generation": {
+			"rows": [
+				"Mesh generation"
+			],
+			"sections": [
+				"AI"
+			]
+		},
+		"Session size": {
+			"rows": [
+				"Session size"
+			],
+			"sections": [
+				"Connection"
+			]
+		},
+		"Signaling server": {
+			"rows": [
+				"Apply changes",
+				"Signaling server"
+			],
+			"sections": [
+				"Connection"
+			]
+		},
+		"Apply changes": {
+			"rows": [
+				"Apply changes"
+			],
+			"sections": [
+				"Connection"
+			]
+		},
+		"Version": {
+			"rows": [
+				"Announce new versions",
+				"Automatic checkpoint every",
+				"Checkpoint storage",
+				"Diagnostics",
+				"Keep automatic checkpoints",
+				"Keep versions per scene",
+				"Simplify distant models",
+				"Version"
+			],
+			"sections": [
+				"Interface",
+				"Scene",
+				"Explorer",
+				"About & what’s new"
+			]
+		},
+		"Diagnostics": {
+			"rows": [
+				"Diagnostics",
+				"Wheel diagnostics"
+			],
+			"sections": [
+				"Controls",
+				"About & what’s new"
+			]
+		},
+		"Clear saved session": {
+			"rows": [
+				"Clear saved session"
+			],
+			"sections": [
+				"About & what’s new"
+			]
+		},
+		"Reset all settings": {
+			"rows": [
+				"Reset all settings"
+			],
+			"sections": [
+				"About & what’s new"
+			]
+		},
+		"dark": {
+			"rows": [
+				"Comfort vignette",
+				"Edit mesh wireframe colour",
+				"Theme"
+			],
+			"sections": [
+				"Interface",
+				"Scene",
+				"VR"
+			]
+		},
+		"light": {
+			"rows": [
+				"Allow text selection everywhere",
+				"Edit mesh wireframe colour",
+				"Invert look Y",
+				"Light helper length",
+				"Selection wireframe",
+				"Shadow quality",
+				"Show helpers in Play",
+				"Show others as classic heads",
+				"Simplify distant models",
+				"Sky image quality",
+				"Theme"
+			],
+			"sections": [
+				"Interface",
+				"Controls",
+				"Input",
+				"Scene",
+				"VR"
+			]
+		},
+		"colour": {
+			"rows": [
+				"Custom theme",
+				"Edit mesh wireframe colour",
+				"Grid colour",
+				"Ping colour",
+				"Reset line colours",
+				"Selection outline colour",
+				"Theme",
+				"Wireframe colour",
+				"Your character"
+			],
+			"sections": [
+				"Interface",
+				"Scene"
+			]
+		},
+		"color": {
+			"rows": [
+				"Custom theme",
+				"Ping colour",
+				"Ping sound",
+				"Reset line colours",
+				"Selection outline colour",
+				"Theme",
+				"Wireframe colour"
+			],
+			"sections": [
+				"Interface",
+				"Scene"
+			]
+		},
+		"contrast": {
+			"rows": [
+				"Theme"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"appearance": {
+			"rows": [
+				"Allow text selection everywhere",
+				"Allow undocking on touch screens",
+				"Announce new versions",
+				"Custom theme",
+				"Density",
+				"Dock resizes the viewport",
+				"Editor tour",
+				"Game sounds",
+				"Knocked-off idle",
+				"Lift the toolbar above docked panels",
+				"Music",
+				"Object search in the right-click menu",
+				"Offer Enter VR in a headset browser",
+				"Reset tours",
+				"Show FPS and draw calls",
+				"Show others as classic heads",
+				"Show pop-ups only in the drawer",
+				"Show system objects in the object list",
+				"Show the environment in the object list",
+				"Show tours automatically",
+				"Theme",
+				"Toolbar always on top",
+				"Touch tools",
+				"VR welcome tour",
+				"Welcome card on start",
+				"Window positions",
+				"Workspace layouts",
+				"Your character"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"sfx": {
+			"rows": [
+				"Game sounds"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"audio": {
+			"rows": [
+				"Game sounds",
+				"Music",
+				"Spatial voice"
+			],
+			"sections": [
+				"Interface",
+				"Scene",
+				"Node types"
+			]
+		},
+		"volume": {
+			"rows": [
+				"Game sounds",
+				"Music"
+			],
+			"sections": [
+				"Interface",
+				"Node types"
+			]
+		},
+		"performance": {
+			"rows": [
+				"Angle",
+				"Animation speed",
+				"Auto-restore on load",
+				"Automatic checkpoint every",
+				"Autosave",
+				"Carry animation clips",
+				"Carry object flow",
+				"Carry shader graph",
+				"Checkpoint storage",
+				"Double-click action",
+				"Draw repeated kit pieces together",
+				"Edit mesh wireframe colour",
+				"Grid colour",
+				"Grid opacity",
+				"Grid size",
+				"Keep automatic checkpoints",
+				"Length",
+				"Light helper length",
+				"Ping colour",
+				"Ping sound",
+				"Placeholder grid texture",
+				"Placeholder style",
+				"Reduce quality when the scene is heavy",
+				"Reset line colours",
+				"Selection outline colour",
+				"Shadow quality",
+				"Share materials",
+				"Show FPS and draw calls",
+				"Show grid",
+				"Show the simulation controls",
+				"Simplify distant models",
+				"Sky image quality",
+				"Spatial voice",
+				"Stuck after",
+				"Sync animations",
+				"Water quality",
+				"When opening another scene",
+				"Wireframe colour"
+			],
+			"sections": [
+				"Interface",
+				"Scene"
+			]
+		},
+		"frame rate": {
+			"rows": [
+				"Refresh rate",
+				"Show FPS and draw calls"
+			],
+			"sections": [
+				"Interface",
+				"VR"
+			]
+		},
+		"beacon": {
+			"rows": [],
+			"sections": []
+		},
+		"telemetry": {
+			"rows": [],
+			"sections": []
+		},
+		"touchpad": {
+			"rows": [
+				"Allow browser pinch zoom",
+				"Double-click to open notes",
+				"Pinch zoom",
+				"Reverse trackpad pan",
+				"Shift+A opens the Add menu",
+				"Show helpers in Play",
+				"Trackpad gestures",
+				"Two-finger pan",
+				"Wheel diagnostics"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"trackpad": {
+			"rows": [
+				"Allow browser pinch zoom",
+				"Double-click to open notes",
+				"Pinch zoom",
+				"Reverse trackpad pan",
+				"Shift+A opens the Add menu",
+				"Show helpers in Play",
+				"Trackpad gestures",
+				"Two-finger pan",
+				"Wheel diagnostics"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"controller": {
+			"rows": [
+				"Flying",
+				"Grab style",
+				"Invert look Y",
+				"Look sensitivity",
+				"Menu hand",
+				"Node editor mouse",
+				"Node editor opens",
+				"Reset panel positions",
+				"Stick deadzone",
+				"Swap sticks",
+				"Use a connected gamepad",
+				"VR welcome tour"
+			],
+			"sections": [
+				"Interface",
+				"Input",
+				"VR"
+			]
+		},
+		"xbox": {
+			"rows": [
+				"Invert look Y",
+				"Look sensitivity",
+				"Stick deadzone",
+				"Swap sticks",
+				"Use a connected gamepad"
+			],
+			"sections": [
+				"Input"
+			]
+		},
+		"joystick": {
+			"rows": [
+				"Button looks",
+				"Haptic tick",
+				"Invert look Y",
+				"Layout",
+				"Look sensitivity",
+				"Look speed",
+				"Node editor mouse",
+				"Node editor opens",
+				"Show in edit",
+				"Show touch controls",
+				"Stick deadzone",
+				"Swap sticks",
+				"Use a connected gamepad"
+			],
+			"sections": [
+				"Input",
+				"Touch controls"
+			]
+		},
+		"drift": {
+			"rows": [
+				"Stick deadzone",
+				"Window positions"
+			],
+			"sections": [
+				"Interface",
+				"Input"
+			]
+		},
+		"fps": {
+			"rows": [
+				"Compress textures",
+				"Include VR button",
+				"Quality",
+				"Reduce quality when the scene is heavy",
+				"Show FPS",
+				"Show FPS and draw calls",
+				"Show the Made with ThePrototype badge",
+				"Start fullscreen",
+				"Use CDN for packs"
+			],
+			"sections": [
+				"Interface",
+				"Scene",
+				"Export"
+			]
+		},
+		"lag": {
+			"rows": [
+				"Reduce quality when the scene is heavy"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"lod": {
+			"rows": [
+				"Simplify distant models"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"instancing": {
+			"rows": [
+				"Draw repeated kit pieces together"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"backup": {
+			"rows": [
+				"Auto-restore on load",
+				"Automatic checkpoint every",
+				"Autosave",
+				"Checkpoint storage",
+				"Keep automatic checkpoints"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"recovery": {
+			"rows": [
+				"Auto-restore on load",
+				"Autosave"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"crash": {
+			"rows": [
+				"Auto-restore on load",
+				"Autosave"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"units": {
+			"rows": [
+				"Angle",
+				"Length"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"metres": {
+			"rows": [
+				"Grid size",
+				"Length",
+				"Placeholder grid texture"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"inches": {
+			"rows": [
+				"Length"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"degrees": {
+			"rows": [
+				"Angle",
+				"Snap angle"
+			],
+			"sections": [
+				"Scene",
+				"VR"
+			]
+		},
+		"radians": {
+			"rows": [
+				"Angle"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"rotate": {
+			"rows": [
+				"Grab style",
+				"Pivot point",
+				"Rotate",
+				"World grab snapping"
+			],
+			"sections": [
+				"Shortcuts",
+				"VR"
+			]
+		},
+		"comfort": {
+			"rows": [
+				"Comfort vignette",
+				"Density",
+				"Flying",
+				"Mirror turn",
+				"Smooth speed",
+				"Snap angle",
+				"Teleport",
+				"Turning"
+			],
+			"sections": [
+				"Interface",
+				"VR"
+			]
+		},
+		"quest": {
+			"rows": [
+				"Offer Enter VR in a headset browser",
+				"Show pop-ups only in the drawer",
+				"Teleport",
+				"VR welcome tour",
+				"When you add files during a session"
+			],
+			"sections": [
+				"Interface",
+				"Explorer",
+				"VR"
+			]
+		},
+		"locomotion": {
+			"rows": [
+				"Teleport"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"mixed reality": {
+			"rows": [
+				"Colocation",
+				"Ghost hands",
+				"Passthrough"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"hz": {
+			"rows": [
+				"Refresh rate"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"peerjs": {
+			"rows": [
+				"Apply changes",
+				"Signaling server"
+			],
+			"sections": [
+				"Connection"
+			]
+		},
+		"network": {
+			"rows": [
+				"Apply changes",
+				"Session size",
+				"Signaling server",
+				"Statistics card"
+			],
+			"sections": [
+				"VR",
+				"Connection"
+			]
+		},
+		"relay": {
+			"rows": [],
+			"sections": []
+		},
+		"nat": {
+			"rows": [
+				"Redo (alternative)",
+				"Reverse trackpad pan"
+			],
+			"sections": [
+				"Controls",
+				"Shortcuts"
+			]
+		},
+		"release": {
+			"rows": [
+				"Compress textures",
+				"Hold to open menu",
+				"Version"
+			],
+			"sections": [
+				"Export",
+				"VR",
+				"About & what’s new"
+			]
+		},
+		"changelog": {
+			"rows": [
+				"Version"
+			],
+			"sections": [
+				"About & what’s new"
+			]
+		},
+		"bug": {
+			"rows": [
+				"Diagnostics",
+				"Show helpers in Play",
+				"Wheel diagnostics"
+			],
+			"sections": [
+				"Controls",
+				"About & what’s new"
+			]
+		},
+		"debug": {
+			"rows": [
+				"Diagnostics",
+				"Show helpers in Play",
+				"Wheel diagnostics"
+			],
+			"sections": [
+				"Controls",
+				"About & what’s new"
+			]
+		},
+		"llm": {
+			"rows": [
+				"Enable assistant",
+				"Mesh generation",
+				"Voice typing provider"
+			],
+			"sections": [
+				"AI"
+			]
+		},
+		"claude": {
+			"rows": [
+				"Enable assistant"
+			],
+			"sections": [
+				"AI"
+			]
+		},
+		"api key": {
+			"rows": [
+				"Voice typing provider"
+			],
+			"sections": [
+				"AI"
+			]
+		},
+		"model": {
+			"rows": [
+				"Enable assistant",
+				"Mesh generation",
+				"My hand model",
+				"Peer hands",
+				"Simplify distant models",
+				"Voice typing provider"
+			],
+			"sections": [
+				"Scene",
+				"VR",
+				"AI"
+			]
+		},
+		"meshy": {
+			"rows": [
+				"Mesh generation"
+			],
+			"sections": [
+				"AI"
+			]
+		},
+		"trash": {
+			"rows": [
+				"Keep a recycle bin",
+				"Keep deleted files after a reload"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"disk": {
+			"rows": [
+				"Storage used"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"quota": {
+			"rows": [
+				"Storage used"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"toolbar": {
+			"rows": [
+				"Allow text selection everywhere",
+				"Allow undocking on touch screens",
+				"Announce new versions",
+				"Custom theme",
+				"Density",
+				"Dock resizes the viewport",
+				"Editor tour",
+				"Game sounds",
+				"Knocked-off idle",
+				"Lift the toolbar above docked panels",
+				"Music",
+				"Object search in the right-click menu",
+				"Offer Enter VR in a headset browser",
+				"Reset tours",
+				"Show FPS and draw calls",
+				"Show others as classic heads",
+				"Show pop-ups only in the drawer",
+				"Show system objects in the object list",
+				"Show the environment in the object list",
+				"Show tours automatically",
+				"Theme",
+				"Toolbar always on top",
+				"Touch tools",
+				"VR welcome tour",
+				"Welcome card on start",
+				"Window positions",
+				"Workspace layouts",
+				"Your character"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"menu": {
+			"rows": [
+				"Allow text selection everywhere",
+				"Allow undocking on touch screens",
+				"Announce new versions",
+				"Button hints",
+				"Custom theme",
+				"Density",
+				"Dock resizes the viewport",
+				"Editor tour",
+				"Game sounds",
+				"Hold to open menu",
+				"Knocked-off idle",
+				"Lift the toolbar above docked panels",
+				"Menu hand",
+				"Mesh generation",
+				"Music",
+				"Object search in the right-click menu",
+				"Offer Enter VR in a headset browser",
+				"Reset panel positions",
+				"Reset tours",
+				"Shift+A opens the Add menu",
+				"Show FPS",
+				"Show FPS and draw calls",
+				"Show others as classic heads",
+				"Show pop-ups only in the drawer",
+				"Show system objects in the object list",
+				"Show the environment in the object list",
+				"Show tours automatically",
+				"Theme",
+				"Toolbar always on top",
+				"Touch tools",
+				"Use a connected gamepad",
+				"VR welcome tour",
+				"Welcome card on start",
+				"Who can unshare a file",
+				"Window positions",
+				"Workspace layouts",
+				"Your character"
+			],
+			"sections": [
+				"Interface",
+				"Controls",
+				"Input",
+				"Explorer",
+				"Export",
+				"VR",
+				"AI"
+			]
+		},
+		"mouse": {
+			"rows": [
+				"Allow browser pinch zoom",
+				"Double-click to open notes",
+				"Editor tour",
+				"Look sensitivity",
+				"Node editor mouse",
+				"Pinch zoom",
+				"Reverse trackpad pan",
+				"Shift+A opens the Add menu",
+				"Show helpers in Play",
+				"Trackpad gestures",
+				"Two-finger pan",
+				"Wheel diagnostics"
+			],
+			"sections": [
+				"Interface",
+				"Controls",
+				"Input"
+			]
+		},
+		"keyboard": {
+			"rows": [
+				"Add a node at the cursor (search)",
+				"Add a node at the cursor (search) — Space",
+				"Add a note around the selection (a frame)",
+				"Add a note at the cursor",
+				"Add object at the cursor (enable in Settings)",
+				"Align the selection into a column (left edges)",
+				"Align the selection into a row (top edges)",
+				"Allow browser pinch zoom",
+				"Animation: show / bring to front / hide",
+				"Arm Extrude (faces)",
+				"Arm Inset (faces)",
+				"Arm Move (faces)",
+				"Arm Move (in the UV editor)",
+				"Arm Move (in the timeline)",
+				"Back to the scene's start view",
+				"Bridge (faces)",
+				"Collapse / expand the selected nodes",
+				"Command palette — search every command and setting",
+				"Connect two corners of a face (vertices)",
+				"Copy the selection",
+				"Cut the selection",
+				"Cycle view mode (Shaded / Shaded + AO / Wireframe)",
+				"Delete selection (Backspace)",
+				"Delete selection (a group asks first)",
+				"Delete the selected nodes and wires",
+				"Delete the selected nodes and wires (Backspace)",
+				"Delete the selected nodes and wires (X)",
+				"Delete the selection (faces; Delete too)",
+				"Distribute the selection evenly left to right",
+				"Distribute the selection evenly top to bottom",
+				"Double-click to open notes",
+				"Duplicate selection (whole set)",
+				"Duplicate the selection (wires between copies kept)",
+				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
+				"Editor tour",
+				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits)",
+				"Enter the selected group / leave the one you are in",
+				"Explorer: show / bring to front / hide",
+				"Fix overlaps and crossings, keeping the layout",
+				"Flip normals (faces); fill the hole (edges)",
+				"Flow Code: show / bring to front / hide",
+				"Fly 3x faster",
+				"Fly down / up",
+				"Fly the camera (horizontal)",
+				"Focus selected object",
+				"Frame all nodes",
+				"Frame all nodes (Home)",
+				"Frame the selected nodes (all when none are selected)",
+				"Group the selection",
+				"Grow the selection (faces)",
+				"HUD editor: show / bring to front / hide",
+				"Invert the selection (any mode)",
+				"Keyboard cheat sheet (every scope; the focused one first)",
+				"Leave isolation (double-click view)",
+				"Leave the group you are in",
+				"Loop cut (faces)",
+				"Loop select (faces: again = perpendicular; edges: the chain)",
+				"Move (grab) — same as 1",
+				"Move (translate)",
+				"Mute / unmute the selection (a muted node does nothing)",
+				"Next element mode (Vertices - Edges - Faces)",
+				"Node editor: show / bring to front / hide",
+				"Nudge the selection down",
+				"Nudge the selection down ×5",
+				"Nudge the selection left (Shift: ×5)",
+				"Nudge the selection left ×5",
+				"Nudge the selection right",
+				"Nudge the selection right ×5",
+				"Nudge the selection up",
+				"Nudge the selection up ×5",
+				"Object list: show / bring to front / hide",
+				"Paste at the cursor",
+				"Pinch zoom",
+				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Previous element mode",
+				"Push to talk while the mic toggle is off",
+				"Race: back on the road",
+				"Race: drive / brake",
+				"Race: steer",
+				"Recall camera bookmark 1",
+				"Recall camera bookmark 2",
+				"Recall camera bookmark 3",
+				"Recall camera bookmark 4",
+				"Recall camera bookmark 5",
+				"Redo",
+				"Redo (alternative)",
+				"Reverse trackpad pan",
+				"Rotate",
+				"Save checkpoint…",
+				"Save scene",
+				"Scale",
+				"Select all (any mode)",
+				"Select all nodes",
+				"Select all objects",
+				"Shader editor: show / bring to front / hide",
+				"Shift+A opens the Add menu",
+				"Show helpers in Play",
+				"Show this shortcut list",
+				"Shrink the selection (faces)",
+				"Simulate physics (toggle)",
+				"Subdivide (faces)",
+				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
+				"Toggle AI prompt bar",
+				"Toggle chat",
+				"Toggle element snapping (vertex/face/surface targets)",
+				"Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)",
+				"Trackpad gestures",
+				"Two-finger pan",
+				"UV editor: show / bring to front / hide",
+				"Undo",
+				"Ungroup (the selected group, or the one you are in)",
+				"Weld the selected vertices (vertices)",
+				"Wheel diagnostics"
+			],
+			"sections": [
+				"Interface",
+				"Controls",
+				"Shortcuts"
+			]
+		},
+		"gamepad": {
+			"rows": [
+				"Invert look Y",
+				"Look sensitivity",
+				"Node editor mouse",
+				"Node editor opens",
+				"Stick deadzone",
+				"Swap sticks",
+				"Use a connected gamepad"
+			],
+			"sections": [
+				"Input"
+			]
+		},
+		"grid": {
+			"rows": [
+				"Angle",
+				"Animation speed",
+				"Auto-restore on load",
+				"Automatic checkpoint every",
+				"Autosave",
+				"Carry animation clips",
+				"Carry object flow",
+				"Carry shader graph",
+				"Checkpoint storage",
+				"Double-click action",
+				"Draw repeated kit pieces together",
+				"Edit mesh wireframe colour",
+				"Grid colour",
+				"Grid opacity",
+				"Grid size",
+				"Keep automatic checkpoints",
+				"Length",
+				"Light helper length",
+				"Ping colour",
+				"Ping sound",
+				"Placeholder grid texture",
+				"Placeholder style",
+				"Reduce quality when the scene is heavy",
+				"Reset line colours",
+				"Selection outline colour",
+				"Shadow quality",
+				"Share materials",
+				"Show grid",
+				"Show the simulation controls",
+				"Simplify distant models",
+				"Sky image quality",
+				"Spatial voice",
+				"Stuck after",
+				"Sync animations",
+				"Water quality",
+				"When opening another scene",
+				"Wireframe colour"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"snap": {
+			"rows": [
+				"Angle",
+				"Automatic checkpoint every",
+				"Checkpoint storage",
+				"Keep automatic checkpoints",
+				"Mirror turn",
+				"Snap angle",
+				"Toggle element snapping (vertex/face/surface targets)",
+				"Turning",
+				"World grab snapping"
+			],
+			"sections": [
+				"Shortcuts",
+				"Scene",
+				"VR"
+			]
+		},
+		"files": {
+			"rows": [
+				"Delete without asking",
+				"Deleted files log",
+				"Download shared files automatically",
+				"Keep a recycle bin",
+				"Keep deleted files after a reload",
+				"Keep versions per scene",
+				"Offer to merge unsaved work on connect",
+				"Save name",
+				"Storage used",
+				"When importing files already in your library",
+				"When you add files during a session",
+				"Who can unshare a file"
+			],
+			"sections": [
+				"Explorer"
+			]
+		},
+		"library": {
+			"rows": [
+				"Delete without asking",
+				"Deleted files log",
+				"Download shared files automatically",
+				"Keep a recycle bin",
+				"Keep deleted files after a reload",
+				"Keep versions per scene",
+				"My hand model",
+				"Offer to merge unsaved work on connect",
+				"Save name",
+				"Storage used",
+				"When importing files already in your library",
+				"When you add files during a session",
+				"Who can unshare a file"
+			],
+			"sections": [
+				"Explorer",
+				"VR"
+			]
+		},
+		"headset": {
+			"rows": [
+				"Colocation probe",
+				"Draw repeated kit pieces together",
+				"Game HUD",
+				"Include VR button",
+				"Offer Enter VR in a headset browser",
+				"Play on the screen, even in a headset",
+				"Refresh rate",
+				"Show FPS and draw calls",
+				"Show others as classic heads",
+				"Sky image quality",
+				"Water quality"
+			],
+			"sections": [
+				"Interface",
+				"Scene",
+				"Export",
+				"VR"
+			]
+		},
+		"xr": {
+			"rows": [
+				"Button hints",
+				"Colocation",
+				"Colocation probe",
+				"Comfort vignette",
+				"Face edit limit",
+				"Flying",
+				"Game HUD",
+				"Game HUD size",
+				"Ghost hands",
+				"Grab style",
+				"Height",
+				"Hold to move vertex",
+				"Hold to open menu",
+				"Left-handed",
+				"Menu hand",
+				"Mirror turn",
+				"My hand model",
+				"Passthrough",
+				"Peer hands",
+				"Pivot point",
+				"Play on the screen, even in a headset",
+				"Refresh rate",
+				"Reset panel positions",
+				"Selection wireframe",
+				"Sleeve palette",
+				"Smooth speed",
+				"Snap angle",
+				"Stance",
+				"Statistics card",
+				"Teleport",
+				"Turning",
+				"Vertex edit limit",
+				"World grab snapping"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"assistant": {
+			"rows": [
+				"Enable assistant",
+				"Mesh generation",
+				"Voice typing provider"
+			],
+			"sections": [
+				"AI"
+			]
+		},
+		"peer": {
+			"rows": [
+				"Apply changes",
+				"Colocation",
+				"Diagnostics",
+				"Keep a recycle bin",
+				"Peer hands",
+				"Ping colour",
+				"Selection outline colour",
+				"Session size",
+				"Show others as classic heads",
+				"Signaling server",
+				"Sky image quality",
+				"Statistics card"
+			],
+			"sections": [
+				"Interface",
+				"Scene",
+				"Explorer",
+				"VR",
+				"Connection",
+				"About & what’s new"
+			]
+		},
+		"server": {
+			"rows": [
+				"Apply changes",
+				"Session size",
+				"Signaling server"
+			],
+			"sections": [
+				"AI",
+				"Connection"
+			]
+		},
+		"invite": {
+			"rows": [
+				"Apply changes",
+				"Session size",
+				"Signaling server"
+			],
+			"sections": [
+				"Connection"
+			]
+		},
+		"room": {
+			"rows": [
+				"Apply changes",
+				"Colocation",
+				"Ghost hands",
+				"Session size",
+				"Show others as classic heads",
+				"Signaling server"
+			],
+			"sections": [
+				"Interface",
+				"VR",
+				"Connection"
+			]
+		},
+		"session": {
+			"rows": [
+				"Apply changes",
+				"Clear saved session",
+				"Diagnostics",
+				"Session size",
+				"Signaling server",
+				"When you add files during a session",
+				"Who can unshare a file"
+			],
+			"sections": [
+				"Explorer",
+				"Connection",
+				"About & what’s new"
+			]
+		},
+		"keys": {
+			"rows": [
+				"Add a node at the cursor (search)",
+				"Add a node at the cursor (search) — Space",
+				"Add a note around the selection (a frame)",
+				"Add a note at the cursor",
+				"Add object at the cursor (enable in Settings)",
+				"Align the selection into a column (left edges)",
+				"Align the selection into a row (top edges)",
+				"Animation: show / bring to front / hide",
+				"Arm Extrude (faces)",
+				"Arm Inset (faces)",
+				"Arm Move (faces)",
+				"Arm Move (in the UV editor)",
+				"Arm Move (in the timeline)",
+				"Back to the scene's start view",
+				"Bridge (faces)",
+				"Collapse / expand the selected nodes",
+				"Command palette — search every command and setting",
+				"Connect two corners of a face (vertices)",
+				"Copy the selection",
+				"Cut the selection",
+				"Cycle view mode (Shaded / Shaded + AO / Wireframe)",
+				"Delete selection (Backspace)",
+				"Delete selection (a group asks first)",
+				"Delete the selected nodes and wires",
+				"Delete the selected nodes and wires (Backspace)",
+				"Delete the selected nodes and wires (X)",
+				"Delete the selection (faces; Delete too)",
+				"Distribute the selection evenly left to right",
+				"Distribute the selection evenly top to bottom",
+				"Duplicate selection (whole set)",
+				"Duplicate the selection (wires between copies kept)",
+				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
+				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits)",
+				"Enter the selected group / leave the one you are in",
+				"Explorer: show / bring to front / hide",
+				"Fix overlaps and crossings, keeping the layout",
+				"Flip normals (faces); fill the hole (edges)",
+				"Flow Code: show / bring to front / hide",
+				"Fly 3x faster",
+				"Fly down / up",
+				"Fly the camera (horizontal)",
+				"Focus selected object",
+				"Frame all nodes",
+				"Frame all nodes (Home)",
+				"Frame the selected nodes (all when none are selected)",
+				"Group the selection",
+				"Grow the selection (faces)",
+				"HUD editor: show / bring to front / hide",
+				"Invert the selection (any mode)",
+				"Keyboard cheat sheet (every scope; the focused one first)",
+				"Leave isolation (double-click view)",
+				"Leave the group you are in",
+				"Loop cut (faces)",
+				"Loop select (faces: again = perpendicular; edges: the chain)",
+				"Move (grab) — same as 1",
+				"Move (translate)",
+				"Mute / unmute the selection (a muted node does nothing)",
+				"Next element mode (Vertices - Edges - Faces)",
+				"Node editor: show / bring to front / hide",
+				"Nudge the selection down",
+				"Nudge the selection down ×5",
+				"Nudge the selection left (Shift: ×5)",
+				"Nudge the selection left ×5",
+				"Nudge the selection right",
+				"Nudge the selection right ×5",
+				"Nudge the selection up",
+				"Nudge the selection up ×5",
+				"Object list: show / bring to front / hide",
+				"Paste at the cursor",
+				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Previous element mode",
+				"Push to talk while the mic toggle is off",
+				"Race: back on the road",
+				"Race: drive / brake",
+				"Race: steer",
+				"Recall camera bookmark 1",
+				"Recall camera bookmark 2",
+				"Recall camera bookmark 3",
+				"Recall camera bookmark 4",
+				"Recall camera bookmark 5",
+				"Redo",
+				"Redo (alternative)",
+				"Rotate",
+				"Save checkpoint…",
+				"Save scene",
+				"Scale",
+				"Select all (any mode)",
+				"Select all nodes",
+				"Select all objects",
+				"Shader editor: show / bring to front / hide",
+				"Show this shortcut list",
+				"Shrink the selection (faces)",
+				"Simulate physics (toggle)",
+				"Subdivide (faces)",
+				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
+				"Toggle AI prompt bar",
+				"Toggle chat",
+				"Toggle element snapping (vertex/face/surface targets)",
+				"Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)",
+				"UV editor: show / bring to front / hide",
+				"Undo",
+				"Ungroup (the selected group, or the one you are in)",
+				"Weld the selected vertices (vertices)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"hotkey": {
+			"rows": [
+				"Add a node at the cursor (search)",
+				"Add a node at the cursor (search) — Space",
+				"Add a note around the selection (a frame)",
+				"Add a note at the cursor",
+				"Add object at the cursor (enable in Settings)",
+				"Align the selection into a column (left edges)",
+				"Align the selection into a row (top edges)",
+				"Animation: show / bring to front / hide",
+				"Arm Extrude (faces)",
+				"Arm Inset (faces)",
+				"Arm Move (faces)",
+				"Arm Move (in the UV editor)",
+				"Arm Move (in the timeline)",
+				"Back to the scene's start view",
+				"Bridge (faces)",
+				"Collapse / expand the selected nodes",
+				"Command palette — search every command and setting",
+				"Connect two corners of a face (vertices)",
+				"Copy the selection",
+				"Cut the selection",
+				"Cycle view mode (Shaded / Shaded + AO / Wireframe)",
+				"Delete selection (Backspace)",
+				"Delete selection (a group asks first)",
+				"Delete the selected nodes and wires",
+				"Delete the selected nodes and wires (Backspace)",
+				"Delete the selected nodes and wires (X)",
+				"Delete the selection (faces; Delete too)",
+				"Distribute the selection evenly left to right",
+				"Distribute the selection evenly top to bottom",
+				"Duplicate selection (whole set)",
+				"Duplicate the selection (wires between copies kept)",
+				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
+				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits)",
+				"Enter the selected group / leave the one you are in",
+				"Explorer: show / bring to front / hide",
+				"Fix overlaps and crossings, keeping the layout",
+				"Flip normals (faces); fill the hole (edges)",
+				"Flow Code: show / bring to front / hide",
+				"Fly 3x faster",
+				"Fly down / up",
+				"Fly the camera (horizontal)",
+				"Focus selected object",
+				"Frame all nodes",
+				"Frame all nodes (Home)",
+				"Frame the selected nodes (all when none are selected)",
+				"Group the selection",
+				"Grow the selection (faces)",
+				"HUD editor: show / bring to front / hide",
+				"Invert the selection (any mode)",
+				"Keyboard cheat sheet (every scope; the focused one first)",
+				"Leave isolation (double-click view)",
+				"Leave the group you are in",
+				"Loop cut (faces)",
+				"Loop select (faces: again = perpendicular; edges: the chain)",
+				"Move (grab) — same as 1",
+				"Move (translate)",
+				"Mute / unmute the selection (a muted node does nothing)",
+				"Next element mode (Vertices - Edges - Faces)",
+				"Node editor: show / bring to front / hide",
+				"Nudge the selection down",
+				"Nudge the selection down ×5",
+				"Nudge the selection left (Shift: ×5)",
+				"Nudge the selection left ×5",
+				"Nudge the selection right",
+				"Nudge the selection right ×5",
+				"Nudge the selection up",
+				"Nudge the selection up ×5",
+				"Object list: show / bring to front / hide",
+				"Paste at the cursor",
+				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Previous element mode",
+				"Push to talk while the mic toggle is off",
+				"Race: back on the road",
+				"Race: drive / brake",
+				"Race: steer",
+				"Recall camera bookmark 1",
+				"Recall camera bookmark 2",
+				"Recall camera bookmark 3",
+				"Recall camera bookmark 4",
+				"Recall camera bookmark 5",
+				"Redo",
+				"Redo (alternative)",
+				"Rotate",
+				"Save checkpoint…",
+				"Save scene",
+				"Scale",
+				"Select all (any mode)",
+				"Select all nodes",
+				"Select all objects",
+				"Shader editor: show / bring to front / hide",
+				"Show this shortcut list",
+				"Shrink the selection (faces)",
+				"Simulate physics (toggle)",
+				"Subdivide (faces)",
+				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
+				"Toggle AI prompt bar",
+				"Toggle chat",
+				"Toggle element snapping (vertex/face/surface targets)",
+				"Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)",
+				"UV editor: show / bring to front / hide",
+				"Undo",
+				"Ungroup (the selected group, or the one you are in)",
+				"Weld the selected vertices (vertices)"
+			],
+			"sections": [
+				"Shortcuts"
+			]
+		},
+		"binding": {
+			"rows": [
+				"Add a node at the cursor (search)",
+				"Add a node at the cursor (search) — Space",
+				"Add a note around the selection (a frame)",
+				"Add a note at the cursor",
+				"Add object at the cursor (enable in Settings)",
+				"Align the selection into a column (left edges)",
+				"Align the selection into a row (top edges)",
+				"Animation: show / bring to front / hide",
+				"Arm Extrude (faces)",
+				"Arm Inset (faces)",
+				"Arm Move (faces)",
+				"Arm Move (in the UV editor)",
+				"Arm Move (in the timeline)",
+				"Back to the scene's start view",
+				"Bridge (faces)",
+				"Collapse / expand the selected nodes",
+				"Command palette — search every command and setting",
+				"Connect two corners of a face (vertices)",
+				"Copy the selection",
+				"Cut the selection",
+				"Cycle view mode (Shaded / Shaded + AO / Wireframe)",
+				"Delete selection (Backspace)",
+				"Delete selection (a group asks first)",
+				"Delete the selected nodes and wires",
+				"Delete the selected nodes and wires (Backspace)",
+				"Delete the selected nodes and wires (X)",
+				"Delete the selection (faces; Delete too)",
+				"Distribute the selection evenly left to right",
+				"Distribute the selection evenly top to bottom",
+				"Duplicate selection (whole set)",
+				"Duplicate the selection (wires between copies kept)",
+				"Edit / Interact mode (Interact: clicks play with the scene instead of selecting)",
+				"Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits)",
+				"Enter the selected group / leave the one you are in",
+				"Explorer: show / bring to front / hide",
+				"Fix overlaps and crossings, keeping the layout",
+				"Flip normals (faces); fill the hole (edges)",
+				"Flow Code: show / bring to front / hide",
+				"Fly 3x faster",
+				"Fly down / up",
+				"Fly the camera (horizontal)",
+				"Focus selected object",
+				"Frame all nodes",
+				"Frame all nodes (Home)",
+				"Frame the selected nodes (all when none are selected)",
+				"Group the selection",
+				"Grow the selection (faces)",
+				"HUD editor: show / bring to front / hide",
+				"Invert the selection (any mode)",
+				"Keyboard cheat sheet (every scope; the focused one first)",
+				"Leave isolation (double-click view)",
+				"Leave the group you are in",
+				"Loop cut (faces)",
+				"Loop select (faces: again = perpendicular; edges: the chain)",
+				"Move (grab) — same as 1",
+				"Move (translate)",
+				"Mute / unmute the selection (a muted node does nothing)",
+				"Next element mode (Vertices - Edges - Faces)",
+				"Node editor mouse",
+				"Node editor: show / bring to front / hide",
+				"Nudge the selection down",
+				"Nudge the selection down ×5",
+				"Nudge the selection left (Shift: ×5)",
+				"Nudge the selection left ×5",
+				"Nudge the selection right",
+				"Nudge the selection right ×5",
+				"Nudge the selection up",
+				"Nudge the selection up ×5",
+				"Object list: show / bring to front / hide",
+				"Paste at the cursor",
+				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Previous element mode",
+				"Push to talk while the mic toggle is off",
+				"Race: back on the road",
+				"Race: drive / brake",
+				"Race: steer",
+				"Recall camera bookmark 1",
+				"Recall camera bookmark 2",
+				"Recall camera bookmark 3",
+				"Recall camera bookmark 4",
+				"Recall camera bookmark 5",
+				"Redo",
+				"Redo (alternative)",
+				"Rotate",
+				"Save checkpoint…",
+				"Save scene",
+				"Scale",
+				"Select all (any mode)",
+				"Select all nodes",
+				"Select all objects",
+				"Shader editor: show / bring to front / hide",
+				"Show this shortcut list",
+				"Shrink the selection (faces)",
+				"Simulate physics (toggle)",
+				"Subdivide (faces)",
+				"Tidy the graph: lay it out left to right, nothing overlapping, no wire across a card",
+				"Toggle AI prompt bar",
+				"Toggle chat",
+				"Toggle element snapping (vertex/face/surface targets)",
+				"Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)",
+				"UV editor: show / bring to front / hide",
+				"Undo",
+				"Ungroup (the selected group, or the one you are in)",
+				"Weld the selected vertices (vertices)"
+			],
+			"sections": [
+				"Input",
+				"Shortcuts",
+				"VR"
+			]
+		},
+		"version": {
+			"rows": [
+				"Announce new versions",
+				"Automatic checkpoint every",
+				"Checkpoint storage",
+				"Diagnostics",
+				"Keep automatic checkpoints",
+				"Keep versions per scene",
+				"Simplify distant models",
+				"Version"
+			],
+			"sections": [
+				"Interface",
+				"Scene",
+				"Explorer",
+				"About & what’s new"
+			]
+		},
+		"privacy": {
+			"rows": [],
+			"sections": []
+		},
+		"shadow": {
+			"rows": [
+				"Reduce quality when the scene is heavy",
+				"Shadow quality"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"water": {
+			"rows": [
+				"Water quality"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"tour": {
+			"rows": [
+				"Editor tour",
+				"Offer Enter VR in a headset browser",
+				"Reset tours",
+				"Show tours automatically",
+				"VR welcome tour"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"welcome": {
+			"rows": [
+				"Show tours automatically",
+				"VR welcome tour",
+				"Welcome card on start"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"checkpoint": {
+			"rows": [
+				"Auto-restore on load",
+				"Automatic checkpoint every",
+				"Autosave",
+				"Checkpoint storage",
+				"Keep automatic checkpoints",
+				"Save checkpoint…",
+				"When opening another scene"
+			],
+			"sections": [
+				"Shortcuts",
+				"Scene"
+			]
+		},
+		"placeholder": {
+			"rows": [
+				"Animation speed",
+				"Grid colour",
+				"Grid opacity",
+				"Grid size",
+				"Placeholder grid texture",
+				"Placeholder style",
+				"Stuck after"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"wireframe": {
+			"rows": [
+				"Cycle view mode (Shaded / Shaded + AO / Wireframe)",
+				"Edit mesh wireframe colour",
+				"Selection wireframe",
+				"Wireframe colour"
+			],
+			"sections": [
+				"Shortcuts",
+				"Scene",
+				"VR"
+			]
+		},
+		"duplicate": {
+			"rows": [
+				"Carry animation clips",
+				"Carry object flow",
+				"Carry shader graph",
+				"Duplicate selection (whole set)",
+				"Duplicate the selection (wires between copies kept)",
+				"Share materials",
+				"When importing files already in your library"
+			],
+			"sections": [
+				"Shortcuts",
+				"Scene",
+				"Explorer"
+			]
+		},
+		"material": {
+			"rows": [
+				"Share materials"
+			],
+			"sections": [
+				"Scene"
+			]
+		},
+		"share": {
+			"rows": [
+				"Colocation",
+				"Download shared files automatically",
+				"My hand model",
+				"Offer to merge unsaved work on connect",
+				"Ping colour",
+				"Ping sound",
+				"Share materials",
+				"Sync animations",
+				"When you add files during a session",
+				"Who can unshare a file"
+			],
+			"sections": [
+				"Scene",
+				"Explorer",
+				"VR"
+			]
+		},
+		"delete": {
+			"rows": [
+				"Clear saved session",
+				"Delete selection (Backspace)",
+				"Delete selection (a group asks first)",
+				"Delete the selected nodes and wires",
+				"Delete the selected nodes and wires (Backspace)",
+				"Delete the selected nodes and wires (X)",
+				"Delete the selection (faces; Delete too)",
+				"Delete without asking",
+				"Deleted files log",
+				"Keep a recycle bin",
+				"Keep deleted files after a reload"
+			],
+			"sections": [
+				"Shortcuts",
+				"Explorer",
+				"About & what’s new"
+			]
+		},
+		"export": {
+			"rows": [
+				"Compress textures",
+				"Custom theme",
+				"Include VR button",
+				"Quality",
+				"Show FPS",
+				"Show the Made with ThePrototype badge",
+				"Start fullscreen",
+				"Use CDN for packs"
+			],
+			"sections": [
+				"Interface",
+				"Export"
+			]
+		},
+		"theme": {
+			"rows": [
+				"Custom theme",
+				"Theme"
+			],
+			"sections": [
+				"Interface"
+			]
+		},
+		"pinch": {
+			"rows": [
+				"Allow browser pinch zoom",
+				"Pinch zoom",
+				"Trackpad gestures"
+			],
+			"sections": [
+				"Controls"
+			]
+		},
+		"zoom": {
+			"rows": [
+				"Allow browser pinch zoom",
+				"Node editor opens",
+				"Pinch zoom",
+				"Trackpad gestures",
+				"Two-finger pan"
+			],
+			"sections": [
+				"Controls",
+				"Input"
+			]
+		},
+		"pan": {
+			"rows": [
+				"Allow text selection everywhere",
+				"Animation: show / bring to front / hide",
+				"Collapse / expand the selected nodes",
+				"Dock resizes the viewport",
+				"Explorer: show / bring to front / hide",
+				"Flow Code: show / bring to front / hide",
+				"HUD editor: show / bring to front / hide",
+				"Lift the toolbar above docked panels",
+				"Node editor mouse",
+				"Node editor opens",
+				"Node editor: show / bring to front / hide",
+				"Object list: show / bring to front / hide",
+				"Reset panel positions",
+				"Reverse trackpad pan",
+				"Shader editor: show / bring to front / hide",
+				"Spatial voice",
+				"Toggle AI prompt bar",
+				"Toggle chat",
+				"Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)",
+				"Toolbar always on top",
+				"Trackpad gestures",
+				"Two-finger pan",
+				"UV editor: show / bring to front / hide",
+				"Workspace layouts"
+			],
+			"sections": [
+				"Interface",
+				"Controls",
+				"Input",
+				"Shortcuts",
+				"Scene",
+				"VR"
+			]
+		},
+		"wheel": {
+			"rows": [
+				"Stance",
+				"Trackpad gestures",
+				"Two-finger pan",
+				"Wheel diagnostics"
+			],
+			"sections": [
+				"Controls",
+				"VR"
+			]
+		},
+		"hand": {
+			"rows": [
+				"Ghost hands",
+				"Grab style",
+				"Left-handed",
+				"Menu hand",
+				"My hand model",
+				"Peer hands",
+				"Statistics card"
+			],
+			"sections": [
+				"VR"
+			]
+		},
+		"hud": {
+			"rows": [
+				"Button hints",
+				"Game HUD",
+				"Game HUD size",
+				"HUD editor: show / bring to front / hide",
+				"Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)"
+			],
+			"sections": [
+				"Shortcuts",
+				"Node types",
+				"VR"
+			]
+		},
+		"vr": {
+			"rows": [
+				"Button hints",
+				"Colocation",
+				"Colocation probe",
+				"Comfort vignette",
+				"Compress textures",
+				"Face edit limit",
+				"Flying",
+				"Game HUD",
+				"Game HUD size",
+				"Ghost hands",
+				"Grab style",
+				"Height",
+				"Hold to move vertex",
+				"Hold to open menu",
+				"Include VR button",
+				"Left-handed",
+				"Menu hand",
+				"Mirror turn",
+				"My hand model",
+				"Offer Enter VR in a headset browser",
+				"Passthrough",
+				"Peer hands",
+				"Pivot point",
+				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play on the screen, even in a headset",
+				"Quality",
+				"Refresh rate",
+				"Reset panel positions",
+				"Selection wireframe",
+				"Show FPS",
+				"Show the Made with ThePrototype badge",
+				"Show tours automatically",
+				"Sleeve palette",
+				"Smooth speed",
+				"Snap angle",
+				"Stance",
+				"Start fullscreen",
+				"Statistics card",
+				"Teleport",
+				"Turning",
+				"Use CDN for packs",
+				"VR welcome tour",
+				"Vertex edit limit",
+				"Voice typing provider",
+				"World grab snapping"
+			],
+			"sections": [
+				"Interface",
+				"Shortcuts",
+				"Export",
+				"VR",
+				"AI"
+			]
+		},
+		"ai": {
+			"rows": [
+				"Colocation probe",
+				"Download shared files automatically",
+				"Enable assistant",
+				"Ghost hands",
+				"Height",
+				"Hold to move vertex",
+				"Loop select (faces: again = perpendicular; edges: the chain)",
+				"Mesh generation",
+				"Placeholder style",
+				"Reverse trackpad pan",
+				"Stance",
+				"Storage used",
+				"Teleport",
+				"Toggle AI prompt bar",
+				"Voice typing provider"
+			],
+			"sections": [
+				"Controls",
+				"Shortcuts",
+				"Scene",
+				"Explorer",
+				"VR",
+				"AI"
+			]
+		},
+		"zz-no-match": {
+			"rows": [],
+			"sections": []
+		}
+	},
+	"inspector": {
+		"object": {
+			"": [
+				"Emission",
+				"Geometry",
+				"LOD",
+				"Material",
+				"Object",
+				"Particles",
+				"Physics",
+				"Shadow",
+				"Texture",
+				"Transform",
+				"Water"
+			],
+			"transform": [
+				"Transform"
+			],
+			"object": [
+				"LOD",
+				"Object",
+				"Transform",
+				"Water"
+			],
+			"lod": [
+				"LOD"
+			],
+			"water": [
+				"Physics",
+				"Water"
+			],
+			"geometry": [
+				"Geometry"
+			],
+			"material": [
+				"Emission",
+				"Material",
+				"Physics",
+				"Shadow",
+				"Texture"
+			],
+			"texture": [
+				"Emission",
+				"Material",
+				"Shadow",
+				"Texture"
+			],
+			"emission": [
+				"Emission",
+				"Material",
+				"Shadow",
+				"Texture"
+			],
+			"shadow": [
+				"Emission",
+				"Material",
+				"Shadow",
+				"Texture"
+			],
+			"physics": [
+				"Physics",
+				"Water"
+			],
+			"particles": [
+				"Particles"
+			],
+			"position": [
+				"Transform"
+			],
+			"rotation": [
+				"Transform"
+			],
+			"scale": [
+				"Transform"
+			],
+			"color": [
+				"Emission",
+				"Material",
+				"Shadow",
+				"Texture"
+			],
+			"colour": [],
+			"intensity": [],
+			"fog": [],
+			"grid": [],
+			"camera": [],
+			"render": [
+				"Object"
+			],
+			"light": [],
+			"sky": [],
+			"environment": [],
+			"origin": [
+				"Transform"
+			],
+			"snap": [
+				"Transform"
+			],
+			"zz-no-match": []
+		},
+		"light": {
+			"": [
+				"Aim at",
+				"Light",
+				"Shadow",
+				"Transform"
+			],
+			"transform": [
+				"Transform"
+			],
+			"light": [
+				"Aim at",
+				"Light",
+				"Shadow",
+				"Transform"
+			],
+			"aim at": [
+				"Aim at",
+				"Light",
+				"Shadow"
+			],
+			"shadow": [
+				"Aim at",
+				"Light",
+				"Shadow"
+			],
+			"position": [
+				"Transform"
+			],
+			"rotation": [
+				"Aim at",
+				"Light",
+				"Shadow"
+			],
+			"scale": [],
+			"color": [],
+			"colour": [],
+			"physics": [],
+			"material": [],
+			"intensity": [
+				"Aim at",
+				"Light",
+				"Shadow"
+			],
+			"fog": [],
+			"grid": [],
+			"camera": [],
+			"water": [],
+			"lod": [],
+			"render": [],
+			"sky": [],
+			"environment": [],
+			"origin": [
+				"Transform"
+			],
+			"snap": [
+				"Transform"
+			],
+			"zz-no-match": []
+		},
+		"scene": {
+			"": [
+				"Advanced",
+				"Background",
+				"Camera",
+				"Components",
+				"Environment",
+				"Fog",
+				"Grid",
+				"Music",
+				"Orbit feel",
+				"Overrides — this device",
+				"Physics",
+				"Play",
+				"Saved views",
+				"Scene look",
+				"Scene track (shared)",
+				"Selection passes through",
+				"Shader materials",
+				"Sky image (HDRI)",
+				"Snap to elements",
+				"Snapping",
+				"Start view",
+				"This device",
+				"View",
+				"Viewport — this device"
+			],
+			"environment": [
+				"Components",
+				"Environment",
+				"Sky image (HDRI)"
+			],
+			"sky image (hdri)": [
+				"Components",
+				"Environment",
+				"Sky image (HDRI)"
+			],
+			"components": [
+				"Components",
+				"Environment",
+				"Sky image (HDRI)"
+			],
+			"music": [
+				"Music",
+				"Scene track (shared)",
+				"This device"
+			],
+			"scene track (shared)": [
+				"Music",
+				"Scene track (shared)",
+				"This device"
+			],
+			"this device": [
+				"Music",
+				"Overrides — this device",
+				"Scene track (shared)",
+				"This device",
+				"View",
+				"Viewport — this device"
+			],
+			"view": [
+				"Advanced",
+				"Camera",
+				"Orbit feel",
+				"Overrides — this device",
+				"Play",
+				"Saved views",
+				"Scene look",
+				"Selection passes through",
+				"Shader materials",
+				"Snap to elements",
+				"Snapping",
+				"Start view",
+				"View",
+				"Viewport — this device"
+			],
+			"viewport — this device": [
+				"Overrides — this device",
+				"View",
+				"Viewport — this device"
+			],
+			"overrides — this device": [
+				"Overrides — this device",
+				"View",
+				"Viewport — this device"
+			],
+			"scene look": [
+				"Overrides — this device",
+				"Scene look",
+				"Shader materials",
+				"View",
+				"Viewport — this device"
+			],
+			"shader materials": [
+				"Scene look",
+				"Shader materials"
+			],
+			"camera": [
+				"Camera",
+				"Grid",
+				"Orbit feel",
+				"Overrides — this device",
+				"Saved views",
+				"Scene look",
+				"Shader materials",
+				"Start view",
+				"View",
+				"Viewport — this device"
+			],
+			"orbit feel": [
+				"Camera",
+				"Orbit feel",
+				"Saved views",
+				"Start view"
+			],
+			"start view": [
+				"Camera",
+				"Orbit feel",
+				"Saved views",
+				"Start view"
+			],
+			"saved views": [
+				"Camera",
+				"Orbit feel",
+				"Saved views",
+				"Start view"
+			],
+			"grid": [
+				"Grid",
+				"Snap to elements",
+				"Snapping"
+			],
+			"snapping": [
+				"Grid",
+				"Snap to elements",
+				"Snapping"
+			],
+			"snap to elements": [
+				"Snap to elements",
+				"Snapping"
+			],
+			"physics": [
+				"Camera",
+				"Orbit feel",
+				"Physics",
+				"Saved views",
+				"Start view"
+			],
+			"play": [
+				"Music",
+				"Physics",
+				"Play",
+				"Scene track (shared)",
+				"This device"
+			],
+			"background": [
+				"Background",
+				"Music",
+				"Scene track (shared)",
+				"This device"
+			],
+			"fog": [
+				"Fog"
+			],
+			"advanced": [
+				"Advanced",
+				"Physics",
+				"Selection passes through"
+			],
+			"selection passes through": [
+				"Advanced",
+				"Selection passes through"
+			],
+			"position": [
+				"Snap to elements",
+				"Snapping"
+			],
+			"rotation": [
+				"Snap to elements",
+				"Snapping"
+			],
+			"scale": [
+				"Physics",
+				"Snap to elements",
+				"Snapping"
+			],
+			"color": [
+				"Components",
+				"Environment",
+				"Sky image (HDRI)"
+			],
+			"colour": [
+				"Grid",
+				"Scene look",
+				"Shader materials"
+			],
+			"shadow": [],
+			"material": [
+				"Overrides — this device",
+				"Physics",
+				"Scene look",
+				"Shader materials",
+				"View",
+				"Viewport — this device"
+			],
+			"intensity": [],
+			"water": [
+				"Advanced",
+				"Selection passes through"
+			],
+			"lod": [],
+			"render": [
+				"Overrides — this device",
+				"View",
+				"Viewport — this device"
+			],
+			"light": [
+				"Components",
+				"Environment",
+				"Overrides — this device",
+				"Sky image (HDRI)",
+				"View",
+				"Viewport — this device"
+			],
+			"sky": [
+				"Components",
+				"Environment",
+				"Sky image (HDRI)"
+			],
+			"origin": [
+				"Grid",
+				"Snap to elements",
+				"Snapping"
+			],
+			"snap": [
+				"Grid",
+				"Snap to elements",
+				"Snapping"
+			],
+			"zz-no-match": []
+		}
+	}
+}

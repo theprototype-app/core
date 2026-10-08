@@ -14,6 +14,7 @@
 	export let id: string;
 	export let data: any;
 
+	const WHITE = '#ffffff'; // tokens-ok: a colour fallback's starting value (user data, matches the runtime's typedFallback)
 	const VTYPES = ['number', 'boolean', 'vector3', 'color'];
 
 	// a fallback only makes sense in its own type — switching the type RESETS it
@@ -21,7 +22,7 @@
 	function typedDefault(vtype: string): any {
 		if (vtype === 'boolean') return false;
 		if (vtype === 'vector3') return [0, 0, 0];
-		if (vtype === 'color') return '#ffffff';
+		if (vtype === 'color') return WHITE;
 		return 0;
 	}
 	function onTypeChange(vtype: string) {
@@ -46,7 +47,7 @@
 	     squeeze side-by-side and the name shows three letters -->
 	<div class="flex w-full flex-col gap-1">
 		<label class="flex w-full flex-col">
-			<span class="text-gray-400">name</span>
+			<span class="text-text-muted">name</span>
 			<input
 				class="nodrag nopan w-full"
 				type="text"
@@ -56,7 +57,7 @@
 		</label>
 		{#if data.type === 'flowinput'}
 			<label class="flex w-full flex-col">
-				<span class="text-gray-400">type</span>
+				<span class="text-text-muted">type</span>
 				<select
 					class="nodrag nopan w-full"
 					value={data.vtype ?? 'number'}
@@ -69,7 +70,7 @@
 			</label>
 			<!-- the fallback editor matches the declared type -->
 			<div class="flex w-full flex-col">
-				<span class="text-gray-400">fallback</span>
+				<span class="text-text-muted">fallback</span>
 				{#if (data.vtype ?? 'number') === 'boolean'}
 					<label class="flex items-center gap-1">
 						<input
@@ -84,7 +85,7 @@
 					<input
 						class="nodrag nopan h-6 w-full"
 						type="color"
-						value={typeof data.fallback === 'string' ? data.fallback : '#ffffff'}
+						value={typeof data.fallback === 'string' ? data.fallback : WHITE}
 						on:change={(e) => setNodeData(id, { fallback: e.currentTarget.value })}
 					/>
 				{:else if (data.vtype ?? 'number') === 'vector3'}

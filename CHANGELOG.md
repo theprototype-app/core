@@ -5,6 +5,83 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.30.0 — A calm new look: one interface on a desk and in a pocket ✨
+
+Every window, menu, modal, the main HUD and the phone layout move onto one small kit of parts. Everything you
+can do — every shortcut, setting, scrub field and panel — works exactly as before.
+
+### 🧭 The main HUD
+
+- 🧰 **One glass toolbar** at the bottom: the accent marks the armed tool, and **Play is the only orange control**.
+  The logo, the corner buttons and the top-right group (notes · notifications · peers) share the same glass look
+  and reach 44 px on touch.
+- 🔗 **The Connect bar collapses to a compact chip once you are connected** (status, who is here, avatars, mic) and
+  expands on click; while reconnecting it says for how long ("Reconnecting · 2 min") — the attempt count is in
+  Connect ▸ Info. A speaker's avatar gets a soft green ring.
+- 🍞 **Calmer toasts**: three at a time, the rest behind "+N more".
+- ⌨️ **New: Ctrl+K command palette** — search tools, windows, menus and every setting from one box.
+- ▶️ **New: a small "Playing · Press Esc to stop" banner** while you play; a scene can hide it or show its own text.
+  The play options have their own section now: **Configure Scene ▸ Play** (pointer, reach, flying, the banner, the
+  spawn point). Games keep their Menu · Esc button.
+- 👤 The profile menu and Profile settings use the new rows.
+
+### 🪟 Windows, tabs and menus
+
+- 🪟 **One window header everywhere** — Explorer, Objects, Chat, AI, Notes, the Notification centre and every docked
+  or floating tool window: icon, title, actions, pin and close in the same places.
+- 🗂️ **One tab strip** for docked and floating windows: pill tabs with the view's icon and their own **✕**; more tabs
+  than fit scroll sideways while **+** stays put, and a docked view no longer repeats its name under its tab.
+- 📋 **One menu style** for the right-click, Add and viewport menus (32 px rows, icons, right-aligned shortcuts).
+  The **object right-click menu is shorter**: Properties, Rename, Duplicate and Delete first, then Focus / Ping /
+  Note and the editing modes, with Transform, Mesh, Physics & effects, Prefab and Save as… one level down. Nothing
+  was removed.
+- 🔔 **Repeated notifications are grouped** — one entry with ×N and the latest time.
+- 🫥 **No native scrollbars anywhere** — lists show a thin scrollbar only while you scroll or hover.
+
+### 🎛️ Inspector
+
+- 🗂️ **Collapsible sections**, aligned property rows for position, rotation, scale and every slider (scrubbing,
+  typing and undo work exactly as before), the object's name in the header, Shared / This device badges instead of
+  explanations, switches instead of checkboxes (a middle position when the selected objects disagree), environment
+  presets as chips, and one **+ Light ▾** menu.
+
+### 🪪 Dialogs
+
+- 🧩 **Modules, Sessions, Checkpoints, Templates, Storage, Publish / Export, Import and every confirm dialog** share one
+  modal header and window style, with one emphasised action per view, kit tabs, toggles and buttons, and a filter in
+  Modules.
+- 🧍 **Customize character is a drawer** you can resize by its edge; your character stands centred in the space beside
+  it, and Apply and Cancel return the camera exactly where it was.
+
+### 📱 Phone
+
+- 📱 **A decluttered phone layout**: the logo top-left, a Connect chip (tap it for your invite link, the join field,
+  Info and Toasts) and a bottom bar (**Add · Objects · Play · Explorer · More**) you can rearrange from More ▸ Edit bar
+  or a long press. A selection toolbar (Move, Rotate, Scale, Inspect, Undo, Redo) appears only while something is
+  selected; with nothing selected, More ▸ Edit has Undo, Redo, Select multiple and Interact.
+- 📜 **Windows open as bottom sheets above the bar** — Play stays in reach — that you drag between peek, half and
+  full; each remembers its height on this device, and the selection toolbar rides on top of the open sheet. Settings
+  and dialogs open full-screen. Every control from the old phone layout is still reachable.
+
+- 🎞️ **Editors on a phone**: the Animation window shows one pane at a time (Channels, Timeline, Key, Clip) with finger
+  dragging, two-finger pan and pinch; the Shader editor gives the canvas the whole screen with the palette and the
+  properties as sheets; toolbars that do not fit (UV editor, Profiler, Animation, Shader) scroll sideways with a fade
+  where more is hidden.
+
+### 🎨 Look and themes
+
+- 🔵 **One accent colour**: blue marks what you can act on or have selected; orange is kept for Play, recording and
+  live states. The light theme and custom `.theme.json` themes now restyle every surface.
+- 🔤 IBM Plex type, one icon set at two sizes (16 / 20) with the first in-house glyphs (Interact, VR, physics, joints,
+  fluids); menu icons that showed blank squares now show their icons.
+- 🧱 **/kit** — every part of the new UI in every state, for module authors building their own panels (new:
+  `ScrollStrip` for rows that can run out of width).
+
+### 🔒 Under the hood
+
+- Behaviour-lock suites pin every setting, shortcut, scrub field, panel and the object list, so the redesign changes the
+  look and nothing else; CI rejects raw colours outside the tokens, native scrollbars and Flowbite.
+
 ## 1.29.0 — Groundwork for cloud saves and rooms that stay ☁️
 
 - ☁️ **Groundwork for cloud saves and kept rooms** on theprototype.app: the app can now tell the cloud plugin when the

@@ -175,7 +175,7 @@
 	<ul
 		use:portal
 		bind:this={listEl}
-		class="ts-list"
+		class="ts-list tp-noscrollbar"
 		role="listbox"
 		tabindex="-1"
 		style="left:{pos.left - origin.x}px; top:{pos.top - origin.y}px; min-width:{pos.width}px;"
@@ -257,7 +257,7 @@
 		border: 1px solid var(--dropdown-border);
 		background: var(--dropdown-bg);
 		color: var(--dropdown-text);
-		box-shadow: 0 10px 28px rgb(0 0 0 / 0.45);
+		box-shadow: var(--shadow-window);
 	}
 	.ts-opt {
 		padding: 0.3rem 0.55rem;
@@ -272,7 +272,7 @@
 		background: var(--dropdown-hover);
 	}
 	.ts-selected {
-		color: #fff;
+		color: var(--on-accent);
 		background: var(--dropdown-accent);
 	}
 	.ts-selected.ts-active {

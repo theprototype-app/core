@@ -28,7 +28,7 @@
 
 {#snippet inner()}
 	{#if icon}
-		<span class="nr-icon" aria-hidden="true"><Icon name={icon} size={20} strokeWidth={1.75} /></span>
+		<span class="nr-icon" aria-hidden="true"><Icon name={icon} size={20} /></span>
 	{/if}
 	<span class="nr-text">
 		<span class="nr-label">
@@ -39,7 +39,7 @@
 		{#if description}<span class="nr-desc">{description}</span>{/if}
 	</span>
 	{#if value}<span class="nr-value">{value}</span>{/if}
-	<span class="nr-chev" aria-hidden="true"><Icon name={external ? 'external-link' : 'chevron-right'} size={16} strokeWidth={1.75} /></span>
+	<span class="nr-chev" aria-hidden="true"><Icon name={external ? 'external-link' : 'chevron-right'} size={16} /></span>
 {/snippet}
 
 {#if href && !disabled}

@@ -7,6 +7,7 @@
 	import { templatesModalOpen } from '../../stores/appStore.js';
 	import { versionString } from '$lib/version';
 	import { githubStars, loadGithubStars } from '$lib/githubStars';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	loadGithubStars(); // cached 12h, no-ops after the first call
 	/** compact star count (1234 -> 1.2k) */
@@ -47,6 +48,7 @@
 	<div
 		id="welcome-overlay"
 		class="welcome-card"
+		use:minimalScroll
 		style="z-index: var(--z-modal)"
 		role="dialog"
 		aria-modal="true"
@@ -107,7 +109,7 @@
 	.welcome-backdrop {
 		position: fixed;
 		inset: 0;
-		background: rgb(0 0 0 / 0.55);
+		background: var(--scrim);
 		backdrop-filter: blur(2px);
 	}
 	.welcome-card {
@@ -122,10 +124,10 @@
 		overflow-y: auto;
 		padding: 18px 20px 14px;
 		border-radius: 16px;
-		border: 1px solid rgb(255 255 255 / 0.1);
-		background: var(--color-form, rgb(31 41 55 / 0.99));
-		color: #e5e7eb;
-		box-shadow: 0 24px 60px rgb(0 0 0 / 0.55);
+		border: 1px solid var(--border);
+		background: var(--surface-1);
+		color: var(--text-2);
+		box-shadow: var(--shadow-window);
 		outline: none;
 	}
 	.welcome-head {
@@ -138,15 +140,15 @@
 		font-size: 18px;
 		font-weight: 650;
 		line-height: 1.1;
-		color: #f3f4f6;
+		color: var(--text);
 	}
 	.welcome-dim {
-		color: #9ca3af;
+		color: var(--text-muted);
 		font-weight: 400;
 	}
 	.welcome-ver {
 		font-size: 10.5px;
-		color: #6b7280;
+		color: var(--text-faint);
 		font-family: ui-monospace, monospace;
 		margin-top: 2px;
 	}
@@ -158,28 +160,28 @@
 		border: 0;
 		border-radius: 7px;
 		background: transparent;
-		color: #9ca3af;
+		color: var(--text-muted);
 		font-size: 12px;
 		cursor: pointer;
 	}
 	.welcome-x:hover {
-		color: #fff;
-		background: rgb(255 255 255 / 0.08);
+		color: var(--text);
+		background: var(--surface-hover);
 	}
 	.welcome-lead {
 		font-size: 13.5px;
 		line-height: 1.55;
-		color: #d1d5db;
+		color: var(--text-2);
 	}
 	.welcome-lead strong {
-		color: #f3f4f6;
+		color: var(--text);
 		font-weight: 600;
 	}
 	.welcome-sub {
 		margin-top: 8px;
 		font-size: 12.5px;
 		line-height: 1.5;
-		color: #9ca3af;
+		color: var(--text-muted);
 	}
 	.welcome-actions {
 		display: flex;
@@ -191,33 +193,34 @@
 		flex: 0 0 auto;
 		padding: 8px 14px;
 		border-radius: 9px;
-		border: 1px solid rgb(255 255 255 / 0.12);
-		background: rgb(255 255 255 / 0.05);
-		color: #e5e7eb;
+		border: 1px solid var(--border-strong);
+		background: var(--surface-hover);
+		color: var(--text-2);
 		font-size: 12.5px;
 		cursor: pointer;
 	}
 	.welcome-btn:hover {
-		background: rgb(255 255 255 / 0.1);
+		background: var(--surface-active);
 	}
 	/* 15-M: star count chip inside the GitHub button */
 	.welcome-stars {
 		margin-left: 7px;
 		padding: 1px 6px;
 		border-radius: 999px;
-		background: rgb(255 255 255 / 0.09);
-		color: #fcd34d;
+		background: var(--surface-active);
+		color: var(--ink-warn);
 		font-size: 11px;
 		font-variant-numeric: tabular-nums;
 	}
 	.welcome-btn-primary {
-		background: #2563eb;
-		border-color: #2563eb;
-		color: #fff;
+		background: var(--accent-fill);
+		border-color: var(--accent-fill);
+		color: var(--on-accent);
 		font-weight: 600;
 	}
 	.welcome-btn-primary:hover {
-		background: #1d4ed8;
+		background: var(--accent-fill);
+		filter: brightness(0.92);
 	}
 	.welcome-foot {
 		display: flex;
@@ -225,14 +228,14 @@
 		gap: 12px;
 		margin-top: 16px;
 		padding-top: 11px;
-		border-top: 1px solid rgb(255 255 255 / 0.08);
+		border-top: 1px solid var(--border);
 	}
 	.welcome-check {
 		display: flex;
 		align-items: center;
 		gap: 7px;
 		font-size: 11.5px;
-		color: #9ca3af;
+		color: var(--text-muted);
 		cursor: pointer;
 	}
 	.welcome-link {
@@ -241,12 +244,12 @@
 		border: 0;
 		padding: 0;
 		font-size: 11.5px;
-		color: #93c5fd;
+		color: var(--accent-text);
 		text-decoration: underline;
 		cursor: pointer;
 	}
 	.welcome-link:hover {
-		color: #bfdbfe;
+		color: var(--accent-soft-text);
 	}
 	@media (max-width: 480px) {
 		.welcome-actions .welcome-btn {

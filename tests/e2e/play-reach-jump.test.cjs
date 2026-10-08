@@ -271,11 +271,11 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.isVRMode.set(false));
 	await page.evaluate(() => window.__stores.objectActions.setEditorMode('edit'));
 
-	// ---- 5. Configure Scene ▸ Physics ▸ Play mode: the Limit grab reach row ----------------------
-	await page.evaluate(() => window.__stores.openSceneSection('Physics'));
+	// ---- 5. Configure Scene ▸ Play (its own section since 38 #33): the Limit grab reach row -------
+	await page.evaluate(() => window.__stores.openSceneSection('Play'));
 	await page.waitForTimeout(1200);
 	const row = await page.evaluate(() => ({
-		on: document.querySelector('#physics-play-reach-on')?.checked ?? null,
+		on: ((e) => (e ? e.getAttribute('aria-pressed') === 'true' : null))(document.querySelector('#physics-play-reach-on')),
 		slider: !!document.querySelector('#physics-play-reach')
 	}));
 	h.check(row.on === true && row.slider, `the Inspector row reads the scene's reach (${JSON.stringify(row)})`);

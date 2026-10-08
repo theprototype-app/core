@@ -197,7 +197,7 @@
 					<input
 						type="color"
 						class="tcs-color"
-						value={tex?.tint ?? '#ffffff'}
+						value={tex?.tint ?? '#ffffff' /* tokens-ok: the tint picker's starting value (user data) */}
 						onchange={(e) => setTouchTexture(editing.id, { tint: e.currentTarget.value })}
 						aria-label={'Tint for ' + editing.label}
 					/>

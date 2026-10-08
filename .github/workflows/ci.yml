@@ -53,10 +53,10 @@ jobs:
       # the subscriber for the session.
       - name: no bare localStorage
         run: node scripts/check-storage.cjs
-      # 38 R2: colours come from the redesign tokens. WARNING mode while the redesign
-      # migrates area by area — it only fails when a token-CLEAN file (its CLEAN list)
-      # grows a raw colour. R11 switches this to --strict.
-      - name: redesign tokens (warning mode)
+      # 38 R2/R11: colours come from the redesign tokens — a HARD FAIL since R11 (every
+      # component was migrated). A colour that is data, not chrome, carries
+      # `tokens-ok: <reason>` on its line; scripts/check-tokens.cjs says how.
+      - name: redesign tokens
         run: node scripts/check-tokens.cjs
 
   # 34 B3: scene-lint over every scene core ships (the seed) and every scene of the scenes ref
@@ -139,3 +139,55 @@ jobs:
       - name: dev server log on failure
         if: failure()
         run: tail -40 /tmp/dev.log
+
+  # 38 (NOTES-38 #18): THE TOKEN SCREENSHOT DIFF. /kit renders every redesign primitive in every
+  # state; this job shoots it in the dark, light and custom themes on the PR's BASE ref and on its
+  # HEAD, on this same runner (so fonts and anti-aliasing cannot drift between machines), and diffs
+  # them (tests/e2e/tools/kit-diff.cjs). It FAILS when a theme moved more than 0.01% of the kit's
+  # pixels — a signal to look at the diff images in the artifact, not a required check: a PR that
+  # changes a token on purpose turns it red and says so. A base without /kit is skipped.
+  kit-diff:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run certs
+      - name: base checkout
+        id: base
+        run: |
+          git worktree add ../kit-base "origin/${{ github.base_ref }}"
+          if [ -f ../kit-base/src/routes/kit/+page.svelte ]; then
+            echo "has_kit=1" >> "$GITHUB_OUTPUT"
+            cp -r certs ../kit-base/ && (cd ../kit-base && npm ci)
+          else
+            echo "has_kit=0" >> "$GITHUB_OUTPUT"
+            echo "The base branch has no /kit yet — nothing to diff against." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: shoot base and head
+        if: steps.base.outputs.has_kit == '1'
+        run: |
+          serve() { (cd "$1" && npm run dev -- --port "$2" --strictPort --host localhost > "/tmp/dev-$2.log" 2>&1 &)
+            for i in $(seq 1 90); do curl -sk -o /dev/null "https://localhost:$2/kit" && break; sleep 1; done; }
+          serve ../kit-base 5174
+          serve . 5173
+          node tests/e2e/tools/kit-diff.cjs shoot https://localhost:5174/ /tmp/kit/base
+          node tests/e2e/tools/kit-diff.cjs shoot https://localhost:5173/ /tmp/kit/head
+      - name: diff
+        if: steps.base.outputs.has_kit == '1'
+        run: |
+          node tests/e2e/tools/kit-diff.cjs diff /tmp/kit/base /tmp/kit/head /tmp/kit/diff; rc=$?
+          cat /tmp/kit/diff/report.md >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.base.outputs.has_kit == '1'
+        with:
+          name: kit-diff
+          path: /tmp/kit

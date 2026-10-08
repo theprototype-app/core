@@ -12,12 +12,12 @@
 
 <NodeWrapper type={data.type} label={data.label}>
 	<div class="flex w-full flex-col gap-1" data-coderef={id}>
-		{#if data.title}<span class="text-xs text-gray-200">{data.title}</span>{/if}
-		<span class="truncate font-mono text-[10px] text-gray-400" title={data.module + '/' + data.file}>
+		{#if data.title}<span class="text-xs text-text-2">{data.title}</span>{/if}
+		<span class="truncate font-mono text-[10px] text-text-muted" title={data.module + '/' + data.file}>
 			{data.module || '—'}{data.file ? '/' + data.file : ''}
 		</span>
 		<button
-			class="nodrag nopan coderef-open self-start rounded-sm bg-gray-600 px-2 py-0.5 text-white hover:bg-gray-500"
+			class="nodrag nopan coderef-open self-start rounded-sm bg-surface-active px-2 py-0.5 text-text hover:bg-border-strong"
 			onclick={() => openCode(openCodeRequestFor({ id, type: 'coderef', data }, $activeGraphId))}
 		>
 			Open code

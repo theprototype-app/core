@@ -41,6 +41,7 @@
 	 */
 	let { doc, view, sel, onview, onselect } = $props();
 
+	// tokens-ok-begin: event-marker and series hues the timeline CANVAS draws (graph data, same in every theme)
 	/** event kind -> marker colour (a canvas cannot take a var()) */
 	const KIND_COLORS = /** @type {Record<string, string>} */ ({
 		stall: '#ef4444',
@@ -58,6 +59,7 @@
 	/** 36 U1: the same hues a shade deeper, for a LIGHT plot — the pastel set measured under
 	 *  2:1 against the light theme's field, too faint to read a line by */
 	const SERIES_COLORS_ON_LIGHT = ['#047857', '#1d4ed8', '#be185d', '#b45309', '#6d28d9'];
+	// tokens-ok-end
 	const MARKER_H = 12;
 	const MIN_SPAN = 30;
 
@@ -137,10 +139,11 @@
 		// 36 U1: every colour the canvas draws comes from the theme (a canvas cannot take a
 		// var(), so they are read off the element — custom properties inherit to it)
 		const css = getComputedStyle(canvas);
-		const ink = css.color || '#d1d5db';
-		const muted = css.getPropertyValue('--tp-muted').trim() || '#9ca3af';
-		const bad = css.getPropertyValue('--ink-bad').trim() || '#f87171';
-		const accent = css.getPropertyValue('--tp-accent').trim() || '#3b82f6';
+		const tok = (/** @type {string} */ name) => css.getPropertyValue(name).trim();
+		const ink = css.color || tok('--text-2');
+		const muted = tok('--tp-muted') || tok('--text-muted');
+		const bad = tok('--ink-bad');
+		const accent = tok('--tp-accent') || tok('--accent');
 		const series = isLightInk(ink) ? SERIES_COLORS : SERIES_COLORS_ON_LIGHT;
 		g.font = '10px system-ui, sans-serif';
 		g.textBaseline = 'top';
@@ -235,7 +238,7 @@
 		for (const e of events) {
 			if (e.t < view.from || e.t > view.to) continue;
 			const x = Math.round(xAt(e.t)) + 0.5;
-			const col = KIND_COLORS[e.kind] ?? '#9ca3af';
+			const col = KIND_COLORS[e.kind] ?? muted;
 			g.strokeStyle = col;
 			g.globalAlpha = e.kind === 'stall' ? 0.55 : 0.3;
 			g.beginPath();
@@ -496,7 +499,7 @@
 	<div
 		bind:this={wrap}
 		id="profiler-timeline"
-		class="pf-timeline focus-visible:ring-primary-400 relative min-h-0 flex-1 cursor-crosshair rounded-sm outline-none select-none focus-visible:ring-1"
+		class="pf-timeline focus-visible:ring-accent relative min-h-0 flex-1 cursor-crosshair rounded-sm outline-none select-none focus-visible:ring-1"
 		role="slider"
 		tabindex="0"
 		aria-label="Recording timeline: arrow keys pick a frame, Shift extends a range, plus and minus zoom, 0 fits"
@@ -516,10 +519,10 @@
 		></canvas>
 	</div>
 	<div
-		class="pf-readout flex h-5 shrink-0 items-center gap-3 overflow-hidden px-1 text-[11px] whitespace-nowrap text-gray-400"
+		class="pf-readout flex h-5 shrink-0 items-center gap-3 overflow-hidden px-1 text-[11px] whitespace-nowrap text-text-muted"
 	>
 		{#if readFrame}
-			<span class="text-gray-300">{fmtSec(readFrame.t)}</span>
+			<span class="text-text-2">{fmtSec(readFrame.t)}</span>
 			<span
 				>{fmtMs(readFrame.ms)} ({readFrame.ms > 0 ? Math.round(1000 / readFrame.ms) : '–'} fps)</span
 			>
@@ -538,8 +541,8 @@
 <style>
 	.pf-timeline {
 		/* the canvas reads its ink from `color` (a canvas cannot take a var()) */
-		color: var(--tp-ink-2, #d1d5db);
-		background: var(--tp-field, #111827);
+		color: var(--tp-ink-2, var(--text-2));
+		background: var(--tp-field, var(--surface-inset));
 	}
 	.pf-ev-ink {
 		color: var(--ink-warn);

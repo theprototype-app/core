@@ -8,7 +8,7 @@
 	// imports into the Explorer, an Explorer drag-drop target, a thumbnail, a clear ✕, and a
 	// "waiting for peer" state so a hash whose bytes are still in flight says so instead of
 	// looking like a broken picker.
-	import { X } from '@lucide/svelte';
+	import Icon from '../ui/Icon.svelte';
 	import { onDestroy } from 'svelte';
 	import { explorerItems, itemByHash, importFiles } from '$lib/explorer';
 	import { hudImageFor, resolveHudImage, shareHudImage, registerHudImageListener } from '$lib/hudImages';
@@ -105,7 +105,7 @@
 	</span>
 	{#if hash}
 		<button class="hud-pick-clear" title="Remove this image" aria-label="Remove this image" onclick={() => assign('')}>
-			<X size={11} aria-hidden="true" />
+			<Icon name="x" size={16} aria-hidden="true" />
 		</button>
 	{/if}
 </div>
@@ -128,9 +128,9 @@
 		align-items: center;
 		justify-content: center;
 		overflow: hidden;
-		border: 1px solid rgb(75 85 99 / 0.7);
+		border: 1px solid var(--border-input);
 		border-radius: 2px;
-		background: rgb(17 24 39 / 0.6);
+		background: var(--surface-inset);
 	}
 	.hud-pick-swatch img {
 		height: 100%;
@@ -158,7 +158,7 @@
 	/* a hash with no local item: assetShare has been asked and we are waiting. Saying so
 	   beats an empty swatch that looks like a broken picker. */
 	.hud-pick[data-state='missing'] .hud-pick-name {
-		color: #fbbf24;
+		color: var(--ink-warn);
 	}
 	.hud-pick-clear {
 		display: flex;

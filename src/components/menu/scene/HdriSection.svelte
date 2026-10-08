@@ -1,4 +1,6 @@
 <script>
+	import InsToggle from '../inspector/InsToggle.svelte';
+	import PropRow from '../../ui/PropRow.svelte';
 	// 37-hdri — Configure Scene ▸ Environment ▸ "Sky image (HDRI)": pick a bundled HDRI (its
 	// preset: sky + image-based light + a rig sun placed where the sky's sun is), upload your own
 	// .hdr/.exr (it becomes an Explorer item, pulled by peers by content hash), or None; then turn,
@@ -131,18 +133,17 @@
 			onchange={(v) => edit({ rotation: v })} />
 		<SliderRow id="hdri-intensity" label="Image light" min={0} max={3} step={0.05} value={hdri.intensity}
 			onchange={(v) => edit({ intensity: v })} />
-		<label class="ui-row cursor-pointer">
-			<span class="w-20 shrink-0 text-xs text-gray-400">Show as sky</span>
-			<input id="hdri-background" type="checkbox" class="accent-primary-600" checked={hdri.background}
-				onchange={(e) => edit({ background: e.currentTarget.checked })} />
-			<span class="text-[10px] text-gray-400">off = light only, the colour sky shows</span>
-		</label>
+		<!-- 38: the kit's on/off row (was a checkbox) — same id, same edit -->
+		<InsToggle id="hdri-background" checked={hdri.background} onchange={(e) => edit({ background: e.currentTarget.checked })}>
+			Show as sky
+		</InsToggle>
+		<p class="text-[length:var(--fs-badge)] text-text-muted">Off = light only, the colour sky shows.</p>
 		{#if hdri.background}
 			<SliderRow id="hdri-blur" label="Sky blur" min={0} max={1} step={0.01} value={hdri.blur}
 				onchange={(v) => edit({ blur: v })} />
 		{/if}
-		<div class="ui-row items-center gap-2">
-			<span class="w-20 shrink-0 text-xs text-gray-400">Tone mapping</span>
+		<PropRow label="Tone mapping" valueBox={false}>
+			{#snippet control()}
 			<ThemedSelect
 				id="hdri-tonemapping"
 				class="flex-1"
@@ -154,9 +155,10 @@
 				]}
 				onchange={(/** @type {any} */ v) => edit({ toneMapping: v })}
 			/>
-		</div>
+			{/snippet}
+		</PropRow>
 		{#if statusText}
-			<p id="hdri-status" class="text-[10px] italic text-gray-400">{statusText}</p>
+			<p id="hdri-status" class="text-[length:var(--fs-badge)] text-text-muted">{statusText}</p>
 		{/if}
 	{/if}
 </div>

@@ -87,6 +87,7 @@
 		})
 	})
 </script>
+<!-- tokens-ok-begin: three.js material / troika Text colours of a WebXR headset panel (meshes cannot read CSS var()) -->
 
 {#if $vrStatsOpen}
 	<T.Group bind:ref={group} name="vr-stats-card">
@@ -107,3 +108,4 @@
 		/>
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

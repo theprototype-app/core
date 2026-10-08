@@ -16,6 +16,7 @@
 	const defs = $derived(entries ?? fallback);
 	const groups = $derived([...new Set(defs.map((/** @type {any} */ def) => def.group))]);
 
+	/* tokens-ok-begin: node category hues (graph data, same in every theme) */
 	/** @type {Record<string, string>} */
 	const GROUP_ACCENT = {
 		Post: '#f472b6',
@@ -26,6 +27,7 @@
 		Utility: '#c084fc',
 		Output: '#fb923c'
 	};
+	/* tokens-ok-end */
 
 	/** @param {DragEvent} event @param {string} key */
 	function onDragStart(event, key) {
@@ -38,7 +40,7 @@
 <div class="shader-palette-list" id="shader-palette">
 	{#each groups as group (group)}
 		<div class="shader-palette-group">
-			<span class="dot" style="background: {GROUP_ACCENT[group] ?? '#94a3b8'}"></span>
+			<span class="dot" style="background: {GROUP_ACCENT[group] ?? 'var(--text-faint)'}"></span>
 			{group}
 		</div>
 		{#each defs.filter((/** @type {any} */ d) => d.group === group) as def (def.key)}
@@ -70,7 +72,7 @@
 		font-size: 9px;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: var(--muted, #6b7280);
+		color: var(--text-faint);
 		padding: 6px 4px 2px;
 	}
 	.dot {
@@ -82,12 +84,12 @@
 	.shader-palette-item {
 		text-align: left;
 		font-size: 11px;
-		color: var(--text, #e5e7eb);
+		color: var(--text);
 		padding: 3px 6px;
 		border-radius: 3px;
 		cursor: grab;
 	}
 	.shader-palette-item:hover {
-		background: rgba(255, 255, 255, 0.08);
+		background: var(--surface-hover);
 	}
 </style>

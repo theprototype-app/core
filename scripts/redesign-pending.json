@@ -1,0 +1,5 @@
+{
+	"about": "38 R11: files whose redesign lands from ANOTHER branch, so the R11 gates (check:tokens, tests/unit/noNativeScrollbars.test.js, tests/unit/noFlowbite.test.js) skip them here instead of this branch rewriting them a second time. Each entry names the branch and why. EMPTY THIS LIST when that branch merges: the gates then cover the files, and its versions are already (nearly) clean — whatever they still flag is the merge's to fix.",
+	"owner": "(none — 37-settings landed with 1.26.0 and was unioned in 38-int-b; the gates cover every file)",
+	"files": []
+}

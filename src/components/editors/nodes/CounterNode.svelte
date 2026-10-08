@@ -29,6 +29,6 @@
 			<option value="down">count down</option>
 			<option value="reset">reset to 0</option>
 		</select>
-		<p class="text-[10px] text-gray-400">wire an event into pulse; the second input resets to 0</p>
+		<p class="text-[10px] text-text-muted">wire an event into pulse; the second input resets to 0</p>
 	</div>
 </NodeWrapper>

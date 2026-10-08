@@ -21,7 +21,7 @@
 		value={budget}
 		onchange={(v) => setScenePhysics({ fluidBudget: v })}
 	/>
-	<p class="text-[10px] italic text-gray-400">
+	<p class="text-[length:var(--fs-badge)] italic text-text-muted">
 		Particles shared by every Fluid emitter in the scene. Lowered automatically when frames drop; a headset runs at most {QUEST_FLUID_BUDGET}.
 	</p>
 </div>

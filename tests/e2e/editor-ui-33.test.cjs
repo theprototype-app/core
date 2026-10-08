@@ -141,61 +141,77 @@ h.run(async () => {
 		return { w: { x: w.x, y: w.y, width: w.width, height: w.height }, leftTitle: well.previousElementSibling.getAttribute('title'), rightTitle: well.nextElementSibling.getAttribute('title'), left: { x: left.x, y: left.y, width: left.width, height: left.height }, right: { x: right.x, y: right.y, width: right.width, height: right.height } };
 	});
 	h.check(geo.leftTitle === 'Interact mode (I)', 'premise: Interact is the well\'s left neighbour (' + geo.leftTitle + ')');
-	// the corners of the well the 50 px FAB circle leaves uncovered: the integer pixel nearest
-	// each corner whose centre is >= 1 px outside the circle AND resolves to that half (not
-	// the FAB, not its anti-aliased edge)
-	const corners = await page.evaluate(() => {
-		const fab = document.getElementById('play-button');
-		const well = fab.parentElement;
-		const f = fab.getBoundingClientRect();
-		const w = well.getBoundingClientRect();
-		const cx = f.x + f.width / 2;
-		const cy = f.y + f.height / 2;
-		const r = f.width / 2;
-		const find = (half, xs, ys) => {
-			for (const y of ys)
-				for (const x of xs) {
-					if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) < r + 1) continue;
-					if (document.elementFromPoint(x + 0.5, y + 0.5) === half) return { x, y };
-				}
-			return null;
-		};
-		const x0 = Math.ceil(w.x);
-		const x1 = Math.floor(w.x + w.width) - 1;
-		const y0 = Math.ceil(w.y);
-		const y1 = Math.floor(w.y + w.height) - 1;
-		const L = well.children[0];
-		const R = well.children[1];
-		return {
-			tl: find(L, [x0, x0 + 1, x0 + 2], [y0, y0 + 1, y0 + 2]),
-			bl: find(L, [x0, x0 + 1, x0 + 2], [y1, y1 - 1, y1 - 2]),
-			tr: find(R, [x1, x1 - 1, x1 - 2], [y0, y0 + 1, y0 + 2])
-		};
-	});
-	h.check(!!(corners.tl && corners.bl && corners.tr), 'premise: corner pixels outside the FAB exist in both halves (' + JSON.stringify(corners) + ')');
-	const cornerTL = corners.tl ?? { x: geo.w.x, y: geo.w.y };
-	const cornerBL = corners.bl ?? { x: geo.w.x, y: geo.w.y + geo.w.height - 1 };
-	// nothing hovered: the mouse leaves the bar first (the E2 click left it over Interact)
-	await page.mouse.move(640, 200);
-	await page.waitForTimeout(250);
-	const pillBg = await pixelAt(page, cornerTL.x, cornerTL.y);
-	const pillBgBL = await pixelAt(page, cornerBL.x, cornerBL.y);
-	await page.mouse.move(geo.left.x + geo.left.width / 2, geo.left.y + geo.left.height / 2);
-	await page.waitForTimeout(250);
-	const hoverBg = await pixelAt(page, geo.left.x + 3, geo.left.y + geo.left.height / 2);
-	h.check(!near(hoverBg, pillBg, 10), 'premise: hovering Interact paints it (' + pillBg + ' -> ' + hoverBg + ')');
-	const tl = await pixelAt(page, cornerTL.x, cornerTL.y);
-	const bl = await pixelAt(page, cornerBL.x, cornerBL.y);
-	h.check(near(tl, hoverBg, 8), 'E3.1 the top corner beside Play takes the hover colour (' + tl + ' vs ' + hoverBg + ')');
-	h.check(near(bl, hoverBg, 8) && !near(pillBgBL, hoverBg, 10), 'E3.2 and the bottom corner (' + pillBgBL + ' -> ' + bl + ' vs ' + hoverBg + ')');
-	// the right half answers the right neighbour, the same rule (a <p> there)
-	await page.mouse.move(geo.right.x + geo.right.width / 2, geo.right.y + geo.right.height / 2);
-	await page.waitForTimeout(250);
-	const hoverR = await pixelAt(page, geo.right.x + geo.right.width - 3, geo.right.y + geo.right.height / 2);
-	const tr = await pixelAt(page, (corners.tr ?? cornerTL).x, (corners.tr ?? cornerTL).y);
-	h.check(near(tr, hoverR, 8), 'E3.3 the right-hand corner follows Object list as before (' + tr + ' vs ' + hoverR + ')');
-	const tlNow = await pixelAt(page, cornerTL.x, cornerTL.y);
-	h.check(near(tlNow, pillBg, 8), 'E3.4 and the left corner is NOT painted by the right neighbour (' + tlNow + ')');
+	// 38 R8: the redesigned bar seats Play as its own circle INSIDE the glass bar — the well has
+	// no left/right halves any more (one child: the FAB), so there is no overhang whose corners
+	// could miss a neighbour's hover. What still must hold: hovering a neighbour paints that
+	// cell only, never the well around Play.
+	const halves = await page.evaluate(() => document.getElementById('play-button').parentElement.children.length >= 3);
+	if (!halves) {
+		const wellPx = { x: Math.ceil(geo.w.x), y: Math.ceil(geo.w.y) };
+		await page.mouse.move(640, 200);
+		await page.waitForTimeout(250);
+		const rest = await pixelAt(page, wellPx.x, wellPx.y);
+		await page.mouse.move(geo.left.x + geo.left.width / 2, geo.left.y + geo.left.height / 2);
+		await page.waitForTimeout(250);
+		const hovered = await pixelAt(page, wellPx.x, wellPx.y);
+		h.check(near(hovered, rest, 8), 'E3 (38 bar) hovering Interact leaves the Play well untouched (' + rest + ' -> ' + hovered + ')');
+	} else {
+		// the corners of the well the 50 px FAB circle leaves uncovered: the integer pixel nearest
+		// each corner whose centre is >= 1 px outside the circle AND resolves to that half (not
+		// the FAB, not its anti-aliased edge)
+		const corners = await page.evaluate(() => {
+			const fab = document.getElementById('play-button');
+			const well = fab.parentElement;
+			const f = fab.getBoundingClientRect();
+			const w = well.getBoundingClientRect();
+			const cx = f.x + f.width / 2;
+			const cy = f.y + f.height / 2;
+			const r = f.width / 2;
+			const find = (half, xs, ys) => {
+				for (const y of ys)
+					for (const x of xs) {
+						if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) < r + 1) continue;
+						if (document.elementFromPoint(x + 0.5, y + 0.5) === half) return { x, y };
+					}
+				return null;
+			};
+			const x0 = Math.ceil(w.x);
+			const x1 = Math.floor(w.x + w.width) - 1;
+			const y0 = Math.ceil(w.y);
+			const y1 = Math.floor(w.y + w.height) - 1;
+			const L = well.children[0];
+			const R = well.children[1];
+			return {
+				tl: find(L, [x0, x0 + 1, x0 + 2], [y0, y0 + 1, y0 + 2]),
+				bl: find(L, [x0, x0 + 1, x0 + 2], [y1, y1 - 1, y1 - 2]),
+				tr: find(R, [x1, x1 - 1, x1 - 2], [y0, y0 + 1, y0 + 2])
+			};
+		});
+		h.check(!!(corners.tl && corners.bl && corners.tr), 'premise: corner pixels outside the FAB exist in both halves (' + JSON.stringify(corners) + ')');
+		const cornerTL = corners.tl ?? { x: geo.w.x, y: geo.w.y };
+		const cornerBL = corners.bl ?? { x: geo.w.x, y: geo.w.y + geo.w.height - 1 };
+		// nothing hovered: the mouse leaves the bar first (the E2 click left it over Interact)
+		await page.mouse.move(640, 200);
+		await page.waitForTimeout(250);
+		const pillBg = await pixelAt(page, cornerTL.x, cornerTL.y);
+		const pillBgBL = await pixelAt(page, cornerBL.x, cornerBL.y);
+		await page.mouse.move(geo.left.x + geo.left.width / 2, geo.left.y + geo.left.height / 2);
+		await page.waitForTimeout(250);
+		const hoverBg = await pixelAt(page, geo.left.x + 3, geo.left.y + geo.left.height / 2);
+		h.check(!near(hoverBg, pillBg, 10), 'premise: hovering Interact paints it (' + pillBg + ' -> ' + hoverBg + ')');
+		const tl = await pixelAt(page, cornerTL.x, cornerTL.y);
+		const bl = await pixelAt(page, cornerBL.x, cornerBL.y);
+		h.check(near(tl, hoverBg, 8), 'E3.1 the top corner beside Play takes the hover colour (' + tl + ' vs ' + hoverBg + ')');
+		h.check(near(bl, hoverBg, 8) && !near(pillBgBL, hoverBg, 10), 'E3.2 and the bottom corner (' + pillBgBL + ' -> ' + bl + ' vs ' + hoverBg + ')');
+		// the right half answers the right neighbour, the same rule (a <p> there)
+		await page.mouse.move(geo.right.x + geo.right.width / 2, geo.right.y + geo.right.height / 2);
+		await page.waitForTimeout(250);
+		const hoverR = await pixelAt(page, geo.right.x + geo.right.width - 3, geo.right.y + geo.right.height / 2);
+		const tr = await pixelAt(page, (corners.tr ?? cornerTL).x, (corners.tr ?? cornerTL).y);
+		h.check(near(tr, hoverR, 8), 'E3.3 the right-hand corner follows Object list as before (' + tr + ' vs ' + hoverR + ')');
+		const tlNow = await pixelAt(page, cornerTL.x, cornerTL.y);
+		h.check(near(tlNow, pillBg, 8), 'E3.4 and the left corner is NOT painted by the right neighbour (' + tlNow + ')');
+	}
 	await page.mouse.move(640, 200);
 
 	// ================================================================ Q1 FPS + draw calls

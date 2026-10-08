@@ -79,7 +79,7 @@
 			onclick={() => pick(i)}
 			onkeydown={(e) => onKey(e, i)}
 		>
-			{#if o.icon}<Icon name={o.icon} size={16} strokeWidth={1.75} />{/if}
+			{#if o.icon}<Icon name={o.icon} size={16} />{/if}
 			<span>{o.label}</span>
 		</button>
 	{/each}
@@ -107,8 +107,15 @@
 		align-items: center;
 		justify-content: center;
 		gap: 6px;
-		height: calc(var(--control-h-sm) - 2px);
-		padding: 0 14px;
+		/* NOTES-38 #26: an option never spills out of its slot — in equal columns (the phone's
+		   wide rows, `full`) a long label wraps to a second line instead of running past the track */
+		min-width: 0;
+		min-height: calc(var(--control-h-sm) - 2px);
+		padding: 3px 14px;
+		line-height: 1.2;
+		text-align: center;
+		overflow-wrap: break-word;
+		hyphens: auto; /* a word that must break does so at a syllable, with a hyphen */
 		border: 0;
 		border-radius: var(--radius-input);
 		background: transparent;
@@ -116,7 +123,7 @@
 		font: inherit;
 		font-size: var(--fs-desc);
 		font-weight: 500;
-		white-space: nowrap;
+		white-space: normal;
 		cursor: pointer;
 	}
 	.seg-opt:hover:not(:disabled):not([aria-checked='true']),
@@ -135,7 +142,8 @@
 	}
 	@media (max-width: 639.98px) {
 		.seg-opt {
-			height: 38px;
+			min-height: 38px;
+			padding: 3px 6px;
 			font-size: var(--fs-body);
 		}
 	}

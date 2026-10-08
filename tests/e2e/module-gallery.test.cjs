@@ -125,7 +125,8 @@ export default {
 	);
 	const dimmed = await A.page.evaluate(() => {
 		const card = document.getElementById('gallery-card-gallerymod');
-		return card.className.includes('opacity-60');
+		// 38 R7: read the computed fade, not a utility class name
+		return Number(getComputedStyle(card).opacity) < 1;
 	});
 	h.check(dimmed, 'installed card is dimmed');
 	const record = await A.page.evaluate(

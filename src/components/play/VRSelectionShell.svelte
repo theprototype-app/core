@@ -27,7 +27,7 @@
 	const boxCenter = new THREE.Vector3()
 
 	const shellMaterial = new THREE.MeshBasicMaterial({
-		color: '#ff7a1a',
+		color: '#ff7a1a', // tokens-ok: three.js selection-outline material (rendered in the 3D view)
 		side: THREE.BackSide,
 		transparent: true,
 		opacity: 0.55,
@@ -36,13 +36,13 @@
 	// the halo draws first and slightly larger — its dark rim keeps the bright
 	// core readable whatever color the object is painted
 	const haloMaterial = new THREE.LineBasicMaterial({
-		color: '#10131a',
+		color: '#10131a', // tokens-ok: three.js selection-outline halo material (rendered in the 3D view)
 		transparent: true,
 		opacity: 0.9,
 		depthWrite: false
 	})
 	const coreMaterial = new THREE.LineBasicMaterial({
-		color: '#ff7a1a',
+		color: '#ff7a1a', // tokens-ok: three.js selection-outline material (rendered in the 3D view)
 		transparent: true,
 		opacity: 0.95,
 		depthWrite: false

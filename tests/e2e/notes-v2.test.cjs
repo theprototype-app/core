@@ -1015,12 +1015,21 @@ h.run(async () => {
 		return {
 			checked: input.checked,
 			background: getComputedStyle(input).backgroundColor,
-			knob: getComputedStyle(input, '::after').transform
+			knob: getComputedStyle(input, '::after').transform,
+			// 38 R11: ON is the app accent token (one accent) — resolve it rather than pin a literal
+			accent: (() => {
+				const p = document.createElement('span');
+				p.style.color = 'var(--accent)';
+				document.body.appendChild(p);
+				const c = getComputedStyle(p).color;
+				p.remove();
+				return c;
+			})()
 		};
 	});
 	h.check(
 		switchOn.checked === true &&
-			switchOn.background === 'rgb(249, 115, 22)' &&
+			switchOn.background === switchOn.accent &&
 			switchOn.knob !== switchInfo?.knob,
 		`H11-B: ON reads as the app accent and the knob slides (${switchOn.background}, knob ${switchOn.knob})`
 	);

@@ -32,6 +32,7 @@
 	})
 </script>
 
+<!-- tokens-ok-begin: three.js materials + troika label drawn in the 3D view (white on a black outline reads in every theme) -->
 {#if a}
 	<T.Mesh position={a}>
 		<T.SphereGeometry args={[0.06, 10, 10]} />
@@ -58,3 +59,4 @@
 		/>
 	</T.Group>
 {/if}
+<!-- tokens-ok-end -->

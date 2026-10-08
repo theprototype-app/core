@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 import { objectsGroup, globalRenderer } from '../stores/sceneStore';
 import { qualityOverrides } from './qualityGovernor';
 import { lookTier, planTier, TIERED_FIELDS } from './materialTiersCore.js';
+import { allLodTrees, onLodTreesChanged } from './lodTrees.js';
 
 // 40 F16 — THE LOOK TIER, the runtime: walks the scene's physical materials and draws each one at
 // this device's tier (materialTiersCore.js has the rule and the why). LOCAL: it writes the live
@@ -76,11 +77,15 @@ export function applyMaterialTiers() {
 	if (!group?.traverse) return;
 	passes++;
 	let n = 0;
-	group.traverse((/** @type {any} */ o) => {
+	/** @param {any} o */
+	const visit = (o) => {
 		if (!o.material) return;
 		const list = Array.isArray(o.material) ? o.material : [o.material];
 		for (const m of list) if (applyTierTo(m, tier)) n++;
-	});
+	};
+	group.traverse(visit);
+	// 40 F14: the substitute models LOD groups draw at the scene root (a fallback group's real model)
+	for (const tree of allLodTrees()) tree.traverse(visit);
 	lowered = n;
 }
 
@@ -94,6 +99,7 @@ export function startMaterialTiers() {
 	if (started) return;
 	started = true;
 	objectsGroup.subscribe(schedule);
+	onLodTreesChanged(schedule);
 	qualityOverrides.subscribe((o) => {
 		overrides = o ?? {};
 		schedule();

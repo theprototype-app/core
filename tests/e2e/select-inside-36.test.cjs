@@ -128,7 +128,12 @@ h.run(async () => {
 	const page = A.page;
 
 	await loadScene(page, AQUARIUM);
-	const fishName = 'Fish orange';
+	// the fish the loaded Aquarium has: 1.32 (40 F14) swapped the primitive fish for reef fish
+	const fishName = await page.evaluate(() => {
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		return ['Clownfish 1', 'Fish orange'].find((n) => g.getObjectByName(n)) ?? 'Fish orange';
+	});
 	const aim = await aimThrough(page, fishName, 'Aquarium water');
 	h.check(!!aim.px, 'premise: a pixel on the orange fish whose nearest hit is the water (' + aim.names.join(' > ') + ')');
 	if (!aim.px) return h.finish(browser);
@@ -170,7 +175,7 @@ h.run(async () => {
 	await altClick();
 	h.check((await selection(page)).join() === fishName, 'Alt+click #2 takes the next one down: the fish');
 	const chip2 = (await page.locator('#pick-cycle-hint').innerText().catch(() => '')).replace(/\s+/g, ' ');
-	h.check(/^2 of \d+ Fish orange/.test(chip2), 'the chip says "2 of N" (' + chip2 + ')');
+	h.check(new RegExp('^2 of \\d+ ' + fishName).test(chip2), 'the chip says "2 of N" (' + chip2 + ')');
 	if (SHOTS) await page.screenshot({ path: SHOTS + '-alt-cycle.png' });
 	const seen = new Set(['Aquarium water', ...(await selection(page))]);
 	// N comes from the app's own chip: what the editor's pick sees under the cursor

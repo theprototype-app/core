@@ -21,7 +21,7 @@
  * @typedef {{color?: string, roughness?: number, metalness?: number}} LodMaterial
  * @typedef {{source: LodSource, ref?: string, name?: string, ratio?: number, screenSize: number,
  *   offset?: LodOffset, material?: LodMaterial}} LodLevel
- * @typedef {{mode: 'auto' | 'forced', forced?: number, bias?: number, cull?: boolean, levels: LodLevel[]}} LodGroup
+ * @typedef {{mode: 'auto' | 'forced', forced?: number, bias?: number, cull?: boolean, fallback?: boolean, levels: LodLevel[]}} LodGroup
  */
 
 export const LOD_SOURCES = ['self', 'pack', 'generated', 'explorer', 'object'];
@@ -137,7 +137,26 @@ export function normalizeLodGroup(block) {
 	}
 	if (finite(block.bias) && block.bias > 0 && block.bias !== 1) out.bias = clampNum(block.bias, 0.1, 10);
 	if (block.cull === true) out.cull = true;
+	// 40 F14: LOD0 (the object itself) as the FALLBACK — see pickFallbackLevel
+	if (block.fallback === true && levels.length >= 2) out.fallback = true;
 	return out;
+}
+
+/**
+ * 40 F14 — A FALLBACK GROUP: the object's own meshes (LOD0) are a SIMPLIFIED stand-in, drawn
+ * only while no finer level is available (its model is still on its way, or the pack cannot be
+ * reached); the real model and its own levels are levels 1..n. So the pick runs over levels 1..n
+ * with level 1's threshold as the first edge, and LOD0 is never chosen by size — the runtime's
+ * "nearest built" walk lands on it exactly when nothing better is built. The Aquarium's fish are
+ * the first users: a primitive fish that becomes the Meshy fish when its pack file lands.
+ * @param {number} size @param {number[]} thresholds the group's (LOD0's first) @param {number} current
+ * the level drawn now (in the group's numbering) @param {{scale?: number, hysteresis?: number, cull?: boolean}} [opts]
+ * @returns {number} a level ≥ 1, or -1 for culled
+ */
+export function pickFallbackLevel(size, thresholds, current, opts = {}) {
+	if (thresholds.length < 2) return 0;
+	const inner = pickGroupLevel(size, thresholds.slice(1), current > 0 ? current - 1 : current === -1 ? -1 : 0, opts);
+	return inner < 0 ? -1 : inner + 1;
 }
 
 /**

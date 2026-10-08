@@ -17,6 +17,7 @@ import {
 } from './motionCore.js';
 import { normalizeSpline, isSplineObject } from '../splineTube.js';
 import { normalizeFlowPath } from '../sim/flowPathCore.js';
+import { lodTreesOf } from '../lodTrees.js';
 
 // 40 F15 — GENERAL-PURPOSE MOTION, the THREE half: what flowRuntime.applyAnimation calls for
 // `followpath`, `orientvelocity`, `wander` and `bodywave`. A LEAF beside sim/motionNodes.js — it
@@ -332,8 +333,8 @@ const WAVE_VERTEX = /* glsl */ `
 }
 `;
 
-/** @typedef {{mesh: any, original: any, clone: any, uniforms: any}} WaveMesh */
-/** @type {Map<string, {object: any, meshes: WaveMesh[], count: number, front: number, len: number, axis: THREE.Vector3, side: THREE.Vector3, sig: string, seen: number}>} */
+/** @typedef {{mesh: any, original: any, clone: any, uniforms: any, frame: any, front: number, len: number}} WaveMesh */
+/** @type {Map<string, {object: any, meshes: WaveMesh[], len: number, axis: THREE.Vector3, side: THREE.Vector3, sig: string, seen: number}>} */
 const waves = new Map();
 
 /** the side (bend) axis for a nose axis: horizontal = up × nose (a fish), vertical = up (a whale) @param {THREE.Vector3} axis @param {string} side */
@@ -354,6 +355,39 @@ function meshesOf(object) {
 		if (o.isMesh && o.geometry && o.material && !Array.isArray(o.material) && o.visible !== false) out.push(o);
 	});
 	return out;
+}
+
+/** a node's matrix relative to an ancestor, from the LOCAL chain (independent of where the
+ * renderer last placed the ancestor) @param {any} node @param {any} root @param {THREE.Matrix4} out */
+function relTo(node, root, out) {
+	node.updateMatrix();
+	out.copy(node.matrix);
+	for (let p = node.parent; p && p !== root; p = p.parent) {
+		p.updateMatrix();
+		out.premultiply(p.matrix);
+	}
+	return out;
+}
+
+/**
+ * The body frame of one set of meshes in its own root's frame: where the nose is along `axis`
+ * and how long the body is. @param {any[]} meshes @param {any} root @param {THREE.Vector3} axis
+ */
+function bodyRange(meshes, root, axis) {
+	let lo = Infinity;
+	let hi = -Infinity;
+	for (const m of meshes) {
+		if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+		const bb = m.geometry.boundingBox;
+		relTo(m, root, mA);
+		for (let i = 0; i < 8; i++) {
+			vA.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(mA);
+			const d = vA.dot(axis);
+			lo = Math.min(lo, d);
+			hi = Math.max(hi, d);
+		}
+	}
+	return Number.isFinite(lo) ? { front: hi, len: Math.max(1e-3, hi - lo) } : null;
 }
 
 /** @param {any} mesh @param {any} object */
@@ -380,7 +414,7 @@ function attachWaveMesh(mesh, object) {
 	const baseKey = original.customProgramCacheKey?.() ?? '';
 	clone.customProgramCacheKey = () => baseKey + '|bodywave1';
 	mesh.material = clone;
-	return { mesh, original, clone, uniforms };
+	return { mesh, original, clone, uniforms, frame: object, front: 0, len: 1 };
 }
 
 /** @param {WaveMesh} m */
@@ -411,50 +445,46 @@ function detachWave(key) {
  * @param {string} key @param {any} object @param {any} data
  */
 function waveFor(key, object, data) {
-	const meshes = meshesOf(object);
 	const forward = data.forward ?? BODY_WAVE_DEFAULTS.forward;
 	const side = data.side === 'vertical' ? 'vertical' : 'horizontal';
-	const sig = forward + side + meshes.map((m) => m.uuid + ':' + m.geometry.uuid).join(',');
+	// the object's own meshes, plus the substitute models drawn for it (a fallback LOD group's
+	// real model, 40 F14) — each set bends in its OWN root's frame, which is the object's frame
+	const sets = [{ root: object, meshes: meshesOf(object) }, ...lodTreesOf(object).map((t) => ({ root: t, meshes: meshesOf(t) }))];
+	let sig = forward + side;
+	for (const set of sets) sig += '|' + set.root.uuid + ':' + set.meshes.map((m) => m.uuid + ':' + m.geometry.uuid).join(',');
 	let w = waves.get(key);
 	if (w && w.sig === sig && w.object === object) {
 		// a material swapped under us (an Inspector edit through applyMaterials): re-wrap
 		for (let i = 0; i < w.meshes.length; i++) {
 			const m = w.meshes[i];
-			if (m.mesh.material !== m.clone && m.mesh.material && !Array.isArray(m.mesh.material)) w.meshes[i] = attachWaveMesh(m.mesh, object);
+			if (m.mesh.material !== m.clone && m.mesh.material && !Array.isArray(m.mesh.material)) {
+				const fresh = attachWaveMesh(m.mesh, m.frame);
+				fresh.front = m.front;
+				fresh.len = m.len;
+				w.meshes[i] = fresh;
+			}
 		}
 		return w;
 	}
 	if (w) detachWave(key);
-	// the body frame: the nose axis in the OBJECT's local frame, the extent along it over every mesh
+	// the nose axis in the object's local frame
 	const axis = new THREE.Vector3(0, 0, 1).applyAxisAngle(UP, -forwardYaw(forward)).normalize();
-	const sideV = sideAxis(axis, side);
-	object.updateWorldMatrix(true, true);
-	const inv = new THREE.Matrix4().copy(object.matrixWorld).invert();
-	let lo = Infinity;
-	let hi = -Infinity;
-	for (const m of meshes) {
-		if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
-		const bb = m.geometry.boundingBox;
-		mA.copy(inv).multiply(m.matrixWorld);
-		for (let i = 0; i < 8; i++) {
-			vA.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(mA);
-			const d = vA.dot(axis);
-			lo = Math.min(lo, d);
-			hi = Math.max(hi, d);
+	/** @type {WaveMesh[]} */
+	const meshes = [];
+	let len = 0;
+	for (const set of sets) {
+		const range = bodyRange(set.meshes, set.root, axis);
+		if (!range) continue;
+		len = Math.max(len, range.len);
+		for (const m of set.meshes) {
+			const wm = attachWaveMesh(m, set.root);
+			wm.front = range.front;
+			wm.len = range.len;
+			meshes.push(wm);
 		}
 	}
-	if (!Number.isFinite(lo)) return null;
-	w = {
-		object,
-		meshes: meshes.map((m) => attachWaveMesh(m, object)),
-		count: meshes.length,
-		front: hi,
-		len: Math.max(1e-3, hi - lo),
-		axis,
-		side: sideV,
-		sig,
-		seen: frameNo
-	};
+	if (!meshes.length) return null;
+	w = { object, meshes, len, axis, side: sideAxis(axis, side), sig, seen: frameNo };
 	waves.set(key, w);
 	return w;
 }
@@ -475,17 +505,15 @@ export function applyBodyWave(object, base, data, time, ctx) {
 	const stiff = clampNum(data.stiffness, d.stiffness, 0, 0.95);
 	const fall = clampNum(data.falloff, d.falloff, 0.25, 6);
 	const dir = data.reverse ? -1 : 1;
-	object.updateWorldMatrix(true, true);
-	const inv = mA.copy(object.matrixWorld).invert();
 	for (const m of w.meshes) {
 		const u = m.uniforms;
-		u.bwToRoot.value.copy(inv).multiply(m.mesh.matrixWorld);
+		relTo(m.mesh, m.frame, u.bwToRoot.value);
 		u.bwFromRoot.value.setFromMatrix4(u.bwToRoot.value).invert();
 		u.bwAxis.value.copy(w.axis);
 		u.bwSide.value.copy(w.side);
-		u.bwRange.value.set(w.front, w.len);
+		u.bwRange.value.set(m.front, m.len);
 		u.bwShape.value.set(k, stiff, fall, dir);
-		u.bwDrive.value.set(drive.amplitude * w.len, drive.bend * w.len, t.phase);
+		u.bwDrive.value.set(drive.amplitude * m.len, drive.bend * m.len, t.phase);
 	}
 	return { drive, phase: t.phase, len: w.len, meshes: w.meshes.length };
 }

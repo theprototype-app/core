@@ -3,7 +3,8 @@ import { createGltfLoader } from './gltfLoader';
 import { writable, get } from 'svelte/store';
 import { globalScene, objectsGroup } from '../stores/sceneStore';
 import { registerLodPass, simplifiedGeometry, swapGeometryForPass, swapMaterialForPass, overlayMaterial } from './lod';
-import { normalizeLodGroup, pickGroupLevel, thresholdsOf, groupFromPackLods } from './lodGroupCore';
+import { normalizeLodGroup, pickGroupLevel, pickFallbackLevel, thresholdsOf, groupFromPackLods } from './lodGroupCore';
+import { addLodTree, removeLodTree } from './lodTrees.js';
 import { packRefOf, packRefUrl, loadPackFile } from './packRefs';
 import { PACKS_BASE } from './packs';
 import { fetchIndex } from './contentBase';
@@ -356,7 +357,13 @@ function asTree(object) {
 	let tris = 0;
 	object.traverse((/** @type {any} */ o) => {
 		o.raycast = () => {};
-		if (o.isMesh) tris += trianglesOf(o.geometry);
+		if (o.isMesh) {
+			tris += trianglesOf(o.geometry);
+			// it stands in for the object, so it shades like one (the holder is outside the
+			// objectsGroup sweep that turns shadows on)
+			o.castShadow = true;
+			o.receiveShadow = true;
+		}
 	});
 	return { object, tris };
 }
@@ -428,6 +435,7 @@ function requestLevel(entry, i) {
 			return;
 		}
 		entry.built.set(key, state);
+		if (state.status === 'ready' && state.kind === 'tree') addLodTree(entry.root, state.object);
 		tick();
 	};
 	/** @param {any} error */
@@ -440,9 +448,13 @@ function requestLevel(entry, i) {
 		if (!url) return fail('no pack reference to resolve "' + level.ref + '" against');
 		loadPackFile(url)
 			.then((scene) => {
-				const paired = pairLevel(entry, scene);
-				if (!paired) throw new Error('none of its meshes match the object');
-				land({ status: 'ready', kind: 'swap', pairs: paired.pairs, tris: paired.tris, owned: paired.owned, releases: [] });
+				// a FALLBACK group's stand-in is by definition not the model (40 F14): never pair them,
+				// even when the mesh counts happen to agree
+				const paired = entry.block.fallback ? null : pairLevel(entry, scene);
+				if (paired) land({ status: 'ready', kind: 'swap', pairs: paired.pairs, tris: paired.tris, owned: paired.owned, releases: [] });
+				// 40 F14: an UNRELATED pack model (a fallback group's real model) is a TREE level —
+				// a copy per object (the file's scene is shared by every object that asks)
+				else land({ status: 'ready', kind: 'tree', ...asTree(scene.clone(true)) });
 			})
 			.catch(fail);
 	} else if (level.source === 'generated') {
@@ -495,7 +507,10 @@ function disposeBuilt(entry) {
 		if (state.kind === 'swap') {
 			for (const g of state.owned) g.dispose();
 			for (const r of state.releases) r();
-		} else if (state.kind === 'tree') state.object.removeFromParent();
+		} else if (state.kind === 'tree') {
+			state.object.removeFromParent();
+			removeLodTree(entry.root, state.object);
+		}
 	}
 	entry.built.clear();
 }
@@ -531,7 +546,10 @@ function ensureEntry(root, block, implicit) {
 				if (state.status === 'ready' && state.kind === 'swap') {
 					for (const g of state.owned) g.dispose();
 					for (const r of state.releases) r();
-				} else if (state.status === 'ready' && state.kind === 'tree') state.object.removeFromParent();
+				} else if (state.status === 'ready' && state.kind === 'tree') {
+					state.object.removeFromParent();
+					removeLodTree(existing.root, state.object);
+				}
 				existing.built.delete(key);
 			}
 			existing.block = block;
@@ -755,8 +773,12 @@ function before(camera, qualityBias, enabled, overlay) {
 		let auto = 0;
 		if (enabled) {
 			const t = thresholdsOf(block, qualityBias);
-			auto = pickGroupLevel(size, t.thresholds, entry.autoCurrent, { cull: !!block.cull, scale: t.scale });
-		}
+			const opts = { cull: !!block.cull, scale: t.scale };
+			// 40 F14: a fallback group picks among its real levels; LOD0 draws only while none is built
+			auto = block.fallback
+				? pickFallbackLevel(size, t.thresholds, entry.autoCurrent, opts)
+				: pickGroupLevel(size, t.thresholds, entry.autoCurrent, opts);
+		} else if (block.fallback) auto = 1; // LOD switched off: the real model, not the stand-in
 		entry.autoCurrent = auto;
 		let want = auto;
 		if (preview && preview.uuid === root.uuid && preview.level < block.levels.length) want = preview.level;

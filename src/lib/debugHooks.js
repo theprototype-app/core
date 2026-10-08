@@ -346,6 +346,9 @@ export const DEBUG_HOOKS = [
 	['replaceModel', () => import('./replaceModel')],
 	['lod', () => import('./lod')],
 	['lodGroup', () => import('./lodGroup')],
+	['lodGroupCore', () => import('./lodGroupCore')],
+	// 40 F14: the substitutes a fallback group draws
+	['lodTrees', () => import('./lodTrees.js')],
 	['lodGroupActions', () => import('./lodGroupActions')],
 	['lodLevelEdit', () => import('./lodLevelEdit')],
 	['packBehavior', () => import('./packBehavior')],

@@ -147,6 +147,9 @@ export function beginPlaceDrag(opts) {
 	window.addEventListener('keyup', onKeyUp, true);
 	window.addEventListener('wheel', onWheel, { capture: true, passive: false });
 	window.addEventListener('blur', onBlur);
+	// a touch drag: the browser must not take the finger as a PAN (touch-action is decided at
+	// touchstart, before the long-press made this a drag) — that ends in a pointercancel
+	window.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
 	document.documentElement.classList.add('tp-place-dragging');
 	if (opts.collapse) document.documentElement.classList.add('tp-place-collapse');
 	update(opts.x, opts.y);
@@ -190,6 +193,11 @@ function onUp(e) {
 	}
 	if (drag.pointerType === 'mouse' && drag.bridgeEl) bridgeDrop(e.clientX, e.clientY);
 	end('released-elsewhere');
+}
+
+/** @param {TouchEvent} e */
+function onTouchMove(e) {
+	if (drag && drag.pointerType !== 'mouse' && e.cancelable) e.preventDefault();
 }
 
 function onCancelEvent() {
@@ -595,6 +603,7 @@ function end(why) {
 	window.removeEventListener('keyup', onKeyUp, true);
 	window.removeEventListener('wheel', onWheel, true);
 	window.removeEventListener('blur', onBlur);
+	window.removeEventListener('touchmove', onTouchMove, true);
 	document.documentElement.classList.remove('tp-place-dragging', 'tp-place-collapse');
 	hideGhost();
 	drag = null;

@@ -219,5 +219,65 @@ h.run(async () => {
 	h.check(after.objects === before.objects, 'one Ctrl+Z removes the placed object');
 	await h.eventually(() => onB(fresh), (o) => o === null, 'and the undo reaches B', 10000);
 
+	// ---- 8. a release over app chrome places nothing (the bridge drop is not a viewport drop) ----
+	const chrome = await A.page.evaluate(() => {
+		for (const sel of ['#connect-pill', '.connect-wrap', '#editor-chrome button', '.top-right-chrome button']) {
+			const el = document.querySelector(sel);
+			if (!el) continue;
+			const r = el.getBoundingClientRect();
+			if (r.width < 4) continue;
+			const x = Math.round(r.left + r.width / 2);
+			const y = Math.round(r.top + r.height / 2);
+			const hit = document.elementFromPoint(x, y);
+			let renderer;
+			window.__stores.globalRenderer.subscribe((v) => (renderer = v))();
+			if (hit && hit !== renderer.domElement && !hit.closest('#explorer-window, #explorer-list')) return { x, y, sel };
+		}
+		return null;
+	});
+	h.check(!!chrome, 'premise: found a piece of app chrome over the viewport (' + chrome?.sel + ')');
+	if (chrome) {
+		const c0 = await counts(A.page);
+		await pickUp(A.page, card, spot);
+		await A.page.waitForTimeout(200);
+		await A.page.mouse.move(chrome.x, chrome.y, { steps: 8 });
+		await A.page.waitForTimeout(150);
+		h.check((await pd(A.page))?.over === 'other', 'over the chrome the drag reads "other"');
+		await A.page.mouse.up();
+		await A.page.waitForTimeout(1500);
+		const c1 = await counts(A.page);
+		h.check(c1.objects === c0.objects && c1.undo === c0.undo, 'released over app chrome: nothing placed, no undo entry (' + c0.objects + ' → ' + c1.objects + ')');
+	}
+
+	// ---- 9. a LIBRARY model: its ghost uses the size recorded at import, and the card's other
+	//         HTML5 targets still work through the bridge (dropped on a folder card = moved) -----
+	const lib = await A.page.evaluate(async () => {
+		const s = window.__stores;
+		const mesh = new s.THREE.Mesh(new s.THREE.BoxGeometry(2, 1, 0.5), new s.THREE.MeshStandardMaterial());
+		mesh.position.y = 0.5;
+		const glb = await new Promise((res, rej) => new s.GLTFExporterModule.GLTFExporter().parse(mesh, res, rej, { binary: true }));
+		const item = await s.explorer.addItemFromBytes(glb, 'crate-39.glb', null);
+		const folder = s.explorer.createFolder('Target 39');
+		s.explorer.activeFolder.set(null);
+		return { id: item.id, dims: item.dims ?? null, folder: folder.id };
+	});
+	h.check(JSON.stringify(lib.dims?.size) === JSON.stringify([2, 1, 0.5]) && lib.dims?.tris === 12, 'a library model records its size at import (' + JSON.stringify(lib.dims) + ')');
+	const libCard = A.page.locator('.explorer-card', { hasText: 'crate-39' }).first();
+	await libCard.waitFor({ timeout: 10000 });
+	await pickUp(A.page, libCard, spot);
+	await A.page.waitForTimeout(300);
+	s = await pd(A.page);
+	h.check(JSON.stringify(s?.items?.[0]?.dims?.size) === JSON.stringify([2, 1, 0.5]), 'its ghost is that size before any decode');
+	const folderCard = A.page.locator('.explorer-folder-card', { hasText: 'Target 39' }).first();
+	const fb = await folderCard.boundingBox();
+	await A.page.mouse.move(fb.x + fb.width / 2, fb.y + fb.height / 2, { steps: 10 });
+	await A.page.waitForTimeout(200);
+	await A.page.mouse.up();
+	await h.eventually(
+		() => A.page.evaluate((id) => { let it; window.__stores.explorer.explorerItems.subscribe((v) => (it = v))(); return it.find((i) => i.id === id)?.folderId ?? null; }, lib.id),
+		(f) => f === lib.folder,
+		'dropped on a Library folder card it MOVES there (the HTML5 bridge kept the Explorer target)'
+	);
+
 	await h.finish(browser);
 });

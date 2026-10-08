@@ -557,3 +557,16 @@ export function licenseLabel(id) {
 	};
 	return map[id] || id;
 }
+
+/**
+ * 39 P5: every file one pack item downloads — its LOD0 and its LOD files (they sit beside it) —
+ * so "Downloaded", its size and "Delete cache" speak about the whole item.
+ * @param {any} item a normalized pack item @returns {string[]}
+ */
+export function packItemUrls(item) {
+	const url = item?.glbUrl;
+	if (!url) return [];
+	const dir = url.slice(0, url.lastIndexOf('/') + 1);
+	const lods = Array.isArray(item.lods) ? item.lods.filter((/** @type {any} */ l) => typeof l?.file === 'string' && !l.file.includes('..')).map((/** @type {any} */ l) => dir + l.file) : [];
+	return [url, ...lods];
+}

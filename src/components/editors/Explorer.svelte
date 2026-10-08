@@ -66,7 +66,7 @@
 	import { prefabFormatOf, prefabFileName, saveBytes } from '$lib/saveAs';
 	// R22 round 11: a pack you make yourself — see packs.js for why it is an "imported"
 	// pack with no zip behind it rather than a fourth kind.
-	import { createPack, addToPack } from '$lib/packs';
+	import { createPack, addToPack, packItemUrls } from '$lib/packs';
 	// R22 round 11: the preview window's arrows walk THIS folder, in the order THIS grid is
 	// showing it — a question only the Explorer can answer (filters, search, view mode,
 	// sort), so it is published rather than derived over there. The noteMarkers shape.
@@ -357,6 +357,8 @@
 	import { safeStorage } from '$lib/safeStorage';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { beginPlaceDrag, isPlaceable } from '$lib/placeDrag';
+	import { packCacheIndex, loadPackCacheIndex, cachedBytesOf, deletePackCache } from '$lib/packCache';
+	import { bytesLabel } from '$lib/placementDims';
 
 	const clampH = (h: number) =>
 		Math.min(Math.max(h || 300, 200), Math.round(window.innerHeight * 0.8));
@@ -555,6 +557,8 @@
 	 * grid. One switch, one question: show me what is NOT in the project yet.
 	 */
 	let localOnly = $state(false);
+	/** 39 P5: show only the pack items this device has downloaded (LOCAL, like the others) */
+	let downloadedOnly = $state(false);
 
 	/** R22-R8: is the Logs pane showing? LOCAL and session-only — it is a debugging
 	 * view, and one that came back on every reload would be clutter. */
@@ -618,7 +622,7 @@
 	// 38 R6: WindowChrome draws the floating header now; the width probe rides on it
 	const headerAttrs = { [createAttachmentKey()]: fromAction(headerWidth) };
 	const hideIdentity = $derived(headerW < 340);
-	const filtering = $derived(kindFilter.size > 0 || localOnly);
+	const filtering = $derived(kindFilter.size > 0 || localOnly || downloadedOnly);
 
 	/** R22-R2: the share state of a card, and the ONE place the vocabulary is read. A
 	 * derived remote row is shared BY DEFINITION — it is in the index and that is the
@@ -971,6 +975,21 @@
 		];
 		if (packSourceUrl(pack))
 			items.push({ label: 'Open source', action: () => window.open(packSourceUrl(pack), '_blank', 'noopener') });
+		// 39 P5: free every download of this pack (its items stay listed)
+		if (pack.source === 'default') {
+			const prefix = (pack.base ?? '') + '/';
+			const urls = [...$packCacheIndex.keys()].filter((u) => u.startsWith(prefix));
+			if (urls.length)
+				items.push({
+					label: 'Delete downloads (' + bytesLabel(cachedBytesOf(urls, $packCacheIndex)) + ')',
+					icon: 'trash-2',
+					tooltip: 'Frees what this device downloaded from this pack. Every item stays in the pack.',
+					action: async () => {
+						const freed = await deletePackCache(urls);
+						showToast('Freed ' + bytesLabel(freed) + ' from ' + pack.title);
+					}
+				});
+		}
 		// M-2: a default-list .zip pack (e.g. audio/SFX) installs on demand
 		if (pack.source === 'default' && pack.zip)
 			items.push({ label: 'Install pack', action: () => installZipPack(pack) });
@@ -995,6 +1014,8 @@
 			thumbIdx = {};
 			loadPackItems(packByName(a.slice(5)));
 		}
+		// 39 P5: the cached badges and the pack rows' "Delete downloads"
+		if (typeof a === 'string' && (a === 'packs' || a.startsWith('pack:'))) void loadPackCacheIndex();
 	});
 	// pack-item thumbnail: imported items carry a dataURL; default items resolve
 	// webp -> png -> screenshot via the <img> onerror cursor, else a placeholder icon
@@ -1325,7 +1346,11 @@
 		// Give each a stable unique id — default items have none, and the keyed {#each}
 		// needs one (duplicate undefined keys crash the block).
 		if (typeof $activeFolder === 'string' && $activeFolder.startsWith('pack:')) {
-			return $openPackItems.map((it) => ({ ...it, packEntry: true, id: it.id ?? `pack:${it.packName}:${it.name}` }));
+			// 39 P5: the ONE filter axis a pack view answers is "Downloaded" (the type / Local only
+			// axes have always left pack items alone — a pack item has no share state)
+			return $openPackItems
+				.filter((it) => !downloadedOnly || !it.glbUrl || $packCacheIndex.has(it.glbUrl))
+				.map((it) => ({ ...it, packEntry: true, id: it.id ?? `pack:${it.packName}:${it.name}` }));
 		}
 		// the Scene manifest (108): a derived, always-shared view — never editable
 		// R22 round 4: THE RECYCLE BIN, a derived view like the Scene manifest — the log is
@@ -4853,7 +4878,11 @@
 				// R22 round 4: deleting a SHARED file removes it from the project for everyone,
 				// and every peer's copy goes to their recycle bin rather than being destroyed.
 				// A LOCAL file keeps the plain delete — there is nobody else to tell.
-				isShared(item)
+				// 39 P5: a PACK item is not ours to delete — what this device holds of it is a
+				// download, so its Delete frees that (and the item stays in the pack).
+				item.packEntry && item.glbUrl
+					? packCacheEntry(item)
+					: isShared(item)
 					? {
 							label: 'Delete for everyone',
 							icon: 'trash-2',
@@ -4873,6 +4902,26 @@
 							action: () => void deleteLocalItem(item)
 						}
 			]
+		};
+	}
+
+	/** 39 P5: the pack item's "Delete cache" row — the download's size, or why there is none */
+	function packCacheEntry(item: any) {
+		const urls = packItemUrls(item);
+		const bytes = cachedBytesOf(urls, $packCacheIndex);
+		const held = $packCacheIndex.has(item.glbUrl);
+		return {
+			label: held ? 'Delete cache (' + bytesLabel(bytes) + ')' : 'Delete cache',
+			icon: 'trash-2',
+			danger: held,
+			disabled: !held,
+			tooltip: held
+				? 'Frees this download on this device. The item stays in the pack and downloads again when it is placed.'
+				: 'Not downloaded on this device — nothing to free',
+			action: async () => {
+				const freed = await deletePackCache(urls);
+				showToast('Freed ' + bytesLabel(freed) + ' — ' + (item.label || item.name) + ' stays in the pack');
+			}
 		};
 	}
 
@@ -5176,12 +5225,24 @@
 			tooltip: 'Show only the files nobody else can see yet — folders included',
 			action: () => (localOnly = !localOnly)
 		});
+		// 39 P5: inside the Packs, which items are already on this device
+		if (typeof $activeFolder === 'string' && ($activeFolder === 'packs' || $activeFolder.startsWith('pack:'))) {
+			items.push({ section: 'Packs' });
+			items.push({
+				label: 'Downloaded',
+				checked: downloadedOnly,
+				icon: 'circle-check',
+				tooltip: 'Show only the pack items this device has already downloaded',
+				action: () => (downloadedOnly = !downloadedOnly)
+			});
+		}
 		if (filtering)
 			items.push({
 				label: 'Clear filters',
 				action: () => {
 					kindFilter = new Set();
 					localOnly = false;
+					downloadedOnly = false;
 				}
 			});
 		menu = { x: e.clientX, y: e.clientY, items };
@@ -7803,6 +7864,14 @@
 									title={behaviorTitle(item.behavior)}
 									data-behavior={item.behavior.type}
 								><Icon name="play" size={16} aria-hidden="true" /></span>
+							{/if}
+							{#if item.packEntry && item.glbUrl && $packCacheIndex.has(item.glbUrl)}
+								<!-- 39 P5: DOWNLOADED. Bottom RIGHT: a pack card carries no roster or share dot. -->
+								<span
+									class="explorer-cached absolute bottom-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-app/80 text-ink-good"
+									title={'Downloaded · ' + bytesLabel(cachedBytesOf(packItemUrls(item), $packCacheIndex)) + ' on this device'}
+									data-cached-bytes={cachedBytesOf(packItemUrls(item), $packCacheIndex)}
+								><Icon name="circle-check" size={16} aria-hidden="true" /></span>
 							{/if}
 							{#if item.packEntry}
 								{#if packThumb(item)}

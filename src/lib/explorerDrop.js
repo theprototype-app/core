@@ -7,7 +7,7 @@ import { explorerItems, itemBlob } from './explorer';
 import { prefabs, instantiatePrefab } from './prefabs';
 import { importFile, addImported } from './fileHandler.svelte';
 import { packRefFromUrl, peekPackTemplate, loadPackTemplate } from './packRefs';
-import { fetchPackBuffer } from './packCache';
+import { fetchPackBuffer, isPackCached } from './packCache';
 import { holdPendingGhost } from './placeGhost';
 import { wouldAskFor } from './importGate';
 import { beginHistoryBatch, endHistoryBatch } from './history';
@@ -340,6 +340,9 @@ export async function placeFromGhost(items, placements) {
 				};
 				addImported(stub, name, at.position);
 				placed.push(stub.uuid);
+				// 39 P5: placing an item downloads it — a file still parsed in memory after its
+				// cache was deleted is fetched (and kept) again in the background
+				if (!isPackCached(payload.url)) void fetchPackBuffer(payload.url).catch(() => {});
 				return;
 			}
 			later.push({ item: { payload, dims }, at });

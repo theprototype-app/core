@@ -344,11 +344,7 @@
 :root.phone-shell {
 	--ps-bar-h: calc(76px + env(safe-area-inset-bottom, 0px));
 }
-:root.phone-shell #inspector {
-	bottom: var(--ps-bar-h) !important;
-	padding-bottom: 16px !important;
-	max-height: calc(100vh - var(--ps-bar-h) - 64px) !important;
-}
+/* (the Inspector's phone-shell rule lives in ui.css — its base rule there is a layered !important) */
 :root.phone-shell .tp-dock-panel {
 	bottom: var(--ps-bar-h) !important;
 	max-height: calc(100vh - var(--ps-bar-h) - 64px) !important;

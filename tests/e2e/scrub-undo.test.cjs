@@ -287,7 +287,7 @@ h.run(async () => {
 		h.check(stack1 === stack0 && (await range.count()) === 1, `light distance slider: and nothing older was undone (undo stack ${stack1} vs ${stack0} before the drag; the light is still there)`);
 	}
 	await contract(page, {
-		name: 'light distance box', root: '.ui-row:has(> input[type=range][aria-label="Distance"])', index: 0, typed: '12', typedValue: 12,
+		name: 'light distance box', root: ':is(.ui-row, .pr):has(> input[type=range][aria-label="Distance"])', // 38 R5: SliderRow draws a PropRow (.pr) index: 0, typed: '12', typedValue: 12,
 		read: distance, shows: (v) => v
 	});
 

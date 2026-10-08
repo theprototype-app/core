@@ -182,6 +182,14 @@ input.tp-check:disabled {
 		max-height: calc(100vh - var(--connect-bottom, 54px) - 56px) !important;
 		border-radius: 0.75rem 0.75rem 0 0 !important;
 	}
+	/* 38 NOTES-38 #32 (a): on the phone shell the Inspector sheet ends at the TOP of the bottom bar
+	   (Play stays visible and tappable). Here, in the same layer as the rule above: a layered
+	   !important beats an unlayered one (phone.css), so the override must live in this file. */
+	:root.phone-shell #inspector {
+		bottom: var(--ps-bar-h) !important;
+		padding-bottom: 16px !important;
+		max-height: calc(100vh - var(--ps-bar-h) - 64px) !important;
+	}
 	.ins-resize {
 		display: flex;
 	}

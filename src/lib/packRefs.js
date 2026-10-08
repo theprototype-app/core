@@ -22,6 +22,8 @@ import {
 	STALL_ABORT_FACTOR
 } from './loadStates';
 import { drawPlaceholders as drawPlaceholderBoxes, placeholderBoxOf, setRetryAllHook } from './placeholders';
+import { cachedPackBuffer, putPackBuffer, fetchPackBuffer } from './packCache';
+import { measureDims, rememberDims } from './placementDims';
 
 // 30c — KIT REFERENCES: a pack piece in a scene is a REFERENCE, not a copy.
 //
@@ -197,6 +199,13 @@ async function fetchWithProgress(url, control) {
 		}, stallMs());
 	};
 	control.abort = (reason) => controller.abort(reason);
+	// 39 P5: a downloaded pack file is read from the pack cache — no network, no watchdog
+	const held = await cachedPackBuffer(url);
+	if (held) {
+		control.abort = null;
+		noteBytes(url, held.byteLength, held.byteLength);
+		return held;
+	}
 	arm();
 	try {
 		const res = await fetch(url, { signal: controller.signal });
@@ -206,6 +215,7 @@ async function fetchWithProgress(url, control) {
 		if (!res.body || typeof res.body.getReader !== 'function') {
 			const buffer = await res.arrayBuffer();
 			noteBytes(url, buffer.byteLength, total || buffer.byteLength);
+			void putPackBuffer(url, buffer, res.headers.get('content-type') || undefined);
 			return buffer;
 		}
 		const reader = res.body.getReader();
@@ -226,6 +236,7 @@ async function fetchWithProgress(url, control) {
 			out.set(chunk, at);
 			at += chunk.byteLength;
 		}
+		void putPackBuffer(url, out.buffer, res.headers.get('content-type') || undefined);
 		return out.buffer;
 	} catch (error) {
 		if (abandoned) throw new StallError(stallMs());
@@ -251,6 +262,29 @@ function backoff(ms, control) {
 		}
 		control.wake = done;
 	});
+}
+
+/** 39: the templates that have FINISHED parsing — "decoded in memory" for the placement ghost
+ * (a sync read, so the ghost never waits on a promise to pick its tier)
+ * @type {Map<string, {hash: string, scene: any}>} */
+const readyTemplates = new Map();
+
+/** The parsed template of `url` if it is already in memory, else null. @param {string} url */
+export function peekPackTemplate(url) {
+	return readyTemplates.get(url) ?? null;
+}
+
+/** Is a parse of `url` in flight or done? @param {string} url */
+export function packTemplateStarted(url) {
+	return templates.has(url);
+}
+
+/** Thrown by loadPackTemplate for a file with clips (it replicates as bytes, never a reference). */
+export class AnimatedRefError extends Error {
+	constructor() {
+		super('animated models are not referenced');
+		this.animated = true;
+	}
 }
 
 /**
@@ -297,14 +331,19 @@ export function loadPackTemplate(url) {
 					const hash = await hashBytes(buffer);
 					/** @type {any} */
 					const gltf = await new Promise((resolve, reject) => createLoader().parse(buffer, '', resolve, reject));
+					// 39 P4: what the file IS, for a row that did not say (an old pack, a Khronos row)
+					const animated = !!gltf.animations?.length;
+					const dims = measureDims(gltf.scene, { bytes: buffer.byteLength, animated });
+					if (dims) void rememberDims(url, dims);
 					// an animated rig replicates as its BYTES (animatedImports) — never a reference
-					if (gltf.animations?.length) throw new Error('animated models are not referenced');
+					if (animated) throw new AnimatedRefError();
 					await shareTextures(gltf, buffer);
 					const scene = gltf.scene;
 					scene.updateMatrixWorld(true);
 					fingerprints.set(hash, fingerprintOf(scene));
 					await warmTemplate(scene);
 					noteDone(url);
+					readyTemplates.set(url, { hash, scene });
 					return { hash, scene };
 				} catch (error) {
 					noteFailed(url, describeLoadError(error));
@@ -313,7 +352,7 @@ export function loadPackTemplate(url) {
 			}
 		})();
 		templates.set(url, job);
-		job.catch(() => templates.delete(url)).finally(() => {
+		job.catch(() => (templates.delete(url), readyTemplates.delete(url))).finally(() => {
 			if (controls.get(url) === control) controls.delete(url);
 		});
 	}
@@ -335,9 +374,8 @@ export function loadPackFile(url) {
 	let job = levelFiles.get(url);
 	if (!job) {
 		job = (async () => {
-			const res = await fetch(url);
-			if (!res.ok) throw new Error('HTTP ' + res.status);
-			const buffer = await res.arrayBuffer();
+			// 39 P5: an item's LOD files are part of its download (the pack cache)
+			const buffer = await fetchPackBuffer(url);
 			/** @type {any} */
 			const gltf = await new Promise((resolve, reject) => createLoader().parse(buffer, '', resolve, reject));
 			await shareTextures(gltf, buffer);

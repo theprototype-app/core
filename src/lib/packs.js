@@ -4,6 +4,7 @@ import { addItemFromBytes, createFolder, explorerFolders } from './explorer';
 import { safeStorage } from './safeStorage';
 import { exportPacksBase } from './export/exportBoot.js';
 import { normalizeBehavior } from './behaviorCore';
+import { dimsFromRow } from './placementDims';
 
 // N6 (roadmap 7 / ship-qa D1): object packs. Two sources, one normalized model:
 //  - DEFAULT packs from static/libraryList.json (bundled today; the model bytes
@@ -322,7 +323,10 @@ export async function listPackItems(pack) {
 					packName: pack.name,
 					// 33 P2: a functional item (door, lid, lever, fan) — null for a plain prop.
 					// Normalized HERE so the Explorer badge and the placement agree on one spec.
-					behavior: normalizeBehavior(o.behavior)
+					behavior: normalizeBehavior(o.behavior),
+					// 39 P4: the item's size before it loads (`size`/`box`/`tris`/`bytes` on the row) —
+					// the drag-to-place ghost and the cached badge read it; null = measured on first load
+					dims: dimsFromRow(o)
 				};
 			});
 	}
@@ -383,7 +387,9 @@ export async function importPackZip(file) {
 			thumbnail: stored.thumbnail,
 			license: decl.license || manifest.license || '',
 			author: decl.author || manifest.author || '',
-			source: decl.source || ''
+			source: decl.source || '',
+			// 39 P4: a manifest item's declared size (a numeric `size` is the old byte count)
+			dims: dimsFromRow(decl)
 		});
 	}
 	const pack = {

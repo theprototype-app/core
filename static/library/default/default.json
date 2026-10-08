@@ -5,7 +5,11 @@
     "label": "The Prototype Logo",
     "variants": {
       "glTF-Binary": "ThePrototype-Logo.glb"
-    }
+    },
+    "size": [6.046, 7.732, 5.197],
+    "box": [-5.046, -3.141, -4.197, 1, 4.591, 1],
+    "tris": 112,
+    "bytes": 7008
   },
   {
     "name": "Duck",
@@ -13,6 +17,10 @@
     "label": "Duck",
     "variants": {
       "glTF-Binary": "Duck.glb"
-    }
+    },
+    "size": [1.655, 1.541, 1.152],
+    "box": [-0.693, 0.099, -0.613, 0.962, 1.64, 0.539],
+    "tris": 4212,
+    "bytes": 120484
   }
 ]

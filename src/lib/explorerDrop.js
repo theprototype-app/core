@@ -5,8 +5,13 @@ import { globalCamera, selectedObject } from '../stores/sceneStore';
 import { peers, showToast, toastStore, stackOnDrop } from '../stores/appStore';
 import { explorerItems, itemBlob } from './explorer';
 import { prefabs, instantiatePrefab } from './prefabs';
-import { importFile } from './fileHandler.svelte';
-import { packRefFromUrl } from './packRefs';
+import { importFile, addImported } from './fileHandler.svelte';
+import { packRefFromUrl, peekPackTemplate, loadPackTemplate } from './packRefs';
+import { fetchPackBuffer } from './packCache';
+import { holdPendingGhost } from './placeGhost';
+import { wouldAskFor } from './importGate';
+import { beginHistoryBatch, endHistoryBatch } from './history';
+import { selectedObjects } from '../stores/sceneStore';
 import { setObjectTexture } from './materialsHandler';
 import { topLevelObjectOf } from './objectActions';
 import { sceneHits, hitWorldNormal } from './scenePick';
@@ -201,15 +206,18 @@ async function placeExplorerPayload(payload, target) {
 		const name = String(payload.name || 'model').replace(/\.\w+$/, '');
 		const dismiss = holdLoadingToast(name);
 		try {
-			const res = await fetch(payload.url);
-			if (!res.ok) {
+			// 39 P5: through the pack cache (a downloaded item reads no network, and a fresh one is kept)
+			let buffer;
+			try {
+				buffer = await fetchPackBuffer(payload.url);
+			} catch {
 				dismiss();
 				return showToast('Could not fetch the pack item');
 			}
 			// 30c: the placed piece carries its pack reference, so a save and the wire write it
 			// as a small stub instead of the whole model (packRefs.js)
 			const { placementGroupFor } = await import('./lodGroup');
-			importFile(new File([await res.blob()], name + '.glb'), name, undefined, target.point ?? undefined, undefined, {
+			importFile(new File([buffer], name + '.glb'), name, undefined, target.point ?? undefined, undefined, {
 				packRef: packRefFromUrl(payload.url, { item: name }),
 				lod: placementGroupFor(payload.url, payload.lods),
 				behavior: payload.behavior ?? null // 33 P2
@@ -252,5 +260,132 @@ async function placeExplorerPayload(payload, target) {
 			}
 		}
 		showToast('Audio/text items are used where they plug in (sound nodes, scripts)');
+	}
+}
+
+// ---- 39 P1/P2: SPAWN AT THE GHOST -------------------------------------------------------
+//
+// A drag-to-place release (placeDrag.js) hands over each item with the exact pose its ghost
+// showed. Two ways an item becomes an object, both through paths that already replicate:
+//   · a STATIC PACK ITEM spawns as a pack STUB (30c's reference) — an empty group carrying
+//     `packRef` + its box, added through `addImported` (ONE `create` undo step, the ordinary
+//     add broadcast, which writes a stub as the tiny stub element). It is in the scene the moment
+//     the pointer lifts, drawn in the Placeholder Style while its file loads, selectable and
+//     movable like any placeholder, and every peer refills it from the pack (the children take
+//     uuids derived from the root's, so peers agree). A prefetched file fills it on the next frame.
+//   · everything else (an ANIMATED pack item — it travels as bytes, never a reference — a
+//     library model, a prefab, a pack item that would trip the import budget) goes through its
+//     own import path at the same pose, with a local pending box held at the spot until it lands.
+// Several items dropped at once spawn their stubs and prefabs in ONE history batch.
+
+/** @param {any} payload @param {any} dims */
+function stubbable(payload, dims) {
+	if (!payload?.url || payload.behavior || dims?.animated) return false;
+	if (dims?.tris != null && wouldAskFor(dims.tris)) return false;
+	return true;
+}
+
+/**
+ * The one spawn a drag-to-place release makes.
+ * @param {{payload: any, dims: any}[]} items @param {{position: number[], quaternion: number[]}[]} placements
+ * @returns {Promise<string[]>} the uuids placed (stubs at once; imports once they land)
+ */
+export async function placeFromGhost(items, placements) {
+	const { placementGroupFor } = await import('./lodGroup');
+	/** @type {string[]} */
+	const placed = [];
+	/** @type {{item: any, at: any}[]} */
+	const later = [];
+	// an item of unknown animation status whose file is not parsed yet: settle it first, so a
+	// door is never referenced (its template parse is what knows). A prefetched one is instant.
+	for (let i = 0; i < items.length; i++) {
+		const { payload, dims } = items[i];
+		if (payload?.url && !payload.behavior && !dims?.known && !peekPackTemplate(payload.url)) {
+			const release = holdPendingGhost(dims?.box ?? [-0.5, 0, -0.5, 0.5, 1, 0.5], placements[i].position, placements[i].quaternion);
+			try {
+				await loadPackTemplate(payload.url);
+			} catch (e) {
+				if (/** @type {any} */ (e)?.animated) items[i] = { payload, dims: { ...(dims ?? {}), animated: true } };
+			}
+			release();
+		}
+	}
+	const many = items.length > 1;
+	if (many) beginHistoryBatch();
+	try {
+		items.forEach(({ payload, dims }, i) => {
+			const at = placements[i];
+			if (!at) return;
+			if (payload.prefabId) {
+				const prefab = get(prefabs).find((entry) => entry.id === payload.prefabId);
+				const object = prefab ? instantiatePrefab(prefab, at.position) : null;
+				if (object) {
+					object.quaternion.fromArray(at.quaternion);
+					placeAt(object, at.position);
+					placed.push(object.uuid);
+				}
+				return;
+			}
+			if (stubbable(payload, dims)) {
+				const name = String(payload.name || 'model').replace(/\.\w+$/, '');
+				const ref = packRefFromUrl(payload.url, { pack: payload.packName, item: name });
+				if (!ref) return later.push({ item: { payload, dims }, at });
+				const stub = new THREE.Group();
+				stub.quaternion.fromArray(at.quaternion);
+				const lod = placementGroupFor(payload.url, payload.lods);
+				stub.userData = {
+					packRef: { ...ref, ...(dims?.known ? { box: dims.box } : {}) },
+					packStub: true,
+					...(lod ? { lod } : {})
+				};
+				addImported(stub, name, at.position);
+				placed.push(stub.uuid);
+				return;
+			}
+			later.push({ item: { payload, dims }, at });
+		});
+	} finally {
+		if (many) endHistoryBatch(`Place ${items.length} objects`);
+	}
+	if (placed.length > 1) selectedObjects.set([...placed]);
+	for (const { item, at } of later) {
+		const uuid = await importAtGhost(item.payload, item.dims, at);
+		if (uuid) placed.push(uuid);
+	}
+	return placed;
+}
+
+/**
+ * The import path at a ghost's pose (a pending box holds the spot meanwhile).
+ * @param {any} payload @param {any} dims @param {{position: number[], quaternion: number[]}} at
+ * @returns {Promise<string | null>}
+ */
+async function importAtGhost(payload, dims, at) {
+	const release = holdPendingGhost(dims?.box ?? [-0.5, 0, -0.5, 0.5, 1, 0.5], at.position, at.quaternion);
+	try {
+		if (payload.url) {
+			const name = String(payload.name || 'model').replace(/\.\w+$/, '');
+			let buffer;
+			try {
+				buffer = await fetchPackBuffer(payload.url);
+			} catch {
+				showToast('Could not fetch the pack item');
+				return null;
+			}
+			const { placementGroupFor } = await import('./lodGroup');
+			return await importFile(new File([buffer], name + '.glb'), name, 'glb', at.position, undefined, {
+				packRef: packRefFromUrl(payload.url, { pack: payload.packName, item: name }),
+				lod: placementGroupFor(payload.url, payload.lods),
+				behavior: payload.behavior ?? null,
+				quaternion: at.quaternion
+			});
+		}
+		const item = get(explorerItems).find((entry) => entry.id === payload.id);
+		if (!item || item.kind !== 'object') return null;
+		const blob = await itemBlob(item.id);
+		if (!blob) return null;
+		return await importFile(new File([blob], item.name), item.name.replace(/\.\w+$/, ''), undefined, at.position, undefined, { quaternion: at.quaternion });
+	} finally {
+		release();
 	}
 }

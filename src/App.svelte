@@ -162,6 +162,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { initModules, disabledModules } from '$lib/moduleSDK'
   import { coreModules } from './modules/index.js'
   import ModulesManager from './components/menu/ModulesManager.svelte'
+  import PlaceDragOverlay from './components/menu/PlaceDragOverlay.svelte'
   // W9: the pref that decides whether the bottom dock RESIZES the viewport (default)
   // or overlays it. A local view preference — see the .viewport style below.
   import { viewPrefs } from '$lib/viewPrefs'
@@ -341,6 +342,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
   function handleDrop(event) {
     // panels with their own drag&drop handle theirs (flow palette, Explorer)
     if (event.target?.closest && (event.target.closest('#flow-list') || event.target.closest('#explorer-list') || event.target.closest('#explorer-window'))) return
+    // 39: a drag-to-place bridge drop (placeDrag over a non-viewport element) never places —
+    // releasing anywhere but the viewport is a cancel, and over the viewport placeDrag spawns itself
+    if (event.dataTransfer?.types?.includes('application/x-tp-place-bridge')) return
     // Explorer cards dropped on the viewport place/texture at the point (96)
     const explorerPayload = event.dataTransfer?.getData('application/x-explorer-item')
     if (explorerPayload) {
@@ -391,6 +395,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <ModelPreviewWindow />
 {/if}
 <Menu />
+<PlaceDragOverlay />
 <!-- 29-E + 36-export: the player's chrome on a play link / embed / exported game (start card,
      fullscreen, the open-in-app link) and the runtime-drawn "Made with ThePrototype" badge -->
 <EmbedChrome />

@@ -356,6 +356,7 @@
 	import { fly } from 'svelte/transition';
 	import { safeStorage } from '$lib/safeStorage';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
+	import { beginPlaceDrag, isPlaceable } from '$lib/placeDrag';
 
 	const clampH = (h: number) =>
 		Math.min(Math.max(h || 300, 200), Math.round(window.innerHeight * 0.8));
@@ -5509,7 +5510,11 @@
 			// 33: a pack item's LOD files travel with the drag so the drop places the group
 			...(item.lods ? { lods: item.lods } : {}),
 			// 33 P2: a functional pack item's spec rides the drag to the drop
-			...(item.behavior ? { behavior: item.behavior } : {})
+			...(item.behavior ? { behavior: item.behavior } : {}),
+			// 39: the item's size travels with the drag (the ghost draws it before any download),
+			// and a pack item names its pack (the placed reference records it)
+			...(item.dims ? { dims: item.dims } : {}),
+			...(item.glbUrl && item.packName ? { packName: item.packName } : {})
 		};
 	}
 	/**
@@ -5554,6 +5559,16 @@
 		return out;
 	}
 	function onItemDragStart(e: DragEvent, item: any) {
+		// 39 P1: a REAL drag of something that places as an object becomes a pointer drag — the
+		// ghost, R / wheel rotation and Esc need input a native drag never delivers. Every HTML5
+		// target the card used to reach still gets it (placeDrag bridges it); a synthetic
+		// dragstart (the suites) keeps the native path below.
+		if (e.isTrusted && isPlaceable(item)) {
+			e.preventDefault();
+			libraryDragging = true;
+			beginPlaceDrag({ payload: dragPayloadFor(item), x: e.clientX, y: e.clientY, pointerType: 'mouse', source: e.currentTarget as HTMLElement });
+			return;
+		}
 		// 96 consumes these payloads (viewport placement / texture drop). N6: a
 		// default-pack item carries a `url` so the drop can fetch+place it without
 		// first storing it in the Explorer library.
@@ -5826,9 +5841,12 @@
 	let tStartX = 0;
 	let tStartY = 0;
 	let tSuppressClick = false;
+	/** 39: this touch drag belongs to placeDrag (it reads the pointer from the window) */
+	let tPlace = false;
 
 	function onCardPointerDown(e: PointerEvent, item: any) {
 		if (e.pointerType === 'mouse') return; // desktop uses native HTML5 drag
+		tPlace = false; // a cancelled place drag (the browser took the pan) left nothing behind
 		tStartX = e.clientX;
 		tStartY = e.clientY;
 		const target = e.currentTarget as HTMLElement;
@@ -5841,6 +5859,20 @@
 		const label = carried > 1 ? `${item.name} + ${carried - 1} more` : item.name;
 		clearTimeout(tPressTimer);
 		tPressTimer = window.setTimeout(() => {
+			// 39 P1: an object card picked up by touch is a PLACE drag — the ghost on the viewport,
+			// the sheet collapsed out of the way; the controller owns the gesture from here
+			if (isPlaceable(item)) {
+				tDragging = true;
+				tPlace = true;
+				try {
+					target.setPointerCapture?.(pid);
+				} catch {}
+				try {
+					navigator.vibrate?.(15);
+				} catch {}
+				beginPlaceDrag({ payload, x: tStartX, y: tStartY, pointerType: e.pointerType || 'touch', pointerId: pid, collapse: true });
+				return;
+			}
 			tDrag = { payload, label };
 			tDragging = true;
 			tGhostX = tStartX;
@@ -5855,6 +5887,7 @@
 	}
 	function onCardPointerMove(e: PointerEvent) {
 		if (e.pointerType === 'mouse') return;
+		if (tPlace) return void e.preventDefault();
 		if (!tDragging) {
 			// moved before the long-press fired -> it's a scroll, not a pick-up
 			if (Math.abs(e.clientX - tStartX) > 10 || Math.abs(e.clientY - tStartY) > 10)
@@ -5867,6 +5900,13 @@
 	}
 	function onCardPointerUp(e: PointerEvent) {
 		clearTimeout(tPressTimer);
+		if (tPlace) {
+			// placeDrag already took the release (its window listener runs first)
+			tPlace = false;
+			tDragging = false;
+			tSuppressClick = true;
+			return;
+		}
 		if (tDragging && tDrag) {
 			const el = document.elementFromPoint(e.clientX, e.clientY);
 			// drop only when released over the viewport, not back onto the Explorer
@@ -5913,14 +5953,18 @@
 		const { holdLoadingToast } = await import('$lib/explorerDrop');
 		const dismiss = holdLoadingToast(String(item.name || 'model'));
 		try {
-			const res = await fetch(item.glbUrl);
-			if (!res.ok) {
+			// 39 P5: through the pack cache, so the item reads as downloaded afterwards
+			const { fetchPackBuffer } = await import('$lib/packCache');
+			let buffer: ArrayBuffer;
+			try {
+				buffer = await fetchPackBuffer(item.glbUrl);
+			} catch {
 				dismiss();
 				return showToast('Could not fetch the pack item');
 			}
 			// 30c: the placed piece carries its pack reference (packRefs.js)
 			const { placementGroupFor } = await import('$lib/lodGroup');
-			await importFile(new File([await res.blob()], item.name + '.glb'), item.name, 'glb', undefined, undefined, {
+			await importFile(new File([buffer], item.name + '.glb'), item.name, 'glb', undefined, undefined, {
 				packRef: packRefFromUrl(item.glbUrl, { pack: item.packName, item: item.name }),
 				lod: placementGroupFor(item.glbUrl, item.lods),
 				behavior: item.behavior ?? null // 33 P2

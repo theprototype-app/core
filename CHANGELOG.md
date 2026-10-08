@@ -5,6 +5,37 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.31.0 — Drag to place: see the size and the spot before you let go 📦
+
+Drag any object from the Explorer onto the scene and see exactly where it will land and how big it is — the way a
+content browser works in a desktop 3D tool.
+
+- 🖱️ **Drag from Explorer ▸ Packs or ▸ Library onto the viewport** (pack items, your Library models, prefabs). A
+  ghost sits on whatever is under the pointer — the floor, a table, the side of a wall — and follows the grid when
+  snapping is on (hold **Shift** to move it freely). Let go and it is placed right there, as **one undo step**, and
+  everyone in the session sees it. A click (no drag) still places in front of the camera.
+- 🔄 **R** (or the mouse wheel) turns it 15° while you drag, **Shift+R** turns it back; hold **Alt** as you let go to
+  drop it at the camera's focus point; drag several selected cards to drop them side by side in a row.
+- 📏 **Its size beside the pointer: width × depth × height in metres**, plus triangles and download size. An item
+  that is already loaded previews as a see-through copy of the real model; a heavy or not-yet-downloaded one as its
+  box (hovering the viewport starts the download, so the drop is quick). A placed pack item shows your loading
+  Placeholder Style until its file arrives.
+- 🛑 **Changed your mind?** Esc, dropping back on the Explorer or letting go anywhere else places nothing and leaves
+  no undo entry. The ghost turns **amber** when it would sit mostly inside another object (you can still place it)
+  and **red** where there is nothing to stand on.
+- 📱 **On a phone or tablet**: press and hold a card until it lifts, then drag — the Explorer tucks itself away so
+  you can see where you are dropping.
+- ⚙️ **Settings ▸ Scene ▸ Performance ▸ Placement preview**: Full model / Within budget (default) / Box only, a
+  triangle budget (50,000 on a computer, 15,000 on a phone or headset) and Show dimensions.
+- ✅ **See what is downloaded**: Explorer ▸ Packs marks downloaded items with a ✓ (size in the tooltip) and the filter
+  has **Downloaded**. A pack item's **Delete is now "Delete cache (size)"** — it frees the download and the item stays
+  in the pack; a pack's menu has **Delete downloads**, and **Storage** lists Pack downloads with **Clear all pack
+  downloads**.
+- 🧩 For pack authors: every pack item now carries its size, bounds, triangle count and download size in the
+  manifest (`kit-build dims`, checked by the packs CI) — see PACKS.md "Item dimensions".
+
+In VR the radial Add menu still places in front of you; drag-to-place in VR comes later.
+
 ## 1.30.0 — A calm new look: one interface on a desk and in a pocket ✨
 
 Every window, menu, modal, the main HUD and the phone layout move onto one small kit of parts. Everything you

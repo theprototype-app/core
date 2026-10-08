@@ -40,6 +40,7 @@
 		selectionBytes,
 		fmtBytes
 	} from '$lib/storageUsage';
+	import { clearAllPackDownloads } from '$lib/storageUsage'; // 39 P5
 
 	/** the row ids ticked for removal @type {Set<string>} */
 	let picked = $state(new Set());
@@ -327,6 +328,21 @@
 					{#if isOpen(cat.key)}
 					<div id={'storage-group-body-' + cat.key} class="storage-group-body">
 					<p class="storage-group-note">{cat.note}</p>
+					{#if cat.key === 'packcache' && cat.rows.some((/** @type {any} */ r) => r.kind === 'packcache')}
+						<!-- 39 P5: one press for every pack's downloads (the items stay in their packs) -->
+						<div class="storage-group-action">
+							<Button
+								id="storage-clear-pack-downloads"
+								variant="outline"
+								size="sm"
+								icon="trash-2"
+								onclick={async () => {
+									const freed = await clearAllPackDownloads();
+									showToast('Cleared all pack downloads — freed about ' + fmtBytes(freed) + '. The items stay in their packs.');
+								}}>Clear all pack downloads</Button
+							>
+						</div>
+					{/if}
 					<ul class="storage-rows" use:minimalScroll>
 						{#each cat.rows as row (row.id)}
 							<li class="storage-row" data-storage-row={row.id} data-removable={row.removable}>
@@ -504,6 +520,9 @@
 	.storage-group-bytes {
 		flex: 0 0 auto;
 		font-variant-numeric: tabular-nums;
+	}
+	.storage-group-action {
+		padding: 0 var(--space-2) var(--space-2) 1.9rem;
 	}
 	.storage-group-note {
 		padding: 0.35rem 0.5rem 0.35rem 1.9rem;

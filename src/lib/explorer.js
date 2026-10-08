@@ -11,6 +11,7 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { idbGet, idbPut, idbDelete } from './idb';
 import { showToast } from '../stores/appStore';
+import { measureDims } from './placementDims';
 
 // Explorer (phase 95): a LOCAL asset library (like prefabs — nothing here
 // replicates until an asset is USED). Folder tree + items live as one small
@@ -409,17 +410,30 @@ export async function parseObjectFile(buffer, ext) {
 
 /** @param {Blob} blob @param {string} name @param {string} kind */
 async function thumbnailFor(blob, name, kind) {
+	return (await itemFacts(blob, name, kind)).thumbnail;
+}
+
+/**
+ * The picture AND (39 P4) the size of a new library item, from ONE parse: a model's bounds in
+ * its root frame + its triangles ride the record as `dims`, so the drag-to-place ghost knows the
+ * size before the file is ever decoded again.
+ * @param {Blob} blob @param {string} name @param {string} kind
+ * @returns {Promise<{thumbnail: string | null, dims: any}>}
+ */
+async function itemFacts(blob, name, kind) {
 	try {
-		if (kind === 'image') return await imageThumbnail(blob);
+		if (kind === 'image') return { thumbnail: await imageThumbnail(blob), dims: null };
 		if (kind === 'object') {
 			const ext = name.split('.').pop()?.toLowerCase() ?? '';
 			const object = await parseObjectFile(await blob.arrayBuffer(), ext);
-			return renderObjectThumbnail(object);
+			const measured = measureDims(object, { bytes: blob.size, animated: !!object.animations?.length });
+			const dims = measured ? { size: measured.size, box: measured.box, tris: measured.tris, bytes: measured.bytes, ...(measured.animated ? { animated: true } : {}) } : null;
+			return { thumbnail: renderObjectThumbnail(object), dims };
 		}
 	} catch (error) {
 		console.log('thumbnail skipped for ' + name, error);
 	}
-	return null; // audio/text get icon cards
+	return { thumbnail: null, dims: null }; // audio/text get icon cards
 }
 
 /**
@@ -569,13 +583,17 @@ async function writeItemNow(buffer, name, folderId, meta) {
 	// the thumbnail is DECORATIVE — never let a wedged loader/renderer block
 	// storing the bytes (a hung GLB parse used to silently swallow shared
 	// assets on the receiving peer, R-3); the card falls back to an icon
-	const thumbnail =
+	/** @type {{thumbnail: string | null, dims: any}} */
+	const facts =
 		meta.thumbnail !== undefined
-			? meta.thumbnail
-			: await Promise.race([
-					thumbnailFor(blob, name, kind),
-					new Promise((resolve) => setTimeout(() => resolve(null), 4000))
-				]);
+			? { thumbnail: meta.thumbnail, dims: null }
+			: /** @type {any} */ (
+					await Promise.race([
+						itemFacts(blob, name, kind),
+						new Promise((resolve) => setTimeout(() => resolve({ thumbnail: null, dims: null }), 4000))
+					])
+				);
+	const thumbnail = facts.thumbnail;
 	const item = {
 		id: String(meta.id ?? '').trim() || crypto.randomUUID(),
 		name,
@@ -593,7 +611,10 @@ async function writeItemNow(buffer, name, folderId, meta) {
 		// means "this app minted it", so every item written before today keeps folding.
 		...(meta.imported ? { imported: true } : {}),
 		...(meta.share ? { share: meta.share } : {}),
-		...(meta.owner ? { owner: meta.owner } : {})
+		...(meta.owner ? { owner: meta.owner } : {}),
+		// 39 P4: a model's size (LOCAL — never published in the shared index, which carries
+		// hash/name/kind/folderId only)
+		...(facts.dims ? { dims: facts.dims } : {})
 	};
 	await idbPut(BLOB_KEY + item.id, blob);
 	explorerItems.update((list) => [...list, item]);

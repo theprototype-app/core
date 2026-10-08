@@ -1,7 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { objectsGroup, globalRenderer } from '../stores/sceneStore';
 import { profileFor } from './sceneBudget';
-import { modelCost, importVerdict, describeRow, shortCount } from './importBudget';
+import { modelCost, importVerdict, describeRow, shortCount, emptyCost } from './importBudget';
 import { showChoice } from './confirmDialog';
 
 // 26-F — THE IMPORT HALF OF THE INGEST GATE (roadmap 26 section 4, Stage 2).
@@ -37,6 +37,18 @@ export function verdictFor(root) {
 	const verdict = importVerdict(sceneCost(), modelCost(root), profileFor(get(globalRenderer)));
 	lastImportVerdict.set(verdict);
 	return verdict;
+}
+
+/**
+ * 39: would a model of `tris` triangles ask before it is let in? For a drop that spawns a pack
+ * REFERENCE (no parsed tree to measure yet): the item's declared triangle count stands in for the
+ * whole cost. A model that would ask takes the import path instead, where the dialog asks.
+ * @param {number} tris @returns {boolean}
+ */
+export function wouldAskFor(tris) {
+	if (!Number.isFinite(tris) || tris <= 0) return false;
+	const cost = { ...emptyCost(), meshes: 1, draws: 1, triangles: tris, vertices: tris, maxMeshTriangles: tris, maxMeshVertices: tris };
+	return importVerdict(sceneCost(), cost, profileFor(get(globalRenderer))).gate;
 }
 
 /** The sentence the dialog says. @param {any} verdict @param {string} name */

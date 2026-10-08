@@ -62,6 +62,9 @@ import { clearSavedSession } from './autosave';
 // 36 B14: the checkpoint timeline's rows are their own category (its index is structure)
 import { checkpoints, deleteCheckpoint, KEY as KEY_CHECKPOINT, INDEX_KEY as KEY_CHECKPOINT_INDEX } from './checkpoints';
 import { fmtBytes } from './transferLedger';
+import { loadPackCacheIndex, packCacheIndex, deletePackCache, clearPackCache } from './packCache';
+import { clearMeasuredDims } from './placementDims';
+import { PACKS_BASE, packs } from './packs';
 
 /**
  * ONE formatter, not a fifth. The app already had four byte formatters (Explorer's
@@ -177,6 +180,12 @@ export const CATEGORIES = [
 		note: 'Pictures of files other people shared but you never downloaded. Purely a cache — they come back the next time you see those files.'
 	},
 	{
+		// 39 P5: not in IndexedDB at all — the pack cache is CacheStorage (packCache.js)
+		key: 'packcache',
+		label: 'Pack downloads',
+		note: 'Files of pack items this device downloaded. Clearing them keeps every item in its pack: it downloads again the next time it is placed or a scene needs it.'
+	},
+	{
 		key: 'modules',
 		label: 'Installed modules',
 		note: 'Modules you installed from a .zip or a URL, with their packaged files.'
@@ -214,6 +223,7 @@ const KEY_PRESET = 'envpreset:';
 const KEY_MATPRESET = 'matpreset:'; // 37 R5
 const KEY_SLEEVE = 'vrsleeve-slots-v1';
 const KEY_AUTOSAVE = 'latest';
+const KEY_PACKDIMS = 'pack:dims-v1'; // 39 P4
 
 /** how long one idb read may take before the scan gives up on measuring it */
 const READ_TIMEOUT_MS = 5000;
@@ -644,6 +654,20 @@ export async function scanStorage() {
 				continue;
 			}
 
+			// ---- 39 P4: the sizes this device measured for pack items -----------------
+			if (key === KEY_PACKDIMS) {
+				push({
+					id: key,
+					category: 'packcache',
+					label: 'Measured item sizes',
+					sub: 'what the drag-to-place ghost knows about items whose pack row has no size',
+					bytes: valueBytes((await safeGet(key)).value),
+					removable: true,
+					kind: 'packdims'
+				});
+				continue;
+			}
+
 			// ---- anything else --------------------------------------------------------
 			push({
 				id: key,
@@ -656,6 +680,33 @@ export async function scanStorage() {
 				ref: key
 			});
 		}
+
+		// ---- 39 P5: pack downloads, one row per pack (CacheStorage, not idb) ------------
+		try {
+			await loadPackCacheIndex();
+			const base = String(PACKS_BASE).replace(/\/+$/, '') + '/';
+			/** @type {Map<string, {urls: string[], bytes: number}>} */
+			const byPack = new Map();
+			for (const [url, bytes] of get(packCacheIndex)) {
+				const name = url.startsWith(base) ? url.slice(base.length).split('/')[0] : new URL(url).host;
+				const entry = byPack.get(name) ?? { urls: [], bytes: 0 };
+				entry.urls.push(url);
+				entry.bytes += bytes;
+				byPack.set(name, entry);
+			}
+			const titles = new Map(get(packs).map((/** @type {any} */ p) => [p.name, p.title]));
+			for (const [name, entry] of byPack)
+				push({
+					id: 'packcache:' + name,
+					category: 'packcache',
+					label: titles.get(name) ?? name,
+					sub: entry.urls.length + (entry.urls.length === 1 ? ' file' : ' files'),
+					bytes: entry.bytes,
+					removable: true,
+					kind: 'packcache',
+					ref: entry.urls
+				});
+		} catch {}
 
 		/** @type {StorageCategory[]} */
 		const categories = CATEGORIES.map((c) => {
@@ -726,6 +777,12 @@ export async function reclaimRow(row) {
 			case 'thumbs':
 				for (const h of /** @type {string[]} */ (row.ref ?? [])) forgetSharedThumb(h);
 				return row.bytes;
+			case 'packcache':
+				// 39 P5: the item stays in its pack; only this device's copy goes
+				return await deletePackCache(/** @type {string[]} */ (row.ref ?? []));
+			case 'packdims':
+				await clearMeasuredDims();
+				return row.bytes;
 			case 'raw':
 				// THE ONE DIRECT DELETE. Nothing in this build reads this key, so there is
 				// no index to keep consistent and no module to route through.
@@ -769,4 +826,11 @@ export function selectionBytes(rows) {
 export function openStorageModal() {
 	storageModalOpen.set(true);
 	void scanStorage();
+}
+
+/** 39 P5: Storage's "Clear all pack downloads" — then a fresh reading. @returns {Promise<number>} bytes freed */
+export async function clearAllPackDownloads() {
+	const freed = await clearPackCache();
+	await scanStorage();
+	return freed;
 }

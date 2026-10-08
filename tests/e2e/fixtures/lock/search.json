@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-08T00:28:57.594Z",
+	"recordedAt": "2026-10-08T05:35:45.501Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -1319,6 +1319,8 @@
 				"Grid opacity",
 				"Length",
 				"Placeholder style",
+				"Placement preview",
+				"Show dimensions",
 				"Show grid",
 				"Show the simulation controls"
 			],
@@ -1493,6 +1495,9 @@
 			"rows": [
 				"Angle",
 				"Face edit limit",
+				"Placement preview",
+				"Preview triangle budget",
+				"Show dimensions",
 				"Snap angle"
 			],
 			"sections": [
@@ -1584,7 +1589,10 @@
 		"Grid size": {
 			"rows": [
 				"Grid size",
+				"Placement preview",
+				"Preview triangle budget",
 				"Shadow quality",
+				"Show dimensions",
 				"Water quality"
 			],
 			"sections": [
@@ -1787,6 +1795,8 @@
 				"Ping sound",
 				"Placeholder grid texture",
 				"Placeholder style",
+				"Placement preview",
+				"Preview triangle budget",
 				"Quality",
 				"Reduce quality when the scene is heavy",
 				"Reset line colours",
@@ -1794,6 +1804,7 @@
 				"Shadow quality",
 				"Share materials",
 				"Show FPS",
+				"Show dimensions",
 				"Show grid",
 				"Show the Made with ThePrototype badge",
 				"Show the simulation controls",
@@ -1916,9 +1927,11 @@
 		"Height": {
 			"rows": [
 				"Height",
+				"Show dimensions",
 				"Stance"
 			],
 			"sections": [
+				"Scene",
 				"VR"
 			]
 		},
@@ -2358,12 +2371,15 @@
 				"Ping sound",
 				"Placeholder grid texture",
 				"Placeholder style",
+				"Placement preview",
+				"Preview triangle budget",
 				"Reduce quality when the scene is heavy",
 				"Reset line colours",
 				"Selection outline colour",
 				"Shadow quality",
 				"Share materials",
 				"Show FPS and draw calls",
+				"Show dimensions",
 				"Show grid",
 				"Show the simulation controls",
 				"Simplify distant models",
@@ -2579,7 +2595,8 @@
 			"rows": [
 				"Grid size",
 				"Length",
-				"Placeholder grid texture"
+				"Placeholder grid texture",
+				"Show dimensions"
 			],
 			"sections": [
 				"Scene"
@@ -2788,6 +2805,8 @@
 				"Mesh generation",
 				"My hand model",
 				"Peer hands",
+				"Placement preview",
+				"Preview triangle budget",
 				"Simplify distant models",
 				"Voice typing provider"
 			],
@@ -3096,11 +3115,14 @@
 				"Ping sound",
 				"Placeholder grid texture",
 				"Placeholder style",
+				"Placement preview",
+				"Preview triangle budget",
 				"Reduce quality when the scene is heavy",
 				"Reset line colours",
 				"Selection outline colour",
 				"Shadow quality",
 				"Share materials",
+				"Show dimensions",
 				"Show grid",
 				"Show the simulation controls",
 				"Simplify distant models",

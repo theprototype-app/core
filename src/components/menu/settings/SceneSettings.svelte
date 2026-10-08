@@ -46,6 +46,7 @@
 	import Icon from '../../ui/Icon.svelte';
 	import CheckpointSettings from './CheckpointSettings.svelte';
 	import LoadingSettings from './LoadingSettings.svelte';
+	import PlacementSettings from './PlacementSettings.svelte'; // 39 P3
 	import WaterSettings from '../../water/WaterSettings.svelte';
 	import HdriSettings from '../../hdri/HdriSettings.svelte'; // 37-hdri
 	import { showSimControls, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, showToast } from '../../../stores/appStore.js';
@@ -142,6 +143,7 @@
 		</SettingRow>
 		<WaterSettings />
 		<HdriSettings />
+		<PlacementSettings />
 	</Section>
 
 	<Section variant="card" label="Collaboration">

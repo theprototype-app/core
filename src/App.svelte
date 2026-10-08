@@ -125,6 +125,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startCloudPlugin } from '$lib/cloudPlugin'
   import { startShaderGraphs } from '$lib/shaderGraph'
   import { startMaterialSharing } from '$lib/materialSharing'
+  import { startMaterialTiers } from '$lib/materialTiers.js'
   import { startShaderSync } from '$lib/shaderSync'
   import { startHudSync } from '$lib/hudSync'
   import { startHudImages } from '$lib/hudImages'
@@ -298,6 +299,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // (GLTF, a peer's per-object messages, undo) rebuilds materials, and the id survives
     // where the instance does not
     startMaterialSharing()
+    // 40 F16: draw physical materials at this device's look tier (transmission / thin film)
+    startMaterialTiers()
     startShaderSync()
     startHudSync()
     startHudImages()

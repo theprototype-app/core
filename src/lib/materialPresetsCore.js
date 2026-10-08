@@ -11,7 +11,12 @@
 //     roughness, metalness, clearcoat, clearcoatRoughness, transmission, ior, shininess,
 //     emissive: '#rrggbb', emissiveIntensity, opacity, transparent, flatShading,
 //     map: dataURL|null, normalMap: dataURL|null, normalScale, repeat: [u, v],
-//     procedural: 'wood'|'stone' }   ← built-ins only: the maps are generated on the device
+//     procedural: 'wood'|'stone'|'scales' }   ← built-ins only: the maps are generated on the device
+//   40 F16 adds the THIN-FILM fields (MeshPhysicalMaterial): iridescence, iridescenceIOR,
+//     iridescenceThicknessMin/Max (nm — three's iridescenceThicknessRange), thickness (the
+//     transmission volume). A device may draw fewer of them than the look asks for: the look
+//     TIER (materialTiers.js) drops transmission on a phone and the whole thin-film set in a
+//     headset — the preset, the save and the wire always carry the authored numbers.
 //
 // Applying one goes through the EXISTING `objectParameters / materials` message (UV4's slot
 // payload), so the wire gains only the library broadcast (`matpresets`, the `envpresets`
@@ -49,7 +54,12 @@ export const NUMERIC_FIELDS = [
 	'ior',
 	'shininess',
 	'emissiveIntensity',
-	'opacity'
+	'opacity',
+	'iridescence',
+	'iridescenceIOR',
+	'iridescenceThicknessMin',
+	'iridescenceThicknessMax',
+	'thickness'
 ];
 
 /**
@@ -127,6 +137,31 @@ export const STARTER_PRESETS = [
 		metalness: 0
 	},
 	{
+		// 40 F16: FISH SCALES — the look the aquarium's fish wear, for anyone: a thin-film
+		// iridescent sheen that shifts with the view (the silver-blue flash of a turning fish),
+		// a procedural scale relief, a light clear coat and, where a device can afford the pass,
+		// a hint of transmission so a fin reads thin. Recolour it in the Inspector for any fish,
+		// snake, dragon or beetle shell.
+		version: 1,
+		id: 'fishscale',
+		label: 'Fish scales',
+		type: 'MeshPhysicalMaterial',
+		color: '#c9d6dc',
+		roughness: 0.32,
+		metalness: 0.15,
+		clearcoat: 0.5,
+		clearcoatRoughness: 0.25,
+		iridescence: 0.9,
+		iridescenceIOR: 1.6,
+		iridescenceThicknessMin: 180,
+		iridescenceThicknessMax: 560,
+		transmission: 0.12,
+		thickness: 0.3,
+		procedural: 'scales',
+		normalScale: 0.7,
+		repeat: [3, 3]
+	},
+	{
 		version: 1,
 		id: 'neon',
 		label: 'Neon',
@@ -138,6 +173,9 @@ export const STARTER_PRESETS = [
 		emissiveIntensity: 2.5
 	}
 ];
+
+/** the procedural map kinds a built-in may name (materialPresetMaps generates them) */
+export const PROCEDURAL_KINDS = ['wood', 'stone', 'scales'];
 
 /** @param {any} name */
 export function cleanName(name) {
@@ -171,7 +209,12 @@ const RANGES = {
 	ior: [1, 2.333],
 	shininess: [0, 1000],
 	emissiveIntensity: [0, 20],
-	opacity: [0, 1]
+	opacity: [0, 1],
+	iridescence: [0, 1],
+	iridescenceIOR: [1, 2.333],
+	iridescenceThicknessMin: [0, 2000],
+	iridescenceThicknessMax: [0, 2000],
+	thickness: [0, 10]
 };
 
 /** a data:image URL or null — presets never carry a remote URL (a library would fetch it) @param {any} v */
@@ -215,7 +258,7 @@ export function normalizePreset(input) {
 		const v = num(input.repeat[1], 0.01, 100);
 		if (u !== undefined && v !== undefined && (u !== 1 || v !== 1)) out.repeat = [u, v];
 	}
-	if (input.procedural === 'wood' || input.procedural === 'stone') out.procedural = input.procedural;
+	if (PROCEDURAL_KINDS.includes(input.procedural)) out.procedural = input.procedural;
 	if (Number.isFinite(input.savedAt)) out.savedAt = input.savedAt;
 	return out;
 }
@@ -242,6 +285,16 @@ export function snapshotLook(material, label, maps = {}) {
 	for (const key of NUMERIC_FIELDS) {
 		if (typeof material?.[key] === 'number') raw[key] = r4(material[key]);
 	}
+	// 40 F16: three keeps the film thickness as a [min, max] pair
+	const range = material?.iridescenceThicknessRange;
+	if (Array.isArray(range) && range.length === 2) {
+		raw.iridescenceThicknessMin = r4(range[0]);
+		raw.iridescenceThicknessMax = r4(range[1]);
+	}
+	// …and a device drawing a lower look TIER holds the authored numbers beside the material
+	const authored = material?.userData?.lookTierAuthored;
+	if (authored && typeof authored === 'object')
+		for (const [key, value] of Object.entries(authored)) if (typeof value === 'number' && key in raw) raw[key] = r4(value);
 	// emissiveIntensity without an emissive colour is noise; opacity 1 is the default
 	if (!raw.emissive) delete raw.emissiveIntensity;
 	if (raw.opacity === 1) delete raw.opacity;
@@ -308,6 +361,11 @@ export const LOOK_DEFAULTS = {
 	shininess: 30,
 	emissiveIntensity: 1,
 	opacity: 1,
+	iridescence: 0,
+	iridescenceIOR: 1.3,
+	iridescenceThicknessMin: 100,
+	iridescenceThicknessMax: 400,
+	thickness: 0,
 	transparent: false,
 	flatShading: false
 };
@@ -323,7 +381,12 @@ const TYPE_FIELDS = {
 		'transmission',
 		'ior',
 		'emissiveIntensity',
-		'opacity'
+		'opacity',
+		'iridescence',
+		'iridescenceIOR',
+		'iridescenceThicknessMin',
+		'iridescenceThicknessMax',
+		'thickness'
 	],
 	MeshPhongMaterial: ['shininess', 'emissiveIntensity', 'opacity'],
 	MeshLambertMaterial: ['emissiveIntensity', 'opacity'],
@@ -394,6 +457,12 @@ export function swatchLayers(p) {
 		`radial-gradient(circle at 50% 50%, transparent 55%, color-mix(in srgb, #000 ${Math.round(25 + metal * 25)}%, transparent) 100%)`
 	];
 	if (glow) layers.push(`radial-gradient(circle at 50% 50%, ${glow} 0%, color-mix(in srgb, ${glow} 40%, transparent) 70%)`);
+	// 40 F16: a thin film reads as a hue sweep across the sphere
+	const irid = typeof p?.iridescence === 'number' ? p.iridescence : 0;
+	if (irid > 0)
+		layers.push(
+			`conic-gradient(from 200deg at 60% 60%, color-mix(in srgb, #ff6ad5 ${Math.round(irid * 35)}%, transparent), color-mix(in srgb, #5ad1ff ${Math.round(irid * 35)}%, transparent), color-mix(in srgb, #8cff8a ${Math.round(irid * 30)}%, transparent), color-mix(in srgb, #ff6ad5 ${Math.round(irid * 35)}%, transparent))`
+		);
 	layers.push(
 		alpha < 1
 			? `linear-gradient(color-mix(in srgb, ${base} ${Math.round(alpha * 100)}%, transparent), color-mix(in srgb, ${base} ${Math.round(alpha * 100)}%, transparent))`

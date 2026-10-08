@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-08T00:15:17.731Z",
+	"recordedAt": "2026-10-08T00:28:57.594Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -2955,6 +2955,7 @@
 				"Back to the scene's start view",
 				"Bridge (faces)",
 				"Collapse / expand the selected nodes",
+				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",
 				"Copy the selection",
 				"Cut the selection",
@@ -3338,6 +3339,7 @@
 				"Back to the scene's start view",
 				"Bridge (faces)",
 				"Collapse / expand the selected nodes",
+				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",
 				"Copy the selection",
 				"Cut the selection",
@@ -3447,6 +3449,7 @@
 				"Back to the scene's start view",
 				"Bridge (faces)",
 				"Collapse / expand the selected nodes",
+				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",
 				"Copy the selection",
 				"Cut the selection",
@@ -3556,6 +3559,7 @@
 				"Back to the scene's start view",
 				"Bridge (faces)",
 				"Collapse / expand the selected nodes",
+				"Command palette — search every command and setting",
 				"Connect two corners of a face (vertices)",
 				"Copy the selection",
 				"Cut the selection",
@@ -4201,6 +4205,7 @@
 				"Orbit feel",
 				"Overrides — this device",
 				"Physics",
+				"Play",
 				"Saved views",
 				"Scene look",
 				"Scene track (shared)",
@@ -4252,7 +4257,7 @@
 				"Camera",
 				"Orbit feel",
 				"Overrides — this device",
-				"Physics",
+				"Play",
 				"Saved views",
 				"Scene look",
 				"Selection passes through",
@@ -4334,6 +4339,13 @@
 				"Physics",
 				"Saved views",
 				"Start view"
+			],
+			"play": [
+				"Music",
+				"Physics",
+				"Play",
+				"Scene track (shared)",
+				"This device"
 			],
 			"background": [
 				"Background",

@@ -3968,6 +3968,19 @@
 									role="presentation"
 									onclick={() => document.getElementById('texture-file')?.click()}
 								/>
+								<!-- 40-image (F13): edit the texture's image; saving it re-textures every
+								     material made from it, for every peer -->
+								<UiButton
+									id="texture-edit"
+									size="sm"
+									variant="outline"
+									icon="square-pen"
+									title="Edit this texture in the Image editor — crop, rotate, resize, adjust"
+									onclick={() => {
+										const uuid = matTargets[0]?.uuid;
+										if (uuid) import('$lib/image/imageEditor').then((m) => m.editMaterialTexture(uuid, 0));
+									}}>Edit</UiButton
+								>
 								<UiButton
 									size="sm"
 									variant="outline"

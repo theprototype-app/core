@@ -164,6 +164,8 @@ const INPUT = {
 	camerarig: { target: 'object', offset: 'vector3' }, // 37 (R8)
 	rotor: { on: 'boolean' }, // 36-fb F25
 	flowfloat: { path: 'object' }, // 36-fb F24
+	followpath: { path: 'object' }, // 40 F15
+	wander: { area: 'object' }, // 40 F15
 	setcolor: { color: 'color' },
 	visibility: { on: 'boolean' },
 	setuniform: { value: 'number' },

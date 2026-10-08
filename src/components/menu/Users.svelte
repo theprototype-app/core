@@ -7,6 +7,9 @@
 	import { sineIn } from 'svelte/easing';
 	import ModalDialog from '../ui/ModalDialog.svelte';
 	import NavRow from '../ui/NavRow.svelte';
+	import SheetGrip from '../ui/SheetGrip.svelte';
+	import { readSheetH, saveSheetH } from '$lib/ui/sheetDrag.js';
+	import { phoneShellActive } from '$lib/ui/phoneShell.js';
 	import UiButton from '../ui/Button.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
@@ -509,11 +512,20 @@
 		if (dropdownEl?.contains(to) || triggerEl?.contains(to)) return;
 		openDropdown = false;
 	}
+	// 40 F1: on the phone the profile menu is a SHEET above the bottom bar — NOT a top-layer
+	// popover there, because nothing can sit above the top layer and the bar's raised Play circle
+	// must (the sheet carries no `popover` attribute on the phone, see the markup). It wears the
+	// shared grab bar: resize (remembered, `profileSheetH`; 0 = fit the content), swipe away.
+	let profileH = $state(readSheetH('profileSheetH', 0));
+	function profileResize(h: number, done: boolean) {
+		profileH = Math.round(h);
+		if (done) saveSheetH('profileSheetH', profileH);
+	}
 	/** mount: enter the top layer, place, and listen for the ways out */
 	function dropdownAttach(node: HTMLElement) {
 		dropdownEl = node;
 		try {
-			node.showPopover?.();
+			if (node.hasAttribute('popover')) node.showPopover?.();
 		} catch {}
 		placeDropdown();
 		// "outside" is decided by where the PRESS started: the panel's own avatar circle sits
@@ -973,14 +985,17 @@
 	{#if openDropdown}
 		<div
 			id="avatar-dropdown"
-			popover="manual"
+			popover={$phoneShellActive ? undefined : 'manual'}
 			role="tooltip"
 			{@attach dropdownAttach}
 			in:fade|global={{ duration: 100, easing: sineIn }}
 			onfocusout={dropdownFocusOut}
 			class="tp-ui w-72 overflow-visible rounded-lg border border-border bg-surface-2 text-text shadow-sm"
-			style="position: fixed; bottom: auto; left: auto; border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 996; margin-top: -50px;"
+			style="position: fixed; bottom: auto; left: auto; border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 996; margin-top: -50px;{$phoneShellActive && profileH ? ` --profile-sheet-h: ${profileH}px;` : ''}"
 		>
+		{#if $phoneShellActive}
+			<SheetGrip class="pm-grip" label="profile menu" height={profileH || dropdownEl?.offsetHeight || 240} onresize={profileResize} onclose={() => (openDropdown = false)} />
+		{/if}
 		<!-- the profile circle, seated in the 1.5rem notch this panel's top-right corner
 		     exists for (24px radius = half of a 48px avatar, so it is exactly inscribed and
 		     the panel's own overflow-hidden does not bite it). Clicking it closes the menu,

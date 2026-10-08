@@ -16,6 +16,7 @@
 	// ArrowUp/ArrowDown step a detent, Enter/Space cycle up (from full back to peek).
 	// Persisting the user's height is the CALLER's (bind:detent) — this owns no storage key.
 	import { detentHeights, snapDetent, stepDetent } from '$lib/ui/sheetSnap.js';
+	import { sheetDrag } from '$lib/ui/sheetDrag.js';
 	import Icon from './Icon.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
@@ -41,8 +42,6 @@
 	const allowed = $derived(detents.filter((d) => d in heights));
 	const resting = $derived(allowed.includes(detent) ? detent : allowed[0]);
 
-	/** when the last drag ended (performance.now) — its trailing click is not a tap */
-	let draggedAt = -Infinity;
 	/** live height while a finger drags; null = at rest on a detent */
 	let dragH = $state(/** @type {number|null} */ (null));
 	const height = $derived(dragH ?? heights[resting] ?? 0);
@@ -64,61 +63,16 @@
 		}
 	}
 
-	/** Pointer drag on the handle strip — an action, so the strip stays a plain element. @param {HTMLElement} node */
-	function dragStrip(node) {
-		let startY = 0;
-		let startH = 0;
-		let moved = false;
-		/** recent [time, y] samples for the release velocity */
-		/** @type {[number, number][]} */
-		let samples = [];
-		/** @param {PointerEvent} e */
-		const down = (e) => {
-			if (e.button !== 0) return;
-			// a press on a control inside the strip (the close button) is that control's
-			if (/** @type {HTMLElement} */ (e.target).closest('button:not(.sh-handle)')) return;
-			startY = e.clientY;
-			startH = height;
-			moved = false;
-			samples = [[e.timeStamp, e.clientY]];
-			node.setPointerCapture?.(e.pointerId);
-		};
-		/** @param {PointerEvent} e */
-		const move = (e) => {
-			if (!samples.length) return;
-			const dy = e.clientY - startY;
-			if (!moved && Math.abs(dy) < 4) return;
-			moved = true;
-			dragH = Math.max(0, Math.min(heights.full, startH - dy));
-			samples.push([e.timeStamp, e.clientY]);
-			if (samples.length > 6) samples.shift();
-			e.preventDefault();
-		};
-		/** @param {PointerEvent} e */
-		const up = (e) => {
-			if (!samples.length) return;
-			node.releasePointerCapture?.(e.pointerId);
-			const first = samples[0];
-			samples = [];
-			if (!moved) return; // a tap: the handle's own click handles it
-			const dt = Math.max(1, e.timeStamp - first[0]);
-			const velocity = (e.clientY - first[1]) / dt; // px/ms, + = down
-			settle(snapDetent({ height: dragH ?? startH, velocity, heights, detents: allowed, dismissible }));
-			// the click this release may fire on the handle is not a tap (see cycle)
-			draggedAt = performance.now();
-		};
-		node.addEventListener('pointerdown', down);
-		node.addEventListener('pointermove', move);
-		node.addEventListener('pointerup', up);
-		node.addEventListener('pointercancel', up);
-		return {
-			destroy() {
-				node.removeEventListener('pointerdown', down);
-				node.removeEventListener('pointermove', move);
-				node.removeEventListener('pointerup', up);
-				node.removeEventListener('pointercancel', up);
-			}
-		};
+	// 40 F1: the drag itself is the shared phone-sheet gesture ($lib/ui/sheetDrag); where a
+	// release rests stays this sheet's detent rule (snapDetent)
+	/** @param {{height: number, velocity: number}} g @returns {number|'closed'} */
+	function settleDetent(g) {
+		const next = snapDetent({ height: g.height, velocity: g.velocity, heights, detents: allowed, dismissible });
+		return next === 'closed' || !next ? 'closed' : heights[next];
+	}
+	/** @param {number} h */
+	function restAt(h) {
+		settle(allowed.find((d) => heights[d] === h) ?? resting);
 	}
 
 	/** @param {KeyboardEvent} e */
@@ -129,7 +83,6 @@
 		}
 	}
 	function cycle() {
-		if (performance.now() - draggedAt < 350) return;
 		const up = stepDetent(resting, 1, allowed, heights, dismissible);
 		settle(up === resting ? allowed[0] : up);
 	}
@@ -166,12 +119,26 @@
 		use:escape
 		{...rest}
 	>
-		<div class="sh-strip" use:dragStrip>
+		<div
+			class="sh-strip"
+			use:sheetDrag={{
+				height: () => height,
+				min: () => heights[allowed[0]] ?? 0,
+				max: () => heights.full,
+				dismissible,
+				keys: false,
+				settle: settleDetent,
+				onmove: (h) => (dragH = h),
+				onsettle: restAt,
+				onclose: close,
+				ontap: cycle
+			}}
+		>
 			<button
 				type="button"
 				class="sh-handle"
+				data-sheet-grip
 				aria-label={`Resize sheet (${resting}). Arrow keys change the height.`}
-				onclick={cycle}
 				onkeydown={onHandleKey}
 			>
 				<span class="sh-grabber" aria-hidden="true"></span>

@@ -1052,5 +1052,47 @@
 		#image-editor-window :global(.dw-resize) {
 			display: none;
 		}
+		/* a phone is too narrow for canvas + sidebar side by side (measured: a 232 px canvas
+		   beside a 158 px sidebar that clipped its own labels), so the panel STACKS under the
+		   canvas: canvas, then the Edit/Versions tabs as a row, then the panel. Order is pinned
+		   whichever side the sidebar was switched to on a desktop. */
+		#image-editor-window :global(.ws-root) {
+			flex-direction: column;
+		}
+		#image-editor-window :global(.ws-main) {
+			order: 1 !important;
+			flex: 1 1 0;
+			min-height: 160px;
+		}
+		#image-editor-window :global(.ws-tabs) {
+			order: 2 !important;
+			flex-direction: row;
+			width: 100%;
+			padding-top: 0;
+			border-top: 1px solid var(--border);
+		}
+		#image-editor-window :global(.ws-tab-btn) {
+			flex: 1 1 0;
+			height: 44px;
+		}
+		#image-editor-window :global(.ws-tabs .ws-resize),
+		#image-editor-window :global([data-ws-switch-side]) {
+			display: none;
+		}
+		#image-editor-window :global(.ws-panel-secondary) {
+			order: 3 !important;
+			width: 100% !important;
+			height: auto;
+			flex: 0 1 46%;
+			min-height: 0;
+			border-inline: 0;
+		}
+	}
+	/* on the phone shell the top bar (logo, bell, avatar) is 64 px tall and the bottom bar
+	   holds Play: the sheet sits between the two, so neither covers its header (the close
+	   button) and Play stays tappable — the Inspector's phone-shell rule (ui.css). */
+	:global(:root.phone-shell) #image-editor-window {
+		top: 64px !important;
+		bottom: var(--ps-bar-h) !important;
 	}
 </style>

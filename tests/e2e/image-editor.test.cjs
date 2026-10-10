@@ -127,7 +127,8 @@ async function imageToPage(p, ix, iy, w, hh) {
 }
 
 h.run(async () => {
-	const browser = await h.launch();
+	// the GPU backend: on software GL two pages plus a 14 MB photo starve the compositor (round trips ~1 s, measured)
+	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1440, height: 900 } } });
 	const B = await h.setupPage(browser, 'B', { context: { viewport: { width: 1280, height: 800 } } });
 	await S(A, () => window.__stores.explorer.loadExplorer());
@@ -201,37 +202,7 @@ h.run(async () => {
 		s.fileWindows.openFilePreview({ title: 'quad.png', kind: 'image', itemId: id, name: 'quad.png', url: URL.createObjectURL(blob) });
 	}, quad.id);
 	await A.page.locator('#preview-edit').waitFor({ timeout: 8000 });
-	const under = await S(A, () => {
-		const b = document.querySelector('#preview-edit').getBoundingClientRect();
-		const el = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
-		return el ? el.tagName + '#' + el.id + '.' + String(el.className).slice(0, 60) : 'nothing';
-	});
-	console.log('  under #preview-edit: ' + under);
-	if (process.env.PROFILE40) {
-		const cdp = await A.ctx.newCDPSession(A.page);
-		await cdp.send('Profiler.enable');
-		await cdp.send('Profiler.start');
-		await A.page.waitForTimeout(3000);
-		const { profile } = await cdp.send('Profiler.stop');
-		const self = new Map();
-		const dt = profile.timeDeltas;
-		const byId = new Map(profile.nodes.map((n) => [n.id, n]));
-		profile.samples.forEach((id, i) => {
-			const n = byId.get(id);
-			const k = n.callFrame.functionName + ' ' + n.callFrame.url.split('/').slice(-2).join('/') + ':' + n.callFrame.lineNumber;
-			self.set(k, (self.get(k) ?? 0) + (dt[i] ?? 0) / 1000);
-		});
-		console.log('  PROFILE top: ' + JSON.stringify([...self.entries()].sort((a, b) => b[1] - a[1]).slice(0, 25).map(([k, v]) => k + ' ' + Math.round(v) + 'ms')));
-	}
-	for (let i = 0; i < 4; i++) {
-		const r0 = Date.now();
-		await S(A, () => 1);
-		console.log('  page round trip ' + (Date.now() - r0) + ' ms');
-		await A.page.waitForTimeout(500);
-	}
-	const t0 = Date.now();
 	await A.page.locator('#preview-edit').click({ timeout: 30000 });
-	console.log('  #preview-edit click took ' + (Date.now() - t0) + ' ms');
 	await A.page.locator('#image-editor-window').waitFor({ timeout: 15000 }).catch(async () => {
 		console.log('  errors: ' + JSON.stringify(h.pageErrors(A).slice(-4)));
 		console.log('  console: ' + JSON.stringify(A.page.__console.filter((m) => m.type === 'error' || m.type === 'warning').slice(-8)));
@@ -288,10 +259,8 @@ h.run(async () => {
 	await bright.press('Enter');
 	await A.page.waitForTimeout(300);
 	const box1Before = await texOf(A, box1);
-	console.log('  before save: title="' + (await A.page.locator('#image-editor-window .ie-title').textContent()) + '" brightness=' + (await bright.inputValue()) + ' saveEnabled=' + (await A.page.locator('#image-editor-save').isEnabled()));
 	await A.page.locator('#image-editor-save').click();
-	await until(async () => (await itemOf(A, quad.id))?.hash !== quad.hash, 8000);
-	console.log('  console after save: ' + JSON.stringify(A.page.__console.filter((m) => m.type === 'error' || m.type === 'warning').slice(-6)));
+	await until(async () => (await itemOf(A, quad.id))?.hash !== quad.hash, 20000);
 	const saved = await itemOf(A, quad.id);
 	h.check(saved && saved.hash !== quad.hash, 'Save replaced the bytes');
 	h.check(saved?.id === quad.id && saved?.name === 'quad.png', 'in the SAME library record (id and name kept)');
@@ -312,7 +281,7 @@ h.run(async () => {
 	// ---- §7 Restore original ------------------------------------------------------------
 	await A.page.locator('[data-ws-mode="history"]').click();
 	await A.page.locator('#image-editor-restore-original').click();
-	await until(async () => (await itemOf(A, quad.id))?.hash === quad.hash, 8000);
+	await until(async () => (await itemOf(A, quad.id))?.hash === quad.hash, 20000);
 	h.check((await itemOf(A, quad.id))?.hash === quad.hash, 'Restore original put the original bytes back');
 	await until(async () => /64 × 48/.test((await sizeText(A)) ?? ''), 6000);
 	h.check(/64 × 48/.test((await sizeText(A)) ?? ''), 'the editor reloaded the original');
@@ -403,15 +372,31 @@ h.run(async () => {
 	});
 	await P.page.locator('#image-editor-window').waitFor({ timeout: 8000 });
 	await until(async () => /80 × 60/.test((await sizeText(P)) ?? ''), 8000);
+	// toasts (the quality governor's, on a phone) sit over the sheet's top; they are not under test
+	await S(P, () => document.querySelectorAll('.toasts-stack .tp-toast-x').forEach((b) => b.click()));
+	await P.page.waitForTimeout(300);
 	const win = await P.page.locator('#image-editor-window').boundingBox();
 	h.check(win && win.x <= 1 && win.width >= 388, `on a phone the editor is full width (${win?.x}, ${win?.width})`);
-	const play = await P.page.locator('#play-button').boundingBox();
-	h.check(!!play && win.y + win.height <= play.y + 1, `it ends above the Play button (sheet bottom ${Math.round(win.y + win.height)}, Play top ${Math.round(play?.y ?? -1)})`);
-	const hitPlay = await S(P, () => {
-		const b = document.querySelector('#play-button').getBoundingClientRect();
-		return !!document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('#play-button');
-	});
+	// the phone shell's Play lives in its bottom bar (#ps-play); the desktop pill is hidden there
+	const playSel = (await S(P, () => document.documentElement.classList.contains('phone-shell'))) ? '#ps-play' : '#play-button';
+	const play = await P.page.locator(playSel).boundingBox();
+	h.check(!!play && win.y + win.height <= play.y + 1, `it ends above Play (sheet bottom ${Math.round(win.y + win.height)}, ${playSel} top ${Math.round(play?.y ?? -1)})`);
+	const hitPlay = await S(P, (sel) => {
+		const b = document.querySelector(sel).getBoundingClientRect();
+		return !!document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest(sel);
+	}, playSel);
 	h.check(hitPlay, 'Play is still the thing under a tap');
+	const head = await S(P, () => {
+		const b = document.querySelector('#image-editor-close').getBoundingClientRect();
+		return !!document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('#image-editor-close');
+	});
+	h.check(head, 'the top bar does not cover the editor\'s close button');
+	const stack = await S(P, () => {
+		const c = document.querySelector('#image-editor-canvas-wrap').getBoundingClientRect();
+		const p = document.querySelector('#image-editor-window .ws-panel-secondary').getBoundingClientRect();
+		return { cw: Math.round(c.width), below: p.top >= c.bottom - 1, pw: Math.round(p.width) };
+	});
+	h.check(stack.cw >= 380 && stack.below && stack.pw >= 380, `the panel stacks under a full-width canvas (canvas ${stack.cw} px, panel ${stack.pw} px, below: ${stack.below})`);
 	await P.page.locator('#image-editor-crop').tap();
 	const q0 = await imageToPage(P, 10, 10, 80, 60);
 	const q1 = await imageToPage(P, 50, 40, 80, 60);

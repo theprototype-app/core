@@ -27,6 +27,12 @@ h.run(async () => {
 		const down = (x, y) => cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
 		const moveTo = (x, y) => cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y, id: 1 }] });
 		const up = () => cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+		// an action sheet closes on a tap on its backdrop (a phone has no Escape key)
+		const closeSheet = async () => {
+			if ((await P.locator('.ctx-scroll[role=menu]').count()) === 0) return;
+			await P.touchscreen.tap(195, 60);
+			await P.waitForTimeout(400);
+		};
 		await P.evaluate(async () => {
 			const ex = window.__stores.explorer;
 			ex.createFolder('Props');
@@ -48,13 +54,16 @@ h.run(async () => {
 		// ---- long press a FILE: the phone action sheet ----------------------------------------
 		const b = await card.boundingBox();
 		await down(b.x + b.width / 2, b.y + b.height / 2);
-		await P.waitForTimeout(700);
-		// the browser's own long-press contextmenu arrives too: swallowed, no second menu
-		const swallowed = await card.evaluate((el) => {
+		await P.waitForTimeout(100);
+		// the browser's own touch contextmenu (Android fires one on a long press) belongs to the
+		// hold: swallowed in capture, so the card's handler never opens a menu of its own
+		const swallowed = await card.evaluate(async (el) => {
 			const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 });
 			el.dispatchEvent(ev);
-			return ev.defaultPrevented;
+			await new Promise((r) => setTimeout(r, 120));
+			return { prevented: ev.defaultPrevented, menus: document.querySelectorAll('.ctx-scroll[role=menu]').length };
 		});
+		await P.waitForTimeout(600);
 		await up();
 		await P.waitForTimeout(500);
 		const sheet = await P.evaluate(() => {
@@ -65,7 +74,7 @@ h.run(async () => {
 		});
 		h.check(!!sheet && sheet.left === 0 && sheet.right === 390 && sheet.bottom >= 760, `${theme}: a long press on a file opens its menu as a bottom action sheet (${JSON.stringify(sheet && { ...sheet, text: undefined })})`);
 		h.check(!!sheet && /Rename/.test(sheet.text) && sheet.menus === 1, `${theme}: ...the FILE's menu, once (${sheet?.menus})`);
-		h.check(swallowed, `${theme}: the browser's own long-press contextmenu is swallowed`);
+		h.check(swallowed.prevented && swallowed.menus === 0, `${theme}: the browser's own touch contextmenu is swallowed — no menu until the hold (${JSON.stringify(swallowed)})`);
 		h.check((await P.evaluate(() => window.__nativeDrags)) === 0, `${theme}: no native drag starts from the long press`);
 
 		// ---- rename: the selected text is readable ---------------------------------------------
@@ -90,10 +99,8 @@ h.run(async () => {
 		await up();
 		await P.waitForTimeout(500);
 		const fmenu = await P.evaluate(() => document.querySelector('.ctx-scroll[role=menu]')?.textContent ?? '');
-		h.check(/Open/.test(fmenu) && /Rename/.test(fmenu), `${theme}: a long press on a folder opens the folder's action sheet`);
-		await P.evaluate(() => document.querySelector('.ctx-scroll[role=menu]') && window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
-		await P.keyboard.press('Escape');
-		await P.waitForTimeout(400);
+		h.check(/Properties/.test(fmenu) && /Rename/.test(fmenu), `${theme}: a long press on a folder opens the folder's action sheet (${fmenu.slice(0, 80)})`);
+		await closeSheet();
 		h.check((await P.locator('.ctx-scroll[role=menu]').count()) === 0, `${theme}: premise: the menu closed`);
 
 		// ---- hold, then MOVE: the menu gives way to the pick-up --------------------------------
@@ -106,6 +113,7 @@ h.run(async () => {
 		const mid = await P.evaluate(() => ({ menus: document.querySelectorAll('.ctx-scroll[role=menu]').length, ghost: !!document.getElementById('explorer-touch-ghost') }));
 		await up();
 		await P.waitForTimeout(400);
+		await closeSheet();
 		h.check(menuWhileHeld === 1 && mid.menus === 0 && mid.ghost, `${theme}: hold then move: the menu closes and the card is picked up (${menuWhileHeld} -> ${JSON.stringify(mid)})`);
 
 		// ---- the toolbar scrolls sideways; the project name is reachable -----------------------

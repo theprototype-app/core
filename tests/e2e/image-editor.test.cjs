@@ -213,12 +213,15 @@ h.run(async () => {
 	h.check(/64 × 48/.test((await sizeText(A)) ?? ''), `the editor opened on the image (${await sizeText(A)})`);
 	await S(A, () => window.__stores.fileWindows.previewWindows.set([]));
 	// the editor draws the picture (a canvas that stayed blank would read all-zero)
-	const drawn = await S(A, () => {
+	const alphaAt = () => S(A, () => {
 		const c = document.querySelector('#image-editor-canvas');
 		const ctx = c.getContext('2d');
 		const d = ctx.getImageData(Math.floor(c.width / 4), Math.floor(c.height / 2), 1, 1).data;
 		return d[3];
 	});
+	// the first draw lands on a frame after the bytes decode, so wait for it rather than sample once
+	await until(async () => (await alphaAt()) > 0, 4000);
+	const drawn = await alphaAt();
 	h.check(drawn > 0, 'the canvas shows the image');
 
 	// ---- §4 rotate + the editor's own undo ---------------------------------------------
@@ -398,6 +401,8 @@ h.run(async () => {
 	});
 	h.check(stack.cw >= 380 && stack.below && stack.pw >= 380, `the panel stacks under a full-width canvas (canvas ${stack.cw} px, panel ${stack.pw} px, below: ${stack.below})`);
 	await P.page.locator('#image-editor-crop').tap();
+	await P.page.locator('#image-editor-crop-badge').waitFor({ timeout: 4000 });
+	await P.page.waitForTimeout(300); // crop mode re-lays the panel out; aim after it settles
 	const q0 = await imageToPage(P, 10, 10, 80, 60);
 	const q1 = await imageToPage(P, 50, 40, 80, 60);
 	const cdp = await P.ctx.newCDPSession(P.page);
@@ -406,10 +411,29 @@ h.run(async () => {
 	for (let i = 1; i <= 6; i++) await touch('touchMove', { x: q0.x + ((q1.x - q0.x) * i) / 6, y: q0.y + ((q1.y - q0.y) * i) / 6 });
 	await touch('touchEnd');
 	await P.page.waitForTimeout(200);
+	const dragged = await P.page.locator('#image-editor-crop-badge').textContent();
+	h.check(/Crop 4\d × 3\d/.test(dragged ?? ''), `the touch drag drew a crop box (${dragged})`);
+	// entering crop mode brought Apply into the panel's view, clear of the bottom bar
+	const apply = await S(P, () => {
+		const b = document.querySelector('#image-editor-crop-apply').getBoundingClientRect();
+		return !!document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('#image-editor-crop-apply');
+	});
+	h.check(apply, 'Apply crop is in view and under a tap (not under the bottom bar)');
 	await P.page.locator('#image-editor-crop-apply').tap();
 	const phoneSize = (await sizeText(P)) ?? '';
 	const [pw, ph] = (phoneSize.match(/(\d+) × (\d+)/) ?? []).slice(1).map(Number);
 	h.check(Math.abs(pw - 40) <= 1 && Math.abs(ph - 30) <= 1, `a touch drag cropped the image (${phoneSize})`);
+	// the sidebar's scroller is shared by Edit and Versions: scrolled down in Edit, Versions
+	// must still open at its top (it opened scrolled past a short list, which read as empty)
+	await S(P, () => (document.querySelector('#image-editor-window .ws-panel-secondary .overflow-y-auto').scrollTop = 600));
+	await P.page.locator('[data-ws-mode="history"]').tap();
+	await P.page.waitForTimeout(300);
+	const vis = await S(P, () => {
+		const pane = document.querySelector('#image-editor-history').getBoundingClientRect();
+		const box = document.querySelector('#image-editor-window .ws-panel-secondary .overflow-y-auto').getBoundingClientRect();
+		return { pane: Math.round(pane.top), box: Math.round(box.top) };
+	});
+	h.check(vis.pane >= vis.box - 1, `Versions opens at its top after a scrolled Edit panel (pane top ${vis.pane}, scroller top ${vis.box})`);
 	void pq;
 
 	h.check(h.pageErrors(A).length === 0 && h.pageErrors(P).length === 0, 'no page errors');

@@ -15,7 +15,7 @@
 	// The editor's undo (Ctrl+Z / Ctrl+Shift+Z) is LOCAL to the window and never touches the
 	// scene's history: an unsaved edit is not scene state. Save is the step that reaches the
 	// scene, and the material re-texturing it does is ONE scene undo entry.
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
 	import UiButton from '../ui/Button.svelte';
 	import Segmented from '../ui/Segmented.svelte';
@@ -186,6 +186,9 @@
 		cropping = true;
 		crop = aspectRatio ? aspectRect(work.width, work.height, aspectRatio) : { x: 0, y: 0, w: work.width, h: work.height };
 		wrapEl?.focus();
+		// the crop fields + Apply appear UNDER the button that opened them; on a phone's short
+		// stacked panel that was half under the bottom bar, so bring them into the panel's view
+		tick().then(() => document.getElementById('image-editor-crop-apply')?.scrollIntoView({ block: 'nearest' }));
 	}
 	/** @param {string} next */
 	function setAspect(next) {
@@ -625,6 +628,16 @@
 		}
 	}
 
+	/** A panel switched in (Edit <-> Versions) starts at its top: the sidebar's scroller is
+	 *  SHARED by both, so it kept the Edit panel's offset and a short Versions list sat
+	 *  scrolled out of view (measured on a phone: rows 200 px above the visible area).
+	 *  @param {HTMLElement} node */
+	function fromTop(node) {
+		let el = node.parentElement;
+		while (el && !/auto|scroll/.test(getComputedStyle(el).overflowY)) el = el.parentElement;
+		if (el) el.scrollTop = 0;
+	}
+
 	/** wheel zoom about the cursor — a DIRECT non-passive listener, or the page zooms instead
 	 * @param {HTMLElement} node */
 	function surface(node) {
@@ -689,7 +702,7 @@
 </script>
 
 {#snippet versionsPanel()}
-	<div class="ie-pane" id="image-editor-history">
+	<div class="ie-pane" id="image-editor-history" use:fromTop>
 		{#if versions.length && item}
 			{@const original = versions[0]}
 			<div class="ie-row">
@@ -727,7 +740,7 @@
 {/snippet}
 
 {#snippet editPanel()}
-	<div class="ie-pane" id="image-editor-tools">
+	<div class="ie-pane" id="image-editor-tools" use:fromTop>
 		<div class="ie-section">
 			<div class="ui-section-label">Rotate and flip</div>
 			<div class="ie-buttons">

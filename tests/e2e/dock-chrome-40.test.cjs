@@ -129,13 +129,14 @@ h.run(async () => {
 		// could not fail): what is under its centre must BE Play — not the sheet, not its scrim
 		const under = await page.evaluate(() => {
 			const ps = document.getElementById('ps-play');
-			const r = ps?.getBoundingClientRect();
+			// the RAISED circle's top edge (it rises above the bar, where a sheet could cover it)
+			const r = (ps?.querySelector('.ps-live') ?? ps)?.getBoundingClientRect();
 			if (!r || !r.width) return 'no #ps-play';
-			const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+			const at = document.elementFromPoint(r.left + r.width / 2, r.top + 4);
 			const sh = document.querySelector('#dock-views-sheet')?.getBoundingClientRect();
 			return ps.contains(at) ? 'ok' : `${at?.id || at?.className} (sheet ${sh && Math.round(sh.top)}-${sh && Math.round(sh.bottom)}, play ${Math.round(r.top)})`;
 		});
-		h.check(under === 'ok', `F9.1c the phone's Play (#ps-play) is on top while the Windows sheet is open (${under})`);
+		h.check(under === 'ok', `F9.1c the phone's Play (#ps-play, the top of its raised circle) is on top while the Windows sheet is open (${under})`);
 		h.check(!!bar.toggleRight && bar.toggleRight <= bar.vw, `F9.1c every row's switch is on screen (${JSON.stringify(bar)})`);
 		h.check(['flow', 'explorer', 'animation', 'uv', 'shader', 'hud', 'profiler', 'code', 'flowcode'].every((k) => sheet.rows.includes(k)), `F9.2 ...listing EVERY window, the Node editor too (${sheet.rows.join(',')})`);
 		const exToggle = page.locator('#dock-view-toggle-explorer');

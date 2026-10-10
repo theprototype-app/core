@@ -119,6 +119,7 @@
 		<button
 			type="button"
 			class="tp-ui sh-scrim"
+			class:sh-lifted={bottomOff > 0}
 			tabindex="-1"
 			aria-label="Close"
 			style:bottom={bottomOff > 0 ? `${bottomOff}px` : undefined}
@@ -127,6 +128,7 @@
 	{/if}
 	<div
 		class="tp-ui sh"
+		class:sh-lifted={bottomOff > 0}
 		class:sh-dragging={dragH !== null}
 		role={modal ? 'dialog' : 'region'}
 		aria-modal={modal || undefined}
@@ -212,6 +214,15 @@
 			transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
 			clip-path 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
 		will-change: transform;
+	}
+	/* 40-int: a sheet lifted onto the phone bar joins the phone sheets' band (38-43) UNDER the bar
+	   (PhoneShell .ps-bar, 44): the raised Play circle rises above the bar's top edge and must
+	   stay on top of the sheet and its scrim */
+	.sh-scrim.sh-lifted {
+		z-index: 42;
+	}
+	.sh.sh-lifted {
+		z-index: 43;
 	}
 	.sh-dragging {
 		transition: none;

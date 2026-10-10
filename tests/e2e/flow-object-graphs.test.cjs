@@ -47,7 +47,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(300);
 	h.check((await graphsOf(A)).includes(uuid), 'Create flow makes the object graph document');
 	h.check((await A.page.locator('#flow-empty-state').count()) === 0, 'empty state clears after create');
-	const chip = await A.page.locator('#flow-scope-chip').innerText();
+	// 41 G15: the breadcrumb bar's object crumb names the object flow (its full title)
+	const chip = (await A.page.locator('#flow-scope-chip [data-crumb="object"]').getAttribute('title')) ?? '';
 	h.check(chip.includes('object flow'), 'scope chip labels the object flow');
 
 	// --- an effect node in the object graph drives the OWNER implicitly -------
@@ -74,7 +75,9 @@ h.run(async () => {
 	await A.page.evaluate((id) => window.__stores.objectActions.selectObject(id), uuid);
 	await A.page.waitForTimeout(400);
 	h.check((await activeOf(A)) === uuid, 'reselecting scopes back to the object');
-	await A.page.locator('#flow-scope-scene').click();
+	await A.page.locator('#flow-scope-chip [data-crumb="scene"]').click();
+	await A.page.waitForTimeout(250);
+	await A.page.locator('.ctx-scroll[role=menu] [role=menuitem]', { hasText: /the Scene graph/ }).first().click();
 	await A.page.waitForTimeout(400);
 	h.check((await activeOf(A)) === 'scene', 'the Scene chip button returns to the scene flow');
 	const setAfter = await A.page.evaluate(

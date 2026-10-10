@@ -1434,7 +1434,7 @@ export function tickWater(_delta) {
 		return;
 	}
 	// 36-fb-water F27: the QUALITY LEVEL (not a headset, not the user's own Low) took the
-	// refraction away from water on screen — SimplifiedWaterNotice says so, once a session
+	// refraction away from water on screen — AutoQualityNotice says so, once a session (40 F12)
 	noteSimplified(
 		'water',
 		tier === 'quest' && qualityPref === 'auto' && !rendererRef?.xr?.isPresenting && [...entries.values()].some((e) => shown(e.object))

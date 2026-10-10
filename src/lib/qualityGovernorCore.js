@@ -246,6 +246,17 @@ function percentile(sorted, q) {
  * each transition itself a visible hitch). A step back up shortly after a walk down
  * doubles the recovery hold for next time, capped; a step up long after the last walk down
  * is just a heavier scene, and resets it.
+ *
+ * 40 F12 — THE FLAP LOCK. Doubling the hold only slowed the flap down: on a phone, Aquarium's
+ * water switched its refraction off and on by itself every 10-80 s (level 6 "post off" drops the
+ * screen-space water pass, so its frames are cheap and recover; level 5 brings the pass back and
+ * overloads 3 s later). The frames of a level say nothing about the cost of the level above it,
+ * so a recovery that had to be undone is not retried: stepping back UP to the level just walked
+ * down FROM (within `flapWindowMs`) makes that level the lowest recovery may reach until
+ * `clearFlapLock` — a new scene, "Keep full quality", the auto switch. Every automatic toggle
+ * (water, fluid, HDRI tier, shadows, resolution, AO, post, particles) derives from the level, so
+ * every one gets the same rule: at most one retry per scene. A scene that becomes LIGHT still
+ * walks back (that is new evidence, not the same frames again).
  * @param {{timing?: Partial<typeof TIMING>}} [opts]
  */
 export function createGovernor(opts = {}) {
@@ -257,6 +268,9 @@ export function createGovernor(opts = {}) {
 	let level = 0;
 	let changedAt = -Infinity;
 	let lastDownAt = -Infinity;
+	/** 40 F12: the level the last walk down started from, and the flap lock (-1 = none) */
+	let lastDownFrom = -1;
+	let flapLock = -1;
 	let recoverHoldMs = timing.recoverWindowMs;
 	let settleUntil = -Infinity;
 	/** 31-perf P3: a live XR session's thresholds (xrThresholds), null = the profile's;
@@ -287,14 +301,17 @@ export function createGovernor(opts = {}) {
 	}
 
 	function change(/** @type {number} */ to, /** @type {number} */ now) {
-		if (to < level) lastDownAt = now;
-		else if (to > level)
+		if (to < level) {
+			lastDownAt = now;
+			lastDownFrom = level;
+		} else if (to > level) {
 			// a step up soon after a walk down is a FLAP: make the next recovery wait longer.
 			// A step up long after one is simply a scene that got heavier: forgive the history
-			recoverHoldMs =
-				now - lastDownAt < timing.flapWindowMs
-					? Math.min(timing.maxRecoverHoldMs, recoverHoldMs * 2)
-					: timing.recoverWindowMs;
+			const flap = now - lastDownAt < timing.flapWindowMs;
+			recoverHoldMs = flap ? Math.min(timing.maxRecoverHoldMs, recoverHoldMs * 2) : timing.recoverWindowMs;
+			// 40 F12: straight back to the level the recovery left — lock it (see the header)
+			if (flap && to === lastDownFrom) flapLock = Math.max(flapLock, to);
+		}
 		level = to;
 		changedAt = now;
 		settleUntil = now + timing.settleMs;
@@ -359,6 +376,8 @@ export function createGovernor(opts = {}) {
 					change(level - 1, now);
 					return { level, moved: 'down', reason: 'scene is light', p95 };
 				}
+				// 40 F12: a recovery that already had to be undone is not retried
+				if (level <= flapLock) return { level, moved: null, reason: 'held (flapped)', p95 };
 				const calm = p95Over(now, recoverHoldMs);
 				if (calm != null && calm < t.underMs && tasks === 0) {
 					change(level - 1, now);
@@ -372,6 +391,13 @@ export function createGovernor(opts = {}) {
 			const next = Math.max(0, Math.min(MAX_LEVEL, Math.floor(to) || 0));
 			if (next !== level) change(next, now);
 			return level;
+		},
+		/** 40 F12: the lowest level recovery may reach because it flapped there (-1 = none) */
+		flapLock: () => flapLock,
+		/** 40 F12: a new scene / "Keep full quality" / the auto switch — the old flap is no evidence */
+		clearFlapLock() {
+			flapLock = -1;
+			lastDownFrom = -1;
 		},
 		/** 31-perf P3: judge against these (an XR session's rate) until cleared with null.
 		 * @param {{overMs: number, underMs: number, budgetMs?: number} | null} t */

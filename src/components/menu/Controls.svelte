@@ -25,7 +25,7 @@
 	import { sendPing } from '$lib/ping';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
 	import * as THREE from 'three';
-	import { onMount, setContext, tick, untrack } from 'svelte';
+	import { onMount, setContext, tick } from 'svelte';
 	import { createGesture } from '$lib/modalGrab';
 	import { writable, get } from 'svelte/store';
 	import { shareObject } from '$lib/objectPermissions';
@@ -599,30 +599,17 @@
 		const what = q.labels.join(', ').toLowerCase();
 		return q.pinned
 			? 'Held at reduced quality (' + what + '). Click to restore full quality.'
-			: 'This scene is heavy for this device, so drawing was reduced: ' + what + '. It comes back on its own when frames recover. Click to keep it this way.';
+			: q.held
+				? 'This scene is heavy for this device, so drawing was reduced: ' + what + '. It stays this way for this scene (it came back once and the frames dropped again). Click to keep it this way.'
+				: 'This scene is heavy for this device, so drawing was reduced: ' + what + '. It comes back on its own when frames recover. Click to keep it this way.';
 	});
 	function qualityChipClick(node: HTMLElement) {
 		const click = () => (get(qualityState).pinned ? releaseQuality() : pinQuality());
 		node.addEventListener('click', click);
 		return { destroy() { node.removeEventListener('click', click); } };
 	}
-	// …and once per session, a toast when it FIRST acts, because the chip lives in the object
-	// list's footer and that window can be closed
-	let qualityToasted = false;
-	$effect(() => {
-		const q = $qualityState;
-		if (q.level > 0 && !qualityToasted) {
-			qualityToasted = true;
-			untrack(() =>
-				showQualityToast('Quality reduced — this scene is heavy for this device (' + q.labels.join(', ').toLowerCase() + '). It comes back on its own.', [
-					// 33 integrate: not "Restore …" — on a phone this toast now shows on every load, beside the
-					// session's own "Restore" (the L1 Restore path), and a tap on the wrong one undid the phone fix
-					{ label: 'Use full quality', action: () => releaseQuality() },
-					{ label: 'Keep it', action: () => pinQuality() }
-				])
-			);
-		}
-	});
+	// 40 F12: the once-per-session "Lowered … to keep it smooth · Keep full quality" toast is
+	// AutoQualityNotice (App root) — it used to live here and was gone whenever this window was closed.
 
 	// bottom status line: totals across the whole tree (N objects · M hidden)
 	let objectCount = $state(0);

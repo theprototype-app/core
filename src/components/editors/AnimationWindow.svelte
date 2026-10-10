@@ -1012,6 +1012,31 @@
 	// the viewport; 0 means "hidden behind another dock tab", which is not narrow.
 	let bodyW = $state(0);
 	const compact = $derived(bodyW > 0 && bodyW < 640);
+	/**
+	 * 40-int (F5 on the preview): `compact` reshapes the HEADER above the body (40 F7 puts the
+	 * name on its own row), which changes the body's own size — measured with bind:clientWidth
+	 * that re-size landed inside the same ResizeObserver pass ("ResizeObserver loop completed
+	 * with undelivered notifications" when every docked view mounts at once on a phone). The
+	 * width is read here instead and applied on the next frame, so the header's change is a
+	 * new notification of the next frame (where the width is unchanged and nothing moves).
+	 * @param {HTMLElement} node
+	 */
+	function bodyWidth(node) {
+		let raf = 0;
+		const ro = new ResizeObserver(() => {
+			cancelAnimationFrame(raf);
+			raf = requestAnimationFrame(() => {
+				if (node.clientWidth !== bodyW) bodyW = node.clientWidth;
+			});
+		});
+		ro.observe(node);
+		return {
+			destroy() {
+				cancelAnimationFrame(raf);
+				ro.disconnect();
+			}
+		};
+	}
 	/** which pane a compact editor shows @type {'list'|'plot'|'key'|'clip'} */
 	let phonePane = $state('plot');
 	// a coarse pointer (a finger) gets invisible hit areas around keys and easing handles: an
@@ -1997,7 +2022,7 @@
 			{/if}
 		</div>
 
-		<div class="flex min-h-0 flex-1" bind:clientWidth={bodyW} data-phone-pane={compact ? phonePane : undefined}>
+		<div class="flex min-h-0 flex-1" use:bodyWidth data-phone-pane={compact ? phonePane : undefined}>
 			<!-- LEFT: the object's OWN clips, then authored clips + movement tracks -->
 			<!-- clientHeight is the clip list's resize CEILING: the grip used to clamp at
 			     a flat 360px whatever the pane's own height, so on a short dock it went

@@ -324,6 +324,53 @@ export function headerTargetAt(x, y, excludeKey) {
 	return null;
 }
 
+/**
+ * 40 F10 — the floating window whose BOX (not just its header) is under (x, y), the
+ * topmost one: a docked tab dropped onto or into a floating window joins it as a tab.
+ * Read through `elementFromPoint`, so whatever is in front wins by construction.
+ * @param {number} x @param {number} y @param {string=} excludeKey
+ * @returns {string|null}
+ */
+export function windowAt(x, y, excludeKey) {
+	if (typeof document === 'undefined') return null;
+	const hit = document.elementFromPoint(x, y);
+	if (!hit) return null;
+	for (const [key, entry] of registry) {
+		if (key === excludeKey || entry.node.dataset?.docked) continue;
+		if (entry.node.style.display === 'none') continue;
+		if (entry.node.contains(hit)) return key;
+	}
+	return null;
+}
+
+/**
+ * 40 F8/F10 — "group `addKey` into `targetKey`'s window once both are floating". A docked
+ * view becomes a floating window a frame or two AFTER it is asked to (its component swaps
+ * branches and registers through `tabbable`), so the merge cannot run where the gesture
+ * ends; it waits here and runs as soon as both are registered.
+ * @type {{target: string, add: string, at: number}[]}
+ */
+let pendingMerges = [];
+/** @param {string} targetKey @param {string} addKey */
+export function queueMerge(targetKey, addKey) {
+	if (targetKey === addKey) return;
+	pendingMerges = pendingMerges.filter((m) => m.add !== addKey);
+	pendingMerges.push({ target: targetKey, add: addKey, at: Date.now() });
+	runPendingMerges();
+}
+function runPendingMerges() {
+	const now = Date.now();
+	// a merge whose window never arrived (closed meanwhile) is dropped after 5 s
+	pendingMerges = pendingMerges.filter((m) => now - m.at < 5000);
+	const ready = pendingMerges.filter((m) => registry.has(m.target) && registry.has(m.add));
+	if (!ready.length) return;
+	pendingMerges = pendingMerges.filter((m) => !ready.includes(m));
+	// after layout: the new window has to have a box before the group adopts a rect
+	requestAnimationFrame(() => {
+		for (const m of ready) mergeWindows(m.target, m.add);
+	});
+}
+
 /** @param {string} key */
 export function titleOf(key) {
 	return registry.get(key)?.title ?? key;
@@ -410,6 +457,11 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 
 	// drag-merge: dropping this window's header onto another window's header
 	let draggingHeader = false;
+	/** 40 F10: where the header press started — a press that never TRAVELS is a click (raise
+	 *  the window), never a merge, even when it lands over another window's header band */
+	let downX = 0;
+	let downY = 0;
+	let travelled = false;
 	/** @type {any} */ let mergeTarget = null;
 	/** the window whose HEADER is under (x, y) — the merge hit test (W7 lifted the body
 	 * to module scope so the bottom-dock band can consult the very same rule) */
@@ -425,15 +477,21 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 		if (!isHeaderDrag(e.target)) return; // 36 F4: a tab/control in the header is not a grip
 		if (groupOfKey(key)) return; // grouped windows drag via the strip
 		draggingHeader = true;
+		downX = e.clientX;
+		downY = e.clientY;
+		travelled = false;
 	};
 	const move = (/** @type {any} */ e) => {
+		if (!draggingHeader) return;
+		if (!travelled && Math.hypot(e.clientX - downX, e.clientY - downY) > 4) travelled = true;
 		// live feedback (104): the header you would merge into lights up
-		if (draggingHeader) setMergeTarget(targetAt(e.clientX, e.clientY));
+		if (travelled) setMergeTarget(targetAt(e.clientX, e.clientY));
 	};
 	const up = (/** @type {any} */ e) => {
 		if (!draggingHeader) return;
 		draggingHeader = false;
 		setMergeTarget(null);
+		if (!travelled) return;
 		const otherKey = targetAt(e.clientX, e.clientY);
 		if (otherKey) mergeWindows(otherKey, key);
 	};
@@ -442,6 +500,7 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 	window.addEventListener('pointerup', up);
 
 	tryRestore();
+	runPendingMerges();
 
 	return {
 		destroy() {

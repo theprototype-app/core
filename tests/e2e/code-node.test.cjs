@@ -141,13 +141,13 @@ h.run(async () => {
 	h.check(await dblclickNode(A, 'cn-script'), 'premise: the script card is on screen');
 	// 36-code merged: the opener is the code workspace — the Script node opens as its tab
 	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.nodeId === 'cn-script'), 'double-click a Script → its tab in the code workspace', 15000);
-	await A.page.locator('#code-ws-close').click();
+	await A.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click();
 
 	await centerOn(A, 'cn-bhv');
 	await A.page.waitForTimeout(400);
 	await dblclickNode(A, 'cn-bhv');
 	await h.eventually(() => tabsOf(A), (t) => t.some((x) => x.nodeId === 'cn-bhv' && x.kind === 'behaviour'), 'double-click a Behaviour → its source in the code workspace', 15000);
-	await A.page.locator('#code-ws-close').click();
+	await A.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click();
 
 	// 36-games-graphs: Mini Golf's rules moved to its Main graph; its module is the ENGINE now
 	await addGraph(A, [node('cn-ref', 'coderef', { label: 'Code link', module: 'minigolf', file: 'module.js', title: 'Mini Golf engine' }, 440, 200)]);
@@ -163,7 +163,7 @@ h.run(async () => {
 		6000
 	);
 	if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, '22-module-source-readonly.png') });
-	await A.page.locator('#code-ws-close').click();
+	await A.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click();
 
 	// a module's own node (registered by a core module — hello, the SDK example) opens the same way
 	const golfType = await A.page.evaluate(() => {
@@ -179,7 +179,7 @@ h.run(async () => {
 		await A.page.waitForTimeout(400);
 		await dblclickNode(A, 'cn-golf');
 		await h.eventually(() => A.page.evaluate(() => window.__stores.codeOpen?.lastOpenCode?.()), (r) => r?.source === 'module' && r?.ref === 'hello', `double-click a module node (${golfType}) → its module's source`, 4000);
-		await A.page.locator('#code-ws-close').click().catch(() => {});
+		await A.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
 	} else h.check(false, 'premise: the core hello module registered a node type');
 
 	// --- 3: the seam ------------------------------------------------------------------------
@@ -214,7 +214,7 @@ h.run(async () => {
 	);
 	const after = await dataOf(B, 'cn-script');
 	if (!(after?.inputs ?? []).some((s) => s.name === 'extra')) console.log('diag code:', JSON.stringify(after?.code), JSON.stringify(after?.inputs));
-	await A.page.locator('#code-ws-close').click();
+	await A.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click();
 
 	// --- 5: module-bound code is read-only until forked ------------------------------------
 	await addGraph(A, [node('cn-mod', 'script', { label: 'Script', inputs: [], code: 'object.rotation.y = time;', src: { kind: 'module', module: 'minigolf', file: 'spin.js' } }, 0, 400)]);
@@ -230,7 +230,7 @@ h.run(async () => {
 		'the copy is in the Explorer library'
 	);
 	await h.eventually(() => A.page.locator('#script-readonly').count(), (n) => n === 0, 'the editor becomes editable after the fork', 6000);
-	await A.page.locator('#code-ws-close').click();
+	await A.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click();
 
 	// --- 6: the Main graph migration -------------------------------------------------------
 	if (GOLF) {

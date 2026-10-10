@@ -50,7 +50,7 @@ h.run(async () => {
 	h.check(Math.abs(parseInt(persisted) - after) < 12, `new height persisted (${persisted})`);
 
 	// undock into a floating window
-	await A.page.locator('#flow-undock').click();
+	await A.page.locator('#dock-undock:visible').first().click();
 	await A.page.waitForTimeout(500);
 	h.check(
 		await A.page.locator('#flow-window .svelte-flow').isVisible(),

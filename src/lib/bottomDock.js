@@ -1,6 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { viewPrefs } from './viewPrefs';
 import { onLayoutRestore } from './uiLayoutsCore';
+import { safeStorage } from './safeStorage';
 
 // Bottom dock: the dock shows exactly ONE panel at a time, and every panel that is
 // docked+open is a notebook TAB in it — the Flow family (Node editor / Flow Code /
@@ -84,6 +85,46 @@ let dockArmToken = 0;
 export function armDockMode(key, docked) {
 	dockModeArm.set({ token: ++dockArmToken, key, docked: !!docked });
 }
+
+/**
+ * 40 F8 — arm SEVERAL panels in turn. `dockModeArm` is one write-once slot (a panel
+ * consumes it by clearing it), so arming in a loop left only the last key armed. This
+ * queues them: the next arm goes out once the previous one was consumed, or after a short
+ * grace when no panel is mounted to consume it (a closed view).
+ * @type {{key: string, docked: boolean}[]}
+ */
+const armQueue = [];
+let armPumping = false;
+/** @param {string[]} keys @param {boolean} docked */
+export function armDockModes(keys, docked) {
+	for (const key of keys) armQueue.push({ key, docked: !!docked });
+	pumpArms();
+}
+function pumpArms() {
+	if (armPumping) return;
+	const next = armQueue.shift();
+	if (!next) return;
+	armPumping = true;
+	armDockMode(next.key, next.docked);
+	const started = Date.now();
+	const wait = () => {
+		if (get(dockModeArm) === null || Date.now() - started > 600) {
+			armPumping = false;
+			pumpArms();
+			return;
+		}
+		setTimeout(wait, 16);
+	};
+	setTimeout(wait, 0);
+}
+
+/**
+ * 40 F8 — what the dock's undock button (beside "minimize the dock") does: 'active' takes
+ * out the visible tab (the default, user 2026-10-08), 'group' takes out every docked tab as
+ * ONE floating tabbed window. Device-scoped, Settings ▸ Interface ▸ Windows & chrome.
+ */
+export const undockButtonMode = writable(safeStorage.getItem('dockUndockMode') === 'group' ? 'group' : 'active');
+undockButtonMode.subscribe((value) => safeStorage.setItem('dockUndockMode', value));
 
 /** {key: {present, height}} — docked AND open */
 export const dockOccupants = writable(

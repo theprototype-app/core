@@ -8,7 +8,8 @@
 	import { focusTick, raiseWindowNode } from '$lib/windowFocus';
 	import ContextMenu from '../ContextMenu.svelte';
 	import Icon from '../ui/Icon.svelte';
-	import { DOCK_ICONS } from '$lib/bottomDock';
+	import { DOCK_ICONS, DOCK_FAMILY } from '$lib/bottomDock';
+	import { dockAllOf } from '$lib/dockMenu';
 
 	// 38 NOTES-38 #23: the view icon before each tab's name — the dock's icons plus the
 	// windows that only ever float
@@ -122,6 +123,20 @@
 			{/each}
 		</div>
 		<span class="flex-1"></span>
+		<!-- 40 F8: dock ALL of this window's tabs, left of "close all tabs" (a lone tab docks by
+		     dragging it to the dock). Only views that have a docked mode are offered. -->
+		{#if group.members.some((/** @type {string} */ k) => DOCK_FAMILY.includes(k))}
+			<button
+				class="ts-dock tp-dtab tp-dtab-icon shrink-0"
+				data-group-dock={group.id}
+				title="Dock all tabs in this window"
+				aria-label="Dock all tabs in this window"
+				onpointerdown={(e) => e.stopPropagation()}
+				onclick={() => dockAllOf(group.members, group.active)}
+			>
+				<Icon name="panel-bottom" size={16} />
+			</button>
+		{/if}
 		<button
 			class="ts-close tp-dtab tp-dtab-icon shrink-0"
 			title="Close all tabs in this window"

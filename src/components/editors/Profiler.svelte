@@ -827,16 +827,6 @@
 				<span class="w-2"></span>
 				<!-- 38 NOTES-38 #38/#39: the controls scroll sideways on a phone; undock/close stay pinned -->
 				<ScrollStrip class="pf-strip" label="Profiler tools" id="profiler-toolbar">{@render controls()}</ScrollStrip>
-				<button class="tp-dock-btn"
-					title="Undock into a floating window"
-					aria-label="Undock the Profiler"
-					onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button
-				>
-				<button class="tp-dock-btn"
-					title="Close"
-					aria-label="Close the Profiler"
-					onclick={() => profilerClose.set(true)}><Icon name="x" size={16} /></button
-				>
 			</div>
 			<div class="flex min-h-0 flex-1 flex-col">
 				{@render body()}

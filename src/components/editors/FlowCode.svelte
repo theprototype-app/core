@@ -232,8 +232,6 @@
 				<span class="tp-dock-title">Flow Code</span>
 				<span class="flex-1"></span>
 				{@render editorActions()}
-				<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock into a floating window" onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button>
-				<button class="tp-dock-btn" title="Close" aria-label="Close Flow Code" onclick={() => flowCodeClose.set(true)}><Icon name="x" size={16} /></button>
 			</div>
 			<div class="flex min-h-0 flex-1 flex-col">
 				{@render body()}

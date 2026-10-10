@@ -230,7 +230,7 @@ h.run(async () => {
 	});
 	h.check(opened.panel === 'sc' || opened.ws, `Open code opens the script node's code (${JSON.stringify(opened)})`);
 	await p.evaluate(() => window.__stores.scriptEditorOpen.set(null));
-	if (opened.ws) await p.locator('#code-ws-close').click().catch(() => {});
+	if (opened.ws) await p.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
 	await p.waitForTimeout(300);
 
 	await select(p, ['a', 'b', 'c']);

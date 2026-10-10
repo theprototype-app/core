@@ -1,3 +1,8 @@
+<script module>
+	// 40 F6: one scroll position for every docked strip (see keepScroll)
+	let sharedScroll = 0;
+</script>
+
 <script>
 	// Notebook tab strip for the bottom dock. EVERY panel that is docked+open is a tab
 	// here — the Flow family (Node editor / Flow Code / Animation / UV editor / Shader
@@ -35,8 +40,12 @@
 	// strip it UNDOCKS that view into a floating window. Both are the fast paths for
 	// what the tab's right-click menu already offered in words, which is what keeps the
 	// feature reachable on a device that cannot drag.
-	import { dockTabs, bottomDockActive, activateDock, dockMinimized, reorderDockTabs, armDockMode } from '$lib/bottomDock';
-	import { dockAddItems, dockTabItems, closeStoreFor } from '$lib/dockMenu';
+	import { dockTabs, bottomDockActive, activateDock, dockMinimized, reorderDockTabs, armDockMode, undockButtonMode } from '$lib/bottomDock';
+	import { dockAddItems, dockTabItems, closeDockView, undockFromDock, undockInto } from '$lib/dockMenu';
+	import { windowAt, nodeOf } from '$lib/windowTabs';
+	import { phoneShell } from '$lib/ui/phoneShell.js';
+	import { mobileUndockAllowed } from '../stores/appStore.js';
+	import DockViewsSheet from './DockViewsSheet.svelte';
 	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import ContextMenu from './ContextMenu.svelte';
 	import Icon from './ui/Icon.svelte';
@@ -45,7 +54,15 @@
 	// Rebuilt per OPEN, not once at init: the list drops views that are already docked,
 	// and that set changes every time a tab opens or closes.
 	let addItems = $state(/** @type {any[]} */ ([]));
+	// 40 F9: on a phone (with floating windows off) "+" is a sheet listing EVERY window with
+	// a show/hide toggle; with floating windows on, a phone behaves like the desktop.
+	const sheetMode = $derived($phoneShell && !$mobileUndockAllowed);
+	let sheetOpen = $state(false);
 	function openAdd(/** @type {MouseEvent} */ e) {
+		if (sheetMode) {
+			sheetOpen = true;
+			return;
+		}
 		const r = /** @type {HTMLElement} */ (e.currentTarget).getBoundingClientRect();
 		addItems = dockAddItems();
 		addMenu = { x: r.left, y: r.bottom + 4 };
@@ -81,6 +98,15 @@
 	let dropX = $state(0);
 	/** released here and the view undocks instead of moving */
 	let dropOut = $state(false);
+	/** 40 F10: the floating window a drag released out of the strip would JOIN as a tab */
+	let joinKey = $state(/** @type {string|null} */ (null));
+	/** @param {string|null} key */
+	function markJoin(key) {
+		if (key === joinKey) return;
+		nodeOf(joinKey ?? '')?.classList.remove('merge-target');
+		joinKey = key;
+		nodeOf(key ?? '')?.classList.add('merge-target');
+	}
 	/** a drag that just ended must not also activate the tab — self-expiring, because a
 	 * pointer that left the button fires no click at all and a sticky flag would then eat
 	 * the next real one */
@@ -130,6 +156,7 @@
 				e.clientX > strip.right + OUT_MARGIN ||
 				e.clientY < strip.top - OUT_MARGIN ||
 				e.clientY > strip.bottom + OUT_MARGIN;
+			markJoin(dropOut ? windowAt(e.clientX, e.clientY, dragKey ?? undefined) : null);
 			dropIndex = rects.filter((r) => e.clientX > r.left + r.width / 2).length;
 			const at = dropIndex < rects.length ? rects[dropIndex].left : rects[rects.length - 1].right;
 			dropX = at - strip.left + scroll;
@@ -141,9 +168,16 @@
 			const state = pending;
 			const dragged = dragKey;
 			const out = dropOut;
+			const join = out ? windowAt(e.clientX, e.clientY, dragged ?? undefined) : null;
 			cleanup();
 			if (!state || !dragged) return; // never travelled: the click activates the tab
 			draggedAt = performance.now();
+			if (join) {
+				// 40 F10: dropped onto/into a floating window — it joins that window as a tab
+				// (forms a group) instead of floating on its own
+				undockInto(dragged, join);
+				return;
+			}
 			if (out) {
 				// the W5 seam every panel already consumes — the panel owns its own mode
 				armDockMode(dragged, false);
@@ -159,6 +193,7 @@
 			pending = null;
 			dragKey = null;
 			dropOut = false;
+			markJoin(null);
 			window.removeEventListener('pointermove', move);
 			window.removeEventListener('pointerup', up);
 			window.removeEventListener('pointercancel', cancel);
@@ -172,6 +207,47 @@
 			destroy() {
 				node.removeEventListener('pointerdown', down);
 				cleanup();
+			}
+		};
+	}
+
+	// --- 40 F6: the strip KEEPS its scroll position ---------------------------------------
+	// Only the visible docked panel renders (or is shown), so each tab switch brings up ANOTHER
+	// panel's strip — a fresh element at scrollLeft 0, which snapped a strip scrolled to its 5th tab
+	// back to the start the moment that tab was picked. One position is shared by every strip
+	// instance (module state), saved while a strip is on screen and put back whenever one comes on
+	// screen (mount, or a display:none panel shown again — its width goes 0 → N). Then the active
+	// tab is brought in only if NONE of it is in view (it was activated from elsewhere — a key,
+	// the toolbar), so a click on a tab, which is always at least partly visible, never moves
+	// the strip.
+	/** @param {HTMLElement} node */
+	function keepScroll(node) {
+		let shown = false;
+		const restore = () => {
+			node.scrollLeft = sharedScroll;
+			const on = /** @type {HTMLElement | null} */ (node.querySelector('[data-dock-tab][aria-selected="true"]'));
+			if (!on) return;
+			const a = on.offsetLeft;
+			const b = a + on.offsetWidth;
+			const view = node.scrollLeft + node.clientWidth;
+			if (b > node.scrollLeft && a < view) return; // some of it shows: leave the strip alone
+			if (b <= node.scrollLeft) node.scrollLeft = Math.max(0, a - 24);
+			else node.scrollLeft = b + 44 - node.clientWidth; // + its own ✕ and the fade
+		};
+		const save = () => {
+			if (node.clientWidth > 0) sharedScroll = node.scrollLeft;
+		};
+		const ro = new ResizeObserver(() => {
+			const now = node.clientWidth > 0;
+			if (now && !shown) restore();
+			shown = now;
+		});
+		ro.observe(node);
+		node.addEventListener('scroll', save, { passive: true });
+		return {
+			destroy() {
+				ro.disconnect();
+				node.removeEventListener('scroll', save);
 			}
 		};
 	}
@@ -192,43 +268,55 @@
 <!-- 38 NOTES-38 #29: each tab carries its own ✕ (the same Close as its right-click menu), and the
      "+" sits OUTSIDE the scrolling strip so it stays pinned and visible however many tabs there
      are. `stripEl` is still the scroll box the W7 drag measures (reorder vs undock). -->
-<div class="dt-row absolute -top-6 left-3 right-24 z-20 flex">
-	<div bind:this={stripEl} class="tp-noscrollbar dt-scroll relative flex min-w-0 overflow-x-auto" use:stripScroll>
-		<div class="tp-ui tp-dtabs tp-dtabs-slim" role="tablist" aria-label="Docked views">
-			{#each $dockTabs as tab (tab.key)}
-				<span class="tp-dtab-group" class:tp-dtab-group-on={$bottomDockActive === tab.key}>
-					<button
-						data-dock-tab={tab.key}
-						role="tab"
-						aria-selected={$bottomDockActive === tab.key}
-						class="tab-note tp-dtab select-none {$bottomDockActive === tab.key ? 'dt-on' : 'dt-off'} {dragKey === tab.key
-							? 'dt-dragging opacity-40'
-							: ''}"
-						title="{tab.title} — drag to reorder, or out of the strip to undock"
-						use:tabDrag={{ key: tab.key }}
-						oncontextmenu={(/** @type {MouseEvent} */ e) => openTabMenu(e, tab.key)}
-						onclick={() => tabClick(tab.key)}
-						>{#if tab.icon}<span class="tp-dtab-ico"><Icon name={tab.icon} size={16} aria-hidden="true" /></span>{/if}{tab.title}</button
-					>
-					<button
-						data-dock-tab-close={tab.key}
-						class="tab-note tp-dtab-x"
-						title="Close {tab.title}"
-						aria-label="Close {tab.title}"
-						onclick={() => closeStoreFor(tab.key)?.set(true)}><Icon name="x" size={16} aria-hidden="true" /></button
-					>
-				</span>
-			{/each}
+<!-- 40 F6: the BAR (background + border) is the non-scrolling `.dt-bar`, and the scroll box
+     inside it is bare. Before, the bar was the scroll box's flex child with `min-width: 0`, so it
+     shrank to the visible width and every tab scrolled past it had no background (the scene showed
+     through — transparent-tab-header), and the edge fade masked the box that held the paint, so
+     the fade faded into the scene. Now the fade masks only the tabs, over the bar's own paint. -->
+<div class="dt-row absolute -top-6 left-3 z-20 flex" class:right-24={!sheetMode} class:right-14={sheetMode}>
+	<div class="tp-ui tp-dtabs tp-dtabs-slim dt-bar">
+		<div
+			bind:this={stripEl}
+			class="tp-noscrollbar dt-scroll relative flex min-w-0 overflow-x-auto"
+			use:stripScroll
+			use:keepScroll
+		>
+			<div class="dt-tabs" role="tablist" aria-label="Docked views">
+				{#each $dockTabs as tab (tab.key)}
+					<span class="tp-dtab-group" class:tp-dtab-group-on={$bottomDockActive === tab.key}>
+						<button
+							data-dock-tab={tab.key}
+							role="tab"
+							aria-selected={$bottomDockActive === tab.key}
+							class="tab-note tp-dtab select-none {$bottomDockActive === tab.key ? 'dt-on' : 'dt-off'} {dragKey === tab.key
+								? 'dt-dragging opacity-40'
+								: ''}"
+							title="{tab.title} — drag to reorder, or out of the strip to undock"
+							use:tabDrag={{ key: tab.key }}
+							oncontextmenu={(/** @type {MouseEvent} */ e) => openTabMenu(e, tab.key)}
+							onclick={() => tabClick(tab.key)}
+							>{#if tab.icon}<span class="tp-dtab-ico"><Icon name={tab.icon} size={16} aria-hidden="true" /></span>{/if}{tab.title}</button
+						>
+						<button
+							data-dock-tab-close={tab.key}
+							class="tab-note tp-dtab-x"
+							title="Close {tab.title}"
+							aria-label="Close {tab.title}"
+							onclick={() => closeDockView(tab.key)}><Icon name="x" size={16} aria-hidden="true" /></button
+						>
+					</span>
+				{/each}
+			</div>
+			<!-- the insertion bar: where the dragged tab would land. Hidden once the pointer is
+			     clear of the strip, because there the drop means UNDOCK, not "put it here". -->
+			{#if dragKey && !dropOut}
+				<div
+					id="dock-tab-drop"
+					class="dt-drop pointer-events-none absolute bottom-0 top-0 w-0.5"
+					style="left: {dropX}px"
+				></div>
+			{/if}
 		</div>
-		<!-- the insertion bar: where the dragged tab would land. Hidden once the pointer is
-		     clear of the strip, because there the drop means UNDOCK, not "put it here". -->
-		{#if dragKey && !dropOut}
-			<div
-				id="dock-tab-drop"
-				class="dt-drop pointer-events-none absolute bottom-0 top-0 w-0.5"
-				style="left: {dropX}px"
-			></div>
-		{/if}
 	</div>
 	<div class="tp-ui tp-dtabs tp-dtabs-slim shrink-0">
 		<button
@@ -244,6 +332,18 @@
 <!-- the dock's OWN chrome, pinned to the right edge of the dock (= of the window) -->
 <div class="absolute -top-6 right-3 z-20 flex">
 	<div class="tp-ui tp-dtabs tp-dtabs-slim">
+		<!-- 40 F8: undock lives HERE, left of "minimize the dock", not inside each docked window.
+		     It undocks the ACTIVE tab (or, per Settings, every tab as one tabbed window). A phone
+		     whose windows cannot float has nothing to undock to, so it shows no button. -->
+		{#if !sheetMode}
+			<button
+				id="dock-undock"
+				class="tab-note dt-btn tp-dtab tp-dtab-icon"
+				title={$undockButtonMode === 'group' ? 'Undock all tabs as one floating window' : 'Undock this view into a floating window'}
+				aria-label={$undockButtonMode === 'group' ? 'Undock all tabs' : 'Undock into a floating window'}
+				onclick={() => undockFromDock()}><Icon name="app-window" size={16} aria-hidden="true" /></button
+			>
+		{/if}
 		<button
 			id="dock-minimize"
 			class="tab-note dt-btn tp-dtab tp-dtab-icon"
@@ -254,6 +354,9 @@
 	</div>
 </div>
 
+{#if sheetOpen}
+	<DockViewsSheet bind:open={sheetOpen} />
+{/if}
 {#if addMenu}
 	<ContextMenu x={addMenu.x} y={addMenu.y} items={addItems} on:close={() => (addMenu = null)} />
 {/if}
@@ -269,5 +372,17 @@
 	}
 	.dt-drop {
 		background: var(--accent);
+	}
+	/* 40 F6: the bar paints; it shrinks to the row (min-width 0) while the tabs inside the bare
+	   scroll box keep their full width (flex-shrink 0), so the paint is under every tab */
+	.dt-bar {
+		display: flex;
+		min-width: 0;
+	}
+	.dt-tabs {
+		display: flex;
+		flex-shrink: 0;
+		align-items: center;
+		gap: 2px;
 	}
 </style>

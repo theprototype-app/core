@@ -52,7 +52,7 @@ h.run(async () => {
 	// refusal is for a THIRD; the split's own coverage is dock-splits
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.waitForTimeout(500);
-	await A.page.locator('#flow-undock').click();
+	await A.page.locator('#dock-undock:visible').first().click();
 	await A.page.waitForTimeout(400);
 	const flow = await A.page.locator('#flow-window').boundingBox();
 	await A.page.mouse.move(flow.x + 120, flow.y + 12);

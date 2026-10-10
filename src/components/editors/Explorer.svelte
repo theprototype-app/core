@@ -8363,13 +8363,6 @@
 				{@render logChip()}
 				{@render storageChip()}
 				{@render identityChip()}
-				<button
-					id="explorer-undock"
-					class="tp-dock-btn shrink-0"
-					title="Undock into a floating window"
-					aria-label="Undock into a floating window"
-					onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button
-				>
 			{/snippet}
 			{#if $phoneShellActive}
 				<!-- 40 F3: on the phone the toolbar SCROLLS sideways (ui/ScrollStrip) instead of

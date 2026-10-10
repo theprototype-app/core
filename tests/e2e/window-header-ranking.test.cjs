@@ -232,7 +232,7 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.explorerClose.set(false));
 	await page.waitForTimeout(400);
 	if (!(await page.locator('#explorer-window').count())) {
-		await page.locator('#explorer-undock').click();
+		await page.locator('#dock-undock:visible').click();
 		await page.waitForTimeout(700);
 	}
 	const EX = '#explorer-window';

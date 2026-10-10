@@ -1454,8 +1454,6 @@
 			<div class="flex shrink-0 items-center gap-2 pb-1">
 				<span class="tp-dock-title">HUD editor</span>
 				<span class="flex-1"></span>
-				<button class="tp-dock-btn" title="Undock into a floating window" onclick={() => setDocked(false)} aria-label="Undock into a floating window"><Icon name="app-window" size={16} /></button>
-				<button class="tp-dock-btn" title="Close" onclick={() => hudEditorClose.set(true)} aria-label="Close"><Icon name="x" size={16} /></button>
 			</div>
 			<div class="flex min-h-0 flex-1 flex-col">
 				{@render body()}

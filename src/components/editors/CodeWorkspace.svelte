@@ -7,7 +7,8 @@
 	//
 	// It replaces the single-script ScriptPanel: a Script node's typed-sockets editor rides
 	// here for the tab that edits ONE script node (same element ids, so its suites carry over).
-	import { untrack } from 'svelte';
+	import { untrack, onMount } from 'svelte';
+	import { registerDockCloser } from '$lib/dockMenu';
 	import { get } from 'svelte/store';
 	import Icon from '../ui/Icon.svelte';
 	import CodeEditor from './CodeEditor.svelte';
@@ -415,6 +416,9 @@
 		closeFailed = 0;
 		confirmCloseAll = true;
 	}
+	// 40 F8: a docked workspace closes from its TAB's ✕ — which takes this same path, so the
+	// unsaved-tabs question still comes first
+	onMount(() => registerDockCloser('code', requestCloseWorkspace));
 	async function closeSavingAll() {
 		const failed = await saveAllCodeTabs();
 		if (failed.length) {
@@ -762,8 +766,6 @@
 			<span class="flex-1"></span>
 			{@render openGraph()}
 			{@render sideToggle('right')}
-			<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock into a floating window" onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button>
-			<button id="code-ws-close" class="tp-dock-btn" title="Close the code workspace" aria-label="Close the code workspace" onclick={requestCloseWorkspace}><Icon name="x" size={16} /></button>
 		</div>
 		{@render main()}
 	</div>

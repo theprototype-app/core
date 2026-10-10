@@ -420,6 +420,9 @@ h.run(async () => {
 	});
 	h.check(apply, 'Apply crop is in view and under a tap (not under the bottom bar)');
 	await P.page.locator('#image-editor-crop-apply').tap();
+	// 40-int: the crop applies asynchronously (a canvas re-encode); read once it has landed, as the
+	// desktop sections do with until() — an immediate read raced it on a loaded box (r2/r4)
+	await until(async () => /\b(39|40|41) × (29|30|31)\b/.test((await sizeText(P)) ?? ''), 4000);
 	const phoneSize = (await sizeText(P)) ?? '';
 	const [pw, ph] = (phoneSize.match(/(\d+) × (\d+)/) ?? []).slice(1).map(Number);
 	h.check(Math.abs(pw - 40) <= 1 && Math.abs(ph - 30) <= 1, `a touch drag cropped the image (${phoneSize})`);

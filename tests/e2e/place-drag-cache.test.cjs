@@ -211,7 +211,12 @@ h.run(async () => {
 	const sy = b.y + b.height / 2;
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sx, y: sy }] });
 	await T.page.waitForTimeout(420);
-	h.check(!!(await pd(T.page)), 'a long-press on a pack card picks it up as a place drag');
+	// 40 F3 (long-press-explorer-file): a still hold opens the card's action sheet; the hold that
+	// then MOVES picks the card up (the sheet gives way) — 1.31 picked it up on the hold itself
+	h.check(!(await pd(T.page)), '40 F3: a still hold is not a place drag yet (it opens the action sheet)');
+	await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: sx, y: sy - 24 }] });
+	await T.page.waitForTimeout(150);
+	h.check(!!(await pd(T.page)), 'a long-press on a pack card that then moves picks it up as a place drag');
 	h.check(await T.page.evaluate(() => document.documentElement.classList.contains('tp-place-collapse')), 'the Explorer is tucked away while the finger drags');
 	// the viewport point is taken WITH the Explorer collapsed
 	await T.page.waitForTimeout(250);

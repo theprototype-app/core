@@ -133,6 +133,12 @@ h.run(async () => {
 	h.check(/bodywave/.test(wave.key ?? ''), '1.9 the stand-in\'s material is patched by the wave (' + wave.key + ')');
 
 	// ---- 2 fallback LOD with the pack reachable -------------------------------------------------
+	// 2.0 the LOD pass keeps running frame after frame (the water reflection pass is a NESTED
+	// render; an after-hook that skipped the hook it wraps froze every LOD group after frame 1)
+	const p0 = await page.evaluate(() => window.__stores.lodGroup.lodGroupPasses());
+	await page.waitForTimeout(1500);
+	const p1 = await page.evaluate(() => window.__stores.lodGroup.lodGroupPasses());
+	h.check(p1 - p0 > 10, '2.0 the LOD group pass keeps running with water in the scene (' + p0 + ' -> ' + p1 + ' in 1.5 s)');
 	await page.evaluate(() => window.__aq.render());
 	await h.eventually(
 		() => page.evaluate(() => window.__aq.fallbackRoots().map((o) => window.__stores.lodTrees.lodTreesOf(o).length)),

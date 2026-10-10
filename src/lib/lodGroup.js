@@ -47,7 +47,7 @@ import { explorerItems, itemByHash, itemBlob } from './explorer';
  *   | {status: 'ready', kind: 'tree', object: any, tris: number}} LevelState
  * @typedef {{root: any, block: LodGroup, sig: string, implicit: boolean, meshes: any[], meshKey: string,
  *   center: any, radius: number, built: Map<string, LevelState>, current: number, autoCurrent: number,
- *   size: number, holder: any, matCache: Map<string, {clone: any, version: number}>, raw: any}} GroupEntry
+ *   size: number, holder: any, matCache: Map<string, {clone: any, version: number}>, raw: any, lastWant?: number}} GroupEntry
  */
 
 /** A LOCAL preview: the level selected in the LOD panel draws on this screen until the

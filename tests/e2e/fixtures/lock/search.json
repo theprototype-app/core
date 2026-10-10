@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-08T05:35:45.501Z",
+	"recordedAt": "2026-10-10T18:17:41.898Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -783,7 +783,8 @@
 				"Allow undocking on touch screens",
 				"Enable assistant",
 				"Touch tools",
-				"Undo"
+				"Undo",
+				"Undock button"
 			],
 			"sections": [
 				"Interface",
@@ -2307,6 +2308,7 @@
 				"Theme",
 				"Toolbar always on top",
 				"Touch tools",
+				"Undock button",
 				"VR welcome tour",
 				"Welcome card on start",
 				"Window positions",
@@ -2874,6 +2876,7 @@
 				"Theme",
 				"Toolbar always on top",
 				"Touch tools",
+				"Undock button",
 				"VR welcome tour",
 				"Welcome card on start",
 				"Window positions",
@@ -2916,6 +2919,7 @@
 				"Theme",
 				"Toolbar always on top",
 				"Touch tools",
+				"Undock button",
 				"Use a connected gamepad",
 				"VR welcome tour",
 				"Welcome card on start",
@@ -4127,6 +4131,10 @@
 				"Transform"
 			],
 			"scale": [
+				"Emission",
+				"Material",
+				"Shadow",
+				"Texture",
 				"Transform"
 			],
 			"color": [

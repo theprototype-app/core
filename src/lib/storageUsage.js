@@ -65,6 +65,7 @@ import { fmtBytes } from './transferLedger';
 import { loadPackCacheIndex, packCacheIndex, deletePackCache, clearPackCache } from './packCache';
 import { clearMeasuredDims } from './placementDims';
 import { PACKS_BASE, packs } from './packs';
+import { listImageVersions, forgetImageVersions, isImageVersionKey } from './image/imageVersions'; // 40-image
 
 /**
  * ONE formatter, not a fifth. The app already had four byte formatters (Explorer's
@@ -204,6 +205,11 @@ export const CATEGORIES = [
 		key: 'sleeve',
 		label: 'VR sleeve slots',
 		note: 'The objects on your VR forearm strip.'
+	},
+	{
+		key: 'imageversions',
+		label: 'Image versions',
+		note: 'Earlier states of images you edited in the Image editor (the original is always kept). Removing an image\'s versions keeps the image as it is now.'
 	},
 	{
 		key: 'other',
@@ -668,6 +674,28 @@ export async function scanStorage() {
 				continue;
 			}
 
+			// ---- 40-image: per-image version history ----------------------------------
+			// ONE row per image, from its list's recorded sizes (the never-read-blobs rule);
+			// the blob keys are covered by that row and skipped here.
+			if (isImageVersionKey(key)) {
+				if (key.startsWith('imgver:list:')) {
+					const itemId = key.slice('imgver:list:'.length);
+					const list = await listImageVersions(itemId);
+					const item = visible.get(itemId) ?? hidden.get(itemId);
+					push({
+						id: key,
+						category: 'imageversions',
+						label: item?.name ?? 'An image no longer in the library',
+						sub: list.length + ' version' + (list.length === 1 ? '' : 's'),
+						bytes: list.reduce((n, v) => n + (v.size || 0), 0),
+						removable: true,
+						kind: 'imgver',
+						ref: itemId
+					});
+				}
+				continue;
+			}
+
 			// ---- anything else --------------------------------------------------------
 			push({
 				id: key,
@@ -782,6 +810,9 @@ export async function reclaimRow(row) {
 				return await deletePackCache(/** @type {string[]} */ (row.ref ?? []));
 			case 'packdims':
 				await clearMeasuredDims();
+				return row.bytes;
+			case 'imgver':
+				await forgetImageVersions(String(row.ref));
 				return row.bytes;
 			case 'raw':
 				// THE ONE DIRECT DELETE. Nothing in this build reads this key, so there is

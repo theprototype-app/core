@@ -49,8 +49,25 @@
 		// children are watched too and nudge it through the scroll event it already listens to
 		const nudge = () => node.dispatchEvent(new Event('scroll'));
 		const ro = new ResizeObserver(nudge);
+		// 40 F5: a child REMOVED while it is watched is the "ResizeObserver loop completed with
+		// undelivered notifications" error: the Explorer's header measured narrow inside a resize
+		// pass and unmounted its storage chip, and a detached node's 0x0 notification cannot be
+		// delivered in that pass. The MutationObserver below runs at the same microtask checkpoint
+		// as the removal, so un-watching there happens before the next gather.
+		/** @type {Set<Element>} */
+		const watched = new Set();
 		const watch = () => {
-			for (const c of node.children) ro.observe(c);
+			for (const c of watched) {
+				if (c.parentNode !== node) {
+					ro.unobserve(c);
+					watched.delete(c);
+				}
+			}
+			for (const c of node.children) {
+				if (watched.has(c)) continue;
+				watched.add(c);
+				ro.observe(c);
+			}
 		};
 		watch();
 		const mo = new MutationObserver(() => {

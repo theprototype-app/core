@@ -136,7 +136,7 @@ h.run(async () => {
 			const sh = document.querySelector('#dock-views-sheet')?.getBoundingClientRect();
 			return ps.contains(at) ? 'ok' : `${at?.id || at?.className} (sheet ${sh && Math.round(sh.top)}-${sh && Math.round(sh.bottom)}, play ${Math.round(r.top)})`;
 		});
-		h.check(under === 'ok', `F9.1c the phone's Play (#ps-play, the top of its raised circle) is on top while the Windows sheet is open (${under})`);
+		h.check(under === 'ok', `F9.1d the phone's Play (#ps-play, the top of its raised circle) is on top while the Windows sheet is open (${under})`);
 		h.check(!!bar.toggleRight && bar.toggleRight <= bar.vw, `F9.1c every row's switch is on screen (${JSON.stringify(bar)})`);
 		h.check(['flow', 'explorer', 'animation', 'uv', 'shader', 'hud', 'profiler', 'code', 'flowcode'].every((k) => sheet.rows.includes(k)), `F9.2 ...listing EVERY window, the Node editor too (${sheet.rows.join(',')})`);
 		const exToggle = page.locator('#dock-view-toggle-explorer');

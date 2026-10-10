@@ -107,6 +107,7 @@ h.run(async () => {
 		place: '#preview-place',
 		next: '#preview-next',
 		up: '#preview-up',
+		edit: '#preview-edit',
 		title: '.pv-title',
 		zoom: '#image-zoom',
 		cog: '#preview-cog',
@@ -146,12 +147,12 @@ h.run(async () => {
 		h.check((await overflows(A, PVH)) === false, '...with no overflow at ' + w + 'px');
 	}
 	const tiny = await widths(A, PVH, pvIds);
-	h.check(tiny.title === 0 && tiny.up === 0, 'the title and the up-a-folder button are what paid for it');
+	h.check(tiny.title === 0 && tiny.up === 0 && tiny.edit === 0, 'the title, the up-a-folder and the Edit image buttons are what paid for it');
 	await setW(A, PV, 520);
 	await page.waitForTimeout(500);
 	const back = await widths(A, PVH, pvIds);
 	h.check(
-		back.title > 0 && back.up > 0 && back.zoom > 0,
+		back.title > 0 && back.up > 0 && back.zoom > 0 && back.edit > 0,
 		'widening brings every piece back — a fit, not a mode (' + JSON.stringify(back) + ')'
 	);
 	// ---- ROUND 27: ZOOMING OUT MUST NOT STRAND A PANNED IMAGE (user) -------------------

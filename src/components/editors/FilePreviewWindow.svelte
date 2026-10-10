@@ -630,9 +630,12 @@
 				<button class="ui-button-quiet" title="Reset" onclick={() => ((zoom = 1), (panX = 0), (panY = 0))}>1:1</button>
 			{/if}
 			{#if editable}
+				<!-- 40-int: ranked with "up" — Edit image… is also on the Explorer's item menu and the
+				     Inspector's texture row, so it gives way before the walk, the cog and the exit -->
 				<button
 					id="preview-edit"
 					class="ui-button-quiet"
+					class:pv-gone={hideExtras}
 					title="Edit image — crop, rotate, resize, adjust"
 					aria-label="Edit image"
 					onclick={() => import('$lib/image/imageEditor').then((m) => m.openImageEditor(String(target?.itemId)))}

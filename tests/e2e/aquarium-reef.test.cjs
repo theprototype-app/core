@@ -95,7 +95,11 @@ h.run(async () => {
 	const moved = Math.hypot(tang[11].a[0] - tang[0].a[0], tang[11].a[1] - tang[0].a[1], tang[11].a[2] - tang[0].a[2]);
 	h.check(moved > 0.3, '1.1 Follow Path moves the tang (' + moved.toFixed(2) + ' m in ~3 s at 0.42 m/s)');
 	const apart = tang.map((t) => Math.hypot(t.a[0] - t.b[0], t.a[2] - t.b[2]));
-	h.check(Math.min(...apart) > 1.2, '1.2 the two tangs ride HALF A LAP apart (offset 0.5): ' + Math.min(...apart).toFixed(2) + ' m at the closest');
+	// the tang loop is an ellipse (radii 1.45 x 0.5 about (0.1, 0.05)): half a lap apart puts the two
+	// fish opposite each other THROUGH ITS CENTRE (a point reflection keeps arc length), so their
+	// midpoint sits on the centre and the closest they get is the minor diameter, 1.0 m
+	const mid = tang.map((t) => Math.hypot((t.a[0] + t.b[0]) / 2 - 0.1, (t.a[2] + t.b[2]) / 2 - 0.05));
+	h.check(Math.max(...mid) < 0.15 && Math.min(...apart) > 0.9, '1.2 the two tangs ride HALF A LAP apart (offset 0.5): midpoint within ' + Math.max(...mid).toFixed(2) + ' m of the loop centre, ' + Math.min(...apart).toFixed(2) + ' m at the closest');
 	let along = 0;
 	for (let i = 1; i < tang.length; i++) {
 		const d = [tang[i].a[0] - tang[i - 1].a[0], tang[i].a[1] - tang[i - 1].a[1], tang[i].a[2] - tang[i - 1].a[2]];

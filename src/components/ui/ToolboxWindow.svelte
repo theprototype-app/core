@@ -42,6 +42,9 @@
 	//   `style:` writes ONE property via setProperty and leaves the rest alone —
 	//   the pattern Flow.svelte already uses for its width/height.
 	import Icon from './Icon.svelte';
+	import SheetGrip from './SheetGrip.svelte';
+	import { saveSheetH } from '$lib/ui/sheetDrag.js';
+	import { phoneSheetMaxH } from '$lib/ui/phoneShell.js';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore';
@@ -50,7 +53,8 @@
 
 	/** @type {{ id: string, title: string, key: string,
 	 *   defaultRect?: { left?: number, top?: number, right?: number, bottom?: number },
-	 *   minW?: number, width?: number, tabs?: any, actions?: any, status?: any, children: any }} */
+	 *   minW?: number, width?: number, tabs?: any, actions?: any, status?: any, children: any,
+	 *   onclose?: () => void }} */
 	let {
 		id,
 		title,
@@ -61,7 +65,10 @@
 		tabs = null,
 		actions = null,
 		status = null,
-		children
+		children,
+		// 40 F1: what a swipe-away does on the phone sheet; absent = the sheet only resizes (a
+		// toolbox that belongs to an edit session closes through its own Done)
+		onclose = undefined
 	} = $props();
 
 	// 18-C3: the exact 640 breakpoint the Inspector and the notes drawer use for
@@ -92,37 +99,11 @@
 		const saved = parseInt(safeStorage.getItem(sheetKey) || '');
 		sheetH = !saved || Number.isNaN(saved) ? Math.round(window.innerHeight * 0.4) : saved;
 	});
-	let sheetResizing = $state(false);
-	/** @param {PointerEvent} e */
-	function startSheetResize(e) {
-		sheetResizing = true;
-		/** @type {HTMLElement} */ (e.currentTarget).setPointerCapture?.(e.pointerId);
-		e.preventDefault();
-		e.stopPropagation(); // never start a window DRAG from the grabber
-	}
-	/** @param {PointerEvent} e */
-	function doSheetResize(e) {
-		if (!sheetResizing) return;
-		// bottom:0, so height = viewport height - finger y; the ceiling clears the
-		// Connect bar + the top-right chrome, exactly as the Inspector sheet does
-		const cb =
-			parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--connect-bottom')) || 54;
-		const maxH = Math.max(180, window.innerHeight - cb - 56);
-		sheetH = Math.min(Math.max(140, window.innerHeight - e.clientY), maxH);
-	}
-	/** @param {PointerEvent} e */
-	function endSheetResize(e) {
-		if (!sheetResizing) return;
-		sheetResizing = false;
-		// releasePointerCapture THROWS when the pointer was never captured, and it
-		// used to run before the write — so a capture quirk silently cost the user
-		// their height. The persist does not depend on it.
-		try {
-			/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
-		} catch {}
-		try {
-			safeStorage.setItem(sheetKey, String(sheetH));
-		} catch {}
+	// 40 F1: the grab bar is ui/SheetGrip (shared gesture; the height keeps its per-toolbox key)
+	/** @param {number} h @param {boolean} done */
+	function sheetResize(h, done) {
+		sheetH = Math.round(h);
+		if (done) saveSheetH(sheetKey, sheetH);
 	}
 </script>
 
@@ -137,14 +118,9 @@
 	use:focusStack={key}
 >
 	{#if sheetMode}
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div
-			class="tbx-sheet-resize"
-			onpointerdown={startSheetResize}
-			onpointermove={doSheetResize}
-			onpointerup={endSheetResize}
-		>
-			<div class="tbx-sheet-grab"></div>
+		<!-- the grab bar never starts a window DRAG (dragWindow is inert in sheet mode) -->
+		<div class="tbx-sheet-resize">
+			<SheetGrip label={title} height={Math.min(sheetH, $phoneSheetMaxH || sheetH)} min={140} dismissible={!!onclose} onresize={sheetResize} onclose={() => onclose?.()} />
 		</div>
 	{/if}
 	<div class="toolbox-header move-handle">
@@ -274,17 +250,6 @@
 	.tbx-sheet-resize {
 		display: none;
 		flex: 0 0 auto;
-		height: 18px;
-		align-items: center;
-		justify-content: center;
-		cursor: ns-resize;
-		touch-action: none;
-	}
-	.tbx-sheet-grab {
-		width: 40px;
-		height: 4px;
-		border-radius: 9999px;
-		background: var(--text-faint);
 	}
 	@media (max-width: 640px) {
 		.toolbox.tbx-sheet {
@@ -294,7 +259,7 @@
 			bottom: 0 !important;
 			width: 100vw !important;
 			max-width: 100vw !important;
-			height: var(--tbx-sheet-h, 40vh) !important;
+			height: min(var(--tbx-sheet-h, 40vh), var(--ps-sheet-max, 100vh)) !important;
 			/* never rise above the Connect bar + the top-right chrome */
 			max-height: calc(100vh - var(--connect-bottom, 54px) - 56px) !important;
 			border-radius: 0.75rem 0.75rem 0 0 !important;
@@ -306,7 +271,7 @@
 			padding-bottom: var(--controls-inset, 0px) !important;
 		}
 		.toolbox.tbx-sheet .tbx-sheet-resize {
-			display: flex;
+			display: block;
 		}
 		/* a sheet is not draggable, and its width grip is meaningless */
 		.toolbox.tbx-sheet .toolbox-header {

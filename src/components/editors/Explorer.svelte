@@ -345,6 +345,9 @@
 	// 24-C1: the in-app clipboard for files and folders
 	import { explorerClipboard, setClipboard, clearClipboard, isCutPending, clipboardLabel } from '$lib/explorerClipboard';
 	import { focusStack } from '$lib/windowFocus';
+	import ScrollStrip from '../ui/ScrollStrip.svelte';
+	import { phoneShellActive } from '$lib/ui/phoneShell.js';
+	import { touchHold, holdEvent, HOLD_MS } from '$lib/ui/touchHold.js';
 	import { tabbable, resizeGroup, tabGroups } from '$lib/windowTabs';
 	import { dockable } from '$lib/docking';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -5904,6 +5907,9 @@
 	let tSuppressClick = false;
 	/** 39: this touch drag belongs to placeDrag (it reads the pointer from the window) */
 	let tPlace = false;
+	/** 40 F3: a HOLD opened the card's menu (the phone action sheet); moving on from there
+	 *  closes it and picks the card up instead (`pickUp`), lifting keeps the menu */
+	let tHeld: { pickUp: () => void } | null = null;
 
 	function onCardPointerDown(e: PointerEvent, item: any) {
 		if (e.pointerType === 'mouse') return; // desktop uses native HTML5 drag
@@ -5919,7 +5925,8 @@
 		const carried = payload.items?.length ?? 1;
 		const label = carried > 1 ? `${item.name} + ${carried - 1} more` : item.name;
 		clearTimeout(tPressTimer);
-		tPressTimer = window.setTimeout(() => {
+		tHeld = null;
+		const pickUp = () => {
 			// 39 P1: an object card picked up by touch is a PLACE drag — the ghost on the viewport,
 			// the sheet collapsed out of the way; the controller owns the gesture from here
 			if (isPlaceable(item)) {
@@ -5944,15 +5951,32 @@
 			try {
 				navigator.vibrate?.(15);
 			} catch {}
-		}, 300);
+		};
+		// 40 F3: a still HOLD opens the card's menu (long-press-explorer-file); the drag is the
+		// hold that then MOVES (onCardPointerMove) — hold-and-lift keeps the menu
+		tPressTimer = window.setTimeout(() => {
+			tHeld = { pickUp };
+			try {
+				navigator.vibrate?.(12);
+			} catch {}
+			itemMenu(holdEvent(tStartX, tStartY), item);
+		}, HOLD_MS);
 	}
 	function onCardPointerMove(e: PointerEvent) {
 		if (e.pointerType === 'mouse') return;
 		if (tPlace) return void e.preventDefault();
 		if (!tDragging) {
+			const travelled = Math.abs(e.clientX - tStartX) > 10 || Math.abs(e.clientY - tStartY) > 10;
+			// 40 F3: held (the menu is up) and now moving: the menu gives way to the pick-up
+			if (tHeld && travelled) {
+				const { pickUp } = tHeld;
+				tHeld = null;
+				menu = null;
+				pickUp();
+				return;
+			}
 			// moved before the long-press fired -> it's a scroll, not a pick-up
-			if (Math.abs(e.clientX - tStartX) > 10 || Math.abs(e.clientY - tStartY) > 10)
-				clearTimeout(tPressTimer);
+			if (travelled) clearTimeout(tPressTimer);
 			return;
 		}
 		e.preventDefault();
@@ -5961,6 +5985,12 @@
 	}
 	function onCardPointerUp(e: PointerEvent) {
 		clearTimeout(tPressTimer);
+		if (tHeld) {
+			// 40 F3: hold-and-lift — the menu stays; the lift is not a tap-select
+			tHeld = null;
+			tSuppressClick = true;
+			return;
+		}
 		if (tPlace) {
 			// placeDrag already took the release (its window listener runs first)
 			tPlace = false;
@@ -6507,7 +6537,7 @@
 {#snippet editRow(depth: number)}
 	<div class="flex flex-col gap-0.5" style="padding-left: {8 + depth * 14}px">
 		<input
-			class="ui-input w-40 py-0.5 {isValidName(editing.value) ? '' : 'border-ink-bad'}"
+			class="ex-edit ui-input w-40 py-0.5 {isValidName(editing.value) ? '' : 'border-ink-bad'}"
 			value={editing.value}
 			use:focusSelect
 			oninput={(e) => (editing = { ...editing, value: e.currentTarget.value })}
@@ -6525,7 +6555,7 @@
 	<!-- `select-text`: the grid is `select-none` (the marquee's text-drag cure), which
 	     would otherwise reach into the one input that lives inside it -->
 	<input
-		class="ui-input w-full select-text py-0 text-center text-[10px] {isValidName(editing.value) ? '' : 'border-ink-bad'}"
+		class="ex-edit ui-input w-full select-text py-0 text-center text-[10px] {isValidName(editing.value) ? '' : 'border-ink-bad'}"
 		value={editing.value}
 		use:focusSelect
 		oninput={(e) => (editing = { ...editing, value: e.currentTarget.value })}
@@ -6679,6 +6709,8 @@
 		onpointerdown={(e) => !isFolder && onCardPointerDown(e, item)}
 		onpointermove={(e) => !isFolder && onCardPointerMove(e)}
 		onpointerup={(e) => !isFolder && onCardPointerUp(e)}
+		onpointercancel={() => clearTimeout(tPressTimer)}
+		use:touchHold={{ onhold: isFolder ? (x, y) => folderMenu(holdEvent(x, y), folder, false) : undefined }}
 		oncontextmenu={(e) => (isFolder ? folderMenu(e, folder, false) : itemMenu(e, item))}
 		onclick={(e) => (isFolder ? onFolderCardClick(e, folder) : onCardClick(e, item))}
 		ondblclick={() => (isFolder ? openFolder(folder.id) : openItem(item))}
@@ -7709,6 +7741,7 @@
 								ondragover={(e) => dragOverInto(e, folder.id)}
 								ondragleave={() => (dropFolder = null)}
 								ondrop={(e) => dropInto(e, folder.id)}
+								use:touchHold={{ onhold: (x, y) => folderMenu(holdEvent(x, y), folder, false) }}
 								oncontextmenu={(e) => folderMenu(e, folder, false)}
 								onclick={(e) => onFolderCardClick(e, folder)}
 								ondblclick={() => openFolder(folder.id)}
@@ -7763,6 +7796,8 @@
 							onpointerdown={(e) => onCardPointerDown(e, item)}
 							onpointermove={onCardPointerMove}
 							onpointerup={onCardPointerUp}
+							onpointercancel={() => clearTimeout(tPressTimer)}
+							use:touchHold
 							data-cut={!!$explorerClipboard && isCutPending(item.id) ? '1' : undefined}
 							class:opacity-50={!!$explorerClipboard && isCutPending(item.id)}
 							oncontextmenu={(e) => itemMenu(e, item)}
@@ -8310,7 +8345,7 @@
 				onpointerup={endResize}
 			></div>
 			<DockTabs />
-			<div class="mb-1 flex items-center gap-2" use:headerWidth>
+			{#snippet dockRow()}
 				<span class="tp-dock-title"><Icon name="folder-tree" size={16} />Explorer</span>
 				<!-- `shrink-0`: the identity chip beside it is the flex item that gives way.
 				     W6 deliberately left this row's LAYOUT alone — its narrow-width behaviour
@@ -8335,7 +8370,18 @@
 					aria-label="Undock into a floating window"
 					onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button
 				>
-			</div>
+			{/snippet}
+			{#if $phoneShellActive}
+				<!-- 40 F3: on the phone the toolbar SCROLLS sideways (ui/ScrollStrip) instead of
+				     squeezing the project name to "Unt…" — every chip stays reachable -->
+				<div class="mb-1" use:headerWidth>
+					<ScrollStrip id="explorer-dock-strip" gap="var(--space-2)" label="Explorer tools">{@render dockRow()}</ScrollStrip>
+				</div>
+			{:else}
+				<div class="mb-1 flex items-center gap-2" use:headerWidth>
+					{@render dockRow()}
+				</div>
+			{/if}
 			<div style="height: {$dockHeight - 44}px">
 				{@render content()}
 			</div>
@@ -8436,6 +8482,7 @@
 <!-- mobile touch-drag ghost that follows the finger onto the viewport -->
 {#if tDragging && tDrag}
 	<div
+		id="explorer-touch-ghost"
 		class="pointer-events-none fixed z-1400 max-w-[160px] -translate-x-1/2 -translate-y-1/2 truncate rounded-sm border border-accent bg-surface-1 px-2 py-1 text-center text-xs font-semibold text-text shadow-lg"
 		style="left: {tGhostX}px; top: {tGhostY}px;"
 	>
@@ -8900,5 +8947,15 @@
 		.ex-log {
 			flex: 1;
 		}
+	}
+	/* 40 F3: the rename field's SELECTED text is readable in every theme — the browser default
+	   selection (and the phone's) fought the field's own colours; the kit's accent pair is the
+	   one guaranteed to contrast. The field inside a card keeps the platform text callout. */
+	.ex-edit::selection {
+		background: var(--accent-fill);
+		color: var(--on-accent);
+	}
+	.ex-edit {
+		-webkit-touch-callout: default;
 	}
 </style>

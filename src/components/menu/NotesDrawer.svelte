@@ -8,6 +8,9 @@
 	// a header toggle for the in-scene pins.
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	import Icon from '../ui/Icon.svelte';
+	import SheetGrip from '../ui/SheetGrip.svelte';
+	import { saveSheetH } from '$lib/ui/sheetDrag.js';
+	import { phoneSheetMaxH } from '$lib/ui/phoneShell.js';
 	import EmptyState from '../ui/EmptyState.svelte';
 	import { notesDrawerOpen, inspectorClose, noteDoubleClickToOpen, showToast } from '../../stores/appStore.js';
 	import {
@@ -48,30 +51,12 @@
 			? Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.45)
 			: stored
 	);
-	let resizing = false;
-	/** @param {PointerEvent} e */
-	function startResize(e) {
-		resizing = true;
-		/** @type {HTMLElement} */ (e.currentTarget).setPointerCapture?.(e.pointerId);
-		e.preventDefault();
-	}
-	/** @param {PointerEvent} e */
-	function doResize(e) {
-		if (!resizing) return;
-		// sheet is bottom:0, so height = viewport height - finger y; cap the top below
-		// the Connect bar + top-right chrome (same limit as the Flow/Explorer dock)
-		const cb = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--connect-bottom')) || 54;
-		const maxH = Math.max(200, window.innerHeight - cb - 56);
-		sheetH = Math.min(Math.max(160, window.innerHeight - e.clientY), maxH);
-	}
-	/** @param {PointerEvent} e */
-	function endResize(e) {
-		if (!resizing) return;
-		resizing = false;
-		/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
-		try {
-			safeStorage.setItem('notesSheetH', String(sheetH));
-		} catch {}
+	// 40 F1: the grab bar is ui/SheetGrip — swipe down to the end closes the sheet; the height
+	// keeps its own key
+	/** @param {number} h @param {boolean} done */
+	function notesResize(h, done) {
+		sheetH = Math.round(h);
+		if (done) saveSheetH('notesSheetH', sheetH);
 	}
 
 	/** @param {string} uuid */
@@ -136,14 +121,8 @@
 {#if $notesDrawerOpen}
 	<aside id="notes-drawer" data-key-scope="panel" class="ui-panel tp-ui tp-window flex flex-col" style="--notes-h: {sheetH}px;">
 		<!-- top drag handle: adjusts the sheet height (bottom-sheet mode on narrow only) -->
-		<div
-			class="notes-resize"
-			title="Drag to resize"
-			onpointerdown={startResize}
-			onpointermove={doResize}
-			onpointerup={endResize}
-		>
-			<span class="notes-grabber"></span>
+		<div class="notes-resize">
+			<SheetGrip label="scene notes" height={Math.min(sheetH, $phoneSheetMaxH || sheetH)} min={160} onresize={notesResize} onclose={() => notesDrawerOpen.set(false)} />
 		</div>
 		<!-- 38 R6: the one window header (ui/WindowChrome) -->
 		<WindowChrome
@@ -298,17 +277,6 @@
 	.notes-resize {
 		display: none;
 		flex: 0 0 auto;
-		height: 16px;
-		cursor: ns-resize;
-		touch-action: none;
-		align-items: center;
-		justify-content: center;
-	}
-	.notes-grabber {
-		width: 40px;
-		height: 4px;
-		border-radius: 9999px;
-		background: var(--border-strong);
 	}
 	/* --- H6 rows + groups --------------------------------------------------- */
 	/* 38 R6: rows, groups and icons in the tokens */
@@ -415,7 +383,7 @@
 			/* background extends behind the Controls HUD; content padded up (see .notes-body) */
 			bottom: 0;
 			width: 100%;
-			height: var(--notes-h, 45vh);
+			height: min(var(--notes-h, 45vh), var(--ps-sheet-max, 100vh));
 			/* never rise above the Connect bar + top-right chrome (like the Flow/Explorer dock) */
 			max-height: calc(100vh - var(--connect-bottom, 54px) - 56px);
 			border-radius: var(--radius-window) var(--radius-window) 0 0;
@@ -423,7 +391,7 @@
 			z-index: calc(var(--z-bottom) - 1);
 		}
 		.notes-resize {
-			display: flex;
+			display: block;
 		}
 		/* keep the list above the Controls HUD while the sheet bg extends behind it */
 		.notes-body {

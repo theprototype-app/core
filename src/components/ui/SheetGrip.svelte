@@ -1,0 +1,91 @@
+<script>
+	// 40 F1 — the GRAB BAR every free-height phone sheet wears (the Inspector / Configure Scene,
+	// the main menu, the profile menu, the Add list, the notes sheet, a toolbox, the dock). It is
+	// STICKY: it sits at the top of the sheet's own scroller, so scrolling the content never takes
+	// the way to resize or close away with it (the reported "the resize handle scrolls away").
+	// The gesture is $lib/ui/sheetDrag (swipe down to the end closes; a flick up goes to the max);
+	// what the height MEANS (a store, a CSS var, a remembered key) stays the owner's — this
+	// component only reports it.
+	//
+	//   height     the sheet's current height (px)
+	//   min / max  the resting range (px); `max` defaults to the phone's sheet room
+	//   onresize   (h, done) — live while dragging (done=false), once on rest (done=true)
+	//   onclose    a swipe-away (or ArrowDown at the min)
+	//   class      extra marker classes (an owner's existing hook, e.g. `ins-resize`)
+	//   inset      px the bar bleeds past its sheet's side padding, so a scrolled row cannot
+	//              show beside it
+	import { sheetDrag } from '$lib/ui/sheetDrag.js';
+	import { phoneSheetMaxH, PHONE_SHEET_MIN } from '$lib/ui/phoneShell.js';
+
+	/** @type {{height: number, min?: number, max?: number, dismissible?: boolean, label?: string, class?: string, inset?: number, onresize?: (h: number, done: boolean) => void, onclose?: () => void} & Record<string, any>} */
+	let { height, min = PHONE_SHEET_MIN, max = 0, dismissible = true, label = 'sheet', class: cls = '', inset = 0, onresize, onclose, ...rest } = $props();
+
+	const room = $derived(max || $phoneSheetMaxH || (typeof window === 'undefined' ? 600 : window.innerHeight - 140));
+	const lo = $derived(Math.min(min, room));
+	/** a tap on the bar: all the way up, or back to the min from there */
+	function tap() {
+		onresize?.(height < room - 1 ? room : lo, true);
+	}
+</script>
+
+<div
+	class="tp-ui sg {cls}"
+	style:margin-inline={inset ? `-${inset}px` : null}
+	data-sheet-grip-zone
+	use:sheetDrag={{
+		height: () => height,
+		min: () => lo,
+		max: () => room,
+		dismissible,
+		onmove: (h) => onresize?.(h, false),
+		onsettle: (h) => onresize?.(h, true),
+		onclose: () => onclose?.(),
+		ontap: tap
+	}}
+	{...rest}
+>
+	<button
+		type="button"
+		class="sg-handle"
+		data-sheet-grip
+		aria-label={`Resize ${label}. Drag down to close; arrow keys change the height.`}
+	><span class="sg-grabber" aria-hidden="true"></span></button>
+</div>
+
+<style>
+	.sg {
+		position: sticky;
+		top: 0;
+		z-index: 11; /* over an owner's own sticky header (the Inspector's is 10) */
+		flex: 0 0 auto;
+		display: flex;
+		justify-content: center;
+		height: 24px;
+		margin: 0;
+		touch-action: none;
+		cursor: grab;
+		background: inherit;
+	}
+	.sg-handle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 100%;
+		height: 24px;
+		padding: 0;
+		border: 0;
+		background: transparent;
+		cursor: inherit;
+		touch-action: none;
+	}
+	.sg-grabber {
+		width: 40px;
+		height: 5px;
+		border-radius: var(--radius-pill);
+		background: var(--border-strong);
+	}
+	.sg-handle:hover .sg-grabber,
+	.sg-handle:focus-visible .sg-grabber {
+		background: var(--text-faint);
+	}
+</style>

@@ -80,7 +80,8 @@ h.run(async () => {
 	await tap('#logo-menu');
 	row(1, (await visible('#sidebar70')) && (await read(store('closeMenu'))) === false, 'Logo (main menu) opens the main menu');
 	const menuBox = await read(() => document.querySelector('#sidebar70')?.getBoundingClientRect().toJSON());
-	h.check(menuBox && Math.abs(menuBox.bottom - 844) < 2 && menuBox.width > 380, `the main menu is a bottom sheet (${JSON.stringify(menuBox)})`);
+	// 40 F1: a bottom sheet that ends at the TOP of the bar (844 - 76), so Play stays uncovered
+	h.check(menuBox && Math.abs(menuBox.bottom - 768) < 2 && menuBox.width > 380, `the main menu is a bottom sheet above the bar (${JSON.stringify(menuBox)})`);
 	const menuBar = await read(() => {
 		const el = document.querySelector('#sidebar70');
 		if (!el) return -1;
@@ -216,7 +217,7 @@ h.run(async () => {
 	row(16, await visible('#avatar-trigger'), 'Profile and peers: the avatar is in the top bar at rest');
 	await tap('#avatar-trigger');
 	const prof = await read(() => document.querySelector('#avatar-dropdown')?.getBoundingClientRect().toJSON());
-	h.check(prof && prof.height > 0 && Math.abs(prof.bottom - 844) < 2, `the avatar opens the profile menu as a bottom sheet (${JSON.stringify(prof)})`);
+	h.check(prof && prof.height > 0 && Math.abs(prof.bottom - 768) < 2, `the avatar opens the profile menu as a bottom sheet above the bar (${JSON.stringify(prof)})`);
 	await P.keyboard.press('Escape');
 	await P.evaluate(() => document.querySelector('#avatar-trigger')?.click());
 	await rest();

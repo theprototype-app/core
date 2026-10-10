@@ -66,3 +66,50 @@ export function stepDetent(current, dir, detents, heights, dismissible = true) {
 	if (i === 0) return dismissible ? 'closed' : current;
 	return order[i - 1];
 }
+
+// ---- 40 F1: FREE-HEIGHT sheets (the phone's drawers) --------------------------------------
+// Most phone drawers are not three-detent sheets: the Inspector, the main menu, the Add list,
+// the dock rest wherever the finger leaves them (the height is remembered), between a MIN and
+// a MAX. What every one of them shares is where a release ENDS:
+//   - dragged down "to the end" (under DISMISS_FRACTION of the min) -> closed;
+//   - a flick DOWN that starts at or near the min -> closed (the swipe-away gesture);
+//     a flick down from higher up -> the min;
+//   - a flick UP -> the max;
+//   - a slow release -> stays where it is, clamped to [min, max], and SNAPS to min / max
+//     when it lands within SNAP_PX of either (so "all the way up" is reachable by feel).
+
+/** px within which a slow release snaps onto the min or the max */
+export const SNAP_PX = 32;
+
+/**
+ * Where a released free-height sheet comes to rest.
+ * @param {{height: number, velocity: number, min: number, max: number, dismissible?: boolean}} g
+ *   height = the sheet's height at release (px); velocity = px/ms, POSITIVE = moving DOWN
+ * @returns {number|'closed'} the resting height, or 'closed'
+ */
+export function settleSheet({ height, velocity, min, max, dismissible = true }) {
+	const lo = Math.max(0, Math.min(min, max));
+	const hi = Math.max(lo, max);
+	if (velocity > FLICK_VELOCITY) {
+		if (dismissible && height <= lo + SNAP_PX) return 'closed';
+		return lo;
+	}
+	if (velocity < -FLICK_VELOCITY) return hi;
+	if (dismissible && height < lo * DISMISS_FRACTION) return 'closed';
+	const h = Math.min(hi, Math.max(lo, height));
+	if (hi - h <= SNAP_PX) return hi;
+	if (h - lo <= SNAP_PX) return lo;
+	return Math.round(h);
+}
+
+/**
+ * The room a phone sheet may take: everything between the top bar and the bottom bar, less
+ * the selection strip while one rides on top of the sheet (NOTES-38 #32 b) — so a sheet at its
+ * max never pushes the strip under the top bar or covers Play (40 F1, cover-play-and-handle).
+ * @param {number} viewportH window.innerHeight
+ * @param {{barH?: number, topH?: number, stripH?: number}} [o] bottom bar, top bar (logo /
+ *   chip / avatar row), and the strip's height + gap (0 = nothing selected)
+ */
+export function phoneSheetMax(viewportH, o = {}) {
+	return Math.max(160, Math.round(viewportH - (o.barH ?? 76) - (o.topH ?? 64) - (o.stripH ?? 0)));
+}

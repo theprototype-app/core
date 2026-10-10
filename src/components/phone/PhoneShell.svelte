@@ -20,6 +20,7 @@
 	// that class, so CSS and markup always agree about which shell is on screen.
 	import { onDestroy, tick } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
@@ -28,10 +29,12 @@
 		detentOf,
 		setPhoneDetent,
 		phoneDetentHeights,
-		phoneShellActive
+		phoneShellActive,
+		phoneSheetMaxH
 	} from '$lib/ui/phoneShell.js';
 	import { phoneBarSlots, setBarSlots, toggleSlot, splitAroundPlay, BAR_CATALOG, DEFAULT_BAR, MAX_SLOTS } from '$lib/ui/phoneBar.js';
-	import { snapDetent, stepDetent } from '$lib/ui/sheetSnap.js';
+	import { snapDetent, stepDetent, phoneSheetMax } from '$lib/ui/sheetSnap.js';
+	import { sheetDrag } from '$lib/ui/sheetDrag.js';
 	import {
 		peers,
 		userdata,
@@ -60,7 +63,7 @@
 	import { setTransformMode, toggleEditorMode } from '$lib/objectActions';
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR } from '$lib/playMode';
-	import { visibleDockKey, DOCK_TITLES } from '$lib/bottomDock';
+	import { visibleDockKey, DOCK_TITLES, dockMinimized, dockHeight } from '$lib/bottomDock';
 	import { micActive, pttActive, toggleMic } from '$lib/voiceChat';
 	import { aiReady } from '$lib/ai/providers';
 	import { canvasCenter } from '$lib/canvasRect';
@@ -71,7 +74,30 @@
 	// NOTES-38 #32 (a): a sheet sits ABOVE the bottom bar (Play stays visible and tappable), so
 	// its detents are fractions of the room above the bar, not of the window
 	const BAR_H = 76; // .ps-bar (+ the safe-area inset, which CSS adds)
-	const heights = $derived(/** @type {Record<string, number>} */ (phoneDetentHeights(viewportH - BAR_H)));
+	// 40 F1: no sheet rises into the top bar, and none pushes the selection strip under it — the
+	// strip (52 + an 8 gap) rides ON TOP of the sheet while something is selected (#32 b)
+	const TOP_ROOM = 64; // the logo / chip / avatar row (12 + 44) and its gap
+	const STRIP_ROOM = 60;
+	const hasSel = $derived(($selectedObjects ?? []).length > 0);
+	const sheetMax = $derived(phoneSheetMax(viewportH, { barH: BAR_H, topH: TOP_ROOM, stripH: hasSel ? STRIP_ROOM : 0 }));
+	const heights = $derived.by(() => {
+		const d = phoneDetentHeights(viewportH - BAR_H);
+		return /** @type {Record<string, number>} */ ({
+			peek: Math.min(d.peek, sheetMax),
+			half: Math.min(d.half, sheetMax),
+			full: Math.min(d.full, sheetMax)
+		});
+	});
+	// every other phone sheet (the Inspector, the menus, the Add list, the dock …) reads the room
+	// from here: the store for script-sized sheets, the CSS var for CSS-placed ones
+	$effect(() => {
+		phoneSheetMaxH.set(sheetMax);
+		document.documentElement.style.setProperty('--ps-sheet-max', sheetMax + 'px');
+		return () => {
+			phoneSheetMaxH.set(0);
+			document.documentElement.style.removeProperty('--ps-sheet-max');
+		};
+	});
 
 	$effect(() => {
 		const root = document.documentElement;
@@ -180,64 +206,21 @@
 	}
 
 	// ---- the handle: tap steps a detent, drag rests on one, below peek closes ---------
+	// 40 F1: the gesture is the shared one ($lib/ui/sheetDrag) — only where a release RESTS is
+	// this sheet's own (its three remembered detents, NOTES-38 #15)
 	const DETENTS = ['peek', 'half', 'full'];
-	let draggedAt = -Infinity;
-	/** @param {HTMLElement} node */
-	function dragHandle(node) {
-		let startY = 0;
-		let startH = 0;
-		let moved = false;
-		/** @type {[number, number][]} */
-		let samples = [];
-		/** @param {PointerEvent} e */
-		const down = (e) => {
-			if (e.button !== 0) return;
-			startY = e.clientY;
-			startH = sheetH;
-			moved = false;
-			samples = [[e.timeStamp, e.clientY]];
-			node.setPointerCapture?.(e.pointerId);
-		};
-		/** @param {PointerEvent} e */
-		const move = (e) => {
-			if (!samples.length) return;
-			const dy = e.clientY - startY;
-			if (!moved && Math.abs(dy) < 4) return;
-			moved = true;
-			dragH = Math.max(0, Math.min(heights.full, startH - dy));
-			samples.push([e.timeStamp, e.clientY]);
-			if (samples.length > 6) samples.shift();
-			e.preventDefault();
-		};
-		/** @param {PointerEvent} e */
-		const up = (e) => {
-			if (!samples.length) return;
-			node.releasePointerCapture?.(e.pointerId);
-			const first = samples[0];
-			samples = [];
-			if (!moved) return;
-			const velocity = (e.clientY - first[1]) / Math.max(1, e.timeStamp - first[0]);
-			const next = snapDetent({ height: dragH ?? startH, velocity, heights, detents: DETENTS });
-			dragH = null;
-			draggedAt = performance.now();
-			if (next === 'closed') closeKind(top);
-			else setDetent(next);
-		};
-		node.addEventListener('pointerdown', down);
-		node.addEventListener('pointermove', move);
-		node.addEventListener('pointerup', up);
-		node.addEventListener('pointercancel', up);
-		return {
-			destroy() {
-				node.removeEventListener('pointerdown', down);
-				node.removeEventListener('pointermove', move);
-				node.removeEventListener('pointerup', up);
-				node.removeEventListener('pointercancel', up);
-			}
-		};
+	/** @param {{height: number, velocity: number}} g @returns {number|'closed'} */
+	function settleDetent(g) {
+		const next = snapDetent({ height: g.height, velocity: g.velocity, heights, detents: DETENTS });
+		return next === 'closed' ? 'closed' : heights[next];
+	}
+	/** @param {number} h */
+	function restAt(h) {
+		dragH = null;
+		const d = DETENTS.find((k) => heights[k] === h) ?? 'half';
+		setDetent(d);
 	}
 	function tapHandle() {
-		if (performance.now() - draggedAt < 350) return;
 		const up = stepDetent(detent, 1, DETENTS, heights, false);
 		setDetent(up === detent ? 'peek' : up);
 	}
@@ -270,7 +253,7 @@
 	}
 
 	// ---- the strip -------------------------------------------------------------------
-	const hasSel = $derived(($selectedObjects ?? []).length > 0);
+	// (`hasSel` is declared with the sheet geometry above: the room a sheet may take depends on it)
 
 	// ---- the bar ---------------------------------------------------------------------
 	function add() {
@@ -314,6 +297,16 @@
 			cancelAnimationFrame(raf);
 		};
 	});
+
+	// 40 F1: the DOCK (Explorer, Node editor, Animation … — one shared height) is a sheet too. Its
+	// panels belong to their editors (and their tab strip to DockTabs), so the grab bar is drawn
+	// HERE, over the panel's top edge (phone.css pads the panel for it): drag resizes the shared
+	// `dockHeight`, swipe down to the end MINIMIZES the dock (every tab stays open; the bar's
+	// buttons bring it back — panelToggles' minimized rule).
+	const DOCK_TABS_ROOM = 28; // DockTabs' strip rides just above the panel
+	const dockOn = $derived(!!$visibleDockKey && !$dockMinimized);
+	const dockMax = $derived(Math.max(160, sheetMax - DOCK_TABS_ROOM));
+	const dockShown = $derived(Math.min($dockHeight, dockMax));
 
 	// unread chat: messages that arrived while the chat sheet was closed
 	let seenChat = $state(0);
@@ -360,7 +353,7 @@
 	const viewAction = (key) => ({
 		label: DOCK_TITLES[key] ?? key,
 		run: fromMore(() => togglePanel(key)),
-		pressed: () => $visibleDockKey === key
+		pressed: () => $visibleDockKey === key && !$dockMinimized
 	});
 	/** ONE map the bar AND the More tiles render from, so a destination cannot behave
 	 *  differently in its two places (NOTES-38 #7: any of them may sit on the bar).
@@ -532,6 +525,12 @@
 		{#each bar.right as key (key)}{@render tab(key)}{/each}
 	</nav>
 
+	{#if dockOn}
+		<div class="ps-dockgrip" id="ps-dock-grip" style:bottom="calc(var(--ps-bar-h) + {dockShown - 24}px)">
+			<SheetGrip label="dock" height={dockShown} min={160} max={dockMax} onresize={(h) => dockHeight.set(Math.round(h))} onclose={() => dockMinimized.set(true)} />
+		</div>
+	{/if}
+
 	<!-- THE SHEET FRAME: a surface, a handle, (a title row for the shell's own sheets);
 	     the reused window is placed into the rest of it by phone.css -->
 	{#if top}
@@ -546,13 +545,26 @@
 			style:height="{sheetH}px"
 			aria-label={HOSTS[top][1] ?? 'Sheet'}
 		>
-			<div class="ps-strip-h" use:dragHandle>
+			<div
+				class="ps-strip-h"
+				use:sheetDrag={{
+					height: () => sheetH,
+					min: () => heights.peek,
+					max: () => heights.full,
+					keys: false,
+					settle: settleDetent,
+					onmove: (h) => (dragH = h),
+					onsettle: restAt,
+					onclose: () => closeKind(top),
+					ontap: tapHandle
+				}}
+			>
 				<button
 					type="button"
 					class="ps-handle"
 					id="ps-sheet-handle"
+					data-sheet-grip
 					aria-label={`Sheet height: ${detent}. Tap to change, drag down to close.`}
-					onclick={tapHandle}
 					onkeydown={handleKey}
 				><span class="ps-grabber" aria-hidden="true"></span></button>
 			</div>
@@ -708,7 +720,7 @@
 		left: 50%;
 		transform: translateX(-50%);
 		bottom: calc(84px + env(safe-area-inset-bottom, 0px));
-		z-index: 41; /* above the sheets (38), a hosted window (40) and the Inspector */
+		z-index: 44; /* above every sheet (38-43), a hosted window (40) and the Inspector */
 		display: flex;
 		align-items: center;
 		gap: 2px;
@@ -775,7 +787,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		z-index: 42; /* #32: above the sheets, so the raised Play circle is never covered */
+		z-index: 44; /* #32 / 40 F1: above every sheet (the main menu is 43), so the raised Play circle is never covered */
 		height: calc(76px + env(safe-area-inset-bottom, 0px));
 		padding: 0 6px calc(8px + env(safe-area-inset-bottom, 0px));
 		display: grid;
@@ -826,6 +838,14 @@
 		font: 600 10px/17px var(--font-ui-mono, monospace);
 	}
 
+	.ps-dockgrip {
+		position: fixed;
+		left: 0;
+		right: 0;
+		height: 24px;
+		z-index: 36; /* over its dock panel (--z-bottom, 35), under every sheet */
+		background: transparent;
+	}
 	.ps-scrim {
 		position: fixed;
 		inset: 0 0 calc(76px + env(safe-area-inset-bottom, 0px)) 0; /* #32: the bar stays live */

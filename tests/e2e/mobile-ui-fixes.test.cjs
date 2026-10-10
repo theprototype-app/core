@@ -222,7 +222,8 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	const anchor = await A.page.evaluate(() => {
 		const t = document.querySelector('#avatar-trigger')?.getBoundingClientRect();
-		const p = document.querySelector('[popover]:popover-open')?.getBoundingClientRect();
+		// 40 F1: on the phone shell the panel is a plain sheet (no top layer) — find it by id
+		const p = (document.querySelector('[popover]:popover-open') ?? document.querySelector('#avatar-dropdown'))?.getBoundingClientRect();
 		if (!t || !p) return null;
 		return {
 			trigger: [Math.round(t.width), Math.round(t.height)],
@@ -238,10 +239,11 @@ h.run(async () => {
 	// 38 R9: below 640px the phone shell draws the profile menu as a BOTTOM SHEET (design
 	// map row 16, "opens a sheet") — the seat-on-the-circle rule is the desktop/tablet one
 	const phoneShell = await A.page.evaluate(() => document.documentElement.classList.contains('phone-shell'));
-	const sheet = phoneShell && (await A.page.evaluate(() => { const p = document.querySelector('[popover]:popover-open')?.getBoundingClientRect(); return p && { left: Math.round(p.left), right: Math.round(p.right), bottom: Math.round(p.bottom), vw: innerWidth, vh: innerHeight }; }));
+	// 40 F1: the sheet ends at the TOP of the bottom bar (Play is never covered), not the window edge
+	const sheet = phoneShell && (await A.page.evaluate(() => { const p = document.querySelector('#avatar-dropdown')?.getBoundingClientRect(); const b = document.querySelector('#ps-bar')?.getBoundingClientRect(); return p && b && { left: Math.round(p.left), right: Math.round(p.right), bottom: Math.round(p.bottom), barTop: Math.round(b.top), vw: innerWidth }; }));
 	h.check(
 		phoneShell
-			? !!sheet && sheet.left === 0 && sheet.right === sheet.vw && sheet.bottom === sheet.vh
+			? !!sheet && sheet.left === 0 && sheet.right === sheet.vw && Math.abs(sheet.bottom - sheet.barTop) <= 1
 			: !!anchor && Math.abs(anchor.rightGap) <= 2 && Math.abs(anchor.topGap) <= 2 && anchor.inset >= 12,
 		phoneShell
 			? `on a phone the profile menu is a bottom sheet (${JSON.stringify(sheet)})`

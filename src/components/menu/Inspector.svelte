@@ -29,6 +29,9 @@
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
 	import DragRow from '../ui/DragRow.svelte';
+	import SheetGrip from '../ui/SheetGrip.svelte';
+	import { saveSheetH } from '$lib/ui/sheetDrag.js';
+	import { phoneSheetMaxH } from '$lib/ui/phoneShell.js';
 	import Segmented from '../ui/Segmented.svelte';
 	import ParticleMotionRows from '../fx/ParticleMotionRows.svelte';
 	import ColorPicker, { ChromeVariant } from 'svelte-awesome-color-picker';
@@ -339,30 +342,12 @@
 		const saved = parseInt(safeStorage.getItem('inspectorSheetH') || '');
 		inspectorH = !saved || Number.isNaN(saved) ? Math.round(window.innerHeight * 0.45) : saved;
 	});
-	let insResizing = $state(false);
-	/** @param {PointerEvent} e */
-	function insStartResize(e) {
-		insResizing = true;
-		/** @type {HTMLElement} */ (e.currentTarget).setPointerCapture?.(e.pointerId);
-		e.preventDefault();
-	}
-	/** @param {PointerEvent} e */
-	function insDoResize(e) {
-		if (!insResizing) return;
-		// sheet is bottom:0, so height = viewport height - finger y; cap the top below
-		// the Connect bar + top-right chrome (same limit as the Flow/Explorer dock)
-		const cb = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--connect-bottom')) || 54;
-		const maxH = Math.max(200, window.innerHeight - cb - 56);
-		inspectorH = Math.min(Math.max(160, window.innerHeight - e.clientY), maxH);
-	}
-	/** @param {PointerEvent} e */
-	function insEndResize(e) {
-		if (!insResizing) return;
-		insResizing = false;
-		/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
-		try {
-			safeStorage.setItem('inspectorSheetH', String(inspectorH));
-		} catch {}
+	// 40 F1: the grab bar is ui/SheetGrip (sticky, swipe down to the end closes). The height
+	// stays this drawer's own, under the same key.
+	/** @param {number} h @param {boolean} done */
+	function insResize(h, done) {
+		inspectorH = Math.round(h);
+		if (done) saveSheetH('inspectorSheetH', inspectorH);
 	}
 
 	// C1 (roadmap #13): scene-mode physics-objects list. Recomputes on scene/graph
@@ -1638,16 +1623,17 @@
 	role="region"
 	aria-label="Properties"
 >
-	<!-- bottom-sheet drag handle (shown only in the narrow bottom-sheet layout) -->
-	<div
+	<!-- bottom-sheet grab bar (shown only in the narrow bottom-sheet layout): STICKY, so
+	     scrolling the properties never takes it away (40 F1) -->
+	<SheetGrip
 		class="ins-resize"
-		title="Drag to resize"
-		onpointerdown={insStartResize}
-		onpointermove={insDoResize}
-		onpointerup={insEndResize}
-	>
-		<span class="ins-grabber"></span>
-	</div>
+		label={$inspectorKind === 'scene' ? 'Configure Scene' : 'Properties'}
+		height={Math.min(inspectorH, $phoneSheetMaxH || inspectorH)}
+		min={160}
+		inset={16}
+		onresize={insResize}
+		onclose={() => inspectorClose.set(true)}
+	/>
 	{#if $inspectorKind === 'file'}
 		<!-- Explorer file properties (107) -->
 		<InspectorHead title={inspectedItem?.name ?? 'File'} icon="file-text" badge="File" onclose={() => inspectorClose.set(true)} />

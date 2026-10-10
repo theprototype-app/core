@@ -69,7 +69,7 @@
 	</button>
 
 	{#if $notificationCenterOpen}
-		<div class="fixed inset-0" style="z-index: 996;" role="presentation" onclick={() => notificationCenterOpen.set(false)}></div>
+		<div class="notif-backdrop fixed inset-0" style="z-index: 996;" role="presentation" onclick={() => notificationCenterOpen.set(false)}></div>
 		<!-- 38 R6: the notification centre is a tool window (ui/WindowChrome) -->
 		<div id="notif-panel" data-key-scope="panel" class="notif-pop absolute right-0 top-10" style="z-index: 998;">
 			<WindowChrome

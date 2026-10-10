@@ -375,12 +375,12 @@ h.run(async () => {
 	);
 	const searchWide = wide.search.width;
 
-	await A.page.setViewportSize({ width: 520, height: 720 });
+	await A.page.setViewportSize({ width: 660, height: 720 });
 	await A.page.waitForTimeout(700);
 	const narrow = await headerGeom(A);
 	h.check(
 		!narrow.rowOverflows,
-		`the row still does not overflow at 520px (scrollWidth vs clientWidth on the row)`
+		`the row still does not overflow at 660px (scrollWidth vs clientWidth on the row)`
 	);
 	h.check(
 		Math.abs(narrow.search.width - searchWide) < 2,
@@ -407,6 +407,25 @@ h.run(async () => {
 		(nc.projectTitle ?? '').includes(LONG_PROJECT) && (nc.sceneTitle ?? '').includes('Bunker'),
 		'a clipped segment still carries the whole text in its title tooltip'
 	);
+	// 40 F3: at 640px and below the PHONE shell is up, and there the docked toolbar is a sideways
+	// strip (ui/ScrollStrip, #explorer-dock-strip) instead: the project name shows WHOLE and a
+	// swipe brings it into view — truncating it to "Unt…" is what the phone user reported.
+	await A.page.setViewportSize({ width: 520, height: 720 });
+	await A.page.waitForTimeout(700);
+	const phone = await A.page.evaluate(() => {
+		const strip = document.getElementById('explorer-dock-strip');
+		const proj = document.querySelector('#explorer-project');
+		const search = document.querySelector('#explorer-search');
+		if (!strip) return null;
+		const before = { over: strip.scrollWidth - strip.clientWidth, projectWhole: proj ? proj.scrollWidth <= proj.clientWidth + 1 : false, searchW: search?.getBoundingClientRect().width ?? 0 };
+		strip.scrollLeft = strip.scrollWidth;
+		const sr = strip.getBoundingClientRect();
+		const cr = document.querySelector('#explorer-identity').getBoundingClientRect();
+		return { ...before, chipInside: cr.left >= sr.left - 1 && cr.right <= sr.right + 1, pageOver: document.documentElement.scrollWidth > window.innerWidth + 1 };
+	});
+	h.check(!!phone, 'phone shell (520px): the docked toolbar is the sideways strip');
+	h.check(!!phone && Math.abs(phone.searchW - searchWide) < 2, `phone shell: the SEARCH box keeps its width (${searchWide | 0} -> ${phone?.searchW | 0})`);
+	h.check(!!phone && phone.projectWhole && phone.chipInside && !phone.pageOver, `phone shell: the project name shows whole and scrolling the strip brings the chip fully into view, without overflowing the page (${JSON.stringify(phone)})`);
 	await A.page.setViewportSize({ width: 1280, height: 720 });
 	await A.page.waitForTimeout(500);
 

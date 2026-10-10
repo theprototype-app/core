@@ -17,6 +17,8 @@
 	import { pingColor, pingSound, previewPing } from '$lib/ping';
 	import { PING_SOUNDS, playPing } from '$lib/pingAudio';
 	import { safeStorage } from '$lib/safeStorage';
+	import { settleSheet } from '$lib/ui/sheetSnap.js';
+	import { phoneSheetMaxH } from '$lib/ui/phoneShell.js';
 	import { flyTo } from '$lib/objectActions';
 	import Icon from '../ui/Icon.svelte';
 	// 38 R7 + NOTES-38 #2: a resizable DRAWER on the redesign kit — WindowChrome size="modal" header,
@@ -113,7 +115,9 @@
 	const MIN_W = 300;
 	const MIN_H = 220;
 	const maxW = () => Math.max(MIN_W, Math.round(window.innerWidth * 0.6));
-	const maxH = () => Math.max(MIN_H, Math.round(window.innerHeight * 0.8));
+	// 40 F1: on the phone the sheet's ceiling is the shell's sheet room (clear of the top bar and the
+	// selection strip), like every other phone sheet
+	const maxH = () => Math.max(MIN_H, Math.round(Math.min(window.innerHeight * 0.8, get(phoneSheetMaxH) || Infinity)));
 	const sheetH = () => (drawerH > 0 ? Math.min(Math.max(drawerH, MIN_H), maxH()) : Math.min(window.innerHeight * 0.52, 460));
 	const panelW = () => Math.min(Math.max(drawerW, MIN_W), maxW());
 
@@ -162,16 +166,34 @@
 		const y0 = e.clientY;
 		const w0 = panelW();
 		const h0 = sheetH();
+		// 40 F1: the phone sheet closes like every other one — swiped down to the end, or flicked
+		// down from its min (the shared rule, sheetSnap.settleSheet)
+		let rawH = h0;
+		/** @type {[number, number][]} */
+		let samples = [[e.timeStamp, e.clientY]];
 		/** @param {PointerEvent} ev */
 		const move = (ev) => {
-			if (narrow) drawerH = Math.min(Math.max(h0 - (ev.clientY - y0), MIN_H), maxH());
+			rawH = h0 - (ev.clientY - y0);
+			samples.push([ev.timeStamp, ev.clientY]);
+			if (samples.length > 6) samples.shift();
+			if (narrow) drawerH = Math.min(Math.max(rawH, MIN_H), maxH());
 			else drawerW = Math.min(Math.max(w0 - (ev.clientX - x0), MIN_W), maxW());
 		};
-		const up = () => {
+		/** @param {PointerEvent} ev */
+		const up = (ev) => {
 			window.removeEventListener('pointermove', move);
 			window.removeEventListener('pointerup', up);
 			window.removeEventListener('pointercancel', up);
 			resizing = false;
+			if (narrow && ev.type === 'pointerup') {
+				const first = samples[0];
+				const velocity = (ev.clientY - first[1]) / Math.max(1, ev.timeStamp - first[0]);
+				if (settleSheet({ height: rawH, velocity, min: MIN_H, max: maxH() }) === 'closed') {
+					drawerH = h0; // the height it had: a swipe-away is not a resize
+					end(false);
+					return;
+				}
+			}
 			safeStorage.setItem(SIZE_KEY, JSON.stringify({ w: drawerW, h: drawerH }));
 			aim(300);
 		};

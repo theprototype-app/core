@@ -39,7 +39,7 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.explorerClose.set(false));
 	await page.waitForTimeout(1200);
 	if (!(await page.locator('#explorer-window').count())) {
-		await page.locator('#explorer-undock').click({ timeout: 20000 });
+		await page.locator('#dock-undock:visible').click({ timeout: 20000 });
 		await page.waitForTimeout(900);
 	}
 	await page.evaluate(() => window.__stores.flowGraphClose?.set?.(false));

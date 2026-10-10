@@ -250,7 +250,7 @@ h.run(async () => {
 	await page.keyboard.insertText(edited);
 	await page.keyboard.press('Control+S');
 	await h.eventually(codeNow, (c) => /const POINTS = \{ can: 150,/.test(c), 'Ctrl+S saved the code onto the node (a can is worth 150)', 6000);
-	await page.locator('#code-ws-close').click().catch(() => {});
+	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
 	await h.eventually(() => page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rid), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
 	/** stage 1, every can swept off: six cans x 150 with no combo = exactly 900 */
 	const feel = async (when) => {

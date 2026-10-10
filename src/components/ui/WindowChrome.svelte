@@ -27,6 +27,7 @@
 	//   closeAttrs    on the close button (an id, the tooltip with its shortcut "Close (O)")
 	import Icon from './Icon.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
+	import { fullName } from '$lib/ui/fullName.js';
 
 	/** @type {{size?: 'modal'|'panel'|'tool', title?: string, icon?: string, count?: number|string, titleId?: string, onclose?: (() => void) | null, closeLabel?: string, onpin?: (() => void) | null, pinned?: boolean, pinAttrs?: Record<string, any>, onpopout?: (() => void) | null, onback?: (() => void) | null, backLabel?: string, bare?: boolean, headerClass?: string, closeAttrs?: Record<string, any>, heading?: import('svelte').Snippet, body?: boolean, padded?: boolean, elevated?: boolean, headerEl?: HTMLElement | null, headerAttrs?: Record<string, any>, actions?: import('svelte').Snippet, footer?: import('svelte').Snippet, children?: import('svelte').Snippet} & Record<string, any>} */
 	let {
@@ -76,7 +77,7 @@
 			{#if icon && size === 'panel' && !onback}
 				<span class="wc-icon" aria-hidden="true"><Icon name={icon} size={16} /></span>
 			{/if}
-			<h2 class="wc-title" id={titleId}>{title}</h2>
+			<h2 class="wc-title" id={titleId} use:fullName={title}>{title}</h2>
 		{/if}
 		{#if hasCount}<span class="wc-count">{count}</span>{/if}
 		{#if actions}<div class="wc-actions">{@render actions()}</div>{/if}

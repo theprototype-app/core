@@ -201,13 +201,6 @@
 				onpointerup={endResize}
 			></div>
 			<DockTabs />
-			<button
-				id="flow-undock"
-				class="tp-dock-btn absolute right-2 top-2 z-10"
-				title="Undock into a floating window"
-				aria-label="Undock into a floating window"
-				onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button
-			>
 			<div class="relative" style="height: {$dockHeight - 16}px">
 				<SvelteFlowProvider>
 					<Nodes bind:paletteOpen />

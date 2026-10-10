@@ -293,7 +293,7 @@ h.run(async () => {
 	await page.keyboard.insertText(edited);
 	await page.keyboard.press('Control+S');
 	await h.eventually(codeNow, (c) => /name: 'Straight', par: 4,/.test(c), 'Ctrl+S saved the code onto the node (hole 1 is par 4)', 6000);
-	await page.locator('#code-ws-close').click().catch(() => {});
+	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
 	await h.eventually(() => page.evaluate(() => window.__stores.behaviours.behavioursDebug().status[window.__minigolf.rulesNode()]?.status), (st) => st === 'running', 'the edited rules reloaded and run', 8000);
 	// both felt in Play
 	await page.evaluate(() => window.__stores.isLocked.set(true));

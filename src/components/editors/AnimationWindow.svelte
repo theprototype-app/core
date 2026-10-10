@@ -40,6 +40,7 @@
 	import DockTabs from '../DockTabs.svelte';
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	import ScrollStrip from '../ui/ScrollStrip.svelte';
+	import { fullName } from '$lib/ui/fullName.js';
 	import Segmented from '../ui/Segmented.svelte';
 	import { createGesture } from '$lib/modalGrab';
 	// W5: the BINDING for this pane's grab key lives in the shortcut registry (an
@@ -2669,14 +2670,22 @@
 				onpointerup={endResize}
 			></div>
 			<DockTabs />
-			<div class="flex shrink-0 items-center gap-2 pb-1">
-				<span class="tp-dock-title">Animation</span>
-				<span class="tp-dock-sub">{target ? target.name || 'object' : 'no selection'}</span>
-				{#if compact && target}{@render paneSwitch()}{/if}
-				<span class="flex-1"></span>
-				<button class="tp-dock-btn" title="Undock into a floating window" aria-label="Undock" onclick={() => setDocked(false)}><Icon name="app-window" size={16} /></button>
-				<button class="tp-dock-btn" title="Close" aria-label="Close" onclick={() => animationClose.set(true)}><Icon name="x" size={16} /></button>
-			</div>
+			<!-- 40 F7/F8: no ✕ and no undock here any more (the tab carries ✕, the dock's own
+			     chrome carries undock), and the object's NAME is one ellipsized line: on a
+			     phone-narrow editor it moves to its own row above the pane switch, so a long
+			     name can never push the controls apart (B2ack-wall-super). -->
+			{#if compact && target}
+				<div class="tp-dock-crumb" id="animation-name-row">
+					<span class="tp-dock-title">Animation</span>
+					<span class="tp-dock-sub" id="animation-target-name" use:fullName>{target.name || 'object'}</span>
+				</div>
+				<div class="flex shrink-0 items-center gap-2 pb-1">{@render paneSwitch()}</div>
+			{:else}
+				<div class="flex min-w-0 shrink-0 items-center gap-2 pb-1">
+					<span class="tp-dock-title">Animation</span>
+					<span class="tp-dock-sub" id="animation-target-name" use:fullName>{target ? target.name || 'object' : 'no selection'}</span>
+				</div>
+			{/if}
 			<div class="flex min-h-0 flex-1 flex-col">
 				{@render body()}
 			</div>
@@ -2707,14 +2716,14 @@
 			>
 				{#snippet heading()}
 					<span class="wc-label">Animation</span>
-					<span class="wc-sub">{target ? target.name || 'object' : 'no selection'}</span>
-					{#if compact && target}{@render paneSwitch()}{/if}
+					<span class="wc-sub" id="animation-target-name" use:fullName>{target ? target.name || 'object' : 'no selection'}</span>
 					<span class="flex-1"></span>
 				{/snippet}
 				{#snippet actions()}
 					<button class="wc-act-text" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
 				{/snippet}
 			</WindowChrome>
+			{#if compact && target}<div class="flex shrink-0 items-center gap-2 px-2 py-1">{@render paneSwitch()}</div>{/if}
 			{@render body()}
 			<div
 				class="resize-cue absolute bottom-0 right-0 z-10 h-3.5 w-3.5 cursor-se-resize rounded-tl bg-border-strong/40"

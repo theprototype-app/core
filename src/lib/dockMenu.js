@@ -10,7 +10,8 @@ import {
 	codeWorkspaceClose
 } from '../stores/appStore';
 import { get } from 'svelte/store';
-import { activateDock, armDockMode, dockOccupants, dockTabs, moveDockTab, DOCK_TITLES } from './bottomDock';
+import { activateDock, armDockMode, armDockModes, dockOccupants, dockTabs, moveDockTab, visibleDockKey, undockButtonMode, DOCK_FAMILY, DOCK_TITLES } from './bottomDock';
+import { queueMerge } from './windowTabs';
 
 // The dock's "+" add-a-view menu, in ONE place. The docked tab strip
 // (DockTabs.svelte) and the FLOATING Node editor's header "+" (Flow.svelte) each
@@ -155,9 +156,96 @@ export function dockTabItems(key) {
 	items.push({
 		label: 'Close',
 		tooltip: `Close ${title} (it leaves the dock; nothing else is touched)`,
-		action: () => closeStoreFor(key)?.set(true)
+		action: () => closeDockView(key)
 	});
 	return items;
+}
+
+/**
+ * 40 F8 — closing a DOCKED view is its tab's ✕ (or the tab menu's Close) now; the docked
+ * header carries no ✕ of its own. A view whose close must ASK first (the code workspace
+ * with unsaved tabs) registers its own closer here, so the tab ✕ takes the same path its
+ * header ✕ used to.
+ * @type {Record<string, () => void>}
+ */
+const dockClosers = {};
+/** @param {string} key @param {() => void} fn @returns {() => void} unregister */
+export function registerDockCloser(key, fn) {
+	dockClosers[key] = fn;
+	return () => {
+		if (dockClosers[key] === fn) delete dockClosers[key];
+	};
+}
+/** @param {string} key */
+export function closeDockView(key) {
+	if (dockClosers[key]) dockClosers[key]();
+	else closeStoreFor(key)?.set(true);
+}
+
+/**
+ * 40 F8 — the dock's undock button (left of "minimize the dock"). By default it takes the
+ * ACTIVE tab out into a floating window; with Settings ▸ Interface ▸ Windows & chrome ▸
+ * "Undock button: all as one tabbed group" it takes every docked tab out as ONE floating
+ * window with a tab per view (the first tab is the window the others join).
+ * @param {'active'|'group'=} mode defaults to the setting
+ */
+export function undockFromDock(mode) {
+	const how = mode ?? get(undockButtonMode);
+	if (how === 'group') {
+		const keys = get(dockTabs).map((t) => t.key);
+		if (!keys.length) return;
+		armDockModes(keys, false);
+		for (const key of keys.slice(1)) queueMerge(keys[0], key);
+		return;
+	}
+	const key = get(visibleDockKey);
+	if (key) armDockMode(key, false);
+}
+
+/**
+ * 40 F8 — a floating tab group's dock button (left of "close all tabs") docks ALL of its
+ * tabs. Members that have no docked mode (Objects, Chat, the AI window) stay floating.
+ * @param {string[]} members @param {string=} active the tab to show once docked
+ * @returns {number} how many were docked
+ */
+export function dockAllOf(members, active) {
+	const keys = members.filter((k) => DOCK_FAMILY.includes(k));
+	if (!keys.length) return 0;
+	armDockModes(keys, true);
+	activateDock(active && keys.includes(active) ? active : keys[0]);
+	return keys.length;
+}
+
+/**
+ * 40 F10 — a docked tab dropped onto/into a floating window joins it as a TAB.
+ * @param {string} key the docked view @param {string} targetKey the floating window
+ */
+export function undockInto(key, targetKey) {
+	armDockMode(key, false);
+	queueMerge(targetKey, key);
+}
+
+/**
+ * 40 F9 — the phone's "+" sheet: EVERY window (the Node editor too), with whether it is
+ * open. Toggling one on opens it in the dock and shows it; off closes it.
+ * @returns {{key: string, title: string, tooltip: string, open: boolean}[]}
+ */
+export function dockSheetRows() {
+	const occupied = get(dockOccupants);
+	return [{ key: 'flow', tooltip: 'Wire the scene’s behaviour as nodes' }, ...DOCK_VIEWS].map((view) => {
+		const closer = closeStoreFor(view.key);
+		return {
+			key: view.key,
+			title: DOCK_TITLES[view.key] ?? view.key,
+			tooltip: view.tooltip,
+			open: !!occupied[view.key]?.present || (!!closer && get(closer) === false)
+		};
+	});
+}
+/** @param {string} key @param {boolean} on */
+export function setDockViewShown(key, on) {
+	if (on) dockView(key);
+	else closeDockView(key);
 }
 
 /**

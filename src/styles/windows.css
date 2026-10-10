@@ -398,3 +398,45 @@
 	-webkit-mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent); /* tokens-ok: mask alpha, not a colour */
 	mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent); /* tokens-ok: mask alpha, not a colour */
 }
+
+/* 40 F7 — a window header's NAME (the object/file it is showing) is one line ending in "…";
+   the full name is on hover / a touch long-press ($lib/ui/fullName.js). `.tp-dock-sub` is the
+   docked header's name (it had no rule at all, so "B2ack wall super" wrapped to three lines
+   and pushed the controls down); `.tp-dock-crumb` is the row the name moves to when the
+   header's own row is taken by controls (a phone-narrow editor's pane switch). */
+.tp-dock-sub {
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: var(--fs-section);
+	color: var(--text-faint);
+}
+.tp-dock-crumb {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+	padding: 0 2px 2px;
+	font-size: var(--fs-desc);
+	color: var(--text-muted);
+}
+.tp-dock-crumb > .tp-dock-sub {
+	font-size: inherit;
+	color: var(--text);
+}
+.tp-fullname-tip {
+	position: fixed;
+	z-index: var(--z-menu);
+	max-width: min(90vw, 420px);
+	padding: 6px 10px;
+	overflow-wrap: anywhere;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-input);
+	background: var(--surface-1);
+	color: var(--text);
+	box-shadow: var(--shadow-window);
+	font: 400 var(--fs-desc) var(--font-ui);
+	pointer-events: none;
+}

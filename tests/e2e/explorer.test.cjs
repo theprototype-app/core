@@ -78,7 +78,7 @@ h.run(async () => {
 	);
 
 	// undock -> floating window -> dock back
-	await A.page.locator('#explorer-undock').click();
+	await A.page.locator('#dock-undock:visible').click();
 	await A.page.waitForTimeout(400);
 	h.check(await A.page.locator('#explorer-window').isVisible(), 'Explorer undocks into a window');
 	await A.page.locator('#explorer-dock').click();

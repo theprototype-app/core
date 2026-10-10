@@ -451,12 +451,12 @@ h.run(async () => {
 		return ev.defaultPrevented;
 	});
 	h.check(beforeUnload === true, 'S7: leaving the page with unsaved code asks (beforeunload)');
-	await page.locator('#code-ws-close').click();
+	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click();
 	await page.waitForTimeout(300);
 	h.check(await page.locator('#code-ws-confirm-all').isVisible(), 'S7: ✕ with an unsaved file asks Save all / Don\'t save / Cancel');
 	await page.locator('#code-ws-confirm-all-cancel').click();
 	h.check((await read(page, 'codeWorkspaceClose')) === false && (await page.locator('#code-ws-confirm-all').count()) === 0, 'S7: Cancel keeps the workspace open');
-	await page.locator('#code-ws-close').click();
+	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click();
 	await page.locator('#code-ws-confirm-all-save').click();
 	await page.waitForTimeout(500);
 	h.check((await read(page, 'codeWorkspaceClose')) === true, 'S7: Save all closes it');
@@ -464,7 +464,7 @@ h.run(async () => {
 	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'cs-undo', graphId: 'scene' } }));
 	await page.waitForTimeout(600);
 	await S(page, (id) => window.__stores.codeWorkspace.setTabCode(id, 'object.position.y = ;'), uTab);
-	await page.locator('#code-ws-close').click();
+	await page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click();
 	await page.locator('#code-ws-confirm-all-save').click();
 	await page.waitForTimeout(500);
 	h.check((await read(page, 'codeWorkspaceClose')) === false && /could not be saved/.test(await page.locator('#code-ws-confirm-all').innerText()), 'S7: code that does not check is not saved — the dialog stays and says why');
@@ -553,7 +553,7 @@ h.run(async () => {
 	h.check(/rgb\((2[0-5]\d|1[89]\d), /.test(lightBg), 'F9: the sidebars follow the light theme (' + lightBg + ')');
 	await S(page, () => window.__stores.themes.theme.set('dark'));
 	await page.waitForTimeout(300);
-	await page.locator('#code-ws-dock button[title="Undock into a floating window"]').click();
+	await page.locator('#code-ws-dock #dock-undock').click();
 	await page.waitForTimeout(800);
 	h.check(await page.locator('#code-ws-window #code-ws-left').isVisible() && (await page.locator('#code-ws-window #code-ws-right').count()) === 1, 'F9: floating, the window has both sidebars');
 	const ftabs = await tabIds(page);

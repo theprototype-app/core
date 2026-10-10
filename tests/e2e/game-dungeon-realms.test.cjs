@@ -395,7 +395,7 @@ h.run(async () => {
 		await D.page.keyboard.insertText(code.replace('const EXTRA_GEMS = 0;', 'const EXTRA_GEMS = 1;'));
 		await D.page.keyboard.press('Control+S');
 		await h.eventually(() => nodesOf(D.page, 'behaviour').then((n) => n[0].data.code), (c) => /const EXTRA_GEMS = 1;/.test(c), '7.5 Ctrl+S put the edited code on the node', 6000);
-		await D.page.locator('#code-ws-close').click().catch(() => {});
+		await D.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
 		await h.eventually(() => D.page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, rulesId), (st) => st === 'running', '7.6 the edited rules reloaded', 10000);
 		// both felt in Play: start, the HUD line, and the portal opens on the right gem
 		await D.page.evaluate(() => window.__stores.isLocked.set(true));

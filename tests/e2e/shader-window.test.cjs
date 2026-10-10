@@ -109,8 +109,8 @@ h.run(async () => {
 	h.check(s.present === true, `1.2 ...and reports itself as a dock tab (present=${s.present})`);
 	h.check(s.visible === 'shader', `1.3 ...as the visible one (visible=${s.visible})`);
 	h.check(s.hasBody, `1.4 the graph body renders`);
-	const undockBtn = await A.page.evaluate(() => !!document.getElementById('shader-undock'));
-	h.check(undockBtn, `1.5 the docked header offers ⧉ Undock (#shader-undock present=${undockBtn})`);
+	const undockBtn = await A.page.evaluate(() => !!document.querySelector('#shader-editor #dock-undock'));
+	h.check(undockBtn, `1.5 40 F8: the dock's own chrome offers Undock (the dock's #dock-undock present=${undockBtn})`);
 	// the top-edge dock resize cue W6 added must survive the restructure
 	const cue = await A.page.evaluate(() => !!document.querySelector('#shader-editor .resize-cue'));
 	h.check(cue, `1.6 the top-edge dock resize cue is still there (${cue})`);

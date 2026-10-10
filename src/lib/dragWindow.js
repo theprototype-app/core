@@ -239,6 +239,13 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		typeof ResizeObserver !== 'undefined'
 			? new ResizeObserver(() => {
 					if (typeof rect.left !== 'number' || dragging) return;
+					// 40 F10: a TAB MEMBER is placed by its group (windowTabs.applyMember), and a tab
+					// switch is a 0x0 -> WxH box change — so this re-clamp from the window's OWN rect
+					// threw the revealed member back to where it last floated while the group's tab
+					// strip stayed put ("the group header breaks after grouping or switching tabs;
+					// a drag recovers it" — the drag re-applies the group rect). The reveal and the
+					// layout-restore paths already stand down for a member; this one did not.
+					if (node.dataset.tabMember || node.dataset.docked) return;
 					const box = node.offsetWidth + 'x' + node.offsetHeight;
 					if (box === lastBox) return;
 					lastBox = box;
@@ -459,6 +466,8 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	// display decision, never saved — the reveal rule's reasoning).
 	const onWindowResize = () => {
 		if (suspended() || typeof rect.left !== 'number' || typeof rect.top !== 'number') return;
+		// 40 F10: a tab member is placed by its group (see the size watch above)
+		if (node.dataset.tabMember || node.dataset.docked) return;
 		if (resizable) clampSize();
 		const before = rect.left + ',' + rect.top;
 		clamp(false);

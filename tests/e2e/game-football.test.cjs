@@ -668,7 +668,7 @@ h.run(async () => {
 		await A.page.keyboard.insertText(fr.code.replace('const GOAL_POINTS = 1;', 'const GOAL_POINTS = 2;'));
 		await A.page.keyboard.press('Control+S');
 		await h.eventually(() => rulesNode(), (n) => /const GOAL_POINTS = 2;/.test(n?.code ?? ''), '8.5 Ctrl+S put the edited code on the node', 6000);
-		await A.page.locator('#code-ws-close').click().catch(() => {});
+		await A.page.locator('#code-ws-close:visible, [data-dock-tab-close="code"]:visible').first().click().catch(() => {});
 		await h.eventually(() => low.page.evaluate((id) => window.__stores.behaviours.behavioursDebug().status[id]?.status, fr.id), (st) => st === 'running', '8.6 the authority reloaded the edited rules', 10000);
 		// both felt in Play: a rematch, ONE goal = 2 for blue, and first-to-2 ends it
 		await A.page.evaluate(() => window.__stores.isLocked.set(true));

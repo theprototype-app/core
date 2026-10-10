@@ -125,6 +125,17 @@ h.run(async () => {
 			return { sheetBottom: sh && Math.round(sh.bottom), playTop: play && Math.round(play.top), toggleRight: tg && Math.round(tg.right), vw: window.innerWidth };
 		});
 		h.check(!bar.playTop || bar.sheetBottom <= bar.playTop + 30, `F9.1b the sheet ends at the phone bar — Play is not covered (${JSON.stringify(bar)})`);
+		// 40-int: the phone shell's Play is #ps-play (#play-button is hidden there, so the check above
+		// could not fail): what is under its centre must BE Play — not the sheet, not its scrim
+		const under = await page.evaluate(() => {
+			const ps = document.getElementById('ps-play');
+			const r = ps?.getBoundingClientRect();
+			if (!r || !r.width) return 'no #ps-play';
+			const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+			const sh = document.querySelector('#dock-views-sheet')?.getBoundingClientRect();
+			return ps.contains(at) ? 'ok' : `${at?.id || at?.className} (sheet ${sh && Math.round(sh.top)}-${sh && Math.round(sh.bottom)}, play ${Math.round(r.top)})`;
+		});
+		h.check(under === 'ok', `F9.1c the phone's Play (#ps-play) is on top while the Windows sheet is open (${under})`);
 		h.check(!!bar.toggleRight && bar.toggleRight <= bar.vw, `F9.1c every row's switch is on screen (${JSON.stringify(bar)})`);
 		h.check(['flow', 'explorer', 'animation', 'uv', 'shader', 'hud', 'profiler', 'code', 'flowcode'].every((k) => sheet.rows.includes(k)), `F9.2 ...listing EVERY window, the Node editor too (${sheet.rows.join(',')})`);
 		const exToggle = page.locator('#dock-view-toggle-explorer');

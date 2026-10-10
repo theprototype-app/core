@@ -38,7 +38,18 @@
 	} = $props();
 
 	let viewportH = $state(typeof window === 'undefined' ? 800 : window.innerHeight);
-	const heights = $derived(/** @type {Record<string, number>} */ (detentHeights(viewportH, { peek, topInset })));
+	/** @type {HTMLElement | undefined} */
+	let sheetEl = $state();
+	// 40-int: a sheet a caller lifts off the screen edge (`bottom: var(--ps-bar-h)` — the phone
+	// bar, NOTES-38 #32) has only the room ABOVE that edge: its detents are measured there, and
+	// the part a lower detent slides down is clipped (below) so it never covers the bar / Play
+	let bottomOff = $state(0);
+	$effect(() => {
+		if (!open || !sheetEl) return;
+		void viewportH;
+		bottomOff = Math.max(0, parseFloat(getComputedStyle(sheetEl).bottom) || 0);
+	});
+	const heights = $derived(/** @type {Record<string, number>} */ (detentHeights(viewportH - bottomOff, { peek, topInset })));
 	const allowed = $derived(detents.filter((d) => d in heights));
 	const resting = $derived(allowed.includes(detent) ? detent : allowed[0]);
 
@@ -105,7 +116,14 @@
 
 {#if open}
 	{#if modal}
-		<button type="button" class="tp-ui sh-scrim" tabindex="-1" aria-label="Close" onclick={() => dismissible && close()}></button>
+		<button
+			type="button"
+			class="tp-ui sh-scrim"
+			tabindex="-1"
+			aria-label="Close"
+			style:bottom={bottomOff > 0 ? `${bottomOff}px` : undefined}
+			onclick={() => dismissible && close()}
+		></button>
 	{/if}
 	<div
 		class="tp-ui sh"
@@ -114,8 +132,10 @@
 		aria-modal={modal || undefined}
 		aria-label={title || 'Sheet'}
 		data-detent={dragH !== null ? 'dragging' : resting}
+		bind:this={sheetEl}
 		style:height="{heights.full}px"
 		style:transform="translateY({heights.full - height}px)"
+		style:clip-path={bottomOff > 0 ? `inset(0 0 ${heights.full - height}px 0)` : undefined}
 		use:escape
 		{...rest}
 	>
@@ -188,7 +208,9 @@
 		border-radius: var(--radius-modal) var(--radius-modal) 0 0;
 		box-shadow: var(--shadow-window);
 		padding-bottom: env(safe-area-inset-bottom, 0px);
-		transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+		transition:
+			transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+			clip-path 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
 		will-change: transform;
 	}
 	.sh-dragging {

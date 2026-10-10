@@ -38,7 +38,7 @@ h.run(async () => {
 	// a second window dropped ONTO it splits the edge
 	await A.page.locator('p[title="Node editor (N)"]').click();
 	await A.page.waitForTimeout(500);
-	await A.page.locator('#flow-undock').click();
+	await A.page.locator('#dock-undock:visible').first().click();
 	await A.page.waitForTimeout(400);
 	const flow0 = await box(A.page, '#flow-window');
 	await A.page.mouse.move(flow0.x + 120, flow0.y + 12);

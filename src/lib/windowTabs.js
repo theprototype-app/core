@@ -457,6 +457,11 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 
 	// drag-merge: dropping this window's header onto another window's header
 	let draggingHeader = false;
+	/** 40 F10: where the header press started — a press that never TRAVELS is a click (raise
+	 *  the window), never a merge, even when it lands over another window's header band */
+	let downX = 0;
+	let downY = 0;
+	let travelled = false;
 	/** @type {any} */ let mergeTarget = null;
 	/** the window whose HEADER is under (x, y) — the merge hit test (W7 lifted the body
 	 * to module scope so the bottom-dock band can consult the very same rule) */
@@ -472,15 +477,21 @@ export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, clo
 		if (!isHeaderDrag(e.target)) return; // 36 F4: a tab/control in the header is not a grip
 		if (groupOfKey(key)) return; // grouped windows drag via the strip
 		draggingHeader = true;
+		downX = e.clientX;
+		downY = e.clientY;
+		travelled = false;
 	};
 	const move = (/** @type {any} */ e) => {
+		if (!draggingHeader) return;
+		if (!travelled && Math.hypot(e.clientX - downX, e.clientY - downY) > 4) travelled = true;
 		// live feedback (104): the header you would merge into lights up
-		if (draggingHeader) setMergeTarget(targetAt(e.clientX, e.clientY));
+		if (travelled) setMergeTarget(targetAt(e.clientX, e.clientY));
 	};
 	const up = (/** @type {any} */ e) => {
 		if (!draggingHeader) return;
 		draggingHeader = false;
 		setMergeTarget(null);
+		if (!travelled) return;
 		const otherKey = targetAt(e.clientX, e.clientY);
 		if (otherKey) mergeWindows(otherKey, key);
 	};

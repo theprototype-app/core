@@ -290,6 +290,10 @@ h.run(async () => {
 		await page.mouse.move(hb.x + 260, 70, { steps: 8 });
 		await page.mouse.up();
 		await page.waitForTimeout(600);
+		// the user's case: the joining window's OWN remembered spot is somewhere else entirely
+		// (here parked mostly off the right edge) — a reveal that re-clamps from that rect moves
+		// the member off its group (F10.5 below)
+		await page.evaluate(() => localStorage.setItem('win:uv', JSON.stringify({ left: window.innerWidth - 60, top: window.innerHeight - 200 })));
 		const tabBox = await page.locator('[data-dock-tab="uv"]:visible').first().boundingBox();
 		const winBox = await page.locator('#animation-window').boundingBox();
 		await page.mouse.move(tabBox.x + tabBox.width / 2, tabBox.y + tabBox.height / 2);
@@ -327,6 +331,18 @@ h.run(async () => {
 		const a3 = await attached();
 		h.check(same(a1), `F10.3 right after grouping, the window sits under its tab strip (${JSON.stringify(a1)})`);
 		h.check(same(a2) && same(a3), `F10.4 ...and after switching tabs both ways it still does — no drag needed to recover (${JSON.stringify([a2, a3])})`);
+		// a browser resize is the other re-clamp: the members stay on the strip through it too
+		await page.setViewportSize({ width: 1300, height: 820 });
+		await page.waitForTimeout(700);
+		await page.locator('.tab-strip .ts-tab', { hasText: 'Animation' }).click();
+		await page.waitForTimeout(700);
+		const a4 = await attached();
+		await page.locator('.tab-strip .ts-tab', { hasText: 'UV editor' }).click();
+		await page.waitForTimeout(700);
+		const a5 = await attached();
+		await page.setViewportSize({ width: 1440, height: 900 });
+		await page.waitForTimeout(700);
+		h.check(same(a4) && same(a5), `F10.5 ...and through a window resize plus two more switches (${JSON.stringify([a4, a5])})`);
 
 		// ---- F8 — the floating group's dock button docks ALL its tabs ----------------------
 		const dockBtn = await page.evaluate(() => {

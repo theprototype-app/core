@@ -47,7 +47,7 @@ function showFailure(message) {
 		note.id = 'export-error';
 		note.setAttribute('role', 'alert');
 		note.style.cssText =
-			'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2000;max-width:calc(100vw - 32px);' +
+			'position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2000;max-width:calc(100vw - 32px);' + // z-ok: the exported game page has no app stylesheet, so no tokens
 			'padding:10px 14px;border-radius:10px;font:600 13px/1.4 system-ui,sans-serif;' +
 			'background:rgb(var(--surface-rgb, 17 24 39) / 0.92);color:var(--text, #e5e7eb);border:1px solid var(--icon-danger, #f87171)';
 		note.textContent = 'This game could not start: ' + message;

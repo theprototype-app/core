@@ -6,7 +6,7 @@ import { safeStorage } from './safeStorage';
 import { onLayoutRestore } from './uiLayoutsCore';
 
 // Docking lite (phase 81L). Drag a window near the left/right screen edge to
-// dock it as a full-height panel (--z-drawer tier); drag its header away to
+// dock it as a full-height panel (--z-chrome tier); drag its header away to
 // float it again. With the Inspector drawer open, a right-docked panel offsets
 // inward as a second column.
 // 21-H2: the Library drawer it also used to give way to no longer exists.
@@ -130,7 +130,7 @@ function apply(key) {
 	node.style.maxWidth = 'none';
 	node.style.maxHeight = 'none';
 	node.style.width = width + 'px';
-	node.style.zIndex = '30'; // --z-drawer tier
+	node.style.zIndex = '30'; // z-ok: = --z-chrome; restored + compared as a number by docking/TabStrips
 	if (!split) {
 		delete node.dataset.dockSlot;
 		node.style.top = TOP + 'px';
@@ -287,7 +287,7 @@ function releaseNode(entry, x, y) {
 	node.style.width = prevRect?.width || '';
 	node.style.maxWidth = '';
 	node.style.maxHeight = '';
-	node.style.zIndex = prevRect?.zIndex || '40';
+	node.style.zIndex = prevRect?.zIndex || '40'; // z-ok: = --z-window, read back as a number
 	node.style.left = (x != null ? Math.max(0, x - 120) : parseFloat(prevRect?.left) || 200) + 'px';
 	node.style.top = (y != null ? Math.max(0, y - 12) : parseFloat(prevRect?.top) || 120) + 'px';
 }
@@ -336,7 +336,7 @@ function showZone(target) {
 	if (!zoneEl) {
 		zoneEl = document.createElement('div');
 		zoneEl.id = 'dock-zone';
-		zoneEl.style.cssText = `position:fixed;z-index:29;pointer-events:none;background:rgb(37 99 235 / .25);border:2px dashed rgb(96 165 250 / .8);`;
+		zoneEl.style.cssText = `position:fixed;z-index:calc(var(--z-chrome) - 1);pointer-events:none;background:rgb(37 99 235 / .25);border:2px dashed rgb(96 165 250 / .8);`;
 		document.body.appendChild(zoneEl);
 	}
 	const { side, split } = target;

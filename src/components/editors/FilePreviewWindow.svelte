@@ -32,7 +32,7 @@
 		stepPreview,
 		clampPreviewOpacity
 	} from '$lib/filePreview';
-	import { activeFolder, explorerFolders, itemBlob } from '$lib/explorer';
+	import { activeFolder, explorerFolders, explorerItems, itemBlob } from '$lib/explorer';
 	// R22 round 13 P3: the arrows may walk into a MOUNTED project's folder, whose files are
 	// not in the library's blob store — `volumeBlob` reads them from the saved payload.
 	import { volumeOf, volumeFolders, volumeKey, volumeBlob } from '$lib/mountedVolumes';
@@ -209,6 +209,9 @@
 	 * Users popover makes for Watch when a peer is in another scene.
 	 */
 	const opacityApplies = $derived(face === 'image' || face === 'object');
+	/** 40-image (F13): an image in YOUR library can be edited — a pack card or a mounted
+	 * project's file has no record to save into */
+	const editable = $derived(face === 'image' && !!target?.itemId && $explorerItems.some((i: any) => i.id === target?.itemId));
 	const walkId = $derived(String(target?.itemId ?? target?.folderId ?? ''));
 	const place = $derived(previewPosition($previewSiblings.entries, walkId));
 	const canPrev = $derived(!!stepPreview($previewSiblings.entries, walkId, -1));
@@ -625,6 +628,16 @@
 				<button class="ui-button-quiet" title="Zoom out" onclick={() => (zoom = clamp(zoom * 0.8))}>−</button>
 				<button class="ui-button-quiet" title="Zoom in" onclick={() => (zoom = clamp(zoom * 1.25))}>＋</button>
 				<button class="ui-button-quiet" title="Reset" onclick={() => ((zoom = 1), (panX = 0), (panY = 0))}>1:1</button>
+			{/if}
+			{#if editable}
+				<button
+					id="preview-edit"
+					class="ui-button-quiet"
+					title="Edit image — crop, rotate, resize, adjust"
+					aria-label="Edit image"
+					onclick={() => import('$lib/image/imageEditor').then((m) => m.openImageEditor(String(target?.itemId)))}
+					><Icon name="square-pen" size={16} aria-hidden="true" /></button
+				>
 			{/if}
 			<button
 				id="preview-cog"

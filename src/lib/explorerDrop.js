@@ -132,7 +132,7 @@ export async function applyExplorerImage(uuid, payload, slot = 0) {
 	if (!item || item.kind !== 'image') return false;
 	const blob = await itemBlob(item.id);
 	if (!blob) return false;
-	await setObjectTexture(uuid, new File([blob], item.name, { type: blob.type || 'image/png' }), slot);
+	await setObjectTexture(uuid, new File([blob], item.name, { type: blob.type || 'image/png' }), slot, { source: item.hash });
 	return true;
 }
 

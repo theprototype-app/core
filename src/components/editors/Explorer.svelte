@@ -4786,6 +4786,19 @@
 							}
 						]
 					: []),
+				// 40-image (F13): an image in YOUR library opens in the Image editor (crop, rotate,
+				// resize, adjust, versions). A pack item is a reference to bytes on a CDN, so it
+				// has nothing to save into — copy it into the Library first.
+				...(item.kind === 'image' && !item.packEntry && !item.dataUrl
+					? [
+							{
+								label: 'Edit image…',
+								icon: 'square-pen',
+								tooltip: 'Crop, rotate, resize and adjust it; saving updates every texture made from it',
+								action: () => import('$lib/image/imageEditor').then((m) => m.openImageEditor(item.id))
+							}
+						]
+					: []),
 				...(item.kind === 'text'
 					? [
 							{

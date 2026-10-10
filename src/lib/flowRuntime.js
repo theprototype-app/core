@@ -87,6 +87,16 @@ import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
 import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
 import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
+// 40 F15: general-purpose motion (a three leaf + its pure core)
+import {
+	applyFollowPath,
+	applyWander,
+	applyOrientVelocity,
+	applyBodyWave,
+	pruneBodyWaves,
+	tickMotionNodes,
+	MOTION_PHASE
+} from './motion/motionNodes.js';
 // 37 (R6): variadic math/gate + the Switcher multiplexer (a leaf, no imports)
 import { rigGoal, rigStep, validVec } from './cameraRig.js'; // 37 (R8): a three leaf
 import { INPUT_LETTERS, socketCount, opFolds, foldMath, foldGate, switcherItems, switcherHandle, switcherIndexOf, switcherRadioIndex } from './variadicNodes.js';
@@ -3647,6 +3657,23 @@ function applyAnimation(object, base, anim, time, ctx) {
 		applyFlowFloat(object, base, data, time, { root: sceneObjects, key: anim.id + '|' + object.uuid });
 		return;
 	}
+	// 40 F15: the general-purpose motion nodes (motion/motionNodes.js, a leaf)
+	if (anim.type === 'followpath') {
+		applyFollowPath(object, base, data, time, { root: sceneObjects, key: anim.id + '|' + object.uuid });
+		return;
+	}
+	if (anim.type === 'wander') {
+		applyWander(object, base, data, time, { root: sceneObjects });
+		return;
+	}
+	if (anim.type === 'orientvelocity') {
+		applyOrientVelocity(object, base, data, time, { key: anim.id + '|' + object.uuid });
+		return;
+	}
+	if (anim.type === 'bodywave') {
+		applyBodyWave(object, base, data, time, { key: anim.id + '|' + object.uuid });
+		return;
+	}
 	if (anim.type === 'shake') {
 		const intensity = data.intensity ?? 0.2;
 		const speed = data.speed ?? 10;
@@ -3991,6 +4018,8 @@ function runTick(now) {
 		}
 	});
 
+	/** 40 F15: the Body Wave (node, object) keys still driven this tick @type {Set<string>} */
+	const liveWaves = new Set();
 	active.forEach((anims, uuid) => {
 		const object = sceneObjects.getObjectByProperty('uuid', uuid);
 		if (!object) {
@@ -4013,8 +4042,20 @@ function runTick(now) {
 		// 21-E3: EFFECTS evaluate on the pause-folded clock, so a paused world holds its
 		// pose and resumes where it froze instead of jumping the gap. Sounds/particles
 		// take the same clock below; value/HUD/game nodes keep the real one.
-		anims.forEach((/** @type {any} */ anim) => applyAnimation(object, base, anim, effectTime(time), ctx));
+		// 40 F15: the motion FOLLOWERS (Orient to Velocity, Body Wave) read what the movers
+		// wrote this frame, so they apply last whatever order the graph lists them in (a stable
+		// sort — every graph without them keeps its order byte-for-byte)
+		const ordered = anims.some((/** @type {any} */ a) => MOTION_PHASE[a.type])
+			? [...anims].sort((/** @type {any} */ a, /** @type {any} */ b) => (MOTION_PHASE[a.type] ?? 0) - (MOTION_PHASE[b.type] ?? 0))
+			: anims;
+		ordered.forEach((/** @type {any} */ anim) => {
+			if (anim.type === 'bodywave') liveWaves.add(anim.id + '|' + object.uuid);
+			applyAnimation(object, base, anim, effectTime(time), ctx);
+		});
 	});
+	// 40 F15: a Body Wave whose node or object went away puts its original materials back
+	pruneBodyWaves(liveWaves);
+	tickMotionNodes();
 
 	// sound nodes keep their own audio chains (97) — hand over the live pairs
 	// 21-E4: `trigger` is the wired event's STAMP (null when nothing is wired)

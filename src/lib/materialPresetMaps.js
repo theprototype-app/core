@@ -61,9 +61,49 @@ function tileFbm(u, v, cu, cv, octaves, seed) {
 	return sum / norm;
 }
 
+// 40 F16: FISH SCALES — overlapping rounded scales in offset rows, each hanging DOWN from its
+// centre like a shingle, the lower row in front. SCALE_ROWS rows × SCALE_COLS columns per tile
+// (integers, and odd rows shift half a scale, so an even row count keeps the tile seamless).
+const SCALE_ROWS = 10;
+const SCALE_COLS = 8;
+
+/**
+ * The height of the scale pattern at (u, v) in [0, 1]: a domed scale (highest near its free
+ * edge's middle, a crisp drop at its rim) over whatever scale lies behind it.
+ * @param {number} u @param {number} v
+ */
+export function scaleHeight(u, v) {
+	const rowH = 1 / SCALE_ROWS;
+	const colW = 1 / SCALE_COLS;
+	const R = colW * 0.62;
+	const row0 = Math.floor(v * SCALE_ROWS);
+	// front to back: the row whose centres sit just above this pixel hangs over it first
+	for (let dr = 0; dr <= 2; dr++) {
+		const row = row0 - dr;
+		const cy = row * rowH;
+		const shift = ((row % 2) + 2) % 2 ? 0.5 : 0;
+		const c0 = Math.floor(u * SCALE_COLS - shift);
+		for (let dc = -1; dc <= 1; dc++) {
+			const cx = (c0 + dc + 0.5 + shift) * colW;
+			let dx = u - cx;
+			dx -= Math.round(dx); // wrap across the tile edge
+			let dy = v - cy;
+			dy -= Math.round(dy);
+			if (dy <= 0) continue; // a scale hangs below its centre only (strict: v = 0 and v = 1 are one row)
+			const d = Math.hypot(dx, dy * (colW / rowH) * 0.9) / R;
+			if (d >= 1) continue;
+			// a soft dome with a raised rim: the light catches each scale's edge
+			const dome = Math.sqrt(1 - d * d);
+			const rim = d > 0.82 ? (d - 0.82) * 2.2 : 0;
+			return Math.min(1, 0.35 + dome * 0.5 + rim);
+		}
+	}
+	return 0.25;
+}
+
 /**
  * The height field of a kind, size×size in [0, 1], tileable in both directions.
- * @param {'wood'|'stone'} kind @param {number} [size]
+ * @param {'wood'|'stone'|'scales'} kind @param {number} [size]
  * @returns {Float32Array}
  */
 export function heightField(kind, size = MAP_SIZE) {
@@ -84,6 +124,8 @@ export function heightField(kind, size = MAP_SIZE) {
 				// a thin dark seam between planks
 				const seam = Math.abs(((v * 4) % 1) - 0.5) > 0.485 ? 0.35 : 0;
 				h = Math.max(0, h - seam);
+			} else if (kind === 'scales') {
+				h = scaleHeight(u, v);
 			} else {
 				// stone: broad blotches, a crisp mid band and grit
 				const broad = tileFbm(u, v, 3, 3, 4, 41);
@@ -132,7 +174,7 @@ const cache = new Map();
 /**
  * The encoded maps of a procedural kind (browser only; null elsewhere). Cached per session,
  * so swatches, applies and the active-swatch compare all see the same strings.
- * @param {'wood'|'stone'} kind
+ * @param {'wood'|'stone'|'scales'} kind
  * @returns {{map: string, normalMap: string} | null}
  */
 export function proceduralMaps(kind) {
@@ -141,7 +183,7 @@ export function proceduralMaps(kind) {
 	if (typeof document === 'undefined') return null;
 	try {
 		const size = MAP_SIZE;
-		const { color, normal } = mapBytes(heightField(kind, size), size, kind === 'wood' ? 2.5 : 4);
+		const { color, normal } = mapBytes(heightField(kind, size), size, kind === 'wood' ? 2.5 : kind === 'scales' ? 3 : 4);
 		const encode = (/** @type {Uint8ClampedArray} */ bytes, /** @type {boolean} */ hq) => {
 			const canvas = document.createElement('canvas');
 			canvas.width = canvas.height = size;

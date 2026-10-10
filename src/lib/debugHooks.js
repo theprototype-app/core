@@ -76,6 +76,10 @@ export const DEBUG_HOOKS = [
 	['materialsHandler', () => import('./materialsHandler')],
 	// 37 R5: material presets (materialPresets, peerMaterialPresets, applyMaterialPreset, materialPresetsDebug…)
 	['materialPresets', () => import('./materialPresets')],
+	// 40 F16: the look tier (materialTiersDebug, pinMaterialTier, applyMaterialTiers)
+	['materialTiers', () => import('./materialTiers.js')],
+	// 40 F15: the motion nodes (motionNodesDebug, resetMotionNodes)
+	['motionNodes', () => import('./motion/motionNodes.js')],
 	['objectActions', () => import('./objectActions')],
 	['commandsHandler', () => import('./commandsHandler.svelte')],
 	['moduleSDK', () => import('./moduleSDK')],
@@ -342,6 +346,9 @@ export const DEBUG_HOOKS = [
 	['replaceModel', () => import('./replaceModel')],
 	['lod', () => import('./lod')],
 	['lodGroup', () => import('./lodGroup')],
+	['lodGroupCore', () => import('./lodGroupCore')],
+	// 40 F14: the substitutes a fallback group draws
+	['lodTrees', () => import('./lodTrees.js')],
 	['lodGroupActions', () => import('./lodGroupActions')],
 	['lodLevelEdit', () => import('./lodLevelEdit')],
 	['packBehavior', () => import('./packBehavior')],

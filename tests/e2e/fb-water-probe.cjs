@@ -38,7 +38,7 @@ h.run(async () => {
 	await load(A.page, 'aquarium');
 	const wb = await A.page.evaluate(() => { let g; window.__stores.objectsGroup.subscribe((v) => (g = v))(); const T = window.__stores.THREE; const b = new T.Box3().setFromObject(g.getObjectByName('Aquarium water')); return [b.min.toArray(), b.max.toArray()]; });
 	console.log('water box', JSON.stringify(wb));
-	const f = await sel(A.page, 'Fish orange');
+	const f = (await sel(A.page, 'Clownfish 1')) ?? (await sel(A.page, 'Fish orange')); // 40: the reef fish
 	console.log('fish', f);
 	await look(A.page, [f[0] + 0.3, f[1] + 0.2, wb[1][2] + 1.4], f);
 	await A.page.waitForTimeout(1500);

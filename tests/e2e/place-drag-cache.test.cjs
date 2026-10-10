@@ -210,7 +210,7 @@ h.run(async () => {
 	const sx = b.x + b.width / 2;
 	const sy = b.y + b.height / 2;
 	await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: sx, y: sy }] });
-	await T.page.waitForTimeout(420);
+	await T.page.waitForTimeout(700); // 40 F3: the shared touch hold is HOLD_MS = 450 (1.31's card hold was 300)
 	// 40 F3 (long-press-explorer-file): a still hold opens the card's action sheet; the hold that
 	// then MOVES picks the card up (the sheet gives way) — 1.31 picked it up on the hold itself
 	h.check(!(await pd(T.page)), '40 F3: a still hold is not a place drag yet (it opens the action sheet)');

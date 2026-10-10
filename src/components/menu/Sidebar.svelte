@@ -1,5 +1,8 @@
 <script lang="ts">
 	import Icon from '../ui/Icon.svelte';
+	import SheetGrip from '../ui/SheetGrip.svelte';
+	import { readSheetH, saveSheetH } from '$lib/ui/sheetDrag.js';
+	import { phoneShellActive, phoneSheetMaxH } from '$lib/ui/phoneShell.js';
 	import { openPublishExport } from '$lib/export/exportStores.js';
 	import { openMomentReport } from '$lib/perf/moment';
 	import { openProblemReport } from '$lib/problemReport';
@@ -142,6 +145,15 @@
 		closeMenu.update((value) => !value);
 	}
 
+	// 40 F1: on the phone the main menu is a resizable sheet above the bottom bar — its height is
+	// remembered (`mainMenuSheetH`), swipe down to the end closes it, like every other sheet
+	let menuH = $state(readSheetH('mainMenuSheetH', 0));
+	const menuShown = $derived(Math.min(menuH || $phoneSheetMaxH, $phoneSheetMaxH || 9999));
+	function menuResize(h: number, done: boolean) {
+		menuH = Math.round(h);
+		if (done) saveSheetH('mainMenuSheetH', menuH);
+	}
+
 	// 15-J viewer gate + 33 (L3) the Clear scene modal live in $lib/sceneTemplates.confirmClearScene
 	// now — shared with the Templates modal's "Blank scene" card.
 </script>
@@ -169,8 +181,11 @@
 		id="sidebar70"
 		transition:fade={{ duration: 130 }}
 		class="app-sidebar tp-ui tp-menu tp-noscrollbar fixed"
-		style="--side-top: {$connectDocked ? $connectBarHeight + 64 : 64}px"
+		style="--side-top: {$connectDocked ? $connectBarHeight + 64 : 64}px; {$phoneShellActive ? `--menu-sheet-h: ${menuShown}px` : ''}"
 	>
+		{#if $phoneShellActive}
+			<SheetGrip class="side-grip" label="main menu" height={menuShown} onresize={menuResize} onclose={() => closeMenu.set(true)} />
+		{/if}
 		<!-- multiple + the companion types so an .obj can be picked TOGETHER with its
 		     .mtl and textures (17-D2); a lone model file behaves exactly as before -->
 		<input type="file" id="import-file" multiple style="display: none" oninput={(e: any) => importModelFiles(e.target.files)} accept=".gltf, .glb, .obj, .stl, .fbx, .mtl, .png, .jpg, .jpeg, .webp" />

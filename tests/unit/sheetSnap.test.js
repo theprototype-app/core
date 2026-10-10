@@ -51,3 +51,31 @@ describe('sheetSnap', () => {
 		expect(stepDetent('peek', -1, all, heights, false)).toBe('peek');
 	});
 });
+
+// 40 F1: a FREE-HEIGHT phone sheet (the Inspector, the menus, the dock …) rests where the finger
+// left it, snaps onto its min / max near them, and closes when swiped down to the end.
+import { settleSheet, phoneSheetMax, SNAP_PX } from '../../src/lib/ui/sheetSnap.js';
+describe('settleSheet (40 F1)', () => {
+	const g = { min: 180, max: 640 };
+	it('a slow release stays where it is, clamped, and snaps onto the ends', () => {
+		expect(settleSheet({ ...g, height: 400, velocity: 0 })).toBe(400);
+		expect(settleSheet({ ...g, height: 640 - SNAP_PX + 4, velocity: 0 })).toBe(640);
+		expect(settleSheet({ ...g, height: 180 + SNAP_PX - 4, velocity: 0 })).toBe(180);
+		expect(settleSheet({ ...g, height: 900, velocity: 0 })).toBe(640);
+	});
+	it('swiped down to the end closes; a dismissible:false sheet rests on its min', () => {
+		expect(settleSheet({ ...g, height: 40, velocity: 0.1 })).toBe('closed');
+		expect(settleSheet({ ...g, height: 0, velocity: 0 })).toBe('closed');
+		expect(settleSheet({ ...g, height: 40, velocity: 0.1, dismissible: false })).toBe(180);
+	});
+	it('a flick down from the min closes, from higher up it goes to the min; a flick up -> max', () => {
+		expect(settleSheet({ ...g, height: 190, velocity: FLICK_VELOCITY + 0.4 })).toBe('closed');
+		expect(settleSheet({ ...g, height: 500, velocity: FLICK_VELOCITY + 0.4 })).toBe(180);
+		expect(settleSheet({ ...g, height: 300, velocity: -(FLICK_VELOCITY + 0.4) })).toBe(640);
+	});
+	it('the phone sheet room keeps the top bar and the selection strip clear', () => {
+		expect(phoneSheetMax(844)).toBe(844 - 76 - 64);
+		expect(phoneSheetMax(844, { stripH: 60 })).toBe(844 - 76 - 64 - 60);
+		expect(phoneSheetMax(200)).toBe(160);
+	});
+});

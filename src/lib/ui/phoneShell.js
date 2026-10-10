@@ -91,3 +91,10 @@ export function phoneDetentHeights(viewportH) {
  *  stop publishing a docked bar's height: on the phone shell the bar is a sheet, so nothing
  *  should be pushed down by it. */
 export const phoneShellActive = writable(false);
+
+/** 40 F1: the room every phone sheet may take, published by PhoneShell (px) — between the top
+ *  bar and the bottom bar, less the selection strip while one rides on top (`phoneSheetMax` in
+ *  sheetSnap.js). Also on <html> as `--ps-sheet-max` for the CSS-placed sheets. 0 = no shell. */
+export const phoneSheetMaxH = writable(0);
+/** the smallest a resizable phone sheet gets before a release closes it (px) */
+export const PHONE_SHEET_MIN = 180;

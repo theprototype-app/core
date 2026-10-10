@@ -6,6 +6,9 @@
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { autofocusOk, typeToFocus } from '$lib/inputDevice';
 	import { safeStorage } from '$lib/safeStorage';
+	import SheetGrip from './ui/SheetGrip.svelte';
+	import { readSheetH, saveSheetH } from '$lib/ui/sheetDrag.js';
+	import { phoneShellActive, phoneSheetMaxH } from '$lib/ui/phoneShell.js';
 
 	// Generic context menu. items: [{ label, action?, disabled?, tooltip?, danger?,
 	// icon?, hint?, checked?, keepOpen?, rowActions?, children?: items[] } |
@@ -58,6 +61,18 @@
 	/** 36 U11: open already SEARCHING (the node editor's Shift+A / Space "add at cursor").
 	 *  Absent = byte-identical to before. */
 	export let startSearch: boolean = false;
+
+	// 40 F1: on the phone every menu is a bottom sheet (phone.css), and the Add list is the
+	// one opened from the bar — so it wears the shared grab bar: drag to resize (remembered,
+	// `menuSheetH`), swipe down to the end to close. The height is ONE root CSS var, so a
+	// submenu laid over its parent (drill in place) takes the same height.
+	let menuSheetH = readSheetH('menuSheetH', 0);
+	$: menuShownH = Math.min(menuSheetH || Math.round((typeof window === 'undefined' ? 800 : window.innerHeight) * 0.6), $phoneSheetMaxH || 9999);
+	$: if ($phoneShellActive && typeof document !== 'undefined') document.documentElement.style.setProperty('--ctx-sheet-h', menuShownH + 'px');
+	function menuSheetResize(h: number, done: boolean) {
+		menuSheetH = Math.round(h);
+		if (done) saveSheetH('menuSheetH', menuSheetH);
+	}
 
 	const rawDispatch = createEventDispatcher();
 	const dispatch = (name: string) => {
@@ -425,6 +440,9 @@
 	on:click|capture={guardLift}
 	on:contextmenu|preventDefault
 >
+	{#if $phoneShellActive}
+		<SheetGrip class="ctx-grip-bar" label="menu" height={menuShownH} onresize={menuSheetResize} onclose={() => dispatch('close')} />
+	{/if}
 	{#if headerItem}
 		<ContextMenuItems items={[headerItem]} onrun={run} />
 	{/if}

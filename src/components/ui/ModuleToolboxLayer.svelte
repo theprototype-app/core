@@ -33,6 +33,7 @@
 		width={box.width ?? 220}
 		minW={box.minW ?? 160}
 		defaultRect={box.defaultRect ?? { right: 12, top: 76 }}
+		onclose={() => closeModuleToolbox(box.id)}
 	>
 		{#snippet actions()}
 			<button

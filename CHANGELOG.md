@@ -5,6 +5,58 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.32.0 — Your 1.31 review, fixed: sheets that swipe away, tidy docks and a reef that swims 🐠
+
+Everything you flagged in 1.31, fixed — plus an Image editor and a real reef in the Aquarium.
+
+### 📱 On a phone
+
+- 👆 **Every sheet has one grab bar**: menus, the Inspector, Configure Scene, Add, the Explorer and every docked window,
+  the profile menu, notes and Customize character. Drag the bar to resize (each sheet remembers its height), swipe it
+  down to the bottom to close. The bar never scrolls away, and no sheet covers **Play** or the selection toolbar.
+- 👤 **Customize character and Profile settings open again** from the profile menu.
+- 🗂️ **Explorer: press and hold a file or folder** for its action sheet — no more browser image callout; hold and move
+  to pick it up. The rename field's selected text is readable, and the toolbar scrolls sideways so the project name
+  is always reachable.
+- ➕ **The dock's "+" lists every window** with a show/hide switch.
+- 🛠️ Fixed a "Something went wrong: ResizeObserver loop" message with the Explorer docked.
+
+### 🪟 Docked and floating windows
+
+- ✖️ **Close a docked window from its tab** — the window itself has no ✕ any more. **Undock** moves to the dock strip,
+  left of *Minimize the dock*, and undocks the window you are looking at (**Settings ▸ Interface ▸ Windows & chrome ▸
+  Undock button** → *All as one tabbed group* takes them all out together).
+- 📥 **A floating tab group has a "Dock all tabs" button**, and **dropping a docked tab onto a floating window adds it as
+  a tab** instead of opening another window. Tab groups no longer lose their header after switching tabs.
+- 🏷️ **Long object and file names stay on one line** with "…" (hover or press and hold for the full name) and never
+  push a window's controls out of place.
+- 🧭 The dock's tab strip stays painted behind every tab and **keeps its scroll** when you pick a tab.
+- 🗔 **Workspace layouts** is a proper dialog on desktop and phone.
+
+### 🖼️ Images
+
+- 📷 **A big photo becomes a texture** instead of being refused — it is scaled to 1024 px.
+- ✂️ **New Image editor** (Explorer ▸ Edit image…, the preview's pencil, or Edit beside a texture): crop, rotate, flip,
+  resize, brightness / contrast / saturation, **Save** or **Save as copy**, and a version history with **Restore
+  original**. Saving updates every texture made from the image, for everyone in the session.
+
+### 🌊 Smoother, and honest about it
+
+- 💧 **Water refraction (and every other automatic quality setting) no longer switches off and on by itself** on phones:
+  a setting that had to be lowered again right after coming back stays lowered for that scene.
+- 🔔 **One notice when quality is lowered for you** — *"Lowered water quality to keep it smooth · Keep full quality"* —
+  replacing the "Simplified water" strip and the object list's quality toast.
+
+### 🐠 The Aquarium is a reef
+
+- 🐟 **Templates ▸ Examples ▸ Aquarium**: clownfish, regal blue tangs and emperor angelfish swim around a reef arch,
+  staghorn coral, eelgrass and Amazon swords from the new **Aquarium Kit** pack. Simple stand-ins show at once and turn
+  into the real fish as they download.
+- 🧭 **Four new motion nodes for anything** (node editor ▸ Animation): **Follow Path** (speed, loop / ping-pong,
+  banking), **Wander**, **Orient to Velocity** and **Body Wave** — a wave travelling along a fish, snake, flag or tail.
+- ✨ **Fish scales material preset**: an iridescent thin film over a scale relief, drawn lighter on phones and headsets.
+- 🛠️ Fixed: LOD groups stuck on their first level in scenes with water.
+
 ## 1.31.0 — Drag to place: see the size and the spot before you let go 📦
 
 Drag any object from the Explorer onto the scene and see exactly where it will land and how big it is — the way a

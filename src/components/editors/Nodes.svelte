@@ -183,6 +183,10 @@
 		spin: AnimationNode,
 		rotor: AnimationNode, // 36-fb F25
 		flowfloat: AnimationNode, // 36-fb F24
+		followpath: AnimationNode, // 40 F15
+		wander: AnimationNode,
+		orientvelocity: AnimationNode,
+		bodywave: AnimationNode,
 		bounce: AnimationNode,
 		orbit: AnimationNode,
 		pulse: AnimationNode,

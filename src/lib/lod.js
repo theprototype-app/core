@@ -593,11 +593,15 @@ function swapLevels(camera) {
 
 /** scene.onAfterRender: every mesh gets its source geometry back. @param {any[]} args */
 function afterRender(...args) {
-	if (--renderDepth > 0) return;
-	renderDepth = 0;
-	batchPass?.after();
-	groupPass?.after();
-	restoreSwapped();
+	// a nested render still hands on to the hook we wrap: beforeRender always calls prevBefore,
+	// so skipping prevAfter here leaked one depth into it per nested render (40 F14 — the water
+	// reflection pass froze every LOD group after its first frame)
+	if (--renderDepth <= 0) {
+		renderDepth = 0;
+		batchPass?.after();
+		groupPass?.after();
+		restoreSwapped();
+	}
 	prevAfter?.(...args);
 }
 

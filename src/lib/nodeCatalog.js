@@ -968,6 +968,98 @@ export const nodeCatalog = [
 				label: 'Path patrol',
 				defaults: { points: [], speed: 1, mode: 'loop' }
 			},
+			// 40 F15: GENERAL-PURPOSE motion (motion/motionNodes.js). Movers first (Follow Path,
+			// Wander are pure functions of the shared clock), then the followers that read the
+			// motion they produce (Orient to Velocity turns, Body Wave bends) — flowRuntime
+			// applies them in that order whatever order the graph lists them in.
+			{
+				type: 'followpath',
+				label: 'Follow Path',
+				defaults: {
+					points: [],
+					speed: 0.5,
+					mode: 'loop',
+					closed: true,
+					smooth: true,
+					offset: 0,
+					align: true,
+					pitch: true,
+					bank: 0.5,
+					maxBank: 30,
+					forward: '+z'
+				},
+				inputs: ['path'],
+				inputLabels: { path: 'path — a Spline or Flow path' },
+				params: [
+					{ key: 'speed', kind: 'range', min: -5, max: 5, step: 0.05 },
+					{ key: 'offset', kind: 'range', min: 0, max: 1, step: 0.01 },
+					{ key: 'mode', kind: 'select', options: ['loop', 'pingpong', 'once'] },
+					{ key: 'align', kind: 'toggle' },
+					{ key: 'pitch', kind: 'toggle' },
+					{ key: 'bank', kind: 'range', min: 0, max: 1, step: 0.05 },
+					{ key: 'maxBank', kind: 'range', min: 0, max: 80, step: 1 },
+					{ key: 'forward', kind: 'select', options: ['+z', '-z', '+x', '-x'] }
+				]
+			},
+			{
+				type: 'wander',
+				label: 'Wander',
+				defaults: { speed: 0.3, seed: 0, margin: 0.2, rx: 1, ry: 0.3, rz: 1 },
+				inputs: ['area'],
+				inputLabels: { area: 'area — stay inside this object' },
+				params: [
+					{ key: 'speed', kind: 'range', min: 0, max: 3, step: 0.05 },
+					{ key: 'seed', kind: 'range', min: 0, max: 999, step: 1 },
+					{ key: 'margin', kind: 'range', min: 0, max: 2, step: 0.05 },
+					{ key: 'rx', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{ key: 'ry', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{ key: 'rz', kind: 'range', min: 0, max: 10, step: 0.1 }
+				]
+			},
+			{
+				type: 'orientvelocity',
+				label: 'Orient to Velocity',
+				defaults: { turnSpeed: 4, bank: 0.5, maxBank: 30, pitch: true, minSpeed: 0.02, forward: '+z' },
+				params: [
+					{ key: 'turnSpeed', kind: 'range', min: 0.1, max: 30, step: 0.1 },
+					{ key: 'bank', kind: 'range', min: 0, max: 1, step: 0.05 },
+					{ key: 'maxBank', kind: 'range', min: 0, max: 80, step: 1 },
+					{ key: 'minSpeed', kind: 'range', min: 0, max: 2, step: 0.01 },
+					{ key: 'pitch', kind: 'toggle' },
+					{ key: 'forward', kind: 'select', options: ['+z', '-z', '+x', '-x'] }
+				]
+			},
+			{
+				type: 'bodywave',
+				label: 'Body Wave',
+				defaults: {
+					forward: '+z',
+					side: 'horizontal',
+					amplitude: 0.08,
+					wavelength: 1,
+					frequency: 1.5,
+					stiffness: 0.3,
+					falloff: 2,
+					speedGain: 1,
+					ampGain: 0.5,
+					turnBend: 0.5,
+					reverse: false
+				},
+				params: [
+					{ key: 'amplitude', kind: 'range', min: 0, max: 0.5, step: 0.01 },
+					{ key: 'wavelength', kind: 'range', min: 0.2, max: 4, step: 0.05 },
+					{ key: 'frequency', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{ key: 'stiffness', kind: 'range', min: 0, max: 0.95, step: 0.05 },
+					{ key: 'falloff', kind: 'range', min: 0.25, max: 6, step: 0.25 },
+					{ key: 'speedGain', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{ key: 'ampGain', kind: 'range', min: 0, max: 5, step: 0.1 },
+					{ key: 'turnBend', kind: 'range', min: 0, max: 2, step: 0.05 },
+					{ key: 'forward', kind: 'select', options: ['+z', '-z', '+x', '-x'] },
+					{ key: 'side', kind: 'select', options: ['horizontal', 'vertical'] },
+					{ key: 'reverse', kind: 'toggle' }
+				],
+				note: 'Bends the look only (a vertex shader): physics and picking see the rest pose.'
+			},
 			{
 				// 17-E: the other half of Play Animation — pulses when a clip FINISHES,
 				// so a movement can hand off to whatever comes next (a door that has
@@ -1243,6 +1335,7 @@ export const nodeCatalog = [
 export const animationTypes = [
 	'shake', 'spin', 'bounce', 'orbit', 'pulse', 'blink', 'pathpatrol',
 	'rotor', 'flowfloat', // 36-fb F25/F24 (sim/motionNodes.js)
+	'followpath', 'wander', 'orientvelocity', 'bodywave', // 40 F15 (motion/motionNodes.js)
 	'lookat', 'setcolor', 'visibility', 'setuniform',
 	'camerarig', // 37 (R8)
 	'deviceparam', 'notetrigger' // 23-B3

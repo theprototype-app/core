@@ -1234,14 +1234,17 @@ function beforeSceneRender(renderer, scene, camera, target) {
 
 /** @param {any[]} args */
 function afterSceneRender(...args) {
-	if (--renderDepth > 0) return;
-	renderDepth = 0;
-	for (let i = swapped.length - 2; i >= 0; i -= 2) swapped[i].material = swapped[i + 1];
-	swapped.length = 0;
-	if (underwater) {
-		const scene = args[1];
-		scene.fog = underwater.savedFog;
-		scene.background = underwater.savedBg;
+	// a nested render (our own reflection pass) still hands on to the hook we wrap — before
+	// always calls prevBefore, so returning early here leaked a depth into it every frame
+	if (--renderDepth <= 0) {
+		renderDepth = 0;
+		for (let i = swapped.length - 2; i >= 0; i -= 2) swapped[i].material = swapped[i + 1];
+		swapped.length = 0;
+		if (underwater) {
+			const scene = args[1];
+			scene.fog = underwater.savedFog;
+			scene.background = underwater.savedBg;
+		}
 	}
 	prevAfter?.(...args);
 }

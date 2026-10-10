@@ -116,6 +116,10 @@
 //   toon (MeshToonMaterial), physical (MeshPhysicalMaterial — also implied by any of:
 //   clearcoat, clearcoatRoughness, transmission, thickness, ior, sheen, sheenColor,
 //   sheenRoughness, iridescence, specularIntensity)
+// LOD (any object): lod {fallback?, levels: [{source: 'self'|'pack'|…, ref?, screenSize?}, …]} — the
+//   object's userData.lod (lodGroupCore). 40 F14: `fallback: true` = the object's own primitives are a
+//   STAND-IN drawn only while its real model (the pack levels) is loading or unreachable; the card
+//   draws the real model (every level is built before the thumbnail)
 // FLAGS (any object): physics {mode, mass, restitution, friction, ...} (userData.physics) ·
 //   shadow false (no cast/receive) · pick 'through' (select-through shells: walls, glass) ·
 //   origin [x, y, z] (the local pivot a Door preset swings about) · anim '<preset>' | [..]
@@ -760,6 +764,13 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 					} else if (o.bubbles) {
 						object.userData.bubbles = { ...s.waterPresets.BUBBLE_DEFAULTS, enabled: true, ...o.bubbles };
 					}
+					// 40 F14: a LOD group block (lodGroupCore's userData.lod) — `fallback: true` makes the
+					// object's own primitives the stand-in for the pack model its levels name
+					if (o.lod) {
+						const block = s.lodGroupCore?.normalizeLodGroup?.(o.lod) ?? o.lod;
+						if (!block?.levels) throw new Error('object "' + o.name + '": its lod block has no usable levels');
+						object.userData.lod = block;
+					}
 					// animation presets are applied once the object has a uuid in the scene
 					if (o.anim) animQueue.push({ object, anim: o.anim });
 				}
@@ -1170,6 +1181,43 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 			// The camera is `thumb.camera`, else `view`, else a 3/4 framing of the CONTENT: the
 			// objects' bounds without the camera markers and without floor-like slabs (a 30x40 m
 			// ground framed whole leaves every game piece a speck — the 1690-byte Waves card).
+			// 40 F14: every level of a FALLBACK LOD group, built now (levels are built when a pick
+			// first wants one), so the card can draw each object's finest real model
+			/** @type {{uuid: string, tree: any, world: any}[]} */
+			const fallbackSubs = [];
+			{
+				/** @type {any[]} */
+				const roots = [];
+				group.traverse((/** @type {any} */ n) => {
+					if (n.userData?.lod?.fallback) roots.push(n);
+				});
+				for (const r of roots) s.lodGroup.buildAllLevels(r.uuid);
+				const until = Date.now() + 45000;
+				while (roots.length && Date.now() < until) {
+					const pending = roots.some((r) => (s.lodGroup.lodGroupInfo(r.uuid)?.levels ?? []).some((/** @type {any} */ l, /** @type {number} */ i) => i > 0 && (l.status === 'loading' || l.status === 'idle')));
+					if (!pending) break;
+					await new Promise((ok) => setTimeout(ok, 250));
+				}
+				for (const r of roots) {
+					const trees = s.lodTrees.lodTreesOf(r);
+					if (!trees.length) {
+						console.log('  WARN lod fallback: no model built for "' + r.name + '" (the card shows its stand-in)');
+						continue;
+					}
+					// the finest = the most triangles
+					/** @param {any} t */
+					const tris = (t) => {
+						let n = 0;
+						t.traverse((/** @type {any} */ o) => {
+							if (o.isMesh) n += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3;
+						});
+						return n;
+					};
+					const tree = trees.reduce((a, b) => (tris(b) > tris(a) ? b : a));
+					r.updateWorldMatrix(true, false);
+					fallbackSubs.push({ uuid: r.uuid, tree, world: r.matrixWorld.clone() });
+				}
+			}
 			let thumb = null;
 			/** @type {string | null} */ let thumbError = null;
 			try {
@@ -1212,6 +1260,20 @@ const DEFS = require('./templates/index.cjs').loadDefs(moduleDef);
 				// the kit references exist to avoid. Every other def renders exactly as before.
 				const clone = kitPacks(d.objects, new Set()).size ? group.clone(true) : new T.ObjectLoader().parse(group.toJSON());
 				scene.add(clone);
+				// 40 F14: a FALLBACK LOD group draws its real model (a scene-root substitute the live
+				// renderer swaps in per frame) — the card shows that model, not the stand-in
+				for (const sub of fallbackSubs) {
+					const twin = clone.getObjectByProperty('uuid', sub.uuid);
+					if (!twin) continue;
+					twin.traverse((/** @type {any} */ n) => {
+						if (n.isMesh) n.visible = false;
+					});
+					const copy = sub.tree.clone(true);
+					copy.matrixAutoUpdate = false;
+					copy.matrix.copy(sub.world);
+					copy.visible = true;
+					scene.add(copy);
+				}
 				// 21-C C6-b: a module's WORLD lives at the scene root (golden rule 5), so a
 				// card rendered from objectsGroup alone shows a dungeon template as a lone
 				// arch. `thumb.sceneGroups` names scene-root groups to include — cloned into

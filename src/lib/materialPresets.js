@@ -124,6 +124,12 @@ export function presetWirePayload(preset, current) {
 		const value = preset[key] ?? LOOK_DEFAULTS[key];
 		if (key in material && typeof value === 'number') material[key] = value;
 	}
+	// 40 F16: the film thickness is one [min, max] pair on the material
+	if ('iridescenceThicknessRange' in material)
+		material.iridescenceThicknessRange = [
+			preset.iridescenceThicknessMin ?? LOOK_DEFAULTS.iridescenceThicknessMin,
+			preset.iridescenceThicknessMax ?? LOOK_DEFAULTS.iridescenceThicknessMax
+		];
 	if (material.color) material.color.set(preset.color ?? LOOK_DEFAULTS.color);
 	if (material.emissive) material.emissive.set(preset.emissive ?? LOOK_DEFAULTS.emissive);
 	material.transparent = !!preset.transparent;

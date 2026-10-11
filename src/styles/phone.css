@@ -370,9 +370,23 @@
    41 G20 reversed the other half: the SELECTION strip (--z-selection) no longer rises — an open
    drawer, menu or settings sheet covers it, like every other sheet does. */
 :root.phone-shell:has(#sidebar70) #ps-bar,
-:root.phone-shell:has(#avatar-dropdown) #ps-bar,
-:root.phone-shell.ps-add-open #ps-bar {
+:root.phone-shell:has(#avatar-dropdown) #ps-bar {
 	z-index: calc(var(--z-popover) + 2) !important;
+}
+/* 41-sheets (on the 41-modals scale): the Add list is a ContextMenu, which paints on --z-portal
+   (its submenus at +2) — so while it is open the bar AND the strip rise over the portal: Play
+   stays uncovered and the strip, riding above the list (#32 b), stays usable over the menu's
+   backdrop. */
+:root.phone-shell.ps-add-open #ps-bar,
+:root.phone-shell.ps-add-open #ps-strip {
+	z-index: calc(var(--z-portal) + 3) !important;
+}
+/* …and over a framed TOOL sheet at full height (Objects, Chat, AI) the strip rides above the
+   sheet's scrim (--z-sheet - 1), not under it: --z-selection keeps it under every sheet's BODY,
+   which it never overlaps anyway (PhoneShell lifts it above the sheet's top edge). The menu-like
+   framed sheets hide it (41 G20, below). */
+:root.phone-shell.ps-sheet-open #ps-strip {
+	z-index: var(--z-phone-bar);
 }
 
 /* 41 G20 — NO SELECTION STRIP OVER AN OPEN MENU. The strip is the TOOL row of a selection: it

@@ -305,8 +305,8 @@
 	box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-faint) 25%, transparent);
 }
 .cx-status-dot[data-tone='connecting'] {
-	background: var(--ink-warn);
-	box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink-warn) 30%, transparent);
+	background: var(--status-warn);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-warn) 30%, transparent);
 	animation: cx-status-pulse 1.2s ease-in-out infinite;
 }
 .cx-status-dot[data-tone='connected'] {

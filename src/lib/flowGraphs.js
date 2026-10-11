@@ -1,4 +1,5 @@
 import { get } from 'svelte/store';
+import { showConfirm } from './confirmDialog.js';
 import {
 	flowGraphs,
 	SCENE_GRAPH,
@@ -7,7 +8,7 @@ import {
 	updateGraph,
 	removeGraphDocument
 } from '../stores/flowStore';
-import { peers, showToast } from '../stores/appStore';
+import { peers } from '../stores/appStore';
 import { registerHistoryKind, recordEntry } from './history';
 import { removeEmbedsOf } from './objectFlow';
 import {
@@ -302,19 +303,21 @@ export function serializeGraphs(serializeNode, serializeEdge, opts = {}) {
 	return out;
 }
 
-/** Guarded delete for the editor UI: confirmation toast, then replicated delete.
+/** Guarded delete for the editor UI: a confirm MODAL (41 G16 — a destructive question is never a
+ * toast), then the replicated delete.
  * @param {string} uuid @param {string} label object name for the message */
-export function requestDeleteObjectGraph(uuid, label) {
+export async function requestDeleteObjectGraph(uuid, label) {
 	const graph = graphOf(uuid);
 	if (!graph) return;
 	const count = graph.nodes.length;
-	showToast(
-		'Delete the flow of "' + (label || 'object') + '"? ' +
-			count + ' node' + (count === 1 ? '' : 's') + ' will be removed for everyone.',
-		[
-			{ label: 'Delete flow', action: () => deleteObjectGraph(uuid) },
-			{ label: 'Cancel', action: () => {} }
-		]
-	);
+	const ok = await showConfirm({
+		title: 'Delete this flow?',
+		message: count
+			? 'The flow of "' + (label || 'object') + '" has ' + count + ' node' + (count === 1 ? '' : 's') +
+				'. Deleting it removes ' + (count === 1 ? 'it' : 'them') + ' for everyone in the session.'
+			: 'The flow of "' + (label || 'object') + '" is empty. Deleting it removes it for everyone in the session.',
+		confirmLabel: 'Delete flow'
+	});
+	if (ok) deleteObjectGraph(uuid);
 }
 

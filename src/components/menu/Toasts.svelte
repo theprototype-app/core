@@ -21,9 +21,6 @@
     // P2: the watch banner says when the watched peer's look CANNOT be adopted (the
     // P1 rule: a scoped feature must say on its own surface when it takes no effect)
     import { peerLooks, watchLookNote } from '$lib/lookPresence'
-    import { restoreAvailable, restoreSnapshot, dismissRestore } from '$lib/autosave'
-    import { ingestGate, resolveIngestGate } from '$lib/commandsHandler.svelte'
-    import { ingestVerdict, profileFor } from '$lib/sceneBudget'
     import { cancelOutboundRequest, denyPeer } from '$lib/peerApproval'
     // 27-B: the ONE sticky card for an uncaught error. This file already mirrors
     // state stores into sticky toasts (restoreAvailable below); diagnostics.js stays a
@@ -288,60 +285,8 @@ $effect(() => {
     else dismissToastById('diagnostics-error');
 });
 
-/** 26-G: the restore prompt's budget line reads the same verdict the ingest gate does. */
-function restoreLimit() {
-    return ingestVerdict(0, 1, profileFor(null)).limit;
-}
-function restoreOverBudget(objects: number) {
-    return ingestVerdict(0, Number(objects) || 0, profileFor(null)).gate;
-}
-
-// 26-C (roadmap 26 Stage 2): A SCENE BIGGER THAN THIS DEVICE'S BUDGET IS ARRIVING.
-// The objects are PARKED in the ingest queue, not applied, so this card is the only
-// thing between them and the scene — hence `noClose`: dismissing it with an X would
-// leave the transfer stalled with nothing left to resume it. The state store is the
-// seam (the restoreAvailable idiom), so commandsHandler never imports the UI.
-$effect(() => {
-    const gate = $ingestGate;
-    if (gate)
-        showInfoToast(
-            'ingest-gate',
-            `This scene has ${gate.count} objects — that would take this device to ${gate.total}, above the ${gate.limit} recommended here.`,
-            [
-                { label: 'Load all', action: () => resolveIngestGate('all') },
-                { label: `Load the first ${gate.allowed}`, action: () => resolveIngestGate('some') },
-                { label: 'Cancel', action: () => resolveIngestGate('cancel') }
-            ],
-            undefined,
-            true
-        );
-    else dismissToastById('ingest-gate');
-});
-
-$effect(() => {
-    const snap = $restoreAvailable;
-    if (snap)
-        showInfoToast(
-            'restore-session',
-            `Restore previous session? ${snap.objects} objects, saved ${new Date(snap.ts).toLocaleTimeString()}` +
-                // 26-G (roadmap 26 Stage 4, last bullet): say how the snapshot compares with
-                // this device's budget BEFORE restoring it. A phone that died restoring a
-                // 50MB scene comes back to this exact prompt, and the count is the reason.
-                (restoreOverBudget(snap.objects) ? ` — above the ${restoreLimit()} recommended for this device.` : '') +
-                // 27-D: `risky` means the last attempt to restore THIS snapshot never
-                // reached a clean flow tick. Auto-restore is already skipped for it; say
-                // why, so pressing Restore again is a choice rather than a surprise.
-                (snap.risky
-                    ? ' Warning: the last attempt to restore this scene never finished a frame, so it may be what stopped the app.'
-                    : ''),
-            [
-                { label: 'Restore', action: () => restoreSnapshot() },
-                { label: 'Dismiss', action: () => dismissRestore() }
-            ],
-            () => dismissRestore()
-        );
-    else dismissToastById('restore-session');
-});
+// 41-modals G16: the restore-session and ingest-gate prompts are kit MODALS now
+// (SessionPrompts.svelte) — blocking questions, not passive outcomes.
 // R22 round 2 (user): WHAT ABOUT THE FILES ALREADY IN MY EXPLORER? Connecting to a
 // session with a library full of local files used to say nothing at all — they simply
 // stayed invisible to everyone, which is correct behaviour and a terrible first

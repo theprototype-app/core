@@ -2508,7 +2508,7 @@
 	 * they ask for. That z only orders the FAB against its own siblings in the well.
 	 * `left` is emitted only once the track has been MEASURED — before that (SSR, the
 	 * first paint) the `start-1/2` class is the honest answer. */
-	const pillZClass = $derived($toolbarAlwaysOnTop ? 'z-45' : 'z-30');
+	const pillZClass = $derived($toolbarAlwaysOnTop ? 'z-(--z-hud)' : 'z-(--z-chrome)');
 	const pillStyle = $derived(
 		($floatingToolbar ? 'bottom: calc(var(--bottom-inset, 0px) + 16px);' : 'bottom: 16px;') +
 			(track.mid > 0 ? ` left: ${Math.round(pillCentre)}px;` : '') +

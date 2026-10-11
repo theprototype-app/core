@@ -397,7 +397,7 @@
 	/* portaled to body, so it clears the dock and any transformed ancestor */
 	.hud-cp {
 		position: fixed;
-		z-index: var(--z-menu, 1300);
+		z-index: var(--z-portal);
 		display: flex;
 		width: 232px;
 		flex-direction: column;

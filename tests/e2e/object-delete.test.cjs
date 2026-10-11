@@ -55,8 +55,8 @@ h.run(async () => {
 	h.check(await inScene(A.page, await A.page.evaluate(() => window.__cyl)), 'Delete is ignored while a text field is focused');
 	await A.page.evaluate(() => document.body.focus());
 
-	// --- deleting a GROUP prompts (action-toast) + only removes on confirm ---
-	const prompted = await A.page.evaluate(() => {
+	// --- deleting a GROUP asks in a modal (41 G16) + only removes on confirm ---
+	await A.page.evaluate(() => {
 		const s = window.__stores;
 		const THREE = s.THREE;
 		let group;
@@ -70,23 +70,20 @@ h.run(async () => {
 		window.__grp = grp.uuid;
 		s.objectActions.selectObject(grp.uuid);
 		s.objectActions.requestDeleteSelection();
-		let toasts;
-		s.toastStore.subscribe((t) => (toasts = t))();
-		const confirm = toasts.find((t) => t && t.actions && /Delete "MyGroup"/.test(t.text));
-		return { hasPrompt: !!confirm, actionCount: confirm?.actions?.length ?? 0 };
 	});
-	h.check(prompted.hasPrompt && prompted.actionCount === 2, 'deleting a group shows a Delete/Cancel confirm toast');
+	// 41 G16: a destructive question is a kit MODAL now (it was a Delete/Cancel toast)
+	await A.page.waitForTimeout(400);
+	const asked = await A.page.evaluate(() => {
+		const d = document.querySelector('dialog[open]');
+		return { text: d?.textContent ?? '', ok: !!d?.querySelector('#confirm-dialog-ok'), cancel: !!d?.querySelector('#confirm-dialog-cancel') };
+	});
+	const prompted = { hasPrompt: /Delete this group\?/.test(asked.text) && /"MyGroup"/.test(asked.text), actionCount: (asked.ok ? 1 : 0) + (asked.cancel ? 1 : 0) };
+	h.check(prompted.hasPrompt && prompted.actionCount === 2, `deleting a group asks in a Delete/Cancel modal ("${asked.text.slice(0, 80)}")`);
 	h.check(await inScene(A.page, await A.page.evaluate(() => window.__grp)), 'the group is NOT removed before confirming');
 
 	// confirm -> the group goes
-	await A.page.evaluate(() => {
-		const s = window.__stores;
-		let toasts;
-		s.toastStore.subscribe((t) => (toasts = t))();
-		const confirm = toasts.find((t) => t && t.actions && /Delete "MyGroup"/.test(t.text));
-		confirm.actions.find((a) => a.label === 'Delete').action();
-	});
-	await A.page.waitForTimeout(150);
+	await A.page.locator('#confirm-dialog-ok').click();
+	await A.page.waitForTimeout(300);
 	h.check(!(await inScene(A.page, await A.page.evaluate(() => window.__grp))), 'confirming removes the group');
 
 	await h.finish(browser);

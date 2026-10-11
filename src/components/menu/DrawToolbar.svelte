@@ -53,7 +53,7 @@
 	<div
 		id="draw-toolbar"
 		data-key-scope="keep"
-		class="fixed left-1/2 top-20 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full bg-surface-1 px-4 py-2 text-sm text-text shadow-window"
+		class="fixed left-1/2 top-20 z-(--z-window) flex -translate-x-1/2 items-center gap-3 rounded-full bg-surface-1 px-4 py-2 text-sm text-text shadow-window"
 	>
 		<span class="font-semibold">{spline ? '〰 Spline' : '✏️ Drawing'}</span>
 

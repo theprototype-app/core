@@ -470,7 +470,7 @@
 		top: 64px;
 		bottom: calc(var(--bottom-inset, 0px) + var(--controls-inset, 0px));
 		width: min(var(--cp-w, 340px), 92vw);
-		z-index: calc(var(--z-bottom, 35) - 1);
+		z-index: calc(var(--z-dock, 35) - 1);
 		display: flex;
 		flex-direction: column;
 		box-sizing: border-box;
@@ -486,7 +486,7 @@
 	@media (min-width: 641px) {
 		:global(:root.connect-docked) .cp {
 			top: calc(var(--connect-bottom, 0px) + 4px);
-			z-index: 1000;
+			z-index: calc(var(--z-chrome-top) + 1);
 		}
 	}
 	/* narrow: a bottom sheet, so the character stays visible above it */

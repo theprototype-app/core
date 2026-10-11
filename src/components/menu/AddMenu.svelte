@@ -171,12 +171,12 @@
 <svelte:window onresize={place} />
 
 {#if $addMenu}
-	<div class="fixed inset-0" style="z-index: 999" role="presentation" onclick={close} oncontextmenu={(e) => { e.preventDefault(); close(); }}></div>
+	<div class="fixed inset-0" style="z-index: calc(var(--z-popover) - 1)" role="presentation" onclick={close} oncontextmenu={(e) => { e.preventDefault(); close(); }}></div>
 	<div
 		id="add-search-box"
 		bind:this={boxEl}
 		class="tp-ui tp-menu fixed w-64"
-		style="left: {pos.left}px; top: {pos.top}px; z-index: 1000;"
+		style="left: {pos.left}px; top: {pos.top}px; z-index: var(--z-popover);"
 		use:rightDragMove={{ onMove: onDragMove }}
 	>
 		<input

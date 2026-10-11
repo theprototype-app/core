@@ -14,7 +14,7 @@ import {
 	isInitiator
 } from './physics';
 import { suspendAnimation, resumeAnimation, fireObjectClick, fireObjectGrab } from './flowRuntime';
-import { velocityFromSamples } from './throwVelocity';
+import { velocityFromSamples, cursorThrow } from './throwVelocity';
 import { resolvePlaySettings } from './playSettings';
 import { pickStack, primaryIndex, gameRayEntry } from './selectThrough';
 import { gamePass } from './pickPass'; // 36 F22: a game's rays skip water + triggers
@@ -98,9 +98,10 @@ const euler = new THREE.Euler(0, 0, 0, 'YXZ');
 
 /** `cursor`: 30 P1 — the carry follows the editor's CURSOR ray (Interact), not the
  * crosshair. Everything else about the hold is the play-mode hold, unforked.
+ * `depth` + `offset`: 41 G4 — where on the object it was taken (see cursorGrabStart).
  * @type {{object: any, relQuat: THREE.Quaternion, mass: number, held: boolean,
  *   samples: {t: number, pos: THREE.Vector3, quat: THREE.Quaternion}[], lastSent: number,
- *   cursor?: boolean}|null} */
+ *   cursor?: boolean, depth?: number, offset?: THREE.Vector3}|null} */
 let grab = null;
 /** 30 P1: the cursor's NDC while an Interact carry runs (fed by Scene's pointermove) */
 const cursorNdc = new THREE.Vector2();
@@ -206,10 +207,18 @@ export function editorInteractActive() {
 	return get(editorMode) === 'interact' && get(isLocked) !== true && !get(isVRMode);
 }
 
+const camFwd = new THREE.Vector3();
+
 /**
  * A press in Interact. Starts a cursor carry when the ray's first hit is a dynamic body
  * of a running sim that nobody else holds; returns whether it did (Scene then stands the
  * camera controls down for the gesture, or lets the press orbit as usual).
+ *
+ * 41 G4: the object is taken AT THE HIT POINT. It moves on a camera-facing plane through
+ * that point (the same depth along the view axis, near or far) and keeps the offset from
+ * the point to its origin, so it follows the cursor or finger RELATIVE to where it was —
+ * it used to put its ORIGIN on the ray at its centre's distance clamped to 0.8-6 m, which
+ * jumped a large or near object (and anything it touched) the moment it was taken.
  * @param {any} ray a THREE.Raycaster aimed through the cursor
  * @param {{x: number, y: number}} ndc the cursor in NDC
  * @param {any} camera
@@ -231,8 +240,27 @@ export function cursorGrabStart(ray, ndc, camera) {
 	beginGrab(target, camera);
 	// (TS narrowed `grab` to null at the guard above; beginGrab assigned it since)
 	const started = /** @type {any} */ (grab);
-	if (started) started.cursor = true;
+	if (started) {
+		started.cursor = true;
+		camera.getWorldDirection(camFwd);
+		started.depth = Math.max(CARRY_MIN * 0.25, targetPos.copy(hit.point).sub(camPos).dot(camFwd));
+		started.offset = target.getWorldPosition(new THREE.Vector3()).sub(hit.point);
+	}
 	return !!started;
+}
+
+/** 41 G4: where a cursor carry wants its object — the cursor ray meets the camera-facing plane
+ * at the grab's depth, plus the grab offset. @param {any} camera @param {THREE.Vector3} out */
+function cursorCarryTarget(camera, out) {
+	const g = /** @type {any} */ (grab);
+	raycaster.setFromCamera(cursorNdc, camera);
+	camera.getWorldDirection(camFwd);
+	camera.getWorldPosition(camPos);
+	const along = raycaster.ray.direction.dot(camFwd);
+	// the plane sits `depth` in front of the eye; an orthographic ray starts ON the near plane
+	const from = raycaster.ray.origin.clone().sub(camPos).dot(camFwd);
+	const t = along > 1e-4 ? (g.depth - from) / along : g.depth;
+	return out.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, t).add(g.offset);
 }
 
 /** The cursor moved while carrying. @param {{x: number, y: number}} ndc */
@@ -240,10 +268,11 @@ export function cursorGrabMove(ndc) {
 	if (grab?.cursor) cursorNdc.set(ndc.x, ndc.y);
 }
 
-/** Release: a throw, like play's. @returns {boolean} whether a cursor carry ended */
-export function cursorGrabEnd() {
+/** Release: a throw, like play's — or (41 G4) a cancelled pointer, which never throws.
+ * @param {boolean} [throwIt] @returns {boolean} whether a cursor carry ended */
+export function cursorGrabEnd(throwIt = true) {
 	if (!grab?.cursor) return false;
-	endGrab(true);
+	endGrab(throwIt);
 	return true;
 }
 
@@ -318,8 +347,8 @@ function beginGrab(object, camera) {
  */
 export function endGrab(throwIt) {
 	if (!grab) return null;
-	const { object, samples, held } = grab;
-	const velocity = throwIt ? velocityFromSamples(samples) : { linvel: [0, 0, 0], angvel: [0, 0, 0] };
+	const { object, samples, held, cursor } = grab;
+	const velocity = !throwIt ? { linvel: [0, 0, 0], angvel: [0, 0, 0] } : cursor ? cursorThrow(samples, performance.now()) : velocityFromSamples(samples);
 	grab = null;
 	resumeAnimation(object.uuid);
 	if (held) releaseBody(object.uuid, velocity);
@@ -499,6 +528,11 @@ function onPointerUp(event) {
 function onWheel(event) {
 	if (!grab) return;
 	event.preventDefault();
+	// 41 G4: a cursor carry's wheel pushes / pulls the grab plane
+	if (grab.cursor && grab.depth !== undefined) {
+		grab.depth = Math.max(CARRY_MIN * 0.25, grab.depth + (event.deltaY > 0 ? -CARRY_STEP : CARRY_STEP));
+		return;
+	}
 	carryDistance = Math.min(
 		CARRY_MAX,
 		Math.max(CARRY_MIN, carryDistance + (event.deltaY > 0 ? -CARRY_STEP : CARRY_STEP))
@@ -537,10 +571,8 @@ export function tickPlayInteract(delta, camera) {
 			return;
 		}
 		if (grab.cursor) {
-			// the same carry point, along the CURSOR's ray instead of the view axis
-			raycaster.setFromCamera(cursorNdc, camera);
-			camPos.copy(raycaster.ray.origin);
-			camDir.copy(raycaster.ray.direction);
+			// 41 G4: the grab point stays under the cursor (cursorGrabStart)
+			cursorCarryTarget(camera, targetPos);
 		} else {
 			camera.getWorldPosition(camPos);
 			// 30 P3: along the AIM ray, so a free-cursor carry follows the cursor
@@ -550,9 +582,8 @@ export function tickPlayInteract(delta, camera) {
 			camDir.copy(raycaster.ray.direction);
 		}
 		// 31-towers P1: a play carry is held WITHIN reach of the body (the editor's cursor
-		// carry has no body, so it keeps its distance)
-		const limit = grab.cursor ? carryDistance : carryLimit(camDir, eyeHeightNow(), playReach(), carryDistance);
-		targetPos.copy(camPos).addScaledVector(camDir, Math.min(carryDistance, limit));
+		// carry has no body, and its target is already set above)
+		if (!grab.cursor) targetPos.copy(camPos).addScaledVector(camDir, Math.min(carryDistance, carryLimit(camDir, eyeHeightNow(), playReach(), carryDistance)));
 		// dt-based, so a throttled tab does not change the feel
 		const k = Math.min(SPRING_K_MAX, Math.max(SPRING_K_MIN, SPRING_K / Math.sqrt(Math.max(grab.mass, 1))));
 		const alpha = 1 - Math.exp(-k * Math.max(delta, 1e-3));

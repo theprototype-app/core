@@ -104,3 +104,26 @@ export function velocityFromSamples(samples, opts = {}) {
 	}
 	return clampThrow(linvel, angvel);
 }
+
+// 41 G4: the editor's Interact carry (cursor or finger) releases with a throw from the last few
+// frames, but a finger flick across a phone is easily 3 m in 50 ms on a near object, so it is
+// capped (direction kept) well under the play-mode ceiling above.
+/** m/s ceiling on an Interact carry's release */
+export const CURSOR_THROW_MAX = 8;
+/** rad/s ceiling on an Interact carry's release */
+export const CURSOR_SPIN_MAX = 10;
+/** samples older than this say nothing about the release (a finger that stopped, then let go) */
+export const THROW_WINDOW_MS = 120;
+
+/**
+ * An Interact carry's release velocity: only the samples of the last THROW_WINDOW_MS count,
+ * and the result is capped to CURSOR_THROW_MAX / CURSOR_SPIN_MAX.
+ * @param {{t: number, pos: THREE.Vector3, quat?: THREE.Quaternion | null}[]} samples oldest first
+ * @param {number} now the release time, on the samples' clock
+ * @returns {{linvel: THREE.Vector3, angvel: THREE.Vector3}}
+ */
+export function cursorThrow(samples, now) {
+	const recent = (Array.isArray(samples) ? samples : []).filter((sample) => now - sample.t <= THROW_WINDOW_MS);
+	const { linvel, angvel } = velocityFromSamples(recent);
+	return { linvel: clampMagnitude(linvel, CURSOR_THROW_MAX), angvel: clampMagnitude(angvel, CURSOR_SPIN_MAX) };
+}

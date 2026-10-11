@@ -30,7 +30,7 @@
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
 	import { sceneHits } from '$lib/scenePick';
-	import { pickStack, chooseInStack, altCycleIndex } from '$lib/selectThrough';
+	import { pickStack, chooseInStack, altCycleIndex, primaryIndex } from '$lib/selectThrough';
 	import { editorPass } from '$lib/pickPass'; // 36 F22
 	import { showPickPreview, hidePickPreview, notePickCycled } from '$lib/pickCycle'; // 36 F22 / S6
 	import { tickModuleProxy, selectModuleGroup, moduleGroupOf } from '$lib/moduleContent';
@@ -563,7 +563,17 @@
 	// module handler runs only if it registered for Edit (so a piano or a puzzle piece no
 	// longer swallows the select) and On Click nodes do NOT fire — Interact is where the
 	// scene reacts. null = VR's trigger, unchanged: every handler first, then select + pulse.
-	function raycastSelect(additive = false, mode: string | null = null, click: { x: number; y: number; t: number } | null = null, cycle = false) {
+	// 41 G14: `touch` = the press was a finger, which has no Shift: a tap on an object that is
+	// already selected LETS GO of it (a double-tap still does the double-click action, and in
+	// Multi-select a tap toggles as Shift does). `onGizmo` = the tap landed on the seated gizmo,
+	// where the only thing a still tap may do is that letting go — anything else is the gizmo's.
+	function raycastSelect(
+		additive = false,
+		mode: string | null = null,
+		click: { x: number; y: number; t: number } | null = null,
+		cycle = false,
+		{ touch = false, onGizmo = false }: { touch?: boolean; onGizmo?: boolean } = {}
+	) {
 		// module-owned interactive groups live at the scene root (pong, dungeon, ...)
 		// 30 P3: in EDIT the nearest module-content hit that no edit handler took is
 		// remembered, so a click on a board or a dungeon selects its PROXY (the object list's
@@ -585,11 +595,17 @@
 		// aside too; Alt+click walks the whole stack front to back instead
 		const stack = pickStack(hits, topLevelObjectOf, editorPass());
 		const altPick = cycle && click ? altCycleIndex(stack, click, lastAltClick) : null;
+		// 41 G14: on a finger, a repeat tap on a SELECTED front object lets go of it rather than
+		// walking to what is behind (on a phone the Objects list reaches that) — in most scenes
+		// the floor is behind everything, so the walk would make letting go impossible
+		const front = stack.length ? stack[primaryIndex(stack)] : null;
+		const frontHeld = touch && !additive && !!front && $selectedObjects.includes(front.uuid);
 		const choice = altPick
 			? { index: altPick.index, cycled: altPick.of > 1 }
-			: chooseInStack(stack, click ?? { x: -1e6, y: -1e6, t: 0 }, !additive && click ? lastSelectClick : null);
+			: chooseInStack(stack, click ?? { x: -1e6, y: -1e6, t: 0 }, !additive && click && !frontHeld ? lastSelectClick : null);
 		const chosen = choice.index >= 0 ? stack[choice.index] : null;
-		if (mode === 'edit' && !additive && !altPick && moduleHit && moduleGroupOf(moduleHit.name) && (!chosen || moduleHit.distance < chosen.hit.distance)) {
+		if (onGizmo && !(chosen && $selectedObjects.includes(chosen.uuid))) return true; // the gizmo's tap
+		if (mode === 'edit' && !onGizmo && !additive && !altPick && moduleHit && moduleGroupOf(moduleHit.name) && (!chosen || moduleHit.distance < chosen.hit.distance)) {
 			deselectObject();
 			selectModuleGroup(moduleHit.name);
 			return true;
@@ -619,6 +635,16 @@
 				const now = Date.now();
 				const isDouble = !additive && !altPick && lastPick.uuid === target.uuid && now - lastPick.t < 400;
 				lastPick = { uuid: target.uuid, t: now };
+				// 41 G14 (above): a finger's tap on a selected object takes it out of the selection
+				if (touch && !additive && !altPick && !isDouble && $selectedObjects.includes(target.uuid)) {
+					const rest = $selectedObjects.filter((uuid) => uuid !== target.uuid);
+					lastPick = { uuid: null, t: 0 };
+					lastSelectClick = null;
+					if (rest.length) applySelectionSet(rest);
+					else deselectObject();
+					return true;
+				}
+				if (onGizmo && !additive) return true; // a double-tap on the gizmo stays the gizmo's
 				// shift-click toggles set membership (13)
 				// 85: WHAT a double-click does is a preference now. 'properties' is
 				// the default and the behaviour 15-O shipped; the other three exist
@@ -783,6 +809,8 @@
 		};
 		// 30 P1: an Interact carry in progress (the camera controls stand down for it)
 		let interactCarrying = false;
+		// 41 G4: the pointer that carries — a second finger (a pinch) must not drag the carry
+		let interactCarryPointer = -1;
 		// the press that CAN start an Interact gesture: no editor session or tool holds it
 		const interactPress = () =>
 			editorInteractActive() && !$specatorMode && !$editingObject && !$faceEditObject && !$splineEditObject && !$drawMode && !$sculptObject;
@@ -854,6 +882,7 @@
 				setRayFromEvent(event);
 				if (cursorGrabStart(selectionRaycaster, ndcOfEvent(event), camera.current)) {
 					interactCarrying = true;
+					interactCarryPointer = event.pointerId;
 					setOrbitEnabled(false);
 					return;
 				}
@@ -953,7 +982,7 @@
 				updateAltPreview(event.clientX, event.clientY);
 			}
 			// 30 P1: an Interact carry follows the cursor
-			if (interactCarrying) cursorGrabMove(ndcOfEvent(event));
+			if (interactCarrying && event.pointerId === interactCarryPointer) cursorGrabMove(ndcOfEvent(event));
 			// 57.3: a radius drag owns the gesture (thickness, not the camera)
 			if (radiusDragActive()) {
 				radiusDragMove(event.clientY);
@@ -1026,7 +1055,7 @@
 				downPosition = null;
 				return;
 			}
-			if (interactCarrying && event.button === 0) {
+			if (interactCarrying && event.button === 0 && event.pointerId === interactCarryPointer) {
 				interactCarrying = false;
 				cursorGrabEnd(); // a throw (false if the carry was already cancelled)
 				setOrbitEnabled(true);
@@ -1144,7 +1173,14 @@
 			}
 			// ignore clicks on the transform gizmo (axis is set while hovering a handle) — not an
 			// Alt+click, which selects through it (36 F22; the gizmo is parked while Alt is held)
-			if ($TControls && ($TControls.dragging || ($TControls.axis && !event.altKey))) return;
+			// 41 G14: a FINGER's still tap on the gizmo may still let go of the object under it —
+			// a touch gizmo covers most of a small object, which is what the finger aims at
+			const touchTap = event.pointerType === 'touch';
+			// (an object's gizmo only — a mesh / spline session's gizmo keeps every tap)
+			const onGizmo =
+				!!$TControls && !$TControls.dragging && !!$TControls.axis && !event.altKey &&
+				!$editingObject && !$faceEditObject && !$splineEditObject && !$measureMode && !splineToolActive();
+			if ($TControls && ($TControls.dragging || ($TControls.axis && !event.altKey)) && !(touchTap && onGizmo)) return;
 			if (!$objectsGroup) return;
 
 			const rect = element.getBoundingClientRect();
@@ -1255,7 +1291,7 @@
 				return;
 			}
 			// light pick-proxies select their light (lights have no raycastable geometry)
-			if ($lightProxiesGroup) {
+			if ($lightProxiesGroup && !onGizmo) {
 				const proxyHits = selectionRaycaster.intersectObject($lightProxiesGroup, true);
 				const proxyHit = proxyHits.find((hit) => hit.object.userData.lightUuid && hit.object.visible);
 				if (proxyHit) {
@@ -1265,7 +1301,7 @@
 			}
 			// note pins take priority over object selection (H3: skipped entirely
 			// while pins are hidden — never rely on raycaster-vs-invisible semantics)
-			if ($pinsGroup && $showNotePins) {
+			if ($pinsGroup && $showNotePins && !onGizmo) {
 				const pinHits = selectionRaycaster.intersectObject($pinsGroup, true);
 				let pinNode = pinHits[0]?.object;
 				while (pinNode && !pinNode.name?.startsWith('pin-')) pinNode = pinNode.parent;
@@ -1278,7 +1314,7 @@
 			// "click the background to get back" instinct as deselecting.
 			const additive = event.shiftKey || $multiSelectMode;
 			hidePickPreview();
-			if (!raycastSelect(additive, 'edit', { x: event.clientX, y: event.clientY, t: Date.now() }, event.altKey && !additive) && !additive) {
+			if (!raycastSelect(additive, 'edit', { x: event.clientX, y: event.clientY, t: Date.now() }, event.altKey && !additive, { touch: touchTap, onGizmo: touchTap && onGizmo }) && !additive) {
 				if (isIsolated()) clearIsolation();
 				deselectObject();
 			}
@@ -1291,6 +1327,16 @@
 		// window, not canvas: the Canvas wrapper swallows pointer events mid-gesture
 		window.addEventListener('pointermove', onPointerMove);
 		window.addEventListener('pointerup', onPointerUp);
+		// 41 G4: a cancelled touch (the browser took the gesture, a call came in) lets the carry go
+		// where it is — a cancel is never a throw
+		const onPointerCancel = (event: PointerEvent) => {
+			if (!interactCarrying || event.pointerId !== interactCarryPointer) return;
+			interactCarrying = false;
+			cursorGrabEnd(false);
+			setOrbitEnabled(true);
+			downPosition = null;
+		};
+		window.addEventListener('pointercancel', onPointerCancel);
 		// right-click TAP opens the Add/object menu (77). Opening happens on the
 		// contextmenu event (which trails pointerup) — opening on pointerup lets
 		// that trailing event hit the fresh menu backdrop and close it instantly.
@@ -1602,6 +1648,7 @@
 			element.removeEventListener('webglcontextlost', onContextLost);
 			element.removeEventListener('webglcontextrestored', onContextRestored);
 			window.removeEventListener('pointerup', onPointerUp);
+			window.removeEventListener('pointercancel', onPointerCancel);
 			window.removeEventListener('keydown', onAltKey);
 			window.removeEventListener('keyup', onAltKey);
 			window.removeEventListener('blur', onAltBlur);

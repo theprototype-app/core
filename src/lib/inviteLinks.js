@@ -15,6 +15,7 @@
 // `#id~srv=…` back as a peer id. Store-only + peerServer + peerApproval; started from
 // App.svelte like startTrackpadNav.
 import { get } from 'svelte/store';
+import { showChoice } from './confirmDialog.js';
 import { peers, showToast, waitingForApproval } from '../stores/appStore';
 import { parseInviteHash, decodeInviteServer, peerServerStatus, sameServer } from './peerServer';
 import { requestConnect, cancelOutboundRequest } from './peerApproval';
@@ -106,26 +107,30 @@ export async function handleInviteHash(hash) {
 	if (inSession) {
 		const who = host ? peerLabel(host) : open.size === 1 ? peerLabel([...open][0]) : open.size + ' peers';
 		const where = needSwitch ? ' on ' + serverLabel(target) : '';
-		showToast("You're in a session with " + who + '. Leave it and join ' + peerLabel(peerId) + where + '?', [
-			{
-				label: 'Leave & join',
-				action: () => {
-					try {
-						peer.leaveSession();
-					} catch {}
-					proceed();
-				}
-			},
-			{ label: 'Stay', action: () => {} }
-		]);
+		// 41 G16: leaving a session is a blocking choice — a modal, not a toast
+		void showChoice({
+			title: 'Leave this session?',
+			message: "You're in a session with " + who + '. Leave it and join ' + peerLabel(peerId) + where + '?',
+			choices: [{ value: 'leave', label: 'Leave & join' }],
+			cancelLabel: 'Stay'
+		}).then((answer) => {
+			if (answer !== 'leave') return;
+			try {
+				peer.leaveSession();
+			} catch {}
+			proceed();
+		});
 		return 'ask-leave';
 	}
 	if (needSwitch) {
 		// one extra tap only in the uncommon case, and the user sees where they are going
-		showToast('Join ' + peerLabel(peerId) + ' on ' + serverLabel(target) + '?', [
-			{ label: 'Join', action: () => proceed() },
-			{ label: 'Cancel', action: () => {} }
-		]);
+		void showChoice({
+			title: 'Join on another server?',
+			message: 'Join ' + peerLabel(peerId) + ' on ' + serverLabel(target) + '?',
+			choices: [{ value: 'join', label: 'Join' }]
+		}).then((answer) => {
+			if (answer === 'join') void proceed();
+		});
 		return 'ask-server';
 	}
 	await proceed();

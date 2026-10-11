@@ -1,5 +1,6 @@
 <script>
 	import Icon from '../ui/Icon.svelte';
+	import { showChoice } from '$lib/confirmDialog.js';
 	// The "Local objects" section of the object list. Renders local-only objects with
 	// the SAME tree component as the shared list (Objects.svelte) — so groups expand/
 	// collapse and objects drag in/out of groups for free. A drop target moves a shared
@@ -65,9 +66,11 @@
 			return;
 		}
 		if (isViewerNow) {
-			showToast('Create a local copy of "' + (obj.name || 'object') + '"? The original stays shared.', [
-				{ label: 'Create copy', action: () => makeLocalCopy(obj) }
-			]);
+			void showChoice({
+				title: 'Create a local copy?',
+				message: 'Create a local copy of "' + (obj.name || 'object') + '"? The original stays shared.',
+				choices: [{ value: 'copy', label: 'Create copy' }]
+			}).then((answer) => answer === 'copy' && makeLocalCopy(obj));
 		} else {
 			// editor: remove it for peers, keep it locally as a local object
 			try {

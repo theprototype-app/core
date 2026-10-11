@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
+	import { showChoice, showConfirm } from '$lib/confirmDialog.js';
 	import Icon from '../ui/Icon.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
@@ -4286,13 +4287,13 @@
 			return showToast('Select the object (or objects) to save into this prefab first');
 		// the opt-in prompt for people who want to be asked (default OFF)
 		if ($confirmPrefabUpdate)
-			return showToast(
-				`Replace "${prefab.name}" with ${uuids.length === 1 ? 'the selected object' : uuids.length + ' selected objects'}?`,
-				[
-					{ label: 'Update', action: () => void applyPrefabUpdate(prefab, uuids) },
-					{ label: 'Cancel', action: () => {} }
-				]
-			);
+			return void showChoice({
+				title: 'Update this prefab?',
+				message: `Replace "${prefab.name}" with ${uuids.length === 1 ? 'the selected object' : uuids.length + ' selected objects'}?`,
+				choices: [{ value: 'update', label: 'Update' }]
+			}).then((answer) => {
+				if (answer === 'update') void applyPrefabUpdate(prefab, uuids);
+			});
 		void applyPrefabUpdate(prefab, uuids);
 	}
 
@@ -4327,10 +4328,14 @@
 	}
 
 	function confirmDeletePrefab(prefab: any) {
-		showToast(`Delete the prefab "${prefab.name}"?`, [
-			{ label: 'Delete', action: () => void removePrefab(prefab.id) },
-			{ label: 'Cancel', action: () => {} }
-		]);
+		// 41 G16: a destructive question is a modal, not a toast
+		void showConfirm({
+			title: 'Delete this prefab?',
+			message: `"${prefab.name}" will be removed from your prefab library.`,
+			confirmLabel: 'Delete'
+		}).then((ok) => {
+			if (ok) void removePrefab(prefab.id);
+		});
 	}
 
 	/** 37 R4: "Move to folder ▸" — every folder of the tab, the root first, and a new one.

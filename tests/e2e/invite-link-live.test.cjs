@@ -32,8 +32,10 @@ const approveOn = async (peer) => {
  * button makes — asserted on the session state right after. */
 const clickToast = async (peer, name) => {
 	const found = await peer.page.evaluate((name) => {
-		const button = [...document.querySelectorAll('.tp-toast-action')].find((b) => b.textContent.trim() === name);
-		if (!button) return { found: false, buttons: [...document.querySelectorAll('.tp-toast-action')].map((b) => b.textContent.trim()) };
+		// 41 G16: the leave/join questions are kit modals now (dialog buttons), other prompts stay toasts
+		const all = [...document.querySelectorAll('.tp-toast-action, dialog[open] button')];
+		const button = all.find((b) => b.textContent.trim() === name);
+		if (!button) return { found: false, buttons: all.map((b) => b.textContent.trim()) };
 		const laidOut = button.offsetParent !== null && button.getBoundingClientRect().width > 0;
 		if (laidOut) button.click();
 		return { found: true, laidOut };

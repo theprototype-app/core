@@ -370,9 +370,38 @@
    41 G20 reversed the other half: the SELECTION strip (--z-selection) no longer rises — an open
    drawer, menu or settings sheet covers it, like every other sheet does. */
 :root.phone-shell:has(#sidebar70) #ps-bar,
-:root.phone-shell:has(#avatar-dropdown) #ps-bar,
-:root.phone-shell.ps-add-open #ps-bar {
+:root.phone-shell:has(#avatar-dropdown) #ps-bar {
 	z-index: calc(var(--z-popover) + 2) !important;
+}
+/* 41-sheets (on the 41-modals scale): the Add list is a ContextMenu, which paints on --z-portal
+   (its submenus at +2) — so while it is open the bar AND the strip rise over the portal: Play
+   stays uncovered and the strip, riding above the list (#32 b), stays usable over the menu's
+   backdrop. */
+:root.phone-shell.ps-add-open #ps-bar,
+:root.phone-shell.ps-add-open #ps-strip {
+	z-index: calc(var(--z-portal) + 3) !important;
+}
+/* …and over a framed TOOL sheet at full height (Objects, Chat, AI) the strip rides above the
+   sheet's scrim (--z-sheet - 1), not under it: --z-selection keeps it under every sheet's BODY,
+   which it never overlaps anyway (PhoneShell lifts it above the sheet's top edge). The menu-like
+   framed sheets hide it (41 G20, below). */
+:root.phone-shell.ps-sheet-open #ps-strip {
+	z-index: var(--z-phone-bar);
+}
+
+/* 41 G20 — NO SELECTION STRIP OVER AN OPEN MENU. The strip is the TOOL row of a selection: it
+   rides on top of the tool sheets that work on that selection (Objects, Chat, AI, the Inspector,
+   Configure Scene, the notes sheet, the Add list, a docked view, a toolbox — PhoneShell measures
+   each one, #32 b, so it sits ABOVE their top edge and never on them). A MENU is not a tool for
+   the selection: the main menu, the profile menu, the notification centre, the Connection and
+   More sheets, an object's / the viewport's action sheet (a ContextMenu that is not the Add
+   list), the character studio and every dialog (Settings, the modals) hide it while they are
+   open — it used to rise OVER the main menu and the profile menu (the reported bug: "the
+   toolbar which shows move/rotate/scale/inspect shows above the drawer"). It comes back as
+   they close, the selection unchanged. */
+:root.phone-shell:has(#sidebar70, #avatar-dropdown, #character-panel, dialog[open], .ps-sheet[data-kind='notif'], .ps-sheet[data-kind='conn'], .ps-sheet[data-kind='more']) #ps-strip,
+:root.phone-shell:not(.ps-add-open):has(.ctx-scroll) #ps-strip {
+	display: none !important;
 }
 /* a framed window that lives inside another stacking context (the notification centre is in the
    top-right corner chrome, --z-chrome-top) paints at THAT level, so the bar rises over it too —

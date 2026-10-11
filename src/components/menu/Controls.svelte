@@ -53,6 +53,18 @@
 	import { hudIsGame } from '$lib/hudDocs';
 	import { DOCK_VIEWS } from '$lib/dockMenu';
 	import { safeStorage } from '$lib/safeStorage';
+	// 41 G23/G1: the toolbar layout model (a pure leaf)
+	import {
+		PLAY as SPACER,
+		defaultLayout as defaultToolbarLayout,
+		normalizeLayout,
+		visualRow,
+		moveCell as moveToolbarCell,
+		hideButton as hideToolbarButton,
+		showButton as showToolbarButton,
+		swapCell as swapToolbarCell
+	} from '$lib/toolbarLayout';
+	import type { ToolbarLayout, LayoutConfig } from '$lib/toolbarLayout';
 	import { pivotMode, pivotParentAvailable } from '$lib/multiTransform'; // 37 R1: the toolbar Pivot cell
 	import { VRButton, XRButton } from '@threlte/xr'
 
@@ -1044,13 +1056,9 @@
 	 *  It rides IN the layout record rather than in a key of its own, which is what
 	 *  makes `resetLayout()` and Settings' "Reset window positions" (whose wipe already
 	 *  names `controlsLayout`) cover the position with no second thing to remember. */
-	type ControlsLayout = {
-		order: string[];
-		hidden: string[];
-		spacerIndex: number;
-		collapsed: boolean;
-		posX: number | null;
-	};
+	// 41: the record is `$lib/toolbarLayout`'s `ToolbarLayout` (+ `left`/`right` corner stacks and
+	// `seen`, the ids it has placed — see that file)
+	type ControlsLayout = ToolbarLayout;
 	// 30 P1: `pressed` makes the cell a TOGGLE — it renders as a real <button> carrying
 	// aria-pressed (a <p> cannot: the attribute is not supported on its role)
 	const PIVOT_NAMES: Record<string, string> = { median: 'Median point', active: 'Active object', individual: 'Individual origins', parent: 'Parent origin' };
@@ -1073,7 +1081,6 @@
 	 *  a collapsed bar is the well and nothing else, and the way back out lives in
 	 *  the FAB's own right-click menu (plus Settings' Reset window positions, which
 	 *  is the hatch for iOS Safari, where a long press fires no `contextmenu`). */
-	const SPACER = '__spacer';
 	// 33 E1: THE USER'S ORDER — the transforms, then Interact, then Play (the well), then
 	// the views they open most: object list, node editor, Explorer, Animation. Interact
 	// sits beside Play because the two answer one question ("how am I touching the scene
@@ -1235,68 +1242,51 @@
 		};
 	}
 
-	/** 33 E1: is this stored record one of the default bars the app used to ship? */
-	function isLegacyDefault(order: string[], saved: any): boolean {
-		const hidden: string[] = Array.isArray(saved.hidden) ? saved.hidden : [];
-		if (hidden.some((id) => order.includes(id))) return false;
-		const row = [...order];
-		const at = Number.isFinite(saved.spacerIndex) ? Math.max(0, Math.min(saved.spacerIndex, row.length)) : 3;
-		row.splice(at, 0, SPACER);
-		return LEGACY_DEFAULT_ROWS.includes(row.join(','));
-	}
+	// 41 G23: THE MODEL LIVES IN `$lib/toolbarLayout` (a pure leaf, unit-tested) — reading a
+	// stored record, the visual row, every move/hide/show/swap and the edit-positions
+	// placements. What stays here is the CONFIG (which ids exist, the shipped defaults) and the
+	// persistence. The legacy rows, the promoted defaults and the append-new-defaults rule
+	// documented above are the leaf's now, unchanged in effect.
+	const LAYOUT_CFG: LayoutConfig = {
+		order: DEFAULT_ORDER,
+		spacer: DEFAULT_SPACER,
+		left: [],
+		right: [],
+		isKnown: (id: string) => !!BUTTONS[id],
+		legacyRows: LEGACY_DEFAULT_ROWS,
+		promoted: PROMOTED_DEFAULTS
+	};
 
 	function defaultLayout(): ControlsLayout {
-		return { order: [...DEFAULT_ORDER], hidden: [], spacerIndex: DEFAULT_SPACER, collapsed: false, posX: null };
+		return defaultToolbarLayout(LAYOUT_CFG);
 	}
 
-	/** Read the persisted layout, SSR-guarded and defensive: a stored record is user
-	 *  data that a later version of this file may not recognise. A button the saved
-	 *  order has never heard of is APPENDED rather than suppressed (`explorerColumns`'
-	 *  rule: store what is hidden, so anything added later shows by default), and an
-	 *  id that no longer exists is dropped so the registry lookup can never miss. */
+	/** Read the persisted layout, SSR-guarded and defensive: a stored record is user data a
+	 *  later version of this file may not recognise, so it goes through `normalizeLayout`,
+	 *  which drops unknown ids and duplicates, closes holes and never throws. */
 	function loadLayout(): ControlsLayout {
 		if (typeof localStorage === 'undefined') return defaultLayout();
 		try {
 			const raw = safeStorage.getItem('controlsLayout');
-			if (!raw) return defaultLayout();
-			const saved = JSON.parse(raw) ?? {};
-			// W8b: kept ids are the ones the REGISTRY knows, not the ones the DEFAULT order
-			// lists — that older test dropped every optional view on the next reload, so a
-			// button enabled from Customize came back gone. A missing DEFAULT id is still
-			// appended (a button added to the app later shows by default, `explorerColumns`'
-			// rule); an OPTIONAL id absent from the record is absent from the bar, which is
-			// what makes it opt-in. Duplicates are dropped — `order` is a set of positions,
-			// and a hand-edited or half-migrated record must not render one button twice.
-			const order: string[] = Array.isArray(saved.order)
-				? saved.order.filter(
-						(id: any, at: number) => BUTTONS[id] && saved.order.indexOf(id) === at
-					)
-				: [];
-			const posX0 = typeof saved.posX === 'number' && Number.isFinite(saved.posX) ? Math.max(0, Math.min(1, saved.posX)) : null;
-			// 33 E1: a record that is still a SHIPPED default migrates to today's default
-			if (isLegacyDefault(order, saved))
-				return { ...defaultLayout(), collapsed: saved.collapsed === true, posX: posX0 };
-			for (const id of DEFAULT_ORDER) if (!order.includes(id) && !PROMOTED_DEFAULTS.includes(id)) order.push(id);
-			const hidden: string[] = Array.isArray(saved.hidden)
-				? saved.hidden.filter((id: any) => order.includes(id))
-				: [];
-			const room = order.filter((id) => !hidden.includes(id)).length;
-			const spacerIndex = Number.isFinite(saved.spacerIndex)
-				? Math.max(0, Math.min(saved.spacerIndex, room))
-				: Math.min(DEFAULT_SPACER, room);
-			// a stored fraction is clamped rather than trusted: 0..1 is the whole domain,
-			// and anything else (a hand-edited key, an older shape) reads as "centred"
-			const posX =
-				typeof saved.posX === 'number' && Number.isFinite(saved.posX)
-					? Math.max(0, Math.min(1, saved.posX))
-					: null;
-			return { order, hidden, spacerIndex, collapsed: saved.collapsed === true, posX };
+			return raw ? normalizeLayout(JSON.parse(raw), LAYOUT_CFG) : defaultLayout();
 		} catch {
 			return defaultLayout();
 		}
 	}
 
-	let controlsLayout: ControlsLayout = $state(loadLayout());
+	// 41 G23 — THE RELOAD BUG. The page is PRERENDERED, so the server's HTML holds the DEFAULT
+	// bar, and svelte 5 hydrates a keyed `{#each}` POSITIONALLY: it only checks that the list
+	// is non-empty, then walks the client's items onto the server's DOM in order. A stored
+	// custom order therefore hydrated each cell onto the markup of whatever button sat in that
+	// slot by default — the title and tint effects repaired the attributes, but every cell's
+	// <svg> kept the server's paths, so after "move the far-right buttons to the leftmost and
+	// reload" the icons belonged to other buttons. The bar now HYDRATES WITH THE DEFAULT (what
+	// the server rendered) and the stored record is applied right after mount, where a keyed
+	// reorder moves real DOM nodes. Same for the viewport width (the narrow bar drops a cell).
+	let controlsLayout: ControlsLayout = $state(defaultLayout());
+	onMount(() => {
+		controlsLayout = loadLayout();
+	});
 
 	function saveLayout() {
 		try {
@@ -1307,9 +1297,11 @@
 	}
 
 	/** The ONE write path. ALWAYS REASSIGNS: `$derived` compares with `===`, so an
-	 *  in-place `order.push(…)` would leave every cell exactly where it was. */
+	 *  in-place `order.push(…)` would leave every cell exactly where it was. Every write goes
+	 *  back through `normalizeLayout`, so no edit can store a record a reload would read
+	 *  differently. */
 	function setLayout(patch: Partial<ControlsLayout>) {
-		controlsLayout = { ...controlsLayout, ...patch };
+		controlsLayout = normalizeLayout({ ...controlsLayout, ...patch }, LAYOUT_CFG);
 		saveLayout();
 	}
 
@@ -1330,22 +1322,13 @@
 	// clears `controlsLayout` and this brings the live bar back with no reload.
 	onMount(() => registerWindowReset(() => resetLayout()));
 
-	/** the roster buttons actually ON the bar, in bar order (the spacer is not one) */
-	function shownIds(): string[] {
-		return controlsLayout.order.filter((id) => BUTTONS[id] && !controlsLayout.hidden.includes(id));
-	}
-
 	/** THE VISUAL ROW — the bar exactly as the user reads it: the shown buttons with
-	 *  the FAB's well spliced in at `spacerIndex`. Every rearrangement is a splice on
-	 *  THIS sequence and the record is derived back from it (below), which is the W1
-	 *  correction: `order` and `spacerIndex` used to be moved independently, so a step
-	 *  across the well moved TWO cells at once ("Move left and right near play just
-	 *  swap items around the play button"). */
+	 *  the FAB's well spliced in at `spacerIndex` (`$lib/toolbarLayout`'s `visualRow`). Every
+	 *  rearrangement is a splice on THIS sequence and the record is derived back from it,
+	 *  which is the W1 correction: `order` and `spacerIndex` used to be moved independently,
+	 *  so a step across the well moved TWO cells at once. */
 	function visualIds(): string[] {
-		const shown = shownIds();
-		const seq: string[] = [...shown];
-		seq.splice(Math.max(0, Math.min(controlsLayout.spacerIndex, shown.length)), 0, SPACER);
-		return seq;
+		return visualRow(controlsLayout);
 	}
 
 	// The cells the bar renders. Collapsed, that is the well ALONE — the play button
@@ -1355,9 +1338,11 @@
 	// (the record keeps it; the Inspector and the object menu still set the pivot there) —
 	// the multiselect lane's own fallback (QUESTIONS-37-multiselect #1).
 	const NARROW_BAR = 440;
-	let viewportW = $state(typeof window === 'undefined' ? 1280 : window.innerWidth);
+	// 41 G23: the SERVER's width until mounted (see the hydration note above)
+	let viewportW = $state(1280);
 	onMount(() => {
 		const read = () => (viewportW = window.innerWidth);
+		read();
 		window.addEventListener('resize', read);
 		return () => window.removeEventListener('resize', read);
 	});
@@ -1377,35 +1362,17 @@
 		BUTTONS[id]?.run();
 	}
 
-	// --- rearranging -------------------------------------------------------------
-	/** Move one cell — a button or the well itself — exactly ONE visual slot.
-	 *
-	 *  Swapping with the neighbour ON THE VISUAL ROW is what makes crossing the play
-	 *  button a single step: the button and the well trade places, so the button ends
-	 *  up on play's other side and every other cell keeps its slot. The record is then
-	 *  READ OFF the mutated row — the well's index is where the well now is, and the
-	 *  shown buttons are poured back into their slots in `order`, so hidden entries
-	 *  keep their absolute positions and come back where they were left. */
+	// --- rearranging (the arithmetic is `$lib/toolbarLayout`'s) ---------------------
+	/** Move one cell — a button or the well itself — exactly ONE visual slot: it trades
+	 *  places with its neighbour on the visual row, so crossing the play button is a single
+	 *  step and every other cell keeps its slot. */
 	function moveCell(id: string, dir: number) {
-		const seq = visualIds();
-		const at = seq.indexOf(id);
-		const to = at + dir;
-		if (at < 0 || to < 0 || to >= seq.length) return;
-		seq[at] = seq[to];
-		seq[to] = id;
-		const shown = seq.filter((cell) => cell !== SPACER);
-		const order = [...controlsLayout.order];
-		let next = 0;
-		for (let i = 0; i < order.length; i++)
-			if (BUTTONS[order[i]] && !controlsLayout.hidden.includes(order[i])) order[i] = shown[next++];
-		setLayout({ order, spacerIndex: seq.indexOf(SPACER) });
+		setLayout(moveToolbarCell(controlsLayout, id, dir));
 	}
 
+	/** Take a bar button off the bar; it keeps its slot for Customize to bring it back. */
 	function hideButton(id: string) {
-		const at = shownIds().indexOf(id);
-		const spacerIndex =
-			at > -1 && at < controlsLayout.spacerIndex ? controlsLayout.spacerIndex - 1 : controlsLayout.spacerIndex;
-		setLayout({ hidden: [...controlsLayout.hidden, id], spacerIndex });
+		setLayout(hideToolbarButton(controlsLayout, id));
 	}
 
 	/** Put a button on the bar. W8b: an OPTIONAL view has never been in `order` at all,
@@ -1413,15 +1380,7 @@
 	 *  thing belongs and where the arrows can walk it from. A DEFAULT button that was
 	 *  hidden keeps its slot in `order` and returns to exactly where it was left. */
 	function showButton(id: string) {
-		if (!BUTTONS[id]) return;
-		const hidden = controlsLayout.hidden.filter((h) => h !== id);
-		const order = controlsLayout.order.includes(id)
-			? controlsLayout.order
-			: [...controlsLayout.order, id];
-		const at = order.filter((o) => BUTTONS[o] && !hidden.includes(o)).indexOf(id);
-		const spacerIndex =
-			at > -1 && at < controlsLayout.spacerIndex ? controlsLayout.spacerIndex + 1 : controlsLayout.spacerIndex;
-		setLayout({ order, hidden, spacerIndex });
+		setLayout(showToolbarButton(controlsLayout, id, LAYOUT_CFG));
 	}
 
 	/** W8b — SWAP: put `toId` in `fromId`'s exact slot and take `fromId` off the bar.
@@ -1429,17 +1388,10 @@
 	 *  The bar keeps its shape (same number of cells, same well position, every other
 	 *  cell untouched), which is the whole point: a user who wants the Animation tab a
 	 *  press away trades the button they never use for it, rather than growing the bar
-	 *  and then having to move things. `fromId` leaves `order` ENTIRELY rather than
-	 *  going into `hidden`, so it comes back on offer in every "Swap with" list and in
-	 *  Customize; `toId` is lifted out of wherever it sat first, so a button that was
-	 *  merely hidden cannot end up in `order` twice. */
+	 *  and then having to move things. */
 	function swapCell(fromId: string, toId: string) {
-		if (!BUTTONS[toId] || fromId === toId) return;
-		const order = controlsLayout.order.filter((o) => o !== toId);
-		const at = order.indexOf(fromId);
-		if (at < 0) return;
-		order[at] = toId;
-		setLayout({ order, hidden: controlsLayout.hidden.filter((h) => h !== toId && h !== fromId) });
+		if (!BUTTONS[toId]) return;
+		setLayout(swapToolbarCell(controlsLayout, fromId, toId));
 	}
 
 	// --- the toolbar's own right-click menus --------------------------------------

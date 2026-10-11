@@ -36,6 +36,8 @@
 	import { coarsePointer } from '$lib/inputDevice';
 	import { viewPrefs } from '$lib/viewPrefs';
 	import { recordingClean } from '$lib/helperLayer';
+	// 41 G10: the character studio hides the scene, so the selection glare stands down with it
+	import { studioIsolating } from '$lib/avatars/avatarState';
 	import { shadowQuality } from '$lib/lightParams';
 	import { useTask, useThrelte } from '@threlte/core';
 	import { framesHeld, registerComposerWarm, schedule } from '$lib/sceneLoader';
@@ -578,7 +580,7 @@
 		// 30b P1: ...and in INTERACT, which is play's hands without play's lock: a
 		// player-style view of the scene has no selection glare either
 		// 36-share: a clean recording is a viewer's picture too
-		const playing = $isLocked || $editorMode === 'interact' || $recordingClean;
+		const playing = $isLocked || $editorMode === 'interact' || $recordingClean || $studioIsolating;
 		if ($objectsGroup && !editing && !playing)
 			for (const uuid of $selectedObjects) addMeshes(outlineEffectSelected.selection, uuid);
 		outlineEffectLocked.selection.clear();

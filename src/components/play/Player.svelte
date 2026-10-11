@@ -4,6 +4,7 @@
     import VRControls from './VRControls.svelte'
     import PointerLockControls from './PointerLockControls.svelte'
     import AvatarRig from './AvatarRig.svelte'
+    import CharacterStudio from './CharacterStudio.svelte'
     import { playerCam, peerHands, worldRig, peerHandStyle } from '../../stores/sceneStore'
     import { userdata, peers, username } from '../../stores/appStore'
     // P2b: a peer standing in ANOTHER scene is looking at a different world, so their
@@ -19,7 +20,7 @@
     import { Text } from '@threlte/extras'
     // 36-avatars: a side whose hand the rigged body holds with its IK draws no floating box (the
     // body's hand IS the marker); the customise panel's preview of YOUR character renders here too
-    import { avatarIkPeers, avatarPreview } from '$lib/avatars/avatarState'
+    import { avatarIkPeers, avatarPreview, studioOpen } from '$lib/avatars/avatarState'
 
     // CO5 — A COLOCATED PEER IS RENDERED AS A GHOST, and the whole rule lives in this
     // component because it is PRESENTATION. `$colocatedPeers` is a peer id set derived
@@ -207,4 +208,6 @@
       lookId={$peers.peer?.id ?? ''}
       preview={{ position: $avatarPreview.position, yaw: $avatarPreview.yaw }}
     />
+    <!-- 41 G10: the isolated studio around it (flat screens; the panel opens it) -->
+    {#if $studioOpen}<CharacterStudio />{/if}
   {/if}

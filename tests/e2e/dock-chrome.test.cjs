@@ -372,7 +372,9 @@ h.run(async () => {
 		`6.6 ...and being icon-only, each carries an aria-label (${geom.labels.add} / ${geom.labels.min})`
 	);
 
-	// --- 7. the ＋ menu offers only views that are NOT already docked ---
+	// --- 7. the ＋ menu ADDS AND REMOVES (41 G22): every window of the registry the phone sheet
+	//        reads, the docked ones marked with a Remove hint (it used to drop docked views and
+	//        never listed the Node editor) ---
 	/** a REAL click on the ＋ of the panel that is showing (the id repeats per panel) */
 	const clickAdd = async () => {
 		const at = await A.page.evaluate(() => {
@@ -404,15 +406,18 @@ h.run(async () => {
 	await clickAdd();
 	await A.page.waitForTimeout(400);
 	let rows = await menuRows();
-	// 34 PF: six since the Profiler joined the dock views; 36-code: seven with the Code workspace
-	h.check(rows.length === 7, `7.1 with flow + Explorer docked the ＋ menu lists 7 views (${rows.length})`);
+	const reg = await A.page.evaluate(() => window.__stores.dockMenu.DOCK_WINDOWS.length);
+	h.check(rows.length === reg, `7.1 the ＋ menu lists every registry window (${rows.length} of ${reg})`);
+	const marked = await A.page.evaluate(() =>
+		[...document.querySelectorAll('[role="menuitem"].ctx-checked')].map((el) => el.querySelector('.flex-1')?.textContent.trim())
+	);
 	h.check(
-		!rows.some((r) => /Explorer/.test(r.label)) && !rows.some((r) => /Node editor/.test(r.label)),
-		`7.2 ...and neither of the two already in the dock (${rows.map((r) => r.label).join(' | ')})`
+		marked.length === 2 && marked.includes('Explorer') && marked.includes('Node editor'),
+		`7.2 ...the two already in the dock are marked (${marked.join(' | ')})`
 	);
 	await closeMenu();
 
-	// add one more tab and the list shrinks again — the filter is live, not a fixed list
+	// add one more tab and it is marked too — the state is read per open, not a fixed list
 	await A.page.evaluate(() => {
 		window.__stores.flowCodeClose.set(false);
 		window.__stores.bottomDock.activateDock('flow');
@@ -420,11 +425,10 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	await clickAdd();
 	await A.page.waitForTimeout(400);
-	rows = await menuRows();
-	h.check(
-		rows.length === 6 && !rows.some((r) => /Flow Code/.test(r.label)),
-		`7.3 docking Flow Code drops it from the list too (${rows.length}: ${rows.map((r) => r.label).join(' | ')})`
+	const marked2 = await A.page.evaluate(() =>
+		[...document.querySelectorAll('[role="menuitem"].ctx-checked')].map((el) => el.querySelector('.flex-1')?.textContent.trim())
 	);
+	h.check(marked2.includes('Flow Code') && marked2.length === 3, `7.3 docking Flow Code marks its row too (${marked2.join(' | ')})`);
 	await closeMenu();
 	await A.page.evaluate(() => window.__stores.flowCodeClose.set(true));
 	await A.page.waitForTimeout(500);

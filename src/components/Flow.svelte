@@ -110,9 +110,11 @@
 	// another dock view. They start docked, so they appear as dock tabs. Same list the
 	// strip's "+" renders ($lib/dockMenu) — they used to be two copies that drifted.
 	let addMenu: { x: number; y: number } | null = $state(null);
-	const addItems = dockAddItems();
+	// 41 G22: built per open (it reads what is docked right now) and without this window's own row
+	let addItems: any[] = $state([]);
 	function openAddMenu(e: MouseEvent) {
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		addItems = dockAddItems({ exclude: ['flow'] });
 		addMenu = { x: r.left, y: r.bottom + 4 };
 	}
 

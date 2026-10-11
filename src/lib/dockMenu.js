@@ -11,7 +11,7 @@ import {
 } from '../stores/appStore';
 import { imageEditorClose } from './image/imageEditorState';
 import { get } from 'svelte/store';
-import { activateDock, armDockMode, armDockModes, dockOccupants, dockTabs, moveDockTab, visibleDockKey, undockButtonMode, placeDockTabs, DOCK_FAMILY, DOCK_TITLES } from './bottomDock';
+import { activateDock, armDockMode, armDockModes, dockOccupants, dockTabs, moveDockTab, visibleDockKey, undockButtonMode, placeDockTabs, DOCK_FAMILY, DOCK_TITLES, DOCK_ICONS } from './bottomDock';
 import { queueMerge } from './windowTabs';
 
 // The dock's "+" add-a-view menu, in ONE place. The docked tab strip
@@ -22,16 +22,11 @@ import { queueMerge } from './windowTabs';
 // as a floating window (see `dockView`); the Explorer is one of them now that it is an
 // ordinary dock tab rather than the dock's separate occupant.
 //
-// W5: a view already IN the dock is dropped from the list — offering "＋ Explorer"
-// while the Explorer is a tab beside the "+" is a row that can only re-activate what
-// you are looking at. The occupancy is read HERE, at build time, and the menu is built
-// per open (DockTabs rebuilds `addItems` in its opener), so it cannot go stale. When
-// everything is docked the list would be EMPTY, which is a menu with nothing in it and
-// no explanation, so it degrades to one disabled row that says why.
-//
-// The Node editor is deliberately NOT in the base list, exactly as before: this menu
-// is also the FLOATING Node editor's own "+", where offering to open a second copy of
-// itself is nonsense. N / the toolbar button is its way back.
+// 41 G22 replaced W5's "drop what is already docked" and the "Node editor deliberately not
+// in the list" rules: the "+" ADDS AND REMOVES windows, one row per `DOCK_WINDOWS` entry (the
+// registry the phone sheet reads too), docked rows marked. The floating Node editor's own "+"
+// passes `exclude: ['flow']`. The occupancy is read at build time and both openers build the
+// list per open, so it cannot go stale.
 
 /**
  * W8b: the views this menu can open, as PLAIN DATA — no labels, no actions, no
@@ -69,7 +64,17 @@ export const DOCK_VIEWS = [
  * @type {{key: string, tooltip: string}[]}
  */
 export const DOCK_EXTRA_VIEWS = [{ key: 'imageEditor', tooltip: 'Crop, rotate, resize and adjust an Explorer image' }];
-const ADD_VIEWS = [...DOCK_VIEWS, ...DOCK_EXTRA_VIEWS];
+
+/**
+ * 41 G22 — THE WINDOW REGISTRY: every window that can live in the dock, in menu order. Both
+ * "+" surfaces read it — the phone's Windows sheet (`dockSheetRows`) and the desktop strip's
+ * menu (`dockAddItems`) — so they can no longer disagree. They did: the sheet listed the
+ * Node editor and the desktop "+" never did ("'+' missing node editor, currently it only can
+ * be clicked as button"), because the desktop list was DOCK_VIEWS and the sheet prepended
+ * the Node editor by hand.
+ * @type {{key: string, tooltip: string}[]}
+ */
+export const DOCK_WINDOWS = [{ key: 'flow', tooltip: 'Wire the scene’s behaviour as nodes' }, ...DOCK_VIEWS, ...DOCK_EXTRA_VIEWS];
 
 /**
  * What a "+" row does: put that view IN THE DOCK and show it. Kept beside the list
@@ -97,25 +102,32 @@ function dockView(key) {
 	activateDock(key);
 }
 
-/** @returns {{label: string, tooltip: string, action?: () => void, disabled?: boolean}[]} */
-export function dockAddItems() {
+/**
+ * 41 G22 — the desktop "+" is the phone sheet's twin: ADD / REMOVE windows in the dock, one row
+ * per `DOCK_WINDOWS` entry. A docked window is marked (checked) and its row removes it (closes
+ * it — the same as the sheet's switch going off); a floating one is brought into the dock; a
+ * closed one opens docked. The hint at the row's end says which, so a click is never a guess.
+ * (Before G22 the list dropped every docked view — W5 — which is what left the menu unable to
+ * remove anything and, with the Node editor missing, unable to even name it.)
+ * @param {{exclude?: string[]}} [options] `exclude`: the floating Node editor's own "+" leaves
+ *   itself out — offering a window its own row there is nonsense.
+ * @returns {{key: string, label: string, tooltip: string, icon: string, hint: string, checked: boolean, action: () => void}[]}
+ */
+export function dockAddItems({ exclude = [] } = {}) {
 	const occupied = get(dockOccupants);
-	const free = ADD_VIEWS.filter((view) => !occupied[view.key]?.present).map((view) => {
+	return DOCK_WINDOWS.filter((view) => !exclude.includes(view.key)).map((view) => {
 		const title = DOCK_TITLES[view.key] ?? view.key;
-		// not docked, but OPEN = it is a floating window, so this row moves it rather
-		// than opening anything. Saying "＋" there would promise a second copy.
+		const docked = !!occupied[view.key]?.present;
 		const closer = closeStoreFor(view.key);
-		const floating = !!closer && get(closer) === false;
-		return {
-			key: view.key,
-			label: floating ? `Dock ${title}` : `＋ ${title}`,
-			tooltip: floating ? `Bring the floating ${title} window into the dock` : view.tooltip,
-			action: () => dockView(view.key)
-		};
+		// not docked, but OPEN = a floating window: the row moves it rather than opening a copy
+		const floating = !docked && !!closer && get(closer) === false;
+		const icon = DOCK_ICONS[view.key] ?? 'app-window';
+		if (docked)
+			return { key: view.key, label: title, icon, hint: 'Remove', checked: true, tooltip: `${title} is in the dock — click to remove it (closes it)`, action: () => closeDockView(view.key) };
+		if (floating)
+			return { key: view.key, label: title, icon, hint: 'Dock', checked: false, tooltip: `Bring the floating ${title} window into the dock`, action: () => dockView(view.key) };
+		return { key: view.key, label: title, icon, hint: 'Open', checked: false, tooltip: view.tooltip, action: () => dockView(view.key) };
 	});
-	if (!free.length)
-		return [{ label: 'All views are docked', tooltip: 'Every view this menu can open is already a tab', disabled: true }];
-	return free;
 }
 
 /**
@@ -272,7 +284,7 @@ export function undockInto(key, targetKey) {
  */
 export function dockSheetRows() {
 	const occupied = get(dockOccupants);
-	return [{ key: 'flow', tooltip: 'Wire the scene’s behaviour as nodes' }, ...ADD_VIEWS].map((view) => {
+	return DOCK_WINDOWS.map((view) => {
 		const closer = closeStoreFor(view.key);
 		return {
 			key: view.key,

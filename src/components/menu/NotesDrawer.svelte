@@ -10,7 +10,7 @@
 	import Icon from '../ui/Icon.svelte';
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { saveSheetH } from '$lib/ui/sheetDrag.js';
-	import { phoneSheetMaxH } from '$lib/ui/phoneShell.js';
+	import { phoneSheetMaxH, notesSheetH } from '$lib/ui/phoneShell.js';
 	import EmptyState from '../ui/EmptyState.svelte';
 	import { notesDrawerOpen, inspectorClose, noteDoubleClickToOpen, showToast } from '../../stores/appStore.js';
 	import {
@@ -19,6 +19,7 @@
 		openAnnotation,
 		focusAnnotation,
 		visitedNote,
+		noteGroupKey,
 		deleteAnnotation,
 		displayName,
 		displayAuthor,
@@ -27,7 +28,6 @@
 		DEFAULT_NOTE_COLOR
 	} from '$lib/annotationsHandler';
 	import { objectsGroup, selectedObjects } from '../../stores/sceneStore.js';
-	import { safeStorage } from '$lib/safeStorage';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	// One bottom sheet at a time on narrow: opening scene notes closes the object/scene
@@ -44,19 +44,17 @@
 	// On a narrow/folded screen the notes drawer is a bottom SHEET (like the Flow/Explorer
 	// bottom dock) with a drag handle to adjust its height — the right-side drawer was
 	// covered by the profile chrome there. On wide screens it stays the right drawer.
-	let stored =
-		typeof localStorage !== 'undefined' ? parseInt(safeStorage.getItem('notesSheetH') || '') : NaN;
-	let sheetH = $state(
-		!stored || Number.isNaN(stored)
-			? Math.round((typeof window !== 'undefined' ? window.innerHeight : 800) * 0.45)
-			: stored
-	);
+	// 41 G12: the height is SHARED with the note card ($lib/ui/phoneShell notesSheetH): on a phone
+	// a note opens as a page of this sheet, over it at the same height, and the drawer stays
+	// mounted underneath — so closing the note returns to the list exactly as it was (scroll
+	// position, collapsed groups), with no re-opening.
+	const sheetH = $derived($notesSheetH);
 	// 40 F1: the grab bar is ui/SheetGrip — swipe down to the end closes the sheet; the height
 	// keeps its own key
 	/** @param {number} h @param {boolean} done */
 	function notesResize(h, done) {
-		sheetH = Math.round(h);
-		if (done) saveSheetH('notesSheetH', sheetH);
+		notesSheetH.set(Math.round(h));
+		if (done) saveSheetH('notesSheetH', Math.round(h));
 	}
 
 	/** @param {string} uuid */
@@ -81,7 +79,7 @@
 		/** @type {Map<string, {a: any, n: number}[]>} */
 		const map = new Map();
 		$annotations.forEach((a, i) => {
-			const key = (a.label || '').trim() || 'General';
+			const key = noteGroupKey(a);
 			if (!map.has(key)) map.set(key, []);
 			/** @type {any[]} */ (map.get(key)).push({ a, n: i + 1 });
 		});

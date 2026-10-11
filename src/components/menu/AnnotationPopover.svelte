@@ -2,7 +2,10 @@
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
+	import { saveSheetH } from '$lib/ui/sheetDrag.js';
+	import { notesSheetH, phoneSheetMaxH } from '$lib/ui/phoneShell.js';
 	import {
 		annotations,
 		activeAnnotation,
@@ -23,7 +26,9 @@
 		DEFAULT_NOTE_COLOR,
 		addReply,
 		deleteReply,
-		visibleReplies
+		visibleReplies,
+		openAnnotation,
+		noteGroupWalk
 	} from '$lib/annotationsHandler';
 	import { globalCamera, globalRenderer, orbitControls } from '../../stores/sceneStore';
 	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore.js';
@@ -111,15 +116,28 @@
 		return () => mq.removeEventListener('change', sync);
 	});
 
-	// one bottom sheet at a time on narrow: the note card takes the bottom, so the
-	// properties sheet and the notes-drawer sheet step aside (NotesDrawer precedent)
+	// one bottom sheet at a time on narrow: the note card takes the bottom, so the properties
+	// sheet steps aside (NotesDrawer precedent). 41 G12: the NOTES sheet does NOT — the card is a
+	// page of it (drill-in, at its height, over it), so the list stays mounted underneath and
+	// closing the note returns to it as it was ("when note closes i have to again open drawer for
+	// notes"), and ‹ › keep walking the notes from the card.
 	$effect(() => {
 		if (!open || !narrow) return;
-		untrack(() => {
-			inspectorClose.set(true);
-			notesDrawerOpen.set(false);
-		});
+		untrack(() => inspectorClose.set(true));
 	});
+	/** the card is a page of the open notes sheet (phone) */
+	const inDrawer = $derived(narrow && $notesDrawerOpen);
+	// 41 G12: ‹ › walk the note's label group in pin order, wrapping — the drawer's own arrows
+	const walk = $derived(existing ? noteGroupWalk($annotations, existing.id) : null);
+	function goToNote(id: string | null) {
+		if (id) openAnnotation(id, 'view');
+	}
+	// the phone card shares the notes sheet's height and grab bar (swipe down = back to the list)
+	const sheetH = $derived(Math.min($notesSheetH, $phoneSheetMaxH || $notesSheetH));
+	function sheetResize(h: number, done: boolean) {
+		notesSheetH.set(Math.round(h));
+		if (done) saveSheetH('notesSheetH', Math.round(h));
+	}
 
 	$effect(() => {
 		if (!open || narrow) return;
@@ -226,16 +244,30 @@
 		bind:this={card}
 		class="note-card ui-panel"
 		class:note-sheet={narrow}
-		style={narrow ? '' : `left:${pos.x}px; top:${pos.y}px;`}
+		class:note-in-drawer={inDrawer}
+		style={narrow ? `--note-sheet-h: ${sheetH}px;` : `left:${pos.x}px; top:${pos.y}px;`}
 		role="dialog"
 		tabindex="-1"
 		aria-label={editing ? 'Edit note' : 'Note'}
 	>
+		{#if narrow}
+			<SheetGrip class="note-grip" label="note" height={sheetH} min={160} onresize={sheetResize} onclose={close} />
+		{/if}
 		<div class="note-head">
 			<span class="note-num" style="background:{note.color || DEFAULT_NOTE_COLOR}"
 				>{noteNumber(note.id) || '+'}</span
 			>
 			<span class="note-title">{editing ? (existing ? 'Edit note' : 'New note') : displayName(note)}</span>
+			{#if !editing && walk && walk.prev}
+				<!-- 41 G12: previous / next in this note's group (the notes drawer's walk) -->
+				<button id="note-prev" class="note-icon" title={'Previous note in ' + walk.label} aria-label={'Previous note in ' + walk.label} onclick={() => goToNote(walk.prev)}>
+					<Icon name="chevron-left" size={16} aria-hidden="true" />
+				</button>
+				<span class="note-pos" style:min-width="{String(walk.ids.length).length * 2 + 1}ch" aria-label={`Note ${walk.index + 1} of ${walk.ids.length} in ${walk.label}`}>{walk.index + 1}/{walk.ids.length}</span>
+				<button id="note-next" class="note-icon" title={'Next note in ' + walk.label} aria-label={'Next note in ' + walk.label} onclick={() => goToNote(walk.next)}>
+					<Icon name="chevron-right" size={16} aria-hidden="true" />
+				</button>
+			{/if}
 			{#if !editing}
 				<button
 					class="note-icon"
@@ -246,7 +278,7 @@
 					<Icon name="pencil" size={16} aria-hidden="true" />
 				</button>
 			{/if}
-			<button class="note-icon" title="Close" aria-label="Close note" onclick={close}>
+			<button class="note-icon" title={inDrawer ? 'Close — back to the notes list' : 'Close'} aria-label={inDrawer ? 'Close note, back to the notes list' : 'Close note'} onclick={close}>
 				<Icon name="x" size={16} aria-hidden="true" />
 			</button>
 		</div>
@@ -732,5 +764,28 @@
 	}
 	.note-card.note-sheet .note-body {
 		padding-bottom: var(--controls-inset, 0px);
+	}
+	/* 41 G12: on the phone shell the card is a page of the notes sheet — the same place (above the
+	   bottom bar, #32 a) and the same height as the drawer it covers, with the sheet's grab bar */
+	:global(:root.phone-shell) .note-card.note-sheet {
+		bottom: var(--ps-bar-h, 0px);
+		height: var(--note-sheet-h, 45vh);
+		max-height: var(--ps-sheet-max, 92vh);
+	}
+	:global(:root.phone-shell) .note-card.note-sheet .note-body {
+		flex: 1;
+		min-height: 0;
+		overflow-y: auto;
+		padding-bottom: 12px;
+	}
+	.note-card :global(.note-grip) {
+		border-radius: 0.75rem 0.75rem 0 0;
+	}
+	.note-pos {
+		/* reserved for the widest "n/N", so the arrows never move under the finger */
+		text-align: center;
+		font-family: var(--font-ui-mono);
+		font-size: var(--fs-badge);
+		color: var(--text-muted);
 	}
 </style>

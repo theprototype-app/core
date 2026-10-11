@@ -98,3 +98,13 @@ export const phoneShellActive = writable(false);
 export const phoneSheetMaxH = writable(0);
 /** the smallest a resizable phone sheet gets before a release closes it (px) */
 export const PHONE_SHEET_MIN = 180;
+
+/** 41 G12: the NOTES SHEET's height (px), shared by the notes drawer and the note card it opens
+ *  on a phone — the card is a page of that sheet (drill-in), so both are one height and one grab
+ *  bar resizes both. Remembered under the drawer's own key (`notesSheetH`, the behaviour lock). */
+export const notesSheetH = writable(
+	(() => {
+		const v = typeof localStorage === 'undefined' ? NaN : parseInt(safeStorage.getItem('notesSheetH') || '');
+		return Number.isFinite(v) && v > 0 ? v : Math.round((typeof window === 'undefined' ? 800 : window.innerHeight) * 0.45);
+	})()
+);

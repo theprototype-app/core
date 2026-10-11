@@ -45,7 +45,7 @@
 	<div
 		id="module-source-window"
 		use:focusStack
-		class="fixed right-0 top-16 z-40 flex h-[70%] w-[520px] max-w-[92vw] flex-col gap-2 rounded-bl-lg bg-surface-1 p-3 text-xs text-text-2 shadow-xl"
+		class="fixed right-0 top-16 z-(--z-window) flex h-[70%] w-[520px] max-w-[92vw] flex-col gap-2 rounded-bl-lg bg-surface-1 p-3 text-xs text-text-2 shadow-xl"
 	>
 		<div class="flex items-center gap-2">
 			<span class="text-sm font-semibold text-text">Module source — {open.module}</span>

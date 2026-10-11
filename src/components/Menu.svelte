@@ -4,6 +4,7 @@
 	import MeshGenModal from './menu/MeshGenModal.svelte';
 	import MeshJobsCard from './menu/MeshJobsCard.svelte';
 	import Toasts from './menu/Toasts.svelte';
+	import SessionPrompts from './menu/SessionPrompts.svelte';
 	import FramingGuide from './menu/FramingGuide.svelte';
 	import CameraPipWindow from './menu/CameraPipWindow.svelte';
 	import Connect from './menu/Connect.svelte';
@@ -82,6 +83,7 @@
 <NotesDrawer />
 <LayoutsMenu />
 <Toasts />
+<SessionPrompts />
 <Users />
 <!-- 16-P5: letterbox bars while previewing a camera at a fixed aspect -->
 <FramingGuide />

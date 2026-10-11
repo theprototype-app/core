@@ -16,7 +16,7 @@
 {#if s}
 	<div
 		id="place-drag-chip"
-		class="place-chip pointer-events-none fixed z-(--z-menu) flex max-w-[260px] flex-col gap-0.5 rounded-md border bg-surface-1 px-2 py-1 text-xs text-text shadow-lg"
+		class="place-chip pointer-events-none fixed z-(--z-portal) flex max-w-[260px] flex-col gap-0.5 rounded-md border bg-surface-1 px-2 py-1 text-xs text-text shadow-lg"
 		class:place-ok={s.state === 'ok' || !onViewport}
 		class:place-warn={onViewport && s.state === 'warn'}
 		class:place-bad={onViewport && s.state === 'bad'}

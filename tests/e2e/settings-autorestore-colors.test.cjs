@@ -179,7 +179,8 @@ h.run(async () => {
 		window.__stores.objectsGroup.subscribe((g) => (group = g))();
 		return {
 			objects: group?.children.length ?? -1,
-			prompt: toasts.find((t) => t && t.id === 'restore-session')?.text ?? '',
+			// 41 G16: the prompt is a kit modal now
+			prompt: document.querySelector('#restore-session-modal')?.textContent ?? '',
 			done: toasts.some((t) => t && t.id === 'restore-done')
 		};
 	});
@@ -215,7 +216,7 @@ h.run(async () => {
 			text: done?.text ?? '',
 			sticky: !!done?.sticky,
 			kind: done?.kind ?? '',
-			prompt: toasts.some((t) => t && t.id === 'restore-session')
+			prompt: !!document.querySelector('#restore-session-modal')
 		};
 	});
 	h.check(onState.objects === 3, `pref ON restores the scene by itself (${onState.objects} objects)`);

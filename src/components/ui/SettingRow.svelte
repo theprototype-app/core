@@ -9,6 +9,10 @@
 	//   wide       a WIDE control (segmented 3+, slider, button pair, text field, list): it
 	//              drops to a full-width line under the label on mobile (< 640px)
 	//   stack      …and on desktop too (a control wider than ~260px)
+	// 41 G19: the row reflows by ITS OWN width (a container query on the row), not the viewport — the
+	// Settings window at 360-900 px wide on an unfolded phone or a narrow desktop window crushed a wide
+	// control's label into one word per line. Below 560 px a wide control (segmented, slider, two pieces)
+	// drops under the label at full width; below 420 px every control but a lone switch does.
 	// SEARCH: the root keeps `.setting-row` and the label `.sr-name`, the two hooks Settings'
 	// filter reads (Settings.svelte "apply"), so a migrated row is still found by its name.
 	// `id` names the row; the description gets `${id}-desc` for the control's describedby.
@@ -44,6 +48,7 @@
 	data-keywords={keywords}
 	{...rest}
 >
+	<div class="sr-body">
 	<div class="sr-text">
 		<div class="sr-head">
 			{#if labelFor}
@@ -65,21 +70,28 @@
 	{#if extra}
 		<div class="sr-extra">{@render extra()}</div>
 	{/if}
+	</div>
 </div>
 
 <style>
-	/* grid, not flex: legacy ui.css flips `.setting-row` to a flex COLUMN under 600px, and a
-	   grid ignores flex-direction (this scoped rule also outranks it: unlayered) */
+	/* the row is the CONTAINER (41 G19); its body is the grid. Containment makes the row the
+	   containing block of position:fixed descendants — nothing in a row is (ThemedSelect portals). */
 	.sr {
+		container: sr / inline-size;
+		padding: var(--setting-row-pad-y) 18px;
+		color: var(--text);
+		font-size: var(--fs-body);
+	}
+	/* grid, not flex: legacy ui.css flips `.setting-row` to a flex COLUMN under 600px — that now
+	   reaches only the root, whose one child is this grid */
+	.sr-body {
 		display: grid;
 		grid-template-columns: minmax(0, 1fr) auto;
 		grid-template-areas: 'text control' 'extra extra';
 		align-items: center;
 		column-gap: var(--space-6);
 		row-gap: 0;
-		padding: var(--setting-row-pad-y) 18px;
-		color: var(--text);
-		font-size: var(--fs-body);
+		min-width: 0;
 	}
 	.sr-text {
 		grid-area: text;
@@ -112,6 +124,7 @@
 		display: flex;
 		align-items: center;
 		justify-content: flex-end;
+		flex-wrap: wrap;
 		gap: var(--space-2);
 		min-width: 0;
 	}
@@ -120,12 +133,12 @@
 		min-width: 0;
 		margin-top: var(--space-3);
 	}
-	.sr-no-control {
+	.sr-no-control .sr-body {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-areas: 'text' 'extra';
 	}
-	/* a WIDE control on its own full-width line under the label */
-	.sr-stack {
+	/* a WIDE control on its own full-width line under the label (any width) */
+	.sr-stack .sr-body {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-areas: 'text' 'control' 'extra';
 		row-gap: var(--space-3);
@@ -141,31 +154,41 @@
 	}
 	@media (max-width: 639.98px) {
 		.sr {
-			column-gap: var(--space-4);
 			padding: var(--setting-row-pad-y) var(--space-4);
 		}
-		/* on a phone these are always wide: a segmented control, a slider, or a control of two
-		   or more pieces (two buttons, a field and its unit). Beside the label they squeezed the
-		   description into a narrow column (37-settings: Density, the volume sliders, Apply) */
-		.sr-wide,
-		.sr:has(.sr-control :global(:is(.seg, .sl))),
-		.sr:has(.sr-control > :global(:nth-child(2))) {
+		.sr-body {
+			column-gap: var(--space-4);
+		}
+		.sr-desc {
+			line-height: 1.4;
+		}
+	}
+	/* a wide control — flagged `wide`, a segmented control, a slider, or a control of two or more
+	   pieces (two buttons, a field and its unit, a control and its status badge) — beside the label
+	   squeezed the description into a narrow column. Under 560 px of ROW it drops below. */
+	@container sr (width < 560px) {
+		.sr-body:is(.sr-wide > *, :has(> .sr-control :global(:is(.seg, .sl))), :has(> .sr-control > :global(:nth-child(2)))) {
 			grid-template-columns: minmax(0, 1fr);
 			grid-template-areas: 'text' 'control' 'extra';
 			row-gap: var(--space-3);
 		}
-		.sr-wide .sr-control,
-		.sr:has(.sr-control :global(:is(.seg, .sl))) .sr-control,
-		.sr:has(.sr-control > :global(:nth-child(2))) .sr-control {
+		.sr-body:is(.sr-wide > *, :has(> .sr-control :global(:is(.seg, .sl))), :has(> .sr-control > :global(:nth-child(2)))) > .sr-control {
 			justify-content: stretch;
 		}
-		.sr-wide .sr-control > :global(*),
-		.sr:has(.sr-control :global(:is(.seg, .sl))) .sr-control > :global(*),
-		.sr:has(.sr-control > :global(:nth-child(2))) .sr-control > :global(*) {
+		.sr-body:is(.sr-wide > *, :has(> .sr-control :global(:is(.seg, .sl))), :has(> .sr-control > :global(:nth-child(2)))) > .sr-control > :global(*) {
 			flex: 1 1 auto;
 		}
-		.sr-desc {
-			line-height: 1.4;
+	}
+	/* a narrow row: every control but a lone switch goes under its label (a select or a single
+	   button beside the text left ~150 px of description) */
+	@container sr (width < 420px) {
+		.sr-body:not(:has(> .sr-control > :global(.tg:only-child))) {
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-areas: 'text' 'control' 'extra';
+			row-gap: var(--space-3);
+		}
+		.sr-body:not(:has(> .sr-control > :global(.tg:only-child))) > .sr-control {
+			justify-content: flex-start;
 		}
 	}
 </style>

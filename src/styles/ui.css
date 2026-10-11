@@ -66,33 +66,45 @@ input.tp-check:disabled {
 }
 
 :root {
-	/* z-tiers — every layered component maps to ONE of these (phase 68).
-	   viewport: three.js canvas
-	   drawer: side drawers (inspector, library, sidebar menu)
-	   bottom: the docked flow editor
-	   window: floating windows (chat, object list, undocked flow, script panel)
-	   hud: toolbar pills, play button, burger — the dock, always clickable
-	   modal: flowbite modals (settings, modules, attribution)
-	   toast: notifications — above everything */
-	--z-viewport: 0;
-	--z-drawer: 30;
-	--z-bottom: 35;
-	--z-window: 40;
-	--z-hud: 45;
-	/* modal/toast sit ABOVE the persistent top chrome — the avatar/peers popover
-	   (~996-998) and Connect (300) — which live outside this scale, so a modal and
-	   its X are never covered. Kept below ThemedSelect (9999) so in-modal dropdowns
-	   still open over the modal. */
-	/* E1: regular/info toasts drop BELOW modals so Settings/Modules/Sessions cover
-	   them; connection-request (action) toasts keep the high --z-toast tier so an
-	   approval is never missed while a modal is open. */
+	/* ── THE z-index SCALE (41-modals G3b) ─────────────────────────────────────────────────
+	   ONE ordered list, lowest first. Every PAGE-level z-index in the app is one of these
+	   tokens, or `calc(var(--z-x) ± n)` for a component's own sub-layers (|n| < 10, never
+	   reaching the next tier). A raw number is only for stacking INSIDE a component's own
+	   stacking context, and stays ≤ 20 — `npm run check:zindex` (CI) fails anything else.
+	   Top-layer elements (showModal() dialogs, popover="manual" panels) paint above all of
+	   this whatever their z-index; that is the platform, not the scale.
+
+	   canvas < floating chrome < selection toolbar < docks < sheets < windows < HUD
+	   < top-bar chrome < popovers/menus < passive toasts < modals < What's new/onboarding
+	   < transient portals (selects, context menus, drag ghosts) < action toasts */
+	--z-canvas: 0; /* the three.js canvas */
+	--z-canvas-overlay: 2; /* drawn ON the picture: camera PiP, framing guide, note markers, crosshair */
+	--z-chrome: 30; /* floating chrome: corner FABs, the Controls pill, side drawers, edge-docked windows */
+	--z-selection: 32; /* the phone selection toolbar (move/rotate/scale/inspect): under every dock and sheet (G20) */
+	--z-dock: 35; /* the bottom dock (Flow, Explorer, the editors) */
+	--z-sheet: 38; /* phone sheets, 37 (scrim) .. 43; a hosted window as a sheet sits at +2/+3 */
+	--z-window: 40; /* floating windows, 40..44 — windowFocus ranks the stack inside this band */
+	--z-phone-bar: 44; /* the phone tab bar + raised Play: the frame every sheet ends at */
+	--z-hud: 45; /* the game HUD layer; the Controls pill when "always on top" */
+	--z-side-panel: 50; /* the Inspector side drawer: over windows and the HUD it edits */
+	--z-chrome-top: 300; /* the top bar: logo/burger, undo/redo, Connect, notes/notifications/peers/profile */
+	--z-popover: 1000; /* menus + popovers opened from chrome: main menu, profile, Add, search, note card */
+	/* E1: passive toasts ("Saved", "Copied") sit UNDER modals so Settings/Modules cover them */
 	--z-toast-low: 1050;
-	--z-modal: 1100;
+	--z-modal: 1100; /* app modals (Settings, Modules, Sessions, Templates, …): they cover ALL chrome, logo included */
+	--z-onboarding: 1150; /* What's new, Welcome, tours: above modals and every top/bottom button */
+	/* transient popups portalled to <body> — dropdowns, context menus, tooltips, drag ghosts. Above
+	   modals because a modal opens them; they close on the next outside press. */
+	--z-portal: 1180;
+	/* action toasts (connection approvals) are never missed, whatever is open; + the GPU-lost
+	   overlays at calc(var(--z-toast) + n) */
 	--z-toast: 1200;
-	/* the logo/burger menu is the TOP-most persistent chrome — above Connect (300)
-	   and toasts (1200) so it is never opened "behind" them. Modals launched from it
-	   close the menu, so they don't need to out-rank it. */
-	--z-menu: 1300;
+	/* OLD NAMES, kept as aliases so a branch written before the scale still resolves (an unknown
+	   var() silently becomes z-index: auto). New code uses the names above. */
+	--z-viewport: var(--z-canvas);
+	--z-drawer: var(--z-chrome);
+	--z-bottom: var(--z-dock);
+	--z-menu: var(--z-portal);
 	/* how much of the bottom the Controls pill + HUD buttons occupy; side drawers
 	   inset ABOVE it on narrow screens (same idea as --bottom-inset for the dock). */
 	--controls-inset: 0px;
@@ -143,7 +155,7 @@ input.tp-check:disabled {
 @media (min-width: 641px) {
 	:root.connect-docked #inspector {
 		top: calc(var(--connect-bottom, 0px) + 4px) !important;
-		z-index: 1000 !important;
+		z-index: calc(var(--z-chrome-top) + 1) !important;
 	}
 }
 /* inspector bottom-sheet grab bar (40 F1: ui/SheetGrip, sticky) — hidden in the wide

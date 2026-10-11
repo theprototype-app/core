@@ -122,7 +122,7 @@
 	.cp-scrim {
 		position: fixed;
 		inset: 0;
-		z-index: var(--z-menu);
+		z-index: var(--z-portal);
 		background: var(--scrim);
 	}
 	.cp {
@@ -130,7 +130,7 @@
 		top: 14vh;
 		left: 50%;
 		transform: translateX(-50%);
-		z-index: calc(var(--z-menu) + 1);
+		z-index: calc(var(--z-portal) + 1);
 		width: min(600px, calc(100vw - 24px));
 		max-height: 64vh;
 		display: flex;

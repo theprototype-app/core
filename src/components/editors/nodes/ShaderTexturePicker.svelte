@@ -331,7 +331,7 @@
 	/* the portaled hover card sits above every panel: it is transient and pointer-inert */
 	.shader-tex-card {
 		position: fixed;
-		z-index: var(--z-menu, 1300);
+		z-index: var(--z-portal);
 		pointer-events: none;
 		display: flex;
 		flex-direction: column;

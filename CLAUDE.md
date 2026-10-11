@@ -4611,14 +4611,17 @@ loadable play content. Everything a user does must be visible to connected peers
 - The camera PiP frame deliberately sits BELOW the tiers (z-index 2): it is a
   viewport overlay whose picture is drawn by the render loop, so panels and HUD must
   cover it (16-Q6).
-- **z-index tiers** (`ui.css` `:root`): viewport 0 · drawer 30 · bottom 35 · window 40 ·
-  hud 45 · **modal 1100 · toast 1200 · menu 1300**. The high modal/toast/menu values
-  clear the ad-hoc persistent chrome that lives OUTSIDE the scale — Users (avatar/peers)
-  ~996-998, Connect 300, ContextMenu 999-1001, ThemedSelect 9999. flowbite Modal
-  hardcodes its dialog z-50 + backdrop z-40, remapped onto `--z-modal` by an UNLAYERED
-  `[role='dialog'][aria-modal='true']` rule (unlayered beats Tailwind's layered utility
-  without !important). The logo/burger menu sits at `--z-menu` (top-most); opening a
-  modal from it calls `closeMenu.set(true)` so the menu can't cover the modal.
+- **z-index: ONE SCALE (41 G3b), `ui.css` `:root`, lowest first** — `--z-canvas` 0 · `--z-canvas-overlay` 2 ·
+  `--z-chrome` 30 (FABs, Controls pill, side drawers) · `--z-selection` 32 (phone strip, under every sheet) ·
+  `--z-dock` 35 · `--z-sheet` 38 · `--z-window` 40..44 · `--z-phone-bar` 44 · `--z-hud` 45 · `--z-side-panel` 50 ·
+  `--z-chrome-top` 300 (logo, undo/redo, Connect, the top-right corner) · `--z-popover` 1000 (main menu, profile,
+  Add, search) · `--z-toast-low` 1050 · `--z-modal` 1100 · `--z-onboarding` 1150 (What's new, Welcome, tours) ·
+  `--z-portal` 1180 (selects, context menus, drag ghosts — above the modals that open them) · `--z-toast` 1200
+  (approvals). Modals COVER the logo (the old logo-above-modals one-click trick is gone). Use `var(--z-…)` /
+  `z-(--z-…)` or `calc(var(--z-…) ± n)`; `npm run check:zindex` (CI) fails a page-level literal ≥ 30, a
+  number code reads back carries `// z-ok: <reason>`. Old names (`--z-drawer/-bottom/-viewport/-menu`) are
+  aliases. The camera PiP is `--z-canvas-overlay`. App modals are non-modal `<dialog>`s on `--z-modal`;
+  `ConfirmModal`/`SessionPrompts` are true modals (top layer).
 - **flowbite 1.x Dropdowns are TOP-LAYER popovers** (`popover="manual"`, `:popover-open`)
   — they paint above the ENTIRE page whatever the z-index (measured: a panel at 996
   covered the profile avatar at 2000, in the same stacking context). No z-index on an

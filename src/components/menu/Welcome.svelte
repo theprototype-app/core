@@ -43,13 +43,13 @@
 {#if $welcomeOpen}
 	<!-- Own backdrop + card rather than a flowbite Modal: this must sit above every
 	     panel at the modal tier and needs no accordion/scroll chrome. -->
-	<div class="welcome-backdrop" style="z-index: calc(var(--z-modal) - 1)"></div>
+	<div class="welcome-backdrop" style="z-index: calc(var(--z-onboarding) - 1)"></div>
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 	<div
 		id="welcome-overlay"
 		class="welcome-card"
 		use:minimalScroll
-		style="z-index: var(--z-modal)"
+		style="z-index: var(--z-onboarding)"
 		role="dialog"
 		aria-modal="true"
 		aria-label="Welcome to theprototype.app"

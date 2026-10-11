@@ -32,7 +32,7 @@ export const focusTick = writable(0);
 function apply() {
 	const top = order.length - 1;
 	order.forEach((node, index) => {
-		node.style.zIndex = String(40 + Math.max(0, 4 - (top - index)));
+		node.style.zIndex = String(40 + Math.max(0, 4 - (top - index))); // z-ok: the --z-window band (40..44); TabStrips + suites parse it as a number
 	});
 	focusTick.update((n) => n + 1);
 }

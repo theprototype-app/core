@@ -239,7 +239,7 @@
 					use:minimalScroll
 					on:mouseenter={() => clearTimeout(closeTimer)}
 					class="ctx-scroll tp-ui tp-menu fixed min-w-36 overflow-y-auto overflow-x-hidden"
-					style="z-index: calc(var(--z-menu) + 2);"
+					style="z-index: calc(var(--z-portal) + 2);"
 				>
 					<!-- 38 R9: on the phone shell a submenu is a sheet laid OVER its parent
 					     (drill in place), so it needs a way back; hidden everywhere else

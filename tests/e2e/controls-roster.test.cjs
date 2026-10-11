@@ -118,7 +118,7 @@ h.run(async () => {
 	// plus Play. It reads checked (it IS on the bar) and carries no toggle, because
 	// there is no toolbar without a way to press play.
 	h.check(
-		menu.filter((r) => r.checked).length === 10, // 37 R1: + Pivot
+		menu.filter((r) => r.checked).length === 14, // 37 R1: + Pivot; 41 G1: + the four corner buttons (Left/Right corner rows)
 		`Customize lists the nine buttons AND the play well as on the bar (${menu.filter((r) => r.checked).length})`
 	);
 	h.check(
@@ -232,14 +232,14 @@ h.run(async () => {
 	await cellMenu(A.page, 'Explorer');
 	await pick(A.page, 'Customize toolbar…');
 	h.check(
-		(await rows(A.page)).filter((r) => r.checked).length === 9,
+		(await rows(A.page)).filter((r) => r.checked).length === 13, // 41 G1: + 4 corner rows
 		'premise: Customize opens showing the hidden button unchecked (8 buttons + Play)'
 	);
 	await pick(A.page, 'Reset toolbar');
 	// W1: Reset is `keepOpen` too, so the list itself has to show the restored roster
 	h.check(await menuOpen(A.page), 'Reset toolbar leaves the Customize list up');
 	h.check(
-		(await rows(A.page)).filter((r) => r.checked).length === 10,
+		(await rows(A.page)).filter((r) => r.checked).length === 14, // 41 G1: + 4 corner rows
 		`and the rows re-rendered IN PLACE — all nine read checked again (${(await rows(A.page)).filter((r) => r.checked).length})`
 	);
 	titles = await barTitles(A.page);
@@ -668,8 +668,10 @@ h.run(async () => {
 	// move that swapped two SHOWN buttons jumped the row over the hidden one between
 	// them and the ticks appeared to scramble.
 	const barCells = (await barTitles(A.page)).map((t) => (t === '—' ? 'Play' : t));
+	// 41 G1: the corner buttons have their own checked rows (Left/Right corner) after the bar's
+	const barRows = shownAfter.filter((l) => barCells.includes(l));
 	h.check(
-		shownAfter.join(' | ') === barCells.join(' | '),
+		barRows.join(' | ') === barCells.join(' | ') && shownAfter.slice(0, barRows.length).join() === barRows.join(),
 		`the Customize rows mirror the bar exactly, well included (rows: ${shownAfter.join(' | ')} / bar: ${barCells.join(' | ')})`
 	);
 	h.check(

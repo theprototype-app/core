@@ -1,8 +1,7 @@
 <script lang="ts">
-	import Icon from '../ui/Icon.svelte';
-	import { remoteStreams, mutedPeers, micActive, pttActive, toggleMic, spatialVoice } from '$lib/voiceChat';
+	import { remoteStreams, mutedPeers, spatialVoice } from '$lib/voiceChat';
 
-	// hidden audio sinks for remote voices + the mic toggle button.
+	// hidden audio sinks for remote voices (41 G1: the mic button lives in Controls now).
 	// muted/volume are set as properties in the action — the Svelte attribute
 	// binding on media elements only applies at load time. In spatial mode the
 	// element stays attached at volume 0 (Chrome only pumps WebRTC audio into
@@ -22,14 +21,5 @@
 	<audio autoplay use:attach={{ stream, muted: $mutedPeers.includes(peerId), spatial: $spatialVoice }}></audio>
 {/each}
 
-<!-- bottom-right stack (93): mic above chat, BELOW the bottom dock's z-tier
-     so an open flow editor / Explorer covers them -->
-<button
-	id="mic-button"
-	class="tp-ui hud-fab fixed bottom-16 right-4 z-(--z-chrome)"
-	class:on={$micActive || $pttActive}
-	title={$micActive ? 'Microphone on — click to mute' : 'Microphone off — click to talk, or hold V for push-to-talk'}
-	on:click={toggleMic}
->
-	{#if $micActive || $pttActive}<Icon name="mic" size={20} aria-hidden="true" />{:else}<Icon name="mic-off" size={20} aria-hidden="true" />{/if}
-</button>
+<!-- 41 G1: the mic toggle moved into Controls.svelte's roster (a corner-stack or bar button,
+     id #mic-button, same title and toggleMic) so it can be moved and removed like the rest -->

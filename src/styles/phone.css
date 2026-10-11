@@ -16,6 +16,7 @@
 
 /* ---- 1. old phone chrome off ------------------------------------------------------- */
 :root.phone-shell #controls-pill,
+:root.phone-shell .hud-stack, /* 41 G1: the corner stacks, whatever they hold */
 :root.phone-shell #chat-button,
 :root.phone-shell #mobile-add-button,
 :root.phone-shell #ai-hud-button,

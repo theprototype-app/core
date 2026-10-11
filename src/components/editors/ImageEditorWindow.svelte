@@ -937,7 +937,7 @@
 		tabindex="-1"
 		use:ownKeys
 		class="tp-themed fixed inset-x-0 bottom-0 tp-ui tp-dock-panel flex flex-col p-2 outline-hidden {dockVisible ? '' : 'hidden'}"
-		style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid var(--tp-line)"
+		style="z-index: var(--z-dock); height: {$dockHeight}px; border-top: 1px solid var(--tp-line)"
 		data-key-scope="panel"
 		role="region"
 		aria-label="Image editor (docked)"

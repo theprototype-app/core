@@ -407,7 +407,11 @@
      landed on the backdrop: a long-press opens this menu while the finger is still
      down, so the backdrop mounts underneath it and the finger's own lift used to
      land here and shut the menu instantly. Requiring the pointerdown too means the
-     opening gesture cannot close what it just opened, with no timers involved. -->
+     opening gesture cannot close what it just opened, with no timers involved.
+     41 G18: the same rule for `contextmenu`. Android fires its OWN contextmenu for a long press
+     at the finger; when that lands after our hold opened this menu (touchHold, 450 ms) its
+     target is this backdrop, and it shut the Explorer long-press menu the moment it showed.
+     A right-click outside still closes: its pointerdown lands here first. -->
 <div
 	use:portal
 	class="fixed inset-0"
@@ -415,7 +419,7 @@
 	role="presentation"
 	on:pointerdown={() => (backdropPressed = true)}
 	on:click={() => backdropPressed && dispatch('close')}
-	on:contextmenu|preventDefault={() => dispatch('close')}
+	on:contextmenu|preventDefault={() => backdropPressed && dispatch('close')}
 ></div>
 
 <!-- the menu container takes a mousedown handler only to KEEP focus in the filter

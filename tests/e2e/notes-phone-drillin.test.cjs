@@ -58,9 +58,12 @@ h.run(async () => {
 	const ids = await P.evaluate(async () => {
 		const s = window.__stores;
 		for (let i = 0; i < 4; i++) s.commandsHandler.sceneCommand('/create box');
-		await new Promise((r) => setTimeout(r, 1200));
 		let g;
-		s.objectsGroup.subscribe((v) => (g = v))();
+		for (let t = 0; t < 100; t++) {
+			s.objectsGroup.subscribe((v) => (g = v))();
+			if (g?.children?.length >= 4) break;
+			await new Promise((r) => setTimeout(r, 200));
+		}
 		const out = [];
 		for (let i = 0; i < 14; i++) {
 			s.annotationsHandler.addAnnotation(g.children[i % g.children.length].uuid);

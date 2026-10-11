@@ -394,6 +394,11 @@ h.run(async () => {
 		return !!document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2)?.closest('#image-editor-close');
 	});
 	h.check(head, 'the top bar does not cover the editor\'s close button');
+	// 41 G18: on a phone the panel starts HIDDEN until the user opens it (the ✎ tab)
+	const hiddenFirst = await S(P, () => document.querySelectorAll('#image-editor-window .ws-panel-secondary').length);
+	h.check(hiddenFirst === 0, `on a phone the Edit panel starts hidden (${hiddenFirst})`);
+	await P.page.locator('#image-editor-window [data-ws-mode="edit"]').tap();
+	await P.page.waitForTimeout(400);
 	const stack = await S(P, () => {
 		const c = document.querySelector('#image-editor-canvas-wrap').getBoundingClientRect();
 		const p = document.querySelector('#image-editor-window .ws-panel-secondary').getBoundingClientRect();

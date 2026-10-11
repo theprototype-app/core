@@ -25,6 +25,7 @@
 	import { dockAddItems } from '$lib/dockMenu';
 	import { fly } from 'svelte/transition';
 	import { safeStorage } from '$lib/safeStorage';
+	import { readPanelOpen } from '$lib/ui/handheldPanels.js';
 
 	const clampH = (h: number) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
 	// 18-B: floating-window size limits, shared with the clamp helpers
@@ -33,9 +34,8 @@
 	let docked = $state(true);
 	// mirrors Nodes' palette-open (bound below) so the docked content only insets above
 	// the Controls HUD when the node palette is actually shown (overlapping the HUD)
-	let paletteOpen = $state(
-		typeof localStorage !== 'undefined' ? safeStorage.getItem('flowPaletteOpen') !== 'false' : true
-	);
+	// 41 G18: the same per-device rule as the palette itself (hidden on a phone until opened)
+	let paletteOpen = $state(readPanelOpen('flowPaletteOpen', true));
 	let winW = $state(760);
 	let winH = $state(480);
 	// keep the floating window within the viewport (a persisted wide rect used to push

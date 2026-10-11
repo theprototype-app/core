@@ -661,6 +661,78 @@ export function compareDocs(a, b) {
 	return { a: sa, b: sb, summary, detailed, groups, objects, cpu };
 }
 
+// ---------------------------------------------------------------- 41 G17: the Details sidebar
+
+/**
+ * WHAT THE DETAILS SIDEBAR SAYS about the selection — ONE frame, a RANGE, or (nothing selected)
+ * the whole RECORDING: frame time (p50 / p95 / max), fps, draw calls and triangles (p50 / max,
+ * against the Quest budget), GPU ms when the recording measured it, the quality levels seen,
+ * stalls, the heaviest CPU phases; and, from the detailed captures behind it, how many materials
+ * were drawn, what each module/game cost, and the PICKED object (its draw calls, triangles,
+ * meshes, materials, CPU ms). Pure: the sidebar renders it, the unit test reads it.
+ * @param {import('./tpprof.js').Tpprof} doc
+ * @param {{from: number, to: number} | null} sel
+ * @param {string | null} [picked] an object/mesh uuid (a tree row the user clicked)
+ */
+export function selectionDetails(doc, sel, picked = null) {
+	const range = sel ?? spanOf(doc);
+	const frames = framesIn(doc.frames ?? [], range.from, range.to);
+	const st = rangeStats(doc, range.from, range.to);
+	const kind = !sel ? 'recording' : frames.length === 1 ? 'frame' : 'range';
+	/** @type {number[]} */
+	const gpu = [];
+	/** @type {number[]} */
+	const quality = [];
+	for (const f of frames) {
+		if (typeof f.gpu === 'number' && Number.isFinite(f.gpu)) gpu.push(f.gpu);
+		if (typeof f.quality === 'number' && Number.isFinite(f.quality)) quality.push(f.quality);
+	}
+	const caps = capturesFor(doc, range.from, range.to);
+	const rows = mergeCaptures(caps.captures).filter((r) => !isEditorRow(r));
+	const tree = buildTree(rows);
+	const total = tree.calls || 1;
+	const modules = tree.children
+		.map((g) => ({ label: g.label, calls: g.calls, tris: g.tris, ms: g.ms, objects: g.objects ?? g.children.length, share: Math.round((g.calls / total) * 1000) / 10 }))
+		.sort(SORTS.cost)
+		.slice(0, 6);
+	/** @type {null | {label: string, group: string, calls: number, tris: number, ms: number, meshes: number, materials: number, shadowCalls: number}} */
+	let object = null;
+	if (picked)
+		for (const g of tree.children)
+			for (const o of g.children)
+				if (!object && (o.uuid === picked || o.children.some((m) => m.uuid === picked)))
+					object = {
+						label: o.label,
+						group: g.label,
+						calls: o.calls,
+						tris: o.tris,
+						ms: o.ms,
+						meshes: o.children.filter((m) => !m.shadow).length,
+						materials: new Set(o.children.filter((m) => !m.shadow && m.material).map((m) => m.material)).size,
+						shadowCalls: o.shadowCalls
+					};
+	return {
+		kind,
+		from: st.from,
+		to: st.to,
+		frames: frames.length,
+		ms: { p50: st.msP50, p95: st.msP95, max: st.msMax },
+		fps: st.fpsP50,
+		calls: { p50: st.callsP50, max: st.callsMax, budget: BUDGET.calls },
+		tris: { p50: st.trisP50, max: st.trisMax, budget: BUDGET.tris },
+		gpu: gpu.length ? { mean: r3(gpu.reduce((a, b) => a + b, 0) / gpu.length), max: r3(Math.max(...gpu)) } : null,
+		quality: quality.length ? { min: Math.min(...quality), max: Math.max(...quality) } : null,
+		stalls: st.stalls,
+		cpu: st.cpu ? st.cpu.phases.filter((p) => p.mean > 0).sort((a, b) => b.mean - a.mean).slice(0, 4) : null,
+		detailed: !!doc.captures?.length,
+		/** ms from the selection to the capture used when none lies inside it (null = inside) */
+		nearest: caps.nearest ? caps.distance : null,
+		materials: rows.length ? new Set(rows.filter((r) => !r.shadow && r.material).map((r) => r.material)).size : null,
+		modules,
+		object
+	};
+}
+
 // ---------------------------------------------------------------- formatting (shared by the panel and the headset lane)
 
 /** 1234567 → "1.23M", 12345 → "12.3k" @param {number | null | undefined} n */

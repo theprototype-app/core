@@ -79,8 +79,10 @@
 	import { kitNodeTypes } from '$lib/kit/catalog.js';
 	import { flowNodes as flowNodesStore, flowEdges as flowEdgesStore, customNodeDefs, nodeDesignerOpen, flowGraphs, activeGraphId, SCENE_GRAPH, setActiveGraph, updateGraph } from '../../stores/flowStore';
 	import { createObjectGraph, requestDeleteObjectGraph, recordFlowNodesEntry } from '$lib/flowGraphs';
-	import { deselectObject } from '$lib/objectActions';
+	import { deselectObject, applySelectionSet } from '$lib/objectActions';
 	import { flowMouseBindings } from '$lib/flowPrefs';
+	import Breadcrumbs from '../ui/Breadcrumbs.svelte'; // 41 G15
+	import { readPanelOpen, writePanelOpen } from '$lib/ui/handheldPanels.js'; // 41 G18
 	import { objectsGroup, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
@@ -401,10 +403,9 @@
 
 	// palette collapse + side (82), persisted. Exported so the docked host (Flow) can
 	// inset its content above the Controls HUD only when the palette is actually shown.
+	// 41 G18: on a phone it starts HIDDEN until the user opens it (handheldPanels).
 	let {
-		paletteOpen = $bindable(
-			typeof localStorage === 'undefined' || safeStorage.getItem('flowPaletteOpen') !== 'false'
-		)
+		paletteOpen = $bindable(readPanelOpen('flowPaletteOpen', true))
 	}: { paletteOpen?: boolean } = $props();
 	let paletteSide = $state(typeof localStorage !== 'undefined' ? safeStorage.getItem('flowPaletteSide') ?? 'left' : 'left');
 	// #20 P7: the left column's own height, measured — the graph tree's resize ceiling
@@ -620,14 +621,16 @@
 	// 166: flow PROPERTIES panel — curated graph prefs (LOCAL, persisted) + the
 	// selected node's props. Right-side, collapses like the palette.
 	const LS = typeof localStorage !== 'undefined' ? localStorage : null;
-	let propsOpen = $state(LS?.getItem('flowPropsOpen') === 'true');
+	let propsOpen = $state(readPanelOpen('flowPropsOpen', false));
 	// 4.3: right-panel tab — 'info' (selected node's params) | 'settings' (graph + name/note)
 	let propsTab = $state(LS?.getItem('flowPropsTab') || 'settings');
 	// 179: the properties panel auto-reflows to the side OPPOSITE the palette so
 	// their divider tabs never overlap (the palette-side toggle used to hide it)
 	const propsSide = $derived(paletteSide === 'right' ? 'left' : 'right');
 	let edgeStyle = $state(LS?.getItem('flowEdgeStyle') ?? 'bezier');
-	let showMinimap = $state(LS?.getItem('flowMinimap') !== 'false');
+	// 41 G15: on a phone the minimap was a black slab over the canvas (node-graph-text.jpg):
+	// it starts OFF there (the ⚙ Settings tab still turns it on, remembered per device)
+	let showMinimap = $state(readPanelOpen('flowMinimap', true));
 	let bgPattern = $state(LS?.getItem('flowBg') ?? 'dots');
 	let gridSnapOn = $state(LS?.getItem('flowGridSnap') !== 'false');
 	let gridSize = $state(+(LS?.getItem('flowGridSize') ?? '25'));
@@ -1515,7 +1518,7 @@
 	function propsOpenFor(tab: 'info' | 'settings') {
 		propsOpen = true;
 		propsTab = tab;
-		LS?.setItem('flowPropsOpen', 'true');
+		writePanelOpen('flowPropsOpen', true);
 		LS?.setItem('flowPropsTab', tab);
 	}
 
@@ -1628,6 +1631,81 @@
 				}))
 			: []
 	);
+
+	// 41 G15 — THE BREADCRUMB BAR: Scene › <object> › ⧉ group › ⧉ group, one line above the
+	// graph (ui/Breadcrumbs). Every crumb opens its SIBLINGS to jump to. At the graph level a
+	// crumb's siblings are the scene's flows (Main + every object that owns one) — the same
+	// list from Scene and from the object, because that is the one choice at that level. Picking
+	// the current one goes back to the TOP of that flow (out of any open group).
+	// $objectsGroup is read on purpose: a rename/delete must reach the rows (THREE is not reactive)
+	const flowRows = $derived.by(() => {
+		const group = $objectsGroup as any;
+		const rows = Object.keys($flowGraphs ?? {})
+			.filter((key) => key !== SCENE_GRAPH)
+			.map((uuid) => {
+				const o = group?.getObjectByProperty?.('uuid', uuid);
+				return { uuid, name: o?.name || o?.type || 'Object', missing: !o };
+			})
+			.filter((r) => !r.missing);
+		// the object you are on is a flow destination even before it has a document
+		if (activeId !== SCENE_GRAPH && !rows.some((r) => r.uuid === activeId))
+			rows.push({ uuid: activeId, name: activeOwnerName, missing: false });
+		return rows.sort((a, b) => a.name.localeCompare(b.name));
+	});
+	function flowSwitchItems() {
+		const items: any[] = [
+			{
+				label: MAIN_GRAPH_LABEL + ' — the Scene graph',
+				icon: 'waypoints',
+				checked: activeId === SCENE_GRAPH,
+				tooltip: 'The scene-wide graph (deselects the object)',
+				action: () => (activeId === SCENE_GRAPH ? (level = null) : deselectObject())
+			}
+		];
+		if (flowRows.length) items.push({ section: 'Object flows' });
+		for (const r of flowRows)
+			items.push({
+				label: r.name,
+				icon: 'box',
+				checked: r.uuid === activeId,
+				tooltip: r.uuid === activeId ? 'The top of this flow' : `Edit ${r.name}'s flow (selects it)`,
+				action: () => (r.uuid === activeId ? (level = null) : applySelectionSet([r.uuid]))
+			});
+		return items;
+	}
+	/** the groups that share `groupId`'s parent — the crumb's siblings */
+	function groupSiblingItems(groupId: string) {
+		const all = nodes as any[];
+		const parents = parentMap(all);
+		const parent = parents.get(groupId) ?? null;
+		return all
+			.filter((n) => isGroup(n) && (parents.get(n.id) ?? null) === parent)
+			.map((n) => ({ id: n.id, label: n.data?.label ?? 'Group' }))
+			.sort((a, b) => a.label.localeCompare(b.label))
+			.map((g) => ({
+				label: g.label,
+				icon: 'group',
+				checked: g.id === groupId,
+				tooltip: g.id === groupId && g.id !== level ? 'Back to this group' : 'Open this group',
+				action: () => enterGroup(g.id)
+			}));
+	}
+	const breadcrumbs = $derived.by(() => {
+		const list: any[] = [
+			{
+				key: 'scene',
+				label: 'Scene',
+				icon: 'house',
+				title: activeId === SCENE_GRAPH ? `Scene — the ${MAIN_GRAPH_LABEL} graph` : 'Scene — every flow in it',
+				siblings: flowSwitchItems
+			}
+		];
+		if (activeId !== SCENE_GRAPH)
+			list.push({ key: 'object', label: activeOwnerName, icon: 'box', title: activeOwnerName + ' — object flow', siblings: flowSwitchItems });
+		for (const c of crumbs)
+			list.push({ key: 'group:' + c.id, label: c.label, icon: 'group', title: c.label + ' — group', siblings: () => groupSiblingItems(c.id) });
+		return list;
+	});
 
 	// muted / collapsed cards: one generated stylesheet keyed by node id, so no node
 	// component has to learn about either (CSS.escape keeps a hostile id inert)
@@ -1848,7 +1926,7 @@
 			title={paletteOpen ? 'Hide the node palette' : 'Show the node palette'}
 			onclick={() => {
 				paletteOpen = !paletteOpen;
-				safeStorage.setItem('flowPaletteOpen', String(paletteOpen));
+				writePanelOpen('flowPaletteOpen', paletteOpen);
 			}}
 		>
 			{paletteOpen ? (paletteSide === 'right' ? '▸' : '◂') : paletteSide === 'right' ? '◂' : '▸'}
@@ -1866,80 +1944,52 @@
 			⇄
 		</button>
 	</div>
+	<!-- 41 G15: the graph column = the breadcrumb bar (in the layout flow, so it can never cover
+	     the graph — the old floating chips wrapped into a tower over the nodes on a phone) + the pane -->
+	<div class="flex h-full min-w-0 grow flex-col" style="order: {paletteSide === 'right' ? 1 : 3}">
+		<Breadcrumbs id="flow-scope-chip" label="Flow location" menuKey="flowCrumbs" crumbs={breadcrumbs}>
+			{#snippet actions()}
+				<!-- A6.4: how many nodes in THIS graph cannot be rendered. Counted per graph, because that
+				     is the graph the user is looking at; the Notification Center entry on scene load covers
+				     the case where the editor is closed entirely. -->
+				{#if unknownHere}
+					<KitButton
+						id="flow-unknown-badge"
+						variant="warn-text"
+						size="sm"
+						icon="circle-alert"
+						title="These nodes come from a module that isn't installed — click to open Modules"
+						onclick={() => modulesOpen.set(true)}
+					>{unknownHere} node{unknownHere === 1 ? ' needs' : 's need'} modules</KitButton>
+				{/if}
+				{#if level}
+					<!-- 36 U11: one level out of a group (Esc / Tab do the same) -->
+					<KitButton id="flow-group-leave" variant="icon" size="sm" icon="corner-left-up" label="Leave the group (Esc)" title="Leave the group (Esc)" onclick={leaveGroup} />
+				{/if}
+				{#if activeId !== SCENE_GRAPH && hasActiveGraph}
+					<KitButton
+						id="flow-scope-delete"
+						variant="icon"
+						size="sm"
+						icon="trash-2"
+						label="Delete this object's flow"
+						title="Delete this object's flow"
+						onclick={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
+					/>
+				{/if}
+			{/snippet}
+		</Breadcrumbs>
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
-		class="svelteFlow relative h-full grow"
+		class="svelteFlow relative min-h-0 w-full flex-1"
 		bind:this={paneEl}
 		class:tp-has-keys={hasKeys}
-		style="order: {paletteSide === 'right' ? 1 : 3}"
 		ondblclickcapture={onNodeDoubleClick}
 		onpointerdown={onWrapPointerDown}
 		onpointerup={onWrapPointerUp}
 		onpointermove={onPointerMoveCursor}
 		onpointerleave={onPointerLeaveCursor}
 	>
-		<!-- H1: graph-scope chip — which flow the editor shows (follows the viewport
-		     selection). Object flows get a delete action (confirmation toast). -->
-		<div
-			id="flow-scope-chip"
-			class="pointer-events-none absolute left-1/2 top-2 z-10 flex -translate-x-1/2 items-center gap-1.5"
-		>
-			{#if activeId !== SCENE_GRAPH}
-				<!-- explicit way back: show the Scene flow AND deselect the object -->
-				<button
-					id="flow-scope-scene"
-					class="pointer-events-auto rounded-full border border-border bg-surface-1/85 px-2 py-0.5 text-xs text-text-muted backdrop-blur-sm hover:text-text"
-					title="Back to the Scene flow (deselects the object)"
-					onclick={() => deselectObject()}
-				>
-					⌂ Scene
-				</button>
-			{/if}
-			<span
-				class="pointer-events-auto rounded-full border border-border bg-surface-1/85 px-2.5 py-0.5 text-xs text-text-2 backdrop-blur-sm"
-			>
-				{activeId === SCENE_GRAPH ? MAIN_GRAPH_LABEL + ' graph' : activeOwnerName + ' — object flow'}
-			</span>
-			<!-- 36 U11: inside a group — the breadcrumb back out (Esc / Tab leave one level) -->
-			{#if crumbs.length}
-				<nav id="flow-group-crumbs" class="pointer-events-auto flex items-center gap-1 rounded-full border border-border bg-surface-1/85 px-2 py-0.5 text-xs text-text-2 backdrop-blur-sm" aria-label="Open groups">
-					<button class="hover:text-text" title="Back to the top of this flow" onclick={() => (level = null)}>Top</button>
-					{#each crumbs as crumb, i (crumb.id)}
-						<span class="text-text-faint">›</span>
-						{#if i === crumbs.length - 1}
-							<span class="font-semibold text-text" data-group-id={crumb.id}>⧉ {crumb.label}</span>
-						{:else}
-							<button class="hover:text-text" data-group-id={crumb.id} onclick={() => (level = crumb.id)}>⧉ {crumb.label}</button>
-						{/if}
-					{/each}
-					<button id="flow-group-leave" class="ml-1 rounded-sm px-1 text-text-muted hover:bg-surface-hover hover:text-text" title="Leave the group (Esc)" onclick={leaveGroup}>⤴</button>
-				</nav>
-			{/if}
-			{#if activeId !== SCENE_GRAPH && hasActiveGraph}
-				<button
-					id="flow-scope-delete"
-					class="pointer-events-auto rounded-full border border-border bg-surface-1/85 px-2 py-0.5 text-xs text-text-muted backdrop-blur-sm hover:text-ink-bad"
-					title="Delete this object's flow"
-					onclick={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
-				>
-					<Icon name="trash-2" size={16} aria-hidden="true" />
-				</button>
-			{/if}
-			<!-- A6.4: how many nodes in THIS graph cannot be rendered. Counted per
-			     graph, because that is the graph the user is looking at; the
-			     Notification Center entry on scene load covers the case where the
-			     editor is closed entirely. -->
-			{#if unknownHere}
-				<button
-					id="flow-unknown-badge"
-					class="pointer-events-auto rounded-full border border-ink-warn/60 bg-ink-warn/15 px-2.5 py-0.5 text-xs font-semibold text-ink-warn backdrop-blur-sm hover:bg-ink-warn/25"
-					title="These nodes come from a module that isn't installed — click to open Modules"
-					onclick={() => modulesOpen.set(true)}
-				>
-					⚠ {unknownHere} node{unknownHere === 1 ? ' needs' : 's need'} modules
-				</button>
-			{/if}
-		</div>
 
 		<!-- H1: empty state — the selected object has no flow document yet.
 		     21-G1: it covers the pane, so a RIGHT-CLICK has to be forwarded or the pane
@@ -2026,6 +2076,7 @@
 		</SvelteFlow>
 		<PeerCursors {viewport} />
 	</div>
+	</div>
 	<!-- 166/179: flow PROPERTIES panel, auto-reflowed opposite the palette -->
 	<div class="relative z-10 w-0" style="order: {propsSide === 'left' ? 0 : 4}">
 		<button
@@ -2033,7 +2084,7 @@
 			class="palette-tab {propsSide === 'left' ? '' : 'palette-tab-mirrored'} absolute top-8 flex h-14 w-4 items-center justify-center bg-surface-2 text-xs text-text-2 hover:bg-surface-active"
 			style="{propsSide === 'left' ? 'left' : 'right'}: -1px"
 			title={propsOpen ? 'Hide properties' : 'Show properties'}
-			onclick={() => { propsOpen = !propsOpen; LS?.setItem('flowPropsOpen', String(propsOpen)); }}
+			onclick={() => { propsOpen = !propsOpen; writePanelOpen('flowPropsOpen', propsOpen); }}
 		>
 			⚙
 		</button>
@@ -2128,7 +2179,7 @@
 						onchange={(v) => { bgPattern = v; LS?.setItem('flowBg', v); }} /></label>
 				<label class="flex items-center gap-2">
 					<input id="flow-minimap-toggle" type="checkbox" checked={showMinimap}
-						onchange={(e) => { showMinimap = e.currentTarget.checked; LS?.setItem('flowMinimap', String(showMinimap)); }} /> Minimap</label>
+						onchange={(e) => { showMinimap = e.currentTarget.checked; writePanelOpen('flowMinimap', showMinimap); }} /> Minimap</label>
 				<label class="flex items-center gap-2">
 					<input type="checkbox" checked={gridSnapOn}
 						onchange={(e) => { gridSnapOn = e.currentTarget.checked; LS?.setItem('flowGridSnap', String(gridSnapOn)); }} /> Snap to grid</label>

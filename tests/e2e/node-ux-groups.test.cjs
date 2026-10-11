@@ -32,7 +32,8 @@ const drawn = (page) =>
 		nodes: [...document.querySelectorAll('.svelteFlow .svelte-flow__node')].map((n) => n.getAttribute('data-id')),
 		proxies: document.querySelectorAll('.svelteFlow .svelte-flow__edge.tp-proxy-edge').length,
 		edges: document.querySelectorAll('.svelteFlow .svelte-flow__edge').length,
-		crumbs: document.querySelector('#flow-group-crumbs')?.textContent?.replace(/\s+/g, ' ').trim() ?? null
+		// 41 G15: the group crumbs live in the breadcrumb bar now (ui/Breadcrumbs, `data-crumb="group:<id>"`)
+		crumbs: [...document.querySelectorAll('#flow-scope-chip [data-crumb^="group:"]')].map((b) => '⧉ ' + b.textContent.trim()).join(' › ') || null
 	}));
 async function focusNodes(page) {
 	const pane = await page.locator('.svelteFlow .svelte-flow__pane').boundingBox();
@@ -118,7 +119,7 @@ h.run(async () => {
 	d = await drawn(p);
 	h.check(d.nodes.includes('m1') && d.nodes.includes('m2') && !d.nodes.includes('src') && !d.nodes.includes(G.id), 'double-click opens the group: only its members are drawn');
 	h.check(d.nodes.includes('__group_in') && d.nodes.includes('__group_out'), 'inside, two boundary cards stand for the outside');
-	h.check(d.crumbs?.includes('Top') && d.crumbs?.includes('Group'), `a breadcrumb shows where you are (${d.crumbs})`);
+	h.check(d.crumbs?.includes('Group'), `a breadcrumb shows where you are (${d.crumbs})`);
 
 	// expose m1.b from inside: drag its input onto "Group inputs ＋"
 	const exposed = await wire(p, handle('m1', 'b'), handle('__group_in', 'i|+'));
@@ -190,10 +191,13 @@ h.run(async () => {
 	await p.waitForTimeout(700);
 	d = await drawn(p);
 	h.check(d.crumbs && (d.crumbs.match(/⧉/g) ?? []).length === 2, `two levels deep, the breadcrumb shows both (${d.crumbs})`);
-	await p.locator('#flow-group-crumbs button', { hasText: 'Top' }).click();
+	// 41 G15: the graph-level crumb lists the scene's flows; picking the CURRENT one = its top
+	await p.locator('#flow-scope-chip [data-crumb="scene"]').click();
+	await p.waitForTimeout(300);
+	await p.locator('.ctx-scroll[role=menu] [role=menuitem]', { hasText: /the Scene graph/ }).first().click();
 	await p.waitForTimeout(600);
 	d = await drawn(p);
-	h.check(d.crumbs === null && d.nodes.includes(G.id) && !d.nodes.includes(inner.id), 'the breadcrumb\'s Top goes straight back out');
+	h.check(d.crumbs === null && d.nodes.includes(G.id) && !d.nodes.includes(inner.id), 'the breadcrumb\'s graph crumb goes straight back to the top');
 	h.check(d.proxies >= 2, 'the wires still route to the outer group at the top');
 
 	// --- 7. copy / paste a group (members + inner wires, fresh ids) ---------------------

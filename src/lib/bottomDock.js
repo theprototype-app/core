@@ -17,12 +17,12 @@ import { safeStorage } from './safeStorage';
 
 export const FLOW_FAMILY = ['flow', 'flowcode', 'animation', 'uv', 'shader', 'hud'];
 /** every panel that can be a dock tab, in strip order (Node editor first) */
-export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code'];
+export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code', 'imageEditor'];
 /** @type {Record<string, string>} */
-export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', explorer: 'Explorer', profiler: 'Profiler', code: 'Code' };
+export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', explorer: 'Explorer', profiler: 'Profiler', code: 'Code', imageEditor: 'Image editor' };
 /** 38 NOTES-38 #23: the view icon each dock tab shows before its name (ui/Icon names) */
 /** @type {Record<string, string>} */
-export const DOCK_ICONS = { flow: 'workflow', flowcode: 'code', animation: 'clapperboard', uv: 'grid-3x3', shader: 'sparkles', hud: 'app-window', explorer: 'folder-open', profiler: 'activity', code: 'code' };
+export const DOCK_ICONS = { flow: 'workflow', flowcode: 'code', animation: 'clapperboard', uv: 'grid-3x3', shader: 'sparkles', hud: 'app-window', explorer: 'folder-open', profiler: 'activity', code: 'code', imageEditor: 'image' };
 
 const ls = typeof localStorage !== 'undefined' ? localStorage : null;
 

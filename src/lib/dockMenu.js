@@ -9,6 +9,7 @@ import {
 	profilerClose,
 	codeWorkspaceClose
 } from '../stores/appStore';
+import { imageEditorClose } from './image/imageEditorState';
 import { get } from 'svelte/store';
 import { activateDock, armDockMode, armDockModes, dockOccupants, dockTabs, moveDockTab, visibleDockKey, undockButtonMode, placeDockTabs, DOCK_FAMILY, DOCK_TITLES } from './bottomDock';
 import { queueMerge } from './windowTabs';
@@ -62,6 +63,15 @@ export const DOCK_VIEWS = [
 ];
 
 /**
+ * 41 G24 — views the dock "+" menu and the phone sheet offer that are NOT toolbar roster
+ * buttons (Controls builds its roster from `DOCK_VIEWS`): the Image editor works on an
+ * Explorer image, so a toolbar button for it would open an empty editor.
+ * @type {{key: string, tooltip: string}[]}
+ */
+export const DOCK_EXTRA_VIEWS = [{ key: 'imageEditor', tooltip: 'Crop, rotate, resize and adjust an Explorer image' }];
+const ADD_VIEWS = [...DOCK_VIEWS, ...DOCK_EXTRA_VIEWS];
+
+/**
  * What a "+" row does: put that view IN THE DOCK and show it. Kept beside the list
  * rather than in it, because the toolbar's consumers do not want this — a roster button
  * goes through `togglePanel`, which can also hide the panel again.
@@ -90,7 +100,7 @@ function dockView(key) {
 /** @returns {{label: string, tooltip: string, action?: () => void, disabled?: boolean}[]} */
 export function dockAddItems() {
 	const occupied = get(dockOccupants);
-	const free = DOCK_VIEWS.filter((view) => !occupied[view.key]?.present).map((view) => {
+	const free = ADD_VIEWS.filter((view) => !occupied[view.key]?.present).map((view) => {
 		const title = DOCK_TITLES[view.key] ?? view.key;
 		// not docked, but OPEN = it is a floating window, so this row moves it rather
 		// than opening anything. Saying "＋" there would promise a second copy.
@@ -262,7 +272,7 @@ export function undockInto(key, targetKey) {
  */
 export function dockSheetRows() {
 	const occupied = get(dockOccupants);
-	return [{ key: 'flow', tooltip: 'Wire the scene’s behaviour as nodes' }, ...DOCK_VIEWS].map((view) => {
+	return [{ key: 'flow', tooltip: 'Wire the scene’s behaviour as nodes' }, ...ADD_VIEWS].map((view) => {
 		const closer = closeStoreFor(view.key);
 		return {
 			key: view.key,
@@ -295,7 +305,8 @@ export const DOCK_CLOSERS = {
 	hud: hudEditorClose,
 	explorer: explorerClose,
 	profiler: profilerClose,
-	code: codeWorkspaceClose
+	code: codeWorkspaceClose,
+	imageEditor: /** @type {any} */ (imageEditorClose)
 };
 
 /** @param {string} key @returns {import('svelte/store').Writable<boolean>|null} */

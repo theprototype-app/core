@@ -28,6 +28,11 @@
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
+	import DockTabs from '../DockTabs.svelte';
+	import { safeStorage } from '$lib/safeStorage';
+	import { setDockOccupant, dockHeight, visibleDockKey, dockMinimized, activateDock, dockModeArm, forgetDockTab } from '$lib/bottomDock';
+	import { bottomDockable } from '$lib/bottomDockDrop';
+	import { registerDockCloser } from '$lib/dockMenu';
 	import { explorerItems, hiddenItems, itemBlob } from '$lib/explorer';
 	import { showToast } from '../../stores/appStore';
 	import { showChoice } from '$lib/confirmDialog';
@@ -693,11 +698,59 @@
 		return { destroy: () => node.removeEventListener('keydown', onKey, true) };
 	}
 
+	// ---- 41 G24: a bottom-dock tab too (the 40-image Q2 answer) ---------------------------
+	// The Profiler's shape: `docked` is this component's own mode, read once and asked to
+	// change through `dockModeArm` (the tab strip's Undock, a drag onto the strip, the "+"
+	// row); docked + open = a dock occupant. Floating stays the default.
+	let docked = $state(typeof localStorage !== 'undefined' && safeStorage.getItem('imageEditorDocked') === 'true');
+	function setDocked(/** @type {boolean} */ v) {
+		docked = v;
+		safeStorage.setItem('imageEditorDocked', String(v));
+		if (v) activateDock('imageEditor');
+		else forgetDockTab('imageEditor');
+	}
+	$effect(() => {
+		const arm = $dockModeArm;
+		if (!arm || arm.key !== 'imageEditor') return;
+		dockModeArm.set(null);
+		untrack(() => {
+			if (arm.docked !== docked) setDocked(arm.docked);
+			// "+ Image editor" with nothing open: open it empty (it says how to pick an image)
+			if (!$imageEditorTarget) imageEditorTarget.set({ itemId: '', raise: 1 });
+		});
+	});
+	$effect(() => {
+		setDockOccupant('imageEditor', !!target && docked, $dockHeight);
+		return () => setDockOccupant('imageEditor', false);
+	});
+	// the tab ✕ asks first when there are unsaved edits, exactly like the header ✕
+	$effect(() => registerDockCloser('imageEditor', () => void close()));
+	const dockVisible = $derived($visibleDockKey === 'imageEditor' && !$dockMinimized);
+	let dockResizing = false;
+	const clampDockH = (/** @type {number} */ h) => Math.min(Math.max(h || 320, 200), Math.round(window.innerHeight * 0.8));
+	function startDockResize(/** @type {any} */ e) {
+		dockResizing = true;
+		e.currentTarget.setPointerCapture(e.pointerId);
+		e.preventDefault();
+	}
+	function doDockResize(/** @type {any} */ e) {
+		if (dockResizing) dockHeight.update((h) => clampDockH(h - e.movementY));
+	}
+	function endDockResize(/** @type {any} */ e) {
+		if (!dockResizing) return;
+		dockResizing = false;
+		e.currentTarget.releasePointerCapture?.(e.pointerId);
+	}
+
 	// come forward when asked for again
 	let winEl = $state(/** @type {HTMLDivElement | null} */ (null));
 	$effect(() => {
 		void target?.raise;
-		if (winEl) untrack(() => winEl?.focus?.());
+		if (!target) return;
+		untrack(() => {
+			if (docked) activateDock('imageEditor');
+			winEl?.focus?.();
+		});
 	});
 </script>
 
@@ -799,7 +852,113 @@
 	</div>
 {/snippet}
 
-{#if target}
+{#snippet editorBody()}
+	<div class="flex min-h-0 flex-1 flex-col">
+		<WindowShell
+			key="imageEditor"
+			hidePrimary
+			secondaryDefaultOpen
+			secondaryDefaultWidth={248}
+			secondaryModes={[{ key: 'edit', icon: '✎', label: 'Edit' }, { key: 'history', icon: '⟲', label: 'Versions' }]}
+		>
+			{#snippet topbar()}
+				<div class="border-b border-border px-2 py-1">
+					<ScrollStrip label="Image editor tools" id="image-editor-toolbar">
+						<div class="flex shrink-0 items-center gap-1">
+							<UiButton id="image-editor-undo" variant="icon" size="sm" icon="undo-2" label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled={!undoStack.length} onclick={undo} />
+							<UiButton id="image-editor-redo" variant="icon" size="sm" icon="redo-2" label="Redo (Ctrl+Shift+Z)" title="Redo (Ctrl+Shift+Z)" disabled={!redoStack.length} onclick={redo} />
+							<span class="ie-sep"></span>
+							<UiButton variant="icon" size="sm" icon="zoom-out" label="Zoom out" title="Zoom out (-)" disabled={!work} onclick={() => zoomAt(1 / 1.25)} />
+							<span class="ie-zoom" id="image-editor-zoom">{Math.round(scale * 100)}%</span>
+							<UiButton variant="icon" size="sm" icon="zoom-in" label="Zoom in" title="Zoom in (+)" disabled={!work} onclick={() => zoomAt(1.25)} />
+							<UiButton size="sm" variant="ghost" disabled={!work} title="Fit the image in the window (0)" onclick={fit}>Fit</UiButton>
+							<UiButton size="sm" variant="ghost" disabled={!work} title="One screen pixel per image pixel" onclick={actualSize}>1:1</UiButton>
+							<span class="ie-sep"></span>
+							<span class="ie-info" id="image-editor-size">{work ? work.width + ' × ' + work.height : ''} · {formatLabel}</span>
+							{#if usedBy}
+								<span class="ie-info ie-used" title="Saving updates the texture on these materials for everyone in the session">
+									<Icon name="image" size={16} aria-hidden="true" />{usedBy} texture{usedBy === 1 ? '' : 's'}
+								</span>
+							{/if}
+							<span class="flex-1"></span>
+							<UiButton id="image-editor-save-copy" size="sm" variant="outline" icon="copy" disabled={!work || saving} title="Save the edit as a new image beside this one" onclick={saveCopy}>Save as copy</UiButton>
+							<UiButton id="image-editor-save" size="sm" variant="primary" icon="save" disabled={!dirty || saving} title="Save over this image (Ctrl+S) — its earlier version stays in Versions" onclick={save}>Save</UiButton>
+						</div>
+					</ScrollStrip>
+				</div>
+			{/snippet}
+
+			{#snippet main()}
+				<!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_static_element_interactions -->
+				<div
+					bind:this={wrapEl}
+					id="image-editor-canvas-wrap"
+					class="relative h-full w-full overflow-hidden bg-app outline-none"
+					class:ie-crop-cursor={cropping}
+					tabindex="-1"
+					use:surface
+					onpointerdown={onPointerDown}
+					onpointermove={onPointerMove}
+					onpointerup={onPointerUp}
+					onpointercancel={onPointerUp}
+				>
+					<canvas bind:this={canvasEl} id="image-editor-canvas" class="absolute inset-0 h-full w-full" style="touch-action: none"></canvas>
+					{#if loading}
+						<div class="ie-overlay">Loading…</div>
+					{:else if loadError}
+						<div class="ie-overlay">{loadError}</div>
+					{:else if !target?.itemId}
+						<div class="ie-overlay" id="image-editor-empty">Open an image from the Explorer (right-click it ▸ Edit image…) to edit it here.</div>
+					{:else if !item}
+						<div class="ie-overlay">This image is no longer in the library.</div>
+					{/if}
+					{#if cropping}
+						<div id="image-editor-crop-badge" class="ie-badge">Crop {crop.w} × {crop.h} — Enter applies, Esc cancels</div>
+					{/if}
+				</div>
+			{/snippet}
+
+			{#snippet secondary(mode)}
+				{#if mode === 'history'}
+					{@render versionsPanel()}
+				{:else}
+					{@render editPanel()}
+				{/if}
+			{/snippet}
+		</WindowShell>
+	</div>
+{/snippet}
+
+{#if target && docked}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div
+		id="image-editor-dock"
+		bind:this={winEl}
+		tabindex="-1"
+		use:ownKeys
+		class="tp-themed fixed inset-x-0 bottom-0 tp-ui tp-dock-panel flex flex-col p-2 outline-hidden {dockVisible ? '' : 'hidden'}"
+		style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid var(--tp-line)"
+		data-key-scope="panel"
+		role="region"
+		aria-label="Image editor (docked)"
+	>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="resize-cue hover:bg-accent/30 absolute -top-1 right-0 left-0 z-30 h-2 cursor-ns-resize"
+			style="touch-action: none"
+			title="Drag to resize"
+			onpointerdown={startDockResize}
+			onpointermove={doDockResize}
+			onpointerup={endDockResize}
+		></div>
+		<DockTabs />
+		<div class="flex shrink-0 items-center gap-2 pb-1">
+			<span class="tp-dock-title">Image editor</span>
+			<span class="wc-sub ie-title" title={item?.name ?? ''}>{item?.name ?? ''}{dirty ? ' •' : ''}</span>
+		</div>
+		{@render editorBody()}
+	</div>
+{:else if target}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
 		id="image-editor-window"
@@ -809,6 +968,7 @@
 		use:dragWindow={{ key: 'imageEditor', defaultRect: { left: 180, top: 110 }, resizable: true, minW: 420, minH: 320 }}
 		use:focusStack={'imageEditor'}
 		use:tabbable={{ key: 'imageEditor', title: 'Image editor', openStore: imageEditorTarget, isOpen: (v) => !!v, close: () => void close(), minW: 420, minH: 320 }}
+		use:bottomDockable={{ key: 'imageEditor' }}
 		use:ownKeys
 		style="z-index: var(--z-window); width: 820px; height: 560px"
 	>
@@ -826,79 +986,11 @@
 				<span class="wc-sub ie-title" title={item?.name ?? ''}>{item?.name ?? ''}{dirty ? ' •' : ''}</span>
 				<span class="flex-1"></span>
 			{/snippet}
+			{#snippet actions()}
+				<button class="wc-act-text" id="image-editor-dock-btn" title="Dock to the bottom" onclick={() => setDocked(true)}><Icon name="panel-bottom" size={16} />Dock</button>
+			{/snippet}
 		</WindowChrome>
-		<div class="flex min-h-0 flex-1 flex-col">
-			<WindowShell
-				key="imageEditor"
-				hidePrimary
-				secondaryDefaultOpen
-				secondaryDefaultWidth={248}
-				secondaryModes={[{ key: 'edit', icon: '✎', label: 'Edit' }, { key: 'history', icon: '⟲', label: 'Versions' }]}
-			>
-				{#snippet topbar()}
-					<div class="border-b border-border px-2 py-1">
-						<ScrollStrip label="Image editor tools" id="image-editor-toolbar">
-							<div class="flex shrink-0 items-center gap-1">
-								<UiButton id="image-editor-undo" variant="icon" size="sm" icon="undo-2" label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled={!undoStack.length} onclick={undo} />
-								<UiButton id="image-editor-redo" variant="icon" size="sm" icon="redo-2" label="Redo (Ctrl+Shift+Z)" title="Redo (Ctrl+Shift+Z)" disabled={!redoStack.length} onclick={redo} />
-								<span class="ie-sep"></span>
-								<UiButton variant="icon" size="sm" icon="zoom-out" label="Zoom out" title="Zoom out (-)" disabled={!work} onclick={() => zoomAt(1 / 1.25)} />
-								<span class="ie-zoom" id="image-editor-zoom">{Math.round(scale * 100)}%</span>
-								<UiButton variant="icon" size="sm" icon="zoom-in" label="Zoom in" title="Zoom in (+)" disabled={!work} onclick={() => zoomAt(1.25)} />
-								<UiButton size="sm" variant="ghost" disabled={!work} title="Fit the image in the window (0)" onclick={fit}>Fit</UiButton>
-								<UiButton size="sm" variant="ghost" disabled={!work} title="One screen pixel per image pixel" onclick={actualSize}>1:1</UiButton>
-								<span class="ie-sep"></span>
-								<span class="ie-info" id="image-editor-size">{work ? work.width + ' × ' + work.height : ''} · {formatLabel}</span>
-								{#if usedBy}
-									<span class="ie-info ie-used" title="Saving updates the texture on these materials for everyone in the session">
-										<Icon name="image" size={16} aria-hidden="true" />{usedBy} texture{usedBy === 1 ? '' : 's'}
-									</span>
-								{/if}
-								<span class="flex-1"></span>
-								<UiButton id="image-editor-save-copy" size="sm" variant="outline" icon="copy" disabled={!work || saving} title="Save the edit as a new image beside this one" onclick={saveCopy}>Save as copy</UiButton>
-								<UiButton id="image-editor-save" size="sm" variant="primary" icon="save" disabled={!dirty || saving} title="Save over this image (Ctrl+S) — its earlier version stays in Versions" onclick={save}>Save</UiButton>
-							</div>
-						</ScrollStrip>
-					</div>
-				{/snippet}
-
-				{#snippet main()}
-					<!-- svelte-ignore a11y_no_noninteractive_element_interactions, a11y_no_static_element_interactions -->
-					<div
-						bind:this={wrapEl}
-						id="image-editor-canvas-wrap"
-						class="relative h-full w-full overflow-hidden bg-app outline-none"
-						class:ie-crop-cursor={cropping}
-						tabindex="-1"
-						use:surface
-						onpointerdown={onPointerDown}
-						onpointermove={onPointerMove}
-						onpointerup={onPointerUp}
-						onpointercancel={onPointerUp}
-					>
-						<canvas bind:this={canvasEl} id="image-editor-canvas" class="absolute inset-0 h-full w-full" style="touch-action: none"></canvas>
-						{#if loading}
-							<div class="ie-overlay">Loading…</div>
-						{:else if loadError}
-							<div class="ie-overlay">{loadError}</div>
-						{:else if !item}
-							<div class="ie-overlay">This image is no longer in the library.</div>
-						{/if}
-						{#if cropping}
-							<div id="image-editor-crop-badge" class="ie-badge">Crop {crop.w} × {crop.h} — Enter applies, Esc cancels</div>
-						{/if}
-					</div>
-				{/snippet}
-
-				{#snippet secondary(mode)}
-					{#if mode === 'history'}
-						{@render versionsPanel()}
-					{:else}
-						{@render editPanel()}
-					{/if}
-				{/snippet}
-			</WindowShell>
-		</div>
+		{@render editorBody()}
 	</div>
 {/if}
 
@@ -1069,30 +1161,37 @@
 		   beside a 158 px sidebar that clipped its own labels), so the panel STACKS under the
 		   canvas: canvas, then the Edit/Versions tabs as a row, then the panel. Order is pinned
 		   whichever side the sidebar was switched to on a desktop. */
-		#image-editor-window :global(.ws-root) {
+		#image-editor-window :global(.ws-root),
+		#image-editor-dock :global(.ws-root) {
 			flex-direction: column;
 		}
-		#image-editor-window :global(.ws-main) {
+		#image-editor-window :global(.ws-main),
+		#image-editor-dock :global(.ws-main) {
 			order: 1 !important;
 			flex: 1 1 0;
 			min-height: 160px;
 		}
-		#image-editor-window :global(.ws-tabs) {
+		#image-editor-window :global(.ws-tabs),
+		#image-editor-dock :global(.ws-tabs) {
 			order: 2 !important;
 			flex-direction: row;
 			width: 100%;
 			padding-top: 0;
 			border-top: 1px solid var(--border);
 		}
-		#image-editor-window :global(.ws-tab-btn) {
+		#image-editor-window :global(.ws-tab-btn),
+		#image-editor-dock :global(.ws-tab-btn) {
 			flex: 1 1 0;
 			height: 44px;
 		}
 		#image-editor-window :global(.ws-tabs .ws-resize),
-		#image-editor-window :global([data-ws-switch-side]) {
+		#image-editor-dock :global(.ws-tabs .ws-resize),
+		#image-editor-window :global([data-ws-switch-side]),
+		#image-editor-dock :global([data-ws-switch-side]) {
 			display: none;
 		}
-		#image-editor-window :global(.ws-panel-secondary) {
+		#image-editor-window :global(.ws-panel-secondary),
+		#image-editor-dock :global(.ws-panel-secondary) {
 			order: 3 !important;
 			width: 100% !important;
 			height: auto;

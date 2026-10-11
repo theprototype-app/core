@@ -4,9 +4,11 @@
 // OPPO N6 FOLDED (390x896, DPR 2.9, touch; real CDP touches):
 //   - tapping a note in the Notes drawer opens its card OVER the drawer at the drawer's height,
 //     and the drawer stays OPEN underneath;
-//   - the card walks the note's group with ‹ › (pin order, wrapping) and says where it is (n/N);
-//   - closing the card (✕, or swiping it down) returns to the list — the drawer is still there
-//     with its scroll position, nothing to re-open;
+//   - the card walks ALL the notes with ‹ › (pin order, wrapping) and says where it is (n/N) —
+//     opened from the drawer AND opened by tapping a note's pin in the scene (orchestrator: "whenever
+//     ANY note is open ... previous/next must move through all the notes");
+//   - closing the card (✕, or swiping it down) returns to where it came from: the list (still
+//     there with its scroll position, nothing to re-open), or the scene (no drawer opened for you);
 //   - the grab bar resizes the notes sheet: the card and the drawer stay one height.
 // Then the desktop: the side drawer and the anchored card are unchanged, and the card's ‹ › walk too.
 const h = require('./helpers.cjs');
@@ -121,31 +123,37 @@ h.run(async () => {
 		await P.waitForTimeout(300);
 	}
 
-	// ---- ‹ › walk the group --------------------------------------------------------------
-	const walk = await P.evaluate(() => {
-		let list;
-		window.__stores.annotationsHandler.annotations.subscribe((v) => (list = v))();
-		let act;
-		window.__stores.annotationsHandler.activeAnnotation.subscribe((v) => (act = v))();
-		return window.__stores.annotationsHandler.noteGroupWalk(list, act.id);
-	});
-	h.check(walk.label === 'mech' && walk.ids.length === 5, `premise: the open note is in "mech" (5 notes) — ${walk.label} ${walk.ids.length}`);
+	// ---- ‹ › walk ALL the notes (pin order, wrapping) ---------------------------------------
+	const walkOf = () =>
+		P.evaluate(() => {
+			let list;
+			window.__stores.annotationsHandler.annotations.subscribe((v) => (list = v))();
+			let act;
+			window.__stores.annotationsHandler.activeAnnotation.subscribe((v) => (act = v))();
+			return act?.id ? window.__stores.annotationsHandler.noteWalk(list, act.id) : null;
+		});
+	const activeId = () => read(`${store('annotationsHandler.activeAnnotation')}?.id`);
+	const walk = await walkOf();
+	h.check(walk && walk.ids.length === 14, `premise: the walk covers all 14 notes (${walk?.ids.length})`);
 	const posText = () => P.evaluate(() => document.querySelector('.note-card .note-pos')?.textContent?.trim() ?? null);
-	h.check((await posText()) === `${walk.index + 1}/5`, `the card says where it is in its group (${await posText()})`);
+	h.check((await posText()) === `${walk.index + 1}/14`, `the card says where it is among all the notes (${await posText()})`);
 	h.check(await tapSel('#note-next'), 'the card has a Next button');
 	await P.waitForTimeout(700);
-	h.check((await read(`${store('annotationsHandler.activeAnnotation')}?.id`)) === walk.next, 'Next opens the next note of the group in the same card');
+	h.check((await activeId()) === walk.ids[walk.index + 1], 'Next opens the next note in pin order in the same card (not only its label group)');
 	h.check(await read(store('notesDrawerOpen')), '...and the drawer is still open under it');
 	h.check(await tapSel('#note-prev'), 'the card has a Previous button');
 	await P.waitForTimeout(700);
-	h.check((await read(`${store('annotationsHandler.activeAnnotation')}?.id`)) === active1, 'Previous goes back to the first note');
-	// wrap: walk Previous from the first of the group lands on the last
+	h.check((await activeId()) === active1, 'Previous goes back to the first note');
+	// wrap both ways
 	await P.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id, 'view'), walk.ids[0]);
 	await P.waitForTimeout(500);
 	await tapSel('#note-prev');
 	await P.waitForTimeout(600);
-	h.check((await read(`${store('annotationsHandler.activeAnnotation')}?.id`)) === walk.ids[walk.ids.length - 1], 'Previous from the first note wraps to the last of the group (the drawer arrows\' walk)');
-	h.check((await posText()) === '5/5', `...and reads 5/5 (${await posText()})`);
+	h.check((await activeId()) === walk.ids[13], 'Previous from note 1 wraps to note 14');
+	h.check((await posText()) === '14/14', `...and reads 14/14 (${await posText()})`);
+	await tapSel('#note-next');
+	await P.waitForTimeout(600);
+	h.check((await activeId()) === walk.ids[0], 'Next from note 14 wraps to note 1');
 
 	// ---- ✕ returns to the list as it was --------------------------------------------------
 	await tapSel('.note-card .note-head button[aria-label^="Close note"]');
@@ -182,13 +190,47 @@ h.run(async () => {
 	h.check(d2 && Math.abs(d2.h - c1.h) < 3, `...and the drawer under it is the same height — one sheet (${Math.round(c1?.h ?? 0)} vs ${Math.round(d2?.h ?? 0)})`);
 	void d1;
 
-	// ---- a note opened from its PIN (drawer closed) is still a sheet with ‹ › -------------------
+	// ---- OPENED FROM THE SCENE: tap a note's pin marker (the drawer closed) ---------------------
 	await P.evaluate(() => window.__stores.notesDrawerOpen.set(false));
-	await P.waitForTimeout(400);
-	await P.evaluate((id) => window.__stores.annotationsHandler.openAnnotation(id, 'view'), walk.ids[0]);
-	await P.waitForTimeout(700);
-	h.check(!!(await rect('#note-next')), 'a note opened without the drawer also walks its group (‹ ›)');
-	await P.evaluate(() => window.__stores.annotationsHandler.activeAnnotation.set(null));
+	await P.waitForTimeout(500);
+	/** the first single-note marker badge on screen (a cluster is tapped open first) */
+	const markerBadge = async () => {
+		for (let round = 0; round < 3; round++) {
+			const b = await P.evaluate(() => {
+				const vis = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.top > 70 && r.bottom < innerHeight - 160 && document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest('.marker-badge') === e; };
+				const one = [...document.querySelectorAll('.marker-badge:not(.is-cluster)')].find(vis);
+				const any = one || [...document.querySelectorAll('.marker-badge.is-cluster')].find(vis);
+				if (!any) return null;
+				const r = any.getBoundingClientRect();
+				return { x: r.x + r.width / 2, y: r.y + r.height / 2, cluster: !one, n: one ? Number(one.querySelector('.marker-num')?.textContent) : 0 };
+			});
+			if (!b || !b.cluster) return b;
+			await tap(b.x, b.y);
+			await P.waitForTimeout(500);
+		}
+		return null;
+	};
+	const pin = await markerBadge();
+	h.check(!!pin && pin.n > 0, `premise: a note's pin marker is on screen to tap (${JSON.stringify(pin)})`);
+	if (pin) {
+		await tap(pin.x, pin.y);
+		await P.waitForTimeout(900);
+		const fromScene = await activeId();
+		h.check(fromScene === walk.ids[pin.n - 1], `tapping pin #${pin.n} in the scene opens that note`);
+		h.check(!(await read(store('notesDrawerOpen'))), '...without opening the Notes drawer');
+		if (SHOTS) await P.screenshot({ path: `${SHOTS}/g12-folded-4-from-scene.png` });
+		h.check((await posText()) === `${pin.n}/14`, `...and the card walks ALL the notes from there (${await posText()})`);
+		await tapSel('#note-next');
+		await P.waitForTimeout(700);
+		h.check((await activeId()) === walk.ids[pin.n % 14], `Next (opened from the scene) goes to note ${(pin.n % 14) + 1}`);
+		await tapSel('#note-prev');
+		await tapSel('#note-prev');
+		await P.waitForTimeout(800);
+		h.check((await activeId()) === walk.ids[(pin.n - 2 + 14) % 14], 'Previous twice goes one before the tapped note');
+		await tapSel('.note-card .note-head button[aria-label^="Close note"]');
+		await P.waitForTimeout(700);
+		h.check(!(await rect('.note-card')) && !(await read(store('notesDrawerOpen'))), 'closing returns to where it came from: the scene (no drawer opened for you)');
+	}
 
 	// ---- desktop: unchanged side drawer, anchored card, the same walk ---------------------------
 	const D = await h.setupPage(browser, 'desktop', { context: { viewport: { width: 1440, height: 900 } } });
@@ -208,9 +250,32 @@ h.run(async () => {
 	h.check(dd.left > 1000 && dd.w <= 330, `desktop: the notes drawer is still the right side drawer (${JSON.stringify(dd)})`);
 	await Q.locator('#notes-drawer .notes-row button').first().click();
 	await Q.waitForTimeout(800);
-	const dc = await Q.evaluate(() => { const c = document.querySelector('.note-card'); return c ? { sheet: c.classList.contains('note-sheet'), next: !!document.getElementById('note-next') } : null; });
-	h.check(!!dc && !dc.sheet && dc.next, `desktop: the card is the anchored card (not a sheet) and walks the group too (${JSON.stringify(dc)})`);
+	const dc = await Q.evaluate(() => { const c = document.querySelector('.note-card'); return c ? { sheet: c.classList.contains('note-sheet'), next: !!document.getElementById('note-next'), pos: c.querySelector('.note-pos')?.textContent?.trim() } : null; });
+	h.check(!!dc && !dc.sheet && dc.next && dc.pos === '1/3', `desktop: the card is the anchored card (not a sheet) and walks all the notes (${JSON.stringify(dc)})`);
 	h.check(await Q.evaluate(store('notesDrawerOpen')), 'desktop: the drawer stays open beside the card (as before)');
+	// desktop, opened from the SCENE: click a pin marker with the drawer closed
+	await Q.evaluate(() => { window.__stores.annotationsHandler.activeAnnotation.set(null); window.__stores.notesDrawerOpen.set(false); });
+	await Q.waitForTimeout(600);
+	let badge = await Q.evaluate(() => { const e = [...document.querySelectorAll('.marker-badge')].find((b) => b.getBoundingClientRect().width > 0); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, cluster: e.classList.contains('is-cluster') }; });
+	if (badge?.cluster) {
+		await Q.mouse.click(badge.x, badge.y);
+		await Q.waitForTimeout(500);
+		badge = await Q.evaluate(() => { const e = [...document.querySelectorAll('.marker-badge:not(.is-cluster)')].find((b) => b.getBoundingClientRect().width > 0); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+	}
+	h.check(!!badge, 'desktop premise: a pin marker to click');
+	if (badge) {
+		await Q.mouse.click(badge.x, badge.y);
+		await Q.waitForTimeout(800);
+		const before = await Q.evaluate(`${store('annotationsHandler.activeAnnotation')}?.id`);
+		h.check(!!before && !(await Q.evaluate(store('notesDrawerOpen'))), 'desktop: clicking a pin in the scene opens its note (no drawer)');
+		await Q.locator('#note-next').click();
+		await Q.waitForTimeout(700);
+		const after = await Q.evaluate(`${store('annotationsHandler.activeAnnotation')}?.id`);
+		h.check(!!after && after !== before, 'desktop: Next walks to another note from a scene-opened card');
+		await Q.locator('.note-card .note-head button[aria-label^="Close note"]').click();
+		await Q.waitForTimeout(500);
+		h.check(!(await Q.evaluate(() => !!document.querySelector('.note-card'))) && !(await Q.evaluate(store('notesDrawerOpen'))), 'desktop: closing returns to the scene');
+	}
 
 	await h.finish(browser);
 });

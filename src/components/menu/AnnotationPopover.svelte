@@ -28,7 +28,7 @@
 		deleteReply,
 		visibleReplies,
 		openAnnotation,
-		noteGroupWalk
+		noteWalk
 	} from '$lib/annotationsHandler';
 	import { globalCamera, globalRenderer, orbitControls } from '../../stores/sceneStore';
 	import { notesDrawerOpen, inspectorClose } from '../../stores/appStore.js';
@@ -119,16 +119,17 @@
 	// one bottom sheet at a time on narrow: the note card takes the bottom, so the properties
 	// sheet steps aside (NotesDrawer precedent). 41 G12: the NOTES sheet does NOT — the card is a
 	// page of it (drill-in, at its height, over it), so the list stays mounted underneath and
-	// closing the note returns to it as it was ("when note closes i have to again open drawer for
-	// notes"), and ‹ › keep walking the notes from the card.
+	// closing the note returns to where it was opened from: the list as it was ("when note closes
+	// i have to again open drawer for notes"), or — opened from a pin in the scene, an object's
+	// menu… — simply the scene (the drawer is never opened for you).
 	$effect(() => {
 		if (!open || !narrow) return;
 		untrack(() => inspectorClose.set(true));
 	});
 	/** the card is a page of the open notes sheet (phone) */
 	const inDrawer = $derived(narrow && $notesDrawerOpen);
-	// 41 G12: ‹ › walk the note's label group in pin order, wrapping — the drawer's own arrows
-	const walk = $derived(existing ? noteGroupWalk($annotations, existing.id) : null);
+	// 41 G12: ‹ › walk ALL the notes in pin order, wrapping, from whatever opened the card
+	const walk = $derived(existing ? noteWalk($annotations, existing.id) : null);
 	function goToNote(id: string | null) {
 		if (id) openAnnotation(id, 'view');
 	}
@@ -259,12 +260,12 @@
 			>
 			<span class="note-title">{editing ? (existing ? 'Edit note' : 'New note') : displayName(note)}</span>
 			{#if !editing && walk && walk.prev}
-				<!-- 41 G12: previous / next in this note's group (the notes drawer's walk) -->
-				<button id="note-prev" class="note-icon" title={'Previous note in ' + walk.label} aria-label={'Previous note in ' + walk.label} onclick={() => goToNote(walk.prev)}>
+				<!-- 41 G12: previous / next through all the notes, in pin order -->
+				<button id="note-prev" class="note-icon" title="Previous note" aria-label="Previous note" onclick={() => goToNote(walk.prev)}>
 					<Icon name="chevron-left" size={16} aria-hidden="true" />
 				</button>
-				<span class="note-pos" style:min-width="{String(walk.ids.length).length * 2 + 1}ch" aria-label={`Note ${walk.index + 1} of ${walk.ids.length} in ${walk.label}`}>{walk.index + 1}/{walk.ids.length}</span>
-				<button id="note-next" class="note-icon" title={'Next note in ' + walk.label} aria-label={'Next note in ' + walk.label} onclick={() => goToNote(walk.next)}>
+				<span class="note-pos" style:min-width="{String(walk.ids.length).length * 2 + 1}ch" aria-label={`Note ${walk.index + 1} of ${walk.ids.length}`}>{walk.index + 1}/{walk.ids.length}</span>
+				<button id="note-next" class="note-icon" title="Next note" aria-label="Next note" onclick={() => goToNote(walk.next)}>
 					<Icon name="chevron-right" size={16} aria-hidden="true" />
 				</button>
 			{/if}

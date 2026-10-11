@@ -143,6 +143,8 @@ h.run(async () => {
 	fb = await feedback(page, '#animation-window');
 	h.check(!fb.caret && !fb.zone && !fb.ghost, `2.1 over the dock's body there is no dock target (${JSON.stringify(fb)})`);
 	await page.screenshot({ path: (process.env.OUT || '/tmp') + '/g7-over-dock-body.png' });
+	// released over the dock BESIDE the centred Controls pill (right of it): nothing pulls it up
+	await page.mouse.move(1200, 780, { steps: 6 });
 	await page.mouse.up();
 	await page.waitForTimeout(600);
 	h.check(Math.abs(overDock.dx) <= 2 && Math.abs(overDock.dy) <= 2, `2.2 a window can be dragged over the dock and stays under the cursor (${JSON.stringify(overDock)})`);
@@ -155,6 +157,21 @@ h.run(async () => {
 		return { top: b.top, floating: !w.dataset.docked && !p.animation?.present, dockTop: window.innerHeight - parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--bottom-inset')) };
 	});
 	h.check(rest.floating && rest.top > rest.dockTop, `2.4 released over the dock it stays FLOATING, parked over the dock (top ${Math.round(rest.top)} > dock ${Math.round(rest.dockTop)})`);
+	// ...but released where it would sit UNDER the Controls pill, its header comes up above it (24-B3)
+	from = await headerPoint(page, '#animation-window');
+	await page.mouse.move(from.x, from.y);
+	await page.mouse.down();
+	await page.mouse.move(720, 800, { steps: 10 });
+	await page.mouse.up();
+	await page.waitForTimeout(500);
+	const pillRule = await S(page, () => {
+		const w = document.getElementById('animation-window').getBoundingClientRect();
+		const head = document.querySelector('#animation-window .move-handle').getBoundingClientRect();
+		const p = document.getElementById('controls-pill')?.getBoundingClientRect();
+		const over = !!p && p.height > 0 && w.left < p.right && w.right > p.left;
+		return { over, headBottom: Math.round(head.bottom), pillTop: p ? Math.round(p.top) : null };
+	});
+	h.check(!pillRule.over || pillRule.headBottom <= pillRule.pillTop, `2.5 a release that would leave the header under the Controls pill nudges it above (${JSON.stringify(pillRule)})`);
 
 	// ---- 3. the bottom edge band still docks, at the end -----------------------------------
 	from = await headerPoint(page, '#animation-window');

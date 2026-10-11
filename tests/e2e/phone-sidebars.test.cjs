@@ -93,6 +93,10 @@ h.run(async () => {
 		});
 		await P.locator('#ps-explorer').tap();
 		await P.waitForTimeout(1500);
+		// a TALL dock, so the pressed card sits ABOVE where the action sheet opens: the common case on a
+		// phone, and the one the bug needs (Android's contextmenu lands on the BACKDROP, not the sheet)
+		await P.evaluate(() => window.__stores.bottomDock.dockHeight.set(Math.round(window.innerHeight * 0.8)));
+		await P.waitForTimeout(600);
 		for (const [kind, sel] of [['file', '#explorer-list .explorer-card'], ['folder', '#explorer-list .explorer-folder-card']]) {
 			await step(`${theme}: long press a ${kind}`, async () => {
 				const card = P.locator(sel, { hasText: kind === 'file' ? 'notes.txt' : 'Props' }).first();
@@ -116,6 +120,7 @@ h.run(async () => {
 				const lifted = await P.locator('.ctx-scroll[role=menu]').count();
 				if (kind === 'file') await shot(P, `explorer-longpress-${theme}`);
 				h.check(opened === 1, `${theme}: a long press on a ${kind} opens its menu`);
+				h.check(android.on === 'the backdrop', `${theme}: premise: the finger is over the backdrop when Android's contextmenu arrives (${android.on})`);
 				h.check(held === 1 && android.prevented, `${theme}: Android's own long-press contextmenu (landing on ${android.on}) does not close it, and no browser menu shows`);
 				h.check(lifted === 1, `${theme}: the ${kind} menu STAYS OPEN after the finger lifts (${lifted})`);
 				await P.touchscreen.tap(195, 60);

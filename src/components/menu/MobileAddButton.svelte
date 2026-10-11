@@ -24,7 +24,7 @@
 
 <button
 	id="mobile-add-button"
-	class="tp-ui hud-fab mobile-hud-btn fixed bottom-16 left-4 z-30"
+	class="tp-ui hud-fab mobile-hud-btn fixed bottom-16 left-4 z-(--z-chrome)"
 	title="Add / context menu"
 	aria-label="Add object or open the context menu"
 	onclick={add}

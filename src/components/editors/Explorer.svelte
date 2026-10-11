@@ -8337,7 +8337,7 @@
 			id="explorer-list"
 			transition:fly={{ y: 300, duration: 200 }}
 			class="tp-ui tp-dock-panel fixed inset-x-0 bottom-0 p-2 {dockVisible ? '' : 'hidden'}"
-			style="z-index: var(--z-bottom); height: {$dockHeight}px"
+			style="z-index: var(--z-dock); height: {$dockHeight}px"
 			data-key-scope="panel"
 			aria-label="Explorer (docked)"
 			ondragover={(e) => {
@@ -8350,7 +8350,7 @@
 			role="region"
 		>
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
+				class="resize-cue absolute -top-1 left-0 right-0 z-28 h-2 cursor-ns-resize hover:bg-accent/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}
@@ -8489,7 +8489,7 @@
 {#if tDragging && tDrag}
 	<div
 		id="explorer-touch-ghost"
-		class="pointer-events-none fixed z-1400 max-w-[160px] -translate-x-1/2 -translate-y-1/2 truncate rounded-sm border border-accent bg-surface-1 px-2 py-1 text-center text-xs font-semibold text-text shadow-lg"
+		class="pointer-events-none fixed z-(--z-portal) max-w-[160px] -translate-x-1/2 -translate-y-1/2 truncate rounded-sm border border-accent bg-surface-1 px-2 py-1 text-center text-xs font-semibold text-text shadow-lg"
 		style="left: {tGhostX}px; top: {tGhostY}px;"
 	>
 		{tDrag.label}

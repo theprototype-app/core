@@ -428,7 +428,7 @@
 }
 .tp-fullname-tip {
 	position: fixed;
-	z-index: var(--z-menu);
+	z-index: var(--z-portal);
 	max-width: min(90vw, 420px);
 	padding: 6px 10px;
 	overflow-wrap: anywhere;

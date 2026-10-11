@@ -159,7 +159,7 @@
 <style>
 	.tour-spot {
 		position: fixed;
-		z-index: calc(var(--z-modal) - 6);
+		z-index: calc(var(--z-onboarding) - 2);
 		border-radius: 12px;
 		pointer-events: none;
 		outline: 2px solid var(--accent);
@@ -175,7 +175,7 @@
 	}
 	.tour-card {
 		position: fixed;
-		z-index: calc(var(--z-modal) - 5);
+		z-index: calc(var(--z-onboarding) - 1);
 		max-height: calc(100dvh - 24px);
 		overflow-y: auto;
 		padding: 14px 16px 12px;

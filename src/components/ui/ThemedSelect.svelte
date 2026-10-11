@@ -243,7 +243,7 @@
 	}
 	.ts-list {
 		position: fixed;
-		z-index: 9999;
+		z-index: var(--z-portal);
 		/* B1: fit the longest option name — the trigger width (inline min-width)
 		   is a floor, not the size, so a short selection can't truncate the list */
 		width: max-content;

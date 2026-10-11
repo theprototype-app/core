@@ -167,7 +167,7 @@ function showZone(on) {
 		zoneEl = document.createElement('div');
 		zoneEl.id = 'bottom-dock-zone';
 		zoneEl.style.cssText =
-			'position:fixed;left:0;right:0;bottom:0;z-index:29;pointer-events:none;background:rgb(37 99 235 / .25);border:2px dashed rgb(96 165 250 / .8);';
+			'position:fixed;left:0;right:0;bottom:0;z-index:calc(var(--z-chrome) - 1);pointer-events:none;background:rgb(37 99 235 / .25);border:2px dashed rgb(96 165 250 / .8);';
 		document.body.appendChild(zoneEl);
 	}
 	zoneEl.style.height = EDGE + 'px';

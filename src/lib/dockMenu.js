@@ -10,7 +10,7 @@ import {
 	codeWorkspaceClose
 } from '../stores/appStore';
 import { get } from 'svelte/store';
-import { activateDock, armDockMode, armDockModes, dockOccupants, dockTabs, moveDockTab, visibleDockKey, undockButtonMode, DOCK_FAMILY, DOCK_TITLES } from './bottomDock';
+import { activateDock, armDockMode, armDockModes, dockOccupants, dockTabs, moveDockTab, visibleDockKey, undockButtonMode, placeDockTabs, DOCK_FAMILY, DOCK_TITLES } from './bottomDock';
 import { queueMerge } from './windowTabs';
 
 // The dock's "+" add-a-view menu, in ONE place. The docked tab strip
@@ -214,6 +214,36 @@ export function dockAllOf(members, active) {
 	armDockModes(keys, true);
 	activateDock(active && keys.includes(active) ? active : keys[0]);
 	return keys.length;
+}
+
+/**
+ * 41 G6 — "Dock this tab" (a floating group tab's long-press / right-click menu): that ONE
+ * view goes to the bottom dock and is shown; the rest of its group stays floating (the
+ * member leaves the group as its floating node unmounts). False for a window with no
+ * docked mode (Objects, Chat, the AI window).
+ * @param {string} key
+ */
+export function dockTab(key) {
+	if (!DOCK_FAMILY.includes(key)) return false;
+	dockView(key);
+	return true;
+}
+
+/**
+ * 41 G7 — floating window(s) dropped on the docked tab strip: they dock at the caret
+ * (before `before`, or at the end of the present tabs), the first one shown. Views with
+ * no docked mode are skipped (they stay floating).
+ * @param {string[]} keys @param {string|null} before
+ * @returns {number} how many were docked
+ */
+export function dockAtStrip(keys, before) {
+	const docking = keys.filter((k) => DOCK_FAMILY.includes(k));
+	if (!docking.length) return 0;
+	placeDockTabs(docking, before);
+	if (docking.length === 1) armDockMode(docking[0], true);
+	else armDockModes(docking, true);
+	activateDock(docking[0]);
+	return docking.length;
 }
 
 /**

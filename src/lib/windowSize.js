@@ -47,8 +47,12 @@ function topInset() {
  *    viewport does not.
  * The centred Controls pill on a wide desktop is a RECT, not a band; dragWindow tests it
  * per window so a window can still be parked in the bottom corners beside it.
+ * `{dock: false}` (41 G7): a window's POSITION ignores the dock — windows sit above the
+ * dock's tier, so one parked over it keeps a reachable header (like the Objects window);
+ * the size cap (`viewportCap`) still counts it.
+ * @param {{dock?: boolean}} [options]
  */
-export function bottomReserve() {
+export function bottomReserve({ dock: withDock = true } = {}) {
 	if (typeof window === 'undefined' || typeof document === 'undefined') return 0;
 	let inset = 0;
 	let dock = 0;
@@ -60,7 +64,7 @@ export function bottomReserve() {
 	const vv = window.visualViewport;
 	const overlay =
 		vv && typeof vv.height === 'number' ? Math.max(0, window.innerHeight - (vv.height + (vv.offsetTop || 0))) : 0;
-	return Math.max(inset, dock) + overlay;
+	return Math.max(inset, withDock ? dock : 0) + overlay;
 }
 
 /** The largest a window may be right now, given it will be placed below the top

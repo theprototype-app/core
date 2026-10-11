@@ -293,6 +293,27 @@ export function reorderDockTabs(keys) {
 }
 
 /**
+ * 41 G7 — a floating window dropped ON the docked tab strip docks exactly where the caret
+ * showed: give `keys` their slots before `before` (a present tab) — or after the last
+ * present tab when `before` is null — BEFORE they report themselves docked, so
+ * `noteDockOrder` finds them placed and leaves them there instead of appending.
+ * @param {string[]} keys @param {string|null} before
+ */
+export function placeDockTabs(keys, before) {
+	const moving = keys.filter((k) => DOCK_FAMILY.includes(k));
+	if (!moving.length) return;
+	const present = presentKeys().filter((k) => !moving.includes(k));
+	const full = [...resolveOrder(get(dockTabOrder)), ...present].filter((k, i, a) => a.indexOf(k) === i).filter((k) => !moving.includes(k));
+	let at = before && full.includes(before) && !moving.includes(before) ? full.indexOf(before) : -1;
+	if (at < 0) {
+		const last = present.length ? full.indexOf(present[present.length - 1]) : -1;
+		at = last < 0 ? full.length : last + 1;
+	}
+	full.splice(at, 0, ...moving);
+	dockTabOrder.set(full);
+}
+
+/**
  * Move a tab one place left/right among the tabs that are PRESENT — moving past a tab
  * that is closed is meaningless, so the neighbour is the next VISIBLE one.
  * @param {string} key @param {'left'|'right'} dir @returns {boolean} did it move

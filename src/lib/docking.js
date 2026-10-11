@@ -440,13 +440,13 @@ export function dockable(node, { key }) {
 		// ...but only where the dock would really take THIS window. Yielding the band
 		// unconditionally hands the bottom of both side edges to a dock that cannot
 		// accept a non-DOCK_FAMILY panel, so the drop does nothing at all.
-		if (bottomDockWouldTake(key, e.clientY)) return null;
+		if (bottomDockWouldTake(key, e.clientY, e.clientX)) return null;
 		return e.clientX < EDGE ? 'left' : e.clientX > window.innerWidth - EDGE ? 'right' : null;
 	};
 	/** 81.4: the docked panel under the pointer (on a side with room), and which half
 	 * @param {any} e @returns {{side: 'left'|'right', node: any, slot: 'top'|'bottom'} | null} */
 	const splitAt = (e) => {
-		if (bottomDockWouldTake(key, e.clientY)) return null;
+		if (bottomDockWouldTake(key, e.clientY, e.clientX)) return null;
 		for (const side of /** @type {const} */ (['left', 'right'])) {
 			const stack = docked[side].filter((k) => k !== key);
 			if (stack.length !== 1) continue;

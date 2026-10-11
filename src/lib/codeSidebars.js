@@ -11,21 +11,24 @@
 
 import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
+import { readPanelOpen, writePanelOpen } from './ui/handheldPanels.js';
 
 /** @param {string} key @param {number} fallback @param {number} min @param {number} max */
 function readNumber(key, fallback, min, max) {
 	const v = Number(safeStorage.getItem(key));
 	return Number.isFinite(v) && v > 0 ? Math.min(max, Math.max(min, v)) : fallback;
 }
-/** @param {string} key @param {boolean} fallback */
-function readBool(key, fallback) {
-	const v = safeStorage.getItem(key);
-	return v === 'true' ? true : v === 'false' ? false : fallback;
-}
 /** a store that writes itself back on every change @template T @param {string} key @param {T} initial @returns {import('svelte/store').Writable<T>} */
 function persisted(key, initial) {
 	const store = writable(initial);
 	store.subscribe((v) => safeStorage.setItem(key, String(v)));
+	return store;
+}
+
+/** 41 G18: a sidebar's open state — HIDDEN on a phone until the user opens it (ui/handheldPanels) @param {string} key @param {boolean} desktopDefault */
+function panelPref(key, desktopDefault) {
+	const store = writable(readPanelOpen(key, desktopDefault));
+	store.subscribe((v) => writePanelOpen(key, v));
 	return store;
 }
 
@@ -37,13 +40,13 @@ export const RIGHT_MAX = 520;
 export const RIGHT_PANELS = /** @type {const} */ (['outline', 'problems', 'bound', 'find']);
 
 /** the left sidebar is shown (Ctrl+B) */
-export const codeLeftOpen = persisted('code:leftOpen', readBool('code:leftOpen', true));
+export const codeLeftOpen = panelPref('code:leftOpen', true);
 /** its width in px */
 export const codeLeftWidth = persisted('code:leftWidth', readNumber('code:leftWidth', 210, LEFT_MIN, LEFT_MAX));
 /** the Open editors share of the left sidebar's height, 0.1..0.9 (the separator) */
 export const codeLeftSplit = persisted('code:leftSplit', readNumber('code:leftSplit', 0.34, 0.1, 0.9));
 /** the right sidebar is shown (Ctrl+Alt+B) */
-export const codeRightOpen = persisted('code:rightOpen', readBool('code:rightOpen', true));
+export const codeRightOpen = panelPref('code:rightOpen', true);
 /** its width in px */
 export const codeRightWidth = persisted('code:rightWidth', readNumber('code:rightWidth', 230, RIGHT_MIN, RIGHT_MAX));
 const storedPanel = safeStorage.getItem('code:rightPanel');

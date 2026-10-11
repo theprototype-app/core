@@ -36,10 +36,14 @@
 	 *   view: {from: number, to: number},
 	 *   sel: {from: number, to: number} | null,
 	 *   onview: (v: {from: number, to: number}) => void,
-	 *   onselect: (s: {from: number, to: number} | null) => void
+	 *   onselect: (s: {from: number, to: number} | null) => void,
+	 *   lanes?: string[] | null,
+	 *   budget?: boolean
 	 * }}
 	 */
-	let { doc, view, sel, onview, onselect } = $props();
+	// 41 G17: `lanes` = the SERIES keys to draw (the Profiler's Settings tab; null = all five) and
+	// `budget` = mark the Quest budget (the dashed line + the red over-budget columns)
+	let { doc, view, sel, onview, onselect, lanes = null, budget = true } = $props();
 
 	// tokens-ok-begin: event-marker and series hues the timeline CANVAS draws (graph data, same in every theme)
 	/** event kind -> marker colour (a canvas cannot take a var()) */
@@ -104,14 +108,16 @@
 
 	const tAt = (/** @type {number} */ x) => view.from + (x / width) * (view.to - view.from);
 	const xAt = (/** @type {number} */ t) => ((t - view.from) / (view.to - view.from || 1)) * width;
-	const laneH = $derived((height - MARKER_H) / SERIES.length);
+	/** the lanes drawn, each with its SERIES index (colours and scales stay per series) */
+	const shown = $derived(SERIES.map((s, i) => ({ s, i })).filter((x) => !lanes || lanes.includes(x.s.key)));
+	const laneH = $derived((height - MARKER_H) / Math.max(1, shown.length));
 
 	// ---------------------------------------------------------------- drawing
 
 	let raf = 0;
 	$effect(() => {
 		// every input the picture depends on, read here so the effect re-runs on each
-		void [doc, view.from, view.to, sel?.from, sel?.to, width, height, hoverT, cursor, scales, $theme, $customThemes];
+		void [doc, view.from, view.to, sel?.from, sel?.to, width, height, hoverT, cursor, scales, shown, budget, $theme, $customThemes];
 		if (!canvas) return;
 		cancelAnimationFrame(raf);
 		raf = requestAnimationFrame(draw);
@@ -162,14 +168,14 @@
 		}
 
 		const cols = Math.max(1, Math.floor(width));
-		SERIES.forEach((s, i) => {
-			const top = MARKER_H + i * laneH;
+		shown.forEach(({ s, i }, lane) => {
+			const top = MARKER_H + lane * laneH;
 			const max = scales[i];
 			const y = (/** @type {number} */ v) => top + laneH - 2 - (v / max) * (laneH - 14);
 			const b = bucketize(frames, view.from, view.to, cols, s.of);
 			const step = width / cols;
 			const over = (/** @type {number} */ c) =>
-				s.budget !== null && (s.higherIsBetter ? b.min[c] < s.budget : b.max[c] > s.budget);
+				budget && s.budget !== null && (s.higherIsBetter ? b.min[c] < s.budget : b.max[c] > s.budget);
 			// min..max per column
 			for (let c = 0; c < cols; c++) {
 				if (!b.has[c]) continue;
@@ -201,7 +207,7 @@
 			g.stroke();
 			g.restore();
 			// the budget line
-			if (s.budget !== null) {
+			if (budget && s.budget !== null) {
 				g.strokeStyle = bad;
 				g.globalAlpha = 0.8;
 				g.setLineDash([4, 3]);
@@ -499,6 +505,8 @@
 	<div
 		bind:this={wrap}
 		id="profiler-timeline"
+		data-lanes={shown.map((x) => x.s.key).join(' ')}
+		data-budget={budget ? 'on' : 'off'}
 		class="pf-timeline focus-visible:ring-accent relative min-h-0 flex-1 cursor-crosshair rounded-sm outline-none select-none focus-visible:ring-1"
 		role="slider"
 		tabindex="0"

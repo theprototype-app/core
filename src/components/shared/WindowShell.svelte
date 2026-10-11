@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte'
 	import { minimalScroll } from '$lib/ui/minimalScroll.js'
+	// 41 G18: on a phone both sidebars start HIDDEN until the user opens them (per window, per device)
+	import { readPanelOpen, writePanelOpen, handheld } from '$lib/ui/handheldPanels.js'
 
 	// 197: reusable window CHROME. A MAIN area flanked by a collapsible PRIMARY
 	// sidebar and a SECONDARY panel that can show one of several MODES (e.g.
@@ -42,17 +44,13 @@
 	} = $props()
 
 	const LS = typeof localStorage === 'undefined' ? null : localStorage
-	const readBool = (k: string, d: boolean) => {
-		const v = LS?.getItem(k)
-		return v == null ? d : v !== 'false'
-	}
 
 	// deliberate one-time prop reads: `key` is static per window and the Default*
 	// props only seed first-run state (persisted to localStorage afterwards)
 	// svelte-ignore state_referenced_locally
-	let primaryOpen = $state(readBool(`ws:${key}:primaryOpen`, primaryDefaultOpen))
+	let primaryOpen = $state(readPanelOpen(`ws:${key}:primaryOpen`, primaryDefaultOpen))
 	// svelte-ignore state_referenced_locally
-	let secondaryOpen = $state(readBool(`ws:${key}:secondaryOpen`, secondaryDefaultOpen))
+	let secondaryOpen = $state(readPanelOpen(`ws:${key}:secondaryOpen`, secondaryDefaultOpen))
 	// svelte-ignore state_referenced_locally
 	let secondaryMode = $state(LS?.getItem(`ws:${key}:secondaryMode`) ?? secondaryModes[0]?.key ?? 'settings')
 	// PINNED = the user opened this panel via its tab (stays put); an auto-open via
@@ -90,14 +88,16 @@
 
 	function togglePrimary() {
 		primaryOpen = !primaryOpen
-		LS?.setItem(`ws:${key}:primaryOpen`, String(primaryOpen))
+		writePanelOpen(`ws:${key}:primaryOpen`, primaryOpen)
 	}
 	function switchSide() {
 		side = side === 'left' ? 'right' : 'left'
 		LS?.setItem(`ws:${key}:side`, side)
 	}
 	function persistSecondary() {
-		LS?.setItem(`ws:${key}:secondaryOpen`, String(secondaryOpen))
+		// on a phone only a panel the user OPENED (pinned) is remembered open: one a pick opened
+		// for a moment (showSecondary) must not greet them next time
+		writePanelOpen(`ws:${key}:secondaryOpen`, handheld() ? secondaryOpen && secondaryPinned : secondaryOpen)
 		LS?.setItem(`ws:${key}:secondaryMode`, secondaryMode)
 		LS?.setItem(`ws:${key}:secondaryPinned`, String(secondaryPinned))
 	}
@@ -296,12 +296,15 @@
 		justify-content: center;
 		font-size: 0.75rem;
 		color: var(--text-2);
-		background: var(--surface-active);
+		/* 41 G17: --text-2 is made for --surface-2; on --surface-active it fell under 4.5:1 in the
+		   green and 8-bit themes (profiler-themes caught it once the Profiler moved onto this shell) */
+		background: var(--surface-2);
+		box-shadow: inset 0 0 0 1px var(--border);
 		cursor: pointer;
 		z-index: 20;
 	}
 	.ws-edge-btn:hover {
-		background: var(--border-strong);
+		background: var(--surface-hover);
 	}
 	.ws-resize {
 		flex: 1;
@@ -326,14 +329,15 @@
 		justify-content: center;
 		font-size: 0.8rem;
 		color: var(--text-2);
-		background: var(--surface-active);
+		background: var(--surface-2);
+		box-shadow: inset 0 0 0 1px var(--border);
 		cursor: pointer;
 	}
 	.ws-tab-btn:first-child {
 		border-radius: 0.25rem 0 0 0;
 	}
 	.ws-tab-btn:hover {
-		background: var(--border-strong);
+		background: var(--surface-hover);
 	}
 	.ws-tab-active {
 		background: var(--accent-fill);

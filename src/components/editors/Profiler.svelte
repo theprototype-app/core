@@ -26,6 +26,11 @@
 	import ProfilerRecordings from './profiler/ProfilerRecordings.svelte';
 	import ProfilerCompare from './profiler/ProfilerCompare.svelte';
 	import { selectDrawn } from './profiler/profilerScene.js';
+	// 41 G17: the left (recordings) and right (Details / Settings) sidebars are WindowShell's, so they
+	// hide and resize like every other docked window's — and start hidden on a phone (G18)
+	import WindowShell from '../shared/WindowShell.svelte';
+	import ProfilerSidePanes from './profiler/ProfilerSidePanes.svelte';
+	import { profilerPrefs } from '$lib/perf/profilerPrefs.js';
 	import { profilerClose } from '../../stores/appStore.js';
 	import { dragWindow } from '$lib/dragWindow';
 	import { focusStack } from '$lib/windowFocus';
@@ -41,7 +46,6 @@
 	} from '$lib/bottomDock';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { safeStorage } from '$lib/safeStorage';
-	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		perfState,
 		startRecording,
@@ -213,7 +217,7 @@
 			const cur = get(liveSources).find((s) => s.id === key.slice(5))?.doc;
 			if (!cur || selected !== key) return;
 			const old = doc ? spanOf(doc) : null;
-			const following = !old || view.to >= old.to - 1;
+			const following = get(profilerPrefs).followLive && (!old || view.to >= old.to - 1);
 			doc = cur;
 			const next = spanOf(cur);
 			if (following) {
@@ -501,6 +505,8 @@
 	function pick(row) {
 		picked = row.uuid;
 		if (!row.uuid) return say(`${row.label} is a material — pick an object to select it.`);
+		// 41 G17: Settings ▸ "Select picked objects in the scene" off = only the Details tab follows
+		if (!get(profilerPrefs).selectInScene) return say(`${row.label} — its numbers are in Details.`);
 		const r = selectDrawn(row.uuid);
 		if (r.ok) say(`Selected ${r.name}${r.lod ? ' — its LOD group is in the properties' : ''}.`);
 		else if (r.reason === 'missing')
@@ -574,9 +580,62 @@
 		return { destroy: () => document.removeEventListener('keydown', key) };
 	}
 
-	// side by side when there is room, stacked when there is not
+	// side by side only when there is real room (both sidebars open on a 1440 screen leave ~950 px,
+	// which reads better STACKED: the graph over the list, the user's own picture of it)
 	let mainW = $state(900);
-	const wide = $derived(mainW >= 860);
+	const wide = $derived(mainW >= 1100);
+
+	// 41 G17 — THE SPLITTER between the graph and the list: drag it (or arrow keys on it), the
+	// share is remembered per orientation, a double-click puts the default back.
+	const SPLIT_DEFAULT = { stacked: 45, wide: 54 };
+	const splitKey = (/** @type {boolean} */ w) => (w ? 'profilerSplitWide' : 'profilerSplit');
+	/** @param {boolean} w */
+	function readSplit(w) {
+		const v = Number(safeStorage.getItem(splitKey(w)));
+		return Number.isFinite(v) && v >= 15 && v <= 85 ? v : w ? SPLIT_DEFAULT.wide : SPLIT_DEFAULT.stacked;
+	}
+	let splitStacked = $state(readSplit(false));
+	let splitWide = $state(readSplit(true));
+	const split = $derived(wide ? splitWide : splitStacked);
+	/** @type {HTMLDivElement | null} */
+	let splitEl = $state(null);
+	let splitting = $state(false);
+	/** @param {number} v */
+	function setSplit(v) {
+		const c = Math.round(Math.min(85, Math.max(15, v)) * 10) / 10;
+		if (wide) splitWide = c;
+		else splitStacked = c;
+	}
+	function saveSplit() {
+		safeStorage.setItem(splitKey(wide), String(split));
+	}
+	function splitDown(/** @type {PointerEvent} */ e) {
+		splitting = true;
+		/** @type {HTMLElement} */ (e.currentTarget).setPointerCapture(e.pointerId);
+		e.preventDefault();
+	}
+	function splitMove(/** @type {PointerEvent} */ e) {
+		if (!splitting || !splitEl) return;
+		const r = splitEl.getBoundingClientRect();
+		setSplit(wide ? ((e.clientX - r.left) / r.width) * 100 : ((e.clientY - r.top) / r.height) * 100);
+	}
+	function splitUp(/** @type {PointerEvent} */ e) {
+		if (!splitting) return;
+		splitting = false;
+		/** @type {HTMLElement} */ (e.currentTarget).releasePointerCapture?.(e.pointerId);
+		saveSplit();
+	}
+	function splitKeys(/** @type {KeyboardEvent} */ e) {
+		const d = { ArrowUp: -5, ArrowLeft: -5, ArrowDown: 5, ArrowRight: 5 }[e.key];
+		if (d === undefined) return;
+		e.preventDefault();
+		setSplit(split + d);
+		saveSplit();
+	}
+	function splitReset() {
+		setSplit(wide ? SPLIT_DEFAULT.wide : SPLIT_DEFAULT.stacked);
+		safeStorage.removeItem(splitKey(wide));
+	}
 	/** @param {HTMLElement} node */
 	function measure(node) {
 		const ro = new ResizeObserver(() => (mainW = node.clientWidth));
@@ -703,99 +762,141 @@
 
 {#snippet body()}
 	<div class="pf-body" class:pf-dropping={dropping} use:fileDrop>
-		<aside class="pf-side" use:minimalScroll>
-			<ProfilerRecordings
-				{rows}
-				live={$liveSources}
-				{selected}
-				{compareOn}
-				{compareA}
-				{compareB}
-				onselect={(k) => void select(k)}
-				onrename={(id, name) => void rename(id, name)}
-				ondelete={(id) => void remove(id)}
-				onpin={(id, on) => void pin(id, on)}
-				onexport={(k) => void exportKey(k)}
-				oncompare={setCompare}
-			/>
-			{#if selected === 'doc' && extraDoc}
-				<p class="pf-extra">
-					Showing <b>{extraLabel}</b> (not saved)
-					<button
-						class="ui-button-quiet"
-						onclick={async () => {
-							if (!extraDoc) return;
-							const id = await saveDocument(structuredClone(extraDoc));
-							await refresh();
-							await select('rec:' + id);
-						}}>Save</button
-					>
-				</p>
-			{/if}
-		</aside>
-		<section class="pf-main" use:measure aria-label="Recording">
-			{#if compareOn}
-				{#if docA && docB}
-					<ProfilerCompare
-						a={docA}
-						b={docB}
-						aLabel={labelOf(compareA)}
-						bLabel={labelOf(compareB)}
-						onpick={pick}
+		<WindowShell
+			key="profiler"
+			primaryLabel="recordings"
+			primaryDefaultWidth={220}
+			secondaryDefaultOpen
+			secondaryDefaultWidth={240}
+			secondaryModes={[
+				{ key: 'details', icon: 'ⓘ', label: 'Details' },
+				{ key: 'settings', icon: '⚙', label: 'Settings' }
+			]}
+		>
+			{#snippet primary()}
+				<aside class="pf-side" id="profiler-side">
+					<ProfilerRecordings
+						{rows}
+						live={$liveSources}
+						{selected}
+						{compareOn}
+						{compareA}
+						{compareB}
+						onselect={(k) => void select(k)}
+						onrename={(id, name) => void rename(id, name)}
+						ondelete={(id) => void remove(id)}
+						onpin={(id, on) => void pin(id, on)}
+						onexport={(k) => void exportKey(k)}
+						oncompare={setCompare}
 					/>
-				{:else}
-					<p class="pf-hint">
-						Pick <b>A</b> (the baseline) and <b>B</b> (the new one) in the list.
-					</p>
-				{/if}
-			{:else if doc && meta}
-				<div id="profiler-meta" class="pf-meta" title={meta.device}>
-					<b class="pf-meta-name">{meta.name || 'Recording'}</b>
-					<span>{meta.mode}{meta.kind && meta.kind !== 'recording' ? ' · ' + meta.kind : ''}</span>
-					<span>{fmtSec(meta.durationMs ?? spanOf(doc).to)} · {doc.frames.length} frames</span>
-					<span>v{meta.version} · {String(meta.build).slice(0, 7)}</span>
-					<span title={moduleList.join('\n') || 'no modules'}
-						>{moduleList.length} module{moduleList.length === 1 ? '' : 's'}</span
-					>
-					<span>{deviceName(meta.device)}{meta.gpu ? ' · ' + meta.gpu.slice(0, 40) : ''}</span>
-					{#if meta.xr}<span>VR</span>{/if}
-					{#if meta.refreshRate}<span>{meta.refreshRate} Hz</span>{/if}
-					{#if meta.framebufferScale}<span>×{meta.framebufferScale}</span>{/if}
-					<span>quality {qualityRange}</span>
-					{#if meta.scene}<span>scene {meta.scene}</span>{/if}
-					{#if meta.game}<span>game {meta.game}</span>{/if}
-				</div>
-				<div class="pf-split" class:pf-wide={wide}>
-					<div class="pf-tl">
-						<ProfilerTimeline
-							{doc}
-							{view}
-							{sel}
-							onview={(v) => (view = v)}
-							onselect={(s) => (sel = s)}
-						/>
-					</div>
-					<div class="pf-detail">
-						<ProfilerDetail {doc} {sel} {tab} ontab={setTab} onpick={pick} onjump={jump} {picked} />
-					</div>
-				</div>
-			{:else}
-				<p class="pf-hint">
-					Record a few seconds of the scene — <b>Light</b> costs nothing, <b>Detailed</b> also says
-					which objects the draw calls go to. Or import a <code>.tpprof</code>.
-				</p>
-			{/if}
-			{#if status}
-				<p
-					id="profiler-status"
-					class="pf-status"
-					class:pf-warn={statusTone === 'warn'}
-					role="status"
-				>
-					{status}
-				</p>
-			{/if}
-		</section>
+					{#if selected === 'doc' && extraDoc}
+						<p class="pf-extra">
+							Showing <b>{extraLabel}</b> (not saved)
+							<button
+								class="ui-button-quiet"
+								onclick={async () => {
+									if (!extraDoc) return;
+									const id = await saveDocument(structuredClone(extraDoc));
+									await refresh();
+									await select('rec:' + id);
+								}}>Save</button
+							>
+						</p>
+					{/if}
+				</aside>
+			{/snippet}
+			{#snippet main()}
+				<section class="pf-main" use:measure aria-label="Recording">
+					{#if compareOn}
+						{#if docA && docB}
+							<ProfilerCompare
+								a={docA}
+								b={docB}
+								aLabel={labelOf(compareA)}
+								bLabel={labelOf(compareB)}
+								onpick={pick}
+							/>
+						{:else}
+							<p class="pf-hint">
+								Pick <b>A</b> (the baseline) and <b>B</b> (the new one) in the list.
+							</p>
+						{/if}
+					{:else if doc && meta}
+						<div id="profiler-meta" class="pf-meta" title={meta.device}>
+							<b class="pf-meta-name">{meta.name || 'Recording'}</b>
+							<span>{meta.mode}{meta.kind && meta.kind !== 'recording' ? ' · ' + meta.kind : ''}</span>
+							<span>{fmtSec(meta.durationMs ?? spanOf(doc).to)} · {doc.frames.length} frames</span>
+							<span>v{meta.version} · {String(meta.build).slice(0, 7)}</span>
+							<span title={moduleList.join('\n') || 'no modules'}
+								>{moduleList.length} module{moduleList.length === 1 ? '' : 's'}</span
+							>
+							<span>{deviceName(meta.device)}{meta.gpu ? ' · ' + meta.gpu.slice(0, 40) : ''}</span>
+							{#if meta.xr}<span>VR</span>{/if}
+							{#if meta.refreshRate}<span>{meta.refreshRate} Hz</span>{/if}
+							{#if meta.framebufferScale}<span>×{meta.framebufferScale}</span>{/if}
+							<span>quality {qualityRange}</span>
+							{#if meta.scene}<span>scene {meta.scene}</span>{/if}
+							{#if meta.game}<span>game {meta.game}</span>{/if}
+						</div>
+						<div class="pf-split" class:pf-wide={wide} class:pf-splitting={splitting} bind:this={splitEl}>
+							<div class="pf-tl" style="flex: 0 0 {split}%">
+								<ProfilerTimeline
+									{doc}
+									{view}
+									{sel}
+									lanes={$profilerPrefs.lanes}
+									budget={$profilerPrefs.budget}
+									onview={(v) => (view = v)}
+									onselect={(s) => (sel = s)}
+								/>
+							</div>
+							<!-- 41 G17: the splitter between the graph and the list (remembered; double-click resets) -->
+							<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+							<div
+								id="profiler-splitter"
+								class="pf-splitter"
+								role="separator"
+								tabindex="0"
+								aria-label="Resize the graph and the list"
+								aria-orientation={wide ? 'vertical' : 'horizontal'}
+								aria-valuemin={15}
+								aria-valuemax={85}
+								aria-valuenow={Math.round(split)}
+								title="Drag to resize · double-click resets"
+								style="touch-action: none"
+								onpointerdown={splitDown}
+								onpointermove={splitMove}
+								onpointerup={splitUp}
+								onpointercancel={splitUp}
+								ondblclick={splitReset}
+								onkeydown={splitKeys}
+							></div>
+							<div class="pf-detail">
+								<ProfilerDetail {doc} {sel} {tab} ontab={setTab} onpick={pick} onjump={jump} {picked} />
+							</div>
+						</div>
+					{:else}
+						<p class="pf-hint">
+							Record a few seconds of the scene — <b>Light</b> costs nothing, <b>Detailed</b> also says
+							which objects the draw calls go to. Or import a <code>.tpprof</code>.
+						</p>
+					{/if}
+					{#if status}
+						<p
+							id="profiler-status"
+							class="pf-status"
+							class:pf-warn={statusTone === 'warn'}
+							role="status"
+						>
+							{status}
+						</p>
+					{/if}
+				</section>
+			{/snippet}
+			{#snippet secondary(mode)}
+				<ProfilerSidePanes {mode} {doc} {sel} {picked} />
+			{/snippet}
+		</WindowShell>
 	</div>
 {/snippet}
 
@@ -895,9 +996,7 @@
 
 <style>
 	.pf-body {
-		display: grid;
-		grid-template-columns: minmax(180px, 230px) 1fr;
-		gap: 8px;
+		display: flex;
 		min-height: 0;
 		flex: 1 1 auto;
 		height: 100%;
@@ -909,15 +1008,15 @@
 	}
 	.pf-side {
 		min-height: 0;
-		overflow-y: auto;
-		border-right: 1px solid var(--tp-line);
-		padding-right: 4px;
+		padding: 4px;
 	}
 	.pf-main {
 		display: flex;
 		flex-direction: column;
 		min-width: 0;
 		min-height: 0;
+		height: 100%;
+		padding: 0 6px;
 	}
 	.pf-meta {
 		display: flex;
@@ -935,20 +1034,60 @@
 		font-weight: 600;
 	}
 	.pf-split {
-		display: grid;
-		grid-template-rows: minmax(120px, 45%) 1fr;
-		gap: 6px;
+		display: flex;
+		flex-direction: column;
 		min-height: 0;
 		flex: 1 1 auto;
 	}
 	.pf-split.pf-wide {
-		grid-template-rows: none;
-		grid-template-columns: minmax(300px, 1fr) minmax(360px, 46%);
+		flex-direction: row;
 	}
-	.pf-tl,
-	.pf-detail {
+	.pf-tl {
 		min-height: 0;
 		min-width: 0;
+		display: flex;
+		flex-direction: column;
+	}
+	.pf-detail {
+		flex: 1 1 0;
+		min-height: 0;
+		min-width: 0;
+	}
+	/* the splitter: a thin rule with a generous grab band (the row/column between the panes) */
+	.pf-splitter {
+		flex: 0 0 8px;
+		position: relative;
+		cursor: row-resize;
+		outline: none;
+	}
+	.pf-wide > .pf-splitter {
+		cursor: col-resize;
+	}
+	.pf-splitter::after {
+		content: '';
+		position: absolute;
+		inset: 3px 0;
+		background: var(--border);
+		border-radius: 1px;
+	}
+	.pf-wide > .pf-splitter::after {
+		inset: 0 3px;
+	}
+	.pf-splitter:hover::after,
+	.pf-splitter:focus-visible::after,
+	.pf-splitting > .pf-splitter::after {
+		background: var(--accent);
+	}
+	@media (pointer: coarse) {
+		.pf-splitter {
+			flex-basis: 16px;
+		}
+		.pf-splitter::after {
+			inset: 7px 0;
+		}
+		.pf-wide > .pf-splitter::after {
+			inset: 0 7px;
+		}
 	}
 	.pf-hint {
 		margin: 12px 4px;

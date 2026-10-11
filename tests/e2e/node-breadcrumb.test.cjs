@@ -1,21 +1,19 @@
-// 41 G15 + G22 — THE NODE EDITOR'S BREADCRUMB BAR AND "+ Add node" (the user's node-graph-text.jpg:
+// 41 G15 — THE NODE EDITOR'S BREADCRUMB BAR (the user's node-graph-text.jpg:
 // the "Scene > Angelfish 1 — object flow" chips floated over the graph and wrapped into a tower on a
-// phone, a black minimap covered the canvas, and there was no visible way to add a node).
+// phone, and a black minimap covered the canvas).
 //
 //   desktop 1440x900 (mouse), dark + light:
 //     - the bar is ONE line in the layout flow ABOVE the graph — nothing of it overlaps the graph;
 //     - Scene › <object> › ⧉ group crumbs; a long name ellipsizes, the full name is the title;
 //     - a crumb opens its siblings (the scene's flows / the groups beside it), the current one
 //       checked, and picking one jumps there;
-//     - "+ Add node" opens the add list and the node lands at the VIEW CENTRE; Shift+A / Space at
-//       the POINTER (unchanged); the minimap stays on a desktop.
 //   phone FOLDED 390x844 + UNFOLDED 770x850 (touch, DPR 2.9, REAL touch through CDP), dark + light:
-//     - the bar fits the width on one line and never overlaps the graph; the Add button stays whole;
+//     - the bar fits the width on one line and never overlaps the graph; the minimap stays on a desktop;
 //     - a LONG PRESS on a crumb shows its full name (a phone has no hover) and opens no list;
 //     - a tap opens the siblings as the phone action sheet; the minimap is OFF by default;
 //     - fold -> unfold -> fold keeps the bar one line.
 // Counterfactual: on origin/feat/40-int the bar does not exist (#flow-scope-chip is the floating
-// chip INSIDE the graph pane, data-crumb / #flow-add-node are missing) -> every bar check is red.
+// chip INSIDE the graph pane, data-crumb is missing) -> every bar check is red.
 // SHOTS=<dir> [SHOT_TAG=before|after] writes the proof screenshots.
 const fs = require('fs');
 const path = require('path');
@@ -93,7 +91,6 @@ const layout = (P) =>
 			const t = el.querySelector('.tp-crumb-text');
 			return { key: el.dataset.crumb, text: el.textContent.trim(), title: el.title, ellipsized: !!t && t.scrollWidth > t.clientWidth + 1 };
 		}) : [];
-		const add = r(document.getElementById('flow-add-node'));
 		return {
 			bar: b && { top: Math.round(b.top), bottom: Math.round(b.bottom), left: Math.round(b.left), right: Math.round(b.right), h: Math.round(b.height) },
 			paneTop: p && Math.round(p.top),
@@ -102,7 +99,6 @@ const layout = (P) =>
 			oneLine: !!b && kids.every((k) => k.top >= b.top - 1 && k.bottom <= b.bottom + 1),
 			insideWidth: !!b && kids.every((k) => k.right <= window.innerWidth + 0.5),
 			crumbs,
-			add: add && { left: Math.round(add.left), right: Math.round(add.right), top: Math.round(add.top), w: Math.round(add.width) },
 			minimap: document.querySelectorAll('.svelteFlow .svelte-flow__minimap').length,
 			vw: window.innerWidth
 		};
@@ -115,20 +111,6 @@ const closeMenu = async (P, touch) => {
 	else await P.keyboard.press('Escape');
 	await P.waitForTimeout(350);
 };
-/** a new node's screen rect + type, the graph diffed against `before` */
-const newNode = (P, before) =>
-	P.evaluate((before) => {
-		let ns;
-		window.__stores.flowNodes.subscribe((v) => (ns = v))();
-		const n = ns.find((x) => !before.includes(x.id));
-		if (!n) return null;
-		const el = document.querySelector(`.svelteFlow .svelte-flow__node[data-id="${n.id}"]`);
-		const r = el?.getBoundingClientRect();
-		return { id: n.id, type: n.type, rect: r && { left: r.left, top: r.top, right: r.right, bottom: r.bottom } };
-	}, before);
-const nodeIds = (P) => P.evaluate(() => { let ns; window.__stores.flowNodes.subscribe((v) => (ns = v))(); return ns.map((n) => n.id); });
-const paneCentre = (P) => P.evaluate(() => { const r = document.querySelector('.svelteFlow .svelte-flow').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
-
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 
@@ -152,7 +134,6 @@ h.run(async () => {
 		const obj = L.crumbs.find((c) => c.key === 'object');
 		h.check(!!obj && obj.title === LONG + ' — object flow', `${theme} desktop: the full name is the crumb's title (${obj?.title})`);
 		h.check(L.minimap === 1, `${theme} desktop: the minimap stays on a desktop (${L.minimap})`);
-		h.check(!!L.add && L.add.right <= L.bar.right && L.add.top >= L.bar.top, `${theme} desktop: "+ Add node" is in the bar (${JSON.stringify(L.add)})`);
 		if (theme === 'light') {
 			await P.context().close();
 			continue;
@@ -199,43 +180,6 @@ h.run(async () => {
 			await P.waitForTimeout(500);
 		});
 
-		// ---- + Add node: at the VIEW CENTRE --------------------------------------------
-		await step('desktop: + Add node', async () => {
-			const before = await nodeIds(P);
-			await P.locator('#flow-add-node').click();
-			await P.waitForTimeout(400);
-			const opened = await P.locator('.ctx-scroll[role=menu]').count();
-			h.check(opened === 1, '"+ Add node" opens the add list');
-			await P.keyboard.type('Number');
-			await P.waitForTimeout(250);
-			await P.keyboard.press('Enter');
-			await P.waitForTimeout(700);
-			const n = await newNode(P, before);
-			const c = await paneCentre(P);
-			h.check(!!n?.rect && n.rect.left <= c.x && n.rect.right >= c.x && n.rect.top <= c.y && n.rect.bottom >= c.y, `...typing picks a node, placed at the CENTRE of the view (${n?.type} ${JSON.stringify(n?.rect)} centre ${JSON.stringify(c)})`);
-		});
-		await step('desktop: Shift+A / Space at the pointer', async () => {
-			const pane = await P.locator('.svelteFlow .svelte-flow__pane').boundingBox();
-			for (const key of ['Shift+A', 'Space']) {
-				const px = pane.x + 140 + (key === 'Space' ? 200 : 0);
-				const py = pane.y + 90;
-				// the editor takes the keyboard from a press anywhere in it: the bar's empty middle
-				// (a press on the pane's corners would land on the zoom Controls or the minimap)
-				const bar = await P.locator('#flow-scope-chip').boundingBox();
-				await P.mouse.click(bar.x + bar.width * 0.55, bar.y + bar.height / 2);
-				await P.mouse.move(px, py);
-				await P.waitForTimeout(150);
-				const before = await nodeIds(P);
-				await P.keyboard.press(key);
-				await P.waitForTimeout(400);
-				await P.keyboard.type('Number');
-				await P.waitForTimeout(250);
-				await P.keyboard.press('Enter');
-				await P.waitForTimeout(700);
-				const n = await newNode(P, before);
-				h.check(!!n?.rect && Math.abs(n.rect.left - px) < 26 && Math.abs(n.rect.top - py) < 26, `${key} adds at the POINTER, within one snap cell (${n?.type} ${JSON.stringify(n?.rect)} vs ${px},${py})`);
-			}
-		});
 		await P.context().close();
 	}
 
@@ -259,7 +203,6 @@ h.run(async () => {
 		h.check(L.oneLine && L.insideWidth && L.bar?.h <= 52, `${theme} folded: one line inside the 390px width (${L.bar?.h}px)`);
 		const obj = L.crumbs.find((c) => c.key === 'object');
 		h.check(!!obj && obj.ellipsized, `${theme} folded: the long object name ellipsizes (${obj?.text?.slice(0, 30)}…)`);
-		h.check(!!L.add && L.add.right <= L.vw && L.add.w >= 40, `${theme} folded: "+ Add node" stays whole (${JSON.stringify(L.add)})`);
 		h.check(L.minimap === 0, `${theme} folded: no minimap slab over the canvas on a phone (${L.minimap})`);
 		if (theme === 'dark') {
 			// ---- long press: the full name, and no list ---------------------------------
@@ -270,10 +213,22 @@ h.run(async () => {
 				await up();
 				await P.waitForTimeout(300);
 				const tip = await P.evaluate(() => document.querySelector('.tp-crumb-tip')?.textContent?.trim() ?? null);
+				// nothing (the selection toolbar, the dock tabs) is drawn over the bubble: probe its corners
+				const onTop = await P.evaluate(() => {
+					const t = document.querySelector('.tp-crumb-tip');
+					if (!t) return false;
+					t.style.pointerEvents = 'auto';
+					const r = t.getBoundingClientRect();
+					const pts = [[r.left + 6, r.top + 6], [r.right - 6, r.top + 6], [r.left + 6, r.bottom - 6], [r.right - 6, r.bottom - 6]];
+					const ok = pts.every(([x, y]) => t.contains(document.elementFromPoint(x, y)));
+					t.style.pointerEvents = '';
+					return ok;
+				});
 				await shot(P, 'phone-folded-dark-longpress-name');
 				const menus = await P.locator('.ctx-scroll[role=menu]').count();
 				h.check(tip === LONG + ' — object flow', `a long press shows the crumb's FULL name (${tip})`);
 				h.check(menus === 0, `...and the lift opens no list (${menus})`);
+				h.check(onTop, '...and nothing covers the name bubble (the selection toolbar above the dock used to)');
 				await P.touchscreen.tap(195, 120);
 				await P.waitForTimeout(300);
 				h.check((await P.locator('.tp-crumb-tip').count()) === 0, 'the name bubble goes with the next touch');
@@ -288,24 +243,6 @@ h.run(async () => {
 				await P.locator('.ctx-scroll[role=menu] [role=menuitem]', { hasText: 'Clownfish' }).first().tap();
 				await P.waitForTimeout(600);
 				h.check((await active(P)) === b, 'tapping a sibling flow jumps to it');
-			});
-			// ---- + Add node on a phone ---------------------------------------------------
-			await step('phone: + Add node', async () => {
-				const before = await nodeIds(P);
-				await P.locator('#flow-add-node').tap();
-				await P.waitForTimeout(500);
-				await shot(P, 'phone-folded-dark-add-sheet');
-				const rows = await menuRows(P);
-				h.check(rows.length > 4 && rows.some((r) => /Search nodes/.test(r.text)), `"+ Add node" opens the add list as a sheet (${rows.length} rows)`);
-				await P.locator('.ctx-scroll[role=menu] [role=menuitem]', { hasText: /Search nodes/ }).first().tap();
-				await P.waitForTimeout(300);
-				await P.keyboard.type('Number');
-				await P.waitForTimeout(250);
-				await P.keyboard.press('Enter');
-				await P.waitForTimeout(800);
-				const n = await newNode(P, before);
-				const c = await paneCentre(P);
-				h.check(!!n?.rect && n.rect.left <= c.x && n.rect.right >= c.x && n.rect.top <= c.y && n.rect.bottom >= c.y, `...the node lands at the view centre (${n?.type} ${JSON.stringify(n?.rect)} centre ${JSON.stringify(c)})`);
 			});
 			// ---- unfold, fold: still one line ---------------------------------------------
 			await step('phone: fold <-> unfold', async () => {

@@ -60,6 +60,12 @@
 		clearTimeout(tipTimer);
 		tipTimer = window.setTimeout(() => (tip = null), 3500);
 	}
+	/** the bubble lives in <body>: a dock is its own stacking context, and the selection toolbar
+	 *  above the dock covered a bubble drawn inside it */
+	function portal(node: HTMLElement) {
+		document.body.appendChild(node);
+		return { destroy: () => node.remove() };
+	}
 	// a tip goes with the next press anywhere (a phone has no "mouse leaves")
 	$effect(() => {
 		if (!tip) return;
@@ -102,7 +108,7 @@
 </nav>
 
 {#if tip}
-	<div class="tp-crumb-tip" role="tooltip" style:left="{tip.x}px" style:top="{tip.y}px">{tip.text}</div>
+	<div use:portal class="tp-crumb-tip" role="tooltip" style:left="{tip.x}px" style:top="{tip.y}px">{tip.text}</div>
 {/if}
 {#if menu}
 	<ContextMenu x={menu.x} y={menu.y} items={menu.items} sizeKey={menuKey} onclose={() => (menu = null)} />

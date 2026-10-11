@@ -83,7 +83,6 @@
 	import { flowMouseBindings } from '$lib/flowPrefs';
 	import Breadcrumbs from '../ui/Breadcrumbs.svelte'; // 41 G15
 	import { readPanelOpen, writePanelOpen } from '$lib/ui/handheldPanels.js'; // 41 G18
-	import { coarsePointer } from '$lib/inputDevice.js';
 	import { objectsGroup, selectedObject, selectedObjects } from '../../stores/sceneStore';
 	import { serializeNode, serializeEdge, deleteFlowNodes, deleteFlowEdges, setNodeData } from '$lib/nodesHandler';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
@@ -1708,29 +1707,6 @@
 		return list;
 	});
 
-	// 41 G22 — THE "+ Add node" BUTTON: the same Add list as the pane menu, anchored under the
-	// button, and the node lands at the VIEW CENTRE (Shift+A / Space keep "at the pointer").
-	// Searching straight away on a keyboard device; on touch the grouped list (a focused filter
-	// would slide the on-screen keyboard over the list).
-	function openAddMenu(e: MouseEvent) {
-		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-		// the card (150 wide) is CENTRED on the view, not hung from its corner
-		const c = screenToFlowPosition(paneCentre());
-		const at = { x: Math.round(c.x - 75), y: Math.round(c.y - 24) };
-		menu = {
-			x: Math.round(r.left),
-			y: Math.round(r.bottom + 2),
-			flowPos: at,
-			search: !coarsePointer(),
-			items: [
-				{ label: 'Search nodes…', revealFilter: true, hint: hint('nodes.add-search') },
-				{ label: 'Add note', icon: 'sticky-note', hint: hint('nodes.add-note'), action: () => addNote(at) },
-				{ section: 'Add' },
-				...addNodeItems(at)
-			]
-		};
-	}
-
 	// muted / collapsed cards: one generated stylesheet keyed by node id, so no node
 	// component has to learn about either (CSS.escape keeps a hostile id inert)
 	const flagsCss = $derived.by(() => {
@@ -2001,15 +1977,6 @@
 						onclick={() => requestDeleteObjectGraph(activeId, activeOwnerName)}
 					/>
 				{/if}
-				<!-- 41 G22: the visible way to add a node (phone + desktop); Shift+A / Space at the pointer -->
-				<KitButton
-					id="flow-add-node"
-					variant="secondary"
-					size="sm"
-					icon="plus"
-					title={'Add a node at the centre of the view (' + (hint('nodes.add-search') || 'Shift+A') + ' / Space: at the pointer)'}
-					onclick={openAddMenu}
-				>Add node</KitButton>
 			{/snippet}
 		</Breadcrumbs>
 	<!-- svelte-ignore a11y_no_static_element_interactions -->

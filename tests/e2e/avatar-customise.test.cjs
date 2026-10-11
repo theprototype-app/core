@@ -182,6 +182,15 @@ h.run(async () => {
 		await page.waitForTimeout(900);
 		const w0 = await page.locator('#character-panel').evaluate((el) => el.getBoundingClientRect().width);
 		const aim0 = await camPose();
+		// 41 G8: the framing centres the body in the free part with a projection VIEW OFFSET, so a
+		// wider drawer can re-frame by the offset alone (the pose stays when the height limits the fit)
+		const viewX = () =>
+			page.evaluate(() => {
+				let c;
+				window.__stores.globalCamera.subscribe((x) => (c = x))();
+				return c.view?.enabled ? c.view.offsetX : 0;
+			});
+		const offset0 = await viewX();
 		const grip = await page.locator('#character-resize').boundingBox();
 		await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
 		await page.mouse.down();
@@ -192,7 +201,11 @@ h.run(async () => {
 		h.check(Math.abs(w1 - w0 - 120) < 3, t(`5.7 dragging the edge 120px left widens the drawer (${Math.round(w0)} -> ${Math.round(w1)})`));
 		const stored5 = await page.evaluate(() => JSON.parse(localStorage.getItem('characterDrawer:size') || 'null'));
 		h.check(Math.abs((stored5?.w ?? 0) - w1) < 3, t('5.8 ...the width is remembered'));
-		h.check(poseOff(await camPose(), aim0) > 0.01, t('5.9 ...and the camera re-frames the character'));
+		const offset1 = await viewX();
+		h.check(
+			poseOff(await camPose(), aim0) > 0.01 || Math.abs(offset1 - offset0 - 60) < 3,
+			t(`5.9 ...and the camera re-frames the character (view offset ${Math.round(offset0)} -> ${Math.round(offset1)})`)
+		);
 		await page.click('#character-cancel');
 		await page.waitForSelector('#character-panel', { state: 'detached' });
 		await page.waitForTimeout(1200);

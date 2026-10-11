@@ -457,7 +457,9 @@ h.run(async () => {
 	await A.page.waitForTimeout(900);
 	from = await headerAt(A.page, '#flow-window');
 	h.check(!!from, '7.0 premise: the Node editor floats again');
-	await drag(A.page, from, { x: 640, y: 300 });
+	// 41 G7: a drop now parks the window where it was released (it no longer clamps above the
+	// dock), so where it floats again varies — move it a clear 160px whichever way has room
+	await drag(A.page, from, { x: 640, y: from.y > 300 ? from.y - 160 : from.y + 160 });
 	const moved = await headerAt(A.page, '#flow-window');
 	// the PREMISE that makes 7.2 mean anything: a drop that leaves the window floating
 	// reads identically to a gesture that never started at all, so prove it really dragged

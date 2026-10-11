@@ -440,3 +440,23 @@
 	font: 400 var(--fs-desc) var(--font-ui);
 	pointer-events: none;
 }
+
+/* 41 G7 ($lib/bottomDockDrop.js) — a floating window dragged over the docked tab strip: the
+   window goes see-through so the strip stays readable, the strip is outlined as the target,
+   and a caret marks the slot the drop docks into */
+.dock-drag-ghost {
+	opacity: 0.6 !important;
+	transition: opacity 120ms ease-out;
+}
+.dt-row.dock-drop-target .dt-bar {
+	box-shadow: 0 0 0 2px var(--accent);
+}
+.dock-strip-caret {
+	position: fixed;
+	z-index: var(--z-portal);
+	width: 3px;
+	border-radius: 2px;
+	background: var(--accent);
+	box-shadow: 0 0 0 1px var(--surface-1);
+	pointer-events: none;
+}

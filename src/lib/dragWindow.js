@@ -129,8 +129,13 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		return hh > 0 ? hh + 4 : Math.min(KEEP, node.offsetHeight || 0);
 	}
 
-	/** @param {boolean} full  true = keep the whole window on-screen; false = allow partial off */
-	function clamp(full) {
+	/** @param {boolean} full  true = keep the whole window on-screen; false = allow partial off
+	 *  @param {boolean} [loose] 41 G7 — WHILE DRAGGING only the viewport bounds the window:
+	 *  it may pass over the dock, the drawers and the bottom chrome like the Objects window
+	 *  (the bottom-chrome clamp used to stop it mid-drag, and since the drag summed movement
+	 *  deltas the window then stayed behind the cursor for the rest of the gesture). The
+	 *  bottom chrome applies again on release, so a header never stays under the HUD. */
+	function clamp(full, loose = false) {
 		const w = node.offsetWidth || 0;
 		const h = node.offsetHeight || 0;
 		const keepX = full ? w : Math.min(KEEP, w);
@@ -152,8 +157,8 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		// desktop is tested as a RECT, the symmetric of the Connect pill above, so a window
 		// can still be parked in a bottom corner beside it. Only a pill in the bottom half
 		// counts — a toolbar the user customized to the top is the Connect case, not this.
-		let maxTop = window.innerHeight - bottomReserve() - keepY;
-		const pill = typeof document !== 'undefined' ? document.getElementById('controls-pill') : null;
+		let maxTop = window.innerHeight - (loose ? 0 : bottomReserve({ dock: false })) - keepY;
+		const pill = !loose && typeof document !== 'undefined' ? document.getElementById('controls-pill') : null;
 		if (pill) {
 			const r = pill.getBoundingClientRect();
 			if (r.height > 0 && r.top > window.innerHeight / 2 && rect.left < r.right && rect.left + w > r.left)
@@ -346,6 +351,13 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 	revealers.set(key, reveal);
 
 	let dragging = false;
+	// 41 G6/G7: where in the window the pointer grabbed it. The window is placed at
+	// pointer - grab on every move, so it stays under the finger/cursor whatever a clamp
+	// did on the way (summing `movementX` let every clamped px become permanent drift, and
+	// touch movement is coalesced per frame anyway).
+	let grabX = 0;
+	let grabY = 0;
+	let dragId = -1;
 
 	/** @param {any} e */
 	function down(e) {
@@ -353,30 +365,45 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		// 36 F4: header controls stay clickable — a TAB in the header too (windowGrip.js)
 		if (e.button !== 0 || !isHeaderDrag(e.target)) return;
 		dragging = true;
+		dragId = e.pointerId;
+		// the node is the truth (a tab group or an ungroup may have placed it since)
+		const box = node.getBoundingClientRect();
+		rect.left = box.left;
+		rect.top = box.top;
+		grabX = e.clientX - box.left;
+		grabY = e.clientY - box.top;
 		node.setPointerCapture?.(e.pointerId);
 		e.preventDefault();
 	}
 
 	/** @param {any} e */
 	function move(e) {
-		if (!dragging) return;
-		rect.left = (typeof rect.left === 'number' ? rect.left : node.offsetLeft) + e.movementX;
-		rect.top = (typeof rect.top === 'number' ? rect.top : node.offsetTop) + e.movementY;
-		clamp(false); // allow partial off-screen while dragging
+		if (!dragging || e.pointerId !== dragId) return;
+		rect.left = e.clientX - grabX;
+		rect.top = e.clientY - grabY;
+		clamp(false, true); // partial off-screen allowed, and over the dock/bottom chrome
 		apply();
 	}
 
 	/** @param {any} e */
 	function up(e) {
-		if (!dragging) return;
+		if (!dragging || e.pointerId !== dragId) return;
 		dragging = false;
 		node.releasePointerCapture?.(e.pointerId);
+		clamp(false); // at rest the header comes out from under the bottom chrome
+		apply();
 		save();
+	}
+	/** @param {any} e */
+	function cancel(e) {
+		if (!dragging || e.pointerId !== dragId) return;
+		up(e);
 	}
 
 	node.addEventListener('pointerdown', down);
 	node.addEventListener('pointermove', move);
 	node.addEventListener('pointerup', up);
+	node.addEventListener('pointercancel', cancel);
 
 	// --- B7: opt-in resize grabber (bottom-right), Flow's corner-resize feel ---
 	/** @type {any} */
@@ -494,6 +521,7 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 			node.removeEventListener('pointerdown', down);
 			node.removeEventListener('pointermove', move);
 			node.removeEventListener('pointerup', up);
+			node.removeEventListener('pointercancel', cancel);
 		}
 	};
 }

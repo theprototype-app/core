@@ -304,6 +304,26 @@ export function tearOff(key, x, y) {
 }
 
 /**
+ * 41 G6 — "Ungroup this tab" (the group tab's long-press / right-click menu): the window
+ * leaves its group and floats on its own, placed a header's height down-right of the group
+ * so both stay visible and the strip is not covered.
+ * @param {string} key
+ */
+export function ungroupTab(key) {
+	const group = groupOfKey(key);
+	const entry = registry.get(key);
+	if (!group || !entry) return false;
+	const { left, top } = group.rect;
+	removeFromGroup(key);
+	releaseMember(entry.node);
+	const maxLeft = Math.max(0, (typeof window !== 'undefined' ? window.innerWidth : 1e4) - 120);
+	entry.node.style.left = Math.min(maxLeft, Math.max(0, left + 32)) + 'px';
+	entry.node.style.top = Math.max(0, top + 48) + 'px';
+	entry.node.style.display = '';
+	return true;
+}
+
+/**
  * The window whose HEADER is under (x, y) — the merge hit test, lifted out of
  * `tabbable`'s closure in W7 so it can be ONE test rather than one per window. It is
  * also the top of the drop PRECEDENCE order: a header is a small, deliberate target, so

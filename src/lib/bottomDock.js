@@ -17,12 +17,12 @@ import { safeStorage } from './safeStorage';
 
 export const FLOW_FAMILY = ['flow', 'flowcode', 'animation', 'uv', 'shader', 'hud'];
 /** every panel that can be a dock tab, in strip order (Node editor first) */
-export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code'];
+export const DOCK_FAMILY = [...FLOW_FAMILY, 'explorer', 'profiler', 'code', 'imageEditor'];
 /** @type {Record<string, string>} */
-export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', explorer: 'Explorer', profiler: 'Profiler', code: 'Code' };
+export const DOCK_TITLES = { flow: 'Node editor', flowcode: 'Flow Code', animation: 'Animation', uv: 'UV editor', shader: 'Shader editor', hud: 'HUD editor', explorer: 'Explorer', profiler: 'Profiler', code: 'Code', imageEditor: 'Image editor' };
 /** 38 NOTES-38 #23: the view icon each dock tab shows before its name (ui/Icon names) */
 /** @type {Record<string, string>} */
-export const DOCK_ICONS = { flow: 'workflow', flowcode: 'code', animation: 'clapperboard', uv: 'grid-3x3', shader: 'sparkles', hud: 'app-window', explorer: 'folder-open', profiler: 'activity', code: 'code' };
+export const DOCK_ICONS = { flow: 'workflow', flowcode: 'code', animation: 'clapperboard', uv: 'grid-3x3', shader: 'sparkles', hud: 'app-window', explorer: 'folder-open', profiler: 'activity', code: 'code', imageEditor: 'image' };
 
 const ls = typeof localStorage !== 'undefined' ? localStorage : null;
 
@@ -290,6 +290,27 @@ export function reorderDockTabs(keys) {
 	slots.forEach((slot, n) => (next[slot] = keys[n]));
 	dockTabOrder.set(next);
 	return true;
+}
+
+/**
+ * 41 G7 — a floating window dropped ON the docked tab strip docks exactly where the caret
+ * showed: give `keys` their slots before `before` (a present tab) — or after the last
+ * present tab when `before` is null — BEFORE they report themselves docked, so
+ * `noteDockOrder` finds them placed and leaves them there instead of appending.
+ * @param {string[]} keys @param {string|null} before
+ */
+export function placeDockTabs(keys, before) {
+	const moving = keys.filter((k) => DOCK_FAMILY.includes(k));
+	if (!moving.length) return;
+	const present = presentKeys().filter((k) => !moving.includes(k));
+	const full = [...resolveOrder(get(dockTabOrder)), ...present].filter((k, i, a) => a.indexOf(k) === i).filter((k) => !moving.includes(k));
+	let at = before && full.includes(before) && !moving.includes(before) ? full.indexOf(before) : -1;
+	if (at < 0) {
+		const last = present.length ? full.indexOf(present[present.length - 1]) : -1;
+		at = last < 0 ? full.length : last + 1;
+	}
+	full.splice(at, 0, ...moving);
+	dockTabOrder.set(full);
 }
 
 /**

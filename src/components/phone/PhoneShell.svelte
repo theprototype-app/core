@@ -79,7 +79,10 @@
 	const TOP_ROOM = 64; // the logo / chip / avatar row (12 + 44) and its gap
 	const STRIP_ROOM = 60;
 	const hasSel = $derived(($selectedObjects ?? []).length > 0);
-	const sheetMax = $derived(phoneSheetMax(viewportH, { barH: BAR_H, topH: TOP_ROOM, stripH: hasSel ? STRIP_ROOM : 0 }));
+	// 41 G13: Interact empties the selection, and the strip STAYS so Interact can be turned off
+	const interactOn = $derived($editorMode === 'interact');
+	const stripOn = $derived(hasSel || interactOn);
+	const sheetMax = $derived(phoneSheetMax(viewportH, { barH: BAR_H, topH: TOP_ROOM, stripH: stripOn ? STRIP_ROOM : 0 }));
 	const heights = $derived.by(() => {
 		const d = phoneDetentHeights(viewportH - BAR_H);
 		return /** @type {Record<string, number>} */ ({
@@ -254,6 +257,13 @@
 
 	// ---- the strip -------------------------------------------------------------------
 	// (`hasSel` is declared with the sheet geometry above: the room a sheet may take depends on it)
+	// 41 G11: Inspect is a TOGGLE whose pressed state is the Inspector really showing the
+	// selection (it used to be an always-tinted label button that could only open it)
+	const inspecting = $derived(!$inspectorClose && $inspectorKind === 'selection');
+	function toggleInspect() {
+		if (inspecting) inspectorClose.set(true);
+		else showSidebar('properties');
+	}
 
 	// ---- the bar ---------------------------------------------------------------------
 	function add() {
@@ -276,7 +286,7 @@
 	// it. Measured, not computed: those panels belong to other components.
 	let stripLift = $state(0);
 	$effect(() => {
-		if (!hasSel) return;
+		if (!stripOn) return;
 		let raf = 0;
 		const measure = () => {
 			let occ = 0;
@@ -478,16 +488,20 @@
 	</div>
 
 	<!-- SELECTION STRIP (NOTES-38 #31 / #32 b): only while something is selected — just looking
-	     or panning shows no toolbar. It rides above whatever is open along the bottom (a sheet,
-	     the Inspector, a docked view), so Move / Undo work without closing it. Undo, Redo, Select
-	     multiple and Interact live in More ▸ Edit when nothing is selected. -->
-	{#if hasSel}
+	     or panning shows no toolbar — or while Interact is on (41 G13: Interact empties the
+	     selection, and this is where it is turned off again). It rides above whatever is open
+	     along the bottom (a sheet, the Inspector, a docked view), so Move / Undo work without
+	     closing it. 41 G11: Multi-select and Interact are toggles here (after Scale), and Inspect
+	     is an icon toggle; each shows its real on/off state. -->
+	{#if stripOn}
 		<div class="ps-strip tp-noscrollbar" role="toolbar" aria-label="Edit selection" id="ps-strip" style:bottom={stripLift ? `${stripLift + 8}px` : null} use:stripScroll>
-			<button type="button" class="ps-cell" id="ps-move" aria-label="Move (1)" aria-pressed={$transformMode === 'translate'} onclick={() => setTransformMode('translate')}><Icon name="move" size={20} /></button>
-			<button type="button" class="ps-cell" id="ps-rotate" aria-label="Rotate (2)" aria-pressed={$transformMode === 'rotate'} onclick={() => setTransformMode('rotate')}><Icon name="rotate-ccw" size={20} /></button>
-			<button type="button" class="ps-cell" id="ps-scale" aria-label="Scale (3)" aria-pressed={$transformMode === 'scale'} onclick={() => setTransformMode('scale')}><Icon name="maximize-2" size={20} /></button>
+			<button type="button" class="ps-cell" id="ps-move" aria-label="Move (1)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'translate'} onclick={() => setTransformMode('translate')}><Icon name="move" size={20} /></button>
+			<button type="button" class="ps-cell" id="ps-rotate" aria-label="Rotate (2)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'rotate'} onclick={() => setTransformMode('rotate')}><Icon name="rotate-ccw" size={20} /></button>
+			<button type="button" class="ps-cell" id="ps-scale" aria-label="Scale (3)" disabled={!hasSel} aria-pressed={hasSel && $transformMode === 'scale'} onclick={() => setTransformMode('scale')}><Icon name="maximize-2" size={20} /></button>
+			<button type="button" class="ps-cell" id="ps-multiselect" aria-label="Select multiple" title="Select multiple" aria-pressed={$multiSelectMode} onclick={() => multiSelectMode.update((v) => !v)}><Icon name="square-dashed" size={20} /></button>
+			<button type="button" class="ps-cell" id="ps-interact" aria-label="Interact mode (I)" title="Interact mode (I)" aria-pressed={interactOn} onclick={() => toggleEditorMode()}><Icon name="hand" size={20} /></button>
 			<span class="ps-sep" aria-hidden="true"></span>
-			<button type="button" class="ps-inspect" id="ps-inspect" onclick={() => showSidebar('properties')}><Icon name="sliders-horizontal" size={16} />Inspect</button>
+			<button type="button" class="ps-cell" id="ps-inspect" aria-label="Inspect" title="Inspect" disabled={!hasSel && !inspecting} aria-pressed={inspecting} onclick={toggleInspect}><Icon name="sliders-horizontal" size={20} /></button>
 			<span class="ps-sep" aria-hidden="true"></span>
 			<button type="button" class="ps-cell" id="ps-undo" aria-label="Undo" disabled={!$canUndo} onclick={() => undo()}><Icon name="undo-2" size={20} /></button>
 			<button type="button" class="ps-cell" id="ps-redo" aria-label="Redo" disabled={!$canRedo} onclick={() => redo()}><Icon name="redo-2" size={20} /></button>
@@ -723,7 +737,7 @@
 		z-index: 44; /* above every sheet (38-43), a hosted window (40) and the Inspector */
 		display: flex;
 		align-items: center;
-		gap: 2px;
+		gap: 0; /* 41 G11: nine cells — the cells' own padding spaces them */
 		height: 52px;
 		padding: 0 4px;
 		border-radius: 16px;
@@ -745,7 +759,10 @@
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 44px;
+		/* 41 G11: nine cells + two 7 px rules + the strip's 16 px gutter, 8 px padding and border
+		   fit a 390 px phone (38.6 px each there), 44 when roomier */
+		width: min(44px, calc((100vw - 44px) / 9));
+		flex-shrink: 0;
 		height: 44px;
 		border: 0;
 		border-radius: 12px;
@@ -767,21 +784,6 @@
 		margin: 0 3px;
 		background: var(--border);
 	}
-	.ps-inspect {
-		display: inline-flex;
-		align-items: center;
-		gap: 6px;
-		height: 40px;
-		margin: 0 2px;
-		padding: 0 12px;
-		border: 0;
-		border-radius: var(--radius-button, 8px);
-		background: var(--accent-soft);
-		color: var(--accent-soft-text, var(--text));
-		font: 500 var(--fs-body) var(--font-ui);
-		cursor: pointer;
-	}
-
 	.ps-bar {
 		position: fixed;
 		left: 0;

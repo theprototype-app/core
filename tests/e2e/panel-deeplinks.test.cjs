@@ -162,13 +162,18 @@ h.run(async () => {
 	await A.page.evaluate(() => {
 		window.__stores.showSidebar('scene'); // start on a DIFFERENT panel
 	});
-	await A.page.waitForTimeout(400);
+	// 41 G2: only an Inspector that IS open follows a new object, and showSidebar opens on a timer
+	// (measured 0.5-1.5 s on a loaded box) — wait until it really shows the scene before adding
+	await h.eventually(() => panel(A.page), (p) => p.open && p.kind === 'scene', '(premise) Configure Scene is open');
 	await A.page.evaluate(() => window.__stores.addObjects?.spawnAtPoint?.('/create Sphere 0.5', [1, 0, 1]));
-	await A.page.waitForTimeout(500);
-	const afterAdd = await panel(A.page);
+	let afterAdd = await panel(A.page);
+	for (let i = 0; i < 40 && !(afterAdd.open && afterAdd.kind === 'selection'); i++) {
+		await A.page.waitForTimeout(100);
+		afterAdd = await panel(A.page);
+	}
 	h.check(
 		afterAdd.open && afterAdd.kind === 'selection',
-		`adding switches the panel to the new object's properties (${JSON.stringify(afterAdd)})`
+		`adding switches an OPEN panel to the new object's properties (${JSON.stringify(afterAdd)})`
 	);
 
 

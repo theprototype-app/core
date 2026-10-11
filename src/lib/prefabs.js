@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { objectsGroup, pokeScene } from '../stores/sceneStore';
-import { peers, showToast } from '../stores/appStore';
+import { peers, showToast, inspectorClose } from '../stores/appStore';
 import { recordObjectPresence, beginHistoryBatch, endHistoryBatch } from './history';
 import { patch as audioPatch, addCablesRemapped } from './audioPatch';
 import { selectObject } from './objectActions';
@@ -598,7 +598,8 @@ export function instantiatePrefab(prefab, position) {
 	} finally {
 		if (cables.length) endHistoryBatch('Prefab ' + (prefab.name || ''));
 	}
-	selectObject(object.uuid, true);
+	// 41 G2: a placed prefab is a CREATION — selected, the Inspector only follows if it is open
+	selectObject(object.uuid, !get(inspectorClose));
 	// R22 round 11: a .tpscene prefab carries what glTF and a bare snapshot cannot — the
 	// objects' flow graphs, shader graphs and authored clips. The OBJECTS are already in
 	// the scene (synchronously, so the drop lands at the cursor and VR still gets its

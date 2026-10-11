@@ -260,15 +260,19 @@ h.run(async () => {
 		});
 		await Q.waitForTimeout(600);
 		const logo = await Q.evaluate(() => { const r = document.getElementById('logo-menu').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+		// a transient toast (the phone quality notice) is not chrome under test
+		await Q.evaluate(() => window.__stores.toastStore.set([]));
 		await press(logo.x, logo.y);
 		await Q.waitForTimeout(600);
+		await Q.evaluate(() => window.__stores.toastStore.set([]));
+		await Q.waitForTimeout(200);
 		h.check(await menuOpen(), `G3a ${label}: the logo opens the burger menu`);
 		if (SHOTS) await Q.screenshot({ path: `${SHOTS}/g3a-${label}-menu-open.png` });
 		const audit = await Q.evaluate(AUDIT, ['#sidebar70']);
 		h.check(!audit.error && Object.keys(audit.foreign).length === 0, `G20 ${label}: nothing floats over the open burger menu (foreign ${JSON.stringify(audit.foreign)})`);
-		const mr = await Q.evaluate(() => { const r = document.getElementById('sidebar70').getBoundingClientRect(); return { right: r.right, top: r.top }; });
-		// inside: stays open
-		await press(mr.right - 30, mr.top + 14);
+		// inside (a section label): stays open
+		const lbl = await Q.evaluate(() => { const r = document.querySelector('#sidebar70 .side-label').getBoundingClientRect(); return { x: r.x + 20, y: r.y + r.height / 2 }; });
+		await press(lbl.x, lbl.y);
 		await Q.waitForTimeout(400);
 		h.check(await menuOpen(), `G3a ${label}: a press inside the menu keeps it open`);
 		// outside on the view: closes, selection unchanged

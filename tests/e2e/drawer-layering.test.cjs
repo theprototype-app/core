@@ -89,6 +89,9 @@ h.run(async () => {
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		s.annotationsHandler.addAnnotation(g.children[1].uuid);
+		let cur;
+		s.annotationsHandler.activeAnnotation.subscribe((v) => (cur = v))();
+		if (cur?.draft) s.annotationsHandler.setAnnotation({ ...cur.draft, name: 'A note in the view', text: 'marker' });
 		s.annotationsHandler.activeAnnotation.set(null);
 	});
 	await P.waitForTimeout(800);

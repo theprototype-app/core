@@ -85,7 +85,12 @@ h.run(async () => {
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
 		const kids = g.children.slice(0, 18);
-		for (const k of kids) s.annotationsHandler.addAnnotation(k.uuid);
+		for (const [i, k] of kids.entries()) {
+			s.annotationsHandler.addAnnotation(k.uuid);
+			let cur;
+			s.annotationsHandler.activeAnnotation.subscribe((v) => (cur = v))();
+			if (cur?.draft) s.annotationsHandler.setAnnotation({ ...cur.draft, name: `Note ${i + 1}`, text: 'A note long enough to fill its row' });
+		}
 		s.annotationsHandler.activeAnnotation.set(null);
 		for (let i = 0; i < 24; i++) s.pushNotification(`Notification number ${i + 1} — long enough to wrap onto two lines on a folded phone`);
 	});

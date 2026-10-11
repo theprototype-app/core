@@ -66,18 +66,17 @@ h.run(async () => {
 			if (g?.children?.length >= 4) break;
 			await new Promise((r) => setTimeout(r, 200));
 		}
-		const out = [];
+		const ah = s.annotationsHandler;
 		for (let i = 0; i < 14; i++) {
-			s.annotationsHandler.addAnnotation(g.children[i % g.children.length].uuid);
-			let list;
-			s.annotationsHandler.annotations.subscribe((v) => (list = v))();
-			const a = list[list.length - 1];
-			out.push(a?.id);
+			// addAnnotation opens a DRAFT; setAnnotation stores it (the notes-v2 recipe)
+			ah.addAnnotation(g.children[i % g.children.length].uuid, [(i % 5) * 1.2 - 2.4, 1 + Math.floor(i / 5) * 0.8, 0]);
+			let cur;
+			ah.activeAnnotation.subscribe((v) => (cur = v))();
+			ah.setAnnotation({ ...cur.draft, name: `Note ${i + 1}`, text: `Description of note ${i + 1}`, label: i % 3 === 0 ? 'mech' : '' });
 		}
-		s.annotationsHandler.activeAnnotation.set(null);
+		ah.activeAnnotation.set(null);
 		let list;
-		s.annotationsHandler.annotations.subscribe((v) => (list = v))();
-		list.forEach((a, i) => s.annotationsHandler.setAnnotation({ ...a, name: `Note ${i + 1}`, text: `Description of note ${i + 1}`, label: i % 3 === 0 ? 'mech' : '' }));
+		ah.annotations.subscribe((v) => (list = v))();
 		return list.map((a) => a.id);
 	});
 	h.check(ids.length === 14, `premise: 14 notes (${ids.length})`);
@@ -241,7 +240,12 @@ h.run(async () => {
 		await new Promise((r) => setTimeout(r, 900));
 		let g;
 		s.objectsGroup.subscribe((v) => (g = v))();
-		for (let i = 0; i < 3; i++) s.annotationsHandler.addAnnotation(g.children[0].uuid);
+		for (let i = 0; i < 3; i++) {
+			s.annotationsHandler.addAnnotation(g.children[0].uuid, [i * 1.5 - 1.5, 1.2, 0]);
+			let cur;
+			s.annotationsHandler.activeAnnotation.subscribe((v) => (cur = v))();
+			s.annotationsHandler.setAnnotation({ ...cur.draft, name: `Desk note ${i + 1}`, text: 'x' });
+		}
 		s.annotationsHandler.activeAnnotation.set(null);
 		s.notesDrawerOpen.set(true);
 	});

@@ -44,7 +44,7 @@
 		position: fixed;
 		top: calc(var(--connect-bottom, 0px) + 148px);
 		left: 16px;
-		z-index: 46;
+		z-index: calc(var(--z-hud) + 1);
 		display: flex;
 		flex-direction: column;
 		gap: 1px;

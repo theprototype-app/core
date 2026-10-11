@@ -482,7 +482,7 @@
 		position: fixed;
 		/* above the drawers (the docked notes drawer sits at 1000) but below
 		   --z-modal / --z-toast / --z-menu */
-		z-index: 1090;
+		z-index: calc(var(--z-popover) + 9);
 		width: min(300px, 92vw);
 		padding: 0;
 		display: flex;

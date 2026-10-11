@@ -26,7 +26,7 @@
 
 <button
 	id="ai-hud-button"
-	class="tp-ui hud-fab mobile-hud-btn fixed bottom-4 left-4 z-30"
+	class="tp-ui hud-fab mobile-hud-btn fixed bottom-4 left-4 z-(--z-chrome)"
 	class:on={$aiAssistantHidden === ''}
 	title="AI assistant"
 	aria-label="Open the AI assistant chat"

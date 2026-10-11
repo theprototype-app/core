@@ -656,7 +656,7 @@
 		left: 64px;
 		right: var(--ps-right, 116px);
 		height: 44px;
-		z-index: 300;
+		z-index: var(--z-chrome-top);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -730,7 +730,7 @@
 		left: 50%;
 		transform: translateX(-50%);
 		bottom: calc(84px + env(safe-area-inset-bottom, 0px));
-		z-index: 44; /* above every sheet (38-43), a hosted window (40) and the Inspector */
+		z-index: var(--z-selection); /* 41 G20: under every dock and sheet — a drawer covers it */
 		display: flex;
 		align-items: center;
 		gap: 2px;
@@ -797,7 +797,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		z-index: 44; /* #32 / 40 F1: above every sheet (the main menu is 43), so the raised Play circle is never covered */
+		z-index: var(--z-phone-bar); /* #32 / 40 F1: above every sheet (the main menu is 43), so the raised Play circle is never covered */
 		height: calc(76px + env(safe-area-inset-bottom, 0px));
 		padding: 0 6px calc(8px + env(safe-area-inset-bottom, 0px));
 		display: grid;
@@ -853,13 +853,13 @@
 		left: 0;
 		right: 0;
 		height: 24px;
-		z-index: 36; /* over its dock panel (--z-bottom, 35), under every sheet */
+		z-index: calc(var(--z-dock) + 1); /* over its dock panel (--z-dock, 35), under every sheet */
 		background: transparent;
 	}
 	.ps-scrim {
 		position: fixed;
 		inset: 0 0 calc(76px + env(safe-area-inset-bottom, 0px)) 0; /* #32: the bar stays live */
-		z-index: 37;
+		z-index: calc(var(--z-sheet) - 1);
 		border: 0;
 		padding: 0;
 		background: var(--scrim);
@@ -870,7 +870,7 @@
 		left: 0;
 		right: 0;
 		bottom: calc(76px + env(safe-area-inset-bottom, 0px)); /* #32 (a): above the bar */
-		z-index: 38;
+		z-index: var(--z-sheet);
 		display: flex;
 		flex-direction: column;
 		box-sizing: border-box;

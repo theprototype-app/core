@@ -87,13 +87,13 @@
 	.qp-backdrop {
 		position: absolute;
 		inset: 0;
-		z-index: 40;
+		z-index: 18;
 	}
 	.qp {
 		position: absolute;
 		top: 6px;
 		left: 50%;
-		z-index: 41;
+		z-index: 19;
 		display: flex;
 		flex-direction: column;
 		width: min(520px, calc(100% - 24px));

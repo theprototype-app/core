@@ -66,7 +66,7 @@
 </script>
 
 {#if $nodeDesignerOpen}
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-scrim">
+	<div class="fixed inset-0 z-(--z-modal) flex items-center justify-center bg-scrim">
 		<div class="flex h-[80vh] w-[640px] max-w-[95vw] flex-col gap-2 rounded-lg bg-surface-1 p-4 text-text shadow-xl">
 			<div class="flex items-center justify-between">
 				<span class="text-lg font-semibold">{editingId ? 'Edit node definition' : 'New custom node'}</span>

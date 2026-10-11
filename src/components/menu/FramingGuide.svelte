@@ -61,7 +61,7 @@
 		right: 0;
 		pointer-events: none;
 		/* above the viewport, below every panel/HUD */
-		z-index: 1;
+		z-index: calc(var(--z-canvas-overlay) - 1);
 	}
 	.bar {
 		position: absolute;

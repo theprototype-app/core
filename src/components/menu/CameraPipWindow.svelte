@@ -148,7 +148,7 @@
 		position: fixed;
 		/* 16-Q6: BELOW every panel and HUD (viewport 0 < this < drawer 30) — the frame
 		   is a viewport overlay, not chrome, so nothing of the UI hides behind it */
-		z-index: 2;
+		z-index: var(--z-canvas-overlay);
 		border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
 		border-radius: 6px;
 		box-shadow: var(--shadow-window);

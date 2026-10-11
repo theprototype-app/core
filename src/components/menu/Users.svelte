@@ -748,10 +748,10 @@
 
 <!-- when Connect docks to a full-width top bar, drop this corner chrome below it (plus
 	 its tab strip when pinned) so nothing overlaps — connectBarHeight is the bar's height -->
-<div class="top-right-chrome" style="position: fixed; right: 0px; z-index: 997; top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
+<div class="top-right-chrome" style="position: fixed; right: 0px; z-index: var(--z-chrome-top); top: {$connectDocked ? $connectBarHeight + 'px' : '0px'};">
 	<!-- 38 R8: one glass group (styles/hud.css) — notes, notifications, peers — sitting just
 	     left of the profile circle, which keeps its own place (its dropdown is anchored to it) -->
-	<div class="tp-ui hud-glass hud-tr" style="position: absolute; top: 10px; right: 76px; z-index: 997;">
+	<div class="tp-ui hud-glass hud-tr" style="position: absolute; top: 10px; right: 76px; z-index: 2;">
 	<!-- E2: scene-notes drawer toggle -->
 	<button
 		id="notes-toggle"
@@ -790,8 +790,8 @@
 		</button>
 
 		{#if peersOpen}
-			<div class="fixed inset-0" style="z-index: 996;" role="presentation" onclick={() => { peersOpen = false; roleMenuFor = null; }}></div>
-			<div id="peers-popover" data-key-scope="panel" class="ui-panel absolute right-0 top-11 w-72 p-2" style="z-index: 998; {$connectDocked ? `position: fixed; top: ${$connectBarHeight + 44}px; right: 8px; left: auto; max-width: calc(100vw - 16px);` : ''}">
+			<div class="fixed inset-0" style="z-index: 1;" role="presentation" onclick={() => { peersOpen = false; roleMenuFor = null; }}></div>
+			<div id="peers-popover" data-key-scope="panel" class="ui-panel absolute right-0 top-11 w-72 p-2" style="z-index: 3; {$connectDocked ? `position: fixed; top: ${$connectBarHeight + 44}px; right: 8px; left: auto; max-width: calc(100vw - 16px);` : ''}">
 				<div class="mb-1 flex items-center justify-between gap-2">
 					<!-- SELF-INCLUSIVE, in both places. The trigger badge and this line count the
 						 same thing and disagreed by one: the badge said 4 while the list drew 5
@@ -966,7 +966,7 @@
 				tabindex="0"
 				aria-haspopup="true"
 				aria-expanded={openDropdown}
-				style="position: absolute; top: 8px; right: 20px; cursor: pointer; z-index: 999; line-height: 0;"
+				style="position: absolute; top: 8px; right: 20px; cursor: pointer; z-index: 4; line-height: 0;"
 				onmousedown={() => (openDropdown = !openDropdown)}
 				onfocusin={() => (openDropdown = true)}
 				onfocusout={dropdownFocusOut}
@@ -991,7 +991,7 @@
 			in:fade|global={{ duration: 100, easing: sineIn }}
 			onfocusout={dropdownFocusOut}
 			class="tp-ui w-72 overflow-visible rounded-lg border border-border bg-surface-2 text-text shadow-sm"
-			style="position: fixed; bottom: auto; left: auto; border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 996; margin-top: -50px;{$phoneShellActive && profileH ? ` --profile-sheet-h: ${profileH}px;` : ''}"
+			style="position: fixed; bottom: auto; left: auto; border-top-right-radius: 1.5rem; padding-right: 0px; z-index: 1; margin-top: -50px;{$phoneShellActive && profileH ? ` --profile-sheet-h: ${profileH}px;` : ''}"
 		>
 		{#if $phoneShellActive}
 			<SheetGrip class="pm-grip" label="profile menu" height={profileH || dropdownEl?.offsetHeight || 240} onresize={profileResize} onclose={() => (openDropdown = false)} />
@@ -1128,7 +1128,7 @@
 	/* the caret is a lucide svg from a child component — needs :global to match */
 	.role-btn :global(.role-caret) { opacity: 0.85; }
 	/* portaled to <body> — fixed position, anchored via inline top/right */
-	.role-menu { position: fixed; z-index: 1000; min-width: 116px; padding: 4px; border-radius: 10px; background: var(--surface-1); border: 1px solid var(--border); box-shadow: var(--shadow-window); display: flex; flex-direction: column; gap: 2px; }
+	.role-menu { position: fixed; z-index: var(--z-portal); min-width: 116px; padding: 4px; border-radius: 10px; background: var(--surface-1); border: 1px solid var(--border); box-shadow: var(--shadow-window); display: flex; flex-direction: column; gap: 2px; }
 	.role-menu-item { display: flex; align-items: center; gap: 7px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font-size: 11px; cursor: pointer; text-transform: capitalize; text-align: left; }
 	.role-menu-item:hover { background: var(--surface-hover); }
 	.role-menu-item.sel { background: var(--accent-soft); }

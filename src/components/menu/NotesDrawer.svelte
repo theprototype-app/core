@@ -260,7 +260,7 @@
 		   both. Identical to the old max() whenever either term is 0. */
 		bottom: calc(var(--bottom-inset, 0px) + var(--controls-inset, 0px));
 		width: min(320px, 92vw);
-		z-index: calc(var(--z-bottom) - 1);
+		z-index: calc(var(--z-dock) - 1);
 		border-radius: var(--radius-window) 0 0 var(--radius-window);
 	}
 	/* only when Connect is docked (chrome dropped under it), and only in side-drawer mode
@@ -268,7 +268,7 @@
 	@media (min-width: 641px) {
 		:global(:root.connect-docked) #notes-drawer {
 			top: calc(var(--connect-bottom, 0px) + 4px);
-			z-index: 1000;
+			z-index: calc(var(--z-chrome-top) + 1);
 		}
 	}
 	/* the resize grabber only shows in bottom-sheet mode */
@@ -386,7 +386,7 @@
 			max-height: calc(100vh - var(--connect-bottom, 54px) - 56px);
 			border-radius: var(--radius-window) var(--radius-window) 0 0;
 			/* below the Controls HUD in the bottom-sheet layout (not the wide cover-z) */
-			z-index: calc(var(--z-bottom) - 1);
+			z-index: calc(var(--z-dock) - 1);
 		}
 		.notes-resize {
 			display: block;

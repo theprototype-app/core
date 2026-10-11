@@ -1026,7 +1026,7 @@
 		     swallow the drag) -->
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
+			class="resize-cue absolute -top-1 left-0 right-0 z-28 h-2 cursor-ns-resize hover:bg-accent/30"
 			style="touch-action: none"
 			title="Drag to resize"
 			onpointerdown={startResize}
@@ -1114,7 +1114,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		z-index: var(--z-bottom, 35);
+		z-index: var(--z-dock, 35);
 		display: flex;
 		flex-direction: column;
 		/* 38 R6: surface + top line from .tp-dock-panel (src/styles/windows.css); a docked

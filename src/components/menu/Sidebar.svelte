@@ -375,14 +375,14 @@
 	     spill off the left edge). Modal tier so it clears the avatar/Connect chrome. -->
 	<button
 		class="fixed inset-0 cursor-default bg-scrim"
-		style="z-index: calc(var(--z-menu) + 1)"
+		style="z-index: calc(var(--z-popover) + 1)"
 		aria-label="Close export settings"
 		onclick={() => (exportSettingsOpen = false)}
 	></button>
 	<div
 		id="export-settings-modal"
 		class="fixed w-64 max-w-[92vw] rounded-lg border border-border bg-surface-1 p-4 text-sm text-text shadow-2xl"
-		style="z-index: calc(var(--z-menu) + 2); top: {exportPos.top}px; left: {exportPos.left}px;"
+		style="z-index: calc(var(--z-popover) + 2); top: {exportPos.top}px; left: {exportPos.left}px;"
 	>
 		<p class="mb-2 font-semibold">Export settings</p>
 		<p class="mb-1 text-[11px] text-text-muted">Scene (.tpscene) includes:</p>
@@ -462,7 +462,7 @@
 		   below the screen where no swipe could bring them back */
 		top: var(--side-top, 64px);
 		left: 8px;
-		z-index: var(--z-menu);
+		z-index: var(--z-popover);
 		/* size to the widest row so wider-font themes (e.g. 8-bit) never overflow
 		   the panel and overlap the scene; clamped so it stays compact */
 		width: max-content;

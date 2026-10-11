@@ -26,7 +26,7 @@
      so an open flow editor / Explorer covers them -->
 <button
 	id="mic-button"
-	class="tp-ui hud-fab fixed bottom-16 right-4 z-30"
+	class="tp-ui hud-fab fixed bottom-16 right-4 z-(--z-chrome)"
 	class:on={$micActive || $pttActive}
 	title={$micActive ? 'Microphone on — click to mute' : 'Microphone off — click to talk, or hold V for push-to-talk'}
 	on:click={toggleMic}

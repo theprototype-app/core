@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { showConfirm } from './confirmDialog.js';
 import { get } from 'svelte/store';
 import { dropToSurface } from './snapping';
 import { recordTransform, recordEntry, recordObjectPresence, registerHistoryKind, registerHistoryMerge, sameJson, beginHistoryBatch, endHistoryBatch, historyBatchOpen, undoEntry, undoStack } from './history';
@@ -545,10 +546,12 @@ export function requestDeleteSelection() {
 		if (object?.type === 'Group' && object.children.length > 0) {
 			const count = collectTree(object).length - 1;
 			const name = object.name || 'group';
-			showToast(`Delete "${name}" and its ${count} object${count === 1 ? '' : 's'}?`, [
-				{ label: 'Delete', action: () => deleteWithUndo([object.uuid]) },
-				{ label: 'Cancel', action: () => {} }
-			]);
+			// 41 G16: a destructive question is a modal, not a toast
+			void showConfirm({
+				title: 'Delete this group?',
+				message: `"${name}" and the ${count} object${count === 1 ? '' : 's'} inside it will be deleted (Ctrl+Z brings them back).`,
+				confirmLabel: 'Delete'
+			}).then((ok) => ok && deleteWithUndo([object.uuid]));
 			return;
 		}
 	}

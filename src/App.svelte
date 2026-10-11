@@ -474,7 +474,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
      `bottom` is the open dock's height, which is what makes the dock a REGION (the
      DCC behaviour: the canvas ends where the panel begins) instead of an overlay
      drawn on top of a full-window canvas. No `z-index` — a stacking context here
-     would trap the PiP frame and the framing guide; the dock's --z-bottom (35)
+     would trap the PiP frame and the framing guide; the dock's --z-dock (35)
      already sits above the canvas at the default 0. No `transition` either: each
      step reallocates the composer's render targets, so animating the inset turns one
      realloc into one per frame. -->

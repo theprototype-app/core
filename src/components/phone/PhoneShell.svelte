@@ -20,6 +20,7 @@
 	// that class, so CSS and markup always agree about which shell is on screen.
 	import { onDestroy, tick } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import { connectionStatus } from '$lib/connectionStatus';
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
@@ -241,7 +242,6 @@
 	// the same three states the Connect pill derives (Connect.svelte connState)
 	const pendingOut = $derived(($waitingForApproval ?? []).some((/** @type {any} */ w) => w[1] === 'pending'));
 	const connState = $derived(openCount > 0 ? 'connected' : pendingOut ? 'pending' : 'idle');
-	const hereCount = $derived(Math.max(1, ($userdata ?? []).length));
 	function openConn() {
 		if ($phoneSheet === 'conn') return closeConn();
 		phoneSheet.set('conn');
@@ -462,13 +462,14 @@
 				id="ps-connect-chip"
 				class="ps-chip-main"
 				aria-expanded={$phoneSheet === 'conn'}
-				aria-label={`Connection: ${connState === 'connected' ? hereCount + ' here' : connState === 'pending' ? 'waiting for approval' : 'not connected'}. Open details`}
+				aria-label={`${$connectionStatus.words}. Open connection details`}
+				title={$connectionStatus.words}
+				data-tone={$connectionStatus.tone}
 				onclick={openConn}
 			>
-				<span class="ps-dot" aria-hidden="true"></span>
-				<span class="ps-chip-lbl">
-					{connState === 'connected' ? hereCount + ' here' : connState === 'pending' ? 'Waiting…' : 'Connect'}
-				</span>
+				<!-- 41 G21: NO text — a status dot + the chevron (+ the mic in a call), so the chip fits
+				     beside the bell and the peers; the words are the tooltip and the accessible name -->
+				<span class="ps-dot cx-status-dot" data-tone={$connectionStatus.tone} aria-hidden="true"></span>
 				<Icon name="chevron-down" size={16} />
 			</button>
 			{#if connState === 'connected'}
@@ -660,7 +661,7 @@
 		left: 64px;
 		right: var(--ps-right, 116px);
 		height: 44px;
-		z-index: 300;
+		z-index: var(--z-chrome-top);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -693,24 +694,11 @@
 		font: 500 var(--fs-body) var(--font-ui);
 		cursor: pointer;
 	}
-	.ps-chip-lbl {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
 	.ps-dot {
 		width: 8px;
 		height: 8px;
 		flex-shrink: 0;
 		border-radius: 50%;
-		background: var(--text-faint);
-	}
-	.ps-chip[data-state='connected'] .ps-dot {
-		background: var(--accent);
-	}
-	.ps-chip[data-state='pending'] .ps-dot {
-		background: var(--warn-text);
 	}
 	.ps-chip-mic {
 		display: inline-flex;
@@ -734,7 +722,7 @@
 		left: 50%;
 		transform: translateX(-50%);
 		bottom: calc(84px + env(safe-area-inset-bottom, 0px));
-		z-index: 44; /* above every sheet (38-43), a hosted window (40) and the Inspector */
+		z-index: var(--z-selection); /* 41 G20: under every dock and sheet — a drawer covers it */
 		display: flex;
 		align-items: center;
 		gap: 0; /* 41 G11: nine cells — the cells' own padding spaces them */
@@ -789,7 +777,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		z-index: 44; /* #32 / 40 F1: above every sheet (the main menu is 43), so the raised Play circle is never covered */
+		z-index: var(--z-phone-bar); /* #32 / 40 F1: above every sheet (the main menu is 43), so the raised Play circle is never covered */
 		height: calc(76px + env(safe-area-inset-bottom, 0px));
 		padding: 0 6px calc(8px + env(safe-area-inset-bottom, 0px));
 		display: grid;
@@ -845,13 +833,13 @@
 		left: 0;
 		right: 0;
 		height: 24px;
-		z-index: 36; /* over its dock panel (--z-bottom, 35), under every sheet */
+		z-index: calc(var(--z-dock) + 1); /* over its dock panel (--z-dock, 35), under every sheet */
 		background: transparent;
 	}
 	.ps-scrim {
 		position: fixed;
 		inset: 0 0 calc(76px + env(safe-area-inset-bottom, 0px)) 0; /* #32: the bar stays live */
-		z-index: 37;
+		z-index: calc(var(--z-sheet) - 1);
 		border: 0;
 		padding: 0;
 		background: var(--scrim);
@@ -862,7 +850,7 @@
 		left: 0;
 		right: 0;
 		bottom: calc(76px + env(safe-area-inset-bottom, 0px)); /* #32 (a): above the bar */
-		z-index: 38;
+		z-index: var(--z-sheet);
 		display: flex;
 		flex-direction: column;
 		box-sizing: border-box;

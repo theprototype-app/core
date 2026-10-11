@@ -908,14 +908,14 @@
 			class="tp-themed fixed inset-x-0 bottom-0 tp-ui tp-dock-panel flex flex-col p-2 {dockVisible
 				? ''
 				: 'hidden'}"
-			style="z-index: var(--z-bottom); height: {$dockHeight}px; border-top: 1px solid var(--tp-line)"
+			style="z-index: var(--z-dock); height: {$dockHeight}px; border-top: 1px solid var(--tp-line)"
 			data-key-scope="panel"
 			role="region"
 			aria-label="Profiler (docked)"
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue hover:bg-accent/30 absolute -top-1 right-0 left-0 z-30 h-2 cursor-ns-resize"
+				class="resize-cue hover:bg-accent/30 absolute -top-1 right-0 left-0 z-28 h-2 cursor-ns-resize"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}

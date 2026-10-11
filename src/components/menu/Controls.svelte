@@ -2090,7 +2090,7 @@
 	 * they ask for. That z only orders the FAB against its own siblings in the well.
 	 * `left` is emitted only once the track has been MEASURED — before that (SSR, the
 	 * first paint) the `start-1/2` class is the honest answer. */
-	const pillZClass = $derived($toolbarAlwaysOnTop ? 'z-45' : 'z-30');
+	const pillZClass = $derived($toolbarAlwaysOnTop ? 'z-(--z-hud)' : 'z-(--z-chrome)');
 	const pillStyle = $derived(
 		($floatingToolbar ? 'bottom: calc(var(--bottom-inset, 0px) + 16px);' : 'bottom: 16px;') +
 			(track.mid > 0 ? ` left: ${Math.round(pillCentre)}px;` : '') +
@@ -2221,7 +2221,7 @@
      dock so an open flow editor / Explorer covers the stack -->
 <button
 	id="chat-button"
-	class="tp-ui hud-fab fixed bottom-4 right-4 z-30"
+	class="tp-ui hud-fab fixed bottom-4 right-4 z-(--z-chrome)"
 	class:on={$chatHidden !== 'hidden'}
 	title={$chatUnread > 0 ? `Chat (C) — ${$chatUnread} unread${$chatMentioned ? ', you were mentioned' : ''}` : 'Chat (C)'}
 	on:click={() => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')}

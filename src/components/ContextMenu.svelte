@@ -415,7 +415,7 @@
 <div
 	use:portal
 	class="fixed inset-0"
-	style="z-index: var(--z-menu);"
+	style="z-index: var(--z-portal);"
 	role="presentation"
 	on:pointerdown={() => (backdropPressed = true)}
 	on:click={() => backdropPressed && dispatch('close')}
@@ -437,7 +437,7 @@
 	use:place
 	use:minimalScroll
 	class="ctx-scroll tp-ui tp-menu fixed min-w-36 overflow-y-auto overflow-x-hidden"
-	style="left: 0; top: 0; z-index: calc(var(--z-menu) + 1);"
+	style="left: 0; top: 0; z-index: calc(var(--z-portal) + 1);"
 	role="menu"
 	on:mousedown={keepFocus}
 	on:pointerdown|capture={() => (menuPressed = true)}

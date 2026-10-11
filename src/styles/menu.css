@@ -2,7 +2,7 @@
 
 .burger {
 	position: absolute;
-	z-index: var(--z-menu); /* the logo menu opens above Connect + toasts */
+	z-index: var(--z-chrome-top); /* top-bar chrome: modals, What's new and menus all cover it (41 G3b) */
 }
 
 /* hamburger menu — positioning only: typography belongs to the drawer
@@ -11,7 +11,7 @@
 .hamburger {
 	position: absolute;
 	cursor: pointer;
-	z-index: var(--z-drawer);
+	z-index: var(--z-chrome);
 	border-radius: 20px;
 	padding-top: 30px;
 }

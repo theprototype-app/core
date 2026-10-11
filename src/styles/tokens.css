@@ -55,6 +55,7 @@
 	--on-live: #ffffff;
 	--speaking: #3fb67a; /* voice speaking ring (NOTES-38 #12: NOT --live) */
 	--warn-text: #f0a07a; /* reset + soft-destructive text actions */
+	--status-warn: var(--ink-warn, #fbbf24); /* 41 G21: a status FILL (the connecting dot) — not text */
 	--danger: #d23b3b; /* destructive confirm buttons (white on it 4.8:1) */
 	--on-danger: #ffffff;
 	--badge-bg: #1f2b42; /* scope badges */
@@ -173,6 +174,7 @@
 	--live: #e4501d;
 	--speaking: #1f8a55;
 	--warn-text: #a5441a;
+	--status-warn: #e5a50a; /* light: --ink-warn is a dark text ink (brown), a dot needs amber */
 	--danger: #c93232;
 	--badge-bg: #e3ebf8;
 	--badge-text: #284a84;

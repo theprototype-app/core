@@ -1,5 +1,6 @@
 <script>
 	import Icon from '../ui/Icon.svelte';
+	import { showConfirm } from '$lib/confirmDialog.js';
 	// Unified inspector (phase 64): one drawer serves every target — mesh, group,
 	// light (from the selection) and the scene itself ($inspectorKind = 'scene').
 	// Replication messages are byte-identical to the old three panels.
@@ -877,10 +878,13 @@
 			geoTick++;
 		};
 		if ($selectedObject.userData?.vertexEdited) {
-			showToast('This mesh has vertex edits — rebuilding the geometry discards them.', [
-				{ label: 'Rebuild', action: run },
-				{ label: 'Keep edits', action: () => geoTick++ }
-			]);
+			// 41 G16: discarding edits is a modal question, not a toast
+			void showConfirm({
+				title: 'Discard the vertex edits?',
+				message: 'This mesh has vertex edits — rebuilding the geometry discards them.',
+				confirmLabel: 'Rebuild',
+				cancelLabel: 'Keep edits'
+			}).then((ok) => (ok ? run() : geoTick++));
 			return;
 		}
 		run();
@@ -896,16 +900,16 @@
 		const uuid = $selectedObject?.uuid;
 		const params = geoParams?.params;
 		if (!uuid || !params) return;
-		showToast('Rebuild this terrain from its parameters? The sculpted shape is discarded.', [
-			{
-				label: 'Rebuild',
-				action: () => {
-					applyGeometry(uuid, { ...params });
-					geoTick++;
-				}
-			},
-			{ label: 'Keep sculpt', action: () => {} }
-		]);
+		void showConfirm({
+			title: 'Rebuild this terrain?',
+			message: 'It is rebuilt from its parameters — the sculpted shape is discarded.',
+			confirmLabel: 'Rebuild',
+			cancelLabel: 'Keep sculpt'
+		}).then((ok) => {
+			if (!ok) return;
+			applyGeometry(uuid, { ...params });
+			geoTick++;
+		});
 	}
 
 	/**

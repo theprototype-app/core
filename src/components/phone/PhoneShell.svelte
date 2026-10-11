@@ -20,6 +20,7 @@
 	// that class, so CSS and markup always agree about which shell is on screen.
 	import { onDestroy, tick } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
+	import { connectionStatus } from '$lib/connectionStatus';
 	import SheetGrip from '../ui/SheetGrip.svelte';
 	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
@@ -238,7 +239,6 @@
 	// the same three states the Connect pill derives (Connect.svelte connState)
 	const pendingOut = $derived(($waitingForApproval ?? []).some((/** @type {any} */ w) => w[1] === 'pending'));
 	const connState = $derived(openCount > 0 ? 'connected' : pendingOut ? 'pending' : 'idle');
-	const hereCount = $derived(Math.max(1, ($userdata ?? []).length));
 	function openConn() {
 		if ($phoneSheet === 'conn') return closeConn();
 		phoneSheet.set('conn');
@@ -452,13 +452,14 @@
 				id="ps-connect-chip"
 				class="ps-chip-main"
 				aria-expanded={$phoneSheet === 'conn'}
-				aria-label={`Connection: ${connState === 'connected' ? hereCount + ' here' : connState === 'pending' ? 'waiting for approval' : 'not connected'}. Open details`}
+				aria-label={`${$connectionStatus.words}. Open connection details`}
+				title={$connectionStatus.words}
+				data-tone={$connectionStatus.tone}
 				onclick={openConn}
 			>
-				<span class="ps-dot" aria-hidden="true"></span>
-				<span class="ps-chip-lbl">
-					{connState === 'connected' ? hereCount + ' here' : connState === 'pending' ? 'Waiting…' : 'Connect'}
-				</span>
+				<!-- 41 G21: NO text — a status dot + the chevron (+ the mic in a call), so the chip fits
+				     beside the bell and the peers; the words are the tooltip and the accessible name -->
+				<span class="ps-dot cx-status-dot" data-tone={$connectionStatus.tone} aria-hidden="true"></span>
 				<Icon name="chevron-down" size={16} />
 			</button>
 			{#if connState === 'connected'}
@@ -679,24 +680,11 @@
 		font: 500 var(--fs-body) var(--font-ui);
 		cursor: pointer;
 	}
-	.ps-chip-lbl {
-		min-width: 0;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
 	.ps-dot {
 		width: 8px;
 		height: 8px;
 		flex-shrink: 0;
 		border-radius: 50%;
-		background: var(--text-faint);
-	}
-	.ps-chip[data-state='connected'] .ps-dot {
-		background: var(--accent);
-	}
-	.ps-chip[data-state='pending'] .ps-dot {
-		background: var(--warn-text);
 	}
 	.ps-chip-mic {
 		display: inline-flex;

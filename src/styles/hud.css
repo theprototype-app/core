@@ -291,3 +291,42 @@
 	font: 600 0.75rem var(--font-ui-mono);
 	color: var(--text-2);
 }
+
+/* 41 G21 — the connection status DOT (desktop Connect bar + chip, the phone chip): grey idle, yellow
+   pulsing while connecting / reconnecting, green connected, red when the peer server cannot be
+   reached. No text beside it: the words are the element's title + aria-label (connectionStatus.js). */
+.cx-status-dot {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	flex: 0 0 auto;
+	border-radius: 50%;
+	background: var(--text-faint);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-faint) 25%, transparent);
+}
+.cx-status-dot[data-tone='connecting'] {
+	background: var(--status-warn);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-warn) 30%, transparent);
+	animation: cx-status-pulse 1.2s ease-in-out infinite;
+}
+.cx-status-dot[data-tone='connected'] {
+	background: var(--ink-good);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink-good) 30%, transparent);
+}
+.cx-status-dot[data-tone='failed'] {
+	background: var(--ink-bad);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink-bad) 30%, transparent);
+}
+@keyframes cx-status-pulse {
+	50% {
+		opacity: 0.35;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.cx-status-dot[data-tone='connecting'] {
+		animation: none;
+	}
+}
+#connect-status {
+	margin: 0 4px 0 8px;
+}

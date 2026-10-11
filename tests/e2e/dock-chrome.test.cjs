@@ -606,7 +606,8 @@ h.run(async () => {
 	h.check(b.maxH <= 24, `9.4 ...so the band cannot reach past its own -top-6 slot (${b.maxH} <= 24)`);
 
 	// --- 10. the top-edge resize, at every x across the panel ---
-	h.check(b.cueZ === '30', `10.1 the resize hot-zone sits ABOVE the strip's z-20 (z=${b.cueZ})`);
+	// 41 G3b: page-level z literals >= 30 are banned (check:zindex), so the cue is z-28 now: what matters is ABOVE 20
+	h.check(Number(b.cueZ) > 20, `10.1 the resize hot-zone sits ABOVE the strip's z-20 (z=${b.cueZ})`);
 	h.check(
 		b.onCue === b.xsTried,
 		`10.2 the top edge answers with the hot-zone at every x, chrome cluster included (${b.onCue}/${b.xsTried})`

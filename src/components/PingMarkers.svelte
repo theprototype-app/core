@@ -58,7 +58,8 @@
 </script>
 
 {#each $pings as ping (ping.id)}
-	<T.Group position={ping.pos}>
+	<!-- named: the character studio (41 G10) finds a previewed ping by it -->
+	<T.Group position={ping.pos} name="ping-marker">
 		<!-- halo ring pair at the exact hit point -->
 		<T.Mesh rotation.x={-Math.PI / 2} oncreate={track(ping.id, 'ringA')}>
 			<T.RingGeometry args={[0.42, 0.5, 40]} />

@@ -54,6 +54,8 @@ export const DEBUG_HOOKS = [
 	['avatars', () => import('./avatars/avatarState.js')],
 	['avatarAssets', () => import('./avatars/assets.js')],
 	['avatarCatalog', () => import('./avatars/catalog.js')],
+	// 41 G9: the customise panel's presets / Custom / Surprise me (lookSignature for the e2e)
+	['characterLooks', () => import('./avatars/characterLooks.js')],
 	['perfLiveSource', () => import('./perf/liveSource')],
 	['perfLiveSink', () => import('./perf/liveSink')],
 	['perfLiveWire', () => import('./perf/liveWire')],

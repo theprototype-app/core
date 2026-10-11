@@ -9,11 +9,18 @@
 	// which writes userdata slot 5 (+ the ping prefs) the way the old modal did; Cancel / Esc / the
 	// close button drop the draft. Either way the camera flies back to where it was.
 	import { get } from 'svelte/store';
+	import { tick } from 'svelte';
+	import * as THREE from 'three';
 	import { characterModalOpen, avatarConfig, userdata, peers } from '../../stores/appStore.js';
-	import { globalCamera, orbitControls, isVRMode } from '../../stores/sceneStore.js';
+	import { globalCamera, globalRenderer, globalScene, orbitControls, isVRMode } from '../../stores/sceneStore.js';
 	import { resolveAvatar, AVATAR_DEFAULTS } from '$lib/avatarModel';
-	import { characterChoices, HEAD_OPTIONS, feetBelowHead, resolveCharacter } from '$lib/avatars/catalog';
-	import { avatarPreview } from '$lib/avatars/avatarState';
+	import { HEAD_OPTIONS, feetBelowHead, resolveCharacter } from '$lib/avatars/catalog';
+	import { avatarPreview, studioOpen, studioInScene, studioIsolating, studioPingUntil } from '$lib/avatars/avatarState';
+	// 41 G9: presets show their defaults, an edit after one is "Custom", Surprise me deals anew
+	import { LOOK_KEYS, presetList, presetLook, presetOf, lookOf, randomLook } from '$lib/avatars/characterLooks';
+	// 41 G8: the framing as pure arithmetic (fit distance + the centring view offset)
+	import { BODY_HEIGHT, fitDistance, fitToCorners, centreOffset, freeRect } from '$lib/avatars/characterFraming';
+	import { PING_TTL } from '$lib/ping';
 	import { pingColor, pingSound, previewPing } from '$lib/ping';
 	import { PING_SOUNDS, playPing } from '$lib/pingAudio';
 	import { safeStorage } from '$lib/safeStorage';
@@ -36,7 +43,7 @@
 		{ value: 'crown', name: 'Crown' }
 	];
 	const CLASSIC_SHAPES = HEAD_OPTIONS.filter((o) => o.value !== 'character');
-	const choices = characterChoices();
+	const presets = presetList();
 
 	/** @type {any} */
 	let draft = $state(resolveAvatar(null));
@@ -56,11 +63,28 @@
 	const myPhoto = () => safeStorage.getItem('avatar') || '';
 	const hasPhoto = $derived(open && !!myPhoto());
 	const rigged = $derived(!!resolveCharacter(draft.character, myId()));
-	const shownName = $derived(
+	/** 41 G9: which entry is selected — a preset id, or 'custom' */
+	let selected = $state('auto');
+	/** the custom look this session made (null = no Custom entry yet) @type {Record<string, any> | null} */
+	let customLook = $state(null);
+	/** how many looks Surprise me has dealt this session (the live region re-reads on change) */
+	let surprises = $state(0);
+	const baseName = $derived(
 		draft.character === 'auto'
-			? `Surprise me — ${resolveCharacter('auto', myId())?.name ?? ''}`
-			: (choices.find((c) => c.value === draft.character)?.name ?? draft.character)
+			? (resolveCharacter('auto', myId())?.name ?? 'Auto')
+			: (presets.find((p) => p.id === draft.character)?.name ?? draft.character)
 	);
+	const shownName = $derived(
+		selected === 'custom' ? `Custom · ${baseName}` : draft.character === 'auto' ? `Auto · ${baseName}` : baseName
+	);
+
+	// 41 G10: while the studio hides the scene, the DOM layers drawn over the 3D view (note
+	// markers, a game HUD) hide with it — they would float over an empty room
+	$effect(() => {
+		const on = open && $studioIsolating;
+		document.documentElement.classList.toggle('character-studio', on);
+		return () => document.documentElement.classList.remove('character-studio');
+	});
 
 	// open/close follow the store (the profile menu's "Customize Character" sets it)
 	$effect(() => {
@@ -72,6 +96,10 @@
 	function begin() {
 		open = true;
 		draft = { ...resolveAvatar(get(avatarConfig)) };
+		const preset = presetOf(draft);
+		selected = preset ?? 'custom';
+		customLook = preset ? null : lookOf(draft);
+		surprises = 0;
 		draftPingColor = get(pingColor) || '';
 		draftPingSound = get(pingSound) || 'ding';
 		/** @type {any} */
@@ -91,7 +119,12 @@
 		savedView = { position: head, target: homeTarget };
 		pushPreview();
 		if (get(isVRMode)) return;
-		aim(500);
+		// 41 G10: the isolated studio (CharacterStudio.svelte, beside the preview avatar)
+		studioOpen.set(true);
+		// frame once the drawer is on screen: the free part of the viewport is what it leaves
+		tick().then(() => {
+			if (open) frame(500, false);
+		});
 	}
 
 	// NOTES-38 #2: the drawer is resizable (its inner edge — the left edge beside the viewport, the
@@ -121,41 +154,157 @@
 	const sheetH = () => (drawerH > 0 ? Math.min(Math.max(drawerH, MIN_H), maxH()) : Math.min(window.innerHeight * 0.52, 460));
 	const panelW = () => Math.min(Math.max(drawerW, MIN_W), maxW());
 
-	/** fly to a 3/4 front view that fits the whole body (head to feet, ~2.2 m) in the FREE part of
-	 * the viewport: left of the drawer on desktop, above the sheet on a phone. @param {number} ms */
-	function aim(ms) {
+	/** the drawer element (the free part of the viewport is what it leaves) @type {HTMLElement | null} */
+	let panelEl = $state(null);
+	/** the layout the camera was last framed for: a re-frame only when it really changed */
+	let framedFor = '';
+
+	/** the renderer's canvas, whose box IS the viewport @returns {HTMLElement | null} */
+	const canvasEl = () => /** @type {any} */ (get(globalRenderer))?.domElement ?? null;
+
+	/** 41 G8: frame the WHOLE body in the free part of the viewport — left of the drawer on a
+	 * wide screen, above the sheet on a phone. The distance fits the body's envelope in both
+	 * directions, and a projection view offset puts the orbit target (the body's middle) at the
+	 * free rect's centre, so orbiting turns the character in place like a turntable.
+	 * `keepAngle` keeps the direction you orbited to (a re-frame after a layout change); the
+	 * first frame takes the 3/4 front view. @param {number} ms @param {boolean} keepAngle */
+	function frame(ms, keepAngle) {
 		/** @type {any} */
 		const cam = get(globalCamera);
-		if (!cam || !stand || get(isVRMode)) return;
+		const canvas = canvasEl();
+		if (!cam || !stand || !canvas || get(isVRMode)) return;
+		const cr = canvas.getBoundingClientRect();
+		if (cr.width < 2 || cr.height < 2) return;
+		const sheet = window.innerWidth <= 640;
+		const pr = panelEl?.getBoundingClientRect() ?? null;
+		const free = freeRect(cr, pr, sheet);
+		framedFor = layoutKey(cr, pr, sheet);
+		let dist = fitDistance({ viewH: cr.height, free, fovDeg: cam.fov });
 		const head = stand.position;
-		const yaw = stand.yaw;
-		const fx = -Math.sin(yaw);
-		const fz = -Math.cos(yaw);
-		const midY = head[1] - feetBelowHead() * 0.42;
-		const fov = ((cam.fov || 40) * Math.PI) / 180;
-		const H = window.innerHeight || 1;
-		const freeH = narrow ? Math.max(0.3, (H - sheetH()) / H) : 1;
-		const dist = Math.max(4, 1.8 / Math.tan(fov / 2) / freeH);
-		const camPos = [head[0] + fx * dist - fz * dist * 0.3, midY + 0.25, head[2] + fz * dist + fx * dist * 0.3];
-		// world metres per screen pixel at the body's distance
-		const perPx = (2 * dist * Math.tan(fov / 2)) / H;
-		// NOTES-38 #34: centre the body in the FREE part of the viewport. A pure screen-space PAN —
-		// camera and target move together along the camera's own right (and up) axes — puts the
-		// body exactly half the drawer to the left of the screen centre (half the sheet higher on a
-		// phone). Shifting only the target along the body's side axis (as before) turned the
-		// camera instead, and with the 3/4 view left the body half under the drawer.
-		const fwdX = head[0] - camPos[0];
-		const fwdZ = head[2] - camPos[2];
-		const len = Math.hypot(fwdX, fwdZ) || 1;
-		const rightX = -fwdZ / len;
-		const rightZ = fwdX / len;
-		const side = narrow ? 0 : (panelW() / 2) * perPx;
-		const drop = narrow ? (sheetH() / 2) * perPx : 0;
-		const pan = [rightX * side, -drop, rightZ * side];
-		const target = [head[0] + pan[0], midY + pan[1], head[2] + pan[2]];
-		const from = [camPos[0] + pan[0], camPos[1] + pan[1], camPos[2] + pan[2]];
-		flyTo(from, target, ms);
+		const feetY = head[1] - feetBelowHead();
+		const box = bodyBox();
+		framedBox = boxKey(box);
+		const target = box
+			? [(box.min.x + box.max.x) / 2, (box.min.y + box.max.y) / 2, (box.min.z + box.max.z) / 2]
+			: [head[0], feetY + BODY_HEIGHT / 2 - 0.12, head[2]];
+		/** @type {any} */
+		const controls = get(orbitControls);
+		let dir;
+		if (keepAngle && performance.now() < flightUntil && flightDir) dir = flightDir;
+		else if (keepAngle && controls) {
+			const d = cam.position.clone().sub(controls.target);
+			dir = d.lengthSq() > 1e-6 ? d.normalize().toArray() : null;
+		}
+		if (!dir) {
+			// a 3/4 front view, a little above the body's middle
+			const fx = -Math.sin(stand.yaw);
+			const fz = -Math.cos(stand.yaw);
+			const v = [fx - fz * 0.3, 0.2, fz + fx * 0.3];
+			const len = Math.hypot(v[0], v[1], v[2]);
+			dir = [v[0] / len, v[1] / len, v[2] / len];
+		}
+		if (box) {
+			// the measured body is the truth: fit its projected corners into the free rect
+			const corners = [];
+			for (const x of [box.min.x, box.max.x])
+				for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
+			const scratch = new THREE.PerspectiveCamera().copy(cam, false);
+			dist = fitToCorners({ cam: scratch, corners, target, dir, dist, viewW: cr.width, viewH: cr.height, free });
+		}
+		flightDir = dir;
+		flightUntil = performance.now() + ms + 50;
+		const camPos = [target[0] + dir[0] * dist, target[1] + dir[1] * dist, target[2] + dir[2] * dist];
+		cam.setViewOffset(...centreOffset(cr.width, cr.height, free));
+		cam.updateProjectionMatrix();
+		flyTo(camPos, target, ms);
 	}
+
+	/** @param {DOMRect} cr @param {DOMRect | null} pr @param {boolean} sheet */
+	function layoutKey(cr, pr, sheet) {
+		const r = (/** @type {number} */ n) => Math.round(n);
+		return [r(cr.width), r(cr.height), sheet ? 's' : 'd', pr ? [r(pr.left), r(pr.top), r(pr.width), r(pr.height)].join(',') : '-'].join('|');
+	}
+
+	/** the box of what the preview DRAWS (visible meshes of the head group and the rigged body),
+	 * or null before the model is in @returns {THREE.Box3 | null} */
+	function bodyBox() {
+		/** @type {any} */
+		const scene = get(globalScene) ?? /** @type {any} */ (get(globalCamera))?.parent;
+		if (!scene) return null;
+		const box = new THREE.Box3();
+		for (const name of ['avatar-preview', 'avatar-preview-avatar']) {
+			const root = scene.getObjectByName(name);
+			if (!root) continue;
+			root.updateMatrixWorld(true);
+			root.traverseVisible((/** @type {any} */ o) => {
+				if (!o.isMesh || !o.geometry) return;
+				// the name label turns to face the camera, so its mesh's box changes as you orbit:
+				// count where it is anchored (and its text height) instead
+				for (let p = o; p && p !== root; p = p.parent)
+					if (p.name?.endsWith('-label')) {
+						const at = p.getWorldPosition(new THREE.Vector3());
+						box.expandByPoint(at.clone().setY(at.y + 0.16)).expandByPoint(at.setY(at.y - 0.14));
+						return;
+					}
+				box.expandByObject(o, false);
+			});
+		}
+		// still parked at its spawn height (the first frame has not placed it yet): not a body
+		return !box.isEmpty() && box.min.y < 900 ? box : null;
+	}
+	/** a coarse key of a box (5 cm), so a model loading or a new look re-frames and jitter does not */
+	const boxKey = (/** @type {any} */ b) => (b ? [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z].map((v) => Math.round(v * 20)).join(',') : '');
+	let framedBox = '';
+	/** the direction the camera is flying in, and until when (a re-frame mid-flight keeps it) @type {number[] | null} */
+	let flightDir = null;
+	let flightUntil = 0;
+
+	// 41 G8: the body itself changes size — its model arrives after the panel opens, and every
+	// new look (a preset, a hat, Surprise me) is a different shape: re-frame when its box moves
+	$effect(() => {
+		if (!open) return;
+		const timer = setInterval(() => {
+			if (resizing || !stand || get(isVRMode)) return;
+			if (boxKey(bodyBox()) !== framedBox) frame(300, true);
+		}, 300);
+		return () => clearInterval(timer);
+	});
+
+	/** the projection back to the plain full-viewport one (leaving, or VR) */
+	function unframe() {
+		/** @type {any} */
+		const cam = get(globalCamera);
+		if (!cam?.view) return;
+		cam.clearViewOffset();
+		cam.updateProjectionMatrix();
+	}
+
+	// 41 G8: re-frame on EVERY layout change — the canvas resizing (a window resize, a phone
+	// folding or unfolding, the orientation) and the drawer resizing (its grip, the fold flipping
+	// it between a side drawer and a bottom sheet). Coalesced to one frame; a layout identical to
+	// the one already framed (the observer's first report) changes nothing.
+	$effect(() => {
+		const el = panelEl;
+		const canvas = canvasEl();
+		if (!open || !el || typeof ResizeObserver === 'undefined') return;
+		let raf = 0;
+		const ro = new ResizeObserver(() => {
+			cancelAnimationFrame(raf);
+			raf = requestAnimationFrame(() => {
+				narrow = window.innerWidth <= 640;
+				const cr = canvasEl()?.getBoundingClientRect();
+				if (!cr) return;
+				const key = layoutKey(cr, panelEl?.getBoundingClientRect() ?? null, window.innerWidth <= 640);
+				if (key !== framedFor) frame(resizing ? 0 : 250, true);
+			});
+		});
+		ro.observe(el);
+		if (canvas) ro.observe(canvas);
+		return () => {
+			cancelAnimationFrame(raf);
+			ro.disconnect();
+		};
+	});
 
 	/** @param {PointerEvent} e */
 	function startResize(e) {
@@ -195,7 +344,7 @@
 				}
 			}
 			safeStorage.setItem(SIZE_KEY, JSON.stringify({ w: drawerW, h: drawerH }));
-			aim(300);
+			frame(200, true);
 		};
 		window.addEventListener('pointermove', move);
 		window.addEventListener('pointerup', up);
@@ -211,7 +360,6 @@
 		if (narrow) drawerH = Math.min(Math.max(sheetH() + (grow ? step : -step), MIN_H), maxH());
 		else drawerW = Math.min(Math.max(panelW() + (grow ? step : -step), MIN_W), maxW());
 		safeStorage.setItem(SIZE_KEY, JSON.stringify({ w: drawerW, h: drawerH }));
-		aim(200);
 	}
 	function onWindowResize() {
 		narrow = window.innerWidth <= 640;
@@ -247,6 +395,8 @@
 		if (!open) return;
 		if (apply) commit();
 		open = false;
+		studioOpen.set(false);
+		unframe();
 		avatarPreview.set(null);
 		if (savedView && !get(isVRMode)) {
 			returnHome(savedView, 450);
@@ -265,6 +415,36 @@
 	/** @param {Record<string, any>} patch */
 	function edit(patch) {
 		draft = { ...draft, ...patch };
+		// 41 G9: touching any LOOK parameter makes this a custom look (the name label is a pref)
+		if (Object.keys(patch).some((k) => /** @type {readonly string[]} */ (LOOK_KEYS).includes(k))) {
+			customLook = lookOf(draft);
+			selected = 'custom';
+		}
+		pushPreview();
+	}
+
+	/** a preset IS its defaults: picking one resets every look parameter @param {string} id */
+	function pickPreset(id) {
+		draft = { ...draft, ...presetLook(id) };
+		selected = id;
+		pushPreview();
+	}
+
+	/** back to the look you made (re-picking a preset reset the draft, never the Custom entry) */
+	function pickCustom() {
+		if (!customLook) return;
+		draft = { ...draft, ...customLook };
+		selected = 'custom';
+		pushPreview();
+	}
+
+	/** a NEW random character on every press — body, head, hat, colours — never the last one */
+	function surprise() {
+		const look = randomLook(draft);
+		draft = { ...draft, ...look };
+		customLook = lookOf(draft);
+		selected = 'custom';
+		surprises += 1;
 		pushPreview();
 	}
 
@@ -285,11 +465,11 @@
 		p?.send?.({ type: 'userdata', userdata: rows });
 	}
 
-	/** @param {number} dir */
+	/** step through the presets (from a custom look: from the body it is built on) @param {number} dir */
 	function cycle(dir) {
-		const ids = choices.map((c) => c.value);
+		const ids = presets.map((p) => p.id);
 		const i = Math.max(0, ids.indexOf(draft.character));
-		edit({ character: ids[(i + dir + ids.length) % ids.length] });
+		pickPreset(ids[(i + dir + ids.length) % ids.length]);
 	}
 
 	function pingHere() {
@@ -299,6 +479,7 @@
 		const fz = -Math.cos(stand.yaw);
 		// beside the character (its right hand side), so the beam does not stand in front of it
 		previewPing([p[0] - fz * 1.3, p[1] - feetBelowHead() + 0.05, p[2] + fx * 1.3], draftPingColor, draftPingSound);
+		studioPingUntil.set(performance.now() + PING_TTL); // the studio shows ping markers this long
 	}
 
 	/** @param {KeyboardEvent} e */
@@ -313,6 +494,7 @@
 
 {#if open}
 	<aside
+		bind:this={panelEl}
 		id="character-panel"
 		class="tp-ui cp"
 		class:cp-resizing={resizing}
@@ -343,22 +525,50 @@
 		</WindowChrome>
 
 		<div class="cp-body" use:minimalScroll>
+			{#if !$isVRMode}
+				<!-- 41 G10: the studio hides the scene; this previews the character IN it instead -->
+				<div class="cp-card cp-view">
+					<div class="cp-row">
+						<span id="character-in-scene-text" class="cp-row-label cp-row-wide">Show in scene</span>
+						<Toggle
+							id="character-show-in-scene"
+							labelledby="character-in-scene-text"
+							title="Off: a plain studio around your character. On: your character in the current scene."
+							checked={$studioInScene}
+							onchange={(/** @type {boolean} */ on) => studioInScene.set(on)}
+						/>
+					</div>
+				</div>
+			{/if}
 			<section>
 				<h3 class="cp-label">Character</h3>
 				<div class="cp-cycle">
 					<Button variant="icon" size="sm" icon="chevron-left" label="Previous character" onclick={() => cycle(-1)} />
-					<span id="character-current" class="cp-current">{shownName}</span>
+					<span id="character-current" class="cp-current" data-selected={selected}>{shownName}</span>
 					<Button variant="icon" size="sm" icon="chevron-right" label="Next character" onclick={() => cycle(1)} />
 				</div>
+				<!-- 41 G9: a NEW random character every press (body, head, hat, colours) -->
+				<div class="cp-surprise">
+					<Button id="character-surprise" variant="outline" size="sm" icon="wand-sparkles" title="A new random character every press" onclick={surprise}
+						>Surprise me</Button
+					>
+					<span class="cp-sr" aria-live="polite">{surprises ? `New look: ${shownName}` : ''}</span>
+				</div>
 				<div class="cp-chips" role="radiogroup" aria-label="Character">
-					{#each choices as c (c.value)}
+					{#if customLook}
+						<button type="button" class="cp-chip" role="radio" aria-checked={selected === 'custom'} data-character="custom" title="The look you made" onclick={pickCustom}
+							>Custom</button
+						>
+					{/if}
+					{#each presets as p (p.id)}
 						<button
 							type="button"
 							class="cp-chip"
 							role="radio"
-							aria-checked={draft.character === c.value}
-							data-character={c.value}
-							onclick={() => edit({ character: c.value })}>{c.value === 'auto' ? 'Surprise me' : c.value === 'classic' ? 'Classic head' : c.name}</button
+							aria-checked={selected === p.id}
+							data-character={p.id}
+							title={p.id === 'auto' ? 'Picked from your id — what peers see you as by default' : `${p.name} with its own look`}
+							onclick={() => pickPreset(p.id)}>{p.name}</button
 						>
 					{/each}
 				</div>
@@ -590,6 +800,28 @@
 		flex: 1;
 		text-align: center;
 		font-weight: 600;
+	}
+	.cp-surprise {
+		display: flex;
+		align-items: center;
+		margin-bottom: var(--space-2);
+	}
+	.cp-sr {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+	.cp-view {
+		margin-top: var(--space-3);
+	}
+	/* 41 G10: the overlays drawn over the 3D view stand down while the studio hides the scene */
+	:global(:root.character-studio .marker-layer),
+	:global(:root.character-studio .marker-lines),
+	:global(:root.character-studio #hud-layer) {
+		visibility: hidden;
 	}
 	.cp-chips {
 		display: flex;

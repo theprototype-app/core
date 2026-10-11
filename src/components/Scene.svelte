@@ -809,6 +809,8 @@
 		};
 		// 30 P1: an Interact carry in progress (the camera controls stand down for it)
 		let interactCarrying = false;
+		// 41 G4: the pointer that carries — a second finger (a pinch) must not drag the carry
+		let interactCarryPointer = -1;
 		// the press that CAN start an Interact gesture: no editor session or tool holds it
 		const interactPress = () =>
 			editorInteractActive() && !$specatorMode && !$editingObject && !$faceEditObject && !$splineEditObject && !$drawMode && !$sculptObject;
@@ -880,6 +882,7 @@
 				setRayFromEvent(event);
 				if (cursorGrabStart(selectionRaycaster, ndcOfEvent(event), camera.current)) {
 					interactCarrying = true;
+					interactCarryPointer = event.pointerId;
 					setOrbitEnabled(false);
 					return;
 				}
@@ -979,7 +982,7 @@
 				updateAltPreview(event.clientX, event.clientY);
 			}
 			// 30 P1: an Interact carry follows the cursor
-			if (interactCarrying) cursorGrabMove(ndcOfEvent(event));
+			if (interactCarrying && event.pointerId === interactCarryPointer) cursorGrabMove(ndcOfEvent(event));
 			// 57.3: a radius drag owns the gesture (thickness, not the camera)
 			if (radiusDragActive()) {
 				radiusDragMove(event.clientY);
@@ -1052,7 +1055,7 @@
 				downPosition = null;
 				return;
 			}
-			if (interactCarrying && event.button === 0) {
+			if (interactCarrying && event.button === 0 && event.pointerId === interactCarryPointer) {
 				interactCarrying = false;
 				cursorGrabEnd(); // a throw (false if the carry was already cancelled)
 				setOrbitEnabled(true);
@@ -1324,6 +1327,16 @@
 		// window, not canvas: the Canvas wrapper swallows pointer events mid-gesture
 		window.addEventListener('pointermove', onPointerMove);
 		window.addEventListener('pointerup', onPointerUp);
+		// 41 G4: a cancelled touch (the browser took the gesture, a call came in) lets the carry go
+		// where it is — a cancel is never a throw
+		const onPointerCancel = (event: PointerEvent) => {
+			if (!interactCarrying || event.pointerId !== interactCarryPointer) return;
+			interactCarrying = false;
+			cursorGrabEnd(false);
+			setOrbitEnabled(true);
+			downPosition = null;
+		};
+		window.addEventListener('pointercancel', onPointerCancel);
 		// right-click TAP opens the Add/object menu (77). Opening happens on the
 		// contextmenu event (which trails pointerup) — opening on pointerup lets
 		// that trailing event hit the fresh menu backdrop and close it instantly.
@@ -1635,6 +1648,7 @@
 			element.removeEventListener('webglcontextlost', onContextLost);
 			element.removeEventListener('webglcontextrestored', onContextRestored);
 			window.removeEventListener('pointerup', onPointerUp);
+			window.removeEventListener('pointercancel', onPointerCancel);
 			window.removeEventListener('keydown', onAltKey);
 			window.removeEventListener('keyup', onAltKey);
 			window.removeEventListener('blur', onAltBlur);

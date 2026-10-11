@@ -453,7 +453,7 @@
 }
 .dock-strip-caret {
 	position: fixed;
-	z-index: var(--z-menu);
+	z-index: var(--z-portal);
 	width: 3px;
 	border-radius: 2px;
 	background: var(--accent);

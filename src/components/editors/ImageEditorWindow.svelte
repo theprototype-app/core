@@ -944,7 +944,7 @@
 	>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
-			class="resize-cue hover:bg-accent/30 absolute -top-1 right-0 left-0 z-30 h-2 cursor-ns-resize"
+			class="resize-cue hover:bg-accent/30 absolute -top-1 right-0 left-0 z-28 h-2 cursor-ns-resize"
 			style="touch-action: none"
 			title="Drag to resize"
 			onpointerdown={startDockResize}

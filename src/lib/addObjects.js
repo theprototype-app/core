@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { selectedObject } from '../stores/sceneStore';
-import { peers, meshGenModalOpen, showSidebar } from '../stores/appStore';
+import { peers, meshGenModalOpen, showSidebar, inspectorClose } from '../stores/appStore';
 import { sceneCommand } from './commandsHandler.svelte';
 import { primitivesCatalog } from './primitivesCatalog';
 import { meshGenReady } from './ai/meshProviders';
@@ -41,10 +41,10 @@ export function spawnAtPoint(command, point) {
 				scale: object.scale.toArray()
 			});
 	}
-	// 16-Q2: adding from the menu OPENS the new object's properties, even when
-	// another panel (Configure Scene, a different selection) was showing — creation
-	// already selects the object, this makes the "now tweak it" step obvious.
-	if (object?.uuid) showSidebar('properties');
+	// 41 G2: creating never OPENS the Inspector (Unity / Blender / Figma, and what a pack drop
+	// always did) — it selects the new object, and an Inspector that is ALREADY open follows it,
+	// even from another panel (Configure Scene, a different selection; 16-Q2's switch)
+	if (object?.uuid && !get(inspectorClose)) showSidebar('properties');
 	return object;
 }
 

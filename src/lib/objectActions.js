@@ -256,12 +256,24 @@ export function applySelectionSet(uuids, openProperties = false) {
 	}
 }
 
+/** 41 G13: what Interact took away, given back when it ends @type {string[]} */
+let interactStash = [];
+
+/** 41 G13: the stashed set (debug hook / tests) */
+export function interactStashed() {
+	return [...interactStash];
+}
+
 /**
  * 30 P1: switch the editor between EDIT (a click selects, the gizmo attaches) and
  * INTERACT (a click plays with the scene: module handlers, On Click nodes, the cursor
- * grab). LOCAL — the store is never sent or saved. Entering Interact puts the gizmo away
- * without dropping the selection, and coming back re-seats it on whatever is still
- * selected, so a round trip through Interact costs the user nothing.
+ * grab). LOCAL — the store is never sent or saved.
+ *
+ * 41 G13: entering Interact DESELECTS (the outline, the gizmo and the peers' lock all go —
+ * the user plays with the scene, not with a selection) and STASHES the set; coming back
+ * restores it — minus anything deleted or taken by a peer meanwhile (applySelectionSet's
+ * filter) — so a round trip through Interact still costs the user nothing. A selection made
+ * DURING Interact (the object list) is the newer intent and is kept instead.
  * @param {'edit' | 'interact'} mode @returns {'edit' | 'interact'}
  */
 export function setEditorMode(mode) {
@@ -272,6 +284,8 @@ export function setEditorMode(mode) {
 	/** @type {any} */
 	const controls = get(TControls);
 	if (next === 'interact') {
+		interactStash = [...get(selectedObjects)];
+		if (interactStash.length) deselectObject();
 		releaseMultiPivot();
 		if (controls && !get(isVRMode)) controls.detach();
 		// 30b P4: a game that names a spawn puts the desktop view there on the way in (VR
@@ -282,8 +296,11 @@ export function setEditorMode(mode) {
 			const { eye, lookAt } = spawnEyePose(spawn);
 			flyTo(eye, lookAt);
 		}
-	} else if (get(selectedObjects).length) {
-		applySelectionSet([...get(selectedObjects)]);
+	} else {
+		const now = get(selectedObjects);
+		const back = now.length ? [...now] : interactStash;
+		interactStash = [];
+		if (back.length) applySelectionSet(back);
 	}
 	return next;
 }

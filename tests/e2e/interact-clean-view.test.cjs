@@ -83,8 +83,9 @@ h.run(async () => {
 	h.check(!r.locks, "Interact: no peer lock box");
 	h.check(!r.tiny, 'Interact: no tiny-object dot');
 	h.check(r.outlineSelected === 0 && r.outlineLocked === 0, `Interact: no selection or lock outline (${r.outlineSelected}/${r.outlineLocked})`);
-	const kept = await A.page.evaluate(() => { let v; window.__stores.selectedObjects.subscribe((x) => (v = x))(); return v.length; });
-	h.check(kept === 1, `Interact keeps the selection itself — only its glare goes (${kept})`);
+	// 41 G13 (the user, 2026-10-11): Interact DESELECTS and stashes the set; Edit restores it (4 below)
+	const kept = await A.page.evaluate(() => { let v; window.__stores.selectedObjects.subscribe((x) => (v = x))(); return { now: v.length, stashed: window.__stores.objectActions.interactStashed().length }; });
+	h.check(kept.now === 0 && kept.stashed === 1, `Interact stashes the selection — nothing selected, one kept for later (${JSON.stringify(kept)})`);
 
 	// ---- 3. VR: the selection shell and the hover box stand down in Interact ---------------------
 	await A.page.evaluate(() => window.__stores.isVRMode.set(true));

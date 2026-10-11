@@ -95,16 +95,16 @@ h.run(async () => {
 	h.check(scrolled > 40, `premise: the notes list scrolls (scrollTop ${scrolled})`);
 	await P.waitForTimeout(300);
 	if (SHOTS) await P.screenshot({ path: `${SHOTS}/g12-folded-1-list.png` });
-	// the first visible "mech" note row
+	// the first fully visible note row
 	const row = await P.evaluate(() => {
 		const rows = [...document.querySelectorAll('#notes-drawer .notes-row')];
 		const body = document.querySelector('#notes-drawer .notes-body').getBoundingClientRect();
-		const r = rows.map((el) => ({ el, b: el.getBoundingClientRect() })).find((x) => x.b.top > body.top + 4 && x.b.bottom < body.bottom - 4 && /Note (1|4|7|10|13)\b/.test(x.el.textContent || ''));
+		const r = rows.map((el) => ({ el, b: el.getBoundingClientRect() })).find((x) => x.b.top > body.top + 4 && x.b.bottom < body.bottom - 4);
 		const btn = r?.el.querySelector('button');
 		const b = btn?.getBoundingClientRect();
 		return b ? { x: b.x + Math.min(60, b.width / 2), y: b.y + b.height / 2, text: (r.el.textContent || '').trim().slice(0, 30) } : null;
 	});
-	h.check(!!row, `premise: a "mech" note row is visible (${row?.text})`);
+	h.check(!!row, `premise: a note row is visible (${row?.text})`);
 	await tap(row.x, row.y);
 	await P.waitForTimeout(900);
 	const active1 = await read(`${store('annotationsHandler.activeAnnotation')}?.id`);

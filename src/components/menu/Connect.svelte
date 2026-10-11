@@ -490,14 +490,14 @@
 		top: 8px;
 		left: 50%;
 		transform: translateX(-50%);
-		z-index: 300;
+		z-index: var(--z-chrome-top);
 		pointer-events: none;
 		max-width: 100vw;
 	}
 	/* when the drawer BODY is open, lift the whole pill+drawer above the corner chrome
 	   (logo/profile/notifications/notes all sit at or below --z-menu) */
 	.connect-wrap.body-open {
-		z-index: calc(var(--z-menu) + 5);
+		z-index: calc(var(--z-popover) + 5);
 	}
 	/* 38 R8: the bar (hud-glass gives the surface, border, shadow, blur) */
 	.connect-pill {

@@ -396,7 +396,7 @@
 	/* 21-E1.5: while authoring, BELOW every window (--z-window 40, docked 35) and still
 	   above the viewport. Not a new tier — the same band, one step down. */
 	.hud-authoring {
-		z-index: 38;
+		z-index: calc(var(--z-window) - 2);
 	}
 	.hud-slot {
 		position: absolute;

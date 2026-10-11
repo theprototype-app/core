@@ -58,6 +58,10 @@ jobs:
       # `tokens-ok: <reason>` on its line; scripts/check-tokens.cjs says how.
       - name: redesign tokens
         run: node scripts/check-tokens.cjs
+      # 41 G3b: ONE z-index scale (src/styles/ui.css). A page-level literal z-index fails;
+      # `z-ok: <reason>` on its line for a number code reads back.
+      - name: z-index scale
+        run: node scripts/check-zindex.cjs
 
   # 34 B3: scene-lint over every scene core ships (the seed) and every scene of the scenes ref
   # the perf budget is about (perf/budgets.json), with the packs checkout for the kit rules.

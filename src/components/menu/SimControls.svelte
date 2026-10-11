@@ -22,7 +22,7 @@
 </script>
 
 {#if $showSimControls || $scenePhysicsState_.simOnLoad === true}
-<div id="sim-controls" class="fixed bottom-[112px] right-4 z-30 flex flex-col gap-2">
+<div id="sim-controls" class="fixed bottom-[112px] right-4 z-(--z-chrome) flex flex-col gap-2">
 	{#if $simulating}
 		<button id="sim-reset" class={btn} aria-label="Reset simulation" title="Reset — back to how it opened (bodies, fluid tanks, drops), and play again" onclick={() => resetWholeSimulation()}>
 			<Icon name="rotate-ccw" size={16} aria-hidden="true" />

@@ -254,7 +254,7 @@
 		height: 100%;
 		pointer-events: none;
 		/* above the viewport, below every panel/drawer/menu tier */
-		z-index: calc(var(--z-drawer) - 2);
+		z-index: calc(var(--z-chrome) - 2);
 	}
 	.marker-badge {
 		position: fixed;

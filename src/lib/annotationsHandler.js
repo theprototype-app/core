@@ -232,6 +232,25 @@ export function noteNumber(id) {
 	return get(annotations).findIndex((a) => a.id === id) + 1;
 }
 
+/** a note's LABEL group key — the notes drawer's grouping ('General' when unlabelled) @param {any} a */
+export function noteGroupKey(a) {
+	return (a?.label || '').trim() || 'General';
+}
+
+/**
+ * 41 G12 — where an open note sits among ALL the notes, and its neighbours: the note card's ‹ ›
+ * walk in GLOBAL pin order (the numbers on the pins), WRAPPING — whatever the card was opened
+ * from (the Notes drawer, a pin in the scene, an object's menu). Pure over the list it is given.
+ * @param {any[]} list the annotations (pin order) @param {string} id
+ * @returns {{ids: string[], index: number, prev: string|null, next: string|null}}
+ */
+export function noteWalk(list, id) {
+	const ids = list.map((a) => a.id);
+	const index = ids.indexOf(id);
+	if (index < 0 || ids.length < 2) return { ids, index, prev: null, next: null };
+	return { ids, index, prev: ids[(index - 1 + ids.length) % ids.length], next: ids[(index + 1) % ids.length] };
+}
+
 /** Row/card title: explicit name, else a trimmed description, else "Note n" @param {any} a */
 export function displayName(a) {
 	if (!a) return '';

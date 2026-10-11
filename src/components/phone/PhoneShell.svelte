@@ -157,6 +157,8 @@
 
 	/** live height while a finger drags the handle; null = resting on a detent */
 	let dragH = $state(/** @type {number|null} */ (null));
+	/** the frame (41 G5: its body hands off to the sheet gesture) @type {HTMLElement | undefined} */
+	let frameEl = $state();
 	const sheetH = $derived(top ? (dragH ?? heights[detent] ?? heights.half) : 0);
 	const titled = $derived(top ? HOSTS[top][1] !== null : false);
 	const STRIP_H = 22; // the handle strip
@@ -280,7 +282,9 @@
 		let raf = 0;
 		const measure = () => {
 			let occ = 0;
-			for (const el of document.querySelectorAll('.ps-sheet, #inspector, .tp-dock-panel, .tp-dock-panel .dt-row, :root.ps-add-open .ctx-scroll')) {
+			// 41 G20: EVERY tool sheet the strip rides on — the notes sheet, a toolbox sheet and the
+			// note card (a page of the notes sheet, G12) were missing, so the strip sat ON them
+			for (const el of document.querySelectorAll('.ps-sheet, #inspector, #notes-drawer, .note-card.note-sheet, .toolbox.tbx-sheet, .tp-dock-panel, .tp-dock-panel .dt-row, :root.ps-add-open .ctx-scroll')) {
 				const r = /** @type {HTMLElement} */ (el).getBoundingClientRect();
 				if (!r.height || getComputedStyle(el).display === 'none' || getComputedStyle(el).visibility === 'hidden') continue;
 				occ = Math.max(occ, window.innerHeight - r.top);
@@ -307,6 +311,9 @@
 	const dockOn = $derived(!!$visibleDockKey && !$dockMinimized);
 	const dockMax = $derived(Math.max(160, sheetMax - DOCK_TABS_ROOM));
 	const dockShown = $derived(Math.min($dockHeight, dockMax));
+	/** 41 G5: the docked view on screen — its lists hand off to the dock's sheet gesture (a
+	 *  canvas or node graph inside keeps every touch: sheetDrag's touch-action rule) */
+	const dockPanels = () => [...document.querySelectorAll('.tp-dock-panel')].filter((el) => !el.classList.contains('hidden') && /** @type {HTMLElement} */ (el).offsetHeight > 0);
 
 	// unread chat: messages that arrived while the chat sheet was closed
 	let seenChat = $state(0);
@@ -527,7 +534,7 @@
 
 	{#if dockOn}
 		<div class="ps-dockgrip" id="ps-dock-grip" style:bottom="calc(var(--ps-bar-h) + {dockShown - 24}px)">
-			<SheetGrip label="dock" height={dockShown} min={160} max={dockMax} onresize={(h) => dockHeight.set(Math.round(h))} onclose={() => dockMinimized.set(true)} />
+			<SheetGrip label="dock" height={dockShown} min={160} max={dockMax} surface={dockPanels} onresize={(h) => dockHeight.set(Math.round(h))} onclose={() => dockMinimized.set(true)} />
 		</div>
 	{/if}
 
@@ -538,6 +545,7 @@
 			<button type="button" class="ps-scrim" tabindex="-1" aria-label="Close" onclick={() => closeKind(top)}></button>
 		{/if}
 		<section
+			bind:this={frameEl}
 			class="ps-sheet"
 			class:ps-dragging={dragH !== null}
 			data-kind={top}
@@ -556,7 +564,9 @@
 					onmove: (h) => (dragH = h),
 					onsettle: restAt,
 					onclose: () => closeKind(top),
-					ontap: tapHandle
+					ontap: tapHandle,
+					// 41 G5: the frame's own body (More, Connection) and the window placed into it
+					surfaces: () => [frameEl, document.querySelector('[data-ps-host="top"]')]
 				}}
 			>
 				<button
@@ -646,7 +656,7 @@
 		left: 64px;
 		right: var(--ps-right, 116px);
 		height: 44px;
-		z-index: 300;
+		z-index: var(--z-chrome-top);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -720,7 +730,7 @@
 		left: 50%;
 		transform: translateX(-50%);
 		bottom: calc(84px + env(safe-area-inset-bottom, 0px));
-		z-index: 44; /* above every sheet (38-43), a hosted window (40) and the Inspector */
+		z-index: var(--z-selection); /* 41 G20: under every dock and sheet — a drawer covers it */
 		display: flex;
 		align-items: center;
 		gap: 2px;
@@ -787,7 +797,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		z-index: 44; /* #32 / 40 F1: above every sheet (the main menu is 43), so the raised Play circle is never covered */
+		z-index: var(--z-phone-bar); /* #32 / 40 F1: above every sheet (the main menu is 43), so the raised Play circle is never covered */
 		height: calc(76px + env(safe-area-inset-bottom, 0px));
 		padding: 0 6px calc(8px + env(safe-area-inset-bottom, 0px));
 		display: grid;
@@ -843,13 +853,13 @@
 		left: 0;
 		right: 0;
 		height: 24px;
-		z-index: 36; /* over its dock panel (--z-bottom, 35), under every sheet */
+		z-index: calc(var(--z-dock) + 1); /* over its dock panel (--z-dock, 35), under every sheet */
 		background: transparent;
 	}
 	.ps-scrim {
 		position: fixed;
 		inset: 0 0 calc(76px + env(safe-area-inset-bottom, 0px)) 0; /* #32: the bar stays live */
-		z-index: 37;
+		z-index: calc(var(--z-sheet) - 1);
 		border: 0;
 		padding: 0;
 		background: var(--scrim);
@@ -860,7 +870,7 @@
 		left: 0;
 		right: 0;
 		bottom: calc(76px + env(safe-area-inset-bottom, 0px)); /* #32 (a): above the bar */
-		z-index: 38;
+		z-index: var(--z-sheet);
 		display: flex;
 		flex-direction: column;
 		box-sizing: border-box;

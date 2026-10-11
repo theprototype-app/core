@@ -153,7 +153,9 @@
 				onmove: (h) => (dragH = h),
 				onsettle: restAt,
 				onclose: close,
-				ontap: cycle
+				ontap: cycle,
+				// 41 G5: the body hands off too — its list scrolls, and at the top a pull moves the sheet
+				surfaces: () => [sheetEl]
 			}}
 		>
 			<button
@@ -188,7 +190,7 @@
 	.sh-scrim {
 		position: fixed;
 		inset: 0;
-		z-index: 60;
+		z-index: calc(var(--z-side-panel) + 1);
 		border: 0;
 		padding: 0;
 		background: var(--scrim);
@@ -199,7 +201,7 @@
 		left: 0;
 		right: 0;
 		bottom: 0;
-		z-index: 61;
+		z-index: calc(var(--z-side-panel) + 2);
 		display: flex;
 		flex-direction: column;
 		box-sizing: border-box;
@@ -219,10 +221,10 @@
 	   (PhoneShell .ps-bar, 44): the raised Play circle rises above the bar's top edge and must
 	   stay on top of the sheet and its scrim */
 	.sh-scrim.sh-lifted {
-		z-index: 42;
+		z-index: calc(var(--z-sheet) + 4);
 	}
 	.sh.sh-lifted {
-		z-index: 43;
+		z-index: calc(var(--z-sheet) + 5);
 	}
 	.sh-dragging {
 		transition: none;

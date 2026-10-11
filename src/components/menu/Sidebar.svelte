@@ -37,6 +37,7 @@
 	import { safeStorage } from '$lib/safeStorage';
 	import { statsOpen } from '$lib/sceneBudget';
 	import { layoutsMenuOpen } from '$lib/uiLayouts'; // 37 R14
+	import { globalRenderer } from '../../stores/sceneStore'; // 41 G3a
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
 	// no boxed group / section headers / vertical bar), a fast fade-in (was a
@@ -153,6 +154,32 @@
 		menuH = Math.round(h);
 		if (done) saveSheetH('mainMenuSheetH', menuH);
 	}
+
+	// 41 G3a — LIGHT DISMISS: a press anywhere outside the open menu closes it, on the desktop
+	// popover and the phone sheet alike — what every platform menu does (and the user's report:
+	// "when burger menu pressed pressing outside it should close menu"). Outside = not the menu,
+	// not the logo (it toggles by itself), not the tour card that may be pointing at the menu,
+	// and nothing while the export-settings popup is up (its own backdrop answers that press).
+	// A press on another control still WORKS (a bottom-bar tab, the bell, Play) — one press,
+	// not two; a press on the 3D VIEW only dismisses: it must not also select, deselect or orbit
+	// the camera, which is what a stray tap to close a menu would otherwise do. A CAPTURE
+	// listener on window: panel chrome stops pointerdown on its way up.
+	$effect(() => {
+		if ($closeMenu) return;
+		const outside = (e: PointerEvent) => {
+			if (exportSettingsOpen) return;
+			const t = e.target as Element | null;
+			if (!t || !t.isConnected || t.closest('#sidebar70, #logo-menu, #tour-card, #export-settings-modal')) return;
+			closeMenu.set(true);
+			const view = ($globalRenderer as any)?.domElement;
+			if (view && t === view) {
+				e.stopPropagation();
+				e.preventDefault();
+			}
+		};
+		window.addEventListener('pointerdown', outside, true);
+		return () => window.removeEventListener('pointerdown', outside, true);
+	});
 
 	// 15-J viewer gate + 33 (L3) the Clear scene modal live in $lib/sceneTemplates.confirmClearScene
 	// now — shared with the Templates modal's "Blank scene" card.
@@ -348,14 +375,14 @@
 	     spill off the left edge). Modal tier so it clears the avatar/Connect chrome. -->
 	<button
 		class="fixed inset-0 cursor-default bg-scrim"
-		style="z-index: calc(var(--z-menu) + 1)"
+		style="z-index: calc(var(--z-popover) + 1)"
 		aria-label="Close export settings"
 		onclick={() => (exportSettingsOpen = false)}
 	></button>
 	<div
 		id="export-settings-modal"
 		class="fixed w-64 max-w-[92vw] rounded-lg border border-border bg-surface-1 p-4 text-sm text-text shadow-2xl"
-		style="z-index: calc(var(--z-menu) + 2); top: {exportPos.top}px; left: {exportPos.left}px;"
+		style="z-index: calc(var(--z-popover) + 2); top: {exportPos.top}px; left: {exportPos.left}px;"
 	>
 		<p class="mb-2 font-semibold">Export settings</p>
 		<p class="mb-1 text-[11px] text-text-muted">Scene (.tpscene) includes:</p>
@@ -435,7 +462,7 @@
 		   below the screen where no swipe could bring them back */
 		top: var(--side-top, 64px);
 		left: 8px;
-		z-index: var(--z-menu);
+		z-index: var(--z-popover);
 		/* size to the widest row so wider-font themes (e.g. 8-bit) never overflow
 		   the panel and overlap the scene; clamped so it stays compact */
 		width: max-content;

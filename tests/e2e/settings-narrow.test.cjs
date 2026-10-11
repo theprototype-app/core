@@ -25,6 +25,8 @@ const SIZES = [
 ];
 const MIN_TEXT = 180;
 const SHOTS = process.env.SHOTS || '';
+// THEME=light (etc.) runs the whole pass in that theme — the screenshots then cover it too
+const THEME = process.env.THEME || '';
 
 /** @param {any} page @param {string} key */
 async function open(page, key) {
@@ -71,6 +73,7 @@ h.run(async () => {
 		const P = await h.setupPage(browser, size, { context });
 		const page = P.page;
 		await page.addStyleTag({ content: '*{transition:none!important;animation:none!important}' });
+		if (THEME) await page.evaluate((th) => /** @type {any} */ (window).__stores.themes.theme.set(th), THEME);
 		let rows = 0;
 		const bad = [];
 		for (const key of PAGES) {
@@ -82,7 +85,7 @@ h.run(async () => {
 				// the page's whole scroller, so every row of the section is in the picture
 				await page.evaluate(() => document.querySelector('#settings-main')?.scrollTo(0, 0));
 				const main = page.locator('dialog.settings-dialog');
-				await main.screenshot({ path: path.join(SHOTS, `settings-${key}-${size}.png`) }).catch(() => {});
+				await main.screenshot({ path: path.join(SHOTS, `settings-${key}-${size}${THEME ? '-' + THEME : ''}.png`) }).catch(() => {});
 			}
 		}
 		const width = await page.evaluate(() => Math.round(document.querySelector('dialog.settings-dialog')?.getBoundingClientRect().width ?? 0));

@@ -38,7 +38,7 @@ h.run(async () => {
 	});
 	await page.evaluate(() => window.__stores.flowNodes?.update?.((n) => n));
 	await clearToasts();
-	await page.evaluate((id) => window.__stores.flowGraphsCtl.requestDeleteObjectGraph(id, 'Box'), uuid);
+	await page.evaluate((id) => { void window.__stores.flowGraphsCtl.requestDeleteObjectGraph(id, 'Box'); }, uuid); // never return the promise: it waits for the answer
 	await page.waitForTimeout(500);
 	const flowAsk = await dialogText();
 	h.check(/Delete this flow\?/.test(flowAsk) && /for everyone/.test(flowAsk), `Delete flow asks in a modal ("${flowAsk.slice(0, 120)}")`);
@@ -53,7 +53,7 @@ h.run(async () => {
 		}, id);
 	h.check(await hasGraph(uuid), 'the premise: the object has a flow');
 	h.check(await hasGraph(uuid), 'Cancel keeps the flow');
-	await page.evaluate((id) => window.__stores.flowGraphsCtl.requestDeleteObjectGraph(id, 'Box'), uuid);
+	await page.evaluate((id) => { void window.__stores.flowGraphsCtl.requestDeleteObjectGraph(id, 'Box'); }, uuid); // never return the promise: it waits for the answer
 	await page.waitForTimeout(400);
 	await page.locator('#confirm-dialog-ok').click({ timeout: 4000 }).catch(() => {});
 	await page.waitForTimeout(400);

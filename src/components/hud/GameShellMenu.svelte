@@ -281,7 +281,7 @@
 		position: fixed;
 		top: calc(var(--connect-bottom, 0px) + 108px);
 		left: 16px;
-		z-index: 46;
+		z-index: calc(var(--z-hud) + 1);
 		display: inline-flex;
 		align-items: center;
 		gap: 6px;

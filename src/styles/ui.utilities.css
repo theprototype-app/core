@@ -60,7 +60,7 @@
     position: absolute;
     top: -24px;
     left: 8px;
-    z-index: 50;
+    z-index: var(--z-portal);
     padding: 2px 8px;
     border-radius: 6px;
     background: var(--accent-fill);

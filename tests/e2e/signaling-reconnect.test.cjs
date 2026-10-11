@@ -7,10 +7,11 @@
 // `reconnect()` cannot revive a spent Peer object, and nothing ever rebuilt one.
 //
 // What this suite pins:
-//   1. the first drop arms the chip and toasts ONCE (a chip is a state you can look at;
-//      an unbounded retry that toasts per attempt is spam)
-//   2. attempt 7 is still retrying, and nothing ever says "reload"
-//   3. `open` clears the chip and says so once — only to somebody who saw it go away
+//   1. the first drop turns the Connect dot yellow and says NOTHING out loud (41 G21: a phone tab
+//      switch drops the socket, and it used to toast three times — the dot is the state)
+//   2. attempt 7 is still retrying, the dot is red, and ONE notification-centre entry (no toast)
+//      says the server cannot be reached; nothing ever says "reload"
+//   3. `open` turns the dot back, again with no toast
 //   4. a CLOSED peer is REBUILT, on the same id, so the invite link still works
 //   5. `online` and `visibilitychange` retry NOW and reset the schedule
 //
@@ -34,6 +35,18 @@ const toastTexts = (page) =>
 		return list.map((t) => (typeof t === 'string' ? t : (t && (t.text || t.message)) || ''));
 	});
 
+const dot = (page) =>
+	page.evaluate(() => {
+		const d = document.querySelector('#connect-status');
+		return d ? { tone: d.getAttribute('data-tone'), words: d.getAttribute('aria-label') } : null;
+	});
+const notes = (page) =>
+	page.evaluate(() => {
+		let list = [];
+		window.__stores.notifications.subscribe((v) => (list = v))();
+		return list.map((n) => n.text);
+	});
+
 const emitOnPeer = (page, event) =>
 	page.evaluate((name) => {
 		let pc = null;
@@ -54,24 +67,25 @@ h.run(async () => {
 		return { open: !!pc?.peer?.open, id: pc?.peer?.id ?? '' };
 	});
 	h.check(premise.open && !!premise.id, `premise: the signaling link is open (${premise.id})`);
-	h.check(
-		(await page.locator('#connect-retry-chip').count()) === 0,
-		'no retry chip while the link is up'
-	);
+	const up = await dot(page);
+	h.check(up?.tone === 'idle', `the status dot is grey while the link is up and nobody is connected (${JSON.stringify(up)})`);
+	const textless = await page.evaluate(() => {
+		const chip = document.querySelector('#ps-connect-chip, .cx-chip');
+		return chip ? (chip.textContent || '').trim() : '';
+	});
+	h.check(textless === '', `the pill carries no text, its words are the tooltip ("${textless}")`);
 
 	// ---- 1. the first drop: chip on, ONE toast ---------------------------------------
 	await emitOnPeer(page, 'disconnected');
 	await page.waitForTimeout(400);
 	const first = await readRetry(page);
-	h.check(first?.retrying === true && first.attempt === 1, `the chip arms on the first drop (${JSON.stringify(first)})`);
-	h.check(
-		await page.locator('#connect-retry-chip').isVisible().catch(() => false),
-		'the Connect pill shows a Reconnecting chip'
-	);
+	h.check(first?.retrying === true && first.attempt === 1, `the retry state arms on the first drop (${JSON.stringify(first)})`);
+	const yellow = await dot(page);
+	h.check(yellow?.tone === 'connecting' && /Reconnecting/.test(yellow.words), `the dot turns yellow and its words say so (${JSON.stringify(yellow)})`);
 	const afterFirst = await toastTexts(page);
 	h.check(
-		afterFirst.filter((t) => /Lost the peer server/i.test(t)).length === 1,
-		'exactly one toast on the way in'
+		!afterFirst.some((t) => /peer server|reconnect/i.test(t)),
+		`no toast on the way in (${JSON.stringify(afterFirst)})`
 	);
 
 	// ---- 2. it never gives up ---------------------------------------------------------
@@ -82,10 +96,11 @@ h.run(async () => {
 	const many = await readRetry(page);
 	h.check(many?.retrying === true && many.attempt === 7, `attempt 7 is still retrying (${JSON.stringify(many)})`);
 	const afterMany = await toastTexts(page);
-	h.check(
-		afterMany.filter((t) => /Lost the peer server/i.test(t)).length === 1,
-		'…and it still said it only once — the chip carries the live state'
-	);
+	h.check(!afterMany.some((t) => /peer server|reconnect/i.test(t)), '…and still no toast — the dot carries the live state');
+	const red = await dot(page);
+	h.check(red?.tone === 'failed', `past the give-up threshold the dot is red (${JSON.stringify(red)})`);
+	const failNotes = (await notes(page)).filter((t) => /Can't reach the peer server/.test(t));
+	h.check(failNotes.length === 1, `ONE notification-centre entry says it (${failNotes.length})`);
 	h.check(
 		!afterMany.some((t) => /reload/i.test(t)),
 		'nothing tells the user to reload (a reload drops every live peer and the invite id)'
@@ -95,16 +110,12 @@ h.run(async () => {
 	await emitOnPeer(page, 'open');
 	await page.waitForTimeout(400);
 	const healed = await readRetry(page);
-	h.check(healed?.retrying === false && healed.attempt === 0, 'the chip clears when the link comes back');
-	h.check(
-		(await page.locator('#connect-retry-chip').count()) === 0,
-		'…and the chip leaves the pill'
-	);
+	h.check(healed?.retrying === false && healed.attempt === 0, 'the retry state clears when the link comes back');
+	const back = await dot(page);
+	h.check(back?.tone === 'idle', `…and the dot turns back (${JSON.stringify(back)})`);
 	const afterOpen = await toastTexts(page);
-	h.check(
-		afterOpen.filter((t) => /Reconnected to the peer server/i.test(t)).length === 1,
-		'one "Reconnected" toast, said only to somebody who saw it go away'
-	);
+	h.check(!afterOpen.some((t) => /Reconnected/i.test(t)), 'no "Reconnected" toast either');
+	h.check((await notes(page)).filter((t) => /Can't reach the peer server/.test(t)).length === 1, 'the outage left exactly one notification');
 
 	// ---- 4. a CLOSED peer is rebuilt, on the same id -----------------------------------
 	const beforeClose = await page.evaluate(() => {
@@ -197,6 +208,37 @@ h.run(async () => {
 		delete p.disconnected;
 		delete p.destroyed;
 	});
+
+	// ---- 6. 41 G21: the PHONE chip (reconnect.jpg / space-connect-svelte.jpg) -----------------
+	// Oppo N6 folded: the chip is a dot + chevron and NO text; a tab switch (the socket drops and
+	// comes back) raises no toast at all.
+	const P = await h.setupPage(browser, 'phone', {
+		context: { viewport: { width: 390, height: 896 }, deviceScaleFactor: 2.9, hasTouch: true, isMobile: true }
+	});
+	const phone = P.page;
+	await phone.waitForSelector('#ps-connect-chip', { timeout: 30000 });
+	const chip = await phone.evaluate(() => {
+		const c = document.querySelector('#ps-connect-chip');
+		const d = c?.querySelector('.cx-status-dot');
+		return {
+			text: (c?.textContent || '').trim(),
+			label: c?.getAttribute('aria-label') ?? '',
+			title: c?.getAttribute('title') ?? '',
+			tone: d?.getAttribute('data-tone') ?? '',
+			width: Math.round(c?.getBoundingClientRect().width ?? 0)
+		};
+	});
+	h.check(chip.text === '', `phone: the Connect chip carries no text ("${chip.text}")`);
+	h.check(/Not connected|Connecting/.test(chip.label) && chip.title.length > 0, `phone: its words are the aria-label and tooltip ("${chip.label}")`);
+	h.check(chip.width <= 72, `phone: the chip is a dot + chevron wide (${chip.width}px)`);
+	await emitOnPeer(phone, 'disconnected');
+	await phone.waitForTimeout(300);
+	const phoneDrop = await phone.evaluate(() => document.querySelector('#ps-connect-chip .cx-status-dot')?.getAttribute('data-tone'));
+	h.check(phoneDrop === 'connecting', `phone: a dropped socket turns the dot yellow (${phoneDrop})`);
+	await emitOnPeer(phone, 'open');
+	await phone.waitForTimeout(300);
+	const phoneToasts = await toastTexts(phone);
+	h.check(!phoneToasts.some((t) => /peer server|reconnect/i.test(t)), `phone: the drop and the return raised no toast (${JSON.stringify(phoneToasts)})`);
 
 	await h.finish(browser);
 });

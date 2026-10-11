@@ -270,7 +270,7 @@ h.run(async () => {
 		window.__stores.settingsOpen.set(true);
 	});
 	await h.eventually(() => rectOf(page, '#touch-edit-layout'), (r) => !!r, 'Settings deep-links to Touch controls', 5000);
-	await page.evaluate(() => { for (const id of ['restore-session', 'quality-reduced']) window.__stores.dismissToastById?.(id); });
+	await page.evaluate(() => { window.__stores.autosave?.dismissRestore?.(); for (const id of ['quality-reduced']) window.__stores.dismissToastById?.(id); });
 	await page.waitForTimeout(200);
 	await shoot(page, '06-settings-phone-dark.png');
 	await page.locator('#touch-edit-layout').click();

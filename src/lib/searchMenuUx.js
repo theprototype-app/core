@@ -84,7 +84,7 @@ export function inputContextMenu(input) {
 		menu = document.createElement('div');
 		menu.id = 'input-context-menu';
 		menu.className =
-			'tp-ui fixed z-1001 flex overflow-hidden rounded-lg border border-border-strong bg-surface-1 text-xs text-text-2 shadow-xl';
+			'tp-ui fixed z-(--z-portal) flex overflow-hidden rounded-lg border border-border-strong bg-surface-1 text-xs text-text-2 shadow-xl';
 		menu.style.left = e.clientX + 'px';
 		menu.style.top = e.clientY + 'px';
 		/** @param {string} label @param {() => any} fn */

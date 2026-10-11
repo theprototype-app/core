@@ -106,7 +106,9 @@ import { applyObjectFile } from '$lib/animatedImports';
 import { applyRemoteBehavior } from '$lib/packBehavior';
 import { sendArchBehaviorStates } from '$lib/arch/archParts.js';
 import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
-import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast, chatHistory, mergeChatHistory } from '../stores/appStore';
+import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast, pushNotification, chatHistory, mergeChatHistory } from '../stores/appStore';
+// 41 G21: the signaling link's ups and downs are a STATE on the Connect pill's dot, never toasts
+import { GIVE_UP_ATTEMPTS } from '$lib/connectionStatus';
 import { get } from 'svelte/store';
 import { exportMode } from './export/exportBoot.js';
 
@@ -330,7 +332,9 @@ export class PeerConnection {
 		const fallbackToPublic = () => {
 			this.didFallback = true;
 			this.canFallback = false;
-			showToast('Your peer server is unreachable - switching to the public PeerJS server.');
+			// 41 G21: a status the user did not ask about — the notification centre, not a toast
+			// (the chevron's warn dot already says it while it lasts)
+			pushNotification('Your peer server is unreachable — switched to the public PeerJS server.');
 			recreatePeer(true);
 		};
 
@@ -393,13 +397,26 @@ export class PeerConnection {
 			});
 		};
 
+		// 41 G21: a drop and its retries are the Connect dot's job (yellow, pulsing); past
+		// GIVE_UP_ATTEMPTS the dot turns red and ONE notification-centre entry says so — once per
+		// outage, never a toast (a phone tab switch drops the socket, and it used to say so three times)
+		this.signalingNotified = false;
+		const signalingDown = (/** @type {number} */ attempt) => {
+			noteSignalingRetry(attempt);
+			if (attempt >= GIVE_UP_ATTEMPTS && !this.signalingNotified) {
+				this.signalingNotified = true;
+				pushNotification("Can't reach the peer server — still retrying. Peers you are connected to are unaffected; check your connection or Settings ▸ Connection.");
+			}
+		};
+
 		const wire = () => {
 		this.peer.on('open', (id) => {
 			console.log(id);
 			this.hasOpened = true;
-			// 27-F: say it ONCE, and only to somebody who saw it go away.
-			if (get(signalingRetry).retrying) showToast('Reconnected to the peer server.');
+			// 41 G21: no "Reconnected" toast — the dot turning back says it
 			clearSignalingRetry();
+			this.signalingNotified = false;
+			peers.update((value) => value); // the dot reads peer.open: tick the store
 			this.reconnectAttempts = 0; // a fresh/re-established server link resets the backoff
 			if (this.updateIdFn) this.updateIdFn(id);
 			if (!window.location.hash.slice(1)) return;
@@ -427,8 +444,7 @@ export class PeerConnection {
 			log('error', 'net', 'signaling server closed');
 			this.reconnectAttempts++;
 			const delay = backoffDelay(this.reconnectAttempts, RETRY_BACKOFF) ?? 8000;
-			if (this.reconnectAttempts === 1) showToast('The peer server closed the link - reconnecting...');
-			noteSignalingRetry(this.reconnectAttempts);
+			signalingDown(this.reconnectAttempts);
 			setTimeout(() => { if (!this.peer?.open) recreatePeer(this.didFallback); }, delay);
 		});
 
@@ -445,8 +461,7 @@ export class PeerConnection {
 			if (this.peer.destroyed) return;
 			this.reconnectAttempts++;
 			const delay = backoffDelay(this.reconnectAttempts, RETRY_BACKOFF) ?? 8000;
-			if (this.reconnectAttempts === 1) showToast('Lost the peer server - reconnecting...');
-			noteSignalingRetry(this.reconnectAttempts);
+			signalingDown(this.reconnectAttempts);
 			setTimeout(() => {
 				if (!this.peer.destroyed && this.peer.disconnected) this.peer.reconnect();
 			}, delay);
@@ -498,7 +513,9 @@ export class PeerConnection {
 			} else if (err.type === 'unavailable-id') {
 				showToast('Your session ID is already in use. Please reload the page.');
 			} else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
-				showToast('Cannot reach the peer server. Retrying...');
+				// 41 G21: no toast — a link that was up retries through 'disconnected'/'close' (the
+				// dot pulses); one that NEVER opened has nothing else to say it, so it is failed
+				if (!this.hasOpened) signalingDown(Math.max(GIVE_UP_ATTEMPTS, get(signalingRetry).attempt || 0));
 			} else {
 				showToast('Connection error: ' + err.type);
 			}

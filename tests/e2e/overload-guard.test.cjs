@@ -284,13 +284,13 @@ h.run(async () => {
 		window.__stores.autosave.restoreAvailable.set({ objects: 4200, ts: Date.now() });
 	});
 	await h.eventually(
-		() => A.page.locator('.tp-toast', { hasText: 'Restore previous session?' }).textContent().catch(() => ''),
+		() => A.page.locator('#restore-session-modal').textContent().catch(() => ''),
 		(t) => /4200 objects/.test(String(t)) && /above the 3000 recommended/.test(String(t)),
 		'the restore prompt says the snapshot is above this device\'s budget'
 	);
 	await A.page.evaluate(() => window.__stores.autosave.restoreAvailable.set({ objects: 40, ts: Date.now() }));
 	await h.eventually(
-		() => A.page.locator('.tp-toast', { hasText: 'Restore previous session?' }).textContent().catch(() => ''),
+		() => A.page.locator('#restore-session-modal').textContent().catch(() => ''),
 		(t) => /40 objects/.test(String(t)) && !/recommended/.test(String(t)),
 		'…and says nothing about the budget for a small one'
 	);

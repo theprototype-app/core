@@ -16,6 +16,7 @@
 
 /* ---- 1. old phone chrome off ------------------------------------------------------- */
 :root.phone-shell #controls-pill,
+:root.phone-shell .hud-stack, /* 41 G1: the corner stacks, whatever they hold */
 :root.phone-shell #chat-button,
 :root.phone-shell #mobile-add-button,
 :root.phone-shell #ai-hud-button,
@@ -159,11 +160,11 @@
 	border: 0 !important;
 	border-radius: 0 !important;
 	box-shadow: none !important;
-	z-index: 40 !important;
+	z-index: calc(var(--z-sheet) + 2) !important;
 	background: var(--surface-1);
 }
 :root.phone-shell [data-ps-host='top'] {
-	z-index: 41 !important;
+	z-index: calc(var(--z-sheet) + 3) !important;
 }
 /* the Connect bar's pill + drawer as the Connect sheet's body */
 :root.phone-shell .connect-wrap[data-ps-host] {
@@ -364,24 +365,21 @@
 	padding-bottom: 12px !important;
 }
 
-/* 40 F1 — NOTHING COVERS PLAY OR THE SELECTION STRIP. The main menu, the profile menu and the
-   Add list keep their own tiers (over toasts, as before), so while one of them is open the bar
-   and the strip rise over it: the sheet ends at the bar's top and the raised Play circle is
-   drawn on top of its edge (cover-play-and-handle). */
+/* 40 F1 — NOTHING COVERS PLAY. The main menu, the profile menu and the Add list sit on
+   --z-popover, so while one of them is open the bar rises over it: the sheet ends at the bar's
+   top and the raised Play circle is drawn on top of its edge (cover-play-and-handle).
+   41 G20 reversed the other half: the SELECTION strip (--z-selection) no longer rises — an open
+   drawer, menu or settings sheet covers it, like every other sheet does. */
 :root.phone-shell:has(#sidebar70) #ps-bar,
-:root.phone-shell:has(#sidebar70) #ps-strip,
 :root.phone-shell:has(#avatar-dropdown) #ps-bar,
-:root.phone-shell:has(#avatar-dropdown) #ps-strip,
-:root.phone-shell.ps-add-open #ps-bar,
-:root.phone-shell.ps-add-open #ps-strip {
-	z-index: calc(var(--z-menu) + 2) !important;
+:root.phone-shell.ps-add-open #ps-bar {
+	z-index: calc(var(--z-popover) + 2) !important;
 }
 /* a framed window that lives inside another stacking context (the notification centre is in the
-   top-right corner chrome, z 997) paints at THAT level, so the bar and the strip rise over it
-   too — still under the full-screen modals (1100), which cover everything (#32 e) */
-:root.phone-shell:has(.top-right-chrome [data-ps-host]) #ps-bar,
-:root.phone-shell:has(.top-right-chrome [data-ps-host]) #ps-strip {
-	z-index: 999 !important;
+   top-right corner chrome, --z-chrome-top) paints at THAT level, so the bar rises over it too —
+   still under the full-screen modals (--z-modal), which cover everything (#32 e) */
+:root.phone-shell:has(.top-right-chrome [data-ps-host]) #ps-bar {
+	z-index: calc(var(--z-chrome-top) + 1) !important;
 }
 
 /* 40 F1: on the phone the notification centre is a framed sheet, whose own scrim (above the bar)

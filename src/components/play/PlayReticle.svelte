@@ -64,7 +64,7 @@
 		justify-content: center;
 		gap: 0.75rem;
 		pointer-events: none;
-		z-index: 2;
+		z-index: var(--z-canvas-overlay);
 	}
 	.reticle {
 		width: 4px;

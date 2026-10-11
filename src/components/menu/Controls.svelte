@@ -38,8 +38,12 @@
 	import Badge from '../ui/Badge.svelte';
 	import Icon from '../ui/Icon.svelte';
 	import { createAttachmentKey, fromAction } from 'svelte/attachments';
-	import MobileAddButton from './MobileAddButton.svelte';
-	import AiHudButton from './AiHudButton.svelte';
+	// 41 G1: MobileAddButton / AiHudButton (and VoiceChat's mic button) became roster entries
+	import { aiAssistantHidden, settingsOpen, settingsSection, viewportMenuOpener } from '../../stores/appStore.js';
+	import { aiReady } from '$lib/ai/providers';
+	import { canvasCenter } from '$lib/canvasRect';
+	import { micActive, pttActive, toggleMic } from '$lib/voiceChat';
+	import { phoneShell } from '$lib/ui/phoneShell.js';
 	import SimControls from './SimControls.svelte';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable, groupRectOf, moveGroupOf, resizeGroup } from '$lib/windowTabs';
@@ -53,6 +57,29 @@
 	import { hudIsGame } from '$lib/hudDocs';
 	import { DOCK_VIEWS } from '$lib/dockMenu';
 	import { safeStorage } from '$lib/safeStorage';
+	// 41 G23/G1: the toolbar layout model (a pure leaf)
+	import {
+		PLAY as SPACER,
+		defaultLayout as defaultToolbarLayout,
+		normalizeLayout,
+		visualRow,
+		moveCell as moveToolbarCell,
+		hideButton as hideToolbarButton,
+		showButton as showToolbarButton,
+		swapCell as swapToolbarCell,
+		SIDE_MAX,
+		placements,
+		fromPlacements,
+		placeAt,
+		placeRemove,
+		placeRegion,
+		fillHole,
+		isHole,
+		stepItem,
+		unplacedIds,
+		regionOf
+	} from '$lib/toolbarLayout';
+	import type { ToolbarLayout, LayoutConfig, Placements, Region } from '$lib/toolbarLayout';
 	import { pivotMode, pivotParentAvailable } from '$lib/multiTransform'; // 37 R1: the toolbar Pivot cell
 	import { VRButton, XRButton } from '@threlte/xr'
 
@@ -1044,13 +1071,9 @@
 	 *  It rides IN the layout record rather than in a key of its own, which is what
 	 *  makes `resetLayout()` and Settings' "Reset window positions" (whose wipe already
 	 *  names `controlsLayout`) cover the position with no second thing to remember. */
-	type ControlsLayout = {
-		order: string[];
-		hidden: string[];
-		spacerIndex: number;
-		collapsed: boolean;
-		posX: number | null;
-	};
+	// 41: the record is `$lib/toolbarLayout`'s `ToolbarLayout` (+ `left`/`right` corner stacks and
+	// `seen`, the ids it has placed — see that file)
+	type ControlsLayout = ToolbarLayout;
 	// 30 P1: `pressed` makes the cell a TOGGLE — it renders as a real <button> carrying
 	// aria-pressed (a <p> cannot: the attribute is not supported on its role)
 	const PIVOT_NAMES: Record<string, string> = { median: 'Median point', active: 'Active object', individual: 'Individual origins', parent: 'Parent origin' };
@@ -1073,7 +1096,6 @@
 	 *  a collapsed bar is the well and nothing else, and the way back out lives in
 	 *  the FAB's own right-click menu (plus Settings' Reset window positions, which
 	 *  is the hatch for iOS Safari, where a long press fires no `contextmenu`). */
-	const SPACER = '__spacer';
 	// 33 E1: THE USER'S ORDER — the transforms, then Interact, then Play (the well), then
 	// the views they open most: object list, node editor, Explorer, Animation. Interact
 	// sits beside Play because the two answer one question ("how am I touching the scene
@@ -1216,8 +1238,94 @@
 					run: () => togglePanel(key)
 				} as CellButton
 			])
-		)
+		),
+		// 41 G1: THE ROUND CORNER BUTTONS JOIN THE ROSTER. They were four hand-placed components
+		// (the "+", the AI assistant, chat, the mic), so nothing could move or remove them; now
+		// each is a roster entry like any bar button, placed by the layout record in a corner
+		// stack or on the bar. The DOM ids, titles and handlers are the ones they always had
+		// (suites and the tours select on #mobile-add-button / #ai-hud-button / #chat-button /
+		// #mic-button), and the id travels with the button wherever it is placed.
+		add: {
+			title: 'Add / context menu',
+			slot: 'mobile-add-button',
+			icon: 'plus',
+			tint: () => ICON_OFF,
+			run: () => openAddMenu()
+		},
+		ai: {
+			title: 'AI assistant',
+			slot: 'ai-hud-button',
+			icon: 'sparkles',
+			tint: () => ($aiAssistantHidden === '' ? ICON_ON : ICON_OFF),
+			run: () => toggleAiAssistant()
+		},
+		chat: {
+			get title() {
+				return $chatUnread > 0
+					? `Chat (C) — ${$chatUnread} unread${$chatMentioned ? ', you were mentioned' : ''}`
+					: 'Chat (C)';
+			},
+			slot: 'chat-button',
+			icon: 'message-square',
+			tint: () => ($chatHidden !== 'hidden' ? ICON_ON : ICON_OFF),
+			run: () => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')
+		},
+		mic: {
+			get title() {
+				return $micActive ? 'Microphone on — click to mute' : 'Microphone off — click to talk, or hold V for push-to-talk';
+			},
+			slot: 'mic-button',
+			get iconName() {
+				return $micActive || $pttActive ? 'mic' : 'mic-off';
+			},
+			tint: () => ($micActive || $pttActive ? ICON_ON : ICON_OFF),
+			run: () => toggleMic()
+		}
 	};
+	/** 41 G1: the corner buttons and where a fresh profile puts them (bottom → top) — the
+	 *  pre-41 places: AI under the "+" on the left, chat under the mic on the right */
+	const CORNER_LEFT = ['ai', 'add'];
+	const CORNER_RIGHT = ['chat', 'mic'];
+	/** every id the layout can place, in the order the Customize / "+" lists show them */
+	const ROSTER_IDS = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS, ...CORNER_LEFT, ...CORNER_RIGHT];
+
+	/** the AI button press — AiHudButton's own path (I3): unconfigured points at Settings ▸ AI */
+	function toggleAiAssistant() {
+		if (!aiReady()) {
+			showQualityToast('Enable an AI provider in Settings to use the assistant');
+			settingsSection.set('ai');
+			settingsOpen.set(true);
+			return;
+		}
+		aiAssistantHidden.set($aiAssistantHidden === '' ? 'hidden' : '');
+	}
+
+	/** the "+" press — MobileAddButton's own path: a new object lands in the middle of the
+	 *  VIEWPORT (W9), the menu opens beside the button, wherever the button now is */
+	function openAddMenu() {
+		const r = document.getElementById('mobile-add-button')?.getBoundingClientRect();
+		const centre = canvasCenter();
+		$viewportMenuOpener?.(centre.x, centre.y, true, r?.left ?? 16, r?.top ?? window.innerHeight - 60);
+	}
+
+	/** 41 G1: a click handler as a DIRECT listener (this file mixes on: directives, so the
+	 *  attribute form is not available — the openCustomizeOnClick reasoning) */
+	function onPress(node: HTMLElement, fn: (e: MouseEvent) => void) {
+		let current = fn;
+		const click = (e: MouseEvent) => {
+			e.stopPropagation();
+			current(e);
+		};
+		node.addEventListener('click', click);
+		return {
+			update(next: (e: MouseEvent) => void) {
+				current = next;
+			},
+			destroy() {
+				node.removeEventListener('click', click);
+			}
+		};
+	}
 
 	/** 30 P1: the toggle cell's click as a DIRECT listener — an `on:click` on a new element
 	 *  adds a deprecation warning in this runes-mode file (the openStats reasoning). */
@@ -1235,68 +1343,51 @@
 		};
 	}
 
-	/** 33 E1: is this stored record one of the default bars the app used to ship? */
-	function isLegacyDefault(order: string[], saved: any): boolean {
-		const hidden: string[] = Array.isArray(saved.hidden) ? saved.hidden : [];
-		if (hidden.some((id) => order.includes(id))) return false;
-		const row = [...order];
-		const at = Number.isFinite(saved.spacerIndex) ? Math.max(0, Math.min(saved.spacerIndex, row.length)) : 3;
-		row.splice(at, 0, SPACER);
-		return LEGACY_DEFAULT_ROWS.includes(row.join(','));
-	}
+	// 41 G23: THE MODEL LIVES IN `$lib/toolbarLayout` (a pure leaf, unit-tested) — reading a
+	// stored record, the visual row, every move/hide/show/swap and the edit-positions
+	// placements. What stays here is the CONFIG (which ids exist, the shipped defaults) and the
+	// persistence. The legacy rows, the promoted defaults and the append-new-defaults rule
+	// documented above are the leaf's now, unchanged in effect.
+	const LAYOUT_CFG: LayoutConfig = {
+		order: DEFAULT_ORDER,
+		spacer: DEFAULT_SPACER,
+		left: CORNER_LEFT,
+		right: CORNER_RIGHT,
+		isKnown: (id: string) => !!BUTTONS[id],
+		legacyRows: LEGACY_DEFAULT_ROWS,
+		promoted: PROMOTED_DEFAULTS
+	};
 
 	function defaultLayout(): ControlsLayout {
-		return { order: [...DEFAULT_ORDER], hidden: [], spacerIndex: DEFAULT_SPACER, collapsed: false, posX: null };
+		return defaultToolbarLayout(LAYOUT_CFG);
 	}
 
-	/** Read the persisted layout, SSR-guarded and defensive: a stored record is user
-	 *  data that a later version of this file may not recognise. A button the saved
-	 *  order has never heard of is APPENDED rather than suppressed (`explorerColumns`'
-	 *  rule: store what is hidden, so anything added later shows by default), and an
-	 *  id that no longer exists is dropped so the registry lookup can never miss. */
+	/** Read the persisted layout, SSR-guarded and defensive: a stored record is user data a
+	 *  later version of this file may not recognise, so it goes through `normalizeLayout`,
+	 *  which drops unknown ids and duplicates, closes holes and never throws. */
 	function loadLayout(): ControlsLayout {
 		if (typeof localStorage === 'undefined') return defaultLayout();
 		try {
 			const raw = safeStorage.getItem('controlsLayout');
-			if (!raw) return defaultLayout();
-			const saved = JSON.parse(raw) ?? {};
-			// W8b: kept ids are the ones the REGISTRY knows, not the ones the DEFAULT order
-			// lists — that older test dropped every optional view on the next reload, so a
-			// button enabled from Customize came back gone. A missing DEFAULT id is still
-			// appended (a button added to the app later shows by default, `explorerColumns`'
-			// rule); an OPTIONAL id absent from the record is absent from the bar, which is
-			// what makes it opt-in. Duplicates are dropped — `order` is a set of positions,
-			// and a hand-edited or half-migrated record must not render one button twice.
-			const order: string[] = Array.isArray(saved.order)
-				? saved.order.filter(
-						(id: any, at: number) => BUTTONS[id] && saved.order.indexOf(id) === at
-					)
-				: [];
-			const posX0 = typeof saved.posX === 'number' && Number.isFinite(saved.posX) ? Math.max(0, Math.min(1, saved.posX)) : null;
-			// 33 E1: a record that is still a SHIPPED default migrates to today's default
-			if (isLegacyDefault(order, saved))
-				return { ...defaultLayout(), collapsed: saved.collapsed === true, posX: posX0 };
-			for (const id of DEFAULT_ORDER) if (!order.includes(id) && !PROMOTED_DEFAULTS.includes(id)) order.push(id);
-			const hidden: string[] = Array.isArray(saved.hidden)
-				? saved.hidden.filter((id: any) => order.includes(id))
-				: [];
-			const room = order.filter((id) => !hidden.includes(id)).length;
-			const spacerIndex = Number.isFinite(saved.spacerIndex)
-				? Math.max(0, Math.min(saved.spacerIndex, room))
-				: Math.min(DEFAULT_SPACER, room);
-			// a stored fraction is clamped rather than trusted: 0..1 is the whole domain,
-			// and anything else (a hand-edited key, an older shape) reads as "centred"
-			const posX =
-				typeof saved.posX === 'number' && Number.isFinite(saved.posX)
-					? Math.max(0, Math.min(1, saved.posX))
-					: null;
-			return { order, hidden, spacerIndex, collapsed: saved.collapsed === true, posX };
+			return raw ? normalizeLayout(JSON.parse(raw), LAYOUT_CFG) : defaultLayout();
 		} catch {
 			return defaultLayout();
 		}
 	}
 
-	let controlsLayout: ControlsLayout = $state(loadLayout());
+	// 41 G23 — THE RELOAD BUG. The page is PRERENDERED, so the server's HTML holds the DEFAULT
+	// bar, and svelte 5 hydrates a keyed `{#each}` POSITIONALLY: it only checks that the list
+	// is non-empty, then walks the client's items onto the server's DOM in order. A stored
+	// custom order therefore hydrated each cell onto the markup of whatever button sat in that
+	// slot by default — the title and tint effects repaired the attributes, but every cell's
+	// <svg> kept the server's paths, so after "move the far-right buttons to the leftmost and
+	// reload" the icons belonged to other buttons. The bar now HYDRATES WITH THE DEFAULT (what
+	// the server rendered) and the stored record is applied right after mount, where a keyed
+	// reorder moves real DOM nodes. Same for the viewport width (the narrow bar drops a cell).
+	let controlsLayout: ControlsLayout = $state(defaultLayout());
+	onMount(() => {
+		controlsLayout = loadLayout();
+	});
 
 	function saveLayout() {
 		try {
@@ -1307,9 +1398,11 @@
 	}
 
 	/** The ONE write path. ALWAYS REASSIGNS: `$derived` compares with `===`, so an
-	 *  in-place `order.push(…)` would leave every cell exactly where it was. */
+	 *  in-place `order.push(…)` would leave every cell exactly where it was. Every write goes
+	 *  back through `normalizeLayout`, so no edit can store a record a reload would read
+	 *  differently. */
 	function setLayout(patch: Partial<ControlsLayout>) {
-		controlsLayout = { ...controlsLayout, ...patch };
+		controlsLayout = normalizeLayout({ ...controlsLayout, ...patch }, LAYOUT_CFG);
 		saveLayout();
 	}
 
@@ -1330,22 +1423,13 @@
 	// clears `controlsLayout` and this brings the live bar back with no reload.
 	onMount(() => registerWindowReset(() => resetLayout()));
 
-	/** the roster buttons actually ON the bar, in bar order (the spacer is not one) */
-	function shownIds(): string[] {
-		return controlsLayout.order.filter((id) => BUTTONS[id] && !controlsLayout.hidden.includes(id));
-	}
-
 	/** THE VISUAL ROW — the bar exactly as the user reads it: the shown buttons with
-	 *  the FAB's well spliced in at `spacerIndex`. Every rearrangement is a splice on
-	 *  THIS sequence and the record is derived back from it (below), which is the W1
-	 *  correction: `order` and `spacerIndex` used to be moved independently, so a step
-	 *  across the well moved TWO cells at once ("Move left and right near play just
-	 *  swap items around the play button"). */
+	 *  the FAB's well spliced in at `spacerIndex` (`$lib/toolbarLayout`'s `visualRow`). Every
+	 *  rearrangement is a splice on THIS sequence and the record is derived back from it,
+	 *  which is the W1 correction: `order` and `spacerIndex` used to be moved independently,
+	 *  so a step across the well moved TWO cells at once. */
 	function visualIds(): string[] {
-		const shown = shownIds();
-		const seq: string[] = [...shown];
-		seq.splice(Math.max(0, Math.min(controlsLayout.spacerIndex, shown.length)), 0, SPACER);
-		return seq;
+		return visualRow(controlsLayout);
 	}
 
 	// The cells the bar renders. Collapsed, that is the well ALONE — the play button
@@ -1355,9 +1439,11 @@
 	// (the record keeps it; the Inspector and the object menu still set the pivot there) —
 	// the multiselect lane's own fallback (QUESTIONS-37-multiselect #1).
 	const NARROW_BAR = 440;
-	let viewportW = $state(typeof window === 'undefined' ? 1280 : window.innerWidth);
+	// 41 G23: the SERVER's width until mounted (see the hydration note above)
+	let viewportW = $state(1280);
 	onMount(() => {
 		const read = () => (viewportW = window.innerWidth);
+		read();
 		window.addEventListener('resize', read);
 		return () => window.removeEventListener('resize', read);
 	});
@@ -1377,35 +1463,17 @@
 		BUTTONS[id]?.run();
 	}
 
-	// --- rearranging -------------------------------------------------------------
-	/** Move one cell — a button or the well itself — exactly ONE visual slot.
-	 *
-	 *  Swapping with the neighbour ON THE VISUAL ROW is what makes crossing the play
-	 *  button a single step: the button and the well trade places, so the button ends
-	 *  up on play's other side and every other cell keeps its slot. The record is then
-	 *  READ OFF the mutated row — the well's index is where the well now is, and the
-	 *  shown buttons are poured back into their slots in `order`, so hidden entries
-	 *  keep their absolute positions and come back where they were left. */
+	// --- rearranging (the arithmetic is `$lib/toolbarLayout`'s) ---------------------
+	/** Move one cell — a button or the well itself — exactly ONE visual slot: it trades
+	 *  places with its neighbour on the visual row, so crossing the play button is a single
+	 *  step and every other cell keeps its slot. */
 	function moveCell(id: string, dir: number) {
-		const seq = visualIds();
-		const at = seq.indexOf(id);
-		const to = at + dir;
-		if (at < 0 || to < 0 || to >= seq.length) return;
-		seq[at] = seq[to];
-		seq[to] = id;
-		const shown = seq.filter((cell) => cell !== SPACER);
-		const order = [...controlsLayout.order];
-		let next = 0;
-		for (let i = 0; i < order.length; i++)
-			if (BUTTONS[order[i]] && !controlsLayout.hidden.includes(order[i])) order[i] = shown[next++];
-		setLayout({ order, spacerIndex: seq.indexOf(SPACER) });
+		setLayout(moveToolbarCell(controlsLayout, id, dir));
 	}
 
+	/** Take a bar button off the bar; it keeps its slot for Customize to bring it back. */
 	function hideButton(id: string) {
-		const at = shownIds().indexOf(id);
-		const spacerIndex =
-			at > -1 && at < controlsLayout.spacerIndex ? controlsLayout.spacerIndex - 1 : controlsLayout.spacerIndex;
-		setLayout({ hidden: [...controlsLayout.hidden, id], spacerIndex });
+		setLayout(hideToolbarButton(controlsLayout, id));
 	}
 
 	/** Put a button on the bar. W8b: an OPTIONAL view has never been in `order` at all,
@@ -1413,15 +1481,7 @@
 	 *  thing belongs and where the arrows can walk it from. A DEFAULT button that was
 	 *  hidden keeps its slot in `order` and returns to exactly where it was left. */
 	function showButton(id: string) {
-		if (!BUTTONS[id]) return;
-		const hidden = controlsLayout.hidden.filter((h) => h !== id);
-		const order = controlsLayout.order.includes(id)
-			? controlsLayout.order
-			: [...controlsLayout.order, id];
-		const at = order.filter((o) => BUTTONS[o] && !hidden.includes(o)).indexOf(id);
-		const spacerIndex =
-			at > -1 && at < controlsLayout.spacerIndex ? controlsLayout.spacerIndex + 1 : controlsLayout.spacerIndex;
-		setLayout({ order, hidden, spacerIndex });
+		setLayout(showToolbarButton(controlsLayout, id, LAYOUT_CFG));
 	}
 
 	/** W8b — SWAP: put `toId` in `fromId`'s exact slot and take `fromId` off the bar.
@@ -1429,18 +1489,276 @@
 	 *  The bar keeps its shape (same number of cells, same well position, every other
 	 *  cell untouched), which is the whole point: a user who wants the Animation tab a
 	 *  press away trades the button they never use for it, rather than growing the bar
-	 *  and then having to move things. `fromId` leaves `order` ENTIRELY rather than
-	 *  going into `hidden`, so it comes back on offer in every "Swap with" list and in
-	 *  Customize; `toId` is lifted out of wherever it sat first, so a button that was
-	 *  merely hidden cannot end up in `order` twice. */
+	 *  and then having to move things. */
 	function swapCell(fromId: string, toId: string) {
-		if (!BUTTONS[toId] || fromId === toId) return;
-		const order = controlsLayout.order.filter((o) => o !== toId);
-		const at = order.indexOf(fromId);
-		if (at < 0) return;
-		order[at] = toId;
-		setLayout({ order, hidden: controlsLayout.hidden.filter((h) => h !== toId && h !== fromId) });
+		if (!BUTTONS[toId]) return;
+		setLayout(swapToolbarCell(controlsLayout, fromId, toId));
 	}
+
+	// ── 41 G1: EDIT POSITIONS ──────────────────────────────────────────────────────────
+	// The user's ask, verbatim in spirit: a right-click (long press on touch) "Edit positions"
+	// mode where the buttons are dragged into place, every placeholder but Play carries a small
+	// red "−", an emptied place carries a small green "+" that offers whatever "Customize
+	// toolbar…" lists and is not placed yet (never Play), up to THREE round buttons stacked in
+	// each bottom corner, and a round green ✓ at the bar's top right applies.
+	//
+	// It edits a DRAFT (`editing`, `$lib/toolbarLayout`'s Placements) and touches the record
+	// only on ✓, through the same `fromPlacements` → `setLayout` path, so it shares every rule
+	// the Customize list and Move left/right obey (G23) and a cancel is free. While it is on, a
+	// press on a button does nothing but pick it up: the bar's own move gesture, the cell
+	// menus and the buttons' actions all stand down.
+	let editing: Placements | null = $state(null);
+	/** the item the keyboard acts on (and the one a drag is carrying) */
+	let editFocus: string | null = $state(null);
+	/** a drag in flight: what it carries and where the pointer is (the ghost follows it) */
+	let editDrag: { id: string; x: number; y: number } | null = $state(null);
+	/** the green "+" popup: where to anchor it and which place it fills */
+	let editAddMenu: { x: number; y: number; region: Region; index: number; hole: string | null } | null = $state(null);
+
+	/** enter edit mode, optionally with an item focused (the one that was right-clicked) */
+	function enterEditPositions(focusId: string | null = null) {
+		toolbarMenu = null;
+		customizeMenu = null;
+		playMenu = null;
+		if (toolbarGrab.active()) toolbarGrab.cancel();
+		editing = placements(controlsLayout);
+		editFocus = focusId && (focusId === SPACER || regionOf(controlsLayout, focusId)) ? focusId : null;
+		tick().then(() => focusEditItem(editFocus ?? visualIds()[0]));
+	}
+
+	function applyEditPositions() {
+		if (!editing) return;
+		const next = fromPlacements(controlsLayout, editing);
+		editing = null;
+		editDrag = null;
+		editAddMenu = null;
+		setLayout({ ...next, collapsed: false });
+	}
+
+	function cancelEditPositions() {
+		editing = null;
+		editDrag = null;
+		editAddMenu = null;
+	}
+
+	// a phone-sized window has no bar at all (PhoneShell draws its own), so folding the phone
+	// mid-edit throws the draft away rather than leaving an invisible mode armed
+	$effect(() => {
+		if ($phoneShell && editing) cancelEditPositions();
+	});
+
+	function focusEditItem(id: string | null) {
+		if (!id) return;
+		const el = document.querySelector<HTMLElement>(`[data-edit-id="${CSS.escape(id)}"]`);
+		el?.focus({ preventScroll: true });
+	}
+
+	/** the red "−": take the item off (a bar item leaves a "+" in its place until ✓) */
+	function editRemove(id: string) {
+		if (!editing || id === SPACER) return;
+		const region = placeRegion(editing, id);
+		editing = placeRemove(editing, id, { hole: region === 'bar' });
+		if (editFocus === id) editFocus = null;
+	}
+
+	/** the green "+": open the popup of unplaced roster buttons for this place */
+	function editOpenAdd(e: MouseEvent | KeyboardEvent, region: Region, index: number, hole: string | null = null) {
+		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		editAddMenu = { x: Math.round(r.left), y: Math.round(r.top), region, index, hole };
+	}
+
+	function editAddItems() {
+		if (!editing || !editAddMenu) return [];
+		const target = editAddMenu;
+		const free = unplacedIds(editing, ROSTER_IDS);
+		if (!free.length)
+			return [{ label: 'Every button is placed', tooltip: 'Remove one with its red "−" first', disabled: true }];
+		return [
+			{ section: 'Place a button' },
+			...free.map((id) => ({
+				label: BUTTONS[id].title,
+				icon: BUTTONS[id].iconName ?? BUTTONS[id].icon,
+				action: () => {
+					if (!editing) return;
+					editing = target.hole ? fillHole(editing, target.hole, id) : placeAt(editing, id, target.region, target.index);
+					editFocus = id;
+					tick().then(() => focusEditItem(id));
+				}
+			}))
+		];
+	}
+
+	/** the keyboard, while editing — in CAPTURE so the editor's own arrows / Delete never see it */
+	function onEditKey(e: KeyboardEvent) {
+		if (!editing || editAddMenu) return;
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			e.stopPropagation();
+			cancelEditPositions();
+			return;
+		}
+		const focused = (document.activeElement as HTMLElement | null)?.dataset?.editId ?? null;
+		if (!focused) return;
+		if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+			e.preventDefault();
+			e.stopPropagation();
+			editing = stepItem(editing, focused, e.key);
+			editFocus = focused;
+			tick().then(() => focusEditItem(focused));
+		} else if ((e.key === 'Delete' || e.key === 'Backspace') && focused !== SPACER) {
+			e.preventDefault();
+			e.stopPropagation();
+			editRemove(focused);
+		}
+	}
+
+	/** a press outside the bar, the corners and the popup cancels (the user's "outside = cancel") */
+	function onEditOutside(e: PointerEvent) {
+		if (!editing || editAddMenu) return;
+		const t = e.target as Element | null;
+		if (t?.closest?.('#controls-pill, .hud-stack, #toolbar-edit-ghost, [role="menu"]')) return;
+		cancelEditPositions();
+	}
+
+	onMount(() => {
+		window.addEventListener('keydown', onEditKey, true);
+		window.addEventListener('pointerdown', onEditOutside, true);
+		return () => {
+			window.removeEventListener('keydown', onEditKey, true);
+			window.removeEventListener('pointerdown', onEditOutside, true);
+		};
+	});
+
+	/** Where a drag would drop: the region under the pointer (each inflated so a corner stack is
+	 *  easy to hit) and the index among that region's OTHER items — counting only the others is
+	 *  what keeps the live reorder from oscillating as the carried item moves under the pointer. */
+	function editDropTarget(x: number, y: number, id: string): { region: Region; index: number } | null {
+		const PAD = 28;
+		const inside = (el: Element | null) => {
+			if (!el) return false;
+			const r = el.getBoundingClientRect();
+			return x >= r.left - PAD && x <= r.right + PAD && y >= r.top - PAD && y <= r.bottom + PAD;
+		};
+		for (const region of ['left', 'right'] as const) {
+			const stack = document.getElementById(`hud-stack-${region}`);
+			if (!inside(stack) || id === SPACER) continue;
+			const others = [...(stack?.querySelectorAll<HTMLElement>('[data-edit-wrap]') ?? [])].filter((el) => el.dataset.editWrap !== id);
+			// bottom → top: an item sits ABOVE every other whose centre is below the pointer
+			const index = others.filter((el) => {
+				const r = el.getBoundingClientRect();
+				return r.top + r.height / 2 > y;
+			}).length;
+			return { region, index };
+		}
+		const row = document.querySelector('#controls-pill .hud-bar-row');
+		if (!inside(row)) return null;
+		const others = [...(row?.querySelectorAll<HTMLElement>('[data-edit-slot]') ?? [])].filter((el) => el.dataset.editWrap !== id);
+		const index = others.filter((el) => {
+			const r = el.getBoundingClientRect();
+			return r.left + r.width / 2 < x;
+		}).length;
+		return { region: 'bar', index };
+	}
+
+	// THE GRIP IS A REAL <button>, the size of the whole placeholder, and the "−" is its SIBLING:
+	// browsers snap a finger to the nearest real button (touch target adjustment), so while the
+	// placeholder was a div with a <button> "−" in its corner, a finger pressed on the middle of
+	// a 44 px button landed on the 18 px "−" — measured with CDP touch, elementFromPoint said the
+	// icon and the pointerdown said the "−".
+	/** One edit item's pointer gesture (mouse, pen or a finger — pointer events throughout, so a
+	 *  real touch drags exactly like a mouse). A press that does not travel is not a drag: it only
+	 *  focuses the item. A drag reorders the draft LIVE, so the other buttons part to show where
+	 *  it will land, and a ghost of the carried button follows the pointer.
+	 *
+	 *  The gesture lives HERE, not in the node that started it: a button carried into another
+	 *  region is drawn by a different {#each} (bar → corner), so the node under the finger is
+	 *  destroyed mid-drag — a gesture owned by that node ended the moment it crossed over. */
+	let editGesture: { id: string; x: number; y: number; dragging: boolean } | null = null;
+	function editGestureMove(e: PointerEvent) {
+		const g = editGesture;
+		if (!g || !editing) return;
+		if (!g.dragging && Math.abs(e.clientX - g.x) + Math.abs(e.clientY - g.y) < DRAG_SLOP) return;
+		e.preventDefault();
+		g.dragging = true;
+		editDrag = { id: g.id, x: e.clientX, y: e.clientY };
+		const target = editDropTarget(e.clientX, e.clientY, g.id);
+		if (!target) return;
+		const p = editing;
+		if (placeRegion(p, g.id) === target.region && p[target.region].indexOf(g.id) === target.index) return; // already there
+		editing = placeAt(p, g.id, target.region, target.index);
+	}
+	function editGestureEnd(e?: Event) {
+		window.removeEventListener('pointermove', editGestureMove);
+		window.removeEventListener('pointerup', editGestureEnd);
+		window.removeEventListener('pointercancel', editGestureEnd);
+		const carried = editGesture?.dragging ? editGesture.id : null;
+		editGesture = null;
+		editDrag = null;
+		if (carried) {
+			// a mouse drag ends in a click that must not land; a finger that moved produces none,
+			// and an armed swallow would eat the NEXT real tap instead (the "−" right after a drag)
+			if ((e as PointerEvent | undefined)?.pointerType === 'mouse') swallowNextClick();
+			tick().then(() => focusEditItem(carried));
+		}
+	}
+	function editItemGesture(node: HTMLElement, id: string) {
+		let current = id;
+		const down = (e: PointerEvent) => {
+			if (!editing || (e.button ?? 0) !== 0) return;
+			if ((e.target as Element)?.closest?.('.hud-edit-remove')) return;
+			e.stopPropagation(); // the bar's own move gesture must not see an edit press
+			// a touch press is implicitly CAPTURED by the element it started on, which is about
+			// to be re-rendered as the draft moves — release it so the moves reach the window
+			try {
+				node.releasePointerCapture?.(e.pointerId);
+			} catch {
+				// not captured
+			}
+			editGestureEnd();
+			editGesture = { id: current, x: e.clientX, y: e.clientY, dragging: false };
+			editFocus = current;
+			window.addEventListener('pointermove', editGestureMove, { passive: false });
+			window.addEventListener('pointerup', editGestureEnd);
+			window.addEventListener('pointercancel', editGestureEnd);
+		};
+		// a long press on touch raises `contextmenu`; in edit mode that is a drag being held
+		const menu = (e: Event) => {
+			if (!editing) return;
+			e.preventDefault();
+			e.stopPropagation();
+		};
+		node.addEventListener('pointerdown', down);
+		node.addEventListener('contextmenu', menu);
+		return {
+			update(next: string) {
+				current = next;
+			},
+			destroy() {
+				node.removeEventListener('pointerdown', down);
+				node.removeEventListener('contextmenu', menu);
+			}
+		};
+	}
+
+	/** the edit button's label, for the a11y tree and the tooltip */
+	function editLabel(id: string) {
+		return id === SPACER ? 'Play' : (BUTTONS[id]?.title ?? id);
+	}
+	/** what a corner stack shows while editing: its items, then empty "+" places up to SIDE_MAX */
+	function stackSlots(list: string[]) {
+		return [...list, ...Array.from({ length: Math.max(0, SIDE_MAX - list.length) }, (_, i) => `__empty:${i}`)];
+	}
+	/** the corner stacks as rendered: the draft while editing, the record otherwise */
+	const stackLeft = $derived.by(() => (editing ? editing.left : controlsLayout.left));
+	const stackRight = $derived.by(() => (editing ? editing.right : controlsLayout.right));
+
+	/** the pill no longer owns the corners' heights, so the opt-in sim transport rides above
+	 *  whatever the right stack holds (0..3 buttons) instead of a fixed 112px */
+	$effect(() => {
+		if (typeof document === 'undefined') return;
+		const n = stackRight.length + (editing ? Math.max(0, SIDE_MAX - stackRight.length) : 0);
+		document.documentElement.style.setProperty('--hud-stack-right-n', String(n));
+	});
 
 	// --- the toolbar's own right-click menus --------------------------------------
 	// `cellMenu` generalises 4a's `playModeMenu`: a DIRECT `contextmenu` listener,
@@ -1451,17 +1769,77 @@
 	let toolbarMenu: { x: number; y: number; id: string } | null = $state(null);
 	let customizeMenu: { x: number; y: number } | null = $state(null);
 
+	// 41 G1: a LONG PRESS opens the same menu on touch, by its own timer. Android raises a
+	// `contextmenu` for a held finger and iOS never does (the W1 hatch existed for exactly that),
+	// so relying on the browser left iPhones with no way into any toolbar menu — "Edit positions"
+	// included. The timer opens it everywhere; the browser's own contextmenu that follows on
+	// Android is then the SAME gesture and is swallowed instead of opening the menu twice.
+	const LONG_PRESS_MS = 500;
+	let longPressAt = 0;
 	function cellMenu(node: HTMLElement, id: string) {
+		const openAt = (x: number, y: number) => {
+			playMenu = null;
+			customizeMenu = null;
+			lastMenuAt = { x, y };
+			toolbarMenu = { x, y, id };
+		};
 		const open = (e: MouseEvent) => {
 			e.preventDefault();
 			e.stopPropagation();
-			playMenu = null;
-			customizeMenu = null;
-			lastMenuAt = { x: e.clientX, y: e.clientY };
-			toolbarMenu = { x: e.clientX, y: e.clientY, id };
+			if (editing) return; // in edit positions a held press is a drag
+			if (performance.now() - longPressAt < 1200) return; // already opened by the hold
+			openAt(e.clientX, e.clientY);
+		};
+		let timer = 0;
+		let fired = false;
+		let from: { x: number; y: number } | null = null;
+		const stop = () => {
+			clearTimeout(timer);
+			// the lift that ends a hold must not ALSO press the button it was held on — only THAT
+			// button: a quick tap on the menu the hold just opened is a real press
+			if (fired) {
+				const eat = (ev: MouseEvent) => {
+					if (!node.contains(ev.target as Node)) return;
+					ev.stopPropagation();
+					ev.preventDefault();
+				};
+				window.addEventListener('click', eat, true);
+				setTimeout(() => window.removeEventListener('click', eat, true), 700);
+			}
+			fired = false;
+			from = null;
+			window.removeEventListener('pointermove', moved);
+			window.removeEventListener('pointerup', stop);
+			window.removeEventListener('pointercancel', stop);
+		};
+		const moved = (e: PointerEvent) => {
+			if (from && Math.abs(e.clientX - from.x) + Math.abs(e.clientY - from.y) >= DRAG_SLOP) stop();
+		};
+		const down = (e: PointerEvent) => {
+			if (e.pointerType === 'mouse' || editing) return;
+			stop();
+			from = { x: e.clientX, y: e.clientY };
+			const at = from;
+			timer = window.setTimeout(() => {
+				from = null; // the hold is decided: travel no longer cancels it
+				if (editing || toolbarGrab.active()) return stop();
+				fired = true;
+				longPressAt = performance.now();
+				openAt(at.x, at.y);
+			}, LONG_PRESS_MS);
+			window.addEventListener('pointermove', moved);
+			window.addEventListener('pointerup', stop);
+			window.addEventListener('pointercancel', stop);
 		};
 		node.addEventListener('contextmenu', open);
-		return { destroy: () => node.removeEventListener('contextmenu', open) };
+		node.addEventListener('pointerdown', down);
+		return {
+			destroy: () => {
+				stop();
+				node.removeEventListener('contextmenu', open);
+				node.removeEventListener('pointerdown', down);
+			}
+		};
 	}
 
 	/** the mode the Explorer is in — panelToggles' own `opensDocked` rule, READ rather
@@ -1518,6 +1896,12 @@
 		const collapsed = controlsLayout.collapsed;
 		return [
 			{ section: 'Toolbar' },
+			// 41 G1: first, because it is the one row that does everything below it by hand
+			{
+				label: 'Edit positions',
+				tooltip: 'Drag the buttons into place, remove them with − or add with + — ✓ applies, Escape cancels',
+				action: () => enterEditPositions(target || SPACER)
+			},
 			{
 				label: 'Move left',
 				tooltip: target
@@ -1637,10 +2021,8 @@
 
 	/** the swap targets: every roster button that is not currently a cell of the bar */
 	function swapItems(id: string) {
-		const seq = visualIds();
-		const offBar = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS].filter(
-			(key) => BUTTONS[key] && !seq.includes(key)
-		);
+		// 41 G1: everything not placed anywhere (the corners count as placed)
+		const offBar = ROSTER_IDS.filter((key) => BUTTONS[key] && !regionOf(controlsLayout, key));
 		if (!offBar.length)
 			return [
 				{
@@ -1688,9 +2070,27 @@
 		// ▲/▼ — what a stacked list means — and up is toward the LEFT end of the bar,
 		// which is the end the first row shows. Every tooltip says so out loud.
 		const seq = visualIds();
-		const offBar = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS].filter(
-			(id) => BUTTONS[id] && !seq.includes(id)
-		);
+		// 41 G1: "not on the bar" = placed NOWHERE (the corner stacks have their own sections)
+		const offBar = ROSTER_IDS.filter((id) => BUTTONS[id] && !regionOf(controlsLayout, id));
+		/** 41 G1: a corner row — ▲ moves it up the stack, ▼ down (the stack reads bottom → top) */
+		const cornerRows = (side: 'left' | 'right') => {
+			const list = controlsLayout[side];
+			return [...list].reverse().map((id) => {
+				const at = list.indexOf(id);
+				return {
+					key: id,
+					label: BUTTONS[id].title,
+					checked: true,
+					keepOpen: true,
+					tooltip: 'Take it off the corner',
+					action: () => hideButton(id),
+					rowActions: [
+						{ icon: 'chevron-up', label: `Move ${BUTTONS[id].title} up`, disabled: at >= list.length - 1, run: () => moveInStack(id, 'ArrowUp') },
+						{ icon: 'chevron-down', label: `Move ${BUTTONS[id].title} down`, disabled: at <= 0, run: () => moveInStack(id, 'ArrowDown') }
+					]
+				};
+			});
+		};
 		/** the reorder pair for a row that is ON the bar */
 		const arrows = (id: string, at: number, title: string) => [
 			{
@@ -1707,6 +2107,13 @@
 			}
 		];
 		return [
+			// 41 G1: the drag-and-drop way to do everything this list does
+			{
+				key: '__edit',
+				label: 'Edit positions…',
+				tooltip: 'Drag the buttons into place on the bar itself — ✓ applies, Escape cancels',
+				action: () => enterEditPositions(null)
+			},
 			{ section: 'On the bar' },
 			...seq.map((id, at) => {
 				if (id === SPACER)
@@ -1738,6 +2145,8 @@
 			// direction to move in: its arrows are greyed and say why rather than being
 			// absent, which would make the two halves of the list look like different
 			// kinds of row.
+			...(controlsLayout.left.length ? [{ section: 'Left corner' }, ...cornerRows('left')] : []),
+			...(controlsLayout.right.length ? [{ section: 'Right corner' }, ...cornerRows('right')] : []),
 			...(offBar.length
 				? [
 						{ section: 'Not on the bar' },
@@ -1771,10 +2180,15 @@
 				label: 'Reset toolbar',
 				danger: true,
 				keepOpen: true,
-				tooltip: 'Back to the six default buttons in their default order',
+				tooltip: 'Back to the default buttons, corners included, in their default places',
 				action: resetLayout
 			}
 		];
+	}
+
+	/** 41 G1: one step up/down a corner stack, through the same placements the edit mode uses */
+	function moveInStack(id: string, key: 'ArrowUp' | 'ArrowDown') {
+		setLayout(fromPlacements(controlsLayout, stepItem(placements(controlsLayout), id, key)));
 	}
 
 	/** the reactive half of `keepOpen`: passing `customizeItems()` inline would already
@@ -1790,7 +2204,10 @@
 	 *  five are conditional — `#sim-controls` is an opt-in setting, `#mic-button` belongs
 	 *  to VoiceChat and any of them can be absent in a stripped build. Connect's
 	 *  `measureDock()` is the same shape one domain over. */
-	const TOOLBAR_NEIGHBOURS = ['#ai-hud-button', '#mobile-add-button', '#chat-button', '#mic-button', '#sim-controls'];
+	// 41 G1: the round buttons live in the two corner STACKS now (whatever they hold)
+	// (each BUTTON is measured, not the stack box: a stack is as tall as what it holds, so its
+	// box would read the upper buttons as sharing the bar's row)
+	const TOOLBAR_NEIGHBOURS = ['#hud-stack-left > *', '#hud-stack-right > *', '#sim-controls'];
 	const EDGE_MARGIN = 8; // breathing room against a neighbour and against the viewport
 	const SNAP_PX = 24; // how near the middle still counts as the middle
 	const DRAG_SLOP = 6; // travel that turns a press into a move
@@ -1824,9 +2241,7 @@
 		let left = EDGE_MARGIN;
 		let right = vw - EDGE_MARGIN;
 		const found: HTMLElement[] = [];
-		for (const sel of TOOLBAR_NEIGHBOURS) {
-			const el = document.querySelector<HTMLElement>(sel);
-			if (!el) continue;
+		for (const el of TOOLBAR_NEIGHBOURS.flatMap((sel) => [...document.querySelectorAll<HTMLElement>(sel)])) {
 			found.push(el);
 			const r = el.getBoundingClientRect();
 			if (!r.width || !r.height) continue; // in the DOM but not rendered
@@ -1897,6 +2312,8 @@
 	$effect(() => {
 		void $showSimControls;
 		void visibleCells;
+		void stackLeft;
+		void stackRight;
 		void $floatingToolbar;
 		void $bottomInset;
 		tick().then(measureTrack);
@@ -2031,6 +2448,7 @@
 			// the play FAB is the one control an accidental drag must not grab: a 50px
 			// circle is the way into play mode and it is what a thumb aims at
 			if (e.button !== 0 || (e.target as Element)?.closest?.('#play-button')) return;
+			if (editing) return; // 41 G1: in edit positions a press picks a button up instead
 			if (toolbarGrab.active()) return; // an armed move already owns the bar
 			from = { x: e.clientX, y: e.clientY };
 			press = e;
@@ -2090,7 +2508,7 @@
 	 * they ask for. That z only orders the FAB against its own siblings in the well.
 	 * `left` is emitted only once the track has been MEASURED — before that (SSR, the
 	 * first paint) the `start-1/2` class is the honest answer. */
-	const pillZClass = $derived($toolbarAlwaysOnTop ? 'z-45' : 'z-30');
+	const pillZClass = $derived($toolbarAlwaysOnTop ? 'z-(--z-hud)' : 'z-(--z-chrome)');
 	const pillStyle = $derived(
 		($floatingToolbar ? 'bottom: calc(var(--bottom-inset, 0px) + 16px);' : 'bottom: 16px;') +
 			(track.mid > 0 ? ` left: ${Math.round(pillCentre)}px;` : '') +
@@ -2130,10 +2548,43 @@
 	id="controls-pill"
 	data-key-scope="keep"
 	class="tp-ui hud-glass hud-bar absolute -translate-x-1/2 rtl:translate-x-1/2 bottom-4 start-1/2 w-max min-w-max shrink-0 {pillZClass}"
+	class:hud-editing={editing !== null}
 	style={pillStyle}
 	use:toolbarDrag
 >
 	<div class="hud-bar-row">
+		{#if editing}
+			<!-- 41 G1 EDIT POSITIONS: the draft, drawn as outlined (jiggling) placeholders. Every item
+			     is a focusable drag handle (arrows move it, Delete removes it), every one but Play
+			     carries the red "−", and a "+" at each end (and wherever a "−" left a gap) offers
+			     the unplaced buttons. -->
+			<button type="button" class="hud-cell hud-edit-add" id="toolbar-edit-add-start" title="Add a button at the start of the bar" aria-label="Add a button at the start of the bar" use:onPress={(e: MouseEvent) => editOpenAdd(e, 'bar', 0)}
+				><Icon name="plus" size={16} aria-hidden="true" /></button
+			>
+			{#each editing.bar as id (id)}
+				{#if isHole(id)}
+					<button type="button" class="hud-cell hud-edit-add" data-edit-slot data-edit-hole={id} title="Add a button here" aria-label="Add a button here" use:onPress={(e: MouseEvent) => editing && editOpenAdd(e, 'bar', editing.bar.indexOf(id), id)}
+						><Icon name="plus" size={16} aria-hidden="true" /></button
+					>
+				{:else if id === SPACER}
+					<div class="hud-play-well hud-edit-item hud-edit-play" class:hud-edit-carried={editDrag?.id === id} data-edit-wrap={id} data-edit-slot>
+						<button type="button" class="hud-edit-grip" data-edit-id={id} title="Play — drag to move it; it always stays on the bar" aria-label="Play — arrow keys move it along the bar" use:editItemGesture={id}
+							><span class="hud-play"><Icon name="play" size={20} class="hud-play-tri" fill="currentColor" aria-hidden="true" /></span></button
+						>
+					</div>
+				{:else}
+					<div class="hud-cell hud-edit-item" class:hud-edit-carried={editDrag?.id === id} data-edit-wrap={id} data-edit-slot>
+						<button type="button" class="hud-edit-grip" data-edit-id={id} title={editLabel(id)} aria-label="{editLabel(id)} — arrow keys move it, Delete removes it" use:editItemGesture={id}
+							><Icon name={BUTTONS[id].iconName ?? BUTTONS[id].icon} size={20} aria-hidden="true" /></button
+						>
+						<button type="button" class="hud-edit-remove" tabindex="-1" title="Remove" aria-label="Remove {editLabel(id)}" use:onPress={() => editRemove(id)}><Icon name="minus" size={16} aria-hidden="true" /></button>
+					</div>
+				{/if}
+			{/each}
+			<button type="button" class="hud-cell hud-edit-add" id="toolbar-edit-add-end" title="Add a button at the end of the bar" aria-label="Add a button at the end of the bar" use:onPress={(e: MouseEvent) => editing && editOpenAdd(e, 'bar', editing.bar.length)}
+				><Icon name="plus" size={16} aria-hidden="true" /></button
+			>
+		{:else}
 		{#each visibleCells as cell (cell.id)}
 			{#if cell.id === SPACER}
 				<!-- the WELL Play sits in. 4b: the play button is the well's own child, so it
@@ -2194,19 +2645,29 @@
 					     the panel toggles select on). -->
 					<p
 						id={btn.slot}
-						class="hud-cell"
+						class="hud-cell relative"
 						class:on={tint === ICON_ON}
 						title={btn.title}
 						on:click={() => runCell(cell.id)}
 						use:cellMenu={cell.id}
 					>
 						<Icon name={glyph} size={20} class={tint} aria-hidden="true" />
+						{#if cell.id === 'chat' && $chatUnread > 0}
+							<span id="chat-unread" class="chat-unread-badge" class:mention={$chatMentioned}>{$chatUnread > 99 ? '99+' : $chatUnread}</span>
+						{/if}
 					</p>
 				{/if}
 			{/if}
 		{/each}
+		{/if}
 	</div>
-	{#if !controlsLayout.collapsed}
+	{#if editing}
+		<!-- 41 G1: the round green ✓ at the bar's top right applies; Escape / a press outside cancels -->
+		<button type="button" id="toolbar-edit-apply" class="hud-edit-apply" title="Apply the new positions" aria-label="Apply the new positions" use:onPress={() => applyEditPositions()}
+			><Icon name="check" size={20} aria-hidden="true" /></button
+		>
+		<p class="hud-edit-hint" id="toolbar-edit-hint" role="status">Drag to arrange · − removes · + adds · ✓ applies · Esc cancels</p>
+	{:else if !controlsLayout.collapsed}
 		<!-- 38 R8 (design page): the bar's own "…" opens Customize toolbar — the same checklist as
 		     the right-click menu's last row. Outside the cell row on purpose: the roster suites read
 		     the row's children as the bar's cells. Hidden on a narrow window (hud.css). -->
@@ -2217,27 +2678,54 @@
 	{/if}
 </nav>
 
-<!-- chat toggle lives bottom-right under the mic (93); z under the bottom
-     dock so an open flow editor / Explorer covers the stack -->
-<button
-	id="chat-button"
-	class="tp-ui hud-fab fixed bottom-4 right-4 z-30"
-	class:on={$chatHidden !== 'hidden'}
-	title={$chatUnread > 0 ? `Chat (C) — ${$chatUnread} unread${$chatMentioned ? ', you were mentioned' : ''}` : 'Chat (C)'}
-	on:click={() => chatHidden.set($chatHidden === 'hidden' ? '' : 'hidden')}
->
-	<Icon name="message-square" size={20} aria-hidden="true" />
-	{#if $chatUnread > 0}
-		<span id="chat-unread" class="chat-unread-badge" class:mention={$chatMentioned}>{$chatUnread > 99 ? '99+' : $chatUnread}</span>
-	{/if}
-</button>
+<!-- 41 G1: THE CORNER STACKS — the round buttons that used to be four hand-placed components
+     (the "+" and the AI assistant bottom-left, chat and the mic bottom-right) are roster
+     entries now, stacked bottom → top, at most three a side. Under the bottom dock's z-tier as
+     before, so an open flow editor / Explorer covers them. -->
+{#snippet stack(side: 'left' | 'right', list: string[])}
+	<div id="hud-stack-{side}" class="tp-ui hud-stack hud-stack-{side}" class:hud-editing={editing !== null} role="group" aria-label="{side === 'left' ? 'Left' : 'Right'} corner buttons">
+		{#if editing}
+			{#each stackSlots(list) as id (id)}
+				{#if id.startsWith('__empty:')}
+					<button type="button" class="hud-fab hud-edit-add" title="Add a button here" aria-label="Add a button to the {side} corner" use:onPress={(e: MouseEvent) => editOpenAdd(e, side, list.length)}
+						><Icon name="plus" size={20} aria-hidden="true" /></button
+					>
+				{:else}
+					<div class="hud-fab hud-edit-item" class:hud-edit-carried={editDrag?.id === id} data-edit-wrap={id}>
+						<button type="button" class="hud-edit-grip" data-edit-id={id} title={editLabel(id)} aria-label="{editLabel(id)} — arrow keys move it, Delete removes it" use:editItemGesture={id}
+							><Icon name={BUTTONS[id].iconName ?? BUTTONS[id].icon} size={20} aria-hidden="true" /></button
+						>
+						<button type="button" class="hud-edit-remove" tabindex="-1" title="Remove" aria-label="Remove {editLabel(id)}" use:onPress={() => editRemove(id)}><Icon name="minus" size={16} aria-hidden="true" /></button>
+					</div>
+				{/if}
+			{/each}
+		{:else}
+			{#each list as id (id)}
+				{@const btn = BUTTONS[id]}
+				{@const tint = btn.tint()}
+				<button type="button" id={btn.slot} class="hud-fab" class:on={tint === ICON_ON} title={btn.title} aria-label={btn.title} use:cellClick={id} use:cellMenu={id}>
+					<Icon name={btn.iconName ?? btn.icon} size={20} aria-hidden="true" />
+					{#if id === 'chat' && $chatUnread > 0}
+						<span id="chat-unread" class="chat-unread-badge" class:mention={$chatMentioned}>{$chatUnread > 99 ? '99+' : $chatUnread}</span>
+					{/if}
+				</button>
+			{/each}
+		{/if}
+	</div>
+{/snippet}
+{@render stack('left', stackLeft)}
+{@render stack('right', stackRight)}
 
-<!-- mobile "+" (bottom-left): opens the same create/context menu as a right-click
-     (own component so it can use onclick without mixing with this file's on:) -->
-<MobileAddButton />
+{#if editDrag}
+	<!-- the carried button, following the pointer (the draft already shows where it lands) -->
+	<div id="toolbar-edit-ghost" class="hud-edit-ghost" style="left: {editDrag.x}px; top: {editDrag.y}px" aria-hidden="true">
+		{#if editDrag.id === SPACER}<span class="hud-play"><Icon name="play" size={20} class="hud-play-tri" fill="currentColor" /></span>{:else}<Icon name={BUTTONS[editDrag.id].iconName ?? BUTTONS[editDrag.id].icon} size={20} />{/if}
+	</div>
+{/if}
 
-<!-- A2: AI assistant button, bottom-left below the "+" (own component, onclick) -->
-<AiHudButton />
+{#if editAddMenu}
+	<ContextMenu x={editAddMenu.x} y={editAddMenu.y} items={editAddItems()} sizeKey="toolbaradd" on:close={() => (editAddMenu = null)} />
+{/if}
 
 <!-- physics transport (P-A): play / pause / stop / reset, above the chat toggle -->
 <SimControls />

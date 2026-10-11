@@ -139,7 +139,7 @@
 <!-- drag ghost that follows the finger while touch-dragging a node onto the canvas -->
 {#if dragging}
 	<div
-		class="pointer-events-none fixed z-1400 -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-accent bg-surface-1 px-3 py-2 text-center font-mono text-xs font-semibold text-text shadow-lg"
+		class="pointer-events-none fixed z-(--z-portal) -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-accent bg-surface-1 px-3 py-2 text-center font-mono text-xs font-semibold text-text shadow-lg"
 		style="left: {ghostX}px; top: {ghostY}px;"
 	>
 		{ghostLabel}

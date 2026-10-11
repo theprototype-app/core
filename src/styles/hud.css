@@ -226,6 +226,222 @@
 	color: var(--warn-text);
 }
 
+/* ---- 41 G1: the corner STACKS + EDIT POSITIONS -------------------------------------------
+ * The round buttons sit in two stacks (bottom → top, at most three), under the dock tier like
+ * the buttons they replace. Edit positions outlines every placeholder (and jiggles it, unless
+ * the user asked for less motion), puts a small red "−" on each removable one, a small green
+ * "+" on every empty place, and a round green ✓ at the bar's top right. */
+.hud-stack {
+	position: fixed;
+	bottom: 16px;
+	z-index: 30;
+	display: flex;
+	flex-direction: column-reverse;
+	gap: 4px;
+}
+.hud-stack-left {
+	left: 16px;
+}
+.hud-stack-right {
+	right: 16px;
+}
+.hud-stack .hud-fab {
+	position: relative;
+}
+.hud-stack.hud-editing,
+#controls-pill.hud-editing {
+	z-index: var(--z-hud);
+}
+/* the opt-in sim transport rides above whatever the right stack holds (Controls publishes the
+   count); an id + this file beat SimControls' bottom-[112px] utility */
+#sim-controls {
+	bottom: calc(16px + var(--hud-stack-right-n, 2) * (var(--hud-fab) + 4px) + 4px);
+}
+@media (max-width: 600px) {
+	#sim-controls {
+		bottom: calc(74px + var(--hud-stack-right-n, 2) * (var(--hud-fab) + 4px) + 4px);
+	}
+}
+.hud-edit-item {
+	position: relative;
+	touch-action: none;
+	cursor: grab;
+	outline: 1.5px dashed var(--accent);
+	outline-offset: -2px;
+	animation: hud-jiggle 0.32s ease-in-out infinite alternate;
+}
+.hud-edit-item:nth-child(even) {
+	animation-delay: -0.16s;
+}
+/* a button under the pointer holds still, so its small "−" is easy to hit */
+.hud-edit-item:hover {
+	animation-play-state: paused;
+}
+.hud-edit-item:has(.hud-edit-grip:focus-visible) {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+	animation: none;
+}
+/* the draggable face of a placeholder: a real button filling it (see Controls' grip note) */
+.hud-edit-grip {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	padding: 0;
+	margin: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: grab;
+	touch-action: none;
+	border-radius: inherit;
+}
+.hud-edit-grip:focus {
+	outline: none;
+}
+.hud-edit-item.hud-edit-carried {
+	opacity: 0.35;
+	animation: none;
+}
+.hud-edit-play {
+	outline: none;
+}
+.hud-edit-play .hud-play {
+	cursor: grab;
+	z-index: auto;
+}
+@keyframes hud-jiggle {
+	from {
+		transform: rotate(-2deg);
+	}
+	to {
+		transform: rotate(2deg);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.hud-edit-item {
+		animation: none;
+	}
+}
+.hud-edit-remove,
+.hud-edit-apply,
+.hud-edit-add {
+	cursor: pointer;
+}
+/* the small red "−", top right of a placeholder */
+.hud-edit-remove {
+	position: absolute;
+	top: -6px;
+	right: -6px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	border: 1.5px solid var(--surface-1);
+	border-radius: 50%;
+	background: var(--danger);
+	color: var(--on-danger);
+	z-index: 1;
+}
+.hud-edit-remove svg {
+	width: 12px;
+	height: 12px;
+}
+/* coarse pointers get a fingertip-sized hit area around the same small dot */
+@media (pointer: coarse) {
+	/* up and out only: an even ring reached the CENTRE of a 44 px button, so a finger
+	   pressing the button to drag it pressed its "−" instead */
+	.hud-edit-remove::after {
+		content: '';
+		position: absolute;
+		top: -8px;
+		right: -8px;
+		bottom: -2px;
+		left: -2px;
+	}
+}
+/* an empty place: a dashed outline and a small green "+" */
+.hud-edit-add {
+	color: var(--ink-good);
+	background: transparent;
+	border: 1.5px dashed color-mix(in srgb, var(--ink-good) 70%, transparent);
+	box-shadow: none;
+}
+#controls-pill .hud-edit-add {
+	border-radius: var(--radius-button);
+}
+.hud-edit-add:hover,
+.hud-edit-add:focus-visible {
+	background: color-mix(in srgb, var(--ink-good) 16%, transparent);
+	color: var(--ink-good);
+}
+/* the round green ✓ at the bar's top right */
+.hud-edit-apply {
+	position: absolute;
+	top: -14px;
+	right: -14px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 32px;
+	padding: 0;
+	border: 2px solid var(--surface-1);
+	border-radius: 50%;
+	background: var(--ink-good);
+	color: var(--surface-1);
+	box-shadow: var(--hud-shadow);
+	z-index: 2;
+}
+.hud-edit-apply:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+@media (pointer: coarse) {
+	.hud-edit-apply {
+		width: 40px;
+		height: 40px;
+		top: -18px;
+		right: -18px;
+	}
+}
+.hud-edit-hint {
+	position: absolute;
+	bottom: calc(100% + 10px);
+	left: 50%;
+	transform: translateX(-50%);
+	margin: 0;
+	padding: 4px 10px;
+	white-space: nowrap;
+	border-radius: var(--radius-pill);
+	background: var(--hud-glass);
+	border: 1px solid var(--border);
+	color: var(--text-2);
+	font-size: var(--fs-badge, 11px);
+	pointer-events: none;
+}
+.hud-edit-ghost {
+	position: fixed;
+	z-index: var(--z-menu);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--hud-fab);
+	height: var(--hud-fab);
+	transform: translate(-50%, -50%) scale(1.08);
+	border-radius: var(--radius-window);
+	background: var(--hud-glass);
+	border: 1.5px solid var(--accent);
+	box-shadow: var(--hud-shadow);
+	color: var(--text);
+	pointer-events: none;
+}
+
 /* a phone: nine tools + Play cannot all be 44 px wide in 390 px. The bar takes the screen
    width and the cells share it (they stay 44 px TALL); the phone's own bottom bar is R9's
    redesign (38-mobile). Id selectors beat the nav's `min-w-max` utility. */

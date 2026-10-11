@@ -222,8 +222,10 @@ h.run(async () => {
 	await dragCellTo(A.page, 'Object list (O)', g.vw);
 	let g2 = await geom(A.page);
 	h.check(Math.abs(g2.right - hardRight) <= 2, `premise: parked hard right again (${Math.round(g2.right)})`);
+	// 41 G1: the corner buttons are a STACK now — hiding chat alone drops the mic into its place
+	// (which is the stack working), so the whole right corner is what goes absent here
 	await A.page.evaluate(() => {
-		const el = document.getElementById('chat-button');
+		const el = document.getElementById('hud-stack-right');
 		if (el) el.style.display = 'none';
 	});
 	await A.page.waitForTimeout(400);
@@ -243,7 +245,7 @@ h.run(async () => {
 		`...and a drag can reach that new extent (${Math.round(g2.right)})`
 	);
 	await A.page.evaluate(() => {
-		const el = document.getElementById('chat-button');
+		const el = document.getElementById('hud-stack-right');
 		if (el) el.style.display = '';
 	});
 	await A.page.waitForTimeout(400);

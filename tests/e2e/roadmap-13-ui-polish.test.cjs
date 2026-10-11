@@ -74,8 +74,11 @@ h.run(async () => {
 	h.check(!/\bbg-white\b/.test(aiClass), 'I1: AI button no longer white');
 
 	// --- I2: left stack geometry matches the right (AI=bottom-4, "+"=bottom-16) --
-	h.check(/\bbottom-4\b/.test(aiClass), 'I2: AI button at bottom-4 (chat parity)');
-	h.check(/\bbottom-16\b/.test(plusClass), 'I2: "+" button at bottom-16 (mic parity)');
+	// 41 G1: the corners are two stacks now (no per-button bottom-* class) — assert the geometry
+	const box = (q) => A.page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { top: r.top, bottom: r.bottom }; }, q);
+	const [aiB, plusB, chatB, micB] = [await box('#ai-hud-button'), await box('#mobile-add-button'), await box('#chat-button'), await box('#mic-button')];
+	h.check(Math.abs(aiB.bottom - chatB.bottom) < 1, `I2: AI button level with chat (${aiB.bottom} vs ${chatB.bottom})`);
+	h.check(Math.abs(plusB.bottom - micB.bottom) < 1 && plusB.bottom < aiB.top + 1, `I2: "+" above AI, level with mic (${plusB.bottom} vs ${micB.bottom})`);
 
 	// --- I3: unconfigured click opens Settings ▸ AI (the toggleAiPrompt branch) --
 	await A.page.evaluate(() => {

@@ -118,17 +118,9 @@ input.tp-check:disabled {
    they don't overlap/crowd it (the pill stays one line). +/chat on one row, mic
    above chat. */
 @media (max-width: 600px) {
-	#chat-button,
-	#ai-hud-button {
+	/* 41 G1: the corner buttons are two STACKS now (Controls.svelte); the stack lifts as one */
+	.hud-stack {
 		bottom: 74px;
-	}
-	#mic-button,
-	#mobile-add-button {
-		bottom: 122px;
-	}
-	/* SimControls (opt-in) lifts above the mic on narrow so it clears the stack */
-	#sim-controls {
-		bottom: 170px;
 	}
 }
 /* A4: on narrow screens the top-right chrome (avatar/peers) drops to its own row

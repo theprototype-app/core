@@ -16,7 +16,9 @@ import {
 	placeRemove,
 	stepItem,
 	unplacedIds,
-	regionOf
+	regionOf,
+	fillHole,
+	isHole
 } from '../../src/lib/toolbarLayout.js';
 
 const ROSTER = ['move', 'rotate', 'scale', 'pivot', 'mode', 'objects', 'flow', 'explorer', 'animation', 'uv', 'shader', 'hud', 'ai', 'add', 'chat', 'mic'];
@@ -223,5 +225,26 @@ describe('legacy rows', () => {
 		l = { ...l, order: l.order.filter((o) => o !== 'pivot'), hidden: [], spacerIndex: 4 };
 		const r = reload(l);
 		expect(visualRow(r)).toEqual(['move', 'rotate', 'scale', 'mode', PLAY, 'objects', 'flow', 'explorer', 'animation']);
+	});
+});
+
+describe('G1 holes (a removed bar cell leaves a "+" until apply)', () => {
+	it('remove-with-hole keeps the slot, fill puts the new item exactly there, apply drops holes', () => {
+		const d = defaultLayout(CFG);
+		let p = placeRemove(placements(d), 'rotate', { hole: true });
+		expect(p.bar[1]).toMatch(/^__hole:/);
+		expect(isHole(p.bar[1])).toBe(true);
+		p = placeRemove(p, 'scale', { hole: true });
+		expect(new Set(p.bar.filter(isHole)).size).toBe(2); // unique hole ids
+		p = fillHole(p, p.bar[1], 'chat'); // from the right corner into the first hole
+		expect(p.bar[1]).toBe('chat');
+		expect(p.right).toEqual(['mic']);
+		const l = fromPlacements(d, p);
+		expect(l.order.some(isHole)).toBe(false);
+		expect(visualRow(l).slice(0, 3)).toEqual(['move', 'chat', 'pivot']);
+		expect(reload(l)).toEqual(l);
+		expect(unplacedIds(p, ROSTER)).toContain('rotate');
+		expect(fillHole(p, '__hole:99', 'uv')).toBe(p);
+		expect(fillHole(p, p.bar.find(isHole) ?? '', PLAY)).toBe(p);
 	});
 });

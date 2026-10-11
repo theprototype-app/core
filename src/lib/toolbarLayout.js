@@ -38,6 +38,10 @@ export const PLAY = '__spacer';
 /** at most this many round buttons stacked in each bottom corner (the user's "up to three") */
 export const SIDE_MAX = 3;
 /** @typedef {'left' | 'bar' | 'right'} Region */
+/** an empty bar slot in an edit-positions DRAFT (`__hole:<n>`), never stored */
+export const HOLE = '__hole';
+/** @param {unknown} id */
+export const isHole = (id) => typeof id === 'string' && id.startsWith(HOLE + ':');
 
 /**
  * @typedef {object} ToolbarLayout
@@ -269,7 +273,7 @@ export function placements(/** @type {ToolbarLayout} */ l) {
  *  simply leaves (it is unplaced, and `seen` keeps it from coming back on its own). */
 export function fromPlacements(/** @type {ToolbarLayout} */ l, /** @type {Placements} */ p) {
 	const bar = p.bar.includes(PLAY) ? p.bar : [...p.bar, PLAY];
-	const shown = uniq(bar.filter((id) => id !== PLAY));
+	const shown = uniq(bar.filter((id) => id !== PLAY && !isHole(id)));
 	const left = uniq(p.left.filter((id) => id !== PLAY && !shown.includes(id))).slice(0, SIDE_MAX);
 	const right = uniq(p.right.filter((id) => id !== PLAY && !shown.includes(id) && !left.includes(id))).slice(0, SIDE_MAX);
 	const placed = [...shown, ...left, ...right];
@@ -299,16 +303,30 @@ export function canPlace(/** @type {Placements} */ p, /** @type {string} */ id, 
 
 /** Move (or insert) `id` to `index` of `region`. Refused moves return `p` unchanged. */
 export function placeAt(/** @type {Placements} */ p, /** @type {string} */ id, /** @type {Region} */ region, /** @type {number} */ index) {
-	if (!isId(id) || !canPlace(p, id, region)) return p;
+	if (!isId(id) || isHole(id) || !canPlace(p, id, region)) return p;
 	const next = removeFrom(p, id);
 	const list = [...next[region]];
 	list.splice(clamp(Math.round(index), 0, list.length), 0, id);
 	return { ...next, [region]: list };
 }
 
-/** Take an item off the screen (Play cannot be removed). */
-export function placeRemove(/** @type {Placements} */ p, /** @type {string} */ id) {
-	return id === PLAY ? p : removeFrom(p, id);
+/** Take an item off the screen (Play cannot be removed). With `{hole: true}` a BAR item leaves an
+ *  empty slot behind (edit mode draws it as a green "+", so the place it came from can be filled
+ *  again); holes are a draft-only thing — `fromPlacements` drops them. */
+export function placeRemove(/** @type {Placements} */ p, /** @type {string} */ id, { hole = false } = {}) {
+	if (id === PLAY || isHole(id)) return id === PLAY ? p : removeFrom(p, id);
+	if (!hole || !p.bar.includes(id)) return removeFrom(p, id);
+	const used = p.bar.filter(isHole).map((h) => Number(h.slice(HOLE.length + 1)) || 0);
+	const next = HOLE + ":" + (used.length ? Math.max(...used) + 1 : 1);
+	return { ...p, bar: p.bar.map((o) => (o === id ? next : o)) };
+}
+
+/** Put `id` into an empty bar slot (a hole), taking it from wherever it was. */
+export function fillHole(/** @type {Placements} */ p, /** @type {string} */ hole, /** @type {string} */ id) {
+	const at = p.bar.indexOf(hole);
+	if (at < 0 || !isId(id) || isHole(id) || id === PLAY) return p;
+	const next = removeFrom({ ...p, bar: p.bar.map((o) => (o === hole ? "\u0000" : o)) }, id);
+	return { ...next, bar: next.bar.map((o) => (o === "\u0000" ? id : o)) };
 }
 
 /**
@@ -339,5 +357,5 @@ export function stepItem(p, id, key) {
 
 /** the roster ids NOT placed anywhere (the "+" popup's list; Play is never in a roster) */
 export function unplacedIds(/** @type {Placements} */ p, /** @type {string[]} */ roster) {
-	return roster.filter((id) => id !== PLAY && !placeRegion(p, id));
+	return roster.filter((id) => id !== PLAY && !isHole(id) && !placeRegion(p, id));
 }

@@ -153,7 +153,9 @@
 				onmove: (h) => (dragH = h),
 				onsettle: restAt,
 				onclose: close,
-				ontap: cycle
+				ontap: cycle,
+				// 41 G5: the body hands off too — its list scrolls, and at the top a pull moves the sheet
+				surfaces: () => [sheetEl]
 			}}
 		>
 			<button

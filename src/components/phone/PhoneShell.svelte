@@ -157,6 +157,8 @@
 
 	/** live height while a finger drags the handle; null = resting on a detent */
 	let dragH = $state(/** @type {number|null} */ (null));
+	/** the frame (41 G5: its body hands off to the sheet gesture) @type {HTMLElement | undefined} */
+	let frameEl = $state();
 	const sheetH = $derived(top ? (dragH ?? heights[detent] ?? heights.half) : 0);
 	const titled = $derived(top ? HOSTS[top][1] !== null : false);
 	const STRIP_H = 22; // the handle strip
@@ -280,7 +282,9 @@
 		let raf = 0;
 		const measure = () => {
 			let occ = 0;
-			for (const el of document.querySelectorAll('.ps-sheet, #inspector, .tp-dock-panel, .tp-dock-panel .dt-row, :root.ps-add-open .ctx-scroll')) {
+			// 41 G20: EVERY tool sheet the strip rides on — the notes sheet and a toolbox sheet
+			// were missing, so the strip sat ON them
+			for (const el of document.querySelectorAll('.ps-sheet, #inspector, #notes-drawer, .toolbox.tbx-sheet, .tp-dock-panel, .tp-dock-panel .dt-row, :root.ps-add-open .ctx-scroll')) {
 				const r = /** @type {HTMLElement} */ (el).getBoundingClientRect();
 				if (!r.height || getComputedStyle(el).display === 'none' || getComputedStyle(el).visibility === 'hidden') continue;
 				occ = Math.max(occ, window.innerHeight - r.top);
@@ -307,6 +311,9 @@
 	const dockOn = $derived(!!$visibleDockKey && !$dockMinimized);
 	const dockMax = $derived(Math.max(160, sheetMax - DOCK_TABS_ROOM));
 	const dockShown = $derived(Math.min($dockHeight, dockMax));
+	/** 41 G5: the docked view on screen — its lists hand off to the dock's sheet gesture (a
+	 *  canvas or node graph inside keeps every touch: sheetDrag's touch-action rule) */
+	const dockPanels = () => [...document.querySelectorAll('.tp-dock-panel')].filter((el) => !el.classList.contains('hidden') && /** @type {HTMLElement} */ (el).offsetHeight > 0);
 
 	// unread chat: messages that arrived while the chat sheet was closed
 	let seenChat = $state(0);
@@ -527,7 +534,7 @@
 
 	{#if dockOn}
 		<div class="ps-dockgrip" id="ps-dock-grip" style:bottom="calc(var(--ps-bar-h) + {dockShown - 24}px)">
-			<SheetGrip label="dock" height={dockShown} min={160} max={dockMax} onresize={(h) => dockHeight.set(Math.round(h))} onclose={() => dockMinimized.set(true)} />
+			<SheetGrip label="dock" height={dockShown} min={160} max={dockMax} surface={dockPanels} onresize={(h) => dockHeight.set(Math.round(h))} onclose={() => dockMinimized.set(true)} />
 		</div>
 	{/if}
 
@@ -538,6 +545,7 @@
 			<button type="button" class="ps-scrim" tabindex="-1" aria-label="Close" onclick={() => closeKind(top)}></button>
 		{/if}
 		<section
+			bind:this={frameEl}
 			class="ps-sheet"
 			class:ps-dragging={dragH !== null}
 			data-kind={top}
@@ -556,7 +564,9 @@
 					onmove: (h) => (dragH = h),
 					onsettle: restAt,
 					onclose: () => closeKind(top),
-					ontap: tapHandle
+					ontap: tapHandle,
+					// 41 G5: the frame's own body (More, Connection) and the window placed into it
+					surfaces: () => [frameEl, document.querySelector('[data-ps-host="top"]')]
 				}}
 			>
 				<button

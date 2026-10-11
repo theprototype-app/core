@@ -282,9 +282,9 @@
 		let raf = 0;
 		const measure = () => {
 			let occ = 0;
-			// 41 G20: EVERY tool sheet the strip rides on — the notes sheet and a toolbox sheet
-			// were missing, so the strip sat ON them
-			for (const el of document.querySelectorAll('.ps-sheet, #inspector, #notes-drawer, .toolbox.tbx-sheet, .tp-dock-panel, .tp-dock-panel .dt-row, :root.ps-add-open .ctx-scroll')) {
+			// 41 G20: EVERY tool sheet the strip rides on — the notes sheet, a toolbox sheet and the
+			// note card (a page of the notes sheet, G12) were missing, so the strip sat ON them
+			for (const el of document.querySelectorAll('.ps-sheet, #inspector, #notes-drawer, .note-card.note-sheet, .toolbox.tbx-sheet, .tp-dock-panel, .tp-dock-panel .dt-row, :root.ps-add-open .ctx-scroll')) {
 				const r = /** @type {HTMLElement} */ (el).getBoundingClientRect();
 				if (!r.height || getComputedStyle(el).display === 'none' || getComputedStyle(el).visibility === 'hidden') continue;
 				occ = Math.max(occ, window.innerHeight - r.top);

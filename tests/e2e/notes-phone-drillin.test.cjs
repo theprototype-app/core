@@ -217,6 +217,13 @@ h.run(async () => {
 		const fromScene = await activeId();
 		h.check(fromScene === walk.ids[pin.n - 1], `tapping pin #${pin.n} in the scene opens that note`);
 		h.check(!(await read(store('notesDrawerOpen'))), '...without opening the Notes drawer');
+		// G20: with a selection, the strip rides ABOVE the note card from this entry too (never under or on it)
+		const sc = await P.evaluate(() => {
+			const st = document.getElementById('ps-strip')?.getBoundingClientRect();
+			const c = document.querySelector('.note-card')?.getBoundingClientRect();
+			return st && c ? { strip: Math.round(st.bottom), card: Math.round(c.top), h: st.height } : null;
+		});
+		if (sc && sc.h > 0) h.check(sc.strip <= sc.card + 1, `...and the selection strip rides above the card (${JSON.stringify(sc)})`);
 		if (SHOTS) await P.screenshot({ path: `${SHOTS}/g12-folded-4-from-scene.png` });
 		h.check((await posText()) === `${pin.n}/14`, `...and the card walks ALL the notes from there (${await posText()})`);
 		await tapSel('#note-next');

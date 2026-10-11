@@ -1,7 +1,7 @@
 // 36-avatars: the small LOCAL state the rigged avatars share with the rest of the UI. A leaf
 // (svelte/store + safeStorage). Nothing here replicates.
 
-import { writable } from 'svelte/store';
+import { derived, writable } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
 
 /**
@@ -17,6 +17,19 @@ export const avatarIkPeers = writable({});
  * @type {import('svelte/store').Writable<null | {config: any, photo: string, position: number[], yaw: number, walk: boolean}>}
  */
 export const avatarPreview = writable(null);
+
+/**
+ * 41 G10: the customise panel's ISOLATED STUDIO (characterStudio.js). `studioOpen` = the panel
+ * is open on a flat screen; `studioInScene` = the remembered "Show in scene" switch (the
+ * character previewed in the current scene instead). LOCAL prefs, never replicated.
+ */
+export const studioOpen = writable(false);
+export const studioInScene = writable(safeStorage.getItem('characterStudio:inScene') === '1');
+studioInScene.subscribe((v) => safeStorage.setItem('characterStudio:inScene', v ? '1' : '0'));
+/** the studio also shows ping markers until this performance.now() (the ping Preview) */
+export const studioPingUntil = writable(0);
+/** the scene is hidden from the render right now */
+export const studioIsolating = derived([studioOpen, studioInScene], ([open, inScene]) => open && !inScene);
 
 /** live RiggedAvatar instances by root name, for the debug hook / e2e @type {Map<string, any>} */
 export const avatarInstances = new Map();

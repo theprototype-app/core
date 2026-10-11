@@ -69,11 +69,11 @@
 </script>
 
 {#if $objectSearch}
-	<div class="fixed inset-0" style="z-index: 999" role="presentation" onclick={close} oncontextmenu={(e) => { e.preventDefault(); close(); }}></div>
+	<div class="fixed inset-0" style="z-index: calc(var(--z-popover) - 1)" role="presentation" onclick={close} oncontextmenu={(e) => { e.preventDefault(); close(); }}></div>
 	<div
 		id="object-search-box"
 		class="fixed w-64 rounded-lg border border-border bg-surface-1 p-1.5 text-xs text-text-2 shadow-xl"
-		style="left: {Math.min($objectSearch.x, window.innerWidth - 270)}px; top: {Math.min($objectSearch.y, window.innerHeight - 320)}px; z-index: 1000;"
+		style="left: {Math.min($objectSearch.x, window.innerWidth - 270)}px; top: {Math.min($objectSearch.y, window.innerHeight - 320)}px; z-index: var(--z-popover);"
 		use:rightDragMove
 	>
 		<input

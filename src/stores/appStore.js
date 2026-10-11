@@ -603,7 +603,7 @@ if (typeof localStorage !== 'undefined') {
  * until the on-device pass, which is why a user who wanted the bar to lift also had to
  * accept it painting over every floating window.
  *   ON           — `--z-hud` (45): above the dock (35) AND above floating windows (40).
- *   OFF (default) — `--z-drawer` (30): windows and the dock cover it.
+ *   OFF (default) — `--z-chrome` (30): windows and the dock cover it.
  * They compose. The DEFAULT combination is floating ON + this OFF: the bar lifts clear
  * of an opening dock (so the two rarely overlap at all), but a floating window dragged
  * over it covers it — the bar moves out of the way rather than fighting. Turning this

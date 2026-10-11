@@ -23,12 +23,11 @@ h.run(async () => {
 		window.__stores.fileHandler.save('gltf');
 	});
 	await A.page.waitForTimeout(400);
-	const toasts = await A.page.evaluate(() => {
-		let t;
-		window.__stores.toastStore.subscribe((x) => (t = x))();
-		return JSON.stringify(t);
-	});
-	h.check(/Nothing selected/.test(toasts), 'no selection -> warning toast (no silent whole-scene export)');
+	// 41 G16: the question is a modal now (it blocks the export), not a toast
+	const asked = await A.page.evaluate(() => document.querySelector('dialog[open]')?.textContent ?? '');
+	h.check(/Nothing selected/.test(asked) && /Export all/.test(asked), 'no selection -> a modal asks (no silent whole-scene export)');
+	await A.page.locator('#confirm-dialog-cancel').click();
+	await A.page.waitForTimeout(300);
 
 	// select ONE object -> the exported GLTF has exactly one mesh
 	await A.page.evaluate((u) => window.__stores.objectActions.selectObject(u), uuids[0]);

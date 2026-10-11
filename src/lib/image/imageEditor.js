@@ -14,7 +14,7 @@
 // step for the whole save. A texture that was painted over or picked from disk carries no
 // source and is left alone: it is no longer that image.
 
-import { writable, get } from 'svelte/store';
+import { get } from 'svelte/store';
 import {
 	itemById,
 	itemBlob,
@@ -33,13 +33,9 @@ import { showToast } from '../../stores/appStore';
 import { recordImageVersion, imageVersionBlob } from './imageVersions';
 import { makeRaster, fitSize, encodingFor } from './imageOps';
 
-/**
- * The open editor: which Explorer image, plus a `raise` counter so asking again for the
- * same image brings the window forward instead of reloading it (the 21-I3 ruling the
- * preview window keeps). null = closed.
- * @type {import('svelte/store').Writable<{itemId: string, raise: number} | null>}
- */
-export const imageEditorTarget = writable(null);
+import { imageEditorTarget } from './imageEditorState';
+// the open state lives in a leaf so the dock can address the editor (41 G24)
+export { imageEditorTarget, closeImageEditor, imageEditorClose } from './imageEditorState';
 
 /** Open the Image editor on an Explorer image. @param {string} itemId */
 export function openImageEditor(itemId) {
@@ -53,9 +49,6 @@ export function openImageEditor(itemId) {
 	return true;
 }
 
-export function closeImageEditor() {
-	imageEditorTarget.set(null);
-}
 
 /**
  * Edit the texture on one material slot. A texture made from a library image opens that

@@ -1791,7 +1791,7 @@
 				<button class="ui-button-quiet" title="Fit the UV square" onclick={fitView}>Fit</button>
 			</ScrollStrip>
 			{#if unwrapOpen}
-				<div id="uv-unwrap-menu" class="absolute top-full z-30 mt-1 w-44 rounded-sm border border-border bg-surface-1 py-1 shadow-lg" style:left="{unwrapLeft}px">
+				<div id="uv-unwrap-menu" class="absolute top-full z-29 mt-1 w-44 rounded-sm border border-border bg-surface-1 py-1 shadow-lg" style:left="{unwrapLeft}px">
 					{#each backends as backend (backend.key)}
 						<button
 							class="block w-full px-2 py-1 text-left text-[11px] text-text-2 hover:bg-surface-hover"
@@ -2003,14 +2003,14 @@
 		<div
 			id="uv-dock"
 			class="fixed inset-x-0 bottom-0 tp-ui tp-dock-panel flex flex-col p-2 {dockVisible ? '' : 'hidden'}"
-			style="z-index: var(--z-bottom); height: {$dockHeight}px"
+			style="z-index: var(--z-dock); height: {$dockHeight}px"
 			data-key-scope="panel"
 			role="region"
 			aria-label="UV editor (docked)"
 		>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
+				class="resize-cue absolute -top-1 left-0 right-0 z-28 h-2 cursor-ns-resize hover:bg-accent/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}

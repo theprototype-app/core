@@ -54,6 +54,6 @@
 		/* the band must never eat the second click */
 		pointer-events: none;
 		/* above the viewport, below the panels — it is viewport feedback, not chrome */
-		z-index: 2;
+		z-index: var(--z-canvas-overlay);
 	}
 </style>

@@ -58,7 +58,7 @@
 		top: calc(var(--connect-bottom, 0px) + 68px);
 		left: 16px;
 		/* the authoring HUD band: over the viewport, under every window (--z-window 40) */
-		z-index: 38;
+		z-index: calc(var(--z-window) - 2);
 		display: flex;
 		align-items: center;
 		gap: 6px;

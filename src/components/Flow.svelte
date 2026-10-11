@@ -110,9 +110,11 @@
 	// another dock view. They start docked, so they appear as dock tabs. Same list the
 	// strip's "+" renders ($lib/dockMenu) — they used to be two copies that drifted.
 	let addMenu: { x: number; y: number } | null = $state(null);
-	const addItems = dockAddItems();
+	// 41 G22: built per open (it reads what is docked right now) and without this window's own row
+	let addItems: any[] = $state([]);
 	function openAddMenu(e: MouseEvent) {
 		const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		addItems = dockAddItems({ exclude: ['flow'] });
 		addMenu = { x: r.left, y: r.bottom + 4 };
 	}
 
@@ -186,14 +188,14 @@
 			id="flow-list"
 			transition:fly={{ y: 320, duration: 200 }}
 			class="tp-ui tp-dock-panel fixed inset-x-0 bottom-0 p-2 {dockVisible ? '' : 'hidden'}"
-			style="z-index: var(--z-bottom); height: {$dockHeight}px"
+			style="z-index: var(--z-dock); height: {$dockHeight}px"
 			data-key-scope="panel"
 			role="region"
 			aria-label="Node editor (docked)"
 		>
 			<!-- top-edge resize hot zone -->
 			<div
-				class="resize-cue absolute -top-1 left-0 right-0 z-30 h-2 cursor-ns-resize hover:bg-accent/30"
+				class="resize-cue absolute -top-1 left-0 right-0 z-28 h-2 cursor-ns-resize hover:bg-accent/30"
 				style="touch-action: none"
 				title="Drag to resize"
 				onpointerdown={startResize}

@@ -24,7 +24,8 @@
 		"sync-llms": "node scripts/sync-llms.cjs",
 		"test:unit": "vitest run",
 		"check:storage": "node scripts/check-storage.cjs",
-		"check:tokens": "node scripts/check-tokens.cjs"
+		"check:tokens": "node scripts/check-tokens.cjs",
+		"check:zindex": "node scripts/check-zindex.cjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-static": "^3.0.10",

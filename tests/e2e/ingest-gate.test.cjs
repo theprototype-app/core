@@ -95,8 +95,9 @@ h.run(async () => {
 	h.check(parked.backlog >= 29, `the objects are PARKED, not applied (${parked.backlog} in the queue)`);
 	h.check((await objectCount(A.page)) === before, 'the scene is untouched while the question is open');
 	h.check(parked.gate?.count === 4200 && parked.gate?.limit === 3000, `the card is told the real numbers (${parked.gate?.count} of ${parked.gate?.limit})`);
-	const card = await A.page.locator('.tp-toast', { hasText: 'This scene has 4200 objects' });
-	h.check((await card.count()) > 0, 'the fork is on screen');
+	// 41 G16: the fork is a kit modal now — the transfer is parked until it is answered
+	const card = await A.page.locator('#ingest-gate-modal', { hasText: '4200 objects' });
+	h.check((await card.count()) > 0, 'the fork is on screen (a modal)');
 	h.check(
 		(await A.page.getByRole('button', { name: /Load the first/ }).count()) > 0,
 		'…offering "Load the first N" beside Load all and Cancel'

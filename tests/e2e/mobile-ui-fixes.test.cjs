@@ -290,44 +290,26 @@ h.run(async () => {
 		'it does not slide to the window edge and clip the circle off the screen'
 	);
 
-	// ---- narrow: the sheet also outranks the LOGO, and only there -------------
-	await A.page.setViewportSize({ width: 420, height: 780 });
-	await A.page.evaluate(() => window.__stores.whatsNew.openWhatsNew());
-	await A.page.waitForTimeout(800);
-	const logoNarrow = await A.page.evaluate(() => {
-		const z = (/** @type {string} */ sel) => {
-			const el = document.querySelector(sel);
-			return el ? parseInt(getComputedStyle(el).zIndex) || 0 : -1;
-		};
-		return { sheet: z('#whats-new-window'), logo: z('.burger'), marked: document.documentElement.classList.contains('wn-sheet') };
-	});
-	h.check(
-		logoNarrow.marked && logoNarrow.sheet > logoNarrow.logo,
-		`the full-screen sheet outranks the logo (${logoNarrow.sheet} > ${logoNarrow.logo})`
-	);
-	await A.page.evaluate(() => window.__stores.whatsNew.closeWhatsNew());
-	await A.page.waitForTimeout(300);
-	const logoRestored = await A.page.evaluate(() => ({
-		logo: parseInt(getComputedStyle(document.querySelector('.burger')).zIndex) || 0,
-		marked: document.documentElement.classList.contains('wn-sheet')
-	}));
-	h.check(
-		!logoRestored.marked && logoRestored.logo > 1000,
-		`closing it gives the logo its layer back (${logoRestored.logo})`
-	);
-	// WIDE: the logo keeps its layer — this is an ordinary floating window there
+	// ---- the changelog outranks the LOGO at EVERY width (41 G3b) ------------------
+	// It used to drop the logo under a narrow sheet with a root class (wn-sheet) and leave it on top
+	// of the wide window; since 41 What's new lives on --z-onboarding, above the logo's
+	// --z-chrome-top, so no class and no width rule are left.
+	for (const [w, label] of [[420, 'narrow'], [1280, 'wide']]) {
+		await A.page.setViewportSize({ width: w, height: 800 });
+		await A.page.evaluate(() => window.__stores.whatsNew.openWhatsNew());
+		await A.page.waitForTimeout(700);
+		const zs = await A.page.evaluate(() => {
+			const z = (/** @type {string} */ sel) => {
+				const el = document.querySelector(sel);
+				return el ? parseInt(getComputedStyle(el).zIndex) || 0 : -1;
+			};
+			return { sheet: z('#whats-new-window'), logo: z('.burger'), marked: document.documentElement.classList.contains('wn-sheet') };
+		});
+		h.check(zs.sheet > zs.logo && zs.logo > 0 && !zs.marked, `${label}: the changelog outranks the logo (${zs.sheet} > ${zs.logo}), no root class`);
+		await A.page.evaluate(() => window.__stores.whatsNew.closeWhatsNew());
+		await A.page.waitForTimeout(300);
+	}
 	await A.page.setViewportSize({ width: 1280, height: 800 });
-	await A.page.evaluate(() => window.__stores.whatsNew.openWhatsNew());
-	await A.page.waitForTimeout(700);
-	const wide = await A.page.evaluate(() => ({
-		logo: parseInt(getComputedStyle(document.querySelector('.burger')).zIndex) || 0,
-		marked: document.documentElement.classList.contains('wn-sheet')
-	}));
-	h.check(
-		!wide.marked && wide.logo > 1000,
-		`on a wide screen the logo is untouched (${wide.logo}, marked=${wide.marked})`
-	);
-	await A.page.evaluate(() => window.__stores.whatsNew.closeWhatsNew());
 
 	// ---- a window shoved off the RIGHT edge must not drag the chrome with it ----
 	// The object-list window was the last `position: absolute` floating window. An

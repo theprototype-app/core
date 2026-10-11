@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { showChoice } from './confirmDialog.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
@@ -290,9 +291,12 @@ export function save(format) {
 			exportGltf(format, roots);
 			showToast(roots.length === 1 ? 'Exported 1 selected object (GLTF)' : `Exported ${roots.length} selected objects (GLTF)`);
 		} else {
-			showToast('Nothing selected — export the entire scene?', [
-				{ label: 'Export all', action: () => exportGltf(format, sceneObjects) }
-			]);
+			// 41 G16: a question that blocks the export is a modal, not a toast
+			void showChoice({
+				title: 'Nothing selected',
+				message: 'GLTF exports the selection. Export the entire scene instead?',
+				choices: [{ value: 'all', label: 'Export all' }]
+			}).then((answer) => answer === 'all' && exportGltf(format, sceneObjects));
 		}
 		return;
 	}

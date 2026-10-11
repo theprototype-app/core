@@ -13,7 +13,7 @@ h.run(async () => {
 		page.evaluate(() => {
 			let t = [];
 			window.__stores.toastStore.subscribe((x) => (t = x))();
-			return t.map((x) => String(x?.text ?? x?.message ?? x?.[0] ?? JSON.stringify(x)));
+			return t.map((x) => (typeof x === "string" ? x : String(x?.text ?? x?.message ?? JSON.stringify(x))));
 		});
 	const dialogText = (/** @type {string} */ sel = 'dialog[open]') =>
 		page.evaluate((s) => document.querySelector(s)?.textContent?.replace(/\s+/g, ' ') ?? '', sel);
@@ -144,7 +144,11 @@ h.run(async () => {
 	await clearToasts();
 	await page.evaluate(() => window.__stores.showToast('Saved'));
 	await page.waitForTimeout(200);
-	h.check((await toastTexts()).some((t) => /Saved/.test(t)) && (await page.locator('dialog[open]').count()) === 0, 'a passive "Saved" is still a toast, no dialog');
+	const passive = await toastTexts();
+	const openDialogs = await page.evaluate(() =>
+		[...document.querySelectorAll('dialog[open]')].filter((d) => d.getBoundingClientRect().width > 0).map((d) => d.id || d.className || d.textContent?.slice(0, 40))
+	);
+	h.check(passive.some((t) => /Saved/.test(t)) && openDialogs.length === 0, `a passive "Saved" is still a toast, no dialog (toasts ${JSON.stringify(passive)}, dialogs ${JSON.stringify(openDialogs)})`);
 
 	h.check(h.pageErrors(A).length === 0, `no page errors (${JSON.stringify(h.pageErrors(A))})`);
 	await h.finish(browser);

@@ -4,7 +4,6 @@
 	import Icon from '../ui/Icon.svelte';
 	import { phoneShellActive } from '$lib/ui/phoneShell.js';
 	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight, toastStore, toastsInDrawerOnly } from '../../stores/appStore'
-	import Badge from '../ui/Badge.svelte';
 	import { onMount, tick } from 'svelte';
 	import { createPeer, PeerConnection } from '$lib/peerHandler.svelte';
 	import { peerServerStatus, inviteServerParam } from '$lib/peerServer';
@@ -13,6 +12,8 @@
 	import { cancelOutboundRequest, requestConnect } from '$lib/peerApproval';
 	import { sessionHost } from '$lib/connectionState';
 	import { connectSlot, drawerSlot } from '$lib/cloudHooks';
+	// 41 G21: the status is a DOT (grey / yellow pulsing / green / red); its words ride title + aria-label
+	import { connectionStatus } from '$lib/connectionStatus';
 	import CloudSlot from '../CloudSlot.svelte';
 	import ConnectInfoDrawer from './ConnectInfoDrawer.svelte';
 	import { safeStorage } from '$lib/safeStorage';
@@ -198,7 +199,6 @@
 	// on the phone shell the bar only ever shows INSIDE the Connect sheet, which is the
 	// expanded form already — the shell draws its own chip (#ps-connect-chip)
 	const compact = $derived(connState === 'connected' && !expanded && !$phoneShellActive);
-	const chipLabel = $derived($sessionHost ? hostLabel : 'Hosting');
 	/** up to three peers on the chip, the rest as +N (NOTES-38 #12: a speaker gets the ring) */
 	const chipPeers = $derived(
 		remoteOpen.slice(0, 3).map((id) => {
@@ -317,13 +317,14 @@
 			<button
 				type="button"
 				class="cx-chip"
-				title={connectedText + ' — click for the full bar'}
-				aria-label={connectedText + '. Show the full connection bar'}
+				title={$connectionStatus.words + ' — click for the full bar'}
+				aria-label={$connectionStatus.words + '. Show the full connection bar'}
 				aria-expanded="false"
+				data-tone={$connectionStatus.tone}
 				onclick={() => (expanded = true)}
 			>
-				<span class="cx-dot" aria-hidden="true"></span>
-				<span class="cx-chip-label">{chipLabel}</span>
+				<!-- 41 G21: no label — the dot and the avatars; the words are the tooltip -->
+				<span class="cx-dot cx-status-dot" data-tone={$connectionStatus.tone} aria-hidden="true"></span>
 				<span class="cx-avatars" aria-hidden="true">
 					{#each chipPeers as p (p.id)}
 						<span class="cx-av" class:speaking={$speakingPeers.includes(p.id)} style:background={peerColor(p.id)} title={p.name}>{p.initial}</span>
@@ -343,6 +344,18 @@
 				{#if $micActive || $pttActive}<Icon name="mic" size={20} aria-hidden="true" />{:else}<Icon name="mic-off" size={20} aria-hidden="true" />{/if}
 			</button>
 		{:else}
+		<!-- 41 G21: the connection status as a dot — grey idle, yellow pulsing while connecting or
+			 reconnecting, green connected, red when the peer server cannot be reached. The words
+			 (with the retry's elapsed time) are its tooltip and accessible name; no toast says them. -->
+		<span
+			id="connect-status"
+			class="cx-status-dot"
+			role="img"
+			data-tone={$connectionStatus.tone}
+			data-testid="connect-status"
+			title={$connectionStatus.words + ($signalingRetry.retrying ? ' (' + formatElapsed(retryNow - ($signalingRetry.since ?? retryNow)) + ')' : '')}
+			aria-label={$connectionStatus.words}
+		></span>
 		<!-- your invite id (click to copy the share link) — the FIRST button in the pill -->
 		<button type="button" class="cx-id" onclick={copy} title="Copy your invite link"
 			><span class="cx-id-text">{myidcap}</span><Icon name="copy" size={16} aria-hidden="true" /></button
@@ -408,17 +421,6 @@
 		{/if}
 		{/if}
 
-		{#if $signalingRetry.retrying}
-			<!-- 27-F: the signaling link is down and retrying — a STATE you can look at, so a
-				 Badge (SPEC §5), not a toast per attempt. Live peers are unaffected. -->
-			<Badge
-				tone="warn"
-				id="connect-retry-chip"
-				data-testid="connect-retry-chip"
-				title={'Reconnecting to the signaling server (attempt ' + $signalingRetry.attempt + ') — peers you are already connected to are unaffected'}
-				text={'Reconnecting · ' + formatElapsed(retryNow - ($signalingRetry.since ?? retryNow))}
-			/>
-		{/if}
 
 		{#if $joinRefusal && connState === 'idle'}
 			<!-- 25-F: declined, or full — told apart, and dismissable -->
@@ -725,16 +727,7 @@
 		outline-offset: -2px;
 	}
 	.cx-dot {
-		width: 8px;
-		height: 8px;
-		border-radius: 50%;
-		background: var(--ink-good);
 		flex: 0 0 auto;
-	}
-	.cx-chip-label {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		max-width: 14rem;
 	}
 	.cx-avatars {
 		display: inline-flex;

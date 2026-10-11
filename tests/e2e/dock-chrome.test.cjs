@@ -721,8 +721,8 @@ h.run(async () => {
 	rows = await menuRows();
 	const dockRow = rows.find((r) => /Animation/.test(r.label));
 	h.check(
-		!!dockRow && /^Dock /.test(dockRow.label),
-		`11.2 the ＋ menu offers it as "Dock Animation", not "＋" — the row moves a window, it does not open a second copy (${rows
+		!!dockRow && /Animation\s*Dock$/.test(dockRow.label) && !/＋/.test(dockRow.label),
+		`11.2 the ＋ menu's Animation row says Dock (41 G22 hint), not Open — the row moves a window, it does not open a second copy (${rows
 			.map((r) => r.label)
 			.join(' | ')})`
 	);

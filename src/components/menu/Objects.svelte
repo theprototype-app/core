@@ -278,6 +278,8 @@
                 <Icon name="person-standing" size={16} class="obj-ico obj-type shrink-0 text-center" aria-hidden="true" title="Animated model" />
             {:else if element.type.endsWith('Group')}
                 <Icon name="layers" size={16} class="obj-ico obj-type shrink-0 text-center" aria-hidden="true" title="Group" />
+            {:else if element.userData?.measure?.points}
+                <Icon name="ruler" size={16} class="obj-ico obj-type shrink-0 text-center" aria-hidden="true" title="Measurement" />
             {:else if element.type.endsWith('Light')}
                 <Icon name="sun" size={16} class="obj-ico obj-type shrink-0 text-center" aria-hidden="true" title="Light" />
             {:else}

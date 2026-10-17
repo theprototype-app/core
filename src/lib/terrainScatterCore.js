@@ -20,6 +20,16 @@ export const SCALE_MAX = 20;
 const Q = 65535;
 const TAU = Math.PI * 2;
 
+/** 48 B1: the static collider a set's instances get in a simulation. 'none' is the default
+ * and is NEVER written (a set without `collider` is the 47 shape), so every scene saved
+ * before this, and every set nobody gave a collider, stays byte-identical. */
+export const SCATTER_COLLIDERS = Object.freeze(['none', 'box', 'sphere', 'hull']);
+
+/** @param {any} c @returns {string} 'none' for anything that is not a known kind */
+export function scatterColliderOf(c) {
+	return typeof c === 'string' && SCATTER_COLLIDERS.includes(c) ? c : 'none';
+}
+
 /** The primitives a scatter set may draw (the Library model path is `{kind: 'library'}`). */
 export const SCATTER_PRIMITIVES = Object.freeze(['Box', 'Sphere', 'Cone', 'Cylinder', 'Capsule', 'Dodecahedron']);
 
@@ -146,7 +156,7 @@ export function sourceKey(s) {
  * Validate a stored/wire block. Sets with a bad source or bytes are DROPPED (never
  * guessed at); empty sets are dropped too, so "erase everything" leaves `sets: []`.
  * @param {any} block @param {(b64: string) => Uint8Array | null} decode
- * @returns {{v: number, sets: {id: string, source: any, align: boolean, data: string, count: number}[]} | null}
+ * @returns {{v: number, sets: {id: string, source: any, align: boolean, data: string, count: number, collider?: string}[]} | null}
  */
 export function normalizeScatter(block, decode) {
 	if (!block || typeof block !== 'object' || !Array.isArray(block.sets)) return null;
@@ -160,12 +170,14 @@ export function normalizeScatter(block, decode) {
 		const count = bytes.length / 8;
 		if (total + count > MAX_INSTANCES) continue;
 		total += count;
+		const collider = scatterColliderOf(s.collider);
 		sets.push({
 			id: typeof s.id === 'string' && s.id ? s.id.slice(0, 40) : sourceKey(source),
 			source,
 			align: !!s.align,
 			data: s.data,
-			count
+			count,
+			...(collider === 'none' ? {} : { collider })
 		});
 	}
 	return { v: SCATTER_VERSION, sets };

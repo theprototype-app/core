@@ -352,10 +352,17 @@ export const shortcuts = [
 		keys: 'Tab',
 		group: 'Objects',
 		scope: 'viewport',
-		label: 'Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits)',
+		label: 'Enter mesh edit mode (inside it Tab cycles Vertices/Edges/Faces; Esc exits) — on a measurement, edit its points',
 		action: () => {
+			const sel = get(selectedObject);
+			// 48 B2: a measurement has no mesh — Tab edits its points instead. DYNAMIC: measure.js
+			// reaches history (measureItems registers a kind), and shortcuts sits in its subtree
+			if (!get(editingObject) && sel?.userData?.measure?.points) {
+				void import('./measure').then((m) => m.toggleMeasureEdit(sel.uuid));
+				return;
+			}
 			if (get(editingObject)) exitEditMode();
-			else if (get(selectedObject)?.uuid) enterEditMode(get(selectedObject).uuid);
+			else if (sel?.uuid) enterEditMode(sel.uuid);
 		}
 	},
 	{

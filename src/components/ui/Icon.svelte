@@ -228,6 +228,7 @@
 		SlidersHorizontal,
 		Sparkles,
 		Spline,
+		Ruler,
 		Square,
 		SquareDashed,
 		SquareMousePointer,
@@ -449,6 +450,7 @@
 		'sliders-horizontal': SlidersHorizontal,
 		sparkles: Sparkles,
 		spline: Spline,
+		ruler: Ruler, // 48 B2: measurement items
 		square: Square,
 		'square-dashed': SquareDashed,
 		'square-mouse-pointer': SquareMousePointer,

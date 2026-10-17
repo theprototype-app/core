@@ -27,6 +27,7 @@
 	import SceneQualitySection from './inspector/SceneQualitySection.svelte'; // 42 I12
 	import ArrangeSection from './inspector/ArrangeSection.svelte'; // 47 M2
 	import TerrainPaintSection from './inspector/TerrainPaintSection.svelte'; // 47 T1/T2
+	import MeasureSection from './inspector/MeasureSection.svelte'; // 48 B2
 	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
@@ -3754,6 +3755,11 @@
 			{#if $selectedObject?.userData?.terrain && !multiCount}
 				<!-- 47 T1/T2: terrain paint layers + scatter sets -->
 				<TerrainPaintSection object={$selectedObject} />
+			{/if}
+
+			{#if $selectedObject?.userData?.measure?.points && !multiCount}
+				<!-- 48 B2: a measurement item's numbers + Edit points -->
+				<MeasureSection object={$selectedObject} />
 			{/if}
 
 			{#if isGroup}

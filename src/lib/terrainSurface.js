@@ -487,14 +487,7 @@ function layoutScatter(object, holder, sets) {
 		const parts = partsOf(set.source);
 		if (!parts || !parts.length) continue;
 		const list = decodeInstances(/** @type {Uint8Array} */ (base64ToBytes(set.data)), b);
-		/** @type {any[]} */
-		const matrices = list.map((inst) => {
-			const h = grid ? sampleHeight(grid, inst.x, inst.z) : { y: 0, nx: 0, ny: 1, nz: 0 };
-			_qy.setFromAxisAngle(UP, inst.yaw);
-			if (set.align) _q.setFromUnitVectors(UP, _n.set(h.nx, h.ny, h.nz)).multiply(_qy);
-			else _q.copy(_qy);
-			return new THREE.Matrix4().compose(_p.set(inst.x, h.y, inst.z), _q, _s.setScalar(inst.scale));
-		});
+		const matrices = instanceMatrices(list, set.align, grid);
 		for (const part of parts) {
 			// 47-int (46 LOD): a dense model takes levels. One centre for instances spread over a
 			// whole terrain means nothing, so a LOD'd part is split into cells — each cell picks
@@ -515,6 +508,49 @@ function layoutScatter(object, holder, sets) {
 			}
 		}
 	}
+}
+
+/** Terrain-LOCAL instance matrices — the drawn pose, and (48 B1) the collider pose.
+ * @param {{x: number, z: number, yaw: number, scale: number}[]} list @param {boolean} align
+ * @param {ReturnType<typeof buildHeightGrid>} grid @returns {any[]} */
+function instanceMatrices(list, align, grid) {
+	return list.map((inst) => {
+		const h = grid ? sampleHeight(grid, inst.x, inst.z) : { y: 0, nx: 0, ny: 1, nz: 0 };
+		_qy.setFromAxisAngle(UP, inst.yaw);
+		if (align) _q.setFromUnitVectors(UP, _n.set(h.nx, h.ny, h.nz)).multiply(_qy);
+		else _q.copy(_qy);
+		return new THREE.Matrix4().compose(_p.set(inst.x, h.y, inst.z), _q, _s.setScalar(inst.scale));
+	});
+}
+
+/**
+ * 48 B1: what a simulation needs to give a terrain's scatter its colliders — every set that
+ * asks for one (`collider` box / sphere / hull), with the parts it draws and its instances'
+ * TERRAIN-LOCAL matrices, computed exactly as the render does (same heights, same tilt), so
+ * a ball rests on the rock it sees. A set whose Library model is still loading is left out
+ * (it is not drawn either); `pending` says so, and the physics side rebuilds when it lands.
+ * @param {any} object a terrain @returns {{sets: {id: string, collider: string, parts: {geometry: any}[], matrices: any[]}[], pending: boolean}}
+ */
+export function scatterPhysicsSets(object) {
+	const out = { sets: /** @type {any[]} */ ([]), pending: false };
+	const block = object?.userData?.terrainScatter;
+	const b = block ? terrainBounds(object) : null;
+	if (!b) return out;
+	const wanted = (normalizeScatter(block, base64ToBytes)?.sets ?? []).filter((s) => s.collider);
+	if (!wanted.length) return out;
+	const pos = object.geometry?.attributes?.position;
+	const grid = pos ? buildHeightGrid(pos.array) : null;
+	for (const set of wanted) {
+		const parts = partsOf(set.source);
+		if (!parts) {
+			out.pending = true;
+			continue;
+		}
+		if (!parts.length) continue;
+		const list = decodeInstances(/** @type {Uint8Array} */ (base64ToBytes(set.data)), b);
+		out.sets.push({ id: set.id, collider: /** @type {string} */ (set.collider), parts, matrices: instanceMatrices(list, set.align, grid) });
+	}
+	return out;
 }
 
 /** @param {any} g */

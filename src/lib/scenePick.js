@@ -6,6 +6,7 @@ import { editingObject } from './meshEdit';
 import { faceEditObject } from './faceEdit';
 import { sculptObject } from './terrainSculpt';
 import { ensureBoundsTrees } from './bvhPicking';
+import { raySegment, normalizeMeasure } from './measureCore'; // 48 B2 (a leaf: imports nothing)
 
 // 19-B P1: the ONE scene pick path.
 //
@@ -48,9 +49,59 @@ export function sceneHits(raycaster, options = {}) {
 			: group.children;
 	const hits = raycaster.intersectObjects(targets, true);
 	if (!options.tinyProxies) return hits;
-	const proxies = tinyProxyHits(raycaster, targets, hits);
+	const proxies = [...tinyProxyHits(raycaster, targets, hits), ...measureHits(raycaster, targets)];
 	if (!proxies.length) return hits;
 	return [...hits, ...proxies].sort((a, b) => a.distance - b.distance);
+}
+
+// 48 B2: a MEASUREMENT item is an empty node (its lines are scene-root decoration drawn on top
+// of everything), so no raycast can reach it. Selection asks for it the way it asks for the tiny
+// proxies — a ray passing within a few SCREEN pixels of one of its segments hits it — and the
+// hit is pulled slightly in front of the surface the line lies on, because the line is drawn
+// over that surface and a press on it means the measurement.
+
+/** how near (css px) a press must pass a segment */
+const MEASURE_PICK_PX = 7;
+/** metres the hit is pulled toward the camera (a segment lying on a face ties with the face) */
+const MEASURE_PICK_LEAD = 0.05;
+const _mA = new THREE.Vector3();
+const _mB = new THREE.Vector3();
+
+/** @param {any} raycaster @param {any[]} targets @returns {any[]} */
+function measureHits(raycaster, targets) {
+	/** @type {any} */
+	const camera = get(globalCamera);
+	/** @type {any} */
+	const renderer = get(globalRenderer);
+	const height = renderer?.domElement?.clientHeight ?? 0;
+	if (!camera?.isPerspectiveCamera || !height) return [];
+	const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+	const o = raycaster.ray.origin.toArray();
+	const d = raycaster.ray.direction.toArray();
+	/** @type {any[]} */
+	const out = [];
+	for (const top of targets) {
+		top.traverse((/** @type {any} */ node) => {
+			const rec = node.userData?.measure ? normalizeMeasure(node.userData.measure) : null;
+			if (!rec) return;
+			for (let n = node; n; n = n.parent) if (n.visible === false) return;
+			node.updateWorldMatrix(true, false);
+			let best = null;
+			for (let i = 1; i < rec.points.length; i++) {
+				const a = _mA.fromArray(rec.points[i - 1]).applyMatrix4(node.matrixWorld).toArray();
+				const b = _mB.fromArray(rec.points[i]).applyMatrix4(node.matrixWorld).toArray();
+				const r = raySegment(o, d, a, b);
+				if (!(r.t > 0)) continue;
+				// world units per css pixel at that depth
+				const perPixel = (2 * tanHalf * r.t) / height;
+				if (r.dist <= MEASURE_PICK_PX * perPixel && (!best || r.t < best.t)) best = r;
+			}
+			// the TOP-LEVEL object is the pick (a measurement inside a group selects the group,
+			// the rule for every other child)
+			if (best) out.push({ object: node, distance: Math.max(0, best.t - MEASURE_PICK_LEAD), point: new THREE.Vector3().fromArray(best.point), measure: true });
+		});
+	}
+	return out;
 }
 
 // R2: an object animated (or scaled) down to nothing has no geometry left to hit,

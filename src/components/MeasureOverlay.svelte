@@ -1,28 +1,26 @@
 <script lang="ts">
 	import * as THREE from 'three'
 	import { T, useTask, useThrelte, useScheduler } from '@threlte/core'
-	import {
-		measurement,
-		measureHover,
-		measureMode,
-		pinnedMeasurements,
-		measureLabelViews
-	} from '$lib/measure'
-	import { chainLabels } from '$lib/measureCore'
-	import { isVRMode } from '../stores/sceneStore'
+	import { measurement, measureHover, measureMode, measureEditing, measureLabelViews } from '$lib/measure'
+	import { chainLabels, layoutLabels } from '$lib/measureCore'
+	import { isMeasurement, worldPointsOf } from '$lib/measureItems'
+	import { isVRMode, isLocked, objectsGroup, selectedObjects } from '../stores/sceneStore'
 
-	// 47 M1: the measure chains in the 3D view — the one being drawn (with a dashed rubber band
-	// to where the next click would land) and every PINNED one. Lines and dots only: the labels
-	// are DOM (MeasureLabels.svelte), placed from the screen positions this component publishes
-	// in the RENDER stage, after OrbitControls has moved the camera for the frame. Scene-root,
-	// local, never in objectsGroup.
+	// 47 M1 + 48 B2: the measure chains in the 3D view — the one being drawn (with a dashed rubber
+	// band to where the next click would land) and every measurement ITEM in the scene (48 B2:
+	// they are objects in objectsGroup now, so this draws them from their records and follows
+	// their transforms). Lines and dots only: the labels are DOM (MeasureLabels.svelte), placed
+	// from the screen positions this component publishes in the RENDER stage, after OrbitControls
+	// has moved the camera for the frame. Scene-root, never in objectsGroup. Hidden in Play (a
+	// measurement is an editing aid) and in a headset (the labels are DOM).
 
 	const { camera, renderer } = useThrelte()
 	const { renderStage } = useScheduler()
 
 	const DOT_PX = 9
+	const EDIT_DOT_PX = 13
 
-	type Chain = { id: string; points: number[][]; pinned: boolean }
+	type Chain = { id: string; points: number[][]; item: boolean; selected: boolean; editing: boolean }
 
 	/** the hover point while measuring — none while the pointer rests on the last point (a
 	 *  0 m preview segment and a "Total" equal to the chain read as a measurement) */
@@ -33,28 +31,51 @@
 		const last = points[points.length - 1]
 		return Math.hypot(hover[0] - last[0], hover[1] - last[1], hover[2] - last[2]) < 1e-4 ? null : hover
 	})
+
+	/** the scene's measurement items, in WORLD space — refreshed per frame (a gizmo drag, a peer's
+	 *  move) but only re-published when something actually moved, so the geometry below is
+	 *  rebuilt on change, not every frame */
+	let items: Chain[] = $state.raw([])
+	let itemsKey = ''
+
+	function collectItems(): Chain[] {
+		const group = $objectsGroup as any
+		if (!group || $isLocked === true) return []
+		const sel = new Set($selectedObjects as string[])
+		const editing = $measureEditing
+		const out: Chain[] = []
+		group.traverse((o: any) => {
+			if (!isMeasurement(o)) return
+			for (let n = o; n; n = n.parent) if (n.visible === false) return
+			let points: number[][] = worldPointsOf(o)
+			const isEditing = editing?.uuid === o.uuid
+			// a picked-up point follows the hover (the snapped spot the next click would put it)
+			if (isEditing && editing && editing.active >= 0 && $measureHover?.point && points[editing.active])
+				points = points.map((p, i) => (i === editing.active ? ($measureHover!.point as number[]) : p))
+			out.push({ id: o.uuid, points, item: true, selected: sel.has(o.uuid), editing: isEditing })
+		})
+		return out
+	}
+
 	/** the drawn chain plus the hover point while measuring (the preview segment) */
 	const live = $derived.by((): Chain | null => {
 		const points = $measurement?.points ?? []
 		const hover = hoverPoint
 		if (!points.length) return null
-		return { id: 'cur', points: hover ? [...points, hover] : points, pinned: false }
+		return { id: 'cur', points: hover ? [...points, hover] : points, item: false, selected: false, editing: false }
 	})
-	const chains = $derived([
-		...$pinnedMeasurements.map((m) => ({ id: m.id, points: m.points, pinned: true })),
-		...(live ? [live] : [])
-	] as Chain[])
+	const chains = $derived([...items, ...(live ? [live] : [])] as Chain[])
 
 	function lineOf(points: number[][]) {
 		return new THREE.BufferGeometry().setFromPoints(points.map((p) => new THREE.Vector3(p[0], p[1], p[2])))
 	}
 
 	// one geometry per chain for the solid part, plus the preview segment; rebuilt only when a
-	// chain changes (a click, a pin, the throttled hover) and disposed with it
+	// chain changes (a click, a keep, an item moved, the throttled hover) and disposed with it
 	const solid = $derived(
 		chains.map((c) => {
-			const fixed = c.pinned ? c.points : ($measurement?.points ?? [])
-			return { id: c.id, pinned: c.pinned, line: lineOf(fixed), dots: lineOf(fixed) }
+			const fixed = c.item ? c.points : ($measurement?.points ?? [])
+			return { id: c.id, item: c.item, selected: c.selected, editing: c.editing, line: lineOf(fixed), dots: lineOf(fixed) }
 		})
 	)
 	const preview = $derived.by(() => {
@@ -84,6 +105,12 @@
 
 	useTask(
 		() => {
+			const next = $isVRMode ? [] : collectItems()
+			const key = next.map((c) => c.id + (c.selected ? 's' : '') + (c.editing ? 'e' : '') + c.points.map((p) => p.map((n) => n.toFixed(4)).join(',')).join(';')).join('|')
+			if (key !== itemsKey) {
+				itemsKey = key
+				items = next
+			}
 			if ($isVRMode || !chains.length) {
 				if (published) measureLabelViews.set([])
 				published = false
@@ -93,23 +120,24 @@
 			const element = renderer?.domElement
 			if (!cam || !element) return
 			const rect = element.getBoundingClientRect()
-			const views: any[] = []
+			const anchors: any[] = []
 			for (const chain of chains) {
 				for (const label of chainLabels(chain.points, chain.id)) {
 					anchor.set(label.point[0], label.point[1], label.point[2])
 					projected.copy(anchor).project(cam)
 					if (projected.z >= 1 || projected.z <= -1) continue // behind the camera
-					views.push({
+					anchors.push({
 						key: label.key,
 						kind: label.kind,
 						text: label.text,
-						pinned: chain.pinned,
+						item: chain.item,
 						x: rect.left + ((projected.x + 1) / 2) * rect.width,
 						y: rect.top + ((1 - projected.y) / 2) * rect.height
 					})
 				}
 			}
-			measureLabelViews.set(views)
+			// 48 B2: labels of short segments used to stack on top of each other
+			measureLabelViews.set(layoutLabels(anchors))
 			published = true
 		},
 		{ stage: renderStage }
@@ -119,12 +147,12 @@
 <!-- tokens-ok-begin: three.js line/point materials drawn in the 3D view (no CSS tokens reach a shader) -->
 {#each solid as s (s.id)}
 	<T.Line geometry={s.line} renderOrder={997}>
-		<T.LineBasicMaterial color={s.pinned ? '#38bdf8' : '#ff6a1a'} depthTest={false} transparent />
+		<T.LineBasicMaterial color={!s.item ? '#ff6a1a' : s.selected || s.editing ? '#facc15' : '#38bdf8'} depthTest={false} transparent />
 	</T.Line>
 	<T.Points geometry={s.dots} renderOrder={998}>
 		<T.PointsMaterial
-			color={s.pinned ? '#38bdf8' : '#ff6a1a'}
-			size={DOT_PX}
+			color={!s.item ? '#ff6a1a' : s.selected || s.editing ? '#facc15' : '#38bdf8'}
+			size={s.editing ? EDIT_DOT_PX : DOT_PX}
 			sizeAttenuation={false}
 			depthTest={false}
 			transparent

@@ -308,7 +308,20 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 		// 15-B8: Edit mesh / Sculpt are SINGLE-object modes — with a set selected they'd silently
 		// act on the last-picked object only (the ViewportMenu path passes the sticky primary),
 		// so hide them rather than mislead.
-		...(multi
+		// 48 B2: a measurement is points, not a mesh — Tab (and this row) edits them
+		...(multi || !object?.userData?.measure?.points
+			? []
+			: [
+					{
+						label: 'Edit measurement',
+						icon: 'ruler',
+						hint: 'Tab',
+						disabled: locked,
+						tooltip: locked ? lockedTooltip : 'Pick up a point and place it again (it snaps), or add points; Tab finishes',
+						action: () => import('./measure').then((m) => m.editMeasurement(uuid))
+					}
+				]),
+		...(multi || object?.userData?.measure?.points
 			? []
 			: [
 					{

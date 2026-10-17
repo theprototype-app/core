@@ -46,6 +46,10 @@ export const scatterScaleMin = writable(0.8);
 export const scatterScaleMax = writable(1.2);
 export const scatterRandomRotation = writable(true);
 export const scatterAlign = writable(false);
+/** 48 B1: the collider a NEW set starts with ('none' | 'box' | 'sphere' | 'hull'). Only a new set
+ * takes it — an existing set keeps the one Properties ▸ Scatter gave it, so painting more rocks
+ * never strips a collider the author chose. */
+export const scatterCollider = writable('none');
 /** true = the brush removes the active source's instances */
 export const scatterErase = writable(false);
 
@@ -249,7 +253,7 @@ export function beginScatterStroke(uuid) {
 		list: set ? decodeInstances(/** @type {Uint8Array} */ (base64ToBytes(set.data)), b) : [],
 		// the align toggle is a property of the SET (heights are derived at render time), so
 		// the brush's current setting re-stamps it
-		set: { ...(set ?? { id: key, source, data: '', count: 0 }), align: get(scatterAlign) },
+		set: { ...(set ?? { id: key, source, data: '', count: 0, collider: get(scatterCollider) }), align: get(scatterAlign) },
 		others: sets.filter((s) => s !== set),
 		changed: false,
 		seed: (Math.random() * 2 ** 32) >>> 0
@@ -347,7 +351,7 @@ registerHistoryKind('terrainScatter', (entry, state) => {
 
 /**
  * Inspector: change one set (align toggle) or remove it (`patch` null). One undo entry.
- * @param {string} uuid @param {string} setId @param {{align?: boolean} | null} patch
+ * @param {string} uuid @param {string} setId @param {{align?: boolean, collider?: string} | null} patch
  */
 export function editScatterSet(uuid, setId, patch) {
 	const object = objectOf(uuid);

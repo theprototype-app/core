@@ -4,7 +4,7 @@ import { createStreakWatch, PHYSICS_SLOW_MS, PHYSICS_SLOW_STEPS } from './overlo
 import { registerMetricSource } from './sceneBudget';
 import { writable, get } from 'svelte/store';
 import { flowGraphs, allNodes, allEdges, SCENE_GRAPH, runtimeGraph } from '../stores/flowStore';
-import { objectsGroup, lockedObjects, selectedObject, selectedObjects, pokeScene, editorMode, isLocked } from '../stores/sceneStore';
+import { objectsGroup, lockedObjects, selectedObject, selectedObjects, pokeScene, editorMode, isLocked, sceneRevision } from '../stores/sceneStore';
 import { peers, showToast, openSceneSection } from '../stores/appStore';
 import { recordTransformSet, recordEntry } from './history';
 import {
@@ -139,6 +139,16 @@ let pendingImpacts = [];
 let fixedColliders = new Map();
 /** @type {Map<string, string>} uuid -> shapeKey for fixed bodies (live rebuild) */
 let fixedShapeKeys = new Map();
+/** 48 B1: terrain uuid -> the ONE fixed body carrying its scatter's colliders, and the
+ * `terrainScatter` block it was built from (an applied block is a fresh object every write,
+ * so identity is the whole change test) @type {Map<string, {body: any, block: any, pending: boolean, count: number}>} */
+let scatterBodies = new Map();
+/** primed at sim start (dynamic: terrainSurface pulls three-heavy render code) @type {any} */
+let scatterRuntime = null;
+/** @type {any} */
+let scatterBuild = null;
+/** @type {ReturnType<typeof setTimeout> | null} */
+let scatterRetry = null;
 /** CL-A A3: sensor enter/exit edges collected inside the substep loop
  * @type {{uuid: string, otherUuid: string, entered: boolean}[]} */
 let pendingEnterExit = [];
@@ -1002,6 +1012,8 @@ async function startSimulation() {
 	const peer = get(peers);
 	if (!group) return;
 	await warmup();
+	// 48 B1: the scatter collider builders (dynamic: terrainSurface pulls three-heavy render code)
+	if (!scatterBuild) [scatterRuntime, scatterBuild] = await Promise.all([import('./terrainSurface'), import('./scatterColliders')]);
 
 	const params = collectParams(group);
 	const locked = get(lockedObjects).map((l) => l[1]);
@@ -1064,6 +1076,10 @@ async function startSimulation() {
 		trackBody(object, p, made);
 	});
 
+	// 48 B1: every scatter set with a collider becomes static colliders, one per instance
+	scatterBodies = new Map();
+	syncScatterColliders();
+
 	// P-B: build rapier impulse joints from the replicated defs. Anchors are
 	// OBJECT-local at attach time -> world -> BODY-local. EVERY body (box and
 	// hull alike, C3) starts with IDENTITY rotation (initialQuat compensates),
@@ -1093,6 +1109,7 @@ async function startSimulation() {
 	liveUnsubs = [
 		flowGraphs.subscribe(onGraphChange), // H1: sees every graph
 		sceneJoints.subscribe(syncLiveJoints), // 37-fx: joints added / detached mid-run
+		sceneRevision.subscribe(() => syncScatterColliders()), // 48 B1: a set edited / undone mid-run
 		// A6: gravity applies live (world.gravity is a plain setter; dynamics
 		// never sleep, so they notice immediately)
 		sceneGravity.subscribe((g) => {
@@ -1186,6 +1203,66 @@ function syncGroundHoles() {
 	const cfg = get(scenePhysicsGround);
 	const key = holesKey(waterHoles(currentWaterVolumes(), cfg.height ?? 0));
 	if (key !== groundHolesKey) buildGround(cfg);
+}
+
+/**
+ * 48 B1: the scatter's colliders follow the replicated `terrainScatter` blocks. ONE fixed body
+ * per scattered terrain (at the world origin: the descs carry world poses), rebuilt only when
+ * the terrain's block object changed — every write (brush, Inspector, undo, a peer) installs a
+ * new one, so an unrelated scene poke costs one Map lookup per terrain. A set whose Library
+ * model is still loading has no shape yet (`pending`), so it is retried until the model lands.
+ * STATIC by design (the brief): a moving or dynamic terrain does not carry its scatter along.
+ */
+function syncScatterColliders() {
+	if (!world || !RAPIER || !scatterRuntime || !scatterBuild) return;
+	const group = get(objectsGroup);
+	/** @type {Set<string>} */
+	const live = new Set();
+	let pending = false;
+	group?.traverse((/** @type {any} */ o) => {
+		const block = o.userData?.terrainScatter;
+		if (!block) return;
+		live.add(o.uuid);
+		const had = scatterBodies.get(o.uuid);
+		if (had && had.block === block && !had.pending) return;
+		if (had) dropScatterBody(o.uuid);
+		const { sets, pending: waiting } = scatterRuntime.scatterPhysicsSets(o);
+		pending ||= waiting;
+		o.updateWorldMatrix(true, false);
+		const descs = sets.length ? scatterBuild.terrainScatterDescs(RAPIER, sets, o.matrixWorld) : [];
+		if (!descs.length && !waiting) {
+			if (had) scatterBodies.delete(o.uuid);
+			return;
+		}
+		const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+		const sceneMaterial = get(scenePhysicsDefaults).material;
+		const groups = interactionGroups('default');
+		for (const desc of descs) {
+			if (sceneMaterial.friction != null) desc.setFriction(sceneMaterial.friction);
+			if (sceneMaterial.restitution != null) desc.setRestitution(sceneMaterial.restitution);
+			desc.setCollisionGroups(groups);
+			const collider = world.createCollider(desc, body);
+			// a hit reads as the TERRAIN (On Impact / impacts name the object the rock belongs to)
+			colliderOwner.set(collider.handle, { uuid: o.uuid, entry: null, sensor: false });
+		}
+		scatterBodies.set(o.uuid, { body, block, pending: waiting, count: descs.length });
+	});
+	for (const uuid of [...scatterBodies.keys()]) if (!live.has(uuid)) dropScatterBody(uuid);
+	if (pending && !scatterRetry)
+		scatterRetry = setTimeout(() => {
+			scatterRetry = null;
+			syncScatterColliders();
+		}, 500);
+}
+
+/** @param {string} uuid */
+function dropScatterBody(uuid) {
+	const had = scatterBodies.get(uuid);
+	if (!had) return;
+	scatterBodies.delete(uuid);
+	if (!world) return;
+	for (let i = 0; i < had.body.numColliders(); i++) colliderOwner.delete(had.body.collider(i).handle);
+	world.removeRigidBody(had.body);
 }
 
 /**
@@ -2020,6 +2097,9 @@ export function stopSimulation(opts = {}) {
 	fixedBodies = new Map();
 	fixedColliders = new Map();
 	fixedShapeKeys = new Map();
+	scatterBodies = new Map();
+	if (scatterRetry) clearTimeout(scatterRetry);
+	scatterRetry = null;
 	simulating.set(false);
 	simPaused.set(false);
 	if (peer) peer.send({ type: 'simulate', running: false, peerId: peer.peer.id });
@@ -2216,7 +2296,9 @@ export function physicsWorldDebug() {
 			shapeKey: fixedShapeKeys.get(uuid) ?? null
 		})),
 		beforeStates: beforeStates.length,
-		suspended: [...suspendedForRun]
+		suspended: [...suspendedForRun],
+		// 48 B1: per scattered terrain, how many static instance colliders this run built
+		scatter: [...scatterBodies].map(([uuid, e]) => ({ uuid, colliders: e.count, pending: e.pending }))
 	};
 }
 

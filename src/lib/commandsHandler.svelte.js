@@ -713,6 +713,11 @@ export async function objectParameters(data) {
         // runtime pulls three-heavy rendering code a plain session never needs
         const { applyRemoteTerrainParam } = await import('$lib/terrainSurface');
         await applyRemoteTerrainParam(data);
+    } else if (data.parameter == 'measure') {
+        // 48 B2: a measurement item's points (the record only; every peer redraws from it).
+        // DYNAMIC: measureItems registers a history kind
+        const { applyRemoteMeasure } = await import('$lib/measureItems');
+        applyRemoteMeasure(data);
     } else if (data.parameter == 'renderOrder') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.renderOrder = data.renderOrder;
@@ -1163,7 +1168,9 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
             // signature silently dropped — it is `opts` now, which is what a recursion
             // into a subtree of an arrival heal has to carry
             sendObject(conn, element, element.uuid, opts);
-        } else if (element.type.endsWith('Light')) {
+        } else if (element.type.endsWith('Light') || element.userData?.measure) {
+            // (48 B2: a measurement item is an empty node with its record in userData — toJSON
+            // carries it exactly, where the GLTF exporter would hand the receiver a bare node)
             element.getWorldPosition(test);
             groupuuid = element.parent.uuid
             // Send each object as a JSON object

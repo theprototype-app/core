@@ -7,9 +7,10 @@
 	import { nameOf } from '$lib/lockControl';
 	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
 	import { startSnapAnchorPick } from '$lib/snapEngine';
-	import { measureMode, toggleMeasure, pinnedMeasurements, clearMeasurements } from '$lib/measure';
+	import { measureMode, toggleMeasure } from '$lib/measure';
+	import { measurementItems, deleteAllMeasurements } from '$lib/measureItems'; // 48 B2
 	import { bookmarks, saveBookmark, recallBookmark, clearBookmarks, SHORTCUT_SLOTS } from '$lib/cameraBookmarks';
-	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject, selectedObjects, lockedObjects } from '../../stores/sceneStore';
+	import { showGrid, globalScene, globalCamera, globalRenderer, selectedObject, selectedObjects, lockedObjects, sceneRevision } from '../../stores/sceneStore';
 	import { viewportMenu, objectSearch, objectSearchEnabled, openSceneSection } from '../../stores/appStore';
 	import { buildAddChildren } from '$lib/addObjects';
 	import { buildObjectMenuItems } from '$lib/objectMenu';
@@ -100,6 +101,11 @@
 				.join(' ')
 		: '';
 
+	/** 48 B2: how many measurement items the scene holds (`_rev` = re-read on every scene change)
+	 * @param {number} _rev */
+	const countMeasurements = (_rev: number) => measurementItems().length;
+	$: measureCount = countMeasurements($sceneRevision);
+
 	$: hasSelection =
 		$selectedObjects.length > 0 ||
 		(!!$selectedObject?.uuid && $lockedObjects.some((lock: any) => lock[1] === $selectedObject.uuid));
@@ -185,16 +191,17 @@
 				{
 					label: $measureMode ? 'Stop measuring' : 'Measure distance',
 					checked: $measureMode,
-					tooltip: 'Click points (they snap to corners, edges and faces); Enter pins; Esc stops',
+					tooltip: 'Click points (they snap to corners, edges and faces); ✓ or Enter keeps the measurement in the scene; Esc cancels',
 					action: () => toggleMeasure()
 				},
-				// 47 M1: pinned dimensions stay on screen after the tool closes, so their way out is here
-				...($pinnedMeasurements.length
+				// 48 B2: measurements are scene items now (the object list holds each one); this
+				// removes every one of them at once, as ONE undo step
+				...(measureCount
 					? [
 							{
-								label: 'Clear measurements',
-								tooltip: 'Remove every pinned measurement (only you see them)',
-								action: () => clearMeasurements()
+								label: `Delete measurements (${measureCount})`,
+								tooltip: 'Delete every measurement in the scene for everyone — Ctrl+Z brings them back',
+								action: () => deleteAllMeasurements()
 							}
 						]
 					: []),

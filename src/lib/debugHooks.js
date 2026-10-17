@@ -106,6 +106,7 @@ export const DEBUG_HOOKS = [
 	['terrainPaint', () => import('./terrainPaint')],
 	['terrainSurface', () => import('./terrainSurface')],
 	['terrainPaintCore', () => import('./terrainPaintCore')],
+	['scatterColliders', () => import('./scatterColliders')],
 	['terrainScatterCore', () => import('./terrainScatterCore')],
 	['userModules', () => import('./userModules')],
 	['environment', () => import('./environment')],
@@ -273,6 +274,7 @@ export const DEBUG_HOOKS = [
 	// 47 M1/M2: the measure tool (chains, pins, snap pref) and its pure arithmetic
 	['measure', () => import('./measure')],
 	['measureCore', () => import('./measureCore')],
+	['measureItems', () => import('./measureItems')],
 	['meshPivot', () => import('./meshPivot')],
 	['selectionPrefs', () => import('./selectionPrefs')],
 	['editOverlays', () => import('./editOverlays')],

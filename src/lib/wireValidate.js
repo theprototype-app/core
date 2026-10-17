@@ -322,6 +322,9 @@ export const VALIDATORS = {
 		if (d.parameter === 'terrainLayers') return isUuid(d.uuid) && (d.terrainLayers === null || isArray(d.terrainLayers));
 		if (d.parameter === 'terrainScatter')
 			return isUuid(d.uuid) && (d.terrainScatter === null || (!!d.terrainScatter && typeof d.terrainScatter === 'object' && isArray(d.terrainScatter.sets)));
+		// 48 B2: a measurement's record — null is not a record (an item is deleted, never emptied)
+		if (d.parameter === 'measure')
+			return isUuid(d.uuid) && !!d.measure && typeof d.measure === 'object' && isArray(d.measure.points) && d.measure.points.length <= 64;
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

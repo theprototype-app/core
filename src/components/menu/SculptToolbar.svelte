@@ -29,6 +29,7 @@
 		scatterScaleMax,
 		scatterRandomRotation,
 		scatterAlign,
+		scatterCollider,
 		scatterErase,
 		layersOf
 	} from '$lib/terrainPaint';
@@ -250,6 +251,22 @@
 					<Checkbox id="sculpt-scatter-align" label="Align to slope" checked={$scatterAlign} onchange={(v) => scatterAlign.set(!!v)} />
 					Align to slope
 				</label>
+			</div>
+			<!-- 48 B1: a NEW model's set starts with this collider (Properties ▸ Scatter edits a set's own) -->
+			<div class="tbx-row text-xs" title="The static collider a newly scattered model gets in a simulation — change an existing model's in Properties ▸ Scatter">
+				<span>Collider</span>
+				<ThemedSelect
+					id="sculpt-scatter-collider"
+					class="min-w-0 flex-1"
+					items={[
+						{ value: 'none', name: 'None' },
+						{ value: 'box', name: 'Box' },
+						{ value: 'sphere', name: 'Sphere' },
+						{ value: 'hull', name: 'Mesh hull' }
+					]}
+					value={$scatterCollider}
+					onchange={(v) => scatterCollider.set(v)}
+				/>
 			</div>
 		{/if}
 

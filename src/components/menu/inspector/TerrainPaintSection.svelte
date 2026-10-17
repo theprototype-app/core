@@ -13,7 +13,8 @@
 	import { sceneRevision } from '../../../stores/sceneStore';
 	import { layersOf, setTerrainLayers, clearTerrainPaint, editScatterSet } from '$lib/terrainPaint';
 	import { layerCoverage, base64ToBytes, decodeSplatBlock } from '$lib/terrainPaintCore';
-	import { normalizeScatter, MAX_INSTANCES } from '$lib/terrainScatterCore';
+	import { normalizeScatter, scatterColliderOf, MAX_INSTANCES } from '$lib/terrainScatterCore';
+	import ThemedSelect from '../../ui/ThemedSelect.svelte';
 
 	/** @type {{ object: any }} */
 	let { object } = $props();
@@ -67,6 +68,12 @@
 		const ts = await import('$lib/terrainSculpt');
 		if (ts.enterSculpt(uuid)) ts.sculptOp.set('scatter');
 	}
+	const COLLIDER_ITEMS = [
+		{ value: 'none', name: 'None' },
+		{ value: 'box', name: 'Box' },
+		{ value: 'sphere', name: 'Sphere' },
+		{ value: 'hull', name: 'Mesh hull' }
+	];
 	/** @param {any} s */
 	const setName = (s) => (s.source.kind === 'primitive' ? s.source.type : s.source.name || 'Library model');
 </script>
@@ -133,14 +140,28 @@
 	{#if scatter.length}
 		<div id="terrain-scatter-sets" class="flex flex-col gap-1">
 			{#each scatter as s (s.id)}
-				<div class="flex items-center gap-2 text-xs" data-scatter-set={s.id}>
-					<span class="min-w-0 flex-1 truncate" title={setName(s)}>{setName(s)}</span>
-					<span class="text-text-muted">{s.count}</span>
-					<label class="flex items-center gap-1">
-						<Checkbox label="Align to slope" checked={s.align} onchange={(/** @type {boolean} */ v) => editScatterSet(uuid, s.id, { align: !!v })} />
-						Align
-					</label>
-					<button class="ui-button-quiet" title="Remove every instance of this model" onclick={() => editScatterSet(uuid, s.id, null)}>Remove</button>
+				<div class="flex flex-col gap-1 text-xs" data-scatter-set={s.id}>
+					<div class="flex items-center gap-2">
+						<span class="min-w-0 flex-1 truncate" title={setName(s)}>{setName(s)}</span>
+						<span class="text-text-muted">{s.count}</span>
+						<label class="flex items-center gap-1">
+							<Checkbox label="Align to slope" checked={s.align} onchange={(/** @type {boolean} */ v) => editScatterSet(uuid, s.id, { align: !!v })} />
+							Align
+						</label>
+						<button class="ui-button-quiet" title="Remove every instance of this model" onclick={() => editScatterSet(uuid, s.id, null)}>Remove</button>
+					</div>
+					<!-- 48 B1: what a simulation gives each instance (static, built on every peer from this field) -->
+					<div class="flex items-center gap-2">
+						<span class="w-14 shrink-0 text-text-muted">Collider</span>
+						<ThemedSelect
+							id={`terrain-scatter-collider-${s.id}`}
+							class="min-w-0 flex-1"
+							title="The static collider every instance of this model gets while a simulation runs"
+							items={COLLIDER_ITEMS}
+							value={scatterColliderOf(s.collider)}
+							onchange={(/** @type {string} */ v) => editScatterSet(uuid, s.id, { collider: v })}
+						/>
+					</div>
 				</div>
 			{/each}
 		</div>

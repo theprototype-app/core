@@ -85,3 +85,46 @@ released version instead of drifting (it carried a stale 1.8.0 before 1.11.0).
   files confirm before loading a NEWER format int — older files always load
   silently. Bump `SESSION_FORMAT`/`MODULE_FORMAT` only when the shape actually
   changes incompatibly.
+
+## Rollback (48 O2): one step back, and when the integrator takes it
+
+**The command** (cloud repo, the deploy token in `.env.deploy`):
+
+```sh
+npm run rollback                     # the plan: what is live, what it would go back to
+npm run rollback -- --yes            # app (Pages production) AND the community Worker, then verify
+npm run rollback -- --yes --to=v1.38.0 --reason="1.39.0 proof red: J12"
+```
+
+The app goes back by RE-POINTING Cloudflare Pages production at the previous successful production
+deployment (no rebuild — the exact files that shipped then, live in seconds); the Worker goes back
+with `wrangler rollback` to its previous version. The script then reads
+`theprototype.pages.dev/version.json` and exits 4 unless the live app reports the target's version.
+`--pages-only` / `--worker-only` split it; `--to=<deployment id>` picks an exact build.
+Proven on a throwaway project and Worker (lane 48-ops evidence), never on production.
+
+**The integrator rule — automatic, then tell.** After a production deploy the integrator rolls back BY
+ITSELF, without asking, when either:
+
+1. the **production proof is red** on something the preview proof had green (A/B it against the
+   previous release first — a red that is red there too is not this release's), or
+2. the **error reports spike**: `npm run error-spike -- --release=X.Y.Z` (cloud) exits 3 — run it
+   ~1 h after the deploy and again before the lane closes. It compares reports per hour since the
+   release against the previous release's last week (rate > 3x and +6/h, a NEW error with 15+
+   reports, or crash/OOM/WebGL losses tripling). Too few reports yet = `wait`, not a pass.
+
+Then, in this order: `npm run rollback -- --yes --reason="…"`, confirm the verify line, write
+what happened at the top of the integrator's QUESTIONS file ("ROLLED BACK vX.Y.Z → vX.Y.(Z-1):
+why, the failing check or the spike table, the fix PR"), keep the tag (a rollback never deletes a
+tag or a GitHub Release — the next release supersedes it), and open the fix as a normal lane PR.
+Staff ▸ Errors shows the same numbers per release.
+
+**Migrations must stay readable by the previous release.** A rollback moves the app and the Worker,
+never PocketBase — so every `pb_migrations` / `pb_hooks` change shipped with release N must leave
+data that release N-1 still reads and writes correctly: add fields and collections (with defaults),
+never rename, retype or drop one in the same release that starts using the replacement; a removal
+waits for the release AFTER the one that stopped using it. Scene and project files follow the
+existing format-int rule (an older app confirms before opening a newer format), so a rollback
+never silently mangles a file saved by the newer release. A migration that cannot meet this rule
+says so in its PR, and the integrator writes "NO AUTO-ROLLBACK: <migration>" at the top of its
+QUESTIONS file before releasing — rolling that release back is then a manual decision.

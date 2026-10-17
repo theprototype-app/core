@@ -48,6 +48,7 @@
 	// 36-export: the export defaults (its own file; also the Publish / Export modal's Settings tab)
 	import ExportSettingsSection from './ExportSettingsSection.svelte';
 	import ImportSettingsSection from './ImportSettingsSection.svelte'; // 46 P2
+	import PrivacySettings from './settings/PrivacySettings.svelte'; // 48 O1
 	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
 	import AiSettings from './settings/AiSettings.svelte';
 	import ConnectionSettings from './settings/ConnectionSettings.svelte';
@@ -72,6 +73,9 @@
 	// 46 P2: Settings ▸ Import — the defaults for new imports (opened by a search or a deep link)
 	let importExpanded = false;
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'import')) importExpanded = true;
+	// 48 O1: Settings ▸ Privacy — the error-report switch (opened by a search or a deep link)
+	let privacyExpanded = false;
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'privacy')) privacyExpanded = true;
 	let sceneExpanded = false;
 	let explorerExpanded = false;
 	let connectionExpanded = false;
@@ -563,6 +567,10 @@
 				<AccordionItem bind:open={exportExpanded}>
 					{#snippet header()}Export{/snippet}
 					<Section variant="card" label="Defaults for the next export" badge="This device"><ExportSettingsSection /></Section>
+				</AccordionItem>
+				<AccordionItem bind:open={privacyExpanded}>
+					{#snippet header()}Privacy{/snippet}
+					<PrivacySettings />
 				</AccordionItem>
 				<AccordionItem bind:open={nodeTypesExpanded}>
 					{#snippet header()}Node types{/snippet}

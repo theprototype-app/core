@@ -50,6 +50,7 @@
   import { startDetailedProbe } from './lib/perf/detailed'
   import { startPerfLive } from './lib/perf/live'
   import { startPerfBeacon } from './lib/perf/beacon'
+  import { startErrorReports } from './lib/errorReports'
   import { startStaleModuleWatch } from './lib/staleModules'
   import { startLod } from './lib/lod'
   import { startLodGroups } from './lib/lodGroup'
@@ -183,6 +184,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // 27-B: FIRST, so a failure during the rest of this boot is already recorded.
     startDiagnostics()
     startWireErrors()
+    // 48 O1: anonymous error + crash reports (default on, Settings ▸ Privacy; inert without VITE_ERROR_REPORTS_URL)
+    startErrorReports()
     // 26-A: one rAF loop, ~2 samples a second. Started here rather than inside Scene so
     // it keeps measuring while the canvas is remounting — which is exactly when a
     // report about the app freezing tends to be written.

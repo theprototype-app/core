@@ -29,6 +29,7 @@ export const DEBUG_HOOKS = [
 	['perf', () => import('./perf/recorder')],
 	['perfDetailed', () => import('./perf/detailed')],
 	['perfBeacon', () => import('./perf/beacon')],
+	['errorReports', () => import('./errorReports')],
 	['staleModules', () => import('./staleModules')],
 	['perfMoment', () => import('./perf/moment')],
 	['problemReport', () => import('./problemReport')],

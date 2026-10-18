@@ -334,7 +334,10 @@ module.exports = (/** @type {string[]} */ parts) => {
 					if (full) await shot(P, `m11-${label}-right-${how}`);
 					await sidebar(P, { side: 'left', full, w: 300 });
 					r = await radii(P);
-					h.check(r.bl === 0 && r.br > 4, T + `M11: a left sidebar (${how}) → the bottom-LEFT corner square (${r.bl}/${r.br})`);
+					// 48 F5: an OPEN left column under the pinned bar starts below the logo's row (8a73b1c7) — the bar's
+					// corner does not meet it there, so it stays rounded; a pinned one reaches the bar
+					if (full) h.check(r.bl === 0 && r.br > 4, T + `M11: a left sidebar (${how}) → the bottom-LEFT corner square (${r.bl}/${r.br})`);
+					else h.check(r.bl > 4 && r.br > 4, T + `M11 (48 F5): an open left sidebar starts below the logo band → both corners rounded (${r.bl}/${r.br})`);
 				}
 				// the corner pixel: what is drawn just inside the bar's bottom-right corner is the bar, not the scene
 				await sidebar(P, { side: 'right', full: true, w: 300 });

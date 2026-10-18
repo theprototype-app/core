@@ -611,6 +611,8 @@
 							<NavRow id="about-link-source" label="Source code" href="https://github.com/theprototype-app/core" external />
 							<NavRow id="about-link-modules" label="Modules" href="https://github.com/theprototype-app/modules" external />
 							<NavRow id="about-link-docs" label="Docs" href="https://github.com/theprototype-app/docs" external />
+							<!-- 48 F3: generated at build time from the packages the app is built from (relative: an export carries it too) -->
+							<NavRow id="about-link-licences" label="Third-party licences" description="The open-source libraries in this app and their licences (libheif-js is LGPL-3.0)." href="third-party-notices.html" external />
 						</Section>
 						<Section variant="card" label="Danger zone">
 							<KitRow label="Clear saved session" description="Deletes the autosaved copy of your work on this device, so no restore is offered next time.">

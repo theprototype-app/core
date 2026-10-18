@@ -150,6 +150,17 @@ export function normalizeImportSettings(raw) {
 }
 
 /**
+ * 48 F4: is a model under BOTH import thresholds? Then no setting of this device and no asset override except
+ * `always` can optimize it (the thresholds are device-wide; an override only changes what an optimize DOES), so
+ * the import places it as parsed — without loading the optimizer or hashing the file to find its override.
+ * @param {{triangles: number, maxTextureSide: number}} facts
+ * @param {ImportSettings} settings
+ */
+export function underImportThresholds(facts, settings) {
+	return facts.triangles <= settings.triangleThreshold && facts.maxTextureSide <= settings.textureThreshold;
+}
+
+/**
  * Would an import of a model this heavy be optimized? `facts` are what a parse measured.
  * @param {{triangles: number, maxTextureSide: number}} facts
  * @param {ImportSettings} settings

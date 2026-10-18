@@ -30,8 +30,12 @@ import {
 	sameLook,
 	uniqueName,
 	cleanName,
-	capLibrary,
 	fieldsOf,
+	planBroadcast,
+	splitParts,
+	presetKey,
+	isPresetRef,
+	PRESET_MAX_PARTS,
 	LOOK_DEFAULTS
 } from './materialPresetsCore';
 import { proceduralMaps } from './materialPresetMaps';
@@ -295,9 +299,22 @@ export async function saveMaterialPreset(name, payload, opts = {}) {
 	if (!stored) return null;
 	stored.savedAt = Date.now();
 	await idbPut(MAT_PRESET_KEY + final, stored);
-	await loadMaterialPresets();
+	// 48 F2: the store takes the one record that changed — re-reading the whole library from IndexedDB
+	// (every record a few MB of data-URLs once CC0 materials are in it) is what made a save take seconds
+	putInStore(final, stored);
 	broadcastMaterialPresets();
 	return final;
+}
+
+/** 48 F2: replace / add one entry in the library store, in the order loadMaterialPresets keeps
+ * @param {string} name @param {any} payload @param {string} [dropName] an entry to remove (a rename's old name) */
+function putInStore(name, payload, dropName) {
+	materialPresets.update((list) => {
+		const next = list.filter((p) => p.name !== name && p.name !== dropName);
+		next.push({ name, payload });
+		next.sort((a, b) => (a.payload.savedAt ?? 0) - (b.payload.savedAt ?? 0) || a.name.localeCompare(b.name));
+		return next;
+	});
 }
 
 /** Snapshot an object's material and save it. @param {string} uuid @param {string} name */
@@ -323,7 +340,7 @@ export async function renameMaterialPreset(from, to) {
 	const payload = { ...entry.payload, label: clean };
 	await idbPut(MAT_PRESET_KEY + clean, payload);
 	await idbDelete(MAT_PRESET_KEY + from);
-	await loadMaterialPresets();
+	putInStore(clean, payload, from);
 	broadcastMaterialPresets();
 	return clean;
 }
@@ -331,7 +348,7 @@ export async function renameMaterialPreset(from, to) {
 /** @param {string} name */
 export async function deleteMaterialPreset(name) {
 	await idbDelete(MAT_PRESET_KEY + name);
-	await loadMaterialPresets();
+	materialPresets.update((list) => list.filter((p) => p.name !== name));
 	broadcastMaterialPresets();
 }
 
@@ -350,16 +367,46 @@ export async function importMaterialPreset(json) {
 }
 
 // ---- the library broadcast (the envpresets shape) --------------------------------------------
+// 48 F2: the list names every preset; a big one is a REFERENCE the receiver pulls once, in parts
+// (materialPresetsCore's planBroadcast). The sender keeps the JSON of its last plan to answer.
 
-/** the message carrying this peer's whole library (capped like the env library) */
+/** each payload's JSON, computed once per payload object (a broadcast follows every save) */
+const jsonOf = new WeakMap();
+/** @param {any} p */
+function stringifyPreset(p) {
+	let s = jsonOf.get(p);
+	if (s === undefined) jsonOf.set(p, (s = JSON.stringify(p)));
+	return s;
+}
+/** each referenced payload's hash, once (hashing a few MB of data-URL costs ~20 ms a preset) */
+const keyCache = new WeakMap();
+/** @param {any} p @param {string} json */
+function keyOfPreset(p, json) {
+	let k = keyCache.get(p);
+	if (k === undefined) keyCache.set(p, (k = presetKey(json)));
+	return k;
+}
+/** wire payloads (no `savedAt`), one object per stored payload so the JSON cache holds */
+const wireOf = new WeakMap();
+/** @param {any} payload */
+function wirePayload(payload) {
+	let w = wireOf.get(payload);
+	if (!w) {
+		const { savedAt, ...rest } = payload;
+		wireOf.set(payload, (w = rest));
+	}
+	return w;
+}
+/** my referenced presets' JSON, by ref (the last plan) @type {Map<string, string>} */
+let outgoing = new Map();
+
+/** the message carrying this peer's whole library (small presets inline, big ones by reference) */
 export function materialPresetsState() {
 	/** @type {any} */
 	const peer = get(peers);
-	const presets = capLibrary(get(materialPresets).map((p) => {
-		const { savedAt, ...rest } = p.payload;
-		return rest;
-	}));
-	return { type: 'matpresets', from: peer?.peer?.id, presets };
+	const plan = planBroadcast(get(materialPresets).map((p) => wirePayload(p.payload)), { stringify: stringifyPreset, keyOf: keyOfPreset });
+	outgoing = plan.json;
+	return { type: 'matpresets', from: peer?.peer?.id, presets: plan.presets };
 }
 
 export function broadcastMaterialPresets() {
@@ -368,15 +415,120 @@ export function broadcastMaterialPresets() {
 	if (peer) peer.send(materialPresetsState());
 }
 
+/** each peer's list as it arrived (inline presets, normalised, and refs), in order @type {Map<string, any[]>} */
+const remoteOrder = new Map();
+/** referenced presets this device holds, by ref (bounded: the oldest go first) @type {Map<string, any>} */
+const refCache = new Map();
+const REF_CACHE_MAX = 48;
+/** reassembly buffers, by `from|ref` @type {Map<string, {n: number, parts: string[], got: number, at: number}>} */
+const incoming = new Map();
+/** asks in flight, by `from|ref` → when asked @type {Map<string, number>} */
+const asked = new Map();
+const PART_TIMEOUT_MS = 60_000;
+
+/** @param {string} peerId @param {any} payload */
+function sendTo(peerId, payload) {
+	/** @type {any} */
+	const peer = get(peers);
+	const conn = peer?.connections?.[peerId];
+	if (!conn?.open) return null;
+	conn.send(payload);
+	return conn;
+}
+
+/** a peer's swatch list = its arrived order with every resolved reference filled in @param {string} from */
+function rebuildPeer(from) {
+	const order = remoteOrder.get(from);
+	if (!order) return;
+	const list = order.map((it) => (isPresetRef(it) ? refCache.get(it.ref) ?? null : it)).filter(Boolean);
+	peerMaterialPresets.update((map) => ({ ...map, [from]: list.slice(0, 200) }));
+}
+
 /** receiver side: every entry is re-validated (a peer's bytes are never trusted) @param {any} data */
 export function applyRemoteMaterialPresets(data) {
 	if (!data?.from || typeof data.from !== 'string') return;
-	const list = Array.isArray(data.presets) ? data.presets.map(normalizePreset).filter(Boolean) : [];
-	peerMaterialPresets.update((map) => ({ ...map, [data.from]: list.slice(0, 200) }));
+	const from = data.from;
+	const items = (Array.isArray(data.presets) ? data.presets : [])
+		.slice(0, 200)
+		.map((/** @type {any} */ it) => (isPresetRef(it) ? { ref: it.ref, label: String(it.label ?? '') } : normalizePreset(it)))
+		.filter(Boolean);
+	remoteOrder.set(from, items);
+	rebuildPeer(from);
+	const now = Date.now();
+	for (const it of items) {
+		if (!isPresetRef(it) || refCache.has(it.ref)) continue;
+		const k = from + '|' + it.ref;
+		if (now - (asked.get(k) ?? -Infinity) < PART_TIMEOUT_MS) continue;
+		asked.set(k, now);
+		sendTo(from, { type: 'getmatpreset', ref: it.ref });
+	}
+}
+
+/** wait for a channel's send buffer to drain (the assetShare rule) @param {any} conn */
+async function pace(conn) {
+	const ch = conn?.dataChannel;
+	if (!ch || typeof ch.bufferedAmount !== 'number') return;
+	for (let i = 0; i < 600 && ch.bufferedAmount > 1_000_000; i++) await new Promise((r) => setTimeout(r, 25));
+}
+
+/** sender side: a peer asked for one of my referenced presets — send it in parts @param {any} data @param {string} peerId */
+export async function answerMaterialPresetRequest(data, peerId) {
+	const ref = typeof data?.ref === 'string' ? data.ref : '';
+	if (!outgoing.has(ref)) materialPresetsState(); // a save since the last plan: re-plan before refusing
+	const json = outgoing.get(ref);
+	if (!json) return;
+	/** @type {any} */
+	const me = get(peers)?.peer?.id;
+	const parts = splitParts(json);
+	for (let i = 0; i < parts.length; i++) {
+		/** @type {any} */
+		const conn = get(peers)?.connections?.[peerId];
+		if (!conn?.open) return;
+		await pace(conn);
+		conn.send({ type: 'matpresetpart', from: me, ref, i, n: parts.length, data: parts[i] });
+	}
+}
+
+/** receiver side: one part of a referenced preset; the last one reassembles, checks and files it @param {any} data */
+export function applyMaterialPresetPart(data) {
+	const from = typeof data?.from === 'string' ? data.from : '';
+	const ref = typeof data?.ref === 'string' ? data.ref : '';
+	const n = Number(data?.n);
+	const i = Number(data?.i);
+	if (!from || !ref || !Number.isInteger(n) || !Number.isInteger(i) || n < 1 || n > PRESET_MAX_PARTS || i < 0 || i >= n || typeof data.data !== 'string') return;
+	const now = Date.now();
+	for (const [k, buf] of incoming) if (now - buf.at > PART_TIMEOUT_MS) incoming.delete(k); // a stalled transfer is reaped
+	const k = from + '|' + ref;
+	let buf = incoming.get(k);
+	if (!buf || buf.n !== n) incoming.set(k, (buf = { n, parts: new Array(n), got: 0, at: now }));
+	if (buf.parts[i] === undefined) buf.got++;
+	buf.parts[i] = data.data;
+	buf.at = now;
+	if (buf.got < n) return;
+	incoming.delete(k);
+	asked.delete(k);
+	const json = buf.parts.join('');
+	if (presetKey(json) !== ref) return; // torn or tampered: the next list asks again
+	let preset = null;
+	try {
+		preset = normalizePreset(JSON.parse(json));
+	} catch {
+		preset = null;
+	}
+	if (!preset) return;
+	refCache.set(ref, preset);
+	while (refCache.size > REF_CACHE_MAX) refCache.delete(/** @type {string} */ (refCache.keys().next().value));
+	for (const [peerId, order] of remoteOrder) if (order.some((it) => it.ref === ref)) rebuildPeer(peerId);
 }
 
 /** drop a disconnected peer's library @param {string} peerId */
 export function dropPeerMaterialPresets(peerId) {
+	remoteOrder.delete(peerId);
+	for (const k of [...incoming.keys(), ...asked.keys()]) {
+		if (!k.startsWith(peerId + '|')) continue;
+		incoming.delete(k);
+		asked.delete(k);
+	}
 	peerMaterialPresets.update((map) => {
 		if (!(peerId in map)) return map;
 		const next = { ...map };

@@ -1,6 +1,8 @@
 // 41 G23 + G1: the bottom toolbar's layout model ($lib/toolbarLayout.js, imports nothing).
 import { describe, it, expect } from 'vitest';
 import {
+	normalizeClusters,
+	CLUSTERS,
 	PLAY,
 	SIDE_MAX,
 	defaultLayout,
@@ -405,5 +407,18 @@ describe('43 K3: the Connect pill in the record', () => {
 		expect(off.connect).toBe(false);
 		expect(fromPlacements(off, placements(off)).connect).toBe(false);
 		expect(fromPlacements(off, { ...placements(off), connect: true }).connect).toBe(true);
+	});
+});
+
+describe('48 F1: the budget chip is a cluster', () => {
+	it('places and hides like the others, never rotates, and survives a record round trip', () => {
+		expect(CLUSTERS).toContain('budget');
+		const c = normalizeClusters({ budget: { x: 0.25, y: 1.4, rotated: true, hidden: true }, nonsense: { x: 1, y: 1 } });
+		expect(c.budget).toEqual({ x: 0.25, y: 1, a: 'bottom-left', hidden: true });
+		expect(c.nonsense).toBeUndefined();
+		expect(normalizeClusters({ budget: { rotated: true } }).budget).toBeUndefined();
+		const rec = reload({ ...defaultLayout(CFG), clusters: { budget: { x: 0.5, y: 0.9 } } });
+		expect(rec.clusters?.budget?.x).toBe(0.5);
+		expect(fromPlacements(rec, placements(rec)).clusters?.budget?.y).toBe(0.9);
 	});
 });

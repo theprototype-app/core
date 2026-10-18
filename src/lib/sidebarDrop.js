@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { sidebarTabs, sidebarVisible } from './sidebars';
 import { canDockFloating, bottomInset } from './bottomDock';
-import { dockStripTarget, inBottomBand, overEmptyDock, showDockCaret } from './bottomDockDrop';
+import { dockStripTarget, dockPaneAt, inBottomBand, overEmptyDock, showDockCaret } from './bottomDockDrop';
 
 // 43 J4 — ONE DROP-TARGET MODEL for a panel on the move: a SIDEBAR TAB dragged out of its strip
 // and a FLOATING WINDOW dragged by its header ask the same question here — where would this land —
@@ -25,7 +25,7 @@ import { dockStripTarget, inBottomBand, overEmptyDock, showDockCaret } from './b
 // the CALLERS act (SidebarStrips moves a tab, docking.js docks a dragged window).
 
 /** @typedef {'left'|'right'} Side */
-/** @typedef {{kind: 'side', side: Side, tab: boolean} | {kind: 'dock', strip: ReturnType<typeof dockStripTarget>} | {kind: 'float', x: number, y: number, w: number, h: number}} DropTarget */
+/** @typedef {{kind: 'side', side: Side, tab: boolean} | {kind: 'dock', strip: ReturnType<typeof dockStripTarget>, pane?: ReturnType<typeof dockPaneAt>} | {kind: 'float', x: number, y: number, w: number, h: number}} DropTarget */
 
 /** px from a screen edge that counts as reaching for that side (docking.js's reach) */
 export const EDGE = 44;
@@ -103,6 +103,10 @@ export function windowDropTarget({ x, y, key, canDock, canSide }) {
 	if (canDock) {
 		const strip = dockStripTarget(x, y);
 		if (strip) return { kind: 'dock', strip };
+		// 48 F5: over a PANE of the split on screen, the window goes INTO that pane (an unsplit dock's body stays
+		// a place a window can pass over, 41 G7)
+		const pane = dockPaneAt(x, y);
+		if (pane) return { kind: 'dock', strip: null, pane };
 		// 44 M5: the EMPTY dock's body takes a drop like the edge band
 		if (inBottomBand(y) || overEmptyDock(x, y)) return { kind: 'dock', strip: null };
 	}
@@ -174,6 +178,16 @@ export function showDropTarget(target, opts = {}) {
 	}
 	delete z.dataset.side;
 	delete z.dataset.tab;
+	if (target.kind === 'dock' && target.pane) {
+		// 48 F5: the pane the window would show in
+		const r = target.pane.rect;
+		s.left = r.x + 'px';
+		s.top = r.y + 'px';
+		s.width = r.w + 'px';
+		s.height = r.h + 'px';
+		label(z, opts.label ?? 'Show in this pane', opts.hint);
+		return;
+	}
 	if (target.kind === 'dock') {
 		s.left = 'var(--sb-dock-left, 0px)';
 		s.right = 'var(--sb-dock-right, 0px)';

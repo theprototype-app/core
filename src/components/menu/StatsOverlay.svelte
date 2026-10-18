@@ -15,6 +15,7 @@
 	import { dragWindow } from '$lib/dragWindow';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { focusStack } from '$lib/windowFocus';
+	import { tabbable } from '$lib/windowTabs'; // 48 F5: Statistics joins tab groups (Group with…, header merge)
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		statsOpen,
@@ -103,6 +104,7 @@
 		use:dragWindow={{ key: 'statsWindow', defaultRect: { left: 120, top: 120 }, resizable: true }}
 		use:bottomDockable={{ key: 'stats' }}
 		use:focusStack={'stats'}
+		use:tabbable={{ key: 'stats', title: 'Statistics', openStore: statsOpen, isOpen: (v) => !!v, close: () => statsOpen.set(false) }}
 		style="z-index: var(--z-window); width: 380px; height: 460px"
 	>
 		<div class="ui-panel-header move-handle flex shrink-0 cursor-move select-none items-center gap-2 py-1.5">

@@ -43,6 +43,7 @@
 	import { dockTabs, dockStripTabs, bottomDockActive, activateDock, dockMinimized, reorderStripTabs, armDockMode, undockButtonMode, setDockEmptyOpen, dockSplitView, splitWithNext, unsplitDock, setSplitPane, visibleDockKey } from '$lib/bottomDock';
 	import { dockAddMenuAt, dockTabItems, closeDockView, undockFromDock, undockInto, canUndockTab, moveToSidebar } from '$lib/dockMenu';
 	import { sideAt, sideOpen, showDropTarget } from '$lib/sidebarDrop';
+	import { dockPaneAt } from '$lib/bottomDockDrop'; // 48 F5
 	import { canDockFloating, DOCK_TITLES } from '$lib/bottomDock';
 	import { windowAt, nodeOf } from '$lib/windowTabs';
 	import { phoneShell } from '$lib/ui/phoneShell.js';
@@ -101,12 +102,7 @@
 	/** the split pane under a point (a tab dragged out of the strip lands IN it), or null
 	 * @param {number} x @param {number} y @returns {{pair: string, pane: 'a'|'b'}|null} */
 	function paneAt(x, y) {
-		const split = $dockSplitView;
-		if (!split) return null;
-		const el = document.elementsFromPoint(x, y).find((n) => n.closest?.('[data-dock-pane], [data-pd-host-pane]'));
-		const host = /** @type {HTMLElement|undefined} */ (el?.closest?.('[data-dock-pane], [data-pd-host-pane]'));
-		const pane = host?.getAttribute('data-dock-pane') || host?.getAttribute('data-pd-host-pane');
-		return pane === 'a' || pane === 'b' ? { pair: split.a, pane } : null;
+		return dockPaneAt(x, y); // 48 F5: the one pane hit test, shared with a floating window's drop
 	}
 	/** 44 M9: the pane a drag released out of the strip would go INTO */
 	let paneKey = /** @type {{pair: string, pane: 'a'|'b'}|null} */ (null);

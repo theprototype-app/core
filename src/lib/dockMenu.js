@@ -590,6 +590,20 @@ export function dockTab(key) {
 }
 
 /**
+ * 48 F5 — a floating window dropped onto a PANE of the split on screen docks and shows IN that pane — the
+ * rule a tab dragged onto a pane already follows (setSplitPane: the view it replaces stays docked as a tab).
+ * @param {string} key @param {{pair: string, pane: 'a'|'b'}} pane
+ * @returns {boolean} whether it docked
+ */
+export function dockIntoPane(key, pane) {
+	if (!canDockHere(key)) return false;
+	dockView(key);
+	setSplitPane(pane.pair, pane.pane, key);
+	activateDock(key);
+	return true;
+}
+
+/**
  * 41 G7 — floating window(s) dropped on the docked tab strip: they dock at the caret
  * (before `before`, or at the end of the present tabs), the first one shown. Views with
  * no docked mode are skipped (they stay floating).

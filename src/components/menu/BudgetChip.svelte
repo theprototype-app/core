@@ -13,10 +13,19 @@
 	//
 	// Hidden in Play (it lives in #editor-chrome, which Play hides) and on the phone shell, whose bar
 	// has no room for it — there it is the `budget` item in More (PhoneShell), placeable on the bar.
+	//
+	// 48 F1: a CLUSTER of Controls' Edit positions (`budget` in $lib/toolbarLayout). PLACED (dragged
+	// there in Edit positions, or Move from its menu) it is drawn where Controls' layoutClusters puts
+	// it (`:root.cl-budget-placed` + --cl-budget-x/y, the Connect pill's shape) and nothing is
+	// measured; UNPLACED it keeps today's measured spot. HIDDEN (its "−" in Edit positions, the
+	// Customize switch) it is gone outside Edit positions and faint inside it. The measured spot
+	// FREEZES while a menu is open: a ContextMenu's full-screen backdrop sat over the spot, so the
+	// 1 s re-check read "covered" and the chip vanished the moment its own chevron was pressed.
 	import { onMount } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import { phoneShell } from '$lib/ui/phoneShell.js';
+	import { toolbarSlots } from '$lib/toolbarSlots.js';
 	import { budgetTarget, sceneCost, TARGETS, verdictFor, startBudgetMeter, openBudget, setBudgetTarget } from '$lib/budgetMeter';
 	import { TARGET_IDS, formatMetric } from '$lib/budgetMeterCore';
 
@@ -36,8 +45,15 @@
 	/** why the chip is not drawn ('' = drawn) — the suite reads it off data-room */
 	let room = $state('measuring');
 	let menu = $state(/** @type {{x: number, y: number} | null} */ (null));
+	/** 48 F1: the person put it somewhere in Edit positions (Controls draws it there, nothing to measure) */
+	const placed = $derived.by(() => {
+		const c = $toolbarSlots.clusters?.budget;
+		return !!c && typeof c.x === 'number' && typeof c.y === 'number' && !c.hidden;
+	});
 
 	const GAP = 8;
+	/** 48 F1: in Edit positions the bar wears its round ✓ 18 px past its top-right corner — clear it */
+	const EDIT_GAP = 26;
 	const MARGIN = 8;
 
 	/** is every sample point of this rect over the 3D view (nothing of the chrome under it)?
@@ -47,7 +63,8 @@
 		const ys = [y + 2, y + h / 2, y + h - 2];
 		for (const px of xs)
 			for (const py of ys) {
-				const hit = document.elementsFromPoint(px, py).find((el) => !wrap?.contains(el));
+				// 48 F1: its own Edit positions outline, the grips and guide lines are edit chrome, not a wall
+				const hit = document.elementsFromPoint(px, py).find((el) => !wrap?.contains(el) && !el.closest('#budget-edit, #cluster-grips, .cl-guide'));
 				if (!hit || hit.tagName !== 'CANVAS') return false;
 			}
 		return true;
@@ -55,6 +72,13 @@
 
 	function place() {
 		if (!wrap) return;
+		// 48 F1: a placed chip is drawn where it was put — nothing to measure
+		if (placed) {
+			room = 'placed';
+			return;
+		}
+		// 48 F1: a menu (its own chevron menu, or any other) is over the spot for a moment: keep the spot
+		if (menu || document.querySelector('[role="menu"]')) return;
 		const pill = document.getElementById('controls-pill');
 		const p = pill?.getBoundingClientRect();
 		if (!pill || !p || p.width === 0 || p.height === 0 || getComputedStyle(pill).visibility === 'hidden') {
@@ -66,11 +90,12 @@
 		const h = wrap.offsetHeight;
 		if (!w || !h) return;
 		const midY = p.top + (p.height - h) / 2;
+		const gap = $toolbarSlots.editing ? EDIT_GAP : GAP;
 		const spots = [
-			{ x: p.right + GAP, y: midY, at: 'right' },
+			{ x: p.right + gap, y: midY, at: 'right' },
 			{ x: p.left - GAP - w, y: midY, at: 'left' },
-			{ x: p.right - w, y: p.top - GAP - h, at: 'above' },
-			{ x: p.left, y: p.top - GAP - h, at: 'above' }
+			{ x: p.right - w, y: p.top - gap - h, at: 'above' },
+			{ x: p.left, y: p.top - gap - h, at: 'above' }
 		];
 		const vw = window.innerWidth;
 		const vh = window.innerHeight;
@@ -137,6 +162,10 @@
 	$effect(() => {
 		void verdict.percent;
 		void target.short;
+		// 48 F1: + placed / unplaced, and a menu closing (the frozen spot is re-checked at once)
+		void placed;
+		void menu;
+		void $toolbarSlots.editing;
 		schedule();
 	});
 
@@ -166,7 +195,7 @@
 		bind:this={wrap}
 		id="budget-chip-wrap"
 		class="tp-ui hud-glass budget-chip"
-		class:bc-hidden={!pos || !ready}
+		class:bc-hidden={(!pos && !placed) || !ready}
 		data-tier={verdict.tier}
 		data-target={$budgetTarget}
 		data-room={room}
@@ -198,6 +227,19 @@
 		border-radius: 9999px;
 		font-size: var(--fs-desc);
 		white-space: nowrap;
+	}
+	/* 48 F1: PLACED in Edit positions — drawn where Controls' layoutClusters put it (also while a drag carries it);
+	   !important beats the measured inline left / top */
+	:global(:root.cl-budget-placed) .budget-chip {
+		left: var(--cl-budget-x) !important;
+		top: var(--cl-budget-y) !important;
+	}
+	/* 48 F1: hidden — gone outside Edit positions, a faint placeholder inside it (its menu / "+" shows it again) */
+	:global(:root:not(.hud-edit-on).cl-budget-hidden) .budget-chip {
+		display: none;
+	}
+	:global(:root.hud-edit-on.cl-budget-hidden) .budget-chip {
+		opacity: 0.35;
 	}
 	/* measured while invisible (it needs a size to be placed); never a hit target until placed */
 	.bc-hidden {

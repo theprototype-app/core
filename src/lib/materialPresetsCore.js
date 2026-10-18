@@ -32,6 +32,78 @@ export const MAT_PRESET_KEY = 'matpreset:';
 /** a library broadcast is capped like the env library's (bytes of JSON, roughly) */
 export const MAT_PRESETS_BROADCAST_CAP = 2_000_000;
 
+// 48 F2 — A PRESET OVER THE CAP STILL REACHES THE PEER. The library message used to drop whole
+// presets from its end until the JSON fit the cap, so a CC0 material (two 2k JPEG data-URLs, 3-6 MB)
+// never appeared in a peer's swatch list. Now the list names EVERY preset: the small ones inline, a
+// big one as a REFERENCE `{ref, label, size}` the receiver pulls once (`getmatpreset`) and the sender
+// answers in PARTS (`matpresetpart`, paced on the channel's buffer). The ref is a hash of the
+// preset's JSON, so a peer that already holds those bytes never asks again, a re-broadcast after
+// every save re-sends nothing big, and the reassembled JSON is checked against it.
+
+/** a preset whose JSON is longer than this travels by reference (characters) */
+export const PRESET_INLINE_MAX = 200_000;
+/** one part of a referenced preset (characters of its JSON) */
+export const PRESET_PART_CHARS = 240_000;
+/** a referenced preset may be at most this many parts (~60 MB of JSON) */
+export const PRESET_MAX_PARTS = 256;
+
+/**
+ * cyrb53 — a fast 53-bit string hash (no crypto: an integrity check and a cache key, not a secret).
+ * @param {string} str @returns {string} 14 hex characters
+ */
+export function presetKey(str) {
+	let h1 = 0xdeadbeef;
+	let h2 = 0x41c6ce57;
+	for (let i = 0; i < str.length; i++) {
+		const ch = str.charCodeAt(i);
+		h1 = Math.imul(h1 ^ ch, 2654435761);
+		h2 = Math.imul(h2 ^ ch, 1597334677);
+	}
+	h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+	h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+	return (h2 & 0x1fffff).toString(16).padStart(6, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * The library message's list: every preset, in order — inline while it is small and the inline
+ * total stays under the cap, else a reference. `json` maps each ref to the JSON it stands for.
+ * @param {any[]} list payloads (already without `savedAt`)
+ * @param {{cap?: number, inlineMax?: number, stringify?: (p: any) => string, keyOf?: (p: any, json: string) => string}} [opts]
+ * @returns {{presets: any[], json: Map<string, string>}}
+ */
+export function planBroadcast(list, opts = {}) {
+	const cap = opts.cap ?? MAT_PRESETS_BROADCAST_CAP;
+	const inlineMax = opts.inlineMax ?? PRESET_INLINE_MAX;
+	const stringify = opts.stringify ?? ((p) => JSON.stringify(p));
+	const keyOf = opts.keyOf ?? ((_p, json) => presetKey(json));
+	/** @type {any[]} */
+	const presets = [];
+	const json = new Map();
+	let total = 2;
+	for (const p of list) {
+		const s = stringify(p);
+		if (s.length <= inlineMax && total + s.length + 1 <= cap) {
+			presets.push(p);
+			total += s.length + 1;
+			continue;
+		}
+		const key = keyOf(p, s);
+		json.set(key, s);
+		presets.push({ ref: key, label: p.label, size: s.length });
+	}
+	return { presets, json };
+}
+
+/** @param {string} s @param {number} [size] @returns {string[]} */
+export function splitParts(s, size = PRESET_PART_CHARS) {
+	const out = [];
+	for (let i = 0; i < s.length; i += size) out.push(s.slice(i, i + size));
+	return out.length ? out : [''];
+}
+
+/** a list entry that names a preset by reference @param {any} item */
+export const isPresetRef = (item) => !!item && typeof item.ref === 'string' && /^[0-9a-f]{14}$/.test(item.ref);
+
 /** longest name we keep — a swatch label, not a paragraph */
 export const NAME_MAX = 40;
 
@@ -426,16 +498,6 @@ export function uniqueName(name, taken) {
 		if (!set.has(candidate.toLowerCase())) return candidate;
 	}
 	return base;
-}
-
-/**
- * Cap a library for the wire: drop presets from the END until the JSON fits.
- * @param {any[]} list @param {number} [cap]
- */
-export function capLibrary(list, cap = MAT_PRESETS_BROADCAST_CAP) {
-	let out = list;
-	while (out.length && JSON.stringify(out).length > cap) out = out.slice(0, out.length - 1);
-	return out;
 }
 
 /** CSS for a swatch: a lit-sphere look from the numbers alone (no render, no WebGL).

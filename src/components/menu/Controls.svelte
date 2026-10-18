@@ -92,6 +92,7 @@
 		canPlace,
 		foldToFit,
 		CLUSTERS,
+		UNROTATED,
 		normalizeClusters
 	} from '$lib/toolbarLayout';
 	// 43 J8/J10: where the sidebars are (a pinned column bounds the bar; any open one bounds Edit positions)
@@ -1080,6 +1081,8 @@
 	/** 43 K3: the Connect pill (top centre) as an edit/menu id — shown or hidden, never moved */
 	const CONNECT = '__connect';
 	const CONNECT_LABEL = 'Connect bar';
+	/** 48 F1: the budget chip as a Customize row id */
+	const BUDGET = '__budget';
 	// 30 P1: `pressed` makes the cell a TOGGLE — it renders as a real <button> carrying
 	// aria-pressed (a <p> cannot: the attribute is not supported on its role)
 	const PIVOT_NAMES: Record<string, string> = { median: 'Median point', active: 'Active object', individual: 'Individual origins', parent: 'Parent origin' };
@@ -1754,7 +1757,7 @@
 	function onEditOutside(e: PointerEvent) {
 		if (!editing || editAddMenu || clusterMenu || clusterGrab.active()) return;
 		const t = e.target as Element | null;
-		if (t?.closest?.('#controls-pill, .hud-stack, #hud-tr, #touch-tools, #toolbar-edit-ghost, #connect-edit, [role="menu"], [data-cluster-grip], #cluster-move-hint, .connect-wrap')) return;
+		if (t?.closest?.('#controls-pill, .hud-stack, #hud-tr, #touch-tools, #toolbar-edit-ghost, #connect-edit, [role="menu"], [data-cluster-grip], #cluster-move-hint, .connect-wrap, #budget-edit, #budget-chip-wrap')) return;
 		cancelEditPositions();
 	}
 
@@ -1973,7 +1976,8 @@
 		right: '#hud-stack-right',
 		touch: '#touch-tools',
 		top: '#hud-tr',
-		connect: '.connect-pill'
+		connect: '.connect-pill',
+		budget: '#budget-chip-wrap'
 	};
 	const CLUSTER_LABEL: Record<string, string> = {
 		bar: 'Toolbar',
@@ -1981,7 +1985,8 @@
 		right: 'Bottom-right buttons',
 		touch: 'Buttons beside the logo',
 		top: 'Top-right buttons',
-		connect: 'Connect bar'
+		connect: 'Connect bar',
+		budget: 'Budget chip'
 	};
 	/** a cluster's home orientation (rotation turns it 90° from this) */
 	const HOME_VERTICAL: Record<string, boolean> = { bar: false, left: true, right: true, touch: false, top: false };
@@ -2024,7 +2029,11 @@
 	}
 	const barPlaced = $derived(isPlaced('bar'));
 	function clusterEl(id: string) {
-		return typeof document === 'undefined' ? null : (document.querySelector(CLUSTER_SEL[id]) as HTMLElement | null);
+		if (typeof document === 'undefined') return null;
+		const el = document.querySelector(CLUSTER_SEL[id]) as HTMLElement | null;
+		// 48 F1: the budget chip keeps a box while it waits for a spot (it is measured invisible) — not drawn = not there
+		if (id === 'budget' && el?.classList.contains('bc-hidden')) return null;
+		return el;
 	}
 	const boxOf = (r: DOMRect): Box => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
 	function shown(el: Element | null) {
@@ -2333,13 +2342,13 @@
 			disabled: id === 'connect' && $connectPinned,
 			action: () => armClusterMove(id, lastMenuAt)
 		});
-		if (id !== 'connect')
+		if (!UNROTATED.includes(id))
 			items.push({
 				label: vertical ? 'Rotate to horizontal' : 'Rotate to vertical',
 				tooltip: vertical ? 'Lay its buttons out in a row' : 'Lay its buttons out in a column',
 				action: () => rotateCluster(id)
 			});
-		else
+		else if (id === 'connect')
 			items.push({
 				label: $connectPinned ? 'Float' : 'Pin to top row',
 				tooltip: $connectPinned ? 'Float the Connect bar — it goes compact when the top row is full' : 'Give the Connect bar its own row along the top',
@@ -2372,7 +2381,7 @@
 					? { label: 'Show cluster', tooltip: id === 'touch' ? 'Show these buttons beside the logo (Touch tools on)' : undefined, action: () => showCluster(id) }
 					: {
 							label: 'Hide cluster',
-							tooltip: id === 'bar' ? 'The toolbar holds Play — it cannot be hidden' : 'Hide these buttons (Show all brings them back)',
+							tooltip: id === 'bar' ? 'The toolbar holds Play — it cannot be hidden' : id === 'budget' ? 'Hide the budget chip (Customize toolbar… or Show all brings it back)' : 'Hide these buttons (Show all brings them back)',
 							disabled: id === 'bar',
 							action: () => hideCluster(id)
 						},
@@ -2457,6 +2466,8 @@
 		};
 		const onDown = (e: PointerEvent) => {
 			if ((e.button ?? 0) !== 0 || clusterGrab.active()) return;
+			// 48 F1: the budget chip's outline carries its own "−" / "+" — a press there is that button's
+			if ((e.target as Element | null)?.closest?.('.hud-edit-remove, .hud-edit-add')) return;
 			e.stopPropagation();
 			try {
 				node.releasePointerCapture?.(e.pointerId);
@@ -3101,6 +3112,15 @@
 				keepOpen: true,
 				tooltip: controlsLayout.connect !== false ? 'Hide the Connect bar at the top of the screen' : 'Show the Connect bar at the top of the screen',
 				action: () => setLayout({ connect: controlsLayout.connect === false })
+			},
+			// 48 F1: the budget chip beside the toolbar — shown or hidden (moved in Edit positions)
+			{
+				key: BUDGET,
+				label: 'Budget chip',
+				checked: !controlsLayout.clusters?.budget?.hidden,
+				keepOpen: true,
+				tooltip: controlsLayout.clusters?.budget?.hidden ? 'Show the scene budget chip beside the toolbar' : 'Hide the scene budget chip beside the toolbar',
+				action: () => setCluster('budget', { hidden: !controlsLayout.clusters?.budget?.hidden })
 			},
 			...(offBar.length || controlsLayout.more === false
 				? [
@@ -3910,6 +3930,26 @@
 			<button type="button" id="connect-edit-add" class="hud-cell hud-edit-add hud-edit-connect-add" title="Show the Connect bar" aria-label="Show the {CONNECT_LABEL}" use:onPress={() => editing && (editing = { ...editing, connect: true })}
 				><Icon name="plus" size={16} aria-hidden="true" /><span>Connect</span></button
 			>
+		{/if}
+	</div>
+{/if}
+
+{#if editing && !$phoneShell && clusterRects.budget}
+	<!-- 48 F1: the budget chip in Edit positions — an outline over it (a press there is part of the edit: drag it to move
+	     the chip, tap or right-click it for its menu) with a red "−" to hide it; hidden, it is faint with a green "+" -->
+	{@const b = clusterRects.budget}
+	{@const off = clusterHidden('budget')}
+	<div
+		id="budget-edit"
+		class="tp-ui hud-edit-item hud-edit-connect hud-edit-budget"
+		data-edit-wrap="budget"
+		style="left: {b.left}px; top: {b.top}px; width: {b.right - b.left}px; height: {b.bottom - b.top}px"
+		use:clusterGrip={'budget'}
+	>
+		{#if off}
+			<button type="button" id="budget-edit-add" class="hud-edit-remove hud-edit-add" tabindex="-1" title="Show the budget chip" aria-label="Show the budget chip" use:onPress={() => setCluster('budget', { hidden: false })}><Icon name="plus" size={16} aria-hidden="true" /></button>
+		{:else}
+			<button type="button" id="budget-edit-remove" class="hud-edit-remove" tabindex="-1" title="Hide the budget chip" aria-label="Hide the budget chip" use:onPress={() => setCluster('budget', { hidden: true })}><Icon name="minus" size={16} aria-hidden="true" /></button>
 		{/if}
 	</div>
 {/if}

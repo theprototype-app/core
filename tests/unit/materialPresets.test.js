@@ -6,7 +6,10 @@ import {
 	snapshotLook,
 	sameLook,
 	uniqueName,
-	capLibrary,
+	planBroadcast,
+	splitParts,
+	presetKey,
+	isPresetRef,
 	cleanName,
 	swatchBackground,
 	NAME_MAX
@@ -165,14 +168,39 @@ describe('names', () => {
 });
 
 describe('the library broadcast', () => {
-	it('capLibrary drops from the END until the JSON fits', () => {
-		const big = 'data:image/png;base64,' + 'A'.repeat(1000);
-		const list = Array.from({ length: 10 }, (_, i) => ({ label: 'p' + i, map: big }));
-		const capped = capLibrary(list, 3500);
-		expect(capped.length).toBeGreaterThan(0);
-		expect(capped.length).toBeLessThan(10);
-		expect(capped[0].label).toBe('p0');
-		expect(JSON.stringify(capped).length).toBeLessThanOrEqual(3500);
+	it('48 F2: every preset is listed, in order — small ones inline, big ones by reference', () => {
+		const big = 'data:image/jpeg;base64,' + 'A'.repeat(5000);
+		const list = Array.from({ length: 10 }, (_, i) => ({ label: 'p' + i, type: 'MeshStandardMaterial', map: i % 3 ? undefined : big }));
+		const plan = planBroadcast(list, { cap: 3500, inlineMax: 2000 });
+		expect(plan.presets.map((p) => p.label)).toEqual(list.map((p) => p.label));
+		const refs = plan.presets.filter(isPresetRef);
+		expect(refs.map((r) => r.label)).toEqual(['p0', 'p3', 'p6', 'p9']);
+		for (const r of refs) {
+			const json = plan.json.get(r.ref);
+			expect(json && presetKey(json)).toBe(r.ref);
+			expect(r.size).toBe(json?.length);
+		}
+		// the inline part stays under the cap
+		expect(JSON.stringify(plan.presets.filter((p) => !isPresetRef(p))).length).toBeLessThanOrEqual(3500);
+	});
+
+	it('48 F2: a past-the-cap inline run spills to references, never drops', () => {
+		const list = Array.from({ length: 30 }, (_, i) => ({ label: 'q' + i, type: 'MeshStandardMaterial', map: 'data:image/png;base64,' + 'B'.repeat(150) }));
+		const plan = planBroadcast(list, { cap: 2000 });
+		expect(plan.presets.length).toBe(30);
+		expect(plan.presets.some(isPresetRef)).toBe(true);
+		expect(plan.presets.findIndex(isPresetRef)).toBeGreaterThan(0);
+	});
+
+	it('48 F2: parts rejoin to the same JSON, and the key tells two payloads apart', () => {
+		const s = JSON.stringify({ label: 'x', map: 'data:' + 'C'.repeat(1234) });
+		const parts = splitParts(s, 100);
+		expect(parts.length).toBe(Math.ceil(s.length / 100));
+		expect(parts.join('')).toBe(s);
+		expect(presetKey(s)).toMatch(/^[0-9a-f]{14}$/);
+		expect(presetKey(s)).not.toBe(presetKey(s.replace('x', 'y')));
+		expect(isPresetRef({ ref: presetKey(s), label: 'x' })).toBe(true);
+		expect(isPresetRef({ ref: 'nothex!', label: 'x' })).toBe(false);
 	});
 
 	it('the wire validator takes a library and refuses a malformed one', () => {
@@ -180,6 +208,12 @@ describe('the library broadcast', () => {
 		expect(validateWireMessage({ type: 'matpresets', from: 'peer-a', presets: 'x' })).toBe(false);
 		expect(validateWireMessage({ type: 'matpresets', presets: [] })).toBe(false);
 		expect(validateWireMessage({ type: 'matpresets', from: 'a', presets: new Array(201).fill({}) })).toBe(false);
+		// 48 F2: the pull and its parts
+		expect(validateWireMessage({ type: 'getmatpreset', ref: '0123456789abcd' })).toBe(true);
+		expect(validateWireMessage({ type: 'getmatpreset', ref: 7 })).toBe(false);
+		expect(validateWireMessage({ type: 'matpresetpart', from: 'a', ref: 'r', i: 0, n: 2, data: 'xx' })).toBe(true);
+		expect(validateWireMessage({ type: 'matpresetpart', from: 'a', ref: 'r', i: 2, n: 2, data: 'xx' })).toBe(false);
+		expect(validateWireMessage({ type: 'matpresetpart', from: 'a', ref: 'r', i: 0, n: 999, data: 'xx' })).toBe(false);
 	});
 });
 

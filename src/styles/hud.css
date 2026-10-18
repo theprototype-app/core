@@ -645,6 +645,15 @@
 	border-radius: var(--radius-pill);
 	font: 500 var(--fs-body) var(--font-ui);
 }
+/* 48 F1: the budget chip in Edit positions — the same outline over the real chip (it takes the presses: a drag moves
+   the chip, a tap / right-click opens its menu) with the red "−"; hidden, the faint chip carries a green "+" */
+.hud-edit-budget {
+	border-radius: var(--radius-pill);
+	cursor: grab;
+}
+.hud-edit-budget .hud-edit-add {
+	background: var(--surface-1);
+}
 /* 44 M4: the armed Move toolbar's hint above the bar — with a Cancel (touch has no Escape) */
 .hud-move-hint {
 	display: inline-flex;

@@ -9,7 +9,7 @@
 	import { windowMenu, openWindowMenu } from '$lib/windowMenu';
 	import Icon from '../ui/Icon.svelte';
 	import { DOCK_ICONS, activateDock } from '$lib/bottomDock';
-	import { dockAllOf, dockTab, dockAtStrip, canDockHere, moveToSidebar } from '$lib/dockMenu';
+	import { dockAllOf, dockTab, dockAtStrip, dockIntoPane, canDockHere, moveToSidebar } from '$lib/dockMenu';
 	import { ghostWindows, clearStripFeedback, canSideHere } from '$lib/bottomDockDrop';
 	import { windowDropTarget, windowDropZoneId, showDropTarget } from '$lib/sidebarDrop';
 	import { placeFree, watchPlaceFree, placeFreeHint, showPlaceFreeChip } from '$lib/placeFree';
@@ -142,12 +142,17 @@
 		if (hit.strip) {
 			const n = dockAtStrip(members, hit.strip.before);
 			if (n && canDockHere(group.active)) activateDock(group.active);
+		} else if (hit.pane) {
+			// 48 F5: onto a pane of the split — the members dock, the active one shows in that pane
+			dockAllOf(members, group.active);
+			dockIntoPane(group.active, hit.pane);
 		} else dockAllOf(members, group.active);
 	}
 	/** a torn-out tab (one window) lands like an ungrouped window @param {string} key @param {any} hit */
 	function dockTornAt(key, hit) {
 		if (hit.kind === 'side') moveToSidebar(key, hit.side);
 		else if (hit.strip) dockAtStrip([key], hit.strip.before);
+		else if (hit.pane) dockIntoPane(key, hit.pane); // 48 F5
 		else dockTab(key);
 	}
 	/** @param {any} e */

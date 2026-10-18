@@ -5,7 +5,9 @@ import pkg from './package.json';
 // @ts-ignore -- no @types/node in this project (adding them shifts the svelte-check baseline)
 import { execSync } from 'node:child_process';
 // @ts-ignore -- same node-types caveat
-import { writeFileSync, readFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, rmSync } from 'node:fs';
+// @ts-ignore -- same node-types caveat
+import { createRequire } from 'node:module';
 
 // Version identity is baked at build time (V1): `npm version` in package.json is the
 // single source of truth, the sha comes from the checkout. vite `define` reaches dev,
@@ -122,6 +124,46 @@ function emitVersionJson(): Plugin {
 	};
 }
 
+// 48 F3: THE THIRD-PARTY LICENCE NOTICES PAGE (scripts/third-party-notices.cjs). Dev writes it into static/
+// (gitignored, the version.json way) so the dev server serves it; a BUILD emits it into the client output from the
+// lockfile + src's imports AND every package a client chunk really contains — a shipped library can never be
+// missing from it. Settings ▸ About links to it; an export carries it with the rest of build/.
+function thirdPartyNotices(): Plugin {
+	const notices = createRequire(import.meta.url)('./scripts/third-party-notices.cjs');
+	let isBuild = false;
+	return {
+		name: 'third-party-notices',
+		configResolved(config) {
+			isBuild = config.command === 'build';
+			// a dev run's copy in static/ would collide with the emitted one
+			if (isBuild) for (const f of ['html', 'json']) rmSync('static/third-party-notices.' + f, { force: true });
+		},
+		buildStart() {
+			if (isBuild) return;
+			try {
+				notices.writeNotices('static', { version: pkg.version });
+			} catch (e) {
+				console.warn('third-party notices: not written —', (e as Error)?.message);
+			}
+		},
+		generateBundle(_opts, bundle) {
+			const env = (this as any).environment;
+			if (!isBuild || (env && env.config?.consumer !== 'client')) return;
+			const extra = new Set<string>();
+			for (const out of Object.values(bundle) as any[]) {
+				if (out.type !== 'chunk') continue;
+				for (const id of out.moduleIds ?? Object.keys(out.modules ?? {})) {
+					const m = /.*\/node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(String(id).replace(/\\/g, '/'));
+					if (m) extra.add(m[1]);
+				}
+			}
+			const list = notices.collectNotices({ extra });
+			this.emitFile({ type: 'asset', fileName: 'third-party-notices.html', source: notices.renderHtml(list, { version: pkg.version }) });
+			this.emitFile({ type: 'asset', fileName: 'third-party-notices.json', source: JSON.stringify(list.map(({ text, ...rest }: any) => ({ ...rest, hasText: !!text }))) });
+		}
+	};
+}
+
 export default defineConfig({
 	define: {
 		__APP_VERSION__: JSON.stringify(pkg.version),
@@ -135,6 +177,7 @@ export default defineConfig({
 			tailwindcss(),
 			devAssetProxy(),
 			emitVersionJson(),
+			thirdPartyNotices(),
 			sveltekit()
 		],
 		// the transform above only reaches @shaderfrog/core if it is served as SOURCE:

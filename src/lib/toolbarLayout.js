@@ -42,6 +42,8 @@
 //                nearest of the nine anchors, for reading — plus `rotated` (turned 90° from its home orientation:
 //                the bar and the two rows go vertical, the corner stacks horizontal; never the Connect pill) and
 //                `hidden` (never the bar: Play lives there). Absent = at home, as before. See $lib/clusterPlace.
+//                48 F1: the budget chip is a cluster too (`budget`) — placed = drawn where put, unplaced = its
+//                measured spot beside the bar; `hidden` = off (Edit positions' "−", Customize's switch); never rotated.
 //
 // 42 I9 — FIVE REGIONS, ONE RECORD. The bar and four STACKS (the two bottom corners, the
 // top-right group, the touch tools). A stack holds at most SIDE_MAX (four — the user's "if I
@@ -88,7 +90,9 @@ export const isHole = (id) => typeof id === 'string' && id.startsWith(HOLE + ':'
 /** @typedef {{ a?: string, x?: number, y?: number, rotated?: boolean, hidden?: boolean }} ClusterState */
 
 /** 44 M12b: the clusters a person can place, rotate and hide, in the order overlaps are settled */
-export const CLUSTERS = ['bar', 'left', 'right', 'touch', 'top', 'connect'];
+export const CLUSTERS = ['bar', 'left', 'right', 'touch', 'top', 'connect', 'budget'];
+/** 48 F1: the clusters that never turn 90° (the Connect pill, the budget chip) */
+export const UNROTATED = ['connect', 'budget'];
 /** the nine anchors, by the fraction along each axis */
 export function anchorOf(/** @type {number} */ x, /** @type {number} */ y) {
 	const h = x < 1 / 3 ? 'left' : x > 2 / 3 ? 'right' : 'center';
@@ -110,7 +114,7 @@ export function normalizeClusters(/** @type {unknown} */ raw) {
 			next.y = Math.round(clamp(c.y, 0, 1) * 10000) / 10000;
 			next.a = anchorOf(next.x, next.y);
 		}
-		if (c.rotated === true && id !== 'connect') next.rotated = true;
+		if (c.rotated === true && !UNROTATED.includes(id)) next.rotated = true;
 		if (c.hidden === true && id !== 'bar') next.hidden = true;
 		if (Object.keys(next).length) out[id] = next;
 	}

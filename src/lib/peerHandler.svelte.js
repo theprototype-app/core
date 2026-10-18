@@ -61,7 +61,7 @@ import { applyJointCreate, applyJointDelete, applyJointsSnapshot, sendJoints } f
 import { applyAnimData, applyAnimPlay, applyAnimationsSnapshot, sendAnimations } from '$lib/animationPreview';
 import { applyHandModel, handModelState, dropPeerHandModel } from '$lib/handModels';
 import { applyRemoteEnvironment, environmentState, envPresetsState, applyRemoteEnvPresets, dropPeerEnvPresets } from '$lib/environment';
-import { materialPresetsState, applyRemoteMaterialPresets, dropPeerMaterialPresets } from '$lib/materialPresets'; // 37 R5
+import { materialPresetsState, applyRemoteMaterialPresets, dropPeerMaterialPresets, answerMaterialPresetRequest, applyMaterialPresetPart } from '$lib/materialPresets'; // 37 R5, 48 F2
 import { applyRemoteMusic, musicState } from '$lib/sceneMusic';
 import { applyRemoteScenePhysics, scenePhysicsState } from '$lib/scenePhysics';
 // CO1: where the physical room's origin sits in content coords. The scenephysics
@@ -1052,6 +1052,10 @@ export class PeerConnection {
 					applyRemoteEnvPresets(data);
 				} else if(data.type == 'matpresets') {
 					applyRemoteMaterialPresets(data); // 37 R5: a person's material library
+				} else if(data.type == 'getmatpreset') {
+					answerMaterialPresetRequest(data, conn.peer); // 48 F2: a peer pulls one of my big presets
+				} else if(data.type == 'matpresetpart') {
+					applyMaterialPresetPart(data); // 48 F2: one part of a big preset
 				} else if(data.type == 'geometry') {
 					applyRemoteGeometry(data);
 				} else if(data.type == 'lighttarget') {

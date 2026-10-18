@@ -401,8 +401,11 @@
 	const compact = $derived(connState === 'connected' && !expanded && !$phoneShellActive);
 	/** 44 M11: pinned to the top row with a sidebar open below it, the bar's bottom corner on that side is SQUARE —
 	 *  a rounded one showed the viewport through the gap between the curve and the column's top edge */
-	const squareLeft = $derived(docked && !$phoneShellActive && $sidebarGeometry.wide && $sidebarGeometry.left.shown);
-	const squareRight = $derived(docked && !$phoneShellActive && $sidebarGeometry.wide && $sidebarGeometry.right.shown);
+	// 48 F5: …a column that REACHES UP to it. Under a pinned bar an open (unpinned) LEFT column starts below the logo's
+	// row (8a73b1c7), so the logo band sits between them and a square corner there hung over the band
+	const reachesBar = (col: { shown: unknown; top: number }) => !!col.shown && col.top <= $connectBarHeight + 8;
+	const squareLeft = $derived(docked && !$phoneShellActive && $sidebarGeometry.wide && reachesBar($sidebarGeometry.left));
+	const squareRight = $derived(docked && !$phoneShellActive && $sidebarGeometry.wide && reachesBar($sidebarGeometry.right));
 	/** 44 M14: the squeezed form is drawn (not while a peek shows the full bar, never on the phone shell) */
 	const squeezedView = $derived(squeezed && !peek && !$phoneShellActive);
 	/** up to three peers on the chip, the rest as +N (NOTES-38 #12: a speaker gets the ring) */

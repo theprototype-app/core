@@ -204,6 +204,9 @@ export const VALIDATORS = {
 	manifest: (d) => !!d.manifest && typeof d.manifest === 'object',
 	// 37 R5: a person's material-preset library; every entry is re-normalised on arrival
 	matpresets: (d) => typeof d.from === 'string' && isArray(d.presets) && d.presets.length <= 200,
+	// 48 F2: a pull of one referenced preset, and one part of the answer (re-checked by hash on reassembly)
+	getmatpreset: (d) => typeof d.ref === 'string' && d.ref.length <= 32,
+	matpresetpart: (d) => typeof d.from === 'string' && typeof d.ref === 'string' && Number.isInteger(d.i) && Number.isInteger(d.n) && d.n >= 1 && d.n <= 256 && d.i >= 0 && d.i < d.n && typeof d.data === 'string' && d.data.length <= 300_000,
 	environment: (d) => !!d && typeof d === 'object',
 	atscene: (d) => typeof d.peerId === 'string',
 	disconnected: (d) => typeof d.peerId === 'string',

@@ -26,13 +26,15 @@ import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
 import { stripEditOverlays } from '$lib/editOverlays';
 import { stampPackRef } from '$lib/packRefs';
-import { hashBytes } from '$lib/explorer';
+import { hashBytes, explorerItems, hiddenItems } from '$lib/explorer';
+import { importSettings } from './importSettings.js'; // 48 F4: the leaf (no optimizer)
+import { underImportThresholds } from './gltfOptimize/presets.js';
 import { saveFileBase } from '$lib/saveName';
 import { peers, fixLight, loadingFile, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { safeStorage } from './safeStorage';
 import { saveOptions } from './saveOptions';
 import { admitModel, verdictFor } from './importGate';
-import { reductionPlan } from './importBudget';
+import { reductionPlan, modelCost } from './importBudget';
 import { reduceModel, plannedTriangles, retainOriginal, originalOf, textureCapFor } from './decimate';
 import { shortCount } from './importBudget';
 
@@ -750,6 +752,24 @@ function defaultImportName(extension, name) {
 	return undefined;
 }
 
+/** 48 F4: the "not this one" of the optimize check (a model under the thresholds) */
+const SKIP_OPTIMIZE = Symbol('skip-optimize');
+/**
+ * 48 F4: does this import need the optimize check at all? A model under BOTH thresholds (Settings ▸ Import) is
+ * placed as parsed — the optimizer chunk (importOptimize + the engine and its worker) is never fetched and the
+ * file is never hashed — unless a Library asset carries an `always` override: only that can push a small model
+ * through, and which file it is takes the hash, so then the full check runs. Pack pieces, LOD rows and
+ * `noOptimize` never optimize either way.
+ * @param {any} parsed @param {any} opts
+ */
+function optimizeCheckNeeded(parsed, opts) {
+	if (opts?.packRef || opts?.lod || opts?.noOptimize) return false;
+	const root = parsed.animated ? parsed.animated.result?.scene : parsed.root;
+	const cost = modelCost(root);
+	if (!underImportThresholds({ triangles: cost.triangles, maxTextureSide: cost.maxTextureSize }, get(importSettings))) return true;
+	return [...get(explorerItems), ...get(hiddenItems)].some((/** @type {any} */ it) => it?.importSettings?.mode === 'always');
+}
+
 /**
  * Import a 3d file into the scene. GLB/GLTF, OBJ (+ .mtl when its companion file
  * comes along), STL and FBX (animated ones ride the raw-bytes path since 17-D2).
@@ -787,11 +807,12 @@ export async function importFile(file, name, ext, position, extras, opts = {}) {
 	/** @type {any} */
 	let optimized = null;
 	try {
+		if (!optimizeCheckNeeded(parsed, opts)) throw SKIP_OPTIMIZE;
 		const { maybeOptimizeImport } = await import('./importOptimize.js');
 		optimized = await maybeOptimizeImport(parsed, { file, extension, label: label ?? file?.name ?? 'Model', opts });
 		if (optimized) parsed = optimized.parsed;
 	} catch (error) {
-		console.error('Import optimize skipped:', error);
+		if (error !== SKIP_OPTIMIZE) console.error('Import optimize skipped:', error);
 	}
 	// 26-F phase 2: `opts.reduce` asks for the reduced import directly (true = aim at the
 	// budget the verdict names, or an explicit plan). Phase 3 routes the dialog's own

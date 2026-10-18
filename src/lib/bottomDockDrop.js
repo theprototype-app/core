@@ -1,7 +1,8 @@
 import { isHeaderDrag } from './windowGrip';
-import { armDockMode, activateDock, canDockFloating } from './bottomDock';
+import { get } from 'svelte/store';
+import { armDockMode, activateDock, canDockFloating, dockSplitView } from './bottomDock';
 import { groupOfKey, headerTargetAt } from './windowTabs';
-import { dockAtStrip, canDockHere, moveToSidebar, canMoveToSidebar } from './dockMenu';
+import { dockAtStrip, dockIntoPane, canDockHere, moveToSidebar, canMoveToSidebar } from './dockMenu';
 import { windowDropTarget, windowDropZoneId, showDropTarget } from './sidebarDrop';
 import { placeFree, watchPlaceFree, placeFreeHint, showPlaceFreeChip } from './placeFree';
 import { PHONE_QUERY } from './ui/phoneShell.js';
@@ -113,6 +114,25 @@ export function overEmptyDock(x, y) {
 	if (!frame) return false;
 	const r = frame.getBoundingClientRect();
 	return r.height > 0 && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+/**
+ * 48 F5 — the PANE of the split on screen under (x, y): a floating window (or a tab pulled out of the strip) dropped
+ * there shows IN it. `pair` names the pair by its left member; `rect` is the pane's box (the highlight).
+ * @param {number} x @param {number} y
+ * @returns {{pair: string, pane: 'a'|'b', rect: {x: number, y: number, w: number, h: number}}|null}
+ */
+export function dockPaneAt(x, y) {
+	if (typeof document === 'undefined') return null;
+	const split = get(dockSplitView);
+	if (!split) return null;
+	const SEL = '[data-dock-pane], [data-pd-host-pane]';
+	const hit = document.elementsFromPoint(x, y).find((n) => n.closest?.(SEL));
+	const host = /** @type {HTMLElement|undefined} */ (hit?.closest?.(SEL));
+	const pane = host?.getAttribute('data-dock-pane') || host?.getAttribute('data-pd-host-pane');
+	if (!host || (pane !== 'a' && pane !== 'b')) return null;
+	const r = host.getBoundingClientRect();
+	return { pair: split.a, pane, rect: { x: r.left, y: r.top, w: r.width, h: r.height } };
 }
 
 /** @type {HTMLElement|null} */ let caretEl = null;
@@ -248,8 +268,8 @@ export function bottomDockable(node, { key }) {
 	const paint = (t) => {
 		showDropTarget(t, { id: windowDropZoneId(t), hint: placeFreeHint() });
 		showPlaceFreeChip(dragging && !t && would && placeFree() ? at : null);
-		// the window goes see-through over a strip or a column, so the target under it reads (41 G7)
-		const ghost = !!t && (t.kind === 'side' || (t.kind === 'dock' && !!t.strip));
+		// the window goes see-through over a strip, a column or (48 F5) a pane, so the target under it reads (41 G7)
+		const ghost = !!t && (t.kind === 'side' || (t.kind === 'dock' && (!!t.strip || !!t.pane)));
 		if (ghost || ghosted) ghostWindows([node], ghost);
 		ghosted = ghost;
 	};
@@ -274,6 +294,10 @@ export function bottomDockable(node, { key }) {
 			return;
 		}
 		if (take.kind !== 'dock') return;
+		if (take.pane) {
+			dockIntoPane(key, take.pane);
+			return;
+		}
 		if (take.strip) {
 			dockAtStrip([key], take.strip.before);
 			return;

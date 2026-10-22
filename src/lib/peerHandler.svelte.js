@@ -1922,10 +1922,13 @@ export class PeerConnection {
 		this.reconnecting.clear(); // pending retry timers see a cleared map and no-op
 		this.gracefulLeft.clear();
 		this.wantsStateFrom.clear();
-		for (const peerId of Object.keys(this.connections)) {
+		// 55 A9: ALSO every peer still counted open whose conn already closed — one inside its
+		// reconnect window (onConnClose deletes the conn and keeps it in `openedPeers` while the
+		// backoff runs). Leaving then used to keep them: the pill read "connected" to nobody.
+		for (const peerId of new Set([...Object.keys(this.connections), ...this.openedPeers])) {
 			const conn = this.connections[peerId];
 			delete this.connections[peerId];
-			try { conn.close(); } catch {}
+			try { conn?.close(); } catch {}
 			if (this.openedPeers.has(peerId)) {
 				this.openedPeers.delete(peerId);
 				handleDisconnected(peerId);

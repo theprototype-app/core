@@ -28,8 +28,7 @@
 		connectDocked,
 		connectBarHeight,
 		peersPanelOpen,
-		showToast,
-		avatarConfig
+		showToast
 	} from '../../stores/appStore.js';
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	import { globalScene, globalCamera, camSave, peerHands, isLocked, objectsGroup } from '../../stores/sceneStore.js';
@@ -108,6 +107,7 @@
 	// 55 A9: the peer menu (Profile · Find · Character · Talk · For you only · Moderation)
 	import { buildPeerMenuItems } from '$lib/peerMenu';
 	import { removePeer, allowBack, blockedPeers, inviteStoreModule } from '$lib/peerModeration';
+	import { copyLookOf } from '$lib/peerActions';
 	import { canModerateWith } from '$lib/peerModerationCore';
 	import { hiddenPeers, setPeerHidden } from '$lib/peerHide';
 	import { peerActivity, agoText } from '$lib/peerFacts';
@@ -213,20 +213,6 @@
 
 	function nameOf(peerId: string) {
 		return (($userdata as any[]).find((u) => u[0] === peerId)?.[1]) || shortId(peerId).toUpperCase();
-	}
-	/** wear their character and colours: OUR slot 5, replicated like the character panel's own commit */
-	function copyLookOf(peerId: string) {
-		const rows = $userdata as any[];
-		const theirs = rows.find((u) => u[0] === peerId)?.[5];
-		if (!theirs) return;
-		const next = { ...theirs };
-		avatarConfig.set(next as any);
-		try { safeStorage.setItem('avatarConfig', JSON.stringify(next)); } catch {}
-		const me = ($peers as any)?.peer?.id;
-		rows.forEach((row) => { if (row[0] === me) row[5] = next; });
-		userdata.set(rows as any);
-		($peers as any)?.send?.({ type: 'userdata', userdata: rows });
-		showToast('You now wear ' + nameOf(peerId) + '’s look. Change character to adjust it.');
 	}
 	/** fly the editor camera to stand a few metres off their avatar, looking at it */
 	function goToPeer(peerId: string) {

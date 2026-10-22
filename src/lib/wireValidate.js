@@ -213,6 +213,13 @@ export const VALIDATORS = {
 	matpresetpart: (d) => typeof d.from === 'string' && typeof d.ref === 'string' && Number.isInteger(d.i) && Number.isInteger(d.n) && d.n >= 1 && d.n <= 256 && d.i >= 0 && d.i < d.n && typeof d.data === 'string' && d.data.length <= 300_000,
 	environment: (d) => !!d && typeof d === 'object',
 	atscene: (d) => typeof d.peerId === 'string',
+	// 55 A6: the agent mesh relay (agent/meshRelay.js) — the host re-checks everything that matters
+	meshgenask: () => true,
+	meshgenstate: (d) => typeof d.ready === 'boolean',
+	meshgenreq: (d) =>
+		typeof d.id === 'string' && d.id.length <= 64 && typeof d.prompt === 'string' && d.prompt.length <= 2000 &&
+		(d.name == null || typeof d.name === 'string') && (d.position == null || isVec3(d.position)),
+	meshgenack: (d) => typeof d.id === 'string' && typeof d.ok === 'boolean',
 	disconnected: (d) => typeof d.peerId === 'string',
 	annotations: (d) => isArray(d.annotations),
 	joints: (d) => isArray(d.joints),

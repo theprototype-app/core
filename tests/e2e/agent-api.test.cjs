@@ -162,6 +162,119 @@ h.run(async () => {
 	const inst = await B.page.evaluate(() => window.tpAgent.exec('install_modules', { ids: ['zz-not-a-module'] }));
 	h.check(inst.installed?.[0]?.ok === false && /gallery/.test(inst.installed[0].error ?? ''), `install_modules explains what it cannot fetch (${JSON.stringify(inst)})`);
 
+	// ---- A5. eyes: a clean PNG from a temporary camera, nobody's view moved ----------------------
+	/** decode a data URL in the page: size, distinct colours, mean luminance */
+	const probe = (url) =>
+		B.page.evaluate(async (u) => {
+			if (typeof u !== 'string' || !u.startsWith('data:image/png;base64,')) return { bad: String(u).slice(0, 40) };
+			const img = new Image();
+			img.src = u;
+			await img.decode();
+			const c = document.createElement('canvas');
+			c.width = img.width;
+			c.height = img.height;
+			const ctx = c.getContext('2d');
+			ctx.drawImage(img, 0, 0);
+			const d = ctx.getImageData(0, 0, c.width, c.height).data;
+			const colours = new Set();
+			let lum = 0;
+			for (let i = 0; i < d.length; i += 16) {
+				colours.add((d[i] >> 3) * 1024 + (d[i + 1] >> 3) * 32 + (d[i + 2] >> 3));
+				lum += d[i] + d[i + 1] + d[i + 2];
+			}
+			return { w: img.width, h: img.height, colours: colours.size, lum: lum / (d.length / 16) / 3 };
+		}, url);
+	/** fraction of pixels differing by > 24 in any channel */
+	const diff = (a, b) =>
+		B.page.evaluate(async ([x, y]) => {
+			const read = async (u) => {
+				const img = new Image();
+				img.src = u;
+				await img.decode();
+				const c = document.createElement('canvas');
+				c.width = img.width;
+				c.height = img.height;
+				c.getContext('2d').drawImage(img, 0, 0);
+				return c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+			};
+			const [p, q] = [await read(x), await read(y)];
+			if (p.length !== q.length) return 1;
+			let n = 0;
+			for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) > 24 || Math.abs(p[i + 1] - q[i + 1]) > 24 || Math.abs(p[i + 2] - q[i + 2]) > 24) n++;
+			return n / (p.length / 4);
+		}, [a, b]);
+	const camBefore = await B.page.evaluate(() => { let c; window.__stores.globalCamera.subscribe((v) => (c = v))(); return [...c.position.toArray(), ...c.quaternion.toArray()].map((v) => v.toFixed(5)).join(); });
+	const iso = await B.page.evaluate(() => window.tpAgent.screenshot());
+	const isoP = await probe(iso);
+	const canvasAspect = await B.page.evaluate(() => { let r; window.__stores.globalRenderer.subscribe((v) => (r = v))(); return r.domElement.width / r.domElement.height; });
+	h.check(isoP.w === 768 || isoP.h === 768, `default PNG, longest side 768 (${JSON.stringify(isoP)})`);
+	h.check(Math.abs(isoP.w / isoP.h - canvasAspect) < 0.02, `in the canvas aspect (${(isoP.w / isoP.h).toFixed(3)} vs ${canvasAspect.toFixed(3)})`);
+	h.check(isoP.colours > 20, `and it shows something, not a flat fill (${isoP.colours} colours, mean ${isoP.lum?.toFixed(1)})`);
+	const small = await probe(await B.page.evaluate(() => window.tpAgent.screenshot({ view: 'top', size: 300 })));
+	h.check(Math.max(small.w, small.h) === 300, `size caps the longest side (${small.w}x${small.h})`);
+	const top = await B.page.evaluate(() => window.tpAgent.screenshot({ view: 'top' }));
+	const front = await B.page.evaluate(() => window.tpAgent.screenshot({ view: 'front' }));
+	const current = await B.page.evaluate(() => window.tpAgent.screenshot({ view: 'current' }));
+	const dTF = await diff(top, front);
+	const dIT = await diff(iso, top);
+	h.check(dTF > 0.05 && dIT > 0.05, `top, front and iso are different pictures (top/front ${dTF.toFixed(3)}, iso/top ${dIT.toFixed(3)})`);
+	h.check((await probe(current)).colours > 5, 'current renders from the viewer camera');
+	const focus = await B.page.evaluate((id) => window.tpAgent.screenshot({ view: 'focus', uuid: id }), uuids[0]);
+	h.check((await probe(focus)).colours > 5 && (await diff(focus, iso)) > 0.05, 'focus(uuid) frames one object');
+	h.check((await B.page.evaluate(() => window.tpAgent.screenshot({ view: 'focus', uuid: 'nope' }))) === null, 'focus on an unknown uuid is null, never a throw');
+	const camAfter = await B.page.evaluate(() => { let c; window.__stores.globalCamera.subscribe((v) => (c = v))(); return [...c.position.toArray(), ...c.quaternion.toArray()].map((v) => v.toFixed(5)).join(); });
+	h.check(camAfter === camBefore, 'the viewer camera never moved');
+	// clean: the transform gizmo on a selected object does not reach the picture
+	const clean0 = await B.page.evaluate(() => window.tpAgent.screenshot({ view: 'iso' }));
+	const gizmoOn = await B.page.evaluate((id) => {
+		let g, tc;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		window.__stores.TControls.subscribe((v) => (tc = v))();
+		const o = g.getObjectByProperty('uuid', id);
+		if (!tc || !o) return false;
+		tc.attach(o);
+		const helper = tc.getHelper?.() ?? tc;
+		return !!helper.visible;
+	}, uuids[0]);
+	const clean1 = await B.page.evaluate(() => window.tpAgent.screenshot({ view: 'iso' }));
+	await B.page.evaluate(() => { let tc; window.__stores.TControls.subscribe((v) => (tc = v))(); tc?.detach(); });
+	const dGizmo = await diff(clean0, clean1);
+	h.check(!gizmoOn || dGizmo < 0.002, `a gizmo on screen is not in the screenshot (gizmo ${gizmoOn}, ${(dGizmo * 100).toFixed(2)}% pixels differ)`);
+	const withGrid = await B.page.evaluate(() => window.tpAgent.screenshot({ view: 'iso', grid: true }));
+	h.check((await diff(withGrid, clean0)) > 0.001, 'grid: true draws the editor grid, the default leaves it out');
+
+	// ---- A6. the full tool set ------------------------------------------------------------------
+	const names = (await B.page.evaluate(() => window.tpAgent.tools())).map((t) => t.function?.name);
+	const providers = await B.page.evaluate(() => { let l; window.__stores.aiProviders.aiProviders?.subscribe?.((v) => (l = v))(); return l?.length ?? 0; });
+	h.check(['set_physics', 'create_joints', 'control_simulation'].every((n) => names.includes(n)), `physics tools are offered with no AI provider at all (${providers} providers)`);
+	const phys = await B.page.evaluate((id) => window.tpAgent.exec('set_physics', { updates: [{ uuid: id, mode: 'static' }] }), uuids[0]);
+	h.check(!phys.error, `and set_physics runs (${JSON.stringify(phys).slice(0, 100)})`);
+	const gap = (await B.page.evaluate(() => window.tpAgent.status())).missingTools;
+	h.check(!names.includes('generate_mesh') && gap.some((g) => g.name === 'generate_mesh' && /host/.test(g.reason)), `generate_mesh is missing WITH the reason (${JSON.stringify(gap)})`);
+	// the host sets up a provider (a fake endpoint: the job starts and then fails, which is fine here)
+	await A.page.evaluate(() => {
+		const m = window.__stores.meshProviders;
+		m.addMeshProvider({ kind: 'meshy', label: 'e2e fake', baseUrl: 'https://127.0.0.1:9', apiKey: 'k' });
+		m.setMeshGenEnabled(true);
+	});
+	const offered = await poll(() => B.page.evaluate(() => window.tpAgent.tools().some((t) => t.function?.name === 'generate_mesh')), (x) => x, 'host provider seen', 25000);
+	h.check(offered === true, 'once the HOST has a provider, the agent is offered generate_mesh');
+	h.check(!(await B.page.evaluate(() => window.tpAgent.status())).missingTools.some((g) => g.name === 'generate_mesh'), 'and it leaves missingTools');
+	const gen = await B.page.evaluate(() => window.tpAgent.exec('generate_mesh', { prompt: 'an e2e test rock' }));
+	h.check(gen.started === true && gen.onHost === true, `the call is relayed to the host (${JSON.stringify(gen).slice(0, 120)})`);
+	const job = await poll(() => A.page.evaluate(() => { let l; window.__stores.meshJobs.meshJobs.subscribe((v) => (l = v))(); return l.map((j) => j.prompt); }), (l) => l.includes('an e2e test rock'), 'host job', 10000);
+	h.check(job?.includes('an e2e test rock'), `the HOST runs the job on its own provider (${JSON.stringify(job)})`);
+	const told = await A.page.evaluate(() => { let l; window.__stores.notifications.subscribe((v) => (l = v))(); return l.some((n) => /asked for a mesh/.test(n.text)); });
+	h.check(told, 'and the host is told who asked');
+	await A.page.evaluate(() => { let l; window.__stores.meshJobs.meshJobs.subscribe((v) => (l = v))(); for (const j of l) window.__stores.meshJobs.cancelMeshJob(j.id); });
+	await A.page.waitForTimeout(500);
+	await A.page.evaluate((agentId) => window.__stores.cloudHooks.rolesInfo.set({ myId: 'x', myRole: 'admin', amAdmin: true, order: [], roleOf: (id) => (id === agentId ? 'viewer' : 'admin'), setRole() {} }), B.id);
+	const asViewer = await B.page.evaluate(() => window.tpAgent.exec('generate_mesh', { prompt: 'a second rock' }));
+	h.check(/host refused: view-only/.test(asViewer.error ?? ''), `the HOST refuses a viewer's request itself (${asViewer.error})`);
+	if (!/host refused: view-only/.test(asViewer.error ?? ''))
+		console.log('  relay A: ' + JSON.stringify(await A.page.evaluate(() => window.__stores.meshRelay?.relayLog)) + '\n  relay B: ' + JSON.stringify(await B.page.evaluate(() => window.__stores.meshRelay?.relayLog)));
+	await A.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+
 	// ---- 9. T5: leave() is a goodbye, not a dropped link ----------------------------------------
 	const toastsA0 = await A.page.evaluate(() => { let l; window.__stores.toastStore.subscribe((x) => (l = x))(); return l.length; });
 	await B.page.evaluate(() => window.tpAgent.leave());

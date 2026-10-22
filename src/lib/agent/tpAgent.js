@@ -8,7 +8,13 @@
 
 import { get } from 'svelte/store';
 import { createAgentCore, missingModulesFrom } from './agentCore.js';
-import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall } from '$lib/ai/tools.js';
+import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall, MESH_TOOL } from '$lib/ai/tools.js';
+import { physicsToolsEnabled, forcePhysicsTools } from '$lib/ai/flowTools.js';
+import { meshGenReady } from '$lib/ai/meshProviders.js';
+import { behaviourHost } from '$lib/ai/aiExtensions.js';
+import { missingToolsFor } from './toolPolicy.js';
+import { peerMeshReady, askMeshState, requestHostMesh } from './meshRelay.js';
+import { takeScreenshot } from './screenshot.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 import { peers, userdata, waitingForApproval, toastStore, dismissToastById } from '../../stores/appStore.js';
 import { globalRenderer } from '../../stores/sceneStore.js';
@@ -77,8 +83,42 @@ async function installModules(/** @type {any} */ args) {
 	return results;
 }
 
+/** A6: is the HOST's mesh provider ready (what it last said through the relay)? */
+function hostMeshReady() {
+	const host = get(sessionHost);
+	return !!host && get(peerMeshReady)[host] === true;
+}
+
+/** A6: the tool list an agent session gets — the assistant's own (physics forced on) + generate_mesh
+ * when only the HOST can run it */
+function agentTools() {
+	const list = getAiTools();
+	if (!meshGenReady() && hostMeshReady() && !list.some((t) => t?.function?.name === 'generate_mesh')) list.push(MESH_TOOL);
+	return list;
+}
+
+/** A6: generate_mesh goes to the host's provider when this page has none @param {string} name @param {any} args */
+async function agentRun(name, args) {
+	const real = repairToolCall(name, args).name;
+	if (real === 'generate_mesh' && !meshGenReady()) {
+		const host = get(sessionHost);
+		if (!host || !hostMeshReady())
+			return { error: 'no mesh-generation provider: neither this page nor the host has one ready (status().missingTools)' };
+		const prompt = String(args?.prompt ?? '').trim();
+		if (!prompt) return { error: 'prompt required' };
+		const answer = await requestHostMesh(host, { prompt, name: args?.name, position: args?.position });
+		if (!answer.ok) return { error: 'the host refused: ' + (answer.error ?? 'no reason given') };
+		return {
+			started: true,
+			onHost: true,
+			note: 'Generating "' + prompt.slice(0, 60) + '" with the host\'s provider. It appears in the scene in ~1-3 minutes (waitForEdit / list_scene). Do not call generate_mesh again for the same request.'
+		};
+	}
+	return executeAiTool(name, args);
+}
+
 /**
- * Build the wired agent. `screenshot` and the A6 tool policy are plugged in by their own modules.
+ * Build the wired agent.
  * @param {{screenshot?: (opts: any) => Promise<string|null>, missingTools?: () => {name: string, reason: string}[]}} [extra]
  */
 export function createTpAgent(extra = {}) {
@@ -86,8 +126,8 @@ export function createTpAgent(extra = {}) {
 	let core;
 	core = createAgentCore({
 		appVersion: APP_VERSION,
-		getTools: () => getAiTools(),
-		runTool: (name, args) => executeAiTool(name, args),
+		getTools: () => agentTools(),
+		runTool: (name, args) => agentRun(name, args),
 		resolveName: (name, args) => repairToolCall(name, args),
 		systemPrompt: () => buildSystemPrompt(),
 		summarize: (cap) => summarizeScene(cap),
@@ -99,10 +139,18 @@ export function createTpAgent(extra = {}) {
 		waiting: () => (/** @type {any[]} */ (get(waitingForApproval)) ?? []).some((w) => Array.isArray(w) && w[1] === 'pending'),
 		openPeers: () => openPeerIds().map((id) => ({ id, name: nameOf(id) })),
 		inVR: () => !!(/** @type {any} */ (get(globalRenderer))?.xr?.isPresenting),
-		missingTools: () => extra.missingTools?.() ?? [],
+		missingTools: () =>
+			extra.missingTools?.() ??
+			missingToolsFor({
+				physics: physicsToolsEnabled(),
+				meshLocal: meshGenReady(),
+				meshHost: hostMeshReady(),
+				hostKnown: !!get(sessionHost),
+				behaviours: !!behaviourHost()
+			}),
 		missingModules: () => missingModulesFrom(get(peerModuleVersions), openPeerIds(), moduleVersions()),
 		onSceneChange: (cb) => dirtyPulse.subscribe(() => cb()),
-		screenshot: (opts) => (extra.screenshot ? extra.screenshot(opts) : Promise.resolve(null)),
+		screenshot: (opts) => (extra.screenshot ?? takeScreenshot)(opts),
 		leave: async () => {
 			try {
 				link()?.leaveSession?.();
@@ -211,6 +259,17 @@ export function startQuiet(core) {
 	return () => offs.forEach((off) => off());
 }
 
+/** A6: keep asking the host whether its mesh provider is ready (on join, then every 15 s — cheap,
+ * and a provider set up mid-session shows up without a reload) */
+function startMeshAsk() {
+	const ask = () => {
+		const host = get(sessionHost);
+		if (host && openPeerIds().includes(host)) askMeshState(host);
+	};
+	sessionHost.subscribe((host) => host && setTimeout(ask, 1500));
+	setInterval(ask, 15000);
+}
+
 /**
  * Install `window.tpAgent` (idempotent).
  * @param {Parameters<typeof createTpAgent>[0]} [extra]
@@ -220,8 +279,10 @@ export function installTpAgent(extra) {
 	/** @type {any} */
 	const w = window;
 	if (w.tpAgent) return w.tpAgent;
+	forcePhysicsTools(true);
 	const core = createTpAgent(extra);
 	startQuiet(core);
+	startMeshAsk();
 	w.tpAgent = Object.freeze({ ...core.agent });
 	return w.tpAgent;
 }

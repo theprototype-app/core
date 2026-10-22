@@ -116,6 +116,7 @@ export function createOffers(now) {
 		accept(id, which) {
 			const o = offers.get(String(id));
 			if (!o) return { ok: false, error: 'no pending offer "' + id + '"' };
+			/** @type {{label: string, action: () => void} | undefined} */
 			let action = o.actions[0];
 			if (typeof which === 'number') action = o.actions[which];
 			else if (typeof which === 'string' && which)
@@ -279,7 +280,7 @@ export function createAgentCore(deps) {
 			return deps.screenshot(opts ?? {}).catch(() => null);
 		},
 		pendingOffers: () => offers.list(),
-		accept: (/** @type {string} */ id, /** @type {string|number} */ which) => offers.accept(id, which),
+		accept: (/** @type {string} */ id, /** @type {string|number|undefined} */ which = undefined) => offers.accept(id, which),
 		leave: () => deps.leave()
 	};
 

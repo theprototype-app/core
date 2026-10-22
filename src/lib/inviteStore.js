@@ -71,6 +71,12 @@ export function isAgentPeer(peerId) {
 /** the kind each dial declared, kept so a card and a roster row agree before userdata lands @type {Map<string, string>} */
 const dialKinds = new Map();
 
+// ---------------------------------------------------------------- the sheet
+
+/** the invite sheet: which tab is open, null = closed (Connect ▸ Request AI opens 'agent',
+ * Users ▸ Invite a person opens 'person') @type {import('svelte/store').Writable<null | 'agent' | 'person'>} */
+export const inviteSheet = writable(/** @type {null | 'agent' | 'person'} */ (null));
+
 // ---------------------------------------------------------------- settings
 
 /** "Let AI agents join as guests" — default OFF: an agent dial gets the approval card even

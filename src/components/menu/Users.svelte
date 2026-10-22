@@ -31,6 +31,8 @@
 		showToast
 	} from '../../stores/appStore.js';
 	import WindowChrome from '../ui/WindowChrome.svelte';
+	// 55 A4/A7: agent rows (robot + "AI") and the active invites with Revoke / Revoke all
+	import { invites, listInvites, revokeInvite, revokeAllInvites, inviteSheet, kindOfRow } from '$lib/inviteStore';
 	import { globalScene, globalCamera, camSave, peerHands, isLocked } from '../../stores/sceneStore.js';
 	// 21-F3: who is in play mode, and who may end the round
 	import { peerPlayModes, resetAllowed, requestResetGame } from '$lib/gamePresence';
@@ -183,6 +185,18 @@
 	const ri = $derived($rolesInfo);
 	// 21-G5 (F7): the project's OTHER rooms — mine is excluded, and a room with no
 	// members to show is skipped rather than rendering an empty header
+	// 55 A4: the invites still granting something — active, or used and not revoked (so the
+	// host sees "used by" and can take it back). A slow clock: expiry is minutes, not seconds.
+	let inviteNow = $state(Date.now());
+	onMount(() => {
+		const t = setInterval(() => (inviteNow = Date.now()), 30000);
+		return () => clearInterval(t);
+	});
+	const inviteRows = $derived(listInvites($invites, inviteNow).filter((r: any) => r.state === 'active' || r.state === 'used'));
+	const inviteText = (r: any) =>
+		(r.kind === 'agent' ? 'AI agent' : 'Person') +
+		(r.usedBy.length ? ' · used by ' + r.usedBy.join(', ') : r.maxUses > 1 ? ' · up to ' + r.maxUses : ' · not used yet') +
+		(r.state === 'active' ? ' · ' + Math.max(1, Math.round((r.expiresAt - inviteNow) / 60000)) + ' min left' : '');
 	const crossRooms = $derived(
 		(($scenePresence?.rooms as any[]) ?? []).filter(
 			(room) => room && room.id !== $scenePresence?.myRoomId && (room.members?.length ?? 0) > 0
@@ -635,7 +649,13 @@
 		{@render avatarImg(user[2], 'bg-surface-active h-8 w-8 shrink-0')}
 		<div class="peer-info">
 			<div class="peer-name">
-				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || 'Peer'}</span>
+				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || (kindOfRow(user) === 'agent' ? 'AI agent' : 'Peer')}</span>
+				{#if kindOfRow(user) === 'agent'}
+					<!-- 55 A7: an AI agent is not a person — no character, the robot and "AI" instead -->
+					<span class="peer-ai" title="AI agent — joined over MCP or an agent link; it has no character"
+						><Icon name="bot" size={16} aria-hidden="true" />AI</span
+					>
+				{/if}
 				{#if self}<span class="peer-you">(you)</span>{/if}
 			</div>
 			<div class="peer-meta">
@@ -811,7 +831,7 @@
 	 21-G5: OR on cross-scene presence — being alone in YOUR scene is exactly when
 	 "where is everyone" matters, and a popover that only exists once somebody is
 	 already in your mesh could never show you the people who are not. -->
-{#if trShown('peers') && (($userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0) || crossRooms.length > 0)}
+{#if trShown('peers') && (($userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0) || crossRooms.length > 0 || inviteRows.length > 0)}
 	<div class="relative" style:order={trOrder('peers')}>
 		<!-- compact trigger: a few stacked avatars + the peer count -->
 		<button
@@ -918,6 +938,24 @@
 					{/each}
 				{/if}
 				</div>
+				<!-- 55 A4: ACTIVE INVITES — each one revocable, all at once too. A revoke stops new uses at
+					 once; on cloud builds the peers it let in lose the edit it granted. -->
+				{#if inviteRows.length}
+					<div class="mt-1 border-t border-border pt-1" id="peers-invites">
+						<div class="peers-inv-head">
+							<span>Invites</span>
+							<button type="button" id="peers-invite-new" class="peers-inv-btn" title="Create another invite link" onclick={() => inviteSheet.set('person')}>New…</button>
+							<button type="button" id="peers-revoke-all-invites" class="peers-inv-btn peers-inv-danger" title="Every invite link stops working" onclick={revokeAllInvites}>Revoke all</button>
+						</div>
+						{#each inviteRows as inv (inv.id)}
+							<div class="peers-inv-row" data-invite={inv.id} data-state={inv.state} data-kind={inv.kind}>
+								<Icon name={inv.kind === 'agent' ? 'bot' : 'user-plus'} size={16} aria-hidden="true" />
+								<span class="min-w-0 flex-1 truncate" title={inviteText(inv)}>{inviteText(inv)}</span>
+								<button type="button" class="peers-inv-btn peers-inv-danger peers-inv-revoke" title="This link stops working" onclick={() => revokeInvite(inv.id)}>Revoke</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
 				<!-- 21-F3: the ADMIN half of "the game resets only when everyone has left
 					 play, or an admin resets it". Offered only when there is a game to
 					 reset, and DISABLED (with the reason in its tooltip) for anyone who is
@@ -1207,6 +1245,15 @@
 	.peer-info { min-width: 0; }
 	.peer-name { display: flex; align-items: baseline; gap: 4px; min-width: 0; font-size: var(--fs-body); color: var(--text); white-space: nowrap; }
 	.peer-you { flex: 0 0 auto; font-size: var(--fs-badge); color: var(--accent-text); }
+	/* 55 A7: the agent mark — a badge, tokens only */
+	.peer-ai { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 2px; padding: 0 5px; border-radius: 999px; font-size: var(--fs-badge); font-weight: 600; background: var(--badge-bg); color: var(--badge-text); }
+	/* 55 A4: the active-invites list */
+	.peers-inv-head { display: flex; align-items: center; gap: 6px; padding: 2px 6px; font-size: var(--fs-badge); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+	.peers-inv-head > span { flex: 1; }
+	.peers-inv-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; font-size: var(--fs-desc); color: var(--text-2); }
+	.peers-inv-btn { flex: 0 0 auto; padding: 1px 6px; border-radius: 6px; font-size: var(--fs-badge); text-transform: none; letter-spacing: 0; color: var(--accent-text); }
+	.peers-inv-btn:hover { background: var(--surface-hover); }
+	.peers-inv-danger { color: var(--warn-text); }
 	.peer-meta { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 2px; overflow: hidden; white-space: nowrap; font-size: var(--fs-badge); color: var(--text-muted); }
 	.peer-meta > * { flex: 0 0 auto; }
 	.peer-meta > .scene-chip { flex: 0 1 auto; }

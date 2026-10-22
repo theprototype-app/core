@@ -11,6 +11,8 @@ import {
 	noteJoinRefusal,
 	clearJoinRefusal
 } from './connectionState';
+// 55 A4: how a peer got in + the dial's kind on its roster row (store-only, no cycle)
+import { noteJoinedVia, isAgentPeer } from './inviteStore';
 
 // Pending-connection approval (211). Kept in its own store-only module so VR
 // (vrControls -> executeVRMenuAction) can call it WITHOUT statically importing
@@ -35,8 +37,11 @@ export function approvePeer(peerId) {
 	}
 	pendingApprovals.set(get(pendingApprovals).filter((/** @type {any} */ p) => p.peerId !== peerId));
 	clearApprovalStarted(peerId);
+	noteJoinedVia(peerId, 'approval');
 	const users = /** @type {any[]} */ (get(userdata));
-	if (!users.some((/** @type {any} */ u) => u[0] === peerId)) users.push([peerId, '', '']);
+	// 55 A7: an agent's row carries its kind (slot 6) from the start, so no avatar is built
+	if (!users.some((/** @type {any} */ u) => u[0] === peerId))
+		users.push(isAgentPeer(peerId) ? [peerId, '', '', null, null, null, { kind: 'agent' }] : [peerId, '', '']);
 	userdata.set(/** @type {any} */ (users));
 	if (!peer) return;
 	peer.send({ type: 'userdata', userdata: get(userdata) });

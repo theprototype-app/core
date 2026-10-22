@@ -228,6 +228,7 @@ export const DEBUG_HOOKS = [
 	['cloudPlugin', () => import('./cloudPlugin')],
 	['connectionState', () => import('./connectionState')],
 	['peerApproval', () => import('./peerApproval')],
+	['inviteStore', () => import('./inviteStore')],
 	['particleRuntime', () => import('./particleRuntime')],
 	['particleActions', () => import('./particleActions')],
 	['particlePresets', () => import('./particlePresets')],

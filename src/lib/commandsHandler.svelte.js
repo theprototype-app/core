@@ -97,6 +97,8 @@ export function userData(data) {
             if (element[2] != '') users[index][2] = element[2];
             // avatar config (slot 5) from newer clients
             if (element[5]) users[index][5] = element[5];
+            // 55 A7: the peer's kind (slot 6, `{kind: 'agent'}`) — self-declared presence
+            if (element[6] && typeof element[6] === 'object') users[index][6] = { kind: element[6].kind === 'agent' ? 'agent' : 'person' };
         }
 
     })

@@ -201,7 +201,7 @@ describe('bookkeeping', () => {
 	it('prunes records a day after they ended', () => {
 		const a = makeRecord(newToken(), {}, T0);
 		const b = revokeRecord(makeRecord(newToken(), { expiry: '24h' }, T0), T0 + 1);
-		expect(pruneRecords([a, b, null, { id: 1 }], T0 + 10)).toHaveLength(2);
+		expect(pruneRecords(/** @type {any} */ ([a, b, null, { id: 1 }]), T0 + 10)).toHaveLength(2);
 		expect(pruneRecords([a, b], a.expiresAt + KEEP_AFTER_MS + 1)).toHaveLength(0);
 	});
 });

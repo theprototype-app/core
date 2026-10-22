@@ -6,6 +6,7 @@
 	// link, the ready MCP command (agents) or one sentence for any chat. Once used, the sheet
 	// says "used by <name> (<id>)", live from the record. No typed join code (owner's call).
 	import { get } from 'svelte/store';
+	import { tick } from 'svelte';
 	import ModalDialog from '../ui/ModalDialog.svelte';
 	import Tabs from '../ui/Tabs.svelte';
 	import Segmented from '../ui/Segmented.svelte';
@@ -67,6 +68,8 @@
 			srvTail: inviteServerParam($peerServerStatus)
 		});
 		minted = { ...minted, [tab]: record.id };
+		// the Create button is gone now: hand the keyboard to Copy, so Escape and Tab stay in the sheet
+		tick().then(() => /** @type {HTMLElement | null} */ (document.querySelector('#invite-copy-link'))?.focus());
 	}
 
 	/** @param {string} text @param {string} what */

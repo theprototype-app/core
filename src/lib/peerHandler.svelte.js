@@ -767,7 +767,8 @@ export class PeerConnection {
 						knockLabel = knockLabel || 'An AI agent wants to join (guests join automatically, but AI agents ask first)';
 					}
 					if (authorized) {
-						if (invite?.ok) this.invitedRoles.set(conn.peer, invite.role);
+						// the OSS build has no roles: an invite simply admits, and everyone edits
+						if (invite?.ok) this.invitedRoles.set(conn.peer, get(rolesInfo) ? invite.role : 'edit');
 						noteJoinedVia(conn.peer, invite?.ok ? 'invite' : 'guest');
 					}
 					if (authorized && roomIsFull(this) && conn?.metadata?.jr) {

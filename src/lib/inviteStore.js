@@ -233,14 +233,15 @@ export function noteDialKind(peerId, kind) {
  * snapshot of the record it named (with the key — the plugin re-verifies the proof itself,
  * the roomAccess pattern). Null when this peer did not come in by an invite this session.
  * @param {string} peerId
- * @returns {{ meta: any, record: InviteRecord, role: string } | null}
+ * `at` = when the dial arrived (the cloud judges the expiry then, never later).
+ * @returns {{ meta: any, record: InviteRecord, role: string, at: number } | null}
  */
 export function inviteGrantFor(peerId) {
 	const g = grants.get(String(peerId || '').toLowerCase());
 	if (!g) return null;
 	const record = get(invites).find((r) => r.id === g.inviteId);
 	if (!record) return null;
-	return { meta: g.meta, record: JSON.parse(JSON.stringify(record)), role: record.role };
+	return { meta: g.meta, record: JSON.parse(JSON.stringify(record)), role: record.role, at: g.at };
 }
 
 /** a peer left: its grant goes (a re-dial proves again) — the use stays spent @param {string} peerId */

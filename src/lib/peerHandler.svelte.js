@@ -1284,7 +1284,7 @@ export class PeerConnection {
 					// 37 R1: `wb` is ADDITIVE — an older peer omits it and keeps getting bare messages
 					if (data.wb === 1) this.wireBatchPeers.add(conn.peer);
 					else this.wireBatchPeers.delete(conn.peer);
-					checkModuleVersions(data.versions);
+					checkModuleVersions(data.versions, conn.peer); // 55 T6: + who, for tpAgent.missingModules
 					checkPeerAppVersion(data.appVersion);
 				} else if(data.type == 'getmodulestate') {
 					sendModuleStates(data.sender);

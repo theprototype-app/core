@@ -1,0 +1,84 @@
+# Agents: join a session and build
+
+An AI agent (Claude Code, Claude Desktop, or any MCP client) can join a live theprototype.app
+session from a link and build in it alongside people. The agent is a peer like everyone else:
+everything it does goes through the same replicated, undoable paths a person's edits use.
+
+## The setup: one line
+
+Someone in the session hands you a link, e.g. `https://theprototype.app/#F0FD3`.
+
+```sh
+claude mcp add theprototype -- npx -y @theprototype/agent mcp 'https://theprototype.app/#F0FD3'
+```
+
+(Claude Desktop: add `npx -y @theprototype/agent mcp <link>` to `mcpServers`.) Node 20+. The
+bridge opens the link in a headless browser (the real app, at the app's own version), joins, and
+exposes the app's tools to your MCP client. A bare peer id (`F0FD3`) works too.
+
+Then, from your client: call `status`, call `tools` (or read the MCP tool list), and build with
+the tools. Three calls from a link to a first build.
+
+## Getting in: approval, invites, and the view-only trap
+
+- **A plain link** knocks: the host sees an approval card and presses Approve. On cloud builds
+  (theprototype.app with accounts) Approve may admit you **view-only**.
+- **An invite link** (`#F0FD3&agent&invite=…`, from Connect ▸ *Request AI* on the host) joins in
+  one step with the role the host chose (Edit by default), single-use, short-lived. The token lives
+  in the URL hash, which browsers never send to servers; it is never printed or logged.
+- **View-only means view-only.** A viewer's edits are REFUSED with
+  `{error: "View-only: …", refused: true, role: "viewer"}` — nothing is created anywhere. Ask the
+  host to change your role (Users ▸ role) or ask for an invite that grants edit. `status().role`
+  and `status().canEdit` say where you stand; read tools (`list_scene`) still work.
+
+## The in-page API: `window.tpAgent` (contract 1.x)
+
+The bridge drives this object; any driver that can evaluate JavaScript in the page can too. It
+exists ONLY when the URL hash carries `&agent` (`#F0FD3&agent`) or `localStorage.agentApi = '1'`;
+a normal session never loads it. Semver: new methods and fields are minor versions.
+
+| member | what it does |
+|---|---|
+| `version` | the contract version, e.g. `"1.0.0"` |
+| `tools()` | the in-app assistant's own tools, OpenAI function shape with FULL JSON schemas, plus the agent-only tools below |
+| `systemPrompt()` | the assistant's guidance (coordinates, primitives, flow-node vocabulary, physics rules) — give it to your model |
+| `exec(name, args)` | run one tool. Replicated to every peer, ONE undo step per call, calls run one at a time, never throws (`{error}` instead) |
+| `snapshot(cap?)` | the scene as the assistant sees it: objects (uuid, name, transform, material, physics, flow graph), scene flow, behaviours, joints |
+| `status()` | `{version, appVersion, peerId, host, joined, waiting, role, canEdit, peers, missingTools, missingModules, pendingOffers, inVR, notices}` |
+| `waitForEdit(ms?)` | resolves `{changed: true, at}` on the next scene change made by someone else, or `{changed: false, timedOut: true}` (default 30 s, max 10 min); your own `exec` never wakes it |
+| `screenshot({view, uuid, size, grid})` | a clean PNG data URL (no gizmo, selection, grid or helpers) from a TEMPORARY camera: `view` = `iso` (default) · `top` · `front` · `current` (the page's own camera) · `focus` (frames `uuid`); `size` = longest side, 64–2048 (default 768); `grid: true` draws the editor grid. Never moves anyone's view. `null` in VR |
+| `pendingOffers()` / `accept(id, action?)` | questions the app asked with buttons (an admin-role offer, "share or stash"), kept until answered — the toast that showed one may have expired |
+| `leave()` | a graceful goodbye: every peer drops you at once, no ghost in Users |
+
+**Agent-only tools** (in `tools()`, run locally, allowed for viewers): `install_modules` (install the
+modules other peers run that this page lacks — `status().missingModules`), `pending_offers`,
+`accept_offer`.
+
+**The full tool set.** In an agent session the physics tools (`set_physics`, `create_joints`,
+`control_simulation` and the physics flow nodes) are always offered. `generate_mesh` is offered
+when the HOST has a mesh provider ready (the call runs on the host's provider — you never bring
+keys into the page — and the host sees who asked and can cancel). `status().missingTools` says why
+any tool is absent.
+
+## Rules a builder must respect
+
+- **Use real uuids.** Read `snapshot()` (or `list_scene`) first; edit by uuid.
+- **Batch.** Put every object of a request into ONE `create_objects` call — one undo step, one
+  replication burst. A campfire with six rocks and a flame is one call with seven objects.
+- **Y is up, metres, radians.** The ground is y = 0; an object of height h rests at y = h/2.
+- **Motion is flow nodes.** A behaviour node (spin, bounce, pathpatrol, blink…) in an OBJECT's
+  graph with no edges drives that object: one node, zero edges. Logic nodes (latch, delay,
+  sequence, counter) need wires.
+- **Static scenery.** New primitives may spawn dynamic; pin ground, walls and props with
+  `set_physics` `mode: "static"` before anyone presses Play, or the scene collapses.
+- **Never fight a person.** An object locked by another peer is skipped (`skipped: "locked by
+  another peer"`); do not retry in a loop. `waitForEdit` is how you notice people's changes.
+- **Everything is shared.** Every peer sees each call as it happens and can undo it. There is no
+  private side channel, by design.
+- **Look before you say "done".** `screenshot()` after a build; compare with the request.
+
+## The light engine
+
+`npx -y @theprototype/agent mcp --engine=wire <link>` is a small Node peer without a browser:
+objects only (no flow graphs, behaviours, physics or screenshots). Use it where a headless
+Chromium cannot run.

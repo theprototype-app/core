@@ -229,6 +229,7 @@ export const DEBUG_HOOKS = [
 	['connectionState', () => import('./connectionState')],
 	['peerApproval', () => import('./peerApproval')],
 	['inviteStore', () => import('./inviteStore')],
+	['agentLog', () => import('./agentLog')],
 	['particleRuntime', () => import('./particleRuntime')],
 	['particleActions', () => import('./particleActions')],
 	['particlePresets', () => import('./particlePresets')],

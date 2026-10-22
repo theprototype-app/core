@@ -25,6 +25,8 @@ import { log } from '$lib/diagnostics';
 import { isRefusal } from '$lib/connectionState';
 import { applyJoinRefusal } from '$lib/peerApproval';
 // 55 A4: invite links — the host's check and the joiner's proof (store-only, no cycle)
+// 55 A7/A8: the agent action log + where an agent looked (store-only)
+import { applyAgentLog, applyAgentUndo, applyAgentView, dropAgentView, sendAgentLogTo } from '$lib/agentLog';
 import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests } from '$lib/inviteStore';
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
@@ -1429,6 +1431,12 @@ export class PeerConnection {
 					// 34 PF (profiler-xr): a peer's live perf stream, or a request to stream ours.
 					// LOCAL presence-like data: never re-broadcast, never saved, never undone.
 					routePerfLive(conn.peer, data);
+				} else if(data.type == 'agentlog') {
+					applyAgentLog(conn.peer, data); // 55 A8: one agent tool call (or the handshake's recent N)
+				} else if(data.type == 'agentundo') {
+					applyAgentUndo(conn.peer, data); // 55 A8: an editor's per-line Undo, to the agent that holds it
+				} else if(data.type == 'agentview') {
+					applyAgentView(conn.peer, data); // 55 A7: where the agent's last screenshot looked
 				} else if(data.type == 'vrhands') {
 					peerHands.update((map) => ({
 						...map,
@@ -1594,6 +1602,8 @@ export class PeerConnection {
 		if (!hostsPrivate) conn.send({type: 'locked', lockeditems: locks})
 		conn.send({type: 'hosts', hosts: hosts})
 		conn.send({type: 'userdata', userdata: users})
+		// 55 A8: the newest agent log lines, so a late joiner's AI window shows what was built
+		sendAgentLogTo(conn);
 		// V3: app version rides the modules handshake — old peers ignore the extras,
 		// old senders omit them (checkPeerAppVersion is silent on absence)
 		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1})
@@ -1957,6 +1967,7 @@ export class PeerConnection {
 		dropPeerEnvPresets(peerId);
 		dropPeerMaterialPresets(peerId);
 		dropPeerHandModel(peerId);
+		dropAgentView(peerId); // 55 A7
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
 		checkLocks();
 		peers.update((value) => value);

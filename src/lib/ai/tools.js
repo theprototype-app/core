@@ -554,6 +554,14 @@ export function repairToolCall(rawName, rawArgs) {
 const PHYSICS_DISABLED =
 	'physics tools are disabled — enable "Physics tools" for this provider in Settings → AI';
 
+/** 55 A8: one observer of every tool call — `(name, args) => (result) => void`, set by the agent
+ * page's action-log recorder. Null everywhere else (the call path is unchanged). @type {any} */
+let aiToolObserver = null;
+/** @param {((name: string, args: any) => ((result: any) => void) | void) | null} fn */
+export function setAiToolObserver(fn) {
+	aiToolObserver = fn;
+}
+
 /**
  * Execute one tool call. Never throws — returns a JSON-serializable result.
  * @param {string} rawName
@@ -561,6 +569,26 @@ const PHYSICS_DISABLED =
  * @returns {Promise<any>}
  */
 export async function executeAiTool(rawName, rawArgs) {
+	if (!aiToolObserver) return runAiTool(rawName, rawArgs);
+	const { name, args } = repairToolCall(rawName, rawArgs);
+	/** @type {any} */
+	let done = null;
+	try {
+		done = aiToolObserver(name, args);
+	} catch {
+		/* the log is presentation: never let it stop a call */
+	}
+	const result = await runAiTool(rawName, rawArgs);
+	try {
+		Promise.resolve(done?.(result)).catch(() => {});
+	} catch {
+		/* ditto */
+	}
+	return result;
+}
+
+/** @param {string} rawName @param {any} rawArgs @returns {Promise<any>} */
+async function runAiTool(rawName, rawArgs) {
 	const { name, args } = repairToolCall(rawName, rawArgs);
 	try {
 		switch (name) {

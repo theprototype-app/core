@@ -21,7 +21,7 @@
 	import ConnectInfoDrawer from './ConnectInfoDrawer.svelte';
 	// 55 A4: Request AI — the invite sheet
 	import InviteSheet from './InviteSheet.svelte';
-	import { inviteSheet } from '$lib/inviteStore';
+	import { inviteSheet, kindOfRow } from '$lib/inviteStore';
 	import { rolesInfo } from '$lib/cloudHooks';
 	import { safeStorage } from '$lib/safeStorage';
 	// 44 M14: pinned to the top row (the full-width bar) or floating (the centred pill, compact when crowded)
@@ -418,8 +418,10 @@
 	/** up to three peers on the chip, the rest as +N (NOTES-38 #12: a speaker gets the ring) */
 	const chipPeers = $derived(
 		remoteOpen.slice(0, 3).map((id) => {
-			const name = $userdata.find((u) => u[0] === id)?.[1] || String(id);
-			return { id, name, initial: String(name).trim().charAt(0).toUpperCase() || '?' };
+			const row = $userdata.find((u) => u[0] === id);
+			const name = row?.[1] || String(id);
+			// 55 A7: an agent is a robot on the chip, never a voice avatar
+			return { id, name, initial: String(name).trim().charAt(0).toUpperCase() || '?', agent: kindOfRow(row) === 'agent' };
 		})
 	);
 	const selfSpeaking = $derived(!!$peers?.peer?.id && $speakingPeers.includes($peers.peer.id));
@@ -559,7 +561,11 @@
 				<span class="cx-dot cx-status-dot" data-tone={$connectionStatus.tone} aria-hidden="true"></span>
 				<span class="cx-avatars" aria-hidden="true">
 					{#each chipPeers as p (p.id)}
-						<span class="cx-av" class:speaking={$speakingPeers.includes(p.id)} style:background={peerColor(p.id)} title={p.name}>{p.initial}</span>
+						{#if p.agent}
+							<span class="cx-av cx-av-agent" style:background={peerColor(p.id)} title={p.name + ' (AI agent)'}><Icon name="bot" size={16} aria-hidden="true" /></span>
+						{:else}
+							<span class="cx-av" class:speaking={$speakingPeers.includes(p.id)} style:background={peerColor(p.id)} title={p.name}>{p.initial}</span>
+						{/if}
 					{/each}
 					{#if remoteOpen.length > 3}<span class="cx-av cx-av-more">+{remoteOpen.length - 3}</span>{/if}
 				</span>

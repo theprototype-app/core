@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { flowCursors, activeGraphId, SCENE_GRAPH } from '../../stores/flowStore';
+	import { hiddenPeers } from '$lib/peerHide'; // 55 A9: Hide takes their cursor off this screen
 
 	// Renders connected peers' cursors inside the flow editor. Coordinates arrive
 	// in flow space; the current viewport (pan/zoom) converts them to screen space.
@@ -32,7 +33,7 @@
 
 <div class="pointer-events-none absolute inset-0 overflow-hidden" style="z-index: 10;">
 	<!-- H1: only cursors on the SAME graph as this editor (missing graphId = scene) -->
-	{#each Object.entries($flowCursors).filter(([, c]) => ((c as any).graphId ?? SCENE_GRAPH) === $activeGraphId) as [id, cursor] (id)}
+	{#each Object.entries($flowCursors).filter(([cid, c]) => ((c as any).graphId ?? SCENE_GRAPH) === $activeGraphId && !$hiddenPeers.includes(cid)) as [id, cursor] (id)}
 		<div
 			class="absolute flex items-start"
 			style="left: {cursor.x * viewport.zoom + viewport.x}px; top: {cursor.y * viewport.zoom + viewport.y}px;"

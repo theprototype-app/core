@@ -25,6 +25,7 @@ import { log } from '$lib/diagnostics';
 import { isRefusal } from '$lib/connectionState';
 import { applyJoinRefusal } from '$lib/peerApproval';
 import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
+import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
@@ -108,7 +109,7 @@ import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
 import { applyRemoteBehavior } from '$lib/packBehavior';
 import { sendArchBehaviorStates } from '$lib/arch/archParts.js';
-import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
+import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene, isVRMode } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast, pushNotification, chatHistory, mergeChatHistory } from '../stores/appStore';
 // 41 G21: the signaling link's ups and downs are a STATE on the Connect pill's dot, never toasts
 import { GIVE_UP_ATTEMPTS } from '$lib/connectionStatus';
@@ -827,6 +828,9 @@ export class PeerConnection {
 				// The get* REQUESTS are not in ROOM_SCOPED, deliberately — they are the gate's
 				// own queue mechanism, and dropping them would strand both sides in silence.
 				if (data && ROOM_SCOPED.has(data.type) && gateHolds(conn.peer)) return;
+				// 55 A9: who did what, for the peer menu's "Show their recent changes" (LOCAL,
+				// past every gate — only what was actually applied here is recorded)
+				notePeerActivity(conn.peer, data);
 				// console.log(data);
 				if(data.type == 'cloud') {
 					// open-core (M1): the cloud plugin's own replicated channel
@@ -1306,6 +1310,7 @@ export class PeerConnection {
 					else this.wireBatchPeers.delete(conn.peer);
 					checkModuleVersions(data.versions);
 					checkPeerAppVersion(data.appVersion);
+					notePeerFacts(conn.peer, { appVersion: data.appVersion, device: data.dev }); // 55 A9: the profile card
 				} else if(data.type == 'getmodulestate') {
 					sendModuleStates(data.sender);
 					sendCameraPreviewState(); // 16-P5: ride the same late-joiner request
@@ -1548,7 +1553,7 @@ export class PeerConnection {
 		for (const k of blockReplay()) conn.send(k);
 		// V3: app version rides the modules handshake — old peers ignore the extras,
 		// old senders omit them (checkPeerAppVersion is silent on absence)
-		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1})
+		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1, dev: myDevice(get(isVRMode))}) // 55 A9: `dev` is additive
 		// 37 R15: the chat so far. Chat is MESH-WIDE (not a room's content), so this goes out
 		// whatever the connect decision / privacy hold below decides about the scene.
 		conn.send({type: 'getchat', sender: this.peer.id})
@@ -1896,6 +1901,7 @@ export class PeerConnection {
 		dropPeerEnvPresets(peerId);
 		dropPeerMaterialPresets(peerId);
 		dropPeerHandModel(peerId);
+		dropPeerFacts(peerId); // 55 A9
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
 		checkLocks();
 		peers.update((value) => value);

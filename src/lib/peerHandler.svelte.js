@@ -24,6 +24,7 @@ import { log } from '$lib/diagnostics';
 // 25-F: the join result (peerApproval is store-only, so a static edge closes no cycle)
 import { isRefusal } from '$lib/connectionState';
 import { applyJoinRefusal } from '$lib/peerApproval';
+import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
@@ -645,6 +646,16 @@ export class PeerConnection {
 				return;
 			}
 
+			// 55 A9: a peer REMOVED AND BLOCKED from this session. Refused before anything
+			// below can whitelist it (an auth provider's auto-admit included), and told so when
+			// its dial can hear a join result — "You were removed from this session".
+			if (isBlocked(conn.peer)) {
+				log('info', 'net', 'blocked peer refused', { peer: conn.peer });
+				if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'removed');
+				try { conn.close(); } catch {}
+				return;
+			}
+
 			// Update approval status on expected connections
 			let waiting = get(waitingForApproval);
 			waiting.forEach(element => {
@@ -850,6 +861,9 @@ export class PeerConnection {
 						// the whitelist, written at dial time, so it counts people who were
 						// invited and never arrived.
 						if (roomIsFull(this)) return;
+						// 55 A9: never fill the mesh back in with a peer just removed / blocked
+						// (a `hosts` list from a peer that had not heard the kick yet)
+						if (isHeldOut(id)) return;
 						// mesh fill: connect, but DON'T request full state — the scene
 						// is one shared state and we already pull it from the peer we
 						// joined. Requesting it from everyone made a joiner download
@@ -980,6 +994,12 @@ export class PeerConnection {
 					// the room gate every full-state reply here takes: a peer standing in
 					// another scene must not be handed this one's tempo
 					if (sameRoomOrUnknown(conn.peer)) sendTransport(data.sender);
+				} else if(data.type == 'kick') {
+					// 55 A9: remove (and block / allow back) a peer. The SENDER is checked
+					// receive-side (session host, or an admin under roles); every entitled
+					// receiver closes its own connection to that peer — see peerModeration.
+					const verdict = applyKick(data, conn.peer, this);
+					if (verdict === 'ignore') log('warn', 'net', 'kick ignored', { from: conn.peer, peer: data?.peer });
 				} else if(data.type == 'joinresult') {
 					// 25-F: the answer to our join request as a MESSAGE. A refusal normally
 					// arrives as dial metadata and never reaches here; this path is the same
@@ -1522,7 +1542,10 @@ export class PeerConnection {
 		const hostsPrivate = amPrivate();
 		if (!hostsPrivate) conn.send({type: 'locked', lockeditems: locks})
 		conn.send({type: 'hosts', hosts: hosts})
-		conn.send({type: 'userdata', userdata: users})
+		conn.send({type: 'userdata', userdata: users.filter((/** @type {any} */ u) => !isHeldOut(u[0]))})
+		// 55 A9: a moderator hands its block list on, so a blocked re-dial is refused by
+		// whichever peer it reaches — including one that joined after the block
+		for (const k of blockReplay()) conn.send(k);
 		// V3: app version rides the modules handshake — old peers ignore the extras,
 		// old senders omit them (checkPeerAppVersion is silent on absence)
 		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1})
@@ -1621,8 +1644,9 @@ export class PeerConnection {
 	 * answer — delivered through signaling with the offer, so it arrives even where a data
 	 * channel could never open — never added to `connections`, never wired, closed by the
 	 * joiner at once and by us after REFUSAL_DIAL_MS whatever happens. Callers only send
-	 * this to a dial that advertised `jr` (see denyPeer). @param {string} peerId
-	 * @param {'denied' | 'full'} result @returns {boolean} whether a dial went out
+	 * this to a dial that advertised `jr` (see denyPeer). 55 A9: 'removed' answers a blocked
+	 * peer's re-dial. @param {string} peerId
+	 * @param {'denied' | 'full' | 'removed'} result @returns {boolean} whether a dial went out
 	 */
 	sendJoinResult(peerId, result) {
 		if (!isRefusal(result) || !this.peer?.open) return false;
@@ -1920,6 +1944,7 @@ export class PeerConnection {
 		// claimed after you left — for the life of the page.
 		releaseMic();
 		resetSession();
+		resetModeration(); // 55 A9: a block list belongs to the session it was made in
 		checkLocks();
 		peers.update((value) => value);
 	}

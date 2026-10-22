@@ -214,6 +214,15 @@ export const VALIDATORS = {
 	environment: (d) => !!d && typeof d === 'object',
 	atscene: (d) => typeof d.peerId === 'string',
 	disconnected: (d) => typeof d.peerId === 'string',
+	// 55 A9: remove / remove-and-block / allow back. WHO may send it is decided by the
+	// receiver (peerModeration), not here — this is the shape.
+	// (peerModerationCore.isKickMessage mirrors it; this file stays a zero-import leaf.)
+	kick: (d) =>
+		typeof d.peer === 'string' &&
+		d.peer.length > 0 &&
+		d.peer.length <= 64 &&
+		(d.block === undefined || typeof d.block === 'boolean') &&
+		(d.allow === undefined || typeof d.allow === 'boolean'),
 	annotations: (d) => isArray(d.annotations),
 	joints: (d) => isArray(d.joints),
 	triggers: (d) => !!d.triggers && typeof d.triggers === 'object',

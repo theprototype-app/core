@@ -26,6 +26,7 @@ import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
+import { isHeldOut } from '$lib/peerModeration' // 55 A9
 import { get, writable } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { dropWireErrors } from './wireErrors';
@@ -87,6 +88,9 @@ export function userData(data) {
     if (!Array.isArray(data)) return;
     data.forEach(element => {
         if (!Array.isArray(element) || typeof element[0] !== 'string') return;
+        // 55 A9: a roster written before the sender heard a kick must not re-whitelist
+        // the peer it removed
+        if (isHeldOut(element[0])) return;
         console.log('received new approved host : ' + element[0])
         if (!users.some(u => u[0] === element[0]))
             users.push(element)

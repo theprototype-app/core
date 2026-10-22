@@ -11,6 +11,7 @@ import {
 	noteJoinRefusal,
 	clearJoinRefusal
 } from './connectionState';
+import { forgetRemoved } from './peerModeration';
 
 // Pending-connection approval (211). Kept in its own store-only module so VR
 // (vrControls -> executeVRMenuAction) can call it WITHOUT statically importing
@@ -35,6 +36,7 @@ export function approvePeer(peerId) {
 	}
 	pendingApprovals.set(get(pendingApprovals).filter((/** @type {any} */ p) => p.peerId !== peerId));
 	clearApprovalStarted(peerId);
+	forgetRemoved(peerId); // 55 A9: an approval lets back in somebody removed moments ago
 	const users = /** @type {any[]} */ (get(userdata));
 	if (!users.some((/** @type {any} */ u) => u[0] === peerId)) users.push([peerId, '', '']);
 	userdata.set(/** @type {any} */ (users));
@@ -88,6 +90,9 @@ export function applyJoinRefusal(peerId, result) {
 		showToast(label(peerId) + "'s session is full (" + HARD_PEER_CAP + ' people). Try again when someone leaves.', [
 			{ label: 'Try again', action: () => requestConnect(peerId) }
 		]);
+	} else if (result === 'removed') {
+		// 55 A9: a blocked peer's re-dial
+		showToast('You were removed from this session.');
 	} else {
 		showToast(label(peerId) + ' declined your connection request.');
 	}

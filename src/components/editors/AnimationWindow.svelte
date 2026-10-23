@@ -33,7 +33,8 @@
 	// posed from the synced clock) — the window used to ignore them entirely, so
 	// a rigged model showed "no movements yet" and its own animations were
 	// reachable only from the Inspector.
-	import { animatedObjects, setAnimationState, clipInfo, behaviorOf } from '$lib/animatedImports';
+	import { animatedObjects, setAnimationState, clipInfo, behaviorOf, restRowsOf } from '$lib/animatedImports';
+	import { openApplyClip } from '$lib/characterUi.js';
 	import Icon from '../ui/Icon.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -2037,6 +2038,15 @@
 					<div id="animation-clips" class="border-b border-border">
 						<div class="flex items-center justify-between px-2 pt-1.5">
 							<span class="text-[10px] uppercase tracking-wider text-text-faint">Imported clips</span>
+							<!-- 57 M2: a rig's clip can play on any other mapped humanoid -->
+							{#if target && !behavior && restRowsOf(target.uuid).length}
+								<button
+									id="clip-apply-to"
+									class="ui-button-quiet ml-auto mr-2 text-[10px] text-accent-text"
+									title="Play the selected clip on other characters (fitted to each skeleton)"
+									onclick={() => target && openApplyClip({ src: { uuid: target.uuid, clip: clipState?.clip ?? clips[0]?.name } })}
+								>Apply to…</button>
+							{/if}
 							<span class="text-[10px] text-text-faint">{clips.length}</span>
 						</div>
 						<div class="max-h-24 overflow-y-auto p-1" use:minimalScroll>

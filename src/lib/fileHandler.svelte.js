@@ -1,3 +1,6 @@
+import { addProvenance } from '$lib/provenance';
+import { APP_VERSION } from '$lib/version';
+import { glbIsVrm } from '$lib/vrm/vrmDetect';
 import * as THREE from 'three';
 import { showChoice } from './confirmDialog.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -414,12 +417,19 @@ export async function loadFile(url, name) {
  * Animated imports keep their file bytes and replicate as ONE objectfile
  * message (rigs cannot survive the per-node pipeline).
  * @param {any} result @param {ArrayBuffer} buffer @param {string=} name
- * @param {'gltf'|'fbx'=} kind which parser the bytes need on the other side (17-D2)
+ * @param {'gltf'|'fbx'|'vrm'=} kind which parser the bytes need on the other side (17-D2; 57 M4 'vrm')
  * @param {number[]=} position 33 P2: the drop point
  */
 function addAnimatedImport(result, buffer, name, kind, position) {
 	const root = result.scene;
 	root.name = name ?? 'Animated import';
+	// 57 M7: where it came from (rides the bytes: animatedImports rootDataFields). A VRM's licence is
+	// its own meta; anything else says nothing about its licence, which is honest
+	if (!root.userData?.provenance) {
+		const vrmLicence = root.userData?.vrmLicence ?? null;
+		root.userData = root.userData ?? {};
+		addProvenance(root.userData, { tool: 'import', model: kind === 'vrm' ? 'VRM' : kind === 'fbx' ? 'FBX' : 'glTF', version: APP_VERSION, source: root.name, licence: vrmLicence });
+	}
 	// 33 P2: an animated model lands where it was dropped, like every other import (the
 	// position used to be ignored on this path, so a door dropped at the cursor appeared at
 	// the origin). Set BEFORE the sync so peers receive the placed transform.
@@ -438,7 +448,9 @@ function addAnimatedImport(result, buffer, name, kind, position) {
 	showToast(
 		root.userData.behavior
 			? 'Placed "' + root.name + '" — it opens with a click in Interact or Play'
-			: 'Animated model: ' + result.animations.length + ' clip(s) — play them from the Animation panel'
+			: result.animations.length
+				? 'Animated model: ' + result.animations.length + ' clip(s) — play them from the Animation panel'
+				: 'Rigged character — give it motions with Inspector ▸ Character ▸ Apply clip…'
 	);
 }
 
@@ -492,7 +504,7 @@ export function importGeneratedGlb(buffer, opts = {}) {
 						const root = result.scene;
 						// 26-F: a generated mesh is a model like any other — the same ask,
 						// and a cancel rejects so the job reports it rather than waiting
-						const animated = result.animations?.length > 0;
+						const animated = result.animations?.length > 0 || hasSkin(root);
 						const answer = await admitModel(root, {
 							name: opts.name ?? 'Generated',
 							extraChoices: animated ? undefined : (verdict) => reduceChoice(verdict, root),
@@ -502,7 +514,12 @@ export function importGeneratedGlb(buffer, opts = {}) {
 							reject(new Error('Import cancelled — the model is above this device\'s budget'));
 							return;
 						}
-						if (opts.provenance) root.userData = { ...(root.userData || {}), aiGen: opts.provenance };
+						if (opts.provenance) {
+							root.userData = { ...(root.userData || {}), aiGen: opts.provenance };
+							// 57 M7: the shared provenance record beside the legacy aiGen stamp
+							const p = opts.provenance;
+							addProvenance(root.userData, { tool: 'generate', model: [p.provider, p.label].filter(Boolean).join(' / ') || undefined, version: APP_VERSION, prompt: p.prompt, date: p.at ? new Date(p.at).toISOString().slice(0, 19) + 'Z' : undefined });
+						}
 						if (answer === 'reduce') {
 							const name = opts.name ?? 'Generated';
 							const placed = await placeReduced(
@@ -516,8 +533,9 @@ export function importGeneratedGlb(buffer, opts = {}) {
 							else reject(new Error('The reduction failed — nothing was imported'));
 							return;
 						}
-						if (result.animations?.length > 0) {
-							// rare for generated meshes; animated rigs keep the raw-bytes path (unplaced)
+						if (result.animations?.length > 0 || hasSkin(root)) {
+							// rare for generated meshes; animated rigs keep the raw-bytes path (unplaced).
+							// 57 M2: a RIGGED generation too (Meshy auto-rig), so clips can be applied to it
 							addAnimatedImport(result, buffer, opts.name ?? 'Generated');
 						} else {
 							addImported(root, opts.name ?? 'Generated', opts.position);
@@ -656,7 +674,16 @@ function readAs(file, mode) {
 }
 
 /** the model formats the import dialog and the viewport drop both accept */
-export const MODEL_EXT = /\.(glb|gltf|obj|stl|fbx)$/i;
+export const MODEL_EXT = /\.(glb|gltf|obj|stl|fbx|vrm)$/i; // 57 M4: .vrm
+/** 57 M2: does this tree carry a skeleton? (a rig must ride its original bytes) @param {any} root */
+export function hasSkin(root) {
+	let found = false;
+	root?.traverse?.((/** @type {any} */ o) => {
+		if (o.isSkinnedMesh) found = true;
+	});
+	return found;
+}
+
 /** files that are not models themselves but belong to one (17-D2) */
 export const COMPANION_EXT = /\.(mtl|png|jpe?g|webp|bmp|gif)$/i;
 
@@ -727,8 +754,9 @@ export async function parseModelFile(file, extension, extras) {
 		// 17-D2: FBX clips used to be dropped on the floor (the loader parsed
 		// them, nothing read them). Animated rigs now take the SAME raw-bytes
 		// route as animated GLB — peers reparse the original file.
-		const animated = object.animations?.length > 0
-			? { result: { scene: object, animations: object.animations }, buffer, kind: 'fbx' }
+		// 57 M2: a RIG with no clips rides the same path — the per-node sync cannot carry a skeleton
+		const animated = object.animations?.length > 0 || hasSkin(object)
+			? { result: { scene: object, animations: object.animations ?? [] }, buffer, kind: 'fbx' }
 			: null;
 		return { root: object, animated, notes };
 	}
@@ -736,9 +764,17 @@ export async function parseModelFile(file, extension, extras) {
 	// arrives as an ordinary texture with its compressed twin (ktx2Twins.js), never as a
 	// CompressedTexture the wire/undo/saves could not write.
 	const buffer = await readAs(file, 'buffer');
+	// 57 M4: a VRM (.vrm, or a .glb carrying the VRM extension) parses through three-vrm — a lazy
+	// chunk — and rides the raw-bytes path as kind 'vrm', so every peer gets its springs + face
+	if (extension === 'vrm' || glbIsVrm(buffer)) {
+		const { parseVrmBytes } = await import('./vrm/vrmRuntime.js');
+		const vrm = await parseVrmBytes(buffer);
+		return { root: vrm.root, animated: { result: { scene: vrm.root, animations: vrm.animations }, buffer, kind: 'vrm' }, notes };
+	}
 	const result = await parseGltfSceneSafe(buffer);
-	// animated rigs keep their own pipeline (raw-bytes sync) — unplaced
-	const animated = result.animations?.length > 0 ? { result, buffer, kind: 'gltf' } : null;
+	// animated rigs keep their own pipeline (raw-bytes sync) — unplaced. 57 M2: so does a rig
+	// without clips (a VRM, a Meshy / UniRig character): clips get applied to it later
+	const animated = result.animations?.length > 0 || hasSkin(result.scene) ? { result, buffer, kind: 'gltf' } : null;
 	return { root: result.scene, animated, notes };
 }
 
@@ -749,6 +785,7 @@ function defaultImportName(extension, name) {
 	if (extension === 'obj') return 'OBJ';
 	if (extension === 'stl') return 'STL';
 	if (extension === 'fbx') return 'FBX';
+	if (extension === 'vrm') return 'VRM';
 	return undefined;
 }
 
@@ -764,6 +801,8 @@ const SKIP_OPTIMIZE = Symbol('skip-optimize');
  */
 function optimizeCheckNeeded(parsed, opts) {
 	if (opts?.packRef || opts?.lod || opts?.noOptimize) return false;
+	// 57 M4: a VRM is never rewritten — the optimizer would drop its VRM extension (springs, face, licence)
+	if (parsed.animated?.kind === 'vrm') return false;
 	const root = parsed.animated ? parsed.animated.result?.scene : parsed.root;
 	const cost = modelCost(root);
 	if (!underImportThresholds({ triangles: cost.triangles, maxTextureSide: cost.maxTextureSize }, get(importSettings))) return true;

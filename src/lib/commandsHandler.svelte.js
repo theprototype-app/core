@@ -13,7 +13,7 @@ import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined } from '$lib/connectionState'
 import { environment, editEnvSky } from '$lib/environment'
-import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
+import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports, setVrmExpression } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
@@ -582,6 +582,13 @@ export async function objectParameters(data) {
         setMaterialParam(data.uuid, data.key, data.value, false);
     } else if (data.parameter == 'animation') {
         setAnimationState(data.uuid, { clip: data.clip, playing: data.playing, speed: data.speed }, false);
+    } else if (data.parameter == 'humanoid') {
+        // 57 M2: a character's humanoid map fixes + applied clips; each peer retargets for itself
+        const { receiveHumanoid } = await import('$lib/humanoid/humanoidRig.js');
+        receiveHumanoid(data);
+    } else if (data.parameter == 'expression') {
+        // 57 M4: a VRM expression weight (the face of a character)
+        setVrmExpression(data.uuid, data.name, data.weight, false);
     } else if (data.parameter == 'castShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.castShadow = data.castShadow;

@@ -267,6 +267,7 @@
 		animstate: AnimStateNode, // 17-E F3: the readable half of it
 		playseq: TimelineSeqNode, // 48 S2: Play Sequence
 		onseqevent: TimelineSeqNode, // 48 S2: On Sequence Event
+		setexpression: AnimationNode, // 57 M4: spec-driven (expression text + weight)
 		// A3: ONE generic card for the whole HUD group (the ShaderNode precedent)
 		hudscreen: HudNode,
 		hudtext: HudNode,

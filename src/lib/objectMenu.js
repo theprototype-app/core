@@ -19,6 +19,8 @@ import { createJoint, detachJoints, jointsFor } from './joints';
 import { addParticlesPreset, removeObjectParticles, burstObjectParticles } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
 import { SAVE_AS_FORMATS, saveSelectionAs } from './saveAs';
+import { restRowsOf } from './animatedImports';
+import { openApplyClip } from './characterUi.js';
 import { enterEditMode } from './meshEdit';
 // 24-E3: a group's origin from its context menu, and the set's pivot point
 import { originPreset, resetOrigin } from './objectOrigin';
@@ -701,8 +703,23 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 				])
 	];
 
+	// 57: a RIGGED model (bones captured at registration) gets Character ▸ — its clips and its skeleton
+	const rigged = !multi && !!object && restRowsOf(uuid).length > 0;
+	/** @type {any[]} */
+	const character = rigged
+		? [
+				{
+					label: 'Apply clip…',
+					icon: 'person-standing',
+					tooltip: 'Play a clip from another model or the built-in motions on this character (fitted to its skeleton)',
+					action: () => openApplyClip({ targets: [uuid] })
+				}
+			]
+		: [];
+
 	/** @type {any[]} the submenus: rare or specialist work, one level down */
 	const more = [
+		...(character.length ? [{ label: 'Character', icon: 'person-standing', children: character }] : []),
 		{ label: 'Transform', icon: 'move-3d', children: transform },
 		...(mesh.length ? [{ label: 'Mesh', icon: 'box', children: mesh }] : []),
 		{ label: 'Physics & effects', icon: 'atom', children: behaviour },

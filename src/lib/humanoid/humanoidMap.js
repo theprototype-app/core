@@ -73,7 +73,6 @@ function fingerBones(side) {
 	return out;
 }
 
-
 /** name -> the spec row @type {Map<string, {name: string, parent: string | null, required?: boolean}>} */
 const BY_NAME = new Map(VRM_BONES.map((b) => [b.name, b]));
 
@@ -132,7 +131,8 @@ const PART_RULES = /** @type {[RegExp, string][]} */ ([
 ]);
 
 /** a bone that is only an END marker or a helper — never a humanoid bone */
-const IGNORE = /(end$|_end|top$|front$|nub$|tip$|slot|ik|pole|target|control|roll|twist|socket|weapon|prop|root$|^root|armature|^rig$)/i;
+const IGNORE =
+	/(end$|_end|top$|front$|nub$|tip$|slot|ik|pole|target|control|roll|twist|socket|weapon|prop|root$|^root|armature|^rig$)/i;
 
 /**
  * Read one bone name: its side and the body part it names.
@@ -165,12 +165,18 @@ export function readBoneName(raw) {
 	// by a bare l/r is a side too
 	if (!side) {
 		const tail = rest.match(/^(.*?)([lr])$/);
-		if (tail && /^(upperarm|lowerarm|forearm|hand|wrist|upperleg|lowerleg|upleg|leg|foot|toes?|shoulder|clavicle|thigh|calf|ball|arm|eye)$/.test(tail[1])) {
+		if (
+			tail &&
+			/^(upperarm|lowerarm|forearm|hand|wrist|upperleg|lowerleg|upleg|leg|foot|toes?|shoulder|clavicle|thigh|calf|ball|arm|eye)$/.test(
+				tail[1]
+			)
+		) {
 			side = tail[2] === 'l' ? 'left' : 'right';
 			rest = tail[1];
 		}
 	}
-	if (IGNORE.test(rest) && !/^(hips?|head|neck)$/.test(rest)) return { side, part: '', rest, seg: 0 };
+	if (IGNORE.test(rest) && !/^(hips?|head|neck)$/.test(rest))
+		return { side, part: '', rest, seg: 0 };
 	let part = '';
 	for (const [re, p] of PART_RULES) {
 		if (re.test(rest)) {
@@ -228,7 +234,13 @@ export function detectHumanoidMap(bones) {
 	const shaped = mapFromStructure(bones);
 	const shapeMissing = REQUIRED_BONES.filter((b) => !shaped[b]);
 	if (shapeMissing.length < missing.length)
-		return { map: shaped, rig: rig === 'generic' ? 'unirig' : rig, missing: shapeMissing, ok: !shapeMissing.length, via: 'structure' };
+		return {
+			map: shaped,
+			rig: rig === 'generic' ? 'unirig' : rig,
+			missing: shapeMissing,
+			ok: !shapeMissing.length,
+			via: 'structure'
+		};
 	return { map: byNames, rig, missing, ok: false, via: 'names' };
 }
 
@@ -251,7 +263,8 @@ function depthOf(bones, i) {
 
 /** is `a` an ancestor of `b`? @param {BoneEntry[]} bones @param {number} a @param {number} b */
 function isAncestor(bones, a, b) {
-	for (let p = bones[b].parent, n = 0; p >= 0 && n < 1000; p = bones[p].parent, n++) if (p === a) return true;
+	for (let p = bones[b].parent, n = 0; p >= 0 && n < 1000; p = bones[p].parent, n++)
+		if (p === a) return true;
 	return false;
 }
 
@@ -280,12 +293,16 @@ export function mapFromNames(bones) {
 	const map = {};
 	const idx = (/** @type {(i: number) => boolean} */ fn) => bones.map((_, i) => i).filter(fn);
 	const hipsCands = idx((i) => info[i].part === 'hips' && !info[i].side);
-	hipsCands.sort((a, b) => subtreeSize(kids, b) - subtreeSize(kids, a) || depthOf(bones, a) - depthOf(bones, b));
+	hipsCands.sort(
+		(a, b) => subtreeSize(kids, b) - subtreeSize(kids, a) || depthOf(bones, a) - depthOf(bones, b)
+	);
 	const hips = hipsCands[0];
 	if (hips === undefined) return map;
 	map.hips = bones[hips].name;
 	const below = (/** @type {number} */ i) => isAncestor(bones, hips, i);
-	const heads = idx((i) => info[i].part === 'head' && !info[i].side && below(i)).sort((a, b) => depthOf(bones, a) - depthOf(bones, b));
+	const heads = idx((i) => info[i].part === 'head' && !info[i].side && below(i)).sort(
+		(a, b) => depthOf(bones, a) - depthOf(bones, b)
+	);
 	const head = heads[0];
 	if (head !== undefined) {
 		map.head = bones[head].name;
@@ -303,12 +320,24 @@ export function mapFromNames(bones) {
 			map.neck = bones[path[path.length - 1]].name;
 			spineSegs = path.slice(0, -1);
 		}
-		assignSpine(map, spineSegs.map((i) => bones[i].name));
+		assignSpine(
+			map,
+			spineSegs.map((i) => bones[i].name)
+		);
 	}
 	for (const side of /** @type {const} */ (['left', 'right'])) {
 		const S = side;
-		const pick = (/** @type {string} */ part, /** @type {number | undefined} */ under, /** @type {(i: number) => number} */ rank = () => 0) => {
-			const c = idx((i) => info[i].side === S && info[i].part === part && (under === undefined ? below(i) : isAncestor(bones, under, i)));
+		const pick = (
+			/** @type {string} */ part,
+			/** @type {number | undefined} */ under,
+			/** @type {(i: number) => number} */ rank = () => 0
+		) => {
+			const c = idx(
+				(i) =>
+					info[i].side === S &&
+					info[i].part === part &&
+					(under === undefined ? below(i) : isAncestor(bones, under, i))
+			);
 			c.sort((a, b) => rank(a) - rank(b) || depthOf(bones, a) - depthOf(bones, b));
 			return c[0];
 		};
@@ -329,12 +358,21 @@ export function mapFromNames(bones) {
 		}
 		// arms: the upper arm is the 'arm' bone that has a forearm below it (Mixamo's LeftArm, not
 		// a stray "arm_twist" helper)
-		const ups = idx((i) => info[i].side === S && info[i].part === 'upperArm' && below(i) && idx((j) => info[j].side === S && info[j].part === 'lowerArm' && isAncestor(bones, i, j)).length > 0);
+		const ups = idx(
+			(i) =>
+				info[i].side === S &&
+				info[i].part === 'upperArm' &&
+				below(i) &&
+				idx((j) => info[j].side === S && info[j].part === 'lowerArm' && isAncestor(bones, i, j))
+					.length > 0
+		);
 		ups.sort((a, b) => depthOf(bones, a) - depthOf(bones, b));
 		const upArm = ups[0] ?? pick('upperArm', undefined);
 		if (upArm !== undefined) {
 			map[side + 'UpperArm'] = bones[upArm].name;
-			const sh = idx((i) => info[i].side === S && info[i].part === 'shoulder' && isAncestor(bones, i, upArm)).sort((a, b) => depthOf(bones, b) - depthOf(bones, a))[0];
+			const sh = idx(
+				(i) => info[i].side === S && info[i].part === 'shoulder' && isAncestor(bones, i, upArm)
+			).sort((a, b) => depthOf(bones, b) - depthOf(bones, a))[0];
 			if (sh !== undefined) map[side + 'Shoulder'] = bones[sh].name;
 			const low = pick('lowerArm', upArm);
 			if (low !== undefined) {
@@ -347,7 +385,12 @@ export function mapFromNames(bones) {
 				}
 			}
 		}
-		const eye = idx((i) => info[i].side === S && info[i].part === 'eye' && (head === undefined || isAncestor(bones, head, i)))[0];
+		const eye = idx(
+			(i) =>
+				info[i].side === S &&
+				info[i].part === 'eye' &&
+				(head === undefined || isAncestor(bones, head, i))
+		)[0];
 		if (eye !== undefined) map[side + 'Eye'] = bones[eye].name;
 	}
 	if (head !== undefined) {
@@ -380,7 +423,12 @@ function assignFingers(map, side, bones, kids, info, hand) {
 		const stack = [...kids[hand]];
 		while (stack.length) {
 			const j = /** @type {number} */ (stack.pop());
-			if (info[j].part === 'finger' && word.test(info[j].rest) && (!info[j].side || info[j].side === side)) c.push(j);
+			if (
+				info[j].part === 'finger' &&
+				word.test(info[j].rest) &&
+				(!info[j].side || info[j].side === side)
+			)
+				c.push(j);
 			stack.push(...kids[j]);
 		}
 		// numbered (1..3 / 01..03, sometimes 0-based) or by depth when unnumbered
@@ -413,7 +461,8 @@ export function mapFromStructure(bones) {
 		return out;
 	};
 	const extentY = (/** @type {number} */ i) => {
-		let lo = Infinity, hi = -Infinity;
+		let lo = Infinity,
+			hi = -Infinity;
 		const stack = [i];
 		while (stack.length) {
 			const j = /** @type {number} */ (stack.pop());
@@ -424,7 +473,8 @@ export function mapFromStructure(bones) {
 		return [lo, hi];
 	};
 	const height = (() => {
-		let lo = Infinity, hi = -Infinity;
+		let lo = Infinity,
+			hi = -Infinity;
 		for (const b of bones) {
 			lo = Math.min(lo, /** @type {number[]} */ (b.pos)[1]);
 			hi = Math.max(hi, /** @type {number[]} */ (b.pos)[1]);
@@ -446,8 +496,12 @@ export function mapFromStructure(bones) {
 	if (hips < 0) return map;
 	map.hips = bones[hips].name;
 	const y0 = P(hips)[1];
-	const downs = kids[hips].filter((c) => extentY(c)[0] < y0 - height * 0.2).sort((a, b) => P(b)[0] - P(a)[0]);
-	const up = kids[hips].filter((c) => extentY(c)[1] > y0 + height * 0.2).sort((a, b) => extentY(b)[1] - extentY(a)[1])[0];
+	const downs = kids[hips]
+		.filter((c) => extentY(c)[0] < y0 - height * 0.2)
+		.sort((a, b) => P(b)[0] - P(a)[0]);
+	const up = kids[hips]
+		.filter((c) => extentY(c)[1] > y0 + height * 0.2)
+		.sort((a, b) => extentY(b)[1] - extentY(a)[1])[0];
 	const legs = [downs[0], downs[downs.length - 1]];
 	['left', 'right'].forEach((side, k) => {
 		const c = chain(legs[k]);
@@ -470,9 +524,20 @@ export function mapFromStructure(bones) {
 	}
 	if (branch < 0) return map;
 	const sideKids = kids[branch].slice().sort((a, b) => P(b)[0] - P(a)[0]);
-	const neckKid = kids[branch].slice().sort((a, b) => extentY(b)[1] - extentY(a)[1] || Math.abs(P(a)[0]) - Math.abs(P(b)[0]))[0];
-	const arms = [sideKids.find((k) => k !== neckKid), sideKids.slice().reverse().find((k) => k !== neckKid)];
-	assignSpine(map, spine.map((i) => bones[i].name));
+	const neckKid = kids[branch]
+		.slice()
+		.sort((a, b) => extentY(b)[1] - extentY(a)[1] || Math.abs(P(a)[0]) - Math.abs(P(b)[0]))[0];
+	const arms = [
+		sideKids.find((k) => k !== neckKid),
+		sideKids
+			.slice()
+			.reverse()
+			.find((k) => k !== neckKid)
+	];
+	assignSpine(
+		map,
+		spine.map((i) => bones[i].name)
+	);
 	const neckChain = chain(neckKid);
 	if (neckChain.length >= 2) {
 		map.neck = bones[neckChain[0]].name;
@@ -483,8 +548,12 @@ export function mapFromStructure(bones) {
 		if (a === undefined) return;
 		const ch = chain(a);
 		// four joints before the fingers spread = a shoulder first
-		const withShoulder = ch.length >= 4 && Math.abs(P(ch[1])[0] - P(ch[0])[0]) < Math.abs(P(ch[2])[0] - P(ch[1])[0]) * 1.5;
-		const parts = withShoulder ? ['Shoulder', 'UpperArm', 'LowerArm', 'Hand'] : ['UpperArm', 'LowerArm', 'Hand'];
+		const withShoulder =
+			ch.length >= 4 &&
+			Math.abs(P(ch[1])[0] - P(ch[0])[0]) < Math.abs(P(ch[2])[0] - P(ch[1])[0]) * 1.5;
+		const parts = withShoulder
+			? ['Shoulder', 'UpperArm', 'LowerArm', 'Hand']
+			: ['UpperArm', 'LowerArm', 'Hand'];
 		ch.slice(0, parts.length).forEach((j, n) => (map[side + parts[n]] = bones[j].name));
 	});
 	return map;
@@ -498,7 +567,8 @@ export function normalizeHumanoidMap(raw) {
 	/** @type {Record<string, string>} */
 	const out = {};
 	if (!raw || typeof raw !== 'object') return out;
-	for (const [k, v] of Object.entries(raw)) if (BY_NAME.has(k) && typeof v === 'string' && v) out[k] = v;
+	for (const [k, v] of Object.entries(raw))
+		if (BY_NAME.has(k) && typeof v === 'string' && v) out[k] = v;
 	return out;
 }
 
@@ -523,7 +593,10 @@ export function applyMapOverrides(detected, overrides) {
 
 /** a human label for a bone ("leftUpperArm" -> "Left upper arm") @param {string} bone */
 export function boneLabel(bone) {
-	const words = bone.replace(/([A-Z])/g, ' $1').toLowerCase().trim();
+	const words = bone
+		.replace(/([A-Z])/g, ' $1')
+		.toLowerCase()
+		.trim();
 	return words.charAt(0).toUpperCase() + words.slice(1);
 }
 

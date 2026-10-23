@@ -332,6 +332,9 @@ export const VALIDATORS = {
 		// 48 B2: a measurement's record — null is not a record (an item is deleted, never emptied)
 		if (d.parameter === 'measure')
 			return isUuid(d.uuid) && !!d.measure && typeof d.measure === 'object' && isArray(d.measure.points) && d.measure.points.length <= 64;
+		// 57 M2: a humanoid config is a plain object (normalized again by its applier)
+		if (d.parameter === 'expression') return isUuid(d.uuid) && typeof d.name === 'string' && d.name.length <= 64 && Number.isFinite(d.weight);
+		if (d.parameter === 'humanoid') return isUuid(d.uuid) && !!d.humanoid && typeof d.humanoid === 'object' && !isArray(d.humanoid);
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

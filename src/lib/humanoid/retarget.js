@@ -44,7 +44,8 @@ export function rigSnapshot(root, map) {
 		if (!node) continue;
 		/** @type {THREE.Object3D[]} */
 		const chain = [];
-		for (let o = /** @type {THREE.Object3D | null} */ (node); o && o !== root; o = o.parent) chain.unshift(o);
+		for (let o = /** @type {THREE.Object3D | null} */ (node); o && o !== root; o = o.parent)
+			chain.unshift(o);
 		for (const o of chain) {
 			if (seen.has(o)) continue;
 			seen.add(o);
@@ -135,7 +136,11 @@ function bonePos(snap, W, bone) {
  */
 export function restBasis(snap, W = restWorld(snap)) {
 	const hips = bonePos(snap, W, 'hips');
-	const top = bonePos(snap, W, 'head') ?? bonePos(snap, W, 'neck') ?? bonePos(snap, W, 'upperChest') ?? bonePos(snap, W, 'chest');
+	const top =
+		bonePos(snap, W, 'head') ??
+		bonePos(snap, W, 'neck') ??
+		bonePos(snap, W, 'upperChest') ??
+		bonePos(snap, W, 'chest');
 	const l = bonePos(snap, W, 'leftUpperLeg') ?? bonePos(snap, W, 'leftUpperArm');
 	const r = bonePos(snap, W, 'rightUpperLeg') ?? bonePos(snap, W, 'rightUpperArm');
 	if (!hips || !top || !l || !r) return new THREE.Quaternion();
@@ -144,7 +149,9 @@ export function restBasis(snap, W = restWorld(snap)) {
 	if (up.lengthSq() < 0.5 || left.lengthSq() < 0.5) return new THREE.Quaternion();
 	const forward = new THREE.Vector3().crossVectors(left, up).normalize();
 	left.crossVectors(up, forward).normalize();
-	return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(left, up, forward));
+	return new THREE.Quaternion().setFromRotationMatrix(
+		new THREE.Matrix4().makeBasis(left, up, forward)
+	);
 }
 
 /**
@@ -180,7 +187,9 @@ function snapAxisAligned(q) {
 function hipsHeight(snap, W) {
 	const hips = bonePos(snap, W, 'hips');
 	if (!hips) return 1;
-	const feet = ['leftFoot', 'rightFoot', 'leftToes', 'rightToes'].map((b) => bonePos(snap, W, b)).filter(Boolean);
+	const feet = ['leftFoot', 'rightFoot', 'leftToes', 'rightToes']
+		.map((b) => bonePos(snap, W, b))
+		.filter(Boolean);
 	const floor = feet.length ? Math.min(...feet.map((p) => /** @type {THREE.Vector3} */ (p).y)) : 0;
 	const h = hips.y - floor;
 	return h > 1e-6 ? h : Math.max(1e-6, Math.abs(hips.y)) || 1;
@@ -235,7 +244,9 @@ export function retargetClip(clip, source, target, opts = {}) {
 	const srcRest = restWorld(source);
 	const dstRest = restWorld(target);
 	// facing: C maps a direction in the source's basis to the same direction in the target's
-	const C = snapAxisAligned(restBasis(target, dstRest).multiply(restBasis(source, srcRest).invert()));
+	const C = snapAxisAligned(
+		restBasis(target, dstRest).multiply(restBasis(source, srcRest).invert())
+	);
 	const Ci = C.clone().invert();
 	const scale = hipsHeight(target, dstRest) / hipsHeight(source, srcRest);
 
@@ -251,11 +262,18 @@ export function retargetClip(clip, source, target, opts = {}) {
 	}
 	const srcHips = source.index.get(source.map.hips ?? '');
 	const dstHips = target.index.get(target.map.hips ?? '');
-	const srcHipsRest = srcHips !== undefined ? new THREE.Vector3().setFromMatrixPosition(srcRest.M[srcHips]) : null;
-	const dstHipsRest = dstHips !== undefined ? new THREE.Vector3().setFromMatrixPosition(dstRest.M[dstHips]) : null;
+	const srcHipsRest =
+		srcHips !== undefined ? new THREE.Vector3().setFromMatrixPosition(srcRest.M[srcHips]) : null;
+	const dstHipsRest =
+		dstHips !== undefined ? new THREE.Vector3().setFromMatrixPosition(dstRest.M[dstHips]) : null;
 	const hipsParent = dstHips !== undefined ? target.nodes[dstHips].parent : -1;
-	const hipsParentInv = hipsParent >= 0 ? dstRest.M[hipsParent].clone().invert() : new THREE.Matrix4();
-	const moveHips = opts.hipsTranslation !== false && srcHips !== undefined && dstHips !== undefined && bound.some((b) => b.node === srcHips && b.property === 'position');
+	const hipsParentInv =
+		hipsParent >= 0 ? dstRest.M[hipsParent].clone().invert() : new THREE.Matrix4();
+	const moveHips =
+		opts.hipsTranslation !== false &&
+		srcHips !== undefined &&
+		dstHips !== undefined &&
+		bound.some((b) => b.node === srcHips && b.property === 'position');
 
 	/** @type {Map<number, Float32Array>} */
 	const quatOut = new Map([...pairs.keys()].map((d) => [d, new Float32Array(frames * 4)]));
@@ -293,21 +311,36 @@ export function retargetClip(clip, source, target, opts = {}) {
 			const out = /** @type {Float32Array} */ (quatOut.get(i));
 			// keep the track on one hemisphere so the interpolation never takes the long way round
 			if (f > 0) {
-				const dot = out[(f - 1) * 4] * local.x + out[(f - 1) * 4 + 1] * local.y + out[(f - 1) * 4 + 2] * local.z + out[(f - 1) * 4 + 3] * local.w;
+				const dot =
+					out[(f - 1) * 4] * local.x +
+					out[(f - 1) * 4 + 1] * local.y +
+					out[(f - 1) * 4 + 2] * local.z +
+					out[(f - 1) * 4 + 3] * local.w;
 				if (dot < 0) local.set(-local.x, -local.y, -local.z, -local.w);
 			}
 			local.toArray(out, f * 4);
 		});
 		if (posOut && srcHips !== undefined && srcHipsRest && dstHipsRest) {
-			const p = new THREE.Vector3().setFromMatrixPosition(W.M[srcHips]).sub(srcHipsRest).applyQuaternion(C).multiplyScalar(scale).add(dstHipsRest);
+			const p = new THREE.Vector3()
+				.setFromMatrixPosition(W.M[srcHips])
+				.sub(srcHipsRest)
+				.applyQuaternion(C)
+				.multiplyScalar(scale)
+				.add(dstHipsRest);
 			p.applyMatrix4(hipsParentInv).toArray(posOut, f * 3);
 		}
 	}
 
 	/** @type {THREE.KeyframeTrack[]} */
 	const tracks = [];
-	for (const [d, values] of quatOut) tracks.push(new THREE.QuaternionKeyframeTrack(target.nodes[d].name + '.quaternion', times, values));
-	if (posOut && dstHips !== undefined) tracks.push(new THREE.VectorKeyframeTrack(target.nodes[dstHips].name + '.position', times, posOut));
+	for (const [d, values] of quatOut)
+		tracks.push(
+			new THREE.QuaternionKeyframeTrack(target.nodes[d].name + '.quaternion', times, values)
+		);
+	if (posOut && dstHips !== undefined)
+		tracks.push(
+			new THREE.VectorKeyframeTrack(target.nodes[dstHips].name + '.position', times, posOut)
+		);
 	return new THREE.AnimationClip(opts.name ?? clip.name, duration, tracks);
 }
 
@@ -318,4 +351,3 @@ export function retargetClip(clip, source, target, opts = {}) {
 export function retargetScale(source, target) {
 	return hipsHeight(target, restWorld(target)) / hipsHeight(source, restWorld(source));
 }
-

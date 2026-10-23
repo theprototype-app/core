@@ -1121,6 +1121,19 @@ export const nodeCatalog = [
 				]
 			},
 			{
+				// 57 M4: a VRM character's FACE — sets one expression (happy, blink, aa, a custom one)
+				// to a weight when the trigger fires. Every peer runs it from the shared trigger stamp
+				// (the playanim reasoning), so the face needs no message of its own.
+				type: 'setexpression',
+				label: 'Set Expression',
+				defaults: { expression: 'happy', weight: 1 },
+				inputs: ['trigger', 'weight'],
+				params: [
+					{ key: 'expression', kind: 'text', placeholder: 'happy / blink / aa', maxLength: 64 },
+					{ key: 'weight', kind: 'range', min: 0, max: 1, step: 0.05 }
+				]
+			},
+			{
 				// 48 S2: plays a Timeline SEQUENCE (camera shots, clips, audio, events) on the
 				// trigger's rising stamp — on EVERY peer from that shared stamp, so the cutscene
 				// lines up with no message of its own; a shot changes each player's own view.

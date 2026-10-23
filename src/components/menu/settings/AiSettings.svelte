@@ -2,15 +2,16 @@
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { registerSettingsKeywords } from '$lib/settingsSearch';
 	const ROW_WORDS = {
-		'enable assistant': ['ai', 'llm', 'claude', 'openai', 'assistant', 'prompt'],
-		'add provider': ['provider', 'api key', 'model', 'ai', 'llm'],
-		'mesh generation': ['meshy', 'ai', 'text to 3d', 'trellis', 'comfyui'],
-		'add mesh provider': ['meshy', 'comfyui', 'provider', 'mesh']
+		'add chat provider': ['provider', 'api key', 'model', 'ai', 'llm', 'claude', 'openai', 'assistant', 'prompt'],
+		'add mesh provider': ['meshy', 'comfyui', 'provider', 'mesh', 'mesh generation', 'text to 3d', 'trellis']
 	};
 	for (const [row, words] of Object.entries(ROW_WORDS)) registerSettingsKeywords(row, words);
 </script>
 
 <script>
+	// 59 T4: this page is Settings ▸ TOOLS & CONNECTIONS now. Its main view is the registry's hub
+	// (ToolsHub.svelte); the provider / mesh / voice FORMS below stay here as its sub-pages, unchanged,
+	// so the stores and storage keys they write are the ones every saved setup already uses.
 	// 37-settings (R21) — Settings ▸ AI on the redesign kit (docs/settings-inventory.md §3.11): the
 	// providers are a list of NavRows (+ Add provider) opening a provider SUB-PAGE with the form, the
 	// same for mesh providers and the voice-typing server; the storage note is a muted footnote. The
@@ -19,16 +20,15 @@
 	import { getContext } from 'svelte';
 	import Section from '../../ui/Section.svelte';
 	import SettingRow from '../../ui/SettingRow.svelte';
-	import NavRow from '../../ui/NavRow.svelte';
 	import Toggle from '../../ui/Toggle.svelte';
 	import Segmented from '../../ui/Segmented.svelte';
 	import Button from '../../ui/Button.svelte';
 	import AiSttSettings from '../AiSttSettings.svelte';
+	import ToolsHub from './ToolsHub.svelte';
+	import { toolsFocus } from '$lib/tools/toolStatus.js';
 	import { NAV_CONTEXT } from '$lib/settingsNav';
 	import { showToast } from '../../../stores/appStore.js';
 	import {
-		aiEnabled,
-		setAiEnabled,
 		aiProviders,
 		aiActiveProvider,
 		setAiActiveProvider,
@@ -41,8 +41,6 @@
 	} from '$lib/ai/providers';
 	import { testConnection, listModels } from '$lib/ai/client';
 	import {
-		meshGenEnabled,
-		setMeshGenEnabled,
 		meshProviders,
 		meshActiveProvider,
 		setMeshActiveProvider,
@@ -55,6 +53,21 @@
 
 	const nav = /** @type {any} */ (getContext(NAV_CONTEXT));
 	const sub = nav?.sub;
+	/** this page's section key (sectionKeyOf('Tools & connections')) */
+	const PAGE = 'toolsconnections';
+
+	/** a hub row's form (built-in sections) @param {string} kind @param {any} [ref] */
+	function openForm(kind, ref) {
+		if (kind === 'chat') aiStartEdit(ref);
+		else if (kind === 'chat:new') aiStartAdd();
+		else if (kind === 'mesh') meshStartEdit(ref);
+		else if (kind === 'mesh:new') meshStartAdd();
+		else if (kind === 'voice') nav.openSub('ai:stt', 'Voice typing', PAGE);
+	}
+	// T5: a missing-tool link lands on the hub, never inside a form left open earlier
+	$effect(() => {
+		if ($toolsFocus && $sub) nav.closeSub();
+	});
 	const view = $derived(
 		$sub?.id === 'ai:stt' ? 'stt' : $sub?.id?.startsWith('ai:provider') ? 'provider' : $sub?.id?.startsWith('ai:mesh') ? 'mesh' : 'main'
 	);
@@ -132,7 +145,7 @@
 		aiModelListOpen = false;
 		aiFormKeys = {};
 		aiFormPresetPrev = aiFormPreset;
-		nav.openSub('ai:provider:new', 'Add provider', 'ai');
+		nav.openSub('ai:provider:new', 'Add chat provider', PAGE);
 	}
 	/** @param {any} p */
 	function aiStartEdit(p) {
@@ -150,7 +163,7 @@
 		aiModelListOpen = false;
 		aiFormKeys = { [p.preset]: p.apiKey };
 		aiFormPresetPrev = p.preset;
-		nav.openSub('ai:provider:' + p.id, p.label, 'ai');
+		nav.openSub('ai:provider:' + p.id, p.label, PAGE);
 		aiRefreshModels(); // silent; keeps the picker current without a Test click
 	}
 	function aiSaveProvider() {
@@ -222,7 +235,7 @@
 		meshFormOutputNode = '';
 		meshFormMode = 'preview';
 		meshFormAssetProxy = '';
-		nav.openSub('ai:mesh:new', 'Add mesh provider', 'ai');
+		nav.openSub('ai:mesh:new', 'Add mesh provider', PAGE);
 	}
 	/** @param {any} p */
 	function meshStartEdit(p) {
@@ -235,7 +248,7 @@
 		meshFormOutputNode = p.outputNodeId ?? '';
 		meshFormMode = p.mode ?? 'preview';
 		meshFormAssetProxy = p.assetProxy ?? '';
-		nav.openSub('ai:mesh:' + p.id, p.label, 'ai');
+		nav.openSub('ai:mesh:' + p.id, p.label, PAGE);
 	}
 	function meshSaveProvider() {
 		if (!meshFormBaseUrl.trim()) {
@@ -427,28 +440,7 @@
 			{/if}
 		</div>
 	{:else}
-		<Section variant="card" label="Assistant" badge="This device">
-			<SettingRow id="row-ai-enable" label="Enable assistant" description="Build and edit the scene with prompts. Press ` for the quick prompt bar. Edits replicate and undo as one step.">
-				<Toggle id="ai-enabled" label="Enable assistant" checked={$aiEnabled} onchange={(on) => setAiEnabled(on)} />
-			</SettingRow>
-			{#each $aiProviders as p (p.id)}
-				<NavRow label={p.label} description={p.model} badge={$aiActiveProvider === p.id ? 'Active' : ''} data-provider={p.id} onclick={() => aiStartEdit(p)} />
-			{/each}
-			<NavRow id="ai-add-provider" label="Add provider" description={$aiProviders.length ? '' : 'No providers yet.'} onclick={aiStartAdd} />
-		</Section>
-		<Section variant="card" label="Voice typing" badge="This device">
-			<AiSttSettings />
-		</Section>
-		<Section variant="card" label="Mesh generation" badge="This device">
-			<SettingRow id="row-mesh-enable" label="Mesh generation" description="Text → 3D models from the Add menu or the assistant — a self-hosted ComfyUI with TRELLIS, or Meshy.">
-				<Toggle id="mesh-gen-enabled" label="Mesh generation" checked={$meshGenEnabled} onchange={(on) => setMeshGenEnabled(on)} />
-			</SettingRow>
-			{#each $meshProviders as p (p.id)}
-				<NavRow label={p.label} description={p.kind} badge={$meshActiveProvider === p.id ? 'Active' : ''} data-mesh-provider={p.id} onclick={() => meshStartEdit(p)} />
-			{/each}
-			<NavRow id="ai-add-mesh-provider" label="Add mesh provider" description={$meshProviders.length ? '' : 'No mesh providers yet.'} onclick={meshStartAdd} />
-		</Section>
-		<p class="settings-footnote">API keys are stored unencrypted in this browser and only ever sent to the provider you set up.</p>
+		<ToolsHub onform={openForm} />
 	{/if}
 </div>
 

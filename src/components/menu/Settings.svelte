@@ -54,7 +54,7 @@
 	import ImportSettingsSection from './ImportSettingsSection.svelte'; // 46 P2
 	import PrivacySettings from './settings/PrivacySettings.svelte'; // 48 O1
 	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
-	import AiSettings from './settings/AiSettings.svelte';
+	import AiSettings from './settings/AiSettings.svelte'; // 59 T4: the Tools & connections page (+ its provider forms)
 	import ConnectionSettings from './settings/ConnectionSettings.svelte';
 	import { settingsOpen, settingsSection, settingsSearchSeed, hidePanels, restorePanels, showToast } from '../../stores/appStore.js';
 	import { cloudPluginInfo } from '$lib/cloudHooks';
@@ -115,7 +115,8 @@
 	$: if ($settingsOpen) {
 		stepPanelsAside();
 		shortcutsExpanded = $settingsSection === 'shortcuts';
-		aiExpanded = $settingsSection === 'ai';
+		// 59 T4: Settings ▸ AI became Tools & connections ('ai' stays a deep-link alias)
+		aiExpanded = $settingsSection === 'ai' || String($settingsSection ?? '').startsWith('tools');
 		sceneExpanded = $settingsSection === 'scene';
 		connectionExpanded = $settingsSection === 'connection';
 		vrExpanded = $settingsSection === 'vr';
@@ -567,7 +568,7 @@
 					<VRSettingsSection />
 				</AccordionItem>
 				<AccordionItem bind:open={aiExpanded}>
-					{#snippet header()}AI{/snippet}
+					{#snippet header()}Tools & connections{/snippet}
 					<AiSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={importExpanded}>

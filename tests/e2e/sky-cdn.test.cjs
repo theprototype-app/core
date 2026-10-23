@@ -30,7 +30,8 @@ const sceneSky = (page) =>
 		};
 	})()`);
 /** @param {any} page @param {string} key */
-const pick = (page, key) => page.evaluate((k) => window.__stores.environment.setEnvironment(k), key);
+const pick = (page, key) =>
+	page.evaluate((k) => window.__stores.environment.setEnvironment(k), key);
 /** @param {any} page */
 const settle = (page) => page.evaluate(() => window.__stores.hdri.hdriDebug.settle());
 
@@ -39,7 +40,9 @@ h.run(async () => {
 	const opts = { context: { viewport: { width: 1280, height: 720 } } };
 	const A = await h.setupPage(browser, 'A', opts);
 	const skies = await h.routeSkies(A.page);
-	console.log(`skies from ${process.env.E2E_SKIES_CDN ? 'the real CDN' : (skies.dir ?? 'the real CDN (no local packs checkout)')}`);
+	console.log(
+		`skies from ${process.env.E2E_SKIES_CDN ? 'the real CDN' : (skies.dir ?? 'the real CDN (no local packs checkout)')}`
+	);
 	const base = await A.page.evaluate(() => window.__stores.hdriSky.SKY_BASE);
 	const appOrigin = new URL(h.URL).origin;
 
@@ -47,13 +50,27 @@ h.run(async () => {
 	h.check(skies.count() === 0, `no sky is fetched at boot (${skies.count()})`);
 	await pick(A.page, 'meadow');
 	h.check((await settle(A.page)) === 'ready', 'Meadow is ready');
-	h.check(skies.count() === 1, `Meadow was fetched once (${skies.count()}: ${skies.hits.join(', ')})`);
+	h.check(
+		skies.count() === 1,
+		`Meadow was fetched once (${skies.count()}: ${skies.hits.join(', ')})`
+	);
 	const url = skies.hits[0] ?? '';
-	h.check(url === base + '/hdri/meadow_2_1k.hdr' && !url.startsWith(appOrigin), `from the packs base, not the app (${url})`);
+	h.check(
+		url === base + '/hdri/meadow_2_1k.hdr' && !url.startsWith(appOrigin),
+		`from the packs base, not the app (${url})`
+	);
 	const sky = await sceneSky(A.page);
-	h.check(sky.environment === 'hdri:bundled:meadow|full', `the HDRI lights the scene (${sky.environment})`);
-	const appHdr = await A.page.evaluate(async () => (await fetch(new URL('hdri/meadow_2_1k.hdr', document.baseURI))).status);
-	h.check(appHdr === 404 || appHdr >= 400, `the app itself no longer serves hdri/*.hdr (HTTP ${appHdr})`);
+	h.check(
+		sky.environment === 'hdri:bundled:meadow|full',
+		`the HDRI lights the scene (${sky.environment})`
+	);
+	const appHdr = await A.page.evaluate(
+		async () => (await fetch(new URL('hdri/meadow_2_1k.hdr', document.baseURI))).status
+	);
+	h.check(
+		appHdr === 404 || appHdr >= 400,
+		`the app itself no longer serves hdri/*.hdr (HTTP ${appHdr})`
+	);
 
 	// ---- 2. Cache Storage keeps it across a reload -------------------------------------------
 	const cached = await A.page.evaluate(() => window.__stores.hdriSky.cachedSkies());
@@ -66,7 +83,10 @@ h.run(async () => {
 	h.check(skies.count() === 1, `…and was NOT fetched again (${skies.count()} sky requests in all)`);
 	await pick(A.page, 'sunrise');
 	h.check((await settle(A.page)) === 'ready', 'Sunrise is ready');
-	h.check(skies.count() === 2 && /\/hdri\/spruit_sunrise_1k\.hdr$/.test(skies.hits[1] ?? ''), `counterfactual: a sky never picked IS fetched (${skies.count()})`);
+	h.check(
+		skies.count() === 2 && /\/hdri\/spruit_sunrise_1k\.hdr$/.test(skies.hits[1] ?? ''),
+		`counterfactual: a sky never picked IS fetched (${skies.count()})`
+	);
 
 	// ---- 4. an export embeds the chosen sky (built app only) ---------------------------------
 	await pick(A.page, 'meadow');
@@ -80,11 +100,23 @@ h.run(async () => {
 		}
 		const b64 = (/** @type {Uint8Array} */ buf) => {
 			let s = '';
-			for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+			for (let i = 0; i < buf.length; i += 0x8000)
+				s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
 			return btoa(s);
 		};
-		const out = await b.buildExport({ preset: 'static', title: 'Sky check', thumbnail: false, startFullscreen: false, showFps: false, quality: 'auto', vrButton: false, useCdnForPacks: false });
-		const cdn = new Uint8Array(await (await fetch(window.__stores.hdriSky.skyUrl('hdri/meadow_2_1k.hdr'))).arrayBuffer());
+		const out = await b.buildExport({
+			preset: 'static',
+			title: 'Sky check',
+			thumbnail: false,
+			startFullscreen: false,
+			showFps: false,
+			quality: 'auto',
+			vrButton: false,
+			useCdnForPacks: false
+		});
+		const cdn = new Uint8Array(
+			await (await fetch(window.__stores.hdriSky.skyUrl('hdri/meadow_2_1k.hdr'))).arrayBuffer()
+		);
 		return { skip: '', zip: b64(new Uint8Array(await out.blob.arrayBuffer())), cdn: b64(cdn) };
 	});
 	if (exp.skip) console.log('SKIP export check (not a built app): ' + exp.skip);
@@ -93,8 +125,13 @@ h.run(async () => {
 		const files = unzipSync(new Uint8Array(Buffer.from(exp.zip, 'base64')));
 		const hdr = files['hdri/meadow_2_1k.hdr'];
 		const cdn = Buffer.from(exp.cdn, 'base64');
-		h.check(!!hdr && Buffer.compare(Buffer.from(hdr), cdn) === 0, `the export carries hdri/meadow_2_1k.hdr byte-identical to the CDN's (${hdr?.length ?? 0} bytes)`);
-		const others = Object.keys(files).filter((n) => /\.hdr$/.test(n) && n !== 'hdri/meadow_2_1k.hdr');
+		h.check(
+			!!hdr && Buffer.compare(Buffer.from(hdr), cdn) === 0,
+			`the export carries hdri/meadow_2_1k.hdr byte-identical to the CDN's (${hdr?.length ?? 0} bytes)`
+		);
+		const others = Object.keys(files).filter(
+			(n) => /\.hdr$/.test(n) && n !== 'hdri/meadow_2_1k.hdr'
+		);
 		h.check(others.length === 0, `…and no other sky (${others.join(', ') || 'none'})`);
 	}
 	await A.ctx.close();
@@ -103,11 +140,17 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B', opts);
 	const blocked = await h.routeSkies(B.page, { block: true });
 	await pick(B.page, 'starlight');
-	h.check((await settle(B.page)) === 'unavailable', `CDN blocked: the sky is unavailable, not an error (${(await status(B.page)).state})`);
+	h.check(
+		(await settle(B.page)) === 'unavailable',
+		`CDN blocked: the sky is unavailable, not an error (${(await status(B.page)).state})`
+	);
 	h.check(blocked.count() >= 1, `the sky was asked for (${blocked.count()})`);
 	const flat = await sceneSky(B.page);
 	h.check(flat.environment === null, `no HDRI on the scene (${flat.environment})`);
-	h.check(!!flat.flat && flat.background === String(flat.flat).toLowerCase(), `the preset's flat sky shows (${flat.background} = ${flat.flat})`);
+	h.check(
+		!!flat.flat && flat.background === String(flat.flat).toLowerCase(),
+		`the preset's flat sky shows (${flat.background} = ${flat.flat})`
+	);
 	const st = await status(B.page);
 	h.check(st.error === '', `no error recorded (${JSON.stringify(st.error)})`);
 	h.check(h.pageErrors(B).length === 0, `no page error (${h.pageErrors(B).join(' | ')})`);
@@ -115,7 +158,12 @@ h.run(async () => {
 	await B.page.unrouteAll({ behavior: 'ignoreErrors' });
 	const back = await h.routeSkies(B.page);
 	await B.page.evaluate(() => window.dispatchEvent(new Event('online')));
-	await h.eventually(() => status(B.page), (v) => v.state === 'ready' && v.src === 'bundled:starlight', 'back online, Starlight loads', 20000);
+	await h.eventually(
+		() => status(B.page),
+		(v) => v.state === 'ready' && v.src === 'bundled:starlight',
+		'back online, Starlight loads',
+		20000
+	);
 	h.check(back.count() === 1, `…with one fetch (${back.count()})`);
 
 	await h.finish(browser);

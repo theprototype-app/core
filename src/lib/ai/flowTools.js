@@ -305,7 +305,7 @@ export function createFlowNodesTool(args) {
 		if (!allowed.includes(type)) {
 			errors.push(
 				PHYSICS_NODE_TYPES.includes(type)
-					? 'node "' + type + '" needs Physics tools enabled (Settings -> AI)'
+					? 'node "' + type + '" needs Physics tools enabled (Settings ▸ Tools & connections ▸ the chat provider)'
 					: 'node type "' + type + '" cannot be created by the assistant'
 			);
 			continue;

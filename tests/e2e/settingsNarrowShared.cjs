@@ -94,6 +94,9 @@ h.run(async () => {
 		// the screenshot's row, named: on an unfolded phone the provider row stacks
 		if (size === 'unfolded' || size === 'w700') {
 			await open(page, 'ai');
+			// 59 T4: the provider picker lives in Tools & connections ▸ Voice typing ▸ Set up
+			await page.click('#tool-chat-voice-configure');
+			await page.waitForSelector('#row-stt-preset', { state: 'visible', timeout: 5000 });
 			const stt = await page.evaluate(() => {
 				const row = document.querySelector('#row-stt-preset');
 				if (!row) return null;

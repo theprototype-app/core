@@ -120,7 +120,7 @@ export const DEBUG_HOOKS = [
 	['hdriStores', () => import('./hdri/skyEnv.js')],
 	['hdriCore', () => import('./hdri/hdriCore.js')],
 	['hdriPrefs', () => import('./hdri/hdriPrefs.js')],
-	['hdriSky', () => import('./hdri/skyFetch.js')], // 59 T3: skyUrl / cachedSkies
+	['hdriSky', () => import('./hdri/skyFetch.js')],
 	['sceneMusic', () => import('./sceneMusic')],
 	['animatedImports', () => import('./animatedImports')],
 	['fileHandler', () => import('./fileHandler.svelte')],
@@ -217,6 +217,8 @@ export const DEBUG_HOOKS = [
 	['aiTools', () => import('./ai/tools')],
 	['aiAssistant', () => import('./ai/assistant')],
 	['meshProviders', () => import('./ai/meshProviders')],
+	['toolStatus', () => import('./tools/toolStatus.js')],
+	['toolLinks', () => import('./tools/toolLinks.js')],
 	['meshJobs', () => import('./ai/meshJobs')],
 	['flowGraphsCtl', () => import('./flowGraphs')],
 	// 37 (R6): socket add/remove + the switcher type

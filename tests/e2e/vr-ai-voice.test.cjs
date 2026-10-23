@@ -48,11 +48,14 @@ h.run(async () => {
 		window.__stores.aiProviders.setAiEnabled(true);
 	}, origin);
 
-	// --- 1. Settings ▸ AI ▸ Voice typing: the rows, the presets, persistence ---
+	// --- 1. Settings ▸ Tools & connections ▸ Voice typing: the rows, the presets, persistence ---
+	// (59 T4: the 'ai' deep link lands on Tools & connections; the Voice typing row's Set up opens the form)
 	await A.page.evaluate(() => {
 		window.__stores.settingsSection.set('ai');
 		window.__stores.settingsOpen.set(true);
 	});
+	await A.page.waitForSelector('#tool-chat-voice-configure', { state: 'visible', timeout: 10000 });
+	await A.page.click('#tool-chat-voice-configure');
 	await A.page.waitForSelector('#ai-stt-preset', { state: 'visible', timeout: 10000 });
 	// 37-settings: the provider is a segmented control; the server form is a sub-page (AI › Voice typing server)
 	const presets = await A.page.$$eval('#ai-stt-preset [role=radio]', (o) => o.map((x) => x.getAttribute('data-value')));
@@ -69,7 +72,6 @@ h.run(async () => {
 	h.check(groq.saved?.preset === 'groq', 'the choice is persisted');
 	// self-hosted at the mock
 	await A.page.click('#ai-stt-preset-custom');
-	await A.page.click('#ai-stt-server');
 	await A.page.waitForSelector('#ai-stt-base', { state: 'visible', timeout: 5000 });
 	await A.page.fill('#ai-stt-base', origin + '/mock-stt/v1');
 	await A.page.locator('#ai-stt-base').dispatchEvent('change');
@@ -79,9 +81,11 @@ h.run(async () => {
 	await A.page.click('#ai-stt-test');
 	await A.page.waitForSelector('#ai-stt-test-result', { timeout: 10000 });
 	h.check((await A.page.locator('#ai-stt-test-result').textContent()).includes('Connected'), 'Test connection reaches the server');
-	await A.page.locator('.ss-back').click();
 	await A.page.waitForSelector('#ai-stt-status', { state: 'visible', timeout: 5000 });
 	h.check((await A.page.locator('#ai-stt-status').textContent()).includes('Ready'), 'self-hosted with a URL reads Ready');
+	await A.page.locator('.ss-back').click();
+	await A.page.waitForSelector('#tool-chat-voice', { state: 'visible', timeout: 5000 });
+	h.check((await A.page.locator('#tool-chat-voice [data-tool-status]').getAttribute('data-tool-status')) === 'ready', '…and the Tools & connections row reads ready');
 	const testCall = sttCalls[sttCalls.length - 1];
 	h.check(testCall?.fileField && testCall?.model === 'whisper-1' && testCall?.auth === 'Bearer stt-key', `the request is multipart file + model with the bearer key (${JSON.stringify(testCall)})`);
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));

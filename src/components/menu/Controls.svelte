@@ -45,12 +45,12 @@
 	import Icon from '../ui/Icon.svelte';
 	import { createAttachmentKey, fromAction } from 'svelte/attachments';
 	// 41 G1: MobileAddButton / AiHudButton (and VoiceChat's mic button) became roster entries
-	import { aiAssistantHidden, settingsOpen, settingsSection, viewportMenuOpener } from '../../stores/appStore.js';
+	import { aiAssistantHidden, viewportMenuOpener } from '../../stores/appStore.js';
 	// 42 I9: the top-right group's and the touch tools' buttons join the roster
 	import { notesDrawerOpen, multiSelectMode, touchTools } from '../../stores/appStore.js';
 	import { undo, redo } from '$lib/history';
 	import { toolbarSlots, TOP_DEFAULT, TOUCH_DEFAULT, TOP_NATIVE, TOUCH_NATIVE } from '$lib/toolbarSlots';
-	import { aiReady } from '$lib/ai/providers';
+	import { explainMissing } from '$lib/tools/toolLinks.js'; // 59 T5
 	import { canvasCenter } from '$lib/canvasRect';
 	import { micActive, pttActive, toggleMic } from '$lib/voiceChat';
 	import { phoneShell } from '$lib/ui/phoneShell.js';
@@ -1372,14 +1372,10 @@
 		return id === SPACER ? 'Play' : (BUTTONS[id]?.label ?? BUTTONS[id]?.title ?? id);
 	}
 
-	/** the AI button press — AiHudButton's own path (I3): unconfigured points at Settings ▸ AI */
+	/** the AI button press — AiHudButton's own path (I3); 59 T5: unconfigured says what is missing
+	 *  and opens its row in Settings ▸ Tools & connections */
 	function toggleAiAssistant() {
-		if (!aiReady()) {
-			showQualityToast('Enable an AI provider in Settings to use the assistant');
-			settingsSection.set('ai');
-			settingsOpen.set(true);
-			return;
-		}
+		if (explainMissing('assistant')) return;
 		aiAssistantHidden.set($aiAssistantHidden === '' ? 'hidden' : '');
 	}
 

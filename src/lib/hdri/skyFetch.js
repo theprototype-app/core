@@ -71,7 +71,9 @@ export async function fetchSky(file) {
 	try {
 		res = await fetch(url);
 	} catch (err) {
-		throw new SkyUnavailable('could not reach ' + url + ': ' + String(/** @type {any} */ (err)?.message ?? err));
+		throw new SkyUnavailable(
+			'could not reach ' + url + ': ' + String(/** @type {any} */ (err)?.message ?? err)
+		);
 	}
 	if (!res.ok) throw new SkyUnavailable('HTTP ' + res.status + ' for ' + url);
 	const buffer = await res.arrayBuffer();
@@ -85,9 +87,13 @@ export async function fetchSky(file) {
  */
 async function keep(cache, url, file, buffer, type) {
 	try {
-		await cache.put(url, new Response(buffer, { headers: { 'content-type': type || 'application/octet-stream' } }));
+		await cache.put(
+			url,
+			new Response(buffer, { headers: { 'content-type': type || 'application/octet-stream' } })
+		);
 		const name = '/' + String(file).replace(/^\/+/, '');
-		for (const req of await cache.keys()) if (req.url !== url && req.url.endsWith(name)) await cache.delete(req);
+		for (const req of await cache.keys())
+			if (req.url !== url && req.url.endsWith(name)) await cache.delete(req);
 	} catch {
 		/* quota or a private window: the sky still shows, it is just fetched again next time */
 	}

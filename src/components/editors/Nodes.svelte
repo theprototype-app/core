@@ -66,6 +66,7 @@
 	import KeyPressNode from './nodes/KeyPressNode.svelte';
 	import GamepadNode from './nodes/GamepadNode.svelte';
 	import PlayAnimNode from './nodes/PlayAnimNode.svelte';
+	import BlendSpeedNode from './nodes/BlendSpeedNode.svelte'; // 57 M3
 	import TimelineSeqNode from './nodes/TimelineSeqNode.svelte';
 	import AnimStateNode from './nodes/AnimStateNode.svelte';
 	import OnHitNode from './nodes/OnHitNode.svelte';
@@ -262,6 +263,10 @@
 		gamepadbutton: GamepadNode,
 		gamepadaxis: GamepadNode,
 		playanim: PlayAnimNode, // 17-E A5
+		blendspeed: BlendSpeedNode, // 57 M3
+		setanimparam: AnimationNode, // 57 M11 (spec-driven: named inputs + text/select/range)
+		onanimstate: AnimationNode, // 57 M11 (the onrest precedent: a trigger with params)
+		attachsocket: AnimationNode, // 57 M12
 		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
 		animmarker: OnClickNode, // 17-E F5: a pulse at a named point in a clip
 		animstate: AnimStateNode, // 17-E F3: the readable half of it

@@ -14,7 +14,7 @@
 	// undo entry and ONE broadcast instead of dozens.
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
-	import { selectedObject } from '../../stores/sceneStore';
+	import { selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { animationClose } from '../../stores/appStore.js';
 	import {
 		animations, playback, playheads, CHANNELS, EASINGS, STEPPED, channelLabel, isRotChannel,
@@ -35,6 +35,7 @@
 	// reachable only from the Inspector.
 	import { animatedObjects, setAnimationState, clipInfo, behaviorOf, restRowsOf } from '$lib/animatedImports';
 	import { openApplyClip } from '$lib/characterUi.js';
+	import ClipToolsPanel from './ClipToolsPanel.svelte'; // 57 M3/M8
 	import Icon from '../ui/Icon.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -59,6 +60,13 @@
 
 	// live-follow the primary selection (keeps a truthy [] before the first select)
 	const target = $derived($selectedObject && $selectedObject.uuid ? $selectedObject : null);
+	// 57 M12: the MODEL a selected part belongs to (its top-level object), or null for a top-level object
+	const partOf = $derived.by(() => {
+		let o = target;
+		if (!o || !o.parent || o.parent === $objectsGroup) return null;
+		while (o.parent && o.parent !== $objectsGroup) o = o.parent;
+		return o.parent === $objectsGroup ? o : null;
+	});
 	// the ACTIVE clip of the object's set, normalized (a v1 save migrates on read)
 	const anim = $derived.by(() => {
 		$animations; // the store is the dependency; activeClip reads it with get()
@@ -2028,8 +2036,11 @@
 			<!-- clientHeight is the clip list's resize CEILING: the grip used to clamp at
 			     a flat 360px whatever the pane's own height, so on a short dock it went
 			     straight off the bottom of the window -->
+			<!-- 57: the pane SCROLLS — with a model's clip tools under its clip list it can be taller
+			     than a short dock, and a cut-off pane had no way to reach what was below -->
 			<div
-				class="flex w-56 shrink-0 flex-col border-r border-border"
+				class="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border"
+				use:minimalScroll
 				class:an-pane-full={compact}
 				class:an-pane-off={compact && phonePane !== 'list'}
 				bind:clientHeight={sideH}
@@ -2088,6 +2099,15 @@
 						</div>
 					</div>
 				{/if}
+				<!-- 57 M3/M8: clip assets (.tpanim) on a rigged model — settings, seam, trim/split/join, extract -->
+				{#if target && clipState && !behavior}
+					{#if !clips.length}
+						<p id="clip-empty" class="border-b border-border px-2 py-1.5 text-[10px] leading-snug text-text-muted">
+							No clips yet — drag an animation clip (.tpanim) from the Explorer onto the model.
+						</p>
+					{/if}
+					<ClipToolsPanel uuid={target.uuid} {clips} {clipState} />
+				{/if}
 
 				<!-- authored clips -->
 				{#if authoredClips.length}
@@ -2135,6 +2155,20 @@
 							onpointermove={doClipsResize}
 							onpointerup={endClipsResize}
 						></div>
+						<!-- 57 M12: keys on a PART of a model become one clip FILE on the model (node-name .tpanim) -->
+						{#if partOf}
+							<button
+								id="parts-to-clip"
+								class="ui-button-quiet mx-2 mb-1 text-accent-text"
+								title={'Save this clip of the model\'s parts as a .tpanim clip file on "' + (partOf.name || 'the model') + '" — it plays like any clip and travels to everyone once'}
+								onclick={async () => {
+									const active = authoredClips.find((c) => c.active);
+									if (!active || !partOf) return;
+									const m = await import('$lib/tpanim/clipEdit.js');
+									await m.partsKeysToClip(partOf.uuid, active.name);
+								}}>Save as a clip file on {partOf.name || 'the model'}</button
+							>
+						{/if}
 					</div>
 				{/if}
 
@@ -2148,7 +2182,7 @@
 					</select>
 					<button class="ui-button-quiet shrink-0" title="Animate this channel" aria-label="Add channel" onclick={add}>＋</button>
 				</div>
-				<div class="min-h-0 flex-1 overflow-y-auto" use:minimalScroll>
+				<div class="min-h-24 flex-1 overflow-y-auto" use:minimalScroll>
 					{#if !tracks.length}
 						<div class="p-3 text-center text-[11px] text-text-faint">
 							{clips.length

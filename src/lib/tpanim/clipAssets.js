@@ -23,8 +23,9 @@ import {
 	restPoseOf,
 	setClipRefs,
 	setAnimationState,
-	hasAnimatedImport,
-	animatedImportUuids
+	hasClipModel,
+	partsModelSettling,
+	ensureClipModel
 } from '../animatedImports';
 import { decodeTpanim, tpToThreeClip, bindHumanoid, clipFit } from './format.js';
 import { stripRootMotion } from './clipOps.js';
@@ -115,10 +116,25 @@ export function bindClip(tp, root, name) {
 		}
 	}
 	const fit = clipFit(tp, root);
+	// a peer's copy of a parts model may still be gaining its parts: no toast yet (it retries)
+	if (fit.fit === 'none' && partsModelSettling(root.uuid)) return settleRetry(root.uuid);
 	if (fit.fit === 'none') return warn('"' + name + '" was made for another skeleton — none of its bones are in "' + (root.name || 'this model') + '".');
 	const clip = tpToThreeClip(tp, root);
 	clip.name = name;
 	return clip;
+}
+
+/** @type {Set<string>} */
+const settling = new Set();
+/** try a parts model's binds again once it has settled — then it binds, or says why @param {string} uuid */
+function settleRetry(uuid) {
+	if (settling.has(uuid)) return null;
+	settling.add(uuid);
+	setTimeout(() => {
+		settling.delete(uuid);
+		void attachClipAssets(uuid);
+	}, 4500);
+	return null;
 }
 
 /**
@@ -127,7 +143,7 @@ export function bindClip(tp, root, name) {
  */
 export async function attachClipAssets(uuid) {
 	const root = rootOf(uuid);
-	if (!root || !hasAnimatedImport(uuid)) return;
+	if (!root || !hasClipModel(uuid)) return;
 	const refs = clipRefsOf(root);
 	pruneClipActions(uuid, new Set(refs.map((r) => r.name)));
 	setClipPlayback(uuid, refs); // 57 M8: speed / play-once per ref
@@ -162,8 +178,9 @@ function uniqueClipName(root, wanted) {
  */
 export function assignClipAsset(uuid, item, opts = {}) {
 	const root = rootOf(uuid);
-	if (!root || !hasAnimatedImport(uuid)) {
-		showToast('Drop a clip on a rigged model (a character, an animated import)');
+	// 57 M12: a model that is not a rig takes clips too — its named nodes are its parts
+	if (!root || !ensureClipModel(root)) {
+		showToast('This object cannot take an animation clip');
 		return null;
 	}
 	const refs = clipRefsOf(root);
@@ -222,8 +239,9 @@ registerSceneAssetSource(() => {
 	const group = get(objectsGroup);
 	/** @type {{hash: string, name: string, kind: string}[]} */
 	const out = [];
-	for (const uuid of animatedImportUuids(group)) {
-		const root = group?.getObjectByProperty('uuid', uuid);
+	// rigs (bytes) and parts models alike: every top-level object carrying refs
+	for (const root of group?.children ?? []) {
+		if (!root?.userData?.clipRefs) continue;
 		for (const ref of clipRefsOf(root)) out.push({ hash: ref.hash, name: itemByHash(ref.hash)?.name ?? ref.name + '.tpanim', kind: 'anim' });
 	}
 	return out;

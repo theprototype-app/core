@@ -33,6 +33,11 @@ const heliState = (page, uuid, hash) =>
 				clipModel: s.animatedImports.hasClipModel(uuid),
 				state: s.animatedImports.animationState(uuid),
 				clips: s.animatedImports.clipInfo(uuid).map((c) => c.name + (c.asset ? '*' : '')),
+				nodes: (() => {
+					const n = [];
+					root?.traverse((o) => n.push(o.name));
+					return n;
+				})(),
 				item: item ? { id: item.id, share: item.share } : null,
 				assets: s.clipAssets.clipAssetsDebug()
 			};
@@ -162,11 +167,34 @@ h.run(async () => {
 	await B.page.waitForTimeout(1500);
 	await watchStates(A.page, uuid);
 	await watchStates(B.page, uuid);
-	await A.page.evaluate((uuid) => window.__stores.flowRuntime.fireObjectClick(uuid), uuid);
+	// on a red: B's view of the click over time (stamp landing vs B's clock, the On Click output, the jump param)
+	await B.page.evaluate((uuid) => {
+		const s = window.__stores;
+		const now = () => +((s.connectionState.sessionNow() % 86400000) / 1000).toFixed(3);
+		const log = (window.__clk57 = []);
+		let last = null;
+		const stop = s.flowTriggers.subscribe((t) => {
+			const e = t?.['k-click'];
+			if (e && e.lastT !== last) log.push({ got: (last = e.lastT), now: now() });
+		});
+		const iv = setInterval(() => {
+			let v;
+			s.flowValues.subscribe((x) => (v = x))();
+			const jump = s.animGraphRuntime.animGraphReading(uuid)?.params?.jump;
+			if (log.length < 40) log.push({ now: now(), click: v?.['k-click'], jump: Number.isFinite(jump) ? jump : String(jump) });
+		}, 100);
+		setTimeout(() => (clearInterval(iv), stop()), 3000);
+	}, uuid);
+	const firedAt = await A.page.evaluate((uuid) => {
+		const s = window.__stores;
+		s.flowRuntime.fireObjectClick(uuid);
+		return (s.connectionState.sessionNow() % 86400000) / 1000;
+	}, uuid);
 	await A.page.waitForTimeout(600);
 	h.check((await seenStates(A.page)).includes('jump'), 'M11: Set Animation Parameter fires the jump trigger on A');
 	await h.eventually(() => seenStates(B.page), (l) => l.includes('jump'), 'M11: ...and on B (from the replicated click stamp)');
 	// on a red: did B get the click stamp at all? (B reads the pulse as a window on the shared clock)
+	console.log('  fired on A at', firedAt, '- B saw:', JSON.stringify(await B.page.evaluate(() => window.__clk57)));
 	console.log(
 		'  B trigger view:',
 		JSON.stringify(

@@ -21,14 +21,14 @@ import { normalizeBehavior } from './behaviorCore';
 // peer on the previous build keep working unchanged.
 
 /** 57 M3: `at` (when the clip began, a synced stamp) and `from`/`fromSpeed`/`fade` (a crossfade) are optional
- * @type {import('svelte/store').Writable<Record<string, {clips: string[], clip: string, playing: boolean, speed: number, at?: number, from?: string, fromSpeed?: number, fade?: number}>>} */
+ * @type {import('svelte/store').Writable<Record<string, {clips: string[], clip: string, playing: boolean, speed: number, at?: number, from?: string, fromSpeed?: number, fade?: number, resume?: string}>>} */
 export const animatedObjects = writable({});
 
 /** @type {Map<string, ArrayBuffer>} rootUuid -> original file bytes */
 const fileBytes = new Map();
 /** @type {Map<string, 'gltf'|'fbx'>} rootUuid -> which parser those bytes need */
 const fileKinds = new Map();
-/** @type {Map<string, {mixer: any, actions: Record<string, any>, durations: Record<string, number>, rest?: Map<any, {p: number[], q: number[], s: number[]}>, assets?: Record<string, string>, clipSpeed?: Record<string, number>, clipOnce?: Record<string, boolean>, assetKeys?: Record<string, string>, embeddedOff?: boolean, embedded?: string[], stashed?: Record<string, any>, parts?: boolean}>} */
+/** @type {Map<string, {mixer: any, actions: Record<string, any>, durations: Record<string, number>, rest?: Map<any, {p: number[], q: number[], s: number[]}>, assets?: Record<string, string>, clipSpeed?: Record<string, number>, clipOnce?: Record<string, boolean>, assetKeys?: Record<string, string>, embeddedOff?: boolean, embedded?: string[], stashed?: Record<string, any>, parts?: boolean, nodeCount?: number, born?: number}>} */
 const mixers = new Map();
 
 // ---- 33 P2: animated FUNCTIONAL items (a door, a chest, a lever, a fan) ---------------
@@ -166,12 +166,10 @@ export function restPoseOf(uuid) {
 	return (o) => rest?.get(o) ?? null;
 }
 
-/** @param {any} root */
-function captureRest(root) {
-	/** @type {Map<any, {p: number[], q: number[], s: number[]}>} */
-	const rest = new Map();
+/** @param {any} root @param {Map<any, {p: number[], q: number[], s: number[]}>} [rest] add to (nodes it holds keep theirs) */
+function captureRest(root, rest = new Map()) {
 	root.traverse((/** @type {any} */ o) => {
-		if (o !== root) rest.set(o, { p: o.position.toArray(), q: o.quaternion.toArray(), s: o.scale.toArray() });
+		if (o !== root && !rest.has(o)) rest.set(o, { p: o.position.toArray(), q: o.quaternion.toArray(), s: o.scale.toArray() });
 	});
 	return rest;
 }
@@ -200,7 +198,13 @@ export function addClipAction(uuid, clip, hash, key = hash) {
 	const entry = get(animatedObjects)[uuid];
 	if (entry) {
 		const clips = [...entry.clips.filter((c) => c !== clip.name), clip.name];
+		/** @type {any} */
 		const next = { ...entry, clips, clip: entry.clip ?? clip.name };
+		if (entry.resume === clip.name) {
+			next.clip = clip.name;
+			next.playing = true;
+			delete next.resume;
+		}
 		animatedObjects.update((map) => ({ ...map, [uuid]: next }));
 		if (next.playing && next.clip === clip.name) {
 			Object.values(record.actions).forEach((action) => action.stop());
@@ -242,7 +246,9 @@ export function pruneClipActions(uuid, keep) {
 		const back = (/** @type {string} */ c) => !!record.actions[c] && !record.embeddedOff;
 		const clips = entry.clips.filter((c) => !gone.includes(c) || back(c));
 		const clip = gone.includes(entry.clip) && !back(entry.clip) ? clips[0] : entry.clip;
-		animatedObjects.update((map) => ({ ...map, [uuid]: { ...entry, clips, clip, playing: gone.includes(entry.clip) ? false : entry.playing } }));
+		// a playing clip that goes stops — and comes back playing if its ref returns (undo, then redo)
+		const stopped = gone.includes(entry.clip) && entry.playing ? { resume: entry.clip } : {};
+		animatedObjects.update((map) => ({ ...map, [uuid]: { ...entry, clips, clip, playing: gone.includes(entry.clip) ? false : entry.playing, ...stopped } }));
 	}
 }
 
@@ -363,10 +369,38 @@ export function ensureClipModel(root) {
 	if (held?.parts && held.mixer.getRoot() !== root) dropPartsRecord(root.uuid, held, true);
 	else if (held) return !behaviors.has(root.uuid);
 	const mixer = new THREE.AnimationMixer(root);
-	mixers.set(root.uuid, { mixer, actions: {}, durations: {}, rest: captureRest(root), embedded: [], embeddedOff: false, parts: true });
+	mixers.set(root.uuid, { mixer, actions: {}, durations: {}, rest: captureRest(root), embedded: [], embeddedOff: false, parts: true, nodeCount: nodeCountOf(root), born: performance.now() });
 	// a re-registered (replaced) model keeps its transport: its clips rebind and carry on playing
 	animatedObjects.update((map) => ({ ...map, [root.uuid]: map[root.uuid] ? { ...map[root.uuid], clips: [] } : { clips: [], clip: '', playing: false, speed: 1 } }));
 	return true;
+}
+
+/** @param {any} root */
+function nodeCountOf(root) {
+	let n = 0;
+	root.traverse(() => n++);
+	return n;
+}
+
+/** a parts model registered in the last few seconds may still be assembling (see growParts) @param {string} uuid */
+export function partsModelSettling(uuid) {
+	const record = mixers.get(uuid);
+	return !!record?.parts && performance.now() - (record.born ?? 0) < PARTS_SETTLE_MS;
+}
+const PARTS_SETTLE_MS = 4000;
+
+/**
+ * A parts model's NODES can land after its refs: an object sync builds a peer's copy one object
+ * at a time (the root, then each part parented to it). When the node count changes, the nodes it
+ * gained get a rest pose and the clips not bound yet try again.
+ * @param {any} root @param {any} record
+ */
+function growParts(root, record) {
+	const n = nodeCountOf(root);
+	if (n === record.nodeCount) return;
+	record.nodeCount = n;
+	captureRest(root, record.rest);
+	if (clipRefsOf(root).some((r) => !record.assets?.[r.name])) attachClipRefs(root.uuid);
 }
 
 // A peer's clipRefs / animGraph / transport message can land while its OBJECT is still in this
@@ -411,7 +445,10 @@ function sweepPartsModels(time) {
 		if (ud?.attachTo && !socketFollowers.has(child.uuid)) syncSocketFollower(child);
 		const held = mixers.get(child.uuid);
 		if (held?.parts && held.mixer.getRoot() !== child) dropPartsRecord(child.uuid, held, true);
-		else if (held) continue;
+		else if (held) {
+			if (held.parts) growParts(child, held);
+			continue;
+		}
 		if (!ud?.clipRefs && !ud?.animGraph) continue;
 		if (ensureClipModel(child)) {
 			attachClipRefs(child.uuid);
@@ -916,6 +953,8 @@ export function setAnimationState(uuid, next, replicate = true) {
 	}
 	/** @type {any} */
 	const state = { ...entry, ...next };
+	// a transport change overrides a clip waiting to resume (pruneClipActions)
+	delete state.resume;
 	const changed = !!next.clip && next.clip !== entry.clip;
 	// 57 M3: the moment the clip began (`at`, a synced stamp — the trigger's, when a node played it)
 	// times a play-once clip and a crossfade. A remote state carries its own; a local change takes

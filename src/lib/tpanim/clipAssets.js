@@ -24,6 +24,7 @@ import {
 	setClipRefs,
 	setAnimationState,
 	hasClipModel,
+	partsModelSettling,
 	ensureClipModel
 } from '../animatedImports';
 import { decodeTpanim, tpToThreeClip, bindHumanoid, clipFit } from './format.js';
@@ -100,10 +101,25 @@ export function bindClip(tp, root, name) {
 		}
 	}
 	const fit = clipFit(tp, root);
+	// a peer's copy of a parts model may still be gaining its parts: no toast yet (it retries)
+	if (fit.fit === 'none' && partsModelSettling(root.uuid)) return settleRetry(root.uuid);
 	if (fit.fit === 'none') return warn('"' + name + '" was made for another skeleton — none of its bones are in "' + (root.name || 'this model') + '".');
 	const clip = tpToThreeClip(tp, root);
 	clip.name = name;
 	return clip;
+}
+
+/** @type {Set<string>} */
+const settling = new Set();
+/** try a parts model's binds again once it has settled — then it binds, or says why @param {string} uuid */
+function settleRetry(uuid) {
+	if (settling.has(uuid)) return null;
+	settling.add(uuid);
+	setTimeout(() => {
+		settling.delete(uuid);
+		void attachClipAssets(uuid);
+	}, 4500);
+	return null;
 }
 
 /**

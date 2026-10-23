@@ -21,6 +21,8 @@ import { get } from 'svelte/store';
 import { globalRenderer, globalScene, globalCamera, objectsGroup, TControls } from '../../stores/sceneStore';
 import { isEditorHelper } from '$lib/water/waterRuntime.js';
 import { normalizeView, clampSize, frameSize, viewPose, boundsOf, linearFrameToSrgb } from './screenshotCore.js';
+// 55 A7 (union): every peer draws the "AI" camera marker where this shot looked (agentLog is store-only)
+import { noteAgentView } from '$lib/agentLog';
 
 /** supersampling factor (the target is not multisampled: an MSAA target reads back as zeros) */
 const SUPERSAMPLE = 2;
@@ -176,5 +178,6 @@ export async function takeScreenshot(opts = {}) {
 		view,
 		at: Date.now()
 	};
+	noteAgentView(camera);
 	return out.toDataURL('image/png');
 }

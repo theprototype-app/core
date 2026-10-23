@@ -438,6 +438,11 @@ export function createInbox(deps) {
 		if (typeof o.text === 'string' && o.text) s.text += (s.text && !/\n$/.test(s.text) ? '\n\n' : '') + o.text;
 		s.text = s.text.slice(0, MAX_TEXT);
 		const final = !!o.final;
+		if (!s.text && !final) {
+			// nothing to show yet (a terminal turn posted ahead of its streamed answer)
+			publishStatus();
+			return { ok: true, id: s.id, chatId: s.chatId, final };
+		}
 		/** @type {any} */
 		const msg = { type: 'agentchat', id: s.id, chatId: s.chatId, from: me, to: s.to, replyTo: s.replyTo, text: s.text };
 		const name = deps.myName?.();

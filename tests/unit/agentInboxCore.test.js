@@ -360,3 +360,14 @@ describe('agent inbox: how the agent is driven', () => {
 		expect(sent.at(-1).mode).toBeUndefined();
 	});
 });
+
+describe('agent inbox: empty partials', () => {
+	it('a terminal prompt with no text yet posts the turn but no empty reply bubble', () => {
+		const { inbox, sent } = fake();
+		const r = inbox.reply({ prompt: 'hello', via: 'cli' });
+		expect(sent.filter((m) => m.role === 'user')).toHaveLength(1);
+		expect(sent.some((m) => m.id === r.id)).toBe(false);
+		inbox.reply({ delta: 'Hi!', via: 'cli', final: true });
+		expect(sent.find((m) => m.id === r.id)).toMatchObject({ text: 'Hi!', via: 'cli' });
+	});
+});

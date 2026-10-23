@@ -3,7 +3,7 @@
 // ride the raw-bytes path as kind 'vrm' on every peer, bring their own humanoid map, spring bones
 // and expressions, show their licence meta in the Inspector and carry it as provenance.
 const h = require('./helpers.cjs');
-const { mixamoGlb, toVrm } = require('./characterFixtures.cjs');
+const { mixamoGlb, toVrm, FULL_RESOURCE_TIMING } = require('./characterFixtures.cjs');
 
 const states = (page) =>
 	page.evaluate(
@@ -45,8 +45,8 @@ const qDiff = (a, b) => (a && b ? Math.max(...a.map((v, i) => Math.abs(v - b[i])
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
-	const A = await h.setupPage(browser, 'A');
-	const B = await h.setupPage(browser, 'B');
+	const A = await h.setupPage(browser, 'A', { init: FULL_RESOURCE_TIMING });
+	const B = await h.setupPage(browser, 'B', { init: FULL_RESOURCE_TIMING });
 	await h.connect(B, A);
 
 	// 0. boot graph: no VRM code until a VRM arrives
@@ -87,8 +87,9 @@ h.run(async () => {
 	await h.eventually(
 		() => A.page.evaluate((u) => window.__stores.animatedImports.vrmDebug(u), v1),
 		(d) =>
-			d?.vrm && d.joints >= 2 && d.expressions.includes('happy') && d.expressions.includes('wink'),
-		'A: the VRM runtime adopted it (spring joints, expressions incl. a custom one)'
+			// three-vrm makes ONE joint per bone that has a next bone in its chain: Hair1 -> Hair2 is 1
+			d?.vrm && d.joints === 1 && d.expressions.includes('happy') && d.expressions.includes('wink'),
+		'A: the VRM runtime adopted it (the spring joint, expressions incl. a custom one)'
 	);
 	const hm = await A.page.evaluate((u) => {
 		const x = window.__stores.humanoidRig.humanoidOf(u);
@@ -129,7 +130,7 @@ h.run(async () => {
 	);
 	await h.eventually(
 		() => B.page.evaluate((u) => window.__stores.animatedImports.vrmDebug(u), v1),
-		(d) => d?.vrm && d.joints >= 2,
+		(d) => d?.vrm && d.joints === 1,
 		'B: adopted as a VRM with its spring bones'
 	);
 	h.check(
@@ -161,19 +162,31 @@ h.run(async () => {
 		'the provenance line names the licence'
 	);
 
-	// 4. spring bones move the hair while the head moves (a local visual)
-	const hair0 = await boneQ(A.page, v1, 'mixamorigHair1');
-	await A.page.evaluate((u) => {
-		window.__stores.objectsGroup.subscribe((g) => {
-			const root = g.getObjectByProperty('uuid', u);
-			root.position.x += 0.6;
-			root.updateMatrixWorld(true);
-		})();
-	}, v1);
-	await A.page.waitForTimeout(600);
+	// 4. spring bones move the hair while the body moves (a local visual). Sampled DURING the
+	// motion: the spring is damped, so a while after a move it has settled back to rest.
+	const swing = await A.page.evaluate(
+		(u) =>
+			new Promise((r) =>
+				window.__stores.objectsGroup.subscribe((g) => {
+					const root = g.getObjectByProperty('uuid', u);
+					const hair = root.getObjectByName('mixamorigHair1');
+					const q0 = hair.quaternion.clone();
+					let n = 0;
+					let most = 0;
+					const step = () => {
+						root.position.x += 0.04;
+						most = Math.max(most, 1 - Math.abs(q0.dot(hair.quaternion)));
+						if (++n < 40) requestAnimationFrame(step);
+						else r({ most, frames: n });
+					};
+					requestAnimationFrame(step);
+				})()
+			),
+		v1
+	);
 	h.check(
-		qDiff(hair0, await boneQ(A.page, v1, 'mixamorigHair1')) > 1e-4,
-		'spring bones: the hair swings when the body moves'
+		swing.most > 1e-5,
+		`spring bones: the hair swings while the body moves (${JSON.stringify(swing)})`
 	);
 
 	// 5. expressions: the Inspector slider replicates; the weight reaches B's face

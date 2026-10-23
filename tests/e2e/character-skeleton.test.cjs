@@ -3,7 +3,7 @@
 // it on the other peer ONCE when the operation ends; undo puts the old file back everywhere. The rig
 // code loads only when the view opens.
 const h = require('./helpers.cjs');
-const { mixamoGlb } = require('./characterFixtures.cjs');
+const { mixamoGlb, FULL_RESOURCE_TIMING } = require('./characterFixtures.cjs');
 
 const uuidOf = (page, name) =>
 	page.evaluate(
@@ -72,8 +72,8 @@ const offHips = (page, uuid) =>
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
-	const A = await h.setupPage(browser, 'A');
-	const B = await h.setupPage(browser, 'B');
+	const A = await h.setupPage(browser, 'A', { init: FULL_RESOURCE_TIMING });
+	const B = await h.setupPage(browser, 'B', { init: FULL_RESOURCE_TIMING });
 	await h.connect(B, A);
 	const { page } = A;
 
@@ -103,9 +103,34 @@ h.run(async () => {
 	await page.evaluate((u) => window.__stores.objectActions.selectObject(u, true), u);
 	await page.waitForSelector('#character-skeleton', { timeout: 15000 });
 	await page.click('#character-skeleton');
-	await page.waitForSelector('#skeleton-window #skeleton-map [data-vrm-bone="leftHand"] select', {
-		timeout: 20000
-	});
+	await page
+		.waitForSelector('#skeleton-window #skeleton-map [data-vrm-bone="leftHand"] select', {
+			timeout: 20000
+		})
+		.catch(async (e) => {
+			// what is on screen instead (the window's chunk loads inside an {#await} with no catch)
+			const dom = await page.evaluate(() => {
+				const w = document.querySelector('#skeleton-window');
+				return {
+					window: !!w,
+					open: w?.hasAttribute('open'),
+					map: !!document.querySelector('#skeleton-map'),
+					rows: document.querySelectorAll('#skeleton-map [data-vrm-bone]').length,
+					text: (w?.textContent ?? '').replace(/\s+/g, ' ').slice(0, 300)
+				};
+			});
+			console.log('skeleton window:', JSON.stringify(dom));
+			console.log('page errors:', JSON.stringify(h.pageErrors(A).slice(-8)));
+			console.log(
+				'console:',
+				JSON.stringify(
+					(page.__console ?? [])
+						.filter((m) => m.type === 'error' || /fail|error/i.test(m.text))
+						.slice(-8)
+				)
+			);
+			throw e;
+		});
 	h.check(await loaded(page, 'rigFixes'), 'the rig code loaded with the view');
 
 	// 2. the map editor: unmap a required bone -> not a humanoid, on both peers; bytes untouched

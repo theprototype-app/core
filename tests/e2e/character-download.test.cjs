@@ -5,7 +5,7 @@
 // redistribution shows the licence warning in Download, Export and Publish. The writers are lazy.
 const h = require('./helpers.cjs');
 const fs = require('fs');
-const { mixamoGlb, toVrm, readGlb } = require('./characterFixtures.cjs');
+const { mixamoGlb, toVrm, readGlb, FULL_RESOURCE_TIMING } = require('./characterFixtures.cjs');
 
 const states = (page) =>
 	page.evaluate(
@@ -50,7 +50,7 @@ async function openDownload(page, uuid) {
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
-	const A = await h.setupPage(browser, 'A');
+	const A = await h.setupPage(browser, 'A', { init: FULL_RESOURCE_TIMING });
 	const { page } = A;
 	h.check(
 		!(await loaded(page, 'characterDownload|bvhWriter|glbEdit|clipFiles|three-vrm|vrmRuntime')),
@@ -146,8 +146,15 @@ h.run(async () => {
 	const files = unzipSync(new Uint8Array(b.bytes));
 	const list = Object.keys(files).sort();
 	h.check(
-		JSON.stringify(list) === '["Hero-Kick.tpanim","Hero-Walking_A.tpanim","Hero.glb"]',
-		`(b) model + one .tpanim per clip (${list})`
+		JSON.stringify(list) ===
+			'["CREDITS.txt","Hero-Kick.tpanim","Hero-Walking_A.tpanim","Hero.glb"]',
+		`(b) model + one .tpanim per clip + CREDITS.txt (${list})`
+	);
+	// the applied Walking_A came from the built-in avatar motions: the zip credits their source
+	const credits = new TextDecoder().decode(files['CREDITS.txt']);
+	h.check(
+		/KayKit/.test(credits) && /CC0/.test(credits),
+		`(b) CREDITS.txt credits the applied clip's source (${credits.replace(/\s+/g, ' ').slice(0, 160)})`
 	);
 	h.check(
 		!(readGlb(files['Hero.glb']).json.animations ?? []).length,

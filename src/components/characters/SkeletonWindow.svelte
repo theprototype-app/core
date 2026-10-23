@@ -7,7 +7,7 @@
 	//                 brush for one bad area with a live test pose
 	// Bones and Weights edit the FILE: each operation (a brush stroke is one) rewrites the GLB and
 	// sends it once, undoable. Opened from Inspector ▸ Character ▸ Skeleton… (lazy, CharacterDialogs).
-	import { onMount, onDestroy } from 'svelte';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import ModalDialog from '../ui/ModalDialog.svelte';
 	import Button from '../ui/Button.svelte';
 	import Tabs from '../ui/Tabs.svelte';
@@ -64,15 +64,31 @@
 		human ? Object.fromEntries(Object.entries(human.map).map(([k, v]) => [v, k])) : {}
 	);
 
+	/** what the drawn skeleton depends on: the bones, their rest places and the live root (a file
+	 *  edit swaps it). A STRING, so a scene poke that changes none of them re-runs nothing —
+	 *  refreshHelpers itself pokes the scene, and keyed on `info` this effect re-ran forever. */
+	const helperKey = $derived.by(() => {
+		void $sceneRevision;
+		const root = /** @type {any} */ ($objectsGroup)?.getObjectByProperty('uuid', uuid);
+		if (!info || !root) return '';
+		return (
+			root.id + '|' + info.bones.map((b) => b.name + '<' + b.parent + '@' + b.t.join(',')).join('|')
+		);
+	});
+	// the Bones fields follow the picked bone and the rig (an edit, an undo) — not every scene poke,
+	// or a test-pose drag would wipe a name being typed
 	$effect(() => {
-		const b = info?.bones.find((x) => x.name === $pickedBone);
-		renameTo = $pickedBone;
-		if (b) restT = b.t.map((/** @type {number} */ v) => +v.toFixed(4));
+		void helperKey;
+		const name = $pickedBone;
+		untrack(() => {
+			const b = info?.bones.find((x) => x.name === name);
+			renameTo = name;
+			if (b) restT = b.t.map((/** @type {number} */ v) => +v.toFixed(4));
+		});
 	});
 	$effect(() => {
 		void $pickedBone;
-		void info;
-		if (uuid) rig.refreshHelpers(uuid);
+		if (helperKey) rig.refreshHelpers(uuid);
 	});
 	$effect(() => {
 		if (uuid && $pickedBone) rig.testPose(uuid, $pickedBone, bend);

@@ -245,4 +245,13 @@ function toVrm(glb, { version = '1', meta = {} } = {}) {
 	return Array.from(writeGlb(json, bin));
 }
 
-module.exports = { mixamoGlb, toVrm, readGlb, writeGlb };
+/**
+ * An init script for `h.setupPage(browser, name, { init: FULL_RESOURCE_TIMING })`: the browser keeps
+ * only 250 resource-timing entries, and the dev server's boot alone fetches more modules than that,
+ * so a "was this lazy chunk fetched?" check against the default buffer reads false whatever loads.
+ */
+function FULL_RESOURCE_TIMING() {
+	performance.setResourceTimingBufferSize(100000);
+}
+
+module.exports = { mixamoGlb, toVrm, readGlb, writeGlb, FULL_RESOURCE_TIMING };

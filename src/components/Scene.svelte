@@ -74,6 +74,8 @@
 	import { measureMode, measureClick, measureHoverAt } from '$lib/measure';
 	import { pinsGroup, openAnnotation, showNotePins } from '$lib/annotationsHandler';
 	import { setParticleRoot } from '$lib/particleRuntime';
+	import { setBackgroundRoot, tickBackgroundLayer } from '$lib/backgroundLayer'; // 65 M2
+	import { tickFluidLayer } from '$lib/fluidLayer'; // 65 M6: smoke / ink (a look entry; the XR panel)
 	import WaterLayer from './water/WaterLayer.svelte';
 	import { registerEditResumeSources } from '$lib/editResume';
 	import { sendPing } from '$lib/ping';
@@ -430,6 +432,8 @@
 		tickAnimatedMixers(); // imported clips run on the synced clock
 		tickPackBehaviors(); // 33 P2: doors/lids/levers pose from their shared state (rest in Edit)
 		tickSim($objectsGroup, camera.current, renderer, performance.now()); // 36-sim (after mixers: jiggle rides the posed bones)
+		tickBackgroundLayer(camera.current, renderer, performance.now()); // 65 M2: the shader background (inert without one)
+		tickFluidLayer(camera.current, renderer, performance.now()); // 65 M6: steps the XR smoke panel (the screen effect steps itself)
 		tickAnimationPreview(); // Animation window: local transform preview (not synced)
 		tickSequences(); // 48 S2: shots / clips / audio / events of running sequences
 		tickMeshEdit(); // vertex handles follow the object if it moves (119)
@@ -1838,6 +1842,9 @@
 	     sceneObjects — they'd leak into GLTF sync). oncreate passes the ref
 	     DIRECTLY (the { ref } destructure trap, N1). -->
 	<T.Group name="particle-root" oncreate={(ref: any) => setParticleRoot(ref)} />
+	<!-- 65 M2: the shader BACKGROUND layer's meshes (screen / VR sphere / plane overlay) — scene
+	     root, never in sceneObjects, so nothing under it is saved or sent -->
+	<T.Group name="background-root" oncreate={(ref: any) => setBackgroundRoot(ref)} />
 	<!-- 36-water: water surfaces/bodies/bubbles (scene root, local) + the render hooks -->
 	<WaterLayer />
 

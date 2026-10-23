@@ -20,7 +20,7 @@
 	];
 </script>
 
-<div class="pm" data-keywords="particles render stretch trail ribbon streak sparks velocity">
+<div class="pm" data-keywords="particles render stretch trail ribbon streak sparks velocity flow field curl noise swirl">
 	<!-- four options do not fit the PropRow middle column (measured: "SpritesStretch" ran
 	     together and "Ribbon" clipped), so the control takes the whole row under its label -->
 	<div class="pm-mode">
@@ -44,6 +44,16 @@
 		<p id="particles-ribbon-note" class="pm-note">
 			In Local space the ribbon rides the object. Set Space to World for a trail behind it.
 		</p>
+	{/if}
+	<!-- 65 M6: the curl-noise flow field (0 = off). Divergence-free, so particles swirl like
+	     smoke or ink without clumping; the same on every peer (a function of the synced clock) -->
+	<PropRow label="Flow field" slider min={0} max={3} step={0.05} id="particles-flow" value={p.flow ?? 0}
+		title="Swirls the particles through a smooth curl-noise field (0 = off)" onchange={(v) => set({ flow: v })} />
+	{#if (p.flow ?? 0) > 0}
+		<PropRow label="Swirl size" slider min={0.1} max={3} step={0.05} id="particles-flow-scale" value={p.flowScale ?? 0.6}
+			title="The field's frequency: higher makes tighter swirls" onchange={(v) => set({ flowScale: v })} />
+		<PropRow label="Field speed" slider min={0} max={2} step={0.05} id="particles-flow-speed" value={p.flowSpeed ?? 0.3}
+			title="How fast the field itself changes (0 = a fixed field)" onchange={(v) => set({ flowSpeed: v })} />
 	{/if}
 	{#if world}
 		<PropRow label="Inherit velocity" slider min={0} max={1} step={0.05} value={p.inherit ?? 0}

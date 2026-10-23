@@ -273,6 +273,8 @@
 		border: 1px solid var(--border);
 		border-radius: var(--radius-input);
 		color: var(--text);
+		/* a select does not inherit the font: it fell back to the browser's larger default */
+		font: inherit;
 		padding: 1px 4px;
 		max-width: 100%;
 	}

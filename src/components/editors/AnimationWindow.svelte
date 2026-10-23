@@ -2035,8 +2035,11 @@
 			<!-- clientHeight is the clip list's resize CEILING: the grip used to clamp at
 			     a flat 360px whatever the pane's own height, so on a short dock it went
 			     straight off the bottom of the window -->
+			<!-- 57: the pane SCROLLS — with a model's clip tools under its clip list it can be taller
+			     than a short dock, and a cut-off pane had no way to reach what was below -->
 			<div
-				class="flex w-56 shrink-0 flex-col border-r border-border"
+				class="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border"
+				use:minimalScroll
 				class:an-pane-full={compact}
 				class:an-pane-off={compact && phonePane !== 'list'}
 				bind:clientHeight={sideH}
@@ -2169,7 +2172,7 @@
 					</select>
 					<button class="ui-button-quiet shrink-0" title="Animate this channel" aria-label="Add channel" onclick={add}>＋</button>
 				</div>
-				<div class="min-h-0 flex-1 overflow-y-auto" use:minimalScroll>
+				<div class="min-h-24 flex-1 overflow-y-auto" use:minimalScroll>
 					{#if !tracks.length}
 						<div class="p-3 text-center text-[11px] text-text-faint">
 							{clips.length

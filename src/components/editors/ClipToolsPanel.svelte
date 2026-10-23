@@ -10,7 +10,6 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { clipRefsOf, embeddedClipsOf, setPoseDriver, clearPoseDriver } from '$lib/animatedImports';
 	import { objectsGroup } from '../../stores/sceneStore';
-	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	/** @type {{uuid: string, clips: {name: string, duration: number, asset?: string}[], clipState: any}} */
 	let { uuid, clips, clipState } = $props();
@@ -110,9 +109,9 @@
 	const fmt = (/** @type {number} */ t) => t.toFixed(2) + ' s';
 </script>
 
-<!-- min-h-0 + its own scroll: the clip list's pane does not scroll, so on a short dock the tools
-     below the fold were cut off by the window with no way to reach them -->
-<div id="clip-tools" class="flex min-h-0 shrink flex-col gap-1.5 overflow-y-auto border-b border-border px-2 py-1.5 text-xs" use:minimalScroll>
+<!-- natural height: the Animation window's clip pane scrolls as a whole (squeezed into its own
+     scroll box, the tools shrank to one line on a short dock) -->
+<div id="clip-tools" class="flex shrink-0 flex-col gap-1.5 border-b border-border px-2 py-1.5 text-xs">
 	{#if embedded.names.length && !embedded.off}
 		<div class="flex flex-wrap items-center gap-2">
 			<button

@@ -75,7 +75,7 @@ const EXTENSIONS = {
 	// 36-share: a dropped .webm stays audio (above wins); the recorder stamps its own webm `video`
 	video: ['mp4', 'm4v', 'mov'],
 	text: ['txt', 'json', 'md', 'cfg', 'js'],
-	object: ['glb', 'gltf', 'obj', 'stl', 'fbx'],
+	object: ['glb', 'gltf', 'obj', 'stl', 'fbx', 'vrm'],
 	// 21-F4: a LEVEL — a .tpscene zip the travel node loads by content hash. Its own
 	// kind so it never opens in the text editor (it is a binary zip) and gets a map icon.
 	scene: ['tpscene'],

@@ -57,6 +57,7 @@
 		"@gltf-transform/extensions": "^4.5.1",
 		"@gltf-transform/functions": "^4.5.1",
 		"@lucide/svelte": "^1.48.0",
+		"@pixiv/three-vrm": "3.5.5",
 		"@shaderfrog/core": "^4.0.2",
 		"@shaderfrog/glsl-parser": "^7.0.1",
 		"@threlte/core": "^8.6.1",

@@ -13,7 +13,7 @@ import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined } from '$lib/connectionState'
 import { environment, editEnvSky } from '$lib/environment'
-import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, dropAllAnimatedImports } from '$lib/animatedImports'
+import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, dropAllAnimatedImports, setVrmExpression } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
@@ -588,6 +588,13 @@ export async function objectParameters(data) {
         if (typeof data.from === 'string' && Number(data.fade) > 0) Object.assign(next, { from: data.from, fromSpeed: Number(data.fromSpeed) || data.speed, fade: Math.min(5, Number(data.fade)) });
         else if (Number.isFinite(data.at)) Object.assign(next, { from: undefined, fade: undefined });
         setAnimationState(data.uuid, next, false);
+    } else if (data.parameter == 'character') {
+        // 57 M2: a character's humanoid map fixes + applied clips; each peer retargets for itself
+        const { receiveHumanoid } = await import('$lib/humanoid/humanoidRig.js');
+        receiveHumanoid(data);
+    } else if (data.parameter == 'expression') {
+        // 57 M4: a VRM expression weight (the face of a character)
+        setVrmExpression(data.uuid, data.name, data.weight, false);
     } else if (data.parameter == 'clipRefs') {
         // 57 M1: the clip assets a model plays (bytes pulled by hash, bound per peer)
         setClipRefs(data.uuid, data.clipRefs, { replicate: false, record: false });

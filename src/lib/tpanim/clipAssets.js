@@ -31,6 +31,9 @@ import { stripRootMotion } from './clipOps.js';
 import { humanoidMapOf } from './humanoidMap.js';
 import { registerSceneAssetSource } from '../sceneAssets';
 
+/** 57-chars M2's character code (lazy), loaded before the first humanoid bind @type {any} */
+let characterRig = null;
+
 /** hash -> the decode (shared by every model using the clip; a failure is forgotten) @type {Map<string, Promise<import('./format.js').TpClip | null>>} */
 const decoded = new Map();
 /** hash -> the models waiting for its bytes @type {Map<string, Set<string>>} */
@@ -90,6 +93,18 @@ export function bindClip(tp, root, name) {
 		return null;
 	};
 	if (tp.humanoid) {
+		// 57-chars M2: the rest- and facing-corrected retarget onto the character's own map (its
+		// detector + the user's fixes); attachClipAssets loads it before a humanoid bind
+		if (characterRig) {
+			try {
+				const clip = characterRig.retargetTpClip(tp, root.uuid, name);
+				if (clip) return clip;
+			} catch (error) {
+				console.log('humanoid retarget failed', error);
+				return warn('"' + name + '" could not be applied to "' + (root.name || 'this model') + '".');
+			}
+			return warn('"' + name + '" is a humanoid clip, and "' + (root.name || 'this model') + '" has no humanoid bones mapped yet.');
+		}
 		const map = humanoidMapOf(root);
 		if (!map) return warn('"' + name + '" is a humanoid clip, and "' + (root.name || 'this model') + '" has no humanoid bones mapped yet.');
 		try {
@@ -121,6 +136,7 @@ export async function attachClipAssets(uuid) {
 		if (clipAssetKey(uuid, ref.name) === key) continue;
 		const tp = await loadClip(ref.hash, uuid);
 		if (!tp) continue;
+		if (tp.humanoid && !characterRig) characterRig = await import('../humanoid/humanoidRig.js');
 		// the refs may have moved on while the bytes decoded
 		if (!clipRefsOf(root).some((r) => r.hash === ref.hash && r.name === ref.name && (r.mode ?? '') === (ref.mode ?? ''))) continue;
 		// 57 M3: In place strips the root's travel at bind time (the file is untouched); Moving keeps it

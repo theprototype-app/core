@@ -183,6 +183,7 @@ const INPUT = {
 	// 17-E A5: the trigger that starts/stops an authored clip, plus a wired speed
 	playanim: { trigger: 'event', speed: 'number' },
 	playseq: { trigger: 'event' }, // 48 S2
+	setexpression: { trigger: 'event', weight: 'number' }, // 57 M4: a VRM's face
 	// PFX-B: drive emission from flow — density, tint, spawn offset, motion, and
 	// a burst fired from any event (On Click / Key Press / On Impact)
 	particle: { count: 'number', color: 'color', offset: 'vector3', speed: 'number', gravity: 'number', size: 'number', trigger: 'event' },

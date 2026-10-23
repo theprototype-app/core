@@ -29,6 +29,8 @@
   // panel, so it sits with ConfirmModal where every entry point can reach it.
   import StorageModal from './components/menu/StorageModal.svelte'
   import ReplaceModelModal from './components/menu/ReplaceModelModal.svelte'
+  // 57: Apply clip… / Download… / the Skeleton view — a tiny host, the dialogs load on open
+  import CharacterDialogs from './components/characters/CharacterDialogs.svelte'
   import PlaceholderTooltip from './components/menu/PlaceholderTooltip.svelte'
   import Flow from './components/Flow.svelte'
   import FlowCode from './components/editors/FlowCode.svelte'
@@ -384,7 +386,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     const files = [...(event.dataTransfer?.files ?? [])]
     if (files.length === 0) return
     const skipped = []
-    const modelExt = /\.(glb|gltf|obj|stl|fbx)$/
+    const modelExt = /\.(glb|gltf|obj|stl|fbx|vrm)$/
     // 17-D2: a .mtl / texture dropped ALONGSIDE a model is its companion, not
     // an unsupported file — importFile pairs them up.
     const companionExt = /\.(mtl|png|jpe?g|webp|bmp|gif)$/i
@@ -448,6 +450,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 36 U9: Replace model… for a loading/failed placeholder, and the hover tooltip over one -->
 <ReplaceModelModal />
 <PlaceholderTooltip />
+<CharacterDialogs />
 <DrawToolbar />
 <SculptToolbar />
 <SplineToolbar />

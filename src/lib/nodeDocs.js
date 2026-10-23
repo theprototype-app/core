@@ -112,6 +112,7 @@ export const NODE_DOCS = {
 	animmarker: "Fires a pulse when the connected object's animation passes a named marker.",
 	animstate: "Reads the connected object's animation transport as a number - playing, position or progress.",
 	playanim: "Starts, stops or restarts an animation clip on the connected object when a pulse arrives.",
+	setexpression: "Sets a VRM character's facial expression (happy, angry, blink, aa or one of its own) to a weight when a pulse arrives.",
 	playseq: "Plays, stops, toggles or restarts a Timeline sequence (camera shots, clips, audio, events) for every player when a pulse arrives.",
 	onseqevent: "Fires a pulse when a running Timeline sequence passes a named event, or reaches its end ('end').",
 	mass: "Gives the connected object weight for the physics simulation - objects with a Mass fall and collide.",

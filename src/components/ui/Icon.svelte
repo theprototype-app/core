@@ -73,6 +73,7 @@
 		Atom, // 38 NOTES-38 #24: Physics & effects ▸
 		AudioLines,
 		Bell,
+		Bone,
 		BookOpen,
 		Bookmark,
 		Box,
@@ -298,6 +299,7 @@
 		'audio-lines': AudioLines,
 		bell: Bell,
 		'book-open': BookOpen,
+		bone: Bone, // 57 M6: Character ▸ Skeleton…
 		bookmark: Bookmark,
 		box: Box,
 		'box-select': BoxSelect,

@@ -636,6 +636,31 @@ function updatePlayAnim(pairs, ctx) {
 	for (const id of [...playAnimEdge.keys()]) if (!seen.has(id)) playAnimEdge.delete(id);
 }
 
+// 57 M4: rising-edge memory for Set Expression (the playAnimEdge shape)
+/** @type {Map<string, boolean>} */
+const setExpressionEdge = new Map();
+
+/**
+ * Set a VRM expression from a flow event. LOCAL on every peer (the trigger stamp replicated),
+ * never broadcast — `setVrmExpression(…, false)` — the updatePlayAnim reasoning.
+ * @param {{node: any, uuid: string}[]} pairs
+ */
+function updateSetExpression(pairs) {
+	const seen = new Set();
+	for (const { node, uuid } of pairs) {
+		seen.add(node.id);
+		const data = node.data ?? {};
+		const high = !!data.trigger;
+		const was = setExpressionEdge.get(node.id) ?? false;
+		setExpressionEdge.set(node.id, high);
+		if (!high || was) continue;
+		const name = typeof data.expression === 'string' ? data.expression.trim() : '';
+		const weight = Number(data.weight);
+		if (name) animImportsRef?.setVrmExpression?.(uuid, name, Number.isFinite(weight) ? weight : 1, false);
+	}
+	for (const id of [...setExpressionEdge.keys()]) if (!seen.has(id)) setExpressionEdge.delete(id);
+}
+
 /**
  * B6: the physics ACTION nodes (Impulse, Set Velocity, Joint). Modelled on
  * updatePlayAnim: the same pair collection, the same resolveInputs, and the same
@@ -4626,6 +4651,21 @@ function runTick(now) {
 		if (uuid) animPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
 	});
 	updatePlayAnim(animPairs, ctx);
+	// 57 M4: Set Expression — same pair collection, same rising edge
+	/** @type {{node: any, uuid: string}[]} */
+	const exprPairs = [];
+	edges.forEach((edge) => {
+		const source = nodeById(nodes, edge.source);
+		if (source?.type !== 'setexpression') return;
+		const uuid = targetUuidOf(edge);
+		if (uuid) exprPairs.push({ node: { ...source, data: resolveInputs(source, nodes, edges, time, ctx) }, uuid });
+	});
+	nodes.forEach((node) => {
+		if (node.type !== 'setexpression') return;
+		const uuid = implicitOwnerOf(node);
+		if (uuid) exprPairs.push({ node: { ...node, data: resolveInputs(node, nodes, edges, time, ctx) }, uuid });
+	});
+	if (exprPairs.length || setExpressionEdge.size) updateSetExpression(exprPairs);
 
 	// B6: physics ACTIONS, collected exactly like the animation pairs. Called
 	// here — after the flow poses, before the physics post-tick hook — so an

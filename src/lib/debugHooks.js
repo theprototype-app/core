@@ -55,6 +55,10 @@ export const DEBUG_HOOKS = [
 	['avatars', () => import('./avatars/avatarState.js')],
 	['avatarAssets', () => import('./avatars/assets.js')],
 	['avatarCatalog', () => import('./avatars/catalog.js')],
+	// 57: characters — humanoid maps + applied clips, provenance / licence flags, the dialogs' open state
+	['humanoidRig', () => import('./humanoid/humanoidRig.js')],
+	['provenance', () => import('./provenance.js')],
+	['characterUi', () => import('./characterUi.js')],
 	// 41 G9: the customise panel's presets / Custom / Surprise me (lookSignature for the e2e)
 	['characterLooks', () => import('./avatars/characterLooks.js')],
 	['perfLiveSource', () => import('./perf/liveSource')],

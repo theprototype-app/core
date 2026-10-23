@@ -388,8 +388,13 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // an unsupported file — importFile pairs them up.
     const companionExt = /\.(mtl|png|jpe?g|webp|bmp|gif)$/i
     const companions = files.filter((file) => companionExt.test(file.name))
+    // 57 M1: animation clip files go to the Explorer (converted to .tpanim) and onto the rig under the cursor
+    const clipExt = /\.(tpanim|vrma|bvh)$/i
+    const clipFiles = files.filter((file) => clipExt.test(file.name))
+    if (clipFiles.length) import('./lib/explorerDrop').then((m) => m.dropClipFiles(clipFiles, event.clientX, event.clientY))
     files.forEach((file) => {
       const name = file.name.toLowerCase()
+      if (clipFiles.includes(file)) return
       if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
       else if (!companions.includes(file)) skipped.push(file.name)

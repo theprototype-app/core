@@ -23,8 +23,8 @@ import {
 	restPoseOf,
 	setClipRefs,
 	setAnimationState,
-	hasAnimatedImport,
-	animatedImportUuids
+	hasClipModel,
+	ensureClipModel
 } from '../animatedImports';
 import { decodeTpanim, tpToThreeClip, bindHumanoid, clipFit } from './format.js';
 import { stripRootMotion } from './clipOps.js';
@@ -112,7 +112,7 @@ export function bindClip(tp, root, name) {
  */
 export async function attachClipAssets(uuid) {
 	const root = rootOf(uuid);
-	if (!root || !hasAnimatedImport(uuid)) return;
+	if (!root || !hasClipModel(uuid)) return;
 	const refs = clipRefsOf(root);
 	pruneClipActions(uuid, new Set(refs.map((r) => r.name)));
 	setClipPlayback(uuid, refs); // 57 M8: speed / play-once per ref
@@ -146,8 +146,9 @@ function uniqueClipName(root, wanted) {
  */
 export function assignClipAsset(uuid, item, opts = {}) {
 	const root = rootOf(uuid);
-	if (!root || !hasAnimatedImport(uuid)) {
-		showToast('Drop a clip on a rigged model (a character, an animated import)');
+	// 57 M12: a model that is not a rig takes clips too — its named nodes are its parts
+	if (!root || !ensureClipModel(root)) {
+		showToast('This object cannot take an animation clip');
 		return null;
 	}
 	const refs = clipRefsOf(root);
@@ -206,8 +207,9 @@ registerSceneAssetSource(() => {
 	const group = get(objectsGroup);
 	/** @type {{hash: string, name: string, kind: string}[]} */
 	const out = [];
-	for (const uuid of animatedImportUuids(group)) {
-		const root = group?.getObjectByProperty('uuid', uuid);
+	// rigs (bytes) and parts models alike: every top-level object carrying refs
+	for (const root of group?.children ?? []) {
+		if (!root?.userData?.clipRefs) continue;
 		for (const ref of clipRefsOf(root)) out.push({ hash: ref.hash, name: itemByHash(ref.hash)?.name ?? ref.name + '.tpanim', kind: 'anim' });
 	}
 	return out;

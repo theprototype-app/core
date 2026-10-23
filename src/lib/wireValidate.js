@@ -341,6 +341,18 @@ export const VALIDATORS = {
 				d.clipRefs.length <= 64 &&
 				d.clipRefs.every((/** @type {any} */ r) => !!r && typeof r.hash === 'string' && r.hash.length <= 128 && typeof r.name === 'string' && r.name.length <= 200)
 			);
+		// 57 M11: an Animation states graph is a plain object with a states ARRAY, or null; a
+		// parameter is a short name + a number/boolean value + a finite stamp
+		if (d.parameter === 'animGraph') return isUuid(d.uuid) && (d.animGraph === null || (!!d.animGraph && typeof d.animGraph === 'object' && isArray(d.animGraph.states)));
+		if (d.parameter === 'animParam')
+			return isUuid(d.uuid) && typeof d.name === 'string' && d.name.length <= 40 && (typeof d.value === 'boolean' || Number.isFinite(d.value)) && Number.isFinite(d.at);
+		// 57 M12: a socket attach is {uuid, socket, offset[7]} or null (detached)
+		if (d.parameter === 'attachTo')
+			return (
+				isUuid(d.uuid) &&
+				(d.attachTo === null ||
+					(!!d.attachTo && isUuid(d.attachTo.uuid) && typeof d.attachTo.socket === 'string' && d.attachTo.socket.length <= 200 && isNumberArray(d.attachTo.offset) && d.attachTo.offset.length === 7))
+			);
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

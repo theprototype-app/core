@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalCamera, selectedObject } from '../stores/sceneStore';
 import { peers, showToast, toastStore, stackOnDrop } from '../stores/appStore';
-import { explorerItems, itemBlob } from './explorer';
+import { explorerItems, itemBlob, importFiles } from './explorer';
 import { prefabs, instantiatePrefab } from './prefabs';
 import { importFile, addImported } from './fileHandler.svelte';
 import { packRefFromUrl, peekPackTemplate, loadPackTemplate } from './packRefs';
@@ -178,6 +178,24 @@ function spreadPoint(point, i, count) {
 }
 
 /**
+ * 57 M1: animation clip FILES dropped on the viewport (.tpanim / .vrma / .bvh from the desktop): into
+ * the Explorer (converted to .tpanim on the way), then onto the model under the cursor, the first
+ * one playing — the same as dragging the new cards onto it.
+ * @param {File[]} files @param {number} clientX @param {number} clientY
+ */
+export async function dropClipFiles(files, clientX, clientY) {
+	const target = dropTarget(clientX, clientY);
+	const items = (await importFiles(files, null)).filter((/** @type {any} */ it) => it?.kind === 'anim');
+	if (!items.length) return;
+	if (!target.object) return showToast('Clips added to the Explorer — drag one onto a character to play it');
+	let first = true;
+	for (const item of items) {
+		await placeExplorerPayload({ id: item.id, kind: 'anim', name: item.name }, first ? target : { ...target, noPlay: true });
+		first = false;
+	}
+}
+
+/**
  * Handle a viewport drop of an Explorer card.
  *
  * 21-H3: the payload may carry an `items` ARRAY — the whole Explorer selection behind
@@ -204,7 +222,7 @@ export async function dropExplorerItem(payload, clientX, clientY) {
  * Place ONE payload at an already-resolved drop target (21-H3 split this out of
  * `dropExplorerItem` unchanged so the multi path could reuse the single one verbatim).
  * @param {any} payload
- * @param {{point: number[] | null, object: any, normal: number[] | null, hit?: any}} target
+ * @param {{point: number[] | null, object: any, normal: number[] | null, hit?: any, noPlay?: boolean}} target
  */
 async function placeExplorerPayload(payload, target) {
 	if (payload.prefabId) {
@@ -260,12 +278,14 @@ async function placeExplorerPayload(payload, target) {
 		const { hasAnimatedImport } = await import('./animatedImports');
 		let hit = target.hit ?? target.object;
 		while (hit && !hasAnimatedImport(hit.uuid)) hit = hit.parent;
+		// 57 M12: no rig under the drop — the object itself takes it (its named nodes are its parts)
+		hit ??= target.object;
 		if (!hit) {
-			showToast('Drop the clip ON a character or another rigged model to play it');
+			showToast('Drop the clip ON a character or another model to play it');
 			return;
 		}
 		const { assignClipAsset } = await import('./tpanim/clipAssets.js');
-		assignClipAsset(hit.uuid, { hash: item.hash, name: item.name }, { play: true });
+		assignClipAsset(hit.uuid, { hash: item.hash, name: item.name }, { play: !target.noPlay });
 	} else if (item.kind === 'image') {
 		if (!target.object) {
 			showToast('Drop the image ON an object to texture it');

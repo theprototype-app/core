@@ -28,7 +28,7 @@ export const animatedObjects = writable({});
 const fileBytes = new Map();
 /** @type {Map<string, 'gltf'|'fbx'>} rootUuid -> which parser those bytes need */
 const fileKinds = new Map();
-/** @type {Map<string, {mixer: any, actions: Record<string, any>, durations: Record<string, number>, rest?: Map<any, {p: number[], q: number[], s: number[]}>, assets?: Record<string, string>, clipSpeed?: Record<string, number>, clipOnce?: Record<string, boolean>, assetKeys?: Record<string, string>}>} */
+/** @type {Map<string, {mixer: any, actions: Record<string, any>, durations: Record<string, number>, rest?: Map<any, {p: number[], q: number[], s: number[]}>, assets?: Record<string, string>, clipSpeed?: Record<string, number>, clipOnce?: Record<string, boolean>, assetKeys?: Record<string, string>, embeddedOff?: boolean, embedded?: string[], stashed?: Record<string, any>, parts?: boolean}>} */
 const mixers = new Map();
 
 // ---- 33 P2: animated FUNCTIONAL items (a door, a chest, a lever, a fan) ---------------
@@ -83,12 +83,17 @@ function behaviorFields(uuid) {
  * behavior spec does — the peer RE-PARSES the file, so anything stamped on the root after
  * the parse is otherwise lost on peers, after a reload and across an undo. Absent = none,
  * so every message without one is byte-identical.
- * @param {any} root @returns {{lod?: any, clipRefs?: any[]}}
+ * @param {any} root @returns {{lod?: any, clipRefs?: any[], clipsOff?: boolean, animGraph?: any}}
  */
 function rootDataFields(root) {
 	// 57 M1: the clip ASSETS assigned to this model ride beside the bytes for the same reason
 	const refs = clipRefsOf(root);
+	/** @type {any} */
 	const clips = refs.length ? { clipRefs: refs } : {};
+	// 57 M8: the model's EMBEDDED clips are switched off (Extract clips ▸ use the files instead)
+	if (root?.userData?.clipsOff) clips.clipsOff = true;
+	// 57 M11: its Animation states graph (plain JSON, normalized on every apply)
+	if (root?.userData?.animGraph && typeof root.userData.animGraph === 'object') clips.animGraph = JSON.parse(JSON.stringify(root.userData.animGraph));
 	const lod = root?.userData?.lod;
 	if (!lod || typeof lod !== 'object') return clips;
 	try {
@@ -138,6 +143,17 @@ export function normalizeClipRefs(raw) {
 	return out;
 }
 
+/** 57 M8: the clips the model's own file carries, and whether they are switched off @param {string} uuid */
+export function embeddedClipsOf(uuid) {
+	const record = mixers.get(uuid);
+	return { names: record?.embedded ?? [], off: !!record?.embeddedOff };
+}
+
+/** the bound AnimationClip for a clip name (Extract clips reads the embedded ones) @param {string} uuid @param {string} name */
+export function threeClipOf(uuid, name) {
+	return mixers.get(uuid)?.actions[name]?.getClip() ?? null;
+}
+
 /** what a bound clip-asset action was bound from (hash|mode), or null @param {string} uuid @param {string} name */
 export function clipAssetKey(uuid, name) {
 	return mixers.get(uuid)?.assetKeys?.[name] ?? null;
@@ -172,7 +188,10 @@ export function addClipAction(uuid, clip, hash, key = hash) {
 	const old = record.actions[clip.name];
 	if (old) {
 		old.stop();
-		record.mixer.uncacheAction(old.getClip());
+		// an EMBEDDED clip of the same name is stashed, not dropped (Extract ▸ use the files keeps
+		// the names, so a graph naming "Walk" plays the file) — it comes back when the file goes
+		if (!record.assets?.[clip.name]) record.stashed = { ...(record.stashed ?? {}), [clip.name]: old };
+		else record.mixer.uncacheAction(old.getClip());
 	}
 	record.actions[clip.name] = record.mixer.clipAction(clip);
 	record.durations[clip.name] = clip.duration;
@@ -210,11 +229,19 @@ export function pruneClipActions(uuid, keep) {
 		delete record.durations[name];
 		delete record.assets[name];
 		if (record.assetKeys) delete record.assetKeys[name];
+		const stashed = record.stashed?.[name];
+		if (stashed) {
+			record.actions[name] = stashed;
+			record.durations[name] = stashed.getClip().duration;
+			delete record.stashed?.[name];
+		}
 	}
 	const entry = get(animatedObjects)[uuid];
 	if (entry) {
-		const clips = entry.clips.filter((c) => !gone.includes(c));
-		const clip = gone.includes(entry.clip) ? clips[0] : entry.clip;
+		// a restored embedded clip stays listed (unless the embedded clips are off)
+		const back = (/** @type {string} */ c) => !!record.actions[c] && !record.embeddedOff;
+		const clips = entry.clips.filter((c) => !gone.includes(c) || back(c));
+		const clip = gone.includes(entry.clip) && !back(entry.clip) ? clips[0] : entry.clip;
 		animatedObjects.update((map) => ({ ...map, [uuid]: { ...entry, clips, clip, playing: gone.includes(entry.clip) ? false : entry.playing } }));
 	}
 }
@@ -230,33 +257,58 @@ function attachClipRefs(uuid) {
 
 /**
  * Set a model's clip refs: applied here, bound, and (unless `replicate` is false) broadcast as ONE
- * message and recorded as ONE undo entry.
- * @param {string} uuid @param {any[]} refs @param {{replicate?: boolean, record?: boolean}} [opts]
+ * message and recorded as ONE undo entry. 57 M8: `clipsOff` switches the model's EMBEDDED clips
+ * off (or back on) in the same step — absent = unchanged.
+ * @param {string} uuid @param {any[]} refs @param {{replicate?: boolean, record?: boolean, clipsOff?: boolean}} [opts]
  */
 export function setClipRefs(uuid, refs, opts = {}) {
 	const root = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
-	if (!root || !fileBytes.has(uuid)) return false;
+	if (!root || !ensureClipModel(root)) return false;
 	const before = clipRefsOf(root);
 	const after = normalizeClipRefs(refs);
-	if (JSON.stringify(before) === JSON.stringify(after)) return false;
+	const offBefore = !!root.userData.clipsOff;
+	const offAfter = typeof opts.clipsOff === 'boolean' ? opts.clipsOff : offBefore;
+	if (JSON.stringify(before) === JSON.stringify(after) && offBefore === offAfter) return false;
 	if (after.length) root.userData.clipRefs = after;
 	else delete root.userData.clipRefs;
+	if (offAfter !== offBefore) setEmbeddedOff(uuid, offAfter);
 	attachClipRefs(uuid);
-	if (opts.record !== false) recordEntry({ kind: 'clipRefs', uuid, before, after });
+	pokeClipModels(); // a settings-only change (mode / loop / speed) moves no clip list
+	if (opts.record !== false)
+		recordEntry({ kind: 'clipRefs', uuid, before: { refs: before, clipsOff: offBefore }, after: { refs: after, clipsOff: offAfter } });
 	if (opts.replicate !== false) {
 		/** @type {any} */
 		const peer = get(peers);
-		if (peer) peer.send({ type: 'objectParameters', parameter: 'clipRefs', uuid, clipRefs: after });
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'clipRefs', uuid, clipRefs: after, ...(offAfter || offBefore ? { clipsOff: offAfter } : {}) });
 	}
 	return true;
 }
 
+/** 57 M8: switch a model's embedded clips off/on (the bytes are untouched; the list hides them) @param {string} uuid @param {boolean} off */
+function setEmbeddedOff(uuid, off) {
+	const root = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	const record = mixers.get(uuid);
+	if (!root || !record) return;
+	if (off) root.userData.clipsOff = true;
+	else delete root.userData.clipsOff;
+	record.embeddedOff = off;
+	const entry = get(animatedObjects)[uuid];
+	if (!entry) return;
+	const assets = Object.keys(record.assets ?? {});
+	const clips = off ? entry.clips.filter((c) => assets.includes(c)) : [...(record.embedded ?? []), ...entry.clips.filter((c) => !(record.embedded ?? []).includes(c))];
+	const hidden = off && !assets.includes(entry.clip);
+	if (hidden) record.actions[entry.clip]?.stop();
+	animatedObjects.update((map) => ({ ...map, [uuid]: { ...entry, clips, clip: hidden ? clips[0] : entry.clip, playing: hidden ? false : entry.playing } }));
+}
+
 registerHistoryKind('clipRefs', (entry, state) => {
-	if (!fileBytes.has(entry.uuid)) {
+	if (!get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid)) {
 		showToast('Cannot undo/redo: the object no longer exists');
 		return false;
 	}
-	setClipRefs(entry.uuid, state, { record: false });
+	// a pre-M8 entry is the refs array alone
+	if (Array.isArray(state)) setClipRefs(entry.uuid, state, { record: false });
+	else setClipRefs(entry.uuid, state?.refs ?? [], { record: false, clipsOff: !!state?.clipsOff });
 	return true;
 });
 
@@ -286,6 +338,61 @@ export function hasAnimatedImport(uuid) {
 	return fileBytes.has(uuid);
 }
 
+// ---- 57 M12: PARTS MODELS ---------------------------------------------------------------
+// A model with no rig and no clips (an img2threejs import, a kit piece with a rotor and a door)
+// can still be animated: its NAMED NODES are its parts. On the first clip ref it gets a mixer of
+// its own (no bytes — it replicates and saves through the ordinary object path, which carries
+// `userData.clipRefs` / `animGraph`), and node-name `.tpanim` clips bind to it like any skeleton
+// clip. A sweep registers the parts models that arrive by a load or a peer's object sync.
+
+/** does this object have a mixer for clips (an animated import, or a parts model)? @param {string} uuid */
+export function hasClipModel(uuid) {
+	return mixers.has(uuid);
+}
+
+/**
+ * Make sure an object can take clips: an animated import already can; anything else becomes a
+ * PARTS model (a mixer over its own nodes). A functional item (a pack door) cannot.
+ * @param {any} root @returns {boolean}
+ */
+export function ensureClipModel(root) {
+	if (!root?.uuid) return false;
+	if (mixers.has(root.uuid)) return !behaviors.has(root.uuid);
+	const mixer = new THREE.AnimationMixer(root);
+	mixers.set(root.uuid, { mixer, actions: {}, durations: {}, rest: captureRest(root), embedded: [], embeddedOff: false, parts: true });
+	animatedObjects.update((map) => ({ ...map, [root.uuid]: { clips: [], clip: '', playing: false, speed: 1 } }));
+	return true;
+}
+
+let lastSweep = 0;
+/** register parts models that arrived carrying refs or a graph; forget the ones that left @param {number} time */
+function sweepPartsModels(time) {
+	if (Math.abs(time - lastSweep) < 0.5) return;
+	lastSweep = time;
+	const group = get(objectsGroup);
+	if (!group) return;
+	for (const child of group.children) {
+		const ud = child.userData;
+		if (ud?.attachTo && !socketFollowers.has(child.uuid)) syncSocketFollower(child);
+		if (mixers.has(child.uuid) || (!ud?.clipRefs && !ud?.animGraph)) continue;
+		if (ensureClipModel(child)) {
+			attachClipRefs(child.uuid);
+			loadGraphRuntime(child);
+		}
+	}
+	for (const [uuid, record] of mixers)
+		if (record.parts && !group.getObjectByProperty('uuid', uuid)) {
+			record.mixer.stopAllAction();
+			mixers.delete(uuid);
+			drivers.delete(uuid);
+			animatedObjects.update((map) => {
+				const next = { ...map };
+				delete next[uuid];
+				return next;
+			});
+		}
+}
+
 /** This model's clip transport, for a caller that must not import the store
  * (17-E: the Play Animation node reaches this module through a primed dynamic
  * import, so it reads state through accessors). @param {string} uuid */
@@ -303,7 +410,7 @@ export function animatedImportKind(uuid) {
 export function clipInfo(uuid) {
 	const record = mixers.get(uuid);
 	if (!record) return [];
-	return Object.keys(record.actions).map((name) => ({
+	return Object.keys(record.actions).filter((name) => !record.embeddedOff || record.assets?.[name]).map((name) => ({
 		name,
 		duration: record.durations[name] ?? 0,
 		// 57 M1: a clip that came from a `.tpanim` asset names its hash
@@ -337,7 +444,8 @@ export function registerAnimatedImport(root, animations, bytes, kind = 'gltf') {
 		actions[clip.name] = mixer.clipAction(clip);
 		durations[clip.name] = clip.duration;
 	});
-	mixers.set(root.uuid, { mixer, actions, durations, rest: captureRest(root) });
+	const embeddedOff = !!root.userData.clipsOff;
+	mixers.set(root.uuid, { mixer, actions, durations, rest: captureRest(root), embedded: animations.map((c) => c.name), embeddedOff });
 	root.userData.animatedClips = animations.map((c) => c.name);
 	const spec = normalizeBehavior(root.userData.behavior);
 	if (spec && !actions[spec.clip]) {
@@ -348,13 +456,14 @@ export function registerAnimatedImport(root, animations, bytes, kind = 'gltf') {
 		root.userData.behavior = spec;
 		behaviors.set(root.uuid, spec);
 	} else delete root.userData.behavior;
-	const first = spec && actions[spec.clip] ? spec.clip : animations[0]?.name;
+	const first = spec && actions[spec.clip] ? spec.clip : embeddedOff ? undefined : animations[0]?.name;
 	animatedObjects.update((map) => ({
 		...map,
-		[root.uuid]: { clips: animations.map((c) => c.name), clip: first, playing: false, speed: 1 }
+		[root.uuid]: { clips: embeddedOff ? [] : animations.map((c) => c.name), clip: first, playing: false, speed: 1 }
 	}));
 	if (behaviors.has(root.uuid)) behaviorHooks.registered?.(root.uuid);
 	attachClipRefs(root.uuid); // 57 M1
+	loadGraphRuntime(root); // 57 M11
 }
 
 /**
@@ -410,11 +519,15 @@ export function dropProceduralBehavior(uuid) {
 export function tickAnimatedMixers() {
 	const states = get(animatedObjects);
 	const time = runtimeNow();
+	// 57 M12: parts models arriving by a load or a peer's sync (throttled)
+	sweepPartsModels(time);
+	// 57 M11: the Animation states graphs feed their pose drivers first (lazy; absent = none)
+	if (graphTick) graphTick(time);
 	mixers.forEach((record, uuid) => {
 		if (behaviors.has(uuid)) return; // 33 P2: packBehavior poses these
 		// 57 M3: a Blend by Speed node (or a state machine) drives this model's weights LOCALLY
 		const driver = drivers.get(uuid);
-		if (driver && time - driver.stamp < DRIVER_STALE_S && time >= driver.stamp - 1) return applyDriver(record, driver, time);
+		if (driver && (driver.hold || (time - driver.stamp < DRIVER_STALE_S && time >= driver.stamp - 1))) return applyDriver(record, driver, time);
 		if (driver) releaseDriver(uuid, record);
 		const state = states[uuid];
 		if (!state || !state.playing || !state.clip) return;
@@ -452,6 +565,126 @@ export function tickAnimatedMixers() {
 		}
 		mixer.setTime(t);
 	});
+	// 57 M12: objects attached to a socket follow it, after the sockets were posed this frame
+	if (socketFollowers.size) followSockets();
+}
+
+// ---- 57 M12: ATTACH TO A SOCKET ------------------------------------------------------------
+// `userData.attachTo = {uuid, socket, offset: [px,py,pz, qx,qy,qz,qw]}` on an object makes it
+// follow a named node of a model (a sword in a hand, a lamp on a rotor arm). A CONSTRAINT, not a
+// re-parent: the object stays a top-level object (its own saves, sync and undo are untouched) and
+// every peer places it each frame from the socket it poses itself — no message per frame.
+
+/** uuid of the follower -> its attach spec @type {Map<string, {uuid: string, socket: string, offset: number[]}>} */
+const socketFollowers = new Map();
+const _sm = new THREE.Matrix4();
+const _so = new THREE.Matrix4();
+const _sp = new THREE.Vector3();
+const _sq = new THREE.Quaternion();
+const _ss = new THREE.Vector3();
+
+/** (re)read one object's attach spec @param {any} object */
+export function syncSocketFollower(object) {
+	const a = object?.userData?.attachTo;
+	if (a && typeof a.uuid === 'string' && typeof a.socket === 'string') socketFollowers.set(object.uuid, { uuid: a.uuid, socket: a.socket, offset: Array.isArray(a.offset) && a.offset.length === 7 ? a.offset : [0, 0, 0, 0, 0, 0, 1] });
+	else socketFollowers.delete(object?.uuid);
+}
+
+/**
+ * Attach an object to a model's socket (a named node), or detach it (`socket` null). `snap` puts
+ * it ON the socket; otherwise it keeps where it stands relative to the socket. Applied here and —
+ * unless `replicate` / `record` is false — ONE `objectParameters 'attachTo'` message and ONE
+ * `attachTo` undo entry. A detach leaves the object where it was last placed.
+ * @param {string} itemUuid @param {string | null} modelUuid @param {string | null} socket
+ * @param {{snap?: boolean, replicate?: boolean, record?: boolean, spec?: any}} [opts] `spec` = an exact stored spec (undo / a peer)
+ * @returns {boolean}
+ */
+export function attachToSocket(itemUuid, modelUuid, socket, opts = {}) {
+	const group = get(objectsGroup);
+	const item = group?.getObjectByProperty('uuid', itemUuid);
+	if (!item) return false;
+	const before = item.userData?.attachTo ?? null;
+	/** @type {any} */
+	let after = null;
+	if (opts.spec !== undefined) after = opts.spec;
+	else if (modelUuid && socket) {
+		const model = group.getObjectByProperty('uuid', modelUuid);
+		const node = model?.getObjectByName(socket) ?? model?.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(socket));
+		if (!model || !node || model === item || item.getObjectByProperty('uuid', model.uuid)) return false;
+		let offset = [0, 0, 0, 0, 0, 0, 1];
+		if (!opts.snap) {
+			node.updateWorldMatrix(true, false);
+			item.updateWorldMatrix(true, false);
+			const rel = new THREE.Matrix4().copy(node.matrixWorld).invert().multiply(item.matrixWorld);
+			const p = new THREE.Vector3();
+			const q = new THREE.Quaternion();
+			rel.decompose(p, q, new THREE.Vector3());
+			offset = [...p.toArray(), ...q.toArray()];
+		}
+		after = { uuid: model.uuid, socket: node.name, offset };
+	}
+	if (JSON.stringify(before) === JSON.stringify(after)) return false;
+	if (after) item.userData.attachTo = after;
+	else delete item.userData.attachTo;
+	syncSocketFollower(item);
+	if (!after) {
+		// detached: tell everyone where it was left (the follow was local on every peer)
+		/** @type {any} */
+		const peer = get(peers);
+		if (peer && opts.replicate !== false) peer.send({ type: 'move', uuid: item.uuid, pos: item.position.toArray(), rot: item.rotation.toArray(), scale: item.scale.toArray() });
+	}
+	if (opts.record !== false) recordEntry({ kind: 'attachTo', uuid: item.uuid, before, after });
+	if (opts.replicate !== false) {
+		/** @type {any} */
+		const peer = get(peers);
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'attachTo', uuid: item.uuid, attachTo: after });
+	}
+	return true;
+}
+
+registerHistoryKind('attachTo', (entry, state) => {
+	if (!get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid)) {
+		showToast('Cannot undo/redo: the object no longer exists');
+		return false;
+	}
+	attachToSocket(entry.uuid, null, null, { spec: state ?? null, record: false });
+	return true;
+});
+
+/** the sockets (named nodes) a model offers, for a picker @param {string} uuid @returns {string[]} */
+export function socketsOf(uuid) {
+	const model = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	/** @type {string[]} */
+	const out = [];
+	model?.traverse((/** @type {any} */ o) => {
+		if (o !== model && o.name && !o.isMesh && !o.isSkinnedMesh) out.push(o.name);
+	});
+	return out;
+}
+
+function followSockets() {
+	const group = get(objectsGroup);
+	if (!group) return;
+	for (const [uuid, a] of socketFollowers) {
+		const obj = group.getObjectByProperty('uuid', uuid);
+		const model = group.getObjectByProperty('uuid', a.uuid);
+		const socket = model?.getObjectByName(a.socket) ?? model?.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(a.socket));
+		if (!obj || !socket || obj.userData?.attachTo?.uuid !== a.uuid) {
+			if (!obj || !obj.userData?.attachTo) socketFollowers.delete(uuid);
+			continue;
+		}
+		socket.updateWorldMatrix(true, false);
+		_so.compose(_sp.set(a.offset[0], a.offset[1], a.offset[2]), _sq.set(a.offset[3], a.offset[4], a.offset[5], a.offset[6]), _ss.set(1, 1, 1));
+		_sm.multiplyMatrices(socket.matrixWorld, _so);
+		// into the follower's parent frame (normally the scene root)
+		if (obj.parent) {
+			obj.parent.updateWorldMatrix(true, false);
+			_sm.premultiply(_so.copy(obj.parent.matrixWorld).invert());
+		}
+		_sm.decompose(_sp, _sq, _ss);
+		obj.position.copy(_sp);
+		obj.quaternion.copy(_sq);
+	}
 }
 
 // ---- 57 M3: LOCAL POSE DRIVERS (Blend by Speed, the Animation states graph) ---------------
@@ -461,21 +694,83 @@ export function tickAnimatedMixers() {
 // node stops feeding it (deleted, or the graph stopped).
 
 const DRIVER_STALE_S = 0.5;
-/** @type {Map<string, {weights: Record<string, number>, rates: Record<string, number>, phase: Record<string, number>, stamp: number, last: number}>} */
+
+// ---- 57 M11: the ANIMATION STATES graph on a model -----------------------------------------
+// `userData.animGraph` (tpanim/animGraph.js's shape) is config: it rides the objectfile message,
+// saves and undo (rootDataFields), a change is ONE `objectParameters 'animGraph'` message + ONE
+// `animGraph` undo entry, and every peer evaluates it itself (tpanim/animGraphRuntime.js, loaded
+// only when a model has one) into the model's pose driver.
+
+/** @type {((time: number) => void) | null} */
+let graphTick = null;
+/** the graph runtime plugs its per-frame step in here @param {((time: number) => void) | null} fn */
+export function setAnimGraphTick(fn) {
+	graphTick = fn;
+}
+
+/** userData changed under the clip panels: a shallow copy re-runs every subscriber */
+function pokeClipModels() {
+	animatedObjects.update((map) => ({ ...map }));
+}
+
+/** @param {any} root */
+function loadGraphRuntime(root) {
+	if (!root?.userData?.animGraph && !graphTick) return;
+	void import('./tpanim/animGraphRuntime.js').then((m) => m.syncAnimGraph(root.uuid));
+}
+
+/**
+ * Set (or clear, with null) a model's Animation states graph — ONE message, ONE undo step.
+ * @param {string} uuid @param {any} graph @param {{replicate?: boolean, record?: boolean}} [opts]
+ */
+export async function setAnimGraph(uuid, graph, opts = {}) {
+	const root = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!root || !ensureClipModel(root)) return false;
+	const { normalizeAnimGraph } = await import('./tpanim/animGraph.js');
+	const before = root.userData.animGraph ?? null;
+	const after = graph ? normalizeAnimGraph(graph) : null;
+	if (JSON.stringify(before) === JSON.stringify(after)) return false;
+	if (after) root.userData.animGraph = after;
+	else delete root.userData.animGraph;
+	loadGraphRuntime(root);
+	pokeClipModels();
+	if (opts.record !== false) recordEntry({ kind: 'animGraph', uuid, before, after });
+	if (opts.replicate !== false) {
+		/** @type {any} */
+		const peer = get(peers);
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'animGraph', uuid, animGraph: after });
+	}
+	return true;
+}
+
+registerHistoryKind('animGraph', (entry, state) => {
+	if (!get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid)) {
+		showToast('Cannot undo/redo: the object no longer exists');
+		return false;
+	}
+	void setAnimGraph(entry.uuid, state, { record: false });
+	return true;
+});
+/** @type {Map<string, {weights: Record<string, number>, rates: Record<string, number>, phase: Record<string, number>, stamp: number, last: number, hold?: boolean, times?: Record<string, number> | null}>} */
 const drivers = new Map();
 
 /**
  * Feed a model's blend for this frame: `weights` per clip name (normalized here), `rates` = clip
- * seconds per second for each (1 = its own speed). LOCAL, never sent.
+ * seconds per second for each (1 = its own speed). LOCAL, never sent. 57 M8: `times` pins clips
+ * at absolute clip times (the Animation window's scrub preview) and `hold` keeps the driver until
+ * `clearPoseDriver`, with no per-frame feeding.
  * @param {string} uuid @param {Record<string, number>} weights @param {Record<string, number>} [rates]
+ * @param {{times?: Record<string, number>, hold?: boolean}} [opts]
  */
-export function setPoseDriver(uuid, weights, rates = {}) {
+export function setPoseDriver(uuid, weights, rates = {}, opts = {}) {
 	if (!mixers.has(uuid) || behaviors.has(uuid)) return false;
 	const now = runtimeNow();
 	const d = drivers.get(uuid) ?? { weights: {}, rates: {}, phase: {}, stamp: now, last: now };
 	d.weights = weights;
 	d.rates = rates;
 	d.stamp = now;
+	d.hold = !!opts.hold;
+	d.times = opts.times ?? null;
 	drivers.set(uuid, d);
 	return true;
 }
@@ -509,7 +804,9 @@ function applyDriver(record, d, time) {
 		if (!a.isScheduled()) a.play();
 		const duration = record.durations[name] || 1;
 		const rate = (d.rates[name] ?? 1) * (record.clipSpeed?.[name] ?? 1);
-		d.phase[name] = ((d.phase[name] ?? (time * rate) % duration) + dt * rate) % duration;
+		const pinned = d.times?.[name];
+		if (Number.isFinite(pinned)) d.phase[name] = Math.min(Math.max(/** @type {number} */ (pinned), 0), duration - 1e-4);
+		else d.phase[name] = ((d.phase[name] ?? (time * rate) % duration) + dt * rate) % duration;
 		a.setEffectiveWeight(w);
 		a.time = d.phase[name];
 	}
@@ -628,7 +925,9 @@ export async function applyObjectFile(data) {
 		if (!data.override) return;
 		if (data.name) held.name = data.name;
 		if (data.lod && typeof data.lod === 'object') held.userData.lod = data.lod;
-		if (data.clipRefs) setClipRefs(data.uuid, data.clipRefs, { replicate: false, record: false });
+		if (data.clipRefs || data.clipsOff !== undefined)
+			setClipRefs(data.uuid, data.clipRefs ?? clipRefsOf(held), { replicate: false, record: false, clipsOff: !!data.clipsOff });
+		if (data.animGraph !== undefined) void setAnimGraph(data.uuid, data.animGraph, { replicate: false, record: false });
 		if (data.pos) held.position.fromArray(data.pos);
 		if (data.rot) held.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
 		if (data.scale) held.scale.fromArray(data.scale);
@@ -653,6 +952,8 @@ export async function applyObjectFile(data) {
 		// 57 M1: the clip assets this model plays (bound once registered)
 		const refs = normalizeClipRefs(data.clipRefs);
 		if (refs.length) root.userData.clipRefs = refs;
+		if (data.clipsOff === true) root.userData.clipsOff = true;
+		if (data.animGraph && typeof data.animGraph === 'object') root.userData.animGraph = data.animGraph; // 57 M11
 		// 33-scenes: the pack file these bytes are, so this copy SAVES as a reference too
 		const ref = animRefOf({ userData: { animRef: data.animRef } });
 		if (ref) root.userData.animRef = ref;
@@ -863,6 +1164,8 @@ export async function animatedImportsRestore(entries, replicate = true, live = (
 				behavior: entry.behavior,
 				lod: entry.lod,
 				clipRefs: entry.clipRefs,
+				clipsOff: entry.clipsOff,
+				animGraph: entry.animGraph,
 				live
 			});
 			if (!live()) break;
@@ -921,6 +1224,8 @@ registerHistoryKind('animimport', (entry, state) => {
 			behavior: entry.behavior,
 			lod: entry.lod,
 			clipRefs: entry.clipRefs,
+			clipsOff: entry.clipsOff,
+			animGraph: entry.animGraph,
 			animRef: entry.animRef
 		}).then(() => {
 			const root = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);

@@ -126,6 +126,11 @@ export const DEBUG_HOOKS = [
 	['tpanim', () => import('./tpanim/format.js')],
 	['clipAssets', () => import('./tpanim/clipAssets.js')],
 	['humanoidMap', () => import('./tpanim/humanoidMap.js')],
+	// 57 M3/M8/M11: clip edits + ops, the Animation states graph + runtime
+	['clipEdit', () => import('./tpanim/clipEdit.js')],
+	['clipOps', () => import('./tpanim/clipOps.js')],
+	['animGraph', () => import('./tpanim/animGraph.js')],
+	['animGraphRuntime', () => import('./tpanim/animGraphRuntime.js')],
 	['fileHandler', () => import('./fileHandler.svelte')],
 	['fileWindows', () => import('./fileWindows')],
 	['imageEditor', () => import('./image/imageEditor')],

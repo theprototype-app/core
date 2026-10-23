@@ -34,6 +34,7 @@
 	// a rigged model showed "no movements yet" and its own animations were
 	// reachable only from the Inspector.
 	import { animatedObjects, setAnimationState, clipInfo, behaviorOf } from '$lib/animatedImports';
+	import ClipToolsPanel from './ClipToolsPanel.svelte'; // 57 M3/M8
 	import Icon from '../ui/Icon.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -2077,6 +2078,15 @@
 							<span class="shrink-0 text-[10px] tabular-nums text-text-muted">{(clipState?.speed ?? 1).toFixed(1)}×</span>
 						</div>
 					</div>
+				{/if}
+				<!-- 57 M3/M8: clip assets (.tpanim) on a rigged model — settings, seam, trim/split/join, extract -->
+				{#if target && clipState && !behavior}
+					{#if !clips.length}
+						<p id="clip-empty" class="border-b border-border px-2 py-1.5 text-[10px] leading-snug text-text-muted">
+							No clips yet — drag an animation clip (.tpanim) from the Explorer onto the model.
+						</p>
+					{/if}
+					<ClipToolsPanel uuid={target.uuid} {clips} {clipState} />
 				{/if}
 
 				<!-- authored clips -->

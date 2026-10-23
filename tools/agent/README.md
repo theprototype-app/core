@@ -45,7 +45,7 @@ generation when the host has a mesh provider ready. Each tool's JSON schema is p
 unchanged. When the host's set changes (a provider comes online, a role changes) the client is
 told (`tools/list_changed`).
 
-Beside them, four of the bridge's own:
+Beside them, four of the bridge's own (plus the chat tools below):
 
 | tool | what it does |
 |---|---|
@@ -55,6 +55,41 @@ Beside them, four of the bridge's own:
 | `wait_for_edit` | wait until someone in the session changes the scene |
 
 Scene tools answer "not in the session yet" until the host lets the agent in.
+
+## Talk to it from the app
+
+People in the session can type to the agent in the app's **AI assistant** window (pick it in the
+target list: "Claude · agent via MCP"). An MCP host only acts while its model runs, so the agent
+has to be *listening*. Tell it once in the terminal:
+
+> listen to my theprototype session
+
+and it loops: `wait_for_message` → builds with the scene tools → `reply` → `wait_for_message`.
+Its badge in the window says **listening**, **working** or **away**. The terminal stays a full
+second window onto the same conversation: what you type there shows in the app "via terminal".
+
+| tool | what it does |
+|---|---|
+| `wait_for_message` | blocks until someone types to the agent (`timeoutS`, default 240, at most 600); `null` = nobody wrote, wait again. The message has `from`, `name`, `role`, `text`, `chatId`, and its images |
+| `reply` | streams into the window: each call adds a paragraph, `final: true` finishes it. `prompt` = the user's own words typed in the terminal, shown "via terminal" |
+| `ask` | buttons in the window; the click comes back through `wait_for_message` with `answers` |
+| `get_thread` | page back through a chat (`chatId`, `before`, `limit`) |
+
+- **Roles.** Every message carries the sender's role as the agent's page knows it. A viewer may ask,
+  but while a viewer's request runs every edit is refused, and a viewer's images are dropped.
+- **Stop.** The window's Stop marks the request cancelled: every later tool call returns
+  `cancelled` until the next message.
+- **Images.** Each image arrives as an MCP image block (the model sees it) and as a private temp
+  file (`0600`, removed when the bridge exits) whose path is in the message — for a skill that wants
+  a file as its reference. The app downscales them and strips EXIF/GPS before they are sent.
+- **Chats.** Every message carries its `chatId`. The first message in a chat the agent has not seen
+  this session carries `history` (its newest 20 messages) and a `summary`; `get_thread` pages back.
+  A host or admin can mute the agent (nothing is delivered) or remove it from **Users**.
+- **`import_model`** (when the app offers it): pass `path` for a local `.glb` (≤ 25 MB, a
+  self-contained binary glTF); the bridge reads it and sends the bytes.
+
+With `repl` the bridge owns the model loop, so app messages go straight in as user turns — no
+terminal needed after launch; replies stream (SSE) and terminal lines show "via terminal".
 
 ## How it joins
 
@@ -82,7 +117,10 @@ npx @theprototype/agent smoke <link>     # a scripted create / move / delete, no
 ```
 
 `repl` drives the scene from your own OpenAI-compatible endpoint (or `AGENT_API_URL`,
-`AGENT_API_KEY`, `AGENT_MODEL`). Slash commands: `/status`, `/tools`, `/raw <tool> <json>`, `/quit`.
+`AGENT_API_KEY`, `AGENT_MODEL`), and answers what people type in the app's AI assistant window
+(images go to the model as `image_url` parts; a text-only model is retried without them).
+Slash commands: `/status`, `/tools`, `/raw <tool> <json>`, `/quit`. With stdin closed (a script,
+a service) it keeps answering the app until Ctrl+C / SIGTERM.
 
 ### The wire engine
 
@@ -125,14 +163,18 @@ deployment (`https://preview-1-45.theprototype.pages.dev/#F0FD3`), a local dev s
   tools, list refresh, the not-yet-in-the-session gate, graceful shutdown.
 - `wireEngine.js` + `peerBridge.js` + `turn.js` + `messages.js` + `registry.js` + `tools.js` —
   the wire engine: the approval dance, the minimal handshake, TURN, the goodbye.
-- `repl.js` + `llmClient.js` — the REPL driver.
+- `chat.js` — the chat tools, the image temp files, `import_model`'s local path.
+- `repl.js` + `llmClient.js` — the REPL driver (terminal + app messages, one transcript, SSE).
 
 ## Tests
 
 ```
-npm test    # link parsing, tool mapping + the MCP server over a fake engine, the wire engine (no network)
+npm test    # link parsing, tool mapping + the MCP server over a fake engine, chat, REPL vs a stub endpoint, the wire engine (no network)
 ```
 
 End to end (in the app repo, against a dev server): `tests/e2e/agent-mcp.test.cjs` — a real MCP
 stdio client spawns this bridge, a Playwright host page approves it, and the agent's edits land
-in the host's scene; `tests/e2e/agent-bridge.test.cjs` covers the wire protocol.
+in the host's scene; `tests/e2e/agent-chat.test.cjs` — the chat loop (wait → exec → reply, roles,
+Stop, images, history, mute) and REPL mode against a stub endpoint; `tests/e2e/agent-bridge.test.cjs`
+covers the wire protocol. `TP_AGENT_INIT_SCRIPT=<file>` adds an init script to the agent page
+(a test / diagnostic seam).

@@ -67,6 +67,8 @@ export function toolName(tool) {
  * @property {() => Promise<void>} leave
  * @property {Record<string, {schema: any, run: (args: any) => Promise<any>|any}>} [extraTools]
  *   agent-only tools (run locally, never batched — they change no shared scene state)
+ * @property {(name: string, isEdit: boolean) => any} [gate] 56: the chat inbox's say on a call — null runs
+ *   it, anything else is the answer (a Stopped request → `cancelled`; a viewer's request → refused edits)
  * @property {() => number} [now]
  * @property {(fn: () => void, ms: number) => any} [setTimer]
  * @property {(t: any) => void} [clearTimer]
@@ -174,6 +176,8 @@ export function createAgentCore(deps) {
 	/** @param {string} name @param {any} args */
 	async function run(name, args) {
 		const real = resolved(name, args);
+		const held = deps.gate?.(real, !extra[real] && !READ_ONLY_TOOLS.has(real));
+		if (held) return held;
 		if (extra[real]) {
 			try {
 				return await extra[real].run(args ?? {});

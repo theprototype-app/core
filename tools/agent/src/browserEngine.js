@@ -220,6 +220,8 @@ export class BrowserEngine extends EventEmitter {
 			const ctx = await this.browser.newContext({ ignoreHTTPSErrors: this.insecure, viewport: { width: 1280, height: 720 } });
 			await ctx.addInitScript(agentStorage, { name: this.name, compat: this.compat });
 			if (this.compat) await ctx.addInitScript(compatShim);
+			// a diagnostic / test seam: one more init script in the agent page (the e2e gives it roles this way)
+			if (process.env.TP_AGENT_INIT_SCRIPT) await ctx.addInitScript({ path: process.env.TP_AGENT_INIT_SCRIPT });
 			this.page = await ctx.newPage();
 			this.page.on('pageerror', (/** @type {any} */ e) => this.log('page error: ' + firstLine(e)));
 			if (this.verbose) this.page.on('console', (/** @type {any} */ m) => this.log('console.' + m.type() + ': ' + m.text().slice(0, 300)));
@@ -296,6 +298,16 @@ export class BrowserEngine extends EventEmitter {
 	async joined() {
 		if (this.state !== 'ready') return false;
 		return joinedOf(await this.status(), this.hostId);
+	}
+
+	/**
+	 * 56: a chat method of tpAgent 1.1.0 (nextMessage, abortWait, requeue, reply, ask, chatStatus, thread).
+	 * @param {string} method @param {...any} args
+	 */
+	async chat(method, ...args) {
+		const r = await this.call(method, ...args);
+		if (r && r.__missing) throw new Error('this app build has no agent chat (tpAgent 1.1.0, theprototype 1.46+): people cannot type to you here');
+		return r;
 	}
 
 	/** @param {number} ms */

@@ -1,6 +1,6 @@
 {
 	"name": "@theprototype/agent",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Let an AI agent (Claude Code, Claude Desktop, any MCP host) join a theprototype.app session from its link and build the 3D scene with you.",
 	"type": "module",
 	"license": "MIT",
@@ -38,7 +38,7 @@
 		"access": "public"
 	},
 	"scripts": {
-		"test": "node test/messages.test.mjs && node test/bridge.test.mjs && node test/link.test.mjs && node test/mcp.test.mjs && node test/wire.test.mjs",
+		"test": "node test/chat.test.mjs && node test/messages.test.mjs && node test/bridge.test.mjs && node test/link.test.mjs && node test/mcp.test.mjs && node test/repl.test.mjs && node test/wire.test.mjs",
 		"spike": "node src/spike.js",
 		"smoke": "node src/cli.js smoke",
 		"repl": "node src/cli.js repl",

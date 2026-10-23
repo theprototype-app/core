@@ -1072,7 +1072,8 @@
 		object: 'box',
 		prefab: 'boxes',
 		'prefab-folder': 'folder', // 37 R4: a folder inside the Prefabs view
-		scene: 'map' // 21-F4: a level (.tpscene)
+		scene: 'map', // 21-F4: a level (.tpscene)
+		anim: 'person-standing' // 57 M1: an animation clip (.tpanim)
 	};
 	// semantic icon colors (ui.css classes over the --icon-* theme tokens)
 	/** R22-R7: what a kind is CALLED in the filter. The store values are internal
@@ -1084,11 +1085,12 @@
 		text: 'Text and config',
 		object: '3D models',
 		prefab: 'Prefabs',
-		scene: 'Scenes'
+		scene: 'Scenes',
+		anim: 'Animation clips'
 	};
 	/** R22-R7: the filter's fixed order. Every kind the Explorer can hold, so the menu is
 	 * a statement about the app rather than about this library's current contents. */
-	const FILTER_KINDS = ['image', 'object', 'audio', 'video', 'text', 'scene', 'prefab'];
+	const FILTER_KINDS = ['image', 'object', 'anim', 'audio', 'video', 'text', 'scene', 'prefab'];
 	const KIND_COLORS: Record<string, string> = {
 		image: 'ico-image',
 		audio: 'ico-audio',
@@ -1097,7 +1099,8 @@
 		object: 'ico-object',
 		prefab: 'ico-prefab',
 		'prefab-folder': 'ico-folder',
-		scene: 'ico-prefab' // 21-F4: levels share the prefab tint
+		scene: 'ico-prefab', // 21-F4: levels share the prefab tint
+		anim: 'ico-object' // 57 M1: a clip belongs with the models it moves
 	};
 
 	// ---- R22 round 13 P3: WHERE AM I, when it is not the library ----------------------

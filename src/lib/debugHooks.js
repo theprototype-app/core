@@ -122,6 +122,10 @@ export const DEBUG_HOOKS = [
 	['hdriPrefs', () => import('./hdri/hdriPrefs.js')],
 	['sceneMusic', () => import('./sceneMusic')],
 	['animatedImports', () => import('./animatedImports')],
+	// 57 M1: .tpanim clip assets (format, binder, humanoid map)
+	['tpanim', () => import('./tpanim/format.js')],
+	['clipAssets', () => import('./tpanim/clipAssets.js')],
+	['humanoidMap', () => import('./tpanim/humanoidMap.js')],
 	['fileHandler', () => import('./fileHandler.svelte')],
 	['fileWindows', () => import('./fileWindows')],
 	['imageEditor', () => import('./image/imageEditor')],

@@ -7,7 +7,7 @@
 	import { Text } from '@threlte/extras'
 	import { vrAiPanelOpen, vrMenuHand } from '../../stores/sceneStore'
 	import { vrHovered, controllerIndexFor } from '$lib/vrControls'
-	import { vrAiGroup, vrAiMessages, vrAiBusy, vrAiStatus, vrAiReady, vrSttReady, vrAiNotice, mountVRAiPanel, talkBindingLabel } from '$lib/vr/aiPanel.js'
+	import { vrAiGroup, vrAiMessages, vrAiBusy, vrAiStatus, vrAiReady, vrSttReady, vrAiNotice, vrAiTitle, vrAiHint, mountVRAiPanel, talkBindingLabel } from '$lib/vr/aiPanel.js'
 	import { dictation } from '$lib/ai/sttCapture.js'
 	import { vrIconTexture } from '$lib/vr/icons.js'
 	import { applyWindowPose } from '$lib/vrWindowPoses'
@@ -116,7 +116,7 @@
 			</T.Mesh>
 		{/if}
 		<Text
-			text="AI Assistant"
+			text={$vrAiTitle}
 			color="#f2efff"
 			fontSize={0.011}
 			anchorX="left"
@@ -133,7 +133,7 @@
 		<!-- the thread (the last few turns) -->
 		{#if !$vrAiReady}
 			<Text
-				text={'Configure an AI provider in Settings ▸ AI on desktop — the assistant uses the same provider here.'}
+				text={$vrAiHint || 'Configure an AI provider in Settings ▸ AI on desktop — the assistant uses the same provider here.'}
 				color="#c9bcff"
 				fontSize={0.0085}
 				anchorX="center"
@@ -222,7 +222,7 @@
 			/>
 		</T.Mesh>
 		<Text
-			text={!$vrAiReady ? 'Set up AI on desktop first' : $vrAiBusy ? 'Answering…' : '＋ Ask AI…'}
+			text={!$vrAiReady ? ($vrAiHint ? 'Not available now' : 'Set up AI on desktop first') : $vrAiBusy ? 'Answering…' : '＋ Ask AI…'}
 			color={!$vrAiReady || $vrAiBusy ? '#6c7480' : '#c8d0da'}
 			fontSize={0.0085}
 			anchorX="center"

@@ -104,6 +104,7 @@ export function cleanMessage(d, now = Date.now()) {
 	if (kind === 'reply') {
 		if (isId(d.replyTo)) m.replyTo = d.replyTo;
 		if (d.partial === true) m.partial = true;
+		if (Number.isFinite(d.last) && d.last >= m.at) m.last = d.last;
 	}
 	if (d.via === 'cli') m.via = 'cli';
 	if (kind === 'request' && isId(d.answers)) m.answers = d.answers;
@@ -146,7 +147,8 @@ export function mergeMessage(list, m) {
 	const had = list[i];
 	if (!samePeer(had.from, m.from)) return list; // an id is its sender's: nobody else may rewrite it
 	let next = had;
-	if (had.partial && (!m.partial || m.text.length >= had.text.length)) next = { ...had, text: m.text, partial: m.partial === true };
+	// `last` = when the text last grew: the thread places a reply there, after the steps it streamed across
+	if (had.partial && (!m.partial || m.text.length >= had.text.length)) next = { ...had, text: m.text, partial: m.partial === true, last: Math.max(had.at, m.last ?? m.at) };
 	if (m.cancelled && !next.cancelled) next = { ...next, cancelled: true };
 	if (!next.partial && 'partial' in next) {
 		const { partial: _p, ...rest } = next;
@@ -270,16 +272,20 @@ export const streamingReply = (chat, requestId) =>
 export function threadItems(chat, log = []) {
 	if (!chat) return [];
 	const answered = new Set(chat.messages.filter((/** @type {any} */ m) => m.answers).map((/** @type {any} */ m) => m.answers));
-	/** @type {any[]} */
-	const items = chat.messages.map((/** @type {any} */ m) => ({
-		type: 'msg',
-		at: m.at,
-		key: 'm:' + m.id,
-		m: m.kind === 'ask' && answered.has(m.id) ? { ...m, answered: true } : m
-	}));
 	const start = chat.messages[0]?.at ?? Infinity;
-	for (const e of log) if (samePeer(e.peer, chat.agent) && e.at >= start) items.push({ type: 'log', at: e.at, key: 'l:' + e.id, e });
-	return items.sort((a, b) => a.at - b.at || (a.type === b.type ? 0 : a.type === 'msg' ? -1 : 1));
+	const steps = log.filter((e) => samePeer(e.peer, chat.agent) && e.at >= start).sort((a, b) => a.at - b.at);
+	// messages keep their own order; each step goes in before the first message that came after it
+	// (a streamed reply counts from its LAST update, so the answer reads after the work it describes)
+	/** @type {any[]} */
+	const items = [];
+	let j = 0;
+	for (const m of chat.messages) {
+		const when = m.last ?? m.at;
+		for (; j < steps.length && steps[j].at < when; j++) items.push({ type: 'log', at: steps[j].at, key: 'l:' + steps[j].id, e: steps[j] });
+		items.push({ type: 'msg', at: m.at, key: 'm:' + m.id, m: m.kind === 'ask' && answered.has(m.id) ? { ...m, answered: true } : m });
+	}
+	for (; j < steps.length; j++) items.push({ type: 'log', at: steps[j].at, key: 'l:' + steps[j].id, e: steps[j] });
+	return items;
 }
 
 /** a chat's title: its own, else the first request's words @param {any} chat */

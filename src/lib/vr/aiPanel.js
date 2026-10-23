@@ -173,7 +173,7 @@ function refreshAgent() {
 	const running = runningRequest(chat);
 	vrAiBusy.set(!!running);
 	vrAiStatus.set(running ? name + (st?.status === 'working' ? ' is working…' : ' has your message') : '');
-	vrAiTitle.set(name + ' · AI agent');
+	vrAiTitle.set(row?.label ?? name + ' · AI agent'); // the desktop picker's words
 	vrAiHint.set(!row ? name + ' has left this session.' : st?.muted ? name + ' is muted by the host.' : '');
 	vrAiReady.set(!!row && !st?.muted);
 }

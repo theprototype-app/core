@@ -168,6 +168,13 @@ describe('thread, history, backlog, files', () => {
 		const items = threadItems(s.chats.c1, log);
 		expect(items.map((i) => i.key)).toEqual(['m:r1', 'l:agent1:1', 'm:a1']);
 	});
+	it('a reply that streams across a step reads after it, and keeps that through the backlog', () => {
+		const s = run([[HOST, req()], [AG, rep({ text: 'Plant', at: 110 })], [AG, rep({ text: 'Planted three', partial: undefined, at: 160 })]]);
+		const log = [{ id: 'agent1:1', peer: AG, text: 'created 3 objects (Tree)', at: 130 }];
+		expect(threadItems(s.chats.c1, log).map((i) => i.key)).toEqual(['m:r1', 'l:agent1:1', 'm:a1']);
+		const late = applyAgentChat(emptyState(), HOST, { type: 'agentchat', backlog: backlogOf(s) }, 600);
+		expect(threadItems(late.chats.c1, log).map((i) => i.key)).toEqual(['m:r1', 'l:agent1:1', 'm:a1']);
+	});
 	it('titles from the first request', () => {
 		const s = run([[HOST, req({ text: 'a small campfire ring with six rocks and a cone flame and benches' })]]);
 		expect(chatTitle(s.chats.c1)).toMatch(/^a small campfire ring.*…$/);

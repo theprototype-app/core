@@ -67,7 +67,7 @@ h.run(async () => {
 	await iwer.frames(A.page, 4);
 	const head = await inPage(A, 'return { title: get(s.vrAiPanel.vrAiTitle), ready: get(s.vrAiPanel.vrAiReady), open: get(s.vrAiPanelOpen), presenting: !!get(s.globalRenderer)?.xr?.isPresenting };');
 	h.check(head.presenting && head.open, `premise: presenting, panel open (${JSON.stringify(head)})`);
-	h.check(/AI agent/.test(head.title) && head.ready, `the header names the agent and it can be addressed (${head.title})`);
+	h.check(/grok-3-mini · agent REPL/.test(head.title) && head.ready, `the header names the agent as the desktop picker does, and it can be addressed (${head.title})`);
 
 	console.log('\n=== 2. the VR keyboard sends to the agent ===');
 	const typed = await inPage(A, `

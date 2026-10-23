@@ -1,8 +1,8 @@
 // 57 M2 — HUMANOIDS IN THE SCENE: each rigged model's map, and clips applied to it from elsewhere.
 //
-// THE CONFIG is `root.userData.humanoid = {map?: {bone: nodeName | ''}, clips?: [{name, src}]}` —
+// THE CONFIG is `root.userData.character = {map?: {bone: nodeName | ''}, clips?: [{name, src}]}` —
 // the user's map FIXES on top of the detected map, and the clips applied to this character. It is
-// replicated (`objectParameters` parameter 'humanoid'), saved, sent with the bytes (rootDataFields)
+// replicated (`objectParameters` parameter 'character'), saved, sent with the bytes (rootDataFields)
 // and undoable. What it NAMES is computed here, on every peer: the source clip is retargeted onto
 // this rig and added to its mixer as a RUNTIME clip. The model's bytes never change.
 //
@@ -214,7 +214,7 @@ function normalizeSource(s) {
 
 /** @param {string} uuid @returns {HumanoidConfig} */
 export function configOf(uuid) {
-	return normalizeHumanoidConfig(rootOf(uuid)?.userData?.humanoid);
+	return normalizeHumanoidConfig(rootOf(uuid)?.userData?.character);
 }
 
 /**
@@ -225,16 +225,16 @@ export function configOf(uuid) {
 export function applyHumanoidConfig(uuid, cfg, opts = {}) {
 	const root = rootOf(uuid);
 	if (!root) return false;
-	const before = normalizeHumanoidConfig(root.userData.humanoid);
+	const before = normalizeHumanoidConfig(root.userData.character);
 	const next = normalizeHumanoidConfig(cfg);
-	if (next.map || next.clips) root.userData.humanoid = next;
-	else delete root.userData.humanoid;
+	if (next.map || next.clips) root.userData.character = next;
+	else delete root.userData.character;
 	if (opts.history !== false && opts.replicate !== false)
 		recordEntry({ kind: 'humanoidcfg', uuid, before: { cfg: before }, after: { cfg: next } });
 	if (opts.replicate !== false) {
 		/** @type {any} */
 		const peer = get(peers);
-		peer?.send({ type: 'objectParameters', parameter: 'humanoid', uuid, humanoid: next });
+		peer?.send({ type: 'objectParameters', parameter: 'character', uuid, character: next });
 	}
 	void rebuildHumanoidClips(uuid);
 	pokeScene();
@@ -252,7 +252,7 @@ registerHistoryKind('humanoidcfg', (entry, state) => {
 
 /** the wire applier (commandsHandler `objectParameters`) @param {any} data */
 export function receiveHumanoid(data) {
-	applyHumanoidConfig(data.uuid, data.humanoid, { replicate: false });
+	applyHumanoidConfig(data.uuid, data.character, { replicate: false });
 }
 
 // ---- sources -------------------------------------------------------------------------------

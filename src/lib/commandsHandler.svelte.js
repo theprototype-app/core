@@ -582,7 +582,7 @@ export async function objectParameters(data) {
         setMaterialParam(data.uuid, data.key, data.value, false);
     } else if (data.parameter == 'animation') {
         setAnimationState(data.uuid, { clip: data.clip, playing: data.playing, speed: data.speed }, false);
-    } else if (data.parameter == 'humanoid') {
+    } else if (data.parameter == 'character') {
         // 57 M2: a character's humanoid map fixes + applied clips; each peer retargets for itself
         const { receiveHumanoid } = await import('$lib/humanoid/humanoidRig.js');
         receiveHumanoid(data);

@@ -193,7 +193,7 @@ function rootDataFields(root) {
 	const out = {};
 	// 57 M2 / M7: the humanoid config (map fixes + applied clips) and the provenance record ride
 	// the bytes for the same reason (absent = none, byte-identical messages for everything else)
-	for (const key of ['lod', 'humanoid', 'provenance', 'vrmExpressions']) {
+	for (const key of ['lod', 'character', 'provenance', 'vrmExpressions']) {
 		const v = root?.userData?.[key];
 		if (!v || typeof v !== 'object') continue;
 		try {
@@ -207,7 +207,7 @@ function rootDataFields(root) {
 
 /** 57: put the riding fields back on a freshly parsed (or healed) root @param {any} root @param {any} data */
 function applyRootData(root, data) {
-	if (data.humanoid && typeof data.humanoid === 'object') root.userData.humanoid = data.humanoid;
+	if (data.character && typeof data.character === 'object') root.userData.character = data.character;
 	if (Array.isArray(data.provenance)) root.userData.provenance = data.provenance;
 	if (data.vrmExpressions && typeof data.vrmExpressions === 'object')
 		root.userData.vrmExpressions = data.vrmExpressions;
@@ -398,7 +398,7 @@ export function registerAnimatedImport(root, animations, bytes, kind = 'gltf') {
 	const vrmReady = kind === 'vrm' ? adoptVrmRoot(root) : Promise.resolve();
 	// 57 M2: a humanoid config (clips applied from another rig) is rebuilt on THIS peer; the code
 	// for it loads only for a model that has one
-	if (root.userData?.humanoid?.clips?.length)
+	if (root.userData?.character?.clips?.length)
 		void vrmReady
 			.then(() => import('./humanoid/humanoidRig.js'))
 			.then((m) => m.rebuildHumanoidClips(root.uuid));
@@ -544,7 +544,7 @@ export async function applyObjectFile(data) {
 		if (data.name) held.name = data.name;
 		if (data.lod && typeof data.lod === 'object') held.userData.lod = data.lod;
 		applyRootData(held, data);
-		if (data.humanoid)
+		if (data.character)
 			void import('./humanoid/humanoidRig.js').then((m) => m.rebuildHumanoidClips(data.uuid));
 		if (data.pos) held.position.fromArray(data.pos);
 		if (data.rot) held.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
@@ -792,7 +792,7 @@ export async function animatedImportsRestore(entries, replicate = true, live = (
 				anim: entry.anim,
 				behavior: entry.behavior,
 				lod: entry.lod,
-				humanoid: entry.humanoid,
+				character: entry.character,
 				provenance: entry.provenance,
 				vrmExpressions: entry.vrmExpressions,
 				live
@@ -858,7 +858,7 @@ registerHistoryKind('animimport', (entry, state) => {
 			pos: entry.pos,
 			behavior: entry.behavior,
 			lod: entry.lod,
-			humanoid: entry.humanoid,
+			character: entry.character,
 			provenance: entry.provenance,
 			vrmExpressions: entry.vrmExpressions,
 			animRef: entry.animRef

@@ -27,7 +27,7 @@ export function licensedAssets(uuids = null) {
 			if (seen.has(o.uuid)) return;
 			seen.add(o.uuid);
 			const ud = o.userData ?? {};
-			const clips = Array.isArray(ud.humanoid?.clips) ? ud.humanoid.clips : [];
+			const clips = Array.isArray(ud.character?.clips) ? ud.character.clips : [];
 			const extra = clips
 				.map((/** @type {any} */ c) => normalizeLicence(c?.licence))
 				.filter(Boolean);

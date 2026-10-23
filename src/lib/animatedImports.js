@@ -204,7 +204,7 @@ export function addClipAction(uuid, clip, hash, key = hash) {
 		animatedObjects.update((map) => ({ ...map, [uuid]: next }));
 		if (next.playing && next.clip === clip.name) {
 			Object.values(record.actions).forEach((action) => action.stop());
-			record.actions[clip.name].play();
+			record.actions[clip.name].setEffectiveWeight(1).play();
 		}
 	}
 	return true;
@@ -881,14 +881,16 @@ export function setAnimationState(uuid, next, replicate = true) {
 		Object.entries(record.actions).forEach(([name, action]) => {
 			if (name !== state.from) action.stop();
 		});
-		record.actions[state.clip]?.play();
+		// 57 M3: stop() keeps an action's weight, so one left mid-crossfade would play half-strength
+		record.actions[state.clip]?.setEffectiveWeight(1).play();
 	}
 	// 33 P2: nothing autoplays at registration any more, so the FIRST play is what schedules
 	// the action — without this a press (or a restored `playing: true`) changed the state and
 	// moved nothing
 	if (state.playing && state.clip && !record.actions[state.clip]?.isScheduled()) {
 		Object.values(record.actions).forEach((action) => action.stop());
-		record.actions[state.clip]?.play();
+		// 57 M3: stop() keeps an action's weight, so one left mid-crossfade would play half-strength
+		record.actions[state.clip]?.setEffectiveWeight(1).play();
 	}
 	if (!state.playing && next.playing === false) record.mixer.setTime(0);
 	if (replicate) {

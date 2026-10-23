@@ -11,7 +11,7 @@ import { addItemFromBytes, itemByHash } from '../explorer';
 import { sendAsset } from '../assetShare';
 import { objectsGroup } from '../../stores/sceneStore';
 import { showToast } from '../../stores/appStore';
-import { clipRefsOf, setClipRefs, embeddedClipsOf, threeClipOf, restPoseOf, hasAnimatedImport } from '../animatedImports';
+import { clipRefsOf, setClipRefs, embeddedClipsOf, threeClipOf, restPoseOf, hasAnimatedImport, ensureClipModel } from '../animatedImports';
 import { encodeTpanim, tpFromThreeClip, toHumanoid, clipFacts } from './format.js';
 import { loopSeam, makeLoop, trimClip, splitClip, joinClips, joinProblem, rootTravel } from './clipOps.js';
 import { loadClip } from './clipAssets.js';
@@ -196,4 +196,48 @@ export async function extractClips(uuid, opts = {}) {
 	setClipRefs(uuid, refs, opts.useFiles ? { clipsOff: true } : {});
 	showToast('Extracted ' + written + ' clip' + (written === 1 ? '' : 's') + ' to the Explorer');
 	return written;
+}
+
+/**
+ * 57 M12: KEYS ON PARTS -> ONE CLIP FILE. The Animation window keys a model's parts (its child
+ * nodes) as authored clips, one per part; this bakes every part's clip called `clipName` into ONE
+ * node-name `.tpanim` on the MODEL (the parts' rest nodes + their tracks), saves it to the
+ * Explorer and assigns it to the model — so the movement travels and plays like any clip file,
+ * and other copies of the model can use it. The authored keys stay as they were.
+ * @param {string} modelUuid @param {string} clipName @returns {Promise<{name: string, hash: string, parts: number} | null>}
+ */
+export async function partsKeysToClip(modelUuid, clipName) {
+	const root = rootOf(modelUuid);
+	if (!root) return null;
+	const THREE = await import('three');
+	const ap = await import('../animationPreview');
+	/** @type {any[]} */
+	const tracks = [];
+	let duration = 0;
+	let parts = 0;
+	root.traverse((/** @type {any} */ o) => {
+		if (o === root) return;
+		const set = ap.getAnimSet(o.uuid);
+		const clip = set ? Object.values(set.clips).find((/** @type {any} */ c) => c.name === clipName) : null;
+		if (!clip) return;
+		const baked = ap.clipToThreeClip(o, clip, { name: clipName });
+		if (!baked) return;
+		// a look channel (visible) is not part of a clip file
+		tracks.push(...baked.tracks.filter((/** @type {any} */ t) => !t.name.endsWith('.visible')));
+		duration = Math.max(duration, baked.duration);
+		parts++;
+	});
+	if (!tracks.length) {
+		showToast('No part of "' + (root.name || 'this model') + '" has keys in a clip called "' + clipName + '"');
+		return null;
+	}
+	ensureClipModel(root);
+	const merged = new THREE.AnimationClip(clipName, duration, tracks);
+	const tp = tpFromThreeClip(root, merged, { rest: restPoseOf(root.uuid), provenance: { tool: 'animation window', source: root.name || 'model', date: new Date().toISOString().slice(0, 10) } });
+	const saved = await saveClip(tp, (root.name ? root.name + ' - ' : '') + clipName);
+	if (!saved) return null;
+	const refs = clipRefsOf(root).filter((r) => r.name !== clipName);
+	setClipRefs(modelUuid, [...refs, { hash: saved.hash, name: clipName }]);
+	showToast('Saved "' + clipName + '" as a clip file on "' + (root.name || 'the model') + '" (' + parts + ' part' + (parts === 1 ? '' : 's') + ')');
+	return { name: clipName, hash: saved.hash, parts };
 }

@@ -197,6 +197,25 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.history.redo());
 	await h.eventually(() => clipOnHeli(B.page), (l) => l.includes('Spin'), 'M12: redo puts it back');
 
+	// ---------- M12: keys on a part in the Animation window -> one clip FILE on the model ----------
+	const fromKeys = await A.page.evaluate(async (heli) => {
+		const s = window.__stores;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const model = g.getObjectByProperty('uuid', heli);
+		const body = model.getObjectByName('body');
+		const ap = s.animationPreview;
+		ap.createClip(body.uuid, 'Bob');
+		const track = ap.addTrack(body.uuid, 'pos.y', body);
+		ap.updateKey(body.uuid, track, 0, { t: 0, v: 0 });
+		ap.updateKey(body.uuid, track, 1, { t: 1, v: 0.5 });
+		ap.updateAnim(body.uuid, { duration: 1 });
+		const out = await s.clipEdit.partsKeysToClip(heli, 'Bob');
+		return { out, clips: s.animatedImports.clipInfo(heli).map((c) => c.name) };
+	}, heli);
+	h.check(fromKeys.out?.parts === 1 && fromKeys.clips.includes('Bob'), `M12: a part's keys become a node-name clip file on the model (${JSON.stringify(fromKeys.out)})`);
+	await h.eventually(() => clipOnHeli(B.page), (l) => l.includes('Bob'), 'M12: ...and reach B as a clip');
+
 	// ---------- M12: Attach to Socket — a box rides the rotor tip ----------
 	const box = await A.page.evaluate(async () => {
 		const s = window.__stores;

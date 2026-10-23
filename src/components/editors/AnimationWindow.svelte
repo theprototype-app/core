@@ -14,7 +14,7 @@
 	// undo entry and ONE broadcast instead of dozens.
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
-	import { selectedObject } from '../../stores/sceneStore';
+	import { selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { animationClose } from '../../stores/appStore.js';
 	import {
 		animations, playback, playheads, CHANNELS, EASINGS, STEPPED, channelLabel, isRotChannel,
@@ -59,6 +59,13 @@
 
 	// live-follow the primary selection (keeps a truthy [] before the first select)
 	const target = $derived($selectedObject && $selectedObject.uuid ? $selectedObject : null);
+	// 57 M12: the MODEL a selected part belongs to (its top-level object), or null for a top-level object
+	const partOf = $derived.by(() => {
+		let o = target;
+		if (!o || !o.parent || o.parent === $objectsGroup) return null;
+		while (o.parent && o.parent !== $objectsGroup) o = o.parent;
+		return o.parent === $objectsGroup ? o : null;
+	});
 	// the ACTIVE clip of the object's set, normalized (a v1 save migrates on read)
 	const anim = $derived.by(() => {
 		$animations; // the store is the dependency; activeClip reads it with get()
@@ -2135,6 +2142,20 @@
 							onpointermove={doClipsResize}
 							onpointerup={endClipsResize}
 						></div>
+						<!-- 57 M12: keys on a PART of a model become one clip FILE on the model (node-name .tpanim) -->
+						{#if partOf}
+							<button
+								id="parts-to-clip"
+								class="ui-button-quiet mx-2 mb-1 text-accent-text"
+								title={'Save this clip of the model\'s parts as a .tpanim clip file on "' + (partOf.name || 'the model') + '" — it plays like any clip and travels to everyone once'}
+								onclick={async () => {
+									const active = authoredClips.find((c) => c.active);
+									if (!active || !partOf) return;
+									const m = await import('$lib/tpanim/clipEdit.js');
+									await m.partsKeysToClip(partOf.uuid, active.name);
+								}}>Save as a clip file on {partOf.name || 'the model'}</button
+							>
+						{/if}
 					</div>
 				{/if}
 

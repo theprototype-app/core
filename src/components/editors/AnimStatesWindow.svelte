@@ -6,7 +6,7 @@
 	// the live reading is local (every peer runs the machine itself). On the shared ToolboxWindow
 	// shell: a floating palette on desktop, a bottom sheet on a phone.
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
-	import { setAnimGraph, clipInfo, animatedObjects } from '$lib/animatedImports';
+	import { setAnimGraph, clipInfo, clipRefsOf, animatedObjects } from '$lib/animatedImports';
 	import { objectsGroup } from '../../stores/sceneStore';
 	import { locomotionPreset, normalizeAnimGraph, OPS } from '$lib/tpanim/animGraph.js';
 
@@ -47,8 +47,28 @@
 		await setAnimGraph(uuid, next);
 		version++;
 	}
+	/**
+	 * The preset, made GAME-READY: a walk or run that travels (root motion) tells the blend its own
+	 * pace — so the feet keep up with the controller instead of sliding — and is switched to
+	 * In place, so the controller (not the clip) moves the character.
+	 */
 	async function preset() {
-		await setAnimGraph(uuid, locomotionPreset(clips));
+		const g = locomotionPreset(clips);
+		const move = g?.states.find((/** @type {any} */ s) => s.blend);
+		const refs = clipRefsOf(root);
+		if (move) {
+			const { clipFactsFor } = await import('$lib/tpanim/clipEdit.js');
+			const { updateClipRef } = await import('$lib/tpanim/clipAssets.js');
+			for (const [slot, key] of /** @type {const} */ ([['walk', 'walkSpeed'], ['run', 'runSpeed']])) {
+				const ref = refs.find((r) => r.name === move.blend[slot]);
+				const f = ref ? await clipFactsFor(ref.hash) : null;
+				if (!f || f.travel < 0.1 || !(f.duration > 0)) continue;
+				move.blend[key] = Math.round((f.travel / f.duration) * 100) / 100;
+				if (ref && ref.mode !== 'inplace') updateClipRef(uuid, ref.name, { mode: 'inplace' });
+			}
+			if (move.blend.runSpeed <= move.blend.walkSpeed) move.blend.runSpeed = move.blend.walkSpeed * 2;
+		}
+		await setAnimGraph(uuid, g);
 		version++;
 	}
 	async function removeGraph() {

@@ -10,7 +10,6 @@
 	import { onDestroy, untrack } from 'svelte';
 	import { clipRefsOf, embeddedClipsOf, setPoseDriver, clearPoseDriver } from '$lib/animatedImports';
 	import { objectsGroup } from '../../stores/sceneStore';
-	import AnimStatesWindow from './AnimStatesWindow.svelte';
 
 	/** @type {{uuid: string, clips: {name: string, duration: number, asset?: string}[], clipState: any}} */
 	let { uuid, clips, clipState } = $props();
@@ -274,7 +273,10 @@
 		>
 	</div>
 	{#if statesOpen}
-		<AnimStatesWindow {uuid} onclose={() => (statesOpen = false)} />
+		<!-- a lazy chunk: the states editor (and its graph module) loads only when opened -->
+		{#await import('./AnimStatesWindow.svelte') then m}
+			<m.default {uuid} onclose={() => (statesOpen = false)} />
+		{/await}
 	{/if}
 
 	<!-- join: pick two or more clip files, in order -->

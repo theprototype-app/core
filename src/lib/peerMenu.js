@@ -17,7 +17,7 @@
  *   muted: boolean, hidden: boolean, away: string, privateRow: boolean,
  *   hasAvatar: boolean, editingUuid: string, hasLook: boolean,
  *   isAgent: boolean, inviteId: string, requestAsked: boolean, canInvite: boolean,
- *   watching: boolean
+ *   watching: boolean, agentBusy?: boolean, agentMuted?: boolean
  * }} PeerMenuFacts
  * @typedef {Record<string, (() => void) | undefined>} PeerMenuActions
  */
@@ -85,8 +85,9 @@ export function buildPeerMenuItems(f, a) {
 
 	if (f.isAgent) {
 		items.push({ section: 'AI agent' });
-		row('agent-stop', 'Stop request', 'circle-x', a.agentStop, a.agentStop ? {} : off('Comes with the agent controls (roadmap 56)'));
-		row('agent-mute', 'Mute agent', 'mic-off', a.agentMute, a.agentMute ? {} : off('Comes with the agent controls (roadmap 56)'));
+		// 56 C5/C6: Stop = cancel what it is answering now; Mute = the host/an admin stops delivery
+		row('agent-stop', 'Stop request', 'circle-x', a.agentStop, a.agentStop ? { tooltip: 'Stop what it is answering — later steps return cancelled' } : off(f.agentBusy ? 'Only the person who asked, the host or an editor can stop it' : 'It is not answering anything right now'));
+		row('agent-mute', f.agentMuted ? 'Unmute agent' : 'Mute agent', f.agentMuted ? 'mic' : 'mic-off', a.agentMute, a.agentMute ? { tooltip: f.agentMuted ? 'Deliver messages to it again' : 'Messages are no longer delivered to it — it stays in the session' } : off('Only the session host or an admin can mute an agent'));
 		if (f.inviteId && f.canModerate) row('agent-revoke', 'Revoke invite', 'unlink', a.revokeInvite);
 	}
 	return items;

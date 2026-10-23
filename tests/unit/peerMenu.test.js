@@ -33,13 +33,23 @@ describe('buildPeerMenuItems', () => {
 		expect(sections(items)).toEqual(['You']);
 		expect(ids(items)).toEqual(['edit-profile', 'change-character', 'copy-id']);
 	});
-	it('agent extras: Stop/Mute wait for roadmap 56, Revoke invite needs an invite and a moderator', () => {
+	it('agent extras: Stop/Mute disabled without an action, Revoke invite needs an invite and a moderator', () => {
 		const a = buildPeerMenuItems({ ...base, isAgent: true }, {});
 		expect(sections(a)).toContain('AI agent');
 		expect(byId(a, 'agent-stop').disabled).toBe(true);
 		expect(ids(a)).not.toContain('agent-revoke');
 		const b = buildPeerMenuItems({ ...base, isAgent: true, inviteId: 'i1', canModerate: true }, { revokeInvite: () => {} });
 		expect(ids(b)).toContain('agent-revoke');
+	});
+	it('56: Stop and Mute act when handed an action, and say why not otherwise', () => {
+		const idle = buildPeerMenuItems({ ...base, isAgent: true }, {});
+		expect(byId(idle, 'agent-stop').tooltip).toMatch(/not answering/);
+		expect(byId(idle, 'agent-mute').tooltip).toMatch(/host or an admin/);
+		const busy = buildPeerMenuItems({ ...base, isAgent: true, agentBusy: true }, {});
+		expect(byId(busy, 'agent-stop').tooltip).toMatch(/who asked/);
+		const host = buildPeerMenuItems({ ...base, isAgent: true, agentBusy: true, agentMuted: true }, { agentStop: () => {}, agentMute: () => {} });
+		expect(byId(host, 'agent-stop').disabled).toBeUndefined();
+		expect(byId(host, 'agent-mute').label).toBe('Unmute agent');
 	});
 	it('disabled with the reason, never silently', () => {
 		const hidden = buildPeerMenuItems({ ...base, hidden: true }, {});

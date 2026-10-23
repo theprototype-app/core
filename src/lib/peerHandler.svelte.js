@@ -27,6 +27,7 @@ import { applyJoinRefusal } from '$lib/peerApproval';
 // 55 A4: invite links — the host's check and the joiner's proof (store-only, no cycle)
 // 55 A7/A8: the agent action log + where an agent looked (store-only)
 import { applyAgentLog, applyAgentUndo, applyAgentView, dropAgentView, sendAgentLogTo } from '$lib/agentLog';
+import { applyAgentChatMessage, sendAgentChatBacklogTo, agentChatPeerGone } from '$lib/agentChat'; // 56 C1
 import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession } from '$lib/inviteStore';
 import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
@@ -1492,8 +1493,9 @@ export class PeerConnection {
 				} else if(data.type == 'agentview') {
 					applyAgentView(conn.peer, data); // 55 A7: where the agent's last screenshot looked
 				} else if(data.type == 'agentchat') {
-					// 56 (56-bridge): a message to an agent — on an AGENT page its inbox holds it for the bridge.
-					// 56-int: one `agentchat` branch with 56-chat's window reducer (handovers/QUESTIONS-56-bridge.md Q2)
+					// 56: ONE branch for both halves — the window's reducer (56-chat: a request / streamed reply / Stop /
+					// status, or the backlog) and, on an AGENT page, its inbox that holds the message for the bridge (56-bridge)
+					applyAgentChatMessage(conn.peer, data);
 					const from = conn.peer;
 					if (isAgentSession()) import('$lib/agent/agentInbox.js').then((m) => m.receiveAgentChat(from, data)).catch(() => {});
 				} else if(data.type == 'vrhands') {
@@ -1664,6 +1666,7 @@ export class PeerConnection {
 		conn.send({type: 'userdata', userdata: users.filter((/** @type {any} */ u) => !isHeldOut(u[0]))})
 		// 55 A8: the newest agent log lines, so a late joiner's AI window shows what was built
 		sendAgentLogTo(conn);
+		sendAgentChatBacklogTo(conn); // 56 C1: the agent chats so far
 		// 55 A9: a moderator hands its block list on, so a blocked re-dial is refused by
 		// whichever peer it reaches — including one that joined after the block
 		for (const k of blockReplay()) conn.send(k);
@@ -2032,6 +2035,7 @@ export class PeerConnection {
 		dropPeerMaterialPresets(peerId);
 		dropPeerHandModel(peerId);
 		dropAgentView(peerId); // 55 A7
+		agentChatPeerGone(peerId); // 56: an agent that left is away
 		dropPeerFacts(peerId); // 55 A9
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
 		checkLocks();

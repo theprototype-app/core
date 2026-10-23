@@ -317,6 +317,18 @@ export const VALIDATORS = {
 		(d.entry !== undefined || d.entries !== undefined),
 	agentundo: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	agentview: (d) => isVec3(d.pos) && isFiniteArray(d.quat, 4),
+	// 56 C1: the agent chat — one type, fields discriminate (agentChatCore.kindOf has the full rules):
+	// a backlog array, or short string ids and text; status names one of three states
+	agentchat: (d) =>
+		Array.isArray(d.backlog)
+			? d.backlog.length <= 200
+			: (d.id === undefined || (typeof d.id === 'string' && d.id.length <= 64)) &&
+				(d.chatId === undefined || (typeof d.chatId === 'string' && d.chatId.length <= 64)) &&
+				(d.cancel === undefined || (typeof d.cancel === 'string' && d.cancel.length <= 64)) &&
+				(d.text === undefined || typeof d.text === 'string') &&
+				(d.status === undefined || d.status === 'listening' || d.status === 'working' || d.status === 'away') &&
+				(d.mute === undefined || typeof d.mute === 'boolean') &&
+				(d.images === undefined || (Array.isArray(d.images) && d.images.length <= 4)),
 	camera: (d) =>
 		typeof d.peerId === 'string' &&
 		isVec3(d.position) &&

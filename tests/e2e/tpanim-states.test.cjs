@@ -18,6 +18,27 @@ const watchStates = (page, uuid) =>
 		window.__stores.animGraphRuntime.onAnimStateEnter((u, id) => u === uuid && window.__seen57.push(id));
 	}, uuid);
 const seenStates = (page) => page.evaluate(() => window.__seen57 ?? []);
+/** what a peer holds for a parts model — printed beside its checks so a red says which link broke */
+const heliState = (page, uuid, hash) =>
+	page.evaluate(
+		({ uuid, hash }) => {
+			const s = window.__stores;
+			let g;
+			s.objectsGroup.subscribe((x) => (g = x))();
+			const root = g.getObjectByProperty('uuid', uuid);
+			const item = s.explorer.itemByHash(hash);
+			return {
+				here: !!root,
+				refs: root?.userData?.clipRefs ?? null,
+				clipModel: s.animatedImports.hasClipModel(uuid),
+				state: s.animatedImports.animationState(uuid),
+				clips: s.animatedImports.clipInfo(uuid).map((c) => c.name + (c.asset ? '*' : '')),
+				item: item ? { id: item.id, share: item.share } : null,
+				assets: s.clipAssets.clipAssetsDebug()
+			};
+		},
+		{ uuid, hash }
+	);
 
 /** a vertical hop on A, broadcasting moves the way a drag does (vy +4 m/s, then -4 back down) */
 const hop = (page, uuid) =>
@@ -149,11 +170,22 @@ h.run(async () => {
 	console.log(
 		'  B trigger view:',
 		JSON.stringify(
-			await B.page.evaluate(() => {
+			await B.page.evaluate((uuid) => {
+				const s = window.__stores;
 				let t;
-				window.__stores.flowTriggers.subscribe((v) => (t = v))();
-				return { click: t?.['k-click'] ?? null };
-			})
+				let fg;
+				let st;
+				s.flowTriggers.subscribe((v) => (t = v))();
+				s.flowGraphs.subscribe((v) => (fg = v))();
+				s.animGraphRuntime.animStates.subscribe((v) => (st = v))();
+				return {
+					click: t?.['k-click'] ?? null,
+					nodes: (fg?.[uuid]?.nodes ?? []).map((n) => n.id),
+					edges: (fg?.[uuid]?.edges ?? []).map((e) => e.id),
+					jump: st?.[uuid]?.params?.jump ?? null,
+					state: st?.[uuid]?.state ?? null
+				};
+			}, uuid)
 		)
 	);
 	const pulsed = await A.page.evaluate(() => {
@@ -202,6 +234,7 @@ h.run(async () => {
 	};
 	h.check(await turns(A.page), 'M12: the rotor spins on A');
 	await h.eventually(() => turns(B.page), (v) => v, 'M12: ...and on B (the clip pulled, bound to its own copy by part name)', 20000);
+	console.log('  B heli:', JSON.stringify(await heliState(B.page, heli, res.hash)));
 	// A clip message that lands BEFORE its object (still in the receiver's ingest queue — an agent
 	// imports a model and animates it at once) is parked and applied when the object arrives.
 	// Delivered on B by hand, in that order, so the race is not left to timing.
@@ -284,7 +317,8 @@ h.run(async () => {
 		const b = await boxAt(page);
 		return a && b && Math.hypot(a[0] - b[0], a[1] - b[1]) > 0.2 && Math.abs(Math.hypot(b[0], b[1]) - 1.8) < 0.15;
 	};
-	h.check(await circles(A.page), 'M12: the attached box follows the spinning rotor on A');
+	await h.eventually(() => circles(A.page), (v) => v, 'M12: the attached box follows the spinning rotor on A', 10000);
+	console.log('  A heli:', JSON.stringify(await heliState(A.page, heli, res.hash)), 'box', JSON.stringify(await boxAt(A.page)));
 	await h.eventually(() => circles(B.page), (v) => v, 'M12: ...and on B (the attach replicated; each peer follows its own socket)', 15000);
 	await A.page.evaluate((box) => window.__stores.animatedImports.attachToSocket(box, null, null), box);
 	const s1 = await boxAt(A.page);

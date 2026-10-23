@@ -736,6 +736,8 @@ function followSockets() {
 // node stops feeding it (deleted, or the graph stopped).
 
 const DRIVER_STALE_S = 0.5;
+/** 57 M3: a driver weight below this sits out of the blend (see applyDriver) */
+const DRIVER_MIN_WEIGHT = 0.01;
 
 // ---- 57 M11: the ANIMATION STATES graph on a model -----------------------------------------
 // `userData.animGraph` (tpanim/animGraph.js's shape) is config: it rides the objectfile message,
@@ -835,10 +837,17 @@ export function poseDriverOf(uuid) {
 function applyDriver(record, d, time) {
 	const dt = Math.min(Math.max(time - d.last, 0), 0.1);
 	d.last = time;
+	// a sliver of weight (a blend's tail: run at 0.0004 beside walk) costs a whole skeleton's
+	// evaluation and shows nothing — below 1 % a clip sits out and the rest renormalize
+	let floor = DRIVER_MIN_WEIGHT;
+	let top = 0;
+	for (const name of Object.keys(d.weights)) if (record.actions[name]) top = Math.max(top, d.weights[name]);
+	if (top < floor) floor = top; // every weight that small: the strongest still plays (never the rest pose)
+	const live = (/** @type {string} */ name) => d.weights[name] > 0 && d.weights[name] >= floor;
 	let sum = 0;
-	for (const name of Object.keys(d.weights)) if (record.actions[name] && d.weights[name] > 0) sum += d.weights[name];
+	for (const name of Object.keys(d.weights)) if (record.actions[name] && live(name)) sum += d.weights[name];
 	for (const [name, action] of Object.entries(record.actions)) {
-		const w = sum > 0 && d.weights[name] > 0 ? d.weights[name] / sum : 0;
+		const w = sum > 0 && live(name) ? d.weights[name] / sum : 0;
 		const a = /** @type {any} */ (action);
 		if (w <= 0) {
 			if (a.isScheduled()) a.stop();

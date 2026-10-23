@@ -185,6 +185,11 @@ function buildEntry(key, count, render = 'points', segs = 1) {
 			uWind: { value: new THREE.Vector3() },
 			uFall: { value: 0 },
 			uGround: { value: 0 },
+			// 65 M6: the curl-noise flow field
+			uFlow: { value: 0 },
+			uFlowScale: { value: 0.6 },
+			uFlowSpeed: { value: 0.3 },
+			uFlowSteps: { value: 4 },
 			uQuat: { value: new THREE.Vector4(0, 0, 0, 1) },
 			uWorldSpace: { value: 0 },
 			// 37-fx: inherit velocity + the strip modes
@@ -360,6 +365,10 @@ function applyUniforms(entry, cfg) {
 	u.uGravity.value = cfg.gravity;
 	u.uDrag.value = cfg.drag;
 	u.uTurbulence.value = cfg.turbulence;
+	// 65 M6: curl-noise flow (clamped: a field faster than this reads as noise, not flow)
+	u.uFlow.value = Math.min(Math.max(Number(cfg.flow) || 0, 0), 6);
+	u.uFlowScale.value = Math.min(Math.max(Number(cfg.flowScale ?? 0.6) || 0.6, 0.05), 8);
+	u.uFlowSpeed.value = Math.min(Math.max(Number(cfg.flowSpeed ?? 0.3) || 0, 0), 4);
 	// PFX-B fix: `size` is an alias for the start size (the wired input handle)
 	u.uSizeStart.value = cfg.size ?? cfg.sizeStart;
 	u.uSizeEnd.value = cfg.sizeEnd;
@@ -479,7 +488,7 @@ export function updateParticles(pairs, sceneObjects, time) {
 			const sig = JSON.stringify([
 				cfg.offset, cfg.speed, cfg.gravity, cfg.sizeStart, cfg.size, cfg.lifetime,
 				cfg.turbulence, cfg.angle, cfg.radius, cfg.shape, cfg.sprite, cfg.colorStart, cfg.colorEnd,
-				cfg.inherit, cfg.stretch, cfg.trail
+				cfg.inherit, cfg.stretch, cfg.trail, cfg.flow, cfg.flowScale, cfg.flowSpeed
 			]);
 			if (entry.cfgSig !== undefined && entry.cfgSig !== sig) {
 				entry.burstT = tw;
@@ -488,6 +497,9 @@ export function updateParticles(pairs, sceneObjects, time) {
 			entry.cfgSig = sig;
 		}
 		u.uBurstT.value = entry.burstT;
+		// 65 M6: the device budget — half the flow integration on a headset or once the governor
+		// caps particles (a flow path is a few trig calls per step per vertex)
+		u.uFlowSteps.value = vr || particlesCapped ? 2 : 4;
 		const drawn = vr ? Math.min(cfg.count, VR_MAX_COUNT) : cfg.count;
 		entry.geometry.setDrawRange(0, entry.layout ? drawn * entry.layout.indicesPerSlot : drawn);
 		entry.points.visible = object.visible !== false;

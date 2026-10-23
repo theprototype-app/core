@@ -30,6 +30,8 @@
 //  particles in birth order — with space 'world', the path the emitter took; continuous
 //  emitters only, a burst falls back to trails); inherit = share of the emitter's velocity
 //  a particle is born with (world space; 1 = all of it)
+//  65 M6: flow = curl-noise flow field strength m/s (0 = off), flowScale = its frequency
+//  (1/m — higher = tighter swirls), flowSpeed = how fast the field itself changes
 
 /** @type {any} */
 export const PARTICLE_DEFAULTS = {
@@ -62,7 +64,10 @@ export const PARTICLE_DEFAULTS = {
 	inherit: 0,
 	stretch: 0.04,
 	trail: 0.4,
-	trailSegments: 8
+	trailSegments: 8,
+	flow: 0,
+	flowScale: 0.6,
+	flowSpeed: 0.3
 };
 
 // The Core 6 (user-locked lineup). Names show in menus; keys are stable ids.
@@ -209,6 +214,37 @@ export const PARTICLE_PRESETS = [
 			opacity: 0.9, fadeIn: 0.05, fadeOut: 0.3,
 			sprite: 'dot', blending: 'normal', spin: 0.5, space: 'world',
 			wind: [0.35, 0, 0.12], fall: 6, ground: 'settle'
+		}
+	},
+	// 65 M6: curl-noise flow fields — trails that swirl through a divergence-free field
+	{
+		key: 'flowfield',
+		name: 'Flow field',
+		config: {
+			count: 360, lifetime: 6, lifeJitter: 0.3,
+			shape: 'box', area: [4, 4], angle: 80, radius: 0,
+			speed: 0.05, speedJitter: 0.5, gravity: 0, drag: 0, turbulence: 0,
+			sizeStart: 0.02, sizeEnd: 0.012,
+			colorStart: '#7ff9ff', colorEnd: '#b06bff',
+			opacity: 0.85, fadeIn: 0.15, fadeOut: 0.4,
+			sprite: 'dot', blending: 'additive', spin: 0, space: 'world',
+			render: 'trails', trail: 1.2, trailSegments: 12,
+			flow: 1.1, flowScale: 0.7, flowSpeed: 0.25
+		}
+	},
+	{
+		key: 'swirl',
+		name: 'Swirl ribbon',
+		config: {
+			count: 160, lifetime: 2.6, lifeJitter: 0,
+			shape: 'sphere', radius: 0.05,
+			speed: 0.15, speedJitter: 0.2, gravity: 0.1, drag: 0.4, turbulence: 0,
+			sizeStart: 0.06, sizeEnd: 0.01,
+			colorStart: '#ffd1f5', colorEnd: '#5b6cff',
+			opacity: 0.8, fadeIn: 0.05, fadeOut: 0.6,
+			sprite: 'dot', blending: 'additive', spin: 0, space: 'world',
+			render: 'ribbon', inherit: 0.4,
+			flow: 0.8, flowScale: 0.9, flowSpeed: 0.4
 		}
 	}
 ];

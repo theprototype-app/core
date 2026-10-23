@@ -48,6 +48,41 @@ const SIM_COMMON = /* glsl */ `
 	uniform vec3 uWind;       // 36 B3: constant drift, m/s
 	uniform float uFall;      // 36 B3: the ground this far below the emitter (0 = none)
 	uniform float uGround;    // 36 B3: on landing 1 = splash (rain), 2 = settle (snow)
+	uniform float uFlow;      // 65 M6: curl-noise flow strength, m/s (0 = off)
+	uniform float uFlowScale; // ...the field's frequency, 1/m
+	uniform float uFlowSpeed; // ...how fast the field itself evolves
+	uniform float uFlowSteps; // ...integration steps (the device budget: 4, 2 on a headset / capped)
+
+	// 65 M6 — CURL NOISE: the curl of a smooth vector potential is DIVERGENCE-FREE, so the
+	// particles swirl like smoke or ink without bunching up or thinning out. The potential is
+	// two octaves of trigonometric waves with ANALYTIC derivatives (no noise texture, no
+	// finite differences), a pure function of (position, synced time) like everything else in
+	// this shader — so every peer, and every trail segment sampling the same particle at an
+	// earlier age, sees the same path.
+	vec3 tpCurlOctave(vec3 p, float t) {
+		return vec3(
+			-1.9 * sin(1.9 * p.y + 1.1 * t) - 1.1 * cos(1.1 * p.z + 0.9 * t),
+			-1.7 * sin(1.7 * p.z - 0.7 * t) - 1.2 * cos(1.2 * p.x - 0.8 * t),
+			-1.5 * sin(1.5 * p.x + 0.6 * t) - 1.3 * cos(1.3 * p.y + t));
+	}
+	vec3 tpCurl(vec3 p, float t) {
+		return (tpCurlOctave(p, t) + 0.5 * tpCurlOctave(p * 2.1 + vec3(3.1, 1.7, 5.3), t * 1.3)) / 4.5;
+	}
+	// how far the field has carried a particle by \`age\`: integrated along the straight line
+	// from where it spawned (s0) to where its ballistic motion puts it now (s1), in uFlowSteps
+	// midpoint steps — the step count scales with nothing but the budget, so a longer life is
+	// a longer step, never a different number of them (and a trail stays continuous)
+	vec3 tpFlowOffset(vec3 s0, vec3 s1, float birth, float age) {
+		vec3 d = vec3(0.0);
+		float h = age / uFlowSteps;
+		for (int i = 0; i < 6; i++) {
+			if (float(i) >= uFlowSteps) break;
+			float f = (float(i) + 0.5) / uFlowSteps;
+			vec3 q = mix(s0, s1, f) + d;
+			d += tpCurl(q * uFlowScale, (birth + age * f) * uFlowSpeed) * (uFlow * h);
+		}
+		return d;
+	}
 
 	vec3 qrot(vec4 q, vec3 v) {
 		return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
@@ -140,6 +175,13 @@ const SIM_COMMON = /* glsl */ `
 			landed = uGround > 1.5 ? 1.0 : clamp((age - hitAge) / 0.18, 0.0, 1.0) + 0.001;
 		}
 		if (uWorldSpace > 0.5) p = origin + qrot(uQuat, p);
+		// 65 M6: the flow field — in WORLD space for a world emitter (the field stays put and
+		// the particles drift through it), in the emitter's frame otherwise; a landed particle
+		// stays where it landed
+		if (uFlow > 0.001 && landed <= 0.0) {
+			vec3 s0 = uWorldSpace > 0.5 ? origin + qrot(uQuat, posBase) : posBase;
+			p += tpFlowOffset(s0, p, uTime - age, age);
+		}
 		return p;
 	}
 `;

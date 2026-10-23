@@ -78,9 +78,13 @@ export async function convertAnimationFile(file) {
 		root.add(holder);
 		holder.add(res.skeleton.bones[0]);
 		root.updateMatrixWorld(true);
-		// mocap is usually in centimetres: a hips height over 20 units is, so the clip is stored in metres
-		const hipsY = new THREE.Vector3().setFromMatrixPosition(res.skeleton.bones[0].matrixWorld).y;
-		if (hipsY > 20) holder.scale.setScalar(0.01);
+		// mocap is usually in centimetres: a standing hips height over 20 units is, so the clip is
+		// stored in metres. A BVH rests its root at the floor and puts the height in the MOTION, so
+		// the height is read from the first frame's root position, not the rest pose.
+		const rootBone = res.skeleton.bones[0];
+		const rootPos = res.clip.tracks.find((/** @type {any} */ t) => t.name === rootBone.name + '.position');
+		const hipsY = rootPos ? rootPos.values[1] : new THREE.Vector3().setFromMatrixPosition(rootBone.matrixWorld).y;
+		if (Math.abs(hipsY) > 20) holder.scale.setScalar(0.01);
 		const tp = maybeHumanoid(tpFromThreeClip(root, res.clip, { name: base, provenance: provenance(file.name) }));
 		return [clipFile(base, encodeTpanim(tp))];
 	}

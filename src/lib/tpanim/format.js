@@ -365,11 +365,23 @@ export function tpFromThreeClip(root, clip, opts = {}) {
 /**
  * TpClip -> an AnimationClip bound by node name (the file's own skeleton, or a model with those
  * bones). A humanoid clip's tracks then target its humanoid-named nodes — bind it to a model with
- * `bindHumanoid` instead.
- * @param {TpClip} tp @returns {THREE.AnimationClip}
+ * `bindHumanoid` instead. With `root`, each name resolves against THAT model: GLTFLoader sanitizes
+ * node names ('Door Left' -> 'Door_Left'), an object made or renamed in the app does not.
+ * @param {TpClip} tp @param {THREE.Object3D} [root] @returns {THREE.AnimationClip}
  */
-export function tpToThreeClip(tp) {
-	const tracks = tp.tracks.map((tr) => makeTrack(sanitizeName(tp.nodes[tr.node].name) + '.' + PROPS[tr.path], tr));
+export function tpToThreeClip(tp, root) {
+	/** @type {Set<string> | null} */
+	let names = null;
+	if (root) {
+		names = new Set();
+		root.traverse((o) => /** @type {Set<string>} */ (names).add(o.name));
+	}
+	const bindName = (/** @type {string} */ raw) => {
+		const clean = sanitizeName(raw);
+		if (names && !names.has(clean) && names.has(raw) && !/[[\].:/]/.test(raw)) return raw;
+		return clean;
+	};
+	const tracks = tp.tracks.map((tr) => makeTrack(bindName(tp.nodes[tr.node].name) + '.' + PROPS[tr.path], tr));
 	return new THREE.AnimationClip(tp.name, tp.duration, tracks);
 }
 
@@ -500,6 +512,9 @@ export function toHumanoid(tp, map) {
 		const off = pi >= 0 ? restPos[i].clone().sub(restPos[pi]) : restPos[i].clone();
 		return { name: b, parent: pi, t: off.toArray(), r: [0, 0, 0, 1], s: [1, 1, 1] };
 	});
+	// a rig whose REST hips sit at the floor (a BVH: the height lives in the motion) stands at its
+	// first frame instead — VRMA scales the hips by the rest height, and a zero there means nothing
+	if (restPos[0].y < 1e-3 && hipsPos[1] > 1e-3) nodes[0].t = [hipsPos[0], hipsPos[1], hipsPos[2]];
 	/** @type {TpTrack[]} */
 	const tracks = [];
 	bones.forEach((b, i) => {
@@ -676,9 +691,12 @@ export function clipFit(tp, root, map) {
 		return { fit: ok ? 'humanoid' : 'none', matched: ok ? 1 : 0, total: 1 };
 	}
 	const names = new Set();
-	root.traverse((o) => names.add(sanitizeName(o.name)));
-	const animated = [...new Set(tp.tracks.map((tr) => sanitizeName(tp.nodes[tr.node].name)))];
-	const matched = animated.filter((n) => names.has(n)).length;
+	root.traverse((o) => {
+		names.add(sanitizeName(o.name));
+		names.add(o.name);
+	});
+	const animated = [...new Set(tp.tracks.map((tr) => tp.nodes[tr.node].name))];
+	const matched = animated.filter((n) => names.has(n) || names.has(sanitizeName(n))).length;
 	if (tp.sig && tp.sig === modelSignature(root) && matched === animated.length) return { fit: 'exact', matched, total: animated.length };
 	return { fit: matched === 0 ? 'none' : matched === animated.length ? 'exact' : 'partial', matched, total: animated.length };
 }
@@ -696,4 +714,16 @@ export function clipFacts(tp) {
 		bones: tp.humanoid ? Object.keys(tp.humanoid).length : tp.nodes.length,
 		tracks: tp.tracks.length
 	};
+}
+
+/**
+ * Every node's position in the file's root frame at time t (xyz per node) — a skeleton drawn
+ * from the clip alone (the Explorer thumbnail, a preview with no model).
+ * @param {TpClip} tp @param {number} t @returns {Float32Array}
+ */
+export function nodePositionsAt(tp, t) {
+	const world = worldMatrices(tp, poseAt(tp, interpolants(tp), t));
+	const out = new Float32Array(world.length * 3);
+	world.forEach((m, i) => posOf(m).toArray(out, i * 3));
+	return out;
 }

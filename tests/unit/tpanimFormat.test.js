@@ -14,7 +14,8 @@ import {
 	clipFit,
 	detectFps,
 	glbAnimationNames,
-	glbHasMeshes
+	glbHasMeshes,
+	nodePositionsAt
 } from '../../src/lib/tpanim/format.js';
 import { isHumanoidMap, VRM_HUMAN_BONE_PARENTS } from '../../src/lib/tpanim/humanoidBones.js';
 import { makeRig, makeClip, captureRest } from './helpers/tpanimRig.js';
@@ -112,6 +113,17 @@ describe('tpanim: skeleton clips', () => {
 			const got = sampleWorld(root, back, t, names);
 			got.forEach((v, i) => expect(v.distanceTo(want[i])).toBeLessThan(1e-4));
 		}
+	});
+
+	it('poses its own skeleton (the thumbnail stick figure) where the model would be', () => {
+		const { root } = makeRig();
+		const rest = captureRest(root);
+		const clip = makeClip();
+		const tp = tpFromThreeClip(root, clip, { rest });
+		const pos = nodePositionsAt(tp, 0.5);
+		const want = sampleWorld(root, clip, 0.5, ['mixamorigHead'])[0];
+		const i = tp.nodes.findIndex((n) => n.name === 'mixamorigHead');
+		expect(Math.hypot(pos[i * 3] - want.x, pos[i * 3 + 1] - want.y, pos[i * 3 + 2] - want.z)).toBeLessThan(1e-4);
 	});
 
 	it('reports fit by signature and by node name', () => {

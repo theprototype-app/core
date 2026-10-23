@@ -20,7 +20,7 @@ import { addParticlesPreset, removeObjectParticles, burstObjectParticles } from 
 import { PARTICLE_PRESETS } from './particlePresets';
 import { SAVE_AS_FORMATS, saveSelectionAs } from './saveAs';
 import { restRowsOf, hasAnimatedImport } from './animatedImports';
-import { openApplyClip, openDownload } from './characterUi.js';
+import { openApplyClip, openDownload, openSkeleton } from './characterUi.js';
 import { enterEditMode } from './meshEdit';
 // 24-E3: a group's origin from its context menu, and the set's pivot point
 import { originPreset, resetOrigin } from './objectOrigin';
@@ -713,6 +713,12 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					icon: 'person-standing',
 					tooltip: 'Play a clip from another model or the built-in motions on this character (fitted to its skeleton)',
 					action: () => openApplyClip({ targets: [uuid] })
+				},
+				{
+					label: 'Skeleton…',
+					icon: 'bone',
+					tooltip: 'The humanoid map, the bones (rename, move, add, delete, mirror) and the skin weights',
+					action: () => openSkeleton(uuid)
 				}
 			]
 		: [];

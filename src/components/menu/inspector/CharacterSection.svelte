@@ -8,7 +8,7 @@
 	import UiButton from '../../ui/Button.svelte';
 	import { sceneRevision } from '../../../stores/sceneStore';
 	import { animatedObjects, vrmExpressionNames, setVrmExpression } from '$lib/animatedImports';
-	import { openApplyClip, openDownload } from '$lib/characterUi.js';
+	import { openApplyClip, openDownload, openSkeleton } from '$lib/characterUi.js';
 	import { licenceOf, licenceLabel, licenceFlags, normalizeProvenance } from '$lib/provenance';
 
 	/** @type {{ object: any }} */
@@ -87,7 +87,7 @@
 			</div>
 			{#if !rig.ok}
 				<p id="character-missing" class="text-ink-warn">
-					Not a full humanoid yet — missing {rig.missingText}. Fix the map in Skeleton….
+					Not a full humanoid yet — missing {rig.missingText}. Fix the map in Skeleton…
 				</p>
 			{/if}
 			{#if rig.clips.length}
@@ -115,6 +115,13 @@
 					disabled={!rig.ok}
 					title="Play a clip from another model or the built-in motions on this character"
 					onclick={() => openApplyClip({ targets: [object.uuid] })}>Apply clip…</UiButton
+				>
+				<UiButton
+					id="character-skeleton"
+					size="sm"
+					variant="outline"
+					title="The skeleton: fix the humanoid map, rename / move / add / delete bones, mirror, weights"
+					onclick={() => openSkeleton(object.uuid)}>Skeleton…</UiButton
 				>
 				<UiButton
 					id="character-download"

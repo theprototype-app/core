@@ -23,7 +23,7 @@ import { downscaleImage } from '$lib/materialsHandler';
 import { shaderDrivenCount } from '$lib/shaderGraph';
 import { originOf, bakeOriginForExport } from '$lib/objectOrigin';
 import { bakeAnimationsForExport } from '$lib/animationPreview';
-import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport } from '$lib/animatedImports';
+import { createGltfLoader, registerAnimatedImport, recordAnimatedImport, sendAnimatedImport, stampGltfPrimitives } from '$lib/animatedImports';
 import { parseGltfSceneSafe, withTwins } from '$lib/ktx2Twins';
 import { environment } from './environment';
 import { parkAnimatedAtBase } from '$lib/flowRuntime';
@@ -769,9 +769,11 @@ export async function parseModelFile(file, extension, extras) {
 	if (extension === 'vrm' || glbIsVrm(buffer)) {
 		const { parseVrmBytes } = await import('./vrm/vrmRuntime.js');
 		const vrm = await parseVrmBytes(buffer);
+		stampGltfPrimitives(vrm.gltf);
 		return { root: vrm.root, animated: { result: { scene: vrm.root, animations: vrm.animations }, buffer, kind: 'vrm' }, notes };
 	}
 	const result = await parseGltfSceneSafe(buffer);
+	stampGltfPrimitives(result); // 57 M6: a weight edit writes back into the right primitive
 	// animated rigs keep their own pipeline (raw-bytes sync) — unplaced. 57 M2: so does a rig
 	// without clips (a VRM, a Meshy / UniRig character): clips get applied to it later
 	const animated = result.animations?.length > 0 || hasSkin(result.scene) ? { result, buffer, kind: 'gltf' } : null;

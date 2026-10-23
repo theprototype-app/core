@@ -212,3 +212,68 @@ export function animationNames(json) {
 		(/** @type {any} */ a, /** @type {number} */ i) => a.name ?? 'animation_' + i
 	);
 }
+
+const TYPED = /** @type {Record<number, any>} */ ({
+	5120: Int8Array,
+	5121: Uint8Array,
+	5122: Int16Array,
+	5123: Uint16Array,
+	5125: Uint32Array,
+	5126: Float32Array
+});
+
+/**
+ * An accessor's data as a fresh typed array (strided views de-interleaved; normalized ints are
+ * returned as stored). @param {GlbDoc} doc @param {number} index
+ */
+export function readAccessor(doc, index) {
+	const acc = doc.json.accessors[index];
+	const n = COMPONENTS[/** @type {'SCALAR'} */ (acc.type)];
+	const Typed = TYPED[acc.componentType];
+	const out = new Typed(acc.count * n);
+	if (acc.bufferView === undefined) return out; // all zeros (sparse not supported here)
+	const view = doc.json.bufferViews[acc.bufferView];
+	const base = (view.byteOffset ?? 0) + (acc.byteOffset ?? 0);
+	const size = Typed.BYTES_PER_ELEMENT;
+	const stride = view.byteStride || n * size;
+	const dv = new DataView(doc.bin.buffer, doc.bin.byteOffset, doc.bin.byteLength);
+	const get = /** @type {Record<number, (o: number) => number>} */ ({
+		5120: (o) => dv.getInt8(o),
+		5121: (o) => dv.getUint8(o),
+		5122: (o) => dv.getInt16(o, true),
+		5123: (o) => dv.getUint16(o, true),
+		5125: (o) => dv.getUint32(o, true),
+		5126: (o) => dv.getFloat32(o, true)
+	})[acc.componentType];
+	for (let i = 0; i < acc.count; i++)
+		for (let c = 0; c < n; c++) out[i * n + c] = get(base + i * stride + c * size);
+	return out;
+}
+
+/**
+ * Append an accessor of any component type (5121 uint8, 5123 uint16, 5125 uint32, 5126 float).
+ * @param {GlbDoc} doc @param {Uint8Array | Uint16Array | Uint32Array | Float32Array} data
+ * @param {'SCALAR'|'VEC2'|'VEC3'|'VEC4'|'MAT4'} type @returns {number}
+ */
+export function appendAccessor(doc, data, type) {
+	if (data instanceof Float32Array) return appendFloatAccessor(doc, data, type);
+	const json = doc.json;
+	const pad = (4 - (doc.bin.byteLength % 4)) % 4;
+	const offset = doc.bin.byteLength + pad;
+	const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+	const next = new Uint8Array(offset + bytes.byteLength);
+	next.set(doc.bin, 0);
+	next.set(bytes, offset);
+	doc.bin = next;
+	json.buffers = json.buffers?.length ? json.buffers : [{ byteLength: 0 }];
+	json.bufferViews = json.bufferViews ?? [];
+	json.accessors = json.accessors ?? [];
+	json.bufferViews.push({ buffer: 0, byteOffset: offset, byteLength: bytes.byteLength });
+	json.accessors.push({
+		bufferView: json.bufferViews.length - 1,
+		componentType: data instanceof Uint8Array ? 5121 : data instanceof Uint16Array ? 5123 : 5125,
+		count: data.length / COMPONENTS[type],
+		type
+	});
+	return json.accessors.length - 1;
+}

@@ -209,7 +209,8 @@ function rootDataFields(root) {
 function applyRootData(root, data) {
 	if (data.humanoid && typeof data.humanoid === 'object') root.userData.humanoid = data.humanoid;
 	if (Array.isArray(data.provenance)) root.userData.provenance = data.provenance;
-	if (data.vrmExpressions && typeof data.vrmExpressions === 'object') root.userData.vrmExpressions = data.vrmExpressions;
+	if (data.vrmExpressions && typeof data.vrmExpressions === 'object')
+		root.userData.vrmExpressions = data.vrmExpressions;
 }
 
 /** GLTFLoader with draco + meshopt decoders wired — 34 R7: the app's one (gltfLoader.js) */
@@ -226,7 +227,8 @@ async function parseAnimatedBytes(bytes, kind) {
 	// 57 M4: a VRM parses through three-vrm (a lazy chunk, loaded only for a scene that has one)
 	if (kind === 'vrm') {
 		const { parseVrmBytes } = await import('./vrm/vrmRuntime.js');
-		const { root, animations } = await parseVrmBytes(bytes);
+		const { root, animations, gltf } = await parseVrmBytes(bytes);
+		stampGltfPrimitives(gltf);
 		return { root, animations };
 	}
 	if (kind === 'fbx') {
@@ -236,6 +238,7 @@ async function parseAnimatedBytes(bytes, kind) {
 	// 46: KTX2-aware, scene-safe (a KTX2 texture becomes an ordinary one + its twin)
 	/** @type {any} */
 	const gltf = await parseGltfSceneSafe(bytes);
+	stampGltfPrimitives(gltf);
 	return { root: gltf.scene, animations: gltf.animations ?? [] };
 }
 
@@ -243,6 +246,21 @@ async function parseAnimatedBytes(bytes, kind) {
  * posed live one) @param {ArrayBuffer} bytes @param {'gltf'|'fbx'|'vrm'} [kind] */
 export function parseImportBytes(bytes, kind) {
 	return parseAnimatedBytes(bytes, kind);
+}
+
+/**
+ * 57 M6: which glTF mesh + primitive each skinned mesh came from (a weight edit writes back into
+ * THAT primitive of the file). Local to the parse; never replicated.
+ * @param {any} gltf
+ */
+export function stampGltfPrimitives(gltf) {
+	const assoc = gltf?.parser?.associations;
+	if (!assoc) return;
+	gltf.scene.traverse((/** @type {any} */ o) => {
+		const a = assoc.get(o);
+		if (o.isMesh && a && a.meshes !== undefined && a.primitives !== undefined)
+			o.userData.gltfPrimitive = [a.meshes, a.primitives];
+	});
 }
 
 /** @param {string} uuid */
@@ -296,7 +314,14 @@ export function isVrmImport(uuid) {
 
 /** a VRM's runtime facts for the suites (null = the runtime never loaded) @param {string} uuid */
 export function vrmDebug(uuid) {
-	return vrmMod ? { vrm: vrmMod.isVrm(uuid), joints: vrmMod.springJointCount(uuid), expressions: vrmMod.expressionNames(uuid), value: (/** @type {string} */ n) => vrmMod.expressionValue(uuid, n) } : null;
+	return vrmMod
+		? {
+				vrm: vrmMod.isVrm(uuid),
+				joints: vrmMod.springJointCount(uuid),
+				expressions: vrmMod.expressionNames(uuid),
+				value: (/** @type {string} */ n) => vrmMod.expressionValue(uuid, n)
+			}
+		: null;
 }
 
 /** the expressions a VRM offers ([] for anything else) @param {string} uuid @returns {string[]} */
@@ -374,7 +399,9 @@ export function registerAnimatedImport(root, animations, bytes, kind = 'gltf') {
 	// 57 M2: a humanoid config (clips applied from another rig) is rebuilt on THIS peer; the code
 	// for it loads only for a model that has one
 	if (root.userData?.humanoid?.clips?.length)
-		void vrmReady.then(() => import('./humanoid/humanoidRig.js')).then((m) => m.rebuildHumanoidClips(root.uuid));
+		void vrmReady
+			.then(() => import('./humanoid/humanoidRig.js'))
+			.then((m) => m.rebuildHumanoidClips(root.uuid));
 	for (const fn of registeredListeners) {
 		try {
 			fn(root.uuid);
@@ -460,7 +487,8 @@ export function setAnimationState(uuid, next, replicate = true) {
 	// or the Inspector is a LOCAL PREVIEW — never sent, never saved, back to rest at the end
 	// (the user's rule: previewing a door in Edit must not leave it open in the file)
 	if (behaviors.has(uuid)) {
-		if (replicate && (next.playing || next.clip)) behaviorHooks.preview?.(uuid, next.clip ?? entry.clip);
+		if (replicate && (next.playing || next.clip))
+			behaviorHooks.preview?.(uuid, next.clip ?? entry.clip);
 		return;
 	}
 	const state = { ...entry, ...next };
@@ -497,7 +525,14 @@ export function setAnimationState(uuid, next, replicate = true) {
 export async function applyObjectFile(data) {
 	const group = get(objectsGroup);
 	if (!group) return;
-	const held = group.getObjectByProperty('uuid', data.uuid);
+	let held = group.getObjectByProperty('uuid', data.uuid);
+	// 57 M6: a rig fix REPLACES the bytes — drop the held tree and parse the new file in its place
+	// (its transform, config and clip state ride the message like any arrival)
+	if (held && data.replace) {
+		held.parent?.remove(held);
+		dropAnimatedImport(data.uuid);
+		held = null;
+	}
 	if (held) {
 		// R22 round 32 — AN ARRIVAL HEAL, and deliberately NOT a re-parse. A rig's
 		// geometry is not scene-editable (it travels as its original file bytes precisely
@@ -509,17 +544,20 @@ export async function applyObjectFile(data) {
 		if (data.name) held.name = data.name;
 		if (data.lod && typeof data.lod === 'object') held.userData.lod = data.lod;
 		applyRootData(held, data);
-		if (data.humanoid) void import('./humanoid/humanoidRig.js').then((m) => m.rebuildHumanoidClips(data.uuid));
+		if (data.humanoid)
+			void import('./humanoid/humanoidRig.js').then((m) => m.rebuildHumanoidClips(data.uuid));
 		if (data.pos) held.position.fromArray(data.pos);
 		if (data.rot) held.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
 		if (data.scale) held.scale.fromArray(data.scale);
 		pokeScene();
-		if (data.behaviorState && behaviors.has(data.uuid)) behaviorHooks.apply?.(data.uuid, data.behaviorState);
+		if (data.behaviorState && behaviors.has(data.uuid))
+			behaviorHooks.apply?.(data.uuid, data.behaviorState);
 		else if (data.anim) setAnimationState(data.uuid, data.anim, false);
 		return;
 	}
 	try {
-		const bytes = data.buffer instanceof ArrayBuffer ? data.buffer : data.buffer?.buffer ?? data.buffer;
+		const bytes =
+			data.buffer instanceof ArrayBuffer ? data.buffer : (data.buffer?.buffer ?? data.buffer);
 		// absent kind = 'gltf' (every pre-17-D2 sender)
 		const { root, animations } = await parseAnimatedBytes(bytes, data.kind);
 		// 36 F20: a scene load restoring this rig was superseded while it parsed
@@ -540,7 +578,12 @@ export async function applyObjectFile(data) {
 		if (data.scale) root.scale.fromArray(data.scale);
 		group.add(root);
 		pokeScene();
-		registerAnimatedImport(root, animations, bytes, data.kind === 'fbx' ? 'fbx' : data.kind === 'vrm' ? 'vrm' : 'gltf');
+		registerAnimatedImport(
+			root,
+			animations,
+			bytes,
+			data.kind === 'fbx' ? 'fbx' : data.kind === 'vrm' ? 'vrm' : 'gltf'
+		);
 		if (behaviors.has(data.uuid)) {
 			if (data.behaviorState) behaviorHooks.apply?.(data.uuid, data.behaviorState);
 		} else if (data.anim) setAnimationState(data.uuid, data.anim, false);
@@ -553,14 +596,16 @@ export async function applyObjectFile(data) {
 /**
  * Broadcast one animated root to a connection (or everyone)
  * @param {any} conn @param {any} root
- * @param {{override?: boolean}} [opts] R22 round 32 — an ARRIVAL HEAL (see sendObject);
- *   absent for every other caller, and then the message is byte-identical to before.
+ * @param {{override?: boolean, replace?: boolean}} [opts] R22 round 32 — an ARRIVAL HEAL (see sendObject);
+ *   absent for every other caller, and then the message is byte-identical to before. 57 M6
+ *   `replace`: new bytes for a model the receiver already holds (a rig fix).
  */
 export function sendAnimatedImport(conn, root, opts = {}) {
 	const state = get(animatedObjects)[root.uuid];
 	conn.send({
 		type: 'objectfile',
 		...(opts.override ? { override: true } : {}),
+		...(opts.replace ? { replace: true } : {}),
 		uuid: root.uuid,
 		name: root.name,
 		kind: animatedImportKind(root.uuid),
@@ -668,7 +713,9 @@ export function animatedImportsSnapshot(group) {
 /** the reference an animated pack piece saves as, or null @param {any} root */
 function animRefOf(root) {
 	const ref = root?.userData?.animRef;
-	return ref && typeof ref.path === 'string' && ref.path ? { pack: String(ref.pack ?? ''), item: String(ref.item ?? ''), path: ref.path } : null;
+	return ref && typeof ref.path === 'string' && ref.path
+		? { pack: String(ref.pack ?? ''), item: String(ref.item ?? ''), path: ref.path }
+		: null;
 }
 
 /** url -> the file's bytes (a failure is forgotten so a retry can win) @type {Map<string, Promise<ArrayBuffer>>} */
@@ -724,7 +771,11 @@ export async function animatedImportsRestore(entries, replicate = true, live = (
 				} catch (error) {
 					if (!refFailures.has(entry.animRef.path)) {
 						refFailures.add(entry.animRef.path);
-						showToast('Could not load "' + (entry.animRef.item || entry.name || 'a pack piece') + '" — its pack is unreachable.');
+						showToast(
+							'Could not load "' +
+								(entry.animRef.item || entry.name || 'a pack piece') +
+								'" — its pack is unreachable.'
+						);
 					}
 					throw error;
 				}
@@ -843,3 +894,60 @@ export function recordAnimatedImport(root) {
 		after: { present: true }
 	});
 }
+
+// ---- 57 M6: a rig fix REPLACES the model's bytes ----------------------------------------
+// A rig edit (a bone moved / added / deleted / renamed, new weights) rewrites the file, so the
+// file is what changes: here and on every peer the old tree is dropped and the new bytes parsed
+// at the same uuid, transform, config and clip state. Sent ONCE per operation (a brush stroke is
+// one operation) and undoable — the history entry holds both files.
+
+/**
+ * @param {string} uuid @param {ArrayBuffer} bytes the new file
+ * @param {{history?: boolean, label?: string}} [opts]
+ */
+export async function replaceAnimatedBytes(uuid, bytes, opts = {}) {
+	const group = get(objectsGroup);
+	const old = group?.getObjectByProperty('uuid', uuid);
+	const before = fileBytes.get(uuid);
+	if (!old || !before) return false;
+	const kind = animatedImportKind(uuid);
+	const state = get(animatedObjects)[uuid];
+	const data = {
+		uuid,
+		name: old.name,
+		kind,
+		buffer: bytes,
+		pos: old.position.toArray(),
+		rot: [old.rotation.x, old.rotation.y, old.rotation.z],
+		scale: old.scale.toArray(),
+		anim: state ? { clip: state.clip, playing: state.playing, speed: state.speed } : null,
+		...behaviorFields(uuid),
+		...rootDataFields(old)
+	};
+	old.parent?.remove(old);
+	dropAnimatedImport(uuid);
+	await applyObjectFile(data);
+	const root = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!root) return false;
+	/** @type {any} */
+	const peer = get(peers);
+	if (peer) sendAnimatedImport(peer, root, { replace: true });
+	if (opts.history !== false)
+		recordEntry({
+			kind: 'rigbytes',
+			uuid,
+			label: opts.label ?? 'Rig edit',
+			before: { bytes: before },
+			after: { bytes }
+		});
+	return true;
+}
+
+registerHistoryKind('rigbytes', (entry, state) => {
+	if (!get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid)) {
+		showToast('Cannot undo/redo: the object no longer exists');
+		return false;
+	}
+	void replaceAnimatedBytes(entry.uuid, state.bytes, { history: false });
+	return true;
+});

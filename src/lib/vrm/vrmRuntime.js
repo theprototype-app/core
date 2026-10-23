@@ -29,7 +29,7 @@ let last = 0;
 
 /**
  * Parse VRM bytes. Resolves the same shape animatedImports' parser does, plus the VRM.
- * @param {ArrayBuffer} bytes @returns {Promise<{root: any, animations: any[], vrm: any}>}
+ * @param {ArrayBuffer} bytes @returns {Promise<{root: any, animations: any[], vrm: any, gltf: any}>}
  */
 export async function parseVrmBytes(bytes) {
 	const loader = createGltfLoader();
@@ -44,7 +44,7 @@ export async function parseVrmBytes(bytes) {
 		root.userData.vrmLicence = licenceFromVrmMeta(vrm.meta);
 		root.userData.vrmMeta = metaSummary(vrm.meta);
 	}
-	return { root, animations: gltf.animations ?? [], vrm };
+	return { root, animations: gltf.animations ?? [], vrm, gltf };
 }
 
 /**

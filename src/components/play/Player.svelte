@@ -7,6 +7,7 @@
     import CharacterStudio from './CharacterStudio.svelte'
     import { playerCam, peerHands, worldRig, peerHandStyle } from '../../stores/sceneStore'
     import { userdata, peers, username } from '../../stores/appStore'
+    import { hiddenPeers } from '$lib/peerHide' // 55 A9: a peer you hid is not drawn here
     // P2b: a peer standing in ANOTHER scene is looking at a different world, so their
     // avatar and hands have no business floating in this one. Same evidence rule as
     // the Watch gate: an unknown or unnamed scene on either side is not evidence.
@@ -117,7 +118,7 @@
          what an unnamed peer resolves to (hostIsMe -> our row), so the pure predicate would
          seat the whole session in our private world; the map cannot see our privacy
          (`privacySplit`'s rule), so the caller states it — the broadcast gate's `if (secret)`. -->
-    {#if user[0] != $peers.peer.id && !$currentLevel?.private && !elsewhereThan($peerScenes, $currentLevel?.name ?? '', user[0], $sessionHost)}
+    {#if user[0] != $peers.peer.id && !$hiddenPeers.includes(user[0]) && !$currentLevel?.private && !elsewhereThan($peerScenes, $currentLevel?.name ?? '', user[0], $sessionHost)}
     <!-- {console.log(user)} -->
       {@const colocated = $colocatedPeers.has(user[0])}
       {@const agent = kindOfRow(user) === 'agent'}

@@ -187,21 +187,23 @@ export function approvalRemaining(startedAt) {
  * Absent means the old behaviour on both sides: an incoming conn from a peer we are
  * waiting on is an approval.
  */
-export const JOIN_RESULTS = /** @type {const} */ (['approved', 'denied', 'full']);
+export const JOIN_RESULTS = /** @type {const} */ (['approved', 'denied', 'full', 'removed']);
+// 55 A9: 'removed' — the joiner was removed from this session and blocked from it (a re-dial
+// of a blocked peer is answered with it by whichever peer it reaches).
 
-/** @param {any} v @returns {v is 'denied' | 'full'} */
+/** @param {any} v @returns {v is 'denied' | 'full' | 'removed'} */
 export function isRefusal(v) {
-	return v === 'denied' || v === 'full';
+	return v === 'denied' || v === 'full' || v === 'removed';
 }
 
 /**
  * The last refusal this joiner received, for the Connect pill: `{peerId, result, at}`, or
  * null. Cleared by the next dial, by dismissing it, and by leaving the session.
- * @type {import('svelte/store').Writable<{peerId: string, result: 'denied' | 'full', at: number} | null>}
+ * @type {import('svelte/store').Writable<{peerId: string, result: 'denied' | 'full' | 'removed', at: number} | null>}
  */
 export const joinRefusal = writable(null);
 
-/** @param {string} peerId @param {'denied' | 'full'} result */
+/** @param {string} peerId @param {'denied' | 'full' | 'removed'} result */
 export function noteJoinRefusal(peerId, result) {
 	joinRefusal.set({ peerId, result, at: Date.now() });
 }

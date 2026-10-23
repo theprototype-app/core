@@ -17,6 +17,7 @@ import { perfContext } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
 import { vrDollhouseOpen, vrSculptActive } from './vr/worldStores.js'; // 37: a leaf
 import { sculptOp } from './terrainSculpt';
 import { primitivesCatalog } from './primitivesCatalog';
+import { startPeopleRing } from './vr/peopleRing.js'; // 55 A9
 
 // D4 (roadmap 13): selection-set helpers for the Edit ring — counted labels
 // act on the whole SET (parity with the desktop object menu, U-2)
@@ -607,6 +608,9 @@ function registerBuiltins() {
 }
 
 registerBuiltins();
+// 55 A9: Tools ▸ People — the peer menu in a headset. The registry is HANDED IN: peopleRing
+// importing this module would close a cycle.
+startPeopleRing({ register: registerVRMenuEntry, unregister: unregisterVRMenuEntry, pushRing, popRing });
 
 // closing the menu (any path) resets navigation to the base ring
 vrMenuOpen.subscribe((open) => {

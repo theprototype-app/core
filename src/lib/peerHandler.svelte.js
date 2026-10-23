@@ -28,6 +28,8 @@ import { applyJoinRefusal } from '$lib/peerApproval';
 // 55 A7/A8: the agent action log + where an agent looked (store-only)
 import { applyAgentLog, applyAgentUndo, applyAgentView, dropAgentView, sendAgentLogTo } from '$lib/agentLog';
 import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests } from '$lib/inviteStore';
+import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
+import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
 import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
@@ -111,7 +113,7 @@ import { applyLightTarget } from '$lib/lightParams';
 import { applyObjectFile } from '$lib/animatedImports';
 import { applyRemoteBehavior } from '$lib/packBehavior';
 import { sendArchBehaviorStates } from '$lib/arch/archParts.js';
-import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
+import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene, isVRMode } from '../stores/sceneStore';
 import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast, pushNotification, chatHistory, mergeChatHistory } from '../stores/appStore';
 // 41 G21: the signaling link's ups and downs are a STATE on the Connect pill's dot, never toasts
 import { GIVE_UP_ATTEMPTS } from '$lib/connectionStatus';
@@ -679,6 +681,16 @@ export class PeerConnection {
 				return;
 			}
 
+			// 55 A9: a peer REMOVED AND BLOCKED from this session. Refused before anything
+			// below can whitelist it (an auth provider's auto-admit included), and told so when
+			// its dial can hear a join result — "You were removed from this session".
+			if (isBlocked(conn.peer)) {
+				log('info', 'net', 'blocked peer refused', { peer: conn.peer });
+				if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'removed');
+				try { conn.close(); } catch {}
+				return;
+			}
+
 			// Update approval status on expected connections
 			let waiting = get(waitingForApproval);
 			waiting.forEach(element => {
@@ -890,6 +902,9 @@ export class PeerConnection {
 				// The get* REQUESTS are not in ROOM_SCOPED, deliberately — they are the gate's
 				// own queue mechanism, and dropping them would strand both sides in silence.
 				if (data && ROOM_SCOPED.has(data.type) && gateHolds(conn.peer)) return;
+				// 55 A9: who did what, for the peer menu's "Show their recent changes" (LOCAL,
+				// past every gate — only what was actually applied here is recorded)
+				notePeerActivity(conn.peer, data);
 				// console.log(data);
 				if(data.type == 'cloud') {
 					// open-core (M1): the cloud plugin's own replicated channel
@@ -924,6 +939,9 @@ export class PeerConnection {
 						// the whitelist, written at dial time, so it counts people who were
 						// invited and never arrived.
 						if (roomIsFull(this)) return;
+						// 55 A9: never fill the mesh back in with a peer just removed / blocked
+						// (a `hosts` list from a peer that had not heard the kick yet)
+						if (isHeldOut(id)) return;
 						// mesh fill: connect, but DON'T request full state — the scene
 						// is one shared state and we already pull it from the peer we
 						// joined. Requesting it from everyone made a joiner download
@@ -1054,6 +1072,12 @@ export class PeerConnection {
 					// the room gate every full-state reply here takes: a peer standing in
 					// another scene must not be handed this one's tempo
 					if (sameRoomOrUnknown(conn.peer)) sendTransport(data.sender);
+				} else if(data.type == 'kick') {
+					// 55 A9: remove (and block / allow back) a peer. The SENDER is checked
+					// receive-side (session host, or an admin under roles); every entitled
+					// receiver closes its own connection to that peer — see peerModeration.
+					const verdict = applyKick(data, conn.peer, this);
+					if (verdict === 'ignore') log('warn', 'net', 'kick ignored', { from: conn.peer, peer: data?.peer });
 				} else if(data.type == 'joinresult') {
 					// 25-F: the answer to our join request as a MESSAGE. A refusal normally
 					// arrives as dial metadata and never reaches here; this path is the same
@@ -1364,6 +1388,7 @@ export class PeerConnection {
 					else this.wireBatchPeers.delete(conn.peer);
 					checkModuleVersions(data.versions, conn.peer); // 55 T6: + who, for tpAgent.missingModules
 					checkPeerAppVersion(data.appVersion);
+					notePeerFacts(conn.peer, { appVersion: data.appVersion, device: data.dev }); // 55 A9: the profile card
 				} else if(data.type == 'getmodulestate') {
 					sendModuleStates(data.sender);
 					sendCameraPreviewState(); // 16-P5: ride the same late-joiner request
@@ -1606,12 +1631,15 @@ export class PeerConnection {
 		const hostsPrivate = amPrivate();
 		if (!hostsPrivate) conn.send({type: 'locked', lockeditems: locks})
 		conn.send({type: 'hosts', hosts: hosts})
-		conn.send({type: 'userdata', userdata: users})
+		conn.send({type: 'userdata', userdata: users.filter((/** @type {any} */ u) => !isHeldOut(u[0]))})
 		// 55 A8: the newest agent log lines, so a late joiner's AI window shows what was built
 		sendAgentLogTo(conn);
+		// 55 A9: a moderator hands its block list on, so a blocked re-dial is refused by
+		// whichever peer it reaches — including one that joined after the block
+		for (const k of blockReplay()) conn.send(k);
 		// V3: app version rides the modules handshake — old peers ignore the extras,
 		// old senders omit them (checkPeerAppVersion is silent on absence)
-		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1})
+		conn.send({type: 'modules', versions: moduleVersions(), appVersion: APP_VERSION, sha: COMMIT_SHA, wb: 1, dev: myDevice(get(isVRMode))}) // 55 A9: `dev` is additive
 		// 37 R15: the chat so far. Chat is MESH-WIDE (not a room's content), so this goes out
 		// whatever the connect decision / privacy hold below decides about the scene.
 		conn.send({type: 'getchat', sender: this.peer.id})
@@ -1721,8 +1749,9 @@ export class PeerConnection {
 	 * answer — delivered through signaling with the offer, so it arrives even where a data
 	 * channel could never open — never added to `connections`, never wired, closed by the
 	 * joiner at once and by us after REFUSAL_DIAL_MS whatever happens. Callers only send
-	 * this to a dial that advertised `jr` (see denyPeer). @param {string} peerId
-	 * @param {'denied' | 'full'} result @returns {boolean} whether a dial went out
+	 * this to a dial that advertised `jr` (see denyPeer). 55 A9: 'removed' answers a blocked
+	 * peer's re-dial. @param {string} peerId
+	 * @param {'denied' | 'full' | 'removed'} result @returns {boolean} whether a dial went out
 	 */
 	sendJoinResult(peerId, result) {
 		if (!isRefusal(result) || !this.peer?.open) return false;
@@ -1973,6 +2002,7 @@ export class PeerConnection {
 		dropPeerMaterialPresets(peerId);
 		dropPeerHandModel(peerId);
 		dropAgentView(peerId); // 55 A7
+		dropPeerFacts(peerId); // 55 A9
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
 		checkLocks();
 		peers.update((value) => value);
@@ -1993,10 +2023,13 @@ export class PeerConnection {
 		this.reconnecting.clear(); // pending retry timers see a cleared map and no-op
 		this.gracefulLeft.clear();
 		this.wantsStateFrom.clear();
-		for (const peerId of Object.keys(this.connections)) {
+		// 55 A9: ALSO every peer still counted open whose conn already closed — one inside its
+		// reconnect window (onConnClose deletes the conn and keeps it in `openedPeers` while the
+		// backoff runs). Leaving then used to keep them: the pill read "connected" to nobody.
+		for (const peerId of new Set([...Object.keys(this.connections), ...this.openedPeers])) {
 			const conn = this.connections[peerId];
 			delete this.connections[peerId];
-			try { conn.close(); } catch {}
+			try { conn?.close(); } catch {}
 			if (this.openedPeers.has(peerId)) {
 				this.openedPeers.delete(peerId);
 				handleDisconnected(peerId);
@@ -2021,6 +2054,7 @@ export class PeerConnection {
 		// claimed after you left — for the life of the page.
 		releaseMic();
 		resetSession();
+		resetModeration(); // 55 A9: a block list belongs to the session it was made in
 		checkLocks();
 		peers.update((value) => value);
 	}

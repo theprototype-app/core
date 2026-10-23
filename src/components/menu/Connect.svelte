@@ -62,7 +62,9 @@
 	const REFUSAL_CHIP_MS = 20000;
 	const refusalText = $derived(
 		$joinRefusal
-			? String($joinRefusal.peerId).slice(0, 6).toUpperCase() +
+			? $joinRefusal.result === 'removed'
+				? 'You were removed from this session' // 55 A9
+				: String($joinRefusal.peerId).slice(0, 6).toUpperCase() +
 					($joinRefusal.result === 'full' ? "'s session is full (" + HARD_PEER_CAP + ')' : ' declined')
 			: ''
 	);

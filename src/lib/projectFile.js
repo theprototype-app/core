@@ -58,6 +58,7 @@ import {
 	projectName
 } from './projectManifest';
 import { ensureScenesFolder, currentLevel } from './levels';
+import { sceneBytesForDoor as sceneBytesForDoorRaw } from './chat/tpchatDoor.js';
 import { safeStorage } from './safeStorage';
 
 /** V4's gating pattern with its own int: a NEWER format ASKS before importing, an
@@ -129,6 +130,39 @@ async function bytesOf(hash) {
 }
 
 /**
+ * 56 C10 (fork F5): a library `.tpscene` holds every chat; the .tp leaving the machine keeps only the
+ * "Include when publishing" ones (tpchatDoor). A file that changes gets a NEW hash — the caller maps the
+ * manifest onto it, or the file would name scene versions it does not carry (the dead-pointer rule).
+ * @param {Uint8Array} bytes @returns {Promise<{bytes: Uint8Array, hash: string | null, dropped: number}>}
+ */
+async function sceneBytesForDoor(bytes) {
+	const out = await sceneBytesForDoorRaw(bytes);
+	if (!out.changed) return { bytes, hash: null, dropped: 0 };
+	const exact = /** @type {ArrayBuffer} */ (out.bytes.buffer.slice(out.bytes.byteOffset, out.bytes.byteOffset + out.bytes.byteLength));
+	return { bytes: out.bytes, hash: await hashBytes(exact), dropped: out.dropped };
+}
+
+/** 56 C10: the manifest with every remapped scene hash replaced @param {any} manifest @param {Map<string, string>} remap */
+function remapManifestHashes(manifest, remap) {
+	if (!remap.size) return manifest;
+	const map = (/** @type {string} */ h) => remap.get(h) ?? h;
+	/** @type {Record<string, any>} */
+	const scenes = {};
+	for (const [name, entry] of Object.entries(manifest.scenes ?? {})) {
+		/** @type {any} */
+		const e = { ...entry, history: (entry.history ?? []).map(map) };
+		if (entry.pinned) e.pinned = entry.pinned.map(map);
+		if (entry.labels) e.labels = Object.fromEntries(Object.entries(entry.labels).map(([h, l]) => [map(h), l]));
+		scenes[name] = e;
+	}
+	/** @type {any} */
+	const out = { ...manifest, scenes };
+	if (Array.isArray(manifest.assets)) out.assets = manifest.assets.map(map);
+	if (Array.isArray(manifest.items)) out.items = manifest.items.map((/** @type {any} */ r) => (r?.hash && remap.has(r.hash) ? { ...r, hash: map(r.hash) } : r));
+	return out;
+}
+
+/**
  * EXPORT: the manifest plus every scene version this machine still KEEPS locally, plus
  * the assets the manifest tracks — one zip.
  *
@@ -163,11 +197,13 @@ async function bytesOf(hash) {
  * which every reader has handled since 21-G3, so trimming a history would throw away
  * pins and version names to solve a problem the format does not have.
  *
- * @param {{versions?: boolean, folderId?: string | null}} [opts] `versions` overrides
- *   the stored preference; `folderId` scopes the whole export to one folder's subtree
+ * @param {{versions?: boolean, folderId?: string | null, chats?: 'all' | 'published'}} [opts] `versions` overrides
+ *   the stored preference; `folderId` scopes the whole export to one folder's subtree; 56 C10 `chats`:
+ *   absent = an outward door (scene files drop chats without "Include when publishing"), 'all' = the
+ *   project's own save (a cloud room keeper)
  * @returns {Promise<{bytes: Uint8Array, scenes: number, assets: number, items: number,
  *   folder: string | null, skippedScenes: number, skippedAssets: number,
- *   omittedVersions: number, omittedScenes: number}>}
+ *   omittedVersions: number, omittedScenes: number, privateChats: number}>}
  */
 export async function exportProject(opts = {}) {
 	const { zipSync, strToU8 } = await import('fflate');
@@ -198,6 +234,11 @@ export async function exportProject(opts = {}) {
 	let omittedVersions = 0;
 
 	const seen = new Set();
+	// 56 C10 (fork F5): a .tp is an outward door unless the caller is the project's own save
+	const openDoor = opts.chats !== 'all';
+	/** @type {Map<string, string>} scene hash in the library -> hash of the file this zip carries */
+	const hashRemap = new Map();
+	let privateChats = 0;
 	for (const name of sceneNames) {
 		const keep = keepableHashes(name);
 		// the GATE: pointer-only when history is switched off. The pointer is what the
@@ -213,9 +254,16 @@ export async function exportProject(opts = {}) {
 				skippedScenes++;
 				continue;
 			}
-			const file = 'scenes/' + hash + '.tpscene';
-			files[file] = found.bytes;
-			scenes.push({ hash, name: found.item.name, file });
+			// 56 C10: the scene's private chats stay home (a changed file gets its own hash)
+			const door = openDoor ? await sceneBytesForDoor(found.bytes) : { bytes: found.bytes, hash: null, dropped: 0 };
+			if (door.hash) {
+				hashRemap.set(hash, door.hash);
+				privateChats += door.dropped;
+			}
+			const outHash = door.hash ?? hash;
+			const file = 'scenes/' + outHash + '.tpscene';
+			files[file] = door.bytes;
+			scenes.push({ hash: outHash, name: found.item.name, file });
 		}
 	}
 
@@ -253,14 +301,25 @@ export async function exportProject(opts = {}) {
 	const carried = {};
 	for (const s of scenes) carried[s.hash] = s.file;
 	for (const a of assets) carried[a.hash] = a.file;
+	// 56 C10: a scene file this zip rewrote is carried under its NEW hash; the library item still
+	// holds the old one
+	for (const [orig, next] of hashRemap) if (carried[next]) carried[orig] = carried[next];
 	for (const item of get(explorerItems)) {
 		if (!inScope(item.folderId)) continue;
 		let file = carried[item.hash];
+		let rowHash = hashRemap.get(item.hash) ?? item.hash;
 		if (!file) {
 			const found = await bytesOf(item.hash);
 			if (!found) continue; // an index row whose blob is gone — nothing to carry
-			file = 'items/' + item.hash + extOf(item);
-			files[file] = found.bytes;
+			// 56 C10: a scene item outside the manifest (a loose .tpscene) passes the same door
+			const door = openDoor && item.kind === 'scene' ? await sceneBytesForDoor(found.bytes) : { bytes: found.bytes, hash: null, dropped: 0 };
+			if (door.hash) {
+				hashRemap.set(item.hash, door.hash);
+				privateChats += door.dropped;
+				rowHash = door.hash;
+			}
+			file = 'items/' + rowHash + extOf(item);
+			files[file] = door.bytes;
 			carried[item.hash] = file;
 		}
 		// 24-C2: the RECORD id rides beside the hash (additive — an older reader ignores it).
@@ -269,7 +328,7 @@ export async function exportProject(opts = {}) {
 		// index inside `manifest` is remapped onto those records by this same id.
 		items.push({
 			id: item.id,
-			hash: item.hash,
+			hash: rowHash,
 			name: item.name,
 			kind: item.kind,
 			folderId: reparent(item.folderId),
@@ -313,11 +372,14 @@ export async function exportProject(opts = {}) {
 	// folder it lands in).
 	const claimed = scope ? sceneNames : Object.keys(manifest.scenes);
 	/** @type {any} */
-	const outManifest = {
-		...manifest,
-		...(scope ? { name: scope.name, assets: assetHashes } : {}),
-		scenes: Object.fromEntries(claimed.map((name) => [name, gateEntry(manifest.scenes[name])]))
-	};
+	const outManifest = remapManifestHashes(
+		{
+			...manifest,
+			...(scope ? { name: scope.name, assets: assetHashes } : {}),
+			scenes: Object.fromEntries(claimed.map((name) => [name, gateEntry(manifest.scenes[name])]))
+		},
+		hashRemap
+	);
 
 	files['project.json'] = strToU8(
 		JSON.stringify({
@@ -350,7 +412,8 @@ export async function exportProject(opts = {}) {
 		skippedScenes,
 		skippedAssets,
 		omittedVersions,
-		omittedScenes
+		omittedScenes,
+		privateChats
 	};
 }
 
@@ -625,6 +688,10 @@ export async function downloadProject(opts = {}) {
 			(result.omittedVersions
 				? ' — ' + plural(result.omittedVersions, 'older version') +
 					' left out (scene version history is off in Export settings)'
+				: '') +
+			// 56 C10: the fourth fact — chats are private unless switched to "Include when publishing"
+			(result.privateChats
+				? ' — ' + plural(result.privateChats, 'private AI chat') + ' left out'
 				: '')
 	);
 	return result;

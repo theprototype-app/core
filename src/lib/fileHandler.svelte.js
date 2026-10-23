@@ -780,7 +780,9 @@ function optimizeCheckNeeded(parsed, opts) {
  * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
  * @param {number[]=} position - world drop point (Explorer drag-out, 96)
  * @param {any[]=} extras - companion files picked/dropped alongside (.mtl + its textures)
- * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null, lod?: any, behavior?: any, quaternion?: number[] | null}} [opts]
+ * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null, lod?: any, behavior?: any, quaternion?: number[] | null, scale?: number[] | null, stamp?: any, admit?: 'load', onVerdict?: (verdict: any) => void}} [opts]
+ *   56 C9 (import_model): `scale` and `stamp` (userData merged onto the root, e.g. provenance) are set
+ *   BEFORE the add like `quaternion`; `admit: 'load'` skips the budget ASK and hands `onVerdict` the verdict.
  *   `quaternion` (39): the placed root's rotation — a drag-to-place drop turned with R / the wheel
  *   or aligned to a surface. Set BEFORE the add, so the create entry and the wire carry it.
  *   `behavior` (33 P2): the pack item's functional spec — a door, a lid, a fan
@@ -818,10 +820,21 @@ export async function importFile(file, name, ext, position, extras, opts = {}) {
 	// budget the verdict names, or an explicit plan). Phase 3 routes the dialog's own
 	// Reduce answer here. An animated rig is never reduced — it replicates as its original
 	// BYTES, and decimating the tree would leave peers reparsing the unreduced file.
+	// 56 C9: `admit: 'load'` = a caller with nobody at a dialog (an agent's import_model) — the
+	// budget verdict goes back to it as a WARNING instead of an ask
+	if (opts.admit === 'load') {
+		try {
+			opts.onVerdict?.(verdictFor(parsed.root));
+		} catch {
+			/* the warning is a courtesy */
+		}
+	}
 	const answer =
 		opts.reduce && !parsed.animated
 			? 'reduce'
-			: await admitModel(parsed.root, {
+			: opts.admit === 'load'
+				? 'load'
+				: await admitModel(parsed.root, {
 					name: label ?? file?.name,
 					// 26-F phase 3: ONE dialog — the reduction is a third way out of the same ask
 					extraChoices: parsed.animated ? undefined : (verdict) => reduceChoice(verdict, parsed.root),
@@ -840,6 +853,11 @@ export async function importFile(file, name, ext, position, extras, opts = {}) {
 		if (Array.isArray(opts.quaternion) && opts.quaternion.length === 4) {
 			parsed.root?.quaternion?.fromArray(opts.quaternion);
 			parsed.animated?.result?.scene?.quaternion?.fromArray(opts.quaternion);
+		}
+		// 56 C9: an agent import's scale + provenance ride the FIRST sync too (one replicated add)
+		for (const root of [parsed.root, parsed.animated?.result?.scene].filter(Boolean)) {
+			if (Array.isArray(opts.scale) && opts.scale.length === 3) root.scale?.fromArray(opts.scale);
+			if (opts.stamp && typeof opts.stamp === 'object') root.userData = { ...(root.userData ?? {}), ...opts.stamp };
 		}
 		// 30c: stamp the pack reference BEFORE addImported, which is what replicates it
 		if (opts.packRef && !parsed.animated && typeof file?.arrayBuffer === 'function')

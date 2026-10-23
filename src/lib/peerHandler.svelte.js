@@ -103,6 +103,8 @@ import { applyRemoteGameState, sendGameState, gameStatePayload } from '$lib/game
 import { applyRemoteSequence, applyRemoteSequenceDelete, applyRemoteSequences, sendSequences } from '$lib/sequenceSync';
 // 50 Y1/Y2: shared text in the Code tab (Yjs, loaded lazily with the editor)
 import { applyRemoteYText, applyRemoteYAwareness, answerYText } from '$lib/sharedText';
+// 56 C10/C8: the scene's AI chats (.tpchat) + the pictures kept from them (store-only leaf)
+import { applyRemoteTpchat, applyRemoteTpchatDelete, applyRemoteTpchats, applyRemoteChatRefs, sendTpchats } from '$lib/chat/tpchatStore.js';
 // 34 R2 (T3): the game kit's document + requests (kit/runtime.js; a leaf-side module)
 import { receiveKitMessage, kitPayload } from '$lib/kit/runtime.js';
 import { kitEntityPayloads } from '$lib/kit/entityApp.js'; // 34 R2 (kit-entities)
@@ -1142,6 +1144,17 @@ export class PeerConnection {
 				} else if(data.type == 'getytext') {
 					// answered across rooms too, with `none`, so the asker stops waiting at once
 					answerYText(data, conn.peer, sameRoomOrUnknown(conn.peer));
+				} else if(data.type == 'tpchat') {
+					// 56 C10: one chat, whole-doc latest-wins on changedAt (one writer per session)
+					applyRemoteTpchat(data);
+				} else if(data.type == 'tpchatdel') {
+					applyRemoteTpchatDelete(data);
+				} else if(data.type == 'tpchats') {
+					applyRemoteTpchats(data);
+				} else if(data.type == 'gettpchats') {
+					if (sameRoomOrUnknown(conn.peer)) sendTpchats(data.sender);
+				} else if(data.type == 'tprefs') {
+					applyRemoteChatRefs(data.refs); // 56 C8: the scene's kept chat pictures
 				} else if(data.type == 'hudvalue') {
 					// 21-D4: a SHARED input's value - the one runtime HUD message, because what a
 					// player dragged is the only HUD state a peer cannot derive for itself.
@@ -1605,6 +1618,7 @@ export class PeerConnection {
 		conn.send({type: 'gethuds', sender: this.peer.id})
 		conn.send({type: 'gethudvalues', sender: this.peer.id})
 		conn.send({type: 'getseqs', sender: this.peer.id}) // 48 S2
+		conn.send({type: 'gettpchats', sender: this.peer.id}) // 56 C10
 	}
 
 	// Send the initial handshake (locks, known hosts, whitelist, object/node sync requests).

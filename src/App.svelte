@@ -302,6 +302,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startSnapping()
     startAutosave()
     startSceneAssets()
+    void import('$lib/chat/tpchatStore.js').then((m) => m.startTpchats()) // 56 C10: Scene ▸ chats / references
     startCodeWorkspace() // 36-code: scriptEditorOpen -> a workspace tab, file follow
     startNetworkQuality()
     startAudioDevices() // 23-A3: the device reconcile off objectsGroup

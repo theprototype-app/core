@@ -76,6 +76,9 @@ import { disabledModules } from './moduleSDK';
 import { findNodeSpec } from './nodeCatalog';
 import { hudDocsSnapshot, hudDocsRestore } from './hudDocs';
 import { sequencesSnapshot, sequencesRestore } from './sequences'; // 48 S2
+// 56 C10: the scene's chats (.tpchat) and kept chat pictures — scene data, private at every outward door
+import { chatsSnapshot, chatRefsSnapshot, chatsRestore } from './chat/tpchatStore.js';
+import { payloadForDoor } from './chat/tpchatCore.js';
 import { gameStateSnapshot, gameStateRestore } from './gameState';
 // 31 K3: which GAME a scene is decides whose per-game settings apply (a leaf)
 import { noteSceneFileName } from './gameSettings';
@@ -268,6 +271,8 @@ export function buildSessionPayload(name, opts = {}) {
 	const track = musicSnapshot();
 	const clock = transportSnapshot();
 	const seqs = sequencesSnapshot(); // 48 S2
+	const talk = chatsSnapshot('all'); // 56 C10
+	const kept = chatRefsSnapshot(); // 56 C8
 	const routing = patchSnapshot();
 	const mods = moduleRequirements();
 	const views = flowViewsSnapshot((id) => id === SCENE_GRAPH || !!group?.getObjectByProperty?.('uuid', id));
@@ -340,6 +345,12 @@ export function buildSessionPayload(name, opts = {}) {
 			// 48 S2: the Timeline's sequences — OMITTED when there are none, so a scene
 			// without one is byte-identical to a 1.38 save (formatMinor says what it may hold)
 			...(seqs ? { sequences: seqs } : {}),
+			// 56 C10/C8: the conversations and the pictures kept from them — OMITTED when there are
+			// none, so a scene without a chat is byte-identical. EVERY outward door (a download, Publish,
+			// export as a game, a .tp) drops the chats without "Include when publishing": see
+			// exportSessionZip's `chats` option and tpchatCore.payloadForDoor.
+			...(talk ? { chats: talk } : {}),
+			...(kept ? { chatRefs: kept } : {}),
 			camera: camera
 				? { position: camera.position.toArray(), target: controls?.target?.toArray() ?? [0, 0, 0] }
 				: null,
@@ -870,7 +881,8 @@ function noteBundledVersions(entries) {
  * 46 P3: `preset: 'quest'` applies the "For Quest / web" preset (sceneOptimize.js) and leaves
  * its numbers on `opts.report`; `onProgress` follows the texture work.
  * @param {any} payload
- * @param {{assets?: boolean, packs?: boolean, flow?: boolean, preset?: 'full' | 'quest', onProgress?: (p: any) => void, report?: any}} [opts]
+ * @param {{assets?: boolean, packs?: boolean, flow?: boolean, preset?: 'full' | 'quest', onProgress?: (p: any) => void, report?: any, chats?: 'all' | 'published'}} [opts]
+ *   56 C10: `chats: 'all'` = the scene's own save; absent = an outward door (private chats left out)
  */
 export async function exportSessionZip(payload, opts = { assets: true, packs: false, flow: true }) {
 	const { zipSync, strToU8 } = await import('fflate');
@@ -902,6 +914,10 @@ export async function exportSessionZip(payload, opts = { assets: true, packs: fa
 		payload = { ...payload };
 		delete payload.chat;
 	}
+	// 56 C10 (fork F5): the scene's AI chats are PRIVATE at every outward door — a download, Publish,
+	// export as a game. Only the scene's OWN saves (its library file, a cloud room save) pass
+	// `chats: 'all'`; anything else keeps just the chats switched to "Include when publishing".
+	payload = payloadForDoor(payload, opts.chats === 'all' ? 'all' : 'published');
 	/**
 	 * R22 round 12 — THE LIBRARY HAS TO TRAVEL AS FILES.
 	 *
@@ -1657,6 +1673,8 @@ async function applySessionNow(payload, opts, job) {
 	hudDocsRestore(payload.hud ?? null, true, replicate);
 	// 48 S2: and its sequences — absent (every pre-1.39 scene) means none
 	sequencesRestore(payload.sequences ?? null, true, replicate);
+	// 56 C10/C8: and its chats — absent (every pre-56 scene) means none
+	chatsRestore(payload.chats ?? null, payload.chatRefs ?? null, true, replicate);
 	// and the game with it: loading a game scene into a live room must bring its state.
 	// 21-F4 fork 3: LEVEL TRAVEL passes game:false — state/round/vars CARRY across the
 	// hop (campaign semantics), so the traveller re-asserts the live state after this.

@@ -175,6 +175,11 @@ export const VALIDATORS = {
 	ytext: (d) => isTextKey(d.key) && (d.none === true || isBytes(d.u)),
 	ytextaw: (d) => isTextKey(d.key) && isBytes(d.a),
 	getytext: (d) => isTextKey(d.key) && (d.sv === undefined || isBytes(d.sv)),
+	// 56 C10/C8: a chat document (normalized again on apply) / its delete / the full state / kept pictures
+	tpchat: (d) => !!d.doc && typeof d.doc === 'object' && !Array.isArray(d.doc) && typeof d.doc.id === 'string' && d.doc.id.length <= 64 && (d.doc.messages === undefined || (isArray(d.doc.messages) && d.doc.messages.length <= 5000)),
+	tpchatdel: (d) => typeof d.id === 'string' && d.id.length <= 64,
+	tpchats: (d) => isArray(d.chats) && d.chats.length <= 500,
+	tprefs: (d) => !!d.refs && typeof d.refs === 'object' && isArray(d.refs.list) && d.refs.list.length <= 500,
 	userdata: (d) => isArray(d.userdata),
 	locked: (d) => isArray(d.lockeditems),
 	lock: (d) => isUuid(d.uuid) && (d.uuids === undefined || isArray(d.uuids)),

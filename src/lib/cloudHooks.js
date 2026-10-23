@@ -71,7 +71,9 @@ const ALWAYS_ALLOWED = new Set([
 	// 50 Y1: "send me the shared buffer of this code tab" — the getnodes rule: a REQUEST is
 	// floor (a just-approved viewer must still see the text everyone is typing), its `ytext`
 	// reply and every update stay gateable, which is what keeps a viewer read-only.
-	'getytext'
+	'getytext',
+	// 56 C10: the scene chats REQUEST (its `tpchats` reply stays gateable)
+	'gettpchats'
 ]);
 
 /** @type {((peerId: string, msgType: string) => boolean) | null} */

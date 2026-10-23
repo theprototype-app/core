@@ -9,6 +9,7 @@
 import { get } from 'svelte/store';
 import { createAgentCore, missingModulesFrom } from './agentCore.js';
 import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall, MESH_TOOL } from '$lib/ai/tools.js';
+import { IMPORT_MODEL_TOOL } from '$lib/ai/importModel.js'; // 56 C9
 import { physicsToolsEnabled, forcePhysicsTools } from '$lib/ai/flowTools.js';
 import { meshGenReady } from '$lib/ai/meshProviders.js';
 import { behaviourHost } from '$lib/ai/aiExtensions.js';
@@ -94,6 +95,7 @@ function hostMeshReady() {
 function agentTools() {
 	const list = getAiTools();
 	if (!meshGenReady() && hostMeshReady() && !list.some((t) => t?.function?.name === 'generate_mesh')) list.push(MESH_TOOL);
+	list.push(IMPORT_MODEL_TOOL); // 56 C9: a GLB built outside the app (the bridge maps a local `path` to `data`)
 	return list;
 }
 

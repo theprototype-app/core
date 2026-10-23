@@ -59,7 +59,9 @@ const bubbles = (peer) =>
 
 h.run(async () => {
 	const browser = await h.launch();
-	const A = await h.setupPage(browser, 'A');
+	// the window parked under the header: at its default spot three peers' avatar stack covers its title-bar icons
+	const parked = { 'win:aiAssistant': JSON.stringify({ left: 380, top: 140 }) };
+	const A = await h.setupPage(browser, 'A', { storage: parked });
 	const B = await h.setupPage(browser, 'B', { storage: { agentApi: '1' } });
 	await inPage(B, "s.username?.set?.('Claude')");
 	await h.connect(B, A);
@@ -134,7 +136,7 @@ h.run(async () => {
 	h.check((await A.page.locator('#ai-agent-stop').count()) === 0, 'and the composer is back to Send');
 
 	console.log('\n=== 5. a late joiner, a viewer ===');
-	const C = await h.setupPageQuiet(browser, 'C', [A, B]);
+	const C = await h.setupPageQuiet(browser, 'C', [A, B], { storage: parked });
 	await h.connect(C, A);
 	const cChat = await until(() => read(C, 'agentChat.agentChatState'), (st) => (st?.chats?.[chatId]?.messages?.length ?? 0) >= 6, 20000);
 	h.check((cChat?.chats?.[chatId]?.messages?.length ?? 0) >= 6, `the late joiner has the thread from the backlog (${cChat?.chats?.[chatId]?.messages?.length ?? 0} messages)`);
@@ -162,7 +164,14 @@ h.run(async () => {
 	await A.page.locator('#peers-popover').waitFor({ timeout: 8000 });
 	await A.page.locator(`#peers-popover .peers-row[data-peer-id="${B.id}"]`).first().click({ button: 'right' });
 	const muteRow = A.page.locator('[data-testid="peer-menu-agent-mute"]');
-	await muteRow.waitFor({ timeout: 5000 });
+	await muteRow.waitFor({ timeout: 5000 }).catch(async (err) => {
+		const seen = await A.page.$$eval('[data-testid^="peer-menu-"]', (els) => els.map((e) => e.getAttribute('data-testid') + (e.getBoundingClientRect().height ? '' : '(0h)')));
+		const rowB = await inPage(A, 'return get(s.userdata).find((r) => r[0] === arg);', B.id);
+		const rows = await A.page.$$eval('#peers-popover .peers-row[data-peer-id]', (els) => els.map((e) => e.getAttribute('data-peer-id') + (e.getBoundingClientRect().height ? '' : '(0h)')));
+		await A.page.screenshot({ path: require('path').join(process.env.E2E_SHOTS || require('os').tmpdir(), 'agent-chat-mute.png') }).catch(() => {});
+		console.log('mute row missing — menu:', JSON.stringify(seen), 'B row:', JSON.stringify(rowB), 'popover rows:', JSON.stringify(rows));
+		throw err;
+	});
 	h.check((await muteRow.getAttribute('aria-disabled')) !== 'true', 'the host is offered Mute agent');
 	await muteRow.click();
 	const mutes = await until(() => B.page.evaluate(() => window.__cancelSeen), (l) => l?.some((d) => d.mute === true), 8000);

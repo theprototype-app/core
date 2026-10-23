@@ -391,6 +391,9 @@ export const DEBUG_HOOKS = [
 	['explorerClipboard', () => import('./explorerClipboard')],
 	['lookPresence', () => import('./lookPresence')],
 	['postGraphs', () => import('./postGraphs')],
+	// 65 M2: the shader background layer + its packs preset loader
+	['backgroundLayer', () => import('./backgroundLayer')],
+	['backgroundPresets', () => import('./backgroundPresets')],
 	['postGraphPresets', () => import('./postGraphPresets')],
 	['materialSharing', () => import('./materialSharing')],
 	['diagnostics', () => import('./diagnostics')],

@@ -422,7 +422,11 @@ export function buildSelectionPayload(name, uuids) {
 			),
 			nodes: [],
 			edges: [],
-			shaderGraphs: shaderGraphsSnapshot({ pruneMissing: missing }),
+			// 65 M2: the snapshot keeps SCENE documents (post graphs, the background) now that
+			// they are no longer mis-pruned as orphans — and a selection carries none of them
+			shaderGraphs: Object.fromEntries(
+				Object.entries(shaderGraphsSnapshot({ pruneMissing: missing })).filter(([, doc]) => doc.domain === 'surface')
+			),
 			annotations: annotationsSnapshot().filter((/** @type {any} */ note) => inSet.has(note.objectUuid)),
 			// a joint with one end outside the set would arrive attached to nothing
 			joints: jointsSnapshot().filter((/** @type {any} */ joint) => inSet.has(joint.a) && inSet.has(joint.b)),

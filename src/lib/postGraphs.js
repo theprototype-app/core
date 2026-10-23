@@ -77,9 +77,12 @@ export function postGraphName(key) {
 
 const LS = typeof localStorage !== 'undefined' ? localStorage : null;
 
-/** 'surface' | 'post' — which domain the shader editor is showing.
+/** 'surface' | 'post' | 'background' — which domain the shader editor is showing.
  * @type {import('svelte/store').Writable<string>} */
-export const shaderDomain = writable(LS?.getItem('shaderDomain') === 'post' ? 'post' : 'surface');
+// 65 M2: 'background' is the third domain (the backgroundLayer document)
+export const shaderDomain = writable(
+	LS?.getItem('shaderDomain') === 'post' ? 'post' : LS?.getItem('shaderDomain') === 'background' ? 'background' : 'surface'
+);
 shaderDomain.subscribe((value) => {
 	try {
 		LS?.setItem('shaderDomain', value);

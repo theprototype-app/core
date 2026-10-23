@@ -26,6 +26,7 @@
 	import MenuButton from './inspector/MenuButton.svelte';
 	import InsToggle from './inspector/InsToggle.svelte';
 	import SceneQualitySection from './inspector/SceneQualitySection.svelte'; // 42 I12
+	import BackgroundLayerSection from './inspector/BackgroundLayerSection.svelte'; // 65 M2
 	import ArrangeSection from './inspector/ArrangeSection.svelte'; // 47 M2
 	import TerrainPaintSection from './inspector/TerrainPaintSection.svelte'; // 47 T1/T2
 	import MeasureSection from './inspector/MeasureSection.svelte'; // 48 B2
@@ -2122,6 +2123,7 @@
 					Open the shader editor
 				</button>
 			</Section>
+			<BackgroundLayerSection />
 
 			<!-- 16-P4: everything about the VIEWPORT camera in one place (it used to be a
 			     "Camera lens" sub-label buried in View): lens, clip planes, orbit feel,

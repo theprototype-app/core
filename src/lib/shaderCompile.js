@@ -514,7 +514,7 @@ export function compilePostGraphToIR(graph) {
  * material for every graph, so they are left out of the declarations here — and
  * `usesPointer` / `usesScroll` / `usesClock` tell the layer which inputs are worth feeding.
  * @param {{nodes: any[], edges: any[]}} graph
- * @returns {{ok: boolean, ir?: {fragment: string, uniforms: any[], usesClock: boolean, usesPointer: boolean, usesScroll: boolean, requires: string[]}, errors?: string[]}}
+ * @returns {{ok: boolean, ir?: {fragment: string, uniforms: any[], usesClock: boolean, usesPointer: boolean, usesScroll: boolean, hasAlpha: boolean, requires: string[]}, errors?: string[]}}
  */
 export function compileBackgroundGraphToIR(graph) {
 	const { output, errors, uniforms, preludes, makePass } = createCompiler(graph, BACKGROUND_OUTPUT_NODE);
@@ -545,6 +545,8 @@ export function compileBackgroundGraphToIR(graph) {
 			usesClock: pass.requires.has('time'),
 			usesPointer: types.has('pointer'),
 			usesScroll: types.has('scroll'),
+			// a wired alpha needs BLENDING (the layer material goes transparent)
+			hasAlpha: !!taps.alpha,
 			requires: [...pass.requires]
 		}
 	};

@@ -37,7 +37,7 @@ export const SCENE_GRAPH_KEY = 'scene';
  * @typedef {object} ShaderGraphDoc
  * @property {any[]} nodes
  * @property {any[]} edges
- * @property {'surface'|'post'} domain
+ * @property {'surface'|'post'|'background'} domain
  * @property {string} backend
  * @property {number} changedAt
  */
@@ -81,7 +81,8 @@ export function normalizeShaderGraph(doc) {
 			data: node?.data ?? {}
 		})),
 		edges: Array.isArray(doc?.edges) ? doc.edges : [],
-		domain: doc?.domain === 'post' ? 'post' : 'surface',
+		// 65 M2: 'background' is the third domain (the backgroundLayer document)
+		domain: doc?.domain === 'post' ? 'post' : doc?.domain === 'background' ? 'background' : 'surface',
 		backend: typeof doc?.backend === 'string' ? doc.backend : INJECT_SHADER_BACKEND,
 		changedAt: Number(doc?.changedAt) || 0
 	};
@@ -243,6 +244,25 @@ export function registerPostDomain(fn) {
 	};
 }
 
+/** 65 M2: compile paths for the OTHER non-material domains, by domain name — the post hook's
+ * shape without a new export per domain. @type {Map<string, (key: string) => any>} */
+const domainHooks = new Map();
+
+/**
+ * Install a domain's compiler (65 M2: `background`, registered by backgroundLayer). Like the
+ * post hook, a document of that domain drives no object, so the material path must never see
+ * it; a DELETED document still reaches the hook (doc null) so the domain can tear down.
+ * @param {string} domain @param {(key: string) => any} fn @param {(key: string) => boolean} [owns]
+ *   which keys belong to it when the document is already gone
+ */
+export function registerGraphDomain(domain, fn, owns) {
+	const entry = Object.assign((/** @type {string} */ key) => fn(key), { owns });
+	domainHooks.set(domain, entry);
+	return () => {
+		if (domainHooks.get(domain) === entry) domainHooks.delete(domain);
+	};
+}
+
 /** Is this key a post-domain document (by its own `domain`, so the prefix is a
  * convention and not the truth)? @param {string} key */
 export function isPostDomain(key) {
@@ -262,6 +282,10 @@ export async function compileAndApply(key) {
 	// graph's own teardown runs.
 	if ((doc?.domain === 'post' || (!doc && postDomainHook && key.startsWith('post:'))) && postDomainHook)
 		return postDomainHook(key) ?? { ok: true };
+	// 65 M2: the background (and any later non-material domain) — the same rule
+	for (const [domain, hook] of domainHooks) {
+		if (doc ? doc.domain === domain : /** @type {any} */ (hook).owns?.(key)) return hook(key) ?? { ok: true };
+	}
 	if (!doc) {
 		// deleted: put every target back to its own material
 		for (const object of targetsFor(key)) detachFrom(object);
@@ -792,8 +816,12 @@ export function shaderGraphsSnapshot(opts = {}) {
 	/** @type {Record<string, any>} */
 	const out = {};
 	for (const [key, doc] of Object.entries(all)) {
-		if (key !== SCENE_GRAPH_KEY && opts.pruneMissing?.(key)) continue;
-		out[key] = normalizeShaderGraph(doc);
+		const normal = normalizeShaderGraph(doc);
+		// only an OBJECT's own graph can be orphaned: a post (`post:<id>`) or background
+		// document belongs to the scene, and pruning it because no object has its key as a
+		// uuid silently dropped every post graph from autosave and session saves (65 M2)
+		if (key !== SCENE_GRAPH_KEY && normal.domain === 'surface' && opts.pruneMissing?.(key)) continue;
+		out[key] = normal;
 	}
 	return out;
 }

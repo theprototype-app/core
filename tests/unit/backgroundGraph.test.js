@@ -1,3 +1,4 @@
+// @ts-nocheck — fixture-shaped test data (the tests/unit convention for graph fixtures)
 // 65 M2 — the BACKGROUND shader domain: catalog + compiler, no browser (both modules are
 // pure). The GLSL itself is compiled for real by tests/e2e/background-glsl.test.cjs
 // (glslangValidator) and rendered by tests/e2e/background-layer.test.cjs.

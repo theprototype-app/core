@@ -40,7 +40,11 @@
 		shaderRefusalReason
 	} from '$lib/shaderGraph';
 	import { beginShaderGesture, endShaderGesture } from '$lib/shaderSync';
-	import { shaderNodeDefs, shaderNodeDef, SURFACE_NODE, POST_OUTPUT_NODE } from '$lib/shaderCatalog';
+	import { shaderNodeDefs, shaderNodeDef, SURFACE_NODE, POST_OUTPUT_NODE, BACKGROUND_OUTPUT_NODE, stageForDomain } from '$lib/shaderCatalog';
+	// 65 M2: the BACKGROUND domain — one document per scene, so its scope is fixed
+	import { BACKGROUND_KEY, removeBackground } from '$lib/backgroundLayer';
+	import { backgroundPresets, loadBackgroundPresets, applyBackgroundPreset } from '$lib/backgroundPresets';
+	import { BUILTIN_PRESET_KEY } from '$lib/backgroundPresetsCore';
 	// P4: the POST domain. The editor is one surface for two domains — same cards, same
 	// palette, same pane menu — because a post graph IS a shader graph; what differs is
 	// which nodes mean anything, which terminal node the graph ends at, and (since a post
@@ -100,7 +104,8 @@
 			(def) =>
 				def.key !== SURFACE_NODE &&
 				def.key !== POST_OUTPUT_NODE &&
-				(!def.stages || def.stages.includes(which === 'post' ? 'post' : 'fragment'))
+				def.key !== BACKGROUND_OUTPUT_NODE &&
+				(!def.stages || def.stages.includes(/** @type {any} */ (stageForDomain(which))))
 		);
 	const catalog = $derived(catalogFor($shaderDomain));
 	const groups = $derived([...new Set(catalog.map((def) => def.group))]);
@@ -111,6 +116,10 @@
 	// ---- scope: selection-driven in SURFACE, picked in POST ---------------------
 	const selectedUuid = $derived($selectedObjects?.length === 1 ? $selectedObjects[0] : null);
 	const isPost = $derived($shaderDomain === 'post');
+	const isBg = $derived($shaderDomain === 'background');
+	$effect(() => {
+		if (isBg) void loadBackgroundPresets();
+	});
 	/** every post graph, re-derived off the store so a new one appears at once */
 	/** @param {any} _poke */
 	const graphsOf = (_poke) => postGraphKeys();
@@ -121,17 +130,21 @@
 			? $activePostGraph
 			: (postGraphs[0]?.key ?? '')
 	);
-	const scope = $derived(isPost ? postScope : (selectedUuid ?? SCENE_GRAPH_KEY));
+	const scope = $derived(isBg ? BACKGROUND_KEY : isPost ? postScope : (selectedUuid ?? SCENE_GRAPH_KEY));
 	/** the navigator's list, split by domain (see its markup below) */
 	const treeDocuments = $derived(
 		Object.fromEntries(
-			Object.entries($shaderGraphs).filter(([key]) => key.startsWith('post:') === isPost)
+			Object.entries($shaderGraphs).filter(([key]) =>
+				isBg ? key === BACKGROUND_KEY : key !== BACKGROUND_KEY && key.startsWith('post:') === isPost
+			)
 		)
 	);
 	const doc = $derived(scope ? ($shaderGraphs[scope] ?? null) : null);
 	const errors = $derived(scope ? ($shaderErrors[scope] ?? []) : []);
 	const ownerName = $derived(
-		isPost
+		isBg
+			? 'The background'
+			: isPost
 			? scope
 				? postGraphName(scope)
 				: 'No post effect'
@@ -140,7 +153,9 @@
 				: $objectsGroup?.getObjectByProperty('uuid', scope)?.name || 'This object'
 	);
 	const scopeLabel = $derived(
-		isPost
+		isBg
+			? 'Scene background'
+			: isPost
 			? ownerName + ' — post effect'
 			: scope === SCENE_GRAPH_KEY
 				? 'Scene default material'
@@ -280,6 +295,10 @@
 
 	// ---- actions ---------------------------------------------------------------
 	function createGraph() {
+		if (isBg) {
+			void applyBackgroundPreset(BUILTIN_PRESET_KEY);
+			return;
+		}
 		if (isPost) {
 			// in the post half "create" MINTS a document (there is no object to attach one
 			// to), and the new one becomes the scope so you are looking at what you made
@@ -311,6 +330,10 @@
 	}
 
 	function removeGraph() {
+		if (isBg) {
+			removeBackground();
+			return;
+		}
 		if (isPost) {
 			if (scope) deletePostGraph(scope);
 			activePostGraph.set(null);
@@ -425,7 +448,7 @@
 				{ label: 'Disconnect all', action: () => disconnectNode(id) },
 				// the Surface output is the graph's terminal — there is exactly one, and a
 				// graph without it cannot compile at all
-				...(node.type === SURFACE_NODE
+				...(node.type === SURFACE_NODE || node.type === BACKGROUND_OUTPUT_NODE
 					? []
 					: [{ label: 'Delete node', danger: true, action: () => deleteNode(id) }])
 			]
@@ -653,7 +676,7 @@
 		<button
 			class="tp-seg-btn"
 			id="shader-domain-surface"
-			aria-pressed={!isPost}
+			aria-pressed={!isPost && !isBg}
 			title="Materials: this object's, or the scene's default"
 			onclick={() => shaderDomain.set('surface')}>Surface</button
 		>
@@ -663,6 +686,13 @@
 			aria-pressed={isPost}
 			title="Post effects: a fragment over the finished frame, added to the scene look"
 			onclick={() => shaderDomain.set('post')}>Post</button
+		>
+		<button
+			class="tp-seg-btn"
+			id="shader-domain-background"
+			aria-pressed={isBg}
+			title="Background: a moving shader behind the scene (Configure Scene ▸ Background)"
+			onclick={() => shaderDomain.set('background')}>Background</button
 		>
 	</div>
 	{#if isPost && postGraphs.length}
@@ -712,8 +742,8 @@
 					<GraphTree
 						kind="shader"
 						documents={treeDocuments}
-						sceneKey={SCENE_GRAPH_KEY}
-						label={isPost ? 'Post effects' : 'Shaders'}
+						sceneKey={isBg ? BACKGROUND_KEY : SCENE_GRAPH_KEY}
+						label={isBg ? 'Background' : isPost ? 'Post effects' : 'Shaders'}
 						paneHeight={paneH}
 					/>
 					<div class="shader-side-scroll" use:minimalScroll>
@@ -781,16 +811,29 @@
 					<!-- the `#flow-empty-state` shape: ONE centred call to action -->
 					<div id="shader-empty-state" class="shader-empty">
 						<p class="text-sm text-text-2">
-							{#if isPost}
+							{#if isBg}
+								The scene has no background yet
+							{:else if isPost}
 								No post effect to edit yet
 							{:else}
 								<span class="font-semibold text-text">{ownerName}</span> has no shader yet
 							{/if}
 						</p>
 						<button id="shader-create-btn" class="shader-create" onclick={createGraph}>
-							{isPost ? 'Create post effect' : 'Create shader'}
+							{isBg ? 'Create background' : isPost ? 'Create post effect' : 'Create shader'}
 						</button>
-						{#if isPost}
+						{#if isBg}
+							<div class="shader-preset-row" id="shader-bg-presets">
+								{#each $backgroundPresets.presets as preset (preset.key)}
+									<button class="shader-preset" title={preset.hint} onclick={() => applyBackgroundPreset(preset.key)}
+										>{preset.label}</button
+									>
+								{/each}
+							</div>
+							<p class="text-[11px] text-text-faint">
+								A background draws behind the scene, or on a plane — Configure Scene ▸ Background
+							</p>
+						{:else if isPost}
 							<!-- the presets are the fastest way to see what the domain can do, and each
 							     one is an ordinary graph you can then take apart -->
 							<div class="shader-preset-row">
@@ -1002,6 +1045,8 @@
 									{doc.nodes.length} nodes · {doc.edges.length} wires · {doc.backend}
 								</p>
 								<p class="shader-hint">Replicates to peers · saved with the scene</p>
+							{:else if isBg}
+								<p class="shader-hint">Pick a preset to start a background, then take it apart here.</p>
 							{:else if isPost}
 								<p class="shader-hint">
 									Create a post effect, then add it to a look in Configure Scene ▸

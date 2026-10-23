@@ -90,6 +90,25 @@ function meanDiff(a, b) {
 	return s / ((a.length * 3) / 4);
 }
 
+/**
+ * How much of what is NOT sky changed between two frames: changed pixels over the union of both
+ * frames' object pixels (the sky = the top-left pixel's colour). A mean over the whole frame is
+ * swamped by the flat sky; this reads ~0 for a still camera and ~0.9 for the A → B glide.
+ * @param {number[]} a @param {number[]} b RGBA, same size
+ */
+function changedShare(a, b) {
+	const off = (/** @type {number[]} */ p, /** @type {number} */ i, /** @type {number[]} */ q, /** @type {number} */ j) =>
+		Math.abs(p[i] - q[j]) + Math.abs(p[i + 1] - q[j + 1]) + Math.abs(p[i + 2] - q[j + 2]);
+	let union = 0;
+	let changed = 0;
+	for (let i = 0; i < a.length; i += 4) {
+		if (off(a, i, a, 0) <= 40 && off(b, i, a, 0) <= 40) continue;
+		union++;
+		if (off(a, i, b, i) > 40) changed++;
+	}
+	return union ? changed / union : 0;
+}
+
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 800 }, acceptDownloads: true } });
@@ -116,7 +135,11 @@ h.run(async () => {
 			const cam = g.children.find((/** @type {any} */ o) => !before.has(o.uuid));
 			cam.name = name;
 			cam.position.set(p[0], p[1], p[2]);
-			cam.lookAt(0, 0.5, 0);
+			// a marker is not a THREE.Camera: Object3D.lookAt would aim its +Z (away from the
+			// scene); the camera convention is -Z at the target (camera-preview-control's way)
+			const THREE = /** @type {any} */ (window).__stores.THREE;
+			const m = new THREE.Matrix4().lookAt(cam.position, new THREE.Vector3(0, 0.5, 0), new THREE.Vector3(0, 1, 0));
+			cam.quaternion.setFromRotationMatrix(m);
 			cam.updateMatrix();
 			cam.updateMatrixWorld(true);
 			return cam.uuid;
@@ -204,8 +227,8 @@ h.run(async () => {
 		);
 	const mp4First = await videoFrame(mp4.b64, 'video/mp4', 'first');
 	const mp4Last = await videoFrame(mp4.b64, 'video/mp4', 'last');
-	const glide = meanDiff(mp4First, mp4Last);
-	h.check(glide > 6, `the camera glided A → B during the take (first vs last frame differ by ${glide.toFixed(1)})`);
+	const glide = changedShare(mp4First, mp4Last);
+	h.check(glide > 0.4, `the camera glided A → B during the take (${(glide * 100).toFixed(0)}% of the objects' pixels changed between the first and last frame)`);
 
 	// ---------- 2. GIF + WebP loops: same frame count, same first frame ----------
 	/** decode an animated image's frame count + first frame @param {string} b64 @param {string} mime */
@@ -382,6 +405,19 @@ h.run(async () => {
 	await plainCtx.close();
 
 	// ---------- 5. cancel mid-export ----------
+	if (!(await page.$('#recording-again'))) {
+		// diagnose a result card that went away while the plain page had the focus
+		const why = await page.evaluate(() => {
+			const S = window.__stores;
+			let st = /** @type {any} */ (null);
+			let open = null;
+			S.recordingStores.recordingState.subscribe((/** @type {any} */ v) => (st = v))();
+			S.recordingStores.recordingOpen.subscribe((/** @type {any} */ v) => (open = v))();
+			return { url: location.href, open, status: st?.status, error: st?.error, result: !!st?.result, dialog: !!document.querySelector('#recording-dialog'), upFor: Math.round(performance.now()) };
+		});
+		console.log('DIAG result card missing: ' + JSON.stringify(why));
+		await shot(page, 'diag-no-again.png');
+	}
 	await page.click('#recording-again');
 	await page.waitForSelector('#recording-start');
 	await page.click('#recording-mode-turntable');
@@ -401,5 +437,6 @@ h.run(async () => {
 	h.check(cancelled.status === 'idle' && !cancelled.result && !cancelled.bar && !cancelled.debug && !cancelled.canvas, `Cancel stops it, saves nothing, leaves no canvas (${JSON.stringify(cancelled)})`);
 	h.check(movedC < 1e-3, `and puts the camera back (${movedC.toExponential(1)})`);
 
-	await browser.close();
+	h.check(h.pageErrors(A).length === 0, `no page errors (${h.pageErrors(A).slice(0, 2).join(' | ')})`);
+	await h.finish(browser);
 });

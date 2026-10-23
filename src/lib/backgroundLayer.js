@@ -247,6 +247,11 @@ function ensureMeshes() {
 	refreshDraw();
 }
 
+/** The scene-root group the layer draws under (65 M6's XR fluid panel shares it). */
+export function backgroundRootGroup() {
+	return root;
+}
+
 /** Scene.svelte hands over the scene-root group. @param {any} group */
 export function setBackgroundRoot(group) {
 	root = group;

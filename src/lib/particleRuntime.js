@@ -590,6 +590,8 @@ export function particleEntries() {
 		vel: [...entry.vel],
 		inherit: entry.material.uniforms.uInherit.value,
 		trail: entry.material.uniforms.uTrail.value,
+		flow: entry.material.uniforms.uFlow?.value ?? 0, // 65 M6
+		flowSteps: entry.material.uniforms.uFlowSteps?.value ?? 0,
 		space: entry.space,
 		sprite: entry.sprite,
 		burstT: entry.burstT,

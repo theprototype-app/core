@@ -227,6 +227,15 @@ export class FluidSim {
 		this.type = THREE.HalfFloatType;
 		this.steps = 0;
 		this.splats = 0;
+		// set by allocate(); declared here so the checker knows they always exist after it
+		/** @type {Pair} */ this.velocity = /** @type {any} */ (null);
+		/** @type {Pair} */ this.pressure = /** @type {any} */ (null);
+		/** @type {Pair} */ this.dye = /** @type {any} */ (null);
+		/** @type {any} */ this.divergence = null;
+		/** @type {any} */ this.curl = null;
+		this.simTexel = new THREE.Vector2();
+		this.dyeTexel = new THREE.Vector2();
+		this.cleared = false;
 		this.allocate();
 	}
 

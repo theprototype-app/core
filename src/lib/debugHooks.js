@@ -394,6 +394,7 @@ export const DEBUG_HOOKS = [
 	// 65 M2: the shader background layer + its packs preset loader
 	['backgroundLayer', () => import('./backgroundLayer')],
 	['backgroundPresets', () => import('./backgroundPresets')],
+	['fluidLayer', () => import('./fluidLayer')],
 	['postGraphPresets', () => import('./postGraphPresets')],
 	['materialSharing', () => import('./materialSharing')],
 	['diagnostics', () => import('./diagnostics')],

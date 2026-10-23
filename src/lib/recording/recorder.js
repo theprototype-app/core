@@ -18,7 +18,7 @@
 // Explorer item is a local library file like any other (private until shared).
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { globalCamera, globalRenderer, objectsGroup, orbitControls, selectedObjects, isVRMode, isLocked, TControls, cameraClaim } from '../../stores/sceneStore';
+import { globalCamera, globalRenderer, globalScene, objectsGroup, orbitControls, selectedObjects, isVRMode, isLocked, TControls, cameraClaim } from '../../stores/sceneStore';
 import { recordingState, recordingPrefs, IDLE_RECORDING } from './recordingStores.js';
 import { recordingClean, setMarkersHidden, markersAreHidden } from '../helperLayer';
 import {
@@ -36,15 +36,35 @@ import {
 	sphereOfBoxes
 } from './recordingCore.js';
 import { fixWebmDuration } from './webmDuration.js';
+import { sequences } from '../sequences';
+import { findSequence } from '../sequenceCore';
 
 export const RECORDINGS_FOLDER = 'Recordings';
 
 /** what the driver component hands over: threlte's own pixel-ratio knob (Scene's governor rule —
- * renderer.setPixelRatio directly would be undone by threlte's resize effect)
- * @type {{getDpr: () => number, setDpr: (v: number) => void} | null} */
+ * renderer.setPixelRatio directly would be undone by threlte's resize effect) and (65) its invalidate
+ * @typedef {{getDpr: () => number, setDpr: (v: number) => void, invalidate?: () => void}} RecordingDriver
+ * @type {RecordingDriver | null} */
 let driver = null;
 
-/** @param {{getDpr: () => number, setDpr: (v: number) => void} | null} d @returns {() => void} */
+/** 65 M4: the threlte hooks, for the frame-exact export @returns {RecordingDriver | null} */
+export function recordingDriver() {
+	return driver;
+}
+
+/**
+ * 65 M4: the frame-exact export (offlineRender.js, loaded LAZILY so its encoders stay off the boot
+ * graph) borrows the driver's two stages while it runs. One take at a time: either this module's live
+ * session or these hooks.
+ * @type {{before: () => void, after: () => void, cancel: () => void} | null}
+ */
+let frameHooks = null;
+/** @param {{before: () => void, after: () => void, cancel: () => void} | null} hooks */
+export function setFrameHooks(hooks) {
+	frameHooks = hooks;
+}
+
+/** @param {RecordingDriver | null} d @returns {() => void} */
 export function registerRecordingDriver(d) {
 	driver = d;
 	return () => {
@@ -56,7 +76,7 @@ export function registerRecordingDriver(d) {
  * The live recording. One at a time.
  * @type {null | {
  *   prefs: import('./recordingCore.js').RecordingPrefs, durationMs: number, frameMs: number,
- *   pose: (t: number) => {position: number[], target: number[], fov?: number | null},
+ *   pose: ((t: number) => {position: number[], target: number[], fov?: number | null}) | null,
  *   out: {w: number, h: number}, canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D,
  *   stream: MediaStream, track: any, manual: boolean, recorder: MediaRecorder, chunks: Blob[], mime: string, ext: string,
  *   phase: 'preparing' | 'recording' | 'finishing', t0: number, lastCapture: number, lastRenderFrame: number,
@@ -76,15 +96,27 @@ export function isRecording() {
  * @param {import('./recordingCore.js').RecordingPrefs} [prefs]
  */
 export function recordingBlocker(prefs) {
-	if (session) return 'A recording is already running.';
+	if (session || frameHooks) return 'A recording is already running.';
 	if (typeof MediaRecorder === 'undefined') return 'This browser cannot record video (no MediaRecorder).';
 	if (!pickMimeType((m) => MediaRecorder.isTypeSupported(m))) return 'This browser cannot record webm or mp4 video.';
 	const r = /** @type {any} */ (get(globalRenderer));
 	if (!r?.domElement?.captureStream) return 'The viewport cannot be captured in this browser.';
+	return sceneBlocker(prefs);
+}
+
+/**
+ * 65 M4: why the viewport cannot be filmed right now (either recorder), or ''.
+ * @param {import('./recordingCore.js').RecordingPrefs} [prefs]
+ */
+export function sceneBlocker(prefs) {
+	if (session || frameHooks) return 'A recording is already running.';
+	if (!get(globalRenderer)) return 'The viewport is not ready yet.';
 	if (get(isVRMode)) return 'Leave VR to record — the headset owns the camera.';
 	if (get(isLocked) === true) return 'Leave Play to record — the recorder drives the editor camera.';
 	if (!get(orbitControls) || !get(globalCamera)) return 'The viewport is not ready yet.';
 	if (prefs?.mode === 'flythrough' && !flythroughViews()) return 'A flythrough needs at least two saved camera views (right-click the viewport ▸ Camera bookmarks ▸ Save current view).';
+	if (prefs?.mode === 'timeline' && !findSequence(get(sequences), prefs.sequence))
+		return Object.keys(get(sequences)).length ? 'Pick the timeline to film.' : 'There is no timeline yet: make one in the Timeline editor (Windows ▸ Timeline).';
 	return '';
 }
 
@@ -120,8 +152,13 @@ function framedBoxes(target) {
 	return out;
 }
 
-/** @param {import('./recordingCore.js').RecordingPrefs} prefs */
-function planPose(prefs) {
+/**
+ * The camera path of a take, as a function of t ∈ [0, 1]; null when the take does not move the
+ * camera (a timeline: its shots, or the view as it is).
+ * @param {import('./recordingCore.js').RecordingPrefs} prefs
+ */
+export function planPose(prefs) {
+	if (prefs.mode === 'timeline') return null;
 	const camera = /** @type {any} */ (get(globalCamera));
 	const controls = /** @type {any} */ (get(orbitControls));
 	if (prefs.mode === 'flythrough') {
@@ -143,34 +180,18 @@ function planPose(prefs) {
 	return (/** @type {number} */ t) => turntablePose(orbit, t);
 }
 
-/* ------------------------------------------------------------------- start ---- */
-
 /**
- * Start recording with the remembered options (or `override`). Resolves when the recording has
- * STARTED (or refused, with the reason in `recordingState.error`); the file arrives later through
- * `recordingState` (status 'done').
- * @param {Partial<import('./recordingCore.js').RecordingPrefs>} [override]
- * @returns {Promise<boolean>}
+ * Take the viewport over for a take: the editor camera stops answering the mouse, the pixel ratio
+ * grows so the cropped region holds the output's pixels, the editor helpers hide, and (65 M4)
+ * `transparent` drops the sky and the fog. Returns the restore, which puts every one of those back.
+ * Shared by the live recorder and the frame-exact export (offlineRender.js).
+ * @param {{hideHelpers: boolean, transparent?: boolean}} prefs @param {{w: number, h: number}} out
+ * @returns {() => void}
  */
-export async function startRecording(override) {
-	const prefs = coerceRecordingPrefs({ ...get(recordingPrefs), ...(override || {}) });
-	const blocked = recordingBlocker(prefs);
-	if (blocked) {
-		recordingState.set({ ...IDLE_RECORDING, status: 'error', error: blocked });
-		return false;
-	}
-	const renderer = /** @type {any} */ (get(globalRenderer));
+export function takeOverScene(prefs, out) {
 	const camera = /** @type {any} */ (get(globalCamera));
 	const controls = /** @type {any} */ (get(orbitControls));
-	const pose = planPose(prefs);
-	if (!pose) {
-		recordingState.set({ ...IDLE_RECORDING, status: 'error', error: 'Nothing to record along.' });
-		return false;
-	}
-	const picked = /** @type {{mime: string, ext: string}} */ (pickMimeType((m) => MediaRecorder.isTypeSupported(m)));
-	const dom = /** @type {HTMLCanvasElement} */ (renderer.domElement);
-	const out = outputSize(prefs.resolution, { w: dom.width, h: dom.height });
-
+	const dom = /** @type {HTMLCanvasElement} */ (/** @type {any} */ (get(globalRenderer)).domElement);
 	// --- the scene as the recording wants it, every change remembered for the restore
 	const saved = {
 		position: camera.position.clone(),
@@ -195,6 +216,72 @@ export async function startRecording(override) {
 		recordingClean.set(true);
 		setMarkersHidden(true);
 	}
+
+	const scene = /** @type {any} */ (get(globalScene));
+	const sky = prefs.transparent && scene ? { background: scene.background, fog: scene.fog } : null;
+	if (sky) {
+		scene.background = null;
+		scene.fog = null;
+	}
+
+	return function restoreScene() {
+		const cam = /** @type {any} */ (get(globalCamera));
+		const ctl = /** @type {any} */ (get(orbitControls));
+		if (cam) {
+			cam.position.copy(saved.position);
+			if (typeof saved.fov === 'number' && cam.fov !== saved.fov) {
+				cam.fov = saved.fov;
+				cam.updateProjectionMatrix();
+			}
+		}
+		if (ctl) {
+			ctl.target.copy(saved.target);
+			ctl.enabled = saved.enabled;
+			ctl.update?.();
+		}
+		// put the pixel ratio back only if nothing else (the quality governor) moved it meanwhile
+		if (driver && boostedDpr !== null && Math.abs(driver.getDpr() - boostedDpr) < 1e-6) driver.setDpr(saved.dpr);
+		if (prefs.hideHelpers) {
+			recordingClean.set(false);
+			setMarkersHidden(saved.markers);
+		}
+		if (sky && scene) {
+			scene.background = sky.background;
+			scene.fog = sky.fog;
+		}
+		setGizmoHidden(false);
+	};
+}
+
+/* ------------------------------------------------------------------- start ---- */
+
+/**
+ * Start recording with the remembered options (or `override`). Resolves when the recording has
+ * STARTED (or refused, with the reason in `recordingState.error`); the file arrives later through
+ * `recordingState` (status 'done').
+ * @param {Partial<import('./recordingCore.js').RecordingPrefs>} [override]
+ * @returns {Promise<boolean>}
+ */
+export async function startRecording(override) {
+	const prefs = coerceRecordingPrefs({ ...get(recordingPrefs), ...(override || {}) });
+	const blocked = recordingBlocker(prefs);
+	if (blocked) {
+		recordingState.set({ ...IDLE_RECORDING, status: 'error', error: blocked });
+		return false;
+	}
+	const renderer = /** @type {any} */ (get(globalRenderer));
+	const camera = /** @type {any} */ (get(globalCamera));
+	const controls = /** @type {any} */ (get(orbitControls));
+	const pose = planPose(prefs);
+	if (!pose && prefs.mode !== 'timeline') {
+		recordingState.set({ ...IDLE_RECORDING, status: 'error', error: 'Nothing to record along.' });
+		return false;
+	}
+	const picked = /** @type {{mime: string, ext: string}} */ (pickMimeType((m) => MediaRecorder.isTypeSupported(m)));
+	const dom = /** @type {HTMLCanvasElement} */ (renderer.domElement);
+	const out = outputSize(prefs.resolution, { w: dom.width, h: dom.height });
+
+	const restoreScene = takeOverScene(prefs, out);
 
 	const canvas = document.createElement('canvas');
 	canvas.width = out.w;
@@ -231,30 +318,6 @@ export async function startRecording(override) {
 	const onStop = new Promise((resolve) => {
 		recorder.onstop = () => resolve(undefined);
 	});
-
-	function restoreScene() {
-		const cam = /** @type {any} */ (get(globalCamera));
-		const ctl = /** @type {any} */ (get(orbitControls));
-		if (cam) {
-			cam.position.copy(saved.position);
-			if (typeof saved.fov === 'number' && cam.fov !== saved.fov) {
-				cam.fov = saved.fov;
-				cam.updateProjectionMatrix();
-			}
-		}
-		if (ctl) {
-			ctl.target.copy(saved.target);
-			ctl.enabled = saved.enabled;
-			ctl.update?.();
-		}
-		// put the pixel ratio back only if nothing else (the quality governor) moved it meanwhile
-		if (driver && boostedDpr !== null && Math.abs(driver.getDpr() - boostedDpr) < 1e-6) driver.setDpr(saved.dpr);
-		if (prefs.hideHelpers) {
-			recordingClean.set(false);
-			setMarkersHidden(saved.markers);
-		}
-		setGizmoHidden(false);
-	}
 
 	session = {
 		prefs,
@@ -296,7 +359,7 @@ function onVisibility() {
 /** @type {{obj: any, was: boolean} | null} */
 let gizmoHidden = null;
 /** the transform gizmo's visuals live in `getHelper()`, not on the controls (three r16x+) @param {boolean} hide */
-function setGizmoHidden(hide) {
+export function setGizmoHidden(hide) {
 	if (hide) {
 		const tc = /** @type {any} */ (get(TControls));
 		const gizmo = tc?.getHelper?.() ?? tc;
@@ -312,7 +375,7 @@ function setGizmoHidden(hide) {
 /* -------------------------------------------------------------- per frame ---- */
 
 /** @param {{position: number[], target: number[], fov?: number | null}} p */
-function applyPose(p) {
+export function applyPose(p) {
 	const camera = /** @type {any} */ (get(globalCamera));
 	const controls = /** @type {any} */ (get(orbitControls));
 	if (!camera || !controls) return;
@@ -328,29 +391,36 @@ function applyPose(p) {
 
 /** the driver's pose stage: after OrbitControls' update, before the render */
 export function recordingBeforeRender() {
+	if (frameHooks) return frameHooks.before();
 	const s = session;
 	if (!s) return;
 	if (get(isVRMode)) return abort('Recording stopped: VR started.');
 	if (get(isLocked) === true) return abort('Recording stopped: Play started.');
 	if (s.prefs.hideHelpers) setGizmoHidden(true);
 	if (s.phase === 'preparing') {
-		applyPose(s.pose(0));
+		if (s.pose) applyPose(s.pose(0));
 		// a few frames for a pixel-ratio change to reach the canvas and the composer's targets
 		if (++s.prepFrames >= 4) {
 			s.phase = 'recording';
 			s.recorder.start(500);
 			s.t0 = performance.now();
+			// 65: a timeline take (the fallback where WebCodecs is missing) plays it live, as a preview
+			if (s.prefs.mode === 'timeline') {
+				const id = s.prefs.sequence;
+				void import('../sequencePlayer').then((m) => m.playSequence(id, { mode: 'preview' }));
+			}
 			recordingState.update((st) => ({ ...st, status: 'recording' }));
 		}
 		return;
 	}
 	if (s.phase !== 'recording') return;
 	const t = Math.min(1, (performance.now() - s.t0) / s.durationMs);
-	applyPose(s.pose(t));
+	if (s.pose) applyPose(s.pose(t));
 }
 
 /** the driver's capture stage: right after the render, while the drawing buffer still holds it */
 export function recordingAfterRender() {
+	if (frameHooks) return frameHooks.after();
 	const s = session;
 	if (!s || s.phase !== 'recording') return;
 	const renderer = /** @type {any} */ (get(globalRenderer));
@@ -379,7 +449,7 @@ export function recordingAfterRender() {
 }
 
 /** a small picture for the Explorer card @param {HTMLCanvasElement} src */
-function thumbnailOf(src) {
+export function thumbnailOf(src) {
 	try {
 		const scale = Math.min(1, 160 / Math.max(src.width, src.height));
 		const c = document.createElement('canvas');
@@ -398,6 +468,10 @@ function teardown() {
 	const s = session;
 	if (!s) return;
 	document.removeEventListener('visibilitychange', onVisibility);
+	if (s.prefs.mode === 'timeline') {
+		const id = s.prefs.sequence;
+		void import('../sequencePlayer').then((m) => m.stopSequence(id, { restore: true }));
+	}
 	s.stream.getTracks().forEach((t) => t.stop());
 	s.canvas.remove();
 	s.restore();
@@ -455,9 +529,10 @@ async function finish() {
 /**
  * The file in the Explorer's Recordings folder, as a `video` item.
  * @param {Uint8Array} bytes @param {string} name @param {string | null} thumbnail @param {string} type
+ * @param {string} [kind] the Explorer kind (65: `image` for a GIF / WebP loop)
  * @returns {Promise<{itemId: string | null, note: string}>}
  */
-async function saveToExplorer(bytes, name, thumbnail, type) {
+export async function saveToExplorer(bytes, name, thumbnail, type, kind = 'video') {
 	try {
 		const explorer = await import('../explorer');
 		await explorer.loadExplorer();
@@ -467,7 +542,7 @@ async function saveToExplorer(bytes, name, thumbnail, type) {
 		const folders = /** @type {any[]} */ (get(explorer.explorerFolders));
 		const folder = folders.find((f) => f.name === RECORDINGS_FOLDER && !f.parentId) ?? explorer.createFolder(RECORDINGS_FOLDER, null);
 		const buffer = /** @type {ArrayBuffer} */ (bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
-		const item = await explorer.addItemFromBytes(buffer, name, folder?.id ?? null, { kind: 'video', type, thumbnail, allowDuplicate: true });
+		const item = await explorer.addItemFromBytes(buffer, name, folder?.id ?? null, { kind, type, thumbnail, allowDuplicate: true });
 		return { itemId: item?.id ?? null, note: `Saved to Explorer ▸ ${RECORDINGS_FOLDER}.` };
 	} catch (e) {
 		return { itemId: null, note: 'Not kept in the Explorer (' + (e instanceof Error ? e.message : String(e)) + '). Download it instead.' };
@@ -493,13 +568,16 @@ function abort(reason) {
 
 /** Cancel the running recording; nothing is saved. */
 export function cancelRecording() {
+	if (frameHooks) return frameHooks.cancel();
+	// 65: an export still loading its encoder has no session yet — going idle is what tells it to stop
+	if (!session) return recordingState.set({ ...IDLE_RECORDING });
 	abort('');
 }
 
 /** Forget a finished/failed result (the dialog's Close / New recording). */
 export function resetRecording() {
 	const st = get(recordingState);
-	if (session) return;
+	if (session || frameHooks) return;
 	if (st.result?.url) setTimeout(() => URL.revokeObjectURL(/** @type {string} */ (st.result?.url)), 60000);
 	recordingState.set({ ...IDLE_RECORDING });
 }

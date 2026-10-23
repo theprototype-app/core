@@ -114,7 +114,7 @@ describe('recording prefs', () => {
 		expect(coerceRecordingPrefs(null)).toEqual(DEFAULT_RECORDING_PREFS);
 	});
 	it('clamps and drops what it does not know', () => {
-		const p = coerceRecordingPrefs({ duration: 999, fps: 25, quality: 'ultra', revolutions: 0.1, mode: 'flythrough', junk: 1 });
+		const p = coerceRecordingPrefs({ duration: 999, fps: 27, quality: 'ultra', revolutions: 0.1, mode: 'flythrough', junk: 1 });
 		expect(p.duration).toBe(60);
 		expect(p.fps).toBe(30);
 		expect(p.quality).toBe('medium');

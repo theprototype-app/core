@@ -8,12 +8,22 @@
 /** output sizes. `viewport` = whatever the canvas is (even dimensions, long side ≤ 3840) */
 export const RESOLUTIONS = Object.freeze([
 	{ id: 'viewport', label: 'Viewport size', w: 0, h: 0 },
-	{ id: '720p', label: '1280 × 720 (HD)', w: 1280, h: 720 },
-	{ id: '1080p', label: '1920 × 1080 (Full HD)', w: 1920, h: 1080 },
-	{ id: 'square', label: '1080 × 1080 (square)', w: 1080, h: 1080 },
-	{ id: 'vertical', label: '1080 × 1920 (vertical)', w: 1080, h: 1920 }
+	{ id: 'vertical', label: 'Phone 9:16 (1080 × 1920)', w: 1080, h: 1920 },
+	{ id: 'square', label: 'Square (1080 × 1080)', w: 1080, h: 1080 },
+	{ id: '720p', label: 'HD (1280 × 720)', w: 1280, h: 720 },
+	{ id: '1080p', label: 'Full HD (1920 × 1080)', w: 1920, h: 1080 },
+	{ id: '4k', label: '4K UHD (3840 × 2160)', w: 3840, h: 2160 },
+	// 65 M4: small sizes for GIF / WebP loops and website sections, where every pixel is bytes
+	{ id: '480p', label: 'Small (854 × 480)', w: 854, h: 480 },
+	{ id: 'square480', label: 'Small square (480 × 480)', w: 480, h: 480 }
 ]);
-export const FPS_CHOICES = Object.freeze([24, 30, 60]);
+export const FPS_CHOICES = Object.freeze([12, 15, 24, 25, 30, 50, 60]);
+/** 65 M4: what the file is. `hero` = the M7 website section (frames + one script) */
+export const EXPORT_FORMATS = Object.freeze(['mp4', 'webm', 'gif', 'webp', 'png', 'hero']);
+/** 65 M7: what scrubs a website section's timeline */
+export const HERO_TRIGGERS = Object.freeze(['scroll', 'hover', 'click']);
+/** 65 M7: the anime.js v4 eases a website section may glide with (names = anime's own) */
+export const HERO_EASES = Object.freeze(['linear', 'outQuad', 'inOutSine', 'outCubic', 'inOutCubic', 'outExpo']);
 /** bits per pixel per frame — × w × h × fps = the encoder's target bitrate */
 export const QUALITY_BPP = Object.freeze({ low: 0.05, medium: 0.1, high: 0.2 });
 export const MIN_DURATION = 1;
@@ -21,9 +31,10 @@ export const MAX_DURATION = 60;
 const MIN_BITRATE = 500_000;
 const MAX_BITRATE = 25_000_000;
 
-/** @typedef {{mode: 'turntable'|'flythrough', target: 'selection'|'scene', resolution: string, fps: number,
+/** @typedef {{mode: 'turntable'|'flythrough'|'timeline', target: 'selection'|'scene', resolution: string, fps: number,
  *   duration: number, quality: 'low'|'medium'|'high', revolutions: number, direction: 'cw'|'ccw',
- *   frame: boolean, hideHelpers: boolean}} RecordingPrefs */
+ *   frame: boolean, hideHelpers: boolean, format: string, sequence: string, transparent: boolean,
+ *   heroTrigger: string, heroEase: string, heroSmooth: number, heroFit: 'cover'|'contain'}} RecordingPrefs */
 
 /** @type {RecordingPrefs} */
 export const DEFAULT_RECORDING_PREFS = Object.freeze({
@@ -36,7 +47,15 @@ export const DEFAULT_RECORDING_PREFS = Object.freeze({
 	revolutions: 1,
 	direction: 'ccw',
 	frame: true,
-	hideHelpers: true
+	hideHelpers: true,
+	// 65 M4/M7
+	format: 'mp4',
+	sequence: '',
+	transparent: false,
+	heroTrigger: 'scroll',
+	heroEase: 'outQuad',
+	heroSmooth: 400,
+	heroFit: 'cover'
 });
 
 /** Typed, clamped prefs from whatever was stored (unknown keys dropped). @param {any} raw @returns {RecordingPrefs} */
@@ -47,8 +66,9 @@ export function coerceRecordingPrefs(raw) {
 	const bool = (v, def) => (typeof v === 'boolean' ? v : def);
 	const num = Number(r.duration);
 	const revs = Number(r.revolutions);
+	const smooth = Number(r.heroSmooth);
 	return {
-		mode: r.mode === 'flythrough' ? 'flythrough' : 'turntable',
+		mode: r.mode === 'flythrough' || r.mode === 'timeline' ? r.mode : 'turntable',
 		target: r.target === 'scene' ? 'scene' : 'selection',
 		resolution: RESOLUTIONS.some((x) => x.id === r.resolution) ? r.resolution : d.resolution,
 		fps: FPS_CHOICES.includes(Number(r.fps)) ? Number(r.fps) : d.fps,
@@ -57,7 +77,14 @@ export function coerceRecordingPrefs(raw) {
 		revolutions: Number.isFinite(revs) ? Math.min(4, Math.max(0.25, Math.round(revs * 4) / 4)) : d.revolutions,
 		direction: r.direction === 'cw' ? 'cw' : 'ccw',
 		frame: bool(r.frame, d.frame),
-		hideHelpers: bool(r.hideHelpers, d.hideHelpers)
+		hideHelpers: bool(r.hideHelpers, d.hideHelpers),
+		format: EXPORT_FORMATS.includes(r.format) ? r.format : d.format,
+		sequence: typeof r.sequence === 'string' ? r.sequence.slice(0, 200) : d.sequence,
+		transparent: bool(r.transparent, d.transparent),
+		heroTrigger: HERO_TRIGGERS.includes(r.heroTrigger) ? r.heroTrigger : d.heroTrigger,
+		heroEase: HERO_EASES.includes(r.heroEase) ? r.heroEase : d.heroEase,
+		heroSmooth: Number.isFinite(smooth) ? Math.min(2000, Math.max(0, Math.round(smooth))) : d.heroSmooth,
+		heroFit: r.heroFit === 'contain' ? 'contain' : 'cover'
 	};
 }
 
@@ -142,7 +169,8 @@ export function pickMimeType(isSupported) {
 export function recordingFileName(mode, when, ext) {
 	const p = (/** @type {number} */ n) => String(n).padStart(2, '0');
 	const stamp = `${when.getFullYear()}-${p(when.getMonth() + 1)}-${p(when.getDate())} ${p(when.getHours())}-${p(when.getMinutes())}-${p(when.getSeconds())}`;
-	return `${mode === 'flythrough' ? 'Flythrough' : 'Turntable'} ${stamp}.${ext || 'webm'}`;
+	const label = mode === 'flythrough' ? 'Flythrough' : mode === 'timeline' ? 'Timeline' : 'Turntable';
+	return `${label} ${stamp}.${ext || 'webm'}`;
 }
 
 /* ------------------------------------------------------------------ turntable ---- */

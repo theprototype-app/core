@@ -22,7 +22,8 @@ export const skyEnv = writable(null);
 export const envToneMapping = writable(null);
 
 /**
- * For the UI and the suite: what the HDRI layer is doing.
- * @type {import('svelte/store').Writable<{state: 'off'|'loading'|'ready'|'missing'|'error', src: string, tier: string, width: number, pmremSize: number, error: string, ms: number}>}
+ * For the UI and the suite: what the HDRI layer is doing. 59 T3: `unavailable` = a bundled sky the
+ * CDN could not deliver (offline / blocked) — the flat preset shows, which is not an error.
+ * @type {import('svelte/store').Writable<{state: 'off'|'loading'|'ready'|'missing'|'error'|'unavailable', src: string, tier: string, width: number, pmremSize: number, error: string, ms: number}>}
  */
 export const hdriStatus = writable({ state: 'off', src: '', tier: '', width: 0, pmremSize: 0, error: '', ms: 0 });

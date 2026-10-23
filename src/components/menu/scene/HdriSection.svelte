@@ -6,6 +6,7 @@
 	// .hdr/.exr (it becomes an Explorer item, pulled by peers by content hash), or None; then turn,
 	// brighten, blur or hide it. Every edit goes through editEnvSky, so it persists and replicates
 	// on the environment singleton like a background colour. The quality pin is LOCAL (Settings).
+	// 59 T3: the bundled skies download on first pick (hdri/skyFetch.js); the cards stay bundled.
 	import SliderRow from '../../ui/SliderRow.svelte';
 	import ThemedSelect from '../../ui/ThemedSelect.svelte';
 	import { environment, presetPayload, setEnvironment, editEnvSky } from '$lib/environment';
@@ -77,7 +78,9 @@
 				? 'Loading…'
 				: $hdriStatus.state === 'missing'
 					? 'Waiting for the file from a peer — the flat sky shows meanwhile.'
-					: $hdriStatus.state === 'error'
+					: $hdriStatus.state === 'unavailable'
+						? 'The sky image could not be downloaded — its flat sky shows. It tries again when you are back online.'
+						: $hdriStatus.state === 'error'
 						? 'Could not read this HDRI: ' + $hdriStatus.error
 						: $hdriStatus.state === 'ready' && $hdriStatus.tier === 'low'
 							? 'Headset quality (512 px)'

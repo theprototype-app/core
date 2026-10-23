@@ -8,7 +8,7 @@
 //       matches the "+" in every theme
 //   I2  the left corner stack matches the right: "+" at bottom-16 (mic parity),
 //       AI at bottom-4 (chat parity)
-//   I3  the AI HUD button ALWAYS renders; unconfigured, clicking opens Settings ▸ AI;
+//   I3  the AI HUD button ALWAYS renders; unconfigured, clicking opens Settings ▸ Tools & connections (59; was AI);
 //       configured, it opens the chat window
 //   I4  the far-zoom "circle": (a) the grid fade SNAPS to its target (no multi-frame
 //       lerp ramp), and (b) the shadow-catcher disc has depthWrite:false so N8AO no
@@ -109,7 +109,8 @@ h.run(async () => {
 		);
 	});
 	h.check(openedSettings.open === true, 'I3: unconfigured click opens Settings');
-	h.check(openedSettings.section === 'ai', 'I3: unconfigured click targets the AI section');
+	// 59 T5: the AI section is Settings ▸ Tools & connections (deep-link key 'tools'; 'ai' is an alias)
+	h.check(openedSettings.section === 'tools', 'I3: unconfigured click targets Tools & connections (' + openedSettings.section + ')');
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 
 	// configure a provider + enable AI (persisted), then reload to one module graph

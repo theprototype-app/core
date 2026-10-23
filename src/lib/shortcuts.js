@@ -18,7 +18,7 @@ import {
 	armExplorerSceneSave,
 	explorerClose
 } from '../stores/appStore';
-import { aiReady } from './ai/providers';
+import { explainMissing } from './tools/toolLinks.js';
 import {
 	focusObject,
 	duplicateSelection,
@@ -126,19 +126,14 @@ function deleteFromViewport() {
 
 /**
  * Toggle the quick AI prompt pill (roadmap #10). Opens only when a provider is
- * configured; otherwise points the user at Settings -> AI.
+ * configured; otherwise says what is missing and opens Settings ▸ Tools & connections.
  */
 function toggleAiPrompt() {
 	if (get(aiPromptBarOpen)) {
 		aiPromptBarOpen.set(false);
 		return;
 	}
-	if (!aiReady()) {
-		showToast('Enable an AI provider in Settings to use the assistant');
-		settingsSection.set('ai');
-		settingsOpen.set(true);
-		return;
-	}
+	if (explainMissing('assistant')) return; // 59 T5: says what is missing, opens its row
 	aiPromptBarOpen.set(true);
 }
 

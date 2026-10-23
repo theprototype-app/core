@@ -133,7 +133,7 @@
 		<!-- the thread (the last few turns) -->
 		{#if !$vrAiReady}
 			<Text
-				text={'Configure an AI provider in Settings ▸ AI on desktop — the assistant uses the same provider here.'}
+				text={'The AI assistant needs a Chat provider: set one up in Settings ▸ Tools & connections on desktop — the assistant uses the same provider here.'}
 				color="#c9bcff"
 				fontSize={0.0085}
 				anchorX="center"

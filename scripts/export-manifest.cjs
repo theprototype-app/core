@@ -30,7 +30,8 @@ function excluded(rel) {
 		/^llms(-full)?\.txt$/.test(rel) ||
 		/^cloud-plugin.*\.js$/.test(rel) ||
 		rel.startsWith('templates/') ||
-		// 37-hdri: ~7.5 MB of bundled HDRIs — buildExport copies only the one the scene shows
+		// 37-hdri: buildExport copies only the sky the scene shows (59 T3: from the CDN — the .hdr
+		// files left the bundle; the preview cards stay excluded here as before)
 		rel.startsWith('hdri/') ||
 		rel.startsWith('.')
 	);

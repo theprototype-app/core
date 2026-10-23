@@ -12,6 +12,8 @@ import {
 import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/materialsHandler';
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { meshGenReady } from './meshProviders.js';
+import { featureStatus, toolSummary } from '../tools/toolStatus.js';
+import '../tools/builtinTools.js'; // 59 T5: the registry the prompt's tool lines read
 import { graphOf, SCENE_GRAPH } from '../../stores/flowStore';
 import { sceneJoints } from '$lib/joints';
 import { graphToText } from '$lib/graphText';
@@ -653,7 +655,7 @@ export async function executeAiTool(rawName, rawArgs) {
 				// replicates the mesh when it lands (a progress card shows status).
 				const prompt = String(args?.prompt || '').trim();
 				if (!prompt) return { error: 'prompt required' };
-				if (!meshGenReady()) return { error: 'no mesh-generation provider is configured (Settings -> AI -> Mesh generation)' };
+				if (!meshGenReady()) return { error: 'no mesh-generation provider is configured — tell the user: ' + featureStatus('generateMesh').message };
 				import('$lib/ai/meshJobs')
 					.then((m) => m.generateMesh({ prompt, name: args?.name, position: args?.position }))
 					.catch(() => {});
@@ -1052,6 +1054,14 @@ export function buildSystemPrompt() {
 	const meshLine = meshGenReady()
 		? '\nCustom meshes: for objects no primitive can approximate, call generate_mesh with a text\ndescription (slow, async — it appears shortly). Prefer primitives for simple shapes.'
 		: '';
+	// 59 T5: the assistant reads the same tool status the buttons do — what is NOT set up here, so a
+	// request for it gets "that needs X, set it up in Tools & connections" instead of a guess
+	const missing = toolSummary().missing.filter((f) => f.id !== 'assistant');
+	const toolsLine = missing.length
+		? '\nNot set up on this device: ' +
+			missing.map((f) => f.label + ' (needs ' + f.needs + ')').join('; ') +
+			'. If the user asks for one of these, say what it needs and that they can set it up in Settings ▸ Tools & connections.'
+		: '';
 	const physics = physicsToolsEnabled();
 	const flowBlock = [
 		'',
@@ -1136,6 +1146,6 @@ export function buildSystemPrompt() {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + toolsLine + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

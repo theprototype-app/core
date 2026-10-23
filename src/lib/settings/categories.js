@@ -31,7 +31,7 @@ const META = {
 	import: { group: 'workspace', order: 8.5, description: 'What happens to big models and textures as they come in.' },
 	export: { group: 'workspace', order: 9, description: 'What the next exported game starts with.' },
 	vr: { group: 'devices', order: 10, description: 'Comfort, body, buttons and display in the headset — the same table as the headset’s own Settings.' },
-	ai: { group: 'devices', order: 11, description: 'The scene assistant, voice typing and mesh generation.' },
+	toolsconnections: { group: 'devices', order: 11, description: 'Everything outside the app — chat and mesh providers, voice typing, desktop tools. Set up only the ones you use: each shows whether it is ready, a Test and the features it turns on, and a button whose tool is missing brings you here.' }, // 59 T4 (was 'ai')
 	connection: { group: 'devices', order: 12, description: 'How you find other people.' },
 	privacy: { group: 'devices', order: 13, description: 'What this device sends about errors — anonymous, and you can switch it off.' },
 	aboutwhatsnew: { group: 'about', order: 99, description: '' }

@@ -15,6 +15,8 @@ import { AiHttpError, describeAiError } from './client.js';
  * @property {string} apiKey   bearer token (plaintext; may be empty for a self-hosted server)
  * @property {string} model    model id sent as `model`
  * @property {string} [language] optional ISO-639-1 hint ('en', 'de'…); empty = the server detects it
+ * @property {boolean} [enabled] 59 T4: Tools & connections ▸ Disable keeps the server set up but off.
+ *   ABSENT (every config saved before it) = on, so nothing migrates
  */
 
 /** @type {{preset: string, label: string, baseUrl: string, defaultModel: string, needsKey: boolean}[]} */
@@ -47,7 +49,8 @@ export function normalizeSttConfig(raw) {
 		baseUrl: String(raw.baseUrl ?? preset.baseUrl).trim().replace(/\/+$/, ''),
 		apiKey: String(raw.apiKey ?? '').trim(),
 		model: String(raw.model || preset.defaultModel).trim(),
-		language: String(raw.language ?? '').trim()
+		language: String(raw.language ?? '').trim(),
+		...(raw.enabled === false ? { enabled: false } : {})
 	};
 }
 
@@ -79,10 +82,32 @@ export function applySttPreset(preset) {
 	return setSttConfig({ preset: p.preset, baseUrl: p.baseUrl, model: p.defaultModel });
 }
 
+/** 59 T4: shared by the Voice typing page's Test and the Tools & connections row. Half a second of silence as a 16 kHz mono WAV — enough for the server to answer, nothing to transcribe */
+export function silentWav() {
+	const samples = 8000;
+	const buffer = new ArrayBuffer(44 + samples * 2);
+	const view = new DataView(buffer);
+	const text = (/** @type {number} */ at, /** @type {string} */ s) => [...s].forEach((c, i) => view.setUint8(at + i, c.charCodeAt(0)));
+	text(0, 'RIFF');
+	view.setUint32(4, 36 + samples * 2, true);
+	text(8, 'WAVE');
+	text(12, 'fmt ');
+	view.setUint32(16, 16, true);
+	view.setUint16(20, 1, true);
+	view.setUint16(22, 1, true);
+	view.setUint32(24, 16000, true);
+	view.setUint32(28, 32000, true);
+	view.setUint16(32, 2, true);
+	view.setUint16(34, 16, true);
+	text(36, 'data');
+	view.setUint32(40, samples * 2, true);
+	return new Blob([buffer], { type: 'audio/wav' });
+}
+
 /** Can voice typing run? A hosted preset needs a key; a self-hosted one only a base URL and a model.
  * @param {SttConfig=} config @returns {boolean} */
 export function sttReady(config = get(sttConfig)) {
-	if (!config?.baseUrl || !config?.model) return false;
+	if (!config?.baseUrl || !config?.model || config.enabled === false) return false;
 	return sttPresetFor(config.preset).needsKey ? !!config.apiKey : true;
 }
 

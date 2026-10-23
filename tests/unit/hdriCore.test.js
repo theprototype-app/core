@@ -127,12 +127,17 @@ describe('rotateAboutY', () => {
 });
 
 describe('the bundled catalog', () => {
-	it('every row has its file and card in static/, and a preset of the same key', () => {
+	// 59 T3: the .hdr files live in the PACKS repo's hdri/ (the CDN); only the cards stay in static/
+	const PACKS_HDRI = [path.resolve('../packs/hdri'), ...(fs.existsSync('..') ? fs.readdirSync('..').filter((d) => /^packs-lane-59-/.test(d)).map((d) => path.resolve('..', d, 'hdri')) : [])].find((d) =>
+		fs.existsSync(path.join(d, 'meadow_2_1k.hdr'))
+	);
+	it('every row has its card in static/ (and NOT its .hdr — the release zip carries none), and a preset of the same key', () => {
 		for (const [key, row] of Object.entries(BUNDLED_HDRIS)) {
-			expect(fs.existsSync(path.join('static', row.file)), row.file).toBe(true);
+			expect(fs.existsSync(path.join('static', row.file)), row.file + ' must not be bundled').toBe(false);
+			expect(row.file).toMatch(/^hdri\/[a-z0-9_]+_1k\.hdr$/);
 			expect(fs.existsSync(path.join('static', row.card)), row.card).toBe(true);
-			// ≤ 1k (the brief): a 1024x512 RGBE file is ~1.5 MB
-			expect(fs.statSync(path.join('static', row.file)).size).toBeLessThan(2.5 * 1024 * 1024);
+			// ≤ 1k (the brief): a 1024x512 RGBE file is ~1.5 MB — checked where a packs checkout is beside us
+			if (PACKS_HDRI) expect(fs.statSync(path.join(PACKS_HDRI, path.basename(row.file))).size).toBeLessThan(2.5 * 1024 * 1024);
 			const block = presetBlock(key);
 			expect(block, key).toContain("hdri: { src: 'bundled:" + key + "'");
 			expect(bundledHdri('bundled:' + key)).toBe(row);

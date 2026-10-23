@@ -3,8 +3,8 @@
 // An environment payload (a stock preset or a customPreset) may carry ONE additive field:
 //
 //   hdri: {
-//     src: 'bundled:<id>' | 'hash:<sha256>',  where the pixels come from (a bundled file under
-//                                             static/hdri/, or an Explorer item by content hash —
+//     src: 'bundled:<id>' | 'hash:<sha256>',  where the pixels come from (a bundled sky — 59 T3:
+//                                             the packs CDN, skyFetch.js — or an Explorer item by content hash —
 //                                             a peer without the bytes pulls them, golden rule 9)
 //     name?: string,                          the file name a custom upload had (for the UI)
 //     rotation: degrees 0..360,               turns the sky AND the IBL (and the rig sun with them)

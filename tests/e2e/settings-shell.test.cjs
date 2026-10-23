@@ -53,7 +53,7 @@ h.run(async () => {
 	// 46 P2: Settings ▸ Import sits beside Export
 	h.check(JSON.stringify(byGroup('workspace')) === JSON.stringify(['Scene', 'Explorer', 'Node types', 'Import', 'Export']), 'Workspace: Scene, Explorer, Node types, Import, Export');
 	// 48 O1: Privacy (the error-report switch) closes the group
-	h.check(JSON.stringify(byGroup('devices')) === JSON.stringify(['VR', 'AI', 'Connection', 'Privacy']), 'Devices & services: VR, AI, Connection, Privacy (' + byGroup('devices').join(', ') + ')');
+	h.check(JSON.stringify(byGroup('devices')) === JSON.stringify(['VR', 'Tools & connections', 'Connection', 'Privacy']), 'Devices & services: VR, Tools & connections, Connection, Privacy (' + byGroup('devices').join(', ') + ')');
 	h.check(labels[labels.length - 1] === 'About & what’s new' && s.rows[s.rows.length - 1].group === 'about', '"About & what’s new" is pinned last');
 	const pinned = await page.evaluate(() => {
 		const about = document.querySelector('#settings-nav .sn-about')?.getBoundingClientRect();
@@ -76,12 +76,13 @@ h.run(async () => {
 		'Node types': '#node-types-section',
 		Export: '#export-settings-section',
 		VR: '[data-tour="settings-vr-controls"]',
-		AI: '#ai-enabled',
+		'Tools & connections': '[data-tool-section="chat"]', // 59 T4 (was AI: #ai-enabled)
 		Connection: '#peer-server-mode',
 		'About & what’s new': '#about-copy-diagnostics'
 	};
 	for (const label of labels) {
-		await page.locator('#settings-nav .sn-row', { hasText: label }).first().click();
+		// exact label: "Connection" is also a substring of "Tools & connections" (59 T4)
+		await page.locator('#settings-nav .sn-row').filter({ has: page.locator('.sn-label', { hasText: new RegExp('^\\s*' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$') }) }).first().click();
 		await page.waitForTimeout(250);
 		s = await state(page);
 		const proof = proofs[label];
@@ -133,7 +134,7 @@ h.run(async () => {
 	await page.evaluate(() => window.__stores.settingsSection.set('ai'));
 	await page.waitForTimeout(500);
 	s = await state(page);
-	h.check(s.titles.length === 1 && s.titles[0] === 'AI', 'the AI deep link (the HUD AI button) lands on AI');
+	h.check(s.titles.length === 1 && s.titles[0] === 'Tools & connections', 'the old AI deep link (the HUD AI button) lands on Tools & connections');
 
 	// ---- 4. Sub-pages: in the content area, breadcrumb + back, Esc backs out first ---------------
 	await page.locator('#settings-nav .sn-row', { hasText: 'VR' }).first().click();

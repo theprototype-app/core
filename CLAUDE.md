@@ -2644,6 +2644,23 @@ loadable play content. Everything a user does must be visible to connected peers
   2 (every canvas panel >= 1 texel per Quest pixel). `api.claimInput('sticks')` + the world-pan stick REEL (stick Y
   pushes/pulls a one-grip world, as Edit does an object); `addSetting({onLevels: true})` draws a choice as tabs on the
   VR Levels page, which now lists every level.
+- **ROADMAP 59 (59-hub) — TOOLS & CONNECTIONS, FEATURE STATUS, SKIES OFF THE BUNDLE.** `lib/tools/toolStatus.js` is a
+  LEAF registry (svelte/store only): `registerToolRows(section, readable)` per section (TOOL_SECTIONS order: chat,
+  mesh, animation, aibox, agents, desktop — a section shows once a source registers, so a later roadmap adds its
+  rows with ONE call) and `registerFeature({id, label, section, needs, fix?, ready, row})`. A row = status (`ready |
+  off | setup | error`), Test, Enable / Disable over the EXISTING switches (provider: active + master; voice:
+  additive `aiStt.enabled`, absent = on; desktop: `tools:blender`) and the features it turns on. NO KEY MOVED:
+  Settings ▸ AI became Settings ▸ Tools & connections (`AiSettings.svelte` keeps the provider forms as sub-pages,
+  `ToolsHub.svelte` is the main view; `'ai'` is a deep-link ALIAS in settingsNav). T5: a button whose tool is missing
+  STAYS VISIBLE — `toolLinks.explainMissing(id)` toasts "<label> needs <needs>: set one up in Settings ▸ Tools &
+  connections." and opens the row (`toolsFocus` scrolls + flashes it); the assistant's system prompt lists the same
+  missing features (`toolSummary`). `builtinTools.js` registers chat/voice/mesh/desktop; Test clients import lazily.
+  Skies (`hdri/skyFetch.js`): the five bundled `.hdr` live in the PACKS repo `hdri/` (jsDelivr, `VITE_HDRI_BASE` >
+  `VITE_PACKS_BASE` > packs@format-1); an export reads its own `hdri/<file>`; Cache Storage `tp-skies-v1` keeps a
+  picked sky (keyed by URL, older ref dropped); a CDN miss is `hdriStatus: 'unavailable'` = the flat preset + a retry
+  on `online`, never an error. e2e: `h.routeSkies` (OPT-IN — a route disables the context's HTTP cache) serves them
+  from a local packs checkout. Suites: vitest `toolStatus` (incl. the storage migration); e2e `tools-connections`,
+  `sky-cdn`.
 
 ## UI design system (redesign epic)
 

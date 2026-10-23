@@ -65,7 +65,8 @@ h.run(async () => {
 		window.__stores.settingsOpen.set(true);
 	});
 	await A.page.waitForTimeout(400);
-	h.check(await A.page.getByText('Enable assistant', { exact: false }).first().isVisible(), 'Settings -> AI section renders');
+	// 59 T4: the 'ai' deep link lands on Tools & connections, the provider is a Chat providers row
+	h.check(await A.page.locator('#settings-main [data-tool-section="chat"]').first().isVisible(), 'Settings -> Tools & connections renders the Chat providers section');
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 	await A.page.waitForTimeout(200);
 	// The pill is rendered by AiAssistant.svelte from its OWN static import of the

@@ -821,7 +821,8 @@ function optimizeCheckNeeded(parsed, opts) {
  * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
  * @param {number[]=} position - world drop point (Explorer drag-out, 96)
  * @param {any[]=} extras - companion files picked/dropped alongside (.mtl + its textures)
- * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null, lod?: any, behavior?: any, quaternion?: number[] | null}} [opts]
+ * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null, lod?: any, behavior?: any, quaternion?: number[] | null, provenance?: any}} [opts]
+ *   `provenance` (57 M7): a {tool, model, source, licence} step recorded on the placed root
  *   `quaternion` (39): the placed root's rotation — a drag-to-place drop turned with R / the wheel
  *   or aligned to a surface. Set BEFORE the add, so the create entry and the wire carry it.
  *   `behavior` (33 P2): the pack item's functional spec — a door, a lid, a fan
@@ -898,6 +899,11 @@ export async function importFile(file, name, ext, position, extras, opts = {}) {
 		// instead of carrying it (animatedImports `animRef`; the wire still sends the bytes)
 		if (opts.packRef?.path && parsed.animated)
 			parsed.root.userData.animRef = { pack: opts.packRef.pack, item: opts.packRef.item, path: opts.packRef.path };
+		// 57 M7: a caller that knows where the file came from (the Asset Browser's avatars) says so
+		if (opts.provenance) {
+			const root = parsed.animated ? parsed.animated.result?.scene : parsed.root;
+			if (root) addProvenance((root.userData = root.userData ?? {}), { ...opts.provenance, version: APP_VERSION });
+		}
 		if (parsed.animated)
 			addAnimatedImport(parsed.animated.result, parsed.animated.buffer, label, parsed.animated.kind, position);
 		else addImported(parsed.root, label, position);

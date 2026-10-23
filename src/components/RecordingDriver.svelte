@@ -5,12 +5,13 @@
 	//             is where the recording wants it for THIS frame
 	//   capture — after the render stage: the drawing buffer still holds the frame just drawn
 	// Both are one null check while nothing records. It also hands the recorder threlte's own
-	// pixel-ratio knob, so a 1080p recording from a small viewport is rendered sharp.
+	// pixel-ratio knob, so a 1080p recording from a small viewport is rendered sharp. 65 M4: the
+	// frame-exact export (offlineRender.js) borrows the same two stages through recorder.js.
 	import { onDestroy } from 'svelte';
 	import { useStage, useTask, useThrelte } from '@threlte/core';
 	import { registerRecordingDriver, recordingBeforeRender, recordingAfterRender } from '$lib/recording/recorder.js';
 
-	const { mainStage, renderStage, dpr } = useThrelte();
+	const { mainStage, renderStage, dpr, invalidate } = useThrelte();
 	const poseStage = useStage('tp-recording-pose', { after: mainStage, before: renderStage });
 	const captureStage = useStage('tp-recording-capture', { after: renderStage });
 	useTask(recordingBeforeRender, { stage: poseStage, autoInvalidate: false });
@@ -19,7 +20,9 @@
 	onDestroy(
 		registerRecordingDriver({
 			getDpr: () => dpr.current,
-			setDpr: (v) => dpr.set(v)
+			setDpr: (v) => dpr.set(v),
+			// 65 M4: the frame-exact export asks for every frame it needs
+			invalidate
 		})
 	);
 </script>

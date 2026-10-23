@@ -10,7 +10,7 @@ describe('virtual:tp-hero-runtime', () => {
 		const { code, files } = await bundleHeroRuntime();
 		expect(code).toMatch(/^var TPHero\s*=/);
 		expect(code).not.toMatch(/\bimport\s*[({'"]|\brequire\(/);
-		expect(files.some((f) => f.endsWith('heroMath.js'))).toBe(true);
+		expect(files.some((/** @type {string} */ f) => f.endsWith('heroMath.js'))).toBe(true);
 		const g = /** @type {any} */ ({});
 		new Function(code + ';this.TPHero=TPHero').call(g);
 		expect(typeof g.TPHero.mount).toBe('function');

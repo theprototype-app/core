@@ -119,6 +119,7 @@ export function muxAnimatedWebp(stills, o) {
 	parts.push(chunk('ANIM', anim));
 	frames.forEach((f, i) => {
 		if (f.width !== width || f.height !== height) throw new Error(`frame ${i} is ${f.width}×${f.height}, not ${width}×${height}`);
+		/** @type {number[]} */
 		const head = [];
 		put24(head, 0); // x / 2
 		put24(head, 0); // y / 2

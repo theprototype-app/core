@@ -42,8 +42,9 @@ export function mount(data, script) {
 	if (!el.style.width && !el.getAttribute('width')) el.style.width = '100%';
 	if (!el.style.aspectRatio && !el.style.height && !el.getAttribute('height')) el.style.aspectRatio = data.w + ' / ' + data.h;
 	el.style.display = el.style.display || 'block';
-	const ctx = el.getContext('2d');
-	if (!ctx) return null;
+	const ctx2d = el.getContext('2d');
+	if (!ctx2d) return null;
+	const ctx = ctx2d;
 
 	const n = data.frames.length;
 	/** @type {(HTMLImageElement | null)[]} */

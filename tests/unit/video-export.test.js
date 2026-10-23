@@ -87,12 +87,13 @@ function riff(chunks) {
 	const n = body.length;
 	return new Uint8Array([...'RIFF'].map((c) => c.charCodeAt(0)).concat([n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >> 24) & 255], body));
 }
-/** a lossless still header: 0x2f + 14 bits w-1 + 14 bits h-1 + alpha bit (+ some fake payload, odd length) */
+/** a lossless still header: 0x2f + 14 bits w-1 + 14 bits h-1 + alpha bit (+ some fake payload, odd length)
+ * @param {number} w @param {number} h @param {boolean} alpha @param {number[]} [extra] */
 function vp8lStill(w, h, alpha, extra = [1, 2, 3]) {
 	const bits = ((w - 1) & 0x3fff) | (((h - 1) & 0x3fff) << 14) | ((alpha ? 1 : 0) << 28);
 	return riff([riffChunk('VP8L', [0x2f, bits & 255, (bits >>> 8) & 255, (bits >>> 16) & 255, (bits >>> 24) & 255, ...extra])]);
 }
-/** a lossy still: VP8X (alpha) + ALPH + VP8 with the 9d 01 2a start code */
+/** a lossy still: VP8X (alpha) + ALPH + VP8 with the 9d 01 2a start code @param {number} w @param {number} h */
 function vp8Still(w, h) {
 	const vp8x = [0x10, 0, 0, 0, (w - 1) & 255, ((w - 1) >> 8) & 255, 0, (h - 1) & 255, ((h - 1) >> 8) & 255, 0];
 	const vp8 = [0, 0, 0, 0x9d, 0x01, 0x2a, w & 255, (w >> 8) & 0x3f, h & 255, (h >> 8) & 0x3f, 7, 7];

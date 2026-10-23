@@ -24,6 +24,7 @@
 	import Segmented from '../../ui/Segmented.svelte';
 	import Button from '../../ui/Button.svelte';
 	import AiSttSettings from '../AiSttSettings.svelte';
+	import ChatPictureSettings from './ChatPictureSettings.svelte'; // 56 C8
 	import { NAV_CONTEXT } from '$lib/settingsNav';
 	import { showToast } from '../../../stores/appStore.js';
 	import {
@@ -438,6 +439,9 @@
 		</Section>
 		<Section variant="card" label="Voice typing" badge="This device">
 			<AiSttSettings />
+		</Section>
+		<Section variant="card" label="Chat pictures" badge="This device">
+			<ChatPictureSettings /><!-- 56 C8 -->
 		</Section>
 		<Section variant="card" label="Mesh generation" badge="This device">
 			<SettingRow id="row-mesh-enable" label="Mesh generation" description="Text → 3D models from the Add menu or the assistant — a self-hosted ComfyUI with TRELLIS, or Meshy.">

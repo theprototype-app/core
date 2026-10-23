@@ -5678,7 +5678,10 @@
 			// 39: the item's size travels with the drag (the ghost draws it before any download),
 			// and a pack item names its pack (the placed reference records it)
 			...(item.dims ? { dims: item.dims } : {}),
-			...(item.glbUrl && item.packName ? { packName: item.packName } : {})
+			...(item.glbUrl && item.packName ? { packName: item.packName } : {}),
+			// 56 C10/C8: a Scene ▸ chats card drops onto the AI window as its chat; a kept picture as its file
+			...(item.chatId ? { chatId: item.chatId } : {}),
+			...(item.refEntry && item.itemId ? { refItemId: item.itemId } : {})
 		};
 	}
 	/**

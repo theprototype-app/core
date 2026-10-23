@@ -16,6 +16,7 @@
 	import Button from '../ui/Button.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
 	import AgentLog from './AgentLog.svelte'; // 55 A8
+	import ChatAttach from './ChatAttach.svelte'; // 56 C8
 	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider } from '$lib/ai/providers';
 	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi } from '$lib/ai/assistant';
 	import { dragWindow } from '$lib/dragWindow';
@@ -26,6 +27,8 @@
 	import { dictation, startDictation, stopDictation } from '$lib/ai/sttCapture';
 
 	let prompt = $state('');
+	/** 56 C8: pictures for the next message, ready for a request's `images` (56-chat's send path reads it) */
+	let pending: any[] = $state([]);
 	let pillPrompt = $state('');
 	let scroller: any = $state(null);
 	let pillInput: any = $state(null);
@@ -212,6 +215,8 @@
 						if (e.key === 'Enter') submit();
 					}}
 				/>
+				<!-- 56 C8: pictures for the next message (+ menu, paste, drop, Explorer drag) -->
+				<ChatAttach bind:pending disabled={$aiBusy} />
 				<button
 					id="ai-mic"
 					class="ai-mic shrink-0"

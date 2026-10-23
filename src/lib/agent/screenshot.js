@@ -178,6 +178,7 @@ export async function takeScreenshot(opts = {}) {
 		view,
 		at: Date.now()
 	};
-	noteAgentView(camera);
+	// 56 C8: a PERSON's "ask about this selection" picture is not where an agent looked
+	if (!(/** @type {any} */ (opts).quiet)) noteAgentView(camera);
 	return out.toDataURL('image/png');
 }

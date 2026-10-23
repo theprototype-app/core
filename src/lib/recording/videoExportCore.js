@@ -111,7 +111,9 @@ export function estimateExportBytes(plan, quality) {
 			return Math.round(px * plan.frames * 0.45);
 		case 'webp':
 		case 'hero':
-			return Math.round(px * plan.frames * 0.07 * q);
+			// a rendered scene's smooth shading compresses far better than a photo: measured 0.007 B/px
+			// for two primitives on a plain sky; textured scenes run several times that
+			return Math.round(px * plan.frames * 0.035 * q);
 		case 'png':
 			return Math.round(px * plan.frames * 1.6);
 		default:

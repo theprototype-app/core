@@ -30,6 +30,7 @@
 	oncancel={close}
 	outsideclose
 	width="sm"
+	desktopWidth="560px"
 >
 	{#if card}
 		<div id="edit-in-blender" class="flex flex-col gap-2 text-sm" data-file={card.fileName}>

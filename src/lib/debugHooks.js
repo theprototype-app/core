@@ -423,6 +423,7 @@ export const DEBUG_HOOKS = [
 	['modelDrop', () => import('./modelDrop')],
 	['modelWatch', () => import('./modelWatch')],
 	['glbEdit', () => import('./glbEdit')],
+	['modelClips', () => import('./modelClips')],
 	['lod', () => import('./lod')],
 	['gltfOptimize', () => import('./gltfOptimize.js')],
 	['gltfLoader', () => import('./gltfLoader.js')],

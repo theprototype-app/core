@@ -309,6 +309,7 @@ export async function applyObjectFile(data) {
 		// animation on every walk-in for no gain.
 		if (!data.override) return;
 		if (data.name) held.name = data.name;
+		applyUserDataFields(held, data.userData);
 		if (data.lod && typeof data.lod === 'object') held.userData.lod = data.lod;
 		if (data.pos) held.position.fromArray(data.pos);
 		if (data.rot) held.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
@@ -328,6 +329,8 @@ export async function applyObjectFile(data) {
 		root.name = data.name ?? 'Animated import';
 		// 33 P2: the spec rides the message (it lives in the pack row, not the file); absent =
 		// whatever the file's own extras say, or nothing
+		// 59 T1: the object's own rows first, so the fields below (and the file's parse) keep theirs
+		applyUserDataFields(root, data.userData);
 		const spec = normalizeBehavior(data.behavior);
 		if (spec) root.userData.behavior = spec;
 		if (data.lod && typeof data.lod === 'object') root.userData.lod = data.lod;
@@ -378,8 +381,40 @@ export function sendAnimatedImport(conn, root, opts = {}) {
 		...(animRefOf(root) ? { animRef: animRefOf(root) } : {}),
 		// 59 T1: additive — the parent of a model standing inside a group (a replaced one keeps
 		// its parent); absent at the scene root, which is every import before 59
-		...(parentFields(root))
+		...parentFields(root),
+		// 59 T1: additive — the object's own rows (physics, colliders …); absent when none
+		...userDataFields(root)
 	});
+}
+
+/** userData keys the bytes or another field already carry (derived on parse, or sent on their own) */
+const CARRIED_ELSEWHERE = new Set(['animatedClips', 'behavior', 'lod', 'animRef']);
+
+/**
+ * 59 T1: the rest of the root's userData — physics, colliders, pick, origin … everything a person set
+ * on the OBJECT. The peer re-parses the file, so a row stamped on the root after the parse never
+ * reached it (a late joiner's animated import came without its physics; a replaced one lost them).
+ * Plain JSON only; absent when there is none, so every message without one is byte-identical.
+ * @param {any} root @returns {{userData?: any}}
+ */
+function userDataFields(root) {
+	const rows = root?.userData;
+	if (!rows || typeof rows !== 'object') return {};
+	/** @type {any} */
+	const out = {};
+	for (const key of Object.keys(rows)) if (!CARRIED_ELSEWHERE.has(key) && !key.startsWith('__')) out[key] = rows[key];
+	if (!Object.keys(out).length) return {};
+	try {
+		return { userData: JSON.parse(JSON.stringify(out)) };
+	} catch {
+		return {};
+	}
+}
+
+/** what an objectfile / save entry's `userData` puts back on the parsed root @param {any} root @param {any} rows */
+function applyUserDataFields(root, rows) {
+	if (!rows || typeof rows !== 'object' || Array.isArray(rows)) return;
+	for (const key of Object.keys(rows)) if (!CARRIED_ELSEWHERE.has(key)) root.userData[key] = rows[key];
 }
 
 /** the `parent` an objectfile names: absent at the scene root @param {any} root */
@@ -467,6 +502,7 @@ export function animatedImportsSnapshot(group) {
 			...(behaviors.has(child.uuid) ? { behavior: behaviors.get(child.uuid) } : {}),
 			...rootDataFields(child),
 			...parentFields(child),
+			...userDataFields(child),
 			// 33-scenes: a pack piece names its file (fetched back on restore, once per url);
 			// anything else carries its bytes, as always
 			...(ref ? { animRef: ref } : { bytes: bytesToBase64(bytes) })
@@ -564,6 +600,7 @@ export async function animatedImportsRestore(entries, replicate = true, live = (
 				behavior: entry.behavior,
 				lod: entry.lod,
 				parent: entry.parent,
+				userData: entry.userData,
 				live
 			});
 			if (!live()) break;

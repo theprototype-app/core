@@ -37,7 +37,15 @@ import { activeAiConfig } from './providers.js';
 /** Physics is hard for small local models — a per-provider opt-in checkbox
  * (Settings → AI) gates these tools. @returns {boolean} */
 export function physicsToolsEnabled() {
-	return !!activeAiConfig()?.physicsTools;
+	return physicsForced || !!activeAiConfig()?.physicsTools;
+}
+
+/** 55 A6: an AGENT page always offers the physics tools — the checkbox exists for small LOCAL models,
+ * and an external agent is not one (test flight T9). Set by tpAgent only. */
+let physicsForced = false;
+/** @param {boolean} on */
+export function forcePhysicsTools(on) {
+	physicsForced = !!on;
 }
 
 /** Node types only usable when physics tools are on — the sim-driving set

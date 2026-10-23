@@ -19,7 +19,10 @@ h.run(async () => {
 			fullStatus: full.status,
 			fullStarts: fullText.startsWith('# theprototype.app'),
 			fullHasAnchor: fullText.includes('registerEffect'),
-			fullHasRule: fullText.includes('runs on every peer')
+			fullHasRule: fullText.includes('runs on every peer'),
+			// 55 A1: how an agent joins a session
+			mapAgents: mapText.includes('## Agents: join a session') && mapText.includes('@theprototype/agent mcp'),
+			fullAgents: fullText.includes('# Agents: join a session and build') && fullText.includes('window.tpAgent') && fullText.includes('View-only')
 		};
 	});
 	h.check(res.mapStatus === 200, 'GET /llms.txt returns 200');
@@ -28,6 +31,8 @@ h.run(async () => {
 	h.check(res.fullStatus === 200 && res.fullStarts, 'llms-full.txt serves + shares the map header');
 	h.check(res.fullHasAnchor, 'llms-full.txt inlines the real SDK API (registerEffect anchor)');
 	h.check(res.fullHasRule, 'llms-full.txt carries the one-rule-that-matters (runs on every peer)');
+	h.check(res.mapAgents, 'llms.txt has "Agents: join a session" with the one-line setup (55 A1)');
+	h.check(res.fullAgents, 'llms-full.txt inlines the agent guide: the tpAgent contract and the view-only trap (55 A1)');
 
 	await h.finish(browser);
 });

@@ -1280,11 +1280,15 @@ export class PeerConnection {
 					else answerAssetRequest(conn.peer, data);
 				} else if(data.type == 'module') {
 					applyModuleMessage(data);
+				} else if(data.type == 'meshgenask' || data.type == 'meshgenstate' || data.type == 'meshgenreq' || data.type == 'meshgenack') {
+					// 55 A6: an agent's generate_mesh relayed to the host's provider — lazy, so a session with no agent never loads it
+					const from = conn.peer;
+					import('$lib/agent/meshRelay.js').then((m) => m.handleMeshRelay(from, data)).catch(() => {});
 				} else if(data.type == 'modules') {
 					// 37 R1: `wb` is ADDITIVE — an older peer omits it and keeps getting bare messages
 					if (data.wb === 1) this.wireBatchPeers.add(conn.peer);
 					else this.wireBatchPeers.delete(conn.peer);
-					checkModuleVersions(data.versions);
+					checkModuleVersions(data.versions, conn.peer); // 55 T6: + who, for tpAgent.missingModules
 					checkPeerAppVersion(data.appVersion);
 				} else if(data.type == 'getmodulestate') {
 					sendModuleStates(data.sender);

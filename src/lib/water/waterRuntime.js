@@ -874,7 +874,7 @@ const EDITOR_HELPER_NAMES = new Set([
 ]);
 const EDITOR_HELPER_PREFIXES = ['spline-preview', 'lod-overlay-', 'light-proxy', 'camera-frustum'];
 /** @param {any} n */
-function isEditorHelper(n) {
+export function isEditorHelper(n) {
 	const name = n.name;
 	if (typeof name !== 'string' || !name) return false;
 	if (EDITOR_HELPER_NAMES.has(name) || isEditOverlay(n)) return true;

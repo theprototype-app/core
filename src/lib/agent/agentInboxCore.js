@@ -250,7 +250,12 @@ export function createInbox(deps) {
 	async function prepare(msg) {
 		/** @type {any} */
 		const out = { ...msg };
-		if (msg.chatId !== lastChat) {
+		const switched = msg.chatId !== lastChat;
+		// the request is current at once (before the history read), so pump's status says `working`
+		lastChat = msg.chatId;
+		current = { id: msg.id, chatId: msg.chatId, from: msg.from, role: msg.role, cancelled: false, done: false };
+		lastActive = now();
+		if (switched) {
 			const all = await threadOf(msg.chatId);
 			const earlier = all.filter((m) => m.id !== msg.id && (m.at ?? 0) <= msg.at && !m.partial);
 			if (earlier.length) {
@@ -259,9 +264,6 @@ export function createInbox(deps) {
 				out.olderMessages = Math.max(0, earlier.length - HISTORY_COUNT);
 			}
 		}
-		lastChat = msg.chatId;
-		current = { id: msg.id, chatId: msg.chatId, from: msg.from, role: msg.role, cancelled: false, done: false };
-		lastActive = now();
 		return out;
 	}
 

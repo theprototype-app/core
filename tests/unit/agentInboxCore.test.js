@@ -274,6 +274,8 @@ describe('agent inbox: status', () => {
 		await p;
 		await new Promise((r) => setTimeout(r, 0));
 		expect(inbox.state().status).toBe('working');
+		// SENT, not just derived: a chat switch reads history first, and the badge must not wait for it
+		expect(statuses(sent).at(-1)).toBe('working');
 		inbox.reply({ text: 'ok', final: true });
 		advance(AWAY_AFTER_MS + 100);
 		expect(inbox.state().status).toBe('away');

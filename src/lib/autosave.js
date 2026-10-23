@@ -29,6 +29,7 @@ import { transport, transportSnapshot, transportRestore } from './musicClock';
 import { patch, patchSnapshot, patchRestore } from './audioPatch';
 import { hudDocs, hudDocsSnapshot, hudDocsRestore } from './hudDocs';
 import { sequences, sequencesSnapshot, sequencesRestore } from './sequences'; // 48 S2
+import { chats, chatRefs, chatsSnapshot, chatRefsSnapshot, chatsRestore } from './chat/tpchatStore.js'; // 56 C10
 import { gameState, gameStateSnapshot, gameStateRestore } from './gameState';
 import { peers, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
@@ -379,6 +380,9 @@ async function writeSnapshot() {
 		// 48 S2: the Timeline's sequences — scene data with nowhere in a GLTF to live; the
 		// object uuids their tracks name survive through the __uuid stamp above
 		sequences: sequencesSnapshot(),
+		// 56 C10/C8: the scene's AI chats and the pictures kept from them (null when none)
+		chats: chatsSnapshot('all'),
+		chatRefs: chatRefsSnapshot(),
 		// 21-D6: same reasoning - session state with nowhere in a GLTF to live
 		game: gameStateSnapshot(),
 		// #20 P5: the selection, any open edit session, and the panel LAYOUT. This is the
@@ -756,6 +760,7 @@ async function applyRestore(snapshot, offer = null) {
 		// same reasoning: replicate, so a restore into a live room brings the HUD too
 		hudDocsRestore(snapshot.hud, true, true);
 		sequencesRestore(snapshot.sequences ?? null, true, true); // 48 S2
+		chatsRestore(snapshot.chats ?? null, snapshot.chatRefs ?? null, true, true); // 56 C10
 		gameStateRestore(snapshot.game, true);
 		// #20 P5: windows, selection and edit mode — the EXPLICIT-restore path. A plain
 		// reload never reaches here, which is exactly the point.
@@ -862,6 +867,8 @@ export function startAutosave() {
 	// written (the scenePost lesson, and the notes-disappear-on-reload one before it)
 	hudDocs.subscribe(() => markDirty());
 	sequences.subscribe(() => markDirty()); // 48 S2: authoring a sequence touches no object either
+	chats.subscribe(() => markDirty()); // 56 C10: a chat is scene data (cloud rooms save on this signal)
+	chatRefs.subscribe(() => markDirty());
 	// and once more: a game's state changes touch no object either
 	gameState.subscribe(() => markDirty());
 	setInterval(() => {

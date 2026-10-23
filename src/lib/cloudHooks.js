@@ -67,7 +67,9 @@ const ALWAYS_ALLOWED = new Set([
 	'getshadergraphs',
 	'getanim',
 	'getscenepost',
-	'getroomanchor'
+	'getroomanchor',
+	// 56 C10: the scene chats REQUEST (its `tpchats` reply stays gateable)
+	'gettpchats'
 ]);
 
 /** @type {((peerId: string, msgType: string) => boolean) | null} */

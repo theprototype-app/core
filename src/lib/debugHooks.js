@@ -323,6 +323,9 @@ export const DEBUG_HOOKS = [
 	['hudSync', () => import('./hudSync')],
 	// 48 S1/S2: the Timeline — data, sync, player
 	['sequences', () => import('./sequences')],
+	// 56 C10: the scene's chats (.tpchat store + format)
+	['tpchats', () => import('./chat/tpchatStore.js')],
+	['tpchatCore', () => import('./chat/tpchatCore.js')],
 	['sequenceSync', () => import('./sequenceSync')],
 	['sequencePlayer', () => import('./sequencePlayer')],
 	['idb', () => import('./idb')],

@@ -49,7 +49,8 @@ export const DEBUG_HOOKS = [
 	['recording', () => import('./recording/recorder.js')],
 	['recordingStores', () => import('./recording/recordingStores.js')],
 	['webmDuration', () => import('./recording/webmDuration.js')],
-	['videoExport', () => import('./recording/offlineRender.js')], // 65 M4/M7
+	// 65 M4/M7: the frame-exact export (startExport, cancelExport, exportDebug, exportCaps)
+	['videoExport', () => import('./recording/offlineRender.js')],
 	// 36 A2: the offerSession decision (xrOfferMode, xrOfferEnabled, xrOfferDebug)
 	['xrOffer', () => import('./xrOffer')],
 	// 36-avatars: rigged avatars (avatarsDebug, avatarInstances, avatarIkPeers, avatarPreview) + assets/catalog

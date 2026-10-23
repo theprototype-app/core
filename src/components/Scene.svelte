@@ -112,6 +112,7 @@
 	import LockHighlights from './LockHighlights.svelte';
 	import Grid from '../extensions/Grid.svelte';
 	import { safeStorage } from '$lib/safeStorage';
+	import { myKind } from '$lib/inviteStore';
 	import Outline from './Outline.svelte'
 	import RecordingDriver from './RecordingDriver.svelte'
 	import Player from './play/Player.svelte'
@@ -187,7 +188,8 @@
 	$globalScene.background = new THREE.Color(0x101010);
 
 	$username = safeStorage.getItem('username');
-	$userdata.push([$peers.peer.id, safeStorage.getItem('username'), safeStorage.getItem('avatar'), null, null, get(avatarConfig)]);
+	// 55 A7: slot 6 says this page is an AI agent's (`&agent` / agentApi) — peers draw no body for it
+	$userdata.push(myKind() ? [$peers.peer.id, safeStorage.getItem('username'), safeStorage.getItem('avatar'), null, null, get(avatarConfig), { kind: myKind() }] : [$peers.peer.id, safeStorage.getItem('username'), safeStorage.getItem('avatar'), null, null, get(avatarConfig)]);
 	$userdata = $userdata;
 
 	$showGrid = safeStorage.getItem('showGrid') === 'false' ? false : true;

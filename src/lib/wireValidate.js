@@ -281,6 +281,13 @@ export const VALIDATORS = {
 		) &&
 		(d.fired === undefined || (!!d.fired && typeof d.fired === 'object' && !Array.isArray(d.fired))),
 	// 37: optional presence extras — `feet` (a walker's floor, metres) and `knocked` (0/1 idle flag)
+	// 55 A7/A8: an agent's log line(s), an editor's undo request, where the agent looked
+	agentlog: (d) =>
+		(d.entry === undefined || (typeof d.entry === 'object' && d.entry !== null && typeof d.entry.id === 'string')) &&
+		(d.entries === undefined || (Array.isArray(d.entries) && d.entries.length <= 200)) &&
+		(d.entry !== undefined || d.entries !== undefined),
+	agentundo: (d) => typeof d.id === 'string' && d.id.length <= 64,
+	agentview: (d) => isVec3(d.pos) && isFiniteArray(d.quat, 4),
 	camera: (d) =>
 		typeof d.peerId === 'string' &&
 		isVec3(d.position) &&

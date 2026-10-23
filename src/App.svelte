@@ -136,6 +136,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startWireErrors } from '$lib/wireErrors'
   import { startTrackpadNav } from '$lib/trackpadNav'
   import { startInviteLinks } from '$lib/inviteLinks'
+  import { isAgentSession } from '$lib/inviteStore' // 55 A8
   import { startHelperLayer, helpersInPlay } from '$lib/helperLayer'
   import { startCloudPlugin } from '$lib/cloudPlugin'
   import { startShaderGraphs } from '$lib/shaderGraph'
@@ -317,6 +318,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startTrackpadNav()
     // 24-D1: an invite link pasted into the open tab (hashchange → dial / ask)
     startInviteLinks()
+    // 55 A8: an AI agent's page logs its own tool calls for every peer's AI window — loaded only
+    // there (dynamic), so nobody else's boot carries it
+    if (isAgentSession()) import('$lib/agentLogRecorder').then((m) => m.startAgentRecorder()).catch(() => {})
     // 24-E2: the editor camera renders the helper layer outside Play (debug toggle in Play)
     startHelperLayer()
     // shader graphs: the compile/target wiring + the replication and history seams

@@ -295,7 +295,7 @@ export function installTpAgent(extra) {
 		requeue: (/** @type {any} */ msg) => inbox.requeue(msg),
 		reply: (/** @type {any} */ o) => inbox.reply(o),
 		ask: (/** @type {any} */ o) => inbox.ask(o),
-		chatStatus: (/** @type {any} */ s) => inbox.setStatus(s),
+		chatStatus: (/** @type {any} */ s, /** @type {any} */ meta) => inbox.setStatus(s, meta),
 		thread: (/** @type {any} */ o) => inbox.thread(o),
 		status: () => ({ ...core.agent.status(), chat: inbox.state() })
 	});

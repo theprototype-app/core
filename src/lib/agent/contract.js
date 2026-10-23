@@ -126,8 +126,9 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  *   1.1.0: say something in the chat; repeated calls grow ONE streamed reply until `final`
  * @property {(o: {to?: string, question: string, options?: string[], chatId?: string}) => {ok: boolean, id?: string, error?: string}} ask
  *   1.1.0: buttons in the window; the click arrives as a request whose `answers` is the returned id
- * @property {(status: 'listening'|'working'|'away'|null) => {ok: boolean, status: string}} chatStatus 1.1.0: pin
- *   the badge (null = derive it from the waits)
+ * @property {(status: 'listening'|'working'|'away'|null, meta?: {mode?: 'mcp'|'repl', model?: string}) => {ok: boolean, status: string}} chatStatus
+ *   1.1.0: pin the badge (null = derive it from the waits); `meta` labels the agent in the window ("agent via MCP",
+ *   "<model> · agent REPL")
  * @property {(o: {chatId?: string, before?: string, limit?: number}) => Promise<{chatId: string|null, messages: TpAgentChatEntry[], more: boolean}>} thread
  *   1.1.0: a page of a chat, oldest first (`before` = a message id)
  *

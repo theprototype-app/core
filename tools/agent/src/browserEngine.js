@@ -298,6 +298,16 @@ export class BrowserEngine extends EventEmitter {
 		return joinedOf(await this.status(), this.hostId);
 	}
 
+	/**
+	 * 56: a chat method of tpAgent 1.1.0 (nextMessage, abortWait, requeue, reply, ask, chatStatus, thread).
+	 * @param {string} method @param {...any} args
+	 */
+	async chat(method, ...args) {
+		const r = await this.call(method, ...args);
+		if (r && r.__missing) throw new Error('this app build has no agent chat (tpAgent 1.1.0, theprototype 1.46+): people cannot type to you here');
+		return r;
+	}
+
 	/** @param {number} ms */
 	async waitForEdit(ms) {
 		const r = await this.call('waitForEdit', ms);

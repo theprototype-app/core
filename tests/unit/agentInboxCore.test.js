@@ -348,3 +348,15 @@ describe('agent inbox: chats and history (C11)', () => {
 		expect(s).toMatch(/now add rocks/);
 	});
 });
+
+describe('agent inbox: how the agent is driven', () => {
+	it('mode + model ride every status message (the window labels the agent with them)', () => {
+		const { inbox, sent } = fake();
+		inbox.setStatus(null, { mode: 'repl', model: 'grok-3-mini' });
+		expect(sent.at(-1)).toMatchObject({ status: expect.any(String), mode: 'repl', model: 'grok-3-mini' });
+		inbox.heartbeat();
+		expect(sent.at(-1)).toMatchObject({ mode: 'repl', model: 'grok-3-mini' });
+		inbox.setStatus(null, { mode: 'bogus' });
+		expect(sent.at(-1).mode).toBeUndefined();
+	});
+});

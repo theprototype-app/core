@@ -4,7 +4,9 @@
 // is up (never a hardcoded catalog: it is the live app's set, physics and mesh gen included
 // when the host offers them) and re-read on a poll and after every call, so a host that turns
 // a provider on, or a role change, reaches the client as `notifications/tools/list_changed`.
-// Beside them sit the bridge's own four: connect, status, screenshot, wait_for_edit.
+// Beside them sit the bridge's own four: connect, status, screenshot, wait_for_edit — and (roadmap 56,
+// browser engine) the chat: wait_for_message, reply, ask, get_thread (./chat.js), so people can type to the
+// agent in the app's AI assistant window while the terminal stays a second window onto the same thread.
 //
 // The server answers IMMEDIATELY and connects in the background: approval is a human's, so no
 // tool registration ever waits on it — scene tools refuse with "not in the session yet" until
@@ -14,6 +16,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { bridgeTools, mapHostTools, toolSignature, textResult, resultIsError } from './mcpTools.js';
+import { chatTools, waitMs, ImageSpool, messageContent, withImportPath, importModelArgs } from './chat.js';
 import { parseLink } from './link.js';
 
 export const PKG_VERSION = (() => {
@@ -27,7 +30,10 @@ export const PKG_VERSION = (() => {
 const INSTRUCTIONS = [
 	'theprototype.app session bridge: you are a peer in a live, shared 3D scene. Everything you change replicates to everyone in the session, with undo.',
 	'Start with status (or connect with the session link the host gave you). The scene tools are the host app\'s own and appear once you are in;',
-	'call list_scene first so you use real uuids, batch many objects into one call, and use screenshot to look at the result. wait_for_edit waits for the humans.'
+	'call list_scene first so you use real uuids, batch many objects into one call, and use screenshot to look at the result. wait_for_edit waits for the humans.',
+	'People can also TYPE TO YOU in the app\'s AI assistant window: when the user asks you to listen (e.g. "listen to my theprototype session"), loop',
+	'wait_for_message → act → reply({text, final: true}) → wait_for_message (null = nobody wrote yet: wait again). Respect each message\'s role (viewers may not edit).',
+	'When the user talks to you in this terminal while you are in a session, echo it: reply({prompt: <their words>, text: <your answer>, final: true}), so the app\'s thread is complete.'
 ].join(' ');
 
 const CONNECT_WAIT_MS = 45000;
@@ -44,11 +50,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * @param {any[]} [opts.staticTools] host tools known before connecting (the wire engine's catalog)
  * @param {number} [opts.pollMs] how often to re-read the host's tool list (default 5000)
  * @param {number} [opts.connectWaitMs]
+ * @param {ImageSpool | null} [opts.spool] where chat images are written (null = no temp files)
  * @param {(m: string) => void} [opts.log]
  */
 export function createBridgeServer(opts) {
 	const log = opts.log || (() => {});
-	const builtins = bridgeTools(opts.kind);
+	const builtins = [...bridgeTools(opts.kind), ...(opts.kind === 'browser' ? chatTools() : [])];
+	const spool = opts.spool === undefined ? new ImageSpool() : opts.spool;
 	const reserved = builtins.map((t) => t.name);
 	/** @type {any} */
 	let engine = null;
@@ -66,7 +74,7 @@ export function createBridgeServer(opts) {
 
 	if (opts.staticTools) {
 		const m = mapHostTools(opts.staticTools, reserved);
-		hostTools = m.tools;
+		hostTools = m.tools.map(withImportPath);
 		dropped = m.dropped;
 		signature = toolSignature(hostTools);
 	}
@@ -94,10 +102,11 @@ export function createBridgeServer(opts) {
 			return;
 		}
 		const m = mapHostTools(raw, reserved);
-		const sig = toolSignature(m.tools);
+		const mapped = m.tools.map(withImportPath);
+		const sig = toolSignature(mapped);
 		if (sig !== signature) {
 			signature = sig;
-			hostTools = m.tools;
+			hostTools = mapped;
 			dropped = m.dropped;
 			log('host tool list: ' + hostTools.length + ' tools');
 			notifyChanged();
@@ -131,7 +140,11 @@ export function createBridgeServer(opts) {
 		const mine = engine;
 		starting = engine
 			.start()
-			.then(() => refreshTools())
+			.then(() => {
+				// 56: the window labels the agent "via MCP" (an older page has no chat: fine)
+				if (engine === mine && mine.kind === 'browser') mine.chat?.('chatStatus', null, { mode: 'mcp' }).catch(() => {});
+				return refreshTools();
+			})
 			.catch((/** @type {any} */ e) => log('connect failed: ' + e.message));
 		if (!poll) {
 			poll = setInterval(() => refreshTools().catch(() => {}), opts.pollMs ?? 5000);
@@ -175,7 +188,7 @@ export function createBridgeServer(opts) {
 
 	server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...builtins, ...hostTools] }));
 
-	server.setRequestHandler(CallToolRequestSchema, async (req) => {
+	server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
 		const name = req.params.name;
 		const a = /** @type {any} */ (req.params.arguments || {});
 		try {
@@ -207,6 +220,10 @@ export function createBridgeServer(opts) {
 				const r = await engine.waitForEdit(ms);
 				return textResult(r, resultIsError(r));
 			}
+			if (name === 'wait_for_message' || name === 'reply' || name === 'ask' || name === 'get_thread') {
+				if (!engineReady()) return textResult({ error: 'the agent page is not up yet (' + engine.state + ')' }, true);
+				return await chatCall(name, a, extra?.signal);
+			}
 			if (!hostTools.some((t) => t.name === name)) {
 				return textResult({ error: 'unknown tool: ' + name, note: engineReady() ? 'call status for the tools this session offers' : 'the scene tools appear once connected' }, true);
 			}
@@ -220,7 +237,7 @@ export function createBridgeServer(opts) {
 					true
 				);
 			}
-			const r = await engine.exec(name, a);
+			const r = await engine.exec(name, name === 'import_model' ? importModelArgs(a) : a);
 			refreshTools().catch(() => {});
 			if (r && r.__missing) return textResult({ error: 'this app build has no exec()' }, true);
 			return textResult(r, resultIsError(r));
@@ -229,9 +246,45 @@ export function createBridgeServer(opts) {
 		}
 	});
 
+	/**
+	 * 56: the chat tools. wait_for_message long-polls the page's inbox; if the client gives up on the call
+	 * (cancel / timeout) the page's wait is released, and a message that arrived in that instant goes back.
+	 * @param {string} name @param {any} a @param {AbortSignal | undefined} signal
+	 */
+	async function chatCall(name, a, signal) {
+		const e = engine;
+		if (name === 'wait_for_message') {
+			const token = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+			const release = () => e.chat('abortWait', token).catch(() => {});
+			signal?.addEventListener('abort', release, { once: true });
+			try {
+				const msg = await e.chat('nextMessage', waitMs(a.timeoutS ?? a.timeout_s), token);
+				if (!msg) return textResult(null);
+				if (signal?.aborted) {
+					await e.chat('requeue', msg).catch(() => {});
+					return textResult({ error: 'cancelled' }, true);
+				}
+				return { content: messageContent(msg, spool) };
+			} finally {
+				signal?.removeEventListener('abort', release);
+			}
+		}
+		if (name === 'reply') {
+			const r = await e.chat('reply', { text: a.text, final: a.final, to: a.to, chatId: a.chatId ?? a.chat_id, prompt: a.prompt, replyTo: a.replyTo });
+			return textResult(r, !r?.ok);
+		}
+		if (name === 'ask') {
+			const r = await e.chat('ask', { question: a.question, options: a.options, to: a.to, chatId: a.chatId ?? a.chat_id });
+			return textResult(r, !r?.ok);
+		}
+		const r = await e.chat('thread', { chatId: a.chatId ?? a.chat_id, before: a.before, limit: a.limit });
+		return textResult(r);
+	}
+
 	async function shutdown() {
 		if (closed) return;
 		closed = true;
+		spool?.cleanup();
 		if (poll) clearInterval(poll);
 		const e = engine;
 		engine = null;

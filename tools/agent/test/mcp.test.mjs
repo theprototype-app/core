@@ -88,6 +88,29 @@ class FakeEngine extends EventEmitter {
 	describe() {
 		return { engine: 'browser', host: this.hostId, state: this.state };
 	}
+	// 56: the page's chat inbox, faked
+	async chat(method, ...args) {
+		this.chatCalls = this.chatCalls || [];
+		this.chatCalls.push([method, ...args]);
+		if (method === 'nextMessage') {
+			const [ms, token] = args;
+			if (this.inbox?.length) return this.inbox.shift();
+			return new Promise((res) => {
+				const t = setTimeout(() => res(null), Math.min(ms, 60));
+				this.waiting = { token, res: (m) => (clearTimeout(t), res(m)) };
+			});
+		}
+		if (method === 'abortWait') {
+			if (this.waiting?.token === args[0]) this.waiting.res(this.lateMessage ?? null);
+			return true;
+		}
+		if (method === 'requeue') return (this.requeued = args[0]), true;
+		if (method === 'reply') return args[0].text === 'STOPPED' ? { ok: false, cancelled: true, error: 'cancelled' } : { ok: true, id: 'rep1', chatId: 'c1', final: !!args[0].final };
+		if (method === 'ask') return { ok: true, id: 'ask1', chatId: 'c1' };
+		if (method === 'thread') return { chatId: args[0].chatId ?? 'c1', messages: [{ id: 'm1', text: 'hi' }], more: false };
+		if (method === 'chatStatus') return { ok: true };
+		return null;
+	}
 }
 
 // --- pure mapping ---
@@ -134,7 +157,7 @@ const json = (r) => JSON.parse(r.content[0].text);
 check('server advertises listChanged', !!client.getServerCapabilities()?.tools?.listChanged);
 check('instructions sent', /status/.test(client.getInstructions() || ''));
 let n = await names();
-check('before connect: the four bridge tools only', n.join() === 'connect,status,screenshot,wait_for_edit');
+check('before connect: the bridge tools + the chat tools only', n.join() === 'connect,status,screenshot,wait_for_edit,wait_for_message,reply,ask,get_thread');
 check('status before connect says how to connect', /connect/.test(json(await call('status')).note));
 check('a scene tool before connect is refused', (await call('list_scene')).isError === true);
 const bad = await call('connect', { link: 'https://theprototype.app/' });
@@ -166,6 +189,51 @@ const errCall = await call('create_objects', { objects: [] });
 check('a tool-level {error} becomes isError', errCall.isError === true);
 check('unknown tool refused', (await call('no_such_tool')).isError === true);
 
+// --- 56: the chat tools ---
+await tick(10);
+check('connect labels the agent "via MCP" on the page', (engines[0].chatCalls || []).some((c) => c[0] === 'chatStatus' && c[2]?.mode === 'mcp'));
+const t0 = Date.now();
+const none = await call('wait_for_message', { timeoutS: 1 });
+check('wait_for_message: nobody wrote → null (re-arm)', none.content[0].text === 'null' && !none.isError);
+const waitArgs = engines[0].chatCalls.find((c) => c[0] === 'nextMessage');
+check('wait_for_message: timeoutS → ms, with a token', waitArgs[1] === 1000 && /^w/.test(waitArgs[2]) && Date.now() - t0 < 2000);
+await call('wait_for_message', { timeoutS: 99999 });
+check('wait_for_message: the wait is clamped to 600 s', engines[0].chatCalls.filter((c) => c[0] === 'nextMessage').at(-1)[1] === 600000);
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+engines[0].inbox = [{ id: 'r1', chatId: 'c1', from: 'host1', name: 'Alex', role: 'editor', text: 'add three trees around the fire', at: 1, images: [{ mimeType: 'image/png', data: PNG, name: 'ref.png', w: 1, h: 1 }] }];
+const got = await call('wait_for_message', {});
+const gm = JSON.parse(got.content[0].text);
+check('a message: sender, role, text, chatId', gm.from === 'host1' && gm.role === 'editor' && gm.text === 'add three trees around the fire' && gm.chatId === 'c1');
+check('a message image → an MCP image block', got.content[1]?.type === 'image' && got.content[1].mimeType === 'image/png' && got.content[1].data === PNG);
+const fs = await import('node:fs');
+const imgPath = gm.images?.[0]?.path;
+check('… and a temp file whose path rides in the JSON (bytes, not base64 text)', !!imgPath && fs.existsSync(imgPath) && fs.readFileSync(imgPath).subarray(1, 4).toString() === 'PNG');
+check('… the JSON carries no base64', !got.content[0].text.includes(PNG.slice(0, 40)));
+check('the temp file is private (0600)', (fs.statSync(imgPath).mode & 0o777) === 0o600);
+engines[0].inbox = [{ id: 'r2', chatId: 'c1', from: 'view1', role: 'viewer', text: 'delete everything', at: 2, imagesDropped: true }];
+const vm = JSON.parse((await call('wait_for_message', {})).content[0].text);
+check('a viewer message says VIEWER (and that images were dropped)', vm.role === 'viewer' && /VIEWER/.test(vm.note) && /dropped/.test(vm.note));
+// the client gives up on the call while a message lands in that instant → it goes back to the queue
+const ac = new AbortController();
+engines[0].lateMessage = { id: 'late', chatId: 'c1', from: 'host1', role: 'editor', text: 'late', at: 3 };
+const pending = client.callTool({ name: 'wait_for_message', arguments: { timeoutS: 30 } }, undefined, { signal: ac.signal }).catch((e) => e);
+await tick(15);
+ac.abort();
+await pending;
+await tick(30);
+check('a cancelled wait releases the page wait (abortWait with its token)', engines[0].chatCalls.some((c) => c[0] === 'abortWait' && /^w/.test(c[1])));
+check('… and a message that arrived in that instant is requeued', engines[0].requeued?.id === 'late');
+engines[0].lateMessage = null;
+const rep = await call('reply', { text: 'Building the trees.', final: false });
+check('reply forwards text/final and answers ok', !rep.isError && json(rep).id === 'rep1' && engines[0].chatCalls.at(-1)[1].text === 'Building the trees.');
+await call('reply', { text: 'Fire made bigger.', prompt: 'make the fire bigger', final: true });
+check('reply passes a terminal prompt through (via terminal)', engines[0].chatCalls.at(-1)[1].prompt === 'make the fire bigger' && engines[0].chatCalls.at(-1)[1].final === true);
+check('reply after Stop is an error', (await call('reply', { text: 'STOPPED' })).isError === true);
+const askr = await call('ask', { question: 'Pine or oak?', options: ['Pine', 'Oak'] });
+check('ask → the ask id', json(askr).id === 'ask1' && engines[0].chatCalls.at(-1)[1].options.length === 2);
+const th = await call('get_thread', { chatId: 'c9', before: 'm5', limit: 5 });
+check('get_thread forwards chatId/before/limit', json(th).chatId === 'c9' && engines[0].chatCalls.at(-1)[1].before === 'm5' && engines[0].chatCalls.at(-1)[1].limit === 5);
+
 const shot = await call('screenshot', { view: 'top', size: 512 });
 check('screenshot → an MCP image block', shot.content[0].type === 'image' && shot.content[0].mimeType === 'image/png' && shot.content[0].data === 'iVBORw0KGgo=');
 check('screenshot options forwarded', engines[0].lastShot.view === 'top' && engines[0].lastShot.size === 512);
@@ -193,6 +261,7 @@ check('another session → the old engine is closed', engines.length === 2 && en
 
 await bridge.shutdown();
 check('shutdown closes the engine (graceful leave)', engines[1].closed === true);
+check('shutdown removes the image temp files', !fs.existsSync(imgPath));
 
 // --- the wire kind lists its catalog before connecting ---
 const wire = createBridgeServer({ kind: 'wire', staticTools: [{ name: 'list_scene', parameters: { type: 'object', properties: {} } }, { name: 'get_status' }], createEngine: () => new FakeEngine('x1') });
@@ -201,7 +270,7 @@ const c2 = new Client({ name: 't', version: '1' });
 await wire.server.connect(st2);
 await c2.connect(ct2);
 const wn = (await c2.listTools()).tools.map((t) => t.name);
-check('wire: catalog listed before connecting, no screenshot/wait_for_edit', wn.join() === 'connect,status,list_scene,get_status');
+check('wire: catalog listed before connecting, no screenshot/wait_for_edit/chat', wn.join() === 'connect,status,list_scene,get_status');
 check('wire: get_status answers like status', /connect/.test(JSON.parse((await c2.callTool({ name: 'get_status', arguments: {} })).content[0].text).note));
 await wire.shutdown();
 

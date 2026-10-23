@@ -10,7 +10,8 @@
 //   terminal {id, chatId, from, role:'user', via:'cli', text}   a turn the user typed in the agent's terminal
 //   ask      {id, chatId, from, to, ask: {question, options}}   buttons; the click is a request with `answers`
 //   cancel   {cancel: requestId, chatId, from, to}               Stop
-//   status   {from, status, muted?, chatId?}                     listening | working | away
+//   status   {from, status, muted?, chatId?, mode?, model?}      listening | working | away; mode 'mcp' | 'repl' and
+//            the REPL's model name label the agent in the window's target picker
 //   mute     {to, from, mute}                                    host / admin only
 //
 // The rules this file owns (they hold whatever the model does):
@@ -147,6 +148,8 @@ export function createInbox(deps) {
 	let muted = false;
 	/** the bridge's explicit status (null = derived) */
 	let forced = /** @type {string|null} */ (null);
+	/** how the agent is driven, from the bridge: {mode: 'mcp'|'repl', model?} */
+	let ident = /** @type {{mode?: string, model?: string}} */ ({});
 	let lastSent = '';
 	let lastActive = now();
 	/** replies being streamed: replyTo|'cli:'+chatId -> {id, text, chatId, to, replyTo, via} */
@@ -186,12 +189,14 @@ export function createInbox(deps) {
 	/** broadcast the status when it changed (or always, for the heartbeat) @param {boolean} [force] */
 	function publishStatus(force = false) {
 		const s = status();
-		const key = s + (muted ? ':m' : '') + ':' + (current?.chatId ?? lastChat ?? '');
+		const key = s + (muted ? ':m' : '') + ':' + (current?.chatId ?? lastChat ?? '') + ':' + (ident.mode ?? '') + ':' + (ident.model ?? '');
 		if (!force && key === lastSent) return;
 		lastSent = key;
 		/** @type {any} */
 		const msg = { type: 'agentchat', from: self(), status: s };
 		if (muted) msg.muted = true;
+		if (ident.mode) msg.mode = ident.mode;
+		if (ident.model) msg.model = ident.model;
 		const chatId = current?.chatId ?? lastChat;
 		if (chatId) msg.chatId = chatId;
 		try {
@@ -505,9 +510,18 @@ export function createInbox(deps) {
 		return null;
 	}
 
-	/** the bridge's explicit status ('listening'|'working'|'away'), or null to derive it @param {string|null} s */
-	function setStatus(s) {
+	/**
+	 * The bridge's explicit status ('listening'|'working'|'away'), or null to derive it; `meta` says how the
+	 * agent is driven (`mode` 'mcp' | 'repl', `model` the REPL's model name) for the window's label.
+	 * @param {string|null} s @param {{mode?: string, model?: string}} [meta]
+	 */
+	function setStatus(s, meta) {
 		forced = s === 'listening' || s === 'working' || s === 'away' ? s : null;
+		if (meta && typeof meta === 'object') {
+			ident = {};
+			if (meta.mode === 'mcp' || meta.mode === 'repl') ident.mode = meta.mode;
+			if (typeof meta.model === 'string' && meta.model) ident.model = meta.model.slice(0, 64);
+		}
 		publishStatus();
 		return { ok: true, status: status() };
 	}
@@ -530,7 +544,8 @@ export function createInbox(deps) {
 			queued: queue.length,
 			waiting: waiters.size,
 			current: current ? { ...current } : null,
-			chatId: current?.chatId ?? lastChat
+			chatId: current?.chatId ?? lastChat,
+			...ident
 		}),
 		/** @param {() => void} fn */
 		onChange(fn) {

@@ -32,8 +32,17 @@ const sceneSky = (page) =>
 /** @param {any} page @param {string} key */
 const pick = (page, key) =>
 	page.evaluate((k) => window.__stores.environment.setEnvironment(k), key);
-/** @param {any} page */
-const settle = (page) => page.evaluate(() => window.__stores.hdri.hdriDebug.settle());
+/** wait until the layer has settled ON `key` (a preset switch passes through 'off' first, and the
+ * environment applies on its own schedule — a bare settle() can answer for the PREVIOUS sky)
+ * @param {any} page @param {string} key @returns {Promise<string>} */
+const settle = async (page, key) => {
+	for (let i = 0; i < 400; i++) {
+		const st = await status(page);
+		if (st.src === 'bundled:' + key && st.state !== 'loading') return st.state;
+		await page.waitForTimeout(50);
+	}
+	return (await status(page)).state;
+};
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
@@ -49,7 +58,7 @@ h.run(async () => {
 	// ---- 1. first pick downloads --------------------------------------------------------------
 	h.check(skies.count() === 0, `no sky is fetched at boot (${skies.count()})`);
 	await pick(A.page, 'meadow');
-	h.check((await settle(A.page)) === 'ready', 'Meadow is ready');
+	h.check((await settle(A.page, 'meadow')) === 'ready', 'Meadow is ready');
 	h.check(
 		skies.count() === 1,
 		`Meadow was fetched once (${skies.count()}: ${skies.hits.join(', ')})`
@@ -79,10 +88,10 @@ h.run(async () => {
 	await h.answerRestore(A);
 	await A.page.evaluate(() => window.__stores.environment.setEnvironment('studio'));
 	await pick(A.page, 'meadow');
-	h.check((await settle(A.page)) === 'ready', 'after a reload Meadow is ready again');
+	h.check((await settle(A.page, 'meadow')) === 'ready', 'after a reload Meadow is ready again');
 	h.check(skies.count() === 1, `…and was NOT fetched again (${skies.count()} sky requests in all)`);
 	await pick(A.page, 'sunrise');
-	h.check((await settle(A.page)) === 'ready', 'Sunrise is ready');
+	h.check((await settle(A.page, 'sunrise')) === 'ready', 'Sunrise is ready');
 	h.check(
 		skies.count() === 2 && /\/hdri\/spruit_sunrise_1k\.hdr$/.test(skies.hits[1] ?? ''),
 		`counterfactual: a sky never picked IS fetched (${skies.count()})`
@@ -90,7 +99,10 @@ h.run(async () => {
 
 	// ---- 4. an export embeds the chosen sky (built app only) ---------------------------------
 	await pick(A.page, 'meadow');
-	await settle(A.page);
+	await settle(A.page, 'meadow');
+	// the exporter refuses an empty scene
+	await A.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await A.page.waitForTimeout(300);
 	const exp = await A.page.evaluate(async () => {
 		const b = window.__stores.exportBuilder;
 		try {
@@ -141,7 +153,7 @@ h.run(async () => {
 	const blocked = await h.routeSkies(B.page, { block: true });
 	await pick(B.page, 'starlight');
 	h.check(
-		(await settle(B.page)) === 'unavailable',
+		(await settle(B.page, 'starlight')) === 'unavailable',
 		`CDN blocked: the sky is unavailable, not an error (${(await status(B.page)).state})`
 	);
 	h.check(blocked.count() >= 1, `the sky was asked for (${blocked.count()})`);

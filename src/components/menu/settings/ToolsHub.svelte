@@ -112,10 +112,6 @@
 	});
 </script>
 
-<p class="tools-intro">
-	Connect only the tools you use. Each one shows whether it is ready, a Test, and the features it
-	turns on — a button whose tool is missing says so and brings you here.
-</p>
 {#each $toolSections as group (group.section.id)}
 	<div
 		class="tools-section"
@@ -204,7 +200,6 @@
 </p>
 
 <style>
-	.tools-intro,
 	.tools-desc {
 		margin: 0;
 		font-size: var(--fs-desc);

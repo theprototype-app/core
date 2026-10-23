@@ -145,6 +145,16 @@ h.run(async () => {
 	);
 
 	// ---- 2. the page --------------------------------------------------------------------------
+	// SHOTS=<dir>: evidence screenshots of the page (the default theme here, dark at the end)
+	const shot = async (/** @type {string} */ name) => {
+		if (!process.env.SHOTS) return;
+		require('node:fs').mkdirSync(process.env.SHOTS, { recursive: true });
+		await page
+			.locator('dialog.settings-dialog')
+			.screenshot({ path: require('node:path').join(process.env.SHOTS, name + '.png') })
+			.catch(() => {});
+	};
+	await shot('tools-connections-default');
 	const sections = await page.evaluate(() =>
 		[...document.querySelectorAll('#settings-main [data-tool-section]')].map((e) =>
 			e.getAttribute('data-tool-section')
@@ -323,6 +333,12 @@ h.run(async () => {
 		gated.length === 0,
 		`axe: no serious/critical violation on Tools & connections (${gated.map((/** @type {any} */ v) => v.id).join(', ') || 'none'})`
 	);
+	await page.evaluate(() => {
+		document.documentElement.dataset.theme = 'dark';
+		document.documentElement.classList.add('dark');
+	});
+	await page.waitForTimeout(200);
+	await shot('tools-connections-dark');
 	h.check(
 		h.pageErrors(A).length === 0,
 		`no page errors (${h.pageErrors(A).join(' | ').slice(0, 200)})`

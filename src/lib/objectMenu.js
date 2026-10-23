@@ -29,6 +29,7 @@ import { pingObject, pingObjects } from './ping';
 import { hasOriginal } from './decimate';
 import { linkOf } from './prefabSync';
 import { prefabById } from './prefabs';
+import { isReplaceableModel } from './modelTarget'; // 59 T1/T2
 
 /**
  * 47 M2: the nine Align rows (X / Y / Z × min / centre / max) for a set.
@@ -279,6 +280,28 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 					}
 				])
 	];
+
+	/** @type {any[]} 59 T1/T2: this object's MODEL — swapped from a file, or taken out to a tool and back */
+	const model =
+		!multi && !loadingStub && isReplaceableModel(object)
+			? [
+					{
+						label: 'Replace model…',
+						icon: 'folder-input',
+						disabled: locked,
+						tooltip: locked
+							? lockedTooltip
+							: 'Pick a model file — the object keeps its place, name, links, flows, physics and behaviours (one undo)',
+						action: () => import('./modelReplace').then((m) => m.pickReplacementFile(uuid))
+					},
+					{
+						label: 'Edit in Blender…',
+						icon: 'external-link',
+						tooltip: 'Download it as a .glb for Blender (or any glTF tool); drop the exported file back to update it',
+						action: () => import('./editInBlender').then((m) => m.editInBlender(uuid))
+					}
+				]
+			: [];
 
 	/** @type {any[]} structure + the editing modes */
 	const edit = [
@@ -727,7 +750,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 		}
 	];
 
-	const groups = [loading, primary, view, edit, more].filter((g) => g.length);
+	const groups = [loading, primary, view, edit, model, more].filter((g) => g.length);
 	return [
 		{
 			header: {

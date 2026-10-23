@@ -337,7 +337,10 @@ export async function applyObjectFile(data) {
 		if (data.pos) root.position.fromArray(data.pos);
 		if (data.rot) root.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
 		if (data.scale) root.scale.fromArray(data.scale);
-		group.add(root);
+		// 59 T1: `parent` (additive) — the pose above is LOCAL to it; a parent we do not hold
+		// (yet) falls back to the scene root, which is where every pre-59 objectfile landed
+		const parent = typeof data.parent === 'string' ? group.getObjectByProperty('uuid', data.parent) : null;
+		(parent ?? group).add(root);
 		pokeScene();
 		registerAnimatedImport(root, animations, bytes, data.kind === 'fbx' ? 'fbx' : 'gltf');
 		if (behaviors.has(data.uuid)) {
@@ -372,8 +375,18 @@ export function sendAnimatedImport(conn, root, opts = {}) {
 		...behaviorFields(root.uuid),
 		...rootDataFields(root),
 		// 33-scenes: additive — absent for every import that is not a pack piece
-		...(animRefOf(root) ? { animRef: animRefOf(root) } : {})
+		...(animRefOf(root) ? { animRef: animRefOf(root) } : {}),
+		// 59 T1: additive — the parent of a model standing inside a group (a replaced one keeps
+		// its parent); absent at the scene root, which is every import before 59
+		...(parentFields(root))
 	});
+}
+
+/** the `parent` an objectfile names: absent at the scene root @param {any} root */
+function parentFields(root) {
+	const parent = root?.parent;
+	const group = get(objectsGroup);
+	return parent && group && parent !== group && parent.uuid ? { parent: parent.uuid } : {};
 }
 
 // ---- saving: rigs travel as their ORIGINAL BYTES here too --------------------
@@ -423,7 +436,16 @@ export function animatedImportsSnapshot(group) {
 	/** @type {any[]} */
 	const out = [];
 	const states = get(animatedObjects);
-	for (const child of group?.children ?? []) {
+	// 59 T1: every animated import in the tree, not only the top level — one standing inside a
+	// group (a model replaced in place keeps its parent) was otherwise saved only as the static
+	// twin its parent's serialization carries. The entry names that parent, and the restore
+	// removes the twin by uuid before it re-parses, as it always did for the top level.
+	/** @type {any[]} */
+	const roots = [];
+	group?.traverse?.((/** @type {any} */ o) => {
+		if (o !== group && fileBytes.has(o.uuid)) roots.push(o);
+	});
+	for (const child of roots) {
 		const bytes = fileBytes.get(child.uuid);
 		if (!bytes) continue;
 		const ref = animRefOf(child);
@@ -444,6 +466,7 @@ export function animatedImportsSnapshot(group) {
 			// and never is — a scene saved with its door open reopens shut
 			...(behaviors.has(child.uuid) ? { behavior: behaviors.get(child.uuid) } : {}),
 			...rootDataFields(child),
+			...parentFields(child),
 			// 33-scenes: a pack piece names its file (fetched back on restore, once per url);
 			// anything else carries its bytes, as always
 			...(ref ? { animRef: ref } : { bytes: bytesToBase64(bytes) })
@@ -540,6 +563,7 @@ export async function animatedImportsRestore(entries, replicate = true, live = (
 				anim: entry.anim,
 				behavior: entry.behavior,
 				lod: entry.lod,
+				parent: entry.parent,
 				live
 			});
 			if (!live()) break;

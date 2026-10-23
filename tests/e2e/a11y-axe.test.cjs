@@ -128,7 +128,10 @@ h.run(async () => {
 		const box = g.children.find((c) => c.isMesh);
 		s.objectActions.selectObject(box.uuid, true);
 	});
-	await page.waitForTimeout(1200);
+	// The Inspector opens on showSidebar's 50 ms timer, which takes 0.5-1.5 s under e2e load:
+	// poll for it (a fixed sleep went red on CI with no axe violation), then let it settle.
+	await page.waitForSelector('#inspector', { state: 'visible', timeout: 15000 }).catch(() => {});
+	await page.waitForTimeout(300);
 	await gate(page, 'Inspector', '#inspector', '#inspector');
 	await page.evaluate(() => {
 		window.__stores.inspectorClose?.set(true);

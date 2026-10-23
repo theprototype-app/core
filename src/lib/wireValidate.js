@@ -51,6 +51,16 @@ export function isEulerWithOrder(v) {
 	return Array.isArray(v) && v.length === 4 && isFiniteArray(v.slice(0, 3), 3) && typeof v[3] === 'string' && /^[XYZ]{3}$/.test(v[3]);
 }
 
+/** 50 Y1: a shared-text document key @param {unknown} v */
+export function isTextKey(v) {
+	return typeof v === 'string' && v.length > 2 && v.length <= 512 && /^[nf]:/.test(v);
+}
+
+/** raw bytes as binarypack delivers them: an ArrayBuffer or a typed view @param {unknown} v */
+export function isBytes(v) {
+	return v instanceof ArrayBuffer || ArrayBuffer.isView(v);
+}
+
 /** @param {unknown} v */
 export function isArray(v) {
 	return Array.isArray(v);
@@ -160,6 +170,11 @@ export const VALIDATORS = {
 	seq: (d) => typeof d.id === 'string' && d.id.length <= 64 && !!d.doc && typeof d.doc === 'object' && !Array.isArray(d.doc),
 	seqdelete: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	seqs: (d) => !!d.seqs && typeof d.seqs === 'object' && !Array.isArray(d.seqs),
+	// 50 Y1: shared text — a document key (`n:<graph>:<node>` / `f:<name>`) and Yjs's own binary
+	// encodings as raw bytes (an update, an awareness update, a state vector), or `none`
+	ytext: (d) => isTextKey(d.key) && (d.none === true || isBytes(d.u)),
+	ytextaw: (d) => isTextKey(d.key) && isBytes(d.a),
+	getytext: (d) => isTextKey(d.key) && (d.sv === undefined || isBytes(d.sv)),
 	userdata: (d) => isArray(d.userdata),
 	locked: (d) => isArray(d.lockeditems),
 	lock: (d) => isUuid(d.uuid) && (d.uuids === undefined || isArray(d.uuids)),

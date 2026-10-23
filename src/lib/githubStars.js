@@ -41,6 +41,10 @@ export function loadGithubStars() {
 	const entry = cached();
 	if (entry) githubStars.set(entry.n);
 	if (entry && Date.now() - entry.ts < TTL) return; // still fresh
+	// Automated browsers (Playwright sets navigator.webdriver) start every test with empty
+	// storage, so each one would spend a call from the machine's 60/h; e2e lanes ran it dry.
+	// The cache still shows (like the cloud plugin's copy) — only the fetch is skipped
+	if (navigator.webdriver) return;
 	fetch('https://api.github.com/repos/' + REPO, { headers: { Accept: 'application/vnd.github+json' } })
 		.then((res) => (res.ok ? res.json() : null))
 		.then((data) => {

@@ -238,7 +238,8 @@ h.run(async () => {
 	const target = (await rows(page)).find((r) => r.name === 'Blockout v1');
 	const result = await page.evaluate((id) => window.__stores.checkpoints.restoreCheckpoint(id), target.id);
 	h.check(result === 'proposed', 'with a peer connected the restore is a proposal (' + result + ')');
-	await B.page.getByText(/wants to load session/).waitFor({ timeout: 8000 });
+	// 53-reader (1.41): the polite live region repeats the toast's words — wait for the toast card itself
+	await B.page.locator('.tp-toast-text', { hasText: /wants to load session/ }).first().waitFor({ timeout: 8000 });
 	h.check(true, 'the peer is asked');
 	await B.page.getByRole('button', { name: 'Accept', exact: true }).click();
 	await h.eventually(

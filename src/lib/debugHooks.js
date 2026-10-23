@@ -376,6 +376,7 @@ export const DEBUG_HOOKS = [
 	['touchActions', () => import('./touchActions')],
 	['touchSpec', () => import('./touchSpec')],
 	['playMode', () => import('./playMode')],
+	['arTable', () => import('./arTable')],
 	// 36-export: the export builder, its stores, the export boot + runtime state
 	['exportBuilder', () => import('./export/exportBuilder.js')],
 	['exportStores', () => import('./export/exportStores.js')],
@@ -450,6 +451,10 @@ export const DEBUG_HOOKS = [
 	['scriptSockets', () => import('./scriptSockets')],
 	['scriptLint', () => import('./scriptLint')],
 	['codeWorkspace', () => import('./codeWorkspace')],
+	// 50 Y1/Y2: the shared code/text buffers
+	['sharedText', () => import('./sharedText')],
+	// 50-window (C1): the code workspace in its own browser window
+	['codePopout', () => import('./codePopout')],
 	['codeSidebars', () => import('./codeSidebars')],
 	['scriptAssets', () => import('./scriptAssets')],
 	['codeTabs', () => import('./codeTabs')],

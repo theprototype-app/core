@@ -22,7 +22,7 @@ import { parse } from 'acorn';
  * @typedef {'node' | 'file' | 'behaviour' | 'module' | 'graph'} TabKind
  * @typedef {{ message: string, line: number, col?: number }} CodeError
  * @typedef {{
- *   id: string, kind: TabKind, title: string, lang: 'js' | 'json', code: string, saved: string,
+ *   id: string, kind: TabKind, title: string, lang: 'js' | 'json' | 'text', code: string, saved: string,
  *   readOnly?: boolean, stale?: boolean, external?: string, error?: CodeError | null,
  *   nodeId?: string, graphId?: string, itemId?: string | null, hash?: string, name?: string,
  *   moduleId?: string, line?: number, fromNode?: { nodeId: string, graphId: string } | null,
@@ -73,6 +73,25 @@ export function reconcileExternal(tab, external) {
 	if (text === tab.code) return { ...tab, saved: text, stale: false, external: undefined };
 	if (!isDirty(tab)) return { ...tab, code: text, saved: text, stale: false, external: undefined };
 	return { ...tab, stale: true, external: text };
+}
+
+/**
+ * 50 Y1 — THE EXTERNAL-EDIT RULE FOR A SHARED BUFFER. The buffer is everyone's (sharedText.js),
+ * so a source change usually IS that buffer arriving through a save — the peer who pressed
+ * Ctrl+S recorded it in the shared document first (`savedFromBuffer`) — and then this tab is
+ * simply saved, whatever unsaved text sits on top. A change that came some other way (an undo
+ * of the node, a peer on an older build) follows a CLEAN buffer — but through ONE writer,
+ * never by every peer rewriting the shared text (`follow` asks the caller to arrange that) —
+ * and leaves a dirty one stale, the classic rule.
+ * @param {CodeTab} tab @param {string} external @param {boolean} savedFromBuffer
+ * @returns {{tab: CodeTab, follow: boolean}}
+ */
+export function reconcileShared(tab, external, savedFromBuffer) {
+	const text = String(external ?? '');
+	if (text === tab.saved && !tab.stale) return { tab, follow: false };
+	if (text === tab.code || savedFromBuffer) return { tab: { ...tab, saved: text, stale: false, external: undefined }, follow: false };
+	if (!isDirty(tab)) return { tab: { ...tab, saved: text, stale: false, external: undefined }, follow: true };
+	return { tab: { ...tab, stale: true, external: text }, follow: false };
 }
 
 /** throw away the user's edits for the source's current text @param {CodeTab} tab @returns {CodeTab} */

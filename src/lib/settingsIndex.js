@@ -97,6 +97,7 @@ export const SETTINGS_ROWS = [
 	["Scene", "Autosave", "Keep a local session snapshot (restore offered after a crash/reload)"],
 	["Scene", "Auto-restore on load", "Restore that snapshot automatically at startup instead of asking."],
 	["Scene", "Keep automatic checkpoints", "While you work, autosave also adds a row to the checkpoint timeline every few minutes — only when the scene…"],
+	["Scene", "Auto checkpoints on large scenes", "Off: a very large scene skips automatic checkpoints (each copies the whole scene); named ones always work."],
 	["Scene", "Automatic checkpoint every", "The shortest gap between two automatic checkpoints"],
 	["Scene", "Checkpoint storage", "How much of this device checkpoints may use."],
 	["Scene", "When opening another scene", "Modules that came with the scene you are leaving (a game's Waves or Untangle) and that the next scene does…"],

@@ -1,6 +1,6 @@
 <script module>
 	/** 36 B14: what the settings search matches beyond the row names (I4 indexes labels + keywords) */
-	export const keywords = ['checkpoint', 'checkpoints', 'version', 'versions', 'timeline', 'history', 'snapshot', 'backup', 'restore', 'storage'];
+	export const keywords = ['checkpoint', 'checkpoints', 'version', 'versions', 'timeline', 'history', 'snapshot', 'backup', 'restore', 'storage', 'large', 'heavy', 'big scene'];
 </script>
 
 <script>
@@ -13,7 +13,7 @@
 	import Toggle from '../../ui/Toggle.svelte';
 	import Segmented from '../../ui/Segmented.svelte';
 	import { checkpointsOpen, settingsOpen } from '../../../stores/appStore.js';
-	import { autoCheckpoints, autoCheckpointMinutes, checkpointCapMb, INTERVAL_CHOICES_MIN, CAP_CHOICES_MB } from '$lib/checkpoints';
+	import { autoCheckpoints, autoCheckpointsLarge, autoCheckpointMinutes, checkpointCapMb, INTERVAL_CHOICES_MIN, CAP_CHOICES_MB } from '$lib/checkpoints';
 
 	const EVERY = INTERVAL_CHOICES_MIN.map((m) => ({ value: String(m), label: m + ' min' }));
 	const CAP = CAP_CHOICES_MB.map((m) => ({ value: String(m), label: m >= 1000 ? m / 1000 + ' GB' : m + ' MB' }));
@@ -22,6 +22,10 @@
 <div class="contents" data-keywords={keywords.join(' ')}>
 	<SettingRow id="row-checkpoints-auto" label="Keep automatic checkpoints" description="Autosave also adds a timeline row every few minutes, when the scene changed. Named checkpoints are kept either way.">
 		<Toggle id="checkpoints-auto" label="Keep automatic checkpoints" bind:checked={$autoCheckpoints} />
+	</SettingRow>
+	<!-- 50-window (C2) -->
+	<SettingRow id="row-checkpoints-large" label="Auto checkpoints on large scenes" description="Off: a very large scene (over the budget meter's desktop line for triangles or texture memory) skips automatic checkpoints — each one copies the whole scene. Named checkpoints always work.">
+		<Toggle id="checkpoints-auto-large" label="Auto checkpoints on large scenes" bind:checked={$autoCheckpointsLarge} disabled={!$autoCheckpoints} />
 	</SettingRow>
 	<SettingRow id="row-checkpoints-every" label="Automatic checkpoint every" description="The shortest gap between two automatic checkpoints." wide>
 		<Segmented id="checkpoints-every" label="Automatic checkpoint every" options={EVERY} value={String($autoCheckpointMinutes)} onchange={(v) => autoCheckpointMinutes.set(Number(v))} />

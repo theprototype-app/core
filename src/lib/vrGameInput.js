@@ -35,6 +35,7 @@ import { registerVRFrameHook, registerVRTriggerHooks, registerPanelGroupProvider
 // P3 (C2): the game UI in VR — the panel, the wrist card, the strip, the banner
 import { vrPerfStripFrame, hideVrPerfStrip } from './vrPerfStrip';
 import { vrRecIndicatorFrame, hideVrRecIndicator } from './vrRecIndicator';
+import { arTableActive } from './arTableState.js';
 import { vrGamePanelFrame, panelTargetAlong, panelHover, pressPanelTarget, pokeFrame, uAcross, vrGameSurface, hideVrGamePanel } from './vrGamePanel';
 
 const _mat = new THREE.Matrix4();
@@ -392,7 +393,8 @@ export function startVrGameInput() {
 	offs = [
 		registerVRFrameHook(() => {
 			const renderer = /** @type {any} */ (get(globalRenderer));
-			if (!renderer?.xr?.isPresenting) {
+			// 50 R1: an AR table draws the game's screens in its DOM overlay, not on the VR board
+			if (!renderer?.xr?.isPresenting || arTableActive()) {
 				// the session ENDED: take the surfaces down once (this hook runs every desktop
 				// frame too, where there is nothing to do)
 				if (presenting) {

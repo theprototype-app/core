@@ -70,6 +70,10 @@ released version instead of drifting (it carried a stale 1.8.0 before 1.11.0).
   Pages Deployments page reads `vX.Y.Z (cloud <sha>)` and About shows the tagged
   core; the script asks before shipping anything not exactly on a tag to production.
   Then add the two-line entry to the cloud repo's `CHANGELOG.md`.
+- Tell the owner (cloud repo, since 1.42): `npm run notify-release -- --version=X.Y.Z
+  --title="<roadmap title>"` — one Telegram message with the preview and device-checklist
+  links; it refuses a version production does not serve yet. `--dry-run` prints it. What
+  else alerts and how to mute it: the cloud repo's `docs/alerts.md`.
 - Content refs (jsDelivr, read off-bundle — `src/lib/contentBase.js`): scenes
   `format-2`, packs `format-1` and, since 1.27, modules `format-1`. Each is a MOVING tag
   (never semver-looking — jsDelivr resolves a version once and a retag of it is a no-op
@@ -108,12 +112,15 @@ ITSELF, without asking, when either:
 
 1. the **production proof is red** on something the preview proof had green (A/B it against the
    previous release first — a red that is red there too is not this release's), or
-2. the **error reports spike**: `npm run error-spike -- --release=X.Y.Z` (cloud) exits 3 — run it
+2. the **error reports spike**: `npm run error-spike -- --release=X.Y.Z --alert` (cloud) exits 3 — run it
    ~1 h after the deploy and again before the lane closes. It compares reports per hour since the
    release against the previous release's last week (rate > 3x and +6/h, a NEW error with 15+
    reports, or crash/OOM/WebGL losses tripling). Too few reports yet = `wait`, not a pass.
+   `--alert` sends a SPIKE to the owner's Telegram once per release; a scheduled Action in the
+   cloud repo also checks 2 h / 6 h / 24 h after the release and daily, sharing that "once".
 
-Then, in this order: `npm run rollback -- --yes --reason="…"`, confirm the verify line, write
+Then, in this order: `npm run rollback -- --yes --reason="…"` (it tells the owner on Telegram:
+from → to, the reason, the verify line — so write the reason for a human), confirm the verify line, write
 what happened at the top of the integrator's QUESTIONS file ("ROLLED BACK vX.Y.Z → vX.Y.(Z-1):
 why, the failing check or the spike table, the fix PR"), keep the tag (a rollback never deletes a
 tag or a GitHub Release — the next release supersedes it), and open the fix as a normal lane PR.

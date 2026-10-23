@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planEviction, fingerprint, dayLabel, formatBytes } from '../../src/lib/checkpointsCore.js';
+import { planEviction, fingerprint, dayLabel, formatBytes, largeSceneVerdict } from '../../src/lib/checkpointsCore.js';
 
 const MB = 1024 * 1024;
 /** @param {string} id @param {number} createdAt @param {number} mb @param {{pinned?: boolean, auto?: boolean}} [o] */
@@ -68,5 +68,26 @@ describe('labels', () => {
 		expect(formatBytes(500)).toBe('1 KB');
 		expect(formatBytes(3.25 * MB)).toBe('3.3 MB');
 		expect(formatBytes(42 * MB)).toBe('42 MB');
+	});
+});
+
+describe('largeSceneVerdict (50-window C2)', () => {
+	const desktop = { calls: 2000, triangles: 4000000, lights: 8, textureMB: 512 };
+	it('a scene inside the desktop line is not large', () => {
+		expect(largeSceneVerdict({ triangles: 3999999, textureMB: 512, calls: 99999 }, desktop)).toBe(null);
+	});
+	it('over the line on triangles or texture memory is large, and names the metric', () => {
+		expect(largeSceneVerdict({ triangles: 4000001, textureMB: 10 }, desktop)).toEqual({ metric: 'triangles', value: 4000001, limit: 4000000 });
+		expect(largeSceneVerdict({ triangles: 10, textureMB: 600 }, desktop)).toEqual({ metric: 'textureMB', value: 600, limit: 512 });
+	});
+	it('draw calls and lights never make a checkpoint large (they cost frames, not bytes)', () => {
+		expect(largeSceneVerdict({ calls: 1e6, lights: 99, triangles: 0, textureMB: 0 }, desktop)).toBe(null);
+	});
+	it('names the metric furthest over its line', () => {
+		expect(largeSceneVerdict({ triangles: 4400000, textureMB: 1024 }, desktop)?.metric).toBe('textureMB');
+	});
+	it('a missing reading or an unlimited target is never large', () => {
+		expect(largeSceneVerdict(null, desktop)).toBe(null);
+		expect(largeSceneVerdict({ triangles: 9e9 }, { triangles: Infinity })).toBe(null);
 	});
 });

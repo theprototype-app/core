@@ -1,6 +1,7 @@
 <script>
 	import { onMount, onDestroy } from 'svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
+	import { rebaseEdit } from '$lib/sharedTextCore.js';
 
 	// Lazy CodeMirror 6 wrapper: loads the editor bundle on first mount.
 	// One-way flow: `value` seeds/refreshes the doc, edits go out via onChange.
@@ -11,7 +12,22 @@
 	// only for a caller that uses them, so every older caller mounts exactly as fast as before.
 
 	export let value = '';
-	export let onChange = (/** @type {string} */ code) => {};
+	// 50 Y1: the second argument says whether the change was TYPED here (`remote: false`) or
+	// arrived through the shared buffer (a peer's keys, a Reload) — a live-apply must only
+	// follow typing, or every peer would apply every keystroke
+	export let onChange = (/** @type {string} */ code, /** @type {{remote: boolean}} */ meta) => {};
+	// 50 Y1/Y2: share this buffer with everyone who has the same source open (sharedText.js).
+	// `shareKey` names the document on every peer (sharedTextCore.sharedDocKey); `shareSeed` is
+	// the SOURCE text it starts from when nobody holds it yet. Absent = an ordinary editor.
+	/** @type {string | null} */
+	export let shareKey = null;
+	/** @type {string | null} the text to seed with — absent = this buffer's own text */
+	export let shareSeed = null;
+	// 50-int (the 53 rules): the name a screen reader gives the editable text — CodeMirror's
+	// role=textbox had none (axe aria-input-field-name, in the app and in the pop-out window)
+	export let label = 'Code editor';
+	// 50 Y2: 'text' = a plain document (no JavaScript highlighting); anything else reads as code
+	export let lang = 'js';
 	// 36 (G1): a module's source is shown, never edited in place; `line` scrolls to a line
 	export let readonly = false;
 	/** @type {number | undefined} */
@@ -34,9 +50,14 @@
 	let lastEmitted = value;
 	/** @type {{destroy?: () => void} | null} 38 R11: the thin overlay thumb on CodeMirror's own scroller */
 	let scrollThumb = null;
+	/** 50 Y1: the shared binding once the document is ready (null = not shared / not yet) @type {any} */
+	let shared = null;
+	let sharedHeld = false;
+	let applyingSeed = false;
+	let destroyed = false;
 
 	onMount(async () => {
-		const extras = !!(readOnly || onSave || reveal || diagnostic);
+		const extras = !!(readOnly || onSave || reveal || diagnostic || shareKey);
 		const [{ EditorView, basicSetup }, { javascript }, state, viewMod, lintMod] = await Promise.all([
 			import('codemirror'),
 			import('@codemirror/lang-javascript'),
@@ -60,21 +81,37 @@
 				}
 			]);
 			more.push(state.Prec.highest(saveKeys), lintMod.lintGutter());
-			if (readOnly || readonly) more.push(state.EditorState.readOnly.of(true));
+			// (a shared editor's lock lives in its lock slot, so it can lift again)
+			if ((readOnly || readonly) && !shareKey) more.push(state.EditorState.readOnly.of(true));
+			// 50 Y1: two slots a shared buffer fills once its document is ready — the binding, and
+			// the read-only lock (a viewer's, from the start). The editor takes keys before the room
+			// has answered; `bindShared` carries them into the shared document (`preBase`).
+			if (shareKey) {
+				collabSlot = new state.Compartment();
+				lockSlot = new state.Compartment();
+				lockedNow = !!(readOnly || readonly);
+				more.push(collabSlot.of([]), lockSlot.of(lockedNow ? [state.EditorState.readOnly.of(true), viewMod.EditorView.editable.of(false)] : []));
+				stateMod = state;
+				viewModule = viewMod;
+			}
 		}
+		preBase = String(value ?? '');
 		view = new EditorView({
 			doc: value,
 			parent: host,
 			extensions: [
 				basicSetup,
-				javascript(),
+				...(lang === 'text' ? [EditorView.lineWrapping] : [javascript()]),
 				// 36: a module's source is read, never typed into
 				...more,
-				...(readonly || readOnly ? [EditorView.editable.of(false)] : []),
+				...((readonly || readOnly) && !shareKey ? [EditorView.editable.of(false)] : []),
+				EditorView.contentAttributes.of({ 'aria-label': label }),
 				EditorView.updateListener.of((update) => {
 					if (!update.docChanged) return;
 					lastEmitted = update.state.doc.toString();
-					onChange(lastEmitted);
+					const sync = shared?.syncAnnotation;
+					const remote = applyingSeed || (!!sync && update.transactions.some((tr) => tr.annotation(sync) !== undefined));
+					onChange(lastEmitted, { remote });
 				}),
 				// dark professional theme from the ui tokens (107) — the stock
 				// white box looked pasted-in on every dark panel. 36-fb-code (F9) / 38 R11: every
@@ -98,7 +135,64 @@
 		});
 		// 38 R11 (NOTES-38 #1): the host never scrolls (the editor fills it) — .cm-scroller does
 		scrollThumb = minimalScroll(view.scrollDOM);
+		if (shareKey) void bindShared(shareKey);
 	});
+
+	/** @type {any} */ let collabSlot = null;
+	/** @type {any} */ let lockSlot = null;
+	/** @type {any} */ let stateMod = null;
+	/** @type {any} */ let viewModule = null;
+	/** 50 Y1: the text the editor had before its shared document was ready (keys typed since
+	 * are an edit against it) */
+	let preBase = '';
+
+	/**
+	 * 50 Y1: hold the shared document, show ITS text (the room's buffer may be ahead of the
+	 * source), then hand the editor to the Yjs binding: typing goes into the shared Y.Text, a
+	 * peer's typing comes out of it, Ctrl+Z undoes only this person's edits.
+	 * @param {string} key
+	 */
+	async function bindShared(key) {
+		const st = await import('$lib/sharedText');
+		await st.openShared(key, String(shareSeed ?? preBase));
+		sharedHeld = true;
+		if (destroyed || !view) {
+			st.release(key);
+			sharedHeld = false;
+			return;
+		}
+		const binding = st.editorBinding(key);
+		if (!binding) return;
+		shared = binding;
+		const locked = !!(readOnly || readonly);
+		const local = view.state.doc.toString();
+		// (against the latest prop text: a prop refresh during the wait is not typing)
+		const typed = locked ? null : rebaseEdit(preBase, local, binding.text);
+		if (binding.text !== local) {
+			applyingSeed = true;
+			try {
+				view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: binding.text } });
+			} finally {
+				applyingSeed = false;
+			}
+		}
+		lockedNow = locked;
+		view.dispatch({
+			effects: [
+				collabSlot.reconfigure([binding.extension, stateMod.Prec.highest(viewModule.keymap.of(binding.undoKeymap))]),
+				lockSlot.reconfigure(locked ? [stateMod.EditorState.readOnly.of(true), viewModule.EditorView.editable.of(false)] : [])
+			]
+		});
+		// the keys typed while the room was answering: typed again, now INTO the shared buffer
+		if (typed) {
+			const at = Math.min(typed.index, view.state.doc.length);
+			view.dispatch({
+				changes: { from: at, to: Math.min(at + typed.remove, view.state.doc.length), insert: typed.insert },
+				selection: { anchor: at + typed.insert.length },
+				userEvent: 'input.type'
+			});
+		}
+	}
 
 	// 36: basicSetup's default highlight style is for a LIGHT editor — identifiers came out dark
 	// blue on this dark one (unreadable in the read-only module source). Appended once its modules
@@ -125,6 +219,17 @@
 	}
 	let highlighted = false;
 
+	// 50 Y1: a shared editor's lock follows `readOnly` live — a peer demoted to viewer mid-edit
+	// stops typing into the shared buffer without the tab being reopened (bound or not yet)
+	let lockedNow = false;
+	$: if (view && lockSlot) {
+		const want = !!(readOnly || readonly);
+		if (want !== lockedNow) {
+			lockedNow = want;
+			view.dispatch({ effects: lockSlot.reconfigure(want ? [stateMod.EditorState.readOnly.of(true), viewModule.EditorView.editable.of(false)] : []) });
+		}
+	}
+
 	// 36: put the cursor on `line` (1-based) and scroll it into view, once per line asked for
 	let shownLine = 0;
 	$: if (view && line && line !== shownLine) {
@@ -145,8 +250,12 @@
 	/** @param {string} next */
 	function syncFromProp(next) {
 		syncedValue = next;
+		// 50 Y1: a shared buffer is the shared document's to change — a replace-all here would
+		// travel to every peer as "delete everything, insert everything"
+		if (shared) return;
 		if (next === lastEmitted || next === view.state.doc.toString()) return;
 		lastEmitted = next;
+		preBase = next;
 		view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } });
 	}
 
@@ -175,9 +284,14 @@
 	}
 
 	onDestroy(() => {
+		destroyed = true;
 		scrollThumb?.destroy?.();
 		view?.destroy();
+		if (sharedHeld && shareKey) {
+			const key = shareKey;
+			void import('$lib/sharedText').then((st) => st.release(key));
+		}
 	});
 </script>
 
-<div bind:this={host} data-readonly={readonly || readOnly ? 'true' : undefined} class="tp-noscrollbar h-full overflow-auto rounded-sm border border-border bg-surface-inset text-left"></div>
+<div bind:this={host} data-readonly={readonly || readOnly ? 'true' : undefined} data-shared={shared ? 'true' : undefined} class="tp-noscrollbar h-full overflow-auto rounded-sm border border-border bg-surface-inset text-left"></div>

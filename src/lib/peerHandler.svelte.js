@@ -101,6 +101,8 @@ import {
 import { applyRemoteGameState, sendGameState, gameStatePayload } from '$lib/gameSync';
 // 48 S2: sequences (Timeline) — scene data, latest-wins per sequence (sequenceSync.js)
 import { applyRemoteSequence, applyRemoteSequenceDelete, applyRemoteSequences, sendSequences } from '$lib/sequenceSync';
+// 50 Y1/Y2: shared text in the Code tab (Yjs, loaded lazily with the editor)
+import { applyRemoteYText, applyRemoteYAwareness, answerYText } from '$lib/sharedText';
 // 34 R2 (T3): the game kit's document + requests (kit/runtime.js; a leaf-side module)
 import { receiveKitMessage, kitPayload } from '$lib/kit/runtime.js';
 import { kitEntityPayloads } from '$lib/kit/entityApp.js'; // 34 R2 (kit-entities)
@@ -1131,6 +1133,15 @@ export class PeerConnection {
 					applyRemoteSequences(data);
 				} else if(data.type == 'getseqs') {
 					if (sameRoomOrUnknown(conn.peer)) sendSequences(data.sender);
+				} else if(data.type == 'ytext') {
+					// 50 Y1: a shared code/text buffer's update (or a `none` answer) — applied only to a
+					// document this peer holds open; the Y.Doc is session state, never saved
+					applyRemoteYText(data, conn.peer);
+				} else if(data.type == 'ytextaw') {
+					applyRemoteYAwareness(data);
+				} else if(data.type == 'getytext') {
+					// answered across rooms too, with `none`, so the asker stops waiting at once
+					answerYText(data, conn.peer, sameRoomOrUnknown(conn.peer));
 				} else if(data.type == 'hudvalue') {
 					// 21-D4: a SHARED input's value - the one runtime HUD message, because what a
 					// player dragged is the only HUD state a peer cannot derive for itself.

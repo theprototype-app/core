@@ -5,6 +5,37 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.42.0 — Together and anywhere: type code together, pop the editor out to a second screen, play on a real table 🤝
+
+Two people can now write the same script at once, the code editor can live on its own monitor, and an Android phone can
+put your scene on the table in front of you.
+
+### ✍️ Write code together
+
+- **Shared typing in the Code tab**: open the same Script or Behaviour node (or script file) as someone in your session
+  and you both type into one text — two people in one line both keep what they typed, nothing is overwritten.
+- 👀 **See each other**: everyone's cursor and selection show in their colour, and an **Editing with you** strip names
+  who is there and where ("Ana is on line 4") — a screen reader reads it too.
+- Someone who joins late sees the current text, unsaved edits included. Viewers can read along but not type.
+  **Ctrl+S** saves exactly as before, and **Ctrl+Z** undoes only your own typing.
+- 📄 **Text documents from the Explorer** (.txt, .md …) open in the Code tab from the preview's **Edit**, and are shared
+  the same way.
+
+### 🖥️ The code editor on a second monitor
+
+- **Pop out** in the Code tab's header opens the editor in its own browser window — drag it to any screen. Saving,
+  errors and shared typing stay live; **Dock back** (or closing the window) returns it to the app. Desktop only.
+- 🖼️ Checkpoint and saved-scene thumbnails show just the scene — no gizmo, grid or helpers.
+- 🐘 Very large scenes skip automatic checkpoints (with a one-time notice);
+  Settings ▸ Scene ▸ **Auto checkpoints on large scenes** turns them back on.
+
+### 📱 Play on a real table (Android)
+
+- **AR table**: on an Android phone with Chrome, More ▸ **AR table** shows the camera, finds a table, and a tap
+  places your scene on it. Pinch to resize, twist to turn, **Move** to put it somewhere else, then **Play** — tap
+  things to click them, and a game's HUD shows on screen. Everyone else in the room keeps playing the same game.
+- iPhone and desktop show "AR needs Android Chrome" instead.
+
 ## 1.41.0 — Accessibility: bigger UI, high contrast, the whole editor by keyboard, screen readers, and games everyone can play ♿
 
 A pass over the editor and over the games you make, for people who see, hear, move or hold a controller differently.

@@ -28,7 +28,7 @@ describe('phoneBar', () => {
 	it('the catalog: More ▸ Windows / Edit / Tools & View, every one placeable', () => {
 		expect(WINDOW_ITEMS.slice(0, 5)).toEqual(['play', 'add', 'more', 'objects', 'stats']);
 		expect(EDIT_ITEMS).toEqual(['inspect', 'move', 'rotate', 'scale', 'undo', 'redo', 'multiselect', 'interact']);
-		expect(VIEW_ITEMS).toEqual(['tools', 'focus', 'budget']);
+		expect(VIEW_ITEMS).toEqual(['tools', 'focus', 'budget', 'ar']);
 		expect(new Set(BAR_CATALOG).size).toBe(BAR_CATALOG.length);
 	});
 

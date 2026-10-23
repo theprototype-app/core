@@ -9,6 +9,7 @@ import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
+import { withCleanView } from './cleanView'; // 50-window (C2): thumbnails without the editor's scaffolding
 import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
 // 36 L2: the scene's saved view is applied at the START of a load (startView.js)
 import { beginStartView, settleStartView, sceneHoldsCamera } from './startView';
@@ -138,7 +139,8 @@ export function viewportThumbnail(maxW = 256) {
 	const camera = get(globalCamera);
 	if (!renderer || !scene || !camera || renderer.xr?.isPresenting) return null;
 	try {
-		renderer.render(scene, camera);
+		// 50-window (C2): the scene, not the editor — no gizmo, grid or helpers in the picture
+		withCleanView(scene, camera, () => renderer.render(scene, camera));
 		const source = renderer.domElement;
 		const sw = source.width || maxW;
 		const scale = Math.min(1, maxW / sw);

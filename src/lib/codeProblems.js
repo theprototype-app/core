@@ -20,6 +20,7 @@ import { analyze } from './behaviours/analyze.js';
  * @param {any} tab @returns {'json' | 'behaviour' | 'module' | 'script' | null} */
 export function checkKindOf(tab) {
 	if (!tab || tab.readOnly) return null;
+	if (tab.lang === 'text') return null; // 50 Y2: a text document is prose, not code
 	if (tab.kind === 'graph') return 'json';
 	if (tab.kind === 'behaviour') return 'behaviour';
 	if (tab.kind === 'node') return 'script';

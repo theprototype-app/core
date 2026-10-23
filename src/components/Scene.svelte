@@ -67,6 +67,8 @@
 	import { initVRControls, updateVRControls, raycastMenu, radialStickSelection, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuids, hapticKnock, hapticPulse, onVRSessionStart } from '$lib/vrControls';
 	// 30b (vr-play): the game in your hands — hover/press haptics (P1), the sweep (P4)
 	import { startVrGameInput, stopVrGameInput } from '$lib/vrGameInput';
+	import { tickArTable } from '$lib/arTable'; // 50 R1: phone AR table placement
+	import { arTableActive } from '$lib/arTableState.js';
 	import { gameFeelActive } from '$lib/gameFeel';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick, measureHoverAt } from '$lib/measure';
@@ -367,6 +369,8 @@
 		// flow tick (animations + particle sweep + the physics postTick) from
 		// threlte's XR-aware loop or everything freezes the moment VR starts
 		if (renderer?.xr?.isPresenting) pumpFlowTick(performance.now());
+		// 50 R1: the AR table's reticle + placement (a no-op unless one is running)
+		if (renderer?.xr?.isPresenting) tickArTable(renderer, camera.current);
 		// console.log(camera.current.lookAt.)
 		if (camera.current.fov !== fov) {
 			// console.log('fov changed')
@@ -422,7 +426,7 @@
 				lastCameraQuaternion.copy(camContentQuat);
 			}
 		}
-		if (renderer.xr.isPresenting) broadcastVRHands();
+		if (renderer.xr.isPresenting && !arTableActive()) broadcastVRHands(); // 50 R1: a phone has no hands
 		updateVRControls(); // also manages ray/hover visibility outside sessions
 		updateSpatialAudio(camera.current, scene); // voices follow avatars (throttled)
 		tickAnimatedMixers(); // imported clips run on the synced clock
@@ -1469,6 +1473,8 @@
 		const tempMatrix = new THREE.Matrix4();
 		const xrControllers = [renderer.xr.getController(0), renderer.xr.getController(1)];
 		const onXRSelect = (event) => {
+			// 50 R1: an AR table takes its taps from its overlay (arTable.js), never as a VR trigger
+			if (arTableActive()) return;
 			const controller = event.target;
 			// B2.4: a pinch-HOLD that just toggled the radial also fires 'select' on
 			// release — swallow that click so it doesn't immediately pick a sector
@@ -1604,6 +1610,7 @@
 		// 182: hold-to-move a vertex — grab on trigger press, drop on release
 		// (the functions no-op unless in vertex mode with the hold setting on)
 		const onXRSelectStart = (event: any) => {
+			if (arTableActive()) return; // 50 R1
 			const idx = xrControllers.indexOf(event.target);
 			// K1: a module hook (sleeve ghost pick) may consume the press
 			if (vrModuleTriggerStart(idx)) return;
@@ -1612,6 +1619,7 @@
 			boxSelectStart(idx); // 214: start a box-select marquee (no-op unless tool = box)
 		};
 		const onXRSelectEnd = (event: any) => {
+			if (arTableActive()) return; // 50 R1
 			// K1: a held sleeve preview places on release
 			if (vrModuleTriggerEnd(xrControllers.indexOf(event?.target))) return;
 			vrVertexGrabEnd();
@@ -1887,8 +1895,8 @@ position={[0, 2, 3]}
 		// without this the Quest stays at its 90Hz default
 		applyVRFrameRate();
 		// 30b P4: remember the untouched reference space (the walker's floor), and a
-		// GAME lands in Interact on its spawn
-		onVRSessionStart();
+		// GAME lands in Interact on its spawn — not an AR table, which is placed first (50 R1)
+		if (!arTableActive()) onVRSessionStart();
 	}}
 	onsessionend={() => passthroughActive.set(false)}
 >

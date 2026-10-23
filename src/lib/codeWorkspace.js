@@ -62,6 +62,20 @@ import { followCode } from './scriptDerive';
 import { codeOfNode, isBuiltinCodeType, BUILTIN_CODE } from './builtinCode.js';
 import { nodeHasCode, openCodeRequestFor } from './graphContract.js';
 import { keyOfTab, nodeKey, modulesInUse, projectTree } from './codeProject.js';
+import { reconcileShared } from './codeTabs';
+import { sharedDocKey } from './sharedTextCore';
+
+// 50 Y1/Y2: the shared-buffer registry, PRIMED (it reaches lockControl -> objectActions, a
+// static edge this module must not grow). It matters only once an editor has bound a tab,
+// which loads it first, so the primed ref is always there when a shared tab exists.
+/** @type {any} */
+let shared = null;
+if (typeof window !== 'undefined') import('./sharedText').then((m) => (shared = m)).catch(() => {});
+/** the shared document a tab's buffer IS right now (null = an ordinary buffer) @param {CodeTab | null | undefined} tab */
+export function sharedKeyOfTab(tab) {
+	const key = sharedDocKey(tab);
+	return key && shared?.holds(key) ? key : null;
+}
 
 /** @typedef {import('./codeTabs').CodeTab} CodeTab */
 
@@ -240,7 +254,10 @@ async function resolve(req) {
 	if (item) {
 		const blob = await itemBlob(item.id);
 		const code = blob ? await blob.text() : '';
-		return { id, kind: 'file', title: item.name, lang: 'js', code, saved: code, hash: item.hash, name: item.name, itemId: item.id };
+		// 50 Y2: an Explorer TEXT document (not a script) opens here too — plain text: no parse
+		// check, no node to reload, saved as the file's bytes exactly as the old text window did
+		const lang = req.source === 'text' || !/\.m?js$/i.test(item.name) ? 'text' : 'js';
+		return { id, kind: 'file', title: item.name, lang, code, saved: code, hash: item.hash, name: item.name, itemId: item.id };
 	}
 	// a peer's file we hold no copy of: the bound nodes carry its text
 	const bound = ref.hash ? nodesBoundTo(ref.hash) : [];
@@ -254,7 +271,7 @@ async function resolve(req) {
  * OPEN SOURCE CODE IN THE WORKSPACE — the G1 entry point. Raises an already-open tab.
  * `ref` is an object (`{nodeId, graphId?}` · `{itemId}` · `{hash}` · `{moduleId, name?, code?}`
  * · `{graphId}`) or G1's string form (see `normalizeCodeRequest`).
- * @param {{source: 'script' | 'behaviour' | 'module' | 'graph' | 'customnode', ref: any, graphId?: string, line?: number, readonly?: boolean}} request
+ * @param {{source: 'script' | 'behaviour' | 'module' | 'graph' | 'customnode' | 'text', ref: any, graphId?: string, line?: number, readonly?: boolean}} request
  * @returns {Promise<string | null>} the tab id
  */
 export async function openCode(request) {
@@ -296,11 +313,16 @@ export const tabById = (id) => get(codeTabs).find((t) => t.id === id) ?? null;
 /** @type {Map<string, any>} */
 const liveTimers = new Map();
 
-/** the editor's text changed @param {string} id @param {string} code */
-export function setTabCode(id, code) {
+/**
+ * the editor's text changed. 50 Y1: `remote` = it arrived through the shared buffer (a peer's
+ * keys) — the tab follows it, but only the person TYPING live-applies, or every peer in the
+ * document would write every keystroke to the node.
+ * @param {string} id @param {string} code @param {{remote?: boolean}} [meta]
+ */
+export function setTabCode(id, code, meta = {}) {
 	patchTab(id, (t) => (t.readOnly ? t : { ...t, code }));
 	const tab = tabById(id);
-	if (!tab || !get(codeApplyLive) || (tab.kind !== 'node' && tab.kind !== 'behaviour')) return;
+	if (meta.remote || !tab || !get(codeApplyLive) || (tab.kind !== 'node' && tab.kind !== 'behaviour')) return;
 	clearTimeout(liveTimers.get(id));
 	liveTimers.set(id, setTimeout(() => saveCodeTab(id, { quiet: true }), 500));
 }
@@ -313,7 +335,17 @@ export function moveCodeTab(id, toIndex) {
 
 /** throw away edits for the source's text @param {string} id */
 export function reloadCodeTab(id) {
-	patchTab(id, reloadTab);
+	const tab = tabById(id);
+	const key = sharedKeyOfTab(tab);
+	if (!tab || !key) {
+		patchTab(id, reloadTab);
+		return;
+	}
+	// 50 Y1: a shared buffer is reverted FOR EVERYONE in it — the text lands as one edit in
+	// the shared document and every editor (this one too) follows it
+	const target = tab.stale && tab.external !== undefined ? tab.external : tab.saved;
+	patchTab(id, (t) => ({ ...t, saved: target, stale: false, external: undefined, error: null }));
+	shared.replaceText(key, target);
 }
 
 /** Close a tab. A dirty one only with `force` (the UI asks first). @param {string} id @param {{force?: boolean}} [opts] */
@@ -345,9 +377,11 @@ export async function saveAllCodeTabs() {
 	return failed;
 }
 
-/** Throw away every unsaved edit (each tab shows its source as it is now). */
+/** Throw away every unsaved edit (each tab shows its source as it is now). 50 Y1: THIS
+ * peer's view only — closing the workspace without saving must not wipe a buffer other people
+ * are still typing in (their editors keep the shared document; a reopen rejoins it). */
 export function discardAllCodeTabs() {
-	for (const tab of dirtyTabs()) reloadCodeTab(tab.id);
+	for (const tab of dirtyTabs()) patchTab(tab.id, reloadTab);
 }
 
 // ---------------------------------------------------------------- saving
@@ -431,7 +465,12 @@ async function saveNow(id, opts) {
 		return { ok: true };
 	}
 
-	const error = parseCheck(code, /** @type {'script' | 'behaviour'} */ (parseKindOf(tab)));
+	// 50 Y2: a text document has nothing to parse; 50 Y1: a shared buffer records the save in
+	// its document before the source moves, so the room reads it as a save, not a foreign edit
+	const error = tab.lang === 'text' ? null : parseCheck(code, /** @type {'script' | 'behaviour'} */ (parseKindOf(tab)));
+	const sharedKey = error ? null : sharedKeyOfTab(tab);
+	if (sharedKey) shared.noteSaved(sharedKey, code);
+	if (tab.lang === 'text' && tab.kind === 'file') return saveTextFile(id, tab, code);
 	if (error) {
 		patchTab(id, (t) => ({ ...t, error }));
 		markNodes(ids, 'edit not applied — line ' + error.line + ': ' + error.message);
@@ -469,6 +508,25 @@ async function saveNow(id, opts) {
 	markNodes(ids, null);
 	followSockets([target], code);
 	return { ok: true, nodes: 1 };
+}
+
+/**
+ * 50 Y2: an Explorer text document's save — the file's bytes, in place, the way the old text
+ * window saved it (`updateItemBytes`: same record, new hash). No node runs a text file.
+ * @param {string} id @param {CodeTab} tab @param {string} code
+ */
+async function saveTextFile(id, tab, code) {
+	await loadExplorer();
+	const item = (tab.itemId && itemById(tab.itemId)) || (tab.hash && itemByHash(tab.hash)) || null;
+	if (!item) {
+		patchTab(id, (t) => ({ ...t, error: { message: 'This file is not in your Library any more', line: 1 } }));
+		return { ok: false };
+	}
+	const { updateItemBytes } = await import('./explorer');
+	await updateItemBytes(item.id, code);
+	const fresh = itemById(item.id);
+	patchTab(id, (t) => ({ ...t, hash: fresh?.hash ?? t.hash, itemId: item.id, saved: code, error: null, stale: false, external: undefined }));
+	return { ok: true, nodes: 0 };
 }
 
 /**
@@ -706,21 +764,42 @@ function followSources() {
 	if (changed) codeTabs.set(next);
 }
 
+/**
+ * The source moved under a tab. An ordinary buffer: the classic rule (`reconcileExternal`).
+ * 50 Y1, a SHARED buffer: `reconcileShared`, and when a clean shared buffer must follow, the
+ * one writer is arranged by sharedText (the lowest peer id holding the document).
+ * @param {CodeTab} tab @param {string} external @returns {CodeTab}
+ */
+function follow(tab, external) {
+	const key = sharedKeyOfTab(tab);
+	if (!key) return reconcileExternal(tab, external);
+	const text = String(external ?? '');
+	const out = reconcileShared(tab, text, shared.wasSharedSave(key, text));
+	if (out.follow) {
+		const id = tab.id;
+		shared.followExternal(key, text, () => {
+			const t = tabById(id);
+			return !!t && t.saved === text && !t.stale;
+		});
+	}
+	return out.tab;
+}
+
 /** @param {CodeTab} tab @returns {CodeTab} */
 function followOne(tab) {
 	if (tab.kind === 'node' || tab.kind === 'behaviour') {
 		const f = tab.nodeId ? findNode(tab.nodeId, tab.graphId) : null;
 		if (!f) return tab.error?.message === 'The node this tab edits is gone' ? tab : { ...tab, error: { message: 'The node this tab edits is gone', line: 1 } };
-		return reconcileExternal(tab, codeOfNode(f.node));
+		return follow(tab, codeOfNode(f.node));
 	}
 	if (tab.kind === 'file') {
 		const bound = nodesBoundTo(tab.hash ?? '');
-		if (bound.length) return reconcileExternal(tab, String(bound[0].node.data?.code ?? ''));
+		if (bound.length) return follow(tab, String(bound[0].node.data?.code ?? ''));
 		// no node bears our hash any more: did the file MOVE under us (a peer's save, an undo)?
 		const from = tab.fromNode ? findNode(tab.fromNode.nodeId, tab.fromNode.graphId) : null;
 		const ref = from ? assetSrcOf(from.node) : null;
 		if (ref && ref.name === tab.name && ref.hash !== tab.hash) {
-			const followed = reconcileExternal({ ...tab, hash: ref.hash, itemId: itemByHash(ref.hash)?.id ?? tab.itemId }, String(from?.node.data?.code ?? ''));
+			const followed = follow({ ...tab, hash: ref.hash, itemId: itemByHash(ref.hash)?.id ?? tab.itemId }, String(from?.node.data?.code ?? ''));
 			return followed;
 		}
 		return tab;
@@ -738,7 +817,7 @@ async function followItems() {
 		const blob = await itemBlob(item.id);
 		if (!blob) continue;
 		const text = await blob.text();
-		patchTab(tab.id, (t) => reconcileExternal({ ...t, hash: item.hash, name: item.name, title: item.name }, text));
+		patchTab(tab.id, (t) => follow({ ...t, hash: item.hash, name: item.name, title: item.name }, text));
 	}
 }
 

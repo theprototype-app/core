@@ -111,6 +111,7 @@ import {
 	stretchSliderDrag,
 	updateStretchSliderDrag
 } from './tools.js';
+import { arTableActive } from '../arTableState.js';
 
 /** @type {any} */ let micHud = null;
 
@@ -197,7 +198,9 @@ function panelModal() {
 
 /** Per-frame update while presenting (called from Scene's useTask) */
 export function updateVRControls() {
-	const session = renderer?.xr.getSession();
+	// 50 R1: a phone placing a scene on a table is not a headset — no rays, sticks, grips, panels,
+	// height lift or spawn; the AR table runs its own frame (arTable.tickArTable)
+	const session = arTableActive() ? null : renderer?.xr.getSession();
 	updateRaysAndHover(!!session);
 	updateBlink();
 	updateMicHud(!!session);

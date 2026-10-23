@@ -43,7 +43,6 @@
 		itemByHash,
 		inspectedFile,
 		setItemHidden,
-		updateItemBytes,
 		addItemFromBytes,
 		patchRecord,
 		parseObjectFile,
@@ -4794,6 +4793,17 @@
 							}
 						]
 					: []),
+				// 50 Y2: a text document's editor is the Code tab, shared with everyone who opens it
+				...(item.kind === 'text' && !/\.js$/i.test(item.name) && !item.packEntry
+					? [
+							{
+								label: 'Edit in the Code tab',
+								icon: 'square-pen',
+								tooltip: 'Edit this text in a Code tab — people who open it type with you; Ctrl+S saves the file',
+								action: () => import('$lib/codeWorkspace').then((m) => m.openCode({ source: 'text', ref: { itemId: item.id, hash: item.hash } }))
+							}
+						]
+					: []),
 				// 40-image (F13): an image in YOUR library opens in the Image editor (crop, rotate,
 				// resize, adjust, versions). A pack item is a reference to bytes on a CDN, so it
 				// has nothing to save into — copy it into the Library first.
@@ -6484,14 +6494,9 @@
 		if (item.kind === 'text' && /\.js$/i.test(item.name)) {
 			import('$lib/codeWorkspace').then((m) => m.openCode({ source: 'script', ref: { itemId: item.id, hash: item.hash } }));
 		} else if (item.kind === 'text') {
-			const blob = await itemBlob(item.id);
-			if (!blob) return;
-			openTextEditor({
-				title: item.name,
-				code: await blob.text(),
-				onSave: (code: string) => updateItemBytes(item.id, code),
-				onClose: () => gridEl?.focus()
-			});
+			// 50 Y2: a text document opens in the Code tab too — the ONE shared surface, where
+			// everyone with it open types together (Yjs) and Ctrl+S writes the file's bytes as before
+			import('$lib/codeWorkspace').then((m) => m.openCode({ source: 'text', ref: { itemId: item.id, hash: item.hash } }));
 		} else if (item.kind === 'image') {
 			const blob = await itemBlob(item.id);
 			if (blob)

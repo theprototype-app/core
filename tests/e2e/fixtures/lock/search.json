@@ -1486,6 +1486,7 @@
 		},
 		"Checkpoint storage": {
 			"rows": [
+				"Auto checkpoints on large scenes",
 				"Automatic checkpoint every",
 				"Checkpoint storage",
 				"Keep automatic checkpoints"
@@ -1522,6 +1523,7 @@
 		"Angle": {
 			"rows": [
 				"Angle",
+				"Auto checkpoints on large scenes",
 				"Compress textures (KTX2)",
 				"Face edit limit",
 				"Import defaults",
@@ -1910,6 +1912,7 @@
 			"rows": [
 				"Angle",
 				"Animation speed",
+				"Auto checkpoints on large scenes",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",
@@ -2023,6 +2026,7 @@
 		"Snap angle": {
 			"rows": [
 				"Angle",
+				"Auto checkpoints on large scenes",
 				"Snap angle"
 			],
 			"sections": [
@@ -2329,6 +2333,7 @@
 		"Version": {
 			"rows": [
 				"Announce new versions",
+				"Auto checkpoints on large scenes",
 				"Automatic checkpoint every",
 				"Checkpoint storage",
 				"Diagnostics",
@@ -2544,6 +2549,7 @@
 			"rows": [
 				"Angle",
 				"Animation speed",
+				"Auto checkpoints on large scenes",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",
@@ -2785,6 +2791,7 @@
 		},
 		"backup": {
 			"rows": [
+				"Auto checkpoints on large scenes",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",
@@ -3394,6 +3401,7 @@
 			"rows": [
 				"Angle",
 				"Animation speed",
+				"Auto checkpoints on large scenes",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",
@@ -3444,6 +3452,7 @@
 		"snap": {
 			"rows": [
 				"Angle",
+				"Auto checkpoints on large scenes",
 				"Automatic checkpoint every",
 				"Checkpoint storage",
 				"Keep automatic checkpoints",
@@ -4024,6 +4033,7 @@
 		"version": {
 			"rows": [
 				"Announce new versions",
+				"Auto checkpoints on large scenes",
 				"Automatic checkpoint every",
 				"Checkpoint storage",
 				"Diagnostics",
@@ -4092,6 +4102,7 @@
 		},
 		"checkpoint": {
 			"rows": [
+				"Auto checkpoints on large scenes",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",

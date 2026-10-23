@@ -14,6 +14,7 @@ import { hapticPulse } from './haptics.js';
 import { controllerIndexFor } from './input.js';
 import { noteXRBaseSpace, viewerNow, spawnPlayer } from './locomotion.js';
 import { handOf, bindingOf, bindingLabel, controlName } from './bindings.js';
+import { arTableActive } from '../arTableState.js';
 
 // ---- 30b P4: ENTER INTERACT, SWITCH IN VR, SPAWN ------------------------------------------
 // Contract C1: pressing Play in VR on a GAME enters Interact; the left Y button toggles
@@ -166,6 +167,8 @@ editorMode.subscribe((mode) => {
 	if (mode === lastEditorMode) return;
 	lastEditorMode = mode;
 	if (!renderer?.xr?.getSession?.()) return;
+	// 50 R1: an AR table's Interact is a player's view of a placed scene — no 1:1 reset, no spawn
+	if (arTableActive()) return;
 	if (mode === 'interact') enterInteractVR();
 	updateModeLabel();
 });

@@ -62,3 +62,29 @@ export function formatBytes(bytes) {
 	if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + ' KB';
 	return (bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0) + ' MB';
 }
+
+/** 50-window (C2): the budget-meter metrics that make a checkpoint EXPENSIVE — a checkpoint is the
+ * scene serialised, so its cost is geometry and pictures, not draw calls or lights */
+export const LARGE_SCENE_METRICS = /** @type {const} */ (['triangles', 'textureMB']);
+
+/**
+ * Is this scene "very large" for an AUTOMATIC checkpoint? PURE (unit-tested). Large = over the
+ * budget meter's heavy line (the red tier) of the DESKTOP target on a metric that costs bytes:
+ * a scene a desktop itself would call too heavy is one where cutting a copy every few minutes
+ * (a full serialise on the main thread, megabytes into idb) costs more than it keeps.
+ * @param {Record<string, number> | null | undefined} totals the meter's reading totals
+ * @param {Record<string, number> | null | undefined} target the desktop target (`TARGETS.desktop`)
+ * @returns {null | {metric: string, value: number, limit: number}} the metric over the line, or null
+ */
+export function largeSceneVerdict(totals, target) {
+	if (!totals || !target) return null;
+	/** @type {null | {metric: string, value: number, limit: number}} */
+	let worst = null;
+	for (const metric of LARGE_SCENE_METRICS) {
+		const value = Number(totals[metric]) || 0;
+		const limit = Number(target[metric]);
+		if (!Number.isFinite(limit) || limit <= 0 || value <= limit) continue;
+		if (!worst || value / limit > worst.value / worst.limit) worst = { metric, value, limit };
+	}
+	return worst;
+}

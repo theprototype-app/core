@@ -50,8 +50,13 @@
 		dirtyTabs,
 		saveAllCodeTabs,
 		discardAllCodeTabs,
-		currentProjectTree
+		currentProjectTree,
+		sharedKeyOfTab
 	} from '$lib/codeWorkspace';
+	// 50 Y1/Y2: shared buffers — who else is in the active tab's document, and the viewer rule
+	import { sharedDocKey, presenceLabel } from '$lib/sharedTextCore';
+	import { sharedPresence, sharedDocs } from '$lib/sharedText';
+	import { rolesInfo } from '$lib/cloudHooks';
 	import { codeLeftOpen, codeLeftWidth, codeRightOpen, codeRightWidth, sidebarKey, focusFind, clampSidebarWidth } from '$lib/codeSidebars';
 	import { dragReorder } from '$lib/dragReorder';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
@@ -69,7 +74,28 @@
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { safeStorage } from '$lib/safeStorage';
 	import { keyOf } from '$lib/keyOf';
-	import { popOutAvailable, popOutCode } from '$lib/codePopout';
+	import { popOutSupported, popOutCode, codePoppedOut, dockCodeBack, focusCodePopout } from '$lib/codePopout';
+
+	// 50-window (C1): `popped` = THIS instance lives in the code window ($lib/codePopout mounts
+	// it there). It shares every store with the main window's instance, so it only skips the
+	// main window's chrome duties: the dock slot, the layouts, the dock closer.
+	let { popped = false } = $props();
+	/** @type {HTMLElement | null} */
+	let poppedEl = $state(null);
+	/** the document this instance renders into (the popup's, when popped) */
+	const hostDoc = () => poppedEl?.ownerDocument ?? document;
+	// the main window's instance never shows while the code window is open: it hands the
+	// request (openCode, the dock's Code entry) to that window and closes itself
+	$effect(() => {
+		if (popped || !$codePoppedOut) return;
+		untrack(() => {
+			focusCodePopout();
+			codeWorkspaceClose.set(true);
+		});
+	});
+	function popOut() {
+		void popOutCode();
+	}
 
 	let docked = $state(true);
 	let winW = $state(900);
@@ -82,7 +108,7 @@
 	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
 	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
 	$effect(() =>
-		onLayoutRestore(() => {
+		popped ? undefined : onLayoutRestore(() => {
 			const stored = storedPanelLayout(safeStorage.getItem, 'code', 900, 500);
 			docked = !!(stored.docked);
 			winW = stored.w;
@@ -99,7 +125,7 @@
 	// the shared dock-mode arm (tab strip menu, drag a tab out, the "+" menu)
 	$effect(() => {
 		const arm = $dockModeArm;
-		if (!arm || arm.key !== 'code') return;
+		if (popped || !arm || arm.key !== 'code') return;
 		dockModeArm.set(null);
 		untrack(() => {
 			if (arm.docked !== docked) setDocked(arm.docked);
@@ -107,6 +133,7 @@
 		});
 	});
 	$effect(() => {
+		if (popped) return;
 		setDockOccupant('code', docked, $dockHeight);
 		return () => setDockOccupant('code', false);
 	});
@@ -114,7 +141,7 @@
 	// a repeat open RAISES (the previewRaise shape): a docked view becomes the dock tab
 	$effect(() => {
 		if (!$codeWorkspaceRaise) return;
-		untrack(() => (docked ? activateDock('code') : raiseWindow('code')));
+		untrack(() => (popped ? hostDoc().defaultView?.focus() : docked ? activateDock('code') : raiseWindow('code')));
 	});
 
 	const myGroup = $derived($tabGroups.find((g) => g.members.includes('code')) ?? null);
@@ -125,6 +152,18 @@
 
 	const tabs = $derived($codeTabs);
 	const active = $derived(tabs.find((t) => t.id === $activeCodeTab) ?? tabs[0] ?? null);
+	// 50 Y1: a viewer (a roles plugin's read-only peer) sees the shared text move and cannot type
+	const viewer = $derived(/** @type {any} */ ($rolesInfo)?.myRole === 'viewer');
+	/** the other people in the active tab's shared document */
+	const here = $derived.by(() => {
+		void $sharedDocs;
+		const key = active ? sharedDocKey(active) : null;
+		return key ? ($sharedPresence[key] ?? []) : [];
+	});
+	const activeShared = $derived.by(() => {
+		void $sharedDocs;
+		return !!(active && sharedKeyOfTab(active));
+	});
 	/** the nodes the active tab feeds (go-to-node, badges); re-read when the graphs move */
 	const bound = $derived.by(() => {
 		void $flowGraphs;
@@ -286,6 +325,7 @@
 	/** @param {any} tab */
 	function kindLabel(tab) {
 		if (tab.nodeType) return BUILTIN_CODE[tab.nodeType]?.title + ' code';
+		if (tab.kind === 'file' && tab.lang === 'text') return 'Text document'; // 50 Y2
 		return { node: 'Script node', behaviour: 'Behaviour node', file: 'Script file', module: 'Module source (read-only)', graph: 'Graph JSON' }[/** @type {string} */ (tab.kind)] ?? tab.kind;
 	}
 	/** @param {any} tab */
@@ -342,12 +382,13 @@
 	function toggleSide(side) {
 		// closing the sidebar that holds the focus would drop it to <body>, where the workspace's
 		// own keys (Ctrl+Alt+B to bring it back) no longer reach — hand it to the editor first
-		const panel = document.getElementById(side === 'left' ? 'code-ws-left' : 'code-ws-right');
-		if (panel?.contains(document.activeElement) && active) {
+		const doc = hostDoc();
+		const panel = doc.getElementById(side === 'left' ? 'code-ws-left' : 'code-ws-right');
+		if (panel?.contains(doc.activeElement) && active) {
 			// a read-only source's editor is not focusable (contenteditable=false): its tab in the
 			// strip is, and it is the strip's one tab stop anyway
-			const editor = /** @type {HTMLElement | null} */ (document.querySelector(`[data-pane="${active.id}"] .cm-content[contenteditable="true"]`));
-			(editor ?? /** @type {HTMLElement | null} */ (document.querySelector(`.code-tab[data-tab-id="${active.id}"]`)))?.focus();
+			const editor = /** @type {HTMLElement | null} */ (doc.querySelector(`[data-pane="${active.id}"] .cm-content[contenteditable="true"]`));
+			(editor ?? /** @type {HTMLElement | null} */ (doc.querySelector(`.code-tab[data-tab-id="${active.id}"]`)))?.focus();
 		}
 		if (narrow) narrowSide = narrowSide === side ? null : side;
 		else (side === 'left' ? codeLeftOpen : codeRightOpen).update((v) => !v);
@@ -418,7 +459,7 @@
 	}
 	// 40 F8: a docked workspace closes from its TAB's ✕ — which takes this same path, so the
 	// unsaved-tabs question still comes first
-	onMount(() => registerDockCloser('code', requestCloseWorkspace));
+	onMount(() => (popped ? undefined : registerDockCloser('code', requestCloseWorkspace)));
 	async function closeSavingAll() {
 		const failed = await saveAllCodeTabs();
 		if (failed.length) {
@@ -519,6 +560,7 @@
 				tabindex={active?.id === tab.id ? 0 : -1}
 				aria-selected={active?.id === tab.id}
 				aria-controls="code-pane-{tab.id}"
+				aria-keyshortcuts="Delete"
 				data-tab-id={tab.id}
 				data-kind={tab.kind}
 				data-dirty={dirty}
@@ -532,7 +574,9 @@
 				<span class="code-tab-name">{tab.title}</span>
 				{#if bad}<span class="code-tab-bad" aria-label="has errors">!</span>{/if}
 				{#if dirty}<span class="code-tab-dirty" aria-label="unsaved">●</span>{/if}
-				<button class="code-tab-close" tabindex="-1" aria-label="Close {tab.title}" onclick={(e) => { e.stopPropagation(); requestClose(tab.id); }}>✕</button>
+				<!-- 50-int (axe nested-interactive): a role=tab may hold no control, so the ✕ is a pointer
+				     affordance only; the keyboard closes the focused tab with Delete (aria-keyshortcuts) -->
+				<span class="code-tab-close" aria-hidden="true" onclick={(e) => { e.stopPropagation(); requestClose(tab.id); }}>✕</span>
 			</div>
 		{/each}
 	</div>
@@ -585,12 +629,9 @@
 					<label class="code-live" title="Apply inline node edits as you type (otherwise Ctrl+S)"><input id="code-ws-live" type="checkbox" class="tp-check" bind:checked={$codeApplyLive} />Live</label>
 				{/if}
 				{#if active.stale || isDirty(active)}
-					<button id="code-ws-reload" class="ui-button-quiet" title="Throw away your edits and show the source as it is now" onclick={() => reloadCodeTab(active.id)}><Icon name="rotate-ccw" size={16} aria-hidden="true" />Revert</button>
+					<button id="code-ws-reload" class="ui-button-quiet" title={activeShared ? 'Throw away the unsaved edits — everyone\'s in this shared file — and show the source as it is now' : 'Throw away your edits and show the source as it is now'} onclick={() => reloadCodeTab(active.id)}><Icon name="rotate-ccw" size={16} aria-hidden="true" />Revert</button>
 				{/if}
 				<button id="code-ws-save" class="ui-button-quiet" class:code-save-armed={isDirty(active)} title={active.kind === 'graph' ? 'Apply the JSON to the graph (Ctrl+S)' : 'Save and reload what runs it (Ctrl+S)'} onclick={save}><Icon name="save" size={16} aria-hidden="true" />{active.kind === 'graph' ? 'Apply' : 'Save'}</button>
-			{/if}
-			{#if $popOutAvailable}
-				<button id="code-ws-popout" class="ui-button-quiet" title="Open this tab in its own browser window (experimental)" onclick={() => popOutCode(active.id)}>⧉ Window</button>
 			{/if}
 		</div>
 	{/if}
@@ -598,6 +639,21 @@
 
 {#snippet body()}
 	{@render toolbar()}
+	{#if active && here.length}
+		<!-- 50 Y1: who else has this source open — the caret in the editor carries their colour,
+		     this strip carries their name and line for everyone, screen readers included -->
+		<div id="code-ws-presence" class="code-presence" data-count={here.length}>
+			<span class="code-muted">Editing with you:</span>
+			<ul class="code-presence-list" aria-label="People editing this file">
+				{#each here as p (p.peerId)}
+					<li class="code-presence-peer" data-peer={p.peerId} data-line={p.line ?? ''} aria-label={presenceLabel(p)} title={presenceLabel(p)}>
+						<span class="code-presence-dot" style:background-color={p.color} aria-hidden="true"></span>
+						<span aria-hidden="true">{p.name || 'A peer'}{p.line ? ' · line ' + p.line : ''}</span>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
 	{#if active?.stale}
 		<div id="code-ws-stale" class="code-banner code-banner-warn">
 			<span class="flex-1">This source changed somewhere else while you were editing it.</span>
@@ -647,12 +703,17 @@
 		</div>
 	{/if}
 	<div class="relative min-h-0 flex-1 p-1">
-		{#each tabs as tab (tab.id)}
+		<!-- 50 Y1: keyed by the shared document too — a tab that changes identity (Save as file, a
+		     rename) remounts its editor on the RIGHT document instead of staying bound to the old one -->
+		{#each tabs as tab (tab.id + '|' + (sharedDocKey(tab) ?? ''))}
 			<div class="code-pane h-full" class:hidden={active?.id !== tab.id} id="code-pane-{tab.id}" role="tabpanel" aria-labelledby="code-tab-{tab.id}" data-pane={tab.id} data-readonly={!!tab.readOnly}>
 				<CodeEditor
 					value={tab.code}
-					readOnly={!!tab.readOnly}
-					onChange={(/** @type {string} */ c) => setTabCode(tab.id, c)}
+					readOnly={!!tab.readOnly || viewer}
+					lang={tab.lang}
+					label={tab.title + ' — ' + kindLabel(tab)}
+					shareKey={sharedDocKey(tab)}
+					onChange={(/** @type {string} */ c, /** @type {{remote: boolean}} */ meta) => setTabCode(tab.id, c, meta)}
 					onSave={() => saveCodeTab(tab.id).then((r) => r.ok && r.nodes && r.nodes > 1 && showToast('Saved — ' + r.nodes + ' nodes reloaded'))}
 					reveal={jump && jump.tabId === tab.id ? jump : revealLineOf(tab)}
 					diagnostic={tab.error ? { line: tab.error.line, message: tab.error.message } : null}
@@ -676,6 +737,12 @@
 			</div>
 		{/if}
 	</div>
+{/snippet}
+
+{#snippet popOutButton()}
+	{#if $popOutSupported}
+		<button id="code-ws-popout" class="ui-button-quiet" title="Open the code editor in its own browser window (drag it to another monitor)" aria-label="Pop out" onclick={popOut}><Icon name="external-link" size={16} aria-hidden="true" /></button>
+	{/if}
 {/snippet}
 
 {#snippet sideToggle(/** @type {'left' | 'right'} */ side)}
@@ -739,7 +806,27 @@
 	</div>
 {/snippet}
 
-{#if docked}
+{#if popped}
+	<!-- 50-window (C1): the whole window is the workspace -->
+	<div
+		bind:this={poppedEl}
+		id="code-ws-popped"
+		class="code-ws code-ws-popped tp-ui flex flex-col p-1"
+		role="region"
+		aria-label="Code (own window)"
+		use:keys
+	>
+		<div class="flex shrink-0 items-center gap-1 pb-1">
+			{@render sideToggle('left')}
+			<span class="tp-dock-title">Code</span>
+			<span class="flex-1"></span>
+			{@render openGraph()}
+			{@render sideToggle('right')}
+			<button id="code-ws-dock-back" class="ui-button-quiet" title="Close this window and put the code editor back in the app" onclick={dockCodeBack}><Icon name="panel-bottom" size={16} aria-hidden="true" />Dock back</button>
+		</div>
+		{@render main()}
+	</div>
+{:else if docked}
 	<div
 		id="code-ws-dock"
 		data-tour="code-workspace"
@@ -766,6 +853,7 @@
 			<span class="tp-dock-title">Code</span>
 			<span class="flex-1"></span>
 			{@render openGraph()}
+			{@render popOutButton()}
 			{@render sideToggle('right')}
 		</div>
 		{@render main()}
@@ -793,6 +881,7 @@
 			title="Code"
 			headerClass="ui-panel-header move-handle cursor-move select-none"
 			onclose={requestCloseWorkspace}
+			onpopout={$popOutSupported ? popOut : null}
 			closeLabel="Close the code workspace"
 			closeAttrs={{ id: 'code-ws-close', title: 'Close the code workspace' }}
 		>
@@ -832,6 +921,12 @@
 	}
 	/* 38 R6: the surface is the shared window / dock panel (src/styles/windows.css) and the
 	   header is WindowChrome — this file paints neither any more */
+	.code-ws-popped {
+		position: fixed;
+		inset: 0;
+		color: var(--text);
+		background: var(--surface-1);
+	}
 	.code-main {
 		position: relative;
 		display: flex;
@@ -953,6 +1048,7 @@
 		padding: 0 3px;
 		border-radius: 3px;
 		color: var(--text-muted);
+		cursor: pointer;
 	}
 	.code-tab-close:hover {
 		color: var(--ink-bad);
@@ -996,6 +1092,33 @@
 	.code-muted {
 		color: var(--text-muted);
 		font-size: 11px;
+	}
+	/* 50 Y1: the people sharing the active buffer */
+	.code-presence {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 6px;
+		flex-shrink: 0;
+		margin: 0 4px 4px;
+		font-size: 11px;
+	}
+	.code-presence-list {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 10px;
+	}
+	.code-presence-peer {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		color: var(--text);
+	}
+	.code-presence-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		flex-shrink: 0;
 	}
 	.code-warn {
 		color: var(--ink-warn);

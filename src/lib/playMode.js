@@ -12,6 +12,8 @@ import { pushState } from '$app/navigation';
 // 36-export: an exported game is an embed for its whole life too (a leaf, read once at eval)
 import { exportMode } from './export/exportBoot.js';
 import { safeStorage } from './safeStorage';
+// 50 R1: a LEAF (svelte/store only) — the AR table's session is not a Play press
+import { arTableActive } from './arTableState.js';
 
 // THE PLAY STATE MACHINE, lifted out of Controls.svelte so the play FAB, the FAB's
 // right-click mode menu and (next) a keyboard shortcut all press the same button.
@@ -269,7 +271,14 @@ function clearXRWatchdog() {
 /** a session really started — Scene calls this from the renderer's own event */
 export function noteXRSessionStarted() {
 	clearXRWatchdog();
+	// 50 R1: an AR table is placed BEFORE anything plays — its own Play button runs sim-on-play
+	if (arTableActive()) return;
 	// the VR half of sim-on-play: only a session that REALLY started counts
+	maybeSimOnPlay();
+}
+
+/** 50 R1: sim-on-play for a press that is not the play button's (the AR table's Play) */
+export function simOnPlay() {
 	maybeSimOnPlay();
 }
 

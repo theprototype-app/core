@@ -14,7 +14,9 @@
 name: perf-budget
 
 on:
+  # PRs into `deps` run it through deps.yml (workflow_call) instead
   pull_request:
+    branches-ignore: [deps]
   push:
     branches: [main, release/next]
   workflow_call:

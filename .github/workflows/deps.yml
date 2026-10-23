@@ -1,0 +1,231 @@
+# deps-auto — DEPENDENCY UPDATES, TESTED AND MERGED WITHOUT A PERSON IN THE LOOP.
+#
+# Dependabot opens its version updates against the long-lived `deps` branch (.github/dependabot.yml,
+# target-branch). Every PR into `deps` runs the whole release gate here: ci.yml (build, the
+# svelte-check ratchet, vitest, scene-lint, kit-diff, a11y, supply chain) and perf-budget.yml, both
+# called as reusable workflows, then the integrators' e2e battery split into shards on
+# GitHub-hosted runners (SwiftShader: no GPU). `deps-gate` is the one required check; the ruleset on
+# `deps` also requires the `pc-battery` commit status, which the GPU check on a desktop posts for a
+# PR that changes what the app ships (scripts/ci/pc-battery.sh — pulled from there, no runner of ours
+# in this public repo) and this workflow posts as "not needed" for every other PR.
+#
+# Then the policy (scripts/ci/deps-policy.cjs): patch / development-only / actions → GitHub
+# auto-merge; a minor of something that ships → label `deps-ready` for the monthly deps lane; a
+# major → `needs-migration` with a pointer to the planned migrations. Integrators merge `deps` into
+# their union branch; RELEASING.md "Dependency updates" has the whole loop.
+#
+# Security updates are the exception GitHub makes: they always target the default branch, whatever
+# target-branch says. They get the same battery and labels here (pull_request into main by
+# Dependabot), never auto-merge (main has no required checks to wait for), and a person merges.
+name: deps
+
+on:
+  pull_request:
+    branches: [deps, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deps-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # what this PR is and what happens to it once it is green
+  scope:
+    runs-on: ubuntu-latest
+    # into main: Dependabot's security updates only — every other PR to main has ci.yml already
+    if: github.event_name != 'pull_request' || github.base_ref == 'deps' || github.event.pull_request.user.login == 'dependabot[bot]'
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    outputs:
+      cls: ${{ steps.policy.outputs.class }}
+      needs_pc: ${{ steps.policy.outputs.needs_pc }}
+      reason: ${{ steps.policy.outputs.reason }}
+      gate_ci: ${{ github.event_name != 'pull_request' || github.base_ref == 'deps' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: dependabot metadata
+        id: meta
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        uses: dependabot/fetch-metadata@v2
+      - name: policy
+        id: policy
+        env:
+          DEPS_JSON: ${{ steps.meta.outputs.updated-dependencies-json }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          if [ -n "$DEPS_JSON" ]; then
+            node scripts/ci/deps-policy.cjs
+          else
+            # a person's PR (or a dispatch): no automation; the PC check runs when the app's lockfile moved
+            pc=false
+            if [ -n "$BASE" ] && git diff --name-only "origin/$BASE...HEAD" | grep -qxE 'package(-lock)?\.json'; then pc=true; fi
+            printf 'class=manual\nneeds_pc=%s\nreason=not a Dependabot PR\n' "$pc" | tee -a "$GITHUB_OUTPUT"
+          fi
+      - name: majors wait for a planned migration
+        if: steps.policy.outputs.class == 'major'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh label create needs-migration --color B60205 --description 'Major update: needs a planned migration' 2>/dev/null || true
+          gh pr edit "$PR" --add-label needs-migration
+          gh pr comment "$PR" --body "A major update is not merged by automation. It needs a planned migration (the maintainers keep those notes beside the roadmap, under plans/core/pending/ in the private planning repo); until then this PR stays open and labelled \`needs-migration\`. If the migration is already written, link it here."
+
+  ci:
+    needs: scope
+    if: needs.scope.outputs.gate_ci == 'true'
+    uses: ./.github/workflows/ci.yml
+
+  perf:
+    needs: scope
+    if: needs.scope.outputs.gate_ci == 'true'
+    uses: ./.github/workflows/perf-budget.yml
+
+  plan:
+    needs: scope
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      playwright: ${{ steps.pw.outputs.version }}
+      refs: ${{ steps.refs.outputs.refs }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        run: node scripts/ci/battery.cjs plan
+      - id: pw
+        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")" >> "$GITHUB_OUTPUT"
+      - id: refs
+        run: echo "refs=$(node -p "JSON.stringify(require('./tests/e2e/battery.json').refs)")" >> "$GITHUB_OUTPUT"
+
+  e2e:
+    name: e2e ${{ matrix.shard }}/${{ matrix.of }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    # the browsers and their OS libraries at exactly the lockfile's Playwright: no 5-minute apt step per shard
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.plan.outputs.playwright }}-noble
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    # the sibling checkouts sit beside core, where the suites' own defaults look for them. Inside a
+    # container the workspace is NOT ${{ github.workspace }} (that is the host path): use the env vars.
+    env:
+      E2E_NO_PERF_OFFER: '1'
+      MODE: quick
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: core
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ fromJSON(needs.plan.outputs.refs).scenes.repo }}
+          ref: ${{ fromJSON(needs.plan.outputs.refs).scenes.ref }}
+          path: scenes
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ fromJSON(needs.plan.outputs.refs).modules.repo }}
+          ref: ${{ fromJSON(needs.plan.outputs.refs).modules.ref }}
+          path: modules
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ fromJSON(needs.plan.outputs.refs).packs.repo }}
+          ref: ${{ fromJSON(needs.plan.outputs.refs).packs.ref }}
+          path: packs
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: core/.nvmrc
+          cache: npm
+          cache-dependency-path: |
+            core/package-lock.json
+            modules/package-lock.json
+      - name: install
+        run: |
+          command -v openssl > /dev/null || (apt-get update -qq && apt-get install -y -qq --no-install-recommends openssl > /dev/null)
+          (cd core && npm ci --no-audit --no-fund && npm run certs)
+          # the module zips the game suites install (MODULES_REPO)
+          (cd modules && npm ci --no-audit --no-fund && node scripts/pack.cjs --all --force)
+      - name: battery shard ${{ matrix.shard }}/${{ matrix.of }} (~${{ matrix.est }} min, ${{ matrix.suites }} suites)
+        working-directory: core
+        run: |
+          W=$GITHUB_WORKSPACE; S=$W/scenes; G=$S/games
+          export SCENES_DIR=$S SCENES_REPO=$S SHELL_SCENES_DIR=$G GAMES_DIR=$G FBW_SCENES=$S/examples
+          export MODULES_REPO=$W/modules MODULES_DIR=$W/modules PACKS_DIR=$W/packs
+          for g in dungeon-realms:DUNGEON_REALMS escape-room:ESCAPE football:FOOTBALL jam-room:JAM_ROOM marble-maze:MARBLE \
+                   mini-golf:MINIGOLF sky-run:SKY_RUN stars-room:STARS_ROOM target-toss:TARGET_TOSS towers:TOWERS \
+                   untangle:UNTANGLE waves:WAVES race:RACE; do export "${g#*:}_TPSCENE=$G/${g%%:*}/scene.tpscene"; done
+          export JELLY_TPSCENE=$S/examples/jelly-room/scene.tpscene TANK_TPSCENE=$S/examples/fluid-tank-toy/scene.tpscene \
+                 POOL_TPSCENE=$S/examples/pool-party/scene.tpscene
+          node scripts/ci/battery.cjs run --shard ${{ matrix.shard }} --of ${{ matrix.of }} --serve --port 5173 --out "$W/battery-out"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: battery-${{ matrix.shard }}
+          # every suite's log; screenshots and evidence only for the suites that failed (the runner deletes the
+          # rest). Beside core, not in it: an artefact inside the served tree reloads the app mid-test.
+          path: battery-out
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # THE required check (the ruleset on `deps` names it)
+  gate:
+    name: deps-gate
+    needs: [scope, ci, perf, plan, e2e]
+    if: always() && needs.scope.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: battery-*
+          path: battery
+      - name: battery report
+        id: report
+        run: node scripts/ci/battery.cjs report battery
+      - name: the release gate
+        env:
+          GATE_CI: ${{ needs.scope.outputs.gate_ci }}
+          CI: ${{ needs.ci.result }}
+          PERF: ${{ needs.perf.result }}
+        run: |
+          echo "### Release gate: ci=$CI perf-budget=$PERF (class ${{ needs.scope.outputs.cls }}: ${{ needs.scope.outputs.reason }})" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$GATE_CI" = true ] && { [ "$CI" != success ] || [ "$PERF" != success ]; }; then exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: battery-durations
+          path: battery/durations.json
+          if-no-files-found: ignore
+      # green from here on
+      - name: pc-battery not needed
+        if: github.event_name == 'pull_request' && needs.scope.outputs.needs_pc != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }}" -f state=success -f context=pc-battery \
+            -f description='Not needed: nothing the app ships changed' > /dev/null
+      - name: ready for the monthly deps lane
+        if: needs.scope.outputs.cls == 'ready'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create deps-ready --color 0E8A16 --description 'Green; a runtime minor or a Playwright bump waiting for the deps lane' 2>/dev/null || true
+          gh pr edit "${{ github.event.pull_request.number }}" --add-label deps-ready
+      - name: auto-merge
+        if: needs.scope.outputs.cls == 'auto' && github.base_ref == 'deps'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # waits for whatever the ruleset still wants (pc-battery from the desktop for a runtime patch)
+        run: gh pr merge "${{ github.event.pull_request.number }}" --auto --squash

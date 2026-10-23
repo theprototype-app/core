@@ -1,19 +1,49 @@
-# Dependency update policy (release 1.0):
-# - one grouped PR per month for all minor/patch bumps (low-risk, reviewed together)
-# - majors arrive as separate PRs, EXCEPT the known frozen migration deps below —
-#   each of those needs its own planned migration (see plans-core/pending/ in the
-#   private cloud repo) and a Dependabot PR would just red-x until then.
+# Dependency update policy (release 1.0; deps-auto 2026-10):
+# - version updates open against the long-lived `deps` branch, where .github/workflows/deps.yml runs
+#   the whole release gate + the e2e battery and merges what is safe by itself (RELEASING.md,
+#   "Dependency updates"). Integrators merge `deps` into their union branch, so main only ever
+#   receives dependency bumps through a tested union.
+# - monthly, grouped by what happens to them once green: a group is judged by its most careful
+#   member, so packages that ship in the app, the build that produces it, Playwright (the e2e hosts
+#   pin the same browser) and the development-only rest each get their own PR, and a dev patch is
+#   not held back by a runtime minor riding in the same group
+# - majors arrive as separate PRs (labelled needs-migration), EXCEPT the known frozen migration deps
+#   below — each of those needs its own planned migration (see plans-core/pending/ in the private
+#   cloud repo) and a Dependabot PR would just red-x until then.
+# - security updates are GitHub's exception: they ALWAYS target the default branch (main) and the
+#   options below do not apply to them; deps.yml runs the same battery on them there.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
+    target-branch: deps
     schedule:
       interval: monthly
+    open-pull-requests-limit: 10
     groups:
-      minor-and-patch:
-        update-types:
-          - minor
-          - patch
+      # first match wins, so the named groups take their packages before the dependency-type ones
+      playwright:
+        patterns: [playwright, playwright-core, '@playwright/*', '@axe-core/playwright']
+        update-types: [minor, patch]
+      build:
+        patterns:
+          - svelte
+          - vite
+          - '@sveltejs/*'
+          - tailwindcss
+          - '@tailwindcss/*'
+          - flowbite
+          - svelte-awesome-color-picker
+        update-types: [minor, patch]
+      runtime-minor:
+        dependency-type: production
+        update-types: [minor]
+      runtime-patch:
+        dependency-type: production
+        update-types: [patch]
+      dev:
+        dependency-type: development
+        update-types: [minor, patch]
     ignore:
       # engine: TS 7 until svelte-check peers it (currently ^5||^6)
       - dependency-name: typescript
@@ -29,3 +59,24 @@ updates:
         update-types: [version-update:semver-major]
       # 2026-08-01: three/threlte/xyflow/tailwind/vite ignores REMOVED -
       # the planned migrations (A-D) all shipped; future majors PR normally.
+
+  # the headless agent (tools/agent): its own lockfile, its own CLI — never the PC GPU check
+  - package-ecosystem: npm
+    directory: /tools/agent
+    target-branch: deps
+    schedule:
+      interval: monthly
+    groups:
+      agent:
+        update-types: [minor, patch]
+
+  # the workflows' actions: one PR a month, every update type (an action major is a CI change, and
+  # the PR runs the very workflows it bumps, so the battery proves it)
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: deps
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']

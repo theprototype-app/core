@@ -13,11 +13,16 @@
 #
 # Two-peer suites stay a MANUAL gate: they meet on the self-hosted signaling box, which a
 # public runner cannot reach and should not be pointed at.
+#
+# deps-auto: PRs into the `deps` branch (Dependabot's version updates) run this file through
+# deps.yml (workflow_call) as part of the dependency gate, so it does not ALSO run for them here.
 name: ci
 on:
   pull_request:
+    branches-ignore: [deps]
   push:
     branches: [main, release/next]
+  workflow_call:
 
 jobs:
   build:

@@ -447,6 +447,11 @@ async function thumbnailFor(blob, name, kind) {
 async function itemFacts(blob, name, kind) {
 	try {
 		if (kind === 'image') return { thumbnail: await imageThumbnail(blob), dims: null };
+		// 57 M1: a clip draws its own skeleton (lazy; a 2D canvas, no WebGL context per card)
+		if (kind === 'anim') {
+			const { clipThumbnail } = await import('./tpanim/thumb.js');
+			return { thumbnail: clipThumbnail(await blob.arrayBuffer()), dims: null };
+		}
 		if (kind === 'object') {
 			const ext = name.split('.').pop()?.toLowerCase() ?? '';
 			const object = await parseObjectFile(await blob.arrayBuffer(), ext);
@@ -518,7 +523,7 @@ export async function importFiles(files, folderId = null, opts = {}) {
 		}
 		const kind = kindOf(file.name);
 		if (!kind) {
-			showToast('Unsupported: ' + file.name + ' (images incl. HEIC photos, audio, text/config, 3D objects)');
+			showToast('Unsupported: ' + file.name + ' (images incl. HEIC photos, audio, text/config, 3D objects, animation clips)');
 			continue;
 		}
 		if (file.size > MAX_ITEM_BYTES) {

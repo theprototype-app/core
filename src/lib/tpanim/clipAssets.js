@@ -101,7 +101,7 @@ export function bindClip(tp, root, name) {
 	}
 	const fit = clipFit(tp, root);
 	if (fit.fit === 'none') return warn('"' + name + '" was made for another skeleton — none of its bones are in "' + (root.name || 'this model') + '".');
-	const clip = tpToThreeClip(tp);
+	const clip = tpToThreeClip(tp, root);
 	clip.name = name;
 	return clip;
 }

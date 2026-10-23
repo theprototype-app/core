@@ -6531,6 +6531,24 @@
 					url: URL.createObjectURL(blob),
 					onClose: () => gridEl?.focus()
 				});
+		} else if (item.kind === 'anim') {
+			// 57 M1: a clip PLAYS on the selected character (the drop's assign, without the drag)
+			const pick = selectedSet()[0];
+			if (!pick) {
+				showToast('Select a character, then double-click the clip — or drag it onto one');
+				return;
+			}
+			const { assignClipAsset } = await import('$lib/tpanim/clipAssets.js');
+			const { objectsGroup } = await import('../../stores/sceneStore.js');
+			const { hasAnimatedImport } = await import('$lib/animatedImports');
+			const group: any = get(objectsGroup);
+			let root = group?.getObjectByProperty('uuid', pick);
+			// the rig the selection belongs to; else (a parts model) its top-level object
+			let rig = root;
+			while (rig && !hasAnimatedImport(rig.uuid)) rig = rig.parent;
+			while (!rig && root && root.parent && root.parent !== group) root = root.parent;
+			const target = rig ?? root;
+			if (target) assignClipAsset(target.uuid, { hash: item.hash, name: item.name }, { play: true });
 		} else if (item.kind === 'object' && !item.packEntry) {
 			// R22 round 12 (user): "double click on 3d objects should open same preview as
 			// when opening image". ONE window for every kind, so the arrows walk from a

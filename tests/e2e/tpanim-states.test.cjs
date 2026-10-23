@@ -164,7 +164,22 @@ h.run(async () => {
 		nh.createFlowEdge({ id: 'e-k', source: 'k-click', target: 'k-jump', targetHandle: 'trigger' }, uuid);
 		nh.createFlowNode({ id: 'k-onjump', type: 'onanimstate', position: { x: 0, y: 160 }, data: { type: 'onanimstate', state: 'Jump', pulse: 0.3 } }, uuid);
 	}, uuid);
-	await B.page.waitForTimeout(1500);
+	// the graph reaches B by the node sync, not at once: click only when B's RUNTIME runs it (the On
+	// Click card reads a value there), else the 1 s pulse is over before B has the nodes
+	await h.eventually(
+		() =>
+			B.page.evaluate((uuid) => {
+				const s = window.__stores;
+				let v;
+				let fg;
+				s.flowValues.subscribe((x) => (v = x))();
+				s.flowGraphs.subscribe((x) => (fg = x))();
+				return v?.['k-click'] !== undefined && (fg?.[uuid]?.edges ?? []).some((e) => e.id === 'e-k');
+			}, uuid),
+		(ok) => ok,
+		'M11: B runs the click graph',
+		15000
+	);
 	await watchStates(A.page, uuid);
 	await watchStates(B.page, uuid);
 	// on a red: B's view of the click over time (stamp landing vs B's clock, the On Click output, the jump param)

@@ -557,6 +557,8 @@ export async function colorObject(uuid, color, near, far) {
     } else {
         let mesh = sceneObjects.getObjectByProperty('uuid', uuid);
         if (mesh) mesh.material.color.set(color);
+        // 59 T1: the receiving side of setObjectColor's override stamp
+        if (mesh?.material?.userData) mesh.material.userData.tpEdited = true;
     }
 }
 
@@ -1018,11 +1020,13 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
  * Sends all objects in the scene to the given peer.
  * @param {string} peerId - The ID of the peer to send the objects to.
  * @param {any} [element] - subtree to send (the null-peerId group path); absent = the whole scene
- * @param {{override?: boolean}} [opts] - R22 round 32: `override` marks this send as an
+ * @param {{override?: boolean, groupparent?: string}} [opts] - R22 round 32: `override` marks this send as an
  *   ARRIVAL HEAL, so the receiver REPLACES the objects it already holds instead of
  *   deduping them away. Set by exactly one caller (the `arriving` row of
  *   `deferUntilShareChoice`); absent everywhere else, and when absent every message this
- *   walk emits is byte-identical to what it always sent.
+ *   walk emits is byte-identical to what it always sent. 59 T1: `groupparent` (the
+ *   null-peerId group path only) names the root's parent, so a model replaced inside a
+ *   group lands back inside it on every peer; absent = the scene root, as always.
  */
 export function sendObjects(peerId, element, opts = {}) {
     let groupid;
@@ -1034,7 +1038,8 @@ export function sendObjects(peerId, element, opts = {}) {
     }
     if (peerId === null) {
         groupid = element.uuid;
-        peer.send({type: 'group', name: element.name, uuid: element.uuid, groupparent: null,
+        // 59 T1: `groupparent` (additive) — a replaced model keeps its parent on every peer
+        peer.send({type: 'group', name: element.name, uuid: element.uuid, groupparent: opts.groupparent ?? null,
             pos: element.position.toArray(),
             rot: element.rotation.toArray(),
             scale: element.scale.toArray(),

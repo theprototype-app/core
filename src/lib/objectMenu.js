@@ -29,6 +29,7 @@ import { pingObject, pingObjects } from './ping';
 import { hasOriginal } from './decimate';
 import { linkOf } from './prefabSync';
 import { prefabById } from './prefabs';
+import { isReplaceableModel } from './modelTarget'; // 59 T1/T2
 
 /**
  * 47 M2: the nine Align rows (X / Y / Z × min / centre / max) for a set.
@@ -524,6 +525,29 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 	];
 
 	/** @type {any[]} Mesh ▸ — operations that rebuild geometry */
+	/** @type {any[]} 59 T1/T2: this object's MODEL — swapped from a file, or taken out to a tool and back.
+	 * Inside Mesh ▸ beside "Restore original model": the top level has a row budget (38 NOTES-38 #22). */
+	const model =
+		!multi && !loadingStub && isReplaceableModel(object)
+			? [
+					{
+						label: 'Replace model…',
+						icon: 'folder-input',
+						disabled: locked,
+						tooltip: locked
+							? lockedTooltip
+							: 'Pick a model file — the object keeps its place, name, links, flows, physics and behaviours (one undo)',
+						action: () => import('./modelReplace').then((m) => m.pickReplacementFile(uuid))
+					},
+					{
+						label: 'Edit in Blender…',
+						icon: 'external-link',
+						tooltip: 'Download it as a .glb for Blender (or any glTF tool); drop the exported file back to update it',
+						action: () => import('./editInBlender').then((m) => m.editInBlender(uuid))
+					}
+				]
+			: [];
+
 	const mesh = [
 		// 15-G: bake a group / a set of meshes down to ONE mesh (materials kept as slots,
 		// originals deleted, one undo step)
@@ -593,6 +617,11 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 				]
 			: [])
 	];
+	// …and only where Mesh ▸ is there anyway (an imported model is a Group, which has Convert to
+	// mesh): a lone primitive would gain a top-level row past the budget, so it gets both rows from
+	// Properties ▸ Model (and the drop onto it) instead
+	if (mesh.length || isGroup) mesh.unshift(...model);
+
 
 	/** @type {any[]} Physics & effects ▸ — joints, particles, the object's flow */
 	const behaviour = [

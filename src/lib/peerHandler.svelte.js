@@ -106,7 +106,7 @@ import { applyRemoteTriggers, sendTriggers } from '$lib/triggerSync';
 import { applySessionProposal, applySessionAnswer, deferUntilShareChoice, localSceneCount, gateHolds, registerWorldStatePush, connectDecisionApplies, noteHandshakeDeferred } from '$lib/sessions';
 import { applyRemoteGeometry } from '$lib/geometryEdit';
 import { applyLightTarget } from '$lib/lightParams';
-import { applyObjectFile } from '$lib/animatedImports';
+import { applyObjectFile, dropAnimatedImport } from '$lib/animatedImports';
 import { applyRemoteBehavior } from '$lib/packBehavior';
 import { sendArchBehaviorStates } from '$lib/arch/archParts.js';
 import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
@@ -1176,6 +1176,10 @@ export class PeerConnection {
 					applyClearScene(data.peerId);
 				} else if(data.type == 'delete') {
 					deleteObject(data.uuid);
+					// 59 T1: a model REPLACED in place — the add that follows reuses this uuid, so the
+					// animated record (bytes, mixer) of the old one must go now, or this peer would
+					// save and serve the old file under it. Additive: absent on every other delete.
+					if (data.replacing) dropAnimatedImport(data.uuid);
 				} else if(data.type == 'color') {
 					colorObject(data.uuid, data.color, data.near, data.far);
 				} else if(data.type == 'loading') {

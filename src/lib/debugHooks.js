@@ -421,6 +421,13 @@ export const DEBUG_HOOKS = [
 	['loadStates', () => import('./loadStates')],
 	['placeholders', () => import('./placeholders')],
 	['replaceModel', () => import('./replaceModel')],
+	// 59 T1/T2/T7: Replace from file, Edit in Blender, the drop router, the file watch
+	['modelReplace', () => import('./modelReplace')],
+	['editInBlender', () => import('./editInBlender')],
+	['modelDrop', () => import('./modelDrop')],
+	['modelWatch', () => import('./modelWatch')],
+	['glbEdit', () => import('./glbEdit')],
+	['modelClips', () => import('./modelClips')],
 	['lod', () => import('./lod')],
 	['gltfOptimize', () => import('./gltfOptimize.js')],
 	['gltfLoader', () => import('./gltfLoader.js')],

@@ -263,6 +263,7 @@ function attachClipRefs(uuid) {
  */
 export function setClipRefs(uuid, refs, opts = {}) {
 	const root = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!root && opts.replicate === false) return parkEarly(uuid, { refs, ...(typeof opts.clipsOff === 'boolean' ? { clipsOff: opts.clipsOff } : {}) });
 	if (!root || !ensureClipModel(root)) return false;
 	const before = clipRefsOf(root);
 	const after = normalizeClipRefs(refs);
@@ -368,6 +369,35 @@ export function ensureClipModel(root) {
 	return true;
 }
 
+// A peer's clipRefs / animGraph / transport message can land while its OBJECT is still in this
+// peer's ingest queue (an agent imports a model and animates it at once): parked here by uuid and
+// applied when the object arrives, refs first, so the transport finds its clip. Unclaimed ones expire.
+const EARLY_TTL_MS = 30000;
+/** @type {Map<string, {t: number, refs?: any[], clipsOff?: boolean, graph?: any, state?: any}>} */
+const early = new Map();
+
+/** @param {string} uuid @param {{refs?: any[], clipsOff?: boolean, graph?: any, state?: any}} part @returns {false} */
+function parkEarly(uuid, part) {
+	early.set(uuid, { ...(early.get(uuid) ?? {}), ...part, t: performance.now() });
+	return false;
+}
+
+/** @param {any} group */
+function drainEarly(group) {
+	const now = performance.now();
+	for (const [uuid, held] of [...early]) {
+		if (now - held.t > EARLY_TTL_MS) {
+			early.delete(uuid);
+			continue;
+		}
+		if (!group.getObjectByProperty('uuid', uuid)) continue;
+		early.delete(uuid);
+		if (held.refs) setClipRefs(uuid, held.refs, { replicate: false, record: false, ...(typeof held.clipsOff === 'boolean' ? { clipsOff: held.clipsOff } : {}) });
+		if ('graph' in held) void setAnimGraph(uuid, held.graph, { replicate: false, record: false });
+		if (held.state) setAnimationState(uuid, held.state, false);
+	}
+}
+
 let lastSweep = 0;
 /** register parts models that arrived carrying refs or a graph; forget the ones that left @param {number} time */
 function sweepPartsModels(time) {
@@ -375,6 +405,7 @@ function sweepPartsModels(time) {
 	lastSweep = time;
 	const group = get(objectsGroup);
 	if (!group) return;
+	if (early.size) drainEarly(group);
 	for (const child of group.children) {
 		const ud = child.userData;
 		if (ud?.attachTo && !socketFollowers.has(child.uuid)) syncSocketFollower(child);
@@ -736,6 +767,7 @@ function loadGraphRuntime(root) {
  */
 export async function setAnimGraph(uuid, graph, opts = {}) {
 	const root = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!root && opts.replicate === false) return parkEarly(uuid, { graph: graph ?? null });
 	if (!root || !ensureClipModel(root)) return false;
 	const { normalizeAnimGraph } = await import('./tpanim/animGraph.js');
 	const before = root.userData.animGraph ?? null;
@@ -861,6 +893,10 @@ export function setClipPlayback(uuid, refs) {
 export function setAnimationState(uuid, next, replicate = true) {
 	const entry = get(animatedObjects)[uuid];
 	const record = mixers.get(uuid);
+	if ((!entry || !record) && !replicate && !get(objectsGroup)?.getObjectByProperty('uuid', uuid)) {
+		parkEarly(uuid, { state: { ...(early.get(uuid)?.state ?? {}), ...next } });
+		return;
+	}
 	if (!entry || !record) return;
 	// 33 P2: a functional item has no transport. Pressing play on one in the Animation panel
 	// or the Inspector is a LOCAL PREVIEW — never sent, never saved, back to rest at the end
@@ -1212,6 +1248,7 @@ export function dropAllAnimatedImports() {
 	fileBytes.clear();
 	fileKinds.clear();
 	mixers.clear();
+	early.clear();
 	animatedObjects.set({});
 }
 

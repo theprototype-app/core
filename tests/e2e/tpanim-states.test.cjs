@@ -133,7 +133,7 @@ h.run(async () => {
 		const s = window.__stores;
 		s.flowGraphsCtl.createObjectGraph(uuid);
 		const nh = s.nodesHandler;
-		nh.createFlowNode({ id: 'k-click', type: 'onclick', position: { x: 0, y: 0 }, data: { type: 'onclick', pulse: 0.3 } }, uuid);
+		nh.createFlowNode({ id: 'k-click', type: 'onclick', position: { x: 0, y: 0 }, data: { type: 'onclick', pulse: 1 } }, uuid);
 		nh.createFlowNode({ id: 'k-jump', type: 'setanimparam', position: { x: 220, y: 0 }, data: { type: 'setanimparam', name: 'jump', mode: 'trigger', value: 0 } }, uuid);
 		nh.createFlowEdge({ id: 'e-k', source: 'k-click', target: 'k-jump', targetHandle: 'trigger' }, uuid);
 		nh.createFlowNode({ id: 'k-onjump', type: 'onanimstate', position: { x: 0, y: 160 }, data: { type: 'onanimstate', state: 'Jump', pulse: 0.3 } }, uuid);
@@ -145,6 +145,17 @@ h.run(async () => {
 	await A.page.waitForTimeout(600);
 	h.check((await seenStates(A.page)).includes('jump'), 'M11: Set Animation Parameter fires the jump trigger on A');
 	await h.eventually(() => seenStates(B.page), (l) => l.includes('jump'), 'M11: ...and on B (from the replicated click stamp)');
+	// on a red: did B get the click stamp at all? (B reads the pulse as a window on the shared clock)
+	console.log(
+		'  B trigger view:',
+		JSON.stringify(
+			await B.page.evaluate(() => {
+				let t;
+				window.__stores.flowTriggers.subscribe((v) => (t = v))();
+				return { click: t?.['k-click'] ?? null };
+			})
+		)
+	);
 	const pulsed = await A.page.evaluate(() => {
 		let t;
 		window.__stores.flowTriggers.subscribe((v) => (t = v))();
@@ -191,6 +202,38 @@ h.run(async () => {
 	};
 	h.check(await turns(A.page), 'M12: the rotor spins on A');
 	await h.eventually(() => turns(B.page), (v) => v, 'M12: ...and on B (the clip pulled, bound to its own copy by part name)', 20000);
+	// A clip message that lands BEFORE its object (still in the receiver's ingest queue — an agent
+	// imports a model and animates it at once) is parked and applied when the object arrives.
+	// Delivered on B by hand, in that order, so the race is not left to timing.
+	const earlyOk = await B.page.evaluate(async (hash) => {
+		const s = window.__stores;
+		const T = s.THREE;
+		const uuid = T.MathUtils.generateUUID();
+		await s.commandsHandler.objectParameters({ type: 'objectParameters', parameter: 'clipRefs', uuid, clipRefs: [{ hash, name: 'Spin' }] });
+		await s.commandsHandler.objectParameters({ type: 'objectParameters', parameter: 'animation', uuid, clip: 'Spin', playing: true, speed: 1, at: 0 });
+		const root = new T.Group();
+		root.uuid = uuid;
+		root.name = 'Late heli';
+		const rotor = new T.Object3D();
+		rotor.name = 'rotor';
+		root.add(rotor);
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		g.add(root);
+		const yaw = () => new T.Euler().setFromQuaternion(rotor.quaternion, 'YXZ').y;
+		for (let i = 0; i < 60; i++) {
+			await new Promise((r) => setTimeout(r, 250));
+			const a = yaw();
+			await new Promise((r) => setTimeout(r, 170));
+			if (Math.abs(yaw() - a) > 0.2) {
+				g.remove(root);
+				return true;
+			}
+		}
+		g.remove(root);
+		return false;
+	}, res.hash);
+	h.check(earlyOk, 'M12: clip refs + play that arrive before their object are applied when it lands (B)');
 	const clipOnHeli = (page) => page.evaluate((heli) => window.__stores.animatedImports.clipInfo(heli).map((c) => c.name), heli);
 	await A.page.evaluate(() => window.__stores.history.undo());
 	await h.eventually(() => clipOnHeli(B.page), (l) => !l.includes('Spin'), 'M12: one undo takes the clip off on B');
@@ -213,7 +256,8 @@ h.run(async () => {
 		const out = await s.clipEdit.partsKeysToClip(heli, 'Bob');
 		return { out, clips: s.animatedImports.clipInfo(heli).map((c) => c.name) };
 	}, heli);
-	h.check(fromKeys.out?.parts === 1 && fromKeys.clips.includes('Bob'), `M12: a part's keys become a node-name clip file on the model (${JSON.stringify(fromKeys.out)})`);
+	h.check(fromKeys.out?.parts === 1, `M12: a part's keys become a node-name clip file on the model (${JSON.stringify(fromKeys.out)})`);
+	await h.eventually(() => clipOnHeli(A.page), (l) => l.includes('Bob'), 'M12: ...which the model plays as a clip on A (bound once the file decodes)');
 	await h.eventually(() => clipOnHeli(B.page), (l) => l.includes('Bob'), 'M12: ...and reach B as a clip');
 
 	// ---------- M12: Attach to Socket — a box rides the rotor tip ----------

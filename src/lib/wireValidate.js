@@ -347,6 +347,15 @@ export const VALIDATORS = {
 		// 48 B2: a measurement's record — null is not a record (an item is deleted, never emptied)
 		if (d.parameter === 'measure')
 			return isUuid(d.uuid) && !!d.measure && typeof d.measure === 'object' && isArray(d.measure.points) && d.measure.points.length <= 64;
+		// 57 M1: a model's clip-asset refs — a short array of {hash, name} (normalizeClipRefs
+		// trims the rest on apply)
+		if (d.parameter === 'clipRefs')
+			return (
+				isUuid(d.uuid) &&
+				isArray(d.clipRefs) &&
+				d.clipRefs.length <= 64 &&
+				d.clipRefs.every((/** @type {any} */ r) => !!r && typeof r.hash === 'string' && r.hash.length <= 128 && typeof r.name === 'string' && r.name.length <= 200)
+			);
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

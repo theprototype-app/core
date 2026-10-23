@@ -438,7 +438,9 @@ function addAnimatedImport(result, buffer, name, kind, position) {
 	showToast(
 		root.userData.behavior
 			? 'Placed "' + root.name + '" — it opens with a click in Interact or Play'
-			: 'Animated model: ' + result.animations.length + ' clip(s) — play them from the Animation panel'
+			: result.animations.length
+				? 'Animated model: ' + result.animations.length + ' clip(s) — play them from the Animation panel'
+				: 'Rigged model — drop an animation clip (.tpanim) on it to play one'
 	);
 }
 
@@ -727,8 +729,9 @@ export async function parseModelFile(file, extension, extras) {
 		// 17-D2: FBX clips used to be dropped on the floor (the loader parsed
 		// them, nothing read them). Animated rigs now take the SAME raw-bytes
 		// route as animated GLB — peers reparse the original file.
-		const animated = object.animations?.length > 0
-			? { result: { scene: object, animations: object.animations }, buffer, kind: 'fbx' }
+		// 57 M1: a RIG with no clips rides the same route — clip assets are assigned to it later
+		const animated = object.animations?.length > 0 || hasSkin(object)
+			? { result: { scene: object, animations: object.animations ?? [] }, buffer, kind: 'fbx' }
 			: null;
 		return { root: object, animated, notes };
 	}
@@ -738,8 +741,18 @@ export async function parseModelFile(file, extension, extras) {
 	const buffer = await readAs(file, 'buffer');
 	const result = await parseGltfSceneSafe(buffer);
 	// animated rigs keep their own pipeline (raw-bytes sync) — unplaced
-	const animated = result.animations?.length > 0 ? { result, buffer, kind: 'gltf' } : null;
+	// 57 M1: ...and so does a rig with no clips of its own (clip assets are assigned to it later)
+	const animated = result.animations?.length > 0 || hasSkin(result.scene) ? { result, buffer, kind: 'gltf' } : null;
 	return { root: result.scene, animated, notes };
+}
+
+/** 57 M1: does a parsed model carry a skinned mesh (a rig clips can drive)? @param {any} root */
+function hasSkin(root) {
+	let found = false;
+	root?.traverse?.((/** @type {any} */ o) => {
+		if (o.isSkinnedMesh) found = true;
+	});
+	return found;
 }
 
 /** The name an import takes when the caller gave none — what each branch used before.

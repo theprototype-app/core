@@ -30,6 +30,7 @@
 	"devDependencies": {
 		"@axe-core/playwright": "4.13.0",
 		"@iwer/devui": "2.6.0",
+		"@pixiv/three-vrm-animation": "^3.5.5",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",

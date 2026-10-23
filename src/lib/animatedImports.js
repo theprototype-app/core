@@ -20,14 +20,15 @@ import { normalizeBehavior } from './behaviorCore';
 // exactly what every pre-D2 peer sent — so old sessions/.tpscene files and a
 // peer on the previous build keep working unchanged.
 
-/** @type {import('svelte/store').Writable<Record<string, {clips: string[], clip: string, playing: boolean, speed: number}>>} */
+/** 57 M3: `at` (when the clip began, a synced stamp) and `from`/`fromSpeed`/`fade` (a crossfade) are optional
+ * @type {import('svelte/store').Writable<Record<string, {clips: string[], clip: string, playing: boolean, speed: number, at?: number, from?: string, fromSpeed?: number, fade?: number}>>} */
 export const animatedObjects = writable({});
 
 /** @type {Map<string, ArrayBuffer>} rootUuid -> original file bytes */
 const fileBytes = new Map();
 /** @type {Map<string, 'gltf'|'fbx'>} rootUuid -> which parser those bytes need */
 const fileKinds = new Map();
-/** @type {Map<string, {mixer: any, actions: Record<string, any>, durations: Record<string, number>}>} */
+/** @type {Map<string, {mixer: any, actions: Record<string, any>, durations: Record<string, number>, rest?: Map<any, {p: number[], q: number[], s: number[]}>, assets?: Record<string, string>, clipSpeed?: Record<string, number>, clipOnce?: Record<string, boolean>, assetKeys?: Record<string, string>}>} */
 const mixers = new Map();
 
 // ---- 33 P2: animated FUNCTIONAL items (a door, a chest, a lever, a fan) ---------------
@@ -82,17 +83,182 @@ function behaviorFields(uuid) {
  * behavior spec does — the peer RE-PARSES the file, so anything stamped on the root after
  * the parse is otherwise lost on peers, after a reload and across an undo. Absent = none,
  * so every message without one is byte-identical.
- * @param {any} root @returns {{lod?: any}}
+ * @param {any} root @returns {{lod?: any, clipRefs?: any[]}}
  */
 function rootDataFields(root) {
+	// 57 M1: the clip ASSETS assigned to this model ride beside the bytes for the same reason
+	const refs = clipRefsOf(root);
+	const clips = refs.length ? { clipRefs: refs } : {};
 	const lod = root?.userData?.lod;
-	if (!lod || typeof lod !== 'object') return {};
+	if (!lod || typeof lod !== 'object') return clips;
 	try {
-		return { lod: JSON.parse(JSON.stringify(lod)) };
+		return { lod: JSON.parse(JSON.stringify(lod)), ...clips };
 	} catch {
-		return {};
+		return clips;
 	}
 }
+
+// ---- 57 M1: CLIP ASSETS (`.tpanim`) ---------------------------------------------------
+// A clip is its own small file (fork F1): assigning one to a model writes a REFERENCE
+// `userData.clipRefs = [{hash, name}]` on the root — the model's bytes never change, the clip's
+// bytes travel once by content hash (assetShare), and every peer binds it to its own parse of the
+// model. The refs ride the objectfile message / save entry / undo entry (rootDataFields) and a
+// change is ONE `objectParameters 'clipRefs'` message + ONE `clipRefs` undo entry. Binding lives
+// in tpanim/clipAssets.js, loaded only when a model has refs (nothing enters the boot graph).
+
+const MAX_CLIP_REFS = 64;
+
+/**
+ * The clip refs on a root, normalized (hash + name strings, deduped by hash, capped).
+ * @param {any} root @returns {{hash: string, name: string, speed?: number, loop?: boolean, mode?: 'inplace'|'moving'}[]}
+ */
+export function clipRefsOf(root) {
+	return normalizeClipRefs(root?.userData?.clipRefs);
+}
+
+/** @param {any} raw @returns {{hash: string, name: string, speed?: number, loop?: boolean, mode?: 'inplace'|'moving'}[]} */
+export function normalizeClipRefs(raw) {
+	if (!Array.isArray(raw)) return [];
+	/** @type {any[]} */
+	const out = [];
+	const seen = new Set();
+	for (const r of raw) {
+		if (!r || typeof r.hash !== 'string' || !/^[0-9a-f]{16,128}$/i.test(r.hash) || seen.has(r.hash)) continue;
+		seen.add(r.hash);
+		/** @type {any} */
+		const ref = { hash: r.hash, name: String(r.name ?? 'Clip').slice(0, 80) || 'Clip' };
+		// 57 M8: per-clip playback settings, absent = defaults (so a plain ref stays two keys)
+		if (Number.isFinite(r.speed) && r.speed > 0 && r.speed !== 1) ref.speed = Math.min(8, Math.max(0.05, r.speed));
+		if (typeof r.loop === 'boolean') ref.loop = r.loop;
+		// 57 M3: In place / Moving per clip on this model (absent = what the file says)
+		if (r.mode === 'inplace' || r.mode === 'moving') ref.mode = r.mode;
+		out.push(ref);
+		if (out.length >= MAX_CLIP_REFS) break;
+	}
+	return out;
+}
+
+/** what a bound clip-asset action was bound from (hash|mode), or null @param {string} uuid @param {string} name */
+export function clipAssetKey(uuid, name) {
+	return mixers.get(uuid)?.assetKeys?.[name] ?? null;
+}
+
+/** the rest pose this model was parsed with, per node (for humanoid binding and Extract clips)
+ * @param {string} uuid @returns {(o: any) => {p: number[], q: number[], s: number[]} | null} */
+export function restPoseOf(uuid) {
+	const rest = mixers.get(uuid)?.rest;
+	return (o) => rest?.get(o) ?? null;
+}
+
+/** @param {any} root */
+function captureRest(root) {
+	/** @type {Map<any, {p: number[], q: number[], s: number[]}>} */
+	const rest = new Map();
+	root.traverse((/** @type {any} */ o) => {
+		if (o !== root) rest.set(o, { p: o.position.toArray(), q: o.quaternion.toArray(), s: o.scale.toArray() });
+	});
+	return rest;
+}
+
+/**
+ * Add (or replace) a bound clip-asset action on a model's mixer. Called by clipAssets once the
+ * bytes are here and bound; a transport already naming this clip starts it.
+ * @param {string} uuid @param {any} clip a THREE.AnimationClip bound to this model @param {string} hash
+ * @param {string} [key] what the bind depended on (hash + per-ref mode), so a re-attach skips it
+ */
+export function addClipAction(uuid, clip, hash, key = hash) {
+	const record = mixers.get(uuid);
+	if (!record) return false;
+	const old = record.actions[clip.name];
+	if (old) {
+		old.stop();
+		record.mixer.uncacheAction(old.getClip());
+	}
+	record.actions[clip.name] = record.mixer.clipAction(clip);
+	record.durations[clip.name] = clip.duration;
+	record.assets = { ...(record.assets ?? {}), [clip.name]: hash };
+	record.assetKeys = { ...(record.assetKeys ?? {}), [clip.name]: key };
+	const entry = get(animatedObjects)[uuid];
+	if (entry) {
+		const clips = [...entry.clips.filter((c) => c !== clip.name), clip.name];
+		const next = { ...entry, clips, clip: entry.clip ?? clip.name };
+		animatedObjects.update((map) => ({ ...map, [uuid]: next }));
+		if (next.playing && next.clip === clip.name) {
+			Object.values(record.actions).forEach((action) => action.stop());
+			record.actions[clip.name].play();
+		}
+	}
+	return true;
+}
+
+/**
+ * Drop the clip-asset actions whose name is not in `keep` (a ref was removed or renamed).
+ * @param {string} uuid @param {Set<string>} keep
+ */
+export function pruneClipActions(uuid, keep) {
+	const record = mixers.get(uuid);
+	if (!record?.assets) return;
+	const gone = Object.keys(record.assets).filter((name) => !keep.has(name));
+	if (!gone.length) return;
+	for (const name of gone) {
+		const action = record.actions[name];
+		if (action) {
+			action.stop();
+			record.mixer.uncacheAction(action.getClip());
+		}
+		delete record.actions[name];
+		delete record.durations[name];
+		delete record.assets[name];
+		if (record.assetKeys) delete record.assetKeys[name];
+	}
+	const entry = get(animatedObjects)[uuid];
+	if (entry) {
+		const clips = entry.clips.filter((c) => !gone.includes(c));
+		const clip = gone.includes(entry.clip) ? clips[0] : entry.clip;
+		animatedObjects.update((map) => ({ ...map, [uuid]: { ...entry, clips, clip, playing: gone.includes(entry.clip) ? false : entry.playing } }));
+	}
+}
+
+/** load the binder and (re)bind this model's clip refs — lazy, so a scene without clip assets never fetches it
+ * @param {string} uuid */
+function attachClipRefs(uuid) {
+	const root = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	const hasRefs = clipRefsOf(root).length > 0;
+	if (!hasRefs && !mixers.get(uuid)?.assets) return;
+	void import('./tpanim/clipAssets.js').then((m) => m.attachClipAssets(uuid));
+}
+
+/**
+ * Set a model's clip refs: applied here, bound, and (unless `replicate` is false) broadcast as ONE
+ * message and recorded as ONE undo entry.
+ * @param {string} uuid @param {any[]} refs @param {{replicate?: boolean, record?: boolean}} [opts]
+ */
+export function setClipRefs(uuid, refs, opts = {}) {
+	const root = get(objectsGroup)?.getObjectByProperty('uuid', uuid);
+	if (!root || !fileBytes.has(uuid)) return false;
+	const before = clipRefsOf(root);
+	const after = normalizeClipRefs(refs);
+	if (JSON.stringify(before) === JSON.stringify(after)) return false;
+	if (after.length) root.userData.clipRefs = after;
+	else delete root.userData.clipRefs;
+	attachClipRefs(uuid);
+	if (opts.record !== false) recordEntry({ kind: 'clipRefs', uuid, before, after });
+	if (opts.replicate !== false) {
+		/** @type {any} */
+		const peer = get(peers);
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'clipRefs', uuid, clipRefs: after });
+	}
+	return true;
+}
+
+registerHistoryKind('clipRefs', (entry, state) => {
+	if (!fileBytes.has(entry.uuid)) {
+		showToast('Cannot undo/redo: the object no longer exists');
+		return false;
+	}
+	setClipRefs(entry.uuid, state, { record: false });
+	return true;
+});
 
 /** GLTFLoader with draco + meshopt decoders wired — 34 R7: the app's one (gltfLoader.js) */
 export { createGltfLoader };
@@ -139,7 +305,9 @@ export function clipInfo(uuid) {
 	if (!record) return [];
 	return Object.keys(record.actions).map((name) => ({
 		name,
-		duration: record.durations[name] ?? 0
+		duration: record.durations[name] ?? 0,
+		// 57 M1: a clip that came from a `.tpanim` asset names its hash
+		...(record.assets?.[name] ? { asset: record.assets[name] } : {})
 	}));
 }
 
@@ -169,7 +337,7 @@ export function registerAnimatedImport(root, animations, bytes, kind = 'gltf') {
 		actions[clip.name] = mixer.clipAction(clip);
 		durations[clip.name] = clip.duration;
 	});
-	mixers.set(root.uuid, { mixer, actions, durations });
+	mixers.set(root.uuid, { mixer, actions, durations, rest: captureRest(root) });
 	root.userData.animatedClips = animations.map((c) => c.name);
 	const spec = normalizeBehavior(root.userData.behavior);
 	if (spec && !actions[spec.clip]) {
@@ -186,6 +354,7 @@ export function registerAnimatedImport(root, animations, bytes, kind = 'gltf') {
 		[root.uuid]: { clips: animations.map((c) => c.name), clip: first, playing: false, speed: 1 }
 	}));
 	if (behaviors.has(root.uuid)) behaviorHooks.registered?.(root.uuid);
+	attachClipRefs(root.uuid); // 57 M1
 }
 
 /**
@@ -241,18 +410,145 @@ export function dropProceduralBehavior(uuid) {
 export function tickAnimatedMixers() {
 	const states = get(animatedObjects);
 	const time = runtimeNow();
-	mixers.forEach(({ mixer, durations }, uuid) => {
+	mixers.forEach((record, uuid) => {
 		if (behaviors.has(uuid)) return; // 33 P2: packBehavior poses these
+		// 57 M3: a Blend by Speed node (or a state machine) drives this model's weights LOCALLY
+		const driver = drivers.get(uuid);
+		if (driver && time - driver.stamp < DRIVER_STALE_S && time >= driver.stamp - 1) return applyDriver(record, driver, time);
+		if (driver) releaseDriver(uuid, record);
 		const state = states[uuid];
 		if (!state || !state.playing || !state.clip) return;
+		const { mixer, durations, actions } = record;
 		const duration = durations[state.clip] || 1;
-		mixer.setTime((time * state.speed) % duration);
+		const speed = state.speed * (record.clipSpeed?.[state.clip] ?? 1);
+		// 57 M8: a clip ref set to play ONCE holds its last frame (timed from the stamp it began at)
+		const at = Number(state.at);
+		const once = record.clipOnce?.[state.clip] && Number.isFinite(at);
+		const t = once ? Math.min(Math.max((time - at) * speed, 0), duration - 1e-4) : (time * speed) % duration;
+		// 57 M3: a CROSSFADE — from `at` for `fade` seconds both clips play and their weights cross,
+		// on every peer from the same stamp (no message per frame, no snap)
+		const fromName = state.from ?? '';
+		const fade = Number(state.fade) || 0;
+		const from = fromName ? actions[fromName] : null;
+		if (from && fade > 0 && time - at < fade) {
+			const k = Math.min(1, Math.max(0, (time - at) / fade));
+			const w = k * k * (3 - 2 * k);
+			const to = actions[state.clip];
+			if (!from.isScheduled()) from.play();
+			if (to && !to.isScheduled()) to.play();
+			const fromSpeed = (state.fromSpeed ?? state.speed) * (record.clipSpeed?.[fromName] ?? 1);
+			from.setEffectiveWeight(1 - w);
+			from.time = (time * fromSpeed) % (durations[fromName] || 1);
+			if (to) {
+				to.setEffectiveWeight(w);
+				to.time = t;
+			}
+			mixer.update(0);
+			return;
+		}
+		if (from?.isScheduled()) {
+			from.stop();
+			actions[state.clip]?.setEffectiveWeight(1);
+		}
+		mixer.setTime(t);
 	});
+}
+
+// ---- 57 M3: LOCAL POSE DRIVERS (Blend by Speed, the Animation states graph) ---------------
+// A driver sets per-clip WEIGHTS and rates every frame from inputs every peer already has (a
+// speed derived from the replicated transform, synced parameters), so it needs no message: each
+// peer blends its own copy. It overrides the transport while it is fresh, and lets go when its
+// node stops feeding it (deleted, or the graph stopped).
+
+const DRIVER_STALE_S = 0.5;
+/** @type {Map<string, {weights: Record<string, number>, rates: Record<string, number>, phase: Record<string, number>, stamp: number, last: number}>} */
+const drivers = new Map();
+
+/**
+ * Feed a model's blend for this frame: `weights` per clip name (normalized here), `rates` = clip
+ * seconds per second for each (1 = its own speed). LOCAL, never sent.
+ * @param {string} uuid @param {Record<string, number>} weights @param {Record<string, number>} [rates]
+ */
+export function setPoseDriver(uuid, weights, rates = {}) {
+	if (!mixers.has(uuid) || behaviors.has(uuid)) return false;
+	const now = runtimeNow();
+	const d = drivers.get(uuid) ?? { weights: {}, rates: {}, phase: {}, stamp: now, last: now };
+	d.weights = weights;
+	d.rates = rates;
+	d.stamp = now;
+	drivers.set(uuid, d);
+	return true;
+}
+
+/** stop driving a model (it returns to its transport) @param {string} uuid */
+export function clearPoseDriver(uuid) {
+	const record = mixers.get(uuid);
+	if (record) releaseDriver(uuid, record);
+	else drivers.delete(uuid);
+}
+
+/** is a driver feeding this model now? @param {string} uuid */
+export function poseDriverOf(uuid) {
+	const d = drivers.get(uuid);
+	return d && runtimeNow() - d.stamp < DRIVER_STALE_S ? { weights: { ...d.weights } } : null;
+}
+
+/** @param {any} record @param {any} d @param {number} time */
+function applyDriver(record, d, time) {
+	const dt = Math.min(Math.max(time - d.last, 0), 0.1);
+	d.last = time;
+	let sum = 0;
+	for (const name of Object.keys(d.weights)) if (record.actions[name] && d.weights[name] > 0) sum += d.weights[name];
+	for (const [name, action] of Object.entries(record.actions)) {
+		const w = sum > 0 && d.weights[name] > 0 ? d.weights[name] / sum : 0;
+		const a = /** @type {any} */ (action);
+		if (w <= 0) {
+			if (a.isScheduled()) a.stop();
+			continue;
+		}
+		if (!a.isScheduled()) a.play();
+		const duration = record.durations[name] || 1;
+		const rate = (d.rates[name] ?? 1) * (record.clipSpeed?.[name] ?? 1);
+		d.phase[name] = ((d.phase[name] ?? (time * rate) % duration) + dt * rate) % duration;
+		a.setEffectiveWeight(w);
+		a.time = d.phase[name];
+	}
+	record.mixer.update(0);
+}
+
+/** @param {string} uuid @param {any} record */
+function releaseDriver(uuid, record) {
+	drivers.delete(uuid);
+	for (const action of Object.values(record.actions)) {
+		/** @type {any} */ (action).stop();
+		/** @type {any} */ (action).setEffectiveWeight(1);
+	}
+	const state = get(animatedObjects)[uuid];
+	if (state?.playing && state.clip) record.actions[state.clip]?.play();
+}
+
+/**
+ * 57 M8: per-clip playback factors from the refs (speed multiplier, play-once) — kept on the record
+ * so the tick reads plain numbers. @param {string} uuid @param {{name: string, speed?: number, loop?: boolean}[]} refs
+ */
+export function setClipPlayback(uuid, refs) {
+	const record = mixers.get(uuid);
+	if (!record) return;
+	/** @type {Record<string, number>} */
+	const speed = {};
+	/** @type {Record<string, boolean>} */
+	const once = {};
+	for (const r of refs) {
+		if (r.speed && r.speed !== 1) speed[r.name] = r.speed;
+		if (r.loop === false) once[r.name] = true;
+	}
+	record.clipSpeed = speed;
+	record.clipOnce = once;
 }
 
 /**
  * Apply clip/playing/speed (local UI and remote objectParameters both land here).
- * @param {string} uuid @param {{clip?: string, playing?: boolean, speed?: number}} next @param {boolean} replicate
+ * @param {string} uuid @param {{clip?: string, playing?: boolean, speed?: number, at?: number, fade?: number, from?: string, fromSpeed?: number}} next @param {boolean} replicate
  */
 export function setAnimationState(uuid, next, replicate = true) {
 	const entry = get(animatedObjects)[uuid];
@@ -265,10 +561,29 @@ export function setAnimationState(uuid, next, replicate = true) {
 		if (replicate && (next.playing || next.clip)) behaviorHooks.preview?.(uuid, next.clip ?? entry.clip);
 		return;
 	}
+	/** @type {any} */
 	const state = { ...entry, ...next };
+	const changed = !!next.clip && next.clip !== entry.clip;
+	// 57 M3: the moment the clip began (`at`, a synced stamp — the trigger's, when a node played it)
+	// times a play-once clip and a crossfade. A remote state carries its own; a local change takes
+	// the caller's, else now. `fade` > 0 on a clip change while one plays = a crossfade from it.
+	if (replicate || next.at === undefined) {
+		if (changed || (next.playing && !entry.playing)) state.at = Number.isFinite(next.at) ? next.at : runtimeNow();
+		if (changed && Number(next.fade) > 0 && entry.playing && entry.clip && record.actions[entry.clip]) {
+			state.from = entry.clip;
+			state.fromSpeed = entry.speed;
+			state.fade = Math.min(5, Number(next.fade));
+		} else if (changed) {
+			delete state.from;
+			delete state.fromSpeed;
+			delete state.fade;
+		}
+	}
 	animatedObjects.update((map) => ({ ...map, [uuid]: state }));
-	if (next.clip && next.clip !== entry.clip) {
-		Object.values(record.actions).forEach((action) => action.stop());
+	if (changed) {
+		Object.entries(record.actions).forEach(([name, action]) => {
+			if (name !== state.from) action.stop();
+		});
 		record.actions[state.clip]?.play();
 	}
 	// 33 P2: nothing autoplays at registration any more, so the FIRST play is what schedules
@@ -289,7 +604,10 @@ export function setAnimationState(uuid, next, replicate = true) {
 				uuid: uuid,
 				clip: state.clip,
 				playing: state.playing,
-				speed: state.speed
+				speed: state.speed,
+				// 57 M3: additive — absent for a peer that sends no stamp (it then plays on the clock)
+				...(Number.isFinite(state.at) ? { at: state.at } : {}),
+				...(state.from ? { from: state.from, fromSpeed: state.fromSpeed, fade: state.fade } : {})
 			});
 	}
 }
@@ -310,6 +628,7 @@ export async function applyObjectFile(data) {
 		if (!data.override) return;
 		if (data.name) held.name = data.name;
 		if (data.lod && typeof data.lod === 'object') held.userData.lod = data.lod;
+		if (data.clipRefs) setClipRefs(data.uuid, data.clipRefs, { replicate: false, record: false });
 		if (data.pos) held.position.fromArray(data.pos);
 		if (data.rot) held.rotation.set(data.rot[0], data.rot[1], data.rot[2]);
 		if (data.scale) held.scale.fromArray(data.scale);
@@ -331,6 +650,9 @@ export async function applyObjectFile(data) {
 		const spec = normalizeBehavior(data.behavior);
 		if (spec) root.userData.behavior = spec;
 		if (data.lod && typeof data.lod === 'object') root.userData.lod = data.lod;
+		// 57 M1: the clip assets this model plays (bound once registered)
+		const refs = normalizeClipRefs(data.clipRefs);
+		if (refs.length) root.userData.clipRefs = refs;
 		// 33-scenes: the pack file these bytes are, so this copy SAVES as a reference too
 		const ref = animRefOf({ userData: { animRef: data.animRef } });
 		if (ref) root.userData.animRef = ref;
@@ -540,6 +862,7 @@ export async function animatedImportsRestore(entries, replicate = true, live = (
 				anim: entry.anim,
 				behavior: entry.behavior,
 				lod: entry.lod,
+				clipRefs: entry.clipRefs,
 				live
 			});
 			if (!live()) break;
@@ -597,6 +920,7 @@ registerHistoryKind('animimport', (entry, state) => {
 			pos: entry.pos,
 			behavior: entry.behavior,
 			lod: entry.lod,
+			clipRefs: entry.clipRefs,
 			animRef: entry.animRef
 		}).then(() => {
 			const root = get(objectsGroup)?.getObjectByProperty('uuid', entry.uuid);

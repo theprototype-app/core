@@ -13,7 +13,7 @@ import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined } from '$lib/connectionState'
 import { environment, editEnvSky } from '$lib/environment'
-import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
+import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, dropAllAnimatedImports } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
@@ -581,7 +581,16 @@ export async function objectParameters(data) {
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
     } else if (data.parameter == 'animation') {
-        setAnimationState(data.uuid, { clip: data.clip, playing: data.playing, speed: data.speed }, false);
+        // 57 M3: the stamp + crossfade ride along when the sender has them (absent = an older peer)
+        /** @type {any} */
+        const next = { clip: data.clip, playing: data.playing, speed: data.speed };
+        if (Number.isFinite(data.at)) next.at = data.at;
+        if (typeof data.from === 'string' && Number(data.fade) > 0) Object.assign(next, { from: data.from, fromSpeed: Number(data.fromSpeed) || data.speed, fade: Math.min(5, Number(data.fade)) });
+        else if (Number.isFinite(data.at)) Object.assign(next, { from: undefined, fade: undefined });
+        setAnimationState(data.uuid, next, false);
+    } else if (data.parameter == 'clipRefs') {
+        // 57 M1: the clip assets a model plays (bytes pulled by hash, bound per peer)
+        setClipRefs(data.uuid, data.clipRefs, { replicate: false, record: false });
     } else if (data.parameter == 'castShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.castShadow = data.castShadow;

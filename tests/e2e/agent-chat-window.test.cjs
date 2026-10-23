@@ -63,7 +63,15 @@ h.run(async () => {
 	// the window parked under the header: at its default spot three peers' avatar stack covers its title-bar icons
 	const parked = { 'win:aiAssistant': JSON.stringify({ left: 380, top: 140 }) };
 	const A = await h.setupPage(browser, 'A', { storage: parked });
-	const B = await h.setupPage(browser, 'B', { storage: { agentApi: '1' } });
+	// 56-union: on an agent page the app now also runs 56-bridge's REAL inbox (src/lib/agent/agentInbox.js), which
+	// publishes its own status (away / muted until the host unmutes) over this script's — so B's inbox is stubbed
+	// and the script stays the only agent. The real inbox is agent-chat.test.cjs's (bridge) to cover.
+	const inboxStub = 'const inbox = { receive() {}, heartbeat() {}, state: () => ({}) };\n' +
+		'export function agentInbox() { return inbox; }\nexport function receiveAgentChat() {}\n';
+	const B = await h.setupPage(browser, 'B', {
+		storage: { agentApi: '1' },
+		route: [/\/src\/lib\/agent\/agentInbox\.js(\?|$)/, (r) => r.fulfill({ contentType: 'application/javascript', body: inboxStub })]
+	});
 	await inPage(B, "s.username?.set?.('Claude')");
 	await h.connect(B, A);
 	await until(() => read(A, 'userdata'), (rows) => rows?.some((r) => r[0] === B.id && r[6]?.kind === 'agent'), 20000);
@@ -213,8 +221,12 @@ h.run(async () => {
 	h.check((await read(A, 'agentChat.activeChatId')) === chatId, 'the Explorer’s open seam (tpchatStore.openChat) opens it too');
 	const saved = await until(() => read(A, 'tpchatStore.chatList'), (l) => l?.length >= 2, 8000);
 	h.check(saved?.length >= 2 && saved.some((c) => c.id === chatId && c.target?.kind === 'agent'), `the host (the one writer) saved both chats through the store (${saved?.length})`);
+	// 56-union: with 56-media's real store (not the lane's local stub) the host's chats REPLICATE to C (C10: a late
+	// joiner gets them), so "a viewer writes nothing" is asserted on C's own write, not on an empty list
+	const cWrote = await inPage(C, "return s.tpchatStore.saveChat({ id: 'chat-by-viewer', title: 'mine', messages: [{ id: 'v1', from: pc?.peer?.id ?? 'C', text: 'hello', at: 1 }] });");
 	const cSaved = await read(C, 'tpchatStore.chatList');
-	h.check((cSaved?.length ?? 0) === 0, 'a viewer writes no chat file');
+	const aIds = new Set((saved ?? []).map((c) => c.id));
+	h.check(cWrote == null && !(cSaved ?? []).some((c) => c.id === 'chat-by-viewer') && (cSaved ?? []).every((c) => aIds.has(c.id)), `a viewer writes no chat file (save refused; C holds only the host's: ${cSaved?.length ?? 0})`);
 
 	console.log('\n=== 8. axe on the window ===');
 	await A.page.locator('#ai-history-btn').click();

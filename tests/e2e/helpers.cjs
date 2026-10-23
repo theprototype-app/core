@@ -175,6 +175,9 @@ async function setupPage(browser, name, options = {}) {
 			for (const [k, v] of Object.entries(extra)) localStorage.setItem(k, String(v));
 		}, options.storage);
 	}
+	// options.route = [url, handler]: a ctx.route installed before the first navigation (56-union: a fake agent page
+	// replaces a module the app would load — dev servers only, a PROD service worker hides routes)
+	if (options.route) await ctx.route(options.route[0], options.route[1]);
 	const page = await ctx.newPage();
 	// Page errors were LOGGED and nothing more, so a suite could sail past a
 	// component that had crashed on mount: a duplicate each-key threw inside the

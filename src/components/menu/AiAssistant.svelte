@@ -113,23 +113,28 @@
 		requestAnimationFrame(() => historyBtn?.focus());
 	}
 
-	/** C11: a `.tpchat` card dragged from the Explorer onto the window opens it here @param {DragEvent} e */
+	/** C11: a chat dragged onto the window opens it here — a Scene ▸ chats card, a Library `.tpchat`, or a desktop file */
+	const isTpchatName = (name: unknown) => /\.tpchat$/i.test(String(name ?? ''));
 	function chatDragOver(e: DragEvent) {
-		if (e.dataTransfer?.types?.includes('application/x-explorer-item')) {
+		const types = e.dataTransfer?.types;
+		if (types?.includes('application/x-explorer-item') || types?.includes('Files')) {
 			e.preventDefault();
 			if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
 		}
 	}
 	async function chatDrop(e: DragEvent) {
+		const file = [...(e.dataTransfer?.files ?? [])].find((f) => isTpchatName(f.name));
 		const raw = e.dataTransfer?.getData('application/x-explorer-item');
-		if (!raw) return;
-		let item: any = null;
-		try {
-			item = JSON.parse(raw);
-		} catch {
-			return;
+		let item: any = file ?? null;
+		if (!item && raw) {
+			try {
+				item = JSON.parse(raw);
+			} catch {
+				return;
+			}
 		}
-		if (item?.kind !== 'tpchat' && item?.kind !== 'chat') return; // images etc. are the composer's (56-media)
+		// images and other files are the composer's (56-media)
+		if (!item || !(file || item.kind === 'tpchat' || item.kind === 'chat' || item.chatId || isTpchatName(item.name))) return;
 		e.preventDefault();
 		e.stopPropagation();
 		const id = await chatIdOfItem(item);

@@ -113,7 +113,14 @@ h.run(async () => {
 		await page.evaluate(() => window.__stores.backgroundLayer.setBackgroundClockForTest(null));
 	}
 	h.check(served >= 6, '2.9 the files came from the packs checkout (' + served + ' served)');
-	// the clock runs again: the background drifts on its own (the shared clock)
+	// the clock runs again: the background drifts on its own (the shared clock). The built-in
+	// Soft gradient applied last is STILL by design (it moves only with the pointer), so a preset
+	// that reads the clock goes on first — and the premise says so.
+	await page.evaluate(() => window.__stores.backgroundPresets.applyBackgroundPreset('noise-flow'));
+	await h.eventually(() => bg(page), (s) => s.compiled && s.preset === 'noise-flow', 'noise-flow back', 8000).catch(() => {});
+	const clocked = (await bg(page)).usesClock;
+	h.check(clocked === true, 'premise: Noise flow reads the shared clock (usesClock ' + clocked + ')');
+	await page.waitForTimeout(400);
 	const t0 = await h.grabFrame(A, clip);
 	await page.waitForTimeout(1500);
 	const t1 = await h.grabFrame(A, clip);

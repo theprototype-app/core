@@ -533,6 +533,7 @@ export function backgroundLayerDebug() {
 		visible: Object.fromEntries(Object.entries(meshes).map(([k, m]) => [k, !!m?.visible])),
 		programs: Object.fromEntries(Object.entries(materials).map(([k, m]) => [k, !!m])),
 		usesPointer: !!compiled?.usesPointer,
+		usesClock: !!compiled?.usesClock,
 		usesScroll: !!compiled?.usesScroll
 	};
 }

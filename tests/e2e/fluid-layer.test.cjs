@@ -87,7 +87,10 @@ h.run(async () => {
 	const quiet2 = await dye(page);
 	h.check(quiet2 && quiet2.total <= still.total + 1, '2.1 a still pointer adds no dye (' + still.total.toFixed(1) + ' -> ' + quiet2.total.toFixed(1) + ')');
 	const splatsBefore = (await fl(page)).splats;
-	for (let i = 0; i < 3; i++) await stroke(page, r, 0.1, 0.3 + i * 0.15, 0.4, 0.35 + i * 0.15);
+	// VERTICAL strokes on the left: a stroke's own push moves the dye along it, so a sideways
+	// stroke throws its smoke towards the other half (measured: left-to-right strokes over
+	// 0.1..0.4 left more dye on the RIGHT) — up and down keeps it where the pointer went
+	for (let i = 0; i < 3; i++) await stroke(page, r, 0.12 + i * 0.1, 0.25, 0.12 + i * 0.1, 0.75);
 	await page.waitForTimeout(150);
 	const stirred = await dye(page);
 	d = await fl(page);

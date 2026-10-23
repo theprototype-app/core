@@ -15,6 +15,7 @@ import { behaviourHost } from '$lib/ai/aiExtensions.js';
 import { missingToolsFor } from './toolPolicy.js';
 import { peerMeshReady, askMeshState, requestHostMesh } from './meshRelay.js';
 import { takeScreenshot } from './screenshot.js';
+import { agentInbox } from './agentInbox.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 import { peers, userdata, waitingForApproval, toastStore, dismissToastById } from '../../stores/appStore.js';
 import { globalRenderer } from '../../stores/sceneStore.js';
@@ -124,8 +125,10 @@ async function agentRun(name, args) {
 export function createTpAgent(extra = {}) {
 	/** @type {ReturnType<typeof createAgentCore>} */
 	let core;
+	const inbox = agentInbox();
 	core = createAgentCore({
 		appVersion: APP_VERSION,
+		gate: (name, isEdit) => inbox.gate(name, isEdit),
 		getTools: () => agentTools(),
 		runTool: (name, args) => agentRun(name, args),
 		resolveName: (name, args) => repairToolCall(name, args),
@@ -283,6 +286,18 @@ export function installTpAgent(extra) {
 	const core = createTpAgent(extra);
 	startQuiet(core);
 	startMeshAsk();
-	w.tpAgent = Object.freeze({ ...core.agent });
+	const inbox = agentInbox();
+	w.tpAgent = Object.freeze({
+		...core.agent,
+		// 1.1.0 (roadmap 56): the chat
+		nextMessage: (/** @type {number} */ ms, /** @type {string} */ token) => inbox.next(ms, token),
+		abortWait: (/** @type {string} */ token) => inbox.abortWait(token),
+		requeue: (/** @type {any} */ msg) => inbox.requeue(msg),
+		reply: (/** @type {any} */ o) => inbox.reply(o),
+		ask: (/** @type {any} */ o) => inbox.ask(o),
+		chatStatus: (/** @type {any} */ s) => inbox.setStatus(s),
+		thread: (/** @type {any} */ o) => inbox.thread(o),
+		status: () => ({ ...core.agent.status(), chat: inbox.state() })
+	});
 	return w.tpAgent;
 }

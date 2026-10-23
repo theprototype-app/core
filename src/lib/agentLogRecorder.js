@@ -14,6 +14,7 @@ import { objectsGroup } from '../stores/sceneStore';
 import { peers, showToast } from '../stores/appStore';
 import { summarizeToolCall, touchedUuids, entryId } from './agentLogCore.js';
 import { publishAgentEntry, publishAgentUndone, setAgentUndoHandler, agentLog, agentName } from './agentLog.js';
+import { agentInbox } from './agent/agentInbox.js';
 
 /** line id -> the history entries the call recorded @type {Map<string, any[]>} */
 const historyOf = new Map();
@@ -65,7 +66,9 @@ export function startAgentRecorder() {
 				uuids: touchedUuids(tool, args, result),
 				at: Date.now(),
 				ok: !result?.error,
-				undoable: mine.length > 0
+				undoable: mine.length > 0,
+				// 56 C11: which chat this call belongs to, so two chats never mix in the window
+				chatId: agentInbox().state().chatId ?? undefined
 			});
 		};
 	});

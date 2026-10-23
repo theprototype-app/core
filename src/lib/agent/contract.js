@@ -11,7 +11,7 @@
 // major. The bridge feature-detects methods, so an older bridge keeps working against a newer page.
 
 /** The contract version (`tpAgent.version`). */
-export const TP_AGENT_VERSION = '1.0.0';
+export const TP_AGENT_VERSION = '1.1.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([
@@ -24,7 +24,15 @@ export const TP_AGENT_METHODS = /** @type {const} */ ([
 	'screenshot',
 	'pendingOffers',
 	'accept',
-	'leave'
+	'leave',
+	// 1.1.0 (roadmap 56): the chat — what people type to the agent in the AI assistant window
+	'nextMessage',
+	'abortWait',
+	'requeue',
+	'reply',
+	'ask',
+	'chatStatus',
+	'thread'
 ]);
 
 /** Camera views `screenshot` renders from (A5). */
@@ -67,6 +75,8 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {TpAgentMissingModule[]} missingModules modules peers run that this page lacks
  * @property {number} pendingOffers questions waiting for an answer (`pendingOffers()`)
  * @property {boolean} inVR an immersive session is running (screenshot returns null)
+ * @property {{status: 'listening'|'working'|'away', muted: boolean, queued: number, waiting: number, current: any, chatId: string|null}} [chat]
+ *   1.1.0: the chat inbox — the badge people see, requests waiting, the running request
  */
 
 /**
@@ -106,6 +116,54 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {(id: string, action?: string) => {ok: boolean, error?: string}} accept press an offer's button
  *   (the first one when `action` is omitted)
  * @property {() => Promise<void>} leave say goodbye to every peer and close the connections
+ * @property {(timeoutMs?: number, token?: string) => Promise<TpAgentChatMessage|null>} nextMessage 1.1.0: the
+ *   next request typed to this agent, or null after the timeout (max 10 min). While a wait is armed the agent's
+ *   badge says `listening`; once one is delivered, `working` until the final reply.
+ * @property {(token: string) => boolean} abortWait 1.1.0: give up the wait `token` armed (resolves it null)
+ * @property {(msg: TpAgentChatMessage) => boolean} requeue 1.1.0: put a delivered request back (its result never
+ *   reached the agent's model)
+ * @property {(o: TpAgentReply) => {ok: boolean, id?: string, chatId?: string, error?: string, cancelled?: boolean}} reply
+ *   1.1.0: say something in the chat; repeated calls grow ONE streamed reply until `final`
+ * @property {(o: {to?: string, question: string, options?: string[], chatId?: string}) => {ok: boolean, id?: string, error?: string}} ask
+ *   1.1.0: buttons in the window; the click arrives as a request whose `answers` is the returned id
+ * @property {(status: 'listening'|'working'|'away'|null) => {ok: boolean, status: string}} chatStatus 1.1.0: pin
+ *   the badge (null = derive it from the waits)
+ * @property {(o: {chatId?: string, before?: string, limit?: number}) => Promise<{chatId: string|null, messages: TpAgentChatEntry[], more: boolean}>} thread
+ *   1.1.0: a page of a chat, oldest first (`before` = a message id)
+ *
+ * 1.1.0 also gates `exec` by the running request: after Stop every call answers `{error:'cancelled', cancelled:true}`
+ * until the next request, and while a VIEWER's request runs every edit answers `{error, refused:true, role:'viewer'}`.
+ */
+
+/**
+ * A request typed to the agent (roadmap 56). `role` is the sender's role as THIS page knows it.
+ * @typedef {object} TpAgentChatMessage
+ * @property {string} id
+ * @property {string} chatId
+ * @property {string} from the sender's peer id
+ * @property {string} [name]
+ * @property {'admin'|'editor'|'viewer'} role
+ * @property {string} text
+ * @property {{mimeType: string, data: string, name?: string, w?: number, h?: number}[]} [images] base64, already
+ *   downscaled and EXIF-stripped by the sender; never present on a viewer's request
+ * @property {boolean} [imagesDropped] a viewer attached images and they were dropped
+ * @property {string} [answers] the `ask` id this message answers
+ * @property {number} at
+ * @property {TpAgentChatEntry[]} [history] on the first request in a chat other than the last one: its newest 20 messages
+ * @property {string} [summary] and a few lines about the whole of it
+ * @property {number} [olderMessages] how many more `thread` can page back to
+ */
+
+/**
+ * One line of a chat's history (no image bytes).
+ * @typedef {{id: string, from: string, name?: string, role?: string, text: string, via?: 'cli', kind?: 'terminal'|'ask', at: number, replyTo?: string, images?: {mimeType: string, name?: string}[]}} TpAgentChatEntry
+ */
+
+/**
+ * `reply` options. `text` adds a paragraph; `delta` appends raw text (token streaming). `prompt` first posts the
+ * user's own words typed in the agent's terminal (shown "via terminal"). Without a running app request the
+ * reply itself is tagged `via:'cli'`.
+ * @typedef {{to?: string, text?: string, delta?: string, final?: boolean, chatId?: string, replyTo?: string, via?: 'cli', prompt?: string}} TpAgentReply
  */
 
 export {};

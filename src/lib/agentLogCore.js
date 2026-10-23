@@ -154,7 +154,9 @@ export function cleanEntry(e) {
 		at: e.at,
 		ok: e.ok !== false,
 		undone: e.undone === true,
-		undoable: e.undoable !== false
+		undoable: e.undoable !== false,
+		// 56 C11: the chat the agent was answering when it made the call (absent = none / an older agent)
+		...(typeof e.chatId === 'string' && e.chatId && e.chatId.length <= 64 ? { chatId: e.chatId } : {})
 	};
 }
 

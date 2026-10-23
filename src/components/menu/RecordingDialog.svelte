@@ -13,6 +13,7 @@
 	import { RESOLUTIONS, FPS_CHOICES, MIN_DURATION, MAX_DURATION, EXPORT_FORMATS, HERO_EASES } from '$lib/recording/recordingCore.js';
 	import { exportPlan, estimateExportBytes, FORMAT_INFO, ALPHA_FORMATS, formatBytes } from '$lib/recording/videoExportCore.js';
 	import { startExport, exportBlocker, exportCaps } from '$lib/recording/offlineRender.js';
+	import { heroDemoPage } from '$lib/recording/heroCore.js';
 	import { sequences } from '$lib/sequences';
 	import { findSequence } from '$lib/sequenceCore';
 	import { bookmarks } from '$lib/cameraBookmarks';
@@ -32,7 +33,9 @@
 	const views = $derived(/** @type {any[]} */ ($bookmarks));
 	const hasSelection = $derived((/** @type {string[]} */ ($selectedObjects) || []).length > 0);
 	// re-read on every pref change and every views/selection change (the blocker reads them)
-	const seqList = $derived(Object.values(/** @type {Record<string, any>} */ ($sequences)).sort((a, b) => String(a.name).localeCompare(String(b.name))));
+	/** @type {Record<string, any>} */
+	const seqMap = $derived($sequences);
+	const seqList = $derived(Object.values(seqMap).sort((a, b) => String(a.name).localeCompare(String(b.name))));
 	const seq = $derived(p.mode === 'timeline' ? findSequence($sequences, p.sequence) : null);
 	const caps = exportCaps();
 	const plan = $derived.by(() => {
@@ -103,13 +106,12 @@
 		setTimeout(() => URL.revokeObjectURL(url), 60000);
 	}
 	/** open the section in a plain page, the way a site would show it */
-	async function previewSection() {
+	function previewSection() {
 		const r = get(recordingState).result;
 		if (!r?.script) return;
-		const core = await import('$lib/recording/heroCore.js');
-		const scriptUrl = URL.createObjectURL(new Blob([r.script], { type: 'text/javascript' }));
+			const scriptUrl = URL.createObjectURL(new Blob([r.script], { type: 'text/javascript' }));
 		const id = r.scriptFile?.replace(/\.js$/, '') || 'tp-hero-section';
-		const page = core.heroDemoPage(id, scriptUrl, { w: r.width, h: r.height, label: r.name, trigger: p.heroTrigger, title: r.name });
+		const page = heroDemoPage(id, scriptUrl, { w: r.width, h: r.height, label: r.name, trigger: p.heroTrigger, title: r.name });
 		window.open(URL.createObjectURL(new Blob([page], { type: 'text/html' })), '_blank', 'noopener');
 	}
 

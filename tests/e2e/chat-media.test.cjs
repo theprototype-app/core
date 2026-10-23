@@ -73,9 +73,10 @@ h.run(async () => {
 	});
 	h.check(keptA.inRefs && keptA.kind === 'image', `kept as an image file in Library ▸ References (${JSON.stringify(keptA)})`);
 	h.check(keptA.share === 'mine', `shared, so peers file it too (${keptA.share})`);
-	await A.page.waitForTimeout(600); // sceneAssets recomputes on a 400 ms debounce
-	const sceneRefsA = await A.page.evaluate(() => window.__stores.sceneAssets.sceneAssetList().filter((e) => e.group === 'references' && e.hash).length);
-	h.check(sceneRefsA === 1, `Scene ▸ references lists it, with its hash (so a .tpscene bundles it) (${sceneRefsA})`);
+	// sceneAssets recomputes on a 400 ms trailing debounce (and a 5 s heartbeat): poll, never sleep
+	const refsSince = Date.now();
+	const sceneRefsA = await waitFor(() => A.page.evaluate(() => window.__stores.sceneAssets.sceneAssetList().filter((e) => e.group === 'references' && e.hash).length), (n) => n === 1, 8000);
+	h.check(sceneRefsA === 1, `Scene ▸ references lists it, with its hash (so a .tpscene bundles it) (${sceneRefsA} after ${Date.now() - refsSince} ms)`);
 
 	// ---- 3. a chat (the window's one writer calls saveChat) -----------------------------------------
 	const ids = await A.page.evaluate(() => {
@@ -181,8 +182,9 @@ h.run(async () => {
 			o.traverse((c) => paths.push(c.name));
 			return { names: paths, prov: o.userData?.provenance ?? null, x: o.position.x, sx: o.scale.x };
 		}, imported?.uuid),
-		(v) => !!v && v.names.includes('Socket_Pot'),
-		20000
+		// the structure can land before the meshes: wait for the leaves too
+		(v) => !!v && ['Socket_Pot', 'Log_3', 'Flame'].every((n) => v.names.includes(n)),
+		30000
 	);
 	h.check(!!onB, 'the peer has the imported model under the same uuid');
 	h.check(['Logs', 'Log_1', 'Log_2', 'Log_3', 'Flame_Pivot', 'Flame', 'Socket_Pot'].every((n) => onB?.names.includes(n)), `with the same named hierarchy (${JSON.stringify(onB?.names)})`);

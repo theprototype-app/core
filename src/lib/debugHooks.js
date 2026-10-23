@@ -331,6 +331,8 @@ export const DEBUG_HOOKS = [
 	['chatAttachCore', () => import('./chat/attachCore.js')],
 	// 56 C9: the import_model tool (importModelTool, inspectGlb)
 	['importModel', () => import('./ai/importModel.js')],
+	// 56: fflate for the suites that look INSIDE an exported .tpscene / .tp (the app's own copy)
+	['fflate', () => import('fflate')],
 	['sequenceSync', () => import('./sequenceSync')],
 	['sequencePlayer', () => import('./sequencePlayer')],
 	['idb', () => import('./idb')],

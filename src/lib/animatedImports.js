@@ -239,6 +239,12 @@ async function parseAnimatedBytes(bytes, kind) {
 	return { root: gltf.scene, animations: gltf.animations ?? [] };
 }
 
+/** 57 M9: a fresh parse of an import's bytes (a download re-exports the PRISTINE tree, never the
+ * posed live one) @param {ArrayBuffer} bytes @param {'gltf'|'fbx'|'vrm'} [kind] */
+export function parseImportBytes(bytes, kind) {
+	return parseAnimatedBytes(bytes, kind);
+}
+
 /** @param {string} uuid */
 export function hasAnimatedImport(uuid) {
 	return fileBytes.has(uuid);

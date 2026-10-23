@@ -19,8 +19,8 @@ import { createJoint, detachJoints, jointsFor } from './joints';
 import { addParticlesPreset, removeObjectParticles, burstObjectParticles } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
 import { SAVE_AS_FORMATS, saveSelectionAs } from './saveAs';
-import { restRowsOf } from './animatedImports';
-import { openApplyClip } from './characterUi.js';
+import { restRowsOf, hasAnimatedImport } from './animatedImports';
+import { openApplyClip, openDownload } from './characterUi.js';
 import { enterEditMode } from './meshEdit';
 // 24-E3: a group's origin from its context menu, and the set's pivot point
 import { originPreset, resetOrigin } from './objectOrigin';
@@ -725,6 +725,17 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 		{ label: 'Physics & effects', icon: 'atom', children: behaviour },
 		// 37 R4 (1.26): a placed prefab copy's "Prefab: <name> ▸" sits beside Save as… ▸
 		...(multi ? [] : prefabInstanceMenu(object, group)),
+		// 57 M9: a model that rides its bytes (a rig, an animated import) downloads WITH its clips
+		...(targets.some((t) => hasAnimatedImport(t))
+			? [
+					{
+						label: 'Download…' + suffix,
+						icon: 'arrow-down-to-line',
+						tooltip: 'Download the model with the clips you pick: one GLB, model + .tpanim clips, or the model only — or one clip as .tpanim / .vrma / .bvh',
+						action: () => openDownload(targets.filter((t) => hasAnimatedImport(t)))
+					}
+				]
+			: []),
 		{
 			// R22 round 11 (user): "I would like to be able to save prefabs as they are now with
 			// right click 'Save as...'". The single "Save as prefab" row became a submenu whose

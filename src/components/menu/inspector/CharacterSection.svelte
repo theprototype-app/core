@@ -8,7 +8,7 @@
 	import UiButton from '../../ui/Button.svelte';
 	import { sceneRevision } from '../../../stores/sceneStore';
 	import { animatedObjects, vrmExpressionNames, setVrmExpression } from '$lib/animatedImports';
-	import { openApplyClip } from '$lib/characterUi.js';
+	import { openApplyClip, openDownload } from '$lib/characterUi.js';
 	import { licenceOf, licenceLabel, licenceFlags, normalizeProvenance } from '$lib/provenance';
 
 	/** @type {{ object: any }} */
@@ -115,6 +115,13 @@
 					disabled={!rig.ok}
 					title="Play a clip from another model or the built-in motions on this character"
 					onclick={() => openApplyClip({ targets: [object.uuid] })}>Apply clip…</UiButton
+				>
+				<UiButton
+					id="character-download"
+					size="sm"
+					variant="outline"
+					title="Download the character with its clips (GLB, model + clips, or one clip as .tpanim / .vrma / .bvh)"
+					onclick={() => openDownload([object.uuid])}>Download…</UiButton
 				>
 			</div>
 			{#if meta}

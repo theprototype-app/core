@@ -1,38 +1,47 @@
-// REPL mode (roadmap #10 B4): a readline loop that drives the scene through an
-// OpenAI-compatible endpoint's tool-calls. Slash commands: /status /list /raw /quit.
+// REPL mode (roadmap 10 B4 → 55 A3): a readline loop that drives the scene through an
+// OpenAI-compatible endpoint's tool calls. Either engine: the browser engine hands the model
+// the host app's own tools and system prompt; the wire engine its fixed object catalog.
+// Slash commands: /status /tools /raw <tool> <json> /quit.
 import readline from 'node:readline';
-import { executeTool, TOOL_SCHEMAS, systemPrompt } from './tools.js';
 import { runChat } from './llmClient.js';
+import { mapHostTools } from './mcpTools.js';
+import { redactLink } from './link.js';
 
 /**
  * @param {Record<string, any>} args
- * @param {(args: any) => import('./peerBridge.js').PeerBridge} makeBridge
+ * @param {string} link
+ * @param {(link: string) => any} makeEngine
  */
-export async function runRepl(args, makeBridge) {
+export async function runRepl(args, link, makeEngine) {
 	const cfg = {
 		apiUrl: args['api-url'] || process.env.AGENT_API_URL,
 		apiKey: args['api-key'] || process.env.AGENT_API_KEY || '',
 		model: args.model || process.env.AGENT_MODEL
 	};
-	if (!args.peer) throw new Error('--repl needs --peer <hostId>');
-	if (!cfg.apiUrl || !cfg.model) throw new Error('--repl needs --api-url and --model (or env AGENT_API_URL / AGENT_MODEL)');
+	if (!cfg.apiUrl || !cfg.model) throw new Error('repl needs --api-url and --model (or env AGENT_API_URL / AGENT_MODEL)');
 
-	const bridge = makeBridge(args);
-	bridge.on('approval-needed', () => console.error('\n[agent] waiting for the host to APPROVE the join in the app…'));
-	await bridge.start();
-	console.error('[agent] peer id: ' + bridge.agentId + ' (name "' + bridge.name + '") — joining host ' + args.peer);
-	bridge.connectToHost(args.peer);
-	try {
-		await bridge.waitUntilConnected();
-	} catch (e) {
-		console.error('[agent] ' + e.message);
-		bridge.shutdown();
-		process.exit(1);
+	const engine = makeEngine(link);
+	const quit = async (/** @type {number} */ code) => {
+		await engine.close().catch(() => {});
+		process.exit(code);
+	};
+	process.on('SIGINT', () => quit(0));
+	console.error('[agent] joining ' + redactLink(link) + ' (' + engine.kind + ' engine)…');
+	await engine.start();
+	console.error('[agent] waiting for the host to let us in (Approve, or an invite link)…');
+	const t0 = Date.now();
+	while (!(await engine.joined())) {
+		if (Date.now() - t0 > (Number(args['approval-timeout']) || 120) * 1000) {
+			console.error('[agent] not let in within the approval timeout');
+			return quit(1);
+		}
+		await new Promise((r) => setTimeout(r, 500));
 	}
-	console.error('[agent] connected. Type a request, or /help. Ctrl+C to quit.\n');
+	console.error('[agent] in the session. Type a request, or /help. Ctrl+C to quit.\n');
 
+	const toolsFor = async () => mapHostTools(await engine.tools(), []).tools.map((t) => ({ name: t.name, description: t.description, parameters: t.inputSchema }));
 	/** @type {any[]} */
-	const history = [{ role: 'system', content: systemPrompt() }];
+	const history = [{ role: 'system', content: await engine.systemPrompt() }];
 
 	const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: 'scene> ' });
 	rl.prompt();
@@ -40,70 +49,48 @@ export async function runRepl(args, makeBridge) {
 	rl.on('line', async (line) => {
 		const text = line.trim();
 		if (!text) return rl.prompt();
-
-		if (text.startsWith('/')) {
-			handleSlash(text, bridge, rl);
-			return;
-		}
-
 		rl.pause();
-		history.push({ role: 'user', content: 'Scene the agent knows: ' + JSON.stringify(bridge.registry.list()) + '\nRequest: ' + text });
 		try {
-			const reply = await runChat({
-				cfg,
-				messages: history,
-				tools: TOOL_SCHEMAS,
-				executeTool: (name, a) => {
-					const r = executeTool(bridge, name, a);
-					console.log('  · ' + name + ' ' + summarizeArgs(name, a));
-					return r;
-				}
-			});
-			if (reply) console.log('\n' + reply + '\n');
+			if (text.startsWith('/')) await handleSlash(text, engine, rl, toolsFor);
+			else {
+				history.push({ role: 'user', content: text });
+				const reply = await runChat({
+					cfg,
+					messages: history,
+					tools: await toolsFor(),
+					executeTool: (name, a) => engine.exec(name, a),
+					onTool: (name, a) => console.log('  · ' + name + ' ' + summarizeArgs(a))
+				});
+				if (reply) console.log('\n' + reply + '\n');
+			}
 		} catch (e) {
-			console.error('[agent] error: ' + e.message + '\n');
+			console.error('[agent] error: ' + /** @type {any} */ (e).message + '\n');
 		}
 		rl.resume();
 		rl.prompt();
 	});
-
-	rl.on('close', () => {
-		bridge.shutdown();
-		process.exit(0);
-	});
+	rl.on('close', () => quit(0));
 }
 
-function summarizeArgs(name, a) {
-	if (name === 'create_objects') return '(' + (a.objects?.length ?? 0) + ')';
-	if (name === 'update_objects') return '(' + (a.updates?.length ?? 0) + ')';
-	if (name === 'delete_objects') return '(' + (a.uuids?.length ?? 0) + ')';
+/** @param {any} a */
+function summarizeArgs(a) {
+	for (const k of ['objects', 'updates', 'uuids', 'nodes']) if (Array.isArray(a?.[k])) return '(' + a[k].length + ' ' + k + ')';
 	return '';
 }
 
-function handleSlash(text, bridge, rl) {
+/** @param {string} text @param {any} engine @param {any} rl @param {() => Promise<any[]>} toolsFor */
+async function handleSlash(text, engine, rl, toolsFor) {
 	const [cmd, ...rest] = text.slice(1).split(/\s+/);
-	if (cmd === 'quit' || cmd === 'q' || cmd === 'exit') {
-		rl.close();
-		return;
-	}
-	if (cmd === 'status') {
-		console.log(JSON.stringify(bridge.status(), null, 2));
-	} else if (cmd === 'list') {
-		const objs = bridge.registry.list();
-		if (!objs.length) console.log('(no tracked objects)');
-		else for (const o of objs) console.log('  ' + o.uuid.slice(0, 8) + '  ' + (o.name || o.kind || '?') + '  [' + (o.tracked || 'full') + ']');
-	} else if (cmd === 'raw') {
+	if (cmd === 'quit' || cmd === 'q' || cmd === 'exit') return rl.close();
+	if (cmd === 'status') console.log(JSON.stringify({ ...engine.describe(), session: await engine.status() }, null, 2));
+	else if (cmd === 'tools') for (const t of await toolsFor()) console.log('  ' + t.name);
+	else if (cmd === 'raw') {
+		const [name, ...json] = rest;
 		try {
-			const msg = JSON.parse(rest.join(' '));
-			bridge.broadcast(msg);
-			console.log('sent.');
+			console.log(JSON.stringify(await engine.exec(name, json.length ? JSON.parse(json.join(' ')) : {}), null, 2));
 		} catch (e) {
-			console.log('bad JSON: ' + e.message);
+			console.log('bad call: ' + /** @type {any} */ (e).message);
 		}
-	} else if (cmd === 'help') {
-		console.log('/status  /list  /raw <json>  /quit — anything else is a natural-language request');
-	} else {
-		console.log('unknown command /' + cmd + ' (try /help)');
-	}
-	rl.prompt();
+	} else if (cmd === 'help') console.log('/status  /tools  /raw <tool> <json>  /quit — anything else is a request for the model');
+	else console.log('unknown command /' + cmd + ' (try /help)');
 }

@@ -1,23 +1,56 @@
 {
-  "name": "theprototype-agent",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "description": "Headless console agent that joins a theprototype.app session as a peer and builds/edits the scene (REPL + MCP modes).",
-  "bin": {
-    "theprototype-agent": "src/cli.js"
-  },
-  "scripts": {
-    "test": "node test/messages.test.mjs && node test/bridge.test.mjs",
-    "spike": "node src/spike.js",
-    "smoke": "node src/cli.js --smoke",
-    "repl": "node src/cli.js --repl",
-    "mcp": "node src/cli.js --mcp"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1",
-    "@roamhq/wrtc": "^0.8.0",
-    "peerjs": "^1.5.4",
-    "ws": "^8.18.0"
-  }
+	"name": "@theprototype/agent",
+	"version": "0.2.0",
+	"description": "Let an AI agent (Claude Code, Claude Desktop, any MCP host) join a theprototype.app session from its link and build the 3D scene with you.",
+	"type": "module",
+	"license": "MIT",
+	"keywords": [
+		"theprototype",
+		"mcp",
+		"model-context-protocol",
+		"claude",
+		"3d",
+		"multiplayer",
+		"agent",
+		"webrtc"
+	],
+	"homepage": "https://theprototype.app",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/theprototype-app/core.git",
+		"directory": "tools/agent"
+	},
+	"bugs": {
+		"url": "https://github.com/theprototype-app/core/issues"
+	},
+	"bin": {
+		"theprototype-agent": "src/cli.js"
+	},
+	"files": [
+		"src/",
+		"README.md",
+		"LICENSE"
+	],
+	"engines": {
+		"node": ">=20"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"test": "node test/messages.test.mjs && node test/bridge.test.mjs && node test/link.test.mjs && node test/mcp.test.mjs && node test/wire.test.mjs",
+		"spike": "node src/spike.js",
+		"smoke": "node src/cli.js smoke",
+		"repl": "node src/cli.js repl",
+		"mcp": "node src/cli.js mcp"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.32.1",
+		"peerjs": "^1.5.4",
+		"playwright-core": "1.63.0",
+		"ws": "^8.18.0"
+	},
+	"optionalDependencies": {
+		"@roamhq/wrtc": "^0.8.0"
+	}
 }

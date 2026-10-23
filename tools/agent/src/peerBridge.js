@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { installPolyfills } from './polyfills.js';
 import { Registry } from './registry.js';
 import { hostsMsg, userdataMsg, lockedMsg, deleteMsg } from './messages.js';
+import { fetchTurn, iceServersFrom } from './turn.js';
 
 installPolyfills();
 
@@ -43,6 +44,9 @@ export class PeerBridge extends EventEmitter {
 	 * @param {string} [opts.name]
 	 * @param {string} [opts.hostId]
 	 * @param {{host:string,port:number,secure?:boolean,path?:string,key?:string}|null} [opts.server] null = public cloud
+	 * @param {string[]} [opts.stun] STUN urls (from the link's origin, link.js endpointsFor)
+	 * @param {string|null} [opts.turnApi] where to fetch short-lived TURN credentials (production: PocketBase)
+	 * @param {any[]} [opts.iceServers] a ready RTCIceServer[] (wins over stun/turnApi)
 	 * @param {number} [opts.approvalTimeout] ms (default 120000)
 	 * @param {boolean} [opts.verbose]
 	 */
@@ -52,6 +56,12 @@ export class PeerBridge extends EventEmitter {
 		this.name = opts.name || 'agent';
 		this.hostId = opts.hostId || null;
 		this.server = opts.server || null;
+		this.stun = opts.stun || [];
+		this.turnApi = opts.turnApi || null;
+		/** @type {any[] | null} */
+		this.iceServers = opts.iceServers || null;
+		/** 'none' (no endpoint) | 'ok' | why it is missing @type {string} */
+		this.turnState = this.turnApi ? 'pending' : 'none';
 		this.approvalTimeout = opts.approvalTimeout || 120000;
 		this.verbose = !!opts.verbose;
 
@@ -88,6 +98,17 @@ export class PeerBridge extends EventEmitter {
 	async start(maxAttempts = 5) {
 		installErrorGuard();
 		if (!this._Peer) this._Peer = (await import('peerjs')).default.Peer;
+		// T4: production mints short-lived TURN credentials; ask once, go without relay if it cannot
+		if (!this.iceServers) {
+			let turn = null;
+			if (this.turnApi) {
+				const r = await fetchTurn(this.turnApi);
+				turn = r.entry;
+				this.turnState = r.reason;
+				this.log('TURN from ' + this.turnApi + ': ' + r.reason);
+			}
+			this.iceServers = iceServersFrom(this.stun, turn);
+		}
 		let lastErr = 'unknown';
 		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
@@ -121,7 +142,10 @@ export class PeerBridge extends EventEmitter {
 				path: this.server.path || '/peerjs'
 			};
 			if (this.server.key) opts.key = this.server.key;
+			if (this.iceServers && this.iceServers.length) opts.config = { iceServers: this.iceServers };
 			peer = new this._Peer(this.agentId, opts);
+		} else if (this.iceServers && this.iceServers.length) {
+			peer = new this._Peer(this.agentId, { config: { iceServers: this.iceServers } });
 		} else {
 			peer = new this._Peer(this.agentId);
 		}
@@ -164,6 +188,7 @@ export class PeerBridge extends EventEmitter {
 	}
 
 	_onDisconnected() {
+		if (this.state === 'closed') return;
 		this.log('peer disconnected from signaling; reconnecting');
 		this._setState('reconnecting');
 		try {
@@ -257,6 +282,7 @@ export class PeerBridge extends EventEmitter {
 	_onOutClose(peerId, conn) {
 		this.log('outgoing conn CLOSED to ' + peerId);
 		if (this.out.get(peerId) === conn) this.out.delete(peerId);
+		if (this.state === 'closed') return; // we are the one leaving
 		// host closed our unknown conn pre-approval -> wait for the approve + inbound
 		if (!this.everConnected && peerId === this.hostId) {
 			this._setState('awaiting-approval');
@@ -365,6 +391,7 @@ export class PeerBridge extends EventEmitter {
 			hostId: this.hostId,
 			connected: this.everConnected,
 			outgoingPeers: [...this.out.keys()],
+			turn: this.turnState,
 			objects: this.registry.size
 		};
 	}
@@ -374,14 +401,51 @@ export class PeerBridge extends EventEmitter {
 		this.broadcast(deleteMsg(id, this.agentId));
 	}
 
-	shutdown() {
+	/**
+	 * Leave the way a browser tab does (T5): say goodbye on every open connection —
+	 * `{type:'disconnected', peerId}` is what peerHandler's `pagehide` sends, and the host tears
+	 * the peer down at once instead of keeping a ghost in Users and toasting "Connection error"
+	 * — then close the connections and the Peer. The state is 'closed' straight away (nothing
+	 * redials); the returned promise settles once the goodbye had time to leave.
+	 * @param {number} [graceMs]
+	 */
+	shutdown(graceMs = 300) {
+		if (this.state === 'closed' && !this.peer) return Promise.resolve();
 		this._clearApprovalTimer();
 		this._setState('closed');
-		try {
-			this.peer && this.peer.destroy();
-		} catch (e) {
-			// ignore
+		const conns = [...this.out.values(), ...this.inbound].filter((c) => c && c.open);
+		const bye = { type: 'disconnected', peerId: this.agentId };
+		for (const c of conns) {
+			try {
+				c.send(bye);
+			} catch {}
 		}
-		this.emit('closed');
+		const peer = this.peer;
+		this.peer = null;
+		const finish = () => {
+			for (const c of [...this.out.values(), ...this.inbound]) {
+				try {
+					c.close();
+				} catch {}
+			}
+			this.out.clear();
+			this.inbound.clear();
+			try {
+				peer && peer.destroy();
+			} catch {
+				// ignore
+			}
+			this.emit('closed');
+		};
+		if (!conns.length || !graceMs) {
+			finish();
+			return Promise.resolve();
+		}
+		return new Promise((resolve) =>
+			setTimeout(() => {
+				finish();
+				resolve(undefined);
+			}, graceMs)
+		);
 	}
 }

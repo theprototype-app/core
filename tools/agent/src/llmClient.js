@@ -36,7 +36,7 @@ async function chatOnce(cfg, messages, tools) {
  * @param {any} opts.cfg
  * @param {any[]} opts.messages   mutated with the turn
  * @param {any[]} opts.tools
- * @param {(name:string, args:any)=>any} opts.executeTool
+ * @param {(name:string, args:any)=>any} opts.executeTool may return a Promise
  * @param {(name:string, args:any)=>void} [opts.onTool]
  * @param {number} [opts.maxIterations]
  * @returns {Promise<string>}
@@ -59,7 +59,7 @@ export async function runChat({ cfg, messages, tools, executeTool, onTool, maxIt
 			if (onTool) onTool(call.function.name, args);
 			let result;
 			try {
-				result = executeTool(call.function.name, args);
+				result = await executeTool(call.function.name, args);
 			} catch (e) {
 				result = { error: e.message };
 			}

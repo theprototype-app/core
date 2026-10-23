@@ -329,6 +329,8 @@ export const DEBUG_HOOKS = [
 	// 56 C8: the composer's picture pipeline (prepareImage, lastPrepare, composerPending) + its pure half
 	['chatAttach', () => import('./chat/attachments.js')],
 	['chatAttachCore', () => import('./chat/attachCore.js')],
+	// 56 C9: the import_model tool (importModelTool, inspectGlb)
+	['importModel', () => import('./ai/importModel.js')],
 	['sequenceSync', () => import('./sequenceSync')],
 	['sequencePlayer', () => import('./sequencePlayer')],
 	['idb', () => import('./idb')],

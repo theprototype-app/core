@@ -149,13 +149,39 @@ describe('57 M2 humanoid map detection', () => {
 		expect(v.map).toMatchObject({ hips: 'J_Bip_C_Hips', upperChest: 'J_Bip_C_UpperChest', leftHand: 'J_Bip_L_Hand', rightLittleDistal: 'J_Bip_R_Little3', leftToes: 'J_Bip_L_ToeBase' });
 		expect(rigFamily(vroid.map((b) => b.name))).toBe('vroid');
 
-		const ueArm = (s, x) => ['clavicle_' + s, [0.05 * x, 0.1, 0], ['upperarm_' + s, [0.1 * x, 0, 0], ['upperarm_twist_01_' + s, [0.1 * x, 0, 0]], ['lowerarm_' + s, [0.25 * x, 0, 0], ['hand_' + s, [0.25 * x, 0, 0], ['thumb_01_' + s, [0.02 * x, 0, 0.03], ['thumb_02_' + s, [0.02 * x, 0, 0], ['thumb_03_' + s, [0.02 * x, 0, 0]]]]]]]];
+		const ueArm = (s, x) => ['clavicle_' + s, [0.05 * x, 0.1, 0], ['upperarm_' + s, [0.1 * x, 0, 0], ['upperarm_twist_01_' + s, [0.1 * x, 0, 0]], ['lowerarm_' + s, [0.25 * x, 0, 0], ['hand_' + s, [0.25 * x, 0, 0], ['thumb_01_' + s, [0.02 * x, 0, 0.03], ['thumb_02_' + s, [0.02 * x, 0, 0], ['thumb_03_' + s, [0.02 * x, 0, 0], ['thumb_04_leaf_' + s, [0.01 * x, 0, 0]]]]], ['index_metacarpal_' + s, [0.03 * x, 0, 0.01], ['index_01_' + s, [0.05 * x, 0, 0], ['index_02_' + s, [0.02 * x, 0, 0], ['index_03_' + s, [0.02 * x, 0, 0], ['index_04_leaf_' + s, [0.01 * x, 0, 0]]]]]]]]]];
 		const ueLeg = (s, x) => ['thigh_' + s, [0.1 * x, -0.05, 0], ['calf_' + s, [0, -0.45, 0], ['calf_twist_01_' + s, [0, -0.2, 0]], ['foot_' + s, [0, -0.45, 0], ['ball_' + s, [0, -0.05, 0.1]]]]];
 		const ue = tree(['root', [0, 0, 0], ['pelvis', [0, 1, 0], ueLeg('l', 1), ueLeg('r', -1), ['spine_01', [0, 0.1, 0], ['spine_02', [0, 0.1, 0], ['spine_03', [0, 0.1, 0], ueArm('l', 1), ueArm('r', -1), ['neck_01', [0, 0.1, 0], ['head', [0, 0.1, 0]]]]]]], ['ik_foot_root', [0, 0, 0]]]);
 		const u = detectHumanoidMap(ue);
 		expect(u.ok).toBe(true);
-		expect(u.map).toMatchObject({ hips: 'pelvis', spine: 'spine_01', chest: 'spine_02', upperChest: 'spine_03', neck: 'neck_01', leftShoulder: 'clavicle_l', leftUpperArm: 'upperarm_l', rightLowerLeg: 'calf_r', leftToes: 'ball_l', leftThumbProximal: 'thumb_02_l' });
+		expect(u.map).toMatchObject({ hips: 'pelvis', spine: 'spine_01', chest: 'spine_02', upperChest: 'spine_03', neck: 'neck_01', leftShoulder: 'clavicle_l', leftUpperArm: 'upperarm_l', rightLowerLeg: 'calf_r', leftToes: 'ball_l', leftThumbProximal: 'thumb_02_l', leftThumbMetacarpal: 'thumb_01_l', leftIndexProximal: 'index_01_l', rightIndexDistal: 'index_03_r' });
 		expect(rigFamily(ue.map((b) => b.name))).toBe('unreal');
+	});
+
+	it('Rigify / Quaternius UAL (DEF- names, raw and as three sanitizes them)', () => {
+		const fingers = (S, x) => ['index', 'middle', 'ring', 'pinky'].map((f, k) => ['DEF-f_' + f + '.01.' + S, [0.08 * x, 0, 0.02 - k * 0.01], ['DEF-f_' + f + '.02.' + S, [0.02 * x, 0, 0], ['DEF-f_' + f + '.03.' + S, [0.02 * x, 0, 0]]]]);
+		const arm = (S, x) => ['DEF-shoulder.' + S, [0.05 * x, 0.1, 0], ['DEF-upper_arm.' + S, [0.1 * x, 0, 0], ['DEF-forearm.' + S, [0.25 * x, 0, 0], ['DEF-hand.' + S, [0.25 * x, 0, 0], ...fingers(S, x), ['DEF-thumb.01.' + S, [0.02 * x, 0, 0.03], ['DEF-thumb.02.' + S, [0.02 * x, 0, 0], ['DEF-thumb.03.' + S, [0.02 * x, 0, 0]]]]]]]];
+		const leg = (S, x) => ['DEF-thigh.' + S, [0.1 * x, -0.05, 0], ['DEF-shin.' + S, [0, -0.45, 0], ['DEF-foot.' + S, [0, -0.45, 0], ['DEF-toe.' + S, [0, -0.05, 0.1]]]]];
+		const raw = tree(['root', [0, 0, 0], ['DEF-hips', [0, 1, 0], ['DEF-spine.001', [0, 0.1, 0], ['DEF-spine.002', [0, 0.1, 0], ['DEF-spine.003', [0, 0.1, 0], ['DEF-neck', [0, 0.1, 0], ['DEF-head', [0, 0.1, 0]]], arm('L', 1), arm('R', -1)]]], leg('L', 1), leg('R', -1)]]);
+		for (const sanitize of [false, true]) {
+			const bones = raw.map((b) => ({ ...b, name: sanitize ? b.name.replace(/[\[\]\.:\/]/g, '') : b.name }));
+			const m = detectHumanoidMap(bones);
+			const n = (x) => (sanitize ? x.replace(/\./g, '') : x);
+			expect(m.ok, 'sanitized ' + sanitize).toBe(true);
+			expect(m.map).toMatchObject({
+				hips: 'DEF-hips',
+				spine: n('DEF-spine.001'),
+				upperChest: n('DEF-spine.003'),
+				leftUpperArm: n('DEF-upper_arm.L'),
+				rightLowerArm: n('DEF-forearm.R'),
+				leftLowerLeg: n('DEF-shin.L'),
+				rightToes: n('DEF-toe.R'),
+				leftIndexDistal: n('DEF-f_index.03.L'),
+				rightLittleProximal: n('DEF-f_pinky.01.R'),
+				leftThumbMetacarpal: n('DEF-thumb.01.L')
+			});
+			expect(rigFamily(bones.map((b) => b.name))).toBe('rigify');
+		}
 	});
 
 	it('numbered bones (UniRig) fall back to the SHAPE: legs down, arms sideways, left = +X', () => {

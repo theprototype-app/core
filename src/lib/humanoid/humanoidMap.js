@@ -132,7 +132,7 @@ const PART_RULES = /** @type {[RegExp, string][]} */ ([
 
 /** a bone that is only an END marker or a helper — never a humanoid bone */
 const IGNORE =
-	/(end$|_end|top$|front$|nub$|tip$|slot|ik|pole|target|control|roll|twist|socket|weapon|prop|root$|^root|armature|^rig$)/i;
+	/(end$|_end|top$|front$|nub$|tip$|leaf|slot|ik|pole|target|control|roll|twist|socket|weapon|prop|root$|^root|armature|^rig$)/i;
 
 /**
  * Read one bone name: its side and the body part it names.
@@ -159,6 +159,11 @@ export function readBoneName(raw) {
 	} else if ((m = n.match(/[_.\-\s]([LlRr])$/))) {
 		side = sideOf(m[1]);
 		n = n.slice(0, -2);
+	} else if ((m = n.match(/[a-z0-9]([LR])$/)) || (m = n.match(/\d([lr])$/))) {
+		// three's GLTFLoader drops the '.' of Blender / Rigify names: "upper_arm.L" -> "upper_armL",
+		// "f_index.01.L" -> "f_index01L" (a capital L/R after lowercase, or l/r after a digit)
+		side = sideOf(m[1]);
+		n = n.slice(0, -1);
 	}
 	let rest = n.toLowerCase().replace(SEP, '');
 	// three's GLTFLoader drops the '.' from "upperarm.l" ("upperarml"): a known part word followed
@@ -214,6 +219,7 @@ export function rigFamily(names) {
 	if (has(/^J_Bip_/)) return 'vroid';
 	if (has(/^(pelvis|clavicle_[lr]|thigh_[lr]|calf_[lr])$/i)) return 'unreal';
 	if (has(/^(upperarm\.?l|handslot\.?l|kneeIK\.?l)$/i)) return 'kaykit';
+	if (has(/^DEF-(hips|spine|upper_arm)/)) return 'rigify';
 	if (has(/^Spine02$/) && has(/^neck$/) && has(/^head_end$/)) return 'meshy';
 	if (has(/^(LeftUpLeg|LeftForeArm)$/)) return 'mixamo';
 	if (names.length && names.every((n) => /^(bone|joint)[_.]?\d+$/i.test(n))) return 'unirig';
@@ -423,10 +429,12 @@ function assignFingers(map, side, bones, kids, info, hand) {
 		const stack = [...kids[hand]];
 		while (stack.length) {
 			const j = /** @type {number} */ (stack.pop());
+			// an index / middle / ring / little METACARPAL (UE5) is not a VRM finger bone — the thumb's is
 			if (
 				info[j].part === 'finger' &&
 				word.test(info[j].rest) &&
-				(!info[j].side || info[j].side === side)
+				(!info[j].side || info[j].side === side) &&
+				(finger === 'Thumb' || !/metacarpal/.test(info[j].rest))
 			)
 				c.push(j);
 			stack.push(...kids[j]);
@@ -606,7 +614,8 @@ export function rigLabel(rig) {
 		/** @type {Record<string, string>} */ ({
 			mixamo: 'Mixamo',
 			vroid: 'VRoid',
-			unreal: 'Unreal / Quaternius',
+			unreal: 'Unreal',
+			rigify: 'Rigify / Quaternius',
 			kaykit: 'KayKit',
 			meshy: 'Meshy',
 			unirig: 'UniRig',

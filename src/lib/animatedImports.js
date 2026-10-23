@@ -357,10 +357,14 @@ export function hasClipModel(uuid) {
  */
 export function ensureClipModel(root) {
 	if (!root?.uuid) return false;
-	if (mixers.has(root.uuid)) return !behaviors.has(root.uuid);
+	const held = mixers.get(root.uuid);
+	// a parts model whose object was REPLACED by an object sync (same uuid, new instance) re-registers
+	if (held?.parts && held.mixer.getRoot() !== root) dropPartsRecord(root.uuid, held, true);
+	else if (held) return !behaviors.has(root.uuid);
 	const mixer = new THREE.AnimationMixer(root);
 	mixers.set(root.uuid, { mixer, actions: {}, durations: {}, rest: captureRest(root), embedded: [], embeddedOff: false, parts: true });
-	animatedObjects.update((map) => ({ ...map, [root.uuid]: { clips: [], clip: '', playing: false, speed: 1 } }));
+	// a re-registered (replaced) model keeps its transport: its clips rebind and carry on playing
+	animatedObjects.update((map) => ({ ...map, [root.uuid]: map[root.uuid] ? { ...map[root.uuid], clips: [] } : { clips: [], clip: '', playing: false, speed: 1 } }));
 	return true;
 }
 
@@ -374,23 +378,30 @@ function sweepPartsModels(time) {
 	for (const child of group.children) {
 		const ud = child.userData;
 		if (ud?.attachTo && !socketFollowers.has(child.uuid)) syncSocketFollower(child);
-		if (mixers.has(child.uuid) || (!ud?.clipRefs && !ud?.animGraph)) continue;
+		const held = mixers.get(child.uuid);
+		if (held?.parts && held.mixer.getRoot() !== child) dropPartsRecord(child.uuid, held, true);
+		else if (held) continue;
+		if (!ud?.clipRefs && !ud?.animGraph) continue;
 		if (ensureClipModel(child)) {
 			attachClipRefs(child.uuid);
 			loadGraphRuntime(child);
 		}
 	}
-	for (const [uuid, record] of mixers)
-		if (record.parts && !group.getObjectByProperty('uuid', uuid)) {
-			record.mixer.stopAllAction();
-			mixers.delete(uuid);
-			drivers.delete(uuid);
-			animatedObjects.update((map) => {
-				const next = { ...map };
-				delete next[uuid];
-				return next;
-			});
-		}
+	for (const [uuid, record] of mixers) if (record.parts && !group.getObjectByProperty('uuid', uuid)) dropPartsRecord(uuid, record);
+}
+
+/** forget a parts model's mixer (its object left, or — `replaced` — a sync swapped the instance)
+ * @param {string} uuid @param {any} record @param {boolean} [replaced] keep its transport entry */
+function dropPartsRecord(uuid, record, replaced = false) {
+	record.mixer.stopAllAction();
+	mixers.delete(uuid);
+	drivers.delete(uuid);
+	if (replaced) return;
+	animatedObjects.update((map) => {
+		const next = { ...map };
+		delete next[uuid];
+		return next;
+	});
 }
 
 /** This model's clip transport, for a caller that must not import the store

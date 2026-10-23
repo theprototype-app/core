@@ -450,7 +450,7 @@ function addAnimatedImport(result, buffer, name, kind, position) {
 			? 'Placed "' + root.name + '" — it opens with a click in Interact or Play'
 			: result.animations.length
 				? 'Animated model: ' + result.animations.length + ' clip(s) — play them from the Animation panel'
-				: 'Rigged character — give it motions with Inspector ▸ Character ▸ Apply clip…'
+				: 'Rigged character — Inspector ▸ Character ▸ Apply clip…, or drop an animation clip (.tpanim) on it'
 	);
 }
 
@@ -754,7 +754,8 @@ export async function parseModelFile(file, extension, extras) {
 		// 17-D2: FBX clips used to be dropped on the floor (the loader parsed
 		// them, nothing read them). Animated rigs now take the SAME raw-bytes
 		// route as animated GLB — peers reparse the original file.
-		// 57 M2: a RIG with no clips rides the same path — the per-node sync cannot carry a skeleton
+		// 57 M1/M2: a RIG with no clips rides the same route — the per-node sync cannot carry a skeleton,
+		// and clip assets / applied clips are assigned to it later
 		const animated = object.animations?.length > 0 || hasSkin(object)
 			? { result: { scene: object, animations: object.animations ?? [] }, buffer, kind: 'fbx' }
 			: null;
@@ -774,8 +775,8 @@ export async function parseModelFile(file, extension, extras) {
 	}
 	const result = await parseGltfSceneSafe(buffer);
 	stampGltfPrimitives(result); // 57 M6: a weight edit writes back into the right primitive
-	// animated rigs keep their own pipeline (raw-bytes sync) — unplaced. 57 M2: so does a rig
-	// without clips (a VRM, a Meshy / UniRig character): clips get applied to it later
+	// animated rigs keep their own pipeline (raw-bytes sync) — unplaced. 57 M1/M2: so does a rig
+	// without clips (a VRM, a Meshy / UniRig character): clips get assigned / applied to it later
 	const animated = result.animations?.length > 0 || hasSkin(result.scene) ? { result, buffer, kind: 'gltf' } : null;
 	return { root: result.scene, animated, notes };
 }

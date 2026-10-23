@@ -21,6 +21,7 @@
 // TARGET's own nodes, so it binds on the target model by name like an embedded clip.
 
 import * as THREE from 'three';
+import { sanitizeName } from '../tpanim/format.js';
 
 /**
  * @typedef {{name: string, parent: number, t: number[], q: number[], s: number[]}} RigNode
@@ -88,6 +89,37 @@ function snapshotFromObjects(objects, map) {
 export function makeSnapshot(nodes, map) {
 	const index = new Map(nodes.map((n, i) => [n.name, i]));
 	return { nodes, index, map: { ...map } };
+}
+
+/**
+ * A decoded `.tpanim` humanoid clip's own skeleton as a snapshot (parent-first; names sanitized
+ * the way `tpToThreeClip` names its tracks) — the normalized VRMA shape and a raw-rig VRMA alike.
+ * @param {import('../tpanim/format.js').TpClip} tp
+ */
+export function tpSnapshot(tp) {
+	const n = tp.nodes.length;
+	const depth = (/** @type {number} */ i) => {
+		let d = 0;
+		for (let p = tp.nodes[i].parent; p >= 0 && d < n; p = tp.nodes[p]?.parent ?? -1) d++;
+		return d;
+	};
+	const order = tp.nodes.map((_, i) => i).sort((a, b) => depth(a) - depth(b));
+	const at = new Map(order.map((i, k) => [i, k]));
+	const nodes = order.map((i) => {
+		const node = tp.nodes[i];
+		return {
+			name: sanitizeName(node.name),
+			parent: node.parent >= 0 ? (at.get(node.parent) ?? -1) : -1,
+			t: [...node.t],
+			q: [...node.r],
+			s: [...node.s]
+		};
+	});
+	/** @type {Record<string, string>} */
+	const map = {};
+	for (const [bone, i] of Object.entries(tp.humanoid ?? {}))
+		if (tp.nodes[i]) map[bone] = sanitizeName(tp.nodes[i].name);
+	return makeSnapshot(nodes, map);
 }
 
 const _q = new THREE.Quaternion();

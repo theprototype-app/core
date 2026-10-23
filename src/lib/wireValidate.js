@@ -335,6 +335,15 @@ export const VALIDATORS = {
 		// 57 M2: a character config (map fixes + applied clips) is a plain object (normalized again by its applier)
 		if (d.parameter === 'expression') return isUuid(d.uuid) && typeof d.name === 'string' && d.name.length <= 64 && Number.isFinite(d.weight);
 		if (d.parameter === 'character') return isUuid(d.uuid) && !!d.character && typeof d.character === 'object' && !isArray(d.character);
+		// 57 M1: a model's clip-asset refs — a short array of {hash, name} (normalizeClipRefs
+		// trims the rest on apply)
+		if (d.parameter === 'clipRefs')
+			return (
+				isUuid(d.uuid) &&
+				isArray(d.clipRefs) &&
+				d.clipRefs.length <= 64 &&
+				d.clipRefs.every((/** @type {any} */ r) => !!r && typeof r.hash === 'string' && r.hash.length <= 128 && typeof r.name === 'string' && r.name.length <= 200)
+			);
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

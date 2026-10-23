@@ -9,7 +9,9 @@
 // A clip's `src` is one of:
 //   {uuid, clip}       a clip another model in the scene plays (embedded, or itself applied)
 //   {lib: 'avatars', clip}  the 36 avatars' shared KayKit motions (CC0), on the KayKit rig
-//   {asset, clip?}     a `.tpanim` clip asset (57 M1; resolved through `clipAssetResolver`)
+//   {asset, clip?}     a `.tpanim` clip asset (57 M1; resolved through `clipAssetResolver`). The Apply
+//                      dialog hands a clip FILE to 57 M1's clip refs instead (assignClipAsset), whose
+//                      humanoid bind calls `retargetTpClip` below — one mechanism per kind of source
 // A source that is not here yet (a late joiner's restore order, an asset still arriving) leaves the
 // target PENDING; every registration and every resolver retry looks again.
 //
@@ -39,7 +41,9 @@ import {
 	isHumanBone
 } from './humanoidMap.js';
 export { rigLabel, boneLabel } from './humanoidMap.js';
-import { makeSnapshot, retargetClip } from './retarget.js';
+import { makeSnapshot, retargetClip, tpSnapshot } from './retarget.js';
+import { tpToThreeClip } from '../tpanim/format.js';
+import { setHumanoidDetector } from '../tpanim/humanoidMap.js';
 import { licenceOf, normalizeLicence } from '../provenance.js';
 
 /** @typedef {import('./humanoidMap.js').HumanoidMap} HumanoidMap */
@@ -158,6 +162,23 @@ export function restSnapshotOf(uuid) {
 	const h = humanoidOf(uuid);
 	if (!h) return null;
 	return makeSnapshot(restRowsOf(uuid), h.map);
+}
+
+// 57 M1 union: a clip asset maps a model's bones through THIS detector (the file's own map for a
+// VRM, else the detected map with the user's fixes) — registered once this module loads, which
+// clipAssets makes sure of before it binds a humanoid clip
+setHumanoidDetector((_names, root) => (root?.uuid ? (humanoidOf(root.uuid)?.map ?? null) : null));
+
+/**
+ * 57 M1's humanoid clip assets bind through here: the clip retargeted onto this character (rest
+ * pose + facing corrected, hips scaled), at the clip's own frame rate. null = no mapped hips.
+ * @param {import('../tpanim/format.js').TpClip} tp @param {string} uuid @param {string} name
+ */
+export function retargetTpClip(tp, uuid, name) {
+	const target = restSnapshotOf(uuid);
+	if (!target?.map.hips || !tp.humanoid) return null;
+	const fps = tp.fps > 0 ? tp.fps : RETARGET_FPS;
+	return retargetClip(tpToThreeClip(tp), tpSnapshot(tp), target, { fps, name });
 }
 
 /** forget a model's cached detection (its bytes were replaced by a rig fix) @param {string} uuid */
@@ -412,6 +433,15 @@ export async function clipSourcesInScene() {
 	}
 	for (const clip of await avatarClipNames())
 		out.push({ label: clip, src: { lib: 'avatars', clip }, group: 'Avatar motions (KayKit, CC0)' });
+	// 57 M1: the clip files in the Explorer (a `.tpanim`; a non-humanoid one is refused per target)
+	const { explorerItems } = await import('../explorer');
+	for (const item of /** @type {any[]} */ (get(explorerItems)))
+		if (item?.kind === 'anim' && item.hash && !item.hidden)
+			out.push({
+				label: String(item.name ?? 'Clip').replace(/\.tpanim$/i, ''),
+				src: { asset: item.hash },
+				group: 'Clip files'
+			});
 	return out;
 }
 
@@ -437,6 +467,7 @@ export async function applyClipTo(targets, src, opts = {}) {
 	const applied = [];
 	/** @type {{uuid: string, why: string}[]} */
 	const refused = [];
+	if ('asset' in src) return applyClipFile(targets, src.asset, opts);
 	const source = await resolveSource(src);
 	if (!source) {
 		showToast('That clip is not available yet');
@@ -486,6 +517,47 @@ export async function applyClipTo(targets, src, opts = {}) {
 			if (name && runtimeClipNames(uuid).includes(name))
 				setAnimationState(uuid, { clip: name, playing: true });
 		}
+	}
+	return { applied, refused };
+}
+
+/**
+ * A clip FILE goes onto each target as one of its clip assets (57 M1's clip refs: the bytes travel
+ * by hash, every peer binds — through `retargetTpClip` for a humanoid clip).
+ * @param {string[]} targets @param {string} hash @param {{play?: boolean}} opts
+ */
+async function applyClipFile(targets, hash, opts) {
+	/** @type {string[]} */
+	const applied = [];
+	/** @type {{uuid: string, why: string}[]} */
+	const refused = [];
+	const [{ itemByHash }, { assignClipAsset, loadClip }] = await Promise.all([
+		import('../explorer'),
+		import('../tpanim/clipAssets.js')
+	]);
+	const item = itemByHash(hash);
+	const tp = item ? await loadClip(hash) : null;
+	if (!item || !tp) {
+		showToast('That clip file is not available yet');
+		return { applied, refused: targets.map((uuid) => ({ uuid, why: 'source missing' })) };
+	}
+	const many = targets.length > 1;
+	if (many) beginHistoryBatch();
+	try {
+		for (const uuid of targets) {
+			const h = humanoidOf(uuid);
+			if (tp.humanoid && !h?.ok) {
+				refused.push({
+					uuid,
+					why: h ? 'missing bones: ' + h.missing.join(', ') : 'not a rigged model'
+				});
+				continue;
+			}
+			if (assignClipAsset(uuid, item, { play: opts.play !== false })) applied.push(uuid);
+			else refused.push({ uuid, why: 'not a rigged model' });
+		}
+	} finally {
+		if (many) endHistoryBatch('Apply clip');
 	}
 	return { applied, refused };
 }

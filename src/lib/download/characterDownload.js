@@ -20,6 +20,7 @@ import {
 	runtimeClipNames,
 	clipOf,
 	restRowsOf,
+	restPoseOf,
 	parseImportBytes
 } from '../animatedImports';
 import { isGlb, readGlb, animationNames } from './glbEdit.js';
@@ -168,10 +169,22 @@ export async function clipFile(uuid, clipName, format) {
 	const h = humanoidOf(uuid);
 	if (format === 'vrma' && !h?.ok) throw new Error('.vrma needs a humanoid');
 	const map = h?.ok ? h.map : null;
-	const bytes = writeClipFile(rows, clip, {
-		map,
-		provenance: provenanceFor(root, 'clip ' + clipName)
+	const provenance = provenanceFor(root, 'clip ' + clipName);
+	if (format === 'glb') {
+		// the rig's OWN skeleton + the clip: what Blender / Unity re-import onto this model
+		return { name: base + '.glb', bytes: writeClipFile(rows, clip, { map, provenance }) };
+	}
+	// .tpanim / .vrma: 57 M1's writer, so every clip file the app writes has one shape (a humanoid
+	// clip in VRM's normalized space: plays on any mapped humanoid, and in VRM tools as .vrma)
+	const { tpFromThreeClip, toHumanoid, encodeTpanim } = await import('../tpanim/format.js');
+	const tp = tpFromThreeClip(root, clip, {
+		fps: 30,
+		loop: true,
+		provenance: /** @type {any} */ (provenance),
+		name: clipName,
+		rest: restPoseOf(uuid)
 	});
+	const bytes = new Uint8Array(encodeTpanim(map ? toHumanoid(tp, map) : tp));
 	return { name: base + '.' + format, bytes };
 }
 

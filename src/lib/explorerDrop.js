@@ -254,6 +254,18 @@ async function placeExplorerPayload(payload, target) {
 			undefined,
 			target.point ?? undefined
 		);
+	} else if (item.kind === 'anim') {
+		// 57 M1: a clip dropped ON a rigged model is assigned to it and plays (one ref change,
+		// one undo step, the bytes pushed once); anywhere else it says where it goes
+		const { hasAnimatedImport } = await import('./animatedImports');
+		let hit = target.hit ?? target.object;
+		while (hit && !hasAnimatedImport(hit.uuid)) hit = hit.parent;
+		if (!hit) {
+			showToast('Drop the clip ON a character or another rigged model to play it');
+			return;
+		}
+		const { assignClipAsset } = await import('./tpanim/clipAssets.js');
+		assignClipAsset(hit.uuid, { hash: item.hash, name: item.name }, { play: true });
 	} else if (item.kind === 'image') {
 		if (!target.object) {
 			showToast('Drop the image ON an object to texture it');

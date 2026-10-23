@@ -15,6 +15,29 @@ function tokenColor(token, fallback) {
 	}
 }
 
+const HELPER = /ik(?![a-z])|^ik|control|ctrl|pole|target/i;
+const CONTAINER = /^(root|armature|rig)$/i;
+
+/**
+ * Which nodes' lines to their parent are BODY: not a rig helper (IK targets, poles and controls hang
+ * off the root — a fan of lines from the floor) or under one, and not hanging from the root /
+ * armature container (its line to the hips is a tail).
+ * @param {import('./format.js').TpClip} tp @returns {boolean[]}
+ */
+export function bodyLines(tp) {
+	return tp.nodes.map((node) => {
+		if (node.parent < 0) return false;
+		const up = tp.nodes[node.parent];
+		if (CONTAINER.test(up.name)) return false;
+		for (let n = node, guard = 0; n && guard < 256; n = tp.nodes[n.parent], guard++) {
+			if (CONTAINER.test(n.name)) break;
+			if (HELPER.test(n.name)) return false;
+			if (n.parent < 0) break;
+		}
+		return true;
+	});
+}
+
 /**
  * @param {ArrayBuffer} bytes @param {number} [size] px
  * @returns {string | null} a data URL
@@ -25,17 +48,22 @@ export function clipThumbnail(bytes, size = 128) {
 		if (!tp.tracks.length || tp.nodes.length < 2) return null;
 		const moments = [0, 0.2, 0.4, 0.8, 0.6].map((k) => k * tp.duration);
 		const poses = moments.map((t) => nodePositionsAt(tp, t));
+		const body = bodyLines(tp);
 		let x0 = Infinity;
 		let x1 = -Infinity;
 		let y0 = Infinity;
 		let y1 = -Infinity;
 		for (const p of poses)
-			for (let i = 0; i < p.length; i += 3) {
-				x0 = Math.min(x0, p[i]);
-				x1 = Math.max(x1, p[i]);
-				y0 = Math.min(y0, p[i + 1]);
-				y1 = Math.max(y1, p[i + 1]);
-			}
+			tp.nodes.forEach((node, i) => {
+				if (!body[i]) return;
+				for (const j of [i, node.parent]) {
+					x0 = Math.min(x0, p[j * 3]);
+					x1 = Math.max(x1, p[j * 3]);
+					y0 = Math.min(y0, p[j * 3 + 1]);
+					y1 = Math.max(y1, p[j * 3 + 1]);
+				}
+			});
+		if (!Number.isFinite(x0)) return null;
 		const span = Math.max(x1 - x0, y1 - y0, 1e-6);
 		const pad = size * 0.12;
 		const k = (size - 2 * pad) / span;
@@ -55,7 +83,7 @@ export function clipThumbnail(bytes, size = 128) {
 			g.lineWidth = last ? 3 : 1.5;
 			g.beginPath();
 			tp.nodes.forEach((node, i) => {
-				if (node.parent < 0) return;
+				if (!body[i]) return;
 				const a = node.parent * 3;
 				const b = i * 3;
 				g.moveTo(size / 2 + (p[a] - cx) * k, size / 2 - (p[a + 1] - cy) * k);

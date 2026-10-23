@@ -109,7 +109,7 @@ const edge = (from, to, targetHandle, sourceHandle = 'out') => ({
 	const defs = shaderNodeDefs();
 	// the TERMINAL nodes are the exception: they emit nothing because nothing reads them —
 	// each domain's graph ends at one (P4 added the post half's)
-	const terminals = ['surface', 'postOutput'];
+	const terminals = ['surface', 'postOutput', 'backgroundOutput']; // 65 M2 added the background's
 	const bad = defs.filter((d) => !d.key || !d.label || !d.group || (!terminals.includes(d.key) && !d.emit));
 	check(bad.length === 0, defs.length + ' node defs, all with key/label/group/emit: ' + JSON.stringify(bad.map((d) => d.key)));
 	check(!!shaderNodeDef('surface'), 'the Surface output def exists');

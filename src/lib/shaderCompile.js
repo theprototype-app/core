@@ -22,10 +22,10 @@
 // recomputed per consumer), and loop forever on a cycle. Both are handled by the
 // memo + the in-progress set, the PATH-based guard the flow editor uses.
 
-import { shaderNodeDef, outputTypeOf, SURFACE_NODE, POST_OUTPUT_NODE } from './shaderCatalog.js';
+import { shaderNodeDef, outputTypeOf, SURFACE_NODE, POST_OUTPUT_NODE, BACKGROUND_OUTPUT_NODE } from './shaderCatalog.js';
 
 /** @typedef {'float'|'vec2'|'vec3'|'vec4'|'sampler2D'} GlslType */
-/** @typedef {'fragment'|'vertex'|'post'} ShaderStage */
+/** @typedef {'fragment'|'vertex'|'post'|'background'} ShaderStage */
 
 /** The FRAGMENT taps the inject backend exposes, and the type each expects. */
 const TAP_TYPES = {
@@ -44,8 +44,11 @@ const VERTEX_TAP_TYPES = { position: 'vec3' };
 /** The POST tap: one colour (plus the frame's own alpha unless wired). */
 const POST_TAP_TYPES = { color: 'vec3', alpha: 'float' };
 
+/** 65 M2: the BACKGROUND tap — a colour and an alpha (opaque unless wired). */
+const BACKGROUND_TAP_TYPES = { color: 'vec3', alpha: 'float' };
+
 /** Stage names as a user would recognise them. @type {Record<string,string>} */
-const STAGE_LABEL = { fragment: 'surface', vertex: 'vertex displacement', post: 'post-processing' };
+const STAGE_LABEL = { fragment: 'surface', vertex: 'vertex displacement', post: 'post-processing', background: 'background' };
 
 /**
  * The one helper every depth-reading post node calls, emitted ONCE by the post pass
@@ -87,8 +90,24 @@ const POST_EQUIVALENT = {
 	'normalize(vNormal)': null
 };
 
+/**
+ * 65 M2: the BACKGROUND stage. The layer's material names its coordinate varying `vUv`
+ * (the screen, the plane's UVs, or the sphere's) so a UV default needs no translation;
+ * a surface normal has no meaning on a backdrop and is refused by name.
+ * @type {Record<string,string|null>}
+ */
+const BACKGROUND_EQUIVALENT = {
+	'normalize(vNormal)': null
+};
+
+/**
+ * The layer uniforms the BACKGROUND material always declares itself (backgroundLayer.js),
+ * so the compiler must not declare them a second time.
+ */
+export const BACKGROUND_BUILTIN_UNIFORMS = ['uShaderTime', 'uPointer', 'uScroll', 'uAspect', 'resolution', 'texelSize'];
+
 /** @type {Record<string, Record<string, string|null>>} */
-const STAGE_EQUIVALENT = { vertex: VERTEX_EQUIVALENT, post: POST_EQUIVALENT };
+const STAGE_EQUIVALENT = { vertex: VERTEX_EQUIVALENT, post: POST_EQUIVALENT, background: BACKGROUND_EQUIVALENT };
 
 /**
  * Convert `expr` from `from` to `to`. GLSL will not do this silently, and a mismatch is
@@ -260,6 +279,17 @@ function createCompiler(graph, outputType) {
 			}
 			inProgress.add(nodeId);
 			for (const r of def.requires ?? []) requires.add(r);
+			// a dependency's prelude goes in FIRST and under ITS key, so a graph holding both
+			// the helper and its user declares the shared function once (GLSL has no overloads
+			// by redefinition — a duplicate is a compile error)
+			for (const dep of def.preludeDeps ?? []) {
+				const depDef = shaderNodeDef(dep);
+				for (const inner of depDef?.preludeDeps ?? []) {
+					const innerDef = shaderNodeDef(inner);
+					if (innerDef?.prelude && !preludes.has(inner)) preludes.set(inner, innerDef.prelude);
+				}
+				if (depDef?.prelude && !preludes.has(dep)) preludes.set(dep, depDef.prelude);
+			}
 			if (def.prelude) preludes.set(def.key, def.prelude);
 
 			// params: a uniform-backed one becomes a live uniform, a plain one a literal
@@ -470,6 +500,53 @@ export function compilePostGraphToIR(graph) {
 	return {
 		ok: true,
 		ir: { fragment, uniforms: list, readsDepth, readsNormals, usesClock, requires: [...pass.requires] }
+	};
+}
+
+/**
+ * 65 M2 — compile a BACKGROUND graph document into the layer material's fragment shader.
+ *
+ * ONE pass, stage 'background', over the Background output node's `color` (+ `alpha`).
+ * The result is a complete fragment shader for a THREE.ShaderMaterial whose vertex shader
+ * (backgroundLayer.js) writes the `vUv` varying: the graph's preludes, its own uniform
+ * declarations, and a `main` writing gl_FragColor through three's colour-space chunk. The
+ * layer uniforms (shared clock, pointer, scroll, aspect, resolution) are declared by the
+ * material for every graph, so they are left out of the declarations here — and
+ * `usesPointer` / `usesScroll` / `usesClock` tell the layer which inputs are worth feeding.
+ * @param {{nodes: any[], edges: any[]}} graph
+ * @returns {{ok: boolean, ir?: {fragment: string, uniforms: any[], usesClock: boolean, usesPointer: boolean, usesScroll: boolean, requires: string[]}, errors?: string[]}}
+ */
+export function compileBackgroundGraphToIR(graph) {
+	const { output, errors, uniforms, preludes, makePass } = createCompiler(graph, BACKGROUND_OUTPUT_NODE);
+	if (!output) return { ok: false, errors: ['The graph has no Background output node.'] };
+	const pass = makePass('background');
+	const taps = pass.walkTaps(BACKGROUND_TAP_TYPES);
+	if (!taps.color && !errors.length)
+		errors.push("Nothing is connected to the Background output's colour, so the layer would draw nothing.");
+	if (errors.length) return { ok: false, errors };
+	const types = new Set((graph?.nodes ?? []).map((/** @type {any} */ n) => n?.type));
+	const list = [...uniforms.values()].filter((u) => !BACKGROUND_BUILTIN_UNIFORMS.includes(u.name));
+	const decls = list.map((u) => 'uniform ' + u.type + ' ' + u.name + ';').join('\n');
+	const fragment =
+		'varying vec2 vUv;\n' +
+		'uniform float uShaderTime;\nuniform vec4 uPointer;\nuniform vec2 uScroll;\nuniform float uAspect;\n' +
+		'uniform vec2 resolution;\nuniform vec2 texelSize;\n' +
+		[...preludes.values()].join('\n') +
+		(decls ? decls + '\n' : '') +
+		'void main() {\n\t' +
+		pass.statements.join('\n\t') +
+		'\n\tgl_FragColor = vec4(' + taps.color + ', clamp(' + (taps.alpha ?? '1.0') + ', 0.0, 1.0));\n' +
+		'\t#include <colorspace_fragment>\n}';
+	return {
+		ok: true,
+		ir: {
+			fragment,
+			uniforms: list,
+			usesClock: pass.requires.has('time'),
+			usesPointer: types.has('pointer'),
+			usesScroll: types.has('scroll'),
+			requires: [...pass.requires]
+		}
 	};
 }
 

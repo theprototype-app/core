@@ -17,7 +17,7 @@
 //   inputs   sockets [{name, type, default}] — `default` is the GLSL used when unwired
 //   outputs  sockets [{name, type, suffix}] — `suffix` swizzles the node's temp
 //   stages   which shader STAGES the node works in (absent = every stage: 'fragment',
-//            'vertex' and, since P4, 'post'). uv/normal mean different things per stage
+//            'vertex', since P4 'post' and since 65 M2 'background'). uv/normal mean different things per stage
 //            and `emit` receives the stage; a node needing the view vector or dFdx is
 //            'fragment' only, and a node reading a SCREEN buffer is 'post' only
 //   nativeType the GLSL type `emit` actually returns, when that is not the FIRST output's
@@ -29,6 +29,8 @@
 //            when USE_UV is set, so a graph using UV on an untextured material would
 //            otherwise fail to compile.
 //   prelude  GLSL function definitions hoisted once per graph (deduped by key)
+//   preludeDeps other defs whose prelude this one CALLS (65 M2: fBm uses Noise's hash), hoisted
+//            first under THEIR key — so a graph holding both nodes declares the function once
 //   emit     ({ in, params, node }) => GLSL expression string
 
 /** @typedef {'float'|'vec2'|'vec3'|'vec4'|'sampler2D'} GlslType */
@@ -42,12 +44,13 @@
  * @property {any[]} [inputs]
  * @property {any[]} [outputs]
  * @property {GlslType} [nativeType]
- * @property {('fragment'|'vertex'|'post')[]} [stages] which shader stages the node works
+ * @property {('fragment'|'vertex'|'post'|'background')[]} [stages] which shader stages the node works
  *   in. Absent = all three. A node needing the view vector or screen-space derivatives is
  *   fragment-only, one reading the scene's colour or depth buffer is post-only, and the
  *   compiler refuses either elsewhere with an explanation naming both stages.
  * @property {string[]} [requires]
  * @property {string} [prelude]
+ * @property {string[]} [preludeDeps]
  * @property {string} [doc] the manual line, merged in from DOCS below
  * @property {(arg: any) => string} [emit]
  */
@@ -63,9 +66,22 @@ export const SURFACE_NODE = 'surface';
  */
 export const POST_OUTPUT_NODE = 'postOutput';
 
+/**
+ * 65 M2 — the single output node every BACKGROUND graph must have. A background is a
+ * fragment function over the LAYER's own coordinates (the screen, a picked plane's UVs, or
+ * the inside of the VR sphere), with the viewer's pointer and scroll as inputs — it has no
+ * material to patch and no frame to read, so it is a third domain with its own terminal.
+ */
+export const BACKGROUND_OUTPUT_NODE = 'backgroundOutput';
+
 /** @param {string} domain @returns {string} */
 export function outputNodeFor(domain) {
-	return domain === 'post' ? POST_OUTPUT_NODE : SURFACE_NODE;
+	return domain === 'post' ? POST_OUTPUT_NODE : domain === 'background' ? BACKGROUND_OUTPUT_NODE : SURFACE_NODE;
+}
+
+/** The shader STAGE a domain's graph compiles in (the palette filters on it). @param {string} domain */
+export function stageForDomain(domain) {
+	return domain === 'post' ? 'post' : domain === 'background' ? 'background' : 'fragment';
 }
 
 /** float in / float out helper for the one-argument maths nodes. */
@@ -666,7 +682,8 @@ const DEFS = [
 		key: 'resolution',
 		label: 'Resolution',
 		group: 'Post',
-		stages: ['post'],
+		// 65 M2: the background material declares the same two uniforms
+		stages: ['post', 'background'],
 		nativeType: 'vec4',
 		outputs: [
 			{ name: 'size', type: 'vec2', suffix: '.xy' },
@@ -678,7 +695,7 @@ const DEFS = [
 		key: 'bayer',
 		label: 'Bayer pattern',
 		group: 'Post',
-		stages: ['post'],
+		stages: ['post', 'background'],
 		inputs: [{ name: 'uv', type: 'vec2', default: 'uv' }],
 		params: [{ name: 'scale', type: 'float', default: 1, uniform: true }],
 		outputs: [{ name: 'out', type: 'float' }],
@@ -695,7 +712,12 @@ const DEFS = [
 			'  else if (i == 12) v = 15.0; else if (i == 13) v = 7.0; else if (i == 14) v = 13.0; else v = 5.0;\n' +
 			'  return (v + 0.5) / 16.0;\n' +
 			'}\n',
-		emit: (a) => 'tpBayer4(' + a.in.uv + ' * resolution / max(' + a.params.scale + ', 1.0))'
+		// a background on a PLANE has the plane's UVs, so the pixel grid comes from the
+		// fragment's own window position there (the post stage keeps its uv * resolution)
+		emit: (a) =>
+			a.stage === 'background'
+				? 'tpBayer4(gl_FragCoord.xy / max(' + a.params.scale + ', 1.0))'
+				: 'tpBayer4(' + a.in.uv + ' * resolution / max(' + a.params.scale + ', 1.0))'
 	},
 	{
 		key: 'edgeDetect',
@@ -771,6 +793,293 @@ const DEFS = [
 			{ name: 'color', type: 'vec3', default: null },
 			// unwired: the frame's own alpha, so a graph that only recolours keeps it
 			{ name: 'alpha', type: 'float', default: 'inputColor.a' }
+		],
+		outputs: []
+	},
+
+	// ---- patterns (65 M2: the fluid-background vocabulary — every stage that has a pixel) ----
+	// Pure maths on a UV, so they work on a surface, in a post pass and in a background
+	// alike. Everything animated reads the SHARED clock, so a background drifts in step on
+	// every peer with no messages (determinism IS the netcode); only the pointer and scroll
+	// inputs are the viewer's own.
+	{
+		key: 'fbm',
+		label: 'Fractal noise (fBm)',
+		group: 'Pattern',
+		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv' }],
+		params: [
+			{ name: 'scale', type: 'float', default: 3, uniform: true },
+			{ name: 'octaves', type: 'float', default: 5, uniform: true },
+			{ name: 'lacunarity', type: 'float', default: 2, uniform: true },
+			{ name: 'gain', type: 'float', default: 0.5, uniform: true }
+		],
+		outputs: [{ name: 'out', type: 'float' }],
+		requires: ['uv'],
+		preludeDeps: ['noise'],
+		// gradient noise (smoother than Noise's value noise, no grid look) summed over
+		// octaves. TP_OCTAVE_CAP is the DEVICE-BUDGET knob: the background layer defines it
+		// lower on a headset or phone, so one graph runs everywhere and costs what the device
+		// can afford — a recompile on a tier change, never a different document
+		prelude:
+			'#ifndef TP_OCTAVE_CAP\n' +
+			'#define TP_OCTAVE_CAP 8\n' +
+			'#endif\n' +
+			'vec2 tpGrad2(vec2 p) {\n' +
+			'  float h = tpHash21(p) * 6.2831853;\n' +
+			'  return vec2(cos(h), sin(h));\n' +
+			'}\n' +
+			'float tpGNoise(vec2 p) {\n' +
+			'  vec2 i = floor(p), f = fract(p);\n' +
+			'  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);\n' +
+			'  float a = dot(tpGrad2(i), f);\n' +
+			'  float b = dot(tpGrad2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0));\n' +
+			'  float c = dot(tpGrad2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0));\n' +
+			'  float d = dot(tpGrad2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0));\n' +
+			'  return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);\n' +
+			'}\n' +
+			'float tpFbm(vec2 p, float octaves, float lacunarity, float gain) {\n' +
+			'  float sum = 0.0, amp = 0.5, norm = 0.0;\n' +
+			'  for (int i = 0; i < 8; i++) {\n' +
+			'    if (float(i) >= octaves || i >= TP_OCTAVE_CAP) break;\n' +
+			'    sum += amp * tpGNoise(p);\n' +
+			'    norm += amp;\n' +
+			'    p = p * lacunarity + vec2(17.3, 9.1);\n' +
+			'    amp *= gain;\n' +
+			'  }\n' +
+			'  return clamp(0.5 + 0.7 * sum / max(norm, 0.0001), 0.0, 1.0);\n' +
+			'}\n',
+		emit: (a) =>
+			'tpFbm(' + a.in.uv + ' * ' + a.params.scale + ', ' + a.params.octaves + ', ' +
+			a.params.lacunarity + ', ' + a.params.gain + ')'
+	},
+	{
+		key: 'domainWarp',
+		label: 'Domain warp',
+		group: 'Pattern',
+		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv' }],
+		params: [
+			{ name: 'amount', type: 'float', default: 0.35, uniform: true },
+			{ name: 'scale', type: 'float', default: 2.5, uniform: true },
+			{ name: 'speed', type: 'float', default: 0.08, uniform: true }
+		],
+		outputs: [{ name: 'out', type: 'vec2' }],
+		requires: ['uv', 'time'],
+		preludeDeps: ['noise', 'fbm'],
+		// UV pushed along two drifting fBm fields: the "liquid" in every fluid background
+		prelude:
+			'vec2 tpWarp(vec2 uv, float amount, float scale, float t) {\n' +
+			'  vec2 p = uv * scale;\n' +
+			'  vec2 q = vec2(tpFbm(p + vec2(0.0, t), 4.0, 2.0, 0.5), tpFbm(p + vec2(5.2, 1.3 - t), 4.0, 2.0, 0.5));\n' +
+			'  return uv + amount * (q - 0.5);\n' +
+			'}\n',
+		emit: (a) =>
+			'tpWarp(' + a.in.uv + ', ' + a.params.amount + ', ' + a.params.scale + ', uShaderTime * ' + a.params.speed + ')'
+	},
+	{
+		key: 'meshGradient',
+		label: 'Mesh gradient',
+		group: 'Pattern',
+		inputs: [
+			{ name: 'uv', type: 'vec2', default: 'vUv' },
+			// unwired = no pull: the four colour points drift on the shared clock alone
+			{ name: 'focus', type: 'vec2', default: 'vec2(-2.0)' }
+		],
+		params: [
+			{ name: 'colorA', type: 'vec3', default: '#ff6a88', uniform: true },
+			{ name: 'colorB', type: 'vec3', default: '#ffd36e', uniform: true },
+			{ name: 'colorC', type: 'vec3', default: '#6a8bff', uniform: true },
+			{ name: 'colorD', type: 'vec3', default: '#3fe0c5', uniform: true },
+			{ name: 'speed', type: 'float', default: 0.35, uniform: true },
+			{ name: 'warp', type: 'float', default: 0.6, uniform: true },
+			{ name: 'pull', type: 'float', default: 0.45, uniform: true },
+			{ name: 'sharpness', type: 'float', default: 2.2, uniform: true }
+		],
+		outputs: [{ name: 'out', type: 'vec3' }],
+		requires: ['uv', 'time'],
+		// four colours pinned to four drifting points, blended by inverse distance — the
+		// "mesh gradient" look. `focus` drags the first point (wire the Pointer in)
+		prelude:
+			'vec3 tpMeshGrad(vec2 uv, vec2 focus, vec3 c0, vec3 c1, vec3 c2, vec3 c3, float t, float warp, float pull, float sharp) {\n' +
+			'  vec2 p0 = vec2(0.22, 0.26) + 0.14 * vec2(sin(t * 0.7), cos(t * 0.9));\n' +
+			'  vec2 p1 = vec2(0.80, 0.22) + 0.14 * vec2(cos(t * 0.6 + 1.0), sin(t * 0.8 + 2.0));\n' +
+			'  vec2 p2 = vec2(0.24, 0.80) + 0.14 * vec2(sin(t * 0.5 + 3.0), cos(t * 0.7 + 1.5));\n' +
+			'  vec2 p3 = vec2(0.78, 0.76) + 0.14 * vec2(cos(t * 0.9 + 2.5), sin(t * 0.6 + 0.5));\n' +
+			'  if (focus.x > -1.0) p0 = mix(p0, focus, clamp(pull, 0.0, 1.0));\n' +
+			'  vec2 q = uv + warp * 0.1 * vec2(sin(uv.y * 3.1 + t * 0.6), cos(uv.x * 2.7 - t * 0.5));\n' +
+			'  float w0 = 1.0 / pow(max(distance(q, p0), 0.002), sharp);\n' +
+			'  float w1 = 1.0 / pow(max(distance(q, p1), 0.002), sharp);\n' +
+			'  float w2 = 1.0 / pow(max(distance(q, p2), 0.002), sharp);\n' +
+			'  float w3 = 1.0 / pow(max(distance(q, p3), 0.002), sharp);\n' +
+			'  return (c0 * w0 + c1 * w1 + c2 * w2 + c3 * w3) / (w0 + w1 + w2 + w3);\n' +
+			'}\n',
+		emit: (a) =>
+			'tpMeshGrad(' + a.in.uv + ', ' + a.in.focus + ', ' + a.params.colorA + ', ' + a.params.colorB + ', ' +
+			a.params.colorC + ', ' + a.params.colorD + ', uShaderTime * ' + a.params.speed + ', ' +
+			a.params.warp + ', ' + a.params.pull + ', ' + a.params.sharpness + ')'
+	},
+	{
+		key: 'blobs',
+		label: 'Metaballs',
+		group: 'Pattern',
+		inputs: [
+			{ name: 'uv', type: 'vec2', default: 'vUv' },
+			// one extra blob that follows whatever is wired here (the Pointer); unwired = none
+			{ name: 'attract', type: 'vec2', default: 'vec2(-10.0)' }
+		],
+		params: [
+			{ name: 'count', type: 'float', default: 5, uniform: true },
+			{ name: 'radius', type: 'float', default: 0.12, uniform: true },
+			{ name: 'speed', type: 'float', default: 0.5, uniform: true },
+			{ name: 'smoothness', type: 'float', default: 0.12, uniform: true },
+			{ name: 'softness', type: 'float', default: 0.01, uniform: true },
+			{ name: 'attractRadius', type: 'float', default: 0.1, uniform: true }
+		],
+		nativeType: 'vec2',
+		outputs: [
+			{ name: 'mask', type: 'float', suffix: '.y' },
+			{ name: 'sdf', type: 'float', suffix: '.x' }
+		],
+		requires: ['uv', 'time'],
+		preludeDeps: ['noise', 'smoothMin'],
+		// up to eight drifting circles merged with a smooth minimum (an SDF), so they melt
+		// into each other like a lava lamp. Positions hash from the blob index: every peer
+		// draws the same blobs at the same moment
+		prelude:
+			'vec2 tpBlobs(vec2 uv, vec2 extra, float count, float radius, float t, float k, float soft, float extraR) {\n' +
+			'  float d = 1000.0;\n' +
+			'  for (int i = 0; i < 8; i++) {\n' +
+			'    if (float(i) >= count) break;\n' +
+			'    float fi = float(i);\n' +
+			'    vec2 h = vec2(tpHash21(vec2(fi, 3.1)), tpHash21(vec2(7.7, fi)));\n' +
+			'    vec2 c = 0.5 + 0.32 * vec2(sin(t * (0.5 + h.x) + h.y * 6.2831853), cos(t * (0.4 + h.y * 0.8) + h.x * 6.2831853));\n' +
+			'    float r = radius * (0.7 + 0.6 * tpHash21(vec2(fi, 11.0)));\n' +
+			'    d = tpSmin(d, length(uv - c) - r, k);\n' +
+			'  }\n' +
+			'  if (extra.x > -5.0 && extraR > 0.0) d = tpSmin(d, length(uv - extra) - extraR, k);\n' +
+			'  float s = max(soft, 0.0005);\n' +
+			'  return vec2(d, 1.0 - smoothstep(-s, s, d));\n' +
+			'}\n',
+		emit: (a) =>
+			'tpBlobs(' + a.in.uv + ', ' + a.in.attract + ', ' + a.params.count + ', ' + a.params.radius + ', uShaderTime * ' +
+			a.params.speed + ', ' + a.params.smoothness + ', ' + a.params.softness + ', ' + a.params.attractRadius + ')'
+	},
+	{
+		key: 'smoothMin',
+		label: 'Smooth min',
+		group: 'Math',
+		inputs: [
+			{ name: 'a', type: 'float', default: '0.0' },
+			{ name: 'b', type: 'float', default: '0.0' }
+		],
+		params: [{ name: 'k', type: 'float', default: 0.1, uniform: true }],
+		outputs: [{ name: 'out', type: 'float' }],
+		// the polynomial smooth minimum: min(a, b) with the corner rounded by k — how two
+		// distance fields MELT together instead of meeting at a crease
+		prelude:
+			'float tpSmin(float a, float b, float k) {\n' +
+			'  float h = clamp(0.5 + 0.5 * (b - a) / max(k, 0.0001), 0.0, 1.0);\n' +
+			'  return mix(b, a, h) - k * h * (1.0 - h);\n' +
+			'}\n',
+		emit: (a) => 'tpSmin(' + a.in.a + ', ' + a.in.b + ', ' + a.params.k + ')'
+	},
+	{
+		key: 'grain',
+		label: 'Film grain',
+		group: 'Pattern',
+		// gl_FragCoord: a pixel-locked pattern, so there is no vertex-stage meaning
+		stages: ['fragment', 'post', 'background'],
+		params: [
+			{ name: 'amount', type: 'float', default: 0.06, uniform: true },
+			{ name: 'size', type: 'float', default: 1.5, uniform: true },
+			{ name: 'animate', type: 'float', default: 1, uniform: true }
+		],
+		outputs: [{ name: 'out', type: 'float' }],
+		requires: ['time'],
+		preludeDeps: ['noise'],
+		// -amount/2 .. +amount/2 per screen pixel cell; ADD it to a colour. Re-rolled 24
+		// times a second on the shared clock when animate is 1
+		prelude:
+			'float tpGrain(vec2 px, float size, float t) {\n' +
+			'  vec2 cell = floor(px / max(size, 1.0));\n' +
+			'  return tpHash21(cell + floor(t * 24.0) * vec2(37.1, 17.3)) - 0.5;\n' +
+			'}\n',
+		emit: (a) =>
+			'(tpGrain(gl_FragCoord.xy, ' + a.params.size + ', uShaderTime * ' + a.params.animate + ') * ' + a.params.amount + ')'
+	},
+	{
+		key: 'rotateUv',
+		label: 'Rotate',
+		group: 'UV',
+		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv' }],
+		params: [
+			{ name: 'angle', type: 'float', default: 0, uniform: true },
+			{ name: 'speed', type: 'float', default: 0, uniform: true },
+			{ name: 'center', type: 'vec2', default: [0.5, 0.5], uniform: true }
+		],
+		outputs: [{ name: 'out', type: 'vec2' }],
+		requires: ['uv', 'time'],
+		// degrees, plus degrees per second on the shared clock
+		prelude:
+			'vec2 tpRotate(vec2 uv, vec2 c, float deg) {\n' +
+			'  float r = radians(deg);\n' +
+			'  float s = sin(r), k = cos(r);\n' +
+			'  vec2 p = uv - c;\n' +
+			'  return vec2(k * p.x - s * p.y, s * p.x + k * p.y) + c;\n' +
+			'}\n',
+		emit: (a) =>
+			'tpRotate(' + a.in.uv + ', ' + a.params.center + ', ' + a.params.angle + ' + uShaderTime * ' + a.params.speed + ')'
+	},
+
+	// ---- background inputs (65 M2: the layer's own uniforms — background stage only) ----
+	{
+		key: 'pointer',
+		label: 'Pointer',
+		group: 'Background',
+		stages: ['background'],
+		// smoothed, in the layer's own 0..1 space (the screen, the plane's UVs, or where the
+		// right controller points on the VR sphere). LOCAL: each viewer's own pointer moves
+		// their own background — nothing is sent
+		nativeType: 'vec4',
+		outputs: [
+			{ name: 'position', type: 'vec2', suffix: '.xy' },
+			{ name: 'velocity', type: 'vec2', suffix: '.zw' }
+		],
+		emit: () => 'uPointer'
+	},
+	{
+		key: 'scroll',
+		label: 'Scroll',
+		group: 'Background',
+		stages: ['background'],
+		nativeType: 'vec2',
+		outputs: [
+			{ name: 'progress', type: 'float', suffix: '.x' },
+			{ name: 'speed', type: 'float', suffix: '.y' }
+		],
+		emit: () => 'uScroll'
+	},
+	{
+		key: 'aspectUv',
+		label: 'Aspect-correct UV',
+		group: 'Background',
+		stages: ['background'],
+		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv' }],
+		outputs: [{ name: 'out', type: 'vec2' }],
+		requires: ['uv'],
+		// stretches x by the layer's width/height about the centre, so a circle stays round
+		// on a wide screen (wire the Pointer's position through one too, to compare them)
+		emit: (a) => '((' + a.in.uv + ' - 0.5) * vec2(uAspect, 1.0) + 0.5)'
+	},
+	{
+		key: BACKGROUND_OUTPUT_NODE,
+		label: 'Background output',
+		group: 'Output',
+		stages: ['background'],
+		inputs: [
+			{ name: 'color', type: 'vec3', default: null },
+			// unwired: opaque. Below 1 shows what is behind — the sky in screen mode, the
+			// plane's own material in plane mode
+			{ name: 'alpha', type: 'float', default: '1.0' }
 		],
 		outputs: []
 	},
@@ -871,6 +1180,22 @@ const DOCS = {
 	bayer: 'An ordered-dither threshold pattern locked to the pixel grid, 0..1. Add it (minus a half) before Posterise for retro dithering; scale grows the cells.',
 	edgeDetect: 'A line strength, 0..1, where depth or normals change sharply — silhouettes and creases. Mix a line colour over the scene colour by it for an ink look.',
 	ambientOcclusion: 'A cheap screen-space occlusion from depth alone, 0 open to 1 tucked into a corner. Darken the scene colour by it for contact shading you can tune in a graph.',
+
+	// patterns (65 M2)
+	fbm: 'Layered gradient noise, 0..1: soft clouds, smoke, marble. More octaves add finer detail; on a headset or phone the background layer caps them so the same graph stays within budget.',
+	domainWarp: 'Pushes UV along two slowly drifting noise fields — the liquid, flowing look of a fluid background. Feed its output into anything that takes a UV.',
+	meshGradient: 'Four colours pinned to four drifting points and blended smoothly: the modern mesh-gradient backdrop. Wire the Pointer into focus to pull the first colour towards it.',
+	blobs: 'Up to eight drifting circles that melt into each other (metaballs, a lava lamp). Mask is 0..1 inside; sdf is the signed distance for glows and outlines. Wire the Pointer into attract for a blob that follows it.',
+	smoothMin: 'The smaller of two distances with the corner rounded off by k, so two shapes merge softly instead of meeting at a crease.',
+	grain: 'Per-pixel film grain centred on zero — add it to a colour to break up banding in smooth gradients. Animate 1 re-rolls it 24 times a second.',
+	rotateUv: 'Turns UV about a centre by an angle in degrees, plus a spin speed in degrees per second.',
+
+	// background inputs (65 M2)
+	pointer: "Where this viewer's pointer is over the background (0..1, smoothed) and how fast it is moving. In VR it is where the right controller points. Local to each viewer: nothing is sent.",
+	scroll: 'How far the page has scrolled (0..1) and how fast — for scroll-driven heroes and embeds. In the editor the mouse wheel over the background nudges it.',
+	aspectUv: 'UV stretched to the layer\'s width/height, so circles stay round on a wide screen. Put the Pointer\'s position through one too before comparing the two.',
+	[BACKGROUND_OUTPUT_NODE]:
+		'The background graph\'s output: the colour drawn behind the scene (full screen, on a picked plane, or on a big sphere around you in VR). Alpha below 1 lets what is behind show through.',
 
 	// output
 	[POST_OUTPUT_NODE]:

@@ -120,6 +120,7 @@ export const DEBUG_HOOKS = [
 	['hdriStores', () => import('./hdri/skyEnv.js')],
 	['hdriCore', () => import('./hdri/hdriCore.js')],
 	['hdriPrefs', () => import('./hdri/hdriPrefs.js')],
+	['hdriSky', () => import('./hdri/skyFetch.js')], // 59 T3: skyUrl / cachedSkies
 	['sceneMusic', () => import('./sceneMusic')],
 	['animatedImports', () => import('./animatedImports')],
 	['fileHandler', () => import('./fileHandler.svelte')],

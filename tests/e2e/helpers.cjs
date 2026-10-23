@@ -651,6 +651,42 @@ const MODULES_REPO =
 			require('path').resolve(__dirname, '../../../modules')
 		].find((p) => require('fs').existsSync(p)) ??
 		require('path').resolve(__dirname, '../../../theprototype.app-modules')) + '/';
+// 59 T3: the bundled skies live in the PACKS repo's hdri/ now and the app fetches them from the
+// ref-pinned jsDelivr mirror. Until a packs tag carries them (and for offline runs), a suite serves
+// them from a sibling packs checkout: SKIES_DIR (env) wins, then ../packs/hdri, then a packs lane
+// worktree's. `routeSkies` is OPT-IN (a route disables the context's HTTP cache — never global):
+// it counts every sky request, can BLOCK them all (the CDN-down case) and passes through to the
+// real CDN when no local copy exists (E2E_SKIES_CDN=1 forces that: the post-tag proof).
+const SKIES_DIR = (() => {
+	const path = require('path');
+	const fs = require('fs');
+	if (process.env.SKIES_DIR) return path.resolve(process.env.SKIES_DIR);
+	const root = path.resolve(__dirname, '../../..');
+	const lanes = fs.existsSync(root) ? fs.readdirSync(root).filter((d) => /^packs-lane-59-/.test(d)).sort() : [];
+	return [path.join(root, 'packs/hdri'), ...lanes.map((d) => path.join(root, d, 'hdri'))].find((d) => fs.existsSync(path.join(d, 'meadow_2_1k.hdr'))) ?? null;
+})();
+/**
+ * @param {any} target a page or a browser context
+ * @param {{block?: boolean}} [opts]
+ * @returns {Promise<{hits: string[], count: () => number, dir: string | null}>}
+ */
+async function routeSkies(target, opts = {}) {
+	const fs = require('fs');
+	const path = require('path');
+	/** @type {string[]} */
+	const hits = [];
+	await target.route(/\/hdri\/[^/?#]+\.hdr(\?.*)?$/, async (/** @type {any} */ route) => {
+		const url = route.request().url();
+		// the app's own origin (a custom upload is never fetched by URL; an export's copy is) passes
+		if (url.startsWith(URL)) return route.continue();
+		hits.push(url);
+		if (opts.block) return route.abort('internetdisconnected');
+		const file = SKIES_DIR && !process.env.E2E_SKIES_CDN ? path.join(SKIES_DIR, path.basename(new globalThis.URL(url).pathname)) : null;
+		if (file && fs.existsSync(file)) return route.fulfill({ status: 200, body: fs.readFileSync(file), headers: { 'content-type': 'application/octet-stream', 'access-control-allow-origin': '*' } });
+		return route.continue();
+	});
+	return { hits, count: () => hits.length, dir: SKIES_DIR };
+}
 function moduleZipPath(id) {
 	return MODULES_REPO + id + '.zip';
 }
@@ -1061,4 +1097,4 @@ function envelopeDelta(a, b) {
 	return { maxDelta, meanDelta: n ? sum / n : 0, worstSlice };
 }
 
-module.exports = { URL, GPU_ARGS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta };
+module.exports = { URL, GPU_ARGS, routeSkies, SKIES_DIR, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta };

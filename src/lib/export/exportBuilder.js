@@ -284,19 +284,23 @@ export async function buildExport(opts, onProgress = () => {}) {
 		}
 	);
 	// 37-hdri: the bundled HDRIs are not in the manifest (export-manifest.cjs) — copy only the one
-	// this scene's environment shows, at the same relative path the runtime fetches it from
+	// this scene's environment shows, at the same relative path the runtime fetches it from.
+	// 59 T3: they are not in the deployment at all any more — the bytes come from the sky cache or
+	// the CDN (fetchSky), and the export still carries its own copy (an export never needs the CDN)
 	{
 		const { presetPayload } = await import('../environment');
 		const { hdriOf } = await import('../hdri/hdriCore.js');
 		const { bundledHdri } = await import('../hdri/catalog.js');
+		const { fetchSky } = await import('../hdri/skyFetch.js');
 		const row = bundledHdri(hdriOf(presetPayload())?.src ?? '');
 		if (row) {
-			const res = await fetch(pageUrl(row.file));
-			if (res.ok) {
-				const bytes = new Uint8Array(await res.arrayBuffer());
+			try {
+				const bytes = new Uint8Array(await fetchSky(row.file));
 				out[row.file] = bytes;
 				breakdown.runtime += bytes.byteLength;
-			} else warnings.push(`The sky image ${row.file} could not be copied (HTTP ${res.status}) — the export shows its flat sky.`);
+			} catch (err) {
+				warnings.push(`The sky image ${row.file} could not be copied (${String(/** @type {any} */ (err)?.message ?? err)}) — the export shows its flat sky.`);
+			}
 		}
 	}
 	const indexRes = await fetch(pageUrl('index.html'));

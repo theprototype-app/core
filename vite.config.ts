@@ -185,6 +185,28 @@ function thirdPartyNotices(): Plugin {
 	};
 }
 
+// 65 M7: THE WEBSITE SECTION RUNTIME. An exported section is ONE <script> that must run on a page with
+// nothing else loaded, so its code cannot be a chunk of this app: `virtual:tp-hero-runtime` bundles
+// src/lib/recording/heroRuntime.js (+ the anime.js v4 animation module it imports, tree-shaken, and
+// heroMath.js) with rolldown into a minified IIFE (`var TPHero=...`) and serves it as a STRING. The app
+// only ever imports it lazily (heroExport.js), so it adds nothing to the boot graph.
+function tpHeroRuntime(): Plugin {
+	const ID = 'virtual:tp-hero-runtime';
+	const { bundleHeroRuntime } = createRequire(import.meta.url)('./scripts/hero-runtime.cjs');
+	return {
+		name: 'tp:hero-runtime',
+		resolveId(id) {
+			return id === ID ? '\0' + ID : null;
+		},
+		async load(id) {
+			if (id !== '\0' + ID) return null;
+			const { code, files } = await bundleHeroRuntime();
+			for (const f of files) this.addWatchFile(f);
+			return 'export default ' + JSON.stringify(code) + ';';
+		}
+	};
+}
+
 export default defineConfig({
 	define: {
 		__APP_VERSION__: JSON.stringify(pkg.version),
@@ -200,6 +222,7 @@ export default defineConfig({
 			devAssetProxy(),
 			emitVersionJson(),
 			thirdPartyNotices(),
+			tpHeroRuntime(), // 65 M7
 			sveltekit()
 		],
 		// the transform above only reaches @shaderfrog/core if it is served as SOURCE:
@@ -221,7 +244,8 @@ export default defineConfig({
 			// 46: the optimizer Worker's dependencies, for the same reason as the simplifier above — the
 			// first optimize (an import, a Quest export) discovered them and reloaded the page mid-export
 			// 46-media H1: libheif's loader is CJS reached only from inside the HEIC worker — the same rule
-			include: ['lodash.groupby', 'meshoptimizer/simplifier', '@codemirror/state', '@codemirror/language', '@lezer/highlight', 'meshoptimizer', '@gltf-transform/core', '@gltf-transform/extensions', '@gltf-transform/functions', 'ktx-parse', 'libheif-js/libheif-wasm/libheif.js']
+			// 65 M4: mediabunny + gifenc are reached only by the video export's lazy import — the same rule
+			include: ['lodash.groupby', 'meshoptimizer/simplifier', '@codemirror/state', '@codemirror/language', '@lezer/highlight', 'meshoptimizer', '@gltf-transform/core', '@gltf-transform/extensions', '@gltf-transform/functions', 'ktx-parse', 'libheif-js/libheif-wasm/libheif.js', 'mediabunny', 'gifenc']
 		},
 	// dev https via the repo's local certs (vite-plugin-mkcert stayed on vite<=5;
 	// certs/ was already how CI-less https worked before mkcert)

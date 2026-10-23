@@ -117,7 +117,8 @@ h.run(async () => {
 	// Soft gradient applied last is STILL by design (it moves only with the pointer), so a preset
 	// that reads the clock goes on first — and the premise says so.
 	await page.evaluate(() => window.__stores.backgroundPresets.applyBackgroundPreset('noise-flow'));
-	await h.eventually(() => bg(page), (s) => s.compiled && s.preset === 'noise-flow', 'noise-flow back', 8000).catch(() => {});
+	// the compile is debounced: `preset` changes at once, the IR (and usesClock) a moment later
+	await h.eventually(() => bg(page), (s) => s.compiled && s.preset === 'noise-flow' && s.usesClock, 'noise-flow compiled', 8000).catch(() => {});
 	const clocked = (await bg(page)).usesClock;
 	h.check(clocked === true, 'premise: Noise flow reads the shared clock (usesClock ' + clocked + ')');
 	await page.waitForTimeout(400);
@@ -169,7 +170,7 @@ h.run(async () => {
 		const saved = s.shaderGraph.shaderGraphsSnapshot({ pruneMissing });
 		return { keys: Object.keys(saved), layer: saved.background?.layer, preset: saved.background?.preset };
 	});
-	h.check(snap.keys.includes('background') && snap.preset === 'soft-gradient', '4.1 the background survives the SAVE snapshot (pruneMissing no longer drops scene documents): ' + JSON.stringify(snap));
+	h.check(snap.keys.includes('background') && snap.preset === 'noise-flow', '4.1 the background survives the SAVE snapshot (pruneMissing no longer drops scene documents): ' + JSON.stringify(snap));
 	const sel = await page.evaluate((u) => Object.keys(window.__stores.sessions?.buildSelectionPayload?.('sel', [u])?.shaderGraphs ?? { na: 1 }), uuid);
 	h.check(!sel.includes('background'), '4.2 ...and a SELECTION (a prefab) carries no background: ' + JSON.stringify(sel));
 

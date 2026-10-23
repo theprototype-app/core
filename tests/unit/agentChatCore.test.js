@@ -198,7 +198,7 @@ describe('thread, history, backlog, files', () => {
 		expect(backlog[2]).toMatchObject({ role: 'user', via: 'cli' });
 		// relayed by the HOST, the agent's lines keep their own sender
 		const late = applyAgentChat(emptyState(), HOST, { type: 'agentchat', backlog }, 600);
-		expect(late.chats.c1.messages.map((m) => m.from)).toEqual([HOST, AG, AG]);
+		expect(late.chats.c1.messages.map((/** @type {any} */ m) => m.from)).toEqual([HOST, AG, AG]);
 		expect(late.chats.c1.messages[2].kind).toBe('cli');
 	});
 	it('a saved chat loads and round-trips through its record', () => {
@@ -236,5 +236,12 @@ describe('the wire row and the viewer floor', async () => {
 		} finally {
 			setCapabilityProvider(null);
 		}
+	});
+});
+
+describe('runningRequest with two requests in flight', () => {
+	it('a final reply to the first does not close the second', () => {
+		const s = run([[HOST, req()], [VIEW, req({ id: 'r2', from: VIEW, text: 'what is this?', at: 105 })], [AG, rep({ text: 'Done', partial: undefined, at: 120 })]]);
+		expect(runningRequest(s.chats.c1)?.id).toBe('r2');
 	});
 });

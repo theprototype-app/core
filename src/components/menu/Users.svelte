@@ -125,6 +125,8 @@
 	import { phoneShell } from '$lib/ui/phoneShell.js';
 	import CloudSlot from '../CloudSlot.svelte';
 	import { usersSlot, profileSlot, rolesInfo, scenePresence } from '$lib/cloudHooks';
+	import { agentChatState, agentStatusOf, stopAgent, muteAgent, canMuteAgents, canStop } from '$lib/agentChat'; // 56 C5/C6
+	import { runningRequest, samePeer } from '$lib/agentChatCore';
 	import { safeStorage } from '$lib/safeStorage';
 	// 45 N4: a pinned / closed right sidebar moves the profile circle while its menu may be open
 	import { geometry as sidebarGeometry } from '$lib/sidebars';
@@ -213,6 +215,13 @@
 		e.stopPropagation();
 	}
 
+	/** 56: the requests an agent is answering now, across the scene's chats @param {string} agentId */
+	function agentRuns(agentId: string): any[] {
+		return Object.values($agentChatState.chats)
+			.filter((c: any) => samePeer(c.agent, agentId))
+			.map((c: any) => runningRequest(c))
+			.filter(Boolean);
+	}
 	function nameOf(peerId: string) {
 		return (($userdata as any[]).find((u) => u[0] === peerId)?.[1]) || shortId(peerId).toUpperCase();
 	}
@@ -275,6 +284,8 @@
 				editingUuid: (($lockedObjects as any[]).find((l) => l[0] === id)?.[1]) || '',
 				hasLook: !!row?.[5] && Object.keys(row[5]).length > 0,
 				isAgent: row?.[6]?.kind === 'agent',
+				agentBusy: agentRuns(id).length > 0,
+				agentMuted: !!agentStatusOf($agentChatState, id)?.muted,
 				inviteId,
 				requestAsked: $sceneAccessAsked.includes(id),
 				canInvite: typeof $scenePresence?.invite === 'function',
@@ -292,6 +303,8 @@
 				showEditing: () => showEditing(id),
 				copyLook: () => copyLookOf(id),
 				toggleMute: () => toggleMutePeer(id),
+				agentStop: agentRuns(id).some((r) => canStop(r)) ? () => stopAgent(id) : undefined,
+				agentMute: row?.[6]?.kind === 'agent' && canMuteAgents() ? () => muteAgent(id, !agentStatusOf($agentChatState, id)?.muted) : undefined,
 				requestAccess: () => askForScene(id),
 				invite: () => $scenePresence?.invite?.(id),
 				toggleHide: () => setPeerHidden(id),

@@ -127,7 +127,8 @@ export function cleanMessage(d, now = Date.now()) {
 /** the agent a thread message belongs to: a request's `to`, everyone else's `from` @param {any} m */
 export const agentOf = (m) => (m.kind === 'request' ? m.to : m.from);
 
-/** @returns {{chats: Record<string, any>, agents: Record<string, any>}} */
+/** @typedef {{chats: Record<string, any>, agents: Record<string, any>}} AgentChatState */
+/** @type {() => AgentChatState} */
 export const emptyState = () => ({ chats: {}, agents: {} });
 
 /** @param {any[]} list */
@@ -159,7 +160,7 @@ export function mergeMessage(list, m) {
 
 /**
  * Put a clean message into its chat (creating the chat), capped.
- * @param {ReturnType<typeof emptyState>} state @param {any} m
+ * @param {AgentChatState} state @param {any} m
  */
 function putMessage(state, m) {
 	const had = state.chats[m.chatId];
@@ -169,6 +170,7 @@ function putMessage(state, m) {
 	const messages = mergeMessage(chat.messages, m);
 	if (had && messages === had.messages) return state;
 	const updatedAt = Math.max(chat.updatedAt ?? 0, m.at);
+	/** @type {Record<string, any>} */
 	let chats = { ...state.chats, [m.chatId]: { ...chat, agent: chat.agent || agent, messages, updatedAt } };
 	const ids = Object.keys(chats);
 	if (ids.length > CHATS_CAP) {
@@ -182,7 +184,8 @@ function putMessage(state, m) {
 /**
  * THE REDUCER: an `agentchat` message from `fromPeer`. Returns the same state when nothing
  * changed (so a store can skip the set).
- * @param {ReturnType<typeof emptyState>} state @param {string} fromPeer @param {any} d @param {number} [now]
+ * @param {AgentChatState} state @param {string} fromPeer @param {any} d @param {number} [now]
+ * @returns {AgentChatState}
  */
 export function applyAgentChat(state, fromPeer, d, now = Date.now()) {
 	const kind = kindOf(d);
@@ -226,7 +229,7 @@ export function applyAgentChat(state, fromPeer, d, now = Date.now()) {
 
 /**
  * The agent dropped off: it is away (its chats stay — they are history).
- * @param {ReturnType<typeof emptyState>} state @param {string} peerId @param {number} [now]
+ * @param {AgentChatState} state @param {string} peerId @param {number} [now]
  */
 export function agentGone(state, peerId, now = Date.now()) {
 	const key = Object.keys(state.agents).find((k) => samePeer(k, peerId));
@@ -243,12 +246,10 @@ export function runningRequest(chat) {
 	const list = chat?.messages ?? [];
 	for (let i = list.length - 1; i >= 0; i--) {
 		const m = list[i];
-		if (m.kind === 'reply' && !m.partial && !m.replyTo) continue; // the agent speaking up does not close a request
-		if (m.kind === 'reply' && !m.partial) return null;
 		if (m.kind === 'ask') return null; // it asked back: the turn is the person's
 		if (m.kind === 'request') {
 			if (m.cancelled) return null;
-			const answered = list.some((r) => r.kind === 'reply' && r.replyTo === m.id && !r.partial);
+			const answered = list.some((/** @type {any} */ r) => r.kind === 'reply' && r.replyTo === m.id && !r.partial);
 			return answered ? null : m;
 		}
 	}
@@ -292,7 +293,7 @@ export function chatTitle(chat) {
 /**
  * The history list: in-memory chats + the scene's saved ones (`files`, the .tpchat store's
  * rows), one row per chat id, newest first, filtered by `query` (title or agent label).
- * @param {ReturnType<typeof emptyState>} state @param {any[]} files @param {string} [query]
+ * @param {AgentChatState} state @param {any[]} files @param {string} [query]
  * @param {(agentId: string) => string} [labelOf]
  */
 export function historyRows(state, files = [], query = '', labelOf = () => '') {
@@ -323,7 +324,7 @@ export function historyRows(state, files = [], query = '', labelOf = () => '') {
 /**
  * The late joiner's share: the newest BACKLOG_CAP thread messages across chats, as wire
  * messages, image BYTES dropped (the .tpchat file carries those; the handshake stays small).
- * @param {ReturnType<typeof emptyState>} state
+ * @param {AgentChatState} state
  */
 export function backlogOf(state) {
 	const all = byTime(Object.values(state.chats).flatMap((c) => c.messages));
@@ -338,7 +339,7 @@ export function backlogOf(state) {
 /**
  * Load a saved chat (the .tpchat store's `readChat`) into the state, its messages cleaned
  * like any arriving ones.
- * @param {ReturnType<typeof emptyState>} state @param {any} saved @param {number} [now]
+ * @param {AgentChatState} state @param {any} saved @param {number} [now]
  */
 export function loadChat(state, saved, now = Date.now()) {
 	if (!saved || !isId(saved.id) || !Array.isArray(saved.messages)) return state;

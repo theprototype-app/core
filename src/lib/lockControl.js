@@ -101,7 +101,10 @@ export function startLockSweep() {
 			locks.filter((l) => {
 				if (l[0] === peer.peer.id) return true;
 				const conn = peer.connections[l[0]];
-				return !!(conn && conn.open);
+				// test-health-1: mid-blip the holder's conn is down but the reconnect window still runs —
+				// their lock survives until finalizeDisconnect decides (the rule checkLocks keeps, B5).
+				// Without it a sweep landing inside a drop released a live peer's locks (net-drop HARD).
+				return !!(conn && conn.open) || !!peer.reconnecting?.has(l[0]);
 			})
 		);
 	}, 60000);

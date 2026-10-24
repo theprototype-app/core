@@ -179,6 +179,11 @@ export function createPeer() {
 // remote had already adopted as its send channel. Killing young conns is how
 // mesh formation shredded itself above ~5 peers.
 const DIAL_GRACE_MS = 10000;
+/** test-health-1: what the reconnect window's FINAL verdict gives a dial still negotiating (either
+ * direction). Longer than DIAL_GRACE_MS on purpose: a redial after a 5 s drop starts late (when the
+ * signaling link returns) and measured ~12 s to open on a loaded box — the 10 s grace tore it down a
+ * second before it opened (net-drop HARD). A teardown is the expensive mistake here. */
+const VERDICT_GRACE_MS = 20000;
 // 27-F: the SIGNALING schedule — 800ms doubling to a 8s ceiling, forever, +/-25% so a
 // room full of tabs does not return in lockstep. Separate from the per-peer conn
 // backoff below, which is bounded on purpose (a peer really can be gone).
@@ -282,6 +287,11 @@ export class PeerConnection {
 		 * toast) waits until the backoff exhausts; checkLocks keeps the peer's
 		 * locks and roster entry alive for the window (B5, 172 deferred item 1) */
 		this.reconnecting = new Map();
+		// test-health-1: inbound dials from a peer in the reconnect window, while they negotiate
+		// (the higher id only ever heals through one) — scheduleReconnect's final verdict waits
+		// for them as it waits for its own dial
+		/** @type {Map<string, any>} */
+		this.inboundDials = new Map();
 		/** @type {Set<string>} peers that ANNOUNCED they were leaving (the
 		 * `disconnected` self-message) — their close is expected, don't redial */
 		this.gracefulLeft = new Set();
@@ -393,7 +403,20 @@ export class PeerConnection {
 			cancelTimers();
 			const old = this.peer;
 			if (old) retired.add(old);
-			try { old.destroy(); } catch (e) { /* already gone */ }
+			// test-health-1: rebuilding the SIGNALING link must not cut the PEER links. destroy() closes
+			// every DataConnection the old Peer owns (peerjs _cleanup), and an open DataConnection needs
+			// no server — so a reconnect that stalled (watchOpen, 10 s after a wifi drop) used to end
+			// every live conn with it and push them all into the reconnect window. disconnect() drops the
+			// server socket only ("does not close any active connections"); the old Peer is retired, so
+			// none of its handlers act again. Nothing open to keep -> destroy, as before.
+			const keepLinks = !!old && !old.destroyed && Object.values(this.connections).some((/** @type {any} */ c) => c?.open);
+			try { if (keepLinks) old.disconnect(); else old.destroy(); } catch (e) { /* already gone */ }
+			// …but only the OPEN links survive: a conn still negotiating needed the old socket for its
+			// answer and candidates and can never finish now — close it exactly as destroy() did, so its
+			// close runs the usual paths (reconnect window / mesh restore) instead of wedging
+			if (keepLinks)
+				for (const c of Object.values(this.connections))
+					if (c && !(/** @type {any} */ (c).open)) try { /** @type {any} */ (c).close(); } catch (e) { /* never opened */ }
 			createPeerForMode(!!forcePublic);
 			attachVoiceToPeer(this); // rebind the incoming-call handler to the new peer
 			wire();
@@ -505,6 +528,22 @@ export class PeerConnection {
 			this.signalingNotified = false;
 			peers.update((value) => value); // the dot reads peer.open: tick the store
 			this.reconnectAttempts = 0; // a fresh/re-established server link resets the backoff
+			// test-health-1: the window's dials while the server was unreachable never left
+			// (`peer.connect` is undefined with the link down) — redial NOW, not on the next
+			// backoff tick, which can be the verdict-only one (a 5 s wifi drop: no dial until 7.5 s)
+			// A dial still un-open at this moment was made while the link was down — its offer never
+			// reached the server, yet it holds the slot until its DIAL_GRACE expires, and after a 5 s
+			// drop that is past the window's last dial (net-drop HARD: the session tore down with one
+			// such dial "negotiating" for 15 s). Replace it (delete first, so onConnClose ignores the
+			// close of a conn we no longer hold).
+			for (const peerId of this.reconnecting.keys()) {
+				const stale = this.connections[peerId];
+				if (stale && !stale.open) {
+					delete this.connections[peerId];
+					try { stale.close(); } catch (e) { /* never opened */ }
+				}
+				this.reconnectDial(peerId);
+			}
 			if (this.updateIdFn) this.updateIdFn(id);
 			if (!window.location.hash.slice(1)) return;
 			let connect = window.location.hash.slice(1).toLocaleLowerCase()
@@ -769,6 +808,12 @@ export class PeerConnection {
 				conn.close();
 			}
 
+			// test-health-1: an inbound redial from a peer we are waiting for is a heal in progress
+			if (this.reconnecting.has(conn.peer)) {
+				/** @type {any} */ (conn).__dialedAt = Date.now();
+				this.inboundDials.set(conn.peer, conn);
+			}
+
 			// ADOPT an open inbound conn as our send channel when our outgoing one
 			// is dead (P-A find): the host closes the joiner's original conn before
 			// approving, the close is often never signaled, and the fresh reopen can
@@ -789,8 +834,9 @@ export class PeerConnection {
 				// relationship, or a reconnect resyncing what the blip dropped. A
 				// mesh-fill adoption asking a JOINER for its objects was pure
 				// duplication — and could pop a bogus share-or-stash prompt (B5).
-				const wantState = this.wantsStateFrom.has(conn.peer) || this.reconnecting.has(conn.peer);
-				this.sendHandshake(conn, conn.peer, wantState, this.peer.id);
+				const healing = this.reconnecting.has(conn.peer);
+				const wantState = this.wantsStateFrom.has(conn.peer) || healing;
+				this.sendHandshake(conn, conn.peer, wantState, this.peer.id, { heal: healing });
 			});
 
 			this.wireData(conn);
@@ -1543,8 +1589,9 @@ export class PeerConnection {
 
 	// Send the initial handshake (locks, known hosts, whitelist, object/node sync requests).
 	// Must only be called once the connection is open — messages sent earlier are dropped by peerjs.
-	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id */
-	sendHandshake(conn, peerId, getobjects, id) {
+	/** @param {any} conn @param {string} peerId @param {boolean} getobjects @param {string} id
+	 * @param {{heal?: boolean}} [opts] heal: this conn REPLACES one that dropped (the reconnect window) */
+	sendHandshake(conn, peerId, getobjects, id, opts = {}) {
 		// 25-F: an approval dial-back SAYS it is one, ahead of everything else (the roadmap's
 		// "first message"). The metadata already carried it; this is the same answer for a
 		// peer that reads messages rather than metadata, and it is idempotent on a joiner
@@ -1616,7 +1663,10 @@ export class PeerConnection {
 		// DECISION: there is no decision here, and the ask comes back the moment we share or
 		// rejoin (both end in a full-state re-sync of their own).
 		const secret = hostsPrivate;
-		const holdContent = secret || (getobjects && connectDecisionApplies(get(sessionHost) === peerId, myScene()?.scene ?? ''));
+		// test-health-1: the connect decision is a FIRST-CONTACT question; a healed conn is the same
+		// session coming back, so it never holds (it deferred our state for a decision nobody asked:
+		// net-drop HARD healed, open both ways, and no edit crossed)
+		const holdContent = secret || (getobjects && !opts.heal && connectDecisionApplies(get(sessionHost) === peerId, myScene()?.scene ?? ''));
 		if (holdContent && !secret) noteHandshakeDeferred(peerId);
 		if (!holdContent) {
 			conn.send(environmentState())
@@ -1633,7 +1683,10 @@ export class PeerConnection {
 		conn.send(handModelState())
 		conn.send(envPresetsState())
 		conn.send(materialPresetsState())
-		if (getobjects && !holdContent) this.requestFullState(conn)
+		// test-health-1: a HEALED conn re-syncs as `arriving` — what each side holds is the same room's
+		// scene, so it is not two worlds merging: without the flag the far side asked share-or-stash
+		// and its gate DROPPED everything we sent (net-reconnect / net-drop: open both ways, edits lost)
+		if (getobjects && !holdContent) this.requestFullState(conn, opts.heal ? { arriving: true } : {})
 		// singleton PUSH, like environmentState/scenePhysicsState above
 		if (!holdContent) conn.send(gameStatePayload())
 		// 34 R2: the kit document, the same singleton push (its events are NOT sent: history fires nothing)
@@ -1860,6 +1913,24 @@ export class PeerConnection {
 	scheduleReconnect(peerId, attempt) {
 		const delay = backoffDelay(attempt, { base: 500, max: 5 });
 		if (delay === null) {
+			// test-health-1: the verdict waits out a dial that is still negotiating, either way
+			// round (6-12 s measured on a loaded box, VERDICT_GRACE_MS). After a 5 s drop the
+			// first dial that can leave goes out at ~5-7.5 s, so tearing down at 15.5 s killed
+			// heals in flight: "disconnected" toasts and a dead session (net-drop HARD).
+			const inFlight = [this.connections[peerId], this.inboundDials.get(peerId)]
+				.filter((c) => c && !c.open)
+				.map((c) => VERDICT_GRACE_MS - (Date.now() - (c.__dialedAt ?? 0)))
+				.filter((left) => left > 0);
+			if (inFlight.length) {
+				this.reconnecting.set(peerId, attempt); // still in the window, under a fresh token
+				setTimeout(() => {
+					if (this.reconnecting.get(peerId) !== attempt) return; // healed, superseded or left
+					if (this.connections[peerId]?.open) { this.reconnecting.delete(peerId); this.inboundDials.delete(peerId); return; }
+					this.reconnecting.delete(peerId);
+					this.finalizeDisconnect(peerId, true);
+				}, Math.max(...inFlight));
+				return;
+			}
 			this.reconnecting.delete(peerId);
 			this.finalizeDisconnect(peerId, true);
 			return;
@@ -1869,7 +1940,7 @@ export class PeerConnection {
 			if (this.reconnecting.get(peerId) !== attempt) return; // superseded or cancelled
 			if (!this.openedPeers.has(peerId)) { this.reconnecting.delete(peerId); return; } // torn down elsewhere
 			const existing = this.connections[peerId];
-			if (existing?.open) { this.reconnecting.delete(peerId); return; } // healed (redial or adopted inbound)
+			if (existing?.open) { this.reconnecting.delete(peerId); this.inboundDials.delete(peerId); return; } // healed (redial or adopted inbound)
 			// a dial un-open past the dial grace is genuinely wedged — clear it.
 			// Anything younger is just negotiating (measured 6-9s on a loaded
 			// headless box; closing it early poisons the NEXT negotiation too —
@@ -1881,23 +1952,29 @@ export class PeerConnection {
 			// dial (lower id only), unless this is the verdict-only final check —
 			// a dial started now would be torn down before it could ever open
 			const lastCheck = backoffDelay(attempt + 1, { base: 500, max: 5 }) === null;
-			if (!this.connections[peerId] && !lastCheck && this.peer.id < peerId) {
-				const conn = this.peer.connect(peerId, dialOptions());
-				if (conn) {
-					/** @type {any} */ (conn).__dialedAt = Date.now();
-					this.connections[peerId] = conn;
-					conn.on('close', () => this.onConnClose(peerId, conn));
-					conn.on('open', () => {
-						log('info', 'net', 'reconnected', { peer: peerId });
-						this.reconnecting.delete(peerId);
-						peers.update((value) => value);
-						this.sendHandshake(conn, peerId, true, this.peer.id);
-					});
-					this.wireData(conn);
-				}
-			}
+			if (!lastCheck) this.reconnectDial(peerId);
 			this.scheduleReconnect(peerId, attempt + 1);
 		}, delay);
+	}
+
+	/** One reconnect-window dial: the lower id only, and never over a dial already in flight.
+	 * Called from the window's timers and when the signaling link comes back.
+	 * @param {string} peerId */
+	reconnectDial(peerId) {
+		if (this.connections[peerId] || !(this.peer.id < peerId)) return;
+		const conn = this.peer.connect(peerId, dialOptions());
+		if (!conn) return; // the signaling link is down: the next tick (or its return) redials
+		/** @type {any} */ (conn).__dialedAt = Date.now();
+		this.connections[peerId] = conn;
+		conn.on('close', () => this.onConnClose(peerId, conn));
+		conn.on('open', () => {
+			log('info', 'net', 'reconnected', { peer: peerId });
+			this.reconnecting.delete(peerId);
+			this.inboundDials.delete(peerId);
+			peers.update((value) => value);
+			this.sendHandshake(conn, peerId, true, this.peer.id, { heal: true });
+		});
+		this.wireData(conn);
 	}
 
 	// The peer is really gone: full per-peer teardown (self-heal — a relayed
@@ -1909,6 +1986,7 @@ export class PeerConnection {
 	/** @param {string} peerId @param {boolean} relay */
 	finalizeDisconnect(peerId, relay) {
 		this.reconnecting.delete(peerId);
+		this.inboundDials.delete(peerId);
 		const conn = this.connections[peerId];
 		if (conn) {
 			delete this.connections[peerId];
@@ -1947,6 +2025,7 @@ export class PeerConnection {
 		this.broadcast({ type: 'disconnected', peerId: this.peer.id });
 		dropPeerUnderlays(null); // 60 Q5: every peer's shared reference images go with the session
 		this.reconnecting.clear(); // pending retry timers see a cleared map and no-op
+		this.inboundDials.clear();
 		this.gracefulLeft.clear();
 		this.wantsStateFrom.clear();
 		// 60 Q2: every fast channel, sequence and owed keyframe goes with the session

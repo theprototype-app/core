@@ -252,6 +252,32 @@ async function setupPageQuiet(browser, name, others, options = {}) {
 
 /** Connect `from` to `to` (approve on `to`), then let the mesh settle. */
 async function connect(from, to, settleMs = 9000) {
+	// test-health-1: dial the id the page holds NOW. setupPage reads it before the signaling link
+	// has opened, and a page whose first id the server reports as taken re-rolls it
+	// (peerHandler 'unavailable-id') — behaviours dialled the stale id and waited 30 s for an
+	// Approve card that could never come. Wait (bounded) for both links, then re-read both ids.
+	for (const peer of [from, to]) {
+		const live = await peer.page
+			.waitForFunction(
+				() => {
+					/** @type {any} */ let p;
+					window.__stores.peers.subscribe((v) => (p = v))();
+					return p?.peer?.open && p.peer.id ? p.peer.id : false;
+				},
+				null,
+				{ timeout: 20000 }
+			)
+			.then((r) => r.jsonValue())
+			.catch(() => null);
+		if (live && live !== peer.id) {
+			console.log(`[helpers] ${peer.id} is ${live} now (the id was re-rolled)`);
+			peer.id = live;
+		}
+	}
+	// 44 M14: on a narrow window (net-stress's 800 px) the floating pill is SQUEEZED to its status dot,
+	// and the dial input shows only after a tap on it — press it first when it is what is there
+	const squeezedDot = from.page.locator('#connect-squeeze-dot');
+	if (await squeezedDot.isVisible().catch(() => false)) await squeezedDot.click();
 	await step(from, 'fill the peer id', () =>
 		from.page.locator('input[placeholder="Enter peer ID to connect"]').fill(to.id)
 	);
@@ -534,9 +560,9 @@ async function centeredClip(peer, world, size = 360) {
  * @param {any} page @param {Buffer} before @param {Buffer} after @param {number} [threshold]
  * @returns {Promise<{changed: number, total: number, fraction: number, mean: number, max: number, width: number, height: number, error?: string}>}
  */
-async function frameDelta(page, before, after, threshold = 6) {
+async function frameDelta(page, before, after, threshold = 6, skipTop = 0) {
 	return page.evaluate(
-		async ({ a, b, threshold, decodeSource }) => {
+		async ({ a, b, threshold, skipTop, decodeSource }) => {
 			const decode = eval(decodeSource);
 			const A = await decode(a);
 			const B = await decode(b);
@@ -545,7 +571,8 @@ async function frameDelta(page, before, after, threshold = 6) {
 			let changed = 0;
 			let sum = 0;
 			let max = 0;
-			for (let i = 0; i < A.data.length; i += 4) {
+			// skipTop: rows left out of the comparison (chrome a reference image captured over the canvas)
+			for (let i = skipTop * A.width * 4; i < A.data.length; i += 4) {
 				const delta =
 					Math.abs(A.data[i] - B.data[i]) +
 					Math.abs(A.data[i + 1] - B.data[i + 1]) +
@@ -554,7 +581,7 @@ async function frameDelta(page, before, after, threshold = 6) {
 				sum += delta;
 				if (delta > max) max = delta;
 			}
-			const total = A.data.length / 4;
+			const total = A.data.length / 4 - skipTop * A.width;
 			return {
 				changed,
 				total,
@@ -565,7 +592,7 @@ async function frameDelta(page, before, after, threshold = 6) {
 				height: A.height
 			};
 		},
-		{ a: before.toString('base64'), b: after.toString('base64'), threshold, decodeSource: DECODE_FN }
+		{ a: before.toString('base64'), b: after.toString('base64'), threshold, skipTop, decodeSource: DECODE_FN }
 	);
 }
 

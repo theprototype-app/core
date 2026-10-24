@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-22T17:48:57.949Z",
+	"recordedAt": "2026-10-24T15:10:13.838Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -1776,10 +1776,12 @@
 		},
 		"Storage used": {
 			"rows": [
+				"Cache size limit",
 				"Storage used"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"Optimize big models automatically": {
@@ -2971,11 +2973,13 @@
 		"network": {
 			"rows": [
 				"Apply changes",
+				"Cached downloads",
 				"Session size",
 				"Signaling server",
 				"Statistics card"
 			],
 			"sections": [
+				"Storage",
 				"VR",
 				"Connection"
 			]
@@ -3105,18 +3109,23 @@
 		},
 		"disk": {
 			"rows": [
+				"Storage breakdown",
 				"Storage used"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"quota": {
 			"rows": [
+				"Cache size limit",
+				"Storage breakdown",
 				"Storage used"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"toolbar": {
@@ -3332,6 +3341,7 @@
 				"Paste at the cursor",
 				"Pinch zoom",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -3470,6 +3480,8 @@
 		},
 		"files": {
 			"rows": [
+				"Cache size limit",
+				"Cached downloads",
 				"Delete without asking",
 				"Deleted files log",
 				"Download shared files automatically",
@@ -3484,7 +3496,8 @@
 				"Who can unshare a file"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"library": {
@@ -3740,6 +3753,7 @@
 				"Object list: show / bring to front / hide",
 				"Paste at the cursor",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -3862,6 +3876,7 @@
 				"Object list: show / bring to front / hide",
 				"Paste at the cursor",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -3985,6 +4000,7 @@
 				"Object list: show / bring to front / hide",
 				"Paste at the cursor",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -4419,6 +4435,7 @@
 		},
 		"ai": {
 			"rows": [
+				"Cached downloads",
 				"Colocation probe",
 				"Compress textures (KTX2)",
 				"Download shared files automatically",
@@ -4444,6 +4461,7 @@
 				"Reset tips",
 				"Reverse trackpad pan",
 				"Stance",
+				"Storage breakdown",
 				"Storage used",
 				"Teleport",
 				"Texture threshold",
@@ -4457,6 +4475,7 @@
 				"Shortcuts",
 				"Scene",
 				"Explorer",
+				"Storage",
 				"Import",
 				"Export",
 				"VR",

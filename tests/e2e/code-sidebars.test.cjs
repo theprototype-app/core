@@ -471,8 +471,11 @@ h.run(async () => {
 	await page.locator('#code-ws-confirm-all-discard').click();
 	await page.waitForTimeout(400);
 	h.check((await read(page, 'codeWorkspaceClose')) === true && (await read(page, 'codeWorkspace.codeTabs')).every((t) => t.code === t.saved || t.readOnly), 'S7: Don\'t save closes and throws the edits away');
-	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'cs-undo', graphId: 'scene' } }));
-	await page.waitForTimeout(600);
+	const reTab = await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'cs-undo', graphId: 'scene' } }));
+	// 50 Y1 (6e6c95ca): "Don't save" discards THIS view and leaves the room's shared buffer alone, so the
+	// reopen rejoins the edits; revert the shared copy (for everyone) to reach "nothing unsaved"
+	await S(page, (id) => window.__stores.codeWorkspace.reloadCodeTab(id), reTab);
+	await h.eventually(() => read(page, 'codeWorkspace.codeTabs'), (tabs) => tabs.every((t) => t.code === t.saved || t.readOnly), 'S7 (premise) after the revert nothing is unsaved');
 	h.check((await S(page, () => {
 		const ev = new Event('beforeunload', { cancelable: true });
 		window.dispatchEvent(ev);

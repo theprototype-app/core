@@ -52,7 +52,7 @@ export default {
 		);
 
 		// clicking the chosen button object presses the node instead of selecting
-		api.registerClickHandler((object) => {
+		api.registerClickHandler((/** @type {import('three').Object3D} */ object) => {
 			const group = api.objectsGroup();
 			if (!group) return false;
 			let top = object;
@@ -67,11 +67,11 @@ export default {
 		});
 
 		// door effect: slide the connected object up while pressed
-		api.registerEffect('buttontrigger', (object, base, data, time) => {
+		api.registerEffect('buttontrigger', /** @param {import('three').Object3D} object @param {{pos: number[], rot: number[], scale: number[]}} base @param {Record<string, any>} data @param {number} time */ (object, base, data, time) => {
 			const height = data.height ?? 2;
 			const duration = Math.max(Math.abs(height) / 2, 0.15); // ~2 m/s
 			const at = data.at ?? 0;
-			const clamp01 = (value) => Math.min(Math.max(value, 0), 1);
+			const clamp01 = (/** @type {number} */ value) => Math.min(Math.max(value, 0), 1);
 			let lift;
 			if (data.pressed) {
 				lift = clamp01((time - at) / duration);

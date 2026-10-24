@@ -129,6 +129,11 @@ const restFired = new Map();
 /** B6: rising-edge map for the physics ACTION nodes (a pulse is high ~0.3 s, so
  * an action must run once per pulse, not once per frame) @type {Map<string, boolean>} */
 const physicsActionEdge = new Map();
+/** test-health-1: the trigger STAMP each physics action last saw. A pulse is high for 0.3 s, so a
+ * frame longer than that (below ~3.3 fps: two pages on software GL, a slow phone) can step over the
+ * whole pulse and the rising VALUE never shows — the trigger stamp still changed, and that is the
+ * event. @type {Map<string, number|null>} */
+const physicsActionStamp = new Map();
 
 // --- 21-E6 follow-up: THE STALE-STAMP GUARD, shared by every trigger-edge family ----
 //
@@ -665,8 +670,14 @@ function updatePhysicsActions(pairs, ctx, time) {
 		if (!target) continue;
 		const was = physicsActionEdge.get(node.id) ?? false;
 		physicsActionEdge.set(node.id, high);
+		const stamp = triggerStampFor(node.id, ctx);
+		const lastStamp = physicsActionStamp.get(node.id);
+		physicsActionStamp.set(node.id, stamp);
+		// a NEW stamp is a rising edge even when the pulse it made fell between two ticks; first sight
+		// (no last stamp) is not — that is a pulse from before this node, and staleTrigger has it
+		const freshStamp = typeof stamp === 'number' && lastStamp !== undefined && stamp !== lastStamp;
 		const continuous = node.type === 'setvelocity' && (data.mode ?? 'once') === 'continuous';
-		if (!continuous && (!high || was)) continue;
+		if (!continuous && !((high && !was) || freshStamp)) continue;
 		if (continuous && !high) continue;
 		// ...and the pulse that made us high may PREDATE this node. This family reads a
 		// rising VALUE rather than a stamp, so its exposure was only the ~0.3s a pulse
@@ -675,7 +686,7 @@ function updatePhysicsActions(pairs, ctx, time) {
 		// behind the pulse is what answers it. A pulse with NO stamp (a Toggle wired into
 		// `trigger`) is never refused, and a continuous Set Velocity keeps running,
 		// because after its first tick every live stamp is newer than the cutoff.
-		if (staleTrigger(node, triggerStampFor(node.id, ctx))) continue;
+		if (staleTrigger(node, stamp)) continue;
 		// a physics action in a scene that is not simulating is a no-op, and used to
 		// be a SILENT one — the graph is right, the key fires, nothing moves
 		// initiator-gated by design, so a NON-initiator doing nothing here is correct
@@ -712,6 +723,7 @@ function updatePhysicsActions(pairs, ctx, time) {
 		}
 	}
 	for (const id of [...physicsActionEdge.keys()]) if (!seen.has(id)) physicsActionEdge.delete(id);
+	for (const id of [...physicsActionStamp.keys()]) if (!seen.has(id)) physicsActionStamp.delete(id);
 }
 
 let lastNoSimWarn = 0;

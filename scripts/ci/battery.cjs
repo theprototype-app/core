@@ -4,9 +4,10 @@
 // The battery is the list an integrator runs before a release: tests/e2e/battery.json holds it
 // (suite → seconds measured on a GitHub runner, or twice the desk time until one has run), the
 // suites a public runner must skip (`skip`: they need the self-hosted signaling box, a hosts-file
-// origin or a built app) and the ones that run but do not gate (`optional`: red or flaky on
-// SwiftShader with the same red on the unchanged base — the reason is on the line). Nothing here
-// names a suite; the list is data, refreshed from the integrators' battery runs (`refresh`).
+// origin or a built app). What runs but does not gate is tests/e2e/quarantine.json (test-health-1:
+// it replaced battery.json's suite-wide `optional` map) — per CHECK, with an owner and a review date,
+// read through scripts/ci/quarantine.cjs. Nothing here names a suite; the list is data, refreshed from
+// the integrators' battery runs (`refresh`).
 //
 //   node scripts/ci/battery.cjs plan                      # matrix JSON for GITHUB_OUTPUT
 //   node scripts/ci/battery.cjs run --shard 3 --of 14     # run one shard (serves the app itself)
@@ -15,20 +16,22 @@
 //
 // Sharding is longest-first onto the least-loaded shard, by name on ties: every shard computes the
 // same assignment from the same file, so the plan job only has to say how many shards there are.
-// A failed suite runs once more; green on the retry = `flaky` (reported, not a red).
+// A failed suite runs once more; green on the retry = `flaky` (reported, not a red). Red twice and
+// every failed check quarantined = `quarantined` (reported in its own tier, not a red).
 
 const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
+const quarantine = require('./quarantine.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const BATTERY = path.join(ROOT, 'tests', 'e2e', 'battery.json');
 
 /**
  * @typedef {{ comment?: string, refs: Record<string, {repo: string, ref: string}>, shards: {target_minutes: number, max: number, min: number},
- *   pc?: {games: string[], levels: string[]}, skip: Record<string, string>, optional: Record<string, string>, setup: Record<string, string>,
+ *   pc?: {games: string[], levels: string[]}, skip: Record<string, string>, setup: Record<string, string>,
  *   suites: Record<string, number> }} Battery
- * @typedef {{ name: string, status: 'pass'|'flaky'|'fail'|'timeout'|'gone', required: boolean, rc: number|null, secs: number,
+ * @typedef {{ name: string, status: 'pass'|'flaky'|'quarantined'|'fail'|'timeout'|'gone', required: boolean, rc: number|null, secs: number,
  *   retrySecs?: number, pass: number, fail: number, last: string, shard: number }} SuiteResult
  */
 
@@ -166,7 +169,7 @@ function runSuite(name, est, out, tag) {
 			fs.closeSync(log);
 			const text = fs.readFileSync(logFile, 'utf8');
 			if (timedOut) fs.appendFileSync(logFile, `\n[battery] TIMEOUT after ${timeout / 1000}s\n`);
-			resolve({ rc: timedOut ? null : code, secs: Math.round((Date.now() - t0) / 1000), timedOut, ...counts(text) });
+			resolve({ rc: timedOut ? null : code, secs: Math.round((Date.now() - t0) / 1000), timedOut, text, ...counts(text) });
 		});
 	});
 }
@@ -174,6 +177,12 @@ function runSuite(name, est, out, tag) {
 /** @param {string[]} argv */
 async function run(argv) {
 	const b = load();
+	const q = quarantine.load();
+	const qErrors = quarantine.validate(q);
+	if (qErrors.length) {
+		for (const e of qErrors) console.error('quarantine.json: ' + e);
+		process.exit(2);
+	}
 	const of = Number(opt(argv, '--of') || shardCount(b));
 	const shard = Number(opt(argv, '--shard') || 1);
 	const out = path.resolve(opt(argv, '--out') || process.env.BATTERY_OUT || path.join(ROOT, '..', 'battery-out'));
@@ -187,7 +196,7 @@ async function run(argv) {
 	const results = [];
 	console.log(`shard ${shard}/${of}: ${mine.length} suites, est ${Math.round(mine.reduce((t, s) => t + (b.suites[s] || 60), 0) / 60)} min`);
 	for (const name of mine) {
-		const required = !(name in b.optional);
+		const required = true;
 		if (!fs.existsSync(path.join(ROOT, 'tests', 'e2e', name + '.test.cjs'))) {
 			results.push({ name, status: 'gone', required: false, rc: null, secs: 0, pass: 0, fail: 0, last: 'no such suite (refresh battery.json)', shard });
 			continue;
@@ -214,10 +223,19 @@ async function run(argv) {
 			if (again.rc === 0) status = 'flaky';
 			else r = again;
 		}
-		const res = { name, status, required, rc: r.rc, secs: r.secs, retrySecs, pass: r.pass, fail: r.fail, last: r.last, shard };
+		/** @type {string[]} */
+		let quarantinedChecks = [];
+		if (status === 'fail' || status === 'timeout') {
+			const v = quarantine.classify(q, name, r.text, { timedOut: r.timedOut });
+			if (v.quarantined) {
+				status = 'quarantined';
+				quarantinedChecks = v.whole ? ['(whole suite)'] : v.failed;
+			}
+		}
+		const res = { name, status, required, rc: r.rc, secs: r.secs, retrySecs, pass: r.pass, fail: r.fail, last: quarantinedChecks.length ? 'quarantined: ' + quarantinedChecks.join(' | ').slice(0, 140) : r.last, shard };
 		results.push(res);
-		if (status === 'pass' || status === 'flaky') fs.rmSync(path.join(out, 'evidence', name), { recursive: true, force: true });
-		console.log(`${name} ${status}${required ? '' : ' (optional)'} rc=${r.rc} pass~${r.pass} fail~${r.fail} ${r.secs}s${retrySecs ? ` retry ${retrySecs}s` : ''} :: ${r.last}`);
+		if (status === 'pass' || status === 'flaky' || status === 'quarantined') fs.rmSync(path.join(out, 'evidence', name), { recursive: true, force: true });
+		console.log(`${name} ${status} rc=${r.rc} pass~${r.pass} fail~${r.fail} ${r.secs}s${retrySecs ? ` retry ${retrySecs}s` : ''} :: ${r.last}`);
 	}
 	stop(server);
 	fs.writeFileSync(path.join(out, `results-${shard}.json`), JSON.stringify({ shard, of, results }, null, 1));
@@ -232,14 +250,14 @@ async function run(argv) {
 function table(results, title) {
 	const red = results.filter((r) => r.status === 'fail' || r.status === 'timeout');
 	const req = red.filter((r) => r.required);
-	const opt = red.filter((r) => !r.required);
+	const quar = results.filter((r) => r.status === 'quarantined');
 	const flaky = results.filter((r) => r.status === 'flaky');
 	const secs = results.reduce((t, r) => t + r.secs + (r.retrySecs || 0), 0);
 	const row = (/** @type {SuiteResult} */ r) => `| ${r.name} | ${r.status} | ${r.shard} | ${r.pass}/${r.fail} | ${r.secs}s | ${r.last.replace(/\|/g, '\\|')} |`;
 	const head = '| suite | status | shard | ✓/✗ | time | last line |\n|---|---|---|---|---|---|\n';
-	let md = `### ${title}: ${results.length} suites, ${req.length} required red, ${opt.length} optional red, ${flaky.length} flaky (${Math.round(secs / 60)} suite-min)\n\n`;
+	let md = `### ${title}: ${results.length} suites, ${req.length} required red, ${quar.length} quarantined, ${flaky.length} flaky (${Math.round(secs / 60)} suite-min)\n\n`;
 	if (req.length) md += `**Required reds**\n\n${head}${req.map(row).join('\n')}\n\n`;
-	if (opt.length) md += `<details><summary>Optional reds (do not gate)</summary>\n\n${head}${opt.map(row).join('\n')}\n\n</details>\n\n`;
+	if (quar.length) md += `<details><summary>Quarantined reds (tests/e2e/quarantine.json — do not gate)</summary>\n\n${head}${quar.map(row).join('\n')}\n\n</details>\n\n`;
 	if (flaky.length) md += `<details><summary>Flaky (green on the retry)</summary>\n\n${head}${flaky.map(row).join('\n')}\n\n</details>\n\n`;
 	const gone = results.filter((r) => r.status === 'gone');
 	if (gone.length) md += `Listed but gone (refresh tests/e2e/battery.json): ${gone.map((r) => r.name).join(', ')}\n\n`;
@@ -262,6 +280,8 @@ function report(argv) {
 	const b = load();
 	const missing = Array.from({ length: of || shardCount(b) }, (_, i) => i + 1).filter((s) => !seen.has(s));
 	let md = table(all, 'e2e battery');
+	const qWarn = quarantine.warnings(quarantine.load(), all, Object.keys(b.suites));
+	if (qWarn.length) md += `<details><summary>Quarantine to review (${qWarn.length})</summary>\n\n${qWarn.map((w) => '- ' + w).join('\n')}\n\n</details>\n\n`;
 	if (missing.length) md += `**Shards with no results (crashed or cancelled): ${missing.join(', ')}**\n`;
 	if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
 	else console.log(md);
@@ -296,7 +316,6 @@ function write(b) {
 		`\t"shards": ${JSON.stringify(b.shards)}`,
 		`\t"pc": ${JSON.stringify(b.pc || { games: [], levels: [] })}`,
 		`\t"skip": ${obj(b.skip, '\t')}`,
-		`\t"optional": ${obj(b.optional, '\t')}`,
 		`\t"setup": ${obj(b.setup, '\t')}`,
 		`\t"suites": ${obj(b.suites, '\t')}`
 	];
@@ -329,9 +348,9 @@ function refresh(argv) {
 			for (const [n, s] of Object.entries(JSON.parse(fs.readFileSync(f, 'utf8')))) if (n in b.suites) b.suites[n] = Number(s);
 		}
 	}
-	for (const k of Object.keys(b.optional)) if (!(k in b.suites)) delete b.optional[k];
 	write(b);
-	console.log(`battery.json: ${Object.keys(b.suites).length} suites, ${Object.keys(b.skip).length} skipped, ${Object.keys(b.optional).length} optional, ${shardCount(b)} shards`);
+	console.log(`battery.json: ${Object.keys(b.suites).length} suites, ${Object.keys(b.skip).length} skipped, ${shardCount(b)} shards`);
+	for (const w of quarantine.warnings(quarantine.load(), [], Object.keys(b.suites))) console.log('warning: ' + w);
 }
 
 // ---------------------------------------------------------------- plan

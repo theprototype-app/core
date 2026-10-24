@@ -395,7 +395,7 @@
 			// so its local position put every walking player 0.9 m into the floor on every peer.
 			camera.current.updateWorldMatrix(true, false);
 			camera.current.matrixWorld.decompose(camContentPos, camContentQuat, camFeetPoint);
-			const feetWorld = localFeet();
+			const feetWorld = localFeet(delta * 1000);
 			const camExtras: Record<string, number> = {};
 			if (feetWorld !== null) {
 				camFeetPoint.set(camContentPos.x, feetWorld, camContentPos.z);
@@ -1195,8 +1195,12 @@
 			// a touch gizmo covers most of a small object, which is what the finger aims at
 			const touchTap = event.pointerType === 'touch';
 			// (an object's gizmo only — a mesh / spline session's gizmo keeps every tap)
+			// test-health-1: on a finger, `dragging` set by THIS press is not a drag — we are past the
+			// still-tap test above (<= 5 px, <= 400 ms), and the gizmo's own pointerdown starts a drag on
+			// the handle under the finger, so whether a tap on the seated gizmo let go of the object
+			// depended on which pointerup listener ran first (select-41 G14 unfolded: axis XYZ, dragging)
 			const onGizmo =
-				!!$TControls && !$TControls.dragging && !!$TControls.axis && !event.altKey &&
+				!!$TControls && (touchTap || !$TControls.dragging) && !!$TControls.axis && !event.altKey &&
 				!$editingObject && !$faceEditObject && !$splineEditObject && !$measureMode && !splineToolActive();
 			if ($TControls && ($TControls.dragging || ($TControls.axis && !event.altKey)) && !(touchTap && onGizmo)) return;
 			if (!$objectsGroup) return;
@@ -1422,6 +1426,13 @@
 		});
 
 		const onContextMenu = (event) => {
+			// test-health-1: heard on threlte's WRAPPER (`dom`), not the canvas. OrbitControls listens
+			// there and captures the pointer on every press, right button included, so where
+			// `contextmenu` fires on mousedown (Linux; Chromium headless) it is dispatched to the capture
+			// element and a canvas listener never heard it — a real right-click on the viewport opened
+			// nothing (fresh page: 0 menu rows; play-reentry). Canvas events still bubble here; anything
+			// else inside the wrapper keeps its own menu.
+			if (event.target !== element && event.target !== dom) return;
 			event.preventDefault(); // the browser menu never belongs on the canvas
 			const down = rightDown;
 			rightDown = null;
@@ -1431,7 +1442,7 @@
 			if (moved > 5 || Date.now() - down[2] > 400) return;
 			openViewportMenuAt(event.clientX, event.clientY);
 		};
-		element.addEventListener('contextmenu', onContextMenu);
+		dom.addEventListener('contextmenu', onContextMenu);
 
 		// touch long-press = right-click (touch has no contextmenu). A stationary
 		// ~500ms hold opens the same menu at the touch point.
@@ -1666,7 +1677,7 @@
 			stopClap(); // 31
 			stopVrGameInput(); // 30b
 			element.removeEventListener('pointerdown', onPointerDown);
-			element.removeEventListener('contextmenu', onContextMenu);
+			dom.removeEventListener('contextmenu', onContextMenu);
 			element.removeEventListener('webglcontextlost', onContextLost);
 			element.removeEventListener('webglcontextrestored', onContextRestored);
 			window.removeEventListener('pointerup', onPointerUp);

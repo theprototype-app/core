@@ -51,6 +51,9 @@ h.run(async () => {
 		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
 		const [slab, box] = group.children.slice(-2);
 		slab.position.set(0, 1, 0);
+		// /create makes every primitive dynamic since 95df3a66 — the slab must be scenery, so the spin
+		// effect is what makes it a KINEMATIC platform (a dynamic slab just falls to the ground)
+		delete slab.userData.physics;
 		box.position.set(2, 1.75, 0); // resting on the slab top, 2m off-axis
 		// dynamic via Inspector-style userData.physics (NO flow mass node)
 		box.userData.physics = { mode: 'dynamic', mass: 1 };
@@ -58,6 +61,7 @@ h.run(async () => {
 		peer.send({ type: 'move', uuid: slab.uuid, pos: [0, 1, 0], rot: [0, 0, 0], scale: [1, 1, 1] });
 		peer.send({ type: 'move', uuid: box.uuid, pos: [2, 1.75, 0], rot: [0, 0, 0], scale: [1, 1, 1] });
 		peer.send({ type: 'objectParameters', parameter: 'physics', uuid: box.uuid, physics: box.userData.physics });
+		peer.send({ type: 'objectParameters', parameter: 'physics', uuid: slab.uuid, physics: null });
 		// spin effect on the slab -> it becomes a KINEMATIC platform mid-sim
 		const nodes = [
 			{ id: 'sp1', type: 'spin', position: { x: 0, y: 0 }, data: { type: 'spin', axis: 'y', speed: 2 }, class: 'w-[150px]' },

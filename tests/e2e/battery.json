@@ -1,5 +1,5 @@
 {
-	"comment": "deps-auto: the e2e battery deps.yml runs in shards on GitHub-hosted runners (scripts/ci/battery.cjs). suites = name -> seconds on a runner (2x the desk time until a runner has measured it); skip = cannot run on a public runner (the reason); optional = runs and reports, does not gate (the reason); setup = extra install a suite needs. Refresh after an integrator battery: node scripts/ci/battery.cjs refresh --list <listA> --list <listB> --summary <summary.txt>... (RELEASING.md, Dependency updates). pc = the games (fps) and levels (shots) scripts/ci/pc-battery.sh measures on a desktop GPU.",
+	"comment": "deps-auto: the e2e battery deps.yml runs in shards on GitHub-hosted runners (scripts/ci/battery.cjs). suites = name -> seconds on a runner (2x the desk time until a runner has measured it); skip = cannot run on a public runner (the reason); what runs but does not gate is tests/e2e/quarantine.json (per check, owner + review date; test-health-1 replaced the old `optional` map); setup = extra install a suite needs. Refresh after an integrator battery: node scripts/ci/battery.cjs refresh --list <listA> --list <listB> --summary <summary.txt>... (RELEASING.md, Dependency updates). pc = the games (fps) and levels (shots) scripts/ci/pc-battery.sh measures on a desktop GPU.",
 	"refs": {
 		"modules": {"repo":"theprototype-app/modules","ref":"80fca17f7cd963cf698d6b5f29beaff14f28f9e1"},
 		"packs": {"repo":"theprototype-app/packs","ref":"360f31686652f0f9c7e240ff09785c6b6c60d678"},
@@ -14,40 +14,6 @@
 		"net-stress": "multi-peer stress on the self-hosted signaling box",
 		"perf-beacon": "reads a hosts-mapped preview origin",
 		"timeline-export": "needs the built app (scripts/serve-build.cjs), not the dev server"
-	},
-	"optional": {
-		"animation-sync": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"behaviours": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"char-controller": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"collider-live": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"context-menu-redesign": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"edit-move-games": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"fb-water": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"flow-physics-actions": "flaky on every app/driver pair (deps-1 ab3, 2026-10-23)",
-		"flow-physics-nodes": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"game-loop-v4": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"game-sky-run": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"kit-instancing": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"lock-search": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"mesh-toolbox-redesign": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"model-preview": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"net-stress": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"panels": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"phone-sheets": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"physics-discoverability": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"physics-kinematic": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"scene-budget": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"scene-post": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"scene-post-effects": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"search-menus": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"select-41": "G4 flick timing flake (deps-1 ab3: 12/12 green on --local, red under load)",
-		"settings-layout": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"shader-sync": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"sound-node": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"themes": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"timeline-export": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"touch-actions": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
-		"water-migration": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)"
 	},
 	"setup": {
 		"agent-bridge": "agent"

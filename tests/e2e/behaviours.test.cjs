@@ -121,6 +121,10 @@ h.run(async () => {
 		s.behaviourViewOpen.set({ id: i, graphId: 'scene' });
 	}, wid);
 	await B.page.waitForSelector('#behaviour-view [data-bview-kind="state"]', { timeout: 10000 });
+	// the glow is "changed since this view's FIRST live tick" — on the authority the died handler
+	// fires the moment we kill, so a kill that beats B's first 100 ms tick lands in its baseline
+	// and never glows (0 of 10 samples). Live values on the state nodes = that tick has run.
+	await h.eventually(() => B.page.$$eval('#behaviour-view [data-bview-kind="state"] [data-bview-value]', (els) => els.map((e) => e.textContent?.trim())), (v) => v.join(',') === '1,2', 'B\'s view is live before the kill (wave 1, alive 2)', 5000);
 	const SAMPLE = () =>
 		new Promise((resolve) => {
 			/** @type {any[]} */

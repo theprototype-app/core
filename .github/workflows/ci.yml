@@ -5,11 +5,11 @@
 # enforced by whoever remembered to run it, and a broken main was discovered at release
 # time. Everything below is what a maintainer already does by hand.
 #
-# WHY e2e-smoke IS NOT REQUIRED YET: it renders WebGL through SwiftShader on a GPU-less
-# runner, and this project's own notes measure ~4.5 fps there plus a documented family of
-# timing-sensitive suites. Blocking every PR on that before it has been observed green on
-# GitHub would train people to ignore a red tick, which is worse than not having it. It
-# reports, it does not gate, and the comment below says when to flip it.
+# e2e-smoke GATES since test-health-1 (feat/60). It renders WebGL through SwiftShader on a
+# GPU-less runner (~4.5 fps), so it was report-only until it had been seen green on GitHub:
+# the runner step now really fails (it used to `|| echo` every red away), a failed suite runs
+# once more (green on the retry = flaky, reported), and a known flake is entered in
+# tests/e2e/quarantine.json with an owner and a review date instead of blocking every PR.
 #
 # Two-peer suites stay a MANUAL gate: they meet on the self-hosted signaling box, which a
 # public runner cannot reach and should not be pointed at.
@@ -150,9 +150,7 @@ jobs:
 
   e2e-smoke:
     runs-on: ubuntu-latest
-    # NOT a gate yet — see the header. Flip this to false once it has been green on a few
-    # PRs in a row; until then a red here is a signal to read, not a block.
-    continue-on-error: true
+    # a gate — see the header (green on GitHub for bc453ae8 and e77ca3f7 before the flip)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -180,14 +178,20 @@ jobs:
           # Deliberately NOT added: net-stress and signaling-reconnect are multi-peer and
           # meet on the self-hosted signaling box, which a public runner cannot reach and
           # should not be pointed at (see the header) — they stay a manual gate.
-          for s in net-backoff net-mesh wire-hardening runtime-resilience diagnostics mesh-budget script-guard dispose approval-timeout; do
-            echo "::group::$s"
-            npm run e2e -- "$s" || echo "SUITE FAILED: $s"
-            echo "::endgroup::"
-          done
+          # test-health-1: through the battery runner, so a red is a red (the old loop's
+          # `|| echo SUITE FAILED` could never fail the step), a failed suite runs once more
+          # (green on the retry = flaky, reported) and tests/e2e/quarantine.json applies.
+          node scripts/ci/battery.cjs run --only net-backoff,net-mesh,wire-hardening,runtime-resilience,diagnostics,mesh-budget,script-guard,dispose,approval-timeout --port 5173 --out /tmp/smoke
       - name: dev server log on failure
         if: failure()
         run: tail -40 /tmp/dev.log
+      - name: suite logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-smoke-logs
+          path: /tmp/smoke/logs
+          if-no-files-found: ignore
 
   # 53-reader (A4): THE ACCESSIBILITY GATE. axe-core over the main surfaces (editor shell, object
   # list, Inspector, Settings, Asset Browser on recorded fixtures, phone shell) FAILS on serious and
@@ -230,6 +234,13 @@ jobs:
       - name: dev server log on failure
         if: failure()
         run: tail -40 /tmp/dev.log
+      - name: suite logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-smoke-logs
+          path: /tmp/smoke/logs
+          if-no-files-found: ignore
 
   # 38 (NOTES-38 #18): THE TOKEN SCREENSHOT DIFF. /kit renders every redesign primitive in every
   # state; this job shoots it in the dark, light and custom themes on the PR's BASE ref and on its

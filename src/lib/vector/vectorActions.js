@@ -46,7 +46,7 @@ export function makeVectorMesh(params, name) {
  * Add a vector shape to the scene: one create undo entry, one `object` message.
  * `position` / `quaternion` are in objectsGroup's frame.
  * @param {Record<string, any>} params
- * @param {{position?: THREE.Vector3 | number[] | null, quaternion?: THREE.Quaternion | number[] | null, name?: string, select?: boolean, record?: boolean}} [opts]
+ * @param {{position?: THREE.Vector3 | number[] | null, quaternion?: THREE.Quaternion | number[] | null, scale?: THREE.Vector3 | number[] | null, name?: string, select?: boolean, record?: boolean}} [opts]
  * @returns {THREE.Mesh | null}
  */
 export function addVectorShape(params, opts = {}) {
@@ -55,6 +55,7 @@ export function addVectorShape(params, opts = {}) {
 	const mesh = makeVectorMesh(params, opts.name);
 	if (opts.position) Array.isArray(opts.position) ? mesh.position.fromArray(opts.position) : mesh.position.copy(opts.position);
 	if (opts.quaternion) Array.isArray(opts.quaternion) ? mesh.quaternion.fromArray(opts.quaternion) : mesh.quaternion.copy(opts.quaternion);
+	if (opts.scale) Array.isArray(opts.scale) ? mesh.scale.fromArray(opts.scale) : mesh.scale.copy(opts.scale);
 	group.add(mesh);
 	mesh.updateMatrixWorld(true);
 	pokeScene();

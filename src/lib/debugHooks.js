@@ -336,6 +336,7 @@ export const DEBUG_HOOKS = [
 	['vectorEdit', () => import('./vector/vectorEdit.js')],
 	['vectorBoolean', () => import('./vector/vectorBoolean.js')],
 	['vectorSvg', () => import('./vector/vectorSvg.js')],
+	['vectorOps', () => import('./vector/vectorOps.js')],
 	['splineTube', () => import('./splineTube')],
 	['splineTool', () => import('./splineTool')],
 	['splineEdit', () => import('./splineEdit')],

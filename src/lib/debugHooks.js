@@ -328,6 +328,12 @@ export const DEBUG_HOOKS = [
 	['hudActions', () => import('./hudActions')],
 	['moduleNodeIO', () => import('./moduleNodeIO')],
 	['moduleToolboxes', () => import('./moduleToolboxes')],
+	// 64 D1/D3: vector shapes (record, path math, mesh, actions, booleans, SVG)
+	['vectorRecord', () => import('./vector/vectorRecord.js')],
+	['vectorPath', () => import('./vector/vectorPath.js')],
+	['vectorActions', () => import('./vector/vectorActions.js')],
+	['vectorBoolean', () => import('./vector/vectorBoolean.js')],
+	['vectorSvg', () => import('./vector/vectorSvg.js')],
 	['splineTube', () => import('./splineTube')],
 	['splineTool', () => import('./splineTool')],
 	['splineEdit', () => import('./splineEdit')],

@@ -16,6 +16,9 @@ import('./water/waterActions.js').then((m) => (waterRef = m));
 // menu builder into that family is how the SSR prerender TDZ-crashes.
 /** @type {any} */ let devicesRef = null;
 import('./audioDevices').then((m) => (devicesRef = m));
+// 64 D1: vector shapes — PRIMED for the same reason (vectorActions reaches history)
+/** @type {any} */ let vectorRef = null;
+import('./vector/vectorActions.js').then((m) => (vectorRef = m));
 
 // Spawning for the viewport Add menu (77): run the replicated create command,
 // then land the new object at the clicked ground point (groups keep their
@@ -88,6 +91,20 @@ export function buildAddChildren(pointOf) {
 			}))
 		})),
 		{ label: 'Group', tooltip: 'Create an empty group', action: () => spawnAtPoint('/group New', null) },
+		// 64 D1: flat vector shapes (a toJSON create, never /create — the record carries the colours)
+		{
+			label: 'Vector',
+			children: [
+				['rect', 'Rectangle', 'A rectangle with a live corner radius'],
+				['ellipse', 'Ellipse', 'An ellipse'],
+				['star', 'Star', 'A star — points, inner radius and corner radius are live'],
+				['polygon', 'Polygon', 'A regular polygon — sides and corner radius are live']
+			].map(([kind, label, tooltip]) => ({
+				label,
+				tooltip,
+				action: () => vectorRef?.placeVectorShape(kind, pointOf())
+			}))
+		},
 		// 23-A5: instruments and effects. Built from the registry at menu-open time, so a
 		// module registering (or going away) needs no menu plumbing of its own. A device is
 		// created through addDevice (a replicated toJSON), never through /create.

@@ -15,6 +15,11 @@ import { terrainGeometry, TERRAIN_FALLOFFS } from './customGeometries';
 // `build`-hook shape as Terrain, plus `fromArgs` (createGeometry maps `/create` numbers to
 // params with it) and the collider hint stamped at creation
 import { ARCH_SPECS } from './arch/archGeometry.js';
+// 64 D1: VECTOR SHAPES (rect / ellipse / star / polygon / pen path) — the same `build`-hook shape;
+// the record (colours included, baked to vertex colours) is the params, so a shape edit is the
+// ordinary `geometry` message + undo entry. The Inspector's colour row is VectorSection.svelte.
+import { buildVectorGeometry } from './vector/vectorMesh.js';
+import { cleanVector, VECTOR_PARAMS } from './vector/vectorRecord.js';
 
 const TAU = Math.PI * 2;
 
@@ -201,7 +206,13 @@ export const GEOMETRY_PARAMS = {
 			{ key: 'offsetZ', label: 'Tile Z', kind: 'slider', min: -2000, max: 2000, step: 1, def: 0 }
 		]
 	},
-	...ARCH_SPECS
+	...ARCH_SPECS,
+	Vector: {
+		build: buildVectorGeometry,
+		clean: cleanVector,
+		order: [...new Set(VECTOR_PARAMS.map((p) => p.key))],
+		params: VECTOR_PARAMS
+	}
 };
 
 /** Registry spec for a mesh's geometry, by three type name @param {string} gtype e.g. 'Sphere' */

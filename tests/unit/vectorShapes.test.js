@@ -350,3 +350,22 @@ describe('SVG', () => {
 		expect(vectorPolylines(cleanVector({ kind: 'path', paths: [sub] }))[0].pts.length).toBeGreaterThan(8);
 	});
 });
+
+describe('the geometry registry entry (D1 phase 2)', () => {
+	test('Vector is a build-hook spec whose clean is the record boundary', async () => {
+		const { geometrySpec } = await import('../../src/lib/geometryParams.js');
+		const spec = geometrySpec('Vector');
+		expect(spec?.build).toBeTypeOf('function');
+		expect(spec.clean({ kind: 'star', points: 999, junk: 1 })).toEqual(cleanVector({ kind: 'star', points: 64 }));
+		const g = spec.build(spec.clean({ ...vectorDefaults('star'), corner: 0.05 }));
+		expect(g.getAttribute('position').count).toBeGreaterThan(0);
+		expect(g.getAttribute('color').count).toBe(g.getAttribute('position').count);
+		// every key a row edits is a record key, and `show` keeps the duplicate 'points' row to one kind
+		const keys = Object.keys(vectorDefaults('rect'));
+		for (const p of spec.params) expect(keys).toContain(p.key);
+		for (const kind of ['rect', 'ellipse', 'star', 'polygon', 'path']) {
+			const shown = spec.params.filter((p) => !p.show || p.show(vectorDefaults(kind))).map((p) => p.key);
+			expect(new Set(shown).size).toBe(shown.length);
+		}
+	});
+});

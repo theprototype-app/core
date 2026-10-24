@@ -3,7 +3,7 @@
 	import { OrbitControls } from '@threlte/extras';
 	import * as THREE from 'three';
 	import { objectsGroup, TControls } from '../stores/sceneStore';
-	import { cameraPreview, writeBackPose, previewOrbit, seatOrbitBehind, previewPoseOverride } from '$lib/cameraPreview';
+	import { cameraPreview, writeBackPose, previewOrbit, seatOrbitBehind, previewPoseOverride, applyMarkerLens } from '$lib/cameraPreview';
 	import { cameraSpec, aspectRatio, syncCameraToObject } from '$lib/cameraObjects';
 	import { safeStorage } from '$lib/safeStorage';
 
@@ -64,6 +64,8 @@
 		object.matrixWorld.decompose(pos, quat, scale);
 		cameraRef.position.copy(pos);
 		cameraRef.quaternion.copy(quat);
+		// 68: a marker's fov / dutch roll (prop tracks, Film takes) reach the lens here
+		applyMarkerLens(cameraRef, object);
 	});
 
 	// a previewed camera must not also be gizmo-attached (dragging the marker while

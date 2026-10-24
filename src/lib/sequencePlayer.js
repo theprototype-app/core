@@ -32,9 +32,12 @@ import {
 	crossedStarts,
 	liveItems,
 	playheadAt,
+	propsAt,
 	END_EVENT,
 	clamp
 } from './sequenceCore';
+// 68: property tracks (the one keyframe model) — posed locally, bases restored + parked
+import { applyProps, releaseProps, skipTargets } from './propPlayback';
 import { findCameraObject, cameraSpec } from './cameraObjects';
 import {
 	cameraPreview,
@@ -195,6 +198,7 @@ function endRun(run, opts) {
 		for (const uuid of run.imported) setAnimationState(uuid, { playing: false }, false);
 	}
 	if (cameraOwner === run.id && !opts.keepCamera) releaseCamera();
+	releaseProps(run.id);
 	seqTransport.update((map) => {
 		const cur = map[run.id];
 		return cur ? { ...map, [run.id]: { ...cur, playing: false } } : map;
@@ -231,6 +235,7 @@ function tickRun(run, seq, now) {
 	crossRange(run, seq, run.lastT, head.t, now);
 	run.lastT = head.t;
 	applyShot(run, seq, head.t);
+	applyProps(run.id, propsAt(seq, head.t, skipTargets));
 	setTransport(run.id, { t: head.t, playing: !head.done, mode: run.mode });
 	if (head.done) {
 		run.done = true;
@@ -427,6 +432,7 @@ export function scrubSequence(id, t) {
 		anim.scrub(item.target, offset * item.speed, clipId);
 		scrubbed.add(item.target);
 	}
+	applyProps('__scrub', propsAt(seq, at, skipTargets));
 	if (get(previewShots)) {
 		const shot = shotAt(seq, at);
 		const scrubRun = /** @type {any} */ ({ id: '__scrub', mode: 'preview', shot: scrubShot });
@@ -445,6 +451,7 @@ const scrubbed = new Set();
 export function releaseScrub() {
 	for (const uuid of scrubbed) anim.resetPreview(uuid);
 	scrubbed.clear();
+	releaseProps('__scrub');
 	if (cameraOwner === '__scrub') releaseCamera();
 	scrubShot = '';
 }

@@ -336,6 +336,10 @@ function tickSprite(object, now) {
 		material.alphaTest = alphaTest;
 		material.needsUpdate = true;
 	}
+	// three draws a transparent DoubleSide material twice (back faces, then front) to sort its
+	// own faces — a flat quad has nothing to sort, so one draw per view (halves a sprite crowd's
+	// calls; a render-list flag, no recompile)
+	material.forceSinglePass = true;
 }
 
 // ---- draw offsets: parallax + pixel snap ----------------------------------------------------

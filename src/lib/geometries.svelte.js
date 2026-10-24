@@ -136,7 +136,7 @@ export function createGeometry(command, uuid) {
             // documents the block). White, so the image shows its own colours; no shadow (a quad's
             // shadow is a square). The image is the material map, set from the Inspector.
             object.material.dispose();
-            /** @type {any} */ (object).material = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+            /** @type {any} */ (object).material = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5, forceSinglePass: true });
             object.userData.sprite = {};
             object.userData.shadow = false;
             object.castShadow = false;

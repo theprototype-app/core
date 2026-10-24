@@ -59,7 +59,14 @@ const openTemplate = (page) =>
 	page.evaluate(async () => {
 		const m = await import('/src/lib/sprite2d/template2d.js');
 		const ok = await m.open2dTemplate();
-		await new Promise((r) => setTimeout(r, 1500)); // images decode, the reconcile sizes the planes
+		// images decode, the reconcile sizes the planes
+		for (let i = 0; i < 100; i++) {
+			let g;
+			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			if (g?.getObjectByName('Player')?.material?.map?.image) break;
+			await new Promise((r) => setTimeout(r, 200));
+		}
+		await new Promise((r) => setTimeout(r, 1000));
 		return ok;
 	});
 
@@ -103,8 +110,9 @@ h.run(async () => {
 	let page = D.page;
 	row('desktop', 'empty scene (baseline)', await measure(page));
 	h.check(await openTemplate(page), 'desktop: the 2D template opened');
-	row('desktop', '2D template, its ortho camera', await measure(page));
-	await page.evaluate(() => window.__stores.cameraPreview.stopCameraPreview());
+	row('desktop', '2D template, 2D editor view (ortho)', await measure(page));
+	await page.evaluate(async () => (await import('/src/lib/sprite2d/view2d.js')).exit2dView());
+	await page.waitForTimeout(500);
 	row('desktop', '2D template, perspective editor view', await measure(page));
 	const n = await addCrowd(page);
 	h.check(n === 100, 'desktop: 100 crowd sprites (' + n + ')');

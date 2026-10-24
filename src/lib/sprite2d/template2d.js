@@ -268,8 +268,9 @@ export function build2dTemplate(version) {
 /**
  * Open the 2D template: build it and load it the normal way (requestLoadPayload — the
  * replicated replace asks the room first; no slot appears in the Sessions manager), then open
- * the 2D editor view HERE.
- * @returns {Promise<boolean>} applied
+ * the 2D editor view HERE — once it really applied (with peers it goes out as a proposal and
+ * applies when everyone accepted; the view opens then).
+ * @returns {Promise<boolean>} applied now (false while a proposal waits for answers)
  */
 export async function open2dTemplate() {
 	// viewers cannot replace the shared scene (the loadRemoteScene gate; inert without roles)
@@ -279,9 +280,9 @@ export async function open2dTemplate() {
 	}
 	const [sessions, { APP_VERSION }] = await Promise.all([import('../sessions'), import('../version.js')]);
 	const { payload } = build2dTemplate({ format: sessions.SESSION_FORMAT, formatMinor: sessions.SESSION_FORMAT_MINOR, appVersion: APP_VERSION });
-	const applied = await sessions.requestLoadPayload(payload);
 	// the author edits it in the 2D view, framed on the template camera (Game Start looks
 	// through that camera when a game starts)
-	if (applied) (await import('./view2d.js')).enter2dView({ x: 0, y: 1, halfH: 5 });
+	const view = import('./view2d.js');
+	const applied = await sessions.requestLoadPayload(payload, { afterApply: () => view.then((m) => m.enter2dView({ x: 0, y: 1, halfH: 5 })) });
 	return !!applied;
 }

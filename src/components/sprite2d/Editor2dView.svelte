@@ -44,6 +44,18 @@
 		};
 	});
 
+	// the frustum is OURS (`manual`): threlte otherwise resets an orthographic camera to the
+	// canvas size in PIXELS (1 m = 1 px) on every resize
+	$effect(() => {
+		const camera = cameraRef;
+		if (!camera) return;
+		camera.left = -halfH * aspect;
+		camera.right = halfH * aspect;
+		camera.top = halfH;
+		camera.bottom = -halfH;
+		camera.updateProjectionMatrix();
+	});
+
 	// debug probe for the suites (opt-in, like __cameraPreviewDebug)
 	$effect(() => {
 		if (typeof window === 'undefined') return;
@@ -52,6 +64,7 @@
 			ortho: !!cameraRef?.isOrthographicCamera,
 			pos: cameraRef ? [cameraRef.position.x, cameraRef.position.y, cameraRef.position.z] : null,
 			zoom: cameraRef?.zoom ?? null,
+			frustum: cameraRef ? [cameraRef.left, cameraRef.right, cameraRef.top, cameraRef.bottom] : null,
 			rotate: controlsRef?.enableRotate ?? null
 		});
 	});
@@ -60,6 +73,7 @@
 {#if active}
 	<T.OrthographicCamera
 		makeDefault
+		manual
 		left={-halfH * aspect}
 		right={halfH * aspect}
 		top={halfH}

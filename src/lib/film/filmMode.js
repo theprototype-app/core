@@ -207,9 +207,20 @@ function listenForMotion() {
 			sensor = null;
 		}
 	}
+	armSensorWait();
+}
+
+/**
+ * 'starting' until the first reading; none in SENSOR_WAIT_MS → iOS (requestPermission exists and
+ * nothing arrives until a tap grants it) asks, everything else falls back to touch. Asking only
+ * when nothing came keeps a browser that HAS requestPermission but streams anyway (desktop
+ * Chromium, some Android builds) from showing a needless button.
+ */
+function armSensorWait() {
+	clearTimeout(sensorTimer);
 	patchUi({ sensor: 'starting' });
 	sensorTimer = /** @type {any} */ (setTimeout(() => {
-		if (!live.source) patchUi({ sensor: 'touch' });
+		if (!live.source) patchUi({ sensor: needsPermission() ? 'permission' : 'touch' });
 	}, SENSOR_WAIT_MS));
 }
 
@@ -242,7 +253,7 @@ export async function enableMotion() {
 		patchUi({ sensor: 'denied' });
 		return false;
 	}
-	listenForMotion();
+	armSensorWait(); // the listeners are already on; readings start now
 	return true;
 }
 
@@ -538,8 +549,7 @@ export function startFilm(uuid) {
 			if (!p || p.uuid !== live.uuid) stopFilm({ keepPreview: true });
 		})
 	);
-	if (needsPermission()) patchUi({ sensor: 'permission' });
-	else listenForMotion();
+	listenForMotion();
 	return true;
 }
 

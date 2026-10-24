@@ -16,6 +16,7 @@ const UNFOLDED = { viewport: { width: 770, height: 850 }, deviceScaleFactor: 2.9
 
 /** the event path: no Generic Sensor, synthetic deviceorientation, a settable screen angle */
 function eventShim() {
+	performance.setResourceTimingBufferSize(100000);
 	/** @type {any} */ (window).RelativeOrientationSensor = undefined;
 	let angle = 0;
 	try {
@@ -28,6 +29,7 @@ function eventShim() {
 
 /** the Generic Sensor path: a fake RelativeOrientationSensor whose readings the suite feeds */
 function sensorShim() {
+	performance.setResourceTimingBufferSize(100000);
 	/** @type {any[]} */
 	const live = [];
 	class FakeRelative extends EventTarget {
@@ -61,6 +63,7 @@ function sensorShim() {
 
 /** a desktop with no motion at all */
 function noMotionShim() {
+	performance.setResourceTimingBufferSize(100000);
 	/** @type {any} */ (window).RelativeOrientationSensor = undefined;
 }
 
@@ -147,10 +150,14 @@ h.run(async () => {
 	const page = A.page;
 
 	// boot graph: the runtime and the overlay are not loaded until Film opens
-	const loadedAtBoot = await page.evaluate(() =>
-		performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /film\/(filmMode|FilmMode)/.test(n))
-	);
-	h.check(loadedAtBoot.length === 0, `Film mode is not in the boot graph (loaded: ${JSON.stringify(loadedAtBoot)})`);
+	// (the resource-timing buffer holds 250 entries by default and a dev server loads far more modules,
+	// so the init script widens it; the runtime's debug row is the second witness)
+	const loadedAtBoot = await page.evaluate(() => ({
+		files: performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /film\/(filmMode|FilmMode|filmWalk|filmRecorder)/.test(n)),
+		runtime: 'filmMode' in window.__stores,
+		total: performance.getEntriesByType('resource').length
+	}));
+	h.check(loadedAtBoot.files.length === 0 && !loadedAtBoot.runtime && loadedAtBoot.total > 50, `Film mode is not in the boot graph (${JSON.stringify(loadedAtBoot)})`);
 
 	const uuid = await makeCamera(page);
 	await page.waitForTimeout(400);
@@ -167,10 +174,11 @@ h.run(async () => {
 	await picked.click();
 	await page.waitForSelector('#film-exit', { timeout: 10000 });
 	h.check(await page.evaluate(() => document.documentElement.classList.contains('film-mode')), 'Film takes the screen over (html.film-mode)');
-	const loadedAfter = await page.evaluate(() =>
-		performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /film\/(filmMode|FilmMode)/.test(n))
-	);
-	h.check(loadedAfter.length >= 1, `opening Film loads its chunk (${loadedAfter.length} files)`);
+	const loadedAfter = await page.evaluate(() => ({
+		files: performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /film\/(filmMode|FilmMode)/.test(n)).length,
+		runtime: 'filmMode' in window.__stores
+	}));
+	h.check(loadedAfter.files >= 1 && loadedAfter.runtime, `opening Film loads its chunk (${JSON.stringify(loadedAfter)})`);
 
 	// the letterbox: 16:9 across the folded screen, centred
 	let rect = await viewportRect(page);

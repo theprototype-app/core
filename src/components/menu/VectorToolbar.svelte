@@ -27,7 +27,7 @@
 	<div
 		id="vector-toolbar"
 		data-key-scope="keep"
-		class="fixed left-1/2 top-20 z-(--z-window) flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-full bg-surface-1 px-4 py-2 text-sm text-text shadow-window"
+		class="fixed left-1/2 top-20 z-(--z-window) flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-2xl sm:rounded-full bg-surface-1 px-4 py-2 text-sm text-text shadow-window"
 	>
 		<span class="font-semibold">Shapes</span>
 		<div class="flex overflow-hidden rounded-full border border-border-strong text-xs" role="group" aria-label="Shape tool">
@@ -75,7 +75,7 @@
 	<div
 		id="vector-edit-toolbar"
 		data-key-scope="keep"
-		class="fixed left-1/2 top-20 z-(--z-window) flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-full bg-surface-1 px-4 py-2 text-sm text-text shadow-window"
+		class="fixed left-1/2 top-20 z-(--z-window) flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-2xl sm:rounded-full bg-surface-1 px-4 py-2 text-sm text-text shadow-window"
 	>
 		<span class="font-semibold">Edit points</span>
 		<span class="text-xs text-text-2">drag points and handles · click the outline to add · double-click to convert · Alt breaks a handle</span>

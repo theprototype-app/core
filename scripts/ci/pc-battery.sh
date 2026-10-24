@@ -28,7 +28,9 @@
 #   PC_BATTERY_PORT     first of two dev-server ports (default: 5610; head = +1)
 #   PC_BATTERY_AUTHORS  extra allowed authors, space-separated
 #   PC_BATTERY_WRAP     a command prefix that serialises GPU use with other jobs on the machine, e.g. an
-#                       exclusive e2e slot; the measuring part runs inside it (default: none)
+#                       exclusive e2e slot; the measuring part runs inside it (default: none). In a
+#                       systemd unit quote the whole assignment, Environment="PC_BATTERY_WRAP=a b --",
+#                       or systemd splits it at the spaces into separate assignments
 #   PC_BATTERY_FPS_MAX  allowed head/base p50 frame-time ratio (default: 1.15)
 #   PC_BATTERY_STALE    seconds after which a `pending` status of ours counts as abandoned (default: 10800)
 # Needs git, gh (logged in: repo status + gist), node/npm at the repo's .nvmrc, curl, flock.

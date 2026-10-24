@@ -64,6 +64,7 @@
   import CommandPalette from './components/menu/CommandPalette.svelte'
   import TouchPlayControls from './components/play/TouchPlayControls.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
+  import VectorToolbar from './components/menu/VectorToolbar.svelte' // 64 D1
   import SculptToolbar from './components/menu/SculptToolbar.svelte'
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
   import MeasureToolbar from './components/menu/MeasureToolbar.svelte' // 47 M1
@@ -150,6 +151,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startColocationPresence } from '$lib/colocationPresence'
   import { startColocationAnchors } from '$lib/colocationAnchors'
   import { startColocationNudge } from '$lib/colocationNudge'
+  import '$lib/vector/vectorVR.js' // 64 D1: Add ▸ Shapes + Selected ▸ Extrude on the VR radial menu
   import ColocationBadge from './components/menu/ColocationBadge.svelte'
   import { loadProjectManifest } from '$lib/projectManifest'
   import { startSharedLibrary } from '$lib/sharedLibrary'
@@ -393,10 +395,12 @@ import { startMusicToolbox } from './lib/musicToolbox'
       const name = file.name.toLowerCase()
       if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
+      // 64 D1: an SVG becomes vector shapes on the surface under the drop (a lazy chunk)
+      else if (name.endsWith('.svg')) import('./lib/vector/vectorSvgActions.js').then((m) => m.importSvgFile(file, event.clientX, event.clientY))
       else if (!companions.includes(file)) skipped.push(file.name)
     })
     if (skipped.length > 0)
-      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .json (scene)')
+      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .svg (vector shapes), .json (scene)')
   }
 </script>
 
@@ -449,6 +453,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <ReplaceModelModal />
 <PlaceholderTooltip />
 <DrawToolbar />
+<VectorToolbar />
 <SculptToolbar />
 <SplineToolbar />
 <MeasureToolbar />

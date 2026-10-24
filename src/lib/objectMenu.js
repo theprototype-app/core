@@ -116,6 +116,66 @@ function prefabInstanceMenu(object, group) {
 	];
 }
 
+/** 64 D1/D3: the Shape ▸ rows for a vector shape (or a set holding some)
+ * @param {any} object @param {string[]} targets @param {boolean} multi @param {boolean} locked @param {string} lockedTooltip */
+function vectorMenuRows(object, targets, multi, locked, lockedTooltip) {
+	const group = get(objectsGroup);
+	const isVec = (/** @type {any} */ o) => o?.userData?.geometryParams?.gtype === 'Vector';
+	const vectors = targets.filter((u) => isVec(group?.getObjectByProperty('uuid', u)));
+	if (!isVec(object) && !vectors.length) return [];
+	const ops = () => import('./vector/vectorOps.js');
+	/** @type {any[]} */
+	const children = [];
+	if (vectors.length >= 2)
+		for (const [op, label, tip] of [
+			['union', 'Union', 'Merge the shapes into one'],
+			['subtract', 'Subtract', 'Cut the other shapes out of the first one picked'],
+			['intersect', 'Intersect', 'Keep only where all the shapes overlap'],
+			['exclude', 'Exclude', 'Keep where an odd number of shapes overlap']
+		])
+			children.push({
+				label: `${label} (${vectors.length})`,
+				disabled: locked,
+				tooltip: locked ? lockedTooltip : tip + ' — one undo',
+				action: () => ops().then((m) => m.combineShapes(op, vectors))
+			});
+	if (!multi && isVec(object)) {
+		const p = object.userData.geometryParams.params ?? {};
+		children.push(
+			{
+				label: 'Edit points',
+				disabled: locked,
+				tooltip: locked ? lockedTooltip : 'Drag points and handles, add points on the outline (a parametric shape becomes a path)',
+				action: () => import('./vector/vectorEdit.js').then((m) => m.enterVectorEdit(object.uuid))
+			},
+			{
+				label: 'Outline stroke',
+				disabled: locked || !(p.strokeWidth > 0),
+				tooltip: locked ? lockedTooltip : p.strokeWidth > 0 ? 'Turn the stroke into a filled shape of its own' : 'This shape has no stroke',
+				action: () => ops().then((m) => m.outlineShape(object.uuid))
+			},
+			{
+				label: 'Inset 5 cm',
+				disabled: locked,
+				tooltip: locked ? lockedTooltip : 'Shrink the fill by 5 cm all round',
+				action: () => ops().then((m) => m.offsetVector(object.uuid, -0.05))
+			},
+			{
+				label: 'Outset 5 cm',
+				disabled: locked,
+				tooltip: locked ? lockedTooltip : 'Grow the fill by 5 cm all round',
+				action: () => ops().then((m) => m.offsetVector(object.uuid, 0.05))
+			}
+		);
+	}
+	children.push({
+		label: vectors.length > 1 ? `Export SVG (${vectors.length})` : 'Export SVG',
+		tooltip: 'Download the shape' + (vectors.length > 1 ? 's' : '') + ' as an SVG file (our own files read back exactly)',
+		action: () => import('./vector/vectorSvgActions.js').then((m) => m.downloadShapesSvg(vectors.length ? vectors : [object.uuid]))
+	});
+	return [{ label: 'Shape', icon: 'pen-tool', children }];
+}
+
 /**
  * The FULL object context menu, shared so the direct object menu (right-click an
  * object / an object-list row, Controls.svelte) and the empty-space menu's
@@ -378,6 +438,10 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						]
 					}
 				]),
+		// 64 D1/D3: vector shapes — booleans across the set (the FIRST picked is the subject),
+		// outline / inset / outset / edit points on one, SVG export of every shape in the set.
+		// Every action is a dynamic import: polygon-clipping and SVGLoader stay lazy chunks.
+		...vectorMenuRows(object, targets, multi, locked, lockedTooltip),
 		// T-2: brush sculpting — Terrain keeps its column brush; any other mesh gets the
 		// normal-brush MESH sculpt (same toolbar + replication)
 		...(multi

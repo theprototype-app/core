@@ -23,6 +23,7 @@ import { normalizeLodGroup } from '$lib/lodGroupCore'
 import { normalizeFluid } from '$lib/sim/fluidCore.js'; // 36-sim
 import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCore.js'; // 36-fb F23
 import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
+import { applyTextPathTo } from '$lib/textPathObject.js'; // 64 D2
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
@@ -636,6 +637,14 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.flowPath) applyFlowPathTo(mesh, data.flowPath);
             else delete mesh.userData.flowPath;
+            pokeScene();
+        }
+    } else if (data.parameter == 'textPath') {
+        // 64 D2: text on a path's record, normalized at the boundary; every peer lays it out
+        let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (mesh) {
+            if (data.textPath) applyTextPathTo(mesh, data.textPath);
+            else delete mesh.userData.textPath;
             pokeScene();
         }
     } else if (data.parameter == 'fluidInteraction') {

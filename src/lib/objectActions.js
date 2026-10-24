@@ -47,6 +47,7 @@ import { desktopSpawn, spawnEyePose } from './playSpawn'; // 30b P4 (+ vrOnly: c
 // D2: a LEAF (svelte stores + THREE), so a static import here closes no cycle
 import { shareDuplicatedMaterials, linkMaterials } from './materialSharing';
 import { applyFlowPathTo } from './sim/flowPathObject.js'; // 36-fb F24 (a three leaf)
+import { applyTextPathTo } from './textPathObject.js'; // 64 D2 (a three leaf)
 import {
 	duplicateCarriesAnimation,
 	duplicateCarriesFlow,
@@ -889,6 +890,12 @@ registerHistoryKind('props', (entry, state) => {
 		if (state.flowPath) applyFlowPathTo(object, state.flowPath);
 		else delete object.userData.flowPath;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'flowPath', uuid: entry.uuid, flowPath: state.flowPath ?? null });
+	}
+	if ('textPath' in state) {
+		// 64 D2: text on a path — the record only; every peer lays the letters out from it
+		if (state.textPath) applyTextPathTo(object, state.textPath);
+		else delete object.userData.textPath;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'textPath', uuid: entry.uuid, textPath: state.textPath ?? null });
 	}
 	if ('fluidInteraction' in state) {
 		// 36-fb F23: how a mesh meets particle fluid (none / collide / float; absent = auto)

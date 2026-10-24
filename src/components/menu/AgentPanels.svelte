@@ -30,7 +30,21 @@
 		focusedPanel
 	} from '$lib/agentPanels.js';
 	import { ownershipLabel } from '$lib/agentPanelCore.js';
-	import { isLocked } from '../../stores/sceneStore';
+	import { isLocked, isVRMode } from '../../stores/sceneStore';
+
+	// P1 VR: in a headset the same panels are a board in front of the person (agentPanelsVR.js, lazy)
+	$effect(() => {
+		if (!$isVRMode) return;
+		let off = /** @type {null | (() => void)} */ (null);
+		let gone = false;
+		import('$lib/agentPanelsVR.js').then((m) => {
+			if (!gone) off = m.mountAgentPanelsVR();
+		});
+		return () => {
+			gone = true;
+			off?.();
+		};
+	});
 
 	/** which tab each panel shows @type {Record<string, string>} */
 	let tabOf = $state({});

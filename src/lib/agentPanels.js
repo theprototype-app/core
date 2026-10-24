@@ -21,7 +21,7 @@
 // session without agent panels never loads it.
 
 import { writable, get } from 'svelte/store';
-import { peers, userdata, showToast, agentPanelsLive } from '../stores/appStore';
+import { peers, userdata, showToast, agentPanelsLive, agentTools } from '../stores/appStore';
 import {
 	normalizeSpec,
 	mergeValues,
@@ -45,8 +45,8 @@ import { samePeer } from './agentChatCore.js';
 
 /** the panels this screen shows, oldest first @type {import('svelte/store').Writable<AgentPanel[]>} */
 export const agentPanels = writable([]);
-/** declared tools per agent (P6): agentId -> [{id, name, panel}] @type {import('svelte/store').Writable<Record<string, {id: string, name: string, panel: boolean}[]>>} */
-export const agentTools = writable({});
+/** declared tools per agent (P6) live in appStore (the Users menu reads them without this module) */
+export { agentTools };
 /** the panel most recently opened or touched (the VR board shows it) */
 export const focusedPanel = writable(/** @type {string|null} */ (null));
 

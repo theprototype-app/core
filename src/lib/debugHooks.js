@@ -45,6 +45,9 @@ export const DEBUG_HOOKS = [
 	['packCache', () => import('./packCache.js')],
 	['placeGhost', () => import('./placeGhost.js')],
 	['tourVR', () => import('./tours/vrPanel.js')],
+	// 67: agent panels on a person's page + the headset board
+	['agentPanels', () => import('./agentPanels.js')],
+	['agentPanelsVR', () => import('./agentPanelsVR.js')],
 	// 36-share (B13): the recorder + its stores
 	['recording', () => import('./recording/recorder.js')],
 	['recordingStores', () => import('./recording/recordingStores.js')],

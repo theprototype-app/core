@@ -17,9 +17,10 @@
  *   muted: boolean, hidden: boolean, away: string, privateRow: boolean,
  *   hasAvatar: boolean, editingUuid: string, hasLook: boolean,
  *   isAgent: boolean, inviteId: string, requestAsked: boolean, canInvite: boolean,
- *   watching: boolean, agentBusy?: boolean, agentMuted?: boolean
+ *   watching: boolean, agentBusy?: boolean, agentMuted?: boolean,
+ *   agentTools?: {id: string, name: string, panel: boolean}[], viewerMe?: boolean
  * }} PeerMenuFacts
- * @typedef {Record<string, (() => void) | undefined>} PeerMenuActions
+ * @typedef {Record<string, ((...args: any[]) => void) | undefined>} PeerMenuActions
  */
 
 /**
@@ -89,6 +90,11 @@ export function buildPeerMenuItems(f, a) {
 		row('agent-stop', 'Stop request', 'circle-x', a.agentStop, a.agentStop ? { tooltip: 'Stop what it is answering — later steps return cancelled' } : off(f.agentBusy ? 'Only the person who asked, the host or an editor can stop it' : 'It is not answering anything right now'));
 		row('agent-mute', f.agentMuted ? 'Unmute agent' : 'Mute agent', f.agentMuted ? 'mic' : 'mic-off', a.agentMute, a.agentMute ? { tooltip: f.agentMuted ? 'Deliver messages to it again' : 'Messages are no longer delivered to it — it stays in the session' } : off('Only the session host or an admin can mute an agent'));
 		if (f.inviteId && f.canModerate) row('agent-revoke', 'Revoke invite', 'unlink', a.revokeInvite);
+		// 67 P6: the tools it declared with a panel — the agent opens the panel for whoever asks (never a viewer)
+		for (const t of (f.agentTools ?? []).filter((t) => t.panel)) {
+			const open = a.openToolPanel;
+			row('agent-tool-' + t.id, 'Open ' + t.name + ' panel', 'sliders-horizontal', open ? () => open(t.id) : undefined, f.viewerMe || !open ? off('Viewers cannot use agent panels') : { tooltip: 'The agent opens its ' + t.name + ' panel for you' });
+		}
 	}
 	return items;
 }

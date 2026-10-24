@@ -76,7 +76,16 @@ const ALWAYS_ALLOWED = new Set([
 	// reply and every update stay gateable, which is what keeps a viewer read-only.
 	'getytext',
 	// 60 Q5: the shared reference images REQUEST (the `underlay` replies stay gateable)
-	'getunderlays'
+	'getunderlays',
+	// fix-live (plans review #5, roadmap 49 follow-up): the last three `get*` requests off the
+	// floor. A viewer asking for the project manifest, a missing asset's bytes (or thumbnail) or
+	// one big material preset was DROPPED, so a cloud viewer's Explorer never filled in and a
+	// shared texture or preset stayed missing. Each only asks; the answerer sends what it already
+	// shares, and the replies (`manifest`, `assetfile`/`assetstart`/`assetchunk`/`assetmissing`,
+	// `matpresetpart`) stay gateable.
+	'getproject',
+	'getasset',
+	'getmatpreset'
 ]);
 
 /** @type {((peerId: string, msgType: string) => boolean) | null} */
@@ -126,6 +135,10 @@ export function hasCapabilityProvider() {
  *     present it replaces `authorize`: `cloudMeta` is the joiner's dial data
  *     (cloudApi.connectToPeer's 2nd arg, null when absent); 'deny' refuses with no
  *     approval card; an object is the normal card, carrying `label`.
+ *   admitNotice(peerId, cloudMeta): {text?, turnOff?, turnOffLabel?} | null — F-5 (fix-live,
+ *     optional). Core tells the HOST about EVERY automatic admission (toast + notification
+ *     history, with Remove); the provider says WHY in `text` and may offer `turnOff()` (e.g.
+ *     switch "Allow guests to join automatically" off). Null/absent = the generic notice.
  * @type {any}
  */
 let authProvider = null;
@@ -412,4 +425,44 @@ export const sceneHeart = writable(null);
  * @param {any} info */
 export function setSceneHeart(info) {
 	sceneHeart.set(info && typeof info === 'object' && typeof info.toggle === 'function' ? info : null);
+}
+
+/**
+ * F-5 (fix-live): A STANDING SETTING THAT IS NEVER INVISIBLE — a small badge on the Connect
+ * pill, e.g. "Public · guests join" while a listed room auto-admits guests. The plugin sets it
+ * (cloudApi.setConnectBadge) whenever the setting changes; null hides it. Shape:
+ *   { text: string (≤ 32 chars), title?: string (tooltip, ≤ 200), onClick?: () => void }
+ * @type {import('svelte/store').Writable<{text: string, title: string, onClick: (() => void) | null} | null>} */
+export const connectBadge = writable(null);
+
+/** @param {any} badge */
+export function setConnectBadge(badge) {
+	const text = badge && typeof badge === 'object' ? String(badge.text ?? '').trim().slice(0, 32) : '';
+	connectBadge.set(
+		text
+			? {
+					text,
+					title: String(badge.title ?? '').slice(0, 200),
+					onClick: typeof badge.onClick === 'function' ? badge.onClick : null
+				}
+			: null
+	);
+}
+
+/**
+ * fix-live (reports): entries a plugin adds to the Users PEER menu (right-click a peer), under
+ * core's own. `run(peerId, {name})` gets the peer's session id and the name the roster shows.
+ * The cloud plugin's "Report…" lives here. Set via cloudApi.setPeerMenuItems; [] clears.
+ * @type {import('svelte/store').Writable<{id: string, label: string, run: (peerId: string, info: {name: string}) => void}[]>} */
+export const peerMenuItems = writable([]);
+
+/** @param {any} items */
+export function setPeerMenuItems(items) {
+	const list = Array.isArray(items) ? items : [];
+	peerMenuItems.set(
+		list
+			.filter((i) => i && typeof i.run === 'function' && String(i.label ?? '').trim())
+			.slice(0, 8)
+			.map((i, n) => ({ id: String(i.id ?? 'item-' + n).slice(0, 40), label: String(i.label).trim().slice(0, 40), run: i.run }))
+	);
 }

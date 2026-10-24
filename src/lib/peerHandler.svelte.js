@@ -35,6 +35,8 @@ import { createFastLinks, createStaleFilter, createKeyframer, stampPose, poseKey
 import { registerDebugHook } from '$lib/debugHooks';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError } from '$lib/wireErrors';
+import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';
+import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence } from '$lib/peerDrop';
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
@@ -115,7 +117,7 @@ import { applyObjectFile } from '$lib/animatedImports';
 import { applyRemoteBehavior } from '$lib/packBehavior';
 import { sendArchBehaviorStates } from '$lib/arch/archParts.js';
 import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene } from '../stores/sceneStore';
-import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast, pushNotification, chatHistory, mergeChatHistory } from '../stores/appStore';
+import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast, showLastingToast, pushNotification, chatHistory, mergeChatHistory } from '../stores/appStore';
 // 41 G21: the signaling link's ups and downs are a STATE on the Connect pill's dot, never toasts
 import { GIVE_UP_ATTEMPTS } from '$lib/connectionStatus';
 import { get } from 'svelte/store';
@@ -285,6 +287,18 @@ export class PeerConnection {
 		/** @type {Set<string>} peers that ANNOUNCED they were leaving (the
 		 * `disconnected` self-message) — their close is expected, don't redial */
 		this.gracefulLeft = new Set();
+		/** F-3: when a peer last left or dropped (or we left) — peer-level errors right after
+		 * one are its symptoms, not news (peerDrop.quietPeerError) */
+		this.lastLeaveAt = 0;
+		/** F-3: peerId -> "not on the signaling server" answers while we redial them
+		 * @type {Map<string, number>} */
+		this.unavailableStrikes = new Map();
+		/** F-3: peers whose link WE closed for ICE silence — one "not on the server" answer
+		 * then ends the wait (peerDrop.strikesNeeded) @type {Set<string>} */
+		this.silentDrops = new Set();
+		/** F-5: peers the host removed from an automatic admission — their re-dials are
+		 * refused for the rest of this tab's session, guests setting or not @type {Set<string>} */
+		this.removedPeers = new Set();
 		/** @type {Set<string>} peers we mean to exchange FULL STATE with — the
 		 * host we're joining (requestConnect) or a joiner we approved. Mesh-fill
 		 * dials (the `hosts` flow) don't request state, and an adopted inbound
@@ -602,9 +616,15 @@ export class PeerConnection {
 			if (err.type === 'peer-unavailable') {
 				// 27-E: end the request this names. The pill used to sit on "Requesting"
 				// beside this very toast, and the optimistic whitelist row never went away.
-				const id = String(err.message ?? '').match(/[0-9a-z]{3,}/i)?.[0] ?? '';
+				const id = unavailablePeerId(err.message);
 				// 25-F: a refusal to somebody who already gave up and left is not news
 				if (id && this.refusalDials.has(id)) return;
+				// F-3: a REDIAL of a peer that dropped — the server no longer holds them. Not
+				// news either; a few answers in a row mean they are gone, so stop waiting.
+				if (id && this.reconnecting.has(id)) {
+					this.noteUnavailable(id);
+					return;
+				}
 				if (id) import('$lib/peerApproval').then((m) => m.abandonOutboundRequest(id)).catch(() => {});
 				showToast('Peer is unreachable. Check the ID and ask them to stay online.');
 			} else if (err.type === 'unavailable-id') {
@@ -613,6 +633,10 @@ export class PeerConnection {
 				// 41 G21: no toast — a link that was up retries through 'disconnected'/'close' (the
 				// dot pulses); one that NEVER opened has nothing else to say it, so it is failed
 				if (!this.hasOpened) signalingDown(Math.max(GIVE_UP_ATTEMPTS, get(signalingRetry).attempt || 0));
+			} else if (quietPeerError(err.type, { lastLeaveAt: this.lastLeaveAt, reconnecting: this.reconnecting.size, now: Date.now() })) {
+				// F-3: the tail of a leave or a drop (late candidates for a closed link) — the
+				// leave itself is what the user hears about
+				log('info', 'net', 'peer error during a leave — not shown', { type: err.type });
 			} else {
 				showToast('Connection error: ' + err.type);
 			}
@@ -712,6 +736,12 @@ export class PeerConnection {
 					// 'admit' | 'deny' | {label} (knock). 'deny' refuses with no card — told to a
 					// joiner that can hear it. Without `decide`, `authorize` as before.
 					const cloudMeta = conn?.metadata?.cloud ?? null;
+					// F-5: someone the host removed stays out (the setting would just let them back)
+					if (this.removedPeers.has(conn.peer)) {
+						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied');
+						conn.close();
+						return;
+					}
 					const verdict = auth && typeof auth.decide === 'function' ? auth.decide(conn.peer, cloudMeta) : undefined;
 					if (verdict === 'deny') {
 						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied');
@@ -742,6 +772,7 @@ export class PeerConnection {
 						}
 						get(peers).send({ type: 'userdata', userdata: get(userdata) });
 						this.approveDialBack(conn.peer);
+						this.announceAutoAdmit(conn.peer, auth, cloudMeta);
 					}
 				} catch (e) {
 					console.error('cloud auth provider threw:', e);
@@ -803,8 +834,54 @@ export class PeerConnection {
 			// both invisible. This is the one function every creation site already calls —
 			// the four dials and the adopted inbound conn — so one listener pair covers all.
 			conn.on('error', (/** @type {any} */ err) => noteWireError(conn.peer, 'conn-error', err?.type ?? err));
+			// F-3: a peer that died without closing its channel (a killed process, a crashed tab)
+			// leaves the conn "open" — a ghost in Users. Two watches close it ourselves, and the
+			// close runs the ordinary reconnect window, which redials a live peer and drops a gone
+			// one: ICE held `disconnected` past the grace (ICE took ~15 s to say so in the crash
+			// probe), and the selected pair's consent checks going unanswered (peerDrop.linkSilence).
+			/** @type {ReturnType<typeof setTimeout> | null} */
+			let iceDropTimer = null;
+			/** @type {ReturnType<typeof setInterval> | null} */
+			let silenceTimer = null;
+			const closeSilent = (/** @type {string} */ why) => {
+				if (!conn.open) return;
+				log('warn', 'net', 'link silent — closing it so the peer is redialled or dropped', { peer: conn.peer, why });
+				this.silentDrops.add(conn.peer);
+				try { conn.close(); } catch (e) { /* already dead */ }
+			};
 			conn.on('iceStateChanged', (/** @type {any} */ state) => {
 				if (state === 'failed' || state === 'closed') noteWireError(conn.peer, 'ice-' + state);
+				if (state === 'disconnected') {
+					if (iceDropTimer) clearTimeout(iceDropTimer);
+					iceDropTimer = setTimeout(() => {
+						iceDropTimer = null;
+						if (conn.peerConnection?.iceConnectionState === 'disconnected') closeSilent('ice-disconnected');
+					}, ICE_DROP_GRACE_MS);
+				} else if (iceDropTimer) {
+					clearTimeout(iceDropTimer);
+					iceDropTimer = null;
+				}
+			});
+			const watchSilence = () => {
+				if (silenceTimer) return;
+				/** @type {any} */
+				let seen = null;
+				silenceTimer = setInterval(async () => {
+					const pc = conn.peerConnection;
+					if (!conn.open || !pc || typeof pc.getStats !== 'function') return;
+					try {
+						const verdict = linkSilence(seen, consentCounters(await pc.getStats()), Date.now());
+						seen = verdict.state;
+						if (verdict.silent) closeSilent('consent-unanswered');
+					} catch (e) { /* stats unavailable: the ICE watch still stands */ }
+				}, LINK_POLL_MS);
+			};
+			if (conn.open) watchSilence();
+			conn.on('open', watchSilence);
+			conn.on('close', () => {
+				if (iceDropTimer) clearTimeout(iceDropTimer);
+				if (silenceTimer) clearInterval(silenceTimer);
+				silenceTimer = null;
 			});
 			// The dispatch chain itself, called from the guarded handler below. Naming it is
 			// what lets a try/catch wrap 440 lines without re-indenting any of them.
@@ -1838,6 +1915,7 @@ export class PeerConnection {
 			checkLocks();
 			return;
 		}
+		this.lastLeaveAt = Date.now();
 		if (this.gracefulLeft.delete(peerId)) {
 			this.finalizeDisconnect(peerId, false);
 			return;
@@ -1890,6 +1968,8 @@ export class PeerConnection {
 					conn.on('open', () => {
 						log('info', 'net', 'reconnected', { peer: peerId });
 						this.reconnecting.delete(peerId);
+						this.unavailableStrikes.delete(peerId);
+						this.silentDrops.delete(peerId);
 						peers.update((value) => value);
 						this.sendHandshake(conn, peerId, true, this.peer.id);
 					});
@@ -1898,6 +1978,65 @@ export class PeerConnection {
 			}
 			this.scheduleReconnect(peerId, attempt + 1);
 		}, delay);
+	}
+
+	// F-5: an AUTOMATIC admission is never silent. A toast AND a notification-history entry
+	// that keeps its buttons: Turn off (when the provider offers it — e.g. "Allow guests to
+	// join automatically") and Remove. The provider says why; without one, a generic line.
+	/** @param {string} peerId @param {any} auth @param {any} cloudMeta */
+	announceAutoAdmit(peerId, auth, cloudMeta) {
+		let provided = null;
+		try {
+			provided = typeof auth?.admitNotice === 'function' ? auth.admitNotice(peerId, cloudMeta) : null;
+		} catch (e) {
+			console.error('cloud auth provider admitNotice threw:', e);
+		}
+		const notice = composeAdmitNotice(peerId, provided);
+		/** @type {{label: string, action: () => void}[]} */
+		const actions = [];
+		if (notice.turnOff) {
+			const turnOff = notice.turnOff;
+			actions.push({ label: notice.turnOffLabel, action: () => { try { turnOff(); } catch (e) { console.error('turnOff threw:', e); } } });
+		}
+		actions.push({ label: 'Remove', action: () => this.removeAdmittedPeer(peerId) });
+		log('info', 'net', 'peer admitted automatically', { peer: peerId });
+		showLastingToast(notice.text, actions);
+	}
+
+	// F-5: Remove from the auto-admit notice. Local to this host: drop them from the roster,
+	// close our link, and refuse their re-dials for the rest of the session. (The mesh-wide
+	// kick with a block list is roadmap 55 A9; this is the host's own door.)
+	/** @param {string} peerId */
+	removeAdmittedPeer(peerId) {
+		this.removedPeers.add(peerId);
+		this.gracefulLeft.add(peerId); // their close is expected — no redial
+		const roster = /** @type {any[]} */ (get(userdata)).filter((/** @type {any} */ e) => e[0] !== peerId);
+		userdata.set(roster);
+		if (this.openedPeers.has(peerId)) this.finalizeDisconnect(peerId, true);
+		else {
+			const conn = this.connections[peerId];
+			delete this.connections[peerId];
+			try { conn?.close(); } catch (e) { /* never opened */ }
+		}
+		this.broadcast({ type: 'userdata', userdata: get(userdata) });
+		showToast(shortPeer(peerId) + ' was removed. They cannot rejoin while this tab stays open.');
+	}
+
+	// F-3: the signaling server answered "no such peer" to a redial. The dial it named
+	// stays un-open (peerjs does not close it), so clear it — the next check redials at
+	// once instead of waiting out the dial grace — and after a few answers in a row stop
+	// waiting: the peer is gone, not blipping.
+	/** @param {string} peerId */
+	noteUnavailable(peerId) {
+		const strikes = (this.unavailableStrikes.get(peerId) ?? 0) + 1;
+		this.unavailableStrikes.set(peerId, strikes);
+		const dead = this.connections[peerId];
+		if (dead && !dead.open) {
+			delete this.connections[peerId];
+			try { dead.close(); } catch (e) { /* never opened */ }
+		}
+		log('info', 'net', 'redial: peer not on the server', { peer: peerId, strikes });
+		if (strikes >= strikesNeeded(this.silentDrops.has(peerId))) this.finalizeDisconnect(peerId, true);
 	}
 
 	// The peer is really gone: full per-peer teardown (self-heal — a relayed
@@ -1909,6 +2048,9 @@ export class PeerConnection {
 	/** @param {string} peerId @param {boolean} relay */
 	finalizeDisconnect(peerId, relay) {
 		this.reconnecting.delete(peerId);
+		this.unavailableStrikes.delete(peerId);
+		this.silentDrops.delete(peerId);
+		this.lastLeaveAt = Date.now();
 		const conn = this.connections[peerId];
 		if (conn) {
 			delete this.connections[peerId];
@@ -1945,6 +2087,9 @@ export class PeerConnection {
 		// reconnect redials our still-registered peer id and every attempt lands
 		// here as a fresh approval request
 		this.broadcast({ type: 'disconnected', peerId: this.peer.id });
+		this.lastLeaveAt = Date.now(); // F-3: the closes below make peer-level noise
+		this.unavailableStrikes.clear();
+		this.silentDrops.clear();
 		dropPeerUnderlays(null); // 60 Q5: every peer's shared reference images go with the session
 		this.reconnecting.clear(); // pending retry timers see a cleared map and no-op
 		this.gracefulLeft.clear();

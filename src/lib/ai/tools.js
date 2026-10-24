@@ -12,6 +12,10 @@ import {
 import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/materialsHandler';
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { meshGenReady } from './meshProviders.js';
+import { viewerToolRefusal } from './viewerGate.js';
+import { aiCreatePhysics } from './aiPhysicsDefault.js';
+import { setPhysicsFor } from '$lib/physics';
+import { isViewer } from '$lib/objectPermissions';
 import { graphOf, SCENE_GRAPH } from '../../stores/flowStore';
 import { sceneJoints } from '$lib/joints';
 import { graphToText } from '$lib/graphText';
@@ -321,7 +325,10 @@ function createOne(spec) {
 		const parent = objectOf(spec.parentUuid);
 		if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
 	}
-	return { uuid, name: created.name };
+	// fix-live F-4: static unless asked — a built scene must not fall apart in Play
+	const physics = aiCreatePhysics(spec, created.userData?.physics);
+	if (physics) setPhysicsFor(uuid, physics);
+	return { uuid, name: created.name, ...(created.userData?.physics?.mode ? { physics: created.userData.physics.mode } : {}) };
 }
 
 /** @param {any} raw @returns {string|null} */
@@ -562,6 +569,9 @@ const PHYSICS_DISABLED =
  */
 export async function executeAiTool(rawName, rawArgs) {
 	const { name, args } = repairToolCall(rawName, rawArgs);
+	// F-1: a viewer's edits never reach anyone, so refuse instead of reporting success
+	const refusal = viewerToolRefusal(name, isViewer());
+	if (refusal) return refusal;
 	try {
 		switch (name) {
 			case 'list_scene':
@@ -729,7 +739,13 @@ export const AI_TOOLS = [
 								},
 								scale: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
 								color: { type: 'string', description: 'hex like #ff8800 (meshes only)' },
-								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under' }
+								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under' },
+								physics: {
+									type: 'string',
+									enum: ['static', 'dynamic'],
+									description: 'default static (it stays put in Play). dynamic = it falls, collides and can be thrown — only when asked for'
+								},
+								mass: { type: 'number', description: 'kg; implies physics dynamic' }
 							},
 							required: ['kind']
 						}
@@ -947,7 +963,7 @@ const PHYSICS_AI_TOOLS = [
 		function: {
 			name: 'set_physics',
 			description:
-				'Set physics body params on objects (batch). NOTE: new primitives already spawn dynamic with mass 1 — use this mostly to TUNE bodies or make scenery immovable (mode "static" for ground/walls). mode "auto" reverts to scenery defaults.',
+				'Set physics body params on objects (batch). NOTE: objects made with create_objects are STATIC unless created with physics "dynamic" or a mass — use this to make existing objects dynamic, to TUNE bodies, or to pin scenery (mode "static"). mode "auto" reverts to scenery defaults.',
 			parameters: {
 				type: 'object',
 				properties: {

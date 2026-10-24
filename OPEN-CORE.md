@@ -118,6 +118,17 @@ Consulted in `handleConnection` when an unknown peer connects: if the auth provi
 Default (no provider) keeps the whitelist + approval flow byte-identical. `authorize`
 is a synchronous lookup against state the plugin maintains from its own async login.
 
+**Automatic admissions are never silent (fix-live F-5).** Whenever `decide` answers
+`'admit'` (or `authorize` returns true), core shows the HOST a toast and a
+notification-history entry that keeps its buttons until answered: **Remove** (closes the
+link, drops the roster row, refuses that peer's re-dials while the tab stays open) and,
+when the provider offers it, a switch-off. The optional provider member
+`admitNotice(peerId, cloudMeta) → {text?, turnOff?, turnOffLabel?} | null` supplies the
+line (≤ 200 chars) and the switch-off; absent or null = a generic line, no switch-off.
+`api.setConnectBadge({text, title?, onClick?} | null)` puts a small badge on the Connect
+pill (`#connect-setting-badge`, ≤ 32 chars) for a standing setting such as "Public ·
+guests join"; a press runs `onClick` or opens the drawer's Rooms tab.
+
 ### 3. UI mount points
 
 Roles replicate over the **plugin message channel**: an admin broadcasts the roles
@@ -248,6 +259,9 @@ static|embed>`. Core never talks to a server about it.
 | `loadRemoteScene({…, keepGameId?})` | `keepGameId: true` = the OWNER opening their own published scene (no fork); otherwise a community load is a remix |
 | `onExportBuilt(fn)` → off | after an export zip is built: `fn({gameId, buildId, preset, title, template, parentGameId, appVersion})` |
 | `onTemplateOpen(fn)` → off | a Games-tab template was started: `fn(slug)` (one "template open") |
+| `toast(message, actions?, {keep?})` | fix-live F-2: with `keep: true` an action toast's buttons also stay on its notification-history entry until one is pressed (a role offer the user sees later) |
+| `setPeerMenuItems(items)` | fix-live: `[{id, label, run(peerId, {name})}]` (≤ 8, labels ≤ 40) appended to the Users peer menu (right-click a peer) under core's own entries — the cloud's "Report…"; `[]` clears |
+| `setConnectBadge(badge \| null)` | fix-live F-5: `{text, title?, onClick?}` — a small badge on the Connect pill for a standing setting (e.g. "Public · guests join"); `null` hides it. Probe with `typeof` |
 | `setSceneHeart(info \| null)` | the heart on the play-link start card (`#embed-heart`) and a game's pause menu (`#game-shell-heart`): `{count, liked, toggle() → Promise<{liked, count} \| null>}`; `null` from `toggle` rolls the optimistic flip back |
 
 The community provider gains three optional entry fields — `liked` (boolean, the viewer's own

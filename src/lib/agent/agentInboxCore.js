@@ -141,7 +141,7 @@ export function createInbox(deps) {
 	const queue = [];
 	/** armed waits: token -> resolver @type {Map<string, (m: any) => void>} */
 	const waiters = new Map();
-	/** the request the agent is working on @type {null | {id: string, chatId: string, from: string, role: string|null, via?: string, cancelled: boolean, done: boolean}} */
+	/** the request the agent is working on (67: or a panel event) @type {null | {id: string, chatId: string, from: string, role: string|null, via?: string, cancelled: boolean, done: boolean, panel?: boolean}} */
 	let current = null;
 	/** the chat the agent last saw a message in */
 	let lastChat = /** @type {string|null} */ (null);
@@ -250,6 +250,12 @@ export function createInbox(deps) {
 	async function prepare(msg) {
 		/** @type {any} */
 		const out = { ...msg };
+		if (msg.kind === 'panel') {
+			// 67 P2: a panel event is the agent's next piece of work, under its sender's role — no chat to switch
+			current = { id: msg.id, chatId: lastChat ?? 'terminal', from: msg.from, role: msg.role, cancelled: false, done: false, panel: true };
+			lastActive = now();
+			return out;
+		}
 		const switched = msg.chatId !== lastChat;
 		// the request is current at once (before the history read), so pump's status says `working`
 		lastChat = msg.chatId;
@@ -350,6 +356,28 @@ export function createInbox(deps) {
 	}
 
 	/**
+	 * 67 P2: a panel event (panelHostCore's — already checked: the sender may act on the panel) waits for the
+	 * agent like a chat message. A change of the same control that is still queued is REPLACED, so a dragged
+	 * slider is one message with its latest value, never a backlog. Muted → dropped, like a message.
+	 * @param {any} evt
+	 */
+	function pushEvent(evt) {
+		if (!evt || typeof evt !== 'object' || muted) return false;
+		if (evt.event === 'change') {
+			const q = queue.find((m) => m.kind === 'panel' && m.event === 'change' && m.panelId === evt.panelId && m.control === evt.control);
+			if (q) {
+				Object.assign(q, evt, { id: q.id, kind: 'panel', at: now() });
+				return true;
+			}
+		}
+		const msg = { ...evt, id: makeId(), kind: 'panel', at: now() };
+		queue.push(msg);
+		if (queue.length > QUEUE_CAP) queue.splice(0, queue.length - QUEUE_CAP);
+		pump();
+		return true;
+	}
+
+	/**
 	 * The next request, or null after `timeoutMs`. `token` names the wait so the bridge can abandon it.
 	 * @param {number} [timeoutMs] @param {string} [token]
 	 * @returns {Promise<any|null>}
@@ -395,7 +423,7 @@ export function createInbox(deps) {
 		const { history, summary, olderMessages, ...plain } = msg;
 		queue.unshift(plain);
 		if (current?.id === msg.id) current = null;
-		lastChat = null; // the agent never saw it: the switch is still to come
+		if (msg.kind !== 'panel') lastChat = null; // the agent never saw it: the switch is still to come
 		pump();
 		return true;
 	}
@@ -535,6 +563,7 @@ export function createInbox(deps) {
 
 	return {
 		receive,
+		pushEvent,
 		next,
 		abortWait,
 		requeue,

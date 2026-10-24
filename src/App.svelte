@@ -181,6 +181,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { profilerClose } from './stores/appStore'
   // 36-code: the code workspace (plan 75), loaded the first time a tab opens
   import { codeWorkspaceClose } from './stores/appStore'
+  import { agentPanelsLive } from './stores/appStore' // 67: agent panels (the layer is lazy)
   import { startCodeWorkspace } from '$lib/codeWorkspace'
   import { peers, userdata } from './stores/appStore'
   import { get } from 'svelte/store'
@@ -484,6 +485,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <MomentReport />
 <ProblemReport />
 <ProfilerLive />
+<!-- 67: agent panels — loaded the first time an agent opens one, so the boot carries none of it -->
+{#if $agentPanelsLive > 0 && !$embedMode}
+{#await import('./components/menu/AgentPanels.svelte') then m}<m.default />{/await}
+{/if}
 <!-- 47-cc0: the Asset Browser — loaded the first time it opens, so the boot carries none of it -->
 {#if $assetBrowserOpen}
 {#await import('./components/editors/AssetBrowser.svelte') then m}<m.default />{/await}

@@ -135,7 +135,7 @@ h.run(async () => {
 		const st = await waitJoined(B.client);
 		h.check(st && st.joined === true, 'the agent joined after Approve');
 		agentId = st?.session?.peerId;
-		h.check(st?.session?.version === '1.1.0', 'tpAgent 1.1.0 (the chat contract): ' + st?.session?.version);
+		h.check(/^1\.([1-9]|\d{2,})\./.test(st?.session?.version ?? ''), 'tpAgent 1.1+ (the chat contract): ' + st?.session?.version);
 		for (const P of [A, C]) await h.eventually(() => seen(P.page, agentId), (l) => Array.isArray(l), 'the ' + (P === A ? 'host' : 'second peer') + ' is tapping the agent', 30000);
 		await h.eventually(() => openedPeersOf(C.page), (p) => p.includes(agentId), 'the agent is in the mesh with the second peer', 60000);
 

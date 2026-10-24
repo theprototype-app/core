@@ -11,7 +11,7 @@
 // major. The bridge feature-detects methods, so an older bridge keeps working against a newer page.
 
 /** The contract version (`tpAgent.version`). */
-export const TP_AGENT_VERSION = '1.1.0';
+export const TP_AGENT_VERSION = '1.2.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([
@@ -32,7 +32,11 @@ export const TP_AGENT_METHODS = /** @type {const} */ ([
 	'reply',
 	'ask',
 	'chatStatus',
-	'thread'
+	'thread',
+	// 1.2.0 (roadmap 67): agent panels — the tools are open_panel / update_panel / close_panel / list_panels in
+	// tools(); their events arrive through nextMessage (kind 'panel'). These two are the bridge's
+	'panelIdentity',
+	'declareTool'
 ]);
 
 /** Camera views `screenshot` renders from (A5). */

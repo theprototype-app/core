@@ -125,6 +125,9 @@ export const objectListClose = writable(true);
 export const chatHidden = writable('hidden');
 // AI assistant (roadmap #10): '' = window open, 'hidden' = closed (mirrors chat).
 export const aiAssistantHidden = writable('hidden');
+// 67: how many agent panels this screen shows (agentPanels.js keeps it); App.svelte mounts the lazy
+// panel layer while it is above 0, so a session without agent panels loads none of it.
+export const agentPanelsLive = writable(0);
 // Quick prompt pill — toggled by the backquote shortcut; session-only (not persisted).
 export const aiPromptBarOpen = writable(false);
 // Mesh-generation modal (roadmap #11): { position: number[]|null } when open, else null.

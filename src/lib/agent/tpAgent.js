@@ -86,6 +86,76 @@ async function installModules(/** @type {any} */ args) {
 	return results;
 }
 
+/** 67: the panel host, loaded on first use (a page that never opens a panel never loads it) */
+const panels = () => import('./panelHost.js');
+
+/** the panel spec, as the model reads it (agentPanelCore.js is the authority) */
+const PANEL_SPEC_HELP =
+	'spec = {title, icon?, toolId?, size?: {w}, controls: [...]} (or sections: [{title, controls}] / tabs: [{title, sections}]). ' +
+	'A control is {type, id, label, …}: slider {min, max, step, value, unit?} · number {min?, max?, step?, value} · select {options: [string|{value,label}], value} · ' +
+	'toggle {value} · colour {value: "#rrggbb"} · text {value, placeholder?} · textarea {value, rows?} · button {label, variant?: "primary"} · ' +
+	'image {src: "data:image/png;base64,…", alt, pixelated?, frames?: {cols, rows, fps}} · files {items: [{name}]} · progress {value 0..1 or null, text?} · ' +
+	'status {text, tone?: info|ok|warn|error} · table {columns, rows}. Labels are plain text; no password / key / card fields; at most 60 controls, 4 images.';
+
+/** agent-only tools for panels: run locally on this page, never batched (a panel is not scene state) */
+const PANEL_TOOLS = {
+	open_panel: {
+		schema: {
+			description:
+				'Open a floating tool panel in the app for the person you are working for (sliders, selects, buttons, an image preview…). ' +
+				'Their changes and button presses come back through wait_for_message as messages of kind "panel" (event change / press, control, value, values); ' +
+				'answer with update_panel (new preview, progress, status) and your normal tool calls. The panel never acts by itself. ' +
+				PANEL_SPEC_HELP,
+			parameters: {
+				type: 'object',
+				properties: {
+					spec: { type: 'object', description: 'the panel spec (see the tool description)' },
+					owner: { type: 'string', description: 'peer id of the person it is for (default: whoever you are working for, else the host)' },
+					values: { type: 'object', description: 'starting values by control id (optional)' }
+				},
+				required: ['spec']
+			}
+		},
+		run: (/** @type {any} */ args) => panels().then((m) => m.panelHost().open(args?.spec, { owner: args?.owner, values: args?.values }))
+	},
+	update_panel: {
+		schema: {
+			description:
+				'Change an open panel: values {id: value}, controls {id: {label?, src?, options?, text?, value?, disabled?, …}}, title. ' +
+				'Use it to show a new preview image, progress, a status line, or to set a value. Every copy redraws.',
+			parameters: {
+				type: 'object',
+				properties: {
+					panelId: { type: 'string' },
+					values: { type: 'object' },
+					controls: { type: 'object', description: 'control id -> the fields to change' },
+					title: { type: 'string' }
+				},
+				required: ['panelId']
+			}
+		},
+		run: (/** @type {any} */ args) =>
+			panels().then((m) => {
+				const { panelId, panel_id, ...patch } = args ?? {};
+				return m.panelHost().update(panelId ?? panel_id, patch);
+			})
+	},
+	close_panel: {
+		schema: {
+			description: 'Close one of your panels (for everyone who has a copy).',
+			parameters: { type: 'object', properties: { panelId: { type: 'string' } }, required: ['panelId'] }
+		},
+		run: (/** @type {any} */ args) => panels().then((m) => m.panelHost().close(args?.panelId ?? args?.panel_id))
+	},
+	list_panels: {
+		schema: {
+			description: 'Your open panels: id, title, owner, shared, current values, control ids.',
+			parameters: { type: 'object', properties: {} }
+		},
+		run: () => panels().then((m) => ({ panels: m.panelHost().list(), tools: m.panelHost().tools() }))
+	}
+};
+
 /** A6: is the HOST's mesh provider ready (what it last said through the relay)? */
 function hostMeshReady() {
 	const host = get(sessionHost);
@@ -180,6 +250,8 @@ export function createTpAgent(extra = {}) {
 				},
 				run: () => ({ offers: core.agent.pendingOffers() })
 			},
+			// 67 P1/P2: agent panels — a small tool window for the person you work for (agentPanelCore.js has the schema)
+			...PANEL_TOOLS,
 			accept_offer: {
 				schema: {
 					description: 'Press a button on a pending offer (see pending_offers). action = the button label; omit for the first button.',
@@ -301,6 +373,9 @@ export function installTpAgent(extra) {
 		ask: (/** @type {any} */ o) => inbox.ask(o),
 		chatStatus: (/** @type {any} */ s, /** @type {any} */ meta) => inbox.setStatus(s, meta),
 		thread: (/** @type {any} */ o) => inbox.thread(o),
+		// 1.2.0 (roadmap 67): the bridge names its machine for the panel header, and declares local tools (P6)
+		panelIdentity: (/** @type {any} */ o) => panels().then((m) => m.setPanelIdentity(o)),
+		declareTool: (/** @type {any} */ manifest) => panels().then((m) => m.panelHost().declareTool(manifest)),
 		status: () => ({ ...core.agent.status(), chat: inbox.state() })
 	});
 	return w.tpAgent;

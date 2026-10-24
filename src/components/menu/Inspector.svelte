@@ -34,6 +34,8 @@
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
+	import TextPathSection from './TextPathSection.svelte'; // 64 D2
+	import TextOnPathButton from './TextOnPathButton.svelte'; // 64 D2
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
 	import DragRow from '../ui/DragRow.svelte';
 	import FieldClip from '../ui/FieldClip.svelte'; // 43 J3
@@ -3949,7 +3951,8 @@
 				</Section>
 			{/if}
 
-			{#if material}
+			<!-- 64 D2: a text's carrier draws nothing — its look is the Text section's -->
+			{#if material && !$selectedObject.userData?.textPath}
 				<Section variant="panel" label="Material" clip={{ count: () => matTargets.length, fans: true }}>
 					{#if matCount}
 						<p id="material-multi-note" class="text-[length:var(--fs-badge)] italic text-text-muted">
@@ -4303,6 +4306,7 @@
 			{#if $selectedObject.userData?.fluid}<FluidTankSection object={$selectedObject} />{/if}<!-- 36-sim U2b -->
 			{#if $selectedObject.userData?.fluidEmitter}<FluidEmitterSection object={$selectedObject} />{/if}<!-- 36-fb F23 -->
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
+			{#if $selectedObject.userData?.textPath}<TextPathSection object={$selectedObject} />{/if}<!-- 64 D2 -->
 			{#if !$selectedObject.isLight}
 				<Section variant="panel" label="Physics" clip={{ count: () => insTargets.length, fans: true }}>
 					{#if multiCount}
@@ -4529,6 +4533,7 @@
 						>
 							{$splineEditObject === $selectedObject.uuid ? 'Close spline editor' : 'Edit control points'}
 						</UiButton>
+						<TextOnPathButton object={$selectedObject} /><!-- 64 D2 -->
 						<p class="text-[length:var(--fs-badge)] text-text-faint">
 							Per-point thickness lives on the handles — open the editor and drag the amber dot above a point.
 						</p>

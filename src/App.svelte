@@ -394,10 +394,12 @@ import { startMusicToolbox } from './lib/musicToolbox'
       const name = file.name.toLowerCase()
       if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
+      // 64 D1: an SVG becomes vector shapes on the surface under the drop (a lazy chunk)
+      else if (name.endsWith('.svg')) import('./lib/vector/vectorSvgActions.js').then((m) => m.importSvgFile(file, event.clientX, event.clientY))
       else if (!companions.includes(file)) skipped.push(file.name)
     })
     if (skipped.length > 0)
-      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .json (scene)')
+      showToast('Unsupported: ' + skipped.join(', ') + '. Supported formats: .glb, .gltf, .obj, .stl, .fbx (models), .svg (vector shapes), .json (scene)')
   }
 </script>
 

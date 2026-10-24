@@ -77,6 +77,15 @@ check('the streamed text adds up, and the last push is final', textOf(r1) === 'P
 check('the terminal shows the app turn too', /\[app\] Alex \(editor\): add three trees/.test(out) && /create_objects/.test(out));
 check('the user turn names the sender and role', s.history.some((m) => m.role === 'user' && /Alex \(editor\) in the app/.test(m.content)));
 
+// --- 67: a panel event is a quiet turn: the model acts, nothing is posted to the app's thread ---
+const ep = new FakeEngine();
+let pout = '';
+const sp = createReplSession({ engine: ep, cfg, out: (t) => (pout += t), log: () => {}, flushMs: 5 });
+await sp.appTurn({ kind: 'panel', id: 'pe1', event: 'press', panelId: 'p1', title: 'Pixling', control: 'render', label: 'Render', values: { size: 32 }, from: 'host1', name: 'Alex', role: 'editor', at: 1 });
+check('panel event: the terminal shows it', /\[panel\] \[Alex \(editor\) in the app, panel "Pixling"/.test(pout) && /pressed Render/.test(pout));
+check('panel event: the model got it as a user turn', sp.history.some((m) => m.role === 'user' && /pressed Render \[render\]/.test(m.content)));
+check('panel event: no chat reply posted', replies(ep, () => true).length === 0);
+
 // --- a terminal line: echoed via cli, then answered via cli ---
 await s.terminal('make the fire bigger please');
 const firstCli = e.chats.find((c) => c[0] === 'reply' && c[1].prompt);

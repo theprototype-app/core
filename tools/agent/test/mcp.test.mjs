@@ -4,7 +4,7 @@
 import { EventEmitter } from 'node:events';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import { ToolListChangedNotificationSchema, LoggingMessageNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { createBridgeServer, nameFromClient } from '../src/mcpServer.js';
 import { toMcpTool, mapHostTools } from '../src/mcpTools.js';
 import { parseLink } from '../src/link.js';
@@ -273,6 +273,53 @@ const wn = (await c2.listTools()).tools.map((t) => t.name);
 check('wire: catalog listed before connecting, no screenshot/wait_for_edit/chat', wn.join() === 'connect,status,list_scene,get_status');
 check('wire: get_status answers like status', /connect/.test(JSON.parse((await c2.callTool({ name: 'get_status', arguments: {} })).content[0].text).note));
 await wire.shutdown();
+
+// --- 67: panels — the announce on connect, and the nudge when the inbox has a backlog nobody waits on ---
+class PanelEngine extends FakeEngine {
+	constructor(link) {
+		super(link);
+		this.isJoined = true;
+		this.queued = 0;
+		this.announced = [];
+	}
+	async call(method, arg) {
+		this.announced.push([method, arg]);
+		return { ok: true };
+	}
+	async status() {
+		return { ...(await super.status()), chat: { queued: this.queued, waiting: 0 } };
+	}
+}
+/** @type {PanelEngine | null} */
+let pe = null;
+const pb = createBridgeServer({
+	kind: 'browser',
+	panels: { machine: 'deck', tools: [{ id: 'pixling', name: 'Pixling' }] },
+	createEngine: (link) => (pe = new PanelEngine(link)),
+	pollMs: 30
+});
+const [ct3, st3] = InMemoryTransport.createLinkedPair();
+const c3 = new Client({ name: 'claude-code', version: '1' });
+const notes = [];
+c3.setNotificationHandler(LoggingMessageNotificationSchema, (n) => notes.push(n.params));
+await pb.server.connect(st3);
+await c3.connect(ct3);
+check('server advertises logging (the nudge channel)', !!c3.getServerCapabilities()?.logging);
+check('instructions mention open_panel', /open_panel/.test(c3.getInstructions() || ''));
+await c3.callTool({ name: 'connect', arguments: { link: 'F0FD3' } });
+await tick(40);
+check('connect announces the machine, then declares each tool', pe.announced[0]?.[0] === 'panelIdentity' && pe.announced[0][1].machine === 'deck' && pe.announced.some((a) => a[0] === 'declareTool' && a[1].id === 'pixling'));
+pe.queued = 2;
+await tick(100);
+check('a backlog nobody waits on → one notice', notes.length === 1 && /2 messages/.test(notes[0].data) && /wait_for_message/.test(notes[0].data));
+await tick(100);
+check('the same backlog is not repeated', notes.length === 1);
+pe.queued = 0;
+await tick(60);
+pe.queued = 1;
+await tick(100);
+check('a new backlog after it drained → another notice', notes.length === 2 && /1 message /.test(notes[1].data));
+await pb.shutdown();
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

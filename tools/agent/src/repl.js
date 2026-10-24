@@ -11,6 +11,7 @@ import { runChat } from './llmClient.js';
 import { mapHostTools } from './mcpTools.js';
 import { redactLink } from './link.js';
 import { execBridged } from './chat.js';
+import { panelEventText, announcePanels, machineName, readToolManifests } from './panels.js';
 
 /** how often a streamed reply is pushed to the window (each push carries the full text so far) */
 const FLUSH_MS = 250;
@@ -69,6 +70,7 @@ export function createReplSession(o) {
 		const push = (/** @type {boolean} */ final) => {
 			const delta = pending;
 			pending = '';
+			if (ids.quiet) return sending; // a panel turn: the terminal shows the words, the app's thread does not
 			sending = sending.then(() => chat('reply', { ...ids, delta, final }).catch(() => null));
 			return sending;
 		};
@@ -154,6 +156,13 @@ export function createReplSession(o) {
 
 	/** A message typed in the app's window, as a user turn. @param {any} msg */
 	function appTurn(msg) {
+		// 67 P2: a person used one of the agent's panels — a turn too, but its answer is tool calls, not a chat reply
+		if (msg.kind === 'panel')
+			return enqueue(async () => {
+				const text = panelEventText(msg);
+				out('\n[panel] ' + text + '\n');
+				return turn(text, { quiet: true }).catch((e) => log('turn failed: ' + e.message));
+			});
 		return enqueue(async () => {
 			const who = (msg.name || String(msg.from || '').toUpperCase() || 'someone') + ' (' + (msg.role || 'editor') + ')';
 			out('\n[app] ' + who + ': ' + (msg.text || '') + (msg.images?.length ? ' [' + msg.images.length + ' image' + (msg.images.length > 1 ? 's' : '') + ']' : '') + '\n');
@@ -256,6 +265,9 @@ export async function runRepl(args, link, makeEngine) {
 		}
 		await new Promise((r) => setTimeout(r, 500));
 	}
+	// 67: the machine for the panel header, and the declared tools (P6)
+	if (engine.kind === 'browser')
+		await announcePanels(engine, { machine: machineName(args), tools: readToolManifests(args['tools-dir'] || process.env.TP_AGENT_TOOLS, { log: (m) => console.error('[agent] ' + m) }) }).catch(() => {});
 	session = createReplSession({ engine, cfg });
 	const s = session;
 	console.error(

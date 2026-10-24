@@ -329,6 +329,35 @@ export const VALIDATORS = {
 				(d.status === undefined || d.status === 'listening' || d.status === 'working' || d.status === 'away') &&
 				(d.mute === undefined || typeof d.mute === 'boolean') &&
 				(d.images === undefined || (Array.isArray(d.images) && d.images.length <= 4)),
+	// 67: agent panels — one type, `op` discriminates; short string ids, finite revisions. The spec itself is
+	// re-validated by agentPanelCore.normalizeSpec before anything draws it.
+	agentpanel: (d) => {
+		const id = (/** @type {unknown} */ v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
+		switch (d.op) {
+			case 'open':
+				return !!d.panel && typeof d.panel === 'object' && id(d.panel.id) && !!d.panel.spec && typeof d.panel.spec === 'object';
+			case 'patch':
+			case 'values':
+				return id(d.panel) && Number.isFinite(d.rev);
+			case 'close':
+			case 'closed':
+				return id(d.panel);
+			case 'event':
+				return id(d.panel) && typeof d.control === 'string' && d.control.length <= 40 && (d.kind === 'change' || d.kind === 'press');
+			case 'share':
+				return id(d.panel) && typeof d.shared === 'boolean';
+			case 'reopen':
+				return id(d.key) && !!d.saved && typeof d.saved === 'object';
+			case 'refused':
+				return id(d.key) && typeof d.error === 'string';
+			case 'request':
+				return typeof d.toolId === 'string' && d.toolId.length <= 64;
+			case 'tools':
+				return Array.isArray(d.tools) && d.tools.length <= 32;
+			default:
+				return false;
+		}
+	},
 	camera: (d) =>
 		typeof d.peerId === 'string' &&
 		isVec3(d.position) &&

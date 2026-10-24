@@ -10,6 +10,7 @@ import { mkdirSync, writeFileSync, rmSync, readFileSync, statSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { PANEL_EVENT_NOTE } from './panels.js';
 
 export const CHAT_TOOL_NAMES = ['wait_for_message', 'reply', 'ask', 'get_thread'];
 
@@ -33,7 +34,8 @@ export function chatTools() {
 				'(id, chatId, from, name, role, text, images with a local file path each, answers = the ask it answers). Returns null when the timeout passes ' +
 				'with no message — call it again to keep listening. Loop: wait_for_message → do the work with the scene tools → reply(final) → wait_for_message. ' +
 				'role "viewer" = that person may not change the scene: answer, but do not edit for them (edits are refused). A message in a chat you have not ' +
-				'seen carries history (its newest messages) + summary; get_thread pages further back.',
+				'seen carries history (its newest messages) + summary; get_thread pages further back. ' +
+				'Messages of kind "panel" are a person using a panel you opened (open_panel): event change / press, control, value, values — act with tools, no reply needed.',
 			inputSchema: {
 				type: 'object',
 				properties: { timeoutS: { type: 'number', description: 'seconds to wait (default ' + WAIT_DEFAULT_S + ', at most ' + WAIT_MAX_S + ')' } }
@@ -169,6 +171,7 @@ export function messageContent(msg, spool) {
 	if (listed.length) out.images = listed;
 	if (msg.role === 'viewer') out.note = 'This person is a VIEWER: they may read and ask, but not change the scene. Edits for this request are refused — say so in your reply.';
 	if (msg.imagesDropped) out.note = (out.note ? out.note + ' ' : '') + 'They attached images; viewers cannot attach, so they were dropped.';
+	if (msg.kind === 'panel') out.note = PANEL_EVENT_NOTE; // 67
 	if (msg.history?.length) out.historyNote = 'You have not seen this chat in this session: history = its newest messages, summary = the whole of it; get_thread pages back.';
 	return [{ type: 'text', text: JSON.stringify(out) }, ...blocks];
 }

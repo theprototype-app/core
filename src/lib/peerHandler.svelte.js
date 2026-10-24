@@ -119,7 +119,7 @@ import { applyObjectFile } from '$lib/animatedImports';
 import { applyRemoteBehavior } from '$lib/packBehavior';
 import { sendArchBehaviorStates } from '$lib/arch/archParts.js';
 import { lockedObjects, selectedObject, peerHands, objectsGroup, pokeScene, isVRMode } from '../stores/sceneStore';
-import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast, pushNotification, chatHistory, mergeChatHistory } from '../stores/appStore';
+import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, showToast, pushNotification, chatHistory, mergeChatHistory, agentPanelsLive } from '../stores/appStore';
 // 41 G21: the signaling link's ups and downs are a STATE on the Connect pill's dot, never toasts
 import { GIVE_UP_ATTEMPTS } from '$lib/connectionStatus';
 import { get } from 'svelte/store';
@@ -1498,6 +1498,12 @@ export class PeerConnection {
 					applyAgentChatMessage(conn.peer, data);
 					const from = conn.peer;
 					if (isAgentSession()) import('$lib/agent/agentInbox.js').then((m) => m.receiveAgentChat(from, data)).catch(() => {});
+				} else if(data.type == 'agentpanel') {
+					// 67: agent panels — a person's page draws the copies an agent sent it; an AGENT page is the
+					// authority for its own panels (events, Share, reopen). Both halves load on first use.
+					const from = conn.peer;
+					import('$lib/agentPanels.js').then((m) => m.applyAgentPanelMessage(from, data)).catch(() => {});
+					if (isAgentSession()) import('$lib/agent/panelHost.js').then((m) => m.receivePanelMessage(from, data)).catch(() => {});
 				} else if(data.type == 'vrhands') {
 					peerHands.update((map) => ({
 						...map,
@@ -1667,6 +1673,8 @@ export class PeerConnection {
 		// 55 A8: the newest agent log lines, so a late joiner's AI window shows what was built
 		sendAgentLogTo(conn);
 		sendAgentChatBacklogTo(conn); // 56 C1: the agent chats so far
+		// 67: an agent page hands a (re)connected person their panels back, and its declared tools
+		if (isAgentSession()) import('$lib/agent/panelHost.js').then((m) => m.panelsPeerOpened(peerId, conn)).catch(() => {});
 		// 55 A9: a moderator hands its block list on, so a blocked re-dial is refused by
 		// whichever peer it reaches — including one that joined after the block
 		for (const k of blockReplay()) conn.send(k);
@@ -2036,6 +2044,8 @@ export class PeerConnection {
 		dropPeerHandModel(peerId);
 		dropAgentView(peerId); // 55 A7
 		agentChatPeerGone(peerId); // 56: an agent that left is away
+		// 67: its panels stay up read-only, "waiting for <agent>" (only loaded once a panel was shown)
+		if (get(agentPanelsLive) > 0) import('$lib/agentPanels.js').then((m) => m.agentPanelPeerGone(peerId)).catch(() => {});
 		dropPeerFacts(peerId); // 55 A9
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
 		checkLocks();

@@ -28,8 +28,10 @@
 		connectDocked,
 		connectBarHeight,
 		peersPanelOpen,
-		showToast
+		showToast,
+		agentTools
 	} from '../../stores/appStore.js';
+	import { isViewer } from '$lib/objectPermissions';
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	// 55 A4/A7: agent rows (robot + "AI") and the active invites with Revoke / Revoke all
 	import { invites, listInvites, revokeInvite, revokeAllInvites, inviteSheet, kindOfRow } from '$lib/inviteStore';
@@ -286,6 +288,8 @@
 				isAgent: row?.[6]?.kind === 'agent',
 				agentBusy: agentRuns(id).length > 0,
 				agentMuted: !!agentStatusOf($agentChatState, id)?.muted,
+				agentTools: $agentTools[id.toLowerCase()] ?? [], // 67 P6
+				viewerMe: isViewer(),
 				inviteId,
 				requestAsked: $sceneAccessAsked.includes(id),
 				canInvite: typeof $scenePresence?.invite === 'function',
@@ -305,6 +309,7 @@
 				toggleMute: () => toggleMutePeer(id),
 				agentStop: agentRuns(id).some((r) => canStop(r)) ? () => stopAgent(id) : undefined,
 				agentMute: row?.[6]?.kind === 'agent' && canMuteAgents() ? () => muteAgent(id, !agentStatusOf($agentChatState, id)?.muted) : undefined,
+				openToolPanel: (toolId: string) => void import('$lib/agentPanels.js').then((m) => m.requestToolPanel(id, toolId)),
 				requestAccess: () => askForScene(id),
 				invite: () => $scenePresence?.invite?.(id),
 				toggleHide: () => setPeerHidden(id),

@@ -116,6 +116,96 @@ knight standing at the origin, turning to face each viewer. To change it, edit t
 again and import again (a new file; undo removes the old card). `pixling guide` and
 `pixling pipelines` explain the styles and the spec format to your agent.
 
+## Agent panels: give a person controls for your tool
+
+An agent can open a small **tool window** in the app for the person it works for: sliders, choices,
+buttons, an image preview. The person moves a slider, the agent re-renders and shows the new
+preview; they press Render, the agent imports the result. The panel never acts by itself — every
+change and press is a **message to the agent**, and every effect is the agent's own tool call
+(under its role, in the AI window's log, undoable).
+
+**Tools** (contract 1.2, listed by `tools()` and the bridge):
+
+| tool | what it does |
+|---|---|
+| `open_panel` | `{spec, owner?, values?}` → `{panelId, owner, values, controls}`. `owner` = a peer id; default: the person whose message you are working on, else the host |
+| `update_panel` | `{panelId, values?, controls?, title?}` — `controls` maps a control id to the fields to change (`src` of an image, `text`/`tone` of a status, `value`, `options`, `label`, `disabled`…). Every copy redraws |
+| `close_panel` | `{panelId}` — closes it for everyone holding a copy |
+| `list_panels` | your open panels (id, title, owner, shared, values, control ids) and your declared tools |
+
+**Events** arrive through `wait_for_message` (`tpAgent.nextMessage` in the page), in the same queue
+as chat, as `{kind: "panel", event, panelId, title, control?, label?, value?, values, from, name,
+role}`. `event` is `change` (a value; sliders and text fields are sent ~200 ms after the person
+stops), `press` (a button — a pending change is sent first, so Render sees the size just set),
+`shared` / `unshared`, `closed` (the owner closed it), `reopened` (a saved panel came back to you)
+or `opened` (a person asked for a declared tool's panel). Answer with tool calls; no chat reply is
+needed. An MCP client that is not waiting gets a `notifications/message` when events queue up.
+
+**The spec** (version 1). A panel is `{v: 1, title, icon?, toolId?, size?: {w, h}}` plus ONE of
+`controls: [...]`, `sections: [{title?, controls}]` or `tabs: [{title, sections}]`. A control is
+`{type, id, label, help?, disabled?}` and:
+
+| type | fields | value |
+|---|---|---|
+| `slider` | `min, max, step, value, unit?` | number |
+| `number` | `min?, max?, step?, value, unit?` | number |
+| `select` | `options: [string \| {value, label}], value` | string |
+| `toggle` | `value` | boolean |
+| `colour` | `value: "#rrggbb"` | string |
+| `text` / `textarea` | `value, placeholder?, maxLength?` (`rows?`) | string |
+| `button` | `label, variant?: "primary" \| "secondary"` | — (a press) |
+| `image` | `src: "data:image/png;base64,…", alt, pixelated?, frames?: {cols, rows, fps}` | — |
+| `files` | `items: [{name, hash?}]` | — |
+| `progress` | `value: 0..1 \| null, text?` | — |
+| `status` | `text, tone?: info \| ok \| warn \| error` | — |
+| `table` | `columns: [string], rows: [[string \| number]]` | — |
+
+A Pixling panel:
+
+```json
+{ "name": "open_panel", "arguments": { "spec": {
+    "v": 1, "title": "Pixling", "icon": "image", "toolId": "pixling",
+    "sections": [{ "title": "Sprite", "controls": [
+      { "type": "select", "id": "clip", "label": "Clip", "options": ["walk", "idle"], "value": "walk" },
+      { "type": "slider", "id": "scale", "label": "Scale", "min": 1, "max": 8, "step": 1, "value": 2, "unit": "x" },
+      { "type": "image", "id": "preview", "label": "Preview", "alt": "Pixling preview", "pixelated": true },
+      { "type": "button", "id": "render", "label": "Render", "variant": "primary" },
+      { "type": "status", "id": "status", "text": "Ready" } ] }] } } }
+```
+
+then the loop: `wait_for_message` → `{kind: "panel", event: "change", control: "scale", value: 3}` →
+render on your machine → `update_panel {panelId, controls: {preview: {src: "data:image/png;base64,…"}}}`
+→ `wait_for_message` → `{event: "press", control: "render", values}` → `import_file {path,
+spec_path}` → `update_panel {controls: {status: {text: "Rendered", tone: "ok"}}}`.
+
+**Who sees it.** A panel belongs to its OWNER. The header says whose it is ("Panel by Claude on
+deck-pc" — the bridge names the machine). Only the owner holds a copy until they press **Share with
+editors**; then every editor gets one and their changes come to you too (with their `from` and
+`role`). A **viewer never gets a copy** and anything a viewer sends about a panel is dropped. A
+person may close their copy; the owner's close closes the panel. **Close all agent panels** is in
+every panel's footer.
+
+**Saving.** The save button stores the panel as `<title>.tppanel` (the spec and the last values) in
+Explorer ▸ Panels, shared like any file. Opening it shows the panel read-only, "Waiting for
+<agent>", until that agent — or another declaring the same `toolId` — takes it back (a `reopened`
+event with the saved values).
+
+**Guardrails.** Refused with the reason, never repaired: password, key, token, card-number and
+one-time-code fields (by type, id, label, placeholder or help); markup or links in any label (text
+is drawn as text); an image that is not a `data:image/…;base64` URL (a panel never loads a link);
+more than 60 controls, 8 tabs, 4 images (1.5 MB each) or 64 KB of spec without images. At most 6
+panels per person: a page shows 6 and refuses a 7th (you hear `closed` with `reason: "cap"`).
+
+**In a headset** the focused panel is a board in front of the person; the controller's laser and
+trigger press its buttons, set a slider where the laser points on its track, step number fields
+(− / +) and walk its choices. Text and colour fields are read-only there.
+
+**Declared tools.** The bridge's `--tools-dir <dir>` holds one JSON manifest per local tool:
+`{id, name, description?, panel?}` (`panel` = a spec). Each tool is declared to the page, and a tool
+with a panel shows as **Open <name> panel** in your row of the Users menu (not for viewers); a
+press opens it for that person and you hear `opened`. Only the declaration crosses — any command
+in a manifest stays on your machine and nothing in the app runs it.
+
 ## Rules a builder must respect
 
 - **Use real uuids.** Read `snapshot()` (or `list_scene`) first; edit by uuid.

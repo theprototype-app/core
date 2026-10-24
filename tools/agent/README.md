@@ -94,6 +94,20 @@ second window onto the same conversation: what you type there shows in the app "
   (`knight_walk.png` + `knight_walk.pixling.json`); an image is also placed as a card in the scene
   (`filter: "nearest"` for pixel art, `frame` for one frame of a sheet, `facing` to face the viewer).
   Viewers' agents are refused. Works the same in `repl`.
+- **Panels** (app 1.2 contract): `open_panel` gives the person you work for a small tool window —
+  sliders, selects, buttons, an image preview — and `update_panel` changes it (a new preview, a
+  status line). Their changes and presses come back through `wait_for_message` as messages of kind
+  `panel` (`event: change | press | …`, `control`, `value`, `values`), with a note saying what they
+  are; answer with tool calls. The header says "Panel by <name> on <machine>" (`--machine`). In
+  `repl` a panel event is a turn of its own, shown as `[panel] …` in the terminal, with no chat
+  reply. The full spec: "Agent panels" in the app's agent guide (`/llms-full.txt`).
+- **Declared tools**: `--tools-dir <dir>` (or `TP_AGENT_TOOLS`) holds one JSON manifest per local
+  tool, `{id, name, description?, panel?}`. Each is declared to the page on connect, and a tool with
+  a `panel` spec shows as "Open <name> panel" in your Users row for the session's editors. Only
+  `id`, `name`, `description` and `panel` leave this machine; anything else in a manifest (a
+  command) stays here, and the app runs nothing.
+- **A backlog nobody waits on**: when messages or panel events queue while the model is not in
+  `wait_for_message`, the bridge sends one MCP `notifications/message` per new backlog.
 
 With `repl` the bridge owns the model loop, so app messages go straight in as user turns — no
 terminal needed after launch; replies stream (SSE) and terminal lines show "via terminal".
@@ -151,6 +165,8 @@ signaling server and fetches TURN from the deployment's `/api/tp/turn` when it c
 | `--turn-url <url>` \| `--no-turn` | wire: TURN credential endpoint (default: from the link) |
 | `--id <id>` | wire: a stable peer id |
 | `--approval-timeout <s>` | repl / smoke: how long to wait to be let in (default 120) |
+| `--machine <name>` | the machine name panel headers show (default: `TP_AGENT_MACHINE`, else the host name; `--machine ''` leaves it out) |
+| `--tools-dir <dir>` | declared tools: one JSON manifest per tool (`TP_AGENT_TOOLS` too) |
 | `--verbose` | log to stderr (stdout is the MCP channel) |
 
 The older `--mcp` / `--repl` / `--smoke --peer <id>` forms still work.

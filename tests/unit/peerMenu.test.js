@@ -51,6 +51,19 @@ describe('buildPeerMenuItems', () => {
 		expect(byId(host, 'agent-stop').disabled).toBeUndefined();
 		expect(byId(host, 'agent-mute').label).toBe('Unmute agent');
 	});
+	it('67 P6: a declared tool with a panel is offered; a viewer sees it disabled with the reason', () => {
+		const tools = [{ id: 'pixling', name: 'Pixling', panel: true }, { id: 'cli', name: 'CLI only', panel: false }];
+		let asked = '';
+		const ed = buildPeerMenuItems({ ...base, isAgent: true, agentTools: tools }, { openToolPanel: (id) => (asked = id) });
+		expect(ids(ed)).toContain('agent-tool-pixling');
+		expect(ids(ed)).not.toContain('agent-tool-cli');
+		expect(byId(ed, 'agent-tool-pixling').label).toBe('Open Pixling panel');
+		byId(ed, 'agent-tool-pixling').action();
+		expect(asked).toBe('pixling');
+		const vw = buildPeerMenuItems({ ...base, isAgent: true, agentTools: tools, viewerMe: true }, { openToolPanel: () => {} });
+		expect(byId(vw, 'agent-tool-pixling').disabled).toBe(true);
+		expect(byId(vw, 'agent-tool-pixling').tooltip).toMatch(/Viewers/);
+	});
 	it('disabled with the reason, never silently', () => {
 		const hidden = buildPeerMenuItems({ ...base, hidden: true }, {});
 		expect(byId(hidden, 'goto').disabled).toBe(true);

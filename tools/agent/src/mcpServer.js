@@ -18,6 +18,7 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprot
 import { bridgeTools, mapHostTools, toolSignature, textResult, resultIsError } from './mcpTools.js';
 import { chatTools, waitMs, ImageSpool, messageContent, withImportPath, execBridged } from './chat.js';
 import { parseLink } from './link.js';
+import { announcePanels, machineName, readToolManifests } from './panels.js';
 
 export const PKG_VERSION = (() => {
 	try {
@@ -33,7 +34,9 @@ const INSTRUCTIONS = [
 	'call list_scene first so you use real uuids, batch many objects into one call, and use screenshot to look at the result. wait_for_edit waits for the humans.',
 	'People can also TYPE TO YOU in the app\'s AI assistant window: when the user asks you to listen (e.g. "listen to my theprototype session"), loop',
 	'wait_for_message → act → reply({text, final: true}) → wait_for_message (null = nobody wrote yet: wait again). Respect each message\'s role (viewers may not edit).',
-	'When the user talks to you in this terminal while you are in a session, echo it: reply({prompt: <their words>, text: <your answer>, final: true}), so the app\'s thread is complete.'
+	'When the user talks to you in this terminal while you are in a session, echo it: reply({prompt: <their words>, text: <your answer>, final: true}), so the app\'s thread is complete.',
+	'To give a person controls for a tool of yours (a renderer, a generator), open_panel a small panel (sliders, selects, buttons, an image preview); their changes arrive',
+	'through wait_for_message as kind "panel" — answer with update_panel (new preview, progress) and tool calls such as import_file.'
 ].join(' ');
 
 const CONNECT_WAIT_MS = 45000;
@@ -52,6 +55,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * @param {number} [opts.connectWaitMs]
  * @param {ImageSpool | null} [opts.spool] where chat images are written (null = no temp files)
  * @param {(m: string) => void} [opts.log]
+ * @param {{machine?: string, tools?: any[]} | null} [opts.panels] 67: the panel header's machine + declared tools
  */
 export function createBridgeServer(opts) {
 	const log = opts.log || (() => {});
@@ -81,7 +85,7 @@ export function createBridgeServer(opts) {
 
 	const server = new Server(
 		{ name: 'theprototype', version: PKG_VERSION },
-		{ capabilities: { tools: { listChanged: true } }, instructions: INSTRUCTIONS }
+		{ capabilities: { tools: { listChanged: true }, logging: {} }, instructions: INSTRUCTIONS }
 	);
 
 	const notifyChanged = () => {
@@ -111,12 +115,33 @@ export function createBridgeServer(opts) {
 			log('host tool list: ' + hostTools.length + ' tools');
 			notifyChanged();
 		}
+		// 67: a person used a panel (or typed) while nobody waits — a notification says so, once per new backlog
+		if (engine.kind === 'browser') await nudgeWaiting().catch(() => {});
 		// a join (or a role change that comes with it) can change what the host offers
 		const j = await engine.joined().catch(() => false);
 		if (j !== wasJoined) {
 			wasJoined = j;
 			log(j ? 'in the session' : 'not in the session');
 		}
+	}
+
+	let nudged = 0;
+	/** 67 P2: an MCP host cannot be woken, but a client that shows server notifications can tell its model that
+	 * panel events or messages wait in the app (`notifications/message`); wait_for_message picks them up */
+	async function nudgeWaiting() {
+		const st = await engine.status();
+		const queued = Number(st?.chat?.queued) || 0;
+		if (!queued || st?.chat?.waiting) {
+			nudged = 0;
+			return;
+		}
+		if (queued === nudged) return;
+		nudged = queued;
+		await server.sendLoggingMessage({
+			level: 'notice',
+			logger: 'theprototype',
+			data: queued + ' message' + (queued === 1 ? '' : 's') + ' (a chat message or a panel event) wait for you in the app: call wait_for_message.'
+		});
 	}
 
 	/** @param {string} link */
@@ -143,6 +168,8 @@ export function createBridgeServer(opts) {
 			.then(() => {
 				// 56: the window labels the agent "via MCP" (an older page has no chat: fine)
 				if (engine === mine && mine.kind === 'browser') mine.chat?.('chatStatus', null, { mode: 'mcp' }).catch(() => {});
+				// 67: the machine for the panel header, and the declared tools (P6)
+				if (engine === mine && mine.kind === 'browser' && opts.panels) announcePanels(mine, opts.panels, log).catch(() => {});
 				return refreshTools();
 			})
 			.catch((/** @type {any} */ e) => log('connect failed: ' + e.message));
@@ -329,6 +356,7 @@ export async function runMcp(args, deps) {
 	const bridge = createBridgeServer({
 		kind: deps.kind,
 		staticTools: deps.staticTools,
+		panels: { machine: machineName(args), tools: readToolManifests(args['tools-dir'] || process.env.TP_AGENT_TOOLS, { log }) },
 		createEngine: (link) => deps.makeEngine(link, name || nameFromClient(bridge.server.getClientVersion())),
 		log: args.verbose ? log : () => {}
 	});

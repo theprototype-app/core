@@ -6519,6 +6519,11 @@
 			else showToast(item.name + ' is not a chat this version can read');
 			return;
 		}
+		// 67 P4: a saved agent panel opens (read-only until its agent, or one with the same tool, takes it)
+		if (!item.sceneEntry && !item.volumeItem && !item.remoteItem && /\.tppanel$/i.test(item.name ?? '')) {
+			void import('$lib/agentPanels.js').then((m) => m.openSavedPanelItem(item));
+			return;
+		}
 		// P3: a file in a mounted project — its own opener, because its bytes are not in
 		// the library's blob store
 		if (item.volumeItem) {

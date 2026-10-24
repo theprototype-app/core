@@ -54,7 +54,7 @@
 	/** @type {{ id: string, title: string, key: string,
 	 *   defaultRect?: { left?: number, top?: number, right?: number, bottom?: number },
 	 *   minW?: number, width?: number, tabs?: any, actions?: any, status?: any, children: any,
-	 *   onclose?: () => void }} */
+	 *   onclose?: () => void, label?: string }} */
 	let {
 		id,
 		title,
@@ -68,7 +68,10 @@
 		children,
 		// 40 F1: what a swipe-away does on the phone sheet; absent = the sheet only resizes (a
 		// toolbox that belongs to an edit session closes through its own Done)
-		onclose = undefined
+		onclose = undefined,
+		// 67: a toolbox that is a window in its own right (an agent panel) is a named REGION for a screen
+		// reader (53-reader A4, what WindowChrome does for a titled window); absent = as before
+		label = undefined
 	} = $props();
 
 	// 18-C3: the exact 640 breakpoint the Inspector and the notes drawer use for
@@ -111,6 +114,8 @@
 	{id}
 	class="ui-panel toolbox"
 	class:tbx-sheet={sheetMode}
+	role={label ? 'region' : undefined}
+	aria-label={label}
 	style="z-index: var(--z-window)"
 	style:--tbx-w="{width}px"
 	style:--tbx-sheet-h="{sheetH}px"

@@ -171,6 +171,8 @@ function usage() {
 			'  --peer-server h:p[:insecure] | public   wire: signaling override (default: from the link)',
 			'  --turn-url <url> | --no-turn            wire: TURN credentials endpoint (default: from the link)',
 			'  --id <id>               wire: stable peer id   --approval-timeout <s>  (default 120)',
+			'  --machine <name>        the machine name on your panels ("Panel by Claude on <name>"; default: this host name, \'\' = none)',
+			'  --tools-dir <dir>       declared local tools: one JSON manifest per tool {id, name, panel?} (or TP_AGENT_TOOLS)',
 			'  --verbose               log to stderr'
 		].join('\n')
 	);

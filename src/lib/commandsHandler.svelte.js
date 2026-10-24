@@ -17,6 +17,7 @@ import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimat
 import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
+import { vectorWireElement, rebuildVectorFromRecord } from '$lib/vector/vectorWire.js'
 import { isPristinePackRef, stubElementOf } from '$lib/packRefs'
 import { withTwins, attachTwinsFromGltf } from '$lib/ktx2Twins'
 import { normalizeLodGroup } from '$lib/lodGroupCore'
@@ -938,6 +939,8 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
     // an incoming object can only carry a STALE edit wireframe (a peer on an
     // older build, or a scene saved with a session open) — never a live one
     stripEditOverlays(mesh);
+    // 64: a heavy vector shape travels as its record only; its triangles are rebuilt here
+    rebuildVectorFromRecord(mesh);
     let existing = override ? sceneObjects.getObjectByProperty('uuid', mesh.uuid) : null;
     if (existing) {
         // replace IN PLACE, under the same parent. The gizmo has to let go first or it
@@ -1126,6 +1129,7 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
     }
     // Iterate over all objects in the scene
     objects.forEach(element => {
+        let vectorElement; // 64: a vector shape's wire element (vectorWire.js)
         // viewer perms: never sync a viewer's local-only objects to a peer
         if (element.userData && element.userData.__localOnly) return;
         if (isPristinePackRef(element)) {
@@ -1202,6 +1206,19 @@ export function sendObject(conn, element, groupuuid, opts = {}) {
                 ...heal
             });
             sendObject(conn, element, element.uuid, opts);
+        } else if ((vectorElement = vectorWireElement(element))) {
+            // 64: a vector shape is its RECORD — toJSON, without its triangles when they are
+            // heavy (the receiver rebuilds them), where the GLTF route ships every vertex as
+            // base64 (a radial ellipse is ~5.6k vertices) and drops nothing it needs
+            conn.send({
+                type: 'object',
+                element: vectorElement,
+                groupuuid: groupuuid,
+                pos: element.position.toArray(),
+                rot: element.rotation.toArray(),
+                scale: element.scale.toArray(),
+                ...heal
+            });
         } else if (multiMaterialSyncable(element)) {
             // A MATERIAL ARRAY cannot survive the GLTF round trip: the exporter
             // splits geometry.groups into one primitive per material and the loader

@@ -22,6 +22,7 @@ import { moveNode, moveHandle, convertNode, deleteNode, insertNodeAt, nearestOnS
 import { cleanVector, vectorSubpaths } from './vectorRecord.js';
 import { buildVectorGeometry } from './vectorMesh.js';
 import { isVector, vectorParamsOf } from './vectorActions.js';
+import { selectObject } from '../objectActions';
 import { disarmVectorTool } from './vectorTool.js';
 
 /** the shape being edited (uuid) @type {import('svelte/store').Writable<string | null>} */
@@ -73,6 +74,9 @@ export function enterVectorEdit(uuid) {
 	edited = object;
 	working = cloneSubpaths(vectorParamsOf(object)?.paths ?? []);
 	vectorEditPick.set(null);
+	// the session belongs to the shape it edits: select it first, or the selection watch below
+	// sees whatever else was selected and ends the session on its first emission
+	if (!get(selectedObjects)?.some?.((/** @type {any} */ o) => (o?.uuid ?? o) === uuid)) selectObject(uuid);
 	/** @type {any} */
 	const controls = get(TControls);
 	controls?.detach();

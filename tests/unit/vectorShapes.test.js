@@ -23,6 +23,7 @@ import {
 import { strokePieces, dashPolyline, strokeAll } from '../../src/lib/vector/vectorStroke.js';
 import { cleanVector, vectorDefaults, fillColourAt, MAX_NODES } from '../../src/lib/vector/vectorRecord.js';
 import { buildVectorGeometry, vectorPolylines } from '../../src/lib/vector/vectorMesh.js';
+import { vectorWireElement, rebuildVectorFromRecord, WIRE_FLOAT_CAP } from '../../src/lib/vector/vectorWire.js';
 import { booleanShapes, outlineStroke, offsetShape, multiArea, recordArea, strokeArea, transformPolygons } from '../../src/lib/vector/vectorBoolean.js';
 import { writeSvg, readOwnSvg, pathData, arcToCubics, subpathFromCurves, importSvg } from '../../src/lib/vector/vectorSvg.js';
 
@@ -367,5 +368,46 @@ describe('the geometry registry entry (D1 phase 2)', () => {
 			const shown = spec.params.filter((p) => !p.show || p.show(vectorDefaults(kind))).map((p) => p.key);
 			expect(new Set(shown).size).toBe(shown.length);
 		}
+	});
+});
+
+describe('the wire (vectorWire)', () => {
+	/** @param {Record<string, any>} patch */
+	const meshOf = (patch) => {
+		const params = cleanVector({ ...vectorDefaults(patch.kind), ...patch });
+		const mesh = new THREE.Mesh(buildVectorGeometry(params), new THREE.MeshStandardMaterial({ vertexColors: true }));
+		mesh.userData.geometryParams = { gtype: 'Vector', params };
+		return mesh;
+	};
+
+	test('a light shape sends its whole mesh (byte-identical to before)', () => {
+		const mesh = meshOf({ kind: 'rect' });
+		const element = vectorWireElement(mesh);
+		expect(JSON.stringify(element)).toBe(JSON.stringify(mesh.toJSON()));
+	});
+
+	test('a heavy shape goes without triangles and the receiver rebuilds the same mesh', () => {
+		// a radial-gradient ellipse: ~61k floats, over the binarypack-safe cap
+		const mesh = meshOf({ kind: 'ellipse', width: 1.4, height: 0.7, fillType: 'radial', fill: '#ffffff', fill2: '#0044ff' });
+		const count = mesh.geometry.attributes.position.count;
+		expect(count * 3).toBeGreaterThan(WIRE_FLOAT_CAP / 3);
+		const element = vectorWireElement(mesh);
+		expect(JSON.stringify(element).length).toBeLessThan(20000);
+		// the sender's own mesh keeps its triangles
+		expect(mesh.geometry.attributes.position.count).toBe(count);
+		const arrived = /** @type {any} */ (new THREE.ObjectLoader().parse(element));
+		expect(arrived.geometry.attributes.position).toBeUndefined();
+		expect(rebuildVectorFromRecord(arrived)).toBe(true);
+		expect(arrived.uuid).toBe(mesh.uuid);
+		expect(arrived.geometry.attributes.position.count).toBe(count);
+		expect(Array.from(arrived.geometry.attributes.color.array.slice(0, 30))).toEqual(Array.from(mesh.geometry.attributes.color.array.slice(0, 30)));
+		// a complete mesh is never rebuilt
+		expect(rebuildVectorFromRecord(arrived)).toBe(false);
+	});
+
+	test('a shape edited by the mesh tools is not a record any more: it always sends its triangles', () => {
+		const mesh = meshOf({ kind: 'ellipse', width: 1.4, height: 0.7, fillType: 'radial', fill: '#ffffff', fill2: '#0044ff' });
+		mesh.userData.faceEdited = true;
+		expect(vectorWireElement(mesh)).toBeNull();
 	});
 });

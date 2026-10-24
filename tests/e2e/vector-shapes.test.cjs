@@ -15,6 +15,7 @@ const shapes = (page) =>
 					g?.traverse((o) => {
 						const gp = o.userData?.geometryParams;
 						if (gp?.gtype !== 'Vector') return;
+						try {
 						o.updateMatrixWorld(true);
 						o.geometry.computeBoundingBox();
 						const c = o.geometry.boundingBox.getCenter(o.position.clone()).applyMatrix4(o.matrixWorld);
@@ -28,6 +29,10 @@ const shapes = (page) =>
 							colours: !!o.geometry.attributes.color,
 							vertexColors: !!o.material?.vertexColors
 						});
+						} catch (error) {
+							// a shape this helper cannot read is a finding, not a missing object
+							out.push({ uuid: o.uuid, name: o.name, kind: gp.params?.kind, params: gp.params, error: String(error), type: o.type, hasGeometry: !!o.geometry });
+						}
 					});
 					resolve(out);
 				})();
@@ -64,9 +69,25 @@ h.run(async () => {
 	// ---- each parametric kind from a real drag on the ground ---------------
 	/** @type {Record<string, any>} */
 	const made = {};
+	// the draw frame's +X is the CAMERA's right laid on the plane, so a 1 x 1 box drag is built
+	// from that axis and its in-plane perpendicular (a world-diagonal drag can run along one axis)
+	const [rx, rz] = await A.page.evaluate(
+		() =>
+			new Promise((r) =>
+				window.__stores.globalCamera.subscribe((c) => {
+					const e = c.matrixWorld.elements;
+					const l = Math.hypot(e[0], e[2]) || 1;
+					r([e[0] / l, e[2] / l]);
+				})()
+			)
+	);
+	const box = (cx, cz) => [
+		[cx - (rx - rz) / 2, 0, cz - (rz + rx) / 2],
+		[cx + (rx - rz) / 2, 0, cz + (rz + rx) / 2]
+	];
 	const drags = {
-		rect: [[-2.4, 0, -0.4], [-1.4, 0, 0.6]],
-		ellipse: [[-1.0, 0, -0.4], [0.0, 0, 0.6]],
+		rect: box(-1.9, 0.1),
+		ellipse: box(-0.5, 0.1),
 		star: [[1.0, 0, 0.1], [1.5, 0, 0.1]],
 		polygon: [[2.4, 0, 0.1], [2.8, 0, 0.1]]
 	};
@@ -86,7 +107,7 @@ h.run(async () => {
 		if (kind === 'rect' || kind === 'ellipse') {
 			const mid = from.map((v, i) => (v + to[i]) / 2);
 			h.check(near(shape.centre, mid, 0.2), `${kind}: centred between the press and the release (${shape.centre.map((v) => v.toFixed(2))})`);
-			h.check(shape.params.width > 0.3 && shape.params.height > 0.3, `${kind}: sized by the drag (${shape.params.width.toFixed(2)} x ${shape.params.height.toFixed(2)})`);
+			h.check(Math.abs(shape.params.width - 1) < 0.1 && Math.abs(shape.params.height - 1) < 0.1, `${kind}: a 1 x 1 drag makes a 1 x 1 shape (${shape.params.width.toFixed(2)} x ${shape.params.height.toFixed(2)})`);
 		} else {
 			h.check(Math.abs(shape.params.radius - Math.hypot(to[0] - from[0], to[2] - from[2])) < 0.08, `${kind}: radius = the drag distance (${shape.params.radius.toFixed(2)})`);
 			h.check(near(shape.centre, from, 0.25), `${kind}: centred on the press`);
@@ -124,6 +145,8 @@ h.run(async () => {
 	h.check(path?.params.fillType === 'solid', 'a closed pen path fills');
 	h.check((await undoDepth(A.page)) === penDepth + 1, 'the finished path is one undo entry');
 	await h.eventually(() => byUuid(B.page, path?.uuid), (s) => s?.kind === 'path' && s.params.paths[0].nodes.length === 3, 'B sees the pen path');
+	if (!(await byUuid(B.page, path?.uuid)))
+		console.log('  B has: ' + JSON.stringify((await shapes(B.page)).map((s) => [s.uuid.slice(0, 8), s.kind, s.error ?? 'ok'])) + ' A path ' + path?.uuid.slice(0, 8) + ' json ' + (await A.page.evaluate((u) => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(JSON.stringify(g.getObjectByProperty('uuid', u)?.toJSON() ?? null).length))()), path?.uuid)) + ' bytes');
 
 	// an open path: Enter finishes it
 	const q0 = await h.projectPoint(A.page, [2, 0, 2.4]);
@@ -153,12 +176,15 @@ h.run(async () => {
 
 	// the Inspector shows the shape's rows and colours
 	await A.page.evaluate((uuid) => window.__stores.objectActions.selectObject(uuid, true), made.star.uuid);
-	await A.page.waitForTimeout(800);
-	const inspector = await A.page.evaluate(() => ({
-		section: !!document.querySelector('#vector-section'),
-		fill: !!document.querySelector('#vector-colour-fill'),
-		rows: document.querySelector('#inspector-geometry')?.textContent ?? ''
-	}));
+	// the Inspector opens on a timer that takes 0.5-1.5 s under e2e load: poll, never sleep
+	const readInspector = () =>
+		A.page.evaluate(() => ({
+			section: !!document.querySelector('#vector-section'),
+			fill: !!document.querySelector('#vector-colour-fill'),
+			rows: document.querySelector('#inspector-geometry')?.textContent ?? ''
+		}));
+	await h.eventually(readInspector, (i) => i.section && /Points/.test(i.rows), 'the Inspector opens on the star');
+	const inspector = await readInspector();
 	h.check(inspector.section && inspector.fill, 'the Inspector shows the Shape section with a fill colour');
 	h.check(/Points/.test(inspector.rows) && /Corner radius/.test(inspector.rows) && !/Width/.test(inspector.rows), 'the Geometry rows are the star\'s own (Points, Corner radius — no Width)');
 	await A.page.evaluate((uuid) => window.__stores.vectorActions.setVectorParams(uuid, { fill: '#ff0000' }), made.star.uuid);
@@ -220,8 +246,25 @@ h.run(async () => {
 	await h.eventually(
 		() => byUuid(C.page, made.star.uuid),
 		(s) => s?.kind === 'star' && s.params.fill === '#ff0000',
-		'a late joiner receives the star WITH its record'
+		'a late joiner receives the star WITH its record',
+		30000 // a third page on software GL is slow to boot and to drain the handshake (arch-primitives, script-nodes)
 	);
+	if (!(await byUuid(C.page, made.star.uuid)))
+		console.log(
+			'  C holds: ' +
+				JSON.stringify(
+					await C.page.evaluate(
+						(u) =>
+							new Promise((r) =>
+								window.__stores.objectsGroup.subscribe((g) => {
+									const o = g?.getObjectByProperty('uuid', u);
+									r({ children: g?.children.length, star: o ? { type: o.type, keys: Object.keys(o.userData ?? {}), gp: o.userData?.geometryParams?.gtype } : null });
+								})()
+							),
+						made.star.uuid
+					)
+				)
+		);
 	const lateEdit = await C.page.evaluate((uuid) => window.__stores.vectorActions.setVectorParams(uuid, { points: 7 }), made.star.uuid);
 	h.check(lateEdit, 'the late joiner can edit the shape');
 	await h.eventually(() => byUuid(A.page, made.star.uuid), (s) => s?.params.points === 7, 'A sees the late joiner\'s edit');

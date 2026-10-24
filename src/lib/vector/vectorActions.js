@@ -16,6 +16,7 @@ import { applyGeometry } from '../geometryEdit';
 import { selectObject } from '../objectActions';
 import { buildVectorGeometry, vectorMaterial } from './vectorMesh.js';
 import { cleanVector, vectorDefaults, KIND_NAMES } from './vectorRecord.js';
+import { vectorWireElement } from './vectorWire.js';
 
 export const VECTOR_GTYPE = 'Vector';
 
@@ -62,7 +63,8 @@ export function addVectorShape(params, opts = {}) {
 	if (opts.record !== false) recordObjectPresence('create', mesh);
 	/** @type {any} */
 	const peer = get(peers);
-	if (peer) peer.send({ type: 'object', element: mesh.toJSON() });
+	// a heavy shape (a gradient, a stroke) goes without its triangles — vectorWire.js
+	if (peer) peer.send({ type: 'object', element: vectorWireElement(mesh) ?? mesh.toJSON() });
 	if (opts.select !== false) selectObject(mesh.uuid);
 	return mesh;
 }

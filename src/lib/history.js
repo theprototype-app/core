@@ -6,6 +6,7 @@ import { notifyExternalMove } from '$lib/flowRuntime';
 import { parkEditOverlays, stripEditOverlays } from '$lib/editOverlays';
 import { HISTORY_BYTES, entryBytes } from '$lib/meshBudget';
 import { withWireBatch } from '$lib/wireBatch';
+import { vectorWireElement } from '$lib/vector/vectorWire.js';
 import { currentHistoryGesture } from '$lib/historyGesture';
 
 // Undo/redo for local edits; remote peers' changes are not recorded, so
@@ -451,7 +452,8 @@ function applyPresence(entry, state) {
 		pokeScene();
 		// receivers take the same ObjectLoader path as light/parent sync
 		if (peer)
-			peer.send({ type: 'object', element: entry.snapshot.element, groupuuid: entry.snapshot.parentUuid ?? undefined });
+			// (64: a heavy vector shape re-sends its record without the triangles — vectorWire.js)
+			peer.send({ type: 'object', element: vectorWireElement(object) ?? entry.snapshot.element, groupuuid: entry.snapshot.parentUuid ?? undefined });
 		return true;
 	}
 

@@ -151,6 +151,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startColocationPresence } from '$lib/colocationPresence'
   import { startColocationAnchors } from '$lib/colocationAnchors'
   import { startColocationNudge } from '$lib/colocationNudge'
+  import '$lib/vector/vectorVR.js' // 64 D1: Add ▸ Shapes + Selected ▸ Extrude on the VR radial menu
   import ColocationBadge from './components/menu/ColocationBadge.svelte'
   import { loadProjectManifest } from '$lib/projectManifest'
   import { startSharedLibrary } from '$lib/sharedLibrary'

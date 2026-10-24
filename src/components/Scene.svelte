@@ -46,6 +46,8 @@
 	import { tickAnimatedMixers } from '$lib/animatedImports';
 	import { tickSim } from '$lib/sim/runtime.js'; // 36-sim: jiggle, splashes, fluid tanks
 	import { tickSprites2d } from '$lib/sprite2d/spriteRuntime.js'; // 64-2d: sprite frames, flipbooks, parallax
+	import { view2d } from '$lib/sprite2d/view2d.js'; // 64-2d: the 2D editor view stands the perspective controls down
+	import Editor2dView from './sprite2d/Editor2dView.svelte';
 	import { startPackBehaviors, tickPackBehaviors } from '$lib/packBehavior';
 	import { startArchParts } from '$lib/arch/archParts.js';
 	import { tickAnimationPreview, captureAutoKey, playheadOf } from '$lib/animationPreview';
@@ -1792,7 +1794,7 @@
 	     changes, so a `false` from here is stomped within the tick (traced: our write,
 	     then a `true` from execute_effect_teardown). It never touches `enableZoom`.
 	     isLocked is three-state: null editor / true playing / false just exited. -->
-	{#if !$specatorMode && !$cameraPreview}
+	{#if !$specatorMode && !$cameraPreview && !($view2d.on && $isLocked !== true)}
 		<OrbitControls bind:ref={$orbitControls} enableZoom={$isLocked !== true} enableDamping autoRotateSpeed={0.5} target.y={1.5} />
 	{/if}
 </T.PerspectiveCamera>
@@ -1822,6 +1824,7 @@
 	<T.Group bind:ref={$objectsGroup} name="sceneObjects" />
 
 	<CameraPreview />
+	<Editor2dView /><!-- 64-2d: the local orthographic 2D editor view (View ▸ 2D view) -->
 
 	<!-- CO4: no virtual ground in AR — the grid stands down over passthrough
 	     (LOCAL: showGrid itself is untouched, so it returns on session end) -->

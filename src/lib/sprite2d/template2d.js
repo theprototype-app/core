@@ -18,6 +18,7 @@ import { isViewer, warnViewerReadOnly } from '../objectPermissions';
 //              clip autoplays, walking back and forth on a Follow Path node
 //   Camera     orthographic, z 10; its own graph has Camera Follow 2D (an Object Selector picks
 //              the player); the scene graph's Game Start looks through it when a game starts.
+// The loader opens the 2D EDITOR VIEW (view2d.js) on the opener's screen.
 // Layer parallax is horizontal only (parallaxY 1), so authored heights are drawn heights.
 
 /** draw w×h pixels with `paint`, return the canvas @param {number} w @param {number} h @param {(g: CanvasRenderingContext2D) => void} paint */
@@ -279,5 +280,8 @@ export async function open2dTemplate() {
 	const [sessions, { APP_VERSION }] = await Promise.all([import('../sessions'), import('../version.js')]);
 	const { payload } = build2dTemplate({ format: sessions.SESSION_FORMAT, formatMinor: sessions.SESSION_FORMAT_MINOR, appVersion: APP_VERSION });
 	const applied = await sessions.requestLoadPayload(payload);
+	// the author edits it in the 2D view, framed on the template camera (Game Start looks
+	// through that camera when a game starts)
+	if (applied) (await import('./view2d.js')).enter2dView({ x: 0, y: 1, halfH: 5 });
 	return !!applied;
 }

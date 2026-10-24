@@ -228,29 +228,73 @@ h.run(async () => {
 	await h.closePeer(B);
 
 	// ---- §8 ------------------------------------------------------------------------------
-	const C = await h.setupPage(browser, 'C', { init: iwer.initScript(), context: { viewport: { width: 1280, height: 720 } } });
+	// ...in a GPU browser of its own, the way vr-iwer runs, once the app's XR probe says yes
+	const vrBrowser = await h.launch({ args: h.GPU_ARGS });
+	const C = await h.setupPage(vrBrowser, 'C', { init: iwer.initScript(), context: { viewport: { width: 1280, height: 720 } } });
+	await h.eventually(
+		() => C.page.evaluate(() => {
+			let v;
+			window.__stores.playMode.vrSupported.subscribe((x) => (v = x))();
+			return v;
+		}),
+		(v) => v === true,
+		'§8 premise: the app sees an immersive-vr headset',
+		10000
+	);
 	const vr = await C.page.evaluate(() => window.__stores.addObjects.spawnAtPoint('/create Text', [0, 0, -3]).uuid);
 	await until(C.page, vr, (d) => d.glyphs > 0, '§8 premise: a text in front of the headset');
 	await iwer.enter(C.page);
-	await iwer.pose(C.page, 'right', [0.2, 1.2, 0], { yaw: 0, pitch: 0.29 });
+	// aim BOTH controllers at the middle of glyph 6's hit quad (the carrier's own proxy triangles): the beam
+	// belongs to the pointer hand, the one opposite the VR menu hand (left by default)
+	const hand = [0.2, 1.2, 0];
+	const aimAt = await C.page.evaluate((u) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		const o = g.getObjectByProperty('uuid', u);
+		o.updateWorldMatrix(true, false);
+		const pos = o.geometry.attributes.position;
+		const THREE = window.__stores.THREE;
+		const c = new THREE.Vector3();
+		for (let k = 0; k < 4; k++) c.add(new THREE.Vector3().fromBufferAttribute(pos, 6 * 4 + k));
+		return c.multiplyScalar(0.25).applyMatrix4(o.matrixWorld).toArray();
+	}, vr);
+	// the rig may sit IWER's floor anywhere in the world (vr-iwer's delta): aim from where three put each hand
+	for (const who of /** @type {const} */ (['left', 'right'])) await iwer.pose(C.page, who, hand);
+	await iwer.frames(C.page, 6);
+	const world = await iwer.controllerWorld(C.page);
+	const handWorld = world.right.pos;
+	for (const who of /** @type {const} */ (['left', 'right'])) {
+		const [dx, dy, dz] = aimAt.map((v, i) => v - world[who].pos[i]);
+		await iwer.pose(C.page, who, hand, { yaw: Math.atan2(-dx, -dz), pitch: Math.atan2(dy, Math.hypot(dx, dz)) });
+	}
 	await iwer.frames(C.page, 10);
-	const beam = await C.page.evaluate(() => {
+	const probe = await C.page.evaluate((u) => {
 		const v = window.__stores.vrControls;
-		/** @type {any} */
-		const out = [];
-		for (const i of [0, 1]) {
-			const ray = v.controllerRay(i);
-			const t = ray ? v.beamTarget(ray) : null;
-			out.push(t?.object?.uuid ?? null);
-		}
-		return out;
-	});
+		const ray = v.pointerHandRay();
+		if (!ray) return { beam: 'no pointer ray' };
+		let g;
+		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		const carrier = g.getObjectByProperty('uuid', u);
+		const t = v.beamTarget(ray);
+		const f = (/** @type {number[]} */ a) => a.map((x) => +x.toFixed(3));
+		return {
+			beam: t.object?.uuid ?? 'nothing',
+			why: { hit: t.hit, panel: t.panel, distance: +t.distance.toFixed(3), info: t.info?.object?.name ?? null },
+			ray: { o: f(ray.ray.origin.toArray()), d: f(ray.ray.direction.toArray()) },
+			direct: ray.intersectObject(carrier, false).map((h) => +h.distance.toFixed(3)),
+			scene: ray.intersectObjects(g.children, true).slice(0, 5).map((h) => `${h.object.name}@${h.distance.toFixed(2)}`),
+			carrier: { layers: carrier.layers.mask, tris: carrier.geometry.index?.count / 3, sphere: carrier.geometry.boundingSphere?.radius }
+		};
+	}, vr);
+	const beam = probe.beam;
+	if (beam !== vr) console.log('  §8 beam probe:', JSON.stringify(probe));
 	const c8 = await one(C.page, vr);
-	h.check(beam.includes(vr), `§8 the right controller's beam ends on the text (${JSON.stringify(beam)})`);
+	h.check(beam === vr, `§8 the pointer hand's beam ends on the text, aimed from ${r3(handWorld)} at glyph 6 (${r3(aimAt)}): ${beam}`);
 	h.check(!!c8?.visible, '§8 the letters are drawn while presenting');
 	await C.page.screenshot({ path: `${OUT}/text-path-vr.png` });
 	await iwer.exit(C.page);
 
 	h.check(h.pageErrors(C).length === 0, `no page errors on C (${h.pageErrors(C).join(' | ')})`);
+	await vrBrowser.close();
 	await h.finish(browser);
 });

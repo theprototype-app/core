@@ -16,7 +16,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { bridgeTools, mapHostTools, toolSignature, textResult, resultIsError } from './mcpTools.js';
-import { chatTools, waitMs, ImageSpool, messageContent, withImportPath, importModelArgs } from './chat.js';
+import { chatTools, waitMs, ImageSpool, messageContent, withImportPath, execBridged } from './chat.js';
 import { parseLink } from './link.js';
 
 export const PKG_VERSION = (() => {
@@ -237,7 +237,7 @@ export function createBridgeServer(opts) {
 					true
 				);
 			}
-			const r = await engine.exec(name, name === 'import_model' ? importModelArgs(a) : a);
+			const r = await execBridged(engine, name, a);
 			refreshTools().catch(() => {});
 			if (r && r.__missing) return textResult({ error: 'this app build has no exec()' }, true);
 			return textResult(r, resultIsError(r));

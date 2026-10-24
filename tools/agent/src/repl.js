@@ -10,6 +10,7 @@ import readline from 'node:readline';
 import { runChat } from './llmClient.js';
 import { mapHostTools } from './mcpTools.js';
 import { redactLink } from './link.js';
+import { execBridged } from './chat.js';
 
 /** how often a streamed reply is pushed to the window (each push carries the full text so far) */
 const FLUSH_MS = 250;
@@ -112,7 +113,7 @@ export function createReplSession(o) {
 				cfg,
 				messages: history,
 				tools: await toolsFor(),
-				executeTool: (name, a) => engine.exec(name, a),
+				executeTool: (name, a) => execBridged(engine, name, a), // local `path`s for import_model / import_file
 				onTool: (name, a) => out('\n  · ' + name + ' ' + summarizeArgs(a) + '\n'),
 				onDelta: (t, round) => s.delta(t, round),
 				stopOn: (r) => {

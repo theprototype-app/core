@@ -3,7 +3,7 @@
 import { mkdtempSync, writeFileSync, existsSync, statSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { waitMs, ImageSpool, messageContent, withImportPath, importModelArgs, chatTools, CHAT_TOOL_NAMES } from '../src/chat.js';
+import { waitMs, ImageSpool, messageContent, withImportPath, importModelArgs, importFileCalls, sniffImportKind, execBridged, IMPORT_FILE_CAPS, chatTools, CHAT_TOOL_NAMES } from '../src/chat.js';
 
 let pass = 0;
 let fail = 0;
@@ -61,6 +61,48 @@ check('import_model: missing file → readable', throws(() => importModelArgs({ 
 check('import_model: over 25 MB → refused without reading', throws(() => importModelArgs({ path: 'big.glb' }, { size: () => 26 * 1048576, read: () => { throw new Error('read'); } }), /limit is 25 MB/));
 check('import_model: path + data → refused', throws(() => importModelArgs({ path: join(dir, 'Tree.glb'), data: 'AAAA' }), /one of path/));
 check('import_model without path passes through untouched', JSON.stringify(importModelArgs({ url: 'https://x/y.glb' })) === '{"url":"https://x/y.glb"}');
+// --- import_file (roadmap 66 S4b) ---
+const fdir = mkdtempSync(join(tmpdir(), 'tpa-file-'));
+const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40, 7)]);
+writeFileSync(join(fdir, 'knight_walk.png'), png);
+writeFileSync(join(fdir, 'knight.json'), '{"name":"knight","clips":["walk"]}');
+writeFileSync(join(fdir, 'bad.json'), '{"name":');
+writeFileSync(join(fdir, 'photo.jpg'), Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8]));
+writeFileSync(join(fdir, 'sheet.png.txt'), png); // the name lies; the bytes decide
+check('sniff: PNG / WebP / glTF / JSON by bytes', sniffImportKind(png) === 'image' && sniffImportKind(Buffer.from('RIFF\0\0\0\0WEBPVP8 ', 'latin1')) === 'image' && sniffImportKind(glb) === 'clip' && sniffImportKind(Buffer.from('\uFEFF  [1]')) === 'json');
+check('sniff: JPEG / text → null', sniffImportKind(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0])) === null && sniffImportKind(Buffer.from('hello')) === null);
+const one = importFileCalls({ path: join(fdir, 'knight_walk.png'), spec_path: join(fdir, 'knight.json'), filter: 'nearest' });
+check('import_file path → ONE call: data, name from the file, spec parsed, paths gone', one.length === 1 && one[0].data === png.toString('base64') && one[0].name === 'knight_walk' && one[0].spec.name === 'knight' && one[0].filter === 'nearest' && !('path' in one[0]) && !('spec_path' in one[0]));
+check('import_file: type from bytes, not the name', importFileCalls({ path: join(fdir, 'sheet.png.txt') })[0].data === png.toString('base64'));
+check('import_file: JPEG refused before anything is sent', throws(() => importFileCalls({ path: join(fdir, 'photo.jpg') }), /not a PNG, WebP, JSON or \.tpanim/));
+check('import_file: broken spec_path → readable', throws(() => importFileCalls({ path: join(fdir, 'knight_walk.png'), spec_path: join(fdir, 'bad.json') }), /bad\.json is not JSON/));
+check('import_file: spec + spec_path → refused', throws(() => importFileCalls({ spec: {}, spec_path: join(fdir, 'knight.json') }), /one of spec or spec_path/));
+check('import_file: path + data → refused', throws(() => importFileCalls({ path: join(fdir, 'knight_walk.png'), data: 'AAAA' }), /one of path or data/));
+check('import_file: missing file → readable', throws(() => importFileCalls({ path: join(fdir, 'nope.png') }), /cannot read/));
+check('import_file: over every cap → refused without reading', throws(() => importFileCalls({ path: 'big.png' }, { size: () => 26 * 1048576, read: () => { throw new Error('read'); } }), /limit for any file is 25 MB/));
+const bigJson = Buffer.from('[' + '0,'.repeat(1100000) + '0]');
+check('import_file: JSON over 2 MB → the JSON cap', throws(() => importFileCalls({ path: 'x.json' }, { size: () => bigJson.length, read: () => bigJson }), /limit for a JSON file is 2 MB/));
+const bigPng = Buffer.concat([png, Buffer.alloc(IMPORT_FILE_CAPS.image)]);
+check('import_file: image over 16 MB → the image cap', throws(() => importFileCalls({ path: 'x.png' }, { size: () => bigPng.length, read: () => bigPng }), /limit for an image is 16 MB/));
+const parts = importFileCalls({ path: join(fdir, 'knight_walk.png'), folder: 'Sprites' }, { chunkChars: 42, id: 'up1' });
+check('import_file: chunked — whole quads, same id, args on the LAST part only', parts.length === 2 && parts.every((c, i) => c.chunk.id === 'up1' && c.chunk.index === i && c.chunk.total === 2) && parts[0].data.length === 40 && !parts[0].folder && parts[1].folder === 'Sprites' && parts[1].name === 'knight_walk' && parts.map((c) => c.data).join('') === png.toString('base64'));
+check('import_file without path passes through (data / spec untouched)', JSON.stringify(importFileCalls({ data: 'AAAA', spec: { a: 1 } })) === '[{"data":"AAAA","spec":{"a":1}}]');
+/** @type {any[]} */
+const sent = [];
+const fakeEngine = { exec: async (/** @type {string} */ n, /** @type {any} */ a) => (sent.push([n, a]), a.chunk && a.chunk.index < a.chunk.total - 1 ? { partial: true } : { file: 'Generated/' + a.name + '.png' }) };
+const done = await execBridged(fakeEngine, 'import_file', { path: join(fdir, 'knight_walk.png') });
+check('execBridged import_file: one exec, the page answer back', sent.length === 1 && done.file === 'Generated/knight_walk.png');
+sent.length = 0;
+const refusing = { exec: async (/** @type {string} */ n, /** @type {any} */ a) => (sent.push([n, a]), { error: 'view-only', refused: true }) };
+const r2 = await execBridged(refusing, 'import_file', { path: join(fdir, 'knight_walk.png') });
+check('execBridged: the page refusal comes back (viewer)', r2.refused === true && sent.length === 1);
+sent.length = 0;
+await execBridged(fakeEngine, 'import_model', { path: join(dir, 'Tree.glb') });
+check('execBridged import_model: path read into data', sent[0][1].data === glb.toString('base64'));
+sent.length = 0;
+await execBridged(fakeEngine, 'add_object', { type: 'box' });
+check('execBridged: other tools untouched', sent[0][0] === 'add_object' && sent[0][1].type === 'box');
+rmSync(fdir, { recursive: true, force: true });
 rmSync(dir, { recursive: true, force: true });
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

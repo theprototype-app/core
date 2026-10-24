@@ -520,6 +520,16 @@
 		// viewport trap below), so the notch's circle sits exactly over the trigger wherever it is.
 		dropdownEl.style.setProperty('--pm-right', `${Math.max(0, Math.round(window.innerWidth - r.right))}px`);
 	}
+	/** fix-batch-1 #23: the trigger's keys — Enter / Space toggle, ↓ opens; opening moves focus in */
+	function triggerKey(e: KeyboardEvent) {
+		if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'ArrowDown') return;
+		e.preventDefault();
+		const opening = e.key === 'ArrowDown' || !openDropdown;
+		openDropdown = opening;
+		if (opening) focusFirstRow = true;
+	}
+	/** set by a keyboard open: the panel's mount focuses its first row */
+	let focusFirstRow = false;
 	/** focus moving OUT of the menu or its trigger (to a real element) closes it */
 	function dropdownFocusOut(e: FocusEvent) {
 		const to = e.relatedTarget as Node | null;
@@ -558,8 +568,21 @@
 			openDropdown = false;
 		};
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') openDropdown = false;
+			if (e.key !== 'Escape') return;
+			// fix-batch-1 #23: focus inside the panel goes back to the button that opened it
+			const inPanel = !!document.activeElement && node.contains(document.activeElement);
+			openDropdown = false;
+			if (inPanel) triggerEl?.focus();
 		};
+		if (focusFirstRow) {
+			focusFirstRow = false;
+			queueMicrotask(() => {
+				// the first ROW — not the notch's avatar circle, which only closes the panel again
+				const rows = 'a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])';
+				const first = node.querySelector<HTMLElement>(`.pm-card :is(${rows})`) ?? node.querySelector<HTMLElement>(rows);
+				first?.focus();
+			});
+		}
 		const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(placeDropdown) : null;
 		if (triggerEl) ro?.observe(triggerEl);
 		window.addEventListener('resize', placeDropdown);
@@ -1015,7 +1038,10 @@
 	     top-right corner. -->
 	<div id="avatar-menu" class="mr-5 flex w-52 items-center md:order-2">
 		<div class="flex items-center space-x-3">
-			<!-- tabindex 0 + press/focus semantics: what flowbite's Popper gave the trigger -->
+			<!-- tabindex 0 + press semantics. fix-batch-1 #23 (53-int Q5): it opened on FOCUS too (what
+			     flowbite's Popper did), so Tab walked the whole panel — sign-in and every link on a cloud
+			     build. Now the ARIA menu-button pattern: Tab passes it, Enter / Space / ↓ open it and move
+			     focus to its first row, Escape closes it and gives focus back here. -->
 			<div
 				id="avatar-trigger"
 				bind:this={triggerEl}
@@ -1026,7 +1052,7 @@
 				aria-expanded={openDropdown}
 				style="position: absolute; top: 8px; right: 20px; cursor: pointer; z-index: 4; line-height: 0;"
 				onmousedown={() => (openDropdown = !openDropdown)}
-				onfocusin={() => (openDropdown = true)}
+				onkeydown={triggerKey}
 				onfocusout={dropdownFocusOut}
 			>
 				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-12 w-12 border-2 border-border-strong')}

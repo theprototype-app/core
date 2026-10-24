@@ -48,6 +48,19 @@
 				/>
 				<span class="w-6 text-right font-mono text-[10px] text-text-muted">{(+(data.minStrength ?? 1)).toFixed(1)}</span>
 			</label>
+			<!-- fix-batch-1 #14: missing = 'down', what a node saved before the option did -->
+			<label class="flex items-center gap-1">
+				<span class="w-14 shrink-0 text-[10px] text-text-muted">from</span>
+				<select
+					class="nodrag nopan flex-1 text-[10px]"
+					data-impact-direction
+					value={data.direction ?? 'down'}
+					on:change={(e) => setNodeData(id, { direction: e.currentTarget.value })}
+				>
+					<option value="any">any side</option>
+					<option value="down">landing only</option>
+				</select>
+			</label>
 		{/if}
 		<div class="relative -mx-3 flex h-5 items-center gap-1 px-3">
 			<span class="text-[10px] text-text-2">other</span>

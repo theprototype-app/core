@@ -69,7 +69,7 @@ h.run(async () => {
 	const order = [];
 	let ringless = [];
 	// walk until the toolbar, then a few stops past it (a cloud build has more top-bar stops: rooms,
-	// sign-in and the links inside the profile panel, which opens on focus) — no fixed window
+	// sign-in; since fix-batch-1 #23 the profile panel no longer opens on focus) — no fixed window
 	let afterToolbar = -1;
 	for (let i = 0; i < 40 && afterToolbar < 6; i++) {
 		await press(page, 'Tab');

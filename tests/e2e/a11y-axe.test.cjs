@@ -1,5 +1,6 @@
 // 53-reader (A4) — THE AXE GATE. axe-core (via @axe-core/playwright) over the main surfaces: the
-// editor shell, the object list, the Inspector, Settings, the Asset Browser and the phone shell.
+// editor shell, the object list, the Inspector, Settings, the Asset Browser, the profile menu and the phone shell.
+// fix-batch-1 #23: + the profile menu's menu-button keys (Tab passes it, Enter/Space open, Escape returns).
 //
 // It FAILS only on `serious` and `critical` violations. `moderate` and `minor` are LISTED in the
 // report (stdout + `axe-<phase>.md` / `.json` in AXE_REPORT_DIR) and not fixed — the user took the
@@ -152,6 +153,41 @@ h.run(async () => {
 	await page.waitForTimeout(500);
 	await gate(page, 'Asset Browser', '#asset-browser-window', '#asset-browser-window');
 	await page.locator('#asset-browser-close').click().catch(() => {});
+	await page.waitForTimeout(300);
+
+	// 5b. fix-batch-1 #23 (53-int Q5): the profile menu is a MENU BUTTON — reaching the circle with Tab
+	// does not open it (it opened on focus, so Tab walked the whole panel: sign-in + links on a cloud
+	// build); Enter opens it with focus on its first row; Escape closes it and focus goes back to the
+	// circle. COUNTERFACTUAL (4cd3dafc): the panel is open the moment the circle takes focus.
+	const profile = () =>
+		page.evaluate(() => {
+			const dd = document.querySelector('#avatar-dropdown');
+			const a = document.activeElement;
+			return { open: !!dd && dd.getBoundingClientRect().width > 0, onTrigger: a?.id === 'avatar-trigger', inRow: !!a?.closest('#avatar-dropdown .pm-card'), expanded: document.querySelector('#avatar-trigger')?.getAttribute('aria-expanded') };
+		});
+	await page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('#avatar-trigger'))?.focus());
+	await page.waitForTimeout(300);
+	const p0 = await profile();
+	h.check(p0.onTrigger && !p0.open && p0.expanded === 'false', `profile menu: focus on the circle does NOT open it (${JSON.stringify(p0)})`);
+	await page.keyboard.press('Tab');
+	await page.waitForTimeout(200);
+	const p1 = await profile();
+	h.check(!p1.open && !p1.inRow, `profile menu: Tab moves past the circle, not into the panel (${JSON.stringify(p1)})`);
+	await page.evaluate(() => /** @type {HTMLElement} */ (document.querySelector('#avatar-trigger'))?.focus());
+	await page.keyboard.press('Enter');
+	await page.waitForTimeout(400);
+	const p2 = await profile();
+	h.check(p2.open && p2.inRow && p2.expanded === 'true', `profile menu: Enter opens it, focus on its first row (${JSON.stringify(p2)})`);
+	if (p2.open) await gate(page, 'profile menu', '#avatar-dropdown', '#avatar-dropdown');
+	await page.keyboard.press('Escape');
+	await page.waitForTimeout(300);
+	const p3 = await profile();
+	h.check(!p3.open && p3.onTrigger, `profile menu: Escape closes it and focus returns to the circle (${JSON.stringify(p3)})`);
+	await page.keyboard.press(' ');
+	await page.waitForTimeout(400);
+	const p4 = await profile();
+	h.check(p4.open && p4.inRow, `profile menu: Space opens it too (${JSON.stringify(p4)})`);
+	await page.keyboard.press('Escape');
 	await h.closePeer(A);
 
 	// ---- 6. the phone shell (Find N6 folded) ---------------------------------------------------

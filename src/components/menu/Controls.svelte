@@ -101,7 +101,7 @@
 	import { geometry as sidebarGeometry } from '$lib/sidebars';
 	import type { ToolbarLayout, LayoutConfig, Placements, Region } from '$lib/toolbarLayout';
 	import { pivotMode, pivotParentAvailable } from '$lib/multiTransform'; // 37 R1: the toolbar Pivot cell
-	import { cssPx, scaledPx } from '$lib/uiScale'; // 53 A1: hud.css px tokens read back as calc(...)
+	import { cssPx, scaledPx, uiScale } from '$lib/uiScale'; // 53 A1: hud.css px tokens read back as calc(...)
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -776,8 +776,10 @@
 		read();
 		return { destroy: () => ro.disconnect() };
 	}
-	const objHideSearch = $derived(objHeaderW < 260);
-	const objHideLabel = $derived(objHeaderW < 190);
+	// fix-batch-1 #23: the thresholds are 100 % widths — at 150 % the search and the label are 1.5x as
+	// wide, and an unscaled 260 kept the search on the folded N6 (a ~390 px header) and wrapped the ✕
+	const objHideSearch = $derived(objHeaderW < (260 * $uiScale) / 100);
+	const objHideLabel = $derived(objHeaderW < (190 * $uiScale) / 100);
 	// 38 R6: what the header element carries now that WindowChrome draws it — the width
 	// probe above (as an attachment) and the drop-to-root target
 	const objHeaderAttrs = {
@@ -4396,6 +4398,14 @@
 	}
 	.obj-search :global(.sf) {
 		width: 100%;
+	}
+	/* fix-batch-1 #23: at a large UI scale the search enters the header's line-breaking at a minimum
+	   and grows into what is left (WindowChrome's compact-header rule for the title), so it narrows
+	   before the ✕ wraps to a second row */
+	:global(:root[data-ui-large]) .obj-search {
+		flex: 3 1 0; /* most of what is left: the spacer after it only pushes the ✕ right */
+		width: auto;
+		min-width: min(6em, 100%);
 	}
 	.obj-filters {
 		padding: 8px 10px;

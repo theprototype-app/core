@@ -90,7 +90,7 @@ export const NODE_DOCS = {
 	setuniform: "Writes one number inside an object's shader graph, so a trigger, a",
 	onclick: "Fires a short pulse when its object is clicked - the bridge from user input into the graph.",
 	keypress: "Fires a pulse while a keyboard key is pressed - the bridge from your keyboard into the graph.",
-	onimpact: "Fires a pulse when a physics simulation lands the connected object on the ground or another object.",
+	onimpact: "Fires a pulse when the connected object hits something in a physics simulation - from any side (a wall, a target), or only when it lands with From: landing only.",
 	onhit: "Fires a pulse when a hand or a walking player knocks the object - with how hard it was hit (speed) and whether you did it (byMe).",
 	onenter: "Fires a pulse when something enters a trigger volume - the checkpoint, doorway and pressure-plate node.",
 	onexit: "Fires a pulse when something leaves a trigger volume - the other half of On Enter.",

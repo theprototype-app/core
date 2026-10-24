@@ -22,7 +22,7 @@ import { playSequence, stopSequence, scrubSequence, releaseScrub, seqTransport }
 import { findCameraObject } from '../cameraObjects';
 import { isViewer } from '../objectPermissions';
 import { showToast } from '../../stores/appStore';
-import { onFilmFrame, setPoseFilter, liveState, placeCamera } from './filmMode';
+import { onFilmFrame, setPoseFilter, liveState, placeCamera, setPresenceRecording, parentInContent } from './filmMode';
 import { commitTake, uniformSamples, filmShots, DEFAULT_BUDGET } from './filmTake';
 import { packRaw, moveEase, RAW_LAYOUT } from './filmCore';
 import { sampleCurve } from '../curveCore';
@@ -156,6 +156,7 @@ function startSegment(mode, t0, itemId) {
 	const runAt = syncedNow();
 	segment = { mode, itemId, t0, runAt, frames: [], markers: [] };
 	releaseScrub(); // the paused moment's pose hands over to the run
+	setPresenceRecording(true);
 	playSequence(session.seqId, { mode: 'preview', from: t0, at: runAt, open: true });
 	patch({ state: 'recording', seq: session.seqId, t: t0, segStart: t0, choosing: false, mode, shots: get(take).shots });
 }
@@ -166,6 +167,7 @@ export function pause() {
 	const seg = segment;
 	segment = null;
 	setPoseFilter(null);
+	setPresenceRecording(false);
 	const s = session;
 	stopSequence(s.seqId, { restore: false });
 	const tEnd = seg.frames.length ? seg.frames[seg.frames.length - 1].t : seg.t0;
@@ -236,10 +238,8 @@ function poseAt(seq, camera, t) {
 	const local = sampleCurve('vec3', track.keys, t);
 	const object = findCameraObject(camera);
 	const v = new THREE.Vector3(local[0], local[1], local[2]);
-	if (object?.parent) {
-		object.parent.updateWorldMatrix(true, false);
-		v.applyMatrix4(object.parent.matrixWorld);
-	}
+	const parentM = parentInContent(object);
+	if (parentM) v.applyMatrix4(parentM);
 	return v.toArray();
 }
 
@@ -256,13 +256,12 @@ async function commitSegment(s, seg) {
 		return;
 	}
 	// prop tracks are LOCAL to the marker's parent (the pose was filmed in world space)
-	const parent = object.parent;
+	const parentM = parentInContent(object);
 	const inv = new THREE.Matrix4();
 	const parentQ = new THREE.Quaternion();
-	if (parent) {
-		parent.updateWorldMatrix(true, false);
-		inv.copy(parent.matrixWorld).invert();
-		parent.matrixWorld.decompose(new THREE.Vector3(), parentQ, new THREE.Vector3());
+	if (parentM) {
+		inv.copy(parentM).invert();
+		parentM.decompose(new THREE.Vector3(), parentQ, new THREE.Vector3());
 		parentQ.invert();
 	}
 	const v = new THREE.Vector3();

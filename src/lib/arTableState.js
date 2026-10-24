@@ -22,7 +22,27 @@ export const AR_OFF = { phase: 'off', playing: false, hit: false, overlay: false
 /** @type {import('svelte/store').Writable<ArTableState>} */
 export const arTable = writable({ ...AR_OFF });
 
-/** is an AR table session running (or being asked for)? — the one test every stand-down reads */
+/**
+ * 68 V3: Film's AR WALK is the other phone AR session (immersive-ar, the phone's own tracking moves
+ * the filming camera). Everything that stands down for an AR table stands down for it too, so it
+ * rides the same test rather than teaching every stand-down a second flag.
+ * @type {import('svelte/store').Writable<boolean>}
+ */
+export const filmWalkActive = writable(false);
+
+/** is a phone AR session (an AR table, or Film's walk) running or being asked for? — the one test every stand-down reads */
 export function arTableActive() {
-	return get(arTable).phase !== 'off';
+	return get(arTable).phase !== 'off' || get(filmWalkActive);
+}
+
+/** the walk's per-frame hook (Film's lazy chunk registers it; Scene calls tickPhoneAr while presenting) */
+/** @type {((renderer: any, camera: any) => void) | null} */
+let phoneArTick = null;
+/** @param {((renderer: any, camera: any) => void) | null} fn */
+export function setPhoneArTick(fn) {
+	phoneArTick = fn;
+}
+/** @param {any} renderer @param {any} camera */
+export function tickPhoneAr(renderer, camera) {
+	phoneArTick?.(renderer, camera);
 }

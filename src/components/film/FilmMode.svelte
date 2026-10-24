@@ -26,11 +26,20 @@
 		pullFocus,
 		setRig,
 		pickAt,
-		onFilmFrame
+		onFilmFrame,
+		filmPose,
+		placeCamera
 	} from '$lib/film/filmMode';
+	import { walk, walkEntry, startWalk, stopWalk, setWalkScale, recentreWalk, teleportWalk } from '$lib/film/filmWalk';
+	import { worldRig } from '../../stores/sceneStore';
+	import * as THREE from 'three';
 	import { stickValue, formatTake, LENS_PRESETS, focalForFov, fovForFocal, pinchFov, snapToLens, rollOf } from '$lib/film/filmCore';
 	import { take, record, pause, resume, finishTake, retake, closeRecorder, recorderDebug, addMarker } from '$lib/film/filmRecorder';
 	import { safeStorage } from '$lib/safeStorage';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
+	import { rolesInfo } from '$lib/cloudHooks';
+	import { isViewer } from '$lib/objectPermissions';
+	import { openTimeline } from '$lib/timelineOpen';
 	import { filmShots } from '$lib/film/filmTake';
 	import { sequences } from '$lib/sequences';
 	import { registerDebugHook } from '$lib/debugHooks';
@@ -42,7 +51,8 @@
 
 	// the shot's box inside the window ('free' = the whole window)
 	const box = $derived.by(() => {
-		const ratio = $film ? aspectRatio($film.aspect) : 0;
+		// walking, the XR view fills the screen (the runtime owns the projection)
+		const ratio = $film && !$film.walk ? aspectRatio($film.aspect) : 0;
 		if (!vw || !vh || !ratio) return { l: 0, t: 0, w: vw, h: vh };
 		if (vw / vh > ratio) {
 			const w = Math.round(vh * ratio);
@@ -318,6 +328,10 @@
 		if (now - lastLevelAt < 100) return;
 		lastLevelAt = now;
 		level = rollOf(pose.q);
+		if (mapOpen && now - lastMapAt > 200) {
+			lastMapAt = now;
+			drawMap(pose);
+		}
 		// sustained under ~24 fps: the phone is throttling (hot) or overloaded
 		if (frameEma > 1 / 24) {
 			if (!slowSince) slowSince = now;
@@ -379,6 +393,80 @@
 		countdown = 0;
 	}
 
+	// ---- V3 walk ("Track my movement") + the mini-map ----
+	function onRecentre() {
+		if ($walk.on) recentreWalk();
+		else recentre();
+	}
+	function onWalk() {
+		if ($walk.on || $walk.starting) return stopWalk();
+		const p = filmPose();
+		startWalk({ pos: p.pos, q: p.qBase });
+		settingsOpen = false;
+	}
+	const WALK_LOG = { min: Math.log10(0.1), max: Math.log10(20) };
+
+	let mapOpen = $state(false);
+	let mapEl = $state(/** @type {HTMLCanvasElement | null} */ (null));
+	/** the map's world square (content frame): centre x/z and half size */
+	let mapView = { x: 0, z: 0, half: 10 };
+	let lastMapAt = 0;
+	const MAP_PX = 160;
+	/** @param {any} pose */
+	function drawMap(pose) {
+		const canvas = mapEl;
+		const ctx = canvas?.getContext('2d');
+		if (!canvas || !ctx) return;
+		const group = /** @type {any} */ (get(objectsGroup));
+		const rig = /** @type {any} */ (get(worldRig));
+		const inv = rig ? rig.matrixWorld.clone().invert() : null;
+		/** @type {{x: number, z: number}[]} */
+		const dots = [];
+		let far = 8;
+		for (const o of group?.children ?? []) {
+			if (!o.visible || o.userData?.camera) continue;
+			const v = o.getWorldPosition(new THREE.Vector3());
+			if (inv) v.applyMatrix4(inv);
+			dots.push({ x: v.x, z: v.z });
+			far = Math.max(far, Math.hypot(v.x - pose.pos[0], v.z - pose.pos[2]));
+		}
+		const half = Math.min(250, far * 1.15);
+		mapView = { x: pose.pos[0], z: pose.pos[2], half };
+		const k = MAP_PX / (2 * half);
+		const css = getComputedStyle(canvas);
+		ctx.clearRect(0, 0, MAP_PX, MAP_PX);
+		ctx.fillStyle = css.getPropertyValue('--film-glass').trim() || 'black';
+		ctx.fillRect(0, 0, MAP_PX, MAP_PX);
+		ctx.fillStyle = css.getPropertyValue('--film-knob').trim() || 'white';
+		for (const d of dots) {
+			const x = (d.x - mapView.x) * k + MAP_PX / 2;
+			const y = (d.z - mapView.z) * k + MAP_PX / 2;
+			ctx.fillRect(x - 2, y - 2, 4, 4);
+		}
+		// the camera: a wedge along its heading (canvas +y is world +z)
+		const [qx, qy, qz, qw] = pose.qBase;
+		const fx = -(2 * (qx * qz + qw * qy));
+		const fz = -(1 - 2 * (qx * qx + qy * qy));
+		const a = Math.atan2(fz, fx);
+		ctx.fillStyle = css.getPropertyValue('--film-rec').trim() || 'red';
+		ctx.beginPath();
+		ctx.moveTo(MAP_PX / 2, MAP_PX / 2);
+		ctx.arc(MAP_PX / 2, MAP_PX / 2, 14, a - 0.45, a + 0.45);
+		ctx.closePath();
+		ctx.fill();
+	}
+	/** @param {PointerEvent} e */
+	function mapTap(e) {
+		if (!mapEl) return;
+		const r = mapEl.getBoundingClientRect();
+		const k = (2 * mapView.half) / r.width;
+		const x = mapView.x + (e.clientX - r.left - r.width / 2) * k;
+		const z = mapView.z + (e.clientY - r.top - r.height / 2) * k;
+		const y = filmPose().pos[1];
+		if (!($walk.on && teleportWalk([x, y, z]))) placeCamera([x, y, z]);
+		buzz(15);
+	}
+
 	// ---- keys (desktop testing, a Bluetooth keyboard): WASD + E/Q, R recentre, Esc exits ----
 	/** @type {Set<string>} */
 	const held = new Set();
@@ -406,7 +494,7 @@
 			return;
 		}
 		if (e.type === 'keydown' && e.code === 'KeyR' && !e.ctrlKey && !e.metaKey) {
-			recentre();
+			onRecentre();
 			e.stopPropagation();
 			return;
 		}
@@ -435,6 +523,7 @@
 
 	onDestroy(() => {
 		if (typeof window === 'undefined') return;
+		stopWalk();
 		window.removeEventListener('keydown', onKey, true);
 		window.removeEventListener('keyup', onKey, true);
 		cancelCountdown();
@@ -447,7 +536,19 @@
 	registerDebugHook('filmRecorder', { take, record, pause, resume, finishTake, retake, recorderDebug });
 
 	// ---- the take ----
+	// V7: recording writes the Timeline, so it is an editor's act; a viewer films (peers see it) only
+	const viewer = $derived.by(() => {
+		void $rolesInfo;
+		return isViewer();
+	});
 	let shotsOpen = $state(false);
+	/** V6: hand the take to the Timeline (edit there; video export is the Timeline's job) */
+	async function editInTimeline() {
+		const seq = $take.seq;
+		await finishTake();
+		closeFilm();
+		void openTimeline(seq ?? undefined);
+	}
 	const shots = $derived.by(() => {
 		const seq = $take.seq ? $sequences[$take.seq] : null;
 		return seq && $film ? filmShots(seq, $film.uuid) : [];
@@ -486,17 +587,17 @@
 
 <div id="film-root" class="film-root tp-ui" data-sensor={$film?.sensor ?? 'none'}>
 	{#if !$film}
-		<div class="film-picker" role="dialog" aria-modal="true" aria-labelledby="film-picker-title">
+		<div class="film-picker" use:minimalScroll role="dialog" aria-modal="true" aria-labelledby="film-picker-title">
 			<h2 id="film-picker-title">Film with your phone</h2>
 			<p class="film-picker-desc">Pick the camera to film through. Turn the phone to look around, the stick to move.</p>
 			<div class="film-picker-list">
 				{#each cameras as cam (cam.uuid)}
 					<button class="film-pick-cam" data-uuid={cam.uuid} onclick={() => pick(cam.uuid)}>
-						<Icon name="camera" size={18} />{cam.name}
+						<Icon name="camera" size={20} />{cam.name}
 					</button>
 				{/each}
 				<button id="film-new-camera" class="film-pick-cam film-pick-new" onclick={newCamera}>
-					<Icon name="plus" size={18} />New camera here
+					<Icon name="plus" size={20} />New camera here
 				</button>
 			</div>
 			<button id="film-cancel" class="film-btn film-text" onclick={() => closeFilm()}>Cancel</button>
@@ -544,6 +645,11 @@
 			<div id="film-countdown-num" class="film-countdown" aria-live="assertive">{countdown}</div>
 		{/if}
 		<div class="film-hints">
+			{#if $walk.on || $walk.starting}
+				<button id="film-walk-chip" class="film-chip" data-tracking={$walk.tracking} title="Stop walking" onclick={() => stopWalk()}
+					>{$walk.starting ? 'Starting AR…' : $walk.tracking ? `Walking ×${$walk.scale}` : 'Finding the room…'} ✕</button
+				>
+			{/if}
 			{#if armed === 'track'}
 				<span id="film-track-hint" class="film-chip film-chip-ask">Tap what to follow</span>
 			{:else if $film.rig === 'track'}
@@ -554,6 +660,18 @@
 			{#if lowBattery}<span id="film-battery" class="film-chip film-warn">Battery low</span>{/if}
 			{#if slow}<span id="film-heat" class="film-chip film-warn" title="Frames are slow — the phone may be hot or busy">Slow frames · phone hot?</span>{/if}
 		</div>
+
+		{#if mapOpen}
+			<canvas
+				id="film-minimap"
+				class="film-minimap"
+				width={MAP_PX}
+				height={MAP_PX}
+				bind:this={mapEl}
+				aria-label="Mini-map: tap to move the camera there"
+				onpointerdown={mapTap}
+			></canvas>
+		{/if}
 
 		<!-- the zoom rail + lens snaps (right edge) -->
 		<div class="film-zoom">
@@ -607,6 +725,15 @@
 					onclick={toggleHorizonLock}><Icon name="ruler" size={20} /></button
 				>
 				<button
+					id="film-map-btn"
+					class="film-btn"
+					class:on={mapOpen}
+					aria-expanded={mapOpen}
+					title="Mini-map: tap a spot to jump the camera there"
+					aria-label="Mini-map"
+					onclick={() => (mapOpen = !mapOpen)}><Icon name="map" size={20} /></button
+				>
+				<button
 					id="film-settings-btn"
 					class="film-btn"
 					class:on={settingsOpen}
@@ -615,7 +742,7 @@
 					aria-label="Camera settings"
 					onclick={() => (settingsOpen = !settingsOpen)}><Icon name="sliders-horizontal" size={20} /></button
 				>
-				<button id="film-recentre" class="film-btn" title="Recentre: point the phone, press — that is straight ahead (R)" aria-label="Recentre" onclick={recentre}>
+				<button id="film-recentre" class="film-btn" title="Recentre: point the phone, press — that is straight ahead (R)" aria-label="Recentre" onclick={onRecentre}>
 					<Icon name="locate-fixed" size={20} />
 				</button>
 			</div>
@@ -648,7 +775,7 @@
 						>
 						{#if $take.state === 'recording'}
 							<button id="film-marker" class="film-chip" title="Drop a timeline marker here (M)" onclick={() => addMarker()}
-								><Icon name="flag" size={14} />Mark{#if $take.markers}&nbsp;{$take.markers}{/if}</button
+								><Icon name="flag" size={16} />Mark{#if $take.markers}&nbsp;{$take.markers}{/if}</button
 							>
 						{/if}
 						{#if $take.state === 'paused'}
@@ -663,8 +790,12 @@
 					class="film-record"
 					data-state={$take.state}
 					aria-label={$take.state === 'recording' ? 'Pause recording' : $take.state === 'paused' ? 'Resume recording' : 'Record'}
-					title={$take.state === 'recording' ? 'Pause — the shot so far goes into the Timeline' : 'Record into the Timeline (the timeline plays while you film)'}
-					disabled={$take.saving && $take.state !== 'recording'}
+					title={viewer
+						? 'Only editors can record — ask the host for editor access'
+						: $take.state === 'recording'
+							? 'Pause — the shot so far goes into the Timeline'
+							: 'Record into the Timeline (the timeline plays while you film)'}
+					disabled={viewer || ($take.saving && $take.state !== 'recording')}
 					onclick={onRecord}
 				>
 					<span class="film-record-mark" aria-hidden="true"></span>
@@ -672,30 +803,56 @@
 			</div>
 			<div class="film-lift">
 				<button id="film-up" class="film-btn" aria-label="Rise" title="Rise (E)" onpointerdown={liftDown(1)} onpointerup={liftUp} onpointercancel={liftUp}>
-					<Icon name="chevron-up" size={22} />
+					<Icon name="chevron-up" size={20} />
 				</button>
 				<button id="film-speed" class="film-chip film-speed" title="Movement speed" onclick={cycleSpeed}>{$film.speed} m/s</button>
 				<button id="film-down" class="film-btn" aria-label="Sink" title="Sink (Q)" onpointerdown={liftDown(-1)} onpointerup={liftUp} onpointercancel={liftUp}>
-					<Icon name="chevron-down" size={22} />
+					<Icon name="chevron-down" size={20} />
 				</button>
 			</div>
 		</div>
 
 		{#if $take.choosing}
-			<div id="film-resume" class="film-sheet" role="dialog" aria-label="Resume how?">
+			<div id="film-resume" class="film-sheet" use:minimalScroll role="dialog" aria-label="Resume how?">
 				<p class="film-sheet-title">Continue from here as…</p>
 				<button id="film-resume-cut" class="film-sheet-btn primary" onclick={() => onResume('cut')}>
-					<Icon name="scissors" size={18} /><span><strong>Cut</strong> — a new shot starts here</span>
+					<Icon name="scissors" size={20} /><span><strong>Cut</strong> — a new shot starts here</span>
 				</button>
 				<button id="film-resume-move" class="film-sheet-btn" onclick={() => onResume('move')}>
-					<Icon name="move-3d" size={18} /><span><strong>Move</strong> — fly from the last frame to here, same shot</span>
+					<Icon name="move-3d" size={20} /><span><strong>Move</strong> — fly from the last frame to here, same shot</span>
 				</button>
 				<button class="film-sheet-btn film-sheet-cancel" onclick={() => take.update((t) => ({ ...t, choosing: false }))}>Not yet</button>
 			</div>
 		{/if}
 		{#if settingsOpen}
-			<div id="film-settings" class="film-sheet film-settings" role="dialog" aria-label="Camera settings">
+			<div id="film-settings" class="film-sheet film-settings" use:minimalScroll role="dialog" aria-label="Camera settings">
 				<p class="film-sheet-title">Camera</p>
+				<div class="film-row">
+					<span>Walk</span>
+					<button
+						id="film-walk"
+						class="film-sheet-btn"
+						class:primary={$walk.on}
+						aria-pressed={$walk.on}
+						disabled={$walkEntry !== 'ready' && !$walk.on}
+						title={$walkEntry === 'ready' ? 'Your steps move the camera (AR tracking)' : 'Walking needs AR — Chrome on an Android phone'}
+						onclick={onWalk}>{$walk.on ? 'Stop walking' : 'Track my movement'}</button
+					>
+				</div>
+				{#if $walkEntry !== 'ready'}
+					<p class="film-note">Walking needs AR — Chrome on an Android phone with Google Play Services for AR.</p>
+				{/if}
+				<label class="film-row"
+					><span>Walk scale</span><input
+						id="film-walk-scale"
+						type="range"
+						min={WALK_LOG.min}
+						max={WALK_LOG.max}
+						step="0.01"
+						value={Math.log10($walk.scale)}
+						oninput={(e) => setWalkScale(Math.round(Math.pow(10, Number(e.currentTarget.value)) * 100) / 100)}
+					/><output>×{$walk.scale}</output></label
+				>
 				<div class="film-row">
 					<span>Rig</span>
 					<div class="film-seg">
@@ -780,7 +937,7 @@
 			</div>
 		{/if}
 		{#if shotsOpen}
-			<div id="film-shot-list" class="film-sheet" role="dialog" aria-label="Shots">
+			<div id="film-shot-list" class="film-sheet" use:minimalScroll role="dialog" aria-label="Shots">
 				<p class="film-sheet-title">Shots of this camera</p>
 				{#each shots as s, i (s.id)}
 					<div class="film-shot-row" data-item={s.id}>
@@ -790,6 +947,11 @@
 				{:else}
 					<p class="film-sheet-empty">No shots yet</p>
 				{/each}
+				{#if shots.length}
+					<button id="film-edit" class="film-sheet-btn primary" onclick={editInTimeline}>
+						<Icon name="clapperboard" size={20} /><span><strong>Edit in Timeline</strong> — trim, re-time and export the take</span>
+					</button>
+				{/if}
 			</div>
 		{/if}
 	{/if}
@@ -1160,6 +1322,17 @@
 	.film-warn {
 		background: var(--film-warn);
 		color: var(--film-shadow);
+	}
+	.film-minimap {
+		position: absolute;
+		left: max(12px, env(safe-area-inset-left));
+		top: calc(max(10px, env(safe-area-inset-top)) + 96px);
+		width: 160px;
+		height: 160px;
+		border-radius: 12px;
+		border: 1px solid var(--film-edge);
+		pointer-events: auto;
+		touch-action: none;
 	}
 	.film-zoom {
 		position: absolute;

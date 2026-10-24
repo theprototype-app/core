@@ -42,6 +42,7 @@ import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } fr
 import { applyRemotePlayMode, dropPeerPlayMode, sendPlayModeState } from '$lib/gamePresence';
 // P2: watch adopts the watched peer's LOOK STATE — the campreview shape, one row per peer
 import { applyRemoteLookState, dropPeerLook, sendLookState } from '$lib/lookPresence';
+import { applyRemoteFilmPose, dropPeerFilm } from '$lib/film/filmPresence'; // 68 V7
 // P2b: which SCENE each peer is standing in — the gamePresence shape exactly
 import { applyRemotePeerScene, dropPeerScene, sendMySceneState, peerScenes, myScene, mySceneWire, amPrivate, privacySplit, elsewhereThan, sceneOfPeer, ROOM_SCOPED, canApplyByRoom, sameRoomOrUnknown, myRoomLabel, roomLabelOf } from '$lib/peerScenes';
 // 21-G2: the project manifest — a latest-wins singleton like environment/scenephysics
@@ -1344,6 +1345,9 @@ export class PeerConnection {
 				} else if(data.type == 'campreview') {
 					// 16-P5: presence only — "X is previewing camera Y" (peers may join it)
 					applyRemoteCameraPreview(data);
+				} else if(data.type == 'filmpose') {
+					// 68 V7: presence only — a phone filming through a camera (posed locally, never saved)
+					applyRemoteFilmPose(data);
 				} else if(data.type == 'lookstate') {
 					// P2: presence only — how X is LOOKING at the scene, so a watcher renders
 					// X's chain rather than its own. ADDITIVE: an older build never sends it.
@@ -1876,6 +1880,7 @@ export class PeerConnection {
 		clearPeerPreview(peerId); // 16-P5
 		perfLivePeerGone(peerId); // 34 PF
 		dropPeerLook(peerId); // P2
+		dropPeerFilm(peerId); // 68 V7
 		dropPeerPlayMode(peerId); // 21-F3
 		dropPeerScene(peerId); // P2b
 		dropPeerVars(peerId); // 21-G4
@@ -1913,6 +1918,7 @@ export class PeerConnection {
 				clearPeerPreview(peerId); // 16-P5
 				perfLivePeerGone(peerId); // 34 PF
 				dropPeerLook(peerId); // P2
+				dropPeerFilm(peerId); // 68 V7
 				dropPeerPlayMode(peerId); // 21-F3
 				dropPeerScene(peerId); // P2b
 				dropPeerVars(peerId); // 21-G4

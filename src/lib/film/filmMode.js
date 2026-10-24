@@ -20,11 +20,11 @@ import { startCameraPreview, stopCameraPreview, setFilmPoseHook, cameraPreview }
 import { findCameraObject, cameraSpec } from '../cameraObjects';
 import { recordingClean } from '../helperLayer';
 import { skipTargets, applyProps, releaseProps } from '../propPlayback';
-import { objectsGroup } from '../../stores/sceneStore';
+import { objectsGroup, worldRig } from '../../stores/sceneStore';
 import { holdCamera } from '../sequencePlayer';
 import { safeStorage } from '../safeStorage';
 import { registerDebugHook } from '../debugHooks';
-import { showToast } from '../../stores/appStore';
+import { showToast, peers } from '../../stores/appStore';
 import { postStackFor, addPostEffect, POST_SCENE_KEY } from '../scenePost';
 import {
 	IDENTITY,
@@ -45,7 +45,8 @@ import {
 	clampFov,
 	oneEuro,
 	oneEuroQuat,
-	smoothingParams
+	smoothingParams,
+	levelHorizon
 } from './filmCore';
 
 const D2R = Math.PI / 180;
@@ -60,7 +61,7 @@ const SENSOR_WAIT_MS = 1500;
  * `rig`: 'handheld' | 'tripod' (position locked, pan / tilt only) | 'track' (keeps `target` framed).
  * @typedef {{uuid: string, name: string, aspect: string, sensor: string, source: string,
  *   horizonLock: boolean, speed: number, fov: number, roll: number, smoothing: number,
- *   rig: string, target: string, targetName: string, focus: number|null, aperture: number|null}} FilmUi
+ *   rig: string, target: string, targetName: string, focus: number|null, aperture: number|null, walk?: boolean}} FilmUi
  */
 /** @type {import('svelte/store').Writable<FilmUi | null>} */
 export const film = writable(null);
@@ -251,6 +252,8 @@ export async function enableMotion() {
  */
 function frame(camera, uuid) {
 	if (!live.uuid || uuid !== live.uuid) return false;
+	// AR walk: the headset runtime poses the camera, filmWalk feeds walkFrame from the XR frame
+	if (walking) return true;
 	const now = performance.now() / 1000;
 	const dt = live.lastT ? Math.min(0.25, Math.max(0, now - live.lastT)) : 0;
 	live.lastT = now;
@@ -273,6 +276,23 @@ function frame(camera, uuid) {
 	let pos = rawPos;
 	if (live.posFilter) pos = live.posFilter.filter(rawPos, now);
 	if (live.quatFilter) qBase = live.quatFilter.filter(qBase, now);
+	const pose = finishPose(pos, qBase, rawPos, rawQBase, now, dt);
+	camera.position.set(pose.pos[0], pose.pos[1], pose.pos[2]);
+	camera.quaternion.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
+	if (camera.isPerspectiveCamera && Math.abs(camera.fov - pose.fov) > 1e-4) {
+		camera.fov = pose.fov;
+		camera.updateProjectionMatrix();
+	}
+	return true;
+}
+
+/**
+ * The shared tail of a frame (the gyro path and the AR walk): focus pull, the lens values, the
+ * recorder's Move fly, the dutch roll, then presence + the frame listeners.
+ * @param {number[]} pos @param {number[]} qBase @param {number[]} rawPos @param {number[]} rawQBase
+ * @param {number} now seconds @param {number} dt @returns {FilmPose}
+ */
+function finishPose(pos, qBase, rawPos, rawQBase, now, dt) {
 	if (live.pull) {
 		const s = Math.min(1, (now - live.pull.start) / FOCUS_PULL_S);
 		const e = s * s * (3 - 2 * s);
@@ -288,15 +308,92 @@ function frame(camera, uuid) {
 	pose.q = withRoll(pose.qBase, pose.roll);
 	drawn = pose;
 	live.q = pose.q;
-	camera.position.set(pose.pos[0], pose.pos[1], pose.pos[2]);
-	camera.quaternion.set(pose.q[0], pose.q[1], pose.q[2], pose.q[3]);
-	if (camera.isPerspectiveCamera && Math.abs(camera.fov - pose.fov) > 1e-4) {
-		camera.fov = pose.fov;
-		camera.updateProjectionMatrix();
-	}
 	poseLens(pose);
+	sendPresence(pose);
 	for (const fn of frameListeners) fn(pose, dt);
-	return true;
+	return pose;
+}
+
+// ---- V3 AR walk (filmWalk.js drives it) ------------------------------------------------
+let walking = false;
+
+/** filmWalk: the session took over (true) or ended (false) @param {boolean} on */
+export function setWalking(on) {
+	walking = !!on;
+	live.lastT = 0;
+	patchUi({ walk: walking });
+}
+
+/**
+ * One AR frame: the phone's tracked pose, already mapped into the scene (CONTENT frame). The XR
+ * runtime draws the view itself; Film records + publishes what it would have drawn.
+ * @param {number[]} pos @param {number[]} q @param {any} camera the camera the XR view renders through
+ */
+export function walkFrame(pos, q, camera) {
+	if (!walking || !live.uuid) return null;
+	const now = performance.now() / 1000;
+	const dt = live.lastT ? Math.min(0.25, Math.max(0, now - live.lastT)) : 0;
+	live.lastT = now;
+	liveCamera = camera;
+	live.pos = pos.slice();
+	const qBase = get(film)?.horizonLock ? levelHorizon(q) : q;
+	return finishPose(pos.slice(), qBase, pos.slice(), qBase, now, dt);
+}
+
+/** the stick + lift while walking: they slide the walk's anchor (filmWalk asks) @param {number[]} q @param {number} dt */
+export function walkNudge(q, dt) {
+	const ui = get(film);
+	if (!dt || (!live.stick.x && !live.stick.y && !live.lift)) return null;
+	const from = [0, 0, 0];
+	return moveStep(from, q, live.stick, live.lift, ui?.speed ?? 1, dt);
+}
+
+/** where Film started looking (the marker's heading) — the walk's recentre target */
+export function startHeading() {
+	return live.startQ.slice();
+}
+
+// ---- V7 presence: peers see the live camera (filmPresence.js poses it on their side) ----
+const presence = { rec: false, lastAt: 0, sent: false };
+const PRESENCE_MS = 66;
+const tmpM = new THREE.Matrix4();
+const tmpV = new THREE.Vector3();
+const tmpQ = new THREE.Quaternion();
+const tmpPQ = new THREE.Quaternion();
+
+/** the recorder says whether a take is rolling (peers see a recording camera) @param {boolean} on */
+export function setPresenceRecording(on) {
+	presence.rec = !!on;
+	presence.lastAt = 0;
+}
+
+/** @param {FilmPose} pose */
+function sendPresence(pose) {
+	const now = performance.now();
+	if (now - presence.lastAt < PRESENCE_MS) return;
+	presence.lastAt = now;
+	const peer = /** @type {any} */ (get(peers));
+	if (!peer?.peer?.id || !peer.openedPeers?.size) return;
+	// the marker's PARENT frame: what a receiver writes onto its own copy of the marker
+	tmpV.fromArray(pose.pos);
+	tmpQ.fromArray(pose.qBase);
+	const parentM = parentInContent(findCameraObject(live.uuid));
+	if (parentM) {
+		tmpM.copy(parentM).invert();
+		tmpV.applyMatrix4(tmpM);
+		parentM.decompose(new THREE.Vector3(), tmpPQ, new THREE.Vector3());
+		tmpQ.premultiply(tmpPQ.invert());
+	}
+	peer.send({ type: 'filmpose', peerId: peer.peer.id, uuid: live.uuid, pos: tmpV.toArray(), q: tmpQ.toArray(), fov: pose.fov, roll: pose.roll, rec: presence.rec });
+	presence.sent = true;
+}
+
+function presenceOff() {
+	if (!presence.sent) return;
+	presence.sent = false;
+	presence.rec = false;
+	const peer = /** @type {any} */ (get(peers));
+	if (peer?.peer?.id) peer.send({ type: 'filmpose', peerId: peer.peer.id, off: true });
 }
 
 /**
@@ -445,6 +542,7 @@ export function stopFilm(opts = {}) {
 	poseFilter = null;
 	drawn = null;
 	releaseProps('film');
+	presenceOff();
 	live.uuid = '';
 	if (uuid) skipTargets.delete(uuid);
 	if (cleanBefore !== null) recordingClean.set(cleanBefore);
@@ -671,4 +769,23 @@ function offerDof() {
 			}
 		}
 	]);
+}
+
+/**
+ * A marker's PARENT frame in the CONTENT frame: Film's poses are content-frame poses, and while an
+ * AR walk bends the world rig (the group the replicated objects live in), the parent's world matrix
+ * carries that bend — so it is taken back out. With the rig at rest this IS parent.matrixWorld.
+ * @param {any} object @returns {THREE.Matrix4 | null}
+ */
+export function parentInContent(object) {
+	const parent = object?.parent;
+	if (!parent) return null;
+	parent.updateWorldMatrix(true, false);
+	const m = parent.matrixWorld.clone();
+	const rig = /** @type {any} */ (get(worldRig));
+	if (rig) {
+		rig.updateWorldMatrix(true, false);
+		m.premultiply(rig.matrixWorld.clone().invert());
+	}
+	return m;
 }

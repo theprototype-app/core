@@ -85,6 +85,22 @@ released version instead of drifting (it carried a stale 1.8.0 before 1.11.0).
   ```
   (plus every changed module file; the same three lines with `scenes`/`format-2` and
   `packs`/`format-1`). A modules merge alone no longer reaches production's gallery.
+- **Record the release's known reds** (the desk battery's baseline, pipeline-1): right after the tag, run the
+  battery once ON THE TAG — two halves, each on a pc slot where the e2e-slot setup has them — and save it:
+  ```sh
+  bash scripts/ci/battery-snapshot.sh vX.Y.Z <dir>     # git archive + .env + certs + the desk tool (NOT archive alone)
+  cd <dir> && BATTERY_COMMIT=vX.Y.Z node scripts/ci/battery-desk.cjs run --half A --out test-results/bl --name blA   # and --half B
+  node scripts/ci/battery-desk.cjs baseline save vX.Y.Z <dir>
+  ```
+  The next integrator runs the same halves on its union and calls `battery-desk.cjs diff --baseline vX.Y.Z <dir>`:
+  a red whose every twice-red check is red on the tag too is PRE-EXISTING (no A/B run), a red that went green on
+  the end-of-half retry is FLAKY (logged; `battery-desk.cjs flakes` prints the rates), and only NEW reds need a look.
+  No pc slot for the tag run? Save the releasing union's OWN last battery as the tag's baseline instead (it is the
+  released code, run the way the next integrator will run it): `battery-desk.cjs import <u1A.txt> --logs <dir>
+  [--retry <rerun.txt>]` per half, then `baseline save vX.Y.Z <dirs>`. Measured on 1.43 (51-int) against 50-int's 1.42
+  battery imported that way: 50 reds -> 33 pre-existing, 11 NEW after the retry.
+  A new `tests/e2e/*.test.cjs` goes into `tests/e2e/battery.json` (suites, or `exclude` with a reason) —
+  `tests/unit/batteryDesk.test.js` fails on a file in neither.
 - The peers warn (never block) on version mismatches, and `.tpscene`/`.tpmodule`
   files confirm before loading a NEWER format int — older files always load
   silently. Bump `SESSION_FORMAT`/`MODULE_FORMAT` only when the shape actually

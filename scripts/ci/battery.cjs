@@ -27,7 +27,7 @@ const BATTERY = path.join(ROOT, 'tests', 'e2e', 'battery.json');
 /**
  * @typedef {{ comment?: string, refs: Record<string, {repo: string, ref: string}>, shards: {target_minutes: number, max: number, min: number},
  *   pc?: {games: string[], levels: string[]}, skip: Record<string, string>, optional: Record<string, string>, setup: Record<string, string>,
- *   suites: Record<string, number> }} Battery
+ *   suites: Record<string, number>, modules?: Record<string, number>, desk?: Record<string, string[]>, exclude?: Record<string, string[]> }} Battery
  * @typedef {{ name: string, status: 'pass'|'flaky'|'fail'|'timeout'|'gone', required: boolean, rc: number|null, secs: number,
  *   retrySecs?: number, pass: number, fail: number, last: string, shard: number }} SuiteResult
  */
@@ -300,6 +300,10 @@ function write(b) {
 		`\t"setup": ${obj(b.setup, '\t')}`,
 		`\t"suites": ${obj(b.suites, '\t')}`
 	];
+	// the desk battery's keys (battery-desk.cjs): written only when present, so a file without them stays byte-identical
+	if (b.modules) body.push(`\t"modules": ${obj(b.modules, '\t')}`);
+	if (b.desk) body.push(`\t"desk": ${obj(b.desk, '\t')}`);
+	if (b.exclude) body.push(`\t"exclude": ${obj(Object.fromEntries(Object.entries(b.exclude).map(([k, v]) => [k, [...v].sort()])), '\t')}`);
 	fs.writeFileSync(BATTERY, `{\n${body.join(',\n')}\n}\n`);
 }
 
@@ -309,8 +313,14 @@ function refresh(argv) {
 	const lists = opts(argv, '--list');
 	if (lists.length) {
 		// the integrator's battery lists ARE the battery: names not in them leave, new ones arrive at 120 s
-		const names = new Set(lists.flatMap((f) => fs.readFileSync(f, 'utf8').split(/\s+/).filter((n) => n && !n.startsWith('MOD:'))));
+		const all = lists.flatMap((f) => fs.readFileSync(f, 'utf8').split(/\s+/).filter(Boolean));
+		const names = new Set(all.filter((n) => !n.startsWith('MOD:')));
 		b.suites = Object.fromEntries([...names].map((n) => [n, b.suites[n] ?? 120]));
+		// the modules repo's flights (MOD:x) are the desk battery's, never a runner's
+		const mods = all.filter((n) => n.startsWith('MOD:')).map((n) => n.slice(4));
+		if (mods.length) b.modules = Object.fromEntries(mods.map((m) => [m, b.modules?.[m] ?? 600]));
+		// a suite that joined the battery is no longer excluded
+		if (b.exclude) for (const k of Object.keys(b.exclude)) b.exclude[k] = b.exclude[k].filter((/** @type {string} */ n) => !names.has(n));
 	}
 	/** @type {Record<string, number[]>} */
 	const desk = {};

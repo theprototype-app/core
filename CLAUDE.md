@@ -5,6 +5,10 @@ Threlte 8 + three.js, peerjs mesh networking (no server beyond PeerJS signaling)
 node/flow editor (@xyflow/svelte 0.1.x) driving scene behavior, and a module SDK for
 loadable play content. Everything a user does must be visible to connected peers.
 
+**This file is ~7,000 lines; you are shown only its start.** `CLAUDE-index.md` lists every section, entry and
+sub-entry with its line: grep the index for a word, then read this file from that line. After editing this file
+(or on a merge conflict in the index), run `node scripts/claude-index.cjs`.
+
 ## Architecture map
 
 - `src/stores/` — `appStore` (UI panels + `openSceneSection(label)`/`inspectorScrollTo`

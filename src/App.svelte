@@ -64,6 +64,7 @@
   import CommandPalette from './components/menu/CommandPalette.svelte'
   import TouchPlayControls from './components/play/TouchPlayControls.svelte'
   import DrawToolbar from './components/menu/DrawToolbar.svelte'
+  import VectorToolbar from './components/menu/VectorToolbar.svelte' // 64 D1
   import SculptToolbar from './components/menu/SculptToolbar.svelte'
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
   import MeasureToolbar from './components/menu/MeasureToolbar.svelte' // 47 M1
@@ -449,6 +450,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <ReplaceModelModal />
 <PlaceholderTooltip />
 <DrawToolbar />
+<VectorToolbar />
 <SculptToolbar />
 <SplineToolbar />
 <MeasureToolbar />

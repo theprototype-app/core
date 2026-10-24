@@ -7,6 +7,8 @@
 	import { sceneRevision } from '../../../stores/sceneStore';
 	import { VECTOR_COLOURS } from '$lib/vector/vectorRecord.js';
 	import { vectorParamsOf, setVectorParams } from '$lib/vector/vectorActions.js';
+	import { vectorEditObject, enterVectorEdit, exitVectorEdit } from '$lib/vector/vectorEdit.js';
+	import UiButton from '../../ui/Button.svelte';
 
 	/** @type {{ object: any }} */
 	let { object } = $props();
@@ -38,5 +40,13 @@
 				<p class="text-text-faint">No fill and no stroke — set Fill or Stroke above.</p>
 			{/if}
 		</div>
+		<UiButton
+			id="vector-edit-points"
+			size="sm"
+			variant="outline"
+			title={params.kind === 'path' ? 'Drag points and handles, add points on the outline' : 'Turns the shape into a path you can reshape point by point'}
+			onclick={() => ($vectorEditObject === object.uuid ? exitVectorEdit() : enterVectorEdit(object.uuid))}
+			>{$vectorEditObject === object.uuid ? 'Done editing points' : 'Edit points'}</UiButton
+		>
 	</Section>
 {/if}

@@ -3,6 +3,7 @@
 	import ContextMenu from '../ContextMenu.svelte';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
 	import { drawMode, toggleDrawMode } from '$lib/drawMode';
+	import { vectorTool, armVectorTool, disarmVectorTool } from '$lib/vector/vectorTool.js'; // 64 D1
 	import { simulating, simPaused, remoteSimulating, toggleSimulation, pauseSimulation, resetSimulation } from '$lib/physics';
 	import { nameOf } from '$lib/lockControl';
 	import { snapEnabled, snapSettings, surfaceSnap, snapTargets } from '$lib/snapping';
@@ -180,6 +181,13 @@
 					checked: $drawMode,
 					tooltip: 'Drag on surfaces to draw 3D strokes (Esc exits)',
 					action: toggleDrawMode
+				},
+				{
+					// 64 D1: vector shapes — drag a rectangle / ellipse / star / polygon, or the pen
+					label: 'Draw shapes',
+					checked: !!$vectorTool,
+					tooltip: 'Drag out rectangles, ellipses, stars and polygons, or place bezier points with the pen (Esc exits)',
+					action: () => ($vectorTool ? disarmVectorTool() : armVectorTool('rect'))
 				},
 				{
 					// 36-share (B13): a turntable or flythrough of the viewport, as a webm

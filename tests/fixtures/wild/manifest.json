@@ -1,0 +1,2643 @@
+{
+	"about": "import-wild fixtures: NOT committed — node scripts/fetch-wild-assets.cjs fetches them. Scenario 3D Collection, CC BY 4.0, Scenario (ATTRIBUTION.md). Written by tools/bench/wild-assets.mjs --pick.",
+	"at": "2026-10-24",
+	"bench": "every item",
+	"fixtures": [
+		{
+			"id": "asset_4D9CT8BrUH6HUwuUiiUr8tu7",
+			"path": "assets/scenario_asset_4D9CT8BrUH6HUwuUiiUr8tu7/output.glb",
+			"sha256": "3983f0dcea32af3910cdf78d633f3f4fbda7e0e6de17b7ae5d592da5d155bb44",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_4D9CT8BrUH6HUwuUiiUr8tu7/output.glb",
+			"format": "glb",
+			"model": "partcrafter",
+			"family": "PartCrafter",
+			"group": "inputs/asset_BLHv6esrvEg2v2np33zgVeUe.png",
+			"expect": {
+				"bytes": 168276076,
+				"cost": {
+					"meshes": 7,
+					"triangles": 7010976,
+					"vertices": 3505715,
+					"draws": 7,
+					"maxMeshVertices": 1143603,
+					"maxMeshTriangles": 2287018,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 8,
+				"materialsUsed": 7,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					1.9525,
+					1.9381,
+					1.9761
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"largest file",
+				"most triangles"
+			]
+		},
+		{
+			"id": "asset_P13ZdKwzusUWdcLVHp5utGUs",
+			"path": "assets/scenario_asset_P13ZdKwzusUWdcLVHp5utGUs/output.glb",
+			"sha256": "891df16ef05a06f2503963c7f5879051035605322a562164ef28e7bf15281dc9",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_P13ZdKwzusUWdcLVHp5utGUs/output.glb",
+			"format": "glb",
+			"model": "meshy-7-1-img23d",
+			"family": "Meshy",
+			"group": "inputs/asset_QfZEJXfM5w6Ztcodu3FmfYbs.png",
+			"expect": {
+				"bytes": 163849004,
+				"cost": {
+					"meshes": 1,
+					"triangles": 2887316,
+					"vertices": 1607819,
+					"draws": 1,
+					"maxMeshVertices": 1607819,
+					"maxMeshTriangles": 2887316,
+					"textures": 3,
+					"textureBytes": 536870911,
+					"maxTextureSize": 8192
+				},
+				"nodes": 1,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					1.9005,
+					0.3556,
+					1.9014
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						8192,
+						8192
+					],
+					[
+						4096,
+						4096
+					],
+					[
+						4096,
+						4096
+					]
+				]
+			},
+			"why": [
+				"largest file"
+			]
+		},
+		{
+			"id": "asset_aV5ovdXdf2Ga2HW6NpKFkMXP",
+			"path": "assets/scenario_asset_aV5ovdXdf2Ga2HW6NpKFkMXP/output.glb",
+			"sha256": "d3a94d0750f670990850d6bb779028623d412b0437cf7047672bdeaecbd47937",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_aV5ovdXdf2Ga2HW6NpKFkMXP/output.glb",
+			"format": "glb",
+			"model": "hitem-sparc-3d-2",
+			"family": "Hitem / Sparc",
+			"group": "inputs/asset_AKDhBiUbtuBJM8Dh7kzRR6ix.png",
+			"expect": {
+				"bytes": 157519748,
+				"cost": {
+					"meshes": 1,
+					"triangles": 1953100,
+					"vertices": 5735368,
+					"draws": 1,
+					"maxMeshVertices": 5735368,
+					"maxMeshTriangles": 1953100,
+					"textures": 2,
+					"textureBytes": 178956970,
+					"maxTextureSize": 4096
+				},
+				"nodes": 2,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					1.6186,
+					1.7232,
+					0.6703
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "odd",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						4096,
+						4096
+					],
+					[
+						4096,
+						4096
+					]
+				]
+			},
+			"why": [
+				"largest file"
+			]
+		},
+		{
+			"id": "asset_zXwtKGB7fE8wymdv9dqdZ1J5",
+			"path": "assets/scenario_asset_zXwtKGB7fE8wymdv9dqdZ1J5/output.glb",
+			"sha256": "f96bdc1706ede329fd57f739cd8569bb0762519f6bfde3968530087152a8d7e7",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_zXwtKGB7fE8wymdv9dqdZ1J5/output.glb",
+			"format": "glb",
+			"model": "hitem-3d-3-0",
+			"family": "Hitem / Sparc",
+			"group": "inputs/asset_T5QATjFCC8HHsr5NL1PGYpDb.png",
+			"expect": {
+				"bytes": 92911048,
+				"cost": {
+					"meshes": 1,
+					"triangles": 4000000,
+					"vertices": 2024691,
+					"draws": 1,
+					"maxMeshVertices": 2024691,
+					"maxMeshTriangles": 4000000,
+					"textures": 2,
+					"textureBytes": 715827882,
+					"maxTextureSize": 8192
+				},
+				"nodes": 2,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.4498,
+					1,
+					0.3798
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						8192,
+						8192
+					],
+					[
+						8192,
+						8192
+					]
+				]
+			},
+			"why": [
+				"most triangles"
+			]
+		},
+		{
+			"id": "asset_t9LLjroRBBBccVSHJ63WyUxr",
+			"path": "assets/scenario_asset_t9LLjroRBBBccVSHJ63WyUxr/output.glb",
+			"sha256": "1a2a77df417fc8f056212f75b859c8be817d817fc7f1d50342e5069878dd0539",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_t9LLjroRBBBccVSHJ63WyUxr/output.glb",
+			"format": "glb",
+			"model": "meshy-7-img23d",
+			"family": "Meshy",
+			"group": "inputs/asset_RJFFPQV5ThV1jTxgur3kwDQG.png",
+			"expect": {
+				"bytes": 146733532,
+				"cost": {
+					"meshes": 1,
+					"triangles": 3138240,
+					"vertices": 1627878,
+					"draws": 1,
+					"maxMeshVertices": 1627878,
+					"maxMeshTriangles": 3138240,
+					"textures": 3,
+					"textureBytes": 201326591,
+					"maxTextureSize": 4096
+				},
+				"nodes": 1,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					1.9026,
+					1.6275,
+					1.4673
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						4096,
+						4096
+					],
+					[
+						4096,
+						4096
+					],
+					[
+						2048,
+						2048
+					]
+				]
+			},
+			"why": [
+				"most triangles"
+			]
+		},
+		{
+			"id": "asset_7LuiVAyukDeF12TTkyHmU3Y1",
+			"path": "assets/scenario_asset_7LuiVAyukDeF12TTkyHmU3Y1/output.glb",
+			"sha256": "9da21e0c3f31c5844b02638d9bd5ede841347061e8ac35235420a4b0c06f9e41",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_7LuiVAyukDeF12TTkyHmU3Y1/output.glb",
+			"format": "glb",
+			"model": "reconviagen-0-5",
+			"family": "ReconViaGen",
+			"group": "inputs/asset_b16gTxnbXeQL2o71EjwKTjJd.png",
+			"expect": {
+				"bytes": 83498256,
+				"cost": {
+					"meshes": 1,
+					"triangles": 1998560,
+					"vertices": 1661490,
+					"draws": 1,
+					"maxMeshVertices": 1661490,
+					"maxMeshTriangles": 1998560,
+					"textures": 2,
+					"textureBytes": 178956970,
+					"maxTextureSize": 4096
+				},
+				"nodes": 2,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.6879,
+					0.9989,
+					0.5293
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "y",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						4096,
+						4096
+					],
+					[
+						4096,
+						4096
+					]
+				]
+			},
+			"why": [
+				"most triangles"
+			]
+		},
+		{
+			"id": "92bb5f0e0ccfdc66",
+			"path": "assets/92bb5f0e0ccfdc66/194ecbc5270f4e29.glb",
+			"sha256": "430220e7e746729c52634a8a3ecd307e2dd05883cb7b47eed561d35361e230c4",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/92bb5f0e0ccfdc66/194ecbc5270f4e29.glb",
+			"format": "glb",
+			"model": "claude-opus-5-5",
+			"family": "Claude",
+			"group": "inputs/b0ba9c6f329ed2e13c5134730477ab2dc5f19f376f73e396414d6170883e0db8.glb",
+			"expect": {
+				"bytes": 3592452,
+				"cost": {
+					"meshes": 599,
+					"triangles": 43051,
+					"vertices": 87007,
+					"draws": 599,
+					"maxMeshVertices": 3636,
+					"maxMeshTriangles": 3600,
+					"textures": 3,
+					"textureBytes": 4194303,
+					"maxTextureSize": 512
+				},
+				"nodes": 175,
+				"materialsUsed": 79,
+				"pbr": "color",
+				"skinned": false,
+				"morph": false,
+				"animations": 1,
+				"size": [
+					22.52,
+					10.4157,
+					17.4845
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						512,
+						512
+					],
+					[
+						512,
+						512
+					],
+					[
+						512,
+						512
+					]
+				]
+			},
+			"why": [
+				"most materials",
+				"most draw calls",
+				"Claude scene builder"
+			]
+		},
+		{
+			"id": "asset_N96j6kkqVxkLs8FKNPsMMPj5",
+			"path": "assets/scenario_asset_N96j6kkqVxkLs8FKNPsMMPj5/output.glb",
+			"sha256": "b0ba9c6f329ed2e13c5134730477ab2dc5f19f376f73e396414d6170883e0db8",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_N96j6kkqVxkLs8FKNPsMMPj5/output.glb",
+			"format": "glb",
+			"model": "scenario-gpt6-astra-3d",
+			"family": "GPT",
+			"group": "inputs/asset_dc5BiW91mwF62aWbv1eyAJKk.png",
+			"expect": {
+				"bytes": 3585656,
+				"cost": {
+					"meshes": 599,
+					"triangles": 43051,
+					"vertices": 87007,
+					"draws": 599,
+					"maxMeshVertices": 3636,
+					"maxMeshTriangles": 3600,
+					"textures": 3,
+					"textureBytes": 4194303,
+					"maxTextureSize": 512
+				},
+				"nodes": 175,
+				"materialsUsed": 79,
+				"pbr": "color",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					22.52,
+					10.4157,
+					17.4845
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						512,
+						512
+					],
+					[
+						512,
+						512
+					],
+					[
+						512,
+						512
+					]
+				]
+			},
+			"why": [
+				"most materials"
+			]
+		},
+		{
+			"id": "asset_eWzMXMN154Nwgxtd6gRZA2pS",
+			"path": "assets/scenario_asset_eWzMXMN154Nwgxtd6gRZA2pS/output.glb",
+			"sha256": "da5c37b3bdc0be94e62780a8cce3d45a7f2fa60656ddc8432d35812263055e1d",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_eWzMXMN154Nwgxtd6gRZA2pS/output.glb",
+			"format": "glb",
+			"model": "tripo-v3-0-image-to-3d",
+			"family": "Tripo",
+			"group": "inputs/asset_uT6BwQvD4MtEEukjivVyhTqa.png",
+			"expect": {
+				"bytes": 461988,
+				"cost": {
+					"meshes": 24,
+					"triangles": 11793,
+					"vertices": 11310,
+					"draws": 24,
+					"maxMeshVertices": 1707,
+					"maxMeshTriangles": 2180,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 25,
+				"materialsUsed": 24,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.8317,
+					1,
+					0.542
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"most materials",
+				"most draw calls"
+			]
+		},
+		{
+			"id": "5463ca0c95d472a2",
+			"path": "assets/5463ca0c95d472a2/8f791771b64ce81e.glb",
+			"sha256": "030e0770561cca4141c2d134212a4231eae492ccbecc3587ee2964b583a8d9d3",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/5463ca0c95d472a2/8f791771b64ce81e.glb",
+			"format": "glb",
+			"model": "gpt-6-astra",
+			"family": "GPT",
+			"group": "inputs/6457def76f283c257278015fc2c10068ccf5d9d63e37fd53c9cc92ecc2483b73.jpg",
+			"expect": {
+				"bytes": 25739728,
+				"cost": {
+					"meshes": 1722,
+					"triangles": 444884,
+					"vertices": 347485,
+					"draws": 1722,
+					"maxMeshVertices": 47470,
+					"maxMeshTriangles": 61148,
+					"textures": 12,
+					"textureBytes": 134217724,
+					"maxTextureSize": 2048
+				},
+				"nodes": 1722,
+				"materialsUsed": 26,
+				"pbr": "color",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					15.914,
+					8.1441,
+					4.9
+				],
+				"rootNodes": 1722,
+				"fileIssues": [
+					"transforms"
+				],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					]
+				]
+			},
+			"why": [
+				"most draw calls",
+				"GPT scene builder"
+			]
+		},
+		{
+			"id": "asset_2mf48Fh8E8AGeFLKip1FQ1JK",
+			"path": "assets/scenario_asset_2mf48Fh8E8AGeFLKip1FQ1JK/output.glb",
+			"sha256": "dd95436553b2708189699005da6013535bfc849d0777cd73251f0873c6ca4681",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_2mf48Fh8E8AGeFLKip1FQ1JK/output.glb",
+			"format": "glb",
+			"model": "partcrafter",
+			"family": "PartCrafter",
+			"group": "inputs/asset_b16gTxnbXeQL2o71EjwKTjJd.png",
+			"expect": {
+				"bytes": 37220816,
+				"cost": {
+					"meshes": 13,
+					"triangles": 1549546,
+					"vertices": 775545,
+					"draws": 13,
+					"maxMeshVertices": 180670,
+					"maxMeshTriangles": 361180,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 14,
+				"materialsUsed": 13,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					1.4306,
+					1.9993,
+					0.735
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "y",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"most draw calls",
+				"PartCrafter multi-part"
+			]
+		},
+		{
+			"id": "c1125eef32a6e6f0",
+			"path": "assets/c1125eef32a6e6f0/f1d407aaebadaaaa.glb",
+			"sha256": "c08616e88ed5e73427db28fea880b3a6a1db0897caebd86283d49cb06953d71d",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/c1125eef32a6e6f0/f1d407aaebadaaaa.glb",
+			"format": "glb",
+			"model": "claude-opus-5-5",
+			"family": "Claude",
+			"group": "assets/scenario_asset_MmYYasw9tEp3vam4stxKcgsH/output.glb",
+			"expect": {
+				"bytes": 1131596,
+				"cost": {
+					"meshes": 10,
+					"triangles": 11356,
+					"vertices": 7736,
+					"draws": 10,
+					"maxMeshVertices": 1542,
+					"maxMeshTriangles": 2304,
+					"textures": 4,
+					"textureBytes": 134217728,
+					"maxTextureSize": 8192
+				},
+				"nodes": 9,
+				"materialsUsed": 5,
+				"pbr": "color",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.66,
+					0.6167,
+					0.6758
+				],
+				"rootNodes": 9,
+				"fileIssues": [],
+				"up": "y",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						8192,
+						256
+					],
+					[
+						4096,
+						4096
+					],
+					[
+						4096,
+						1024
+					],
+					[
+						1024,
+						2048
+					]
+				]
+			},
+			"why": [
+				"largest texture"
+			]
+		},
+		{
+			"id": "asset_3DBQeLN4EuUZVtehMW5Pe2iU",
+			"path": "assets/scenario_asset_3DBQeLN4EuUZVtehMW5Pe2iU/output.glb",
+			"sha256": "58edce360456273d2b1546bee28d4a81850c9c5d7da184fed73f4e9650052c9d",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_3DBQeLN4EuUZVtehMW5Pe2iU/output.glb",
+			"format": "glb",
+			"model": "meshy-7-1-txt23d",
+			"family": "Meshy",
+			"group": null,
+			"expect": {
+				"bytes": 116199496,
+				"cost": {
+					"meshes": 1,
+					"triangles": 1108120,
+					"vertices": 595804,
+					"draws": 1,
+					"maxMeshVertices": 595804,
+					"maxMeshTriangles": 1108120,
+					"textures": 3,
+					"textureBytes": 536870911,
+					"maxTextureSize": 8192
+				},
+				"nodes": 1,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					1.7308,
+					1.9014,
+					0.3968
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						8192,
+						8192
+					],
+					[
+						4096,
+						4096
+					],
+					[
+						4096,
+						4096
+					]
+				]
+			},
+			"why": [
+				"largest texture"
+			]
+		},
+		{
+			"id": "e259e1ceba4eccf7",
+			"path": "assets/e259e1ceba4eccf7/a63fac00be48b5c9.glb",
+			"sha256": "fa52b329a58d2289bdebf79ac05800b4cf97a6864ecd6b08dd790e32b1c0074d",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/e259e1ceba4eccf7/a63fac00be48b5c9.glb",
+			"format": "glb",
+			"model": "claude-opus-5-5",
+			"family": "Claude",
+			"group": "assets/scenario_asset_oVt4mfv8pdyuwzkmjEDNc3MS/native.blend",
+			"expect": {
+				"bytes": 41828,
+				"cost": {
+					"meshes": 2,
+					"triangles": 557,
+					"vertices": 1503,
+					"draws": 2,
+					"maxMeshVertices": 1080,
+					"maxMeshTriangles": 360,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 2,
+				"materialsUsed": 2,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					4.5171,
+					4.9949,
+					2.8132
+				],
+				"rootNodes": 2,
+				"fileIssues": [],
+				"up": "y",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"no PBR maps"
+			]
+		},
+		{
+			"id": "3abb0c701e88e46f",
+			"path": "assets/3abb0c701e88e46f/3a08380bb1e56baf.glb",
+			"sha256": "f922b1a6f46b91ce4bd687d0e3efe6de358adf4187f683181b8dedec60aad732",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/3abb0c701e88e46f/3a08380bb1e56baf.glb",
+			"format": "glb",
+			"model": "gpt-6-astra",
+			"family": "GPT",
+			"group": "assets/scenario_asset_oVt4mfv8pdyuwzkmjEDNc3MS/native.blend",
+			"expect": {
+				"bytes": 73704,
+				"cost": {
+					"meshes": 6,
+					"triangles": 967,
+					"vertices": 2581,
+					"draws": 6,
+					"maxMeshVertices": 1920,
+					"maxMeshTriangles": 640,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 2,
+				"materialsUsed": 6,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					4.4557,
+					4.9947,
+					2.7792
+				],
+				"rootNodes": 2,
+				"fileIssues": [],
+				"up": "y",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"no PBR maps"
+			]
+		},
+		{
+			"id": "asset_Qh3PFSWR99ukBC8kgcKiUUvT",
+			"path": "assets/scenario_asset_Qh3PFSWR99ukBC8kgcKiUUvT/output.glb",
+			"sha256": "97a558c64927c46f3e2113c36355669f5610b9d6c3ce585c30f38860c639845e",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_Qh3PFSWR99ukBC8kgcKiUUvT/output.glb",
+			"format": "glb",
+			"model": "meta-sam-3d-body",
+			"family": "SAM 3D",
+			"group": "inputs/asset_oazqmxXAH6T7ArhCJnFvbtFs.jpg",
+			"expect": {
+				"bytes": 738536,
+				"cost": {
+					"meshes": 1,
+					"triangles": 36874,
+					"vertices": 18439,
+					"draws": 1,
+					"maxMeshVertices": 18439,
+					"maxMeshTriangles": 36874,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 2,
+				"materialsUsed": 0,
+				"pbr": "vertex-colour",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.9166,
+					1.6257,
+					1.0194
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"vertex colours only"
+			]
+		},
+		{
+			"id": "633b2ed75e963b06",
+			"path": "assets/633b2ed75e963b06/c56a619c7c2b203e.glb",
+			"sha256": "b8f19f84de07e4b43fc58349d6f510803ffa69618ccbe359548424a120090fa4",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/633b2ed75e963b06/c56a619c7c2b203e.glb",
+			"format": "glb",
+			"model": "gpt-6-astra",
+			"family": "GPT",
+			"group": "inputs/scene-51109a722ef6138e67782900/scene.ply",
+			"expect": {
+				"bytes": 2269516,
+				"cost": {
+					"meshes": 4,
+					"triangles": 42748,
+					"vertices": 57785,
+					"draws": 4,
+					"maxMeshVertices": 43714,
+					"maxMeshTriangles": 18432,
+					"textures": 1,
+					"textureBytes": 22369621,
+					"maxTextureSize": 2048
+				},
+				"nodes": 4,
+				"materialsUsed": 2,
+				"pbr": "color",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					73.2622,
+					190.3578,
+					72.1546
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						2048,
+						2048
+					]
+				]
+			},
+			"why": [
+				"odd scale (largest box)"
+			]
+		},
+		{
+			"id": "asset_S9EM7SqTL85RE5D7dH1Abm4f",
+			"path": "assets/scenario_asset_S9EM7SqTL85RE5D7dH1Abm4f/output.glb",
+			"sha256": "402fb0116687ff0a6386b08177a8239ed28065d1746d01a97b4e75445db1599f",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_S9EM7SqTL85RE5D7dH1Abm4f/output.glb",
+			"format": "glb",
+			"model": "meshy-multi-image-to-3d",
+			"family": "Meshy",
+			"group": "inputs/asset_FKzC4uKNmrKe3D2wywTEkjCC.png",
+			"expect": {
+				"bytes": 36999124,
+				"cost": {
+					"meshes": 1,
+					"triangles": 381473,
+					"vertices": 230060,
+					"draws": 1,
+					"maxMeshVertices": 230060,
+					"maxMeshTriangles": 381473,
+					"textures": 4,
+					"textureBytes": 223696212,
+					"maxTextureSize": 4096
+				},
+				"nodes": 1,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					43.1817,
+					93,
+					43.1867
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						4096,
+						4096
+					],
+					[
+						4096,
+						4096
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					]
+				]
+			},
+			"why": [
+				"odd scale (largest box)"
+			]
+		},
+		{
+			"id": "5eaa67ddddd8f062",
+			"path": "assets/5eaa67ddddd8f062/a048863bdf9fc58e.glb",
+			"sha256": "ce01258fe361db46567725924dea9b9e8f9c8c5b83cc572d076afb948bc76e31",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/5eaa67ddddd8f062/a048863bdf9fc58e.glb",
+			"format": "glb",
+			"model": "gpt-6-astra",
+			"family": "GPT",
+			"group": "inputs/293805686d7ac7364060ea8d0a295a60fe435a566a282d876c3e5de7b60e26dc.usdz",
+			"expect": {
+				"bytes": 2003324,
+				"cost": {
+					"meshes": 15,
+					"triangles": 26496,
+					"vertices": 15791,
+					"draws": 15,
+					"maxMeshVertices": 5092,
+					"maxMeshTriangles": 8832,
+					"textures": 3,
+					"textureBytes": 67108863,
+					"maxTextureSize": 2048
+				},
+				"nodes": 32,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": true,
+				"morph": false,
+				"animations": 1,
+				"size": [
+					0.0026,
+					0.0024,
+					0.0011
+				],
+				"rootNodes": 1,
+				"fileIssues": [
+					"transforms"
+				],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					]
+				]
+			},
+			"why": [
+				"odd scale (smallest box)"
+			]
+		},
+		{
+			"id": "cdb6c782c1b244ce",
+			"path": "assets/cdb6c782c1b244ce/a2bd370278c58592.glb",
+			"sha256": "3a2306330f791c5c3362c376796adbf8c2805ee53764e434c2bd7ca5cb6b1448",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/cdb6c782c1b244ce/a2bd370278c58592.glb",
+			"format": "glb",
+			"model": "claude-opus-5-5",
+			"family": "Claude",
+			"group": null,
+			"expect": {
+				"bytes": 356504,
+				"cost": {
+					"meshes": 10,
+					"triangles": 17120,
+					"vertices": 10224,
+					"draws": 10,
+					"maxMeshVertices": 4130,
+					"maxMeshTriangles": 8064,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 10,
+				"materialsUsed": 6,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.126,
+					0.124,
+					0.068
+				],
+				"rootNodes": 10,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"odd scale (smallest box)"
+			]
+		},
+		{
+			"id": "99c5d6b318cceb70",
+			"path": "assets/99c5d6b318cceb70/a1102d2460d1b6b3.glb",
+			"sha256": "84e891cf0de43c136804b6072c835bd4e729154570e985abd938ad58f3b785f6",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/99c5d6b318cceb70/a1102d2460d1b6b3.glb",
+			"format": "glb",
+			"model": "gpt-6-astra",
+			"family": "GPT",
+			"group": "inputs/c47da510af55edbb544ef862cde2f37771afece93e5530ef3bed63b809d6f01f.blend",
+			"expect": {
+				"bytes": 1282776,
+				"cost": {
+					"meshes": 7,
+					"triangles": 62092,
+					"vertices": 33297,
+					"draws": 7,
+					"maxMeshVertices": 7243,
+					"maxMeshTriangles": 13760,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 6,
+				"materialsUsed": 5,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.3856,
+					0.3125,
+					0.3856
+				],
+				"rootNodes": 6,
+				"fileIssues": [
+					"transforms"
+				],
+				"up": "y",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"unapplied root transform"
+			]
+		},
+		{
+			"id": "asset_U2KQ686opM4MA4YiuxrvK1Zh",
+			"path": "assets/scenario_asset_U2KQ686opM4MA4YiuxrvK1Zh/output.glb",
+			"sha256": "48b56ad84026cbe0e4435227fafa83c6f64f737fadcfabebabc306925a642195",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_U2KQ686opM4MA4YiuxrvK1Zh/output.glb",
+			"format": "glb",
+			"model": "csm-image-to-3d",
+			"family": "CSM",
+			"group": "inputs/asset_sa9Tf11THQ1PYWA1ZgpwFzy1.png",
+			"expect": {
+				"bytes": 1469220,
+				"cost": {
+					"meshes": 1,
+					"triangles": 47034,
+					"vertices": 32246,
+					"draws": 1,
+					"maxMeshVertices": 32246,
+					"maxMeshTriangles": 47034,
+					"textures": 2,
+					"textureBytes": 11184810,
+					"maxTextureSize": 1024
+				},
+				"nodes": 1,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.3592,
+					1,
+					0.2088
+				],
+				"rootNodes": 1,
+				"fileIssues": [
+					"transforms"
+				],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					]
+				]
+			},
+			"why": [
+				"unapplied root transform"
+			]
+		},
+		{
+			"id": "5cd8172bfdc69a0d",
+			"path": "assets/5cd8172bfdc69a0d/beaba868c4b051f3.glb",
+			"sha256": "a9fb1ea72605d07010c6369092fb83f7860b0c12f43152b8073f889d61dffd93",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/5cd8172bfdc69a0d/beaba868c4b051f3.glb",
+			"format": "glb",
+			"model": "claude-opus-5-5",
+			"family": "Claude",
+			"group": "assets/scenario_asset_VsiGCcoku3U5qTex2MwQdbGR/output.glb",
+			"expect": {
+				"bytes": 2138880,
+				"cost": {
+					"meshes": 127,
+					"triangles": 49011,
+					"vertices": 82597,
+					"draws": 127,
+					"maxMeshVertices": 3024,
+					"maxMeshTriangles": 1746,
+					"textures": 1,
+					"textureBytes": 349525,
+					"maxTextureSize": 256
+				},
+				"nodes": 21,
+				"materialsUsed": 17,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					4.7387,
+					4.262,
+					4.6796
+				],
+				"rootNodes": 21,
+				"fileIssues": [
+					"transforms"
+				],
+				"up": "y",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						256,
+						256
+					]
+				]
+			},
+			"why": [
+				"unapplied root transform"
+			]
+		},
+		{
+			"id": "asset_amHxbHSr3jweSqTGcQkmfurb",
+			"path": "assets/scenario_asset_amHxbHSr3jweSqTGcQkmfurb/output.glb",
+			"sha256": "174c9c556ab36bd198b120c4b9b791d4861f100c2d53a748290cbed9fe7c1dec",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_amHxbHSr3jweSqTGcQkmfurb/output.glb",
+			"format": "glb",
+			"model": "partcrafter",
+			"family": "PartCrafter",
+			"group": "inputs/asset_pGB1jVvy1GEiNRQs4CD5N7an.png",
+			"expect": {
+				"bytes": 112013968,
+				"cost": {
+					"meshes": 13,
+					"triangles": 4666480,
+					"vertices": 2333461,
+					"draws": 13,
+					"maxMeshVertices": 464822,
+					"maxMeshTriangles": 929566,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 14,
+				"materialsUsed": 13,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					2.0061,
+					1.9696,
+					2.003
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "y",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"PartCrafter multi-part"
+			]
+		},
+		{
+			"id": "asset_1sLXS8tgkU7HN48zSyoap88Q",
+			"path": "assets/scenario_asset_1sLXS8tgkU7HN48zSyoap88Q/output.glb",
+			"sha256": "0f0837dac9ef294535c2eee942eea693a2e6f356e38fceef55afa9d1a0eb1668",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_1sLXS8tgkU7HN48zSyoap88Q/output.glb",
+			"format": "glb",
+			"model": "partcrafter",
+			"family": "PartCrafter",
+			"group": "inputs/asset_gLZELEpikPY8SDtTPLzdXxeH.png",
+			"expect": {
+				"bytes": 46719716,
+				"cost": {
+					"meshes": 12,
+					"triangles": 1946980,
+					"vertices": 972671,
+					"draws": 12,
+					"maxMeshVertices": 288508,
+					"maxMeshTriangles": 577004,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 13,
+				"materialsUsed": 12,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					1.0633,
+					1.4796,
+					1.991
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"PartCrafter multi-part"
+			]
+		},
+		{
+			"id": "asset_3Qm5iYNDfKuVU1Xxws58hLo3",
+			"path": "assets/scenario_asset_3Qm5iYNDfKuVU1Xxws58hLo3/output.glb",
+			"sha256": "c06bcf1b06e74011165bd1a0ce63854651a3fedf3e02a3530cf0eab83d49f840",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_3Qm5iYNDfKuVU1Xxws58hLo3/output.glb",
+			"format": "glb",
+			"model": "partcrafter",
+			"family": "PartCrafter",
+			"group": "inputs/asset_BC8wBXpC4gfh1TNKve7mF6je.png",
+			"expect": {
+				"bytes": 40929184,
+				"cost": {
+					"meshes": 12,
+					"triangles": 1704824,
+					"vertices": 852476,
+					"draws": 12,
+					"maxMeshVertices": 333490,
+					"maxMeshTriangles": 666944,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 13,
+				"materialsUsed": 12,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.7851,
+					1.3795,
+					1.9993
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"PartCrafter multi-part"
+			]
+		},
+		{
+			"id": "f5e095fbb0749c92",
+			"path": "assets/f5e095fbb0749c92/603463c2fc622fed.glb",
+			"sha256": "40d7cef5189285d3303a6498ea02b104dc112db5e3fc6edea58609f7c454c0e2",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/f5e095fbb0749c92/603463c2fc622fed.glb",
+			"format": "glb",
+			"model": "gpt-6-astra",
+			"family": "GPT",
+			"group": null,
+			"expect": {
+				"bytes": 9139924,
+				"cost": {
+					"meshes": 1400,
+					"triangles": 140470,
+					"vertices": 178926,
+					"draws": 1400,
+					"maxMeshVertices": 1143,
+					"maxMeshTriangles": 1708,
+					"textures": 6,
+					"textureBytes": 8388606,
+					"maxTextureSize": 512
+				},
+				"nodes": 1400,
+				"materialsUsed": 32,
+				"pbr": "color",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					5.8768,
+					2.7675,
+					2.352
+				],
+				"rootNodes": 1400,
+				"fileIssues": [
+					"transforms"
+				],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						512,
+						512
+					],
+					[
+						512,
+						512
+					],
+					[
+						512,
+						512
+					],
+					[
+						512,
+						512
+					],
+					[
+						512,
+						512
+					],
+					[
+						512,
+						512
+					]
+				]
+			},
+			"why": [
+				"GPT scene builder"
+			]
+		},
+		{
+			"id": "08f0934e5bb14fea",
+			"path": "assets/08f0934e5bb14fea/146a6c8b14bcafe0.glb",
+			"sha256": "c94ff66a0143320f1e692eea5e428ee5a331dcc0f9434b1d918c45344f764494",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/08f0934e5bb14fea/146a6c8b14bcafe0.glb",
+			"format": "glb",
+			"model": "gpt-6-astra",
+			"family": "GPT",
+			"group": "inputs/926c5ab0055987183606fc98b7b6ef4412fa8940985365fd30adf37e4bc7e780.jpg",
+			"expect": {
+				"bytes": 6810808,
+				"cost": {
+					"meshes": 1175,
+					"triangles": 136216,
+					"vertices": 180471,
+					"draws": 1175,
+					"maxMeshVertices": 1884,
+					"maxMeshTriangles": 1840,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 1163,
+				"materialsUsed": 51,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					24.4991,
+					6.88,
+					24.6788
+				],
+				"rootNodes": 1163,
+				"fileIssues": [
+					"transforms"
+				],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"GPT scene builder"
+			]
+		},
+		{
+			"id": "0e37967bf4aff42f",
+			"path": "assets/0e37967bf4aff42f/d1c575ce5d2410ae.glb",
+			"sha256": "0a0016c9e94e5e86d3cc647dd47419d3f1248cd7076cd3d818bac6a45d8552bf",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/0e37967bf4aff42f/d1c575ce5d2410ae.glb",
+			"format": "glb",
+			"model": "claude-opus-5-5",
+			"family": "Claude",
+			"group": null,
+			"expect": {
+				"bytes": 1096280,
+				"cost": {
+					"meshes": 156,
+					"triangles": 46138,
+					"vertices": 31976,
+					"draws": 156,
+					"maxMeshVertices": 3024,
+					"maxMeshTriangles": 5118,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 166,
+				"materialsUsed": 10,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.507,
+					0.901,
+					0.696
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"Claude scene builder"
+			]
+		},
+		{
+			"id": "fcf5aeaad49680cd",
+			"path": "assets/fcf5aeaad49680cd/af78a3b5b99010b1.glb",
+			"sha256": "0bf0967eb0d11f94a85ffad5b5c11c2fc733f3b90365ffe8a87c08b7186597e2",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/fcf5aeaad49680cd/af78a3b5b99010b1.glb",
+			"format": "glb",
+			"model": "claude-opus-5-5",
+			"family": "Claude",
+			"group": null,
+			"expect": {
+				"bytes": 727200,
+				"cost": {
+					"meshes": 123,
+					"triangles": 31432,
+					"vertices": 21845,
+					"draws": 123,
+					"maxMeshVertices": 1154,
+					"maxMeshTriangles": 2304,
+					"textures": 0,
+					"textureBytes": 0,
+					"maxTextureSize": 0
+				},
+				"nodes": 124,
+				"materialsUsed": 13,
+				"pbr": "none",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.335,
+					0.495,
+					0.4817
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": []
+			},
+			"why": [
+				"Claude scene builder"
+			]
+		},
+		{
+			"id": "asset_43R1ne9CAWDmPasw84aa18oe",
+			"path": "assets/scenario_asset_43R1ne9CAWDmPasw84aa18oe/output.glb",
+			"sha256": "3d11182ae4c23cd0c80640627eb58fd94394f8b592b548a5a8f219845e30a589",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_43R1ne9CAWDmPasw84aa18oe/output.glb",
+			"format": "glb",
+			"model": "rodin-hyper3d-highpack",
+			"family": "Rodin",
+			"group": "inputs/asset_AAwQmGXfkbTEhjMABoANZ1Qt.png",
+			"expect": {
+				"bytes": 71079844,
+				"cost": {
+					"meshes": 1,
+					"triangles": 1430208,
+					"vertices": 748143,
+					"draws": 1,
+					"maxMeshVertices": 748143,
+					"maxMeshTriangles": 1430208,
+					"textures": 3,
+					"textureBytes": 268435455,
+					"maxTextureSize": 4096
+				},
+				"nodes": 1,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.9518,
+					1.9005,
+					1.1663
+				],
+				"rootNodes": 1,
+				"fileIssues": [
+					"transforms"
+				],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						4096,
+						4096
+					],
+					[
+						4096,
+						4096
+					],
+					[
+						4096,
+						4096
+					]
+				]
+			},
+			"why": [
+				"Rodin HighPack"
+			]
+		},
+		{
+			"id": "asset_4Y4wuz91B6pWr5BNpkFP6bpc",
+			"path": "assets/scenario_asset_4Y4wuz91B6pWr5BNpkFP6bpc/output.glb",
+			"sha256": "9d5a1d3775526d03df03dabad28a695f2f68762be9298f487195b19cba53c8af",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_4Y4wuz91B6pWr5BNpkFP6bpc/output.glb",
+			"format": "glb",
+			"model": "rodin-hyper3d-highpack",
+			"family": "Rodin",
+			"group": "inputs/asset_uxNssFtxedZQKjS7oxbPoRxc.png",
+			"expect": {
+				"bytes": 25786640,
+				"cost": {
+					"meshes": 1,
+					"triangles": 125872,
+					"vertices": 68966,
+					"draws": 1,
+					"maxMeshVertices": 68966,
+					"maxMeshTriangles": 125872,
+					"textures": 3,
+					"textureBytes": 268435455,
+					"maxTextureSize": 4096
+				},
+				"nodes": 1,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					1.2893,
+					1.9004,
+					0.7544
+				],
+				"rootNodes": 1,
+				"fileIssues": [
+					"transforms"
+				],
+				"up": "y",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						4096,
+						4096
+					],
+					[
+						4096,
+						4096
+					],
+					[
+						4096,
+						4096
+					]
+				]
+			},
+			"why": [
+				"Rodin HighPack"
+			]
+		},
+		{
+			"id": "5cc3bec09b594db5",
+			"path": "assets/5cc3bec09b594db5/f8a3560dc69dec8c.glb",
+			"sha256": "b3b2c3102ab7b206865604d0e81ad8ef05a315cc511af41ff7a197d09378dc0a",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/5cc3bec09b594db5/f8a3560dc69dec8c.glb",
+			"format": "glb",
+			"model": "gpt-6-astra",
+			"family": "GPT",
+			"group": "inputs/946aae6e8aaa77ed5badd7fd202164be99089813451e7a77a0f3300f62c4e56a.blend",
+			"expect": {
+				"bytes": 24793564,
+				"cost": {
+					"meshes": 174,
+					"triangles": 232280,
+					"vertices": 473301,
+					"draws": 174,
+					"maxMeshVertices": 19728,
+					"maxMeshTriangles": 10876,
+					"textures": 21,
+					"textureBytes": 234881017,
+					"maxTextureSize": 2048
+				},
+				"nodes": 67,
+				"materialsUsed": 10,
+				"pbr": "pbr",
+				"skinned": true,
+				"morph": true,
+				"animations": 2,
+				"size": [
+					4.524,
+					3.954,
+					1.2435
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						1024,
+						1024
+					]
+				]
+			},
+			"why": [
+				"skinned / animated"
+			]
+		},
+		{
+			"id": "cb1f2c0dca7c0ca0",
+			"path": "assets/cb1f2c0dca7c0ca0/1941bc393dd1b6a3.glb",
+			"sha256": "10bb756863cace84edef8497f252ede66e73362a167c59eebf35dac0a032a86a",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/cb1f2c0dca7c0ca0/1941bc393dd1b6a3.glb",
+			"format": "glb",
+			"model": "claude-opus-5-5",
+			"family": "Claude",
+			"group": "inputs/8a27076c62eaaeb395ce1a77ee696da471549c5d2d2a4e07a26a9fc2a5145f75.blend",
+			"expect": {
+				"bytes": 3740992,
+				"cost": {
+					"meshes": 17,
+					"triangles": 74462,
+					"vertices": 61248,
+					"draws": 17,
+					"maxMeshVertices": 12439,
+					"maxMeshTriangles": 20200,
+					"textures": 6,
+					"textureBytes": 134217726,
+					"maxTextureSize": 2048
+				},
+				"nodes": 18,
+				"materialsUsed": 3,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 10,
+				"size": [
+					0.536,
+					0.6879,
+					0.483
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "y",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					]
+				]
+			},
+			"why": [
+				"skinned / animated"
+			]
+		},
+		{
+			"id": "asset_oQcKXUD44oJ1gU3UjcjsvMTK",
+			"path": "assets/scenario_asset_oQcKXUD44oJ1gU3UjcjsvMTK/output.glb",
+			"sha256": "68b5454a0fe1899d947d1fc814ab9904907e86f09b288f672c06963a1e60e76f",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_oQcKXUD44oJ1gU3UjcjsvMTK/output.glb",
+			"format": "glb",
+			"model": "direct3d-s2",
+			"family": "Direct3D",
+			"group": "inputs/asset_eXaKU4abbuPQi5XvVxYvFAHm.png",
+			"expect": {
+				"bytes": 2511952,
+				"cost": {
+					"meshes": 1,
+					"triangles": 40000,
+					"vertices": 48516,
+					"draws": 1,
+					"maxMeshVertices": 48516,
+					"maxMeshTriangles": 40000,
+					"textures": 2,
+					"textureBytes": 44739242,
+					"maxTextureSize": 2048
+				},
+				"nodes": 2,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					1.8903,
+					1.8881,
+					1.9051
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 1,
+				"textureDims": [
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					]
+				]
+			},
+			"why": [
+				"texture MIME type lies"
+			]
+		},
+		{
+			"id": "asset_uKgWMW27HVuHYKfb21S9pP1V",
+			"path": "assets/scenario_asset_uKgWMW27HVuHYKfb21S9pP1V/output.glb",
+			"sha256": "d67442b0ad2828b743efa43058e0a773521dd53b1c92ba4e8e445e4f4f198e23",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_uKgWMW27HVuHYKfb21S9pP1V/output.glb",
+			"format": "glb",
+			"model": "scenario-gpt6-astra-3d",
+			"family": "GPT",
+			"group": "inputs/asset_5L22k5ZNkh3ji3j6fsgHz74W.png",
+			"expect": {
+				"bytes": 11446904,
+				"cost": {
+					"meshes": 331,
+					"triangles": 153324,
+					"vertices": 271168,
+					"draws": 331,
+					"maxMeshVertices": 18240,
+					"maxMeshTriangles": 10336,
+					"textures": 11,
+					"textureBytes": 208317095,
+					"maxTextureSize": 2048
+				},
+				"nodes": 64,
+				"materialsUsed": 10,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					20.872,
+					11.0477,
+					6.5826
+				],
+				"rootNodes": 64,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					],
+					[
+						512,
+						512
+					]
+				]
+			},
+			"why": [
+				"most non-manifold edges"
+			]
+		},
+		{
+			"id": "asset_7ST6h7jsZqqwLVUajU2Z5dYo",
+			"path": "assets/scenario_asset_7ST6h7jsZqqwLVUajU2Z5dYo/output.glb",
+			"sha256": "d2fc94a74be06f5fa4b93f431ece7edc7f7db3d8a9f0c5c37b71c5374ab575f7",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_7ST6h7jsZqqwLVUajU2Z5dYo/output.glb",
+			"format": "glb",
+			"model": "trellis-2",
+			"family": "TRELLIS",
+			"group": "inputs/asset_TKXLQP9jsgTo2b1jS7ZL4aMT.png",
+			"expect": {
+				"bytes": 32953672,
+				"cost": {
+					"meshes": 1,
+					"triangles": 937674,
+					"vertices": 636341,
+					"draws": 1,
+					"maxMeshVertices": 636341,
+					"maxMeshTriangles": 937674,
+					"textures": 2,
+					"textureBytes": 44739242,
+					"maxTextureSize": 2048
+				},
+				"nodes": 2,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.9994,
+					0.5147,
+					0.2807
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "odd",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					]
+				]
+			},
+			"why": [
+				"family representative"
+			]
+		},
+		{
+			"id": "asset_HAEGDVyWjzf7NYKeJDrA9hJQ",
+			"path": "assets/scenario_asset_HAEGDVyWjzf7NYKeJDrA9hJQ/output.glb",
+			"sha256": "284be5755f5c78a2944f3123c16f16bfc806c6c62d3063e0ed2dc4936890e2cd",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_HAEGDVyWjzf7NYKeJDrA9hJQ/output.glb",
+			"format": "glb",
+			"model": "yvo3d-image-to-3d",
+			"family": "YVO3D",
+			"group": "inputs/asset_bLregZA6RPF5METdejRP5YUW.png",
+			"expect": {
+				"bytes": 13367052,
+				"cost": {
+					"meshes": 1,
+					"triangles": 99866,
+					"vertices": 65219,
+					"draws": 1,
+					"maxMeshVertices": 65219,
+					"maxMeshTriangles": 99866,
+					"textures": 3,
+					"textureBytes": 50331647,
+					"maxTextureSize": 2048
+				},
+				"nodes": 2,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					1.0033,
+					0.8338,
+					1.0025
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					],
+					[
+						1024,
+						1024
+					]
+				]
+			},
+			"why": [
+				"family representative"
+			]
+		},
+		{
+			"id": "asset_35GzUr8aV2smK9dTSxK7oQMB",
+			"path": "assets/scenario_asset_35GzUr8aV2smK9dTSxK7oQMB/output.glb",
+			"sha256": "474c6e0b7114d01a56abd3d9c848fb6e46052e08a075454c6587aa0ac859a56f",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_35GzUr8aV2smK9dTSxK7oQMB/output.glb",
+			"format": "glb",
+			"model": "pixal3d",
+			"family": "Pixal3D",
+			"group": "inputs/asset_iXzQWS65wjkDFmbbJk2B2dL7.png",
+			"expect": {
+				"bytes": 8401596,
+				"cost": {
+					"meshes": 1,
+					"triangles": 195510,
+					"vertices": 150993,
+					"draws": 1,
+					"maxMeshVertices": 150993,
+					"maxMeshTriangles": 195510,
+					"textures": 2,
+					"textureBytes": 44739242,
+					"maxTextureSize": 2048
+				},
+				"nodes": 2,
+				"materialsUsed": 1,
+				"pbr": "pbr",
+				"skinned": false,
+				"morph": false,
+				"animations": 0,
+				"size": [
+					0.8251,
+					0.8554,
+					0.8023
+				],
+				"rootNodes": 1,
+				"fileIssues": [],
+				"up": "-",
+				"mimeMismatch": 0,
+				"textureDims": [
+					[
+						2048,
+						2048
+					],
+					[
+						2048,
+						2048
+					]
+				]
+			},
+			"why": [
+				"family representative"
+			]
+		},
+		{
+			"id": "asset_1zxBLgvdmzTAGYZfgkjH1M4u",
+			"path": "assets/scenario_asset_1zxBLgvdmzTAGYZfgkjH1M4u/output.fbx",
+			"sha256": "3c293ccac763e070d399fe63755ec400bda84b9a948433cec8e9ed4f09ee85d4",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_1zxBLgvdmzTAGYZfgkjH1M4u/output.fbx",
+			"format": "fbx",
+			"model": "tripo-v3-0-image-to-3d",
+			"family": "Tripo",
+			"group": "inputs/asset_MpiWxhcXm8nzdF5uKH55Fwyz.png",
+			"expect": null,
+			"why": [
+				"FBX output"
+			]
+		},
+		{
+			"id": "asset_7MBMTFohjcBxFxBgHGhAYT2f",
+			"path": "assets/scenario_asset_7MBMTFohjcBxFxBgHGhAYT2f/output.fbx",
+			"sha256": "5a6d53f7fe86c74f2db4af9c593aed2a9b685c6ce9ac29289707100d5d3baf27",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_7MBMTFohjcBxFxBgHGhAYT2f/output.fbx",
+			"format": "fbx",
+			"model": "tripo-v3-1-image-to-3d",
+			"family": "Tripo",
+			"group": "inputs/asset_nVpgfXaLFx4kPJxFYMVGo9z8.png",
+			"expect": null,
+			"why": [
+				"FBX output"
+			]
+		},
+		{
+			"id": "asset_WkFCSXjsXcwZcTgZ5BkQH783",
+			"path": "assets/scenario_asset_WkFCSXjsXcwZcTgZ5BkQH783/output.fbx",
+			"sha256": "9aa2dddebff7120a58e74b11fc8b024118074ed112cf8bf3fd6f16d4ee944d73",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_WkFCSXjsXcwZcTgZ5BkQH783/output.fbx",
+			"format": "fbx",
+			"model": "tripo-v3-1-image-to-3d",
+			"family": "Tripo",
+			"group": "inputs/asset_T1uXFqK5DkjGRXY366fYJKuT.png",
+			"expect": null,
+			"why": [
+				"FBX output"
+			]
+		},
+		{
+			"id": "asset_ZDudUvuQmbimSsuzkivXjcgn",
+			"path": "assets/scenario_asset_ZDudUvuQmbimSsuzkivXjcgn/output.fbx",
+			"sha256": "4844fb9f0dd0349d03a6c04b81b4c4d5e4b578d9b34525b26343faded773c3fb",
+			"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_ZDudUvuQmbimSsuzkivXjcgn/output.fbx",
+			"format": "fbx",
+			"model": "tripo-p2-multiview-to-3d",
+			"family": "Tripo",
+			"group": "inputs/asset_KaZrixbA8uPWDGguTrN6rVWT.png",
+			"expect": null,
+			"why": [
+				"FBX output"
+			]
+		}
+	],
+	"pairs": [
+		{
+			"group": "inputs/asset_zVErRdpnXEZSxZscsxb4qJ43.png",
+			"a": {
+				"id": "asset_TzjXnk2tkbVdu1z2DVd1gMPg",
+				"path": "assets/scenario_asset_TzjXnk2tkbVdu1z2DVd1gMPg/output.glb",
+				"sha256": "055a022829c6e6a2d6604a6246ab8dca903d5bbfd95d05f4679b7d904a792f8b",
+				"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_TzjXnk2tkbVdu1z2DVd1gMPg/output.glb",
+				"format": "glb",
+				"model": "rodin-hyper3d-v2-5-fast",
+				"family": "Rodin",
+				"group": "inputs/asset_zVErRdpnXEZSxZscsxb4qJ43.png",
+				"expect": {
+					"bytes": 1860756,
+					"cost": {
+						"meshes": 1,
+						"triangles": 19292,
+						"vertices": 16532,
+						"draws": 1,
+						"maxMeshVertices": 16532,
+						"maxMeshTriangles": 19292,
+						"textures": 1,
+						"textureBytes": 89478485,
+						"maxTextureSize": 4096
+					},
+					"nodes": 1,
+					"materialsUsed": 1,
+					"pbr": "none",
+					"skinned": false,
+					"morph": false,
+					"animations": 0,
+					"size": [
+						1.5318,
+						1.5899,
+						1.82
+					],
+					"rootNodes": 1,
+					"fileIssues": [],
+					"up": "y",
+					"mimeMismatch": 0,
+					"textureDims": [
+						[
+							4096,
+							4096
+						]
+					]
+				}
+			},
+			"b": {
+				"id": "asset_pW6oJhgxaSHw7EouWca3DoGd",
+				"path": "assets/scenario_asset_pW6oJhgxaSHw7EouWca3DoGd/output.glb",
+				"sha256": "5bae5441cff1c7a3c8bbc937448eec62806b929b044c8176a999e3695da437c4",
+				"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_pW6oJhgxaSHw7EouWca3DoGd/output.glb",
+				"format": "glb",
+				"model": "tripo-p1-image-to-3d",
+				"family": "Tripo",
+				"group": "inputs/asset_zVErRdpnXEZSxZscsxb4qJ43.png",
+				"expect": {
+					"bytes": 1637116,
+					"cost": {
+						"meshes": 1,
+						"triangles": 4942,
+						"vertices": 3231,
+						"draws": 1,
+						"maxMeshVertices": 3231,
+						"maxMeshTriangles": 4942,
+						"textures": 3,
+						"textureBytes": 268435455,
+						"maxTextureSize": 4096
+					},
+					"nodes": 2,
+					"materialsUsed": 1,
+					"pbr": "pbr",
+					"skinned": false,
+					"morph": false,
+					"animations": 0,
+					"size": [
+						0.9472,
+						0.9472,
+						0.998
+					],
+					"rootNodes": 1,
+					"fileIssues": [],
+					"up": "y",
+					"mimeMismatch": 0,
+					"textureDims": [
+						[
+							4096,
+							4096
+						],
+						[
+							4096,
+							4096
+						],
+						[
+							4096,
+							4096
+						]
+					]
+				}
+			},
+			"expectIssues": [],
+			"why": "replace: none"
+		},
+		{
+			"group": "inputs/asset_TKXLQP9jsgTo2b1jS7ZL4aMT.png",
+			"a": {
+				"id": "asset_5hejgj8DBTZinDyicJP3y2o9",
+				"path": "assets/scenario_asset_5hejgj8DBTZinDyicJP3y2o9/output.glb",
+				"sha256": "5c38dd535a4f037ac23a24f10a5d18ac27d3dc97f414f93f264e86179661a236",
+				"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_5hejgj8DBTZinDyicJP3y2o9/output.glb",
+				"format": "glb",
+				"model": "meta-sam-3d-objects",
+				"family": "SAM 3D",
+				"group": "inputs/asset_TKXLQP9jsgTo2b1jS7ZL4aMT.png",
+				"expect": {
+					"bytes": 1607960,
+					"cost": {
+						"meshes": 1,
+						"triangles": 8006,
+						"vertices": 6194,
+						"draws": 1,
+						"maxMeshVertices": 6194,
+						"maxMeshTriangles": 8006,
+						"textures": 1,
+						"textureBytes": 5592405,
+						"maxTextureSize": 1024
+					},
+					"nodes": 2,
+					"materialsUsed": 1,
+					"pbr": "color",
+					"skinned": false,
+					"morph": false,
+					"animations": 0,
+					"size": [
+						1.2037,
+						0.7142,
+						0.7168
+					],
+					"rootNodes": 1,
+					"fileIssues": [],
+					"up": "odd",
+					"mimeMismatch": 0,
+					"textureDims": [
+						[
+							1024,
+							1024
+						]
+					]
+				}
+			},
+			"b": {
+				"id": "asset_CQBE79ctoNn24NYcQiywMFjG",
+				"path": "assets/scenario_asset_CQBE79ctoNn24NYcQiywMFjG/output.glb",
+				"sha256": "810d327890fb7b99d3037b21af4384155ef1033cdedb48576083dcef0b80b39c",
+				"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_CQBE79ctoNn24NYcQiywMFjG/output.glb",
+				"format": "glb",
+				"model": "tripo-p1-image-to-3d",
+				"family": "Tripo",
+				"group": "inputs/asset_TKXLQP9jsgTo2b1jS7ZL4aMT.png",
+				"expect": {
+					"bytes": 2108568,
+					"cost": {
+						"meshes": 1,
+						"triangles": 4792,
+						"vertices": 3744,
+						"draws": 1,
+						"maxMeshVertices": 3744,
+						"maxMeshTriangles": 4792,
+						"textures": 3,
+						"textureBytes": 268435455,
+						"maxTextureSize": 4096
+					},
+					"nodes": 2,
+					"materialsUsed": 1,
+					"pbr": "pbr",
+					"skinned": false,
+					"morph": false,
+					"animations": 0,
+					"size": [
+						0.998,
+						0.5098,
+						0.2402
+					],
+					"rootNodes": 1,
+					"fileIssues": [],
+					"up": "odd",
+					"mimeMismatch": 0,
+					"textureDims": [
+						[
+							4096,
+							4096
+						],
+						[
+							4096,
+							4096
+						],
+						[
+							4096,
+							4096
+						]
+					]
+				}
+			},
+			"expectIssues": [],
+			"why": "replace: none"
+		},
+		{
+			"group": "inputs/asset_YnYvZL5egbRyqSdtu8hHMgPo.png",
+			"a": {
+				"id": "asset_REqrcdST88BnqrUqbz4WehU2",
+				"path": "assets/scenario_asset_REqrcdST88BnqrUqbz4WehU2/output.glb",
+				"sha256": "82cf50a28fd22ea40cc531be2aa125f03ad05b800210d0e56c117dc2c7c753db",
+				"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_REqrcdST88BnqrUqbz4WehU2/output.glb",
+				"format": "glb",
+				"model": "meta-sam-3d-objects",
+				"family": "SAM 3D",
+				"group": "inputs/asset_YnYvZL5egbRyqSdtu8hHMgPo.png",
+				"expect": {
+					"bytes": 1511760,
+					"cost": {
+						"meshes": 1,
+						"triangles": 16952,
+						"vertices": 11204,
+						"draws": 1,
+						"maxMeshVertices": 11204,
+						"maxMeshTriangles": 16952,
+						"textures": 1,
+						"textureBytes": 5592405,
+						"maxTextureSize": 1024
+					},
+					"nodes": 2,
+					"materialsUsed": 1,
+					"pbr": "color",
+					"skinned": false,
+					"morph": false,
+					"animations": 0,
+					"size": [
+						0.9377,
+						0.8489,
+						0.8781
+					],
+					"rootNodes": 1,
+					"fileIssues": [],
+					"up": "y",
+					"mimeMismatch": 0,
+					"textureDims": [
+						[
+							1024,
+							1024
+						]
+					]
+				}
+			},
+			"b": {
+				"id": "asset_zr6zH9iscxDDjViqrsHPS1sB",
+				"path": "assets/scenario_asset_zr6zH9iscxDDjViqrsHPS1sB/output.glb",
+				"sha256": "bd20664aecf069ab182dcc8783b078b0b84c9c7e08a43a2c69e8cb91b4833054",
+				"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_zr6zH9iscxDDjViqrsHPS1sB/output.glb",
+				"format": "glb",
+				"model": "rodin-hyper3d",
+				"family": "Rodin",
+				"group": "inputs/asset_YnYvZL5egbRyqSdtu8hHMgPo.png",
+				"expect": {
+					"bytes": 7079304,
+					"cost": {
+						"meshes": 1,
+						"triangles": 37830,
+						"vertices": 22612,
+						"draws": 1,
+						"maxMeshVertices": 22612,
+						"maxMeshTriangles": 37830,
+						"textures": 3,
+						"textureBytes": 67108863,
+						"maxTextureSize": 2048
+					},
+					"nodes": 1,
+					"materialsUsed": 1,
+					"pbr": "pbr",
+					"skinned": false,
+					"morph": false,
+					"animations": 0,
+					"size": [
+						1.7561,
+						1.9075,
+						1.3889
+					],
+					"rootNodes": 1,
+					"fileIssues": [
+						"transforms"
+					],
+					"up": "y",
+					"mimeMismatch": 0,
+					"textureDims": [
+						[
+							2048,
+							2048
+						],
+						[
+							2048,
+							2048
+						],
+						[
+							2048,
+							2048
+						]
+					]
+				}
+			},
+			"expectIssues": [
+				"transforms"
+			],
+			"why": "replace: transforms"
+		},
+		{
+			"group": "inputs/asset_uzr9Ft1qTsnrdh3FBh15NU7Z.png",
+			"a": {
+				"id": "asset_tNNocTQBTiQXAe2TyhjdbgpK",
+				"path": "assets/scenario_asset_tNNocTQBTiQXAe2TyhjdbgpK/output.glb",
+				"sha256": "b8fa6ef1514430002cb6d4f06bf60c66e15255744a6335728992d6c27ff4e416",
+				"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_tNNocTQBTiQXAe2TyhjdbgpK/output.glb",
+				"format": "glb",
+				"model": "direct3d-s2",
+				"family": "Direct3D",
+				"group": "inputs/asset_uzr9Ft1qTsnrdh3FBh15NU7Z.png",
+				"expect": {
+					"bytes": 3456192,
+					"cost": {
+						"meshes": 1,
+						"triangles": 40000,
+						"vertices": 47775,
+						"draws": 1,
+						"maxMeshVertices": 47775,
+						"maxMeshTriangles": 40000,
+						"textures": 2,
+						"textureBytes": 44739242,
+						"maxTextureSize": 2048
+					},
+					"nodes": 2,
+					"materialsUsed": 1,
+					"pbr": "pbr",
+					"skinned": false,
+					"morph": false,
+					"animations": 0,
+					"size": [
+						1.9087,
+						0.9252,
+						1.8954
+					],
+					"rootNodes": 1,
+					"fileIssues": [],
+					"up": "y",
+					"mimeMismatch": 1,
+					"textureDims": [
+						[
+							2048,
+							2048
+						],
+						[
+							2048,
+							2048
+						]
+					]
+				}
+			},
+			"b": {
+				"id": "asset_BaX6gQz7fdsn6rnWnGdRPCYk",
+				"path": "assets/scenario_asset_BaX6gQz7fdsn6rnWnGdRPCYk/output.glb",
+				"sha256": "74c2c712cca9aa46d5972a6c68255891b1128087dcdcde8eaa2648ac85d974e8",
+				"url": "https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_BaX6gQz7fdsn6rnWnGdRPCYk/output.glb",
+				"format": "glb",
+				"model": "rodin-hyper3d",
+				"family": "Rodin",
+				"group": "inputs/asset_uzr9Ft1qTsnrdh3FBh15NU7Z.png",
+				"expect": {
+					"bytes": 6090416,
+					"cost": {
+						"meshes": 1,
+						"triangles": 35602,
+						"vertices": 21156,
+						"draws": 1,
+						"maxMeshVertices": 21156,
+						"maxMeshTriangles": 35602,
+						"textures": 3,
+						"textureBytes": 67108863,
+						"maxTextureSize": 2048
+					},
+					"nodes": 1,
+					"materialsUsed": 1,
+					"pbr": "pbr",
+					"skinned": false,
+					"morph": false,
+					"animations": 0,
+					"size": [
+						1.8949,
+						0.9651,
+						1.8964
+					],
+					"rootNodes": 1,
+					"fileIssues": [
+						"transforms"
+					],
+					"up": "y",
+					"mimeMismatch": 0,
+					"textureDims": [
+						[
+							2048,
+							2048
+						],
+						[
+							2048,
+							2048
+						],
+						[
+							2048,
+							2048
+						]
+					]
+				}
+			},
+			"expectIssues": [
+				"transforms"
+			],
+			"why": "replace: transforms"
+		}
+	]
+}

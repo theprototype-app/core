@@ -141,6 +141,26 @@ function geometryInfo(g) {
 		return { box: [-r, -h, -r, r, h, r], tris: 512, solid: true };
 	}
 	const pos = g.data?.attributes?.position;
+	// an INTERLEAVED position (wild-assets): three's toJSON writes it as a reference into
+	// `interleavedBuffers` + `arrayBuffers` (the raw bytes as uint32s), and every model the
+	// import optimizer rewrote is interleaved (glTF-Transform's default vertex layout) — so its
+	// triangles counted ZERO and the budget note never fired for any optimized import
+	if (pos?.isInterleavedBufferAttribute) {
+		const ib = g.data.interleavedBuffers?.[pos.data];
+		const raw = ib && g.data.arrayBuffers?.[ib.buffer];
+		if (!raw?.length || ib.type !== 'Float32Array') return null;
+		const a = new Float32Array(Uint32Array.from(raw).buffer);
+		const stride = ib.stride || 3;
+		const off = pos.offset || 0;
+		const box = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
+		for (let i = off; i + 2 < a.length; i += stride)
+			for (let k = 0; k < 3; k++) {
+				box[k] = Math.min(box[k], a[i + k]);
+				box[k + 3] = Math.max(box[k + 3], a[i + k]);
+			}
+		const idx = g.data.index?.array?.length;
+		return { box, tris: Math.round((idx ?? Math.floor(a.length / stride)) / 3), solid: false };
+	}
 	if (pos?.array?.length) {
 		const a = pos.array;
 		const s = pos.itemSize || 3;

@@ -1073,6 +1073,14 @@ export function sendObjects(peerId, element, opts = {}) {
             console.log('Not sending ' + count + ' objects to ' + peerId + ': the connection is gone');
             return;
         }
+        // …and the SUBTREE too (wild-assets): an import replaced, undone or cleared inside
+        // these 500ms is DETACHED by now, and the walk below reads `parent.parent.parent` —
+        // the same uncaught TypeError inside a timer. Whatever removed it already sent its own
+        // delete (or the replacement's sync), so there is nothing left to send.
+        if (element && !inSceneObjects(element)) {
+            console.log('Not sending ' + count + ' objects: "' + (element.name || element.uuid) + '" left the scene');
+            return;
+        }
         // Send amount of objects to be sent and their uuids
         conn.send({type: 'loading', count: count, uuids: uuidList});
         // park animated objects at their base pose so the receiver captures the
@@ -1086,6 +1094,12 @@ export function sendObjects(peerId, element, opts = {}) {
         }
     }, 500);
 
+}
+
+/** is `element` still under objectsGroup (not detached by a delete, an undo or a clear)? @param {any} element */
+function inSceneObjects(element) {
+    for (let o = element; o; o = o.parent) if (o === sceneObjects) return true;
+    return false;
 }
 
 /**

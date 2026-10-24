@@ -71,7 +71,8 @@ h.run(async () => {
 		polygon: [[2.4, 0, 0.1], [2.8, 0, 0.1]]
 	};
 	for (const [kind, [from, to]] of Object.entries(drags)) {
-		await A.page.locator(`#vector-tool-${kind}`).click();
+		// a button press on the ARMED tool disarms it (the toggle), so rect — armed above — is not pressed again
+		if ((await A.page.evaluate(() => window.__stores.vectorTool.vectorToolDebug().tool)) !== kind) await A.page.locator(`#vector-tool-${kind}`).click();
 		const before = (await shapes(A.page)).length;
 		const depth = await undoDepth(A.page);
 		await dragWorld(A.page, from, to);

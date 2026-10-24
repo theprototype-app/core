@@ -6,6 +6,7 @@
 	import { cameraPreview, writeBackPose, previewOrbit, seatOrbitBehind, previewPoseOverride, applyMarkerLens } from '$lib/cameraPreview';
 	import { cameraSpec, aspectRatio, syncCameraToObject } from '$lib/cameraObjects';
 	import { safeStorage } from '$lib/safeStorage';
+	import { filmCameraMount } from '$lib/film/filmState';
 
 	// 16-P5: while a camera OBJECT is previewed, THIS is the render camera — a real
 	// perspective/orthographic camera (`makeDefault`, so threlte's `camera.current`
@@ -92,6 +93,8 @@
 </script>
 
 {#if $cameraPreview && spec}
+	<!-- 68 V3: the camera's own mount — identity, except during Film's AR walk (filmState.filmCameraMount) -->
+	<T.Group bind:ref={$filmCameraMount} name="preview-camera-mount">
 	{#if spec.kind === 'orthographic'}
 		<T.OrthographicCamera
 			makeDefault
@@ -123,4 +126,5 @@
 			{/if}
 		</T.PerspectiveCamera>
 	{/if}
+	</T.Group>
 {/if}

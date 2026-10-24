@@ -104,6 +104,21 @@ const qaxis = (axis, deg) => {
 	const s = Math.sin((deg * D) / 2);
 	return [axis[0] * s, axis[1] * s, axis[2] * s, Math.cos((deg * D) / 2)];
 };
+/**
+ * deviceorientation angles (Z-X'-Y'') for a phone at heading `alpha`, tilt `beta`, then turned `roll`° about its
+ * own screen normal — a sideways lean. (Feeding gamma alone at beta 90 is a turn about the vertical: gimbal.)
+ * @param {number} alpha @param {number} beta @param {number} roll
+ */
+function leanAngles(alpha, beta, roll) {
+	/** @param {number[][]} A @param {number[][]} B */
+	const mul = (A, B) => A.map((r) => B[0].map((_, j) => r.reduce((s, _v, k) => s + r[k] * B[k][j], 0)));
+	/** @param {number} d */
+	const rz = (d) => [[Math.cos(d * D), -Math.sin(d * D), 0], [Math.sin(d * D), Math.cos(d * D), 0], [0, 0, 1]];
+	/** @param {number} d */
+	const rx = (d) => [[1, 0, 0], [0, Math.cos(d * D), -Math.sin(d * D)], [0, Math.sin(d * D), Math.cos(d * D)]];
+	const m = mul(mul(rz(alpha), rx(beta)), rz(roll));
+	return [Math.atan2(-m[0][1], m[1][1]) / D, Math.asin(m[2][1]) / D, Math.atan2(-m[2][0], m[2][2]) / D];
+}
 const near = (/** @type {number} */ a, /** @type {number} */ b, tol = 2) => Math.abs(a - b) <= tol;
 
 /** @param {any} page */
@@ -215,11 +230,11 @@ h.run(async () => {
 	h.check(near(yawDeg(p.q), 0) && near(pitchDeg(p.q), 30), `Recentre makes this heading straight ahead (yaw ${yawDeg(p.q).toFixed(1)}, pitch ${pitchDeg(p.q).toFixed(1)})`);
 
 	// a sideways lean rolls the picture; horizon lock levels it
-	await page.evaluate(() => window.__tilt(30, 90, 20));
+	await page.evaluate(([a, b, g]) => window.__tilt(a, b, g), leanAngles(30, 90, 20));
 	await page.waitForTimeout(400);
 	p = await pose(page);
 	const leaning = rollDeg(p.q);
-	h.check(Math.abs(leaning) > 10, `leaning the phone rolls the camera (${leaning.toFixed(1)}°)`);
+	h.check(near(Math.abs(leaning), 20, 3) && near(yawDeg(p.q), 0), `leaning the phone rolls the camera (${leaning.toFixed(1)}°)`);
 	await page.locator('#film-horizon').click();
 	await page.waitForTimeout(400);
 	p = await pose(page);
@@ -452,7 +467,7 @@ h.run(async () => {
 	await B.page.evaluate(() => window.__setScreenAngle(90));
 	await B.page.waitForTimeout(300);
 	rect = await viewportRect(B.page);
-	h.check(near(rect.h, 770, 1) && near(rect.w, 850, 1), `landscape: the shot box fills the width (${JSON.stringify(rect)})`);
+	h.check(near(rect.w, 850, 1) && near(rect.h, 478, 1) && near(rect.t, 146, 2), `landscape: the 16:9 shot box fills the width, centred (${JSON.stringify(rect)})`);
 	await shot(B.page, 'unfolded-landscape');
 	await B.page.keyboard.press('Escape');
 	await B.page.waitForTimeout(500);
@@ -482,6 +497,7 @@ h.run(async () => {
 	const rail = await pg.locator('#film-zoom-rail').boundingBox();
 	await pg.mouse.move(rail.x + rail.width / 2, rail.y + rail.height - 2);
 	await pg.mouse.down();
+	await pg.mouse.move(rail.x + rail.width / 2, rail.y + rail.height + 30, { steps: 3 }); // captured: past the end clamps
 	await pg.mouse.up();
 	p = await pose(pg);
 	h.check(near(p.fov, fovFor(14), 0.5), `the bottom of the rail is the widest lens (fov ${p.fov.toFixed(1)})`);
@@ -542,9 +558,24 @@ h.run(async () => {
 		const r = document.getElementById('viewport').getBoundingClientRect();
 		return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height, depth: cam.position.distanceTo(box.getWorldPosition(box.position.clone())) };
 	});
+	// the box straight ahead at eye height: at (0, 0.5, 0) it drew in the lower fifth of the shot, under the record bar
+	await pg.evaluate(() => {
+		let g = null;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		const box = g.children.find((o) => o.geometry?.type === 'BoxGeometry');
+		box.position.set(0, 1.6, 0);
+		box.updateMatrixWorld(true);
+	});
+	/** what a tap at the point lands on (a red row names the cover) */
+	const underTap = (/** @type {{x: number, y: number}} */ at) =>
+		pg.evaluate(({ x, y }) => {
+			const el = document.elementFromPoint(x, y);
+			return el ? `${el.tagName.toLowerCase()}#${el.id}.${[...el.classList].join('.')}` : 'nothing';
+		}, at);
 	let bs = await boxScreen();
+	const under1 = await underTap(bs);
 	await pg.mouse.click(bs.x, bs.y);
-	await h.eventually(() => pose(pg), (q) => q.focus !== undefined && Math.abs(q.focus - (bs.depth - 0.5)) < 0.6, `tap-to-focus pulls focus to the box (~${bs.depth.toFixed(1)} m)`, 6000);
+	await h.eventually(() => pose(pg), (q) => q.focus !== undefined && Math.abs(q.focus - (bs.depth - 0.5)) < 0.6, `tap-to-focus pulls focus to the box (~${bs.depth.toFixed(1)} m; the tap landed on ${under1})`, 6000);
 	h.check((await pg.locator('#film-focus-mark').count()) === 1, 'the focus square marks the tap');
 	const lens = await pg.evaluate((u) => {
 		let g = null;
@@ -552,6 +583,20 @@ h.run(async () => {
 		return g.getObjectByProperty('uuid', u).userData.camera;
 	}, uuidC);
 	h.check(Number.isFinite(lens.focus) && lens.aperture === 1.4, `the marker carries the live lens for the look (focus ${lens.focus}, f/${lens.aperture})`);
+	// a save PARKS the marker at its base and (autosave) puts it back only when the async export ends: the very next
+	// frame must show the live lens again (the tree was already read), not the base for the whole export
+	const parked = await pg.evaluate(async (u) => {
+		let g = null;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		const cam = () => g.getObjectByProperty('uuid', u).userData.camera;
+		const restore = window.__stores.flowRuntime.parkAnimatedAtBase();
+		const atPark = cam().aperture;
+		await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+		const nextFrame = cam().aperture;
+		restore();
+		return { atPark, nextFrame, after: cam().aperture };
+	}, uuidC);
+	h.check(parked.atPark === 5.6 && parked.nextFrame === 1.4 && parked.after === 1.4, `a save parks the base lens, the next frame shows the live one again (${JSON.stringify(parked)})`);
 
 	// tripod: the stick does not move the camera
 	await pg.locator('#film-settings-btn').click();
@@ -568,8 +613,9 @@ h.run(async () => {
 	await pg.locator('.film-rig[data-rig="track"]').click();
 	h.check((await pg.locator('#film-track-hint').count()) === 1, 'Track asks for a tap');
 	bs = await boxScreen();
+	const under2 = await underTap(bs);
 	await pg.mouse.click(bs.x, bs.y);
-	await h.eventually(filmUi, (u) => u.rig === 'track', 'tapping the box follows it');
+	await h.eventually(filmUi, (u) => u.rig === 'track', `tapping the box follows it (the tap landed on ${under2})`);
 	const aimErr = () => pg.evaluate(() => {
 		const w = window.__stores;
 		let g = null;
@@ -601,18 +647,37 @@ h.run(async () => {
 		w.sequences.activeSequence.set(id);
 		return id;
 	});
+	// every number the countdown shows, in order (one read after the click can land on any of them under load)
+	await pg.evaluate(() => {
+		const seen = (window.__countdownSeen = []);
+		const read = () => {
+			const n = document.getElementById('film-countdown-num')?.textContent?.trim();
+			if (n && seen[seen.length - 1] !== n) seen.push(n);
+		};
+		window.__countdownObs = new MutationObserver(read);
+		window.__countdownObs.observe(document.body, { childList: true, subtree: true, characterData: true });
+	});
 	await pg.locator('#film-record').click();
-	h.check((await pg.locator('#film-countdown-num').textContent())?.trim() === '3', 'the countdown shows 3-2-1 first');
 	await h.eventually(() => pg.evaluate(() => {
 		let ui = null;
 		window.__stores.filmRecorder.take.subscribe((v) => (ui = v))();
 		return ui.state;
 	}), (s) => s === 'recording', 'recording starts after the countdown', 6000);
+	const counted = await pg.evaluate(() => {
+		window.__countdownObs.disconnect();
+		return window.__countdownSeen;
+	});
+	h.check(counted.join('') === '321', `the countdown shows 3-2-1 first (${JSON.stringify(counted)})`);
 	await pg.locator('.film-lens[data-mm="24"]').click();
 	await pg.waitForTimeout(700);
 	await pg.locator('#film-marker').click();
 	await pg.locator('.film-lens[data-mm="85"]').click();
-	await pg.evaluate(() => window.__stores.filmLive.setRoll(-6));
+	await pg.evaluate(() => {
+		window.__stores.filmLive.setRoll(-6);
+		// a live control is recorded only when it MOVES in the take (filmTake): pull focus + stop down mid-take
+		window.__stores.filmLive.pullFocus(2);
+		window.__stores.filmLive.setAperture(4);
+	});
 	await pg.waitForTimeout(900);
 	await pg.locator('#film-record').click();
 	await h.eventually(() => pg.evaluate(() => {

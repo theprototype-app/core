@@ -1007,7 +1007,9 @@
 	.film-root {
 		position: fixed;
 		inset: 0;
-		z-index: var(--z-modal);
+		/* over every bar and popover, but UNDER the passive toasts: Film's own offers ("Add depth of field",
+		   "Watch the shot", motion off) are toasts, and at --z-modal the settings sheet covered them */
+		z-index: calc(var(--z-toast-low) - 1);
 		pointer-events: none;
 		/* tokens-ok-begin: the viewfinder is a camera screen — dark glass over the picture in every theme */
 		--film-ink: #fff;

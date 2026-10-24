@@ -2,13 +2,15 @@
 //
 // Android Chrome's WebXR immersive-ar session tracks the phone in the ROOM; walking a metre moves
 // the camera `scale` metres through the scene (0.1 = a miniature set, 20 = a city in a few steps).
-// It is the AR table's arrangement one use over: the WORLD RIG (the group the replicated objects
-// live in) is posed so the phone's room pose lands on the camera's scene pose —
-//     rig = T(roomStart) · Ry(-δ) · S(1/scale) · T(-anchor)        δ = anchor yaw − room yaw at start
-// so the XR runtime draws the scene from exactly where Film says the camera is, and the take records
-// the CONTENT-frame pose (walkPosition) through Film's own frame tail (walkFrame). The rig is LOCAL
-// (peers see the camera through filmpose presence, never a bent world) and goes back to 1:1 when the
-// session ends. The stick slides the anchor (walk + fly), Recentre makes the phone's heading the
+// The XR runtime draws the views under the render camera's PARENT, and the preview camera hangs in
+// its own mount group (filmState.filmCameraMount, inside the world rig) — so the walk poses that
+// mount so the phone's room pose lands on the camera's scene pose —
+//     mount = T(anchor) · Ry(δ) · S(scale) · T(-roomStart)        δ = anchor yaw − room yaw at start
+// and the scene is drawn from exactly where Film says the camera is, while the take records the
+// CONTENT-frame pose (walkPosition) through Film's own frame tail (walkFrame). (Posing the world rig
+// instead does nothing: the camera sits inside it, so the rig cancels out of the view.) The mount is
+// LOCAL (peers see the camera through filmpose presence) and goes back to identity when the session
+// ends. The stick slides the anchor (walk + fly), Recentre makes the phone's heading the
 // marker's again, the scale re-anchors where you stand (no jump), and the mini-map teleports it.
 //
 // What the AR view cannot show: the zoom and the dutch dial (the XR runtime owns the projection and
@@ -18,7 +20,8 @@ import * as THREE from 'three';
 import { get, writable } from 'svelte/store';
 import { toggleXRSession } from '@threlte/xr';
 import { filmWalkActive, setPhoneArTick } from '../arTableState.js';
-import { worldRig, globalRenderer, isVRMode } from '../../stores/sceneStore';
+import { globalRenderer, isVRMode } from '../../stores/sceneStore';
+import { filmCameraMount } from './filmState';
 import { showToast } from '../../stores/appStore';
 import { safeStorage } from '../safeStorage';
 import { registerDebugHook } from '../debugHooks';
@@ -131,12 +134,12 @@ function cleanup() {
 	rt.anchor = null;
 	rt.lastT = 0;
 	setPhoneArTick(null);
-	const rig = /** @type {any} */ (get(worldRig));
-	if (rig) {
-		rig.position.set(0, 0, 0);
-		rig.quaternion.identity();
-		rig.scale.set(1, 1, 1);
-		rig.updateMatrixWorld(true);
+	const mount = /** @type {any} */ (get(filmCameraMount));
+	if (mount) {
+		mount.position.set(0, 0, 0);
+		mount.quaternion.identity();
+		mount.scale.set(1, 1, 1);
+		mount.updateMatrixWorld(true);
 	}
 	const wasOn = get(walk).on;
 	filmWalkActive.set(false);
@@ -194,9 +197,8 @@ function tick(renderer, camera) {
 		if (get(walk).tracking) patch({ tracking: false });
 		return;
 	}
+	// the ROOM pose: the reference space itself (the mount below maps it into the scene)
 	tmpM.fromArray(viewer.transform.matrix);
-	// reference space -> scene: three draws the reference space under the camera's parent
-	if (camera?.parent) tmpM.premultiply(camera.parent.matrixWorld);
 	tmpM.decompose(tmpP, tmpQ, tmpS);
 	rt.room = { pos: tmpP.toArray(), q: tmpQ.toArray() };
 	const now = performance.now() / 1000;
@@ -216,14 +218,13 @@ function tick(renderer, camera) {
 	const contentPos = walkPosition(rt.anchor.pos, delta, rt.anchor.roomStart, rt.room.pos, scale);
 	rt.content = contentPos;
 	rt.contentQ = contentQ;
-	const rig = /** @type {any} */ (get(worldRig));
-	if (rig) {
-		const back = quatAxisAngle(Y, -delta);
-		const a = quatRotate(back, rt.anchor.pos.map((v) => v / scale));
-		rig.quaternion.fromArray(back);
-		rig.scale.setScalar(1 / scale);
-		rig.position.set(rt.anchor.roomStart[0] - a[0], rt.anchor.roomStart[1] - a[1], rt.anchor.roomStart[2] - a[2]);
-		rig.updateMatrixWorld(true);
+	const mount = /** @type {any} */ (get(filmCameraMount));
+	if (mount) {
+		const r = quatRotate(turn, rt.anchor.roomStart.map((v) => v * scale));
+		mount.quaternion.fromArray(turn);
+		mount.scale.setScalar(scale);
+		mount.position.set(rt.anchor.pos[0] - r[0], rt.anchor.pos[1] - r[1], rt.anchor.pos[2] - r[2]);
+		mount.updateMatrixWorld(true);
 	}
 	walkFrame(contentPos, contentQ, camera);
 }

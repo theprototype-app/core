@@ -106,8 +106,8 @@ const live = {
 	posFilter: null,
 	/** @type {any} */
 	quatFilter: null,
-	/** the lens values last posed onto the marker (so the post look reads them) */
-	lensPosed: ''
+	/** the marker the live lens is posed on (so the post look reads it) @type {any} */
+	lensObject: null
 };
 
 /** how long a focus pull takes, seconds */
@@ -214,7 +214,8 @@ function listenForMotion() {
  * 'starting' until the first reading; none in SENSOR_WAIT_MS → iOS (requestPermission exists and
  * nothing arrives until a tap grants it) asks, everything else falls back to touch. Asking only
  * when nothing came keeps a browser that HAS requestPermission but streams anyway (desktop
- * Chromium, some Android builds) from showing a needless button.
+ * Chromium, some Android builds) from showing a needless button. A screen without touch is never
+ * held up as a camera, so it gets drag-to-look even where requestPermission exists (desktop Chromium).
  */
 function armSensorWait() {
 	clearTimeout(sensorTimer);
@@ -233,10 +234,10 @@ function stopSensor() {
 	sensor = null;
 }
 
-/** iOS: motion needs a permission asked from a tap. True when motion may be used. */
+/** iOS: motion needs a permission asked from a tap (only on a touch screen — see armSensorWait). */
 function needsPermission() {
 	const DOE = typeof window !== 'undefined' ? /** @type {any} */ (window).DeviceOrientationEvent : null;
-	return !!DOE && typeof DOE.requestPermission === 'function';
+	return !!DOE && typeof DOE.requestPermission === 'function' && navigator.maxTouchPoints > 0;
 }
 
 /** The "Use phone motion" tap (iOS). */
@@ -421,13 +422,18 @@ function presenceOff() {
 /**
  * The lens values a post look reads (depth of field) live on the MARKER's userData.camera — posed
  * LOCALLY through prop playback (base restored on exit, parked for every save), never an edit.
+ * Compared with what the marker HOLDS each frame, never with what was posed last: autosave parks the
+ * bases and puts them back only when its async export finishes (the tree is read synchronously, so a
+ * re-pose cannot leak into the file), and a settings write replaces the whole camera block — a
+ * "posed already" cache left the depth of field on the base focus through both.
  * @param {FilmPose} pose
  */
 function poseLens(pose) {
 	if (pose.focus === undefined && pose.aperture === undefined) return;
-	const sig = `${pose.focus ?? ''}|${pose.aperture ?? ''}|${pose.fov}|${pose.roll}`;
-	if (sig === live.lensPosed) return;
-	live.lensPosed = sig;
+	if (live.lensObject?.uuid !== live.uuid || !live.lensObject.parent) live.lensObject = findCameraObject(live.uuid);
+	const held = live.lensObject?.userData?.camera;
+	if (!held) return;
+	if ((pose.focus === undefined || held.focus === pose.focus) && (pose.aperture === undefined || held.aperture === pose.aperture)) return;
 	/** @type {{target: string, path: string, value: any}[]} */
 	const list = [];
 	if (pose.focus !== undefined) list.push({ target: live.uuid, path: 'camera.focus', value: pose.focus });
@@ -514,7 +520,7 @@ export function startFilm(uuid) {
 	live.pull = null;
 	live.aperture = null;
 	live.trackOffset = null;
-	live.lensPosed = '';
+	live.lensObject = null;
 	const smoothing = Math.min(1, Math.max(0, Number(safeStorage.getItem('film:smoothing') ?? 0.3)));
 	setFilters(smoothing);
 	live.lastT = 0;

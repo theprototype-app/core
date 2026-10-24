@@ -134,6 +134,19 @@ describe('commitTake', () => {
 		expect(byPath.position[0]).toBeCloseTo(2, 1);
 	});
 
+	it('a control that never moves in the take adds no track (a plain handheld take = position + rotation)', () => {
+		const samples = walk(0, 2).map((s) => ({ ...s, focus: 4.5, aperture: 2.8 }));
+		const r = commitTake(empty(), { camera: CAM, mode: 'cut', samples, base: { fov: 50, roll: 0, focus: 4.5, aperture: 2.8 } });
+		const seq = normalizeSequence(r.seq);
+		for (const path of ['camera.fov', 'camera.roll', 'camera.focus', 'camera.aperture']) expect(propTrackOf(seq, CAM, path)).toBeNull();
+		expect(propTrackOf(seq, CAM, 'position')).not.toBeNull();
+		// the same take with a focus pull records focus, and only focus
+		const pulled = samples.map((s) => ({ ...s, focus: s.t < 1 ? 4.5 : 2 }));
+		const p = normalizeSequence(commitTake(empty(), { camera: CAM, mode: 'cut', samples: pulled, base: { fov: 50, roll: 0, focus: 4.5, aperture: 2.8 } }).seq);
+		expect(propTrackOf(p, CAM, 'camera.focus')).not.toBeNull();
+		expect(propTrackOf(p, CAM, 'camera.aperture')).toBeNull();
+	});
+
 	it('a control first moved in a LATER shot holds its base value through the earlier ones', () => {
 		const a = commitTake(empty(), { camera: CAM, mode: 'cut', samples: walk(0, 2), base: { fov: 50 }, sessionStart: 0 });
 		const b = commitTake(a.seq, { camera: CAM, mode: 'cut', samples: walk(2, 4, { fov: (u) => 50 - 10 * u }), base: { fov: 50 }, sessionStart: 0 });

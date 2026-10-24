@@ -4,9 +4,9 @@
 //      never saved), A is told "… is filming"; B stops → A's marker is back where it stands
 //   W. walk: "Track my movement" asks for immersive-ar with #film-root as the dom-overlay; the phone walking
 //      1 m forward moves the camera 1 m along its own heading; walk scale 5 → 5 m; turning the phone turns
-//      the camera; the world rig maps the room onto the scene (the XR view is drawn from Film's pose)
+//      the camera; the preview camera's mount maps the room onto the scene (the XR view is drawn from Film's pose)
 //   R. a take while walking commits a shot whose keys cover the walked distance
-//   X. Stop walking: the session ends, the rig is 1:1 again, Film carries on
+//   X. Stop walking: the session ends, the mount is 1:1 again, Film carries on
 // What stays MANUAL on the N6: ARCore tracking quality, the 90 s drift row, the iPhone permission prompt.
 // Run: APP_URL=https://theprototype.app:5561/ node tests/e2e/film-walk-iwer.test.cjs
 const fs = require('fs');
@@ -133,24 +133,34 @@ h.run(async () => {
 	await iwer.frames(page, 8);
 	const p3 = await pose();
 	h.check(Math.abs(len(sub(p3.pos, p2.pos)) - 5) < 0.15, `walk scale 5: 1 m walked = 5 m in the scene (${len(sub(p3.pos, p2.pos)).toFixed(2)} m)`);
+	const mountScale = await page.evaluate(() => {
+		let m = null;
+		window.__stores.filmState.filmCameraMount.subscribe((v) => (m = v))();
+		return m ? m.scale.x : null;
+	});
+	h.check(mountScale === 5, `the AR view is drawn at walk scale 5 (the camera mount's scale ${mountScale})`);
 	await iwer.pose(page, 'head', [0, 1.6, -2], { yaw: Math.PI / 2 });
 	await iwer.frames(page, 8);
 	const p4 = await pose();
 	let turned = yawDeg(p4.qBase) - yawDeg(p3.qBase);
 	turned = ((turned + 540) % 360) - 180;
 	h.check(Math.abs(turned - 90) < 3, `turning the phone 90° left turns the camera 90° left (${turned.toFixed(1)}°)`);
-	// the XR view is drawn from Film's pose: the rendering camera, taken through the inverse rig, is the film pose
+	// the XR view is drawn from Film's pose: the EYE cameras' midpoint, taken through the inverse rig, is the film pose
+	// (not the combined XR camera — three pulls that back to fit both frustums, and the walk scale multiplies the pull)
 	const drawnAt = await page.evaluate(() => {
 		const w = window.__stores;
-		let cam = null;
+		let renderer = null;
 		let rig = null;
-		w.globalCamera.subscribe((v) => (cam = v))();
+		w.globalRenderer.subscribe((v) => (renderer = v))();
 		w.worldRig?.subscribe?.((v) => (rig = v))();
-		const p = cam.getWorldPosition(cam.position.clone());
+		// matrixWorld as three left it (the eye cameras have no parent: getWorldPosition would recompute it without the mount)
+		const eyes = renderer.xr.getCamera().cameras;
+		const p = eyes[0].position.clone().set(0, 0, 0);
+		for (const e of eyes) p.add(e.position.clone().setFromMatrixPosition(e.matrixWorld).divideScalar(eyes.length));
 		if (rig) p.applyMatrix4(rig.matrixWorld.clone().invert());
 		return p.toArray();
 	});
-	h.check(len(sub(drawnAt, p4.pos)) < 0.3, `the AR view is drawn from where Film says the camera is (${drawnAt.map((v) => v.toFixed(2))} vs ${p4.pos.map((v) => v.toFixed(2))})`);
+	h.check(len(sub(drawnAt, p4.pos)) < 0.05, `the AR view is drawn from where Film says the camera is (${drawnAt.map((v) => v.toFixed(2))} vs ${p4.pos.map((v) => v.toFixed(2))})`);
 	await page.screenshot({ path: path.join(OUT, 'film-walk-iwer.png') });
 	// the peer follows the walking camera too
 	await h.eventually(() => markerOn(A, uuid), (p) => p && len(sub(p, p4.pos)) < 0.5, "A sees the walking camera move", 8000);
@@ -186,12 +196,12 @@ h.run(async () => {
 	// ---- X. stop walking ----
 	await page.locator('#film-walk-chip').click();
 	await h.eventually(() => iwer.state(page), (s) => !s.presenting, 'Stop walking ends the session', 10000);
-	const rig = await page.evaluate(() => {
-		let r = null;
-		window.__stores.worldRig?.subscribe?.((v) => (r = v))();
-		return r ? { p: r.position.toArray(), s: r.scale.x, q: r.quaternion.toArray() } : null;
+	const mount = await page.evaluate(() => {
+		let m = null;
+		window.__stores.filmState.filmCameraMount.subscribe((v) => (m = v))();
+		return m ? { p: m.position.toArray(), s: m.scale.x, q: m.quaternion.toArray() } : null;
 	});
-	h.check(!rig || (len(rig.p) < 1e-9 && rig.s === 1 && Math.abs(rig.q[3]) === 1), `the world rig is 1:1 again (${JSON.stringify(rig)})`);
+	h.check(!!mount && len(mount.p) < 1e-9 && mount.s === 1 && Math.abs(mount.q[3]) === 1, `the preview camera's mount is 1:1 again (${JSON.stringify(mount)})`);
 	h.check(await page.evaluate(() => document.documentElement.classList.contains('film-mode')), 'Film carries on after the walk');
 
 	// ---- P (end). B leaves Film → A's marker is back ----

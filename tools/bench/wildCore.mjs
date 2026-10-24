@@ -125,7 +125,7 @@ export function quantile(xs, q) {
  * @param {{size: number[] | null}[]} members
  */
 export function upAxisGuesses(members) {
-	const boxes = members.map((m) => m.size).filter((s) => s && Math.max(...s) > 0);
+	const boxes = /** @type {number[][]} */ (members.map((m) => m.size).filter((s) => s && Math.max(...s) > 0));
 	if (boxes.length < 3) return members.map(() => '-');
 	const norm = boxes.map((s) => s.map((v) => v / Math.max(...s)));
 	const consensus = [0, 1, 2].map((i) => median(norm.map((n) => n[i])));

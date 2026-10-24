@@ -7474,7 +7474,7 @@
 						onclick={() => openFolder('scene')} ondblclick={toggleScene}><Icon name="globe" size={16} class="mr-1.5 text-text-muted" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
 					>
 					{#if sceneExpanded}
-					{#each ['audio', 'config', 'textures', 'chats', 'references'] as sub}
+					{#each ['audio', 'config', 'textures', 'chats', 'references', 'generated'] as sub}
 						<button
 							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
 								? 'ex-tree-on'

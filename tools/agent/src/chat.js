@@ -18,6 +18,10 @@ export const WAIT_DEFAULT_S = 240;
 export const WAIT_MAX_S = 600;
 /** import_model: the largest local GLB the bridge reads (the app's own import cap) */
 export const IMPORT_MAX_BYTES = 25 * 1024 * 1024;
+/** import_file (roadmap 66 S4b): the app's caps by kind, checked here so a wrong file never crosses the wire */
+export const IMPORT_FILE_CAPS = { image: 16 * 1024 * 1024, json: 2 * 1024 * 1024, clip: 25 * 1024 * 1024 };
+/** import_file: base64 characters per exec call (a multiple of 4, so every part but the last is whole quads) */
+export const IMPORT_CHUNK_CHARS = 4 * 1024 * 1024;
 
 /** The chat tools (browser engine only: the wire peer has no inbox). */
 export function chatTools() {
@@ -207,4 +211,93 @@ export function importModelArgs(args, io = {}) {
 	if (buf.length < 12 || buf.toString('latin1', 0, 4) !== 'glTF')
 		throw new Error('import_model: ' + basename(path) + ' is not a binary glTF (.glb) — export a self-contained GLB (no external files)');
 	return { ...rest, data: buf.toString('base64'), name: rest.name ?? basename(path).replace(/\.glb$/i, '') };
+}
+
+/**
+ * What a local file for `import_file` is, by its first bytes (the page sniffs again and owns the rules;
+ * this is the early refusal so 16 MB of the wrong thing never crosses the wire).
+ * @param {Buffer} b @returns {'image' | 'json' | 'clip' | null}
+ */
+export function sniffImportKind(b) {
+	if (b.length >= 8 && b[0] === 0x89 && b.toString('latin1', 1, 4) === 'PNG') return 'image';
+	if (b.length >= 12 && b.toString('latin1', 0, 4) === 'RIFF' && b.toString('latin1', 8, 12) === 'WEBP') return 'image';
+	if (b.length >= 12 && b.toString('latin1', 0, 4) === 'glTF') return 'clip';
+	const head = b.toString('utf8', 0, Math.min(b.length, 64)).replace(/^\uFEFF/, '').trimStart();
+	if (head[0] === '{' || head[0] === '[') return 'json';
+	return null;
+}
+
+/**
+ * `import_file` with a `path` (and/or `spec_path`): read the local files, check kind and size, and return
+ * the exec calls to make — ONE call, or the base64 split into `chunk: {id, index, total}` parts with every
+ * other argument riding the last one (the page imports when the last part lands). Paths never reach the
+ * page. Throws a readable error. Without a path the args pass through as the only call.
+ * @param {any} args
+ * @param {{read?: (p: string) => Buffer, size?: (p: string) => number, chunkChars?: number, id?: string}} [io]
+ * @returns {any[]}
+ */
+export function importFileCalls(args, io = {}) {
+	if (!args || typeof args !== 'object') return [args];
+	const { path, spec_path: specPath, ...rest } = args;
+	const size = io.size ?? ((/** @type {string} */ p) => statSync(p).size);
+	const read = io.read ?? ((/** @type {string} */ p) => readFileSync(p));
+	/** @param {string} p @param {number} max @param {string} what */
+	const load = (p, max, what) => {
+		let n;
+		try {
+			n = size(p);
+		} catch (e) {
+			throw new Error('import_file: cannot read ' + p + ' (' + String(/** @type {any} */ (e).code || /** @type {any} */ (e).message) + ')');
+		}
+		if (n > max) throw new Error('import_file: ' + basename(p) + ' is ' + (n / 1048576).toFixed(1) + ' MB; the limit for ' + what + ' is ' + max / 1048576 + ' MB');
+		return read(p);
+	};
+	if (typeof specPath === 'string' && specPath) {
+		if (rest.spec != null) throw new Error('import_file: pass one of spec or spec_path');
+		const text = load(specPath, IMPORT_FILE_CAPS.json, 'a spec').toString('utf8').replace(/^\uFEFF/, '');
+		try {
+			rest.spec = JSON.parse(text);
+		} catch (e) {
+			throw new Error('import_file: ' + basename(specPath) + ' is not JSON (' + String(/** @type {any} */ (e).message).slice(0, 80) + ')');
+		}
+	}
+	if (typeof path !== 'string' || !path) return [rest];
+	if (rest.data || rest.chunk) throw new Error('import_file: pass one of path or data');
+	const max = Math.max(...Object.values(IMPORT_FILE_CAPS));
+	const buf = load(path, max, 'any file');
+	const kind = sniffImportKind(buf);
+	if (!kind) throw new Error('import_file: ' + basename(path) + ' is not a PNG, WebP, JSON or .tpanim file (read from its bytes)');
+	if (buf.length > IMPORT_FILE_CAPS[kind])
+		throw new Error('import_file: ' + basename(path) + ' is ' + (buf.length / 1048576).toFixed(1) + ' MB; the limit for ' + (kind === 'image' ? 'an image' : kind === 'json' ? 'a JSON file' : 'a clip') + ' is ' + IMPORT_FILE_CAPS[kind] / 1048576 + ' MB');
+	if (rest.name == null) rest.name = basename(path).replace(/\.[^.]+$/, '');
+	const data = buf.toString('base64');
+	const step = Math.max(4, Math.floor((io.chunkChars ?? IMPORT_CHUNK_CHARS) / 4) * 4);
+	if (data.length <= step) return [{ ...rest, data }];
+	const total = Math.ceil(data.length / step);
+	const id = io.id ?? 'b' + randomBytes(6).toString('hex');
+	/** @type {any[]} */
+	const calls = [];
+	for (let i = 0; i < total; i++) {
+		const part = { data: data.slice(i * step, (i + 1) * step), chunk: { id, index: i, total } };
+		calls.push(i === total - 1 ? { ...rest, ...part } : part);
+	}
+	return calls;
+}
+
+/**
+ * One scene-tool call through the engine, with the bridge's local-file arguments resolved: `import_model`
+ * reads its `path`; `import_file` reads `path`/`spec_path` and may take several exec calls (chunks) — the
+ * first error stops it, else the last result is the answer.
+ * @param {{exec: (name: string, args: any) => Promise<any>}} engine @param {string} name @param {any} args
+ */
+export async function execBridged(engine, name, args) {
+	if (name === 'import_model') return engine.exec(name, importModelArgs(args));
+	if (name !== 'import_file') return engine.exec(name, args);
+	const calls = importFileCalls(args);
+	let r;
+	for (const c of calls) {
+		r = await engine.exec(name, c);
+		if (!r || r.error || r.__missing) return r;
+	}
+	return r;
 }

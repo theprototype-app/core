@@ -44,6 +44,7 @@ export function touchedUuids(tool, args, result) {
 	for (const r of arr(result?.created)) add(r?.uuid);
 	for (const r of arr(result?.updated)) add(r?.uuid);
 	add(result?.groupUuid);
+	if (tool === 'import_file') add(result?.uuid); // 66 S4b: the placed card
 	for (const u of arr(result?.members)) add(u);
 	for (const u of arr(args?.updates)) add(u?.uuid);
 	if (tool === 'delete_objects') return out; // deleted things cannot be selected
@@ -66,6 +67,7 @@ export function touchedUuids(tool, args, result) {
  */
 export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 	if (READ_ONLY.has(tool)) return null;
+	if (tool === 'import_file' && result?.partial) return null; // 66 S4b: a chunk of an upload is not an action
 	const failed = !result || typeof result !== 'object' || (result.error && !result.created && !result.updated);
 	if (failed) return 'tried ' + tool.replace(/_/g, ' ') + ' — ' + String(result?.error ?? 'it failed').slice(0, 80);
 	switch (tool) {
@@ -118,6 +120,11 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 			return String(args?.action ?? '') === 'start' ? 'started the simulation' : String(args?.action ?? 'changed') + ' the simulation';
 		case 'generate_mesh':
 			return 'started generating “' + String(args?.prompt ?? '').slice(0, 50) + '”';
+		case 'import_file': {
+			// 66 S4b: one line per import — the file, its spec, and the card when one was placed
+			const file = String(result?.file?.name ?? 'a file');
+			return 'imported ' + file + (result?.spec ? ' + its spec' : '') + (result?.uuid ? ' and placed it in the scene' : ' into the Explorer');
+		}
 		case 'install_modules':
 			return 'installed ' + count(arr(args?.ids ?? args?.modules).length, 'module');
 		default:

@@ -60,6 +60,62 @@ when the HOST has a mesh provider ready (the call runs on the host's provider �
 keys into the page — and the host sees who asked and can cancel). `status().missingTools` says why
 any tool is absent.
 
+## Bringing files in: `import_file`
+
+An agent can make things with tools on its OWN machine — a sprite sheet, a render, a data file, an
+animation clip — and bring them into the session. `import_file` takes a PNG or WebP image
+(≤ 16 MB), a JSON file (≤ 2 MB) or a `.tpanim` clip. The TYPE is read from the bytes, never from
+the name, and image metadata (EXIF, XMP, text chunks) is stripped before anything is stored.
+
+- Through the bridge, pass `path` (a local file) and optionally `spec_path` (the generator's input,
+  a local `.json`): the bridge reads them, refuses a wrong type or an oversized file before sending
+  anything, and splits a big file into chunks itself. In the page (`tpAgent.exec`), pass `data`
+  (base64), or for a large file the parts with `chunk: {id, index, total}` (the import runs when
+  the last part lands; split on a multiple of 4 base64 characters).
+- The file lands in the Explorer in `folder` (default **Generated**, `"A/B"` nests), shared with
+  every peer, and saves with the scene. Pass `spec` (the generator's input) and it is stored BESIDE
+  the file as `<name>.<generator>.json` — `knight_walk.png` + `knight_walk.pixling.json` — so the
+  next agent, or a later in-app tool, can regenerate or vary it from the exact input.
+- An image is also PLACED as a card (a plane; `place: false` to skip): `filter: "nearest"` keeps
+  pixel art crisp (the default when a spec is given or the image is ≤ 512 px), `frame: {w, h,
+  col, row}` shows one frame of a sheet (row 0 = top), `facing: "camera-y"` turns it toward each
+  viewer about Y (a standing sprite; `"camera"` faces fully), `height`/`width` size it in metres,
+  `position`/`rotation` place it. The card is an ordinary object: `update_objects` moves it.
+- `source`, `licence` and `prompt` are kept as the file's provenance.
+- ONE undo step: the card and the files it created go together (the files to the Deleted bin, so
+  Restore works). One line in the AI assistant window, with Undo.
+- Editors and admins only: a viewer's agent gets `{error: "view-only: …", refused: true}` and
+  nothing is filed anywhere.
+- A GLB MODEL is not a file for this tool — use `import_model` (also takes a local `path`).
+
+## Recipe: generate pixel art with Pixling and Claude Code
+
+[Pixling](https://github.com/trinity-works/pixling) (MIT) makes game sprites from a JSON spec, on
+your machine, deterministically: the same spec renders the same bytes. With the bridge connected
+(the one-line setup above), ask Claude Code for a character and it runs:
+
+```sh
+uv tool install pixling          # or: pip install pixling
+pixling new hero knight          # copies an example spec to specs/knight.json — edit it
+pixling build specs/knight.json --clips walk --dirs S,E,N,W
+# -> out/knight/knight_walk.png: 16 frames x 4 directions of 64x48 px (rows S, E, N, W)
+pixling review out/knight        # a zoomed review grid — look at it before importing
+```
+
+Then one tool call brings the sheet AND its spec into the session:
+
+```json
+{ "name": "import_file", "arguments": {
+    "path": "out/knight/knight_walk.png", "spec_path": "specs/knight.json",
+    "frame": { "w": 64, "h": 48, "col": 0, "row": 0 }, "facing": "camera-y",
+    "source": "pixling 0.3.1 build specs/knight.json --clips walk --dirs S,E,N,W", "licence": "own work" } }
+```
+
+Everyone sees Explorer ▸ Generated ▸ `knight_walk.png` + `knight_walk.pixling.json` and a crisp
+knight standing at the origin, turning to face each viewer. To change it, edit the spec, build
+again and import again (a new file; undo removes the old card). `pixling guide` and
+`pixling pipelines` explain the styles and the spec format to your agent.
+
 ## Rules a builder must respect
 
 - **Use real uuids.** Read `snapshot()` (or `list_scene`) first; edit by uuid.

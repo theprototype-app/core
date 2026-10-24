@@ -347,6 +347,13 @@ export const VALIDATORS = {
 		// 48 B2: a measurement's record — null is not a record (an item is deleted, never emptied)
 		if (d.parameter === 'measure')
 			return isUuid(d.uuid) && !!d.measure && typeof d.measure === 'object' && isArray(d.measure.points) && d.measure.points.length <= 64;
+		// 64 D2: a text-on-a-path record (normalizeTextPath clamps the rest) or null; a text
+		// longer than any record keeps is refused before it is copied anywhere
+		if (d.parameter === 'textPath') {
+			const v = d.textPath;
+			if (v === null) return isUuid(d.uuid);
+			return isUuid(d.uuid) && !!v && typeof v === 'object' && !isArray(v) && (v.text === undefined || (typeof v.text === 'string' && v.text.length <= 4000));
+		}
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

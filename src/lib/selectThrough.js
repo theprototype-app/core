@@ -36,6 +36,9 @@ export const CYCLE_WINDOW_MS = 1500;
 export function hitOpacity(hit) {
 	const object = hit?.object;
 	if (!object) return 1;
+	// 64 D2: a text's carrier draws nothing (opacity 0) — it is the HIT PROXY of letters drawn
+	// at the scene root, and as solid as they are
+	if (object.userData?.textPath) return 1;
 	let material = object.material;
 	if (Array.isArray(material)) {
 		const index = hit.face?.materialIndex ?? 0;

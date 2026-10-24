@@ -244,6 +244,9 @@ export function finishSpline() {
 	cancelSplinePlacement();
 	const mesh = createSplineMesh(spline, center);
 	if (!mesh) return null;
+	// toJSON writes `matrix`, which only the next render composes from `position` — sent
+	// before that, a peer gets the spline at the origin (the measureItems note)
+	mesh.updateMatrix();
 	group.add(mesh);
 	pokeScene();
 	recordObjectPresence('create', mesh);

@@ -40,7 +40,7 @@ function interactionOf(o, root) {
 function skipped(o, root) {
 	for (let t = o; t && t !== root; t = t.parent) {
 		const u = t.userData;
-		if (!t.visible || u?.fluidEmitter || u?.water || u?.__fluidVisual || u?.flowPath) return true;
+		if (!t.visible || u?.fluidEmitter || u?.water || u?.__fluidVisual || u?.flowPath || u?.textPath) return true;
 	}
 	return false;
 }

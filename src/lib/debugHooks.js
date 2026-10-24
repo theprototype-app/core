@@ -460,7 +460,10 @@ export const DEBUG_HOOKS = [
 	['mainGraph', () => import('./mainGraph.js')],
 	// 36 (U10, games-graphs): engine pieces, the behaviour runtime, authored-group sockets
 	['engines', () => import('./behaviours/engines.js')],
-	['groupReconcile', () => import('./groupReconcile.js')]
+	['groupReconcile', () => import('./groupReconcile.js')],
+	// 64 D2: text on a path (textPathDebug, setLetterOverrides)
+	['textPath', () => import('./textPathRuntime.js')],
+	['textPathEdit', () => import('./textPathEdit.js')]
 ];
 
 /** hooks published at runtime through registerDebugHook @type {Record<string, any>} */

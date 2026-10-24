@@ -32,7 +32,7 @@ function fakeInfo(n, { advance = 1, lines = 1, lh = 1.2 } = {}) {
 	for (let c = 0; c < n; c++) {
 		const k = Math.floor(c / perLine);
 		const x = (c % perLine) * advance;
-		caret.push(x, x + advance, -0.2 - k * lh);
+		caret.push(x, x + advance, -0.2 - k * lh, 0.8 - k * lh); // troika 0.52: start, end, bottom, top
 		bounds.push(x + 0.1, -k * lh, x + advance - 0.1, 0.7 - k * lh);
 		chars.push(c);
 	}

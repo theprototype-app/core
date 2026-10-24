@@ -11,7 +11,11 @@
 // missing file here, log one console error and carry on from its own CDN for the rest of the
 // session — what every label did before, now only for the rare glyph.
 //
-//   node scripts/fetch-troika-fonts.cjs      (rewrites static/fonts/unicode-font-resolver/)
+// 64 D2 — TEXT ON A PATH picks a family from a short list (src/lib/textPathCore.js TEXT_FONTS):
+// the families the interface already ships, as WOFF copies under static/fonts/text/ (troika
+// cannot read the interface's WOFF2). Same OFL licences as the WOFF2 beside them.
+//
+//   node scripts/fetch-troika-fonts.cjs      (rewrites static/fonts/unicode-font-resolver/ + static/fonts/text/)
 const fs = require('fs');
 const path = require('path');
 
@@ -22,6 +26,15 @@ const OUT = path.join(__dirname, '..', 'static', 'fonts', 'unicode-font-resolver
 const FONTS = ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext', 'greek', 'greek-ext', 'vietnamese', 'symbols-2'];
 /** the only typeform troika asks for: no label sets a weight, a style or a category */
 const FILE = 'sans-serif.normal.400.woff';
+
+/** 64 D2: the text-on-a-path families (@fontsource, pinned) */
+const TEXT_SOURCE = 'https://cdn.jsdelivr.net/npm';
+const TEXT_OUT = path.join(__dirname, '..', 'static', 'fonts', 'text');
+const TEXT_FONTS = [
+	'@fontsource/ibm-plex-sans@5.1.0/files/ibm-plex-sans-latin-400-normal.woff',
+	'@fontsource/ibm-plex-mono@5.1.0/files/ibm-plex-mono-latin-500-normal.woff',
+	'@fontsource/press-start-2p@5.1.0/files/press-start-2p-latin-400-normal.woff'
+];
 
 /** @param {string} rel */
 async function get(rel) {
@@ -73,6 +86,17 @@ function blocksOf(ranges) {
 	put('LICENSE-noto.txt', await get('font-files/LICENSE'));
 	put('LICENSE-unicode-font-resolver.txt', await get('LICENSE'));
 	console.log(`static/fonts/unicode-font-resolver: ${FONTS.length} fonts, ${blocks.size} index blocks, ${(bytes / 1024).toFixed(0)} KB`);
+	fs.rmSync(TEXT_OUT, { recursive: true, force: true });
+	fs.mkdirSync(TEXT_OUT, { recursive: true });
+	let textBytes = 0;
+	for (const rel of TEXT_FONTS) {
+		const res = await fetch(TEXT_SOURCE + '/' + rel);
+		if (!res.ok) throw new Error(rel + ': ' + res.status);
+		const woff = Buffer.from(await res.arrayBuffer());
+		fs.writeFileSync(path.join(TEXT_OUT, path.basename(rel)), woff);
+		textBytes += woff.length;
+	}
+	console.log(`static/fonts/text: ${TEXT_FONTS.length} fonts, ${(textBytes / 1024).toFixed(0)} KB`);
 })().catch((err) => {
 	console.error(err);
 	process.exit(1);

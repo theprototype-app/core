@@ -383,10 +383,13 @@ export function mergeLetterStyles(count, letters, overrides = null) {
 
 // ---- the layout ------------------------------------------------------------------------------
 
+/** troika 0.52's caretPositions per character: startX, endX, bottomY, topY (its JSDoc says three) */
+export const CARET_STRIDE = 4;
+
 /**
  * Sit every glyph on the path.
  *
- * Inputs are troika's straight layout (anchorX 0, anchorY 'top-baseline', textAlign 'left': the
+ * Inputs are troika's straight layout (caretPositions CARET_STRIDE per character; anchorX 0, anchorY 'top-baseline', textAlign 'left': the
  * first line's baseline is y = 0, line k's is -k·lineHeight, x runs from 0) and the per-character
  * styles. Each character is pivoted at its own advance's centre on its baseline, scaled, rotated
  * and nudged there, then the whole letter is carried to the path point its (scaled-advance)
@@ -405,7 +408,7 @@ export function layoutOnPath(info, styles, sampler, params) {
 	const rows = new Float32Array(glyphCount * 12);
 	const hidden = new Uint8Array(glyphCount);
 	const caret = info.caretPositions ?? [];
-	const charCount = Math.floor(caret.length / 3);
+	const charCount = Math.floor(caret.length / CARET_STRIDE);
 	const lh = info.lineHeight || info.fontSize || 1;
 	const em = info.fontSize || 1;
 	const L = sampler.total;
@@ -419,12 +422,12 @@ export function layoutOnPath(info, styles, sampler, params) {
 	const lines = [];
 	const bottom0 = charCount ? caret[2] : 0;
 	for (let c = 0; c < charCount; c++) {
-		const k = Math.max(0, Math.round((bottom0 - caret[c * 3 + 2]) / lh));
+		const k = Math.max(0, Math.round((bottom0 - caret[c * CARET_STRIDE + 2]) / lh));
 		line[c] = k;
 		while (lines.length <= k) lines.push({ first: -1, start: 0, width: 0, chars: [] });
 		const entry = lines[k];
-		const x0 = Math.min(caret[c * 3], caret[c * 3 + 1]);
-		const a = Math.abs(caret[c * 3 + 1] - caret[c * 3]);
+		const x0 = Math.min(caret[c * CARET_STRIDE], caret[c * CARET_STRIDE + 1]);
+		const a = Math.abs(caret[c * CARET_STRIDE + 1] - caret[c * CARET_STRIDE]);
 		advance[c] = a;
 		pivotX[c] = x0 + a / 2;
 		if (entry.first < 0) {

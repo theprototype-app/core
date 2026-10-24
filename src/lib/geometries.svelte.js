@@ -131,6 +131,16 @@ export function createGeometry(command, uuid) {
             object.userData.shadow = false;
             object.castShadow = false;
         }
+        if (geometry === 'Sprite') {
+            // 64-2d: a SPRITE = an unlit, alpha-tested plane + userData.sprite (sprite2d/spriteCore.js
+            // documents the block). White, so the image shows its own colours; no shadow (a quad's
+            // shadow is a square). The image is the material map, set from the Inspector.
+            object.material.dispose();
+            /** @type {any} */ (object).material = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, side: THREE.DoubleSide, alphaTest: 0.5 });
+            object.userData.sprite = {};
+            object.userData.shadow = false;
+            object.castShadow = false;
+        }
         // 36-sim U2b: a fluid tank = glass + userData.fluid + a compound collider
         if (geometry === 'FluidTank') stampFluidTank(object, options[0], options[1], options[2]);
         if (geometry === 'FluidEmitter') stampFluidEmitter(object); // 36-fb F23

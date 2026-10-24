@@ -2,6 +2,10 @@
 // 64-2d (D4 wave 1): the sprite / flipbook / layer / 2D-follow maths (src/lib/sprite2d/spriteCore.js).
 import { describe, it, expect } from 'vitest';
 import {
+	parseFramesText,
+	framesText,
+	parseEventsText,
+	eventsText,
 	normalizeSprite,
 	compactSprite,
 	clipByName,
@@ -240,5 +244,27 @@ describe('2D camera follow', () => {
 		for (let i = 0; i < 120; i++) b = follow2dStep(b, goal, 0.2, 1 / 120);
 		expect(a.x).toBeCloseTo(b.x, 6);
 		expect(follow2dStep({ x: 0, y: 0 }, goal, 0, 1 / 60)).toEqual(goal);
+	});
+});
+
+describe('Inspector text forms', () => {
+	it('parses and prints clip frames', () => {
+		expect(parseFramesText('0-3')).toEqual({ frames: null, from: 0, to: 3 });
+		expect(parseFramesText(' 3 - 0 ')).toEqual({ frames: null, from: 3, to: 0 });
+		expect(parseFramesText('0, 1, 2, 1')).toEqual({ frames: [0, 1, 2, 1], from: 0, to: 0 });
+		expect(parseFramesText('4')).toEqual({ frames: null, from: 4, to: 4 });
+		expect(parseFramesText('a-b')).toBeNull();
+		const sheet = { sheet: { cols: 4, rows: 2 } };
+		for (const t of ['0-3', '3-0', '0, 1, 2, 1', '4']) {
+			const clip = normalizeSprite({ ...sheet, clips: [{ name: 'c', ...parseFramesText(t) }] }).clips[0];
+			expect(parseFramesText(framesText(clip))).toEqual(parseFramesText(t));
+		}
+	});
+	it('parses and prints events', () => {
+		expect(parseEventsText('2:land, 5 : step,junk')).toEqual([
+			{ frame: 2, name: 'land' },
+			{ frame: 5, name: 'step' }
+		]);
+		expect(eventsText(parseEventsText('2:land, 5:step'))).toBe('2:land, 5:step');
 	});
 });

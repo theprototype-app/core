@@ -6,6 +6,8 @@
 	import { activeGraphId, SCENE_GRAPH } from '../../../stores/flowStore';
 	import { animations, playback, clipList } from '$lib/animationPreview';
 	import { animatedObjects, clipInfo } from '$lib/animatedImports';
+	import { objectsGroup, sceneRevision } from '../../../stores/sceneStore';
+	import { spriteClipNames } from '$lib/sprite2d/spriteRuntime.js';
 
 	// 17-E A5: starts / stops an animation when an event fires. Wire On Click (or
 	// Key Press, On Enter…) into `trigger` and the door this node lives on opens
@@ -31,7 +33,9 @@
 	$: suggestions = owner
 		? [
 				...(authoredMap[owner] ? clipList(owner).map((c) => c.name) : []),
-				...(importedMap[owner] ? clipInfo(owner).map((c) => c.name) : [])
+				...(importedMap[owner] ? clipInfo(owner).map((c) => c.name) : []),
+				// 64-2d: a sprite's flipbook clips (the same field plays them)
+				...($sceneRevision >= 0 ? spriteClipNames($objectsGroup?.getObjectByProperty('uuid', owner)) : [])
 			]
 		: [];
 	$: running = !!(owner && $playback[owner]?.playing);

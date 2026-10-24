@@ -118,6 +118,14 @@ export function hasSpriteClip(object, name) {
 	return !!spec && !!clipByName(spec, name);
 }
 
+/** The clip an EMPTY Play Animation clip field means on a sprite: its autoplay clip, else its
+ * first ('' = no clips). @param {any} object */
+export function defaultSpriteClip(object) {
+	const spec = isSprite(object) ? spriteSpecOf(object) : null;
+	if (!spec) return '';
+	return (spec.play && clipByName(spec, spec.play)?.name) || spec.clips[0]?.name || '';
+}
+
 /** The names of an object's flipbook clips (the Play Animation clip field lists them). @param {any} object */
 export function spriteClipNames(object) {
 	const spec = isSprite(object) ? spriteSpecOf(object) : null;
@@ -151,10 +159,13 @@ function resolvePlayback(object, now) {
 	}
 	const auto = spec.play ? clipByName(spec, spec.play) : null;
 	if (!auto) return { clip: null, at: 0, speed: 1, frame: spec.frame, explicit: false };
-	// a looping autoplay runs off the clock's origin (every peer in phase with no stamp at all);
-	// a once autoplay plays from the moment this peer first saw the sprite
+	// a looping autoplay is in phase with the CLOCK (every peer agrees with no stamp at all): it
+	// starts on the hour — a start of 0 (midnight) would sit past the half-day wrap `since`
+	// applies, and a start that moved every cycle would re-key the event walk and drop the
+	// frames between the last tick and the wrap. A once autoplay plays from the moment this peer
+	// first saw the sprite.
 	if (!firstSeen.has(object.uuid)) firstSeen.set(object.uuid, now);
-	const at = auto.loop === 'once' ? /** @type {number} */ (firstSeen.get(object.uuid)) : 0;
+	const at = auto.loop === 'once' ? /** @type {number} */ (firstSeen.get(object.uuid)) : now - (now % 3600);
 	return { clip: auto, at, speed: 1, frame: spec.frame, explicit: false };
 }
 
@@ -266,7 +277,11 @@ function applyPlane(object, w, h) {
 	const key = w.toFixed(5) + 'x' + h.toFixed(5);
 	const geo = object.geometry;
 	if (geo?.userData?.sprite2d === key) return;
-	const next = new THREE.PlaneGeometry(w, h);
+	// a PLAIN BufferGeometry: a PlaneGeometry would hand the Inspector editable Plane rows
+	// (geometryParamsOf reads geometry.type) that fight this reconcile
+	const plane = new THREE.PlaneGeometry(w, h);
+	const next = new THREE.BufferGeometry().copy(plane);
+	plane.dispose();
 	next.userData.sprite2d = key;
 	object.geometry = next;
 	geo?.dispose?.();
@@ -291,7 +306,10 @@ function tickSprite(object, now) {
 		// its first frame again
 		const key = p.clip.name + '@' + p.at;
 		const seen = eventSteps.get(object.uuid);
-		const from = seen?.key === key ? seen.step : -1;
+		// an AUTOPLAY seen for the first time (a load, a join, the hour turning) starts listening
+		// from the frame it is on — its past frames were nobody's events
+		const from = seen?.key === key ? seen.step : p.explicit ? -1 : at.step;
+		if (!seen || seen.key !== key) eventSteps.set(object.uuid, { key, step: from });
 		if (at.step !== from && elapsed >= 0) {
 			const { events, finished } = clipEventsBetween(p.clip, from, at.step);
 			eventSteps.set(object.uuid, { key, step: at.step });
@@ -311,9 +329,11 @@ function tickSprite(object, now) {
 	const px = frameSizePx(spec.sheet, W, H);
 	const size = planeSize(px.w, px.h, spec.ppu);
 	applyPlane(object, size.width, size.height);
-	// pixel art wants a hard edge, not a blended fringe that sorts badly
-	if (material.alphaTest !== 0.5 && spec.filter === 'nearest') {
-		material.alphaTest = 0.5;
+	// pixel art wants a hard edge, not a blended fringe that sorts badly; smooth art keeps its
+	// soft edge and only drops the fully clear pixels
+	const alphaTest = spec.filter === 'nearest' ? 0.5 : 0.01;
+	if (material.alphaTest !== alphaTest) {
+		material.alphaTest = alphaTest;
 		material.needsUpdate = true;
 	}
 }

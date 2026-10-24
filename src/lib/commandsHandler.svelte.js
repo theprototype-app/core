@@ -21,6 +21,7 @@ import { isPristinePackRef, stubElementOf } from '$lib/packRefs'
 import { withTwins, attachTwinsFromGltf } from '$lib/ktx2Twins'
 import { normalizeLodGroup } from '$lib/lodGroupCore'
 import { normalizeFluid } from '$lib/sim/fluidCore.js'; // 36-sim
+import { compactSprite, compactLayer2d } from '$lib/sprite2d/spriteCore.js'; // 64-2d
 import { normalizeEmitter, normalizeInteraction } from '$lib/sim/fluidEmitterCore.js'; // 36-fb F23
 import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
 import { runSceneClearHandlers } from '$lib/moduleSDK'
@@ -620,6 +621,17 @@ export async function objectParameters(data) {
         if (mesh) {
             if (data.fluid) mesh.userData.fluid = normalizeFluid(data.fluid);
             else delete mesh.userData.fluid;
+            pokeScene();
+        }
+    } else if (data.parameter == 'sprite' || data.parameter == 'layer2d') {
+        // 64-2d: a sprite's settings / a 2D layer's parallax, compacted at the boundary (the
+        // runtime normalizes again on read; the frames and parallax are derived per peer)
+        let object = sceneObjects.getObjectByProperty('uuid', data.uuid);
+        if (object) {
+            const key = data.parameter;
+            const value = data[key];
+            if (value && typeof value === 'object') object.userData[key] = key == 'sprite' ? compactSprite(value) : compactLayer2d(value);
+            else delete object.userData[key];
             pokeScene();
         }
     } else if (data.parameter == 'fluidEmitter') {

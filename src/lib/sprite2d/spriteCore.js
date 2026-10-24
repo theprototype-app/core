@@ -35,6 +35,10 @@
 //   parallax   how much the layer follows the camera in x: 1 = world (the gameplay layer),
 //              0.5 = half speed (far hills), 0 = stuck to the camera (a sky)
 //   parallaxY  the same in y (defaults to `parallax`)
+// The offset is a DRAW offset in the layer's matrixWorld (spriteRuntime), applied only while an
+// orthographic camera looks (a 2D game camera, the 2D editor view); saves keep the authored pose.
+// Gameplay — physics bodies, triggers, things a player touches — belongs in a parallax-1 layer,
+// whose offset is always zero.
 //
 // Flow node "Camera Follow 2D" (type `follow2d`) — moves a CAMERA OBJECT in x/y after a target,
 // with a dead zone, damping, an offset, optional bounds and pixel snap; z is kept (follow2dGoal /
@@ -445,4 +449,41 @@ export function follow2dStep(cam, goal, damping, dt) {
 	if (!(damping > 0) || !(dt > 0)) return { x: goal.x, y: goal.y };
 	const a = 1 - Math.exp(-Math.min(dt, 1) / damping);
 	return { x: cam.x + (goal.x - cam.x) * a, y: cam.y + (goal.y - cam.y) * a };
+}
+
+// ---- the Inspector's text forms (one field per clip, not a grid of numbers) -------------------
+
+/**
+ * A clip's frames as the Inspector writes them: "0-3" (a range; "3-0" plays backwards), "0,1,2,1"
+ * (explicit), "4" (one frame). Returns the clip fields it sets, or null for nonsense.
+ * @param {string} text @returns {{frames: number[] | null, from: number, to: number} | null}
+ */
+export function parseFramesText(text) {
+	const t = String(text ?? '').replace(/\s+/g, '');
+	const range = /^(\d+)-(\d+)$/.exec(t);
+	if (range) return { frames: null, from: +range[1], to: +range[2] };
+	if (/^\d+(,\d+)*$/.test(t)) {
+		const list = t.split(',').map(Number);
+		return list.length === 1 ? { frames: null, from: list[0], to: list[0] } : { frames: list, from: 0, to: 0 };
+	}
+	return null;
+}
+
+/** The reverse of parseFramesText. @param {SpriteClip} clip */
+export function framesText(clip) {
+	return clip.frames ? clip.frames.join(', ') : clip.from === clip.to ? String(clip.from) : clip.from + '-' + clip.to;
+}
+
+/** "2:land, 5:step" -> events (bad pieces dropped). @param {string} text @returns {SpriteEvent[]} */
+export function parseEventsText(text) {
+	return String(text ?? '')
+		.split(',')
+		.map((piece) => /^\s*(\d+)\s*:\s*(.+?)\s*$/.exec(piece))
+		.filter((m) => !!m)
+		.map((m) => ({ frame: +(/** @type {RegExpExecArray} */ (m)[1]), name: /** @type {RegExpExecArray} */ (m)[2].slice(0, 64) }));
+}
+
+/** @param {SpriteEvent[]} events */
+export function eventsText(events) {
+	return events.map((e) => e.frame + ':' + e.name).join(', ');
 }

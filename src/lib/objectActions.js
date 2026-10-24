@@ -878,6 +878,18 @@ registerHistoryKind('props', (entry, state) => {
 		else delete object.userData.fluid;
 		if (peer) peer.send({ type: 'objectParameters', parameter: 'fluid', uuid: entry.uuid, fluid: state.fluid ?? null });
 	}
+	if ('sprite' in state) {
+		// 64-2d: a sprite's settings (sprite2d/spriteActions.setSpriteFor is the write path)
+		if (state.sprite) object.userData.sprite = state.sprite;
+		else delete object.userData.sprite;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'sprite', uuid: entry.uuid, sprite: state.sprite ?? null });
+	}
+	if ('layer2d' in state) {
+		// 64-2d: a group's 2D layer block (parallax) — spriteActions.setLayer2dFor
+		if (state.layer2d) object.userData.layer2d = state.layer2d;
+		else delete object.userData.layer2d;
+		if (peer) peer.send({ type: 'objectParameters', parameter: 'layer2d', uuid: entry.uuid, layer2d: state.layer2d ?? null });
+	}
 	if ('fluidEmitter' in state) {
 		// 36-fb F23: a Fluid emitter's settings (fluidEmitterActions.setFluidEmitterFor is the write path)
 		if (state.fluidEmitter) object.userData.fluidEmitter = state.fluidEmitter;

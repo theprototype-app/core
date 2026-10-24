@@ -222,5 +222,7 @@ export const customGeometryBuilders = {
 	CameraOrtho: cameraBody,
 	FluidTank: fluidTankGeometry, // 36-sim U2b (sim/fluidTank.js)
 	FluidEmitter: fluidEmitterGeometry, // 36-fb F23 (sim/fluidEmitterObject.js)
-	FlowPath: () => flowPathGeometry(FLOW_PATH_DEFAULTS) // 36-fb F24 (sim/flowPathObject.js)
+	FlowPath: () => flowPathGeometry(FLOW_PATH_DEFAULTS), // 36-fb F24 (sim/flowPathObject.js)
+	// 64-2d: a sprite starts as a 1 m quad; the sprite runtime resizes it to frame px / ppu
+	Sprite: () => new THREE.PlaneGeometry(1, 1)
 };

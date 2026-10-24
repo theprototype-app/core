@@ -82,7 +82,7 @@ function fontUrl(id) {
 
 /**
  * @typedef {{carrier: any, text: any, rec: any, recRef: any, troikaKey: string, info: any,
- *   glyphChars: Int32Array | null, target: any, relinkIn: number, sourceKey: any, follow: Float32Array | null,
+ *   glyphChars: Int32Array | null, target: any, relinkIn: number, sourceKey: any,
  *   overrides: any, dirty: boolean, synced: boolean, glyphs: number, hidden: number, rows: Float32Array | null}} Entry
  */
 /** @type {Map<string, Entry>} */
@@ -136,7 +136,6 @@ function makeEntry(carrier) {
 		target: null,
 		relinkIn: 0,
 		sourceKey: undefined,
-		follow: null,
 		overrides: null,
 		dirty: true,
 		synced: false,
@@ -231,7 +230,12 @@ function shown(o, root) {
 const m4 = new THREE.Matrix4();
 const inv = new THREE.Matrix4();
 
-/** linked text: sit the carrier where its path is (local to the carrier's parent) @param {Entry} e */
+/**
+ * linked text: sit the carrier where its path is (local to the carrier's parent). Compared with
+ * the carrier's OWN pose every frame, not with the last copy: anything else that writes it (a
+ * received move easing in, a gizmo drag) is put back, or the letters would leave their path.
+ * @param {Entry} e
+ */
 function follow(e) {
 	const t = e.target;
 	const c = e.carrier;
@@ -239,10 +243,10 @@ function follow(e) {
 	t.updateWorldMatrix(true, false);
 	c.parent.updateWorldMatrix(true, false);
 	m4.copy(c.parent.matrixWorld).invert().multiply(t.matrixWorld);
+	c.updateMatrix();
 	const el = m4.elements;
-	const last = e.follow;
-	if (last && el.every((/** @type {number} */ v, /** @type {number} */ i) => Math.abs(v - last[i]) < 1e-7)) return;
-	e.follow = Float32Array.from(el);
+	const now = c.matrix.elements;
+	if (el.every((/** @type {number} */ v, /** @type {number} */ i) => Math.abs(v - now[i]) < 1e-6)) return;
 	m4.decompose(c.position, c.quaternion, c.scale);
 	c.updateMatrix();
 	c.updateMatrixWorld(true);

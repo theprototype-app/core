@@ -6,7 +6,8 @@
 // The fixtures are AI-generated models from the Scenario 3D Collection (CC BY 4.0, "Scenario" —
 // tests/fixtures/wild/ATTRIBUTION.md). They are NOT committed: tests/fixtures/wild/manifest.json
 // names each one (dataset path + sha256 + Hugging Face URL + why it is in the set) and this script
-// puts the bytes in the cache (default ~/.cache/tp-wild-assets, or $WILD_ASSETS_DIR), keeping the
+// puts the bytes in the cache (default ~/.cache/tp-wild/assets: three levels under HOME, so an e2e-slot pc run
+// mirrors it when E2E_PC_INPUTS names it; or $WILD_ASSETS_DIR), keeping the
 // dataset's own relative paths. A local copy of the dataset is used first (hard link, else copy:
 // ~/.local/share/datasets/scenario-3d-collection/repo or $WILD_DATASET_DIR); otherwise the file is
 // downloaded from Hugging Face. Every file is checked against its sha256 — a mismatch is deleted.
@@ -22,7 +23,7 @@ const HF = 'https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/
 
 /** where the fixtures live (the suite reads the same answer) */
 function cacheDir() {
-	return process.env.WILD_ASSETS_DIR || path.join(os.homedir(), '.cache', 'tp-wild-assets');
+	return process.env.WILD_ASSETS_DIR || path.join(os.homedir(), '.cache', 'tp-wild', 'assets');
 }
 /** a local dataset checkout, if there is one */
 function datasetDir() {

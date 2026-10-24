@@ -2,7 +2,7 @@
 
 The models the `import-wild` e2e suite loads are NOT in this repository. `manifest.json` here names each one
 (its path in the dataset, its sha256, its Hugging Face URL and why it is in the set), and
-`node scripts/fetch-wild-assets.cjs` puts them in a local cache (`~/.cache/tp-wild-assets` or `$WILD_ASSETS_DIR`).
+`node scripts/fetch-wild-assets.cjs` puts them in a local cache (`~/.cache/tp-wild/assets` or `$WILD_ASSETS_DIR`).
 
 They come from the **Scenario 3D Collection** — https://huggingface.co/datasets/scenario-labs/3d-collection —
 by **Scenario**, licensed **CC BY 4.0** (https://creativecommons.org/licenses/by/4.0/). The models are AI-generated

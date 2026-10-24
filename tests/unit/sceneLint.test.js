@@ -134,6 +134,29 @@ describe('lintSession', () => {
 		for (let i = 0; i < 150; i++) s.objects.push(box('b' + i, [i % 10, 0.5, -5 - Math.floor(i / 10)], [0.5, 0.5, 0.5]));
 		expect(rules(s)).toEqual(['warn:budget-static']);
 	});
+	it('budget-static counts the triangles of an INTERLEAVED geometry (an optimized import)', () => {
+		// three's toJSON of a glTF-Transform output: position = a view into one interleaved buffer
+		const stride = 5; // xyz + uv
+		const verts = 4;
+		const f = new Float32Array(verts * stride);
+		[[0, 0, 0], [2, 0, 0], [0, 3, 0], [0, 0, 4]].forEach((p, i) => f.set(p, i * stride));
+		const geometry = {
+			uuid: 'g-il',
+			type: 'BufferGeometry',
+			data: {
+				attributes: { position: { isInterleavedBufferAttribute: true, itemSize: 3, data: 'ib', offset: 0, normalized: false } },
+				interleavedBuffers: { ib: { uuid: 'ib', buffer: 'ab', type: 'Float32Array', stride } },
+				arrayBuffers: { ab: Array.from(new Uint32Array(f.buffer)) },
+				// 310k triangles drawn from those vertices (the count is what the budget reads)
+				index: { type: 'Uint32Array', array: { length: 930000 } }
+			}
+		};
+		const s = clean();
+		s.objects.push({ metadata: { version: 4.7 }, geometries: [geometry], object: { uuid: 'u-il', type: 'Mesh', name: 'il', layers: 1, matrix: M(5, 0, 5), geometry: 'g-il', userData: {} } });
+		const notes = lint.lintSession(s).filter((x) => x.rule === 'budget-static');
+		expect(notes.map((x) => x.severity)).toEqual(['info']);
+		expect(notes[0].message).toMatch(/≈310k triangles/);
+	});
 });
 
 describe('kit pieces against a packs checkout', () => {

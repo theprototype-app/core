@@ -43,7 +43,7 @@ const flag = (/** @type {string} */ name) => argv.includes('--' + name);
 export const DEFAULTS = {
 	index: path.join(HOME, '.local/share/scenario-browser/public/index.json'),
 	state: path.join(HOME, '.local/share/scenario-browser/state.json'),
-	data: [process.env.WILD_ASSETS_DIR, path.join(HOME, '.local/share/datasets/scenario-3d-collection/repo'), path.join(HOME, '.cache/tp-wild-assets')]
+	data: [process.env.WILD_ASSETS_DIR, path.join(HOME, '.local/share/datasets/scenario-3d-collection/repo'), path.join(HOME, '.cache/tp-wild/assets')]
 };
 
 

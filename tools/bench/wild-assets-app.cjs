@@ -22,7 +22,7 @@ const os = require('os');
 const h = require('../../tests/e2e/helpers.cjs');
 const fx = require('../../tests/e2e/fakeXR.cjs');
 const { startRecorder, readScene, settleLod } = require('../../scripts/perfProbe.cjs');
-const { openWildPage } = require('../../tests/e2e/wildPage.cjs');
+const { openWildPage, deliver } = require('../../tests/e2e/wildPage.cjs');
 
 const argv = process.argv.slice(2);
 const arg = (/** @type {string} */ n, /** @type {string} */ d) => (argv.includes('--' + n) ? argv[argv.indexOf('--' + n) + 1] : d);
@@ -31,7 +31,7 @@ const BENCH = arg('bench', path.join(OUT, 'bench.json'));
 const GROUPS = Number(arg('groups', '5'));
 const SECONDS = Number(arg('seconds', '4'));
 const STATE = arg('state', path.join(os.homedir(), '.local/share/scenario-browser/state.json'));
-const ROOTS = [process.env.WILD_ASSETS_DIR, path.join(os.homedir(), '.local/share/datasets/scenario-3d-collection/repo'), path.join(os.homedir(), '.cache/tp-wild-assets')].filter(Boolean);
+const ROOTS = [process.env.WILD_ASSETS_DIR, path.join(os.homedir(), '.local/share/datasets/scenario-3d-collection/repo'), path.join(os.homedir(), '.cache/tp-wild/assets')].filter(Boolean);
 /** @param {string} rel */
 const locate = (rel) => ROOTS.map((r) => path.join(/** @type {string} */ (r), rel)).find((f) => fs.existsSync(f)) ?? null;
 
@@ -95,18 +95,18 @@ function frame({ uuid }) {
 
 /** @param {any} page @param {any} row */
 async function importOne(page, row) {
+	await deliver(page, locate, row.path);
 	return page.evaluate(
-		async ({ url, name }) => {
+		async ({ name }) => {
 			const s = window.__stores;
 			s.commandsHandler.clearSceneLocal();
-			const bytes = await (await fetch(url)).arrayBuffer();
 			const t0 = performance.now();
-			const uuid = await s.fileHandler.importFile(new File([bytes], name), name);
+			const uuid = await s.fileHandler.importFile(new File([/** @type {any} */ (window).__wildFiles.a], name), name);
 			const importMs = performance.now() - t0;
 			await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
 			return { uuid, importMs: Math.round(importMs), firstFrameMs: Math.round(performance.now() - t0) };
 		},
-		{ url: h.URL + '__wild/' + row.path, name: (row.model + '.glb').replace(/[^\w.-]/g, '_') }
+		{ name: (row.model + '.glb').replace(/[^\w.-]/g, '_') }
 	);
 }
 
@@ -149,7 +149,7 @@ h.run(async () => {
 		process.exit(0);
 	}
 	fs.mkdirSync(path.join(OUT, 'shots'), { recursive: true });
-	const browser = await h.launch({ args: h.GPU_ARGS });
+	let browser = await h.launch({ args: h.GPU_ARGS });
 	/** @type {any[]} */
 	const results = [];
 	for (const set of sets) {
@@ -157,6 +157,8 @@ h.run(async () => {
 		for (const row of set.picks) {
 			const out = { group: set.group, id: row.id, model: row.model, family: row.family, bytes: row.m.bytes, tris: row.m.cost.triangles };
 			// a fresh context per asset: a 2M-triangle import must not slow the next one's numbers
+			// a 4M+ triangle file can take the WHOLE browser down: the next asset gets a new one
+			if (!browser.isConnected()) browser = await h.launch({ args: h.GPU_ARGS });
 			// the heavy-model ask: load as it is (the measurement is of the file, not of a reduction)
 			const A = await openWildPage(browser, locate, { 'This model is heavy': 'load' }, { context: { viewport: { width: 1280, height: 720 } }, storage: { lodEnabled: 'true' } });
 			const page = A.page;
@@ -185,6 +187,7 @@ h.run(async () => {
 				out.pageErrors = h.pageErrors(A).length;
 			} catch (error) {
 				out.error = String(/** @type {any} */ (error)?.message ?? error).split('\n')[0];
+				if (!browser.isConnected()) out.error = 'the BROWSER crashed (' + out.error + ')';
 			} finally {
 				await A.ctx.close().catch(() => {});
 			}
@@ -192,7 +195,7 @@ h.run(async () => {
 			results.push(out);
 		}
 	}
-	await browser.close();
+	await browser.close().catch(() => {});
 	fs.writeFileSync(path.join(OUT, 'app-bench.json'), JSON.stringify(results, null, 1));
 	await contactSheets(results);
 	fs.writeFileSync(path.join(OUT, 'app-bench.md'), table(results));

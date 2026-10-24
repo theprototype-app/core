@@ -75,4 +75,42 @@ async function openWildPage(browser, locate, answers, options = {}) {
 	return A;
 }
 
-module.exports = { warm, openWildPage };
+/**
+ * Put the fixture at `rel` on `window.__wildFiles[id]` (a File named after it).
+ * @param {any} page @param {(rel: string) => string | null} locate @param {string} rel @param {string} id
+ */
+async function deliver(page, locate, rel, id = 'a') {
+	const file = locate(rel);
+	if (!file) throw new Error('fixture not in the cache: ' + rel);
+	if (process.env.WILD_DELIVERY === 'route') {
+		await page.evaluate(
+			async ({ url, id, name }) => {
+				/** @type {any} */
+				const w = window;
+				w.__wildFiles = w.__wildFiles ?? {};
+				w.__wildFiles[id] = new File([await (await fetch(url)).arrayBuffer()], name);
+			},
+			{ url: h.URL + '__wild/' + rel, id, name: rel.split('/').pop() }
+		);
+		return;
+	}
+	await page.evaluate((id) => {
+		let input = /** @type {HTMLInputElement | null} */ (document.getElementById('wild-file-' + id));
+		if (!input) {
+			input = document.createElement('input');
+			input.type = 'file';
+			input.id = 'wild-file-' + id;
+			input.style.display = 'none';
+			document.body.appendChild(input);
+		}
+	}, id);
+	await page.setInputFiles('#wild-file-' + id, file);
+	await page.evaluate((id) => {
+		/** @type {any} */
+		const w = window;
+		w.__wildFiles = w.__wildFiles ?? {};
+		w.__wildFiles[id] = /** @type {HTMLInputElement} */ (document.getElementById('wild-file-' + id)).files?.[0] ?? null;
+	}, id);
+}
+
+module.exports = { warm, openWildPage, deliver };

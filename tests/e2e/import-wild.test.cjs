@@ -34,13 +34,15 @@ const crypto = require('crypto');
 const h = require('./helpers.cjs');
 const { cacheDir, datasetDir, readManifest } = require('../../scripts/fetch-wild-assets.cjs');
 const { lintSession } = require('../../scripts/scene-lint.cjs');
-const { openWildPage } = require('./wildPage.cjs');
+const { openWildPage, deliver } = require('./wildPage.cjs');
 
 /** the look may change this much in the round trip: share of pixels off by more than the delta */
 const LOOK_FRACTION = 0.04;
 const LOOK_DELTA = 48;
 /** fixtures above this many bytes run last */
 const HEAVY = 100e6;
+/** …and above this many triangles */
+const HEAVY_TRIS = 3e6;
 
 const roots = [cacheDir(), datasetDir()].filter(Boolean);
 /** @param {string} rel */
@@ -79,9 +81,14 @@ h.run(async () => {
 	}
 	console.log(`import-wild: ${fixtures.length} of ${manifest.fixtures.length} fixtures, ${pairs.length} of ${(manifest.pairs ?? []).length} pairs (cache ${roots.join(', ')})`);
 
-	const browser = await h.launch({ args: h.GPU_ARGS });
+	let browser = await h.launch({ args: h.GPU_ARGS });
 	const ANSWERS = { 'This model is heavy': 'load', 'replace-model-sanity': 'asis' };
 	const open = async () => {
+		// a 4M+ triangle file can take the WHOLE browser down, not just its tab
+		if (!browser.isConnected()) {
+			console.log('  (the browser died — launching a new one)');
+			browser = await h.launch({ args: h.GPU_ARGS });
+		}
 		const A = await openWildPage(browser, locate, ANSWERS, { context: { viewport: { width: 1280, height: 800 } } });
 		await A.page.evaluate(() => window.__stores.lod.lodEnabled.set(true));
 		return A;
@@ -94,32 +101,36 @@ h.run(async () => {
 	const smallest = [...fixtures].filter((f) => f.format === 'glb').sort((a, b) => (a.expect?.bytes ?? 0) - (b.expect?.bytes ?? 0))[0];
 	if (smallest) {
 		const before = h.pageErrors(A).length;
-		await A.page.evaluate(async (url) => {
+		await deliver(A.page, locate, smallest.path);
+		await A.page.evaluate(async () => {
 			const s = window.__stores;
 			s.commandsHandler.clearSceneLocal();
-			const bytes = await (await fetch(url)).arrayBuffer();
-			await s.fileHandler.importFile(new File([bytes], 'quick.glb'), 'quick');
+			await s.fileHandler.importFile(new File([/** @type {any} */ (window).__wildFiles.a], 'quick.glb'), 'quick');
 			s.commandsHandler.clearSceneLocal();
-		}, h.URL + '__wild/' + smallest.path);
+		});
 		await A.page.waitForTimeout(900);
 		const thrown = h.pageErrors(A).slice(before);
 		h.check(thrown.length === 0, 'an import cleared within the 500 ms sync delay throws nothing' + (thrown.length ? ` — ${thrown[0].slice(0, 120)}` : ''));
 	}
 
 	// the heaviest last: a file that takes the tab down costs the run one fresh page, not the rest
-	const order = [...fixtures].sort((a, b) => Number((a.expect?.bytes ?? 0) > HEAVY) - Number((b.expect?.bytes ?? 0) > HEAVY));
-	for (const f of order) {
+	const heavy = (/** @type {any} */ f) => Number((f.expect?.bytes ?? 0) > HEAVY || (f.expect?.cost.triangles ?? 0) > HEAVY_TRIS);
+	const order = [...fixtures].sort((a, b) => heavy(a) - heavy(b));
+	const light = order.filter((f) => !heavy(f));
+	const heavies = order.filter((f) => heavy(f));
+	const runFixture = async (/** @type {any} */ f) => {
 		console.log(`\n=== ${f.family} · ${f.model} · ${f.path} (${f.why.join('; ')})`);
 		const consoleAt = A.page.__console.length;
 		try {
 			await oneFixture(A.page, f);
 		} catch (error) {
 			const message = String(/** @type {any} */ (error)?.message ?? error).split('\n')[0];
-			if (A.crashed || A.page.isClosed()) {
+			if (A.crashed || A.page.isClosed() || !browser.isConnected()) {
+				const whole = !browser.isConnected();
 				// what the tab had been asked before it died (the dialog log survives on the node side)
 				const asked = A.page.__console.slice(consoleAt).filter((/** @type {any} */ m) => m.text.startsWith('[wild]')).map((/** @type {any} */ m) => m.text);
-				h.check(false, `${f.family} ${f.id.slice(6, 14)}: the TAB CRASHED importing ${(f.expect?.bytes / 1e6 || 0).toFixed(0)} MB / ${((f.expect?.cost.triangles ?? 0) / 1e6).toFixed(1)}M tris (${asked.join('; ') || 'before any dialog'})`);
-				rows.push({ id: f.id, model: f.model, family: f.family, crashed: true, asked });
+				h.check(false, `${f.family} ${f.id.slice(6, 14)}: the ${whole ? 'BROWSER' : 'TAB'} CRASHED importing ${(f.expect?.bytes / 1e6 || 0).toFixed(0)} MB / ${((f.expect?.cost.triangles ?? 0) / 1e6).toFixed(1)}M tris (${asked.join('; ') || 'no dialog reached node before it died'})`);
+				rows.push({ id: f.id, model: f.model, family: f.family, crashed: whole ? 'browser' : 'tab', asked });
 				await A.ctx.close().catch(() => {});
 				A = await open();
 			} else {
@@ -127,16 +138,19 @@ h.run(async () => {
 				rows.push({ id: f.id, model: f.model, error: message.slice(0, 200) });
 			}
 		}
-	}
+	};
+	for (const f of light) await runFixture(f);
 	for (const p of pairs) {
 		console.log(`\n=== ${p.why}: ${p.a.model} → ${p.b.model} (group ${p.group})`);
 		try {
 			await onePair(A.page, p);
 		} catch (error) {
 			h.check(false, `${p.why}: the suite step threw — ${String(/** @type {any} */ (error)?.message ?? error).split('\n')[0]}`);
-			if (A.crashed || A.page.isClosed()) A = await open();
+			if (A.crashed || A.page.isClosed() || !browser.isConnected()) A = await open();
 		}
 	}
+	// the heaviest last (light fixtures, then the Replace pairs, then these)
+	for (const f of heavies) await runFixture(f);
 	if (process.env.SHOTS_DIR) fs.writeFileSync(path.join(process.env.SHOTS_DIR, 'import-wild.json'), JSON.stringify(rows, null, 1));
 	await h.finish(browser);
 });
@@ -150,16 +164,16 @@ async function oneFixture(page, f) {
 	const name = (f.model + '-' + f.id.slice(6, 12) + '.' + f.format).replace(/[^\w.-]/g, '_');
 
 	// ---- 1. import ----------------------------------------------------------------------------
+	await deliver(page, locate, f.path);
 	const r = await page.evaluate(
-		async ({ url, name }) => {
+		async ({ name }) => {
 			const s = window.__stores;
 			/** @type {any} */
 			const w = window;
 			s.commandsHandler.clearSceneLocal();
 			w.__wild.dialogs = [];
-			const bytes = await (await fetch(url)).arrayBuffer();
 			const t0 = performance.now();
-			const uuid = await s.fileHandler.importFile(new File([bytes], name), name);
+			const uuid = await s.fileHandler.importFile(new File([w.__wildFiles.a], name), name);
 			const importMs = performance.now() - t0;
 			await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
 			const firstFrameMs = performance.now() - t0;
@@ -181,7 +195,7 @@ async function oneFixture(page, f) {
 				dialogs: w.__wild.dialogs.map((/** @type {any} */ d) => d.title)
 			};
 		},
-		{ url: h.URL + '__wild/' + f.path, name }
+		{ name }
 	);
 	const row = { id: f.id, model: f.model, family: f.family, why: f.why.join('; '), importMs: r.importMs, firstFrameMs: r.firstFrameMs, tris: r.cost?.triangles, draws: r.cost?.draws, gate: r.verdict?.gate, lod: !!r.lod };
 	rows.push(row);
@@ -224,15 +238,18 @@ async function oneFixture(page, f) {
 			let renderer;
 			s.globalRenderer.subscribe((v) => (renderer = v))();
 			const verdict = s.importBudget.importVerdict(s.importBudget.emptyCost(), placed, s.sceneBudget.profileFor(renderer));
-			return { decision, settings: { triangleThreshold: settings.triangleThreshold, lodLevels: settings.lodLevels }, gate: verdict.gate, asking: verdict.asking.map((/** @type {any} */ a) => a.key), placed };
+			return { decision, engine, settings: { triangleThreshold: settings.triangleThreshold, lodLevels: settings.lodLevels }, gate: verdict.gate, asking: verdict.asking.map((/** @type {any} */ a) => a.key), placed };
 		},
 		{ e: { ...e, path: f.path } }
 	);
 	const c = r.cost;
 	h.check(c.triangles === e.cost.triangles, `${tag}: triangles as the bench measured (${c.triangles} vs ${e.cost.triangles})`);
 	h.check(c.draws === e.cost.draws && c.meshes === e.cost.meshes, `${tag}: draw calls as the bench measured (${c.draws} vs ${e.cost.draws})`);
-	h.check(c.maxMeshVertices === e.cost.maxMeshVertices, `${tag}: largest mesh as the bench measured (${c.maxMeshVertices} vs ${e.cost.maxMeshVertices} vertices)`);
-	h.check(c.textures === e.cost.textures, `${tag}: textures as the bench measured (${c.textures} vs ${e.cost.textures})`);
+	// when the import engine rewrote the file (46 P2) it welds vertices and drops duplicate images, so
+	// the placed model may only be LIGHTER than the file on those two axes
+	const same = (/** @type {number} */ app, /** @type {number} */ bench) => (p.engine ? app <= bench : app === bench);
+	h.check(same(c.maxMeshVertices, e.cost.maxMeshVertices), `${tag}: largest mesh as the bench measured (${c.maxMeshVertices} vs ${e.cost.maxMeshVertices} vertices${p.engine ? ', ≤ after the import engine' : ''})`);
+	h.check(same(c.textures, e.cost.textures), `${tag}: textures as the bench measured (${c.textures} vs ${e.cost.textures}${p.engine ? ', ≤ after the import engine' : ''})`);
 	h.check(c.maxTextureSize === p.placed.maxTextureSize, `${tag}: largest placed texture ${c.maxTextureSize} px (bench ${e.cost.maxTextureSize} → ${p.placed.maxTextureSize} after the import resize)`);
 	h.check(r.verdict?.gate === p.gate, `${tag}: the budget gate ${p.gate ? 'asked' : 'stayed quiet'} as importVerdict says for the bench's numbers (app ${r.verdict?.gate}: ${r.verdict?.asking.join(',') || '-'} · bench ${p.asking.join(',') || '-'})`);
 	h.check(r.dialogs.includes('This model is heavy') === p.gate, `${tag}: the "heavy" dialog ${p.gate ? 'showed' : 'did not show'}`);
@@ -240,7 +257,7 @@ async function oneFixture(page, f) {
 	// ---- 3. LOD --------------------------------------------------------------------------------
 	const wantGroup = p.decision.optimize && p.decision.lod && !e.skinned;
 	h.check(!!r.lod === wantGroup, `${tag}: LOD group ${wantGroup ? 'stamped' : 'not stamped'} (${e.cost.triangles} tris vs threshold ${p.settings.triangleThreshold}${e.skinned ? ', skinned' : ''})`);
-	const auto = await page.evaluate(
+	const countAuto = () => page.evaluate(
 		({ uuid }) => {
 			const s = window.__stores;
 			s.lod.scanForLod();
@@ -254,7 +271,17 @@ async function oneFixture(page, f) {
 		{ uuid: r.uuid }
 	);
 	const wantAuto = !wantGroup && !e.skinned && !e.morph && e.cost.maxMeshTriangles >= 3000;
-	h.check(wantAuto ? auto > 0 : auto === 0, `${tag}: auto LOD ${wantAuto ? 'takes' : 'leaves'} its meshes (${auto} registered, largest mesh ${e.cost.maxMeshTriangles} tris)`);
+	// a LOD GROUP claims its meshes from auto LOD once the group draws (lod.js scanForLod); until then
+	// both may hold them — wait for the claim, and say how long the overlap lasted
+	let auto = await countAuto();
+	const t0 = Date.now();
+	while (wantGroup && auto > 0 && Date.now() - t0 < 30000) {
+		await page.waitForTimeout(1000);
+		auto = await countAuto();
+	}
+	const overlap = wantGroup ? Math.round((Date.now() - t0) / 1000) : 0;
+	h.check(wantAuto ? auto > 0 : auto === 0, `${tag}: auto LOD ${wantAuto ? 'takes' : 'leaves'} its meshes (${auto} registered, largest mesh ${e.cost.maxMeshTriangles} tris${overlap ? `; the group claimed them after ${overlap} s` : ''})`);
+	row.lodOverlapS = overlap;
 	row.autoLod = auto;
 
 	// ---- 4. scene-lint's static budget on the saved scene ----------------------------------------
@@ -267,6 +294,32 @@ async function oneFixture(page, f) {
 		for (const entry of payload.objects ?? []) {
 			for (const g of entry.geometries ?? []) {
 				const pos = g.data?.attributes?.position;
+				if (pos?.isInterleavedBufferAttribute) {
+					// keep the INTERLEAVED shape (scene-lint must read it), shrunk to two vertices
+					const ib = g.data.interleavedBuffers?.[pos.data];
+					const raw = ib && g.data.arrayBuffers?.[ib.buffer];
+					if (!raw) continue;
+					const a = new Float32Array(Uint32Array.from(raw).buffer);
+					const stride = ib.stride || 3;
+					const lo = [Infinity, Infinity, Infinity];
+					const hi = [-Infinity, -Infinity, -Infinity];
+					for (let i = pos.offset || 0; i + 2 < a.length; i += stride)
+						for (let k = 0; k < 3; k++) {
+							lo[k] = Math.min(lo[k], a[i + k]);
+							hi[k] = Math.max(hi[k], a[i + k]);
+						}
+					const two = new Float32Array(2 * stride);
+					two.set(lo, pos.offset || 0);
+					two.set(hi, stride + (pos.offset || 0));
+					const count = g.data.index?.array?.length ?? Math.floor(a.length / stride);
+					g.data = {
+						attributes: { position: pos },
+						interleavedBuffers: { [pos.data]: ib },
+						arrayBuffers: { [ib.buffer]: Array.from(new Uint32Array(two.buffer)) },
+						index: { array: { length: count } }
+					};
+					continue;
+				}
 				if (!pos?.array?.length) continue;
 				const a = pos.array;
 				const n = pos.itemSize || 3;
@@ -293,9 +346,11 @@ async function oneFixture(page, f) {
 	h.check(budget.some((x) => x.severity === 'info') === wantInfo, `${tag}: scene-lint ${wantInfo ? 'notes' : 'does not note'} the triangle budget (${e.cost.triangles} tris, budget 300k)`);
 
 	// ---- 5. export round trip keeps the look -----------------------------------------------------
-	if (process.env.WILD_NO_ROUNDTRIP !== '1' && !r.animated) {
+	const tripMax = Number(process.env.WILD_ROUNDTRIP_MAX_MB ?? 40) * 1e6;
+	if (process.env.WILD_NO_ROUNDTRIP !== '1' && !r.animated && e.bytes > tripMax) console.log(`  (round trip skipped: ${(e.bytes / 1e6).toFixed(0)} MB > WILD_ROUNDTRIP_MAX_MB)`);
+	if (process.env.WILD_NO_ROUNDTRIP !== '1' && !r.animated && e.bytes <= tripMax) {
 		await frameObject(page, r.uuid);
-		const before = await h.grabFrame({ page });
+		const before = await shot(page);
 		const trip = await page.evaluate(
 			async ({ uuid, name }) => {
 				const s = window.__stores;
@@ -323,7 +378,7 @@ async function oneFixture(page, f) {
 		h.check(!trip.error && !!trip.back, `${tag}: the Quest / web export re-imports (${trip.error ?? `${(trip.rawBytes / 1e6).toFixed(1)} MB → ${(trip.outBytes / 1e6).toFixed(1)} MB in ${trip.exportMs} ms`})`);
 		if (trip.back) {
 			await page.waitForTimeout(1500); // KTX2 twins + LOD levels settle
-			const after = await h.grabFrame({ page });
+			const after = await shot(page);
 			const d = await h.frameDelta(page, before, after, LOOK_DELTA);
 			if (process.env.SHOTS_DIR) {
 				fs.writeFileSync(path.join(process.env.SHOTS_DIR, `${f.id}-a.png`), before);
@@ -346,22 +401,48 @@ async function oneFixture(page, f) {
 
 	// ---- 6. modelSanity on the file alone (a replace by itself) ----------------------------------
 	const sane = await page.evaluate(
-		async ({ uuid, url, name }) => {
+		async ({ uuid, name }) => {
 			const s = window.__stores;
 			/** @type {any} */
 			const w = window;
 			w.__wild.dialogs = [];
-			const bytes = await (await fetch(url)).arrayBuffer();
-			const out = await s.modelReplace.replaceModelFromFile(uuid, new File([bytes], name), { fixes: 'ask', source: 'menu' });
+			const out = await s.modelReplace.replaceModelFromFile(uuid, new File([w.__wildFiles.a], name), { fixes: 'ask', source: 'menu' });
 			return { ok: !!out, issues: (out?.issues ?? []).map((/** @type {any} */ i) => i.kind), dialog: w.__wild.dialogs.some((/** @type {any} */ d) => d.id === 'replace-model-sanity') };
 		},
-		{ uuid: r.uuid, url: h.URL + '__wild/' + f.path, name }
+		{ uuid: r.uuid, name }
 	);
 	const want = [...e.fileIssues].sort().join(',');
 	h.check(sane.ok && sane.issues.sort().join(',') === want, `${tag}: modelSanity flags what the file carries (${sane.issues.join(',') || 'nothing'} · bench ${want || 'nothing'})`);
 	h.check(sane.dialog === e.fileIssues.length > 0, `${tag}: the sanity dialog ${e.fileIssues.length ? 'asked' : 'stayed away'}`);
 	row.sanity = sane.issues.join(',');
 	await cleanup(page);
+}
+
+/**
+ * The viewport for the look comparison: no toasts, nothing selected (an import selects what it placed,
+ * and the gizmo would be in one frame only), rendering resumed (the overload guard pauses a heavy scene
+ * on its own — a paused frame is not the model's look; whether it fired is recorded), then the canvas.
+ * @param {any} page
+ */
+async function shot(page) {
+	const paused = await page.evaluate(() => {
+		const s = window.__stores;
+		let p;
+		s.overloadGuard.renderPaused.subscribe((v) => (p = v))();
+		if (p) s.overloadGuard.resumeRendering();
+		s.selectedObjects.set([]);
+		s.selectedObject.set(null);
+		if (!document.getElementById('wild-no-toasts')) {
+			const st = document.createElement('style');
+			st.id = 'wild-no-toasts';
+			st.textContent = '.toasts-stack { visibility: hidden !important; }';
+			document.head.appendChild(st);
+		}
+		return p?.reason ?? null;
+	});
+	if (paused) console.log(`  (the overload guard had paused rendering: ${paused})`);
+	await page.waitForTimeout(800);
+	return h.grabFrame({ page });
 }
 
 /** the camera on the object's box, three quarters from the front @param {any} page @param {string} uuid */
@@ -420,15 +501,16 @@ async function cleanup(page) {
  * @param {any} page @param {any} p */
 async function onePair(page, p) {
 	const name = (/** @type {any} */ side) => (side.model + '.glb').replace(/[^\w.-]/g, '_');
+	await deliver(page, locate, p.a.path, 'a');
+	await deliver(page, locate, p.b.path, 'b');
 	const out = await page.evaluate(
-		async ({ ua, ub, na, nb }) => {
+		async ({ na, nb }) => {
 			const s = window.__stores;
 			/** @type {any} */
 			const w = window;
 			s.commandsHandler.clearSceneLocal();
 			w.__wild.dialogs = [];
-			const a = await (await fetch(ua)).arrayBuffer();
-			const uuid = await s.fileHandler.importFile(new File([a], na), 'Wild A');
+			const uuid = await s.fileHandler.importFile(new File([w.__wildFiles.a], na), 'Wild A');
 			if (!uuid) return { error: 'A did not import' };
 			let g;
 			s.objectsGroup.subscribe((x) => (g = x))();
@@ -445,9 +527,8 @@ async function onePair(page, p) {
 			const d0 = await depth();
 			const pose = () => [o.position.toArray(), o.rotation.toArray().slice(0, 3)].flat().map((v) => +Number(v).toFixed(4)).join(',');
 			const before = pose();
-			const b = await (await fetch(ub)).arrayBuffer();
 			w.__wild.dialogs = [];
-			const res = await s.modelReplace.replaceModelFromFile(uuid, new File([b], nb), { fixes: 'ask', source: 'menu' });
+			const res = await s.modelReplace.replaceModelFromFile(uuid, new File([w.__wildFiles.b], nb), { fixes: 'ask', source: 'menu' });
 			const live = g.getObjectByProperty('uuid', uuid);
 			let graphs;
 			s.flowGraphs.subscribe((x) => (graphs = x))();
@@ -462,7 +543,7 @@ async function onePair(page, p) {
 				undo: (await depth()) - d0
 			};
 		},
-		{ ua: h.URL + '__wild/' + p.a.path, ub: h.URL + '__wild/' + p.b.path, na: name(p.a), nb: name(p.b) }
+		{ na: name(p.a), nb: name(p.b) }
 	);
 	const tag = `${p.why} (${p.a.family} → ${p.b.family})`;
 	h.check(!out.error && out.ok, `${tag}: replaced${out.error ? ' — ' + out.error : ''}`);

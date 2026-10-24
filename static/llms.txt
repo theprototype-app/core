@@ -30,6 +30,14 @@
   `spec_path`): filed in Explorer ▸ Generated for everyone, the generator's spec
   beside it, an image placed as a card (`filter: "nearest"`, `frame`, `facing`).
   Recipe: generate pixel art with Pixling and Claude Code (in the agent guide).
+- Agent panels (contract 1.2): `open_panel {spec}` puts a small tool window in
+  front of the person you work for — spec `{v: 1, title, controls | sections |
+  tabs}`, controls slider / number / select / toggle / colour / text / textarea /
+  button / image (data: URL) / files / progress / status / table. Their changes
+  and presses arrive through `wait_for_message` as `{kind: "panel", event:
+  change | press | …, control, value, values}`; answer with `update_panel` and
+  tool calls. Owner only until they Share with editors; viewers never get one;
+  no password fields, no links, at most 6 per person. Full spec in the agent guide.
 - A plain link waits for the host's Approve; an invite link (`&invite=…`) joins
   in one step. A VIEW-ONLY agent's edits are refused — check `status().canEdit`.
 - [Agent guide, inlined](/llms-full.txt): the whole contract, the view-only

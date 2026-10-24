@@ -157,6 +157,10 @@ export function imageSize(b) {
 	return null;
 }
 
+/** file-type suffixes a requested name may carry (all dropped: the bytes decide the extension); any other
+ * dotted part is the name's own (`knight_walk.frames` stays `knight_walk.frames.json`) */
+const FILE_EXTS = /(\.(png|webp|jpe?g|gif|bmp|avif|tiff?|svg|json|txt|tpanim|vrma|glb|gltf|fbx|bin))+$/i;
+
 /**
  * A safe Explorer file name: the agent's `name` (or a fallback), any extension it typed replaced by
  * the one the BYTES earned, path separators and control characters gone.
@@ -166,7 +170,7 @@ export function fileName(name, ext, fallback = 'generated') {
 	const raw = String(name ?? '').split(/[\\/]/).pop() ?? '';
 	const base =
 		raw
-			.replace(/(\.[a-z0-9]{1,8})+$/i, '')
+			.replace(FILE_EXTS, '')
 			.replace(/[:*?"<>|\u0000-\u001f]+/g, ' ')
 			.replace(/\s+/g, ' ')
 			.trim()

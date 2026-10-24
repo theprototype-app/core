@@ -181,6 +181,8 @@ describe('names, folders, the spec beside the sheet (F2)', () => {
 		expect(fileName('a<b>:c\u0007', '.json')).toBe('a b c.json');
 		expect(fileName('', '.webp')).toBe('generated.webp');
 		expect(fileName('clip.tpanim.glb', '.tpanim')).toBe('clip.tpanim');
+		expect(fileName('knight_walk.frames', '.json')).toBe('knight_walk.frames.json'); // not a file type: the name's own
+		expect(fileName('v1.2 hero.PNG', '.png')).toBe('v1.2 hero.png');
 	});
 	it('<stem>.<generator>.json pairs with the sheet', () => {
 		expect(stemOf('knight_walk.png') + '.' + generatorTag(undefined) + '.json').toBe('knight_walk.pixling.json');

@@ -3,6 +3,7 @@ import {
 	BloomEffect,
 	BrightnessContrastEffect,
 	ChromaticAberrationEffect,
+	DepthOfFieldEffect,
 	DotScreenEffect,
 	EffectPass,
 	HueSaturationEffect,
@@ -27,6 +28,9 @@ import { registerPostEffect, postEffectDef, planPostStack } from './scenePost';
 // peer (and every late joiner) grades with a missing texture — golden rule 9.
 import { itemByHash, itemBlob, explorerItems } from './explorer';
 import { requestAsset } from './assetShare';
+import { get } from 'svelte/store';
+import { cameraPreview } from './cameraPreview';
+import { objectsGroup } from '../stores/sceneStore';
 
 // L1 — the built-in post effects and the COMPILER.
 //
@@ -409,6 +413,60 @@ registerPostEffect('bloom', {
 			mipmapBlur: true,
 			kernelSize: KernelSize.LARGE
 		})
+});
+
+// 68 V8: DEPTH OF FIELD. With `source: camera` the focus distance and the f-number come from the
+// camera you are looking through (`userData.camera.focus` / `.aperture` — what Film's focus pull and
+// aperture record as prop tracks, so a take plays its pull back); a camera with neither falls back
+// to the manual values. Read per frame in `tick`, never through a rebuild.
+/** f-number + focus distance → the effect's bokeh scale and in-focus depth range */
+export function dofFromLens(/** @type {number} */ focus, /** @type {number} */ aperture) {
+	const n = Math.max(0.7, Math.min(64, aperture || 5.6));
+	const d = Math.max(0.05, focus || 10);
+	return { focusDistance: d, focusRange: Math.max(0.05, (d * n) / 16), bokehScale: Math.max(0, Math.min(10, (4 * 2.8) / n)) };
+}
+
+/** the lens of the camera being looked through, or null @returns {{focus: number, aperture: number} | null} */
+function activeLens() {
+	const uuid = get(cameraPreview)?.uuid;
+	if (!uuid) return null;
+	const spec = /** @type {any} */ (get(objectsGroup))?.getObjectByProperty?.('uuid', uuid)?.userData?.camera;
+	const focus = Number(spec?.focus);
+	const aperture = Number(spec?.aperture);
+	return Number.isFinite(focus) || Number.isFinite(aperture) ? { focus, aperture } : null;
+}
+
+registerPostEffect('dof', {
+	label: 'Depth of field',
+	group: 'camera',
+	params: [
+		{ key: 'source', label: 'Focus from', type: 'select', default: 'camera',
+			options: [
+				{ value: 'camera', label: 'The camera (Film focus pull)' },
+				{ value: 'manual', label: 'These values' }
+			],
+			hint: 'A camera filmed with focus or aperture carries its own; otherwise the values below.' },
+		{ key: 'focusDistance', label: 'Focus distance', min: 0.1, max: 200, step: 0.1, decimals: 1, default: 10 },
+		{ key: 'aperture', label: 'Aperture (f/)', min: 0.7, max: 32, step: 0.1, decimals: 1, default: 2.8,
+			hint: 'Lower = more blur and a thinner sharp zone.' }
+	],
+	make: (params, ctx) => {
+		const lens = dofFromLens(num(params.focusDistance, 10), num(params.aperture, 2.8));
+		const effect = new DepthOfFieldEffect(ctx.camera, { focusDistance: lens.focusDistance, focusRange: lens.focusRange, bokehScale: lens.bokehScale });
+		/** @type {any} */ (effect).__dofParams = params;
+		return effect;
+	},
+	tick: (effect) => {
+		const params = effect.__dofParams ?? {};
+		const live = params.source === 'manual' ? null : activeLens();
+		const lens = dofFromLens(
+			Number.isFinite(live?.focus) ? /** @type {number} */ (live?.focus) : num(params.focusDistance, 10),
+			Number.isFinite(live?.aperture) ? /** @type {number} */ (live?.aperture) : num(params.aperture, 2.8)
+		);
+		effect.cocMaterial.focusDistance = lens.focusDistance;
+		effect.cocMaterial.focusRange = lens.focusRange;
+		if (Math.abs(effect.bokehScale - lens.bokehScale) > 1e-4) effect.bokehScale = lens.bokehScale;
+	}
 });
 
 registerPostEffect('vignette', {

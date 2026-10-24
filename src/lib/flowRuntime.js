@@ -103,6 +103,7 @@ import {
 } from './motion/motionNodes.js';
 // 37 (R6): variadic math/gate + the Switcher multiplexer (a leaf, no imports)
 import { rigGoal, rigStep, validVec } from './cameraRig.js'; // 37 (R8): a three leaf
+import { runParkHooks } from './parkHooks.js'; // 68: extra parks (prop tracks), a leaf
 import { INPUT_LETTERS, socketCount, opFolds, foldMath, foldGate, switcherItems, switcherHandle, switcherIndexOf, switcherRadioIndex } from './variadicNodes.js';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
@@ -2219,6 +2220,8 @@ export function parkAnimatedAtBase() {
 	const unpark3 = shaderRef?.parkShaderMaterials?.() ?? null;
 	// 36-sim: a jiggling bone chain is posed on top of its rest pose — park it too
 	const unpark4 = parkJiggle();
+	// 68: the sequencer's property tracks (and any later runtime) through one registry
+	const unpark5 = runParkHooks();
 	let restored = false;
 	return () => {
 		if (restored) return;
@@ -2228,6 +2231,7 @@ export function parkAnimatedAtBase() {
 		unpark2();
 		unpark3?.();
 		unpark4();
+		unpark5();
 	};
 }
 

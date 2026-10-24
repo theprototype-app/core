@@ -3315,6 +3315,12 @@
 							>{$cameraPreview?.uuid === $selectedObject.uuid ? 'Previewing' : 'Preview'}</button
 						>
 						<button
+							id="camera-film"
+							class="ui-chip"
+							title="Film mode: look through this camera full screen, move it with the phone (or the mouse) and record shots into the Timeline"
+							onclick={() => import('$lib/film/filmState').then((m) => m.openFilm($selectedObject.uuid))}>Film</button
+						>
+						<button
 							id="camera-from-view"
 							class="ui-chip"
 							title="Move this camera to your current viewpoint (and take its FOV)"

@@ -320,6 +320,11 @@ export const DEBUG_HOOKS = [
 	['sequences', () => import('./sequences')],
 	['sequenceSync', () => import('./sequenceSync')],
 	['sequencePlayer', () => import('./sequencePlayer')],
+	// 68 V1: Film mode's leaf store (openFilm/closeFilm); the runtime registers `filmMode` itself when it loads (lazy)
+	['filmState', () => import('./film/filmState')],
+	// 68 V7: who is filming (presence) + the prop-playback ledger a presence pose sits in
+	['filmPresence', () => import('./film/filmPresence')],
+	['propPlayback', () => import('./propPlayback')],
 	['idb', () => import('./idb')],
 	['hudKinds', () => import('./hudKinds')],
 	['hudImages', () => import('./hudImages')],

@@ -88,6 +88,7 @@
 	import { requestPlay, willEnterXR, willEnterAR, playAsItems } from '$lib/playMode';
 	// 50 R1: the AR table — a phone places the scene on a real table (Android Chrome, WebXR immersive-ar)
 	import { enterArTable, arTableEntry } from '$lib/arTable';
+	import { openFilm } from '$lib/film/filmState';
 	import { AR_UNSUPPORTED_NOTE } from '$lib/arTableCore.js';
 	import { visibleDockKey, DOCK_TITLES, dockMinimized, dockHeight } from '$lib/bottomDock';
 	import { micActive, pttActive, toggleMic } from '$lib/voiceChat';
@@ -577,6 +578,8 @@
 			note: () => ($arTableEntry === 'unsupported' ? AR_UNSUPPORTED_NOTE : $arTableEntry === 'checking' ? 'Checking…' : '')
 		},
 		focus: { label: 'Focus mode', short: 'Focus', icon: 'maximize-2', run: () => enterFocusMode() },
+		// 68 V1: film the scene with the phone (turn it to look, a stick to move, ● to record)
+		film: { label: 'Film with phone', short: 'Film', icon: 'video', hint: 'The phone becomes a scene camera: turn it to look around, record a shot into the Timeline', run: fromMore(() => openFilm()) },
 		// 46 B1: the scene budget for the chosen device (Statistics ▸ Budget picks the device); the dot is its tier
 		budget: {
 			get label() {

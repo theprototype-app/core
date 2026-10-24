@@ -56,6 +56,8 @@ h.run(async () => {
 		'huesaturation:grading',
 		'brightnesscontrast:grading',
 		'lut:grading',
+		// 68 V8: Film's focus pull and aperture render through it
+		'dof:camera',
 		'bloom:camera',
 		'vignette:camera',
 		'grain:camera',

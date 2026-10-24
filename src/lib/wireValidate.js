@@ -192,6 +192,15 @@ export const VALIDATORS = {
 	hit: (d) => isUuid(d.uuid) && isArray(d.linvel) && isArray(d.angvel) && typeof d.speed === 'number',
 	// P2: a peer's LOOK presence row. `overrides` and `look` are read as objects the moment
 	// this lands, so a malformed row is dropped here rather than breaking the watch chain.
+	// 68 V7: a filming peer's live camera pose (presence) — or `off`
+	filmpose: (d) =>
+		typeof d.peerId === 'string' &&
+		(d.off === true ||
+			(isUuid(d.uuid) &&
+				isVec3(d.pos) &&
+				isFiniteArray(d.q, 4) &&
+				(d.fov === undefined || (typeof d.fov === 'number' && Number.isFinite(d.fov))) &&
+				(d.roll === undefined || (typeof d.roll === 'number' && Number.isFinite(d.roll))))),
 	lookstate: (d) => typeof d.peerId === 'string' && (d.overrides === undefined || typeof d.overrides === 'object'),
 	simulate: (d) => typeof d.running === 'boolean' || typeof d.paused === 'boolean',
 	loading: (d) => isArray(d.uuids),

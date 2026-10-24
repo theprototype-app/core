@@ -68,7 +68,7 @@
 	// 30b (vr-play): the game in your hands — hover/press haptics (P1), the sweep (P4)
 	import { startVrGameInput, stopVrGameInput } from '$lib/vrGameInput';
 	import { tickArTable } from '$lib/arTable'; // 50 R1: phone AR table placement
-	import { arTableActive } from '$lib/arTableState.js';
+	import { arTableActive, tickPhoneAr } from '$lib/arTableState.js';
 	import { gameFeelActive } from '$lib/gameFeel';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick, measureHoverAt } from '$lib/measure';
@@ -369,6 +369,7 @@
 		if (renderer?.xr?.isPresenting) pumpFlowTick(performance.now());
 		// 50 R1: the AR table's reticle + placement (a no-op unless one is running)
 		if (renderer?.xr?.isPresenting) tickArTable(renderer, camera.current);
+		if (renderer?.xr?.isPresenting) tickPhoneAr(renderer, camera.current); // 68 V3: Film's AR walk
 		// console.log(camera.current.lookAt.)
 		if (camera.current.fov !== fov) {
 			// console.log('fov changed')

@@ -780,7 +780,7 @@ function optimizeCheckNeeded(parsed, opts) {
  * @param {any} file @param {string=} name @param {string=} ext - explicit extension when the blob has no name (Library)
  * @param {number[]=} position - world drop point (Explorer drag-out, 96)
  * @param {any[]=} extras - companion files picked/dropped alongside (.mtl + its textures)
- * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null, lod?: any, behavior?: any, quaternion?: number[] | null}} [opts]
+ * @param {{reduce?: boolean | import('./importBudget').ReductionPlan, packRef?: import('./packRefs').PackRef | null, lod?: any, behavior?: any, quaternion?: number[] | null, noOptimize?: boolean}} [opts]
  *   `quaternion` (39): the placed root's rotation — a drag-to-place drop turned with R / the wheel
  *   or aligned to a surface. Set BEFORE the add, so the create entry and the wire carry it.
  *   `behavior` (33 P2): the pack item's functional spec — a door, a lid, a fan

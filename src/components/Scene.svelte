@@ -29,6 +29,7 @@
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
+	import { scatterSelectArmed, scatterSelectDown, scatterSelectMove, scatterSelectUp, onScatterProxyMoved, onScatterProxyDragChanged } from '$lib/scatterEdit';
 	import { sceneHits } from '$lib/scenePick';
 	import { pickStack, chooseInStack, altCycleIndex, primaryIndex } from '$lib/selectThrough';
 	import { editorPass } from '$lib/pickPass'; // 36 F22
@@ -485,6 +486,11 @@
 				onSplineProxyDragChanged(event.value);
 				return;
 			}
+			// 51 E4: scatter instances under the gizmo — ONE terrainScatter entry per drag
+			if (object.userData?.isScatterProxy) {
+				onScatterProxyDragChanged(event.value);
+				return;
+			}
 			// 33: one LOD level's offset — ONE lod write per drag, never a move
 			if (object.userData?.isLodLevelProxy) {
 				onLodProxyDragChanged(event.value);
@@ -871,9 +877,18 @@
 			}
 			// T-2: sculpt mode — dragging brushes the terrain instead of orbiting
 			if ($sculptObject && !$isLocked && !$isVRMode) {
+				// 51 E4: the Scatter Select tool — a press picks instances / starts a box; a
+				// press on a gizmo handle is the gizmo's (it sets `axis` on hover)
+				if (scatterSelectArmed()) {
+					if ($TControls?.axis) return;
+					scatterSelectDown($sculptObject, event);
+					sculptActive = true;
+					setOrbitEnabled(false);
+					return;
+				}
 				const terrain = $objectsGroup?.getObjectByProperty('uuid', $sculptObject);
 				setRayFromEvent(event);
-				const hit = terrain ? selectionRaycaster.intersectObject(terrain, false)[0] : null;
+				const hit = terrain ? selectionRaycaster.intersectObject(terrain, !terrain.isMesh)[0] : null; // 51-surface: a group host's children
 				if (hit) {
 					sculptActive = true;
 					lastSculptAt = performance.now();
@@ -1017,14 +1032,22 @@
 					y1: Math.max(marqueeStart[1], event.clientY)
 				};
 			}
+			// 51 E4: the Scatter Select tool draws a box, never a brush ring
+			if ($sculptObject && scatterSelectArmed()) {
+				hideCursor();
+				if (sculptActive) {
+					scatterSelectMove(event);
+					return;
+				}
+			}
 			// T-2: the brush cursor tracks the terrain; a held button keeps sculpting
-			if ($sculptObject) {
+			else if ($sculptObject) {
 				const terrain = $objectsGroup?.getObjectByProperty('uuid', $sculptObject);
 				setRayFromEvent(event);
-				const hit = terrain ? selectionRaycaster.intersectObject(terrain, false)[0] : null;
+				const hit = terrain ? selectionRaycaster.intersectObject(terrain, !terrain.isMesh)[0] : null; // 51-surface: a group host's children
 				if (hit) {
 					// mesh sculpt: orient the brush ring to the surface
-					const worldNormal = hit.face ? hit.face.normal.clone().transformDirection(terrain.matrixWorld) : null;
+					const worldNormal = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;
 					showCursorAt(hit.point, worldNormal);
 					if (sculptActive) {
 						const now = performance.now();
@@ -1142,7 +1165,8 @@
 			if (sculptActive && event.button === 0) {
 				sculptActive = false;
 				setOrbitEnabled(true);
-				sculptEndStroke(); // flush the pending preview + ONE undoable snapshot
+				if ($sculptObject && scatterSelectArmed()) scatterSelectUp($sculptObject, event, camera.current);
+				else sculptEndStroke(); // flush the pending preview + ONE undoable snapshot
 				return;
 			}
 			if (strokeActive && event.button === 0) {
@@ -1703,6 +1727,12 @@
 		if ($TControls.object?.userData?.isSplineProxy) {
 			$TControls.visible = true;
 			onSplineProxyMoved();
+			return;
+		}
+		// 51 E4: the selected scatter instances follow the proxy (preview; release commits)
+		if ($TControls.object?.userData?.isScatterProxy) {
+			$TControls.visible = true;
+			onScatterProxyMoved();
 			return;
 		}
 		// 33: a LOD level's proxy — the level follows locally; the release commits

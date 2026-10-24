@@ -189,10 +189,11 @@ export function fixtureOf(r) {
 			morph: m.morphPrims > 0,
 			animations: m.animations,
 			size: m.size,
-			topNodes: m.topNodes,
+			rootNodes: m.topNodes.length,
 			fileIssues: m.fileIssues,
 			up: r.up ?? '-',
-			mimeMismatch: m.textures.mimeMismatch
+			mimeMismatch: m.textures.mimeMismatch,
+			textureDims: m.textures.dims ?? null
 		}
 	};
 }
@@ -214,10 +215,14 @@ export function pickFixtures(rows, items, state) {
 		picked.set(r.path, cur);
 	};
 	// n NEW rows per reason (a row already in for another reason is tagged with this one too, if it ranks)
-	const top = (/** @type {(r: any) => number} */ key, /** @type {number} */ n, /** @type {string} */ why, list = ok) => {
+	// `distinct`: one family per reason, so "most triangles" is not four PartCrafter rows
+	const top = (/** @type {(r: any) => number} */ key, /** @type {number} */ n, /** @type {string} */ why, list = ok, distinct = true) => {
 		let fresh = 0;
+		const fams = new Set();
 		for (const r of [...list].sort((a, b) => key(b) - key(a) || (a.path < b.path ? -1 : 1))) {
 			if (fresh >= n) break;
+			if (distinct && fams.has(r.family)) continue;
+			fams.add(r.family);
 			if (!picked.has(r.path)) fresh++;
 			add(r, why);
 		}
@@ -234,12 +239,12 @@ export function pickFixtures(rows, items, state) {
 	top((r) => r.m.maxDim, 2, 'odd scale (largest box)');
 	top((r) => -r.m.maxDim, 2, 'odd scale (smallest box)', ok.filter((r) => r.m.maxDim > 0));
 	top((r) => -r.m.bytes, 3, 'Z-up guess (group consensus)', ok.filter((r) => r.up === 'z?'));
-	top((r) => -r.m.bytes, 2, 'unapplied root transform', ok.filter((r) => r.m.fileIssues.includes('transforms')));
-	top((r) => r.m.primitives, 3, 'PartCrafter multi-part', ok.filter((r) => r.family === 'PartCrafter'));
-	top((r) => r.m.primitives, 2, 'voxel GLB', ok.filter((r) => r.family === 'Voxels'));
-	top((r) => r.m.nodes, 2, 'GPT scene builder', ok.filter((r) => r.family === 'GPT'));
-	top((r) => r.m.nodes, 2, 'Claude scene builder', ok.filter((r) => r.family === 'Claude'));
-	top((r) => r.m.textures.count, 2, 'Rodin HighPack', ok.filter((r) => /highpack/.test(r.model)));
+	top((r) => -r.m.bytes, 3, 'unapplied root transform', ok.filter((r) => r.m.fileIssues.includes('transforms')));
+	top((r) => r.m.primitives, 3, 'PartCrafter multi-part', ok.filter((r) => r.family === 'PartCrafter'), false);
+	top((r) => r.m.primitives, 2, 'voxel GLB', ok.filter((r) => r.family === 'Voxels'), false);
+	top((r) => r.m.nodes, 2, 'GPT scene builder', ok.filter((r) => r.family === 'GPT'), false);
+	top((r) => r.m.nodes, 2, 'Claude scene builder', ok.filter((r) => r.family === 'Claude'), false);
+	top((r) => r.m.textures.count, 2, 'Rodin HighPack', ok.filter((r) => /highpack/.test(r.model)), false);
 	top((r) => r.m.animations + r.m.skinnedPrims, 2, 'skinned / animated', ok.filter((r) => r.m.skinnedPrims || r.m.animations));
 	top((r) => -r.m.bytes, 1, 'texture MIME type lies', ok.filter((r) => r.m.textures.mimeMismatch));
 	top((r) => r.m.topology.nonManifold, 1, 'most non-manifold edges');
@@ -270,19 +275,31 @@ export function pickFixtures(rows, items, state) {
 export function pickPairs(ok) {
 	const byGroup = new Map();
 	for (const r of ok) for (const g of r.groups) (byGroup.get(g) ?? byGroup.set(g, []).get(g)).push(r);
-	/** @type {Map<string, any>} */
-	const want = new Map([['none', null], ['scale', null], ['zup', null], ['transforms', null]]);
-	const light = (/** @type {any} */ r) => r.m.bytes < 30e6 && !r.m.skinnedPrims && !r.m.animations;
+	// two pairs per outcome where the data has one, each a different family pair; the scene
+	// builders (GPT / Claude) only when nothing else gives that outcome, and Rodin preferred as the
+	// "transforms" B (it is where the data has them: a root quarter turn on most Rodin files)
+	/** @type {Record<string, any[]>} */
+	const want = { none: [], scale: [], zup: [], transforms: [] };
+	const light = (/** @type {any} */ r) => r.m.bytes < 30e6 && !r.m.skinnedPrims && !r.m.animations && r.m.size;
+	const builder = (/** @type {any} */ r) => r.family === 'GPT' || r.family === 'Claude';
+	/** @type {{a: any, b: any, issues: string[], key: string, g: string}[]} */
+	const all = [];
 	for (const [g, list] of [...byGroup].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
-		const cands = list.filter(light).sort((a, b) => a.m.bytes - b.m.bytes);
+		const cands = list.filter(light);
 		for (const a of cands)
 			for (const b of cands) {
-				if (a === b || a.model === b.model || !a.m.size || !b.m.size) continue;
+				if (a === b || a.family === b.family) continue;
 				const issues = sanityIssues({ oldSize: a.m.size, newSize: b.m.size, topNodes: b.m.topNodes, canBake: true }).map((i) => i.kind);
-				const key = issues.length === 0 ? 'none' : issues.includes('scale') ? 'scale' : issues.includes('zup') ? 'zup' : issues.includes('transforms') ? 'transforms' : null;
-				if (key && want.has(key) && !want.get(key)) want.set(key, { group: g, a: fixtureOf(a), b: fixtureOf(b), expectIssues: issues, why: 'replace: ' + key });
+				const key = issues.length === 0 ? 'none' : issues.includes('scale') ? 'scale' : issues.includes('zup') ? 'zup' : 'transforms';
+				all.push({ a, b, issues, key, g });
 			}
 	}
-	return [...want.values()].filter(Boolean);
+	const rank = (/** @type {any} */ x) => (builder(x.a) || builder(x.b) ? 1e12 : 0) + (x.key === 'transforms' && x.b.family !== 'Rodin' ? 1e11 : 0) + x.a.m.bytes + x.b.m.bytes;
+	for (const x of all.sort((p, q) => rank(p) - rank(q) || (p.a.path + p.b.path < q.a.path + q.b.path ? -1 : 1))) {
+		const list = want[x.key];
+		const fams = (/** @type {any} */ y) => [y.a.family, y.b.family].sort().join('|');
+		if (list.length >= 2 || list.some((y) => fams(y) === fams(x))) continue;
+		list.push({ group: x.g, a: fixtureOf(x.a), b: fixtureOf(x.b), expectIssues: x.issues, why: 'replace: ' + x.key });
+	}
+	return Object.values(want).flat();
 }
-

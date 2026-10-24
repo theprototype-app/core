@@ -211,6 +211,8 @@ export async function measureGlb(file, opts = {}) {
 	/** @type {Record<string, number>} */
 	const formats = {};
 	const sizes = [];
+	/** @type {number[][]} */
+	const dims = [];
 	let mimeMismatch = 0;
 	for (const tex of usedTextures) {
 		const img = tex.getImage();
@@ -222,6 +224,7 @@ export async function measureGlb(file, opts = {}) {
 		const size = img ? ImageUtils.getSize(img, mime) : null;
 		const [w, h] = size ?? [0, 0];
 		sizes.push(Math.max(w, h));
+		dims.push([w, h]);
 		cost.textures++;
 		cost.textureBytes += Math.round(w * h * 4 * (4 / 3));
 		cost.maxTextureSize = Math.max(cost.maxTextureSize, w, h);
@@ -256,7 +259,7 @@ export async function measureGlb(file, opts = {}) {
 		rootNodes: topNodes.length,
 		materials: mats.length,
 		materialsUsed: usedMaterials.size,
-		textures: { count: usedTextures.size, maxPx: cost.maxTextureSize, sizes: sizes.sort((a, b) => b - a), formats, mimeMismatch },
+		textures: { count: usedTextures.size, maxPx: cost.maxTextureSize, sizes: sizes.sort((a, b) => b - a), formats, mimeMismatch, dims },
 		maps,
 		pbr,
 		vertexColors,

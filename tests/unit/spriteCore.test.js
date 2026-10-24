@@ -36,8 +36,7 @@ describe('normalizeSprite', () => {
 			play: '',
 			frame: 0,
 			flipX: false,
-			flipY: false,
-			order: 0
+			flipY: false
 		});
 	});
 	it('clamps a hostile document (the peer-bytes boundary)', () => {
@@ -68,8 +67,7 @@ describe('normalizeSprite', () => {
 			sheet: { cols: 4, rows: 2, count: 7 },
 			clips: [{ name: 'walk', from: 0, to: 3, fps: 8 }, { name: 'jump', frames: [4, 5, 6], fps: 12, loop: 'once', next: 'walk', events: [{ frame: 1, name: 'lift' }] }],
 			play: 'walk',
-			flipX: true,
-			order: 2
+			flipX: true
 		};
 		const c = compactSprite(raw);
 		expect(c.sheet).toEqual({ cols: 4, rows: 2, count: 7 });

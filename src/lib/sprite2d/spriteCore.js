@@ -27,11 +27,11 @@
 //   play     the clip that plays on its own ('' = none: the static `frame` shows)
 //   frame    the sheet frame shown when no clip plays (0)
 //   flipX, flipY  mirror the drawn frame (a character turning round)
-//   order    draw order inside the layer (renderOrder); higher draws later (in front)
+// Draw order inside one layer is the object's own Render order (the existing Inspector field).
 //
 // userData.layer2d — on a Group: a 2D LAYER. Z-ORDER is the layer's z (a 2D scene is viewed down
 // -Z, so z is depth — nothing else is needed for the depth test, and three's transparent sort is
-// back-to-front by it); `order` on sprites breaks ties inside one layer.
+// back-to-front by it); Render order breaks ties inside one layer.
 //   parallax   how much the layer follows the camera in x: 1 = world (the gameplay layer),
 //              0.5 = half speed (far hills), 0 = stuck to the camera (a sky)
 //   parallaxY  the same in y (defaults to `parallax`)
@@ -43,7 +43,7 @@
 /** @typedef {{frame: number, name: string}} SpriteEvent */
 /** @typedef {{name: string, frames: number[]|null, from: number, to: number, fps: number, loop: 'loop'|'once'|'pingpong', events: SpriteEvent[], next: string}} SpriteClip */
 /** @typedef {{cols: number, rows: number, count: number, margin: number, spacing: number}} SpriteSheet */
-/** @typedef {{ppu: number, filter: 'nearest'|'linear', snap: boolean, sheet: SpriteSheet, clips: SpriteClip[], play: string, frame: number, flipX: boolean, flipY: boolean, order: number}} Sprite */
+/** @typedef {{ppu: number, filter: 'nearest'|'linear', snap: boolean, sheet: SpriteSheet, clips: SpriteClip[], play: string, frame: number, flipX: boolean, flipY: boolean}} Sprite */
 
 export const SPRITE_FILTERS = Object.freeze(['nearest', 'linear']);
 export const SPRITE_LOOPS = Object.freeze(['loop', 'once', 'pingpong']);
@@ -137,8 +137,7 @@ export function normalizeSprite(raw) {
 		play: cleanName(raw?.play),
 		frame: clampInt(raw?.frame, 0, 0, sheet.count - 1),
 		flipX: raw?.flipX === true,
-		flipY: raw?.flipY === true,
-		order: clampInt(raw?.order, 0, -1000, 1000)
+		flipY: raw?.flipY === true
 	};
 }
 
@@ -184,7 +183,6 @@ export function compactSprite(raw) {
 	if (s.frame) out.frame = s.frame;
 	if (s.flipX) out.flipX = true;
 	if (s.flipY) out.flipY = true;
-	if (s.order) out.order = s.order;
 	return out;
 }
 

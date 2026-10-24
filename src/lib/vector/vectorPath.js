@@ -23,7 +23,7 @@ export function node(x, y, ix = 0, iy = 0, ox = 0, oy = 0, smooth = false) {
 	return { x, y, ix, iy, ox, oy, smooth };
 }
 
-/** @param {VNode} n */
+/** @param {VNode} n @returns {VNode} */
 export function cloneNode(n) {
 	return { x: n.x, y: n.y, ix: n.ix, iy: n.iy, ox: n.ox, oy: n.oy, smooth: !!n.smooth };
 }

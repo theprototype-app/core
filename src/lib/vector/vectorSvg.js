@@ -73,7 +73,9 @@ function gradientDef(p, id) {
  * @returns {string}
  */
 export function writeSvg(items) {
+	/** @type {string[]} */
 	const defs = [];
+	/** @type {string[]} */
 	const els = [];
 	/** @type {number[][]} */
 	const extent = [];
@@ -290,7 +292,9 @@ export function importSvg(text) {
 	/** @type {{params: Record<string, any>, name: string}[]} */
 	const shapes = [];
 	for (const sp of data.paths ?? []) {
+		/** @type {Record<string, any>} */
 		const style = sp.userData?.style ?? {};
+		/** @type {any} */
 		const el = sp.userData?.node;
 		const subs = (sp.subPaths ?? [])
 			.map(subpathFromCurves)

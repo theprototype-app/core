@@ -119,7 +119,7 @@ export function strokePieces(pts, closed, style) {
 	}
 	const n = line.length;
 	const segCount = closed ? n : n - 1;
-	/** unit direction + left normal per segment */
+	/** unit direction + left normal per segment @type {{dx: number, dy: number, nx: number, ny: number}[]} */
 	const dirs = [];
 	for (let s = 0; s < segCount; s++) {
 		const a = line[s];

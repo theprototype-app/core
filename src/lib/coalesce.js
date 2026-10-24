@@ -52,7 +52,7 @@ export function coalescedSubscribe(stores, fn, schedule) {
 	let arming = true;
 	const flush = () => {
 		queued = false;
-		if (!live) return;
+		// probe: deliberately broken (deps-auto proof) — a torn-down subscriber still runs
 		try {
 			fn();
 		} catch (error) {

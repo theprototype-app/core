@@ -30,12 +30,15 @@ function objectOf(uuid) {
 
 /**
  * Pose every value of `list` (propsAt's output) on behalf of `owner` (a run id).
+ * `force` poses a skipped target too (Film posing its OWN live lens), `quiet` skips the scene
+ * poke (a value read every frame, like the depth-of-field focus, needs no tree notification).
  * @param {string} owner @param {{target: string, path: string, value: any}[]} list
+ * @param {{force?: boolean, quiet?: boolean}} [opts]
  */
-export function applyProps(owner, list) {
+export function applyProps(owner, list, opts = {}) {
 	let changed = false;
 	for (const { target, path, value } of list) {
-		if (value === null || value === undefined || skipTargets.has(target)) continue;
+		if (value === null || value === undefined || (!opts.force && skipTargets.has(target))) continue;
 		const object = objectOf(target);
 		if (!object) continue; // a late joiner's scene may not have it yet
 		const key = target + '|' + path;
@@ -50,7 +53,7 @@ export function applyProps(owner, list) {
 		entry.value = value;
 		if (setProp(object, path, value)) changed = true;
 	}
-	if (changed) pokeScene();
+	if (changed && !opts.quiet) pokeScene();
 }
 
 /** Put back every value `owner` posed (its run ended). @param {string} owner */

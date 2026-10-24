@@ -82,6 +82,7 @@
   // 47-cc0: the free CC0 asset browser (lazy, like the export modal)
   import { assetBrowserOpen } from '$lib/cc0/assetBrowserState.js'
   import { recordingOpen, recordingState } from '$lib/recording/recordingStores.js'
+  import { filmOpen } from '$lib/film/filmState.js'
   import { exportMode } from '$lib/export/exportBoot.js'
   import { startExportRuntime } from '$lib/export/exportRuntime.js'
   import { objectsGroup, globalRenderer } from './stores/sceneStore'
@@ -468,6 +469,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 36-share: Tools ▸ Recording — mounted while open or while a recording runs (its progress bar) -->
 {#if $recordingOpen || $recordingState.status !== 'idle'}
 {#await import('./components/menu/RecordingDialog.svelte') then m}<m.default />{/await}
+{/if}
+<!-- 68 V1: Film mode (the phone as a scene camera's viewfinder) — loaded only while open -->
+{#if $filmOpen && !$embedMode}
+{#await import('./components/film/FilmMode.svelte') then m}<m.default />{/await}
 {/if}
 <DungeonMinimap />
 <StatsOverlay />

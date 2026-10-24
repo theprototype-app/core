@@ -320,6 +320,8 @@ export const DEBUG_HOOKS = [
 	['sequences', () => import('./sequences')],
 	['sequenceSync', () => import('./sequenceSync')],
 	['sequencePlayer', () => import('./sequencePlayer')],
+	// 68 V1: Film mode's leaf store (openFilm/closeFilm); the runtime registers `filmMode` itself when it loads (lazy)
+	['filmState', () => import('./film/filmState')],
 	['idb', () => import('./idb')],
 	['hudKinds', () => import('./hudKinds')],
 	['hudImages', () => import('./hudImages')],

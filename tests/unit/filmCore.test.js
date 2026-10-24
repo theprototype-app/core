@@ -16,6 +16,8 @@ import {
 	withRoll,
 	filmOrientation,
 	lookAtQuat,
+	tripodOrientation,
+	quatConj,
 	moveStep,
 	stickValue,
 	walkPosition,
@@ -101,6 +103,26 @@ describe('recentre / horizon lock / roll', () => {
 		const d = [3, 1, -4].map((c) => c / Math.hypot(3, 1, -4));
 		expect(near(f, d)).toBe(true);
 		expect(Math.abs(rollOf(q))).toBeLessThan(1e-6);
+	});
+	it('track keeps the framing offset taken at the tap as the camera moves', () => {
+		const pos = [0, 1, 5];
+		const target = [0, 1, 0];
+		// the camera framed the target 10° off-centre when tracking began
+		const atTap = quatMul(lookAtQuat(pos, target), quatAxisAngle([0, 1, 0], (10 * Math.PI) / 180));
+		const offset = quatMul(quatConj(lookAtQuat(pos, target)), atTap);
+		expect(near(lookAtQuat(pos, target, offset), atTap)).toBe(true);
+		// walk sideways: still 10° off the target's direction
+		const moved = [4, 1, 5];
+		const f = forwardOf(lookAtQuat(moved, target, offset));
+		const d = [-4, 0, -5].map((c) => c / Math.hypot(4, 5));
+		const deg = (Math.acos(Math.min(1, f[0] * d[0] + f[1] * d[1] + f[2] * d[2])) * 180) / Math.PI;
+		expect(deg).toBeCloseTo(10, 4);
+	});
+	it('tripod pans and tilts but never rolls', () => {
+		const tilted = withRoll(cameraQuatFromAngles(30, 80, 0), 12);
+		const t = tripodOrientation(tilted);
+		expect(Math.abs(rollOf(t))).toBeLessThan(1e-6);
+		expect(near(forwardOf(t), forwardOf(tilted))).toBe(true);
 	});
 });
 

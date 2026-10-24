@@ -60,7 +60,7 @@ function syncedNow() {
  * @typedef {{
  *   id: string, mode: 'game'|'preview', at: number, from: number, inPlay: boolean,
  *   lastT: number, wraps: number, voices: any[], anims: Set<string>, imported: Set<string>,
- *   shot: string, done: boolean
+ *   shot: string, done: boolean, open: boolean
  * }} Run
  */
 
@@ -102,8 +102,10 @@ function setTransport(id, patch) {
 /**
  * Start a sequence.
  * @param {string} ref id (or name) of the sequence
- * @param {{at?: number, from?: number, mode?: 'game'|'preview'}} [opts] `at` = the shared
- *   moment sequence time `from` happened (the trigger stamp), flow seconds
+ * @param {{at?: number, from?: number, mode?: 'game'|'preview', open?: boolean}} [opts] `at` = the shared
+ *   moment sequence time `from` happened (the trigger stamp), flow seconds; `open` (68 Film
+ *   takes) = the run does not end at the duration — a take may film past the end, and the
+ *   recorder grows the sequence when it commits
  * @returns {boolean}
  */
 export function playSequence(ref, opts = {}) {
@@ -129,7 +131,8 @@ export function playSequence(ref, opts = {}) {
 		anims: new Set(),
 		imported: new Set(),
 		shot: '',
-		done: false
+		done: false,
+		open: !!opts.open
 	};
 	runs.set(seq.id, run);
 	// a mid-way start brings up what is already running at `from`: clips and sounds with
@@ -224,7 +227,7 @@ export function tickSequences() {
 
 /** @param {Run} run @param {any} seq @param {number} now */
 function tickRun(run, seq, now) {
-	const head = playheadAt(seq, now - run.at, run.from);
+	const head = run.open ? { t: run.from + Math.max(0, now - run.at), done: false, wraps: 0 } : playheadAt(seq, now - run.at, run.from);
 	// what the playhead crossed since the last tick — split at a loop wrap into the two
 	// real pieces (lastT..end and 0..t), never the empty gap (the animmarker rule)
 	if (head.wraps > run.wraps) {
@@ -325,8 +328,29 @@ function startAudio(run, seq, item) {
 
 // ---- camera shots ---------------------------------------------------------------
 
+/**
+ * 68: Film mode HOLDS the camera — the phone is the viewfinder, so a playing sequence's shots
+ * must not switch the view (the take plays the timeline with its own camera). While held,
+ * applyShot does nothing, and a run that owned the camera when the hold began gives it up
+ * without restoring a view (Film's preview is the view now).
+ */
+let cameraHeld = false;
+
+/** @returns {() => void} release */
+export function holdCamera() {
+	cameraHeld = true;
+	cameraOwner = null;
+	priorCamera = undefined;
+	shotState = null;
+	lastPosed = null;
+	return () => {
+		cameraHeld = false;
+	};
+}
+
 /** @param {Run} run @param {any} seq @param {number} t */
 function applyShot(run, seq, t) {
+	if (cameraHeld) return;
 	if (run.mode === 'preview' && !get(previewShots)) {
 		if (cameraOwner === run.id) releaseCamera();
 		return;
@@ -502,10 +526,12 @@ export function sequencePlayerDebug() {
 			t: r.lastT,
 			inPlay: r.inPlay,
 			shot: r.shot,
+			open: r.open,
 			voices: r.voices.length,
 			anims: [...r.anims]
 		})),
 		cameraOwner,
+		cameraHeld,
 		priorCamera: priorCamera ?? null,
 		preview: get(cameraPreview)?.uuid ?? null,
 		blend: shotState?.blend ?? null,

@@ -251,6 +251,12 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						action: () => import('./cameraPreview').then((m) => m.startCameraPreview(uuid))
 					},
 					{
+						label: 'Film with this camera',
+						icon: 'video',
+						tooltip: 'Film mode: the phone (or mouse) moves this camera; record shots into the Timeline',
+						action: () => import('./film/filmState').then((m) => m.openFilm(uuid))
+					},
+					{
 						label: 'Set from current view',
 						icon: 'focus',
 						disabled: locked,

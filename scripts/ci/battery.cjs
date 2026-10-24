@@ -12,7 +12,7 @@
 //   node scripts/ci/battery.cjs run --set required --shard 3 --of 14   # one shard (serves the app + the signaling server)
 //   node scripts/ci/battery.cjs run --set confirm --from <dir> --shard 1 --of 3   # re-run a run's required reds
 //   node scripts/ci/battery.cjs report <results-dir>      # merge shard results → summary, exit 1 on a required red
-//   node scripts/ci/battery.cjs refresh [--list f]... [--summary f]... [--results dir]
+//   node scripts/ci/battery.cjs refresh [--list f]... [--summary f]... [--results dir]...
 //
 // Two sets, two matrices: the REQUIRED suites gate (deps-gate waits for them, sized to finish inside the hour);
 // the OPTIONAL ones run in their own shards AFTER the required ones (the free-plan runner cap is 20 jobs), are
@@ -399,12 +399,14 @@ function refresh(argv) {
 	const median = (/** @type {number[]} */ v) => v.sort((x, y) => x - y)[Math.floor(v.length / 2)];
 	// a desk second is about two runner seconds (measured: the e2e-smoke suites on ubuntu-latest vs the Deck)
 	for (const [n, v] of Object.entries(desk)) if (n in b.suites) b.suites[n] = Math.round(2 * median(v));
-	const results = opt(argv, '--results');
-	if (results) {
-		for (const f of walk(path.resolve(results)).filter((f) => f.endsWith('durations.json'))) {
-			for (const [n, s] of Object.entries(JSON.parse(fs.readFileSync(f, 'utf8')))) if (n in b.suites) b.suites[n] = Number(s);
-		}
-	}
+	// --results <dir>...: seconds measured on the runners, the MEDIAN across every durations.json found — one
+	// suite's time moves by half from run to run on a shared runner, so a single run balances badly
+	/** @type {Record<string, number[]>} */
+	const ran = {};
+	for (const dir of opts(argv, '--results'))
+		for (const f of walk(path.resolve(dir)).filter((f) => f.endsWith('durations.json')))
+			for (const [n, s] of Object.entries(JSON.parse(fs.readFileSync(f, 'utf8')))) (ran[n] ||= []).push(Number(s));
+	for (const [n, v] of Object.entries(ran)) if (n in b.suites) b.suites[n] = Math.round(median(v));
 	// --red <dir>... --reason "…": suites red in those runs' results (fail / timeout / flaky) become optional with
 	// the reason — for runs on unchanged code, i.e. what this runner cannot pass reliably. --green <dir>: a suite
 	// that passed there is never moved.

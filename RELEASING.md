@@ -96,8 +96,9 @@ deps.yml runs the same battery and labels on them there; nothing auto-merges int
 
 **When the battery list moves** (an integrator's battery added or dropped suites), refresh it from that
 run: `node scripts/ci/battery.cjs refresh --list <battery list>... --summary <battery summary>...`
-(names come from the lists, seconds from the summaries). `--results <dir>` takes seconds measured on the
-runners instead (deps.yml's `battery-durations` artifact). A suite goes into `optional` (runs, reported,
+(names come from the lists, seconds from the summaries). `--results <dir>` (repeatable) takes seconds measured on the
+runners instead, the median across the runs given (deps.yml's `battery-durations` artifact; one suite's time
+moves by half between runs, so balance on several). A suite goes into `optional` (runs, reported,
 does not gate) only when it is red or flaky on the unchanged base too, with that reason on its line —
 `--red <run dir>... --reason "…"` does it from downloaded `battery-*` artifacts of runs on unchanged code;
 `skip` is for what a public runner cannot do at all (the self-hosted signaling box, a hosts-mapped origin,

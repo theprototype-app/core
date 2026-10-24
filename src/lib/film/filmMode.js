@@ -61,7 +61,7 @@ const SENSOR_WAIT_MS = 1500;
  * `rig`: 'handheld' | 'tripod' (position locked, pan / tilt only) | 'track' (keeps `target` framed).
  * @typedef {{uuid: string, name: string, aspect: string, sensor: string, source: string,
  *   horizonLock: boolean, speed: number, fov: number, roll: number, smoothing: number,
- *   rig: string, target: string, targetName: string, focus: number|null, aperture: number|null, walk?: boolean}} FilmUi
+ *   rig: string, target: string, targetName: string, focus: number|null, aperture: number|null, walk?: boolean, heightLock?: boolean}} FilmUi
  */
 /** @type {import('svelte/store').Writable<FilmUi | null>} */
 export const film = writable(null);
@@ -264,6 +264,7 @@ function frame(camera, uuid) {
 	const rig = ui?.rig ?? 'handheld';
 	if (dt && rig !== 'tripod' && (live.stick.x || live.stick.y || live.lift))
 		live.pos = moveStep(live.pos, sensed, live.stick, live.lift, ui?.speed ?? 1, dt);
+	if (heightY !== null) live.pos[1] = heightY;
 	let qBase = sensed;
 	if (rig === 'tripod') qBase = tripodOrientation(sensed);
 	else if (rig === 'track') {
@@ -314,6 +315,15 @@ function finishPose(pos, qBase, rawPos, rawQBase, now, dt) {
 	return pose;
 }
 
+// ---- V8 wave 2: height lock — the camera keeps the height it had when locked ------------
+/** @type {number | null} */
+let heightY = null;
+/** @param {boolean} on */
+export function setHeightLock(on) {
+	heightY = on ? (drawn?.pos[1] ?? live.pos[1]) : null;
+	patchUi({ heightLock: heightY !== null });
+}
+
 // ---- V3 AR walk (filmWalk.js drives it) ------------------------------------------------
 let walking = false;
 
@@ -335,6 +345,7 @@ export function walkFrame(pos, q, camera) {
 	const dt = live.lastT ? Math.min(0.25, Math.max(0, now - live.lastT)) : 0;
 	live.lastT = now;
 	liveCamera = camera;
+	if (heightY !== null) pos = [pos[0], heightY, pos[2]];
 	live.pos = pos.slice();
 	const qBase = get(film)?.horizonLock ? levelHorizon(q) : q;
 	return finishPose(pos.slice(), qBase, pos.slice(), qBase, now, dt);
@@ -643,7 +654,7 @@ export function filmDebug() {
 }
 
 // the suites reach the runtime once it loaded (a ROW in DEBUG_HOOKS would pull it into every debug boot)
-registerDebugHook('filmMode', { film, startFilm, stopFilm, setStick, setLift, lookDrag, recentre, toggleHorizonLock, cycleSpeed, placeCamera, filmPose, filmDebug, onFilmFrame });
+registerDebugHook('filmMode', { film, startFilm, stopFilm, setStick, setLift, lookDrag, recentre, toggleHorizonLock, cycleSpeed, placeCamera, filmPose, filmDebug, onFilmFrame, lookHasDof, setHeightLock, setRig, pickAt });
 
 // ---- V5 / V8 live controls ------------------------------------------------------------
 

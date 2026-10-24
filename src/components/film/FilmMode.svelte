@@ -28,7 +28,8 @@
 		pickAt,
 		onFilmFrame,
 		filmPose,
-		placeCamera
+		placeCamera,
+		setHeightLock
 	} from '$lib/film/filmMode';
 	import { walk, walkEntry, startWalk, stopWalk, setWalkScale, recentreWalk, teleportWalk } from '$lib/film/filmWalk';
 	import { worldRig } from '../../stores/sceneStore';
@@ -477,6 +478,7 @@
 		setLift((held.has('KeyE') ? 1 : 0) - (held.has('KeyQ') ? 1 : 0));
 	}
 	const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyE', 'KeyQ']);
+	const SHUTTER_KEYS = new Set([' ', 'Enter', 'AudioVolumeUp', 'AudioVolumeDown', 'MediaPlayPause', 'Camera']);
 	/** @param {KeyboardEvent} e */
 	function onKey(e) {
 		if (!$film) return;
@@ -486,6 +488,15 @@
 			e.preventDefault();
 			e.stopPropagation();
 			closeFilm();
+			return;
+		}
+		// a Bluetooth shutter (it sends a volume key or Enter) or Space: ● / ❚❚
+		// (Space / Enter on a focused control stay that control's: keyboard users press buttons with them)
+		const onControl = (e.key === ' ' || e.key === 'Enter') && !!t?.closest?.('button, [role="slider"], .film-sheet');
+		if (e.type === 'keydown' && SHUTTER_KEYS.has(e.key) && !onControl && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			e.preventDefault();
+			e.stopPropagation();
+			if (!e.repeat && !viewer) onRecord();
 			return;
 		}
 		if (e.type === 'keydown' && e.code === 'KeyM' && !e.ctrlKey && !e.metaKey) {
@@ -866,6 +877,15 @@
 						{/each}
 					</div>
 				</div>
+				<label class="film-row"
+					><span>Height lock</span><input
+						id="film-height-lock"
+						type="checkbox"
+						class="tp-check"
+						checked={!!$film.heightLock}
+						onchange={(e) => setHeightLock(e.currentTarget.checked)}
+					/></label
+				>
 				<label class="film-row"
 					><span>Smoothing</span><input
 						id="film-smoothing"

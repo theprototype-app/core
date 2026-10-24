@@ -655,6 +655,27 @@ h.run(async () => {
 	await C.page.keyboard.up('KeyW');
 	const k1 = (await pose(C.page)).pos;
 	h.check(Math.hypot(k1[0] - k0[0], k1[2] - k0[2]) > 0.2, `W flies forward (${JSON.stringify(k1.map((v) => +v.toFixed(2)))})`);
+	// a Bluetooth shutter sends a volume key: it is ● / ❚❚ (after the countdown, which is still on)
+	const takeState = () => C.page.evaluate(() => {
+		let u = null;
+		window.__stores.filmRecorder.take.subscribe((v) => (u = v))();
+		return u;
+	});
+	await C.page.locator('#film-look').click({ position: { x: 5, y: 300 } }); // focus off any control
+	await C.page.keyboard.press('AudioVolumeUp');
+	await h.eventually(takeState, (u) => u.state === 'recording', 'a shutter key (volume up) starts recording', 8000);
+	await C.page.waitForTimeout(800);
+	await C.page.keyboard.press('AudioVolumeUp');
+	await h.eventually(takeState, (u) => u.state === 'paused' && !u.saving, 'the shutter key again pauses + commits', 15000);
+	await C.page.evaluate(() => window.__stores.filmRecorder.finishTake());
+	// height lock: rising does nothing while it is on
+	await C.page.evaluate(() => window.__stores.filmMode.setHeightLock(true));
+	const hy = (await pose(C.page)).pos[1];
+	await C.page.keyboard.down('KeyE');
+	await C.page.waitForTimeout(800);
+	await C.page.keyboard.up('KeyE');
+	h.check(Math.abs((await pose(C.page)).pos[1] - hy) < 1e-6, 'height lock keeps the camera at its height');
+	await C.page.evaluate(() => window.__stores.filmMode.setHeightLock(false));
 	await shot(C.page, 'desktop');
 	await h.closePeer(C);
 

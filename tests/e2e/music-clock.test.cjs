@@ -147,6 +147,8 @@ h.run(async () => {
 		page,
 		'const ctx = eng.ensureAudioContext();' +
 			'const hits = [];' +
+			// 75 MU2: the piano roll keeps ONE repeat of its own from boot (startPianoRoll), so count ours on top
+			'const baseRepeats = mc.clockDebug().scheduler.repeats;' +
 			'const cancel = mc.scheduleRepeat(1, (e) => hits.push({ beat: e.beat, at: e.at, now: ctx.currentTime, late: e.late }));' +
 			'const oneShot = [];' +
 			'mc.schedule(2.5, (e) => oneShot.push({ beat: e.beat, at: e.at, now: ctx.currentTime, late: e.late }));' +
@@ -158,7 +160,7 @@ h.run(async () => {
 			'await new Promise((r) => setTimeout(r, 300));' +
 			'const dbg = mc.clockDebug().scheduler;' +
 			'cancel();' +
-			'return { hits, oneShot, firedWhilePlaying, afterStop: hits.length, dbg, rate: ctx.sampleRate }'
+			'return { hits, oneShot, firedWhilePlaying, afterStop: hits.length, dbg, baseRepeats, rate: ctx.sampleRate }'
 	);
 	const beats = sched.hits.map((x) => x.beat);
 	h.check(beats.length >= 3 && beats.every((b, i) => b === i), '4.1 beats fire in order from 0 with no gap and no double fire (' + beats.join(',') + ')');
@@ -175,7 +177,7 @@ h.run(async () => {
 	h.check(worstGap < quantum + 0.001, '4.4 consecutive beats are 500 ms apart ON THE AUDIO CLOCK within one buffer (worst ' + (worstGap * 1000).toFixed(2) + ' ms, bound ' + ((quantum + 0.001) * 1000).toFixed(2) + ' ms)');
 	h.check(sched.oneShot.length === 1 && sched.oneShot[0].beat === 2.5 && !sched.oneShot[0].late, '4.5 a one-shot at beat 2.5 fires exactly once, on time');
 	h.check(sched.afterStop === sched.firedWhilePlaying, '4.6 nothing fires after Stop');
-	h.check(sched.dbg.ticking && sched.dbg.repeats === 1, '4.7 the scheduler ticks on setInterval and keeps the repeat registered');
+	h.check(sched.dbg.ticking && sched.dbg.repeats === sched.baseRepeats + 1, '4.7 the scheduler ticks on setInterval and keeps the repeat registered (' + sched.baseRepeats + ' before ours, ' + sched.dbg.repeats + ' with it)');
 
 	const lateAndRestart = await mc(
 		page,

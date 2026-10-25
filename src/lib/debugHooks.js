@@ -73,6 +73,8 @@ export const DEBUG_HOOKS = [
 	['musicToolbox', () => import('./musicToolbox')],
 	// 75 MU1: Web MIDI input (midiState, handleMidiMessage, parseMidi, midiDebug…)
 	['midiInput', () => import('./midiInput')],
+	// 75 MU2: the piano roll (rollFor, setRoll, pianoRollPick, notesStartingAt, pianoRollDebug…)
+	['pianoRoll', () => import('./pianoRoll')],
 	['micCapture', () => import('./micCapture')],
 	['annotationsHandler', () => import('./annotationsHandler')],
 	['noteHistory', () => import('./noteHistory')],

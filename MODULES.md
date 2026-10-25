@@ -1234,6 +1234,14 @@ const off = api.audio.onMidi((msg) => {      // every parsed message, LOCAL (not
 await api.audio.midi();                      // {status: 'off'|'asking'|'on'|'denied'|'unsupported'|'error', inputs}
 ```
 
+**The piano roll (75 MU2).** Any device whose spec has an `onNote` gets a core *Piano roll*
+(the Inspector's Device section and the Music toolbox open it): a looping clip of 1-8 bars on a
+sixteenth grid, stored in the device's own params under the undeclared key `roll` (a JSON
+string — do not declare a param named `roll`). Every peer plays the clip itself from the shared
+transport, so a clip note reaches your `onNote` as `{note, velocity, at, gate, roll: true}` —
+`at` the wall stamp of its beat, `gate` its length in seconds — on every peer at once, with
+nothing sent. Honour `gate` and a clip plays the lengths it was drawn with.
+
 The rule behind `schedule` and `onNote`: **anything scheduled on the transport must be a
 pure function of its arguments.** Every peer runs the same pattern from the same
 `startedAt`; an impure callback desyncs silently, per peer, with no error anywhere.

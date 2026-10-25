@@ -65,7 +65,7 @@
 	import { setObjectFlag, lightStateOf, recordLightChange, sendLight, allMembers } from '$lib/multiEdit';
 	import { currentHistoryGesture, withHistoryGesture } from '$lib/historyGesture';
 	import { deviceOf, deviceSpec, isDeviceObject, setDeviceFor, previewDeviceParams } from '$lib/audioDevices';
-	import { MUSIC_TOOLBOX_ID, musicToolboxPick } from '$lib/musicToolbox';
+	import { MUSIC_TOOLBOX_ID, musicToolboxPick, openPianoRollOn } from '$lib/musicToolbox';
 	import { openModuleToolbox, moduleToolboxes } from '$lib/moduleToolboxes';
 	// 30 P3: a Module content row selected in the object list (a proxy, not an object)
 	import { moduleSelection } from '$lib/moduleContent';
@@ -3674,6 +3674,12 @@
 						<button id="device-open-toolbox" class="ui-button-quiet" onclick={() => openMusicToolboxOnPrimary()}>
 							Open in Music toolbox
 						</button>
+						{#if typeof deviceSpec(devPrimary.userData.device.kind)?.onNote === 'function'}
+							<!-- 75 MU2: a device that plays notes can play a clip -->
+							<button id="device-open-pianoroll" class="ui-button-quiet" onclick={() => openPianoRollOn(devPrimary.uuid)}>
+								Piano roll
+							</button>
+						{/if}
 					</div>
 					<p class="text-[length:var(--fs-badge)] text-text-faint">Presets and the mixer live in the Music toolbox.</p>
 				</Section>

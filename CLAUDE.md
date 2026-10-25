@@ -2655,6 +2655,18 @@ loadable play content. Everything a user does must be visible to connected peers
   older device would read an off as a second note). An off goes to the device its note-on went to; CC 64 defers offs.
   SDK: `api.audio.onMidi(fn)` (registers, journaled synchronously) + `api.audio.midi()`. Suites: vitest `midiInput`,
   e2e `midi-input` (a faked MIDIAccess init script, two peers + N6 folded/unfolded).
+  MU2 `pianoRoll.js` + `PianoRollEditor.svelte` (toolbox `mod-core-pianoroll`, registered while a kind with an
+  `onNote` exists): the clip IS the device document — the undeclared param `roll`, a JSON string (the drum machine's
+  `pattern` precedent: replicates, saves, undoes, reaches a late joiner with no channel of its own; `normalizeRoll`
+  at every boundary, tuples on the wire). NOTHING CROSSES THE WIRE DURING PLAYBACK: `startPianoRoll` (from
+  `startMusicToolbox`) is ONE repeating sixteenth on the look-ahead scheduler that plays every clip LOCALLY
+  (`noteDevice(..., {replicate: false})`) at `wallForBeat` of its beat, with the length as `gate` — every peer holds
+  the same `startedAt`, so the stamps agree; a `late` sixteenth is skipped. Edits are the knob pattern: a click /
+  key is one `setRoll`, a drag previews (66 ms throttled broadcast) and commits ONE entry with `before`. The grid
+  adds on CLICK, not pointerdown (a finger starting a scroll on a phone makes no click), Enter adds from the
+  keyboard, Delete/arrows are captured on the grid (they would delete / move the OBJECT), and the editor redraws
+  by comparing the stored string per frame (an undo or a peer's write has no store to say so). Suites: vitest
+  `pianoRoll`, e2e `piano-roll` (two peers + a late joiner + N6).
 
 ## UI design system (redesign epic)
 

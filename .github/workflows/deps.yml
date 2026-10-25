@@ -237,9 +237,20 @@ jobs:
         run: |
           gh label create deps-ready --color 0E8A16 --description 'Green; a runtime minor or a Playwright bump waiting for the deps lane' 2>/dev/null || true
           gh pr edit "${{ github.event.pull_request.number }}" --add-label deps-ready
+
+  # its own job: turning auto-merge on needs contents: write, which the gate (it checks out and runs the PR's
+  # code) should not hold. No checkout here; it only runs after a green deps-gate.
+  automerge:
+    needs: [scope, gate]
+    if: needs.scope.outputs.cls == 'auto' && github.base_ref == 'deps'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
       - name: auto-merge
-        if: needs.scope.outputs.cls == 'auto' && github.base_ref == 'deps'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         # waits for whatever the ruleset still wants (pc-battery from the desktop for a runtime patch)
         run: gh pr merge "${{ github.event.pull_request.number }}" --auto --squash

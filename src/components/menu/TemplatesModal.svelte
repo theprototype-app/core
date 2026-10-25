@@ -165,6 +165,11 @@
 		// 33 (L2/L3): a NEW scene — resets the game setup and unloads the scene's modules too
 		void confirmClearScene({ blank: true });
 	}
+	// 64-2d: the built-in 2D starter (made in code — sprite2d/template2d.js), beside Blank scene
+	function pick2d() {
+		templatesModalOpen.set(false);
+		void import('$lib/sprite2d/template2d.js').then((m) => m.open2dTemplate());
+	}
 	/** @param {any} entry */
 	function pickEntry(entry) {
 		// close first (the Sessions Load precedent) — the load path talks through
@@ -381,6 +386,16 @@
 						<Icon name="file-plus" size={24} aria-hidden="true" />
 						<span class="text-sm font-semibold">Blank scene</span>
 						<span class="text-[10px] text-text-faint">Start from nothing</span>
+					</button>
+					<button
+						id="template-2d"
+						class="tpl-card tpl-blank flex flex-col items-center justify-center gap-2 rounded-card border border-dashed border-border-strong p-4 text-text-2"
+						title="A 2D starter: an orthographic camera that follows a walking sprite past three parallax layers (replaces the scene for everyone)"
+						onclick={pick2d}
+					>
+						<Icon name="gamepad-2" size={24} aria-hidden="true" />
+						<span class="text-sm font-semibold">2D scene</span>
+						<span class="text-[10px] text-text-faint">Sprites, layers, a 2D camera</span>
 					</button>
 					{#each shown as entry (entry.slug)}
 						{@render card(entry)}

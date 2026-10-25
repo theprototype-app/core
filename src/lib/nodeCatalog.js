@@ -201,6 +201,31 @@ export const nodeCatalog = [
 					{ key: 'aim', kind: 'range', min: -5, max: 5, step: 0.05 }
 				]
 			},
+			// 64-2d: the 2D camera — a camera OBJECT follows a target in x/y with a dead zone, damping
+			// and optional bounds; z is kept (spriteCore.js follow2dGoal/follow2dStep). LOCAL per peer,
+			// the Camera Rig rule.
+			{
+				type: 'follow2d',
+				label: 'Camera Follow 2D',
+				defaults: { deadW: 1, deadH: 1, ox: 0, oy: 0, damping: 0.15, followX: true, followY: true, bounds: false, minX: -20, maxX: 20, minY: -10, maxY: 10, ppu: 0 },
+				inputs: ['target'],
+				inputLabels: { target: 'target — what to follow' },
+				params: [
+					{ key: 'deadW', kind: 'range', min: 0, max: 20, step: 0.1, label: 'dead zone width' },
+					{ key: 'deadH', kind: 'range', min: 0, max: 20, step: 0.1, label: 'dead zone height' },
+					{ key: 'ox', kind: 'range', min: -20, max: 20, step: 0.1, label: 'offset x' },
+					{ key: 'oy', kind: 'range', min: -20, max: 20, step: 0.1, label: 'offset y' },
+					{ key: 'damping', kind: 'range', min: 0, max: 2, step: 0.05 },
+					{ key: 'followX', kind: 'toggle', label: 'follow x' },
+					{ key: 'followY', kind: 'toggle', label: 'follow y' },
+					{ key: 'bounds', kind: 'toggle', label: 'keep inside bounds' },
+					{ key: 'minX', kind: 'number', step: 0.5 },
+					{ key: 'maxX', kind: 'number', step: 0.5 },
+					{ key: 'minY', kind: 'number', step: 0.5 },
+					{ key: 'maxY', kind: 'number', step: 0.5 },
+					{ key: 'ppu', kind: 'number', step: 1, label: 'pixel snap (px/m, 0 = off)' }
+				]
+			},
 			// L-C: switch a LOOK on or off. The camera input picks WHOSE look (empty = the
 			// scene's); the switch is a per-peer runtime override, not an edit to the
 			// authored document, so it needs no message of its own — the trigger already
@@ -1365,6 +1390,7 @@ export const animationTypes = [
 	'followpath', 'wander', 'orientvelocity', 'bodywave', // 40 F15 (motion/motionNodes.js)
 	'lookat', 'setcolor', 'visibility', 'setuniform',
 	'camerarig', // 37 (R8)
+	'follow2d', // 64-2d
 	'deviceparam', 'notetrigger' // 23-B3
 ];
 

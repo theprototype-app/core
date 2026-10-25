@@ -163,6 +163,7 @@ const INPUT = {
 	proximity: { a: 'object', b: 'object' },
 	lookat: { target: 'object' },
 	camerarig: { target: 'object', offset: 'vector3' }, // 37 (R8)
+	follow2d: { target: 'object' }, // 64-2d
 	rotor: { on: 'boolean' }, // 36-fb F25
 	flowfloat: { path: 'object' }, // 36-fb F24
 	followpath: { path: 'object' }, // 40 F15

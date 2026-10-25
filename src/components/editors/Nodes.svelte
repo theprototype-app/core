@@ -326,6 +326,7 @@
 		possessnode: AnimationNode,
 		camerafollow: AnimationNode,
 		camerarig: AnimationNode, // 37 (R8)
+		follow2d: AnimationNode, // 64-2d
 		movespeed: AnimationNode,
 		moveinput: MoveInputNode,
 		// 34 R2 (T3): every generated kit node renders from its spec params (the card a node

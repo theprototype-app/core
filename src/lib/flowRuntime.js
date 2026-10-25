@@ -103,6 +103,7 @@ import {
 } from './motion/motionNodes.js';
 // 37 (R6): variadic math/gate + the Switcher multiplexer (a leaf, no imports)
 import { rigGoal, rigStep, validVec } from './cameraRig.js'; // 37 (R8): a three leaf
+import { follow2dGoal, follow2dStep, snapToPixel } from './sprite2d/spriteCore.js'; // 64-2d: an import-free leaf
 import { INPUT_LETTERS, socketCount, opFolds, foldMath, foldGate, switcherItems, switcherHandle, switcherIndexOf, switcherRadioIndex } from './variadicNodes.js';
 
 // H3: inputRuntime is reached via a PRIMED dynamic import (the moduleSDK
@@ -422,6 +423,9 @@ let presenceRef = null;
  * on every keypress (the physics-not-running toast precedent above) */
 let lookSilentToasted = false;
 /** @type {any} */ let animImportsRef = null;
+/** 64-2d: the sprite runtime (flipbook clips), PRIMED like animatedImports — Play Animation
+ * routes a sprite's clip name to it before the imported-clip branch. @type {any} */
+let spriteRef = null;
 /** 21-E6: possess.js, primed. It imports history (recordTransform) AND this module
  * (suspendAnimation), so a static edge closes the cycle twice over. @type {any} */
 let possessRef = null;
@@ -600,6 +604,14 @@ function updatePlayAnim(pairs, ctx) {
 		// latency out of phase.
 		const at = triggerStampFor(node.id, ctx) ?? logicNow();
 
+		// 64-2d: a sprite's FLIPBOOK clip — local on every peer from the same stamp, like the rest
+		// (an empty clip field on a sprite means its autoplay / first clip)
+		const spriteObject = spriteRef ? sceneObjects?.getObjectByProperty('uuid', uuid) : null;
+		const spriteClip = spriteObject ? clip || spriteRef.defaultSpriteClip(spriteObject) : '';
+		if (spriteClip && spriteRef.hasSpriteClip(spriteObject, spriteClip)) {
+			spriteRef.playSpriteClip(spriteObject, spriteClip, { action, at, speed });
+			continue;
+		}
 		// an imported clip NAME funnels to the mixer path, which is already
 		// replicated — one node drives both animation systems
 		const imported = animImportsRef?.clipInfo?.(uuid) ?? [];
@@ -3851,6 +3863,8 @@ function applyAnimation(object, base, anim, time, ctx) {
 		if (target) object.lookAt(target);
 	} else if (anim.type === 'camerarig') {
 		applyCameraRig(object, anim, data);
+	} else if (anim.type === 'follow2d') {
+		applyFollow2d(object, anim, data);
 	} else if (anim.type === 'setcolor') {
 		// drive the material color from a color input, LOCAL per peer (no spam) — 134
 		if (object.material?.color && typeof data.color === 'string') object.material.color.set(data.color);
@@ -3984,6 +3998,72 @@ function pruneCameraRigs(/** @type {Map<string, any>} */ active) {
 		const [id, uuid] = key.split('|');
 		if (!(active.get(uuid) ?? []).some((/** @type {any} */ a) => a.id === id && a.type === 'camerarig')) cameraRigState.delete(key);
 	}
+	// 64-2d: the same for Camera Follow 2D
+	for (const key of follow2dState.keys()) {
+		const [id, uuid] = key.split('|');
+		if (!(active.get(uuid) ?? []).some((/** @type {any} */ a) => a.id === id && a.type === 'follow2d')) follow2dState.delete(key);
+	}
+}
+
+// --- 64-2d: Camera Follow 2D — a camera OBJECT follows a target in x/y ---------------------------
+/** the smoothed world xy per node+camera (damping carries across the per-frame base restore) @type {Map<string, {x: number, y: number, t: number}>} */
+const follow2dState = new Map();
+
+/** half the view a camera object shows at the target's depth (the bounds keep THIS inside) @param {any} spec @param {number} depth */
+function viewHalf2d(spec, depth) {
+	const [w, h] = String(spec?.aspect ?? '16:9').split(':').map(Number);
+	const aspect = w > 0 && h > 0 ? w / h : 16 / 9;
+	const hh = spec?.kind === 'orthographic' ? Math.max(0.01, num(spec.orthoSize ?? 5)) : Math.tan(((num(spec?.fov ?? 50) * Math.PI) / 180) / 2) * Math.max(0.01, depth);
+	return { hw: hh * aspect, hh };
+}
+
+/**
+ * Move a camera MARKER after a target in x/y (spriteCore follow2dGoal + follow2dStep): dead zone,
+ * damping, offset, bounds, pixel snap; its z and orientation stay authored. LOCAL per peer and
+ * never sent — the Camera Rig rule (every peer runs the same graph against the same target pose).
+ * @param {any} object @param {any} anim @param {any} data
+ */
+function applyFollow2d(object, anim, data) {
+	if (!object?.userData?.camera) {
+		if (!cameraRigWarned.has(anim.id)) {
+			cameraRigWarned.add(anim.id);
+			showToast('Camera Follow 2D moves camera objects only — wire it into an Object Selector that picks a camera.');
+		}
+		return;
+	}
+	/** @type {THREE.Vector3 | null} */
+	let target = null;
+	const vec = validVec(data.target);
+	if (vec) target = new THREE.Vector3().fromArray(vec);
+	else if (typeof data.target === 'string' && data.target && data.target !== object.uuid) {
+		const other = sceneObjects?.getObjectByProperty('uuid', data.target);
+		if (other) {
+			other.updateWorldMatrix(true, false);
+			target = other.getWorldPosition(new THREE.Vector3());
+		}
+	}
+	if (!target) return;
+	const key = anim.id + '|' + object.uuid;
+	const now = performance.now() / 1000;
+	object.updateWorldMatrix(true, false);
+	const base = object.getWorldPosition(new THREE.Vector3()); // authored (the restore loop just put it back)
+	let state = follow2dState.get(key);
+	if (!state) {
+		state = { x: base.x, y: base.y, t: now };
+		follow2dState.set(key, state);
+	}
+	const opts = data.bounds ? data : { ...data, minX: 0, maxX: 0, minY: 0, maxY: 0 };
+	const goal = follow2dGoal(state, target, opts, viewHalf2d(object.userData.camera, Math.abs(base.z - target.z)));
+	const next = follow2dStep(state, goal, num(data.damping ?? 0.15), now - state.t);
+	state.x = next.x;
+	state.y = next.y;
+	state.t = now;
+	const ppu = num(data.ppu ?? 0);
+	const world = new THREE.Vector3(ppu > 0 ? snapToPixel(next.x, ppu) : next.x, ppu > 0 ? snapToPixel(next.y, ppu) : next.y, base.z);
+	if (object.parent) {
+		object.parent.updateWorldMatrix(true, false);
+		object.position.copy(object.parent.worldToLocal(world));
+	} else object.position.copy(world);
 }
 
 /**
@@ -4963,6 +5043,11 @@ export function startFlowRuntime() {
 	import('./scenePost').then((m) => (postRef = m));
 	import('./cameraPreview').then((m) => (previewRef = m));
 	import('./animatedImports').then((m) => (animImportsRef = m));
+	// 64-2d: flipbook clips for Play Animation; their events + ends pulse the marker/finished nodes
+	import('./sprite2d/spriteRuntime.js').then((m) => {
+		spriteRef = m;
+		m.setSpriteEventSink({ marker: fireAnimMarker, finished: fireAnimFinished });
+	});
 	// 21-E6: possess, for the Possess Object / Camera Follow nodes (see the TDZ note
 	// beside its ref above)
 	import('./possess').then((m) => (possessRef = m));

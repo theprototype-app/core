@@ -43,8 +43,22 @@
 			controlsMounted: !!controlsRef,
 			cameraParent: cameraRef?.parent?.name || cameraRef?.parent?.type || null,
 			defaultCamera: (activeCamera as any)?.current?.type ?? null,
-			defaultIsMine: (activeCamera as any)?.current === cameraRef
+			defaultIsMine: (activeCamera as any)?.current === cameraRef,
+			frustum: cameraRef?.isOrthographicCamera ? [cameraRef.left, cameraRef.right, cameraRef.top, cameraRef.bottom] : null
 		});
+	});
+
+	// 64-2d: an orthographic camera's frustum is OURS (`manual` below) — threlte otherwise resets
+	// it to the canvas size in PIXELS on mount and every resize, so a 5 m ortho size drew the
+	// scene at 1 m per pixel
+	$effect(() => {
+		const camera = cameraRef;
+		if (!camera?.isOrthographicCamera) return;
+		camera.left = -halfH * ratio;
+		camera.right = halfH * ratio;
+		camera.top = halfH;
+		camera.bottom = -halfH;
+		camera.updateProjectionMatrix();
 	});
 
 	// pose sync, both directions
@@ -93,6 +107,7 @@
 	{#if spec.kind === 'orthographic'}
 		<T.OrthographicCamera
 			makeDefault
+			manual
 			left={-halfH * ratio}
 			right={halfH * ratio}
 			top={halfH}

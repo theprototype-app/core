@@ -1696,7 +1696,7 @@ async function applySessionNow(payload, opts, job) {
 
 // ---- proposal flow (50.3) --------------------------------------------------
 
-/** @type {{payload: any, opts?: any, accepts: Set<string>, needed: string[], beforeApply?: () => void} | null} */
+/** @type {{payload: any, opts?: any, accepts: Set<string>, needed: string[], beforeApply?: () => void, afterApply?: () => void} | null} */
 let pendingProposal = null;
 
 /** Load a session — solo applies immediately, with peers it becomes a proposal
@@ -1786,17 +1786,19 @@ async function confirmSceneSize(payload) {
 }
 
 /** @param {any} payload @returns {Promise<boolean>} see the block comment above
- * @param {{backup?: boolean, quiet?: boolean, job?: any}} [opts] applySession's, carried through a proposal too
+ * @param {{backup?: boolean, quiet?: boolean, job?: any, afterApply?: () => void}} [opts] applySession's, carried through a proposal too
  * (36 B14: a checkpoint restore cuts its own backup into the timeline, so it asks for none here).
  * 36 F20: `job` = the claim the click opened (absent = claimed here); every await below is
- * followed by `isLive(job)` — a click that a newer load superseded never applies */
+ * followed by `isLive(job)` — a click that a newer load superseded never applies.
+ * 64-2d: `afterApply` runs once the payload REALLY applied here — at once when alone, after
+ * every peer accepted when it went out as a proposal (the return value is false then) */
 export async function requestLoadPayload(payload, opts = {}) {
 	if (!payload) {
 		if (opts.job) endLoad(opts.job);
 		return false;
 	}
 	const job = opts.job ?? claimLoad(payload.name ?? 'scene');
-	const { job: _claim, ...applyOpts } = opts;
+	const { job: _claim, afterApply, ...applyOpts } = opts;
 	/** @param {boolean} go */
 	const stillGo = (go) => {
 		if (go && isLive(job)) return true;
@@ -1841,11 +1843,13 @@ export async function requestLoadPayload(payload, opts = {}) {
 	if (!stillGo(true)) return false;
 	if (!connected.length) {
 		moduleSwitch.run();
-		return await applySession(payload, { ...applyOpts, job });
+		const applied = await applySession(payload, { ...applyOpts, job });
+		if (applied) afterApply?.();
+		return applied;
 	}
 	// a proposal applies later, through its own load (acceptance runs applySession)
 	endLoad(job);
-	pendingProposal = { payload, opts: applyOpts, accepts: new Set(), needed: connected, beforeApply: moduleSwitch.run };
+	pendingProposal = { payload, opts: applyOpts, accepts: new Set(), needed: connected, beforeApply: moduleSwitch.run, afterApply };
 	peer.send({
 		type: 'sessionproposal',
 		name: payload.name,
@@ -2762,6 +2766,6 @@ export function applySessionAnswer(data) {
 		const proposal = pendingProposal;
 		pendingProposal = null;
 		proposal.beforeApply?.();
-		applySession(proposal.payload, proposal.opts);
+		applySession(proposal.payload, proposal.opts).then((applied) => applied && proposal.afterApply?.());
 	}
 }

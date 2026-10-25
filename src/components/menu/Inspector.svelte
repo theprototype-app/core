@@ -35,6 +35,8 @@
 	import FluidInteractionRow from '../sim/FluidInteractionRow.svelte'; // 36-fb F23
 	import FlowPathSection from '../sim/FlowPathSection.svelte'; // 36-fb F24
 	import FluidTankSection from '../sim/FluidTankSection.svelte'; // 36-sim U2b
+	import SpriteSection from '../sprite2d/SpriteSection.svelte'; // 64-2d
+	import Layer2dSection from '../sprite2d/Layer2dSection.svelte'; // 64-2d
 	import DragRow from '../ui/DragRow.svelte';
 	import FieldClip from '../ui/FieldClip.svelte'; // 43 J3
 	import FieldMenuHost from '../ui/FieldMenuHost.svelte'; // 43 J3
@@ -4303,6 +4305,8 @@
 			{#if $selectedObject.userData?.fluid}<FluidTankSection object={$selectedObject} />{/if}<!-- 36-sim U2b -->
 			{#if $selectedObject.userData?.fluidEmitter}<FluidEmitterSection object={$selectedObject} />{/if}<!-- 36-fb F23 -->
 			{#if $selectedObject.userData?.flowPath}<FlowPathSection object={$selectedObject} />{/if}<!-- 36-fb F24 -->
+			{#if $selectedObject.isMesh && $selectedObject.userData?.sprite}<SpriteSection object={$selectedObject} />{/if}<!-- 64-2d -->
+			{#if $selectedObject.isGroup}<Layer2dSection object={$selectedObject} />{/if}<!-- 64-2d -->
 			{#if !$selectedObject.isLight}
 				<Section variant="panel" label="Physics" clip={{ count: () => insTargets.length, fans: true }}>
 					{#if multiCount}

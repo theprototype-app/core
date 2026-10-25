@@ -63,6 +63,12 @@ export const primitivesCatalog = [
 		items: [{ label: 'Fluid tank', command: '/create FluidTank 1.2 0.8 0.8' }]
 	},
 	{
+		// 64-2d: a sprite (image / sprite sheet on a plane — sprite2d/spriteCore.js); 2D layers are
+		// groups made one in the Inspector, and the 2D scene template sets both up
+		group: '2D',
+		items: [{ label: 'Sprite', command: '/create Sprite' }]
+	},
+	{
 		// 16-P5: camera OBJECTS are marker meshes carrying userData.camera, so they
 		// create / replicate / undo through the same /create path as any primitive
 		group: 'Camera',

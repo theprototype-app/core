@@ -458,6 +458,32 @@ export async function downscaleImage(file, maxSize) {
 }
 
 /**
+ * 64-2d: encode an image LOSSLESSLY for pixel art — PNG, never webp/jpeg, and image smoothing
+ * OFF when it has to shrink (an integer step down where it can, so a sheet's grid survives).
+ * Sprites go through this (setObjectsTexture `lossless`): a webp re-encode smears every edge.
+ * @param {File | Blob} file @param {number} maxSize
+ */
+export async function encodeLossless(file, maxSize) {
+	const bitmap = await createImageBitmap(file);
+	const side = Math.max(bitmap.width, bitmap.height);
+	// an integer divisor keeps whole pixels; only a huge odd size falls back to a plain ratio
+	const div = side > maxSize ? Math.ceil(side / maxSize) : 1;
+	const canvas = document.createElement('canvas');
+	canvas.width = Math.max(1, Math.floor(bitmap.width / div));
+	canvas.height = Math.max(1, Math.floor(bitmap.height / div));
+	const ctx = canvas.getContext('2d');
+	if (ctx) {
+		ctx.imageSmoothingEnabled = false;
+		ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+	}
+	bitmap.close?.();
+	return canvas.toDataURL('image/png');
+}
+
+/** 64-2d: the longest side a LOSSLESS (sprite) texture keeps — a 64-frame sheet of 32 px is 2048 */
+export const SPRITE_TEXTURE_MAX_SIDE = 2048;
+
+/**
  * 40-image (F13, the user's image-large report): the texture is DOWNSCALED to 1024 px
  * whatever comes in, so refusing a big file at 8 MB refused photos the path was already
  * built to shrink. The only limit left is a decode-safety one — a file this size is not
@@ -477,7 +503,9 @@ export const TEXTURE_MAX_SIDE = 1024;
  * UV2: `slot` picks the material slot, so a multi-material mesh is no longer
  * refused — it used to toast "not supported yet" and skip.
  * 40-image: `opts.source` = the content hash of the Explorer image `file` holds (see applyMap).
- * @param {string[]} uuids @param {File | Blob} file @param {number} [slot] @param {{source?: string | null}} [opts]
+ * 64-2d: `opts.lossless` = PNG at up to 2048 px with no smoothing (encodeLossless); absent = on
+ * when any target is a sprite.
+ * @param {string[]} uuids @param {File | Blob} file @param {number} [slot] @param {{source?: string | null, lossless?: boolean}} [opts]
  * @returns {Promise<number>} how many were textured
  */
 export async function setObjectsTexture(uuids, file, slot = 0, opts = {}) {
@@ -494,7 +522,9 @@ export async function setObjectsTexture(uuids, file, slot = 0, opts = {}) {
 	/** @type {string} */
 	let dataURL;
 	try {
-		dataURL = await downscaleImage(file, TEXTURE_MAX_SIDE);
+		// a SPRITE target is lossless whichever path set it (the map picker, an Explorer drop)
+		const lossless = opts.lossless ?? uuids.some((uuid) => !!objectOf(uuid)?.userData?.sprite);
+		dataURL = lossless ? await encodeLossless(file, SPRITE_TEXTURE_MAX_SIDE) : await downscaleImage(file, TEXTURE_MAX_SIDE);
 	} catch (error) {
 		console.log(error);
 		showToast('Could not read the image file');
@@ -527,7 +557,7 @@ export async function setObjectsTexture(uuids, file, slot = 0, opts = {}) {
 }
 
 /** Set an image file as the object's texture and replicate
- * @param {string} uuid @param {File | Blob} file @param {number} [slot] @param {{source?: string | null}} [opts] */
+ * @param {string} uuid @param {File | Blob} file @param {number} [slot] @param {{source?: string | null, lossless?: boolean}} [opts] */
 export async function setObjectTexture(uuid, file, slot = 0, opts = {}) {
 	await setObjectsTexture([uuid], file, slot, opts);
 }

@@ -329,6 +329,10 @@ export const DEBUG_HOOKS = [
 	['sequences', () => import('./sequences')],
 	['sequenceSync', () => import('./sequenceSync')],
 	['sequencePlayer', () => import('./sequencePlayer')],
+	// 77: the cut's import path and in-page test clips (cutState() rides sequencePlayer)
+	['cutImport', () => import('./cut/clipImport.js')],
+	['cutTestClips', () => import('./cut/testClips.js')],
+	['cutCore', () => import('./cutCore')],
 	['idb', () => import('./idb')],
 	['hudKinds', () => import('./hudKinds')],
 	['hudImages', () => import('./hudImages')],

@@ -537,11 +537,11 @@ h.run(async () => {
 		.first()
 		.click({ position: { x: 5, y: 5 } });
 	await pa.locator('.tl-item[data-item-id="' + itemsOf(st.all[id], 'event')[0].id + '"]').click();
-	await pa.keyboard.press('k'); // K: add on the selected track at the playhead
+	await pa.keyboard.press('n'); // N: add on the selected track at the playhead (77: K is the shuttle's stop)
 	await h.eventually(
 		() => seqs(B.page),
 		(s) => s.all[id].tracks.reduce((n, t) => n + t.items.length, 0) === countA + 1,
-		'K adds an item and B sees it'
+		'N adds an item and B sees it'
 	);
 	await pa.keyboard.press('Control+z');
 	await h.eventually(

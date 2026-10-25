@@ -118,7 +118,7 @@ export function setSequence(id, patch, opts = {}) {
 }
 
 /** Edit one sequence through a function of its current document. @param {string} id @param {(seq: any) => any} fn */
-function editSequence(id, fn) {
+export function editSequence(id, fn) {
 	const seq = sequenceOf(id);
 	if (!seq) return null;
 	return setSequence(id, fn(structuredClone(seq)), { whole: true });
@@ -237,12 +237,17 @@ export function addItem(id, trackId, item) {
 export function updateItem(id, itemId, patch) {
 	return editSequence(id, (s) => ({
 		...s,
-		tracks: s.tracks.map((/** @type {any} */ tr) => ({
-			...tr,
-			items: tr.items.map((/** @type {any} */ it) =>
-				it.id === itemId ? normalizeItem(tr.kind, { ...it, ...patch, id: it.id }) : it
-			)
-		}))
+		// 77: a newer peer's (opaque) track is never re-shaped by our normalize
+		tracks: s.tracks.map((/** @type {any} */ tr) =>
+			!isTrackKind(tr.kind)
+				? tr
+				: {
+						...tr,
+						items: tr.items.map((/** @type {any} */ it) =>
+							it.id === itemId ? normalizeItem(tr.kind, { ...it, ...patch, id: it.id }) : it
+						)
+					}
+		)
 	}));
 }
 
@@ -253,7 +258,7 @@ export function updateItem(id, itemId, patch) {
 export function placeItems(id, moves) {
 	return editSequence(id, (s) => ({
 		...s,
-		tracks: s.tracks.map((/** @type {any} */ tr) => ({
+		tracks: s.tracks.map((/** @type {any} */ tr) => !isTrackKind(tr.kind) ? tr : ({
 			...tr,
 			items: tr.items.map((/** @type {any} */ it) => {
 				const m = moves[it.id];

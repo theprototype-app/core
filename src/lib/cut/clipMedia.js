@@ -315,6 +315,62 @@ export class ClipDecoder {
 	}
 }
 
+/** hash|t -> poster promise @type {Map<string, Promise<string|null>>} */
+const posters = new Map();
+
+/**
+ * A small still of a clip at source time t, as a JPEG data URL (the Timeline's item picture).
+ * One per hash and tenth of a second; null when the clip cannot be decoded.
+ * @param {string} hash @param {'video'|'image'} media @param {number} [t] @param {number} [height]
+ */
+export function clipPoster(hash, media, t = 0, height = 48) {
+	const key = `${hash}|${media}|${Math.round(t * 10)}|${height}`;
+	let p = posters.get(key);
+	if (!p) {
+		p = (async () => {
+			try {
+				if (media === 'image') {
+					const blob = await clipBlob(hash);
+					if (!blob) return null;
+					const bmp = await createImageBitmap(blob);
+					return toPoster(bmp, bmp.width, bmp.height, height);
+				}
+				const s = await openClip(hash);
+				if (s.kind === 'mb') {
+					const mb = await mediabunny();
+					const sink = new mb.CanvasSink(s.track, { height });
+					const frame = await sink.getCanvas(Math.max(0, Math.min(t, s.duration - 1e-3)));
+					return frame ? toPoster(frame.canvas, frame.canvas.width, frame.canvas.height, height) : null;
+				}
+				if (s.kind === 'element') {
+					const d = new ClipDecoder(hash, 'video');
+					await d.ready;
+					d.want(t);
+					await d.seekElement(t);
+					const c = /** @type {HTMLCanvasElement} */ (d.canvas);
+					const url = toPoster(c, c.width, c.height, height);
+					d.dispose();
+					return url;
+				}
+			} catch (error) {
+				console.warn('clip poster:', error);
+			}
+			return null;
+		})();
+		posters.set(key, p);
+	}
+	return p;
+}
+
+/** @param {CanvasImageSource} src @param {number} w @param {number} h @param {number} height */
+function toPoster(src, w, h, height) {
+	const c = document.createElement('canvas');
+	c.height = height;
+	c.width = Math.max(2, Math.round((w / Math.max(1, h)) * height));
+	c.getContext('2d')?.drawImage(src, 0, 0, c.width, c.height);
+	return c.toDataURL('image/jpeg', 0.7);
+}
+
 /** item id -> decoder @type {Map<string, ClipDecoder>} */
 const decoders = new Map();
 
@@ -351,6 +407,7 @@ export function disposeClips() {
 	decoders.clear();
 	sources.clear();
 	blobs.clear();
+	posters.clear();
 }
 
 /** test / debug view */

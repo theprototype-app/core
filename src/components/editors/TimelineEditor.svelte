@@ -15,9 +15,17 @@
 	// playhead and the frame grid; Alt frees it), the right edge resizes, double-click an
 	// empty lane adds an item there. One undo step per drag (beginSequenceGesture).
 	// Keys (on the editor): Space play/pause, ←/→ nudge the selection a frame (Shift ×10)
-	// or step the playhead, Home/End, K adds on the selected track at the playhead,
+	// or step the playhead, Home/End, N adds on the selected track at the playhead,
 	// Delete removes, Esc cancels a drag or clears the selection, Ctrl+A selects all.
 	// Wheel zooms, Shift+wheel pans. The ruler scrubs.
+	//
+	// 77 THE CUT (K1-K5): VIDEO tracks (clips + stills, decoded in the lazy cut chunk) and
+	// TITLE tracks; S splits at the playhead (the selection, or everything under it), Shift+Del
+	// ripple-deletes (closes the gap), M drops / lifts a marker, ↑/↓ jump to the previous / next
+	// edit or marker, J/K/L shuttle (L forward 1x-2x-4x, J back, K stops — where K used to add;
+	// that is N now). The LEFT edge trims (the source follows), Alt+Shift drag slips a clip.
+	// Phone: one finger along an empty lane pans, two pinch the zoom, the bar carries split /
+	// ripple / marker / jump buttons. A track kind from a NEWER build draws read-only.
 	import { untrack } from 'svelte';
 	import { get } from 'svelte/store';
 	import Icon from '../ui/Icon.svelte';
@@ -65,7 +73,8 @@
 		updateItem,
 		placeItems,
 		removeItems,
-		findItem
+		findItem,
+		editSequence
 	} from '$lib/sequences';
 	import {
 		beginSequenceGesture,
@@ -91,8 +100,20 @@
 		snapTargets,
 		contentEnd,
 		MIN_ITEM,
-		clamp
+		clamp,
+		isTrackKind
 	} from '$lib/sequenceCore';
+	import {
+		splitAt,
+		rippleDelete,
+		trimItem,
+		slipItem,
+		sourceRate,
+		hasSource,
+		addMarker,
+		removeMarker,
+		nextStop
+	} from '$lib/cutCore';
 	import { listCameraObjects } from '$lib/cameraObjects';
 	import { animations, clipList } from '$lib/animationPreview';
 	import { animatedObjects, clipInfo } from '$lib/animatedImports';
@@ -236,7 +257,10 @@
 	const playing = $derived(!!transport?.playing && transport?.mode === 'preview');
 	const runningGame = $derived(!!transport?.playing && transport?.mode === 'game');
 	const selection = $derived($sequenceSelection as string[]);
-	const oneSel: any = $derived(seq && selection.length === 1 ? findItem(seq, selection[0]) : null);
+	const oneSel: any = $derived.by(() => {
+		const hit = seq && selection.length === 1 ? findItem(seq, selection[0]) : null;
+		return hit && isTrackKind(hit.track.kind) ? hit : null;
+	});
 
 	// keep the store pointing at a real sequence (a peer deleted ours, a load replaced them)
 	$effect(() => {
@@ -250,6 +274,7 @@
 	$effect(() => {
 		if (!$timelineClose) return;
 		untrack(() => {
+			stopShuttle();
 			stopAllSequences((run: any) => run.mode === 'preview');
 			releaseScrub();
 		});
@@ -352,6 +377,11 @@
 		return [{ value: '', name: 'default clip' }, ...[...names].map((n) => ({ value: n, name: n }))];
 	}
 	const audioItems = $derived(($explorerItems as any[]).filter((i) => i.kind === 'audio'));
+	const clipLibrary = $derived(
+		($explorerItems as any[]).filter((i) => i.kind === 'video' || i.kind === 'image')
+	);
+	const kindIcon = (kind: string) => KIND_ICON[kind] ?? 'puzzle';
+	const kindColor = (kind: string) => KIND_COLOR[kind] ?? 'var(--text-faint)';
 
 	function itemLabel(kind: string, item: any) {
 		if (kind === 'camera') {
@@ -363,7 +393,9 @@
 				? `${objectName(item.target)} · ${item.clip || 'default'}`
 				: 'choose an object';
 		if (kind === 'audio') return item.name || (item.sound ? 'sound' : 'choose a sound');
-		return item.name;
+		if (kind === 'video') return item.name || (item.src ? 'clip' : 'choose a clip');
+		if (kind === 'title') return item.text || item.sub || 'title';
+		return item.name ?? '';
 	}
 
 	// ---- authoring ----------------------------------------------------------------------
@@ -404,31 +436,189 @@
 				item.name = sound.name;
 				sendAsset(sound.hash);
 			} else showToast('Import an audio file into the Explorer, then pick it here');
+		} else if (track.kind === 'video') {
+			const clip = clipLibrary[0];
+			if (clip) {
+				item.src = clip.hash;
+				item.name = clip.name;
+				item.media = clip.kind === 'image' ? 'image' : 'video';
+				sendAsset(clip.hash);
+			} else showToast('Import a clip (Import clip… beside the item, or drop a video on the lane)');
+		} else if (track.kind === 'title') {
+			item.text = 'Title';
+			item.preset = 'title';
 		} else {
 			const n = track.items.length + 1;
 			item.name = `event ${n}`;
 		}
 		const id = addItem(seqId, track.id, item);
 		if (id) sequenceSelection.set([id]);
+		if (id && item.media === 'video') probeLength(id, item.src);
 		return id;
+	}
+	/** a new clip takes its real length once the file is probed (the lazy cut chunk) */
+	async function probeLength(itemId: string, hash: string) {
+		const { clipFacts } = await import('$lib/cut/clipMedia.js');
+		const f = await clipFacts(hash);
+		const id = seqId;
+		const hit = id ? findItem(($sequences as any)[id], itemId) : null;
+		if (!id || !hit || hit.item.src !== hash || !f.ok || !(f.duration > 0)) return;
+		updateItem(id, itemId, { srcDur: f.duration, dur: f.duration });
+	}
+	/** a video file dropped on a video lane: imported through THE clip path, placed at the drop */
+	async function dropClips(e: DragEvent, track: any) {
+		const files = [...(e.dataTransfer?.files ?? [])];
+		const explorer = e.dataTransfer?.getData('application/x-explorer-item');
+		if (!seqId || !seq || (!files.length && !explorer)) return;
+		e.preventDefault();
+		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+		let t = Math.max(0, tOf(e.clientX - rect.left));
+		const id = seqId;
+		if (explorer) {
+			try {
+				const p = JSON.parse(explorer);
+				const list = Array.isArray(p.items) ? p.items : [p];
+				for (const x of list) {
+					const lib = clipLibrary.find((c: any) => c.hash === x.hash || c.id === x.id);
+					if (!lib) continue;
+					sendAsset(lib.hash);
+					const media = lib.kind === 'image' ? 'image' : 'video';
+					const itemId = addItem(id, track.id, { t, src: lib.hash, name: lib.name, media });
+					if (itemId && media === 'video') probeLength(itemId, lib.hash);
+					t += 4;
+				}
+			} catch {
+				/* not an Explorer drag */
+			}
+			return;
+		}
+		const { importClip } = await import('$lib/cut/clipImport.js');
+		for (const file of files) {
+			const r = await importClip(file, file.name);
+			if (!r.ok) {
+				showToast(r.error ?? `${file.name} could not be imported`);
+				continue;
+			}
+			if (r.warn) showToast(r.warn);
+			const dur = r.media === 'video' && (r.duration ?? 0) > 0 ? r.duration! : 4;
+			const itemId = addItem(id, track.id, {
+				t,
+				dur,
+				src: r.item.hash,
+				name: r.item.name ?? file.name,
+				media: r.media,
+				srcDur: r.media === 'video' ? (r.duration ?? 0) : 0
+			});
+			if (itemId) sequenceSelection.set([itemId]);
+			t += dur;
+		}
 	}
 	function deleteSelection() {
 		if (!seqId || !selection.length) return;
 		removeItems(seqId, selection);
 	}
 
-	// ---- transport ----------------------------------------------------------------------
-	function togglePlay() {
+	// ---- 77 K5: the cut's edits (pure maths in cutCore, ONE write each) ----------------------
+	/** S: split the selection under the playhead, or — nothing selected — everything under it */
+	function splitHere() {
 		if (!seqId || !seq) return;
-		if (playing) {
-			stopSequence(seqId, { restore: false }); // pause: the playhead parks where it is
+		const t = playhead;
+		const only = selection.length ? selection : undefined;
+		if (!splitAt(seq, t, only).created.length) {
+			showToast(
+				only ? 'The playhead is not inside the selected items' : 'Nothing under the playhead to split'
+			);
 			return;
 		}
+		let created: string[] = [];
+		editSequence(seqId, (s: any) => {
+			const r = splitAt(s, t, only);
+			created = r.created;
+			return r.doc;
+		});
+		if (only) sequenceSelection.set(created);
+	}
+	/** Shift+Del: remove the selection and close the gaps on its tracks */
+	function rippleSelection() {
+		if (!seqId || !selection.length) return;
+		const ids = [...selection];
+		sequenceSelection.set([]);
+		editSequence(seqId, (s: any) => rippleDelete(s, ids));
+	}
+	/** M: a marker at the playhead — or, on one already (half a frame), lift it */
+	function toggleMarker() {
+		if (!seqId || !seq) return;
+		const near = (seq.markers ?? []).find((m: any) => Math.abs(m.t - playhead) < 0.5 / seq.fps);
+		const t = playhead;
+		editSequence(seqId, (s: any) => (near ? removeMarker(s, near.id) : addMarker(s, t).doc));
+	}
+	/** ↑ / ↓: the previous / next edit point or marker */
+	function jump(dir: 1 | -1) {
+		if (!seq) return;
+		scrubTo(nextStop(seq, playhead, dir), true);
+	}
+
+	// ---- 77 K5: J / K / L — the shuttle. L at 1x is the ordinary preview (with sound); every
+	// other rate scrubs the picture per frame, silent, the way an editor's shuttle does --------
+	let shuttle = $state(0);
+	let shuttleRaf = 0;
+	function stopShuttle() {
+		if (shuttleRaf) cancelAnimationFrame(shuttleRaf);
+		shuttleRaf = 0;
+		shuttle = 0;
+	}
+	function setShuttle(rate: number) {
+		stopShuttle();
+		if (!seqId || !seq) return;
+		if (rate === 0) return pause();
+		if (rate === 1) {
+			if (!playing)
+				playSequence(seqId, {
+					mode: 'preview',
+					from: playhead >= seq.duration - 1e-3 ? 0 : playhead
+				});
+			return;
+		}
+		if (playing) stopSequence(seqId, { restore: false });
+		shuttle = rate;
+		const id = seqId;
+		let t = playhead;
+		let last = performance.now();
+		const step = (now: number) => {
+			const s = ($sequences as any)[id];
+			if (!s || shuttle !== rate) return;
+			t = clamp(t + ((now - last) / 1000) * rate, 0, s.duration);
+			last = now;
+			scrubSequence(id, t);
+			if ((rate < 0 && t <= 0) || (rate > 0 && t >= s.duration)) return stopShuttle();
+			shuttleRaf = requestAnimationFrame(step);
+		};
+		shuttleRaf = requestAnimationFrame(step);
+	}
+	const shuttleRate = () => (shuttle ? shuttle : playing ? 1 : 0);
+	$effect(() => () => stopShuttle());
+
+	// ---- transport ----------------------------------------------------------------------
+	/** pause: the playhead parks where it is, and the frame stays up (77: the program too) */
+	function pause() {
+		if (!seqId) return;
+		const t = playhead;
+		stopSequence(seqId, { restore: false });
+		scrubSequence(seqId, t);
+	}
+	function togglePlay() {
+		if (!seqId || !seq) return;
+		if (shuttle) {
+			stopShuttle();
+			return;
+		}
+		if (playing) return pause();
 		const from = playhead >= seq.duration - 1e-3 ? 0 : playhead;
 		playSequence(seqId, { mode: 'preview', from });
 	}
 	function stopAll() {
 		if (!seqId) return;
+		stopShuttle();
 		stopSequence(seqId, { restore: true });
 		scrubSequence(seqId, 0);
 		releaseScrub();
@@ -461,10 +651,22 @@
 		const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
 		scrubTo(tOf(e.clientX - rect.left), e.altKey);
 	}
-	function itemDown(e: PointerEvent, item: any, resize = false) {
+	/** `edge`: false = the body (move, or Alt+Shift slip), 'right' = length, 'left' = trim */
+	function itemDown(e: PointerEvent, item: any, edge: false | 'left' | 'right' = false) {
 		if (e.button !== 0 || !seqId || !seq) return;
 		e.stopPropagation();
 		focusRoot();
+		if (pinch) return;
+		const resize = !!edge;
+		const home = findItem(seq, item.id);
+		if (!home || !isTrackKind(home.track.kind)) return;
+		const kind = home.track.kind;
+		if (!edge && e.altKey && e.shiftKey && hasSource(kind, item)) {
+			sequenceSelection.set([item.id]);
+			drag = slipDrag(e, item, kind);
+			(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+			return;
+		}
 		let sel = get(sequenceSelection) as string[];
 		if (e.shiftKey || e.ctrlKey || e.metaKey) {
 			sel = sel.includes(item.id) ? sel.filter((x) => x !== item.id) : [...sel, item.id];
@@ -481,14 +683,28 @@
 			if (hit) orig[id] = { t: hit.item.t, dur: hit.item.dur };
 		}
 		drag = {
-			kind: resize ? 'resize' : 'move',
+			kind: edge === 'left' ? 'trim' : resize ? 'resize' : 'move',
 			x0: e.clientX,
 			primary: item.id,
 			orig,
+			item: { ...item },
+			trackKind: kind,
 			moved: false,
 			pointerId: e.pointerId
 		};
 		(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+	}
+	function slipDrag(e: PointerEvent, item: any, kind: string) {
+		return {
+			kind: 'slip',
+			x0: e.clientX,
+			primary: item.id,
+			orig: { [item.id]: { t: item.t, dur: item.dur } },
+			item: { ...item },
+			trackKind: kind,
+			moved: false,
+			pointerId: e.pointerId
+		};
 	}
 	function itemMove(e: PointerEvent) {
 		if (!drag || drag.kind === 'scrub' || !seqId || !seq) return;
@@ -503,6 +719,24 @@
 		const targets = snapTargets(seq, exclude, playhead);
 		const o = drag.orig[drag.primary];
 		const free = !snapOn || e.altKey;
+		if (drag.kind === 'slip') {
+			// the picture follows the pointer: dragging right shows EARLIER source
+			const d = -(dx / pps) * sourceRate(drag.trackKind, drag.item);
+			const patch = slipItem(drag.trackKind, drag.item, d);
+			if (patch) updateItem(seqId, drag.primary, patch);
+			return;
+		}
+		if (drag.kind === 'trim') {
+			let at = o.t + dx / pps;
+			guide = null;
+			if (!free) {
+				const s = snapTime(at, targets, tol, seq.fps);
+				at = s.t;
+				guide = s.to;
+			}
+			updateItem(seqId, drag.primary, trimItem(drag.trackKind, drag.item, 'left', at));
+			return;
+		}
 		if (drag.kind === 'move') {
 			let t = Math.max(0, o.t + dx / pps);
 			guide = null;
@@ -535,7 +769,8 @@
 				end = Math.max(o.t + MIN_ITEM, s.t);
 				guide = s.to;
 			}
-			placeItems(seqId, { [drag.primary]: { dur: end - o.t } });
+			// a clip cannot run past the end of its source
+			placeItems(seqId, { [drag.primary]: trimItem(drag.trackKind, drag.item, 'right', end) });
 		}
 	}
 	function itemUp() {
@@ -563,6 +798,93 @@
 		if (!e.shiftKey) sequenceSelection.set([]);
 	}
 
+	// ---- 77 K5: fingers — one along an EMPTY lane pans the view, two pinch the zoom (an item
+	// under the first finger drags as before; the second finger cancels that drag) ------------
+	let pinch: { d0: number; span0: number; at: number; start0: number } | null = null;
+	function touchNav(node: HTMLElement) {
+		const touches = new Map<number, { x: number; y: number }>();
+		let pan: { x0: number; y0: number; start: number; live: boolean } | null = null;
+		const lanesLeft = () =>
+			(node.querySelector('.tl-ruler') as HTMLElement | null)?.getBoundingClientRect().left ?? 0;
+		const down = (e: PointerEvent) => {
+			if (e.pointerType !== 'touch' || !seq) return;
+			touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+			const el = e.target as HTMLElement;
+			if (touches.size === 2) {
+				cancelDrag();
+				pan = null;
+				const [a, b] = [...touches.values()];
+				pinch = {
+					d0: Math.max(24, Math.abs(a.x - b.x)),
+					span0: span,
+					at: tOf((a.x + b.x) / 2 - lanesLeft()),
+					start0: viewStart
+				};
+			} else if (touches.size === 1 && el.closest?.('.tl-lane') && !el.closest?.('.tl-item'))
+				pan = { x0: e.clientX, y0: e.clientY, start: viewStart, live: false };
+		};
+		const move = (e: PointerEvent) => {
+			if (!touches.has(e.pointerId) || !seq) return;
+			touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+			if (pinch && touches.size >= 2) {
+				const [a, b] = [...touches.values()];
+				const d = Math.max(24, Math.abs(a.x - b.x));
+				const next = clamp((pinch.span0 * pinch.d0) / d, 0.2, Math.max(seq.duration * 4, 10));
+				const ratio = (pinch.at - pinch.start0) / pinch.span0;
+				viewStart = pinch.at - ratio * next;
+				viewEnd = viewStart + next;
+				e.preventDefault();
+			} else if (pan) {
+				const dx = e.clientX - pan.x0;
+				if (!pan.live && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(e.clientY - pan.y0))
+					pan.live = true;
+				if (pan.live) {
+					const st = Math.max(-span * 0.1, pan.start - dx / pps);
+					viewEnd = st + span;
+					viewStart = st;
+				}
+			}
+		};
+		const up = (e: PointerEvent) => {
+			touches.delete(e.pointerId);
+			if (touches.size < 2) pinch = null;
+			if (!touches.size) pan = null;
+		};
+		node.addEventListener('pointerdown', down, true);
+		node.addEventListener('pointermove', move, true);
+		node.addEventListener('pointerup', up, true);
+		node.addEventListener('pointercancel', up, true);
+		return {
+			destroy() {
+				node.removeEventListener('pointerdown', down, true);
+				node.removeEventListener('pointermove', move, true);
+				node.removeEventListener('pointerup', up, true);
+				node.removeEventListener('pointercancel', up, true);
+			}
+		};
+	}
+
+	/** a clip item's picture: a poster frame at its `in` (the lazy cut chunk; cached per tenth) */
+	function poster(node: HTMLElement, item: any) {
+		let key = '';
+		const run = (it: any) => {
+			const k = it?.src ? `${it.src}|${it.media}|${Math.round((it.in ?? 0) * 10)}` : '';
+			if (k === key) return;
+			key = k;
+			if (!k) {
+				node.style.backgroundImage = '';
+				return;
+			}
+			import('$lib/cut/clipMedia.js')
+				.then((m) => m.clipPoster(it.src, it.media, it.in ?? 0))
+				.then((url) => {
+					if (key === k) node.style.backgroundImage = url ? `url(${url})` : '';
+				});
+		};
+		run(item);
+		return { update: run };
+	}
+
 	// ---- keys (claimed on the editor, CAPTURE phase: Delete would delete the selected
 	// OBJECT and Space / arrows drive the viewport otherwise — the UvEditor rule) ----------
 	function keys(node: HTMLElement) {
@@ -576,9 +898,14 @@
 			else if (e.key === 'Escape') {
 				if (drag) cancelDrag();
 				else sequenceSelection.set([]);
-			} else if (e.key === 'Delete' || e.key === 'Backspace') deleteSelection();
+			} else if (e.key === 'Delete' || e.key === 'Backspace')
+				e.shiftKey ? rippleSelection() : deleteSelection();
 			else if ((e.key === 'a' || e.key === 'A') && (e.ctrlKey || e.metaKey))
-				sequenceSelection.set(seq.tracks.flatMap((tr: any) => tr.items.map((it: any) => it.id)));
+				sequenceSelection.set(
+					seq.tracks
+						.filter((tr: any) => isTrackKind(tr.kind))
+						.flatMap((tr: any) => tr.items.map((it: any) => it.id))
+				);
 			else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
 				const step = (e.key === 'ArrowLeft' ? -1 : 1) * frame * (e.shiftKey ? 10 : 1);
 				if (selection.length) {
@@ -593,10 +920,23 @@
 				} else scrubTo(playhead + step, true);
 			} else if (e.key === 'Home') scrubTo(0, true);
 			else if (e.key === 'End') scrubTo(seq.duration, true);
-			else if ((e.key === 'k' || e.key === 'K') && !e.ctrlKey && !e.metaKey) {
+			else if (e.ctrlKey || e.metaKey || e.altKey) used = false;
+			else if (e.key === 'n' || e.key === 'N') {
 				const hit = selection.length ? findItem(seq, selection[0]) : null;
-				const track = hit?.track ?? seq.tracks[0];
-				if (track) addItemAt(track, playhead);
+				const track =
+					hit?.track ?? seq.tracks.find((tr: any) => isTrackKind(tr.kind)) ?? null;
+				if (track && isTrackKind(track.kind)) addItemAt(track, playhead);
+			} else if (e.key === 's' || e.key === 'S') splitHere();
+			else if (e.key === 'm' || e.key === 'M') toggleMarker();
+			else if (e.key === 'ArrowUp') jump(-1);
+			else if (e.key === 'ArrowDown') jump(1);
+			else if (e.key === 'k' || e.key === 'K') setShuttle(0);
+			else if (e.key === 'l' || e.key === 'L') {
+				const r = shuttleRate();
+				setShuttle(r <= 0 ? 1 : Math.min(4, r * 2));
+			} else if (e.key === 'j' || e.key === 'J') {
+				const r = shuttleRate();
+				setShuttle(r >= 0 ? -1 : Math.max(-4, r * 2));
 			} else used = false;
 			if (used) {
 				e.preventDefault();
@@ -657,6 +997,9 @@
 			x: e.clientX,
 			y: e.clientY,
 			items: [
+				...(isTrackKind(track.kind)
+					? []
+					: [{ label: 'Made in a newer version — read-only here', disabled: true }]),
 				{ label: 'Rename…', action: () => (renamingTrack = track.id) },
 				{
 					label: track.muted ? 'Unmute' : 'Mute',
@@ -672,6 +1015,36 @@
 				{ label: 'Delete track', danger: true, action: () => removeTrack(id, track.id) }
 			]
 		};
+	}
+	let renamingMarker = $state<string | null>(null);
+	function markerMenu(e: MouseEvent, m: any) {
+		e.preventDefault();
+		if (!seqId) return;
+		const id = seqId;
+		menu = {
+			x: e.clientX,
+			y: e.clientY,
+			items: [
+				{ label: 'Go to', action: () => scrubTo(m.t, true) },
+				{ label: 'Rename…', action: () => (renamingMarker = m.id) },
+				{ section: ' ' },
+				{
+					label: 'Delete marker',
+					danger: true,
+					action: () => editSequence(id, (s: any) => removeMarker(s, m.id))
+				}
+			]
+		};
+	}
+	function renameMarker(mid: string, name: string) {
+		if (seqId)
+			editSequence(seqId, (s: any) => ({
+				...s,
+				markers: (s.markers ?? []).map((m: any) =>
+					m.id === mid ? { ...m, name: name.trim().slice(0, 80) } : m
+				)
+			}));
+		renamingMarker = null;
 	}
 	function commitRename() {
 		if (seqId && renameText.trim()) renameSequence(seqId, renameText);
@@ -779,9 +1152,73 @@
 					id="timeline-stop"
 					onclick={stopAll}
 				/>
+				<span class="tl-sep"></span>
+				<Button
+					size="sm"
+					variant="ghost"
+					icon="step-back"
+					title="Previous edit or marker (↑)"
+					id="timeline-prev-stop"
+					onclick={() => jump(-1)}
+				/>
+				<Button
+					size="sm"
+					variant="ghost"
+					icon="step-forward"
+					title="Next edit or marker (↓)"
+					id="timeline-next-stop"
+					onclick={() => jump(1)}
+				/>
+				<Button
+					size="sm"
+					variant="ghost"
+					icon="scissors"
+					title={selection.length
+						? 'Split the selection at the playhead (S)'
+						: 'Split everything under the playhead (S)'}
+					id="timeline-split"
+					onclick={splitHere}
+				/>
+				<Button
+					size="sm"
+					variant="ghost"
+					icon="shrink"
+					title="Ripple delete — remove and close the gap (Shift+Del)"
+					id="timeline-ripple"
+					disabled={!selection.length}
+					onclick={rippleSelection}
+				/>
+				<Button
+					size="sm"
+					variant="ghost"
+					icon="flag"
+					title="Marker at the playhead (M) — again on it removes it"
+					id="timeline-marker"
+					onclick={toggleMarker}
+				/>
+				{#if shuttle}<span class="tl-live" id="timeline-shuttle"
+						>{shuttle > 0 ? '▶' : '◀'} {Math.abs(shuttle)}×</span
+					>{/if}
 				<span class="tl-time" id="timeline-time"
 					>{formatTime(playhead, seq.fps)} / {formatTime(seq.duration, seq.fps)}</span
 				>
+				{#if renamingMarker}
+					{@const mk = (seq.markers ?? []).find((m: any) => m.id === renamingMarker)}
+					<!-- svelte-ignore a11y_autofocus -->
+					<input
+						class="tl-rename"
+						id="timeline-marker-rename"
+						aria-label="Marker name"
+						value={mk?.name ?? ''}
+						autofocus
+						onkeydown={(e) => {
+							if (e.key === 'Enter') renameMarker(renamingMarker!, e.currentTarget.value);
+							if (e.key === 'Escape') renamingMarker = null;
+							e.stopPropagation();
+						}}
+						onblur={(e) => renamingMarker && renameMarker(renamingMarker, e.currentTarget.value)}
+					/>
+				{/if}
 				{#if runningGame}<span
 						class="tl-live"
 						title="Running in the game (Play Sequence / autoplay)">● live</span
@@ -859,7 +1296,7 @@
 				/>
 			</div>
 
-			<div class="tl-grid" use:wheel use:minimalScroll>
+			<div class="tl-grid" use:wheel use:touchNav use:minimalScroll>
 				<div class="tl-corner"></div>
 				<!-- svelte-ignore a11y_no_static_element_interactions -->
 				<div
@@ -875,6 +1312,23 @@
 						<span class="tl-tick" style="left: {xOf(t)}px">{tickLabel(t)}</span>
 					{/each}
 					<span class="tl-end" style="left: {xOf(seq.duration)}px" title="End"></span>
+					{#each seq.markers ?? [] as m (m.id)}
+						<button
+							class="tl-marker"
+							style="left: {xOf(m.t)}px"
+							data-marker-id={m.id}
+							aria-label="Marker {m.name || ''} at {formatTime(m.t, seq.fps)}"
+							title="{m.name || 'Marker'} · {formatTime(m.t, seq.fps)} — click to go there, right-click for more"
+							onpointerdown={(e) => {
+								e.stopPropagation();
+								if (e.button === 0) scrubTo(m.t, true);
+							}}
+							oncontextmenu={(e) => markerMenu(e, m)}
+							><Icon name="flag" size={16} />{#if m.name}<span class="tl-marker-name"
+									>{m.name}</span
+								>{/if}</button
+						>
+					{/each}
 					<span class="tl-head-mark" style="left: {xOf(playhead)}px"></span>
 				</div>
 				{#if !seq.tracks.length}
@@ -894,8 +1348,8 @@
 				{/if}
 				{#each seq.tracks as track, index (track.id)}
 					<div class="tl-track-head" data-track-head={track.id} class:tl-muted={track.muted}>
-						<span class="tl-kind" style="color: {KIND_COLOR[track.kind]}"
-							><Icon name={KIND_ICON[track.kind]} size={16} /></span
+						<span class="tl-kind" style="color: {kindColor(track.kind)}"
+							><Icon name={kindIcon(track.kind)} size={16} /></span
 						>
 						{#if renamingTrack === track.id}
 							<!-- svelte-ignore a11y_autofocus -->
@@ -947,17 +1401,42 @@
 					<div
 						class="tl-lane"
 						class:tl-muted={track.muted}
+						class:tl-opaque={!isTrackKind(track.kind)}
 						data-track-id={track.id}
 						data-track-kind={track.kind}
-						title="Double-click to add {track.kind === 'event'
-							? 'an event'
-							: 'a ' + TRACK_LABELS[track.kind].toLowerCase() + ' item'}"
-						ondblclick={(e) => laneDblClick(e, track)}
+						title={!isTrackKind(track.kind)
+							? 'A track from a newer version — it plays there and is kept here as it is'
+							: track.kind === 'video'
+								? 'Double-click to add a clip, or drop a video / image here'
+								: 'Double-click to add ' +
+									(track.kind === 'event'
+										? 'an event'
+										: 'a ' + TRACK_LABELS[track.kind].toLowerCase() + ' item')}
+						ondblclick={(e) => isTrackKind(track.kind) && laneDblClick(e, track)}
 						onpointerdown={laneDown}
+						ondragover={(e) => {
+							if (track.kind === 'video') e.preventDefault();
+						}}
+						ondrop={(e) => track.kind === 'video' && dropClips(e, track)}
 					>
+						{#each seq.markers ?? [] as m (m.id)}
+							<span class="tl-mark-line" style="left: {xOf(m.t)}px"></span>
+						{/each}
 						{#each track.items as item (item.id)}
 							{@const sel = selection.includes(item.id)}
-							{#if track.kind === 'event'}
+							{#if !isTrackKind(track.kind)}
+								<div
+									class="tl-item tl-ro"
+									style="left: {xOf(Number(item.t) || 0)}px; width: {Math.max(
+										8,
+										(Number(item.dur ?? item.len) || 0) * pps
+									)}px; --tl-kind: var(--text-faint)"
+									data-item-id={item.id}
+									title="Made in a newer version — read-only here"
+								>
+									<span class="tl-label">{item.name ?? item.text ?? track.kind}</span>
+								</div>
+							{:else if track.kind === 'event'}
 								<div
 									class="tl-item tl-event"
 									class:tl-sel={sel}
@@ -992,13 +1471,42 @@
 									onpointerup={itemUp}
 									onpointercancel={cancelDrag}
 								>
+									{#if track.kind === 'video' && item.src}
+										<span class="tl-poster" use:poster={item}></span>
+									{/if}
+									{#if item.trans}
+										<span
+											class="tl-trans"
+											data-item-trans={item.trans.kind}
+											title="{item.trans.kind} in, {item.trans.dur.toFixed(2)} s"
+											style="width: {Math.min(item.dur, item.trans.dur) * pps}px"
+										></span>
+									{/if}
+									{#if item.fadeOut}
+										<span
+											class="tl-fadeout"
+											style="width: {Math.min(item.dur, item.fadeOut) * pps}px"
+										></span>
+									{/if}
 									<span class="tl-label">{itemLabel(track.kind, item)}</span>
+									<!-- svelte-ignore a11y_no_static_element_interactions -->
+									<span
+										class="tl-grip tl-grip-l"
+										title={hasSource(track.kind, item)
+											? 'Drag to trim the start (the clip follows)'
+											: 'Drag to move the start'}
+										data-item-grip-left={item.id}
+										onpointerdown={(e) => itemDown(e, item, 'left')}
+										onpointermove={itemMove}
+										onpointerup={itemUp}
+										onpointercancel={cancelDrag}
+									></span>
 									<!-- svelte-ignore a11y_no_static_element_interactions -->
 									<span
 										class="tl-grip"
 										title="Drag to change the length"
 										data-item-grip={item.id}
-										onpointerdown={(e) => itemDown(e, item, true)}
+										onpointerdown={(e) => itemDown(e, item, 'right')}
 										onpointermove={itemMove}
 										onpointerup={itemUp}
 										onpointercancel={cancelDrag}
@@ -1016,8 +1524,8 @@
 				{@const kind = oneSel.track.kind}
 				{@const it = oneSel.item}
 				<div class="tl-inspector" id="timeline-inspector" data-kind={kind}>
-					<span class="tl-kind" style="color: {KIND_COLOR[kind]}"
-						><Icon name={KIND_ICON[kind]} size={16} /></span
+					<span class="tl-kind" style="color: {kindColor(kind)}"
+						><Icon name={kindIcon(kind)} size={16} /></span
 					>
 					<div class="tl-field">
 						<DragRow
@@ -1162,7 +1670,12 @@
 							}}
 							onchange={(e) => patchItem({ caption: e.currentTarget.value.trim() })}
 						/>
-					{:else}
+					{/if}
+					{#if kind === 'camera' || kind === 'video' || kind === 'title'}
+						{#await import('./CutInspector.svelte') then m}
+							<m.default {kind} item={it} patch={patchItem} {scrubStart} {scrubEnd} />
+						{/await}
+					{:else if kind === 'event'}
 						<input
 							class="tl-event-name"
 							id="timeline-item-event"
@@ -1494,7 +2007,7 @@
 		display: flex;
 		align-items: center;
 		overflow: hidden;
-		padding: 0 10px 0 6px;
+		padding: 0 10px;
 		border: 1px solid color-mix(in srgb, var(--tl-kind) 70%, transparent);
 		border-radius: 5px;
 		background: color-mix(in srgb, var(--tl-kind) 28%, var(--surface-1));
@@ -1522,6 +2035,93 @@
 		width: 8px;
 		cursor: ew-resize;
 		background: color-mix(in srgb, var(--tl-kind) 45%, transparent);
+	}
+	/* 77: the left trim grip, a clip's poster, the transition in / fade out wedges */
+	.tl-grip.tl-grip-l {
+		right: auto;
+		left: 0;
+		z-index: 1;
+	}
+	.tl-poster {
+		position: absolute;
+		inset: 0;
+		background-repeat: repeat-x;
+		background-size: auto 100%;
+		opacity: 0.55;
+		pointer-events: none;
+	}
+	.tl-trans,
+	.tl-fadeout {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		pointer-events: none;
+	}
+	.tl-trans {
+		left: 0;
+		background: linear-gradient(
+			to right,
+			color-mix(in srgb, var(--surface-inset) 80%, transparent),
+			transparent
+		);
+		border-right: 1px dashed color-mix(in srgb, var(--tl-kind) 80%, transparent);
+	}
+	.tl-fadeout {
+		right: 0;
+		background: linear-gradient(
+			to left,
+			color-mix(in srgb, var(--surface-inset) 80%, transparent),
+			transparent
+		);
+	}
+	.tl-item .tl-label {
+		position: relative;
+	}
+	.tl-ro {
+		cursor: default;
+		border-style: dashed;
+	}
+	.tl-opaque {
+		background: repeating-linear-gradient(
+			135deg,
+			transparent 0 6px,
+			color-mix(in srgb, var(--border) 40%, transparent) 6px 7px
+		);
+	}
+	.tl-marker {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		z-index: 2;
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		max-width: 120px;
+		margin-left: -2px;
+		padding: 0 2px;
+		border: 0;
+		border-left: 2px solid var(--ink-warn);
+		background: transparent;
+		color: var(--ink-warn);
+		font-size: var(--fs-badge);
+		cursor: pointer;
+	}
+	.tl-marker:focus-visible {
+		outline: 2px solid var(--accent);
+	}
+	.tl-marker-name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--text-2);
+	}
+	.tl-mark-line {
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		width: 1px;
+		background: color-mix(in srgb, var(--ink-warn) 45%, transparent);
+		pointer-events: none;
 	}
 	.tl-event {
 		padding: 0 4px 0 0;
@@ -1591,6 +2191,9 @@
 		display: none;
 	}
 	:global(:root.phone-shell) .tl-grip {
-		width: 14px;
+		width: 16px;
+	}
+	:global(:root.phone-shell) .tl-item:not(.tl-event) {
+		padding: 0 18px;
 	}
 </style>

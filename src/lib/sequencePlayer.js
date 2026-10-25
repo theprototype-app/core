@@ -109,6 +109,17 @@ function ensureCut() {
 	return cutLoad;
 }
 
+/**
+ * 77: the cut runtime's state — null until a sequence needed it (the lazy chunk never loaded).
+ * `pending` = a clip frame still decoding (what an export waits on).
+ */
+export async function cutState() {
+	if (!cutLoad) return null;
+	await cutLoad;
+	const m = await import('./cut/cutRuntime.js');
+	return { pending: m.cutPending(), ...m.cutDebug() };
+}
+
 /** @param {any} seq @param {number} t @param {'game'|'preview'} mode @param {boolean} scrub */
 function showProgram(seq, t, mode, scrub) {
 	if (!hasCutContent(seq) || (mode === 'preview' && !get(previewShots))) {
@@ -554,6 +565,7 @@ export function sequencePlayerDebug() {
 		preview: get(cameraPreview)?.uuid ?? null,
 		blend: shotState?.blend ?? null,
 		program,
+		cutLoaded: !!cutLoad,
 		fired: fired.slice()
 	};
 }

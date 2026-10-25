@@ -170,7 +170,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
   // 33 (L2-L4): keep/unload modules on a scene switch, and the scope a kept module lives in
   import { startSceneSwitch } from '$lib/sceneSwitch'
   import HudEditor from './components/editors/HudEditor.svelte'
-  import TimelineEditor from './components/editors/TimelineEditor.svelte' // 48 S1
+  // 48 S1 / 77: the Timeline loads the first time it opens and then STAYS mounted — its close
+  // effect is what hands the view back (stops previews, releases a scrub), so closing must not
+  // unmount it
+  import { timelineClose } from './stores/appStore'
   import { importFile, load } from '$lib/fileHandler.svelte'
   import { showToast, showInfoToast } from './stores/appStore'
   // 34 PF: the Profiler dock tab, loaded the first time it opens (it is closed by default)
@@ -179,7 +182,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { codeWorkspaceClose } from './stores/appStore'
   import { startCodeWorkspace } from '$lib/codeWorkspace'
   import { peers, userdata } from './stores/appStore'
-  import { get } from 'svelte/store'
+  import { get, derived } from 'svelte/store'
+  const timelineOpened = derived(timelineClose, (closed, set) => { if (!closed) set(true) }, false)
   import { initModules, disabledModules } from '$lib/moduleSDK'
   import { coreModules } from './modules/index.js'
   import ModulesManager from './components/menu/ModulesManager.svelte'
@@ -411,7 +415,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <UvEditor />
 <SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>
 <HudEditor />
-<TimelineEditor />
+{#if $timelineOpened}
+{#await import('./components/editors/TimelineEditor.svelte') then m}<m.default />{/await}
+{/if}
 <Explorer />
 {#if !$profilerClose}
 {#await import('./components/editors/Profiler.svelte') then m}<m.default />{/await}

@@ -104,13 +104,17 @@
 		camera: 'camera',
 		anim: 'clapperboard',
 		audio: 'volume-2',
-		event: 'zap'
+		event: 'zap',
+		video: 'video',
+		title: 'type'
 	};
 	const KIND_COLOR: Record<string, string> = {
 		camera: 'var(--icon-object)',
 		anim: 'var(--accent)',
 		audio: 'var(--icon-audio)',
-		event: 'var(--ink-warn)'
+		event: 'var(--ink-warn)',
+		video: 'var(--icon-image)',
+		title: 'var(--ink-good)'
 	};
 
 	// ---- shell: docked vs floating (HudEditor's verbatim) ------------------------------

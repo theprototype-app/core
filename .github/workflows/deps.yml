@@ -5,8 +5,11 @@
 # svelte-check ratchet, vitest, scene-lint, kit-diff, a11y, supply chain) and perf-budget.yml, both
 # called as reusable workflows, then the integrators' e2e battery split into shards on
 # GitHub-hosted runners (SwiftShader: no GPU, battery.yml): the REQUIRED set gates; the OPTIONAL set (red on
-# SwiftShader with unchanged code, each with its reason in tests/e2e/battery.json) runs after it and is only
-# reported. `deps-gate` is the one required check; the ruleset on
+# SwiftShader with unchanged code, each with its reason in tests/e2e/battery.json) runs only when started by hand
+# (workflow_dispatch) and is only reported. Perf budget + battery run only for a non-major change to the root
+# app's npm packages (deps-policy.cjs `battery`): Actions, the agent and majors get ci.yml alone, so one monthly
+# Dependabot round does not hold the account's 20 concurrent jobs for half a day. `deps-gate` is the one
+# required check; the ruleset on
 # `deps` also requires the `pc-battery` commit status, which the GPU check on a desktop posts for a
 # PR that changes what the app ships (scripts/ci/pc-battery.sh — pulled from there, no runner of ours
 # in this public repo) and this workflow posts as "not needed" for every other PR.
@@ -47,6 +50,7 @@ jobs:
       cls: ${{ steps.policy.outputs.class }}
       needs_pc: ${{ steps.policy.outputs.needs_pc }}
       reason: ${{ steps.policy.outputs.reason }}
+      battery: ${{ steps.policy.outputs.battery }}
       gate_ci: ${{ github.event_name != 'pull_request' || github.base_ref == 'deps' }}
     steps:
       - uses: actions/checkout@v4
@@ -68,7 +72,7 @@ jobs:
             # a person's PR (or a dispatch): no automation; the PC check runs when the app's lockfile moved
             pc=false
             if [ -n "$BASE" ] && git diff --name-only "origin/$BASE...HEAD" | grep -qxE 'package(-lock)?\.json'; then pc=true; fi
-            printf 'class=manual\nneeds_pc=%s\nreason=not a Dependabot PR\n' "$pc" | tee -a "$GITHUB_OUTPUT"
+            printf 'class=manual\nneeds_pc=%s\nbattery=true\nreason=not a Dependabot PR\n' "$pc" | tee -a "$GITHUB_OUTPUT"
           fi
       - name: majors wait for a planned migration
         if: steps.policy.outputs.class == 'major'
@@ -90,7 +94,7 @@ jobs:
   # the budget gate in three parallel parts (~20 min each instead of ~60 in one)
   perf:
     needs: scope
-    if: needs.scope.outputs.gate_ci == 'true'
+    if: needs.scope.outputs.gate_ci == 'true' && needs.scope.outputs.battery == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -102,6 +106,7 @@ jobs:
 
   plan:
     needs: scope
+    if: needs.scope.outputs.battery == 'true'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -142,11 +147,12 @@ jobs:
       refs: ${{ needs.plan.outputs.refs }}
       deadline: 20
 
-  # red or flaky on SwiftShader with the same red on unchanged code: run, reported, never waited for. They start
-  # AFTER the required shards and the confirm step (the free plan runs 20 jobs at once); deps-gate does not need them.
+  # red or flaky on SwiftShader with the same red on unchanged code: reported, never waited for, and only on a run
+  # started by hand (refreshing battery.json's classification); ~750 runner-min a time is too much for every PR.
+  # They start AFTER the required shards and the confirm step (the free plan runs 20 jobs at once).
   e2e-optional:
     needs: [plan, e2e, confirm]
-    if: always() && needs.plan.outputs.optional_shards != '0'
+    if: always() && github.event_name == 'workflow_dispatch' && needs.plan.result == 'success' && needs.plan.outputs.optional_shards != '0'
     uses: ./.github/workflows/battery.yml
     with:
       set: optional
@@ -182,25 +188,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
+        if: needs.scope.outputs.battery == 'true'
         with:
           pattern: battery-required-*
           path: battery
       - uses: actions/download-artifact@v4
-        if: needs.confirm.result != 'skipped'
+        if: needs.scope.outputs.battery == 'true' && needs.confirm.result != 'skipped'
         with:
           pattern: battery-confirm-*
           path: battery
       - name: battery report
         id: report
+        if: needs.scope.outputs.battery == 'true'
         run: node scripts/ci/battery.cjs report battery
       - name: the release gate
         env:
           GATE_CI: ${{ needs.scope.outputs.gate_ci }}
+          BATTERY: ${{ needs.scope.outputs.battery }}
+          CLS: ${{ needs.scope.outputs.cls }}
           CI: ${{ needs.ci.result }}
           PERF: ${{ needs.perf.result }}
+          E2E: ${{ needs.e2e.result }}
         run: |
-          echo "### Release gate: ci=$CI perf-budget=$PERF (class ${{ needs.scope.outputs.cls }}: ${{ needs.scope.outputs.reason }})" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$GATE_CI" = true ] && { [ "$CI" != success ] || [ "$PERF" != success ]; }; then exit 1; fi
+          echo "### Release gate: ci=$CI perf-budget=$PERF battery=$BATTERY (class $CLS: ${{ needs.scope.outputs.reason }})" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$CLS" = major ]; then
+            echo "A major is not tested here (no perf budget, no battery): its planned migration runs them. Red on purpose." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "$BATTERY" = true ] && [ "$E2E" = skipped ]; then exit 1; fi
+          if [ "$GATE_CI" = true ] && { [ "$CI" != success ] || { [ "$BATTERY" = true ] && [ "$PERF" != success ]; }; }; then exit 1; fi
       - uses: actions/upload-artifact@v4
         with:
           name: battery-durations

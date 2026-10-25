@@ -39,6 +39,15 @@ describe('deps-policy: one class per PR, the most careful part wins', () => {
 		expect(classify([dep('ws', 'direct:production', 'patch', '/tools/agent')])).toMatchObject({ cls: 'auto', needsPc: false });
 		expect(classify([]).cls).toBe('ready');
 	});
+	it('runs the battery only for a non-major change to the app root', () => {
+		expect(classify([dep('three', 'direct:production', 'patch')]).battery).toBe(true);
+		expect(classify([dep('prettier', 'direct:development', 'minor')]).battery).toBe(true);
+		expect(classify([dep('@sveltejs/kit', 'direct:development', 'major')]).battery).toBe(false);
+		expect(classify([dep('actions/checkout', 'direct:production', 'minor', '/', 'github_actions')]).battery).toBe(false);
+		expect(classify([dep('ws', 'direct:production', 'minor', '/tools/agent')]).battery).toBe(false);
+		expect(classify([dep('ws', 'direct:production', 'patch', '/tools/agent'), dep('three', 'direct:production', 'patch')]).battery).toBe(true);
+		expect(classify([]).battery).toBe(true);
+	});
 });
 
 /** @param {Record<string, number>} suites @param {Record<string, string>} [skip] */

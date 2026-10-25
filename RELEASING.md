@@ -60,9 +60,14 @@ plus GitHub Actions), and `.github/workflows/deps.yml` decides what happens to e
      runner; green there = `flaky` (reported), red there = a red. SwiftShader fails any one suite now and then,
      and twice on the same loaded runner too, so a same-shard retry proves nothing;
    - the **optional** set (red or flaky on SwiftShader with unchanged code, each with its reason on its line)
-     runs AFTER that and is only reported (`optional-report`); nothing waits for it.
+     runs only on a run started by hand (Actions → deps → Run workflow, e.g. before refreshing `battery.json`),
+     AFTER the rest, and is only reported (`optional-report`); nothing waits for it.
+   The perf budget and the battery run only for a PR that moves the root app's npm packages and is not a major;
+   an Actions bump, an agent (`tools/agent`) bump and a major get ci.yml alone. One battery is about 30 jobs
+   and 600 runner-minutes against the account's cap of 20 concurrent jobs, and Dependabot opens its monthly
+   round all at once (9 PRs in the first one, 2026-10-25), so everything else on the account queues behind it.
    One check sums it all up: **`deps-gate`**. Measured on unchanged code (2026-10-24): about an hour from push
-   to `deps-gate`, the optional set ~45 min more. The shard runner is `scripts/ci/battery.cjs`.
+   to `deps-gate` on an idle account. The shard runner is `scripts/ci/battery.cjs`.
 2. **The GPU half.** `pc-battery` is a commit status posted from a desktop with a real GPU
    (`scripts/ci/pc-battery.sh`): /kit, the app surfaces (base shot twice for the noise floor), the level shots
    (head against the closer of two base runs; under 2 % of the pixels is animation) and frame time on the
@@ -81,7 +86,7 @@ plus GitHub Actions), and `.github/workflows/deps.yml` decides what happens to e
    | patch, a development-only package, any GitHub Action | GitHub auto-merge into `deps` |
    | a minor of something that ships (a `dependency`, or svelte / vite / kit / tailwind / flowbite) | label `deps-ready`; the monthly deps lane merges it after the release notes + a visual review |
    | any Playwright bump | `deps-ready`: the e2e hosts outside GitHub must serve the same browser first |
-   | a major | `needs-migration` + a comment; a planned migration, never automation |
+   | a major | `needs-migration` + a comment; `deps-gate` red on purpose (not tested here); a planned migration, never automation |
 
    The ruleset on `deps` requires `deps-gate` and `pc-battery`, so an auto-merge of a runtime patch waits
    for the desktop. The ruleset also forbids deleting `deps`: it is never cleaned up with merged branches.

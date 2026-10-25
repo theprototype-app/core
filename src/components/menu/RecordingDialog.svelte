@@ -165,6 +165,7 @@
 					</select>
 				</div>
 				<label class="rec-check"><input id="recording-hide-helpers" class="tp-check" type="checkbox" checked={p.hideHelpers} onchange={(e) => setRecordingPrefs({ hideHelpers: /** @type {any} */ (e.currentTarget).checked })} /> Hide editor helpers (grid, gizmo, outlines, light and camera helpers)</label>
+				<label class="rec-check"><input id="recording-captions" class="tp-check" type="checkbox" checked={p.captions} onchange={(e) => setRecordingPrefs({ captions: /** @type {any} */ (e.currentTarget).checked })} /> Burn in captions (the subtitles and caption lines on screen while it records)</label>
 				<div id="recording-estimate" class="rec-dim">{estimate.out.w} × {estimate.out.h} · about {fmt(estimate.bytes)} as webm</div>
 
 				{#if st.status === 'error' && st.error}<p id="recording-error" class="rec-warn">{st.error}</p>{/if}

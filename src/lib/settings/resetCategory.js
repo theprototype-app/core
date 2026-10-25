@@ -61,6 +61,7 @@ import { gameSoundVolume } from '../gameSfx';
 import { uiScale, DEFAULT_UI_SCALE } from '../uiScale';
 import { motionPref, DEFAULT_MOTION } from '../motion';
 import { editorCaptions } from '../captionsPref';
+import { captionEnginePref, captionLanguage } from '../captionEngines';
 import { gameMusicVolume } from '../gameMusic';
 import { showWelcomeOnStart, showWhatsNewNotice } from '../whatsNew';
 import { tours } from '../tours/index.js';
@@ -132,6 +133,9 @@ const RESETS = {
 		uiScale.set(DEFAULT_UI_SCALE);
 		motionPref.set(DEFAULT_MOTION);
 		editorCaptions.set(false);
+		// 77: captions from speech
+		captionEnginePref.set('auto');
+		captionLanguage.set('');
 		// 53-int: the page's High contrast switch writes $theme, so its reset turns it off (only when on)
 		if (get(theme) === 'contrast') theme.set('dark');
 	},

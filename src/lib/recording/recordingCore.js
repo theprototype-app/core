@@ -23,7 +23,7 @@ const MAX_BITRATE = 25_000_000;
 
 /** @typedef {{mode: 'turntable'|'flythrough', target: 'selection'|'scene', resolution: string, fps: number,
  *   duration: number, quality: 'low'|'medium'|'high', revolutions: number, direction: 'cw'|'ccw',
- *   frame: boolean, hideHelpers: boolean}} RecordingPrefs */
+ *   frame: boolean, hideHelpers: boolean, captions: boolean}} RecordingPrefs */
 
 /** @type {RecordingPrefs} */
 export const DEFAULT_RECORDING_PREFS = Object.freeze({
@@ -36,7 +36,8 @@ export const DEFAULT_RECORDING_PREFS = Object.freeze({
 	revolutions: 1,
 	direction: 'ccw',
 	frame: true,
-	hideHelpers: true
+	hideHelpers: true,
+	captions: true
 });
 
 /** Typed, clamped prefs from whatever was stored (unknown keys dropped). @param {any} raw @returns {RecordingPrefs} */
@@ -57,7 +58,9 @@ export function coerceRecordingPrefs(raw) {
 		revolutions: Number.isFinite(revs) ? Math.min(4, Math.max(0.25, Math.round(revs * 4) / 4)) : d.revolutions,
 		direction: r.direction === 'cw' ? 'cw' : 'ccw',
 		frame: bool(r.frame, d.frame),
-		hideHelpers: bool(r.hideHelpers, d.hideHelpers)
+		hideHelpers: bool(r.hideHelpers, d.hideHelpers),
+		// 77 C1: burn the on-screen captions (subtitles + the caption bus) into the frames
+		captions: bool(r.captions, d.captions)
 	};
 }
 

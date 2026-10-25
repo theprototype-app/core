@@ -6,22 +6,30 @@
 	// Interact, a play link / embed / export — or anywhere when 53-scale's editor switch forces
 	// them. A headset draws the same lines on its own strip (vrGamePanel). LOCAL chrome:
 	// --z-hud, under the pause menu and the toasts; pointer-events none.
-	import { activeCaptions, captionsShown, captionsForced } from '$lib/captions';
+	// 77 C1: SUBTITLES (caption-track cues) come first and show whenever their sequence plays or
+	// is scrubbed, editor included — they are authored content, not an accessibility extra.
+	import { activeCaptions, captionsShown, captionsForced, subtitleLines } from '$lib/captions';
 	import { accessValues } from '$lib/playerAccess';
 	import { captionPx } from '$lib/playerAccessCore';
 	import { isLocked, isVRMode, editorMode } from '../../stores/sceneStore';
 	import { embedMode } from '$lib/playMode';
 
 	const playing = $derived($isLocked === true || $editorMode === 'interact' || $embedMode);
-	const shown = $derived($captionsShown && !$isVRMode && (playing || $captionsForced) && $activeCaptions.length > 0);
+	const busShown = $derived($captionsShown && (playing || $captionsForced) && $activeCaptions.length > 0);
+	const shown = $derived(!$isVRMode && (busShown || $subtitleLines.length > 0));
 	const px = $derived(captionPx($accessValues.captionSize));
 </script>
 
 {#if shown}
 	<div id="game-captions" class="captions" style:--caption-px={px + 'px'} aria-live="polite" data-hud-avoid>
-		{#each $activeCaptions as cap (cap.id)}
-			<p class="caption-line" data-caption-source={cap.source}>{cap.text}</p>
+		{#each $subtitleLines as sub (sub.seq + sub.id)}
+			<p class="caption-line caption-sub" data-caption-source="subtitle">{#if sub.speaker}<span class="caption-speaker">{sub.speaker + ': '}</span>{/if}{sub.text}</p>
 		{/each}
+		{#if busShown}
+			{#each $activeCaptions as cap (cap.id)}
+				<p class="caption-line" data-caption-source={cap.source}>{cap.text}</p>
+			{/each}
+		{/if}
 	</div>
 {/if}
 
@@ -49,6 +57,12 @@
 		font: 600 var(--caption-px) / 1.3 system-ui, sans-serif;
 		text-align: center;
 		overflow-wrap: anywhere;
+	}
+	.caption-sub {
+		white-space: pre-line;
+	}
+	.caption-speaker {
+		color: var(--text-muted);
 	}
 	@media (pointer: coarse) {
 		/* clear of the touch play controls along the bottom edge */

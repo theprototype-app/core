@@ -82,6 +82,7 @@
 		Brush,
 		Bug,
 		Camera,
+		Captions, // 77 C1: caption tracks / live captions
 		CaseSensitive,
 		Check,
 		ChevronDown,
@@ -306,6 +307,7 @@
 		brush: Brush,
 		bug: Bug,
 		camera: Camera,
+		captions: Captions,
 		'case-sensitive': CaseSensitive,
 		check: Check,
 		'chevron-down': ChevronDown,

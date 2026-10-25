@@ -36,6 +36,9 @@ import {
 	sphereOfBoxes
 } from './recordingCore.js';
 import { fixWebmDuration } from './webmDuration.js';
+// 77 C1: captions burned into the copied frame
+/** 77 C1: the caption painter, loaded by the first recording that burns captions in (lazy chunk) @type {((ctx: CanvasRenderingContext2D, w: number, h: number) => void) | null} */
+let burnLiveCaptions = null;
 
 export const RECORDINGS_FOLDER = 'Recordings';
 
@@ -155,6 +158,7 @@ function planPose(prefs) {
 export async function startRecording(override) {
 	const prefs = coerceRecordingPrefs({ ...get(recordingPrefs), ...(override || {}) });
 	const blocked = recordingBlocker(prefs);
+	if (!blocked && prefs.captions && !burnLiveCaptions) burnLiveCaptions = (await import('../captionBurn.js')).burnLiveCaptions;
 	if (blocked) {
 		recordingState.set({ ...IDLE_RECORDING, status: 'error', error: blocked });
 		return false;
@@ -366,6 +370,7 @@ export function recordingAfterRender() {
 		const dom = renderer.domElement;
 		const crop = coverRect(dom.width, dom.height, s.out.w, s.out.h);
 		s.ctx.drawImage(dom, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, s.out.w, s.out.h);
+		if (s.prefs.captions) burnLiveCaptions?.(s.ctx, s.out.w, s.out.h);
 		if (s.manual) s.track.requestFrame();
 		s.lastCapture = now;
 		s.frames++;

@@ -225,6 +225,27 @@ export function addItem(id, trackId, item) {
 	return it.id;
 }
 
+/**
+ * 77 C1: add subtitle cues in ONE edit (one undo step, one broadcast) — into the caption track
+ * `trackId`, or a new caption track named `name` when that is null / not a caption track.
+ * @param {string} id @param {string | null} trackId @param {{t: number, dur: number, text: string, speaker?: string}[]} cues @param {string} [name]
+ * @returns {{trackId: string, ids: string[]} | null}
+ */
+export function addCues(id, trackId, cues, name) {
+	const seq = sequenceOf(id);
+	if (!seq) return null;
+	const items = (cues ?? []).map((c) => normalizeItem('caption', { ...c, id: newId('it') })).filter((it) => it.text);
+	const into = trackIn(seq, trackId ?? '');
+	const target = into?.kind === 'caption' ? into : normalizeTrack({ kind: 'caption', name: name || TRACK_LABELS.caption });
+	const done = editSequence(id, (s) => ({
+		...s,
+		tracks: into?.kind === 'caption'
+			? s.tracks.map((/** @type {any} */ tr) => (tr.id === target.id ? { ...tr, items: [...tr.items, ...items] } : tr))
+			: [...s.tracks, { ...target, items }]
+	}));
+	return done ? { trackId: target.id, ids: items.map((it) => it.id) } : null;
+}
+
 /** @param {string} id @param {string} itemId @param {any} patch */
 export function updateItem(id, itemId, patch) {
 	return editSequence(id, (s) => ({

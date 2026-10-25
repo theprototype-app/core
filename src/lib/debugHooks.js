@@ -166,6 +166,12 @@ export const DEBUG_HOOKS = [
 	['settingsReset', () => import('./settings/resetCategory')],
 	['motion', () => import('./motion')],
 	['captionsPref', () => import('./captionsPref')],
+	// 77 C1/C2: the caption bus + subtitles, the engine registry, the (lazy) caption jobs + file formats
+	['captions', () => import('./captions')],
+	['captionEngines', () => import('./captionEngines')],
+	['captionJobs', () => import('./captionJobs')],
+	['subtitleFormat', () => import('./subtitleFormat')],
+	['captionBurn', () => import('./captionBurn')],
 	['phoneShell', () => import('./ui/phoneShell.js')],
 	// 42 I5: the phone bar list (phoneBar / setBar) and More's three chrome switches
 	['phoneBar', () => import('./ui/phoneBar.js')],

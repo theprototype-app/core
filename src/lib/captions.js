@@ -74,6 +74,33 @@ export function captionSound(authored, from) {
 	return showCaption({ text, source: from.source, seconds: from.seconds });
 }
 
+// ---- 77 C1: SUBTITLES — the cues of caption TRACKS (sequenceCore `captionsAt`), keyed by the
+// sequence showing them (a run's playhead or a parked scrub). Unlike the bus above they are
+// AUTHORED content: shown to everyone while their sequence plays, whatever the Captions switch.
+/** @typedef {{id: string, text: string, speaker?: string, seq: string}} SubtitleLine */
+/** @type {import('svelte/store').Writable<SubtitleLine[]>} */
+export const subtitleLines = writable([]);
+/** @type {Map<string, {sig: string, lines: SubtitleLine[]}>} */
+const subtitleBy = new Map();
+
+/**
+ * The cues `key` (a sequence id) shows now; [] takes them down. Writes the store only on a
+ * CHANGE (the player calls this every frame).
+ * @param {string} key @param {{id: string, text: string, speaker?: string}[]} cues
+ */
+export function setSubtitles(key, cues) {
+	const sig = cues.map((c) => c.id + '\u0001' + c.text + '\u0001' + (c.speaker ?? '')).join('\u0002');
+	if ((subtitleBy.get(key)?.sig ?? '') === sig) return;
+	if (cues.length) subtitleBy.set(key, { sig, lines: cues.map((c) => ({ ...c, seq: key })) });
+	else subtitleBy.delete(key);
+	subtitleLines.set([...subtitleBy.values()].flatMap((v) => v.lines));
+}
+
+/** One string per subtitle line, speaker first ("Ana: text"). @param {SubtitleLine[]} lines */
+export function subtitleTexts(lines) {
+	return lines.map((l) => (l.speaker ? l.speaker + ': ' : '') + l.text);
+}
+
 /** Clear every line (a scene switch, leaving play). */
 export function clearCaptions() {
 	activeCaptions.set([]);
@@ -81,5 +108,5 @@ export function clearCaptions() {
 
 /** the suites' view */
 export function captionsDebug() {
-	return { pushed: debug.pushed, last: [...debug.last], live: get(activeCaptions).map((c) => ({ text: c.text, source: c.source })), shown: get(captionsShown) };
+	return { pushed: debug.pushed, last: [...debug.last], live: get(activeCaptions).map((c) => ({ text: c.text, source: c.source })), shown: get(captionsShown), subtitles: get(subtitleLines).map((l) => ({ text: l.text, speaker: l.speaker ?? '', seq: l.seq })) };
 }

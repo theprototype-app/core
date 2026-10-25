@@ -19,17 +19,26 @@
 //             on (captions.js); ABSENT when unset, so a captionless document is byte-identical
 //     event:  { name } — fires the graph event `name` (On Sequence Event) as the
 //             playhead crosses `t`; `dur` is ignored
+//     caption: { text, speaker? } — 77 C1: a SUBTITLE cue, on screen while the playhead is
+//             inside [t, t+dur) (`captionsAt`); `text` may hold line breaks (≤ 3 lines);
+//             `speaker` is ABSENT when unset. Drawn by the caption overlay, the VR strip and
+//             the recorder's burn-in; imported/exported as .srt/.vtt (subtitleFormat.js)
 // Unknown fields RIDE THROUGH every normalize (the hudSync rule): a newer peer's field
 // survives an older peer's edit of the same document.
 
-export const TRACK_KINDS = /** @type {const} */ (['camera', 'anim', 'audio', 'event']);
+export const TRACK_KINDS = /** @type {const} */ (['camera', 'anim', 'audio', 'event', 'caption']);
 
 export const TRACK_LABELS = /** @type {Record<string, string>} */ ({
 	camera: 'Camera',
 	anim: 'Animation',
 	audio: 'Audio',
-	event: 'Event'
+	event: 'Event',
+	caption: 'Captions'
 });
+
+/** 77 C1: a cue's text cap and line cap (an .srt line wraps on screen; three is the subtitle norm's limit) */
+export const CAPTION_TEXT_MAX = 300;
+export const CAPTION_LINES_MAX = 3;
 
 export const DEFAULT_DURATION = 10;
 export const MIN_DURATION = 0.1;
@@ -99,7 +108,55 @@ export function normalizeItem(kind, raw) {
 		};
 	if (kind === 'audio')
 		return { ...base, sound: str(r.sound), name: str(r.name), gain: clamp(num(r.gain, 1), 0, 2) };
+	if (kind === 'caption') {
+		const out = { ...base, text: cleanCueText(r.text) };
+		if (str(r.speaker).trim()) out.speaker = str(r.speaker).trim().slice(0, 60);
+		else delete out.speaker;
+		return out;
+	}
 	return { ...base, name: str(r.name) || 'event' };
+}
+
+/** A cue's text: line breaks kept (≤ CAPTION_LINES_MAX, each trimmed), capped. @param {any} v */
+export function cleanCueText(v) {
+	return str(v)
+		.replace(/\r\n?/g, '\n')
+		.split('\n')
+		.map((l) => l.replace(/\s+/g, ' ').trim())
+		.filter(Boolean)
+		.slice(0, CAPTION_LINES_MAX)
+		.join('\n')
+		.slice(0, CAPTION_TEXT_MAX);
+}
+
+/**
+ * Break a cue into rows of at most `max` characters, at spaces where it can (a hard break
+ * inside one over-long word), keeping its own line breaks. Pure.
+ * @param {string} text @param {number} max @returns {string[]}
+ */
+export function splitCaption(text, max) {
+	/** @type {string[]} */
+	const rows = [];
+	for (const line of String(text ?? '').split('\n')) {
+		let row = '';
+		for (const word of line.split(' ').filter(Boolean)) {
+			let w = word;
+			while (w.length > max) {
+				if (row) rows.push(row);
+				rows.push(w.slice(0, max));
+				w = w.slice(max);
+				row = '';
+			}
+			if (!row) row = w;
+			else if (row.length + 1 + w.length <= max) row += ' ' + w;
+			else {
+				rows.push(row);
+				row = w;
+			}
+		}
+		if (row) rows.push(row);
+	}
+	return rows;
 }
 
 /** @param {any} raw @returns {any} */
@@ -220,6 +277,25 @@ export function liveItems(seq, t, kind) {
 		if (track.muted || track.kind !== kind) continue;
 		for (const item of track.items)
 			if (t >= item.t && t < item.t + item.dur) out.push({ item, track, offset: t - item.t });
+	}
+	return out;
+}
+
+/**
+ * 77 C1: the subtitle cues on screen at t — every unmuted caption track's items covering t
+ * (start inclusive, end exclusive, so back-to-back cues never show together), in track order.
+ * Pure: the overlay, the VR strip and a frame-exact burn-in all read it.
+ * @param {any} seq @param {number} t
+ * @returns {{id: string, text: string, speaker?: string}[]}
+ */
+export function captionsAt(seq, t) {
+	/** @type {{id: string, text: string, speaker?: string}[]} */
+	const out = [];
+	for (const track of seq?.tracks ?? []) {
+		if (track.kind !== 'caption' || track.muted) continue;
+		for (const item of track.items ?? [])
+			if (item.text && t >= item.t && t < item.t + item.dur)
+				out.push(item.speaker ? { id: item.id, text: item.text, speaker: item.speaker } : { id: item.id, text: item.text });
 	}
 	return out;
 }

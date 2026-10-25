@@ -24,6 +24,8 @@ import {
 	MAX_DURATION,
 	MIN_ITEM
 } from './sequenceCore';
+// 77: every local write stamps what it changed, so two peers' edits merge (sequenceMerge.js)
+import { stampChanges, stripStamps } from './sequenceMerge';
 
 /** id -> sequence document @type {import('svelte/store').Writable<Record<string, any>>} */
 export const sequences = writable({});
@@ -75,9 +77,12 @@ export function registerSequenceHistory(fn) {
  * here (setHudDocFor's contract), so the four never drift.
  * @param {string} id
  * @param {any} patch partial document; `null` deletes
- * @param {{silent?: boolean, stamp?: number, history?: boolean}} [opts] `silent` skips
+ * @param {{silent?: boolean, stamp?: number, history?: boolean, raw?: boolean, reset?: boolean, whole?: boolean}} [opts] `silent` skips
  *   history AND broadcast (the applier: a receiver never re-broadcasts — golden rule 1);
- *   `history: false` broadcasts without an undo step (a restore into a live room)
+ *   `history: false` broadcasts without an undo step (a restore into a live room);
+ *   77: `raw` writes the document's merge stamps as they are (the applier, a cancelled drag),
+ *   otherwise what changed is stamped; `reset` stamps everything and raises `resetAt` (a load);
+ *   `whole`: `patch` is the entire document, not a patch over the current one
  */
 export function setSequence(id, patch, opts = {}) {
 	const before = sequenceOf(id);
@@ -88,13 +93,16 @@ export function setSequence(id, patch, opts = {}) {
 		if (patch === null) delete next[id];
 		else {
 			after = normalizeSequence({
-				...(all[id] ?? {}),
+				// a WHOLE document (an edit's result, a merge, an undo) replaces, so a field it
+				// dropped (the last marker, a transition) does not come back from the old one
+				...(opts.whole || opts.raw ? {} : (all[id] ?? {})),
 				...patch,
 				id,
 				// MONOTONIC per id: a drag writes several times inside one millisecond, and
 				// a bare clock would let the receiver's latest-wins guard drop all but one
 				changedAt: opts.stamp ?? Math.max(sessionNow(), (all[id]?.changedAt ?? 0) + 1)
 			});
+			if (!opts.raw) after = stampChanges(all[id] ?? null, after, after.changedAt, { reset: opts.reset });
 			next[id] = after;
 		}
 		return next;
@@ -113,7 +121,7 @@ export function setSequence(id, patch, opts = {}) {
 function editSequence(id, fn) {
 	const seq = sequenceOf(id);
 	if (!seq) return null;
-	return setSequence(id, fn(structuredClone(seq)));
+	return setSequence(id, fn(structuredClone(seq)), { whole: true });
 }
 
 // ---- authoring --------------------------------------------------------------
@@ -294,7 +302,8 @@ export function sequencesSnapshot() {
 	const all = get(sequences);
 	/** @type {Record<string, any>} */
 	const out = {};
-	for (const [id, seq] of Object.entries(all)) out[id] = normalizeSequence(seq);
+	// 77: the merge stamps are session state, never file content (a save, the scene signature)
+	for (const [id, seq] of Object.entries(all)) out[id] = stripStamps(normalizeSequence(seq));
 	return Object.keys(out).length ? out : null;
 }
 
@@ -325,9 +334,11 @@ export function sequencesRestore(map, replace = false, replicate = false) {
 	for (const [id, seq] of Object.entries(map)) {
 		if (!seq) continue;
 		setSequence(id, normalizeSequence({ ...seq, id }), {
+			whole: true,
 			silent: !replicate,
 			history: false,
-			stamp: stamp + i++
+			stamp: stamp + i++,
+			reset: true
 		});
 	}
 	const active = get(activeSequence);

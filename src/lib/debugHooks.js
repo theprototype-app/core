@@ -397,6 +397,8 @@ export const DEBUG_HOOKS = [
 	// 65 M2: the shader background layer + its packs preset loader
 	['backgroundLayer', () => import('./backgroundLayer')],
 	['backgroundPresets', () => import('./backgroundPresets')],
+	// 65 gradient: the Gradient lab's pure rules (the runtime is reached through backgroundLayer)
+	['gradientLabCore', () => import('./gradientLabCore')],
 	['fluidLayer', () => import('./fluidLayer')],
 	['postGraphPresets', () => import('./postGraphPresets')],
 	['materialSharing', () => import('./materialSharing')],

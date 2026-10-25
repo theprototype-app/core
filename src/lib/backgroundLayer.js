@@ -37,6 +37,8 @@ import { viewportOverrides, renderLayer } from './viewportOverrides.js';
 import { qualityOverrides, phoneQuality } from './qualityGovernor.js';
 import { ndcFromClient } from './canvasRect.js';
 import { pointerHandRay } from './vr/pointer.js';
+import { reducedMotion } from './motion.js';
+import { gradientNodeOf } from './gradientLabCore.js';
 
 /** The ONE background document key (a scene has one background). */
 export const BACKGROUND_KEY = 'background';
@@ -62,8 +64,36 @@ const U = {
 	uScroll: { value: new THREE.Vector2(0, 0) },
 	uAspect: { value: 1 },
 	resolution: { value: new THREE.Vector2(1, 1) },
-	texelSize: { value: new THREE.Vector2(1, 1) }
+	texelSize: { value: new THREE.Vector2(1, 1) },
+	// 65 gradient: the Gradient lab's offscreen picture (a dark 1x1 until the lazy chunk draws),
+	// the layer's pixel size and the dot-screen pitch in those pixels
+	tpGradientTex: { value: /** @type {any} */ (null) },
+	tpGradientPx: { value: new THREE.Vector2(1, 1) },
+	tpGradientDot: { value: 2 }
 };
+const gradientPlaceholder = new THREE.DataTexture(new Uint8Array([24, 24, 28, 255]), 1, 1);
+gradientPlaceholder.needsUpdate = true;
+U.tpGradientTex.value = gradientPlaceholder;
+
+// ---- 65 gradient: the Gradient lab (lazy) ---------------------------------------------
+// Loaded the first time a compiled graph wires a `gradientLab` node, so a scene without one
+// never fetches it (the three.js mesh, the ported noise GLSL, the target).
+/** @type {any} */
+let lab = null;
+/** @type {Promise<any>|null} */
+let labLoading = null;
+function loadLab() {
+	if (!labLoading)
+		labLoading = import('./gradientLab.js').then(
+			(m) => (lab = m),
+			() => (labLoading = null)
+		);
+	return labLoading;
+}
+function releaseLab() {
+	lab?.releaseGradientLab();
+	U.tpGradientTex.value = gradientPlaceholder;
+}
 
 const SCREEN_VERTEX = /* glsl */ `
 	varying vec2 vUv;
@@ -134,6 +164,7 @@ export function compileBackground(key) {
 	const doc = shaderGraphOf(key);
 	if (!doc) {
 		compiled = null;
+		releaseLab();
 		disposeMaterials();
 		setErrors([]);
 		refreshDraw();
@@ -164,6 +195,10 @@ export function compileBackground(key) {
 		void resolveShaderTexture(ref.hash).then(refillTextures, () => {});
 	}
 	compiled = ir;
+	// the lab node only matters when it is WIRED (the fragment calls it)
+	compiled.usesGradient = ir.fragment.includes('tpGradientLab(');
+	if (compiled.usesGradient) void loadLab();
+	else releaseLab();
 	setErrors([]);
 	refreshDraw();
 	return { ok: true };
@@ -432,6 +467,24 @@ export function tickBackgroundLayer(camera = get(globalCamera), renderer = get(g
 		const h = boxSize.y > 1e-4 ? boxSize.y : boxSize.z;
 		U.uAspect.value = h > 1e-4 ? Math.abs(boxSize.x / h) : 1;
 	}
+	if (compiled?.usesGradient && lab) {
+		const node = gradientNodeOf(shaderGraphOf(BACKGROUND_KEY));
+		const px = draw === 'screen' ? [U.resolution.value.x, U.resolution.value.y] : draw === 'plane' ? [U.resolution.value.y * U.uAspect.value, U.resolution.value.y] : [2048, 1024];
+		const out = lab.renderGradientLab(renderer, {
+			data: node?.data ?? {},
+			seconds: U.uShaderTime.value,
+			width: px[0],
+			height: px[1],
+			sphere: draw === 'sphere',
+			tier,
+			xr,
+			reducedMotion: get(reducedMotion),
+			dpr: renderer?.getPixelRatio?.() ?? 1
+		});
+		U.tpGradientTex.value = out.texture;
+		U.tpGradientPx.value.set(out.px[0], out.px[1]);
+		U.tpGradientDot.value = out.dot;
+	}
 	if (layer.pointer && compiled?.usesPointer) {
 		// raycasting a plane or the hand ray only when something could have moved it
 		if (draw === 'screen' || draw === 'sphere' || pointerTarget.moved || get(isVRMode)) {
@@ -534,8 +587,17 @@ export function backgroundLayerDebug() {
 		programs: Object.fromEntries(Object.entries(materials).map(([k, m]) => [k, !!m])),
 		usesPointer: !!compiled?.usesPointer,
 		usesClock: !!compiled?.usesClock,
-		usesScroll: !!compiled?.usesScroll
+		usesScroll: !!compiled?.usesScroll,
+		usesGradient: !!compiled?.usesGradient,
+		gradient: compiled?.usesGradient && lab ? lab.gradientLabDebug() : null
 	};
+}
+
+/** test seam: the Gradient lab's picture (mean colour + grid hash), or null when none is drawn */
+export async function readGradientForTest() {
+	if (!compiled?.usesGradient) return null;
+	await loadLab();
+	return lab?.readGradientForTest(get(globalRenderer)) ?? null;
 }
 
 /** test seam: the meshes (for a pixel probe / render-order check) */

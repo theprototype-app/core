@@ -11,12 +11,13 @@ import { writable, get } from 'svelte/store';
 import { PACKS_BASE } from './packs';
 import { fetchIndex, onContentStale } from './contentBase';
 import { normalizePresetIndex, normalizePresetDoc, builtinPresetDoc, BUILTIN_PRESET_KEY } from './backgroundPresetsCore.js';
+import { shaderNodeDef } from './shaderCatalog.js';
 
 /** Where the set lives inside the packs repo. */
 export const BACKGROUNDS_PATH = 'backgrounds';
 
 /**
- * @typedef {{key: string, label: string, hint: string, file: string, source: 'packs'|'builtin'}} PresetRow
+ * @typedef {{key: string, label: string, hint: string, file: string, family?: string, needs?: string[], source: 'packs'|'builtin'}} PresetRow
  * @type {import('svelte/store').Writable<{status: 'idle'|'loading'|'ready'|'offline', error: string, presets: PresetRow[]}>}
  */
 export const backgroundPresets = writable({
@@ -51,7 +52,8 @@ export function loadBackgroundPresets(opts = {}) {
 		try {
 			const res = await fetchIndex(base() + '/index.json');
 			if (!res.ok) throw new Error('HTTP ' + res.status);
-			const index = normalizePresetIndex(await res.json());
+			// a row needing a node this build lacks is dropped (65 gradient: the `needs` field)
+			const index = normalizePresetIndex(await res.json(), (type) => !!shaderNodeDef(type));
 			if (!index.ok) throw new Error(index.error);
 			/** @type {PresetRow[]} */
 			const rows = index.presets.map((p) => ({ ...p, source: /** @type {const} */ ('packs') }));

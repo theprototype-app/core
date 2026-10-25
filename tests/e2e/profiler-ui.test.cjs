@@ -390,7 +390,7 @@ h.run(async () => {
 	});
 	// auto-LOD draws the 60k mesh lighter, so the exact number is what was DRAWN: assert the size of the drop
 	h.check(
-		cmp.delta <= -10000 && /-[5-9]\d%|-100%/.test(cmp.text ?? ''),
+		cmp.delta <= -10000 && /-([5-9]\d|100)(\.\d)?%/.test(cmp.text ?? ''), // pct has one decimal (profilerModel r1)
 		`compare: Heavy lost ${-cmp.delta} triangles per frame (${cmp.text})`
 	);
 	h.check(/pf-better/.test(cmp.tone ?? ''), 'and the change reads as better');

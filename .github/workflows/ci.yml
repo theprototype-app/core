@@ -33,8 +33,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -57,8 +57,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -92,8 +92,8 @@ jobs:
   scene-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -103,12 +103,12 @@ jobs:
         run: |
           echo "scenes=$(node -p "require('./perf/budgets.json').scenes.ref")" >> "$GITHUB_OUTPUT"
           echo "scenes_repo=$(node -p "require('./perf/budgets.json').scenes.repo")" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: ${{ steps.refs.outputs.scenes_repo }}
           ref: ${{ steps.refs.outputs.scenes }}
           path: .perf-deps/scenes
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: theprototype-app/packs
           path: .perf-deps/packs
@@ -123,7 +123,7 @@ jobs:
   supply-chain:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: SBOM (syft, SPDX JSON)
         uses: anchore/sbom-action@v0.24.3
         with:
@@ -145,8 +145,8 @@ jobs:
   unit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -160,8 +160,8 @@ jobs:
     # PRs in a row; until then a red here is a signal to read, not a block.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -204,8 +204,8 @@ jobs:
     if: ${{ !inputs.battery }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -229,7 +229,7 @@ jobs:
           npm run e2e -- a11y-axe a11y-reader || rc=$?
           [ -f /tmp/axe/axe-after.md ] && cat /tmp/axe/axe-after.md >> "$GITHUB_STEP_SUMMARY"
           exit $rc
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: axe-report
@@ -248,10 +248,10 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -284,7 +284,7 @@ jobs:
           node tests/e2e/tools/kit-diff.cjs diff /tmp/kit/base /tmp/kit/head /tmp/kit/diff; rc=$?
           cat /tmp/kit/diff/report.md >> "$GITHUB_STEP_SUMMARY"
           exit $rc
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.base.outputs.has_kit == '1'
         with:
           name: kit-diff

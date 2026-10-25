@@ -49,25 +49,25 @@ jobs:
       E2E_NO_PERF_OFFER: '1'
       MODE: quick
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: core
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: ${{ fromJSON(inputs.refs).scenes.repo }}
           ref: ${{ fromJSON(inputs.refs).scenes.ref }}
           path: scenes
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: ${{ fromJSON(inputs.refs).modules.repo }}
           ref: ${{ fromJSON(inputs.refs).modules.ref }}
           path: modules
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: ${{ fromJSON(inputs.refs).packs.repo }}
           ref: ${{ fromJSON(inputs.refs).packs.ref }}
           path: packs
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version-file: core/.nvmrc
           cache: npm
@@ -81,7 +81,7 @@ jobs:
           # the module zips the game suites install (MODULES_REPO)
           (cd modules && npm ci --no-audit --no-fund && node scripts/pack.cjs --all --force)
       # confirm: what the required shards left red (or unrun), from their artifacts
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: inputs.set == 'confirm'
         with:
           pattern: battery-required-*
@@ -99,7 +99,7 @@ jobs:
                  POOL_TPSCENE=$S/examples/pool-party/scene.tpscene
           node scripts/ci/battery.cjs run --set ${{ inputs.set }} ${{ inputs.set == 'confirm' && '--from "$W/prev"' || '' }} --shard ${{ matrix.shard }} --of ${{ matrix.of }} --serve --port 5173 \
             --deadline ${{ inputs.deadline }} --out "$W/battery-out"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: battery-${{ inputs.set }}-${{ matrix.shard }}

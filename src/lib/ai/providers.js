@@ -1,5 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
+import { registerSecretSource } from '../diagnostics';
 
 // AI provider settings (roadmap #10, A1). A LOCAL per-device preference — the
 // only credentials the app stores. Keys live in PLAINTEXT localStorage (there is
@@ -112,6 +113,8 @@ function persistProviders(list) {
 /** Saved provider configs (list — a user can keep Grok + several vLLM boxes).
  * @type {import('svelte/store').Writable<AiProviderConfig[]>} */
 export const aiProviders = writable(loadProviders());
+// 69 T2: the keys never reach a pasted diagnostics bundle
+registerSecretSource(() => get(aiProviders).map((p) => p.apiKey));
 
 /** id of the active provider, or null.
  * @type {import('svelte/store').Writable<string|null>} */

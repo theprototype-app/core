@@ -24,6 +24,7 @@ import {
 } from './animatedImports';
 import { animationsSnapshot, animationsRestore, copyAnimationsFrom } from './animationPreview';
 import { shaderGraphsSnapshot, shaderGraphsRestore, copyShaderGraphFrom } from './shaderGraph';
+import { preloadSandboxFor } from './sandbox/preload.js';
 import {
 	peers,
 	showToast,
@@ -1032,6 +1033,8 @@ export async function readSessionZip(buffer) {
 		showToast('This level needs a newer app version (format ' + format + ' > ' + SESSION_FORMAT + ')');
 		return null;
 	}
+	// 69: the engine loads while the assets restore (applySession asks again — a no-op by then)
+	preloadSandboxFor(payload);
 	await restoreZipAssets(entries, strFromU8);
 	// R22 round 12: and the library's own files, which session.json carries only an index of
 	await restoreLibraryBlobs(payload, entries);
@@ -1062,6 +1065,7 @@ export async function importSessionZip(buffer) {
 	// 21-I5: after the confirms (a cancelled import must not talk about the file it did
 	// not read) and before the restore loops, which never touch `versions/`
 	noteBundledVersions(entries);
+	preloadSandboxFor(payload); // 69: as in readSessionZip
 	await restoreZipAssets(entries, strFromU8);
 	// R22 round 12: a bundle written by this build carries its library as real files, so
 	// an imported PROJECT entry arrives with its files rather than with `{}` where each
@@ -1447,6 +1451,8 @@ export async function applySession(payload, opts = {}) {
 	// still arriving is how a user cancels A, and it must not leave A's objects in B.
 	// 36 F20: a person's click CLAIMED its job before downloading/asking (`claimLoad`); the
 	// apply adopts that claim — and a claim a newer load has superseded applies NOTHING.
+	// 69: a scene that carries code starts the sandbox engine now, so it loads while the objects build
+	preloadSandboxFor(payload);
 	const name = payload?.name ?? 'scene';
 	const total = (payload?.objects ?? []).length;
 	/** @type {any} */

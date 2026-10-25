@@ -5,6 +5,36 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.43.2 — A dependency fix 🔧
+
+- 🔧 Updated **body-parser** (a security advisory, GHSA-27r3-jxmh-p828) in the development tools and the agent bridge.
+  The app you open in the browser does not use it and is unchanged; the downloadable release builds are published
+  again from this version.
+
+## 1.43.1 — Security: scene code runs in a sandbox 🔒
+
+A security fix ([GHSA-r74q-9hg7-wrgr](https://github.com/theprototype-app/core/security/advisories/GHSA-r74q-9hg7-wrgr)).
+Until now, code carried inside a scene — Script nodes, Behaviour files, the Player code of a Character Controller and
+**Custom (code)** HUD elements — ran as part of the app page itself, so a scene someone opened (a shared play link, an
+embed, a session peer's scene) could read what the page keeps: AI provider keys and, on theprototype.app, your sign-in.
+Please update; self-hosters, rebuild from this release.
+
+- 🔒 **Scene code runs in a sandbox**: a separate JavaScript engine (QuickJS, WebAssembly) that has only the scene API
+  it is given — no page, storage, cookies, network or DOM. Your scripts and the bundled games work as before; a
+  scene with code loads the engine while the scene is opening.
+- 🧩 **Custom (code) HUD elements** draw through a small document whose markup is cleaned before it is shown
+  (text, boxes, styles, SVG, a 2D canvas). Event listeners, timers and images by URL are not available inside one.
+- 🛡️ **Built apps ship a Content-Security-Policy**, so injected scripts do not run. Self-hosting? The policy is in
+  every page; `build/_headers` holds the one line (`frame-ancestors`) a server has to send itself.
+- 🔑 A diagnostics bundle never contains your API keys.
+- 📡 An invite link that names a different signaling server asks before switching to it.
+- ▶️ Optional for hosted setups: `VITE_PLAY_ORIGIN` serves play links and embeds from a second origin. On
+  theprototype.app, play links and embeds now open from play.theprototype.app.
+- 🧱 Installed modules are trusted code and are unchanged — install only modules you trust (see SECURITY.md).
+- ☁️ On theprototype.app: your sign-in renews itself while you use the app and is no longer kept where page code
+  can read it; **Sign out everywhere** ends every session at once; and roles in a room are verified — only the host
+  or an admin can change who may edit, and when the host leaves an admin or editor takes over.
+
 ## 1.43.0 — Scatter everywhere: any model, on any object, edited by hand, the same on every device 🌿
 
 Scatter grew up: pack items, prefabs and mixes of models, on any object (not just terrains), filled to a count with

@@ -1,6 +1,6 @@
 {
 	"name": "theprototype.app",
-	"version": "1.43.0",
+	"version": "1.43.2",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -11,7 +11,7 @@
 		"dev": "vite dev",
 		"certs": "node scripts/gen-certs.cjs",
 		"build": "vite build",
-		"postbuild": "node scripts/export-manifest.cjs",
+		"postbuild": "node scripts/csp-headers.cjs && node scripts/export-manifest.cjs",
 		"check:export": "node scripts/check-export.cjs",
 		"preview": "vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
@@ -55,6 +55,7 @@
 		"@gltf-transform/core": "^4.5.1",
 		"@gltf-transform/extensions": "^4.5.1",
 		"@gltf-transform/functions": "^4.5.1",
+		"@jitl/quickjs-wasmfile-release-sync": "0.32.0",
 		"@lucide/svelte": "^1.61.0",
 		"@shaderfrog/core": "^4.0.2",
 		"@shaderfrog/glsl-parser": "^7.0.1",
@@ -70,6 +71,7 @@
 		"n8ao": "^2.0.1",
 		"peerjs": "^1.5.5",
 		"postprocessing": "^6.39.5",
+		"quickjs-emscripten-core": "0.32.0",
 		"svelte-hamburgers": "^5.0.0",
 		"three": "^0.186.1",
 		"three-bvh-csg": "^0.0.18",

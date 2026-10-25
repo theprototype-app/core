@@ -24,6 +24,7 @@ import {
 // cloudPlugin path is in history's import subtree — App alone imports this module).
 import { currentLevel } from './levels';
 import { myPlayMode, peerPlayModes } from './gamePresence';
+import { onPlayOrigin, playUrl } from './playOrigin.js';
 import { safeStorage } from './safeStorage';
 // v3.1 (roadmap 29 G-3): the hosted-AI preset seam. Both provider modules are LEAVES
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
@@ -260,6 +261,13 @@ export function makeCloudApi() {
 		/** 29: this engine carries `cloudMeta` on dials and consults `authProvider.decide`
 		 *  (admit / deny / knock-with-label). Absent on older engines — probe it. */
 		dialMeta: true,
+		/** 69 T4: this page is served from the separate PLAY origin (`VITE_PLAY_ORIGIN`): player-only,
+		 *  and nothing that signs anyone in belongs here (a token on this origin is what the split
+		 *  exists to avoid). Absent on older engines — probe it; false on the app origin. */
+		playOrigin: onPlayOrigin,
+		/** 69 T4: an absolute play / embed URL — on the play origin when one is configured, else here.
+		 *  @param {string} path e.g. `/?s=<id>&play=1&embed=1` */
+		playUrl: (/** @type {string} */ path) => playUrl(String(path ?? '/')),
 
 		// --- plugin message channel (replicate the plugin's own state) ---
 		/** broadcast a cloud message to all peers (roles, room announces) */

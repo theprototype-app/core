@@ -281,6 +281,16 @@ of `s` (`whatsNew.hasDeepLink()`): the first-run welcome overlay stands down for
 boot exactly as it does for an invite. What the id means, fetching the record, loading it
 (`loadRemoteScene`) and honouring `play=1` (`startPlay`) are the plugin's.
 
+#### 69 T4: a separate play origin — `playOrigin` · `playUrl(path)` — additive, no bump
+
+A deployment may serve the same build from a second origin (`VITE_PLAY_ORIGIN`, e.g.
+`https://play.theprototype.app`) and send play links and embeds there, so a played scene runs on a
+page that holds none of the editor's storage. `api.playOrigin` is `true` on that origin (the page is
+player-only for its whole life, the embed chrome) — a plugin must not offer sign-in or keep a token
+there. `api.playUrl('/?s=<id>&play=1')` is the absolute URL to put in a play link or an embed: on
+the play origin when one is configured, else on this origin. Probe both (`typeof`): older engines
+have neither. `VITE_APP_ORIGIN` is the editor origin the player's "Open in the app" link returns to.
+
 ### 5. Continuity — scene changes and projects (CL-5) — additive, no bump
 
 Five members for a tier that keeps scenes and whole projects on a server (cloud saves, rooms that survive

@@ -25,6 +25,8 @@ export const DEBUG_HOOKS = [
 	['kitEntities', () => import('./kit/entityApp.js')],
 	// 34 R3 (D1/D2): behaviours (runtime, behaviourStatus, behavioursDebug)
 	['behaviours', () => import('./behaviours/app.js')],
+	// 69: the sandbox engine (sandboxReady / loadSandbox / sandboxLoadError) — probes on built apps
+	['sandbox', () => import('./sandbox/engine.js')],
 	['meshEdit', () => import('./meshEdit')],
 	['perf', () => import('./perf/recorder')],
 	['perfDetailed', () => import('./perf/detailed')],

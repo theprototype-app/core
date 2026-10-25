@@ -6,9 +6,10 @@
 //              scene, replicates through node sync, joins late joiners through getnodes, undoes as
 //              a node-data edit, and the Explorer lists it as `<name>.js` (sceneAssets) — no new
 //              persistence path. Every peer evaluates the SAME text.
-//   LOADING    analyze (the lint stops a file that would make peers disagree), then the module
-//              loader's blob import (userModules.importModuleText — the path installed modules
-//              take; source.js puts the one-line scope prologue in front), then core.start.
+//   LOADING    analyze (the lint stops a file that would make peers disagree), then the file is
+//              evaluated in the sandbox GUEST (69 T1, sandbox/behaviours.js — its own engine
+//              context: no DOM, storage or network; source.js's prologue + loop guard as before;
+//              `def` comes back as data + host stubs), then core.start.
 //   T2         each behaviour is a lifecycle MODULE `behaviour:<nodeId>`: its kit face's
 //              listeners, its owned kit entities and its scope are tracked in the registry
 //              (sdk/lifecycle.js), and removing the node (or disabling it, or a scene clear)
@@ -32,7 +33,7 @@ import { log } from '../diagnostics';
 import { kit, kitAuthorityId } from '../kit/runtime.js';
 import { track, disposeRegistrations, registrationsOf } from '../sdk/lifecycle.js';
 import { createBehaviourRuntime, BHV } from './core.js';
-import { compileBehaviour } from './source.js';
+import { compileBehaviourInGuest } from '../sandbox/behaviours.js';
 import { analyze } from './analyze.js';
 import { globMatch } from './events.js';
 // 36 (U10): module ENGINE pieces a game's rules call as `kit.<piece>.*` (engines.js)
@@ -134,12 +135,6 @@ function setStatus(id, patch) {
 	behaviourStatus.update((all) => ({ ...all, [id]: { ...(all[id] ?? {}), ...patch } }));
 }
 
-/** the module loader's evaluation (lazy: userModules reaches the SDK) @param {string} code */
-async function importText(code) {
-	const m = await import('../userModules');
-	return m.importModuleText(code);
-}
-
 /** the owner object of a graph, as `this.object` @param {string | undefined} graphId */
 function ownerRef(graphId) {
 	if (!graphId || graphId === 'scene') return null;
@@ -189,7 +184,7 @@ async function load(node) {
 	/** @type {any} */
 	let compiled;
 	try {
-		compiled = await compileBehaviour(code, importText);
+		compiled = await compileBehaviourInGuest(code);
 	} catch (error) {
 		if (seq !== entry.seq) return;
 		runtime.stop(id);

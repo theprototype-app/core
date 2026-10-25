@@ -5,12 +5,18 @@
 // message goes through the app's validateWireMessage), and the peer's own kit as the handlers'
 // `kit`. A behaviour FILE is compiled on every peer separately (source.js, a data: URL instead of
 // the app's blob — the same text), exactly as each browser evaluates it.
+// 69 T1: the app evaluates a behaviour in the sandbox GUEST (sandbox/behaviours.js), so the sim does
+// too; BEHAVIOUR_REALM=host runs the old in-realm import instead (an A/B for a red).
+
+const compileFile = (/** @type {string} */ source) =>
+	process.env.BEHAVIOUR_REALM === 'host' ? compileBehaviour(source, dataUrlImporter) : compileBehaviourInGuest(source);
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createSim } from './logicSim.js';
 import { createBehaviourRuntime, BHV } from '../../../src/lib/behaviours/core.js';
 import { compileBehaviour, dataUrlImporter } from '../../../src/lib/behaviours/source.js';
+import { compileBehaviourInGuest } from '../../../src/lib/sandbox/behaviours.js';
 import { pickAuthority } from '../../../src/lib/kit/authority.js';
 
 /** a file under static/behaviours @param {string} name */
@@ -62,7 +68,7 @@ export function createBehaviourSim(opts = {}) {
 				mod = { list, face: p.kit.api({ onDispose: (/** @type {() => void} */ fn) => list.push(fn), moduleId: 'behaviour:' + id }) };
 				modules.set(id, mod);
 			}
-			const { def, scope } = await compileBehaviour(source, dataUrlImporter);
+			const { def, scope } = await compileFile(source);
 			const inst = p.bhv.start(id, def, { name: def.name ?? id, kit: mod.face, resetGuard: () => scope.scope.resetGuard?.() });
 			scope.bind(inst.ctx.kit);
 			p.bhv.loaded(id); // 36 (U10): on.load, every peer

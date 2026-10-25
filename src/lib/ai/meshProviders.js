@@ -1,5 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
+import { registerSecretSource } from '../diagnostics';
 
 // Text/image -> 3D mesh generation providers (roadmap #11, G1). Mirrors
 // ai/providers.js (the LLM providers) but for mesh backends: a self-hosted ComfyUI
@@ -74,6 +75,8 @@ function persist(list) {
 
 /** Saved mesh-provider configs. @type {import('svelte/store').Writable<MeshProviderConfig[]>} */
 export const meshProviders = writable(loadProviders());
+// 69 T2: the keys never reach a pasted diagnostics bundle
+registerSecretSource(() => get(meshProviders).map((p) => p.apiKey));
 
 /** @type {import('svelte/store').Writable<string|null>} */
 export const meshActiveProvider = writable(

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { showChoice, showConfirm } from '$lib/confirmDialog.js';
+	import { safeHtml } from '$lib/sandbox/sanitize.js';
 	import Icon from '../ui/Icon.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
@@ -8534,7 +8535,7 @@
 				<Icon name="loader-circle" size={16} class="animate-spin" aria-hidden="true" /> Loading attribution…
 			</div>
 		{:else}
-			<div class="prose prose-invert prose-sm max-w-none">{@html packAttribHtml}</div>
+			<div class="prose prose-invert prose-sm max-w-none" use:safeHtml={packAttribHtml}></div>
 		{/if}
 		<div class="mt-3 flex justify-end">
 			<button class="ui-button-quiet" onclick={() => (packAttribModal = false)}>Close</button>

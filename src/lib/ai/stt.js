@@ -1,5 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
+import { registerSecretSource } from '../diagnostics';
 import { AiHttpError, describeAiError } from './client.js';
 
 // Speech to text (36-vr-ai, plan F2): voice typing for the AI assistant. ONE local per-device config,
@@ -62,6 +63,8 @@ function loadConfig() {
 
 /** @type {import('svelte/store').Writable<SttConfig>} */
 export const sttConfig = writable(loadConfig());
+// 69 T2: the keys never reach a pasted diagnostics bundle
+registerSecretSource(() => get(sttConfig).apiKey ? [get(sttConfig).apiKey] : []);
 
 /** Merge a patch into the config and persist it @param {Partial<SttConfig>} patch */
 export function setSttConfig(patch) {

@@ -13,11 +13,21 @@
 #
 # Two-peer suites stay a MANUAL gate: they meet on the self-hosted signaling box, which a
 # public runner cannot reach and should not be pointed at.
+#
+# deps-auto: PRs into the `deps` branch (Dependabot's version updates) run this file through
+# deps.yml (workflow_call) as part of the dependency gate, so it does not ALSO run for them here.
 name: ci
 on:
   pull_request:
+    branches-ignore: [deps]
   push:
     branches: [main, release/next]
+  workflow_call:
+    inputs:
+      # deps.yml: the e2e battery runs these suites itself, so the two browser jobs below stand down
+      battery:
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -144,6 +154,7 @@ jobs:
       - run: npm run test:unit
 
   e2e-smoke:
+    if: ${{ !inputs.battery }}
     runs-on: ubuntu-latest
     # NOT a gate yet — see the header. Flip this to false once it has been green on a few
     # PRs in a row; until then a red here is a signal to read, not a block.
@@ -190,6 +201,7 @@ jobs:
   # screen-reader basics (live regions, selection announce, the object-list tree). One page at a
   # time and DOM-only assertions, so — unlike e2e-smoke — it gates.
   a11y:
+    if: ${{ !inputs.battery }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

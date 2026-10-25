@@ -9,6 +9,7 @@
 	// STARTED from as `before`, the VR knob's shape exactly.
 	import { onMount } from 'svelte';
 	import DragRow from '../ui/DragRow.svelte';
+	import MidiInputSection from './MidiInputSection.svelte';
 	import { selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import {
 		listDeviceObjects,
@@ -24,7 +25,7 @@
 	import { patch, cablesOf, setCableGain } from '$lib/audioPatch';
 	import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 	import { musicPresets, presetsFor, savePreset, deletePreset, applyPreset } from '$lib/musicToolbox';
-	import { musicToolboxPick } from '$lib/musicToolbox';
+	import { musicToolboxPick, openPianoRollOn } from '$lib/musicToolbox';
 
 	/** bumps after a local write so derived reads re-run even when no store poked */
 	let tick = $state(0);
@@ -252,6 +253,11 @@
 			{:else if !params.length}
 				<div class="tbx-row music-empty">This device has no settings.</div>
 			{/if}
+			{#if typeof current.spec?.onNote === 'function'}
+				<div class="tbx-row">
+					<button id="music-open-pianoroll" class="tbx-btn" onclick={() => openPianoRollOn(current.uuid)}>Piano roll…</button>
+				</div>
+			{/if}
 			{#each params as p (p.key)}
 				<div class="music-param" data-key={p.key}>
 					{#if p.kind === 'select'}
@@ -274,6 +280,7 @@
 							value={Number(current.doc.params[p.key] ?? p.default ?? 0)}
 							min={p.min}
 							max={p.max}
+							scale={p.scale}
 							step={(Number(p.max ?? 1) - Number(p.min ?? 0)) / 240}
 							snap={p.step ?? 0.01}
 							decimals={p.step && p.step >= 1 ? 0 : 2}
@@ -320,6 +327,9 @@
 			</div>
 		{/each}
 	{/if}
+
+	<!-- 75 MU1: a hardware keyboard plays the devices (offered with no device yet, too) -->
+	<MidiInputSection />
 </div>
 
 <style>

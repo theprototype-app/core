@@ -7,6 +7,7 @@ import { hapticPulse, registerNavSuppressor, registerVRTriggerHooks, registerVRF
 import { beginHistoryBatch, endHistoryBatch } from './history';
 import { isDeviceObject, deviceSpec, deviceOf, setDeviceFor, previewDeviceParams } from './audioDevices';
 import { addCable, removeCable, cablesOf, setCableHidden, PORT_COLORS } from './audioPatch';
+import { isLogParam, moveAlong } from './paramScale';
 // The DESKTOP path reaches the mouse ray and the click dispatch through a primed dynamic
 // import (the moduleSDK precedent) — a static edge into that module is a cycle risk.
 /** @type {any} */ let sdkRef = null;
@@ -426,7 +427,7 @@ export function cancelCableDrag() {
 
 // ---- knobs ------------------------------------------------------------------------------
 
-/** @type {{index: number, uuid: string, key: string, param: any, startValue: number, value: number, lastY: number, before: any, lastSent: number}|null} */
+/** @type {{index: number, uuid: string, key: string, param: any, startValue: number, value: number, raw?: number, lastY: number, before: any, lastSent: number}|null} */
 let knob = null;
 
 /** @param {any} param @param {number} value */
@@ -474,7 +475,14 @@ export function updateKnobDrag(pose) {
 	knob.lastY = pose.position.y;
 	const min = typeof knob.param.min === 'number' ? knob.param.min : 0;
 	const max = typeof knob.param.max === 'number' ? knob.param.max : 1;
-	const next = snapValue(knob.param, knob.value + (dy / KNOB_SWEEP_M) * (max - min));
+	// 75 MU3: a `scale: 'log'` param sweeps in RATIOS (the same fraction of the travel per
+	// metre); the unsnapped position is kept so slow travel near the floor is not lost
+	let next;
+	if (isLogParam(knob.param)) {
+		const raw = moveAlong(knob.param, knob.raw ?? knob.value, dy / KNOB_SWEEP_M);
+		knob.raw = raw;
+		next = snapValue(knob.param, raw);
+	} else next = snapValue(knob.param, knob.value + (dy / KNOB_SWEEP_M) * (max - min));
 	if (next === knob.value) return;
 	knob.value = next;
 	hapticPulse(0.15, 15); // a detent: the value crossed a step

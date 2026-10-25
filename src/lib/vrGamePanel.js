@@ -68,6 +68,8 @@ import { drawShellPage, SHELL_STAGE, fitLabel, collectOverflow, drawCaptionStrip
 import { activeCaptions, captionsShown, subtitleLines, subtitleTexts } from './captions';
 // 77 C1: subtitle cues may hold line breaks and run long — one strip row per wrapped line
 import { splitCaption } from './sequenceCore';
+import { liveLines, liveCaptionsShown } from './liveCaptions';
+import { userdata } from '../stores/appStore';
 // 31 K3 G3: Show FPS in the headset (the HUD band + the wrist)
 import { fpsReading, fpsText, noteXrFrame, perfStatsShown } from './fpsMeter';
 import { vignetteFrame } from './comfortVignette';
@@ -709,7 +711,9 @@ export function vrGamePanelFrame(opts = {}) {
 	}
 	// ---- 53 (A6): captions — head-locked low in the view, the player's caption size
 	// 77 C1: subtitles (caption-track cues) first, for everyone; the bus lines for Captions-on players
-	const caps = head ? [...subtitleTexts(get(subtitleLines)).flatMap((t) => splitCaption(t, 56)), ...(get(captionsShown) ? get(activeCaptions).map((c) => c.text) : [])].slice(0, 6) : [];
+	// 77 C3: then live subtitles of voice chat ("Name: text"), for viewers who keep them on
+	const liveRows = head && get(liveCaptionsShown) ? get(liveLines).map((l) => `${(get(userdata) ?? []).find((/** @type {any} */ u) => u[0] === l.speaker)?.[1] || 'Peer'}: ${l.text}`) : [];
+	const caps = head ? [...subtitleTexts(get(subtitleLines)).flatMap((t) => splitCaption(t, 56)), ...liveRows.flatMap((t) => splitCaption(t, 56)), ...(get(captionsShown) ? get(activeCaptions).map((c) => c.text) : [])].slice(0, 6) : [];
 	const size = String(get(accessValues).captionSize ?? 'medium');
 	const captionPx = [CAPTION_STRIP_W, captionStripHeight(caps.length, size)];
 	const strip = surface('vr-game-captions', captionPx[0], captionPx[1], 1.1);

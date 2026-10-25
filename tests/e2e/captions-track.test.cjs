@@ -117,6 +117,12 @@ h.run(async () => {
 	h.check(lines.length === 1 && lines[0] === 'Ana: Hello from the timeline', `2.1 a scrub into the cue shows "Ana: …" in the editor (${JSON.stringify(lines)})`);
 	h.check((await capDbg(pa)).shown === false, '2.2 … with the Accessibility Captions switch OFF (subtitles are content)');
 	await shot(pa, '01-subtitle-scrub-dark.png');
+	if (SHOTS) {
+		await pa.evaluate(() => window.__stores.themes.theme.set('light'));
+		await pa.waitForTimeout(300);
+		await shot(pa, '01-subtitle-scrub-light.png');
+		await pa.evaluate(() => window.__stores.themes.theme.set('dark'));
+	}
 	await pa.evaluate((sid) => window.__stores.sequencePlayer.scrubSequence(sid, 3.2), id);
 	await pa.waitForTimeout(200);
 	h.check((await capText(pa)).length === 0, '2.3 outside the cue (3.2 s, end exclusive at 3.0) nothing shows');
@@ -329,7 +335,7 @@ h.run(async () => {
 			return r ? { left: r.left, right: r.right, bottom: r.bottom, w: innerWidth, h: innerHeight, scroll: document.documentElement.scrollWidth } : null;
 		});
 		h.check(!!box && box.left >= 0 && box.right <= box.w && box.bottom <= box.h - 100 && box.scroll <= box.w, `${n} phone ${label} (${vp.width} px): the subtitle wraps inside the screen, clear of the bottom controls (${JSON.stringify(box)})`);
-		if (SHOTS) await P.page.screenshot({ path: path.join(SHOTS, `02-subtitle-phone-${label}.png`) });
+		await shot(P.page, `02-subtitle-phone-${label}.png`);
 	}
 
 	await h.finish(browser);

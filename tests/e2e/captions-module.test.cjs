@@ -90,7 +90,8 @@ h.run(async () => {
 		return { engine: out.engine, text: out.segments.map((s) => s.text).join(' '), segments: out.segments.length, seconds: pcm.length / 16000, ms, rtf: ms / 1000 / (pcm.length / 16000), moduleRtf: globalThis.__captionsModule.status.rtf };
 	}, JFK);
 	const words = run.text.toLowerCase();
-	h.check(run.engine === 'mod-captions-moonshine' && /ask not/.test(words) && /country/.test(words), `3.1 Auto picks the module and the words come out ("${run.text.slice(0, 90)}…")`);
+	// Moonshine tiny hears "ask not" as "as not" — the check is on the words it gets right
+	h.check(run.engine === 'mod-captions-moonshine' && /fellow/.test(words) && /your country can do for you/.test(words), `3.1 Auto picks the module and the words come out ("${run.text.slice(0, 90)}…")`);
 	h.check(run.rtf > 0 && run.rtf < 1, `3.2 faster than real time on this desktop: RTF ${run.rtf.toFixed(3)} (${run.seconds.toFixed(1)} s of speech in ${(run.ms / 1000).toFixed(2)} s, first run incl. model load)`);
 	const warm = await page.evaluate(async (url) => {
 		const jobs = window.__stores.captionJobs;
@@ -126,7 +127,10 @@ h.run(async () => {
 	await h.answerRestore(A).catch(() => false);
 	await until(() => page.evaluate(() => !!globalThis.__captionsModule), 30000);
 	await page.evaluate(() => globalThis.__captionsModule.ensureReady());
-	const again = net.filter((u) => /jsdelivr/.test(u));
+	// the pinned runtime only (troika's font resolver also fetches from cdn.jsdelivr.net/gh/)
+	const again = net.filter((u) => /cdn\.jsdelivr\.net\/npm\/(@huggingface\/transformers|onnxruntime-web)@/.test(u));
+	const other = net.filter((u) => /jsdelivr/.test(u) && !again.includes(u));
+	if (other.length) console.log('  other jsDelivr requests (not the runtime): ' + other.join(' '));
 	const hf = net.filter((u) => /huggingface\.co\/onnx-community/.test(u) && /\.onnx/.test(u));
 	h.check(again.length === 0, `5.1 a reload loads the runtime from tp-ml-runtime: 0 jsDelivr requests (${again.length})`);
 	h.check(hf.length === 0, `5.2 … and the model from transformers-cache: 0 model downloads (${hf.length})`);
@@ -147,7 +151,7 @@ h.run(async () => {
 		fs.mkdirSync(EVIDENCE, { recursive: true });
 		fs.writeFileSync(
 			path.join(EVIDENCE, 'measurements.json'),
-			JSON.stringify({ when: new Date().toISOString(), profile: 'desktop (Deck, headless Chromium, WASM, 1 thread)', downloadSeconds: downloadS, runtimeBytesUncompressed: dl?.runtimeBytes, modelBytes, modelFiles: dl?.modelFiles, loadMs: dl?.loadMs, speechSeconds: run.seconds, rtfFirst: run.rtf, rtfWarm: warm, text: run.text }, null, 2)
+			JSON.stringify({ when: new Date().toISOString(), profile: 'desktop (GPU test PC slot, headless Chromium, WASM)', downloadSeconds: downloadS, runtimeBytesUncompressed: dl?.runtimeBytes, modelBytes, modelFiles: dl?.modelFiles, loadMs: dl?.loadMs, speechSeconds: run.seconds, rtfFirst: run.rtf, rtfWarm: warm, text: run.text }, null, 2)
 		);
 	}
 	await h.finish(browser);

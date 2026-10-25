@@ -73,6 +73,7 @@ import { applyRoomAnchorRemote, sendRoomAnchor } from '$lib/colocation';
 // message, a reply riding getmodulestate, a drop at every disconnect site). Everything it
 // drives is LOCAL receive-side filtering; nobody stops broadcasting because of it.
 import { applyRemoteColocation, dropPeerColocation, sendColocationState } from '$lib/colocationPresence';
+import { applyLiveCaption, dropPeerLiveCaption, sendLiveState } from '$lib/liveCaptions'; // 77 C3
 import { applyRemoteScenePost, scenePostStates, sendScenePost } from '$lib/scenePost';
 // 23-A2: the musical transport (a latest-wins singleton like scenephysics) and the
 // peer clock-offset estimate it carries alongside
@@ -1205,6 +1206,7 @@ export class PeerConnection {
 						dropPeerScene(data.peerId); // P2b
 						dropPeerVars(data.peerId); // 21-G4
 						dropPeerColocation(data.peerId); // CO5
+						dropPeerLiveCaption(data.peerId); // 77 C3
 						dropPeerEnvPresets(data.peerId);
 						dropPeerMaterialPresets(data.peerId);
 						dropPeerHandModel(data.peerId);
@@ -1311,6 +1313,7 @@ export class PeerConnection {
 					sendMySceneState(); // P2b: ...and where we are standing
 					sendPeerVarsState(); // 21-G4: ...and our own per-player row, if we hold one
 					sendColocationState(); // CO5: ...and our physical room, if we are in one
+					sendLiveState(); // 77 C3: ...and whether our voice may be captioned / we transcribe
 				} else if(data.type == 'peervars') {
 					// 21-G4: ONE peer's OWN numbers, whole-map latest-wins. Owner-only writer,
 					// so this applier can never be the thing that clobbers somebody's score.
@@ -1323,6 +1326,10 @@ export class PeerConnection {
 					// chain compare K against OUR OWN key, so a remote peer holding two
 					// colocated rows still sees and hears both of them.
 					applyRemoteColocation(data);
+				} else if(data.type == 'livecap') {
+					// 77 C3: live subtitles — a speaker's consent row (from THAT peer's own conn) or
+					// a caption line relayed by the session's transcriber; `conn.peer` is the sender
+					applyLiveCaption(data, conn.peer);
 				} else if(data.type == 'playmode') {
 					// 21-F3: presence only — "X is in play mode". ADDITIVE: the message goes out
 					// only while PLAYING, so an absent peer (or one on an older build that never
@@ -1886,6 +1893,7 @@ export class PeerConnection {
 		dropPeerScene(peerId); // P2b
 		dropPeerVars(peerId); // 21-G4
 		dropPeerColocation(peerId); // CO5
+		dropPeerLiveCaption(peerId); // 77 C3
 		dropPeerEnvPresets(peerId);
 		dropPeerMaterialPresets(peerId);
 		dropPeerHandModel(peerId);
@@ -1923,6 +1931,7 @@ export class PeerConnection {
 				dropPeerScene(peerId); // P2b
 				dropPeerVars(peerId); // 21-G4
 				dropPeerColocation(peerId); // CO5
+				dropPeerLiveCaption(peerId); // 77 C3
 				dropPeerEnvPresets(peerId);
 				dropPeerMaterialPresets(peerId);
 				dropPeerHandModel(peerId);

@@ -13,10 +13,15 @@
 	import { captionPx } from '$lib/playerAccessCore';
 	import { isLocked, isVRMode, editorMode } from '../../stores/sceneStore';
 	import { embedMode } from '$lib/playMode';
+	// 77 C3: live subtitles of voice chat (only speakers who allow it), editor and play alike
+	import { liveLines, liveCaptionsShown } from '$lib/liveCaptions';
+	import { userdata } from '../../stores/appStore';
 
 	const playing = $derived($isLocked === true || $editorMode === 'interact' || $embedMode);
 	const busShown = $derived($captionsShown && (playing || $captionsForced) && $activeCaptions.length > 0);
-	const shown = $derived(!$isVRMode && (busShown || $subtitleLines.length > 0));
+	const live = $derived($liveCaptionsShown ? $liveLines : []);
+	const nameOf = (/** @type {string} */ id) => (/** @type {any[]} */ ($userdata).find((u) => u[0] === id)?.[1]) || 'Peer';
+	const shown = $derived(!$isVRMode && (busShown || $subtitleLines.length > 0 || live.length > 0));
 	const px = $derived(captionPx($accessValues.captionSize));
 </script>
 
@@ -24,6 +29,9 @@
 	<div id="game-captions" class="captions" style:--caption-px={px + 'px'} aria-live="polite" data-hud-avoid>
 		{#each $subtitleLines as sub (sub.seq + sub.id)}
 			<p class="caption-line caption-sub" data-caption-source="subtitle">{#if sub.speaker}<span class="caption-speaker">{sub.speaker + ': '}</span>{/if}{sub.text}</p>
+		{/each}
+		{#each live as line (line.speaker + line.id)}
+			<p class="caption-line caption-sub" data-caption-source="live" data-speaker={line.speaker}><span class="caption-speaker">{nameOf(line.speaker) + ': '}</span>{line.text}</p>
 		{/each}
 		{#if busShown}
 			{#each $activeCaptions as cap (cap.id)}

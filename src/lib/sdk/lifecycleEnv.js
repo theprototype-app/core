@@ -65,7 +65,8 @@ export async function lifecycleEnv() {
 		vrSeat,
 		modulePointer,
 		sdkRegistries,
-		pointerSeam
+		pointerSeam,
+		midiInput
 	] = await Promise.all([
 		import('../moduleSDK.js'),
 		import('./index.js'),
@@ -114,7 +115,8 @@ export async function lifecycleEnv() {
 		tryLoad(import('../vr/seat.js')),
 		tryLoad(import('../modulePointer.js')),
 		tryLoad(import('./registries.js')),
-		tryLoad(import('./pointerSeam.js'))
+		tryLoad(import('./pointerSeam.js')),
+		tryLoad(import('../midiInput'))
 	]);
 	const browser = typeof window !== 'undefined' && typeof document !== 'undefined';
 	return {
@@ -169,7 +171,8 @@ export async function lifecycleEnv() {
 			vrSeat,
 			modulePointer,
 			sdkRegistries,
-			pointerSeam
+			pointerSeam,
+			midiInput
 		}
 	};
 }

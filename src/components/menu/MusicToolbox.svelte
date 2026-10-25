@@ -9,6 +9,7 @@
 	// STARTED from as `before`, the VR knob's shape exactly.
 	import { onMount } from 'svelte';
 	import DragRow from '../ui/DragRow.svelte';
+	import MidiInputSection from './MidiInputSection.svelte';
 	import { selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import {
 		listDeviceObjects,
@@ -320,6 +321,9 @@
 			</div>
 		{/each}
 	{/if}
+
+	<!-- 75 MU1: a hardware keyboard plays the devices (offered with no device yet, too) -->
+	<MidiInputSection />
 </div>
 
 <style>

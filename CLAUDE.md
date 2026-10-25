@@ -2644,6 +2644,17 @@ loadable play content. Everything a user does must be visible to connected peers
   2 (every canvas panel >= 1 texel per Quest pixel). `api.claimInput('sticks')` + the world-pan stick REEL (stick Y
   pushes/pulls a one-grip world, as Edit does an object); `addSetting({onLevels: true})` draws a choice as tabs on the
   VR Levels page, which now lists every level.
+- **ROADMAP 75 — MUSIC (75-music)**: `midiInput.js` = Web MIDI input. NOTHING NEW ON THE WIRE: a key is the same
+  `noteDevice` call a click makes (local onNote + one stamped `devicenote`), so every peer hears it; the MIDI side
+  (inputs, target, permission) is LOCAL. `requestMIDIAccess` is NEVER called at boot: the Music toolbox's
+  `MidiInputSection.svelte` explains once (`#midi-explain`), then asks (sysex off); `resumeMidiIfGranted` (from
+  `startMusicToolbox`) reconnects silently only when `safeStorage.midiInput === '1'` AND `navigator.permissions` says
+  `granted`. Target = `midiTarget` (a picked uuid) else the LAST selected device with an `onNote` (sticky across a
+  deselect) else the only one. `spec.heldNotes` opts a device into `{gate: 0}` on key down + `{velocity: 0, off: true}`
+  on key up (music-voice's VR-trigger shape); without it a key plays the device's own length and NO off goes out (an
+  older device would read an off as a second note). An off goes to the device its note-on went to; CC 64 defers offs.
+  SDK: `api.audio.onMidi(fn)` (registers, journaled synchronously) + `api.audio.midi()`. Suites: vitest `midiInput`,
+  e2e `midi-input` (a faked MIDIAccess init script, two peers + N6 folded/unfolded).
 
 ## UI design system (redesign epic)
 

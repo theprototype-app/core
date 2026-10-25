@@ -4,6 +4,7 @@ import MusicToolbox from '../components/menu/MusicToolbox.svelte';
 import { registerModuleToolbox, unregisterModuleToolbox } from './moduleToolboxes';
 import { setDeviceFor, deviceCatalog, deviceCatalogVersion } from './audioDevices';
 import { safeStorage } from './safeStorage';
+import { resumeMidiIfGranted } from './midiInput';
 
 // THE MUSIC TOOLBOX (roadmap #23 B2, cloud plans-core/pending/23-b-interfaces.md).
 //
@@ -41,6 +42,9 @@ let registered = false;
  */
 export function startMusicToolbox() {
 	if (stop || typeof window === 'undefined') return;
+	// 75 MU1: reconnect MIDI only when this browser connected before AND the permission is
+	// already granted — never a prompt at boot
+	void resumeMidiIfGranted();
 	stop = deviceCatalogVersion.subscribe(() => {
 		const wanted = deviceCatalog().length > 0;
 		if (wanted && !registered) {

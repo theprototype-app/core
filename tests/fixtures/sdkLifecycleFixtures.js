@@ -554,6 +554,17 @@
 					M.micCapture.releaseMicStream();
 				}
 			},
+			// 75 MU1: a MIDI listener (the import settles a tick after the call)
+			'audio.onMidi': {
+				needs: ['midiInput'],
+				async call(api, t) {
+					t.data.before = M.midiInput.midiDebug().listeners;
+					api.audio.onMidi(() => {});
+					await new Promise((r) => setTimeout(r, 20));
+				},
+				present: (t) => M.midiInput.midiDebug().listeners === t.data.before + 1,
+				absent: (t) => M.midiInput.midiDebug().listeners === t.data.before
+			},
 			// ---- hud -----------------------------------------------------------------------
 			'hud.rows': {
 				needs: ['flowRuntime'],

@@ -1219,6 +1219,21 @@ await api.audio.record({ maxSeconds: 8, stream: dest.stream, name: 'loop' });
 api.audio.device(uuid);                             // {kind, params} or null
 ```
 
+**MIDI keyboards (75 MU1).** The user connects one in the Music toolbox (core never asks the
+browser on its own); core then plays the device the toolbox's *Play on* picker names (default:
+the last selected device that has an `onNote`) through the same replicated `api.audio.note`
+path — a module writes nothing for that. Declare `heldNotes: true` on the spec when `onNote`
+understands a held note: a key then arrives as `{note, velocity, gate: 0}` and its release as
+`{note, velocity: 0, off: true}` (the sustain pedal defers the offs). Without the flag a key
+plays your own note length and no off is sent.
+
+```js
+const off = api.audio.onMidi((msg) => {      // every parsed message, LOCAL (nothing is sent for you)
+	if (msg.type === 'cc' && msg.controller === 1) api.audio.previewParams(uuid, { cutoff: 200 + msg.value * 8000 });
+});                                          // msg: {type, channel, note, velocity, controller, value, data, input}
+await api.audio.midi();                      // {status: 'off'|'asking'|'on'|'denied'|'unsupported'|'error', inputs}
+```
+
 The rule behind `schedule` and `onNote`: **anything scheduled on the transport must be a
 pure function of its arguments.** Every peer runs the same pattern from the same
 `startedAt`; an impure callback desyncs silently, per peer, with no error anywhere.

@@ -8,6 +8,7 @@ import {
 	audioPatchRef,
 	soundRuntimeRef
 } from './refs.js';
+import { get } from 'svelte/store';
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkAudio(ctx) {
@@ -171,7 +172,45 @@ export function sdkAudio(ctx) {
 			/** end the running take (the record() promise resolves with the item) */
 			stopRecording: () => import('../micCapture').then((m) => m.stopRecording()),
 			/** the recorder's state `{active, startedAt, maxSeconds, name}` as a store */
-			recording: () => import('../micCapture').then((m) => m.recording)
+			recording: () => import('../micCapture').then((m) => m.recording),
+			/**
+			 * 75 MU1: every parsed message from the user's MIDI inputs `{type, channel, note,
+			 * velocity, controller, value, data, input}` (types noteon / noteoff / cc / pitchbend /
+			 * aftertouch / other; velocity and value 0..1, pitch bend -1..1). LOCAL: nothing is sent
+			 * for you — what you do with a message (previewParams on a knob, a note) is what
+			 * replicates. Core already plays notes on the target device; this is for the rest.
+			 * Silent until the user connects MIDI in the Music toolbox. Returns an off.
+			 * @param {(msg: any) => void} fn
+			 */
+			onMidi: (fn) => {
+				// journaled SYNCHRONOUSLY (the async-registration rule): an unload before the import
+				// settles must still win
+				/** @type {(() => void) | null} */
+				let off = null;
+				let gone = false;
+				const release = onDispose(
+					() => {
+						gone = true;
+						off?.();
+					},
+					'audio.midi'
+				);
+				import('../midiInput').then((m) => {
+					off = m.onMidiMessage(fn);
+					if (gone) off();
+				});
+				return () => {
+					gone = true;
+					off?.();
+					release();
+				};
+			},
+			/** 75 MU1: the MIDI connection now `{status, inputs: [{id, name, manufacturer}]}` —
+			 * status 'off' | 'asking' | 'on' | 'denied' | 'unsupported' | 'error' */
+			midi: () => import('../midiInput').then((m) => {
+				const s = get(m.midiState);
+				return { status: s.status, inputs: s.inputs.map((i) => ({ ...i })) };
+			})
 		}
 	};
 }
@@ -199,5 +238,7 @@ sdkAudio.surface = {
 	'audio.captureMic': 'registers',
 	'audio.record': 'registers',
 	'audio.stopRecording': 'action',
-	'audio.recording': 'read'
+	'audio.recording': 'read',
+	'audio.onMidi': 'registers',
+	'audio.midi': 'read'
 };

@@ -90,6 +90,7 @@ import { registerSceneAssetSource } from './sceneAssets';
  * @property {(el: HTMLElement, handle: DeviceHandle, node: any) => (() => void)|void} [toolbox]
  * @property {string} [moduleId] the module that registered it (moduleSDK stamps it; 23-D3)
  * @property {(params: Record<string, any>) => {hash: string, name?: string}[]} [assets] 23-D1: what a document of this kind references by content hash (the Scene manifest asks)
+ * @property {boolean} [heldNotes] 75 MU1: `onNote` understands a HELD note (`gate: 0`) and its release (`{note, velocity: 0, off: true}`) — MIDI keys then play for as long as they are down; without it a key plays the device's own note length and no off is sent
  */
 
 /** @type {Record<string, DeviceSpec>} kind -> spec */

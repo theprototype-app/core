@@ -59,7 +59,7 @@
 		"@shaderfrog/core": "^4.0.2",
 		"@shaderfrog/glsl-parser": "^7.0.1",
 		"@threlte/core": "^8.6.1",
-		"@threlte/extras": "^9.22.0",
+		"@threlte/extras": "^9.22.3",
 		"@threlte/xr": "^1.6.1",
 		"@xyflow/svelte": "^1.7.0",
 		"codemirror": "^6.0.2",
@@ -73,7 +73,7 @@
 		"svelte-hamburgers": "^5.0.0",
 		"three": "^0.186.1",
 		"three-bvh-csg": "^0.0.18",
-		"three-mesh-bvh": "^0.9.15",
+		"three-mesh-bvh": "^0.9.16",
 		"y-codemirror.next": "^0.3.6",
 		"y-protocols": "^1.0.7",
 		"yjs": "^13.6.33"

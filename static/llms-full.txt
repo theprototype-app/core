@@ -119,7 +119,7 @@ shortcuts, VR menu entries, key bindings, input listeners and claims, possess, t
 VR panels, hit listeners, your music track, game levels / settings rows / help / restart hooks /
 the forced menu, LOD handles, quality / flow / game / settings / peer-variable listeners, unwrap /
 shader / post backends, post effects, audio device kinds, engine voices (`api.audio.voice`),
-transport events (`api.audio.schedule`), your copy of the mic stream, a recording you started,
+transport events (`api.audio.schedule`) and transport / MIDI listeners (`api.audio.onTransport`, `api.audio.onMidi`), your copy of the mic stream, a recording you started,
 HUD rows / debug lines / actions / element kinds.
 
 Every `off()` the api hands you still works, and calling it early also drops the registry
@@ -815,6 +815,14 @@ register(api) {
   `step` `ring` `sparkle` `hurt` `portal`, plus the ping chimes `ding` (the default),
   `chime`, `pluck`, `bell`. An unknown name is a quiet no-op (it used to play the
   ding). `position` spatialises it. Played at the player's "Game sounds" volume.
+  (1.41) A game-set sound shows a CAPTION to a player who switched Captions on in the game
+  menu's Accessibility page (`[coin]`; step / click / pop stay quiet); a third argument
+  `{caption: 'The gate opens'}` says it your way, `{caption: '-'}` says nothing.
+- **`api.captions.show(text, {seconds?})`** (1.41) — a caption line for something the player
+  hears that is not a game-set sound (a voice, your own audio): shown only to players with
+  Captions on, at their caption size, on a flat screen and in a headset. LOCAL; `seconds`
+  0.5..15 (default 3). `api.captions.shown()` = are captions on for this player. Input you read
+  through `api.onInput` / `api.input` already follows the player's remapped keys and buttons.
 - **`api.music.play(preset, {volume?})` / `api.music.stop()`** — a looping
   procedural track under the effects, at the player's "Music" volume: `arcade`
   `ambient` `dungeon` `stadium` `space` `puzzle` `studio`. It is TEMPO-SYNCED to the
@@ -1109,6 +1117,28 @@ export default behaviour({
   the kit and assert `sim.states('w')`. Examples: `static/behaviours/waves-spawner.js`,
   `static/behaviours/towers-reach.js`.
 
+### Water: `api.water` (1.22, roadmap 36)
+
+```js
+if (api.water) {
+	// a tank in the shared scene (replicated like Create -> Water; kinds tank | pool | ocean | cylinder)
+	const tank = await api.water.create({ kind: 'tank', preset: 'aquarium', size: [3, 1.5, 1.2], at: [0, 0.75, 0] });
+	api.water.configure(tank, { look: { deepColor: '#0b3d4f' }, bubbles: { enabled: true, rate: 12 } });
+	api.water.preset(tank, 'toxic');              // lava, swamp, toxic, ice, ocean, lake, river, pool, aquarium
+	const hit = api.water.query([0, 0.5, 0]);       // {uuid, depth, surfaceY, flow} | null (waves included)
+	api.water.disturb(tank, [0.2, 1.5, 0], 0.4, 0.8); // a LOCAL ripple — call it on every peer
+	const off = api.water.onChange((volumes) => {}); // appear / edit / move / remove; off() or module unload
+}
+```
+
+An object is water when `userData.water` holds a water blob (contract W1, `src/lib/water/volumes.js`): `{version: 1,
+shape: 'box'|'plane'|'cylinder', level (local Y; null = top), density, linearDrag, angularDrag, flow: [x,y,z] (local
+m/s), preset, look, waves, bubbles}`. `configure` merges a patch (look/waves/bubbles one level deep) and is replicated
+and undoable like an Inspector edit; on a dry object it takes a whole blob. `query` is deterministic (the waves run
+on the shared clock), so every peer's buoyancy agrees. `disturb` is visual only and NOT sent — drive it from shared
+physics on every peer. `burst(uuid)` fires the bubble burst for everyone (the moment rides the blob). Feature-detect
+it (`api.water`): 1.21 and older cores do not have it.
+
 ### Physics (P-A)
 
 All mutations are INITIATOR-ONLY — the peer that started the simulation steps
@@ -1237,6 +1267,45 @@ await api.audio.record({ maxSeconds: 8, stream: dest.stream, name: 'loop' });
 // carries the bytes: `assets(params) -> [{hash, name}]` on the registerAudioDevice spec
 api.audio.device(uuid);                             // {kind, params} or null
 ```
+
+**MIDI keyboards (75 MU1).** The user connects one in the Music toolbox (core never asks the
+browser on its own); core then plays the device the toolbox's *Play on* picker names (default:
+the last selected device that has an `onNote`) through the same replicated `api.audio.note`
+path — a module writes nothing for that. Declare `heldNotes: true` on the spec when `onNote`
+understands a held note: a key then arrives as `{note, velocity, gate: 0}` and its release as
+`{note, velocity: 0, off: true}` (the sustain pedal defers the offs). Without the flag a key
+plays your own note length and no off is sent.
+
+```js
+const off = api.audio.onMidi((msg) => {      // every parsed message, LOCAL (nothing is sent for you)
+	if (msg.type === 'cc' && msg.controller === 1) api.audio.previewParams(uuid, { cutoff: 200 + msg.value * 8000 });
+});                                          // msg: {type, channel, note, velocity, controller, value, data, input}
+await api.audio.midi();                      // {status: 'off'|'asking'|'on'|'denied'|'unsupported'|'error', inputs}
+```
+
+**The piano roll (75 MU2).** Any device whose spec has an `onNote` gets a core *Piano roll*
+(the Inspector's Device section and the Music toolbox open it): a looping clip of 1-8 bars on a
+sixteenth grid, stored in the device's own params under the undeclared key `roll` (a JSON
+string — do not declare a param named `roll`). Every peer plays the clip itself from the shared
+transport, so a clip note reaches your `onNote` as `{note, velocity, at, gate, roll: true}` —
+`at` the wall stamp of its beat, `gate` its length in seconds — on every peer at once, with
+nothing sent. Honour `gate` and a clip plays the lengths it was drawn with.
+
+**Transport, samples, log ranges (75 MU3).**
+
+```js
+const off = api.audio.onTransport((t) => {   // now, then on every CHANGE (play/stop/tempo/swing/loop,
+	if (!t.playing) stopMyArp();              // a peer's included) - never per beat: use schedule()
+});                                          // t: transport() + startedAt; goes with the module
+const { hash, name } = await api.audio.importSample(wavBytes, 'bounce.wav');
+// bytes (ArrayBuffer / typed array / Blob) -> an Explorer audio item shared by hash, like a
+// recorded take; rejects on no bytes, a non-audio name, or the sharing limit
+api.audio.setParams(uuid, { sample: hash });  // then sample(hash) decodes it on every peer
+```
+
+A `range` param may declare `scale: 'log'` (needs `min > 0`): the Inspector row, the Music
+toolbox row and the VR knob then travel in RATIOS, so a 20-20000 Hz cutoff gives each decade the
+same travel. The stored value is the plain number, so nothing else changes.
 
 The rule behind `schedule` and `onNote`: **anything scheduled on the transport must be a
 pure function of its arguments.** Every peer runs the same pattern from the same

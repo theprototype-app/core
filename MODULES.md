@@ -70,7 +70,7 @@ shortcuts, VR menu entries, key bindings, input listeners and claims, possess, t
 VR panels, hit listeners, your music track, game levels / settings rows / help / restart hooks /
 the forced menu, LOD handles, quality / flow / game / settings / peer-variable listeners, unwrap /
 shader / post backends, post effects, audio device kinds, engine voices (`api.audio.voice`),
-transport events (`api.audio.schedule`), your copy of the mic stream, a recording you started,
+transport events (`api.audio.schedule`) and transport / MIDI listeners (`api.audio.onTransport`, `api.audio.onMidi`), your copy of the mic stream, a recording you started,
 HUD rows / debug lines / actions / element kinds.
 
 Every `off()` the api hands you still works, and calling it early also drops the registry

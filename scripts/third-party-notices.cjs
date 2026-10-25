@@ -34,6 +34,7 @@ const VENDORED = [
 	{ name: 'Press Start 2P', version: 'static/fonts', license: 'OFL-1.1', url: 'https://fonts.google.com/specimen/Press+Start+2P', file: 'static/fonts/LICENSE-press-start-2p.txt', source: 'static/fonts' },
 	{ name: 'Noto Sans subsets (3D label fonts)', version: 'static/fonts/unicode-font-resolver', license: 'OFL-1.1', url: 'https://github.com/notofonts', file: 'static/fonts/unicode-font-resolver/LICENSE-noto.txt', source: 'static/fonts/unicode-font-resolver (scripts/fetch-troika-fonts.cjs)' },
 	{ name: 'unicode-font-resolver data', version: 'v1.0.1', license: 'MIT', url: 'https://github.com/lojjic/unicode-font-resolver', file: 'static/fonts/unicode-font-resolver/LICENSE-unicode-font-resolver.txt', source: 'static/fonts/unicode-font-resolver (scripts/fetch-troika-fonts.cjs)' },
+	{ name: 'ShaderGradient shaders (Gradient lab port)', version: '68bdd74', license: 'MIT', url: 'https://github.com/ruucm/shadergradient', file: 'src/lib/LICENSE-shadergradient.txt', source: 'src/lib/gradientLab.js (GLSL ported; includes glsl-noise classic noise, MIT)' },
 	{ name: 'Poly Haven HDRIs', version: 'static/hdri', license: 'CC0-1.0', url: 'https://polyhaven.com/license', file: 'static/hdri/CREDITS.md', source: 'static/hdri' }
 ];
 

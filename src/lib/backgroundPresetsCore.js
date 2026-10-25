@@ -16,31 +16,43 @@ export const PRESET_FORMAT = 1;
 /** A preset key: lower-case words and dashes (the file name stem). */
 const KEY_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
+/** A node type name (a `needs` entry). */
+const NODE_TYPE_RE = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
+
 /**
  * The preset LIST from `backgrounds/index.json`. Bad rows are DROPPED, not fatal: one broken
  * row in a CDN file must not take the whole picker down.
- * @param {any} raw
- * @returns {{ok: boolean, error?: string, presets: {key: string, label: string, hint: string, file: string}[]}}
+ * 65 gradient: two OPTIONAL fields, additive within format 1. `family` groups rows in the picker
+ * ("Gradient"; absent = the M2 fluid set). `needs` lists the node types a preset's graph uses
+ * beyond the M2 vocabulary; `knownNode` (the caller's catalog lookup — this module imports
+ * nothing) DROPS a row this build cannot compile, rather than listing a preset that fails on apply.
+ * @param {any} raw @param {(type: string) => boolean} [knownNode]
+ * @returns {{ok: boolean, error?: string, presets: {key: string, label: string, hint: string, file: string, family: string, needs: string[]}[]}}
  */
-export function normalizePresetIndex(raw) {
+export function normalizePresetIndex(raw, knownNode = () => true) {
 	if (!raw || typeof raw !== 'object') return { ok: false, error: 'The preset list is not JSON.', presets: [] };
 	const format = Number(raw.format ?? 1);
 	if (!Number.isFinite(format) || format > PRESET_FORMAT)
 		return { ok: false, error: 'The preset list is a newer format (' + raw.format + ') than this app reads.', presets: [] };
 	const rows = Array.isArray(raw.presets) ? raw.presets : [];
-	/** @type {{key: string, label: string, hint: string, file: string}[]} */
+	/** @type {{key: string, label: string, hint: string, file: string, family: string, needs: string[]}[]} */
 	const presets = [];
 	const seen = new Set();
 	for (const row of rows) {
 		const key = typeof row?.key === 'string' ? row.key : '';
 		if (!KEY_RE.test(key) || seen.has(key)) continue;
 		const file = typeof row.file === 'string' && /^[A-Za-z0-9._-]+\.json$/.test(row.file) ? row.file : key + '.json';
+		/** @type {string[]} */
+		const needs = Array.isArray(row.needs) ? row.needs.filter((/** @type {any} */ t) => typeof t === 'string' && NODE_TYPE_RE.test(t)) : [];
+		if (!needs.every((t) => knownNode(t))) continue;
 		seen.add(key);
 		presets.push({
 			key,
 			label: typeof row.label === 'string' && row.label.trim() ? row.label.trim().slice(0, 60) : key,
 			hint: typeof row.hint === 'string' ? row.hint.trim().slice(0, 240) : '',
-			file
+			file,
+			family: typeof row.family === 'string' ? row.family.trim().slice(0, 40) : '',
+			needs
 		});
 	}
 	return { ok: true, presets };

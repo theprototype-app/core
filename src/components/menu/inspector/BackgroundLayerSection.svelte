@@ -8,6 +8,7 @@
 	import Segmented from '../../ui/Segmented.svelte';
 	import ThemedSelect from '../../ui/ThemedSelect.svelte';
 	import InsToggle from './InsToggle.svelte';
+	import GradientLabPanel from './GradientLabPanel.svelte';
 	import { onMount } from 'svelte';
 	import { shaderGraphs, shaderErrors, openShaderEditor } from '$lib/shaderGraph';
 	import { shaderDomain } from '$lib/postGraphs';
@@ -29,7 +30,12 @@
 	const doc = $derived(/** @type {any} */ ($shaderGraphs[BACKGROUND_KEY] ?? null));
 	const layer = $derived(normalizeLayer(doc?.layer));
 	const errors = $derived($shaderErrors[BACKGROUND_KEY] ?? []);
-	const items = $derived($backgroundPresets.presets.map((p) => ({ value: p.key, name: p.label })));
+	// 65 gradient: a family's rows are named by it and listed after the fluid set (no groups in the select)
+	const items = $derived(
+		[...$backgroundPresets.presets]
+			.sort((a, b) => Number(!!a.family) - Number(!!b.family))
+			.map((p) => ({ value: p.key, name: p.family ? p.family + ' · ' + p.label : p.label }))
+	);
 	const hint = $derived($backgroundPresets.presets.find((p) => p.key === doc?.preset)?.hint ?? '');
 	/** @param {any} _poke */
 	const targetName = (_poke) =>
@@ -54,7 +60,7 @@
 	}
 </script>
 
-<Section variant="panel" label="Background" badge="Shared" aliases={['Shader background', 'Fluid background']}>
+<Section variant="panel" label="Background" badge="Shared" aliases={['Shader background', 'Fluid background', 'Gradient lab', 'ShaderGradient', '3D gradient']}>
 	<p class="mb-1 text-[length:var(--fs-badge)] text-text-muted">
 		A moving shader drawn behind the scene or on a plane — everyone sees it, and it drifts in
 		step for everyone. Your own pointer moves your own view of it.
@@ -83,6 +89,7 @@
 	{#if failure}
 		<p id="background-failure" class="mb-1 text-[length:var(--fs-badge)] text-warn-text" role="alert">{failure}</p>
 	{/if}
+	<GradientLabPanel />
 	{#if doc}
 		<PropRow label="Where" valueBox={false} id="background-mode-row">
 			{#snippet control()}

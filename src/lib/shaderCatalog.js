@@ -33,6 +33,8 @@
 //            first under THEIR key — so a graph holding both nodes declares the function once
 //   emit     ({ in, params, node }) => GLSL expression string
 
+import { GRADIENT_NODE, GRADIENT_PARAMS } from './gradientLabCore.js';
+
 /** @typedef {'float'|'vec2'|'vec3'|'vec4'|'sampler2D'} GlslType */
 
 /**
@@ -1030,6 +1032,74 @@ const DEFS = [
 			'tpRotate(' + a.in.uv + ', ' + a.params.center + ', ' + a.params.angle + ' + uShaderTime * ' + a.params.speed + ')'
 	},
 
+	// ---- 65 gradient: the GRADIENT LAB (a ShaderGradient port, MIT — gradientLabCore.js) ----
+	// The look is a displaced, lit MESH seen from its own camera, which no fragment function can
+	// be, so the lazy runtime (gradientLab.js) renders it offscreen from this node's params and the
+	// node SAMPLES that picture. Only `grain` is a uniform: the dot screen runs here, at the layer's
+	// full resolution. Every other param is read by the runtime straight from the node's data.
+	{
+		key: GRADIENT_NODE,
+		label: 'Gradient lab',
+		group: 'Background',
+		stages: ['background'],
+		inputs: [{ name: 'uv', type: 'vec2', default: 'vUv' }],
+		params: GRADIENT_PARAMS.map((p) => ({ ...p })),
+		outputs: [{ name: 'out', type: 'vec3' }],
+		requires: ['uv'],
+		prelude:
+			'uniform sampler2D tpGradientTex;\n' +
+			// the layer's pixel size and the dot pitch in those pixels (2 CSS px, as upstream)
+			'uniform vec2 tpGradientPx;\n' +
+			'uniform float tpGradientDot;\n' +
+			'#ifndef TP_OCTAVE_CAP\n' +
+			'#define TP_OCTAVE_CAP 8\n' +
+			'#endif\n' +
+			// the target holds DISPLAY values (ShaderGradient mixes its colours in that space);
+			// the layer works in linear and re-encodes once at the end
+			'vec3 tpGradLinear(vec3 c) {\n' +
+			'  c = clamp(c, 0.0, 1.0);\n' +
+			'  return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));\n' +
+			'}\n' +
+			'float tpGradRand(vec2 s) { return fract(sin(dot(s, vec2(12.9898, 78.233))) * 43758.5453); }\n' +
+			// one channel of the dot screen: the four grid points around p on a grid turned by ang,
+			// each a dot whose radius grows with that channel's value there (scatter jitters them)
+			'float tpGradDots(vec2 p, float ang, int ch, float rad) {\n' +
+			'  vec2 n = vec2(cos(ang), sin(ang));\n' +
+			'  vec2 q = vec2(dot(p, n), dot(p, vec2(-n.y, n.x))) / rad;\n' +
+			'  vec2 b = floor(q);\n' +
+			'  float aa = rad < 2.5 ? rad * 0.5 : 1.25;\n' +
+			'  float cov = 0.0;\n' +
+			'  for (int i = 0; i < 4; i++) {\n' +
+			'    vec2 g = b + vec2(float(i - (i / 2) * 2), float(i / 2));\n' +
+			'    float a = tpGradRand(g) * 6.2831853;\n' +
+			'    g += 0.25 * vec2(cos(a), sin(a));\n' +
+			'    vec2 w = (g.x * n + g.y * vec2(-n.y, n.x)) * rad;\n' +
+			'    vec3 s = texture2D(tpGradientTex, w / tpGradientPx).rgb;\n' +
+			'    float v = ch == 0 ? s.r : ch == 1 ? s.g : s.b;\n' +
+			'    float d = pow(abs(v), 1.125) * rad - distance(p, w);\n' +
+			'    cov += d > 0.0 ? clamp(d / aa, 0.0, 1.0) : 0.0;\n' +
+			'  }\n' +
+			'  return clamp(cov, 0.0, 1.0);\n' +
+			'}\n' +
+			'vec3 tpGradientLab(vec2 uv, float grain) {\n' +
+			'  vec3 c = texture2D(tpGradientTex, uv).rgb;\n' +
+			'  if (grain > 0.0) {\n' +
+			'#if TP_OCTAVE_CAP >= 4\n' +
+			'    vec2 p = uv * tpGradientPx;\n' +
+			'    vec3 dots = vec3(tpGradDots(p, 0.2617994, 0, tpGradientDot), tpGradDots(p, 0.5235988, 1, tpGradientDot), tpGradDots(p, 0.7853982, 2, tpGradientDot));\n' +
+			// upstream masks a channel that is exactly black, so the dots never light a void
+			'    dots *= step(vec3(0.0001), c);\n' +
+			'    c = mix(c, dots, clamp(grain, 0.0, 1.0));\n' +
+			'#else\n' +
+			// the budget tier: one-sample grain instead of twelve reads per pixel
+			'    c += (tpGradRand(floor(gl_FragCoord.xy / 1.5)) - 0.5) * 0.09 * clamp(grain, 0.0, 1.0);\n' +
+			'#endif\n' +
+			'  }\n' +
+			'  return tpGradLinear(c);\n' +
+			'}\n',
+		emit: (a) => 'tpGradientLab(' + a.in.uv + ', ' + a.params.grain + ')'
+	},
+
 	// ---- background inputs (65 M2: the layer's own uniforms — background stage only) ----
 	{
 		key: 'pointer',
@@ -1193,6 +1263,8 @@ const DOCS = {
 	// background inputs (65 M2)
 	pointer: "Where this viewer's pointer is over the background (0..1, smoothed) and how fast it is moving. In VR it is where the right controller points. Local to each viewer: nothing is sent.",
 	scroll: 'How far the page has scrolled (0..1) and how fast — for scroll-driven heroes and embeds. In the editor the mouse wheel over the background nudges it.',
+	[GRADIENT_NODE]:
+		'A 3D gradient in the style of ShaderGradient: a ribbon, sphere or water plane bent by noise, coloured by three colours and seen from its own camera. Configure Scene ▸ Background has a small panel for it; grain mixes in a fine dot screen. In VR and with reduced motion it holds still.',
 	aspectUv: 'UV stretched to the layer\'s width/height, so circles stay round on a wide screen. Put the Pointer\'s position through one too before comparing the two.',
 	[BACKGROUND_OUTPUT_NODE]:
 		'The background graph\'s output: the colour drawn behind the scene (full screen, on a picked plane, or on a big sphere around you in VR). Alpha below 1 lets what is behind show through.',

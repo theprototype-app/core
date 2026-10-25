@@ -4,9 +4,15 @@
 // calls registerHistoryKind, so it must never be reachable from history's own imports.
 //
 // Wire: `seq` {id, doc} / `seqdelete` {id, changedAt} per edit, `seqs` {seqs} as the
-// late-joiner reply to `getseqs` (requestFullState). Latest-wins on `changedAt`, refusing
-// only a STRICTLY older document (an ordered DataConnection makes an equal stamp "later").
-// No `handleDisconnected` cleanup: sequences are scene data, not per-peer state.
+// late-joiner reply to `getseqs` (requestFullState). No `handleDisconnected` cleanup:
+// sequences are scene data, not per-peer state.
+//
+// 77: a received document MERGES with ours (sequenceMerge.js — per-item / per-track stamps and
+// tombstones), so two peers editing one cut at once both keep their edits; when the merge holds
+// something the sender lacked, it goes back out once. A document relayed by an OLDER peer
+// (unstamped since its last change) takes the old rule: latest wins on `changedAt`, refusing
+// only a STRICTLY older one (an ordered DataConnection makes an equal stamp "later"). Undo
+// re-applies only what its own step changed (applyDelta), never a whole old document.
 
 import { get } from 'svelte/store';
 import { sessionNow } from './sessionClock';
@@ -20,6 +26,7 @@ import {
 	registerSequenceHistory
 } from './sequences';
 import { normalizeSequence } from './sequenceCore';
+import { mergeSequences, isStamped, stampChanges, sameContent, applyDelta } from './sequenceMerge';
 
 // ---- outbound -------------------------------------------------------------------
 
@@ -62,9 +69,23 @@ export function applyRemoteSequence(data) {
 	if (!id || !data?.doc || typeof data.doc !== 'object') return;
 	const incoming = normalizeSequence({ ...data.doc, id });
 	const mine = sequenceOf(id);
-	if (mine && (mine.changedAt ?? 0) > (incoming.changedAt ?? 0)) return;
 	// silent: a receiver must not re-broadcast, and a remote edit is not OUR undo step
-	setSequence(id, incoming, { silent: true, stamp: incoming.changedAt });
+	if (!mine || !isStamped(mine) || !isStamped(incoming)) {
+		if (mine && (mine.changedAt ?? 0) > (incoming.changedAt ?? 0)) return;
+		// an older peer's whole-document edit: adopted into the stamps, so a later merge with a
+		// third peer does not quietly undo it
+		const doc = mine && !isStamped(incoming) ? stampChanges(mine, incoming, incoming.changedAt) : incoming;
+		setSequence(id, doc, { silent: true, raw: true, stamp: incoming.changedAt });
+		return;
+	}
+	const merged = mergeSequences(mine, incoming);
+	if (sameContent(merged, mine) && JSON.stringify(merged.gone ?? {}) === JSON.stringify(mine.gone ?? {})) {
+		if (!sameContent(merged, incoming)) broadcast(id, merged);
+		return;
+	}
+	setSequence(id, merged, { silent: true, raw: true, stamp: merged.changedAt });
+	// the sender lacks something we had: one send back (content-idempotent, so it settles)
+	if (!sameContent(merged, incoming)) broadcast(id, merged);
 }
 
 /** @param {any} data */
@@ -110,21 +131,27 @@ export function cancelSequenceGesture(id) {
 	if (!gestures.has(id)) return;
 	const before = gestures.get(id);
 	gestures.delete(id);
-	setSequence(id, before, { silent: true });
+	setSequence(id, before, { silent: true, raw: true });
 }
 
 /** @param {any} a @param {any} b */
 function sameDoc(a, b) {
-	const strip = (/** @type {any} */ d) => (d ? { ...d, changedAt: 0 } : null);
-	return JSON.stringify(strip(a)) === JSON.stringify(strip(b));
+	if (!a || !b) return a === b;
+	return sameContent({ ...a, changedAt: 0 }, { ...b, changedAt: 0 });
 }
 
 registerHistoryKind('seq', (/** @type {any} */ entry, /** @type {any} */ state) => {
 	// `state` IS entry.before or entry.after — an IDENTITY comparison (the hud/anim idiom)
-	const doc = state === entry.before ? entry.before : entry.after;
+	const undoing = state === entry.before;
+	const doc = undoing ? entry.before : entry.after;
+	const other = undoing ? entry.after : entry.before;
+	// 77: only what THIS step changed goes back, onto the document as it is now (a peer's edit
+	// since stays) — a created / deleted sequence is still the whole document
+	const cur = sequenceOf(entry.key);
+	const next = doc && other && cur ? applyDelta(cur, other, doc) : doc;
 	// through the single write path, so an undo replicates exactly like an edit. History
 	// mutes its own recording while applying, so this cannot re-record.
-	setSequence(entry.key, doc ? { ...doc, changedAt: undefined } : null);
+	setSequence(entry.key, next ? { ...next, changedAt: undefined } : null, { whole: true });
 	return true;
 });
 

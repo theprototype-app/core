@@ -22,6 +22,14 @@ import { measureDims } from './placementDims';
 const INDEX_KEY = 'explorer:index';
 const BLOB_KEY = 'explorer:blob:';
 export const MAX_ITEM_BYTES = 25 * 1024 * 1024;
+/** 77 K1: a video clip may be bigger (a phone take, an agent render) — it travels chunked like
+ * everything else; the Timeline warns past VIDEO_WARN_BYTES (Quest / phone memory) */
+export const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+export const VIDEO_WARN_BYTES = 60 * 1024 * 1024;
+/** The library's size limit for a file of this kind. @param {string|null|undefined} kind */
+export function maxItemBytes(kind) {
+	return kind === 'video' ? MAX_VIDEO_BYTES : MAX_ITEM_BYTES;
+}
 
 /**
  * R22-R1 — THE NAMING PASS the plan asked for. Three flags now live on a library
@@ -488,8 +496,8 @@ export async function importFiles(files, folderId = null, opts = {}) {
 			showToast('Unsupported: ' + file.name + ' (images incl. HEIC photos, audio, text/config, 3D objects)');
 			continue;
 		}
-		if (file.size > MAX_ITEM_BYTES) {
-			showToast(file.name + ' is over the 25 MB Explorer limit');
+		if (file.size > maxItemBytes(kind)) {
+			showToast(file.name + ' is over the ' + Math.round(maxItemBytes(kind) / 1048576) + ' MB Explorer limit');
 			continue;
 		}
 		const buffer = await file.arrayBuffer();

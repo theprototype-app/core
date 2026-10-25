@@ -113,6 +113,7 @@
 	import CloudSlot from '../CloudSlot.svelte';
 	import { usersSlot, profileSlot, rolesInfo, scenePresence } from '$lib/cloudHooks';
 	import { safeStorage } from '$lib/safeStorage';
+	import { consentingSpeakers } from '$lib/liveCaptions';
 	// 45 N4: a pinned / closed right sidebar moves the profile circle while its menu may be open
 	import { geometry as sidebarGeometry } from '$lib/sidebars';
 
@@ -637,6 +638,8 @@
 			<div class="peer-name">
 				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || 'Peer'}</span>
 				{#if self}<span class="peer-you">(you)</span>{/if}
+				<!-- 77 C3: this person lets the session caption their voice -->
+				{#if $consentingSpeakers.includes(user[0])}<span class="peer-cc" title={self ? 'Your voice is captioned for the session (Settings ▸ Accessibility ▸ Live captions)' : 'Allows live captions of their voice'} aria-label="Live captions on">CC</span>{/if}
 			</div>
 			<div class="peer-meta">
 				<!-- P2b: where this peer is. Absent means we have not been told — which is
@@ -1207,6 +1210,8 @@
 	.peer-info { min-width: 0; }
 	.peer-name { display: flex; align-items: baseline; gap: 4px; min-width: 0; font-size: var(--fs-body); color: var(--text); white-space: nowrap; }
 	.peer-you { flex: 0 0 auto; font-size: var(--fs-badge); color: var(--accent-text); }
+	/* 77 C3: the "captions on" marker — a small outlined CC, readable in both themes */
+	.peer-cc { flex: 0 0 auto; padding: 0 3px; border: 1px solid var(--border-strong); border-radius: 3px; font-size: var(--fs-badge); font-weight: 700; line-height: 1.3; color: var(--text-muted); }
 	.peer-meta { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 2px; overflow: hidden; white-space: nowrap; font-size: var(--fs-badge); color: var(--text-muted); }
 	.peer-meta > * { flex: 0 0 auto; }
 	.peer-meta > .scene-chip { flex: 0 1 auto; }

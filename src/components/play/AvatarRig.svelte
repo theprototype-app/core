@@ -5,6 +5,7 @@
 	import * as THREE from 'three'
 	import { onDestroy } from 'svelte'
 	import { speakingPeers } from '$lib/voiceChat'
+	import { liveLines, liveCaptionsShown, consentingSpeakers } from '$lib/liveCaptions'
 	import { resolveAvatar, hatAnchorY, usesPhotoCard } from '$lib/avatarModel'
 	import { peerHands } from '../../stores/sceneStore'
 	import { RiggedAvatar, lookOf } from '$lib/avatars/riggedAvatar'
@@ -130,6 +131,10 @@
 	let root: any = null
 	let card: any = null
 	let labelGroup: any = null
+	// 77 C3: this speaker's live caption line (only while they allow captions) + the CC marker
+	let captionGroup: any = null
+	$: caption = $liveCaptionsShown ? ($liveLines.find((l) => l.speaker === user[0])?.text ?? '') : ''
+	$: labelText = (user[1] || user[0]) + ($consentingSpeakers.includes(user[0]) ? '  CC' : '')
 	const viewer = new THREE.Vector3()
 	useTask((delta) => {
 		const cam: any = camera.current
@@ -141,6 +146,7 @@
 		}
 		if (card) card.lookAt(viewer)
 		if (labelGroup) labelGroup.lookAt(viewer)
+		if (captionGroup) captionGroup.lookAt(viewer)
 		if (avatar && root) avatar.update(Math.min(delta, 0.1), performance.now() / 1000, root, preview ? null : $peerHands[user[0]], viewer)
 		tickClassicDizzy(Math.min(delta, 0.1))
 	})
@@ -159,8 +165,15 @@
 					fontSize={0.26}
 					anchorX="center"
 					anchorY="middle"
-					text={user[1] || user[0]}
+					text={labelText}
 				/>
+			</T.Group>
+		{/if}
+
+		{#if caption}
+			<!-- 77 C3: a classic floating head has no body — the line hangs UNDER the head -->
+			<T.Group bind:ref={captionGroup} position={[0, -0.85, 0]} name={`${user[0]}-caption`}>
+				<Text color="#ffffff" outlineColor="#0b0e14" outlineWidth={0.018} fontSize={0.16} maxWidth={2.6} textAlign="center" anchorX="center" anchorY="top" text={caption} />
 			</T.Group>
 		{/if}
 
@@ -249,8 +262,14 @@
 					fontSize={0.22}
 					anchorX="center"
 					anchorY="middle"
-					text={user[1] || user[0]}
+					text={labelText}
 				/>
+			</T.Group>
+		{/if}
+		{#if caption}
+			<!-- 77 C3: a rigged body's line sits ABOVE the name label -->
+			<T.Group bind:ref={captionGroup} position={[0, feetBelowHead() + (config.showLabel ? 1.15 : 0.95), 0]} name={`${user[0]}-caption`}>
+				<Text color="#ffffff" outlineColor="#0b0e14" outlineWidth={0.016} fontSize={0.14} maxWidth={2.4} textAlign="center" anchorX="center" anchorY="bottom" text={caption} />
 			</T.Group>
 		{/if}
 		{#if $speakingPeers.includes(user[0])}

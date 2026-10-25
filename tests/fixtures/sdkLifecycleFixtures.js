@@ -495,6 +495,12 @@
 				call: (api) => api.registerShaderBackend('lc', 'LC', () => null),
 				present: (t) => M.shaderBackends.shaderBackendList().some((b) => b.key === 'mod-' + t.id + '-lc')
 			},
+			// 77 C2: a speech-to-text engine (the Captions module's Moonshine)
+			'captions.registerEngine': {
+				needs: ['captionEngines'],
+				call: (api) => api.captions.registerEngine({ id: 'lc', label: 'LC', local: true, languages: ['en'], transcribe: async () => ({ segments: [] }) }),
+				present: (t) => get(M.captionEngines.captionEngines).some((e) => e.id === 'mod-' + t.id + '-lc')
+			},
 			registerAudioDevice: {
 				needs: ['audioDevices'],
 				call: (api) => api.registerAudioDevice({ kind: 'lc', label: 'LC', build: () => ({}) }),

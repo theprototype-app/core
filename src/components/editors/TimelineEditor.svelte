@@ -104,13 +104,15 @@
 		camera: 'camera',
 		anim: 'clapperboard',
 		audio: 'volume-2',
-		event: 'zap'
+		event: 'zap',
+		caption: 'captions'
 	};
 	const KIND_COLOR: Record<string, string> = {
 		camera: 'var(--icon-object)',
 		anim: 'var(--accent)',
 		audio: 'var(--icon-audio)',
-		event: 'var(--ink-warn)'
+		event: 'var(--ink-warn)',
+		caption: 'var(--icon-doc)'
 	};
 
 	// ---- shell: docked vs floating (HudEditor's verbatim) ------------------------------
@@ -359,6 +361,8 @@
 				? `${objectName(item.target)} · ${item.clip || 'default'}`
 				: 'choose an object';
 		if (kind === 'audio') return item.name || (item.sound ? 'sound' : 'choose a sound');
+		if (kind === 'caption')
+			return (item.speaker ? item.speaker + ': ' : '') + (String(item.text ?? '').replace(/\n/g, ' / ') || 'type a caption');
 		return item.name;
 	}
 
@@ -400,6 +404,8 @@
 				item.name = sound.name;
 				sendAsset(sound.hash);
 			} else showToast('Import an audio file into the Explorer, then pick it here');
+		} else if (track.kind === 'caption') {
+			item.text = 'New caption';
 		} else {
 			const n = track.items.length + 1;
 			item.name = `event ${n}`;
@@ -624,6 +630,8 @@
 				},
 				{ label: 'Duplicate', action: () => duplicateSequence(id) },
 				{ label: 'Fit view', action: fitView },
+				// 77 C1: subtitles in and out, and captions made from the clips' speech
+				{ label: 'Captions', icon: 'captions', children: captionMenuItems(id, null) },
 				{
 					label: 'Grow to fit items',
 					disabled: contentEnd(seq) <= seq.duration,
@@ -664,10 +672,40 @@
 					disabled: index === seq.tracks.length - 1,
 					action: () => moveTrack(id, track.id, 1)
 				},
+				...(track.kind === 'caption' ? [{ label: 'Captions', icon: 'captions', children: captionMenuItems(id, track.id) }] : []),
 				{ section: ' ' },
 				{ label: 'Delete track', danger: true, action: () => removeTrack(id, track.id) }
 			]
 		};
+	}
+	// 77 C1: the caption actions (captionJobs.js is LAZY — loaded on the first press)
+	const captionJobs = () => import('$lib/captionJobs');
+	function captionMenuItems(id: string, trackId: string | null) {
+		return [
+			{
+				label: trackId ? 'Import .srt / .vtt into this track…' : 'Import .srt / .vtt…',
+				// the file input is made synchronously, inside the press: a picker opened after the
+				// lazy import resolves can land outside the click's user activation (no dialog at all)
+				action: () => {
+					const input = document.createElement('input');
+					input.type = 'file';
+					input.accept = '.srt,.vtt,text/vtt,application/x-subrip';
+					input.onchange = () => {
+						const file = input.files?.[0];
+						if (file) void captionJobs().then((m) => m.importSubtitleFile(id, trackId, file));
+					};
+					input.click();
+				}
+			},
+			{ label: 'Export .vtt', action: () => captionJobs().then((m) => m.exportSubtitles(id, 'vtt')) },
+			{ label: 'Export .srt', action: () => captionJobs().then((m) => m.exportSubtitles(id, 'srt')) },
+			{ section: ' ' },
+			{
+				label: 'Caption the speech in audio clips',
+				tooltip: 'Transcribes the selected audio clips (or all of them) onto a new caption track — on this device with the Captions module, else your speech-to-text server (Settings ▸ AI)',
+				action: () => captionJobs().then((m) => m.autoCaption(id))
+			}
+		];
 	}
 	function commitRename() {
 		if (seqId && renameText.trim()) renameSequence(seqId, renameText);
@@ -1158,6 +1196,40 @@
 							}}
 							onchange={(e) => patchItem({ caption: e.currentTarget.value.trim() })}
 						/>
+					{:else if kind === 'caption'}
+						<!-- 77 C1: a subtitle cue — Enter commits, Shift+Enter breaks the line -->
+						<textarea
+							class="tl-event-name tl-cue-text"
+							id="timeline-item-cue"
+							rows="1"
+							value={it.text ?? ''}
+							maxlength="300"
+							placeholder="Caption text"
+							aria-label="Caption text"
+							title="The subtitle shown while the playhead is inside this cue (Shift+Enter for a second line)"
+							onkeydown={(e) => {
+								if (e.key === 'Enter' && !e.shiftKey) {
+									e.preventDefault();
+									e.currentTarget.blur();
+								}
+								e.stopPropagation();
+							}}
+							onchange={(e) => patchItem({ text: e.currentTarget.value })}
+						></textarea>
+						<input
+							class="tl-event-name tl-cue-speaker"
+							id="timeline-item-speaker"
+							value={it.speaker ?? ''}
+							maxlength="60"
+							placeholder="Speaker"
+							aria-label="Speaker"
+							title="Who says it (optional) — shown before the line and written as a voice in .vtt"
+							onkeydown={(e) => {
+								if (e.key === 'Enter') e.currentTarget.blur();
+								e.stopPropagation();
+							}}
+							onchange={(e) => patchItem({ speaker: e.currentTarget.value.trim() })}
+						/>
 					{:else}
 						<input
 							class="tl-event-name"
@@ -1353,6 +1425,19 @@
 	}
 	.tl-event-name {
 		width: 180px;
+	}
+	/* 77 C1: a cue's text grows with a second line; the speaker field is short */
+	.tl-cue-text {
+		width: 260px;
+		min-height: var(--control-h-sm);
+		height: auto;
+		padding: 3px 6px;
+		resize: vertical;
+		field-sizing: content;
+		max-height: 72px;
+	}
+	.tl-cue-speaker {
+		width: 110px;
 	}
 	.tl-grid {
 		position: relative;

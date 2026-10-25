@@ -234,6 +234,8 @@ export const VALIDATORS = {
 	triggers: (d) => !!d.triggers && typeof d.triggers === 'object',
 	peervars: (d) => typeof d.peerId === 'string',
 	playmode: (d) => typeof d.peerId === 'string',
+	// 77 C3: live subtitles — a consent row, or one caption line (≤ 300 chars are shown)
+	livecap: (d) => d.op === 'state' || (d.op === 'line' && typeof d.speaker === 'string' && d.speaker.length <= 64 && typeof d.text === 'string' && d.text.length <= 2000),
 	// 33 P2: a functional pack item was triggered (a door opened). The state is evaluated
 	// as a POSE every frame, so a non-finite stamp would put a door at NaN forever.
 	behavior: (d) =>

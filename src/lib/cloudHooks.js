@@ -37,6 +37,10 @@ const ALWAYS_ALLOWED = new Set([
 	// everything), i.e. it would relax the gate by tightening one message. It is presence
 	// besides, which is this floor's own family.
 	'atscene',
+	// 77 C3: live-subtitle consent ("caption my voice") is presence about the SENDER, like atscene;
+	// a plugin that gated it for a viewer would silently never caption that viewer. Lines ride it too
+	// and every receiver re-checks them (consenting speaker + the elected transcriber or the speaker).
+	'livecap',
 	// 25-E: the session clock's round trip. Protocol, not content — a plugin that gated it
 	// for a viewer would leave that viewer stamping on its own machine's clock, so every
 	// latest-wins write it made would sort wrongly against the room's.

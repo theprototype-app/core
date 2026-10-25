@@ -544,6 +544,8 @@
 				<AccordionItem bind:open={accessibilityExpanded}>
 					{#snippet header()}Accessibility{/snippet}
 					<AccessibilitySettings />
+					<!-- 77: captions from speech + live captions (a lazy chunk: the page loads with this section) -->
+					{#await import('./settings/CaptionSettings.svelte') then CaptionSettings}<CaptionSettings.default />{/await}
 				</AccordionItem>
 				<AccordionItem bind:open={controlsExpanded}>
 					{#snippet header()}Controls{/snippet}

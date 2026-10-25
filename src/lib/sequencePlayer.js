@@ -33,7 +33,8 @@ import {
 	liveItems,
 	playheadAt,
 	END_EVENT,
-	clamp
+	clamp,
+	captionsAt
 } from './sequenceCore';
 import { findCameraObject, cameraSpec } from './cameraObjects';
 import {
@@ -46,7 +47,7 @@ import * as anim from './animationPreview';
 import { clipInfo, setAnimationState } from './animatedImports';
 import { fireSequenceEvent } from './flowRuntime';
 // 53 (A6/A5): an audio clip's caption line (the shared caption bus)
-import { showCaption } from './captions';
+import { showCaption, setSubtitles } from './captions';
 
 /** flow seconds of day — the unit trigger stamps use (flowRuntime / animationPreview) */
 function syncedNow() {
@@ -83,6 +84,22 @@ export const seqFlash = writable(/** @type {Record<string, number>} */ ({}));
 let cameraOwner = /** @type {string|null} */ (null);
 /** undefined = we never took the camera; null = it was the player's own view */
 let priorCamera = /** @type {string|null|undefined} */ (undefined);
+
+// ---- 77 C1: subtitles ------------------------------------------------------------
+
+/** the time each sequence's subtitles are read at: a run's playhead, or a parked scrub @type {Map<string, number>} */
+const subtitleAt = new Map();
+
+/** @param {any} seq @param {number} t */
+function showSubtitles(seq, t) {
+	subtitleAt.set(seq.id, t);
+	setSubtitles(seq.id, captionsAt(seq, t));
+}
+
+/** @param {string} id */
+function hideSubtitles(id) {
+	if (subtitleAt.delete(id)) setSubtitles(id, []);
+}
 
 // ---- transport ----------------------------------------------------------------
 
@@ -195,6 +212,8 @@ function endRun(run, opts) {
 		for (const uuid of run.imported) setAnimationState(uuid, { playing: false }, false);
 	}
 	if (cameraOwner === run.id && !opts.keepCamera) releaseCamera();
+	// 77 C1: a paused PREVIEW parks its playhead, and its cues stay up under it (like a scrub)
+	if (run.mode !== 'preview' || opts.restore || run.done) hideSubtitles(run.id);
 	seqTransport.update((map) => {
 		const cur = map[run.id];
 		return cur ? { ...map, [run.id]: { ...cur, playing: false } } : map;
@@ -231,6 +250,7 @@ function tickRun(run, seq, now) {
 	crossRange(run, seq, run.lastT, head.t, now);
 	run.lastT = head.t;
 	applyShot(run, seq, head.t);
+	showSubtitles(seq, head.t);
 	setTransport(run.id, { t: head.t, playing: !head.done, mode: run.mode });
 	if (head.done) {
 		run.done = true;
@@ -420,6 +440,7 @@ export function scrubSequence(id, t) {
 	if (run) endRun(run, { restore: false });
 	const at = clamp(t, 0, seq.duration);
 	setTransport(id, { t: at, playing: false, mode: 'preview' });
+	showSubtitles(seq, at);
 	for (const { item, offset } of liveItems(seq, at, 'anim')) {
 		const clip = String(item.clip ?? '').trim();
 		if (!item.target || (clip && clipInfo(item.target).some((c) => c.name === clip))) continue;
@@ -445,6 +466,7 @@ const scrubbed = new Set();
 export function releaseScrub() {
 	for (const uuid of scrubbed) anim.resetPreview(uuid);
 	scrubbed.clear();
+	for (const id of [...subtitleAt.keys()]) if (!runs.has(id)) hideSubtitles(id);
 	if (cameraOwner === '__scrub') releaseCamera();
 	scrubShot = '';
 }
@@ -475,6 +497,17 @@ export function startSequencePlayer() {
 	);
 	// a scene load replaces the sequences: a run whose sequence vanished ends in the tick,
 	// one whose sequence was replaced by a same-id load keeps going on the new document
+	// 77 C1: a PARKED playhead re-reads its cues when the document changes (a cue typed or
+	// moved under it, a peer's edit); a running one re-reads on its next tick anyway
+	disposers.push(
+		sequences.subscribe((all) => {
+			for (const [id, t] of [...subtitleAt]) {
+				if (runs.has(id)) continue;
+				if (all[id]) showSubtitles(all[id], t);
+				else hideSubtitles(id);
+			}
+		})
+	);
 }
 
 /** Test seam. */
@@ -502,6 +535,7 @@ export function sequencePlayerDebug() {
 		priorCamera: priorCamera ?? null,
 		preview: get(cameraPreview)?.uuid ?? null,
 		blend: shotState?.blend ?? null,
-		fired: fired.slice()
+		fired: fired.slice(),
+		subtitleAt: Object.fromEntries(subtitleAt)
 	};
 }

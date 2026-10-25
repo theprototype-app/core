@@ -148,6 +148,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startGamePresence } from '$lib/gamePresence'
   import { startColocationCalibration } from '$lib/colocationCalibrate'
   import { startColocationPresence } from '$lib/colocationPresence'
+  import { startLiveCaptions } from '$lib/liveCaptions' // 77 C3
   import { startColocationAnchors } from '$lib/colocationAnchors'
   import { startColocationNudge } from '$lib/colocationNudge'
   import ColocationBadge from './components/menu/ColocationBadge.svelte'
@@ -342,6 +343,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // CO5: publish which physical ROOM we are in when it changes, so a co-present peer
     // can stop rendering our avatar and stop playing our voice (their side, locally)
     startColocationPresence()
+    startLiveCaptions()
     // CO3: persist a calibration as an XRAnchor per room; restore it on the next XR
     // session (zero ritual) and follow the anchor's refined pose while presenting
     startColocationAnchors()

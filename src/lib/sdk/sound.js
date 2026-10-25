@@ -8,13 +8,15 @@ import { get } from 'svelte/store';
 import { pingAudioRef, effectsRef } from './refs.js';
 // 53 (A6): the caption bus — a game sound says its line, a module can say its own
 import { captionSound, showCaption, captionsShown } from '../captions';
+// 77 C2: a module can add a speech-to-text CAPTION ENGINE (the `captions` module's Moonshine)
+import { registerCaptionEngine } from '../captionEngines';
 
 /** the ping chimes `api.playSound` still reaches (pingAudio's PING_SOUNDS ids) */
 const PING_NAMES = new Set(['ding', 'chime', 'pluck', 'bell']);
 
 /** @param {import('./context.js').SdkContext} ctx */
 export function sdkSound(ctx) {
-	const { moduleId, onDispose } = ctx;
+	const { moduleId, onDispose, owned } = ctx;
 	/** 33 (L4): api.music journals its stop once per module */
 	let musicDisposeHooked = false;
 	return {
@@ -79,7 +81,21 @@ export function sdkSound(ctx) {
 			/** @param {string} text @param {{seconds?: number}=} options @returns {string} the line shown ('' = nothing) */
 			show: (text, options = {}) => showCaption({ text, source: moduleId, seconds: options?.seconds }),
 			/** @returns {boolean} */
-			shown: () => !!get(captionsShown)
+			shown: () => !!get(captionsShown),
+			/**
+			 * 77 C2: add a CAPTION ENGINE — speech to timed text — that Timeline auto-captions and live
+			 * captions can use. `{id, label, local, languages, transcribe(job)}`: `job.audio` is 16 kHz mono
+			 * Float32 PCM (`job.sampleRate`, `job.language`, `job.signal`); resolve
+			 * `{segments: [{start, end, text}], text?}` in seconds of the clip. `local: true` = it runs on
+			 * this device (no audio leaves it). The id is namespaced to the module; the engine goes away
+			 * when the module unloads. Returns `off()`.
+			 * @param {{id: string, label?: string, local?: boolean, languages?: string[], transcribe: (job: any) => Promise<any>, status?: () => string}} def
+			 * @returns {() => void}
+			 */
+			registerEngine: (def) => {
+				const id = `mod-${moduleId}-${String(def?.id ?? 'engine').trim() || 'engine'}`;
+				return owned('captionEngine', registerCaptionEngine({ ...def, id, owner: moduleId }), { key: id });
+			}
 		},
 		// 33 (L4): the track is OWNED by this module — `stop` only stops ours, the module's
 		// teardown stops it ("music from waves stays" after Waves was unloaded), and a module a
@@ -111,6 +127,7 @@ sdkSound.surface = {
 	announce: 'action',
 	'captions.show': 'action',
 	'captions.shown': 'read',
+	'captions.registerEngine': 'registers',
 	'music.play': 'registers',
 	'music.stop': 'action',
 	'music.current': 'read',

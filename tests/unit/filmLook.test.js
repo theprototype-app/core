@@ -2,7 +2,7 @@
 // 77 L1: the film-look leaves — lens normalising, the focus pull, the letterbox matte, and the
 // look properties in 68's registry shape (camera lens fields + live look overrides).
 import { describe, it, expect, beforeEach } from 'vitest';
-import { dofFromLens, lensOf, easeFocus, matteBars, LETTERBOX_PRESETS } from '../../src/lib/filmLookCore.js';
+import { dofFromLens, lensOf, easeFocus, matteBars, framingAspect, LETTERBOX_PRESETS } from '../../src/lib/filmLookCore.js';
 import {
 	LOOK_PROPS,
 	LIVE_LOOK,
@@ -80,22 +80,38 @@ describe('easeFocus (the focus pull)', () => {
 });
 
 describe('matteBars', () => {
-	it('a 2.39 matte in a 16:9 frame = top and bottom bars', () => {
-		const bars = matteBars(16 / 9, 2.39);
+	it('a 2.39 matte on a 16:9 camera in a 16:9 canvas = top and bottom bars', () => {
+		const bars = matteBars(16 / 9, 16 / 9, 2.39);
 		expect(bars.x).toBe(0);
 		expect(bars.y).toBeCloseTo((1 - 16 / 9 / 2.39) / 2, 9);
 	});
-	it('a 4:3 matte in a 16:9 frame = pillar bars', () => {
-		const bars = matteBars(16 / 9, 4 / 3);
+	it('a 4:3 matte on a 16:9 camera = pillar bars', () => {
+		const bars = matteBars(16 / 9, 16 / 9, 4 / 3);
 		expect(bars.y).toBe(0);
 		expect(bars.x).toBeCloseTo(0.125, 9);
 	});
-	it('off / equal / garbage = no bars', () => {
-		expect(matteBars(16 / 9, 0)).toEqual({ x: 0, y: 0 });
-		expect(matteBars(16 / 9, 16 / 9)).toEqual({ x: 0, y: 0 });
-		expect(matteBars(NaN, 2)).toEqual({ x: 0, y: 0 });
+	it('is cut from the camera FRAMING when the canvas has another shape (1280x800 vs 16:9)', () => {
+		const bars = matteBars(1.6, 16 / 9, 2.39);
+		// the 16:9 frame is 90% of the canvas height; the matte keeps 16:9 / 2.39 of that
+		expect(bars.y).toBeCloseTo((1 - 0.9 * (16 / 9 / 2.39)) / 2, 9);
+		expect(bars.x).toBe(0);
+		// a free camera follows the canvas
+		expect(matteBars(1.6, 0, 2.39).y).toBeCloseTo((1 - 1.6 / 2.39) / 2, 9);
 	});
-	it('presets start with Off', () => {
+	it('a matte equal to the framing leaves only the frame edges', () => {
+		expect(matteBars(16 / 9, 16 / 9, 16 / 9)).toEqual({ x: 0, y: 0 });
+		const pillarbox = matteBars(2, 16 / 9, 16 / 9);
+		expect(pillarbox.y).toBe(0);
+		expect(pillarbox.x).toBeCloseTo((1 - 16 / 9 / 2) / 2, 9);
+	});
+	it('off / garbage = no bars', () => {
+		expect(matteBars(16 / 9, 16 / 9, 0)).toEqual({ x: 0, y: 0 });
+		expect(matteBars(NaN, 0, 2)).toEqual({ x: 0, y: 0 });
+	});
+	it('framing presets match cameraObjects.aspectRatio; Off comes first', () => {
+		expect(framingAspect('16:9')).toBeCloseTo(16 / 9, 12);
+		expect(framingAspect('2.39:1')).toBe(2.39);
+		expect(framingAspect('free')).toBe(0);
 		expect(LETTERBOX_PRESETS[0].value).toBe(0);
 	});
 });

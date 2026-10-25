@@ -37,9 +37,10 @@
 		style="bottom: {$viewportInset}px"
 		role="presentation"
 		onpointerdown={pick}
-	>
-		<div class="focus-pick-hint" role="status">Click what should be sharp · Alt = distance only · Esc cancels</div>
-	</div>
+	></div>
+	<!-- a sibling, not a child: the hint sits UNDER the top bar (z-chrome-top covers the top of the
+	     canvas box on every shell) and above windows, while the click layer stays under every panel -->
+	<div class="focus-pick-hint" role="status">Click what should be sharp · Alt = distance only · Esc cancels</div>
 {/if}
 
 <style>
@@ -53,8 +54,12 @@
 		z-index: var(--z-canvas-overlay);
 	}
 	.focus-pick-hint {
-		position: absolute;
-		top: 12px;
+		position: fixed;
+		top: calc(env(safe-area-inset-top, 0px) + 62px);
+		z-index: var(--z-hud);
+		max-width: calc(100vw - 32px);
+		overflow: hidden;
+		text-overflow: ellipsis;
 		left: 50%;
 		transform: translateX(-50%);
 		padding: 4px 10px;

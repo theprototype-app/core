@@ -28,7 +28,7 @@ import { registerPostEffect, postEffectDef, planPostStack, postStackFor } from '
 import { Uniform } from 'three';
 // 77 L1: the film look — the lens on the camera you look through, its focus pull, the matte,
 // and the look params a sequencer property track may pose (lookProps)
-import { dofFromLens, easeFocus, lensOf } from './filmLookCore';
+import { dofFromLens, easeFocus, framingAspect, lensOf } from './filmLookCore';
 import { desiredFocus, lookCameraMarker, lookCameraUuid } from './filmLook';
 import { LIVE_LOOK, liveLookActive, liveLookValue, setLookResolver } from './lookProps';
 // L5: a LUT is an Explorer ASSET, so it must ride the content-hash push/pull or a
@@ -472,15 +472,20 @@ registerPostEffect('dof', {
 // uniforms, so a property track can open the matte without a chain rebuild.
 const LETTERBOX_GLSL = `
 uniform float matte;
+uniform float framing;
 uniform float matteOpacity;
 void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
-	float frame = resolution.x / max(resolution.y, 1.0);
-	vec2 bars = matte <= 0.0 ? vec2(0.0) : (matte > frame ? vec2(0.0, 0.5 * (1.0 - frame / matte)) : vec2(0.5 * (1.0 - matte / frame), 0.0));
+	// the picture = the camera's framing (centred in the canvas) cut to the matte (filmLookCore.matteBars)
+	float canvas = resolution.x / max(resolution.y, 1.0);
+	float f = framing > 0.0 ? framing : canvas;
+	vec2 frame = canvas > f ? vec2(f / canvas, 1.0) : vec2(1.0, canvas / f);
+	vec2 pic = frame * (matte > f ? vec2(1.0, f / matte) : vec2(matte / f, 1.0));
+	vec2 inside = 0.5 * pic;
 	vec2 edge = abs(uv - 0.5);
-	vec2 inside = 0.5 - bars;
 	// one-texel soft edge so the matte line does not crawl
 	vec2 px = 1.0 / max(resolution, vec2(1.0));
-	float cover = max(bars.x > 0.0 ? smoothstep(inside.x - px.x, inside.x, edge.x) : 0.0, bars.y > 0.0 ? smoothstep(inside.y - px.y, inside.y, edge.y) : 0.0);
+	vec2 out2 = smoothstep(inside - px, inside, edge) * step(pic, vec2(0.9999));
+	float cover = matte > 0.0 ? max(out2.x, out2.y) : 0.0;
 	// black in every theme: a matte is part of the picture, not chrome
 	outputColor = vec4(mix(inputColor.rgb, vec3(0.0), cover * matteOpacity), inputColor.a);
 }`;
@@ -497,9 +502,16 @@ registerPostEffect('letterbox', {
 		new Effect('LetterboxEffect', LETTERBOX_GLSL, {
 			uniforms: new Map([
 				['matte', new Uniform(num(params.aspect, 2.39))],
+				['framing', new Uniform(0)],
 				['matteOpacity', new Uniform(num(params.opacity, 1))]
 			])
-		})
+		}),
+	// the framing of the camera on screen (16:9, 4:3 …), read per frame like the DOF lens
+	tick: (effect) => {
+		const framing = framingAspect(lookCameraMarker()?.userData?.camera?.aspect ?? '16:9'); // DEFAULT_CAMERA's framing
+		const slot = effect.uniforms.get('framing');
+		if (slot.value !== framing) slot.value = framing;
+	}
 });
 
 registerPostEffect('vignette', {
@@ -710,4 +722,21 @@ export function applyLiveLook(instances) {
 			else instance.applied[param] = value;
 		}
 	}
+}
+
+/** test/debug: the film look as BUILT — the DOF lens, the matte, posed params @param {any[]} instances */
+export function filmLookDebug(instances) {
+	const find = (/** @type {string} */ kind) => instances.find((instance) => instance.kind === kind)?.object ?? null;
+	const dof = find('dof');
+	const matte = find('letterbox');
+	const vignette = find('vignette');
+	return {
+		camera: lookCameraUuid(),
+		dof: dof
+			? { focusDistance: dof.cocMaterial.focusDistance, focusRange: dof.cocMaterial.focusRange, bokehScale: dof.bokehScale, focusNow: dof.__focusNow }
+			: null,
+		matte: matte ? { aspect: matte.uniforms.get('matte').value, framing: matte.uniforms.get('framing').value, opacity: matte.uniforms.get('matteOpacity').value } : null,
+		vignette: vignette ? { darkness: vignette.darkness, offset: vignette.offset } : null,
+		applied: instances.filter((instance) => instance.applied && Object.keys(instance.applied).length).map((instance) => ({ kind: instance.kind, applied: { ...instance.applied } }))
+	};
 }

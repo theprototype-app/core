@@ -25,7 +25,7 @@
 	} from '$lib/scenePost';
 	// side-effecting import: registers the built-in effect kinds. It also owns the
 	// postprocessing/n8ao imports, which is what keeps scenePost.js a pure leaf.
-	import { compilePostStack, disposePostStack, applyLiveLook } from '$lib/postEffects';
+	import { compilePostStack, disposePostStack, applyLiveLook, filmLookDebug } from '$lib/postEffects';
 	import { setLookCamera, setRenderCamera } from '$lib/filmLook';
 	// P4: side-effecting too — registers the `graph` kind, so a post-domain shader graph
 	// is just another entry in the stack above. This component owns the one thing that
@@ -614,6 +614,8 @@
 				plan: stackPlan,
 				skipped: stackSkipped.map((entry: any) => entry.kind),
 				kinds: stackInstances.map((instance: any) => instance.kind),
+				// 77 L1: the film look as built (DOF lens, matte, posed look params)
+				film: filmLookDebug(stackInstances),
 				// the ordering INVARIANT, as a boolean: the two editor-gizmo outlines
 				// are the last two passes in the chain
 				outlinesLast:

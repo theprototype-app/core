@@ -60,15 +60,31 @@ export function easeFocus(current, desired, delta, pull) {
 	return 1 / next;
 }
 
+/** A camera's framing preset as a number (0 = 'free': the frame follows the canvas) —
+ * cameraObjects.aspectRatio's table, here so the leaf needs no import. @param {any} aspect */
+export function framingAspect(aspect) {
+	if (aspect === '4:3') return 4 / 3;
+	if (aspect === '1:1') return 1;
+	if (aspect === '2.39:1') return 2.39;
+	if (aspect === '16:9') return 16 / 9;
+	return 0;
+}
+
 /**
- * The letterbox MATTE inside a frame: each bar's size as a fraction of the frame
- * (`y` = top and bottom bars, `x` = pillar bars). 0 / non-finite `matte` = off.
- * @param {number} frameAspect width / height of the rendered frame @param {number} matte target width / height
+ * The letterbox MATTE on the canvas: each bar's size as a fraction of the CANVAS (`y` = top and
+ * bottom bars, `x` = pillars). The matte is cut from the camera's FRAMING (the 16-P5 frame the
+ * guide shows and a capture keeps), which sits centred in a canvas of another shape — so what is
+ * outside the frame is matte too. The shader in postEffects computes the same rectangle.
+ * @param {number} canvasAspect @param {number} framing the camera's framing aspect (0 = the canvas) @param {number} matte (0 = off)
  */
-export function matteBars(frameAspect, matte) {
-	if (!(matte > 0) || !(frameAspect > 0) || Math.abs(frameAspect - matte) < 1e-4) return { x: 0, y: 0 };
-	if (matte > frameAspect) return { x: 0, y: (1 - frameAspect / matte) / 2 };
-	return { x: (1 - matte / frameAspect) / 2, y: 0 };
+export function matteBars(canvasAspect, framing, matte) {
+	if (!(matte > 0) || !(canvasAspect > 0)) return { x: 0, y: 0 };
+	const f = framing > 0 ? framing : canvasAspect;
+	const frame = canvasAspect > f ? { w: f / canvasAspect, h: 1 } : { w: 1, h: canvasAspect / f };
+	const w = frame.w * (matte < f ? matte / f : 1);
+	const h = frame.h * (matte > f ? f / matte : 1);
+	const bar = (/** @type {number} */ v) => (v >= 1 - 1e-9 ? 0 : (1 - v) / 2);
+	return { x: bar(w), y: bar(h) };
 }
 
 /** The matte presets the Camera Inspector offers (0 = off). */

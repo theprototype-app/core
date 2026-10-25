@@ -8,17 +8,32 @@ import * as THREE from 'three';
 import { objectsGroup, globalRenderer } from '../stores/sceneStore';
 import { findCameraObject, isCameraObject, setCameraFor } from './cameraObjects';
 import { currentRenderCamera } from './filmLook';
+import { dockMinimized } from './bottomDock';
+import { phoneShell } from './ui/phoneShell.js';
 
 /** the camera a pick is armed for, or null. LOCAL. @type {import('svelte/store').Writable<string|null>} */
 export const focusPickArm = writable(/** @type {string|null} */ (null));
 
+/** true while WE minimized the phone dock for a pick (so only our own minimize is undone) */
+let minimizedForPick = false;
+
 /** @param {string} uuid */
 export function armFocusPick(uuid) {
-	focusPickArm.set(findCameraObject(uuid) ? uuid : null);
+	const ok = !!findCameraObject(uuid);
+	focusPickArm.set(ok ? uuid : null);
+	// on a phone the Inspector is a dock tab covering the picture: get it out of the way
+	if (ok && get(phoneShell) && !get(dockMinimized)) {
+		dockMinimized.set(true);
+		minimizedForPick = true;
+	}
 }
 
 export function cancelFocusPick() {
 	focusPickArm.set(null);
+	if (minimizedForPick) {
+		minimizedForPick = false;
+		dockMinimized.set(false);
+	}
 }
 
 const ray = new THREE.Raycaster();

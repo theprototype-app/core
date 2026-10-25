@@ -89,6 +89,7 @@ export const SETTINGS_ROWS = [
 	["Scene", "Placement preview", "What an item dragged in from the Explorer shows before you drop it: the full model, the model within a triangle budget, or its box"],
 	["Scene", "Preview triangle budget", "Above this a loaded model previews as its box while you drag it in (50k on a desktop, 15k on a phone or headset)"],
 	["Scene", "Show dimensions", "Width × depth × height in metres, and the triangles and download size, beside the pointer while you drag an item in"],
+	["Scene", "Distant scatter", "Far scattered models fade out to keep this device inside its budget; near ones and their colliders never change"],
 	["Scene", "Water quality", "High draws refraction, caustics, shoreline foam and planar mirrors at full resolution; Medium at half; Low…"],
 	["Scene", "Simulation controls", "Show the physics transport (play/pause/stop/reset) at bottom-right."],
 	["Scene", "Sync animations", "Node animations use wall-clock time so all peers see the same phase"],

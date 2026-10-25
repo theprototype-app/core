@@ -211,7 +211,9 @@ h.run(async () => {
 	await press(page, '1');
 	// the LAST control in the document (the open Explorer, Inspector and object list add many)
 	await page.evaluate(() => {
-		const all = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])')]).filter((e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden');
+		// a toast's ✕ is not part of the layout (51-int: the "Scene saved" toast's ✕ was picked, then auto-dismissed
+		// before the Tab, which dropped focus on <body> — whose Tab is the Edit Mesh shortcut)
+		const all = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])')]).filter((e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden' && !e.closest('.tp-toast'));
 		all[all.length - 1]?.focus();
 	});
 	let wrapped = false;

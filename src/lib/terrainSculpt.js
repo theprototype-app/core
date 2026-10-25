@@ -13,9 +13,21 @@ import {
 	endPaintStroke,
 	beginScatterStroke,
 	scatterStrokeMove,
+	isMeshHost,
 	endScatterStroke,
 	terrainStrokeOpen
 } from './terrainPaint';
+// 51 E4: the Scatter brush's edit tools (erase / rotate / scale / relax brushes, select)
+import {
+	scatterBrushArmed,
+	beginEditStroke,
+	editStrokeMove,
+	endEditStroke,
+	editStrokeOpen,
+	startScatterEditSession,
+	endScatterEditSession,
+	clearScatterSelection
+} from './scatterEdit';
 
 // Terrain sculpting (T-2): brush raise/lower/smooth/flatten on the Terrain
 // primitive, replicated through the EXISTING meshgeo channel — live strokes
@@ -38,6 +50,10 @@ export const sculptMode = writable('terrain');
  * strokes terrainPaint.js runs; the session, lock, radius and strength are shared.
  * @type {import('svelte/store').Writable<'raise'|'lower'|'smooth'|'flatten'|'paint'|'scatter'>} */
 export const sculptOp = writable('raise');
+/** 51-surface: true while a SCATTER session runs on a plain mesh that was entered for scatter only —
+ * its geometry was left exactly as it is (no soup conversion, no size cap), so the shaping brushes
+ * are not offered (Sculpt from the object menu gives them). */
+export const sculptScatterOnly = writable(false);
 export const sculptRadius = writable(3);
 export const sculptStrength = writable(0.5);
 
@@ -258,11 +274,15 @@ export function rebuildSculptCaches(object) {
 const MESH_SCULPT_MAX_FLOATS = MAX_SNAPSHOT;
 
 /** Enter sculpt mode: Terrain gets the column brush, any other mesh the
- * normal brush (selects = locks it either way). @param {string} uuid */
-export function enterSculpt(uuid) {
+ * normal brush (selects = locks it either way). 51-surface: `{scatter: true}` on a plain mesh opens
+ * a SCATTER-ONLY session — the scatter brush paints on its surface and the geometry is never touched
+ * (so a 100k-triangle import is fine, and nothing is converted or sent).
+ * @param {string} uuid @param {{scatter?: boolean}} [opts] */
+export function enterSculpt(uuid, opts = {}) {
 	const object = objectOf(uuid);
 	if (!object) return false;
 	const isTerrain = !!object.userData?.terrain;
+	if (!isTerrain && opts.scatter) return enterMeshScatter(uuid, object);
 	if (!isTerrain && (!object.isMesh || !object.geometry?.attributes?.position)) {
 		showToast('Sculpting works on meshes (Terrain gets the height brush)');
 		return false;
@@ -306,14 +326,40 @@ export function enterSculpt(uuid) {
 	if (isTerrain) rebuildWeldMap(object);
 	else rebuildMeshWeldMap(object);
 	sculptMode.set(isTerrain ? 'terrain' : 'mesh');
-	// paint / scatter have no meaning on a plain mesh
-	if (!isTerrain && (get(sculptOp) === 'paint' || get(sculptOp) === 'scatter')) sculptOp.set('raise');
+	sculptScatterOnly.set(false);
+	// paint has no meaning on a plain mesh (no splat map); scatter does since 51-surface
+	if (!isTerrain && get(sculptOp) === 'paint') sculptOp.set('raise');
+	sculptObject.set(uuid);
+	if (isTerrain) startScatterEditSession(() => get(sculptObject), () => get(sculptOp) === 'scatter' && get(sculptMode) === 'terrain');
+	return true;
+}
+
+/** 51-surface: the scatter-only session on a plain mesh (see enterSculpt). @param {string} uuid @param {any} object */
+function enterMeshScatter(uuid, object) {
+	if (!isMeshHost(object)) {
+		showToast('Scatter works on a mesh object');
+		return false;
+	}
+	const lock = get(lockedObjects).find((entry) => entry[1] === uuid);
+	if (lock) {
+		showToast('Locked by ' + nameOf(lock[0]));
+		return false;
+	}
+	gizmoSuppressed.set(true);
+	selectObject(uuid);
+	weld = null;
+	meshWeld = null;
+	sculptMode.set('mesh');
+	sculptScatterOnly.set(true);
+	sculptOp.set('scatter');
 	sculptObject.set(uuid);
 	return true;
 }
 
 export function exitSculpt() {
-	if (strokeBefore || terrainStrokeOpen()) endStroke(); // commit a stroke in flight
+	if (strokeBefore || terrainStrokeOpen() || editStrokeOpen()) endStroke(); // commit a stroke in flight
+	sculptScatterOnly.set(false);
+	endScatterEditSession();
 	sculptObject.set(null);
 	weld = null;
 	meshWeld = null;
@@ -404,10 +450,13 @@ export function applyBrushAt(uuid, x, z, op, radius, strength, dt = 0.016) {
 	return touched;
 }
 
-/** 47: is the current op a terrainPaint stroke (and on a terrain)? */
+/** 47: is the current op a terrainPaint stroke? Paint = a terrain only; scatter = any mesh (51-surface).
+ * 51 E4: 'scatter-edit' = the Scatter brush with an edit tool armed (scatterEdit.js runs it) —
+ * on a terrain only (a mesh host keeps Paint + the 47 erase). */
 function paintOp() {
 	const op = get(sculptOp);
-	return get(sculptMode) === 'terrain' && (op === 'paint' || op === 'scatter') ? op : null;
+	if (op === 'scatter') return get(sculptMode) === 'terrain' && scatterBrushArmed() ? 'scatter-edit' : op;
+	return get(sculptMode) === 'terrain' && op === 'paint' ? op : null;
 }
 
 /** Stroke begin: snapshot for the ONE undo entry per stroke. @param {string} uuid */
@@ -415,6 +464,7 @@ export function beginStroke(uuid) {
 	const op = paintOp();
 	if (op === 'paint') return void beginPaintStroke(uuid);
 	if (op === 'scatter') return void beginScatterStroke(uuid);
+	if (op === 'scatter-edit') return void beginEditStroke(uuid);
 	const object = objectOf(uuid);
 	if (!object?.geometry?.attributes?.position) return;
 	strokeBefore = object.geometry.attributes.position.array.slice();
@@ -426,7 +476,8 @@ export function beginStroke(uuid) {
 export function strokeMove(uuid, x, z, dt = 0.016, y = 0) {
 	const paint = paintOp();
 	if (paint === 'paint') return paintStrokeMove(uuid, x, z, dt, get(sculptRadius), get(sculptStrength));
-	if (paint === 'scatter') return scatterStrokeMove(uuid, x, z, get(sculptRadius));
+	if (paint === 'scatter') return scatterStrokeMove(uuid, x, z, get(sculptRadius), y);
+	if (paint === 'scatter-edit') return editStrokeMove(uuid, x, z, get(sculptRadius), get(sculptStrength), dt);
 	if (!strokeBefore) return;
 	const op = /** @type {'raise'|'lower'|'smooth'|'flatten'} */ (get(sculptOp));
 	const changed =
@@ -458,9 +509,10 @@ export function strokeMove(uuid, x, z, dt = 0.016, y = 0) {
 
 /** Stroke end: flush the pending preview + ONE snapshot commit + undo entry. */
 export function endStroke() {
-	if (terrainStrokeOpen()) {
+	if (terrainStrokeOpen() || editStrokeOpen()) {
 		endPaintStroke();
 		endScatterStroke();
+		endEditStroke();
 		return;
 	}
 	const uuid = get(sculptObject);
@@ -512,3 +564,9 @@ export function showCursorAt(/** @type {any} */ worldPoint, /** @type {any} */ w
 export function hideCursor() {
 	if (cursor) cursor.visible = false;
 }
+
+// 51 E4: the instance selection belongs to the Scatter brush's Select tool — another brush
+// drops it (sits LAST: a module-level subscribe runs at once, the TDZ rule)
+sculptOp.subscribe((op) => {
+	if (op !== 'scatter') clearScatterSelection();
+});

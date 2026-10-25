@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-22T17:48:57.949Z",
+	"recordedAt": "2026-10-24T05:18:57.281Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -1920,6 +1920,7 @@
 				"Carry object flow",
 				"Carry shader graph",
 				"Checkpoint storage",
+				"Distant scatter",
 				"Double-click action",
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
@@ -2077,6 +2078,7 @@
 		},
 		"Stance": {
 			"rows": [
+				"Distant scatter",
 				"Length",
 				"Stance"
 			],
@@ -2558,6 +2560,7 @@
 				"Carry shader graph",
 				"Checkpoint storage",
 				"Compress textures (KTX2)",
+				"Distant scatter",
 				"Double-click action",
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
@@ -2903,6 +2906,7 @@
 		"quest": {
 			"rows": [
 				"Compress textures (KTX2)",
+				"Distant scatter",
 				"Import defaults",
 				"Include VR button",
 				"LOD 1 keeps",
@@ -2927,6 +2931,7 @@
 			],
 			"sections": [
 				"Interface",
+				"Scene",
 				"Explorer",
 				"Import",
 				"Export",
@@ -3068,6 +3073,7 @@
 		},
 		"model": {
 			"rows": [
+				"Distant scatter",
 				"Enable assistant",
 				"Mesh generation",
 				"My hand model",
@@ -3409,6 +3415,7 @@
 				"Carry object flow",
 				"Carry shader graph",
 				"Checkpoint storage",
+				"Distant scatter",
 				"Double-click action",
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
@@ -3513,6 +3520,7 @@
 		"headset": {
 			"rows": [
 				"Colocation probe",
+				"Distant scatter",
 				"Draw repeated kit pieces together",
 				"Game HUD",
 				"Include VR button",
@@ -4478,6 +4486,7 @@
 				"Object",
 				"Particles",
 				"Physics",
+				"Scatter",
 				"Shadow",
 				"Texture",
 				"Transform",
@@ -4489,6 +4498,7 @@
 			"object": [
 				"LOD",
 				"Object",
+				"Scatter",
 				"Transform",
 				"Water"
 			],
@@ -4498,6 +4508,9 @@
 			"water": [
 				"Physics",
 				"Water"
+			],
+			"scatter": [
+				"Scatter"
 			],
 			"geometry": [
 				"Geometry"
@@ -4543,6 +4556,7 @@
 			"scale": [
 				"Emission",
 				"Material",
+				"Scatter",
 				"Shadow",
 				"Texture",
 				"Transform"

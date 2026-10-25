@@ -28,6 +28,11 @@
 	import SceneQualitySection from './inspector/SceneQualitySection.svelte'; // 42 I12
 	import ArrangeSection from './inspector/ArrangeSection.svelte'; // 47 M2
 	import TerrainPaintSection from './inspector/TerrainPaintSection.svelte'; // 47 T1/T2
+	import ScatterSection from './inspector/ScatterSection.svelte'; // 51-surface E2: scatter on any mesh
+	import { isMeshHost } from '$lib/terrainPaint';
+	/** 51-surface: a mesh or a group of meshes takes scatter (the tick re-asks when children load)
+	 * @param {any} o @param {any} _tick */
+	const scatterHostOk = (o, _tick) => isMeshHost(o);
 	import MeasureSection from './inspector/MeasureSection.svelte'; // 48 B2
 	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
@@ -3617,6 +3622,13 @@
 				<Section variant="panel" label="Water">
 					<WaterPanel uuid={$selectedObject.uuid} />
 				</Section>
+			{/if}
+
+			{#if !isLight && !multiCount && scatterHostOk($selectedObject, $objectsGroup)}
+				<!-- 51-surface E2: "Add scatter" on ANY mesh, right after the Water section's Add bubble /
+				     pour emitter rows; instances live in the object's own frame (a Terrain keeps its
+				     Scatter section beside Terrain paint) -->
+				<ScatterSection object={$selectedObject} />
 			{/if}
 
 			{#if devPrimary}

@@ -30,6 +30,15 @@ import { hasOriginal } from './decimate';
 import { linkOf } from './prefabSync';
 import { prefabById } from './prefabs';
 
+/** @param {any} object */
+function hasMesh(object) {
+	let found = false;
+	object?.traverse?.((/** @type {any} */ n) => {
+		if (n.isMesh) found = true;
+	});
+	return found;
+}
+
 /**
  * 47 M2: the nine Align rows (X / Y / Z × min / centre / max) for a set.
  * @param {string[]} targets @param {'selection'|'active'} to @param {boolean} locked
@@ -289,6 +298,13 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 						icon: 'group',
 						tooltip: 'Move the selected objects into one new group',
 						action: () => groupSelection()
+					},
+					// 51 E5: many copies of one object on a terrain become instances of its scatter
+					{
+						label: 'Make scatter' + suffix,
+						icon: 'tool:scatter',
+						tooltip: 'Turn copies of one object standing on a Terrain into scatter instances (one undo turns them back)',
+						action: () => import('./scatterConvert').then((m) => m.objectsToScatter(selection))
 					}
 				]
 			: []),
@@ -594,7 +610,7 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			: [])
 	];
 
-	/** @type {any[]} Physics & effects ▸ — joints, particles, the object's flow */
+	/** @type {any[]} Physics & effects ▸ — joints, particles, the object's flow, Use as scatter source */
 	const behaviour = [
 		// P-B: joints — attach exactly TWO objects (weld holds the pose, a hinge spins about the
 		// FIRST-clicked object's chosen local axis, anchored at the second object's origin);
@@ -697,6 +713,18 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 									);
 								}
 							)
+					}
+				]),
+		// 51 E1: this object's look becomes what the Scatter brush paints (a pristine kit piece as its pack item);
+		// one level down (51-int: the top level holds at 16 rows, the context-menu-redesign lock)
+		...(multi || object?.userData?.terrain || !hasMesh(object)
+			? []
+			: [
+					{
+						label: 'Use as scatter source',
+						icon: 'boxes',
+						tooltip: 'Scatter this model with a terrain\u2019s Scatter brush — its look only (model + materials), not its logic',
+						action: () => import('./scatterSources').then((m) => m.useAsScatterSource(uuid))
 					}
 				])
 	];

@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
-    "@roamhq/wrtc": "^0.8.0",
+    "@roamhq/wrtc": "^0.10.0",
     "peerjs": "^1.5.4",
     "ws": "^8.18.0"
   }

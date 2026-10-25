@@ -302,6 +302,11 @@ export const DEBUG_HOOKS = [
 	['objectPermissions', () => import('./objectPermissions')],
 	['scenePost', () => import('./scenePost')],
 	['postEffects', () => import('./postEffects')],
+	// 77 L1: the film look (lens, focus pull, matte, live look props, tap-to-focus)
+	['filmLook', () => import('./filmLook')],
+	['filmLookCore', () => import('./filmLookCore')],
+	['lookProps', () => import('./lookProps')],
+	['focusPick', () => import('./focusPick')],
 	['viewportOverrides', () => import('./viewportOverrides')],
 	['postprocessing', () => import('postprocessing')],
 	['shaderBackends', () => import('./shaderBackends')],

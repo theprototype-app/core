@@ -2645,6 +2645,21 @@ loadable play content. Everything a user does must be visible to connected peers
   pushes/pulls a one-grip world, as Edit does an object); `addSetting({onLevels: true})` draws a choice as tabs on the
   VR Levels page, which now lists every level.
 
+- **ROADMAP 77 L1 — THE FILM LOOK (77-look)**: `filmLookCore.js` (leaf: `lensOf`, `dofFromLens`, `easeFocus` — a focus
+  PULL eased in DIOPTERS, `matteBars`/`framingAspect`), `filmLook.js` (which camera's look is ON SCREEN — Outline calls
+  `setLookCamera(throughCamera)` and `setRenderCamera` — and `desiredFocus`: the focus target's point as VIEW-AXIS depth),
+  `lookProps.js` (leaf: `LOOK_PROPS` in 68's PropDef shape; `registerLookProps(PROPS)` is the line 68's propTracks needs),
+  `focusPick.js` + `FocusPickOverlay.svelte` (tap to focus; on a phone it minimizes the dock while armed) and
+  `inspector/FilmLookSection.svelte`. THE LENS IS CAMERA DATA on `userData.camera` (`focus`, `aperture`, `focusTarget`,
+  `focusPoint` in the target's LOCAL frame, `focusPull`), written through `setCameraFor`; the EFFECTS are entries in the
+  camera's OWN look document (`dof` — the same kind/params as 68 V8, a superset — and `letterbox`, a matte rendered INTO
+  the frame and cut from the camera FRAMING, not the canvas), so they show only through that camera and switching shots
+  switches them. A posed `look.<kind>.<param>` is a LOCAL live override (`postEffects` `def.live` setters,
+  `applyLiveLook` per frame, matched by ENTRY ID to the camera document's entry) — never written into the replicated
+  document; `get` reads the authored value through the resolver postEffects installs, so a propPlayback base/restore
+  leaves no override. VR: none of it runs in XR (the composer does not), proven by `film-look-iwer`.
+  Suites: vitest `filmLook`; e2e `film-look` (two peers, shots, N6), `film-look-iwer`.
+
 ## UI design system (redesign epic)
 
 - All UI follows the redesign spec kept in the `cloud` repo: `docs/design/redesign/SPEC.md`

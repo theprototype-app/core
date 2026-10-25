@@ -72,7 +72,9 @@ export function findCameraObject(uuid) {
  * THE write path for camera settings — mirrors `setPhysicsFor` (CL-A): one props
  * history entry, one replicated `objectParameters` message, and a poke so the
  * viz + any live preview rebuild.
- * @param {string} uuid @param {Partial<typeof DEFAULT_CAMERA>} patch
+ * 77 L1: the patch may carry the lens fields too (focus, aperture, focusTarget, focusPoint,
+ * focusPull — filmLookCore), which ride the same message and undo entry.
+ * @param {string} uuid @param {Partial<typeof DEFAULT_CAMERA> & Record<string, any>} patch
  */
 export function setCameraFor(uuid, patch) {
 	const object = findCameraObject(uuid);

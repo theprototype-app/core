@@ -231,7 +231,8 @@ async function run(argv) {
 	// loaded shard fails the same suite twice), and a shard without retries stays inside its estimate
 	const retry = set === 'confirm' || argv.includes('--retry');
 	// past the deadline no suite starts: the rest report `notrun` instead of the job being killed with nothing said
-	const deadline = Date.now() + Number(opt(argv, '--deadline') || 0) * 60000 || Infinity;
+	const dl = Number(opt(argv, '--deadline') || 0);
+	const deadline = dl ? Date.now() + dl * 60000 : Infinity;
 	const save = () => fs.writeFileSync(path.join(out, `${set === 'confirm' ? 'confirm' : 'results'}-${shard}.json`), JSON.stringify({ shard, of, set, results }, null, 1));
 	console.log(`shard ${shard}/${of}: ${mine.length} suites, est ${Math.round(mine.reduce((t, s) => t + (b.suites[s] || 60), 0) / 60)} min, ${par} at a time`);
 	/** @type {Promise<any> | null} */

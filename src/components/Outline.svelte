@@ -25,7 +25,8 @@
 	} from '$lib/scenePost';
 	// side-effecting import: registers the built-in effect kinds. It also owns the
 	// postprocessing/n8ao imports, which is what keeps scenePost.js a pure leaf.
-	import { compilePostStack, disposePostStack } from '$lib/postEffects';
+	import { compilePostStack, disposePostStack, applyLiveLook } from '$lib/postEffects';
+	import { setLookCamera, setRenderCamera } from '$lib/filmLook';
 	// P4: side-effecting too — registers the `graph` kind, so a post-domain shader graph
 	// is just another entry in the stack above. This component owns the one thing that
 	// module cannot: the NormalPass, added ON DEMAND below when a graph reads normals.
@@ -277,6 +278,7 @@
 		const active = $camera as any;
 		if (!active) return;
 		(composer as any).setMainCamera?.(active);
+		setRenderCamera(active); // 77 L1: tap-to-focus casts through what is on screen
 		// Every stack pass gets the same treatment, declared by its registry def: a
 		// third-party Pass (N8AO) keeps its OWN camera reference, outside the sweep
 		// setMainCamera does over `pass.mainCamera`. Generic, so a future effect that
@@ -338,6 +340,8 @@
 		const adopted = watching ? lookOf(watching) : null;
 		adoptedFrom = adopted ? watching : '';
 		const throughCamera = adopted ? adopted.camera : ($cameraPreview?.uuid ?? null);
+		// 77 L1: the camera whose look is on screen — the DOF lens and the live look overrides read it
+		setLookCamera(throughCamera);
 		// resolvedDoc reads the stores with get(), which registers NO svelte dependency —
 		// so BOTH have to be touched here or this effect stops re-running when a document
 		// changes (measured: setting a camera to No files replaced rendered nothing new).
@@ -509,6 +513,8 @@
 			// what the parent plan names as the reason a param-driving node needs a seam
 			// like this one first).
 			for (const instance of stackInstances) instance.def?.tick?.(instance.object, delta);
+			// 77 L1: posed look params (sequencer property tracks) reach their uniforms, no rebuild
+			applyLiveLook(stackInstances);
 			// 43 K5: every PiP window (camera preview, the maximized dock's viewport PiP) draws FIRST,
 			// into a corner the main frame then paints over ($lib/pipViews)
 			if (!renderer.xr.isPresenting) renderPipViews(renderer, scene);

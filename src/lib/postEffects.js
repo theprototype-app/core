@@ -3,7 +3,9 @@ import {
 	BloomEffect,
 	BrightnessContrastEffect,
 	ChromaticAberrationEffect,
+	DepthOfFieldEffect,
 	DotScreenEffect,
+	Effect,
 	EffectPass,
 	HueSaturationEffect,
 	KernelSize,
@@ -22,7 +24,13 @@ import {
 } from 'postprocessing';
 // @ts-ignore - n8ao ships no bundled type declarations
 import { N8AOPostPass } from 'n8ao';
-import { registerPostEffect, postEffectDef, planPostStack } from './scenePost';
+import { registerPostEffect, postEffectDef, planPostStack, postStackFor } from './scenePost';
+import { Uniform } from 'three';
+// 77 L1: the film look — the lens on the camera you look through, its focus pull, the matte,
+// and the look params a sequencer property track may pose (lookProps)
+import { dofFromLens, easeFocus, lensOf } from './filmLookCore';
+import { desiredFocus, lookCameraMarker, lookCameraUuid } from './filmLook';
+import { LIVE_LOOK, liveLookActive, liveLookValue, setLookResolver } from './lookProps';
 // L5: a LUT is an Explorer ASSET, so it must ride the content-hash push/pull or a
 // peer (and every late joiner) grades with a missing texture — golden rule 9.
 import { itemByHash, itemBlob, explorerItems } from './explorer';
@@ -411,6 +419,89 @@ registerPostEffect('bloom', {
 		})
 });
 
+// 68 V8 + 77 L1: DEPTH OF FIELD. With `source: camera` the focus distance and the f-number come
+// from the camera you are looking through (`userData.camera.focus` / `.aperture` — what Film's
+// focus pull and aperture record as prop tracks, so a take plays its pull back); a camera with
+// neither falls back to the manual values. 77 L1 adds the camera's FOCUS TARGET (an object, or
+// a tapped point on one — followed every frame, measured along the view axis) and its PULL
+// TIME (a change of focus eases in diopters instead of cutting). Read per frame in `tick`,
+// never through a rebuild. Off in VR by construction: the composer does not run in XR.
+export { dofFromLens };
+
+registerPostEffect('dof', {
+	label: 'Depth of field',
+	group: 'camera',
+	params: [
+		{ key: 'source', label: 'Focus from', type: 'select', default: 'camera',
+			options: [
+				{ value: 'camera', label: 'The camera (focus target, Film focus pull)' },
+				{ value: 'manual', label: 'These values' }
+			],
+			hint: 'A camera with a focus target, distance or aperture carries its own; otherwise the values below.' },
+		{ key: 'focusDistance', label: 'Focus distance', min: 0.1, max: 200, step: 0.1, decimals: 1, default: 10 },
+		{ key: 'aperture', label: 'Aperture (f/)', min: 0.7, max: 32, step: 0.1, decimals: 1, default: 2.8,
+			hint: 'Lower = more blur and a thinner sharp zone.' }
+	],
+	make: (params, ctx) => {
+		const lens = dofFromLens(num(params.focusDistance, 10), num(params.aperture, 2.8));
+		const effect = new DepthOfFieldEffect(ctx.camera, { focusDistance: lens.focusDistance, focusRange: lens.focusRange, bokehScale: lens.bokehScale });
+		/** @type {any} */ (effect).__dofParams = params;
+		/** @type {any} */ (effect).__focusNow = NaN;
+		return effect;
+	},
+	tick: (effect, delta) => {
+		const params = effect.__dofParams ?? {};
+		const marker = params.source === 'manual' ? null : lookCameraMarker();
+		const live = marker ? lensOf(marker.userData?.camera) : null;
+		const wanted = live ? desiredFocus(live, effect.camera) : NaN;
+		const desired = Number.isFinite(wanted) ? wanted : num(params.focusDistance, 10);
+		effect.__focusNow = easeFocus(effect.__focusNow, desired, delta, live?.focusPull ?? 0);
+		const lens = dofFromLens(
+			effect.__focusNow,
+			Number.isFinite(live?.aperture) ? /** @type {number} */ (live?.aperture) : num(params.aperture, 2.8)
+		);
+		effect.cocMaterial.focusDistance = lens.focusDistance;
+		effect.cocMaterial.focusRange = lens.focusRange;
+		if (Math.abs(effect.bokehScale - lens.bokehScale) > 1e-4) effect.bokehScale = lens.bokehScale;
+	}
+});
+
+// 77 L1: the LETTERBOX MATTE, rendered INTO the frame (the 16-P5 framing guide is a DOM mask
+// over the canvas, so a capture or an export never carried it). In a camera's own look it is
+// per camera = per shot, and switching shots switches it. `aspect` and `opacity` are live
+// uniforms, so a property track can open the matte without a chain rebuild.
+const LETTERBOX_GLSL = `
+uniform float matte;
+uniform float matteOpacity;
+void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+	float frame = resolution.x / max(resolution.y, 1.0);
+	vec2 bars = matte <= 0.0 ? vec2(0.0) : (matte > frame ? vec2(0.0, 0.5 * (1.0 - frame / matte)) : vec2(0.5 * (1.0 - matte / frame), 0.0));
+	vec2 edge = abs(uv - 0.5);
+	vec2 inside = 0.5 - bars;
+	// one-texel soft edge so the matte line does not crawl
+	vec2 px = 1.0 / max(resolution, vec2(1.0));
+	float cover = max(bars.x > 0.0 ? smoothstep(inside.x - px.x, inside.x, edge.x) : 0.0, bars.y > 0.0 ? smoothstep(inside.y - px.y, inside.y, edge.y) : 0.0);
+	// black in every theme: a matte is part of the picture, not chrome
+	outputColor = vec4(mix(inputColor.rgb, vec3(0.0), cover * matteOpacity), inputColor.a);
+}`;
+
+registerPostEffect('letterbox', {
+	label: 'Letterbox',
+	group: 'camera',
+	params: [
+		{ key: 'aspect', label: 'Aspect (:1)', min: 0.5, max: 4, step: 0.01, decimals: 2, default: 2.39,
+			hint: 'The picture inside the bars: 2.39 = scope, 1.85 = flat, 1.33 = 4:3 pillars.' },
+		{ key: 'opacity', label: 'Opacity', min: 0, max: 1, step: 0.01, decimals: 2, default: 1 }
+	],
+	make: (params) =>
+		new Effect('LetterboxEffect', LETTERBOX_GLSL, {
+			uniforms: new Map([
+				['matte', new Uniform(num(params.aspect, 2.39))],
+				['matteOpacity', new Uniform(num(params.opacity, 1))]
+			])
+		})
+});
+
 registerPostEffect('vignette', {
 	label: 'Vignette',
 	group: 'camera',
@@ -536,3 +627,87 @@ registerPostEffect('smaa', {
 	make: (params) =>
 		new SMAAEffect({ preset: /** @type {any} */ (SMAAPreset)[params.preset] ?? SMAAPreset.MEDIUM })
 });
+
+// ---- 77 L1: LIVE look params -------------------------------------------------
+
+// The look params a sequencer property track may pose (`look.<kind>.<param>`, lookProps) and
+// the uniform each one writes — so a posed value reaches the frame with no chain rebuild.
+// Kept beside the registrations rather than inside them, so the built-ins read as they did.
+/** @type {Record<string, Record<string, (effect: any, value: number) => void>>} */
+const LIVE_SETTERS = {
+	vignette: {
+		offset: (effect, v) => (effect.offset = v),
+		darkness: (effect, v) => (effect.darkness = v)
+	},
+	grain: { opacity: (effect, v) => (effect.blendMode.opacity.value = v) },
+	bloom: { intensity: (effect, v) => (effect.intensity = v) },
+	chromaticaberration: {
+		offsetX: (effect, v) => (effect.offset.x = v),
+		offsetY: (effect, v) => (effect.offset.y = v)
+	},
+	huesaturation: {
+		hue: (effect, v) => (effect.hue = v),
+		saturation: (effect, v) => (effect.saturation = v)
+	},
+	brightnesscontrast: {
+		brightness: (effect, v) => (effect.brightness = v),
+		contrast: (effect, v) => (effect.contrast = v)
+	},
+	letterbox: {
+		aspect: (effect, v) => (effect.uniforms.get('matte').value = v),
+		opacity: (effect, v) => (effect.uniforms.get('matteOpacity').value = v)
+	}
+};
+for (const [kind, setters] of Object.entries(LIVE_SETTERS)) {
+	const def = postEffectDef(kind);
+	if (def) def.live = setters;
+}
+
+/** test/debug: which kinds + params can be posed live (the e2e checks it against lookProps) */
+export function liveLookKinds() {
+	return Object.fromEntries(Object.entries(LIVE_SETTERS).map(([kind, setters]) => [kind, Object.keys(setters).sort()]));
+}
+
+/** the first ENABLED entry of `kind` in a camera's own look document @param {string} uuid @param {string} kind */
+function cameraLookEntry(uuid, kind) {
+	return postStackFor(uuid).effects.find((entry) => entry.kind === kind && entry.enabled) ?? null;
+}
+
+// lookProps reads the AUTHORED value through this, so it stays a leaf
+setLookResolver((uuid, kind, param) => {
+	if (!uuid || uuid === 'scene') return null;
+	const entry = cameraLookEntry(uuid, kind);
+	if (!entry || !(param in (LIVE_LOOK[kind] ?? {}))) return null;
+	const n = Number(entry.params?.[param]);
+	return Number.isFinite(n) ? n : null;
+});
+
+/**
+ * Per frame (Outline's render task): write every posed look param of the camera on screen onto
+ * its built effect, and put a released one back to the authored value. Matches by ENTRY ID, so
+ * only the camera's own entry is driven, never the scene look's effect of the same kind.
+ * @param {{kind: string, id: string, object: any, params: Record<string, any>, def: any, applied?: Record<string, number>}[]} instances
+ */
+export function applyLiveLook(instances) {
+	if (!liveLookActive() && !instances.some((instance) => instance.applied && Object.keys(instance.applied).length)) return;
+	const uuid = lookCameraUuid();
+	for (const instance of instances) {
+		const setters = instance.def?.live;
+		if (!setters) continue;
+		const own = uuid ? cameraLookEntry(uuid, instance.kind) : null;
+		const mine = !!own && own.id === instance.id;
+		for (const param of Object.keys(setters)) {
+			const posed = mine ? liveLookValue(uuid, instance.kind, param) : undefined;
+			const applied = instance.applied?.[param];
+			if (posed === undefined && applied === undefined) continue; // the common case: nothing posed
+			const value = posed ?? num(instance.params?.[param], NaN);
+			if (!Number.isFinite(value) || value === applied) continue;
+			try {
+				setters[param](instance.object, value);
+			} catch {}
+			instance.applied ??= {};
+			if (posed === undefined) delete instance.applied[param];
+			else instance.applied[param] = value;
+		}
+	}
+}

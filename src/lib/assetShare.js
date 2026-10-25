@@ -8,7 +8,8 @@ import {
 	itemById,
 	addItemFromBytes,
 	replaceItemBytes,
-	hashBytes
+	hashBytes,
+	maxItemBytes
 } from './explorer';
 import { projectManifest, isSyntheticId, itemRowLive } from './projectManifest';
 import { idbGet, idbPut } from './idb';
@@ -35,6 +36,12 @@ import {
  * user-visible thing chunking unlocked.
  */
 export const MAX_SHARED_BYTES = 25 * 1024 * 1024;
+/** 77 K1: the per-kind cap (a video clip may be up to explorer's MAX_VIDEO_BYTES); an older
+ * receiver keeps refusing anything over 25 MB, which is right — it cannot play the clip
+ * @param {string|null|undefined} kind */
+export function maxSharedBytes(kind) {
+	return Math.max(MAX_SHARED_BYTES, maxItemBytes(kind));
+}
 
 // R22 round 9: `sharedFolderId` is GONE, along with the last thing in the app that could
 // create a `Shared` folder. Round 2 narrowed it to "only when the asset has nowhere else
@@ -93,8 +100,10 @@ function destinationFor(hash) {
  * document describes — a scene asset pushed before its row, or a hash nobody shared —
  * take the old path: one record at `destinationFor`.
  * @param {string} hash @param {string} name @param {ArrayBuffer} buffer
+ * @param {string} [kind] 77: the sender's kind when its name cannot say it (a recorded .webm video)
  */
-async function landBytes(hash, name, buffer) {
+async function landBytes(hash, name, buffer, kind) {
+	const kindOpt = kind ? { kind } : {};
 	/** @type {any} */
 	const doc = get(projectManifest);
 	const tombs = doc?.removed?.items ?? {};
@@ -102,7 +111,7 @@ async function landBytes(hash, name, buffer) {
 		(/** @type {any} */ r) => r?.hash === hash && itemRowLive(r, tombs)
 	);
 	if (!rows.length) {
-		await addItemFromBytes(buffer, name, destinationFor(hash));
+		await addItemFromBytes(buffer, name, destinationFor(hash), kindOpt);
 		return;
 	}
 	for (const row of rows) {
@@ -110,7 +119,7 @@ async function landBytes(hash, name, buffer) {
 			row.folderId && get(explorerFolders).some((f) => f.id === row.folderId) ? row.folderId : null;
 		if (isSyntheticId(row.id)) {
 			// a pre-24 row: by hash, through the dedupe — the sweep marks whatever record holds it
-			await addItemFromBytes(buffer, row.name ?? name, folder);
+			await addItemFromBytes(buffer, row.name ?? name, folder, kindOpt);
 			continue;
 		}
 		const held = itemById(row.id);
@@ -119,6 +128,7 @@ async function landBytes(hash, name, buffer) {
 			continue;
 		}
 		await addItemFromBytes(buffer, row.name ?? name, folder, {
+			...kindOpt,
 			id: row.id,
 			share: 'peer',
 			owner: row.owner
@@ -178,8 +188,8 @@ export async function sendAsset(hash) {
 	await markSharedForScene(hash);
 	const blob = await itemBlob(item.id);
 	if (!blob) return;
-	if (blob.size > MAX_SHARED_BYTES) {
-		showToast(item.name + ' is over the ' + Math.round(MAX_SHARED_BYTES / 1048576) + ' MB sharing limit — peers will not receive it');
+	if (blob.size > maxSharedBytes(item.kind)) {
+		showToast(item.name + ' is over the ' + Math.round(maxSharedBytes(item.kind) / 1048576) + ' MB sharing limit — peers will not receive it');
 		return;
 	}
 	const conns = Object.entries(peer.connections ?? {});
@@ -242,7 +252,7 @@ export async function applyAssetFile(data) {
 			size: buffer.byteLength
 		});
 	activateTransfer(tx, buffer.byteLength);
-	await landBytes(data.hash, data.name ?? 'shared-asset', buffer);
+	await landBytes(data.hash, data.name ?? 'shared-asset', buffer, data.kind === 'video' ? 'video' : undefined);
 	finishTransfer(tx);
 	settlePull(data.hash);
 }
@@ -264,7 +274,7 @@ export async function answerAssetRequest(peerId, data) {
 	// hold, so the asker had to discover it with a timer — and could not tell "nobody
 	// has this" from "the one peer who has it is slow". One tiny message removes the
 	// guess entirely.
-	if (!blob || blob.size > MAX_SHARED_BYTES) {
+	if (!blob || blob.size > maxSharedBytes(item?.kind)) {
 		conn.send({ type: 'assetmissing', hash: String(data?.hash ?? '') });
 		return;
 	}
@@ -482,7 +492,7 @@ const BUFFER_HIGH = 4 * 1024 * 1024;
  */
 const SEND_CONCURRENCY = 3;
 
-/** hash -> reassembly state @type {Map<string, {name: string, size: number, chunks: number,
+/** hash -> reassembly state @type {Map<string, {name: string, kind?: string, size: number, chunks: number,
  *  parts: (Uint8Array|null)[], have: number, bytes: number, tx: string, at: number}>} */
 const incoming = new Map();
 
@@ -520,12 +530,14 @@ async function sendSliced(conn, item, blob, peerId) {
 	try {
 		if (size <= SINGLE_SHOT_BYTES) {
 			activateTransfer(tx, size);
-			conn.send({ type: 'assetfile', hash: item.hash, name: item.name, buffer: await blob.arrayBuffer() });
+			conn.send({ type: 'assetfile', hash: item.hash, name: item.name, buffer: await blob.arrayBuffer(), ...(item.kind === 'video' ? { kind: 'video' } : {}) });
 			finishTransfer(tx);
 			return;
 		}
 		const chunks = Math.ceil(size / CHUNK_BYTES);
-		conn.send({ type: 'assetstart', hash: item.hash, name: item.name, size, chunks });
+		// 77: `kind` rides along (additive) so a video keeps its kind — a recorded .webm would
+		// otherwise land as audio by its extension — and may use the video size cap
+		conn.send({ type: 'assetstart', hash: item.hash, name: item.name, size, chunks, ...(item.kind === 'video' ? { kind: 'video' } : {}) });
 		activateTransfer(tx, size);
 		let sent = 0;
 		for (let seq = 0; seq < chunks; seq++) {
@@ -550,7 +562,8 @@ export function applyAssetStart(data) {
 	const size = Number(data?.size) || 0;
 	if (!hash || chunks <= 0 || size <= 0) return;
 	if (itemByHash(hash)) return; // already here; the sender is behind, not wrong
-	if (size > MAX_SHARED_BYTES) return;
+	const kind = data?.kind === 'video' ? 'video' : undefined;
+	if (size > maxSharedBytes(kind)) return;
 	const name = String(data?.name ?? 'shared-asset');
 	const held = incoming.get(hash);
 	if (held) {
@@ -565,6 +578,7 @@ export function applyAssetStart(data) {
 	const tx = pullsInFlight.get(hash)?.tx ?? beginTransfer({ hash, name, dir: 'in', size });
 	incoming.set(hash, {
 		name,
+		kind,
 		size,
 		chunks,
 		parts: new Array(chunks).fill(null),
@@ -620,7 +634,7 @@ export async function applyAssetChunk(data) {
 		next.delete(hash);
 		return next;
 	});
-	await landBytes(hash, state.name, whole.buffer);
+	await landBytes(hash, state.name, whole.buffer, state.kind);
 	finishTransfer(state.tx);
 	settlePull(hash);
 }

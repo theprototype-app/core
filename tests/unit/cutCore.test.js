@@ -1,4 +1,5 @@
 // 77 K1/K2/K3/K5: the cut's pure half — the older-peer migration, the edit maths and the program at t
+// @ts-nocheck — fixture documents built inline
 import { describe, it, expect } from 'vitest';
 import { normalizeSequence, normalizeTrack, normalizeItem, shotAt, snapTargets } from '../../src/lib/sequenceCore.js';
 import {

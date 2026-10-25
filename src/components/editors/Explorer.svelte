@@ -49,7 +49,7 @@
 		parseObjectFile,
 		hashBytes,
 		kindOf,
-		MAX_ITEM_BYTES,
+		maxItemBytes,
 		duplicateItem,
 		duplicateFolder
 	} from '$lib/explorer';
@@ -5555,7 +5555,7 @@
 		let skipped = 0;
 		for (const file of [...files]) {
 			const kind = kindOf(file.name);
-			if (!kind || file.size > MAX_ITEM_BYTES) {
+			if (!kind || file.size > maxItemBytes(kind)) {
 				skipped++;
 				continue;
 			}

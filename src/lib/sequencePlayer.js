@@ -47,6 +47,8 @@ import { clipInfo, setAnimationState } from './animatedImports';
 import { fireSequenceEvent } from './flowRuntime';
 // 53 (A6/A5): an audio clip's caption line (the shared caption bus)
 import { showCaption } from './captions';
+// 77: clips, titles and transitions draw through the lazy cut runtime (lib/cut/)
+import { hasCutContent } from './sequenceCore';
 
 /** flow seconds of day — the unit trigger stamps use (flowRuntime / animationPreview) */
 function syncedNow() {
@@ -83,6 +85,39 @@ export const seqFlash = writable(/** @type {Record<string, number>} */ ({}));
 let cameraOwner = /** @type {string|null} */ (null);
 /** undefined = we never took the camera; null = it was the player's own view */
 let priorCamera = /** @type {string|null|undefined} */ (undefined);
+
+// ---- 77: the program (what the cut overlay draws) ---------------------------------
+
+/** the sequence the frame shows and where: a run, or the editor's scrub @type {{id: string, t: number, scrub: boolean}|null} */
+let program = null;
+
+/** 77: which sequence the cut overlay draws, at which time (null = none). */
+export function programSource() {
+	return program;
+}
+
+/** @type {Promise<any>|null} */
+let cutLoad = null;
+/** Load the cut runtime the first time a sequence needs it (clips, titles, transitions). */
+function ensureCut() {
+	cutLoad ??= import('./cut/cutRuntime.js')
+		.then((m) => m.startCutRuntime(programSource))
+		.catch((error) => {
+			cutLoad = null;
+			console.warn('cut runtime:', error);
+		});
+	return cutLoad;
+}
+
+/** @param {any} seq @param {number} t @param {'game'|'preview'} mode @param {boolean} scrub */
+function showProgram(seq, t, mode, scrub) {
+	if (!hasCutContent(seq) || (mode === 'preview' && !get(previewShots))) {
+		if (program?.id === seq.id) program = null;
+		return;
+	}
+	program = { id: seq.id, t, scrub };
+	void ensureCut();
+}
 
 // ---- transport ----------------------------------------------------------------
 
@@ -134,6 +169,8 @@ export function playSequence(ref, opts = {}) {
 	for (const { item } of liveItems(seq, from, 'anim')) if (item.t < from) startAnim(run, seq, item);
 	for (const { item } of liveItems(seq, from, 'audio'))
 		if (item.t < from) startAudio(run, seq, item);
+	for (const { item } of liveItems(seq, from, 'video'))
+		if (item.t < from) startClipAudio(run, seq, item);
 	setTransport(seq.id, { t: from, playing: true, mode });
 	tickRun(run, seq, syncedNow());
 	return true;
@@ -195,6 +232,7 @@ function endRun(run, opts) {
 		for (const uuid of run.imported) setAnimationState(uuid, { playing: false }, false);
 	}
 	if (cameraOwner === run.id && !opts.keepCamera) releaseCamera();
+	if (program?.id === run.id && !program.scrub) program = null;
 	seqTransport.update((map) => {
 		const cur = map[run.id];
 		return cur ? { ...map, [run.id]: { ...cur, playing: false } } : map;
@@ -231,6 +269,7 @@ function tickRun(run, seq, now) {
 	crossRange(run, seq, run.lastT, head.t, now);
 	run.lastT = head.t;
 	applyShot(run, seq, head.t);
+	showProgram(seq, head.t, run.mode, false);
 	setTransport(run.id, { t: head.t, playing: !head.done, mode: run.mode });
 	if (head.done) {
 		run.done = true;
@@ -244,6 +283,7 @@ function crossRange(run, seq, prev, t, now) {
 	for (const { item, track } of crossedStarts(seq, prev, t)) {
 		if (track.kind === 'anim') startAnim(run, seq, item);
 		else if (track.kind === 'audio') startAudio(run, seq, item);
+		else if (track.kind === 'video') startClipAudio(run, seq, item);
 		else if (track.kind === 'event') {
 			if (run.mode === 'game') fireEvent(run, seq, item.name);
 			seqFlash.update((map) => ({ ...map, [item.id]: now }));
@@ -285,7 +325,7 @@ function startAnim(run, seq, item) {
 	// stamped at the moment the item began, so a peer (or a mid-way start) lands in phase
 	anim.play(uuid, clipId ?? null, {
 		at: itemMoment(run, seq, item),
-		from: 0,
+		from: item.in ?? 0, // 77: a split's right half continues the clip
 		speed: item.speed,
 		replicate: false
 	});
@@ -294,8 +334,14 @@ function startAnim(run, seq, item) {
 
 // ---- audio --------------------------------------------------------------------
 
-/** @param {Run} run @param {any} seq @param {any} item */
-function startAudio(run, seq, item) {
+/** 77 K1: a video clip's own sound, as an audio item over its source window. @param {Run} run @param {any} seq @param {any} item */
+function startClipAudio(run, seq, item) {
+	if (item.media === 'image' || !item.src || !(item.gain > 0)) return;
+	startAudio(run, seq, { ...item, sound: item.src, caption: undefined }, true);
+}
+
+/** @param {Run} run @param {any} seq @param {any} item @param {boolean} [quiet] a clip with no sound is not an error */
+function startAudio(run, seq, item, quiet = false) {
 	const moment = itemMoment(run, seq, item);
 	// 53 (A6/A5): the clip's caption for the rest of its window (a caption with no sound yet is
 	// still a subtitle); the player's / 53-scale's Captions switch decides whether it shows
@@ -308,14 +354,17 @@ function startAudio(run, seq, item) {
 			const now = syncedNow();
 			const late = Math.max(0, now - moment);
 			if (late >= item.dur) return; // its window already passed while the bytes arrived
-			const voice = ae.sampleVoice({ buffer, offset: late, gain: item.gain, destination: 'sfx' });
+			// 77: `in` = where the source starts (a split's right half, a trimmed clip)
+			const voice = ae.sampleVoice({ buffer, offset: late + (item.in ?? 0), gain: item.gain, destination: 'sfx' });
 			const startMs = sessionNow() + Math.max(0, moment - now) * 1000;
 			voice.start(ae.audioTimeFor(startMs));
 			// the item's length is the clip window: cut at its end like an editor would
 			voice.stop(ae.audioTimeFor(sessionNow() + (moment + item.dur - now) * 1000));
 			run.voices.push(voice);
 		})
-		.catch((error) => console.warn('sequence audio:', error));
+		.catch((error) => {
+			if (!quiet) console.warn('sequence audio:', error);
+		});
 }
 
 // ---- camera shots ---------------------------------------------------------------
@@ -424,7 +473,7 @@ export function scrubSequence(id, t) {
 		const clip = String(item.clip ?? '').trim();
 		if (!item.target || (clip && clipInfo(item.target).some((c) => c.name === clip))) continue;
 		const clipId = (clip && anim.clipIdByName(item.target, clip)) || undefined;
-		anim.scrub(item.target, offset * item.speed, clipId);
+		anim.scrub(item.target, (item.in ?? 0) + offset * item.speed, clipId);
 		scrubbed.add(item.target);
 	}
 	if (get(previewShots)) {
@@ -434,6 +483,7 @@ export function scrubSequence(id, t) {
 		scrubShot = scrubRun.shot;
 		if (!shot && cameraOwner === '__scrub') releaseCamera();
 	}
+	showProgram(seq, at, 'preview', true);
 }
 
 /** the camera the scrub is looking through */
@@ -447,6 +497,7 @@ export function releaseScrub() {
 	scrubbed.clear();
 	if (cameraOwner === '__scrub') releaseCamera();
 	scrubShot = '';
+	if (program?.scrub) program = null;
 }
 
 // ---- autoplay + lifecycle -------------------------------------------------------
@@ -502,6 +553,7 @@ export function sequencePlayerDebug() {
 		priorCamera: priorCamera ?? null,
 		preview: get(cameraPreview)?.uuid ?? null,
 		blend: shotState?.blend ?? null,
+		program,
 		fired: fired.slice()
 	};
 }

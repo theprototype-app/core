@@ -19,7 +19,9 @@
 //              comes back over the incoming half — no second render needed
 //   fadeOut    the frame fades to black over the item's last seconds (a title: just the title)
 
-import { MIN_ITEM, clamp, newId, shotBlend, isTrackKind } from './sequenceCore.js';
+import { MIN_ITEM, clamp, newId, shotBlend, isTrackKind, hasCutContent } from './sequenceCore.js';
+
+export { hasCutContent };
 
 /** two times this close are one cut */
 const EPS = 1e-4;
@@ -211,18 +213,6 @@ export function nextStop(seq, t, dir) {
 }
 
 // ---- the program at t ---------------------------------------------------------------
-
-/** Does the frame need the cut runtime (clips, titles, transitions)? @param {any} seq */
-export function hasCutContent(seq) {
-	for (const tr of seq?.tracks ?? []) {
-		if (tr.kind === 'video' || tr.kind === 'title') {
-			if (tr.items.length) return true;
-			continue;
-		}
-		if (tr.kind === 'camera') for (const it of tr.items) if (it.trans || it.fadeOut) return true;
-	}
-	return false;
-}
 
 /** progress 0..1 through an item's transition IN at t, or null when none is running @param {any} item @param {number} t */
 function transP(item, t) {

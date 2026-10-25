@@ -1,4 +1,5 @@
 // 77: two peers edit one cut at once — the stamps, the join, the old-peer relay and undo-as-a-delta
+// @ts-nocheck — fixture documents built inline
 import { describe, it, expect } from 'vitest';
 import { normalizeSequence, normalizeItem } from '../../src/lib/sequenceCore.js';
 import { splitAt } from '../../src/lib/cutCore.js';

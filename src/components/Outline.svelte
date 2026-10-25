@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { objectsGroup, selectedObjects, lockedObjects, viewMode, isLocked, editorMode } from '../stores/sceneStore.js';
+	import { drawProgramOverlay } from '$lib/programOverlay'; // 77: the cut's overlay
 	import { showToast } from '../stores/appStore.js';
 	import { get } from 'svelte/store';
 	import { chromiumMajor, postSupported } from '$lib/viewMode';
@@ -515,8 +516,12 @@
 			// ...and while a maximized docked window covers the whole 3D view, the main frame is not
 			// drawn at all (nothing could see it)
 			if (!renderer.xr.isPresenting && mainViewCovered()) noteMainSkipped();
-			else if (renderer.xr.isPresenting || nothingToCompose) renderer.render(scene, camera.current);
-			else composer.render(delta);
+			else {
+				if (renderer.xr.isPresenting || nothingToCompose) renderer.render(scene, camera.current);
+				else composer.render(delta);
+				// 77: the cut's clips / titles / transitions, over the finished frame
+				if (!renderer.xr.isPresenting) drawProgramOverlay(renderer, scene, camera.current);
+			}
 		},
 		{ stage: renderStage, autoInvalidate: false }
 	);

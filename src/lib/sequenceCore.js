@@ -233,6 +233,19 @@ export function normalizeTrack(raw) {
 	return track;
 }
 
+/** 77: does the frame need the cut runtime (clips, titles, transitions)? Lives here, not in
+ * cutCore, so the player's boot-graph import stays this small module. @param {any} seq */
+export function hasCutContent(seq) {
+	for (const tr of seq?.tracks ?? []) {
+		if (tr.kind === 'video' || tr.kind === 'title') {
+			if (tr.items.length) return true;
+			continue;
+		}
+		if (tr.kind === 'camera') for (const it of tr.items) if (it.trans || it.fadeOut) return true;
+	}
+	return false;
+}
+
 /** 77: ruler markers, sorted; undefined when there are none (absent stays absent) @param {any} raw */
 export function normalizeMarkers(raw) {
 	if (!Array.isArray(raw) || !raw.length) return undefined;

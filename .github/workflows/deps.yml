@@ -239,10 +239,12 @@ jobs:
           gh pr edit "${{ github.event.pull_request.number }}" --add-label deps-ready
 
   # its own job: turning auto-merge on needs contents: write, which the gate (it checks out and runs the PR's
-  # code) should not hold. No checkout here; it only runs after a green deps-gate.
+  # code) should not hold. No checkout here; it only runs after a green deps-gate. The condition names the gate's
+  # result: the implicit success() also looks at the gate's own needs, and perf/plan/e2e are SKIPPED for every
+  # PR without the battery (Actions, the agent), so without it automerge skipped exactly where it is needed.
   automerge:
     needs: [scope, gate]
-    if: needs.scope.outputs.cls == 'auto' && github.base_ref == 'deps'
+    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.scope.outputs.cls == 'auto' && github.base_ref == 'deps' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

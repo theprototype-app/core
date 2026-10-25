@@ -285,9 +285,10 @@ h.run(async () => {
 				count: g.children.length,
 				layers,
 				player: player
-					? { status: s.sprite2d.spriteStatus(player), image: !!player.material?.map?.image?.width, nearest: player.material?.map?.magFilter === 1003, size: box ? +(box.max.x - box.min.x).toFixed(3) : null, x: player.getWorldPosition(new s.THREE.Vector3()).x }
+					? { status: s.sprite2d.spriteStatus(player), image: !!player.material?.map?.image?.width, nearest: player.material?.map?.magFilter === 1003, size: box ? +(box.max.x - box.min.x).toFixed(3) : null, x: player.getWorldPosition(new s.THREE.Vector3()).x, y: +player.getWorldPosition(new s.THREE.Vector3()).y.toFixed(3) }
 					: null,
 				cam: cam ? { x: cam.position.x, uuid: cam.uuid } : null,
+				groundY: (() => { const gr = g.getObjectByName('Ground'); return gr ? +gr.getWorldPosition(new s.THREE.Vector3()).y.toFixed(3) : null; })(),
 				previewing: s.sprite2d.sprite2dDebug().ortho
 			};
 		});
@@ -298,6 +299,10 @@ h.run(async () => {
 		const who = k ? 'peer' : 'host';
 		const pars = r.layers.map((l) => l.parallax).sort();
 		h.check(r.layers.length === 4 && JSON.stringify(pars) === JSON.stringify([0, 0.3, 0.6, 1]), '6.2 ' + who + ': four 2D layers, three of them parallax (' + JSON.stringify(r.layers) + ')');
+		// the authored layout survived the load: sky farthest back, gameplay in front, the player
+		// standing above the ground (a template built without composed matrices loaded all at 0)
+		const zOf = (p) => r.layers.find((l) => l.parallax === p)?.z;
+		h.check(zOf(0) < zOf(0.3) && zOf(0.3) < zOf(0.6) && zOf(0.6) < zOf(1) && r.player && r.player.y > r.groundY, '6.2b ' + who + ': the layers keep their depth order and the player stands above the ground (' + JSON.stringify({ z: [0, 0.3, 0.6, 1].map(zOf), playerY: r.player?.y, groundY: r.groundY }) + ')');
 		h.check(r.player && r.player.status.clip === 'walk' && r.player.status.playing && r.player.nearest && r.player.size === 1, '6.3 ' + who + ': the player is an animated sprite sheet (walk autoplays, nearest, 1 m) (' + JSON.stringify(r.player) + ')');
 	}
 	const v2 = await A.page.evaluate(() => window.__view2dDebug?.());
@@ -334,6 +339,13 @@ h.run(async () => {
 		return { viewX: view.pos[0], hillsX: +hills.matrixWorld.elements[12].toFixed(3), skyX: +sky.matrixWorld.elements[12].toFixed(3), authored: hills.position.x };
 	});
 	h.check(Math.abs(drawn.hillsX - drawn.viewX * 0.7) < 0.05 && Math.abs(drawn.skyX - drawn.viewX) < 0.05 && drawn.authored === 0, '6.6 panning the 2D view draws the hills at 0.7 x the view\'s x and the sky with the view (authored stays 0) (' + JSON.stringify(drawn) + ')');
+	// personal AO (Shaded + AO) stands down through the orthographic 2D view — halos, not depth
+	const aoChain = () => A.page.evaluate(() => (window.__postDebug?.().chain ?? []).filter((c) => /ao/.test(c)));
+	await A.page.evaluate(() => window.__stores.viewMode.set('shaded-ao'));
+	await A.page.waitForTimeout(800);
+	const ao2d = await aoChain();
+	const postOk = await A.page.evaluate(() => window.__stores.viewModeCtl?.postSupported?.() ?? null);
+	h.check(ao2d.length === 0, '6.7b no AO pass through the 2D view, even in Shaded + AO (' + JSON.stringify(ao2d) + ')');
 	// leaving the 2D view hands the perspective controls back (rotate on), and the layers draw as authored
 	const back2d = await A.page.evaluate(async () => {
 		const s = window.__stores;
@@ -349,6 +361,11 @@ h.run(async () => {
 		return { rotate: controls?.enableRotate, persp: !!controls?.object?.isPerspectiveCamera, hillsX: hills.matrixWorld.elements[12] };
 	});
 	h.check(back2d.rotate === true && back2d.persp && back2d.hillsX === 0, '6.8 View ▸ 2D view off: the perspective controls are back and the layers draw as authored (' + JSON.stringify(back2d) + ')');
+	await A.page.waitForTimeout(800);
+	const aoBack = await aoChain();
+	console.log('  info: AO chain back in perspective ' + JSON.stringify(aoBack) + ' (postSupported ' + postOk + ')');
+	if (postOk !== false) h.check(aoBack.length > 0, '6.8b back in perspective, Shaded + AO draws its AO again (' + JSON.stringify(aoBack) + ')');
+	await A.page.evaluate(() => window.__stores.viewMode.set('shaded'));
 	// the follow is LOCAL per peer (same graph, each peer's own player pose): the peer's camera
 	// keeps the peer's player in view, sampled together
 	const pb = [];

@@ -239,6 +239,9 @@ export function build2dTemplate(version) {
 		}
 	};
 	const roots = [sky, hills, trees, play, camera];
+	// toJSON writes `matrix`, which three composes from position/rotation/scale only at render
+	// time — without this every layer, sprite and the camera would load at the origin
+	for (const o of roots) o.updateMatrixWorld(true);
 	const payload = {
 		id: crypto.randomUUID(),
 		name: '2D scene',

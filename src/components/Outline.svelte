@@ -350,16 +350,19 @@
 		// look (`adopted`), but the governor still applies on top — it is this machine giving
 		// up post to keep its frames, and that must not be undone by watching somebody.
 		const reduced = $qualityOverrides;
+		// 64-2d: through an ORTHOGRAPHIC camera (the 2D view, a 2D game camera) AO stands down too
+		// — flat layers metres apart in depth only grow screen-space halos around every sprite
+		const aoOff = reduced.aoOff || !!($camera as any)?.isOrthographicCamera;
 		const overrides = adopted ? adopted.look : undefined;
 		const adoptedMode = adopted ? adopted.mode : $viewMode;
 		const entries = effectivePostStack({
 			stack: resolvedDoc(POST_SCENE_KEY, overrides),
 			cameraStack: /** @type {any} */ (throughCamera ? resolvedDoc(throughCamera, overrides) : null),
-			mode: reduced.aoOff && adoptedMode === 'shaded-ao' ? 'shaded' : adoptedMode,
+			mode: aoOff && adoptedMode === 'shaded-ao' ? 'shaded' : adoptedMode,
 			localEnabled: (adopted ? adopted.overrides.post !== false : $postEnabledLocal) && !reduced.postOff,
 			postOk,
 			postWarm
-		}).filter((entry) => !(reduced.aoOff && entry.kind === 'ao'));
+		}).filter((entry) => !(aoOff && entry.kind === 'ao'));
 		const signature = postStackSignature(entries);
 		if (signature === stackSignature) return;
 		stackSignature = signature;

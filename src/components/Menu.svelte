@@ -6,6 +6,7 @@
 	import Toasts from './menu/Toasts.svelte';
 	import SessionPrompts from './menu/SessionPrompts.svelte';
 	import FramingGuide from './menu/FramingGuide.svelte';
+	import FocusPickOverlay from './menu/FocusPickOverlay.svelte';
 	import CameraPipWindow from './menu/CameraPipWindow.svelte';
 	import Connect from './menu/Connect.svelte';
 	import Controls from './menu/Controls.svelte';
@@ -109,6 +110,8 @@
 <SessionPrompts />
 <!-- 16-P5: letterbox bars while previewing a camera at a fixed aspect -->
 <FramingGuide />
+<!-- 77 L1: tap-to-focus layer, only while a camera's focus pick is armed -->
+<FocusPickOverlay />
 <!-- 16-Q4: live preview window for the selected camera (chrome only — the image
      is an inset viewport drawn by the render loop) -->
 <CameraPipWindow />

@@ -25,6 +25,7 @@
 	import UiButton from '../ui/Button.svelte';
 	import MenuButton from './inspector/MenuButton.svelte';
 	import InsToggle from './inspector/InsToggle.svelte';
+	import FilmLookSection from './inspector/FilmLookSection.svelte';
 	import SceneQualitySection from './inspector/SceneQualitySection.svelte'; // 42 I12
 	import ArrangeSection from './inspector/ArrangeSection.svelte'; // 47 M2
 	import TerrainPaintSection from './inspector/TerrainPaintSection.svelte'; // 47 T1/T2
@@ -3360,6 +3361,8 @@
 						The camera itself is shared; previewing and the frustum lines are yours alone.
 					</p>
 				</Section>
+				<!-- 77 L1: the camera's film look (DOF, focus target, letterbox) -->
+				<FilmLookSection object={$selectedObject} />
 			{/if}
 			<!-- 36 U9: a kit piece still loading — its file, its progress, Retry / Replace / Remove -->
 			{#if !multiCount && isLoadingStubOf($selectedObject, $objectsGroup)}

@@ -1,9 +1,12 @@
 import { mount, unmount } from 'svelte';
 import { writable, get } from 'svelte/store';
 import MusicToolbox from '../components/menu/MusicToolbox.svelte';
-import { registerModuleToolbox, unregisterModuleToolbox } from './moduleToolboxes';
-import { setDeviceFor, deviceCatalog, deviceCatalogVersion } from './audioDevices';
+import PianoRollEditor from '../components/menu/PianoRollEditor.svelte';
+import { registerModuleToolbox, unregisterModuleToolbox, openModuleToolbox } from './moduleToolboxes';
+import { setDeviceFor, deviceCatalog, deviceCatalogVersion, deviceSpec } from './audioDevices';
 import { safeStorage } from './safeStorage';
+import { resumeMidiIfGranted } from './midiInput';
+import { startPianoRoll, pianoRollPick } from './pianoRoll';
 
 // THE MUSIC TOOLBOX (roadmap #23 B2, cloud plans-core/pending/23-b-interfaces.md).
 //
@@ -29,7 +32,18 @@ export const MUSIC_TOOLBOX_ID = 'mod-core-music';
  * clears it, so the pane goes back to following the selection afterwards. */
 export const musicToolboxPick = writable('');
 
+/** 75 MU2: the piano roll's registry id */
+export const PIANO_ROLL_ID = 'mod-core-pianoroll';
+
+/** Open the piano roll on one device (the Inspector's and the Music toolbox's button).
+ * @param {string} uuid */
+export function openPianoRollOn(uuid) {
+	if (uuid) pianoRollPick.set(uuid);
+	openModuleToolbox(PIANO_ROLL_ID);
+}
+
 let registered = false;
+let rollRegistered = false;
 /** @type {(() => void)|null} */ let stop = null;
 
 /**
@@ -41,8 +55,34 @@ let registered = false;
  */
 export function startMusicToolbox() {
 	if (stop || typeof window === 'undefined') return;
+	// 75 MU1: reconnect MIDI only when this browser connected before AND the permission is
+	// already granted — never a prompt at boot
+	void resumeMidiIfGranted();
+	// 75 MU2: clips play from the transport on every peer, whether or not the editor is open
+	startPianoRoll();
 	stop = deviceCatalogVersion.subscribe(() => {
 		const wanted = deviceCatalog().length > 0;
+		// the piano roll exists while a kind that PLAYS NOTES does (a speaker has nothing to roll)
+		const rollWanted = deviceCatalog().some((c) => typeof deviceSpec(c.kind)?.onNote === 'function');
+		if (rollWanted && !rollRegistered) {
+			rollRegistered = true;
+			registerModuleToolbox({
+				moduleId: 'core',
+				id: 'pianoroll',
+				title: 'Piano roll',
+				width: 560,
+				minW: 320,
+				defaultRect: { right: 324, top: 76 },
+				playMode: true,
+				mount(el) {
+					const app = mount(PianoRollEditor, { target: el });
+					return () => unmount(app);
+				}
+			});
+		} else if (!rollWanted && rollRegistered) {
+			rollRegistered = false;
+			unregisterModuleToolbox(PIANO_ROLL_ID);
+		}
 		if (wanted && !registered) {
 			registered = true;
 			registerModuleToolbox({

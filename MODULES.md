@@ -1219,6 +1219,45 @@ await api.audio.record({ maxSeconds: 8, stream: dest.stream, name: 'loop' });
 api.audio.device(uuid);                             // {kind, params} or null
 ```
 
+**MIDI keyboards (75 MU1).** The user connects one in the Music toolbox (core never asks the
+browser on its own); core then plays the device the toolbox's *Play on* picker names (default:
+the last selected device that has an `onNote`) through the same replicated `api.audio.note`
+path — a module writes nothing for that. Declare `heldNotes: true` on the spec when `onNote`
+understands a held note: a key then arrives as `{note, velocity, gate: 0}` and its release as
+`{note, velocity: 0, off: true}` (the sustain pedal defers the offs). Without the flag a key
+plays your own note length and no off is sent.
+
+```js
+const off = api.audio.onMidi((msg) => {      // every parsed message, LOCAL (nothing is sent for you)
+	if (msg.type === 'cc' && msg.controller === 1) api.audio.previewParams(uuid, { cutoff: 200 + msg.value * 8000 });
+});                                          // msg: {type, channel, note, velocity, controller, value, data, input}
+await api.audio.midi();                      // {status: 'off'|'asking'|'on'|'denied'|'unsupported'|'error', inputs}
+```
+
+**The piano roll (75 MU2).** Any device whose spec has an `onNote` gets a core *Piano roll*
+(the Inspector's Device section and the Music toolbox open it): a looping clip of 1-8 bars on a
+sixteenth grid, stored in the device's own params under the undeclared key `roll` (a JSON
+string — do not declare a param named `roll`). Every peer plays the clip itself from the shared
+transport, so a clip note reaches your `onNote` as `{note, velocity, at, gate, roll: true}` —
+`at` the wall stamp of its beat, `gate` its length in seconds — on every peer at once, with
+nothing sent. Honour `gate` and a clip plays the lengths it was drawn with.
+
+**Transport, samples, log ranges (75 MU3).**
+
+```js
+const off = api.audio.onTransport((t) => {   // now, then on every CHANGE (play/stop/tempo/swing/loop,
+	if (!t.playing) stopMyArp();              // a peer's included) - never per beat: use schedule()
+});                                          // t: transport() + startedAt; goes with the module
+const { hash, name } = await api.audio.importSample(wavBytes, 'bounce.wav');
+// bytes (ArrayBuffer / typed array / Blob) -> an Explorer audio item shared by hash, like a
+// recorded take; rejects on no bytes, a non-audio name, or the sharing limit
+api.audio.setParams(uuid, { sample: hash });  // then sample(hash) decodes it on every peer
+```
+
+A `range` param may declare `scale: 'log'` (needs `min > 0`): the Inspector row, the Music
+toolbox row and the VR knob then travel in RATIOS, so a 20-20000 Hz cutoff gives each decade the
+same travel. The stored value is the plain number, so nothing else changes.
+
 The rule behind `schedule` and `onNote`: **anything scheduled on the transport must be a
 pure function of its arguments.** Every peer runs the same pattern from the same
 `startedAt`; an impure callback desyncs silently, per peer, with no error anywhere.

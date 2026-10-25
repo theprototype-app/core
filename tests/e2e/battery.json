@@ -163,6 +163,7 @@
 		"scatter-edit": "red on the GitHub runner (SwiftShader) on released 1.43.2 code: deps-auto run 12 (shard; green on confirm) and run 13 (shard + both confirm tries), 2026-10-25 (peer B never gets the terrain)",
 		"scatter-select": "red on the GitHub runner (SwiftShader) twice, its shard + a fresh confirm runner, on released 1.43.2 code: deps-auto run 12, 2026-10-25 (peer B never gets the terrain)",
 		"scatter-sources": "red on the GitHub runner (SwiftShader) twice, its shard + a fresh confirm runner, on released 1.43.2 code: deps-auto run 12, 2026-10-25 (600 s suite timeout, all checks reached green)",
+		"scatter-surface": "red on the GitHub runner (SwiftShader) on its shard in deps-auto runs 13, 14 and 16 (green on confirm in 13/14, red on both confirm tries in 16), 2026-10-25: the Add scatter click times out (locator.click 30 s), not the terrain race",
 		"scene-budget": "red on the unchanged base too (deps-1 A/B on 1f3b9dd5, 2026-10-23)",
 		"scene-open-guard": "flaky on the GitHub runner (SwiftShader): red or green-on-retry in deps-auto run 5 or 6 with unchanged code, 2026-10-24",
 		"scene-physics-state": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",

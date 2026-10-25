@@ -1,4 +1,5 @@
 <script>
+	import { isLogParam, moveAlong } from '$lib/paramScale';
 	import {
 		lengthUnit,
 		angleUnit,
@@ -44,7 +45,7 @@
 	// (measured: the card jumped from (60,40) to (125,50) while the value scrubbed).
 	// node-drag-fields section 7 is that case; a suite that only drags a cold field
 	// passes with the class removed.
-	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, disabled?: boolean, nodrag?: boolean, unit?: 'length'|'angle'|'angleDeg'|'', onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void}} */
+	/** @type {{label?: string, value?: number, step?: number, snap?: number, decimals?: number, min?: number, max?: number, accent?: string, id?: string, title?: string, ariaLabel?: string, mixed?: boolean, disabled?: boolean, nodrag?: boolean, unit?: 'length'|'angle'|'angleDeg'|'', scale?: 'log'|'linear'|'', onchange?: (next: number) => void, onscrubstart?: () => void, onscrubend?: () => void}} */
 	let {
 		label = '',
 		value = 0,
@@ -70,6 +71,10 @@
 		// 'angleDeg' (degrees). Opts it into display units + typed suffixes; absent = a
 		// plain number. See $lib/units.js for why the two angle kinds are both needed.
 		unit = '',
+		// 75 MU3: 'log' = scrubs and arrow presses travel in RATIOS (a filter cutoff); needs
+		// min > 0. One 240th of the range's travel per pixel / per press, the same travel a
+		// linear device row gets from its (max - min) / 240 step. Absent = linear, unchanged.
+		scale = '',
 		onchange = () => {},
 		onscrubstart = () => {},
 		onscrubend = () => {}
@@ -77,6 +82,8 @@
 
 	/** @param {number} n */
 	const clamp = (n) => Math.min(max, Math.max(min, n));
+	/** 75 MU3: the range as paramScale reads it, or null for a linear row */
+	const logParam = $derived(isLogParam({ min, max, scale }) ? { min, max, scale } : null);
 
 	// ---- #20 P3 units ---------------------------------------------------------
 	// `unit` opts a field into the display units. Everything below
@@ -199,7 +206,9 @@
 			// Ctrl = x10, Shift = x100; left/right stay with the caret
 			const factor = event.shiftKey ? 100 : event.ctrlKey || event.metaKey ? 10 : 1;
 			const delta = minorStep * factor * (up ? 1 : -1);
-			const next = clamp(Number((Number(value) + delta).toFixed(6)));
+			const next = logParam
+				? clamp(Number(moveAlong(logParam, Number(value), (factor * (up ? 1 : -1)) / 240).toFixed(6)))
+				: clamp(Number((Number(value) + delta).toFixed(6)));
 			typed = fmt(next);
 			commit(next);
 			event.preventDefault(); // never let the browser scroll or re-step
@@ -273,7 +282,9 @@
 		}
 		// dragging must not smear a text selection across the field
 		document.getSelection?.()?.removeAllRanges?.();
-		let next = startValue + dx * step * (event.shiftKey ? 0.1 : 1);
+		let next = logParam
+			? moveAlong(logParam, startValue, (dx * (event.shiftKey ? 0.1 : 1)) / 240)
+			: startValue + dx * step * (event.shiftKey ? 0.1 : 1);
 		if (event.ctrlKey || event.metaKey) next = Math.round(next / snap) * snap;
 		// 16-Q5: quantize to the field's own precision. A raw scrub produced values
 		// like 0.7999999999999999, which then leaked into menus and saved settings —

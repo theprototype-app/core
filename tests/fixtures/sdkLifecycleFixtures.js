@@ -565,6 +565,26 @@
 				present: (t) => M.midiInput.midiDebug().listeners === t.data.before + 1,
 				absent: (t) => M.midiInput.midiDebug().listeners === t.data.before
 			},
+			// 75 MU3: a transport listener (the import settles a tick after the call); probed by a
+			// tempo change, which calls it synchronously while it is subscribed
+			'audio.onTransport': {
+				needs: ['musicClock'],
+				async call(api, t) {
+					t.data.n = 0;
+					api.audio.onTransport(() => t.data.n++);
+					await new Promise((r) => setTimeout(r, 20));
+				},
+				present: (t) => {
+					const before = t.data.n;
+					M.musicClock.setBpm(M.musicClock.transportState().bpm === 121 ? 122 : 121);
+					return t.data.n === before + 1;
+				},
+				absent: (t) => {
+					const before = t.data.n;
+					M.musicClock.setBpm(M.musicClock.transportState().bpm === 121 ? 122 : 121);
+					return t.data.n === before;
+				}
+			},
 			// ---- hud -----------------------------------------------------------------------
 			'hud.rows': {
 				needs: ['flowRuntime'],

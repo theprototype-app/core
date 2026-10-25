@@ -1242,6 +1242,22 @@ transport, so a clip note reaches your `onNote` as `{note, velocity, at, gate, r
 `at` the wall stamp of its beat, `gate` its length in seconds — on every peer at once, with
 nothing sent. Honour `gate` and a clip plays the lengths it was drawn with.
 
+**Transport, samples, log ranges (75 MU3).**
+
+```js
+const off = api.audio.onTransport((t) => {   // now, then on every CHANGE (play/stop/tempo/swing/loop,
+	if (!t.playing) stopMyArp();              // a peer's included) - never per beat: use schedule()
+});                                          // t: transport() + startedAt; goes with the module
+const { hash, name } = await api.audio.importSample(wavBytes, 'bounce.wav');
+// bytes (ArrayBuffer / typed array / Blob) -> an Explorer audio item shared by hash, like a
+// recorded take; rejects on no bytes, a non-audio name, or the sharing limit
+api.audio.setParams(uuid, { sample: hash });  // then sample(hash) decodes it on every peer
+```
+
+A `range` param may declare `scale: 'log'` (needs `min > 0`): the Inspector row, the Music
+toolbox row and the VR knob then travel in RATIOS, so a 20-20000 Hz cutoff gives each decade the
+same travel. The stored value is the plain number, so nothing else changes.
+
 The rule behind `schedule` and `onNote`: **anything scheduled on the transport must be a
 pure function of its arguments.** Every peer runs the same pattern from the same
 `startedAt`; an impure callback desyncs silently, per peer, with no error anywhere.

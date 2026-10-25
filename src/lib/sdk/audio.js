@@ -205,6 +205,68 @@ export function sdkAudio(ctx) {
 					release();
 				};
 			},
+			/**
+			 * 75 MU3: `fn(transport)` now and on every CHANGE of the shared transport — play, stop,
+			 * tempo, swing, loop length, a peer's change included (never per beat: use `schedule`
+			 * for that). `transport` is the `transport()` reading plus `startedAt`. Returns an off;
+			 * the listener goes with the module.
+			 * @param {(t: any) => void} fn
+			 */
+			onTransport: (fn) => {
+				/** @type {(() => void) | null} */
+				let off = null;
+				let gone = false;
+				const release = onDispose(
+					() => {
+						gone = true;
+						off?.();
+					},
+					'audio.transport'
+				);
+				import('../musicClock').then((m) => {
+					if (gone) return;
+					let last = '';
+					off = m.transport.subscribe((state) => {
+						const key = [state.playing, state.bpm, state.startedAt, state.swing, state.barsPerLoop].join('|');
+						if (key === last) return;
+						last = key;
+						try {
+							fn({ ...m.transportNow(), startedAt: state.startedAt });
+						} catch (error) {
+							console.warn('[module ' + moduleId + '] onTransport threw', error);
+						}
+					});
+				});
+				return () => {
+					gone = true;
+					off?.();
+					release();
+				};
+			},
+			/**
+			 * 75 MU3: put an audio file the module MADE (a bounce, a generated sample, a download)
+			 * into the Explorer and share it by hash, the way a recorded take is. `bytes` is an
+			 * ArrayBuffer, a typed array or a Blob; `name` must end in an audio extension (wav,
+			 * mp3, ogg, webm, opus, m4a, flac); the sharing limit applies. Resolves to
+			 * `{hash, name}` — play it with `sample(hash)` or put the hash in a device param.
+			 * Rejects on no bytes, a name that is not audio, or a file over the limit.
+			 * @param {ArrayBuffer | ArrayBufferView | Blob} bytes @param {string} name
+			 */
+			importSample: async (bytes, name) => {
+				const clean = String(name ?? '').trim();
+				const [{ addItemFromBytes, kindOf }, { sendAsset, MAX_SHARED_BYTES }] = await Promise.all([import('../explorer'), import('../assetShare')]);
+				if (kindOf(clean) !== 'audio') throw new Error('importSample: "' + clean + '" is not an audio file name');
+				/** @type {ArrayBuffer | null} */
+				let buffer = null;
+				if (typeof Blob !== 'undefined' && bytes instanceof Blob) buffer = await bytes.arrayBuffer();
+				else if (bytes instanceof ArrayBuffer) buffer = bytes;
+				else if (ArrayBuffer.isView(bytes)) buffer = /** @type {ArrayBuffer} */ (bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+				if (!buffer || !buffer.byteLength) throw new Error('importSample: no bytes');
+				if (buffer.byteLength > MAX_SHARED_BYTES) throw new Error('importSample: over the ' + Math.round(MAX_SHARED_BYTES / 1048576) + ' MB sharing limit');
+				const item = await addItemFromBytes(buffer, clean, null, { imported: true });
+				sendAsset(item.hash);
+				return { hash: item.hash, name: item.name };
+			},
 			/** 75 MU1: the MIDI connection now `{status, inputs: [{id, name, manufacturer}]}` —
 			 * status 'off' | 'asking' | 'on' | 'denied' | 'unsupported' | 'error' */
 			midi: () => import('../midiInput').then((m) => {
@@ -240,5 +302,7 @@ sdkAudio.surface = {
 	'audio.stopRecording': 'action',
 	'audio.recording': 'read',
 	'audio.onMidi': 'registers',
+	'audio.onTransport': 'registers',
+	'audio.importSample': 'content',
 	'audio.midi': 'read'
 };

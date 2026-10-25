@@ -25,6 +25,7 @@
 		ROLL_BAR_CHOICES
 	} from '$lib/pianoRoll';
 	import { noteName } from '$lib/midiInput';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 
 	const CELL = 16; // px per sixteenth
 	const ROW = 14; // px per semitone
@@ -341,7 +342,7 @@
 			<button id="pr-delete" class="tbx-btn tbx-danger" aria-label="Delete selected notes" title="Delete selected notes" disabled={!selected.size} onclick={() => removeKeys(new Set(selected))}>✕</button>
 			<button id="pr-clear" class="tbx-btn" title="Clear the clip" disabled={!roll.notes.length} onclick={clearClip}>Clear</button>
 		</div>
-		<div class="pr-body" bind:this={body}>
+		<div class="pr-body" bind:this={body} use:minimalScroll>
 			<div class="pr-keys" aria-hidden="true">
 				{#each pitches as p (p)}
 					<div class="pr-key" class:pr-black={[1, 3, 6, 8, 10].includes(p % 12)} style:height="{ROW}px">{p % 12 === 0 ? noteName(p) : ''}</div>
@@ -351,7 +352,7 @@
 				 arrows move, Delete removes), so the click has its keyboard twin -->
 			<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 			<div
-				class="pr-grid"
+				class="pr-grid tp-noscrollbar"
 				bind:this={grid}
 				role="application"
 				aria-label={'Piano roll for ' + current.name + '. Click a cell or press Enter to add a note; arrows move the selection, Shift for bigger steps, Alt to change its length, Delete removes it.'}

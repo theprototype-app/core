@@ -3660,6 +3660,7 @@
 								value={Number(devValue(p.key) ?? p.default ?? 0)}
 								min={p.min}
 								max={p.max}
+								scale={p.scale}
 								step={(Number(p.max ?? 1) - Number(p.min ?? 0)) / 240}
 								snap={p.step ?? 0.01}
 								decimals={p.step && p.step >= 1 ? 0 : 2}

@@ -2667,6 +2667,15 @@ loadable play content. Everything a user does must be visible to connected peers
   keyboard, Delete/arrows are captured on the grid (they would delete / move the OBJECT), and the editor redraws
   by comparing the stored string per frame (an undo or a peer's write has no store to say so). Suites: vitest
   `pianoRoll`, e2e `piano-roll` (two peers + a late joiner + N6).
+  MU3 SDK gaps: `api.audio.onTransport(fn)` ('registers', journaled synchronously, deduped on
+  playing/bpm/startedAt/swing/barsPerLoop so a running transport never calls it per beat; lifecycle fixture probes
+  it with a tempo change, which a store subscriber hears synchronously), `api.audio.importSample(bytes, name)`
+  ('content': `addItemFromBytes` + `sendAsset`, the recorded-take path; audio name + bytes + MAX_SHARED_BYTES
+  checked), and `scale: 'log'` on range params via the leaf `paramScale.js` (`isLogParam`/`toUnit`/`fromUnit`/
+  `moveAlong`): DragRow's `scale` prop (one 240th of the log travel per pixel / per arrow press — the linear device
+  rows' `(max-min)/240` step), the Inspector + Music toolbox device rows pass `p.scale`, and the VR knob keeps an
+  unsnapped `raw` position for log params. Stored values stay plain numbers. Suites: vitest `paramScale`, e2e
+  `audio-sdk-gaps` (two peers; the VR knob through the music-vr-patch synthetic-pose seams).
 
 ## UI design system (redesign epic)
 

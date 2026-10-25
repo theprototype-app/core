@@ -69,6 +69,7 @@ import { registerSceneAssetSource } from './sceneAssets';
  * @property {number} [min] @property {number} [max] @property {number} [step]
  * @property {any} default
  * @property {string} [unit]
+ * @property {'log'|'linear'} [scale]  75 MU3: 'log' = the controls travel in ratios (needs min > 0)
  * @property {{value: any, label: string}[]} [options]
  *
  * @typedef {object} DeviceHandle

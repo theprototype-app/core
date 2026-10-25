@@ -117,7 +117,7 @@ export async function cutState() {
 	if (!cutLoad) return null;
 	await cutLoad;
 	const m = await import('./cut/cutRuntime.js');
-	return { pending: m.cutPending(), ...m.cutDebug() };
+	return m.cutDebug();
 }
 
 /** @param {any} seq @param {number} t @param {'game'|'preview'} mode @param {boolean} scrub */

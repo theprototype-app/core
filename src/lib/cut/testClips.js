@@ -1,6 +1,8 @@
 // 77 — TEST CLIPS: a WebM made in the page, frame by frame, with Mediabunny's encoder — solid
 // colour segments, so a suite can say "at 1.5 s the frame is green" and mean the exact frame.
 // Reached only through the debug hook (`__stores.cutTestClips`); nothing in the app imports it.
+// Named imports, so the encoder half never joins the decode chunk the app loads.
+import { Output, BufferTarget, WebMOutputFormat, CanvasSource, canEncodeVideo } from 'mediabunny';
 
 /**
  * @param {{colors?: string[], segment?: number, fps?: number, width?: number, height?: number}} [opts]
@@ -8,15 +10,14 @@
  */
 export async function makeTestClip(opts = {}) {
 	const { colors = ['#ff0000', '#00ff00', '#0000ff'], segment = 1, fps = 30, width = 320, height = 180 } = opts;
-	const mb = await import('mediabunny');
-	const codec = (await mb.canEncodeVideo('vp9', { width, height })) ? 'vp9' : 'vp8';
+	const codec = (await canEncodeVideo('vp9', { width, height })) ? 'vp9' : 'vp8';
 	const canvas = document.createElement('canvas');
 	canvas.width = width;
 	canvas.height = height;
 	const ctx = /** @type {CanvasRenderingContext2D} */ (canvas.getContext('2d'));
-	const target = new mb.BufferTarget();
-	const output = new mb.Output({ format: new mb.WebMOutputFormat(), target });
-	const source = new mb.CanvasSource(canvas, { codec, bitrate: 2e6, keyFrameInterval: 1 });
+	const target = new BufferTarget();
+	const output = new Output({ format: new WebMOutputFormat(), target });
+	const source = new CanvasSource(canvas, { codec, bitrate: 2e6, keyFrameInterval: 1 });
 	output.addVideoTrack(source, { frameRate: fps });
 	await output.start();
 	const per = Math.round(segment * fps);

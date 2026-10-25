@@ -1,6 +1,6 @@
 // 77 K1 — CLIP FRAMES: a video item's frame at a source time, as a THREE texture. Lazy (the cut
 // chunk): Mediabunny (MPL-2.0, unmodified, the same 1.61.3 65 M4 exports with) never reaches
-// the boot graph.
+// the boot graph, and only its decode slice loads (mbDecode.js).
 //
 // BYTES are content-hash Explorer assets synced like a sound (soundRuntime.sampleBuffer's
 // shape): our own copy, else `requestAsset` and wait for the pull to land. One Mediabunny
@@ -56,7 +56,7 @@ export function clipBlob(hash, timeoutMs = 60000) {
 
 /** @type {Promise<any>|null} */
 let mbPromise = null;
-const mediabunny = () => (mbPromise ??= import('mediabunny'));
+const mediabunny = () => (mbPromise ??= import('./mbDecode.js'));
 
 /** hash -> opened source @type {Map<string, Promise<any>>} */
 const sources = new Map();
@@ -75,7 +75,7 @@ export function openClip(hash) {
 			if (typeof VideoDecoder !== 'undefined') {
 				try {
 					const mb = await mediabunny();
-					const input = new mb.Input({ source: new mb.BlobSource(blob), formats: mb.ALL_FORMATS });
+					const input = new mb.Input({ source: new mb.BlobSource(blob), formats: mb.FORMATS });
 					const track = await input.getPrimaryVideoTrack();
 					if (track && (await track.canDecode())) {
 						const audio = await input.getPrimaryAudioTrack().catch(() => null);

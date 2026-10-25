@@ -1082,7 +1082,7 @@
 				onaction={newSequence}
 			/>
 		{:else}
-			<div class="tl-bar">
+			<div class="tl-bar tp-noscrollbar">
 				{#if renaming}
 					<input
 						class="tl-rename"
@@ -1523,7 +1523,7 @@
 			{#if oneSel}
 				{@const kind = oneSel.track.kind}
 				{@const it = oneSel.item}
-				<div class="tl-inspector" id="timeline-inspector" data-kind={kind}>
+				<div class="tl-inspector" use:minimalScroll id="timeline-inspector" data-kind={kind}>
 					<span class="tl-kind" style="color: {kindColor(kind)}"
 						><Icon name={kindIcon(kind)} size={16} /></span
 					>
@@ -1699,7 +1699,7 @@
 					/>
 				</div>
 			{:else if selection.length > 1}
-				<div class="tl-inspector">
+				<div class="tl-inspector" use:minimalScroll>
 					<span class="tl-hint"
 						>{selection.length} items — drag to move together, ←/→ to nudge, Del to delete</span
 					>
@@ -2186,6 +2186,26 @@
 	:global(:root.phone-shell) .tl-field {
 		width: calc(50% - 20px);
 	}
+	/* 77: the bar is ONE row that scrolls sideways (the cut's buttons made it four rows on a
+	   folded phone), and the inspector scrolls inside a cap, so the lanes always keep room */
+	:global(:root.phone-shell) .tl-bar {
+		flex-wrap: nowrap;
+		overflow-x: auto;
+	}
+	:global(:root.phone-shell) .tl-bar > :global(*) {
+		flex: 0 0 auto;
+	}
+	:global(:root.phone-shell) .tl-bar .flex-1 {
+		display: none;
+	}
+	:global(:root.phone-shell) .tl-grid {
+		min-height: 128px;
+	}
+	:global(:root.phone-shell) .tl-inspector {
+		max-height: 40%;
+		overflow-y: auto;
+		flex: 0 1 auto;
+	}
 	/* the name needs the room: Mute lives in the track menu there */
 	:global(:root.phone-shell) .tl-mute {
 		display: none;
@@ -2195,5 +2215,14 @@
 	}
 	:global(:root.phone-shell) .tl-item:not(.tl-event) {
 		padding: 0 18px;
+	}
+	/* 77: a finger anywhere (an unfolded phone, a tablet) gets the finger-sized grips too */
+	@media (pointer: coarse) {
+		.tl-grip {
+			width: 16px;
+		}
+		.tl-item:not(.tl-event) {
+			padding: 0 18px;
+		}
 	}
 </style>

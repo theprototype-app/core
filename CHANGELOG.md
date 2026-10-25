@@ -5,6 +5,33 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## Next release — Music: play from a MIDI keyboard, draw a piano roll 🎹
+<!-- 75-int: the version is set at release time (roadmap 75 releases after 64). -->
+
+Plug in a keyboard and play the music devices in your scene, or draw a looping clip that plays in time on every screen.
+
+### 🎹 Play from a MIDI keyboard
+
+- Music toolbox ▸ **MIDI input** ▸ **Connect MIDI keyboard**: a USB or Bluetooth keyboard or pad controller plays the
+  piano, synth, sampler pads and drum pads in your scene, and **everyone in the session hears it**. The browser is only
+  asked when you press Connect, and only once.
+- On the piano and the synth a key holds its note for as long as you hold it down, and the **sustain pedal** works.
+- **Play on** picks the device your keys play (by default the last music device you selected); two people with two
+  keyboards can play two instruments.
+
+### 🎼 A piano roll
+
+- Every device that plays notes has a **Piano roll** (Inspector ▸ Device, or the Music toolbox): draw a looping clip of
+  1, 2, 4 or 8 bars. It plays with the shared transport, in time on every screen, and stays with the device when you
+  save, undo, or someone joins later. Click to add, drag to move, drag the edge to lengthen; the keyboard works too.
+  On a phone it opens as a bottom sheet.
+
+### 🎛️ Smoother knobs, and more for module authors
+
+- Filter cutoffs (Music FX, the Music Voice synth) move evenly through low, middle and high frequencies.
+- Module SDK: `api.audio.onMidi` / `midi()`, `heldNotes` on device specs, `api.audio.onTransport`,
+  `api.audio.importSample`, and `scale: 'log'` on range params (MODULES.md).
+
 ## 1.42.0 — Together and anywhere: type code together, pop the editor out to a second screen, play on a real table 🤝
 
 Two people can now write the same script at once, the code editor can live on its own monitor, and an Android phone can

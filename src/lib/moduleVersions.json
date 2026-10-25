@@ -1,6 +1,6 @@
 {
-	"generated": "2026-10-07",
-	"source": "modules@4e39ef0 (origin/main)",
+	"generated": "2026-10-25",
+	"source": "modules@b38ce56 (origin/feat/75-music)",
 	"modules": {
 		"avatar": "1.1.0",
 		"blocks": "1.0.0",
@@ -15,9 +15,9 @@
 		"fps-player": "1.0.0",
 		"health": "1.0.0",
 		"music-dj": "0.1.1",
-		"music-fx": "0.2.0",
-		"music-lab": "0.2.1",
-		"music-voice": "0.1.1",
+		"music-fx": "0.2.1",
+		"music-lab": "0.3.0",
+		"music-voice": "0.1.2",
 		"piano": "1.1.1",
 		"sabers": "1.0.1",
 		"smart-unwrap": "1.0.0",

@@ -16,8 +16,8 @@ tab can now find any scene by a word or a maker.
 - The welcome card asks **one question**: Play a game, Remix a game, Start from a template, or Describe it (or start
   from an empty scene). Play opens a game straight in Play; the others start a three-step **first-win quest**:
   change something, play it, invite a friend.
-- Until your first Play, a new visitor's advanced buttons — the node editor, Animation and a few more — wait behind
-  **More** on the bottom bar, and Modules and Layouts behind **More** in the logo menu. Settings ▸ Interface ▸
+- Until your first Play, a new visitor's advanced buttons — the node editor, Animation, Pivot and the click mode —
+  wait in the bottom bar's **»** menu, and Modules and Layouts behind **More** in the logo menu. Settings ▸ Interface ▸
   **Show everything** brings them all back at any time. If you have used the app before, nothing changes.
 - The interface tour no longer starts by itself: it is in the logo menu as **Tour the interface**, and the quest can
   be started again from Settings ▸ Interface ▸ **First-game quest**.

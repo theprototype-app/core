@@ -41,6 +41,9 @@ export const DEBUG_HOOKS = [
 	// 36 U3b/I5: the tour engine (tours, activeTour, toursDebug) + the built-in tours
 	['tours', () => import('./tours/index.js')],
 	['toursBuiltin', () => import('./tours/builtin.js')],
+	// 76 FW1: the first-win quest (start / choose / debug) + its local state
+	['firstWin', () => import('./onboarding/firstWin.js')],
+	['onboardState', () => import('./onboarding/onboardState.js')],
 	// 39: drag to place — the preview setting, the measured dims, the pack downloads, the ghost
 	['placementPrefs', () => import('./placementPrefs.js')],
 	['placementDims', () => import('./placementDims.js')],

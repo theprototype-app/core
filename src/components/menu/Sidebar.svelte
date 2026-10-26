@@ -8,6 +8,9 @@
 	import { openProblemReport } from '$lib/problemReport';
 	import '../../app.css';
 	import { moduleToolboxes, openToolboxes, buildToolboxItems } from '$lib/moduleToolboxes';
+	import { simpleUntilPlay } from '$lib/onboarding/onboardState.js'; // 76 FW1
+	/** 76 FW1: the "More" row was pressed this time the menu is open */
+	let sceneMore = $state(false);
 	import '../../styles/menu.css';
 	import { tick } from 'svelte';
 	import { fade } from 'svelte/transition';
@@ -278,32 +281,39 @@
 		<button id="open-asset-browser" class="side-row" onclick={() => { openAssetBrowser(); closeMenu.set(true); }}>
 			<span class="side-ico"><Icon name="package-open" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Free assets (CC0)</span>
 		</button>
-		<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico"><Icon name="puzzle" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Modules</span>
-		</button>
-		<!-- A5: a module's own toolbox, one row each, indented under Modules. This is
-		     what makes moduleSDK's JSDoc true — it already CLAIMED a sidebar Modules
-		     section that did not exist. Deliberately not a Controls HUD button: the
-		     corner HUD already reflows four buttons at <=600px and does not scale to N
-		     modules. The rows come from the SAME builder the viewport menu uses, which is
-		     asked as the 'sidebar' surface: a toolbox may opt OUT of this permanent row
-		     (`sidebar: false`) and keep its viewport-menu one. -->
-		{#each buildToolboxItems($moduleToolboxes, $openToolboxes, 'sidebar') as box (box.id)}
-			<button
-				id="open-toolbox-{box.id}"
-				class="side-row side-sub"
-				class:active={box.checked}
-				onclick={() => { box.action(); closeMenu.set(true); }}
-			>
-				<span class="side-ico"><Icon name="wrench" size={16} aria-hidden="true" /></span>
-				<span class="flex-1 whitespace-nowrap">{box.label}</span>
-				{#if box.shortcut}<span class="side-hint">{box.shortcut}</span>{/if}
+		<!-- 76 FW1: until a new user's first Play, Modules and Layouts wait under "More" -->
+		{#if !$simpleUntilPlay || sceneMore}
+			<button id="open-modules-manager" class="side-row" onclick={() => { modulesOpen.set(true); closeMenu.set(true); }}>
+				<span class="side-ico"><Icon name="puzzle" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Modules</span>
 			</button>
-		{/each}
-		<!-- 37 R14: named workspace layouts (windows, docks, sizes) -->
-		<button id="open-layouts" class="side-row" onclick={() => { layoutsMenuOpen.set(true); closeMenu.set(true); }}>
-			<span class="side-ico"><Icon name="panels-top-left" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Layouts</span>
-		</button>
+			<!-- A5: a module's own toolbox, one row each, indented under Modules. This is
+			     what makes moduleSDK's JSDoc true — it already CLAIMED a sidebar Modules
+			     section that did not exist. Deliberately not a Controls HUD button: the
+			     corner HUD already reflows four buttons at <=600px and does not scale to N
+			     modules. The rows come from the SAME builder the viewport menu uses, which is
+			     asked as the 'sidebar' surface: a toolbox may opt OUT of this permanent row
+			     (`sidebar: false`) and keep its viewport-menu one. -->
+			{#each buildToolboxItems($moduleToolboxes, $openToolboxes, 'sidebar') as box (box.id)}
+				<button
+					id="open-toolbox-{box.id}"
+					class="side-row side-sub"
+					class:active={box.checked}
+					onclick={() => { box.action(); closeMenu.set(true); }}
+				>
+					<span class="side-ico"><Icon name="wrench" size={16} aria-hidden="true" /></span>
+					<span class="flex-1 whitespace-nowrap">{box.label}</span>
+					{#if box.shortcut}<span class="side-hint">{box.shortcut}</span>{/if}
+				</button>
+			{/each}
+			<!-- 37 R14: named workspace layouts (windows, docks, sizes) -->
+			<button id="open-layouts" class="side-row" onclick={() => { layoutsMenuOpen.set(true); closeMenu.set(true); }}>
+				<span class="side-ico"><Icon name="panels-top-left" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Layouts</span>
+			</button>
+		{:else}
+			<button id="sidebar-more" class="side-row" aria-expanded="false" onclick={() => (sceneMore = true)}>
+				<span class="side-ico"><Icon name="ellipsis" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">More</span>
+			</button>
+		{/if}
 		<div class="side-div"></div>
 		<div class="side-label">Collaborate</div>
 		<button id="open-sessions-manager" class="side-row" onclick={() => { sessionsOpen.set(true); closeMenu.set(true); }}>
@@ -352,9 +362,10 @@
 			<span class="flex-1 whitespace-nowrap">What's new</span>
 			<span class="row-dot" class:row-dot-on={$whatsNewUnseen}></span>
 		</button>
-		<!-- 36 I5: the first-run editor tour, again (Settings ▸ Tours has the VR welcome + reset) -->
+		<!-- 36 I5: the editor tour (Settings ▸ Tours has the VR welcome + reset). 76 FW1: it no longer starts by
+		     itself after the Welcome — the first-win quest does — so this row is where it lives -->
 		<button id="open-tour" class="side-row" onclick={() => { closeMenu.set(true); startEditorTour(); }}>
-			<span class="side-ico"><Icon name="compass" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Tours</span>
+			<span class="side-ico"><Icon name="compass" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Tour the interface</span>
 		</button>
 	</nav>
 {/if}

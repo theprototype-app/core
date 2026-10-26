@@ -65,6 +65,7 @@
 	import { dockShownKeys, dockOccupants, bottomInset, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, xrSessionFailed, playAsItems } from '$lib/playMode';
+	import { simpleUntilPlay, holdAdvanced } from '$lib/onboarding/onboardState.js'; // 76 FW1
 	// 60 Q1: Play here — a roster button (Customize), a row in Play's own menu, Ctrl+Shift+Enter
 	import { playHere, playHereItems, playingHere } from '$lib/playHere';
 	// 30 P2: Test play — the play button's right-click row beside the game chip's button
@@ -1566,15 +1567,19 @@
 	// positions runs (it shows every item, wrapping) and on a phone-width bar (its cells shrink instead).
 	const foldPlan = $derived.by(() => {
 		if (controlsLayout.collapsed) return { shown: [SPACER], folded: [] as string[] };
-		const row = visualIds().filter((id) => !(id === 'pivot' && viewportW < NARROW_BAR));
-		if (editing || viewportW <= FOLD_MIN_VW || !barRoom.ok) return { shown: row, folded: [] as string[] };
-		return foldToFit(row, {
+		const all = visualIds().filter((id) => !(id === 'pivot' && viewportW < NARROW_BAR));
+		if (editing) return { shown: all, folded: [] as string[] };
+		// 76 FW1: until a new user's first Play the advanced buttons wait in "»" (still one press away)
+		const { row, held } = holdAdvanced(all, $simpleUntilPlay);
+		if (viewportW <= FOLD_MIN_VW || !barRoom.ok) return { shown: row, folded: held };
+		const fit = foldToFit(row, {
 			...barMetrics,
 			// a px of slack: the arithmetic is in whole layout px, the browser's in fractions of one
 			budget: barRoom.right - barRoom.left - 1,
 			// the "…" is drawn only on a wide window (hud.css hides it below 720 px)
 			more: controlsLayout.more !== false && viewportW >= 720
 		});
+		return held.length ? { shown: fit.shown, folded: [...fit.folded, ...held] } : fit;
 	});
 	const visibleCells = $derived(foldPlan.shown.map((id) => ({ id })));
 	/** the cells folded into "»", in the bar's left → right order */
@@ -3863,7 +3868,7 @@
 		<!-- 43 J10: the buttons that do not fit wait in "»" (right to left by the user's order, Play never);
 		     once anything folds it ends the bar in place of the "…", and its menu closes with Customize -->
 		<span class="hud-sep" aria-hidden="true"></span>
-		<button id="toolbar-overflow" type="button" class="hud-cell" class:on={overflowMenu !== null} data-folded={folded.join(',')} title="More buttons — {folded.length} {folded.length === 1 ? 'does' : 'do'} not fit" aria-label="More buttons ({folded.length})" aria-haspopup="menu" aria-expanded={overflowMenu !== null} use:onPress={openOverflow} use:cellMenu={BAR}
+		<button id="toolbar-overflow" type="button" class="hud-cell" class:on={overflowMenu !== null} data-folded={folded.join(',')} title={$simpleUntilPlay ? 'More buttons — the node editor, animation and more (the bar shows them all after your first Play)' : `More buttons — ${folded.length} ${folded.length === 1 ? 'does' : 'do'} not fit`} aria-label="More buttons ({folded.length})" aria-haspopup="menu" aria-expanded={overflowMenu !== null} use:onPress={openOverflow} use:cellMenu={BAR}
 			><Icon name="chevrons-right" size={20} aria-hidden="true" /></button
 		>
 	{:else if !controlsLayout.collapsed && controlsLayout.more !== false}

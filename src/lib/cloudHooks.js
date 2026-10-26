@@ -414,6 +414,49 @@ export function notifyTemplateOpen(slug) {
 	}
 }
 
+/** @typedef {{ e: string, c: string, b: string, d: string, x: string }} FunnelEvent */
+
+/** @type {Set<(ev: FunnelEvent) => void>} */
+const funnelListeners = new Set();
+/** 76 FW2: events from before the plugin registered (ob_view fires at boot); flushed to the first
+ *  listener, capped — an engine with no plugin keeps at most this many and sends nothing
+ *  @type {FunnelEvent[]} */
+const funnelQueue = [];
+const FUNNEL_QUEUE_MAX = 20;
+/** something listens (a plugin that counts) — Settings ▸ Privacy offers its switch only then */
+export const funnelListening = writable(false);
+
+/** cloudApi `onFunnelEvent(fn)` — 76 FW2: one anonymous first-visit funnel event (onboarding/
+ *  funnel.js decided it may be counted). Only closed-vocabulary fields, never an id.
+ *  @param {(ev: FunnelEvent) => void} fn @returns {() => void} off */
+export function onFunnelEvent(fn) {
+	if (typeof fn !== 'function') return () => {};
+	funnelListeners.add(fn);
+	funnelListening.set(true);
+	for (const ev of funnelQueue.splice(0)) {
+		try {
+			fn({ ...ev });
+		} catch (e) {
+			console.error('funnel listener threw:', e);
+		}
+	}
+	return () => funnelListeners.delete(fn);
+}
+/** core → plugin @param {FunnelEvent} ev */
+export function notifyFunnelEvent(ev) {
+	if (!funnelListeners.size) {
+		if (funnelQueue.length < FUNNEL_QUEUE_MAX) funnelQueue.push({ ...ev });
+		return;
+	}
+	for (const fn of funnelListeners) {
+		try {
+			fn({ ...ev });
+		} catch (e) {
+			console.error('funnel listener threw:', e);
+		}
+	}
+}
+
 /**
  * C6: THE HEART FOR THE SCENE ON SCREEN — the play-link start card and a published game's pause
  * menu render a heart toggle while this is set. The plugin sets it after loading a published

@@ -12,7 +12,9 @@
 		'show pop-ups only in the drawer': ['toasts in drawer only', 'toasts', 'notifications'],
 		'show tours automatically': ['tour', 'tours', 'tutorial', 'onboarding', 'first run', 'guide'],
 		'vr welcome tour': ['vr welcome', 'controllers', 'quest', 'tour', 'tutorial'],
-		'editor tour': ['tour', 'tutorial', 'help', 'guide'],
+		'editor tour': ['tour', 'tutorial', 'help', 'guide', 'tour the interface'],
+		'first-game quest': ['quest', 'first win', 'onboarding', 'tutorial', 'guide', 'make it yours'],
+		'show everything': ['simple', 'beginner', 'more', 'hidden buttons', 'node editor', 'modules', 'onboarding', 'advanced'],
 		'offer enter vr in a headset browser': ['offer enter vr', 'enter vr', 'headset browser', 'quest'],
 		'reset tours': ['tour', 'tours', 'tutorial'],
 		'reset tips': ['tip', 'tips', 'hint', 'hints', 'help', 'how-to'],
@@ -71,6 +73,9 @@
 	import { showWelcomeOnStart, showWhatsNewNotice, openWelcome } from '$lib/whatsNew';
 	import { tours, tourRecords } from '$lib/tours/index.js';
 	import { VR_TOUR, editorTourId, startVRWelcome, startEditorTour, resetAllTours } from '$lib/tours/builtin.js';
+	import { FIRST_WIN_TOUR } from '$lib/onboarding/quests.js'; // 76 FW1
+	import { startFirstWin } from '$lib/onboarding/firstWin.js';
+	import { simpleUntilPlay } from '$lib/onboarding/onboardState.js';
 	// 43 J9: closed tips (the phone More sheet's how-to) come back from one row
 	import { resetTips, dismissedTips } from '$lib/tips';
 	import { xrOfferEnabled } from '$lib/xrOffer';
@@ -208,7 +213,7 @@
 	</Section>
 
 	<Section variant="card" label="Tours">
-		<SettingRow id="row-tours-auto" label="Show tours automatically" description="Starts the editor tour after the welcome card, and the VR welcome on your first VR visit.">
+		<SettingRow id="row-tours-auto" label="Show tours automatically" description="Starts the first-game quest after the welcome card, and the VR welcome on your first VR visit.">
 			<Toggle id="setting-tours-auto" label="Show tours automatically" checked={autoTours} onchange={(on) => tours.setAutoStart(on)} />
 		</SettingRow>
 		<SettingRow id="row-tour-vr" label="VR welcome tour">
@@ -234,6 +239,23 @@
 					startEditorTour();
 				}}>Start</Button
 			>
+		</SettingRow>
+		<!-- 76 FW1: the welcome card's three-step quest, again (change something → Play → invite) -->
+		<SettingRow id="row-tour-firstwin" label="First-game quest">
+			{#snippet desc()}Three steps: change something, play it, invite a friend. <span class="iface-status">{tourStatus(FIRST_WIN_TOUR, $tourRecords)}</span>{/snippet}
+			<Button
+				id="setting-tour-firstwin"
+				size="sm"
+				variant="outline"
+				onclick={() => {
+					close();
+					startFirstWin({ choice: 'empty', force: true });
+				}}>Start</Button
+			>
+		</SettingRow>
+		<!-- 76 FW1: a new user's advanced buttons wait behind More until their first Play -->
+		<SettingRow id="row-show-everything" label="Show everything" description="Off: the node editor, animation and other advanced buttons wait behind More (new users start this way until their first Play).">
+			<Toggle id="setting-show-everything" label="Show everything" checked={!$simpleUntilPlay} onchange={(on) => simpleUntilPlay.set(!on)} />
 		</SettingRow>
 		<SettingRow id="row-xr-offer" label="Offer Enter VR in a headset browser" description="Lets the Quest browser show its own Enter VR button, once per visit.">
 			<Toggle id="setting-xr-offer" label="Offer Enter VR in a headset browser" bind:checked={$xrOfferEnabled} />

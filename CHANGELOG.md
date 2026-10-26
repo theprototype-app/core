@@ -5,6 +5,16 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+<!-- ktx2-noeval: the integrator gives this section its version (1.45.1 from the v1.45.0 tag, or the next release). -->
+
+## Unreleased
+
+### 🔧 Fixes
+
+- Compressed (KTX2) textures load again. Since 1.43.1 the site's security policy stopped the texture decoder, so
+  imported models kept full-size textures in GPU memory and "For Quest / web" exports could not be opened back in the
+  app. The decoder is rebuilt to run under that policy.
+
 ## 1.44.0 — Quick wins: play from where you stand, trace over a picture, share files in, embed anywhere ⚡
 
 Small things you feel in every session: try the corner you are building without walking there, trace a plan, send a

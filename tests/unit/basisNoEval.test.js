@@ -47,6 +47,9 @@ describe('scanNoEval', () => {
 	});
 	it('leaves type tests, names, strings and comments alone', () => {
 		expect(names('if(!(c instanceof Function)){}')).toEqual([]);
+		expect(names('if(e.constructor===Function){} Function.prototype.toString.call(f);')).toEqual(
+			[]
+		);
 		expect(
 			names('throwBindingError(`Function \'${n}\' called`); var s="new Function(x)"; // eval(x)')
 		).toEqual([]);

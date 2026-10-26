@@ -7,8 +7,8 @@
 // helper, so grepping for `new Function` finds nothing. This parses the file instead and reports
 // every place the identifiers `eval` or `Function` are USED as values, which covers
 // `new Function(...)`, `Function(...)`, `f(Function, ...)` and `return Function`. Left alone:
-// `x instanceof Function` (a type test), `obj.Function` / `{ Function: … }` (names, not the
-// global) and text inside strings or comments.
+// type tests (`x instanceof Function`, `x.constructor === Function`), `Function.prototype`,
+// `obj.Function` / `{ Function: … }` (names, not the global) and text inside strings or comments.
 //
 //   node scripts/no-eval-scan.cjs <file.js> [...]   → exit 1 and one line per hit
 //
@@ -46,8 +46,16 @@ function scanNoEval(code) {
 					key === 'key' &&
 					!parent.computed);
 			const typeTest =
-				parent?.type === 'BinaryExpression' && parent.operator === 'instanceof' && key === 'right';
-			if (!isName && !typeTest)
+				parent?.type === 'BinaryExpression' &&
+				(parent.operator === 'instanceof'
+					? key === 'right'
+					: ['===', '!==', '==', '!='].includes(parent.operator));
+			const prototype =
+				parent?.type === 'MemberExpression' &&
+				key === 'object' &&
+				!parent.computed &&
+				parent.property?.name === 'prototype';
+			if (!isName && !typeTest && !prototype)
 				hits.push({ name: node.name, line: node.loc.start.line, column: node.loc.start.column });
 		}
 		for (const k of Object.keys(node)) {

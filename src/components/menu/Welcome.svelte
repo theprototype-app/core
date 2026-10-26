@@ -17,7 +17,7 @@
 	import Icon from '../ui/Icon.svelte';
 	import { templates, games, templatesState, loadTemplatesIndex, loadRemoteScene, loadingSlug } from '$lib/sceneTemplates';
 	import { chooseOnboarding } from '$lib/onboarding/firstWin.js';
-	import { requestPlay } from '$lib/playMode';
+	import { requestPlay, embedMode } from '$lib/playMode';
 	import { aiEnabled, aiProviders, aiActiveProvider } from '$lib/ai/providers';
 	import { aiBusy, runPrompt } from '$lib/ai/assistant';
 
@@ -47,13 +47,15 @@
 	const listed = $derived(view === 'template' ? $templates : $games);
 	const listLoading = $derived($templatesState === 'idle' || $templatesState === 'loading');
 
-	// a fresh question every time it opens; the index is fetched up front so the lists are ready
+	// a fresh question every time it opens; the index is fetched up front so the lists are ready.
+	// Not in an embed / exported game / play-origin page: the editor chrome (and this card) is
+	// hidden there, and an exported game talks to nobody but its own origin (36-export)
 	$effect(() => {
 		const open = $welcomeOpen;
 		untrack(() => {
 			if (!open) return;
 			view = 'ask';
-			loadTemplatesIndex();
+			if (!$embedMode) loadTemplatesIndex();
 		});
 	});
 	// focus follows the view (keyboard users land on the first answer, then the first list item)

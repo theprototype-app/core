@@ -259,6 +259,8 @@ static|embed>`. Core never talks to a server about it.
 | `loadRemoteScene({…, keepGameId?})` | `keepGameId: true` = the OWNER opening their own published scene (no fork); otherwise a community load is a remix |
 | `onExportBuilt(fn)` → off | after an export zip is built: `fn({gameId, buildId, preset, title, template, parentGameId, appVersion})` |
 | `onTemplateOpen(fn)` → off | a Games-tab template was started: `fn(slug)` (one "template open") |
+| `onFunnelEvent(fn)` → off | 76 FW2: one anonymous first-visit funnel event `fn({e, c, b, d, x})` — closed vocabularies only (event name, Welcome answer, release, desktop/touch/vr, a time bucket or quest step), never an id. Core has already applied once-per-browser, Do Not Track / Global Privacy Control and the under-test guard; events from before registration are queued (20 max) and handed to the first listener. With no plugin nothing is sent anywhere. Probe with `typeof` |
+| `funnelEvent(name)` → Promise\<boolean\> | 76 FW2: the plugin's own funnel event through the same rules; only `'ob_waitlist'` (a feature-update opt-in) is accepted |
 | `toast(message, actions?, {keep?})` | fix-live F-2: with `keep: true` an action toast's buttons also stay on its notification-history entry until one is pressed (a role offer the user sees later) |
 | `setPeerMenuItems(items)` | fix-live: `[{id, label, run(peerId, {name})}]` (≤ 8, labels ≤ 40) appended to the Users peer menu (right-click a peer) under core's own entries — the cloud's "Report…"; `[]` clears |
 | `setConnectBadge(badge \| null)` | fix-live F-5: `{text, title?, onClick?}` — a small badge on the Connect pill for a standing setting (e.g. "Public · guests join"); `null` hides it. Probe with `typeof` |

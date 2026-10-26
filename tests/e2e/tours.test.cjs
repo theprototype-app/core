@@ -6,8 +6,9 @@
 //    Y → Interact, leaving VR → done) and the panel's own buttons press with the trigger;
 //    re-entering (and a reload) shows nothing; Skip persists; an interrupted tour resumes;
 //    the radial's Settings ▸ Welcome tour and Settings ▸ Tours ▸ Reset bring it back.
-//  Screen: the editor tour follows the first-visit Welcome card (and NOT under test without
-//    the opt-in — the guard that keeps the battery clean), its card never covers its target,
+//  Screen: the first-visit Welcome card's answer starts the first-win quest (76 FW1; NOT under test
+//    without the opt-in — the guard that keeps the battery clean); the editor tour is started from
+//    the logo menu, its card never covers its target,
 //    Settings / the logo menu start it, "Don't show again" turns auto-start off, the VR
 //    welcome previews on a screen without being marked seen, the touch variant on a phone.
 //  A2: with a fake headset browser, the page offers immersive-VR (not threlte's AR default)
@@ -262,7 +263,15 @@ async function screenPart(browser) {
 	h.check((await page.locator('#tour-card').count()) === 0, 'I5: …and no tour on top of it');
 	await page.locator('#welcome-start').click();
 	await page.locator('#tour-card').waitFor({ state: 'visible', timeout: 5000 });
-	h.check((await page.locator('#tour-card').getAttribute('data-tour-id')) === 'editor', 'I5: closing the Welcome starts the desktop editor tour');
+	// 76 FW1: the Welcome's answer starts the first-win QUEST now; the editor tour is optional
+	h.check((await page.locator('#tour-card').getAttribute('data-tour-id')) === 'first-win', 'FW1: closing the Welcome (Empty scene) starts the first-win quest, not the editor tour');
+	await page.locator('#tour-skip').click();
+	await page.waitForTimeout(300);
+	h.check((await page.locator('#tour-card').count()) === 0, 'FW1: Skip closes the quest');
+	await page.locator('#logo-menu').click();
+	await page.locator('#open-tour').click();
+	await page.locator('#tour-card').waitFor({ state: 'visible', timeout: 5000 });
+	h.check((await page.locator('#tour-card').getAttribute('data-tour-id')) === 'editor', 'I5: logo menu ▸ Tour the interface starts the desktop editor tour');
 	const STEPS = ['add', 'navigate', 'tools', 'play', 'connect', 'menu'];
 	const TARGET = { add: '#mobile-add-button', tools: '#controls-pill', play: '#play-button', connect: '.connect-pill', menu: '#logo-menu' };
 	for (let i = 0; i < STEPS.length; i++) {
@@ -345,7 +354,9 @@ async function screenPart(browser) {
 	);
 	await T.page.locator('#welcome-start').click();
 	await T.page.locator('#tour-card').waitFor({ state: 'visible', timeout: 5000 });
-	h.check((await T.page.locator('#tour-card').getAttribute('data-tour-id')) === 'editor-touch', 'I5: a touch screen gets the touch tour');
+	h.check((await T.page.locator('#tour-card').getAttribute('data-tour-id')) === 'first-win', 'FW1: a phone gets the first-win quest after the Welcome');
+	await T.page.evaluate(() => window.__stores.toursBuiltin.startEditorTour());
+	await h.eventually(() => T.page.locator('#tour-card').getAttribute('data-tour-id'), (id) => id === 'editor-touch', 'I5: a touch screen gets the touch tour');
 	h.check(/sheet/.test(await T.page.locator('#tour-card').getAttribute('data-side')), 'I5: on a phone the card is a sheet');
 	const tcard = await rectOf(T.page, '#tour-card');
 	h.check(tcard.x >= 0 && tcard.x + tcard.w <= 412 && tcard.y + tcard.h <= 915, 'I5: the sheet fits the phone');

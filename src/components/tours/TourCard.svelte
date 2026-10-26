@@ -9,7 +9,8 @@
 	import { installTours, BUILTIN_TARGETS, FAMILY_KEY } from '$lib/tours/builtin.js'
 	import { placeCard, targetSelectors, SPOT_PAD } from '$lib/tours/place.js'
 	import { controllerSvg, litFor, familyLabel } from '$lib/tours/controllerArt.js'
-	import { isVRMode } from '../../stores/sceneStore'
+	import { isVRMode, isLocked } from '../../stores/sceneStore'
+	import { noteTourSkip } from '$lib/onboarding/firstWin.js'
 	import { safeStorage } from '$lib/safeStorage'
 	import { minimalScroll } from '$lib/ui/minimalScroll.js'
 
@@ -19,7 +20,20 @@
 	})
 	onDestroy(() => uninstall?.())
 
-	let tour = $derived($activeTour && !$isVRMode && ($activeTour.surface === 'card' || $activeTour.preview) ? $activeTour : null)
+	// 76 FW1: a `hideWhilePlaying` tour (the first-win quest) stands down while the game runs
+	let tour = $derived(
+		$activeTour && !$isVRMode && ($activeTour.surface === 'card' || $activeTour.preview) && !($activeTour.hideWhilePlaying && $isLocked === true)
+			? $activeTour
+			: null
+	)
+	function skip() {
+		noteTourSkip(tour)
+		tours.skip()
+	}
+	function never() {
+		noteTourSkip(tour)
+		tours.dontShowAgain()
+	}
 
 	let cardEl: HTMLElement | null = $state(null)
 	let spot: { x: number; y: number; w: number; h: number } | null = $state(null)
@@ -76,7 +90,7 @@
 		if (e.key === 'Escape') {
 			e.preventDefault()
 			e.stopPropagation()
-			tours.skip()
+			skip()
 		} else if (e.key === 'ArrowRight') {
 			e.preventDefault()
 			tours.next()
@@ -101,6 +115,7 @@
 		<div
 			id="tour-spotlight"
 			class="tour-spot"
+			class:quiet={tour.quiet}
 			style="left: {spot.x}px; top: {spot.y}px; width: {spot.w}px; height: {spot.h}px;"
 			aria-hidden="true"
 		></div>
@@ -145,8 +160,8 @@
 			<p class="tour-hint">→ {tour.step.hint}</p>
 		{/if}
 		<div class="tour-actions">
-			<button id="tour-skip" class="tour-link" onclick={() => tours.skip()}>Skip</button>
-			<button id="tour-never" class="tour-link" onclick={() => tours.dontShowAgain()}>Don't show again</button>
+			<button id="tour-skip" class="tour-link" onclick={skip}>Skip</button>
+			<button id="tour-never" class="tour-link" onclick={never}>Don't show again</button>
 			<span class="tour-spacer"></span>
 			{#if !tour.first}
 				<button id="tour-back" class="tour-btn" onclick={() => tours.back()}>Back</button>
@@ -167,6 +182,10 @@
 		box-shadow: 0 0 0 9999px var(--scrim);
 		transition: left 0.25s ease, top 0.25s ease, width 0.25s ease, height 0.25s ease;
 		animation: tour-pulse 1.8s ease-in-out infinite;
+	}
+	/* 76 FW1: a quest's ring — the user is working, so the viewport stays undimmed */
+	.tour-spot.quiet {
+		box-shadow: none;
 	}
 	@keyframes tour-pulse {
 		50% {

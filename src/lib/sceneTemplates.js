@@ -13,6 +13,7 @@ import { primeLoadOrigin } from './gameIdentity.js';
 // 33 (L3): the Clear scene modal's setup check and full clear (see confirmClearScene)
 import * as sceneSwitch from './sceneSwitch';
 import { offerUndo } from './undoToast';
+import { normalizeQuest } from './onboarding/quests.js';
 
 // Templates modal content (roadmap: "Templates" sidebar row → General/Examples/
 // Community tabs). Two content sources, no bytes in this repo beyond the bundled
@@ -69,6 +70,9 @@ export const games = writable([]);
 /** 'idle' | 'loading' | 'ready' (remote) | 'fallback' (bundled seed) | 'error'
  * @type {import('svelte/store').Writable<string>} */
 export const templatesState = writable('idle');
+/** 76 FW1: the last template / example / game that LOADED here ({entry, origin, at}) — the first-win
+ * quest starts from it (a remix or a template answer waits for its scene) @type {import('svelte/store').Writable<any>} */
+export const templateLoaded = writable(null);
 /** normalized Community-tab entries @type {import('svelte/store').Writable<any[]>} */
 export const communityEntries = writable([]);
 /** 'idle' | 'loading' | 'ready' | 'empty' | 'error'
@@ -132,6 +136,8 @@ function normalizeEntry(entry, base) {
 					)
 			: [],
 		bytes: entry.bytes || 0,
+		// 76 FW1: the first-win quest's task text for this scene ('' = core's default for the slug)
+		quest: normalizeQuest(entry.quest),
 		sceneUrl: resolveUrl(entry.scene, base),
 		thumbUrl: resolveUrl(entry.thumb, base)
 	};
@@ -386,6 +392,7 @@ export async function loadRemoteScene(entry, opts = {}) {
 		const isTemplate = origin === 'games' || origin === 'general' || origin === 'examples';
 		primeLoadOrigin(payload.id, { remote: true, keep: opts.keepGameId === true, template: isTemplate ? String(entry.slug || '') : '' });
 		const applied = await requestLoadSession(payload.id, { job });
+		if (applied) templateLoaded.set({ entry, origin, at: Date.now() });
 		// (not for a click a newer one superseded — that template never opened)
 		if (origin === 'games' && entry.slug && !job.cancelled) notifyTemplateOpen(String(entry.slug));
 		return applied;

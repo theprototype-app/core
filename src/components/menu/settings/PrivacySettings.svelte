@@ -1,6 +1,6 @@
 <script module>
 	/** 48 O1: what the settings search matches beyond the row names */
-	export const keywords = ['privacy', 'error reports', 'crash reports', 'telemetry', 'anonymous', 'opt out', 'diagnostics', 'bug'];
+	export const keywords = ['privacy', 'error reports', 'crash reports', 'telemetry', 'anonymous', 'opt out', 'diagnostics', 'bug', 'usage counts', 'analytics', 'do not track'];
 </script>
 
 <script>
@@ -12,6 +12,9 @@
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import Toggle from '../../ui/Toggle.svelte';
 	import { errorReportsOn, errorReportsAvailable } from '$lib/errorReports';
+	// 76 FW2: the anonymous first-visit counts (onboarding/funnel.js), offered when a plugin counts them
+	import { funnelOn } from '$lib/onboarding/funnel.js';
+	import { funnelListening } from '$lib/cloudHooks';
 </script>
 
 <div class="contents" data-keywords={keywords.join(' ')}>
@@ -30,6 +33,19 @@
 			</SettingRow>
 		{:else}
 			<SettingRow id="row-error-reports" label="Error reports" description="This build sends no error reports — nothing leaves this device." keywords="crash telemetry privacy" />
+		{/if}
+	</Section>
+	<Section variant="card" label="Usage counts" badge="This device">
+		{#if $funnelListening}
+			<SettingRow id="row-usage-counts" label="Count my visits anonymously" keywords="analytics telemetry privacy funnel">
+				{#snippet desc()}
+					Counts a few first-visit steps (the welcome card, a first change, a first Play, a first share) and whether you come back — each once, with no ID, account or IP address. Off whenever your browser asks not to be tracked.
+					<a class="settings-link" href="/privacy" target="_blank" rel="noopener">Privacy</a>
+				{/snippet}
+				<Toggle id="send-usage-counts" label="Count my visits anonymously" bind:checked={$funnelOn} />
+			</SettingRow>
+		{:else}
+			<SettingRow id="row-usage-counts" label="Usage counts" description="This build counts nothing — nothing leaves this device." keywords="analytics telemetry privacy" />
 		{/if}
 	</Section>
 </div>

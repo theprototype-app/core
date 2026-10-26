@@ -10,6 +10,7 @@
 	import Tabs from '../ui/Tabs.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
 	import Icon from '../ui/Icon.svelte';
+	import SearchField from '../ui/SearchField.svelte';
 	import { templatesModalOpen, templatesModalTab, hidePanels, restorePanels } from '../../stores/appStore.js';
 	import {
 		templates,
@@ -19,6 +20,9 @@
 		communityEntries,
 		communityState,
 		communityNotice,
+		communityQuery,
+		communitySearching,
+		setCommunityQuery,
 		loadingSlug,
 		loadTemplatesIndex,
 		loadCommunityGallery,
@@ -33,6 +37,7 @@
 	// 28-A6: a cloud plugin's Community provider — null in the OSS build. Read for two
 	// things only: whether the GitHub copy applies, and the provider's own submit control.
 	import { communityProvider } from '$lib/cloudHooks';
+	import { matchesQuery, normQuery } from '$lib/communitySearch.js';
 	import { licenseLabel } from '$lib/packs';
 	import { classifyRequirements } from '$lib/moduleRequirements';
 	import HeartButton from '../ui/HeartButton.svelte';
@@ -59,8 +64,45 @@
 	// (`provider.mine`) and marks the viewer's own entries; a facet of its own, AND-ed with tags
 	let mineOnly = $state(false);
 	const mineChip = $derived(tab === 'community' && $communityProvider?.mine === true);
+	// 76 FW3: the search field — one query for every tab (it survives a tab switch, unlike the
+	// chips: a word means the same thing in each tab). Client-side over title, description,
+	// author and tags everywhere; a provider that declared `search: true` also gets it
+	// server-side (debounced), so Community finds scenes beyond the first page.
+	let query = $state('');
+	const q = $derived(normQuery(query));
+	// 76 FW3: the provider's sorts ({id, label}[], the first is its default) — Community only
+	const sorts = $derived(
+		tab === 'community' && Array.isArray($communityProvider?.sorts)
+			? $communityProvider.sorts
+					.filter((/** @type {any} */ s) => s && typeof s.id === 'string' && typeof s.label === 'string')
+					.slice(0, 5)
+			: []
+	);
+	const sortId = $derived(
+		sorts.some((/** @type {any} */ s) => s.id === $communityQuery.sort) ? $communityQuery.sort : (sorts[0]?.id ?? '')
+	);
+	/** @param {string} id */
+	function pickSort(id) {
+		setCommunityQuery({ q: $communityQuery.q, sort: id === sorts[0]?.id ? '' : id });
+	}
+	// the server half is debounced; the client filter above is immediate
+	$effect(() => {
+		const next = q;
+		const t = setTimeout(() => untrack(() => setCommunityQuery({ q: next, sort: $communityQuery.sort })), 300);
+		return () => clearTimeout(t);
+	});
+	/** @param {KeyboardEvent} e Escape clears a non-empty field before it closes the modal */
+	function searchKey(e) {
+		if (e.key === 'Escape' && query) {
+			e.preventDefault();
+			e.stopPropagation();
+			query = '';
+		}
+	}
 	const shown = $derived(
-		tabEntries.filter((/** @type {any} */ e) => matchesTags(e, activeTags) && (!mineOnly || !mineChip || e.mine === true))
+		tabEntries.filter(
+			(/** @type {any} */ e) => matchesTags(e, activeTags) && (!mineOnly || !mineChip || e.mine === true) && matchesQuery(e, q)
+		)
 	);
 	// 36-community (C6): a provider that can write a like puts a heart on its cards
 	const canLike = $derived(tab === 'community' && typeof $communityProvider?.toggleLike === 'function');
@@ -141,8 +183,10 @@
 			}
 		});
 	});
-	// the Community manifest fetches lazily, first time the tab is opened
+	// the Community manifest fetches lazily, first time the tab is opened — and again when the
+	// query/sort it answers changes (76 FW3; loadCommunityGallery memoizes per query)
 	$effect(() => {
+		void $communityQuery;
 		const wants = $templatesModalOpen && tab === 'community';
 		untrack(() => {
 			if (wants) loadCommunityGallery();
@@ -329,6 +373,35 @@
 	{/snippet}
 	<div class="tpl-body">
 
+		<!-- 76 FW3: one search field for every tab, and the provider's sorts on Community -->
+		<div class="tpl-search-row">
+			<SearchField
+				id="templates-search"
+				clearId="templates-search-clear"
+				bind:value={query}
+				placeholder={tab === 'community' ? 'Search scenes, makers, tags…' : 'Search titles, tags…'}
+				label="Search templates"
+				size="sm"
+				onkeydown={searchKey}
+			/>
+			{#if sorts.length}
+				<div id="community-sorts" class="tpl-sorts" role="group" aria-label="Sort community scenes">
+					{#each sorts as s (s.id)}
+						<button
+							class="tpl-chip"
+							class:active={sortId === s.id}
+							data-sort={s.id}
+							aria-pressed={sortId === s.id}
+							onclick={() => pickSort(s.id)}>{s.label}</button
+						>
+					{/each}
+				</div>
+			{/if}
+		</div>
+		{#if tab === 'community' && $communitySearching}
+			<p id="community-searching" class="mb-2 text-xs italic text-text-faint" aria-live="polite">Searching…</p>
+		{/if}
+
 		<!-- A7: tag chips, shared by all four tabs and derived from the ACTIVE tab's own
 		     tags. OR within the facet (see matchesTags) — an AND would empty the grid on
 		     the second click, which reads as a broken filter. VR is just a chip. -->
@@ -480,6 +553,8 @@
 				</div>
 				{#if !shown.length && mineOnly}
 					<p id="community-mine-empty" class="mt-3 text-xs italic text-text-faint">Nothing published yet — publish a scene and it shows here.</p>
+				{:else if !shown.length && q && !$communitySearching}
+					<p id="community-search-empty" class="mt-3 text-xs italic text-text-faint">No scenes match “{q}”.</p>
 				{/if}
 				<p class="mt-3 text-xs text-text-faint">
 					{#if !provided}
@@ -492,7 +567,9 @@
 					<p class="text-sm text-text-muted">
 						{$communityState === 'error'
 							? "Couldn't reach the community gallery — check your connection."
-							: 'No community scenes yet — be the first!'}
+							: $communityQuery.q
+								? `No scenes match “${$communityQuery.q}”.`
+								: 'No community scenes yet — be the first!'}
 					</p>
 					{#if !provided}
 						<p class="text-xs text-text-faint">
@@ -530,6 +607,31 @@
 		flex-wrap: wrap;
 		gap: 6px;
 		margin-bottom: var(--space-4);
+	}
+	/* 76 FW3: the search field + the provider's sort chips share one row, wrapping on a phone */
+	.tpl-search-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2);
+		margin-bottom: var(--space-3);
+	}
+	.tpl-search-row > :global(.sf) {
+		flex: 1 1 220px;
+	}
+	.tpl-sorts {
+		display: flex;
+		gap: 6px;
+	}
+	/* a touch screen wider than the phone breakpoint (Find N6 unfolded, a tablet) still needs
+	   44 px targets — SearchField's own 44 px rule is width-based */
+	@media (pointer: coarse) {
+		.tpl-search-row > :global(.sf) {
+			height: 44px;
+		}
+		.tpl-search-row .tpl-chip {
+			height: 44px;
+		}
 	}
 	.tpl-chip {
 		height: var(--control-h-sm);

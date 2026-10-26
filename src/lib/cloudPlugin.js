@@ -31,7 +31,7 @@ import { safeStorage } from './safeStorage';
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
 import { aiProviders, aiActiveProvider, aiEnabled, addAiProvider, updateAiProvider, removeAiProvider, setAiActiveProvider, setAiEnabled } from './ai/providers';
 import { meshProviders, meshActiveProvider, meshGenEnabled, addMeshProvider, updateMeshProvider, removeMeshProvider, setMeshActiveProvider, setMeshGenEnabled } from './ai/meshProviders';
-import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems } from './cloudHooks';
+import { meshJobStatus, onExportBuilt, onTemplateOpen, onFunnelEvent, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems } from './cloudHooks';
 // 36-community (C4): a leaf (svelte/store only) — safe as a static edge
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
@@ -544,6 +544,12 @@ export function makeCloudApi() {
 		onExportBuilt: (/** @type {any} */ fn) => onExportBuilt(fn),
 		/** A Games-tab template was started: `fn(slug)`. Returns `off`. */
 		onTemplateOpen: (/** @type {any} */ fn) => onTemplateOpen(fn),
+		/** 76 FW2: an anonymous first-visit funnel event `fn({e, c, b, d, x})` — closed fields only,
+		 *  already past core's once-per-browser / DNT / GPC rules. Returns `off`. Probe with typeof. */
+		onFunnelEvent: (/** @type {any} */ fn) => onFunnelEvent(fn),
+		/** 76 FW2: the plugin's own funnel event, through the same rules. Only `ob_waitlist` (a
+		 *  feature-update opt-in) is accepted; anything else is ignored. Returns whether it went out. */
+		funnelEvent: async (/** @type {any} */ name) => (String(name) === 'ob_waitlist' ? (await import('./onboarding/funnel.js')).funnelEvent('ob_waitlist') : false),
 		/** C6: the heart for the scene on screen (play-link start card + pause menu):
 		 *  `{count, liked, toggle() → Promise<{liked, count} | null>}`, or null to remove it. */
 		setSceneHeart: (/** @type {any} */ info) => setSceneHeart(info),

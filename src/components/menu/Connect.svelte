@@ -6,6 +6,7 @@
 	import { phoneShellActive } from '$lib/ui/phoneShell.js';
 	import { tours } from '$lib/tours/index.js'; // 76 FW1: the copy is the first-win quest's share step
 	import { SIGNALS } from '$lib/onboarding/quests.js';
+	import { funnelEvent } from '$lib/onboarding/funnel.js'; // 76 FW2: …and the funnel's first share
 	// 43 K3/K4: whether the pill is shown (Edit positions / Customize), and the top-row items it measures against
 	import { toolbarSlots } from '$lib/toolbarSlots';
 	import { peers, userdata, waitingForApproval, pendingApprovals, showToast, settingsOpen, settingsSection, connectDrawerOpen, connectDrawerTab, connectDrawerPinned, showRoomsButton, connectDocked, connectBarHeight, toastStore, toastsInDrawerOnly, touchTools } from '../../stores/appStore'
@@ -506,6 +507,8 @@
 				.writeText(window.location.origin + '#' + myidcap + inviteServerParam(srv))
 				.then(function () {
 					// 76 FW1: the first-win quest's last step waits for this
+					// (the funnel first: the signal can end the quest, whose own event follows it)
+					funnelEvent('ob_first_share');
 					tours.signal(SIGNALS.copied);
 				})
 				.catch(function () {

@@ -12,6 +12,7 @@ import { showToast } from '../stores/appStore.js';
 import changelogRaw from '../../CHANGELOG.md?raw';
 import { safeStorage } from './safeStorage';
 import { simpleUntilPlay } from './onboarding/onboardState.js';
+import { funnelBoot } from './onboarding/funnel.js';
 
 /** Raw markdown of the changelog, rendered by WhatsNew.svelte. */
 export const CHANGELOG = String(changelogRaw || '');
@@ -164,6 +165,8 @@ export function startWhatsNew() {
 	// 76 FW1: a browser meeting the new Welcome on its FIRST visit starts with the advanced buttons
 	// behind More, until its first Play (onboarding/onboardState.js) — never a returning user
 	if (welcomeThisBoot && firstVisit) simpleUntilPlay.set(true);
+	// 76 FW2: the anonymous funnel — that first Welcome is `ob_view`, any other boot reports returns
+	funnelBoot({ firstWelcome: welcomeThisBoot && firstVisit });
 	if (firstVisit) {
 		// The welcome overlay IS the announcement — the current version counts as
 		// seen so the update badge can't fire on top of it.

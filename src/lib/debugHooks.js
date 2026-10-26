@@ -44,6 +44,7 @@ export const DEBUG_HOOKS = [
 	// 76 FW1: the first-win quest (start / choose / debug) + its local state
 	['firstWin', () => import('./onboarding/firstWin.js')],
 	['onboardState', () => import('./onboarding/onboardState.js')],
+	['funnel', () => import('./onboarding/funnel.js')],
 	// 39: drag to place — the preview setting, the measured dims, the pack downloads, the ghost
 	['placementPrefs', () => import('./placementPrefs.js')],
 	['placementDims', () => import('./placementDims.js')],

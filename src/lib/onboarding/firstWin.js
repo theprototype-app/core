@@ -32,6 +32,7 @@ import {
 	playEdge
 } from './quests.js';
 import { onboardChoice, simpleUntilPlay } from './onboardState.js';
+import { funnelEvent } from './funnel.js';
 
 /** may the quest start by itself on this page? (not under test unless the suite asks) */
 function allowed() {
@@ -87,6 +88,8 @@ export function startFirstWin({ choice = get(onboardChoice), entry = null, force
  */
 export function chooseOnboarding(choice, { entry = null, loaded = false } = {}) {
 	onboardChoice.set(choice);
+	// 76 FW2: the funnel counts the answer (once per browser; funnel.js decides)
+	funnelEvent('ob_choice');
 	if (choice === 'play') {
 		afterPlay = { entry };
 		return false;
@@ -148,7 +151,10 @@ export function installFirstWin(options = {}) {
 			const top = stack[stack.length - 1];
 			if (!top || seen.has(top)) return;
 			seen.add(top);
-			if (top.kind !== 'selection') tours.signal(SIGNALS.edited);
+			if (top.kind === 'selection') return;
+			// the funnel before the signal: a signal can end the quest, whose own event comes after
+			funnelEvent('ob_first_edit');
+			tours.signal(SIGNALS.edited);
 		})
 	);
 
@@ -160,6 +166,7 @@ export function installFirstWin(options = {}) {
 			const edge = playEdge(phase, v);
 			phase = edge.phase;
 			if (edge.entered) {
+				funnelEvent('ob_first_play');
 				tours.signal(SIGNALS.played);
 				if (get(simpleUntilPlay)) simpleUntilPlay.set(false);
 			}
@@ -195,7 +202,9 @@ export function installFirstWin(options = {}) {
 				known.add(id);
 				fresh = true;
 			}
-			if (fresh) tours.signal(SIGNALS.joined);
+			if (!fresh) return;
+			funnelEvent('ob_first_share');
+			tours.signal(SIGNALS.joined);
 		})
 	);
 
@@ -212,8 +221,12 @@ export function installFirstWin(options = {}) {
 			if (wasQuest && !isQuest) {
 				if (questComplete(advancedBy)) {
 					ended({ kind: 'done' });
+					funnelEvent('ob_quest_done');
 					celebrate();
-				} else if (skippedAt) ended({ kind: 'skip', step: skippedAt });
+				} else if (skippedAt) {
+					ended({ kind: 'skip', step: skippedAt });
+					funnelEvent('ob_tour_skip', { x: skippedAt });
+				}
 				skippedAt = '';
 			}
 			wasQuest = isQuest;

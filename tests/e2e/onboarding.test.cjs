@@ -12,8 +12,13 @@
 //  E  the phone (OPPO Find N6 folded 390×896 and unfolded 770×850, DPR 2.9, touch): the Welcome
 //     fits with no sideways scroll, the quest card is a sheet that fits.
 //  Guard: under test without `toursUnderTest`, an answer starts no quest (the battery stays clean).
+//  F  76 FW2, the anonymous funnel: a first visit's events reach the cloudHooks seam once each, with
+//     closed fields only (ob_view → ob_choice → ob_first_edit → ob_first_play → ob_first_share →
+//     ob_quest_done; a Skip is ob_tour_skip with its step); Do Not Track / GPC send and store
+//     nothing (the counterfactual sends); a browser back the next day reports return_d1, one
+//     back a week later return_w; under test nothing counts without `funnelUnderTest`.
 //
-// ONBOARD_SHOTS=<dir> writes the screenshots. ONBOARD_PART=a|b|c|d|e|all.
+// ONBOARD_SHOTS=<dir> writes the screenshots. ONBOARD_PART=a|b|c|d|e|f|all.
 const h = require('./helpers.cjs');
 const fs = require('fs');
 const path = require('path');
@@ -423,6 +428,219 @@ async function partE(browser) {
 	}
 }
 
+/** collect funnel events on the page (the seam's boot queue hands over what came before) */
+const listenFunnel = (page) =>
+	page.evaluate(() => {
+		window.__ob = [];
+		window.__stores.cloudHooks.onFunnelEvent((e) => window.__ob.push(e));
+	});
+const funnelNames = (page) => page.evaluate(() => (window.__ob || []).map((e) => e.e));
+const DAY = 86400000;
+
+/** a returning browser (the Welcome already seen) with a funnel record written before boot */
+async function returning(browser, state) {
+	const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+	await ctx.addInitScript((state) => {
+		if (sessionStorage.getItem('seeded')) return;
+		sessionStorage.setItem('seeded', '1');
+		localStorage.setItem('debugStores', 'true');
+		localStorage.setItem('hasSeenDisclaimer', 'true');
+		localStorage.setItem('hasSeenWelcome', 'true');
+		localStorage.setItem('funnelUnderTest', 'true');
+		localStorage.setItem('onboard.funnel', JSON.stringify(state));
+	}, state);
+	const page = await ctx.newPage();
+	await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+	await page.waitForFunction(() => window.__stores && !!window.__stores.funnel, null, {
+		timeout: 90000
+	});
+	await page.waitForTimeout(500);
+	await listenFunnel(page);
+	return { ctx, page };
+}
+
+async function partF(browser) {
+	// ---- the guard: under test without the opt-in nothing counts --------------------------------
+	const G = await firstVisit(browser, { toursUnderTest: 'true' });
+	await G.page.locator('#welcome-start').click();
+	// (no listener yet: one would also flip the Privacy row checked below; the record is the proof)
+	await G.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await G.page.waitForTimeout(800);
+	const gState = await G.page.evaluate(() => window.__stores.funnel.funnelDebug());
+	h.check(
+		(await funnelNames(G.page)).length === 0 && gState.state === null && gState.allowed === false,
+		'FW2 guard: under test without funnelUnderTest nothing is counted or stored'
+	);
+	// Settings ▸ Privacy: with nothing listening (no plugin) the row says nothing is counted
+	await G.page.evaluate(() => {
+		window.__stores.settingsSection.set('privacy');
+		window.__stores.settingsOpen.set(true);
+	});
+	await G.page.locator('#row-usage-counts').waitFor({ state: 'visible', timeout: 8000 });
+	h.check(
+		(await G.page.locator('#send-usage-counts').count()) === 0 &&
+			/counts nothing/.test(await G.page.locator('#row-usage-counts').innerText()),
+		'FW2 Settings ▸ Privacy: with no plugin listening the row says this build counts nothing'
+	);
+	await G.page.evaluate(() => window.__stores.cloudHooks.onFunnelEvent(() => {}));
+	await G.page.locator('#send-usage-counts').waitFor({ state: 'visible', timeout: 5000 });
+	h.check(
+		(await G.page.locator('#row-usage-counts a[href="/privacy"]').count()) === 1,
+		'FW2 Settings ▸ Privacy: once a plugin listens, the switch appears, linking the privacy page'
+	);
+	await shot(G.page, '30-privacy-usage-counts');
+	await G.page.locator('#send-usage-counts').click();
+	h.check(
+		(await G.page.evaluate(() => localStorage.getItem('onboard.funnelSend'))) === 'false',
+		'FW2 Settings ▸ Privacy: the switch turns the counts off (remembered on this device)'
+	);
+	await G.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await G.ctx.close();
+
+	// ---- a whole first win, counted ---------------------------------------------------------------
+	const A = await firstVisit(browser, { toursUnderTest: 'true', funnelUnderTest: 'true' });
+	const page = A.page;
+	await listenFunnel(page);
+	h.check(
+		JSON.stringify(await funnelNames(page)) === '["ob_view"]',
+		'FW2: meeting the Welcome on a first visit is ob_view (queued at boot, handed to the listener)'
+	);
+	await page.locator('#welcome-start').click();
+	await page
+		.locator('#tour-card[data-tour-id="first-win"]')
+		.waitFor({ state: 'visible', timeout: 8000 });
+	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await h.eventually(
+		() => tourStep(page),
+		(st) => st === 'play',
+		'FW2: the quest moves on after the edit'
+	);
+	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create sphere'));
+	await page.locator('#play-button').click();
+	await h.eventually(
+		() => read(page, 's.isLocked'),
+		(v) => v === true,
+		'FW2: Play starts'
+	);
+	await h.leavePlay(page);
+	await page.locator('#tour-card').waitFor({ state: 'visible', timeout: 8000 });
+	await page.locator('.cx-id').first().click();
+	await h.eventually(
+		() => funnelNames(page),
+		(n) => n.includes('ob_quest_done'),
+		'FW2: finishing the quest is ob_quest_done'
+	);
+	const evs = await page.evaluate(() => window.__ob);
+	h.check(
+		JSON.stringify(evs.map((e) => e.e)) ===
+			JSON.stringify([
+				'ob_view',
+				'ob_choice',
+				'ob_first_edit',
+				'ob_first_play',
+				'ob_first_share',
+				'ob_quest_done'
+			]),
+		'FW2: each step once, in order — a second edit is not a second ob_first_edit (' +
+			evs.map((e) => e.e) +
+			')'
+	);
+	h.check(
+		evs.every((e) => Object.keys(e).sort().join(',') === 'b,c,d,e,x'),
+		'FW2: every event carries only {e, c, b, d, x}'
+	);
+	h.check(
+		evs.slice(1).every((e) => e.c === 'empty') && evs[0].c === '',
+		'FW2: the Welcome answer rides every event after it'
+	);
+	const play = evs.find((e) => e.e === 'ob_first_play');
+	h.check(
+		['lt1', '1to3'].includes(play.x) &&
+			evs.every((e) => /^\d+\.\d+\.\d+/.test(e.b) && e.d === 'desktop'),
+		'FW2: ob_first_play carries its time bucket (' + play.x + '); release + device class on all'
+	);
+	const st = await page.evaluate(() => localStorage.getItem('onboard.funnel'));
+	h.check(
+		!/[0-9a-f]{8}-|peer|uuid/i.test(st) &&
+			Object.keys(JSON.parse(st)).sort().join(',') === 'first,sent,v,view,w',
+		'FW2: what this browser remembers is days, a time and event names — no id'
+	);
+	await A.ctx.close();
+
+	// ---- a Skip is ob_tour_skip with its step ----------------------------------------------------
+	const S = await firstVisit(browser, { toursUnderTest: 'true', funnelUnderTest: 'true' });
+	await listenFunnel(S.page);
+	await S.page.locator('#welcome-start').click();
+	await S.page
+		.locator('#tour-card[data-tour-id="first-win"]')
+		.waitFor({ state: 'visible', timeout: 8000 });
+	await S.page.locator('#tour-skip').click();
+	await h.eventually(
+		() => S.page.evaluate(() => (window.__ob || []).find((e) => e.e === 'ob_tour_skip')?.x || ''),
+		(x) => x === 'change',
+		'FW2: Skip on the first step is ob_tour_skip x=change'
+	);
+	await S.ctx.close();
+
+	// ---- Do Not Track / GPC: nothing sent, nothing stored — and the counterfactual ---------------
+	for (const [label, prop, value] of [
+		['Do Not Track', 'doNotTrack', '1'],
+		['Global Privacy Control', 'globalPrivacyControl', true]
+	]) {
+		const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+		await ctx.addInitScript(
+			([prop, value]) => {
+				Object.defineProperty(Navigator.prototype, prop, { get: () => value, configurable: true });
+				localStorage.setItem('debugStores', 'true');
+				localStorage.setItem('hasSeenDisclaimer', 'true');
+				localStorage.setItem('funnelUnderTest', 'true');
+				localStorage.setItem('toursUnderTest', 'true');
+			},
+			[prop, value]
+		);
+		const page = await ctx.newPage();
+		await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+		await page.waitForFunction(() => window.__stores && !!window.__stores.funnel, null, {
+			timeout: 90000
+		});
+		await page.locator('#welcome-overlay').waitFor({ state: 'visible', timeout: 15000 });
+		await listenFunnel(page);
+		await page.locator('#welcome-start').click();
+		await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+		await page.waitForTimeout(800);
+		h.check(
+			(await funnelNames(page)).length === 0 &&
+				(await page.evaluate(() => localStorage.getItem('onboard.funnel'))) === null,
+			`FW2: ${label} — no event and no record`
+		);
+		await ctx.close();
+	}
+
+	// ---- returns ----------------------------------------------------------------------------------
+	const now = Date.now();
+	const today = Math.floor(now / DAY);
+	const R1 = await returning(browser, {
+		v: 1,
+		first: today - 1,
+		view: now - DAY,
+		sent: ['ob_view'],
+		w: 0
+	});
+	h.check(
+		JSON.stringify(await funnelNames(R1.page)) === '["return_d1"]',
+		'FW2: back the next day is return_d1 (' + (await funnelNames(R1.page)) + ')'
+	);
+	await R1.ctx.close();
+	const R7 = await returning(browser, { v: 1, first: today - 15, view: 0, sent: [], w: 1 });
+	h.check(
+		JSON.stringify(await funnelNames(R7.page)) === '["return_w"]',
+		'FW2: a browser that never met the Welcome, back in a later week, is return_w only (' +
+			(await funnelNames(R7.page)) +
+			')'
+	);
+	await R7.ctx.close();
+}
+
 h.run(async () => {
 	const browser = await h.launch();
 	if (on('a')) await partA(browser);
@@ -430,5 +648,6 @@ h.run(async () => {
 	if (on('c')) await partC(browser);
 	if (on('d')) await partD(browser);
 	if (on('e')) await partE(browser);
+	if (on('f')) await partF(browser);
 	await h.finish(browser);
 });

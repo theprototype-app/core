@@ -272,6 +272,22 @@ Promise<{liked, likeCount} | null>` puts a heart on every card (`[data-card-hear
 A play link's frame may carry `&src=play|embed&b=v<n>` (read once with `embed=1`;
 `playMode.embedSource` / `embedBuild`) — the badge inside counts them.
 
+#### 76 FW3: search and sorts on the Community tab — additive, no bump
+
+The Templates modal has ONE search field (`#templates-search`) on every tab: core filters the
+cards client-side — every word must appear in the title, description, author or tags
+(`communitySearch.matchesQuery`) — so the OSS GitHub gallery is searchable with no server. Two
+optional provider members widen it on Community:
+
+| member | contract |
+|---|---|
+| `search: true` | `list()` also receives `q` (lower-case, single-spaced, ≤ 60 chars, debounced 300 ms) when the field is not empty; search the same fields server-side so a returned row also passes core's filter. An older query's late answer is dropped |
+| `sorts: [{id, label}]` | ≤ 5 chips beside the field (`#community-sorts [data-sort]`); the FIRST is the default and is never sent — another chip's `id` arrives as `list({sort})` |
+
+Absent = absent: a provider that declares neither is called `list({force})` exactly as before
+and is never re-listed for a query. While a re-list runs the grid stays up and
+`#community-searching` says "Searching…"; an empty answer to a query reads "No scenes match".
+
 #### 37 R20: "Report a problem" — `setProblemReporter(reporter | null)` — additive, no bump
 
 Core draws the whole report — the screenshot taken at the press, boxes drawn round what is

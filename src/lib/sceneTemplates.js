@@ -8,6 +8,7 @@ import { claimLoad, isLive, endLoad, updateLoad } from './sceneLoader';
 // 28-A6: the Community source a cloud plugin may install (store-only, no cycle — the
 // objectPermissions import above already reaches cloudHooks' family)
 import { communityProvider, notifyTemplateOpen } from './cloudHooks';
+import { normQuery } from './communitySearch.js';
 import { primeLoadOrigin } from './gameIdentity.js';
 // 33 (L3): the Clear scene modal's setup check and full clear (see confirmClearScene)
 import * as sceneSwitch from './sceneSwitch';
@@ -81,6 +82,23 @@ export const loadingSlug = writable(null);
  * the OSS build, so the modal renders no row.
  * @type {import('svelte/store').Writable<{text: string, href?: string} | null>} */
 export const communityNotice = writable(null);
+/** 76 FW3: what the Community tab asks its provider for — `q` (normQuery'd text, '' = none)
+ * and `sort` (an id from `provider.sorts`, '' = the provider's default). Written by the modal;
+ * a provider that declared `search: true` / `sorts` receives both in `list()`.
+ * @type {import('svelte/store').Writable<{q: string, sort: string}>} */
+export const communityQuery = writable({ q: '', sort: '' });
+/** 76 FW3: true while a query/sort re-list is in flight — the grid stays up (no skeleton
+ * flash on every keystroke) and the modal shows a quiet "Searching…" instead.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const communitySearching = writable(false);
+/** 76 FW3: the modal's one write path for the above (normalized here, so a store reader never
+ * sees raw input) @param {{q?: unknown, sort?: unknown}} next */
+export function setCommunityQuery(next) {
+	const q = normQuery(next?.q);
+	const sort = typeof next?.sort === 'string' ? next.sort.slice(0, 40) : '';
+	const cur = get(communityQuery);
+	if (cur.q !== q || cur.sort !== sort) communityQuery.set({ q, sort });
+}
 
 /** Resolve an index path against a CDN base: absolute http(s) URLs pass through
  * (big .tpscene files >~20MB point at raw.githubusercontent — the jsDelivr file
@@ -147,6 +165,10 @@ export function matchesTags(entry, active) {
  * the modal in a tab that outlived a deploy re-fetches instead of showing the old list. */
 let templatesStale = false;
 let communityStale = false;
+/** 76 FW3: the newest Community list request — an older answer that lands late is dropped —
+ * and the query it asked (`q\nsort`), so a changed query re-lists instead of hitting the memo */
+let communitySeq = 0;
+let askedKey = '\n';
 onContentStale(() => {
 	templatesStale = true;
 	communityStale = true;
@@ -231,23 +253,40 @@ function normalizeProviderEntry(e) {
  * way, so the modal needs no state work. */
 export async function loadCommunityGallery(force = false) {
 	const state = get(communityState);
-	if (!force && !communityStale && (state === 'ready' || state === 'empty' || state === 'loading')) return;
-	communityStale = false;
-	communityState.set('loading');
 	const provider = get(communityProvider);
+	// 76 FW3: the part of the query this source answers — absent = absent, so a provider that
+	// declared neither `search` nor `sorts` (and the GitHub path) sees the 36-era call
+	const { q, sort } = get(communityQuery);
+	/** @type {any} */
+	const ask = { force: !!force };
+	if (provider?.search === true && q) ask.q = q;
+	if (Array.isArray(provider?.sorts) && sort) ask.sort = sort;
+	const key = `${ask.q ?? ''}\n${ask.sort ?? ''}`;
+	const requery = key !== askedKey;
+	if (!force && !requery && !communityStale && (state === 'ready' || state === 'empty' || state === 'loading')) return;
+	communityStale = false;
+	askedKey = key;
+	// a query/sort re-list keeps the grid that is showing; only a first load skeletons
+	const keepGrid = requery && (state === 'ready' || state === 'empty');
+	if (keepGrid) communitySearching.set(true);
+	else communityState.set('loading');
+	const seq = ++communitySeq;
 	if (provider) {
 		try {
-			const raw = await provider.list({ force: !!force });
+			const raw = await provider.list(ask);
 			// the provider may have been swapped/cleared while its list was in flight — a
-			// late answer must not overwrite what the new source (or the GitHub path) shows
-			if (get(communityProvider) !== provider) return;
+			// late answer must not overwrite what the new source (or the GitHub path) shows;
+			// 76 FW3: nor may an older query's answer overwrite a newer one's
+			if (get(communityProvider) !== provider || seq !== communitySeq) return;
 			const list = (Array.isArray(raw) ? raw : []).map(normalizeProviderEntry);
 			communityEntries.set(list);
 			communityState.set(list.length ? 'ready' : 'empty');
 		} catch {
-			if (get(communityProvider) !== provider) return;
+			if (get(communityProvider) !== provider || seq !== communitySeq) return;
 			communityEntries.set([]);
 			communityState.set('error');
+		} finally {
+			if (seq === communitySeq) communitySearching.set(false);
 		}
 		let notice = null;
 		try {
@@ -259,6 +298,8 @@ export async function loadCommunityGallery(force = false) {
 		return;
 	}
 	communityNotice.set(null);
+	// the GitHub gallery is one small file: its search and sort are the modal's client-side filter
+	communitySearching.set(false);
 	try {
 		const res = await fetchIndex(GALLERY_JSON_URL);
 		if (res.ok) {
@@ -573,5 +614,6 @@ communityProvider.subscribe((provider) => {
 	lastProvider = provider;
 	communityEntries.set([]);
 	communityNotice.set(null);
+	communitySearching.set(false);
 	communityState.set('idle');
 });

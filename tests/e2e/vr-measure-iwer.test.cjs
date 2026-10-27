@@ -10,7 +10,7 @@
 //  G  grid snapping on: a raw floor point lands on the grid
 //  E  Selected ▸ Edit measurement: a press near a point (by angle) picks it up, the next puts it down
 //     snapped; ONE undo entry; B sees it; Undo puts it back on both peers
-//  H  hand tracking: a pinch while measuring says "pick up a controller" and adds nothing
+//  H  hand tracking: a pinch while measuring says "pick up a controller" (the shared chip, no toast) and adds nothing
 //  A  Selected ▸ Arrange ▸ Align X min (stick-driven) / X even gaps / Drop to ground: the alignCore
 //     answer, on A and B, ONE undo restores the whole set on both
 //  F  frame cost on the Quest profile: the hover search + the label posing per frame, against 13.9 ms
@@ -427,8 +427,11 @@ h.run(async () => {
 			await settle(6);
 			const after = await dbg();
 			const toast = await page.evaluate(() => [...document.querySelectorAll('.tp-toast, [role=status]')].map((e) => e.textContent).join(' | '));
+			const note = await g(() => window.__stores.vrHands.handInputDebug());
 			h.check(after.handRefusals > before.handRefusals && after.points.length === before.points.length, `a pinch while measuring adds no point (${before.points.length} → ${after.points.length}, refusals ${after.handRefusals})`);
-			h.check(/pick up a controller/i.test(toast), `…and says "pick up a controller" (${toast.slice(0, 120)})`);
+			h.check(note.note?.text === 'Pick up a controller to measure' && note.note?.hand === pointer, `…and says "Pick up a controller" on the shared chip at that hand (${JSON.stringify(note.note)})`);
+			// 54 X6: the chip is the one message — no toast says it a second time
+			h.check(!/pick up a controller/i.test(toast), `…and no toast doubles it (${toast.slice(0, 120)})`);
 			await g(async () => { window.__iwer.device.primaryInputMode = 'controller'; await new Promise((r) => setTimeout(r, 500)); });
 			await settle(10);
 		}

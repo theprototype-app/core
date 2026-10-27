@@ -134,7 +134,15 @@ export function createTpAgent(extra = {}) {
 		beginBatch: () => beginHistoryBatch(),
 		endBatch: (label) => endHistoryBatch(label),
 		peerId: myPeerId,
-		role: () => /** @type {any} */ (get(rolesInfo))?.myRole ?? null,
+		// the LIVE role: `myRole` is a snapshot the plugin republishes on its next change, so in the moment
+		// a join lands it can still hold the fresh tab's own "admin" (alone = owner of its own room);
+		// `roleOf` asks the plugin now, with the host we just joined as the authority
+		role: () => {
+			const ri = /** @type {any} */ (get(rolesInfo));
+			if (!ri) return null;
+			const id = myPeerId();
+			return (id && typeof ri.roleOf === 'function' ? ri.roleOf(id) : null) ?? ri.myRole ?? null;
+		},
 		host: () => get(sessionHost),
 		waiting: () => (/** @type {any[]} */ (get(waitingForApproval)) ?? []).some((w) => Array.isArray(w) && w[1] === 'pending'),
 		openPeers: () => openPeerIds().map((id) => ({ id, name: nameOf(id) })),

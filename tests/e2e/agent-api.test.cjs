@@ -136,7 +136,8 @@ h.run(async () => {
 	h.check(!!admin && admin.actions.join() === 'Accept', `the admin offer is a pending offer after its toast is gone (${JSON.stringify(offers).slice(0, 120)})`);
 	const viaTool = await B.page.evaluate((id) => window.tpAgent.exec('accept_offer', { id, action: 'Accept' }), admin?.id);
 	h.check(viaTool.ok === true && (await B.page.evaluate(() => window.__answered.join())) === 'accept', 'accept_offer presses its button');
-	h.check((await B.page.evaluate(() => window.tpAgent.pendingOffers())).length === 0, 'and the offer is gone');
+	// (a cloud build also holds the roles plugin's own view-only notice: only the answered offer must go)
+	h.check(!(await B.page.evaluate(() => window.tpAgent.pendingOffers())).some((o) => o.id === admin?.id), 'and the offer is gone');
 
 	// ---- 7. T7: the human prompts stay out of an agent page -------------------------------------
 	await B.page.evaluate(() => {

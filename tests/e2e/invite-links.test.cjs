@@ -193,7 +193,9 @@ h.run(async () => {
 	await A.page.locator('#connect-request-ai').click({ timeout: 10000 });
 	await A.page.locator('#invite-sheet').waitFor({ timeout: 5000 });
 	h.check((await A.page.locator('#invite-sheet').getAttribute('data-tab')) === 'agent', 'Request AI opens the sheet on the AI agent tab');
-	h.check((await A.page.locator('#invite-role').count()) === 0, 'no role choice in the OSS build (everyone edits)');
+	const rolesOn = await A.page.evaluate(() => { let r; window.__stores.cloudHooks.rolesInfo.subscribe((v) => (r = v))(); return !!r; });
+	if (rolesOn) h.check((await A.page.locator('#invite-role-edit[aria-checked="true"]').count()) === 1, 'a cloud build offers the role, Edit preselected for an agent');
+	else h.check((await A.page.locator('#invite-role-view').count()) === 0, 'no role choice in the OSS build (everyone edits)');
 	await A.page.locator('#invite-create').click();
 	const link = await A.page.locator('#invite-link').inputValue({ timeout: 5000 });
 	h.check(/#[A-Z0-9]+&agent&invite=[A-Za-z0-9_-]{22}(~srv=[^&]*)?$/.test(link), `the sheet shows the agent link (${link.replace(/invite=.*/, 'invite=…')})`);

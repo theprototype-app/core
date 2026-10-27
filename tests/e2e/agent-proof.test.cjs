@@ -209,7 +209,8 @@ h.run(async () => {
 		const img = shot.content.find((c) => c.type === 'image');
 		const bytes = img ? Buffer.from(img.data, 'base64') : Buffer.alloc(0);
 		h.check(img && img.mimeType === 'image/png' && bytes.slice(1, 4).toString() === 'PNG' && bytes.length > 2000, `screenshot → a PNG (${bytes.length} bytes)`);
-		if (process.env.PROOF_OUT) require('fs').writeFileSync(path.join(process.env.PROOF_OUT, 'agent-campfire.png'), bytes);
+		const outDir = process.env.PROOF_OUT || process.env.OUT;
+		if (outDir) require('fs').writeFileSync(path.join(outDir, 'agent-campfire.png'), bytes);
 
 		// =========================================================== 5. a late joiner
 		console.log('\n=== 5. a late joiner sees it all ===');

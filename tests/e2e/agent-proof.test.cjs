@@ -40,7 +40,7 @@ const inPage = (peer, body, arg) =>
 	);
 const read = (peer, store) => inPage(peer, `let v; s.${store}.subscribe((x) => (v = x))(); return v;`);
 const opened = (peer) => inPage(peer, 'return [...pc.openedPeers];');
-const roleOf = (peer, id) => inPage(peer, 'let r; s.rolesInfo.subscribe((x) => (r = x))(); return r ? r.roleOf(arg) : null;', id);
+const roleOf = (peer, id) => inPage(peer, 'let r; s.cloudHooks.rolesInfo.subscribe((x) => (r = x))(); return r ? r.roleOf(arg) : null;', id);
 const cards = (peer) => read(peer, 'pendingApprovals').then((p) => (p || []).map((c) => c.peerId ?? c[0]));
 
 async function until(fn, ok, timeout = 15000) {
@@ -125,7 +125,7 @@ h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
 	const A = await h.setupPage(browser, 'A-host');
 	await A.page.waitForFunction(() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; }, null, { timeout: 60000 });
-	const cloud = (await read(A, 'rolesInfo')) != null;
+	const cloud = (await read(A, 'cloudHooks.rolesInfo')) != null;
 	console.log('build: ' + (cloud ? 'CLOUD (roles plugin)' : 'OSS (no roles)') + ' at ' + BASE);
 
 	// =========================================================== 1. the invite → in, with Edit

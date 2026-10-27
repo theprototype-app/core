@@ -103,7 +103,10 @@ h.run(async () => {
 				b.filter((n) => n === 'Box').length === 1 &&
 				b.includes('Sphere')),
 		'accepted load replaced the scene on both peers',
-		15000
+		// 54-net: not stuck, slow — traced under load ~20 (x2-trace2): Accept -> the 'Backup before'
+		// save took ~10 s (its session-list reload ~8 s), the clear landed ~15 s after Accept and the
+		// objects after it, so a 15 s window read "nothing happened" while the load was still running
+		60000
 	);
 	// test-health-1: red since the toast check stopped masking it (e3edaee5) and not explained from the
 	// code (A clears and adds nothing, B applies nothing) — a red prints each side's link, load job and

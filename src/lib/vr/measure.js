@@ -18,7 +18,6 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { editorMode, vrMenuOpen, vrMenuHand, vrToolMode, isVRMode } from '../../stores/sceneStore';
-import { showToast } from '../../stores/appStore';
 import {
 	measureMode,
 	measurement,
@@ -53,6 +52,7 @@ import {
 } from '../vrMeasureCore';
 import { renderer } from './core.js';
 import { hapticPulse } from './haptics.js';
+import { controllerRequired, isTrackedHand } from './handInput.js';
 import { controllerIndexFor } from './input.js';
 import { controllerRay, beamTarget } from './pointer.js';
 import { vrHovered } from './panels.js';
@@ -71,7 +71,6 @@ const VR_BIAS = coneBias(MEASURE_BIAS, RADIUS_MOUSE);
 let hooked = false;
 let swallowAt = 0;
 let lastHoverAt = 0;
-let lastHandToast = 0;
 /** the last point a press put down — the double-tap rule reads it @type {{at: number, point: number[] | null}} */
 let lastTap = { at: 0, point: null };
 /** the suites' view */
@@ -96,14 +95,6 @@ function rayOf(index) {
 	const ray = new THREE.Raycaster(shared.ray.origin.clone(), shared.ray.direction.clone());
 	/** @type {any} */ (ray).camera = /** @type {any} */ (shared).camera;
 	return ray;
-}
-
-/** is this slot's input a tracked HAND (no controller in it)? @param {number} index */
-function isHandInput(index) {
-	const session = renderer?.xr?.getSession?.();
-	const hand = renderer?.xr?.getController(index)?.userData?.handedness;
-	const source = session && hand ? [...session.inputSources].find((s) => s.handedness === hand) : null;
-	return !!source?.hand;
 }
 
 /**
@@ -225,12 +216,9 @@ export function measureTriggerStart(index) {
 	if (beamTarget(controllerRay(index)).panel) return false;
 	stats.presses++;
 	swallowAt = Date.now();
-	if (isHandInput(index)) {
+	// the shared gate: its chip at the hand that pinched is the one message (54 X6: no toast as well)
+	if (controllerRequired('measure', index)) {
 		stats.handRefusals++;
-		if (Date.now() - lastHandToast > 4000) {
-			lastHandToast = Date.now();
-			showToast('Measure: pick up a controller — hand tracking browses and places, measuring needs the laser');
-		}
 		return true;
 	}
 	const ray = rayOf(index);
@@ -280,7 +268,7 @@ export function tickVRMeasure() {
 		return;
 	}
 	const index = pointerIndex();
-	if (index < 0 || isHandInput(index)) return;
+	if (index < 0 || isTrackedHand(index)) return;
 	const t0 = performance.now();
 	const ray = rayOf(index);
 	measureHover.set(beamTarget(ray).panel ? null : resolveVRMeasurePoint(ray));

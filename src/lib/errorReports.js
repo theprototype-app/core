@@ -34,14 +34,15 @@ const ALIVE_KEY = 'tp.errorReports.alive';
  * @returns {string | null}
  */
 export function errorReportsUrl() {
-	/** @type {any} */
-	const env = import.meta.env ?? {};
+	// 54 X7: the literal key, never the whole env object (vite inlines that object, every VITE_
+	// key, into the chunk — and an exported game zip carries it)
+	const url = import.meta.env.VITE_ERROR_REPORTS_URL;
 	if (safeStorage.getItem('debugStores') === 'true') {
 		const o = safeStorage.getItem(URL_OVERRIDE_KEY);
 		if (o) return o === 'off' ? null : o;
 	}
 	if (IS_DEV) return null;
-	return typeof env.VITE_ERROR_REPORTS_URL === 'string' && env.VITE_ERROR_REPORTS_URL ? env.VITE_ERROR_REPORTS_URL : null;
+	return typeof url === 'string' && url ? url : null;
 }
 
 /** Is the feature in this build at all (the Settings row reads it). */
@@ -136,7 +137,7 @@ function staticContext() {
 	return {
 		origin: typeof location !== 'undefined' ? location.origin : '',
 		// 49 J3: a preview files under its own label, never the release it was branched from
-		release: releaseLabel(APP_VERSION, typeof location !== 'undefined' ? location.hostname : '', /** @type {any} */ (import.meta.env ?? {}).VITE_RELEASE_LABEL),
+		release: releaseLabel(APP_VERSION, typeof location !== 'undefined' ? location.hostname : '', import.meta.env.VITE_RELEASE_LABEL),
 		build: COMMIT_SHA,
 		device: deviceClassOf({ ua, coarse, minSide }),
 		browser,

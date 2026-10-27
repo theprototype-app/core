@@ -99,6 +99,9 @@ async function waitJoined(client, ms = 120000) {
 
 /** open the Request AI sheet, pick the tab (+ role on cloud), create, return the link; closes the sheet */
 async function mintInSheet(A, tab, role) {
+	// connected, the bar is the compact chip: a click on it shows the full bar (where Request AI lives)
+	if (!(await A.page.locator('#connect-request-ai').count()) && (await A.page.locator('.connect-pill button.cx-chip').count()))
+		await A.page.locator('.connect-pill button.cx-chip').click({ timeout: 5000 });
 	await A.page.locator('#connect-request-ai').click({ timeout: 10000 });
 	await A.page.locator('#invite-sheet').waitFor({ timeout: 5000 });
 	if ((await A.page.locator('#invite-sheet').getAttribute('data-tab')) !== tab)
@@ -218,9 +221,13 @@ h.run(async () => {
 		await h.connect(C, A);
 		const cView = await until(() => sceneOf(C, uuids), (m) => Object.values(m).every((o) => o) && m[signU]?.flow.includes('spin') && m[lightU]?.flow.includes('pulse'), 45000);
 		h.check(Object.values(cView).every((o) => o), 'C has every object');
-		// the sign SPINS (its rotation moves every frame on every peer), so its rotation is left out
-		const still = (m) => JSON.stringify(Object.fromEntries(Object.entries(m).map(([u, o]) => [u, u === signU ? { ...o, rot: null } : o])));
-		h.check(still(cView) === still(await sceneOf(A, uuids)), "C's objects, transforms and flow graphs equal the host's");
+		// the sign SPINS and the light PULSES (rotation / scale move every frame on every peer), so those are left out
+		const stillOf = (m) => Object.fromEntries(Object.entries(m).map(([u, o]) => [u, u === signU ? { ...o, rot: null } : u === lightU && o ? { ...o, scale: null } : o]));
+		const cStill = stillOf(cView);
+		const aStill = stillOf(await sceneOf(A, uuids));
+		const differ = uuids.filter((u) => JSON.stringify(cStill[u]) !== JSON.stringify(aStill[u]));
+		for (const u of differ) console.log('  differs ' + JSON.stringify(cStill[u]) + ' host ' + JSON.stringify(aStill[u]));
+		h.check(!differ.length, "C's objects, transforms and flow graphs equal the host's");
 		h.check(!!(await until(() => read(C, 'agentLog.agentLog'), (l) => (l || []).some((e) => /created 9 objects/.test(e.text)), 20000))?.length, "C's AI window lists the agent's build");
 
 		// =========================================================== 6. revoke

@@ -167,13 +167,23 @@ h.run(async () => {
 	h.check(/checked OK/.test((await page.locator('#export-result').textContent()) || ''), 'the result says the zip passed its own check');
 	// 36-int-121: a host that injects into the HTML it serves (Cloudflare Pages Web Analytics; serve-build
 	// --inject-cf-beacon stands in for it) leaves no trace in the zip, and the removal is reported
-	const zipText = (() => {
+	const scanned = (() => {
 		const dir = path.join(WORK, 'scan-golf');
 		unzipTo(new Uint8Array(fs.readFileSync(golfZip)), dir);
-		const walk = (/** @type {string} */ d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.(html?|js|css|json)$/i.test(e.name) ? [fs.readFileSync(path.join(d, e.name), 'utf8')] : []));
-		return walk(dir).join('\n');
+		/** @type {(d: string) => {name: string, text: string}[]} */
+		const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : /\.(html?|js|css|json)$/i.test(e.name) ? [{ name: e.name, text: fs.readFileSync(path.join(d, e.name), 'utf8') }] : []));
+		return walk(dir);
 	})();
-	h.check(!/cloudflareinsights|data-cf-beacon/i.test(zipText), 'no host-injected beacon anywhere in the zip');
+	// 54 X7: the INJECTED TAG (a <script> naming the beacon or carrying data-cf-beacon, or the
+	// analytics comment) — in the HTML, where a host puts it. The bare URL is not the test: a
+	// deployed build's CSP value names the beacon origin and used to ride along in the env object
+	const htmlText = scanned.filter((f) => /\.html?$/i.test(f.name)).map((f) => f.text).join('\n');
+	const injected = htmlText.match(/<script\b[^>]*(cloudflareinsights|data-cf-beacon)[^>]*>|<!--\s*Cloudflare Pages Analytics\s*-->/i);
+	h.check(!injected, `no host-injected beacon tag in the zip's HTML (${injected?.[0]?.slice(0, 120) ?? 'none'})`);
+	// 54 X7: the code reads its VITE_ keys one by one, so no chunk carries the whole env object
+	// (`{VITE_PEER_HOST:"…",VITE_CSP_SCRIPT_SRC:"…",…}` was inlined wherever `import.meta.env` was read whole)
+	const envObject = scanned.map((f) => f.text.match(/\bVITE_[A-Z0-9_]+\s*:\s*[`'"]/)?.[0]).find(Boolean);
+	h.check(!envObject, `no build env object inlined in the zip's code (${envObject ?? 'none'})`);
 	if (process.env.EXPECT_CF_BEACON) {
 		// 36 L3: the beacon is a KNOWN host script — removed quietly: no visible warning, one line
 		// in the result's (collapsed) Details

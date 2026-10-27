@@ -79,7 +79,7 @@ export async function startCloudPlugin() {
 	let url = '';
 	try {
 		url =
-			(import.meta && import.meta.env && import.meta.env.VITE_CLOUD_PLUGIN) ||
+			import.meta.env.VITE_CLOUD_PLUGIN ||
 			(typeof localStorage !== 'undefined' && safeStorage.getItem('cloudPluginUrl')) ||
 			'';
 	} catch {

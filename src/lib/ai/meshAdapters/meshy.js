@@ -183,12 +183,12 @@ const NO_CORS_HOSTS = ['assets.meshy.ai'];
  * @param {any} config @returns {string[]}
  */
 function assetProxyCandidates(config) {
-	const env = /** @type {any} */ (import.meta.env);
-	const peerHost = String(env.VITE_PEER_HOST || '').trim();
+	// 54 X7: literal keys, never the whole env object (see errorReports.js)
+	const peerHost = String(import.meta.env.VITE_PEER_HOST || '').trim();
 	const raw = [
 		String(config.assetProxy || '').trim(),
 		'/proxy',
-		String(env.VITE_ASSET_PROXY || '').trim(),
+		String(import.meta.env.VITE_ASSET_PROXY || '').trim(),
 		peerHost ? 'https://' + peerHost + '/proxy' : ''
 	];
 	return [...new Set(raw.filter(Boolean).map((p) => p.replace(/\/+$/, '')))];

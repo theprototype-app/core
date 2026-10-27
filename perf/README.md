@@ -10,7 +10,9 @@
 | `textureMB` | 64 | uncompressed estimate of the visible textures, one per image source, mips included |
 
 `node scripts/perf-games.cjs --check` is the gate (exit 0 green, 1 red, 2 could not run). CI runs it on
-every PR (`.github/workflows/perf-budget.yml`) and before every release (`release.yml` needs it).
+every PR (`.github/workflows/perf-budget.yml`) and before every release (`release.yml` needs it), as three
+parallel jobs (`--part 1/3` … `3/3`, balanced by measured cost; one job would run past its time limit). A part
+judges only what it measured, so a stale allow entry is reported only by a full local run.
 
 ## Only counts
 

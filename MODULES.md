@@ -10,7 +10,7 @@ into a session and every connected peer can see and interact with.
 
 ## The one rule that matters
 
-**A module runs on every peer.** There is no server. Whatever your module does
+**A module runs on every peer.** There is no game server. Whatever your module does
 must end up identical on all clients, one of three ways:
 
 1. **Deterministic from shared inputs** — effects driven by node `data` (already

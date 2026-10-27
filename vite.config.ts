@@ -221,7 +221,11 @@ export default defineConfig({
 			// 46: the optimizer Worker's dependencies, for the same reason as the simplifier above — the
 			// first optimize (an import, a Quest export) discovered them and reloaded the page mid-export
 			// 46-media H1: libheif's loader is CJS reached only from inside the HEIC worker — the same rule
-			include: ['lodash.groupby', 'meshoptimizer/simplifier', '@codemirror/state', '@codemirror/language', '@lezer/highlight', 'meshoptimizer', '@gltf-transform/core', '@gltf-transform/extensions', '@gltf-transform/functions', 'ktx-parse', 'libheif-js/libheif-wasm/libheif.js']
+			// 50 Y1: the shared-text chunk (yjs + its CodeMirror binding) loads with the first code tab
+			// opened — discovered then, it would reload the page with the tab half-bound
+			// 69: the script engine loads with the first scene that carries code — the same reload, with
+			// the scene that was just opened gone (its wasm comes in by ?url, so pre-bundling is safe)
+			include: ['quickjs-emscripten-core', '@jitl/quickjs-wasmfile-release-sync', 'lodash.groupby', 'meshoptimizer/simplifier', '@codemirror/state', '@codemirror/language', '@lezer/highlight', 'meshoptimizer', '@gltf-transform/core', '@gltf-transform/extensions', '@gltf-transform/functions', 'ktx-parse', 'libheif-js/libheif-wasm/libheif.js', 'yjs', 'y-protocols/awareness', 'y-codemirror.next']
 		},
 	// dev https via the repo's local certs (vite-plugin-mkcert stayed on vite<=5;
 	// certs/ was already how CI-less https worked before mkcert)

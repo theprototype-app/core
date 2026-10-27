@@ -29,6 +29,7 @@
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
+	import { scatterSelectArmed, scatterSelectDown, scatterSelectMove, scatterSelectUp, onScatterProxyMoved, onScatterProxyDragChanged } from '$lib/scatterEdit';
 	import { sceneHits } from '$lib/scenePick';
 	import { pickStack, chooseInStack, altCycleIndex, primaryIndex } from '$lib/selectThrough';
 	import { editorPass } from '$lib/pickPass'; // 36 F22
@@ -67,6 +68,8 @@
 	import { initVRControls, updateVRControls, raycastMenu, radialStickSelection, raycastPanel, raycastPalette, raycastProps, raycastPrefabs, raycastKeyboard, raycastChat, raycastEdit, raycastSnap, raycastSettings, raycastApprove, placePrefabGhost, vrFaceTrigger, vrVertexTrigger, vrVertexGrabStart, vrVertexGrabEnd, beginStretchSliderDrag, endStretchSliderDrag, executeVRMenuAction, resetWorldRig, onInputSourcesChange, worldToContentPose, boxSelectStart, boxSelectEnd, boxSelectActive, applyVRFrameRate, shouldSendHands, onHandPinchStart, onHandPinchEnd, pinchMenuToggledAt, firePingIfArmed, vrModuleTriggerStart, vrModuleTriggerEnd, vrModuleSelectSwallowed, handSnapshot, vrGrabbedUuids, hapticKnock, hapticPulse, onVRSessionStart } from '$lib/vrControls';
 	// 30b (vr-play): the game in your hands — hover/press haptics (P1), the sweep (P4)
 	import { startVrGameInput, stopVrGameInput } from '$lib/vrGameInput';
+	import { tickArTable } from '$lib/arTable'; // 50 R1: phone AR table placement
+	import { arTableActive } from '$lib/arTableState.js';
 	import { gameFeelActive } from '$lib/gameFeel';
 	import { vrKeyboardTarget } from '$lib/vrKeyboard';
 	import { measureMode, measureClick, measureHoverAt } from '$lib/measure';
@@ -102,9 +105,11 @@
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
 	// 36 U3b: the VR welcome tour's world-space panel
 	import TourVRPanel from './tours/TourVRPanel.svelte';
+	import VRAssetBrowser from './play/VRAssetBrowser.svelte'; // 52-browser: the wrist Asset Browser
 	// 36 A2: the headset browser's own "Enter VR" offer — decided by us, not threlte's default
 	import { xrOfferMode } from '$lib/xrOffer';
 	import MeasureOverlay from './MeasureOverlay.svelte';
+	import UnderlayLayer from './UnderlayLayer.svelte'; // 60 Q5
 	import AnnotationPins from './AnnotationPins.svelte';
 	import PingMarkers from './PingMarkers.svelte';
 	import PingHighlights from './PingHighlights.svelte';
@@ -341,13 +346,15 @@
 		// kept rendering finger spheres). shouldSendHands forces it on a rep flip.
 		const lens = [left?.joints?.length ?? 0, right?.joints?.length ?? 0];
 		if (!shouldSendHands({ moved, hasJoints, prevLens: lastSentJointLens, lens })) return;
+		// 60 Q2: a hands<->controllers switch is state (reliable); a pose of the same rep is stream
+		const sameRep = !!lastSentJointLens && lastSentJointLens[0] === lens[0] && lastSentJointLens[1] === lens[1];
 		lastSentJointLens = lens;
 		lastHandsSendAt = now;
 		for (let i = 0; i < 2; i++) {
 			const pose = poses[i];
 			if (pose) lastHandPositions[i].fromArray(pose.pos);
 		}
-		$peers.send({ type: 'vrhands', peerId: $peers.peer.id, left, right, active: true });
+		$peers.send({ type: 'vrhands', peerId: $peers.peer.id, left, right, active: true }, { fast: sameRep });
 	}
 
 	useTask((delta) => {
@@ -367,6 +374,8 @@
 		// flow tick (animations + particle sweep + the physics postTick) from
 		// threlte's XR-aware loop or everything freezes the moment VR starts
 		if (renderer?.xr?.isPresenting) pumpFlowTick(performance.now());
+		// 50 R1: the AR table's reticle + placement (a no-op unless one is running)
+		if (renderer?.xr?.isPresenting) tickArTable(renderer, camera.current);
 		// console.log(camera.current.lookAt.)
 		if (camera.current.fov !== fov) {
 			// console.log('fov changed')
@@ -390,7 +399,7 @@
 			// so its local position put every walking player 0.9 m into the floor on every peer.
 			camera.current.updateWorldMatrix(true, false);
 			camera.current.matrixWorld.decompose(camContentPos, camContentQuat, camFeetPoint);
-			const feetWorld = localFeet();
+			const feetWorld = localFeet(delta * 1000);
 			const camExtras: Record<string, number> = {};
 			if (feetWorld !== null) {
 				camFeetPoint.set(camContentPos.x, feetWorld, camContentPos.z);
@@ -416,13 +425,15 @@
 				nowMs - lastCameraSendAt >= camGapMs) {
 				lastCameraSendAt = nowMs;
 				camContentEuler.setFromQuaternion(camContentQuat);
-				$peers.send({ type: 'camera', peerId: $peers.peer.id, position: camContentPos.toArray(), rotation: [camContentEuler.x, camContentEuler.y, camContentEuler.z], ...camExtras });
+				// 60 Q2: a pose of the stream rides the fast channel; a change of the extras (seat,
+				// feet, knocked…) is state and goes reliable, or a lost datagram could strand it
+				$peers.send({ type: 'camera', peerId: $peers.peer.id, position: camContentPos.toArray(), rotation: [camContentEuler.x, camContentEuler.y, camContentEuler.z], ...camExtras }, { fast: camExtrasKey === lastCameraExtras });
 				lastCameraExtras = camExtrasKey;
 				lastCameraPosition.copy(camContentPos);
 				lastCameraQuaternion.copy(camContentQuat);
 			}
 		}
-		if (renderer.xr.isPresenting) broadcastVRHands();
+		if (renderer.xr.isPresenting && !arTableActive()) broadcastVRHands(); // 50 R1: a phone has no hands
 		updateVRControls(); // also manages ray/hover visibility outside sessions
 		updateSpatialAudio(camera.current, scene); // voices follow avatars (throttled)
 		tickAnimatedMixers(); // imported clips run on the synced clock
@@ -481,6 +492,11 @@
 			// 57.3: a spline control point — ONE spline undo entry per drag
 			if (object.userData?.isSplineProxy) {
 				onSplineProxyDragChanged(event.value);
+				return;
+			}
+			// 51 E4: scatter instances under the gizmo — ONE terrainScatter entry per drag
+			if (object.userData?.isScatterProxy) {
+				onScatterProxyDragChanged(event.value);
 				return;
 			}
 			// 33: one LOD level's offset — ONE lod write per drag, never a move
@@ -869,9 +885,18 @@
 			}
 			// T-2: sculpt mode — dragging brushes the terrain instead of orbiting
 			if ($sculptObject && !$isLocked && !$isVRMode) {
+				// 51 E4: the Scatter Select tool — a press picks instances / starts a box; a
+				// press on a gizmo handle is the gizmo's (it sets `axis` on hover)
+				if (scatterSelectArmed()) {
+					if ($TControls?.axis) return;
+					scatterSelectDown($sculptObject, event);
+					sculptActive = true;
+					setOrbitEnabled(false);
+					return;
+				}
 				const terrain = $objectsGroup?.getObjectByProperty('uuid', $sculptObject);
 				setRayFromEvent(event);
-				const hit = terrain ? selectionRaycaster.intersectObject(terrain, false)[0] : null;
+				const hit = terrain ? selectionRaycaster.intersectObject(terrain, !terrain.isMesh)[0] : null; // 51-surface: a group host's children
 				if (hit) {
 					sculptActive = true;
 					lastSculptAt = performance.now();
@@ -1015,14 +1040,22 @@
 					y1: Math.max(marqueeStart[1], event.clientY)
 				};
 			}
+			// 51 E4: the Scatter Select tool draws a box, never a brush ring
+			if ($sculptObject && scatterSelectArmed()) {
+				hideCursor();
+				if (sculptActive) {
+					scatterSelectMove(event);
+					return;
+				}
+			}
 			// T-2: the brush cursor tracks the terrain; a held button keeps sculpting
-			if ($sculptObject) {
+			else if ($sculptObject) {
 				const terrain = $objectsGroup?.getObjectByProperty('uuid', $sculptObject);
 				setRayFromEvent(event);
-				const hit = terrain ? selectionRaycaster.intersectObject(terrain, false)[0] : null;
+				const hit = terrain ? selectionRaycaster.intersectObject(terrain, !terrain.isMesh)[0] : null; // 51-surface: a group host's children
 				if (hit) {
 					// mesh sculpt: orient the brush ring to the surface
-					const worldNormal = hit.face ? hit.face.normal.clone().transformDirection(terrain.matrixWorld) : null;
+					const worldNormal = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;
 					showCursorAt(hit.point, worldNormal);
 					if (sculptActive) {
 						const now = performance.now();
@@ -1140,7 +1173,8 @@
 			if (sculptActive && event.button === 0) {
 				sculptActive = false;
 				setOrbitEnabled(true);
-				sculptEndStroke(); // flush the pending preview + ONE undoable snapshot
+				if ($sculptObject && scatterSelectArmed()) scatterSelectUp($sculptObject, event, camera.current);
+				else sculptEndStroke(); // flush the pending preview + ONE undoable snapshot
 				return;
 			}
 			if (strokeActive && event.button === 0) {
@@ -1415,6 +1449,13 @@
 		});
 
 		const onContextMenu = (event) => {
+			// test-health-1: heard on threlte's WRAPPER (`dom`), not the canvas. OrbitControls listens
+			// there and captures the pointer on every press, right button included, so where
+			// `contextmenu` fires on mousedown (Linux; Chromium headless) it is dispatched to the capture
+			// element and a canvas listener never heard it — a real right-click on the viewport opened
+			// nothing (fresh page: 0 menu rows; play-reentry). Canvas events still bubble here; anything
+			// else inside the wrapper keeps its own menu.
+			if (event.target !== element && event.target !== dom) return;
 			event.preventDefault(); // the browser menu never belongs on the canvas
 			const down = rightDown;
 			rightDown = null;
@@ -1424,7 +1465,7 @@
 			if (moved > 5 || Date.now() - down[2] > 400) return;
 			openViewportMenuAt(event.clientX, event.clientY);
 		};
-		element.addEventListener('contextmenu', onContextMenu);
+		dom.addEventListener('contextmenu', onContextMenu);
 
 		// touch long-press = right-click (touch has no contextmenu). A stationary
 		// ~500ms hold opens the same menu at the touch point.
@@ -1469,13 +1510,15 @@
 		const tempMatrix = new THREE.Matrix4();
 		const xrControllers = [renderer.xr.getController(0), renderer.xr.getController(1)];
 		const onXRSelect = (event) => {
+			// 50 R1: an AR table takes its taps from its overlay (arTable.js), never as a VR trigger
+			if (arTableActive()) return;
 			const controller = event.target;
 			// B2.4: a pinch-HOLD that just toggled the radial also fires 'select' on
 			// release — swallow that click so it doesn't immediately pick a sector
 			if (Date.now() - pinchMenuToggledAt < 250) return;
 			// K1: a sleeve ghost pick/place just handled this trigger — the release
 			// must not fall through to raycastSelect
-			if (vrModuleSelectSwallowed()) return;
+			if (vrModuleSelectSwallowed(xrControllers.indexOf(controller))) return; // 52-browser: per controller
 			// the keyboard is modal on top of any panel (116)
 			if ($vrKeyboardTarget) {
 				const key = raycastKeyboard(xrControllers.indexOf(controller));
@@ -1604,6 +1647,7 @@
 		// 182: hold-to-move a vertex — grab on trigger press, drop on release
 		// (the functions no-op unless in vertex mode with the hold setting on)
 		const onXRSelectStart = (event: any) => {
+			if (arTableActive()) return; // 50 R1
 			const idx = xrControllers.indexOf(event.target);
 			// K1: a module hook (sleeve ghost pick) may consume the press
 			if (vrModuleTriggerStart(idx)) return;
@@ -1612,6 +1656,7 @@
 			boxSelectStart(idx); // 214: start a box-select marquee (no-op unless tool = box)
 		};
 		const onXRSelectEnd = (event: any) => {
+			if (arTableActive()) return; // 50 R1
 			// K1: a held sleeve preview places on release
 			if (vrModuleTriggerEnd(xrControllers.indexOf(event?.target))) return;
 			vrVertexGrabEnd();
@@ -1655,7 +1700,7 @@
 			stopClap(); // 31
 			stopVrGameInput(); // 30b
 			element.removeEventListener('pointerdown', onPointerDown);
-			element.removeEventListener('contextmenu', onContextMenu);
+			dom.removeEventListener('contextmenu', onContextMenu);
 			element.removeEventListener('webglcontextlost', onContextLost);
 			element.removeEventListener('webglcontextrestored', onContextRestored);
 			window.removeEventListener('pointerup', onPointerUp);
@@ -1699,6 +1744,12 @@
 			onSplineProxyMoved();
 			return;
 		}
+		// 51 E4: the selected scatter instances follow the proxy (preview; release commits)
+		if ($TControls.object?.userData?.isScatterProxy) {
+			$TControls.visible = true;
+			onScatterProxyMoved();
+			return;
+		}
 		// 33: a LOD level's proxy — the level follows locally; the release commits
 		if ($TControls.object?.userData?.isLodLevelProxy) {
 			$TControls.visible = true;
@@ -1734,13 +1785,14 @@
 						dropToSurface($TControls.object, $objectsGroup);
 					}
 					$TControls.visible = true;
+					// 60 Q2: the gizmo drag is a stream (fast); its keyframe lands the last pose
 					$peers.send({
 						type: 'move',
 						uuid: $TControls.object.uuid,
 						pos: $TControls.object.position.toArray(),
 						rot: $TControls.object.rotation.toArray(),
 						scale: $TControls.object.scale.toArray()
-					});
+					}, { fast: true });
 				}
 	}
 
@@ -1813,6 +1865,10 @@
 <T.Group bind:ref={$worldRig} name="world-grab-rig">
 	<T.Group bind:ref={$objectsGroup} name="sceneObjects" />
 
+	<!-- 60 Q5: reference images — under the world rig (a VR world grab carries them), never in
+	     sceneObjects (never picked, synced, saved or exported) -->
+	<UnderlayLayer />
+
 	<CameraPreview />
 
 	<!-- CO4: no virtual ground in AR — the grid stands down over passthrough
@@ -1876,6 +1932,7 @@ position={[0, 2, 3]}
 <VRKeyboard />
 <VRSelectionShell />
 <TourVRPanel />
+<VRAssetBrowser />
 
 <XR
 	offerSession={$xrOfferMode}
@@ -1887,8 +1944,8 @@ position={[0, 2, 3]}
 		// without this the Quest stays at its 90Hz default
 		applyVRFrameRate();
 		// 30b P4: remember the untouched reference space (the walker's floor), and a
-		// GAME lands in Interact on its spawn
-		onVRSessionStart();
+		// GAME lands in Interact on its spawn — not an AR table, which is placed first (50 R1)
+		if (!arTableActive()) onVRSessionStart();
 	}}
 	onsessionend={() => passthroughActive.set(false)}
 >

@@ -150,11 +150,12 @@
 	// The anchor is the submenu's own parent element — the ROW it belongs to — so a
 	// keyboard-opened submenu places itself exactly like a hovered one.
 	function placeSubmenu(node: HTMLElement) {
+		const win = node.ownerDocument.defaultView ?? window;
 		const reposition = () => {
 			const anchor = node.parentElement?.getBoundingClientRect();
 			if (!anchor) return;
-			const vw = window.innerWidth;
-			const vh = window.innerHeight;
+			const vw = win.innerWidth;
+			const vh = win.innerHeight;
 			node.style.maxHeight = vh - 8 + 'px';
 			const w = node.offsetWidth;
 			const h = node.offsetHeight;
@@ -170,8 +171,8 @@
 		};
 		reposition();
 		requestAnimationFrame(reposition); // re-measure once content/scrollbar settle
-		window.addEventListener('resize', reposition);
-		return { destroy: () => window.removeEventListener('resize', reposition) };
+		win.addEventListener('resize', reposition);
+		return { destroy: () => win.removeEventListener('resize', reposition) };
 	}
 
 	// icon column: reserve the slot for EVERY row of a level when any sibling has

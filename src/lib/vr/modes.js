@@ -2,7 +2,7 @@
 // 34 R4 (A5): one concern of src/lib/vrControls.js, which re-exports the public names unchanged.
 import * as THREE from 'three';
 import { get } from 'svelte/store';
-import { globalScene, editorMode } from '../../stores/sceneStore';
+import { globalScene, editorMode, worldRig } from '../../stores/sceneStore';
 import { resolvePlaySettings, playPublishers } from '../playSettings';
 import { hudDocs, isGameHud } from '../hudDocs';
 import { setEditorMode, toggleEditorMode } from '../objectActions';
@@ -14,6 +14,10 @@ import { hapticPulse } from './haptics.js';
 import { controllerIndexFor } from './input.js';
 import { noteXRBaseSpace, viewerNow, spawnPlayer } from './locomotion.js';
 import { handOf, bindingOf, bindingLabel, controlName } from './bindings.js';
+import { arTableActive } from '../arTableState.js';
+// 60 Q1: Play here in a headset — the same spawn rule and override the desktop press uses
+import { currentSpawn, playHereSpawnFrom, headingOf, setPlayHereSpawn } from '../playSpawn';
+import { surfaceBelow, playingHere } from '../playHere';
 
 // ---- 30b P4: ENTER INTERACT, SWITCH IN VR, SPAWN ------------------------------------------
 // Contract C1: pressing Play in VR on a GAME enters Interact; the left Y button toggles
@@ -82,6 +86,81 @@ export function payPendingSpawn() {
 	if (!spawnPending || !viewerNow()) return;
 	spawnPending = false;
 	spawnPlayer();
+}
+
+// ---- 60 Q1: PLAY HERE IN A HEADSET --------------------------------------------------------------
+// The radial's Tools ▸ Play here: Interact (the headset's Play) starting where you stand, not on the
+// game's spawn — the feet on the surface under your head, facing where you look — and the next
+// switch back to Edit puts you (and the world grab you had) back exactly where you were. A viewer
+// pose exists only inside the session's frame callback, so the press is PAID on the next frame
+// (frame.js, beside payPendingSpawn) — the recenter rule.
+let playHerePending = false;
+/** @type {{space: any, rig: {p: number[], q: number[], s: number[]} | null} | null} */
+let playHereSaved = null;
+
+/** the radial's press @returns {boolean} whether a Play here was queued */
+export function requestVRPlayHere() {
+	if (!renderer?.xr?.getSession?.() || get(editorMode) === 'interact') return false;
+	playHerePending = true;
+	return true;
+}
+
+/** a Play here owed since the press, paid on the first frame with a viewer pose */
+export function payPendingPlayHere() {
+	if (!playHerePending) return;
+	const viewer = viewerNow();
+	if (!viewer) return;
+	playHerePending = false;
+	if (get(editorMode) === 'interact') return;
+	/** @type {any} */
+	const rig = get(worldRig);
+	playHereSaved = {
+		space: renderer.xr.getReferenceSpace(),
+		rig: rig ? { p: rig.position.toArray(), q: rig.quaternion.toArray(), s: rig.scale.toArray() } : null
+	};
+	// where the head is in the CONTENT frame: Interact resets the world grab to 1:1, so the
+	// content point under you is where you will stand
+	const head = new THREE.Vector3(viewer.head.x, viewer.head.y, viewer.head.z);
+	let yaw = viewer.yaw;
+	if (rig) {
+		rig.updateMatrixWorld(true);
+		rig.worldToLocal(head);
+		yaw -= headingOf(rig.quaternion);
+	}
+	resetWorldRig();
+	setPlayHereSpawn(playHereSpawnFrom({ eye: head.toArray(), yaw }, surfaceBelow, currentSpawn(), viewer.headHeight));
+	playingHere.set(true);
+	// → the editorMode subscription → enterInteractVR → spawnPlayer, which reads the override
+	setEditorMode('interact');
+}
+
+/** back to Edit (or the session ended): the override goes, and the view you left comes back */
+function endVRPlayHere(/** @type {boolean} */ restore) {
+	playHerePending = false;
+	const was = playHereSaved;
+	playHereSaved = null;
+	if (!was) return;
+	setPlayHereSpawn(null);
+	playingHere.set(false);
+	if (!restore) return;
+	try {
+		if (was.space) renderer.xr.setReferenceSpace(was.space);
+	} catch {
+		/* a space from an ended session — nothing to go back to */
+	}
+	/** @type {any} */
+	const rig = get(worldRig);
+	if (rig && was.rig) {
+		rig.position.fromArray(was.rig.p);
+		rig.quaternion.fromArray(was.rig.q);
+		rig.scale.fromArray(was.rig.s);
+		rig.updateMatrixWorld(true);
+	}
+}
+
+/** test/debug view */
+export function vrPlayHereDebug() {
+	return { pending: playHerePending, saved: !!playHereSaved };
 }
 
 /** @type {any} */ let modeLabel = null;
@@ -165,7 +244,10 @@ let lastEditorMode = get(editorMode);
 editorMode.subscribe((mode) => {
 	if (mode === lastEditorMode) return;
 	lastEditorMode = mode;
-	if (!renderer?.xr?.getSession?.()) return;
+	if (!renderer?.xr?.getSession?.()) return endVRPlayHere(false);
+	// 50 R1: an AR table's Interact is a player's view of a placed scene — no 1:1 reset, no spawn
+	if (arTableActive()) return;
 	if (mode === 'interact') enterInteractVR();
+	else endVRPlayHere(true); // 60 Q1
 	updateModeLabel();
 });

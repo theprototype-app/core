@@ -218,7 +218,7 @@
 
 	function scrollNavIntoView() {
 		requestAnimationFrame(() =>
-			document.querySelector('[data-ctx-active="true"]')?.scrollIntoView({ block: 'nearest' })
+			(menuEl?.ownerDocument ?? document).querySelector('[data-ctx-active="true"]')?.scrollIntoView({ block: 'nearest' })
 		);
 	}
 
@@ -352,8 +352,10 @@
 	// Portal to <body> so the menu escapes any z-indexed/stacking-context ancestor
 	// (e.g. the Flow editor's docked/floating window) and its z-index:1000 ranks
 	// above other windows instead of being trapped at the host window's z-tier.
+	// 50-window: into the body of the document this menu was opened in (the code window's,
+	// when the workspace is popped out), never blindly the main window's
 	function portal(node: HTMLElement) {
-		document.body.appendChild(node);
+		node.ownerDocument.body.appendChild(node);
 		return { destroy: () => node.remove() };
 	}
 
@@ -363,9 +365,10 @@
 	function place(node: HTMLElement) {
 		let lastW = -1;
 		let lastH = -1;
+		const win = node.ownerDocument.defaultView ?? window;
 		const reposition = () => {
-			const vw = window.innerWidth;
-			const vh = window.innerHeight;
+			const vw = win.innerWidth;
+			const vh = win.innerHeight;
 			// measure the NATURAL height first (uncapped) — every decision needs it
 			node.style.maxHeight = 'none';
 			const w = node.offsetWidth;
@@ -419,11 +422,11 @@
 			reposition();
 		});
 		observer.observe(node);
-		window.addEventListener('resize', reposition);
+		win.addEventListener('resize', reposition);
 		return {
 			destroy: () => {
 				observer.disconnect();
-				window.removeEventListener('resize', reposition);
+				win.removeEventListener('resize', reposition);
 			}
 		};
 	}
@@ -533,13 +536,14 @@
 					searchHeight = Math.max(MIN_LIST_HEIGHT, startH + (moveEvent.clientY - startY));
 					repositionMenu();
 				};
+				const gripWin = (event.currentTarget as HTMLElement).ownerDocument.defaultView ?? window;
 				const up = () => {
-					window.removeEventListener('pointermove', move);
-					window.removeEventListener('pointerup', up);
+					gripWin.removeEventListener('pointermove', move);
+					gripWin.removeEventListener('pointerup', up);
 					if (searchHeight) rememberHeight(searchHeight); // 16-Q6: keep it next time
 				};
-				window.addEventListener('pointermove', move);
-				window.addEventListener('pointerup', up);
+				gripWin.addEventListener('pointermove', move);
+				gripWin.addEventListener('pointerup', up);
 				event.preventDefault();
 				event.stopPropagation();
 			}}

@@ -9,6 +9,7 @@ import { hostedDocked, setHostedDocked } from './dockHost';
 import { registerSideMover } from './dockMenu';
 import { groupOfKey, removeFromGroup } from './windowTabs';
 import { phoneShell } from './ui/phoneShell.js';
+import { isForeign } from './windows/winEnv.js';
 
 // Docking lite (phase 81L). Drag a window near the left/right screen edge to dock it as a
 // full-height panel (--z-chrome tier); drag its header away to float it again.
@@ -272,6 +273,8 @@ onLayoutRestore(() => {
  * @param {any} node @param {{key: string}} options
  */
 export function dockable(node, { key }) {
+	// 70 W2: a panel in a pop-out window ($lib/windows/panelHost) is laid out by its window, not here
+	if (isForeign(node)) return { destroy() {} };
 	// 43 J4: a window may be wired twice (its own `use:dockable` + bottomDockable's seam) — once is enough
 	if (registry.get(key)?.node === node) return { destroy() {} };
 	/** @type {any} */

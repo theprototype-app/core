@@ -48,6 +48,7 @@
 	import ShortcutsSettings from './settings/ShortcutsSettings.svelte';
 	import SceneSettings from './settings/SceneSettings.svelte'; // checkpoints, loading, water render inside
 	import ExplorerSettings from './settings/ExplorerSettings.svelte';
+	import StorageSettings from './settings/StorageSettings.svelte'; // 60 Q6: the local asset cache
 	import NodeTypesSection from './NodeTypesSection.svelte'; // 36 B7
 	// 36-export: the export defaults (its own file; also the Publish / Export modal's Settings tab)
 	import ExportSettingsSection from './ExportSettingsSection.svelte';
@@ -84,6 +85,8 @@
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'accessibility')) accessibilityExpanded = true;
 	let sceneExpanded = false;
 	let explorerExpanded = false;
+	let storageExpanded = false; // 60 Q6: Settings ▸ Storage (StorageSettings.svelte)
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'storage')) storageExpanded = true;
 	let connectionExpanded = false;
 	let aboutExpanded = false;
 	let vrExpanded = false; // D7: edit-cap toasts deep-link here ('vr')
@@ -561,6 +564,10 @@
 				<AccordionItem bind:open={explorerExpanded}>
 					{#snippet header()}Explorer{/snippet}
 					<ExplorerSettings />
+				</AccordionItem>
+				<AccordionItem bind:open={storageExpanded}>
+					{#snippet header()}Storage{/snippet}
+					<StorageSettings />
 				</AccordionItem>
 				<AccordionItem bind:open={vrExpanded}>
 					{#snippet header()}VR{/snippet}

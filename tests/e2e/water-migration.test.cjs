@@ -23,10 +23,11 @@ const GATED = ['aquarium', 'pool-party', 'island-ocean'];
 const REPORT = ['jelly-room', 'fluid-tank-toy'];
 const T0 = 1791200000000; // a fixed wall clock: the same water phase on every build
 const CLIP = { x: 190, y: 110, width: 900, height: 500 };
+const GOLDEN_CHROME_ROWS = 28;
 
 h.run(async () => {
 	const browser = await h.launch({ args: h.GPU_ARGS });
-	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } }, storage: { 'water:quality': 'high' } });
+	const A = await h.setupPage(browser, 'A', { context: { viewport: { width: 1280, height: 720 } }, storage: { 'water:quality': 'high', autoQuality: 'false' } }); // test-health-1: the quality governor lowers dpr / shadows / AO on slow frames — a pixel comparison needs it pinned
 	await A.ctx.addInitScript((t) => {
 		Date.now = () => t;
 	}, T0);
@@ -62,7 +63,9 @@ h.run(async () => {
 			h.check(false, `${slug}: no golden (capture with GOLDEN_WRITE=1 on v1.22.0)`);
 			continue;
 		}
-		const d = await h.frameDelta(A.page, fs.readFileSync(goldFile), png, 24);
+		// the 1.22 goldens carry a strip of UI chrome along their top edge (the connect pill was inside
+		// CLIP on that build): compare the scene below it
+		const d = await h.frameDelta(A.page, fs.readFileSync(goldFile), png, 24, GOLDEN_CHROME_ROWS);
 		rows.push(`| ${slug} | ${(d.fraction * 100).toFixed(2)}% | ${d.mean.toFixed(2)} | ${GATED.includes(slug) ? (d.fraction <= MAX_CHANGED ? 'same' : '**DIFFERENT**') : 'reported'} |`);
 		if (GATED.includes(slug))
 			h.check(d.fraction <= MAX_CHANGED, `${slug} (saved on 1.22) looks the same: ${(d.fraction * 100).toFixed(2)}% of the frame changed (max ${(MAX_CHANGED * 100).toFixed(0)}%)`);

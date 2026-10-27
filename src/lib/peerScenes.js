@@ -645,6 +645,14 @@ ROOM_SCOPED.add('bhv');
 // 37 R1: a multi-object edit's ONE envelope (wireBatch.js) — its items are all room content,
 // and each one is gated again on arrival
 ROOM_SCOPED.add('batch');
+// 50 Y1: shared-text updates and cursors — a node id is the same in two copies of one scene, so
+// an edit to a Script node's buffer is room content. Their REQUEST `getytext` stays mesh-wide
+// (every get* request does; the answer side checks the room and says `none` across rooms).
+ROOM_SCOPED.add('ytext');
+ROOM_SCOPED.add('ytextaw');
+// 60 Q5: a shared reference image belongs to the scene it was laid in (its request rides the floor)
+ROOM_SCOPED.add('underlay');
+ROOM_SCOPED.add('underlaydelete');
 
 /**
  * THE ONE PREDICATE, used on both sides of the wire: `broadcast` will not SEND a

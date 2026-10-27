@@ -1,8 +1,9 @@
 # theprototype.app
 
-> Collaborative peer-to-peer 3D prototyping in the browser. No accounts and no
-> server beyond PeerJS signaling — a session is a direct WebRTC peer mesh, so
-> everything one person does is visible to everyone connected. Desktop and VR
+> Collaborative peer-to-peer 3D prototyping in the browser. No account needed —
+> a session is a direct WebRTC peer mesh (servers only introduce peers and relay
+> when a direct link fails), so everything one person does is visible to everyone
+> connected. The hosted site adds optional accounts, cloud saves and community pages. Desktop and VR
 > (WebXR), a node/flow editor that drives scene behavior, and a module SDK for
 > loadable, self-contained play content. Built with SvelteKit (static adapter),
 > Svelte 5, Threlte and three.js.
@@ -166,7 +167,7 @@ into a session and every connected peer can see and interact with.
 
 ## The one rule that matters
 
-**A module runs on every peer.** There is no server. Whatever your module does
+**A module runs on every peer.** There is no game server. Whatever your module does
 must end up identical on all clients, one of three ways:
 
 1. **Deterministic from shared inputs** — effects driven by node `data` (already

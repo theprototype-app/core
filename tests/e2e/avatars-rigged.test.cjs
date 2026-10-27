@@ -31,6 +31,10 @@ h.run(async () => {
 				if (d && d.type) window.__types[d.type] = (window.__types[d.type] ?? 0) + 1;
 			})
 		);
+		// 60 Q2: camera + vrhands ride the FAST channel between two 1.44 peers; count those arrivals too
+		window.__stores.fastChannel.setPoseTap((peer, d, via) => {
+			if (via === 'fast' && d?.type) window.__types[d.type] = (window.__types[d.type] ?? 0) + 1;
+		});
 	});
 
 	const stateOn = (page, id) => page.evaluate((id) => window.__stores.avatars.avatarsDebug()[id] ?? null, id);

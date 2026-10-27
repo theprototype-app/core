@@ -522,15 +522,32 @@ export function annotationsRestore(annotations) {
 	if (annotations?.length && annotationsRestorer) annotationsRestorer(annotations);
 }
 
+/**
+ * 60 Q4: "has this boot's restore question been ANSWERED?" — the launch inbox (a file shared
+ * into the app or opened from the OS) waits on it, because a model imported into the empty
+ * boot scene is wiped by a Restore pressed a second later, and a .tpscene opened over the
+ * prompt overwrites the very autosave the prompt offers. Resolves once: no snapshot, a scene
+ * already non-empty, an auto-restore finished, or the offer answered (Restore → after its
+ * load; Dismiss → at once). A restore's Cancel that re-offers does not re-arm it.
+ */
+let settleRestore = () => {};
+const restoreDecided = new Promise((resolve) => (settleRestore = () => resolve(undefined)));
+/** the running applyRestore of an answered offer (restoreSnapshot), for restoreDecided
+ * @type {Promise<boolean | null> | null} */
+let restoreJob = null;
+export function restoreSettled() {
+	return restoreDecided;
+}
+
 async function checkRestore() {
 	try {
 		const snapshot = await idbGet('latest');
-		if (!snapshot || (!snapshot.scene && !snapshot.nodes?.length)) return;
+		if (!snapshot || (!snapshot.scene && !snapshot.nodes?.length)) return settleRestore();
 		// wait for the scene group to exist, then only offer when it's still empty
 		const unsubscribe = objectsGroup.subscribe((group) => {
 			if (!group) return;
 			setTimeout(() => unsubscribe(), 0);
-			if (group.children.length !== 0) return;
+			if (group.children.length !== 0) return settleRestore();
 			let armed = false;
 			try {
 				armed = typeof localStorage !== 'undefined' && !!safeStorage.getItem('restoreArmed');
@@ -545,11 +562,23 @@ async function checkRestore() {
 			// 27-D: `risky` means the previous restore of this snapshot never reached a clean
 			// flow tick. Auto-restoring it again is how one bad scene becomes a boot loop the
 			// user cannot escape, so it always goes to the PROMPT, which says why.
-			if (get(autoRestoreEnabled) && !armed) autoRestore(offer);
-			else restoreAvailable.set(offer);
+			if (get(autoRestoreEnabled) && !armed) autoRestore(offer).finally(settleRestore);
+			else {
+				restoreAvailable.set(offer);
+				// answered = the offer cleared; a Restore clears it BEFORE its load starts, so
+				// the microtask lets restoreSnapshot publish the job first
+				const off = restoreAvailable.subscribe((value) => {
+					if (value) return;
+					queueMicrotask(() => {
+						off();
+						Promise.resolve(restoreJob).finally(settleRestore);
+					});
+				});
+			}
 		});
 	} catch (error) {
 		log('warn', 'autosave', 'restore check failed', String(error));
+		settleRestore();
 	}
 }
 
@@ -788,7 +817,8 @@ export async function restoreSnapshot() {
 	const offer = get(restoreAvailable);
 	if (!offer) return;
 	restoreAvailable.set(null);
-	const ok = await applyRestore(offer.snapshot, offer);
+	restoreJob = applyRestore(offer.snapshot, offer);
+	const ok = await restoreJob;
 	// null: cancelled (it said so itself and re-offered) or superseded by another load
 	if (ok === null) return;
 	showToast(

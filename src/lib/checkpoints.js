@@ -40,15 +40,15 @@ import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { safeStorage } from './safeStorage';
 import { log } from './diagnostics';
 import { objectsGroup } from '../stores/sceneStore';
-import { showToast, showInfoToast, checkpointSaveOpen } from '../stores/appStore';
+import { showToast, showInfoToast, checkpointSaveOpen, settingsOpen, settingsSection } from '../stores/appStore';
 import { autosaveStatus } from './autosave';
 import { buildSessionPayload, requestLoadPayload } from './sessions';
 import { currentLevel, sceneSignature } from './levels';
 import { sceneFileName } from './gameSettings';
 import { loading as sceneLoading } from './sceneLoader';
 // the pure half (vitest: tests/unit/checkpointsCore)
-import { planEviction, fingerprint } from './checkpointsCore';
-export { planEviction, fingerprint, dayLabel, formatBytes } from './checkpointsCore';
+import { planEviction, fingerprint, largeSceneVerdict } from './checkpointsCore';
+export { planEviction, fingerprint, dayLabel, formatBytes, largeSceneVerdict } from './checkpointsCore';
 
 export const KEY = 'checkpoint:';
 export const INDEX_KEY = 'checkpoints:index';
@@ -91,7 +91,14 @@ export const autoCheckpoints = writable(safeStorage.getItem('checkpoints:auto') 
 export const autoCheckpointMinutes = writable(readChoice('checkpoints:every', DEFAULT_INTERVAL_MIN, INTERVAL_CHOICES_MIN));
 /** the byte cap in MB @type {import('svelte/store').Writable<number>} */
 export const checkpointCapMb = writable(readChoice('checkpoints:capMb', DEFAULT_CAP_MB, CAP_CHOICES_MB));
+/** 50-window (C2): keep cutting automatic rows on a VERY LARGE scene (over the budget meter's
+ * desktop heavy line, `largeSceneVerdict`). LOCAL, default OFF — such a scene skips them.
+ * @type {import('svelte/store').Writable<boolean>} */
+export const autoCheckpointsLarge = writable(safeStorage.getItem('checkpoints:autoLarge') === 'true');
+/** the last large-scene verdict the auto path acted on (null = the scene was not large) */
+export const largeSceneSkip = writable(/** @type {null | {metric: string, value: number, limit: number}} */ (null));
 autoCheckpoints.subscribe((v) => safeStorage.setItem('checkpoints:auto', String(v)));
+autoCheckpointsLarge.subscribe((v) => safeStorage.setItem('checkpoints:autoLarge', String(v)));
 autoCheckpointMinutes.subscribe((v) => safeStorage.setItem('checkpoints:every', String(v)));
 checkpointCapMb.subscribe((v) => safeStorage.setItem('checkpoints:capMb', String(v)));
 
@@ -352,6 +359,45 @@ export function autoDue(now = Date.now()) {
 	return true;
 }
 
+let largeNoticeShown = false;
+
+/**
+ * 50-window (C2): is the scene too large for an AUTOMATIC row right now? Reads the budget meter
+ * (one fresh sample — the same reading the chip shows) against the DESKTOP target's heavy line.
+ * Says so ONCE per session, with the way to the setting. A named checkpoint is never skipped.
+ */
+async function largeSkip() {
+	if (get(autoCheckpointsLarge)) {
+		largeSceneSkip.set(null);
+		return false;
+	}
+	/** @type {null | {metric: string, value: number, limit: number}} */
+	let verdict = null;
+	try {
+		const meter = await import('./budgetMeter');
+		const reading = meter.sampleBudget();
+		verdict = largeSceneVerdict(reading?.totals, /** @type {any} */ (meter.TARGETS.desktop));
+	} catch (error) {
+		log('warn', 'checkpoints', 'budget reading failed', String(error));
+	}
+	largeSceneSkip.set(verdict);
+	if (!verdict) return false;
+	if (!largeNoticeShown) {
+		largeNoticeShown = true;
+		const what = verdict.metric === 'textureMB' ? Math.round(verdict.value) + ' MB of textures' : Math.round(verdict.value / 1e5) / 10 + 'M triangles';
+		showToast('Automatic checkpoints are paused: this scene is very large (' + what + '). Named checkpoints still work.', [
+			{
+				label: 'Settings',
+				action: () => {
+					settingsSection.set('scene');
+					settingsOpen.set(true);
+				}
+			}
+		]);
+	}
+	return true;
+}
+
 async function maybeAuto() {
 	idleHandle = null;
 	if (!autoDue()) return;
@@ -360,6 +406,7 @@ async function maybeAuto() {
 		if (get(physics.simulating)) return; // a running world is not a state anyone authored
 	} catch {}
 	lastAutoAt = Date.now();
+	if (await largeSkip()) return;
 	await saveCheckpoint({ auto: true, quiet: true });
 }
 
@@ -396,6 +443,7 @@ export const checkpointsDebug = {
 	resetAutoClock: (/** @type {number} */ at = 0) => (lastAutoAt = at),
 	capBytes: (/** @type {number | null} */ bytes) => (capOverride = bytes),
 	maybeAuto,
+	resetLargeNotice: () => (largeNoticeShown = false),
 	planEviction,
 	reload: loadCheckpoints
 };

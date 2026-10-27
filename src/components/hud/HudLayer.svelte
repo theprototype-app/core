@@ -14,6 +14,7 @@
 	import HudElement from './HudElement.svelte';
 	import { hudDocs, hudRuntime, hudScreenOverride, hudPreviewInViewport, hudIsGame, visibleScreen, activeHudKeys, setHudValue, hudValueOf } from '$lib/hudDocs';
 	import { isVRMode, isLocked, playPointerFree } from '../../stores/sceneStore';
+	import { arTable } from '$lib/arTableState.js'; // 50 R1: a phone playing a scene on a table
 	import { hudEditorClose } from '../../stores/appStore.js';
 	import { viewportOverrides, renderLayer } from '$lib/viewportOverrides';
 	// 21-E7.4: RENDERABLE is no longer the same list as HUD_KINDS - a module kind is
@@ -70,6 +71,11 @@
 	// Controls turns back to null), so playing is `=== true` and everything else is
 	// authoring. `=== false` would read the transient value and flip back a moment later.
 	const playing = $derived($isLocked === true);
+	// 50 R1: an AR TABLE playing is the one XR session whose screen can show DOM — the WebXR
+	// dom-overlay. The game's screens draw there (moved into the overlay's #ar-hud-slot by
+	// `arPortal`) instead of on the headset's VR board, and they count as played, not authored.
+	const arPlaying = $derived($arTable.phase === 'placed' && $arTable.playing);
+	const shown = $derived(playing || arPlaying);
 
 	// 30 P1: THE EDITOR STOPS MASQUERADING AS THE GAME. Outside Play a GAME's screens (the
 	// `hudIsGame` rule: a screen bound to a game state) are not drawn at all — the menu of
@@ -79,7 +85,7 @@
 	// every control is INERT (`editor` on HudElement — the artboard's own swallow), so
 	// laying out a menu can never fire the game. A HUD with no state-bound screen is a
 	// plain overlay and keeps its old behaviour exactly.
-	const gameInEditor = $derived(!playing && $hudIsGame);
+	const gameInEditor = $derived(!shown && $hudIsGame);
 	const gameHidden = $derived(gameInEditor && !$hudPreviewInViewport);
 
 	// BOTH stores are read as dependencies. `visibleScreen` reaches the override through
@@ -123,7 +129,7 @@
 	// dropdowns, and under pointer lock the ring is the only hand a player has. A
 	// disabled control is skipped the way it ignores presses.
 	const focusables = $derived(elements.filter((el) => isInteractiveKind(el.kind) && el.enabled !== false));
-	const anyVisible = $derived(elements.length > 0 && !$isVRMode && layerAllowed && !authoringHidden && !gameHidden);
+	const anyVisible = $derived(elements.length > 0 && (!$isVRMode || arPlaying) && layerAllowed && !authoringHidden && !gameHidden);
 
 	// ---- 21-E3: the MENU SUBSTATE - this component is the SINGLE WRITER ------------
 	// Visibility IS the state: any visible screen marked input:'menu' while playing
@@ -353,7 +359,7 @@
 		else out.push('left: 50%', `--hud-tx: ${el.x}px`);
 		return out.join('; ');
 	}
-	const textScale = $derived(playing ? hudTextScale($accessValues.hudText) : 1);
+	const textScale = $derived(shown ? hudTextScale($accessValues.hudText) : 1);
 	/** kinds with no text to grow (pictures, plots, the crosshair, a flash, module DOM) */
 	const NO_TEXT = new Set(['image', 'minimap', 'crosshair', 'damageflash', 'custom']);
 	/** @param {string} kind */
@@ -368,11 +374,35 @@
 		if (!cx && !cy) return '';
 		return `transform: translate(${cx ? 'calc(-50% + var(--hud-tx, 0px))' : '0'}, ${cy ? 'calc(-50% + var(--hud-ty, 0px))' : '0'})`;
 	}
+
+	/** 50 R1: while an AR table plays, the node lives in the AR overlay (the only DOM a phone's AR
+	 *  session shows); otherwise back where svelte put it. The overlay is always mounted (App.svelte).
+	 * @param {HTMLElement} node @param {boolean} on */
+	function arPortal(node, on) {
+		const home = node.parentNode;
+		const anchor = document.createComment('ar-portal');
+		home?.insertBefore(anchor, node);
+		/** @param {boolean} want */
+		const place = (want) => {
+			const slot = want ? document.getElementById('ar-hud-slot') : null;
+			if (slot && node.parentNode !== slot) slot.appendChild(node);
+			else if (!slot && node.parentNode !== home && anchor.parentNode) anchor.parentNode.insertBefore(node, anchor.nextSibling);
+		};
+		place(on);
+		return {
+			/** @param {boolean} want */
+			update: (want) => place(want),
+			destroy() {
+				anchor.remove();
+				node.remove();
+			}
+		};
+	}
 </script>
 
-{#if $gameAnnouncement && !$isVRMode && layerAllowed}
+{#if $gameAnnouncement && (!$isVRMode || arPlaying) && layerAllowed}
 	{#key $gameAnnouncement.id}
-		<div id="game-announce" class="game-announce" role="status" aria-live="polite" style="--announce-ms: {$gameAnnouncement.ms}ms">
+		<div id="game-announce" class="game-announce" role="status" aria-live="polite" style="--announce-ms: {$gameAnnouncement.ms}ms" use:arPortal={arPlaying}>
 			<div class="game-announce-title" style:color={$gameAnnouncement.color}>{$gameAnnouncement.text}</div>
 			{#if $gameAnnouncement.sub}<div class="game-announce-sub">{$gameAnnouncement.sub}</div>{/if}
 		</div>
@@ -380,7 +410,7 @@
 {/if}
 
 {#if anyVisible}
-	<div id="hud-layer" class="hud-layer" class:hud-authoring={!playing} class:hud-inert={gameInEditor} data-authoring={!playing} data-inert={gameInEditor}>
+	<div id="hud-layer" class="hud-layer" class:hud-authoring={!shown} class:hud-inert={gameInEditor} data-authoring={!shown} data-inert={gameInEditor} use:arPortal={arPlaying}>
 		{#each elements as el (el.__key + ':' + el.id)}
 			<div
 				class="hud-slot"

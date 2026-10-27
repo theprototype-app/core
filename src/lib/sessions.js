@@ -9,6 +9,7 @@ import { flowViewsSnapshot } from './flowView';
 import { serializeNode, serializeEdge, sendNodes } from './nodesHandler';
 import { parkAnimatedAtBase } from './flowRuntime';
 import { stripEditOverlays } from './editOverlays';
+import { withCleanView } from './cleanView'; // 50-window (C2): thumbnails without the editor's scaffolding
 import { isPristinePackRef, stubElementOf, stubNodeCount, fillPackRef, warmPrograms } from './packRefs';
 // 36 L2: the scene's saved view is applied at the START of a load (startView.js)
 import { beginStartView, settleStartView, sceneHoldsCamera } from './startView';
@@ -23,6 +24,7 @@ import {
 } from './animatedImports';
 import { animationsSnapshot, animationsRestore, copyAnimationsFrom } from './animationPreview';
 import { shaderGraphsSnapshot, shaderGraphsRestore, copyShaderGraphFrom } from './shaderGraph';
+import { preloadSandboxFor } from './sandbox/preload.js';
 import {
 	peers,
 	showToast,
@@ -138,7 +140,9 @@ export function viewportThumbnail(maxW = 256) {
 	const camera = get(globalCamera);
 	if (!renderer || !scene || !camera || renderer.xr?.isPresenting) return null;
 	try {
-		renderer.render(scene, camera);
+		// 50-window (C2): the scene, not the editor — no gizmo, grid or helpers in the picture
+		// (60 Q5: reference images sit on the helper layer, which withCleanView switches off)
+		withCleanView(scene, camera, () => renderer.render(scene, camera));
 		const source = renderer.domElement;
 		const sw = source.width || maxW;
 		const scale = Math.min(1, maxW / sw);
@@ -159,12 +163,14 @@ export function viewportThumbnail(maxW = 256) {
 
 /** The saved entry's picture. @param {any} group @returns {string|null} */
 function renderSceneThumbnail(group) {
+	/** @type {THREE.WebGLRenderer | null} */
+	let renderer = null;
 	try {
 		if (!group || group.children.length === 0) return null;
 		// the live viewport first — see viewportThumbnail for why
 		const live = viewportThumbnail();
 		if (live) return live;
-		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+		renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 		renderer.setSize(256, 160);
 		const scene = new THREE.Scene();
 		scene.background = new THREE.Color('#232a33');
@@ -179,13 +185,15 @@ function renderSceneThumbnail(group) {
 		camera.position.copy(center).add(new THREE.Vector3(size * 0.65, size * 0.5, size * 0.85));
 		camera.lookAt(center);
 		renderer.render(scene, camera);
-		const url = renderer.domElement.toDataURL('image/webp', 0.7);
-		renderer.dispose();
-		renderer.forceContextLoss?.();
-		return url;
+		return renderer.domElement.toDataURL('image/webp', 0.7);
 	} catch (error) {
 		console.log('session thumbnail failed', error);
 		return null;
+	} finally {
+		// every exit, the empty-box early return and a throw included: a renderer that is not
+		// released holds its WebGL context until GC, and Chromium caps live contexts at 16
+		renderer?.dispose();
+		renderer?.forceContextLoss?.();
 	}
 }
 
@@ -1030,6 +1038,8 @@ export async function readSessionZip(buffer) {
 		showToast('This level needs a newer app version (format ' + format + ' > ' + SESSION_FORMAT + ')');
 		return null;
 	}
+	// 69: the engine loads while the assets restore (applySession asks again — a no-op by then)
+	preloadSandboxFor(payload);
 	await restoreZipAssets(entries, strFromU8);
 	// R22 round 12: and the library's own files, which session.json carries only an index of
 	await restoreLibraryBlobs(payload, entries);
@@ -1060,6 +1070,7 @@ export async function importSessionZip(buffer) {
 	// 21-I5: after the confirms (a cancelled import must not talk about the file it did
 	// not read) and before the restore loops, which never touch `versions/`
 	noteBundledVersions(entries);
+	preloadSandboxFor(payload); // 69: as in readSessionZip
 	await restoreZipAssets(entries, strFromU8);
 	// R22 round 12: a bundle written by this build carries its library as real files, so
 	// an imported PROJECT entry arrives with its files rather than with `{}` where each
@@ -1445,6 +1456,8 @@ export async function applySession(payload, opts = {}) {
 	// still arriving is how a user cancels A, and it must not leave A's objects in B.
 	// 36 F20: a person's click CLAIMED its job before downloading/asking (`claimLoad`); the
 	// apply adopts that claim — and a claim a newer load has superseded applies NOTHING.
+	// 69: a scene that carries code starts the sandbox engine now, so it loads while the objects build
+	preloadSandboxFor(payload);
 	const name = payload?.name ?? 'scene';
 	const total = (payload?.objects ?? []).length;
 	/** @type {any} */

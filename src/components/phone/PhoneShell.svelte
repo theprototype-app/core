@@ -86,6 +86,10 @@
 	import { phoneBarTap, openPhoneTab, closePhoneTab, phoneDockShown, phoneTabsOpen } from '$lib/phoneDock';
 	import { toggleViewportFocus } from '$lib/focusMode';
 	import { requestPlay, willEnterXR, willEnterAR, playAsItems } from '$lib/playMode';
+	// 50 R1: the AR table — a phone places the scene on a real table (Android Chrome, WebXR immersive-ar)
+	import { enterArTable, arTableEntry } from '$lib/arTable';
+	import { AR_UNSUPPORTED_NOTE } from '$lib/arTableCore.js';
+	import { playHere, playHereItems } from '$lib/playHere'; // 60 Q1
 	import { visibleDockKey, DOCK_TITLES, dockMinimized, dockHeight } from '$lib/bottomDock';
 	import { micActive, pttActive, toggleMic } from '$lib/voiceChat';
 	import { aiReady } from '$lib/ai/providers';
@@ -441,6 +445,11 @@
 		const at = list.indexOf('play');
 		return [
 			...playAsItems(),
+			// 50 R1: only where it can work — elsewhere the More tile carries the note
+			...($arTableEntry === 'ready'
+				? [{ label: 'Play on a table (AR)', tooltip: 'Find a table through the camera and play the scene on it', action: () => enterArTable() }]
+				: []),
+			...playHereItems(), // 60 Q1
 			...($hudIsGame
 				? [
 						{ section: 'Game' },
@@ -493,9 +502,12 @@
 	 *  two places (NOTES-38 #7 / 42 I5: any of them may sit on the bar). `short` is the bar's label
 	 *  where the full one would not fit; `pressed` absent = not a toggle; `disabled` keeps the item
 	 *  holdable (aria-disabled, not the attribute — a disabled button takes no pointer events).
-	 * @type {Record<string, {label: string, short?: string, hint?: string, icon: string, run: () => void, pressed?: () => boolean, disabled?: () => boolean, badge?: () => number, dot?: () => string}>} */
+	 * `note` (50 R1) is a line under a More tile's label — why an item that cannot work here is off.
+	 * @type {Record<string, {label: string, short?: string, hint?: string, icon: string, run: () => void, pressed?: () => boolean, disabled?: () => boolean, badge?: () => number, dot?: () => string, note?: () => string}>} */
 	const ACTIONS = {
 		play: { label: 'Play', icon: 'play', run: fromMore(() => requestPlay()) },
+		// 60 Q1: Play from where the camera is (More ▸ Tools & View; placeable on the bar)
+		playhere: { label: 'Play here', short: 'Here', hint: 'Play here — start from this view', icon: 'map-pin', run: fromMore(() => playHere()) },
 		add: { label: 'Add', icon: 'plus', run: () => add() },
 		// 41b H1/H5: Objects, Configure Scene and Notes are dock tabs — the bar shows / minimizes them
 		objects: { label: 'Objects', icon: 'list', run: fromMore(() => phoneBarTap('objects')), pressed: () => $visibleDockKey === 'objects' && !$dockMinimized },
@@ -555,6 +567,19 @@
 		interact: { label: 'Interact mode', short: 'Interact', icon: 'hand', run: () => toggleEditorMode(), pressed: () => interactOn },
 		// 42 I5: "Tools, snapping, view and camera…" renamed, and placeable
 		tools: { label: 'Tools & View', short: 'Tools', icon: 'wrench', run: () => viewportTools() },
+		// 50 R1: the AR table. Off with a NOTE where the browser has no immersive-ar (iPhone, desktop) —
+		// never a button that fails; the session request rides this press (it needs the activation)
+		ar: {
+			label: 'AR table',
+			short: 'AR',
+			icon: 'smartphone',
+			get hint() {
+				return $arTableEntry === 'ready' ? 'Place the scene on a real table through the camera, then play it' : AR_UNSUPPORTED_NOTE;
+			},
+			run: fromMore(() => enterArTable()),
+			disabled: () => $arTableEntry !== 'ready',
+			note: () => ($arTableEntry === 'unsupported' ? AR_UNSUPPORTED_NOTE : $arTableEntry === 'checking' ? 'Checking…' : '')
+		},
 		focus: { label: 'Focus mode', short: 'Focus', icon: 'maximize-2', run: () => enterFocusMode() },
 		// 46 B1: the scene budget for the chosen device (Statistics ▸ Budget picks the device); the dot is its tier
 		budget: {
@@ -934,6 +959,7 @@
 						onclick={() => runItem(key)}
 					>
 						<span class="ps-gi" class:ps-gi-play={key === 'play'}><Icon name={act.icon} size={20} />{#if act.dot}<span class="budget-dot ps-dot" data-tier={act.dot()} aria-hidden="true"></span>{/if}</span>{act.label}
+						{#if act.note?.()}<span class="ps-tile-note" id={`${tileId(key)}-note`}>{act.note()}</span>{/if}
 						{#if n > 0}<span class="ps-nb ps-nb-tile">{n > 99 ? '99+' : n}</span>{/if}
 					</button>
 				{/snippet}
@@ -1323,6 +1349,12 @@
 	}
 	.ps-tile {
 		position: relative;
+	}
+	/* 50 R1: why an item is off here (the AR table's "AR needs Android Chrome") */
+	.ps-tile-note {
+		color: var(--color-text-muted);
+		font-size: 11px;
+		line-height: 1.2;
 	}
 	.ps-nb-tile {
 		top: 4px;

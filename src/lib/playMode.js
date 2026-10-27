@@ -11,7 +11,10 @@ import { showToast } from '../stores/appStore';
 import { pushState } from '$app/navigation';
 // 36-export: an exported game is an embed for its whole life too (a leaf, read once at eval)
 import { exportMode } from './export/exportBoot.js';
+import { onPlayOrigin, appUrl } from './playOrigin.js';
 import { safeStorage } from './safeStorage';
+// 50 R1: a LEAF (svelte/store only) — the AR table's session is not a Play press
+import { arTableActive } from './arTableState.js';
 
 // THE PLAY STATE MACHINE, lifted out of Controls.svelte so the play FAB, the FAB's
 // right-click mode menu and (next) a keyboard shortcut all press the same button.
@@ -104,8 +107,9 @@ function readEmbedBoot() {
 }
 const embedBoot = readEmbedBoot();
 /** true for the whole life of a page opened with `?embed=1` — or of an EXPORTED game (36-export),
- *  which hides the same editor chrome and draws the same player chrome */
-export const embedMode = writable(embedBoot.on || exportMode);
+ *  which hides the same editor chrome and draws the same player chrome — or of any page on the
+ *  separate play origin (69 T4: it is player-only, `$lib/playOrigin`) */
+export const embedMode = writable(embedBoot.on || exportMode || onPlayOrigin);
 /** the `?s=<id>` the embed opened with ('' when none) — the corner link's target */
 export const embedSceneId = embedBoot.scene;
 /** 36-community (C4): the visit source and published build the frame was opened with ('' when none) */
@@ -113,7 +117,8 @@ export const embedSource = embedBoot.src;
 export const embedBuild = embedBoot.build;
 /** the same scene in the full app: `/?s=<id>`, or `/` when the embed carried no scene */
 export function embedOpenUrl() {
-	return embedSceneId ? `/?s=${encodeURIComponent(embedSceneId)}` : '/';
+	// 69 T4: from the play origin, the editor is on the app origin
+	return appUrl(embedSceneId ? `/?s=${encodeURIComponent(embedSceneId)}` : '/');
 }
 
 /* ------------------------------------------------------------------ the exit --- */
@@ -269,7 +274,14 @@ function clearXRWatchdog() {
 /** a session really started — Scene calls this from the renderer's own event */
 export function noteXRSessionStarted() {
 	clearXRWatchdog();
+	// 50 R1: an AR table is placed BEFORE anything plays — its own Play button runs sim-on-play
+	if (arTableActive()) return;
 	// the VR half of sim-on-play: only a session that REALLY started counts
+	maybeSimOnPlay();
+}
+
+/** 50 R1: sim-on-play for a press that is not the play button's (the AR table's Play) */
+export function simOnPlay() {
 	maybeSimOnPlay();
 }
 

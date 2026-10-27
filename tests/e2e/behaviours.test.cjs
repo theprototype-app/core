@@ -61,8 +61,11 @@ h.run(async () => {
 	const other = auth === A ? B : A;
 
 	// ---- 1. a behaviour node: the file loads on BOTH peers through the module loader -----------
+	// 69: the first behaviour on a page also loads the sandbox engine (QuickJS); on a headless dev
+	// server at 2-4 fps that load alone takes 3-6 s per page (a built app: 0.1-0.6 s), hence 40 s here
+	// and for the late joiner below — the later waits run with the engine already loaded
 	const [wid] = await B_(A, (code) => /** @type {any} */ (window).__bApi.flow.addNodes({ nodes: [{ type: 'behaviour', x: 40, y: 40, data: { name: 'Waves spawner', code } }] }), WAVES);
-	await h.eventually(() => Promise.all([A, B].map((p) => dbg(p))), (v) => v.every((d) => d.status[wid]?.status === 'running'), 'the Waves behaviour node RUNS on both peers (analyzed, loaded through the module loader)', 15000);
+	await h.eventually(() => Promise.all([A, B].map((p) => dbg(p))), (v) => v.every((d) => d.status[wid]?.status === 'running'), 'the Waves behaviour node RUNS on both peers (analyzed, loaded through the module loader)', 40000);
 	const reg = await B_(A, (i) => /** @type {any} */ (window).__stores.behaviours.behavioursDebug().registrations(i), wid);
 	h.check((reg.kit ?? 0) >= 2, 'T2: its kit listeners are tracked in its lifecycle module (' + JSON.stringify(reg) + ')');
 
@@ -121,6 +124,10 @@ h.run(async () => {
 		s.behaviourViewOpen.set({ id: i, graphId: 'scene' });
 	}, wid);
 	await B.page.waitForSelector('#behaviour-view [data-bview-kind="state"]', { timeout: 10000 });
+	// the glow is "changed since this view's FIRST live tick" — on the authority the died handler
+	// fires the moment we kill, so a kill that beats B's first 100 ms tick lands in its baseline
+	// and never glows (0 of 10 samples). Live values on the state nodes = that tick has run.
+	await h.eventually(() => B.page.$$eval('#behaviour-view [data-bview-kind="state"] [data-bview-value]', (els) => els.map((e) => e.textContent?.trim())), (v) => v.join(',') === '1,2', 'B\'s view is live before the kill (wave 1, alive 2)', 5000);
 	const SAMPLE = () =>
 		new Promise((resolve) => {
 			/** @type {any[]} */
@@ -198,7 +205,7 @@ h.run(async () => {
 	const C = await h.setupPage(browser, 'C');
 	await B_(C, PROBE);
 	await h.connect(C, A);
-	await h.eventually(() => liveOf(C, wid), (l) => l?.state?.wave === 2 && l.synced, 'a LATE joiner runs the behaviour with the session\'s state (wave 2), not its initial one', 15000);
+	await h.eventually(() => liveOf(C, wid), (l) => l?.state?.wave === 2 && l.synced, 'a LATE joiner runs the behaviour with the session\'s state (wave 2), not its initial one', 40000);
 	await A.page.waitForTimeout(2500); // past the joiner grace
 	const after = await Promise.all([A, B, C].map((p) => liveOf(p, wid)));
 	h.check(after.every((l) => l.state.wave === 2), 'still wave 2 everywhere after the joiner grace (' + after.map((l) => l.state.wave) + ')');

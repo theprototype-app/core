@@ -31,11 +31,19 @@
 			<Socket kind="target" nodeType={data.type} position={Position.Left} id="trigger" style="top: 50%;" />
 			<span class="text-[10px] text-text-2">trigger</span>
 		</div>
+		<!-- fix-batch-1 (docs-1): on the standard 150 px card a "wait" word on every row plus a 48 px step
+		     label left each field's input 12 px — the values read as empty boxes. "wait" is said ONCE,
+		     as the column's heading (each field still names itself to a screen reader), and the step
+		     label is a fixed 36 px so the field does not jump when the ● lights. -->
+		<div class="flex h-4 items-center justify-between text-[10px] text-text-muted" aria-hidden="true">
+			<span>wait (s)</span>
+			<span>then</span>
+		</div>
 		{#each STEPS as step (step)}
 			<div class="relative -mx-3 flex h-6 items-center gap-1 px-3">
-				<span class="w-10 shrink-0 text-[10px] text-text-muted">wait</span>
 				<DragRow
 					nodrag
+					ariaLabel={`wait before step ${step} (seconds)`}
 					step={0.05}
 					decimals={2}
 					min={0}
@@ -43,7 +51,7 @@
 					onchange={(v: number) => setNodeData(id, { ['delay' + step]: v })}
 				/>
 				<span
-					class="w-12 shrink-0 text-right text-[10px]"
+					class="w-9 shrink-0 whitespace-nowrap text-right text-[10px]"
 					class:text-accent-text={!!handles['step' + step]}
 					class:text-text-2={!handles['step' + step]}
 				>

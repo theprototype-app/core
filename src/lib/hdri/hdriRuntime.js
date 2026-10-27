@@ -17,6 +17,8 @@ import { hdriOf, resolveHdriTier, isHeadsetUA, TIER_MAX_WIDTH, downsampleRGBA, i
 import { bundledHdri } from './catalog.js';
 import { skyEnv, envToneMapping, hdriStatus } from './skyEnv.js';
 import { pageUrl } from '../export/exportBoot.js';
+import { fetchCached } from '../assetCache';
+import { APP_VERSION } from '../version';
 import { qualityOverrides } from '../qualityGovernor';
 import { isVRMode } from '../../stores/sceneStore';
 import { hdriQuality } from './hdriPrefs.js';
@@ -72,9 +74,15 @@ async function fetchSource(src) {
 	if (held) return held;
 	const row = bundledHdri(src);
 	if (row) {
-		const res = await fetch(pageUrl(row.file));
-		if (!res.ok) throw new Error('HTTP ' + res.status + ' for ' + row.file);
-		const got = { buffer: await res.arrayBuffer(), name: row.file };
+		// 60 Q6: through the local asset cache (kind `sky`). A bundled sky ships WITH the build, so
+		// its key carries the build's version: an updated file under the same name is fetched anew
+		let buffer;
+		try {
+			buffer = await fetchCached(pageUrl(row.file), { kind: 'sky', version: APP_VERSION });
+		} catch (e) {
+			throw new Error(String(/** @type {any} */ (e)?.message ?? e) + ' for ' + row.file);
+		}
+		const got = { buffer, name: row.file };
 		remember(sources, src, got);
 		return got;
 	}

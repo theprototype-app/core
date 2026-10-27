@@ -35,6 +35,9 @@ import { velocityFromSamples, clampThrow, MAX_LINVEL, MAX_ANGVEL } from './throw
 // 29-F: the lower-id-keeps-the-world rule, as a leaf that imports nothing — the whole
 // decision is a pure function of four facts, so its truth table is a vitest unit.
 import { simulateVerdict } from './simAuthority';
+// fix-batch-1 #14: the impact rule (closing speed along the contact normal, the legacy
+// downward channel beside it) as a leaf of pure functions
+import { closingSpeed, IMPACT_MIN_DOWN_VY, IMPACT_MIN_SPEED } from './impactSpeed';
 // B7: spawned objects are swept when the run ends. transientObjects is a LEAF (the two
 // stores only), so this edge closes nothing — unlike objectActions, which the
 // out-of-bounds delete has to reach dynamically.
@@ -90,7 +93,7 @@ export const remoteSimulating = writable(null);
  *   lastSent?: {pos: THREE.Vector3, quat: THREE.Quaternion},
  *   colliders: any[], shapeKey: string,
  *   oob?: boolean, restSince?: number | null,
- *   preVy?: number, ccd?: boolean,
+ *   preV?: {x: number, y: number, z: number}, ccd?: boolean,
  *   buoy?: {points: Float32Array, weights: Float32Array, volume: number, cellH: number}}} BodyEntry */
 /** @type {BodyEntry[]} */
 let bodies = [];
@@ -130,9 +133,16 @@ let defaultsSubPrimed = false;
 let oobCount = 0;
 /** @type {any} */ let oobTimer = null;
 /** @type {string} */ let oobAction = 'respawn';
-/** @type {Map<string, number>} uuid -> last impact stamp (step-now ms) */
+/** @type {Map<string, number>} uuid -> last DOWNWARD impact stamp (step-now ms) */
 let lastImpactAt = new Map();
-/** @type {{uuid: string, strength: number, other: string}[]} contacts collected inside the substep loop (36 X6: + the other body) */
+/** fix-batch-1 #14: uuid -> last any-direction impact stamp. Its OWN cooldown: a sideways
+ * bump must not swallow the landing a downward-only node (an old scene) is waiting for.
+ * @type {Map<string, number>} */
+let lastAnyImpactAt = new Map();
+/** contacts collected inside the substep loop (36 X6: + the other body; fix-batch-1 #14: the
+ * two channels — `down` = downward speed, `speed` = closing speed along the contact normal,
+ * null where that channel did not count the contact)
+ * @type {{uuid: string, down: number | null, speed: number | null, other: string}[]} */
 let pendingImpacts = [];
 /** CL-A: colliders attached to FIXED scenery bodies (rebuild bookkeeping —
  * BodyEntry only exists for dynamic/kinematic). @type {Map<string, any[]>} */
@@ -174,7 +184,6 @@ export const PHYSICS_MATERIALS = {
 // two copies of a clamp is how they drift apart
 const EXTERNAL_HOLD_MS = 250; // peer-move silence before a held body drops
 const IMPACT_COOLDOWN_MS = 300; // per-body: a roll/settle can't machine-gun impacts
-const IMPACT_MIN_DOWN_VY = 1.2; // m/s downward (pre-step) for a contact to count
 
 /** Pre-load the wasm module (also lets tests warm the vite dep cache) */
 export async function warmup() {
@@ -1063,6 +1072,7 @@ async function startSimulation() {
 	eventQueue = new RAPIER.EventQueue(true);
 	colliderOwner = new Map();
 	lastImpactAt = new Map();
+	lastAnyImpactAt = new Map();
 	pendingImpacts = [];
 	// 36 X2: static/kinematic scenery may pick the EXACT mesh (ColliderDesc.trimesh,
 	// colliderSpec kind 'trimesh'); terrain from a heightfield is still deferred.
@@ -1294,6 +1304,7 @@ export function physicsRemoveBody(uuid) {
 	// cooldown would grow without bound. Purging is also strictly correct — a uuid is
 	// never reused, so a surviving row could only ever suppress nothing.
 	lastImpactAt.delete(uuid);
+	lastAnyImpactAt.delete(uuid);
 	return true;
 }
 
@@ -1859,9 +1870,15 @@ function stepInner(now) {
 			feed.entry.body.setNextKinematicRotation({ x: stepQuat.x, y: stepQuat.y, z: stepQuat.z, w: stepQuat.w });
 		}
 		// PFX-C: impact strength must be sampled BEFORE the step — contact
-		// resolution rewrites linvel during it (a bounce reads as upward after)
+		// resolution rewrites linvel during it (a bounce reads as upward after).
+		// fix-batch-1 #14: the whole vector (a wall hit is horizontal), every body
+		// (a kinematic mover or a held one is the OTHER side of somebody's impact)
 		bodies.forEach((entry) => {
-			if (entry.mode === 'dynamic' && !entry.hold) entry.preVy = entry.body.linvel().y;
+			const v = entry.body.linvel();
+			const pre = (entry.preV ??= { x: 0, y: 0, z: 0 });
+			pre.x = v.x;
+			pre.y = v.y;
+			pre.z = v.z;
 		});
 		for (const f of floaters)
 			if (!f.entry.hold && f.entry.buoy)
@@ -1935,13 +1952,17 @@ function stepInner(now) {
 				entry.lastSent ??= { pos: new THREE.Vector3(), quat: new THREE.Quaternion() };
 				entry.lastSent.pos.copy(object.position);
 				entry.lastSent.quat.copy(object.quaternion);
-				peer.send({
-					type: 'move',
-					uuid: object.uuid,
-					pos: object.position.toArray(),
-					rot: [object.rotation.x, object.rotation.y, object.rotation.z],
-					scale: object.scale.toArray()
-				});
+				// 60 Q2: a body's pose stream rides the fast channel
+				peer.send(
+					{
+						type: 'move',
+						uuid: object.uuid,
+						pos: object.position.toArray(),
+						rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+						scale: object.scale.toArray()
+					},
+					{ fast: true }
+				);
 			}
 		}
 	});
@@ -1950,35 +1971,67 @@ function stepInner(now) {
 }
 
 /**
- * A contact-start seen inside the substep loop. Either side that is a falling
- * DYNAMIC body (pre-step downward velocity above the threshold, not held, off
- * cooldown) registers an impact — dynamic-vs-ground, dynamic-vs-scenery and
- * dynamic-vs-dynamic all count.
+ * A contact-start seen inside the substep loop. Either side that is a DYNAMIC body (not held)
+ * registers an impact when it passes either channel, each with its own cooldown:
+ *   down  — the pre-step DOWNWARD velocity reaches 1.2 m/s (a landing; the only rule up to
+ *           1.43, kept for On Impact nodes set to "down" and every node saved before the
+ *           option existed, and for the emitters' "On impact" burst)
+ *   speed — fix-batch-1 #14: the two bodies CLOSE along the contact normal at ≥ 1.2 m/s,
+ *           from any side (a ball thrown at a wall, a crate shoved into a target, a
+ *           kinematic paddle hitting a ball at rest)
+ * Dynamic-vs-ground, dynamic-vs-scenery and dynamic-vs-dynamic all count.
  *
  * 49 P2: the body it landed ON hears it too when that body cannot register for itself — a
  * fixed or kinematic object (a pressure plate, a target, a moving platform) gets the same
  * impact with `other` = the mover. A DYNAMIC partner is left to its own test above, so two
  * dynamic bodies never fire twice for one contact; a sensor partner has On Enter instead.
- * The passive event rides the mover's cooldown, so it cannot machine-gun either.
+ * The passive event rides the mover's cooldowns, so it cannot machine-gun either.
  * @param {number} h1 @param {number} h2 @param {number} now step clock (ms)
  */
 function queueContact(h1, h2, now) {
 	for (const handle of [h1, h2]) {
 		if (groundHandles.has(handle)) continue;
 		const entry = colliderOwner.get(handle)?.entry;
-		if (!entry || entry.mode !== 'dynamic' || entry.hold) continue;
-		const down = -(entry.preVy ?? 0);
-		if (down < IMPACT_MIN_DOWN_VY) continue;
-		const uuid = entry.object.uuid;
-		if (now - (lastImpactAt.get(uuid) ?? -Infinity) < IMPACT_COOLDOWN_MS) continue;
-		lastImpactAt.set(uuid, now);
-		// 36 X6: and what it hit — the other collider's owner, '' for the ground
+		if (!entry || entry.mode !== 'dynamic' || entry.hold || !entry.preV) continue;
 		const other = handle === h1 ? h2 : h1;
 		const hit = groundHandles.has(other) ? null : colliderOwner.get(other);
-		pendingImpacts.push({ uuid, strength: down, other: hit?.uuid ?? '' });
+		const uuid = entry.object.uuid;
+		const fall = -entry.preV.y;
+		const down = fall >= IMPACT_MIN_DOWN_VY && now - (lastImpactAt.get(uuid) ?? -Infinity) >= IMPACT_COOLDOWN_MS ? fall : null;
+		let speed = null;
+		if (now - (lastAnyImpactAt.get(uuid) ?? -Infinity) >= IMPACT_COOLDOWN_MS) {
+			// the ground and fixed scenery stand still; anything else brings its own velocity
+			const closing = closingSpeed(entry.preV, hit?.entry?.preV ?? null, contactNormal(handle, other));
+			if (closing >= IMPACT_MIN_SPEED) speed = closing;
+		}
+		if (down === null && speed === null) continue;
+		if (down !== null) lastImpactAt.set(uuid, now);
+		if (speed !== null) lastAnyImpactAt.set(uuid, now);
+		// 36 X6: and what it hit — the other collider's owner, '' for the ground
+		pendingImpacts.push({ uuid, down, speed, other: hit?.uuid ?? '' });
 		if (hit && !hit.sensor && hit.uuid !== uuid && hit.entry?.mode !== 'dynamic')
-			pendingImpacts.push({ uuid: hit.uuid, strength: down, other: uuid });
+			pendingImpacts.push({ uuid: hit.uuid, down, speed, other: uuid });
 	}
+}
+
+/**
+ * fix-batch-1 #14: the world-space normal of a contact that just started (its sign is
+ * irrelevant to the caller), or null when rapier holds no manifold for the pair — the
+ * caller then falls back to the vertical, the old landing assumption.
+ * @param {number} h1 @param {number} h2 @returns {{x: number, y: number, z: number} | null}
+ */
+function contactNormal(h1, h2) {
+	const c1 = world?.getCollider(h1);
+	const c2 = world?.getCollider(h2);
+	if (!c1 || !c2) return null;
+	/** @type {{x: number, y: number, z: number} | null} */
+	let n = null;
+	world.contactPair(c1, c2, (/** @type {any} */ manifold) => {
+		if (n || !manifold.numContacts()) return;
+		const v = manifold.normal();
+		n = { x: v.x, y: v.y, z: v.z };
+	});
+	return n;
 }
 
 /**
@@ -2020,10 +2073,14 @@ function dispatchImpacts() {
 	const impacts = pendingImpacts;
 	pendingImpacts = [];
 	const group = get(objectsGroup);
-	impacts.forEach(({ uuid, strength, other }) => {
+	impacts.forEach(({ uuid, down, speed, other }) => {
 		// flow path: pulse On Impact nodes targeting this object — the trigger
-		// stamp replicates (nodetrigger), so every peer computes the same pulse
-		fireObjectImpact(uuid, strength, other);
+		// stamp replicates (nodetrigger), so every peer computes the same pulse.
+		// fix-batch-1 #14: each node picks its channel (direction any | down)
+		fireObjectImpact(uuid, down, other, speed);
+		// the emitters keep the landing rule: their "On impact" has no direction option, so
+		// a sideways contact bursting them would change every scene that uses one
+		if (down === null) return;
 		// zero-flow path: an emitter set to "On impact" bursts for everyone
 		// (replicated particleburst timestamp) — userData emitters checked on
 		// the object, NODE emitters through the runtime

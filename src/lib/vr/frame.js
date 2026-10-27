@@ -75,7 +75,7 @@ import {
 	vrJumpHeight,
 	updateHeightLift
 } from './locomotion.js';
-import { modeHand, toggleVRMode, payPendingSpawn, updateModeLabel } from './modes.js';
+import { modeHand, toggleVRMode, payPendingSpawn, payPendingPlayHere, updateModeLabel } from './modes.js';
 import {
 	vrHovered,
 	vrPanelCursor,
@@ -111,6 +111,7 @@ import {
 	stretchSliderDrag,
 	updateStretchSliderDrag
 } from './tools.js';
+import { arTableActive } from '../arTableState.js';
 
 /** @type {any} */ let micHud = null;
 
@@ -197,7 +198,9 @@ function panelModal() {
 
 /** Per-frame update while presenting (called from Scene's useTask) */
 export function updateVRControls() {
-	const session = renderer?.xr.getSession();
+	// 50 R1: a phone placing a scene on a table is not a headset — no rays, sticks, grips, panels,
+	// height lift or spawn; the AR table runs its own frame (arTable.tickArTable)
+	const session = arTableActive() ? null : renderer?.xr.getSession();
 	updateRaysAndHover(!!session);
 	updateBlink();
 	updateMicHud(!!session);
@@ -216,6 +219,7 @@ export function updateVRControls() {
 		return;
 	}
 	payPendingSpawn(); // 30b P4
+	payPendingPlayHere(); // 60 Q1
 	updateHeightLift(); // 36: Settings ▸ VR ▸ Body (seated / height), applied once per change
 	// open menu/panel are modal for the sticks: sector nav / scrolling own them;
 	// a RIGHT-hand grab owns the right stick too (reel/scale beats teleport, 100);

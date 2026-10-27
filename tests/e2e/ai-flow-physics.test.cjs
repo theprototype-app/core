@@ -128,7 +128,7 @@ h.run(async () => {
 						{ kind: 'primitive', primitive: 'Box', params: [1, 0.5, 1.4], position: [0, 0.6, 0], color: '#442200', name: 'Body' },
 						{ kind: 'primitive', primitive: 'Box', params: [0.15, 0.5, 0.15], position: [0.7, 0.25, 0], name: 'LegL' },
 						{ kind: 'primitive', primitive: 'Box', params: [0.15, 0.5, 0.15], position: [-0.7, 0.25, 0], name: 'LegR' },
-						{ kind: 'primitive', primitive: 'Box', params: [0.4, 0.4, 0.4], position: [3, 2, 0], name: 'Pebble' }
+						{ kind: 'primitive', primitive: 'Box', params: [0.4, 0.4, 0.4], position: [3, 2, 0], name: 'Pebble', physics: 'dynamic' } // fix-live F-4: AI-made objects are static unless asked
 					]
 				})
 			);
@@ -272,7 +272,7 @@ h.run(async () => {
 	}
 
 	let list = await msgs(A);
-	h.check(!list.some((m) => m.role === 'error'), 'no tool errors in the spider run');
+	h.check(!list.some((m) => m.role === 'error'), 'no tool errors in the spider run' + JSON.stringify(list.filter((m) => m.role === 'error')).slice(0, 300));
 	h.check(
 		list.some((m) => m.role === 'tool-status' && /behavior node/.test(m.content)),
 		'transcript labels the flow-node calls'

@@ -28,6 +28,11 @@
 	import SceneQualitySection from './inspector/SceneQualitySection.svelte'; // 42 I12
 	import ArrangeSection from './inspector/ArrangeSection.svelte'; // 47 M2
 	import TerrainPaintSection from './inspector/TerrainPaintSection.svelte'; // 47 T1/T2
+	import ScatterSection from './inspector/ScatterSection.svelte'; // 51-surface E2: scatter on any mesh
+	import { isMeshHost } from '$lib/terrainPaint';
+	/** 51-surface: a mesh or a group of meshes takes scatter (the tick re-asks when children load)
+	 * @param {any} o @param {any} _tick */
+	const scatterHostOk = (o, _tick) => isMeshHost(o);
 	import MeasureSection from './inspector/MeasureSection.svelte'; // 48 B2
 	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
@@ -351,15 +356,19 @@
 	// only when its side was EMPTY — opening onto (or closing off) a column that stays on screen is a
 	// tab change, and a tab change is instant.
 	const insSide = $derived($inspectorSide);
-	const insCovered = $derived(!sheetMode && $sidebarShown[insSide] !== 'inspector' && $sidebarTabs[insSide].includes('inspector'));
+	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost): no column, no sheet
+	let { popped = false } = $props();
+	const insCovered = $derived(!popped && !sheetMode && $sidebarShown[insSide] !== 'inspector' && $sidebarTabs[insSide].includes('inspector'));
 	const columnShared = $derived($sidebarTabs[insSide].some((k) => k !== 'inspector'));
 	// 53 A5: instant under reduced motion
 	const insTransition = $derived(
-		sheetMode
+		popped
+			? { duration: 0 } // 70: a pop-out window has nowhere to slide in from
+			: sheetMode
 			? { y: 500, duration: $reducedMotion ? 0 : 240, easing: sineIn }
 			: { ...transitionParamsRight, x: insSide === 'left' ? -transitionParamsRight.x : transitionParamsRight.x, duration: columnShared || $reducedMotion ? 0 : transitionParamsRight.duration }
 	);
-	const insPlacement = $derived(sheetMode ? drawerStyle : memberPlacement(insSide) + ' z-index: calc(var(--z-dock) - 1)');
+	const insPlacement = $derived(popped ? '' : sheetMode ? drawerStyle : memberPlacement(insSide) + ' z-index: calc(var(--z-dock) - 1)');
 
 	// On a narrow/folded screen this drawer is a bottom SHEET (see #inspector in ui.css)
 	// with a top drag handle to adjust height — mirrors the scene-notes sheet. Persisted.
@@ -1752,7 +1761,7 @@
 {#if !$inspectorClose}
 <div
 	style={insPlacement + '; --inspector-h: ' + inspectorH + 'px'}
-	data-sidebar-side={sheetMode ? null : insSide}
+	data-sidebar-side={sheetMode || popped ? null : insSide}
 	data-sidebar-hidden={insCovered ? '' : null}
 	transition:fly={insTransition}
 	class={'tp-ui ins-shell fixed inset-e-0 top-16 z-(--z-side-panel) w-80 overflow-y-auto overflow-x-hidden touch-pan-y p-4 pt-0' + (bottomRounded ? ' ins-rounded-bl' : '')}
@@ -3617,6 +3626,13 @@
 				<Section variant="panel" label="Water">
 					<WaterPanel uuid={$selectedObject.uuid} />
 				</Section>
+			{/if}
+
+			{#if !isLight && !multiCount && scatterHostOk($selectedObject, $objectsGroup)}
+				<!-- 51-surface E2: "Add scatter" on ANY mesh, right after the Water section's Add bubble /
+				     pour emitter rows; instances live in the object's own frame (a Terrain keeps its
+				     Scatter section beside Terrain paint) -->
+				<ScatterSection object={$selectedObject} />
 			{/if}
 
 			{#if devPrimary}

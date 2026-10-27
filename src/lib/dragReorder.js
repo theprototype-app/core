@@ -44,6 +44,8 @@ export function dragReorder(node, options) {
 	/** @type {null | {id: string, el: HTMLElement, x: number, y: number, moved: boolean, pointerId: number}} */
 	let press = null;
 	let index = -1;
+	/** @type {Window} the window the press began in */
+	let win = window;
 
 	const others = () =>
 		/** @type {HTMLElement[]} */ ([...node.querySelectorAll(opts.item)]).filter((el) => el !== press?.el);
@@ -61,9 +63,11 @@ export function dragReorder(node, options) {
 		const id = el.getAttribute(opts.idAttr);
 		if (!id) return;
 		press = { id, el, x: e.clientX, y: e.clientY, moved: false, pointerId: e.pointerId };
-		window.addEventListener('pointermove', move, true);
-		window.addEventListener('pointerup', up, true);
-		window.addEventListener('pointercancel', cancel, true);
+		// 50-window: the window this strip lives in (the code window's, when popped out)
+		win = node.ownerDocument.defaultView ?? window;
+		win.addEventListener('pointermove', move, true);
+		win.addEventListener('pointerup', up, true);
+		win.addEventListener('pointercancel', cancel, true);
 	}
 
 	/** @param {PointerEvent} e */
@@ -101,9 +105,9 @@ export function dragReorder(node, options) {
 	}
 
 	function finish() {
-		window.removeEventListener('pointermove', move, true);
-		window.removeEventListener('pointerup', up, true);
-		window.removeEventListener('pointercancel', cancel, true);
+		win.removeEventListener('pointermove', move, true);
+		win.removeEventListener('pointerup', up, true);
+		win.removeEventListener('pointercancel', cancel, true);
 		clearMarks();
 		node.removeAttribute('data-reordering');
 		press?.el.removeAttribute('data-dragging');
@@ -121,8 +125,8 @@ export function dragReorder(node, options) {
 			ev.stopPropagation();
 			ev.preventDefault();
 		};
-		window.addEventListener('click', swallow, { capture: true, once: true });
-		setTimeout(() => window.removeEventListener('click', swallow, true), 0);
+		win.addEventListener('click', swallow, { capture: true, once: true });
+		setTimeout(() => win.removeEventListener('click', swallow, true), 0);
 		if (index >= 0) opts.onMove(done.id, index);
 	}
 

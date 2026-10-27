@@ -96,7 +96,9 @@ h.run(async () => {
 		return cam.getWorldPosition(new s.THREE.Vector3()).toArray().map((n) => +n.toFixed(2));
 	});
 	const vignette = await page.evaluate(() => { let v; window.__stores.gameKit.gameSettings?.gameSettingValues?.subscribe((x) => (v = x))(); return v?.vignette ?? null; });
-	h.check(vignette === true, `the comfort vignette defaults ON for this game (${vignette})`);
+	// test-health-1: 53-play phase 6 (e16c7413) made the vignette a LEVEL (default/off/low/high) and
+	// maps the module's `true` to 'high' (gameSettings aliases), so ON reads 'high' now
+	h.check(vignette === 'high', `the comfort vignette defaults ON (high) for this game (${vignette})`);
 	h.check(eye0[1] > 12.5 && Math.abs(eye0[0]) < 3, `Play put the player on stage 1's start pad, up in the sky (${eye0})`);
 
 	console.log('\n=== 3. a scripted run of stage 1 ===');

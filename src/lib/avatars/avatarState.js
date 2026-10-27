@@ -63,11 +63,14 @@ export function setLocalFeet(y) {
 	feetY = Number.isFinite(y) ? /** @type {number} */ (y) : null;
 	feetAt = typeof performance !== 'undefined' ? performance.now() : 0;
 }
-/** @returns {number | null} */
-export function localFeet() {
+/** @param {number} [frameMs] the reader's frame time: the writer runs once per frame and the reader
+ * sees the previous frame's write, so below ~4 fps a fixed 250 ms called every reading stale and the
+ * body fell under the head on every peer (avatar-feet 1.7; any >250 ms hitch did it too)
+ * @returns {number | null} */
+export function localFeet(frameMs = 0) {
 	if (feetY === null) return null;
 	const now = typeof performance !== 'undefined' ? performance.now() : 0;
-	return now - feetAt > FEET_STALE_MS ? null : feetY;
+	return now - feetAt > Math.max(FEET_STALE_MS, 2 * frameMs) ? null : feetY;
 }
 
 // 37 R22: THIS player is "knocked off" — no input for `knockedAfterSeconds`. The camera broadcast

@@ -202,7 +202,13 @@ function heldRecordFor(row) {
  */
 export function rowsNeedingBytes(manifest) {
 	const held = heldHashes();
-	return (manifest?.items ?? []).filter((/** @type {any} */ r) => r?.hash && !held.has(r.hash));
+	return (manifest?.items ?? []).filter(
+		// 70 W1: never OUR OWN row. Saving a shared file moves the record to its new hash at
+		// once and the row a debounce later, and in that gap the row named bytes we no longer
+		// held — so we pulled our own old version back from a peer, and it landed as a stray
+		// copy at the library root (no row names it by then)
+		(/** @type {any} */ r) => r?.hash && !held.has(r.hash) && heldRecordFor(r)?.share !== 'mine'
+	);
 }
 
 /**
@@ -2080,6 +2086,11 @@ export function applySharedIndex(doc) {
 			? (get(explorerFolders).find((f) => f.id === row.folderId)?.id ?? null)
 			: null;
 		if ((item.folderId ?? null) !== dest) patch.folderId = dest;
+		// 70 W1: and NAMED as the row says — the folder rows above always followed a peer's
+		// rename, the item rows never did, so a file renamed by its writer kept its old name on
+		// every other machine. A real-id row only: a legacy row is keyed by HASH and may land on
+		// a copy somebody here named themselves
+		if (row.name && !isSyntheticId(row.id) && item.name !== row.name) patch.name = row.name;
 		patchRecord(item.id, patch);
 		// the row points at OTHER bytes: the publisher edited the file, and the record
 		// follows in place — from a sibling record if one holds them, else through the pull
@@ -2564,14 +2575,15 @@ function scheduleSweep() {
 	// a cheap key: placement, the share flags — and, since 24-C2, the HASH: a row carries
 	// its record's content pointer, so an edit to a shared file (updateItemBytes) is a
 	// change the document must see. Before C2 an edited shared file kept its old row until
-	// something unrelated moved.
+	// something unrelated moved. 70 W1: and the NAMES (plus a folder's parent) — a row
+	// carries them too, so a rename or a folder move from the Code tab never reached a peer.
 	const key =
 		get(explorerItems)
-			.map((i) => i.id + ':' + (i.folderId ?? '') + ':' + (i.share ?? '') + ':' + (i.hash ?? ''))
+			.map((i) => i.id + ':' + (i.folderId ?? '') + ':' + (i.share ?? '') + ':' + (i.hash ?? '') + ':' + (i.name ?? ''))
 			.join('|') +
 		'#' +
 		get(explorerFolders)
-			.map((f) => f.id + ':' + (f.share ?? ''))
+			.map((f) => f.id + ':' + (f.share ?? '') + ':' + (f.parentId ?? '') + ':' + (f.name ?? ''))
 			.join('|');
 	if (key === sweptKey) return;
 	sweptKey = key;

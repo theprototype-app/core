@@ -188,6 +188,7 @@ function graphOutline(code) {
 export function outlineOf(code, hint = {}) {
 	const src = String(code ?? '');
 	if (hint.lang === 'json') return graphOutline(src);
+	if (hint.lang === 'text') return { items: [], partial: false }; // 50 Y2: prose has no outline
 	/** @type {OutlineItem[]} */
 	const items = [];
 	const asScript = hint.kind === 'node';

@@ -7,7 +7,7 @@
 	// missed (or dismissed while a modal was open) is still recoverable. Placed in the
 	// top-right chrome next to the peers/profile cluster (Users.svelte), mirroring the
 	// peers popover pattern (absolute dropdown, click-catcher backdrop).
-	import { notifications, notificationsUnread, notificationCenterOpen } from '../../stores/appStore.js';
+	import { notifications, notificationsUnread, notificationCenterOpen, notificationActions } from '../../stores/appStore.js';
 
 	function toggle() {
 		const willOpen = !$notificationCenterOpen;
@@ -18,6 +18,16 @@
 	function clearAll() {
 		notifications.set([]);
 		notificationsUnread.set(0);
+		notificationActions.set({});
+	}
+
+	/** F-5: the newest entry of a group that still offers buttons @param {any[]} items */
+	function liveActionsOf(items) {
+		for (let i = items.length - 1; i >= 0; i--) {
+			const acts = $notificationActions[items[i].id];
+			if (acts?.length) return acts;
+		}
+		return null;
 	}
 
 	// NOTES-38 #13 (user): a message that repeats ("Cannot reach the peer server. Retrying…"
@@ -95,6 +105,13 @@
 								<span class="min-w-0">
 									<span class="notif-text">{g.text}</span>
 									<span class="notif-time">{ago(g.latest.ts)}</span>
+									{#if liveActionsOf(g.items)}
+										<span class="notif-actions">
+											{#each liveActionsOf(g.items) ?? [] as a (a.label)}
+												<button class="notif-act" onclick={() => a.action()}>{a.label}</button>
+											{/each}
+										</span>
+									{/if}
 									{#if g.items.length > 1 && open[g.text]}
 										<ul class="notif-times">
 											{#each [...g.items].reverse() as n (n.id)}
@@ -128,6 +145,24 @@
 	}
 	.notif-pop :global(.wc-body) {
 		max-height: 60vh;
+	}
+	.notif-actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 4px;
+	}
+	.notif-act {
+		font-size: var(--fs-badge);
+		padding: 2px 8px;
+		border-radius: 6px;
+		border: 1px solid var(--border);
+		background: transparent;
+		color: var(--accent);
+		cursor: pointer;
+	}
+	.notif-act:hover {
+		background: var(--surface-hover);
 	}
 	.notif-list {
 		margin: 0;

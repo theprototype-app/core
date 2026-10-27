@@ -14,6 +14,10 @@ import { retainOriginal } from './decimate';
 import { generatedGroup } from './lodGroupCore';
 import { parseGltfSceneSafe } from './ktx2Twins';
 import { optimizeGltf, OptimizeUnsupported } from './gltfOptimize.js';
+// 60 Q6: the converted output is kept in the local asset cache, keyed by the source hash + settings
+import { readCached, writeCached, cachedEntry } from './assetCache';
+import { derivedKey } from './assetCacheCore.js';
+import { APP_VERSION } from './version';
 import {
 	importDecision,
 	importOptions,
@@ -157,34 +161,53 @@ export async function maybeOptimizeImport(parsed, source) {
 	/** @type {any} */
 	let report = null;
 	let optimizedBytes = null;
+	// 60 Q6: the same file under the same settings converts ONCE per build — the textures'
+	// resize + KTX2 encode is the slow part of an import, and its output is a pure function of both
+	const engineOptions = importOptions(settings);
+	const convertedKey = runEngine
+		? derivedKey('texture', hash, { options: engineOptions, v: APP_VERSION })
+		: null;
+	const converted = convertedKey ? await readCached(convertedKey) : null;
 	if (runEngine) {
 		const progressId = 'import-optimize-' + hash.slice(0, 12);
-		showInfoToast(
-			progressId,
-			'Optimizing "' + source.label + '"… you can keep working while it runs.',
-			[],
-			undefined,
-			true
-		);
+		if (!converted)
+			showInfoToast(
+				progressId,
+				'Optimizing "' + source.label + '"… you can keep working while it runs.',
+				[],
+				undefined,
+				true
+			);
 		try {
-			const out = await optimizeGltf(bytes, importOptions(settings), {
-				onProgress: (p) => {
-					if (p.step === 'textures' && p.total)
-						showInfoToast(
-							progressId,
-							'Optimizing "' +
-								source.label +
-								'": textures ' +
-								Math.min(p.total, (p.done ?? 0) + 1) +
-								' / ' +
-								p.total +
-								'…',
-							[],
-							undefined,
-							true
-						);
-				}
-			});
+			const out = converted
+				? {
+						bytes: new Uint8Array(converted),
+						report: cachedEntry(/** @type {string} */ (convertedKey))?.meta?.report ?? null
+					}
+				: await optimizeGltf(bytes, engineOptions, {
+						onProgress: (p) => {
+							if (p.step === 'textures' && p.total)
+								showInfoToast(
+									progressId,
+									'Optimizing "' +
+										source.label +
+										'": textures ' +
+										Math.min(p.total, (p.done ?? 0) + 1) +
+										' / ' +
+										p.total +
+										'…',
+									[],
+									undefined,
+									true
+								);
+						}
+					});
+			if (!converted && convertedKey)
+				void writeCached(convertedKey, out.bytes.slice().buffer, {
+					kind: 'texture',
+					type: 'model/gltf-binary',
+					meta: { report: out.report }
+				});
 			report = out.report;
 			optimizedBytes = out.bytes;
 			const gltfResult = await parseGltfSceneSafe(
@@ -254,7 +277,9 @@ export async function maybeOptimizeImport(parsed, source) {
 				optimizedFrom: original.hash,
 				optimizeReport: summaryForItem,
 				// 47 C2: the optimized copy names the same CC0 source as its original (Explorer Properties)
-				...(/** @type {any} */ (original).source ? { source: /** @type {any} */ (original).source } : {})
+				.../** @type {any} */ ((original).source
+					? { source: /** @type {any} */ (original).source }
+					: {})
 			});
 			patchRecord(original.id, { optimizedHash: optimizedItem.hash });
 		}

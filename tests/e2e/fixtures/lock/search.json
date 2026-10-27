@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-22T17:48:57.949Z",
+	"recordedAt": "2026-10-27T09:37:53.574Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -438,6 +438,7 @@
 				"Layout",
 				"Look speed",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Show in edit",
 				"Show touch controls",
 				"UI scale",
@@ -485,6 +486,7 @@
 		},
 		"Scale": {
 			"rows": [
+				"Both grips scale the world",
 				"Grab style",
 				"Phone selection toolbar",
 				"Pivot point",
@@ -1486,6 +1488,7 @@
 		},
 		"Checkpoint storage": {
 			"rows": [
+				"Auto checkpoints on large scenes",
 				"Automatic checkpoint every",
 				"Checkpoint storage",
 				"Keep automatic checkpoints"
@@ -1522,6 +1525,7 @@
 		"Angle": {
 			"rows": [
 				"Angle",
+				"Auto checkpoints on large scenes",
 				"Compress textures (KTX2)",
 				"Face edit limit",
 				"Import defaults",
@@ -1774,10 +1778,12 @@
 		},
 		"Storage used": {
 			"rows": [
+				"Cache size limit",
 				"Storage used"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"Optimize big models automatically": {
@@ -1910,6 +1916,7 @@
 			"rows": [
 				"Angle",
 				"Animation speed",
+				"Auto checkpoints on large scenes",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",
@@ -1917,6 +1924,7 @@
 				"Carry object flow",
 				"Carry shader graph",
 				"Checkpoint storage",
+				"Distant scatter",
 				"Double-click action",
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
@@ -2023,6 +2031,7 @@
 		"Snap angle": {
 			"rows": [
 				"Angle",
+				"Auto checkpoints on large scenes",
 				"Snap angle"
 			],
 			"sections": [
@@ -2073,6 +2082,7 @@
 		},
 		"Stance": {
 			"rows": [
+				"Distant scatter",
 				"Length",
 				"Stance"
 			],
@@ -2329,6 +2339,7 @@
 		"Version": {
 			"rows": [
 				"Announce new versions",
+				"Auto checkpoints on large scenes",
 				"Automatic checkpoint every",
 				"Checkpoint storage",
 				"Diagnostics",
@@ -2469,6 +2480,7 @@
 			"rows": [
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
+				"Always show tab strip in windows",
 				"Announce new versions",
 				"Custom theme",
 				"Density",
@@ -2485,6 +2497,7 @@
 				"Phone grab handle",
 				"Phone selection toolbar",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Reset tips",
 				"Reset tours",
 				"Show FPS and draw calls",
@@ -2544,6 +2557,7 @@
 			"rows": [
 				"Angle",
 				"Animation speed",
+				"Auto checkpoints on large scenes",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",
@@ -2552,6 +2566,7 @@
 				"Carry shader graph",
 				"Checkpoint storage",
 				"Compress textures (KTX2)",
+				"Distant scatter",
 				"Double-click action",
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
@@ -2785,6 +2800,7 @@
 		},
 		"backup": {
 			"rows": [
+				"Auto checkpoints on large scenes",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",
@@ -2896,6 +2912,7 @@
 		"quest": {
 			"rows": [
 				"Compress textures (KTX2)",
+				"Distant scatter",
 				"Import defaults",
 				"Include VR button",
 				"LOD 1 keeps",
@@ -2920,6 +2937,7 @@
 			],
 			"sections": [
 				"Interface",
+				"Scene",
 				"Explorer",
 				"Import",
 				"Export",
@@ -2964,11 +2982,13 @@
 		"network": {
 			"rows": [
 				"Apply changes",
+				"Cached downloads",
 				"Session size",
 				"Signaling server",
 				"Statistics card"
 			],
 			"sections": [
+				"Storage",
 				"VR",
 				"Connection"
 			]
@@ -3061,6 +3081,7 @@
 		},
 		"model": {
 			"rows": [
+				"Distant scatter",
 				"Enable assistant",
 				"Mesh generation",
 				"My hand model",
@@ -3098,24 +3119,30 @@
 		},
 		"disk": {
 			"rows": [
+				"Storage breakdown",
 				"Storage used"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"quota": {
 			"rows": [
+				"Cache size limit",
+				"Storage breakdown",
 				"Storage used"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"toolbar": {
 			"rows": [
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
+				"Always show tab strip in windows",
 				"Announce new versions",
 				"Custom theme",
 				"Density",
@@ -3133,6 +3160,7 @@
 				"Phone grab handle",
 				"Phone selection toolbar",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Reset tips",
 				"Reset tours",
 				"Show FPS and draw calls",
@@ -3163,6 +3191,7 @@
 			"rows": [
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
+				"Always show tab strip in windows",
 				"Announce new versions",
 				"Button hints",
 				"Custom theme",
@@ -3184,6 +3213,7 @@
 				"Phone grab handle",
 				"Phone selection toolbar",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Reset panel positions",
 				"Reset tips",
 				"Reset tours",
@@ -3325,6 +3355,7 @@
 				"Paste at the cursor",
 				"Pinch zoom",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -3394,6 +3425,7 @@
 			"rows": [
 				"Angle",
 				"Animation speed",
+				"Auto checkpoints on large scenes",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",
@@ -3401,6 +3433,7 @@
 				"Carry object flow",
 				"Carry shader graph",
 				"Checkpoint storage",
+				"Distant scatter",
 				"Double-click action",
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
@@ -3444,6 +3477,7 @@
 		"snap": {
 			"rows": [
 				"Angle",
+				"Auto checkpoints on large scenes",
 				"Automatic checkpoint every",
 				"Checkpoint storage",
 				"Keep automatic checkpoints",
@@ -3461,6 +3495,8 @@
 		},
 		"files": {
 			"rows": [
+				"Cache size limit",
+				"Cached downloads",
 				"Delete without asking",
 				"Deleted files log",
 				"Download shared files automatically",
@@ -3475,7 +3511,8 @@
 				"Who can unshare a file"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"library": {
@@ -3504,6 +3541,7 @@
 		"headset": {
 			"rows": [
 				"Colocation probe",
+				"Distant scatter",
 				"Draw repeated kit pieces together",
 				"Game HUD",
 				"Include VR button",
@@ -3525,6 +3563,7 @@
 		},
 		"xr": {
 			"rows": [
+				"Both grips scale the world",
 				"Button hints",
 				"Colocation",
 				"Colocation probe",
@@ -3731,6 +3770,7 @@
 				"Object list: show / bring to front / hide",
 				"Paste at the cursor",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -3853,6 +3893,7 @@
 				"Object list: show / bring to front / hide",
 				"Paste at the cursor",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -3976,6 +4017,7 @@
 				"Object list: show / bring to front / hide",
 				"Paste at the cursor",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -4024,6 +4066,7 @@
 		"version": {
 			"rows": [
 				"Announce new versions",
+				"Auto checkpoints on large scenes",
 				"Automatic checkpoint every",
 				"Checkpoint storage",
 				"Diagnostics",
@@ -4092,6 +4135,7 @@
 		},
 		"checkpoint": {
 			"rows": [
+				"Auto checkpoints on large scenes",
 				"Auto-restore on load",
 				"Automatic checkpoint every",
 				"Autosave",
@@ -4243,6 +4287,7 @@
 		"zoom": {
 			"rows": [
 				"Allow browser pinch zoom",
+				"Both grips scale the world",
 				"High contrast",
 				"Motion",
 				"Node editor opens",
@@ -4255,12 +4300,14 @@
 			"sections": [
 				"Accessibility",
 				"Controls",
-				"Input"
+				"Input",
+				"VR"
 			]
 		},
 		"pan": {
 			"rows": [
 				"Allow text selection everywhere",
+				"Always show tab strip in windows",
 				"Animation: show / bring to front / hide",
 				"Collapse / expand the selected nodes",
 				"Dock resizes the viewport",
@@ -4351,6 +4398,7 @@
 		},
 		"vr": {
 			"rows": [
+				"Both grips scale the world",
 				"Button hints",
 				"Colocation",
 				"Colocation probe",
@@ -4408,6 +4456,8 @@
 		},
 		"ai": {
 			"rows": [
+				"Both grips scale the world",
+				"Cached downloads",
 				"Colocation probe",
 				"Compress textures (KTX2)",
 				"Download shared files automatically",
@@ -4433,6 +4483,7 @@
 				"Reset tips",
 				"Reverse trackpad pan",
 				"Stance",
+				"Storage breakdown",
 				"Storage used",
 				"Teleport",
 				"Texture threshold",
@@ -4446,6 +4497,7 @@
 				"Shortcuts",
 				"Scene",
 				"Explorer",
+				"Storage",
 				"Import",
 				"Export",
 				"VR",
@@ -4467,6 +4519,7 @@
 				"Object",
 				"Particles",
 				"Physics",
+				"Scatter",
 				"Shadow",
 				"Texture",
 				"Transform",
@@ -4478,6 +4531,7 @@
 			"object": [
 				"LOD",
 				"Object",
+				"Scatter",
 				"Transform",
 				"Water"
 			],
@@ -4487,6 +4541,9 @@
 			"water": [
 				"Physics",
 				"Water"
+			],
+			"scatter": [
+				"Scatter"
 			],
 			"geometry": [
 				"Geometry"
@@ -4532,6 +4589,7 @@
 			"scale": [
 				"Emission",
 				"Material",
+				"Scatter",
 				"Shadow",
 				"Texture",
 				"Transform"

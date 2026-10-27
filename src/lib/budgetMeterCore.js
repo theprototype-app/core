@@ -283,7 +283,8 @@ export function measureScene(input) {
 					if (node.castShadow) row.shadowLights++;
 				}
 				if (node.isMesh || node.isPoints || node.isLine || node.isSprite) {
-					const tris = node.isMesh ? trianglesOf(node.geometry) * (node.isInstancedMesh ? Math.max(0, node.count ?? 0) : 1) : 0;
+					// 51: a thinned scatter mesh counts every instance (the content, not this device's draw)
+					const tris = node.isMesh ? trianglesOf(node.geometry) * (node.isInstancedMesh ? Math.max(0, node.userData?.instanceTotal ?? node.count ?? 0) : 1) : 0;
 					row.triangles += tris;
 					let calls = callsOf(node);
 					if (kitInstancing && node.isMesh && !node.isInstancedMesh) {

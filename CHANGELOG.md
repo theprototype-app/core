@@ -5,6 +5,43 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## Next release — AI agents in your session, invite links, and a people menu 🤖
+
+Send Claude (or any AI agent) your session link and build together: the agent joins as a peer, uses the app's own
+tools and shows you every step. Invite links let a friend or an agent in without an approval card, and a new menu on
+every person in the Connected panel lets the host remove someone.
+
+### 🤖 AI agents in your session
+
+- **Join from a link**: `claude mcp add theprototype -- npx -y @theprototype/agent mcp '<link>'` adds theprototype to
+  Claude Code (or any MCP client). The agent drives the real app in a headless browser — objects, flow nodes,
+  physics, and 3D generation on your own provider — with the in-app assistant's own tools, read live from your app.
+- **It sees what it built** through clean screenshots (no gizmos or toasts) that never move anyone's view, and it
+  leaves cleanly when you close it.
+- **No body, clear marks**: an agent shows as a robot with an "AI" label in Users — no character, no voice, no
+  cursor — and a small camera marker shows where it last looked (Settings can hide it).
+- **Every step in the AI assistant window**, on every peer: "Claude · created 12 objects (Campfire)". Click a line
+  to select those objects; editors can Undo it.
+- A view-only agent is told so instead of building things nobody else sees. llms.txt now says how an agent joins.
+
+### 🔗 Invite links (Connect ▸ Request AI)
+
+- One sheet with two tabs, **Person** and **AI agent**: pick **View** or **Edit** (cloud builds; View is the default
+  for people, Edit for agents), how long it lasts (10 min / 30 min / 24 h) and how many may use it. Copy it as a
+  link, a ready MCP command or one sentence for any chat.
+- An invite joins with no approval card. Users lists your active invites, who used each one, and Revoke.
+- AI agents never ride "Allow guests to join automatically" unless you also tick **Let AI agents join as guests**.
+- The invite key lives in the link's `#` part, which browsers never send to servers, and only your app checks it.
+
+### 👥 People menu
+
+- Right-click (or long-press, or Shift+F10) anyone in the Connected panel: **View profile**, **Copy peer id**,
+  **Go to**, **Watch**, **Show what they're editing**, **View character**, **Copy their look**, **Mute voice** and
+  **Hide** (for you only). Also in VR under Tools ▸ People.
+- The host (or an admin on theprototype.app) can **Remove from session** or **Remove and block** — every peer drops
+  them and a re-dial is refused with "You were removed from this session"; **Allow back** in Users undoes the block.
+  A removal sent by anyone else is ignored.
+
 ## 1.46.0 — Every panel in its own window, and files from the Code tab 🪟
 
 Spread the editor over two monitors: pop out any panel, or a whole dock, into its own window and move tabs between

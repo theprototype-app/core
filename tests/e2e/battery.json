@@ -260,7 +260,8 @@
 	},
 	"setup": {
 		"agent-bridge": "agent",
-		"agent-mcp": "agent"
+		"agent-mcp": "agent",
+		"agent-proof": "agent"
 	},
 	"suites": {
 		"a11y-axe": 127,
@@ -270,6 +271,7 @@
 		"agent-api": 420,
 		"agent-bridge": 48,
 		"agent-mcp": 100,
+		"agent-proof": 600,
 		"ai-connection": 90,
 		"ai-flow-physics": 118,
 		"align-arrange": 62,

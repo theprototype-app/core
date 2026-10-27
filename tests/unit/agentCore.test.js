@@ -151,6 +151,14 @@ describe('status()', () => {
 		app.state.host = null;
 		expect(agent.status().joined).toBe(false);
 	});
+	it('is not joined until the host\'s roles have arrived (a roles plugin), then is', () => {
+		const app = fakeApp();
+		let settled = false;
+		const { agent } = createAgentCore({ ...app.deps, rolesSettled: () => settled });
+		expect(agent.status().joined).toBe(false);
+		settled = true;
+		expect(agent.status().joined).toBe(true);
+	});
 	it('reports a viewer as unable to edit', () => {
 		const app = fakeApp();
 		app.state.role = 'viewer';

@@ -44,7 +44,7 @@ a normal session never loads it. Semver: new methods and fields are minor versio
 | `systemPrompt()` | the assistant's guidance (coordinates, primitives, flow-node vocabulary, physics rules) — give it to your model |
 | `exec(name, args)` | run one tool. Replicated to every peer, ONE undo step per call, calls run one at a time, never throws (`{error}` instead) |
 | `snapshot(cap?)` | the scene as the assistant sees it: objects (uuid, name, transform, material, physics, flow graph), scene flow, behaviours, joints |
-| `status()` | `{version, appVersion, peerId, host, joined, waiting, role, canEdit, peers, missingTools, missingModules, pendingOffers, inVR, notices}` |
+| `status()` | `{version, appVersion, peerId, host, joined, waiting, role, canEdit, peers, missingTools, missingModules, pendingOffers, inVR, notices}` — `joined` turns true once the host let you in AND (on a build with roles) its roles reached you, so `role`/`canEdit` are final from then on |
 | `waitForEdit(ms?)` | resolves `{changed: true, at}` on the next scene change made by someone else, or `{changed: false, timedOut: true}` (default 30 s, max 10 min); your own `exec` never wakes it |
 | `screenshot({view, uuid, size, grid})` | a clean PNG data URL (no gizmo, selection, grid or helpers) from a TEMPORARY camera: `view` = `iso` (default) · `top` · `front` · `current` (the page's own camera) · `focus` (frames `uuid`); `size` = longest side, 64–2048 (default 768); `grid: true` draws the editor grid. Never moves anyone's view. `null` in VR |
 | `pendingOffers()` / `accept(id, action?)` | questions the app asked with buttons (an admin-role offer, "share or stash"), kept until answered — the toast that showed one may have expired |

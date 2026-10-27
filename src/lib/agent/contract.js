@@ -58,7 +58,8 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {string} appVersion the app's own version (APP_VERSION)
  * @property {string|null} peerId this page's peer id (null before signaling opens)
  * @property {string|null} host the peer whose session we joined (null = not joined / we host)
- * @property {boolean} joined true once a host admitted us (approval or invite) and the link is open
+ * @property {boolean} joined true once a host admitted us (approval or invite), the link is open and (cloud) the
+ *   host's roles have arrived, so `role`/`canEdit` are final
  * @property {boolean} waiting true while a join request waits for the host's Approve
  * @property {'admin'|'editor'|'viewer'|null} role null = no roles in this build (everyone edits)
  * @property {boolean} canEdit false for a viewer: `exec` refuses every edit

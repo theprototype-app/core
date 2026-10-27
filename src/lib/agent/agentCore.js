@@ -56,6 +56,7 @@ export function toolName(tool) {
  * @property {(label: string) => void} endBatch
  * @property {() => string|null} peerId
  * @property {() => string|null} role 'admin'|'editor'|'viewer' or null (no roles in this build)
+ * @property {() => boolean} [rolesSettled] false while a roles plugin still waits for the host's map (absent = settled)
  * @property {() => string|null} host
  * @property {() => boolean} waiting
  * @property {() => {id: string, name: string}[]} openPeers
@@ -220,7 +221,9 @@ export function createAgentCore(deps) {
 			appVersion: deps.appVersion ?? '',
 			peerId: deps.peerId(),
 			host,
-			joined: !!host && peers.some((p) => p.id === host) && !waiting,
+			// in = admitted, the link open, and (with a roles plugin) the host's roles map arrived — until then a
+			// joiner's role is only the default, and an Edit invite would read as view-only
+			joined: !!host && peers.some((p) => p.id === host) && !waiting && deps.rolesSettled?.() !== false,
 			waiting,
 			role,
 			canEdit: role !== 'viewer',

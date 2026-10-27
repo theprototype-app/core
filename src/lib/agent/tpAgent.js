@@ -42,6 +42,9 @@ function link() {
 }
 
 /** @returns {string|null} */
+/** how long a joiner waits for the host's roles map before its role counts as final anyway */
+const ROLES_SETTLE_MS = 10000;
+
 function myPeerId() {
 	const p = link();
 	return p?.peer?.id ?? p?.myId ?? null;
@@ -124,6 +127,7 @@ async function agentRun(name, args) {
 export function createTpAgent(extra = {}) {
 	/** @type {ReturnType<typeof createAgentCore>} */
 	let core;
+	let unsettledSince = 0;
 	core = createAgentCore({
 		appVersion: APP_VERSION,
 		getTools: () => agentTools(),
@@ -142,6 +146,14 @@ export function createTpAgent(extra = {}) {
 			if (!ri) return null;
 			const id = myPeerId();
 			return (id && typeof ri.roleOf === 'function' ? ri.roleOf(id) : null) ?? ri.myRole ?? null;
+		},
+		// a roles plugin's `synced()`: the host's map has reached us (absent = an older plugin, settled). Ten
+		// seconds unsettled while in counts as settled, so a host that never sends a map cannot hang an agent.
+		rolesSettled: () => {
+			const ri = /** @type {any} */ (get(rolesInfo));
+			if (!ri || typeof ri.synced !== 'function' || ri.synced()) return !(unsettledSince = 0);
+			if (!unsettledSince) unsettledSince = Date.now();
+			return Date.now() - unsettledSince > ROLES_SETTLE_MS;
 		},
 		host: () => get(sessionHost),
 		waiting: () => (/** @type {any[]} */ (get(waitingForApproval)) ?? []).some((w) => Array.isArray(w) && w[1] === 'pending'),

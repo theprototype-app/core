@@ -100,6 +100,21 @@ function agentStorage(/** @type {{name: string, compat: boolean}} */ o) {
 	if (o.compat) set('debugStores', 'true');
 }
 
+/** The `window.tpAgent` contract major this bridge speaks (plans review #34: a breaking change to the
+ * contract bumps its major; the package version follows the app release it shipped with). */
+export const CONTRACT_MAJOR = 1;
+
+/** A line for the user when the page's contract major is not ours, else ''. An older bridge keeps
+ * working against a newer MINOR (it feature-detects methods); a different MAJOR may not.
+ * @param {string | null | undefined} version the page's `tpAgent.version` */
+export function contractNote(version) {
+	const major = Number(String(version ?? '').split('.')[0]);
+	if (!Number.isFinite(major) || major === CONTRACT_MAJOR || !String(version ?? '').trim()) return '';
+	return major > CONTRACT_MAJOR
+		? `this app speaks agent contract ${version}; this bridge speaks ${CONTRACT_MAJOR}.x — update it: npx -y @theprototype/agent@latest`
+		: `this app speaks agent contract ${version}, older than this bridge's ${CONTRACT_MAJOR}.x — some tools may fail; the matching bridge ships with that app release`;
+}
+
 /** Is a peer list / status saying we are in the host's session? @param {any} st @param {string} hostId */
 export function joinedOf(st, hostId) {
 	if (!st || typeof st !== 'object') return false;
@@ -196,6 +211,8 @@ export class BrowserEngine extends EventEmitter {
 		this.state = 'idle';
 		this.error = null;
 		this.apiVersion = null;
+		/** set when the page's contract major is not ours (contractNote) */
+		this.contractNote = '';
 		/** @type {any} */
 		this.browser = null;
 		/** @type {any} */
@@ -247,6 +264,8 @@ export class BrowserEngine extends EventEmitter {
 				);
 			}
 			this.apiVersion = await this.page.evaluate(() => String(/** @type {any} */ (window).tpAgent.version ?? ''));
+			this.contractNote = contractNote(this.apiVersion);
+			if (this.contractNote) this.log(this.contractNote);
 			this.state = 'ready';
 			this.log('agent API ' + this.apiVersion + ' ready');
 			this.emit('ready');
@@ -386,6 +405,7 @@ export class BrowserEngine extends EventEmitter {
 			host: this.hostId,
 			state: this.state,
 			apiVersion: this.apiVersion,
+			contractNote: this.contractNote || undefined,
 			compat: this.compat || undefined,
 			error: this.error || undefined
 		};

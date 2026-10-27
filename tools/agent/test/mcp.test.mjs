@@ -8,7 +8,7 @@ import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/typ
 import { createBridgeServer, nameFromClient } from '../src/mcpServer.js';
 import { toMcpTool, mapHostTools } from '../src/mcpTools.js';
 import { parseLink } from '../src/link.js';
-import { joinedOf } from '../src/browserEngine.js';
+import { joinedOf, contractNote, CONTRACT_MAJOR } from '../src/browserEngine.js';
 
 let pass = 0;
 let fail = 0;
@@ -106,6 +106,10 @@ check('nameFromClient: another client keeps its name', nameFromClient({ name: 'c
 check('nameFromClient: nothing → AI agent', nameFromClient(null) === 'AI agent');
 check('joinedOf: host among the peers', joinedOf({ peers: ['f0fd3'] }, 'f0fd3') && joinedOf({ peers: [{ id: 'F0FD3' }] }, 'f0fd3'));
 check('joinedOf: an explicit joined flag wins', joinedOf({ joined: false, peers: ['f0fd3'] }, 'f0fd3') === false);
+check('contractNote: same major is silent', contractNote(CONTRACT_MAJOR + '.0.0') === '' && contractNote(CONTRACT_MAJOR + '.7.2') === '');
+check('contractNote: no version (compat page) is silent', contractNote('') === '' && contractNote(null) === '');
+check('contractNote: a newer major says update', /npx -y @theprototype\/agent@latest/.test(contractNote(CONTRACT_MAJOR + 1 + '.0.0')));
+check('contractNote: an older major says so', /older/.test(contractNote('0.9.0')));
 check('joinedOf: nobody', !joinedOf({ peers: [] }, 'f0fd3') && !joinedOf(null, 'f0fd3'));
 
 // --- the server over a real client ---

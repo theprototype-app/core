@@ -145,6 +145,16 @@ any tool is absent.
   private side channel, by design.
 - **Look before you say "done".** `screenshot()` after a build; compare with the request.
 
+## Versions
+
+Two version numbers, and only one of them is about compatibility:
+- **`tpAgent.version`** is the CONTRACT (`1.0.0` today). A new method or a new optional field is a
+  minor version; a removed or renamed method, or a changed shape, is a new MAJOR. Read it first
+  (`status().version` carries it too) and feature-detect methods rather than comparing minors.
+- **`@theprototype/agent`** (the bridge) is versioned with the app release it shipped in, and it
+  speaks one contract major. Against a page with a different major it still connects and says so
+  in its log and in the `status` tool (`contractNote`), with the fix: `npx -y @theprototype/agent@latest`.
+
 ## The light engine
 
 `npx -y @theprototype/agent mcp --engine=wire <link>` is a small Node peer without a browser:

@@ -259,14 +259,17 @@
 		"workspace-restore": "joined from the 1.43 desk battery (pipeline-1): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green"
 	},
 	"setup": {
-		"agent-bridge": "agent"
+		"agent-bridge": "agent",
+		"agent-mcp": "agent"
 	},
 	"suites": {
 		"a11y-axe": 127,
 		"a11y-reader": 78,
 		"a11y-scale": 258,
 		"add-flow-scene": 100,
+		"agent-api": 420,
 		"agent-bridge": 48,
+		"agent-mcp": 100,
 		"ai-connection": 90,
 		"ai-flow-physics": 118,
 		"align-arrange": 62,
@@ -443,6 +446,7 @@
 		"inspector": 93,
 		"interact-clean-view": 18,
 		"invite-link-live": 295,
+		"invite-links": 320,
 		"join-result": 324,
 		"joints-fx": 183,
 		"keyboard-walk": 48,
@@ -524,6 +528,7 @@
 		"particles-fx": 100,
 		"particles-impact": 47,
 		"path-capture-trap": 70,
+		"peer-moderation": 110,
 		"peers-panel-41b": 43,
 		"peers-popover": 18,
 		"perf-beacon": 138,

@@ -450,9 +450,14 @@ h.run(async () => {
 		const note = (/** @type {string} */ t) => {
 			let tc;
 			w.__stores.TControls?.subscribe?.((/** @type {any} */ v) => (tc = v))?.();
-			w.__gz.push([t, tc?.axis ?? null, !!tc?.dragging]);
+			w.__gz.push([t, tc?.axis ?? null, !!tc?.dragging, Date.now(), Math.round(performance.timeOrigin + (w.__gzEv?.timeStamp ?? 0))]);
 		};
-		for (const t of ['pointerdown', 'pointerup']) window.addEventListener(t, () => note(t), { capture: true, once: true });
+		// 54 X4: the handler clock (Date.now) beside the input's own time (timeStamp) — a tap is a
+		// click only while pointerdown -> pointerup stays under 400 ms, and the 'up+' entry runs
+		// AFTER Scene's own window pointerup
+		for (const t of ['pointerdown', 'pointerup'])
+			window.addEventListener(t, (e) => { w.__gzEv = e; note(t); }, { capture: true, once: true });
+		window.addEventListener('pointerup', (e) => { w.__gzEv = e; note('up+'); }, { once: true });
 	});
 	await touchU.tap(at.x, at.y);
 	await Q.waitForTimeout(700);

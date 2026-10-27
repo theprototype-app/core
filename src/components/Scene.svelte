@@ -117,6 +117,7 @@
 	import LockHighlights from './LockHighlights.svelte';
 	import Grid from '../extensions/Grid.svelte';
 	import { safeStorage } from '$lib/safeStorage';
+	import { eventNow } from '$lib/eventTime.js';
 	import Outline from './Outline.svelte'
 	import RecordingDriver from './RecordingDriver.svelte'
 	import Player from './play/Player.svelte'
@@ -653,7 +654,7 @@
 				// DOUBLE-click (or via the context menu / object list / a pinned
 				// panel). It used to open on EVERY single click — that is exactly
 				// what the pin now controls deliberately.
-				const now = Date.now();
+				const now = click?.t ?? Date.now();
 				const isDouble = !additive && !altPick && lastPick.uuid === target.uuid && now - lastPick.t < 400;
 				lastPick = { uuid: target.uuid, t: now };
 				// 41 G14 (above): a finger's tap on a selected object takes it out of the selection
@@ -917,7 +918,7 @@
 					return;
 				}
 				downPosition = [event.clientX, event.clientY];
-				downTime = Date.now();
+				downTime = eventNow(event);
 				return;
 			}
 			// Shift+drag = marquee select (13) — orbit pauses for the gesture
@@ -936,7 +937,7 @@
 				elementMarquee = true;
 				setOrbitEnabled(false);
 				downPosition = [event.clientX, event.clientY];
-				downTime = Date.now();
+				downTime = eventNow(event);
 				return;
 			}
 			// #20 P4: the touch Multi-select mode stands in for Shift, since a finger
@@ -946,7 +947,7 @@
 				setOrbitEnabled(false);
 			}
 			downPosition = [event.clientX, event.clientY];
-			downTime = Date.now();
+			downTime = eventNow(event);
 		};
 
 		// 36 S6: while Alt is held, preview what an Alt+click would select — a box around it
@@ -1185,7 +1186,8 @@
 			const moved = Math.hypot(event.clientX - downPosition[0], event.clientY - downPosition[1]);
 			downPosition = null;
 			// only a short, stationary click selects — dragging orbits the camera
-			if (moved > 5 || Date.now() - downTime > 400) return;
+			// 54 X4: timed by the events themselves — a slow frame between them is not a long press
+			if (moved > 5 || eventNow(event) - downTime > 400) return;
 			if ($isLocked || $isVRMode || $specatorMode) return;
 			// 21-C3: the FLATTEN pick captures one click the same way — it is aimed at
 			// another OBJECT rather than a point, so it must also sit ahead of the
@@ -1357,7 +1359,7 @@
 			// "click the background to get back" instinct as deselecting.
 			const additive = event.shiftKey || $multiSelectMode;
 			hidePickPreview();
-			if (!raycastSelect(additive, 'edit', { x: event.clientX, y: event.clientY, t: Date.now() }, event.altKey && !additive, { touch: touchTap, onGizmo: touchTap && onGizmo }) && !additive) {
+			if (!raycastSelect(additive, 'edit', { x: event.clientX, y: event.clientY, t: eventNow(event) }, event.altKey && !additive, { touch: touchTap, onGizmo: touchTap && onGizmo }) && !additive) {
 				if (isIsolated()) clearIsolation();
 				deselectObject();
 			}

@@ -23,13 +23,44 @@ const specs = () => KIT_PIECES.map((row) => row.piece.spec);
 export function behaviourReference() {
 	return [
 		'BEHAVIOURS (create_behaviour / edit_behaviour): game logic as ONE JavaScript module, run on ONE peer (the session authority); `state` replicates to everyone.',
-		'export default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, on: {event(payload) {...}}, ...methods });',
+		'export default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, inputs: [names], outputs: [names], on: {event(payload) {...}}, ...methods });',
+		'inputs: a trigger wired into input "x" runs on.x. outputs: a state field = a value output, any other name = an event fired by this.emit("name").',
+		'A behaviour does NOT move, rotate, recolour or hide objects (no such this.*): it drives effect nodes (spin, visibility, setcolor…) via its outputs. NO per-frame hook (no onTick/update): repeat with this.after(seconds, "method").',
 		'this: params, state, kit (also bare `kit`), after(seconds, "method", ...args) (survives the host leaving), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log() — always as this.find(…) etc. (only `kit` and the helpers are bare). Helpers: dist(a,b), clamp, lerp.',
 		'events: load (runs on EVERY peer when the behaviour loads — local, state read-only: register things there), start (once, on the authority); grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as "piece.event" or ' +
 			Object.keys(ALIASES).join(', ') +
 			'. Entity payloads have entity.is(glob), entity.hasTag(t).',
 		'kit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, "nearestPlayer"), kit.rules.set({reach, jump}), kit.pickups.register({id, score, respawn, radius}) — register pickups in on.load (every peer must know them, or touching one does nothing), never in start.',
-		'Forbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import.'
+		'Forbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import. Unknown this.* members, unknown events and hook-named methods nothing calls are refused too.'
+	].join('\n');
+}
+
+/** one complete behaviour that passes the lint (the create_behaviour description carries it: a client that drops
+ * the system prompt still sees the format working) */
+export const BEHAVIOUR_EXAMPLE = `export default behaviour({
+  name: 'Countdown',
+  params: { seconds: 30 },
+  state: { left: 30, found: 0 },
+  inputs: ['gemTouched'],
+  outputs: ['left', 'found', 'timeUp'],
+  on: {
+    start() { this.state.left = this.params.seconds; this.after(1, 'tick'); },
+    gemTouched() { this.state.found += 1; }
+  },
+  tick() {
+    this.state.left -= 1;
+    if (this.state.left > 0) this.after(1, 'tick');
+    else this.emit('timeUp');
+  }
+});`;
+
+/** the create_behaviour tool's description: what it is, the reference, the example */
+export function behaviourToolDescription() {
+	return [
+		'Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…).',
+		behaviourReference(),
+		'EXAMPLE (passes the lint; wire a trigger into input gemTouched, output left into a HUD Text, timeUp into a Visibility or Announce):',
+		BEHAVIOUR_EXAMPLE
 	].join('\n');
 }
 
@@ -68,6 +99,8 @@ export function makeBehaviourHost(statusOf, liveOf = () => null) {
 	return {
 		format: 'behaviour/1',
 		reference: behaviourReference,
+		// 55 (41's voice session #2): claude.ai drops server instructions — the tool itself carries the format
+		toolDescription: behaviourToolDescription,
 		list() {
 			const status = statusOf();
 			return behaviourNodes().map((n) => {

@@ -39,6 +39,10 @@ every person in the Connected panel lets the host remove someone.
   object says so instead of reporting success; big flow graphs are read page by page (`list_scene {flow, page}`);
   `create_behaviour` returns the node's id and its inputs and outputs; a wire to a socket the node does not have
   is refused with the node's real socket names (it used to be accepted and do nothing).
+- **Code behaviours explain themselves**: `create_behaviour` carries its own format and a working example (some
+  clients drop the app's instructions), and the checker refuses what would silently do nothing — a `this.` member
+  that does not exist (a behaviour drives effect nodes through its outputs; it does not move objects itself) or a
+  per-frame hook such as `onTick` (there is none: repeat with `this.after`).
 - Material parameters are validated (each key and value checked, on every peer).
 - **It knows when a scene is still arriving** and **when a behaviour fails**: status reports a scene that is still
   loading, and a code behaviour that throws says so with its error, so the agent can fix it instead of guessing.

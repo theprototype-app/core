@@ -131,6 +131,8 @@ the HOST: an agent page never steps the physics itself (its result carries `onHo
 apply (a light field on a mesh, a bad material value) in that row's `errors` with `ok: false`.
 `create_flow_nodes` refuses a wire whose `toHandle` (or, on a node with several outputs, `fromHandle`) the node
 does not have; the error lists the node's real socket names and the call's other wires are still made.
+`create_behaviour`'s description carries the behaviour format and a working example; its checker refuses an
+unknown `this.` member, an unknown event and a hook-named method nothing calls (there is no per-frame hook).
 
 ## Rules a builder must respect
 

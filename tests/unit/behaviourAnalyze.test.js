@@ -160,3 +160,21 @@ describe('deriveGraph — the read-only node view', () => {
 		expect(deriveGraph(analyze(REACH, SPECS)).nodes.length).toBe(4);
 	});
 });
+
+// 55 (41's voice session #2): a guessed `onTick() {}` and `this.setTransform(…)` passed the lint and did nothing
+describe('analyze — guesses that would do nothing', () => {
+	/** @param {string} src @returns {string[]} */
+	const warnings = (src) => analyze(src, SPECS).lint.filter((/** @type {any} */ f) => f.level === 'warning').map((/** @type {any} */ f) => f.message);
+	it('an unknown this.* member is named, with what `this` has and what to do instead', () => {
+		const w = warnings("export default behaviour({ name: 'M', on: { start() { this.setTransform([0, 1, 0]); this.state; this.after(1, 'go'); } }, go() { this.go2(); }, go2() {} });");
+		expect(w.filter((/** @type {string} */ m) => /does not exist/.test(m))).toHaveLength(1);
+		expect(w.find((/** @type {string} */ m) => /this\.setTransform does not exist/.test(m))).toMatch(/findAll.*go, go2.*effect nodes/);
+	});
+	it('a per-frame hook does not exist: as a method nothing calls, and under on', () => {
+		expect(warnings("export default behaviour({ name: 'T', onTick() {} });").some((/** @type {string} */ m) => /never called.*no per-frame hook.*this\.after/.test(m))).toBe(true);
+		expect(warnings("export default behaviour({ name: 'T', on: { update() {} } });").some((/** @type {string} */ m) => /on\.update: no such event.*per-frame/.test(m))).toBe(true);
+		// a method the code reaches is an ordinary method, whatever its name
+		expect(warnings("export default behaviour({ name: 'T', on: { start() { this.after(1, 'tick'); } }, tick() { this.after(1, 'tick'); } });")).toEqual([]);
+		expect(analyze(BEHAVIOUR_STARTER, SPECS).lint.filter((/** @type {any} */ f) => f.level === 'warning')).toEqual([]);
+	});
+});

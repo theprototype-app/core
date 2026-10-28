@@ -22,11 +22,19 @@ const MAX_SOURCE = 40_000;
 
 /** Tool schemas, or [] when behaviours are not in this build. @returns {any[]} */
 export function behaviourToolSchemas() {
-	if (!behaviourHost()) return [];
+	const host = behaviourHost();
+	if (!host) return [];
+	/** @type {string} */
+	let description = '';
+	try {
+		description = String(host.toolDescription?.() ?? '');
+	} catch {
+		description = '';
+	}
 	const source = {
 		type: 'string',
 		description:
-			'the whole behaviour module source (plain JavaScript, the format in the system prompt). Must be deterministic: no Math.random (use rand()), no Date.now/new Date (use the session clock), no DOM, no localStorage, no timers (use this.after), no loop without an exit.'
+			'the whole behaviour module source (plain JavaScript, the format in create_behaviour\'s description). Must be deterministic: no Math.random (use rand()), no Date.now/new Date (use the session clock), no DOM, no localStorage, no timers (use this.after), no loop without an exit.'
 	};
 	return [
 		{
@@ -34,6 +42,7 @@ export function behaviourToolSchemas() {
 			function: {
 				name: 'create_behaviour',
 				description:
+					description ||
 					'Create a code behaviour: game logic (rules, waves, scoring, reach limits) written as JavaScript, run on the session authority and replicated. Prefer this over large node graphs for game rules. It is linted before it is applied; errors come back with line numbers.',
 				parameters: {
 					type: 'object',
@@ -51,7 +60,7 @@ export function behaviourToolSchemas() {
 			function: {
 				name: 'edit_behaviour',
 				description:
-					'Replace an existing behaviour\'s source (the scene summary lists them; read the current source with the name). Linted before it is applied.',
+					'Replace an existing behaviour\'s source (the scene summary lists them; read the current source with the name). Linted before it is applied. Same format as create_behaviour (see its description).',
 				parameters: {
 					type: 'object',
 					properties: { name: { type: 'string' }, source },

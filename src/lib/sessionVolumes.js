@@ -29,7 +29,7 @@ import { get, writable } from 'svelte/store';
 import { peers, userdata, showToast } from '../stores/appStore';
 import { sessionHost } from './connectionState';
 import { rolesInfo } from './cloudHooks';
-import { safeStorage } from './safeStorage';
+import { shareScope, setShareScope } from './shareScope';
 import { explorerItems, explorerFolders, addItemFromBytes, createFolder } from './explorer';
 import { sceneAssets } from './sceneAssets';
 import { currentLevel, levelItems } from './levels';
@@ -47,7 +47,6 @@ import {
 	sessionVolumeName
 } from './sessionVolumeCore';
 
-const SCOPE_KEY = 'session:shareScope';
 /** how many thumbnails ride one `volthumbs` message */
 const THUMBS_PER_MESSAGE = 24;
 /** how long a guest waits for the host's Save answer (ms) */
@@ -92,20 +91,8 @@ function note(line) {
 // HOST
 // =================================================================================================
 
-/** @param {unknown} v */
-function readScope(v) {
-	return normalizeShareScope(v);
-}
-
-/** The host's share scope, remembered on this device. @type {import('svelte/store').Writable<'scene'|'project'|'library'|'none'>} */
-export const shareScope = writable(readScope(typeof localStorage !== 'undefined' ? safeStorage.getItem(SCOPE_KEY) : null));
-
-/** @param {string} scope */
-export function setShareScope(scope) {
-	const next = normalizeShareScope(scope);
-	shareScope.set(next);
-	safeStorage.setItem(SCOPE_KEY, next);
-}
+// the share scope itself lives in a leaf (the Connect drawer shows it); re-exported for callers here
+export { shareScope, setShareScope };
 
 /** per guest: the projection (and scope) we last sent it, and the thumbnails it already has
  * @type {Map<string, {proj: {folders: any[], items: any[]}, scope: string, thumbs: Set<string>}>} */

@@ -2,6 +2,7 @@ import { get } from 'svelte/store';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import { lockSkip } from './lockNote.js';
+import { sceneFilter } from './sceneFilter.js';
 import { geometrySpec } from '$lib/geometryParams';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte.js';
 import { recordObjectPresence, recordTransform } from '$lib/history';
@@ -164,6 +165,11 @@ function geometrySummary(object) {
 	return out;
 }
 
+/** 55 (1.48.1): list_scene `brief` — enough to address an object, nothing more @param {any} object */
+function briefObject(object) {
+	return { uuid: object.uuid, name: object.name || object.type, type: object.type, parentUuid: object.parent && object.parent.type === 'Group' ? object.parent.uuid : null };
+}
+
 /** Node data compacted for the model: big point lists reduced to a count, long strings
  * (script code) clipped. Key order is kept, so the text's `label`/`type+` shorthands apply.
  * @param {any} node */
@@ -270,25 +276,33 @@ export function graphPage(graphId, page) {
  * replicated objectsGroup only (scene-root helpers/env stay local). Capped so a
  * huge scene can't blow the context.
  * @param {number} [cap]
+ * @param {{brief?: boolean, name?: string, type?: string, near?: {position: number[], radius: number}} | null} [filter]
+ *   55 (1.48.1): list_scene's narrowing — uuid/name/type/parent only, a name glob, a type, a world-space sphere
  * @returns {{objects: any[], truncated?: number}}
  */
-export function summarizeScene(cap = 200) {
+export function summarizeScene(cap = 200, filter = null) {
 	const group = get(objectsGroup);
+	const keep = sceneFilter(filter);
 	/** @type {any[]} */
 	const objects = [];
 	let truncated = 0;
+	let matched = 0;
 	if (group) {
 		group.traverse((/** @type {any} */ object) => {
 			if (object === group) return;
+			if (keep && !keep(object)) return;
+			matched++;
 			if (objects.length >= cap) {
 				truncated++;
 				return;
 			}
-			objects.push(describeObject(object));
+			objects.push(filter?.brief ? briefObject(object) : describeObject(object));
 		});
 	}
 	/** @type {any} */
 	const out = truncated ? { objects, truncated } : { objects };
+	// a filtered read is about objects: the scene-wide flow / behaviours / joints stay in the plain call
+	if (keep || filter?.brief) return { ...out, matched };
 	const sceneFlow = summarizeGraph(SCENE_GRAPH);
 	if (sceneFlow) out.sceneFlow = sceneFlow;
 	const behaviours = summarizeBehaviours();
@@ -813,6 +827,9 @@ async function runAiTool(rawName, rawArgs) {
 			case 'list_scene':
 				// 55: `{flow, page}` reads one page of a big graph's summary
 				if (args && typeof args.flow === 'string' && args.flow) return graphPage(args.flow === 'scene' ? SCENE_GRAPH : args.flow, args.page ?? 1);
+				// 55 (1.48.1): narrowed reads
+				if (args && (args.brief || args.name || args.type || args.near))
+					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near });
 				return summarizeScene();
 
 			case 'create_objects': {
@@ -956,12 +973,21 @@ export const AI_TOOLS = [
 		function: {
 			name: 'list_scene',
 			description:
-				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
+				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
 			parameters: {
 				type: 'object',
 				properties: {
 					flow: { type: 'string', description: 'optional: read one flow graph ("scene" or an object uuid) page by page instead of the scene summary' },
-					page: { type: 'number', description: 'with flow: which page (1-based)' }
+					page: { type: 'number', description: 'with flow: which page (1-based)' },
+					brief: { type: 'boolean', description: 'optional: only uuid, name, type, parentUuid per object (cheap on a big scene)' },
+					name: { type: 'string', description: 'optional: only objects whose name matches — a glob ("Wall*", "*door*"), or plain text = contains; case-insensitive' },
+					type: { type: 'string', description: 'optional: only objects of this type — Mesh, Group, PointLight… or a primitive shape (Box, Wall, Sphere…)' },
+					near: {
+						type: 'object',
+						description: 'optional: only objects within radius of a WORLD position',
+						properties: { position: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, radius: { type: 'number' } },
+						required: ['position', 'radius']
+					}
 				}
 			}
 		}

@@ -28,7 +28,12 @@ every person in the Connected panel lets the host remove someone.
 - A view-only agent is told so instead of building things nobody else sees. llms.txt now says how an agent joins.
 - **It goes where you go**: save as another name or open another scene and the agent follows; while it travels (or
   while you work in a private scene) it holds its edits, so nothing lands in a scene you left. An agent never
-  becomes the host.
+  becomes the host, never decides a game's rules for the people playing, and never hands you its old world when you
+  open a new or another scene.
+- **When the host leaves**, the agent carries on with the person who takes over. If everyone has left it pauses —
+  reading only, building nothing — and waits for its host (10 minutes by default), then asks to come back in.
+- **It knows when a scene is still arriving** and **when a behaviour fails**: status reports a scene that is still
+  loading, and a code behaviour that throws says so with its error, so the agent can fix it instead of guessing.
 - **Game-kit nodes work for AI**: the agent and the in-app assistant can now create every `kit-*` node (they were
   all "unknown"), a half-valid node batch says it was only partly applied, and hinges take an exact pivot point.
 

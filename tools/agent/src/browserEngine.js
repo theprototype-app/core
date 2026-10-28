@@ -12,7 +12,7 @@
 //   leave()? (optional: a graceful goodbye before the page closes)
 // Every call is feature-detected, so a newer or older page degrades to a clear message.
 //
-// `compat` runs against an app WITHOUT tpAgent (1.40-1.44): it turns the debug hook on and
+// `compat` runs against an app WITHOUT tpAgent (1.40-1.47): it turns the debug hook on and
 // builds the same object over `__stores.aiTools` — the test-flight recipe — so the bridge can
 // be tested before 55-page lands and still reaches an older self-hosted build.
 import { EventEmitter } from 'node:events';
@@ -22,7 +22,7 @@ import { parseLink, pageUrl, redactLink, isLocalOrigin } from './link.js';
 
 const BOOT_TIMEOUT = 90000;
 
-/** Runs IN THE PAGE (addInitScript): `window.tpAgent` over the debug hook, for apps < 1.45. */
+/** Runs IN THE PAGE (addInitScript): `window.tpAgent` over the debug hook, for apps < 1.48. */
 function compatShim() {
 	const w = /** @type {any} */ (window);
 	const read = (/** @type {any} */ s) => {
@@ -260,7 +260,7 @@ export class BrowserEngine extends EventEmitter {
 				throw new Error(
 					this.compat
 						? 'the app never exposed its AI tools (is this a theprototype.app session link?)'
-						: 'this app build has no agent API (window.tpAgent needs theprototype 1.45+); for an older build retry with --compat'
+						: 'this app build has no agent API (window.tpAgent needs theprototype 1.48+); for an older build retry with --compat'
 				);
 			}
 			this.apiVersion = await this.page.evaluate(() => String(/** @type {any} */ (window).tpAgent.version ?? ''));

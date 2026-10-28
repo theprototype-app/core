@@ -37,6 +37,16 @@ export function viewerRefusal(peerId) {
 }
 
 /**
+ * 1.2 (41's round 5): the words an agent reads while it is not in the session (status().joined false).
+ * @param {string|null} host @param {boolean} waiting
+ */
+export function notJoinedRefusal(host, waiting) {
+	if (waiting) return 'This agent is still waiting for the host to let it in — wait for status().joined, then try again.';
+	if (!host) return 'This agent is not in a session yet — join with an invite link first (status().joined is false).';
+	return 'This agent is not connected to the host right now (status().joined is false), so an edit would not reach the session. It reconnects on its own — wait for status().joined.';
+}
+
+/**
  * 1.2 (41): the words an agent reads while its host is gone and no person is here.
  * @param {{host: string, until: number, expired: boolean}} away
  */
@@ -205,6 +215,12 @@ export function createAgentCore(deps) {
 		return deps.role() !== 'viewer';
 	}
 
+	/** admitted, the host's link open, roles settled — status().joined, and the gate on every edit */
+	function isJoined() {
+		const host = deps.host();
+		return !!host && deps.openPeers().some((p) => p.id === host) && !deps.waiting() && deps.rolesSettled?.() !== false;
+	}
+
 	/** @param {string} name @param {any} args */
 	async function run(name, args) {
 		const real = resolved(name, args);
@@ -218,6 +234,10 @@ export function createAgentCore(deps) {
 		if (!READ_ONLY_TOOLS.has(real) && !canEdit()) return { error: viewerRefusal(deps.peerId()), refused: true, role: 'viewer' };
 		const away = deps.hostAway?.() ?? null;
 		if (!READ_ONLY_TOOLS.has(real) && away) return { error: hostAwayRefusal(away), refused: true, hostAway: away };
+		// 55 (41's round 5): status().joined and what an edit does must agree — an edit while not joined
+		// either reaches nobody or reaches a session that thinks the agent is gone
+		if (!READ_ONLY_TOOLS.has(real) && !isJoined())
+			return { error: notJoinedRefusal(deps.host(), deps.waiting()), refused: true, joined: false };
 		const room = deps.room?.() ?? null;
 		if (!READ_ONLY_TOOLS.has(real) && room && !room.withHost)
 			return { error: leftBehindRefusal(room.hostScene, room.following), refused: true, withHost: false };
@@ -290,7 +310,7 @@ export function createAgentCore(deps) {
 			host,
 			// in = admitted, the link open, and (with a roles plugin) the host's roles map arrived — until then a
 			// joiner's role is only the default, and an Edit invite would read as view-only
-			joined: !!host && peers.some((p) => p.id === host) && !waiting && deps.rolesSettled?.() !== false,
+			joined: isJoined(),
 			waiting,
 			role,
 			canEdit: role !== 'viewer',

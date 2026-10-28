@@ -2,7 +2,7 @@
 // joined:false, peers:[PC] — stranded beside a live person, and with nobody to answer to it would have built alone.
 // A = the host (a person), C = a second person (joins A), B = an agent's page (agentApi, joins A).
 //   1  three in one room; the agent meshes to C
-//   2  A LEAVES: the agent continues with C (the successor, a person) — status().host = C, withHost, an edit reaches C
+//   2  A CLOSES ITS TAB: the agent continues with C (the successor, a person) — status().host = C, withHost, an edit reaches C
 //   3  C LEAVES too: nobody is here — paused: status().hostAway, withHost false, an edit is REFUSED, nothing built
 //   4  C is back and lets it in (the agent knocks; C answers the card): hostAway clears, host = C again
 // Run: APP_URL=... node tests/e2e/agent-host-leaves.test.cjs
@@ -53,11 +53,12 @@ h.run(async () => {
 	const meshed = await until(() => open(B), (o) => o.includes(C.id), 40000);
 	h.check(meshed.includes(C.id), `the agent is linked to C too (the mesh): ${JSON.stringify(meshed)}`);
 
-	console.log('\n=== 2. the host LEAVES: the agent continues with C ===');
-	await inPage(A, 'pc.leaveSession();');
-	const st1 = await until(() => status(B), (st) => st.host === C.id && st.joined === true && st.withHost !== false, 30000);
+	console.log('\n=== 2. the host CLOSES ITS TAB (no goodbye): the agent continues with C ===');
+	// 41's round 5: a closed tab nulls nothing — the agent sat at joined:false while its edits still landed
+	await A.page.close();
+	const st1 = await until(() => status(B), (st) => st.host === C.id && st.joined === true && st.withHost !== false, 60000);
 	h.check(st1?.host === C.id, `status().host is C, the person who remains (${JSON.stringify({ host: st1?.host, joined: st1?.joined, withHost: st1?.withHost, hostAway: st1?.hostAway })})`);
-	h.check(st1?.joined === true && !st1?.hostAway, 'joined, and not paused');
+	h.check(st1?.joined === true && !st1?.hostAway, 'joined, and not paused (status matches: its edits reach C)');
 	h.check((st1?.notices || []).some((n) => /host left — continuing with/.test(n)), 'and it was told why: ' + JSON.stringify((st1?.notices || []).slice(-2)));
 	const made = await exec(B, 'create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'AfterHostLeft', position: [0, 0.5, 0] }] });
 	h.check(!!made?.created?.length, 'it builds: ' + JSON.stringify(made).slice(0, 120));

@@ -83,6 +83,17 @@ h.run(async () => {
 	h.check(st1?.hostScene === 'Run1' && st1?.withHost === true, `after a naming save the agent is still with the host (${JSON.stringify({ scene: st1?.scene, hostScene: st1?.hostScene, withHost: st1?.withHost })})`);
 
 	console.log('\n=== 3. the host SAVES AS another scene (Run1 → Run2): the agent follows ===');
+	// DIAG: a timeline on the agent page — load phases, its level, transfers — read only on a red
+	await B.page.evaluate(() => {
+		const s = window.__stores;
+		const t0 = Date.now();
+		const log = (window.__followLog = []);
+		const at = (what) => log.push(Date.now() - t0 + 'ms ' + what);
+		s.sceneLoader?.sceneLoad?.subscribe((j) => at('load ' + (j ? j.phase + ' ' + (j.done | 0) + '/' + (j.total | 0) : 'none')));
+		s.levels.currentLevel.subscribe((l) => at('level ' + (l?.name ?? '-') + ' ' + String(l?.hash ?? '').slice(0, 6)));
+		s.transferLedger.transfers.subscribe((t) => at('tx ' + (t ?? []).map((r) => r.dir + ':' + String(r.hash).slice(0, 6) + ':' + r.state).join(',')));
+		s.toastStore?.subscribe?.((l) => { const last = (l ?? [])[l.length - 1]; if (last) at('toast ' + String(last.text ?? last.message ?? last).slice(0, 60)); });
+	});
 	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Run2'));
 	const gap = await until(() => status(B), (st) => st.hostScene === 'Run2', 15000);
 	h.check(gap?.hostScene === 'Run2', `status() reports the host's new scene (${gap?.hostScene})`);
@@ -92,6 +103,7 @@ h.run(async () => {
 	if (followed?.withHost !== true) {
 		const [da, db] = [await where(A), await where(B)];
 		console.log('  DIAG notices ' + JSON.stringify(followed?.notices) + '\n  DIAG rows A ' + JSON.stringify(da.rows) + ' B ' + JSON.stringify(db.rows) + '\n  DIAG A level ' + JSON.stringify(await inPage(A, 'let lv; s.levels.currentLevel.subscribe((x) => (lv = x))(); return lv;')) + ' B level ' + JSON.stringify(await inPage(B, 'let lv; s.levels.currentLevel.subscribe((x) => (lv = x))(); return lv?.name + " " + lv?.hash;')));
+		console.log('  DIAG agent timeline ' + JSON.stringify(await B.page.evaluate(() => window.__followLog)));
 		const tx = 'let t; s.transferLedger.transfers.subscribe((x) => (t = x))(); let u; s.assetShare.unavailableHashes?.subscribe((x) => (u = x))(); return {tx: (t ?? []).map((r) => [r.dir, String(r.hash).slice(0, 8), r.state ?? r.status, r.error ?? ""]), un: [...(u ?? [])].map((h) => h.slice(0, 8)), has: !!s.explorer.itemByHash?.(arg) };';
 		const hash = da.rows ? Object.values(db.rows)[0]?.hash : '';
 		console.log('  DIAG transfers A ' + JSON.stringify(await inPage(A, tx, hash).catch((e) => String(e))) + ' B ' + JSON.stringify(await inPage(B, tx, hash).catch((e) => String(e))));

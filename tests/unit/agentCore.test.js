@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createAgentCore, createOffers, viewerRefusal, leftBehindRefusal, hostAwayRefusal, toolName, READ_ONLY_TOOLS } from '../../src/lib/agent/agentCore.js';
+import { createAgentCore, createOffers, viewerRefusal, leftBehindRefusal, hostAwayRefusal, notJoinedRefusal, toolName, READ_ONLY_TOOLS } from '../../src/lib/agent/agentCore.js';
 import { TP_AGENT_VERSION } from '../../src/lib/agent/contract.js';
 
 // 55 A2: the tpAgent methods against fakes. Each test names the test-flight finding it pins.
@@ -174,6 +174,20 @@ describe('status()', () => {
 		expect((await agent.exec('list_scene', {})).refused).toBeUndefined();
 		away = null;
 		expect(agent.status().hostAway).toBeUndefined();
+	});
+	it("1.2: status().joined and the edit gate agree — no edit while the host's link is gone (41 round 5)", async () => {
+		const app = fakeApp();
+		const { agent } = createAgentCore(app.deps);
+		app.state.peers = []; // the host's tab closed: still named, no open link
+		expect(agent.status().joined).toBe(false);
+		const res = await agent.exec('create_objects', { objects: [{}] });
+		expect(res).toMatchObject({ refused: true, joined: false });
+		expect(res.error).toBe(notJoinedRefusal('host1', false));
+		expect(app.log).toEqual([]);
+		expect((await agent.exec('list_scene', {})).refused).toBeUndefined();
+		app.state.peers = [{ id: 'host1', name: 'Alex' }];
+		expect(agent.status().joined).toBe(true);
+		expect((await agent.exec('create_objects', { objects: [{}] })).refused).toBeUndefined();
 	});
 	it('1.2: says a scene is still arriving, and which behaviours are failing (41)', () => {
 		const app = fakeApp();

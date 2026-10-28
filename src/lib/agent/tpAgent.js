@@ -194,6 +194,8 @@ function hostAwayMs() {
 }
 /** how often a waiting agent knocks */
 const HOST_KNOCK_MS = 30000;
+/** a host named but with no open link this long is gone (a closed tab sends no goodbye); short blips heal */
+const HOST_GONE_MS = 8000;
 
 /** the host we answered to, and when it left (0 = it has not) */
 let lastHost = '';
@@ -232,8 +234,28 @@ function startHostWatch(core) {
 		if (knock) clearInterval(knock);
 		knock = null;
 	};
+	/** @type {any} */
+	let goneTimer = null;
 	const settle = () => {
 		const host = get(sessionHost);
+		// 55 (41's round 5): a host whose tab simply CLOSED can stay named as the host with its link gone
+		// (no goodbye nulls it) — the agent sat at joined:false while its edits still reached the others.
+		// Named but absent for HOST_GONE_MS = gone: the same successor/pause path as a host that left.
+		if (host && !openPeerIds().includes(host)) {
+			if (!goneTimer)
+				goneTimer = setTimeout(() => {
+					goneTimer = null;
+					if (get(sessionHost) === host && !openPeerIds().includes(host)) {
+						lastHost = host;
+						sessionHost.set(null); // → settle: successor, else pause
+					}
+				}, HOST_GONE_MS);
+			return;
+		}
+		if (goneTimer) {
+			clearTimeout(goneTimer);
+			goneTimer = null;
+		}
 		if (host) {
 			if (awaySince) core.notice('Back with the host ' + host.slice(0, 6).toUpperCase() + ' — edits reach the room again.');
 			lastHost = host;
@@ -269,6 +291,8 @@ function startHostWatch(core) {
 	};
 	sessionHost.subscribe(() => queueMicrotask(settle));
 	peers.subscribe(() => queueMicrotask(settle));
+	// a link closing does not always publish a store change — look again now and then
+	setInterval(settle, 2000);
 }
 
 /** A6: is the HOST's mesh provider ready (what it last said through the relay)? */

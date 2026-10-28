@@ -133,10 +133,11 @@ h.run(async () => {
 		name: 'Conf',
 		source: "export default behaviour({ name: 'Conf', state: { n: 0 }, inputs: ['hit'], outputs: ['n', 'done'], on: { hit() { this.state.n += 1; if (this.state.n > 2) this.emit('done'); } } });"
 	});
-	h.check(!!bhv?.id && (bhv.inputs || []).some((/** @type {any} */ i) => (i.name ?? i) === 'hit'), 'create_behaviour returns its node id and sockets: ' + short(bhv));
+	const made = bhv?.created?.[0];
+	h.check(!!made?.id && (made.inputs || []).some((/** @type {any} */ i) => (i.name ?? i) === 'hit'), 'create_behaviour returns its node id and sockets: ' + short(bhv));
 	const hook = await exec('create_behaviour', { name: 'Ticker', source: "export default behaviour({ name: 'Ticker', state: {}, onTick() {} });" });
-	h.check(typeof hook?.error === 'string' && /onTick|per-frame/.test(hook.error), 'a per-frame hook is refused, saying there is none: ' + short(hook));
-	const wire = await exec('create_flow_nodes', { graph: 'scene', nodes: [{ ref: 'c', type: 'onclick' }], edges: [{ from: 'c', to: bhv?.id, toHandle: 'nope' }] });
+	h.check(typeof hook?.error === 'string' && /onTick/.test(JSON.stringify(hook.issues)) && /per-frame/.test(JSON.stringify(hook.issues)), 'a per-frame hook is refused, saying there is none: ' + short(hook));
+	const wire = await exec('create_flow_nodes', { graph: 'scene', nodes: [{ ref: 'c', type: 'onclick' }], edges: [{ from: 'c', to: made?.id, toHandle: 'nope' }] });
 	const wireText = JSON.stringify(wire);
 	h.check(/nope/.test(wireText) && /hit/.test(wireText), 'a toHandle the node does not declare is an error naming the real inputs: ' + short(wire));
 

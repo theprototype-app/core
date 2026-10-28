@@ -240,6 +240,16 @@ export const VALIDATORS = {
 		typeof d.id === 'string' && d.id.length <= 64 && typeof d.prompt === 'string' && d.prompt.length <= 2000 &&
 		(d.name == null || typeof d.name === 'string') && (d.position == null || isVec3(d.position)),
 	meshgenack: (d) => typeof d.id === 'string' && typeof d.ok === 'boolean',
+	// 56 C13: the session volume (sessionVolumes.js) — rows are re-normalised on arrival, the host
+	// re-checks every pull against the scope it sent and every save against the asker's role
+	volidx: (d) =>
+		isArray(d.items) && d.items.length <= 5000 && isArray(d.folders) && d.folders.length <= 2000 &&
+		d.items.every((/** @type {any} */ r) => !!r && typeof r.id === 'string' && typeof r.hash === 'string' && r.hash.length <= 128) &&
+		d.folders.every((/** @type {any} */ f) => !!f && typeof f.id === 'string'),
+	volthumbs: (d) => !!d.thumbs && typeof d.thumbs === 'object' && Object.keys(d.thumbs).length <= 64,
+	volget: (d) => typeof d.hash === 'string' && d.hash.length > 0 && d.hash.length <= 128,
+	volsave: (d) => typeof d.id === 'string' && d.id.length <= 64 && (d.name == null || (typeof d.name === 'string' && d.name.length <= 200)),
+	volsaveack: (d) => typeof d.id === 'string' && typeof d.ok === 'boolean',
 	disconnected: (d) => typeof d.peerId === 'string',
 	// 55 A9: remove / remove-and-block / allow back. WHO may send it is decided by the
 	// receiver (peerModeration), not here — this is the shape.

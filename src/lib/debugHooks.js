@@ -383,6 +383,9 @@ export const DEBUG_HOOKS = [
 	['colocationAnchors', () => import('./colocationAnchors')],
 	['colocationNudge', () => import('./colocationNudge')],
 	['mountedVolumes', () => import('./mountedVolumes')],
+	// 56 C13: the session volume (sessionVolumes) and the host-side save (hostSave, C12 wraps it)
+	['sessionVolumes', () => import('./sessionVolumes')],
+	['hostSave', () => import('./hostSave')],
 	['storageUsage', () => import('./storageUsage')],
 	['scenePrivacy', () => import('./scenePrivacy')],
 	['touchControls', () => import('./touchControls')],

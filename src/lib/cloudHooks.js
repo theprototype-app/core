@@ -79,7 +79,10 @@ const ALWAYS_ALLOWED = new Set([
 	// reply and every update stay gateable, which is what keeps a viewer read-only.
 	'getytext',
 	// 56 C10: the scene chats REQUEST (its `tpchats` reply stays gateable)
-	'gettpchats'
+	'gettpchats',
+	// 56 C13: a session-volume byte REQUEST. A viewer may browse and copy (Open / Copy to my library), and
+	// the host answers it only for a hash inside the share scope it sent that peer (sessionVolumes.js)
+	'volget'
 ]);
 
 /** @type {((peerId: string, msgType: string) => boolean) | null} */

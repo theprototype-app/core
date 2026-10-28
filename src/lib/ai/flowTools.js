@@ -583,9 +583,18 @@ export function createJointsTool(args) {
 			kind === 'revolute' && j?.motor && Number.isFinite(j.motor.vel)
 				? { vel: j.motor.vel, maxForce: Number.isFinite(j.motor.maxForce) ? j.motor.maxForce : 100 }
 				: undefined;
-		const def = createJoint(/** @type {'fixed'|'revolute'} */ (kind), a, b, axis, motor);
+		// 55 owner finding 6: anchor (world point), contacts:false and hinge limits reach the joint
+		const anchor =
+			Array.isArray(j?.anchor) && j.anchor.length === 3 && j.anchor.every((/** @type {any} */ n) => Number.isFinite(n))
+				? j.anchor
+				: undefined;
+		const def = createJoint(/** @type {'fixed'|'revolute'} */ (kind), a, b, axis, motor, {
+			...(anchor ? { anchor } : {}),
+			...(j?.contacts === false ? { contacts: false } : {}),
+			...(Array.isArray(j?.limits) ? { limits: j.limits } : {})
+		});
 		if (!def) return { error: 'joint creation failed', a, b };
-		return { id: def.id, kind, a, b };
+		return { id: def.id, kind, a, b, ...(def.contacts === false ? { contacts: false } : {}) };
 	});
 	if (results.every((/** @type {any} */ r) => r.error))
 		return { error: 'nothing was attached: ' + results[0].error, joints: results };

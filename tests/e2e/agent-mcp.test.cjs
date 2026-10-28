@@ -156,6 +156,15 @@ h.run(async () => {
 			mixed.isError !== true && mixedBody.partial === true && /1 of 2 nodes/.test(mixedBody.warning || '') && mixedBody.created?.length === 1,
 			'a half-valid create_flow_nodes says partial at the top level: ' + JSON.stringify(mixedBody).slice(0, 160)
 		);
+		// 55 owner finding 6: a hinge at an explicit world anchor, the pair not colliding
+		const jointed = json(await call(B.client, 'create_joints', { joints: [{ kind: 'revolute', a: preUuid, b: uuid, axis: 'z', anchor: [0, 1.5, 0], contacts: false }] }));
+		h.check(!jointed.error && jointed.joints?.[0]?.contacts === false, 'create_joints takes anchor + contacts:false: ' + JSON.stringify(jointed).slice(0, 120));
+		await h.eventually(
+			() => A.page.evaluate(() => new Promise((r) => window.__stores.joints.sceneJoints.subscribe((j) => r(JSON.parse(JSON.stringify(j))))())),
+			(j) => (j || []).some((d) => d.b === uuid && d.contacts === false && Math.abs(d.anchorB[1] - 1) < 0.01),
+			'the host\'s joint sits at the anchor (1 m above the box centre) with contacts off',
+			20000
+		);
 		const moved = json(await call(B.client, 'update_objects', { updates: [{ uuid, position: [0, 2, 0] }] }));
 		h.check(!moved.error, 'update_objects accepted');
 		await h.eventually(() => objectByUuid(A.page, uuid), (o) => o && Math.abs(o.y - 2) < 0.01, 'the move reached the host', 20000);

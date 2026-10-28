@@ -95,7 +95,8 @@ function removeLocal(id) {
  * the axis = A's chosen LOCAL axis at the current pose.
  * @param {'fixed'|'revolute'} kind @param {string} aUuid @param {string} bUuid
  * @param {'x'|'y'|'z'=} axis @param {JointDef['motor']=} motor
- * @param {{limits?: number[], contacts?: boolean, sparks?: boolean}=} opts 37-fx (jointOptions)
+ * @param {{limits?: number[], contacts?: boolean, sparks?: boolean, anchor?: number[]}=} opts 37-fx
+ *   (jointOptions); `anchor` = a world point for the joint instead of the origins
  * @returns {JointDef | null}
  */
 export function createJoint(kind, aUuid, bUuid, axis, motor, opts) {
@@ -113,7 +114,15 @@ export function createJoint(kind, aUuid, bUuid, axis, motor, opts) {
 	// (originWorld falls back to the world position).
 	const aPos = originWorld(a, new THREE.Vector3());
 	const bPos = originWorld(b, new THREE.Vector3());
-	const anchorWorld = kind === 'revolute' ? bPos.clone() : aPos.clone().lerp(bPos, 0.5);
+	// 55 owner finding 6: an explicit WORLD anchor (opts.anchor [x,y,z]) wins — a pendulum is a
+	// rod hinged at its top, not a rod plus a pivot ball placed at B's origin
+	const at = opts?.anchor;
+	const anchorWorld =
+		Array.isArray(at) && at.length === 3 && at.every((n) => Number.isFinite(n))
+			? new THREE.Vector3(at[0], at[1], at[2])
+			: kind === 'revolute'
+				? bPos.clone()
+				: aPos.clone().lerp(bPos, 0.5);
 	/** @type {JointDef} */
 	const joint = {
 		id: crypto.randomUUID().slice(0, 8),

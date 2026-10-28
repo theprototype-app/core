@@ -1038,7 +1038,7 @@ const PHYSICS_AI_TOOLS = [
 		function: {
 			name: 'create_joints',
 			description:
-				'Attach object pairs with physics joints: "fixed" welds them rigidly, "revolute" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing.',
+				'Attach object pairs with physics joints: "fixed" welds them rigidly, "revolute" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b\'s origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door\'s edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1051,6 +1051,17 @@ const PHYSICS_AI_TOOLS = [
 								a: { type: 'string', description: 'uuid of the base object' },
 								b: { type: 'string', description: 'uuid of the attached object (hinge anchors at its origin)' },
 								axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'hinge axis (revolute only, default y)' },
+								anchor: {
+									type: 'array',
+									items: { type: 'number' },
+									description: 'world [x,y,z] of the pivot/weld point (default: b\'s origin for a hinge, midway for a weld)'
+								},
+								contacts: { type: 'boolean', description: 'false = the two bodies stop colliding with each other (default true)' },
+								limits: {
+									type: 'array',
+									items: { type: 'number' },
+									description: 'revolute only: [min, max] radians the hinge may turn'
+								},
 								motor: {
 									type: 'object',
 									description: 'revolute only: {vel: rad/s, maxForce}',
@@ -1147,12 +1158,14 @@ export function buildSystemPrompt() {
 	const physicsBlock = physics
 		? [
 				'',
-				'Physics: new primitives already spawn DYNAMIC (mass 1) — they fall and collide once a',
-				'simulation runs. Use set_physics to tune bodies or pin scenery (mode "static" for',
-				'ground/walls). create_joints welds (fixed) or hinges (revolute, optional motor) pairs:',
+				'Physics: objects made with create_objects are STATIC (they stay put in Play) unless you',
+				'create them with physics "dynamic" or a mass — then they fall and collide once a',
+				'simulation runs. Use set_physics to make existing objects dynamic, tune bodies or pin',
+				'scenery. create_joints welds (fixed) or hinges (revolute, optional motor) pairs:',
 				'assemble parts at their final pose WORLD-ALIGNED (no rotation) BEFORE jointing, or the',
-				'hinge axis is wrong and the solver launches the assembly. A door = static frame +',
-				'revolute joint; a wheel = revolute + motor. When a physics build is done, call',
+				'hinge axis is wrong and the solver launches the assembly. Give a hinge its pivot with',
+				'anchor [x,y,z] (default: b\'s origin) and contacts:false for parts that touch. A door =',
+				'static frame + revolute joint at its edge; a wheel = revolute + motor. When done, call',
 				'control_simulation action "start" so it comes alive (undo will not stop a running sim).'
 			].join('\n')
 		: '';

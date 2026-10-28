@@ -488,6 +488,12 @@ function createOne(spec) {
 
 	// 55 (41's research): a group keeps the name it was given (the command form made 'G group' 'G_group Group')
 	if (spec.name) renameObject(uuid, String(spec.name).slice(0, 120));
+	// 55 (1.48.1 a): nest FIRST, then place — position/rotation/scale are LOCAL to the group, as list_scene reports
+	// them (attach() keeps the world pose, so nesting after the transform read them as world space)
+	if (spec.parentUuid) {
+		const parent = objectOf(spec.parentUuid);
+		if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
+	}
 	applyAiTransform(created, spec);
 	/** @type {string[]} */
 	const warnings = [];
@@ -498,10 +504,6 @@ function createOne(spec) {
 		const hex = colorOf(spec.color);
 		if (hex) setObjectColor(uuid, hex);
 		else warnings.push('color: takes a hex colour like "#ff8800"');
-	}
-	if (spec.parentUuid) {
-		const parent = objectOf(spec.parentUuid);
-		if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
 	}
 	// fix-live F-4: static unless asked — a built scene must not fall apart in Play
 	const physics = aiCreatePhysics(spec, created.userData?.physics);
@@ -537,6 +539,15 @@ async function updateOne(spec) {
 	const errors = [];
 
 	if (typeof spec.name === 'string') renameObject(uuid, spec.name);
+	// 55 (1.48.1 a): re-nest FIRST (the object keeps its world pose), then a given position is LOCAL to the new parent
+	if (spec.parentUuid) {
+		if (spec.parentUuid === 'root') moveObjectToGroup(uuid, 'root');
+		else {
+			const parent = objectOf(spec.parentUuid);
+			if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
+			else errors.push('parentUuid: no group with that uuid');
+		}
+	}
 	applyAiTransform(object, spec);
 	if (object.isLight) {
 		errors.push(...applyAiLight(object, spec));
@@ -561,14 +572,6 @@ async function updateOne(spec) {
 		}
 	}
 	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
-	if (spec.parentUuid) {
-		if (spec.parentUuid === 'root') moveObjectToGroup(uuid, 'root');
-		else {
-			const parent = objectOf(spec.parentUuid);
-			if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
-			else errors.push('parentUuid: no group with that uuid');
-		}
-	}
 	return errors.length ? { uuid, ok: false, errors } : { uuid, ok: true };
 }
 
@@ -1004,7 +1007,7 @@ export const AI_TOOLS = [
 								scale: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
 								color: { type: 'string', description: 'hex like #ff8800 (a mesh, or a light\'s colour)' },
 								...LIGHT_SCHEMA,
-								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under' },
+								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group' },
 								physics: {
 									type: 'string',
 									enum: ['static', 'dynamic'],
@@ -1054,7 +1057,7 @@ export const AI_TOOLS = [
 								visible: { type: 'boolean' },
 								parentUuid: {
 									type: 'string',
-									description: 'group uuid to nest under, or "root" to un-nest'
+									description: 'group uuid to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent'
 								}
 							},
 							required: ['uuid']

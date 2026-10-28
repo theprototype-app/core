@@ -87,6 +87,15 @@ export function disposeTree(root, options = {}) {
 	// seen-set keeps the counts honest
 	const seen = new Set();
 	root.traverse?.((/** @type {any} */ o) => {
+		// fix-agenttest 3: a shadow-casting light's SHADOW MAP (a render target: colour + depth texture)
+		// is the light's own — `copy()` clones the LightShadow and the renderer makes the map — so it
+		// is never shared, and deleting a spot/point/directional light used to leave it on the GPU.
+		// Counted as one texture.
+		if (o.isLight && o.shadow?.map) {
+			o.shadow.dispose();
+			o.shadow.map = null;
+			freed.textures++;
+		}
 		eachResource(o, (r) => {
 			if (!r || keep.has(r) || seen.has(r)) return;
 			seen.add(r);

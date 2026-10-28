@@ -655,6 +655,7 @@
 		"terrain-procedural": 460,
 		"terrain-sculpt": 95,
 		"text-selection": 16,
+		"texture-leak": 320,
 		"theme-import": 20,
 		"theme-text-sweep": 361,
 		"theme-tokens": 10,

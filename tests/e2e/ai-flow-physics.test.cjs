@@ -229,7 +229,7 @@ h.run(async () => {
 
 	await h.eventually(() => count(A), (n) => n === base0 + 3, 'scene has ground + pebble + spider group (3 top-level)');
 	const names = await uuidsByName(A);
-	const spiderUuid = names['Spider Group']; // createGroup suffixes the /group name
+	const spiderUuid = names.Spider; // 1.48: group_objects keeps the name it was given (it used to come back 'Spider Group')
 	h.check(!!(names.Ground && names.Body && names.LegL && spiderUuid), 'named objects + group exist');
 
 	const graphs = await graphsSnapshot(A);

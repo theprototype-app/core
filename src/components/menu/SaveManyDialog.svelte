@@ -44,7 +44,8 @@
 		await m.confirmSaveMany(ids, { remember, sceneFirst });
 	}
 	function openSetting() {
-		void import('$lib/saveProject').then((m) => m.cancelSaveMany());
+		// close as Cancel does (the effect above cancels), then hand over to Settings
+		open = false;
 		settingsSection.set('saveoptions');
 		settingsOpen.set(true);
 	}

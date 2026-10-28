@@ -95,7 +95,7 @@ function note(line) {
 export { shareScope, setShareScope };
 
 /** per guest: the projection (and scope) we last sent it, and the thumbnails it already has
- * @type {Map<string, {proj: {folders: any[], items: any[]}, scope: string, thumbs: Set<string>}>} */
+ * @type {Map<string, {proj: {folders: any[], items: any[]}, scope: string, role: string, thumbs: Set<string>}>} */
 const sentTo = new Map();
 let rev = 0;
 
@@ -147,7 +147,7 @@ function hosting() {
 function sendVolume(peerId, proj = currentProjection()) {
 	const prior = sentTo.get(peerId);
 	const thumbs = prior?.thumbs ?? new Set();
-	sentTo.set(peerId, { proj, scope: get(shareScope), thumbs });
+	sentTo.set(peerId, { proj, scope: get(shareScope), role: roleOf(peerId), thumbs });
 	const ok = sendTo(peerId, {
 		type: 'volidx',
 		rev: ++rev,
@@ -184,7 +184,8 @@ function republish() {
 	const proj = currentProjection();
 	const key = JSON.stringify(proj);
 	for (const [peerId, prior] of sentTo) {
-		if (JSON.stringify(prior.proj) === key && prior.scope === get(shareScope)) continue;
+		// a role change (made viewer / editor) is resent too: it decides Save on host on the guest
+		if (JSON.stringify(prior.proj) === key && prior.scope === get(shareScope) && prior.role === roleOf(peerId)) continue;
 		sendVolume(peerId, proj);
 	}
 }
@@ -200,7 +201,7 @@ let watching = false;
 function watch() {
 	if (watching) return;
 	watching = true;
-	for (const store of [explorerItems, explorerFolders, currentLevel, sceneAssets, shareScope])
+	for (const store of [explorerItems, explorerFolders, currentLevel, sceneAssets, shareScope, rolesInfo])
 		/** @type {any} */ (store).subscribe(() => sentTo.size && scheduleRepublish());
 }
 

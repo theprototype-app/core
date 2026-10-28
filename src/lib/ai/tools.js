@@ -1,6 +1,8 @@
 import { get } from 'svelte/store';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
+import { lockSkip } from './lockNote.js';
+import { geometrySpec } from '$lib/geometryParams';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte.js';
 import { recordObjectPresence, recordTransform } from '$lib/history';
 import {
@@ -134,8 +136,31 @@ function describeObject(object) {
 		if (material.color) out.color = '#' + material.color.getHexString();
 	}
 	if (object.userData?.physics) out.physics = { ...object.userData.physics };
+	const geometry = geometrySummary(object);
+	if (geometry) out.geometry = geometry;
 	const flow = summarizeGraph(object.uuid);
 	if (flow) out.flow = flow;
+	return out;
+}
+
+/**
+ * 55 (1.48.1 c, 41's voice-Claude finding): a primitive's editable shape — a wall's thickness, a box's size — so an
+ * agent can read what it built (create_objects' `params` and the Inspector's Geometry rows). Sizes always; segment
+ * counts only when changed; nothing that is not a plain number/flag/word.
+ * @param {any} object @returns {any}
+ */
+function geometrySummary(object) {
+	const gp = object.userData?.geometryParams;
+	if (!gp?.gtype || !gp.params) return null;
+	const spec = geometrySpec(gp.gtype);
+	/** @type {any} */
+	const out = { type: gp.gtype };
+	for (const [key, value] of Object.entries(gp.params)) {
+		const def = spec?.params?.find((/** @type {any} */ p) => p.key === key);
+		if (def?.kind === 'int' && value === def.def) continue;
+		if (typeof value === 'number') out[key] = r3(value);
+		else if (typeof value === 'boolean' || (typeof value === 'string' && value.length <= 40)) out[key] = value;
+	}
 	return out;
 }
 
@@ -506,7 +531,8 @@ async function updateOne(spec) {
 	const uuid = spec.uuid;
 	const object = objectOf(uuid);
 	if (!object) return { uuid, error: 'no object with that uuid' };
-	if (lockedByPeer(uuid)) return { uuid, skipped: 'locked by another peer' };
+	const lock = lockSkip(uuid, object);
+	if (lock) return { uuid, skipped: lock };
 	/** @type {string[]} */
 	const errors = [];
 
@@ -813,7 +839,9 @@ async function runAiTool(rawName, rawArgs) {
 				const allowed = uuids.filter((/** @type {string} */ u) => objectOf(u) && !lockedByPeer(u));
 				const skipped = uuids.filter((/** @type {string} */ u) => !allowed.includes(u));
 				const count = deleteObjectsByUuid(allowed);
-				return { deleted: count, skipped };
+				// 55 (1.48.1 b): why each was skipped — gone, or locked by whom
+				const why = skipped.map((/** @type {string} */ u) => (objectOf(u) ? lockSkip(u, objectOf(u)) : u + ': no object with that uuid'));
+				return { deleted: count, skipped, ...(why.length ? { skippedWhy: why } : {}) };
 			}
 
 			case 'group_objects': {
@@ -829,13 +857,15 @@ async function runAiTool(rawName, rawArgs) {
 				// 55 (41's research): the name as given — the command form turns 'G group' into 'G_group Group'
 				if (typeof args?.name === 'string' && args.name.trim()) renameObject(groupUuid, args.name.trim().slice(0, 120));
 				const moved = [];
+				/** @type {string[]} */
+				const skippedWhy = [];
 				for (const uuid of members) {
 					if (objectOf(uuid) && !lockedByPeer(uuid)) {
 						moveObjectToGroup(uuid, groupUuid);
 						moved.push(uuid);
-					}
+					} else skippedWhy.push(objectOf(uuid) ? String(lockSkip(uuid, objectOf(uuid))) : uuid + ': no object with that uuid');
 				}
-				return { groupUuid, name: group.name, members: moved };
+				return { groupUuid, name: group.name, members: moved, ...(skippedWhy.length ? { skippedWhy } : {}) };
 			}
 
 			case 'clear_scene': {
@@ -923,7 +953,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'list_scene',
 			description:
-				'List every object currently in the scene with its uuid, name, type, parent, transform, material and color. Call this before editing so you use real uuids. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
+				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
 			parameters: {
 				type: 'object',
 				properties: {

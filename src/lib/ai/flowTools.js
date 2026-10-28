@@ -26,6 +26,7 @@ import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X
 import { parseGraphText } from '$lib/graphText';
 import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
 import { edgeHandleProblems } from './edgeHandles.js';
+import { lockSkip } from './lockNote.js';
 import { activeAiConfig } from './providers.js';
 import { matchNodeType } from './nodeTypeMatch.js';
 
@@ -548,7 +549,8 @@ export function setPhysicsTool(args) {
 	const results = updates.map((/** @type {any} */ u) => {
 		const uuid = u?.uuid;
 		if (!uuid || !objectOf(uuid)) return { uuid, error: 'no object with that uuid' };
-		if (lockedByPeer(uuid)) return { uuid, skipped: 'locked by another peer' };
+		const lock = lockSkip(uuid, objectOf(uuid));
+		if (lock) return { uuid, skipped: lock };
 		/** @type {any} */ const patch = {};
 		if (typeof u.mode === 'string' && PHYSICS_MODES.includes(u.mode)) patch.mode = u.mode;
 		if (Number.isFinite(u.mass)) {
@@ -599,7 +601,8 @@ export function createJointsTool(args) {
 		if (!a || !objectOf(a)) return { error: 'joint "a" object not found: ' + a };
 		if (!b || !objectOf(b)) return { error: 'joint "b" object not found: ' + b };
 		if (a === b) return { error: 'cannot joint an object to itself' };
-		if (lockedByPeer(a) || lockedByPeer(b)) return { skipped: 'locked by another peer', a, b };
+		const lock = lockSkip(a, objectOf(a)) || lockSkip(b, objectOf(b));
+		if (lock) return { skipped: lock, a, b };
 		const axis = ['x', 'y', 'z'].includes(j?.axis) ? j.axis : undefined;
 		const motor =
 			kind === 'revolute' && j?.motor && Number.isFinite(j.motor.vel)

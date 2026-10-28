@@ -239,8 +239,9 @@ h.run(async () => {
 		15000
 	);
 	h.check(!!bSeesA, 'counterfactual holds: a person still gets a body');
-	await A.page.click('#peers-trigger', { timeout: 10000 }).catch(() => {});
-	await A.page.waitForTimeout(400);
+	// the automatic-admission notice is a lasting toast at the top: open the panel by its store, not a click under it
+	await A.page.evaluate(() => window.__stores.peersPanelOpen.set(true));
+	await A.page.locator('#peers-popover').waitFor({ timeout: 8000 }).catch(() => {});
 	h.check((await A.page.locator('.peer-ai').count()) >= 1, 'Users shows the robot + AI on the agent row');
 	h.check((await A.page.locator('#peers-invites .peers-inv-row[data-state="used"]').count()) === 1, 'Users lists the invite as used');
 	await inPage(A, 's.peersPanelOpen.set(false)');

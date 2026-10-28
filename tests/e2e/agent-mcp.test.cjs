@@ -161,8 +161,9 @@ h.run(async () => {
 		h.check(!jointed.error && jointed.joints?.[0]?.contacts === false, 'create_joints takes anchor + contacts:false: ' + JSON.stringify(jointed).slice(0, 120));
 		await h.eventually(
 			() => A.page.evaluate(() => new Promise((r) => window.__stores.joints.sceneJoints.subscribe((j) => r(JSON.parse(JSON.stringify(j))))())),
-			(j) => (j || []).some((d) => d.b === uuid && d.contacts === false && Math.abs(d.anchorB[1] - 1) < 0.01),
-			'the host\'s joint sits at the anchor (1 m above the box centre) with contacts off',
+			// HostBall (a) stands at [2, 0.5, 0], so the world anchor [0, 1.5, 0] is [-2, 1, 0] in its frame
+			(j) => (j || []).some((d) => d.b === uuid && d.contacts === false && Math.abs(d.anchorA[0] + 2) < 0.01 && Math.abs(d.anchorA[1] - 1) < 0.01),
+			'the host\'s joint sits at the world anchor (a\'s frame: [-2, 1, 0]) with contacts off',
 			20000
 		);
 		const moved = json(await call(B.client, 'update_objects', { updates: [{ uuid, position: [0, 2, 0] }] }));

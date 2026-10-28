@@ -61,6 +61,11 @@ function openPeerIds() {
 	return set ? [...set] : [];
 }
 
+/** a live link to this peer (the mesh's own opened set — a silently closed tab leaves it) @param {string} id */
+function hostLinked(id) {
+	return openPeerIds().includes(id);
+}
+
 /** @param {string} id */
 function nameOf(id) {
 	const row = (/** @type {any[]} */ (get(userdata)) ?? []).find((u) => Array.isArray(u) && u[0] === id);
@@ -236,16 +241,20 @@ function startHostWatch(core) {
 	};
 	/** @type {any} */
 	let goneTimer = null;
+	/** the host we last SAW linked — only a host that was here can leave */
+	let seenHost = '';
 	const settle = () => {
 		const host = get(sessionHost);
+		if (host && hostLinked(host)) seenHost = host;
 		// 55 (41's round 5): a host whose tab simply CLOSED can stay named as the host with its link gone
 		// (no goodbye nulls it) — the agent sat at joined:false while its edits still reached the others.
-		// Named but absent for HOST_GONE_MS = gone: the same successor/pause path as a host that left.
-		if (host && !openPeerIds().includes(host)) {
+		// Named, once seen linked, then absent for HOST_GONE_MS = gone: the same successor/pause path as a
+		// host that left. (A join names the host before its link settles — that is not a departure.)
+		if (host && host === seenHost && !hostLinked(host)) {
 			if (!goneTimer)
 				goneTimer = setTimeout(() => {
 					goneTimer = null;
-					if (get(sessionHost) === host && !openPeerIds().includes(host)) {
+					if (get(sessionHost) === host && !hostLinked(host)) {
 						lastHost = host;
 						sessionHost.set(null); // → settle: successor, else pause
 					}

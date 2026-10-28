@@ -40,7 +40,7 @@ h.run(async () => {
 	const browser = await h.launch();
 	const A = await h.setupPage(browser, 'A-host');
 	const C = await h.setupPage(browser, 'C-person');
-	const B = await h.setupPage(browser, 'B-agent', { storage: { agentApi: '1' } });
+	const B = await h.setupPageQuiet(browser, 'B-agent', [A, C], { storage: { agentApi: '1' } });
 	await B.page.waitForFunction(() => !!window.tpAgent, null, { timeout: 30000 });
 
 	console.log('\n=== 1. three in one room ===');

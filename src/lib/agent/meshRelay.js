@@ -86,6 +86,8 @@ export async function handleMeshRelay(from, data) {
 	try {
 		if (data.type === 'meshgenask') {
 			sendTo(from, { type: 'meshgenstate', ready: meshGenReady() });
+			// an agent is here: warm the sim relay (its control_simulation runs on this page)
+			import('./simRelay.js').catch(() => {});
 		} else if (data.type === 'meshgenstate') {
 			peerMeshReady.update((m) => ({ ...m, [from]: data.ready === true }));
 		} else if (data.type === 'meshgenack') {

@@ -16,9 +16,13 @@ import { get } from 'svelte/store';
 import { peers } from '../../stores/appStore.js';
 import { rolesInfo } from '$lib/cloudHooks';
 import { isAgentPeer } from '$lib/inviteStore';
+// static: this module is itself loaded lazily (and warmed when an agent first asks the host anything —
+// meshRelay's meshgenask), so the tool's module graph is ready before the first control_simulation
+import { controlSimulationTool } from '$lib/ai/flowTools';
 
-/** how long an agent waits for the host's answer (ms) — a start warms rapier up first */
-export const ACK_TIMEOUT_MS = 20000;
+/** how long an agent waits for the host's answer (ms) — a start warms the physics engine up first,
+ * which on a busy machine takes a while */
+export const ACK_TIMEOUT_MS = 60000;
 /** the actions the tool knows */
 export const SIM_ACTIONS = ['start', 'stop', 'pause', 'resume', 'reset'];
 
@@ -83,7 +87,6 @@ export async function handleSimRelay(from, data) {
 				sendTo(from, { type: 'agentsimack', id, ok: false, error: refusal });
 				return;
 			}
-			const { controlSimulationTool } = await import('$lib/ai/flowTools');
 			const result = plain(await controlSimulationTool({ action }));
 			if (result.error) sendTo(from, { type: 'agentsimack', id, ok: false, error: String(result.error) });
 			else sendTo(from, { type: 'agentsimack', id, ok: true, result });

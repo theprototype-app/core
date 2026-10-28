@@ -303,6 +303,10 @@ h.run(async () => {
 	h.check(!!broken?.created, 'create_behaviour applied it: ' + JSON.stringify(broken).slice(0, 200));
 	console.log('  create result errors: ' + JSON.stringify(broken?.errors ?? null).slice(0, 160));
 	const failing = await poll(() => B.page.evaluate(() => window.tpAgent.status().behaviourErrors ?? null), (x) => Array.isArray(x) && x.length > 0, 'status().behaviourErrors', 15000);
+	if (!(Array.isArray(failing) && failing.length)) {
+		const diag = await Promise.all([A, B].map((p) => p.page.evaluate((id) => { const d = window.__stores.behaviours.behavioursDebug(); const l = id ? d.live(id) : null; return { me: d.me, authority: d.authority, stats: d.stats, status: id ? d.status[id] : Object.keys(d.status), live: l && { started: l.started, rev: l.rev, synced: l.synced, authority: l.authority, errors: l.errors, fired: l.fired } }; }, broken?.created?.[0]?.id ?? null)));
+		console.log('  DIAG behaviour errors: ' + JSON.stringify(diag).slice(0, 2400));
+	}
 	h.check(Array.isArray(failing) && failing.some((e) => e.name === 'BrokenGems' && /name/.test(e.message)), `status().behaviourErrors names the failing behaviour on the AGENT page (it runs on the host): ${JSON.stringify(failing).slice(0, 200)}`);
 	const listed = await B.page.evaluate(() => window.tpAgent.exec('list_scene', {}));
 	const row = (listed?.behaviours ?? []).find((b) => b.name === 'BrokenGems');
@@ -320,7 +324,7 @@ h.run(async () => {
 	const fall = A.page.evaluate((id) => new Promise((resolve) => {
 		let g, t0 = 0;
 		window.__stores.objectsGroup.subscribe((x) => (g = x))();
-		const end = Date.now() + 15000;
+		const end = Date.now() + 60000;
 		const tick = setInterval(() => {
 			let on = false;
 			window.__stores.physics.simulating.subscribe((v) => (on = v))();

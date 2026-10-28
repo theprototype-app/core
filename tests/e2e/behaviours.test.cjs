@@ -265,7 +265,8 @@ h.run(async () => {
 	const SCORE = "export default behaviour({ name: 'Scorer', state: { kills: 0 }, on: { died() { this.state.kills += 1; } } });";
 	const made = await B_(A, (src) => /** @type {any} */ (window).__stores.aiExtensions.behaviourHost().create('Scorer', src, { target: 'scene' }), SCORE);
 	h.check(made?.ok === true, 'host.create made a behaviour node (' + JSON.stringify(made) + ')');
-	const scorerId = await B_(B, () => /** @type {any} */ (window).__stores.findNodeAnyGraph((/** @type {any} */ n) => n.type === 'behaviour' && n.data?.name === 'Scorer')?.node?.id ?? null);
+	// the id create returned — B may not hold the node yet when this line runs (a one-shot read there stayed null)
+	const scorerId = made?.id ?? null;
 	await h.eventually(() => Promise.all([A, B].map((p) => dbg(p))), (v) => !!scorerId && v.every((d) => d.status[scorerId]?.status === 'running'), 'the created behaviour runs on both peers', 12000);
 	const edited = await B_(A, (src) => /** @type {any} */ (window).__stores.aiExtensions.behaviourHost().edit('Scorer', src.replace('kills += 1', 'kills += 2')), SCORE);
 	h.check(edited?.ok === true, 'host.edit replaced its source');

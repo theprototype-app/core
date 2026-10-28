@@ -50,8 +50,10 @@ import {
 
 /** how many thumbnails ride one `volthumbs` message */
 const THUMBS_PER_MESSAGE = 24;
-/** how long a guest waits for the host's Save answer (ms) */
-const SAVE_TIMEOUT_MS = 30000;
+/** how long a guest waits for the host's Save answer (ms). Generous: the host exports the whole scene,
+ * and a big scene on a busy machine took well over 30 s (measured) — a short fuse said "no answer" to
+ * a save that then landed */
+const SAVE_TIMEOUT_MS = 120000;
 
 /** @param {string} peerId */
 function nameOf(peerId) {
@@ -469,6 +471,8 @@ export function saveOnHost(volumeId, opts = {}) {
 	if (opts.name) msg.name = String(opts.name).slice(0, 120);
 	if (!sendTo(vol.peerId, msg)) return Promise.resolve({ ok: false, error: vol.host + ' is not connected' });
 	note('out volsave to ' + vol.peerId);
+	// say so straight away: the answer can take a while on a big scene
+	if (!opts.quiet) showToast('Saving on ' + vol.host + '…');
 	return new Promise((resolve) => {
 		pendingSaves.set(id, (r) => {
 			if (!opts.quiet)

@@ -124,14 +124,14 @@ h.run(async () => {
 	await h.eventually(() => dialogOpen(G), (o) => o === true, 'the dialog again', 30000);
 	await G.page.locator('#save-many-remember').check();
 	await G.page.locator('#save-many-save').click();
-	await h.eventually(() => hostSaves(H), (n) => n === 1, 'Save saves the session scene ON THE HOST', 30000);
+	await h.eventually(() => hostSaves(H), (n) => n === 1, 'Save saves the session scene ON THE HOST', 120000);
 	h.check((await setting(G)) === 'active', `"Remember my choice" with only the active one ticked sets "Save the active one" (${await setting(G)})`);
 	h.check(JSON.stringify(await ownScenes(G)) === JSON.stringify(mineBefore), '…and my own Library was not saved into');
 
 	// ---- 4. "Save the active one": Ctrl+S and the burger, no dialog -----------------------------
 	await G.page.waitForTimeout(1500); // the first save's toasts and the dialog's focus hand-back settle
 	await ctrlS(G);
-	await h.eventually(() => hostSaves(H), (n) => n === 2, 'Ctrl+S now saves the active one straight away', 30000);
+	await h.eventually(() => hostSaves(H), (n) => n === 2, 'Ctrl+S now saves the active one straight away', 120000);
 	if ((await hostSaves(H)) !== 2) {
 		console.log('  G toasts:', JSON.stringify(await toasts(G)));
 		console.log('  G log:', JSON.stringify((await debug(G)).log.slice(-8)));
@@ -143,12 +143,12 @@ h.run(async () => {
 	let downloaded = false;
 	G.page.once('download', () => (downloaded = true));
 	await G.page.evaluate(() => window.__stores.closeMenu.set(false));
-	await G.page.waitForSelector('#sidebar70', { timeout: 5000 });
+	await G.page.waitForSelector('#sidebar70', { timeout: 20000 });
 	await G.page.waitForTimeout(350);
 	const burgerSave = G.page.locator('#sidebar70 #project-save, #sidebar70 #save-project').first();
 	if ((await burgerSave.count()) === 1) {
 		await burgerSave.click();
-		await h.eventually(() => hostSaves(H), (n) => n === 3, "the burger's Save (Project) follows the same setting", 30000);
+		await h.eventually(() => hostSaves(H), (n) => n === 3, "the burger's Save (Project) follows the same setting", 120000);
 		await G.page.waitForTimeout(1500);
 		h.check(!downloaded && !(await dialogOpen(G)), '…no dialog, and no project file of my own was written');
 	} else h.check(false, 'premise: the burger shows a Save row (#project-save)');

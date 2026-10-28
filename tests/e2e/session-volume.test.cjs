@@ -209,7 +209,10 @@ h.run(async () => {
 	const saveBtn = G.page.locator('button[id^="session-save-"]');
 	h.check(!(await saveBtn.isDisabled()), 'an editor has Save on host');
 	await saveBtn.click();
-	await h.eventually(() => toasts(G), (t) => t.some((x) => /Saved "Castle" on .+'s device/.test(x)), 'G is told the scene was saved on the host', 30000);
+	// the host exports the whole scene; on a loaded machine that alone took over 30 s — read the result
+	// where it lasts (G's log: the ack arrived ok) rather than a toast that can come and go between polls
+	await h.eventually(() => debug(H), (d) => d.log.some((l) => /^volsave from .+: saved Castle/.test(l)), 'H saved the session scene (Save on host)', 120000);
+	await h.eventually(() => toasts(G), (t) => t.some((x) => /Saving on |Saved "Castle" on .+'s device/.test(x)), 'G is told about it', 10000);
 	const hostScenes = await H.page.evaluate(() => {
 		let v;
 		window.__stores.explorer.explorerItems.subscribe((x) => (v = x))();

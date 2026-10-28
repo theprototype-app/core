@@ -456,6 +456,13 @@ const STALL_MS = 20000;
  */
 const REQUEST_MS = 6000;
 /**
+ * 56 C13: a session-volume pull is asked of ONE known host that always answers — bytes or
+ * `assetmissing` — and holds no auto-download slot, so the short fuse above (which exists to free
+ * slots from hashes nobody holds) only cut it off when the host was merely busy: measured, a photo
+ * opened behind a big transfer on a loaded machine came back empty. It gets a minute.
+ */
+const VOLUME_REQUEST_MS = 60000;
+/**
  * A hash nobody answered, and when we gave up on it. Without this, auto-download
  * re-queues a dead hash on every single index change — which is a retry loop that never
  * ends and permanently occupies the queue it is starving.
@@ -664,7 +671,7 @@ export function sweepStalledTransfers() {
 		const row = get(transfers).find((t) => t.id === tx);
 		// 'queued' means the request went out and not one byte came back, so REQUEST_MS
 		// applies; a row that reached 'active' is mid-transfer and gets the stall window
-		if (row && row.state === 'queued' && now - row.at > REQUEST_MS) {
+		if (row && row.state === 'queued' && now - row.at > (volumeSinks.has(hash) ? VOLUME_REQUEST_MS : REQUEST_MS)) {
 			failTransfer(tx, 'nobody answered');
 			pendingRequests.delete(hash);
 			deadHashes.set(hash, now);

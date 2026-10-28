@@ -18,6 +18,7 @@
 	},
 	"optional": {
 		"agent-bridge": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
+		"agent-conformance": "joined from 55-next (1.48.1 agent tool contract, 41's research rounds 1-6, 2026-10-28): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
 		"agent-host-leaves": "joined from 55-int (41's 3-peer host-leaves test, 2026-10-28): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
 		"agent-travel": "joined from 55-int (owner finding 1, 2026-10-28): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
 		"align-arrange": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
@@ -273,6 +274,7 @@
 		"add-flow-scene": 100,
 		"agent-api": 420,
 		"agent-bridge": 48,
+		"agent-conformance": 200,
 		"agent-host-leaves": 180,
 		"agent-mcp": 100,
 		"agent-presence": 40,

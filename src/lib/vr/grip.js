@@ -17,7 +17,7 @@ import {
 	editorMode,
 	pokeScene
 } from '../../stores/sceneStore';
-import { isScenery, pickGripTarget, gripMovesWorld } from '../vrGrip';
+import { isScenery, pickGripTarget, gripMovesWorld, contactGrabAllowed, secondGripVerdict, grabMoved, GRAB_JOIN_MS } from '../vrGrip';
 import { pointGrabAllowed } from '../pointGrab';
 import { resolvePlaySettings } from '../playSettings';
 import { withinReach } from '../playReach';
@@ -60,7 +60,8 @@ import { safeStorage } from '../safeStorage';
 import { S } from './state.js';
 import { renderer, tempVector } from './core.js';
 import { hapticPulse, hapticPattern } from './haptics.js';
-import { gripDropHooks, worldGrabDiverts, worldGestureDiverted } from './hooks.js';
+import { gripDropHooks, worldGrabDiverts, worldGestureDiverted, vrModuleGripStart, vrModuleGripEnd } from './hooks.js';
+import { controllerRequired } from './handInput.js';
 import { controllerIndexFor, axesForSlot } from './input.js';
 import { STANDING_HEAD, vrLocomotionNow, viewerNow } from './locomotion.js';
 import {
@@ -75,6 +76,8 @@ import { stretch } from './tools.js';
 import { perfMark } from '../perf/perfMarks.js';
 import { handOf, pointerHand } from './bindings.js';
 import { applyWorldSnap, endWorldSnap, yawOf } from './worldSnap.js';
+import { vrBothGripsWorld } from './prefs.js';
+import { noteWorldGesture } from '../comfortVignette';
 
 /** @type {any[]} per-hand grabs, indexed by controller SLOT: each is { object, index, prevPos,
  * prevQuat, before, ... }. 33 G4: one per hand, so two hands hold two things at once — a single
@@ -186,15 +189,22 @@ export function vrGripDebug() {
 		worldGrab: !!S.worldGrab,
 		worldPan: !!S.worldPan,
 		panReach: S.worldPan ? S.worldPan.reach : null, // 33: the stick reel's distance
-		emptyAir: [...emptyAirSqueeze]
+		emptyAir: [...emptyAirSqueeze],
+		// 52 (V5): the universal world grab
+		tentative: grabs.map((g) => !!g?.tentative),
+		moved: grabs.map((g) => !!g?.moved),
+		scaleRotates: !!S.scaleGrab?.axis0,
+		...universalStats
 	};
 }
+/** 52 (V5): what the second grips decided, for the suites */
+const universalStats = { secondGrip: /** @type {string | null} */ (null), dropped: 0, worldByUniversal: 0, twoHandScales: 0 };
 
 // ---- world grab (71): BOTH grips in empty air scale/rotate/pan the world ---
 // The gesture transforms the world-grab-rig LOCALLY (peers see nothing —
 // broadcasts stay in objectsGroup-local coords, which never change here).
 
-const WORLD_SCALE_MIN = 0.05;
+const WORLD_SCALE_MIN = 0.02; // 52 (V5): 1:50, the miniature table (was 0.05)
 const WORLD_SCALE_MAX = 20;
 
 export const emptyAirSqueeze = [false, false];
@@ -301,6 +311,17 @@ export function updateWorldGrab() {
 		}
 	}
 	const next = computeWorldGrabTransform(live.start, live.now, S.worldGrab.rig0, applyWorldSnap);
+	// 52 (V5): the comfort vignette (53) closes in while the world scales or turns around you
+	const now = performance.now();
+	const last = S.worldGrab.last;
+	if (last) {
+		const dt = Math.max((now - last.at) / 1000, 1e-3);
+		const yaw = yawOf(next.quat);
+		let dYaw = yaw - last.yaw;
+		dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
+		noteWorldGesture(Math.abs(Math.log(next.scale / last.scale)) / dt + Math.abs(dYaw) / dt);
+	}
+	S.worldGrab.last = { at: now, scale: next.scale, yaw: yawOf(next.quat) };
 	rig.position.fromArray(next.pos);
 	rig.quaternion.fromArray(next.quat);
 	rig.scale.setScalar(next.scale);
@@ -329,6 +350,30 @@ export function containedTopLevel(point, group) {
 	return null;
 }
 
+/**
+ * 52 (V5): the object a hand INSIDE it may take by touch — the SMALLEST containing top-level object that
+ * vrGrip.contactGrabAllowed passes (a cup on a table, not the table; never the room you stand in).
+ * @param {any} point @param {any} group @param {any} head @param {any[]} locked
+ */
+export function containedGrabbable(point, group, head, locked = []) {
+	if (!group) return null;
+	const box = new THREE.Box3();
+	let best = null;
+	let bestVolume = Infinity;
+	for (const child of group.children) {
+		box.setFromObject(child);
+		if (!isFinite(box.min.x) || !box.containsPoint(point)) continue;
+		const flags = { terrain: !!child.userData?.terrain, locked: !!locked?.find((/** @type {any} */ lock) => lock[1] === child.uuid) };
+		if (!contactGrabAllowed(box, head, flags)) continue;
+		const volume = (box.max.x - box.min.x) * (box.max.y - box.min.y) * (box.max.z - box.min.z);
+		if (volume < bestVolume) {
+			best = child;
+			bestVolume = volume;
+		}
+	}
+	return best;
+}
+
 /** @type {any} active VR vertex-handle drag: {index, offset} */
 export let vertexGrab = null;
 /** @type {any} active VR face grab (122): {index, pos0, quat0, push, scale} */
@@ -343,6 +388,8 @@ export let faceGrabHand = null;
 export let faceAdjustHand = null;
 
 export function vrFaceTrigger() {
+	// 52 (H): editing faces is a precise tool — a tracked hand is asked to pick up a controller
+	if (controllerRequired('edit faces', controllerIndexFor(pointerHand()))) return;
 	// 212: Multi mode — the trigger ACCUMULATES the pointed unit; the op button
 	// applies to the whole set (no live adjust while multi-selecting)
 	if (get(faceEditMulti)) {
@@ -401,6 +448,8 @@ function endVertexCarry() {
 /** @param {number} index */
 export function vrVertexTrigger(index) {
 	if (!get(editingObject)) return;
+	// 52 (H): moving / picking a vertex is a precise tool — a tracked hand is asked to pick up a controller
+	if (controllerRequired('edit vertices', index ?? -1)) return;
 	// 183: in create-face mode a trigger click toggles the picked vertex into the
 	// selection (once per click — the 'select' event) instead of grabbing it
 	if (get(vrFaceCreateMode)) {
@@ -419,6 +468,7 @@ export function vrVertexTrigger(index) {
 export function vrVertexGrabStart(index) {
 	// create-face selection is driven by the 'select' click, not the press
 	if (!get(editingObject) || get(vrFaceCreateMode) || !get(vrVertexHold) || S.vertexTriggerGrab) return;
+	if (controllerRequired('edit vertices', index)) return; // 52 (H)
 	beginVertexCarry(index);
 }
 export function vrVertexGrabEnd() {
@@ -432,6 +482,8 @@ export function vertexTriggerActive() {
 
 /** @param {number} index */
 export function onSqueezeStart(index) {
+	// 52-browser: a feature took this squeeze (a VR placement ghost cancels, a wrist panel lifts off)
+	if (vrModuleGripStart(index)) return;
 	// an armed prefab ghost cancels on grip (115) — nothing else grabs
 	if (get(vrPrefabGhost)) {
 		cancelPrefabGhost();
@@ -475,6 +527,8 @@ export function onSqueezeStart(index) {
 			return;
 		}
 	}
+	// 52 (V5): a SECOND grip while the other hand's is held — both grips are the world, whatever this ray hits
+	if (gripHeld[1 - index] && universalSecondGrip(index)) return;
 	// grip on a follower window (111): hold to detach it into adjust mode
 	const windowId = windowHitAt(index);
 	if (windowId) {
@@ -576,17 +630,139 @@ export function onSqueezeStart(index) {
 		scaleFactor: 1,
 		prevPos: cPos,
 		prevQuat: cQuat,
-		before: transformStateOf(object)
+		before: transformStateOf(object),
+		// 52 (V5): where it was taken (world) and when — a second grip before it MOVES makes this the world
+		// grab; until it moves or GRAB_JOIN_MS pass it is TENTATIVE: not selected, nothing sent
+		startWorld: object.getWorldPosition(new THREE.Vector3()).toArray(),
+		startedAt: performance.now(),
+		moved: false,
+		tentative: !interact && get(vrBothGripsWorld) === 'always'
 	};
 	syncGrabbedHand();
 	// 30b (C4): a grab lands with a `hit` (a gated no-op in Edit, like every pulse)
 	hapticPattern('hit', renderer.xr.getController(index)?.userData?.handedness ?? undefined);
 	// 30b P2: a player picking something up is not SELECTING it — no lock broadcast, no
-	// selection shell, no inspector (Edit keeps all three)
-	if (!interact) selectObject(object.uuid); // locks it for peers, updates selection state
-	// 30b (core-games): a PLAYER's grab reaches On Grab nodes (Edit moves things, it does not play)
-	else fireObjectGrab(object.uuid);
+	// selection shell, no inspector (Edit keeps all three). 52 (V5): a tentative grab selects when it commits.
+	if (interact) fireObjectGrab(object.uuid); // 30b (core-games): a PLAYER's grab reaches On Grab nodes
+	else if (!grabs[index].tentative) selectObject(object.uuid); // locks it for peers, updates selection state
 }
+
+/**
+ * 52 (V5): what a SECOND grip does while the other hand's grip is held (vrGrip.secondGripVerdict). Returns
+ * true when it took the press: 'world' drops an unmoved first grab and starts the two-grip world gesture,
+ * 'scale' turns an already-moved object in the other hand into the two-hand scale/rotate.
+ * @param {number} index the hand whose grip just closed
+ */
+function universalSecondGrip(index) {
+	const other = 1 - index;
+	const held = grabs[other];
+	const verdict = secondGripVerdict({
+		setting: get(vrBothGripsWorld),
+		mode: get(editorMode) === 'interact' ? 'interact' : 'edit',
+		stretch: !!get(vrStretchObject),
+		otherBusy:
+			S.windowGrabPending?.index === other ||
+			S.windowGrab?.index === other ||
+			faceGrabHand?.index === other ||
+			vertexGrab?.index === other ||
+			S.vertexTriggerGrab?.index === other ||
+			!!S.scaleGrab ||
+			!!S.worldGrab,
+		otherGrab: held ? { moved: !!held.moved, set: !!held.set } : null,
+		// only asked when it matters (a moved object in the other hand): is THIS hand inside another object?
+		takesOther: !!held?.moved && touchesOtherObject(index, held)
+	});
+	universalStats.secondGrip = verdict;
+	if (verdict === 'legacy') return false;
+	if (verdict === 'scale') {
+		beginTwoHandScale(held);
+		universalStats.twoHandScales++;
+		return true;
+	}
+	if (held) dropUnmovedGrab(other);
+	// both hands are WORLD hands now: releasing either lets a still-held pan hand pan (onSqueezeEnd)
+	emptyAirSqueeze[index] = true;
+	emptyAirSqueeze[other] = true;
+	beginWorldGrab();
+	universalStats.worldByUniversal++;
+	return true;
+}
+
+/**
+ * 52 (V5): a first-hand grab that never moved, overtaken by the second grip: the object goes back to the pose
+ * it was taken in, NO undo entry; nothing is sent while it was tentative (else one move puts peers back too).
+ * @param {number} i
+ */
+function dropUnmovedGrab(i) {
+	const grab = grabs[i];
+	if (!grab) return;
+	grabs[i] = null;
+	const members = grab.set ? grab.set : [{ object: grab.object, before: grab.before }];
+	for (const m of members) {
+		m.object.position.fromArray(m.before.pos);
+		m.object.rotation.fromArray(m.before.rot);
+		m.object.scale.fromArray(m.before.scale);
+		m.object.updateMatrixWorld(true);
+		const uuid = m.object.uuid;
+		import('../physics').then((mod) => mod.releaseBody(uuid));
+		resumeAnimation(uuid);
+		if (!grab.tentative && !grab.set) broadcastMove(m.object, true);
+	}
+	if (!grab.tentative && grab.set) sendSetMoves(grab);
+	universalStats.dropped++;
+	syncGrabbedHand();
+	pokeScene();
+}
+
+/**
+ * 52 (V5): is this hand INSIDE (touching) an object other than the one the other hand holds — one it may take by
+ * touch? Then it holds that one (two things at once, 33 G4). A RAY on something else does not count: with an
+ * object already moving in the other hand, the second grip scales it wherever this ray points (Open Brush).
+ * @param {number} index @param {any} held
+ */
+function touchesOtherObject(index, held) {
+	const camera = /** @type {any} */ (get(globalCamera));
+	const head = camera ? camera.getWorldPosition(new THREE.Vector3()) : null;
+	const hand = renderer.xr.getController(index).getWorldPosition(new THREE.Vector3());
+	const inside = containedGrabbable(hand, get(objectsGroup), head, get(lockedObjects));
+	return !!inside && inside !== held.object && !held.set?.some((/** @type {any} */ m) => m.object === inside);
+}
+
+/** 52 (V5): the moved object in the other hand becomes a two-hand scale + rotate @param {any} held */
+function beginTwoHandScale(held) {
+	const a = renderer.xr.getController(0).getWorldPosition(new THREE.Vector3());
+	const b = renderer.xr.getController(1).getWorldPosition(new THREE.Vector3());
+	const axis = b.sub(a);
+	S.scaleGrab = {
+		object: held.object,
+		startDistance: Math.max(axis.length(), 0.05),
+		startScale: held.object.scale.clone(),
+		before: held.before,
+		axis0: axis.lengthSq() > 1e-8 ? axis.clone().normalize() : null,
+		startQuat: held.object.quaternion.clone()
+	};
+	grabs[held.index] = null;
+	syncGrabbedHand();
+}
+
+/** 52 (V5): a tentative grab becomes a real one — selected (the lock) and sent @param {any} grab */
+function commitTentative(grab) {
+	if (!grab?.tentative) return;
+	grab.tentative = false;
+	if (grab.set) sendSetMoves(grab);
+	else {
+		selectObject(grab.object.uuid);
+		broadcastMove(grab.object, true);
+	}
+}
+
+/** 52 (V5): per frame — has the held object moved yet, and is the tentative window over? @param {any} grab */
+function trackGrabMotion(grab) {
+	if (!grab.startWorld) return;
+	if (!grab.moved) grab.moved = grabMoved(grab.startWorld, grab.object.getWorldPosition(_motionProbe).toArray());
+	if (grab.tentative && (grab.moved || performance.now() - grab.startedAt >= GRAB_JOIN_MS)) commitTentative(grab);
+}
+const _motionProbe = new THREE.Vector3();
 
 /**
  * 30b P2: the top-level object a grip closes on, or null for empty air. Ray hits first
@@ -632,7 +808,8 @@ export function gripTargetOf(ray, handPos, mode, gripHand = 'right') {
 			scenery: isScenery(box.isEmpty() ? null : box, head),
 			grabbable: holdable && near,
 			// 33 E4: in Edit a SELECTED wall/floor/arena is held like any object
-			selected: selectedNow.includes(object.uuid)
+			selected: selectedNow.includes(object.uuid),
+			terrain: !!object.userData?.terrain // 52 (V5): never by grip
 		};
 	};
 	/** @type {any[]} */
@@ -658,8 +835,10 @@ export function gripTargetOf(ray, handPos, mode, gripHand = 'right') {
 		lastGripRefusal = null;
 		return order[picked];
 	}
-	// a hand INSIDE an object needs no pointer (100.3) — the same rule decides
-	const inside = containedTopLevel(handPos, group);
+	// a hand INSIDE an object needs no pointer (100.3) — the same rule decides. 52 (V5): and only what a hand
+	// can sensibly hold by touch: never what encloses the headset, is larger than ~2 m, is terrain or is locked
+	// (vrGrip.contactGrabAllowed — those move deliberately: select with the ray, then grip)
+	const inside = containedGrabbable(handPos, group, head, locked);
 	if (inside && pickGripTarget([describe(inside, handPos)], mode) === 0) {
 		lastGripRefusal = null;
 		return inside;
@@ -691,6 +870,8 @@ export function lastGripRefusalDebug() {
 
 /** @param {number} index */
 export function onSqueezeEnd(index) {
+	// 52-browser: the release of a squeeze a feature took
+	if (vrModuleGripEnd(index)) return;
 	// face grab (122): release commits the reshape as one meshgeo + undo entry
 	if (faceGrabHand?.index === index) {
 		faceGrabHand = null;
@@ -756,6 +937,7 @@ export function onSqueezeEnd(index) {
 			return;
 		}
 		grabs[index] = null;
+		commitTentative(grab); // 52 (V5): a grip tap on an object still selects it
 		endGrab(object, grab.interact ? null : grab.before);
 		syncGrabbedHand();
 		hapticPulse(0.18, 24);
@@ -839,7 +1021,12 @@ function beginSetGrab(index, object) {
 		handPos0: controller.getWorldPosition(new THREE.Vector3()),
 		handQuat0: controller.getWorldQuaternion(new THREE.Quaternion()),
 		scaleFactor: 1,
-		/** @type {any} */ before: null
+		/** @type {any} */ before: null,
+		// 52 (V5): the same tentative window as a single grab (vrGrip.GRAB_JOIN_MS)
+		startWorld: object.getWorldPosition(new THREE.Vector3()).toArray(),
+		startedAt: performance.now(),
+		moved: false,
+		tentative: get(vrBothGripsWorld) === 'always'
 	};
 	grab.before = { setGrab: grab };
 	grabs[index] = grab;
@@ -861,6 +1048,8 @@ function updateSetGrab(grab) {
 	grab.scaleFactor = grabStickAdjust({ length: 1, scale: grab.scaleFactor, x: axes[2] ?? 0, y: 0 }).scale;
 	poseSetGrab(grab.set, grab.pivot, move, turn, grab.scaleFactor);
 	pokeScene();
+	trackGrabMotion(grab);
+	if (grab.tentative) return; // 52 (V5): nothing sent before it commits
 	const now = Date.now();
 	if (now - lastSetSent < 50) return;
 	lastSetSent = now;
@@ -940,7 +1129,8 @@ export function updateGrab(grab) {
 		grab.prevPos.copy(position);
 		grab.prevQuat.copy(quaternion);
 		pokeScene();
-		broadcastMove(object);
+		trackGrabMotion(grab);
+		if (!grab.tentative) broadcastMove(object); // 52 (V5): nothing sent before it commits
 		return;
 	}
 
@@ -969,7 +1159,8 @@ export function updateGrab(grab) {
 	grab.prevPos.copy(position);
 	grab.prevQuat.copy(quaternion);
 	pokeScene();
-	broadcastMove(object);
+	trackGrabMotion(grab);
+	if (!grab.tentative) broadcastMove(object);
 }
 
 export function updateScaleGrab() {
@@ -980,6 +1171,19 @@ export function updateScaleGrab() {
 		factor = Math.max(Math.round(factorRaw / step) * step, step);
 	}
 	S.scaleGrab.object.scale.copy(S.scaleGrab.startScale).multiplyScalar(factor);
+	// 52 (V5): the universal two-hand grab also TURNS the object with the hands' axis (about its own origin)
+	if (S.scaleGrab.axis0) {
+		const object = S.scaleGrab.object;
+		const a = renderer.xr.getController(0).getWorldPosition(new THREE.Vector3());
+		const axis = renderer.xr.getController(1).getWorldPosition(new THREE.Vector3()).sub(a);
+		if (axis.lengthSq() > 1e-8) {
+			const turn = new THREE.Quaternion().setFromUnitVectors(S.scaleGrab.axis0, axis.normalize());
+			const parentQuat = object.parent ? object.parent.getWorldQuaternion(new THREE.Quaternion()) : new THREE.Quaternion();
+			// the world-space turn, conjugated into the object's parent frame
+			const local = parentQuat.clone().invert().multiply(turn).multiply(parentQuat);
+			object.quaternion.copy(local.multiply(S.scaleGrab.startQuat));
+		}
+	}
 	pokeScene();
 	broadcastMove(S.scaleGrab.object);
 }

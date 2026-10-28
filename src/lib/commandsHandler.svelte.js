@@ -12,6 +12,7 @@ import { dropPeerQuality } from '$lib/networkQuality'
 import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined } from '$lib/connectionState'
+import { acceptedLockRows, mergeLockRows } from '$lib/lockTrust'
 import { environment, editEnvSky } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
@@ -304,12 +305,18 @@ export function applyClearScene(peerId) {
     showToast(peerId + ' cleared the scene');
 }
 
-export function lockRestore(lockeditems) {
+/**
+ * A peer's lock table (handshake / room arrival). `from` is the connection it arrived on:
+ * the session host's rows may name anyone, any other sender's only itself, and a sender
+ * that may not lock adds nothing (`acceptedLockRows`). Rows already held are not repeated.
+ * @param {any} lockeditems @param {string} from @param {boolean} fromHost @param {boolean} mayLock
+ */
+export function lockRestore(lockeditems, from, fromHost, mayLock) {
     // 27-A: same trust, same fix — a non-array here threw inside the handshake.
     if (!Array.isArray(lockeditems)) return;
-    // Filter out the current peer id locks
-    locked = locked.concat(lockeditems.filter((lock) => Array.isArray(lock) && lock[0] != peer.peer.id));
-    // Update the locked objects store
+    const rows = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
+    if (!rows.length) return;
+    locked = mergeLockRows(locked, rows);
     lockedObjects.set(locked);
 }
 

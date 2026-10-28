@@ -37,6 +37,7 @@ import { admitModel, verdictFor } from './importGate';
 import { reductionPlan, modelCost } from './importBudget';
 import { reduceModel, plannedTriangles, retainOriginal, originalOf, textureCapFor } from './decimate';
 import { shortCount } from './importBudget';
+import { liftLocalObjects, withoutLocalObjects, noteLocalObjectsExcluded } from './objectPermissions'; // fix-batch-2
 
 //Access objects Store
 let sceneObjects = $state();
@@ -92,7 +93,9 @@ async function saveTpScene() {
 	const { buildSessionPayload, exportSessionZip } = await import('./sessions');
 	// 36-community (C4): a saved file carries the scene's permanent game id
 	(await import('./gameIdentity.js')).ensureGameId();
-	const payload = buildSessionPayload('Scene export');
+	// fix-batch-2 (1.45.1): local objects are drafts — a downloaded scene carries what peers see
+	const { result: payload, excluded } = withoutLocalObjects(() => buildSessionPayload('Scene export'));
+	noteLocalObjectsExcluded(excluded);
 	// 46 P3: the export preset (Save options, the last choice on this device)
 	const preset = get(saveOptions).exportPreset;
 	const progressId = 'tpscene-optimize';
@@ -145,7 +148,7 @@ function selectedRoots() {
 
 /** Run the GLTFExporter over a root (or array of roots) and download it.
  * @param {string} format @param {any} input
- * @param {{filename?: string, onlyVisible?: boolean, shaderNote?: boolean}=} opts
+ * @param {{filename?: string, onlyVisible?: boolean, shaderNote?: boolean, excludeLocal?: boolean}=} opts (`excludeLocal`, fix-batch-2: a whole-scene export leaves local objects out)
  *   21-H2 (all three default to the pre-existing behaviour, so every old call site is
  *   byte-identical): `filename` names the download, `onlyVisible` reaches GLTFExporter,
  *   `shaderNote:false` suppresses the scene-wide shader warning for a tree that is not
@@ -158,8 +161,16 @@ function exportGltf(format, input, opts = {}) {
 	// `shaderDrivenCount` counts the SCENE's graphs, which says nothing about a detached
 	// tree, so the prefab path opts out rather than warning about somebody else's object.
 	const shaderDriven = opts.shaderNote === false ? 0 : shaderDrivenCount();
+	// fix-batch-2 (1.45.1): a WHOLE-SCENE export leaves local objects (drafts) out, lifted
+	// until the parse finishes like the animation park below
+	const lift = opts.excludeLocal ? liftLocalObjects() : null;
+	noteLocalObjectsExcluded(lift?.excluded ?? 0);
 	// saves store animation BASE poses, not the current swing (88)
-	const restore = parkAnimatedAtBase();
+	const unpark = parkAnimatedAtBase();
+	const restore = () => {
+		unpark();
+		lift?.restore();
+	};
 	// 17-D: glTF nodes carry only TRS, so a per-object ORIGIN has to become real
 	// geometry on the way out or the exported model pivots where it originally
 	// did. Bake on CLONES — never the live objects, which would cost them their
@@ -234,13 +245,21 @@ function exportGltf(format, input, opts = {}) {
  * it, and dropping it silently is the documented GLTFExporter trap (options are parse()'s
  * FOURTH argument, and onlyVisible defaults to TRUE).
  * @param {any} roots one root or an array of them
- * @param {{binary?: boolean}} [opts]
+ * @param {{binary?: boolean, excludeLocal?: boolean}} [opts] `excludeLocal` (fix-batch-2) = a
+ *   whole-scene export: local objects stay out
  * @returns {Promise<ArrayBuffer|null>}
  */
 export function gltfBytesFor(roots, opts = {}) {
 	const list = (Array.isArray(roots) ? roots : [roots]).filter(Boolean);
 	if (!list.length) return Promise.resolve(null);
-	const restore = parkAnimatedAtBase();
+	// fix-batch-2 (1.45.1): the whole-scene export leaves local objects out (see exportGltf)
+	const lift = opts.excludeLocal ? liftLocalObjects() : null;
+	noteLocalObjectsExcluded(lift?.excluded ?? 0);
+	const unpark = parkAnimatedAtBase();
+	const restore = () => {
+		unpark();
+		lift?.restore();
+	};
 	let carriesOrigin = false;
 	for (const root of list)
 		root?.traverse?.((/** @type {any} */ object) => {
@@ -289,10 +308,10 @@ export const lastExportReport = writable(null);
  * origin bake, the clip bake, KTX2 twins carried), then the optimizer's quest preset in its Worker
  * (KTX2/Basis textures at most 2048 px, quantized + EXT_meshopt_compression geometry, the LOD
  * chain as MSFT_lod), downloaded as one .glb. Resolves the report, or null when nothing was made.
- * @param {any[]} roots @param {string} [filename]
+ * @param {any[]} roots @param {string} [filename] @param {boolean} [excludeLocal] fix-batch-2: a whole-scene export
  */
-export async function exportGltfQuest(roots, filename) {
-	const bytes = await gltfBytesFor(roots, { binary: true });
+export async function exportGltfQuest(roots, filename, excludeLocal = false) {
+	const bytes = await gltfBytesFor(roots, { binary: true, excludeLocal });
 	if (!bytes) {
 		showToast('Could not export the selection.');
 		return null;
@@ -374,12 +393,14 @@ export function save(format) {
 				title: 'Nothing selected',
 				message: 'GLTF exports the selection. Export the entire scene instead?',
 				choices: [{ value: 'all', label: 'Export all' }]
-			}).then((answer) => answer === 'all' && (quest ? void exportGltfQuest([sceneObjects]) : exportGltf(format, sceneObjects)));
+			}).then((answer) => answer === 'all' &&
+					(quest ? void exportGltfQuest([sceneObjects], undefined, true) : exportGltf(format, sceneObjects, { excludeLocal: true }))
+			);
 		}
 		return;
 	}
 	// JSON (legacy, whole scene)
-	exportGltf(format, sceneObjects);
+	exportGltf(format, sceneObjects, { excludeLocal: true });
 }
 
 export async function loadFile(url, name) {

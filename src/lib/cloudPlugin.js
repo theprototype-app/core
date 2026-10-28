@@ -362,7 +362,12 @@ export function makeCloudApi() {
 			// 36-community (C4): a published file carries the scene's permanent game id
 			const { ensureGameId } = await import('./gameIdentity.js');
 			ensureGameId();
-			const payload = buildSessionPayload(String(name || get(currentLevel)?.name || 'Untitled'));
+			// fix-batch-2 (1.45.1): local objects are drafts — a published scene carries what peers see
+			const { withoutLocalObjects, noteLocalObjectsExcluded } = await import('./objectPermissions');
+			const { result: payload, excluded } = withoutLocalObjects(() =>
+				buildSessionPayload(String(name || get(currentLevel)?.name || 'Untitled'))
+			);
+			noteLocalObjectsExcluded(excluded);
 			const zip = await exportSessionZip(payload, { assets: assets !== false, flow: flow !== false, packs: false });
 			const blob = new Blob([/** @type {BlobPart} */ (zip)], { type: 'application/zip' });
 			const meta = await bundleMeta(payload, { flow: flow !== false, bytes: blob.size, files: sessionFileList(payload) });
@@ -577,7 +582,9 @@ export function makeCloudApi() {
 		 *  @returns {Promise<string>} */
 		sceneSignature: async () => {
 			const { buildSessionPayload } = await import('./sessions');
-			return contentSignature(buildSessionPayload(String(get(currentLevel)?.name || 'Untitled')));
+			// fix-batch-2: the same objects buildSceneBundle publishes, so the two signatures agree
+			const { withoutLocalObjects } = await import('./objectPermissions');
+			return contentSignature(withoutLocalObjects(() => buildSessionPayload(String(get(currentLevel)?.name || 'Untitled'))).result);
 		},
 		/** The whole PROJECT as a `.tp` — the Explorer's own "Export project" bytes (exportProject: the
 		 *  manifest, every scene and library item; the stored "include versions" preference unless

@@ -7,7 +7,7 @@
 //   2 F8  many tabs: the strip overflows, the wheel scrolls it, a thin scrollbar shows, the
 //         active tab is scrolled into view, a real-mouse drag reorders, a click still activates
 //   3 F6  left sidebar: Open editors in strip order (drag there reorders the strip too), the
-//         separator, the Project tree (Graphs / Script files / Module sources), search, a
+//         separator, the Project tree (Graphs / Files / Module sources), search, a
 //         read-only module file + "Make editable copy", Ctrl+B collapses, the width persists
 //   4 F7  right sidebar: Outline jumps to a handler, Problems lists a typed syntax error (badge),
 //         Bound nodes selects the node in the editor, Ctrl+Shift+F finds across files and a hit
@@ -265,7 +265,7 @@ h.run(async () => {
 	// the Project tree
 	const project = page.locator('#code-ws-project');
 	const groups = await project.locator('.cs-group').evaluateAll((els) => els.map((e) => e.textContent.trim()));
-	h.check(groups.some((g) => g.startsWith('Graphs')) && groups.some((g) => g.startsWith('Script files')) && groups.some((g) => g.startsWith('Module sources')), 'F6: Project groups Graphs / Script files / Module sources (' + groups.length + ' groups)');
+	h.check(groups.some((g) => g.startsWith('Graphs')) && groups.some((g) => g.startsWith('Files')) && groups.some((g) => g.startsWith('Module sources')), 'F6: Project groups Graphs / Files / Module sources (' + groups.length + ' groups)');
 	h.check((await project.locator('[data-tree-key="n:scene:body"]').count()) === 1, 'F6: the Player\'s code is listed under the Main graph');
 	h.check((await project.locator('[data-tree-key="n:scene:rules"]').count()) === 1, 'F6: so are the behaviour (Golf rules) and the scripts');
 	await page.locator('#code-ws-project-search').fill('player');
@@ -299,7 +299,7 @@ h.run(async () => {
 		return v.length;
 	});
 	h.check(itemsAfter === itemsBefore + 1, 'F6: …stored in the Library (' + itemsBefore + ' -> ' + itemsAfter + ' items)');
-	h.check((await project.locator(`[data-tree-key="f:${copy.itemId}"]`).count()) === 1, 'F6: …and listed under Script files');
+	h.check((await project.locator(`[data-tree-key="f:${copy.itemId}"]`).count()) === 1, 'F6: …and listed under Files');
 	// collapse + width persistence
 	await page.locator('#code-ws-tabs').click({ position: { x: 4, y: 4 } }).catch(() => {});
 	await page.keyboard.press('Control+b');

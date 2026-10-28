@@ -51,6 +51,8 @@ export const SETTINGS_ROWS = [
 	["Interface", "Environment in list", "Show the environment group as an Environment filter in the object list"],
 	["Interface", "Object search in menu", "Add a \"Search objects…\" entry to the viewport right-click menu — find a scene object and fly the camera to it"],
 	["Interface", "Show FPS + draw calls", "A small counter with the frame rate, frame time, draw calls and triangles — in the corner of the viewport a…"],
+	["Interface", "Always show tab strip in windows", "A pop-out window with one panel shows its tab strip too"],
+	["Interface", "Remember windows per screen setup", "Pop-out windows come back where they were for each arrangement of monitors"],
 	["Interface", "Dock resizes the viewport", "On, the 3D view ends where an open bottom panel begins — the way every editor lays out its viewport, so not…"],
 	["Controls", "Shift+A quick add", "Pressing Shift+A opens the Add menu at the cursor and spawns the picked object under it."],
 	["Controls", "Show helpers in Play (debug)", "Light helpers, camera frustums and camera markers hide when Play starts (camera previews and captures never…"],

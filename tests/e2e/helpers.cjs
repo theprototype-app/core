@@ -18,6 +18,87 @@ const PEER_CONFIG = process.env.PEER_CONFIG || '';
 
 let failures = 0;
 
+// E2E_COVERAGE=1 (battery-tiers): which APP SOURCE FILES this suite made the browser execute, so a release
+// can pick its tier-1 suites by what they cover instead of by their names. Every page setupPage opens runs
+// Chromium's precise JS coverage; when its context or the browser closes, the entries are folded into
+// { 'src/lib/x.js': <functions that ran>, 'npm:three': … } — a dev-server URL becomes its repo path, a
+// pre-bundled dependency one bucket per package — and the process writes that ONCE, at exit, to
+// $E2E_COVERAGE_OUT/<suite>.json (default test-results/coverage). A count rather than a yes/no, because
+// nearly every suite boots the same app: `battery-desk.cjs map build` subtracts the boot floor per file.
+// Meaningful only against a dev server; a built app's hashed chunks map to nothing and are skipped.
+const COVERAGE = process.env.E2E_COVERAGE === '1';
+/** @type {Map<string, number>} */
+const coverageFiles = new Map();
+/** @type {Set<any>} */
+const coveragePages = new Set();
+let coveragePagesSeen = 0;
+
+/** a dev-server script URL as a repo path or dependency bucket; null for vite internals / foreign scripts @param {string} url */
+function coverageKey(url) {
+	let p;
+	try {
+		p = decodeURIComponent(new globalThis.URL(url).pathname);
+	} catch {
+		return null;
+	}
+	const dep = /\/node_modules\/\.vite\/deps\/([^/]+?)\.js$/.exec(p);
+	// optimizer chunks (chunk-XXXX.js) hold code split out of several packages: no single owner, no bucket
+	// vite flattens an id: `/` -> `_`, `.` -> `__` (three/examples/jsm/x.js -> three_examples_jsm_x__js, @threlte/core -> @threlte_core)
+	// the bundler's shared chunks (client-Cqw3l5wU.js, three.module-CVnfGTZf.js) name no installed package: no bucket either
+	if (dep) {
+		if (dep[1].startsWith('chunk-')) return null;
+		const pkg = (/^(@[^_]+_[^_]+|[^_]+)/.exec(dep[1].replace(/__/g, '.'))?.[1] ?? dep[1]).replace('_', '/');
+		return require('fs').existsSync(require('path').resolve(__dirname, '../../node_modules', pkg, 'package.json')) ? 'npm:' + pkg : null;
+	}
+	const nm = /\/node_modules\/((?:@[^/]+\/)?[^/.][^/]*)\//.exec(p);
+	if (nm) return 'npm:' + nm[1];
+	// the served tree's own sources: /src/… or /@fs/<this tree>/src/… (never a sibling checkout's src/)
+	const tree = require('path').resolve(__dirname, '../..');
+	const src = /^\/src\/.+/.test(p) ? p.slice(1) : p.startsWith('/@fs' + tree + '/src/') ? p.slice(('/@fs' + tree + '/').length) : null;
+	return src;
+}
+
+/** @param {any} page */
+async function collectCoverage(page) {
+	if (!coveragePages.delete(page)) return;
+	const entries = await page.coverage.stopJSCoverage().catch(() => []);
+	for (const e of entries) {
+		const key = coverageKey(e.url);
+		if (!key) continue;
+		// a function ran when its first (whole-function) range counted; the script's own top level is one of them
+		const ran = (e.functions || []).filter((/** @type {any} */ f) => f.ranges?.[0]?.count > 0).length;
+		if (ran) coverageFiles.set(key, Math.max(coverageFiles.get(key) || 0, ran));
+	}
+}
+
+/** wrap `owner.close` so a context / browser closed by the suite itself still hands its pages' coverage in @param {any} owner @param {() => any[]} pages */
+function collectBeforeClose(owner, pages) {
+	if (owner.__coverageWrapped) return;
+	owner.__coverageWrapped = true;
+	const close = owner.close.bind(owner);
+	owner.close = async (/** @type {any[]} */ ...args) => {
+		for (const page of pages()) await collectCoverage(page);
+		return close(...args);
+	};
+}
+
+if (COVERAGE) {
+	process.on('exit', () => {
+		const fs = require('fs');
+		const path = require('path');
+		const suite = path.basename(process.argv[1] || 'unknown').replace(/\.test\.cjs$|\.cjs$/, '');
+		const dir = process.env.E2E_COVERAGE_OUT || path.resolve(__dirname, '../../test-results/coverage');
+		try {
+			fs.mkdirSync(dir, { recursive: true });
+			const files = Object.fromEntries([...coverageFiles].sort(([a], [b]) => (a < b ? -1 : 1)));
+			// pages: how many were opened, uncollected: how many closed without handing coverage in (a crash)
+			fs.writeFileSync(path.join(dir, suite + '.json'), JSON.stringify({ suite, url: URL, pages: coveragePagesSeen, uncollected: coveragePages.size, files }) + '\n');
+		} catch (e) {
+			console.log('[coverage] not written: ' + /** @type {Error} */ (e).message);
+		}
+	});
+}
+
 /** @param {boolean} ok @param {string} label */
 function check(ok, label) {
 	console.log((ok ? 'PASS ' : 'FAIL ') + label);
@@ -176,6 +257,14 @@ async function setupPage(browser, name, options = {}) {
 		}, options.storage);
 	}
 	const page = await ctx.newPage();
+	if (COVERAGE) {
+		// resetOnNavigation off: a suite's reloads (freshReload, a hash change) keep counting into one record
+		await page.coverage.startJSCoverage({ resetOnNavigation: false });
+		coveragePages.add(page);
+		coveragePagesSeen++;
+		collectBeforeClose(ctx, () => [...coveragePages].filter((p) => p.context() === ctx));
+		collectBeforeClose(browser, () => [...coveragePages]);
+	}
 	// E2E_CPU_THROTTLE=<rate> (scatter-sync): CDP CPU throttling on every page, so a suite can be run the way
 	// GitHub's runners run it (2-4 slow vCPUs, SwiftShader) on a fast box — `4` = four times slower main threads
 	const throttle = Number(process.env.E2E_CPU_THROTTLE || 0);
@@ -1162,4 +1251,4 @@ function envelopeDelta(a, b) {
 	return { maxDelta, meanDelta: n ? sum / n : 0, worstSlice };
 }
 
-module.exports = { URL, GPU_ARGS, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta };
+module.exports = { URL, coverageKey, GPU_ARGS, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta };

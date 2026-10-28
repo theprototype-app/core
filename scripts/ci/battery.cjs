@@ -36,7 +36,8 @@ const BATTERY = path.join(ROOT, 'tests', 'e2e', 'battery.json');
 /**
  * @typedef {{ comment?: string, refs: Record<string, {repo: string, ref: string}>, shards: {target_minutes: number, max: number, min: number, par?: number},
  *   pc?: {games: string[], levels: string[]}, skip: Record<string, string>, optional: Record<string, string>, setup: Record<string, string>,
- *   suites: Record<string, number>, modules?: Record<string, number>, desk?: Record<string, string[]>, exclude?: Record<string, string[]> }} Battery
+ *   suites: Record<string, number>, modules?: Record<string, number>, desk?: Record<string, string[]>, exclude?: Record<string, string[]>,
+ *   tiers?: string, tier1_always?: string[], tier1_always_files?: string[], tier1_cap?: number, tier1_shared_suites?: number }} Battery
  * @typedef {{ name: string, status: 'pass'|'flaky'|'quarantined'|'fail'|'timeout'|'gone'|'notrun', required: boolean, rc: number|null, secs: number,
  *   retrySecs?: number, pass: number, fail: number, last: string, shard: number }} SuiteResult
  */
@@ -405,6 +406,8 @@ function write(b) {
 	if (b.modules) body.push(`\t"modules": ${obj(b.modules, '\t')}`);
 	if (b.desk) body.push(`\t"desk": ${obj(b.desk, '\t')}`);
 	if (b.exclude) body.push(`\t"exclude": ${obj(Object.fromEntries(Object.entries(b.exclude).map(([k, v]) => [k, [...v].sort()])), '\t')}`);
+	// battery-tiers (battery-desk.cjs tiers): the tier-1 always-set, shared-core files and caps, kept as written
+	for (const k of /** @type {const} */ (['tiers', 'tier1_always', 'tier1_always_files', 'tier1_cap', 'tier1_shared_suites'])) if (b[k] !== undefined) body.push(`\t${JSON.stringify(k)}: ${JSON.stringify(b[k])}`);
 	fs.writeFileSync(BATTERY, `{\n${body.join(',\n')}\n}\n`);
 }
 

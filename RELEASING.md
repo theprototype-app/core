@@ -167,6 +167,28 @@ released version instead of drifting (it carried a stale 1.8.0 before 1.11.0).
   battery imported that way: 50 reds -> 33 pre-existing, 11 NEW after the retry.
   A new `tests/e2e/*.test.cjs` goes into `tests/e2e/battery.json` (suites, or `exclude` with a reason) —
   `tests/unit/batteryDesk.test.js` fails on a file in neither.
+- **Tier 1 → release → tier 2** (battery-tiers, owner decision 2026-10-26). The battery splits by COVERAGE, not by
+  suite names: `tests/e2e/coverage-map.json` says which app files each suite executes beyond the boot floor, and
+  ```sh
+  node scripts/ci/battery-desk.cjs tiers --base vPREV [--also <focused union suites>] [--verbose]
+  node scripts/ci/battery-desk.cjs tiers --base vPREV --save <tree>/tiers.json     # a snapshot / pc slot has no .git
+  node scripts/ci/battery-desk.cjs run --tier 1 --selection tiers.json --half A …  # and B: gates the release
+  node scripts/ci/battery-desk.cjs run --tier 2 --selection tiers.json --half A …  # on the NEW tag, detached (mux-done)
+  node scripts/ci/battery-desk.cjs record --version X.Y.Z --base vPREV --tier1 <dirA>,<dirB>   # later: --tier2 …
+  node scripts/ci/battery-desk.cjs record --version X.Y.Z --escape <suite>:yes|no:serious|minor|none:<check>
+  node scripts/ci/battery-desk.cjs record --check      # before the next union merge: tier 2 recorded + classified?
+  ```
+  Tier 1 = suites covering a changed `src/` file (or a package the lockfile moved), suites added or changed (and those
+  requiring a changed tests/e2e support file), `tier1_always` (smoke, the two-peer core, join/save/edit/play) + `--also`,
+  every suite the map does not know yet. A SHARED file (`tier1_always_files`, or run past the boot floor by more than
+  `tier1_shared_suites` = 16 suites) brings its HEAVY users (the map names the ~8 that run most of it) and the rest only
+  while tier 1 stays under `tier1_cap` (30 %) of the suite-minutes. Replayed on 1.35-1.44: tier 1 = 26-52 % of the
+  suites, and it holds 3 of the 4 old-suite catches (the miss: a one-line change to a boot-only file, githubStars.js,
+  that every suite runs the same way — `tiers` lists such files as boot-only). Tier 2 must be
+  classified before the next release's union merge: a real tier-2 bug that is serious (data loss, security, broken
+  join/save/edit/play) is a patch release 1.x.1 from the tag, anything else is fixed in the next release. Regenerate
+  the map every few releases (or when `tiers` says many suites are unmapped): both halves with `E2E_COVERAGE=1` on pc
+  slots (MOD: flights carry no core coverage — drop them), then `battery-desk.cjs map build <out-A> <out-B>`.
 - The peers warn (never block) on version mismatches, and `.tpscene`/`.tpmodule`
   files confirm before loading a NEWER format int — older files always load
   silently. Bump `SESSION_FORMAT`/`MODULE_FORMAT` only when the shape actually

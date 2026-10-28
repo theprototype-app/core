@@ -26,6 +26,7 @@
 	// 36 (G1): Main graph label + code <-> node (double-click / Open code)
 	import { MAIN_GRAPH_LABEL, nodeHasCode, openCodeRequestFor } from '$lib/graphContract.js';
 	import { openCode as openCodeRequest } from '$lib/codeOpen';
+	import { pathCaptureNode, endPathCapture } from '$lib/pathCapture'; // fix-batch-2
 	import PeerCursors from './PeerCursors.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ColorPickerNode from './nodes/ColorPickerNode.svelte';
@@ -2078,7 +2079,13 @@
 			onnodecontextmenu={onNodeContextMenu}
 			onselectioncontextmenu={onSelectionContextMenu}
 			onedgecontextmenu={onEdgeContextMenu}
-			onpaneclick={() => (menu = null)}
+			onpaneclick={() => {
+				menu = null;
+				endPathCapture(); // fix-batch-2: a click back in the editor ends waypoint placing
+			}}
+			onnodeclick={({ node }) => {
+				if ($pathCaptureNode && node.id !== $pathCaptureNode) endPathCapture();
+			}}
 		>
 			{#if bgPattern !== 'none'}
 				<!-- 180: {#key} forces a remount so a dots<->lines switch applies at

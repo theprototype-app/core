@@ -4263,6 +4263,20 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   roster-length check shows a phantom peer while pending. `$peers` ticks
   (`peers.update`) on every open/close, so derive from `openedPeers` (#14 CN; the
   Users peers-trigger had this bug too).
+- **`peer.id` does NOT go null on a signaling drop any more — and "is signaling up" is
+  `peer.open`, never `peer.id`** (net-drop-1). peerjs's `Peer.disconnect()`, which runs on every
+  drop of the signaling socket, sets `id` to null until the socket re-registers; everything
+  that asked "who am I" during the gap read null. The cloud roles plugin
+  (`getPeers().peer.id`) counted itself ALONE and wiped its role map, so a joiner came back
+  from a healed drop a VIEWER whose edits never left it (net-drop B -> A red on every
+  deployed build and green on a dev server, which loads no plugin). Core's own readers
+  (own avatar, own locks, shared-library owner, chat, `atscene`) were wrong for the same
+  seconds. `peerDrop.keepPeerId` puts an own getter on the one Peer core builds (live id,
+  else the id it was created with); peerjs's `_id`/`_lastServerId`/`open`/`disconnected`
+  are untouched, and `reconnectDial` checks `peer.disconnected` itself. Suite
+  `net-drop` (own id at the cut; roles unchanged by the heal under
+  `E2E_CLOUD_PLUGIN=https://theprototype.pages.dev/cloud-plugin.js`, the way to run any
+  two-peer suite in the deployed condition on a dev server).
 - A fixed overlay anchored under the Connect pill can't use a `position:fixed`
   click-catcher sized to the viewport — `.connect-wrap`'s `translateX(-50%)` makes it
   the containing block for fixed descendants (the transform gotcha). Close the

@@ -52,6 +52,12 @@ export const DEBUG_HOOKS = [
 	// 60 Q6: the local asset cache (OPFS) — index, stats, clear, persist
 	['assetCache', () => import('./assetCache.js')],
 	['placeGhost', () => import('./placeGhost.js')],
+	['vrPlace', () => import('./vr/placeRay.js')],
+	['vrAssetBrowser', () => import('./vr/assetBrowser.js')],
+	// 74 VH1: the logic graph as a VR panel · VH3: the agent presence marker
+	['vrLogic', () => import('./vr/logicPanel.js')],
+	['agentPresence', () => import('./agentPresence.js')],
+	['vrHands', () => import('./vr/handInput.js')],
 	['tourVR', () => import('./tours/vrPanel.js')],
 	// 36-share (B13): the recorder + its stores
 	['recording', () => import('./recording/recorder.js')],
@@ -187,6 +193,11 @@ export const DEBUG_HOOKS = [
 	['vrDollhouse', () => import('./vr/dollhouse.js')],
 	['vrWorldSnap', () => import('./vr/worldSnap.js')],
 	['vrSculpt', () => import('./vr/sculpt.js')],
+	// 52 V1/V2: VR measure (the laser tool + its leaf) and the build-tool radial entries (Arrange's runArrange)
+	['vrMeasure', () => import('./vr/measure.js')],
+	['vrMeasureCore', () => import('./vrMeasureCore')],
+	['vrBuildRings', () => import('./vr/buildRings.js')],
+	['align', () => import('./align')],
 	['vrTourTargets', () => import('./vr/tourTargets.js')],
 	['vrPrefs', () => import('./vr/prefs.js')],
 	// 53 (A7): recenter + the lift / recenter counts
@@ -472,7 +483,13 @@ export const DEBUG_HOOKS = [
 	['sharedText', () => import('./sharedText')],
 	// 50-window (C1): the code workspace in its own browser window
 	['codePopout', () => import('./codePopout')],
+	// 70 W2-W5: pop-out windows (the live layout + the window host)
+	['panelPlaces', () => import('./windows/panelPlaces.js')],
+	['panelHost', () => import('./windows/panelHost.js')],
+	['panelLayout', () => import('./windows/panelLayout.js')],
 	['codeSidebars', () => import('./codeSidebars')],
+	// 70 W1: files and folders from the Code tab (create / rename / move / delete, their undo)
+	['codeFiles', () => import('./codeFiles')],
 	['scriptAssets', () => import('./scriptAssets')],
 	['codeTabs', () => import('./codeTabs')],
 	['aiExtensions', () => import('./ai/aiExtensions')],

@@ -23,6 +23,7 @@
 	import { tabbable } from '$lib/windowTabs';
 	import { sttConfig, sttReady } from '$lib/ai/stt';
 	import { dictation, startDictation, stopDictation } from '$lib/ai/sttCapture';
+	import { panelAway } from '$lib/windows/panelPlaces.js';
 
 	let prompt = $state('');
 	let pillPrompt = $state('');
@@ -95,10 +96,13 @@
 		const id = (e.currentTarget as HTMLSelectElement).value;
 		setAiActiveProvider(id || null);
 	}
+	// 70 W2: `popped` = the instance in a pop-out window (the window only); the main one keeps the pill
+	// and draws no window while the assistant is away
+	let { popped = false }: { popped?: boolean } = $props();
 </script>
 
 <!-- Quick prompt pill (backquote-toggled) -->
-{#if pillVisible}
+{#if pillVisible && !popped}
 	<div
 		class="ai-pill ui-panel tp-ui tp-window flex items-center gap-1.5 px-2 py-1.5"
 		style="position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bottom-inset, 0px) + 72px); z-index: var(--z-hud); width: min(560px, 92vw);"
@@ -120,6 +124,7 @@
 {/if}
 
 <!-- Floating window -->
+{#if popped || !$panelAway.aiAssistant}
 <div id="ai-assistant" class={$aiAssistantHidden}>
 	<div
 		id="ai-assistant-window"
@@ -230,6 +235,7 @@
 		</div>
 	</div>
 </div>
+{/if}
 
 <style>
 	#ai-assistant.hidden {

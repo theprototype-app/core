@@ -696,20 +696,32 @@ export function buildObjectMenuItems(uuid, opts = {}) {
 			? []
 			: [
 					{
-						// H5: embed this object's flow into the SCENE graph as an Object Flow node
+						// H5: embed this object's flow into the SCENE graph as an Object Flow node.
+						// fix-batch-2 (C2): no flow yet = create one (seeded Input/Output) and embed it,
+						// one undo step; a peer's object is theirs to change
 						label: 'Add flow to Scene graph',
 						icon: 'git-branch-plus',
-						tooltip: 'Embed this object’s flow as a node with its declared inputs/outputs',
+						disabled: locked,
+						tooltip: locked ? lockedTooltip : 'Embed this object’s flow as a node with its declared inputs/outputs — creates the flow if it has none',
 						action: () =>
-							Promise.all([import('./objectFlow'), import('../stores/flowStore'), import('../stores/appStore')]).then(
-								([objectFlow, flowStore, appStore]) => {
-									if (!flowStore.graphExists(uuid)) {
-										appStore.showToast('This object has no flow yet — select it in the Flow editor and click Create flow.');
+							Promise.all([import('./flowGraphs'), import('../stores/appStore'), import('./objectActions')]).then(
+								([flowGraphs, appStore, objectActions]) => {
+									const result = flowGraphs.addFlowToSceneGraph(uuid, object?.name || object?.type);
+									if (result === 'already') {
+										appStore.showToast('This flow is already embedded in the Scene graph');
 										return;
 									}
-									const added = objectFlow.addObjectFlowToScene(uuid, object?.name || object?.type);
 									appStore.showToast(
-										added ? 'Object Flow node added to the Scene graph' : 'This flow is already embedded in the Scene graph'
+										result === 'created' ? 'Flow created and added to the Scene graph' : 'Object Flow node added to the Scene graph',
+										[
+											{
+												label: 'Open flow',
+												action: () => {
+													objectActions.selectObject(uuid);
+													appStore.flowGraphClose.set(false);
+												}
+											}
+										]
 									);
 								}
 							)

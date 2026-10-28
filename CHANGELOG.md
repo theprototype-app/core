@@ -34,6 +34,133 @@ tab can now find any scene by a word or a maker.
   account or IP address. It is off whenever your browser sends Do Not Track or Global Privacy Control, and you can turn
   it off in Settings ▸ Privacy ▸ **Count my visits anonymously**. A build without the hosted plugin counts nothing.
 
+## 1.47.0 — Game logic in the headset, and a phone in a shared room 🥽
+
+- 🔀 **Edit game logic in VR**: radial ▸ **Tools ▸ Logic** opens the scene's node graph as a panel in the headset, and
+  **Selected ▸ Edit logic** opens the selected object's own flow. Trigger-drag a card to move it; drag from a socket to
+  wire it with the laser (green while the types fit, red when they don't); drag from a wired input to pick that wire up
+  and move it, or drop it on the empty graph to remove it. Click a card and its values open on a **wrist pad**: − / +
+  for numbers, the VR keyboard for text, ‹ › for choices and colours, plus Rename, Unwire and Delete. **+ Node**
+  adds nodes from the same groups as the desktop palette. Undo / redo, Fit, zoom (the stick) and pan work too, a grip
+  carries the panel, and peers on the desktop see every edit live. Viewers get the panel read-only. Groups are
+  read-only in VR, and custom, object-flow and sound nodes are still added on the desktop.
+- 📱 **A phone joins a headset's room**: on an Android phone, **More ▸ Join room (AR)** (or the Play menu ▸
+  **Join the room (AR)**). Tap the floor at the point the headsets calibrated on, then a point along the agreed edge
+  (at least 30 cm away), and the phone sees the scene where the headsets do — same room key, same anchored objects.
+  **Recalibrate** redoes the two taps. An unfolded phone's Play menu now offers **Play on a table (AR)** and **Join the room (AR)** too.
+
+## 1.46.0 — Every panel in its own window, and files from the Code tab 🪟
+
+Spread the editor over two monitors: pop out any panel, or a whole dock, into its own window and move tabs between
+windows. And the Code tab now makes, renames, moves and deletes files and folders itself.
+
+### 🪟 Any panel in its own window
+
+- **Pop out any panel**: right-click a dock tab, a sidebar tab or a floating window's header ▸ **Pop out into a new
+  window** — the Explorer, Properties / Configure Scene, the Node editor, Timeline, Animation, UV, Shader and HUD
+  editors, the Profiler, the Debugger, Chat, the AI assistant and Code. Drag the window to any monitor; everything
+  stays live. Or drag a tab out of the browser window and let go.
+- **A whole dock at once**: **Pop out the whole dock** / **Pop out this sidebar** opens one window with every tab.
+- **Tabs between windows**: a window with one panel shows just its name — that name is the tab: drag it, or
+  right-click for **Dock back** / **Move to…**. Drop a second panel on it (or use its **+**) and a tab strip appears;
+  back to one panel, the strip goes. A popped-out dock always shows its tabs (Settings ▸ Interface ▸ **Always show
+  tab strip in windows** shows them everywhere).
+- **One panel, one place**: adding a panel that is open somewhere else moves it there. Drag a tab onto any window's
+  header, or back into the app (left sidebar, right sidebar, bottom dock — or anywhere else to put it back where it
+  was).
+- **Your windows come back**: reload and the windows reopen where they were (per monitor setup). If the browser blocks
+  pop-ups, a bar offers **Open 2 windows** — one click per window. **Bring all windows back** (command palette, or any
+  tab menu) puts everything back in the app. Closing the app's tab closes its windows.
+- Desktop only — phones, touch screens and VR keep one window.
+
+### 📁 Files from the Code tab
+
+- Create, rename, move and delete files and folders from the Code tab (**Project ▸ Files**): **New file** (Script,
+  Note or JSON), **New folder**, rename (F2), move (drag, **Move to**, or Ctrl+X then Ctrl+V), delete (Del, to
+  Deleted). New scripts start from a behaviour template and open in a tab. Undo with Ctrl+Z in the file tree or the
+  toast. Files made here are Explorer files and follow its sharing rules; viewers can only read. Works in the pop-out
+  window too.
+
+### 🔧 Fixes
+
+- Renaming a shared file (or renaming / moving a shared folder) now reaches everyone in the session.
+- Saving a shared file no longer leaves an extra copy of its old version in the Library.
+- The dock's tab strip passes the accessibility check, and Delete closes the focused dock tab.
+
+## 1.45.1 — Fixes: path waypoints, AI connections, object flows, HDRI drops, local objects 🔧
+
+- 🛤️ **Path patrol**: placing waypoints no longer traps the viewport. A **Placing waypoints** box shows while it is on
+  (with the count, **Undo last point** and **Done**); Esc, Done, deselecting the object, clicking the object itself,
+  clicking the node editor, pressing Play or muting the node all end it. The object holds still while you place
+  points.
+- 🤖 **AI connections** (Settings ▸ AI): a base URL typed without `https://` or pasted with `/chat/completions` on the
+  end now works, and **Will call …** under the field shows the exact address. Test connection answers within about
+  10 s and says which problem it is — the server cannot be reached, it does not allow this site (CORS, with the flag
+  for vLLM / Ollama / LM Studio), a rejected key, a model the server does not know, or a vLLM started without tool
+  calling. The same reasons show in the assistant.
+- 🔀 **Add flow to Scene graph** on an object with no flow now creates the flow (with a Flow Input and a Flow Output)
+  and adds it — one Undo, everyone sees it. It is greyed out with **Locked by …** while someone else holds the object.
+- 🌅 Dropping an **HDRI** from the Explorer onto the viewport now says where it goes, with **Open Environment**.
+- 📦 **Local objects** stay yours: a downloaded scene, a whole-scene export, a published or submitted scene and a game
+  export leave them out and say so ("1 local object was not included"). Share them from the object list to include
+  them.
+- 🧊 Compressed **(KTX2) textures** load again. Since 1.43.1 the site's security policy stopped the texture decoder, so
+  imported models kept full-size textures in GPU memory and "For Quest / web" exports could not be opened back in the
+  app. The decoder is rebuilt to run under that policy.
+- Collaboration messages are checked against the sending peer.
+
+## 1.45.0 — Build in the headset: measure, arrange, paint, scatter, browse assets and shrink the world 🥽
+
+Everything you need to build a scene now works with the headset on: measure and line things up, paint terrain and
+scatter, pull models off your wrist and drop them in, and scale the whole world down to a miniature to work from above.
+
+### 📏 Measure and arrange
+
+- **Tools ▸ Measure**: tap points with the laser — they snap to corners, edges and faces (and to the grid when grid
+  snapping is on). Chains of points, labels that turn to face you and stay readable, a double tap (or **Keep**) makes it
+  a measurement item like on the desktop; **Selected ▸ Edit measurement** moves its points.
+- **Selected ▸ Arrange** for two or more objects: pick the axis, then Align min / centre / max, Even centres / gaps,
+  Drop to ground or Align to — the same as the desktop, one Undo, everyone sees it.
+
+### 🌍 Shrink the world
+
+- In Edit, **both grips always grab the world**, wherever you point: pull your hands together to shrink it down to a
+  **1:50 miniature**, apart to grow it, twist to turn it. It clicks (with a buzz) at 1:50 · 1:10 · 1:5 · 1:2 · 1:1 · 2× · 5×
+  · 10×, a readout shows the scale, and **Back to 1:1** sits on the quick menu while the world is off life size. The
+  comfort vignette closes in while it scales or turns. Only you see it.
+- To scale or turn an **object** with two hands, grab it and move it a little first, then add the second grip. Grips
+  never pick up the terrain, locked objects, things bigger than about 2 m or a room you are standing in.
+- Settings ▸ VR ▸ **Both grips scale the world**: Always (new) or Only in empty air (the old way).
+
+### 🖌️ Brushes on the controller
+
+- Quick menu ▸ Sculpt ▸ **Paint** (terrain layers 1-4) and **Scatter** (paint, erase, rotate, scale, relax, choose a
+  source). The trigger paints; the stick sets radius and strength (or density); a ring shows the brush on the ground
+  and a buzz starts each stroke. Works in a miniature too.
+
+### 📦 Asset Browser on your wrist
+
+- **Add ▸ Assets** opens a browser on your wrist: packs, free CC0 models and your library, searchable with the VR
+  keyboard. Trigger-drag a card into the scene, or click it and place copies with the laser (it snaps, the stick turns
+  it, grip stops). Grip the panel off your wrist to pin it in the air; grip it back to return it.
+- **Hand tracking**: no controllers needed to browse and place — a pinch is the trigger, pinch-drag drops a model. Tools
+  that need precision ask you to pick up a controller.
+
+### 🔧 Fixes
+
+- Someone who joined your room no longer comes back from a network or signaling blip as View-only — their edits kept
+  staying on their own screen while you still saw them as an Editor (hosted site; seen on 1.43.2 and 1.44.0).
+- **On Impact** now fires when an object hits something from any side — a ball thrown at a wall or a target — not only
+  when it lands (new **From** option: any side / landing only; On Impact nodes in existing scenes keep landing only).
+- Rotate and Motor nodes spin up from rest when they switch on, and an auto-starting HUD Timer counts down from its full
+  time (both used to start as if they had been running since midnight).
+- Set Game State, Set Variable, HUD Rows, HUD Set Input, Device Param and Note Trigger show the sockets they read, so
+  you can wire them by hand; a HUD Timer's **start** socket starts it.
+- The Sequence card shows its wait times at the normal card width; thirteen node descriptions say what the node really
+  does.
+- The profile button opens with Enter or Space instead of on focus, so Tab moves past it, and Esc returns to it. At
+  large UI scales on a narrow phone, window headers stay on one row with the close button beside the title.
+
 ## 1.44.0 — Quick wins: play from where you stand, trace over a picture, share files in, embed anywhere ⚡
 
 Small things you feel in every session: try the corner you are building without walking there, trace a plan, send a

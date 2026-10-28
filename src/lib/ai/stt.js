@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
 import { registerSecretSource } from '../diagnostics';
 import { AiHttpError, describeAiError } from './client.js';
+import { normalizeEndpointUrl, STT_TAILS } from './url.js'; // fix-batch-2 B1: a leaf
 
 // Speech to text (36-vr-ai, plan F2): voice typing for the AI assistant. ONE local per-device config,
 // the providers.js pattern (plaintext safeStorage, like every AI key here). All three presets speak the
@@ -45,7 +46,7 @@ export function normalizeSttConfig(raw) {
 	const preset = sttPresetFor(String(raw.preset ?? base.preset));
 	return {
 		preset: preset.preset,
-		baseUrl: String(raw.baseUrl ?? preset.baseUrl).trim().replace(/\/+$/, ''),
+		baseUrl: normalizeEndpointUrl(String(raw.baseUrl ?? preset.baseUrl), { tails: STT_TAILS }), // fix-batch-2 B1
 		apiKey: String(raw.apiKey ?? '').trim(),
 		model: String(raw.model || preset.defaultModel).trim(),
 		language: String(raw.language ?? '').trim()
@@ -130,7 +131,8 @@ export async function transcribe(blob, opts = {}) {
 /** A short human message for a failed transcription @param {unknown} error */
 export function describeSttError(error) {
 	if (error instanceof Error && error.name === 'TypeError') {
-		return 'Network or CORS error — a self-hosted speech server must allow this site as an origin';
+		// fix-batch-2 B2: the same TypeError is CORS, a certificate, DNS or a closed port
+		return 'Could not reach the speech server — a network, certificate or CORS problem (a self-hosted one must allow this site as an origin)';
 	}
 	return describeAiError(error);
 }

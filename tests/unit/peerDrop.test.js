@@ -8,8 +8,10 @@ import {
 	strikesNeeded,
 	consentCounters,
 	linkSilence,
-	LINK_SILENT_MS
+	LINK_SILENT_MS,
+	keepPeerId
 } from '../../src/lib/peerDrop.js';
+import { Peer } from 'peerjs';
 
 // F-3: a dropped peer leaves Users within seconds and a leave never toasts "Connection error".
 describe('F-3 peer drop policy', () => {
@@ -70,5 +72,50 @@ describe('F-3 peer drop policy', () => {
 		expect(linkSilence({ responses: 5, requests: 5, at: 0 }, { requestsSent: 5, responsesReceived: 5 }, 60000).silent).toBe(false);
 		// no stats = never silent
 		expect(linkSilence({ responses: 5, requests: 5, at: 0 }, null, 60000).silent).toBe(false);
+	});
+});
+
+// net-drop-1: peerjs's Peer.disconnect() (every signaling drop) sets `id` to null until the socket
+// re-registers, and everything that asks "who am I" read null for the length of the drop — the
+// cloud roles plugin then counted itself ALONE, wiped its role map, and a joiner came back from a
+// healed drop as a viewer whose every edit stayed local (net-drop on deployed builds, B -> A red).
+describe('keepPeerId: our id survives a signaling drop', () => {
+	/** the real peerjs Peer, disconnected the way a dropped socket disconnects it */
+	function droppedPeer(/** @type {boolean} */ kept) {
+		const peer = Object.create(Peer.prototype);
+		Object.assign(peer, { _id: 'abc12', _lastServerId: null, _disconnected: false, _open: true, _destroyed: false });
+		peer._socket = { close() {} };
+		peer.emit = () => true;
+		if (kept) keepPeerId(peer, 'abc12');
+		expect(peer.id).toBe('abc12');
+		peer.disconnect();
+		expect(peer.disconnected).toBe(true);
+		return peer;
+	}
+	it('counterfactual: an unwrapped peerjs Peer reads null while disconnected', () => {
+		expect(droppedPeer(false).id).toBe(null);
+	});
+	it('a wrapped Peer keeps reading its id through the drop, and peerjs still reconnects on it', () => {
+		const peer = droppedPeer(true);
+		expect(peer.id).toBe('abc12');
+		// peerjs keeps its own bookkeeping: the reconnect re-registers the id it remembered
+		expect(peer._lastServerId).toBe('abc12');
+		/** @type {string[]} */
+		const started = [];
+		peer._socket = { start: (/** @type {string} */ id) => started.push(id), close() {} };
+		peer._options = {};
+		peer.reconnect();
+		expect(started).toEqual(['abc12']);
+		expect(peer.id).toBe('abc12');
+	});
+	it('the live id wins over the remembered one, and a missing peer or id is left alone', () => {
+		const peer = Object.create(Peer.prototype);
+		peer._id = 'zzz99';
+		keepPeerId(peer, 'abc12');
+		expect(peer.id).toBe('zzz99');
+		expect(keepPeerId(null, 'abc12')).toBe(null);
+		const bare = { id: 'x' };
+		expect(keepPeerId(bare, '')).toBe(bare);
+		expect(bare.id).toBe('x');
 	});
 });

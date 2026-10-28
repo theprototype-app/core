@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-24T15:10:13.838Z",
+	"recordedAt": "2026-10-27T09:37:53.574Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -438,6 +438,7 @@
 				"Layout",
 				"Look speed",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Show in edit",
 				"Show touch controls",
 				"UI scale",
@@ -485,6 +486,7 @@
 		},
 		"Scale": {
 			"rows": [
+				"Both grips scale the world",
 				"Grab style",
 				"Phone selection toolbar",
 				"Pivot point",
@@ -2478,6 +2480,7 @@
 			"rows": [
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
+				"Always show tab strip in windows",
 				"Announce new versions",
 				"Custom theme",
 				"Density",
@@ -2494,6 +2497,7 @@
 				"Phone grab handle",
 				"Phone selection toolbar",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Reset tips",
 				"Reset tours",
 				"Show FPS and draw calls",
@@ -3138,6 +3142,7 @@
 			"rows": [
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
+				"Always show tab strip in windows",
 				"Announce new versions",
 				"Custom theme",
 				"Density",
@@ -3155,6 +3160,7 @@
 				"Phone grab handle",
 				"Phone selection toolbar",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Reset tips",
 				"Reset tours",
 				"Show FPS and draw calls",
@@ -3185,6 +3191,7 @@
 			"rows": [
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
+				"Always show tab strip in windows",
 				"Announce new versions",
 				"Button hints",
 				"Custom theme",
@@ -3206,6 +3213,7 @@
 				"Phone grab handle",
 				"Phone selection toolbar",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Reset panel positions",
 				"Reset tips",
 				"Reset tours",
@@ -3555,6 +3563,7 @@
 		},
 		"xr": {
 			"rows": [
+				"Both grips scale the world",
 				"Button hints",
 				"Colocation",
 				"Colocation probe",
@@ -4278,6 +4287,7 @@
 		"zoom": {
 			"rows": [
 				"Allow browser pinch zoom",
+				"Both grips scale the world",
 				"High contrast",
 				"Motion",
 				"Node editor opens",
@@ -4290,12 +4300,14 @@
 			"sections": [
 				"Accessibility",
 				"Controls",
-				"Input"
+				"Input",
+				"VR"
 			]
 		},
 		"pan": {
 			"rows": [
 				"Allow text selection everywhere",
+				"Always show tab strip in windows",
 				"Animation: show / bring to front / hide",
 				"Collapse / expand the selected nodes",
 				"Dock resizes the viewport",
@@ -4386,6 +4398,7 @@
 		},
 		"vr": {
 			"rows": [
+				"Both grips scale the world",
 				"Button hints",
 				"Colocation",
 				"Colocation probe",
@@ -4443,6 +4456,7 @@
 		},
 		"ai": {
 			"rows": [
+				"Both grips scale the world",
 				"Cached downloads",
 				"Colocation probe",
 				"Compress textures (KTX2)",

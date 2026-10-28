@@ -557,8 +557,17 @@ export function showCursorAt(/** @type {any} */ worldPoint, /** @type {any} */ w
 		cursor.rotation.x = -Math.PI / 2;
 		cursor.position.set(worldPoint.x, worldPoint.y + 0.02, worldPoint.z);
 	}
-	const r = get(sculptRadius);
+	// 52 (V3): the radius is in the host's own metres — a scaled host (a miniature world, 52 V5) draws it at
+	// its world size; an unscaled one is 1 and unchanged
+	const host = objectOf(get(sculptObject) ?? '');
+	const k = host ? host.getWorldScale(_cursorScale).x : 1;
+	const r = get(sculptRadius) * (k > 0 ? k : 1);
 	cursor.scale.set(r, r, r);
+}
+const _cursorScale = new THREE.Vector3();
+/** 52 (V3): the brush ring's world radius + where it is, for the suites */
+export function cursorDebug() {
+	return cursor ? { visible: !!cursor.visible, radius: cursor.scale.x, pos: cursor.position.toArray() } : null;
 }
 
 export function hideCursor() {

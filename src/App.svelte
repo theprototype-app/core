@@ -67,6 +67,7 @@
   import SculptToolbar from './components/menu/SculptToolbar.svelte'
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
   import MeasureToolbar from './components/menu/MeasureToolbar.svelte' // 47 M1
+  import PathCaptureToolbar from './components/menu/PathCaptureToolbar.svelte' // fix-batch-2
   import UnderlayWindow from './components/menu/UnderlayWindow.svelte' // 60 Q5
   import { underlayDropMenu } from '$lib/underlays'
   import ModuleToolboxLayer from './components/ui/ModuleToolboxLayer.svelte'
@@ -180,6 +181,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
   // 36-code: the code workspace (plan 75), loaded the first time a tab opens
   import { codeWorkspaceClose } from './stores/appStore'
   import { startCodeWorkspace } from '$lib/codeWorkspace'
+  // 70 W2-W5: pop-out windows — where each panel lives, the window host, the main window's drop zones + restore bar
+  import { panelAway } from '$lib/windows/panelPlaces.js'
+  import { startPanelHost } from '$lib/windows/panelHost.js'
+  import WindowsOverlay from './components/windows/WindowsOverlay.svelte'
   import { peers, userdata } from './stores/appStore'
   import { get } from 'svelte/store'
   import { initModules, disabledModules } from '$lib/moduleSDK'
@@ -303,6 +308,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     if (!exportMode) import('$lib/launchInbox').then((m) => m.startLaunchInbox()).catch(() => {})
     startSceneAssets()
     startCodeWorkspace() // 36-code: scriptEditorOpen -> a workspace tab, file follow
+    void startPanelHost() // 70 W5: follow the pop-out layout, bring the saved one back
     startNetworkQuality()
     startAudioDevices() // 23-A3: the device reconcile off objectsGroup
     registerVRPatch() // 23-B1: plugs, cables and knobs in VR
@@ -417,18 +423,20 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <KeyboardNav />
 
 {#if !$isLocked && !$embedMode}
-<Flow />
-<FlowCode />
-<AnimationWindow />
-<UvEditor />
-<SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>
-<HudEditor />
-<TimelineEditor />
-<Explorer />
-{#if !$profilerClose}
+<!-- 70 W2: a panel in a pop-out window is unmounted here (one panel, one place); it remounts in its
+     own last dock / float mode when it comes back -->
+{#if !$panelAway.flow}<Flow />{/if}
+{#if !$panelAway.flowcode}<FlowCode />{/if}
+{#if !$panelAway.animation}<AnimationWindow />{/if}
+{#if !$panelAway.uv}<UvEditor />{/if}
+{#if !$panelAway.shader}<SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>{/if}
+{#if !$panelAway.hud}<HudEditor />{/if}
+{#if !$panelAway.timeline}<TimelineEditor />{/if}
+{#if !$panelAway.explorer}<Explorer />{/if}
+{#if !$profilerClose && !$panelAway.profiler}
 {#await import('./components/editors/Profiler.svelte') then m}<m.default />{/await}
 {/if}
-{#if !$codeWorkspaceClose}
+{#if !$codeWorkspaceClose && !$panelAway.code}
 {#await import('./components/editors/CodeWorkspace.svelte') then m}<m.default />{/await}
 {/if}
 <TextEditorWindow />
@@ -443,6 +451,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 {/if}
 <Menu />
 <PlaceDragOverlay />
+<WindowsOverlay />
 <!-- 29-E + 36-export: the player's chrome on a play link / embed / exported game (start card,
      fullscreen, the open-in-app link) and the runtime-drawn "Made with ThePrototype" badge -->
 <EmbedChrome />
@@ -464,13 +473,14 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <SculptToolbar />
 <SplineToolbar />
 <MeasureToolbar />
+<PathCaptureToolbar />
 <!-- 60 Q5: Reference images (+ the image-drop "Use as reference" menu) -->
 <UnderlayWindow />
 <!-- A5: module toolboxes. OUTSIDE the {#if !$isLocked} block — a toolbox that opted
      into playMode has to survive Play mode, and the layer decides per box. -->
 <ModuleToolboxLayer />
 <!-- 48 D1: the Debugger panel. OUTSIDE the {#if !$isLocked} block — Play is where it works -->
-{#if $debugOpen && !$embedMode}
+{#if $debugOpen && !$embedMode && !$panelAway.debugger}
 {#await import('./components/editors/FlowDebugger.svelte') then m}<m.default />{/await}
 {/if}
 <ModulesManager />

@@ -17,6 +17,7 @@ import { scriptInputs, scriptOutputs, isScriptValue, coerceInput } from './scrip
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
 import { colliderSpecOf } from './colliderSpec'; // B6: pure THREE leaf
+import { impactStrengthFor } from './impactSpeed'; // fix-batch-1 #14: a leaf
 import { updateParticles } from './particleRuntime';
 // 36-sim: jiggle's park (a leaf over three + flowStore; closes no cycle)
 import { parkJiggle } from './sim/jiggleRuntime.js';
@@ -90,6 +91,7 @@ let behavioursRef = null;
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
 import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
+import { pathCaptureNode } from './pathCaptureState'; // fix-batch-2: a leaf
 import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
 // 40 F15: general-purpose motion (a three leaf + its pure core)
 import {
@@ -491,6 +493,9 @@ let lastValuesAt = 0;
 const baseState = new Map();
 // animated objects whose animation is paused while the user drags them
 const suspended = new Set();
+/** fix-batch-2: the Path patrol node placing waypoints (paused while it does) @type {string | null} */
+let capturingPathNode = null;
+pathCaptureNode.subscribe((id) => (capturingPathNode = id));
 
 /**
  * 24-A A4: the effects a SUSPENDED object still gets.
@@ -1222,15 +1227,29 @@ function updateHudRuntime(time, ctx, now) {
 	hudRuntime.set(next);
 }
 
+/** fix-batch-1: node id -> the clock time an autostart HUD Timer was first seen @type {Map<string, number>} */
+const hudTimerSeen = new Map();
+
 /** Seconds left on a HUD Timer. DERIVED from the shared trigger stamp, so every peer
  * reads the same number with no clock and no message of its own — the same reasoning
- * as a looping sound's phase. An `autostart` timer with nothing wired counts from the
- * runtime's own clock origin.
+ * as a looping sound's phase. An `autostart` timer with nothing wired counts from when THIS
+ * peer first saw the node (fix-batch-1, docs-1: it counted from the clock's origin, and the
+ * synced clock is seconds since midnight, so an autostart timer always read 0). That one is
+ * per peer — a timer everyone must agree on is wired to a shared pulse (`start`).
  * @param {any} node @param {any} data @param {number} time @param {any} ctx */
 function hudTimerRemaining(node, data, time, ctx) {
 	const duration = Math.max(0, num(data.duration));
-	const stamp = triggerStampFor(node.id, ctx);
-	if (stamp === null) return data.autostart === false ? duration : Math.max(0, duration - time);
+	// fix-batch-1 (docs-1 Q1): the card's socket is `start` (flowSockets types it), and only an
+	// unnamed / `trigger` wire counted — a Start wired by hand was ignored
+	const stamp = triggerStampFor(node.id, ctx, 'start');
+	if (stamp === null) {
+		if (data.autostart === false) return duration;
+		const seen = hudTimerSeen.get(node.id);
+		// a clock that went BACK by more than a second (midnight, a session clock adopted on join)
+		// re-bases; frame jitter does not (it would hold the timer at its full duration)
+		if (seen === undefined || time < seen - 1) hudTimerSeen.set(node.id, time);
+		return Math.max(0, duration - (time - /** @type {number} */ (hudTimerSeen.get(node.id))));
+	}
 	// a synced stamp can sit AHEAD of `time` by a frame; clamp both ends
 	return Math.max(0, Math.min(duration, duration - (time - stamp)));
 }
@@ -2092,12 +2111,13 @@ function updateDerivedPulses(ctx, fired = scheduledFired) {
 }
 
 /** The shared timestamp of whatever event is wired into this node's `trigger`
- * (the newest, with several sources fanned in). @param {string} nodeId @param {any} ctx */
-function triggerStampFor(nodeId, ctx) {
+ * (the newest, with several sources fanned in). `alias` = a second handle name that counts as
+ * the trigger (HUD Timer's `start`). @param {string} nodeId @param {any} ctx @param {string} [alias] */
+function triggerStampFor(nodeId, ctx, alias = '') {
 	if (!ctx?.triggers) return null;
 	let newest = null;
 	for (const edge of edgesInto(edges, nodeId)) {
-		if (edge.targetHandle && edge.targetHandle !== 'trigger') continue;
+		if (edge.targetHandle && edge.targetHandle !== 'trigger' && edge.targetHandle !== alias) continue;
 		// 21-E4: a Delay/Sequence source has NO entry in the trigger log - its stamp is
 		// derived - so reading the log directly here left those nodes unable to drive
 		// anything that acts on a trigger edge (hudscreen, setgamestate, playanim).
@@ -3580,15 +3600,21 @@ export function objectHasOnClick(uuid) {
  * stamp replicates (nodetrigger), so every peer computes the identical pulse.
  * 36 X6: `otherUuid` = the body it hit ('' = the ground) — gated by the node's
  * `filter` input and carried to every peer for its `other` output.
- * @param {string} uuid @param {number} strength downward speed at contact (m/s)
- * @param {string=} otherUuid
+ * fix-batch-1 #14: physics registers TWO channels per contact and each node reads the one
+ * its `direction` names — 'any' the closing speed along the contact normal (a wall, a
+ * target), 'down' the landing speed (the only rule up to 1.43, and what a node saved
+ * before the option keeps). null = that channel did not count this contact.
+ * @param {string} uuid @param {number | null} down downward speed at contact (m/s)
+ * @param {string=} otherUuid @param {number | null=} speed closing speed along the normal
+ *   (m/s; omitted = `down`, a caller that only knows one number)
  */
-export function fireObjectImpact(uuid, strength, otherUuid = '') {
+export function fireObjectImpact(uuid, down, otherUuid = '', speed = down) {
 	const ctx = runtimeCtx();
 	nodes.forEach((node) => {
 		if (node.type !== 'onimpact') return;
 		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
-		if (strength < num(data.minStrength ?? 0)) return;
+		const strength = impactStrengthFor(data.direction, down, speed ?? null);
+		if (strength === null || strength < num(data.minStrength ?? 0)) return;
 		if (!contactPasses(data, otherUuid)) return;
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) fireContact(node, otherUuid);
 	});
@@ -3851,7 +3877,9 @@ function applyAnimation(object, base, anim, time, ctx) {
 		const speed = data.speed ?? 2;
 		object.visible = Math.sin(time * speed * Math.PI) > 0;
 	} else if (anim.type === 'pathpatrol') {
-		applyPathPatrol(object, data, time);
+		// fix-batch-2: the node whose waypoints are being placed holds still at its base
+		// pose, so the object stays where you can click it
+		if (anim.id !== capturingPathNode) applyPathPatrol(object, data, time);
 	} else if (anim.type === 'lookat') {
 		// face a target object (uuid) or point ([x,y,z]) — 134
 		let target = null;

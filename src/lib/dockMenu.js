@@ -21,6 +21,7 @@ import { maximizeDockTab } from './focusMode';
 import { sidebarTabs, activateSidebarTab, inspectorSide } from './sidebars';
 import { raiseWindow, raiseWindowNode } from './windowFocus';
 import { revealWindow } from './dragWindow';
+import { isAway, releasePanel, focusPanelWindow, popOutItems, popOutDockPanels, canPopOut } from './windows/panelPlaces.js';
 
 // The dock's "+" add-a-view menu, in ONE place. The docked tab strip
 // (DockTabs.svelte) and the FLOATING Node editor's header "+" (Flow.svelte) each
@@ -196,6 +197,8 @@ export function registerDockOpener(key, fn) {
  * @param {string} key
  */
 function dockView(key) {
+	// 70 W4: one panel, one place — a panel in a pop-out window comes home to be docked here
+	releasePanel(key);
 	if (dockOpeners[key]) {
 		dockOpeners[key]();
 		return;
@@ -211,9 +214,11 @@ function dockView(key) {
  * floating tab group's member), or null (closed). A sidebar tab is asked first, because a window
  * docked to a side is ALSO open by its close store and would otherwise read as floating — which
  * is how "+" ▸ Statistics put a second Statistics in the dock while the first sat in a sidebar.
- * @param {string} key @returns {'dock'|'left'|'right'|'floating'|null}
+ * 70 W2: 'window' — it is in a pop-out window.
+ * @param {string} key @returns {'dock'|'left'|'right'|'floating'|'window'|null}
  */
 export function windowWhere(key) {
+	if (isAway(key)) return 'window';
 	const tabs = get(sidebarTabs);
 	if (tabs.left.includes(key)) return 'left';
 	if (tabs.right.includes(key)) return 'right';
@@ -244,6 +249,7 @@ const FLOAT_DRAG_KEYS = /** @type {Record<string, string>} */ ({
 export function focusWindow(key) {
 	const where = windowWhere(key);
 	if (!where) return false;
+	if (where === 'window') return focusPanelWindow(key);
 	if (where === 'dock') activateDock(key);
 	else if (where === 'left' || where === 'right') activateSidebarTab(key);
 	else {
@@ -255,9 +261,9 @@ export function focusWindow(key) {
 	return true;
 }
 
-/** the words for where a window is, in a row's hint @param {'dock'|'left'|'right'|'floating'} where */
+/** the words for where a window is, in a row's hint @param {'dock'|'left'|'right'|'floating'|'window'} where */
 function whereHint(where) {
-	return where === 'dock' ? 'In dock' : where === 'floating' ? 'Floating' : where === 'left' ? 'Left sidebar' : 'Right sidebar';
+	return where === 'dock' ? 'In dock' : where === 'floating' ? 'Floating' : where === 'window' ? 'In a window' : where === 'left' ? 'Left sidebar' : 'Right sidebar';
 }
 
 /**
@@ -268,6 +274,7 @@ function whereHint(where) {
  * @param {string} key @param {'left'|'right'} side
  */
 function openInSide(key, side) {
+	releasePanel(key); // 70 W4: out of its pop-out window, into this column
 	const sided = moveToSidebar(key, side);
 	if (floatOpeners[key]) floatOpeners[key]();
 	else {
@@ -349,12 +356,17 @@ export function addWindowItems({ target = 'dock', exclude = [] } = {}) {
 		const title = DOCK_TITLES[view.key] ?? view.key;
 		const icon = DOCK_ICONS[view.key] ?? 'app-window';
 		const where = windowWhere(view.key);
+		const open = side && canDockFloating(view.key) ? () => openInSide(view.key, side) : () => dockView(view.key);
+		// 70 W4: one panel, one place — a "+" here brings a panel out of its pop-out window, here
+		if (where === 'window') {
+			rows.push({ key: view.key, label: title, icon, hint: whereHint(where), checked: true, multiPick: true, tooltip: `${title} is in a pop-out window — click to bring it here`, action: open });
+			continue;
+		}
 		if (where) {
 			const place = where === 'dock' ? 'the dock' : where === 'floating' ? 'a floating window' : `the ${where} sidebar`;
 			rows.push({ key: view.key, label: title, icon, hint: whereHint(where), checked: true, multiPick: true, tooltip: `${title} is open in ${place} — click to show it there`, action: () => focusWindow(view.key) });
 			continue;
 		}
-		const open = side && canDockFloating(view.key) ? () => openInSide(view.key, side) : () => dockView(view.key);
 		rows.push({ key: view.key, label: title, icon, hint: 'Open', checked: false, multiPick: true, tooltip: view.tooltip, action: open });
 	}
 	return rows;
@@ -488,6 +500,17 @@ export function dockTabItems(key) {
 				tooltip: `Dock ${title} in the ${side} sidebar, as one of its tabs`,
 				action: () => moveToSidebar(key, side)
 			});
+	// 70 W2/W3: into a browser window of its own (desktop) — this tab, or the whole dock as one tabbed window
+	items.push(...popOutItems(key));
+	if (canPopOut(key)) {
+		const all = get(dockTabs).map((t) => t.key).filter((k) => canPopOut(k));
+		if (all.length > 1)
+			items.push({
+				label: 'Pop out the whole dock',
+				tooltip: `Every tab of the bottom dock in ONE browser window, as its tabs`,
+				action: () => popOutDockPanels(all, 'bottom', key)
+			});
+	}
 	// 42 I14: focus mode's touch/pointer way in for a docked window — the tab fills the window
 	items.push({
 		label: 'Maximize (focus mode)',
@@ -518,6 +541,7 @@ export function canMoveToSidebar() {
 }
 /** move a window into a sidebar column (false: it cannot live there) @param {string} key @param {'left'|'right'} side */
 export function moveToSidebar(key, side) {
+	releasePanel(key); // 70 W4: out of its pop-out window first
 	return !!sideMover?.(key, side);
 }
 

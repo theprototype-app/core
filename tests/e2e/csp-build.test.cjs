@@ -49,6 +49,35 @@ h.run(async () => {
 	h.check(bodies > 0, 'the physics engine starts under the policy (' + bodies + ' bodies)');
 	await page.evaluate(() => window.__stores.physics.toggleSimulation());
 
+	// KTX2 (ktx2-noeval): the basis transcoder is wasm too, but its embind glue used to build
+	// functions with `new Function`, and KTX2Loader's blob: worker inherits this policy — every KTX2
+	// texture died with an EvalError (1.43.1-1.44.0). Both encodings three supports, each in time.
+	const { esm } = require('./gltfOptimizeFixture.cjs');
+	const fx = await esm('tests/fixtures/gltfOptimizeFixtures.js');
+	const size = 256;
+	const data = new Uint8Array(size * size * 4).map((_, i) => (i % 4 === 3 ? 255 : (i * 7) & 255));
+	const ktx2Files = [];
+	for (const mode of ['etc1s', 'uastc']) ktx2Files.push(Buffer.from(await fx.nodeEnv().encodeKtx2({ data, width: size, height: size }, { mode, srgb: true, normal: false })).toString('base64'));
+	const ktx2 = await page.evaluate(async (files) => {
+		const loader = await window.__stores.gltfLoader.getKtx2Loader();
+		const out = [];
+		for (const b64 of files) {
+			const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+			try {
+				const texture = await Promise.race([
+					new Promise((resolve, reject) => loader.parse(bytes.buffer, resolve, reject)),
+					new Promise((_, reject) => setTimeout(() => reject(new Error('no answer in 30 s')), 30000))
+				]);
+				out.push({ ok: true, width: texture.image?.width ?? texture.mipmaps?.[0]?.width, compressed: !!texture.isCompressedTexture });
+				texture.dispose();
+			} catch (error) {
+				out.push({ ok: false, error: String(error?.message ?? error).slice(0, 200) });
+			}
+		}
+		return out;
+	}, ktx2Files);
+	h.check(ktx2.every((r) => r.ok && r.width === size), 'the KTX2 transcoder starts and transcodes ETC1S + UASTC under the policy (' + JSON.stringify(ktx2) + ')');
+
 	const before = await page.evaluate(() => window.__csp.slice());
 	h.check(before.length === 0, 'no policy violations while the app ran (' + JSON.stringify(before) + ')');
 

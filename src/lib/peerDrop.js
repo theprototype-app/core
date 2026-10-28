@@ -102,3 +102,30 @@ export function quietPeerError(type, { lastLeaveAt, reconnecting, now }) {
 export function unavailablePeerId(message) {
 	return String(message ?? '').match(/peer\s+([0-9a-z][0-9a-z_-]{2,})\s*$/i)?.[1] ?? '';
 }
+
+/**
+ * net-drop-1: OUR ID OUTLIVES A SIGNALING DROP. peerjs's `Peer.disconnect()` — run on every
+ * drop of the signaling socket — sets `peer.id` to null until the socket re-registers, while every
+ * data conn, lock, roster row and plugin keys on that id, and it comes back unchanged (`reconnect()`
+ * re-registers the id it remembered; a rebuild reuses `PeerConnection.myId`). Everything asking
+ * "who am I" during the gap read null: the cloud roles plugin counted itself ALONE, wiped its role
+ * map, and a joiner came back from a healed drop as a VIEWER whose every edit stayed local (the
+ * net-drop B -> A loss on deployed builds); in core an own avatar, own locks and own shared-library
+ * rows read as somebody else's. An own getter on THIS Peer answers the live id while there is one,
+ * else the id it was created with; peerjs's own bookkeeping (`_id`, `_lastServerId`, `open`,
+ * `disconnected`) is untouched, so "is the signaling link up" is still `open`, never `id`.
+ * @template T @param {T} peer @param {string} id @returns {T}
+ */
+export function keepPeerId(peer, id) {
+	if (!peer || !id) return peer;
+	/** @type {(() => any) | undefined} */
+	let live;
+	for (let o = Object.getPrototypeOf(peer); o && !live; o = Object.getPrototypeOf(o)) live = Object.getOwnPropertyDescriptor(o, 'id')?.get;
+	Object.defineProperty(peer, 'id', {
+		configurable: true,
+		get() {
+			return (live ? live.call(this) : null) ?? id;
+		}
+	});
+	return peer;
+}

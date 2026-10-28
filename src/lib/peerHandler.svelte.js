@@ -32,12 +32,13 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib
 import { validateWireMessage } from '$lib/wireValidate';
 import { holdForWireBatch } from '$lib/wireBatch';
 // 60 Q2: the fast movement channel (an unordered, unreliable second channel for pose streams)
+import { tapAgentEdit } from '$lib/agentPresence';
 import { createFastLinks, createStaleFilter, createKeyframer, stampPose, poseKey, fastChannelEnabled, setPoseTap, tapPose } from '$lib/fastChannel';
 import { registerDebugHook } from '$lib/debugHooks';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError } from '$lib/wireErrors';
 import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';
-import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence } from '$lib/peerDrop';
+import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId } from '$lib/peerDrop';
 import { createDialBackQueue } from '$lib/dialBackQueue'; // scatter-sync: room edits held for an opening approval dial-back
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
@@ -380,7 +381,8 @@ export class PeerConnection {
 			// 36-export: an exported game is single-player and opens NO signaling socket — a stub
 			// Peer that never opens (`connect()` answers undefined, which every dial site already
 			// guards, the signaling-down rule), so `$peers.peer.id` and every send stay valid
-			this.peer = exportMode ? /** @type {Peer} */ (offlinePeer(this.myId)) : new Peer(this.myId, options);
+			// net-drop-1: the id stays readable through a signaling drop (peerDrop.keepPeerId)
+			this.peer = exportMode ? /** @type {Peer} */ (offlinePeer(this.myId)) : keepPeerId(new Peer(this.myId, options), this.myId);
 		};
 
 		// 27-F (audit H2): THE recreate ritual, in one place. Four callers had their own
@@ -968,6 +970,8 @@ export class PeerConnection {
 				// The get* REQUESTS are not in ROOM_SCOPED, deliberately — they are the gate's
 				// own queue mechanism, and dropping them would strand both sides in silence.
 				if (data && ROOM_SCOPED.has(data.type) && gateHolds(conn.peer)) return;
+				// 74 VH3: an applied edit from an AI agent moves its presence marker (nothing new on the wire)
+				tapAgentEdit(conn.peer, data);
 				// console.log(data);
 				if(data.type == 'cloud') {
 					// open-core (M1): the cloud plugin's own replicated channel
@@ -1253,15 +1257,19 @@ export class PeerConnection {
 				} else if(data.type == 'drawend') {
 					applyDrawEnd(data);
 				} else if(data.type == 'lockrequest') {
-					applyLockRequest(data);
+					// lock messages act for the CONNECTION (`conn.peer`); the payload's peerId /
+					// from stay on the wire for older peers and are not read (lockTrust.js)
+					applyLockRequest(data, conn.peer);
 				} else if(data.type == 'unlock') {
-					applyUnlock(data);
+					applyUnlock(data, conn.peer);
 				} else if(data.type == 'lockdenied') {
-					applyLockDenied(data);
+					applyLockDenied(data, conn.peer);
 				} else if(data.type == 'lock') {
-					lockGeometry(data.uuid, data.peerId, data.uuids);
+					lockGeometry(data.uuid, conn.peer, data.uuids);
 				} else if(data.type == 'locked') {
-					lockRestore(data.lockeditems);
+					// the host forwards the room's table; anyone else speaks for its own rows,
+					// and only if it may take locks at all (`locked` is on the canApply floor)
+					lockRestore(data.lockeditems, conn.peer, get(sessionHost) === conn.peer, canApply(conn.peer, 'lock'));
 				} else if(data.type == 'userdata') {
 					// F-5: the roster applier UNIONS, so a third peer still linked to someone this host
 					// removed would put them straight back in Users — a removed peer stays out of ours
@@ -1338,7 +1346,7 @@ export class PeerConnection {
 					// which is what every peer before this build did unconditionally.
 					applyRemoteDuplicate(data.sourceUuid, data.uuids, data.name, data.pos, data.transient, data.shareMaterial);
 				} else if(data.type == 'clearscene') {
-					applyClearScene(data.peerId);
+					applyClearScene(conn.peer);
 				} else if(data.type == 'delete') {
 					deleteObject(data.uuid);
 				} else if(data.type == 'color') {
@@ -2156,7 +2164,8 @@ export class PeerConnection {
 	 * Called from the window's timers and when the signaling link comes back.
 	 * @param {string} peerId */
 	reconnectDial(peerId) {
-		if (this.connections[peerId] || !(this.peer.id < peerId)) return;
+		// a Peer off the signaling server cannot dial (its id still reads, keepPeerId): the `open` handler redials
+		if (this.connections[peerId] || this.peer.disconnected || !(this.peer.id < peerId)) return;
 		const conn = this.peer.connect(peerId, dialOptions());
 		if (!conn) return; // the signaling link is down: the next tick (or its return) redials
 		/** @type {any} */ (conn).__dialedAt = Date.now();

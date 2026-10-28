@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
 import { registerSecretSource } from '../diagnostics';
+import { normalizeEndpointUrl, CHAT_TAILS, willCall } from './url.js'; // fix-batch-2 B1: a leaf
 
 // AI provider settings (roadmap #10, A1). A LOCAL per-device preference — the
 // only credentials the app stores. Keys live in PLAINTEXT localStorage (there is
@@ -73,11 +74,18 @@ export function presetFor(preset) {
  * @param {string} baseUrl @returns {string}
  */
 export function normalizeBaseUrl(baseUrl) {
-	const url = (baseUrl || '').trim().replace(/\/+$/, '');
+	// fix-batch-2 B1: the shared helper adds the missing scheme and strips a pasted endpoint tail
+	const url = normalizeEndpointUrl(baseUrl, { tails: CHAT_TAILS });
 	if (/^https:\/\/generativelanguage\.googleapis\.com(\/|$)/.test(url) && !/\/openai$/.test(url)) {
 		return 'https://generativelanguage.googleapis.com/v1beta/openai';
 	}
 	return url;
+}
+
+/** fix-batch-2 B1: the chat endpoint a typed base URL resolves to ("Will call …").
+ * @param {string} baseUrl */
+export function chatEndpointFor(baseUrl) {
+	return willCall(normalizeBaseUrl(baseUrl), '/chat/completions');
 }
 
 /** @param {string} model @returns {string} */

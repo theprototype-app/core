@@ -47,6 +47,32 @@ let items = [];
 let shownState = 'ok';
 /** pending model swaps (cancelled when the ghost goes) @type {number[]} */
 let swapTimers = [];
+/**
+ * 52-browser: the FRAME placements are expressed in. Null = the scene root (the desktop drag:
+ * objectsGroup sits at the identity there). The VR laser places in the objectsGroup's frame, which
+ * the world rig may have moved, turned or SHRUNK (miniature / dollhouse) — the ghost then rides
+ * that frame so a 2 m crate on a table-sized world draws table-sized. Kept across hideGhost: the
+ * pending boxes a drop holds come AFTER the ghost is gone. @type {any}
+ */
+let frame = null;
+
+/**
+ * Set (or clear with null) the frame the next placements live in — a world matrix (objectsGroup's
+ * matrixWorld). @param {any} matrix
+ */
+export function setGhostFrame(matrix) {
+	frame = matrix ? matrix.clone() : null;
+	if (root) applyFrame(root);
+}
+/** @param {any} obj */
+function applyFrame(obj) {
+	if (frame) frame.decompose(obj.position, obj.quaternion, obj.scale);
+	else {
+		obj.position.set(0, 0, 0);
+		obj.quaternion.identity();
+		obj.scale.set(1, 1, 1);
+	}
+}
 
 function materials() {
 	if (mats) return mats;
@@ -160,6 +186,7 @@ export function showGhost(specs) {
 		items.push({ group, box, model: null, modelKey: null });
 	}
 	quiet(root);
+	if (frame) applyFrame(root);
 	root.visible = false;
 	scene.add(root);
 	return true;
@@ -240,6 +267,7 @@ export function ghostInfo() {
 	return {
 		visible: !!root?.visible,
 		state: shownState,
+		frame: frame ? frame.toArray() : null,
 		items: items.map((it) => ({
 			tier: it.model ? 'model' : 'box',
 			key: it.modelKey,
@@ -258,9 +286,12 @@ const pending = new Set();
  * Hold a box ghost at a drop's spot until the object lands — the import paths (an animated pack
  * item, a library model, a prefab) parse before they add, and the spot must not look empty while
  * they do. LOCAL like the ghost. Returns the release. A pending box gives up after 30 s.
- * @param {number[]} box @param {number[]} position @param {number[]} quaternion @returns {() => void}
+ * `frameMatrix` (52-browser): the world matrix the pose is expressed in (the VR laser places in the
+ * objectsGroup's frame, which the world rig may have moved or shrunk); null = the scene root.
+ * @param {number[]} box @param {number[]} position @param {number[]} quaternion @param {any} [frameMatrix]
+ * @returns {() => void}
  */
-export function holdPendingGhost(box, position, quaternion) {
+export function holdPendingGhost(box, position, quaternion, frameMatrix = null) {
 	/** @type {any} */
 	const scene = get(globalScene);
 	if (!scene) return () => {};
@@ -271,6 +302,11 @@ export function holdPendingGhost(box, position, quaternion) {
 	g.name = 'place-ghost-pending';
 	g.position.fromArray(position);
 	g.quaternion.fromArray(quaternion);
+	// 52-browser: a drop placed in a moved / scaled world frame holds its box in that frame too
+	if (frameMatrix) {
+		g.updateMatrix();
+		g.matrix.premultiply(frameMatrix).decompose(g.position, g.quaternion, g.scale);
+	}
 	scene.add(g);
 	pending.add(g);
 	const release = () => {

@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { addDeformer, removeDeformer, hasDeformer } from '../vertexDeform.js';
 import {
 	buildPath,
 	samplePath,
@@ -309,7 +310,7 @@ export function applyOrientVelocity(object, base, data, time, ctx) {
 
 // ---- Body Wave ------------------------------------------------------------------------------
 
-const WAVE_DECL = /* glsl */ `
+export const WAVE_DECL = /* glsl */ `
 uniform mat4 bwToRoot;
 uniform mat3 bwFromRoot;
 uniform vec3 bwAxis;
@@ -321,7 +322,7 @@ uniform vec3 bwDrive;
 // u: 0 at the nose, 1 at the tail; the envelope and the travelling sine are motionCore's
 // waveOffset verbatim (k = 1/wavelength in bwShape.x, dir in bwShape.w, drive in body lengths
 // already multiplied by the length on the CPU)
-const WAVE_VERTEX = /* glsl */ `
+export const WAVE_VERTEX = /* glsl */ `
 #include <begin_vertex>
 {
 	vec3 bwR = (bwToRoot * vec4(transformed, 1.0)).xyz;
@@ -333,7 +334,7 @@ const WAVE_VERTEX = /* glsl */ `
 }
 `;
 
-/** @typedef {{mesh: any, original: any, clone: any, uniforms: any, frame: any, front: number, len: number}} WaveMesh */
+/** @typedef {{mesh: any, original: any, clone: any, uniforms: any, frame: any, front: number, len: number, id: string}} WaveMesh */
 /** @type {Map<string, {object: any, meshes: WaveMesh[], len: number, axis: THREE.Vector3, side: THREE.Vector3, sig: string, seen: number}>} */
 const waves = new Map();
 
@@ -390,12 +391,8 @@ function bodyRange(meshes, root, axis) {
 	return Number.isFinite(lo) ? { front: hi, len: Math.max(1e-3, hi - lo) } : null;
 }
 
-/** @param {any} mesh @param {any} object */
-function attachWaveMesh(mesh, object) {
-	const original = mesh.material;
-	const clone = original.clone();
-	// the SAME uuid: a save taken mid-wave serializes a material identical to the original
-	clone.uuid = original.uuid;
+/** @param {any} mesh @param {any} object @param {string} key the wave (node + object) */
+function attachWaveMesh(mesh, object, key) {
 	const uniforms = {
 		bwToRoot: { value: new THREE.Matrix4() },
 		bwFromRoot: { value: new THREE.Matrix3() },
@@ -405,30 +402,24 @@ function attachWaveMesh(mesh, object) {
 		bwShape: { value: new THREE.Vector4(1, 0.3, 2, 1) },
 		bwDrive: { value: new THREE.Vector3() }
 	};
-	const previous = original.onBeforeCompile;
-	clone.onBeforeCompile = (/** @type {any} */ shader, /** @type {any} */ renderer) => {
-		if (typeof previous === 'function' && previous !== THREE.Material.prototype.onBeforeCompile) previous(shader, renderer);
-		Object.assign(shader.uniforms, uniforms);
-		shader.vertexShader = WAVE_DECL + shader.vertexShader.replace('#include <begin_vertex>', WAVE_VERTEX);
-	};
-	const baseKey = original.customProgramCacheKey?.() ?? '';
-	clone.customProgramCacheKey = () => baseKey + '|bodywave1';
-	mesh.material = clone;
-	return { mesh, original, clone, uniforms, frame: object, front: 0, len: 1 };
+	// fix-agenttest 2: ONE clone per mesh shared with every other deformer (vertexDeform.js) —
+	// a jiggle or a second wave on the same mesh composes instead of redefining bwToRoot
+	const id = 'bodywave:' + key;
+	const original = mesh.material;
+	const clone = addDeformer(mesh, id, {
+		kind: 'bodywave',
+		prefix: 'bw',
+		key: 'bodywave1',
+		decl: WAVE_DECL,
+		vertex: WAVE_VERTEX,
+		uniforms
+	});
+	return { mesh, original, clone, uniforms, frame: object, front: 0, len: 1, id };
 }
 
 /** @param {WaveMesh} m */
 function detachWaveMesh(m) {
-	if (m.mesh.material !== m.clone) return; // something else replaced it since; leave it
-	const { onBeforeCompile, customProgramCacheKey, uuid } = m.original;
-	m.original.copy(m.clone);
-	m.original.uuid = uuid;
-	m.original.onBeforeCompile = onBeforeCompile;
-	m.original.customProgramCacheKey = customProgramCacheKey;
-	m.original.userData = { ...(m.clone.userData ?? {}) };
-	m.original.needsUpdate = true;
-	m.mesh.material = m.original;
-	m.clone.dispose();
+	removeDeformer(m.mesh, m.id);
 }
 
 /** @param {string} key */
@@ -457,8 +448,8 @@ function waveFor(key, object, data) {
 		// a material swapped under us (an Inspector edit through applyMaterials): re-wrap
 		for (let i = 0; i < w.meshes.length; i++) {
 			const m = w.meshes[i];
-			if (m.mesh.material !== m.clone && m.mesh.material && !Array.isArray(m.mesh.material)) {
-				const fresh = attachWaveMesh(m.mesh, m.frame);
+			if (!hasDeformer(m.mesh, m.id) && m.mesh.material && !Array.isArray(m.mesh.material)) {
+				const fresh = attachWaveMesh(m.mesh, m.frame, key);
 				fresh.front = m.front;
 				fresh.len = m.len;
 				w.meshes[i] = fresh;
@@ -477,7 +468,7 @@ function waveFor(key, object, data) {
 		if (!range) continue;
 		len = Math.max(len, range.len);
 		for (const m of set.meshes) {
-			const wm = attachWaveMesh(m, set.root);
+			const wm = attachWaveMesh(m, set.root, key);
 			wm.front = range.front;
 			wm.len = range.len;
 			meshes.push(wm);
@@ -538,7 +529,7 @@ export function motionNodesDebug() {
 		waves: [...waves.entries()].map(([key, w]) => ({
 			key,
 			meshes: w.meshes.length,
-			cloned: w.meshes.every((m) => m.mesh.material === m.clone),
+			cloned: w.meshes.every((m) => hasDeformer(m.mesh, m.id)),
 			len: w.len
 		}))
 	};

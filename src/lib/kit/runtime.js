@@ -76,9 +76,14 @@ const agentIds = () => {
 	return ids;
 };
 
+/** the facts this peer decides the authority from (the debug hook reads them too) */
+export function kitAuthorityFacts() {
+	return { me: me(), peers: openPeers(), host: null, initiator: initiator(), agents: agentIds() };
+}
+
 /** who decides, as this peer sees it */
 export function kitAuthorityId() {
-	return pickAuthority({ me: me(), peers: openPeers(), host: null, initiator: initiator(), agents: agentIds() });
+	return pickAuthority(kitAuthorityFacts());
 }
 
 /** @type {import('./core.js').KitHost} */

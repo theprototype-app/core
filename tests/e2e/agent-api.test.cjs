@@ -281,6 +281,19 @@ h.run(async () => {
 	// ---- 8b. 41's gem test: the kit authority is the PERSON, and a behaviour that throws says so ------
 	const auth = await Promise.all([A, B].map((p) => p.page.evaluate(() => window.__stores.kit.kitAuthorityId())));
 	h.check(auth[0] === A.id && auth[1] === A.id, `both pages name the host as the kit authority, never the agent (A ${auth[0]}, B ${auth[1]}; ids A ${A.id} B ${B.id})`);
+	// the ids are random, so the case that matters (the AGENT's id sorts lowest — 41's '1e16b' < 'ff637') is
+	// forced: each page's LIVE facts, with the agent renamed '00000', through the same pick
+	const lowest = await Promise.all(
+		[A, B].map((p) =>
+			p.page.evaluate((agentId) => {
+				const f = window.__stores.kit.kitAuthorityFacts();
+				const ren = (id) => (id === agentId ? '00000' : id);
+				const facts = { ...f, me: ren(f.me), peers: f.peers.map(ren), agents: f.agents.map(ren) };
+				return { knowsAgent: f.agents.includes(agentId), pick: window.__stores.kitAuthority.pickAuthority(facts) };
+			}, B.id)
+		)
+	);
+	h.check(lowest.every((x) => x.knowsAgent && x.pick === A.id), `with the agent's id sorting LOWEST both pages still pick the host (${JSON.stringify(lowest)})`);
 	const broken = await B.page.evaluate(() =>
 		window.tpAgent.exec('create_behaviour', {
 			name: 'Broken gems',

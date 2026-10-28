@@ -469,3 +469,28 @@ export function setPeerMenuItems(items) {
 			.map((i, n) => ({ id: String(i.id ?? 'item-' + n).slice(0, 40), label: String(i.label).trim().slice(0, 40), run: i.run }))
 	);
 }
+
+/**
+ * Roadmap 86 B1/B5: THE CLAUDE CONNECTOR's account half, as a provider the cloud plugin installs. A person
+ * presses Connect Claude in their own tab; the PLUGIN (signed in) asks the connector service for a
+ * single-use pairing and lists / revokes the account's connected apps. Core draws every button and runs
+ * every relayed call (src/lib/connector/). NULL is the OSS state: no Connect Claude button anywhere, no
+ * Settings ▸ Connected apps — the OSS build points to the local `serve` instead.
+ *
+ * Shape (the plugin owns the logic; core reads defensively):
+ *   { pair({resume}) → Promise<{wsUrl, pairingToken, expiresAt?, replaces?, connections?}>
+ *        // rejects with `{code: 'signin'}` when nobody is signed in
+ *     connections() → Promise<{connections: {id, client, redirectHost?, scopes, created?, lastUsed?}[], tab?: {linked, since, visible}}>
+ *     revoke(id) → Promise<void>          // one connected app
+ *     revokeAll() → Promise<void>         // every connected app + this tab's link
+ *     account() → {signedIn: boolean, name?: string} }
+ * @type {import('svelte/store').Writable<any>} */
+export const connectorProvider = writable(null);
+
+/** Plugin seam for the above (cloudApi.setConnectorProvider). Anything without `pair` reads as null.
+ * @param {any} provider */
+export function setConnectorProvider(provider) {
+	connectorProvider.set(
+		provider && typeof provider === 'object' && typeof provider.pair === 'function' ? provider : null
+	);
+}

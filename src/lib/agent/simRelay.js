@@ -16,9 +16,10 @@ import { get } from 'svelte/store';
 import { peers } from '../../stores/appStore.js';
 import { rolesInfo } from '$lib/cloudHooks';
 import { isAgentPeer } from '$lib/inviteStore';
-// static: this module is itself loaded lazily (and warmed when an agent first asks the host anything —
-// meshRelay's meshgenask), so the tool's module graph is ready before the first control_simulation
-import { controlSimulationTool } from '$lib/ai/flowTools';
+// started as this module loads (lazily, and warmed when an agent first asks the host anything —
+// meshRelay's meshgenask), so the tool's module graph is ready before the first control_simulation;
+// a cold dev server took longer than the agent waited
+const flowTools = import('$lib/ai/flowTools').catch(() => null);
 
 /** how long an agent waits for the host's answer (ms) — a start warms the physics engine up first,
  * which on a busy machine takes a while */
@@ -87,7 +88,12 @@ export async function handleSimRelay(from, data) {
 				sendTo(from, { type: 'agentsimack', id, ok: false, error: refusal });
 				return;
 			}
-			const result = plain(await controlSimulationTool({ action }));
+			const tools = await flowTools;
+			if (!tools) {
+				sendTo(from, { type: 'agentsimack', id, ok: false, error: 'the simulation tools did not load on the host' });
+				return;
+			}
+			const result = plain(await tools.controlSimulationTool({ action }));
 			if (result.error) sendTo(from, { type: 'agentsimack', id, ok: false, error: String(result.error) });
 			else sendTo(from, { type: 'agentsimack', id, ok: true, result });
 		}

@@ -29,7 +29,7 @@ every person in the Connected panel lets the host remove someone.
 - **It goes where you go**: save as another name or open another scene and the agent follows; while it travels (or
   while you work in a private scene) it holds its edits, so nothing lands in a scene you left. An agent never
   becomes the host, never decides a game's rules for the people playing, and never hands you its old world when you
-  open a new or another scene.
+  open a new or another scene. Its page no longer redraws a view nobody watches, so it follows you in seconds.
 - **When the host leaves**, the agent carries on with the person who takes over. If everyone has left it pauses —
   reading only, building nothing — and waits for its host (10 minutes by default), then asks to come back in.
 - **The physics runs on your machine**: when an agent starts the simulation it runs on the host's page, so balls

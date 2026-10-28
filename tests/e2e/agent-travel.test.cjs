@@ -29,7 +29,8 @@ const where = (p) =>
 		 s.objectsGroup.subscribe((x) => (g = x))(); s.connectionState.sessionHost.subscribe((x) => (sh = x))();
 		 let fg; s.flowGraphs.subscribe((x) => (fg = x))();
 		 const flowNodes = Object.values(fg ?? {}).reduce((n, d) => n + (d?.nodes?.length ?? 0), 0);
-		 return { scene: lv?.name ?? null, private: !!lv?.private, rows: ps, host: sh, objects: (g?.children ?? []).map((o) => o.name).sort(), flowNodes, open: [...pc.openedPeers] };`
+		 const nodeList = Object.entries(fg ?? {}).flatMap(([k, d]) => (d?.nodes ?? []).map((n) => k.slice(0, 8) + ':' + n.type + ':' + String(n.id).slice(0, 8)));
+		 return { scene: lv?.name ?? null, private: !!lv?.private, rows: ps, host: sh, objects: (g?.children ?? []).map((o) => o.name).sort(), flowNodes, nodeList, open: [...pc.openedPeers] };`
 	);
 const status = (p) => p.page.evaluate(() => window.tpAgent.status());
 const exec = (p, name, args) => p.page.evaluate(([n, a]) => window.tpAgent.exec(n, a), [name, args]);
@@ -151,7 +152,7 @@ h.run(async () => {
 	await wait(1500); // every node the spin brought along has landed
 	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Run2'));
 	const full = await where(A);
-	console.log(`  host in Run2: ${full.objects.length} objects, ${full.flowNodes} flow nodes`);
+	console.log(`  host in Run2: ${full.objects.length} objects, ${full.flowNodes} flow nodes ${JSON.stringify(full.nodeList)}`);
 	// the owner's steps: Explorer ▸ New scene "Gem test" (empty), then open it
 	await A.page.evaluate(async () => {
 		const item = await window.__stores.levels.newLevel('Gem test');
@@ -177,6 +178,7 @@ h.run(async () => {
 	const [ra, rb] = [await where(A), await where(B)];
 	h.check(JSON.stringify(ra.objects) === JSON.stringify(full.objects) && ra.flowNodes === full.flowNodes, `the host's Run2 is exactly what it saved: no InGem, nothing extra (${JSON.stringify(ra.objects)} ${ra.flowNodes} flow nodes)`);
 	h.check(JSON.stringify(rb.objects) === JSON.stringify(ra.objects), `and the agent holds the same (${JSON.stringify(rb.objects)})`);
+	if (ra.flowNodes !== full.flowNodes) console.log('  DIAG Run2 nodes saved ' + JSON.stringify(full.nodeList) + ' host now ' + JSON.stringify(ra.nodeList) + ' agent ' + JSON.stringify(rb.nodeList));
 
 	h.check((await h.pageErrors(A)).length === 0 && (await h.pageErrors(B)).length === 0, `no page errors (${JSON.stringify([...h.pageErrors(A), ...h.pageErrors(B)])})`);
 	await h.finish(browser);

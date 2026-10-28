@@ -334,7 +334,7 @@ h.run(async () => {
 			const y = g?.getObjectByProperty('uuid', id)?.position.y ?? 99;
 			// from the first MOTION (the engine's start-up — a wasm load on a cold server — is not the fall)
 			if (on && !t0 && y < 3.45) t0 = Date.now();
-			if ((t0 && y < 0.8) || Date.now() > end) { clearInterval(tick); counting = false; const ms = Date.now() - t0; resolve(t0 ? { ms, y, fps: +((frames * 1000) / Math.max(1, ms)).toFixed(1) } : null); }
+			if ((t0 && y < 1.2) || Date.now() > end) { clearInterval(tick); counting = false; const ms = Date.now() - t0; resolve(t0 ? { ms, y, fps: +((frames * 1000) / Math.max(1, ms)).toFixed(1) } : null); }
 		}, 50);
 	}), ballId);
 	const started = await B.page.evaluate(() => window.tpAgent.exec('control_simulation', { action: 'start' }));
@@ -347,8 +347,8 @@ h.run(async () => {
 	);
 	h.check(sims[0].on === true && sims[1].on !== true && sims[1].remote === A.id, `the HOST steps the world, the agent page never does (${JSON.stringify(sims)})`);
 	const fell = await fall;
-	console.log('  fall of 3 m on the host: ' + JSON.stringify(fell) + ' (real time ~0.8 s; the bug measured 4.5 s)');
-	// real time is ~0.8 s; a page drawing f fps advances at most 0.25·f s of sim per second, so the bound
+	console.log('  fall 3.5 m → 1.2 m on the host: ' + JSON.stringify(fell) + ' (real time ~0.7 s; the bug measured 4.5 s)');
+	// real time is ~0.7 s (a radius-1 sphere rests at y 1); a page drawing f fps advances at most 0.25·f s of sim per second, so the bound
 	// is the slower of real time and that cap (+ headroom) — a 60 fps host must be real time, a 1 fps
 	// headless one cannot be
 	const bound = fell ? Math.max(2500, (0.8 / Math.min(1, 0.25 * Math.max(0.2, fell.fps))) * 1000 * 2.5) : 0;

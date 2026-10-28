@@ -25,6 +25,7 @@ import { createJoint } from '$lib/joints';
 import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X5
 import { parseGraphText } from '$lib/graphText';
 import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
+import { edgeHandleProblems } from './edgeHandles.js';
 import { activeAiConfig } from './providers.js';
 import { matchNodeType } from './nodeTypeMatch.js';
 
@@ -335,7 +336,8 @@ export function createFlowNodesTool(args) {
 	/** @type {any[]} */ const createdEdges = [];
 	const edgeSpecs = [...(Array.isArray(args?.edges) ? args.edges : []), ...textEdges];
 	if (edgeSpecs.length) {
-		const inGraph = new Set((graphOf(graphId)?.nodes ?? []).map((/** @type {any} */ n) => n.id));
+		const graphNodes = graphOf(graphId)?.nodes ?? [];
+		const inGraph = new Set(graphNodes.map((/** @type {any} */ n) => n.id));
 		for (const e of edgeSpecs) {
 			const source = refIds[e?.from] ?? (inGraph.has(e?.from) ? e.from : null);
 			const target = refIds[e?.to] ?? (inGraph.has(e?.to) ? e.to : null);
@@ -350,6 +352,17 @@ export function createFlowNodesTool(args) {
 			}
 			const sourceHandle = typeof e?.fromHandle === 'string' && e.fromHandle ? e.fromHandle : undefined;
 			const targetHandle = typeof e?.toHandle === 'string' && e.toHandle ? e.toHandle : undefined;
+			// 55 (41's voice-Claude finding): a handle the node does not have made a wire that did nothing
+			const bad = edgeHandleProblems(
+				graphNodes.find((/** @type {any} */ n) => n.id === source),
+				graphNodes.find((/** @type {any} */ n) => n.id === target),
+				sourceHandle,
+				targetHandle
+			);
+			if (bad.length) {
+				errors.push('edge "' + e?.from + '" -> "' + e?.to + '": ' + bad.join('; '));
+				continue;
+			}
 			// id format MUST match the editor's (peer dedupe diverges otherwise)
 			const edge = {
 				id:

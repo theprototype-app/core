@@ -37,7 +37,8 @@ every person in the Connected panel lets the host remove someone.
 - **Better building tools**: lights take their colour, intensity, range, cone and aim when created or updated;
   `group_objects` keeps the name you give it; sizes must be positive numbers; a field that does not apply to an
   object says so instead of reporting success; big flow graphs are read page by page (`list_scene {flow, page}`);
-  `create_behaviour` returns the node's id and its inputs and outputs.
+  `create_behaviour` returns the node's id and its inputs and outputs; a wire to a socket the node does not have
+  is refused with the node's real socket names (it used to be accepted and do nothing).
 - Material parameters are validated (each key and value checked, on every peer).
 - **It knows when a scene is still arriving** and **when a behaviour fails**: status reports a scene that is still
   loading, and a code behaviour that throws says so with its error, so the agent can fix it instead of guessing.

@@ -392,6 +392,18 @@ h.run(async () => {
 	const badHex = await B.page.evaluate(() => window.tpAgent.exec('create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'HexBox', color: '#40ff4060' }] }));
 	h.check(/hex colour/.test(JSON.stringify(badHex?.created?.[0]?.warnings ?? '')), `an 8-digit hex colour is refused with a warning (${JSON.stringify(badHex).slice(0, 160)})`);
 	h.check(!!badBox?.error && /positive/.test(JSON.stringify(badBox)), `a Box of [-1, 0, 'a'] is refused (${JSON.stringify(badBox).slice(0, 160)})`);
+	// 41's voice-Claude finding: a wire to a socket the node does not have was accepted ("edges": N) and did nothing
+	const wired = await B.page.evaluate(() =>
+		window.tpAgent.exec('create_flow_nodes', {
+			graph: 'scene',
+			nodes: [{ ref: 'c', type: 'onclick' }, { ref: 'l', type: 'latch' }, { ref: 'n', type: 'counter' }],
+			edges: [{ from: 'c', to: 'l', toHandle: 'sett' }, { from: 'c', to: 'n', toHandle: 'pulse' }]
+		})
+	);
+	h.check(
+		wired?.edges === 1 && wired?.partial === true && /toHandle "sett".*set, reset, toggle|toHandle "sett".*set,.*reset/.test(JSON.stringify(wired?.errors ?? [])),
+		`a wrong toHandle is refused naming the latch's real inputs; the good wire is made (${JSON.stringify(wired).slice(0, 260)})`
+	);
 
 	// ---- 9. T5: leave() is a goodbye, not a dropped link ----------------------------------------
 	const toastsA0 = await A.page.evaluate(() => { let l; window.__stores.toastStore.subscribe((x) => (l = x))(); return l.length; });

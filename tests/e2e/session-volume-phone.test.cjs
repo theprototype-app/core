@@ -81,7 +81,12 @@ h.run(async () => {
 	await G.page.evaluate((id) => window.__stores.peerApproval.requestConnect(id), H.id);
 	await h.approveButton(H.page).click({ timeout: 30000 });
 	await G.page.waitForTimeout(9000);
+	await h.eventually(() => vols(G), (x) => x.length === 1 && x[0].items.length === 4, 'premise: the volume arrived', 20000);
 	const v = await vols(G);
+	if (!v.length) {
+		console.log('  H log:', JSON.stringify((await debug(H)).log.slice(-10)));
+		console.log('  G log:', JSON.stringify((await debug(G)).log.slice(-10)));
+	}
 	h.check(v.length === 1 && v[0].items.length === 4, `within the join wait the phone has all four rows (${v[0]?.items.map((i) => i.name).join(', ')})`);
 	h.check(v[0]?.items.find((i) => i.name === 'photo.png')?.thumb === true, "…and the photo's thumbnail");
 	h.check(v[0]?.items.filter((i) => i.name.startsWith('take-')).every((i) => i.size >= 18 * MB), '…and every row its size');

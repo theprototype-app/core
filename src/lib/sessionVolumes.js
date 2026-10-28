@@ -25,11 +25,12 @@
 //   volget     guest -> host  {hash}            -> the ordinary assetstart/assetchunk/assetfile or assetmissing
 //   volsave    guest -> host  {id, name?}       -> volsaveack {id, ok, name?, error?}
 
-import { get, writable } from 'svelte/store';
+import { get } from 'svelte/store';
 import { peers, userdata, showToast } from '../stores/appStore';
 import { sessionHost } from './connectionState';
 import { rolesInfo } from './cloudHooks';
 import { shareScope, setShareScope } from './shareScope';
+import { sessionVolumes, sessionVolumeById, isSessionVolumeId } from './sessionVolumeState';
 import { explorerItems, explorerFolders, addItemFromBytes, createFolder } from './explorer';
 import { sceneAssets } from './sceneAssets';
 import { currentLevel, levelItems } from './levels';
@@ -58,11 +59,16 @@ function nameOf(peerId) {
 	return row?.[1] ? String(row[1]) : String(peerId ?? '').slice(0, 6).toUpperCase();
 }
 
+/** the conn each guest's handshake ran on — `peers.connections` may not list it yet at that moment
+ * @type {Map<string, any>} */
+const handshakeConns = new Map();
+
 /** @param {string} peerId @param {any} msg */
 function sendTo(peerId, msg) {
 	/** @type {any} */
 	const peer = get(peers);
-	const conn = peer?.connections?.[peerId];
+	let conn = peer?.connections?.[peerId];
+	if (!conn?.open) conn = handshakeConns.get(peerId);
 	if (!conn?.open) return false;
 	try {
 		conn.send(msg);
@@ -140,10 +146,13 @@ export function currentProjection() {
 function hosting() {
 	/** @type {any} */
 	const peer = get(peers);
-	return !get(sessionHost) && !!peer && Object.values(peer.connections ?? {}).some((c) => /** @type {any} */ (c)?.open);
+	if (get(sessionHost)) return false;
+	const open = (/** @type {any} */ c) => !!c?.open;
+	return Object.values(peer?.connections ?? {}).some(open) || [...handshakeConns.values()].some(open);
 }
 
-/** Send the volume to one guest (and the thumbnails it lacks). @param {string} peerId @param {any} [proj] */
+/** Send the volume to one guest (and the thumbnails it lacks). @param {string} peerId @param {any} [proj]
+ * @returns {boolean} the rows left */
 function sendVolume(peerId, proj = currentProjection()) {
 	const prior = sentTo.get(peerId);
 	const thumbs = prior?.thumbs ?? new Set();
@@ -158,7 +167,7 @@ function sendVolume(peerId, proj = currentProjection()) {
 		items: proj.items
 	});
 	note('out volidx to ' + peerId + ' ' + proj.items.length + ' rows' + (ok ? '' : ' (NO OPEN CONN)'));
-	if (!ok) return;
+	if (!ok) return false;
 	// thumbnails AFTER the rows, once per hash per guest, in small batches
 	const byHash = new Map(get(explorerItems).map((i) => [i.hash, i.thumbnail]));
 	/** @type {Record<string, string>} */
@@ -176,6 +185,7 @@ function sendVolume(peerId, proj = currentProjection()) {
 		}
 	}
 	if (n) sendTo(peerId, { type: 'volthumbs', thumbs: batch });
+	return true;
 }
 
 /** Re-send to every guest that has a volume, if what it would see changed. */
@@ -205,11 +215,23 @@ function watch() {
 		/** @type {any} */ (store).subscribe(() => sentTo.size && scheduleRepublish());
 }
 
-/** A connection to `peerId` opened. Called by peerHandler on every open. @param {string} peerId */
-export function volumePeerOpened(peerId) {
-	if (!hosting()) return;
+/**
+ * A connection to `peerId` opened (peerHandler's handshake, which only calls this while we host).
+ * The handshake's own `conn` is used: at that moment `peers.connections` may not list it yet, which
+ * left a guest with no volume at all whenever the two raced (measured on a busy machine). A send
+ * that still finds no open conn is retried a few times.
+ * @param {string} peerId @param {any} [conn]
+ */
+export function volumePeerOpened(peerId, conn) {
+	if (get(sessionHost)) return;
+	if (conn) handshakeConns.set(peerId, conn);
 	watch();
-	sendVolume(peerId);
+	let tries = 0;
+	const attempt = () => {
+		if (get(sessionHost)) return;
+		if (!sendVolume(peerId) && ++tries < 6) setTimeout(attempt, 1000);
+	};
+	attempt();
 }
 
 /** The guest asked for bytes. Only a hash in what we SENT it is answered. @param {string} from @param {any} data */
@@ -229,9 +251,17 @@ function answerVolumeGet(from, data) {
 /** The guest pressed Save on host. @param {string} from @param {any} data */
 async function answerVolumeSave(from, data) {
 	const id = String(data?.id ?? '');
-	const { saveSceneOnHost } = await import('./hostSave');
 	const name = typeof data?.name === 'string' ? data.name : undefined;
-	const result = await saveSceneOnHost(name ? { name } : {}, { by: nameOf(from), role: roleOf(from) });
+	/** @type {{ok: boolean, name?: string, error?: string}} */
+	let result;
+	try {
+		const { saveSceneOnHost } = await import('./hostSave');
+		result = await saveSceneOnHost(name ? { name } : {}, { by: nameOf(from), role: roleOf(from) });
+	} catch (e) {
+		// ANSWER EVEN A THROW: the guest is waiting on this ack, and silence reads as "no answer" 30 s later
+		console.warn('save on host', e);
+		result = { ok: false, error: 'the save failed on the host (' + (e instanceof Error ? e.message : String(e)).slice(0, 160) + ')' };
+	}
 	note('volsave from ' + from + ': ' + (result.ok ? 'saved ' + result.name : result.error));
 	/** @type {any} */
 	const ack = { type: 'volsaveack', id, ok: result.ok };
@@ -244,28 +274,9 @@ async function answerVolumeSave(from, data) {
 // GUEST
 // =================================================================================================
 
-/**
- * @typedef {{id: string, name: string, kind: string, folderId: string | null, hash: string, size: number,
- *   thumbnail: string | null, createdAt: number}} SessionVolumeItem
- * @typedef {{id: string, peerId: string, name: string, host: string, scope: string, role: 'viewer'|'editor',
- *   folders: {id: string, name: string, parentId: string | null}[], items: SessionVolumeItem[],
- *   session: true, readOnly: true, rev: number, at: number}} SessionVolume
- */
-
-/** The session volumes, one per host we joined. Never persisted: a session volume is a fact about
- * a live connection. @type {import('svelte/store').Writable<SessionVolume[]>} */
-export const sessionVolumes = writable([]);
-
-/** @param {string | null | undefined} id @returns {SessionVolume | null} */
-export function sessionVolumeById(id) {
-	if (!id) return null;
-	return get(sessionVolumes).find((v) => v.id === id) ?? null;
-}
-
-/** Is a volume id a session volume's? (the `vol:` namespace is shared with mounted projects) @param {string | null | undefined} id */
-export function isSessionVolumeId(id) {
-	return typeof id === 'string' && id.startsWith('session-');
-}
+// the store and its two lookups live in a leaf (the Explorer renders them from boot); re-exported here
+export { sessionVolumes, sessionVolumeById, isSessionVolumeId };
+/** @typedef {import('./sessionVolumeState').SessionVolume} SessionVolume */
 
 /** @param {string} from @param {any} data */
 function applyVolumeIndex(from, data) {
@@ -323,6 +334,7 @@ function applyVolumeThumbs(from, data) {
 export function dropSessionVolume(peerId) {
 	const id = sessionVolumeId(peerId);
 	sentTo.delete(peerId);
+	handshakeConns.delete(peerId);
 	if (!sessionVolumeById(id)) return;
 	sessionVolumes.update((list) => list.filter((v) => v.id !== id));
 	note('unmounted ' + id);
@@ -331,6 +343,7 @@ export function dropSessionVolume(peerId) {
 /** We left the session: every session volume goes, and the host side forgets its guests. */
 export function dropAllSessionVolumes() {
 	sentTo.clear();
+	handshakeConns.clear();
 	if (get(sessionVolumes).length) sessionVolumes.set([]);
 }
 

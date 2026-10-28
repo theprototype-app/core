@@ -65,7 +65,7 @@
 						onchange={(/** @type {boolean} */ v) => (picked = { ...picked, [row.id]: v })}
 					/>
 					<span class="sm-text">
-						<span class="sm-name">{row.name}{#if row.active}<span class="sm-active"> · active</span>{/if}</span>
+						<span class="sm-name">{row.name}{#if row.active}<span class="sm-active">{' · active'}</span>{/if}</span>
 						<span class="sm-where">{row.disabled ? row.reason : row.where}</span>
 					</span>
 				</li>

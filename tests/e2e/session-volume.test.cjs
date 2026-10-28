@@ -99,6 +99,12 @@ h.run(async () => {
 		"joining mounts \"H's session\" on G with the open scene's file in it",
 		30000
 	);
+	if (!(await vols(G)).length) {
+		// say WHERE it stopped: never sent (H log), sent but not applied (G log), or no conn at all
+		console.log('  H log:', JSON.stringify((await debug(H)).log.slice(-10)));
+		console.log('  G log:', JSON.stringify((await debug(G)).log.slice(-10)));
+		console.log('  G room:', JSON.stringify(await G.page.evaluate(() => { let p; window.__stores.peers.subscribe((x) => (p = x))(); return p?.openedPeers ? [...p.openedPeers] : null; })));
+	}
 	let v = (await vols(G))[0];
 	h.check(v.scope === 'scene' && v.role === 'editor', `…its scope is Current scene's files and G is an editor (${v.scope}/${v.role})`);
 	h.check(

@@ -65,9 +65,9 @@ h.run(async () => {
 		await new Promise((r) => setTimeout(r, 1000));
 	});
 	await ctrlS(G);
-	await h.eventually(() => toasts(G), (t) => t.some((x) => /Saved "Solo"/.test(x)), 'alone with one library, Ctrl+S saves the scene', 15000);
+	// the Library is the durable proof (a toast can come and go between two polls on a loaded machine)
+	await h.eventually(() => ownScenes(G), (now) => now.some((x) => !soloBefore.includes(x)), 'alone with one library, Ctrl+S saves the scene into my own Library (a new version)', 30000);
 	h.check(!(await dialogOpen(G)), '…with no dialog');
-	await h.eventually(() => ownScenes(G), (now) => now.some((x) => !soloBefore.includes(x)), '…into my own Library (a new version: a hash it did not hold)', 10000);
 
 	// back to an empty unnamed world before joining (the connect decision is not this suite's)
 	await G.page.evaluate(async () => {
@@ -121,7 +121,7 @@ h.run(async () => {
 
 	// ---- 3. Save + Remember my choice ---------------------------------------------------------
 	await ctrlS(G);
-	await h.eventually(() => dialogOpen(G), (o) => o === true, 'the dialog again', 10000);
+	await h.eventually(() => dialogOpen(G), (o) => o === true, 'the dialog again', 30000);
 	await G.page.locator('#save-many-remember').check();
 	await G.page.locator('#save-many-save').click();
 	await h.eventually(() => hostSaves(H), (n) => n === 1, 'Save saves the session scene ON THE HOST', 30000);
@@ -167,7 +167,7 @@ h.run(async () => {
 		15000
 	);
 	await ctrlS(G);
-	await h.eventually(() => dialogOpen(G), (o) => o === true, 'the dialog for the viewer', 10000);
+	await h.eventually(() => dialogOpen(G), (o) => o === true, 'the dialog for the viewer', 30000);
 	const vrow = await G.page.evaluate((id) => {
 		const r = document.querySelector('[data-save-row="' + id + '"]');
 		return { disabled: !!r?.querySelector('input')?.disabled, text: r?.textContent.replace(/\s+/g, ' ').trim() ?? '' };

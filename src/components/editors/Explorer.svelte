@@ -215,13 +215,9 @@
 		volumeItems
 	} from '$lib/mountedVolumes';
 	// 56 C13: the host's files while joined — a READ-ONLY volume in the same `vol:` namespace
-	import {
-		sessionVolumes,
-		isSessionVolumeId,
-		sessionVolumeBlob,
-		copySessionItems,
-		saveOnHost
-	} from '$lib/sessionVolumes';
+	// (the store is a boot-light leaf; the runtime behind Open / Copy / Save on host loads on first use)
+	import { sessionVolumes, isSessionVolumeId } from '$lib/sessionVolumeState';
+	const sessionRuntime = () => import('$lib/sessionVolumes');
 	import { formatBytes, SHARE_SCOPE_LABELS } from '$lib/sessionVolumeCore';
 	// ROADMAP 22 R4 — WHO IS IN THIS SCENE, on the card. The session is the mesh and every
 	// peer in it carries a scene tag (peerScenes); a scene card reads the tags for the scene
@@ -3088,7 +3084,7 @@
 		const fromSession = rows.filter((r: any) => isSessionVolumeId(r?.volumeId));
 		let sessionCopied = 0;
 		for (const volId of new Set(fromSession.map((r: any) => r.volumeId)))
-			sessionCopied += await copySessionItems(
+			sessionCopied += await (await sessionRuntime()).copySessionItems(
 				volId,
 				fromSession.filter((r: any) => r.volumeId === volId).map((r: any) => r.id),
 				folderId
@@ -3667,7 +3663,7 @@
 						icon: 'download',
 						disabled: !rows.length,
 						tooltip: rows.length ? 'Copy its ' + plural(rows.length, 'file') + ' into your Library, folders kept' : 'Nothing in it',
-						action: () => void copySessionItems(vol.id, rows.map((r: any) => r.id), activeLibraryFolder())
+						action: () => void sessionRuntime().then((m) => m.copySessionItems(vol.id, rows.map((r: any) => r.id), activeLibraryFolder()))
 					}
 				]
 			};
@@ -5490,7 +5486,7 @@
 							vol?.role === 'viewer'
 								? "You're view-only in this session — Copy to my library instead"
 								: 'Save the session scene into ' + (vol?.host ?? 'the host') + "'s library",
-						action: () => void saveOnHost(vol.id)
+						action: () => void sessionRuntime().then((m) => m.saveOnHost(vol.id))
 					}
 				]
 			};
@@ -6578,7 +6574,7 @@
 			]);
 			return;
 		}
-		const blob = await sessionVolumeBlob(item.volumeId, item.id);
+		const blob = await (await sessionRuntime()).sessionVolumeBlob(item.volumeId, item.id);
 		if (!blob) {
 			showToast(item.name + ' did not arrive from ' + (item.volumeName ?? 'the host'));
 			return;
@@ -7405,7 +7401,7 @@
 								title={vol.role === 'viewer'
 									? "You're view-only in " + vol.host + "'s session — use Copy to my library instead"
 									: 'Save on host: save the session scene into ' + vol.host + "'s library"}
-								onclick={() => void saveOnHost(vol.id)}><Icon name="save" size={16} aria-hidden="true" /></button
+								onclick={() => void sessionRuntime().then((m) => m.saveOnHost(vol.id))}><Icon name="save" size={16} aria-hidden="true" /></button
 							>
 						</div>
 						{#if expanded.has(volumeKey(vol.id))}

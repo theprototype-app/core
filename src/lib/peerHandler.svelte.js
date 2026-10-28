@@ -1680,7 +1680,7 @@ export class PeerConnection {
 		sendAgentLogTo(conn);
 		sendAgentChatBacklogTo(conn); // 56 C1: the agent chats so far
 		// 56 C13: a HOST hands every guest its session volume (rows + thumbnails, no bytes)
-		if (!get(sessionHost)) sessionVolumesNow().then((m) => m.volumePeerOpened(peerId)).catch(() => {});
+		if (!get(sessionHost)) sessionVolumesNow().then((m) => m.volumePeerOpened(peerId, conn)).catch(() => {});
 		// 55 A9: a moderator hands its block list on, so a blocked re-dial is refused by
 		// whichever peer it reaches — including one that joined after the block
 		for (const k of blockReplay()) conn.send(k);

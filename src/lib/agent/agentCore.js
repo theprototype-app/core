@@ -25,6 +25,9 @@ export const DEFAULT_WAIT_MS = 30 * 1000;
 export const OFFER_TTL_MS = 10 * 60 * 1000;
 /** Plain notices kept for status(). */
 export const NOTICE_COUNT = 10;
+/** 55 (agent-mcp): a host tool called while the scene is still arriving waits for it this long, at most — an
+ * agent that acts right after joining (a joint on the host's object) otherwise runs on an empty scene */
+export const LOAD_WAIT_MS = 15 * 1000;
 
 /** The words an agent reads when its edit is refused. @param {string|null} peerId */
 export function viewerRefusal(peerId) {
@@ -221,6 +224,16 @@ export function createAgentCore(deps) {
 		return !!host && deps.openPeers().some((p) => p.id === host) && !deps.waiting() && deps.rolesSettled?.() !== false;
 	}
 
+	/** resolves once no scene is arriving (or after LOAD_WAIT_MS) */
+	function sceneArrived() {
+		if (!loadingState().loading) return Promise.resolve();
+		const t0 = Date.now();
+		return new Promise((resolve) => {
+			const poll = () => (!loadingState().loading || Date.now() - t0 > LOAD_WAIT_MS ? resolve(undefined) : setTimer(poll, 200));
+			setTimer(poll, 200);
+		});
+	}
+
 	/** @param {string} name @param {any} args */
 	async function run(name, args) {
 		const real = resolved(name, args);
@@ -238,6 +251,7 @@ export function createAgentCore(deps) {
 		// either reaches nobody or reaches a session that thinks the agent is gone
 		if (!READ_ONLY_TOOLS.has(real) && !isJoined())
 			return { error: notJoinedRefusal(deps.host(), deps.waiting()), refused: true, joined: false };
+		await sceneArrived();
 		const room = deps.room?.() ?? null;
 		if (!READ_ONLY_TOOLS.has(real) && room && !room.withHost)
 			return { error: leftBehindRefusal(room.hostScene, room.following), refused: true, withHost: false };

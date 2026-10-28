@@ -205,6 +205,20 @@ describe('status()', () => {
 		expect(st.objects).toBeUndefined();
 		expect(st.behaviourErrors).toEqual(failing);
 	});
+	it('a tool called while the scene is still arriving waits for it (55 agent-mcp)', async () => {
+		const app = fakeApp();
+		/** @type {{arrived: number, total: number} | null} */
+		let arriving = { arrived: 0, total: 0 };
+		const { agent } = createAgentCore({ ...app.deps, loading: () => arriving });
+		let done = false;
+		const call = agent.exec('create_objects', { objects: [{}] }).then((r) => ((done = true), r));
+		await new Promise((r) => setTimeout(r, 450));
+		expect(done).toBe(false);
+		expect(app.log).toEqual([]);
+		arriving = null;
+		expect((await call).refused).toBeUndefined();
+		expect(app.log.filter((r) => r[0] === 'run').length).toBe(1);
+	});
 	it('says where it is and where the host is, and REFUSES edits while apart (55 owner finding 1)', async () => {
 		const app = fakeApp();
 		let room = { scene: 'Run1', hostScene: 'Run1', withHost: true, following: false };

@@ -45,7 +45,8 @@ every person in the Connected panel lets the host remove someone.
   per-frame hook such as `onTick` (there is none: repeat with `this.after`).
 - Material parameters are validated (each key and value checked, on every peer).
 - **It knows when a scene is still arriving** and **when a behaviour fails**: status reports a scene that is still
-  loading, and a code behaviour that throws says so with its error, so the agent can fix it instead of guessing.
+  loading (from the moment it joins), a tool called meanwhile waits for the scene first, and a code behaviour that
+  throws says so with its error, so the agent can fix it instead of guessing.
 - **Game-kit nodes work for AI**: the agent and the in-app assistant can now create every `kit-*` node (they were
   all "unknown"), a half-valid node batch says it was only partly applied, and hinges take an exact pivot point.
 

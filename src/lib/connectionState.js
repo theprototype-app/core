@@ -272,3 +272,26 @@ mergeOnConnect.subscribe((v) => {
 		safeStorage.setItem('connect:mergeOnConnect', String(v));
 	} catch {}
 });
+
+/** 55 (agent-mcp): full-state requests sent and not yet ANSWERED — peer id -> when asked. Between a join and
+ * the sender's `loading` announcement (its sendObjects waits 500 ms, more on a busy host) there is no batch
+ * yet, so an agent's status read "not loading" and its first tool call ran on an empty scene. LOCAL.
+ * @type {Map<string, number>} */
+const snapshotAsked = new Map();
+/** how long an unanswered request counts (a host that withholds — share-or-stash, a private scene — never answers) */
+export const SNAPSHOT_ASK_MS = 20000;
+/** @param {string} peerId we just asked this peer for its objects */
+export function noteSnapshotAsked(peerId) {
+	if (peerId) snapshotAsked.set(peerId, Date.now());
+}
+/** @returns {boolean} a full-state request is still waiting for its first answer */
+export function snapshotPending() {
+	const now = Date.now();
+	for (const [id, at] of snapshotAsked) if (now - at > SNAPSHOT_ASK_MS) snapshotAsked.delete(id);
+	return snapshotAsked.size > 0;
+}
+
+/** @param {string} peerId this peer announced its batch (createLoader) */
+export function noteSnapshotAnswered(peerId) {
+	snapshotAsked.delete(peerId);
+}

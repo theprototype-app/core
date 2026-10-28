@@ -23,7 +23,7 @@ import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHa
 // console nobody reads. diagnostics.js is a zero-dependency leaf, so this closes no cycle.
 import { log } from '$lib/diagnostics';
 // 25-F: the join result (peerApproval is store-only, so a static edge closes no cycle)
-import { isRefusal } from '$lib/connectionState';
+import { isRefusal, noteSnapshotAsked } from '$lib/connectionState';
 import { applyJoinRefusal } from '$lib/peerApproval';
 // 55 A4: invite links — the host's check and the joiner's proof (store-only, no cycle)
 // 55 A7/A8: the agent action log + where an agent looked (store-only)
@@ -1804,6 +1804,7 @@ export class PeerConnection {
 	requestFullState(conn, opts = {}) {
 		this.sendMyScene(conn)
 		conn.send({type: 'getobjects', sender: this.peer.id, count: localSceneCount(), ...(opts.arriving ? { arriving: true } : {})})
+		noteSnapshotAsked(conn.peer)
 		conn.send({type: 'gettriggers', sender: this.peer.id})
 		conn.send({type: 'getnodes', sender: this.peer.id})
 		conn.send({type: 'getannotations', sender: this.peer.id})

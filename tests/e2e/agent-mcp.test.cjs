@@ -77,7 +77,8 @@ async function waitJoined(client, ms = 90000) {
 	let st = null;
 	while (Date.now() - t0 < ms) {
 		st = json(await call(client, 'status'));
-		if (st.joined) return st;
+		// 55: joined AND the host's scene landed (status says loading until the host's snapshot is here)
+		if (st.joined && !st.loading) return st;
 		await new Promise((r) => setTimeout(r, 1000));
 	}
 	return st;

@@ -11,7 +11,7 @@ import { dropPeerCursor } from '$lib/nodesHandler'
 import { dropPeerQuality } from '$lib/networkQuality'
 import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
-import { sessionHost, dropPeerJoined } from '$lib/connectionState'
+import { sessionHost, dropPeerJoined, noteSnapshotAnswered } from '$lib/connectionState'
 import { acceptedLockRows, mergeLockRows } from '$lib/lockTrust'
 import { environment, editEnvSky } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
@@ -536,6 +536,7 @@ export function noteLoadFailed(uuids) {
 
 /** @param {number} count @param {string[]} uuids @param {string} [senderId] */
 export async function createLoader(count, uuids, senderId) {
+    if (senderId) noteSnapshotAnswered(senderId);
     // console.log("create loader for " + count + " objects: " + uuids);
     loading.set(Array.isArray(uuids) ? uuids : []);
     loadingcount.set(count);

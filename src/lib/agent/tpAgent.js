@@ -19,7 +19,7 @@ import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 import { peers, userdata, waitingForApproval, toastStore, dismissToastById, loading, loadingcount } from '../../stores/appStore.js';
 import { sceneLoad } from '$lib/sceneLoader.js';
 import { globalRenderer } from '../../stores/sceneStore.js';
-import { sessionHost } from '$lib/connectionState';
+import { sessionHost, snapshotPending } from '$lib/connectionState';
 import { isAgentPeer } from '$lib/inviteStore';
 import { requestConnect } from '$lib/peerApproval';
 import { rolesInfo } from '$lib/cloudHooks';
@@ -392,7 +392,9 @@ export function createTpAgent(extra = {}) {
 				return { arrived: total - left, total };
 			}
 			const job = get(sceneLoad);
-			return job ? { arrived: Math.max(0, job.done | 0), total: Math.max(0, job.total | 0) } : null;
+			if (job) return { arrived: Math.max(0, job.done | 0), total: Math.max(0, job.total | 0) };
+			// asked for the scene, no answer yet (the sender announces its batch ~0.5 s+ later)
+			return snapshotPending() ? { arrived: 0, total: 0 } : null;
 		},
 		room: () => {
 			const st = roomState();

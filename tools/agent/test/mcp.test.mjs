@@ -198,6 +198,29 @@ check('another session → the old engine is closed', engines.length === 2 && en
 await bridge.shutdown();
 check('shutdown closes the engine (graceful leave)', engines[1].closed === true);
 
+// --- 55 owner finding 4: status never pairs joined:true with an older session snapshot ---
+// the role settles between two reads (the roles map lands): `joined` must not be newer than `session`
+class SettlingEngine extends FakeEngine {
+	constructor(link) {
+		super(link);
+		this.role = 'viewer';
+	}
+	async joined() {
+		this.role = 'editor'; // the map arrived just now
+		this.isJoined = true;
+		return true;
+	}
+}
+const settle = createBridgeServer({ kind: 'browser', createEngine: (link) => new SettlingEngine(link), pollMs: 30 });
+const [ct3, st3] = InMemoryTransport.createLinkedPair();
+const c3 = new Client({ name: 'claude-code', version: '1' });
+await settle.server.connect(st3);
+await c3.connect(ct3);
+await c3.callTool({ name: 'connect', arguments: { link: 'https://theprototype.app/#F0FD3' } });
+const s3 = JSON.parse((await c3.callTool({ name: 'status', arguments: {} })).content[0].text);
+check('status: joined:true comes with the settled role, never the one from a moment before', s3.joined === true && s3.session?.role === 'editor');
+await settle.shutdown();
+
 // --- the wire kind lists its catalog before connecting ---
 const wire = createBridgeServer({ kind: 'wire', staticTools: [{ name: 'list_scene', parameters: { type: 'object', properties: {} } }, { name: 'get_status' }], createEngine: () => new FakeEngine('x1') });
 const [ct2, st2] = InMemoryTransport.createLinkedPair();

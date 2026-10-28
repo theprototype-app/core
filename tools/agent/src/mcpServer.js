@@ -154,9 +154,10 @@ export function createBridgeServer(opts) {
 		let joined = false;
 		if (engineReady()) {
 			try {
-				const s = await engine.status();
-				out.session = s;
+				// joined FIRST, the snapshot after: read the other way round, `joined` could be newer than
+				// `session` and say true beside the role from a moment before (role:"viewer" — the owner's flash)
 				joined = await engine.joined();
+				out.session = await engine.status();
 			} catch (e) {
 				out.sessionError = /** @type {any} */ (e).message;
 			}

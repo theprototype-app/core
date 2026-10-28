@@ -105,6 +105,13 @@ export function sendAgentLogTo(conn) {
 export function requestAgentUndo(entry) {
 	/** @type {any} */
 	const p = get(peers);
+	// 86 B3: a line THIS tab holds (the Claude connector runs here) undoes here
+	const me = String(p?.peer?.id || 'me').toLowerCase();
+	if (entry.peer === me) {
+		if (!undoHandler) return false;
+		undoHandler(entry.id, me);
+		return true;
+	}
 	const conn = p?.connections?.[entry.peer];
 	if (!conn?.open) return false;
 	try {

@@ -347,7 +347,8 @@ async function agentRun(name, args) {
 
 /**
  * Build the wired agent.
- * @param {{screenshot?: (opts: any) => Promise<string|null>, missingTools?: () => {name: string, reason: string}[]}} [extra]
+ * @param {{screenshot?: (opts: any) => Promise<string|null>, missingTools?: () => {name: string, reason: string}[],
+ *   deps?: Partial<import('./agentCore.js').AgentDeps>}} [extra] `deps` override the agent-page wiring (86: the connector)
  */
 export function createTpAgent(extra = {}) {
 	/** @type {ReturnType<typeof createAgentCore>} */
@@ -447,9 +448,38 @@ export function createTpAgent(extra = {}) {
 				},
 				run: (args) => core.agent.accept(String(args?.id ?? ''), args?.action)
 			}
-		}
+		},
+		...(extra.deps ?? {})
 	});
 	return core;
+}
+
+/** 86 B3: what the connector's edits are called in the A8 log and on the undo stack — FIXED words, never
+ * the OAuth client's own name (dynamic registration makes that attacker-chosen text) */
+export const CONNECTOR_LABEL = 'Claude (connector)';
+
+/**
+ * 86 B3 — THE CLAUDE CONNECTOR's agent: the same tpAgent behaviour (tools, exec's role gate + one undo step
+ * per call, snapshot, waitForEdit, screenshot) wired for a PERSON's own tab, which is not an agent page:
+ *   · in its session already — as host, alone, or joined (its host link open); no admission wait;
+ *   · no follow-the-host, no host-away pause, no quiet mode: the person is at the screen and decides where
+ *     they stand, and Claude acts where they are;
+ *   · no agent-page tools (install_modules, pending/accept offers): the person keeps those buttons.
+ * Never installed on `window`: the connector (src/lib/connector/) holds it.
+ */
+export function createConnectorAgent() {
+	return createTpAgent({
+		deps: {
+			inSession: () => {
+				const host = get(sessionHost);
+				return !host || hostLinked(host);
+			},
+			hostAway: () => null,
+			room: () => null,
+			extraTools: {},
+			endBatch: (label) => endHistoryBatch(String(label).replace(/^Agent:/, CONNECTOR_LABEL + ':'))
+		}
+	});
 }
 
 /**

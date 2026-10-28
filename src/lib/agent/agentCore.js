@@ -105,6 +105,8 @@ export function toolName(tool) {
  * @property {() => {scene: string, hostScene: string, withHost: boolean, following: boolean} | null} [room] 55 owner
  *   finding 1: our scene, the host's, and whether we stand in the same room (absent/null = not known: allowed)
  * @property {() => boolean} waiting
+ * @property {() => boolean} [inSession] 86 B3: replaces the agent-page "admitted by a host" rule — a PERSON's tab
+ *   (the Claude connector) is in its session already, as host, alone, or joined
  * @property {() => {id: string, name: string}[]} openPeers
  * @property {() => boolean} inVR
  * @property {() => {name: string, reason: string}[]} missingTools
@@ -220,6 +222,7 @@ export function createAgentCore(deps) {
 
 	/** admitted, the host's link open, roles settled — status().joined, and the gate on every edit */
 	function isJoined() {
+		if (deps.inSession) return deps.inSession() && deps.rolesSettled?.() !== false;
 		const host = deps.host();
 		return !!host && deps.openPeers().some((p) => p.id === host) && !deps.waiting() && deps.rolesSettled?.() !== false;
 	}

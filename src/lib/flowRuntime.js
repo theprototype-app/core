@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { get } from 'svelte/store';
 import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
-import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused, runtimeGraph } from '../stores/flowStore';
+import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused, runtimeGraph, orphanGraphIds } from '../stores/flowStore';
 // 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
-import { objectsGroup, isLocked } from '../stores/sceneStore';
+import { objectsGroup, isLocked, sceneRevision } from '../stores/sceneStore';
 import { peers, showToast, showInfoToast, dismissToastById} from '../stores/appStore';
 import { animationTypes, findNodeSpec } from './nodeCatalog';
 // 21-E7.6: hudKinds is a leaf (it reads only moduleHudKinds, itself svelte/store-only)
@@ -485,6 +485,31 @@ const NO_EDGES = [];
 /** @type {any[]} */ let nodes = [];
 /** @type {any[]} */ let edges = [];
 /** @type {any} */ let sceneObjects = null;
+/** 55 (1.48.1, Q1): OBJECT graphs whose owner is not in the scene — DORMANT. A deleted object's flow stays in
+ * flowGraphs on purpose (undoing the delete finds it intact; the savers prune it), but its nodes kept evaluating on
+ * every peer. flowStore.orphanGraphIds (the savers' own rule); recomputed when the graphs change and
+ * when the scene does (an undo brings the object back and its flow runs again). @type {Set<string>} */
+let dormant = new Set();
+
+/** what the runtime evaluates: every graph but the dormant ones, minus muted/editor-only nodes */
+function rebuildRuntimeGraph() {
+	dormant = orphanGraphIds();
+	if (!dormant.size) {
+		({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
+		return;
+	}
+	const live = allNodes().filter((n) => !dormant.has(n.__graph));
+	const ids = new Set(live.map((n) => n.id));
+	({ nodes, edges } = runtimeGraph(live, allEdges().filter((e) => ids.has(e.source) && ids.has(e.target))));
+}
+
+/** the debug hook / e2e: what the runtime evaluates right now, and which object graphs sleep */
+export function runtimeGraphDebug() {
+	return { nodeIds: nodes.map((n) => n.id), dormant: [...dormant] };
+}
+
+/** @param {Set<string>} a @param {Set<string>} b */
+const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
 /** @type {string[]} */ let muted = [];
 let synced = true;
 let lastValuesAt = 0;
@@ -5027,12 +5052,19 @@ export function startFlowRuntime() {
 		})
 		.catch((error) => console.warn('behaviours failed to start', error));
 	flowGraphs.subscribe(() => {
-		// 36 U11: muted nodes and the editor-only kinds (group, note) are not evaluated
-		({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
+		// 36 U11: muted nodes and the editor-only kinds (group, note) are not evaluated; 55 Q1: nor dormant graphs
+		rebuildRuntimeGraph();
 		applyColors();
 	});
 	objectsGroup.subscribe((value) => {
 		sceneObjects = value;
+		rebuildRuntimeGraph();
+	});
+	// 55 Q1: an object added or removed (a delete, its undo, a joiner's objects landing after its graphs)
+	sceneRevision.subscribe(() => {
+		if (!sceneObjects || sameSet(orphanGraphIds(), dormant)) return;
+		rebuildRuntimeGraph();
+		applyColors();
 	});
 	mutedFlowObjects.subscribe((value) => {
 		muted = value;

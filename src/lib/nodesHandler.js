@@ -7,6 +7,7 @@ import {
 	SCENE_GRAPH,
 	updateGraph,
 	graphTotals,
+	orphanGraphIds,
 	activeGraphId
 } from '../stores/flowStore';
 import { peers } from '../stores/appStore';
@@ -171,9 +172,11 @@ export function applyNodesSnapshot(nodes, edges, graphs) {
 /** djb2 over ALL serialized graphs, order-independent via sort */
 export function graphHash() {
 	const all = get(flowGraphs);
+	const orphans = orphanGraphIds(); // 55 Q1: what the reply leaves out, the hash leaves out
 	/** @type {any[]} */
 	const parts = [];
 	for (const graphId of Object.keys(all).sort()) {
+		if (orphans.has(graphId)) continue;
 		const graph = all[graphId];
 		const nodes = graph.nodes.map(serializeNode).sort((a, b) => a.id.localeCompare(b.id));
 		// hash edges by STRUCTURE only -- cosmetic type/marker are LOCAL editor
@@ -264,7 +267,9 @@ export function sendNodes(peerId, attempt = 0) {
 	/** @type {Record<string, {nodes: any[], edges: any[]}>} */
 	const graphs = {};
 	let total = 0;
+	const orphans = orphanGraphIds(); // 55 Q1: a deleted object's flow is not sent (the savers prune it too)
 	for (const [graphId, graph] of Object.entries(all)) {
+		if (orphans.has(graphId)) continue;
 		const nodes = graph.nodes.map(serializeNode);
 		const edges = graph.edges.map(serializeEdge);
 		if (nodes.length === 0 && edges.length === 0) continue;

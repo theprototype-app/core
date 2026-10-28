@@ -61,6 +61,8 @@ keys into the page — and the host sees who asked and can cancel). `control_sim
 the HOST: an agent page never steps the physics itself (its result carries `onHost: true`).
 `status().missingTools` says why any tool is absent. `update_objects` reports a field that does not
 apply (a light field on a mesh, a bad material value) in that row's `errors` with `ok: false`.
+`create_flow_nodes` refuses a wire whose `toHandle` (or, on a node with several outputs, `fromHandle`) the node
+does not have; the error lists the node's real socket names and the call's other wires are still made.
 
 ## Rules a builder must respect
 

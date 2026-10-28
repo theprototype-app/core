@@ -92,9 +92,14 @@ export function userData(data) {
         // 55 A9: a roster written before the sender heard a kick must not re-whitelist
         // the peer it removed
         if (isHeldOut(element[0])) return;
-        console.log('received new approved host : ' + element[0])
-        if (!users.some(u => u[0] === element[0]))
+        // a ROSTER row (the whitelist of peers in this session; entry [0] of every roster is the
+        // sender's view of itself and ours of us), NEVER a host change — the session host is
+        // `sessionHost`, set only to the peer that approved our request. The old wording ("received
+        // new approved host") logged our own id on every roster and read as a takeover (55, 41's note).
+        if (!users.some(u => u[0] === element[0])) {
+            console.log('roster: added peer ' + element[0])
             users.push(element)
+        }
         else
         {
             let index = users.findIndex(u => u[0] === element[0]);

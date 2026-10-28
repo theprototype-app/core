@@ -29,6 +29,17 @@ const where = (p) =>
 const status = (p) => p.page.evaluate(() => window.tpAgent.status());
 const exec = (p, name, args) => p.page.evaluate(([n, a]) => window.tpAgent.exec(n, a), [name, args]);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// 41's retest note: the agent page logs "received new approved host : <its own id>" — that line is the ROSTER
+// applier (entry [0] of every roster is SELF), not a host change. Pin the facts it seemed to contradict: the
+// agent's session host is A, A hosts (null), and on a cloud build the agent is no admin and never the authority.
+const roles = (p, arg) =>
+	inPage(p, 'let r; s.cloudHooks.rolesInfo.subscribe((x) => (r = x))(); return r ? { myRole: r.myRole, amAdmin: !!r.amAdmin, first: (r.order || [])[0] ?? null, agentRole: r.roleOf?.(arg) ?? null } : null;', arg);
+async function hostTruth(A, B, when) {
+	const [aw, bw] = [await where(A), await where(B)];
+	h.check(bw.host === A.id && aw.host === null, `${when}: the agent's session host is A and A hosts (agent → ${bw.host}, A → ${aw.host})`);
+	const [ar, br] = [await roles(A, B.id), await roles(B, B.id)];
+	if (ar && br) h.check(br.amAdmin === false && ar.first !== B.id && br.first !== B.id && ar.agentRole !== 'admin', `${when}: the agent is no admin and never first in the authority order (A ${JSON.stringify(ar)} agent ${JSON.stringify(br)})`);
+}
 
 async function until(fn, ok, timeout = 20000) {
 	const t0 = Date.now();
@@ -52,6 +63,7 @@ h.run(async () => {
 	const cloud = await inPage(A, 'let r; s.cloudHooks.rolesInfo.subscribe((x) => (r = x))(); if (r) r.setRole(arg, "editor"); return !!r;', B.id);
 	console.log('build: ' + (cloud ? 'CLOUD' : 'OSS'));
 	await until(() => status(B), (st) => st.joined && st.canEdit);
+	await hostTruth(A, B, 'after the join');
 
 	console.log('\n=== 1. one world: the agent builds, the host sees it ===');
 	const made = await exec(B, 'create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'Before', position: [0, 0.5, 0] }] });
@@ -69,6 +81,7 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Run2'));
 	const gap = await until(() => status(B), (st) => st.hostScene === 'Run2', 15000);
 	h.check(gap?.hostScene === 'Run2', `status() reports the host's new scene (${gap?.hostScene})`);
+	await hostTruth(A, B, 'right after the Save as');
 	const followed = await until(() => status(B), (st) => st.withHost === true && st.scene === 'Run2', 45000);
 	h.check(followed?.scene === 'Run2' && followed?.withHost === true, `THE AGENT FOLLOWED the host into Run2 (${JSON.stringify({ scene: followed?.scene, withHost: followed?.withHost, following: followed?.following })})`);
 	h.check((followed?.notices || []).some((n) => /following them/.test(n)), 'and was told why it moved: ' + JSON.stringify((followed?.notices || []).slice(-3)));
@@ -78,6 +91,8 @@ h.run(async () => {
 	h.check(aw.objects.includes('AfterSave'), 'and the HOST sees that edit (it reached the room the host is in)');
 	const bw = await where(B);
 	h.check(JSON.stringify(aw.objects) === JSON.stringify(bw.objects), `no merge, no strays: host and agent hold the same objects (A ${JSON.stringify(aw.objects)} B ${JSON.stringify(bw.objects)})`);
+
+	await hostTruth(A, B, 'after following into Run2');
 
 	console.log('\n=== 4. a PRIVATE host cannot be followed: the agent says so and refuses edits ===');
 	// the host re-opens Run1 PRIVATELY (R22 round 35): its row says private, nobody may follow

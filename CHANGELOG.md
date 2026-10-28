@@ -5,7 +5,7 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
-## Next release — AI agents in your session, invite links, and a people menu 🤖
+## 1.48.0 — AI agents in your session, invite links, and a people menu 🤖
 
 Send Claude (or any AI agent) your session link and build together: the agent joins as a peer, uses the app's own
 tools and shows you every step. Invite links let a friend or an agent in without an approval card, and a new menu on

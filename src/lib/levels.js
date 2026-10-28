@@ -1085,15 +1085,24 @@ function resolveLevelItem(hash) {
 	requestAsset(hash);
 	showToast('Pulling the scene from your peers…');
 	return new Promise((resolve) => {
-		const unsub = explorerItems.subscribe(() => {
+		// 55: watch BOTH shelves — itemByHash searches the hidden one too, and a pulled scene
+		// file can land there (an older version of a scene this machine knows), which left a
+		// follow waiting forever on a file it already had
+		let done = false;
+		/** @type {(() => void)[]} */
+		const unsubs = [];
+		const check = () => {
+			if (done) return;
 			const found = itemByHash(hash);
 			if (!found) return;
+			done = true;
 			// never resolve inside the subscriber's own flush — read refs first, then act
 			queueMicrotask(() => {
-				unsub();
+				for (const u of unsubs) u();
 				resolve(found);
 			});
-		});
+		};
+		unsubs.push(explorerItems.subscribe(check), hiddenItems.subscribe(check));
 	});
 }
 

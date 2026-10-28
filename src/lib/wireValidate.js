@@ -21,6 +21,10 @@
 // scene (Box3 for bounds, frame-to-fit, the physics body's next step) reads NaN forever
 // with nothing pointing back at the message that did it.
 
+// The one import: the material parameter rules, itself a zero-import leaf (shared with the setter and
+// the AI tools, so the three cannot disagree about what a material key takes).
+import { checkMaterialParam } from './materialParamRules.js';
+
 /** @param {unknown} v */
 export function isUuid(v) {
 	return typeof v === 'string' && v.length > 0 && v.length <= 64;
@@ -241,6 +245,11 @@ export const VALIDATORS = {
 		typeof d.id === 'string' && d.id.length <= 64 && typeof d.prompt === 'string' && d.prompt.length <= 2000 &&
 		(d.name == null || typeof d.name === 'string') && (d.position == null || isVec3(d.position)),
 	meshgenack: (d) => typeof d.id === 'string' && typeof d.ok === 'boolean',
+	// 55: the agent sim relay (agent/simRelay.js) — the host checks the asker is an agent with edit rights
+	agentsimreq: (d) => typeof d.id === 'string' && d.id.length <= 64 && typeof d.action === 'string' && d.action.length <= 16,
+	agentsimack: (d) =>
+		typeof d.id === 'string' && typeof d.ok === 'boolean' && (d.error == null || (typeof d.error === 'string' && d.error.length <= 300)) &&
+		(d.result == null || (typeof d.result === 'object' && !Array.isArray(d.result))),
 	disconnected: (d) => typeof d.peerId === 'string',
 	// 55 A9: remove / remove-and-block / allow back. WHO may send it is decided by the
 	// receiver (peerModeration), not here — this is the shape.
@@ -379,6 +388,9 @@ export const VALIDATORS = {
 		// 48 B2: a measurement's record — null is not a record (an item is deleted, never emptied)
 		if (d.parameter === 'measure')
 			return isUuid(d.uuid) && !!d.measure && typeof d.measure === 'object' && isArray(d.measure.points) && d.measure.points.length <= 64;
+		// a material parameter: a key the app knows, a value of that key's kind (a texture slot only ever
+		// null on the wire — images travel as `map`)
+		if (d.parameter === 'materialParam') return isUuid(d.uuid) && checkMaterialParam(null, d.key, d.value).ok;
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

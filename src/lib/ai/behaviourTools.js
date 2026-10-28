@@ -134,7 +134,9 @@ export async function behaviourTool(tool, args) {
 				? await host.create(read.name, read.source, { target: typeof args?.target === 'string' ? args.target : 'scene' })
 				: await host.edit(read.name, read.source);
 		if (result && typeof result === 'object' && result.error) return { error: String(result.error) };
-		const done = { [tool === 'create_behaviour' ? 'created' : 'updated']: [{ name: read.name }] };
+		// 55 (41's research): the node id + its sockets (inputs = event sockets in; outputs = state values / emits)
+		const row = { name: read.name, ...(result?.id ? { id: result.id } : {}), ...(result?.target ? { target: result.target } : {}), ...(result?.inputs ? { inputs: result.inputs.map((/** @type {any} */ i) => i.name), outputs: result.outputs } : {}) };
+		const done = { [tool === 'create_behaviour' ? 'created' : 'updated']: [row] };
 		// 55 (41's gem test): a behaviour that loads and then THROWS (a bare findAll(), a typo in a
 		// handler) used to read as success here and "running" in list_scene. Watch its first moments
 		// (its start/load handlers run then, on whichever peer is the authority) and report what failed.

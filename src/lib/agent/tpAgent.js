@@ -100,6 +100,8 @@ async function installModules(/** @type {any} */ args) {
 
 /** set while a follow travel runs */
 let following = false;
+/** how long a follow may take before the agent stops waiting on it (a big scene over a slow link) */
+const FOLLOW_GIVE_UP_MS = 90000;
 
 /** our room vs the host's. Null = no host (we host, or are alone): nothing to follow */
 function roomState() {
@@ -141,13 +143,27 @@ function startFollow(core) {
 		// 41's P0: the agent's old world can no longer reach the host's scene — an agent page answers no
 		// full-state request (peerHandler AGENT_UNANSWERED), and the hop replaces its world locally. (A
 		// separate empty apply before the hop was tried: its load job raced the hop's and stalled the follow.)
+		// a hop that never settles (a file that never arrives) must not hold the agent forever: after
+		// FOLLOW_GIVE_UP_MS it stops waiting, says so, and the next change of the host's row retries
+		let settled = false;
+		const giveUp = setTimeout(() => {
+			if (settled) return;
+			settled = true;
+			following = false;
+			lastTry = '';
+			core.notice('Still could not open "' + st.target?.scene + '"; edits stay refused until this agent is with the host.');
+			schedule();
+		}, FOLLOW_GIVE_UP_MS);
 		import('$lib/levels')
 			.then((m) => (st.target?.hash ? m.travelToLevel(st.target.hash, st.target.scene) : m.travelToScene(st.target?.scene ?? '')))
 			.then((landed) => {
-				if (landed === false) core.notice('Could not open "' + st.target?.scene + '" yet; edits stay refused until this agent is with the host.');
+				if (landed === false && !settled) core.notice('Could not open "' + st.target?.scene + '" yet; edits stay refused until this agent is with the host.');
 			})
 			.catch((e) => core.notice('Following the host failed: ' + String(e?.message ?? e).slice(0, 120)))
 			.finally(() => {
+				clearTimeout(giveUp);
+				if (settled) return;
+				settled = true;
 				following = false;
 				schedule();
 			});
@@ -285,6 +301,13 @@ async function agentRun(name, args) {
 			onHost: true,
 			note: 'Generating "' + prompt.slice(0, 60) + '" with the host\'s provider. It appears in the scene in ~1-3 minutes (waitForEdit / list_scene). Do not call generate_mesh again for the same request.'
 		};
+	}
+	// 55 (41's physics research): the simulation runs on the HOST — this page never steps the world
+	if (real === 'control_simulation') {
+		const host = get(sessionHost);
+		if (!host) return { error: 'no host to run the simulation — an agent page never simulates (status().host)' };
+		const { requestHostSim } = await import('./simRelay.js');
+		return requestHostSim(host, String(repairToolCall(name, args).args?.action ?? ''));
 	}
 	return executeAiTool(name, args);
 }

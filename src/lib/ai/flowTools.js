@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { graphOf, graphExists, SCENE_GRAPH } from '../../stores/flowStore';
+import { graphOf, graphExists, SCENE_GRAPH, findNodeAnyGraph } from '../../stores/flowStore';
 import { objectsGroup, lockedObjects } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import {
@@ -340,7 +340,12 @@ export function createFlowNodesTool(args) {
 			const source = refIds[e?.from] ?? (inGraph.has(e?.from) ? e.from : null);
 			const target = refIds[e?.to] ?? (inGraph.has(e?.to) ? e.to : null);
 			if (!source || !target) {
-				errors.push('edge "' + e?.from + '" -> "' + e?.to + '": unknown node ref/id');
+				// 55 (41's research): an id that lives in ANOTHER graph is not unknown — say what to do instead
+				const elsewhere = [e?.from, e?.to].some((id) => typeof id === 'string' && !refIds[id] && !inGraph.has(id) && !!findNodeAnyGraph((/** @type {any} */ n) => n.id === id));
+				errors.push(
+					'edge "' + e?.from + '" -> "' + e?.to + '": ' +
+						(elsewhere ? 'edges must stay in one graph; put the source in scene with an Object Selector' : 'unknown node ref/id')
+				);
 				continue;
 			}
 			const sourceHandle = typeof e?.fromHandle === 'string' && e.fromHandle ? e.fromHandle : undefined;
@@ -522,7 +527,11 @@ const COLLIDER_KINDS = ['box', 'sphere', 'capsule', 'cylinder', 'hull', 'trimesh
 export function setPhysicsTool(args) {
 	const updates = Array.isArray(args?.updates) ? args.updates : [];
 	if (!updates.length)
-		return { error: 'no updates provided — pass updates: [{ uuid, mode?, mass?, ... }]' };
+		return {
+			error:
+				(Array.isArray(args?.objects) ? 'set_physics takes "updates", not "objects"' : 'no updates provided') +
+				' — pass updates: [{ uuid, mode?, mass?, ... }]'
+		};
 	const results = updates.map((/** @type {any} */ u) => {
 		const uuid = u?.uuid;
 		if (!uuid || !objectOf(uuid)) return { uuid, error: 'no object with that uuid' };

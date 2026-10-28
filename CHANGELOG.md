@@ -32,6 +32,13 @@ every person in the Connected panel lets the host remove someone.
   open a new or another scene.
 - **When the host leaves**, the agent carries on with the person who takes over. If everyone has left it pauses —
   reading only, building nothing — and waits for its host (10 minutes by default), then asks to come back in.
+- **The physics runs on your machine**: when an agent starts the simulation it runs on the host's page, so balls
+  fall at their real speed (an agent's page used to step the world slowly for everyone).
+- **Better building tools**: lights take their colour, intensity, range, cone and aim when created or updated;
+  `group_objects` keeps the name you give it; sizes must be positive numbers; a field that does not apply to an
+  object says so instead of reporting success; big flow graphs are read page by page (`list_scene {flow, page}`);
+  `create_behaviour` returns the node's id and its inputs and outputs.
+- Material parameters are validated (each key and value checked, on every peer).
 - **It knows when a scene is still arriving** and **when a behaviour fails**: status reports a scene that is still
   loading, and a code behaviour that throws says so with its error, so the agent can fix it instead of guessing.
 - **Game-kit nodes work for AI**: the agent and the in-app assistant can now create every `kit-*` node (they were

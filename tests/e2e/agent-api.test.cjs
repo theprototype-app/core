@@ -296,19 +296,90 @@ h.run(async () => {
 	h.check(lowest.every((x) => x.knowsAgent && x.pick === A.id), `with the agent's id sorting LOWEST both pages still pick the host (${JSON.stringify(lowest)})`);
 	const broken = await B.page.evaluate(() =>
 		window.tpAgent.exec('create_behaviour', {
-			name: 'Broken gems',
-			source: "export default behaviour({ name: 'Broken gems', state: { n: 0 }, on: { start() { const g = this.findAll('NoSuchGem*'); this.state.n = g[0].name.length; } } });"
+			name: 'BrokenGems',
+			source: "export default behaviour({ name: 'BrokenGems', state: { n: 0 }, on: { start() { const g = this.findAll('NoSuchGem*'); this.state.n = g[0].name.length; } } });"
 		})
 	);
 	h.check(!!broken?.created, 'create_behaviour applied it: ' + JSON.stringify(broken).slice(0, 200));
 	console.log('  create result errors: ' + JSON.stringify(broken?.errors ?? null).slice(0, 160));
 	const failing = await poll(() => B.page.evaluate(() => window.tpAgent.status().behaviourErrors ?? null), (x) => Array.isArray(x) && x.length > 0, 'status().behaviourErrors', 15000);
-	h.check(Array.isArray(failing) && failing.some((e) => e.name === 'Broken gems' && /name/.test(e.message)), `status().behaviourErrors names the failing behaviour on the AGENT page (it runs on the host): ${JSON.stringify(failing).slice(0, 200)}`);
+	h.check(Array.isArray(failing) && failing.some((e) => e.name === 'BrokenGems' && /name/.test(e.message)), `status().behaviourErrors names the failing behaviour on the AGENT page (it runs on the host): ${JSON.stringify(failing).slice(0, 200)}`);
 	const listed = await B.page.evaluate(() => window.tpAgent.exec('list_scene', {}));
-	const row = (listed?.behaviours ?? []).find((b) => b.name === 'Broken gems');
+	const row = (listed?.behaviours ?? []).find((b) => b.name === 'BrokenGems');
 	h.check(!!row && /error/.test(row.summary) && row.errors?.length > 0, `list_scene says it is failing, not just running (${JSON.stringify(row).slice(0, 200)})`);
-	const bare = await B.page.evaluate(() => window.tpAgent.exec('create_behaviour', { name: 'Bare find', source: "export default behaviour({ name: 'Bare find', on: { start() { findAll('Gem*'); } } });" }));
+	const bare = await B.page.evaluate(() => window.tpAgent.exec('create_behaviour', { name: 'BareFind', source: "export default behaviour({ name: 'BareFind', on: { start() { findAll('Gem*'); } } });" }));
 	h.check(!bare?.created && /this\.findAll/.test(JSON.stringify(bare)), 'a bare findAll() is refused with the fix (this.findAll): ' + JSON.stringify(bare).slice(0, 160));
+
+	// ---- 8c. 41's physics research: the agent's control_simulation runs on the HOST ------------------
+	// (a headless page stepping the world ran the whole session 4-6x slow: a ball took 4.5 s to fall 3 m)
+	const ball = await B.page.evaluate(() => window.tpAgent.exec('create_objects', { objects: [{ kind: 'primitive', primitive: 'Sphere', name: 'DropBall', position: [6, 3.5, 0] }] }));
+	const ballId = ball?.created?.[0]?.uuid;
+	await B.page.evaluate((id) => window.tpAgent.exec('set_physics', { updates: [{ uuid: id, mode: 'dynamic', mass: 1 }] }), ballId);
+	await poll(() => A.page.evaluate((id) => !!window.__stores.objectsGroup && (() => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return g?.getObjectByProperty('uuid', id)?.userData?.physics?.mode === 'dynamic'; })(), ballId), (x) => x, 'ball on host', 15000);
+	// the host times the fall in-page (50 ms resolution), from the moment its simulation starts
+	const fall = A.page.evaluate((id) => new Promise((resolve) => {
+		let g, t0 = 0;
+		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		const end = Date.now() + 15000;
+		const tick = setInterval(() => {
+			let on = false;
+			window.__stores.physics.simulating.subscribe((v) => (on = v))();
+			if (on && !t0) t0 = Date.now();
+			const y = g?.getObjectByProperty('uuid', id)?.position.y ?? 99;
+			if ((t0 && y < 0.8) || Date.now() > end) { clearInterval(tick); resolve(t0 ? { ms: Date.now() - t0, y } : null); }
+		}, 50);
+	}), ballId);
+	const started = await B.page.evaluate(() => window.tpAgent.exec('control_simulation', { action: 'start' }));
+	h.check(started?.simulating === true && started?.onHost === true, `control_simulation start is relayed to the host (${JSON.stringify(started).slice(0, 140)})`);
+	const sims = await poll(
+		() => Promise.all([A, B].map((p) => p.page.evaluate(() => { const s = {}; window.__stores.physics.simulating.subscribe((v) => (s.on = v))(); window.__stores.physics.remoteSimulating.subscribe((v) => (s.remote = v))(); return s; }))),
+		([a, b]) => a.on === true && b.remote === A.id,
+		'host simulates',
+		15000
+	);
+	h.check(sims[0].on === true && sims[1].on !== true && sims[1].remote === A.id, `the HOST steps the world, the agent page never does (${JSON.stringify(sims)})`);
+	const fell = await fall;
+	console.log('  fall of 3 m on the host: ' + JSON.stringify(fell) + ' (real time ~0.8 s; the bug measured 4.5 s)');
+	h.check(!!fell && fell.ms < 2500, `the ball falls in about real time, not 4-6x slow (${fell?.ms} ms)`);
+	const kitNow = await Promise.all([A, B].map((p) => p.page.evaluate(() => window.__stores.kit.kitAuthorityId())));
+	h.check(kitNow.every((x) => x === A.id), `while it runs the kit authority is still the host (${JSON.stringify(kitNow)})`);
+	const stopped = await B.page.evaluate(() => window.tpAgent.exec('control_simulation', { action: 'stop' }));
+	const offA = await poll(() => A.page.evaluate(() => { let on; window.__stores.physics.simulating.subscribe((v) => (on = v))(); return on; }), (x) => x === false, 'host stopped', 10000);
+	h.check(!stopped?.error && offA === false, `and stop is relayed too (${JSON.stringify(stopped).slice(0, 100)})`);
+	await B.page.evaluate(() => window.__stores.physics.toggleSimulation());
+	const selfOn = await B.page.evaluate(() => { let on; window.__stores.physics.simulating.subscribe((v) => (on = v))(); return on; });
+	h.check(selfOn === false, 'the agent page refuses to simulate by itself (sim-on-load, play, the P key)');
+	const wrongKey = await B.page.evaluate((id) => window.tpAgent.exec('set_physics', { objects: [{ uuid: id, mode: 'static' }] }), ballId);
+	h.check(/takes "updates", not "objects"/.test(wrongKey?.error ?? ''), `set_physics names the right key (${wrongKey?.error})`);
+
+	// ---- 8d. 41's API research: material parameters, lights, group names, sizes -----------------------
+	const bad = await B.page.evaluate((id) => window.tpAgent.exec('update_objects', { updates: [{ uuid: id, materialParams: { map: 'https://example.com/x.png', roughness: '0.3', bogus: 1 } }] }), uuids[0]);
+	const row0 = bad?.updated?.[0];
+	h.check(row0?.ok === false && (row0.errors ?? []).some((e) => /map/.test(e)) && (row0.errors ?? []).some((e) => /bogus/.test(e)), `a texture slot given a URL and an unknown key are errors per key (${JSON.stringify(row0).slice(0, 200)})`);
+	const mats = await Promise.all([A, B].map((p) => p.page.evaluate((id) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); const m = g.getObjectByProperty('uuid', id)?.material; return { map: m?.map === null ? null : typeof m?.map, rough: m?.roughness }; }, uuids[0])));
+	h.check(mats.every((m) => m.map === null) && mats[1].rough === 0.3, `nothing bad was written, the good key was (${JSON.stringify(mats)})`);
+	const rendered = await A.page.evaluate(() => window.__stores.globalRenderer && true);
+	h.check(rendered && (await h.pageErrors(A)).length === 0, 'the host keeps rendering, no page errors');
+	const forged = await B.page.evaluate((id) => { let pc; window.__stores.peers.subscribe((v) => (pc = v))(); pc.send({ type: 'objectParameters', parameter: 'materialParam', uuid: id, key: 'map', value: 'https://example.com/x.png' }); return true; }, uuids[0]);
+	await A.page.waitForTimeout(800);
+	const afterForged = await A.page.evaluate((id) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return typeof g.getObjectByProperty('uuid', id)?.material?.map; }, uuids[0]);
+	h.check(forged && afterForged === 'object', `a bad material message from a peer is dropped on receive (map is ${afterForged})`);
+	const lit = await B.page.evaluate(() => window.tpAgent.exec('create_objects', { objects: [{ kind: 'light', light: 'spot', name: 'Lamp', position: [0, 4, 0], color: '#ff8800', intensity: 7, angle: 0.4, penumbra: 0.3, aim: [0, 0, 0] }] }));
+	const lampId = lit?.created?.[0]?.uuid;
+	const lampA = await poll(() => A.page.evaluate((id) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); const l = g.getObjectByProperty('uuid', id); return l ? { color: '#' + l.color.getHexString(), intensity: l.intensity, angle: Math.round(l.angle * 100) / 100, name: l.name } : null; }, lampId), (l) => l && l.intensity === 7, 'lamp on host', 15000);
+	h.check(lampA?.color === '#ff8800' && lampA.intensity === 7 && lampA.angle === 0.4, `a light takes its fields on create, and the host sees them (${JSON.stringify(lampA)})`);
+	const dim = await B.page.evaluate((id) => window.tpAgent.exec('update_objects', { updates: [{ uuid: id, intensity: 2, color: '#0088ff' }] }), lampId);
+	const lampA2 = await poll(() => A.page.evaluate((id) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); const l = g.getObjectByProperty('uuid', id); return { color: '#' + l.color.getHexString(), intensity: l.intensity }; }, lampId), (l) => l.intensity === 2, 'lamp updated', 15000);
+	h.check(dim?.updated?.[0]?.ok === true && lampA2.intensity === 2 && lampA2.color === '#0088ff', `update_objects on a light changes it (${JSON.stringify(lampA2)})`);
+	const wrong = await B.page.evaluate((id) => window.tpAgent.exec('update_objects', { updates: [{ uuid: id, angle: 0.5 }] }), uuids[0]);
+	h.check(wrong?.updated?.[0]?.ok === false && /only a light/.test(JSON.stringify(wrong)), `a light field on a box is an error, not ok:true (${JSON.stringify(wrong).slice(0, 160)})`);
+	const grouped = await B.page.evaluate((ids) => window.tpAgent.exec('group_objects', { name: 'G group', memberUuids: ids }), [lampId]);
+	const gName = await B.page.evaluate((id) => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return g.getObjectByProperty('uuid', id)?.name; }, grouped?.groupUuid ?? grouped?.uuid ?? '');
+	h.check(gName === 'G group', `group_objects keeps the given name (${gName}; ${JSON.stringify(grouped).slice(0, 120)})`);
+	const badBox = await B.page.evaluate(() => window.tpAgent.exec('create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', params: [-1, 0, 'a'] }] }));
+	const badHex = await B.page.evaluate(() => window.tpAgent.exec('create_objects', { objects: [{ kind: 'primitive', primitive: 'Box', name: 'HexBox', color: '#40ff4060' }] }));
+	h.check(/hex colour/.test(JSON.stringify(badHex?.created?.[0]?.warnings ?? '')), `an 8-digit hex colour is refused with a warning (${JSON.stringify(badHex).slice(0, 160)})`);
+	h.check(!!badBox?.error && /positive/.test(JSON.stringify(badBox)), `a Box of [-1, 0, 'a'] is refused (${JSON.stringify(badBox).slice(0, 160)})`);
 
 	// ---- 9. T5: leave() is a goodbye, not a dropped link ----------------------------------------
 	const toastsA0 = await A.page.evaluate(() => { let l; window.__stores.toastStore.subscribe((x) => (l = x))(); return l.length; });

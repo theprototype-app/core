@@ -1584,6 +1584,11 @@ export class PeerConnection {
 					// 55 A6: an agent's generate_mesh relayed to the host's provider — lazy, so a session with no agent never loads it
 					const from = conn.peer;
 					import('$lib/agent/meshRelay.js').then((m) => m.handleMeshRelay(from, data)).catch(() => {});
+				} else if(data.type == 'agentsimreq' || data.type == 'agentsimack') {
+					// 55 (41's physics research): an agent's control_simulation runs on the HOST — a headless
+					// page stepping the world slowed the whole session's physics 4-6x
+					const from = conn.peer;
+					import('$lib/agent/simRelay.js').then((m) => m.handleSimRelay(from, data)).catch(() => {});
 				} else if(data.type == 'modules') {
 					// 37 R1: `wb` is ADDITIVE — an older peer omits it and keeps getting bare messages
 					if (data.wb === 1) this.wireBatchPeers.add(conn.peer);

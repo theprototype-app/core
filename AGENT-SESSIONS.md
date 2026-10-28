@@ -57,8 +57,10 @@ modules other peers run that this page lacks — `status().missingModules`), `pe
 **The full tool set.** In an agent session the physics tools (`set_physics`, `create_joints`,
 `control_simulation` and the physics flow nodes) are always offered. `generate_mesh` is offered
 when the HOST has a mesh provider ready (the call runs on the host's provider — you never bring
-keys into the page — and the host sees who asked and can cancel). `status().missingTools` says why
-any tool is absent.
+keys into the page — and the host sees who asked and can cancel). `control_simulation` also runs on
+the HOST: an agent page never steps the physics itself (its result carries `onHost: true`).
+`status().missingTools` says why any tool is absent. `update_objects` reports a field that does not
+apply (a light field on a mesh, a bad material value) in that row's `errors` with `ok: false`.
 
 ## Rules a builder must respect
 

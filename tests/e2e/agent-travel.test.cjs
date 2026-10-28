@@ -91,7 +91,10 @@ h.run(async () => {
 	h.check(followed?.scene === 'Run2' && followed?.withHost === true, `THE AGENT FOLLOWED the host into Run2 (${JSON.stringify({ scene: followed?.scene, withHost: followed?.withHost, following: followed?.following })})`);
 	if (followed?.withHost !== true) {
 		const [da, db] = [await where(A), await where(B)];
-		console.log('  DIAG notices ' + JSON.stringify(followed?.notices) + '\n  DIAG rows A ' + JSON.stringify(da.rows) + ' B ' + JSON.stringify(db.rows) + '\n  DIAG A level ' + JSON.stringify(await inPage(A, 'let lv; s.levels.currentLevel.subscribe((x) => (lv = x))(); return lv;')) + ' B level ' + JSON.stringify(await inPage(B, 'let lv; s.levels.currentLevel.subscribe((x) => (lv = x))(); return lv;')));
+		console.log('  DIAG notices ' + JSON.stringify(followed?.notices) + '\n  DIAG rows A ' + JSON.stringify(da.rows) + ' B ' + JSON.stringify(db.rows) + '\n  DIAG A level ' + JSON.stringify(await inPage(A, 'let lv; s.levels.currentLevel.subscribe((x) => (lv = x))(); return lv;')) + ' B level ' + JSON.stringify(await inPage(B, 'let lv; s.levels.currentLevel.subscribe((x) => (lv = x))(); return lv?.name + " " + lv?.hash;')));
+		const tx = 'let t; s.transferLedger.transfers.subscribe((x) => (t = x))(); let u; s.assetShare.unavailableHashes?.subscribe((x) => (u = x))(); return {tx: (t ?? []).map((r) => [r.dir, String(r.hash).slice(0, 8), r.state ?? r.status, r.error ?? ""]), un: [...(u ?? [])].map((h) => h.slice(0, 8)), has: !!s.explorer.itemByHash?.(arg) };';
+		const hash = da.rows ? Object.values(db.rows)[0]?.hash : '';
+		console.log('  DIAG transfers A ' + JSON.stringify(await inPage(A, tx, hash).catch((e) => String(e))) + ' B ' + JSON.stringify(await inPage(B, tx, hash).catch((e) => String(e))));
 	}
 	h.check((followed?.notices || []).some((n) => /following them/.test(n)), 'and was told why it moved: ' + JSON.stringify((followed?.notices || []).slice(-3)));
 	const after = await exec(B, 'create_objects', { objects: [{ kind: 'primitive', primitive: 'Sphere', name: 'AfterSave', position: [2, 0.5, 0] }] });

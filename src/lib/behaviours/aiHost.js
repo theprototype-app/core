@@ -12,6 +12,7 @@
 import { get } from 'svelte/store';
 import { allNodes } from '../../stores/flowStore';
 import { analyze } from './analyze.js';
+import { behaviourSockets } from './sockets.js';
 import { ALIASES } from './events.js';
 import { KIT_PIECES } from '../kit/index.js';
 
@@ -24,10 +25,10 @@ export function behaviourReference() {
 		'BEHAVIOURS (create_behaviour / edit_behaviour): game logic as ONE JavaScript module, run on ONE peer (the session authority); `state` replicates to everyone.',
 		'export default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, on: {event(payload) {...}}, ...methods });',
 		'this: params, state, kit (also bare `kit`), after(seconds, "method", ...args) (survives the host leaving), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log() — always as this.find(…) etc. (only `kit` and the helpers are bare). Helpers: dist(a,b), clamp, lerp.',
-		'events: start; grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as "piece.event" or ' +
+		'events: load (runs on EVERY peer when the behaviour loads — local, state read-only: register things there), start (once, on the authority); grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as "piece.event" or ' +
 			Object.keys(ALIASES).join(', ') +
 			'. Entity payloads have entity.is(glob), entity.hasTag(t).',
-		'kit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, "nearestPlayer"), kit.rules.set({reach, jump}).',
+		'kit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, "nearestPlayer"), kit.rules.set({reach, jump}), kit.pickups.register({id, score, respawn, radius}) — register pickups in on.load (every peer must know them, or touching one does nothing), never in start.',
 		'Forbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import.'
 	].join('\n');
 }
@@ -121,7 +122,8 @@ export function makeBehaviourHost(statusOf, liveOf = () => null) {
 			const peer = get(peers);
 			if (peer) peer.send({ type: 'nodecreate', node: serializeNode(node), graphId });
 			recordFlowNodesEntry({ op: 'create', graphId, nodes: [serializeNode(node)], edges: [] });
-			return { ok: true, name };
+			// 55 (41's research): the node's id and sockets, so the caller can wire it without a list_scene
+			return { ok: true, name, id: node.id, target: graphId, ...behaviourSockets(source) };
 		},
 		/** @param {string} name @param {string} source */
 		async edit(name, source) {
@@ -130,12 +132,12 @@ export function makeBehaviourHost(statusOf, liveOf = () => null) {
 			const m = analyze(source, specs());
 			if (!m.ok) return { error: m.errors.map((/** @type {any} */ e) => 'line ' + e.line + ': ' + e.message).join('; ') };
 			const before = String(n.data?.code ?? '');
-			if (before === source) return { ok: true };
+			if (before === source) return { ok: true, id: n.id, ...behaviourSockets(source) };
 			const [{ setNodeData }, { recordFlowNodesEntry }] = await Promise.all([import('../nodesHandler'), import('../flowGraphs')]);
 			const graphId = n.__graph ?? 'scene';
 			setNodeData(n.id, { code: source }, graphId);
 			recordFlowNodesEntry({ op: 'data', graphId, items: [{ id: n.id, before: { code: before }, after: { code: source } }] });
-			return { ok: true };
+			return { ok: true, id: n.id, ...behaviourSockets(source) };
 		},
 		lint: behaviourLint
 	};

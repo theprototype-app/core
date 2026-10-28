@@ -75,7 +75,8 @@ describe('the wiring', () => {
 	it('a reload says it is one, and the guest comes back on its id dialling the host', () => {
 		expect(peer).toMatch(/broadcast\(\{ type: 'disconnected', peerId: this\.peer\.id, unload: true \}\)/);
 		expect(peer).toMatch(/this\.myId = rejoin\?\.id \?\? id;/);
-		expect(peer).toMatch(/let connect = rejoinHost \?\? window\.location\.hash/);
+		// 55: the hash is an invite (`#<id>&…`), read through parseInviteHash
+		expect(peer).toMatch(/let connect = rejoinHost \?\? parseInviteHash\(window\.location\.hash\)/);
 	});
 
 	it('the host re-admits only an UNLOAD goodbye inside the window, never a removed peer', () => {

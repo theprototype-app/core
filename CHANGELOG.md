@@ -5,6 +5,26 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## Next release — fixes for AI agents and game logic 🔧
+
+- **A deleted object's logic stops.** Its flow graph used to keep running on every peer until a reload (and a
+  late joiner received it too). It now sleeps, and undoing the delete brings it back to life.
+- **Game rounds keep their referee.** Whoever is running a kit game round stays in charge when someone new
+  joins, instead of the round moving to the newcomer.
+- **Agents read the scene the way you see it.** Inside a group, the positions an agent gives are local to the
+  group (as list_scene reports them); list_scene shows a shape's sizes (a wall's thickness, a box's depth) and can
+  be narrowed — names only, by a name pattern, by type, or near a point.
+- **A locked object says who has it.** When an agent cannot change something because someone is editing it, it
+  is told which object and who holds it.
+- **Camera Rig:** two rigs complaining at once show one notice, naming the object.
+- **Fixes from the agent test:** every light type survives an autosave restore; Body Wave and Jiggle stack on one
+  object; HUD Text and Bar show wired strings; a behaviour's `on.load` sees the scene a joiner lands in and releases
+  what its last run registered; deleted lights and avatar photo cards free their textures; a phone in the background
+  keeps its link for a minute; a rejoin is told only live peers, and a join pulls the node graphs once; a shared Set
+  Variable changes once per event in multiplayer.
+- **A guest's reload goes back to the session**: reloading the tab while joined comes back on the same id and the host
+  lets it straight back in, with no new approval card.
+
 ## 1.48.0 — AI agents in your session, invite links, and a people menu 🤖
 
 Send Claude (or any AI agent) your session link and build together: the agent joins as a peer, uses the app's own

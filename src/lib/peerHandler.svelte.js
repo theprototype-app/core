@@ -903,7 +903,7 @@ export class PeerConnection {
 						}
 						get(peers).send({ type: 'userdata', userdata: get(userdata) });
 						this.approveDialBack(conn.peer);
-						this.announceAutoAdmit(conn.peer, auth, cloudMeta);
+						this.announceAutoAdmit(conn.peer, auth, cloudMeta, invite?.ok ? invite.role : undefined);
 					}
 				} catch (e) {
 					console.error('cloud auth provider threw:', e);
@@ -2203,10 +2203,15 @@ export class PeerConnection {
 	// F-5: an AUTOMATIC admission is never silent. A toast AND a notification-history entry
 	// that keeps its buttons: Turn off (when the provider offers it — e.g. "Allow guests to
 	// join automatically") and Remove. The provider says why; without one, a generic line.
-	/** @param {string} peerId @param {any} auth @param {any} cloudMeta */
-	announceAutoAdmit(peerId, auth, cloudMeta) {
+	// 55 owner finding 4: an INVITE admission is the invite's notice, never the provider's
+	// ("joined as a guest (view-only)" for an Edit invite, with a Turn off that is not why).
+	/** @param {string} peerId @param {any} auth @param {any} cloudMeta @param {string} [invitedRole] */
+	announceAutoAdmit(peerId, auth, cloudMeta, invitedRole) {
 		let provided = null;
-		try {
+		if (invitedRole) {
+			const canEdit = invitedRole === 'edit' || !get(rolesInfo);
+			provided = { text: shortPeer(peerId) + ' joined with your invite (' + (canEdit ? 'can edit' : 'view-only') + ').' };
+		} else try {
 			provided = typeof auth?.admitNotice === 'function' ? auth.admitNotice(peerId, cloudMeta) : null;
 		} catch (e) {
 			console.error('cloud auth provider admitNotice threw:', e);

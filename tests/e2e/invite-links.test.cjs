@@ -154,6 +154,16 @@ h.run(async () => {
 	await dial('cccc3', { kind: 'agent' });
 	await H.page.waitForTimeout(120);
 	h.check((await roster(H)).some((u) => u[0] === 'cccc3'), 'with "Let AI agents join as guests" on, the agent is admitted');
+	// 55 owner finding 4: an invite into a guest room is announced as the invite, not "as a guest"
+	await inPage(H, "s.cloudHooks.setAuthProvider({ decide() { return 'admit'; }, admitNotice: (id) => ({ text: id + ' joined as a guest (view-only)', turnOff() {} }) })");
+	const guestRoomInv = await mint({ kind: 'agent' });
+	await dial('cccc4', { kind: 'agent', invite: core.dialInvite(tokenOfLink(guestRoomInv.link), 'cccc4', H.id) });
+	await H.page.waitForTimeout(150);
+	const notesNow = await inPage(H, 'let n; s.notifications.subscribe((v) => (n = v.map((x) => x.text)))(); return n;');
+	h.check(
+		(await roster(H)).some((u) => u[0] === 'cccc4') && notesNow.some((t) => /CCCC4 joined with your invite/.test(t)) && !notesNow.some((t) => /cccc4 joined as a guest/i.test(t)),
+		'an invite into a guest-admitting room says "joined with your invite", not "as a guest": ' + JSON.stringify(notesNow.filter((t) => /cccc4/i.test(t)))
+	);
 	await inPage(H, 's.inviteStore.agentsAsGuests.set(false); s.cloudHooks.setAuthProvider(null)');
 	// approving the agent's card by hand gives it a kind:agent row too
 	await inPage(H, "s.peerApproval.approvePeer('cccc1')");

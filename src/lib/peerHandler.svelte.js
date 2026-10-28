@@ -3,7 +3,7 @@ import { backoffDelay } from '$lib/netBackoff';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene } from './commandsHandler.svelte';
 import { gateCreationBroadcast } from './objectPermissions';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
-import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
+import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { preloadSandboxFor } from '$lib/sandbox/preload.js';
 import { applyGraphCreate, applyGraphDelete } from '$lib/flowGraphs';
 import { applyNodeTrigger } from '$lib/flowRuntime';
@@ -38,7 +38,7 @@ import { registerDebugHook } from '$lib/debugHooks';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError } from '$lib/wireErrors';
 import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';
-import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId, silenceCloseAllowed } from '$lib/peerDrop';
+import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId, silenceCloseAllowed, meshHosts } from '$lib/peerDrop';
 import { createDialBackQueue } from '$lib/dialBackQueue'; // scatter-sync: room edits held for an opening approval dial-back
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
@@ -1400,6 +1400,7 @@ export class PeerConnection {
 				} else if(data.type == 'nodes') {
 					preloadSandboxFor(data); // 69: a joiner's scene with code starts the engine before its first tick
 					applyNodesSnapshot(data.nodes, data.edges, data.graphs);
+					noteNodesSnapshot(conn.peer); // fix-agenttest 5: the handshake's graphs are here
 				} else if(data.type == 'nodesync') {
 					applyNodeSync(data);
 				} else if(data.type == 'graphcreate') {
@@ -1720,11 +1721,10 @@ export class PeerConnection {
 		if (opts.heal || this.reconnecting.has(peerId)) conn.send({ type: 'relink' });
 		// a conn opened to them — whatever goodbye they once sent is history
 		this.gracefulLeft.delete(peerId);
-		let hosts = [id];
-		Object.keys(this.connections).forEach(element => {
-			if(element != peerId)
-			hosts.push(element)
-		});
+		// fix-agenttest 5: only the peers we are LINKED to now (peerDrop.meshHosts) — a closed conn
+		// waiting out its reconnect window is still a key here, and a joiner told about it
+		// dialled a departed peer (peer-unavailable)
+		let hosts = meshHosts(id, peerId, this.connections, this.reconnecting);
 		console.log("sending to " + peerId + "  remote " + hosts)
 		let locks = [...locked];
 		if(typeof selected.uuid != 'undefined' && selected.uuid) locks.push([id, selected.uuid]);
@@ -2209,6 +2209,7 @@ export class PeerConnection {
 		this.unavailableStrikes.delete(peerId);
 		this.silentDrops.delete(peerId);
 		this.awayPeers.delete(peerId);
+		forgetNodeSyncPeer(peerId);
 		this.lastLeaveAt = Date.now();
 		this.inboundDials.delete(peerId);
 		const conn = this.connections[peerId];
@@ -2251,6 +2252,7 @@ export class PeerConnection {
 		this.unavailableStrikes.clear();
 		this.silentDrops.clear();
 		this.awayPeers.clear();
+		forgetNodeSyncPeer();
 		dropPeerUnderlays(null); // 60 Q5: every peer's shared reference images go with the session
 		this.reconnecting.clear(); // pending retry timers see a cleared map and no-op
 		this.inboundDials.clear();

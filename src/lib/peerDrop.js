@@ -45,6 +45,25 @@ export function silenceCloseAllowed(awaySince, now) {
 }
 
 /**
+ * fix-agenttest 5: the `hosts` a handshake hands a joiner to fill the mesh with — us, plus every
+ * peer we hold an OPEN link to that is not waiting out its reconnect window. A closed conn stays
+ * a key of `connections` through that window (and a departed peer's for good, until the window
+ * ends), and the joiner dialled it: peer-unavailable, a toast, a strike.
+ * @param {string} myId @param {string} to the joiner @param {Record<string, any>} connections
+ * @param {{has: (id: string) => boolean}} [reconnecting]
+ * @returns {string[]}
+ */
+export function meshHosts(myId, to, connections, reconnecting) {
+	const hosts = [myId];
+	for (const [id, conn] of Object.entries(connections ?? {})) {
+		if (id === to || id === myId) continue;
+		if (!conn?.open || reconnecting?.has(id)) continue;
+		hosts.push(id);
+	}
+	return hosts;
+}
+
+/**
  * Read the selected candidate pair's consent counters out of an RTCStatsReport-like map.
  * @param {Iterable<any> | {forEach: Function} | null | undefined} report
  * @returns {{ requestsSent: number, responsesReceived: number } | null}

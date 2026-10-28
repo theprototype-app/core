@@ -93,15 +93,19 @@ describe('behaviours — a Waves-style spawner on kit entities', () => {
 		sim.advance(3300);
 		sim.settle();
 		expect(JSON.parse(sim.states('waves')[0]).wave).toBe(1);
-		await sim.joinWithBehaviours('a'); // 'a' < 'm': the authority the moment it connects
+		await sim.joinWithBehaviours('a'); // 'a' < 'm': the smallest id, but the round already has an authority
 		sim.settle();
-		expect(sim.authorityPeer().id).toBe('a');
+		// 55 (1.48.1): the INCUMBENT (the peer that wrote the kit document) keeps the round — before, the
+		// smallest-id joiner took it over mid-round
+		const incumbent = sim.authorityPeer().id;
+		expect(incumbent).not.toBe('a');
 		expect(sim.states('waves')).toEqual(Array(3).fill(JSON.stringify({ wave: 1, alive: 2 })));
-		// and it carries on: the wave dies, the joiner (now authority) starts wave 2
+		// and it carries on: the wave dies, the authority starts wave 2 — on every peer, the joiner included
 		killAll(sim, 'm');
 		sim.advance(3300);
 		sim.settle();
-		expect(JSON.parse(sim.states('waves')[2]).wave).toBe(2);
+		expect(sim.authorityPeer().id).toBe(incumbent);
+		expect(sim.states('waves').map((/** @type {string} */ x) => JSON.parse(x).wave)).toEqual([2, 2, 2]);
 	});
 
 	it('the GRACE: a lowest-id joiner whose handshake is slow does not start the behaviour over the session', async () => {
@@ -130,6 +134,9 @@ describe('behaviours — a Waves-style spawner on kit entities', () => {
 		sim.advance(3300);
 		sim.settle();
 		await sim.joinWithBehaviours('a');
+		// 55 (1.48.1): a smaller id alone no longer promotes a joiner (the incumbent keeps the round); stepping
+		// the physics does
+		sim.initiator = 'a';
 		sim.advance(3000);
 		sim.settle();
 		expect(sim.authorityPeer().id).toBe('a');

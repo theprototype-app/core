@@ -79,6 +79,13 @@ describe('authority — one peer decides, everyone agrees who', () => {
 	});
 	it('a peer with no id is alone, so it is its own authority', () => {
 		expect(isAuthorityFor({ me: null, peers: [] })).toBe(true);
+		// 55 (1.48.1): the INCUMBENT (who wrote the document last) keeps it over a smaller id that joins later,
+		// below the host and the initiator; an agent incumbent yields to a person; a departed one is ignored
+		expect(pickAuthority({ me: 'b', peers: ['a', 'c'], incumbent: 'c' })).toBe('c');
+		expect(pickAuthority({ me: 'b', peers: ['a', 'c'], incumbent: 'c', initiator: 'b' })).toBe('b');
+		expect(pickAuthority({ me: 'b', peers: ['a', 'c'], incumbent: 'c', host: 'a' })).toBe('a');
+		expect(pickAuthority({ me: 'b', peers: ['a', 'c'], incumbent: 'c', agents: ['c'] })).toBe('a');
+		expect(pickAuthority({ me: 'b', peers: ['a'], incumbent: 'c' })).toBe('a');
 	});
 	it('every peer of a sim names the same authority', () => {
 		const sim = createSim({ peers: ['c', 'a', 'b'], pieces: PIECES });

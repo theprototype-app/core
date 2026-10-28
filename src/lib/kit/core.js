@@ -352,8 +352,9 @@ export function createKit(host, pieces) {
 
 	/** forget everything (a scene clear: every peer clears too) — local, sends nothing */
 	const reset = () => {
-		// an authoritative LOCAL write: stamped fresh so it beats a stale document on arrival
-		doc = { ...freshDoc(), at: Math.max(now(), (doc.at ?? 0) + 1), by: host.me() ?? '' };
+		// an authoritative LOCAL write: stamped fresh so it beats a stale document on arrival. `by` stays EMPTY:
+		// every peer clears at once, so naming ourselves would make each one the incumbent (authority.js tier 3)
+		doc = { ...freshDoc(), at: Math.max(now(), (doc.at ?? 0) + 1), by: '' };
 		pending.clear();
 		for (const [name, def] of Object.entries(defs)) {
 			try {

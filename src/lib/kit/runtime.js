@@ -76,9 +76,18 @@ const agentIds = () => {
 	return ids;
 };
 
+/** 55 (1.48.1): who wrote the kit document last — the same answer on every peer holding it */
+const incumbent = () => {
+	try {
+		return kit.doc()?.by || null;
+	} catch {
+		return null; // read while the kit itself is being built
+	}
+};
+
 /** the facts this peer decides the authority from (the debug hook reads them too) */
 export function kitAuthorityFacts() {
-	return { me: me(), peers: openPeers(), host: null, initiator: initiator(), agents: agentIds() };
+	return { me: me(), peers: openPeers(), host: null, initiator: initiator(), incumbent: incumbent(), agents: agentIds() };
 }
 
 /** who decides, as this peer sees it */

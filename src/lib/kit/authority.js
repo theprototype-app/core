@@ -8,7 +8,10 @@
 //   1. the SESSION HOST (the peer the room was joined through), while it is still here
 //   2. else the PHYSICS INITIATOR (the stepping peer — the one that knows speeds and holds;
 //      the spawner's "the INITIATOR spawns and everybody else receives" rule)
-//   3. else the SMALLEST peer id among me and the peers I see (the roles module's fallback,
+//   3. else the INCUMBENT — the peer that wrote the kit document last (`doc.by`), while it is still here.
+//      Every peer holding the document agrees on it (a joiner gets it with the snapshot), so a
+//      person with a smaller id joining mid-round no longer takes the round over (55, 1.48.1)
+//   4. else the SMALLEST peer id among me and the peers I see (the roles module's fallback,
 //      and 31-towers' "else the lowest peer id")
 //
 // A peer with no id yet (offline, before the signalling server answered) is alone, so it
@@ -16,14 +19,15 @@
 //
 // 55 (41's gem test): AN AI AGENT'S PAGE IS NEVER THE AUTHORITY while a person is present — the
 // rule "an agent page is nobody's host" applied to the kit. Agent ids (`agents`, self-declared on
-// the roster, which every peer holds) are dropped from all three tiers; a session of agents only
+// the roster, which every peer holds) are dropped from every tier; a session of agents only
 // still has an authority (the smallest of them), so a page alone with another agent never stalls.
 
 /**
  * @param {{me?: string | null, peers?: (string | null | undefined)[], host?: string | null,
- *   initiator?: string | null, agents?: (string | null | undefined)[]}} facts
+ *   initiator?: string | null, incumbent?: string | null, agents?: (string | null | undefined)[]}} facts
  *   `me` this peer's id · `peers` the ids it is connected to · `host` the session host as this
  *   peer knows it · `initiator` the peer stepping the physics (this peer's id when it is)
+ *   · `incumbent` the peer that wrote the kit document last ('' / null before any write)
  *   · `agents` the AI agents' ids among them (this peer's own too when it is one)
  * @returns {string | null} the authority's id (null only when nobody has an id: then `me` decides)
  */
@@ -38,6 +42,8 @@ export function pickAuthority(facts) {
 	if (host && eligible.has(host)) return host;
 	const initiator = facts?.initiator ? String(facts.initiator) : null;
 	if (initiator && eligible.has(initiator)) return initiator;
+	const incumbent = facts?.incumbent ? String(facts.incumbent) : null;
+	if (incumbent && eligible.has(incumbent)) return incumbent;
 	const ids = [...eligible].sort();
 	return ids[0] ?? null;
 }

@@ -62,15 +62,28 @@
 		if (avatar) dropAvatar()
 	})
 
+	// fix-agenttest 3: ONE texture per photo URL. This block re-runs on every roster update (`user` is a
+	// fresh row each time), and it used to load a new texture each time and never dispose the last
 	let faceTexture: any = null
-	$: if (!look && config.face === 'image' && user[2]) {
-		new THREE.TextureLoader().load(user[2], (texture) => {
+	let faceUrl = ''
+	$: setFacePhoto(!look && config.face === 'image' && user[2] ? user[2] : '')
+	function setFacePhoto(url: string) {
+		if (url === faceUrl) return
+		faceUrl = url
+		faceTexture?.dispose()
+		faceTexture = null
+		if (!url) return
+		new THREE.TextureLoader().load(url, (texture) => {
+			// a newer photo (or none) replaced this one while it loaded
+			if (faceUrl !== url) return texture.dispose()
 			texture.colorSpace = THREE.SRGBColorSpace
 			faceTexture = texture
 		})
-	} else {
-		faceTexture = null
 	}
+	onDestroy(() => {
+		faceUrl = ''
+		faceTexture?.dispose()
+	})
 
 	// 37 R22: the classic floating head's knocked-off idle — the same stars + star eyes as the rigged
 	// body, swaying an INNER group (the root is posed by every camera message, so it cannot carry it)

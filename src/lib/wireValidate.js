@@ -250,6 +250,8 @@ export const VALIDATORS = {
 	agentsimack: (d) =>
 		typeof d.id === 'string' && typeof d.ok === 'boolean' && (d.error == null || (typeof d.error === 'string' && d.error.length <= 300)) &&
 		(d.result == null || (typeof d.result === 'object' && !Array.isArray(d.result))),
+	// fix-agenttest 4: a page's hidden/visible notice (peerDrop.AWAY_GRACE_MS)
+	linkaway: (d) => typeof d.hidden === 'boolean',
 	disconnected: (d) => typeof d.peerId === 'string',
 	// 55 A9: remove / remove-and-block / allow back. WHO may send it is decided by the
 	// receiver (peerModeration), not here — this is the shape.
@@ -288,6 +290,16 @@ export const VALIDATORS = {
 		typeof d.doc.slices === 'object' &&
 		!Array.isArray(d.doc.slices) &&
 		(d.ev === undefined || isArray(d.ev)),
+	// fix-agenttest 10: a shared Set Variable's event for the authority (gameState.applyGameVarOp)
+	gamevarop: (d) =>
+		typeof d.rid === 'string' &&
+		d.rid.length > 0 &&
+		d.rid.length <= 160 &&
+		typeof d.name === 'string' &&
+		d.name.length > 0 &&
+		d.name.length <= 200 &&
+		(d.op === 'set' || d.op === 'add' || d.op === 'subtract') &&
+		Number.isFinite(d.value),
 	kitreq: (d) =>
 		typeof d.rid === 'string' &&
 		d.rid.length > 0 &&

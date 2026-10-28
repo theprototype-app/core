@@ -3,7 +3,7 @@ import { backoffDelay } from '$lib/netBackoff';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene } from './commandsHandler.svelte';
 import { gateCreationBroadcast } from './objectPermissions';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
-import { sendNodes, applyNodesSnapshot, applyNodeSync, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
+import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { preloadSandboxFor } from '$lib/sandbox/preload.js';
 import { applyGraphCreate, applyGraphDelete } from '$lib/flowGraphs';
 import { applyNodeTrigger } from '$lib/flowRuntime';
@@ -45,7 +45,8 @@ import { registerDebugHook } from '$lib/debugHooks';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError } from '$lib/wireErrors';
 import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';
-import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId } from '$lib/peerDrop';
+import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId, silenceCloseAllowed, meshHosts } from '$lib/peerDrop';
+import { takeRejoin, rememberRejoin, settleRejoin, REJOIN_WINDOW_MS, REJOIN_DIAL_MS } from '$lib/rejoin'; // fix-agenttest 6
 import { createDialBackQueue } from '$lib/dialBackQueue'; // scatter-sync: room edits held for an opening approval dial-back
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
@@ -108,6 +109,7 @@ import {
 	sendHudValues
 } from '$lib/hudSync';
 import { applyRemoteGameState, sendGameState, gameStatePayload } from '$lib/gameSync';
+import { applyGameVarOp } from '$lib/gameState';
 // 60 Q5: shared reference images (a leaf: stores + idb)
 import { applyRemoteUnderlay, applyRemoteUnderlayDelete, sendUnderlays, dropPeerUnderlays } from '$lib/underlays';
 // 48 S2: sequences (Timeline) — scene data, latest-wins per sequence (sequenceSync.js)
@@ -296,7 +298,14 @@ function boundApprovals(approvals) {
 export class PeerConnection {
 	constructor(id, updateIdFn) {
 		this.updateIdFn = updateIdFn;
-		this.myId = id;
+		// fix-agenttest 6: a reload while joined comes back on the SAME id and dials the host
+		// (rejoin.js); the host re-admits an id that left by unloading (unloadedPeers)
+		const rejoin = takeRejoin();
+		/** @type {string | null} */
+		this.rejoinHost = rejoin?.host ?? null;
+		/** @type {Map<string, number>} id -> when it said goodbye from a pagehide */
+		this.unloadedPeers = new Map();
+		this.myId = rejoin?.id ?? id;
 		this.reconnectAttempts = 0;
 		this.hasOpened = false;   // the signaling link has opened at least once
 		this.didFallback = false; // we've already switched to the public cloud
@@ -343,6 +352,8 @@ export class PeerConnection {
 		/** F-3: peers whose link WE closed for ICE silence — one "not on the server" answer
 		 * then ends the wait (peerDrop.strikesNeeded) @type {Set<string>} */
 		this.silentDrops = new Set();
+		/** fix-agenttest 4: peerId -> Date.now() of its `linkaway {hidden: true}` @type {Map<string, number>} */
+		this.awayPeers = new Map();
 		/** F-5: peers the host removed from an automatic admission — their re-dials are
 		 * refused for the rest of this tab's session, guests setting or not @type {Set<string>} */
 		this.removedPeers = new Set();
@@ -609,9 +620,13 @@ export class PeerConnection {
 				this.reconnectDial(peerId);
 			}
 			if (this.updateIdFn) this.updateIdFn(id);
-			if (!window.location.hash.slice(1)) return;
+			// fix-agenttest 6: the session this tab was in before its reload, dialled like an invite
+			const rejoinHost = this.rejoinHost;
+			this.rejoinHost = null;
+			if (rejoinHost) later(() => settleRejoin('failed'), REJOIN_DIAL_MS);
+			if (!rejoinHost && !window.location.hash.slice(1)) return;
 			// 55: `#<id>&agent…` — the id is everything before the first `&` (parseInviteHash)
-			let connect = parseInviteHash(window.location.hash).peerId.toLocaleLowerCase()
+			let connect = rejoinHost ?? parseInviteHash(window.location.hash).peerId.toLocaleLowerCase()
 			if (!connect) return;
 			// Whitelist connection by adding to userdata
 			let data = [connect, '', '']
@@ -625,7 +640,8 @@ export class PeerConnection {
 			waitingForApproval.update((value) => value);
 			// // Initiate connection request to peer and await approval
 			this.connectToPeer(connect, true);
-			window.location.hash = '';	
+			// 55: the invite key in the hash is consumed whatever was dialled (a rejoin leaves an empty hash alone)
+			if (!rejoinHost || window.location.hash.slice(1)) window.location.hash = '';
 		});
 
 		// 27-F: a closed Peer is SPENT — `reconnect()` does nothing for it, which is why
@@ -686,7 +702,8 @@ export class PeerConnection {
 			// dead end this phase exists to remove. Wait out the registration and rebuild.
 			// 44 L2: "ours" is decided by the SERVER this id opened on, not by `hasOpened` (see
 			// registeredOn). Once the waits are spent, a fresh id beats "please reload".
-			const ownHeld = this.registeredOn.has(this.serverKey);
+			// fix-agenttest 6: so is the id a rejoin brought back from before the reload
+			const ownHeld = this.registeredOn.has(this.serverKey) || !!this.rejoinHost;
 			if (err.type === 'unavailable-id' && ownHeld && this.idRetries < 3) {
 				this.idRetries++;
 				const wait = backoffDelay(this.idRetries, RETRY_BACKOFF) ?? 8000;
@@ -700,6 +717,7 @@ export class PeerConnection {
 				this.idRetries++;
 				this.registeredOn.clear(); // a fresh id is registered nowhere yet
 				this.myId = createPeer();
+				if (this.rejoinHost) { this.rejoinHost = null; settleRejoin('failed'); } // the host would not know a new id
 				log('warn', 'net', 'session id collided — retrying', { id: this.myId });
 				recreatePeer(this.didFallback);
 				return;
@@ -708,6 +726,7 @@ export class PeerConnection {
 				// 27-E: end the request this names. The pill used to sit on "Requesting"
 				// beside this very toast, and the optimistic whitelist row never went away.
 				const id = unavailablePeerId(err.message);
+				settleRejoin('failed'); // fix-agenttest 6: the only dial a pending rejoin has is to its host
 				// 25-F: a refusal to somebody who already gave up and left is not news
 				if (id && this.refusalDials.has(id)) return;
 				// F-3: a REDIAL of a peer that dropped — the server no longer holds them. Not
@@ -747,7 +766,11 @@ export class PeerConnection {
 		// would land there as a fresh approval request.
 		if (typeof window !== 'undefined') {
 			window.addEventListener('pagehide', () => {
-				try { this.broadcast({ type: 'disconnected', peerId: this.peer.id }); } catch (e) { /* going down anyway */ }
+				// fix-agenttest 6: joined as a guest → remember the session for a reload (rejoin.js);
+				// `unload` tells the host this goodbye may come back on the same id
+				const host = get(sessionHost);
+				rememberRejoin(this.peer?.id, host && this.openedPeers.has(host) ? host : null);
+				try { this.broadcast({ type: 'disconnected', peerId: this.peer.id, unload: true }); } catch (e) { /* going down anyway */ }
 			});
 			// 27-F: the two events that mean "there is a point in trying NOW" — a wifi hop
 			// ends as `online`, a lid or a phone lock ends as `visible`. Both RESET the
@@ -760,7 +783,11 @@ export class PeerConnection {
 				else if (this.peer.disconnected) this.peer.reconnect();
 			};
 			window.addEventListener('online', retryNow);
-			document.addEventListener('visibilitychange', () => { if (!document.hidden) retryNow(); });
+			document.addEventListener('visibilitychange', () => {
+				// fix-agenttest 4: tell the peers BEFORE the tab is throttled, so they hold the link
+				try { this.broadcast({ type: 'linkaway', hidden: document.hidden }); } catch (e) { /* no peers yet */ }
+				if (!document.hidden) retryNow();
+			});
 		}
 
 		// Wire the message dispatcher onto a connection. Historically only INBOUND
@@ -806,6 +833,7 @@ export class PeerConnection {
 					// CN: OUR outbound request was approved — that peer is the session
 					// host (first approval wins; null while hosting ourselves).
 					if (!get(sessionHost)) sessionHost.set(conn.peer);
+					settleRejoin('joined'); // fix-agenttest 6: no-op unless this was the reload's dial
 
 					// Show approved toast message
 					// 55 A4: an invite's dial-back says the role it carried — no approval happened
@@ -869,9 +897,29 @@ export class PeerConnection {
 						conn.close();
 						return;
 					}
-					const verdict = invite
-						? invite.ok ? 'admit' : { label: knockLabel }
-						: auth && typeof auth.decide === 'function' ? auth.decide(conn.peer, cloudMeta, { kind: dialKind }) : undefined;
+					// fix-agenttest 6: a guest that RELOADED (its goodbye said `unload`) is back on the id
+					// we approved a moment ago — re-admitted as the auto-approve below does, no new card
+					const leftAt = this.unloadedPeers.get(conn.peer);
+					this.unloadedPeers.delete(conn.peer);
+					if (leftAt !== undefined && Date.now() - leftAt <= REJOIN_WINDOW_MS && !roomIsFull(this)) {
+						found = true;
+						const roster = /** @type {any[]} */ (get(userdata));
+						if (!roster.some((/** @type {any} */ e) => e[0] === conn.peer))
+							// 55 A7: an agent's row keeps saying so (slot 6), so no avatar is built
+							userdata.set(/** @type {any} */ ([...roster, dialKind ? [conn.peer, '', '', null, null, null, { kind: dialKind }] : [conn.peer, '', '']]));
+						// the HOST answers as an approval (roster + dial-back); a fellow guest just takes the
+						// mesh link, as it would with the host's roster already in hand
+						if (!get(sessionHost)) {
+							this.send({ type: 'userdata', userdata: get(userdata) });
+							this.approveDialBack(conn.peer);
+						}
+						log('info', 'net', 'a guest reloaded and is back on its id — re-admitted', { peer: conn.peer });
+					}
+					const verdict = found
+						? undefined
+						: invite
+							? invite.ok ? 'admit' : { label: knockLabel }
+							: auth && typeof auth.decide === 'function' ? auth.decide(conn.peer, cloudMeta, { kind: dialKind }) : undefined;
 					if (verdict === 'deny') {
 						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied');
 						conn.close();
@@ -879,9 +927,10 @@ export class PeerConnection {
 					}
 					if (verdict && typeof verdict === 'object' && verdict.label) knockLabel = String(verdict.label).slice(0, 120);
 					let authorized =
-						verdict !== undefined
+						!found &&
+						(verdict !== undefined
 							? verdict === 'admit'
-							: !!auth && typeof auth.authorize === 'function' && auth.authorize(conn.peer);
+							: !!auth && typeof auth.authorize === 'function' && auth.authorize(conn.peer));
 					// 55 A4: AGENTS NEVER RIDE THE GUEST AUTO-ADMIT. A plugin's admit (guests join
 					// automatically, a room code) becomes the card for a dial that says it is an agent,
 					// unless the host ticked "Let AI agents join as guests". Only an invite skips it.
@@ -998,6 +1047,9 @@ export class PeerConnection {
 			let silenceTimer = null;
 			const closeSilent = (/** @type {string} */ why) => {
 				if (!conn.open) return;
+				// fix-agenttest 4: a peer that told us its page went hidden (a phone in the background)
+				// keeps its link through the grace; the poll comes back and closes it after that
+				if (!silenceCloseAllowed(this.awayPeers.get(conn.peer), Date.now())) return;
 				log('warn', 'net', 'link silent — closing it so the peer is redialled or dropped', { peer: conn.peer, why });
 				this.silentDrops.add(conn.peer);
 				try { conn.close(); } catch (e) { /* already dead */ }
@@ -1333,6 +1385,10 @@ export class PeerConnection {
 					applyRemoteGameState(data);
 				} else if(data.type == 'getgame') {
 					if (sameRoomOrUnknown(conn.peer)) sendGameState(data.sender);
+				} else if(data.type == 'gamevarop') {
+					// fix-agenttest 10: a shared Set Variable's event, sent to us as the authority;
+					// applied once per rid, and the write replicates as `game`
+					applyGameVarOp(data);
 				} else if(data.type == 'underlay') {
 					// 60 Q5: a peer's shared reference image (owner = this conn, never a field)
 					applyRemoteUnderlay(data, conn.peer);
@@ -1477,6 +1533,12 @@ export class PeerConnection {
 						// P-A finding), and marking it graceful stops the transient-drop
 						// reconnect from redialing someone who left on purpose (B5)
 						this.gracefulLeft.add(data.peerId);
+						// fix-agenttest 6: a tab that unloaded may reload and dial back on this id
+						if (data.unload === true && this.openedPeers.has(data.peerId)) {
+							const now = Date.now();
+							for (const [id, at] of this.unloadedPeers) if (now - at > REJOIN_WINDOW_MS) this.unloadedPeers.delete(id);
+							this.unloadedPeers.set(data.peerId, now);
+						}
 						if (this.openedPeers.has(data.peerId)) this.finalizeDisconnect(data.peerId, false);
 					} else if (this.connections[data.peerId] || this.reconnecting.has(data.peerId)) {
 						// a relayed rumor about a peer we have FIRST-HAND state on — our
@@ -1506,6 +1568,7 @@ export class PeerConnection {
 				} else if(data.type == 'nodes') {
 					preloadSandboxFor(data); // 69: a joiner's scene with code starts the engine before its first tick
 					applyNodesSnapshot(data.nodes, data.edges, data.graphs);
+					noteNodesSnapshot(conn.peer); // fix-agenttest 5: the handshake's graphs are here
 				} else if(data.type == 'nodesync') {
 					applyNodeSync(data);
 				} else if(data.type == 'graphcreate') {
@@ -1601,6 +1664,10 @@ export class PeerConnection {
 					notePeerFacts(conn.peer, { appVersion: data.appVersion, device: data.dev }); // 55 A9: the profile card
 				} else if(data.type == 'relink') {
 					this.adoptRelink(conn);
+				} else if(data.type == 'linkaway') {
+					// fix-agenttest 4: their page went hidden / came back (see peerDrop.AWAY_GRACE_MS)
+					if (data.hidden === true) this.awayPeers.set(conn.peer, Date.now());
+					else this.awayPeers.delete(conn.peer);
 				} else if(data.type == 'fastchan') {
 					// 60 Q2: the other end opened its fast channel on this conn's RTCPeerConnection
 					this.openFastChannel(conn);
@@ -1839,11 +1906,10 @@ export class PeerConnection {
 		if (opts.heal || this.reconnecting.has(peerId)) conn.send({ type: 'relink' });
 		// a conn opened to them — whatever goodbye they once sent is history
 		this.gracefulLeft.delete(peerId);
-		let hosts = [id];
-		Object.keys(this.connections).forEach(element => {
-			if(element != peerId)
-			hosts.push(element)
-		});
+		// fix-agenttest 5: only the peers we are LINKED to now (peerDrop.meshHosts) — a closed conn
+		// waiting out its reconnect window is still a key here, and a joiner told about it
+		// dialled a departed peer (peer-unavailable)
+		let hosts = meshHosts(id, peerId, this.connections, this.reconnecting);
 		console.log("sending to " + peerId + "  remote " + hosts)
 		let locks = [...locked];
 		if(typeof selected.uuid != 'undefined' && selected.uuid) locks.push([id, selected.uuid]);
@@ -2334,6 +2400,7 @@ export class PeerConnection {
 			this.inboundDials.delete(peerId);
 			this.unavailableStrikes.delete(peerId);
 			this.silentDrops.delete(peerId);
+			this.awayPeers.delete(peerId);
 			peers.update((value) => value);
 			this.sendHandshake(conn, peerId, true, this.peer.id, { heal: true });
 		});
@@ -2351,6 +2418,8 @@ export class PeerConnection {
 		this.reconnecting.delete(peerId);
 		this.unavailableStrikes.delete(peerId);
 		this.silentDrops.delete(peerId);
+		this.awayPeers.delete(peerId);
+		forgetNodeSyncPeer(peerId);
 		this.lastLeaveAt = Date.now();
 		this.inboundDials.delete(peerId);
 		const conn = this.connections[peerId];
@@ -2394,6 +2463,8 @@ export class PeerConnection {
 		this.lastLeaveAt = Date.now(); // F-3: the closes below make peer-level noise
 		this.unavailableStrikes.clear();
 		this.silentDrops.clear();
+		this.awayPeers.clear();
+		forgetNodeSyncPeer();
 		dropPeerUnderlays(null); // 60 Q5: every peer's shared reference images go with the session
 		this.reconnecting.clear(); // pending retry timers see a cleared map and no-op
 		this.inboundDials.clear();

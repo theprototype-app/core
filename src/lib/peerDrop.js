@@ -26,6 +26,44 @@ export const LINK_POLL_MS = 2000;
 export const LINK_SILENT_MS = 7000;
 
 /**
+ * fix-agenttest 4: A PAGE THAT SAID IT WENT HIDDEN IS NOT A GHOST. A phone's tab in the
+ * background (screen off, a fold, an app switch, a system sheet over the browser) is throttled
+ * or frozen, and its consent answers stop; the 7 s rule above then closed the phone's link as if
+ * it had crashed, and the redial found nothing to answer it. A page announces `linkaway`
+ * {hidden} on visibilitychange (a crashed tab announces nothing, so it is still cleared in
+ * 7 s), and a peer that is away keeps its link for this long before a silence close.
+ */
+export const AWAY_GRACE_MS = 60000;
+
+/**
+ * May a silence close go ahead for a peer whose last `linkaway` said hidden at `awaySince`?
+ * @param {number | undefined} awaySince Date.now() of the hidden notice, undefined = not away
+ * @param {number} now
+ */
+export function silenceCloseAllowed(awaySince, now) {
+	return awaySince === undefined || now - awaySince >= AWAY_GRACE_MS;
+}
+
+/**
+ * fix-agenttest 5: the `hosts` a handshake hands a joiner to fill the mesh with — us, plus every
+ * peer we hold an OPEN link to that is not waiting out its reconnect window. A closed conn stays
+ * a key of `connections` through that window (and a departed peer's for good, until the window
+ * ends), and the joiner dialled it: peer-unavailable, a toast, a strike.
+ * @param {string} myId @param {string} to the joiner @param {Record<string, any>} connections
+ * @param {{has: (id: string) => boolean}} [reconnecting]
+ * @returns {string[]}
+ */
+export function meshHosts(myId, to, connections, reconnecting) {
+	const hosts = [myId];
+	for (const [id, conn] of Object.entries(connections ?? {})) {
+		if (id === to || id === myId) continue;
+		if (!conn?.open || reconnecting?.has(id)) continue;
+		hosts.push(id);
+	}
+	return hosts;
+}
+
+/**
  * Read the selected candidate pair's consent counters out of an RTCStatsReport-like map.
  * @param {Iterable<any> | {forEach: Function} | null | undefined} report
  * @returns {{ requestsSent: number, responsesReceived: number } | null}

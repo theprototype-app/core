@@ -250,6 +250,7 @@ export const VALIDATORS = {
 	volget: (d) => typeof d.hash === 'string' && d.hash.length > 0 && d.hash.length <= 128,
 	volsave: (d) => typeof d.id === 'string' && d.id.length <= 64 && (d.name == null || (typeof d.name === 'string' && d.name.length <= 200)),
 	volsaveack: (d) => typeof d.id === 'string' && typeof d.ok === 'boolean',
+	volcancel: (d) => typeof d.hash === 'string' && d.hash.length > 0 && d.hash.length <= 128,
 	disconnected: (d) => typeof d.peerId === 'string',
 	// 55 A9: remove / remove-and-block / allow back. WHO may send it is decided by the
 	// receiver (peerModeration), not here — this is the shape.

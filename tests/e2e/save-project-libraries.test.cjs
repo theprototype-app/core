@@ -129,8 +129,15 @@ h.run(async () => {
 	h.check(JSON.stringify(await ownScenes(G)) === JSON.stringify(mineBefore), '…and my own Library was not saved into');
 
 	// ---- 4. "Save the active one": Ctrl+S and the burger, no dialog -----------------------------
+	await G.page.waitForTimeout(1500); // the first save's toasts and the dialog's focus hand-back settle
 	await ctrlS(G);
 	await h.eventually(() => hostSaves(H), (n) => n === 2, 'Ctrl+S now saves the active one straight away', 30000);
+	if ((await hostSaves(H)) !== 2) {
+		console.log('  G toasts:', JSON.stringify(await toasts(G)));
+		console.log('  G log:', JSON.stringify((await debug(G)).log.slice(-8)));
+		console.log('  H log:', JSON.stringify((await debug(H)).log.slice(-8)));
+		console.log('  G focus:', await G.page.evaluate(() => document.activeElement?.tagName + '#' + document.activeElement?.id));
+	}
 	h.check(!(await dialogOpen(G)), '…with no dialog');
 	await G.page.evaluate(() => window.__stores.saveOptions.setSaveOptions({ format: 'tp' }));
 	let downloaded = false;

@@ -517,6 +517,8 @@ async function pace(conn) {
  */
 async function sendSliced(conn, item, blob, peerId) {
 	const size = blob.size;
+	const stopKey = peerId + ' ' + item.hash;
+	stoppedSends.delete(stopKey);
 	const tx = beginTransfer({ hash: item.hash, name: item.name, dir: 'out', size, peer: peerId });
 	try {
 		if (size <= SINGLE_SHOT_BYTES) {
@@ -531,6 +533,7 @@ async function sendSliced(conn, item, blob, peerId) {
 		let sent = 0;
 		for (let seq = 0; seq < chunks; seq++) {
 			if (!conn.open) throw new Error('connection closed');
+			if (stoppedSends.has(stopKey)) throw new Error('cancelled by the receiver');
 			await pace(conn);
 			const slice = blob.slice(seq * CHUNK_BYTES, Math.min(size, (seq + 1) * CHUNK_BYTES));
 			const bytes = await slice.arrayBuffer();
@@ -541,7 +544,27 @@ async function sendSliced(conn, item, blob, peerId) {
 		finishTransfer(tx);
 	} catch (e) {
 		failTransfer(tx, /** @type {any} */ (e)?.message ?? 'send failed');
+	} finally {
+		stoppedSends.delete(stopKey);
 	}
+}
+
+/** 56 C13: '<peerId> <hash>' sends the receiver cancelled — checked between chunks @type {Set<string>} */
+const stoppedSends = new Set();
+
+/**
+ * 56 C13: the receiver CANCELLED a pull (a session-volume guest's Cancel): stop sending it that file —
+ * drop a queued send and end a running one at the next chunk, so a cancelled 18 MB pull does not keep
+ * filling a phone's link (and queueing everything after it) for nothing.
+ * @param {string} peerId @param {string} hash @returns {boolean} something was stopped
+ */
+export function stopSendingTo(peerId, hash) {
+	const h = String(hash ?? '');
+	const before = sendQueue.length;
+	sendQueue = sendQueue.filter((j) => !(j.peerId === peerId && j.item?.hash === h));
+	const running = get(transfers).some((t) => t.dir === 'out' && t.hash === h && t.peer === peerId && (t.state === 'active' || t.state === 'queued'));
+	if (running) stoppedSends.add(peerId + ' ' + h);
+	return running || sendQueue.length !== before;
 }
 
 /** Receive an announcement: open the reassembly buffer and the ledger row. @param {any} data */

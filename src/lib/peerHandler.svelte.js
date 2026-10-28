@@ -1411,7 +1411,7 @@ export class PeerConnection {
 					else answerAssetRequest(conn.peer, data);
 				} else if(data.type == 'module') {
 					applyModuleMessage(data);
-				} else if(data.type == 'volidx' || data.type == 'volthumbs' || data.type == 'volget' || data.type == 'volsave' || data.type == 'volsaveack') {
+				} else if(data.type == 'volidx' || data.type == 'volthumbs' || data.type == 'volget' || data.type == 'volsave' || data.type == 'volsaveack' || data.type == 'volcancel') {
 					// 56 C13: the host's files as a read-only Explorer volume — lazy, like the mesh relay
 					const from = conn.peer;
 					sessionVolumesNow().then((m) => m.handleVolumeMessage(from, data)).catch(() => {});

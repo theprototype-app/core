@@ -34,7 +34,7 @@ import { explorerItems, explorerFolders, addItemFromBytes, createFolder } from '
 import { sceneAssets } from './sceneAssets';
 import { currentLevel, levelItems } from './levels';
 import { amPrivate } from './peerScenes';
-import { answerAssetRequest, pullVolumeBytes, cancelPull, volumePullRunning } from './assetShare';
+import { answerAssetRequest, pullVolumeBytes, cancelPull, volumePullRunning, stopSendingTo } from './assetShare';
 import { showChoice } from './confirmDialog';
 import {
 	normalizeShareScope,
@@ -371,8 +371,13 @@ export async function sessionVolumeBlob(volumeId, itemId, opts = {}) {
 
 /** Stop a running pull of one row. @param {string} volumeId @param {string} itemId */
 export function cancelSessionPull(volumeId, itemId) {
-	const row = sessionVolumeById(volumeId)?.items.find((i) => i.id === itemId);
-	return row && volumePullRunning(row.hash) ? cancelPull(row.hash) : false;
+	const vol = sessionVolumeById(volumeId);
+	const row = vol?.items.find((i) => i.id === itemId);
+	if (!vol || !row || !volumePullRunning(row.hash)) return false;
+	// tell the host too, or it keeps sending the whole file down the link for nothing
+	sendTo(vol.peerId, { type: 'volcancel', hash: row.hash });
+	note('out volcancel ' + row.hash.slice(0, 12));
+	return cancelPull(row.hash);
 }
 
 /**
@@ -479,6 +484,7 @@ export function handleVolumeMessage(from, data) {
 		else if (data.type === 'volthumbs') applyVolumeThumbs(from, data);
 		else if (data.type === 'volget') answerVolumeGet(from, data);
 		else if (data.type === 'volsave') void answerVolumeSave(from, data);
+		else if (data.type === 'volcancel') note('volcancel from ' + from + ': ' + (stopSendingTo(from, String(data.hash)) ? 'stopped' : 'nothing running'));
 		else if (data.type === 'volsaveack') {
 			const done = pendingSaves.get(String(data.id));
 			if (done) {

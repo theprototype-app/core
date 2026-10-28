@@ -89,8 +89,18 @@ h.run(async () => {
 	// ---- 2. no bytes until open -----------------------------------------------------------------
 	h.check((await debug(G)).pullCount === 0 && (await answers(H)) === 0, 'no byte request left the phone, and H answered none');
 
-	await G.page.locator('#explorer-slot').click().catch(() => {});
-	await G.page.waitForTimeout(1200);
+	// the phone shell opens the Explorer from its own bar (#ps-explorer), docked at the bottom
+	const psExplorer = G.page.locator('#ps-explorer');
+	if ((await psExplorer.count()) === 1) await psExplorer.tap();
+	else await G.page.locator('#explorer-slot').click();
+	await G.page.waitForTimeout(1500);
+	// the folded phone keeps the folder tree collapsed (as it does for mounted projects): open it
+	if ((await G.page.locator('[data-session-banner]').count()) === 0) {
+		const toggle = G.page.locator('[data-ws-primary-toggle]').first();
+		h.check((await toggle.getAttribute('title')) === 'Show folder tree', `premise: the folded Explorer offers "Show folder tree" (${await toggle.getAttribute('title')})`);
+		await toggle.click();
+		await G.page.waitForTimeout(800);
+	}
 	const vol = G.page.locator('button[data-session-volume]');
 	if ((await vol.count()) === 1) {
 		await vol.click().catch(() => {});

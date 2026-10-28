@@ -79,7 +79,7 @@ export function tapAgentEdit(peerId, data) {
 
 /**
  * The seam for an agent that is LOOKING rather than editing (55's agentview: camera pose → a
- * point in front of it, see `viewFocus`). 74-int wires it; until then nothing calls it.
+ * point in front of it, see `viewFocus`). agentLog.applyAgentView calls it for every agentview.
  * @param {string} peerId @param {[number, number, number]} point
  */
 export function noteAgentFocus(peerId, point) {

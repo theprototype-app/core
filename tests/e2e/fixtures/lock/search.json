@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-27T09:37:53.574Z",
+	"recordedAt": "2026-10-28T10:56:04.679Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -2983,7 +2983,9 @@
 			"rows": [
 				"Apply changes",
 				"Cached downloads",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server",
 				"Statistics card"
 			],
@@ -3065,10 +3067,12 @@
 		},
 		"claude": {
 			"rows": [
-				"Enable assistant"
+				"Enable assistant",
+				"Let AI agents join as guests"
 			],
 			"sections": [
-				"AI"
+				"AI",
+				"Connection"
 			]
 		},
 		"api key": {
@@ -3620,11 +3624,13 @@
 				"Compress textures (KTX2)",
 				"Diagnostics",
 				"Keep a recycle bin",
+				"Let AI agents join as guests",
 				"Peer hands",
 				"Ping colour",
 				"Selection outline colour",
 				"Session size",
 				"Show others as classic heads",
+				"Show where AI agents look",
 				"Signaling server",
 				"Sky image quality",
 				"Statistics card"
@@ -3642,7 +3648,9 @@
 		"server": {
 			"rows": [
 				"Apply changes",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
@@ -3653,7 +3661,9 @@
 		"invite": {
 			"rows": [
 				"Apply changes",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
@@ -3665,8 +3675,10 @@
 				"Apply changes",
 				"Colocation",
 				"Ghost hands",
+				"Let AI agents join as guests",
 				"Session size",
 				"Show others as classic heads",
+				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
@@ -3680,7 +3692,9 @@
 				"Apply changes",
 				"Clear saved session",
 				"Diagnostics",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server",
 				"When you add files during a session",
 				"Who can unshare a file"
@@ -4472,6 +4486,7 @@
 				"LOD 2 keeps",
 				"LOD 3 keeps",
 				"LOD levels",
+				"Let AI agents join as guests",
 				"Lift the corner buttons above docked panels",
 				"Loop select (faces: again = perpendicular; edges: the chain)",
 				"Max texture size",
@@ -4482,6 +4497,7 @@
 				"Project actions",
 				"Reset tips",
 				"Reverse trackpad pan",
+				"Show where AI agents look",
 				"Stance",
 				"Storage breakdown",
 				"Storage used",
@@ -4501,7 +4517,8 @@
 				"Import",
 				"Export",
 				"VR",
-				"AI"
+				"AI",
+				"Connection"
 			]
 		},
 		"zz-no-match": {

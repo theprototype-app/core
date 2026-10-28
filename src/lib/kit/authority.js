@@ -13,23 +13,32 @@
 //
 // A peer with no id yet (offline, before the signalling server answered) is alone, so it
 // is its own authority — a single-player game never waits for a network.
+//
+// 55 (41's gem test): AN AI AGENT'S PAGE IS NEVER THE AUTHORITY while a person is present — the
+// rule "an agent page is nobody's host" applied to the kit. Agent ids (`agents`, self-declared on
+// the roster, which every peer holds) are dropped from all three tiers; a session of agents only
+// still has an authority (the smallest of them), so a page alone with another agent never stalls.
 
 /**
  * @param {{me?: string | null, peers?: (string | null | undefined)[], host?: string | null,
- *   initiator?: string | null}} facts
+ *   initiator?: string | null, agents?: (string | null | undefined)[]}} facts
  *   `me` this peer's id · `peers` the ids it is connected to · `host` the session host as this
  *   peer knows it · `initiator` the peer stepping the physics (this peer's id when it is)
+ *   · `agents` the AI agents' ids among them (this peer's own too when it is one)
  * @returns {string | null} the authority's id (null only when nobody has an id: then `me` decides)
  */
 export function pickAuthority(facts) {
 	const me = facts?.me ? String(facts.me) : null;
 	const present = new Set((facts?.peers ?? []).filter(Boolean).map(String));
 	if (me) present.add(me);
+	const agents = new Set((facts?.agents ?? []).filter(Boolean).map(String));
+	const people = [...present].filter((id) => !agents.has(id));
+	const eligible = new Set(people.length ? people : present);
 	const host = facts?.host ? String(facts.host) : null;
-	if (host && present.has(host)) return host;
+	if (host && eligible.has(host)) return host;
 	const initiator = facts?.initiator ? String(facts.initiator) : null;
-	if (initiator && present.has(initiator)) return initiator;
-	const ids = [...present].sort();
+	if (initiator && eligible.has(initiator)) return initiator;
+	const ids = [...eligible].sort();
 	return ids[0] ?? null;
 }
 

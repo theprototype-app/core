@@ -19,6 +19,10 @@
 	import { connectionStatus } from '$lib/connectionStatus';
 	import CloudSlot from '../CloudSlot.svelte';
 	import ConnectInfoDrawer from './ConnectInfoDrawer.svelte';
+	// 55 A4: Request AI — the invite sheet
+	import InviteSheet from './InviteSheet.svelte';
+	import { inviteSheet, kindOfRow } from '$lib/inviteStore';
+	import { rolesInfo } from '$lib/cloudHooks';
 	import { safeStorage } from '$lib/safeStorage';
 	// 44 M14: pinned to the top row (the full-width bar) or floating (the centred pill, compact when crowded)
 	import { connectPinned } from '$lib/connectPin';
@@ -58,7 +62,9 @@
 	const REFUSAL_CHIP_MS = 20000;
 	const refusalText = $derived(
 		$joinRefusal
-			? String($joinRefusal.peerId).slice(0, 6).toUpperCase() +
+			? $joinRefusal.result === 'removed'
+				? 'You were removed from this session' // 55 A9
+				: String($joinRefusal.peerId).slice(0, 6).toUpperCase() +
 					($joinRefusal.result === 'full' ? "'s session is full (" + HARD_PEER_CAP + ')' : ' declined')
 			: ''
 	);
@@ -90,6 +96,9 @@
 		// card, which ages from the same map and would read zero. Show nothing instead.
 		return started ? Math.ceil(approvalRemaining(started) / 1000) : 0;
 	});
+	// 55 A4: whoever can approve joins can invite — an admin on cloud builds, any peer in the OSS
+	// build (no roles there: everyone edits)
+	const canInvite = $derived(!$rolesInfo || !!$rolesInfo.amAdmin);
 	const connState = $derived(
 		remoteOpen.length > 0 ? 'connected' : pendingOut.length > 0 ? 'pending' : 'idle'
 	);
@@ -411,8 +420,10 @@
 	/** up to three peers on the chip, the rest as +N (NOTES-38 #12: a speaker gets the ring) */
 	const chipPeers = $derived(
 		remoteOpen.slice(0, 3).map((id) => {
-			const name = $userdata.find((u) => u[0] === id)?.[1] || String(id);
-			return { id, name, initial: String(name).trim().charAt(0).toUpperCase() || '?' };
+			const row = $userdata.find((u) => u[0] === id);
+			const name = row?.[1] || String(id);
+			// 55 A7: an agent is a robot on the chip, never a voice avatar
+			return { id, name, initial: String(name).trim().charAt(0).toUpperCase() || '?', agent: kindOfRow(row) === 'agent' };
 		})
 	);
 	const selfSpeaking = $derived(!!$peers?.peer?.id && $speakingPeers.includes($peers.peer.id));
@@ -552,7 +563,11 @@
 				<span class="cx-dot cx-status-dot" data-tone={$connectionStatus.tone} aria-hidden="true"></span>
 				<span class="cx-avatars" aria-hidden="true">
 					{#each chipPeers as p (p.id)}
-						<span class="cx-av" class:speaking={$speakingPeers.includes(p.id)} style:background={peerColor(p.id)} title={p.name}>{p.initial}</span>
+						{#if p.agent}
+							<span class="cx-av cx-av-agent" style:background={peerColor(p.id)} title={p.name + ' (AI agent)'}><Icon name="bot" size={16} aria-hidden="true" /></span>
+						{:else}
+							<span class="cx-av" class:speaking={$speakingPeers.includes(p.id)} style:background={peerColor(p.id)} title={p.name}>{p.initial}</span>
+						{/if}
 					{/each}
 					{#if remoteOpen.length > 3}<span class="cx-av cx-av-more">+{remoteOpen.length - 3}</span>{/if}
 				</span>
@@ -585,6 +600,18 @@
 		<button type="button" class="cx-id" onclick={copy} title="Copy your invite link"
 			><span class="cx-id-text">{myidcap}</span><Icon name="copy" size={16} aria-hidden="true" /></button
 		>
+		{#if canInvite}
+			<!-- 55 A4: Request AI — the invite sheet (AI agent / Person tabs over one signed invite) -->
+			<button
+				type="button"
+				id="connect-request-ai"
+				class="hud-cell cx-request-ai"
+				class:on={!!$inviteSheet}
+				title="Request AI — an invite link for an AI agent (or a person) that joins without an approval card"
+				aria-label="Request AI: create an invite link"
+				onclick={() => inviteSheet.set($inviteSheet ? null : 'agent')}
+			><Icon name="bot" size={20} aria-hidden="true" /></button>
+		{/if}
 		<span class="hud-sep"></span>
 
 		{#if connState === 'connected'}
@@ -723,6 +750,9 @@
 		<ConnectInfoDrawer onClose={() => connectDrawerOpen.set(false)} />
 	{/if}
 </div>
+{#if $inviteSheet}
+	<InviteSheet />
+{/if}
 
 <style>
 	.connect-wrap {

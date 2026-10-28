@@ -21,6 +21,7 @@ import { parseInviteHash, decodeInviteServer, peerServerStatus, sameServer } fro
 import { requestConnect, cancelOutboundRequest } from './peerApproval';
 import { sessionHost } from './connectionState';
 import { nameOf } from './lockControl';
+import { captureInviteHash } from './inviteStore';
 
 /** @param {any} target the decoded override */
 function serverLabel(target) {
@@ -106,6 +107,9 @@ export async function handleInviteHash(hash) {
 	// the signaling link has never opened: the startup path (`peer.on('open')`) owns
 	// the hash and will dial it — nothing to do live, and no "not connected yet" toast
 	if (!peer.hasOpened) return 'startup';
+	// 55 A4: a pasted invite link — keep its token in memory for the dial's proof, then the
+	// whole hash goes (consumeHash), so the token never sits in the URL or the history
+	captureInviteHash(hash || '');
 	consumeHash();
 	const myId = String(peer.peer.id || peer.myId || '').toLowerCase();
 	if (peerId === myId) {

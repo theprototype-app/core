@@ -15,6 +15,24 @@
   and worked examples. Fetch this to write a correct module without guessing the
   API.
 
+## Agents: join a session
+
+- An AI agent can join a live session from its link and build alongside people:
+  `claude mcp add theprototype -- npx -y @theprototype/agent mcp '<link>'`
+  (any MCP client: `npx -y @theprototype/agent mcp <link>`). The bridge runs the
+  real app headless and exposes its tools.
+- In the page: `window.tpAgent` (only with `&agent` in the hash or
+  `localStorage.agentApi`) — `tools()` (full JSON schemas), `systemPrompt()`,
+  `exec(name, args)` (replicated, one undo step), `snapshot()`, `status()`,
+  `waitForEdit(ms)`, `screenshot({view, uuid, size})`, `pendingOffers()`,
+  `accept(id)`, `leave()`.
+- A plain link waits for the host's Approve; an invite link (`&invite=…`) joins
+  in one step. A VIEW-ONLY agent's edits are refused — check `status().canEdit`.
+- [Agent guide, inlined](/llms-full.txt): the whole contract, the view-only
+  trap and the replication rules an agent must respect (AGENT-SESSIONS.md).
+- [Build with an AI agent](https://docs.theprototype.app/ai/build-with-an-agent/):
+  the same for people.
+
 ## Key concepts
 
 - Everything replicates over the peer mesh: apply the change locally, then
@@ -32,7 +50,7 @@
 ## Docs
 
 - [llms-full.txt](/llms-full.txt): this map plus the entire module SDK guide
-  inline (works offline / without repo access).
+  and the agent guide inline (works offline / without repo access).
 - [Source repository](https://github.com/theprototype-app/core): MIT-licensed
   code; CLAUDE.md in the repo root documents the architecture, replication
   rules and conventions agents should follow when contributing.

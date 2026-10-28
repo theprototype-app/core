@@ -233,6 +233,17 @@ describe('behaviours — the runtime rules', () => {
 		expect(live.errors[0].message).toMatch(/loop limit/i);
 		expect(live.started).toBe(true);
 	});
+	it('55: a handler that throws on the authority is visible on EVERY peer (the document carries it)', async () => {
+		// 41's gem test: the error lived only in the authority's instance; another peer's view said nothing
+		const sim = createBehaviourSim({ peers: ['a', 'b'] });
+		await sim.load('oops', 'export default behaviour({ state: {x: 0}, on: { start() { this.state.x = 1; missingThing(); } } });');
+		sim.advance(2100); // a two-peer start waits for the session to settle
+		const onA = sim.peer('a').bhv.live('oops').errors;
+		const onB = sim.peer('b').bhv.live('oops').errors;
+		expect(onA.some((/** @type {any} */ e) => /missingThing/.test(e.message))).toBe(true);
+		expect(onB.some((/** @type {any} */ e) => /missingThing/.test(e.message))).toBe(true);
+		expect(onB.find((/** @type {any} */ e) => /missingThing/.test(e.message))).toMatchObject({ where: 'on.start', remote: true });
+	});
 	it('an unknown event is a problem, not a crash', async () => {
 		const sim = createBehaviourSim({ peers: ['a'] });
 		await sim.load('odd', 'export default behaviour({ on: { noSuchThing() {} } });');

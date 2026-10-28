@@ -21,6 +21,8 @@ export const DEBUG_HOOKS = [
 	['*', () => import('../stores/flowStore')],
 	// 34 R2: the game kit (kit, kitDebug, kitAuthorityId)
 	['kit', () => import('./kit/runtime.js')],
+	// 55: the pure authority pick, so a suite can re-run it on a page's live facts
+	['kitAuthority', () => import('./kit/authority.js')],
 	// 34 R2 (kit-entities): entities drawn / world / api (kitEntitiesDebug, kitEntitiesApi, entityOfObject)
 	['kitEntities', () => import('./kit/entityApp.js')],
 	// 34 R3 (D1/D2): behaviours (runtime, behaviourStatus, behavioursDebug)
@@ -252,6 +254,11 @@ export const DEBUG_HOOKS = [
 	['cloudPlugin', () => import('./cloudPlugin')],
 	['connectionState', () => import('./connectionState')],
 	['peerApproval', () => import('./peerApproval')],
+	['inviteStore', () => import('./inviteStore')],
+	['agentLog', () => import('./agentLog')],
+	['peerModeration', () => import('./peerModeration')],
+	['peerHide', () => import('./peerHide')],
+	['peerFacts', () => import('./peerFacts')],
 	['particleRuntime', () => import('./particleRuntime')],
 	['particleActions', () => import('./particleActions')],
 	['particlePresets', () => import('./particlePresets')],

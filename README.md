@@ -79,6 +79,9 @@ self-host the whole thing, and none of the above involves us.
 - Text-to-3D through ComfyUI/TRELLIS or Meshy, imported straight into the scene
 - Bring your own endpoint and key (**Settings ▸ AI**). Nothing leaves the browser until
   you configure one
+- Invite an AI agent (Claude Code, Claude Desktop, any MCP client) into your session from a
+  link and build together — [Build with an AI agent](https://docs.theprototype.app/ai/build-with-an-agent/)
+  · [AGENT-SESSIONS.md](AGENT-SESSIONS.md)
 
 **Assets and files 📦**
 - Explorer: a local asset library with folders, thumbnails, 3D previews, drag-out placing

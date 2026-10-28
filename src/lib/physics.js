@@ -35,6 +35,7 @@ import { velocityFromSamples, clampThrow, MAX_LINVEL, MAX_ANGVEL } from './throw
 // 29-F: the lower-id-keeps-the-world rule, as a leaf that imports nothing — the whole
 // decision is a pure function of four facts, so its truth table is a vitest unit.
 import { simulateVerdict } from './simAuthority';
+import { myKind } from './inviteStore'; // 55: an agent page never simulates
 // fix-batch-1 #14: the impact rule (closing speed along the contact normal, the legacy
 // downward channel beside it) as a leaf of pure functions
 import { closingSpeed, IMPACT_MIN_DOWN_VY, IMPACT_MIN_SPEED } from './impactSpeed';
@@ -715,6 +716,11 @@ export async function toggleSimulation() {
 		showToast(nameOf(busy) + ' is already simulating — one run at a time');
 		return;
 	}
+	// 55 (41's physics research): AN AI AGENT'S PAGE NEVER STEPS THE WORLD. It renders at ~2 fps, and
+	// the stepping peer feeds at most 0.25 s of sim time a frame — the whole session ran 4-6x slow.
+	// Its control_simulation runs on the host (agent/simRelay.js); a scene's sim-on-load or play waits
+	// for a person to start it.
+	if (myKind() === 'agent') return;
 	await startSimulation();
 }
 

@@ -4,6 +4,8 @@ import { showToast, appNotice, peers, cloudIdentity, userdata } from '../stores/
 import { globalScene, globalCamera, globalRenderer, orbitControls, cameraClaim, isLocked, isVRMode } from '../stores/sceneStore';
 import { requestConnect } from './peerApproval';
 import { sessionHost } from './connectionState';
+// 55 A4: invite grants for the roles plugin (store-only)
+import { inviteGrantFor, onInvitesChange, isAgentPeer, joinedVia } from './inviteStore';
 import {
 	setCapabilityProvider,
 	setAuthProvider,
@@ -262,6 +264,19 @@ export function makeCloudApi() {
 		/** 29: this engine carries `cloudMeta` on dials and consults `authProvider.decide`
 		 *  (admit / deny / knock-with-label). Absent on older engines — probe it. */
 		dialMeta: true,
+		/** 55 A4 — INVITE LINKS, host-side (additive, typeof-probed like `dialMeta`). Core
+		 *  checks every invite proof itself (`inviteStore.verifyInviteDial`) and admits; the
+		 *  roles plugin grants EDIT only from `grantFor(peerId)` = `{meta, record, role}` —
+		 *  the dial's own proof and the record it named (with the KEY, host-only) — and
+		 *  re-verifies the proof itself (the roomAccess pattern). Null = not an invite join.
+		 *  `onChange(fn) -> off` fires on any create/use/revoke; `isAgent(peerId)` is the
+		 *  self-declared `kind: "agent"`; `joinedVia(peerId)` = 'invite'|'approval'|'guest'. */
+		invites: {
+			grantFor: (/** @type {string} */ peerId) => inviteGrantFor(peerId),
+			onChange: (/** @type {() => void} */ fn) => onInvitesChange(fn),
+			isAgent: (/** @type {string} */ peerId) => isAgentPeer(peerId),
+			joinedVia: (/** @type {string} */ peerId) => joinedVia(peerId)
+		},
 		/** 69 T4: this page is served from the separate PLAY origin (`VITE_PLAY_ORIGIN`): player-only,
 		 *  and nothing that signs anyone in belongs here (a token on this origin is what the split
 		 *  exists to avoid). Absent on older engines — probe it; false on the app origin. */

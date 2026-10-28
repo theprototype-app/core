@@ -5,6 +5,69 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.48.0 — AI agents in your session, invite links, and a people menu 🤖
+
+Send Claude (or any AI agent) your session link and build together: the agent joins as a peer, uses the app's own
+tools and shows you every step. Invite links let a friend or an agent in without an approval card, and a new menu on
+every person in the Connected panel lets the host remove someone.
+
+### 🤖 AI agents in your session
+
+- **Join from a link**: `claude mcp add theprototype -- npx -y @theprototype/agent mcp '<link>'` adds theprototype to
+  Claude Code (or any MCP client). The agent drives the real app in a headless browser — objects, flow nodes,
+  physics, and 3D generation on your own provider — with the in-app assistant's own tools, read live from your app.
+- **It sees what it built** through clean screenshots (no gizmos or toasts) that never move anyone's view, and it
+  leaves cleanly when you close it.
+- **No body, clear marks**: an agent shows as a robot with an "AI" label in Users — no character, no voice, no
+  cursor — and a small camera marker shows where it last looked (Settings can hide it).
+- **See where it is working**: a small bot icon with the agent's name stands over the object it is editing (or the
+  spot its last screenshot looked at), on desktop and in VR. It fades while the agent is idle, hides in Play, and
+  leaves with the agent; Settings ▸ Connection ▸ **Show where AI agents look** switches it off.
+- **Every step in the AI assistant window**, on every peer: "Claude · created 12 objects (Campfire)". Click a line
+  to select those objects; editors can Undo it.
+- A view-only agent is told so instead of building things nobody else sees. llms.txt now says how an agent joins.
+- **It goes where you go**: save as another name or open another scene and the agent follows; while it travels (or
+  while you work in a private scene) it holds its edits, so nothing lands in a scene you left. An agent never
+  becomes the host, never decides a game's rules for the people playing, and never hands you its old world when you
+  open a new or another scene. Its page no longer redraws a view nobody watches, so it follows you in seconds.
+- **When the host leaves**, the agent carries on with the person who takes over. If everyone has left it pauses —
+  reading only, building nothing — and waits for its host (10 minutes by default), then asks to come back in.
+- **The physics runs on your machine**: when an agent starts the simulation it runs on the host's page, so balls
+  fall at their real speed (an agent's page used to step the world slowly for everyone).
+- **Better building tools**: lights take their colour, intensity, range, cone and aim when created or updated;
+  `group_objects` keeps the name you give it; sizes must be positive numbers; a field that does not apply to an
+  object says so instead of reporting success; big flow graphs are read page by page (`list_scene {flow, page}`);
+  `create_behaviour` returns the node's id and its inputs and outputs; a wire to a socket the node does not have
+  is refused with the node's real socket names (it used to be accepted and do nothing).
+- **Code behaviours explain themselves**: `create_behaviour` carries its own format and a working example (some
+  clients drop the app's instructions), and the checker refuses what would silently do nothing — a `this.` member
+  that does not exist (a behaviour drives effect nodes through its outputs; it does not move objects itself) or a
+  per-frame hook such as `onTick` (there is none: repeat with `this.after`).
+- Material parameters are validated (each key and value checked, on every peer).
+- **It knows when a scene is still arriving** and **when a behaviour fails**: status reports a scene that is still
+  loading (from the moment it joins), a tool called meanwhile waits for the scene first, and a code behaviour that
+  throws says so with its error, so the agent can fix it instead of guessing.
+- **Game-kit nodes work for AI**: the agent and the in-app assistant can now create every `kit-*` node (they were
+  all "unknown"), a half-valid node batch says it was only partly applied, and hinges take an exact pivot point.
+
+### 🔗 Invite links (Connect ▸ Request AI)
+
+- One sheet with two tabs, **Person** and **AI agent**: pick **View** or **Edit** (cloud builds; View is the default
+  for people, Edit for agents), how long it lasts (10 min / 30 min / 24 h) and how many may use it. Copy it as a
+  link, a ready MCP command or one sentence for any chat.
+- An invite joins with no approval card. Users lists your active invites, who used each one, and Revoke.
+- AI agents never ride "Allow guests to join automatically" unless you also tick **Let AI agents join as guests**.
+- The invite key lives in the link's `#` part, which browsers never send to servers, and only your app checks it.
+
+### 👥 People menu
+
+- Right-click (or long-press, or Shift+F10) anyone in the Connected panel: **View profile**, **Copy peer id**,
+  **Go to**, **Watch**, **Show what they're editing**, **View character**, **Copy their look**, **Mute voice** and
+  **Hide** (for you only). Also in VR under Tools ▸ People.
+- The host (or an admin on theprototype.app) can **Remove from session** or **Remove and block** — every peer drops
+  them and a re-dial is refused with "You were removed from this session"; **Allow back** in Users undoes the block.
+  A removal sent by anyone else is ignored.
+
 ## 1.47.0 — Game logic in the headset, and a phone in a shared room 🥽
 
 - 🔀 **Edit game logic in VR**: radial ▸ **Tools ▸ Logic** opens the scene's node graph as a panel in the headset, and

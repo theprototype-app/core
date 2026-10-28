@@ -21,6 +21,10 @@
 // scene (Box3 for bounds, frame-to-fit, the physics body's next step) reads NaN forever
 // with nothing pointing back at the message that did it.
 
+// The one import: the material parameter rules, itself a zero-import leaf (shared with the setter and
+// the AI tools, so the three cannot disagree about what a material key takes).
+import { checkMaterialParam } from './materialParamRules.js';
+
 /** @param {unknown} v */
 export function isUuid(v) {
 	return typeof v === 'string' && v.length > 0 && v.length <= 64;
@@ -234,7 +238,28 @@ export const VALIDATORS = {
 	matpresetpart: (d) => typeof d.from === 'string' && typeof d.ref === 'string' && Number.isInteger(d.i) && Number.isInteger(d.n) && d.n >= 1 && d.n <= 256 && d.i >= 0 && d.i < d.n && typeof d.data === 'string' && d.data.length <= 300_000,
 	environment: (d) => !!d && typeof d === 'object',
 	atscene: (d) => typeof d.peerId === 'string',
+	// 55 A6: the agent mesh relay (agent/meshRelay.js) — the host re-checks everything that matters
+	meshgenask: () => true,
+	meshgenstate: (d) => typeof d.ready === 'boolean',
+	meshgenreq: (d) =>
+		typeof d.id === 'string' && d.id.length <= 64 && typeof d.prompt === 'string' && d.prompt.length <= 2000 &&
+		(d.name == null || typeof d.name === 'string') && (d.position == null || isVec3(d.position)),
+	meshgenack: (d) => typeof d.id === 'string' && typeof d.ok === 'boolean',
+	// 55: the agent sim relay (agent/simRelay.js) — the host checks the asker is an agent with edit rights
+	agentsimreq: (d) => typeof d.id === 'string' && d.id.length <= 64 && typeof d.action === 'string' && d.action.length <= 16,
+	agentsimack: (d) =>
+		typeof d.id === 'string' && typeof d.ok === 'boolean' && (d.error == null || (typeof d.error === 'string' && d.error.length <= 300)) &&
+		(d.result == null || (typeof d.result === 'object' && !Array.isArray(d.result))),
 	disconnected: (d) => typeof d.peerId === 'string',
+	// 55 A9: remove / remove-and-block / allow back. WHO may send it is decided by the
+	// receiver (peerModeration), not here — this is the shape.
+	// (peerModerationCore.isKickMessage mirrors it; this file stays a zero-import leaf.)
+	kick: (d) =>
+		typeof d.peer === 'string' &&
+		d.peer.length > 0 &&
+		d.peer.length <= 64 &&
+		(d.block === undefined || typeof d.block === 'boolean') &&
+		(d.allow === undefined || typeof d.allow === 'boolean'),
 	annotations: (d) => isArray(d.annotations),
 	joints: (d) => isArray(d.joints),
 	triggers: (d) => !!d.triggers && typeof d.triggers === 'object',
@@ -293,8 +318,18 @@ export const VALIDATORS = {
 		d.timers.every(
 			(/** @type {any} */ t) => !!t && typeof t.k === 'string' && Number.isFinite(t.at) && typeof t.m === 'string' && isArray(t.a)
 		) &&
-		(d.fired === undefined || (!!d.fired && typeof d.fired === 'object' && !Array.isArray(d.fired))),
+		(d.fired === undefined || (!!d.fired && typeof d.fired === 'object' && !Array.isArray(d.fired))) &&
+		// 55: the authority's latest handler errors (optional; an older peer ignores the field)
+		(d.errs === undefined ||
+			(isArray(d.errs) && d.errs.length <= 5 && d.errs.every((/** @type {any} */ e) => !!e && Number.isFinite(e.at) && typeof e.where === 'string' && e.where.length <= 80 && typeof e.message === 'string' && e.message.length <= 240))),
 	// 37: optional presence extras — `feet` (a walker's floor, metres) and `knocked` (0/1 idle flag)
+	// 55 A7/A8: an agent's log line(s), an editor's undo request, where the agent looked
+	agentlog: (d) =>
+		(d.entry === undefined || (typeof d.entry === 'object' && d.entry !== null && typeof d.entry.id === 'string')) &&
+		(d.entries === undefined || (Array.isArray(d.entries) && d.entries.length <= 200)) &&
+		(d.entry !== undefined || d.entries !== undefined),
+	agentundo: (d) => typeof d.id === 'string' && d.id.length <= 64,
+	agentview: (d) => isVec3(d.pos) && isFiniteArray(d.quat, 4),
 	camera: (d) =>
 		typeof d.peerId === 'string' &&
 		isVec3(d.position) &&
@@ -353,6 +388,9 @@ export const VALIDATORS = {
 		// 48 B2: a measurement's record — null is not a record (an item is deleted, never emptied)
 		if (d.parameter === 'measure')
 			return isUuid(d.uuid) && !!d.measure && typeof d.measure === 'object' && isArray(d.measure.points) && d.measure.points.length <= 64;
+		// a material parameter: a key the app knows, a value of that key's kind (a texture slot only ever
+		// null on the wire — images travel as `map`)
+		if (d.parameter === 'materialParam') return isUuid(d.uuid) && checkMaterialParam(null, d.key, d.value).ok;
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

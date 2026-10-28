@@ -284,7 +284,7 @@ let scheduled = false;
 export function startBehaviours() {
 	if (started) return;
 	started = true;
-	registerBehaviourHost(makeBehaviourHost(() => get(behaviourStatus)));
+	registerBehaviourHost(makeBehaviourHost(() => get(behaviourStatus), (id) => runtime.live(id)));
 	registerBehaviourSockets((node) => behaviourSockets(String(node?.data?.code ?? '')));
 	reserveEngineNames(kit.specs().map((/** @type {any} */ s) => s.piece));
 	const schedule = () => {

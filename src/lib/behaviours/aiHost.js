@@ -12,6 +12,7 @@
 import { get } from 'svelte/store';
 import { allNodes } from '../../stores/flowStore';
 import { analyze } from './analyze.js';
+import { behaviourSockets } from './sockets.js';
 import { ALIASES } from './events.js';
 import { KIT_PIECES } from '../kit/index.js';
 
@@ -22,13 +23,44 @@ const specs = () => KIT_PIECES.map((row) => row.piece.spec);
 export function behaviourReference() {
 	return [
 		'BEHAVIOURS (create_behaviour / edit_behaviour): game logic as ONE JavaScript module, run on ONE peer (the session authority); `state` replicates to everyone.',
-		'export default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, on: {event(payload) {...}}, ...methods });',
-		'this: params, state, kit (also bare `kit`), after(seconds, "method", ...args) (survives the host leaving), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log(). Helpers: dist(a,b), clamp, lerp.',
-		'events: start; grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as "piece.event" or ' +
+		'export default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, inputs: [names], outputs: [names], on: {event(payload) {...}}, ...methods });',
+		'inputs: a trigger wired into input "x" runs on.x. outputs: a state field = a value output, any other name = an event fired by this.emit("name").',
+		'A behaviour does NOT move, rotate, recolour or hide objects (no such this.*): it drives effect nodes (spin, visibility, setcolor…) via its outputs. NO per-frame hook (no onTick/update): repeat with this.after(seconds, "method").',
+		'this: params, state, kit (also bare `kit`), after(seconds, "method", ...args) (survives the host leaving), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log() — always as this.find(…) etc. (only `kit` and the helpers are bare). Helpers: dist(a,b), clamp, lerp.',
+		'events: load (runs on EVERY peer when the behaviour loads — local, state read-only: register things there), start (once, on the authority); grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as "piece.event" or ' +
 			Object.keys(ALIASES).join(', ') +
 			'. Entity payloads have entity.is(glob), entity.hasTag(t).',
-		'kit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, "nearestPlayer"), kit.rules.set({reach, jump}).',
-		'Forbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import.'
+		'kit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, "nearestPlayer"), kit.rules.set({reach, jump}), kit.pickups.register({id, score, respawn, radius}) — register pickups in on.load (every peer must know them, or touching one does nothing), never in start.',
+		'Forbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import. Unknown this.* members, unknown events and hook-named methods nothing calls are refused too.'
+	].join('\n');
+}
+
+/** one complete behaviour that passes the lint (the create_behaviour description carries it: a client that drops
+ * the system prompt still sees the format working) */
+export const BEHAVIOUR_EXAMPLE = `export default behaviour({
+  name: 'Countdown',
+  params: { seconds: 30 },
+  state: { left: 30, found: 0 },
+  inputs: ['gemTouched'],
+  outputs: ['left', 'found', 'timeUp'],
+  on: {
+    start() { this.state.left = this.params.seconds; this.after(1, 'tick'); },
+    gemTouched() { this.state.found += 1; }
+  },
+  tick() {
+    this.state.left -= 1;
+    if (this.state.left > 0) this.after(1, 'tick');
+    else this.emit('timeUp');
+  }
+});`;
+
+/** the create_behaviour tool's description: what it is, the reference, the example */
+export function behaviourToolDescription() {
+	return [
+		'Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…).',
+		behaviourReference(),
+		'EXAMPLE (passes the lint; wire a trigger into input gemTouched, output left into a HUD Text, timeUp into a Visibility or Announce):',
+		BEHAVIOUR_EXAMPLE
 	].join('\n');
 }
 
@@ -48,22 +80,51 @@ export function behaviourLint(source) {
 	return [...m.errors, ...m.lint.filter((/** @type {any} */ f) => f.level === 'warning')].map((/** @type {any} */ f) => ({ line: f.line, message: f.message }));
 }
 
-/** the host object (registerBehaviourHost's contract) @param {() => Record<string, any>} statusOf */
-export function makeBehaviourHost(statusOf) {
+/**
+ * 55 (41's gem test): what is failing in one behaviour — a load error (its status) or a handler that
+ * threw (the runtime's instance, which carries the authority's errors on every peer). Newest last;
+ * `at` is the session clock of a handler error (absent for a load error, which is always current).
+ * @param {any} st @param {any} live @returns {{where: string, message: string, at?: number}[]}
+ */
+function errorsOf(st, live) {
+	const out = [];
+	if (st?.status === 'error') for (const e of st.errors ?? []) out.push({ where: 'load', message: String(e?.message ?? e) });
+	for (const e of live?.errors ?? []) out.push({ where: String(e?.where ?? ''), message: String(e?.message ?? ''), ...(Number.isFinite(e?.at) ? { at: e.at } : {}) });
+	return out.slice(-5);
+}
+
+/** the host object (registerBehaviourHost's contract) @param {() => Record<string, any>} statusOf
+ * @param {(id: string) => any} [liveOf] the runtime's live view of one behaviour (errors) */
+export function makeBehaviourHost(statusOf, liveOf = () => null) {
 	return {
 		format: 'behaviour/1',
 		reference: behaviourReference,
+		// 55 (41's voice session #2): claude.ai drops server instructions — the tool itself carries the format
+		toolDescription: behaviourToolDescription,
 		list() {
 			const status = statusOf();
 			return behaviourNodes().map((n) => {
 				const st = status[n.id];
 				const handlers = (st?.model?.handlers ?? []).map((/** @type {any} */ h) => h.name);
+				const errors = errorsOf(st, liveOf(n.id));
+				const failing = errors.length && st?.status !== 'error' ? ' · ' + errors.length + ' error(s), last: ' + errors[errors.length - 1].where + ': ' + errors[errors.length - 1].message.slice(0, 120) : '';
 				return {
 					name: String(n.data?.name ?? 'Behaviour'),
 					target: n.__graph ?? 'scene',
-					summary: (st?.status ?? 'loading') + (handlers.length ? ' · on ' + handlers.join(', ') : '') + (n.data?.enabled === false ? ' · stopped' : '')
+					summary: (st?.status ?? 'loading') + (handlers.length ? ' · on ' + handlers.join(', ') : '') + (n.data?.enabled === false ? ' · stopped' : '') + failing,
+					...(errors.length ? { errors } : {})
 				};
 			});
+		},
+		/** every behaviour's current errors, flat (status().behaviourErrors) */
+		errors() {
+			const status = statusOf();
+			return behaviourNodes().flatMap((n) => errorsOf(status[n.id], liveOf(n.id)).map((e) => ({ name: String(n.data?.name ?? 'Behaviour'), ...e })));
+		},
+		/** @param {string} name one behaviour's errors (create/edit results) */
+		errorsOf(name) {
+			const n = byName(name);
+			return n ? errorsOf(statusOf()[n.id], liveOf(n.id)) : [];
 		},
 		/** @param {string} name */
 		read(name) {
@@ -94,7 +155,8 @@ export function makeBehaviourHost(statusOf) {
 			const peer = get(peers);
 			if (peer) peer.send({ type: 'nodecreate', node: serializeNode(node), graphId });
 			recordFlowNodesEntry({ op: 'create', graphId, nodes: [serializeNode(node)], edges: [] });
-			return { ok: true, name };
+			// 55 (41's research): the node's id and sockets, so the caller can wire it without a list_scene
+			return { ok: true, name, id: node.id, target: graphId, ...behaviourSockets(source) };
 		},
 		/** @param {string} name @param {string} source */
 		async edit(name, source) {
@@ -103,12 +165,12 @@ export function makeBehaviourHost(statusOf) {
 			const m = analyze(source, specs());
 			if (!m.ok) return { error: m.errors.map((/** @type {any} */ e) => 'line ' + e.line + ': ' + e.message).join('; ') };
 			const before = String(n.data?.code ?? '');
-			if (before === source) return { ok: true };
+			if (before === source) return { ok: true, id: n.id, ...behaviourSockets(source) };
 			const [{ setNodeData }, { recordFlowNodesEntry }] = await Promise.all([import('../nodesHandler'), import('../flowGraphs')]);
 			const graphId = n.__graph ?? 'scene';
 			setNodeData(n.id, { code: source }, graphId);
 			recordFlowNodesEntry({ op: 'data', graphId, items: [{ id: n.id, before: { code: before }, after: { code: source } }] });
-			return { ok: true };
+			return { ok: true, id: n.id, ...behaviourSockets(source) };
 		},
 		lint: behaviourLint
 	};

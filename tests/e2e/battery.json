@@ -18,6 +18,8 @@
 	},
 	"optional": {
 		"agent-bridge": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
+		"agent-host-leaves": "joined from 55-int (41's 3-peer host-leaves test, 2026-10-28): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
+		"agent-travel": "joined from 55-int (owner finding 1, 2026-10-28): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
 		"align-arrange": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"animated-models": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"animation-curves": "flaky on the GitHub runner (SwiftShader): red or green-on-retry in deps-auto run 5 or 6 with unchanged code, 2026-10-24",
@@ -259,15 +261,22 @@
 		"workspace-restore": "joined from the 1.43 desk battery (pipeline-1): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green"
 	},
 	"setup": {
-		"agent-bridge": "agent"
+		"agent-bridge": "agent",
+		"agent-mcp": "agent",
+		"agent-proof": "agent"
 	},
 	"suites": {
 		"a11y-axe": 127,
 		"a11y-reader": 78,
 		"a11y-scale": 258,
 		"add-flow-scene": 100,
+		"agent-api": 420,
 		"agent-bridge": 48,
+		"agent-host-leaves": 180,
+		"agent-mcp": 100,
 		"agent-presence": 40,
+		"agent-proof": 600,
+		"agent-travel": 240,
 		"ai-connection": 90,
 		"ai-flow-physics": 118,
 		"align-arrange": 62,
@@ -445,6 +454,7 @@
 		"inspector": 93,
 		"interact-clean-view": 18,
 		"invite-link-live": 295,
+		"invite-links": 320,
 		"join-result": 324,
 		"joints-fx": 183,
 		"keyboard-walk": 48,
@@ -526,6 +536,7 @@
 		"particles-fx": 100,
 		"particles-impact": 47,
 		"path-capture-trap": 70,
+		"peer-moderation": 110,
 		"peers-panel-41b": 43,
 		"peers-popover": 18,
 		"perf-beacon": 138,

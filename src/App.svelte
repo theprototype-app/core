@@ -9,6 +9,9 @@
   // frames' blocking shader links. A dynamic import here queued it behind them (a third e2e page
   // took 34 s instead of 8 s to publish __stores).
   import { installDebugHooks } from '$lib/debugHooks'
+  // 55 A2: `window.tpAgent` — only `&agent` / safeStorage.agentApi turn it on. A LEAF statically
+  // (it must read the hash before the dial consumes it); the API itself is a dynamic import.
+  import { agentRequested } from '$lib/agent/agentMode'
   import { onMount } from 'svelte'
   import { Canvas } from '@threlte/core'
   // 30 P0: threlte's Canvas defaults `shadows` to PCFSoftShadowMap, which three 0.185
@@ -136,6 +139,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startWireErrors } from '$lib/wireErrors'
   import { startTrackpadNav } from '$lib/trackpadNav'
   import { startInviteLinks } from '$lib/inviteLinks'
+  import { isAgentSession } from '$lib/inviteStore' // 55 A8
   import { startHelperLayer, helpersInPlay } from '$lib/helperLayer'
   import { startCloudPlugin } from '$lib/cloudPlugin'
   import { startShaderGraphs } from '$lib/shaderGraph'
@@ -261,6 +265,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // applying but not surviving a reload — invisible from the outside, and the first
     // thing worth knowing when somebody reports that their preferences keep resetting.
     registerDiagnosticsSection('storage', () => storageDebug())
+    if (agentRequested()) import('$lib/agent/tpAgent').then((m) => m.installTpAgent()).catch((e) => console.error('tpAgent install failed', e))
     // 15-N: register the PWA service worker (a no-cache passthrough — see
     // static/sw.js) so mobile browsers offer "Install app". Dev is skipped: a
     // SW in front of vite's HMR only causes confusion.
@@ -325,6 +330,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startTrackpadNav()
     // 24-D1: an invite link pasted into the open tab (hashchange → dial / ask)
     startInviteLinks()
+    // 55 A8: an AI agent's page logs its own tool calls for every peer's AI window — loaded only
+    // there (dynamic), so nobody else's boot carries it
+    if (isAgentSession()) import('$lib/agentLogRecorder').then((m) => m.startAgentRecorder()).catch(() => {})
     // 24-E2: the editor camera renders the helper layer outside Play (debug toggle in Play)
     startHelperLayer()
     // shader graphs: the compile/target wiring + the replication and history seams

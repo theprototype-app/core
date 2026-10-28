@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { remoteStreams, mutedPeers, spatialVoice } from '$lib/voiceChat';
+	import { hiddenPeers } from '$lib/peerHide'; // 55 A9: Hide silences too
 
 	// hidden audio sinks for remote voices (41 G1: the mic button lives in Controls now).
 	// muted/volume are set as properties in the action — the Svelte attribute
@@ -18,7 +19,7 @@
 </script>
 
 {#each Object.entries($remoteStreams) as [peerId, stream] (peerId)}
-	<audio autoplay use:attach={{ stream, muted: $mutedPeers.includes(peerId), spatial: $spatialVoice }}></audio>
+	<audio autoplay use:attach={{ stream, muted: $mutedPeers.includes(peerId) || $hiddenPeers.includes(peerId), spatial: $spatialVoice }}></audio>
 {/each}
 
 <!-- 41 G1: the mic toggle moved into Controls.svelte's roster (a corner-stack or bar button,

@@ -148,13 +148,21 @@ export function createDispatcher(deps) {
 	return {
 		toolNames,
 		cancel,
-		/** @param {{id: string, tool: string, args: any, scope: 'read'|'edit'}} frame */
+		/** @param {{id: string, tool: string, args: any, scope: 'read'|'edit', malformed?: 'tool'|'args'}} frame */
 		handle(frame) {
 			const { id, tool } = frame;
 			const args = frame.args ?? {};
 			if (inFlight.has(id)) return; // a duplicate id: the first one answers
 			if (inFlight.size >= MAX_IN_FLIGHT) {
 				deps.send(answerFrame(id, fail('busy', 'This tab is still working on earlier calls — try again in a moment.')));
+				return;
+			}
+			if (frame.malformed === 'tool') {
+				deps.send(answerFrame(id, fail('unknown_tool', 'That is not a tool name. This tab answers: ' + toolNames().join(', ') + '.')));
+				return;
+			}
+			if (frame.malformed === 'args') {
+				deps.send(answerFrame(id, fail('invalid_args', 'args: must be an object')));
 				return;
 			}
 			if (CONNECTOR_BLOCKED_TOOLS.has(tool)) {

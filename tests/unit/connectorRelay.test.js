@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createRelayClient, backoffMs } from '../../src/lib/connector/relayClient.js';
 import { createDispatcher, BRIDGE_SCHEMAS } from '../../src/lib/connector/dispatcher.js';
-import { PING_MS, HELLO_TIMEOUT_MS, PING_TEXT } from '../../src/lib/connector/protocol.js';
+import { PING_MS, HELLO_TIMEOUT_MS, PING_TEXT, parseFrame } from '../../src/lib/connector/protocol.js';
 import { bridgeTools } from '../../tools/agent/src/mcpTools.js';
 
 // 86 B1/B2/B3/B5: the relay client's transitions and the dispatcher's rules, against fakes.
@@ -276,6 +276,15 @@ describe('dispatcher', () => {
 		expect(x.ran).toEqual([]);
 		expect(x.sent.map((f) => f.error.code)).toEqual(['unknown_tool', 'unknown_tool', 'unknown_tool']);
 		expect(x.d.toolNames()).toEqual(['status', 'screenshot', 'wait_for_edit', 'list_scene', 'create_objects']);
+	});
+
+	it('a malformed name or args is answered, not dropped (the DO must not wait out its timeout)', async () => {
+		const x = dispatch();
+		x.d.handle(/** @type {any} */ (parseFrame('{"type":"call","id":"m1","tool":"Create Objects","scope":"edit"}')));
+		x.d.handle(/** @type {any} */ (parseFrame('{"type":"call","id":"m2","tool":"create_objects","args":[1],"scope":"edit"}')));
+		await flush();
+		expect(x.ran).toEqual([]);
+		expect(x.sent.map((f) => [f.id, f.error.code])).toEqual([['m1', 'unknown_tool'], ['m2', 'invalid_args']]);
 	});
 
 	it('a read-scoped grant cannot edit, but can read', async () => {

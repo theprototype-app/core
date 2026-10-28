@@ -254,17 +254,26 @@ h.run(async () => {
 	await h.closePeer(B);
 
 	// ---- the button on the OPPO Find N6, folded and unfolded --------------------------------------------
-	for (const [name, viewport] of [
-		['folded', { width: 390, height: 896 }],
-		['unfolded', { width: 770, height: 850 }]
+	for (const [name, viewport, theme] of [
+		['folded', { width: 390, height: 896 }, 'dark'],
+		['unfolded', { width: 770, height: 850 }, 'dark'],
+		['unfolded-light', { width: 770, height: 850 }, 'light']
 	]) {
-		const P = await h.setupPage(browser, name, { context: { viewport, deviceScaleFactor: 2.9, isMobile: true, hasTouch: true } });
+		const P = await h.setupPage(browser, name, { context: { viewport, deviceScaleFactor: 2.9, isMobile: true, hasTouch: true }, storage: { theme } });
 		await installProvider(P.page);
-		await P.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
+		// the auto-quality toast lands over the top of a fresh page (it is not this feature's)
+		await P.page.evaluate(() => {
+			window.__stores.toastsInDrawerOnly.set(true);
+			window.__stores.aiAssistantHidden.set('');
+		});
 		const b = P.page.locator('#connect-claude-button');
 		await b.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
 		const box = await b.boundingBox();
-		h.check(!!box && box.x >= 0 && box.x + box.width <= viewport.width && box.height >= 32, `N6 ${name}: Connect Claude is on screen and pressable (${JSON.stringify(box)})`);
+		// pressable = the button itself is what a tap at its centre reaches (nothing parked over it)
+		const hit = box
+			? await P.page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('#connect-claude-button'), [box.x + box.width / 2, box.y + box.height / 2])
+			: false;
+		h.check(!!box && box.x >= 0 && box.x + box.width <= viewport.width && box.height >= 32 && hit, `N6 ${name}: Connect Claude is on screen and pressable (${JSON.stringify(box)}, hit ${hit})`);
 		await P.page.screenshot({ path: require('path').join(process.env.E2E_OUT || 'test-results/86-b', `n6-${name}.png`) }).catch(() => {});
 		await h.closePeer(P);
 	}

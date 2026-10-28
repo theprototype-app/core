@@ -39,8 +39,6 @@ describe('parseFrame', () => {
 			'null',
 			'{"type":"eval","code":"alert(1)"}',
 			'{"type":"call","tool":"create_objects"}', // no id
-			'{"type":"call","id":"c","tool":"../x"}', // bad tool name
-			'{"type":"call","id":"c","tool":"x","args":[1]}', // args not an object
 			JSON.stringify({ type: 'call', id: 'x'.repeat(65), tool: 'a' }),
 			JSON.stringify({ type: 'ready', connection: {} }),
 			42,
@@ -48,6 +46,13 @@ describe('parseFrame', () => {
 		])
 			expect(parseFrame(/** @type {any} */ (bad))).toBeNull();
 		expect(parseFrame(JSON.stringify({ type: 'call', id: 'c', tool: 'a', args: { s: 'x'.repeat(MAX_INBOUND_BYTES) } }))).toBeNull();
+	});
+
+	it('a call with a usable id but a bad name or bad args is kept so it can be answered', () => {
+		expect(parseFrame('{"type":"call","id":"c","tool":"../x"}')).toMatchObject({ type: 'call', id: 'c', tool: '', malformed: 'tool' });
+		expect(parseFrame('{"type":"call","id":"c","tool":"Create Objects"}')).toMatchObject({ tool: '', malformed: 'tool' });
+		expect(parseFrame('{"type":"call","id":"c","tool":"x","args":[1]}')).toMatchObject({ tool: 'x', args: {}, malformed: 'args' });
+		expect(parseFrame('{"type":"call","id":"c","tool":"x","args":{}}')).not.toHaveProperty('malformed');
 	});
 });
 

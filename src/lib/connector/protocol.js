@@ -115,7 +115,7 @@ const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
  * @returns {null
  *  | {type: 'ready', connection: {id: string, client: string, account: string}, connections: {id: string, client: string, scopes: string[], lastUsed: number}[]}
  *  | {type: 'refused', reason: string}
- *  | {type: 'call', id: string, tool: string, args: Record<string, any>, timeoutMs: number|null, scope: 'read'|'edit', connection: string}
+ *  | {type: 'call', id: string, tool: string, args: Record<string, any>, timeoutMs: number|null, scope: 'read'|'edit', connection: string, malformed?: 'tool'|'args'}
  *  | {type: 'cancel', id: string}
  *  | {type: 'revoked', connection: string}
  *  | {type: 'ping', t: number}
@@ -144,14 +144,18 @@ export function parseFrame(text) {
 		case 'refused':
 			return { type: 'refused', reason: String(f.reason ?? '').slice(0, 200) };
 		case 'call': {
-			if (!isId(f.id) || typeof f.tool !== 'string' || !TOOL_NAME.test(f.tool)) return null;
-			if (f.args !== undefined && !isPlainObject(f.args)) return null;
+			if (!isId(f.id)) return null;
+			// a usable id with a bad name or bad args is still ANSWERED (unknown_tool / invalid_args), or
+			// the DO would wait out its timeout; the name is never used unchecked (`tool` is '' then)
+			const badTool = typeof f.tool !== 'string' || !TOOL_NAME.test(f.tool);
+			const badArgs = f.args !== undefined && !isPlainObject(f.args);
 			const t = Number(f.timeoutMs);
 			return {
 				type: 'call',
 				id: f.id,
-				tool: f.tool,
-				args: f.args ?? {},
+				tool: badTool ? '' : f.tool,
+				args: badArgs ? {} : (f.args ?? {}),
+				...(badTool ? { malformed: 'tool' } : badArgs ? { malformed: 'args' } : {}),
 				timeoutMs: Number.isFinite(t) && t > 0 ? t : null,
 				// a call that does not say 'edit' is read-only (fail closed)
 				scope: f.scope === 'edit' ? 'edit' : 'read',

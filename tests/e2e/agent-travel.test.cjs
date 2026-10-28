@@ -28,7 +28,9 @@ const where = (p) =>
 		`let lv, ps, g, sh; s.levels.currentLevel.subscribe((x) => (lv = x))(); s.peerScenes.peerScenes.subscribe((x) => (ps = x))();
 		 s.objectsGroup.subscribe((x) => (g = x))(); s.connectionState.sessionHost.subscribe((x) => (sh = x))();
 		 let fg; s.flowGraphs.subscribe((x) => (fg = x))();
-		 const flowNodes = Object.values(fg ?? {}).reduce((n, d) => n + (d?.nodes?.length ?? 0), 0);
+		 // a loaded scene's Main-graph signposts (mainGraph.ensureMainGraph: data.main, unwired, inert) are the
+		 // load's own view of the file, not content anybody added
+		 const flowNodes = Object.values(fg ?? {}).reduce((n, d) => n + (d?.nodes ?? []).filter((x) => !x?.data?.main).length, 0);
 		 const nodeList = Object.entries(fg ?? {}).flatMap(([k, d]) => (d?.nodes ?? []).map((n) => k.slice(0, 8) + ':' + n.type + ':' + String(n.id).slice(0, 8)));
 		 return { scene: lv?.name ?? null, private: !!lv?.private, rows: ps, host: sh, objects: (g?.children ?? []).map((o) => o.name).sort(), flowNodes, nodeList, open: [...pc.openedPeers] };`
 	);

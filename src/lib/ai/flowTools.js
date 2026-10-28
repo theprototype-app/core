@@ -26,6 +26,7 @@ import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X
 import { parseGraphText } from '$lib/graphText';
 import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
 import { activeAiConfig } from './providers.js';
+import { matchNodeType } from './nodeTypeMatch.js';
 
 // AI flow + physics executors (assistant v3). The behavior counterpart to
 // tools.js: create/update flow nodes (the @xyflow editor graphs driving
@@ -110,9 +111,10 @@ const NODE_TYPE_ALIASES = /** @type {Record<string, string>} */ ({
 	// than for anything else in the palette ("wait 3 seconds", "remember that it was
 	// collected"), so the near-misses are worth mapping home.
 	//
-	// Note the KEY SHAPE: normalizeNodeType flattens whitespace/underscores/hyphens
-	// out of the model's word before the lookup, so only FLATTENED keys can ever
-	// match (the `play_animation` style entries above are dead weight, kept as-is).
+	// Note the KEY SHAPE: after the exact and case-only catalog matches, normalizeNodeType
+	// flattens whitespace/underscores/hyphens out of the model's word before the alias
+	// lookup, so only FLATTENED keys can ever match (the `play_animation` style entries
+	// above are dead weight, kept as-is).
 	// And nothing here may shadow a real catalog type, which wins on the line before:
 	// `toggle` (the Input node), `timer` (the delay LINE) and `switcher` are
 	// deliberately absent for that reason - a model saying "toggle" means the input.
@@ -170,14 +172,9 @@ export function aiNodeVocabulary(physics) {
 		.filter((g) => g.types.length);
 }
 
-/** @param {any} raw @returns {string|null} a real catalog type or null */
+/** @param {any} raw @returns {string|null} a real catalog type or null (exact first — kit-* types keep their case and hyphens) */
 function normalizeNodeType(raw) {
-	const flat = String(raw ?? '')
-		.trim()
-		.toLowerCase()
-		.replace(/[\s_-]+/g, '');
-	if (ALL_CATALOG_TYPES.includes(flat)) return flat;
-	return NODE_TYPE_ALIASES[flat] ?? null;
+	return matchNodeType(raw, ALL_CATALOG_TYPES, NODE_TYPE_ALIASES);
 }
 
 /** A fresh uuid (crypto — same helper shape as tools.js). @returns {string} */

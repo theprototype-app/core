@@ -7,8 +7,8 @@
 //      "Save the active one", and the session's scene is saved ON THE HOST;
 //   4. with that setting, Ctrl+S AND the burger's Save (Project) save the active one with no dialog,
 //      and nothing is saved into my own Library;
-//   5. a viewer → the session row is disabled with the reason, and Save has nothing to save;
-//   6. the dialog's link opens Settings ▸ Save options ▸ "When several libraries are open" (Ask).
+//   (5-6, the viewer row and the link to the setting: save-project-libraries-viewer — the host-side
+//    saves above make this file long on a loaded machine, and the runner gives one file 8 minutes)
 //
 // Run: APP_URL='https://localhost:5482/' npm run e2e -- save-project-libraries
 const h = require('./helpers.cjs');
@@ -154,35 +154,6 @@ h.run(async () => {
 	} else h.check(false, 'premise: the burger shows a Save row (#project-save)');
 	await G.page.evaluate(() => window.__stores.closeMenu.set(true));
 	h.check(JSON.stringify(await ownScenes(G)) === JSON.stringify(mineBefore), 'through all of it, my own Library was never saved into');
-
-	// ---- 5. a viewer: the session row is disabled with the reason -------------------------------
-	await G.page.evaluate(() => window.__stores.saveOptions.setSaveOptions({ saveMany: 'ask' }));
-	await H.page.evaluate((gid) => {
-		window.__stores.cloudHooks.rolesInfo.set({ myId: 'host', myRole: 'admin', amAdmin: true, order: [], roleOf: (id) => (id === gid ? 'viewer' : 'editor'), setRole() {} });
-	}, G.id);
-	await h.eventually(
-		() => G.page.evaluate(() => { let v; window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))(); return v[0]?.role; }),
-		(r) => r === 'viewer',
-		'premise: H made G a viewer',
-		15000
-	);
-	await ctrlS(G);
-	await h.eventually(() => dialogOpen(G), (o) => o === true, 'the dialog for the viewer', 30000);
-	const vrow = await G.page.evaluate((id) => {
-		const r = document.querySelector('[data-save-row="' + id + '"]');
-		return { disabled: !!r?.querySelector('input')?.disabled, text: r?.textContent.replace(/\s+/g, ' ').trim() ?? '' };
-	}, volId);
-	h.check(vrow.disabled && /view-only/.test(vrow.text), `the session row is disabled with the reason (${vrow.text})`);
-	h.check(await G.page.locator('#save-many-save').isDisabled(), '…and with nothing ticked, Save is disabled');
-
-	// ---- 6. the link to the setting -------------------------------------------------------------
-	await G.page.locator('#save-many-setting').click();
-	await h.eventually(() => dialogOpen(G), (o) => o === false, 'the link closes the dialog', 5000);
-	await h.eventually(() => G.page.locator('#row-save-many').isVisible().catch(() => false), (v) => v === true, '…and opens Settings ▸ Save options ▸ "When several libraries are open"', 10000);
-	h.check((await G.page.locator('#save-many-setting-seg-ask').getAttribute('aria-checked')) === 'true', '…showing Ask');
-	await G.page.locator('#save-many-setting-seg-all').click();
-	h.check((await setting(G)) === 'all', 'the row writes the setting ("Save all I can")');
-	await H.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
 
 	await h.finish(browser);
 });

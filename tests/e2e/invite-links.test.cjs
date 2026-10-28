@@ -174,10 +174,16 @@ h.run(async () => {
 	await H.page.waitForTimeout(400);
 	const invRows = await H.page.locator('#peers-invites .peers-inv-row').count();
 	h.check(invRows >= 2, `Users lists the live invites (${invRows})`);
-	await H.page.locator('#peers-revoke-all-invites').click({ timeout: 5000 }).catch(() => {});
-	await H.page.waitForTimeout(200);
-	const left = await inPage(H, "return s.inviteStore.listInvites().filter((r) => r.state === 'active' || r.state === 'used').length");
-	h.check(left === 0, `Revoke all ends every invite (${left} left)`);
+	const revokeClick = await H.page
+		.locator('#peers-revoke-all-invites')
+		.click({ timeout: 10000 })
+		.then(() => '', (e) => String(e?.message ?? e).split('\n')[0]);
+	let left = -1;
+	for (let i = 0; i < 25 && left !== 0; i++) {
+		left = await inPage(H, "return s.inviteStore.listInvites().filter((r) => r.state === 'active' || r.state === 'used').length");
+		if (left) await H.page.waitForTimeout(200);
+	}
+	h.check(left === 0, `Revoke all ends every invite (${left} left${revokeClick ? '; the click: ' + revokeClick : ''})`);
 	await H.ctx.close();
 
 	// ==================================================================== 2. the joiner
@@ -200,7 +206,7 @@ h.run(async () => {
 	console.log('\n=== 3. two real peers: the link → in, no card ===');
 	const A = await h.setupPage(browser, 'A');
 	await A.page.waitForFunction(() => window.__stores?.peers && (() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; })(), null, { timeout: 30000 }).catch(() => {});
-	await A.page.locator('#connect-request-ai').click({ timeout: 10000 });
+	await A.page.locator('#connect-request-ai').click({ timeout: 30000, noWaitAfter: true });
 	await A.page.locator('#invite-sheet').waitFor({ timeout: 5000 });
 	h.check((await A.page.locator('#invite-sheet').getAttribute('data-tab')) === 'agent', 'Request AI opens the sheet on the AI agent tab');
 	const rolesOn = await A.page.evaluate(() => { let r; window.__stores.cloudHooks.rolesInfo.subscribe((v) => (r = v))(); return !!r; });

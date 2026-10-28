@@ -117,7 +117,10 @@ h.run(async () => {
 	h.check(woke?.changed === true, `waitForEdit resolves on the host's edit (${JSON.stringify(woke)})`);
 	// the host's edit arrives as several messages (create, name, colour…); let the tail land, then
 	// a quiet scene must STAY quiet — a periodic poke would make waitForEdit useless
-	await B.page.waitForTimeout(3000);
+	// (a host drawing 1-2 fps sends that tail over seconds): wait for a 2 s quiet window, up to 20 s
+	await B.page.evaluate(
+		() => new Promise((r) => { let last = Date.now(); const off = window.__stores.autosave.dirtyPulse.subscribe(() => (last = Date.now())); const t0 = Date.now(); const iv = setInterval(() => { if (Date.now() - last > 2000 || Date.now() - t0 > 20000) { clearInterval(iv); off(); r(null); } }, 200); })
+	);
 	const pulses = await B.page.evaluate(
 		() => new Promise((r) => { let n = -1; const off = window.__stores.autosave.dirtyPulse.subscribe(() => n++); setTimeout(() => { off(); r(n); }, 4000); })
 	);
@@ -401,8 +404,8 @@ h.run(async () => {
 		})
 	);
 	h.check(
-		wired?.edges === 1 && wired?.partial === true && /toHandle "sett".*set, reset, toggle|toHandle "sett".*set,.*reset/.test(JSON.stringify(wired?.errors ?? [])),
-		`a wrong toHandle is refused naming the latch's real inputs; the good wire is made (${JSON.stringify(wired).slice(0, 260)})`
+		wired?.edges === 1 && wired?.partial === true && (wired?.errors ?? []).some((e) => /toHandle "sett".*set, reset, toggle/.test(String(e))),
+		`a wrong toHandle is refused naming the latch's real inputs; the good wire is made (${JSON.stringify({ edges: wired?.edges, partial: wired?.partial, errors: wired?.errors })})`
 	);
 
 	// ---- 9. T5: leave() is a goodbye, not a dropped link ----------------------------------------

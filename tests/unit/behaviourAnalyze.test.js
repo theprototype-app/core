@@ -94,6 +94,13 @@ describe('analyze — the lint', () => {
 		expect(m.ok).toBe(true);
 		expect(m.lint.map((/** @type {any} */ f) => f.level)).toEqual(['warning']);
 	});
+	it('55: a bare context call (findAll() without this.) warns, so the assistant is refused with the fix', () => {
+		const m = analyze('export default behaviour({ on: { start() { const gems = findAll("Gem*"); } } });', SPECS);
+		expect(m.ok).toBe(true); // a saved scene still loads
+		expect(m.lint.map((/** @type {any} */ f) => f.message).join(' ')).toMatch(/this\.findAll/);
+		// …but a behaviour's own helper of that name is fine, and this.findAll is the right call
+		expect(analyze('function findAll(p) { return []; }\nexport default behaviour({ on: { start() { findAll("x"); this.findAll("y"); } } });', SPECS).lint.filter((/** @type {any} */ f) => /context method/.test(f.message))).toEqual([]);
+	});
 	it('an unknown event warns (it would never fire)', () => {
 		const m = analyze('export default behaviour({ on: { nope() {} } });', SPECS);
 		expect(m.ok).toBe(true);

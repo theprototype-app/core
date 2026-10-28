@@ -309,7 +309,10 @@ export const VALIDATORS = {
 		d.timers.every(
 			(/** @type {any} */ t) => !!t && typeof t.k === 'string' && Number.isFinite(t.at) && typeof t.m === 'string' && isArray(t.a)
 		) &&
-		(d.fired === undefined || (!!d.fired && typeof d.fired === 'object' && !Array.isArray(d.fired))),
+		(d.fired === undefined || (!!d.fired && typeof d.fired === 'object' && !Array.isArray(d.fired))) &&
+		// 55: the authority's latest handler errors (optional; an older peer ignores the field)
+		(d.errs === undefined ||
+			(isArray(d.errs) && d.errs.length <= 5 && d.errs.every((/** @type {any} */ e) => !!e && Number.isFinite(e.at) && typeof e.where === 'string' && e.where.length <= 80 && typeof e.message === 'string' && e.message.length <= 240))),
 	// 37: optional presence extras — `feet` (a walker's floor, metres) and `knocked` (0/1 idle flag)
 	// 55 A7/A8: an agent's log line(s), an editor's undo request, where the agent looked
 	agentlog: (d) =>

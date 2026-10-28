@@ -26,6 +26,7 @@ import { sessionNow } from '../sessionClock';
 import { readStored, writeStored } from '../gameStorage';
 import { gameState, setGameState, commitGameState } from '../gameState';
 import { pickAuthority } from './authority.js';
+import { isAgentPeer, myKind } from '../inviteStore';
 import { createKit, KIT_DOC, KIT_REQ } from './core.js';
 import { KIT_PIECES } from './index.js';
 import { kitNodeType } from './spec.js';
@@ -67,9 +68,17 @@ const initiator = () => {
 	return remote ? String(remote) : null;
 };
 
+/** 55: the AI agents among us and the peers we see — never the authority while a person is here */
+const agentIds = () => {
+	const ids = openPeers().filter((id) => isAgentPeer(id));
+	const self = me();
+	if (self && myKind() === 'agent') ids.push(self);
+	return ids;
+};
+
 /** who decides, as this peer sees it */
 export function kitAuthorityId() {
-	return pickAuthority({ me: me(), peers: openPeers(), host: null, initiator: initiator() });
+	return pickAuthority({ me: me(), peers: openPeers(), host: null, initiator: initiator(), agents: agentIds() });
 }
 
 /** @type {import('./core.js').KitHost} */

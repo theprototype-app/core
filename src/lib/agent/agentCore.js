@@ -71,6 +71,8 @@ export function toolName(tool) {
  * @property {() => string|null} role 'admin'|'editor'|'viewer' or null (no roles in this build)
  * @property {() => boolean} [rolesSettled] false while a roles plugin still waits for the host's map (absent = settled)
  * @property {() => string|null} host
+ * @property {() => {name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the scene's failing behaviours
+ * @property {() => {arrived: number, total: number} | null} [loading] 1.2: a scene still arriving (null = none)
  * @property {() => {scene: string, hostScene: string, withHost: boolean, following: boolean} | null} [room] 55 owner
  *   finding 1: our scene, the host's, and whether we stand in the same room (absent/null = not known: allowed)
  * @property {() => boolean} waiting
@@ -228,6 +230,25 @@ export function createAgentCore(deps) {
 		return list;
 	}
 
+	/** 1.2: `{loading, objects}` — loading is always present, objects only while it is true */
+	function loadingState() {
+		let now = null;
+		try {
+			now = deps.loading?.() ?? null;
+		} catch {}
+		return now ? { loading: true, objects: { arrived: now.arrived, total: now.total } } : { loading: false };
+	}
+
+	/** 1.2: `{behaviourErrors}` when a behaviour is failing, else nothing */
+	function behaviourErrors() {
+		try {
+			const rows = deps.behaviourErrors?.() ?? [];
+			return rows.length ? { behaviourErrors: rows.slice(0, 10) } : {};
+		} catch {
+			return {};
+		}
+	}
+
 	/** @returns {import('./contract.js').TpAgentStatus & {notices: string[]}} */
 	function status() {
 		const host = deps.host();
@@ -253,6 +274,10 @@ export function createAgentCore(deps) {
 			inVR: deps.inVR(),
 			// 55 owner finding 1: where we are and where the host is — an agent left behind says so
 			...(room ? { scene: room.scene, hostScene: room.hostScene, withHost: room.withHost, following: room.following } : {}),
+			// 1.2 (41): right after a join the snapshot is still arriving — say so until it has landed
+			...loadingState(),
+			// 55 (41's gem test): a behaviour that throws says so here, not only in the runtime's instance list
+			...behaviourErrors(),
 			notices: notices.slice()
 		};
 	}

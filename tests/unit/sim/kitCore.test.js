@@ -62,6 +62,21 @@ describe('authority — one peer decides, everyone agrees who', () => {
 		expect(pickAuthority({ me: 'b', peers: ['c'], host: null })).toBe('b');
 		expect(pickAuthority({ me: 'z', peers: ['y', 'x'] })).toBe('x');
 	});
+	it('55: an AI agent page is never the authority while a person is present (41\'s gem test)', () => {
+		// the report: agent '1e16b' < host 'ff637', so the lowest-id fallback chose the agent
+		const host = { me: 'ff637', peers: ['1e16b'], agents: ['1e16b'] };
+		const agent = { me: '1e16b', peers: ['ff637'], agents: ['1e16b'] };
+		expect(pickAuthority(host)).toBe('ff637');
+		expect(pickAuthority(agent)).toBe('ff637');
+		expect(isAuthorityFor(agent)).toBe(false);
+		// nor as the physics initiator or the named host
+		expect(pickAuthority({ ...host, initiator: '1e16b' })).toBe('ff637');
+		expect(pickAuthority({ ...agent, host: '1e16b' })).toBe('ff637');
+		// two people and an agent: the smallest PERSON
+		expect(pickAuthority({ me: 'm', peers: ['a', 'z'], agents: ['a'] })).toBe('m');
+		// agents only: still an authority (the smallest), never a stall
+		expect(pickAuthority({ me: 'q', peers: ['p'], agents: ['p', 'q'] })).toBe('p');
+	});
 	it('a peer with no id is alone, so it is its own authority', () => {
 		expect(isAuthorityFor({ me: null, peers: [] })).toBe(true);
 	});

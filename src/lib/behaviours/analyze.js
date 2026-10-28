@@ -47,6 +47,10 @@ export const BANNED = {
 	requestAnimationFrame: 'use this.after'
 };
 
+/** the context methods (`this.find`…) a behaviour might call bare by mistake — `kit` and the helpers
+ * (dist/clamp/lerp) ARE in its scope, so they are not here */
+const CONTEXT_CALLS = new Set(CONTEXT_MEMBERS.filter((m) => !['kit', 'params', 'state', 'object', 'id', 'me', 'time'].includes(m)));
+
 /** @typedef {{message: string, line: number, col: number, level: 'error'|'warning'}} Finding */
 
 /** @param {any} node */
@@ -295,6 +299,13 @@ function lint(ast, out) {
 			const isKey = (parent?.type === 'Property' || parent?.type === 'MethodDefinition') && key === 'key' && !parent.computed;
 			const isMemberObject = parent?.type === 'MemberExpression' && key === 'object';
 			if (isProp || isKey || declared.has(n.name)) return;
+			// 55 (41's gem test): a bare `findAll(...)` / `after(...)` — a context method called without
+			// `this.` — threw "findAll is not defined" at run time and the behaviour read as running.
+			// A warning, so a scene saved with one still loads; the assistant's tools refuse on it.
+			if (parent?.type === 'CallExpression' && key === 'callee' && CONTEXT_CALLS.has(n.name)) {
+				at(n, n.name + '(…) is a context method: call this.' + n.name + '(…) inside a handler or method', 'warning');
+				return;
+			}
 			const why = /** @type {Record<string, string>} */ (BANNED)[n.name];
 			if (!why) return;
 			// Math / performance as objects are flagged on their member (Math.random), not here

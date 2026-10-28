@@ -29,6 +29,7 @@ import { applyJoinRefusal } from '$lib/peerApproval';
 // 55 A7/A8: the agent action log + where an agent looked (store-only)
 import { applyAgentLog, applyAgentUndo, applyAgentView, dropAgentView, sendAgentLogTo } from '$lib/agentLog';
 import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests } from '$lib/inviteStore';
+
 import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
@@ -131,6 +132,11 @@ import { addMessage, peers, userdata, pendingApprovals, waitingForApproval, show
 import { GIVE_UP_ATTEMPTS } from '$lib/connectionStatus';
 import { get } from 'svelte/store';
 import { exportMode } from './export/exportBoot.js';
+
+/** 55: the full-state requests an AGENT page leaves unanswered — every one whose reply is scene content
+ * (see the dispatch gate). Not getasset/getproject/getchat/getmodulestate/getnodedefs: bytes, the manifest,
+ * chat and module versions are not a world, and a getasset answer is how a scene's files reach the room. */
+export const AGENT_UNANSWERED = new Set(['getobjects', 'getnodes', 'getjoints', 'getanim', 'getscenepost', 'gettransport', 'getpatch', 'getshadergraphs', 'gethuds', 'getseqs', 'gethudvalues', 'getgame', 'getunderlays', 'gettriggers', 'getannotations', 'getkitentities', 'getytext']);
 
 /**
  * 36-export: the Peer an exported game holds — the same shape the rest of the app reads
@@ -1061,6 +1067,13 @@ export class PeerConnection {
 				// The get* REQUESTS are not in ROOM_SCOPED, deliberately — they are the gate's
 				// own queue mechanism, and dropping them would strand both sides in silence.
 				if (data && ROOM_SCOPED.has(data.type) && gateHolds(conn.peer)) return;
+				// 55 (41's P0 on preview-55): AN AGENT PAGE IS NEVER A SOURCE OF WORLD. It works in the host's
+				// scene and takes the host's scene; it answers no full-state request, so a host walking into a
+				// new or another scene cannot be handed the agent's old world (the reported silent merge: the
+				// host opened an empty scene, the agent followed and answered its re-sync with 8 old objects and
+				// their flows). Its live edits still broadcast as they happen; requests are just unanswered —
+				// the Stay shape, which every requester already handles (a later joiner gets the host's reply).
+				if (data && AGENT_UNANSWERED.has(data.type) && myKind() === 'agent') return;
 				// 55 A9: who did what, for the peer menu's "Show their recent changes" (LOCAL,
 				// past every gate — only what was actually applied here is recorded)
 				notePeerActivity(conn.peer, data);

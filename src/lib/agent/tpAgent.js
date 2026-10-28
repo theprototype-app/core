@@ -16,7 +16,8 @@ import { missingToolsFor } from './toolPolicy.js';
 import { peerMeshReady, askMeshState, requestHostMesh } from './meshRelay.js';
 import { takeScreenshot } from './screenshot.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
-import { peers, userdata, waitingForApproval, toastStore, dismissToastById } from '../../stores/appStore.js';
+import { peers, userdata, waitingForApproval, toastStore, dismissToastById, loading, loadingcount } from '../../stores/appStore.js';
+import { sceneLoad } from '$lib/sceneLoader.js';
 import { globalRenderer } from '../../stores/sceneStore.js';
 import { sessionHost } from '$lib/connectionState';
 import { rolesInfo } from '$lib/cloudHooks';
@@ -135,6 +136,9 @@ function startFollow(core) {
 		lastTry = key;
 		following = true;
 		core.notice('The host moved to "' + st.target.scene + '" — following them there.');
+		// 41's P0: the agent's old world can no longer reach the host's scene — an agent page answers no
+		// full-state request (peerHandler AGENT_UNANSWERED), and the hop replaces its world locally. (A
+		// separate empty apply before the hop was tried: its load job raced the hop's and stalled the follow.)
 		import('$lib/levels')
 			.then((m) => (st.target?.hash ? m.travelToLevel(st.target.hash, st.target.scene) : m.travelToScene(st.target?.scene ?? '')))
 			.then((landed) => {
@@ -225,6 +229,18 @@ export function createTpAgent(extra = {}) {
 			return Date.now() - unsettledSince > ROLES_SETTLE_MS;
 		},
 		host: () => get(sessionHost),
+		behaviourErrors: () => /** @type {any} */ (behaviourHost())?.errors?.() ?? [],
+		// 1.2: a scene still arriving — the join snapshot (the uuids the sender announced and we lack) or a
+		// scene load in progress (a travel, a follow)
+		loading: () => {
+			const left = (/** @type {string[]} */ (get(loading)) ?? []).length;
+			if (left) {
+				const total = Math.max(Number(get(loadingcount)) || 0, left);
+				return { arrived: total - left, total };
+			}
+			const job = get(sceneLoad);
+			return job ? { arrived: Math.max(0, job.done | 0), total: Math.max(0, job.total | 0) } : null;
+		},
 		room: () => {
 			const st = roomState();
 			return st ? { scene: st.scene, hostScene: st.hostScene, withHost: st.withHost, following: st.following } : null;

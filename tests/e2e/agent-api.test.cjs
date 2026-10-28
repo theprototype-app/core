@@ -58,6 +58,8 @@ h.run(async () => {
 	await h.connect(B, A);
 	const s = await poll(() => B.page.evaluate(() => window.tpAgent.status()), (x) => x.joined, 'B reports joined', 20000);
 	h.check(s?.joined === true && s.host === A.id && s.peers.some((p) => p.id === A.id) && s.canEdit === true, `status() after Approve: joined, host = A, can edit (${JSON.stringify({ host: s?.host, canEdit: s?.canEdit })})`);
+	const settled = await poll(() => B.page.evaluate(() => window.tpAgent.status()), (x) => x?.loading === false, 'status().loading settles', 30000);
+	h.check(settled?.loading === false && settled.objects === undefined, `status() reports loading (1.2) and it settles to false once the snapshot landed (${JSON.stringify({ loading: settled?.loading, objects: settled?.objects })})`);
 
 	// ---- 3. exec builds on the host, as ONE undo step --------------------------------------------
 	const depth0 = await B.page.evaluate(() => new Promise((r) => window.__stores.history.undoStack.subscribe((v) => r(v.length))()));
@@ -275,6 +277,25 @@ h.run(async () => {
 	if (!/host refused: view-only/.test(asViewer.error ?? ''))
 		console.log('  relay A: ' + JSON.stringify(await A.page.evaluate(() => window.__stores.meshRelay?.relayLog)) + '\n  relay B: ' + JSON.stringify(await B.page.evaluate(() => window.__stores.meshRelay?.relayLog)));
 	await A.page.evaluate(() => window.__stores.cloudHooks.rolesInfo.set(null));
+
+	// ---- 8b. 41's gem test: the kit authority is the PERSON, and a behaviour that throws says so ------
+	const auth = await Promise.all([A, B].map((p) => p.page.evaluate(() => window.__stores.kit.kitAuthorityId())));
+	h.check(auth[0] === A.id && auth[1] === A.id, `both pages name the host as the kit authority, never the agent (A ${auth[0]}, B ${auth[1]}; ids A ${A.id} B ${B.id})`);
+	const broken = await B.page.evaluate(() =>
+		window.tpAgent.exec('create_behaviour', {
+			name: 'Broken gems',
+			source: "export default behaviour({ name: 'Broken gems', state: { n: 0 }, on: { start() { const g = this.findAll('NoSuchGem*'); this.state.n = g[0].name.length; } } });"
+		})
+	);
+	h.check(!!broken?.created, 'create_behaviour applied it: ' + JSON.stringify(broken).slice(0, 200));
+	console.log('  create result errors: ' + JSON.stringify(broken?.errors ?? null).slice(0, 160));
+	const failing = await poll(() => B.page.evaluate(() => window.tpAgent.status().behaviourErrors ?? null), (x) => Array.isArray(x) && x.length > 0, 'status().behaviourErrors', 15000);
+	h.check(Array.isArray(failing) && failing.some((e) => e.name === 'Broken gems' && /name/.test(e.message)), `status().behaviourErrors names the failing behaviour on the AGENT page (it runs on the host): ${JSON.stringify(failing).slice(0, 200)}`);
+	const listed = await B.page.evaluate(() => window.tpAgent.exec('list_scene', {}));
+	const row = (listed?.behaviours ?? []).find((b) => b.name === 'Broken gems');
+	h.check(!!row && /error/.test(row.summary) && row.errors?.length > 0, `list_scene says it is failing, not just running (${JSON.stringify(row).slice(0, 200)})`);
+	const bare = await B.page.evaluate(() => window.tpAgent.exec('create_behaviour', { name: 'Bare find', source: "export default behaviour({ name: 'Bare find', on: { start() { findAll('Gem*'); } } });" }));
+	h.check(!bare?.created && /this\.findAll/.test(JSON.stringify(bare)), 'a bare findAll() is refused with the fix (this.findAll): ' + JSON.stringify(bare).slice(0, 160));
 
 	// ---- 9. T5: leave() is a goodbye, not a dropped link ----------------------------------------
 	const toastsA0 = await A.page.evaluate(() => { let l; window.__stores.toastStore.subscribe((x) => (l = x))(); return l.length; });

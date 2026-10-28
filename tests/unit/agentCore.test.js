@@ -159,6 +159,22 @@ describe('status()', () => {
 		settled = true;
 		expect(agent.status().joined).toBe(true);
 	});
+	it('1.2: says a scene is still arriving, and which behaviours are failing (41)', () => {
+		const app = fakeApp();
+		/** @type {{arrived: number, total: number} | null} */
+		let arriving = { arrived: 3, total: 9 };
+		/** @type {any[]} */
+		let failing = [];
+		const { agent } = createAgentCore({ ...app.deps, loading: () => arriving, behaviourErrors: () => failing });
+		expect(agent.status()).toMatchObject({ loading: true, objects: { arrived: 3, total: 9 } });
+		expect(agent.status().behaviourErrors).toBeUndefined();
+		arriving = null;
+		failing = [{ name: 'Gems', where: 'on.load', message: 'findAll is not defined' }];
+		const st = agent.status();
+		expect(st.loading).toBe(false);
+		expect(st.objects).toBeUndefined();
+		expect(st.behaviourErrors).toEqual(failing);
+	});
 	it('says where it is and where the host is, and REFUSES edits while apart (55 owner finding 1)', async () => {
 		const app = fakeApp();
 		let room = { scene: 'Run1', hostScene: 'Run1', withHost: true, following: false };

@@ -23,7 +23,7 @@ export function behaviourReference() {
 	return [
 		'BEHAVIOURS (create_behaviour / edit_behaviour): game logic as ONE JavaScript module, run on ONE peer (the session authority); `state` replicates to everyone.',
 		'export default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, on: {event(payload) {...}}, ...methods });',
-		'this: params, state, kit (also bare `kit`), after(seconds, "method", ...args) (survives the host leaving), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log(). Helpers: dist(a,b), clamp, lerp.',
+		'this: params, state, kit (also bare `kit`), after(seconds, "method", ...args) (survives the host leaving), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log() — always as this.find(…) etc. (only `kit` and the helpers are bare). Helpers: dist(a,b), clamp, lerp.',
 		'events: start; grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as "piece.event" or ' +
 			Object.keys(ALIASES).join(', ') +
 			'. Entity payloads have entity.is(glob), entity.hasTag(t).',
@@ -48,8 +48,22 @@ export function behaviourLint(source) {
 	return [...m.errors, ...m.lint.filter((/** @type {any} */ f) => f.level === 'warning')].map((/** @type {any} */ f) => ({ line: f.line, message: f.message }));
 }
 
-/** the host object (registerBehaviourHost's contract) @param {() => Record<string, any>} statusOf */
-export function makeBehaviourHost(statusOf) {
+/**
+ * 55 (41's gem test): what is failing in one behaviour — a load error (its status) or a handler that
+ * threw (the runtime's instance, which carries the authority's errors on every peer). Newest last;
+ * `at` is the session clock of a handler error (absent for a load error, which is always current).
+ * @param {any} st @param {any} live @returns {{where: string, message: string, at?: number}[]}
+ */
+function errorsOf(st, live) {
+	const out = [];
+	if (st?.status === 'error') for (const e of st.errors ?? []) out.push({ where: 'load', message: String(e?.message ?? e) });
+	for (const e of live?.errors ?? []) out.push({ where: String(e?.where ?? ''), message: String(e?.message ?? ''), ...(Number.isFinite(e?.at) ? { at: e.at } : {}) });
+	return out.slice(-5);
+}
+
+/** the host object (registerBehaviourHost's contract) @param {() => Record<string, any>} statusOf
+ * @param {(id: string) => any} [liveOf] the runtime's live view of one behaviour (errors) */
+export function makeBehaviourHost(statusOf, liveOf = () => null) {
 	return {
 		format: 'behaviour/1',
 		reference: behaviourReference,
@@ -58,12 +72,25 @@ export function makeBehaviourHost(statusOf) {
 			return behaviourNodes().map((n) => {
 				const st = status[n.id];
 				const handlers = (st?.model?.handlers ?? []).map((/** @type {any} */ h) => h.name);
+				const errors = errorsOf(st, liveOf(n.id));
+				const failing = errors.length && st?.status !== 'error' ? ' · ' + errors.length + ' error(s), last: ' + errors[errors.length - 1].where + ': ' + errors[errors.length - 1].message.slice(0, 120) : '';
 				return {
 					name: String(n.data?.name ?? 'Behaviour'),
 					target: n.__graph ?? 'scene',
-					summary: (st?.status ?? 'loading') + (handlers.length ? ' · on ' + handlers.join(', ') : '') + (n.data?.enabled === false ? ' · stopped' : '')
+					summary: (st?.status ?? 'loading') + (handlers.length ? ' · on ' + handlers.join(', ') : '') + (n.data?.enabled === false ? ' · stopped' : '') + failing,
+					...(errors.length ? { errors } : {})
 				};
 			});
+		},
+		/** every behaviour's current errors, flat (status().behaviourErrors) */
+		errors() {
+			const status = statusOf();
+			return behaviourNodes().flatMap((n) => errorsOf(status[n.id], liveOf(n.id)).map((e) => ({ name: String(n.data?.name ?? 'Behaviour'), ...e })));
+		},
+		/** @param {string} name one behaviour's errors (create/edit results) */
+		errorsOf(name) {
+			const n = byName(name);
+			return n ? errorsOf(statusOf()[n.id], liveOf(n.id)) : [];
 		},
 		/** @param {string} name */
 		read(name) {

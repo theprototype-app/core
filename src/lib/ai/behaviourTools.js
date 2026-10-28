@@ -15,6 +15,7 @@
 
 import { lintScript } from '../scriptLint.js';
 import { behaviourHost } from './aiExtensions.js';
+import { sessionNow } from '../sessionClock.js';
 
 const NAME = /^[A-Za-z_][\w-]{0,63}$/;
 const MAX_SOURCE = 40_000;
@@ -90,6 +91,27 @@ function readArgs(args) {
 	return { name, source };
 }
 
+/** how long a fresh behaviour is watched for errors (its first handlers, a peer's reply on the wire) */
+const SETTLE_MS = 2500;
+
+/** a behaviour's errors after its first moments, only those raised since `since` (the old code's are not
+ * the new one's) — [] when the host cannot say @param {any} host @param {string} name @param {number} since */
+async function settleErrors(host, name, since) {
+	if (typeof host?.errorsOf !== 'function') return [];
+	const until = Date.now() + SETTLE_MS;
+	let errors = [];
+	while (Date.now() < until) {
+		await new Promise((r) => setTimeout(r, 250));
+		try {
+			errors = (host.errorsOf(name) ?? []).filter((/** @type {any} */ e) => !Number.isFinite(e?.at) || e.at >= since).map((/** @type {any} */ e) => ({ where: e.where, message: e.message }));
+		} catch {
+			errors = [];
+		}
+		if (errors.length) break;
+	}
+	return errors;
+}
+
 /**
  * create_behaviour / edit_behaviour. Never throws (the tools.js convention).
  * @param {'create_behaviour' | 'edit_behaviour'} tool @param {any} args @returns {Promise<any>}
@@ -105,13 +127,21 @@ export async function behaviourTool(tool, args) {
 			error: 'the behaviour was NOT applied: ' + issues.length + ' lint issue(s) — fix them and call ' + tool + ' again',
 			issues
 		};
+	const since = sessionNow();
 	try {
 		const result =
 			tool === 'create_behaviour'
 				? await host.create(read.name, read.source, { target: typeof args?.target === 'string' ? args.target : 'scene' })
 				: await host.edit(read.name, read.source);
 		if (result && typeof result === 'object' && result.error) return { error: String(result.error) };
-		return { [tool === 'create_behaviour' ? 'created' : 'updated']: [{ name: read.name }] };
+		const done = { [tool === 'create_behaviour' ? 'created' : 'updated']: [{ name: read.name }] };
+		// 55 (41's gem test): a behaviour that loads and then THROWS (a bare findAll(), a typo in a
+		// handler) used to read as success here and "running" in list_scene. Watch its first moments
+		// (its start/load handlers run then, on whichever peer is the authority) and report what failed.
+		const errors = await settleErrors(host, read.name, since);
+		return errors.length
+			? { ...done, errors, warning: 'the behaviour was applied but its handlers threw (' + errors.length + ') — fix what errors[] names with edit_behaviour' }
+			: done;
 	} catch (error) {
 		return { error: error instanceof Error ? error.message : String(error) };
 	}

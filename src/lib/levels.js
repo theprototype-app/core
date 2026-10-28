@@ -95,6 +95,7 @@ import {
 	sceneOfHash
 } from './projectManifest';
 import { sessionHost } from './connectionState';
+import { myKind } from './inviteStore';
 // loose-scenes fix: the prompt is for an EDITOR, so it stands down in play mode (see
 // armSaveIntoProject). sceneStore is a leaf; sceneEntry answers "does the project know
 // this exact file", which is what makes a dragged-in .tpscene loose.
@@ -711,6 +712,9 @@ export async function publishCurrentIfChanged(opts = {}) {
 	// ordinary autosave still protects the work.
 	if (at.private) return false;
 	if (get(sessionHost) !== null) return false; // not the writer
+	// 55 (41): an AI agent's page is never the writer — a host-less agent (its host left) would otherwise
+	// read as one and publish a version of a scene it was only helping with
+	if (myKind() === 'agent') return false;
 	if (!opts.force && autoVersionsOff()) return false; // fork 10: auto-versions off
 	/** @type {any} */
 	let payload = null;

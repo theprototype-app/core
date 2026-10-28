@@ -20,6 +20,8 @@ import { peers, userdata, waitingForApproval, toastStore, dismissToastById, load
 import { sceneLoad } from '$lib/sceneLoader.js';
 import { globalRenderer } from '../../stores/sceneStore.js';
 import { sessionHost } from '$lib/connectionState';
+import { isAgentPeer } from '$lib/inviteStore';
+import { requestConnect } from '$lib/peerApproval';
 import { rolesInfo } from '$lib/cloudHooks';
 import { dirtyPulse, dismissRestore, restoreAvailable } from '$lib/autosave';
 import { welcomeOpen, whatsNewOpen, markWhatsNewSeen } from '$lib/whatsNew';
@@ -159,6 +161,100 @@ function startFollow(core) {
 	currentLevel.subscribe(schedule);
 }
 
+// ---- 55 (41's 3-peer test): the host LEAVES ---------------------------------------------------------
+// The mobile host left; the agent went to host:null, joined:false beside a live person, and with nobody
+// to answer to it would have built alone (exec only checked the role). Now:
+//   · a PERSON remains → the agent continues with the room's successor: with roles, the person the
+//     room's authority makes admin (the cloud plugin's pickSuccessor, which never picks an agent), else
+//     the lowest id among the people. No new invite: it is already connected to them.
+//   · NOBODY remains → paused: edits refused, status().hostAway says so and until when (10 min, or
+//     `agentHostAwayMin`), and it knocks on the host's door now and then — the host decides whether it
+//     comes back (the ordinary card). It never hosts (no auto-admit) and never saves (publish guard).
+
+/** how long a host-less agent waits for its host @returns {number} ms */
+function hostAwayMs() {
+	const min = Number(safeStorage.getItem('agentHostAwayMin'));
+	return (Number.isFinite(min) && min > 0 ? Math.min(min, 120) : 10) * 60 * 1000;
+}
+/** how often a waiting agent knocks */
+const HOST_KNOCK_MS = 30000;
+
+/** the host we answered to, and when it left (0 = it has not) */
+let lastHost = '';
+let awaySince = 0;
+let awayUntil = 0;
+
+/** the person who takes over when our host left, or '' when none is here @param {string} gone */
+function successorOf(gone) {
+	const people = openPeerIds().filter((id) => id !== gone && !isAgentPeer(id));
+	if (!people.length) return '';
+	const ri = /** @type {any} */ (get(rolesInfo));
+	if (ri && typeof ri.roleOf === 'function') {
+		const role = (/** @type {string} */ id) => {
+			try {
+				return String(ri.roleOf(id));
+			} catch {
+				return '';
+			}
+		};
+		return people.find((id) => role(id) === 'admin') ?? people.find((id) => role(id) === 'editor') ?? '';
+	}
+	return [...people].sort()[0];
+}
+
+/** status().hostAway, or null while a host is here */
+function hostAwayState() {
+	if (!awaySince || get(sessionHost)) return null;
+	return { host: lastHost, since: awaySince, until: awayUntil, expired: Date.now() > awayUntil };
+}
+
+/** @param {ReturnType<typeof createAgentCore>} core */
+function startHostWatch(core) {
+	/** @type {any} */
+	let knock = null;
+	const stopKnocking = () => {
+		if (knock) clearInterval(knock);
+		knock = null;
+	};
+	const settle = () => {
+		const host = get(sessionHost);
+		if (host) {
+			if (awaySince) core.notice('Back with the host ' + host.slice(0, 6).toUpperCase() + ' — edits reach the room again.');
+			lastHost = host;
+			awaySince = 0;
+			stopKnocking();
+			return;
+		}
+		if (!lastHost) return; // never joined anybody: nothing left us
+		const next = successorOf(lastHost);
+		if (next) {
+			core.notice('The host left — continuing with ' + (nameOf(next) || next.slice(0, 6).toUpperCase()) + ', who now leads the room.');
+			sessionHost.set(next); // → settle again with a host
+			return;
+		}
+		if (awaySince) return;
+		awaySince = Date.now();
+		awayUntil = awaySince + hostAwayMs();
+		core.notice('The host left and nobody else is here: paused (read-only). Waiting up to ' + Math.round(hostAwayMs() / 60000) + ' minutes for them to come back.');
+		stopKnocking();
+		knock = setInterval(() => {
+			if (get(sessionHost) || !awaySince) return stopKnocking();
+			if (Date.now() > awayUntil) {
+				stopKnocking();
+				core.notice('The host did not come back within ' + Math.round(hostAwayMs() / 60000) + ' minutes. This agent stays paused: leave(), or join again with a new invite.');
+				return;
+			}
+			// a person joined us meanwhile (a mesh dial): they lead
+			const next = successorOf(lastHost);
+			if (next) return sessionHost.set(next);
+			const waiting = (/** @type {any[]} */ (get(waitingForApproval)) ?? []).some((w) => Array.isArray(w) && w[0] === lastHost && w[1] === 'pending');
+			if (!waiting && !openPeerIds().includes(lastHost)) void requestConnect(lastHost);
+		}, HOST_KNOCK_MS);
+	};
+	sessionHost.subscribe(() => queueMicrotask(settle));
+	peers.subscribe(() => queueMicrotask(settle));
+}
+
 /** A6: is the HOST's mesh provider ready (what it last said through the relay)? */
 function hostMeshReady() {
 	const host = get(sessionHost);
@@ -230,6 +326,7 @@ export function createTpAgent(extra = {}) {
 		},
 		host: () => get(sessionHost),
 		behaviourErrors: () => /** @type {any} */ (behaviourHost())?.errors?.() ?? [],
+		hostAway: () => hostAwayState(),
 		// 1.2: a scene still arriving — the join snapshot (the uuids the sender announced and we lack) or a
 		// scene load in progress (a travel, a follow)
 		loading: () => {
@@ -261,6 +358,9 @@ export function createTpAgent(extra = {}) {
 		onSceneChange: (cb) => dirtyPulse.subscribe(() => cb()),
 		screenshot: (opts) => (extra.screenshot ?? takeScreenshot)(opts),
 		leave: async () => {
+			// a goodbye of our own is not the host leaving us
+			lastHost = '';
+			awaySince = 0;
 			try {
 				link()?.leaveSession?.();
 			} catch {}
@@ -393,6 +493,7 @@ export function installTpAgent(extra) {
 	startQuiet(core);
 	startMeshAsk();
 	startFollow(core);
+	startHostWatch(core);
 	w.tpAgent = Object.freeze({ ...core.agent });
 	return w.tpAgent;
 }

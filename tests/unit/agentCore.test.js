@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createAgentCore, createOffers, viewerRefusal, leftBehindRefusal, toolName, READ_ONLY_TOOLS } from '../../src/lib/agent/agentCore.js';
+import { createAgentCore, createOffers, viewerRefusal, leftBehindRefusal, hostAwayRefusal, toolName, READ_ONLY_TOOLS } from '../../src/lib/agent/agentCore.js';
 import { TP_AGENT_VERSION } from '../../src/lib/agent/contract.js';
 
 // 55 A2: the tpAgent methods against fakes. Each test names the test-flight finding it pins.
@@ -158,6 +158,22 @@ describe('status()', () => {
 		expect(agent.status().joined).toBe(false);
 		settled = true;
 		expect(agent.status().joined).toBe(true);
+	});
+	it('1.2: the host LEFT and nobody is here — paused: status says so and edits are refused (41)', async () => {
+		const app = fakeApp();
+		/** @type {any} */
+		let away = { host: 'ff637aa', since: 1000, until: Date.now() + 600000, expired: false };
+		const { agent } = createAgentCore({ ...app.deps, hostAway: () => away });
+		expect(agent.status()).toMatchObject({ hostAway: { host: 'ff637aa', expired: false }, withHost: false });
+		const res = await agent.exec('create_objects', { objects: [{}] });
+		expect(res).toMatchObject({ refused: true, hostAway: { host: 'ff637aa' } });
+		expect(res.error).toBe(hostAwayRefusal(away));
+		expect(res.error).toMatch(/paused/);
+		expect(app.log).toEqual([]);
+		// reads still work while paused
+		expect((await agent.exec('list_scene', {})).refused).toBeUndefined();
+		away = null;
+		expect(agent.status().hostAway).toBeUndefined();
 	});
 	it('1.2: says a scene is still arriving, and which behaviours are failing (41)', () => {
 		const app = fakeApp();

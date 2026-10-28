@@ -76,6 +76,9 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {boolean} [loading] 1.2: a scene is still arriving (right after a join, or a travel/follow): what
  *   list_scene shows is partial until it is false
  * @property {{arrived: number, total: number}} [objects] 1.2: while `loading`, how many of the scene's objects are here
+ * @property {{host: string, since: number, until: number, expired: boolean}} [hostAway] 1.2: the host LEFT and no person
+ *   is here: the agent is paused (edits refused, `withHost` false), knocks on the host's door until `until`, never
+ *   hosts and never saves. When a person remains instead, it continues with the room's successor (`host` changes).
  * @property {{name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the latest errors thrown by
  *   the scene's code behaviours (on whichever peer runs them); absent when none — fix with edit_behaviour
  */

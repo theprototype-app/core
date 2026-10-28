@@ -37,6 +37,20 @@ export function viewerRefusal(peerId) {
 }
 
 /**
+ * 1.2 (41): the words an agent reads while its host is gone and no person is here.
+ * @param {{host: string, until: number, expired: boolean}} away
+ */
+export function hostAwayRefusal(away) {
+	const who = away.host ? away.host.slice(0, 6).toUpperCase() : 'The host';
+	return (
+		who + ' (the host) left and nobody else is in the session, so this agent is paused: an edit would reach nobody. ' +
+		(away.expired
+			? 'It waited and they did not come back — leave(), or join again with a new invite.'
+			: 'It waits for them until ' + new Date(away.until).toISOString().slice(11, 16) + ' UTC and rejoins when they let it back in; check status().hostAway.')
+	);
+}
+
+/**
  * 55 owner finding 1: the words an agent reads when the HOST is in another scene. Its edits would land
  * in a room the host left — the two demos nobody saw — so they are refused until it is with them again.
  * @param {string} hostScene @param {boolean} following
@@ -73,6 +87,8 @@ export function toolName(tool) {
  * @property {() => string|null} host
  * @property {() => {name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the scene's failing behaviours
  * @property {() => {arrived: number, total: number} | null} [loading] 1.2: a scene still arriving (null = none)
+ * @property {() => {host: string, since: number, until: number, expired: boolean} | null} [hostAway] 1.2: the host left
+ *   and no person is here: paused (null = a host is here)
  * @property {() => {scene: string, hostScene: string, withHost: boolean, following: boolean} | null} [room] 55 owner
  *   finding 1: our scene, the host's, and whether we stand in the same room (absent/null = not known: allowed)
  * @property {() => boolean} waiting
@@ -200,6 +216,8 @@ export function createAgentCore(deps) {
 			}
 		}
 		if (!READ_ONLY_TOOLS.has(real) && !canEdit()) return { error: viewerRefusal(deps.peerId()), refused: true, role: 'viewer' };
+		const away = deps.hostAway?.() ?? null;
+		if (!READ_ONLY_TOOLS.has(real) && away) return { error: hostAwayRefusal(away), refused: true, hostAway: away };
 		const room = deps.room?.() ?? null;
 		if (!READ_ONLY_TOOLS.has(real) && room && !room.withHost)
 			return { error: leftBehindRefusal(room.hostScene, room.following), refused: true, withHost: false };
@@ -228,6 +246,15 @@ export function createAgentCore(deps) {
 		const list = (deps.getTools() ?? []).filter((t) => !extra[toolName(t)]);
 		for (const [name, spec] of Object.entries(extra)) list.push({ type: 'function', function: { name, ...spec.schema } });
 		return list;
+	}
+
+	/** 1.2: the host-away state, or null @returns {any} */
+	function hostAwayNow() {
+		try {
+			return deps.hostAway?.() ?? null;
+		} catch {
+			return null;
+		}
 	}
 
 	/** 1.2: `{loading, objects}` — loading is always present, objects only while it is true */
@@ -276,6 +303,8 @@ export function createAgentCore(deps) {
 			...(room ? { scene: room.scene, hostScene: room.hostScene, withHost: room.withHost, following: room.following } : {}),
 			// 1.2 (41): right after a join the snapshot is still arriving — say so until it has landed
 			...loadingState(),
+			// 1.2 (41): the host left and nobody is here — paused, and until when it waits for them
+			...(hostAwayNow() ? { hostAway: hostAwayNow(), withHost: false } : {}),
 			// 55 (41's gem test): a behaviour that throws says so here, not only in the runtime's instance list
 			...behaviourErrors(),
 			notices: notices.slice()

@@ -39,6 +39,7 @@ import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 P
 import { noteWireError } from '$lib/wireErrors';
 import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';
 import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId, silenceCloseAllowed, meshHosts } from '$lib/peerDrop';
+import { takeRejoin, rememberRejoin, settleRejoin, REJOIN_WINDOW_MS, REJOIN_DIAL_MS } from '$lib/rejoin'; // fix-agenttest 6
 import { createDialBackQueue } from '$lib/dialBackQueue'; // scatter-sync: room edits held for an opening approval dial-back
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
@@ -263,7 +264,14 @@ function boundApprovals(approvals) {
 export class PeerConnection {
 	constructor(id, updateIdFn) {
 		this.updateIdFn = updateIdFn;
-		this.myId = id;
+		// fix-agenttest 6: a reload while joined comes back on the SAME id and dials the host
+		// (rejoin.js); the host re-admits an id that left by unloading (unloadedPeers)
+		const rejoin = takeRejoin();
+		/** @type {string | null} */
+		this.rejoinHost = rejoin?.host ?? null;
+		/** @type {Map<string, number>} id -> when it said goodbye from a pagehide */
+		this.unloadedPeers = new Map();
+		this.myId = rejoin?.id ?? id;
 		this.reconnectAttempts = 0;
 		this.hasOpened = false;   // the signaling link has opened at least once
 		this.didFallback = false; // we've already switched to the public cloud
@@ -572,8 +580,12 @@ export class PeerConnection {
 				this.reconnectDial(peerId);
 			}
 			if (this.updateIdFn) this.updateIdFn(id);
-			if (!window.location.hash.slice(1)) return;
-			let connect = window.location.hash.slice(1).toLocaleLowerCase()
+			// fix-agenttest 6: the session this tab was in before its reload, dialled like an invite
+			const rejoinHost = this.rejoinHost;
+			this.rejoinHost = null;
+			if (rejoinHost) later(() => settleRejoin('failed'), REJOIN_DIAL_MS);
+			if (!rejoinHost && !window.location.hash.slice(1)) return;
+			let connect = rejoinHost ?? window.location.hash.slice(1).toLocaleLowerCase()
 			// Whitelist connection by adding to userdata
 			let data = [connect, '', '']
 			users.push(data);
@@ -586,7 +598,7 @@ export class PeerConnection {
 			waitingForApproval.update((value) => value);
 			// // Initiate connection request to peer and await approval
 			this.connectToPeer(connect, true);
-			window.location.hash = '';	
+			if (!rejoinHost) window.location.hash = '';
 		});
 
 		// 27-F: a closed Peer is SPENT — `reconnect()` does nothing for it, which is why
@@ -647,7 +659,8 @@ export class PeerConnection {
 			// dead end this phase exists to remove. Wait out the registration and rebuild.
 			// 44 L2: "ours" is decided by the SERVER this id opened on, not by `hasOpened` (see
 			// registeredOn). Once the waits are spent, a fresh id beats "please reload".
-			const ownHeld = this.registeredOn.has(this.serverKey);
+			// fix-agenttest 6: so is the id a rejoin brought back from before the reload
+			const ownHeld = this.registeredOn.has(this.serverKey) || !!this.rejoinHost;
 			if (err.type === 'unavailable-id' && ownHeld && this.idRetries < 3) {
 				this.idRetries++;
 				const wait = backoffDelay(this.idRetries, RETRY_BACKOFF) ?? 8000;
@@ -661,6 +674,7 @@ export class PeerConnection {
 				this.idRetries++;
 				this.registeredOn.clear(); // a fresh id is registered nowhere yet
 				this.myId = createPeer();
+				if (this.rejoinHost) { this.rejoinHost = null; settleRejoin('failed'); } // the host would not know a new id
 				log('warn', 'net', 'session id collided — retrying', { id: this.myId });
 				recreatePeer(this.didFallback);
 				return;
@@ -669,6 +683,7 @@ export class PeerConnection {
 				// 27-E: end the request this names. The pill used to sit on "Requesting"
 				// beside this very toast, and the optimistic whitelist row never went away.
 				const id = unavailablePeerId(err.message);
+				settleRejoin('failed'); // fix-agenttest 6: the only dial a pending rejoin has is to its host
 				// 25-F: a refusal to somebody who already gave up and left is not news
 				if (id && this.refusalDials.has(id)) return;
 				// F-3: a REDIAL of a peer that dropped — the server no longer holds them. Not
@@ -708,7 +723,11 @@ export class PeerConnection {
 		// would land there as a fresh approval request.
 		if (typeof window !== 'undefined') {
 			window.addEventListener('pagehide', () => {
-				try { this.broadcast({ type: 'disconnected', peerId: this.peer.id }); } catch (e) { /* going down anyway */ }
+				// fix-agenttest 6: joined as a guest → remember the session for a reload (rejoin.js);
+				// `unload` tells the host this goodbye may come back on the same id
+				const host = get(sessionHost);
+				rememberRejoin(this.peer?.id, host && this.openedPeers.has(host) ? host : null);
+				try { this.broadcast({ type: 'disconnected', peerId: this.peer.id, unload: true }); } catch (e) { /* going down anyway */ }
 			});
 			// 27-F: the two events that mean "there is a point in trying NOW" — a wifi hop
 			// ends as `online`, a lid or a phone lock ends as `visible`. Both RESET the
@@ -761,6 +780,7 @@ export class PeerConnection {
 					// CN: OUR outbound request was approved — that peer is the session
 					// host (first approval wins; null while hosting ourselves).
 					if (!get(sessionHost)) sessionHost.set(conn.peer);
+					settleRejoin('joined'); // fix-agenttest 6: no-op unless this was the reload's dial
 
 					// Show approved toast message
 					// with roles active (cloud), joiners default to view-only — say so + link docs
@@ -798,7 +818,24 @@ export class PeerConnection {
 						conn.close();
 						return;
 					}
-					const verdict = auth && typeof auth.decide === 'function' ? auth.decide(conn.peer, cloudMeta) : undefined;
+					// fix-agenttest 6: a guest that RELOADED (its goodbye said `unload`) is back on the id
+					// we approved a moment ago — re-admitted as the auto-approve below does, no new card
+					const leftAt = this.unloadedPeers.get(conn.peer);
+					this.unloadedPeers.delete(conn.peer);
+					if (leftAt !== undefined && Date.now() - leftAt <= REJOIN_WINDOW_MS && !roomIsFull(this)) {
+						found = true;
+						const roster = /** @type {any[]} */ (get(userdata));
+						if (!roster.some((/** @type {any} */ e) => e[0] === conn.peer))
+							userdata.set(/** @type {any} */ ([...roster, [conn.peer, '', '']]));
+						// the HOST answers as an approval (roster + dial-back); a fellow guest just takes the
+						// mesh link, as it would with the host's roster already in hand
+						if (!get(sessionHost)) {
+							this.send({ type: 'userdata', userdata: get(userdata) });
+							this.approveDialBack(conn.peer);
+						}
+						log('info', 'net', 'a guest reloaded and is back on its id — re-admitted', { peer: conn.peer });
+					}
+					const verdict = found ? undefined : auth && typeof auth.decide === 'function' ? auth.decide(conn.peer, cloudMeta) : undefined;
 					if (verdict === 'deny') {
 						if (conn?.metadata?.jr) this.sendJoinResult(conn.peer, 'denied');
 						conn.close();
@@ -806,9 +843,10 @@ export class PeerConnection {
 					}
 					if (verdict && typeof verdict === 'object' && verdict.label) knockLabel = String(verdict.label).slice(0, 120);
 					const authorized =
-						verdict !== undefined
+						!found &&
+						(verdict !== undefined
 							? verdict === 'admit'
-							: !!auth && typeof auth.authorize === 'function' && auth.authorize(conn.peer);
+							: !!auth && typeof auth.authorize === 'function' && auth.authorize(conn.peer));
 					if (authorized && roomIsFull(this) && conn?.metadata?.jr) {
 						// 25-F: a plugin would let them in, but the mesh cannot take one more —
 						// say so rather than auto-approving past the hard cap
@@ -1376,6 +1414,12 @@ export class PeerConnection {
 						// P-A finding), and marking it graceful stops the transient-drop
 						// reconnect from redialing someone who left on purpose (B5)
 						this.gracefulLeft.add(data.peerId);
+						// fix-agenttest 6: a tab that unloaded may reload and dial back on this id
+						if (data.unload === true && this.openedPeers.has(data.peerId)) {
+							const now = Date.now();
+							for (const [id, at] of this.unloadedPeers) if (now - at > REJOIN_WINDOW_MS) this.unloadedPeers.delete(id);
+							this.unloadedPeers.set(data.peerId, now);
+						}
 						if (this.openedPeers.has(data.peerId)) this.finalizeDisconnect(data.peerId, false);
 					} else if (this.connections[data.peerId] || this.reconnecting.has(data.peerId)) {
 						// a relayed rumor about a peer we have FIRST-HAND state on — our

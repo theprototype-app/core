@@ -575,6 +575,7 @@
 		"race-vr-shadows": 123,
 		"race-vr-shadows-iwer": 121,
 		"reload-memory": 190,
+		"reload-rejoin": 290,
 		"reset-windows": 21,
 		"resize-observer-loop": 468,
 		"ro-loop-guard": 623,

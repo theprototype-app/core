@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { rejoinOutcome } from './rejoin'; // fix-agenttest 6
 import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -548,6 +549,9 @@ async function checkRestore() {
 	try {
 		const snapshot = await idbGet('latest');
 		if (!snapshot || (!snapshot.scene && !snapshot.nodes?.length)) return settleRestore();
+		// fix-agenttest 6: a reload while joined goes back to the session (rejoin.js) — offer our
+		// own copy only when there is no live session to go back to
+		if ((await rejoinOutcome()) === 'joined') return settleRestore();
 		// wait for the scene group to exist, then only offer when it's still empty
 		const unsubscribe = objectsGroup.subscribe((group) => {
 			if (!group) return;

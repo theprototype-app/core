@@ -3982,6 +3982,9 @@ function applyAnimation(object, base, anim, time, ctx) {
 const cameraRigState = new Map();
 /** nodes already told they are wired to something that is not a camera @type {Set<string>} */
 const cameraRigWarned = new Set();
+/** 55 (1.48.1): when the last such notice showed — two rigs (or a deleted object's leftover one) warning in the same
+ * moment are ONE notice, not a stack of identical toasts */
+let cameraRigWarnedAt = 0;
 const _rigQ = new THREE.Quaternion();
 
 /**
@@ -3995,7 +3998,12 @@ function applyCameraRig(object, anim, data) {
 	if (!object?.userData?.camera) {
 		if (!cameraRigWarned.has(anim.id)) {
 			cameraRigWarned.add(anim.id);
-			showToast('Camera Rig moves camera objects only — wire it into an Object Selector that picks a camera.');
+			const now = Date.now();
+			if (now - cameraRigWarnedAt > 5000) {
+				const what = object?.name ? ' ("' + String(object.name).slice(0, 40) + '" is not one)' : '';
+				showToast('Camera Rig moves camera objects only' + what + ' — wire it into an Object Selector that picks a camera.');
+			}
+			cameraRigWarnedAt = now;
 		}
 		return;
 	}

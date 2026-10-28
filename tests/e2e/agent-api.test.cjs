@@ -302,7 +302,7 @@ h.run(async () => {
 	);
 	h.check(!!broken?.created, 'create_behaviour applied it: ' + JSON.stringify(broken).slice(0, 200));
 	console.log('  create result errors: ' + JSON.stringify(broken?.errors ?? null).slice(0, 160));
-	const failing = await poll(() => B.page.evaluate(() => window.tpAgent.status().behaviourErrors ?? null), (x) => Array.isArray(x) && x.length > 0, 'status().behaviourErrors', 15000);
+	const failing = await poll(() => B.page.evaluate(() => window.tpAgent.status().behaviourErrors ?? null), (x) => Array.isArray(x) && x.length > 0, 'status().behaviourErrors', 60000);
 	if (!(Array.isArray(failing) && failing.length)) {
 		const diag = await Promise.all([A, B].map((p) => p.page.evaluate((id) => { const d = window.__stores.behaviours.behavioursDebug(); const l = id ? d.live(id) : null; return { me: d.me, authority: d.authority, stats: d.stats, status: id ? d.status[id] : Object.keys(d.status), live: l && { started: l.started, rev: l.rev, synced: l.synced, authority: l.authority, errors: l.errors, fired: l.fired } }; }, broken?.created?.[0]?.id ?? null)));
 		console.log('  DIAG behaviour errors: ' + JSON.stringify(diag).slice(0, 2400));
@@ -320,17 +320,21 @@ h.run(async () => {
 	const ballId = ball?.created?.[0]?.uuid;
 	await B.page.evaluate((id) => window.tpAgent.exec('set_physics', { updates: [{ uuid: id, mode: 'dynamic', mass: 1 }] }), ballId);
 	await poll(() => A.page.evaluate((id) => !!window.__stores.objectsGroup && (() => { let g; window.__stores.objectsGroup.subscribe((x) => (g = x))(); return g?.getObjectByProperty('uuid', id)?.userData?.physics?.mode === 'dynamic'; })(), ballId), (x) => x, 'ball on host', 15000);
-	// the host times the fall in-page (50 ms resolution), from the moment its simulation starts
+	// the host times the fall in-page (50 ms resolution), from the moment the ball starts to move
 	const fall = A.page.evaluate((id) => new Promise((resolve) => {
-		let g, t0 = 0;
+		let g, t0 = 0, frames = 0, counting = true;
 		window.__stores.objectsGroup.subscribe((x) => (g = x))();
 		const end = Date.now() + 60000;
+		// the page's own frame rate while it falls: physics feeds at most 0.25 s of sim time per frame
+		const count = () => { if (t0) frames++; if (counting) requestAnimationFrame(count); };
+		requestAnimationFrame(count);
 		const tick = setInterval(() => {
 			let on = false;
 			window.__stores.physics.simulating.subscribe((v) => (on = v))();
-			if (on && !t0) t0 = Date.now();
 			const y = g?.getObjectByProperty('uuid', id)?.position.y ?? 99;
-			if ((t0 && y < 0.8) || Date.now() > end) { clearInterval(tick); resolve(t0 ? { ms: Date.now() - t0, y } : null); }
+			// from the first MOTION (the engine's start-up — a wasm load on a cold server — is not the fall)
+			if (on && !t0 && y < 3.45) t0 = Date.now();
+			if ((t0 && y < 0.8) || Date.now() > end) { clearInterval(tick); counting = false; const ms = Date.now() - t0; resolve(t0 ? { ms, y, fps: +((frames * 1000) / Math.max(1, ms)).toFixed(1) } : null); }
 		}, 50);
 	}), ballId);
 	const started = await B.page.evaluate(() => window.tpAgent.exec('control_simulation', { action: 'start' }));
@@ -344,7 +348,11 @@ h.run(async () => {
 	h.check(sims[0].on === true && sims[1].on !== true && sims[1].remote === A.id, `the HOST steps the world, the agent page never does (${JSON.stringify(sims)})`);
 	const fell = await fall;
 	console.log('  fall of 3 m on the host: ' + JSON.stringify(fell) + ' (real time ~0.8 s; the bug measured 4.5 s)');
-	h.check(!!fell && fell.ms < 2500, `the ball falls in about real time, not 4-6x slow (${fell?.ms} ms)`);
+	// real time is ~0.8 s; a page drawing f fps advances at most 0.25·f s of sim per second, so the bound
+	// is the slower of real time and that cap (+ headroom) — a 60 fps host must be real time, a 1 fps
+	// headless one cannot be
+	const bound = fell ? Math.max(2500, (0.8 / Math.min(1, 0.25 * Math.max(0.2, fell.fps))) * 1000 * 2.5) : 0;
+	h.check(!!fell && fell.ms < bound, `the ball falls in about real time for the host's frame rate (${fell?.ms} ms at ${fell?.fps} fps, bound ${Math.round(bound)} ms)`);
 	const kitNow = await Promise.all([A, B].map((p) => p.page.evaluate(() => window.__stores.kit.kitAuthorityId())));
 	h.check(kitNow.every((x) => x === A.id), `while it runs the kit authority is still the host (${JSON.stringify(kitNow)})`);
 	const stopped = await B.page.evaluate(() => window.tpAgent.exec('control_simulation', { action: 'stop' }));

@@ -101,6 +101,7 @@ import {
 	sendHudValues
 } from '$lib/hudSync';
 import { applyRemoteGameState, sendGameState, gameStatePayload } from '$lib/gameSync';
+import { applyGameVarOp } from '$lib/gameState';
 // 60 Q5: shared reference images (a leaf: stores + idb)
 import { applyRemoteUnderlay, applyRemoteUnderlayDelete, sendUnderlays, dropPeerUnderlays } from '$lib/underlays';
 // 48 S2: sequences (Timeline) — scene data, latest-wins per sequence (sequenceSync.js)
@@ -1227,6 +1228,10 @@ export class PeerConnection {
 					applyRemoteGameState(data);
 				} else if(data.type == 'getgame') {
 					if (sameRoomOrUnknown(conn.peer)) sendGameState(data.sender);
+				} else if(data.type == 'gamevarop') {
+					// fix-agenttest 10: a shared Set Variable's event, sent to us as the authority;
+					// applied once per rid, and the write replicates as `game`
+					applyGameVarOp(data);
 				} else if(data.type == 'underlay') {
 					// 60 Q5: a peer's shared reference image (owner = this conn, never a field)
 					applyRemoteUnderlay(data, conn.peer);

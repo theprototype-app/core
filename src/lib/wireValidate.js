@@ -265,6 +265,16 @@ export const VALIDATORS = {
 		typeof d.doc.slices === 'object' &&
 		!Array.isArray(d.doc.slices) &&
 		(d.ev === undefined || isArray(d.ev)),
+	// fix-agenttest 10: a shared Set Variable's event for the authority (gameState.applyGameVarOp)
+	gamevarop: (d) =>
+		typeof d.rid === 'string' &&
+		d.rid.length > 0 &&
+		d.rid.length <= 160 &&
+		typeof d.name === 'string' &&
+		d.name.length > 0 &&
+		d.name.length <= 200 &&
+		(d.op === 'set' || d.op === 'add' || d.op === 'subtract') &&
+		Number.isFinite(d.value),
 	kitreq: (d) =>
 		typeof d.rid === 'string' &&
 		d.rid.length > 0 &&

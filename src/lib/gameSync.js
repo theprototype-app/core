@@ -17,6 +17,7 @@ import {
 	gameState,
 	normalizeGameState,
 	commitGameState,
+	mergeGameState,
 	registerGameBroadcast,
 	registerGameHistory
 } from './gameState';
@@ -61,10 +62,12 @@ export function sendGameState(peerId, attempt = 0) {
  */
 export function applyRemoteGameState(data) {
 	if (!data) return false;
-	const incoming = normalizeGameState(data);
-	if (incoming.changedAt < (get(gameState).changedAt ?? 0)) return false;
+	// fix-agenttest 10: per-variable stamps (gameState.mergeGameState) — an older state still
+	// brings a variable written after ours
+	const next = mergeGameState(get(gameState), data);
+	if (!next) return false;
 	// silent: a receiver must never re-broadcast, and a remote change is not OUR undo step
-	commitGameState(incoming, { silent: true, stamp: incoming.changedAt });
+	commitGameState(next, { silent: true, stamp: next.changedAt, varsAt: next.varsAt });
 	return true;
 }
 

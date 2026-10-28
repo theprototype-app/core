@@ -45,6 +45,7 @@ import {
 	gameState,
 	setGameState,
 	setGameVar,
+	applyGameVarOp,
 	gameVar,
 	gameElapsed,
 	commitGameState,
@@ -1538,6 +1539,31 @@ function sandboxedWrite(stamp) {
 	return !!sharedOverlay && inDebugTick && !sharedOverlay.localStamps.has(stamp);
 }
 
+/**
+ * fix-agenttest 10: a SHARED Set Variable's write goes to ONE peer, the kit's authority (the same
+ * peer kit actions and behaviours already settle on). The authority applies it; anyone else sends
+ * it there — including the player of a perPlayer pulse, whose stamp nobody else sees — and the
+ * authority's rid window makes the N copies of one event a single write. No authority reachable
+ * (alone, or its conn not open yet): apply here.
+ * @param {{rid: string, name: string, op: string, value: number}} req
+ */
+function shareGameVarOp(req) {
+	/** @type {any} */
+	const peer = get(peers);
+	const me = peer?.peer?.id ?? null;
+	const authority = kitAuthorityId();
+	const conn = me && authority && authority !== me ? peer?.connections?.[authority] : null;
+	if (conn?.open) {
+		try {
+			conn.send({ type: 'gamevarop', ...req });
+			return;
+		} catch {
+			/* the conn just closed: apply here */
+		}
+	}
+	applyGameVarOp(req);
+}
+
 /** @param {number} time @param {any} ctx */
 function updateGameNodes(time, ctx) {
 	const game = viewGame(); // 48 D1: the paused view's own state while it holds a sandbox
@@ -1674,7 +1700,8 @@ function updateGameNodes(time, ctx) {
 				const value = op === 'add' ? current + v : op === 'subtract' ? current - v : v;
 				// 48 D1: the paused view's copy first (the watch list reads it), the shared one unless sandboxed
 				if (sharedOverlay) sharedOverlay.game = { ...sharedOverlay.game, vars: { ...sharedOverlay.game.vars, [name]: value } };
-				if (!sandboxedWrite(stamp)) setGameVar(name, value);
+				// fix-agenttest 10: the AUTHORITY writes, once per event (gameState.applyGameVarOp)
+				if (!sandboxedWrite(stamp)) shareGameVarOp({ rid: 'var:' + node.id + ':' + stamp, name, op, value: v });
 			}
 		}
 	}

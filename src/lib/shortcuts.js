@@ -607,18 +607,24 @@ export const shortcuts = [
 		 * naming rather than inventing a name the user never chose.
 		 */
 		action: async () => {
-			const [{ currentLevel, saveSceneAsLevel }, { activeFolder }] = await Promise.all([
-				import('./levels'),
-				import('./explorer')
-			]);
-			const name = get(currentLevel)?.name;
-			if (!name) {
-				explorerClose.set(false);
-				armExplorerSceneSave(null);
-				return;
-			}
-			const saved = await saveSceneAsLevel(name, get(activeFolder) ?? null);
-			showToast(saved ? 'Saved "' + name + '"' : 'Could not save "' + name + '"');
+			const saveOwn = async () => {
+				const [{ currentLevel, saveSceneAsLevel }, { activeFolder }] = await Promise.all([
+					import('./levels'),
+					import('./explorer')
+				]);
+				const name = get(currentLevel)?.name;
+				if (!name) {
+					explorerClose.set(false);
+					armExplorerSceneSave(null);
+					return;
+				}
+				const saved = await saveSceneAsLevel(name, get(activeFolder) ?? null);
+				showToast(saved ? 'Saved "' + name + '"' : 'Could not save "' + name + '"');
+			};
+			// 56 C13: with several libraries open (a session I joined, a mounted project with changes)
+			// Ctrl+S follows Settings ▸ Save options ▸ "When several libraries are open"; with one it is saveOwn
+			const { saveProjectPressed } = await import('./saveProject');
+			await saveProjectPressed('ctrls', saveOwn);
 		}
 	},
 	{

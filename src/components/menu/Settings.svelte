@@ -51,6 +51,7 @@
 	import NodeTypesSection from './NodeTypesSection.svelte'; // 36 B7
 	// 36-export: the export defaults (its own file; also the Publish / Export modal's Settings tab)
 	import ExportSettingsSection from './ExportSettingsSection.svelte';
+	import SaveOptionsSettingsSection from './SaveOptionsSettingsSection.svelte'; // 56 C13
 	import ImportSettingsSection from './ImportSettingsSection.svelte'; // 46 P2
 	import PrivacySettings from './settings/PrivacySettings.svelte'; // 48 O1
 	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
@@ -70,10 +71,12 @@
 	let aiExpanded = false;
 	// 36-export: Settings ▸ Export — opened by a search (the filter needs mounted rows) or a deep link
 	let exportExpanded = false;
+	let saveOptionsExpanded = false; // 56 C13
 	// 36 B7: Settings ▸ Node types (the node manager) — opened by a search or a deep link
 	let nodeTypesExpanded = false;
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'nodetypes')) nodeTypesExpanded = true;
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'export')) exportExpanded = true;
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'saveoptions')) saveOptionsExpanded = true;
 	// 46 P2: Settings ▸ Import — the defaults for new imports (opened by a search or a deep link)
 	let importExpanded = false;
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'import')) importExpanded = true;
@@ -577,6 +580,10 @@
 				<AccordionItem bind:open={exportExpanded}>
 					{#snippet header()}Export{/snippet}
 					<Section variant="card" label="Defaults for the next export" badge="This device"><ExportSettingsSection /></Section>
+				</AccordionItem>
+				<AccordionItem bind:open={saveOptionsExpanded}>
+					{#snippet header()}Save options{/snippet}
+					<Section variant="card" label="Saving" badge="This device"><SaveOptionsSettingsSection /></Section>
 				</AccordionItem>
 				<AccordionItem bind:open={privacyExpanded}>
 					{#snippet header()}Privacy{/snippet}

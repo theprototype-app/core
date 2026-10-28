@@ -25,6 +25,8 @@ import { welcomeOpen, whatsNewOpen, markWhatsNewSeen } from '$lib/whatsNew';
 import { peerModuleVersions, moduleVersions } from '$lib/moduleSDK';
 import { safeStorage } from '$lib/safeStorage';
 import { APP_VERSION } from '$lib/version.js';
+import { peerScenes, myScene, amPrivate, elsewhereThan, PRIVATE_SCENE } from '$lib/peerScenes';
+import { currentLevel } from '$lib/levels';
 
 /** Sticky cards that only NUDGE a person (save your scene, send perf reports): answered "not now". */
 export const NUDGE_TOAST_IDS = new Set(['shared-library-offer', 'perf-reports-offer']);
@@ -84,6 +86,73 @@ async function installModules(/** @type {any} */ args) {
 		results.push(ok ? { id, ok: true } : { id, ok: false, error: 'the install failed (see Modules ▸ User)' });
 	}
 	return results;
+}
+
+// ---- 55 owner finding 1: an agent goes where its host goes ------------------------------------------
+// A host's Save as (or opening another scene) moves the HOST to a new room; a person left behind sees
+// it in Users, an agent page saw nothing, kept building in the room the host had left, and status()
+// still said joined. Now: status() says where both are, edits are refused while apart, and the agent
+// FOLLOWS — it travels to the host's scene the way Go to would (hash first), with no dialog (an agent
+// page is nobody's screen, and the world it holds is the room the host just left).
+
+/** set while a follow travel runs */
+let following = false;
+
+/** our room vs the host's. Null = no host (we host, or are alone): nothing to follow */
+function roomState() {
+	const host = get(sessionHost);
+	if (!host) return null;
+	const map = get(peerScenes);
+	const mine = amPrivate() ? '' : myScene()?.scene ?? '';
+	const row = map?.[host];
+	const away = elsewhereThan(map, mine, host, host);
+	return {
+		scene: mine,
+		hostScene: row?.private ? PRIVATE_SCENE : String(row?.scene ?? ''),
+		withHost: !away && !following,
+		following,
+		/** where to travel: the host's named, shared scene (a private one cannot be followed) */
+		target: away && row && !row.private && String(row.scene ?? '').trim() ? { scene: String(row.scene).trim(), hash: String(row.hash ?? '') } : null
+	};
+}
+
+/** @param {ReturnType<typeof createAgentCore>} core */
+function startFollow(core) {
+	/** @type {string} the last target we set out for (one try per target; a new host move retries) */
+	let lastTry = '';
+	/** @type {any} */
+	let timer = null;
+	const check = () => {
+		timer = null;
+		const st = roomState();
+		if (!st || following) return;
+		if (!st.target) {
+			if (st.withHost) lastTry = '';
+			return;
+		}
+		const key = st.target.scene + '#' + st.target.hash;
+		if (key === lastTry) return;
+		lastTry = key;
+		following = true;
+		core.notice('The host moved to "' + st.target.scene + '" — following them there.');
+		import('$lib/levels')
+			.then((m) => (st.target?.hash ? m.travelToLevel(st.target.hash, st.target.scene) : m.travelToScene(st.target?.scene ?? '')))
+			.then((landed) => {
+				if (landed === false) core.notice('Could not open "' + st.target?.scene + '" yet; edits stay refused until this agent is with the host.');
+			})
+			.catch((e) => core.notice('Following the host failed: ' + String(e?.message ?? e).slice(0, 120)))
+			.finally(() => {
+				following = false;
+				schedule();
+			});
+	};
+	// settle a burst (a save writes the level, then the row) before deciding
+	const schedule = () => {
+		if (!timer) timer = setTimeout(check, 800);
+	};
+	peerScenes.subscribe(schedule);
+	sessionHost.subscribe(schedule);
+	currentLevel.subscribe(schedule);
 }
 
 /** A6: is the HOST's mesh provider ready (what it last said through the relay)? */
@@ -156,6 +225,10 @@ export function createTpAgent(extra = {}) {
 			return Date.now() - unsettledSince > ROLES_SETTLE_MS;
 		},
 		host: () => get(sessionHost),
+		room: () => {
+			const st = roomState();
+			return st ? { scene: st.scene, hostScene: st.hostScene, withHost: st.withHost, following: st.following } : null;
+		},
 		waiting: () => (/** @type {any[]} */ (get(waitingForApproval)) ?? []).some((w) => Array.isArray(w) && w[1] === 'pending'),
 		openPeers: () => openPeerIds().map((id) => ({ id, name: nameOf(id) })),
 		inVR: () => !!(/** @type {any} */ (get(globalRenderer))?.xr?.isPresenting),
@@ -303,6 +376,7 @@ export function installTpAgent(extra) {
 	const core = createTpAgent(extra);
 	startQuiet(core);
 	startMeshAsk();
+	startFollow(core);
 	w.tpAgent = Object.freeze({ ...core.agent });
 	return w.tpAgent;
 }

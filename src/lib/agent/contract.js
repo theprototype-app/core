@@ -11,7 +11,7 @@
 // major. The bridge feature-detects methods, so an older bridge keeps working against a newer page.
 
 /** The contract version (`tpAgent.version`). */
-export const TP_AGENT_VERSION = '1.0.0';
+export const TP_AGENT_VERSION = '1.1.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([
@@ -68,6 +68,11 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {TpAgentMissingModule[]} missingModules modules peers run that this page lacks
  * @property {number} pendingOffers questions waiting for an answer (`pendingOffers()`)
  * @property {boolean} inVR an immersive session is running (screenshot returns null)
+ * @property {string} [scene] 1.1: the scene this page stands in ('' = the session's unnamed world)
+ * @property {string} [hostScene] 1.1: the scene the host stands in ('(private)' when it is private)
+ * @property {boolean} [withHost] 1.1: same room as the host. False after the host traveled (a Save as, another
+ *   scene): `exec` refuses edits — they would not reach the host — until the agent has followed
+ * @property {boolean} [following] 1.1: traveling to the host's scene now
  */
 
 /**

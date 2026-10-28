@@ -832,8 +832,12 @@ export class PeerConnection {
 			// host SEES (the robot on the card), never what anybody may do
 			const dialKind = conn?.metadata?.kind === 'agent' ? 'agent' : undefined;
 			if (dialKind) noteDialKind(conn.peer, dialKind);
+			// 55 owner finding 1(a): an AGENT page is never anybody's host — nothing auto-admits through it
+			// (no invite check, no plugin admit). A mesh dial that beat the roster takes the ordinary card
+			// path and is let in when the host's roster names it, as on any page.
+			const agentPage = myKind() === 'agent';
 			if (!found) {
-				const auth = getAuthProvider();
+				const auth = agentPage ? null : getAuthProvider();
 				try {
 					// 55 A4: AN INVITE FIRST. The proof is checked here, by the one peer holding the
 					// key, before any plugin is asked: a valid one admits with the role the link
@@ -842,7 +846,7 @@ export class PeerConnection {
 					const inviteMeta = conn?.metadata?.invite;
 					/** @type {any} */
 					let invite = null;
-					if (inviteMeta !== undefined) {
+					if (inviteMeta !== undefined && !agentPage) {
 						invite = verifyInviteDial(conn.peer, inviteMeta, this.peer.id, { kind: dialKind });
 						log('info', 'net', 'invite dial', { peer: conn.peer, ok: invite.ok, reason: invite.ok ? undefined : invite.reason });
 						if (!invite.ok) knockLabel = inviteRefusalLabel(invite.reason, dialKind);

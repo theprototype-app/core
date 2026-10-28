@@ -37,6 +37,19 @@ export function viewerRefusal(peerId) {
 }
 
 /**
+ * 55 owner finding 1: the words an agent reads when the HOST is in another scene. Its edits would land
+ * in a room the host left — the two demos nobody saw — so they are refused until it is with them again.
+ * @param {string} hostScene @param {boolean} following
+ */
+export function leftBehindRefusal(hostScene, following) {
+	const where = hostScene ? '"' + hostScene + '"' : 'another scene';
+	return (
+		'The host is now in ' + where + ', and this agent is still in the scene they left, so an edit here would not reach them. ' +
+		(following ? 'Following them there now — check status().withHost and try again in a few seconds.' : 'Wait for status().withHost (the host can bring you along with Go to), or ask them which scene to build in.')
+	);
+}
+
+/**
  * The tool's name, whatever schema shape it arrives in.
  * @param {any} tool @returns {string}
  */
@@ -58,6 +71,8 @@ export function toolName(tool) {
  * @property {() => string|null} role 'admin'|'editor'|'viewer' or null (no roles in this build)
  * @property {() => boolean} [rolesSettled] false while a roles plugin still waits for the host's map (absent = settled)
  * @property {() => string|null} host
+ * @property {() => {scene: string, hostScene: string, withHost: boolean, following: boolean} | null} [room] 55 owner
+ *   finding 1: our scene, the host's, and whether we stand in the same room (absent/null = not known: allowed)
  * @property {() => boolean} waiting
  * @property {() => {id: string, name: string}[]} openPeers
  * @property {() => boolean} inVR
@@ -183,6 +198,9 @@ export function createAgentCore(deps) {
 			}
 		}
 		if (!READ_ONLY_TOOLS.has(real) && !canEdit()) return { error: viewerRefusal(deps.peerId()), refused: true, role: 'viewer' };
+		const room = deps.room?.() ?? null;
+		if (!READ_ONLY_TOOLS.has(real) && room && !room.withHost)
+			return { error: leftBehindRefusal(room.hostScene, room.following), refused: true, withHost: false };
 		const readOnly = READ_ONLY_TOOLS.has(real);
 		if (!readOnly) {
 			selfEditing++;
@@ -216,6 +234,7 @@ export function createAgentCore(deps) {
 		const peers = deps.openPeers();
 		const waiting = deps.waiting();
 		const role = /** @type {any} */ (deps.role());
+		const room = deps.room?.() ?? null;
 		return {
 			version: TP_AGENT_VERSION,
 			appVersion: deps.appVersion ?? '',
@@ -232,6 +251,8 @@ export function createAgentCore(deps) {
 			missingModules: deps.missingModules(),
 			pendingOffers: offers.list().length,
 			inVR: deps.inVR(),
+			// 55 owner finding 1: where we are and where the host is — an agent left behind says so
+			...(room ? { scene: room.scene, hostScene: room.hostScene, withHost: room.withHost, following: room.following } : {}),
 			notices: notices.slice()
 		};
 	}

@@ -18,6 +18,7 @@
 	},
 	"optional": {
 		"agent-bridge": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
+		"agent-travel": "joined from 55-int (owner finding 1, 2026-10-28): not yet measured on a GitHub runner, so it reports and does not gate until a deps run has seen it green",
 		"align-arrange": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"animated-models": "red on the GitHub runner (SwiftShader, no retry) with unchanged code: deps-auto run 5, 2026-10-24",
 		"animation-curves": "flaky on the GitHub runner (SwiftShader): red or green-on-retry in deps-auto run 5 or 6 with unchanged code, 2026-10-24",
@@ -272,6 +273,7 @@
 		"agent-bridge": 48,
 		"agent-mcp": 100,
 		"agent-proof": 600,
+		"agent-travel": 240,
 		"ai-connection": 90,
 		"ai-flow-physics": 118,
 		"align-arrange": 62,

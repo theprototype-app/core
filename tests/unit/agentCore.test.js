@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createAgentCore, createOffers, viewerRefusal, toolName, READ_ONLY_TOOLS } from '../../src/lib/agent/agentCore.js';
+import { createAgentCore, createOffers, viewerRefusal, leftBehindRefusal, toolName, READ_ONLY_TOOLS } from '../../src/lib/agent/agentCore.js';
 import { TP_AGENT_VERSION } from '../../src/lib/agent/contract.js';
 
 // 55 A2: the tpAgent methods against fakes. Each test names the test-flight finding it pins.
@@ -158,6 +158,28 @@ describe('status()', () => {
 		expect(agent.status().joined).toBe(false);
 		settled = true;
 		expect(agent.status().joined).toBe(true);
+	});
+	it('says where it is and where the host is, and REFUSES edits while apart (55 owner finding 1)', async () => {
+		const app = fakeApp();
+		let room = { scene: 'Run1', hostScene: 'Run1', withHost: true, following: false };
+		const { agent } = createAgentCore({ ...app.deps, room: () => room });
+		expect(agent.status()).toMatchObject({ scene: 'Run1', hostScene: 'Run1', withHost: true });
+		room = { scene: 'Run1', hostScene: 'Run2', withHost: false, following: true };
+		const st = agent.status();
+		expect(st.joined).toBe(true); // still in the session …
+		expect(st).toMatchObject({ withHost: false, hostScene: 'Run2', following: true }); // … but not with the host
+		const res = await agent.exec('create_objects', { objects: [{}] });
+		expect(res).toMatchObject({ refused: true, withHost: false });
+		expect(res.error).toBe(leftBehindRefusal('Run2', true));
+		expect(res.error).toMatch(/"Run2"/);
+		expect(app.log).toEqual([]);
+		expect((await agent.exec('list_scene', {})).objects).toEqual([]); // reading still works
+		room = { ...room, withHost: true, following: false, scene: 'Run2' };
+		expect((await agent.exec('create_objects', { objects: [{}] })).created).toBeTruthy();
+	});
+	it('without a room dep (an older wiring) nothing changes', () => {
+		const st = createAgentCore(fakeApp().deps).agent.status();
+		expect('withHost' in st).toBe(false);
 	});
 	it('reports a viewer as unable to edit', () => {
 		const app = fakeApp();

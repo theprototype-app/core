@@ -23,6 +23,11 @@ every person in the Connected panel lets the host remove someone.
 - **Every step in the AI assistant window**, on every peer: "Claude · created 12 objects (Campfire)". Click a line
   to select those objects; editors can Undo it.
 - A view-only agent is told so instead of building things nobody else sees. llms.txt now says how an agent joins.
+- **It goes where you go**: save as another name or open another scene and the agent follows; while it travels (or
+  while you work in a private scene) it holds its edits, so nothing lands in a scene you left. An agent never
+  becomes the host.
+- **Game-kit nodes work for AI**: the agent and the in-app assistant can now create every `kit-*` node (they were
+  all "unknown"), a half-valid node batch says it was only partly applied, and hinges take an exact pivot point.
 
 ### 🔗 Invite links (Connect ▸ Request AI)
 

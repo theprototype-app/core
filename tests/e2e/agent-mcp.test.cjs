@@ -150,7 +150,9 @@ h.run(async () => {
 		// 55 owner findings 2+3: a kit node by its exact type; a mixed call says it was partial
 		const kit = json(await call(B.client, 'create_flow_nodes', { graph: 'scene', nodes: [{ type: 'kit-rules-setJump' }] }));
 		h.check(!kit.error && kit.created?.[0]?.type === 'kit-rules-setJump', 'a kit-* node is created by its exact type: ' + JSON.stringify(kit).slice(0, 120));
-		const mixed = await call(B.client, 'create_flow_nodes', { graph: uuid, nodes: [{ type: 'bounce' }, { type: 'no-such-node' }] });
+		// in the SCENE graph: in the box's own graph the bounce would move the box (an unwired behaviour node drives
+		// its graph's object) and the move check below would read a bounce phase
+		const mixed = await call(B.client, 'create_flow_nodes', { graph: 'scene', nodes: [{ type: 'bounce' }, { type: 'no-such-node' }] });
 		const mixedBody = json(mixed);
 		h.check(
 			mixed.isError !== true && mixedBody.partial === true && /1 of 2 nodes/.test(mixedBody.warning || '') && mixedBody.created?.length === 1,

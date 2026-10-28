@@ -38,7 +38,7 @@ import { registerDebugHook } from '$lib/debugHooks';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError } from '$lib/wireErrors';
 import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';
-import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId } from '$lib/peerDrop';
+import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId, silenceCloseAllowed } from '$lib/peerDrop';
 import { createDialBackQueue } from '$lib/dialBackQueue'; // scatter-sync: room edits held for an opening approval dial-back
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
@@ -309,6 +309,8 @@ export class PeerConnection {
 		/** F-3: peers whose link WE closed for ICE silence — one "not on the server" answer
 		 * then ends the wait (peerDrop.strikesNeeded) @type {Set<string>} */
 		this.silentDrops = new Set();
+		/** fix-agenttest 4: peerId -> Date.now() of its `linkaway {hidden: true}` @type {Map<string, number>} */
+		this.awayPeers = new Map();
 		/** F-5: peers the host removed from an automatic admission — their re-dials are
 		 * refused for the rest of this tab's session, guests setting or not @type {Set<string>} */
 		this.removedPeers = new Set();
@@ -718,7 +720,11 @@ export class PeerConnection {
 				else if (this.peer.disconnected) this.peer.reconnect();
 			};
 			window.addEventListener('online', retryNow);
-			document.addEventListener('visibilitychange', () => { if (!document.hidden) retryNow(); });
+			document.addEventListener('visibilitychange', () => {
+				// fix-agenttest 4: tell the peers BEFORE the tab is throttled, so they hold the link
+				try { this.broadcast({ type: 'linkaway', hidden: document.hidden }); } catch (e) { /* no peers yet */ }
+				if (!document.hidden) retryNow();
+			});
 		}
 
 		// Wire the message dispatcher onto a connection. Historically only INBOUND
@@ -901,6 +907,9 @@ export class PeerConnection {
 			let silenceTimer = null;
 			const closeSilent = (/** @type {string} */ why) => {
 				if (!conn.open) return;
+				// fix-agenttest 4: a peer that told us its page went hidden (a phone in the background)
+				// keeps its link through the grace; the poll comes back and closes it after that
+				if (!silenceCloseAllowed(this.awayPeers.get(conn.peer), Date.now())) return;
 				log('warn', 'net', 'link silent — closing it so the peer is redialled or dropped', { peer: conn.peer, why });
 				this.silentDrops.add(conn.peer);
 				try { conn.close(); } catch (e) { /* already dead */ }
@@ -1476,6 +1485,10 @@ export class PeerConnection {
 					checkPeerAppVersion(data.appVersion);
 				} else if(data.type == 'relink') {
 					this.adoptRelink(conn);
+				} else if(data.type == 'linkaway') {
+					// fix-agenttest 4: their page went hidden / came back (see peerDrop.AWAY_GRACE_MS)
+					if (data.hidden === true) this.awayPeers.set(conn.peer, Date.now());
+					else this.awayPeers.delete(conn.peer);
 				} else if(data.type == 'fastchan') {
 					// 60 Q2: the other end opened its fast channel on this conn's RTCPeerConnection
 					this.openFastChannel(conn);
@@ -2177,6 +2190,7 @@ export class PeerConnection {
 			this.inboundDials.delete(peerId);
 			this.unavailableStrikes.delete(peerId);
 			this.silentDrops.delete(peerId);
+			this.awayPeers.delete(peerId);
 			peers.update((value) => value);
 			this.sendHandshake(conn, peerId, true, this.peer.id, { heal: true });
 		});
@@ -2194,6 +2208,7 @@ export class PeerConnection {
 		this.reconnecting.delete(peerId);
 		this.unavailableStrikes.delete(peerId);
 		this.silentDrops.delete(peerId);
+		this.awayPeers.delete(peerId);
 		this.lastLeaveAt = Date.now();
 		this.inboundDials.delete(peerId);
 		const conn = this.connections[peerId];
@@ -2235,6 +2250,7 @@ export class PeerConnection {
 		this.lastLeaveAt = Date.now(); // F-3: the closes below make peer-level noise
 		this.unavailableStrikes.clear();
 		this.silentDrops.clear();
+		this.awayPeers.clear();
 		dropPeerUnderlays(null); // 60 Q5: every peer's shared reference images go with the session
 		this.reconnecting.clear(); // pending retry timers see a cleared map and no-op
 		this.inboundDials.clear();

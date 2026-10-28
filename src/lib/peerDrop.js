@@ -26,6 +26,25 @@ export const LINK_POLL_MS = 2000;
 export const LINK_SILENT_MS = 7000;
 
 /**
+ * fix-agenttest 4: A PAGE THAT SAID IT WENT HIDDEN IS NOT A GHOST. A phone's tab in the
+ * background (screen off, a fold, an app switch, a system sheet over the browser) is throttled
+ * or frozen, and its consent answers stop; the 7 s rule above then closed the phone's link as if
+ * it had crashed, and the redial found nothing to answer it. A page announces `linkaway`
+ * {hidden} on visibilitychange (a crashed tab announces nothing, so it is still cleared in
+ * 7 s), and a peer that is away keeps its link for this long before a silence close.
+ */
+export const AWAY_GRACE_MS = 60000;
+
+/**
+ * May a silence close go ahead for a peer whose last `linkaway` said hidden at `awaySince`?
+ * @param {number | undefined} awaySince Date.now() of the hidden notice, undefined = not away
+ * @param {number} now
+ */
+export function silenceCloseAllowed(awaySince, now) {
+	return awaySince === undefined || now - awaySince >= AWAY_GRACE_MS;
+}
+
+/**
  * Read the selected candidate pair's consent counters out of an RTCStatsReport-like map.
  * @param {Iterable<any> | {forEach: Function} | null | undefined} report
  * @returns {{ requestsSent: number, responsesReceived: number } | null}

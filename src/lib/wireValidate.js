@@ -234,6 +234,8 @@ export const VALIDATORS = {
 	matpresetpart: (d) => typeof d.from === 'string' && typeof d.ref === 'string' && Number.isInteger(d.i) && Number.isInteger(d.n) && d.n >= 1 && d.n <= 256 && d.i >= 0 && d.i < d.n && typeof d.data === 'string' && d.data.length <= 300_000,
 	environment: (d) => !!d && typeof d === 'object',
 	atscene: (d) => typeof d.peerId === 'string',
+	// fix-agenttest 4: a page's hidden/visible notice (peerDrop.AWAY_GRACE_MS)
+	linkaway: (d) => typeof d.hidden === 'boolean',
 	disconnected: (d) => typeof d.peerId === 'string',
 	annotations: (d) => isArray(d.annotations),
 	joints: (d) => isArray(d.joints),

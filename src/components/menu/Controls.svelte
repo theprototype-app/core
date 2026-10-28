@@ -67,6 +67,7 @@
 	import { requestPlay, willEnterXR, willEnterAR, xrSessionFailed, playAsItems } from '$lib/playMode';
 	// 60 Q1: Play here — a roster button (Customize), a row in Play's own menu, Ctrl+Shift+Enter
 	import { playHere, playHereItems, playingHere } from '$lib/playHere';
+	import { arPlayItems } from '$lib/arTable';
 	// 30 P2: Test play — the play button's right-click row beside the game chip's button
 	import { testPlay } from '$lib/gamePresence';
 	import { hudIsGame } from '$lib/hudDocs';
@@ -1039,6 +1040,9 @@
 			// 41b H7: the "Play as" rows live in $lib/playMode (`playAsItems`) — the phone bar's Play
 			// opens the same ones, so the two buttons write the same choice the same way
 			...playAsItems(),
+			// 50 R1 / VH2: the AR table and Join the room, where the browser has immersive-ar (an
+			// unfolded phone gets this toolbar, not the phone bar)
+			...arPlayItems(),
 			// 60 Q1: Play here (the phone's Play menu carries the same row)
 			...playHereItems(),
 			// 30 P2: TEST PLAY — back to the menu, into Play, the Start screen. Offered only

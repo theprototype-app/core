@@ -50,6 +50,9 @@ export const DEBUG_HOOKS = [
 	['placeGhost', () => import('./placeGhost.js')],
 	['vrPlace', () => import('./vr/placeRay.js')],
 	['vrAssetBrowser', () => import('./vr/assetBrowser.js')],
+	// 74 VH1: the logic graph as a VR panel · VH3: the agent presence marker
+	['vrLogic', () => import('./vr/logicPanel.js')],
+	['agentPresence', () => import('./agentPresence.js')],
 	['vrHands', () => import('./vr/handInput.js')],
 	['tourVR', () => import('./tours/vrPanel.js')],
 	// 36-share (B13): the recorder + its stores

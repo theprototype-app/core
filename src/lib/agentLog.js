@@ -13,6 +13,8 @@ import { writable, get } from 'svelte/store';
 import { peers, userdata, showToast, aiAssistantHidden } from '../stores/appStore';
 import { safeStorage } from './safeStorage.js';
 import { mergeEntries, AGENT_LOG_HANDSHAKE } from './agentLogCore.js';
+import { noteAgentFocus } from './agentPresence.js';
+import { viewFocus } from './agentPresenceCore.js';
 
 // ---------------------------------------------------------------- A8 the log
 
@@ -147,6 +149,9 @@ export function applyAgentView(fromPeer, data) {
 	if (!finite(data?.pos, 3) || !finite(data?.quat, 4)) return;
 	const id = String(fromPeer || '').toLowerCase();
 	agentViews.update((m) => ({ ...m, [id]: { pos: data.pos, quat: data.quat, at: Date.now() } }));
+	// 74 VH3 addendum: an agent that is LOOKING moves its presence marker to what it looked at
+	const focus = viewFocus(data.pos, data.quat);
+	if (focus) noteAgentFocus(id, focus);
 }
 
 /** the agent left: its marker goes (its log lines stay — they are history) @param {string} peerId */

@@ -100,8 +100,8 @@ h.run(async () => {
 		`base ring: Settings ▸ replaces System ▸ (${registry.root.join(',')})`
 	);
 	h.check(
-		registry.tools.join(',') === 'tool:select,tool:box,tool:draw,measure:tool,ping,physics,nav:profile,playhere,ai',
-		`Tools: Select / Box select / Draw mode / Measure (52 V1) / Ping / Simulate physics / Profile ▸ / Play here (60 Q1) / AI (1.24 plan F) (${registry.tools.join(',')})`
+		registry.tools.join(',') === 'tool:select,tool:box,tool:draw,measure:tool,ping,physics,nav:profile,playhere,ai,logic',
+		`Tools: Select / Box select / Draw mode / Measure (52 V1) / Ping / Simulate physics / Profile ▸ / Play here (60 Q1) / AI (1.24 plan F) / Logic (74 VH1) (${registry.tools.join(',')})`
 	);
 	h.check(
 		registry.settings.slice(0, 5).join(',') === 'nav:settings:comfort,nav:settings:body,nav:settings:controls,nav:settings:display,nav:settings:editing' &&

@@ -38,6 +38,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib
 import { validateWireMessage } from '$lib/wireValidate';
 import { holdForWireBatch } from '$lib/wireBatch';
 // 60 Q2: the fast movement channel (an unordered, unreliable second channel for pose streams)
+import { tapAgentEdit } from '$lib/agentPresence';
 import { createFastLinks, createStaleFilter, createKeyframer, stampPose, poseKey, fastChannelEnabled, setPoseTap, tapPose } from '$lib/fastChannel';
 import { registerDebugHook } from '$lib/debugHooks';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
@@ -1063,6 +1064,8 @@ export class PeerConnection {
 				// 55 A9: who did what, for the peer menu's "Show their recent changes" (LOCAL,
 				// past every gate — only what was actually applied here is recorded)
 				notePeerActivity(conn.peer, data);
+				// 74 VH3: an applied edit from an AI agent moves its presence marker (nothing new on the wire)
+				tapAgentEdit(conn.peer, data);
 				// console.log(data);
 				if(data.type == 'cloud') {
 					// open-core (M1): the cloud plugin's own replicated channel

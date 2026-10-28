@@ -165,6 +165,37 @@ export function alignmentFromSpot(headPos, headQuat) {
 	return alignmentFromPointAim(floor, facing);
 }
 
+/** VH2: the shortest span two phone taps may have. The heading is the direction from the
+ * first tap to the second, so a hit-test error of e cm turns it by about e / span radians:
+ * 1 cm over 30 cm is ~2 degrees, which is a metre-away object off by 3.5 cm. Below this
+ * the room would visibly rotate under the content, so the second tap is refused instead. */
+export const MIN_TAP_SPAN = 0.3;
+
+/**
+ * VH2 — THE PHONE'S RITUAL (CO6): two taps on the floor, through hit-test. The first tap is
+ * the agreed point (the room origin), the second any point along the agreed edge, so the
+ * heading is first -> second. That is the headset ritual exactly — the controller tip on
+ * the agreed point, then aimed along the agreed edge — which is why a phone and a Quest
+ * calibrating on the same two marks agree: both go through `alignmentFromPointAim`, the
+ * one definition of the room frame.
+ *
+ * THE Y TERM IS LIVE HERE. A Quest's `local-floor` puts its floor at y = 0, but a phone's
+ * tracking origin is wherever the phone was when AR started, so its floor sits at some
+ * arbitrary height. `py` is the first tap's height, so room y = 0 is the agreed point on
+ * both devices whatever their origins (CO1 kept the term for exactly this).
+ * @param {any} first the first tap's hit, tracking coords
+ * @param {any} second the second tap's hit, tracking coords
+ * @returns {{px: number, py: number, pz: number, yaw: number}|null} null when the taps are
+ *   closer than MIN_TAP_SPAN on the floor (or not numbers)
+ */
+export function alignmentFromTwoPoints(first, second) {
+	const dx = Number(second?.x) - Number(first?.x);
+	const dz = Number(second?.z) - Number(first?.z);
+	if (!Number.isFinite(dx) || !Number.isFinite(dz)) return null;
+	if (Math.hypot(dx, dz) < MIN_TAP_SPAN) return null;
+	return alignmentFromPointAim(first, { x: dx, y: 0, z: dz });
+}
+
 /**
  * R_rig = M · K⁻¹ — the CONTENT -> WORLD transform `worldRig` must hold, as plain
  * arrays. Pure: hand it any alignment and any anchor and it answers without touching

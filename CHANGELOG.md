@@ -20,6 +20,9 @@ every person in the Connected panel lets the host remove someone.
   leaves cleanly when you close it.
 - **No body, clear marks**: an agent shows as a robot with an "AI" label in Users — no character, no voice, no
   cursor — and a small camera marker shows where it last looked (Settings can hide it).
+- **See where it is working**: a small bot icon with the agent's name stands over the object it is editing (or the
+  spot its last screenshot looked at), on desktop and in VR. It fades while the agent is idle, hides in Play, and
+  leaves with the agent; Settings ▸ Connection ▸ **Show where AI agents look** switches it off.
 - **Every step in the AI assistant window**, on every peer: "Claude · created 12 objects (Campfire)". Click a line
   to select those objects; editors can Undo it.
 - A view-only agent is told so instead of building things nobody else sees. llms.txt now says how an agent joins.
@@ -46,6 +49,21 @@ every person in the Connected panel lets the host remove someone.
 - The host (or an admin on theprototype.app) can **Remove from session** or **Remove and block** — every peer drops
   them and a re-dial is refused with "You were removed from this session"; **Allow back** in Users undoes the block.
   A removal sent by anyone else is ignored.
+
+## 1.47.0 — Game logic in the headset, and a phone in a shared room 🥽
+
+- 🔀 **Edit game logic in VR**: radial ▸ **Tools ▸ Logic** opens the scene's node graph as a panel in the headset, and
+  **Selected ▸ Edit logic** opens the selected object's own flow. Trigger-drag a card to move it; drag from a socket to
+  wire it with the laser (green while the types fit, red when they don't); drag from a wired input to pick that wire up
+  and move it, or drop it on the empty graph to remove it. Click a card and its values open on a **wrist pad**: − / +
+  for numbers, the VR keyboard for text, ‹ › for choices and colours, plus Rename, Unwire and Delete. **+ Node**
+  adds nodes from the same groups as the desktop palette. Undo / redo, Fit, zoom (the stick) and pan work too, a grip
+  carries the panel, and peers on the desktop see every edit live. Viewers get the panel read-only. Groups are
+  read-only in VR, and custom, object-flow and sound nodes are still added on the desktop.
+- 📱 **A phone joins a headset's room**: on an Android phone, **More ▸ Join room (AR)** (or the Play menu ▸
+  **Join the room (AR)**). Tap the floor at the point the headsets calibrated on, then a point along the agreed edge
+  (at least 30 cm away), and the phone sees the scene where the headsets do — same room key, same anchored objects.
+  **Recalibrate** redoes the two taps. An unfolded phone's Play menu now offers **Play on a table (AR)** and **Join the room (AR)** too.
 
 ## 1.46.0 — Every panel in its own window, and files from the Code tab 🪟
 

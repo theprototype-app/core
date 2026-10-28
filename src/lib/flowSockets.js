@@ -256,6 +256,17 @@ const OUTPUT_HANDLES = {
 	onexit: { other: 'object' }
 };
 
+/** 74 VH1: the NAMED source handles a node type declares beyond its plain output — the VR logic panel draws
+ * sockets from these tables (a headset has no DOM for xyflow to measure handles from) @param {string} nodeType */
+export function outputHandleNames(nodeType) {
+	return Object.keys(OUTPUT_HANDLES[nodeType] ?? {});
+}
+
+/** 74 VH1: a behaviour node's declared sockets, or null before the behaviours load @param {any} node */
+export function behaviourSockets(node) {
+	return node?.type === 'behaviour' && behaviourSocketsOf ? behaviourSocketsOf(node) : null;
+}
+
 /** the type a source HANDLE carries @param {string} nodeType @param {string|null|undefined} handleId */
 export function outputHandleType(nodeType, handleId) {
 	return (handleId && OUTPUT_HANDLES[nodeType]?.[handleId]) || outputType(nodeType);

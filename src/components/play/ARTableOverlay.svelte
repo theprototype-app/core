@@ -5,16 +5,33 @@
 	// would be too late. While active it is the whole screen over the camera feed: the status line,
 	// the scale, Exit / Place / Move / Play, and the gesture surface (one finger taps, two pinch and
 	// twist). Every `beforexrselect` is cancelled, so no touch on it is ALSO an XR select.
+	// VH2: the room mode's two taps (the agreed point, then a point along the agreed edge), its room
+	// key beside the status, and Recalibrate. Toasts do not reach a dom-overlay session (only this
+	// root is drawn over the camera), so everything the room steps have to say is the status line.
 	import Button from '../ui/Button.svelte';
-	import { arTable, exitArTable, placeAtReticle, moveScene, playOnTable, stopPlayingOnTable, arTap, beginPinch, movePinch, endPinch, isTap } from '$lib/arTable';
+	import { arTable, exitArTable, placeAtReticle, moveScene, playOnTable, stopPlayingOnTable, arTap, beginPinch, movePinch, endPinch, isTap, joinRoom, roomTap, redoRoom } from '$lib/arTable';
+	import { isRoomPhase } from '$lib/arTableState.js';
 	import { scaleLabel } from '$lib/arTableCore.js';
 
 	const st = $derived($arTable);
 	const active = $derived(st.phase !== 'off');
+	const inRoom = $derived(isRoomPhase(st.phase));
 	const status = $derived(
 		st.error
 			? st.error
-			: st.phase === 'starting'
+			: st.note
+				? st.note
+				: st.phase === 'room-a'
+					? st.hit
+						? 'Aim the ring at the agreed point and tap'
+						: 'Point the camera at the floor and move the phone slowly'
+					: st.phase === 'room-b'
+						? 'Now tap a second point along the agreed edge, a step or more away'
+						: st.phase === 'room'
+							? st.playing
+								? 'Playing · tap things to use them'
+								: 'In the room · you see what the headsets see'
+							: st.phase === 'starting'
 				? 'Starting AR…'
 				: st.phase === 'finding'
 					? st.hit
@@ -94,14 +111,26 @@
 		<div class="ar-top">
 			<p class="ar-status" id="ar-status" role="status" aria-live="polite">{status}</p>
 			{#if st.phase === 'placed'}<span class="ar-scale" id="ar-scale" aria-label={`Scale ${scaleLabel(st.scale)}`}>{scaleLabel(st.scale)}</span>{/if}
+			{#if inRoom && st.room}<span class="ar-scale" id="ar-room-key" aria-label={`Room ${st.room}`}>{st.room}</span>{/if}
 		</div>
-		{#if st.phase === 'finding'}<div class="ar-aim" aria-hidden="true"></div>{/if}
+		{#if st.phase === 'finding' || st.phase === 'room-a' || st.phase === 'room-b'}<div class="ar-aim" aria-hidden="true"></div>{/if}
 		<!-- a game's HUD is drawn here while an AR table plays (HudLayer moves itself in) -->
 		<div class="ar-hud-slot" id="ar-hud-slot"></div>
 		<div class="ar-actions" role="toolbar" aria-label="AR table">
 			<Button id="ar-exit" variant="outline" icon="x" onclick={() => exitArTable()}>Exit AR</Button>
 			{#if st.phase === 'finding'}
 				<Button id="ar-place" variant="primary" disabled={!st.hit} onclick={() => placeAtReticle()}>Place here</Button>
+				<Button id="ar-room-join" variant="outline" icon="users" onclick={() => joinRoom()}>Join room</Button>
+			{:else if st.phase === 'room-a' || st.phase === 'room-b'}
+				<Button id="ar-room-tap" variant="primary" disabled={!st.hit} onclick={() => roomTap()}>{st.phase === 'room-a' ? 'Mark point 1' : 'Mark point 2'}</Button>
+				{#if st.phase === 'room-b'}<Button id="ar-room-redo" variant="outline" icon="rotate-ccw" onclick={() => redoRoom()}>Start over</Button>{/if}
+			{:else if st.phase === 'room'}
+				<Button id="ar-room-redo" variant="outline" icon="rotate-ccw" onclick={() => redoRoom()}>Recalibrate</Button>
+				{#if st.playing}
+					<Button id="ar-stop" variant="outline" icon="square" onclick={() => stopPlayingOnTable()}>Stop</Button>
+				{:else}
+					<Button id="ar-play" variant="live" icon="play" onclick={() => playOnTable()}>Play</Button>
+				{/if}
 			{:else if st.phase === 'placed'}
 				<Button id="ar-move" variant="outline" icon="move-3d" onclick={() => moveScene()}>Move</Button>
 				{#if st.playing}

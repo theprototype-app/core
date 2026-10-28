@@ -147,6 +147,15 @@ h.run(async () => {
 			'the spin node is in the box\'s flow graph on the HOST',
 			20000
 		);
+		// 55 owner findings 2+3: a kit node by its exact type; a mixed call says it was partial
+		const kit = json(await call(B.client, 'create_flow_nodes', { graph: 'scene', nodes: [{ type: 'kit-rules-setJump' }] }));
+		h.check(!kit.error && kit.created?.[0]?.type === 'kit-rules-setJump', 'a kit-* node is created by its exact type: ' + JSON.stringify(kit).slice(0, 120));
+		const mixed = await call(B.client, 'create_flow_nodes', { graph: uuid, nodes: [{ type: 'bounce' }, { type: 'no-such-node' }] });
+		const mixedBody = json(mixed);
+		h.check(
+			mixed.isError !== true && mixedBody.partial === true && /1 of 2 nodes/.test(mixedBody.warning || '') && mixedBody.created?.length === 1,
+			'a half-valid create_flow_nodes says partial at the top level: ' + JSON.stringify(mixedBody).slice(0, 160)
+		);
 		const moved = json(await call(B.client, 'update_objects', { updates: [{ uuid, position: [0, 2, 0] }] }));
 		h.check(!moved.error, 'update_objects accepted');
 		await h.eventually(() => objectByUuid(A.page, uuid), (o) => o && Math.abs(o.y - 2) < 0.01, 'the move reached the host', 20000);

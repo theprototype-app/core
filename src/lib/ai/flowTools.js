@@ -366,11 +366,28 @@ export function createFlowNodesTool(args) {
 		recordFlowNodesEntry({ op: 'create', graphId, nodes: createdNodes, edges: createdEdges });
 	if (!createdNodes.length && !createdEdges.length)
 		return { error: 'nothing was created: ' + (errors[0] ?? 'no valid nodes'), errors };
+	// 55 owner finding 3: a half-done call says so at the top level — `partial` + a one-line
+	// `warning` — not only deep in errors[] (a top-level `error` would read as "nothing happened"
+	// and invite a retry that duplicates what WAS created)
+	const failedNodes = specs.length - createdNodes.length;
+	const failedEdges = edgeSpecs.length - createdEdges.length;
 	return {
 		graph: graphId,
 		created,
 		edges: createdEdges.length,
-		...(errors.length ? { errors } : {})
+		...(errors.length
+			? {
+					partial: true,
+					warning:
+						'only part of this call was applied: ' +
+						[failedNodes ? failedNodes + ' of ' + specs.length + ' nodes' : '', failedEdges ? failedEdges + ' of ' + edgeSpecs.length + ' edges' : '']
+							.filter(Boolean)
+							.join(' and ') +
+						(failedNodes || failedEdges ? ' were not created' : 'some node data was not applied') +
+						' — fix what errors[] names and send only those again',
+					errors
+				}
+			: {})
 	};
 }
 

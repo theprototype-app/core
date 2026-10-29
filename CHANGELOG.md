@@ -5,7 +5,7 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
-## Next release — fixes for AI agents and game logic 🔧
+## 1.48.1 — fixes for AI agents and game logic 🔧
 
 - **A deleted object's logic stops.** Its flow graph used to keep running on every peer until a reload (and a
   late joiner received it too). It now sleeps, and undoing the delete brings it back to life.

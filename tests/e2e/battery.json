@@ -274,6 +274,7 @@
 		"add-flow-scene": 100,
 		"agent-api": 420,
 		"connector-relay": 240,
+		"connector-physics": 150,
 		"agent-bridge": 48,
 		"agent-conformance": 200,
 		"agent-host-leaves": 180,

@@ -275,11 +275,11 @@ function buildNodeData(type, spec, raw, errors) {
 /**
  * 86 T1 (= 85 R9): `describe_node_types` — the sockets, params and one-line doc of the node types this
  * assistant may place, from the same tables the editor and D24's edge check read (nodeTypesCore.js).
- * @param {any} args
+ * @param {any} args @param {{physics?: boolean}} [opts] `physics` forces the physics family in (86-fix B1)
  */
-export function describeNodeTypesTool(args) {
+export function describeNodeTypesTool(args, opts) {
 	return describeNodeTypes(args, {
-		vocabulary: aiNodeVocabulary(physicsToolsEnabled()),
+		vocabulary: aiNodeVocabulary(!!opts?.physics || physicsToolsEnabled()),
 		spec: (t) => findNodeSpec(t),
 		doc: (t) => nodeDoc(t),
 		// D24's own lists (edgeHandles.js), so what this tool says is exactly what an edge is checked against;
@@ -304,9 +304,10 @@ export function describeNodeTypesTool(args) {
  * Local `ref` keys let edges point at freshly created nodes. Records ONE
  * 'flownodes' history entry for the whole call.
  * @param {any} args {graph, nodes: [{ref?, type, data?}], edges?: [{from, to, fromHandle?, toHandle?}]}
+ * @param {{physics?: boolean}} [opts] `physics` allows the physics node family whatever the checkbox (86-fix B1)
  * @returns {any}
  */
-export function createFlowNodesTool(args) {
+export function createFlowNodesTool(args, opts) {
 	const graphId = resolveGraph(args?.graph);
 	if (graphId === null)
 		return { error: 'unknown graph "' + args?.graph + '" — pass "scene" or an existing object uuid' };
@@ -319,7 +320,7 @@ export function createFlowNodesTool(args) {
 	if (!specs.length && !textEdges.length)
 		return { error: 'no nodes provided — pass text: \'id = type {params}\' lines, or nodes: [{ type, data? }] (one graph per call)' };
 
-	const physics = physicsToolsEnabled();
+	const physics = !!opts?.physics || physicsToolsEnabled();
 	const allowed = aiNodeTypes(physics);
 	/** @type {any} */
 	const peer = get(peers);

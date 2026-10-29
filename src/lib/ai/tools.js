@@ -785,6 +785,9 @@ export function repairToolCall(rawName, rawArgs) {
 const PHYSICS_DISABLED =
 	'physics tools are disabled — enable "Physics tools" for this provider in Settings → AI';
 
+/** @typedef {{physics?: boolean}} ToolOpts `physics`: offer + run the physics tools for THIS caller whatever the
+ * provider's checkbox says (86-fix B1: the Claude connector; the person's own assistant keeps its setting) */
+
 /** 55 A8: one observer of every tool call — `(name, args) => (result) => void`, set by the agent
  * page's action-log recorder. Null everywhere else (the call path is unchanged). @type {any} */
 let aiToolObserver = null;
@@ -797,10 +800,11 @@ export function setAiToolObserver(fn) {
  * Execute one tool call. Never throws — returns a JSON-serializable result.
  * @param {string} rawName
  * @param {any} rawArgs
+ * @param {ToolOpts} [opts]
  * @returns {Promise<any>}
  */
-export async function executeAiTool(rawName, rawArgs) {
-	if (!aiToolObserver) return runAiTool(rawName, rawArgs);
+export async function executeAiTool(rawName, rawArgs, opts) {
+	if (!aiToolObserver) return runAiTool(rawName, rawArgs, opts);
 	const { name, args } = repairToolCall(rawName, rawArgs);
 	/** @type {any} */
 	let done = null;
@@ -809,7 +813,7 @@ export async function executeAiTool(rawName, rawArgs) {
 	} catch {
 		/* the log is presentation: never let it stop a call */
 	}
-	const result = await runAiTool(rawName, rawArgs);
+	const result = await runAiTool(rawName, rawArgs, opts);
 	try {
 		Promise.resolve(done?.(result)).catch(() => {});
 	} catch {
@@ -818,9 +822,11 @@ export async function executeAiTool(rawName, rawArgs) {
 	return result;
 }
 
-/** @param {string} rawName @param {any} rawArgs @returns {Promise<any>} */
-async function runAiTool(rawName, rawArgs) {
+/** @param {string} rawName @param {any} rawArgs @param {ToolOpts} [opts] @returns {Promise<any>} */
+async function runAiTool(rawName, rawArgs, opts) {
 	const { name, args } = repairToolCall(rawName, rawArgs);
+	// 86-fix B1: a caller that forces the physics tools on (the connector) does so for ITS calls only
+	const physics = !!opts?.physics || physicsToolsEnabled();
 	// F-1: a viewer's edits never reach anyone, so refuse instead of reporting success
 	const refusal = viewerToolRefusal(name, isViewer());
 	if (refusal) return refusal;
@@ -899,10 +905,10 @@ async function runAiTool(rawName, rawArgs) {
 			}
 
 			case 'create_flow_nodes':
-				return createFlowNodesTool(args);
+				return createFlowNodesTool(args, { physics });
 
 			case 'describe_node_types':
-				return describeNodeTypesTool(args);
+				return describeNodeTypesTool(args, { physics });
 
 			case 'update_flow_nodes':
 				return updateFlowNodesTool(args);
@@ -912,17 +918,17 @@ async function runAiTool(rawName, rawArgs) {
 				return await behaviourTool(name, args);
 
 			case 'set_physics': {
-				if (!physicsToolsEnabled()) return { error: PHYSICS_DISABLED };
+				if (!physics) return { error: PHYSICS_DISABLED };
 				return setPhysicsTool(args);
 			}
 
 			case 'create_joints': {
-				if (!physicsToolsEnabled()) return { error: PHYSICS_DISABLED };
+				if (!physics) return { error: PHYSICS_DISABLED };
 				return createJointsTool(args);
 			}
 
 			case 'control_simulation': {
-				if (!physicsToolsEnabled()) return { error: PHYSICS_DISABLED };
+				if (!physics) return { error: PHYSICS_DISABLED };
 				return await controlSimulationTool(args);
 			}
 
@@ -1380,22 +1386,23 @@ const PHYSICS_AI_TOOLS = [
 ];
 
 /** Toolset for the assistant — flow tools always; physics tools when the
- * provider checkbox is on; generate_mesh only when a mesh provider is ready.
- * Call this per turn (readiness can change). @returns {any[]} */
-export function getAiTools() {
-	const physics = physicsToolsEnabled();
+ * provider checkbox is on (or `opts.physics`, 86-fix B1: the connector's own list);
+ * generate_mesh only when a mesh provider is ready.
+ * Call this per turn (readiness can change). @param {ToolOpts} [opts] @returns {any[]} */
+export function getAiTools(opts) {
+	const physics = !!opts?.physics || physicsToolsEnabled();
 	const tools = [...AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
 }
 
-/** Build the system prompt with scene-building guidance. @returns {string} */
-export function buildSystemPrompt() {
+/** Build the system prompt with scene-building guidance. @param {ToolOpts} [opts] @returns {string} */
+export function buildSystemPrompt(opts) {
 	const meshLine = meshGenReady()
 		? '\nCustom meshes: for objects no primitive can approximate, call generate_mesh with a text\ndescription (slow, async — it appears shortly). Prefer primitives for simple shapes.'
 		: '';
-	const physics = physicsToolsEnabled();
+	const physics = !!opts?.physics || physicsToolsEnabled();
 	const flowBlock = [
 		'',
 		'Behaviors (flow nodes): objects MOVE via behavior nodes. create_flow_nodes adds them;',

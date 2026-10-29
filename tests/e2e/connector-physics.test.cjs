@@ -108,7 +108,8 @@ h.run(async () => {
 	relayB.call('g1', 'control_simulation', { action: 'start' });
 	const g1 = await relayB.answer('g1', 60000);
 	h.check(g1?.type === 'result' && g1.result?.simulating === true && !g1.result?.onHost, `a guest tab's control_simulation runs in that tab (${JSON.stringify(g1).slice(0, 160)})`);
-	const sims = await h.eventually(() => Promise.all([A, B].map(simState)), ([a, b]) => b.on === true && a.remote === B.id, 'B simulates, A sees it', 15000);
+	await h.eventually(() => Promise.all([A, B].map(simState)), ([a, b]) => b.on === true && a.remote === B.id, 'B simulates, A sees it', 15000);
+	const sims = await Promise.all([A, B].map(simState));
 	h.check(sims?.[1]?.on === true && sims?.[0]?.remote === B.id, `the guest steps the world, the host sees it as remote (${JSON.stringify(sims)})`);
 	relayB.call('g2', 'control_simulation', { action: 'stop' });
 	await relayB.answer('g2');

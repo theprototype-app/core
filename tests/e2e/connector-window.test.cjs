@@ -57,12 +57,19 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 
 	// the prompt bar keeps the provider toast (it is a prompt, not the window)
-	await A.page.evaluate(() => window.__stores.settingsSection.set(''));
-	await A.page.locator('#ai-welcome-own').click(); // focus the page, not a field
+	// a viewport shortcut: the window closed and nothing focused (a press inside a window is not the viewport's)
+	await A.page.evaluate(() => {
+		window.__stores.settingsSection.set('');
+		window.__stores.aiAssistantHidden.set('hidden');
+		/** @type {any} */ (document.activeElement)?.blur?.();
+	});
 	await A.page.keyboard.press('Backquote');
 	await A.page.waitForTimeout(300);
 	h.check((await read(A.page, 'aiPromptBarOpen')) !== true && (await read(A.page, 'settingsSection')) === 'ai', 'the ` prompt bar still points at Settings ▸ AI with no provider');
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	await A.page.evaluate(() => {
+		window.__stores.settingsOpen.set(false);
+		window.__stores.aiAssistantHidden.set('');
+	});
 
 	// ---- cloud, signed out: Sign in to connect --------------------------------------------------------
 	await installSignIn(A.page);

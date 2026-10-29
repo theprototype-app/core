@@ -25,10 +25,13 @@ import { createJoint } from '$lib/joints';
 import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X5
 import { parseGraphText } from '$lib/graphText';
 import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
-import { edgeHandleProblems } from './edgeHandles.js';
+import { edgeHandleProblems, knownInputs, knownMapOutputs } from './edgeHandles.js';
 import { lockSkip } from './lockNote.js';
 import { activeAiConfig } from './providers.js';
 import { matchNodeType } from './nodeTypeMatch.js';
+import { describeNodeTypes, paramsOf } from './nodeTypesCore.js';
+import { nodeDoc } from '$lib/nodeDocs';
+import { inputType, outputType, outputHandleType } from '$lib/flowSockets';
 
 // AI flow + physics executors (assistant v3). The behavior counterpart to
 // tools.js: create/update flow nodes (the @xyflow editor graphs driving
@@ -267,6 +270,33 @@ function buildNodeData(type, spec, raw, errors) {
 		// unknown keys are dropped silently — defaults render fine without them
 	}
 	return data;
+}
+
+/**
+ * 86 T1 (= 85 R9): `describe_node_types` — the sockets, params and one-line doc of the node types this
+ * assistant may place, from the same tables the editor and D24's edge check read (nodeTypesCore.js).
+ * @param {any} args
+ */
+export function describeNodeTypesTool(args) {
+	return describeNodeTypes(args, {
+		vocabulary: aiNodeVocabulary(physicsToolsEnabled()),
+		spec: (t) => findNodeSpec(t),
+		doc: (t) => nodeDoc(t),
+		// D24's own lists (edgeHandles.js), so what this tool says is exactly what an edge is checked against;
+		// params are listed separately (a wire into a param key drives it)
+		inputs: (t) => {
+			const spec = /** @type {any} */ (findNodeSpec(t));
+			const params = new Set(paramsOf(spec).map((p) => p.key));
+			const names = (knownInputs({ type: t, data: { ...(spec?.defaults ?? {}) } }) ?? []).filter((n) => !params.has(n));
+			return names.map((name) => ({ name, type: inputType(t, name) }));
+		},
+		output: (t) => outputType(t),
+		namedOutputs: (t) => {
+			const spec = /** @type {any} */ (findNodeSpec(t));
+			return (knownMapOutputs({ type: t, data: { ...(spec?.defaults ?? {}) } }) ?? []).map((name) => ({ name, type: outputHandleType(t, name) }));
+		},
+		match: (raw) => normalizeNodeType(raw)
+	});
 }
 
 /**

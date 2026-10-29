@@ -13,6 +13,7 @@ import { physicsToolsEnabled, forcePhysicsTools } from '$lib/ai/flowTools.js';
 import { meshGenReady } from '$lib/ai/meshProviders.js';
 import { behaviourHost } from '$lib/ai/aiExtensions.js';
 import { missingToolsFor } from './toolPolicy.js';
+import { whatCanYouDo, WHAT_CAN_YOU_DO_SCHEMA } from './voiceHelp.js';
 import { peerMeshReady, askMeshState, requestHostMesh } from './meshRelay.js';
 import { takeScreenshot } from './screenshot.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
@@ -447,6 +448,15 @@ export function createTpAgent(extra = {}) {
 					parameters: { type: 'object', properties: { id: { type: 'string' }, action: { type: 'string' } }, required: ['id'] }
 				},
 				run: (args) => core.agent.accept(String(args?.id ?? ''), args?.action)
+			},
+			// 86 T3: "what can you do here?" for a voice conversation (the connector, serve)
+			what_can_you_do: {
+				schema: WHAT_CAN_YOU_DO_SCHEMA,
+				run: () =>
+					whatCanYouDo({
+						status: core.agent.status(),
+						tools: [...core.agent.tools().map((/** @type {any} */ t) => t?.function?.name ?? t?.name), 'screenshot']
+					})
 			}
 		},
 		...(extra.deps ?? {})

@@ -34,6 +34,7 @@ import {
 	aiNodeVocabulary,
 	createFlowNodesTool,
 	updateFlowNodesTool,
+	describeNodeTypesTool,
 	setPhysicsTool,
 	createJointsTool,
 	controlSimulationTool
@@ -599,6 +600,7 @@ const TOOL_NAMES = [
 	'generate_mesh',
 	'create_flow_nodes',
 	'update_flow_nodes',
+	'describe_node_types',
 	'set_physics',
 	'create_joints',
 	'control_simulation',
@@ -898,6 +900,9 @@ async function runAiTool(rawName, rawArgs) {
 
 			case 'create_flow_nodes':
 				return createFlowNodesTool(args);
+
+			case 'describe_node_types':
+				return describeNodeTypesTool(args);
 
 			case 'update_flow_nodes':
 				return updateFlowNodesTool(args);
@@ -1245,6 +1250,21 @@ function flowToolSchemas(physics) {
 						remove: { type: 'array', items: { type: 'string' }, description: 'node ids to delete' }
 					},
 					required: ['graph']
+				}
+			}
+		},
+		{
+			type: 'function',
+			function: {
+				name: 'describe_node_types',
+				description:
+					'Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group; group = that group with one-line docs; types = full details (up to 12). Changes nothing.',
+				parameters: {
+					type: 'object',
+					properties: {
+						types: { type: 'array', items: { type: 'string' }, description: 'node types to describe, e.g. ["latch","spin","onclick"]' },
+						group: { type: 'string', description: 'a palette group, e.g. "Logic" or "Triggers"' }
+					}
 				}
 			}
 		}

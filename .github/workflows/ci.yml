@@ -152,6 +152,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:unit
+      # 86 T4: tools/agent/catalog.json (the Claude connector's + serve's static tool list) matches the app
+      - run: npm run catalog:agent -- --check
 
   e2e-smoke:
     if: ${{ !inputs.battery }}

@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 18,
+		"hostTools": 25,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nUse screenshot to check a result when it matters, not after every step.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -434,6 +434,670 @@
 			}
 		},
 		{
+			"name": "set_geometry",
+			"title": "Reshape objects",
+			"description": "Reshape existing objects in place (they keep uuid, transform, material and flows): change a primitive's params (the keys list_scene shows under geometry, e.g. {width, height, depth} for a Box, {radiusTop, radiusBottom, height, radialSegments} for a Cylinder, {segments, phiLength} for a Lathe, {depth, bevel} for an extrusion), or its TYPE (box → Cylinder) with params on top of the new type's defaults. A tube (create_tube) takes path, radius / radii, closed. An object whose vertices were hand-edited refuses unless force: true (the rebuild replaces those edits). Up to 100 objects per call, one undo step.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"updates": {
+						"type": "array",
+						"maxItems": 100,
+						"items": {
+							"type": "object",
+							"properties": {
+								"uuid": {
+									"type": "string"
+								},
+								"type": {
+									"type": "string",
+									"enum": [
+										"Box",
+										"Sphere",
+										"Cylinder",
+										"Cone",
+										"Capsule",
+										"Torus",
+										"TorusKnot",
+										"Ring",
+										"Circle",
+										"Plane",
+										"Dodecahedron",
+										"Icosahedron",
+										"Octahedron",
+										"Tetrahedron",
+										"Lathe",
+										"Tube",
+										"Extrude",
+										"Wall",
+										"Door",
+										"Window",
+										"Staircase"
+									],
+									"description": "change the primitive type in place"
+								},
+								"params": {
+									"type": "object",
+									"description": "param name → value; sizes clamped to 1 km, segment counts to their range"
+								},
+								"path": {
+									"type": "array",
+									"items": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"minItems": 3,
+										"maxItems": 3
+									},
+									"description": "tubes: a new path in scene space"
+								},
+								"radius": {
+									"type": "number",
+									"description": "tubes: one radius for every point"
+								},
+								"radii": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "tubes: one radius per point"
+								},
+								"closed": {
+									"type": "boolean",
+									"description": "tubes: join the ends"
+								},
+								"radialSegments": {
+									"type": "integer",
+									"description": "tubes: 3-32"
+								},
+								"force": {
+									"type": "boolean",
+									"description": "rebuild even though the vertices were hand-edited"
+								}
+							},
+							"required": [
+								"uuid"
+							]
+						}
+					}
+				},
+				"required": [
+					"updates"
+				]
+			},
+			"annotations": {
+				"title": "Reshape objects",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "create_lathe",
+			"title": "Make a lathed shape",
+			"description": "A lathed (turned) object — vase, bowl, bottle, column, lamp shade: revolve a 2D profile around the Y axis. profile = [[radius, height], …] from bottom to top (radius ≥ 0; start and end at radius 0 to close the bottom / top). Editable afterwards with set_geometry (segments, phiLength). Returns the uuid.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"profile": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 2,
+							"maxItems": 2
+						},
+						"minItems": 2,
+						"maxItems": 200,
+						"description": "[[radius, height], …] in metres"
+					},
+					"segments": {
+						"type": "integer",
+						"description": "around the axis, 3-128 (default 12; 32+ looks round)"
+					},
+					"phiStart": {
+						"type": "number",
+						"description": "radians"
+					},
+					"phiLength": {
+						"type": "number",
+						"description": "radians, default 2π (a full turn)"
+					},
+					"name": {
+						"type": "string"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"rotation": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "Euler radians"
+					},
+					"scale": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"color": {
+						"type": "string",
+						"description": "hex #rrggbb"
+					},
+					"parentUuid": {
+						"type": "string",
+						"description": "group to nest under (position is then local to it)"
+					},
+					"physics": {
+						"type": "string",
+						"enum": [
+							"static",
+							"dynamic"
+						],
+						"description": "default static"
+					}
+				},
+				"required": [
+					"profile"
+				]
+			},
+			"annotations": {
+				"title": "Make a lathed shape",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "create_tube",
+			"title": "Make a tube along a path",
+			"description": "A tube swept along a smooth 3D path — rail, pipe, cable, handrail, tentacle. path = [[x, y, z], …] in SCENE space (the object is placed at the path's centre); radius for all points or radii per point (tapers). Editable with set_geometry (path, radii, closed). Returns the uuid.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"path": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 3,
+							"maxItems": 3
+						},
+						"minItems": 2,
+						"maxItems": 200
+					},
+					"radius": {
+						"type": "number",
+						"description": "metres, default 0.05"
+					},
+					"radii": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"description": "one radius per path point"
+					},
+					"closed": {
+						"type": "boolean",
+						"description": "a loop (3+ points)"
+					},
+					"radialSegments": {
+						"type": "integer",
+						"description": "3-32, default 8"
+					},
+					"name": {
+						"type": "string"
+					},
+					"color": {
+						"type": "string",
+						"description": "hex #rrggbb"
+					},
+					"physics": {
+						"type": "string",
+						"enum": [
+							"static",
+							"dynamic"
+						]
+					}
+				},
+				"required": [
+					"path"
+				]
+			},
+			"annotations": {
+				"title": "Make a tube along a path",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "extrude_shape",
+			"title": "Extrude an outline",
+			"description": "A solid from a 2D outline — sign, letter, logo, floor plan, gear, cookie: points = [[x, y], …] (x right, y up), extruded along +Z by depth and centred on it, so it stands upright facing +Z (rotate [-1.5708, 0, 0] to lay it flat). holes = outlines cut through it (a window, the inside of an O). bevel rounds the edges. Editable with set_geometry (depth, bevel …). Returns the uuid.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"points": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 2,
+							"maxItems": 2
+						},
+						"minItems": 3,
+						"maxItems": 500
+					},
+					"holes": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"minItems": 2,
+								"maxItems": 2
+							}
+						},
+						"maxItems": 20
+					},
+					"depth": {
+						"type": "number",
+						"description": "metres, default 0.2"
+					},
+					"bevel": {
+						"description": "true, or {thickness, size, segments}",
+						"anyOf": [
+							{
+								"type": "boolean"
+							},
+							{
+								"type": "object",
+								"properties": {
+									"thickness": {
+										"type": "number"
+									},
+									"size": {
+										"type": "number"
+									},
+									"segments": {
+										"type": "integer"
+									}
+								}
+							}
+						]
+					},
+					"curveSegments": {
+						"type": "integer",
+						"description": "1-32"
+					},
+					"name": {
+						"type": "string"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"rotation": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "Euler radians"
+					},
+					"scale": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"color": {
+						"type": "string",
+						"description": "hex #rrggbb"
+					},
+					"parentUuid": {
+						"type": "string",
+						"description": "group to nest under (position is then local to it)"
+					},
+					"physics": {
+						"type": "string",
+						"enum": [
+							"static",
+							"dynamic"
+						],
+						"description": "default static"
+					}
+				},
+				"required": [
+					"points"
+				]
+			},
+			"annotations": {
+				"title": "Extrude an outline",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "edit_mesh",
+			"title": "Edit a mesh",
+			"description": "Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide, delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). Each op re-reads the mesh, so a select by normal or box keeps working after an extrude; indices are against the mesh as it is at that op. Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (set_geometry then needs force). One undo step per call.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"object": {
+						"type": "string",
+						"description": "the mesh uuid"
+					},
+					"select": {
+						"type": "object",
+						"description": "which part of the mesh, in its OWN (local) space; filters AND together. mode \"faces\" (default) or \"vertices\". indices = face / vertex numbers from a preview (edit_mesh with ops: []); normal = a direction ([x,y,z] or up/down/+x/-x/+z/-z) within angle degrees (default 30); box = {min, max}; all: true",
+						"properties": {
+							"mode": {
+								"type": "string",
+								"enum": [
+									"faces",
+									"vertices"
+								]
+							},
+							"indices": {
+								"type": "array",
+								"items": {
+									"type": "integer"
+								}
+							},
+							"normal": {
+								"description": "[x, y, z] or up | down | +x | -x | +z | -z"
+							},
+							"angle": {
+								"type": "number",
+								"description": "degrees, default 30"
+							},
+							"box": {
+								"type": "object",
+								"properties": {
+									"min": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"minItems": 3,
+										"maxItems": 3
+									},
+									"max": {
+										"type": "array",
+										"items": {
+											"type": "number"
+										},
+										"minItems": 3,
+										"maxItems": 3
+									}
+								}
+							},
+							"all": {
+								"type": "boolean"
+							}
+						}
+					},
+					"ops": {
+						"type": "array",
+						"maxItems": 20,
+						"items": {
+							"type": "object",
+							"properties": {
+								"op": {
+									"type": "string",
+									"enum": [
+										"extrude",
+										"inset",
+										"move",
+										"bevel",
+										"subdivide",
+										"delete",
+										"flip",
+										"weld",
+										"smooth",
+										"dissolve",
+										"connect",
+										"create_face"
+									]
+								},
+								"select": {
+									"type": "object",
+									"description": "which part of the mesh, in its OWN (local) space; filters AND together. mode \"faces\" (default) or \"vertices\". indices = face / vertex numbers from a preview (edit_mesh with ops: []); normal = a direction ([x,y,z] or up/down/+x/-x/+z/-z) within angle degrees (default 30); box = {min, max}; all: true",
+									"properties": {
+										"mode": {
+											"type": "string",
+											"enum": [
+												"faces",
+												"vertices"
+											]
+										},
+										"indices": {
+											"type": "array",
+											"items": {
+												"type": "integer"
+											}
+										},
+										"normal": {
+											"description": "[x, y, z] or up | down | +x | -x | +z | -z"
+										},
+										"angle": {
+											"type": "number",
+											"description": "degrees, default 30"
+										},
+										"box": {
+											"type": "object",
+											"properties": {
+												"min": {
+													"type": "array",
+													"items": {
+														"type": "number"
+													},
+													"minItems": 3,
+													"maxItems": 3
+												},
+												"max": {
+													"type": "array",
+													"items": {
+														"type": "number"
+													},
+													"minItems": 3,
+													"maxItems": 3
+												}
+											}
+										},
+										"all": {
+											"type": "boolean"
+										}
+									}
+								},
+								"distance": {
+									"type": "number"
+								},
+								"amount": {
+									"type": "number"
+								},
+								"width": {
+									"type": "number"
+								},
+								"segments": {
+									"type": "integer"
+								},
+								"profile": {
+									"type": "number",
+									"description": "-1..1"
+								},
+								"direction": {
+									"type": "string",
+									"enum": [
+										"out",
+										"in"
+									]
+								},
+								"offset": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"minItems": 3,
+									"maxItems": 3
+								},
+								"factor": {
+									"type": "number"
+								},
+								"iterations": {
+									"type": "integer"
+								}
+							},
+							"required": [
+								"op"
+							]
+						}
+					}
+				},
+				"required": [
+					"object"
+				]
+			},
+			"annotations": {
+				"title": "Edit a mesh",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "create_mesh",
+			"title": "Make a mesh from data",
+			"description": "A mesh from raw data: vertices [[x, y, z], …] and faces [[i, j, k] or [i, j, k, l] …] (indices into vertices, counter-clockwise seen from outside; polygons of up to 32 corners are fanned, so keep them convex), optional uvs (one [u, v] per vertex). Up to 20000 vertices and 20000 faces; normals are computed (smooth: true for smooth shading). Edit it afterwards with edit_mesh. Returns the uuid.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"vertices": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 3,
+							"maxItems": 3
+						},
+						"maxItems": 20000
+					},
+					"faces": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "integer"
+							}
+						},
+						"maxItems": 20000
+					},
+					"uvs": {
+						"type": "array",
+						"items": {
+							"type": "array",
+							"items": {
+								"type": "number"
+							},
+							"minItems": 2,
+							"maxItems": 2
+						}
+					},
+					"smooth": {
+						"type": "boolean"
+					},
+					"name": {
+						"type": "string"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"rotation": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3,
+						"description": "Euler radians"
+					},
+					"scale": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"minItems": 3,
+						"maxItems": 3
+					},
+					"color": {
+						"type": "string",
+						"description": "hex #rrggbb"
+					},
+					"parentUuid": {
+						"type": "string",
+						"description": "group to nest under (position is then local to it)"
+					},
+					"physics": {
+						"type": "string",
+						"enum": [
+							"static",
+							"dynamic"
+						],
+						"description": "default static"
+					}
+				},
+				"required": [
+					"vertices",
+					"faces"
+				]
+			},
+			"annotations": {
+				"title": "Make a mesh from data",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
 			"name": "create_flow_nodes",
 			"title": "Add behaviour (flow) nodes",
 			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.",
@@ -849,6 +1513,70 @@
 			},
 			"annotations": {
 				"title": "Run or stop the simulation",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "import_model",
+			"title": "Import model",
+			"description": "Import a self-contained GLB (binary glTF 2.0, everything embedded, ≤ 25 MB) into the scene through the app's own import pipeline (auto-optimize, LOD, budget check). Named nodes are kept as a hierarchy and returned with uuids. One undo step; syncs to every peer; provenance is recorded. Use for models built outside the app (e.g. an img2threejs rebuild exported with named pivots). Materials: standard PBR only — custom shaders do not survive glTF.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"path": {
+						"type": "string",
+						"description": "a local .glb path on the agent's machine (the bridge reads it)"
+					},
+					"data": {
+						"type": "string",
+						"description": "the GLB as base64 (alternative to path/url)"
+					},
+					"url": {
+						"type": "string",
+						"description": "an http(s) URL of a .glb (the host may block other origins)"
+					},
+					"name": {
+						"type": "string"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"description": "[x,y,z] metres (local to parent when given)"
+					},
+					"rotation": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"description": "[x,y,z] degrees, XYZ order"
+					},
+					"scale": {
+						"description": "a number or [x,y,z]"
+					},
+					"parent": {
+						"type": "string",
+						"description": "uuid (or exact name) of the object to parent under"
+					},
+					"source": {
+						"type": "string",
+						"description": "where the model came from, e.g. \"img2threejs from photo campfire.jpg\""
+					},
+					"licence": {
+						"type": "string",
+						"description": "its licence, e.g. CC0, CC-BY-4.0, \"own work\""
+					},
+					"prompt": {
+						"type": "string",
+						"description": "the request it was made for"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Import model",
 				"readOnlyHint": false,
 				"destructiveHint": true,
 				"openWorldHint": false

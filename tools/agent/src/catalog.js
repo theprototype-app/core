@@ -40,6 +40,12 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	control_simulation: { title: 'Run or stop the simulation', destructive: true },
 	delete_objects: { title: 'Delete objects', destructive: true },
 	clear_scene: { title: 'Clear the scene', destructive: true },
+	create_lathe: { title: 'Make a lathed shape', destructive: false },
+	create_tube: { title: 'Make a tube along a path', destructive: false },
+	extrude_shape: { title: 'Extrude an outline', destructive: false },
+	create_mesh: { title: 'Make a mesh from data', destructive: false },
+	set_geometry: { title: 'Reshape objects', destructive: true },
+	edit_mesh: { title: 'Edit a mesh', destructive: true },
 	install_modules: { title: 'Install modules', destructive: false, openWorld: true },
 	accept_offer: { title: 'Answer a question the app asks', destructive: true },
 	connect: { title: 'Join a session', destructive: false, openWorld: true }

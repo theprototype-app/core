@@ -1,8 +1,9 @@
 // Geometry parameter registry (phase 78): for every primitive, the constructor
 // args as typed UI specs. `order` mirrors the three.js constructor signature —
 // rebuilds call new THREE[type+'Geometry'](...order.map(k => params[k])).
-// Only serializable numeric/boolean params live here; Lathe/Tube keep their
-// default profile curves (quiz: fixed presets).
+// Only serializable numeric/boolean params live here; Tube keeps its default
+// curve (quiz: fixed presets). 85 G2: a Lathe's profile is a `points` param now
+// (set by create_lathe; absent = the old default profile).
 
 // 21-C1: a spec may carry a `build` HOOK instead of relying on the
 // `new THREE[gtype + 'Geometry']` convention, which is what lets a CUSTOM
@@ -10,7 +11,7 @@
 // {type:'geometry', uuid, gtype, params} message, the 'geometry' history kind
 // and userData.geometryParams riding toJSON + GLTF extras then all work with no
 // new wire type and no new history kind.
-import { terrainGeometry, TERRAIN_FALLOFFS } from './customGeometries';
+import { terrainGeometry, TERRAIN_FALLOFFS, latheGeometry, cleanLathe, extrudeGeometry, cleanExtrude } from './customGeometries';
 // 37 R3: the parametric architecture primitives (Wall, Door, Window, Staircase) — the same
 // `build`-hook shape as Terrain, plus `fromArgs` (createGeometry maps `/create` numbers to
 // params with it) and the collider hint stamped at creation
@@ -151,7 +152,9 @@ export const GEOMETRY_PARAMS = {
 		]
 	},
 	Lathe: {
-		// points stay the default profile (quiz: fixed presets)
+		// 85 G2: `points` ([[radius, height], …]) is a param with no row; absent = three's default profile
+		build: latheGeometry,
+		clean: cleanLathe,
 		order: ['points', 'segments', 'phiStart', 'phiLength'],
 		params: [
 			{ key: 'segments', label: 'Segments', kind: 'int', min: 3, max: 64, def: 12 },
@@ -166,6 +169,21 @@ export const GEOMETRY_PARAMS = {
 			{ key: 'radius', label: 'Radius', kind: 'slider', min: 0.02, max: 5, step: 0.02, def: 1 },
 			{ key: 'radialSegments', label: 'Radial segs', kind: 'int', min: 3, max: 32, def: 8 },
 			{ key: 'closed', label: 'Closed', kind: 'bool', def: false }
+		]
+	},
+	// 85 G4: an outline + holes extruded to a slab (extrude_shape). `points` / `holes` have no rows;
+	// the depth and the bevel do, so a person tunes what the agent made in the Inspector
+	Extrude: {
+		build: extrudeGeometry,
+		clean: cleanExtrude,
+		order: ['points', 'holes', 'depth', 'bevel', 'bevelThickness', 'bevelSize', 'bevelSegments', 'curveSegments'],
+		params: [
+			{ key: 'depth', label: 'Depth', kind: 'slider', min: 0.01, max: 20, step: 0.01, def: 0.2 },
+			{ key: 'bevel', label: 'Bevel', kind: 'bool', def: false },
+			{ key: 'bevelThickness', label: 'Bevel depth', kind: 'slider', min: 0, max: 2, step: 0.01, def: 0.02, show: (p) => !!p.bevel },
+			{ key: 'bevelSize', label: 'Bevel size', kind: 'slider', min: 0, max: 2, step: 0.01, def: 0.02, show: (p) => !!p.bevel },
+			{ key: 'bevelSegments', label: 'Bevel segs', kind: 'int', min: 1, max: 8, def: 2, show: (p) => !!p.bevel },
+			{ key: 'curveSegments', label: 'Curve segs', kind: 'int', min: 1, max: 32, def: 12 }
 		]
 	},
 	// 21-C1: PROCEDURAL TERRAIN. `build` bypasses the THREE-constructor

@@ -9829,3 +9829,93 @@ registerHistoryKind('meshgeo', (entry, state) => {
 		});
 	return true;
 });
+
+// ---- 85 G5: the face operators WITHOUT a session (the agent's edit_mesh) ------------------
+//
+// commitFaceOp / bevelFaces read the live face session (workingTris, the selection, the
+// granularity). An agent has no session and must not open one (it would lock the object and
+// draw overlays on the agent page), so these two read the object's own geometry, run the SAME
+// pure cores and commit through commitMeshGeoTriple — the meshgeo message + history kind every
+// face op already uses. One commit per op; the caller's history batch makes a call one undo step.
+
+/**
+ * The face partition an operator would see on `geometry` (stored, else derived from the quad
+ * pairing — the default 'quad' granularity's units) and its triangles.
+ * @param {any} geometry @returns {{tris: any[], partition: number[][]}}
+ */
+export function facePartitionOf(geometry) {
+	const tris = readTriangles(geometry);
+	const partition = readStoredFaces(geometry) ?? derivePartition(tris, storedPartner(geometry, tris.length) ?? pairQuads(tris));
+	return { tris, partition };
+}
+
+/** the face ops faceOpOnObject runs */
+export const OBJECT_FACE_OPS = /** @type {const} */ (['extrude', 'inset', 'move', 'bevel', 'subdivide', 'delete', 'flip']);
+
+/**
+ * Run one face operator on an object's triangles `triIndices` (one region, like a multi-select).
+ * @param {string} uuid
+ * @param {string} op one of OBJECT_FACE_OPS
+ * @param {number[]} triIndices
+ * @param {{amount?: number, width?: number, segments?: number, profile?: number, direction?: 'out'|'in'}} [options]
+ * @returns {{ok: true, triangles: number} | {ok: false, error: string}}
+ */
+export function faceOpOnObject(uuid, op, triIndices, options = {}) {
+	interruptOpAdjust();
+	const object = lookupEditable(uuid);
+	if (!object?.geometry?.attributes?.position) return { ok: false, error: 'not a mesh' };
+	const { tris, partition } = facePartitionOf(object.geometry);
+	const picked = [...new Set(triIndices)].filter((ti) => Number.isInteger(ti) && tris[ti]);
+	if (!picked.length) return { ok: false, error: 'no faces selected' };
+	const normal = new THREE.Vector3();
+	const centroid = new THREE.Vector3();
+	for (const ti of picked) {
+		normal.add(triNormal(tris[ti]));
+		tris[ti].forEach((/** @type {any} */ v) => centroid.add(v));
+	}
+	if (normal.lengthSq() < 1e-9) normal.copy(triNormal(tris[picked[0]]));
+	const face = { triIndices: picked, normal: normal.normalize(), centroid: centroid.divideScalar(picked.length * 3) };
+	const amount = Number.isFinite(options.amount) ? Number(options.amount) : 0.3;
+	const open = boundaryEdges(tris, face).length > 0;
+	if ((op === 'extrude' || op === 'bevel') && !open)
+		return { ok: false, error: op + ': the selection is a CLOSED surface (no border) — select fewer faces' };
+	/** @type {any[]} */
+	let next;
+	/** @type {number[][] | null} */
+	let nextFaces;
+	if (op === 'extrude') {
+		next = extrudeFace(tris, face, amount);
+		nextFaces = composeFaces(partition, appendOrigin(tris.length, next.length), appendedQuads(tris.length, next.length));
+	} else if (op === 'inset') {
+		next = insetFace(tris, face, Math.min(Math.max(amount, 0.01), 0.95));
+		nextFaces = composeFaces(partition, appendOrigin(tris.length, next.length), appendedQuads(tris.length, next.length));
+	} else if (op === 'move') {
+		next = moveFaceAlongNormal(tris, face, amount);
+		nextFaces = partition;
+	} else if (op === 'bevel') {
+		const result = bevelFacesCore(tris, face, {
+			width: Math.max(Number(options.width ?? 0.15) || 0.15, 0.001),
+			segments: Math.max(1, Math.min(Math.round(Number(options.segments ?? 1)) || 1, 8)),
+			profile: Math.min(Math.max(Number(options.profile ?? 1), -1), 1),
+			direction: options.direction === 'in' ? 'in' : 'out'
+		});
+		next = result.tris;
+		nextFaces = composeFaces(partition, appendOrigin(tris.length, next.length), result.authored);
+	} else if (op === 'subdivide') {
+		const split = subdivideFaceUnits(tris, picked, storedPartner(object.geometry, tris.length) ?? pairQuads(tris));
+		next = split.tris;
+		nextFaces = composeFaces(partition, split.origin, split.authored);
+	} else if (op === 'delete') {
+		if (picked.length >= tris.length) return { ok: false, error: 'delete: that would remove every face of the mesh' };
+		next = deleteFaceTris(tris, face);
+		nextFaces = composeFaces(partition, survivorOrigin(tris.length, new Set(picked)), []);
+	} else if (op === 'flip') {
+		next = flipFaceNormals(tris, picked);
+		nextFaces = partition;
+	} else return { ok: false, error: 'unknown face op "' + op + '"' };
+	const before = { positions: trisToPositions(tris), groups: trisToGroups(tris), uvs: trisToUVs(tris), faces: readStoredFaces(object.geometry) };
+	const after = { positions: trisToPositions(next), groups: trisToGroups(next), uvs: trisToUVs(next), faces: nextFaces };
+	if (after.positions.length > MAX_SNAPSHOT) return { ok: false, error: tooLargeMessage(after.positions.length, 'edit') };
+	if (!commitMeshGeoTriple(uuid, before, after)) return { ok: false, error: 'the edit could not be committed' };
+	return { ok: true, triangles: next.length };
+}

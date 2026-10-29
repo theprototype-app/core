@@ -39,6 +39,7 @@ import {
 	createJointsTool,
 	controlSimulationTool
 } from './flowTools.js';
+import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool } from './geometryTools.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -457,7 +458,7 @@ async function applyAiMaterialParams(uuid, params) {
 }
 
 /** @param {any} spec @returns {any} one created object's result */
-function createOne(spec) {
+function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	const uuid = genUuid();
 	let created = null;
 	if (spec.kind === 'light') {
@@ -477,7 +478,8 @@ function createOne(spec) {
 		broadcast({ type: 'group', command, uuid });
 	} else {
 		// primitive (default)
-		const primitive = normalizePrimitive(spec.primitive);
+		// 85 G2/G4: the geometry tools make a Lathe / an Extrude base through this same path
+		const primitive = extraTypes.find((t) => t === spec.primitive) ?? normalizePrimitive(spec.primitive);
 		if (!primitive) return { error: 'unknown primitive "' + spec.primitive + '"; allowed: ' + PRIMITIVE_TYPES.join(', ') };
 		if (spec.params !== undefined && !Array.isArray(spec.params)) return { error: 'params: takes an array of numbers, e.g. Box [w, h, d]' };
 		// 55 (41's research): sizes are positive numbers ([-1, 0, 'a'] for a Box used to be accepted);
@@ -606,7 +608,8 @@ const TOOL_NAMES = [
 	'control_simulation',
 	'create_behaviour',
 	'edit_behaviour',
-	'import_model' // 56 C9 (offered to agents; see importModel.js)
+	'import_model', // 56 C9 (offered to agents; see importModel.js)
+	...GEOMETRY_TOOL_NAMES // 85 G1-G6 (geometryTools.js)
 ];
 
 /** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a
@@ -655,7 +658,16 @@ const NAME_ALIASES = /** @type {Record<string,string>} */ ({
 	list: 'list_scene',
 	clear: 'clear_scene',
 	generate_model: 'generate_mesh',
-	create_mesh: 'generate_mesh',
+	// (85 G6: `create_mesh` is a tool of its own now — mesh from vertex data, not generation)
+	set_geometry_params: 'set_geometry',
+	reshape: 'set_geometry',
+	change_geometry: 'set_geometry',
+	lathe: 'create_lathe',
+	create_tubes: 'create_tube',
+	extrude: 'extrude_shape',
+	extrude_outline: 'extrude_shape',
+	modify_mesh: 'edit_mesh',
+	edit_geometry: 'edit_mesh',
 	// flow / behavior invention family
 	add_behavior: 'create_flow_nodes',
 	add_behaviour: 'create_flow_nodes',
@@ -946,6 +958,15 @@ async function runAiTool(rawName, rawArgs) {
 			case 'import_model':
 				// 56 C9: a self-contained GLB through the app's own import path (one undo, synced)
 				return await (await import('./importModel.js')).importModelTool(args);
+
+			case 'set_geometry':
+			case 'create_lathe':
+			case 'create_tube':
+			case 'extrude_shape':
+			case 'edit_mesh':
+			case 'create_mesh':
+				// 85 G1-G6: shape and model objects (geometryTools.js)
+				return await geometryTool(name, args, createOne);
 
 			default:
 				return {
@@ -1389,7 +1410,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @returns {any[]} */
 export function getAiTools() {
 	const physics = physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1486,6 +1507,6 @@ export function buildSystemPrompt() {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + GEOMETRY_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

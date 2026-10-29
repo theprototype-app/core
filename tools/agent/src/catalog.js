@@ -7,7 +7,7 @@
 // the bridge tools a tab answers itself. Nobody hand-writes a tool. The instructions (86 T3) are built
 // from the same list, so a line about a tool appears only while that tool exists.
 
-import { mapHostTools, bridgeTools } from './mcpTools.js';
+import { mapHostTools, bridgeTools, connectorOnlyTools } from './mcpTools.js';
 
 /** Bump when the catalog's SHAPE changes (not when tools change). 2 = titles + annotations. */
 export const CATALOG_FORMAT = 2;
@@ -42,7 +42,9 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	clear_scene: { title: 'Clear the scene', destructive: true },
 	install_modules: { title: 'Install modules', destructive: false, openWorld: true },
 	accept_offer: { title: 'Answer a question the app asks', destructive: true },
-	connect: { title: 'Join a session', destructive: false, openWorld: true }
+	connect: { title: 'Join a session', destructive: false, openWorld: true },
+	// 86-fix N2: the connector's join — the person confirms in the tab; joining may replace what the tab shows
+	join_session: { title: 'Join a session (asks the person)', destructive: true, openWorld: true }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -62,31 +64,88 @@ export function annotate(t) {
 	return { name: t.name, title, description: t.description, inputSchema: t.inputSchema, annotations };
 }
 
+/** every edit tool: the catalog's non-read tools @type {'EDITS'} */
+const EDITS = 'EDITS';
+
+/**
+ * 86-fix B4 — THE GUIDANCE, ONE TABLE. claude.ai drops a server's `instructions`, so every line that matters
+ * lives in the DESCRIPTION of the tools it is about (`on`); the instructions are the same lines for the
+ * clients that do read them. `when` = the tool that must exist for the line to appear at all (default: the
+ * first of `on`). `guidanceGaps` (catalog:agent --check, the unit test) fails on an instruction line no
+ * description carries.
+ * @type {{line: string, on: (string|'EDITS')[], when?: string}[]}
+ */
+export const GUIDANCE = [
+	{
+		line: 'You are building in the person\'s own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.',
+		on: ['status', 'what_can_you_do']
+	},
+	{
+		line: 'This may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words ("Added three trees by the fire"). Never read out uuids, lists of numbers or JSON.',
+		on: ['status', 'what_can_you_do', 'create_objects']
+	},
+	{
+		line: 'If a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.',
+		on: ['status', 'list_scene']
+	},
+	{ line: 'Call status first: it says whether you may edit (a viewer can only look).', on: ['status'] },
+	{ line: 'Call list_scene before editing so you use real uuids; batch many objects into one call.', on: ['list_scene', 'create_objects', 'update_objects'] },
+	{
+		line: 'For "in front of me", "here" or "this", call where_are_users and build at the spots it gives, facing the person.',
+		on: ['where_are_users', 'create_objects']
+	},
+	{ line: 'For "give me a flashlight" or another prop, make the object, then attach_to_user to the person who asked.', on: ['attach_to_user'] },
+	{
+		line: 'Motion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.',
+		on: ['create_flow_nodes', 'describe_node_types'],
+		when: 'describe_node_types'
+	},
+	{ line: 'Motion and interaction are flow nodes (create_flow_nodes).', on: ['create_flow_nodes'], when: '!describe_node_types' },
+	{ line: 'Take a screenshot after each change to check your work.', on: [EDITS], when: 'screenshot' },
+	{ line: 'When asked what you can do here, call what_can_you_do and say its "say" line.', on: ['what_can_you_do'] }
+];
+
+/** @param {{line: string, on: string[], when?: string}} g @param {Set<string>} has */
+function applies(g, has) {
+	const when = g.when ?? g.on.find((n) => n !== EDITS) ?? '';
+	return when.startsWith('!') ? has.has(g.on[0]) && !has.has(when.slice(1)) : has.has(when);
+}
+
 /**
  * The server instructions for a voice-first client (claude.ai chat, phone and voice mode). Short,
- * spoken-style, and only about tools in `names`.
+ * spoken-style, and only about tools in `names` — the GUIDANCE lines, verbatim.
  * @param {string[]} names the tool names the client will see
  * @returns {string}
  */
 export function connectorInstructions(names) {
 	const has = new Set(names);
-	const lines = [
-		'You are building in the person\'s own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.',
-		'This may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words ("Added three trees by the fire"). Never read out uuids, lists of numbers or JSON.',
-		'If a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.'
-	];
-	if (has.has('status')) lines.push('Call status first: it says whether you may edit (a viewer can only look).');
-	if (has.has('list_scene')) lines.push('Call list_scene before editing so you use real uuids; batch many objects into one call.');
-	if (has.has('where_are_users'))
-		lines.push('For "in front of me", "here" or "this", call where_are_users and build at the spots it gives, facing the person.');
-	if (has.has('attach_to_user')) lines.push('For "give me a flashlight" or another prop, make the object, then attach_to_user to the person who asked.');
-	if (has.has('create_flow_nodes'))
-		lines.push(
-			'Motion and interaction are flow nodes (create_flow_nodes)' + (has.has('describe_node_types') ? '; call describe_node_types before wiring edges.' : '.')
-		);
-	if (has.has('screenshot')) lines.push('Use screenshot to check a result when it matters, not after every step.');
-	if (has.has('what_can_you_do')) lines.push('When asked what you can do here, call what_can_you_do and say its "say" line.');
-	return lines.join('\n');
+	return GUIDANCE.filter((g) => applies(g, has))
+		.map((g) => g.line)
+		.join('\n');
+}
+
+/**
+ * The GUIDANCE lines appended to each tool's description (86-fix B4: claude.ai reads descriptions, not
+ * instructions). A tool's own text comes first; each line once.
+ * @template {{name: string, description: string, annotations?: any}} T @param {T[]} tools @returns {T[]}
+ */
+export function withGuidance(tools) {
+	const has = new Set(tools.map((t) => t.name));
+	return tools.map((t) => {
+		const isEdit = !(t.annotations?.readOnlyHint === true);
+		const lines = GUIDANCE.filter((g) => applies(g, has) && (g.on.includes(t.name) || (isEdit && g.on.includes(EDITS)))).map((g) => g.line);
+		const own = String(t.description ?? '').trim();
+		return lines.length ? { ...t, description: [own, ...lines.filter((l) => !own.includes(l))].filter(Boolean).join('\n') } : t;
+	});
+}
+
+/**
+ * Instruction lines no tool description carries — the check `catalog:agent --check` runs (86-fix B4).
+ * @param {{instructions?: string, tools: {description: string}[]}} catalog @returns {string[]}
+ */
+export function guidanceGaps(catalog) {
+	const lines = String(catalog.instructions ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+	return lines.filter((l) => !catalog.tools.some((t) => String(t.description ?? '').includes(l)));
 }
 
 /**
@@ -99,7 +158,7 @@ export function buildCatalog(hostTools, opts = {}) {
 	if (!Array.isArray(hostTools) || !hostTools.length) throw new Error('the host tool list is empty');
 	const mapped = mapHostTools(hostTools);
 	// the bridge tools a page answers itself; `connect` is the agent CLI's (the Worker drops it, serve keeps it)
-	const tools = [...mapped.tools, ...bridgeTools('browser')].map(annotate);
+	const tools = withGuidance([...mapped.tools, ...bridgeTools('browser'), ...connectorOnlyTools()].map(annotate));
 	return {
 		format: CATALOG_FORMAT,
 		generator: {

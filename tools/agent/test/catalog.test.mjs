@@ -1,7 +1,7 @@
 // The static tool catalog (roadmap 86 T4 + 56 C19) and its voice instructions (86 T3). Pure: no browser.
 // Run: node test/catalog.test.mjs
 import fs from 'node:fs';
-import { buildCatalog, connectorInstructions, annotate, CATALOG_FORMAT } from '../src/catalog.js';
+import { buildCatalog, connectorInstructions, annotate, guidanceGaps, withGuidance, CATALOG_FORMAT } from '../src/catalog.js';
 import { BRIDGE_TOOL_NAMES } from '../src/mcpTools.js';
 
 let pass = 0;
@@ -51,9 +51,21 @@ check('spatial (85 S1) and prop (85 P1) lines appear once the tools land', /wher
 check('describe_node_types is named beside flow nodes', /describe_node_types before wiring/.test(full));
 check('the instructions stay short (< 1500 chars)', full.length < 1500);
 
+// 86-fix B4: claude.ai drops server instructions — every instruction line lives in a tool description too
+check('every instruction line is in some tool description (built catalog)', guidanceGaps(c).length === 0);
+const edits = c.tools.filter((t) => !t.annotations.readOnlyHint);
+check('every edit tool says to take a screenshot after the change', edits.length > 0 && edits.every((t) => /Take a screenshot after each change to check your work\./.test(t.description)));
+check('read tools do not carry the screenshot line', c.tools.filter((t) => t.annotations.readOnlyHint).every((t) => !/Take a screenshot after each change/.test(t.description)));
+check('status says to call it first and carries the voice rules', /Call status first/.test(c.tools.find((t) => t.name === 'status').description) && /VOICE/.test(c.tools.find((t) => t.name === 'status').description));
+check('a tool keeps its own text first', c.tools.find((t) => t.name === 'create_objects').description.startsWith('make'));
+check('a line only the instructions carry is a gap (the check catalog:agent --check runs)', guidanceGaps({ instructions: 'Say hello.\n' + c.instructions, tools: c.tools }).join() === 'Say hello.');
+check('withGuidance never repeats a line a description already holds', withGuidance([{ name: 'status', description: 'Call status first: it says whether you may edit (a viewer can only look).', annotations: { readOnlyHint: true } }])[0].description.split('Call status first').length === 2);
+check('join_session (86-fix N2) is listed as an edit that asks the person', c.tools.some((t) => t.name === 'join_session' && t.annotations.destructiveHint === true && /presses Join/.test(t.description)));
+
 // the committed catalog (written by core scripts/agent-tool-catalog.cjs) parses and has the instructions
 const committed = JSON.parse(fs.readFileSync(new URL('../catalog.json', import.meta.url), 'utf8'));
 check('catalog.json carries tools + instructions', committed.tools.length > 10 && committed.instructions === connectorInstructions(committed.tools.map((t) => t.name)));
+check('catalog.json: no guidance only in the instructions', guidanceGaps(committed).length === 0);
 check('catalog.json tools all carry titles + hints', committed.tools.every((t) => t.title && t.annotations && typeof t.annotations.readOnlyHint === 'boolean'));
 check('catalog.json lists describe_node_types and what_can_you_do', ['describe_node_types', 'what_can_you_do'].every((n) => committed.tools.some((t) => t.name === n)));
 

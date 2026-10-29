@@ -6,12 +6,12 @@
 		"hostTools": 18,
 		"dropped": []
 	},
-	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nUse screenshot to check a result when it matters, not after every step.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
+	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
 	"tools": [
 		{
 			"name": "list_scene",
 			"title": "Read the scene",
-			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.",
+			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -66,7 +66,7 @@
 		{
 			"name": "create_objects",
 			"title": "Add objects",
-			"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids.",
+			"description": "Create one or more primitives, lights or empty groups in a single call. Ground is the y=0 plane; place objects so they rest ON it (a box of height h sits at y=h/2). Returns the new uuids.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -236,7 +236,7 @@
 		{
 			"name": "update_objects",
 			"title": "Change objects",
-			"description": "Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call.",
+			"description": "Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -360,7 +360,7 @@
 		{
 			"name": "delete_objects",
 			"title": "Delete objects",
-			"description": "Delete objects by uuid.",
+			"description": "Delete objects by uuid.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -385,7 +385,7 @@
 		{
 			"name": "group_objects",
 			"title": "Group objects",
-			"description": "Create a new group and move the given member objects into it. Returns the group uuid.",
+			"description": "Create a new group and move the given member objects into it. Returns the group uuid.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -414,7 +414,7 @@
 		{
 			"name": "clear_scene",
 			"title": "Clear the scene",
-			"description": "Delete ALL objects in the scene. Requires confirm:true. Use only when the user clearly asks to start over.",
+			"description": "Delete ALL objects in the scene. Requires confirm:true. Use only when the user clearly asks to start over.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -436,7 +436,7 @@
 		{
 			"name": "create_flow_nodes",
 			"title": "Add behaviour (flow) nodes",
-			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.",
+			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -511,7 +511,7 @@
 		{
 			"name": "update_flow_nodes",
 			"title": "Change or remove flow nodes",
-			"description": "Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object's \"flow\" (and \"sceneFlow\").",
+			"description": "Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object's \"flow\" (and \"sceneFlow\").\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -560,7 +560,7 @@
 		{
 			"name": "describe_node_types",
 			"title": "Look up flow node types",
-			"description": "Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group; group = that group with one-line docs; types = full details (up to 12). Changes nothing.",
+			"description": "Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group; group = that group with one-line docs; types = full details (up to 12). Changes nothing.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -586,7 +586,7 @@
 		{
 			"name": "create_behaviour",
 			"title": "Add a code behaviour",
-			"description": "Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…).\nBEHAVIOURS (create_behaviour / edit_behaviour): game logic as ONE JavaScript module, run on ONE peer (the session authority); `state` replicates to everyone.\nexport default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, inputs: [names], outputs: [names], on: {event(payload) {...}}, ...methods });\ninputs: a trigger wired into input \"x\" runs on.x. outputs: a state field = a value output, any other name = an event fired by this.emit(\"name\").\nA behaviour does NOT move, rotate, recolour or hide objects (no such this.*): it drives effect nodes (spin, visibility, setcolor…) via its outputs. NO per-frame hook (no onTick/update): repeat with this.after(seconds, \"method\").\nthis: params, state, kit (also bare `kit`), after(seconds, \"method\", ...args) (survives the host leaving), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log() — always as this.find(…) etc. (only `kit` and the helpers are bare). Helpers: dist(a,b), clamp, lerp.\nevents: load (runs on EVERY peer when the behaviour loads — local, state read-only: register things there), start (once, on the authority); grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as \"piece.event\" or roundStart, go, won, lost, paused, resumed, menu, levelSelected, scored, collected, allCollected, spawned, despawned, emptied, damaged, healed, died, revived, stuck, grabRefused. Entity payloads have entity.is(glob), entity.hasTag(t).\nkit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, \"nearestPlayer\"), kit.rules.set({reach, jump}), kit.pickups.register({id, score, respawn, radius}) — register pickups in on.load (every peer must know them, or touching one does nothing), never in start.\nForbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import. Unknown this.* members, unknown events and hook-named methods nothing calls are refused too.\nEXAMPLE (passes the lint; wire a trigger into input gemTouched, output left into a HUD Text, timeUp into a Visibility or Announce):\nexport default behaviour({\n  name: 'Countdown',\n  params: { seconds: 30 },\n  state: { left: 30, found: 0 },\n  inputs: ['gemTouched'],\n  outputs: ['left', 'found', 'timeUp'],\n  on: {\n    start() { this.state.left = this.params.seconds; this.after(1, 'tick'); },\n    gemTouched() { this.state.found += 1; }\n  },\n  tick() {\n    this.state.left -= 1;\n    if (this.state.left > 0) this.after(1, 'tick');\n    else this.emit('timeUp');\n  }\n});",
+			"description": "Create a code behaviour: game logic (rules, waves, scoring, timers, win/lose) as ONE JavaScript module, run on the session authority and replicated. Prefer it over large node graphs for game rules. Linted before it is applied; problems come back with line numbers. The result names the node id and its sockets — wire them with create_flow_nodes (an On Click / On Enter into an input; an output into HUD Text, Visibility, Announce…).\nBEHAVIOURS (create_behaviour / edit_behaviour): game logic as ONE JavaScript module, run on ONE peer (the session authority); `state` replicates to everyone.\nexport default behaviour({ name, params: {k: literal | {value, min, max, step, unit}}, state: {plain JSON}, inputs: [names], outputs: [names], on: {event(payload) {...}}, ...methods });\ninputs: a trigger wired into input \"x\" runs on.x. outputs: a state field = a value output, any other name = an event fired by this.emit(\"name\").\nA behaviour does NOT move, rotate, recolour or hide objects (no such this.*): it drives effect nodes (spin, visibility, setcolor…) via its outputs. NO per-frame hook (no onTick/update): repeat with this.after(seconds, \"method\").\nthis: params, state, kit (also bare `kit`), after(seconds, \"method\", ...args) (survives the host leaving), cancel(key), rand(), randInt(a,b), pick(list), now(), find(glob) / findAll(glob) -> {uuid, name, pos, tags}, object, log() — always as this.find(…) etc. (only `kit` and the helpers are bare). Helpers: dist(a,b), clamp, lerp.\nevents: load (runs on EVERY peer when the behaviour loads — local, state read-only: register things there), start (once, on the authority); grabRequest({piece, distance, hand, refuse}) (runs on the grabbing peer, read-only: call refuse(reason)); any kit event as \"piece.event\" or roundStart, go, won, lost, paused, resumed, menu, levelSelected, scored, collected, allCollected, spawned, despawned, emptied, damaged, healed, died, revived, stuck, grabRefused. Entity payloads have entity.is(glob), entity.hasTag(t).\nkit calls: kit.round.start/win(reason)/lose(reason), kit.score.add(n), kit.spawner.spawn({kind, template: uuid, at, count, hp, mover: {speed}}), kit.health.damage(id, n), kit.mover.chase(kind, \"nearestPlayer\"), kit.rules.set({reach, jump}), kit.pickups.register({id, score, respawn, radius}) — register pickups in on.load (every peer must know them, or touching one does nothing), never in start.\nForbidden (the load is refused): Math.random, Date / Date.now, performance.now, localStorage, document/window/globalThis, fetch, eval, setTimeout/setInterval, import. Unknown this.* members, unknown events and hook-named methods nothing calls are refused too.\nEXAMPLE (passes the lint; wire a trigger into input gemTouched, output left into a HUD Text, timeUp into a Visibility or Announce):\nexport default behaviour({\n  name: 'Countdown',\n  params: { seconds: 30 },\n  state: { left: 30, found: 0 },\n  inputs: ['gemTouched'],\n  outputs: ['left', 'found', 'timeUp'],\n  on: {\n    start() { this.state.left = this.params.seconds; this.after(1, 'tick'); },\n    gemTouched() { this.state.found += 1; }\n  },\n  tick() {\n    this.state.left -= 1;\n    if (this.state.left > 0) this.after(1, 'tick');\n    else this.emit('timeUp');\n  }\n});\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -618,7 +618,7 @@
 		{
 			"name": "edit_behaviour",
 			"title": "Edit a code behaviour",
-			"description": "Replace an existing behaviour's source (the scene summary lists them; read the current source with the name). Linted before it is applied. Same format as create_behaviour (see its description).",
+			"description": "Replace an existing behaviour's source (the scene summary lists them; read the current source with the name). Linted before it is applied. Same format as create_behaviour (see its description).\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -645,7 +645,7 @@
 		{
 			"name": "set_physics",
 			"title": "Set physics",
-			"description": "Set physics body params on objects (batch). NOTE: objects made with create_objects are STATIC unless created with physics \"dynamic\" or a mass — use this to make existing objects dynamic, to TUNE bodies, or to pin scenery (mode \"static\"). mode \"auto\" reverts to scenery defaults.",
+			"description": "Set physics body params on objects (batch). NOTE: objects made with create_objects are STATIC unless created with physics \"dynamic\" or a mass — use this to make existing objects dynamic, to TUNE bodies, or to pin scenery (mode \"static\"). mode \"auto\" reverts to scenery defaults.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -742,7 +742,7 @@
 		{
 			"name": "create_joints",
 			"title": "Add physics joints",
-			"description": "Attach object pairs with physics joints: \"fixed\" welds them rigidly, \"revolute\" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b's origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door's edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.",
+			"description": "Attach object pairs with physics joints: \"fixed\" welds them rigidly, \"revolute\" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b's origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door's edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -828,7 +828,7 @@
 		{
 			"name": "control_simulation",
 			"title": "Run or stop the simulation",
-			"description": "Start, stop, pause, resume or reset the physics simulation. After building a physics assembly, start the simulation so the user sees it move.",
+			"description": "Start, stop, pause, resume or reset the physics simulation. After building a physics assembly, start the simulation so the user sees it move.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -857,7 +857,7 @@
 		{
 			"name": "install_modules",
 			"title": "Install modules",
-			"description": "Install the modules the other peers in this session run and this page lacks (status().missingModules), from the module gallery. Local to this page; omit ids to install every missing one.",
+			"description": "Install the modules the other peers in this session run and this page lacks (status().missingModules), from the module gallery. Local to this page; omit ids to install every missing one.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -894,7 +894,7 @@
 		{
 			"name": "accept_offer",
 			"title": "Answer a question the app asks",
-			"description": "Press a button on a pending offer (see pending_offers). action = the button label; omit for the first button.",
+			"description": "Press a button on a pending offer (see pending_offers). action = the button label; omit for the first button.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -919,7 +919,7 @@
 		{
 			"name": "what_can_you_do",
 			"title": "What can you do here",
-			"description": "Answer \"what can you do here?\": a short spoken summary of what you can build in this tab, what you cannot do, and example requests. Changes nothing.",
+			"description": "Answer \"what can you do here?\": a short spoken summary of what you can build in this tab, what you cannot do, and example requests. Changes nothing.\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {}
@@ -933,7 +933,7 @@
 		{
 			"name": "connect",
 			"title": "Join a session",
-			"description": "Join a theprototype.app session. Pass the link the host shared (https://theprototype.app/#F0FD3, possibly with &invite=…) or the bare session id. An invite link joins at once; a plain link asks the host to Approve. The scene tools appear once the agent page is up; call status to see whether you are in.",
+			"description": "Join a theprototype.app session. Pass the link the host shared (https://theprototype.app/#F0FD3, possibly with &invite=…) or the bare session id. An invite link joins at once; a plain link asks the host to Approve. The scene tools appear once the agent page is up; call status to see whether you are in.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -957,7 +957,7 @@
 		{
 			"name": "status",
 			"title": "Session status",
-			"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing.",
+			"description": "Where the agent is: connection state, whether the host has let it in, its role (viewer edits stay local), the app version, and why any tool is missing.\nYou are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).",
 			"inputSchema": {
 				"type": "object",
 				"properties": {}
@@ -1018,6 +1018,29 @@
 				"title": "Wait for someone to edit",
 				"readOnlyHint": true,
 				"openWorldHint": false
+			}
+		},
+		{
+			"name": "join_session",
+			"title": "Join a session (asks the person)",
+			"description": "Join a theprototype.app session from a link the person gave you (https://theprototype.app/#F0FD3, possibly with &invite=…, or the bare session id). Nothing happens until the person presses Join on a card in their tab that names the host and the session; Cancel refuses. The app may then ask them what to do with the scene they have open. Answers joining, refused or cancelled; call status afterwards to see where the tab is.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"link": {
+						"type": "string",
+						"description": "the session link, invite link or session id the person gave you"
+					}
+				},
+				"required": [
+					"link"
+				]
+			},
+			"annotations": {
+				"title": "Join a session (asks the person)",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": true
 			}
 		}
 	]

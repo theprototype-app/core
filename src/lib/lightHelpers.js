@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { writable, get } from 'svelte/store';
 import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js';
+import { ensureRectAreaUniforms } from './lightSnapshot';
 import { globalScene, objectsGroup } from '../stores/sceneStore';
 // 24-E2: helpers + proxies live on the helper layer (the editor camera enables it)
 import { markHelper } from './helperLayer';
@@ -72,6 +73,18 @@ function applyVisibility() {
 	});
 }
 
+/** @param {string} uuid @param {any} entry @param {any} scene */
+function dropEntry(uuid, entry, scene) {
+	if (entry.helper) {
+		scene.remove(entry.helper);
+		entry.helper.dispose?.();
+	}
+	proxyRoot?.remove(entry.proxy);
+	entry.proxy.geometry.dispose();
+	entry.proxy.material.dispose();
+	entries.delete(uuid);
+}
+
 function sync() {
 	const scene = get(globalScene);
 	const group = get(objectsGroup);
@@ -90,7 +103,14 @@ function sync() {
 
 	lights.forEach((light) => {
 		migrateSpotTarget(light); // 24-E1: an old spot aims by rotation from here on
-		if (entries.has(light.uuid)) return;
+		// a RectArea light that arrived by ANY path (a session, a peer, a restore) renders
+		// black on Standard/Physical materials until this has run once
+		if (light.isRectAreaLight) ensureRectAreaUniforms();
+		const known = entries.get(light.uuid);
+		if (known?.light === light) return;
+		// the same uuid on a NEW object (a restore or a reload re-creates lights under their
+		// own uuids): an entry still holding the old one would aim the old light's target
+		if (known) dropEntry(light.uuid, known, scene);
 		const helper = helperFor(light);
 		if (helper) scene.add(markHelper(helper));
 		const proxy = new THREE.Mesh(
@@ -106,14 +126,7 @@ function sync() {
 
 	[...entries.entries()].forEach(([uuid, entry]) => {
 		if (lights.some((light) => light.uuid === uuid)) return;
-		if (entry.helper) {
-			scene.remove(entry.helper);
-			entry.helper.dispose?.();
-		}
-		proxyRoot.remove(entry.proxy);
-		entry.proxy.geometry.dispose();
-		entry.proxy.material.dispose();
-		entries.delete(uuid);
+		dropEntry(uuid, entry, scene);
 	});
 	applyVisibility();
 }

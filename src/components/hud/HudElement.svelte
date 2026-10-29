@@ -18,6 +18,7 @@
 	import { parseHudRichText } from '$lib/hudRichText';
 	import { moduleHudKindDef, moduleHudKinds } from '$lib/moduleHudKinds';
 	import { subPressIds } from '$lib/hudKinds';
+	import { hudSandboxReady, renderCustomInGuest, paintCustom } from '$lib/sandbox/hud.js';
 	import { drawHudMinimap, MINIMAP_REFRESH_MS } from '$lib/hudMinimap';
 	// 21-F4: the DEBUG element's sources. All leaves or already-loaded singletons; a
 	// component import closes no history-family cycle (nothing imports components back).
@@ -241,39 +242,41 @@
 	// The script-node trust model: replicated code, run by every peer, compiled once per
 	// distinct source. A THROW renders an inert chip — it must never propagate, or one bad
 	// character in one element takes the whole HUD layer down with it.
+	// 69 T1: the render function runs in the sandbox GUEST against a DOM proxy and its tree is
+	// rebuilt here through the allowlist (sandbox/hud.js + sanitize.js) — it never touches this
+	// document. Until the guest engine has loaded, the element waits (`sandboxReady`).
 	/** @type {any} */
 	let codeError = $state('');
-	const compiled = $derived.by(() => {
-		if (kind !== 'custom') return null;
-		const source = String(element?.code ?? '');
-		try {
-			// eslint-disable-next-line no-new-func
-			return new Function('el', 'runtime', 'container', source);
-		} catch (error) {
-			return /** @type {any} */ ({ __error: String(/** @type {any} */ (error)?.message ?? error) });
-		}
-	});
+	let sandboxReady = $state(false);
 	/** the div a custom or module element draws into @type {HTMLElement|null} */
 	let slotEl = $state(/** @type {HTMLElement|null} */ (null));
 
-	// HOT-APPLIES: the effect depends on the compiled fn, the element and the runtime, so
+	// HOT-APPLIES: the effect depends on the code, the element and the runtime, so
 	// editing the code re-runs it with no remount — which is what makes the code editor
 	// usable at all.
 	$effect(() => {
 		const host = slotEl;
-		const fn = compiled;
-		if (!host || !fn) return;
-		host.replaceChildren();
-		if (typeof fn !== 'function') {
-			codeError = fn.__error ?? 'could not compile';
+		if (!host || kind !== 'custom') return;
+		const source = String(element?.code ?? '');
+		// read the inputs inside the effect so a change re-renders (JSON copies cross the boundary)
+		const el = $state.snapshot(element);
+		const rt = $state.snapshot(runtime);
+		if (!sandboxReady) {
+			hudSandboxReady().then(
+				() => (sandboxReady = true),
+				(error) => (codeError = 'sandbox unavailable: ' + String(error?.message ?? error))
+			);
 			return;
 		}
-		try {
-			fn(element, runtime, host);
-			codeError = '';
-		} catch (error) {
-			codeError = String(/** @type {any} */ (error)?.message ?? error);
+		const result = renderCustomInGuest(source, el, rt);
+		if (!result) return;
+		if ('error' in result) {
+			host.replaceChildren();
+			codeError = result.error;
+			return;
 		}
+		paintCustom(host, result);
+		codeError = '';
 	});
 
 	// ---- 21-E7.4: a MODULE-supplied kind ---------------------------------------------
@@ -972,6 +975,10 @@
 		min-width: 0;
 		flex: 1;
 		overflow: hidden;
+	}
+	/* 69 T1: guest-drawn content is clipped to its box, `position: fixed` included */
+	.hud-custom > .hud-custom-slot {
+		contain: paint;
 	}
 	.hud-code-error {
 		position: absolute;

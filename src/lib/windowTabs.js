@@ -3,6 +3,7 @@ import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
 import { onLayoutRestore } from './uiLayoutsCore';
 import { placeFree, watchPlaceFree } from './placeFree'; // 45 N7 (a leaf)
+import { isForeign } from './windows/winEnv.js';
 
 // Window tab groups (phase 83, floating windows only — docked splits stay in
 // pending/81). Grouped windows share ONE rect; the active member is visible,
@@ -489,6 +490,8 @@ onLayoutRestore(() => {
  * @param {{key: string, title: string, openStore?: any, isOpen?: (v: any) => boolean, close?: () => void, minW?: number, minH?: number}} options
  */
 export function tabbable(node, { key, title, openStore, isOpen = (v) => !!v, close, minW, minH }) {
+	// 70 W2: a panel in a pop-out window ($lib/windows/panelHost) is laid out by its window, not here
+	if (isForeign(node)) return { destroy() {} };
 	registry.set(key, { node, title, close, minW, minH, open: () => (openStore ? isOpen(get(openStore)) : true) });
 
 	// closing through the window's own path removes the tab

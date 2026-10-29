@@ -1,10 +1,12 @@
 import * as THREE from 'three';
+// `{v}` labels for the HUD — 'Gems: {v}' needs no string node and no string socket type
+import { hudFormat } from './hudFormat.js';
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { get } from 'svelte/store';
 import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
-import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused, runtimeGraph } from '../stores/flowStore';
+import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused, runtimeGraph, orphanGraphIds } from '../stores/flowStore';
 // 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
-import { objectsGroup, isLocked } from '../stores/sceneStore';
+import { objectsGroup, isLocked, sceneRevision } from '../stores/sceneStore';
 import { peers, showToast, showInfoToast, dismissToastById} from '../stores/appStore';
 import { animationTypes, findNodeSpec } from './nodeCatalog';
 // 21-E7.6: hudKinds is a leaf (it reads only moduleHudKinds, itself svelte/store-only)
@@ -17,6 +19,7 @@ import { scriptInputs, scriptOutputs, isScriptValue, coerceInput } from './scrip
 import { findNodeDef } from './customNodes';
 import { updateSounds } from './soundRuntime';
 import { colliderSpecOf } from './colliderSpec'; // B6: pure THREE leaf
+import { impactStrengthFor } from './impactSpeed'; // fix-batch-1 #14: a leaf
 import { updateParticles } from './particleRuntime';
 // 36-sim: jiggle's park (a leaf over three + flowStore; closes no cycle)
 import { parkJiggle } from './sim/jiggleRuntime.js';
@@ -42,6 +45,7 @@ import {
 	gameState,
 	setGameState,
 	setGameVar,
+	applyGameVarOp,
 	gameVar,
 	gameElapsed,
 	commitGameState,
@@ -90,6 +94,7 @@ let behavioursRef = null;
 import { registerGameSetting, gameSettingValue } from './gameSettings';
 import { setPointGrabEnabled } from './pointGrab';
 import { spawnedFromOf } from './transientObjects'; // 31: a copy answers to its template (a leaf)
+import { pathCaptureNode } from './pathCaptureState'; // fix-batch-2: a leaf
 import { applyRotor, applyFlowFloat } from './sim/motionNodes.js'; // 36-fb F25/F24 (a three leaf)
 // 40 F15: general-purpose motion (a three leaf + its pure core)
 import {
@@ -129,6 +134,11 @@ const restFired = new Map();
 /** B6: rising-edge map for the physics ACTION nodes (a pulse is high ~0.3 s, so
  * an action must run once per pulse, not once per frame) @type {Map<string, boolean>} */
 const physicsActionEdge = new Map();
+/** test-health-1: the trigger STAMP each physics action last saw. A pulse is high for 0.3 s, so a
+ * frame longer than that (below ~3.3 fps: two pages on software GL, a slow phone) can step over the
+ * whole pulse and the rising VALUE never shows — the trigger stamp still changed, and that is the
+ * event. @type {Map<string, number|null>} */
+const physicsActionStamp = new Map();
 
 // --- 21-E6 follow-up: THE STALE-STAMP GUARD, shared by every trigger-edge family ----
 //
@@ -478,6 +488,31 @@ const NO_EDGES = [];
 /** @type {any[]} */ let nodes = [];
 /** @type {any[]} */ let edges = [];
 /** @type {any} */ let sceneObjects = null;
+/** 55 (1.48.1, Q1): OBJECT graphs whose owner is not in the scene — DORMANT. A deleted object's flow stays in
+ * flowGraphs on purpose (undoing the delete finds it intact; the savers prune it), but its nodes kept evaluating on
+ * every peer. flowStore.orphanGraphIds (the savers' own rule); recomputed when the graphs change and
+ * when the scene does (an undo brings the object back and its flow runs again). @type {Set<string>} */
+let dormant = new Set();
+
+/** what the runtime evaluates: every graph but the dormant ones, minus muted/editor-only nodes */
+function rebuildRuntimeGraph() {
+	dormant = orphanGraphIds();
+	if (!dormant.size) {
+		({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
+		return;
+	}
+	const live = allNodes().filter((n) => !dormant.has(n.__graph));
+	const ids = new Set(live.map((n) => n.id));
+	({ nodes, edges } = runtimeGraph(live, allEdges().filter((e) => ids.has(e.source) && ids.has(e.target))));
+}
+
+/** the debug hook / e2e: what the runtime evaluates right now, and which object graphs sleep */
+export function runtimeGraphDebug() {
+	return { nodeIds: nodes.map((n) => n.id), dormant: [...dormant] };
+}
+
+/** @param {Set<string>} a @param {Set<string>} b */
+const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
 /** @type {string[]} */ let muted = [];
 let synced = true;
 let lastValuesAt = 0;
@@ -486,6 +521,9 @@ let lastValuesAt = 0;
 const baseState = new Map();
 // animated objects whose animation is paused while the user drags them
 const suspended = new Set();
+/** fix-batch-2: the Path patrol node placing waypoints (paused while it does) @type {string | null} */
+let capturingPathNode = null;
+pathCaptureNode.subscribe((id) => (capturingPathNode = id));
 
 /**
  * 24-A A4: the effects a SUSPENDED object still gets.
@@ -665,8 +703,14 @@ function updatePhysicsActions(pairs, ctx, time) {
 		if (!target) continue;
 		const was = physicsActionEdge.get(node.id) ?? false;
 		physicsActionEdge.set(node.id, high);
+		const stamp = triggerStampFor(node.id, ctx);
+		const lastStamp = physicsActionStamp.get(node.id);
+		physicsActionStamp.set(node.id, stamp);
+		// a NEW stamp is a rising edge even when the pulse it made fell between two ticks; first sight
+		// (no last stamp) is not — that is a pulse from before this node, and staleTrigger has it
+		const freshStamp = typeof stamp === 'number' && lastStamp !== undefined && stamp !== lastStamp;
 		const continuous = node.type === 'setvelocity' && (data.mode ?? 'once') === 'continuous';
-		if (!continuous && (!high || was)) continue;
+		if (!continuous && !((high && !was) || freshStamp)) continue;
 		if (continuous && !high) continue;
 		// ...and the pulse that made us high may PREDATE this node. This family reads a
 		// rising VALUE rather than a stamp, so its exposure was only the ~0.3s a pulse
@@ -675,7 +719,7 @@ function updatePhysicsActions(pairs, ctx, time) {
 		// behind the pulse is what answers it. A pulse with NO stamp (a Toggle wired into
 		// `trigger`) is never refused, and a continuous Set Velocity keeps running,
 		// because after its first tick every live stamp is newer than the cutoff.
-		if (staleTrigger(node, triggerStampFor(node.id, ctx))) continue;
+		if (staleTrigger(node, stamp)) continue;
 		// a physics action in a scene that is not simulating is a no-op, and used to
 		// be a SILENT one — the graph is right, the key fires, nothing moves
 		// initiator-gated by design, so a NON-initiator doing nothing here is correct
@@ -712,6 +756,7 @@ function updatePhysicsActions(pairs, ctx, time) {
 		}
 	}
 	for (const id of [...physicsActionEdge.keys()]) if (!seen.has(id)) physicsActionEdge.delete(id);
+	for (const id of [...physicsActionStamp.keys()]) if (!seen.has(id)) physicsActionStamp.delete(id);
 }
 
 let lastNoSimWarn = 0;
@@ -993,14 +1038,6 @@ let lastHudJson = '';
  * trigger's EDGE, not on every frame while the pulse is alive @type {Map<string, number>} */
 const hudScreenActed = new Map();
 
-/** Format a number into an element's label. `{v}` is the wired value, so 'Gems: {v}'
- * needs no string node and no string socket type.
- * @param {string} format @param {number} value @param {number} decimals */
-function hudFormat(format, value, decimals) {
-	const text = Number(value).toFixed(Math.max(0, Math.min(6, Math.round(decimals || 0))));
-	const pattern = String(format ?? '{v}');
-	return pattern.includes('{v}') ? pattern.split('{v}').join(text) : pattern || text;
-}
 
 /** Rows pushed into a list element, keyed by element id.
  * @type {Map<string, any[]>} */
@@ -1163,13 +1200,14 @@ function updateHudRuntime(time, ctx, now) {
 		const element = String(data.element ?? '').trim();
 		if (!element) continue;
 		if (node.type === 'hudtext') {
-			next[element] = { text: hudFormat(data.format, num(data.value), num(data.decimals)) };
+			// the RAW value: a string is text, not 0 (hudFormat.js, fix-agenttest 9)
+			next[element] = { text: hudFormat(data.format, data.value, num(data.decimals)) };
 		} else if (node.type === 'hudbar') {
 			next[element] = {
 				value: num(data.value),
 				min: num(data.min),
 				max: num(data.max),
-				text: data.format ? hudFormat(data.format, num(data.value), 0) : ''
+				text: data.format ? hudFormat(data.format, data.value, 0) : ''
 			};
 		} else if (node.type === 'hudtimer') {
 			next[element] = {
@@ -1210,15 +1248,29 @@ function updateHudRuntime(time, ctx, now) {
 	hudRuntime.set(next);
 }
 
+/** fix-batch-1: node id -> the clock time an autostart HUD Timer was first seen @type {Map<string, number>} */
+const hudTimerSeen = new Map();
+
 /** Seconds left on a HUD Timer. DERIVED from the shared trigger stamp, so every peer
  * reads the same number with no clock and no message of its own — the same reasoning
- * as a looping sound's phase. An `autostart` timer with nothing wired counts from the
- * runtime's own clock origin.
+ * as a looping sound's phase. An `autostart` timer with nothing wired counts from when THIS
+ * peer first saw the node (fix-batch-1, docs-1: it counted from the clock's origin, and the
+ * synced clock is seconds since midnight, so an autostart timer always read 0). That one is
+ * per peer — a timer everyone must agree on is wired to a shared pulse (`start`).
  * @param {any} node @param {any} data @param {number} time @param {any} ctx */
 function hudTimerRemaining(node, data, time, ctx) {
 	const duration = Math.max(0, num(data.duration));
-	const stamp = triggerStampFor(node.id, ctx);
-	if (stamp === null) return data.autostart === false ? duration : Math.max(0, duration - time);
+	// fix-batch-1 (docs-1 Q1): the card's socket is `start` (flowSockets types it), and only an
+	// unnamed / `trigger` wire counted — a Start wired by hand was ignored
+	const stamp = triggerStampFor(node.id, ctx, 'start');
+	if (stamp === null) {
+		if (data.autostart === false) return duration;
+		const seen = hudTimerSeen.get(node.id);
+		// a clock that went BACK by more than a second (midnight, a session clock adopted on join)
+		// re-bases; frame jitter does not (it would hold the timer at its full duration)
+		if (seen === undefined || time < seen - 1) hudTimerSeen.set(node.id, time);
+		return Math.max(0, duration - (time - /** @type {number} */ (hudTimerSeen.get(node.id))));
+	}
 	// a synced stamp can sit AHEAD of `time` by a frame; clamp both ends
 	return Math.max(0, Math.min(duration, duration - (time - stamp)));
 }
@@ -1512,6 +1564,31 @@ function sandboxedWrite(stamp) {
 	return !!sharedOverlay && inDebugTick && !sharedOverlay.localStamps.has(stamp);
 }
 
+/**
+ * fix-agenttest 10: a SHARED Set Variable's write goes to ONE peer, the kit's authority (the same
+ * peer kit actions and behaviours already settle on). The authority applies it; anyone else sends
+ * it there — including the player of a perPlayer pulse, whose stamp nobody else sees — and the
+ * authority's rid window makes the N copies of one event a single write. No authority reachable
+ * (alone, or its conn not open yet): apply here.
+ * @param {{rid: string, name: string, op: string, value: number}} req
+ */
+function shareGameVarOp(req) {
+	/** @type {any} */
+	const peer = get(peers);
+	const me = peer?.peer?.id ?? null;
+	const authority = kitAuthorityId();
+	const conn = me && authority && authority !== me ? peer?.connections?.[authority] : null;
+	if (conn?.open) {
+		try {
+			conn.send({ type: 'gamevarop', ...req });
+			return;
+		} catch {
+			/* the conn just closed: apply here */
+		}
+	}
+	applyGameVarOp(req);
+}
+
 /** @param {number} time @param {any} ctx */
 function updateGameNodes(time, ctx) {
 	const game = viewGame(); // 48 D1: the paused view's own state while it holds a sandbox
@@ -1648,7 +1725,8 @@ function updateGameNodes(time, ctx) {
 				const value = op === 'add' ? current + v : op === 'subtract' ? current - v : v;
 				// 48 D1: the paused view's copy first (the watch list reads it), the shared one unless sandboxed
 				if (sharedOverlay) sharedOverlay.game = { ...sharedOverlay.game, vars: { ...sharedOverlay.game.vars, [name]: value } };
-				if (!sandboxedWrite(stamp)) setGameVar(name, value);
+				// fix-agenttest 10: the AUTHORITY writes, once per event (gameState.applyGameVarOp)
+				if (!sandboxedWrite(stamp)) shareGameVarOp({ rid: 'var:' + node.id + ':' + stamp, name, op, value: v });
 			}
 		}
 	}
@@ -2080,12 +2158,13 @@ function updateDerivedPulses(ctx, fired = scheduledFired) {
 }
 
 /** The shared timestamp of whatever event is wired into this node's `trigger`
- * (the newest, with several sources fanned in). @param {string} nodeId @param {any} ctx */
-function triggerStampFor(nodeId, ctx) {
+ * (the newest, with several sources fanned in). `alias` = a second handle name that counts as
+ * the trigger (HUD Timer's `start`). @param {string} nodeId @param {any} ctx @param {string} [alias] */
+function triggerStampFor(nodeId, ctx, alias = '') {
 	if (!ctx?.triggers) return null;
 	let newest = null;
 	for (const edge of edgesInto(edges, nodeId)) {
-		if (edge.targetHandle && edge.targetHandle !== 'trigger') continue;
+		if (edge.targetHandle && edge.targetHandle !== 'trigger' && edge.targetHandle !== alias) continue;
 		// 21-E4: a Delay/Sequence source has NO entry in the trigger log - its stamp is
 		// derived - so reading the log directly here left those nodes unable to drive
 		// anything that acts on a trigger edge (hudscreen, setgamestate, playanim).
@@ -3568,15 +3647,21 @@ export function objectHasOnClick(uuid) {
  * stamp replicates (nodetrigger), so every peer computes the identical pulse.
  * 36 X6: `otherUuid` = the body it hit ('' = the ground) — gated by the node's
  * `filter` input and carried to every peer for its `other` output.
- * @param {string} uuid @param {number} strength downward speed at contact (m/s)
- * @param {string=} otherUuid
+ * fix-batch-1 #14: physics registers TWO channels per contact and each node reads the one
+ * its `direction` names — 'any' the closing speed along the contact normal (a wall, a
+ * target), 'down' the landing speed (the only rule up to 1.43, and what a node saved
+ * before the option keeps). null = that channel did not count this contact.
+ * @param {string} uuid @param {number | null} down downward speed at contact (m/s)
+ * @param {string=} otherUuid @param {number | null=} speed closing speed along the normal
+ *   (m/s; omitted = `down`, a caller that only knows one number)
  */
-export function fireObjectImpact(uuid, strength, otherUuid = '') {
+export function fireObjectImpact(uuid, down, otherUuid = '', speed = down) {
 	const ctx = runtimeCtx();
 	nodes.forEach((node) => {
 		if (node.type !== 'onimpact') return;
 		const data = resolveInputs(node, nodes, edges, syncedNow(), ctx);
-		if (strength < num(data.minStrength ?? 0)) return;
+		const strength = impactStrengthFor(data.direction, down, speed ?? null);
+		if (strength === null || strength < num(data.minStrength ?? 0)) return;
 		if (!contactPasses(data, otherUuid)) return;
 		if (reachesObjectSelector(node.id, uuid) || implicitOwnerOf(node) === uuid) fireContact(node, otherUuid);
 	});
@@ -3839,7 +3924,9 @@ function applyAnimation(object, base, anim, time, ctx) {
 		const speed = data.speed ?? 2;
 		object.visible = Math.sin(time * speed * Math.PI) > 0;
 	} else if (anim.type === 'pathpatrol') {
-		applyPathPatrol(object, data, time);
+		// fix-batch-2: the node whose waypoints are being placed holds still at its base
+		// pose, so the object stays where you can click it
+		if (anim.id !== capturingPathNode) applyPathPatrol(object, data, time);
 	} else if (anim.type === 'lookat') {
 		// face a target object (uuid) or point ([x,y,z]) — 134
 		let target = null;
@@ -3917,6 +4004,9 @@ function applyAnimation(object, base, anim, time, ctx) {
 const cameraRigState = new Map();
 /** nodes already told they are wired to something that is not a camera @type {Set<string>} */
 const cameraRigWarned = new Set();
+/** 55 (1.48.1): when the last such notice showed — two rigs (or a deleted object's leftover one) warning in the same
+ * moment are ONE notice, not a stack of identical toasts */
+let cameraRigWarnedAt = 0;
 const _rigQ = new THREE.Quaternion();
 
 /**
@@ -3930,7 +4020,12 @@ function applyCameraRig(object, anim, data) {
 	if (!object?.userData?.camera) {
 		if (!cameraRigWarned.has(anim.id)) {
 			cameraRigWarned.add(anim.id);
-			showToast('Camera Rig moves camera objects only — wire it into an Object Selector that picks a camera.');
+			const now = Date.now();
+			if (now - cameraRigWarnedAt > 5000) {
+				const what = object?.name ? ' ("' + String(object.name).slice(0, 40) + '" is not one)' : '';
+				showToast('Camera Rig moves camera objects only' + what + ' — wire it into an Object Selector that picks a camera.');
+			}
+			cameraRigWarnedAt = now;
 		}
 		return;
 	}
@@ -4987,12 +5082,19 @@ export function startFlowRuntime() {
 		})
 		.catch((error) => console.warn('behaviours failed to start', error));
 	flowGraphs.subscribe(() => {
-		// 36 U11: muted nodes and the editor-only kinds (group, note) are not evaluated
-		({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
+		// 36 U11: muted nodes and the editor-only kinds (group, note) are not evaluated; 55 Q1: nor dormant graphs
+		rebuildRuntimeGraph();
 		applyColors();
 	});
 	objectsGroup.subscribe((value) => {
 		sceneObjects = value;
+		rebuildRuntimeGraph();
+	});
+	// 55 Q1: an object added or removed (a delete, its undo, a joiner's objects landing after its graphs)
+	sceneRevision.subscribe(() => {
+		if (!sceneObjects || sameSet(orphanGraphIds(), dormant)) return;
+		rebuildRuntimeGraph();
+		applyColors();
 	});
 	mutedFlowObjects.subscribe((value) => {
 		muted = value;

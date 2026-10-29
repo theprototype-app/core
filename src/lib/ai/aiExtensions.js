@@ -30,6 +30,7 @@
  * @typedef {{
  *   format?: string,
  *   reference?: () => string,
+ *   toolDescription?: () => string,
  *   list?: () => any[],
  *   read?: (name: string) => string | null | Promise<string | null>,
  *   create: (name: string, source: string, opts?: { target?: string }) => any,

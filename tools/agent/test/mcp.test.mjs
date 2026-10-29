@@ -8,7 +8,7 @@ import { ToolListChangedNotificationSchema } from '@modelcontextprotocol/sdk/typ
 import { createBridgeServer, nameFromClient } from '../src/mcpServer.js';
 import { toMcpTool, mapHostTools } from '../src/mcpTools.js';
 import { parseLink } from '../src/link.js';
-import { joinedOf } from '../src/browserEngine.js';
+import { joinedOf, contractNote, CONTRACT_MAJOR } from '../src/browserEngine.js';
 
 let pass = 0;
 let fail = 0;
@@ -129,6 +129,10 @@ check('nameFromClient: another client keeps its name', nameFromClient({ name: 'c
 check('nameFromClient: nothing → AI agent', nameFromClient(null) === 'AI agent');
 check('joinedOf: host among the peers', joinedOf({ peers: ['f0fd3'] }, 'f0fd3') && joinedOf({ peers: [{ id: 'F0FD3' }] }, 'f0fd3'));
 check('joinedOf: an explicit joined flag wins', joinedOf({ joined: false, peers: ['f0fd3'] }, 'f0fd3') === false);
+check('contractNote: same major is silent', contractNote(CONTRACT_MAJOR + '.0.0') === '' && contractNote(CONTRACT_MAJOR + '.7.2') === '');
+check('contractNote: no version (compat page) is silent', contractNote('') === '' && contractNote(null) === '');
+check('contractNote: a newer major says update', /npx -y @theprototype\/agent@latest/.test(contractNote(CONTRACT_MAJOR + 1 + '.0.0')));
+check('contractNote: an older major says so', /older/.test(contractNote('0.9.0')));
 check('joinedOf: nobody', !joinedOf({ peers: [] }, 'f0fd3') && !joinedOf(null, 'f0fd3'));
 
 // --- the server over a real client ---
@@ -262,6 +266,29 @@ check('another session → the old engine is closed', engines.length === 2 && en
 await bridge.shutdown();
 check('shutdown closes the engine (graceful leave)', engines[1].closed === true);
 check('shutdown removes the image temp files', !fs.existsSync(imgPath));
+
+// --- 55 owner finding 4: status never pairs joined:true with an older session snapshot ---
+// the role settles between two reads (the roles map lands): `joined` must not be newer than `session`
+class SettlingEngine extends FakeEngine {
+	constructor(link) {
+		super(link);
+		this.role = 'viewer';
+	}
+	async joined() {
+		this.role = 'editor'; // the map arrived just now
+		this.isJoined = true;
+		return true;
+	}
+}
+const settle = createBridgeServer({ kind: 'browser', createEngine: (link) => new SettlingEngine(link), pollMs: 30 });
+const [ct3, st3] = InMemoryTransport.createLinkedPair();
+const c3 = new Client({ name: 'claude-code', version: '1' });
+await settle.server.connect(st3);
+await c3.connect(ct3);
+await c3.callTool({ name: 'connect', arguments: { link: 'https://theprototype.app/#F0FD3' } });
+const s3 = JSON.parse((await c3.callTool({ name: 'status', arguments: {} })).content[0].text);
+check('status: joined:true comes with the settled role, never the one from a moment before', s3.joined === true && s3.session?.role === 'editor');
+await settle.shutdown();
 
 // --- the wire kind lists its catalog before connecting ---
 const wire = createBridgeServer({ kind: 'wire', staticTools: [{ name: 'list_scene', parameters: { type: 'object', properties: {} } }, { name: 'get_status' }], createEngine: () => new FakeEngine('x1') });

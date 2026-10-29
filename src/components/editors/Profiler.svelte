@@ -68,6 +68,8 @@
 
 	// ---------------------------------------------------------------- dock / float (FlowCode's shell)
 
+	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
+	let { popped = false } = $props();
 	let docked = $state(true);
 	let winW = $state(980);
 	let winH = $state(460);
@@ -78,8 +80,11 @@
 	}
 	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
 	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	// 70 W2: a popped-out instance renders its floating layout inside its window, never docked
+	// svelte-ignore state_referenced_locally
+	if (popped) docked = false;
 	$effect(() =>
-		onLayoutRestore(() => {
+		popped ? undefined : onLayoutRestore(() => {
 			const stored = storedPanelLayout(safeStorage.getItem, 'profiler', 980, 460);
 			docked = !!(stored.docked);
 			winW = stored.w;
@@ -94,6 +99,7 @@
 		else forgetDockTab('profiler');
 	}
 	$effect(() => {
+		if (popped) return; // 70 W2: the main window's instance answers the arm
 		const arm = $dockModeArm;
 		if (!arm || arm.key !== 'profiler') return;
 		dockModeArm.set(null);
@@ -106,6 +112,7 @@
 	const effW = $derived(myGroup ? myGroup.rect.width : winW);
 	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 	$effect(() => {
+		if (popped) return; // 70 W2: a popped panel is no dock tab
 		setDockOccupant('profiler', !$profilerClose && docked, $dockHeight);
 		return () => setDockOccupant('profiler', false);
 	});

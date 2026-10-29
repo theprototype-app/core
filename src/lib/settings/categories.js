@@ -27,12 +27,14 @@ const META = {
 	shortcuts: { group: 'general', order: 5, description: 'Click a shortcut’s keys, then press the new combination.' },
 	scene: { group: 'workspace', order: 6, description: 'How the 3D view draws, saves and behaves on this device.' },
 	explorer: { group: 'workspace', order: 7, description: 'Files, sharing and the recycle bin.' },
+	storage: { group: 'workspace', order: 7.5, description: 'Downloads kept on this device for faster, offline loads: size, limit and Clear.' }, // 60 Q6
 	nodetypes: { group: 'workspace', order: 8, description: 'Hide the node types you never use from the palette, add menus and search on this device.' },
 	import: { group: 'workspace', order: 8.5, description: 'What happens to big models and textures as they come in.' },
 	export: { group: 'workspace', order: 9, description: 'What the next exported game starts with.' },
 	vr: { group: 'devices', order: 10, description: 'Comfort, body, buttons and display in the headset — the same table as the headset’s own Settings.' },
 	ai: { group: 'devices', order: 11, description: 'The scene assistant, voice typing and mesh generation.' },
 	connection: { group: 'devices', order: 12, description: 'How you find other people.' },
+	connectedapps: { group: 'devices', order: 11.5, description: 'The apps you allowed to build for you — Claude in claude.ai, chat or voice — and Revoke.' }, // 86 B5
 	privacy: { group: 'devices', order: 13, description: 'What this device sends about errors — anonymous, and you can switch it off.' },
 	aboutwhatsnew: { group: 'about', order: 99, description: '' }
 };

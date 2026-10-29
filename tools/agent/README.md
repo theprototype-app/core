@@ -136,7 +136,7 @@ signaling server and fetches TURN from the deployment's `/api/tp/turn` when it c
 |---|---|
 | `--engine browser\|wire` | browser (default): the real app in headless Chromium; wire: the light Node peer |
 | `--name <display>` | your name in the session (MCP default: from the client) |
-| `--compat` | browser engine against an app older than 1.45 (no `window.tpAgent`): drives the app's debug hooks instead |
+| `--compat` | browser engine against an app older than 1.48 (no `window.tpAgent`): drives the app's debug hooks instead |
 | `--headed` | show the browser window |
 | `--insecure` | accept any TLS certificate (automatic for `localhost` / a dev server port) |
 | `--no-install` | never download a browser; `TP_AGENT_BROWSER=/path/to/chrome` picks one |

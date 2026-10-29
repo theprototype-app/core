@@ -494,6 +494,23 @@
 [data-docked] > [data-window-grip] {
 	display: none !important;
 }
+/* 70 W2 — A PANEL IN A POP-OUT WINDOW ($lib/windows/panelHost, PoppedPanel.svelte marks its root
+   `data-docked="pop"`): the panel fills the window's body under the pop-out's own header, which is its
+   title, tab and ✕ now — so, as in a sidebar column, the panel's own header chrome above stands down.
+   The geometry its floating mode writes inline (dragWindow is inert in a popup) loses to these. */
+[data-docked='pop'] {
+	position: absolute !important;
+	inset: 0 !important;
+	width: auto !important;
+	height: auto !important;
+	max-width: none !important;
+	max-height: none !important;
+	transform: none !important;
+	border: 0 !important;
+	border-radius: 0 !important;
+	box-shadow: none !important;
+	z-index: auto !important;
+}
 /* the column's geometry wins over a window's own width/height bindings (a `style:width` re-applied
    on a viewport resize would otherwise pull a docked editor out of its column) — docking.js writes
    the same values inline; these keep them */

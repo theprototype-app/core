@@ -1,5 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
+import { registerSecretSource } from '../diagnostics';
+import { normalizeEndpointUrl } from './url.js'; // fix-batch-2 B1: a leaf
 
 // Text/image -> 3D mesh generation providers (roadmap #11, G1). Mirrors
 // ai/providers.js (the LLM providers) but for mesh backends: a self-hosted ComfyUI
@@ -59,7 +61,10 @@ function loadProviders() {
 	try {
 		const raw = safeStorage.getItem(PROVIDERS_KEY);
 		const parsed = raw ? JSON.parse(raw) : null;
-		return Array.isArray(parsed) ? parsed : [];
+		// fix-batch-2 B1: a URL saved before the shared rule (`host:8188`) works on load
+		return Array.isArray(parsed)
+			? parsed.map((p) => (p && typeof p.baseUrl === 'string' ? { ...p, baseUrl: meshBaseUrl(p.baseUrl, p.kind) } : p))
+			: [];
 	} catch {
 		return [];
 	}
@@ -74,6 +79,8 @@ function persist(list) {
 
 /** Saved mesh-provider configs. @type {import('svelte/store').Writable<MeshProviderConfig[]>} */
 export const meshProviders = writable(loadProviders());
+// 69 T2: the keys never reach a pasted diagnostics bundle
+registerSecretSource(() => get(meshProviders).map((p) => p.apiKey));
 
 /** @type {import('svelte/store').Writable<string|null>} */
 export const meshActiveProvider = writable(
@@ -108,6 +115,16 @@ function newId() {
 }
 
 /**
+ * fix-batch-2 B1: the shared URL rule. A ComfyUI box is plain http on its LAN port by default
+ * (the preset itself is http://localhost:8188), so a typed `host:8188` gets http there;
+ * every hosted API gets https.
+ * @param {string} raw @param {string} kind
+ */
+export function meshBaseUrl(raw, kind) {
+	return normalizeEndpointUrl(raw, { scheme: kind === 'comfyui' ? 'http' : 'https' });
+}
+
+/**
  * @param {Partial<MeshProviderConfig>} config
  * @returns {string} the new id
  */
@@ -118,7 +135,7 @@ export function addMeshProvider(config) {
 		id: newId(),
 		kind: /** @type {any} */ (preset.kind),
 		label: (config.label || preset.label).trim(),
-		baseUrl: (config.baseUrl ?? preset.baseUrl).trim().replace(/\/+$/, ''),
+		baseUrl: meshBaseUrl(config.baseUrl ?? preset.baseUrl, preset.kind),
 		apiKey: (config.apiKey ?? '').trim(),
 		...preset.defaults,
 		...(config.workflowJson !== undefined ? { workflowJson: config.workflowJson } : {}),
@@ -143,7 +160,7 @@ export function updateMeshProvider(id, patch) {
 	const list = get(meshProviders).map((p) => {
 		if (p.id !== id) return p;
 		const next = { ...p, ...patch };
-		if (typeof next.baseUrl === 'string') next.baseUrl = next.baseUrl.trim().replace(/\/+$/, '');
+		if (typeof next.baseUrl === 'string') next.baseUrl = meshBaseUrl(next.baseUrl, next.kind);
 		if (typeof next.label === 'string') next.label = next.label.trim();
 		if (typeof next.apiKey === 'string') next.apiKey = next.apiKey.trim();
 		if (typeof next.outputNodeId === 'string') next.outputNodeId = next.outputNodeId.trim();

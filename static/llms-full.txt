@@ -1,8 +1,9 @@
 # theprototype.app
 
-> Collaborative peer-to-peer 3D prototyping in the browser. No accounts and no
-> server beyond PeerJS signaling — a session is a direct WebRTC peer mesh, so
-> everything one person does is visible to everyone connected. Desktop and VR
+> Collaborative peer-to-peer 3D prototyping in the browser. No account needed —
+> a session is a direct WebRTC peer mesh (servers only introduce peers and relay
+> when a direct link fails), so everything one person does is visible to everyone
+> connected. The hosted site adds optional accounts, cloud saves and community pages. Desktop and VR
 > (WebXR), a node/flow editor that drives scene behavior, and a module SDK for
 > loadable, self-contained play content. Built with SvelteKit (static adapter),
 > Svelte 5, Threlte and three.js.
@@ -106,12 +107,12 @@ a normal session never loads it. Semver: new methods and fields are minor versio
 
 | member | what it does |
 |---|---|
-| `version` | the contract version, e.g. `"1.0.0"` |
+| `version` | the contract version, e.g. `"1.1.0"` |
 | `tools()` | the in-app assistant's own tools, OpenAI function shape with FULL JSON schemas, plus the agent-only tools below |
 | `systemPrompt()` | the assistant's guidance (coordinates, primitives, flow-node vocabulary, physics rules) — give it to your model |
 | `exec(name, args)` | run one tool. Replicated to every peer, ONE undo step per call, calls run one at a time, never throws (`{error}` instead) |
 | `snapshot(cap?)` | the scene as the assistant sees it: objects (uuid, name, transform, material, physics, flow graph), scene flow, behaviours, joints |
-| `status()` | `{version, appVersion, peerId, host, joined, waiting, role, canEdit, peers, missingTools, missingModules, pendingOffers, inVR, notices}` |
+| `status()` | `{version, appVersion, peerId, host, joined, waiting, role, canEdit, peers, missingTools, missingModules, pendingOffers, inVR, scene, hostScene, withHost, following, loading, objects, behaviourErrors, notices}` — `joined` turns true once the host let you in AND (on a build with roles) its roles reached you, so `role`/`canEdit` are final from then on. `withHost` (1.1) is false when the host went to another scene (a Save as, opening a scene): the agent follows on its own (`following`), and `exec` refuses edits until it is there — they would not reach the host. `loading` (1.2) is true while a scene is still arriving (right after a join, or a follow), with `objects: {arrived, total}` (from the moment you join until the host's snapshot has landed) — a tool called meanwhile waits for it (15 s at most). `hostAway` (1.2): the host LEFT and no person is here — the agent is paused (edits refused, `withHost` false), knocks on the host's door until `hostAway.until` (10 minutes) and never hosts or saves; when a person remains instead it simply continues with them (`host` changes, no new invite). `behaviourErrors` (1.2, only when any) lists what the scene's code behaviours threw (`{name, where, message}`, from whichever peer runs them): fix them with `edit_behaviour`. `create_behaviour`/`edit_behaviour` also return `errors` + a `warning` when the new code threw in its first moments |
 | `waitForEdit(ms?)` | resolves `{changed: true, at}` on the next scene change made by someone else, or `{changed: false, timedOut: true}` (default 30 s, max 10 min); your own `exec` never wakes it |
 | `screenshot({view, uuid, size, grid})` | a clean PNG data URL (no gizmo, selection, grid or helpers) from a TEMPORARY camera: `view` = `iso` (default) · `top` · `front` · `current` (the page's own camera) · `focus` (frames `uuid`); `size` = longest side, 64–2048 (default 768); `grid: true` draws the editor grid. Never moves anyone's view. `null` in VR |
 | `pendingOffers()` / `accept(id, action?)` | questions the app asked with buttons (an admin-role offer, "share or stash"), kept until answered — the toast that showed one may have expired |
@@ -124,8 +125,18 @@ modules other peers run that this page lacks — `status().missingModules`), `pe
 **The full tool set.** In an agent session the physics tools (`set_physics`, `create_joints`,
 `control_simulation` and the physics flow nodes) are always offered. `generate_mesh` is offered
 when the HOST has a mesh provider ready (the call runs on the host's provider — you never bring
-keys into the page — and the host sees who asked and can cancel). `status().missingTools` says why
-any tool is absent.
+keys into the page — and the host sees who asked and can cancel). `control_simulation` also runs on
+the HOST: an agent page never steps the physics itself (its result carries `onHost: true`).
+`status().missingTools` says why any tool is absent. `update_objects` reports a field that does not
+apply (a light field on a mesh, a bad material value) in that row's `errors` with `ok: false`.
+`create_flow_nodes` refuses a wire whose `toHandle` (or, on a node with several outputs, `fromHandle`) the node
+does not have; the error lists the node's real socket names and the call's other wires are still made.
+`create_behaviour`'s description carries the behaviour format and a working example; its checker refuses an
+unknown `this.` member, an unknown event and a hook-named method nothing calls (there is no per-frame hook).
+`list_scene` gives a primitive's shape as `geometry {type, sizes}` (a wall's thickness, a box's depth) and can be
+narrowed on a big scene: `brief` (uuids and names only), `name` (a glob such as `"Rock*"`, case-insensitive), `type`,
+`near {position, radius}` (world metres); a narrowed read says how many objects `matched`. Positions are LOCAL to the
+parent: an object created or moved with `parentUuid` takes its position inside that group, as `list_scene` reports it.
 
 ## Rules a builder must respect
 
@@ -138,11 +149,23 @@ any tool is absent.
   sequence, counter) need wires.
 - **Static scenery.** New primitives may spawn dynamic; pin ground, walls and props with
   `set_physics` `mode: "static"` before anyone presses Play, or the scene collapses.
-- **Never fight a person.** An object locked by another peer is skipped (`skipped: "locked by
-  another peer"`); do not retry in a loop. `waitForEdit` is how you notice people's changes.
+- **Never fight a person.** An object locked by another peer is skipped, and the skip names the
+  object and who holds it (`"Door" (<uuid>) is locked by Ana (peer …) — they are editing it`;
+  `delete_objects` and `group_objects` list them in `skippedWhy`); do not retry in a loop.
+  `waitForEdit` is how you notice people's changes.
 - **Everything is shared.** Every peer sees each call as it happens and can undo it. There is no
   private side channel, by design.
 - **Look before you say "done".** `screenshot()` after a build; compare with the request.
+
+## Versions
+
+Two version numbers, and only one of them is about compatibility:
+- **`tpAgent.version`** is the CONTRACT (`1.1.0` today). A new method or a new optional field is a
+  minor version; a removed or renamed method, or a changed shape, is a new MAJOR. Read it first
+  (`status().version` carries it too) and feature-detect methods rather than comparing minors.
+- **`@theprototype/agent`** (the bridge) is versioned with the app release it shipped in, and it
+  speaks one contract major. Against a page with a different major it still connects and says so
+  in its log and in the `status` tool (`contractNote`), with the fix: `npx -y @theprototype/agent@latest`.
 
 ## The light engine
 
@@ -166,7 +189,7 @@ into a session and every connected peer can see and interact with.
 
 ## The one rule that matters
 
-**A module runs on every peer.** There is no server. Whatever your module does
+**A module runs on every peer.** There is no game server. Whatever your module does
 must end up identical on all clients, one of three ways:
 
 1. **Deterministic from shared inputs** — effects driven by node `data` (already

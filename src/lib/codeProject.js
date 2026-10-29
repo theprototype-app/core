@@ -5,7 +5,9 @@
 //
 //   Graphs        per graph (Main first, then each object's): its Script nodes, Behaviour
 //                 nodes and built-ins with code (the Player), and the graph itself as JSON
-//   Script files  the Explorer's .js items, with how many nodes run each
+//   Files         70 W1: the Explorer's folders and text files (.js .md .json .txt .cfg), nested
+//                 as the Explorer nests them (codeFilesCore.filesTree), a script with how many
+//                 nodes run it — the Code tab creates, renames, moves and deletes them here
 //   Modules       the module and kit sources the graphs USE (kit nodes, Code links, module
 //                 nodes) — read-only, with "Make editable copy"; a module's full file list
 //                 is loaded when it is expanded (`lazy`)
@@ -15,13 +17,15 @@
 
 import { openCodeRequestFor, nodeHasCode } from './graphContract.js';
 import { isBuiltinCodeType, BUILTIN_CODE } from './builtinCode.js';
+import { filesTree } from './codeFilesCore.js';
 
 /**
  * @typedef {{
  *   key: string, label: string, detail?: string,
  *   icon: 'script' | 'behaviour' | 'builtin' | 'graph' | 'file' | 'module' | 'folder',
  *   request?: any, readOnly?: boolean, fork?: 'node' | 'module',
- *   children?: ProjectNode[], lazy?: string
+ *   children?: ProjectNode[], lazy?: string,
+ *   folderId?: string, itemId?: string, parentId?: string | null
  * }} ProjectNode
  */
 
@@ -88,7 +92,8 @@ export function modulesInUse(graphs, specOf) {
  * @param {{
  *   graphs: Record<string, {nodes: any[], edges?: any[]}>,
  *   graphTitle?: (graphId: string) => string,
- *   scripts?: {id: string, name: string, hash?: string}[],
+ *   scripts?: {id: string, name: string, hash?: string, folderId?: string | null}[],
+ *   folders?: {id: string, name: string, parentId: string | null}[],
  *   boundCount?: (hash: string) => number,
  *   specOf?: (type: string) => any
  * }} input
@@ -124,17 +129,16 @@ export function projectTree(input) {
 		graphGroups.push({ key: 'grp:' + graphId, label: title(graphId), icon: 'folder', children: leaves });
 	}
 
-	const scripts = [...(input.scripts ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+	// 70 W1: the Explorer's own folders + text files (`scripts` = the library's items; only the
+	// text ones are listed)
 	/** @type {ProjectNode[]} */
-	const files = scripts.map((item) => {
-		const n = item.hash && input.boundCount ? input.boundCount(item.hash) : 0;
-		return {
-			key: 'f:' + item.id,
-			label: item.name,
-			...(n ? { detail: n === 1 ? '1 node runs it' : n + ' nodes run it' } : {}),
-			icon: /** @type {'file'} */ ('file'),
-			request: { source: 'script', ref: { itemId: item.id } }
-		};
+	const files = filesTree({
+		folders: input.folders ?? [],
+		files: input.scripts ?? [],
+		detailOf: (item) => {
+			const n = item.hash && input.boundCount ? input.boundCount(item.hash) : 0;
+			return n ? (n === 1 ? '1 node runs it' : n + ' nodes run it') : undefined;
+		}
 	});
 
 	/** @type {ProjectNode[]} */
@@ -153,7 +157,7 @@ export function projectTree(input) {
 
 	/** @type {ProjectNode[]} */
 	const tree = [{ key: 'grp:graphs', label: 'Graphs', icon: 'folder', children: graphGroups }];
-	tree.push({ key: 'grp:files', label: 'Script files', icon: 'folder', children: files });
+	tree.push({ key: 'grp:files', label: 'Files', icon: 'folder', children: files });
 	if (modules.length) tree.push({ key: 'grp:modules', label: 'Module sources', icon: 'folder', children: modules });
 	return tree;
 }

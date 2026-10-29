@@ -76,6 +76,31 @@ export function strikesNeeded(silent) {
 	return silent ? 1 : UNAVAILABLE_STRIKES;
 }
 
+/** 54-net: the longest a reconnect window may wait on OUR OWN signaling link, from the moment
+ * it opened. Nobody can redial while their link to the server is down, and a 5 s wifi drop
+ * on a loaded box kept it down ~25 s after the network was back (deployed net-drop QUIET:
+ * the window ran out first, then both sides tore the session down while the redial was 6 s
+ * into negotiating). Past this the window ends as before. */
+export const SIGNALING_HOLD_MS = 60000;
+/** how often a window held on the signaling link looks again */
+export const SIGNALING_RECHECK_MS = 1000;
+
+/**
+ * How long a reconnect window's verdict must still wait because of OUR signaling link
+ * (0 = decide now). While the link is down nothing can heal, so look again shortly; once it
+ * came back during the window, give a redial `grace` from that moment, the way the verdict
+ * gives a dial still negotiating. A window whose link stayed up is not held at all.
+ * @param {{ openedAt: number, linkUp: boolean, backAt: number, now: number, grace: number }} at
+ *   openedAt: when the window opened · backAt: when the signaling link last (re)opened
+ */
+export function signalingHold({ openedAt, linkUp, backAt, now, grace }) {
+	const left = SIGNALING_HOLD_MS - (now - openedAt);
+	if (left <= 0) return 0;
+	if (!linkUp) return Math.min(SIGNALING_RECHECK_MS, left);
+	if (backAt > openedAt) return Math.max(0, Math.min(grace - (now - backAt), left));
+	return 0;
+}
+
 /** after a leave, a drop or a redial, peer-level noise for this long is a symptom of
  * that, never news. */
 export const LEAVE_QUIET_MS = 20000;

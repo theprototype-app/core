@@ -37,7 +37,7 @@ import { registerDebugHook } from '$lib/debugHooks';
 import { routePerfLive, perfLivePeerGone } from '$lib/perf/liveWire.js'; // 34 PF: the live perf stream (an import-free leaf)
 import { noteWireError } from '$lib/wireErrors';
 import { composeAdmitNotice, shortPeer } from '$lib/admitNotice';
-import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId } from '$lib/peerDrop';
+import { ICE_DROP_GRACE_MS, LINK_POLL_MS, strikesNeeded, quietPeerError, unavailablePeerId, consentCounters, linkSilence, keepPeerId, signalingHold, SIGNALING_RECHECK_MS } from '$lib/peerDrop';
 import { createDialBackQueue } from '$lib/dialBackQueue'; // scatter-sync: room edits held for an opening approval dial-back
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
@@ -308,6 +308,11 @@ export class PeerConnection {
 		/** F-3: peers whose link WE closed for ICE silence — one "not on the server" answer
 		 * then ends the wait (peerDrop.strikesNeeded) @type {Set<string>} */
 		this.silentDrops = new Set();
+		/** 54-net: when each peer's reconnect window opened, and when OUR signaling link last
+		 * (re)opened — a window does not run out while nobody could redial (peerDrop.signalingHold)
+		 * @type {Map<string, number>} */
+		this.windowOpenedAt = new Map();
+		this.signalingBackAt = 0;
 		/** F-5: peers the host removed from an automatic admission — their re-dials are
 		 * refused for the rest of this tab's session, guests setting or not @type {Set<string>} */
 		this.removedPeers = new Set();
@@ -551,6 +556,7 @@ export class PeerConnection {
 			this.signalingNotified = false;
 			peers.update((value) => value); // the dot reads peer.open: tick the store
 			this.reconnectAttempts = 0; // a fresh/re-established server link resets the backoff
+			this.signalingBackAt = Date.now();
 			// test-health-1: the window's dials while the server was unreachable never left
 			// (`peer.connect` is undefined with the link down) — redial NOW, not on the next
 			// backoff tick, which can be the verdict-only one (a 5 s wifi drop: no dial until 7.5 s)
@@ -2010,6 +2016,7 @@ export class PeerConnection {
 			return;
 		}
 		log('warn', 'net', 'connection dropped without a goodbye — trying to get them back', { peer: peerId });
+		this.windowOpenedAt.set(peerId, Date.now());
 		this.scheduleReconnect(peerId, 1);
 	}
 
@@ -2027,26 +2034,7 @@ export class PeerConnection {
 	scheduleReconnect(peerId, attempt) {
 		const delay = backoffDelay(attempt, { base: 500, max: 5 });
 		if (delay === null) {
-			// test-health-1: the verdict waits out a dial that is still negotiating, either way
-			// round (6-12 s measured on a loaded box, VERDICT_GRACE_MS). After a 5 s drop the
-			// first dial that can leave goes out at ~5-7.5 s, so tearing down at 15.5 s killed
-			// heals in flight: "disconnected" toasts and a dead session (net-drop HARD).
-			const inFlight = [this.connections[peerId], this.inboundDials.get(peerId)]
-				.filter((c) => c && !c.open)
-				.map((c) => VERDICT_GRACE_MS - (Date.now() - (c.__dialedAt ?? 0)))
-				.filter((left) => left > 0);
-			if (inFlight.length) {
-				this.reconnecting.set(peerId, attempt); // still in the window, under a fresh token
-				setTimeout(() => {
-					if (this.reconnecting.get(peerId) !== attempt) return; // healed, superseded or left
-					if (this.connections[peerId]?.open) { this.reconnecting.delete(peerId); this.inboundDials.delete(peerId); return; }
-					this.reconnecting.delete(peerId);
-					this.finalizeDisconnect(peerId, true);
-				}, Math.max(...inFlight));
-				return;
-			}
-			this.reconnecting.delete(peerId);
-			this.finalizeDisconnect(peerId, true);
+			this.reconnectVerdict(peerId, attempt);
 			return;
 		}
 		this.reconnecting.set(peerId, attempt);
@@ -2055,20 +2043,82 @@ export class PeerConnection {
 			if (!this.openedPeers.has(peerId)) { this.reconnecting.delete(peerId); return; } // torn down elsewhere
 			const existing = this.connections[peerId];
 			if (existing?.open) { this.reconnecting.delete(peerId); this.inboundDials.delete(peerId); return; } // healed (redial or adopted inbound)
-			// a dial un-open past the dial grace is genuinely wedged — clear it.
-			// Anything younger is just negotiating (measured 6-9s on a loaded
-			// headless box; closing it early poisons the NEXT negotiation too —
-			// the same lesson as the mesh-formation grace).
-			if (existing && Date.now() - (existing.__dialedAt ?? 0) >= DIAL_GRACE_MS) {
-				try { existing.close(); } catch (e) { /* wedged */ }
-				delete this.connections[peerId];
-			}
+			this.clearWedgedDial(peerId);
 			// dial (lower id only), unless this is the verdict-only final check —
 			// a dial started now would be torn down before it could ever open
 			const lastCheck = backoffDelay(attempt + 1, { base: 500, max: 5 }) === null;
 			if (!lastCheck) this.reconnectDial(peerId);
 			this.scheduleReconnect(peerId, attempt + 1);
 		}, delay);
+	}
+
+	/** a dial un-open past the dial grace is genuinely wedged — clear it. Anything younger is
+	 * just negotiating (measured 6-9s on a loaded headless box; closing it early poisons the
+	 * NEXT negotiation too — the same lesson as the mesh-formation grace).
+	 * @param {string} peerId @param {number} [grace] */
+	clearWedgedDial(peerId, grace = DIAL_GRACE_MS) {
+		const existing = this.connections[peerId];
+		if (existing && !existing.open && Date.now() - (existing.__dialedAt ?? 0) >= grace) {
+			try { existing.close(); } catch (e) { /* wedged */ }
+			delete this.connections[peerId];
+		}
+	}
+
+	/** 54-net: how long a reconnect window must still wait on OUR signaling link (0 = none):
+	 * nobody can redial while it is down, and on a loaded box it came back ~25 s after a 5 s
+	 * drop — the window ran out first and both sides tore down a session whose redial was
+	 * already negotiating (deployed net-drop QUIET). peerDrop.signalingHold has the rule.
+	 * @param {string} peerId */
+	signalingHoldMs(peerId) {
+		return signalingHold({
+			openedAt: this.windowOpenedAt.get(peerId) ?? 0,
+			linkUp: !!this.peer?.open,
+			backAt: this.signalingBackAt,
+			now: Date.now(),
+			grace: VERDICT_GRACE_MS
+		});
+	}
+
+	/** The reconnect window's FINAL verdict, under the window's last token.
+	 * @param {string} peerId @param {number} attempt */
+	reconnectVerdict(peerId, attempt) {
+		// 54-net: held on our signaling link — keep redialling meanwhile (lower id only), since
+		// the window's own dial ticks are over. A dial gets the VERDICT's grace here, not the
+		// window's: a redial after a late return negotiated >10 s on a loaded box, and clearing it
+		// at 10 s restarted the negotiation forever (x1-fix1)
+		const hold = this.signalingHoldMs(peerId);
+		if (hold > 0) {
+			this.reconnecting.set(peerId, attempt);
+			setTimeout(() => {
+				if (this.reconnecting.get(peerId) !== attempt) return; // healed, superseded or left
+				if (!this.openedPeers.has(peerId)) { this.reconnecting.delete(peerId); return; }
+				if (this.connections[peerId]?.open) { this.reconnecting.delete(peerId); this.inboundDials.delete(peerId); return; }
+				this.clearWedgedDial(peerId, VERDICT_GRACE_MS);
+				this.reconnectDial(peerId);
+				this.reconnectVerdict(peerId, attempt);
+			}, Math.min(hold, SIGNALING_RECHECK_MS));
+			return;
+		}
+		// test-health-1: the verdict waits out a dial that is still negotiating, either way
+		// round (6-12 s measured on a loaded box, VERDICT_GRACE_MS). After a 5 s drop the
+		// first dial that can leave goes out at ~5-7.5 s, so tearing down at 15.5 s killed
+		// heals in flight: "disconnected" toasts and a dead session (net-drop HARD).
+		const inFlight = [this.connections[peerId], this.inboundDials.get(peerId)]
+			.filter((c) => c && !c.open)
+			.map((c) => VERDICT_GRACE_MS - (Date.now() - (c.__dialedAt ?? 0)))
+			.filter((left) => left > 0);
+		if (inFlight.length) {
+			this.reconnecting.set(peerId, attempt); // still in the window, under a fresh token
+			setTimeout(() => {
+				if (this.reconnecting.get(peerId) !== attempt) return; // healed, superseded or left
+				if (this.connections[peerId]?.open) { this.reconnecting.delete(peerId); this.inboundDials.delete(peerId); return; }
+				this.reconnecting.delete(peerId);
+				this.finalizeDisconnect(peerId, true);
+			}, Math.max(...inFlight));
+			return;
+		}
+		this.reconnecting.delete(peerId);
+		this.finalizeDisconnect(peerId, true);
 	}
 
 	// F-5: an AUTOMATIC admission is never silent. A toast AND a notification-history entry
@@ -2127,7 +2177,9 @@ export class PeerConnection {
 			try { dead.close(); } catch (e) { /* never opened */ }
 		}
 		log('info', 'net', 'redial: peer not on the server', { peer: peerId, strikes });
-		if (strikes >= strikesNeeded(this.silentDrops.has(peerId))) this.finalizeDisconnect(peerId, true);
+		// 54-net: not while held on our own signaling link — a peer that dropped off the server
+		// with us may simply not be back on it yet; the window's verdict decides after the hold
+		if (strikes >= strikesNeeded(this.silentDrops.has(peerId)) && !this.signalingHoldMs(peerId)) this.finalizeDisconnect(peerId, true);
 	}
 
 	/**

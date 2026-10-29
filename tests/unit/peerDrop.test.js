@@ -9,7 +9,10 @@ import {
 	consentCounters,
 	linkSilence,
 	LINK_SILENT_MS,
-	keepPeerId
+	keepPeerId,
+	signalingHold,
+	SIGNALING_HOLD_MS,
+	SIGNALING_RECHECK_MS
 } from '../../src/lib/peerDrop.js';
 import { Peer } from 'peerjs';
 
@@ -117,5 +120,26 @@ describe('keepPeerId: our id survives a signaling drop', () => {
 		const bare = { id: 'x' };
 		expect(keepPeerId(bare, '')).toBe(bare);
 		expect(bare.id).toBe('x');
+	});
+});
+
+// 54-net: a reconnect window does not run out while our own signaling link is down
+describe('signalingHold: the reconnect verdict waits on our signaling link', () => {
+	const openedAt = 1_000_000;
+	const grace = 20000;
+	it('does not hold a window whose link stayed up', () => {
+		expect(signalingHold({ openedAt, linkUp: true, backAt: openedAt - 5000, now: openedAt + 16000, grace })).toBe(0);
+	});
+	it('looks again shortly while the link is down', () => {
+		expect(signalingHold({ openedAt, linkUp: false, backAt: 0, now: openedAt + 16000, grace })).toBe(SIGNALING_RECHECK_MS);
+	});
+	it('gives a redial the grace from the moment the link came back', () => {
+		// the deployed QUIET red: the link back 27 s into the window, the verdict due at 15.5 s
+		expect(signalingHold({ openedAt, linkUp: true, backAt: openedAt + 27000, now: openedAt + 28000, grace })).toBe(19000);
+		expect(signalingHold({ openedAt, linkUp: true, backAt: openedAt + 27000, now: openedAt + 47000, grace })).toBe(0);
+	});
+	it('ends at the ceiling whatever the link does', () => {
+		expect(signalingHold({ openedAt, linkUp: false, backAt: 0, now: openedAt + SIGNALING_HOLD_MS, grace })).toBe(0);
+		expect(signalingHold({ openedAt, linkUp: true, backAt: openedAt + 55000, now: openedAt + 56000, grace })).toBe(4000);
 	});
 });

@@ -16,6 +16,7 @@
 	import Button from '../ui/Button.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
 	import AgentLog from './AgentLog.svelte'; // 55 A8
+	import ConnectClaude from './ConnectClaude.svelte'; // 86 B1/B2
 	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider } from '$lib/ai/providers';
 	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi } from '$lib/ai/assistant';
 	import { dragWindow } from '$lib/dragWindow';
@@ -145,6 +146,8 @@
 			headerClass="ui-panel-header move-handle cursor-move select-none"
 			onclose={() => aiAssistantHidden.set('hidden')}
 		/>
+		<!-- 86 B1/B2: Connect Claude (signed-in cloud builds only) -->
+		<ConnectClaude />
 		<!-- 55 A8: what the AI agents in the session did, on every peer -->
 		<AgentLog />
 

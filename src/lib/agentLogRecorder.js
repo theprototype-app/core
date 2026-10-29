@@ -40,11 +40,17 @@ function settled() {
 	});
 }
 
-/** Start recording. Idempotent. */
-export function startAgentRecorder() {
+/**
+ * Start recording. Idempotent.
+ * @param {{name?: string, accept?: () => boolean}} [opts] 86 B3: the Claude connector records in a PERSON's tab,
+ *   where the in-app assistant runs through the same `executeAiTool` — `accept` says whether a call is the
+ *   connector's (others get no line), and `name` is the fixed label its lines carry ("Claude (connector)")
+ */
+export function startAgentRecorder(opts = {}) {
 	if (started) return;
 	started = true;
 	setAiToolObserver((/** @type {string} */ tool, /** @type {any} */ args) => {
+		if (opts.accept && !opts.accept()) return;
 		const before = new Set(get(undoStack));
 		return async (/** @type {any} */ result) => {
 			const text = summarizeToolCall(tool, args, result, nameOf);
@@ -59,7 +65,7 @@ export function startAgentRecorder() {
 			publishAgentEntry({
 				id,
 				peer: me,
-				name: agentName(me),
+				name: opts.name ?? agentName(me),
 				tool,
 				text,
 				uuids: touchedUuids(tool, args, result),
@@ -78,8 +84,15 @@ export function startAgentRecorder() {
 		for (const step of [...steps].reverse()) undoEntry(step);
 		historyOf.delete(id);
 		publishAgentUndone(entry);
-		showToast(String(from).slice(0, 5).toUpperCase() + ' undid "' + entry.text + '".');
+		showToast((from === entry.peer ? 'You' : String(from).slice(0, 5).toUpperCase()) + ' undid "' + entry.text + '".');
 	});
+}
+
+/** 86: the connector stopped recording (its tab disconnected) — the lines it already wrote stay undoable */
+export function stopAgentRecorder() {
+	if (!started) return;
+	started = false;
+	setAiToolObserver(null);
 }
 
 /** test seam: forget the recorder's state */

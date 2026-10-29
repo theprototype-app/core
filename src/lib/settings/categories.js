@@ -34,6 +34,7 @@ const META = {
 	vr: { group: 'devices', order: 10, description: 'Comfort, body, buttons and display in the headset — the same table as the headset’s own Settings.' },
 	ai: { group: 'devices', order: 11, description: 'The scene assistant, voice typing and mesh generation.' },
 	connection: { group: 'devices', order: 12, description: 'How you find other people.' },
+	connectedapps: { group: 'devices', order: 11.5, description: 'The apps you allowed to build for you — Claude in claude.ai, chat or voice — and Revoke.' }, // 86 B5
 	privacy: { group: 'devices', order: 13, description: 'What this device sends about errors — anonymous, and you can switch it off.' },
 	aboutwhatsnew: { group: 'about', order: 99, description: '' }
 };

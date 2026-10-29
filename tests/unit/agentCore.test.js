@@ -364,3 +364,33 @@ describe('missingModulesFrom (T6)', () => {
 		expect(missingModulesFrom(adv, [], loaded)).toEqual([]);
 	});
 });
+
+describe('86 B3: inSession (the Claude connector in a PERSON’s tab)', () => {
+	it('a tab that hosts or is alone edits with no admission wait; its role still gates', async () => {
+		const app = fakeApp({ inSession: () => true });
+		app.state.host = null; // we host
+		app.state.peers = [];
+		const { agent } = createAgentCore(app.deps);
+		expect(agent.status().joined).toBe(true);
+		expect((await agent.exec('create_objects', { objects: [{ kind: 'primitive' }] })).created).toBeTruthy();
+		app.state.role = 'viewer';
+		const r = await agent.exec('create_objects', { objects: [{ kind: 'primitive' }] });
+		expect(r.refused).toBe(true);
+	});
+	it('counterfactual: without inSession the same tab is refused as "not in a session"', async () => {
+		const app = fakeApp();
+		app.state.host = null;
+		app.state.peers = [];
+		const { agent } = createAgentCore(app.deps);
+		const r = await agent.exec('create_objects', { objects: [{ kind: 'primitive' }] });
+		expect(r).toMatchObject({ refused: true, joined: false });
+	});
+	it('a joined tab whose host link dropped is refused until it is back', async () => {
+		let linked = false;
+		const app = fakeApp({ inSession: () => linked });
+		const { agent } = createAgentCore(app.deps);
+		expect((await agent.exec('create_objects', { objects: [{ kind: 'p' }] })).refused).toBe(true);
+		linked = true;
+		expect((await agent.exec('create_objects', { objects: [{ kind: 'p' }] })).created).toBeTruthy();
+	});
+});

@@ -273,6 +273,7 @@
 		"a11y-scale": 258,
 		"add-flow-scene": 100,
 		"agent-api": 420,
+		"connector-relay": 240,
 		"agent-bridge": 48,
 		"agent-conformance": 200,
 		"agent-host-leaves": 180,

@@ -256,6 +256,8 @@ export const DEBUG_HOOKS = [
 	['peerApproval', () => import('./peerApproval')],
 	['inviteStore', () => import('./inviteStore')],
 	['agentLog', () => import('./agentLog')],
+	// 86: the Claude connector's UI state (a leaf — the connector itself stays a lazy chunk)
+	['connectorStore', () => import('./connector/connectorStore.js')],
 	['peerModeration', () => import('./peerModeration')],
 	['peerHide', () => import('./peerHide')],
 	['peerFacts', () => import('./peerFacts')],

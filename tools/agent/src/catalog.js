@@ -53,7 +53,7 @@ export function buildCatalog(hostTools, opts = {}) {
 	return {
 		format: CATALOG_FORMAT,
 		generator: {
-			source: 'tpAgent.tools() via core scripts/agent-tool-catalog.mjs, mapped by tools/agent/src/catalog.js',
+			source: 'tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js',
 			hostTools: hostTools.length,
 			dropped: mapped.dropped,
 			...(opts.provenance ?? {})

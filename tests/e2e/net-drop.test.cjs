@@ -17,6 +17,9 @@
 //  2. HARD (a network CHANGE): the same, plus the peer connection is closed outright at the start, so
 //     the B5 reconnect window has to redial — through a signaling server it cannot reach until the
 //     drop ends. The window is ~15.5 s (checks at 0.5/1/2/4/8 s), so a 5 s drop must fit inside it.
+//  3. QUIET with the signaling server back NETDROP_SIG_LAG_MS (25 s) after the network (54-net: what a
+//     loaded box did on a deployed build) — the window holds on our own signaling link until a redial
+//     could have happened, so the session survives a heal that starts late. 0 skips the phase.
 // net-drop-1 (deployed builds): with a cloud ROLES plugin loaded — every Pages deploy, or a dev server run
 // with E2E_CLOUD_PLUGIN=https://theprototype.pages.dev/cloud-plugin.js — the joiner came back from the heal
 // a VIEWER and its edits never left it: peerjs nulls `peer.id` while the signaling socket is down, the
@@ -33,6 +36,8 @@ const DROP_MS = Number(process.env.NETDROP_MS || 5000);
 const TRACE = !!process.env.NETDROP_TRACE;
 /** src/lib/peerDrop.js ICE_DROP_GRACE_MS */
 const ICE_DROP_GRACE_MS = 4000;
+/** 54-net: phase 3 keeps the signaling server unreachable this long after the network is back */
+const SIG_LAG_MS = Number(process.env.NETDROP_SIG_LAG_MS ?? 25000);
 
 /** runs in the page before any app code: the hold switch + fake ICE state + the WIRE TRACE (net-drop-1:
  * every peer connection's real ICE/connection state, every data channel's open/close and its sent /
@@ -41,6 +46,9 @@ const ICE_DROP_GRACE_MS = 4000;
 function dropShim() {
 	const D = (window.__drop = {
 		holding: false,
+		/** 54-net: the signaling server stays unreachable while this is set (outlives `holding` in the
+		 * slow-signaling phase) */
+		sigHolding: false,
 		queue: /** @type {Function[]} */ ([]),
 		pcs: /** @type {RTCPeerConnection[]} */ ([]),
 		held: 0,
@@ -112,7 +120,7 @@ function dropShim() {
 	const RealWS = window.WebSocket;
 	// @ts-ignore
 	window.WebSocket = function (/** @type {string} */ url, /** @type {any} */ protocols) {
-		return new RealWS(D.holding ? 'wss://127.0.0.1:9/' : url, protocols);
+		return new RealWS(D.holding || D.sigHolding ? 'wss://127.0.0.1:9/' : url, protocols);
 	};
 	window.WebSocket.prototype = RealWS.prototype;
 	Object.setPrototypeOf(window.WebSocket, RealWS);
@@ -188,6 +196,16 @@ h.run(async () => {
 			window.__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
 			return g.children[g.children.length - 1].uuid;
 		}, shape);
+	/** where an object stands on its creator: local-only (the viewer gate), and the creator's role */
+	const made = (/** @type {any} */ p, /** @type {string} */ uuid) =>
+		p.page.evaluate((/** @type {string} */ u) => {
+			/** @type {any} */ let g;
+			window.__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+			/** @type {any} */ let r;
+			window.__stores.cloudHooks?.rolesInfo?.subscribe((/** @type {any} */ v) => (r = v))();
+			const o = g?.getObjectByProperty('uuid', u);
+			return `exists=${!!o} localOnly=${!!o?.userData?.__localOnly} role=${r ? r.myRole : '-'}`;
+		}, uuid);
 	const has = (/** @type {any} */ p, /** @type {string} */ uuid) =>
 		p.page.evaluate((/** @type {string} */ u) => {
 			/** @type {any} */ let g;
@@ -344,19 +362,25 @@ h.run(async () => {
 		return { a: await one(A, B.id), b: await one(B, A.id) };
 	}
 
-	/** @param {'quiet' | 'hard'} shape */
-	async function drop(shape) {
-		const tag = shape.toUpperCase() + ` ${DROP_MS / 1000}s drop:`;
+	/** @param {'quiet' | 'hard'} shape @param {number} [sigLag] the signaling server stays away this much longer */
+	async function drop(shape, sigLag = 0) {
+		const tag = shape.toUpperCase() + ` ${DROP_MS / 1000}s drop${sigLag ? `, signaling back ${sigLag / 1000}s later` : ''}:`;
 		const toastsA = (await store(A, 'notifications')).length;
 		const toastsB = (await store(B, 'notifications')).length;
-		// mark the conns, to tell "the same conn carried on" from "a redial healed it"
+		// mark the conns, to tell "the same conn carried on" from "a redial healed it" — a phase after a
+		// torn-down one has no conn to drop, which is a red premise, not a script crash
+		let marked = true;
 		for (const [p, other] of [[A, B.id], [B, A.id]]) {
-			await p.page.evaluate((/** @type {string} */ id) => {
+			marked &&= await p.page.evaluate((/** @type {string} */ id) => {
 				/** @type {any} */ let pc;
 				window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
+				if (!pc.connections[id]?.open) return false;
 				pc.connections[id].__th1 = 'before';
+				return true;
 			}, other);
 		}
+		h.check(marked, `${tag} premise: an open conn both ways before the drop`);
+		if (!marked) return;
 		const rolesBefore = await roles();
 		// ---- the network goes away
 		for (const p of [A, B]) await p.page.context().setOffline(true);
@@ -366,6 +390,8 @@ h.run(async () => {
 				window.__stores.peers.subscribe((/** @type {any} */ v) => (pc = v))();
 				// @ts-ignore
 				window.__drop.holding = true;
+				// @ts-ignore
+				window.__drop.sigHolding = true;
 				// @ts-ignore
 				window.__drop.ice('disconnected');
 				// a real drop ends the socket at once (1006, ERR_NETWORK_CHANGED); a graceful close() waits for
@@ -449,6 +475,7 @@ h.run(async () => {
 		for (const until = Date.now() + Math.min(1500, DROP_MS / 3); Date.now() < until; ) await ownIds();
 		const duringA = await create(A, 'sphere');
 		const duringB = await create(B, 'cylinder');
+		const madeA = await made(A, duringA);
 		while (Date.now() - t0 < DROP_MS) {
 			await watch();
 			await A.page.waitForTimeout(500);
@@ -458,18 +485,22 @@ h.run(async () => {
 		// ---- the network comes back: lift the shim's hold FIRST, so the app's own `online` retry
 		// (fired by setOffline(false)) reaches the real server rather than the held-down socket
 		for (const p of [A, B]) {
-			await p.page.evaluate(() => {
+			await p.page.evaluate((/** @type {number} */ lag) => {
 				// @ts-ignore
 				window.__drop.ice(null);
 				// @ts-ignore
 				window.__drop.release();
-			});
+				// @ts-ignore
+				if (lag) setTimeout(() => (window.__drop.sigHolding = false), lag);
+				// @ts-ignore
+				else window.__drop.sigHolding = false;
+			}, sigLag);
 		}
 		for (const p of [A, B]) await p.page.context().setOffline(false);
 		// watch the roster through the rest of the reconnect window: ~15.5 s from the drop's start, plus
 		// the up-to-20 s its last check gives a dial still negotiating (VERDICT_GRACE_MS)
 		const healed = { a: false, b: false };
-		while (Date.now() - t0 < Math.max(DROP_MS, 0) + 37000) {
+		while (Date.now() - t0 < Math.max(DROP_MS, 0) + sigLag + 37000) {
 			await watch();
 			healed.a ||= await openTo(A, B.id);
 			healed.b ||= await openTo(B, A.id);
@@ -491,6 +522,36 @@ h.run(async () => {
 		h.check(healedBoth, `${tag} the conn is open both ways again`);
 		h.check((await disconnectToasts(A, toastsA)) === 0 && (await disconnectToasts(B, toastsB)) === 0, `${tag} no "disconnected" toast on either side`);
 		await h.eventually(() => has(B, duringA), (v) => v, `${tag} A's edit made during the drop reaches B`, 15000);
+		// 54-net: an edit that never left A — a creation made while A read itself a viewer is kept local
+		// (objectPermissions.gateCreationBroadcast) and out of every full-state reply
+		if (!(await has(B, duringA))) {
+			console.log(`  ${tag} A's during-drop object ${duringA.slice(0, 8)}: at creation ${madeA}, now ${await made(A, duringA)}`);
+			for (const [name, p] of [['A', A], ['B', B]])
+				console.log(
+					`  ${tag} ${name} objects: ` +
+						(await p.page
+							.evaluate(() => {
+								/** @type {any} */ let g;
+								window.__stores.objectsGroup.subscribe((/** @type {any} */ v) => (g = v))();
+								const ch = /** @type {any} */ (window.__stores.commandsHandler);
+								const list = (g?.children ?? []).map((/** @type {any} */ o) => `${o.name}:${o.uuid.slice(0, 8)}`).join(' ');
+								return `${list} | backlog=${ch?.ingestBacklog?.() ?? '?'} held=${ch?.ingestGateOpen?.() ?? '?'}`;
+							})
+							.catch((/** @type {any} */ e) => 'err ' + String(e?.message ?? e).slice(0, 60)))
+				);
+			// TEMP 54-net diag: is B's ingest queue throttled (a nested setTimeout chain) or stuck?
+			const probe = await B.page
+				.evaluate(async () => {
+					const t = performance.now();
+					for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
+					return `vis=${document.visibilityState} focus=${document.hasFocus()} 10 nested setTimeout(0)=${Math.round(performance.now() - t)}ms`;
+				})
+				.catch((/** @type {any} */ e) => 'err ' + String(e?.message ?? e).slice(0, 60));
+			console.log(`  ${tag} B timers: ${probe}`);
+			const t1 = Date.now();
+			while (Date.now() - t1 < 90000 && !(await has(B, duringA))) await A.page.waitForTimeout(1000);
+			console.log(`  ${tag} A's during-drop object on B ${(await has(B, duringA)) ? 'arrived ' + Math.round((Date.now() - t1) / 1000) + ' s later' : 'still missing after 90 s'}`);
+		}
 		if (!TRACE && !(await has(B, duringA))) await wireTrace(tag, "A's edit never reached B");
 		await h.eventually(() => has(A, duringB), (v) => v, `${tag} B's edit made during the drop reaches A`, 15000);
 		if (!TRACE && !(await has(A, duringB))) await wireTrace(tag, "B's edit never reached A");
@@ -512,5 +573,10 @@ h.run(async () => {
 
 	await drop('quiet');
 	await drop('hard');
+	// 54-net: the deployed QUIET red — on a loaded box the signaling link came back ~25 s after a 5 s
+	// drop, the reconnect window ran out first, and both sides tore the session down while the redial
+	// was negotiating. The window now holds on our own signaling link (peerDrop.signalingHold).
+	// Counterfactual: red on v1.46.0 (roster lost, "disconnected" toasts).
+	if (SIG_LAG_MS) await drop('quiet', SIG_LAG_MS);
 	await h.finish(browser);
 });

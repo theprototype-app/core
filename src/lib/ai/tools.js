@@ -1,6 +1,9 @@
 import { get } from 'svelte/store';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
+import { lockSkip } from './lockNote.js';
+import { sceneFilter } from './sceneFilter.js';
+import { geometrySpec } from '$lib/geometryParams';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte.js';
 import { recordObjectPresence, recordTransform } from '$lib/history';
 import {
@@ -134,9 +137,37 @@ function describeObject(object) {
 		if (material.color) out.color = '#' + material.color.getHexString();
 	}
 	if (object.userData?.physics) out.physics = { ...object.userData.physics };
+	const geometry = geometrySummary(object);
+	if (geometry) out.geometry = geometry;
 	const flow = summarizeGraph(object.uuid);
 	if (flow) out.flow = flow;
 	return out;
+}
+
+/**
+ * 55 (1.48.1 c, 41's voice-Claude finding): a primitive's editable shape — a wall's thickness, a box's size — so an
+ * agent can read what it built (create_objects' `params` and the Inspector's Geometry rows). Sizes always; segment
+ * counts only when changed; nothing that is not a plain number/flag/word.
+ * @param {any} object @returns {any}
+ */
+function geometrySummary(object) {
+	const gp = object.userData?.geometryParams;
+	if (!gp?.gtype || !gp.params) return null;
+	const spec = geometrySpec(gp.gtype);
+	/** @type {any} */
+	const out = { type: gp.gtype };
+	for (const [key, value] of Object.entries(gp.params)) {
+		const def = spec?.params?.find((/** @type {any} */ p) => p.key === key);
+		if (def?.kind === 'int' && value === def.def) continue;
+		if (typeof value === 'number') out[key] = r3(value);
+		else if (typeof value === 'boolean' || (typeof value === 'string' && value.length <= 40)) out[key] = value;
+	}
+	return out;
+}
+
+/** 55 (1.48.1): list_scene `brief` — enough to address an object, nothing more @param {any} object */
+function briefObject(object) {
+	return { uuid: object.uuid, name: object.name || object.type, type: object.type, parentUuid: object.parent && object.parent.type === 'Group' ? object.parent.uuid : null };
 }
 
 /** Node data compacted for the model: big point lists reduced to a count, long strings
@@ -245,25 +276,33 @@ export function graphPage(graphId, page) {
  * replicated objectsGroup only (scene-root helpers/env stay local). Capped so a
  * huge scene can't blow the context.
  * @param {number} [cap]
+ * @param {{brief?: boolean, name?: string, type?: string, near?: {position: number[], radius: number}} | null} [filter]
+ *   55 (1.48.1): list_scene's narrowing — uuid/name/type/parent only, a name glob, a type, a world-space sphere
  * @returns {{objects: any[], truncated?: number}}
  */
-export function summarizeScene(cap = 200) {
+export function summarizeScene(cap = 200, filter = null) {
 	const group = get(objectsGroup);
+	const keep = sceneFilter(filter);
 	/** @type {any[]} */
 	const objects = [];
 	let truncated = 0;
+	let matched = 0;
 	if (group) {
 		group.traverse((/** @type {any} */ object) => {
 			if (object === group) return;
+			if (keep && !keep(object)) return;
+			matched++;
 			if (objects.length >= cap) {
 				truncated++;
 				return;
 			}
-			objects.push(describeObject(object));
+			objects.push(filter?.brief ? briefObject(object) : describeObject(object));
 		});
 	}
 	/** @type {any} */
 	const out = truncated ? { objects, truncated } : { objects };
+	// a filtered read is about objects: the scene-wide flow / behaviours / joints stay in the plain call
+	if (keep || filter?.brief) return { ...out, matched };
 	const sceneFlow = summarizeGraph(SCENE_GRAPH);
 	if (sceneFlow) out.sceneFlow = sceneFlow;
 	const behaviours = summarizeBehaviours();
@@ -463,6 +502,12 @@ function createOne(spec) {
 
 	// 55 (41's research): a group keeps the name it was given (the command form made 'G group' 'G_group Group')
 	if (spec.name) renameObject(uuid, String(spec.name).slice(0, 120));
+	// 55 (1.48.1 a): nest FIRST, then place — position/rotation/scale are LOCAL to the group, as list_scene reports
+	// them (attach() keeps the world pose, so nesting after the transform read them as world space)
+	if (spec.parentUuid) {
+		const parent = objectOf(spec.parentUuid);
+		if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
+	}
 	applyAiTransform(created, spec);
 	/** @type {string[]} */
 	const warnings = [];
@@ -473,10 +518,6 @@ function createOne(spec) {
 		const hex = colorOf(spec.color);
 		if (hex) setObjectColor(uuid, hex);
 		else warnings.push('color: takes a hex colour like "#ff8800"');
-	}
-	if (spec.parentUuid) {
-		const parent = objectOf(spec.parentUuid);
-		if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
 	}
 	// fix-live F-4: static unless asked — a built scene must not fall apart in Play
 	const physics = aiCreatePhysics(spec, created.userData?.physics);
@@ -506,11 +547,21 @@ async function updateOne(spec) {
 	const uuid = spec.uuid;
 	const object = objectOf(uuid);
 	if (!object) return { uuid, error: 'no object with that uuid' };
-	if (lockedByPeer(uuid)) return { uuid, skipped: 'locked by another peer' };
+	const lock = lockSkip(uuid, object);
+	if (lock) return { uuid, skipped: lock };
 	/** @type {string[]} */
 	const errors = [];
 
 	if (typeof spec.name === 'string') renameObject(uuid, spec.name);
+	// 55 (1.48.1 a): re-nest FIRST (the object keeps its world pose), then a given position is LOCAL to the new parent
+	if (spec.parentUuid) {
+		if (spec.parentUuid === 'root') moveObjectToGroup(uuid, 'root');
+		else {
+			const parent = objectOf(spec.parentUuid);
+			if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
+			else errors.push('parentUuid: no group with that uuid');
+		}
+	}
 	applyAiTransform(object, spec);
 	if (object.isLight) {
 		errors.push(...applyAiLight(object, spec));
@@ -535,14 +586,6 @@ async function updateOne(spec) {
 		}
 	}
 	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
-	if (spec.parentUuid) {
-		if (spec.parentUuid === 'root') moveObjectToGroup(uuid, 'root');
-		else {
-			const parent = objectOf(spec.parentUuid);
-			if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
-			else errors.push('parentUuid: no group with that uuid');
-		}
-	}
 	return errors.length ? { uuid, ok: false, errors } : { uuid, ok: true };
 }
 
@@ -784,6 +827,9 @@ async function runAiTool(rawName, rawArgs) {
 			case 'list_scene':
 				// 55: `{flow, page}` reads one page of a big graph's summary
 				if (args && typeof args.flow === 'string' && args.flow) return graphPage(args.flow === 'scene' ? SCENE_GRAPH : args.flow, args.page ?? 1);
+				// 55 (1.48.1): narrowed reads
+				if (args && (args.brief || args.name || args.type || args.near))
+					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near });
 				return summarizeScene();
 
 			case 'create_objects': {
@@ -813,7 +859,9 @@ async function runAiTool(rawName, rawArgs) {
 				const allowed = uuids.filter((/** @type {string} */ u) => objectOf(u) && !lockedByPeer(u));
 				const skipped = uuids.filter((/** @type {string} */ u) => !allowed.includes(u));
 				const count = deleteObjectsByUuid(allowed);
-				return { deleted: count, skipped };
+				// 55 (1.48.1 b): why each was skipped — gone, or locked by whom
+				const why = skipped.map((/** @type {string} */ u) => (objectOf(u) ? lockSkip(u, objectOf(u)) : u + ': no object with that uuid'));
+				return { deleted: count, skipped, ...(why.length ? { skippedWhy: why } : {}) };
 			}
 
 			case 'group_objects': {
@@ -829,13 +877,15 @@ async function runAiTool(rawName, rawArgs) {
 				// 55 (41's research): the name as given — the command form turns 'G group' into 'G_group Group'
 				if (typeof args?.name === 'string' && args.name.trim()) renameObject(groupUuid, args.name.trim().slice(0, 120));
 				const moved = [];
+				/** @type {string[]} */
+				const skippedWhy = [];
 				for (const uuid of members) {
 					if (objectOf(uuid) && !lockedByPeer(uuid)) {
 						moveObjectToGroup(uuid, groupUuid);
 						moved.push(uuid);
-					}
+					} else skippedWhy.push(objectOf(uuid) ? String(lockSkip(uuid, objectOf(uuid))) : uuid + ': no object with that uuid');
 				}
-				return { groupUuid, name: group.name, members: moved };
+				return { groupUuid, name: group.name, members: moved, ...(skippedWhy.length ? { skippedWhy } : {}) };
 			}
 
 			case 'clear_scene': {
@@ -923,12 +973,21 @@ export const AI_TOOLS = [
 		function: {
 			name: 'list_scene',
 			description:
-				'List every object currently in the scene with its uuid, name, type, parent, transform, material and color. Call this before editing so you use real uuids. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
+				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
 			parameters: {
 				type: 'object',
 				properties: {
 					flow: { type: 'string', description: 'optional: read one flow graph ("scene" or an object uuid) page by page instead of the scene summary' },
-					page: { type: 'number', description: 'with flow: which page (1-based)' }
+					page: { type: 'number', description: 'with flow: which page (1-based)' },
+					brief: { type: 'boolean', description: 'optional: only uuid, name, type, parentUuid per object (cheap on a big scene)' },
+					name: { type: 'string', description: 'optional: only objects whose name matches — a glob ("Wall*", "*door*"), or plain text = contains; case-insensitive' },
+					type: { type: 'string', description: 'optional: only objects of this type — Mesh, Group, PointLight… or a primitive shape (Box, Wall, Sphere…)' },
+					near: {
+						type: 'object',
+						description: 'optional: only objects within radius of a WORLD position',
+						properties: { position: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, radius: { type: 'number' } },
+						required: ['position', 'radius']
+					}
 				}
 			}
 		}
@@ -974,7 +1033,7 @@ export const AI_TOOLS = [
 								scale: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
 								color: { type: 'string', description: 'hex like #ff8800 (a mesh, or a light\'s colour)' },
 								...LIGHT_SCHEMA,
-								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under' },
+								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group' },
 								physics: {
 									type: 'string',
 									enum: ['static', 'dynamic'],
@@ -1024,7 +1083,7 @@ export const AI_TOOLS = [
 								visible: { type: 'boolean' },
 								parentUuid: {
 									type: 'string',
-									description: 'group uuid to nest under, or "root" to un-nest'
+									description: 'group uuid to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent'
 								}
 							},
 							required: ['uuid']

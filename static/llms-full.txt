@@ -133,6 +133,10 @@ apply (a light field on a mesh, a bad material value) in that row's `errors` wit
 does not have; the error lists the node's real socket names and the call's other wires are still made.
 `create_behaviour`'s description carries the behaviour format and a working example; its checker refuses an
 unknown `this.` member, an unknown event and a hook-named method nothing calls (there is no per-frame hook).
+`list_scene` gives a primitive's shape as `geometry {type, sizes}` (a wall's thickness, a box's depth) and can be
+narrowed on a big scene: `brief` (uuids and names only), `name` (a glob such as `"Rock*"`, case-insensitive), `type`,
+`near {position, radius}` (world metres); a narrowed read says how many objects `matched`. Positions are LOCAL to the
+parent: an object created or moved with `parentUuid` takes its position inside that group, as `list_scene` reports it.
 
 ## Rules a builder must respect
 
@@ -145,8 +149,10 @@ unknown `this.` member, an unknown event and a hook-named method nothing calls (
   sequence, counter) need wires.
 - **Static scenery.** New primitives may spawn dynamic; pin ground, walls and props with
   `set_physics` `mode: "static"` before anyone presses Play, or the scene collapses.
-- **Never fight a person.** An object locked by another peer is skipped (`skipped: "locked by
-  another peer"`); do not retry in a loop. `waitForEdit` is how you notice people's changes.
+- **Never fight a person.** An object locked by another peer is skipped, and the skip names the
+  object and who holds it (`"Door" (<uuid>) is locked by Ana (peer …) — they are editing it`;
+  `delete_objects` and `group_objects` list them in `skippedWhy`); do not retry in a loop.
+  `waitForEdit` is how you notice people's changes.
 - **Everything is shared.** Every peer sees each call as it happens and can undo it. There is no
   private side channel, by design.
 - **Look before you say "done".** `screenshot()` after a build; compare with the request.

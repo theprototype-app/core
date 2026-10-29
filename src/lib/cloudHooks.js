@@ -34,6 +34,9 @@ const ALWAYS_ALLOWED = new Set([
 	// 60 Q2: "I opened the fast movement channel on this connection" — transport, no content. A
 	// gated hello would leave a viewer's avatar on the slow channel while the host thinks it is fast
 	'fastchan',
+	// fix-agenttest 4: "my page went hidden / is back" — transport about the link itself, the
+	// fastchan rule: gated for a viewer, a backgrounded phone would be dropped as a ghost again
+	'linkaway',
 	// A1/A2: WHERE A PEER IS STANDING. On the floor because it is the ROOM GATE'S OWN
 	// EVIDENCE - a plugin that gated `atscene` would silently switch off scene adoption
 	// AND every room gate built on it (`canApplyByRoom` reads no evidence, so it allows

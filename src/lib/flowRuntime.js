@@ -1,10 +1,12 @@
 import * as THREE from 'three';
+// `{v}` labels for the HUD — 'Gems: {v}' needs no string node and no string socket type
+import { hudFormat } from './hudFormat.js';
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
 import { get } from 'svelte/store';
 import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
-import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused, runtimeGraph } from '../stores/flowStore';
+import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused, runtimeGraph, orphanGraphIds } from '../stores/flowStore';
 // 21-F2: `isLocked` is the LOCAL play substate the recipe gate reads — see gamePlayActive
-import { objectsGroup, isLocked } from '../stores/sceneStore';
+import { objectsGroup, isLocked, sceneRevision } from '../stores/sceneStore';
 import { peers, showToast, showInfoToast, dismissToastById} from '../stores/appStore';
 import { animationTypes, findNodeSpec } from './nodeCatalog';
 // 21-E7.6: hudKinds is a leaf (it reads only moduleHudKinds, itself svelte/store-only)
@@ -43,6 +45,7 @@ import {
 	gameState,
 	setGameState,
 	setGameVar,
+	applyGameVarOp,
 	gameVar,
 	gameElapsed,
 	commitGameState,
@@ -485,6 +488,31 @@ const NO_EDGES = [];
 /** @type {any[]} */ let nodes = [];
 /** @type {any[]} */ let edges = [];
 /** @type {any} */ let sceneObjects = null;
+/** 55 (1.48.1, Q1): OBJECT graphs whose owner is not in the scene — DORMANT. A deleted object's flow stays in
+ * flowGraphs on purpose (undoing the delete finds it intact; the savers prune it), but its nodes kept evaluating on
+ * every peer. flowStore.orphanGraphIds (the savers' own rule); recomputed when the graphs change and
+ * when the scene does (an undo brings the object back and its flow runs again). @type {Set<string>} */
+let dormant = new Set();
+
+/** what the runtime evaluates: every graph but the dormant ones, minus muted/editor-only nodes */
+function rebuildRuntimeGraph() {
+	dormant = orphanGraphIds();
+	if (!dormant.size) {
+		({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
+		return;
+	}
+	const live = allNodes().filter((n) => !dormant.has(n.__graph));
+	const ids = new Set(live.map((n) => n.id));
+	({ nodes, edges } = runtimeGraph(live, allEdges().filter((e) => ids.has(e.source) && ids.has(e.target))));
+}
+
+/** the debug hook / e2e: what the runtime evaluates right now, and which object graphs sleep */
+export function runtimeGraphDebug() {
+	return { nodeIds: nodes.map((n) => n.id), dormant: [...dormant] };
+}
+
+/** @param {Set<string>} a @param {Set<string>} b */
+const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
 /** @type {string[]} */ let muted = [];
 let synced = true;
 let lastValuesAt = 0;
@@ -1010,14 +1038,6 @@ let lastHudJson = '';
  * trigger's EDGE, not on every frame while the pulse is alive @type {Map<string, number>} */
 const hudScreenActed = new Map();
 
-/** Format a number into an element's label. `{v}` is the wired value, so 'Gems: {v}'
- * needs no string node and no string socket type.
- * @param {string} format @param {number} value @param {number} decimals */
-function hudFormat(format, value, decimals) {
-	const text = Number(value).toFixed(Math.max(0, Math.min(6, Math.round(decimals || 0))));
-	const pattern = String(format ?? '{v}');
-	return pattern.includes('{v}') ? pattern.split('{v}').join(text) : pattern || text;
-}
 
 /** Rows pushed into a list element, keyed by element id.
  * @type {Map<string, any[]>} */
@@ -1180,13 +1200,14 @@ function updateHudRuntime(time, ctx, now) {
 		const element = String(data.element ?? '').trim();
 		if (!element) continue;
 		if (node.type === 'hudtext') {
-			next[element] = { text: hudFormat(data.format, num(data.value), num(data.decimals)) };
+			// the RAW value: a string is text, not 0 (hudFormat.js, fix-agenttest 9)
+			next[element] = { text: hudFormat(data.format, data.value, num(data.decimals)) };
 		} else if (node.type === 'hudbar') {
 			next[element] = {
 				value: num(data.value),
 				min: num(data.min),
 				max: num(data.max),
-				text: data.format ? hudFormat(data.format, num(data.value), 0) : ''
+				text: data.format ? hudFormat(data.format, data.value, 0) : ''
 			};
 		} else if (node.type === 'hudtimer') {
 			next[element] = {
@@ -1543,6 +1564,31 @@ function sandboxedWrite(stamp) {
 	return !!sharedOverlay && inDebugTick && !sharedOverlay.localStamps.has(stamp);
 }
 
+/**
+ * fix-agenttest 10: a SHARED Set Variable's write goes to ONE peer, the kit's authority (the same
+ * peer kit actions and behaviours already settle on). The authority applies it; anyone else sends
+ * it there — including the player of a perPlayer pulse, whose stamp nobody else sees — and the
+ * authority's rid window makes the N copies of one event a single write. No authority reachable
+ * (alone, or its conn not open yet): apply here.
+ * @param {{rid: string, name: string, op: string, value: number}} req
+ */
+function shareGameVarOp(req) {
+	/** @type {any} */
+	const peer = get(peers);
+	const me = peer?.peer?.id ?? null;
+	const authority = kitAuthorityId();
+	const conn = me && authority && authority !== me ? peer?.connections?.[authority] : null;
+	if (conn?.open) {
+		try {
+			conn.send({ type: 'gamevarop', ...req });
+			return;
+		} catch {
+			/* the conn just closed: apply here */
+		}
+	}
+	applyGameVarOp(req);
+}
+
 /** @param {number} time @param {any} ctx */
 function updateGameNodes(time, ctx) {
 	const game = viewGame(); // 48 D1: the paused view's own state while it holds a sandbox
@@ -1679,7 +1725,8 @@ function updateGameNodes(time, ctx) {
 				const value = op === 'add' ? current + v : op === 'subtract' ? current - v : v;
 				// 48 D1: the paused view's copy first (the watch list reads it), the shared one unless sandboxed
 				if (sharedOverlay) sharedOverlay.game = { ...sharedOverlay.game, vars: { ...sharedOverlay.game.vars, [name]: value } };
-				if (!sandboxedWrite(stamp)) setGameVar(name, value);
+				// fix-agenttest 10: the AUTHORITY writes, once per event (gameState.applyGameVarOp)
+				if (!sandboxedWrite(stamp)) shareGameVarOp({ rid: 'var:' + node.id + ':' + stamp, name, op, value: v });
 			}
 		}
 	}
@@ -3957,6 +4004,9 @@ function applyAnimation(object, base, anim, time, ctx) {
 const cameraRigState = new Map();
 /** nodes already told they are wired to something that is not a camera @type {Set<string>} */
 const cameraRigWarned = new Set();
+/** 55 (1.48.1): when the last such notice showed — two rigs (or a deleted object's leftover one) warning in the same
+ * moment are ONE notice, not a stack of identical toasts */
+let cameraRigWarnedAt = 0;
 const _rigQ = new THREE.Quaternion();
 
 /**
@@ -3970,7 +4020,12 @@ function applyCameraRig(object, anim, data) {
 	if (!object?.userData?.camera) {
 		if (!cameraRigWarned.has(anim.id)) {
 			cameraRigWarned.add(anim.id);
-			showToast('Camera Rig moves camera objects only — wire it into an Object Selector that picks a camera.');
+			const now = Date.now();
+			if (now - cameraRigWarnedAt > 5000) {
+				const what = object?.name ? ' ("' + String(object.name).slice(0, 40) + '" is not one)' : '';
+				showToast('Camera Rig moves camera objects only' + what + ' — wire it into an Object Selector that picks a camera.');
+			}
+			cameraRigWarnedAt = now;
 		}
 		return;
 	}
@@ -5027,12 +5082,19 @@ export function startFlowRuntime() {
 		})
 		.catch((error) => console.warn('behaviours failed to start', error));
 	flowGraphs.subscribe(() => {
-		// 36 U11: muted nodes and the editor-only kinds (group, note) are not evaluated
-		({ nodes, edges } = runtimeGraph(allNodes(), allEdges()));
+		// 36 U11: muted nodes and the editor-only kinds (group, note) are not evaluated; 55 Q1: nor dormant graphs
+		rebuildRuntimeGraph();
 		applyColors();
 	});
 	objectsGroup.subscribe((value) => {
 		sceneObjects = value;
+		rebuildRuntimeGraph();
+	});
+	// 55 Q1: an object added or removed (a delete, its undo, a joiner's objects landing after its graphs)
+	sceneRevision.subscribe(() => {
+		if (!sceneObjects || sameSet(orphanGraphIds(), dormant)) return;
+		rebuildRuntimeGraph();
+		applyColors();
 	});
 	mutedFlowObjects.subscribe((value) => {
 		muted = value;

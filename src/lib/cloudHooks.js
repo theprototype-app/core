@@ -490,6 +490,12 @@ export function setPeerMenuItems(items) {
  * @type {import('svelte/store').Writable<any>} */
 export const connectorProvider = writable(null);
 
+/** 86-fix N1: the cloud build's "Sign in to connect", a `(el) => cleanup` mount the plugin installs while the
+ * connector is built in and nobody is signed in (cloudApi.mountConnectorSignIn). The AI window's welcome renders
+ * it in place of Connect Claude; once signed in the plugin installs the provider and the welcome shows the
+ * button. Null (the OSS build, or signed in) = nothing. @type {import('svelte/store').Writable<any>} */
+export const connectorSignInSlot = writable(null);
+
 /** Plugin seam for the above (cloudApi.setConnectorProvider). Anything without `pair` reads as null.
  * @param {any} provider */
 export function setConnectorProvider(provider) {

@@ -4,8 +4,7 @@
 	// Enter/click spawns at the menu's ground point and replicates.
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { untrack } from 'svelte';
-	import { addMenu, aiAssistantHidden, showToast, settingsOpen, settingsSection } from '../../stores/appStore.js';
-	import { aiReady } from '$lib/ai/providers';
+	import { addMenu, aiAssistantHidden } from '../../stores/appStore.js';
 	import { primitivesCatalog } from '$lib/primitivesCatalog';
 	import { spawnAtPoint } from '$lib/addObjects';
 	import { rightDragMove, inputContextMenu } from '$lib/searchMenuUx';
@@ -102,16 +101,10 @@
 		dragged = false; // the next open re-anchors to wherever it is invoked from
 	}
 
-	// the menu's last row opens the AI assistant — the AiHudButton's own path (Settings › AI
-	// with a toast when no provider is set up yet), opening rather than toggling
+	// the menu's last row opens the AI assistant — the AiHudButton's own path, opening rather than
+	// toggling (86-fix N1: always; with no provider the window offers Connect Claude or Settings › AI)
 	function openAi() {
 		close();
-		if (!aiReady()) {
-			showToast('Enable an AI provider in Settings to use the assistant');
-			settingsSection.set('ai');
-			settingsOpen.set(true);
-			return;
-		}
 		aiAssistantHidden.set('');
 	}
 

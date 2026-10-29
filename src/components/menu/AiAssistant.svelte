@@ -17,7 +17,8 @@
 	import EmptyState from '../ui/EmptyState.svelte';
 	import AgentLog from './AgentLog.svelte'; // 55 A8
 	import ConnectClaude from './ConnectClaude.svelte'; // 86 B1/B2
-	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider } from '$lib/ai/providers';
+	import AiWelcome from './AiWelcome.svelte'; // 86-fix N1
+	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider, aiReady } from '$lib/ai/providers';
 	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi } from '$lib/ai/assistant';
 	import { dragWindow } from '$lib/dragWindow';
 	import { bottomDockable } from '$lib/bottomDockDrop';
@@ -35,6 +36,12 @@
 
 	const hasProvider = $derived($aiProviders.length > 0 && !!$aiActiveProvider);
 	const pillVisible = $derived($aiPromptBarOpen && $aiEnabled && hasProvider && $aiAssistantHidden !== '');
+	// 86-fix N1: no provider ready → the window opens on the welcome (Connect Claude / your own provider)
+	const needsSetup = $derived.by(() => {
+		void [$aiEnabled, $aiProviders, $aiActiveProvider];
+		return !aiReady();
+	});
+	const welcome = $derived(needsSetup && !$aiMessages.length);
 
 	function submit() {
 		const text = prompt.trim();
@@ -146,13 +153,15 @@
 			headerClass="ui-panel-header move-handle cursor-move select-none"
 			onclose={() => aiAssistantHidden.set('hidden')}
 		/>
-		<!-- 86 B1/B2: Connect Claude (signed-in cloud builds only) -->
-		<ConnectClaude />
+		<!-- 86 B1/B2: Connect Claude (signed-in cloud builds only); the welcome carries it while no provider is set up -->
+		{#if !welcome}<ConnectClaude />{/if}
 		<!-- 55 A8: what the AI agents in the session did, on every peer -->
 		<AgentLog />
 
 		<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto px-2 py-2" use:minimalScroll>
-			{#if !$aiMessages.length}
+			{#if welcome}
+				<AiWelcome />
+			{:else if !$aiMessages.length}
 				<EmptyState
 					icon="sparkles"
 					title="Describe a scene and I'll build it"

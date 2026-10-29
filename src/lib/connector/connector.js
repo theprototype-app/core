@@ -22,6 +22,7 @@ import { createConnectorAgent, CONNECTOR_LABEL } from '../agent/tpAgent.js';
 import { startAgentRecorder, stopAgentRecorder } from '../agentLogRecorder.js';
 import { showConfirm } from '../confirmDialog.js';
 import { showToast } from '../../stores/appStore.js';
+import { joinSession } from './joinSession.js';
 import { APP_VERSION } from '../version.js';
 
 /** @type {ReturnType<typeof createConnectorAgent> | null} */
@@ -106,6 +107,8 @@ function setup() {
 		send: (text) => client?.send(text),
 		visible,
 		encodeShot: (url) => encodeShot(url).catch(() => null),
+		// 86-fix N2: the person confirms on a Join / Cancel card in this tab
+		joinSession: (args, ctx) => joinSession(args, ctx),
 		onCallStart: () => view({ busy: dispatcher?.inFlight() ?? 0 }),
 		onCallEnd: ({ tool, ok }) => view({ busy: dispatcher?.inFlight() ?? 0, lastCall: { tool, at: Date.now(), ok } })
 	});

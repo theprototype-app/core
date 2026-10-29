@@ -276,6 +276,7 @@
 		"connector-relay": 240,
 		"connector-physics": 150,
 		"connector-window": 150,
+		"connector-join": 120,
 		"agent-bridge": 48,
 		"agent-conformance": 200,
 		"agent-host-leaves": 180,

@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { createRelayClient, backoffMs } from '../../src/lib/connector/relayClient.js';
-import { createDispatcher, BRIDGE_SCHEMAS } from '../../src/lib/connector/dispatcher.js';
+import { createDispatcher, BRIDGE_SCHEMAS, CONNECTOR_SCHEMAS } from '../../src/lib/connector/dispatcher.js';
 import { PING_MS, HELLO_TIMEOUT_MS, PING_TEXT, parseFrame } from '../../src/lib/connector/protocol.js';
-import { bridgeTools } from '../../tools/agent/src/mcpTools.js';
+import { bridgeTools, connectorOnlyTools } from '../../tools/agent/src/mcpTools.js';
+import { parseJoinLink } from '../../src/lib/connector/joinLink.js';
 
 // 86 B1/B2/B3/B5: the relay client's transitions and the dispatcher's rules, against fakes.
 
@@ -242,7 +243,8 @@ function dispatch(/** @type {any} */ over = {}) {
 		agent,
 		send: (t) => sent.push(JSON.parse(t)),
 		visible: () => visible,
-		encodeShot: async () => ({ image: { mimeType: 'image/jpeg', data: 'BBBB' }, width: 768, height: 432 })
+		encodeShot: async () => ({ image: { mimeType: 'image/jpeg', data: 'BBBB' }, width: 768, height: 432 }),
+		...(over.joinSession ? { joinSession: over.joinSession } : {})
 	});
 	return { d, sent, ran, hide: () => (visible = false), release: () => releaseExec?.(undefined) };
 }
@@ -346,5 +348,52 @@ describe('dispatcher', () => {
 
 	it('the bridge schemas are the 55 bridge’s own', () => {
 		for (const t of bridgeTools('browser').filter((t) => t.name !== 'connect')) expect(BRIDGE_SCHEMAS[t.name]).toEqual(t.inputSchema);
+	});
+
+	// 86-fix N2
+	it('join_session: listed only when the tab answers it; schema = the catalog’s', () => {
+		expect(dispatch().d.toolNames()).not.toContain('join_session');
+		expect(dispatch({ joinSession: async () => ({ result: {} }) }).d.toolNames()).toContain('join_session');
+		for (const t of connectorOnlyTools()) expect(CONNECTOR_SCHEMAS[t.name]).toEqual(t.inputSchema);
+	});
+
+	it('join_session: an edit-scope call (a look-only grant cannot ask), args checked before the card', async () => {
+		/** @type {any[]} */ const asked = [];
+		const x = dispatch({ joinSession: async (/** @type {any} */ a) => (asked.push(a), { result: { joining: true } }) });
+		x.d.handle(/** @type {any} */ (call('r', 'join_session', { link: '#abcde' }, 'read')));
+		x.d.handle(/** @type {any} */ (call('n', 'join_session', {})));
+		x.d.handle(/** @type {any} */ (call('j', 'join_session', { link: '#abcde' })));
+		await flush();
+		expect(x.sent.map((f) => [f.id, f.error?.code ?? 'ok'])).toEqual([['r', 'refused'], ['n', 'invalid_args'], ['j', 'ok']]);
+		expect(asked).toEqual([{ link: '#abcde' }]);
+	});
+
+	it('join_session: Disconnect takes the card down and nothing answers', async () => {
+		let dismissed = 0;
+		const x = dispatch({
+			joinSession: (/** @type {any} */ _a, /** @type {any} */ ctx) =>
+				new Promise((resolve) => ctx.onCancel(() => (dismissed++, resolve({ error: { code: 'refused', message: 'gone' } }))))
+		});
+		x.d.handle(/** @type {any} */ (call('j', 'join_session', { link: '#abcde' })));
+		await flush();
+		x.d.cancelAll();
+		await flush();
+		expect(dismissed).toBe(1);
+		expect(x.sent).toEqual([]);
+	});
+});
+
+describe('parseJoinLink (86-fix N2)', () => {
+	const ORIGINS = ['https://theprototype.app', 'https://localhost:5890'];
+	it('reads the share link, an invite link, a hash and a bare id', () => {
+		expect(parseJoinLink('https://theprototype.app/#F0FD3', ORIGINS)).toEqual({ hash: '#F0FD3', id: 'f0fd3', invite: false, server: false });
+		expect(parseJoinLink(' https://theprototype.app/#F0FD3&invite=abc.def~srv=peer.example ', ORIGINS)).toEqual({ hash: '#F0FD3&invite=abc.def~srv=peer.example', id: 'f0fd3', invite: true, server: true });
+		expect(parseJoinLink('#f0fd3', ORIGINS)).toMatchObject({ id: 'f0fd3', invite: false });
+		expect(parseJoinLink('F0FD3', ORIGINS)).toMatchObject({ hash: '#F0FD3', id: 'f0fd3' });
+		expect(parseJoinLink('https://localhost:5890/#ab12c', ORIGINS)).toMatchObject({ id: 'ab12c' });
+	});
+	it('refuses another site, no session, a bad id, junk', () => {
+		for (const bad of ['https://evil.example/#F0FD3', 'https://theprototype.app.evil.example/#F0FD3', 'javascript:alert(1)//#ab', 'https://theprototype.app/', '#', '#<b>x</b>', '#../../x', '', 42, null, 'x'.repeat(3000)])
+			expect(parseJoinLink(/** @type {any} */ (bad), ORIGINS)).toHaveProperty('error');
 	});
 });

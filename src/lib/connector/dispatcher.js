@@ -12,6 +12,8 @@
 //   · NO SCREENSHOT WHILE HIDDEN: the tab answers `hidden`, nothing is rendered.
 //   · CANCEL / DISCONNECT: a queued call that was cancelled never runs; a wait_for_edit ends at once; a
 //     call already inside a tool finishes (a tool is not interruptible) and its late answer is dropped.
+//   · 86-fix N2: `join_session` (when the tab hands in `joinSession`) is an EDIT-scope call the PERSON
+//     answers on a Join / Cancel card (joinSession.js); a cancel takes the card down.
 
 import { BRIDGE_TOOLS, CONNECTOR_BLOCKED_TOOLS, MAX_IN_FLIGHT, MAX_WAIT_MS, answerFrame } from './protocol.js';
 import { validateArgs } from './argsSchema.js';
@@ -35,6 +37,15 @@ export const BRIDGE_SCHEMAS = /** @type {Record<string, any>} */ ({
 	wait_for_edit: { type: 'object', properties: { timeout_ms: { type: 'number', description: 'default 30000, at most 120000' } } }
 });
 
+/** 86-fix N2: tools only a connector tab answers — tools/agent/src/mcpTools.js connectorOnlyTools(), kept in step by a unit test */
+export const CONNECTOR_SCHEMAS = /** @type {Record<string, any>} */ ({
+	join_session: {
+		type: 'object',
+		properties: { link: { type: 'string', description: 'the session link, invite link or session id the person gave you' } },
+		required: ['link']
+	}
+});
+
 /** tools that change nothing: allowed under a read scope */
 const READ_TOOLS = new Set([...READ_ONLY_TOOLS, ...BRIDGE_TOOLS]);
 
@@ -48,6 +59,7 @@ const nameOf = (t) => String(t?.function?.name ?? t?.name ?? '');
  *   send: (text: string) => void,
  *   visible: () => boolean,
  *   encodeShot: (dataUrl: string) => Promise<{image: {mimeType: string, data: string}, width: number, height: number} | null>,
+ *   joinSession?: (args: any, ctx: {onCancel: (fn: () => void) => void}) => Promise<any>,
  *   onCallStart?: (call: {id: string, tool: string}) => void,
  *   onCallEnd?: (call: {id: string, tool: string, ok: boolean}) => void
  * }} deps
@@ -69,9 +81,12 @@ export function createDispatcher(deps) {
 		return map;
 	}
 
+	/** the connector-only tools this tab answers (join_session when the tab hands it in) @returns {string[]} */
+	const ownTools = () => (typeof deps.joinSession === 'function' ? ['join_session'] : []);
+
 	/** every name a relayed call may use (hello's `tools`) */
 	function toolNames() {
-		return [...BRIDGE_TOOLS, ...[...sceneTools().keys()].filter((n) => !BRIDGE_SCHEMAS[n])];
+		return [...BRIDGE_TOOLS, ...ownTools(), ...[...sceneTools().keys()].filter((n) => !BRIDGE_SCHEMAS[n] && !CONNECTOR_SCHEMAS[n])];
 	}
 
 	/** @param {string} id @param {{result: any} | {error: {code: string, message: string}}} answer */
@@ -135,6 +150,19 @@ export function createDispatcher(deps) {
 		return job;
 	}
 
+	/** 86-fix N2: the person answers on a card; a cancel (the DO's, Disconnect) takes it down
+	 * @param {string} id @param {any} args */
+	function joinCall(id, args) {
+		return /** @type {Promise<any>} */ (
+			/** @type {NonNullable<typeof deps.joinSession>} */ (deps.joinSession)(args, {
+				onCancel: (fn) => {
+					const call = inFlight.get(id);
+					if (call) call.wake = fn;
+				}
+			})
+		);
+	}
+
 	/** the DO cancelled one call @param {string} id */
 	function cancel(id) {
 		const call = inFlight.get(id);
@@ -172,11 +200,12 @@ export function createDispatcher(deps) {
 			}
 			const scene = sceneTools();
 			const bridge = Object.prototype.hasOwnProperty.call(BRIDGE_SCHEMAS, tool);
-			if (!bridge && !scene.has(tool)) {
+			const own = ownTools().includes(tool);
+			if (!bridge && !own && !scene.has(tool)) {
 				deps.send(answerFrame(id, fail('unknown_tool', 'Unknown tool "' + tool + '". This tab answers: ' + toolNames().join(', ') + '.')));
 				return;
 			}
-			const check = validateArgs(bridge ? BRIDGE_SCHEMAS[tool] : scene.get(tool), args);
+			const check = validateArgs(bridge ? BRIDGE_SCHEMAS[tool] : own ? CONNECTOR_SCHEMAS[tool] : scene.get(tool), args);
 			if (!check.ok) {
 				deps.send(answerFrame(id, fail('invalid_args', 'Invalid arguments for ' + tool + ' — nothing ran. ' + check.problems.join('; '))));
 				return;
@@ -197,7 +226,9 @@ export function createDispatcher(deps) {
 						? screenshot(id, args)
 						: tool === 'wait_for_edit'
 							? waitForEdit(id, args)
-							: sceneCall(id, tool, args);
+							: own
+								? joinCall(id, args)
+								: sceneCall(id, tool, args);
 			run.then(
 				(a) => answer(id, a),
 				(e) => answer(id, fail('failed', e instanceof Error ? e.message : String(e)))

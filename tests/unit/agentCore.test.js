@@ -79,6 +79,7 @@ describe('exec()', () => {
 		await agent.exec('list_scene', {});
 		expect(app.log.map((l) => l[0])).toEqual(['run']);
 		expect(READ_ONLY_TOOLS.has('list_scene')).toBe(true);
+		expect(READ_ONLY_TOOLS.has('describe_node_types')).toBe(true); // 86 T1
 	});
 	it('REFUSES a viewer edit with a reason and never runs it (T1)', async () => {
 		const app = fakeApp();

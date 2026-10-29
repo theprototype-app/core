@@ -169,10 +169,14 @@ export function applyNodesSnapshot(nodes, edges, graphs) {
 // --- Drift detection: peers periodically exchange a graph hash and pull a
 // fresh snapshot when theirs differs (heals missed nodedata/move messages) ---
 
-/** djb2 over ALL serialized graphs, order-independent via sort */
-export function graphHash() {
+/**
+ * djb2 over ALL serialized graphs, order-independent via sort
+ * @param {{withOrphans?: boolean}} [opts] withOrphans: count graphs whose object is not (yet) here too
+ */
+export function graphHash(opts = {}) {
 	const all = get(flowGraphs);
-	const orphans = orphanGraphIds(); // 55 Q1: what the reply leaves out, the hash leaves out
+	// 55 Q1: what the reply leaves out, the hash leaves out
+	const orphans = opts.withOrphans ? new Set() : orphanGraphIds();
 	/** @type {any[]} */
 	const parts = [];
 	for (const graphId of Object.keys(all).sort()) {
@@ -246,6 +250,9 @@ export function nodeSyncDebug() {
  */
 export function applyNodeSync(data) {
 	if (data.hash === graphHash()) return;
+	// A joiner holds the snapshot's object graphs before the objects themselves arrive, and until
+	// then they read as orphans (55 Q1) — the same graphs counted in full are not drift
+	if (data.hash === graphHash({ withOrphans: true })) return;
 	/** @type {any} */
 	const peer = get(peers);
 	if (!peer) return;

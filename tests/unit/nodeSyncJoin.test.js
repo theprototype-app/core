@@ -6,6 +6,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const { peers } = await import('../../src/stores/appStore.js');
 const { flowGraphs } = await import('../../src/stores/flowStore.js');
 const N = await import('../../src/lib/nodesHandler.js');
+const THREE = await import('three');
+const { objectsGroup } = await import('../../src/stores/sceneStore.js');
 
 let sent;
 beforeEach(() => {
@@ -39,6 +41,27 @@ describe('nodesync during a join', () => {
 		N.noteNodesSnapshot('host');
 		sync();
 		expect(sent.map((m) => m.type)).toEqual(['getnodes']);
+	});
+
+	it("an object graph whose object has not arrived yet is not drift (55 Q1 x the join)", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(9_000_000);
+		const node = (id) => ({ id, type: 'spin', position: { x: 0, y: 0 }, data: {} });
+		const group = new THREE.Group();
+		const box = new THREE.Mesh();
+		group.add(box);
+		objectsGroup.set(group);
+		flowGraphs.set({ scene: { nodes: [node('k1')], edges: [] }, [box.uuid]: { nodes: [node('spin1')], edges: [] } });
+		const hostHash = N.graphHash(); // the host holds the box
+		group.remove(box); // the joiner: the snapshot is here, the box is still on its way
+		expect(N.graphHash()).not.toBe(hostHash);
+		N.noteNodesSnapshot('host');
+		N.applyNodeSync({ type: 'nodesync', peerId: 'host', hash: hostHash, count: 2 });
+		expect(sent).toEqual([]);
+		// a real difference still pulls
+		N.applyNodeSync({ type: 'nodesync', peerId: 'host', hash: hostHash + 1, count: 2 });
+		expect(sent.map((m) => m.type)).toEqual(['getnodes']);
+		objectsGroup.set(null);
 	});
 
 	it('forgets a departed peer, so its next join is a handshake again', () => {

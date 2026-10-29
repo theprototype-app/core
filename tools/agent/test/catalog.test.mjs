@@ -1,7 +1,7 @@
 // The static tool catalog (roadmap 86 T4 + 56 C19) and its voice instructions (86 T3). Pure: no browser.
 // Run: node test/catalog.test.mjs
 import fs from 'node:fs';
-import { buildCatalog, connectorInstructions, CATALOG_FORMAT } from '../src/catalog.js';
+import { buildCatalog, connectorInstructions, annotate, CATALOG_FORMAT } from '../src/catalog.js';
 import { BRIDGE_TOOL_NAMES } from '../src/mcpTools.js';
 
 let pass = 0;
@@ -36,6 +36,12 @@ try {
 }
 check('an empty host list is refused (a broken capture must not publish an empty catalog)', threw);
 
+// the connector directory: every tool has a title and a read-only or destructive hint
+check('every tool has a title and readOnlyHint (+ destructiveHint on edits)', c.tools.every((t) => t.title && t.annotations.title === t.title && typeof t.annotations.readOnlyHint === 'boolean' && (t.annotations.readOnlyHint || typeof t.annotations.destructiveHint === 'boolean')));
+check('list_scene reads, create_objects only adds, delete_objects destroys', annotate({ name: 'list_scene' }).annotations.readOnlyHint === true && annotate({ name: 'create_objects' }).annotations.destructiveHint === false && annotate({ name: 'delete_objects' }).annotations.destructiveHint === true);
+const unknown = annotate({ name: 'brand_new_tool', description: '', inputSchema: {} });
+check('an unlisted tool fails closed: a destructive edit with a title from its name', unknown.title === 'Brand new tool' && unknown.annotations.readOnlyHint === false && unknown.annotations.destructiveHint === true);
+
 // T3: the instructions speak only about tools that exist
 const base = connectorInstructions(['status', 'list_scene', 'create_objects']);
 check('voice rules are always there', /VOICE/.test(base) && /Never read out uuids/.test(base) && /Connect Claude/.test(base));
@@ -48,6 +54,7 @@ check('the instructions stay short (< 1500 chars)', full.length < 1500);
 // the committed catalog (written by core scripts/agent-tool-catalog.cjs) parses and has the instructions
 const committed = JSON.parse(fs.readFileSync(new URL('../catalog.json', import.meta.url), 'utf8'));
 check('catalog.json carries tools + instructions', committed.tools.length > 10 && committed.instructions === connectorInstructions(committed.tools.map((t) => t.name)));
+check('catalog.json tools all carry titles + hints', committed.tools.every((t) => t.title && t.annotations && typeof t.annotations.readOnlyHint === 'boolean'));
 check('catalog.json lists describe_node_types and what_can_you_do', ['describe_node_types', 'what_can_you_do'].every((n) => committed.tools.some((t) => t.name === n)));
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

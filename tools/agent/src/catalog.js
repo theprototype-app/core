@@ -9,8 +9,58 @@
 
 import { mapHostTools, bridgeTools } from './mcpTools.js';
 
-/** Bump when the catalog's SHAPE changes (not when tools change). */
-export const CATALOG_FORMAT = 1;
+/** Bump when the catalog's SHAPE changes (not when tools change). 2 = titles + annotations. */
+export const CATALOG_FORMAT = 2;
+
+/**
+ * Per tool: a human title, whether it only reads, and whether an edit may overwrite or remove what is
+ * there (MCP `destructiveHint`; false = only adds). The Claude connector directory requires a title and
+ * a read-only / destructive hint on EVERY tool. Everything an agent does is undoable, but the hints say
+ * what a call does, not whether it can be taken back. A tool missing here is treated as a destructive
+ * edit (fail closed) with a title made from its name.
+ */
+export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?: true, destructive?: boolean, openWorld?: true}>} */ ({
+	list_scene: { title: 'Read the scene', read: true },
+	describe_node_types: { title: 'Look up flow node types', read: true },
+	what_can_you_do: { title: 'What can you do here', read: true },
+	status: { title: 'Session status', read: true },
+	screenshot: { title: 'Take a picture of the scene', read: true },
+	wait_for_edit: { title: 'Wait for someone to edit', read: true },
+	pending_offers: { title: 'List questions the app is asking', read: true },
+	create_objects: { title: 'Add objects', destructive: false },
+	create_flow_nodes: { title: 'Add behaviour (flow) nodes', destructive: false },
+	create_behaviour: { title: 'Add a code behaviour', destructive: false },
+	create_joints: { title: 'Add physics joints', destructive: false },
+	group_objects: { title: 'Group objects', destructive: false },
+	generate_mesh: { title: 'Generate a 3D model', destructive: false, openWorld: true },
+	update_objects: { title: 'Change objects', destructive: true },
+	update_flow_nodes: { title: 'Change or remove flow nodes', destructive: true },
+	edit_behaviour: { title: 'Edit a code behaviour', destructive: true },
+	set_physics: { title: 'Set physics', destructive: true },
+	control_simulation: { title: 'Run or stop the simulation', destructive: true },
+	delete_objects: { title: 'Delete objects', destructive: true },
+	clear_scene: { title: 'Clear the scene', destructive: true },
+	install_modules: { title: 'Install modules', destructive: false, openWorld: true },
+	accept_offer: { title: 'Answer a question the app asks', destructive: true },
+	connect: { title: 'Join a session', destructive: false, openWorld: true }
+});
+
+/** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
+const titleOf = (name) => (name.charAt(0).toUpperCase() + name.slice(1)).replace(/_/g, ' ');
+
+/**
+ * A catalog tool with `title` + `annotations` (MCP 2025-06-18 shapes).
+ * @param {{name: string, description: string, inputSchema: any}} t
+ */
+export function annotate(t) {
+	const a = TOOL_ANNOTATIONS[t.name];
+	const title = a?.title ?? titleOf(t.name);
+	/** @type {Record<string, any>} */
+	const annotations = { title, readOnlyHint: !!a?.read };
+	if (!a?.read) annotations.destructiveHint = a?.destructive ?? true;
+	annotations.openWorldHint = !!a?.openWorld;
+	return { name: t.name, title, description: t.description, inputSchema: t.inputSchema, annotations };
+}
 
 /**
  * The server instructions for a voice-first client (claude.ai chat, phone and voice mode). Short,
@@ -43,13 +93,13 @@ export function connectorInstructions(names) {
  * Host tools (tpAgent.tools()'s shape) → the static catalog.
  * @param {any[]} hostTools
  * @param {{provenance?: Record<string, any>}} [opts]
- * @returns {{format: number, generator: Record<string, any>, instructions: string, tools: {name: string, description: string, inputSchema: any}[]}}
+ * @returns {{format: number, generator: Record<string, any>, instructions: string, tools: {name: string, title: string, description: string, inputSchema: any, annotations: Record<string, any>}[]}}
  */
 export function buildCatalog(hostTools, opts = {}) {
 	if (!Array.isArray(hostTools) || !hostTools.length) throw new Error('the host tool list is empty');
 	const mapped = mapHostTools(hostTools);
 	// the bridge tools a page answers itself; `connect` is the agent CLI's (the Worker drops it, serve keeps it)
-	const tools = [...mapped.tools, ...bridgeTools('browser')];
+	const tools = [...mapped.tools, ...bridgeTools('browser')].map(annotate);
 	return {
 		format: CATALOG_FORMAT,
 		generator: {

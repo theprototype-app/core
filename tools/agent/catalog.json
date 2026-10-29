@@ -11,7 +11,7 @@
 		{
 			"name": "list_scene",
 			"title": "Read the scene",
-			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material and color. Call this before editing so you use real uuids. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.",
+			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -22,6 +22,38 @@
 					"page": {
 						"type": "number",
 						"description": "with flow: which page (1-based)"
+					},
+					"brief": {
+						"type": "boolean",
+						"description": "optional: only uuid, name, type, parentUuid per object (cheap on a big scene)"
+					},
+					"name": {
+						"type": "string",
+						"description": "optional: only objects whose name matches — a glob (\"Wall*\", \"*door*\"), or plain text = contains; case-insensitive"
+					},
+					"type": {
+						"type": "string",
+						"description": "optional: only objects of this type — Mesh, Group, PointLight… or a primitive shape (Box, Wall, Sphere…)"
+					},
+					"near": {
+						"type": "object",
+						"description": "optional: only objects within radius of a WORLD position",
+						"properties": {
+							"position": {
+								"type": "array",
+								"items": {
+									"type": "number"
+								},
+								"description": "[x, y, z]"
+							},
+							"radius": {
+								"type": "number"
+							}
+						},
+						"required": [
+							"position",
+							"radius"
+						]
 					}
 				}
 			},
@@ -169,7 +201,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "uuid of an existing group to nest under"
+									"description": "uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group"
 								},
 								"physics": {
 									"type": "string",
@@ -305,7 +337,7 @@
 								},
 								"parentUuid": {
 									"type": "string",
-									"description": "group uuid to nest under, or \"root\" to un-nest"
+									"description": "group uuid to nest under, or \"root\" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent"
 								}
 							},
 							"required": [

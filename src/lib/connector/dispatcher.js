@@ -15,6 +15,7 @@
 
 import { BRIDGE_TOOLS, CONNECTOR_BLOCKED_TOOLS, MAX_IN_FLIGHT, MAX_WAIT_MS, answerFrame } from './protocol.js';
 import { validateArgs } from './argsSchema.js';
+import { READ_ONLY_TOOLS } from '../agent/agentCore.js';
 
 /** screenshot sizes a connector may ask for (the Worker refuses images over 2 MB of base64) */
 export const SHOT_DEFAULT = 768;
@@ -35,7 +36,7 @@ export const BRIDGE_SCHEMAS = /** @type {Record<string, any>} */ ({
 });
 
 /** tools that change nothing: allowed under a read scope */
-const READ_TOOLS = new Set(['list_scene', ...BRIDGE_TOOLS]);
+const READ_TOOLS = new Set([...READ_ONLY_TOOLS, ...BRIDGE_TOOLS]);
 
 /** @param {any} t */
 const nameOf = (t) => String(t?.function?.name ?? t?.name ?? '');

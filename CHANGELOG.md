@@ -5,6 +5,19 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.49.0 — talk to Claude from claude.ai and voice 🎙️
+
+- **The Claude connector.** Add theprototype as a connector in claude.ai (web, desktop, phone), press **Connect
+  Claude** in the AI assistant of your open tab, and Claude builds there by chat or voice — with your own access.
+  Every step shows in Agent activity as *Claude (connector)* with its own Undo; a viewer's Claude can look but not
+  build, and locked objects stay locked. Keep the tab open and in front; **Disconnect** stops it at once, and
+  Settings ▸ Connected apps lists and revokes the apps you allowed. Signed-in theprototype.app only.
+- **Agents know the nodes before they wire them.** `describe_node_types` tells an agent each flow node's inputs,
+  outputs and params, and `what_can_you_do` answers "what can you do here?" in a sentence you can hear; the
+  connector speaks voice-first (short answers, no ids or JSON).
+- For developers: `npm run catalog:agent` generates the static agent tool catalog (`tools/agent/catalog.json`) from
+  the app itself, and CI fails when it is stale.
+
 ## 1.48.1 — fixes for AI agents and game logic 🔧
 
 - **A deleted object's logic stops.** Its flow graph used to keep running on every peer until a reload (and a

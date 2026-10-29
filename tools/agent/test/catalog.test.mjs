@@ -1,0 +1,54 @@
+// The static tool catalog (roadmap 86 T4 + 56 C19) and its voice instructions (86 T3). Pure: no browser.
+// Run: node test/catalog.test.mjs
+import fs from 'node:fs';
+import { buildCatalog, connectorInstructions, CATALOG_FORMAT } from '../src/catalog.js';
+import { BRIDGE_TOOL_NAMES } from '../src/mcpTools.js';
+
+let pass = 0;
+let fail = 0;
+const check = (name, cond) => {
+	if (cond) {
+		pass++;
+		console.log('PASS ' + name);
+	} else {
+		fail++;
+		console.log('FAIL ' + name);
+	}
+};
+
+const host = [
+	{ type: 'function', function: { name: 'list_scene', description: 'look', parameters: { type: 'object', properties: {} } } },
+	{ type: 'function', function: { name: 'create_objects', description: 'make', parameters: { type: 'object', properties: { objects: { type: 'array' } } } } },
+	{ type: 'function', function: { name: 'status', description: 'a host tool shadowing a bridge tool', parameters: {} } },
+	{ type: 'function', function: { name: 'bad name!', description: 'dropped' } }
+];
+const c = buildCatalog(host, { provenance: { coreRef: 'v9.9.9' } });
+check('format is stamped', c.format === CATALOG_FORMAT);
+check('host tools first, schemas verbatim', c.tools[1].name === 'create_objects' && c.tools[1].inputSchema.properties.objects.type === 'array');
+check('the bridge tools follow (connect, status, screenshot, wait_for_edit)', BRIDGE_TOOL_NAMES.every((n) => c.tools.some((t) => t.name === n)));
+check('a host tool shadowing a bridge tool and an invalid name are dropped and reported', c.generator.dropped.includes('status') && c.generator.dropped.includes('bad name!'));
+check('provenance is kept', c.generator.coreRef === 'v9.9.9' && c.generator.hostTools === 4);
+let threw = false;
+try {
+	buildCatalog([]);
+} catch {
+	threw = true;
+}
+check('an empty host list is refused (a broken capture must not publish an empty catalog)', threw);
+
+// T3: the instructions speak only about tools that exist
+const base = connectorInstructions(['status', 'list_scene', 'create_objects']);
+check('voice rules are always there', /VOICE/.test(base) && /Never read out uuids/.test(base) && /Connect Claude/.test(base));
+check('no line about a missing tool', !/where_are_users|describe_node_types|screenshot|what_can_you_do|attach_to_user/.test(base));
+const full = connectorInstructions(['status', 'list_scene', 'create_flow_nodes', 'describe_node_types', 'where_are_users', 'attach_to_user', 'screenshot', 'what_can_you_do']);
+check('spatial (85 S1) and prop (85 P1) lines appear once the tools land', /where_are_users/.test(full) && /flashlight/.test(full));
+check('describe_node_types is named beside flow nodes', /describe_node_types before wiring/.test(full));
+check('the instructions stay short (< 1500 chars)', full.length < 1500);
+
+// the committed catalog (written by core scripts/agent-tool-catalog.cjs) parses and has the instructions
+const committed = JSON.parse(fs.readFileSync(new URL('../catalog.json', import.meta.url), 'utf8'));
+check('catalog.json carries tools + instructions', committed.tools.length > 10 && committed.instructions === connectorInstructions(committed.tools.map((t) => t.name)));
+check('catalog.json lists describe_node_types and what_can_you_do', ['describe_node_types', 'what_can_you_do'].every((n) => committed.tools.some((t) => t.name === n)));
+
+console.log('\n' + pass + ' passed, ' + fail + ' failed');
+process.exit(fail ? 1 : 0);

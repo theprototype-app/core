@@ -649,13 +649,14 @@
 							"effects": {
 								"storage": {
 									"notifications": "notified: [\"Tours reset — each one shows again the first time it applies.\"]",
-									"tour.editor": null
+									"tour.editor": null,
+									"tour.first-win": null
 								},
 								"stores": {
 									"a11yAnnounce.politeAnnouncement": "Tours reset — each one shows again the first time it applies.",
 									"notifications": "<object>",
 									"notificationsUnread": "<changed>",
-									"tours.tourRecords": 6,
+									"tours.tourRecords": 9,
 									"toastStore": "<object>"
 								},
 								"html": [],

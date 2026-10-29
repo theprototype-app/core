@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-27T09:37:53.574Z",
+	"recordedAt": "2026-10-29T01:49:06.615Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -129,7 +129,7 @@
 		"Editor tour": {
 			"rows": [
 				"Editor tour",
-				"Show tours automatically"
+				"Show everything"
 			],
 			"sections": [
 				"Interface"
@@ -395,8 +395,8 @@
 				"Node editor: show / bring to front / hide",
 				"Shader editor: show / bring to front / hide",
 				"Show captions",
+				"Show everything",
 				"Show in edit",
-				"Show tours automatically",
 				"Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)",
 				"UV editor: show / bring to front / hide"
 			],
@@ -2361,6 +2361,7 @@
 			"rows": [
 				"Diagnostics",
 				"Error reports",
+				"Usage counts",
 				"Wheel diagnostics"
 			],
 			"sections": [
@@ -2486,6 +2487,7 @@
 				"Density",
 				"Dock resizes the viewport",
 				"Editor tour",
+				"First-game quest",
 				"Game sounds",
 				"Knocked-off idle",
 				"Lift the corner buttons above docked panels",
@@ -2501,6 +2503,7 @@
 				"Reset tips",
 				"Reset tours",
 				"Show FPS and draw calls",
+				"Show everything",
 				"Show others as classic heads",
 				"Show pop-ups only in the drawer",
 				"Show system objects in the object list",
@@ -2633,7 +2636,8 @@
 		},
 		"telemetry": {
 			"rows": [
-				"Error reports"
+				"Error reports",
+				"Usage counts"
 			],
 			"sections": [
 				"Privacy"
@@ -2824,7 +2828,8 @@
 			"rows": [
 				"Auto-restore on load",
 				"Autosave",
-				"Error reports"
+				"Error reports",
+				"Usage counts"
 			],
 			"sections": [
 				"Scene",
@@ -2913,6 +2918,7 @@
 			"rows": [
 				"Compress textures (KTX2)",
 				"Distant scatter",
+				"First-game quest",
 				"Import defaults",
 				"Include VR button",
 				"LOD 1 keeps",
@@ -2927,6 +2933,7 @@
 				"Show FPS",
 				"Show pop-ups only in the drawer",
 				"Show the Made with ThePrototype badge",
+				"Show tours automatically",
 				"Start fullscreen",
 				"Teleport",
 				"Texture threshold",
@@ -3031,6 +3038,7 @@
 				"Error reports",
 				"Show helpers in Play",
 				"Toggle a debugger breakpoint on the selected nodes (Play pauses when an event reaches them)",
+				"Usage counts",
 				"Wheel diagnostics"
 			],
 			"sections": [
@@ -3148,6 +3156,7 @@
 				"Density",
 				"Dock resizes the viewport",
 				"Editor tour",
+				"First-game quest",
 				"Game sounds",
 				"Knocked-off idle",
 				"Lift the corner buttons above docked panels",
@@ -3164,6 +3173,7 @@
 				"Reset tips",
 				"Reset tours",
 				"Show FPS and draw calls",
+				"Show everything",
 				"Show others as classic heads",
 				"Show pop-ups only in the drawer",
 				"Show system objects in the object list",
@@ -3198,6 +3208,7 @@
 				"Density",
 				"Dock resizes the viewport",
 				"Editor tour",
+				"First-game quest",
 				"Game sounds",
 				"Hold to open menu",
 				"Knocked-off idle",
@@ -3221,6 +3232,7 @@
 				"Show FPS",
 				"Show FPS and draw calls",
 				"Show captions",
+				"Show everything",
 				"Show others as classic heads",
 				"Show pop-ups only in the drawer",
 				"Show system objects in the object list",
@@ -3653,10 +3665,12 @@
 		"invite": {
 			"rows": [
 				"Apply changes",
+				"First-game quest",
 				"Session size",
 				"Signaling server"
 			],
 			"sections": [
+				"Interface",
 				"Connection"
 			]
 		},
@@ -4086,7 +4100,8 @@
 		},
 		"privacy": {
 			"rows": [
-				"Error reports"
+				"Error reports",
+				"Usage counts"
 			],
 			"sections": [
 				"Privacy"
@@ -4113,9 +4128,11 @@
 		"tour": {
 			"rows": [
 				"Editor tour",
+				"First-game quest",
 				"Offer Enter VR in a headset browser",
 				"Reset tips",
 				"Reset tours",
+				"Show everything",
 				"Show tours automatically",
 				"VR welcome tour"
 			],
@@ -4482,6 +4499,7 @@
 				"Project actions",
 				"Reset tips",
 				"Reverse trackpad pan",
+				"Show everything",
 				"Stance",
 				"Storage breakdown",
 				"Storage used",

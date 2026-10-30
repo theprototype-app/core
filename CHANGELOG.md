@@ -5,6 +5,19 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.52.0 — sessions in your Explorer 🗂️
+
+- **The host's files in your Explorer.** Joining a session shows them as *"<Host>'s session"*, read-only, above your Library: open images, videos and text, copy any file into your Library, and **Save on host** if you can edit. Nothing downloads until you open or copy, and more than about 50 MB asks first.
+- **Hosts choose what guests see.** Connect ▸ Info ▸ Guests see: Current scene's files (default), Project, Whole library or None.
+- **Save project with several libraries open** asks which to save, with the active one ticked. Settings ▸ Save options ▸ *When several libraries are open* remembers your answer, and Ctrl+S follows it.
+- **Save project with unsaved changes** names the scene and offers *Save scene and project*, so edits are never dropped without a word.
+- **Opening a project** takes you back to the scene you had open.
+- **Android keeps the extension.** `.tp` and `.tpscene` downloads no longer arrive as `.tp.zip`.
+- **Review versions** always lands now, even from a minimized dock, and offers to fetch a scene this device has no copy of.
+- **The AI button always opens the window.** With no provider set up it offers Connect Claude, with the two steps for the claude.ai side and a Copy link button, or your own provider.
+- **Claude on claude.ai can do more in your tab:** use physics and run the simulation at full speed, whether you host or joined; animate a model's named parts; know who it acts as and see where everyone stands and looks, so "put a tree in front of me" lands in front of you, in VR too; and join a session from a link once you press Join on a card in the tab.
+- **Join from a running Claude Code.** `@theprototype/agent serve --port <n>` is MCP over HTTP on this machine, with the full tool list from the start.
+
 ## 1.51.0 — characters and motion 🕺
 
 - **Clips are their own files.** A `.tpanim` is a small clip file in the Explorer (VRM Animation inside, so it opens in

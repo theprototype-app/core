@@ -26,6 +26,10 @@ claude mcp add theprototype -- npx -y @theprototype/agent mcp
 
 and tell Claude *"join https://theprototype.app/#F0FD3"* (it calls `connect`).
 
+**A Claude Code that is already running** joins with no restart: `npx -y @theprototype/agent serve --port 8765`, then
+`claude mcp add --transport http theprototype http://127.0.0.1:8765/mcp`. It answers on this machine only, and lists the
+full tool catalog before a join (`--no-static-tools` = off); scene tools answer *not connected — join first* until `connect`.
+
 **Claude Desktop** and other MCP hosts: the server is `npx -y @theprototype/agent mcp <link>`
 over stdio. For Claude Desktop, in `claude_desktop_config.json`:
 

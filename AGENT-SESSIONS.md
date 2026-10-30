@@ -12,7 +12,9 @@ Someone in the session hands you a link, e.g. `https://theprototype.app/#F0FD3`.
 claude mcp add theprototype -- npx -y @theprototype/agent mcp 'https://theprototype.app/#F0FD3'
 ```
 
-(Claude Desktop: add `npx -y @theprototype/agent mcp <link>` to `mcpServers`.) Node 20+. The
+(Claude Desktop: add `npx -y @theprototype/agent mcp <link>` to `mcpServers`. A client that is already
+running: `npx -y @theprototype/agent serve --port 8765`, then add `http://127.0.0.1:8765/mcp` as an HTTP
+MCP server and call `connect`; loopback only, full tool list before the join.) Node 20+. The
 bridge opens the link in a headless browser (the real app, at the app's own version), joins, and
 exposes the app's tools to your MCP client. A bare peer id (`F0FD3`) works too.
 

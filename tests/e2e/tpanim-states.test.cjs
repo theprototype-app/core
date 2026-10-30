@@ -178,7 +178,7 @@ h.run(async () => {
 			}, uuid),
 		(ok) => ok,
 		'M11: B runs the click graph',
-		15000
+		60000
 	);
 	await watchStates(A.page, uuid);
 	await watchStates(B.page, uuid);

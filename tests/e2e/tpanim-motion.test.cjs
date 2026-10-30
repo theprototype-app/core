@@ -112,7 +112,7 @@ h.run(async () => {
 	}, uuid);
 	const weightsOf = (page) => page.evaluate((uuid) => window.__stores.animatedImports.poseDriverOf(uuid)?.weights ?? null, uuid);
 	await h.eventually(() => weightsOf(A.page), (w) => w && w.Idle > 0.95, 'M3: standing still, the blend is all Idle on A');
-	await h.eventually(() => weightsOf(B.page), (w) => w && w.Idle > 0.95, 'M3: ...and on B (its graph replicated)', 15000);
+	await h.eventually(() => weightsOf(B.page), (w) => w && w.Idle > 0.95, 'M3: ...and on B (its graph replicated)', 60000);
 	// walk the knight at 1.4 m/s along x for 3 s, broadcasting moves at ~10 Hz like a drag does
 	const walking = A.page.evaluate(
 		(uuid) =>

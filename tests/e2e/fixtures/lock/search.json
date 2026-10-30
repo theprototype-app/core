@@ -763,6 +763,7 @@
 			"rows": [
 				"Autosave",
 				"Keep automatic checkpoints",
+				"Keep sent pictures in Explorer",
 				"Offer to merge unsaved work on connect",
 				"Save checkpoint…",
 				"Save scene"
@@ -770,7 +771,8 @@
 			"sections": [
 				"Shortcuts",
 				"Scene",
-				"Explorer"
+				"Explorer",
+				"AI"
 			]
 		},
 		"Simulate physics (toggle)": {
@@ -3058,6 +3060,7 @@
 		"llm": {
 			"rows": [
 				"Enable assistant",
+				"Keep sent pictures in Explorer",
 				"Mesh generation",
 				"Voice typing provider"
 			],
@@ -3087,6 +3090,7 @@
 			"rows": [
 				"Distant scatter",
 				"Enable assistant",
+				"Keep sent pictures in Explorer",
 				"Mesh generation",
 				"My hand model",
 				"Optimize big models automatically",
@@ -3610,6 +3614,7 @@
 		"assistant": {
 			"rows": [
 				"Enable assistant",
+				"Keep sent pictures in Explorer",
 				"Mesh generation",
 				"Voice typing provider"
 			],
@@ -4482,6 +4487,7 @@
 				"Height",
 				"Hold to move vertex",
 				"Import defaults",
+				"Keep sent pictures in Explorer",
 				"LOD 1 keeps",
 				"LOD 2 keeps",
 				"LOD 3 keeps",

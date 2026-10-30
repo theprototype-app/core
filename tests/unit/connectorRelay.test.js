@@ -4,6 +4,7 @@ import { createDispatcher, BRIDGE_SCHEMAS, CONNECTOR_SCHEMAS } from '../../src/l
 import { PING_MS, HELLO_TIMEOUT_MS, PING_TEXT, parseFrame } from '../../src/lib/connector/protocol.js';
 import { bridgeTools, connectorOnlyTools } from '../../tools/agent/src/mcpTools.js';
 import { parseJoinLink } from '../../src/lib/connector/joinLink.js';
+import { describePose } from '../../src/lib/connector/whereAreUsers.js';
 
 // 86 B1/B2/B3/B5: the relay client's transitions and the dispatcher's rules, against fakes.
 
@@ -244,7 +245,9 @@ function dispatch(/** @type {any} */ over = {}) {
 		send: (t) => sent.push(JSON.parse(t)),
 		visible: () => visible,
 		encodeShot: async () => ({ image: { mimeType: 'image/jpeg', data: 'BBBB' }, width: 768, height: 432 }),
-		...(over.joinSession ? { joinSession: over.joinSession } : {})
+		...(over.joinSession ? { joinSession: over.joinSession } : {}),
+		...(over.whereAreUsers ? { whereAreUsers: over.whereAreUsers } : {}),
+		...(over.you ? { you: over.you } : {})
 	});
 	return { d, sent, ran, hide: () => (visible = false), release: () => releaseExec?.(undefined) };
 }
@@ -368,6 +371,30 @@ describe('dispatcher', () => {
 		expect(asked).toEqual([{ link: '#abcde' }]);
 	});
 
+	it('where_are_users: a read call (a look-only grant may ask), listed only when the tab answers it', async () => {
+		expect(dispatch().d.toolNames()).not.toContain('where_are_users');
+		const x = dispatch({ whereAreUsers: () => ({ users: [{ id: 'me', you: true }] }) });
+		expect(x.d.toolNames()).toContain('where_are_users');
+		x.d.handle(/** @type {any} */ (call('w', 'where_are_users', {}, 'read')));
+		await flush();
+		expect(x.sent[0]).toMatchObject({ id: 'w', result: { users: [{ id: 'me', you: true }] } });
+	});
+
+	it('status: "you" is the person this tab belongs to, listed first among the users', async () => {
+		const you = { peerId: 'me', name: 'Ana', role: 'host', inVR: false };
+		const x = dispatch({ you: () => you });
+		x.d.handle(/** @type {any} */ (call('s', 'status', {}, 'read')));
+		await flush();
+		const r = x.sent[0].result;
+		expect(r.you).toEqual(you);
+		expect(r.peers[0]).toEqual({ id: 'me', name: 'Ana', you: true });
+		// without the hook (an agent page) status is unchanged
+		const y = dispatch();
+		y.d.handle(/** @type {any} */ (call('s', 'status', {}, 'read')));
+		await flush();
+		expect(y.sent[0].result).not.toHaveProperty('you');
+	});
+
 	it('join_session: Disconnect takes the card down and nothing answers', async () => {
 		let dismissed = 0;
 		const x = dispatch({
@@ -395,5 +422,38 @@ describe('parseJoinLink (86-fix N2)', () => {
 	it('refuses another site, no session, a bad id, junk', () => {
 		for (const bad of ['https://evil.example/#F0FD3', 'https://theprototype.app.evil.example/#F0FD3', 'javascript:alert(1)//#ab', 'https://theprototype.app/', '#', '#<b>x</b>', '#../../x', '', 42, null, 'x'.repeat(3000)])
 			expect(parseJoinLink(/** @type {any} */ (bad), ORIGINS)).toHaveProperty('error');
+	});
+});
+
+describe('where_are_users pose (86-fix)', () => {
+	/** a camera matrix at `p` turned `yaw` radians about +Y (0 = looking down -Z), pitch 0 */
+	const cam = (/** @type {number[]} */ p, /** @type {number} */ yaw) => {
+		const c = Math.cos(yaw), s = Math.sin(yaw);
+		// columns: x = (c,0,-s), y = (0,1,0), z = (s,0,c), t = p
+		return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, p[0], p[1], p[2], 1];
+	};
+	it('looking down -Z from 1.7 m: spots straight ahead on the floor', () => {
+		const r = /** @type {any} */ (describePose(cam([2, 1.7, 5], 0), null));
+		expect(r).toMatchObject({ position: [2, 1.7, 5], floor: 0, eyeHeightAboveFloor: 1.7, yawDeg: 0, forwardFlat: [0, 0, -1], right: [1, 0, 0] });
+		expect(r.inFront1_5m).toEqual([2, 0, 3.5]);
+		expect(r.inFront3m).toEqual([2, 0, 2]);
+	});
+	it('turned right (yaw -90° about +Y = facing +X): yaw 90, spots along +X, at the walking floor', () => {
+		const r = /** @type {any} */ (describePose(cam([0, 3.5, 0], -Math.PI / 2), 1.8));
+		expect(r.yawDeg).toBe(90);
+		expect(r.inFront3m).toEqual([3, 1.8, 0]);
+		expect(r.right).toEqual([0, 0, 1]);
+		expect(r.eyeHeightAboveFloor).toBe(1.7);
+	});
+	it('a parked avatar (y >= 999) or junk has no live pose', () => {
+		expect(describePose(cam([0, 999, 0], 0), null)).toEqual({ note: 'no live pose yet' });
+		expect(describePose(cam([NaN, 1, 0], 0), null)).toEqual({ note: 'no live pose yet' });
+	});
+	it('looking straight down still gives a heading (the camera up vector)', () => {
+		// pitch -90°: forward = (0,-1,0), up = (0,0,-1)
+		const e = [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 1.7, 0, 1];
+		const r = /** @type {any} */ (describePose(e, null));
+		expect(r.forwardFlat).toEqual([0, 0, -1]);
+		expect(r.inFront1_5m).toEqual([0, 0, -1.5]);
 	});
 });

@@ -21,8 +21,9 @@ import { connectorProvider } from '../cloudHooks.js';
 import { createConnectorAgent, CONNECTOR_LABEL } from '../agent/tpAgent.js';
 import { startAgentRecorder, stopAgentRecorder } from '../agentLogRecorder.js';
 import { showConfirm } from '../confirmDialog.js';
-import { showToast } from '../../stores/appStore.js';
+import { showToast, userdata, username } from '../../stores/appStore.js';
 import { joinSession } from './joinSession.js';
+import { whereAreUsers } from './whereAreUsers.js';
 import { APP_VERSION } from '../version.js';
 
 /** @type {ReturnType<typeof createConnectorAgent> | null} */
@@ -85,6 +86,19 @@ function onVisibility() {
 		}, HIDDEN_THROTTLE_MS);
 }
 
+/**
+ * 86-fix: the person this tab belongs to, as Claude (acting as them) should see them. host = this tab hosts
+ * (no session host above it); a joined tab is its roles-plugin role, or a plain guest without one.
+ * @param {any} st the agent's status @returns {{peerId: string|null, name: string, role: 'host'|'guest'|'editor'|'viewer', inVR: boolean}}
+ */
+export function youOf(st) {
+	const id = st?.peerId ?? null;
+	const row = (/** @type {any[]} */ (get(userdata)) ?? []).find((u) => Array.isArray(u) && u[0] === id);
+	const name = row?.[1] ? String(row[1]) : String(get(username) ?? '');
+	const role = !st?.host ? 'host' : st.role === 'viewer' ? 'viewer' : st.role ? 'editor' : 'guest';
+	return { peerId: id, name, role, inVR: !!st?.inVR };
+}
+
 function setup() {
 	if (client) return client;
 	core = createConnectorAgent();
@@ -109,6 +123,9 @@ function setup() {
 		encodeShot: (url) => encodeShot(url).catch(() => null),
 		// 86-fix N2: the person confirms on a Join / Cancel card in this tab
 		joinSession: (args, ctx) => joinSession(args, ctx),
+		// 86-fix: where the people are (85 S1), and who "you" are — the person this tab belongs to
+		whereAreUsers: () => whereAreUsers(),
+		you: () => youOf(agent.status()),
 		onCallStart: () => view({ busy: dispatcher?.inFlight() ?? 0 }),
 		onCallEnd: ({ tool, ok }) => view({ busy: dispatcher?.inFlight() ?? 0, lastCall: { tool, at: Date.now(), ok } })
 	});

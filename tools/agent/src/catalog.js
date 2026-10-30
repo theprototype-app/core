@@ -44,7 +44,8 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	accept_offer: { title: 'Answer a question the app asks', destructive: true },
 	connect: { title: 'Join a session', destructive: false, openWorld: true },
 	// 86-fix N2: the connector's join — the person confirms in the tab; joining may replace what the tab shows
-	join_session: { title: 'Join a session (asks the person)', destructive: true, openWorld: true }
+	join_session: { title: 'Join a session (asks the person)', destructive: true, openWorld: true },
+	where_are_users: { title: 'Where the people are', read: true }
 });
 
 /** a title from a tool name: `create_objects` → `Create objects` @param {string} name */
@@ -89,6 +90,11 @@ export const GUIDANCE = [
 		on: ['status', 'list_scene']
 	},
 	{ line: 'Call status first: it says whether you may edit (a viewer can only look).', on: ['status'] },
+	{
+		line: 'You act as this person in their own tab: status "you" is them (their peer id, name and role); the other users are everyone else.',
+		on: ['status', 'where_are_users'],
+		when: 'join_session'
+	},
 	{ line: 'Call list_scene before editing so you use real uuids; batch many objects into one call.', on: ['list_scene', 'create_objects', 'update_objects'] },
 	{
 		line: 'For "in front of me", "here" or "this", call where_are_users and build at the spots it gives, facing the person.',

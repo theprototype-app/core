@@ -43,11 +43,12 @@ export const CONNECTOR_SCHEMAS = /** @type {Record<string, any>} */ ({
 		type: 'object',
 		properties: { link: { type: 'string', description: 'the session link, invite link or session id the person gave you' } },
 		required: ['link']
-	}
+	},
+	where_are_users: { type: 'object', properties: {} }
 });
 
 /** tools that change nothing: allowed under a read scope */
-const READ_TOOLS = new Set([...READ_ONLY_TOOLS, ...BRIDGE_TOOLS]);
+const READ_TOOLS = new Set([...READ_ONLY_TOOLS, ...BRIDGE_TOOLS, 'where_are_users']);
 
 /** @param {any} t */
 const nameOf = (t) => String(t?.function?.name ?? t?.name ?? '');
@@ -60,6 +61,8 @@ const nameOf = (t) => String(t?.function?.name ?? t?.name ?? '');
  *   visible: () => boolean,
  *   encodeShot: (dataUrl: string) => Promise<{image: {mimeType: string, data: string}, width: number, height: number} | null>,
  *   joinSession?: (args: any, ctx: {onCancel: (fn: () => void) => void}) => Promise<any>,
+ *   whereAreUsers?: () => any,
+ *   you?: () => {peerId: string|null, name: string, role: 'host'|'guest'|'editor'|'viewer', inVR: boolean},
  *   onCallStart?: (call: {id: string, tool: string}) => void,
  *   onCallEnd?: (call: {id: string, tool: string, ok: boolean}) => void
  * }} deps
@@ -81,8 +84,11 @@ export function createDispatcher(deps) {
 		return map;
 	}
 
-	/** the connector-only tools this tab answers (join_session when the tab hands it in) @returns {string[]} */
-	const ownTools = () => (typeof deps.joinSession === 'function' ? ['join_session'] : []);
+	/** the connector-only tools this tab answers (each when the tab hands it in) @returns {string[]} */
+	const ownTools = () => [
+		...(typeof deps.joinSession === 'function' ? ['join_session'] : []),
+		...(typeof deps.whereAreUsers === 'function' ? ['where_are_users'] : [])
+	];
 
 	/** every name a relayed call may use (hello's `tools`) */
 	function toolNames() {
@@ -111,7 +117,11 @@ export function createDispatcher(deps) {
 	function status() {
 		const s = deps.agent.status() ?? {};
 		const { notices: _n, ...rest } = s;
-		return { ...rest, tab: { visible: deps.visible(), connector: true } };
+		// 86-fix: Claude acts AS this person — say who that is, and list them among the users
+		const you = deps.you?.() ?? null;
+		const others = Array.isArray(rest.peers) ? rest.peers : [];
+		const users = you ? [{ id: you.peerId, name: you.name, you: true }, ...others] : others;
+		return { ...rest, ...(you ? { you, peers: users } : {}), tab: { visible: deps.visible(), connector: true } };
 	}
 
 	/** @param {string} id @param {any} args */
@@ -161,6 +171,12 @@ export function createDispatcher(deps) {
 				}
 			})
 		);
+	}
+
+	/** 86-fix: read-only, answered from this tab's own scene */
+	async function whereCall() {
+		const r = /** @type {NonNullable<typeof deps.whereAreUsers>} */ (deps.whereAreUsers)();
+		return isError(r) ? fail('failed', String(r.error)) : { result: r };
 	}
 
 	/** the DO cancelled one call @param {string} id */
@@ -226,9 +242,11 @@ export function createDispatcher(deps) {
 						? screenshot(id, args)
 						: tool === 'wait_for_edit'
 							? waitForEdit(id, args)
-							: own
-								? joinCall(id, args)
-								: sceneCall(id, tool, args);
+							: tool === 'where_are_users'
+								? whereCall()
+								: own
+									? joinCall(id, args)
+									: sceneCall(id, tool, args);
 			run.then(
 				(a) => answer(id, a),
 				(e) => answer(id, fail('failed', e instanceof Error ? e.message : String(e)))

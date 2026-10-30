@@ -60,6 +60,8 @@ check('status says to call it first and carries the voice rules', /Call status f
 check('a tool keeps its own text first', c.tools.find((t) => t.name === 'create_objects').description.startsWith('make'));
 check('a line only the instructions carry is a gap (the check catalog:agent --check runs)', guidanceGaps({ instructions: 'Say hello.\n' + c.instructions, tools: c.tools }).join() === 'Say hello.');
 check('withGuidance never repeats a line a description already holds', withGuidance([{ name: 'status', description: 'Call status first: it says whether you may edit (a viewer can only look).', annotations: { readOnlyHint: true } }])[0].description.split('Call status first').length === 2);
+check('where_are_users (86-fix) is listed read-only and names the person you act as', c.tools.some((t) => t.name === 'where_are_users' && t.annotations.readOnlyHint === true && /"you": true/.test(t.description) && /in front of me/.test(t.description)));
+check('status says you act as the person in their own tab', /You act as this person in their own tab/.test(c.tools.find((t) => t.name === 'status').description));
 check('join_session (86-fix N2) is listed as an edit that asks the person', c.tools.some((t) => t.name === 'join_session' && t.annotations.destructiveHint === true && /presses Join/.test(t.description)));
 
 // the committed catalog (written by core scripts/agent-tool-catalog.cjs) parses and has the instructions

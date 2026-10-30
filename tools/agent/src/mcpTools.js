@@ -124,9 +124,19 @@ export const JOIN_SESSION_TOOL = {
 	}
 };
 
+/** 86-fix (85 S1 pulled forward): where the people are — read-only; answered by a connector tab */
+export const WHERE_ARE_USERS_TOOL = {
+	name: 'where_are_users',
+	description:
+		'Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw ' +
+		'plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. ' +
+		'The entry with "you": true is the person you act as. Use it for "in front of me", "around me", "behind me", "to my left".',
+	inputSchema: { type: 'object', properties: {} }
+};
+
 /** @returns {any[]} */
 export function connectorOnlyTools() {
-	return [JOIN_SESSION_TOOL];
+	return [JOIN_SESSION_TOOL, WHERE_ARE_USERS_TOOL];
 }
 
 /** Text content for an MCP result. @param {any} obj @param {boolean} [isError] */

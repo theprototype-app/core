@@ -38,6 +38,11 @@ h.run(async () => {
 	const origin = new URL(B.page.url()).origin;
 	const link = origin + '/#' + aId.toUpperCase();
 
+	// ---- "you": Claude acts as this person — alone, B hosts its own session ---------------------------------
+	relay.call('s0', 'status', {}, 'read');
+	const s0 = (await relay.answer('s0'))?.result;
+	h.check(s0?.you?.peerId === B.id && s0.you.role === 'host' && s0.you.inVR === false && s0.peers?.[0]?.you === true, `status "you" = the person, the host of their own session (${JSON.stringify(s0?.you)})`);
+
 	// ---- refused before any card ------------------------------------------------------------------------
 	relay.call('x1', 'join_session', { link: 'https://evil.example/#' + aId });
 	relay.call('x2', 'join_session', { link }, 'read');
@@ -87,6 +92,26 @@ h.run(async () => {
 	relay.call('st', 'status', {}, 'read');
 	const st = (await relay.answer('st'))?.result;
 	h.check(!!st, `status answers after the join (${JSON.stringify(st ?? null).slice(0, 160)})`);
+	h.check(st?.you?.peerId === B.id && st.you.role === 'guest', `after joining, "you" is a guest of A's session (${JSON.stringify(st?.you)})`);
+	const ids = (st?.peers ?? []).map((p) => p.id + (p.you ? '*' : ''));
+	h.check(ids[0] === B.id + '*' && ids.includes(aId), `the users list holds the person (you: true) and A (${ids})`);
+
+	// ---- where_are_users: the person from this tab's camera, A from the avatar A's camera stream poses -------
+	const camOf = (peer) => peer.page.evaluate(() => new Promise((r) => window.__stores.globalCamera.subscribe((c) => { c.updateWorldMatrix(true, false); r(Array.from(c.matrixWorld.elements)); })()));
+	let w = null, n = 0;
+	await h.eventually(async () => {
+		const id = 'w' + n++;
+		relay.call(id, 'where_are_users', {}, 'read');
+		return (w = (await relay.answer(id))?.result);
+	}, (r) => !!r?.users?.find((u) => u.id === aId)?.position, 'A has a live pose on B', 20000);
+	const me = w?.users?.find((u) => u.you);
+	const them = w?.users?.find((u) => u.id === aId);
+	const [bm, am] = [await camOf(B), await camOf(A)];
+	const near = (p, q, tol = 0.15) => !!p && p.every((v, i) => Math.abs(v - q[i]) <= tol);
+	h.check(me?.id === B.id && near(me.position, bm.slice(12, 15)) && Array.isArray(me.inFront1_5m) && me.inFront1_5m[1] === me.floor, `"you" stands at this tab's camera, spots at floor level (${JSON.stringify(me).slice(0, 220)})`);
+	const fwd = [-bm[8], -bm[10]]; const fl = Math.hypot(...fwd) || 1;
+	h.check(!!me && Math.abs(me.forwardFlat[0] - fwd[0] / fl) < 0.05 && Math.abs(me.forwardFlat[2] - fwd[1] / fl) < 0.05, 'and faces the way the camera looks');
+	h.check(near(them?.position, am.slice(12, 15), 0.25) && typeof them.yawDeg === 'number' && them.you === undefined, `A is where A's camera is (${JSON.stringify(them).slice(0, 220)})`);
 
 	h.check(h.pageErrors(B).length === 0, `no page errors on B (${h.pageErrors(B).slice(0, 2).join(' | ')})`);
 	await h.finish(browser);

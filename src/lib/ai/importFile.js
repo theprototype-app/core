@@ -117,6 +117,9 @@ async function shareAll(folderId, items) {
 		const lib = await import('$lib/sharedLibrary');
 		if (folderId) lib.shareFolder?.(folderId);
 		for (const it of items) lib.shareItem?.(it.id);
+		// the row BEFORE the bytes (the conn is ordered): shareItem's publish is debounced, and bytes
+		// that land with no row become a stray local copy at a peer's library root (assetShare.landBytes)
+		lib.publishMine?.(true);
 		const assets = await import('$lib/assetShare');
 		for (const it of items) void assets.sendAsset(it.hash);
 	} catch {

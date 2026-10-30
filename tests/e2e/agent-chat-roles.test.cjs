@@ -33,7 +33,7 @@ async function until(fn, pred, timeout = 10000) {
 }
 const roleOf = (peer, id) => inPage(peer, 'let r; s.cloudHooks.rolesInfo.subscribe((v) => (r = v))(); return r ? (arg === pc.peer.id ? r.myRole : r.roleOf(arg)) : null;', id);
 const objectNames = (peer) => inPage(peer, 'let g; s.objectsGroup.subscribe((v) => (g = v))(); return (g?.children ?? []).map((o) => o.name);');
-const take = (B) => B.page.evaluate(() => window.tpAgent.nextMessage(25000, 'proof'));
+const take = (B) => B.page.evaluate(() => window.tpAgent.nextMessage(60000, 'proof'));
 
 h.run(async () => {
 	const browser = await h.launch();

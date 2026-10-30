@@ -3,11 +3,13 @@
 // OpenAI-compatible endpoint. Handles SSE streaming + the tool-call agent loop.
 //
 // CORS note: this runs in the browser. Gemini's OpenAI-compat endpoint and vLLM
-// (started with `--allowed-origins '["*"]'`) accept browser origins; a self-hosted
-// server that does NOT set CORS headers will fail with a network/TypeError. There is
-// no proxy fallback (static app) — describeAiError() surfaces this clearly.
+// (started with `--allowed-origins`) accept browser origins; a self-hosted server that
+// does NOT set CORS headers fails with a network/TypeError — the same one a bad
+// certificate or a closed port gives. There is no proxy fallback (static app):
+// Test connection tells them apart (diagnoseNetwork), describeAiError() says it plainly.
 
 import { parseTextToolCalls, visiblePrefixLength } from './toolCallText.js';
+import { normalizeEndpointUrl, CHAT_TAILS, serverKind, corsHint } from './url.js'; // fix-batch-2: a leaf
 
 /**
  * @typedef {import('./providers.js').AiProviderConfig} AiProviderConfig
@@ -32,7 +34,9 @@ export class AiHttpError extends Error {
 
 /** @param {AiProviderConfig} config @param {string} path */
 function endpoint(config, path) {
-	return config.baseUrl.replace(/\/+$/, '') + path;
+	// fix-batch-2 B1: a config saved before the shared URL rule (no scheme, a pasted tail)
+	// still calls the right address
+	return normalizeEndpointUrl(config.baseUrl, { tails: CHAT_TAILS }) + path;
 }
 
 /** Providers whose STREAMING tool calls proved unusable this session (see
@@ -350,6 +354,42 @@ export async function runChat({
 	return { content: finalContent, iterations: i, toolRuns };
 }
 
+/** fix-batch-2 B3: every Test stage gives up after this long instead of "Testing…" forever */
+export const TEST_TIMEOUT_MS = 10000;
+
+/** The caller's signal plus a per-stage timeout. @param {AbortSignal} [signal] */
+function stageSignal(signal) {
+	const timeout = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(TEST_TIMEOUT_MS) : null;
+	if (!signal) return timeout ?? undefined;
+	if (!timeout) return signal;
+	return typeof AbortSignal.any === 'function' ? AbortSignal.any([signal, timeout]) : signal;
+}
+
+/**
+ * GET /models, keeping WHY it failed (listModels throws that away).
+ * @param {AiProviderConfig} config @param {AbortSignal} [signal]
+ * @returns {Promise<{models: string[]|null, error: unknown}>}
+ */
+async function fetchModels(config, signal) {
+	try {
+		const res = await fetch(endpoint(config, '/models'), { headers: authHeaders(config), signal });
+		if (!res.ok) return { models: null, error: new AiHttpError(res.status, await res.text().catch(() => '')) };
+		/** @type {any} */
+		const json = await res.json().catch(() => ({}));
+		if (!Array.isArray(json.data)) return { models: null, error: null };
+		const models = json.data
+			.map((/** @type {any} */ m) => String(m.id || ''))
+			// Gemini's compat layer prefixes ids with "models/" — normalize to what
+			// the chat endpoint expects (matches providers.normalizeModel)
+			.map((/** @type {string} */ id) => id.replace(/^models\//, ''))
+			.filter(Boolean)
+			.slice(0, 500);
+		return { models, error: null };
+	} catch (err) {
+		return { models: null, error: err };
+	}
+}
+
 /**
  * List the endpoint's models (GET /models — served by vLLM, Gemini's OpenAI-compat
  * layer, Grok, OpenAI alike). Returns null when the endpoint doesn't support it.
@@ -358,26 +398,13 @@ export async function runChat({
  * @returns {Promise<string[]|null>}
  */
 export async function listModels(config, signal) {
-	try {
-		const res = await fetch(endpoint(config, '/models'), { headers: authHeaders(config), signal });
-		if (!res.ok) return null;
-		/** @type {any} */
-		const json = await res.json().catch(() => ({}));
-		if (!Array.isArray(json.data)) return null;
-		return json.data
-			.map((/** @type {any} */ m) => String(m.id || ''))
-			// Gemini's compat layer prefixes ids with "models/" — normalize to what
-			// the chat endpoint expects (matches providers.normalizeModel)
-			.map((/** @type {string} */ id) => id.replace(/^models\//, ''))
-			.filter(Boolean)
-			.slice(0, 500);
-	} catch {
-		return null;
-	}
+	return (await fetchModels(config, signal)).models;
 }
 
-/** A 1-token completion against the configured model — the definitive "does this
- * model answer" check. @param {AiProviderConfig} config @param {AbortSignal} [signal]
+/** A tiny completion against the configured model — the definitive "does this model
+ * answer" check. fix-batch-2 B6: NO max_tokens (reasoning models reject it and thinking
+ * models spend one token thinking and come back empty) — a 2xx is the answer.
+ * @param {AiProviderConfig} config @param {AbortSignal} [signal]
  * @returns {Promise<{ok: boolean, detail: string}>} */
 async function probeCompletion(config, signal) {
 	try {
@@ -386,34 +413,79 @@ async function probeCompletion(config, signal) {
 			headers: authHeaders(config),
 			body: JSON.stringify({
 				model: config.model,
-				messages: [{ role: 'user', content: 'ping' }],
-				max_tokens: 1,
+				messages: [{ role: 'user', content: 'Reply with OK.' }],
 				stream: false
 			}),
-			signal
+			signal: stageSignal(signal)
 		});
 		if (res.ok) return { ok: true, detail: 'Connected' };
-		return { ok: false, detail: describeAiError(new AiHttpError(res.status, await res.text().catch(() => ''))) };
+		return { ok: false, detail: describeAiError(new AiHttpError(res.status, await res.text().catch(() => '')), config) };
 	} catch (err) {
-		if (err instanceof Error && err.name === 'AbortError') return { ok: false, detail: 'Cancelled' };
-		return { ok: false, detail: describeAiError(err) };
+		if (isNetworkError(err)) return { ok: false, detail: await diagnoseNetwork(config, signal) };
+		return { ok: false, detail: describeAiError(err, config) };
 	}
+}
+
+/** @param {unknown} err */
+function isNetworkError(err) {
+	return err instanceof Error && err.name === 'TypeError';
+}
+
+/** @param {string} host */
+function isLoopback(host) {
+	return host === 'localhost' || host === '[::1]' || /^127\./.test(host);
+}
+
+/**
+ * fix-batch-2 B2: a failed fetch is one TypeError whatever happened — CORS, a self-signed
+ * certificate, DNS, a closed port, mixed content. A `no-cors` request to the same server
+ * tells two of them apart: it RESOLVES when the server answered with valid TLS (so the
+ * real failure was CORS), and fails when it could not be reached at all.
+ * @param {AiProviderConfig} config @param {AbortSignal} [signal] @returns {Promise<string>}
+ */
+export async function diagnoseNetwork(config, signal) {
+	const base = normalizeEndpointUrl(config.baseUrl, { tails: CHAT_TAILS });
+	/** @type {URL} */
+	let url;
+	try {
+		url = new URL(base);
+	} catch {
+		return 'The base URL is not a valid address';
+	}
+	const kind = serverKind(base);
+	try {
+		await fetch(base + '/models', { mode: 'no-cors', signal: stageSignal(signal), cache: 'no-store' });
+		return 'The server answered, but does not allow this site (CORS) — ' + corsHint(kind);
+	} catch (err) {
+		if (err instanceof Error && err.name === 'AbortError') return 'Cancelled';
+		if (err instanceof Error && err.name === 'TimeoutError') return 'No answer from ' + url.host + ' within ' + TEST_TIMEOUT_MS / 1000 + ' s';
+	}
+	const page = typeof location !== 'undefined' ? location.protocol : 'https:';
+	if (page === 'https:' && url.protocol === 'http:' && !isLoopback(url.hostname)) {
+		return 'The browser blocks an http:// address on this https page — use https, or http://127.0.0.1 for a server on this computer';
+	}
+	return (
+		'Could not reach ' + url.host + ' — check the address, the port and that the server is running.' +
+		(url.protocol === 'https:'
+			? ' A self-signed certificate is refused: open ' + base + '/models in a new tab, accept it, then test again.'
+			: '')
+	);
 }
 
 /**
  * Probe a provider config. Tries GET /models (also feeding the Settings model
  * suggestions), then validates the CONFIGURED model: listed -> good; not listed or
- * no list -> a 1-token completion decides (aliases like gemini-flash-latest may
- * answer without being listed).
+ * no list -> a completion decides (aliases like gemini-flash-latest may answer
+ * without being listed). Every stage times out (TEST_TIMEOUT_MS).
  * @param {AiProviderConfig} config
  * @param {AbortSignal} [signal]
- * @returns {Promise<{ok: boolean, detail: string, models: string[]|null, modelOk: boolean|null}>}
+ * @returns {Promise<{ok: boolean, detail: string, models: string[]|null, modelOk: boolean|null, modelDetail?: string}>}
  *   modelOk: true = the configured model is confirmed (listed or answered),
- *   false = it failed the probe, null = no model configured / nothing verifiable
+ *   false = it failed the probe (modelDetail says why), null = no model configured / nothing verifiable
  */
 export async function testConnection(config, signal) {
 	if (!config.baseUrl) return { ok: false, detail: 'No base URL set', models: null, modelOk: null };
-	const models = await listModels(config, signal);
+	const { models, error } = await fetchModels(config, stageSignal(signal));
 	const model = (config.model || '').trim();
 
 	if (models) {
@@ -421,17 +493,26 @@ export async function testConnection(config, signal) {
 		if (models.includes(model)) {
 			return { ok: true, detail: 'Connected — ' + models.length + ' models', models, modelOk: true };
 		}
-		// not listed — an alias may still answer; let the completion decide
+		// not listed — an alias may still answer; let the completion decide (and keep its reason)
 		const probe = await probeCompletion(config, signal);
 		return {
 			ok: true,
 			detail: 'Connected — ' + models.length + ' models',
 			models,
-			modelOk: probe.ok
+			modelOk: probe.ok,
+			...(probe.ok ? {} : { modelDetail: probe.detail })
 		};
 	}
 
-	// endpoint without /models (or blocked) — the completion probe is the whole test
+	// /models failed in a way that would fail the completion too: stop here with the reason
+	if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'))
+		return { ok: false, detail: describeAiError(error, config), models: null, modelOk: null };
+	if (isNetworkError(error))
+		return { ok: false, detail: await diagnoseNetwork(config, signal), models: null, modelOk: null };
+	if (error instanceof AiHttpError && isKeyError(error))
+		return { ok: false, detail: describeAiError(error, config), models: null, modelOk: null };
+
+	// endpoint without /models — the completion probe is the whole test
 	if (!model) {
 		return {
 			ok: false,
@@ -444,13 +525,41 @@ export async function testConnection(config, signal) {
 	return { ...probe, models: null, modelOk: probe.ok };
 }
 
+/** @param {AiHttpError} error */
+function isKeyError(error) {
+	if (error.status === 401 || error.status === 403) return true;
+	return /API_KEY_INVALID|API key not valid/i.test(error.body || '');
+}
+
+/**
+ * fix-batch-2 B3/B4: known server error bodies -> one line that says what to change.
+ * @param {number} status @param {string} body @returns {string | null}
+ */
+export function serverErrorHint(status, body) {
+	const b = body || '';
+	if (/API_KEY_INVALID|API key not valid/i.test(b))
+		return 'Key rejected — check the API key (Gemini keys: aistudio.google.com/apikey)';
+	if (status === 403 && /PERMISSION_DENIED|SERVICE_DISABLED|has not been used|is disabled/i.test(b))
+		return 'Permission denied — this key’s project does not have the Generative Language API enabled, or the key is restricted';
+	if (/auto"? tool choice requires|enable-auto-tool-choice|tool-call-parser/i.test(b))
+		return 'The server is not set up for tool calls — start vLLM with --enable-auto-tool-choice --tool-call-parser <parser> (Qwen3: qwen3_xml; many others: hermes)';
+	if (/maximum context length|max_model_len|max-model-len|context_length_exceeded|context length/i.test(b))
+		return 'The conversation is longer than the model’s context — start a new chat, or raise --max-model-len on the server';
+	if (/model_not_found|model[^\n]{0,120}(does not exist|not found)|unknown model/i.test(b))
+		return 'Unknown model — use an id from the model list (on vLLM it is the --served-model-name value)';
+	return null;
+}
+
 /**
  * Normalize an error into a short human message.
  * @param {unknown} error
+ * @param {AiProviderConfig} [config] when known, network hints name this server's setting
  * @returns {string}
  */
-export function describeAiError(error) {
+export function describeAiError(error, config) {
 	if (error instanceof AiHttpError) {
+		const hint = serverErrorHint(error.status, error.body);
+		if (hint) return hint;
 		if (error.status === 401 || error.status === 403) return 'Invalid API key or unauthorized';
 		if (error.status === 429) return 'Rate limited — slow down or check your quota';
 		if (error.status === 404) return 'Endpoint not found — check the base URL';
@@ -460,8 +569,15 @@ export function describeAiError(error) {
 	}
 	if (error instanceof Error) {
 		if (error.name === 'AbortError') return 'Cancelled';
+		if (error.name === 'TimeoutError') return 'No answer within ' + TEST_TIMEOUT_MS / 1000 + ' s — the server is slow or unreachable';
 		if (error.name === 'TypeError') {
-			return 'Network or CORS error — a self-hosted vLLM must run with --allowed-origins';
+			// B2: this TypeError is CORS, a certificate, DNS or a closed port alike — say so
+			const vllm = config?.baseUrl && serverKind(normalizeEndpointUrl(config.baseUrl)) === 'vllm';
+			return (
+				'Could not reach the server — a network, certificate or CORS problem' +
+				(vllm ? ' (vLLM needs --allowed-origins)' : '') +
+				'. Settings ▸ AI ▸ Test connection tells which.'
+			);
 		}
 		return error.message;
 	}

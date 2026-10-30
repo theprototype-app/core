@@ -11,7 +11,7 @@
 // major. The bridge feature-detects methods, so an older bridge keeps working against a newer page.
 
 /** The contract version (`tpAgent.version`). */
-export const TP_AGENT_VERSION = '1.1.0';
+export const TP_AGENT_VERSION = '1.3.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([
@@ -25,7 +25,7 @@ export const TP_AGENT_METHODS = /** @type {const} */ ([
 	'pendingOffers',
 	'accept',
 	'leave',
-	// 1.1.0 (roadmap 56): the chat — what people type to the agent in the AI assistant window
+	// 1.3.0 (roadmap 56): the chat — what people type to the agent in the AI assistant window
 	'nextMessage',
 	'abortWait',
 	'requeue',
@@ -66,7 +66,8 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {string} appVersion the app's own version (APP_VERSION)
  * @property {string|null} peerId this page's peer id (null before signaling opens)
  * @property {string|null} host the peer whose session we joined (null = not joined / we host)
- * @property {boolean} joined true once a host admitted us (approval or invite) and the link is open
+ * @property {boolean} joined true once a host admitted us (approval or invite), the link is open and (cloud) the
+ *   host's roles have arrived, so `role`/`canEdit` are final
  * @property {boolean} waiting true while a join request waits for the host's Approve
  * @property {'admin'|'editor'|'viewer'|null} role null = no roles in this build (everyone edits)
  * @property {boolean} canEdit false for a viewer: `exec` refuses every edit
@@ -75,8 +76,21 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {TpAgentMissingModule[]} missingModules modules peers run that this page lacks
  * @property {number} pendingOffers questions waiting for an answer (`pendingOffers()`)
  * @property {boolean} inVR an immersive session is running (screenshot returns null)
+ * @property {string} [scene] 1.1: the scene this page stands in ('' = the session's unnamed world)
+ * @property {string} [hostScene] 1.1: the scene the host stands in ('(private)' when it is private)
+ * @property {boolean} [withHost] 1.1: same room as the host. False after the host traveled (a Save as, another
+ *   scene): `exec` refuses edits — they would not reach the host — until the agent has followed
+ * @property {boolean} [following] 1.1: traveling to the host's scene now
+ * @property {boolean} [loading] 1.2: a scene is still arriving (right after a join, or a travel/follow): what
+ *   list_scene shows is partial until it is false
+ * @property {{arrived: number, total: number}} [objects] 1.2: while `loading`, how many of the scene's objects are here
+ * @property {{host: string, since: number, until: number, expired: boolean}} [hostAway] 1.2: the host LEFT and no person
+ *   is here: the agent is paused (edits refused, `withHost` false), knocks on the host's door until `until`, never
+ *   hosts and never saves. When a person remains instead, it continues with the room's successor (`host` changes).
+ * @property {{name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the latest errors thrown by
+ *   the scene's code behaviours (on whichever peer runs them); absent when none — fix with edit_behaviour
  * @property {{status: 'listening'|'working'|'away', muted: boolean, queued: number, waiting: number, current: any, chatId: string|null}} [chat]
- *   1.1.0: the chat inbox — the badge people see, requests waiting, the running request
+ *   1.3.0 (roadmap 56): the chat inbox — the badge people see, requests waiting, the running request
  */
 
 /**
@@ -116,23 +130,23 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {(id: string, action?: string) => {ok: boolean, error?: string}} accept press an offer's button
  *   (the first one when `action` is omitted)
  * @property {() => Promise<void>} leave say goodbye to every peer and close the connections
- * @property {(timeoutMs?: number, token?: string) => Promise<TpAgentChatMessage|null>} nextMessage 1.1.0: the
+ * @property {(timeoutMs?: number, token?: string) => Promise<TpAgentChatMessage|null>} nextMessage 1.3.0: the
  *   next request typed to this agent, or null after the timeout (max 10 min). While a wait is armed the agent's
  *   badge says `listening`; once one is delivered, `working` until the final reply.
- * @property {(token: string) => boolean} abortWait 1.1.0: give up the wait `token` armed (resolves it null)
- * @property {(msg: TpAgentChatMessage) => boolean} requeue 1.1.0: put a delivered request back (its result never
+ * @property {(token: string) => boolean} abortWait 1.3.0: give up the wait `token` armed (resolves it null)
+ * @property {(msg: TpAgentChatMessage) => boolean} requeue 1.3.0: put a delivered request back (its result never
  *   reached the agent's model)
  * @property {(o: TpAgentReply) => {ok: boolean, id?: string, chatId?: string, error?: string, cancelled?: boolean}} reply
- *   1.1.0: say something in the chat; repeated calls grow ONE streamed reply until `final`
+ *   1.3.0: say something in the chat; repeated calls grow ONE streamed reply until `final`
  * @property {(o: {to?: string, question: string, options?: string[], chatId?: string}) => {ok: boolean, id?: string, error?: string}} ask
- *   1.1.0: buttons in the window; the click arrives as a request whose `answers` is the returned id
+ *   1.3.0: buttons in the window; the click arrives as a request whose `answers` is the returned id
  * @property {(status: 'listening'|'working'|'away'|null, meta?: {mode?: 'mcp'|'repl', model?: string}) => {ok: boolean, status: string}} chatStatus
- *   1.1.0: pin the badge (null = derive it from the waits); `meta` labels the agent in the window ("agent via MCP",
+ *   1.3.0: pin the badge (null = derive it from the waits); `meta` labels the agent in the window ("agent via MCP",
  *   "<model> · agent REPL")
  * @property {(o: {chatId?: string, before?: string, limit?: number}) => Promise<{chatId: string|null, messages: TpAgentChatEntry[], more: boolean}>} thread
- *   1.1.0: a page of a chat, oldest first (`before` = a message id)
+ *   1.3.0: a page of a chat, oldest first (`before` = a message id)
  *
- * 1.1.0 also gates `exec` by the running request: after Stop every call answers `{error:'cancelled', cancelled:true}`
+ * 1.3.0 also gates `exec` by the running request: after Stop every call answers `{error:'cancelled', cancelled:true}`
  * until the next request, and while a VIEWER's request runs every edit answers `{error, refused:true, role:'viewer'}`.
  */
 

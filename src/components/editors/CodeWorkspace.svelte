@@ -85,13 +85,12 @@
 	/** the document this instance renders into (the popup's, when popped) */
 	const hostDoc = () => poppedEl?.ownerDocument ?? document;
 	// the main window's instance never shows while the code window is open: it hands the
-	// request (openCode, the dock's Code entry) to that window and closes itself
+	// request (openCode, the dock's Code entry) to that window. 70 W2: App.svelte unmounts it while
+	// Code is away (one panel, one place), so the workspace stays OPEN — closing it here would read
+	// as the popped panel closing itself and send it home.
 	$effect(() => {
 		if (popped || !$codePoppedOut) return;
-		untrack(() => {
-			focusCodePopout();
-			codeWorkspaceClose.set(true);
-		});
+		untrack(() => focusCodePopout());
 	});
 	function popOut() {
 		void popOutCode();
@@ -818,7 +817,7 @@
 	>
 		<div class="flex shrink-0 items-center gap-1 pb-1">
 			{@render sideToggle('left')}
-			<span class="tp-dock-title">Code</span>
+			<span class="tp-dock-title" data-wc-chrome>Code</span>
 			<span class="flex-1"></span>
 			{@render openGraph()}
 			{@render sideToggle('right')}

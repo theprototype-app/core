@@ -247,7 +247,8 @@ h.run(async () => {
 	});
 	const sculptRing = await g(() => window.__stores.vrRadialMenu.ringEntries('sculpt').map((e) => e.id));
 	h.check(activeRing === 'sculpt', `while sculpting the menu opens on the Sculpt ring (${activeRing})`);
-	h.check(sculptRing.join() === 'sculpt:raise,sculpt:lower,sculpt:smooth,sculpt:flatten,sculpt:done', `Raise / Lower / Smooth / Flatten / Done (${sculptRing.join(' ')})`);
+	// 52 (V3): + the Paint ▸ and Scatter ▸ brush wheels (vr-brushes-iwer)
+	h.check(sculptRing.join() === 'sculpt:raise,sculpt:lower,sculpt:smooth,sculpt:flatten,nav:sculpt-paint,nav:sculpt-scatter,sculpt:done', `Raise / Lower / Smooth / Flatten / Paint ▸ / Scatter ▸ / Done (${sculptRing.join(' ')})`);
 	await g(() => window.__stores.vrControls.executeVRMenuAction('sculpt:raise'));
 	await wait(300);
 	h.check(!(await g(() => { let v; window.__stores.vrMenuOpen.subscribe((x) => (v = x))(); return v; })) && (await sc()).op === 'raise', 'Raise picks the brush and closes the ring');

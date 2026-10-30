@@ -48,7 +48,8 @@
 		$remoteSimulating, // PFX-C: the Physics sector label/dot tracks the sim
 		$selectedObject,
 		$selectedObjects, // D4: counted labels + Make Group re-derive on the SET
-		$vrSettingsVersion // 36: a setting's value line follows any VR setting change
+		$vrSettingsVersion, // 36: a setting's value line follows any VR setting change
+		$vrMenuOpen // 52 (V5): a sector whose visibility follows the world (Back to 1:1) re-reads on every open
 	)
 	// 36: label / icon / value are resolved HERE (a function label read inside the template would be
 	// untracked — the legacy-mode rule the 31 R1 note below describes)

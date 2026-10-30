@@ -165,7 +165,7 @@ function usage() {
 			'  --engine browser|wire   browser (default): the real app in headless Chromium — scene, flows, physics, mesh gen;',
 			'                          wire: a light Node peer, objects only (needs @roamhq/wrtc)',
 			'  --name <display>        your name in the session (MCP: taken from the client, e.g. "Claude")',
-			'  --compat                browser engine on an app older than 1.45 (no window.tpAgent)',
+			'  --compat                browser engine on an app older than 1.48 (no window.tpAgent)',
 			'  --headed                show the browser   --insecure  accept any TLS cert (auto on local dev)',
 			'  --no-install            never download a browser (TP_AGENT_BROWSER=<path> picks one)',
 			'  --peer-server h:p[:insecure] | public   wire: signaling override (default: from the link)',

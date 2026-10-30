@@ -48,11 +48,14 @@
 	import ShortcutsSettings from './settings/ShortcutsSettings.svelte';
 	import SceneSettings from './settings/SceneSettings.svelte'; // checkpoints, loading, water render inside
 	import ExplorerSettings from './settings/ExplorerSettings.svelte';
+	import StorageSettings from './settings/StorageSettings.svelte'; // 60 Q6: the local asset cache
 	import NodeTypesSection from './NodeTypesSection.svelte'; // 36 B7
 	// 36-export: the export defaults (its own file; also the Publish / Export modal's Settings tab)
 	import ExportSettingsSection from './ExportSettingsSection.svelte';
 	import ImportSettingsSection from './ImportSettingsSection.svelte'; // 46 P2
 	import PrivacySettings from './settings/PrivacySettings.svelte'; // 48 O1
+	import ConnectedAppsSettings from './settings/ConnectedAppsSettings.svelte'; // 86 B5
+	import { connectorProvider } from '$lib/cloudHooks';
 	import VRSettingsSection from './VRSettingsSection.svelte'; // the whole VR page
 	import AiSettings from './settings/AiSettings.svelte';
 	import ConnectionSettings from './settings/ConnectionSettings.svelte';
@@ -80,10 +83,15 @@
 	// 48 O1: Settings ▸ Privacy — the error-report switch (opened by a search or a deep link)
 	let privacyExpanded = false;
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'privacy')) privacyExpanded = true;
+	// 86 B5: Settings ▸ Connected apps — signed-in cloud builds only (a connector provider is installed)
+	let connectedAppsExpanded = false;
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'connectedapps')) connectedAppsExpanded = true;
 	let accessibilityExpanded = false; // 53: Settings ▸ Accessibility (AccessibilitySettings.svelte)
 	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'accessibility')) accessibilityExpanded = true;
 	let sceneExpanded = false;
 	let explorerExpanded = false;
+	let storageExpanded = false; // 60 Q6: Settings ▸ Storage (StorageSettings.svelte)
+	$: if ((settingsQuery || '').trim() || ($settingsOpen && $settingsSection === 'storage')) storageExpanded = true;
 	let connectionExpanded = false;
 	let aboutExpanded = false;
 	let vrExpanded = false; // D7: edit-cap toasts deep-link here ('vr')
@@ -562,6 +570,10 @@
 					{#snippet header()}Explorer{/snippet}
 					<ExplorerSettings />
 				</AccordionItem>
+				<AccordionItem bind:open={storageExpanded}>
+					{#snippet header()}Storage{/snippet}
+					<StorageSettings />
+				</AccordionItem>
 				<AccordionItem bind:open={vrExpanded}>
 					{#snippet header()}VR{/snippet}
 					<VRSettingsSection />
@@ -582,6 +594,12 @@
 					{#snippet header()}Privacy{/snippet}
 					<PrivacySettings />
 				</AccordionItem>
+				{#if $connectorProvider}
+					<AccordionItem bind:open={connectedAppsExpanded}>
+						{#snippet header()}Connected apps{/snippet}
+						<ConnectedAppsSettings />
+					</AccordionItem>
+				{/if}
 				<AccordionItem bind:open={nodeTypesExpanded}>
 					{#snippet header()}Node types{/snippet}
 					<NodeTypesSection />

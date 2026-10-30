@@ -120,7 +120,9 @@ h.run(async () => {
 	await grip(A.page, 'right', true);
 	s = await state(A.page);
 	h.check(s.grab === ids.cube && !s.grabInteract, `Edit: a grip on the cube holds it (${s.grab})`);
-	h.check(s.selected.includes(ids.cube), 'Edit: holding selects it (the editor lock)');
+	// 52 (V5): a grab selects when it COMMITS (it moves, or 250 ms pass — a second grip inside that window
+	// makes it the world grab instead), so the lock lands a moment after the press
+	await h.eventually(() => state(A.page), (x) => x.selected.includes(ids.cube), 'Edit: holding selects it (the editor lock)', 2000);
 	await xr.pose(A.page, 'right', [0.5, 1.2, 0]);
 	await A.page.waitForTimeout(250);
 	await grip(A.page, 'right', false);

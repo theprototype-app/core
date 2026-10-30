@@ -352,8 +352,9 @@ export function createKit(host, pieces) {
 
 	/** forget everything (a scene clear: every peer clears too) — local, sends nothing */
 	const reset = () => {
-		// an authoritative LOCAL write: stamped fresh so it beats a stale document on arrival
-		doc = { ...freshDoc(), at: Math.max(now(), (doc.at ?? 0) + 1), by: host.me() ?? '' };
+		// an authoritative LOCAL write: stamped fresh so it beats a stale document on arrival. `by` stays EMPTY:
+		// every peer clears at once, so naming ourselves would make each one the incumbent (authority.js tier 3)
+		doc = { ...freshDoc(), at: Math.max(now(), (doc.at ?? 0) + 1), by: '' };
 		pending.clear();
 		for (const [name, def] of Object.entries(defs)) {
 			try {
@@ -390,7 +391,7 @@ export function createKit(host, pieces) {
 		impls,
 		/** the specs, in table order */
 		specs: () => pieces.map((row) => row.piece.spec),
-		/** build the SDK face of every piece for one module @param {{onDispose?: (fn: () => void) => any, moduleId?: string}} [ctx] */
+		/** build the SDK face of every piece for one module @param {{onDispose?: (fn: () => void, info?: {owned?: boolean}) => any, moduleId?: string}} [ctx] */
 		api: (ctx) => Object.fromEntries(pieces.map((row) => [row.name, kitApi(row.piece.spec, impls[row.name], ctx)])),
 		/** every generated node item */
 		nodeItems: () => pieces.flatMap((row) => kitNodeItems(row.piece.spec)),

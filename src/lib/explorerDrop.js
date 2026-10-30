@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalCamera, selectedObject } from '../stores/sceneStore';
-import { peers, showToast, toastStore, stackOnDrop } from '../stores/appStore';
+import { peers, showToast, toastStore, stackOnDrop, openSceneSection } from '../stores/appStore';
 import { explorerItems, itemBlob } from './explorer';
 import { prefabs, instantiatePrefab } from './prefabs';
 import { importFile, addImported } from './fileHandler.svelte';
@@ -65,6 +65,18 @@ export function dropTarget(clientX, clientY) {
 	);
 	if (!onGround) return { point: null, object: null, normal: null, hit: null };
 	return { point: planePoint.toArray(), object: null, normal: [0, 1, 0], hit: null };
+}
+
+/**
+ * 52-browser: the first scene surface along a WORLD ray (the VR laser) — `{point, normal, object}` in
+ * world space, or null when the ray meets nothing. No ground-plane fallback here: the caller knows
+ * the frame its ground lives in (the world rig may have moved or shrunk the objectsGroup).
+ * @param {any} ray a THREE.Raycaster @returns {{point: number[], normal: number[] | null, object: any} | null}
+ */
+export function rayHit(ray) {
+	const hit = sceneHits(ray)[0];
+	if (!hit) return null;
+	return { point: hit.point.toArray(), normal: hitWorldNormal(hit)?.toArray() ?? null, object: topLevelObjectOf(hit.object) };
 }
 
 const _down = new THREE.Raycaster();
@@ -273,6 +285,14 @@ async function placeExplorerPayload(payload, target) {
 				console.log('module drop handler failed', e);
 			}
 		}
+		// fix-batch-2 (1.45.1): an HDRI used to get the audio/text line. It lights the scene as
+		// its sky from Configure Scene ▸ Environment (a direct "Use as sky" on drop is roadmap 81)
+		if (item.kind === 'hdri') {
+			showToast('An HDRI lights the whole scene as its sky — pick it in Configure Scene ▸ Environment', [
+				{ label: 'Open Environment', action: () => openSceneSection('Environment') }
+			]);
+			return;
+		}
 		showToast('Audio/text items are used where they plug in (sound nodes, scripts)');
 	}
 }
@@ -302,9 +322,12 @@ function stubbable(payload, dims) {
 /**
  * The one spawn a drag-to-place release makes.
  * @param {{payload: any, dims: any}[]} items @param {{position: number[], quaternion: number[]}[]} placements
+ * @param {{frame?: any}} [opts] `frame` (52-browser): the world matrix of the placements' frame — the
+ *   objectsGroup's, which the VR world rig may have moved or shrunk — so the pending boxes draw there
  * @returns {Promise<string[]>} the uuids placed (stubs at once; imports once they land)
  */
-export async function placeFromGhost(items, placements) {
+export async function placeFromGhost(items, placements, opts = {}) {
+	const frame = opts.frame ?? null;
 	const { placementGroupFor } = await import('./lodGroup');
 	/** @type {string[]} */
 	const placed = [];
@@ -315,7 +338,7 @@ export async function placeFromGhost(items, placements) {
 	for (let i = 0; i < items.length; i++) {
 		const { payload, dims } = items[i];
 		if (payload?.url && !payload.behavior && !dims?.known && !peekPackTemplate(payload.url)) {
-			const release = holdPendingGhost(dims?.box ?? [-0.5, 0, -0.5, 0.5, 1, 0.5], placements[i].position, placements[i].quaternion);
+			const release = holdPendingGhost(dims?.box ?? [-0.5, 0, -0.5, 0.5, 1, 0.5], placements[i].position, placements[i].quaternion, frame);
 			try {
 				await loadPackTemplate(payload.url);
 			} catch (e) {
@@ -366,7 +389,7 @@ export async function placeFromGhost(items, placements) {
 	}
 	if (placed.length > 1) selectedObjects.set([...placed]);
 	for (const { item, at } of later) {
-		const uuid = await importAtGhost(item.payload, item.dims, at);
+		const uuid = await importAtGhost(item.payload, item.dims, at, frame);
 		if (uuid) placed.push(uuid);
 	}
 	return placed;
@@ -374,11 +397,11 @@ export async function placeFromGhost(items, placements) {
 
 /**
  * The import path at a ghost's pose (a pending box holds the spot meanwhile).
- * @param {any} payload @param {any} dims @param {{position: number[], quaternion: number[]}} at
+ * @param {any} payload @param {any} dims @param {{position: number[], quaternion: number[]}} at @param {any} [frame]
  * @returns {Promise<string | null>}
  */
-async function importAtGhost(payload, dims, at) {
-	const release = holdPendingGhost(dims?.box ?? [-0.5, 0, -0.5, 0.5, 1, 0.5], at.position, at.quaternion);
+async function importAtGhost(payload, dims, at, frame = null) {
+	const release = holdPendingGhost(dims?.box ?? [-0.5, 0, -0.5, 0.5, 1, 0.5], at.position, at.quaternion, frame);
 	try {
 		if (payload.url) {
 			const name = String(payload.name || 'model').replace(/\.\w+$/, '');

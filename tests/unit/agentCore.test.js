@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createAgentCore, createOffers, viewerRefusal, toolName, READ_ONLY_TOOLS } from '../../src/lib/agent/agentCore.js';
+import { createAgentCore, createOffers, viewerRefusal, leftBehindRefusal, hostAwayRefusal, notJoinedRefusal, toolName, READ_ONLY_TOOLS } from '../../src/lib/agent/agentCore.js';
 import { TP_AGENT_VERSION } from '../../src/lib/agent/contract.js';
 
 // 55 A2: the tpAgent methods against fakes. Each test names the test-flight finding it pins.
@@ -79,6 +79,7 @@ describe('exec()', () => {
 		await agent.exec('list_scene', {});
 		expect(app.log.map((l) => l[0])).toEqual(['run']);
 		expect(READ_ONLY_TOOLS.has('list_scene')).toBe(true);
+		expect(READ_ONLY_TOOLS.has('describe_node_types')).toBe(true); // 86 T1
 	});
 	it('REFUSES a viewer edit with a reason and never runs it (T1)', async () => {
 		const app = fakeApp();
@@ -150,6 +151,96 @@ describe('status()', () => {
 		expect(agent.status().joined).toBe(false);
 		app.state.host = null;
 		expect(agent.status().joined).toBe(false);
+	});
+	it('is not joined until the host\'s roles have arrived (a roles plugin), then is', () => {
+		const app = fakeApp();
+		let settled = false;
+		const { agent } = createAgentCore({ ...app.deps, rolesSettled: () => settled });
+		expect(agent.status().joined).toBe(false);
+		settled = true;
+		expect(agent.status().joined).toBe(true);
+	});
+	it('1.2: the host LEFT and nobody is here — paused: status says so and edits are refused (41)', async () => {
+		const app = fakeApp();
+		/** @type {any} */
+		let away = { host: 'ff637aa', since: 1000, until: Date.now() + 600000, expired: false };
+		const { agent } = createAgentCore({ ...app.deps, hostAway: () => away });
+		expect(agent.status()).toMatchObject({ hostAway: { host: 'ff637aa', expired: false }, withHost: false });
+		const res = await agent.exec('create_objects', { objects: [{}] });
+		expect(res).toMatchObject({ refused: true, hostAway: { host: 'ff637aa' } });
+		expect(res.error).toBe(hostAwayRefusal(away));
+		expect(res.error).toMatch(/paused/);
+		expect(app.log).toEqual([]);
+		// reads still work while paused
+		expect((await agent.exec('list_scene', {})).refused).toBeUndefined();
+		away = null;
+		expect(agent.status().hostAway).toBeUndefined();
+	});
+	it("1.2: status().joined and the edit gate agree — no edit while the host's link is gone (41 round 5)", async () => {
+		const app = fakeApp();
+		const { agent } = createAgentCore(app.deps);
+		app.state.peers = []; // the host's tab closed: still named, no open link
+		expect(agent.status().joined).toBe(false);
+		const res = await agent.exec('create_objects', { objects: [{}] });
+		expect(res).toMatchObject({ refused: true, joined: false });
+		expect(res.error).toBe(notJoinedRefusal('host1', false));
+		expect(app.log).toEqual([]);
+		expect((await agent.exec('list_scene', {})).refused).toBeUndefined();
+		app.state.peers = [{ id: 'host1', name: 'Alex' }];
+		expect(agent.status().joined).toBe(true);
+		expect((await agent.exec('create_objects', { objects: [{}] })).refused).toBeUndefined();
+	});
+	it('1.2: says a scene is still arriving, and which behaviours are failing (41)', () => {
+		const app = fakeApp();
+		/** @type {{arrived: number, total: number} | null} */
+		let arriving = { arrived: 3, total: 9 };
+		/** @type {any[]} */
+		let failing = [];
+		const { agent } = createAgentCore({ ...app.deps, loading: () => arriving, behaviourErrors: () => failing });
+		expect(agent.status()).toMatchObject({ loading: true, objects: { arrived: 3, total: 9 } });
+		expect(agent.status().behaviourErrors).toBeUndefined();
+		arriving = null;
+		failing = [{ name: 'Gems', where: 'on.load', message: 'findAll is not defined' }];
+		const st = agent.status();
+		expect(st.loading).toBe(false);
+		expect(st.objects).toBeUndefined();
+		expect(st.behaviourErrors).toEqual(failing);
+	});
+	it('a tool called while the scene is still arriving waits for it (55 agent-mcp)', async () => {
+		const app = fakeApp();
+		/** @type {{arrived: number, total: number} | null} */
+		let arriving = { arrived: 0, total: 0 };
+		const { agent } = createAgentCore({ ...app.deps, loading: () => arriving });
+		let done = false;
+		const call = agent.exec('create_objects', { objects: [{}] }).then((r) => ((done = true), r));
+		await new Promise((r) => setTimeout(r, 450));
+		expect(done).toBe(false);
+		expect(app.log).toEqual([]);
+		arriving = null;
+		expect((await call).refused).toBeUndefined();
+		expect(app.log.filter((r) => r[0] === 'run').length).toBe(1);
+	});
+	it('says where it is and where the host is, and REFUSES edits while apart (55 owner finding 1)', async () => {
+		const app = fakeApp();
+		let room = { scene: 'Run1', hostScene: 'Run1', withHost: true, following: false };
+		const { agent } = createAgentCore({ ...app.deps, room: () => room });
+		expect(agent.status()).toMatchObject({ scene: 'Run1', hostScene: 'Run1', withHost: true });
+		room = { scene: 'Run1', hostScene: 'Run2', withHost: false, following: true };
+		const st = agent.status();
+		expect(st.joined).toBe(true); // still in the session …
+		expect(st).toMatchObject({ withHost: false, hostScene: 'Run2', following: true }); // … but not with the host
+		const res = await agent.exec('create_objects', { objects: [{}] });
+		expect(res).toMatchObject({ refused: true, withHost: false });
+		expect(res.error).toBe(leftBehindRefusal('Run2', true));
+		expect(res.error).toMatch(/"Run2"/);
+		expect(app.log).toEqual([]);
+		expect((await agent.exec('list_scene', {})).objects).toEqual([]); // reading still works
+		room = { ...room, withHost: true, following: false, scene: 'Run2' };
+		expect((await agent.exec('create_objects', { objects: [{}] })).created).toBeTruthy();
+	});
+	it('without a room dep (an older wiring) nothing changes', () => {
+		const st = createAgentCore(fakeApp().deps).agent.status();
+		expect('withHost' in st).toBe(false);
 	});
 	it('reports a viewer as unable to edit', () => {
 		const app = fakeApp();
@@ -272,5 +363,35 @@ describe('missingModulesFrom (T6)', () => {
 		]);
 		expect(missingModulesFrom(adv, ['host'], loaded, ['waves']).map((r) => r.inGallery)).toEqual([false, true]);
 		expect(missingModulesFrom(adv, [], loaded)).toEqual([]);
+	});
+});
+
+describe('86 B3: inSession (the Claude connector in a PERSON’s tab)', () => {
+	it('a tab that hosts or is alone edits with no admission wait; its role still gates', async () => {
+		const app = fakeApp({ inSession: () => true });
+		app.state.host = null; // we host
+		app.state.peers = [];
+		const { agent } = createAgentCore(app.deps);
+		expect(agent.status().joined).toBe(true);
+		expect((await agent.exec('create_objects', { objects: [{ kind: 'primitive' }] })).created).toBeTruthy();
+		app.state.role = 'viewer';
+		const r = await agent.exec('create_objects', { objects: [{ kind: 'primitive' }] });
+		expect(r.refused).toBe(true);
+	});
+	it('counterfactual: without inSession the same tab is refused as "not in a session"', async () => {
+		const app = fakeApp();
+		app.state.host = null;
+		app.state.peers = [];
+		const { agent } = createAgentCore(app.deps);
+		const r = await agent.exec('create_objects', { objects: [{ kind: 'primitive' }] });
+		expect(r).toMatchObject({ refused: true, joined: false });
+	});
+	it('a joined tab whose host link dropped is refused until it is back', async () => {
+		let linked = false;
+		const app = fakeApp({ inSession: () => linked });
+		const { agent } = createAgentCore(app.deps);
+		expect((await agent.exec('create_objects', { objects: [{ kind: 'p' }] })).refused).toBe(true);
+		linked = true;
+		expect((await agent.exec('create_objects', { objects: [{ kind: 'p' }] })).created).toBeTruthy();
 	});
 });

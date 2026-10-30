@@ -109,6 +109,8 @@
 	}
 
 	// docked vs floating — UvEditor's split verbatim
+	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
+	let { popped = false } = $props();
 	let docked = $state(true);
 	const WIN_MIN = { minW: 380, minH: 280 };
 	const WIN_DEFAULT = { w: 680, h: 480 };
@@ -126,8 +128,11 @@
 	}
 	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
 	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	// 70 W2: a popped-out instance renders its floating layout inside its window, never docked
+	// svelte-ignore state_referenced_locally
+	if (popped) docked = false;
 	$effect(() =>
-		onLayoutRestore(() => {
+		popped ? undefined : onLayoutRestore(() => {
 			const stored = storedPanelLayout(safeStorage.getItem, 'hud', 680, 480);
 			docked = !!(stored.docked);
 			const fit = clampWinSize(stored.w, stored.h, WIN_MIN);
@@ -148,6 +153,7 @@
 	// from localStorage ONCE at mount, so writing that flag from outside is inert;
 	// `setDocked` owns the mode and is what has to run. Cleared as it is acted on.
 	$effect(() => {
+		if (popped) return; // 70 W2: the main window's instance answers the arm
 		const arm = $dockModeArm;
 		if (!arm || arm.key !== 'hud') return;
 		dockModeArm.set(null);
@@ -160,6 +166,7 @@
 	const effW = $derived(myGroup ? myGroup.rect.width : winW);
 	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 	$effect(() => {
+		if (popped) return; // 70 W2: a popped panel is no dock tab
 		setDockOccupant('hud', !$hudEditorClose && docked, $dockHeight);
 		return () => setDockOccupant('hud', false);
 	});

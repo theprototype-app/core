@@ -29,6 +29,7 @@
 	import { suspendAnimation, resumeAnimation, pumpFlowTick } from '$lib/flowRuntime';
 	import { holdBody, releaseBody } from '$lib/physics';
 	import { sculptObject, enterSculpt, beginStroke, strokeMove, endStroke as sculptEndStroke, showCursorAt, hideCursor } from '$lib/terrainSculpt';
+	import { scatterSelectArmed, scatterSelectDown, scatterSelectMove, scatterSelectUp, onScatterProxyMoved, onScatterProxyDragChanged } from '$lib/scatterEdit';
 	import { sceneHits } from '$lib/scenePick';
 	import { pickStack, chooseInStack, altCycleIndex, primaryIndex } from '$lib/selectThrough';
 	import { editorPass } from '$lib/pickPass'; // 36 F22
@@ -84,6 +85,7 @@
 	import { updateOnionSkin } from '$lib/onionSkin';
 	import { startCables, updateCables } from '$lib/audioPatch';
 	import { updateTinyMarkers } from '$lib/tinyMarkers';
+	import { tickAgentMarkers } from '$lib/agentPresence'; // 74 VH3
 	import { cameraPreview, activeOrbit, setOrbitEnabled } from '$lib/cameraPreview';
 	import CameraPreview from './CameraPreview.svelte';
 	import { startEditorNavigation, updateEditorNavigation } from '$lib/editorNavigation';
@@ -104,9 +106,12 @@
 	import VRSelectionShell from './play/VRSelectionShell.svelte';
 	// 36 U3b: the VR welcome tour's world-space panel
 	import TourVRPanel from './tours/TourVRPanel.svelte';
+	import VRAssetBrowser from './play/VRAssetBrowser.svelte'; // 52-browser: the wrist Asset Browser
+	import VRLogicPanel from './play/VRLogicPanel.svelte'; // 74 VH1: the logic graph as a VR panel + wrist pad
 	// 36 A2: the headset browser's own "Enter VR" offer — decided by us, not threlte's default
 	import { xrOfferMode } from '$lib/xrOffer';
 	import MeasureOverlay from './MeasureOverlay.svelte';
+	import UnderlayLayer from './UnderlayLayer.svelte'; // 60 Q5
 	import AnnotationPins from './AnnotationPins.svelte';
 	import PingMarkers from './PingMarkers.svelte';
 	import PingHighlights from './PingHighlights.svelte';
@@ -343,13 +348,15 @@
 		// kept rendering finger spheres). shouldSendHands forces it on a rep flip.
 		const lens = [left?.joints?.length ?? 0, right?.joints?.length ?? 0];
 		if (!shouldSendHands({ moved, hasJoints, prevLens: lastSentJointLens, lens })) return;
+		// 60 Q2: a hands<->controllers switch is state (reliable); a pose of the same rep is stream
+		const sameRep = !!lastSentJointLens && lastSentJointLens[0] === lens[0] && lastSentJointLens[1] === lens[1];
 		lastSentJointLens = lens;
 		lastHandsSendAt = now;
 		for (let i = 0; i < 2; i++) {
 			const pose = poses[i];
 			if (pose) lastHandPositions[i].fromArray(pose.pos);
 		}
-		$peers.send({ type: 'vrhands', peerId: $peers.peer.id, left, right, active: true });
+		$peers.send({ type: 'vrhands', peerId: $peers.peer.id, left, right, active: true }, { fast: sameRep });
 	}
 
 	useTask((delta) => {
@@ -394,7 +401,7 @@
 			// so its local position put every walking player 0.9 m into the floor on every peer.
 			camera.current.updateWorldMatrix(true, false);
 			camera.current.matrixWorld.decompose(camContentPos, camContentQuat, camFeetPoint);
-			const feetWorld = localFeet();
+			const feetWorld = localFeet(delta * 1000);
 			const camExtras: Record<string, number> = {};
 			if (feetWorld !== null) {
 				camFeetPoint.set(camContentPos.x, feetWorld, camContentPos.z);
@@ -420,7 +427,9 @@
 				nowMs - lastCameraSendAt >= camGapMs) {
 				lastCameraSendAt = nowMs;
 				camContentEuler.setFromQuaternion(camContentQuat);
-				$peers.send({ type: 'camera', peerId: $peers.peer.id, position: camContentPos.toArray(), rotation: [camContentEuler.x, camContentEuler.y, camContentEuler.z], ...camExtras });
+				// 60 Q2: a pose of the stream rides the fast channel; a change of the extras (seat,
+				// feet, knocked…) is state and goes reliable, or a lost datagram could strand it
+				$peers.send({ type: 'camera', peerId: $peers.peer.id, position: camContentPos.toArray(), rotation: [camContentEuler.x, camContentEuler.y, camContentEuler.z], ...camExtras }, { fast: camExtrasKey === lastCameraExtras });
 				lastCameraExtras = camExtrasKey;
 				lastCameraPosition.copy(camContentPos);
 				lastCameraQuaternion.copy(camContentQuat);
@@ -445,6 +454,7 @@
 		updateCables(); // 23-A4: patch cables follow their plugs; the routing diff runs here too
 		updateOnionSkin(); // 17-E F6: ghosts at the neighbouring keys (local, off by default)
 		updateTinyMarkers(); // R2: a dot to aim at when an object has no size left
+		tickAgentMarkers(renderer.xr.isPresenting ? renderer.xr.getCamera() : camera.current); // 74 VH3: where an AI agent is working
 		tickModuleProxy(); // 30 P3: a selected module group's proxy box follows its content
 		if (!renderer.xr.isPresenting) updateEditorNavigation(delta, camera.current, $activeOrbit);
 		tickStartView(); // 36 L2: last — a held camera undoes this frame's input before it is drawn
@@ -485,6 +495,11 @@
 			// 57.3: a spline control point — ONE spline undo entry per drag
 			if (object.userData?.isSplineProxy) {
 				onSplineProxyDragChanged(event.value);
+				return;
+			}
+			// 51 E4: scatter instances under the gizmo — ONE terrainScatter entry per drag
+			if (object.userData?.isScatterProxy) {
+				onScatterProxyDragChanged(event.value);
 				return;
 			}
 			// 33: one LOD level's offset — ONE lod write per drag, never a move
@@ -873,9 +888,18 @@
 			}
 			// T-2: sculpt mode — dragging brushes the terrain instead of orbiting
 			if ($sculptObject && !$isLocked && !$isVRMode) {
+				// 51 E4: the Scatter Select tool — a press picks instances / starts a box; a
+				// press on a gizmo handle is the gizmo's (it sets `axis` on hover)
+				if (scatterSelectArmed()) {
+					if ($TControls?.axis) return;
+					scatterSelectDown($sculptObject, event);
+					sculptActive = true;
+					setOrbitEnabled(false);
+					return;
+				}
 				const terrain = $objectsGroup?.getObjectByProperty('uuid', $sculptObject);
 				setRayFromEvent(event);
-				const hit = terrain ? selectionRaycaster.intersectObject(terrain, false)[0] : null;
+				const hit = terrain ? selectionRaycaster.intersectObject(terrain, !terrain.isMesh)[0] : null; // 51-surface: a group host's children
 				if (hit) {
 					sculptActive = true;
 					lastSculptAt = performance.now();
@@ -1019,14 +1043,22 @@
 					y1: Math.max(marqueeStart[1], event.clientY)
 				};
 			}
+			// 51 E4: the Scatter Select tool draws a box, never a brush ring
+			if ($sculptObject && scatterSelectArmed()) {
+				hideCursor();
+				if (sculptActive) {
+					scatterSelectMove(event);
+					return;
+				}
+			}
 			// T-2: the brush cursor tracks the terrain; a held button keeps sculpting
-			if ($sculptObject) {
+			else if ($sculptObject) {
 				const terrain = $objectsGroup?.getObjectByProperty('uuid', $sculptObject);
 				setRayFromEvent(event);
-				const hit = terrain ? selectionRaycaster.intersectObject(terrain, false)[0] : null;
+				const hit = terrain ? selectionRaycaster.intersectObject(terrain, !terrain.isMesh)[0] : null; // 51-surface: a group host's children
 				if (hit) {
 					// mesh sculpt: orient the brush ring to the surface
-					const worldNormal = hit.face ? hit.face.normal.clone().transformDirection(terrain.matrixWorld) : null;
+					const worldNormal = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;
 					showCursorAt(hit.point, worldNormal);
 					if (sculptActive) {
 						const now = performance.now();
@@ -1144,7 +1176,8 @@
 			if (sculptActive && event.button === 0) {
 				sculptActive = false;
 				setOrbitEnabled(true);
-				sculptEndStroke(); // flush the pending preview + ONE undoable snapshot
+				if ($sculptObject && scatterSelectArmed()) scatterSelectUp($sculptObject, event, camera.current);
+				else sculptEndStroke(); // flush the pending preview + ONE undoable snapshot
 				return;
 			}
 			if (strokeActive && event.button === 0) {
@@ -1419,6 +1452,13 @@
 		});
 
 		const onContextMenu = (event) => {
+			// test-health-1: heard on threlte's WRAPPER (`dom`), not the canvas. OrbitControls listens
+			// there and captures the pointer on every press, right button included, so where
+			// `contextmenu` fires on mousedown (Linux; Chromium headless) it is dispatched to the capture
+			// element and a canvas listener never heard it — a real right-click on the viewport opened
+			// nothing (fresh page: 0 menu rows; play-reentry). Canvas events still bubble here; anything
+			// else inside the wrapper keeps its own menu.
+			if (event.target !== element && event.target !== dom) return;
 			event.preventDefault(); // the browser menu never belongs on the canvas
 			const down = rightDown;
 			rightDown = null;
@@ -1428,7 +1468,7 @@
 			if (moved > 5 || Date.now() - down[2] > 400) return;
 			openViewportMenuAt(event.clientX, event.clientY);
 		};
-		element.addEventListener('contextmenu', onContextMenu);
+		dom.addEventListener('contextmenu', onContextMenu);
 
 		// touch long-press = right-click (touch has no contextmenu). A stationary
 		// ~500ms hold opens the same menu at the touch point.
@@ -1481,7 +1521,7 @@
 			if (Date.now() - pinchMenuToggledAt < 250) return;
 			// K1: a sleeve ghost pick/place just handled this trigger — the release
 			// must not fall through to raycastSelect
-			if (vrModuleSelectSwallowed()) return;
+			if (vrModuleSelectSwallowed(xrControllers.indexOf(controller))) return; // 52-browser: per controller
 			// the keyboard is modal on top of any panel (116)
 			if ($vrKeyboardTarget) {
 				const key = raycastKeyboard(xrControllers.indexOf(controller));
@@ -1663,7 +1703,7 @@
 			stopClap(); // 31
 			stopVrGameInput(); // 30b
 			element.removeEventListener('pointerdown', onPointerDown);
-			element.removeEventListener('contextmenu', onContextMenu);
+			dom.removeEventListener('contextmenu', onContextMenu);
 			element.removeEventListener('webglcontextlost', onContextLost);
 			element.removeEventListener('webglcontextrestored', onContextRestored);
 			window.removeEventListener('pointerup', onPointerUp);
@@ -1707,6 +1747,12 @@
 			onSplineProxyMoved();
 			return;
 		}
+		// 51 E4: the selected scatter instances follow the proxy (preview; release commits)
+		if ($TControls.object?.userData?.isScatterProxy) {
+			$TControls.visible = true;
+			onScatterProxyMoved();
+			return;
+		}
 		// 33: a LOD level's proxy — the level follows locally; the release commits
 		if ($TControls.object?.userData?.isLodLevelProxy) {
 			$TControls.visible = true;
@@ -1742,13 +1788,14 @@
 						dropToSurface($TControls.object, $objectsGroup);
 					}
 					$TControls.visible = true;
+					// 60 Q2: the gizmo drag is a stream (fast); its keyframe lands the last pose
 					$peers.send({
 						type: 'move',
 						uuid: $TControls.object.uuid,
 						pos: $TControls.object.position.toArray(),
 						rot: $TControls.object.rotation.toArray(),
 						scale: $TControls.object.scale.toArray()
-					});
+					}, { fast: true });
 				}
 	}
 
@@ -1821,6 +1868,10 @@
 <T.Group bind:ref={$worldRig} name="world-grab-rig">
 	<T.Group bind:ref={$objectsGroup} name="sceneObjects" />
 
+	<!-- 60 Q5: reference images — under the world rig (a VR world grab carries them), never in
+	     sceneObjects (never picked, synced, saved or exported) -->
+	<UnderlayLayer />
+
 	<CameraPreview />
 
 	<!-- CO4: no virtual ground in AR — the grid stands down over passthrough
@@ -1884,6 +1935,8 @@ position={[0, 2, 3]}
 <VRKeyboard />
 <VRSelectionShell />
 <TourVRPanel />
+<VRAssetBrowser />
+<VRLogicPanel />
 
 <XR
 	offerSession={$xrOfferMode}

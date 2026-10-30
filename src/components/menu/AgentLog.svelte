@@ -21,7 +21,8 @@
 	// lines, never an Undo
 	const editorNow = (/** @type {any} */ _roles) => !isViewer();
 	const canUndo = $derived(editorNow($rolesInfo));
-	const online = $derived(new Set(/** @type {any} */ ($peers)?.openedPeers ?? []));
+	// 86 B3: lines the Claude connector wrote in THIS tab are held here, so they count as online
+	const online = $derived(new Set([...(/** @type {any} */ ($peers)?.openedPeers ?? []), String(/** @type {any} */ ($peers)?.peer?.id || 'me').toLowerCase()]));
 
 	/** @param {any} e */
 	function select(e) {

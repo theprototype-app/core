@@ -1,9 +1,14 @@
 # CLAUDE.md — theprototype.app
 
 Collaborative peer-to-peer 3D prototyping app: SvelteKit (static adapter) + Svelte 5 +
-Threlte 8 + three.js, peerjs mesh networking (no server beyond PeerJS signaling), a
+Threlte 8 + three.js, peerjs mesh networking (a session needs only signaling + TURN; the hosted
+site's accounts, cloud saves, assets and community pages are plugins/CDN, never in a session's path), a
 node/flow editor (@xyflow/svelte 0.1.x) driving scene behavior, and a module SDK for
 loadable play content. Everything a user does must be visible to connected peers.
+
+**This file is ~7,000 lines; you are shown only its start.** `CLAUDE-index.md` lists every section, entry and
+sub-entry with its line: grep the index for a word, then read this file from that line. After editing this file
+(or on a merge conflict in the index), run `node scripts/claude-index.cjs`.
 
 ## Architecture map
 
@@ -2667,6 +2672,14 @@ loadable play content. Everything a user does must be visible to connected peers
 2. Never send on a timer after connecting — peerjs silently drops pre-open messages.
    Send in the connection `open` callback (`sendHandshake`) or retry-until-`conn.open`
    (`sendNodes`/`sendAnnotations`/`sendModuleStates` pattern).
+   **`broadcast` skips a conn that is not open**, and an approval DIAL-BACK takes a few
+   hundred ms to open on a fast box and 15 s on a GitHub runner — a room edit in that window
+   used to reach the joiner only if its full-state reply happened to be computed later (the
+   slow GLTF path; the 1.43.2 scatter suites' "B has the terrain" on GitHub). scatter-sync:
+   ROOM_SCOPED broadcasts to a peer in `approvedDialBacks` are HELD (`dialBackQueue.js`,
+   300 msgs / 120 s, overflow abandons the whole queue — the full-state reply still covers
+   it) and flushed, re-gated through `withholdFrom`, at the END of `sendHandshake`.
+   Suite `dialback-sync` (approve + create in one tick).
 3. Each domain needs a full-state reply for late joiners (`get<domain>` in
    `sendHandshake`) and cleanup in `handleDisconnected`.
 4. Key everything by uuid; peers assume the **same app version** (catalogs/builders/
@@ -4250,6 +4263,20 @@ loadable play content. Everything a user does must be visible to connected peers
   roster-length check shows a phantom peer while pending. `$peers` ticks
   (`peers.update`) on every open/close, so derive from `openedPeers` (#14 CN; the
   Users peers-trigger had this bug too).
+- **`peer.id` does NOT go null on a signaling drop any more — and "is signaling up" is
+  `peer.open`, never `peer.id`** (net-drop-1). peerjs's `Peer.disconnect()`, which runs on every
+  drop of the signaling socket, sets `id` to null until the socket re-registers; everything
+  that asked "who am I" during the gap read null. The cloud roles plugin
+  (`getPeers().peer.id`) counted itself ALONE and wiped its role map, so a joiner came back
+  from a healed drop a VIEWER whose edits never left it (net-drop B -> A red on every
+  deployed build and green on a dev server, which loads no plugin). Core's own readers
+  (own avatar, own locks, shared-library owner, chat, `atscene`) were wrong for the same
+  seconds. `peerDrop.keepPeerId` puts an own getter on the one Peer core builds (live id,
+  else the id it was created with); peerjs's `_id`/`_lastServerId`/`open`/`disconnected`
+  are untouched, and `reconnectDial` checks `peer.disconnected` itself. Suite
+  `net-drop` (own id at the cut; roles unchanged by the heal under
+  `E2E_CLOUD_PLUGIN=https://theprototype.pages.dev/cloud-plugin.js`, the way to run any
+  two-peer suite in the deployed condition on a dev server).
 - A fixed overlay anchored under the Connect pill can't use a `position:fixed`
   click-catcher sized to the viewport — `.connect-wrap`'s `translateX(-50%)` makes it
   the containing block for fixed descendants (the transform gotcha). Close the

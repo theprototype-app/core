@@ -63,6 +63,7 @@ import { clearSavedSession } from './autosave';
 import { checkpoints, deleteCheckpoint, KEY as KEY_CHECKPOINT, INDEX_KEY as KEY_CHECKPOINT_INDEX } from './checkpoints';
 import { fmtBytes } from './transferLedger';
 import { loadPackCacheIndex, packCacheIndex, deletePackCache, clearPackCache } from './packCache';
+import { assetCacheIndex, deleteCached } from './assetCache'; // 60 Q6: the rest of the local asset cache
 import { clearMeasuredDims } from './placementDims';
 import { PACKS_BASE, packs } from './packs';
 import { listImageVersions, forgetImageVersions, isImageVersionKey } from './image/imageVersions'; // 40-image
@@ -185,6 +186,12 @@ export const CATEGORIES = [
 		key: 'packcache',
 		label: 'Pack downloads',
 		note: 'Files of pack items this device downloaded. Clearing them keeps every item in its pack: it downloads again the next time it is placed or a scene needs it.'
+	},
+	{
+		// 60 Q6: the rest of the local asset cache (OPFS) — Settings ▸ Storage has its limit and Clear
+		key: 'assetcache',
+		label: 'Cached downloads',
+		note: 'Skies, converted textures and downloaded files kept on this device so they load again without the network. Clearing them only costs a download (or a conversion) the next time.'
 	},
 	{
 		key: 'modules',
@@ -736,6 +743,31 @@ export async function scanStorage() {
 				});
 		} catch {}
 
+		// ---- 60 Q6: the asset cache's other kinds, one row per kind ---------------------
+		try {
+			const labels = /** @type {Record<string, string>} */ ({ sky: 'Skies', texture: 'Converted textures', import: 'Downloaded files' });
+			/** @type {Map<string, {keys: string[], hashes: Set<string>, bytes: number}>} */
+			const byKind = new Map();
+			for (const [k, e] of Object.entries(get(assetCacheIndex).entries)) {
+				if (e.kind === 'pack') continue; // listed per pack above
+				const row = byKind.get(e.kind) ?? { keys: [], hashes: new Set(), bytes: 0 };
+				row.keys.push(k);
+				if (!row.hashes.has(e.hash)) (row.hashes.add(e.hash), (row.bytes += e.bytes));
+				byKind.set(e.kind, row);
+			}
+			for (const [kind, row] of byKind)
+				push({
+					id: 'assetcache:' + kind,
+					category: 'assetcache',
+					label: labels[kind] ?? kind,
+					sub: row.hashes.size + (row.hashes.size === 1 ? ' file' : ' files'),
+					bytes: row.bytes,
+					removable: true,
+					kind: 'assetcache',
+					ref: row.keys
+				});
+		} catch {}
+
 		/** @type {StorageCategory[]} */
 		const categories = CATEGORIES.map((c) => {
 			const rows = (buckets.get(c.key) ?? []).sort((a, b) => b.bytes - a.bytes || a.label.localeCompare(b.label));
@@ -808,6 +840,9 @@ export async function reclaimRow(row) {
 			case 'packcache':
 				// 39 P5: the item stays in its pack; only this device's copy goes
 				return await deletePackCache(/** @type {string[]} */ (row.ref ?? []));
+			case 'assetcache':
+				// 60 Q6: only this device's copies go; the next use downloads (or converts) again
+				return await deleteCached(/** @type {string[]} */ (row.ref ?? []));
 			case 'packdims':
 				await clearMeasuredDims();
 				return row.bytes;

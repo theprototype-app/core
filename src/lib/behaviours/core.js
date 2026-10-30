@@ -41,6 +41,17 @@ export const GRACE_MS = 2000;
 export const MAX_TIMERS = 64;
 /** the most `fired` rows a document carries */
 const MAX_FIRED = 64;
+/** 55: how many of the authority's handler errors ride the document, and how long each message may be */
+const MAX_DOC_ERRORS = 5;
+
+/** the document's error rows, bounded and plain (from a handler, or off the wire) @param {any} rows */
+function docErrors(rows) {
+	if (!Array.isArray(rows)) return [];
+	return rows
+		.filter((r) => r && Number.isFinite(r.at) && typeof r.where === 'string' && typeof r.message === 'string')
+		.slice(-MAX_DOC_ERRORS)
+		.map((r) => ({ at: r.at, where: r.where.slice(0, 80), message: r.message.slice(0, 240) }));
+}
 /** 36 (U10): a wired input that reaches a peer while it is not (yet) the authority is held this
  * long (ms) — Play starting a simulation moves the kit's authority, and a press landing in that
  * moment must not be lost; the document's `inputs` record keeps it from running twice */
@@ -129,7 +140,7 @@ export function createBehaviourRuntime(host) {
 
 	/** broadcast the document if the state (or its meta) moved since the last send @param {any} inst @param {boolean} [force] */
 	const flush = (inst, force = false) => {
-		const body = JSON.stringify({ s: inst.state, t: inst.doc.timers, st: inst.doc.started, q: inst.doc.seq, f: inst.doc.fired, i: inst.doc.inputs });
+		const body = JSON.stringify({ s: inst.state, t: inst.doc.timers, st: inst.doc.started, q: inst.doc.seq, f: inst.doc.fired, i: inst.doc.inputs, e: inst.doc.errs });
 		if (!force && body === inst.lastSent) return false;
 		inst.lastSent = body;
 		const prev = inst.doc;
@@ -152,7 +163,10 @@ export function createBehaviourRuntime(host) {
 		seq: inst.doc.seq,
 		timers: clone(inst.doc.timers),
 		fired: clone(inst.doc.fired),
-		inputs: clone(inst.doc.inputs ?? {})
+		inputs: clone(inst.doc.inputs ?? {}),
+		// 55 (41's gem test): the authority's latest handler errors, so EVERY peer (an agent's page is
+		// never the authority) can say a behaviour is failing; absent while it has none
+		...(inst.doc.errs?.length ? { errs: clone(inst.doc.errs) } : {})
 	});
 
 	/** take a received (or parked) document into an instance @param {any} inst @param {any} msg */
@@ -172,9 +186,10 @@ export function createBehaviourRuntime(host) {
 			seq: Number(msg.seq) || 0,
 			timers: Array.isArray(msg.timers) ? msg.timers.slice(0, MAX_TIMERS) : [],
 			fired: msg.fired && typeof msg.fired === 'object' ? msg.fired : {},
-			inputs: msg.inputs && typeof msg.inputs === 'object' && !Array.isArray(msg.inputs) ? { ...msg.inputs } : {}
+			inputs: msg.inputs && typeof msg.inputs === 'object' && !Array.isArray(msg.inputs) ? { ...msg.inputs } : {},
+			errs: docErrors(msg.errs)
 		};
-		inst.lastSent = JSON.stringify({ s: inst.state, t: inst.doc.timers, st: inst.doc.started, q: inst.doc.seq, f: inst.doc.fired, i: inst.doc.inputs });
+		inst.lastSent = JSON.stringify({ s: inst.state, t: inst.doc.timers, st: inst.doc.started, q: inst.doc.seq, f: inst.doc.fired, i: inst.doc.inputs, e: inst.doc.errs });
 		inst.synced = true;
 		for (const [name, row] of Object.entries(inst.doc.fired)) {
 			const local = inst.trace.fired[name];
@@ -215,6 +230,8 @@ export function createBehaviourRuntime(host) {
 			stats.errors++;
 			inst.errors.push({ at, where: label, message: String(/** @type {any} */ (error)?.message ?? error), stack: String(/** @type {any} */ (error)?.stack ?? '') });
 			if (inst.errors.length > 20) inst.errors.shift();
+			// …and onto the document when this peer owns it, so the failure reaches every peer
+			if (!local && host.isAuthority()) inst.doc.errs = docErrors([...(inst.doc.errs ?? []), { at, where: label, message: String(/** @type {any} */ (error)?.message ?? error) }]);
 			warn(inst.name + ': ' + label + ' failed', error);
 		} finally {
 			inst.depth--;
@@ -400,7 +417,7 @@ export function createBehaviourRuntime(host) {
 			/** @type {Record<string, any>} */ values: {},
 			state: initialState(def),
 			/** @type {any} */ prevState: null,
-			doc: { rev: 0, at: 0, by: '', started: false, seq: 0, timers: /** @type {any[]} */ ([]), fired: /** @type {Record<string, [number, number]>} */ ({}), inputs: /** @type {Record<string, number>} */ ({}) },
+			doc: { rev: 0, at: 0, by: '', started: false, seq: 0, timers: /** @type {any[]} */ ([]), fired: /** @type {Record<string, [number, number]>} */ ({}), inputs: /** @type {Record<string, number>} */ ({}), errs: /** @type {any[]} */ ([]) },
 			/** 36 (U10): wired inputs held while this peer cannot act @type {{name: string, stamp: number, payload: any, until: number}[]} */ pendingInputs: [],
 			lastSent: '',
 			depth: 0,
@@ -421,6 +438,8 @@ export function createBehaviourRuntime(host) {
 		const kept = carried ? messageOf(carried) : parked.get(id);
 		parked.delete(id);
 		if (kept && (kept.rev > 0 || kept.started)) adopt(inst, kept);
+		// 55: a RELOAD (an edited source) starts with a clean error list — the old code's failures are not the new one's
+		if (carried) inst.doc.errs = [];
 		inst.prevState = clone(inst.state);
 		instances.set(id, inst);
 		// the events: each `on` key through the kit face
@@ -602,7 +621,11 @@ export function createBehaviourRuntime(host) {
 			calls: clone(inst.trace.calls),
 			writes: clone(inst.trace.writes),
 			methods: clone(inst.trace.methods),
-			errors: inst.errors.map((/** @type {any} */ e) => ({ ...e })),
+			// this peer's own errors, plus the authority's (from the document) that it has not seen itself
+			errors: [
+				...inst.errors.map((/** @type {any} */ e) => ({ ...e })),
+				...(inst.doc.errs ?? []).filter((/** @type {any} */ d) => !inst.errors.some((/** @type {any} */ e) => e.at === d.at && e.where === d.where)).map((/** @type {any} */ d) => ({ ...d, remote: true }))
+			],
 			problems: [...inst.problems],
 			authority: host.isAuthority(),
 			synced: inst.synced

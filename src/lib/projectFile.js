@@ -392,7 +392,7 @@ export async function exportProject(opts = {}) {
 			// or not this build knows how to edit it
 			name: String(outManifest.name ?? ''),
 			// 56 C16: the scene that was open, so opening the file lands there (additive)
-			...(claimed.includes(get(currentLevel)?.name) ? { lastScene: get(currentLevel)?.name } : {}),
+			...(claimed.includes(get(currentLevel)?.name ?? '') ? { lastScene: get(currentLevel)?.name } : {}),
 			manifest: outManifest,
 			scenes,
 			assets,

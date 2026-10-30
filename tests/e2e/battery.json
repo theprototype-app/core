@@ -276,6 +276,7 @@
 		"add-flow-scene": 100,
 		"agent-api": 420,
 		"agent-chat": 360,
+		"agent-chat-roles": 240,
 		"agent-chat-vr": 300,
 		"agent-chat-window": 480,
 		"chat-media": 480,

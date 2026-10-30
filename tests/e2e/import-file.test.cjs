@@ -120,7 +120,8 @@ h.run(async () => {
 		 return { hook: o.onBeforeRender.name, drawn, tilt, want: Math.atan2(5 - p.x, 0 - p.z), authored: o.rotation.y };`,
 		res?.uuid
 	);
-	h.check(facing?.hook === 'faceCamera', `A installed the facing hook on the arriving card (${facing?.hook})`);
+	// a function NAME: minified on a built app, where the drawn rotation below is the proof
+	if (/localhost|:\d+\//.test(process.env.APP_URL || '')) h.check(facing?.hook === 'faceCamera', `A installed the facing hook on the arriving card (${facing?.hook})`);
 	h.check(!!facing && Math.abs(facing.drawn - facing.want) < 1e-3 && facing.tilt < 1e-6, `camera-y: drawn turned toward the camera about Y only (${JSON.stringify(facing)})`);
 	h.check(!!facing && Math.abs(facing.authored) < 1e-6, 'the authored rotation is untouched (the turn is per viewer)');
 

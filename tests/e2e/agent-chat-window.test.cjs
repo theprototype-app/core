@@ -23,6 +23,8 @@
 //
 // Run: APP_URL=https://theprototype.app:5433/ npm run e2e -- agent-chat-window
 // (56-union: 56-chat shipped this as agent-chat.test.cjs, the same name as 56-bridge's MCP suite — renamed)
+// DEV BUILDS ONLY: the agentInbox stub below routes a dev path and the roles are faked; a built app runs the real inbox
+// and the plugin's roles over this script. Real roles on a cloud build: agent-chat-roles.
 const h = require('./helpers.cjs');
 const { AxeBuilder } = require('@axe-core/playwright');
 

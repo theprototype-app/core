@@ -256,6 +256,9 @@ export const DEBUG_HOOKS = [
 	['peerApproval', () => import('./peerApproval')],
 	['inviteStore', () => import('./inviteStore')],
 	['agentLog', () => import('./agentLog')],
+	// 56 C1: the agent chat window; `tpchatStore` = the same module as `tpchats` below (56-chat's suites read it by this name)
+	['agentChat', () => import('./agentChat')],
+	['tpchatStore', () => import('./chat/tpchatStore.js')],
 	// 86: the Claude connector's UI state (a leaf — the connector itself stays a lazy chunk)
 	['connectorStore', () => import('./connector/connectorStore.js')],
 	['peerModeration', () => import('./peerModeration')],
@@ -351,6 +354,20 @@ export const DEBUG_HOOKS = [
 	['hudSync', () => import('./hudSync')],
 	// 48 S1/S2: the Timeline — data, sync, player
 	['sequences', () => import('./sequences')],
+	// 56 C10: the scene's chats (.tpchat store + format)
+	['tpchats', () => import('./chat/tpchatStore.js')],
+	['tpchatCore', () => import('./chat/tpchatCore.js')],
+	// 56 C8: the composer's picture pipeline (prepareImage, lastPrepare, composerPending) + its pure half
+	['chatAttach', () => import('./chat/attachments.js')],
+	['chatAttachCore', () => import('./chat/attachCore.js')],
+	// 56 C9: the import_model tool (importModelTool, inspectGlb)
+	['importModel', () => import('./ai/importModel.js')],
+	// 66 S4b: the import_file tool + its pure half + the scene cards
+	['importFile', () => import('./ai/importFile.js')],
+	['importFileCore', () => import('./ai/importFileCore.js')],
+	['imageCards', () => import('./ai/imageCards.js')],
+	// 56: fflate for the suites that look INSIDE an exported .tpscene / .tp (the app's own copy)
+	['fflate', () => import('fflate')],
 	['sequenceSync', () => import('./sequenceSync')],
 	['sequencePlayer', () => import('./sequencePlayer')],
 	['idb', () => import('./idb')],

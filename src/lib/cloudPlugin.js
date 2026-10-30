@@ -366,13 +366,14 @@ export function makeCloudApi() {
 		 * or renames anything locally — publish is a COPY OUT, and the "a save names the
 		 * room" rules (rounds 34/35) are untouched. `name` is the file's own name only; it
 		 * defaults to the open scene's name, else 'Untitled'. `packs` are never bundled.
-		 * @param {{assets?: boolean, flow?: boolean, name?: string, signature?: boolean}} [opts]
+		 * @param {{assets?: boolean, flow?: boolean, name?: string, signature?: boolean, chats?: 'all' | 'published'}} [opts]
+		 *   56 C10: `chats` — 'published' (default: only chats with "Include when publishing") | 'all' (a room's own save)
 		 * @returns {Promise<{blob: Blob, meta: {objectCount: number, hasFlow: boolean, hasAudio: boolean,
 		 *   hasGame: boolean, modules: {id: string, version: string}[], appVersion: string, bytes: number,
 		 *   camera: {position: number[], target: number[]} | null, duration: number | null, files: any[],
 		 *   signature?: string}}>} (`signature` = CL-5's content identity, only with `signature: true`)
 		 */
-		buildSceneBundle: async ({ assets = true, flow = true, name = '', signature = false } = {}) => {
+		buildSceneBundle: async ({ assets = true, flow = true, name = '', signature = false, chats = 'published' } = {}) => {
 			const { buildSessionPayload, exportSessionZip, sessionFileList } = await import('./sessions');
 			// 36-community (C4): a published file carries the scene's permanent game id
 			const { ensureGameId } = await import('./gameIdentity.js');
@@ -383,7 +384,9 @@ export function makeCloudApi() {
 				buildSessionPayload(String(name || get(currentLevel)?.name || 'Untitled'))
 			);
 			noteLocalObjectsExcluded(excluded);
-			const zip = await exportSessionZip(payload, { assets: assets !== false, flow: flow !== false, packs: false });
+			// 56 C10 (fork F5): a PUBLISHED file carries only the chats switched to "Include when publishing";
+			// a room keeper's save (continuity) asks for `chats: 'all'` — the room's own save keeps them
+			const zip = await exportSessionZip(payload, { assets: assets !== false, flow: flow !== false, packs: false, chats: chats === 'all' ? 'all' : 'published' });
 			const blob = new Blob([/** @type {BlobPart} */ (zip)], { type: 'application/zip' });
 			const meta = await bundleMeta(payload, { flow: flow !== false, bytes: blob.size, files: sessionFileList(payload) });
 			// CL-5 (37-continuity): ADDITIVE, opt-in — the content signature of what was just bundled (see
@@ -602,13 +605,15 @@ export function makeCloudApi() {
 		/** The whole PROJECT as a `.tp` — the Explorer's own "Export project" bytes (exportProject: the
 		 *  manifest, every scene and library item; the stored "include versions" preference unless
 		 *  `versions` says otherwise). Never downloads, names or changes anything locally.
-		 *  @param {{versions?: boolean}} [opts]
+		 *  56 C10: scene files drop their private AI chats unless `chats: 'all'` (a room keeper's own save).
+		 *  @param {{versions?: boolean, chats?: 'all' | 'published'}} [opts]
 		 *  @returns {Promise<{blob: Blob, meta: {name: string, scenes: number, assets: number, items: number, bytes: number, appVersion: string}}>} */
-		buildProjectBundle: async ({ versions } = {}) => {
+		buildProjectBundle: async ({ versions, chats } = {}) => {
 			const { exportProject } = await import('./projectFile');
 			const { projectName } = await import('./projectManifest');
 			const { APP_VERSION } = await import('./version.js');
-			const r = await exportProject(typeof versions === 'boolean' ? { versions } : {});
+			// 56 C10: `chats: 'all'` = a room keeper's own save of the project; absent = private chats left out
+			const r = await exportProject({ ...(typeof versions === 'boolean' ? { versions } : {}), ...(chats === 'all' ? { chats: 'all' } : {}) });
 			const blob = new Blob([/** @type {BlobPart} */ (r.bytes)], { type: 'application/zip' });
 			return {
 				blob,

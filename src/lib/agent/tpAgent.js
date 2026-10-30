@@ -9,6 +9,8 @@
 import { get } from 'svelte/store';
 import { createAgentCore, missingModulesFrom } from './agentCore.js';
 import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall, MESH_TOOL } from '$lib/ai/tools.js';
+import { IMPORT_MODEL_TOOL } from '$lib/ai/importModel.js'; // 56 C9
+import { IMPORT_FILE_TOOL } from '$lib/ai/importFile.js'; // 66 S4b
 import { physicsToolsEnabled, forcePhysicsTools } from '$lib/ai/flowTools.js';
 import { meshGenReady } from '$lib/ai/meshProviders.js';
 import { behaviourHost } from '$lib/ai/aiExtensions.js';
@@ -16,6 +18,7 @@ import { missingToolsFor } from './toolPolicy.js';
 import { whatCanYouDo, WHAT_CAN_YOU_DO_SCHEMA } from './voiceHelp.js';
 import { peerMeshReady, askMeshState, requestHostMesh } from './meshRelay.js';
 import { takeScreenshot } from './screenshot.js';
+import { agentInbox } from './agentInbox.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 import { peers, userdata, waitingForApproval, toastStore, dismissToastById, loading, loadingcount } from '../../stores/appStore.js';
 import { sceneLoad } from '$lib/sceneLoader.js';
@@ -316,6 +319,8 @@ function hostMeshReady() {
 function agentTools() {
 	const list = getAiTools();
 	if (!meshGenReady() && hostMeshReady() && !list.some((t) => t?.function?.name === 'generate_mesh')) list.push(MESH_TOOL);
+	list.push(IMPORT_MODEL_TOOL); // 56 C9: a GLB built outside the app (the bridge maps a local `path` to `data`)
+	list.push(IMPORT_FILE_TOOL); // 66 S4b: a sheet + spec / JSON / .tpanim from a local tool (same `path` mapping)
 	return list;
 }
 
@@ -354,9 +359,11 @@ async function agentRun(name, args) {
 export function createTpAgent(extra = {}) {
 	/** @type {ReturnType<typeof createAgentCore>} */
 	let core;
+	const inbox = agentInbox();
 	let unsettledSince = 0;
 	core = createAgentCore({
 		appVersion: APP_VERSION,
+		gate: (name, isEdit) => inbox.gate(name, isEdit),
 		getTools: () => agentTools(),
 		runTool: (name, args) => agentRun(name, args),
 		resolveName: (name, args) => repairToolCall(name, args),
@@ -592,6 +599,18 @@ export function installTpAgent(extra) {
 	startMeshAsk();
 	startFollow(core);
 	startHostWatch(core);
-	w.tpAgent = Object.freeze({ ...core.agent });
+	const inbox = agentInbox();
+	w.tpAgent = Object.freeze({
+		...core.agent,
+		// 1.1.0 (roadmap 56): the chat
+		nextMessage: (/** @type {number} */ ms, /** @type {string} */ token) => inbox.next(ms, token),
+		abortWait: (/** @type {string} */ token) => inbox.abortWait(token),
+		requeue: (/** @type {any} */ msg) => inbox.requeue(msg),
+		reply: (/** @type {any} */ o) => inbox.reply(o),
+		ask: (/** @type {any} */ o) => inbox.ask(o),
+		chatStatus: (/** @type {any} */ s, /** @type {any} */ meta) => inbox.setStatus(s, meta),
+		thread: (/** @type {any} */ o) => inbox.thread(o),
+		status: () => ({ ...core.agent.status(), chat: inbox.state() })
+	});
 	return w.tpAgent;
 }

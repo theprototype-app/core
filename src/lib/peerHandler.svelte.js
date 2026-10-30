@@ -28,8 +28,8 @@ import { applyJoinRefusal } from '$lib/peerApproval';
 // 55 A4: invite links — the host's check and the joiner's proof (store-only, no cycle)
 // 55 A7/A8: the agent action log + where an agent looked (store-only)
 import { applyAgentLog, applyAgentUndo, applyAgentView, dropAgentView, sendAgentLogTo } from '$lib/agentLog';
-import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests } from '$lib/inviteStore';
-
+import { applyAgentChatMessage, sendAgentChatBacklogTo, agentChatPeerGone } from '$lib/agentChat'; // 56 C1
+import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvite, myKind, noteDialKind, noteJoinedVia, agentsAsGuests, isAgentSession } from '$lib/inviteStore';
 import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
@@ -116,6 +116,8 @@ import { applyRemoteUnderlay, applyRemoteUnderlayDelete, sendUnderlays, dropPeer
 import { applyRemoteSequence, applyRemoteSequenceDelete, applyRemoteSequences, sendSequences } from '$lib/sequenceSync';
 // 50 Y1/Y2: shared text in the Code tab (Yjs, loaded lazily with the editor)
 import { applyRemoteYText, applyRemoteYAwareness, answerYText } from '$lib/sharedText';
+// 56 C10/C8: the scene's AI chats (.tpchat) + the pictures kept from them (store-only leaf)
+import { applyRemoteTpchat, applyRemoteTpchatDelete, applyRemoteTpchats, applyRemoteChatRefs, sendTpchats } from '$lib/chat/tpchatStore.js';
 // 34 R2 (T3): the game kit's document + requests (kit/runtime.js; a leaf-side module)
 import { receiveKitMessage, kitPayload } from '$lib/kit/runtime.js';
 import { kitEntityPayloads } from '$lib/kit/entityApp.js'; // 34 R2 (kit-entities)
@@ -1369,6 +1371,17 @@ export class PeerConnection {
 				} else if(data.type == 'getytext') {
 					// answered across rooms too, with `none`, so the asker stops waiting at once
 					answerYText(data, conn.peer, sameRoomOrUnknown(conn.peer));
+				} else if(data.type == 'tpchat') {
+					// 56 C10: one chat, whole-doc latest-wins on changedAt (one writer per session)
+					applyRemoteTpchat(data);
+				} else if(data.type == 'tpchatdel') {
+					applyRemoteTpchatDelete(data);
+				} else if(data.type == 'tpchats') {
+					applyRemoteTpchats(data);
+				} else if(data.type == 'gettpchats') {
+					if (sameRoomOrUnknown(conn.peer)) sendTpchats(data.sender);
+				} else if(data.type == 'tprefs') {
+					applyRemoteChatRefs(data.refs); // 56 C8: the scene's kept chat pictures
 				} else if(data.type == 'hudvalue') {
 					// 21-D4: a SHARED input's value - the one runtime HUD message, because what a
 					// player dragged is the only HUD state a peer cannot derive for itself.
@@ -1749,6 +1762,12 @@ export class PeerConnection {
 					applyAgentUndo(conn.peer, data); // 55 A8: an editor's per-line Undo, to the agent that holds it
 				} else if(data.type == 'agentview') {
 					applyAgentView(conn.peer, data); // 55 A7: where the agent's last screenshot looked
+				} else if(data.type == 'agentchat') {
+					// 56: ONE branch for both halves — the window's reducer (56-chat: a request / streamed reply / Stop /
+					// status, or the backlog) and, on an AGENT page, its inbox that holds the message for the bridge (56-bridge)
+					applyAgentChatMessage(conn.peer, data);
+					const from = conn.peer;
+					if (isAgentSession()) import('$lib/agent/agentInbox.js').then((m) => m.receiveAgentChat(from, data)).catch(() => {});
 				} else if(data.type == 'vrhands') {
 					peerHands.update((map) => ({
 						...map,
@@ -1886,6 +1905,7 @@ export class PeerConnection {
 		conn.send({type: 'gethuds', sender: this.peer.id})
 		conn.send({type: 'gethudvalues', sender: this.peer.id})
 		conn.send({type: 'getseqs', sender: this.peer.id}) // 48 S2
+		conn.send({type: 'gettpchats', sender: this.peer.id}) // 56 C10
 		conn.send({type: 'getunderlays', sender: this.peer.id}) // 60 Q5
 	}
 
@@ -1932,6 +1952,7 @@ export class PeerConnection {
 		conn.send({type: 'userdata', userdata: users.filter((/** @type {any} */ u) => !isHeldOut(u[0]))})
 		// 55 A8: the newest agent log lines, so a late joiner's AI window shows what was built
 		sendAgentLogTo(conn);
+		sendAgentChatBacklogTo(conn); // 56 C1: the agent chats so far
 		// 55 A9: a moderator hands its block list on, so a blocked re-dial is refused by
 		// whichever peer it reaches — including one that joined after the block
 		for (const k of blockReplay()) conn.send(k);
@@ -2441,6 +2462,7 @@ export class PeerConnection {
 		dropPeerMaterialPresets(peerId);
 		dropPeerHandModel(peerId);
 		dropAgentView(peerId); // 55 A7
+		agentChatPeerGone(peerId); // 56: an agent that left is away
 		dropPeerFacts(peerId); // 55 A9
 		dropPeerUnderlays(peerId); // 60 Q5
 		if (relay) this.broadcast({ type: 'disconnected', peerId });

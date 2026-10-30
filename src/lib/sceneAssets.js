@@ -33,9 +33,36 @@ export function registerSceneAssetSource(fn) {
 	};
 }
 
+/**
+ * 56 C10/C8: sources of WHOLE entries for groups other than the built-in three — Scene ▸ chats (each
+ * chat as a `.tpchat` card) and Scene ▸ references (kept chat pictures). An entry with a `hash` is
+ * bundled by exportSessionZip like any asset; one without is a reading of scene data.
+ * @type {Set<() => any[]>} */
+const entrySources = new Set();
+/** @param {() => any[]} fn @returns {() => void} disposer */
+export function registerSceneEntrySource(fn) {
+	entrySources.add(fn);
+	schedule();
+	return () => {
+		entrySources.delete(fn);
+		schedule();
+	};
+}
+/** recompute soon (a source's data changed) */
+export function refreshSceneAssets() {
+	schedule();
+}
+
 function compute() {
 	/** @type {any[]} */
 	const out = [];
+	for (const source of entrySources) {
+		try {
+			for (const entry of source() ?? []) if (entry?.id && entry?.group) out.push({ ...entry, itemId: entry.hash ? (itemByHash(entry.hash)?.id ?? null) : null });
+		} catch (error) {
+			console.log('scene entry source failed', error);
+		}
+	}
 	const seenAudio = new Set();
 	/** 36-code: a script FILE bound to several nodes is ONE asset, listed under its own name */
 	const seenFiles = new Set();

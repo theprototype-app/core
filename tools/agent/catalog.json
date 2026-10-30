@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 18,
+		"hostTools": 20,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nUse screenshot to check a result when it matters, not after every step.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -849,6 +849,206 @@
 			},
 			"annotations": {
 				"title": "Run or stop the simulation",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "import_model",
+			"title": "Import model",
+			"description": "Import a self-contained GLB (binary glTF 2.0, everything embedded, ≤ 25 MB) into the scene through the app's own import pipeline (auto-optimize, LOD, budget check). Named nodes are kept as a hierarchy and returned with uuids. One undo step; syncs to every peer; provenance is recorded. Use for models built outside the app (e.g. an img2threejs rebuild exported with named pivots). Materials: standard PBR only — custom shaders do not survive glTF.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"path": {
+						"type": "string",
+						"description": "a local .glb path on the agent's machine (the bridge reads it)"
+					},
+					"data": {
+						"type": "string",
+						"description": "the GLB as base64 (alternative to path/url)"
+					},
+					"url": {
+						"type": "string",
+						"description": "an http(s) URL of a .glb (the host may block other origins)"
+					},
+					"name": {
+						"type": "string"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"description": "[x,y,z] metres (local to parent when given)"
+					},
+					"rotation": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"description": "[x,y,z] degrees, XYZ order"
+					},
+					"scale": {
+						"description": "a number or [x,y,z]"
+					},
+					"parent": {
+						"type": "string",
+						"description": "uuid (or exact name) of the object to parent under"
+					},
+					"source": {
+						"type": "string",
+						"description": "where the model came from, e.g. \"img2threejs from photo campfire.jpg\""
+					},
+					"licence": {
+						"type": "string",
+						"description": "its licence, e.g. CC0, CC-BY-4.0, \"own work\""
+					},
+					"prompt": {
+						"type": "string",
+						"description": "the request it was made for"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Import model",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "import_file",
+			"title": "Import file",
+			"description": "Bring a file made on your machine into the session: PNG / WebP images (≤ 16 MB, metadata stripped), JSON (≤ 2 MB) or a .tpanim clip. The type is read from the bytes. It lands in the Explorer (folder \"Generated\" unless `folder`), shared with every peer. Pass the generator's input as `spec` and it is saved beside the file as <name>.<generator>.json (e.g. knight.png + knight.pixling.json) so it can be regenerated. An image is also placed in the scene as a card (a plane; `place: false` to skip): `filter: \"nearest\"` keeps pixel art crisp (default when a spec is given), `frame: {w, h, col, row}` shows one frame of a sprite sheet, `facing: \"camera-y\"` turns it to face each viewer. One undo step; editors and admins only. Large files: send base64 parts with `chunk: {id, index, total}` (the bridge does this for you with `path`).",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"path": {
+						"type": "string",
+						"description": "a local file on the agent's machine (the bridge reads it)"
+					},
+					"data": {
+						"type": "string",
+						"description": "the file as base64 (or this chunk's part of it)"
+					},
+					"chunk": {
+						"type": "object",
+						"description": "a chunked upload: every part has the same id; the import runs when the last part arrives",
+						"properties": {
+							"id": {
+								"type": "string"
+							},
+							"index": {
+								"type": "number"
+							},
+							"total": {
+								"type": "number"
+							}
+						}
+					},
+					"name": {
+						"type": "string",
+						"description": "the file name in the Explorer (its extension comes from the bytes)"
+					},
+					"folder": {
+						"type": "string",
+						"description": "Explorer folder, \"A/B\" for nested (default \"Generated\")"
+					},
+					"spec": {
+						"description": "the generator input (JSON object or string), saved beside the file"
+					},
+					"spec_path": {
+						"type": "string",
+						"description": "the spec as a local .json file (the bridge reads it)"
+					},
+					"generator": {
+						"type": "string",
+						"description": "names the spec file, default \"pixling\""
+					},
+					"place": {
+						"type": "boolean",
+						"description": "images: place a card in the scene (default true)"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"description": "[x,y,z] metres (default: standing on the ground at the origin)"
+					},
+					"rotation": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"description": "[x,y,z] degrees"
+					},
+					"height": {
+						"type": "number",
+						"description": "card height in metres (default 1; width follows the aspect)"
+					},
+					"width": {
+						"type": "number",
+						"description": "card width in metres (instead of height)"
+					},
+					"frame": {
+						"type": "object",
+						"description": "show one frame of a sheet: w/h in pixels, col/row from 0 (row 0 = top)",
+						"properties": {
+							"w": {
+								"type": "number"
+							},
+							"h": {
+								"type": "number"
+							},
+							"col": {
+								"type": "number"
+							},
+							"row": {
+								"type": "number"
+							}
+						}
+					},
+					"filter": {
+						"type": "string",
+						"enum": [
+							"auto",
+							"nearest",
+							"linear"
+						],
+						"description": "texture filtering (auto = nearest for pixel art)"
+					},
+					"facing": {
+						"type": "string",
+						"enum": [
+							"none",
+							"camera",
+							"camera-y"
+						],
+						"description": "billboard: face each viewer (camera-y = turn about Y only)"
+					},
+					"lit": {
+						"type": "boolean",
+						"description": "shade the card with the scene lights (default unlit, like a sprite)"
+					},
+					"source": {
+						"type": "string",
+						"description": "where it came from, e.g. \"pixling 0.3.1 build specs/knight.json\""
+					},
+					"licence": {
+						"type": "string",
+						"description": "its licence, e.g. CC0, \"own work\""
+					},
+					"prompt": {
+						"type": "string",
+						"description": "the request it was made for"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Import file",
 				"readOnlyHint": false,
 				"destructiveHint": true,
 				"openWorldHint": false

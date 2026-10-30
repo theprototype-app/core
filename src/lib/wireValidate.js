@@ -179,6 +179,11 @@ export const VALIDATORS = {
 	ytext: (d) => isTextKey(d.key) && (d.none === true || isBytes(d.u)),
 	ytextaw: (d) => isTextKey(d.key) && isBytes(d.a),
 	getytext: (d) => isTextKey(d.key) && (d.sv === undefined || isBytes(d.sv)),
+	// 56 C10/C8: a chat document (normalized again on apply) / its delete / the full state / kept pictures
+	tpchat: (d) => !!d.doc && typeof d.doc === 'object' && !Array.isArray(d.doc) && typeof d.doc.id === 'string' && d.doc.id.length <= 64 && (d.doc.messages === undefined || (isArray(d.doc.messages) && d.doc.messages.length <= 5000)),
+	tpchatdel: (d) => typeof d.id === 'string' && d.id.length <= 64,
+	tpchats: (d) => isArray(d.chats) && d.chats.length <= 500,
+	tprefs: (d) => !!d.refs && typeof d.refs === 'object' && isArray(d.refs.list) && d.refs.list.length <= 500,
 	// 60 Q5: a shared reference image (normalized again on apply); the image is a data URL, capped
 	// at what a 2048 px picture can be (the sender downscales to that)
 	underlay: (d) =>
@@ -342,6 +347,18 @@ export const VALIDATORS = {
 		(d.entry !== undefined || d.entries !== undefined),
 	agentundo: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	agentview: (d) => isVec3(d.pos) && isFiniteArray(d.quat, 4),
+	// 56 C1: the agent chat — one type, fields discriminate (agentChatCore.kindOf has the full rules):
+	// a backlog array, or short string ids and text; status names one of three states
+	agentchat: (d) =>
+		Array.isArray(d.backlog)
+			? d.backlog.length <= 200
+			: (d.id === undefined || (typeof d.id === 'string' && d.id.length <= 64)) &&
+				(d.chatId === undefined || (typeof d.chatId === 'string' && d.chatId.length <= 64)) &&
+				(d.cancel === undefined || (typeof d.cancel === 'string' && d.cancel.length <= 64)) &&
+				(d.text === undefined || typeof d.text === 'string') &&
+				(d.status === undefined || d.status === 'listening' || d.status === 'working' || d.status === 'away') &&
+				(d.mute === undefined || typeof d.mute === 'boolean') &&
+				(d.images === undefined || (Array.isArray(d.images) && d.images.length <= 4)),
 	camera: (d) =>
 		typeof d.peerId === 'string' &&
 		isVec3(d.position) &&

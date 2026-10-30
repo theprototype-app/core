@@ -159,6 +159,10 @@ export function sceneSignature(payload) {
 		// 48 S2: a sequence is scene data like the HUD — keyed in only when present, so
 		// every scene without one keeps the signature an older build computed
 		...(payload.sequences ? { sequences: stripStamps(payload.sequences) } : {}),
+		// 56 C10/C8: a chat or a kept picture is scene data worth a save — keyed in only when present.
+		// A DIGEST, not the chat: the pictures are megabytes and the signature is compared often.
+		...(payload.chats ? { chats: payload.chats.map((/** @type {any} */ c) => [c.id, c.title, c.include, c.messages?.length ?? 0, c.messages?.[c.messages.length - 1]?.id ?? '', c.messages?.[c.messages.length - 1]?.text?.length ?? 0]) } : {}),
+		...(payload.chatRefs ? { chatRefs: payload.chatRefs.map((/** @type {any} */ r) => r.hash) } : {}),
 		// 23-A2/A4: the transport and the patch are scene data too — a tempo or a cable
 		// is a change worth a save, and they take stripStamps like every block above
 		// (the branch's own merge note asked for exactly this)
@@ -544,7 +548,8 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	ensureGameId();
 	const payload = /** @type {any} */ (buildSessionPayload(String(name ?? '').trim() || 'Scene'));
 	delete payload.workspace;
-	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true });
+	// 56 C10: the scene's OWN file keeps every chat (a download of it later is a door and filters)
+	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true, chats: 'all' });
 	const item = await addItemFromBytes(
 		bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
 		levelFileName(payload.name),
@@ -737,7 +742,7 @@ export async function publishCurrentIfChanged(opts = {}) {
 	const folderId = await targetFolder(
 		pointerItem ? pointerItem.folderId ?? null : sceneFolderOf(at.name)
 	);
-	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true });
+	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true, chats: 'all' }); // 56 C10
 	const item = await addItemFromBytes(
 		bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
 		levelFileName(at.name),

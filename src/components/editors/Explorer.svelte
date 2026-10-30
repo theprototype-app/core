@@ -339,6 +339,9 @@
 	// R22 round 13 P3: `sessions` is read for the Mount picker (which saved entries are
 	// PROJECTS) and to notice a mounted volume whose source record has been deleted.
 	import { emptySessionPayload, exportSessionZip, sessions, loadSessions } from '$lib/sessions';
+	import { sceneBlobForDoor } from '$lib/chat/tpchatDoor.js'; // 56 C10
+	// 56 C10/C8: Scene ▸ chats (.tpchat cards) and Scene ▸ references (kept chat pictures)
+	import { chats as tpchats, openChat, renameChat, deleteChat, setChatInclude, downloadChatMarkdown, downloadTpchat, chatIdOfItem, forgetReference } from '$lib/chat/tpchatStore.js';
 	import { selectedObjects } from '../../stores/sceneStore.js';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
@@ -1079,7 +1082,8 @@
 		object: 'box',
 		prefab: 'boxes',
 		'prefab-folder': 'folder', // 37 R4: a folder inside the Prefabs view
-		scene: 'map' // 21-F4: a level (.tpscene)
+		scene: 'map', // 21-F4: a level (.tpscene)
+		tpchat: 'message-square' // 56 C10: a chat of the scene (Scene ▸ chats)
 	};
 	// semantic icon colors (ui.css classes over the --icon-* theme tokens)
 	/** R22-R7: what a kind is CALLED in the filter. The store values are internal
@@ -1104,7 +1108,8 @@
 		object: 'ico-object',
 		prefab: 'ico-prefab',
 		'prefab-folder': 'ico-folder',
-		scene: 'ico-prefab' // 21-F4: levels share the prefab tint
+		scene: 'ico-prefab', // 21-F4: levels share the prefab tint
+		tpchat: 'ico-doc' // 56 C10
 	};
 
 	// ---- R22 round 13 P3: WHERE AM I, when it is not the library ----------------------
@@ -2574,6 +2579,7 @@
 		// R5: the scene rename — replicated through the manifest, its files follow
 		else if (edit.mode === 'rename-scene') renameScene(edit.sceneName, edit.value);
 		else if (edit.mode === 'rename-prefab') renamePrefab(edit.prefabId, edit.value);
+		else if (edit.mode === 'rename-chat') renameChat(edit.chatId, edit.value.replace(/\.tpchat$/i, '')); // 56 C10
 		else if (edit.mode === 'rename-prefab-folder') await renamePrefabFolder(edit.folderPath, edit.value);
 		else if (edit.mode === 'new-prefab-folder') await createPrefabFolder($prefabFolder, edit.value);
 		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
@@ -3718,8 +3724,11 @@
 	// download from a page, and copying eight lines beats exporting a helper that would
 	// pull fileHandler's whole export machinery into the Explorer.
 	async function downloadItem(item: any) {
-		const blob = await itemBlob(item.id);
-		if (!blob) return showToast('That file has no stored bytes to download');
+		const stored = await itemBlob(item.id);
+		if (!stored) return showToast('That file has no stored bytes to download');
+		// 56 C10 (fork F5): a scene file's private AI chats stay on this machine
+		const { blob, dropped } = await sceneBlobForDoor(stored, item.name);
+		if (dropped) showToast(dropped + ' private AI chat' + (dropped === 1 ? '' : 's') + ' left out of the download (switch "Include when publishing" on a chat to keep it)');
 		const a = document.createElement('a');
 		document.body.appendChild(a);
 		a.style.display = 'none';
@@ -3999,11 +4008,12 @@
 		const entries: Record<string, Uint8Array> = {};
 		let missing = 0;
 		for (const item of files) {
-			const blob = await itemBlob(item.id);
-			if (!blob) {
+			const stored = await itemBlob(item.id);
+			if (!stored) {
 				missing++;
 				continue;
 			}
+			const { blob } = await sceneBlobForDoor(stored, item.name); // 56 C10
 			entries[uniqueZipName(entries, item.name || 'file')] = new Uint8Array(
 				await blob.arrayBuffer()
 			);
@@ -4337,6 +4347,17 @@
 		await savePrefabSelection(uuids);
 	}
 
+	/** 56 C10: a chat is the conversation itself — deleting it is for everyone in the scene */
+	function confirmDeleteChat(item: any) {
+		void showConfirm({
+			title: 'Delete this chat?',
+			message: `"${item.name}" will be removed from the scene for everyone. Pictures kept in References stay.`,
+			confirmLabel: 'Delete'
+		}).then((ok) => {
+			if (ok) deleteChat(item.chatId);
+		});
+	}
+
 	function confirmDeletePrefab(prefab: any) {
 		// 41 G16: a destructive question is a modal, not a toast
 		void showConfirm({
@@ -4649,6 +4670,64 @@
 					// says it at all. Omitted at the library root: "Location: " with nothing after
 					// it reads as missing data rather than as the root.
 					...(item.location ? [{ label: 'Location: ' + item.location, action: () => {} }] : [])
+				]
+			};
+			return;
+		}
+		// 56 C10: a chat IS scene data with its own small CRUD (rename / delete / the publish switch) —
+		// the store's, never a library record's
+		if (item.sceneEntry && item.kind === 'tpchat' && item.chatId) {
+			const chat = $tpchats[item.chatId];
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{ label: 'Open in AI assistant', icon: 'message-square', action: () => openChat(item.chatId) },
+					{
+						label: 'Rename',
+						icon: 'pencil',
+						action: () => {
+							settlePendingEdit();
+							editing = { mode: 'rename-chat', itemId: item.id, chatId: item.chatId, value: chat?.title ?? item.name.replace(/\.tpchat$/i, '') };
+						}
+					},
+					{
+						label: 'Include when publishing',
+						icon: chat?.include ? 'check' : 'eye-off',
+						tooltip: 'Off (the default): this chat stays out of downloads, Publish, game exports and .tp files — its pictures and notes are private. On: it travels with the scene.',
+						action: () => setChatInclude(item.chatId, !chat?.include)
+					},
+					{ label: 'Download as Markdown', icon: 'file-text', action: () => downloadChatMarkdown(item.chatId) },
+					{ label: 'Download (.tpchat)', icon: 'download', action: () => downloadTpchat(item.chatId) },
+					{ label: 'Delete chat', icon: 'trash-2', danger: true, action: () => confirmDeleteChat(item) }
+				]
+			};
+			return;
+		}
+		// 56 C8: a kept picture's card — its file lives in Library ▸ References
+		if (item.sceneEntry && item.refEntry) {
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					...(item.itemId
+						? [
+								{
+									label: 'Show in References',
+									icon: 'folder-open',
+									action: () => {
+										const backing = $explorerItems.find((i) => i.id === item.itemId);
+										if (backing) void revealItem(backing);
+									}
+								}
+							]
+						: []),
+					{
+						label: 'Remove from the scene’s references',
+						icon: 'x',
+						tooltip: 'The picture stays in Library ▸ References; the scene just stops listing (and bundling) it',
+						action: () => forgetReference(item.hash)
+					}
 				]
 			};
 			return;
@@ -5617,7 +5696,10 @@
 			// 39: the item's size travels with the drag (the ghost draws it before any download),
 			// and a pack item names its pack (the placed reference records it)
 			...(item.dims ? { dims: item.dims } : {}),
-			...(item.glbUrl && item.packName ? { packName: item.packName } : {})
+			...(item.glbUrl && item.packName ? { packName: item.packName } : {}),
+			// 56 C10/C8: a Scene ▸ chats card drops onto the AI window as its chat; a kept picture as its file
+			...(item.chatId ? { chatId: item.chatId } : {}),
+			...(item.refEntry && item.itemId ? { refItemId: item.itemId } : {})
 		};
 	}
 	/**
@@ -6438,6 +6520,13 @@
 	}
 
 	async function openItem(item: any) {
+		// 56 C10: a `.tpchat` FILE (a download, a copy someone sent) joins the scene's chats and opens
+		if (!item.sceneEntry && !item.volumeItem && /\.tpchat$/i.test(item.name ?? '')) {
+			const id = await chatIdOfItem(item);
+			if (id) openChat(id);
+			else showToast(item.name + ' is not a chat this version can read');
+			return;
+		}
 		// P3: a file in a mounted project — its own opener, because its bytes are not in
 		// the library's blob store
 		if (item.volumeItem) {
@@ -6479,7 +6568,13 @@
 		if (item.sceneEntry) {
 			// derived Scene entries open live views (108): textures preview,
 			// scripts edit the NODE code (replicated via setNodeData)
-			if (item.kind === 'image' && item.dataUrl) openImagePreview({ title: item.name, url: item.dataUrl, onClose: () => gridEl?.focus() });
+			if (item.kind === 'tpchat' && item.chatId) openChat(item.chatId); // 56 C10
+			else if (item.kind === 'image' && item.dataUrl) openImagePreview({ title: item.name, url: item.dataUrl, onClose: () => gridEl?.focus() });
+			else if (item.kind === 'image' && item.refEntry && item.itemId) {
+				// 56 C8: a kept picture opens its References file
+				const backing = $explorerItems.find((i) => i.id === item.itemId);
+				if (backing) void openItem(backing);
+			}
 			else if (item.kind === 'text' && item.nodeId) {
 				// H1: the script node can live in any graph document; 36-code: its tab in the
 				// code workspace (a node bound to a file opens the FILE's tab)
@@ -6773,7 +6868,7 @@
 								><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={16} /></span
 							>
 						{/if}
-						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-scene' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === id)}
+						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-scene' && editing.itemId === id) || (editing?.mode === 'rename-chat' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === id)}
 							{@render cardEdit()}
 						{:else}
 							<span
@@ -7387,7 +7482,7 @@
 						onclick={() => openFolder('scene')} ondblclick={toggleScene}><Icon name="globe" size={16} class="mr-1.5 text-text-muted" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
 					>
 					{#if sceneExpanded}
-					{#each ['audio', 'config', 'textures'] as sub}
+					{#each ['audio', 'config', 'textures', 'chats', 'references', 'generated'] as sub}
 						<button
 							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
 								? 'ex-tree-on'
@@ -7973,7 +8068,7 @@
 									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={32} />
 								</span>
 							{/if}
-							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-scene' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === item.id)}
+							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-scene' && editing.itemId === item.id) || (editing?.mode === 'rename-chat' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === item.id)}
 								{@render cardEdit()}
 							{:else}
 								<!-- R22-R2: the plan asks for local items in a distinct colour. Drawn only

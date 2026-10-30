@@ -605,7 +605,9 @@ const TOOL_NAMES = [
 	'create_joints',
 	'control_simulation',
 	'create_behaviour',
-	'edit_behaviour'
+	'edit_behaviour',
+	'import_model', // 56 C9 (offered to agents; see importModel.js)
+	'import_file' // 66 S4b (offered to agents; see importFile.js)
 ];
 
 /** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a
@@ -941,6 +943,14 @@ async function runAiTool(rawName, rawArgs) {
 					note: 'Generating a 3D mesh from "' + prompt.slice(0, 60) + '". It will appear in the scene in ~1-3 minutes; a progress card shows status. Do not call generate_mesh again for the same request.'
 				};
 			}
+
+			case 'import_model':
+				// 56 C9: a self-contained GLB through the app's own import path (one undo, synced)
+				return await (await import('./importModel.js')).importModelTool(args);
+
+			case 'import_file':
+				// 66 S4b: a PNG / WebP / JSON / .tpanim made on the agent's machine (Explorer + a scene card)
+				return await (await import('./importFile.js')).importFileTool(args);
 
 			default:
 				return {

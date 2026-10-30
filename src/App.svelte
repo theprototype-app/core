@@ -312,6 +312,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // (file_handlers → launchQueue); they wait for the restore question (launchInbox.js)
     if (!exportMode) import('$lib/launchInbox').then((m) => m.startLaunchInbox()).catch(() => {})
     startSceneAssets()
+    void import('$lib/chat/tpchatStore.js').then((m) => m.startTpchats()) // 56 C10: Scene ▸ chats / references
+    void import('$lib/ai/imageCards.js').then((m) => m.startImageCards()) // 66 S4b: imported cards face the camera; Scene ▸ generated
     startCodeWorkspace() // 36-code: scriptEditorOpen -> a workspace tab, file follow
     void startPanelHost() // 70 W5: follow the pop-out layout, bring the saved one back
     startNetworkQuality()

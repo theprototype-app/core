@@ -58,6 +58,12 @@ const ALWAYS_ALLOWED = new Set([
 	// REPLY is deliberately NOT here: a reply is content, and every other domain leaves
 	// its content gateable (`getnodes` is on the floor, `nodes` is not).
 	'gettriggers',
+	// 56 C5: the agent chat. A VIEWER may ask an agent (the release proof: "a viewer's message is delivered
+	// with role viewer and an edit request is refused") — a plugin that dropped a viewer's unknown types
+	// would make the agent deaf to them instead. It is text and protocol, never a scene mutation: the
+	// agent page reads the sender's role from rolesInfo and gates what the request may do, and only the
+	// host/an admin's `mute` is obeyed there.
+	'agentchat',
 	// 48 S2: the Timeline's sequences REQUEST, the `getnodes` rule again (the `seqs` reply stays
 	// gateable). Off the floor, a cloud build's just-approved joiner reads as a viewer until its
 	// role grant lands, its handshake `getseqs` was dropped, and a late joiner never got the
@@ -78,6 +84,8 @@ const ALWAYS_ALLOWED = new Set([
 	// floor (a just-approved viewer must still see the text everyone is typing), its `ytext`
 	// reply and every update stay gateable, which is what keeps a viewer read-only.
 	'getytext',
+	// 56 C10: the scene chats REQUEST (its `tpchats` reply stays gateable)
+	'gettpchats',
 	// 60 Q5: the shared reference images REQUEST (the `underlay` replies stay gateable)
 	'getunderlays',
 	// fix-live (plans review #5, roadmap 49 follow-up): the last three `get*` requests off the

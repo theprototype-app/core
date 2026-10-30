@@ -14,6 +14,12 @@
 // the panel is up — to dictate; the release transcribes through Settings ▸ AI ▸ Voice typing and SENDS the
 // prompt. Without a speech provider the press says where to set one up and the keyboard stays the way in.
 //
+// 56 C7 — TALK TO AN AGENT WITH THE HEADSET ON: the panel follows the desktop window's target. With an AI
+// agent picked there (agentChat.chatTarget), the rows are that agent's conversation (its A8 steps as ⚙
+// rows), the keyboard and the mic SEND to the agent (`agentchat`, like the window's composer), Stop cancels
+// its running request, and the header names it. Text only back (no TTS in roadmap 56). agentChat.js is
+// store-only (the agentLog shape), so a static edge from here closes no loop.
+//
 // IMPORT-CYCLE GUARD (plan F): ai/assistant reaches ai/tools → the scene/flow family, and shortcuts already
 // imports it; a static edge from the vr/ family closes a loop that a green build can still TDZ-crash in dev.
 // The assistant is a PRIMED dynamic import (the moduleSDK / colliderEdit precedent): loaded as this module
@@ -41,6 +47,9 @@ import { controllerRay } from './pointer.js';
 import { registerVRWindow } from './panels.js';
 import { bindingLabel } from './bindings.js';
 import { raycastMenu } from './radial.js';
+import { agentChatState, chatTarget, activeChatId, agentTargets, agentStatusOf, sendToAgent, stopAgentRequest, peerLabel, myPeerId } from '../agentChat.js';
+import { threadItems, runningRequest, samePeer } from '../agentChatCore.js';
+import { agentLog } from '../agentLog.js';
 
 /** @type {any} the ai/assistant module, once primed */
 let assistantRef = null;
@@ -56,9 +65,19 @@ export const vrAiBusy = writable(false);
 /** the transient run status, e.g. "Thinking…" (mirrors aiStatus) */
 export const vrAiStatus = writable('');
 
-/** can the assistant run? — the stores aiReady() reads, as one store the panel can watch */
+/** 56 C7: the agent the desktop window talks to, or null @type {string|null} */
+let agentMode = null;
+/** can the assistant run? — the stores aiReady() reads, as one store the panel can watch (56 C7: or can
+ * the picked agent be addressed — connected and not muted) */
 export const vrAiReady = writable(false);
-const refreshReady = () => vrAiReady.set(aiReady());
+/** 56 C7: the header — "AI Assistant", or the agent the desktop window talks to */
+export const vrAiTitle = writable('AI Assistant');
+/** 56 C7: why the panel cannot send, in words ('' = the provider hint the panel always had) */
+export const vrAiHint = writable('');
+const refreshReady = () => {
+	if (agentMode) refreshAgent();
+	else vrAiReady.set(aiReady());
+};
 aiEnabled.subscribe(refreshReady);
 aiProviders.subscribe(refreshReady);
 aiActiveProvider.subscribe(refreshReady);
@@ -102,13 +121,76 @@ function mirrorThread(list) {
 	}, STREAM_INTERVAL_MS);
 }
 
+/** the assistant's own values, kept while an agent is the target so switching back restores them */
+const provider = { messages: /** @type {any[]} */ ([]), busy: false, status: '' };
 if (typeof window !== 'undefined')
 	import('../ai/assistant.js').then((m) => {
 		assistantRef = m;
-		m.aiMessages.subscribe(mirrorThread);
-		m.aiBusy.subscribe((v) => vrAiBusy.set(v));
-		m.aiStatus.subscribe((v) => vrAiStatus.set(v));
+		m.aiMessages.subscribe((list) => {
+			provider.messages = list;
+			if (!agentMode) mirrorThread(list);
+		});
+		m.aiBusy.subscribe((v) => {
+			provider.busy = v;
+			if (!agentMode) vrAiBusy.set(v);
+		});
+		m.aiStatus.subscribe((v) => {
+			provider.status = v;
+			if (!agentMode) vrAiStatus.set(v);
+		});
 	});
+
+// ---- 56 C7: an AI agent as the target (`agentMode` is declared above refreshReady: its subscriptions run at once)
+
+/**
+ * The agent thread in the panel's row shape: people's messages are `user` rows (another sender's name
+ * first, a terminal turn says so), replies `assistant` rows (streaming while partial), an ask lists its
+ * options, the agent's A8 steps are `tool-status` rows.
+ * @param {any} chat @param {any[]} log
+ */
+export function agentRows(chat, log) {
+	const me = myPeerId();
+	return threadItems(chat, log).map((it) => {
+		if (it.type === 'log') return { role: 'tool-status', content: it.e.text };
+		const m = it.m;
+		if (m.kind === 'cli') return { role: 'user', content: '(terminal) ' + m.text };
+		if (m.kind === 'request')
+			return { role: 'user', content: (samePeer(m.from, me) ? '' : (m.name || peerLabel(m.from)) + ': ') + m.text + (m.cancelled ? ' — stopped' : '') };
+		if (m.kind === 'ask') return { role: 'assistant', content: m.ask.question + (m.ask.options.length && !m.answered ? ' [' + m.ask.options.join(' / ') + ']' : '') };
+		return { role: 'assistant', content: m.text, streaming: !!m.partial };
+	});
+}
+
+function refreshAgent() {
+	if (!agentMode) return;
+	const state = get(agentChatState);
+	const chatId = get(activeChatId);
+	const chat = chatId ? state.chats[chatId] ?? null : null;
+	const row = get(agentTargets).find((t) => samePeer(t.id, agentMode));
+	const st = agentStatusOf(state, agentMode);
+	const name = row?.name ?? peerLabel(agentMode);
+	mirrorThread(agentRows(chat, get(agentLog)));
+	const running = runningRequest(chat);
+	vrAiBusy.set(!!running);
+	vrAiStatus.set(running ? name + (st?.status === 'working' ? ' is working…' : ' has your message') : '');
+	vrAiTitle.set(row?.label ?? name + ' · AI agent'); // the desktop picker's words
+	vrAiHint.set(!row ? name + ' has left this session.' : st?.muted ? name + ' is muted by the host.' : '');
+	vrAiReady.set(!!row && !st?.muted);
+}
+
+/** switch the panel's source: the provider thread, or an agent's @param {string|null} id */
+function setAgentMode(id) {
+	agentMode = id;
+	if (id) return refreshAgent();
+	vrAiTitle.set('AI Assistant');
+	vrAiHint.set('');
+	mirrorThread(provider.messages);
+	vrAiBusy.set(provider.busy);
+	vrAiStatus.set(provider.status);
+	vrAiReady.set(aiReady());
+}
+chatTarget.subscribe((t) => setAgentMode(t?.kind === 'agent' ? t.id : null));
+for (const store of [agentChatState, activeChatId, agentTargets, agentLog]) store.subscribe(() => agentMode && refreshAgent());
 
 /** the panels the AI panel shares the menu hand with — one of them up at a time (the chat panel's set) */
 const SIBLINGS = [vrChatPanelOpen, vrObjectsPanelOpen, vrPaletteOpen, vrPropsPanelOpen, vrPrefabsPanelOpen, vrSettingsPanelOpen];
@@ -144,10 +226,16 @@ export function toggleAiPanel() {
 	vrAiPanelOpen.update((v) => !v);
 }
 
-/** Send a prompt into the shared thread (the desktop window's runPrompt) @param {string} text */
+/** Send a prompt into the shared thread (the desktop window's runPrompt) — or, 56 C7, to the agent the
+ * window talks to @param {string} text */
 export function askAi(text) {
 	const trimmed = (text || '').trim();
-	if (!trimmed || !assistantRef) return false;
+	if (!trimmed) return false;
+	if (agentMode) {
+		if (!get(vrAiReady)) return false;
+		return sendToAgent(trimmed, { agentId: agentMode });
+	}
+	if (!assistantRef) return false;
 	assistantRef.runPrompt(trimmed);
 	return true;
 }
@@ -159,7 +247,8 @@ export function handleAiAction(action) {
 		return;
 	}
 	if (action === 'stop') {
-		assistantRef?.stopAi();
+		if (agentMode) stopAgentRequest(get(activeChatId) ?? '');
+		else assistantRef?.stopAi();
 		return;
 	}
 	if (action === 'mic') {

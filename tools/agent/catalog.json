@@ -436,7 +436,7 @@
 		{
 			"name": "animate_parts",
 			"title": "Animate parts",
-			"description": "Animate a model's NAMED PARTS (child nodes from list_scene: a rotor, a door, a lid) with one clip — e.g. spin a rotor: tracks [{part: 'rotor', keys: [{t: 0, rot: [0, 0, 0]}, {t: 1, rot: [0, 360, 0]}]}], loop true. Keys are offsets from each part's rest pose (mode 'relative', the default; 'absolute' = local values). rot is Euler degrees [x, y, z]; pos metres [x, y, z]; scale a factor. The clip is saved as a .tpanim file, plays on every peer, and is one undo step.",
+			"description": "Animate a model's NAMED PARTS (child nodes from list_scene: a rotor, a door, a lid) with one clip — e.g. spin a rotor: tracks [{part: 'rotor', keys: [{t: 0, rot: [0, 0, 0]}, {t: 1, rot: [0, 360, 0]}]}], loop true. Keys are offsets from each part's rest pose (mode 'relative', the default; 'absolute' = local values). rot is Euler degrees [x, y, z]; pos metres [x, y, z]; scale a factor. The clip is saved as a .tpanim file, plays on every peer, and is one undo step.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -950,7 +950,7 @@
 		{
 			"name": "import_model",
 			"title": "Import model",
-			"description": "Import a self-contained GLB (binary glTF 2.0, everything embedded, ≤ 25 MB) into the scene through the app's own import pipeline (auto-optimize, LOD, budget check). Named nodes are kept as a hierarchy and returned with uuids. One undo step; syncs to every peer; provenance is recorded. Use for models built outside the app (e.g. an img2threejs rebuild exported with named pivots). Materials: standard PBR only — custom shaders do not survive glTF.",
+			"description": "Import a self-contained GLB (binary glTF 2.0, everything embedded, ≤ 25 MB) into the scene through the app's own import pipeline (auto-optimize, LOD, budget check). Named nodes are kept as a hierarchy and returned with uuids. One undo step; syncs to every peer; provenance is recorded. Use for models built outside the app (e.g. an img2threejs rebuild exported with named pivots). Materials: standard PBR only — custom shaders do not survive glTF.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -1014,7 +1014,7 @@
 		{
 			"name": "import_file",
 			"title": "Import file",
-			"description": "Bring a file made on your machine into the session: PNG / WebP images (≤ 16 MB, metadata stripped), JSON (≤ 2 MB) or a .tpanim clip. The type is read from the bytes. It lands in the Explorer (folder \"Generated\" unless `folder`), shared with every peer. Pass the generator's input as `spec` and it is saved beside the file as <name>.<generator>.json (e.g. knight.png + knight.pixling.json) so it can be regenerated. An image is also placed in the scene as a card (a plane; `place: false` to skip): `filter: \"nearest\"` keeps pixel art crisp (default when a spec is given), `frame: {w, h, col, row}` shows one frame of a sprite sheet, `facing: \"camera-y\"` turns it to face each viewer. One undo step; editors and admins only. Large files: send base64 parts with `chunk: {id, index, total}` (the bridge does this for you with `path`).",
+			"description": "Bring a file made on your machine into the session: PNG / WebP images (≤ 16 MB, metadata stripped), JSON (≤ 2 MB) or a .tpanim clip. The type is read from the bytes. It lands in the Explorer (folder \"Generated\" unless `folder`), shared with every peer. Pass the generator's input as `spec` and it is saved beside the file as <name>.<generator>.json (e.g. knight.png + knight.pixling.json) so it can be regenerated. An image is also placed in the scene as a card (a plane; `place: false` to skip): `filter: \"nearest\"` keeps pixel art crisp (default when a spec is given), `frame: {w, h, col, row}` shows one frame of a sprite sheet, `facing: \"camera-y\"` turns it to face each viewer. One undo step; editors and admins only. Large files: send base64 parts with `chunk: {id, index, total}` (the bridge does this for you with `path`).\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {

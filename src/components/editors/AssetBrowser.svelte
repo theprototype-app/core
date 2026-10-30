@@ -85,7 +85,7 @@
 
 	/** 57 M5: the Avatars tab lists CC-BY collections only when asked (their credit is kept) */
 	let includeCcBy = $state(false);
-	const listed = $derived(kind.source === 'polyhaven' || kind.source === 'osa');
+	const listed = $derived(kind.source === 'polyhaven' || kind.source === 'osa' || kind.source === 'motion');
 	const filtered = $derived(listed ? filterRows(rows, { query, category }) : rows);
 	const visible = $derived(listed ? filtered.slice(0, shown) : filtered);
 	const more = $derived(listed ? filtered.length > shown : rows.length < acgTotal);
@@ -116,6 +116,13 @@
 				rows = list.rows;
 				categories = list.categories;
 				noteStale(list);
+			} else if (kind.source === 'motion') {
+				// 57 M5: the Motion pack (humanoid .tpanim clips, CC0)
+				const { motionRows } = await import('$lib/tpanim/motionKit.js');
+				const list = await motionRows(fresh);
+				if (my !== ticket) return;
+				rows = list.rows;
+				categories = list.categories;
 			} else {
 				const [page, cats] = await Promise.all([
 					acgPage({ query: query.trim(), category, fresh }),
@@ -259,6 +266,21 @@
 		if (held) await placeItem(held);
 	}
 
+	/** 57 M5: a Motion pack clip goes into the Explorer, a file like any other clip @param {any} row */
+	async function addMotion(row) {
+		const key = rowKey(row);
+		placing = { ...placing, [key]: true };
+		cardError = { ...cardError, [key]: '' };
+		try {
+			const { addMotionClip } = await import('$lib/tpanim/motionKit.js');
+			await addMotionClip(row.id);
+			showToast(row.name + ' added to the Explorer: drag it onto a character to play it');
+		} catch (err) {
+			cardError = { ...cardError, [key]: errorText(err) };
+		} finally {
+			placing = { ...placing, [key]: false };
+		}
+	}
 	/** 57 M5: an avatar goes straight into the scene as a VRM character, its credit kept @type {Record<string, boolean>} */
 	let placing = $state({});
 	/** @param {any} row */
@@ -481,7 +503,11 @@
 					{@const key = rowKey(row)}
 					{@const job = $cc0Jobs[key]}
 					{@const item =
-						row.kind === 'models' || row.kind === 'hdris' ? heldItem(row, $explorerItems) : null}
+						row.kind === 'models' || row.kind === 'hdris'
+							? heldItem(row, $explorerItems)
+							: row.kind === 'motion'
+								? $explorerItems.find((/** @type {any} */ it) => it.kind === 'anim' && it.name === row.name + '.tpanim')
+								: null}
 					{@const preset =
 						row.kind === 'textures' || row.kind === 'materials'
 							? heldPreset(row, $materialPresets)
@@ -502,6 +528,8 @@
 									referrerpolicy="no-referrer"
 									onerror={(e) => /** @type {any} */ (e.currentTarget).classList.add('ab-noimg')}
 								/>
+							{:else if row.kind === 'motion'}
+								<Icon name="person-standing" size={32} aria-hidden="true" />
 							{/if}
 							{#if item || preset}<span class="ab-held" title="In your library"
 									><Icon name="check" size={16} aria-hidden="true" /></span
@@ -536,7 +564,18 @@
 							</p>
 						{:else}
 							<div class="ab-acts">
-								{#if row.kind === 'avatars'}
+								{#if row.kind === 'motion'}
+									<Button
+										variant="primary"
+										size="sm"
+										full
+										icon="person-standing"
+										data-act="add-motion"
+										disabled={!!placing[key] || !!item}
+										onclick={() => addMotion(row)}
+										>{item ? 'In the Explorer' : placing[key] ? 'Adding…' : 'Add to Explorer'}</Button
+									>
+								{:else if row.kind === 'avatars'}
 									<Button
 										variant="primary"
 										size="sm"

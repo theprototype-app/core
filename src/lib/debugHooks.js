@@ -150,6 +150,7 @@ export const DEBUG_HOOKS = [
 	// 57 M1: .tpanim clip assets (format, binder, humanoid map)
 	['tpanim', () => import('./tpanim/format.js')],
 	['clipAssets', () => import('./tpanim/clipAssets.js')],
+	['motionKit', () => import('./tpanim/motionKit.js')],
 	['humanoidMap', () => import('./tpanim/humanoidMap.js')],
 	// 57 M3/M8/M11: clip edits + ops, the Animation states graph + runtime
 	['clipEdit', () => import('./tpanim/clipEdit.js')],

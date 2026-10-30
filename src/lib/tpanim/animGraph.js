@@ -211,14 +211,14 @@ export function motionParams(vel, memo, dt) {
 
 /**
  * THE LOCOMOTION PRESET: idle / walk / run as one speed blend, jump and fall, wired to the motion
- * driver. Clips come from the model's own (or assigned motion-kit) clips by name; a state whose clip
+ * driver. Clips come from the model's own (or assigned motion-kit: motionKit.js fills the gaps) clips by name; a state whose clip
  * is missing keeps its slot empty (it simply shows the previous pose's blend).
  * @param {string[]} clips the model's clip names
  * @returns {any} a normalized graph
  */
 export function locomotionPreset(clips) {
-	const jump = clips.find((c) => /jump(?!.*idle)|jump_start|takeoff/i.test(c)) ?? clips.find((c) => /jump/i.test(c)) ?? '';
-	const fall = clips.find((c) => /fall|jump_idle|airborne|in_air/i.test(c)) ?? jump;
+	const jump = clips.find((c) => /jump_start|takeoff/i.test(c)) ?? clips.find((c) => /jump(?!.*(idle|loop|land))/i.test(c)) ?? clips.find((c) => /jump/i.test(c)) ?? '';
+	const fall = clips.find((c) => /fall|jump_loop|jump_idle|airborne|in_air/i.test(c)) ?? jump;
 	return normalizeAnimGraph({
 		entry: 'move',
 		driver: 'motion',

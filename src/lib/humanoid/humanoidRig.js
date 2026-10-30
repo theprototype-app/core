@@ -47,7 +47,7 @@ import { setHumanoidDetector } from '../tpanim/humanoidMap.js';
 import { licenceOf, normalizeLicence } from '../provenance.js';
 
 /** @typedef {import('./humanoidMap.js').HumanoidMap} HumanoidMap */
-/** @typedef {{uuid: string, clip: string} | {lib: 'avatars', clip: string} | {asset: string, clip?: string}} ClipSource */
+/** @typedef {{uuid: string, clip: string} | {lib: 'avatars', clip: string} | {asset: string, clip?: string} | {motion: string}} ClipSource */
 /** @typedef {{name: string, src: ClipSource, licence?: any, from?: string}} AppliedClip */
 /** @typedef {{map?: Record<string, string>, clips?: AppliedClip[]}} HumanoidConfig */
 
@@ -340,7 +340,7 @@ async function resolveSource(src) {
 				}
 			: null;
 	}
-	return clipAssetResolver ? clipAssetResolver(src) : null;
+	return clipAssetResolver ? clipAssetResolver(/** @type {any} */ (src)) : null;
 }
 
 /**
@@ -442,6 +442,13 @@ export async function clipSourcesInScene() {
 				src: { asset: item.hash },
 				group: 'Clip files'
 			});
+	// 57 M5: the Motion pack's clips (fetched into the Explorer when applied); offline = not listed
+	try {
+		const { motionClips } = await import('../tpanim/motionKit.js');
+		for (const c of await motionClips()) out.push({ label: c.name, src: { motion: c.name }, group: 'Motion pack (Quaternius, CC0)' });
+	} catch {
+		/* the list is unreachable: the other sources still work */
+	}
 	return out;
 }
 
@@ -468,6 +475,13 @@ export async function applyClipTo(targets, src, opts = {}) {
 	/** @type {{uuid: string, why: string}[]} */
 	const refused = [];
 	if ('asset' in src) return applyClipFile(targets, src.asset, opts);
+	if ('motion' in src) {
+		const { addMotionClip } = await import('../tpanim/motionKit.js');
+		const item = await addMotionClip(src.motion).catch(() => null);
+		if (item?.hash) return applyClipFile(targets, item.hash, opts);
+		showToast('That clip is not available yet');
+		return { applied, refused: targets.map((uuid) => ({ uuid, why: 'source missing' })) };
+	}
 	const source = await resolveSource(src);
 	if (!source) {
 		showToast('That clip is not available yet');

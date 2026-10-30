@@ -8,6 +8,7 @@
 	import ToolboxWindow from '../ui/ToolboxWindow.svelte';
 	import { setAnimGraph, clipInfo, clipRefsOf, animatedObjects } from '$lib/animatedImports';
 	import { objectsGroup } from '../../stores/sceneStore';
+	import { showToast } from '../../stores/appStore';
 	import { locomotionPreset, normalizeAnimGraph, OPS } from '$lib/tpanim/animGraph.js';
 
 	/** @type {{uuid: string, onclose: () => void}} */
@@ -53,7 +54,17 @@
 	 * In place, so the controller (not the clip) moves the character.
 	 */
 	async function preset() {
-		const g = locomotionPreset(clips);
+		// 57 M5: a humanoid lacking idle / walk / run / jump gets them from the Motion pack
+		let names = clips;
+		const { humanoidOf } = await import('$lib/humanoid/humanoidRig.js');
+		if (humanoidOf(uuid)?.ok) {
+			const { addLocomotionClips } = await import('$lib/tpanim/motionKit.js');
+			names = await addLocomotionClips(uuid, clips).catch((/** @type {any} */ err) => {
+				showToast('Motion pack: ' + (err?.message ?? err));
+				return clips;
+			});
+		}
+		const g = locomotionPreset(names);
 		const move = g?.states.find((/** @type {any} */ s) => s.blend);
 		const refs = clipRefsOf(root);
 		if (move) {
@@ -98,7 +109,7 @@
 			{#if graph}<button class="ui-button-quiet text-ink-warn" onclick={removeGraph} title="Remove the states graph (the clips stay)">Remove</button>{/if}
 		</div>
 		{#if !clips.length}
-			<p class="as-note">This model has no clips yet — drag animation clips onto it first.</p>
+			<p class="as-note">This model has no clips yet — the preset fills a humanoid's from the Motion pack; drag clips onto any other model first.</p>
 		{/if}
 
 		{#if graph}

@@ -22,7 +22,8 @@ export const CC0_SITES = {
 	polyhaven: { label: 'Poly Haven', home: 'https://polyhaven.com', license: 'CC0' },
 	ambientcg: { label: 'ambientCG', home: 'https://ambientcg.com', license: 'CC0' },
 	// 57 M5: VRM avatars from the Open Source Avatars registry (licence per collection: CC0, or CC-BY on request)
-	osa: { label: 'Open Source Avatars', home: 'https://github.com/ToxSam/open-source-avatars', license: 'CC0' }
+	osa: { label: 'Open Source Avatars', home: 'https://github.com/ToxSam/open-source-avatars', license: 'CC0' },
+	motion: { label: 'Motion pack', home: 'https://quaternius.com', license: 'CC0' }
 };
 
 /** the browser's tabs: what each lists and where it comes from */
@@ -31,7 +32,8 @@ export const CC0_KINDS = [
 	{ key: 'hdris', label: 'HDRIs', source: 'polyhaven', phType: 'hdris' },
 	{ key: 'textures', label: 'Textures', source: 'polyhaven', phType: 'textures' },
 	{ key: 'materials', label: 'Materials', source: 'ambientcg', phType: null },
-	{ key: 'avatars', label: 'Avatars', source: 'osa', phType: null }
+	{ key: 'avatars', label: 'Avatars', source: 'osa', phType: null },
+	{ key: 'motion', label: 'Motion', source: 'motion', phType: null }
 ];
 
 export const PH_API = 'https://api.polyhaven.com';

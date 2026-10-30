@@ -29,6 +29,8 @@ h.run(async () => {
 		b1.name = 'PropsBox';
 		b2.name = 'FlowBox';
 		b3.name = 'BareBox';
+		// /create makes every box dynamic since 95df3a66 — this suite needs them bare to start with
+		for (const b of [b1, b2, b3]) delete b.userData.physics;
 		// spread them out — overlapping colliders would explode the fallback sim
 		b1.position.set(0, 0.5, 0);
 		b2.position.set(3, 0.5, 0);

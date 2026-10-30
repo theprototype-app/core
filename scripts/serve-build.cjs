@@ -52,6 +52,22 @@ const MIME = {
 	'.txt': 'text/plain; charset=utf-8'
 };
 
+/** 69 T3: the `/*` block of build/_headers (what Cloudflare Pages sends with every response) */
+const SITE_HEADERS = (() => {
+	/** @type {Record<string, string>} */
+	const out = {};
+	try {
+		let inAll = false;
+		for (const line of fs.readFileSync(path.join(DIR, '_headers'), 'utf8').split('\n')) {
+			if (/^\S/.test(line)) inAll = line.trim() === '/*';
+			else if (inAll && line.includes(':')) out[line.slice(0, line.indexOf(':')).trim()] = line.slice(line.indexOf(':') + 1).trim();
+		}
+	} catch {
+		// no _headers: an older build
+	}
+	return out;
+})();
+
 /** @param {any} req @param {any} res */
 function handle(req, res) {
 	let rel;
@@ -73,6 +89,7 @@ function handle(req, res) {
 	}
 	const immutable = rel.startsWith('/_app/immutable/');
 	res.writeHead(200, {
+		...SITE_HEADERS,
 		'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
 		'Cache-Control': immutable ? 'public, max-age=31536000, immutable' : 'no-cache'
 	});

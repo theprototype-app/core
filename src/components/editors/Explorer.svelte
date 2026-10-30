@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { showChoice, showConfirm } from '$lib/confirmDialog.js';
+	import { safeHtml } from '$lib/sandbox/sanitize.js';
 	import Icon from '../ui/Icon.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
@@ -377,6 +378,8 @@
 	const WIN_DEFAULT = { w: 720, h: 440 };
 
 	let inlineStats: any = $state(null); // N4: poly stats for the Properties inline preview
+	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
+	let { popped = false } = $props();
 	let docked = $state(true);
 	let winW = $state(720);
 	let winH = $state(440);
@@ -428,8 +431,11 @@
 
 	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
 	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	// 70 W2: a popped-out instance renders its floating layout inside its window, never docked
+	// svelte-ignore state_referenced_locally
+	if (popped) docked = false;
 	$effect(() =>
-		onLayoutRestore(() => {
+		popped ? undefined : onLayoutRestore(() => {
 			const stored = storedPanelLayout(safeStorage.getItem, 'explorer', 720, 440);
 			docked = !!(stored.docked || (window.matchMedia?.('(pointer: coarse)').matches && !get(mobileUndockAllowed)));
 			const fit = clampWinSize(stored.w, stored.h, WIN_MIN);
@@ -455,6 +461,7 @@
 	// own context menu can undock any tab; the Explorer-only `explorerDockArm` it used
 	// to own is gone, and the Controls menu asks through this one.
 	$effect(() => {
+		if (popped) return; // 70 W2: the main window's instance answers the arm
 		const arm = $dockModeArm;
 		if (!arm || arm.key !== 'explorer') return;
 		dockModeArm.set(null);
@@ -468,6 +475,7 @@
 	// feeds --bottom-inset) so the strip lists it, and render only while it is the
 	// visible tab. Being covered by another tab closes nothing — this stays open.
 	$effect(() => {
+		if (popped) return; // 70 W2: a popped panel is no dock tab
 		setDockOccupant('explorer', !$explorerClose && docked, $dockHeight);
 		return () => setDockOccupant('explorer', false);
 	});
@@ -8629,7 +8637,7 @@
 				<Icon name="loader-circle" size={16} class="animate-spin" aria-hidden="true" /> Loading attribution…
 			</div>
 		{:else}
-			<div class="prose prose-invert prose-sm max-w-none">{@html packAttribHtml}</div>
+			<div class="prose prose-invert prose-sm max-w-none" use:safeHtml={packAttribHtml}></div>
 		{/if}
 		<div class="mt-3 flex justify-end">
 			<button class="ui-button-quiet" onclick={() => (packAttribModal = false)}>Close</button>

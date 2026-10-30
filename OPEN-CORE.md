@@ -118,6 +118,17 @@ Consulted in `handleConnection` when an unknown peer connects: if the auth provi
 Default (no provider) keeps the whitelist + approval flow byte-identical. `authorize`
 is a synchronous lookup against state the plugin maintains from its own async login.
 
+**Automatic admissions are never silent (fix-live F-5).** Whenever `decide` answers
+`'admit'` (or `authorize` returns true), core shows the HOST a toast and a
+notification-history entry that keeps its buttons until answered: **Remove** (closes the
+link, drops the roster row, refuses that peer's re-dials while the tab stays open) and,
+when the provider offers it, a switch-off. The optional provider member
+`admitNotice(peerId, cloudMeta) → {text?, turnOff?, turnOffLabel?} | null` supplies the
+line (≤ 200 chars) and the switch-off; absent or null = a generic line, no switch-off.
+`api.setConnectBadge({text, title?, onClick?} | null)` puts a small badge on the Connect
+pill (`#connect-setting-badge`, ≤ 32 chars) for a standing setting such as "Public ·
+guests join"; a press runs `onClick` or opens the drawer's Rooms tab.
+
 ### 3. UI mount points
 
 Roles replicate over the **plugin message channel**: an admin broadcasts the roles
@@ -248,6 +259,10 @@ static|embed>`. Core never talks to a server about it.
 | `loadRemoteScene({…, keepGameId?})` | `keepGameId: true` = the OWNER opening their own published scene (no fork); otherwise a community load is a remix |
 | `onExportBuilt(fn)` → off | after an export zip is built: `fn({gameId, buildId, preset, title, template, parentGameId, appVersion})` |
 | `onTemplateOpen(fn)` → off | a Games-tab template was started: `fn(slug)` (one "template open") |
+| `toast(message, actions?, {keep?})` | fix-live F-2: with `keep: true` an action toast's buttons also stay on its notification-history entry until one is pressed (a role offer the user sees later) |
+| `setPeerMenuItems(items)` | fix-live: `[{id, label, run(peerId, {name})}]` (≤ 8, labels ≤ 40) appended to the Users peer menu (right-click a peer) under core's own entries — the cloud's "Report…"; `[]` clears |
+| `setConnectorProvider(p)` | 86 B1/B5: the Claude connector's account half — `{pair({resume}) → {wsUrl, pairingToken, replaces?, connections?}, connections() → {connections, tab?}, revoke(id), revokeAll(), account() → {signedIn, name?}}` (`pair` rejects `{code:'signin'}` signed out); core draws Connect Claude, the connected indicator and Settings ▸ Connected apps only while one is installed and runs every relayed call through tpAgent; null removes it |
+| `setConnectBadge(badge \| null)` | fix-live F-5: `{text, title?, onClick?}` — a small badge on the Connect pill for a standing setting (e.g. "Public · guests join"); `null` hides it. Probe with `typeof` |
 | `setSceneHeart(info \| null)` | the heart on the play-link start card (`#embed-heart`) and a game's pause menu (`#game-shell-heart`): `{count, liked, toggle() → Promise<{liked, count} \| null>}`; `null` from `toggle` rolls the optimistic flip back |
 
 The community provider gains three optional entry fields — `liked` (boolean, the viewer's own
@@ -280,6 +295,16 @@ so they never collide with an invite's `#<peerId>` hash. Core reads only the *pr
 of `s` (`whatsNew.hasDeepLink()`): the first-run welcome overlay stands down for that
 boot exactly as it does for an invite. What the id means, fetching the record, loading it
 (`loadRemoteScene`) and honouring `play=1` (`startPlay`) are the plugin's.
+
+#### 69 T4: a separate play origin — `playOrigin` · `playUrl(path)` — additive, no bump
+
+A deployment may serve the same build from a second origin (`VITE_PLAY_ORIGIN`, e.g.
+`https://play.theprototype.app`) and send play links and embeds there, so a played scene runs on a
+page that holds none of the editor's storage. `api.playOrigin` is `true` on that origin (the page is
+player-only for its whole life, the embed chrome) — a plugin must not offer sign-in or keep a token
+there. `api.playUrl('/?s=<id>&play=1')` is the absolute URL to put in a play link or an embed: on
+the play origin when one is configured, else on this origin. Probe both (`typeof`): older engines
+have neither. `VITE_APP_ORIGIN` is the editor origin the player's "Open in the app" link returns to.
 
 ### 5. Continuity — scene changes and projects (CL-5) — additive, no bump
 

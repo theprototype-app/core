@@ -167,9 +167,10 @@ export function createBridgeServer(opts) {
 		let joined = false;
 		if (engineReady()) {
 			try {
-				const s = await engine.status();
-				out.session = s;
+				// joined FIRST, the snapshot after: read the other way round, `joined` could be newer than
+				// `session` and say true beside the role from a moment before (role:"viewer" — the owner's flash)
 				joined = await engine.joined();
+				out.session = await engine.status();
 			} catch (e) {
 				out.sessionError = /** @type {any} */ (e).message;
 			}
@@ -182,6 +183,8 @@ export function createBridgeServer(opts) {
 		else if (!engineReady()) out.note = 'starting the agent (' + out.state + ')…';
 		else if (!joined) out.note = 'waiting for the host to let you in: ask them to Approve the join, or to send an invite link.';
 		else if (role === 'viewer') out.note = 'you are a VIEWER: your edits stay on your side. Ask the host for edit access or an Edit invite.';
+		else if (out.session && out.session.withHost === false)
+			out.note = 'the host is in another scene (' + JSON.stringify(out.session.hostScene || '') + ')' + (out.session.following ? ' — following them there; edits wait until you arrive.' : ' and edits would not reach them — wait for withHost, or ask the host.');
 		else out.note = 'in the session — the scene tools are live.';
 		return out;
 	}

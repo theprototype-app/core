@@ -481,10 +481,12 @@ async function fetchAnimRef(ref) {
 	const url = packRefUrl(ref);
 	let job = refFiles.get(url);
 	if (!job) {
-		job = fetch(url).then((res) => {
-			if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + url);
-			return res.arrayBuffer();
-		});
+		// 60 Q6: a pack file like any other — through the pack cache (the local asset cache)
+		job = import('./packCache').then((m) =>
+			m.fetchPackBuffer(url).catch((/** @type {any} */ e) => {
+				throw new Error(String(e?.message ?? e) + ' ' + url);
+			})
+		);
 		refFiles.set(url, job);
 		job.catch(() => refFiles.delete(url));
 	}

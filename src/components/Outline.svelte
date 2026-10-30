@@ -56,6 +56,7 @@
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { renderPaused } from '$lib/overloadGuard';
 	import { qualityOverrides, ingestDrawGap } from '$lib/qualityGovernor';
+	import { agentRequested } from '$lib/agent/agentMode';
 	// 16-Q4 / 43 K5: every PiP window renders as a view of THIS renderer ($lib/pipViews)
 	import { renderPipViews, mainViewCovered, noteMainSkipped } from '$lib/pipViews';
 	import { safeStorage } from '$lib/safeStorage';
@@ -472,7 +473,13 @@
 	// receive queue (3,000 objects: ~180s drawing, 5.6s not). Never in XR, like the pause.
 	let drawGapMs = 0;
 	let lastDrawAt = 0;
-	const stopGapWatch = ingestDrawGap.subscribe((value) => (drawGapMs = value));
+	// 55: an AI agent's page is headless (software GL — a frame took ~1.4 s) and nobody looks at its
+	// viewport (tpAgent.screenshot renders its own offscreen frame), so it draws at most one frame per
+	// AGENT_DRAW_GAP_MS. Its frames then come fast, and everything that waits on one — a scene load's
+	// slices, an asset's chunks, the flow tick, a followed host — runs ~50x sooner.
+	const AGENT_DRAW_GAP_MS = 5000;
+	const agentGap = agentRequested() ? AGENT_DRAW_GAP_MS : 0;
+	const stopGapWatch = ingestDrawGap.subscribe((value) => (drawGapMs = Math.max(value, agentGap)));
 	onDestroy(stopGapWatch);
 	useTask(
 		(delta) => {

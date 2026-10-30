@@ -210,6 +210,100 @@ function cameraBody(a) {
 	return merged;
 }
 
+// 85 G2/G4: a LATHE from a profile and an EXTRUDE from an outline, as PARAMS (userData.geometryParams),
+// so the `geometry` message, the 'geometry' history kind and the Inspector rows carry them like any
+// primitive's sizes. The points ride the params; `clean*` is the one gate (caps, finite numbers), run on
+// both sides of the wire before a builder sees anything.
+
+/** profile / outline caps (the params ride every `geometry` message and the save) */
+export const PROFILE_MAX_POINTS = 200;
+export const OUTLINE_MAX_POINTS = 500;
+export const OUTLINE_MAX_HOLES = 20;
+const COORD_MAX = 1000;
+
+/** @param {any} a @param {number} lo @param {number} hi @param {number} fallback */
+const clampNum = (a, lo, hi, fallback) => Math.min(Math.max(anyNum(a, fallback), lo), hi);
+
+/** a 2D point list as [[x, y], …] (finite, clamped, capped), or null when there is none
+ * @param {any} list @param {number} cap @param {number} min how many points make a shape */
+export function cleanPoints2(list, cap, min) {
+	if (!Array.isArray(list)) return null;
+	/** @type {number[][]} */
+	const out = [];
+	for (const p of list.slice(0, cap)) {
+		const x = Array.isArray(p) ? p[0] : p?.x;
+		const y = Array.isArray(p) ? p[1] : p?.y;
+		if (!Number.isFinite(Number(x)) || !Number.isFinite(Number(y))) return null;
+		out.push([clampNum(x, -COORD_MAX, COORD_MAX, 0), clampNum(y, -COORD_MAX, COORD_MAX, 0)]);
+	}
+	return out.length >= min ? out : null;
+}
+
+/** @param {any} params @returns {{segments: number, phiStart: number, phiLength: number, points?: number[][]}} */
+export function cleanLathe(params = {}) {
+	/** @type {any} */
+	const out = {
+		segments: clampInt(params.segments, 3, 128, 12),
+		phiStart: clampNum(params.phiStart, -Math.PI * 2, Math.PI * 2, 0),
+		phiLength: clampNum(params.phiLength, 0.01, Math.PI * 2, Math.PI * 2)
+	};
+	// x is the RADIUS: a lathe cannot reach behind its own axis
+	const points = cleanPoints2(params.points, PROFILE_MAX_POINTS, 2);
+	if (points) out.points = points.map(([x, y]) => [Math.max(0, x), y]);
+	return out;
+}
+
+/** a lathe from cleaned params; no `points` = three's default profile (the old fixed preset) @param {any} params */
+export function latheGeometry(params = {}) {
+	const p = cleanLathe(params);
+	const points = p.points ? p.points.map(([x, y]) => new THREE.Vector2(x, y)) : undefined;
+	return new THREE.LatheGeometry(points, p.segments, p.phiStart, p.phiLength);
+}
+
+/** the default outline: a 1 m square (what `/create Extrude` would otherwise get from three) */
+const SQUARE = [[-0.5, -0.5], [0.5, -0.5], [0.5, 0.5], [-0.5, 0.5]];
+
+/** @param {any} params @returns {{points: number[][], holes: number[][][], depth: number, bevel: boolean, bevelThickness: number, bevelSize: number, bevelSegments: number, curveSegments: number}} */
+export function cleanExtrude(params = {}) {
+	const holes = Array.isArray(params.holes)
+		? /** @type {number[][][]} */ (params.holes.slice(0, OUTLINE_MAX_HOLES).map((/** @type {any} */ h) => cleanPoints2(h, OUTLINE_MAX_POINTS, 3)).filter(Boolean))
+		: [];
+	return {
+		points: cleanPoints2(params.points, OUTLINE_MAX_POINTS, 3) ?? SQUARE,
+		holes,
+		depth: clampNum(params.depth, 0.001, 100, 0.2),
+		bevel: params.bevel === true,
+		bevelThickness: clampNum(params.bevelThickness, 0, 10, 0.02),
+		bevelSize: clampNum(params.bevelSize, 0, 10, 0.02),
+		bevelSegments: clampInt(params.bevelSegments, 1, 8, 2),
+		curveSegments: clampInt(params.curveSegments, 1, 32, 12)
+	};
+}
+
+/**
+ * An outline (x right, y up) extruded along +Z by `depth`, centred on its depth so the object's origin
+ * sits in the middle of the slab. Baked into a plain BufferGeometry: an ExtrudeGeometry's toJSON keeps
+ * only shape + options and would drop the centring on a peer (the customGeometryBuilders rule).
+ * @param {any} params
+ */
+export function extrudeGeometry(params = {}) {
+	const p = cleanExtrude(params);
+	const shape = new THREE.Shape(p.points.map(([x, y]) => new THREE.Vector2(x, y)));
+	for (const hole of p.holes) shape.holes.push(new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))));
+	const built = new THREE.ExtrudeGeometry(shape, {
+		depth: p.depth,
+		bevelEnabled: p.bevel,
+		bevelThickness: p.bevelThickness,
+		bevelSize: p.bevelSize,
+		bevelSegments: p.bevelSegments,
+		curveSegments: p.curveSegments
+	});
+	built.translate(0, 0, -p.depth / 2);
+	const geometry = new THREE.BufferGeometry().copy(built);
+	built.dispose();
+	return geometry;
+}
+
 /** @type {Record<string, (a?: any, b?: any, c?: any, d?: any) => THREE.BufferGeometry>} */
 export const customGeometryBuilders = {
 	Wedge: wedge,

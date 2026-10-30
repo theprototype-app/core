@@ -110,7 +110,7 @@ function decodeSafe(s) {
 /**
  * The page the browser engine opens: the link's own page with `&agent` (installs the app's
  * `window.tpAgent`, 55 A2) and the invite carried through. `compat` drops both — an app older
- * than 1.45 would read `id&agent` as the peer id and dial nobody.
+ * than 1.48 would read `id&agent` as the peer id and dial nobody.
  * @param {ReturnType<typeof parseLink>} link @param {{ compat?: boolean }} [opts]
  */
 export function pageUrl(link, opts = {}) {

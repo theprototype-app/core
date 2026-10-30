@@ -77,30 +77,57 @@ h.run(async () => {
 	await A.page.evaluate((id) => window.__stores.sessions.requestLoadSession(id), target.id);
 	await B.page.waitForTimeout(800);
 	h.check(
-		await B.page.getByText(/wants to load session/).isVisible(),
+		// the TOAST, not its copy in the screen-reader live region (e3edaee5) — getByText matched both
+		await B.page.locator('.tp-toast-text', { hasText: /wants to load session/ }).isVisible(),
 		'B sees the proposal toast'
 	);
-	await B.page.getByRole('button', { name: 'Decline', exact: true }).click();
+	// the proposal's OWN toast's button: another toast's action could share the name
+	await B.page.locator('.tp-toast', { hasText: /wants to load session/ }).getByRole('button', { name: 'Decline', exact: true }).click();
 	await A.page.waitForTimeout(800);
 	h.check(
-		await A.page.getByText(/declined the session load/).isVisible(),
+		await A.page.locator('.tp-toast-text', { hasText: /declined the session load/ }).isVisible(),
 		'A is told about the decline'
 	);
 
 	// then B accepts: the load applies and replicates
 	await A.page.evaluate((id) => window.__stores.sessions.requestLoadSession(id), target.id);
 	await B.page.waitForTimeout(800);
-	await B.page.getByRole('button', { name: 'Accept', exact: true }).click();
+	await B.page.locator('.tp-toast', { hasText: /wants to load session/ }).getByRole('button', { name: 'Accept', exact: true }).click();
+	let replaced = false;
 	await h.eventually(
 		() => Promise.all([objectNames(A.page), objectNames(B.page)]),
 		([a, b]) =>
-			a.filter((n) => n === 'Box').length === 1 &&
-			a.includes('Sphere') &&
-			b.filter((n) => n === 'Box').length === 1 &&
-			b.includes('Sphere'),
+			(replaced =
+				a.filter((n) => n === 'Box').length === 1 &&
+				a.includes('Sphere') &&
+				b.filter((n) => n === 'Box').length === 1 &&
+				b.includes('Sphere')),
 		'accepted load replaced the scene on both peers',
 		15000
 	);
+	// test-health-1: red since the toast check stopped masking it (e3edaee5) and not explained from the
+	// code (A clears and adds nothing, B applies nothing) — a red prints each side's link, load job and
+	// recent net/session diagnostics, so the next run says which path stopped
+	if (!replaced)
+		for (const [name, p, other] of [['A', A, B], ['B', B, A]])
+			console.log(
+				`  ${name} after Accept: ` +
+					JSON.stringify(
+						await p.page.evaluate((otherId) => {
+							const s = window.__stores;
+							let pc;
+							s.peers.subscribe((v) => (pc = v))();
+							const job = s.sceneLoader.currentJob?.();
+							return {
+								id: pc?.peer?.id,
+								openTo: !!pc?.connections?.[otherId]?.open,
+								reconnecting: pc?.reconnecting?.get?.(otherId) ?? null,
+								job: job ? { name: job.name, cancelled: !!job.cancelled, interrupted: !!job.interrupted } : null,
+								log: (s.diagnostics.lines?.() ?? []).filter((l) => /net|session|load|clear|wire/i.test(JSON.stringify(l))).slice(-12)
+							};
+						}, other.id)
+					)
+			);
 
 	await h.finish(browser);
 });

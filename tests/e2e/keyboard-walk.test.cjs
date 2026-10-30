@@ -69,7 +69,7 @@ h.run(async () => {
 	const order = [];
 	let ringless = [];
 	// walk until the toolbar, then a few stops past it (a cloud build has more top-bar stops: rooms,
-	// sign-in and the links inside the profile panel, which opens on focus) — no fixed window
+	// sign-in; since fix-batch-1 #23 the profile panel no longer opens on focus) — no fixed window
 	let afterToolbar = -1;
 	for (let i = 0; i < 40 && afterToolbar < 6; i++) {
 		await press(page, 'Tab');
@@ -211,7 +211,9 @@ h.run(async () => {
 	await press(page, '1');
 	// the LAST control in the document (the open Explorer, Inspector and object list add many)
 	await page.evaluate(() => {
-		const all = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])')]).filter((e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden');
+		// a toast's ✕ is not part of the layout (51-int: the "Scene saved" toast's ✕ was picked, then auto-dismissed
+		// before the Tab, which dropped focus on <body> — whose Tab is the Edit Mesh shortcut)
+		const all = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])')]).filter((e) => e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden' && !e.closest('.tp-toast'));
 		all[all.length - 1]?.focus();
 	});
 	let wrapped = false;

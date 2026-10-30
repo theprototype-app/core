@@ -79,21 +79,18 @@ h.run(async () => {
 	h.check((await page.locator('#add-search-input').inputValue()) === '', 'Clear empties the field');
 	await page.keyboard.press('Escape');
 
-	// node search: open flow, right-click pane, type to search, box right-drags
+	// node search: open flow, right-click pane, type to search. Since 26537bb6 the search runs inside
+	// the pane's context menu (its filter row), so the old pop-up box — and its right-drag — are gone
 	await page.locator('p[title="Node editor (N)"]').click();
 	await page.waitForTimeout(600);
 	await page.locator('.svelte-flow__pane').click({ button: 'right', position: { x: 400, y: 120 } });
-	await page.waitForTimeout(300);
+	await page.waitForSelector('.ctx-filter', { state: 'attached', timeout: 5000 });
 	await page.keyboard.type('s');
-	await page.waitForTimeout(300);
-	h.check(await page.locator('#node-search-box').isVisible(), 'node search opens');
-	const nb = await page.locator('#node-search-box').boundingBox();
-	await page.mouse.move(nb.x + 60, nb.y + 70);
-	await page.mouse.down({ button: 'right' });
-	await page.mouse.move(nb.x + 180, nb.y + 140, { steps: 5 });
-	await page.mouse.up({ button: 'right' });
-	const nbAfter = await page.locator('#node-search-box').boundingBox();
-	h.check(nbAfter.x > nb.x + 80, `node search box right-drags (${nb.x} → ${nbAfter.x})`);
+	const opened = await page
+		.waitForSelector('.ctx-filter.on', { timeout: 5000 })
+		.then(() => true, () => false);
+	h.check(opened, 'node search opens (the menu filter row)');
+	h.check((await page.locator('.ctx-match').count()) > 0, 'typing lists matching nodes');
 
 	await ctx.close();
 	await h.finish(browser);

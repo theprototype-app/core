@@ -1,6 +1,9 @@
 import { get } from 'svelte/store';
 import { objectsGroup, lockedObjects, pokeScene } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
+import { lockSkip } from './lockNote.js';
+import { sceneFilter } from './sceneFilter.js';
+import { geometrySpec } from '$lib/geometryParams';
 import { createGeometry, createLight, createGroup } from '$lib/geometries.svelte.js';
 import { recordObjectPresence, recordTransform } from '$lib/history';
 import {
@@ -10,8 +13,16 @@ import {
 	deleteObjectsByUuid
 } from '$lib/objectActions';
 import { setObjectColor, switchMaterialType, setMaterialParam } from '$lib/materialsHandler';
+import { checkMaterialParam, toHexColor } from '$lib/materialParamRules.js';
+import { lightStateOf, recordLightChange, sendLight } from '$lib/multiEdit';
+import { aimLight } from '$lib/lightParams';
+import { itemByHash } from '$lib/explorer';
 import { notifyExternalMove } from '$lib/flowRuntime';
 import { meshGenReady } from './meshProviders.js';
+import { viewerToolRefusal } from './viewerGate.js';
+import { aiCreatePhysics } from './aiPhysicsDefault.js';
+import { setPhysicsFor } from '$lib/physics';
+import { isViewer } from '$lib/objectPermissions';
 import { graphOf, SCENE_GRAPH } from '../../stores/flowStore';
 import { sceneJoints } from '$lib/joints';
 import { graphToText } from '$lib/graphText';
@@ -23,10 +34,12 @@ import {
 	aiNodeVocabulary,
 	createFlowNodesTool,
 	updateFlowNodesTool,
+	describeNodeTypesTool,
 	setPhysicsTool,
 	createJointsTool,
 	controlSimulationTool
 } from './flowTools.js';
+import { GEOMETRY_TOOL_NAMES, GEOMETRY_AI_TOOLS, GEOMETRY_PROMPT, geometryTool } from './geometryTools.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -126,9 +139,37 @@ function describeObject(object) {
 		if (material.color) out.color = '#' + material.color.getHexString();
 	}
 	if (object.userData?.physics) out.physics = { ...object.userData.physics };
+	const geometry = geometrySummary(object);
+	if (geometry) out.geometry = geometry;
 	const flow = summarizeGraph(object.uuid);
 	if (flow) out.flow = flow;
 	return out;
+}
+
+/**
+ * 55 (1.48.1 c, 41's voice-Claude finding): a primitive's editable shape — a wall's thickness, a box's size — so an
+ * agent can read what it built (create_objects' `params` and the Inspector's Geometry rows). Sizes always; segment
+ * counts only when changed; nothing that is not a plain number/flag/word.
+ * @param {any} object @returns {any}
+ */
+function geometrySummary(object) {
+	const gp = object.userData?.geometryParams;
+	if (!gp?.gtype || !gp.params) return null;
+	const spec = geometrySpec(gp.gtype);
+	/** @type {any} */
+	const out = { type: gp.gtype };
+	for (const [key, value] of Object.entries(gp.params)) {
+		const def = spec?.params?.find((/** @type {any} */ p) => p.key === key);
+		if (def?.kind === 'int' && value === def.def) continue;
+		if (typeof value === 'number') out[key] = r3(value);
+		else if (typeof value === 'boolean' || (typeof value === 'string' && value.length <= 40)) out[key] = value;
+	}
+	return out;
+}
+
+/** 55 (1.48.1): list_scene `brief` — enough to address an object, nothing more @param {any} object */
+function briefObject(object) {
+	return { uuid: object.uuid, name: object.name || object.type, type: object.type, parentUuid: object.parent && object.parent.type === 'Group' ? object.parent.uuid : null };
 }
 
 /** Node data compacted for the model: big point lists reduced to a count, long strings
@@ -187,16 +228,49 @@ function summarizeGraph(graphId, cap = GRAPH_SUMMARY_CHARS) {
 	);
 	const orphans = graph.edges.filter((/** @type {any} */ e) => !known.has(e.source));
 	if (orphans.length) blocks.push(graphToText({ nodes: [], edges: orphans }, opts));
-	let text = '';
-	let shown = 0;
+	const pages = pageBlocks(blocks, cap);
+	if (pages.length === 1) return pages[0];
+	// 55 (41's research): a big graph is PAGED, never cut — the rest is one list_scene call away
+	const dropped = pages.slice(1).join('').split('\n').filter(Boolean).length;
+	return pages[0] + '// … ' + dropped + ' more lines: list_scene {"flow": "' + graphId + '", "page": 2}\n';
+}
+
+/** pack text blocks into pages of at most `cap` characters (a block bigger than a page gets its own)
+ * @param {string[]} blocks @param {number} cap @returns {string[]} */
+function pageBlocks(blocks, cap) {
+	const pages = [''];
 	for (const block of blocks) {
-		if (text.length + block.length > cap) break;
-		text += block;
-		shown++;
+		const last = pages.length - 1;
+		if (pages[last] && pages[last].length + block.length > cap) pages.push(block);
+		else pages[last] += block;
 	}
-	if (shown === blocks.length) return text;
-	const dropped = blocks.slice(shown).join('').split('\n').filter(Boolean).length;
-	return text + '// … ' + dropped + ' more lines not shown\n';
+	return pages;
+}
+
+/**
+ * 55 (41's research): one PAGE of a graph's summary (list_scene `{flow, page}`), so an agent can read
+ * a whole big graph — the scene summary shows page 1. @param {string} graphId @param {number} page 1-based
+ * @returns {{flow: string, page: number, pages: number, text: string} | {error: string}}
+ */
+export function graphPage(graphId, page) {
+	const graph = graphOf(graphId);
+	if (!graph) return { error: 'no flow graph "' + graphId + '" — use "scene" or an object uuid that has a flow' };
+	const opts = { positions: false, defaults: specDefaults, defaultLabel: specLabel };
+	/** @type {Map<string, any[]>} */
+	const out = new Map();
+	for (const e of graph.edges) {
+		if (!out.has(e.source)) out.set(e.source, []);
+		out.get(e.source)?.push(e);
+	}
+	const known = new Set(graph.nodes.map((/** @type {any} */ n) => n.id));
+	const blocks = graph.nodes.map((/** @type {any} */ n) =>
+		graphToText({ nodes: [{ id: n.id, type: n.type, data: compactNodeData(n) }], edges: out.get(n.id) ?? [] }, opts)
+	);
+	const orphans = graph.edges.filter((/** @type {any} */ e) => !known.has(e.source));
+	if (orphans.length) blocks.push(graphToText({ nodes: [], edges: orphans }, opts));
+	const pages = pageBlocks(blocks, GRAPH_SUMMARY_CHARS);
+	const at = Math.min(Math.max(1, Math.floor(Number(page) || 1)), pages.length);
+	return { flow: graphId, page: at, pages: pages.length, text: pages[at - 1] };
 }
 
 /**
@@ -204,25 +278,33 @@ function summarizeGraph(graphId, cap = GRAPH_SUMMARY_CHARS) {
  * replicated objectsGroup only (scene-root helpers/env stay local). Capped so a
  * huge scene can't blow the context.
  * @param {number} [cap]
+ * @param {{brief?: boolean, name?: string, type?: string, near?: {position: number[], radius: number}} | null} [filter]
+ *   55 (1.48.1): list_scene's narrowing — uuid/name/type/parent only, a name glob, a type, a world-space sphere
  * @returns {{objects: any[], truncated?: number}}
  */
-export function summarizeScene(cap = 200) {
+export function summarizeScene(cap = 200, filter = null) {
 	const group = get(objectsGroup);
+	const keep = sceneFilter(filter);
 	/** @type {any[]} */
 	const objects = [];
 	let truncated = 0;
+	let matched = 0;
 	if (group) {
 		group.traverse((/** @type {any} */ object) => {
 			if (object === group) return;
+			if (keep && !keep(object)) return;
+			matched++;
 			if (objects.length >= cap) {
 				truncated++;
 				return;
 			}
-			objects.push(describeObject(object));
+			objects.push(filter?.brief ? briefObject(object) : describeObject(object));
 		});
 	}
 	/** @type {any} */
 	const out = truncated ? { objects, truncated } : { objects };
+	// a filtered read is about objects: the scene-wide flow / behaviours / joints stay in the plain call
+	if (keep || filter?.brief) return { ...out, matched };
 	const sceneFlow = summarizeGraph(SCENE_GRAPH);
 	if (sceneFlow) out.sceneFlow = sceneFlow;
 	const behaviours = summarizeBehaviours();
@@ -277,8 +359,106 @@ function applyAiTransform(object, t) {
 	recordTransform({ uuid: object.uuid, before, after });
 }
 
+/** a colour an AI may pass: hex (3 or 6 digits — never 8) or a plain CSS name ('red'), else null @param {any} v */
+const colorOf = (v) => toHexColor(v) ?? (typeof v === 'string' && /^[a-z]{3,20}$/i.test(v.trim()) ? v.trim().toLowerCase() : null);
+
+/** 55 (41's research, round 4): the light fields create/update_objects take, and what each must be */
+const LIGHT_FIELDS = ['color', 'intensity', 'distance', 'decay', 'angle', 'penumbra', 'width', 'height', 'groundColor', 'castShadow', 'aim'];
+/** the ranges a light number is clamped into @type {Record<string, [number, number]>} */
+const LIGHT_RANGES = { intensity: [0, 1000], distance: [0, 1000], decay: [0, 5], angle: [0.02, Math.PI / 2], penumbra: [0, 1], width: [0.1, 100], height: [0.1, 100] };
+
+/** does this spec name any light field? @param {any} spec */
+const hasLightFields = (spec) => LIGHT_FIELDS.some((k) => k !== 'color' && spec?.[k] !== undefined);
+
+/**
+ * Apply a spec's light fields to a light — the Inspector's path (one `light` undo entry, the whole
+ * light resent). A field this light type does not have is an error, never a silent skip.
+ * @param {any} light @param {any} spec @returns {string[]} errors
+ */
+function applyAiLight(light, spec) {
+	/** @type {string[]} */
+	const errors = [];
+	const before = lightStateOf(light);
+	let touched = false;
+	for (const key of LIGHT_FIELDS) {
+		if (spec[key] === undefined) continue;
+		const value = spec[key];
+		if (key === 'color' || key === 'groundColor') {
+			const hex = toHexColor(value);
+			if (!light[key]?.set) errors.push(key + ': a ' + light.type + ' has no ' + key);
+			else if (!hex) errors.push(key + ': takes a hex colour like "#ffcc88"');
+			else {
+				light[key].set(hex);
+				touched = true;
+			}
+		} else if (key === 'castShadow') {
+			if (!light.shadow) errors.push('castShadow: a ' + light.type + ' casts no shadow');
+			else if (typeof value !== 'boolean') errors.push('castShadow: takes true or false');
+			else {
+				light.castShadow = value;
+				touched = true;
+			}
+		} else if (key === 'aim') {
+			if (!light.isDirectionalLight && !light.isSpotLight) errors.push('aim: only a directional or spot light aims');
+			else if (!Array.isArray(value) || value.length !== 3 || !value.every(Number.isFinite)) errors.push('aim: takes a world point [x, y, z]');
+			else {
+				const was = { pos: light.position.toArray(), rot: [light.rotation.x, light.rotation.y, light.rotation.z], scale: light.scale.toArray() };
+				if (aimLight(light, value)) {
+					const after = { pos: light.position.toArray(), rot: [light.rotation.x, light.rotation.y, light.rotation.z], scale: light.scale.toArray() };
+					broadcast({ type: 'move', uuid: light.uuid, pos: after.pos, rot: after.rot, scale: after.scale });
+					recordTransform({ uuid: light.uuid, before: was, after });
+				}
+			}
+		} else {
+			const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+			if (typeof light[key] !== 'number') errors.push(key + ': a ' + light.type + ' has no ' + key);
+			else if (typeof n !== 'number' || !Number.isFinite(n)) errors.push(key + ': takes a number');
+			else {
+				const [lo, hi] = LIGHT_RANGES[key];
+				light[key] = Math.min(hi, Math.max(lo, n));
+				touched = true;
+			}
+		}
+	}
+	if (touched) {
+		sendLight(light);
+		recordLightChange(light, before);
+		pokeScene();
+	}
+	return errors;
+}
+
+/**
+ * update_objects' materialParams, one key at a time: the shared rules, plus `map` taking a LIBRARY
+ * image by its hash (the Explorer's own texturing path). @param {string} uuid @param {any} params
+ * @returns {Promise<string[]>} errors
+ */
+async function applyAiMaterialParams(uuid, params) {
+	/** @type {string[]} */
+	const errors = [];
+	const material = objectOf(uuid)?.material;
+	if (!material) return ['materialParams: this object has no material'];
+	if (Array.isArray(material)) return ['materialParams: this object has several materials — not editable here'];
+	for (const [key, value] of Object.entries(params)) {
+		if (key === 'map' && typeof value === 'string' && value) {
+			const item = itemByHash(value);
+			if (!item || item.kind !== 'image') {
+				errors.push('map: "' + value.slice(0, 16) + '…" is not an image in the library (pass an image hash, or null to clear)');
+				continue;
+			}
+			const { applyExplorerImage } = await import('$lib/explorerDrop');
+			if (!(await applyExplorerImage(uuid, { id: item.id }))) errors.push('map: the image could not be read');
+			continue;
+		}
+		const checked = checkMaterialParam(material, key, value);
+		if (!checked.ok) errors.push(key + ': ' + checked.error);
+		else if (!setMaterialParam(uuid, key, checked.value, true)) errors.push(key + ': not applied');
+	}
+	return errors;
+}
+
 /** @param {any} spec @returns {any} one created object's result */
-function createOne(spec) {
+function createOne(spec, extraTypes = /** @type {string[]} */ ([])) {
 	const uuid = genUuid();
 	let created = null;
 	if (spec.kind === 'light') {
@@ -298,11 +478,20 @@ function createOne(spec) {
 		broadcast({ type: 'group', command, uuid });
 	} else {
 		// primitive (default)
-		const primitive = normalizePrimitive(spec.primitive);
+		// 85 G2/G4: the geometry tools make a Lathe / an Extrude base through this same path
+		const primitive = extraTypes.find((t) => t === spec.primitive) ?? normalizePrimitive(spec.primitive);
 		if (!primitive) return { error: 'unknown primitive "' + spec.primitive + '"; allowed: ' + PRIMITIVE_TYPES.join(', ') };
+		if (spec.params !== undefined && !Array.isArray(spec.params)) return { error: 'params: takes an array of numbers, e.g. Box [w, h, d]' };
+		// 55 (41's research): sizes are positive numbers ([-1, 0, 'a'] for a Box used to be accepted);
+		// a cylinder's radii may be 0 (a cone). Clamped to 1 km.
+		const bad = (spec.params ?? []).slice(0, 4).findIndex((/** @type {any} */ v, /** @type {number} */ i) => {
+			const zeroOk = primitive === 'Cylinder' && i < 2;
+			return typeof v !== 'number' || !Number.isFinite(v) || v < 0 || (v === 0 && !zeroOk);
+		});
+		if (bad >= 0) return { error: 'params[' + bad + '] = ' + JSON.stringify(spec.params[bad]) + ': sizes are positive numbers (' + primitive + ')' };
 		const params =
 			Array.isArray(spec.params) && spec.params.length
-				? spec.params.slice(0, 4)
+				? spec.params.slice(0, 4).map((/** @type {number} */ v) => Math.min(1000, v))
 				: DEFAULT_PARAMS[primitive] || [];
 		const command = ('/create ' + primitive + ' ' + params.join(' ')).trim();
 		createGeometry(command, uuid);
@@ -314,14 +503,34 @@ function createOne(spec) {
 	// carry it to final state; undo reverses the edits then deletes.
 	recordObjectPresence('create', created);
 
-	if (spec.name && spec.kind !== 'group') renameObject(uuid, String(spec.name));
-	applyAiTransform(created, spec);
-	if (spec.color && created.material && !Array.isArray(created.material)) setObjectColor(uuid, String(spec.color));
+	// 55 (41's research): a group keeps the name it was given (the command form made 'G group' 'G_group Group')
+	if (spec.name) renameObject(uuid, String(spec.name).slice(0, 120));
+	// 55 (1.48.1 a): nest FIRST, then place — position/rotation/scale are LOCAL to the group, as list_scene reports
+	// them (attach() keeps the world pose, so nesting after the transform read them as world space)
 	if (spec.parentUuid) {
 		const parent = objectOf(spec.parentUuid);
 		if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
 	}
-	return { uuid, name: created.name };
+	applyAiTransform(created, spec);
+	/** @type {string[]} */
+	const warnings = [];
+	// 55 (41's research, round 4): a light takes its fields (it used to come out white at intensity 1)
+	if (created.isLight) warnings.push(...applyAiLight(created, spec));
+	else if (spec.color && created.material && !Array.isArray(created.material)) {
+		// 55 (41's round 5): '#40ff4060' (8 digits) was written and three warned "Invalid hex color"
+		const hex = colorOf(spec.color);
+		if (hex) setObjectColor(uuid, hex);
+		else warnings.push('color: takes a hex colour like "#ff8800"');
+	}
+	// fix-live F-4: static unless asked — a built scene must not fall apart in Play
+	const physics = aiCreatePhysics(spec, created.userData?.physics);
+	if (physics) setPhysicsFor(uuid, physics);
+	return {
+		uuid,
+		name: created.name,
+		...(created.userData?.physics?.mode ? { physics: created.userData.physics.mode } : {}),
+		...(warnings.length ? { warnings } : {})
+	};
 }
 
 /** @param {any} raw @returns {string|null} */
@@ -332,32 +541,55 @@ function normalizePrimitive(raw) {
 	return match || null;
 }
 
-/** @param {any} spec @returns {any} */
-function updateOne(spec) {
+/**
+ * One update. 55 (41's research): a field that does not apply to this object (a light field on a box, a
+ * material on a light, a bad material value) is an ERROR in the result — never a silent `ok: true`.
+ * @param {any} spec @returns {Promise<any>}
+ */
+async function updateOne(spec) {
 	const uuid = spec.uuid;
 	const object = objectOf(uuid);
 	if (!object) return { uuid, error: 'no object with that uuid' };
-	if (lockedByPeer(uuid)) return { uuid, skipped: 'locked by another peer' };
+	const lock = lockSkip(uuid, object);
+	if (lock) return { uuid, skipped: lock };
+	/** @type {string[]} */
+	const errors = [];
 
 	if (typeof spec.name === 'string') renameObject(uuid, spec.name);
-	applyAiTransform(object, spec);
-	if (spec.color && object.material && !Array.isArray(object.material)) setObjectColor(uuid, String(spec.color));
-	if (spec.materialType) {
-		const mt = MATERIAL_TYPES.find((m) => m.toLowerCase() === String(spec.materialType).toLowerCase());
-		if (mt) switchMaterialType(uuid, mt, true);
-	}
-	if (spec.materialParams && typeof spec.materialParams === 'object') {
-		for (const [key, value] of Object.entries(spec.materialParams)) setMaterialParam(uuid, key, value, true);
-	}
-	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
+	// 55 (1.48.1 a): re-nest FIRST (the object keeps its world pose), then a given position is LOCAL to the new parent
 	if (spec.parentUuid) {
 		if (spec.parentUuid === 'root') moveObjectToGroup(uuid, 'root');
 		else {
 			const parent = objectOf(spec.parentUuid);
 			if (parent && parent.type === 'Group') moveObjectToGroup(uuid, spec.parentUuid);
+			else errors.push('parentUuid: no group with that uuid');
 		}
 	}
-	return { uuid, ok: true };
+	applyAiTransform(object, spec);
+	if (object.isLight) {
+		errors.push(...applyAiLight(object, spec));
+		if (spec.materialType !== undefined || spec.materialParams !== undefined) errors.push('materialType/materialParams: a light has no material — use color, intensity, distance, angle…');
+	} else {
+		if (hasLightFields(spec)) errors.push(LIGHT_FIELDS.filter((k) => k !== 'color' && spec[k] !== undefined).join(', ') + ': only a light takes these');
+		if (spec.color) {
+			const hex = colorOf(spec.color);
+			if (!hex) errors.push('color: takes a hex colour like "#ff8800"');
+			else if (object.material && !Array.isArray(object.material)) setObjectColor(uuid, hex);
+			else errors.push('color: this object has no single material to colour');
+		}
+		if (spec.materialType) {
+			const mt = MATERIAL_TYPES.find((m) => m.toLowerCase() === String(spec.materialType).toLowerCase());
+			if (mt) switchMaterialType(uuid, mt, true);
+			else errors.push('materialType: unknown "' + String(spec.materialType).slice(0, 40) + '" — one of ' + MATERIAL_TYPES.join(', '));
+		}
+		if (spec.materialParams !== undefined) {
+			if (spec.materialParams && typeof spec.materialParams === 'object' && !Array.isArray(spec.materialParams))
+				errors.push(...(await applyAiMaterialParams(uuid, spec.materialParams)).map((e) => 'materialParams.' + e));
+			else errors.push('materialParams: takes an object like { "roughness": 0.2 }');
+		}
+	}
+	if (typeof spec.visible === 'boolean' && object.visible !== spec.visible) toggleObjectVisibility(uuid);
+	return errors.length ? { uuid, ok: false, errors } : { uuid, ok: true };
 }
 
 const TOOL_NAMES = [
@@ -370,12 +602,14 @@ const TOOL_NAMES = [
 	'generate_mesh',
 	'create_flow_nodes',
 	'update_flow_nodes',
+	'describe_node_types',
 	'set_physics',
 	'create_joints',
 	'control_simulation',
 	'create_behaviour',
 	'edit_behaviour',
-	'import_model' // 56 C9 (offered to agents; see importModel.js)
+	'import_model', // 56 C9 (offered to agents; see importModel.js)
+	...GEOMETRY_TOOL_NAMES // 85 G1-G6 (geometryTools.js)
 ];
 
 /** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a
@@ -424,7 +658,16 @@ const NAME_ALIASES = /** @type {Record<string,string>} */ ({
 	list: 'list_scene',
 	clear: 'clear_scene',
 	generate_model: 'generate_mesh',
-	create_mesh: 'generate_mesh',
+	// (85 G6: `create_mesh` is a tool of its own now — mesh from vertex data, not generation)
+	set_geometry_params: 'set_geometry',
+	reshape: 'set_geometry',
+	change_geometry: 'set_geometry',
+	lathe: 'create_lathe',
+	create_tubes: 'create_tube',
+	extrude: 'extrude_shape',
+	extrude_outline: 'extrude_shape',
+	modify_mesh: 'edit_mesh',
+	edit_geometry: 'edit_mesh',
 	// flow / behavior invention family
 	add_behavior: 'create_flow_nodes',
 	add_behaviour: 'create_flow_nodes',
@@ -591,9 +834,17 @@ export async function executeAiTool(rawName, rawArgs) {
 /** @param {string} rawName @param {any} rawArgs @returns {Promise<any>} */
 async function runAiTool(rawName, rawArgs) {
 	const { name, args } = repairToolCall(rawName, rawArgs);
+	// F-1: a viewer's edits never reach anyone, so refuse instead of reporting success
+	const refusal = viewerToolRefusal(name, isViewer());
+	if (refusal) return refusal;
 	try {
 		switch (name) {
 			case 'list_scene':
+				// 55: `{flow, page}` reads one page of a big graph's summary
+				if (args && typeof args.flow === 'string' && args.flow) return graphPage(args.flow === 'scene' ? SCENE_GRAPH : args.flow, args.page ?? 1);
+				// 55 (1.48.1): narrowed reads
+				if (args && (args.brief || args.name || args.type || args.near))
+					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near });
 				return summarizeScene();
 
 			case 'create_objects': {
@@ -611,8 +862,11 @@ async function runAiTool(rawName, rawArgs) {
 			case 'update_objects': {
 				const updates = Array.isArray(args?.updates) ? args.updates : [];
 				if (!updates.length) return { error: 'no updates provided' };
-				const results = updates.map((/** @type {any} */ u) => updateOne(u));
-				return { updated: results };
+				/** @type {any[]} */
+				const results = [];
+				for (const u of updates) results.push(await updateOne(u));
+				const failed = results.filter((r) => r.errors || r.error).length;
+				return failed ? { updated: results, warning: failed + ' of ' + results.length + ' update(s) did not fully apply — see errors' } : { updated: results };
 			}
 
 			case 'delete_objects': {
@@ -620,7 +874,9 @@ async function runAiTool(rawName, rawArgs) {
 				const allowed = uuids.filter((/** @type {string} */ u) => objectOf(u) && !lockedByPeer(u));
 				const skipped = uuids.filter((/** @type {string} */ u) => !allowed.includes(u));
 				const count = deleteObjectsByUuid(allowed);
-				return { deleted: count, skipped };
+				// 55 (1.48.1 b): why each was skipped — gone, or locked by whom
+				const why = skipped.map((/** @type {string} */ u) => (objectOf(u) ? lockSkip(u, objectOf(u)) : u + ': no object with that uuid'));
+				return { deleted: count, skipped, ...(why.length ? { skippedWhy: why } : {}) };
 			}
 
 			case 'group_objects': {
@@ -633,14 +889,18 @@ async function runAiTool(rawName, rawArgs) {
 				if (!group) return { error: 'group creation failed' };
 				broadcast({ type: 'group', command, uuid: groupUuid });
 				recordObjectPresence('create', group);
+				// 55 (41's research): the name as given — the command form turns 'G group' into 'G_group Group'
+				if (typeof args?.name === 'string' && args.name.trim()) renameObject(groupUuid, args.name.trim().slice(0, 120));
 				const moved = [];
+				/** @type {string[]} */
+				const skippedWhy = [];
 				for (const uuid of members) {
 					if (objectOf(uuid) && !lockedByPeer(uuid)) {
 						moveObjectToGroup(uuid, groupUuid);
 						moved.push(uuid);
-					}
+					} else skippedWhy.push(objectOf(uuid) ? String(lockSkip(uuid, objectOf(uuid))) : uuid + ': no object with that uuid');
 				}
-				return { groupUuid, name: group.name, members: moved };
+				return { groupUuid, name: group.name, members: moved, ...(skippedWhy.length ? { skippedWhy } : {}) };
 			}
 
 			case 'clear_scene': {
@@ -653,6 +913,9 @@ async function runAiTool(rawName, rawArgs) {
 
 			case 'create_flow_nodes':
 				return createFlowNodesTool(args);
+
+			case 'describe_node_types':
+				return describeNodeTypesTool(args);
 
 			case 'update_flow_nodes':
 				return updateFlowNodesTool(args);
@@ -696,6 +959,15 @@ async function runAiTool(rawName, rawArgs) {
 				// 56 C9: a self-contained GLB through the app's own import path (one undo, synced)
 				return await (await import('./importModel.js')).importModelTool(args);
 
+			case 'set_geometry':
+			case 'create_lathe':
+			case 'create_tube':
+			case 'extrude_shape':
+			case 'edit_mesh':
+			case 'create_mesh':
+				// 85 G1-G6: shape and model objects (geometryTools.js)
+				return await geometryTool(name, args, createOne);
+
 			default:
 				return {
 					error:
@@ -711,6 +983,20 @@ async function runAiTool(rawName, rawArgs) {
 	}
 }
 
+/** 55 (41's research, round 4): the light fields create/update_objects take (lights only) */
+const LIGHT_SCHEMA = {
+	intensity: { type: 'number', description: 'lights: brightness (point/spot also fall off with distance)' },
+	distance: { type: 'number', description: 'point/spot: range in metres (0 = unlimited)' },
+	decay: { type: 'number', description: 'point/spot: falloff (2 = physical)' },
+	angle: { type: 'number', description: 'spot: cone half-angle in radians (0.02-1.57)' },
+	penumbra: { type: 'number', description: 'spot: soft edge 0-1' },
+	width: { type: 'number', description: 'rectarea: width in metres' },
+	height: { type: 'number', description: 'rectarea: height in metres' },
+	groundColor: { type: 'string', description: 'hemisphere: the ground colour, hex' },
+	castShadow: { type: 'boolean', description: 'directional/spot/point: cast shadows' },
+	aim: { type: 'array', items: { type: 'number' }, description: 'directional/spot: a world point [x,y,z] to point at' }
+};
+
 /** OpenAI-format tool schemas. Batch-first so one prompt = few tool calls. */
 export const AI_TOOLS = [
 	{
@@ -718,8 +1004,23 @@ export const AI_TOOLS = [
 		function: {
 			name: 'list_scene',
 			description:
-				'List every object currently in the scene with its uuid, name, type, parent, transform, material and color. Call this before editing so you use real uuids.',
-			parameters: { type: 'object', properties: {} }
+				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
+			parameters: {
+				type: 'object',
+				properties: {
+					flow: { type: 'string', description: 'optional: read one flow graph ("scene" or an object uuid) page by page instead of the scene summary' },
+					page: { type: 'number', description: 'with flow: which page (1-based)' },
+					brief: { type: 'boolean', description: 'optional: only uuid, name, type, parentUuid per object (cheap on a big scene)' },
+					name: { type: 'string', description: 'optional: only objects whose name matches — a glob ("Wall*", "*door*"), or plain text = contains; case-insensitive' },
+					type: { type: 'string', description: 'optional: only objects of this type — Mesh, Group, PointLight… or a primitive shape (Box, Wall, Sphere…)' },
+					near: {
+						type: 'object',
+						description: 'optional: only objects within radius of a WORLD position',
+						properties: { position: { type: 'array', items: { type: 'number' }, description: '[x, y, z]' }, radius: { type: 'number' } },
+						required: ['position', 'radius']
+					}
+				}
+			}
 		}
 	},
 	{
@@ -761,8 +1062,15 @@ export const AI_TOOLS = [
 									description: 'Euler radians [x,y,z]'
 								},
 								scale: { type: 'array', items: { type: 'number' }, description: '[x,y,z]' },
-								color: { type: 'string', description: 'hex like #ff8800 (meshes only)' },
-								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under' }
+								color: { type: 'string', description: 'hex like #ff8800 (a mesh, or a light\'s colour)' },
+								...LIGHT_SCHEMA,
+								parentUuid: { type: 'string', description: 'uuid of an existing group to nest under — position/rotation/scale are then LOCAL to that group' },
+								physics: {
+									type: 'string',
+									enum: ['static', 'dynamic'],
+									description: 'default static (it stays put in Play). dynamic = it falls, collides and can be thrown — only when asked for'
+								},
+								mass: { type: 'number', description: 'kg; implies physics dynamic' }
 							},
 							required: ['kind']
 						}
@@ -799,12 +1107,14 @@ export const AI_TOOLS = [
 								},
 								materialParams: {
 									type: 'object',
-									description: 'e.g. { "roughness": 0.2, "metalness": 1 }'
+									description:
+										'meshes: numbers (roughness, metalness, opacity, emissiveIntensity, clearcoat, transmission, ior, shininess…, clamped), true/false (wireframe, transparent, flatShading), hex colours (emissive, specular), side (front|back|double), and map = a library image hash (null clears). Each bad key comes back in errors.'
 								},
+								...LIGHT_SCHEMA,
 								visible: { type: 'boolean' },
 								parentUuid: {
 									type: 'string',
-									description: 'group uuid to nest under, or "root" to un-nest'
+									description: 'group uuid to nest under, or "root" to un-nest. The object keeps its world pose; a position given in the same update is LOCAL to the new parent'
 								}
 							},
 							required: ['uuid']
@@ -890,7 +1200,7 @@ function flowToolSchemas(physics) {
 			function: {
 				name: 'create_flow_nodes',
 				description:
-					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays.',
+					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.',
 				parameters: {
 					type: 'object',
 					properties: {
@@ -968,6 +1278,21 @@ function flowToolSchemas(physics) {
 					required: ['graph']
 				}
 			}
+		},
+		{
+			type: 'function',
+			function: {
+				name: 'describe_node_types',
+				description:
+					'Look up flow node types before wiring them: per type its inputs (toHandle names + socket types), its output type and named outputs (fromHandle), its params with types and defaults, and one line on what it does. No arguments = every type name by group; group = that group with one-line docs; types = full details (up to 12). Changes nothing.',
+				parameters: {
+					type: 'object',
+					properties: {
+						types: { type: 'array', items: { type: 'string' }, description: 'node types to describe, e.g. ["latch","spin","onclick"]' },
+						group: { type: 'string', description: 'a palette group, e.g. "Logic" or "Triggers"' }
+					}
+				}
+			}
 		}
 	];
 }
@@ -980,7 +1305,7 @@ const PHYSICS_AI_TOOLS = [
 		function: {
 			name: 'set_physics',
 			description:
-				'Set physics body params on objects (batch). NOTE: new primitives already spawn dynamic with mass 1 — use this mostly to TUNE bodies or make scenery immovable (mode "static" for ground/walls). mode "auto" reverts to scenery defaults.',
+				'Set physics body params on objects (batch). NOTE: objects made with create_objects are STATIC unless created with physics "dynamic" or a mass — use this to make existing objects dynamic, to TUNE bodies, or to pin scenery (mode "static"). mode "auto" reverts to scenery defaults.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1027,7 +1352,7 @@ const PHYSICS_AI_TOOLS = [
 		function: {
 			name: 'create_joints',
 			description:
-				'Attach object pairs with physics joints: "fixed" welds them rigidly, "revolute" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing.',
+				'Attach object pairs with physics joints: "fixed" welds them rigidly, "revolute" hinges around an axis (optional motor spins it). Move parts to their final pose WORLD-ALIGNED (no rotation) before jointing. Without anchor a hinge sits at b\'s origin (its centre) and a weld midway: pass anchor [x,y,z] (world) for the real pivot, e.g. the top of a pendulum rod or a door\'s edge. Jointed bodies that touch (a door in its frame, a wheel in its arch) also need contacts:false, or the solver pushes them apart.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1040,6 +1365,17 @@ const PHYSICS_AI_TOOLS = [
 								a: { type: 'string', description: 'uuid of the base object' },
 								b: { type: 'string', description: 'uuid of the attached object (hinge anchors at its origin)' },
 								axis: { type: 'string', enum: ['x', 'y', 'z'], description: 'hinge axis (revolute only, default y)' },
+								anchor: {
+									type: 'array',
+									items: { type: 'number' },
+									description: 'world [x,y,z] of the pivot/weld point (default: b\'s origin for a hinge, midway for a weld)'
+								},
+								contacts: { type: 'boolean', description: 'false = the two bodies stop colliding with each other (default true)' },
+								limits: {
+									type: 'array',
+									items: { type: 'number' },
+									description: 'revolute only: [min, max] radians the hinge may turn'
+								},
 								motor: {
 									type: 'object',
 									description: 'revolute only: {vel: rad/s, maxForce}',
@@ -1074,7 +1410,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @returns {any[]} */
 export function getAiTools() {
 	const physics = physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...GEOMETRY_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1136,12 +1472,14 @@ export function buildSystemPrompt() {
 	const physicsBlock = physics
 		? [
 				'',
-				'Physics: new primitives already spawn DYNAMIC (mass 1) — they fall and collide once a',
-				'simulation runs. Use set_physics to tune bodies or pin scenery (mode "static" for',
-				'ground/walls). create_joints welds (fixed) or hinges (revolute, optional motor) pairs:',
+				'Physics: objects made with create_objects are STATIC (they stay put in Play) unless you',
+				'create them with physics "dynamic" or a mass — then they fall and collide once a',
+				'simulation runs. Use set_physics to make existing objects dynamic, tune bodies or pin',
+				'scenery. create_joints welds (fixed) or hinges (revolute, optional motor) pairs:',
 				'assemble parts at their final pose WORLD-ALIGNED (no rotation) BEFORE jointing, or the',
-				'hinge axis is wrong and the solver launches the assembly. A door = static frame +',
-				'revolute joint; a wheel = revolute + motor. When a physics build is done, call',
+				'hinge axis is wrong and the solver launches the assembly. Give a hinge its pivot with',
+				'anchor [x,y,z] (default: b\'s origin) and contacts:false for parts that touch. A door =',
+				'static frame + revolute joint at its edge; a wheel = revolute + motor. When done, call',
 				'control_simulation action "start" so it comes alive (undo will not stop a running sim).'
 			].join('\n')
 		: '';
@@ -1169,6 +1507,6 @@ export function buildSystemPrompt() {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + GEOMETRY_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

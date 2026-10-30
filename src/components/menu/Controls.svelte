@@ -65,6 +65,9 @@
 	import { dockShownKeys, dockOccupants, bottomInset, FLOW_FAMILY, armDockMode, DOCK_TITLES } from '$lib/bottomDock';
 	import { togglePanel } from '$lib/panelToggles';
 	import { requestPlay, willEnterXR, willEnterAR, xrSessionFailed, playAsItems } from '$lib/playMode';
+	// 60 Q1: Play here — a roster button (Customize), a row in Play's own menu, Ctrl+Shift+Enter
+	import { playHere, playHereItems, playingHere } from '$lib/playHere';
+	import { arPlayItems } from '$lib/arTable';
 	// 30 P2: Test play — the play button's right-click row beside the game chip's button
 	import { testPlay } from '$lib/gamePresence';
 	import { hudIsGame } from '$lib/hudDocs';
@@ -101,7 +104,7 @@
 	import { geometry as sidebarGeometry } from '$lib/sidebars';
 	import type { ToolbarLayout, LayoutConfig, Placements, Region } from '$lib/toolbarLayout';
 	import { pivotMode, pivotParentAvailable } from '$lib/multiTransform'; // 37 R1: the toolbar Pivot cell
-	import { cssPx, scaledPx } from '$lib/uiScale'; // 53 A1: hud.css px tokens read back as calc(...)
+	import { cssPx, scaledPx, uiScale } from '$lib/uiScale'; // 53 A1: hud.css px tokens read back as calc(...)
 	import { VRButton, XRButton } from '@threlte/xr'
 
 	// A panel is "shown" when it is open AND either the visible dock tab OR floating
@@ -776,8 +779,10 @@
 		read();
 		return { destroy: () => ro.disconnect() };
 	}
-	const objHideSearch = $derived(objHeaderW < 260);
-	const objHideLabel = $derived(objHeaderW < 190);
+	// fix-batch-1 #23: the thresholds are 100 % widths — at 150 % the search and the label are 1.5x as
+	// wide, and an unscaled 260 kept the search on the folded N6 (a ~390 px header) and wrapped the ✕
+	const objHideSearch = $derived(objHeaderW < (260 * $uiScale) / 100);
+	const objHideLabel = $derived(objHeaderW < (190 * $uiScale) / 100);
 	// 38 R6: what the header element carries now that WindowChrome draws it — the width
 	// probe above (as an attachment) and the drop-to-root target
 	const objHeaderAttrs = {
@@ -1035,6 +1040,11 @@
 			// 41b H7: the "Play as" rows live in $lib/playMode (`playAsItems`) — the phone bar's Play
 			// opens the same ones, so the two buttons write the same choice the same way
 			...playAsItems(),
+			// 50 R1 / VH2: the AR table and Join the room, where the browser has immersive-ar (an
+			// unfolded phone gets this toolbar, not the phone bar)
+			...arPlayItems(),
+			// 60 Q1: Play here (the phone's Play menu carries the same row)
+			...playHereItems(),
 			// 30 P2: TEST PLAY — back to the menu, into Play, the Start screen. Offered only
 			// where it means something: a scene with no game shell has no menu to start from.
 			...($hudIsGame
@@ -1344,6 +1354,18 @@
 			tint: () => ICON_OFF,
 			run: () => redo()
 		},
+		// 60 Q1: PLAY HERE — an OPTIONAL roster button (Customize toolbar / the "+" list place it):
+		// Play with the player where the editor camera is, and the view comes back on Stop. Not on
+		// the default bar, so a profile that never asks for it is byte-identical; the same act is
+		// Play's right-click row and Ctrl+Shift+Enter.
+		playhere: {
+			title: 'Play here — start from this view (Ctrl+Shift+Enter)',
+			label: 'Play here',
+			slot: 'play-here-button',
+			icon: 'map-pin',
+			tint: () => ($playingHere ? ICON_ON : ICON_OFF),
+			run: () => playHere()
+		},
 		multiselect: {
 			get title() {
 				return $multiSelectMode
@@ -1366,7 +1388,9 @@
 	/** 42 I9: the bell and the peers trigger open their panels from the top-right corner, so they
 	 *  may only live in the top-right group (moved, removed, re-added there — never elsewhere) */
 	const HOME_ONLY: Record<string, Region> = { notifications: 'top', peers: 'top' };
-	const ROSTER_IDS = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS, ...CORNER_LEFT, ...CORNER_RIGHT, ...TOP_DEFAULT, ...TOUCH_DEFAULT];
+	/** 60 Q1: optional tool buttons (listed in Customize unchecked, like the optional views) */
+	const OPTIONAL_TOOLS = ['playhere'];
+	const ROSTER_IDS = [...DEFAULT_ORDER, ...OPTIONAL_VIEWS, ...OPTIONAL_TOOLS, ...CORNER_LEFT, ...CORNER_RIGHT, ...TOP_DEFAULT, ...TOUCH_DEFAULT];
 	/** 42 I7: the name a MENU prints for a button (its short label, else its title) */
 	function labelOf(id: string) {
 		return id === SPACER ? 'Play' : (BUTTONS[id]?.label ?? BUTTONS[id]?.title ?? id);
@@ -4396,6 +4420,14 @@
 	}
 	.obj-search :global(.sf) {
 		width: 100%;
+	}
+	/* fix-batch-1 #23: at a large UI scale the search enters the header's line-breaking at a minimum
+	   and grows into what is left (WindowChrome's compact-header rule for the title), so it narrows
+	   before the ✕ wraps to a second row */
+	:global(:root[data-ui-large]) .obj-search {
+		flex: 3 1 0; /* most of what is left: the spacer after it only pushes the ✕ right */
+		width: auto;
+		min-width: min(6em, 100%);
 	}
 	.obj-filters {
 		padding: 8px 10px;

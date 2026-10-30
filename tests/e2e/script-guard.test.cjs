@@ -94,23 +94,26 @@ h.run(async () => {
 	h.check(clicked !== null, 'and the real UI is still there to be driven');
 
 	// the frame loop kept going: rAF still fires
+	const FRAME_WINDOW_MS = 3000;
 	const frames = await A.page.evaluate(
-		() =>
+		(FRAME_WINDOW_MS) =>
 			new Promise((resolve) => {
 				let n = 0;
 				const t0 = performance.now();
 				const step = () => {
 					n++;
-					if (performance.now() - t0 > 1800) return resolve(n);
+					if (performance.now() - t0 > FRAME_WINDOW_MS) return resolve(n);
 					requestAnimationFrame(step);
 				};
 				requestAnimationFrame(step);
-			})
+			}),
+		FRAME_WINDOW_MS
 	);
 	// 1800 ms, not 600: headless SwiftShader runs ~5 fps and the runaway costs part of every frame, so 600 ms
 	// was 2-4 frames on either side of the threshold (1.24.0 and 1.25 both measure 9 frames / 2 s — 36-int-125);
-	// a frozen loop reads 0-1
-	h.check(frames > 3, `the render loop is still running (${frames} frames in 1800ms)`);
+	// a frozen loop reads 0-1. test-health-1: 3000 ms and >= 3 — a GitHub runner measured exactly 3 in 1800 ms
+	// (ci.yml e2e-smoke, 2026-10-23/24), red at `> 3` with the loop plainly alive.
+	h.check(frames >= 3, `the render loop is still running (${frames} frames in ${FRAME_WINDOW_MS}ms)`);
 
 	// ---- 3. a healthy node beside it still works ---------------------------------------
 	const uuid2 = await makeBox(A);
@@ -135,8 +138,10 @@ h.run(async () => {
 	// script at a million iterations, so it cannot buy time by looping MORE, it has to do
 	// more work per iteration. 900k plain additions measured about a millisecond here and
 	// the check failed for the fixture's sake rather than the feature's.
+	// (the counter on window is test-health-1's: when the badge never comes, it tells "the node did
+	// not run" from "it ran and was never paused")
 	const SLOW_SRC =
-		'let s = 0; for (let i = 0; i < 500000; i++) { s += Math.sin(i) * Math.cos(i); } data.s = s;';
+		'let s = 0; for (let i = 0; i < 500000; i++) { s += Math.sin(i) * Math.cos(i); } data.s = s; globalThis.__slowRuns = (globalThis.__slowRuns || 0) + 1;';
 	const bodyMs = await A.page.evaluate((src) => {
 		const fn = new Function('data', src);
 		const t0 = performance.now();
@@ -153,13 +158,32 @@ h.run(async () => {
 			() => {
 				let v = {};
 				window.__stores.scriptErrors.subscribe((m) => (v = m))();
-				return /too slow/i.test(String(v['slow'] ?? '')) ? v['slow'] : false;
+				if (/too slow/i.test(String(v['slow'] ?? ''))) return v['slow'];
+				// 40 runs and still no badge is a real red (a run under 8 ms resets the streak, so not 31)
+				return /** @type {any} */ (globalThis).__slowRuns >= 40 ? 'NO BADGE' : false;
 			},
-			{ timeout: 30000 }
+			// the guard pauses on the 30th slow RUN in a row (SLOW_FRAMES), so the wait counts runs: a time
+			// estimate from the measured frame rate ended at exactly 29 runs twice on a GitHub runner (this
+			// node slows the frames it is measured by). Badge, or the node has run well past 30 — bounded.
+			{ timeout: 180000 }
 		)
 		.then((r) => r.jsonValue())
 		.catch(() => null);
-	h.check(!!slowBadge, `a slow node is paused rather than left to eat the frame (${slowBadge})`);
+	const badged = !!slowBadge && slowBadge !== 'NO BADGE';
+	const slowWhy = badged
+		? slowBadge
+		: JSON.stringify(
+				await A.page
+					.evaluate(() => {
+						/** @type {any} */ let errs = {};
+						/** @type {any} */ let paused = null;
+						window.__stores.scriptErrors.subscribe((/** @type {any} */ m) => (errs = m))();
+						window.__stores.flowPaused.subscribe((/** @type {any} */ p) => (paused = p))();
+						return { runs: /** @type {any} */ (globalThis).__slowRuns ?? 0, errs, paused, visible: document.visibilityState };
+					})
+					.catch((/** @type {any} */ e) => String(e))
+			);
+	h.check(badged, `a slow node is paused rather than left to eat the frame (${slowWhy})`);
 	h.check(
 		await A.page.evaluate(() => 1 + 1).then((v) => v === 2),
 		'and the page is still responsive after it'

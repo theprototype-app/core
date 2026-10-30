@@ -17,7 +17,8 @@ export const S = {
 	/** @type {{index: number, prev: any, reach: number} | null} right-grip drag-the-world pan
 	 * (33: `reach` = how far along the hand's ray the gripped spot is — the stick reels it) */
 	worldPan: null,
-	/** @type {{a0: any, b0: any, rig0: {pos: any, quat: any, scale: number}} | null} */
+	/** @type {{a0: any, b0: any, rig0: {pos: any, quat: any, scale: number}, last?: {at: number, scale: number, yaw: number}} | null}
+	 * 52 (V5): `last` = the previous frame's scale + yaw, for the comfort vignette's rate */
 	worldGrab: null,
 	/** @type {{id: string, index: number, startedAt: number}|null} */
 	windowGrabPending: null,

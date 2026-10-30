@@ -92,8 +92,8 @@ h.run(async () => {
 		window.__stores.flowNodes.update((n) => [...n, ...nodes]);
 		window.__stores.flowEdges.update((e) => [...e, { id: 'e-pop1-popsel', source: 'pop1', target: 'popsel' }]);
 	}, uuid);
-	await page.waitForTimeout(1500);
-	h.check(Math.abs((await objX(page, uuid)) - 1) < 0.01, 'premise: the inline script runs (x = 1)');
+	// the first Script node boots the QuickJS guest (1.7-2.7 s on deployed builds): poll, never a fixed wait
+	await h.eventually(() => objX(page, uuid), (x) => Math.abs(x - 1) < 0.01, 'premise: the inline script runs (x = 1)', 15000);
 	await S(page, () => window.__stores.codeWorkspace.openCode({ source: 'script', ref: { nodeId: 'pop1', graphId: 'scene' } }));
 	await page.waitForSelector('[data-pane] .cm-content', { timeout: 45000 });
 	h.check((await mainWorkspaceShown(page)) === 1, 'premise: the workspace is open in the main window');

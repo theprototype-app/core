@@ -32,6 +32,8 @@
 	// 18-B: floating-window size limits, shared with the clamp helpers
 	const WIN_MIN = { minW: 280, minH: 240 };
 	const WIN_DEFAULT = { w: 760, h: 480 };
+	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
+	let { popped = false } = $props();
 	let docked = $state(true);
 	// mirrors Nodes' palette-open (bound below) so the docked content only insets above
 	// the Controls HUD when the node palette is actually shown (overlapping the HUD)
@@ -70,8 +72,11 @@
 
 	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
 	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	// 70 W2: a popped-out instance renders its floating layout inside its window, never docked
+	// svelte-ignore state_referenced_locally
+	if (popped) docked = false;
 	$effect(() =>
-		onLayoutRestore(() => {
+		popped ? undefined : onLayoutRestore(() => {
 			const stored = storedPanelLayout(safeStorage.getItem, 'flow', 760, 480);
 			docked = !!(stored.docked || (window.matchMedia?.('(pointer: coarse)').matches && !get(mobileUndockAllowed)));
 			winW = stored.w;
@@ -92,6 +97,7 @@
 	// from localStorage ONCE at mount, so writing that flag from outside is inert;
 	// `setDocked` owns the mode and is what has to run. Cleared as it is acted on.
 	$effect(() => {
+		if (popped) return; // 70 W2: the main window's instance answers the arm
 		const arm = $dockModeArm;
 		if (!arm || arm.key !== 'flow') return;
 		dockModeArm.set(null);
@@ -122,6 +128,7 @@
 	// report docked+open (+ the shared dock height) so the dock knows this tab exists;
 	// only the visible Flow-family tab actually renders
 	$effect(() => {
+		if (popped) return; // 70 W2: a popped panel is no dock tab
 		setDockOccupant('flow', !$flowGraphClose && docked, $dockHeight);
 		return () => setDockOccupant('flow', false);
 	});

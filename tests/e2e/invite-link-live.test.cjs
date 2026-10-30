@@ -158,5 +158,18 @@ h.run(async () => {
 	h.check((await navCount(D)) === 1, 'still one navigation entry on D');
 	await D.page.evaluate(() => window.__stores.settingsOpen.set(false));
 
+	// ---- 9. 69 T8: a link that names a server, opened in a NEW tab, asks too ---------
+	// It used to switch at load with no word: the server in a link sees everyone's address.
+	const srvHost = 'nonexistent.invalid:4443';
+	const F = await h.setupPageQuiet(browser, 'F', [D], { hash: '#' + D.id + '~srv=' + encodeURIComponent(srvHost) });
+	await h.eventually(() => question(F), (q) => /\| Join .* on nonexistent\.invalid:4443\?/.test(q) && /IP address/.test(q), 'a new tab on a link naming a server asks first, naming it', 20000);
+	const fHost = await F.page.evaluate(() => { let s; window.__stores.peerServer.peerServerStatus.subscribe((x) => (s = x))(); return s?.host ?? s?.kind ?? null; });
+	h.check(fHost !== 'nonexistent.invalid', `nothing switched before the answer (${fHost})`);
+	await clickToast(F, 'Stay on mine');
+	await F.page.waitForTimeout(1500);
+	h.check((await pendingOut(F)).length === 0, 'Stay on mine: nothing was dialled');
+	const fHostAfter = await F.page.evaluate(() => { let s; window.__stores.peerServer.peerServerStatus.subscribe((x) => (s = x))(); return s?.host ?? s?.kind ?? null; });
+	h.check(fHostAfter !== 'nonexistent.invalid', `and the server stayed ours (${fHostAfter})`);
+
 	await h.finish(browser);
 });

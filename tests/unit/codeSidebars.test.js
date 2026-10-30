@@ -149,8 +149,8 @@ describe('projectTree (F6 Project)', () => {
 		'obj-1': { nodes: [{ id: 's2', type: 'script', data: { label: 'Door', src: { kind: 'asset', hash: 'h1', name: 'door.js' } } }] }
 	};
 	const tree = projectTree({ graphs, scripts: [{ id: 'i1', name: 'door.js', hash: 'h1' }], boundCount: (h) => (h === 'h1' ? 1 : 0), graphTitle: (id) => (id === 'scene' ? 'Main graph' : 'Door object') });
-	it('groups: Graphs (Main first), Script files, Module sources', () => {
-		expect(tree.map((g) => g.label)).toEqual(['Graphs', 'Script files', 'Module sources']);
+	it('groups: Graphs (Main first), Files, Module sources', () => {
+		expect(tree.map((g) => g.label)).toEqual(['Graphs', 'Files', 'Module sources']);
 		expect(tree[0].children?.map((g) => g.label)).toEqual(['Main graph', 'Door object']);
 	});
 	it('Main lists its code nodes (incl. the Player) and the graph JSON', () => {

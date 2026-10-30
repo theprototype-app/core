@@ -333,6 +333,7 @@ export const DEBUG_HOOKS = [
 	['postprocessing', () => import('postprocessing')],
 	['shaderBackends', () => import('./shaderBackends')],
 	['shaderGraph', () => import('./shaderGraph')],
+	['shaderCodeGuard', () => import('./shaderCodeGuard')],
 	['shaderSync', () => import('./shaderSync')],
 	['shaderTextures', () => import('./shaderTextures')],
 	['shaderCatalog', () => import('./shaderCatalog')],

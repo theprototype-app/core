@@ -23,6 +23,7 @@
 // memo + the in-progress set, the PATH-based guard the flow editor uses.
 
 import { shaderNodeDef, outputTypeOf, SURFACE_NODE, POST_OUTPUT_NODE } from './shaderCatalog.js';
+import { glslExpressionProblem } from './shaderCode.js';
 
 /** @typedef {'float'|'vec2'|'vec3'|'vec4'|'sampler2D'} GlslType */
 /** @typedef {'fragment'|'vertex'|'post'} ShaderStage */
@@ -345,6 +346,11 @@ function createCompiler(graph, outputType) {
 				);
 			}
 
+			// 73 AI3: the expression node pastes text into a statement, the one way out of it
+			if (def.key === 'glsl') {
+				const problem = glslExpressionProblem(String(params.expression ?? ''));
+				if (problem) errors.push(problem);
+			}
 			const expr = def.emit ? def.emit({ in: inExpr, params, node, stage }) : '0.0';
 			inProgress.delete(nodeId);
 			// hoist into a temp so a reused node is computed exactly once

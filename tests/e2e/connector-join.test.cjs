@@ -65,7 +65,7 @@ h.run(async () => {
 	await card.waitFor({ state: 'visible', timeout: 10000 });
 	const text = (await card.textContent()) ?? '';
 	h.check(/Claude \(connector\)/.test(text) && text.includes(aId.toUpperCase()), `the card names who asks and the session (${text.trim().slice(0, 160)})`);
-	const res = await new AxeBuilder({ page: B.page }).include('[role="dialog"]').withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice']).analyze();
+	const res = await new AxeBuilder({ page: B.page }).include(CARD).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice']).analyze();
 	const gated = res.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical');
 	h.check(gated.length === 0, `the card: no serious/critical axe violations (${gated.map((v) => v.id).join(', ') || 'none'})`);
 	await B.page.screenshot({ path: path.join(OUT, 'n2-join-card.png') }).catch(() => {});

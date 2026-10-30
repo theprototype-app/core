@@ -1,8 +1,11 @@
 import { get } from 'svelte/store';
+import { HELPER_LAYER } from './helperLayer'; // 60 Q5
 import { showToast, appNotice, peers, cloudIdentity, userdata } from '../stores/appStore';
 import { globalScene, globalCamera, globalRenderer, orbitControls, cameraClaim, isLocked, isVRMode } from '../stores/sceneStore';
 import { requestConnect } from './peerApproval';
 import { sessionHost } from './connectionState';
+// 55 A4: invite grants for the roles plugin (store-only)
+import { inviteGrantFor, onInvitesChange, isAgentPeer, joinedVia } from './inviteStore';
 import {
 	setCapabilityProvider,
 	setAuthProvider,
@@ -24,12 +27,13 @@ import {
 // cloudPlugin path is in history's import subtree — App alone imports this module).
 import { currentLevel } from './levels';
 import { myPlayMode, peerPlayModes } from './gamePresence';
+import { onPlayOrigin, playUrl } from './playOrigin.js';
 import { safeStorage } from './safeStorage';
 // v3.1 (roadmap 29 G-3): the hosted-AI preset seam. Both provider modules are LEAVES
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
 import { aiProviders, aiActiveProvider, aiEnabled, addAiProvider, updateAiProvider, removeAiProvider, setAiActiveProvider, setAiEnabled } from './ai/providers';
 import { meshProviders, meshActiveProvider, meshGenEnabled, addMeshProvider, updateMeshProvider, removeMeshProvider, setMeshActiveProvider, setMeshGenEnabled } from './ai/meshProviders';
-import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart, problemReporter, setWhatsNewCloud } from './cloudHooks';
+import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider } from './cloudHooks';
 // 36-community (C4): a leaf (svelte/store only) — safe as a static edge
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
@@ -260,6 +264,26 @@ export function makeCloudApi() {
 		/** 29: this engine carries `cloudMeta` on dials and consults `authProvider.decide`
 		 *  (admit / deny / knock-with-label). Absent on older engines — probe it. */
 		dialMeta: true,
+		/** 55 A4 — INVITE LINKS, host-side (additive, typeof-probed like `dialMeta`). Core
+		 *  checks every invite proof itself (`inviteStore.verifyInviteDial`) and admits; the
+		 *  roles plugin grants EDIT only from `grantFor(peerId)` = `{meta, record, role}` —
+		 *  the dial's own proof and the record it named (with the KEY, host-only) — and
+		 *  re-verifies the proof itself (the roomAccess pattern). Null = not an invite join.
+		 *  `onChange(fn) -> off` fires on any create/use/revoke; `isAgent(peerId)` is the
+		 *  self-declared `kind: "agent"`; `joinedVia(peerId)` = 'invite'|'approval'|'guest'. */
+		invites: {
+			grantFor: (/** @type {string} */ peerId) => inviteGrantFor(peerId),
+			onChange: (/** @type {() => void} */ fn) => onInvitesChange(fn),
+			isAgent: (/** @type {string} */ peerId) => isAgentPeer(peerId),
+			joinedVia: (/** @type {string} */ peerId) => joinedVia(peerId)
+		},
+		/** 69 T4: this page is served from the separate PLAY origin (`VITE_PLAY_ORIGIN`): player-only,
+		 *  and nothing that signs anyone in belongs here (a token on this origin is what the split
+		 *  exists to avoid). Absent on older engines — probe it; false on the app origin. */
+		playOrigin: onPlayOrigin,
+		/** 69 T4: an absolute play / embed URL — on the play origin when one is configured, else here.
+		 *  @param {string} path e.g. `/?s=<id>&play=1&embed=1` */
+		playUrl: (/** @type {string} */ path) => playUrl(String(path ?? '/')),
 
 		// --- plugin message channel (replicate the plugin's own state) ---
 		/** broadcast a cloud message to all peers (roles, room announces) */
@@ -309,7 +333,10 @@ export function makeCloudApi() {
 			const scene = get(globalScene);
 			const cam = get(globalCamera);
 			if (!r || !scene || !cam || r.xr?.isPresenting) return null;
+			// 60 Q5: no editor scaffolding (light helpers, reference images) in a room/publish picture
+			const mask = /** @type {any} */ (cam).layers?.mask;
 			try {
+				/** @type {any} */ (cam).layers?.disable(HELPER_LAYER);
 				r.render(scene, cam);
 				const src = r.domElement;
 				const sw = src.width || maxW;
@@ -326,6 +353,8 @@ export function makeCloudApi() {
 			} catch (e) {
 				console.warn('thumbnail capture failed', e);
 				return null;
+			} finally {
+				if (/** @type {any} */ (cam).layers && mask != null) /** @type {any} */ (cam).layers.mask = mask;
 			}
 		},
 
@@ -337,19 +366,27 @@ export function makeCloudApi() {
 		 * or renames anything locally — publish is a COPY OUT, and the "a save names the
 		 * room" rules (rounds 34/35) are untouched. `name` is the file's own name only; it
 		 * defaults to the open scene's name, else 'Untitled'. `packs` are never bundled.
-		 * @param {{assets?: boolean, flow?: boolean, name?: string, signature?: boolean}} [opts]
+		 * @param {{assets?: boolean, flow?: boolean, name?: string, signature?: boolean, chats?: 'all' | 'published'}} [opts]
+		 *   56 C10: `chats` — 'published' (default: only chats with "Include when publishing") | 'all' (a room's own save)
 		 * @returns {Promise<{blob: Blob, meta: {objectCount: number, hasFlow: boolean, hasAudio: boolean,
 		 *   hasGame: boolean, modules: {id: string, version: string}[], appVersion: string, bytes: number,
 		 *   camera: {position: number[], target: number[]} | null, duration: number | null, files: any[],
 		 *   signature?: string}}>} (`signature` = CL-5's content identity, only with `signature: true`)
 		 */
-		buildSceneBundle: async ({ assets = true, flow = true, name = '', signature = false } = {}) => {
+		buildSceneBundle: async ({ assets = true, flow = true, name = '', signature = false, chats = 'published' } = {}) => {
 			const { buildSessionPayload, exportSessionZip, sessionFileList } = await import('./sessions');
 			// 36-community (C4): a published file carries the scene's permanent game id
 			const { ensureGameId } = await import('./gameIdentity.js');
 			ensureGameId();
-			const payload = buildSessionPayload(String(name || get(currentLevel)?.name || 'Untitled'));
-			const zip = await exportSessionZip(payload, { assets: assets !== false, flow: flow !== false, packs: false });
+			// fix-batch-2 (1.45.1): local objects are drafts — a published scene carries what peers see
+			const { withoutLocalObjects, noteLocalObjectsExcluded } = await import('./objectPermissions');
+			const { result: payload, excluded } = withoutLocalObjects(() =>
+				buildSessionPayload(String(name || get(currentLevel)?.name || 'Untitled'))
+			);
+			noteLocalObjectsExcluded(excluded);
+			// 56 C10 (fork F5): a PUBLISHED file carries only the chats switched to "Include when publishing";
+			// a room keeper's save (continuity) asks for `chats: 'all'` — the room's own save keeps them
+			const zip = await exportSessionZip(payload, { assets: assets !== false, flow: flow !== false, packs: false, chats: chats === 'all' ? 'all' : 'published' });
 			const blob = new Blob([/** @type {BlobPart} */ (zip)], { type: 'application/zip' });
 			const meta = await bundleMeta(payload, { flow: flow !== false, bytes: blob.size, files: sessionFileList(payload) });
 			// CL-5 (37-continuity): ADDITIVE, opt-in — the content signature of what was just bundled (see
@@ -533,6 +570,16 @@ export function makeCloudApi() {
 		/** C6: the heart for the scene on screen (play-link start card + pause menu):
 		 *  `{count, liked, toggle() → Promise<{liked, count} | null>}`, or null to remove it. */
 		setSceneHeart: (/** @type {any} */ info) => setSceneHeart(info),
+		/** F-5 (fix-live): a small badge on the Connect pill for a standing setting the host
+		 *  should never forget ({text, title?, onClick?}; null hides). Probe with typeof. */
+		setConnectBadge: (/** @type {any} */ badge) => setConnectBadge(badge),
+		/** fix-live: entries for the Users peer menu, `[{id, label, run(peerId, {name})}]` (≤ 8;
+		 *  [] clears) — the cloud's "Report…". Probe with typeof. */
+		setPeerMenuItems: (/** @type {any} */ items) => setPeerMenuItems(items),
+		/** 86 B1/B5: the Claude connector's account half — `{pair({resume}), connections(), revoke(id),
+		 *  revokeAll(), account()}` (see cloudHooks.connectorProvider) or null. Core shows Connect Claude
+		 *  and Settings ▸ Connected apps only while one is installed. Probe with typeof. */
+		setConnectorProvider: (/** @type {any} */ provider) => setConnectorProvider(provider),
 
 		// --- CL-5 continuity (roadmap 37 / R13, 37-continuity): ADDITIVE, typeof-probed, no bump ---
 		/** A counter that moves on EVERY scene change — objects, graphs, animation, looks, sky, physics,
@@ -551,18 +598,22 @@ export function makeCloudApi() {
 		 *  @returns {Promise<string>} */
 		sceneSignature: async () => {
 			const { buildSessionPayload } = await import('./sessions');
-			return contentSignature(buildSessionPayload(String(get(currentLevel)?.name || 'Untitled')));
+			// fix-batch-2: the same objects buildSceneBundle publishes, so the two signatures agree
+			const { withoutLocalObjects } = await import('./objectPermissions');
+			return contentSignature(withoutLocalObjects(() => buildSessionPayload(String(get(currentLevel)?.name || 'Untitled'))).result);
 		},
 		/** The whole PROJECT as a `.tp` — the Explorer's own "Export project" bytes (exportProject: the
 		 *  manifest, every scene and library item; the stored "include versions" preference unless
 		 *  `versions` says otherwise). Never downloads, names or changes anything locally.
-		 *  @param {{versions?: boolean}} [opts]
+		 *  56 C10: scene files drop their private AI chats unless `chats: 'all'` (a room keeper's own save).
+		 *  @param {{versions?: boolean, chats?: 'all' | 'published'}} [opts]
 		 *  @returns {Promise<{blob: Blob, meta: {name: string, scenes: number, assets: number, items: number, bytes: number, appVersion: string}}>} */
-		buildProjectBundle: async ({ versions } = {}) => {
+		buildProjectBundle: async ({ versions, chats } = {}) => {
 			const { exportProject } = await import('./projectFile');
 			const { projectName } = await import('./projectManifest');
 			const { APP_VERSION } = await import('./version.js');
-			const r = await exportProject(typeof versions === 'boolean' ? { versions } : {});
+			// 56 C10: `chats: 'all'` = a room keeper's own save of the project; absent = private chats left out
+			const r = await exportProject({ ...(typeof versions === 'boolean' ? { versions } : {}), ...(chats === 'all' ? { chats: 'all' } : {}) });
 			const blob = new Blob([/** @type {BlobPart} */ (r.bytes)], { type: 'application/zip' });
 			return {
 				blob,
@@ -596,6 +647,8 @@ export function makeCloudApi() {
 		},
 
 		// --- utilities ---
+		/** toast(message, actions?, {keep?}) — fix-live F-2: `keep: true` leaves the buttons on the
+		 *  notification-history entry until one is pressed (e.g. a role offer) */
 		toast: showToast
 	};
 }

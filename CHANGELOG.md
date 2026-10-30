@@ -5,6 +5,387 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.50.0 — talk to your agent 💬
+
+- **Chat with the AI agents in your session.** The AI assistant window lists them next to your own assistant: pick
+  one and chat. Everyone in the session sees the conversation, the replies stream in, and every step the agent takes
+  shows between the messages. Claude Code listens after one sentence in its terminal (*"listen to my theprototype
+  session"*), what you type there shows "via terminal", and a `repl` agent answers with no terminal at all.
+- **Stop, mute, roles.** Stop cancels what the agent is doing; the host can mute an agent from its peer menu. Viewers
+  can ask, and the agent will not change the scene for them.
+- **Pictures in AI chats.** The **+** button, paste, drop or a drag from the Explorer — shrunk and **stripped of
+  location data on your device** before they are sent. *Keep in Explorer* saves one with the scene.
+- **Agents bring things in.** `import_model` imports a GLB (≤ 25 MB, self-contained) as one undo step with its named
+  parts and where it came from; `import_file` brings PNG / WebP / JSON / `.tpanim` files into Explorer ▸ Generated and
+  places an image as a card — crisp for pixel art, one frame of a sprite sheet. New recipes: better models with
+  img2threejs, pixel art with Pixling.
+- **Chats are files.** Every conversation is a `.tpchat` in Explorer ▸ Scene ▸ chats, saved with the scene, private
+  unless you switch on *Include when publishing*. The history icon lists them; New chat starts one; double-click a chat
+  to reopen it, and the agent gets its history.
+- **In VR** the AI panel talks to the same agent — type, or hold the talk button and speak.
+- For developers: `tpAgent` contract 1.3.0 (`nextMessage`, `reply`, `ask`, `thread`, …); `@theprototype/agent` 1.50.0
+  adds `wait_for_message`, `reply`, `ask`, `get_thread`, `import_model` and `import_file` with local paths.
+
+## 1.49.0 — talk to Claude from claude.ai and voice 🎙️
+
+- **The Claude connector.** Add theprototype as a connector in claude.ai (web, desktop, phone), press **Connect
+  Claude** in the AI assistant of your open tab, and Claude builds there by chat or voice — with your own access.
+  Every step shows in Agent activity as *Claude (connector)* with its own Undo; a viewer's Claude can look but not
+  build, and locked objects stay locked. Keep the tab open and in front; **Disconnect** stops it at once, and
+  Settings ▸ Connected apps lists and revokes the apps you allowed. Signed-in theprototype.app only.
+- **Agents know the nodes before they wire them.** `describe_node_types` tells an agent each flow node's inputs,
+  outputs and params, and `what_can_you_do` answers "what can you do here?" in a sentence you can hear; the
+  connector speaks voice-first (short answers, no ids or JSON).
+- For developers: `npm run catalog:agent` generates the static agent tool catalog (`tools/agent/catalog.json`) from
+  the app itself, and CI fails when it is stale.
+
+## 1.48.1 — fixes for AI agents and game logic 🔧
+
+- **A deleted object's logic stops.** Its flow graph used to keep running on every peer until a reload (and a
+  late joiner received it too). It now sleeps, and undoing the delete brings it back to life.
+- **Game rounds keep their referee.** Whoever is running a kit game round stays in charge when someone new
+  joins, instead of the round moving to the newcomer.
+- **Agents read the scene the way you see it.** Inside a group, the positions an agent gives are local to the
+  group (as list_scene reports them); list_scene shows a shape's sizes (a wall's thickness, a box's depth) and can
+  be narrowed — names only, by a name pattern, by type, or near a point.
+- **A locked object says who has it.** When an agent cannot change something because someone is editing it, it
+  is told which object and who holds it.
+- **Camera Rig:** two rigs complaining at once show one notice, naming the object.
+- **Fixes from the agent test:** every light type survives an autosave restore; Body Wave and Jiggle stack on one
+  object; HUD Text and Bar show wired strings; a behaviour's `on.load` sees the scene a joiner lands in and releases
+  what its last run registered; deleted lights and avatar photo cards free their textures; a phone in the background
+  keeps its link for a minute; a rejoin is told only live peers, and a join pulls the node graphs once; a shared Set
+  Variable changes once per event in multiplayer.
+- **A guest's reload goes back to the session**: reloading the tab while joined comes back on the same id and the host
+  lets it straight back in, with no new approval card.
+
+## 1.48.0 — AI agents in your session, invite links, and a people menu 🤖
+
+Send Claude (or any AI agent) your session link and build together: the agent joins as a peer, uses the app's own
+tools and shows you every step. Invite links let a friend or an agent in without an approval card, and a new menu on
+every person in the Connected panel lets the host remove someone.
+
+### 🤖 AI agents in your session
+
+- **Join from a link**: `claude mcp add theprototype -- npx -y @theprototype/agent mcp '<link>'` adds theprototype to
+  Claude Code (or any MCP client). The agent drives the real app in a headless browser — objects, flow nodes,
+  physics, and 3D generation on your own provider — with the in-app assistant's own tools, read live from your app.
+- **It sees what it built** through clean screenshots (no gizmos or toasts) that never move anyone's view, and it
+  leaves cleanly when you close it.
+- **No body, clear marks**: an agent shows as a robot with an "AI" label in Users — no character, no voice, no
+  cursor — and a small camera marker shows where it last looked (Settings can hide it).
+- **See where it is working**: a small bot icon with the agent's name stands over the object it is editing (or the
+  spot its last screenshot looked at), on desktop and in VR. It fades while the agent is idle, hides in Play, and
+  leaves with the agent; Settings ▸ Connection ▸ **Show where AI agents look** switches it off.
+- **Every step in the AI assistant window**, on every peer: "Claude · created 12 objects (Campfire)". Click a line
+  to select those objects; editors can Undo it.
+- A view-only agent is told so instead of building things nobody else sees. llms.txt now says how an agent joins.
+- **It goes where you go**: save as another name or open another scene and the agent follows; while it travels (or
+  while you work in a private scene) it holds its edits, so nothing lands in a scene you left. An agent never
+  becomes the host, never decides a game's rules for the people playing, and never hands you its old world when you
+  open a new or another scene. Its page no longer redraws a view nobody watches, so it follows you in seconds.
+- **When the host leaves**, the agent carries on with the person who takes over. If everyone has left it pauses —
+  reading only, building nothing — and waits for its host (10 minutes by default), then asks to come back in.
+- **The physics runs on your machine**: when an agent starts the simulation it runs on the host's page, so balls
+  fall at their real speed (an agent's page used to step the world slowly for everyone).
+- **Better building tools**: lights take their colour, intensity, range, cone and aim when created or updated;
+  `group_objects` keeps the name you give it; sizes must be positive numbers; a field that does not apply to an
+  object says so instead of reporting success; big flow graphs are read page by page (`list_scene {flow, page}`);
+  `create_behaviour` returns the node's id and its inputs and outputs; a wire to a socket the node does not have
+  is refused with the node's real socket names (it used to be accepted and do nothing).
+- **Code behaviours explain themselves**: `create_behaviour` carries its own format and a working example (some
+  clients drop the app's instructions), and the checker refuses what would silently do nothing — a `this.` member
+  that does not exist (a behaviour drives effect nodes through its outputs; it does not move objects itself) or a
+  per-frame hook such as `onTick` (there is none: repeat with `this.after`).
+- Material parameters are validated (each key and value checked, on every peer).
+- **It knows when a scene is still arriving** and **when a behaviour fails**: status reports a scene that is still
+  loading (from the moment it joins), a tool called meanwhile waits for the scene first, and a code behaviour that
+  throws says so with its error, so the agent can fix it instead of guessing.
+- **Game-kit nodes work for AI**: the agent and the in-app assistant can now create every `kit-*` node (they were
+  all "unknown"), a half-valid node batch says it was only partly applied, and hinges take an exact pivot point.
+
+### 🔗 Invite links (Connect ▸ Request AI)
+
+- One sheet with two tabs, **Person** and **AI agent**: pick **View** or **Edit** (cloud builds; View is the default
+  for people, Edit for agents), how long it lasts (10 min / 30 min / 24 h) and how many may use it. Copy it as a
+  link, a ready MCP command or one sentence for any chat.
+- An invite joins with no approval card. Users lists your active invites, who used each one, and Revoke.
+- AI agents never ride "Allow guests to join automatically" unless you also tick **Let AI agents join as guests**.
+- The invite key lives in the link's `#` part, which browsers never send to servers, and only your app checks it.
+
+### 👥 People menu
+
+- Right-click (or long-press, or Shift+F10) anyone in the Connected panel: **View profile**, **Copy peer id**,
+  **Go to**, **Watch**, **Show what they're editing**, **View character**, **Copy their look**, **Mute voice** and
+  **Hide** (for you only). Also in VR under Tools ▸ People.
+- The host (or an admin on theprototype.app) can **Remove from session** or **Remove and block** — every peer drops
+  them and a re-dial is refused with "You were removed from this session"; **Allow back** in Users undoes the block.
+  A removal sent by anyone else is ignored.
+
+## 1.47.0 — Game logic in the headset, and a phone in a shared room 🥽
+
+- 🔀 **Edit game logic in VR**: radial ▸ **Tools ▸ Logic** opens the scene's node graph as a panel in the headset, and
+  **Selected ▸ Edit logic** opens the selected object's own flow. Trigger-drag a card to move it; drag from a socket to
+  wire it with the laser (green while the types fit, red when they don't); drag from a wired input to pick that wire up
+  and move it, or drop it on the empty graph to remove it. Click a card and its values open on a **wrist pad**: − / +
+  for numbers, the VR keyboard for text, ‹ › for choices and colours, plus Rename, Unwire and Delete. **+ Node**
+  adds nodes from the same groups as the desktop palette. Undo / redo, Fit, zoom (the stick) and pan work too, a grip
+  carries the panel, and peers on the desktop see every edit live. Viewers get the panel read-only. Groups are
+  read-only in VR, and custom, object-flow and sound nodes are still added on the desktop.
+- 📱 **A phone joins a headset's room**: on an Android phone, **More ▸ Join room (AR)** (or the Play menu ▸
+  **Join the room (AR)**). Tap the floor at the point the headsets calibrated on, then a point along the agreed edge
+  (at least 30 cm away), and the phone sees the scene where the headsets do — same room key, same anchored objects.
+  **Recalibrate** redoes the two taps. An unfolded phone's Play menu now offers **Play on a table (AR)** and **Join the room (AR)** too.
+
+## 1.46.0 — Every panel in its own window, and files from the Code tab 🪟
+
+Spread the editor over two monitors: pop out any panel, or a whole dock, into its own window and move tabs between
+windows. And the Code tab now makes, renames, moves and deletes files and folders itself.
+
+### 🪟 Any panel in its own window
+
+- **Pop out any panel**: right-click a dock tab, a sidebar tab or a floating window's header ▸ **Pop out into a new
+  window** — the Explorer, Properties / Configure Scene, the Node editor, Timeline, Animation, UV, Shader and HUD
+  editors, the Profiler, the Debugger, Chat, the AI assistant and Code. Drag the window to any monitor; everything
+  stays live. Or drag a tab out of the browser window and let go.
+- **A whole dock at once**: **Pop out the whole dock** / **Pop out this sidebar** opens one window with every tab.
+- **Tabs between windows**: a window with one panel shows just its name — that name is the tab: drag it, or
+  right-click for **Dock back** / **Move to…**. Drop a second panel on it (or use its **+**) and a tab strip appears;
+  back to one panel, the strip goes. A popped-out dock always shows its tabs (Settings ▸ Interface ▸ **Always show
+  tab strip in windows** shows them everywhere).
+- **One panel, one place**: adding a panel that is open somewhere else moves it there. Drag a tab onto any window's
+  header, or back into the app (left sidebar, right sidebar, bottom dock — or anywhere else to put it back where it
+  was).
+- **Your windows come back**: reload and the windows reopen where they were (per monitor setup). If the browser blocks
+  pop-ups, a bar offers **Open 2 windows** — one click per window. **Bring all windows back** (command palette, or any
+  tab menu) puts everything back in the app. Closing the app's tab closes its windows.
+- Desktop only — phones, touch screens and VR keep one window.
+
+### 📁 Files from the Code tab
+
+- Create, rename, move and delete files and folders from the Code tab (**Project ▸ Files**): **New file** (Script,
+  Note or JSON), **New folder**, rename (F2), move (drag, **Move to**, or Ctrl+X then Ctrl+V), delete (Del, to
+  Deleted). New scripts start from a behaviour template and open in a tab. Undo with Ctrl+Z in the file tree or the
+  toast. Files made here are Explorer files and follow its sharing rules; viewers can only read. Works in the pop-out
+  window too.
+
+### 🔧 Fixes
+
+- Renaming a shared file (or renaming / moving a shared folder) now reaches everyone in the session.
+- Saving a shared file no longer leaves an extra copy of its old version in the Library.
+- The dock's tab strip passes the accessibility check, and Delete closes the focused dock tab.
+
+## 1.45.1 — Fixes: path waypoints, AI connections, object flows, HDRI drops, local objects 🔧
+
+- 🛤️ **Path patrol**: placing waypoints no longer traps the viewport. A **Placing waypoints** box shows while it is on
+  (with the count, **Undo last point** and **Done**); Esc, Done, deselecting the object, clicking the object itself,
+  clicking the node editor, pressing Play or muting the node all end it. The object holds still while you place
+  points.
+- 🤖 **AI connections** (Settings ▸ AI): a base URL typed without `https://` or pasted with `/chat/completions` on the
+  end now works, and **Will call …** under the field shows the exact address. Test connection answers within about
+  10 s and says which problem it is — the server cannot be reached, it does not allow this site (CORS, with the flag
+  for vLLM / Ollama / LM Studio), a rejected key, a model the server does not know, or a vLLM started without tool
+  calling. The same reasons show in the assistant.
+- 🔀 **Add flow to Scene graph** on an object with no flow now creates the flow (with a Flow Input and a Flow Output)
+  and adds it — one Undo, everyone sees it. It is greyed out with **Locked by …** while someone else holds the object.
+- 🌅 Dropping an **HDRI** from the Explorer onto the viewport now says where it goes, with **Open Environment**.
+- 📦 **Local objects** stay yours: a downloaded scene, a whole-scene export, a published or submitted scene and a game
+  export leave them out and say so ("1 local object was not included"). Share them from the object list to include
+  them.
+- 🧊 Compressed **(KTX2) textures** load again. Since 1.43.1 the site's security policy stopped the texture decoder, so
+  imported models kept full-size textures in GPU memory and "For Quest / web" exports could not be opened back in the
+  app. The decoder is rebuilt to run under that policy.
+- Collaboration messages are checked against the sending peer.
+
+## 1.45.0 — Build in the headset: measure, arrange, paint, scatter, browse assets and shrink the world 🥽
+
+Everything you need to build a scene now works with the headset on: measure and line things up, paint terrain and
+scatter, pull models off your wrist and drop them in, and scale the whole world down to a miniature to work from above.
+
+### 📏 Measure and arrange
+
+- **Tools ▸ Measure**: tap points with the laser — they snap to corners, edges and faces (and to the grid when grid
+  snapping is on). Chains of points, labels that turn to face you and stay readable, a double tap (or **Keep**) makes it
+  a measurement item like on the desktop; **Selected ▸ Edit measurement** moves its points.
+- **Selected ▸ Arrange** for two or more objects: pick the axis, then Align min / centre / max, Even centres / gaps,
+  Drop to ground or Align to — the same as the desktop, one Undo, everyone sees it.
+
+### 🌍 Shrink the world
+
+- In Edit, **both grips always grab the world**, wherever you point: pull your hands together to shrink it down to a
+  **1:50 miniature**, apart to grow it, twist to turn it. It clicks (with a buzz) at 1:50 · 1:10 · 1:5 · 1:2 · 1:1 · 2× · 5×
+  · 10×, a readout shows the scale, and **Back to 1:1** sits on the quick menu while the world is off life size. The
+  comfort vignette closes in while it scales or turns. Only you see it.
+- To scale or turn an **object** with two hands, grab it and move it a little first, then add the second grip. Grips
+  never pick up the terrain, locked objects, things bigger than about 2 m or a room you are standing in.
+- Settings ▸ VR ▸ **Both grips scale the world**: Always (new) or Only in empty air (the old way).
+
+### 🖌️ Brushes on the controller
+
+- Quick menu ▸ Sculpt ▸ **Paint** (terrain layers 1-4) and **Scatter** (paint, erase, rotate, scale, relax, choose a
+  source). The trigger paints; the stick sets radius and strength (or density); a ring shows the brush on the ground
+  and a buzz starts each stroke. Works in a miniature too.
+
+### 📦 Asset Browser on your wrist
+
+- **Add ▸ Assets** opens a browser on your wrist: packs, free CC0 models and your library, searchable with the VR
+  keyboard. Trigger-drag a card into the scene, or click it and place copies with the laser (it snaps, the stick turns
+  it, grip stops). Grip the panel off your wrist to pin it in the air; grip it back to return it.
+- **Hand tracking**: no controllers needed to browse and place — a pinch is the trigger, pinch-drag drops a model. Tools
+  that need precision ask you to pick up a controller.
+
+### 🔧 Fixes
+
+- Someone who joined your room no longer comes back from a network or signaling blip as View-only — their edits kept
+  staying on their own screen while you still saw them as an Editor (hosted site; seen on 1.43.2 and 1.44.0).
+- **On Impact** now fires when an object hits something from any side — a ball thrown at a wall or a target — not only
+  when it lands (new **From** option: any side / landing only; On Impact nodes in existing scenes keep landing only).
+- Rotate and Motor nodes spin up from rest when they switch on, and an auto-starting HUD Timer counts down from its full
+  time (both used to start as if they had been running since midnight).
+- Set Game State, Set Variable, HUD Rows, HUD Set Input, Device Param and Note Trigger show the sockets they read, so
+  you can wire them by hand; a HUD Timer's **start** socket starts it.
+- The Sequence card shows its wait times at the normal card width; thirteen node descriptions say what the node really
+  does.
+- The profile button opens with Enter or Space instead of on focus, so Tab moves past it, and Esc returns to it. At
+  large UI scales on a narrow phone, window headers stay on one row with the close button beside the title.
+
+## 1.44.0 — Quick wins: play from where you stand, trace over a picture, share files in, embed anywhere ⚡
+
+Small things you feel in every session: try the corner you are building without walking there, trace a plan, send a
+file from your phone into the app, paste a scene link into Notion — and movement that stays smooth on bad Wi-Fi.
+
+### ▶️ Play here
+
+- **Play here** starts Play where your camera is — standing on whatever is under it, facing your view — and Stop puts
+  the camera and your selection back. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>, right-click Play, the
+  viewport menu's Tools, an optional toolbar button (Customize toolbar), on a phone Play's long press or More, and in VR
+  Tools ▸ Play here.
+
+### 🖼️ Reference images
+
+- Drop an image on the viewport ▸ **Use as reference**: a see-through, unclickable picture on the ground or facing
+  your view to trace over. Opacity, size and height in Tools ▸ Reference images. Hidden in Play, never in exports or
+  published scenes; yours only unless you tick **Share with session**.
+
+### 📲 Share into the app
+
+- Install the app and it appears in your phone's **share sheet**: share a picture and it lands in your Library (or
+  becomes a reference image); share a .glb/.gltf and it is placed in your scene; share a .tpscene and it opens.
+- **Open files from your desktop**: with the app installed, double-click a .tpscene to open it, or a .glb/.gltf to add
+  it to the scene you have open — a second file goes to the same window.
+
+### 🔗 Embed anywhere
+
+- Paste a public scene link (/s/…) into **Notion, WordPress, Discourse** and other oEmbed / Iframely sites and the
+  game plays in place.
+
+### 📶 Smoother together
+
+- Movement — avatars, VR hands, dragged, held and thrown objects, physics — rides a new fast channel between players,
+  so a lossy connection no longer freezes and jumps it (5 % loss: 95 % of gaps 74 ms, was 249 ms). Edits stay reliable
+  and in order; older peers fall back by themselves.
+- 👻 People whose app crashed or lost its connection leave the Users list on their own, and leaving never shows
+  "Connection error". A short Wi-Fi drop heals the session instead of ending it.
+- 🚪 When a guest joins your public room automatically you get a notice with **Turn off** and **Remove**, and the
+  Connect bar says **Public · guests join**.
+- 🚩 Report a public room or a person from the room list and the Users list.
+
+### 💾 Kept on your device
+
+- Packs, skies, converted textures and CC0 downloads are kept on the device (stored once per content), so scenes
+  load again without the network. Settings ▸ Storage shows the use, sets a size limit and clears it; the app asks once
+  to keep the storage, and says why.
+
+### 🤖 AI assistant
+
+- As a viewer, the assistant tells you it can't change the scene instead of "creating" things nobody sees.
+- Things it builds stay where they are when you press Play, unless you ask for physics.
+
+### 🔧 Fixes
+
+- Right-clicking the viewport opens its menu on every platform again.
+- Two-peer sync: anything the host does while a just-approved joiner is still connecting now reaches that joiner as
+  soon as its connection opens, instead of only after the joiner's full scene download (seconds later on slow machines).
+- After a network drop that only one side noticed, edits flow both ways again: the side still holding the dead link
+  switches to the fresh one and catches up on what it missed.
+- Offers (like being made admin) keep their Accept / Decline buttons in Notifications.
+- A late joiner sees a shader graph on an object that arrives after it; physics actions fire even at very low frame
+  rates; viewers' Explorer fills in (project, shared files and big material presets reach viewers).
+- Deleting a file you never shared no longer tells the session its name.
+- The README, the welcome window and the docs now say plainly how it works: sessions are peer-to-peer, and our
+  servers handle signaling and relay, accounts and cloud saves, assets, community pages, anonymous error reports and
+  counters.
+
+## 1.43.2 — A dependency fix 🔧
+
+- 🔧 Updated **body-parser** (a security advisory, GHSA-27r3-jxmh-p828) in the development tools and the agent bridge.
+  The app you open in the browser does not use it and is unchanged; the downloadable release builds are published
+  again from this version.
+
+## 1.43.1 — Security: scene code runs in a sandbox 🔒
+
+A security fix ([GHSA-r74q-9hg7-wrgr](https://github.com/theprototype-app/core/security/advisories/GHSA-r74q-9hg7-wrgr)).
+Until now, code carried inside a scene — Script nodes, Behaviour files, the Player code of a Character Controller and
+**Custom (code)** HUD elements — ran as part of the app page itself, so a scene someone opened (a shared play link, an
+embed, a session peer's scene) could read what the page keeps: AI provider keys and, on theprototype.app, your sign-in.
+Please update; self-hosters, rebuild from this release.
+
+- 🔒 **Scene code runs in a sandbox**: a separate JavaScript engine (QuickJS, WebAssembly) that has only the scene API
+  it is given — no page, storage, cookies, network or DOM. Your scripts and the bundled games work as before; a
+  scene with code loads the engine while the scene is opening.
+- 🧩 **Custom (code) HUD elements** draw through a small document whose markup is cleaned before it is shown
+  (text, boxes, styles, SVG, a 2D canvas). Event listeners, timers and images by URL are not available inside one.
+- 🛡️ **Built apps ship a Content-Security-Policy**, so injected scripts do not run. Self-hosting? The policy is in
+  every page; `build/_headers` holds the one line (`frame-ancestors`) a server has to send itself.
+- 🔑 A diagnostics bundle never contains your API keys.
+- 📡 An invite link that names a different signaling server asks before switching to it.
+- ▶️ Optional for hosted setups: `VITE_PLAY_ORIGIN` serves play links and embeds from a second origin. On
+  theprototype.app, play links and embeds now open from play.theprototype.app.
+- 🧱 Installed modules are trusted code and are unchanged — install only modules you trust (see SECURITY.md).
+- ☁️ On theprototype.app: your sign-in renews itself while you use the app and is no longer kept where page code
+  can read it; **Sign out everywhere** ends every session at once; and roles in a room are verified — only the host
+  or an admin can change who may edit, and when the host leaves an admin or editor takes over.
+
+## 1.43.0 — Scatter everywhere: any model, on any object, edited by hand, the same on every device 🌿
+
+Scatter grew up: pack items, prefabs and mixes of models, on any object (not just terrains), filled to a count with
+masks and spacing, then edited one instance at a time — and still only a few hundred bytes to send.
+
+### 🪨 What you can scatter
+
+- **Pack items** (a Nature Kit rock), **prefabs** and **Use as scatter source** on any object, as well as primitives
+  and Library models. A prefab scatters as its look; **To objects** brings the real prefab back, logic and all.
+- 🎲 **Mix models by weight** (three rocks at 50/30/20), with **Tint** (a little colour variation) and **Sink** (push
+  them into the ground).
+- A scatter is its settings + a seed + your hand edits: everyone in the session, and every reload, gets exactly the
+  same instances. **Re-roll** gives a new layout and keeps every instance you edited.
+
+### 🌍 Scatter on any object
+
+- Properties ▸ Scatter ▸ **Add scatter** on any mesh or placed model — moss on a rock, barnacles on a ship. The
+  instances move, turn and scale with it.
+- **Fill** by count or density, keep a **minimum spacing**, and limit it by **slope**, **height** or a **painted
+  terrain layer**.
+
+### ✋ Edit instances
+
+- The Scatter brush has tools now: **Paint, Erase, Rotate, Scale, Relax** and **Select** — click or box-select
+  instances, move/turn/size them with the gizmo, re-roll or delete them. **Affects** limits a tool to one model.
+- 🔁 **Convert both ways**: instances **To objects**, or several copies of one object ▸ **Make scatter**.
+- Terrain paint ▸ **Detail** sets each terrain's paint resolution (64–512).
+
+### 📱 Fast on every device
+
+- Far scatter fades out to stay inside each device's budget (Quest, phone, desktop); nearby instances and every
+  collider stay the same everywhere, so a ball bounces off the same rock on a phone and a PC. Settings ▸ Scene ▸
+  Performance ▸ **Distant scatter**.
+
+### 🔧 Under the hood
+
+- Updated: svelte 5.57.2, vite 8.3.5, vitest 5.0.5, @threlte/extras 9.22.3, three-mesh-bvh 0.9.16, @lucide/svelte
+  1.61.0, iwer 2.7.0, axe-core 4.14.0, prettier 3.9.10, Playwright 1.64.1 (three stays 0.186.1).
+- Dependency updates now arrive automatically, tested by the full e2e battery before they reach a release.
+
 ## 1.42.0 — Together and anywhere: type code together, pop the editor out to a second screen, play on a real table 🤝
 
 Two people can now write the same script at once, the code editor can live on its own monitor, and an Android phone can

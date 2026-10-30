@@ -11,7 +11,8 @@ import { dropPeerCursor } from '$lib/nodesHandler'
 import { dropPeerQuality } from '$lib/networkQuality'
 import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
-import { sessionHost, dropPeerJoined } from '$lib/connectionState'
+import { sessionHost, dropPeerJoined, noteSnapshotAnswered } from '$lib/connectionState'
+import { acceptedLockRows, mergeLockRows } from '$lib/lockTrust'
 import { environment, editEnvSky } from '$lib/environment'
 import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, setAnimGraph, attachToSocket, dropAllAnimatedImports, setVrmExpression } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
@@ -26,6 +27,7 @@ import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
+import { isHeldOut } from '$lib/peerModeration' // 55 A9
 import { get, writable } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { dropWireErrors } from './wireErrors';
@@ -87,9 +89,17 @@ export function userData(data) {
     if (!Array.isArray(data)) return;
     data.forEach(element => {
         if (!Array.isArray(element) || typeof element[0] !== 'string') return;
-        console.log('received new approved host : ' + element[0])
-        if (!users.some(u => u[0] === element[0]))
+        // 55 A9: a roster written before the sender heard a kick must not re-whitelist
+        // the peer it removed
+        if (isHeldOut(element[0])) return;
+        // a ROSTER row (the whitelist of peers in this session; entry [0] of every roster is the
+        // sender's view of itself and ours of us), NEVER a host change — the session host is
+        // `sessionHost`, set only to the peer that approved our request. The old wording ("received
+        // new approved host") logged our own id on every roster and read as a takeover (55, 41's note).
+        if (!users.some(u => u[0] === element[0])) {
+            console.log('roster: added peer ' + element[0])
             users.push(element)
+        }
         else
         {
             let index = users.findIndex(u => u[0] === element[0]);
@@ -97,6 +107,8 @@ export function userData(data) {
             if (element[2] != '') users[index][2] = element[2];
             // avatar config (slot 5) from newer clients
             if (element[5]) users[index][5] = element[5];
+            // 55 A7: the peer's kind (slot 6, `{kind: 'agent'}`) — self-declared presence
+            if (element[6] && typeof element[6] === 'object') users[index][6] = { kind: element[6].kind === 'agent' ? 'agent' : 'person' };
         }
 
     })
@@ -304,12 +316,18 @@ export function applyClearScene(peerId) {
     showToast(peerId + ' cleared the scene');
 }
 
-export function lockRestore(lockeditems) {
+/**
+ * A peer's lock table (handshake / room arrival). `from` is the connection it arrived on:
+ * the session host's rows may name anyone, any other sender's only itself, and a sender
+ * that may not lock adds nothing (`acceptedLockRows`). Rows already held are not repeated.
+ * @param {any} lockeditems @param {string} from @param {boolean} fromHost @param {boolean} mayLock
+ */
+export function lockRestore(lockeditems, from, fromHost, mayLock) {
     // 27-A: same trust, same fix — a non-array here threw inside the handshake.
     if (!Array.isArray(lockeditems)) return;
-    // Filter out the current peer id locks
-    locked = locked.concat(lockeditems.filter((lock) => Array.isArray(lock) && lock[0] != peer.peer.id));
-    // Update the locked objects store
+    const rows = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
+    if (!rows.length) return;
+    locked = mergeLockRows(locked, rows);
     lockedObjects.set(locked);
 }
 
@@ -518,6 +536,7 @@ export function noteLoadFailed(uuids) {
 
 /** @param {number} count @param {string[]} uuids @param {string} [senderId] */
 export async function createLoader(count, uuids, senderId) {
+    if (senderId) noteSnapshotAnswered(senderId);
     // console.log("create loader for " + count + " objects: " + uuids);
     loading.set(Array.isArray(uuids) ? uuids : []);
     loadingcount.set(count);

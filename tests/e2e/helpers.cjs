@@ -18,6 +18,87 @@ const PEER_CONFIG = process.env.PEER_CONFIG || '';
 
 let failures = 0;
 
+// E2E_COVERAGE=1 (battery-tiers): which APP SOURCE FILES this suite made the browser execute, so a release
+// can pick its tier-1 suites by what they cover instead of by their names. Every page setupPage opens runs
+// Chromium's precise JS coverage; when its context or the browser closes, the entries are folded into
+// { 'src/lib/x.js': <functions that ran>, 'npm:three': … } — a dev-server URL becomes its repo path, a
+// pre-bundled dependency one bucket per package — and the process writes that ONCE, at exit, to
+// $E2E_COVERAGE_OUT/<suite>.json (default test-results/coverage). A count rather than a yes/no, because
+// nearly every suite boots the same app: `battery-desk.cjs map build` subtracts the boot floor per file.
+// Meaningful only against a dev server; a built app's hashed chunks map to nothing and are skipped.
+const COVERAGE = process.env.E2E_COVERAGE === '1';
+/** @type {Map<string, number>} */
+const coverageFiles = new Map();
+/** @type {Set<any>} */
+const coveragePages = new Set();
+let coveragePagesSeen = 0;
+
+/** a dev-server script URL as a repo path or dependency bucket; null for vite internals / foreign scripts @param {string} url */
+function coverageKey(url) {
+	let p;
+	try {
+		p = decodeURIComponent(new globalThis.URL(url).pathname);
+	} catch {
+		return null;
+	}
+	const dep = /\/node_modules\/\.vite\/deps\/([^/]+?)\.js$/.exec(p);
+	// optimizer chunks (chunk-XXXX.js) hold code split out of several packages: no single owner, no bucket
+	// vite flattens an id: `/` -> `_`, `.` -> `__` (three/examples/jsm/x.js -> three_examples_jsm_x__js, @threlte/core -> @threlte_core)
+	// the bundler's shared chunks (client-Cqw3l5wU.js, three.module-CVnfGTZf.js) name no installed package: no bucket either
+	if (dep) {
+		if (dep[1].startsWith('chunk-')) return null;
+		const pkg = (/^(@[^_]+_[^_]+|[^_]+)/.exec(dep[1].replace(/__/g, '.'))?.[1] ?? dep[1]).replace('_', '/');
+		return require('fs').existsSync(require('path').resolve(__dirname, '../../node_modules', pkg, 'package.json')) ? 'npm:' + pkg : null;
+	}
+	const nm = /\/node_modules\/((?:@[^/]+\/)?[^/.][^/]*)\//.exec(p);
+	if (nm) return 'npm:' + nm[1];
+	// the served tree's own sources: /src/… or /@fs/<this tree>/src/… (never a sibling checkout's src/)
+	const tree = require('path').resolve(__dirname, '../..');
+	const src = /^\/src\/.+/.test(p) ? p.slice(1) : p.startsWith('/@fs' + tree + '/src/') ? p.slice(('/@fs' + tree + '/').length) : null;
+	return src;
+}
+
+/** @param {any} page */
+async function collectCoverage(page) {
+	if (!coveragePages.delete(page)) return;
+	const entries = await page.coverage.stopJSCoverage().catch(() => []);
+	for (const e of entries) {
+		const key = coverageKey(e.url);
+		if (!key) continue;
+		// a function ran when its first (whole-function) range counted; the script's own top level is one of them
+		const ran = (e.functions || []).filter((/** @type {any} */ f) => f.ranges?.[0]?.count > 0).length;
+		if (ran) coverageFiles.set(key, Math.max(coverageFiles.get(key) || 0, ran));
+	}
+}
+
+/** wrap `owner.close` so a context / browser closed by the suite itself still hands its pages' coverage in @param {any} owner @param {() => any[]} pages */
+function collectBeforeClose(owner, pages) {
+	if (owner.__coverageWrapped) return;
+	owner.__coverageWrapped = true;
+	const close = owner.close.bind(owner);
+	owner.close = async (/** @type {any[]} */ ...args) => {
+		for (const page of pages()) await collectCoverage(page);
+		return close(...args);
+	};
+}
+
+if (COVERAGE) {
+	process.on('exit', () => {
+		const fs = require('fs');
+		const path = require('path');
+		const suite = path.basename(process.argv[1] || 'unknown').replace(/\.test\.cjs$|\.cjs$/, '');
+		const dir = process.env.E2E_COVERAGE_OUT || path.resolve(__dirname, '../../test-results/coverage');
+		try {
+			fs.mkdirSync(dir, { recursive: true });
+			const files = Object.fromEntries([...coverageFiles].sort(([a], [b]) => (a < b ? -1 : 1)));
+			// pages: how many were opened, uncollected: how many closed without handing coverage in (a crash)
+			fs.writeFileSync(path.join(dir, suite + '.json'), JSON.stringify({ suite, url: URL, pages: coveragePagesSeen, uncollected: coveragePages.size, files }) + '\n');
+		} catch (e) {
+			console.log('[coverage] not written: ' + /** @type {Error} */ (e).message);
+		}
+	});
+}
+
 /** @param {boolean} ok @param {string} label */
 function check(ok, label) {
 	console.log((ok ? 'PASS ' : 'FAIL ') + label);
@@ -175,7 +256,35 @@ async function setupPage(browser, name, options = {}) {
 			for (const [k, v] of Object.entries(extra)) localStorage.setItem(k, String(v));
 		}, options.storage);
 	}
+	// options.route = [url, handler]: a ctx.route installed before the first navigation (56-union: a fake agent page
+	// replaces a module the app would load — dev servers only, a PROD service worker hides routes)
+	if (options.route) await ctx.route(options.route[0], options.route[1]);
 	const page = await ctx.newPage();
+	if (COVERAGE) {
+		// resetOnNavigation off: a suite's reloads (freshReload, a hash change) keep counting into one record
+		await page.coverage.startJSCoverage({ resetOnNavigation: false });
+		coveragePages.add(page);
+		coveragePagesSeen++;
+		collectBeforeClose(ctx, () => [...coveragePages].filter((p) => p.context() === ctx));
+		collectBeforeClose(browser, () => [...coveragePages]);
+	}
+	// E2E_CPU_THROTTLE=<rate> (scatter-sync): CDP CPU throttling on every page, so a suite can be run the way
+	// GitHub's runners run it (2-4 slow vCPUs, SwiftShader) on a fast box — `4` = four times slower main threads
+	const throttle = Number(process.env.E2E_CPU_THROTTLE || 0);
+	if (throttle > 1) await (await ctx.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: throttle });
+	// E2E_LONGTASKS=<ms> (scatter-sync): print every main-thread task longer than that, with when it ran —
+	// a Playwright click that "waits for scheduled navigations" for 30 s is a page that did not yield
+	const longMs = Number(process.env.E2E_LONGTASKS || 0);
+	if (longMs > 0) {
+		await page.addInitScript((ms) => {
+			try {
+				new PerformanceObserver((list) => {
+					for (const e of list.getEntries()) if (e.duration >= ms) console.warn(`[longtask] ${Math.round(e.duration)} ms at ${new Date(performance.timeOrigin + e.startTime).toISOString().slice(11, 23)}`);
+				}).observe({ type: 'longtask', buffered: true });
+			} catch {}
+		}, longMs);
+		page.on('console', (m) => m.text().startsWith('[longtask]') && console.log(`[${name}] ${m.text()}`));
+	}
 	// Page errors were LOGGED and nothing more, so a suite could sail past a
 	// component that had crashed on mount: a duplicate each-key threw inside the
 	// Animation window, the pane stopped opening for real users, and every check
@@ -252,6 +361,32 @@ async function setupPageQuiet(browser, name, others, options = {}) {
 
 /** Connect `from` to `to` (approve on `to`), then let the mesh settle. */
 async function connect(from, to, settleMs = 9000) {
+	// test-health-1: dial the id the page holds NOW. setupPage reads it before the signaling link
+	// has opened, and a page whose first id the server reports as taken re-rolls it
+	// (peerHandler 'unavailable-id') — behaviours dialled the stale id and waited 30 s for an
+	// Approve card that could never come. Wait (bounded) for both links, then re-read both ids.
+	for (const peer of [from, to]) {
+		const live = await peer.page
+			.waitForFunction(
+				() => {
+					/** @type {any} */ let p;
+					window.__stores.peers.subscribe((v) => (p = v))();
+					return p?.peer?.open && p.peer.id ? p.peer.id : false;
+				},
+				null,
+				{ timeout: 20000 }
+			)
+			.then((r) => r.jsonValue())
+			.catch(() => null);
+		if (live && live !== peer.id) {
+			console.log(`[helpers] ${peer.id} is ${live} now (the id was re-rolled)`);
+			peer.id = live;
+		}
+	}
+	// 44 M14: on a narrow window (net-stress's 800 px) the floating pill is SQUEEZED to its status dot,
+	// and the dial input shows only after a tap on it — press it first when it is what is there
+	const squeezedDot = from.page.locator('#connect-squeeze-dot');
+	if (await squeezedDot.isVisible().catch(() => false)) await squeezedDot.click();
 	await step(from, 'fill the peer id', () =>
 		from.page.locator('input[placeholder="Enter peer ID to connect"]').fill(to.id)
 	);
@@ -271,6 +406,13 @@ async function connect(from, to, settleMs = 9000) {
 	// "Reject" (cloudHooks roles); "Editor access" is the plain build's Approve
 	await step(to, 'approve the request', () => approveButton(to.page).click({ timeout: 30000 }));
 	await from.page.waitForTimeout(settleMs);
+	// scatter-sync: the settle is a MINIMUM now — on a slow runner (GitHub, SwiftShader) the approval
+	// dial-back took 15 s to open, so a suite's first edit raced a conn that was still negotiating.
+	// Wait (bounded, never failing here) until BOTH ends hold an open conn to the other.
+	const openTo = (page, id) =>
+		page.evaluate((peerId) => new Promise((r) => window.__stores.peers.subscribe((p) => r(!!p?.connections?.[peerId]?.open))()), id).catch(() => false);
+	const until = Date.now() + 45000;
+	while (Date.now() < until && !((await openTo(from.page, to.id)) && (await openTo(to.page, from.id)))) await from.page.waitForTimeout(250);
 }
 
 /**
@@ -307,6 +449,13 @@ async function step(peer, what, run) {
 	}
 }
 
+/**
+ * scatter-sync: the timeout for a REAL click in a suite that renders two heavy pages. Every actionability check
+ * still runs; only the wait is longer, because each input event waits for a frame ack and one frame took several
+ * seconds on a slow GitHub runner (SwiftShader, two pages) — 30 s clicks timed out there with no task hung.
+ */
+const PATIENT_CLICK_MS = Number(process.env.E2E_CLICK_MS || 90000);
+
 /** Poll `fn` until `predicate` holds; records a PASS/FAIL check. */
 async function eventually(fn, predicate, label, timeout = 10000) {
 	const start = Date.now();
@@ -318,6 +467,49 @@ async function eventually(fn, predicate, label, timeout = 10000) {
 	}
 	console.log('  last: ' + JSON.stringify(last));
 	check(false, label);
+}
+
+/**
+ * scatter-sync: WAIT FOR `to` TO HAVE DISPATCHED EVERYTHING `from` HAS SENT IT SO FAR — a real event, not a
+ * guess at how long a slow runner takes. `from` sends a clock ping (an ordinary one: the app folds it into
+ * its clock estimate like any other), and `to` answers it from its message loop, so the pong means every
+ * earlier message on that ordered conn has been through `to`'s dispatcher (an async applier's module
+ * import resolves in the microtasks before the next message). Returns false after `timeout`.
+ * @param {{page: any, id: string}} from @param {{page: any, id: string}} to
+ */
+async function caughtUp(from, to, timeout = 120000) {
+	const ok = await from.page
+		.evaluate(
+			([peerId, ms]) =>
+				new Promise((resolve) => {
+					let p;
+					window.__stores.peers.subscribe((v) => (p = v))();
+					const t0 = Date.now() + Math.random() / 1000;
+					const conns = new Set([p.connections?.[peerId], ...((p.peer?._connections?.get?.(peerId)) ?? p.peer?.connections?.[peerId] ?? [])].filter(Boolean));
+					const off = () => conns.forEach((c) => c.off?.('data', on));
+					const on = (/** @type {any} */ d) => {
+						if (d?.type === 'clockpong' && d.t0 === t0) {
+							off();
+							resolve(true);
+						}
+					};
+					conns.forEach((c) => c.on('data', on));
+					const conn = p.connections?.[peerId];
+					if (!conn?.open) return (off(), resolve(false));
+					conn.send({ type: 'clockping', sender: p.peer.id, t0 });
+					setTimeout(() => (off(), resolve(false)), ms);
+				}),
+			[to.id, timeout]
+		)
+		.catch(() => false);
+	if (!ok) console.log(`  (${to.id} did not answer ${from.id}'s wire barrier within ${Math.round(timeout / 1000)} s)`);
+	return ok;
+}
+
+/** `eventually`, measured from the moment `to` has caught up with `from`'s wire (see caughtUp). */
+async function eventuallyAfter(from, to, fn, predicate, label, timeout = 10000) {
+	await caughtUp(from, to);
+	return eventually(fn, predicate, label, timeout);
 }
 
 /**
@@ -534,9 +726,9 @@ async function centeredClip(peer, world, size = 360) {
  * @param {any} page @param {Buffer} before @param {Buffer} after @param {number} [threshold]
  * @returns {Promise<{changed: number, total: number, fraction: number, mean: number, max: number, width: number, height: number, error?: string}>}
  */
-async function frameDelta(page, before, after, threshold = 6) {
+async function frameDelta(page, before, after, threshold = 6, skipTop = 0) {
 	return page.evaluate(
-		async ({ a, b, threshold, decodeSource }) => {
+		async ({ a, b, threshold, skipTop, decodeSource }) => {
 			const decode = eval(decodeSource);
 			const A = await decode(a);
 			const B = await decode(b);
@@ -545,7 +737,8 @@ async function frameDelta(page, before, after, threshold = 6) {
 			let changed = 0;
 			let sum = 0;
 			let max = 0;
-			for (let i = 0; i < A.data.length; i += 4) {
+			// skipTop: rows left out of the comparison (chrome a reference image captured over the canvas)
+			for (let i = skipTop * A.width * 4; i < A.data.length; i += 4) {
 				const delta =
 					Math.abs(A.data[i] - B.data[i]) +
 					Math.abs(A.data[i + 1] - B.data[i + 1]) +
@@ -554,7 +747,7 @@ async function frameDelta(page, before, after, threshold = 6) {
 				sum += delta;
 				if (delta > max) max = delta;
 			}
-			const total = A.data.length / 4;
+			const total = A.data.length / 4 - skipTop * A.width;
 			return {
 				changed,
 				total,
@@ -565,7 +758,7 @@ async function frameDelta(page, before, after, threshold = 6) {
 				height: A.height
 			};
 		},
-		{ a: before.toString('base64'), b: after.toString('base64'), threshold, decodeSource: DECODE_FN }
+		{ a: before.toString('base64'), b: after.toString('base64'), threshold, skipTop, decodeSource: DECODE_FN }
 	);
 }
 
@@ -1061,4 +1254,4 @@ function envelopeDelta(a, b) {
 	return { maxDelta, meanDelta: n ? sum / n : 0, worstSlice };
 }
 
-module.exports = { URL, GPU_ARGS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta };
+module.exports = { URL, coverageKey, GPU_ARGS, PATIENT_CLICK_MS, APPROVE_LABEL, approveButton, watchPress, check, launch, setupPage, setupPageQuiet, connect, leavePlay, eventually, caughtUp, eventuallyAfter, projectPoint, freshReload, answerRestore, closePeer, finish, run, installModule, moduleZipPath, makeCollectibleChains, pageErrors, externalErrors, grabFrame, centeredClip, frameDelta, framePixelsOffColor, AUDIO_ARGS, audioMetrics, renderOffline, envelopeDelta };

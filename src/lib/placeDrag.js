@@ -5,7 +5,7 @@ import { globalRenderer, globalCamera, orbitControls, objectsGroup } from '../st
 import { snapEnabled, snapSettings, snapTargets } from './snapping';
 import { dimsOf, dimsRevision, loadMeasuredDims, measureDims, dimsLabel, costLabel } from './placementDims';
 import { placementPreview, placementTriBudget, placementShowDims, currentGhostTier } from './placementPrefs';
-import { showGhost, poseGhost, hideGhost, setGhostModel, ghostInfo } from './placeGhost';
+import { showGhost, poseGhost, hideGhost, setGhostModel, ghostInfo, setGhostFrame } from './placeGhost';
 import { registerDebugHook } from './debugHooks';
 
 // 39 P1 — DRAG TO PLACE. An Explorer card dragged onto the viewport shows a ghost where the
@@ -30,6 +30,16 @@ import { registerDebugHook } from './debugHooks';
 // long-press drag works the same with the Explorer sheet collapsed out of the way.
 //
 // LOCAL: the ghost and this state never leave the machine.
+//
+// 52-browser — THE RAY MODE (the VR laser; absorbs follow-up f-vr-place). The same gesture with a
+// world RAY instead of a screen point: `beginRayPlace` / `updateRayPlace` / `commitRayPlace`. It adds
+// no window listeners (the VR glue drives it per frame and owns the trigger/grip/stick) and publishes
+// to `rayPlace`, not the DOM chip's store. Everything it lays out lives in the OBJECTSGROUP's frame —
+// the space a placed object's position is written in — so the world rig moving, turning or SHRINKING
+// the world (miniature mode, the dollhouse) changes nothing: the ray is carried into that frame, the
+// ground is that frame's y = 0, grid snap is in scene units, and the ghost draws through the frame
+// (placeGhost.setGhostFrame), so a 2 m crate over a table-sized world is table-sized. On a desktop the
+// frame is the identity and the pointer path is byte-unchanged.
 
 const STEP_DEG = 15;
 /** gap between items dropped as a row (metres) */
@@ -51,6 +61,13 @@ const OVERLAP_WARN = 0.5;
  *   unknown: boolean, rotation: number, pointerType: string, alt: boolean, collapse: boolean}>}
  */
 export const placeDrag = writable(null);
+
+/**
+ * 52-browser: what the RAY mode shows (the VR panel reads it). null when no ray placement runs.
+ * @type {import('svelte/store').Writable<null | {label: string, count: number, state: 'ok' | 'warn' | 'bad',
+ *   dims: string, unknown: boolean, rotation: number, onSurface: boolean, hand: string | null}>}
+ */
+export const rayPlace = writable(null);
 
 /** the current gesture (module state; the store is its view) @type {any} */
 let drag = null;
@@ -92,14 +109,23 @@ export function isPlaceable(item) {
 export function placeDragActive() {
 	return !!drag;
 }
+/** 52-browser: the running gesture's turn in degrees (0 when none) */
+export function placeRotation() {
+	return drag?.rotation ?? 0;
+}
+/** 52-browser: is the running gesture the VR laser's? */
+export function rayPlaceActive() {
+	return drag?.mode === 'ray';
+}
 
 /** @param {any} p @returns {DragItem} */
 function toItem(p) {
 	const library = !p.url && !p.prefabId && p.id ? get(explorerRef?.explorerItems ?? writable([])).find((/** @type {any} */ r) => r.id === p.id) : null;
 	const src = p.dims ? p : library ?? p;
+	const dims = dimsOf({ ...src, glbUrl: p.url ?? null });
 	return {
 		payload: p,
-		dims: dimsOf({ ...src, glbUrl: p.url ?? null }),
+		dims: dims.known || !p.prefabId ? dims : (prefabDims(p.prefabId) ?? dims),
 		url: p.url ?? null,
 		libId: !p.url && !p.prefabId ? p.id ?? null : null,
 		prefabId: p.prefabId ?? null,
@@ -117,7 +143,9 @@ export function beginPlaceDrag(opts) {
 	void loadMeasuredDims();
 	const list = Array.isArray(opts.payload?.items) && opts.payload.items.length > 1 ? opts.payload.items : [opts.payload];
 	const items = list.map(toItem);
+	setGhostFrame(null);
 	drag = {
+		mode: 'pointer',
 		payload: opts.payload,
 		items,
 		x: opts.x,
@@ -156,14 +184,155 @@ export function beginPlaceDrag(opts) {
 	return true;
 }
 
+/**
+ * 52-browser: begin a RAY placement (the VR laser). No window listeners — the caller drives it:
+ * `updateRayPlace(ray)` per frame, `rotateBy` on the stick, `commitRayPlace()` on the trigger,
+ * `cancelPlaceDrag()` on the grip. `payload` is an Explorer-shaped card ({url} a pack item, {id} a
+ * Library item, {prefabId} a prefab), or one carrying `items`.
+ * `rotation` (degrees) starts the ghost turned — a re-armed placement keeps the turn it was placed with.
+ * @param {{payload: any, hand?: string | null, rotation?: number}} opts @returns {boolean}
+ */
+export function beginRayPlace(opts) {
+	if (drag) cancelPlaceDrag('restart');
+	void loadMeasuredDims();
+	const list = Array.isArray(opts.payload?.items) && opts.payload.items.length > 1 ? opts.payload.items : [opts.payload];
+	const items = list.map(toItem);
+	drag = {
+		mode: 'ray',
+		hand: opts.hand ?? null,
+		payload: opts.payload,
+		items,
+		x: 0,
+		y: 0,
+		pointerType: 'xr',
+		pointerId: -1,
+		source: null,
+		collapse: false,
+		rotation: Number.isFinite(opts.rotation) ? (((/** @type {number} */ (opts.rotation) % 360) + 360) % 360) : 0,
+		shift: false,
+		alt: false,
+		over: /** @type {'viewport'|'explorer'|'other'} */ ('other'),
+		state: /** @type {'ok'|'warn'|'bad'} */ ('ok'),
+		placements: /** @type {any[]} */ ([]),
+		bridgeEl: null,
+		prefetched: false,
+		ghostUp: false,
+		tiers: items.map(() => 'box'),
+		obstacles: /** @type {any[] | null} */ (null),
+		unsubDims: /** @type {(() => void) | null} */ (null),
+		frame: new THREE.Matrix4(),
+		frameInv: new THREE.Matrix4(),
+		ray: /** @type {any} */ (null)
+	};
+	drag.unsubDims = dimsRevision.subscribe(() => drag && refreshDims());
+	publish();
+	return true;
+}
+
+/**
+ * 52-browser: one frame of a ray placement — `ray` is a WORLD THREE.Raycaster (the pointer hand's
+ * laser), or null to hide the ghost (the laser is on a panel). Returns the state ('ok' | 'warn' |
+ * 'bad'), or null when no ray placement runs. The ray is HELD (a rotate or a dims refresh re-lays the
+ * ghost on it), so pass a raycaster this module may keep — not one reused for other picks.
+ * @param {any} ray @returns {'ok' | 'warn' | 'bad' | null}
+ */
+export function updateRayPlace(ray) {
+	if (!drag || drag.mode !== 'ray') return null;
+	if (!ray) {
+		// the laser is on a panel (or nowhere): no ghost, and a trigger now places nothing
+		drag.ray = null;
+		drag.over = 'other';
+		drag.placements = [];
+		drag.target = null;
+		poseGhost([], drag.state, false);
+		publish();
+		return drag.state;
+	}
+	drag.ray = ray;
+	updateFrame();
+	drag.over = 'viewport';
+	if (!drag.ghostUp) {
+		setGhostFrame(drag.frame);
+		drag.ghostUp = showGhost(drag.items.map((/** @type {DragItem} */ it) => ({ box: it.dims.box })));
+		applyTiers();
+	} else setGhostFrame(drag.frame);
+	if (!drag.prefetched) prefetch();
+	placeRay(ray);
+	poseGhost(drag.placements, drag.state, drag.placements.length > 0);
+	publish();
+	return drag.state;
+}
+
+/** 52-browser: the trigger — spawn at the ghost (ONE undo step, replicated). False when nothing was
+ * placed (no spot, or the spot is off the world). */
+export function commitRayPlace() {
+	if (!drag || drag.mode !== 'ray') return false;
+	if (drag.ray) placeRay(drag.ray);
+	const ok = drag.state !== 'bad' && drag.placements.length > 0;
+	commit();
+	return ok;
+}
+
+/** the objectsGroup's world matrix (and its inverse) — the frame a ray placement lays out in */
+function updateFrame() {
+	/** @type {any} */
+	const group = get(objectsGroup);
+	if (!group) {
+		drag.frame.identity();
+		drag.frameInv.identity();
+		return;
+	}
+	group.updateWorldMatrix(true, false);
+	if (!drag.frame.equals(group.matrixWorld)) drag.obstacles = null; // the rig moved: re-read the boxes
+	drag.frame.copy(group.matrixWorld);
+	drag.frameInv.copy(group.matrixWorld).invert();
+}
+
+/**
+ * 52-browser: a PREFAB's size, measured off its decoded snapshot (a prefab carries no dims row, so its
+ * ghost was the 1 m "size unknown" box and it landed with its pivot on the surface — half sunk for a
+ * centred box). The root's own scale is kept: the placement writes only position + rotation.
+ * @param {string} id @returns {import('./placementDims').Dims | null}
+ */
+function prefabDims(id) {
+	if (!decoded.has('prefab:' + id)) decodePrefab(id);
+	const root = decoded.get('prefab:' + id);
+	if (!root) return null;
+	// measured under a bare parent, the root posed at the origin with its own SCALE (the box a placed
+	// copy actually occupies, before the placement's rotation)
+	const pos = root.position.clone();
+	const quat = root.quaternion.clone();
+	const parent = root.parent;
+	const holder = new THREE.Group();
+	root.position.set(0, 0, 0);
+	root.quaternion.identity();
+	holder.add(root);
+	const d = measureDims(holder);
+	holder.remove(root);
+	if (parent) parent.add(root);
+	root.position.copy(pos);
+	root.quaternion.copy(quat);
+	root.updateMatrixWorld(true);
+	return d;
+}
+
 function refreshDims() {
 	if (!drag) return;
-	drag.items = drag.items.map((/** @type {DragItem} */ it) => ({ ...it, dims: it.dims.known ? it.dims : dimsOf({ ...it.payload, glbUrl: it.url }) }));
+	drag.items = drag.items.map((/** @type {DragItem} */ it) => {
+		if (it.dims.known) return it;
+		const d = dimsOf({ ...it.payload, glbUrl: it.url });
+		return { ...it, dims: d.known || !it.prefabId ? d : (prefabDims(it.prefabId) ?? d) };
+	});
 	if (drag.ghostUp) {
 		// sizes changed: rebuild the boxes (the model tiers re-apply below)
 		showGhost(drag.items.map((/** @type {DragItem} */ it) => ({ box: it.dims.box })));
 		drag.tiers = drag.items.map(() => 'box');
 		applyTiers();
+	}
+	if (drag.mode === 'ray') {
+		if (drag.ray) updateRayPlace(drag.ray);
+		else publish();
+		return;
 	}
 	update(drag.x, drag.y);
 }
@@ -250,6 +419,11 @@ function onWheel(e) {
 export function rotateBy(steps) {
 	if (!drag) return;
 	drag.rotation = (((drag.rotation + steps * STEP_DEG) % 360) + 360) % 360;
+	if (drag.mode === 'ray') {
+		if (drag.ray) updateRayPlace(drag.ray);
+		else publish();
+		return;
+	}
 	update(drag.x, drag.y);
 }
 
@@ -289,9 +463,25 @@ function update(x, y) {
 }
 
 function publish() {
-	if (!drag) return placeDrag.set(null);
+	if (!drag) {
+		rayPlace.set(null);
+		return placeDrag.set(null);
+	}
 	const first = drag.items[0];
 	const many = drag.items.length;
+	if (drag.mode === 'ray') {
+		rayPlace.set({
+			label: many > 1 ? `${first.label} + ${many - 1} more` : first.label,
+			count: many,
+			state: drag.state,
+			dims: first.dims.known ? dimsLabel(first.dims.size) : 'size unknown',
+			unknown: !first.dims.known,
+			rotation: drag.rotation,
+			onSurface: !!drag.target,
+			hand: drag.hand ?? null
+		});
+		return;
+	}
 	placeDrag.set({
 		x: drag.x,
 		y: drag.y,
@@ -331,6 +521,8 @@ function obstacles() {
 		if (!child.visible) continue;
 		const b = new THREE.Box3().setFromObject(child);
 		if (b.isEmpty() || !Number.isFinite(b.min.x)) continue;
+		// 52-browser: the ray mode lays out in the objectsGroup's frame
+		if (drag.mode === 'ray') b.applyMatrix4(drag.frameInv);
 		out.push(b);
 	}
 	drag.obstacles = out;
@@ -371,6 +563,45 @@ function place(x, y) {
 			if (t.normal) normal = new THREE.Vector3().fromArray(t.normal).normalize();
 		}
 	}
+	let right = null;
+	/** @type {any} */
+	const camera = get(globalCamera);
+	if (camera) right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+	layout(point, normal, right);
+}
+
+const _rayLocal = new THREE.Ray();
+const _groundLocal = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+/**
+ * 52-browser: the ray mode's target — the first scene surface along the WORLD ray, else the ground
+ * (y = 0 of the objectsGroup's frame) — laid out in that frame. The row direction is the viewer's
+ * right (the XR camera's in a session) carried into the frame. @param {any} ray
+ */
+function placeRay(ray) {
+	if (!dropRef) return (drag.placements = []);
+	let point = null;
+	let normal = UP.clone();
+	const hit = dropRef.rayHit(ray);
+	if (hit) {
+		point = new THREE.Vector3().fromArray(hit.point).applyMatrix4(drag.frameInv);
+		if (hit.normal) normal = new THREE.Vector3().fromArray(hit.normal).transformDirection(drag.frameInv);
+	} else {
+		_rayLocal.copy(ray.ray).applyMatrix4(drag.frameInv);
+		point = _rayLocal.intersectPlane(_groundLocal, new THREE.Vector3());
+	}
+	// the viewer's right: the camera the ray carries (withRayCamera), else the editor's
+	/** @type {any} */
+	const camera = ray.camera ?? get(globalCamera);
+	const right = camera ? new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).transformDirection(drag.frameInv) : null;
+	layout(point, normal, right);
+}
+
+/**
+ * Lay the dragged items out at `point` (in the placement frame) on a surface of normal `normal`,
+ * a row along `right`. Sets drag.placements / target / state.
+ * @param {any} point @param {any} normal @param {any} right
+ */
+function layout(point, normal, right) {
 	if (!point || point.length() > WORLD_LIMIT) {
 		drag.state = 'bad';
 		drag.placements = point ? drag.items.map(() => ({ position: point.clone(), quaternion: new THREE.Quaternion() })) : [];
@@ -393,10 +624,8 @@ function place(x, y) {
 	else _align.identity();
 	const q = _align.clone().multiply(_yaw);
 	// a row of several items, laid out along the camera's right (on the surface)
-	/** @type {any} */
-	const camera = get(globalCamera);
 	_right.set(1, 0, 0);
-	if (camera) _right.setFromMatrixColumn(camera.matrixWorld, 0);
+	if (right) _right.copy(right);
 	_right.addScaledVector(normal, -_right.dot(normal));
 	if (_right.lengthSq() < 1e-8) _right.set(1, 0, 0).addScaledVector(normal, -normal.x);
 	_right.normalize();
@@ -583,9 +812,10 @@ function commit() {
 	if (host.state === 'bad' || !host.placements.length) return end('invalid');
 	const placements = host.placements.map((/** @type {any} */ p) => ({ position: p.position.toArray(), quaternion: p.quaternion.toArray() }));
 	const items = host.items.map((/** @type {DragItem} */ it) => ({ payload: it.payload, dims: it.dims }));
+	const frame = host.mode === 'ray' && host.frame ? host.frame.clone() : null;
 	end('committed');
-	lastCommit = { at: Date.now(), count: items.length, placements };
-	primed.then(() => dropRef?.placeFromGhost(items, placements));
+	lastCommit = { at: Date.now(), count: items.length, placements, mode: host.mode };
+	primed.then(() => dropRef?.placeFromGhost(items, placements, frame ? { frame } : {}));
 }
 
 /** Cancel the running drag: nothing spawns, nothing enters the undo stack. @param {string} [why] */
@@ -615,6 +845,7 @@ function end(why) {
 	drag = null;
 	lastEnd = why;
 	placeDrag.set(null);
+	rayPlace.set(null);
 }
 
 /** for the suites @type {string | null} */
@@ -626,6 +857,11 @@ registerDebugHook('placeDrag', {
 	placeDrag,
 	placeDragActive,
 	beginPlaceDrag,
+	beginRayPlace,
+	updateRayPlace,
+	commitRayPlace,
+	rayPlaceActive,
+	rayPlace,
 	cancelPlaceDrag,
 	rotateBy,
 	ghostInfo,
@@ -639,7 +875,9 @@ registerDebugHook('placeDrag', {
 					tiers: [...drag.tiers],
 					items: drag.items.map((/** @type {DragItem} */ it) => ({ label: it.label, dims: it.dims })),
 					placements: drag.placements.map((/** @type {any} */ p) => ({ position: p.position.toArray(), quaternion: p.quaternion.toArray() })),
-					target: drag.target ?? null
+					target: drag.target ?? null,
+					mode: drag.mode,
+					frame: drag.frame ? drag.frame.toArray() : null
 				}
 			: null,
 	last: () => ({ end: lastEnd, commit: lastCommit }),

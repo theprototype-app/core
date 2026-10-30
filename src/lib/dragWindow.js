@@ -8,6 +8,7 @@ import { isHeaderDrag, startWindowDragGuard } from './windowGrip';
 import { bodyDrag } from './windowBodyDrag';
 import { onLayoutRestore } from './uiLayoutsCore';
 import { scaledPx } from './uiScale'; // 53 A1: a window's minimum size follows the UI scale
+import { isForeign } from './windows/winEnv.js';
 
 // 169: live reset registry — every draggable window (this action + the object
 // list's own dragMe) registers a reset fn so Settings can rescue windows stuck
@@ -82,6 +83,8 @@ export function resetWindowLayout() {
  *   pane inside the window keeps its own scope (the nearest mark wins).
  */
 export function dragWindow(node, { key, defaultRect = {}, resizable = false, axis = 'xy', minW = 260, minH = 180, inert = null, keyScope = 'panel' }) {
+	// 70 W2: a panel in a pop-out window ($lib/windows/panelHost) is laid out by its window, not here
+	if (isForeign(node)) return { destroy() {} };
 	/** @type {any} */
 	let rect = null;
 	try {

@@ -19,11 +19,12 @@ h.run(async () => {
 	const page = A.page;
 	await page.waitForFunction(() => !!window.__stores?.hudDocs, { timeout: 30000 });
 
-	// ---- 1. it is the 6th FLOW_FAMILY member, opened from the real add-menu --
+	// ---- 1. it is a FLOW_FAMILY member, opened from the real add-menu --------
 	const family = await page.evaluate(() => window.__stores.bottomDock.FLOW_FAMILY);
 	h.check(
-		family.length === 6 && family[5] === 'hud',
-		`'hud' is the sixth FLOW_FAMILY member (${JSON.stringify(family)})`
+		// a position check broke when the timeline joined the family after it (896cdb93)
+		family.includes('hud'),
+		`'hud' is a FLOW_FAMILY member (${JSON.stringify(family)})`
 	);
 	const title = await page.evaluate(() => window.__stores.bottomDock.DOCK_TITLES.hud);
 	h.check(title === 'HUD editor', `and has a dock title (${title})`);

@@ -6,7 +6,7 @@
 
 **Build 3D prototypes in your browser — alone or together.**
 
-Peer-to-peer, no account, no server holding your scene. Free and open source.
+Peer-to-peer sessions, no account needed. Free and open source.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Svelte 5](https://img.shields.io/badge/Svelte-5-ff3e00.svg)](https://svelte.dev)
@@ -29,10 +29,24 @@ own models, wire up behaviour in a node graph, turn on physics, and walk through
 result in VR — then send someone your peer ID and they are editing the same scene with
 you, in real time.
 
-There is no backend. Sessions run over a **peerjs mesh**: a signalling server introduces
-peers, then everything — objects, node graphs, voice, cursors, files — travels directly
-between browsers. Nothing about your scene touches our servers, and you can point the app
-at your own signalling server or self-host the whole thing.
+### How it works
+
+Sessions are **peer-to-peer**: edits, objects, node graphs, voice, cursors and files travel
+directly between browsers over WebRTC (a **peerjs mesh**). Servers do the jobs a browser
+cannot do alone, and on theprototype.app those servers are ours:
+
+- **Signalling** introduces peers to each other, and a **TURN relay** carries a session's
+  encrypted traffic when two networks cannot reach each other directly.
+- **Accounts and cloud saves** (PocketBase) — optional; without signing in, your scenes stay
+  in your browser.
+- **Assets** — packs, skies and models download from our storage (Cloudflare R2) and the
+  jsDelivr CDN.
+- **Community pages** — shared scene pages, embeds and the gallery run on Cloudflare Workers.
+- **Anonymous error reports** (on by default; *Settings ▸ Privacy* turns them off) and
+  **anonymous aggregate counters** such as page views — no cookies, nothing that identifies you.
+
+The engine in this repository is open source: point it at your own signalling server, or
+self-host the whole thing, and none of the above involves us.
 
 ## Features ✨
 
@@ -65,6 +79,9 @@ at your own signalling server or self-host the whole thing.
 - Text-to-3D through ComfyUI/TRELLIS or Meshy, imported straight into the scene
 - Bring your own endpoint and key (**Settings ▸ AI**). Nothing leaves the browser until
   you configure one
+- Invite an AI agent (Claude Code, Claude Desktop, any MCP client) into your session from a
+  link and build together — [Build with an AI agent](https://docs.theprototype.app/ai/build-with-an-agent/)
+  · [AGENT-SESSIONS.md](AGENT-SESSIONS.md)
 
 **Assets and files 📦**
 - Explorer: a local asset library with folders, thumbnails, 3D previews, drag-out placing

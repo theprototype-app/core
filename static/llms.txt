@@ -1,8 +1,9 @@
 # theprototype.app
 
-> Collaborative peer-to-peer 3D prototyping in the browser. No accounts and no
-> server beyond PeerJS signaling — a session is a direct WebRTC peer mesh, so
-> everything one person does is visible to everyone connected. Desktop and VR
+> Collaborative peer-to-peer 3D prototyping in the browser. No account needed —
+> a session is a direct WebRTC peer mesh (servers only introduce peers and relay
+> when a direct link fails), so everything one person does is visible to everyone
+> connected. The hosted site adds optional accounts, cloud saves and community pages. Desktop and VR
 > (WebXR), a node/flow editor that drives scene behavior, and a module SDK for
 > loadable, self-contained play content. Built with SvelteKit (static adapter),
 > Svelte 5, Threlte and three.js.
@@ -13,6 +14,34 @@
   the one rule that matters (a module runs on every peer), layout/registration,
   and worked examples. Fetch this to write a correct module without guessing the
   API.
+
+## Agents: join a session
+
+- An AI agent can join a live session from its link and build alongside people:
+  `claude mcp add theprototype -- npx -y @theprototype/agent mcp '<link>'`
+  (any MCP client: `npx -y @theprototype/agent mcp <link>`). The bridge runs the
+  real app headless and exposes its tools.
+- In the page: `window.tpAgent` (only with `&agent` in the hash or
+  `localStorage.agentApi`) — `tools()` (full JSON schemas), `systemPrompt()`,
+  `exec(name, args)` (replicated, one undo step), `snapshot()`, `status()`,
+  `waitForEdit(ms)`, `screenshot({view, uuid, size})`, `pendingOffers()`,
+  `accept(id)`, `leave()`.
+- Talk to it from the app (1.50): people chat with the agent in the AI assistant
+  window; an MCP agent listens with `wait_for_message` → work → `reply` (the user
+  types "listen to my theprototype session" once), `ask` for buttons, `get_thread`
+  for history. Each message carries the sender's `role` and `chatId`; pictures
+  come as image blocks + temp files. GLB models: `import_model` (≤ 25 MB, local `path`).
+- Files made on the agent's own machine come in with `import_file` (PNG / WebP /
+  JSON / .tpanim, type read from the bytes; the bridge takes a local `path` +
+  `spec_path`): filed in Explorer ▸ Generated for everyone, the generator's spec
+  beside it, an image placed as a card (`filter: "nearest"`, `frame`, `facing`).
+  Recipe: generate pixel art with Pixling and Claude Code (in the agent guide).
+- A plain link waits for the host's Approve; an invite link (`&invite=…`) joins
+  in one step. A VIEW-ONLY agent's edits are refused — check `status().canEdit`.
+- [Agent guide, inlined](/llms-full.txt): the whole contract, the view-only
+  trap and the replication rules an agent must respect (AGENT-SESSIONS.md).
+- [Build with an AI agent](https://docs.theprototype.app/ai/build-with-an-agent/):
+  the same for people.
 
 ## Key concepts
 
@@ -31,7 +60,7 @@
 ## Docs
 
 - [llms-full.txt](/llms-full.txt): this map plus the entire module SDK guide
-  inline (works offline / without repo access).
+  and the agent guide inline (works offline / without repo access).
 - [Source repository](https://github.com/theprototype-app/core): MIT-licensed
   code; CLAUDE.md in the repo root documents the architecture, replication
   rules and conventions agents should follow when contributing.

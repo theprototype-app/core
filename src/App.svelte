@@ -9,6 +9,9 @@
   // frames' blocking shader links. A dynamic import here queued it behind them (a third e2e page
   // took 34 s instead of 8 s to publish __stores).
   import { installDebugHooks } from '$lib/debugHooks'
+  // 55 A2: `window.tpAgent` — only `&agent` / safeStorage.agentApi turn it on. A LEAF statically
+  // (it must read the hash before the dial consumes it); the API itself is a dynamic import.
+  import { agentRequested } from '$lib/agent/agentMode'
   import { onMount } from 'svelte'
   import { Canvas } from '@threlte/core'
   // 30 P0: threlte's Canvas defaults `shadows` to PCFSoftShadowMap, which three 0.185
@@ -69,6 +72,9 @@
   import SculptToolbar from './components/menu/SculptToolbar.svelte'
   import SplineToolbar from './components/menu/SplineToolbar.svelte'
   import MeasureToolbar from './components/menu/MeasureToolbar.svelte' // 47 M1
+  import PathCaptureToolbar from './components/menu/PathCaptureToolbar.svelte' // fix-batch-2
+  import UnderlayWindow from './components/menu/UnderlayWindow.svelte' // 60 Q5
+  import { underlayDropMenu } from '$lib/underlays'
   import ModuleToolboxLayer from './components/ui/ModuleToolboxLayer.svelte'
   // 48 D1: the node graph debugger's panel (loaded the first time it opens)
   import { debugOpen } from '$lib/flowDebug.js'
@@ -135,6 +141,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startWireErrors } from '$lib/wireErrors'
   import { startTrackpadNav } from '$lib/trackpadNav'
   import { startInviteLinks } from '$lib/inviteLinks'
+  import { isAgentSession } from '$lib/inviteStore' // 55 A8
   import { startHelperLayer, helpersInPlay } from '$lib/helperLayer'
   import { startCloudPlugin } from '$lib/cloudPlugin'
   import { startShaderGraphs } from '$lib/shaderGraph'
@@ -180,6 +187,10 @@ import { startMusicToolbox } from './lib/musicToolbox'
   // 36-code: the code workspace (plan 75), loaded the first time a tab opens
   import { codeWorkspaceClose } from './stores/appStore'
   import { startCodeWorkspace } from '$lib/codeWorkspace'
+  // 70 W2-W5: pop-out windows — where each panel lives, the window host, the main window's drop zones + restore bar
+  import { panelAway } from '$lib/windows/panelPlaces.js'
+  import { startPanelHost } from '$lib/windows/panelHost.js'
+  import WindowsOverlay from './components/windows/WindowsOverlay.svelte'
   import { peers, userdata } from './stores/appStore'
   import { get } from 'svelte/store'
   import { initModules, disabledModules } from '$lib/moduleSDK'
@@ -256,6 +267,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // applying but not surviving a reload — invisible from the outside, and the first
     // thing worth knowing when somebody reports that their preferences keep resetting.
     registerDiagnosticsSection('storage', () => storageDebug())
+    if (agentRequested()) import('$lib/agent/tpAgent').then((m) => m.installTpAgent()).catch((e) => console.error('tpAgent install failed', e))
     // 15-N: register the PWA service worker (a no-cache passthrough — see
     // static/sw.js) so mobile browsers offer "Install app". Dev is skipped: a
     // SW in front of vite's HMR only causes confusion.
@@ -298,8 +310,14 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startShortcuts()
     startSnapping()
     startAutosave()
+    // 60 Q4: files shared into the app (share_target → sw.js inbox) or opened from the OS
+    // (file_handlers → launchQueue); they wait for the restore question (launchInbox.js)
+    if (!exportMode) import('$lib/launchInbox').then((m) => m.startLaunchInbox()).catch(() => {})
     startSceneAssets()
+    void import('$lib/chat/tpchatStore.js').then((m) => m.startTpchats()) // 56 C10: Scene ▸ chats / references
+    void import('$lib/ai/imageCards.js').then((m) => m.startImageCards()) // 66 S4b: imported cards face the camera; Scene ▸ generated
     startCodeWorkspace() // 36-code: scriptEditorOpen -> a workspace tab, file follow
+    void startPanelHost() // 70 W5: follow the pop-out layout, bring the saved one back
     startNetworkQuality()
     startAudioDevices() // 23-A3: the device reconcile off objectsGroup
     registerVRPatch() // 23-B1: plugs, cables and knobs in VR
@@ -316,6 +334,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startTrackpadNav()
     // 24-D1: an invite link pasted into the open tab (hashchange → dial / ask)
     startInviteLinks()
+    // 55 A8: an AI agent's page logs its own tool calls for every peer's AI window — loaded only
+    // there (dynamic), so nobody else's boot carries it
+    if (isAgentSession()) import('$lib/agentLogRecorder').then((m) => m.startAgentRecorder()).catch(() => {})
     // 24-E2: the editor camera renders the helper layer outside Play (debug toggle in Play)
     startHelperLayer()
     // shader graphs: the compile/target wiring + the replication and history seams
@@ -395,6 +416,13 @@ import { startMusicToolbox } from './lib/musicToolbox'
     const clipExt = /\.(tpanim|vrma|bvh)$/i
     const clipFiles = files.filter((file) => clipExt.test(file.name))
     if (clipFiles.length) import('./lib/explorerDrop').then((m) => m.dropClipFiles(clipFiles, event.clientX, event.clientY))
+    // 60 Q5: a drop of nothing but images is not a model's companions — they used to be
+    // dropped silently. Ask what they are for: a reference image to build over, or the Explorer.
+    const imageExt = /\.(png|jpe?g|webp|bmp|gif)$/i
+    if (files.every((file) => imageExt.test(file.name))) {
+      underlayDropMenu.set({ x: event.clientX, y: event.clientY, files })
+      return
+    }
     files.forEach((file) => {
       const name = file.name.toLowerCase()
       if (clipFiles.includes(file)) return
@@ -412,18 +440,20 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <KeyboardNav />
 
 {#if !$isLocked && !$embedMode}
-<Flow />
-<FlowCode />
-<AnimationWindow />
-<UvEditor />
-<SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>
-<HudEditor />
-<TimelineEditor />
-<Explorer />
-{#if !$profilerClose}
+<!-- 70 W2: a panel in a pop-out window is unmounted here (one panel, one place); it remounts in its
+     own last dock / float mode when it comes back -->
+{#if !$panelAway.flow}<Flow />{/if}
+{#if !$panelAway.flowcode}<FlowCode />{/if}
+{#if !$panelAway.animation}<AnimationWindow />{/if}
+{#if !$panelAway.uv}<UvEditor />{/if}
+{#if !$panelAway.shader}<SvelteFlowProvider><ShaderEditor /></SvelteFlowProvider>{/if}
+{#if !$panelAway.hud}<HudEditor />{/if}
+{#if !$panelAway.timeline}<TimelineEditor />{/if}
+{#if !$panelAway.explorer}<Explorer />{/if}
+{#if !$profilerClose && !$panelAway.profiler}
 {#await import('./components/editors/Profiler.svelte') then m}<m.default />{/await}
 {/if}
-{#if !$codeWorkspaceClose}
+{#if !$codeWorkspaceClose && !$panelAway.code}
 {#await import('./components/editors/CodeWorkspace.svelte') then m}<m.default />{/await}
 {/if}
 <TextEditorWindow />
@@ -438,6 +468,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 {/if}
 <Menu />
 <PlaceDragOverlay />
+<WindowsOverlay />
 <!-- 29-E + 36-export: the player's chrome on a play link / embed / exported game (start card,
      fullscreen, the open-in-app link) and the runtime-drawn "Made with ThePrototype" badge -->
 <EmbedChrome />
@@ -460,11 +491,14 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <SculptToolbar />
 <SplineToolbar />
 <MeasureToolbar />
+<PathCaptureToolbar />
+<!-- 60 Q5: Reference images (+ the image-drop "Use as reference" menu) -->
+<UnderlayWindow />
 <!-- A5: module toolboxes. OUTSIDE the {#if !$isLocked} block — a toolbox that opted
      into playMode has to survive Play mode, and the layer decides per box. -->
 <ModuleToolboxLayer />
 <!-- 48 D1: the Debugger panel. OUTSIDE the {#if !$isLocked} block — Play is where it works -->
-{#if $debugOpen && !$embedMode}
+{#if $debugOpen && !$embedMode && !$panelAway.debugger}
 {#await import('./components/editors/FlowDebugger.svelte') then m}<m.default />{/await}
 {/if}
 <ModulesManager />

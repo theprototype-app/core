@@ -228,6 +228,8 @@
 	const recording = $derived(!!target && $autoKeyFor === target.uuid);
 
 	// docked vs floating (starts docked, undockable)
+	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
+	let { popped = false } = $props();
 	let docked = $state(true);
 	// 18-B: floating-window size limits, shared with the clamp helpers
 	const WIN_MIN = { minW: 360, minH: 260 };
@@ -248,8 +250,11 @@
 	}
 	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
 	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	// 70 W2: a popped-out instance renders its floating layout inside its window, never docked
+	// svelte-ignore state_referenced_locally
+	if (popped) docked = false;
 	$effect(() =>
-		onLayoutRestore(() => {
+		popped ? undefined : onLayoutRestore(() => {
 			const stored = storedPanelLayout(safeStorage.getItem, 'animation', 660, 460);
 			docked = !!(stored.docked);
 			const fit = clampWinSize(stored.w, stored.h, WIN_MIN);
@@ -270,6 +275,7 @@
 	// from localStorage ONCE at mount, so writing that flag from outside is inert;
 	// `setDocked` owns the mode and is what has to run. Cleared as it is acted on.
 	$effect(() => {
+		if (popped) return; // 70 W2: the main window's instance answers the arm
 		const arm = $dockModeArm;
 		if (!arm || arm.key !== 'animation') return;
 		dockModeArm.set(null);
@@ -285,6 +291,7 @@
 	const effW = $derived(myGroup ? myGroup.rect.width : winW);
 	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 	$effect(() => {
+		if (popped) return; // 70 W2: a popped panel is no dock tab
 		setDockOccupant('animation', !$animationClose && docked, $dockHeight);
 		return () => setDockOccupant('animation', false);
 	});

@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { graphOf, graphExists, SCENE_GRAPH } from '../../stores/flowStore';
+import { graphOf, graphExists, SCENE_GRAPH, findNodeAnyGraph } from '../../stores/flowStore';
 import { objectsGroup, lockedObjects } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import {
@@ -25,7 +25,13 @@ import { createJoint } from '$lib/joints';
 import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X5
 import { parseGraphText } from '$lib/graphText';
 import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
+import { edgeHandleProblems, knownInputs, knownMapOutputs } from './edgeHandles.js';
+import { lockSkip } from './lockNote.js';
 import { activeAiConfig } from './providers.js';
+import { matchNodeType } from './nodeTypeMatch.js';
+import { describeNodeTypes, paramsOf } from './nodeTypesCore.js';
+import { nodeDoc } from '$lib/nodeDocs';
+import { inputType, outputType, outputHandleType } from '$lib/flowSockets';
 
 // AI flow + physics executors (assistant v3). The behavior counterpart to
 // tools.js: create/update flow nodes (the @xyflow editor graphs driving
@@ -37,7 +43,15 @@ import { activeAiConfig } from './providers.js';
 /** Physics is hard for small local models — a per-provider opt-in checkbox
  * (Settings → AI) gates these tools. @returns {boolean} */
 export function physicsToolsEnabled() {
-	return !!activeAiConfig()?.physicsTools;
+	return physicsForced || !!activeAiConfig()?.physicsTools;
+}
+
+/** 55 A6: an AGENT page always offers the physics tools — the checkbox exists for small LOCAL models,
+ * and an external agent is not one (test flight T9). Set by tpAgent only. */
+let physicsForced = false;
+/** @param {boolean} on */
+export function forcePhysicsTools(on) {
+	physicsForced = !!on;
 }
 
 /** Node types only usable when physics tools are on — the sim-driving set
@@ -102,9 +116,10 @@ const NODE_TYPE_ALIASES = /** @type {Record<string, string>} */ ({
 	// than for anything else in the palette ("wait 3 seconds", "remember that it was
 	// collected"), so the near-misses are worth mapping home.
 	//
-	// Note the KEY SHAPE: normalizeNodeType flattens whitespace/underscores/hyphens
-	// out of the model's word before the lookup, so only FLATTENED keys can ever
-	// match (the `play_animation` style entries above are dead weight, kept as-is).
+	// Note the KEY SHAPE: after the exact and case-only catalog matches, normalizeNodeType
+	// flattens whitespace/underscores/hyphens out of the model's word before the alias
+	// lookup, so only FLATTENED keys can ever match (the `play_animation` style entries
+	// above are dead weight, kept as-is).
 	// And nothing here may shadow a real catalog type, which wins on the line before:
 	// `toggle` (the Input node), `timer` (the delay LINE) and `switcher` are
 	// deliberately absent for that reason - a model saying "toggle" means the input.
@@ -162,14 +177,9 @@ export function aiNodeVocabulary(physics) {
 		.filter((g) => g.types.length);
 }
 
-/** @param {any} raw @returns {string|null} a real catalog type or null */
+/** @param {any} raw @returns {string|null} a real catalog type or null (exact first — kit-* types keep their case and hyphens) */
 function normalizeNodeType(raw) {
-	const flat = String(raw ?? '')
-		.trim()
-		.toLowerCase()
-		.replace(/[\s_-]+/g, '');
-	if (ALL_CATALOG_TYPES.includes(flat)) return flat;
-	return NODE_TYPE_ALIASES[flat] ?? null;
+	return matchNodeType(raw, ALL_CATALOG_TYPES, NODE_TYPE_ALIASES);
 }
 
 /** A fresh uuid (crypto — same helper shape as tools.js). @returns {string} */
@@ -263,6 +273,33 @@ function buildNodeData(type, spec, raw, errors) {
 }
 
 /**
+ * 86 T1 (= 85 R9): `describe_node_types` — the sockets, params and one-line doc of the node types this
+ * assistant may place, from the same tables the editor and D24's edge check read (nodeTypesCore.js).
+ * @param {any} args
+ */
+export function describeNodeTypesTool(args) {
+	return describeNodeTypes(args, {
+		vocabulary: aiNodeVocabulary(physicsToolsEnabled()),
+		spec: (t) => findNodeSpec(t),
+		doc: (t) => nodeDoc(t),
+		// D24's own lists (edgeHandles.js), so what this tool says is exactly what an edge is checked against;
+		// params are listed separately (a wire into a param key drives it)
+		inputs: (t) => {
+			const spec = /** @type {any} */ (findNodeSpec(t));
+			const params = new Set(paramsOf(spec).map((p) => p.key));
+			const names = (knownInputs({ type: t, data: { ...(spec?.defaults ?? {}) } }) ?? []).filter((n) => !params.has(n));
+			return names.map((name) => ({ name, type: inputType(t, name) }));
+		},
+		output: (t) => outputType(t),
+		namedOutputs: (t) => {
+			const spec = /** @type {any} */ (findNodeSpec(t));
+			return (knownMapOutputs({ type: t, data: { ...(spec?.defaults ?? {}) } }) ?? []).map((name) => ({ name, type: outputHandleType(t, name) }));
+		},
+		match: (raw) => normalizeNodeType(raw)
+	});
+}
+
+/**
  * create_flow_nodes: add behavior nodes (and optional edges) to ONE graph.
  * Local `ref` keys let edges point at freshly created nodes. Records ONE
  * 'flownodes' history entry for the whole call.
@@ -330,16 +367,33 @@ export function createFlowNodesTool(args) {
 	/** @type {any[]} */ const createdEdges = [];
 	const edgeSpecs = [...(Array.isArray(args?.edges) ? args.edges : []), ...textEdges];
 	if (edgeSpecs.length) {
-		const inGraph = new Set((graphOf(graphId)?.nodes ?? []).map((/** @type {any} */ n) => n.id));
+		const graphNodes = graphOf(graphId)?.nodes ?? [];
+		const inGraph = new Set(graphNodes.map((/** @type {any} */ n) => n.id));
 		for (const e of edgeSpecs) {
 			const source = refIds[e?.from] ?? (inGraph.has(e?.from) ? e.from : null);
 			const target = refIds[e?.to] ?? (inGraph.has(e?.to) ? e.to : null);
 			if (!source || !target) {
-				errors.push('edge "' + e?.from + '" -> "' + e?.to + '": unknown node ref/id');
+				// 55 (41's research): an id that lives in ANOTHER graph is not unknown — say what to do instead
+				const elsewhere = [e?.from, e?.to].some((id) => typeof id === 'string' && !refIds[id] && !inGraph.has(id) && !!findNodeAnyGraph((/** @type {any} */ n) => n.id === id));
+				errors.push(
+					'edge "' + e?.from + '" -> "' + e?.to + '": ' +
+						(elsewhere ? 'edges must stay in one graph; put the source in scene with an Object Selector' : 'unknown node ref/id')
+				);
 				continue;
 			}
 			const sourceHandle = typeof e?.fromHandle === 'string' && e.fromHandle ? e.fromHandle : undefined;
 			const targetHandle = typeof e?.toHandle === 'string' && e.toHandle ? e.toHandle : undefined;
+			// 55 (41's voice-Claude finding): a handle the node does not have made a wire that did nothing
+			const bad = edgeHandleProblems(
+				graphNodes.find((/** @type {any} */ n) => n.id === source),
+				graphNodes.find((/** @type {any} */ n) => n.id === target),
+				sourceHandle,
+				targetHandle
+			);
+			if (bad.length) {
+				errors.push('edge "' + e?.from + '" -> "' + e?.to + '": ' + bad.join('; '));
+				continue;
+			}
 			// id format MUST match the editor's (peer dedupe diverges otherwise)
 			const edge = {
 				id:
@@ -361,11 +415,28 @@ export function createFlowNodesTool(args) {
 		recordFlowNodesEntry({ op: 'create', graphId, nodes: createdNodes, edges: createdEdges });
 	if (!createdNodes.length && !createdEdges.length)
 		return { error: 'nothing was created: ' + (errors[0] ?? 'no valid nodes'), errors };
+	// 55 owner finding 3: a half-done call says so at the top level — `partial` + a one-line
+	// `warning` — not only deep in errors[] (a top-level `error` would read as "nothing happened"
+	// and invite a retry that duplicates what WAS created)
+	const failedNodes = specs.length - createdNodes.length;
+	const failedEdges = edgeSpecs.length - createdEdges.length;
 	return {
 		graph: graphId,
 		created,
 		edges: createdEdges.length,
-		...(errors.length ? { errors } : {})
+		...(errors.length
+			? {
+					partial: true,
+					warning:
+						'only part of this call was applied: ' +
+						[failedNodes ? failedNodes + ' of ' + specs.length + ' nodes' : '', failedEdges ? failedEdges + ' of ' + edgeSpecs.length + ' edges' : '']
+							.filter(Boolean)
+							.join(' and ') +
+						(failedNodes || failedEdges ? ' were not created' : 'some node data was not applied') +
+						' — fix what errors[] names and send only those again',
+					errors
+				}
+			: {})
 	};
 }
 
@@ -500,11 +571,16 @@ const COLLIDER_KINDS = ['box', 'sphere', 'capsule', 'cylinder', 'hull', 'trimesh
 export function setPhysicsTool(args) {
 	const updates = Array.isArray(args?.updates) ? args.updates : [];
 	if (!updates.length)
-		return { error: 'no updates provided — pass updates: [{ uuid, mode?, mass?, ... }]' };
+		return {
+			error:
+				(Array.isArray(args?.objects) ? 'set_physics takes "updates", not "objects"' : 'no updates provided') +
+				' — pass updates: [{ uuid, mode?, mass?, ... }]'
+		};
 	const results = updates.map((/** @type {any} */ u) => {
 		const uuid = u?.uuid;
 		if (!uuid || !objectOf(uuid)) return { uuid, error: 'no object with that uuid' };
-		if (lockedByPeer(uuid)) return { uuid, skipped: 'locked by another peer' };
+		const lock = lockSkip(uuid, objectOf(uuid));
+		if (lock) return { uuid, skipped: lock };
 		/** @type {any} */ const patch = {};
 		if (typeof u.mode === 'string' && PHYSICS_MODES.includes(u.mode)) patch.mode = u.mode;
 		if (Number.isFinite(u.mass)) {
@@ -555,15 +631,25 @@ export function createJointsTool(args) {
 		if (!a || !objectOf(a)) return { error: 'joint "a" object not found: ' + a };
 		if (!b || !objectOf(b)) return { error: 'joint "b" object not found: ' + b };
 		if (a === b) return { error: 'cannot joint an object to itself' };
-		if (lockedByPeer(a) || lockedByPeer(b)) return { skipped: 'locked by another peer', a, b };
+		const lock = lockSkip(a, objectOf(a)) || lockSkip(b, objectOf(b));
+		if (lock) return { skipped: lock, a, b };
 		const axis = ['x', 'y', 'z'].includes(j?.axis) ? j.axis : undefined;
 		const motor =
 			kind === 'revolute' && j?.motor && Number.isFinite(j.motor.vel)
 				? { vel: j.motor.vel, maxForce: Number.isFinite(j.motor.maxForce) ? j.motor.maxForce : 100 }
 				: undefined;
-		const def = createJoint(/** @type {'fixed'|'revolute'} */ (kind), a, b, axis, motor);
+		// 55 owner finding 6: anchor (world point), contacts:false and hinge limits reach the joint
+		const anchor =
+			Array.isArray(j?.anchor) && j.anchor.length === 3 && j.anchor.every((/** @type {any} */ n) => Number.isFinite(n))
+				? j.anchor
+				: undefined;
+		const def = createJoint(/** @type {'fixed'|'revolute'} */ (kind), a, b, axis, motor, {
+			...(anchor ? { anchor } : {}),
+			...(j?.contacts === false ? { contacts: false } : {}),
+			...(Array.isArray(j?.limits) ? { limits: j.limits } : {})
+		});
 		if (!def) return { error: 'joint creation failed', a, b };
-		return { id: def.id, kind, a, b };
+		return { id: def.id, kind, a, b, ...(def.contacts === false ? { contacts: false } : {}) };
 	});
 	if (results.every((/** @type {any} */ r) => r.error))
 		return { error: 'nothing was attached: ' + results[0].error, joints: results };

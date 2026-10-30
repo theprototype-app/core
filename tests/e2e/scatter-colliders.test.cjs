@@ -46,14 +46,32 @@ async function parkBall(page, ball, at) {
 
 /** run a simulation on `peer` until the ball is AT REST (sim time is slow on a loaded box: a
  * fixed sleep reads a ball still falling), then stop and return its height there and on `other` */
+/** Resolve after `n` rendered frames on that page (bounded). @param {any} page @param {number} n */
+const framesPass = (page, n) =>
+	page.evaluate(
+		(n) =>
+			new Promise((resolve) => {
+				let left = n;
+				const tick = () => (--left <= 0 ? resolve(true) : requestAnimationFrame(tick));
+				requestAnimationFrame(tick);
+				setTimeout(() => resolve(false), 120000);
+			}),
+		n
+	);
+
 async function drop(peer, other, ball) {
 	await peer.page.evaluate(() => window.__stores.physics.toggleSimulation());
 	await peer.page.waitForTimeout(800);
 	let last = null;
 	let still = 0;
-	const deadline = Date.now() + 30000;
+	// scatter-sync: SIMULATED time, not wall time. The step accumulator catches up at most 8 substeps a
+	// frame, so on a slow runner (multi-second frames) 30 s of wall clock was ~1 s of simulation and the
+	// ball was still falling. Each sample waits 500 ms AND 8 rendered frames (>= 8 substeps), so "still"
+	// always spans real simulation, and the cap is generous wall time.
+	const deadline = Date.now() + 240000;
 	while (Date.now() < deadline && still < 3) {
 		await peer.page.waitForTimeout(500);
+		await framesPass(peer.page, 8);
 		const y = (await posOf(peer.page, ball))?.[1] ?? null;
 		still = last !== null && y !== null && Math.abs(y - last) < 0.004 ? still + 1 : 0;
 		last = y;
@@ -63,6 +81,7 @@ async function drop(peer, other, ball) {
 	await peer.page.waitForTimeout(300);
 	const here = (await posOf(peer.page, ball))?.[1] ?? null;
 	// the watching peer has the stream (~10 Hz + smoothing) and the settling move sent at stop
+	await h.caughtUp(peer, other);
 	let there = null;
 	const until = Date.now() + 8000;
 	while (Date.now() < until) {
@@ -80,11 +99,11 @@ async function pickCollider(peer, terrain, setId, name) {
 	if (!(await sel.isVisible().catch(() => false))) {
 		// the Scatter section may start collapsed
 		const head = peer.page.locator('button', { hasText: /^Scatter$/ }).first();
-		if (await head.isVisible().catch(() => false)) await head.click();
+		if (await head.isVisible().catch(() => false)) await head.click({ timeout: h.PATIENT_CLICK_MS });
 	}
-	await sel.scrollIntoViewIfNeeded();
-	await sel.click();
-	await peer.page.locator('.ts-list [role="option"]', { hasText: new RegExp(`^\\s*${name}\\s*$`) }).click();
+	await sel.scrollIntoViewIfNeeded({ timeout: h.PATIENT_CLICK_MS });
+	await sel.click({ timeout: h.PATIENT_CLICK_MS });
+	await peer.page.locator('.ts-list [role="option"]', { hasText: new RegExp(`^\\s*${name}\\s*$`) }).click({ timeout: h.PATIENT_CLICK_MS });
 	await peer.page.waitForTimeout(300);
 	return sel.innerText();
 }
@@ -113,7 +132,7 @@ h.run(async () => {
 		s.objectsGroup.update((v) => v);
 		return t.uuid;
 	});
-	await h.eventually(() => blockOf(B.page, terrain), (v) => v !== 'missing', 'B has the terrain', 20000);
+	await h.eventuallyAfter(A, B, () => blockOf(B.page, terrain), (v) => v !== 'missing', 'B has the terrain', 20000);
 
 	const scattered = await A.page.evaluate((u) => {
 		const s = window.__stores;
@@ -160,7 +179,7 @@ h.run(async () => {
 		o.scale.set(0.4, 0.4, 0.4);
 		return o.uuid;
 	});
-	await h.eventually(() => posOf(B.page, ball), (p) => !!p, 'B has the ball', 20000);
+	await h.eventuallyAfter(A, B, () => posOf(B.page, ball), (p) => !!p, 'B has the ball', 20000);
 	// the Terrain is procedural (hills): measure the ground under the rock and drop from above it
 	const ground = await A.page.evaluate(
 		([u, x, z]) => {
@@ -209,7 +228,7 @@ h.run(async () => {
 	if (SHOTS) await A.page.screenshot({ path: `${SHOTS}/01-scatter-collider-select.png` });
 	const aBlock = await blockOf(A.page, terrain);
 	h.check(aBlock?.sets?.[0]?.collider === 'box', 'the set field is box on A');
-	await h.eventually(() => blockOf(B.page, terrain), (v) => v?.sets?.[0]?.collider === 'box', 'the set field REPLICATED to B', 15000);
+	await h.eventuallyAfter(A, B, () => blockOf(B.page, terrain), (v) => v?.sets?.[0]?.collider === 'box', 'the set field REPLICATED to B', 15000);
 
 	// ---- A steps the world: the ball stops on the rock, on A and on B ----------------------
 	await parkBall(A.page, ball, over);
@@ -224,9 +243,9 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
 	await A.page.waitForTimeout(500);
 	await pickCollider(B, terrain, setId, 'Sphere');
-	await h.eventually(() => blockOf(A.page, terrain), (v) => v?.sets?.[0]?.collider === 'sphere', 'B\'s pick replicated back to A', 15000);
+	await h.eventuallyAfter(B, A, () => blockOf(A.page, terrain), (v) => v?.sets?.[0]?.collider === 'sphere', 'B\'s pick replicated back to A', 15000);
 	await B.page.evaluate(() => window.__stores.history.undo());
-	await h.eventually(() => blockOf(A.page, terrain), (v) => v?.sets?.[0]?.collider === 'box', 'ONE undo on B puts Box back, on A too', 10000);
+	await h.eventuallyAfter(B, A, () => blockOf(A.page, terrain), (v) => v?.sets?.[0]?.collider === 'box', 'ONE undo on B puts Box back, on A too', 10000);
 	await B.page.evaluate(() => window.__stores.history.redo());
 	await h.eventually(() => blockOf(A.page, terrain), (v) => v?.sets?.[0]?.collider === 'sphere', 'redo brings Sphere back on A', 10000);
 	await B.page.evaluate(() => window.__stores.objectActions.deselectObject());

@@ -3,6 +3,10 @@
 	// plus a shortcut-toggled quick prompt pill. The pill is hidden by default and
 	// opened with the backquote (`) key; submitting from it opens the window. Edits
 	// go out as normal replicated edits from this peer, undoable as one step.
+	// 56 C1/C11: the target picker also lists the AI AGENTS in the session; with one picked the
+	// body is that agent's conversation (AgentThread), the composer sends `agentchat` requests and
+	// Stop cancels the running one; the history icon lists the scene's chats, New chat starts one,
+	// and a `.tpchat` dropped on the window (or double-clicked in the Explorer) opens it here.
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import {
 		aiAssistantHidden,
@@ -15,29 +19,130 @@
 	import Icon from '../ui/Icon.svelte';
 	import Button from '../ui/Button.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
+	import AgentLog from './AgentLog.svelte'; // 55 A8
+	import ChatAttach from './ChatAttach.svelte'; // 56 C8
+	import AgentThread from './AgentThread.svelte'; // 56 C1
+	import ChatHistory from './ChatHistory.svelte'; // 56 C11
+	import {
+		chatTarget,
+		activeChatId,
+		agentTargets,
+		agentChatState,
+		agentStatusOf,
+		sendToAgent,
+		stopAgentRequest,
+		canStop,
+		iAmViewer,
+		newChat,
+		openChatInAssistant,
+		peerLabel
+	} from '$lib/agentChat';
+	import { runningRequest, samePeer } from '$lib/agentChatCore';
+	import { chatIdOfItem } from '$lib/chat/tpchatStore.js';
+	import { rolesInfo } from '$lib/cloudHooks';
+	import ConnectClaude from './ConnectClaude.svelte'; // 86 B1/B2
 	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider } from '$lib/ai/providers';
-	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi } from '$lib/ai/assistant';
+	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi, resetAiConversation } from '$lib/ai/assistant';
 	import { dragWindow } from '$lib/dragWindow';
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
 	import { sttConfig, sttReady } from '$lib/ai/stt';
 	import { dictation, startDictation, stopDictation } from '$lib/ai/sttCapture';
+	import { panelAway } from '$lib/windows/panelPlaces.js';
 
 	let prompt = $state('');
+	/** 56 C8: pictures for the next message, ready for a request's `images` (56-chat's send path reads it) */
+	let pending: any[] = $state([]);
 	let pillPrompt = $state('');
 	let scroller: any = $state(null);
 	let pillInput: any = $state(null);
 	let promptInput: any = $state(null);
 
 	const hasProvider = $derived($aiProviders.length > 0 && !!$aiActiveProvider);
+
+	// 56 C1: the agent this window talks to (null = the configured provider, as before)
+	const agentId = $derived($chatTarget?.kind === 'agent' ? $chatTarget.id : null);
+	const agentRow = $derived(agentId ? $agentTargets.find((t) => samePeer(t.id, agentId)) ?? null : null);
+	const agentInfo = $derived(agentId ? { id: agentId, name: agentRow?.name ?? peerLabel(agentId) } : null);
+	const agentChat = $derived($activeChatId ? $agentChatState.chats[$activeChatId] ?? null : null);
+	const running = $derived(agentId ? runningRequest(agentChat) : null);
+	const agentMuted = $derived(agentId ? !!agentStatusOf($agentChatState, agentId)?.muted : false);
+	// re-read on a roles change (the argument is the dependency)
+	const viewerNow = (_roles: any) => iAmViewer();
+	const amViewer = $derived(viewerNow($rolesInfo));
+	const mayStop = $derived(!!running && canStop(running));
+	/** the picker's value: `p:<provider id>` or `a:<agent peer id>` */
+	const pickValue = $derived(agentId ? 'a:' + agentId : $aiActiveProvider ? 'p:' + $aiActiveProvider : '');
+	let historyOpen = $state(false);
+	let historyBtn: any = $state(null);
 	const pillVisible = $derived($aiPromptBarOpen && $aiEnabled && hasProvider && $aiAssistantHidden !== '');
 
 	function submit() {
 		const text = prompt.trim();
+		if (agentId) {
+			if ((!text && !pending.length) || !agentRow || agentMuted) return;
+			if (!sendToAgent(text, { agentId, images: pending })) {
+				showToast('Not connected — your message was not sent.');
+				return;
+			}
+			prompt = '';
+			pending = [];
+			return;
+		}
 		if (!text || $aiBusy) return;
 		prompt = '';
 		runPrompt(text);
+	}
+
+	/** pick an agent: its newest chat in this scene, else a fresh one @param {string} id */
+	function pickAgent(id: string) {
+		chatTarget.set({ kind: 'agent', id });
+		const chats = Object.values($agentChatState.chats).filter((c: any) => samePeer(c.agent, id));
+		const newest: any = chats.sort((a: any, b: any) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+		if (newest) activeChatId.set(newest.id);
+		else newChat();
+	}
+
+	function startNewChat() {
+		historyOpen = false;
+		if (agentId) newChat();
+		else resetAiConversation(); // the provider chat (F3, as it was): a fresh conversation
+		requestAnimationFrame(() => promptInput?.focus());
+	}
+
+	function closeHistory() {
+		historyOpen = false;
+		requestAnimationFrame(() => historyBtn?.focus());
+	}
+
+	/** C11: a chat dragged onto the window opens it here — a Scene ▸ chats card, a Library `.tpchat`, or a desktop file */
+	const isTpchatName = (name: unknown) => /\.tpchat$/i.test(String(name ?? ''));
+	function chatDragOver(e: DragEvent) {
+		const types = e.dataTransfer?.types;
+		if (types?.includes('application/x-explorer-item') || types?.includes('Files')) {
+			e.preventDefault();
+			if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+		}
+	}
+	async function chatDrop(e: DragEvent) {
+		const file = [...(e.dataTransfer?.files ?? [])].find((f) => isTpchatName(f.name));
+		const raw = e.dataTransfer?.getData('application/x-explorer-item');
+		let item: any = file ?? null;
+		if (!item && raw) {
+			try {
+				item = JSON.parse(raw);
+			} catch {
+				return;
+			}
+		}
+		// images and other files are the composer's (56-media)
+		if (!item || !(file || item.kind === 'tpchat' || item.kind === 'chat' || item.chatId || isTpchatName(item.name))) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const id = await chatIdOfItem(item);
+		if (id) openChatInAssistant(id);
+		else showToast('That file is not a chat this scene knows.');
 	}
 
 	// 36-vr-ai (F2): voice typing — click to listen, click again to stop; the transcript lands in the input,
@@ -92,13 +197,34 @@
 	});
 
 	function onActiveChange(e: Event) {
-		const id = (e.currentTarget as HTMLSelectElement).value;
+		const v = (e.currentTarget as HTMLSelectElement).value;
+		if (v.startsWith('a:')) {
+			pickAgent(v.slice(2));
+			return;
+		}
+		chatTarget.set(null);
+		const id = v.startsWith('p:') ? v.slice(2) : v;
 		setAiActiveProvider(id || null);
 	}
+
+	const placeholder = $derived.by(() => {
+		if ($dictation.state === 'recording') return 'Listening… click the mic to stop';
+		if ($dictation.state === 'transcribing') return 'Transcribing…';
+		if (agentId) {
+			if (!agentRow) return (agentInfo?.name ?? 'The agent') + ' has left this session';
+			if (agentMuted) return (agentInfo?.name ?? 'The agent') + ' is muted by the host';
+			return 'Message ' + (agentInfo?.name ?? 'the agent') + '…';
+		}
+		return 'Ask the assistant…';
+	});
+	const inputDisabled = $derived(agentId ? !agentRow || agentMuted : $aiBusy);
+	// 70 W2: `popped` = the instance in a pop-out window (the window only); the main one keeps the pill
+	// and draws no window while the assistant is away
+	let { popped = false }: { popped?: boolean } = $props();
 </script>
 
 <!-- Quick prompt pill (backquote-toggled) -->
-{#if pillVisible}
+{#if pillVisible && !popped}
 	<div
 		class="ai-pill ui-panel tp-ui tp-window flex items-center gap-1.5 px-2 py-1.5"
 		style="position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bottom-inset, 0px) + 72px); z-index: var(--z-hud); width: min(560px, 92vw);"
@@ -120,6 +246,7 @@
 {/if}
 
 <!-- Floating window -->
+{#if popped || !$panelAway.aiAssistant}
 <div id="ai-assistant" class={$aiAssistantHidden}>
 	<div
 		id="ai-assistant-window"
@@ -129,6 +256,11 @@
 		use:tabbable={{ key: 'aiAssistant', title: 'AI assistant', openStore: aiAssistantHidden, isOpen: (v: string) => v === '', close: () => aiAssistantHidden.set('hidden') }}
 		class="ui-panel tp-ui tp-window flex h-[440px] w-[min(500px,90vw)] flex-col overflow-hidden"
 		style="z-index: var(--z-window)"
+		data-target={agentId ? 'agent' : 'provider'}
+		role="region"
+		aria-label="AI assistant"
+		ondragover={chatDragOver}
+		ondrop={chatDrop}
 	>
 		<!-- 38 R6: the one window header (ui/WindowChrome) -->
 		<WindowChrome
@@ -138,7 +270,45 @@
 			title="AI assistant"
 			headerClass="ui-panel-header move-handle cursor-move select-none"
 			onclose={() => aiAssistantHidden.set('hidden')}
-		/>
+		>
+			{#snippet actions()}
+				<!-- 56 C11: the scene's chats, and a fresh one -->
+				<button
+					type="button"
+					id="ai-history-btn"
+					class="wc-act"
+					bind:this={historyBtn}
+					aria-label="Chat history"
+					title="Chat history"
+					aria-expanded={historyOpen}
+					aria-controls="ai-chat-history"
+					onclick={() => (historyOpen = !historyOpen)}><Icon name="history" size={16} /></button
+				>
+				<button type="button" id="ai-new-chat" class="wc-act" aria-label="New chat" title="New chat" onclick={startNewChat}
+					><Icon name="plus" size={16} /></button
+				>
+			{/snippet}
+		</WindowChrome>
+		<!-- 86 B1/B2: Connect Claude (signed-in cloud builds only) -->
+		<ConnectClaude />
+		<div class="ai-body relative flex min-h-0 flex-1 flex-col">
+		{#if historyOpen}
+			<ChatHistory
+				activeId={agentId ? $activeChatId : null}
+				onnew={startNewChat}
+				onclose={closeHistory}
+				onpick={(id) => {
+					historyOpen = false;
+					openChatInAssistant(id);
+				}}
+			/>
+		{/if}
+		{#if agentId}
+			<!-- 56 C1: the conversation with the agent, its A8 steps interleaved -->
+			<AgentThread chatId={$activeChatId} agent={agentInfo} visible={$aiAssistantHidden === '' && !historyOpen} />
+		{:else}
+		<!-- 55 A8: what the AI agents in the session did, on every peer -->
+		<AgentLog />
 
 		<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto px-2 py-2" use:minimalScroll>
 			{#if !$aiMessages.length}
@@ -173,14 +343,32 @@
 				{/if}
 			</ul>
 		</div>
+		{/if}
+		</div>
 
 		<div class="ai-composer shrink-0">
 			<div class="mb-1.5 flex items-center gap-1.5">
-				{#if $aiProviders.length}
-					<select class="tp-field flex-1" value={$aiActiveProvider ?? ''} onchange={onActiveChange}>
-						{#each $aiProviders as p (p.id)}
-							<option value={p.id}>{p.label} · {p.model}</option>
-						{/each}
+				{#if $aiProviders.length || $agentTargets.length || agentId}
+					<select id="ai-target" class="tp-field flex-1" aria-label="Talk to" value={pickValue} onchange={onActiveChange}>
+						{#if $aiProviders.length}
+							<optgroup label="Assistant">
+								{#each $aiProviders as p (p.id)}
+									<option value={'p:' + p.id}>{p.label} · {p.model}</option>
+								{/each}
+							</optgroup>
+						{:else}
+							<option value="" disabled>No assistant set up (Settings › AI)</option>
+						{/if}
+						{#if $agentTargets.length || agentId}
+							<optgroup label="AI agents in this session">
+								{#each $agentTargets as t (t.id)}
+									<option value={'a:' + t.id}>{t.label}</option>
+								{/each}
+								{#if agentId && !agentRow}
+									<option value={'a:' + agentId}>{agentInfo?.name ?? 'AI agent'} · left</option>
+								{/if}
+							</optgroup>
+						{/if}
 					</select>
 				{:else}
 					<!-- 38 NOTES-38 #24 (design page): the hint is the way there — the same Settings › AI
@@ -202,13 +390,16 @@
 					bind:this={promptInput}
 					type="text"
 					class="tp-field flex-1"
-					placeholder={$dictation.state === 'recording' ? 'Listening… click the mic to stop' : $dictation.state === 'transcribing' ? 'Transcribing…' : 'Ask the assistant…'}
+					{placeholder}
+					aria-label={agentId ? 'Message ' + (agentInfo?.name ?? 'the agent') : 'Ask the assistant'}
 					bind:value={prompt}
-					disabled={$aiBusy}
+					disabled={inputDisabled}
 					onkeydown={(e) => {
 						if (e.key === 'Enter') submit();
 					}}
 				/>
+				<!-- 56 C8: pictures for the next message (+ menu, paste, drop, Explorer drag) -->
+				<ChatAttach bind:pending disabled={inputDisabled} />
 				<button
 					id="ai-mic"
 					class="ai-mic shrink-0"
@@ -216,20 +407,28 @@
 					aria-label={$dictation.state === 'recording' ? 'Stop voice typing' : 'Voice typing'}
 					aria-pressed={$dictation.state === 'recording'}
 					title={$dictation.state === 'recording' ? 'Stop and type what was said' : 'Voice typing (Settings ▸ AI)'}
-					disabled={$aiBusy || $dictation.state === 'transcribing'}
+					disabled={inputDisabled || $dictation.state === 'transcribing'}
 					onclick={toggleMic}
 				>
 					<Icon name={$dictation.state === 'recording' ? 'square' : 'mic'} size={16} />
 				</button>
-				{#if $aiBusy}
+				{#if agentId && running && mayStop}
+					<!-- 56 C6: Stop the running request — `{cancel}` to the agent -->
+					<Button id="ai-agent-stop" variant="outline" size="sm" onclick={() => stopAgentRequest($activeChatId ?? '')}>Stop</Button>
+				{:else if !agentId && $aiBusy}
 					<Button variant="outline" size="sm" onclick={stopAi}>Stop</Button>
 				{:else}
-					<Button variant="primary" size="sm" onclick={submit}>Send</Button>
+					<Button id="ai-send" variant="primary" size="sm" disabled={agentId ? inputDisabled : false} onclick={submit}>Send</Button>
 				{/if}
 			</div>
+			{#if agentId && amViewer}
+				<!-- 56 C5: a viewer can ask; the agent will not change the scene for them -->
+				<p id="ai-viewer-hint" class="ai-hint mt-1">You can ask — the agent won’t change the scene for a viewer.</p>
+			{/if}
 		</div>
 	</div>
 </div>
+{/if}
 
 <style>
 	#ai-assistant.hidden {

@@ -6,8 +6,8 @@
 //   · our own id                          → say so
 //   · the host we are already with        → say so
 //   · a different server named           → ask, naming the host (a `~srv=` link can point
-//                                           at ANY signaling server; the load-time path
-//                                           switches silently, the live one says where)
+//                                           at ANY signaling server; 69 T8: the load-time
+//                                           path asks the same question, confirmInviteServer)
 //   · already in a session               → ask to leave first (the user's rule)
 //   · else                               → dial through requestConnect (its own guards)
 // The hash is CONSUMED first (replaceState, so no second hashchange and no trailing `#`):
@@ -21,6 +21,7 @@ import { parseInviteHash, decodeInviteServer, peerServerStatus, sameServer } fro
 import { requestConnect, cancelOutboundRequest } from './peerApproval';
 import { sessionHost } from './connectionState';
 import { nameOf } from './lockControl';
+import { captureInviteHash } from './inviteStore';
 
 /** @param {any} target the decoded override */
 function serverLabel(target) {
@@ -39,6 +40,44 @@ function peerLabel(peerId) {
 	} catch {}
 	const id = peerId.toUpperCase();
 	return name && name.toLowerCase() !== peerId ? name + ' (' + id + ')' : id;
+}
+
+/** 69 T8: the one question a link naming another signaling server gets, at load or live
+ * @param {string} peerId @param {any} target @returns {Promise<string | null>} 'join' or not */
+function askServer(peerId, target) {
+	return showChoice({
+		title: 'Join on another server?',
+		message:
+			'Join ' + peerLabel(peerId) + ' on ' + serverLabel(target) + '? This invite connects through that server instead of ' +
+			'your usual one — it sees your IP address and relays how you connect. Only join if you trust who sent the link.',
+		choices: [{ value: 'join', label: 'Join' }],
+		cancelLabel: 'Stay on mine'
+	});
+}
+
+/**
+ * 69 T8: an invite opened IN A NEW TAB that names a signaling server. It used to be switched to
+ * silently at load; now it is asked, the way a link pasted into a running tab always was. The same
+ * server as ours is no question: wait for our own server, then dial as the bare link would.
+ * @param {any} peer the PeerConnection @param {string} peerId @param {any} target decoded `~srv`
+ * @returns {Promise<'dial' | 'stay' | 'failed'>}
+ */
+export async function confirmInviteServer(peer, peerId, target) {
+	const opened = () =>
+		new Promise((resolve) => {
+			const started = Date.now();
+			const tick = () => (peer.hasOpened || Date.now() - started > 20000 ? resolve(!!peer.hasOpened) : setTimeout(tick, 200));
+			tick();
+		});
+	if (sameServer(target, get(peerServerStatus))) {
+		if (!(await opened())) return 'failed';
+		await requestConnect(peerId);
+		return 'dial';
+	}
+	if ((await askServer(peerId, target)) !== 'join') return 'stay';
+	if (!(await peer.switchServer(target))) return 'failed'; // switchServer said why
+	await requestConnect(peerId);
+	return 'dial';
 }
 
 /** Drop the hash without a navigation and without a second hashchange. */
@@ -68,6 +107,9 @@ export async function handleInviteHash(hash) {
 	// the signaling link has never opened: the startup path (`peer.on('open')`) owns
 	// the hash and will dial it — nothing to do live, and no "not connected yet" toast
 	if (!peer.hasOpened) return 'startup';
+	// 55 A4: a pasted invite link — keep its token in memory for the dial's proof, then the
+	// whole hash goes (consumeHash), so the token never sits in the URL or the history
+	captureInviteHash(hash || '');
 	consumeHash();
 	const myId = String(peer.peer.id || peer.myId || '').toLowerCase();
 	if (peerId === myId) {
@@ -124,11 +166,7 @@ export async function handleInviteHash(hash) {
 	}
 	if (needSwitch) {
 		// one extra tap only in the uncommon case, and the user sees where they are going
-		void showChoice({
-			title: 'Join on another server?',
-			message: 'Join ' + peerLabel(peerId) + ' on ' + serverLabel(target) + '?',
-			choices: [{ value: 'join', label: 'Join' }]
-		}).then((answer) => {
+		void askServer(peerId, target).then((answer) => {
 			if (answer === 'join') void proceed();
 		});
 		return 'ask-server';

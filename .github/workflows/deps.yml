@@ -4,7 +4,12 @@
 # target-branch). Every PR into `deps` runs the whole release gate here: ci.yml (build, the
 # svelte-check ratchet, vitest, scene-lint, kit-diff, a11y, supply chain) and perf-budget.yml, both
 # called as reusable workflows, then the integrators' e2e battery split into shards on
-# GitHub-hosted runners (SwiftShader: no GPU). `deps-gate` is the one required check; the ruleset on
+# GitHub-hosted runners (SwiftShader: no GPU, battery.yml): the REQUIRED set gates; the OPTIONAL set (red on
+# SwiftShader with unchanged code, each with its reason in tests/e2e/battery.json) runs only when started by hand
+# (workflow_dispatch) and is only reported. Perf budget + battery run only for a non-major change to the root
+# app's npm packages (deps-policy.cjs `battery`): Actions, the agent and majors get ci.yml alone, so one monthly
+# Dependabot round does not hold the account's 20 concurrent jobs for half a day. `deps-gate` is the one
+# required check; the ruleset on
 # `deps` also requires the `pc-battery` commit status, which the GPU check on a desktop posts for a
 # PR that changes what the app ships (scripts/ci/pc-battery.sh — pulled from there, no runner of ours
 # in this public repo) and this workflow posts as "not needed" for every other PR.
@@ -45,15 +50,16 @@ jobs:
       cls: ${{ steps.policy.outputs.class }}
       needs_pc: ${{ steps.policy.outputs.needs_pc }}
       reason: ${{ steps.policy.outputs.reason }}
+      battery: ${{ steps.policy.outputs.battery }}
       gate_ci: ${{ github.event_name != 'pull_request' || github.base_ref == 'deps' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: dependabot metadata
         id: meta
         if: github.event.pull_request.user.login == 'dependabot[bot]'
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@v3
       - name: policy
         id: policy
         env:
@@ -66,7 +72,7 @@ jobs:
             # a person's PR (or a dispatch): no automation; the PC check runs when the app's lockfile moved
             pc=false
             if [ -n "$BASE" ] && git diff --name-only "origin/$BASE...HEAD" | grep -qxE 'package(-lock)?\.json'; then pc=true; fi
-            printf 'class=manual\nneeds_pc=%s\nreason=not a Dependabot PR\n' "$pc" | tee -a "$GITHUB_OUTPUT"
+            printf 'class=manual\nneeds_pc=%s\nbattery=true\nreason=not a Dependabot PR\n' "$pc" | tee -a "$GITHUB_OUTPUT"
           fi
       - name: majors wait for a planned migration
         if: steps.policy.outputs.class == 'major'
@@ -82,21 +88,34 @@ jobs:
     needs: scope
     if: needs.scope.outputs.gate_ci == 'true'
     uses: ./.github/workflows/ci.yml
+    with:
+      battery: true
 
+  # the budget gate in three parallel parts (~20 min each instead of ~60 in one)
   perf:
     needs: scope
-    if: needs.scope.outputs.gate_ci == 'true'
+    if: needs.scope.outputs.gate_ci == 'true' && needs.scope.outputs.battery == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3]
     uses: ./.github/workflows/perf-budget.yml
+    with:
+      part: ${{ matrix.part }}
+      parts: 3
 
   plan:
     needs: scope
+    if: needs.scope.outputs.battery == 'true'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      optional_matrix: ${{ steps.plan.outputs.optional_matrix }}
+      optional_shards: ${{ steps.plan.outputs.optional_shards }}
       playwright: ${{ steps.pw.outputs.version }}
       refs: ${{ steps.refs.outputs.refs }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: plan
         run: node scripts/ci/battery.cjs plan
       - id: pw
@@ -104,82 +123,62 @@ jobs:
       - id: refs
         run: echo "refs=$(node -p "JSON.stringify(require('./tests/e2e/battery.json').refs)")" >> "$GITHUB_OUTPUT"
 
+  # the suites that gate (sized by battery.json to finish inside the hour)
   e2e:
-    name: e2e ${{ matrix.shard }}/${{ matrix.of }}
     needs: plan
+    uses: ./.github/workflows/battery.yml
+    with:
+      set: required
+      matrix: ${{ needs.plan.outputs.matrix }}
+      playwright: ${{ needs.plan.outputs.playwright }}
+      refs: ${{ needs.plan.outputs.refs }}
+      deadline: 75
+
+  # SwiftShader makes any one suite fail now and then, twice on one loaded runner too: a required red (or a suite
+  # the deadline left unrun) gets two more tries on a FRESH runner before it counts
+  confirm:
+    needs: [plan, e2e]
+    if: ${{ !cancelled() && needs.e2e.result == 'failure' }}
+    uses: ./.github/workflows/battery.yml
+    with:
+      set: confirm
+      matrix: '{"include":[{"shard":1,"of":3,"suites":0,"est":0},{"shard":2,"of":3,"suites":0,"est":0},{"shard":3,"of":3,"suites":0,"est":0}]}'
+      playwright: ${{ needs.plan.outputs.playwright }}
+      refs: ${{ needs.plan.outputs.refs }}
+      deadline: 20
+
+  # red or flaky on SwiftShader with the same red on unchanged code: reported, never waited for, and only on a run
+  # started by hand (refreshing battery.json's classification); ~750 runner-min a time is too much for every PR.
+  # They start AFTER the required shards and the confirm step (the free plan runs 20 jobs at once).
+  e2e-optional:
+    needs: [plan, e2e, confirm]
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && needs.plan.result == 'success' && needs.plan.outputs.optional_shards != '0' }}
+    uses: ./.github/workflows/battery.yml
+    with:
+      set: optional
+      matrix: ${{ needs.plan.outputs.optional_matrix }}
+      playwright: ${{ needs.plan.outputs.playwright }}
+      refs: ${{ needs.plan.outputs.refs }}
+      deadline: 40
+
+  optional-report:
+    needs: e2e-optional
+    if: ${{ !cancelled() && needs.e2e-optional.result != 'skipped' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 100
-    # the browsers and their OS libraries at exactly the lockfile's Playwright: no 5-minute apt step per shard
-    container:
-      image: mcr.microsoft.com/playwright:v${{ needs.plan.outputs.playwright }}-noble
-      options: --ipc=host
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
-    # the sibling checkouts sit beside core, where the suites' own defaults look for them. Inside a
-    # container the workspace is NOT ${{ github.workspace }} (that is the host path): use the env vars.
-    env:
-      E2E_NO_PERF_OFFER: '1'
-      MODE: quick
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
-          path: core
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ fromJSON(needs.plan.outputs.refs).scenes.repo }}
-          ref: ${{ fromJSON(needs.plan.outputs.refs).scenes.ref }}
-          path: scenes
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ fromJSON(needs.plan.outputs.refs).modules.repo }}
-          ref: ${{ fromJSON(needs.plan.outputs.refs).modules.ref }}
-          path: modules
-      - uses: actions/checkout@v4
-        with:
-          repository: ${{ fromJSON(needs.plan.outputs.refs).packs.repo }}
-          ref: ${{ fromJSON(needs.plan.outputs.refs).packs.ref }}
-          path: packs
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: core/.nvmrc
-          cache: npm
-          cache-dependency-path: |
-            core/package-lock.json
-            modules/package-lock.json
-      - name: install
-        run: |
-          command -v openssl > /dev/null || (apt-get update -qq && apt-get install -y -qq --no-install-recommends openssl > /dev/null)
-          (cd core && npm ci --no-audit --no-fund && npm run certs)
-          # the module zips the game suites install (MODULES_REPO)
-          (cd modules && npm ci --no-audit --no-fund && node scripts/pack.cjs --all --force)
-      - name: battery shard ${{ matrix.shard }}/${{ matrix.of }} (~${{ matrix.est }} min, ${{ matrix.suites }} suites)
-        working-directory: core
-        run: |
-          W=$GITHUB_WORKSPACE; S=$W/scenes; G=$S/games
-          export SCENES_DIR=$S SCENES_REPO=$S SHELL_SCENES_DIR=$G GAMES_DIR=$G FBW_SCENES=$S/examples
-          export MODULES_REPO=$W/modules MODULES_DIR=$W/modules PACKS_DIR=$W/packs
-          for g in dungeon-realms:DUNGEON_REALMS escape-room:ESCAPE football:FOOTBALL jam-room:JAM_ROOM marble-maze:MARBLE \
-                   mini-golf:MINIGOLF sky-run:SKY_RUN stars-room:STARS_ROOM target-toss:TARGET_TOSS towers:TOWERS \
-                   untangle:UNTANGLE waves:WAVES race:RACE; do export "${g#*:}_TPSCENE=$G/${g%%:*}/scene.tpscene"; done
-          export JELLY_TPSCENE=$S/examples/jelly-room/scene.tpscene TANK_TPSCENE=$S/examples/fluid-tank-toy/scene.tpscene \
-                 POOL_TPSCENE=$S/examples/pool-party/scene.tpscene
-          node scripts/ci/battery.cjs run --shard ${{ matrix.shard }} --of ${{ matrix.of }} --serve --port 5173 --out "$W/battery-out"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: battery-${{ matrix.shard }}
-          # every suite's log; screenshots and evidence only for the suites that failed (the runner deletes the
-          # rest). Beside core, not in it: an artefact inside the served tree reloads the app mid-test.
-          path: battery-out
-          retention-days: 14
-          if-no-files-found: ignore
+          pattern: battery-optional-*
+          path: battery
+      - name: optional suites (report only)
+        run: node scripts/ci/battery.cjs report battery || true
 
   # THE required check (the ruleset on `deps` names it)
   gate:
     name: deps-gate
-    needs: [scope, ci, perf, plan, e2e]
-    if: always() && needs.scope.result == 'success'
+    needs: [scope, ci, perf, plan, e2e, confirm]
+    if: ${{ !cancelled() && needs.scope.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -187,23 +186,38 @@ jobs:
       issues: write
       statuses: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        if: needs.scope.outputs.battery == 'true'
         with:
-          pattern: battery-*
+          pattern: battery-required-*
+          path: battery
+      - uses: actions/download-artifact@v8
+        if: needs.scope.outputs.battery == 'true' && needs.confirm.result != 'skipped'
+        with:
+          pattern: battery-confirm-*
           path: battery
       - name: battery report
         id: report
+        if: needs.scope.outputs.battery == 'true'
         run: node scripts/ci/battery.cjs report battery
       - name: the release gate
         env:
           GATE_CI: ${{ needs.scope.outputs.gate_ci }}
+          BATTERY: ${{ needs.scope.outputs.battery }}
+          CLS: ${{ needs.scope.outputs.cls }}
           CI: ${{ needs.ci.result }}
           PERF: ${{ needs.perf.result }}
+          E2E: ${{ needs.e2e.result }}
         run: |
-          echo "### Release gate: ci=$CI perf-budget=$PERF (class ${{ needs.scope.outputs.cls }}: ${{ needs.scope.outputs.reason }})" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$GATE_CI" = true ] && { [ "$CI" != success ] || [ "$PERF" != success ]; }; then exit 1; fi
-      - uses: actions/upload-artifact@v4
+          echo "### Release gate: ci=$CI perf-budget=$PERF battery=$BATTERY (class $CLS: ${{ needs.scope.outputs.reason }})" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$CLS" = major ]; then
+            echo "A major is not tested here (no perf budget, no battery): its planned migration runs them. Red on purpose." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [ "$BATTERY" = true ] && [ "$E2E" = skipped ]; then exit 1; fi
+          if [ "$GATE_CI" = true ] && { [ "$CI" != success ] || { [ "$BATTERY" = true ] && [ "$PERF" != success ]; }; }; then exit 1; fi
+      - uses: actions/upload-artifact@v7
         with:
           name: battery-durations
           path: battery/durations.json
@@ -223,9 +237,22 @@ jobs:
         run: |
           gh label create deps-ready --color 0E8A16 --description 'Green; a runtime minor or a Playwright bump waiting for the deps lane' 2>/dev/null || true
           gh pr edit "${{ github.event.pull_request.number }}" --add-label deps-ready
+
+  # its own job: turning auto-merge on needs contents: write, which the gate (it checks out and runs the PR's
+  # code) should not hold. No checkout here; it only runs after a green deps-gate. The condition names the gate's
+  # result: the implicit success() also looks at the gate's own needs, and perf/plan/e2e are SKIPPED for every
+  # PR without the battery (Actions, the agent), so without it automerge skipped exactly where it is needed.
+  automerge:
+    needs: [scope, gate]
+    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.scope.outputs.cls == 'auto' && github.base_ref == 'deps' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
       - name: auto-merge
-        if: needs.scope.outputs.cls == 'auto' && github.base_ref == 'deps'
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         # waits for whatever the ruleset still wants (pc-battery from the desktop for a runtime patch)
         run: gh pr merge "${{ github.event.pull_request.number }}" --auto --squash

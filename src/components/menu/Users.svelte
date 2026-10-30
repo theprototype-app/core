@@ -31,7 +31,9 @@
 		showToast
 	} from '../../stores/appStore.js';
 	import WindowChrome from '../ui/WindowChrome.svelte';
-	import { globalScene, globalCamera, camSave, peerHands, isLocked } from '../../stores/sceneStore.js';
+	// 55 A4/A7: agent rows (robot + "AI") and the active invites with Revoke / Revoke all
+	import { invites, listInvites, revokeInvite, revokeAllInvites, inviteSheet, kindOfRow } from '$lib/inviteStore';
+	import { globalScene, globalCamera, camSave, peerHands, isLocked, objectsGroup } from '../../stores/sceneStore.js';
 	// 21-F3: who is in play mode, and who may end the round
 	import { peerPlayModes, resetAllowed, requestResetGame } from '$lib/gamePresence';
 	// P2b: WHICH SCENE each peer is standing in. Reported as "if a peer opens another
@@ -104,6 +106,17 @@
 	import { gameState } from '$lib/gameState';
 	import { sessionHost } from '$lib/connectionState';
 	import { mutedPeers, toggleMutePeer } from '$lib/voiceChat';
+	// 55 A9: the peer menu (Profile · Find · Character · Talk · For you only · Moderation)
+	import { buildPeerMenuItems } from '$lib/peerMenu';
+	import { removePeer, allowBack, blockedPeers, inviteStoreModule } from '$lib/peerModeration';
+	import { copyLookOf } from '$lib/peerActions';
+	import { canModerateWith } from '$lib/peerModerationCore';
+	import { hiddenPeers, setPeerHidden } from '$lib/peerHide';
+	import { peerActivity, agoText } from '$lib/peerFacts';
+	import { showConfirm } from '$lib/confirmDialog';
+	import { selectObject, focusObject, flyTo } from '$lib/objectActions';
+	import { lockedObjects } from '../../stores/sceneStore.js';
+	import PeerProfileCard from './PeerProfileCard.svelte';
 	import { peerQuality, qGlyph } from '$lib/networkQuality';
 	import ContextMenu from '../ContextMenu.svelte';
 	import NotificationCenter from './NotificationCenter.svelte';
@@ -111,7 +124,9 @@
 	import { toolbarSlots, slotOrder, TOP_DEFAULT } from '$lib/toolbarSlots';
 	import { phoneShell } from '$lib/ui/phoneShell.js';
 	import CloudSlot from '../CloudSlot.svelte';
-	import { usersSlot, profileSlot, rolesInfo, scenePresence } from '$lib/cloudHooks';
+	import { usersSlot, profileSlot, rolesInfo, scenePresence, peerMenuItems } from '$lib/cloudHooks';
+	import { agentChatState, agentStatusOf, stopAgent, muteAgent, canMuteAgents, canStop } from '$lib/agentChat'; // 56 C5/C6
+	import { runningRequest, samePeer } from '$lib/agentChatCore';
 	import { safeStorage } from '$lib/safeStorage';
 	// 45 N4: a pinned / closed right sidebar moves the profile circle while its menu may be open
 	import { geometry as sidebarGeometry } from '$lib/sidebars';
@@ -122,7 +137,17 @@
 	// 53 A2: and its SHAPE, so the band never rides on colour alone ($lib/networkQuality)
 
     let openDropdown = $state(false);
-	let muteMenu = $state(null);
+	/** 55 A9: the open peer menu (was `muteMenu`, which offered Mute voice alone) */
+	let peerMenu: { x: number; y: number; peerId: string; self: boolean; row: HTMLElement | null } | null = $state(null);
+	/** the View profile / View character card */
+	let profileFor: { peerId: string; focus: 'profile' | 'character' } | null = $state(null);
+	/** "Show their recent changes" */
+	let changesMenu: { x: number; y: number; peerId: string } | null = $state(null);
+	/** 55-invite's store, when that lane is on this build (how they joined, Revoke invite) */
+	let inviteMod: any = $state(null);
+	onMount(() => {
+		void inviteStoreModule().then((m) => (inviteMod = m));
+	});
 	// 130: the peers overflow is a proper popover listing EVERY peer (none
 	// hidden by stacking) with a labeled Watch affordance
 	/** @param {string} id */
@@ -130,9 +155,204 @@
 		return String(id ?? '').slice(0, 6);
 	}
 
-	function openMuteMenu(event, peerId) {
-		event.preventDefault();
-		muteMenu = { x: event.clientX, y: event.clientY, peerId };
+	// --- 55 A9: THE PEER MENU, opened four ways onto one list (lib/peerMenu.js) ------------
+	// right-click · a touch LONG-PRESS · the context-menu key / Shift+F10 on a focused row ·
+	// the VR Users panel. A long press leaves the finger down when the menu appears, so the
+	// click that ends it must not also press the row's Watch button.
+	function openPeerMenu(x: number, y: number, peerId: string, self: boolean, row: HTMLElement | null) {
+		roleMenuFor = null;
+		peerMenu = { x, y, peerId, self, row };
+	}
+	function closePeerMenu() {
+		const row = peerMenu?.row;
+		peerMenu = null;
+		// keyboard users land back on the row they opened it from (53 A3)
+		if (row && row.isConnected && (document.activeElement === document.body || !document.activeElement)) row.focus({ preventScroll: true });
+	}
+	function rowContextMenu(e: MouseEvent, peerId: string, self: boolean) {
+		e.preventDefault();
+		openPeerMenu(e.clientX, e.clientY, peerId, self, e.currentTarget as HTMLElement);
+	}
+	function rowKeydown(e: KeyboardEvent, peerId: string, self: boolean) {
+		if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
+		e.preventDefault();
+		e.stopPropagation();
+		const row = e.currentTarget as HTMLElement;
+		const r = row.getBoundingClientRect();
+		openPeerMenu(r.left + 24, r.bottom - 6, peerId, self, row);
+	}
+	const LONG_PRESS_MS = 500;
+	let press: { id: number; x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null;
+	let swallowClick = false;
+	function rowPointerDown(e: PointerEvent, peerId: string, self: boolean) {
+		if (e.pointerType === 'mouse') return;
+		const row = e.currentTarget as HTMLElement;
+		const start = { id: e.pointerId, x: e.clientX, y: e.clientY };
+		if (press) clearTimeout(press.timer);
+		press = {
+			...start,
+			timer: setTimeout(() => {
+				press = null;
+				swallowClick = true;
+				openPeerMenu(start.x, start.y, peerId, self, row);
+			}, LONG_PRESS_MS)
+		};
+	}
+	function rowPointerMove(e: PointerEvent) {
+		if (press && press.id === e.pointerId && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) {
+			clearTimeout(press.timer);
+			press = null;
+		}
+	}
+	function rowPointerEnd() {
+		if (press) clearTimeout(press.timer);
+		press = null;
+	}
+	function rowClickCapture(e: MouseEvent) {
+		if (!swallowClick) return;
+		swallowClick = false;
+		e.preventDefault();
+		e.stopPropagation();
+	}
+
+	/** 56: the requests an agent is answering now, across the scene's chats @param {string} agentId */
+	function agentRuns(agentId: string): any[] {
+		return Object.values($agentChatState.chats)
+			.filter((c: any) => samePeer(c.agent, agentId))
+			.map((c: any) => runningRequest(c))
+			.filter(Boolean);
+	}
+	function nameOf(peerId: string) {
+		return (($userdata as any[]).find((u) => u[0] === peerId)?.[1]) || shortId(peerId).toUpperCase();
+	}
+	/** fly the editor camera to stand a few metres off their avatar, looking at it */
+	function goToPeer(peerId: string) {
+		const avatar = ($globalScene as any)?.getObjectByName?.(peerId);
+		if (!avatar) return;
+		const at = new THREE.Vector3();
+		avatar.getWorldPosition(at);
+		const cam = $globalCamera as any;
+		const away = cam ? cam.position.clone().sub(at) : new THREE.Vector3(0, 1, 3);
+		away.y = Math.max(away.y, 0.6);
+		away.setLength(3.2);
+		flyTo(at.clone().add(away), at);
+		peersPanelOpen.set(false);
+	}
+	function showEditing(peerId: string) {
+		const lock = ($lockedObjects as any[]).find((l) => l[0] === peerId);
+		if (!lock) return;
+		selectObject(lock[1], true);
+		focusObject(lock[1]);
+		peersPanelOpen.set(false);
+	}
+	async function confirmRemove(peerId: string, block: boolean) {
+		const who = nameOf(peerId);
+		const ok = await showConfirm({
+			title: block ? 'Remove and block ' + who + '?' : 'Remove ' + who + '?',
+			message: block
+				? who + ' leaves the session for everyone, and cannot rejoin it until you allow them back from the Connected panel.'
+				: who + ' leaves the session for everyone. They can ask to join again.',
+			confirmLabel: block ? 'Remove and block' : 'Remove'
+		});
+		if (ok) removePeer(peerId, { block });
+	}
+	function copyPeerId(peerId: string) {
+		try {
+			void navigator.clipboard?.writeText(peerId);
+			showToast('Peer id copied');
+		} catch {
+			showToast(peerId);
+		}
+	}
+	function peerMenuRows(m: { x: number; y: number; peerId: string; self: boolean }) {
+		const id = m.peerId;
+		const row = ($userdata as any[]).find((u) => u[0] === id);
+		const away = m.self ? '' : watchBlockedBy($peerScenes, $currentLevel?.name ?? '', id, $sessionHost);
+		const inviteId = inviteMod?.inviteIdOf?.(id) || '';
+		const items = buildPeerMenuItems(
+			{
+				peerId: id,
+				name: nameOf(id),
+				self: m.self,
+				canModerate: mayModerate,
+				canChangeRole: !!(ri && ri.amAdmin),
+				muted: $mutedPeers.includes(id),
+				hidden: $hiddenPeers.includes(id),
+				away: away === UNNAMED_ROOM ? 'the session’s world' : away || '',
+				privateRow: privateRow($peerScenes, id, m.self),
+				hasAvatar: !!($globalScene as any)?.getObjectByName?.(id),
+				editingUuid: (($lockedObjects as any[]).find((l) => l[0] === id)?.[1]) || '',
+				hasLook: !!row?.[5] && Object.keys(row[5]).length > 0,
+				isAgent: row?.[6]?.kind === 'agent',
+				agentBusy: agentRuns(id).length > 0,
+				agentMuted: !!agentStatusOf($agentChatState, id)?.muted,
+				inviteId,
+				requestAsked: $sceneAccessAsked.includes(id),
+				canInvite: typeof $scenePresence?.invite === 'function',
+				watching: ($specatorMode as any) === id
+			},
+			{
+				editProfile: () => profileSettingsOpen.set(true),
+				changeCharacter: () => characterModalOpen.set(true),
+				copyId: () => copyPeerId(id),
+				viewProfile: () => (profileFor = { peerId: id, focus: 'profile' }),
+				viewCharacter: () => (profileFor = { peerId: id, focus: 'character' }),
+				goTo: () => goToPeer(id),
+				goToScene: () => (away === UNNAMED_ROOM ? doJoinWorld() : goToScene(id)),
+				watch: () => { specate(id); peersPanelOpen.set(false); },
+				showEditing: () => showEditing(id),
+				copyLook: () => copyLookOf(id),
+				toggleMute: () => toggleMutePeer(id),
+				agentStop: agentRuns(id).some((r) => canStop(r)) ? () => stopAgent(id) : undefined,
+				agentMute: row?.[6]?.kind === 'agent' && canMuteAgents() ? () => muteAgent(id, !agentStatusOf($agentChatState, id)?.muted) : undefined,
+				requestAccess: () => askForScene(id),
+				invite: () => $scenePresence?.invite?.(id),
+				toggleHide: () => setPeerHidden(id),
+				changeRole: () => {
+					roleMenuPos = { top: m.y, right: Math.max(8, window.innerWidth - m.x - 120) };
+					roleMenuFor = id;
+				},
+				recentChanges: () => (changesMenu = { x: m.x, y: m.y, peerId: id }),
+				remove: () => void confirmRemove(id, false),
+				removeBlock: () => void confirmRemove(id, true),
+				revokeInvite: inviteId ? () => inviteMod?.revokeInvite?.(inviteId) : undefined
+			}
+		);
+		// fix-live: the plugin's entries (the cloud's "Report…") after core's own, with the name the roster shows
+		const extra = m.self ? [] : ($peerMenuItems as any[]);
+		if (!extra.length) return items;
+		return [
+			...items,
+			{ section: 'More' },
+			...extra.map((item) => ({
+				testid: 'peer-menu-plugin-' + item.id,
+				label: item.label,
+				action: () => item.run(id, { name: String(($userdata as any[]).find((e) => e[0] === id)?.[1] ?? '') })
+			}))
+		];
+	}
+	/** what they changed this session, newest first — a row selects the object */
+	function changesItems(peerId: string) {
+		const log = peerActivity(peerId);
+		const group = $objectsGroup as any;
+		const items: any[] = [{ section: 'Recent changes by ' + nameOf(peerId) }];
+		if (!log.length) items.push({ label: 'Nothing yet this session', disabled: true, testid: 'peer-changes-empty' });
+		for (const e of log) {
+			const obj = e.uuid ? group?.getObjectByProperty?.('uuid', e.uuid) : null;
+			const what = e.uuid ? (obj ? obj.name || obj.type : 'an object since removed') : '';
+			items.push({
+				testid: 'peer-change',
+				label: e.verb + (what ? ' ' + what : '') + (e.n > 1 ? ' (×' + e.n + ')' : ''),
+				hint: agoText(e.at),
+				disabled: !obj,
+				action: () => {
+					if (!obj) return;
+					selectObject(e.uuid, true);
+					focusObject(e.uuid);
+				}
+			});
+		}
+		return items;
 	}
 
 	// $effect(() => {
@@ -181,8 +401,22 @@
 	const effAvatar = $derived(avatarImage || ls('avatar') || cid?.avatar || '');
 	/** cloud roles bridge (null without the cloud plugin) */
 	const ri = $derived($rolesInfo);
+	/** may WE moderate — the menu's Moderation group (peerModerationCore.canModerateWith) */
+	const mayModerate = $derived(canModerateWith({ host: $sessionHost, amAdmin: ri?.amAdmin, hasRoles: !!ri, connected: !!($peers as any)?.openedPeers?.size }));
 	// 21-G5 (F7): the project's OTHER rooms — mine is excluded, and a room with no
 	// members to show is skipped rather than rendering an empty header
+	// 55 A4: the invites still granting something — active, or used and not revoked (so the
+	// host sees "used by" and can take it back). A slow clock: expiry is minutes, not seconds.
+	let inviteNow = $state(Date.now());
+	onMount(() => {
+		const t = setInterval(() => (inviteNow = Date.now()), 30000);
+		return () => clearInterval(t);
+	});
+	const inviteRows = $derived(listInvites($invites, inviteNow).filter((r: any) => r.state === 'active' || r.state === 'used'));
+	const inviteText = (r: any) =>
+		(r.kind === 'agent' ? 'AI agent' : 'Person') +
+		(r.usedBy.length ? ' · used by ' + r.usedBy.join(', ') : r.maxUses > 1 ? ' · up to ' + r.maxUses : ' · not used yet') +
+		(r.state === 'active' ? ' · ' + Math.max(1, Math.round((r.expiresAt - inviteNow) / 60000)) + ' min left' : '');
 	const crossRooms = $derived(
 		(($scenePresence?.rooms as any[]) ?? []).filter(
 			(room) => room && room.id !== $scenePresence?.myRoomId && (room.members?.length ?? 0) > 0
@@ -520,6 +754,16 @@
 		// viewport trap below), so the notch's circle sits exactly over the trigger wherever it is.
 		dropdownEl.style.setProperty('--pm-right', `${Math.max(0, Math.round(window.innerWidth - r.right))}px`);
 	}
+	/** fix-batch-1 #23: the trigger's keys — Enter / Space toggle, ↓ opens; opening moves focus in */
+	function triggerKey(e: KeyboardEvent) {
+		if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'ArrowDown') return;
+		e.preventDefault();
+		const opening = e.key === 'ArrowDown' || !openDropdown;
+		openDropdown = opening;
+		if (opening) focusFirstRow = true;
+	}
+	/** set by a keyboard open: the panel's mount focuses its first row */
+	let focusFirstRow = false;
 	/** focus moving OUT of the menu or its trigger (to a real element) closes it */
 	function dropdownFocusOut(e: FocusEvent) {
 		const to = e.relatedTarget as Node | null;
@@ -558,8 +802,21 @@
 			openDropdown = false;
 		};
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') openDropdown = false;
+			if (e.key !== 'Escape') return;
+			// fix-batch-1 #23: focus inside the panel goes back to the button that opened it
+			const inPanel = !!document.activeElement && node.contains(document.activeElement);
+			openDropdown = false;
+			if (inPanel) triggerEl?.focus();
 		};
+		if (focusFirstRow) {
+			focusFirstRow = false;
+			queueMicrotask(() => {
+				// the first ROW — not the notch's avatar circle, which only closes the panel again
+				const rows = 'a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])';
+				const first = node.querySelector<HTMLElement>(`.pm-card :is(${rows})`) ?? node.querySelector<HTMLElement>(rows);
+				first?.focus();
+			});
+		}
 		const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(placeDropdown) : null;
 		if (triggerEl) ro?.observe(triggerEl);
 		window.addEventListener('resize', placeDropdown);
@@ -627,15 +884,36 @@
 	<!-- 41b H15: ONE row per peer — avatar · name over ONE muted line (where they are, their role, the
 	     small facts; the place ellipsizes first, so nothing wraps) · actions on the right. The name
 	     ellipsizes too and carries the full name as its tooltip. -->
+	<!-- 55 A9: the ROW opens the peer menu — right-click, a touch long-press, or the
+	     context-menu key / Shift+F10 once it has focus (it is a tab stop for that reason). -->
+	<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
 	<div
 		class="peers-row rounded {$specatorMode === user[0]
 			? 'bg-accent-soft'
 			: 'hover:bg-surface-hover'}"
+		class:peers-row-hidden={!self && $hiddenPeers.includes(user[0])}
+		data-peer-id={user[0]}
+		role="group"
+		tabindex="0"
+		aria-label={(user[1] || 'Peer') + (self ? ' (you)' : '') + ' — menu: Shift+F10'}
+		oncontextmenu={(e) => rowContextMenu(e, user[0], self)}
+		onkeydown={(e) => rowKeydown(e, user[0], self)}
+		onpointerdown={(e) => rowPointerDown(e, user[0], self)}
+		onpointermove={rowPointerMove}
+		onpointerup={rowPointerEnd}
+		onpointercancel={rowPointerEnd}
+		onclickcapture={rowClickCapture}
 	>
 		{@render avatarImg(user[2], 'bg-surface-active h-8 w-8 shrink-0')}
 		<div class="peer-info">
 			<div class="peer-name">
-				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || 'Peer'}</span>
+				<span class="truncate" title={user[1] || 'Peer'}>{user[1] || (kindOfRow(user) === 'agent' ? 'AI agent' : 'Peer')}</span>
+				{#if kindOfRow(user) === 'agent'}
+					<!-- 55 A7: an AI agent is not a person — no character, the robot and "AI" instead -->
+					<span class="peer-ai" title="AI agent — joined over MCP or an agent link; it has no character"
+						><Icon name="bot" size={16} aria-hidden="true" />AI</span
+					>
+				{/if}
 				{#if self}<span class="peer-you">(you)</span>{/if}
 			</div>
 			<div class="peer-meta">
@@ -671,6 +949,7 @@
 					>
 				{/if}
 				{#if user[3]}<span class="text-ink-warn">▸ {shortId(user[3])}</span>{/if}
+				{#if !self && $hiddenPeers.includes(user[0])}<span class="peer-hidden-chip" title="Hidden on your screen — open their menu to show them again"><Icon name="eye-off" size={16} aria-hidden="true" /></span>{/if}
 				{#if $mutedPeers.includes(user[0])}<span title="Muted"><Icon name="volume-x" size={16} aria-hidden="true" /></span>{/if}
 				{#if $peerHands[user[0]]?.active}<span title="In VR"><Icon name="glasses" size={16} aria-hidden="true" /></span>{/if}
 				{#if !self && $peerQuality[user[0]]}
@@ -766,7 +1045,6 @@
 							? 'Watching (exit from the banner)'
 							: 'Watch this peer'}
 					onclick={() => { specate(user[0]); peersPanelOpen.set(false); }}
-					oncontextmenu={(e) => openMuteMenu(e, user[0])}
 				>
 					<Icon name="eye" size={16} class="mr-1" aria-hidden="true" />{$specatorMode === user[0] ? 'Watching' : 'Watch'}
 				</button>
@@ -811,7 +1089,7 @@
 	 21-G5: OR on cross-scene presence — being alone in YOUR scene is exactly when
 	 "where is everyone" matters, and a popover that only exists once somebody is
 	 already in your mesh could never show you the people who are not. -->
-{#if trShown('peers') && (($userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0) || crossRooms.length > 0)}
+{#if trShown('peers') && (($userdata && $userdata.length > 1 && $peers && $peers.openedPeers?.size > 0) || crossRooms.length > 0 || inviteRows.length > 0 || $blockedPeers.length > 0)}
 	<div class="relative" style:order={trOrder('peers')}>
 		<!-- compact trigger: a few stacked avatars + the peer count -->
 		<button
@@ -918,6 +1196,53 @@
 					{/each}
 				{/if}
 				</div>
+				<!-- 55 A4: ACTIVE INVITES — each one revocable, all at once too. A revoke stops new uses at
+					 once; on cloud builds the peers it let in lose the edit it granted. -->
+				{#if inviteRows.length}
+					<div class="mt-1 border-t border-border pt-1" id="peers-invites">
+						<div class="peers-inv-head">
+							<span>Invites</span>
+							<button type="button" id="peers-invite-new" class="peers-inv-btn" title="Create another invite link" onclick={() => inviteSheet.set('person')}>New…</button>
+							<button type="button" id="peers-revoke-all-invites" class="peers-inv-btn peers-inv-danger" title="Every invite link stops working" onclick={revokeAllInvites}>Revoke all</button>
+						</div>
+						{#each inviteRows as inv (inv.id)}
+							<div class="peers-inv-row" data-invite={inv.id} data-state={inv.state} data-kind={inv.kind}>
+								<Icon name={inv.kind === 'agent' ? 'bot' : 'user-plus'} size={16} aria-hidden="true" />
+								<span class="min-w-0 flex-1 truncate" title={inviteText(inv)}>{inviteText(inv)}</span>
+								<button type="button" class="peers-inv-btn peers-inv-danger peers-inv-revoke" title="This link stops working" onclick={() => revokeInvite(inv.id)}>Revoke</button>
+							</div>
+						{/each}
+					</div>
+				{/if}
+					<!-- 55 A9: who this session refuses, and the way back in. A moderator sees Allow
+					     back; anyone else only that the list exists (it is the host's decision). -->
+					{#if $blockedPeers.length}
+						<div id="peers-blocked" class="mt-1 border-t border-border pt-1">
+							<div class="peers-room-head">
+								<span class="truncate">Blocked</span>
+								<span class="peers-room-count">({$blockedPeers.length})</span>
+							</div>
+							{#each $blockedPeers as b (b.peerId)}
+								<div class="peers-row peers-blocked-row rounded" data-peer-id={b.peerId}>
+									<div class="peer-info">
+										<div class="peer-name"><span class="truncate" title={b.name}>{b.name || shortId(b.peerId)}</span></div>
+										<div class="peer-meta"><span class="peer-id" title={b.peerId}>{shortId(b.peerId)}</span><span>removed for this session</span></div>
+									</div>
+									{#if mayModerate}
+										<div class="peer-actions">
+											<button
+												type="button"
+												class="peer-allow-back shrink-0 rounded bg-surface-active px-2 py-0.5 text-xs text-text hover:bg-border-strong"
+												data-peer-id={b.peerId}
+												title="Let them ask to join this session again"
+												onclick={() => allowBack(b.peerId)}>Allow back</button
+											>
+										</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
 				<!-- 21-F3: the ADMIN half of "the game resets only when everyone has left
 					 play, or an admin resets it". Offered only when there is a game to
 					 reset, and DISABLED (with the reason in its tooltip) for anyone who is
@@ -1015,7 +1340,10 @@
 	     top-right corner. -->
 	<div id="avatar-menu" class="mr-5 flex w-52 items-center md:order-2">
 		<div class="flex items-center space-x-3">
-			<!-- tabindex 0 + press/focus semantics: what flowbite's Popper gave the trigger -->
+			<!-- tabindex 0 + press semantics. fix-batch-1 #23 (53-int Q5): it opened on FOCUS too (what
+			     flowbite's Popper did), so Tab walked the whole panel — sign-in and every link on a cloud
+			     build. Now the ARIA menu-button pattern: Tab passes it, Enter / Space / ↓ open it and move
+			     focus to its first row, Escape closes it and gives focus back here. -->
 			<div
 				id="avatar-trigger"
 				bind:this={triggerEl}
@@ -1026,7 +1354,7 @@
 				aria-expanded={openDropdown}
 				style="position: absolute; top: 8px; right: 20px; cursor: pointer; z-index: 4; line-height: 0;"
 				onmousedown={() => (openDropdown = !openDropdown)}
-				onfocusin={() => (openDropdown = true)}
+				onkeydown={triggerKey}
 				onfocusout={dropdownFocusOut}
 			>
 				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-12 w-12 border-2 border-border-strong')}
@@ -1112,18 +1440,22 @@
 
 
 
-{#if muteMenu}
-	<ContextMenu
-		x={muteMenu.x}
-		y={muteMenu.y}
-		items={[
-			{
-				label: $mutedPeers.includes(muteMenu.peerId) ? 'Unmute voice' : 'Mute voice',
-				action: () => toggleMutePeer(muteMenu.peerId)
-			}
-		]}
-		on:close={() => (muteMenu = null)}
-	/>
+{#if peerMenu}
+	<!-- 55 A9: the peer menu (lib/peerMenu.js builds it; the VR panel renders the same list) -->
+	<ContextMenu x={peerMenu.x} y={peerMenu.y} sizeKey="peer" items={peerMenuRows(peerMenu)} onclose={closePeerMenu} />
+{/if}
+{#if changesMenu}
+	<ContextMenu x={changesMenu.x} y={changesMenu.y} sizeKey="peer-changes" items={changesItems(changesMenu.peerId)} onclose={() => (changesMenu = null)} />
+{/if}
+{#if profileFor}
+	{#key profileFor.peerId + profileFor.focus}
+		<PeerProfileCard
+			peerId={profileFor.peerId}
+			focus={profileFor.focus}
+			joinedVia={inviteMod?.joinedVia?.(profileFor.peerId) ?? ''}
+			onclose={() => (profileFor = null)}
+		/>
+	{/key}
 {/if}
 
 <ModalDialog title="Profile settings" bind:open={$profileSettingsOpen} outsideclose width="md" onkeydown={(e: KeyboardEvent) => { if (e.key === 'Escape') profileSettingsOpen.set(false); }}>
@@ -1203,10 +1535,22 @@
 	/* 41b H15: the peers panel — 320 px at least, as wide as its rows up to 420 px (then they ellipsize) */
 	.peers-pop { width: max-content; min-width: min(320px, calc(100vw - 24px)); max-width: min(420px, calc(100vw - 24px)); }
 	.peers-body { padding: 6px; }
+	/* 55 A9: a peer you hid stays in the list (it is still in the session), dimmed */
+	.peers-row-hidden .peer-info { opacity: 0.6; }
+	.peers-blocked-row .peer-meta { gap: 6px; }
 	.peers-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 8px; }
 	.peer-info { min-width: 0; }
 	.peer-name { display: flex; align-items: baseline; gap: 4px; min-width: 0; font-size: var(--fs-body); color: var(--text); white-space: nowrap; }
 	.peer-you { flex: 0 0 auto; font-size: var(--fs-badge); color: var(--accent-text); }
+	/* 55 A7: the agent mark — a badge, tokens only */
+	.peer-ai { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 2px; padding: 0 5px; border-radius: 999px; font-size: var(--fs-badge); font-weight: 600; background: var(--badge-bg); color: var(--badge-text); }
+	/* 55 A4: the active-invites list */
+	.peers-inv-head { display: flex; align-items: center; gap: 6px; padding: 2px 6px; font-size: var(--fs-badge); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); }
+	.peers-inv-head > span { flex: 1; }
+	.peers-inv-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; font-size: var(--fs-desc); color: var(--text-2); }
+	.peers-inv-btn { flex: 0 0 auto; padding: 1px 6px; border-radius: 6px; font-size: var(--fs-badge); text-transform: none; letter-spacing: 0; color: var(--accent-text); }
+	.peers-inv-btn:hover { background: var(--surface-hover); }
+	.peers-inv-danger { color: var(--warn-text); }
 	.peer-meta { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 2px; overflow: hidden; white-space: nowrap; font-size: var(--fs-badge); color: var(--text-muted); }
 	.peer-meta > * { flex: 0 0 auto; }
 	.peer-meta > .scene-chip { flex: 0 1 auto; }

@@ -4,11 +4,17 @@ import { showToast } from '../stores/appStore';
 import { instrument } from './loopGuard';
 import { lintScript } from './scriptLint';
 import { SCRIPT_HELPERS, harvestOutputs } from './scriptIO';
+import { compileInGuest, forgetCompiled, runEffectInGuest, runValueInGuest, runPlayerInGuest } from './sandbox/scripts.js';
 
 // Compiles and runs user script code for Script nodes and custom node defs.
 // Scripts run on EVERY peer independently — they must be pure functions of
-// (object, base, data, time) to stay deterministic. Peers are already trusted
-// (connection approval); this is collaborative prototyping, not a sandbox.
+// (object, base, data, time) to stay deterministic.
+//
+// 69 T1: a script is scene content, and a scene reaches people who never approved its author (a
+// published scene, a play link), so the code no longer runs in the app's realm: it is compiled and
+// called inside the sandbox guest (sandbox/scripts.js — no DOM, no storage, no network; `object` is
+// a view diffed back onto the real one). Until the guest engine has loaded (a lazy chunk, the first
+// frames of the first scene with a script) a script simply does not run yet — no badge.
 //
 // 27-D (audit C1) adds the two LIVENESS guards that trust does not cover, because a
 // trusted author still writes an infinite loop by ACCIDENT — and this runs on every
@@ -17,10 +23,13 @@ import { SCRIPT_HELPERS, harvestOutputs } from './scriptIO';
 //   1. every loop is instrumented (`loopGuard`), so a runaway THROWS instead of hanging
 //   2. a node that merely runs LONG is timed and paused after a sustained run of slow
 //      frames — the loop guard cannot see that one, since it returns between frames
-// Neither is a sandbox. They stop a hang, not a hostile script.
+// The guest adds a third: every call has a deadline (engine.js), whatever the code does.
 
-/** @type {Map<string, {fn?: Function, error?: string}>} */
+/** @type {Map<string, {fn?: Function, error?: string, pending?: boolean}>} */
 const compiled = new Map();
+/** the guest is still loading: nothing runs yet, nothing is cached, no badge */
+const PENDING = Object.freeze({ pending: true });
+let compileSeq = 0;
 
 // 34 D3: the three shapes a script compiles to. 'v1' is today's signature, byte-identical
 // (a v1 body declaring its own `inputs` must keep compiling, which is why the v2 names are
@@ -43,7 +52,10 @@ function compile(code, shape = 'v1') {
 	const key = shape === 'v1' ? code : shape + ':' + code;
 	let entry = compiled.get(key);
 	if (entry) return entry;
-	if (compiled.size > 100) compiled.clear(); // stale codes from live editing
+	if (compiled.size > 100) {
+		compiled.clear(); // stale codes from live editing
+		forgetCompiled();
+	}
 	// Guard the loops BEFORE the code becomes a function. Here rather than at the call
 	// site because this map is keyed by the CODE STRING: each distinct script is
 	// transformed exactly once, and an edit re-instruments it and clears the old badge.
@@ -62,13 +74,26 @@ function compile(code, shape = 'v1') {
 		compiled.set(key, entry);
 		return entry;
 	}
+	const id = 's' + ++compileSeq;
+	let failed;
 	try {
-		entry = { fn: new Function(...SIGNATURES[shape], '"use strict";\n' + guarded.code) };
+		failed = compileInGuest(id, shape, '"use strict";\n' + guarded.code);
 	} catch (error) {
-		entry = { error: String(error) };
+		failed = String(error);
 	}
+	if (failed === null) return PENDING;
+	entry = failed ? { error: failed } : { fn: callerOf(id, shape) };
 	compiled.set(key, entry);
 	return entry;
+}
+
+/** A host function with the shape's positional signature that runs guest function `id` (the call
+ * sites below are unchanged: the helpers they pass are the guest's own copies).
+ * @param {string} id @param {'v1' | 'effect' | 'value' | 'player'} shape */
+function callerOf(id, shape) {
+	if (shape === 'value') return (/** @type {any} */ inputs, /** @type {number} */ time, /** @type {any} */ _d, /** @type {any} */ _l, /** @type {any} */ _c, /** @type {any} */ api) => runValueInGuest(id, inputs, time, api);
+	if (shape === 'player') return (/** @type {any} */ settings, /** @type {any} */ input, /** @type {number} */ time) => runPlayerInGuest(id, settings, input, time);
+	return (/** @type {any[]} */ ...a) => runEffectInGuest(id, shape === 'effect', a[0], a[1], a[2], a[3], a[5], a[9]);
 }
 
 /** One frame's fair share for ONE node: an eighth of a 60Hz frame, with the rest of the
@@ -104,10 +129,11 @@ function reportError(nodeId, error) {
 /**
  * Time one call against the node's budget; records/clears the node's error badge.
  * Returns the call's result, or undefined when it failed, was refused or is paused.
- * @param {string} nodeId @param {string} code @param {{fn?: Function, error?: string}} entry
+ * @param {string} nodeId @param {string} code @param {{fn?: Function, error?: string, pending?: boolean}} entry
  * @param {(fn: Function) => any} call
  */
 function timed(nodeId, code, entry, call) {
+	if (entry.pending) return undefined;
 	if (entry.error) {
 		reportError(nodeId, entry.error);
 		return undefined;
@@ -145,6 +171,13 @@ function timed(nodeId, code, entry, call) {
 		reportError(nodeId, null);
 		return result;
 	} catch (error) {
+		// 69 T1: the guest's deadline stopped it — retrying every frame would spend the deadline
+		// every frame, so it is paused like a node that ran slow for half a second
+		if (/** @type {any} */ (error)?.interrupted) {
+			b.paused = true;
+			reportError(nodeId, PAUSED_BADGE);
+			return undefined;
+		}
 		reportError(nodeId, String(error));
 		return undefined;
 	}

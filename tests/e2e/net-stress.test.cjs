@@ -77,6 +77,11 @@ const installProbe = (peer) =>
 			return ns.allConns().length;
 		};
 		ns.hook();
+		// 60 Q2: camera poses ride the FAST channel when both ends have it — the conn 'data' above
+		// only sees the reliable fallback, so count the fast arrivals through the pose tap too
+		w.__stores.fastChannel?.setPoseTap?.((peer, d, via) => {
+			if (via === 'fast' && d.type === 'camera' && d.peerId) ns.cam[d.peerId] = (ns.cam[d.peerId] || 0) + 1;
+		});
 		if (!ns.auto) ns.auto = setInterval(() => ns.hook(), 250);
 		ns.send = (uuid, seq) => {
 			const t = performance.now();

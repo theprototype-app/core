@@ -26,6 +26,11 @@
   `exec(name, args)` (replicated, one undo step), `snapshot()`, `status()`,
   `waitForEdit(ms)`, `screenshot({view, uuid, size})`, `pendingOffers()`,
   `accept(id)`, `leave()`.
+- Files made on the agent's own machine come in with `import_file` (PNG / WebP /
+  JSON / .tpanim, type read from the bytes; the bridge takes a local `path` +
+  `spec_path`): filed in Explorer ▸ Generated for everyone, the generator's spec
+  beside it, an image placed as a card (`filter: "nearest"`, `frame`, `facing`).
+  Recipe: generate pixel art with Pixling and Claude Code (in the agent guide).
 - A plain link waits for the host's Approve; an invite link (`&invite=…`) joins
   in one step. A VIEW-ONLY agent's edits are refused — check `status().canEdit`.
 - [Agent guide, inlined](/llms-full.txt): the whole contract, the view-only

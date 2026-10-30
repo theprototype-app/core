@@ -239,6 +239,16 @@ h.run(async () => {
 		h.check(!text(m6r).includes(PNG.slice(0, 30)), 'the message JSON carries the path, not the base64');
 		await call(B.client, 'reply', { text: 'Got the sketch.', final: true });
 
+		// ---- 6b (roadmap 66 S4b): a file from the agent's own disk, through the real bridge — the Pixling
+		// fixture by local `path` + `spec_path` (the bridge reads both; the page never sees a path)
+		const pix = path.join(__dirname, 'fixtures', 'pixling');
+		const imp = await call(B.client, 'import_file', { path: path.join(pix, 'knight_walk.png'), spec_path: path.join(pix, 'knight.pixling.json'), frame: { w: 64, h: 48, col: 0, row: 0 }, position: [8, 0.5, 0] });
+		const impJ = json(imp);
+		h.check(!imp.isError && impJ.file?.name === 'knight_walk.png' && impJ.spec?.name === 'knight_walk.pixling.json' && !!impJ.uuid, `import_file by local path through the MCP bridge (${text(imp).slice(0, 160)})`);
+		await h.eventually(() => sceneNames(A.page), (n) => n.includes('knight_walk'), 'the imported card reached the host', 20000);
+		const bad = await call(B.client, 'import_file', { path: path.join(pix, 'README.md') });
+		h.check(bad.isError === true && /not a PNG, WebP, JSON or \.tpanim/.test(text(bad)), `a non-image is refused by the bridge before sending (${text(bad).slice(0, 100)})`);
+
 		// ---- 7: a chat switch, get_thread, mute
 		const chatB = 'chat-b-' + Date.now().toString(36);
 		w = call(B.client, 'wait_for_message', { timeoutS: 60 });

@@ -606,7 +606,8 @@ const TOOL_NAMES = [
 	'control_simulation',
 	'create_behaviour',
 	'edit_behaviour',
-	'import_model' // 56 C9 (offered to agents; see importModel.js)
+	'import_model', // 56 C9 (offered to agents; see importModel.js)
+	'import_file' // 66 S4b (offered to agents; see importFile.js)
 ];
 
 /** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a
@@ -946,6 +947,10 @@ async function runAiTool(rawName, rawArgs) {
 			case 'import_model':
 				// 56 C9: a self-contained GLB through the app's own import path (one undo, synced)
 				return await (await import('./importModel.js')).importModelTool(args);
+
+			case 'import_file':
+				// 66 S4b: a PNG / WebP / JSON / .tpanim made on the agent's machine (Explorer + a scene card)
+				return await (await import('./importFile.js')).importFileTool(args);
 
 			default:
 				return {

@@ -9858,7 +9858,9 @@ export const OBJECT_FACE_OPS = /** @type {const} */ (['extrude', 'inset', 'move'
  * @param {string} op one of OBJECT_FACE_OPS
  * @param {number[]} triIndices
  * @param {{amount?: number, width?: number, segments?: number, profile?: number, direction?: 'out'|'in'}} [options]
- * @returns {{ok: true, triangles: number} | {ok: false, error: string}}
+ * @returns {{ok: true, triangles: number, kept: number[] | null} | {ok: false, error: string}}
+ *   `kept` = the triangles still selected afterwards (the extruded cap, the inset's inner face — the
+ *   ops that move the picked triangles in place and APPEND the rest), null where the op reshapes them
  */
 export function faceOpOnObject(uuid, op, triIndices, options = {}) {
 	interruptOpAdjust();
@@ -9917,5 +9919,8 @@ export function faceOpOnObject(uuid, op, triIndices, options = {}) {
 	const after = { positions: trisToPositions(next), groups: trisToGroups(next), uvs: trisToUVs(next), faces: nextFaces };
 	if (after.positions.length > MAX_SNAPSHOT) return { ok: false, error: tooLargeMessage(after.positions.length, 'edit') };
 	if (!commitMeshGeoTriple(uuid, before, after)) return { ok: false, error: 'the edit could not be committed' };
-	return { ok: true, triangles: next.length };
+	return { ok: true, triangles: next.length, kept: KEEPS_SELECTION.has(op) ? picked : null };
 }
+
+/** the face ops whose picked triangles survive at the same indices (moved in place; new ones appended) */
+const KEEPS_SELECTION = new Set(['extrude', 'inset', 'move', 'flip']);

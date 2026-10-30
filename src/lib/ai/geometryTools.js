@@ -413,7 +413,17 @@ function resolveSelection(fe, object, mode, sel) {
 	return { tris, picked, outOfRange, count: picked.length };
 }
 
-/** @param {any} fe @param {string} uuid @param {any} object @param {'faces'|'vertices'} mode @param {any} op @param {any[]} picked @param {any[]} tris */
+/** the faces made of the carried triangles @param {any} fe @param {any} object @param {number[]} carry */
+function carriedSelection(fe, object, carry) {
+	const { tris, partition } = fe.facePartitionOf(object.geometry);
+	const set = new Set(carry);
+	const picked = facesOf(tris, partition).filter((f) => f.tris.length && f.tris.every((/** @type {number} */ t) => set.has(t)));
+	return { tris, picked, outOfRange: [] };
+}
+
+/** null or {kept} when it ran, else the error
+ * @param {any} fe @param {string} uuid @param {any} object @param {'faces'|'vertices'} mode @param {any} op @param {any[]} picked @param {any[]} tris
+ * @returns {string | null | {kept: number[] | null}} */
 function runOp(fe, uuid, object, mode, op, picked, tris) {
 	const name = String(op.op);
 	if (mode === 'faces') {
@@ -425,7 +435,7 @@ function runOp(fe, uuid, object, mode, op, picked, tris) {
 			profile: op.profile,
 			direction: op.direction
 		});
-		return r.ok ? null : r.error;
+		return r.ok ? { kept: r.kept } : r.error;
 	}
 	const keys = picked.map((v) => v.key);
 	switch (name) {
@@ -508,6 +518,8 @@ async function editMeshTool(args) {
 	const trianglesBefore = fe.facePartitionOf(object.geometry).tris.length;
 	/** @type {any[]} */
 	const done = [];
+	/** @type {number[] | null} the triangles the last face op left selected */
+	let carry = null;
 	for (let i = 0; i < ops.length; i++) {
 		const op = ops[i];
 		if (!op || typeof op.op !== 'string') return { error: 'ops[' + i + ']: {op: "extrude", distance: 0.5} …', updated: done.length ? [{ uuid, ok: false, ops: done }] : undefined };
@@ -518,11 +530,15 @@ async function editMeshTool(args) {
 		const allowed = mode === 'faces' ? FACE_OPS : VERTEX_OPS;
 		if (!allowed.includes(op.op)) return partial(uuid, done, 'ops[' + i + ']: "' + op.op + '" is not a ' + mode + ' op — ' + mode + ': ' + allowed.join(', '));
 		const live = objectOf(uuid) ?? object;
-		const { tris, picked, outOfRange } = resolveSelection(fe, live, mode, sel);
+		// an op with no select of its own goes on with what the last face op left selected (the
+		// extruded cap, the inset's inner face), like Edit Mesh; otherwise the select is read again
+		const { tris, picked, outOfRange } =
+			op.select === undefined && carry && mode === 'faces' ? carriedSelection(fe, live, carry) : resolveSelection(fe, live, mode, sel);
 		if (outOfRange.length) return partial(uuid, done, 'ops[' + i + ']: ' + mode + ' ' + outOfRange.slice(0, 5).join(', ') + ' do not exist (preview with ops: [])');
 		if (!picked.length) return partial(uuid, done, 'ops[' + i + ']: the selection picks no ' + mode);
-		const err = runOp(fe, uuid, live, mode, op, picked, tris);
-		if (err) return partial(uuid, done, 'ops[' + i + '] ' + err);
+		const res = runOp(fe, uuid, live, mode, op, picked, tris);
+		if (typeof res === 'string') return partial(uuid, done, 'ops[' + i + '] ' + res);
+		carry = res?.kept ?? null;
 		done.push({ op: op.op, [mode]: picked.length });
 	}
 	const after = fe.facePartitionOf(objectOf(uuid).geometry);
@@ -695,7 +711,7 @@ export const GEOMETRY_AI_TOOLS = [
 		function: {
 			name: 'edit_mesh',
 			description:
-				'Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide, delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). Each op re-reads the mesh, so a select by normal or box keeps working after an extrude; indices are against the mesh as it is at that op. Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (set_geometry then needs force). One undo step per call.',
+				'Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide, delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). An op without its own select goes on with what the previous face op left selected (after extrude / inset / move / flip: the cap, the inset\'s inner face), like Edit Mesh; otherwise the select is read again on the mesh as it is at that op (indices too). Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (set_geometry then needs force). One undo step per call.',
 			parameters: {
 				type: 'object',
 				properties: {

@@ -811,7 +811,7 @@
 		{
 			"name": "edit_mesh",
 			"title": "Edit a mesh",
-			"description": "Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide, delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). Each op re-reads the mesh, so a select by normal or box keeps working after an extrude; indices are against the mesh as it is at that op. Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (set_geometry then needs force). One undo step per call.",
+			"description": "Model an existing mesh like Edit Mesh does: run ops on a selection of its faces or vertices. Face ops: extrude {distance}, inset {amount 0-1}, move {distance} along the normal, bevel {width, segments, profile}, subdivide, delete, flip. Vertex ops: weld (to their centre), move {offset [x,y,z]}, smooth {factor, iterations}, dissolve, bevel {width}, delete, connect (2 vertices), create_face (3-4 vertices). An op without its own select goes on with what the previous face op left selected (after extrude / inset / move / flip: the cap, the inset's inner face), like Edit Mesh; otherwise the select is read again on the mesh as it is at that op (indices too). Call with ops: [] first to preview faces / vertices (index, normal, centre). Afterwards the object counts as hand-edited (set_geometry then needs force). One undo step per call.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {

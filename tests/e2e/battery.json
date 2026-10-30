@@ -264,6 +264,7 @@
 	},
 	"setup": {
 		"agent-bridge": "agent",
+		"agent-geometry": "agent",
 		"agent-mcp": "agent",
 		"agent-proof": "agent"
 	},
@@ -276,6 +277,7 @@
 		"connector-relay": 240,
 		"agent-bridge": 48,
 		"agent-conformance": 200,
+		"agent-geometry": 240,
 		"agent-host-leaves": 180,
 		"agent-mcp": 100,
 		"agent-presence": 40,

@@ -264,16 +264,24 @@ describe('G5 edit_mesh', () => {
 		expect(get(history.undoStack).length).toBe(0);
 	});
 
-	it('extrudes the top, then extrudes it again (the normal select re-reads the mesh); one undo', async () => {
+	it('extrude, inset, extrude: each op goes on with what the last one left selected; one undo', async () => {
 		const box = prim(new THREE.BoxGeometry(1, 1, 1), 'Tower');
 		const r = await call('edit_mesh', { object: box.uuid, select: { normal: 'up' }, ops: [{ op: 'extrude', distance: 0.5 }, { op: 'inset', amount: 0.3 }, { op: 'extrude', distance: 0.25 }] });
-		expect(r.updated[0]).toMatchObject({ ok: true, ops: [{ op: 'extrude', faces: 1 }, { op: 'inset' }, { op: 'extrude' }] });
+		// the second extrude raises the inset's INNER face only, not the ring around it (5 up-facing faces)
+		expect(r.updated[0]).toMatchObject({ ok: true, ops: [{ op: 'extrude', faces: 1 }, { op: 'inset', faces: 1 }, { op: 'extrude', faces: 1 }] });
 		expect(bbox(live(box.uuid)).max.y).toBeCloseTo(1.25, 4);
 		expect(sent.filter((m) => m.type === 'meshgeo').length).toBe(3);
 		expect(live(box.uuid).userData.faceEdited).toBe(true);
 		expect(get(history.undoStack).length).toBe(1);
 		history.undo();
 		expect(bbox(live(box.uuid)).max.y).toBeCloseTo(0.5, 4);
+	});
+
+	it('an op with its own select reads the mesh again', async () => {
+		const box = prim(new THREE.BoxGeometry(1, 1, 1));
+		const r = await call('edit_mesh', { object: box.uuid, select: { normal: 'up' }, ops: [{ op: 'inset', amount: 0.3 }, { op: 'move', distance: 0.2, select: { normal: 'up' } }] });
+		expect(r.updated[0].ops).toEqual([{ op: 'inset', faces: 1 }, { op: 'move', faces: 5 }]);
+		expect(bbox(live(box.uuid)).max.y).toBeCloseTo(0.7, 4);
 	});
 
 	it('bevel / subdivide / delete / flip on faces; closed selections refuse to extrude', async () => {

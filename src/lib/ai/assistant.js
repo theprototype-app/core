@@ -1,8 +1,9 @@
 import { writable, get } from 'svelte/store';
 import { showToast, settingsOpen, settingsSection } from '../../stores/appStore.js';
 import { activeAiConfig, aiReady } from './providers.js';
-import { runChat, describeAiError } from './client.js';
-import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall } from './tools.js';
+import { runChat, describeAiError, AiHttpError } from './client.js';
+import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall, setTurnPictures } from './tools.js';
+import { userContent, limitPictures, hasPictures, isVisionRefusal } from './visionParts.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 
 // Conversation orchestrator (roadmap #10, A5). Module-level state so the chat
@@ -10,7 +11,7 @@ import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 // batch, so one prompt = one undo step even on error/abort.
 
 /**
- * @typedef {{role: 'user'|'assistant'|'tool-status'|'error'|'summary', content: string, streaming?: boolean}} UiMessage
+ * @typedef {{role: 'user'|'assistant'|'tool-status'|'error'|'summary', content: string, streaming?: boolean, images?: {url: string, name: string}[]}} UiMessage
  */
 
 /** @type {import('svelte/store').Writable<UiMessage[]>} */
@@ -150,13 +151,28 @@ function tallyChanges(name, result, tally) {
 }
 
 /**
+ * Roadmap 73 AI2: the picture message after a refused turn — and the transcript stops carrying pictures,
+ * or every later prompt in this chat would be refused the same way. Null when pictures are not the matter.
+ * @param {unknown} error @param {any} config @returns {string|null}
+ */
+function pictureFailure(error, config) {
+	if (!(error instanceof AiHttpError) || !hasPictures(apiHistory)) return null;
+	if (![400, 404, 413, 415, 422].includes(error.status)) return null;
+	apiHistory = limitPictures(apiHistory, 0);
+	if (isVisionRefusal(error.status, error.body)) return 'This model can’t read pictures — pick a vision model, or ask without the picture. The picture is left out of the rest of this chat.';
+	return describeAiError(error, config) + ' — pictures are left out of the rest of this chat.';
+}
+
+/**
  * Run a user prompt: stream the model, execute tool calls against the scene, and
  * commit everything as one undo step.
  * @param {string} text
+ * @param {{mimeType: string, data: string, name?: string}[]} [images] 73 AI2: the composer's pictures,
+ *   already through attachments.prepareImage (downscaled, metadata stripped)
  */
-export async function runPrompt(text) {
+export async function runPrompt(text, images = []) {
 	const trimmed = (text || '').trim();
-	if (!trimmed) return;
+	if (!trimmed && !images.length) return;
 	if (get(aiBusy)) return;
 
 	if (!aiReady()) {
@@ -168,22 +184,36 @@ export async function runPrompt(text) {
 	const config = activeAiConfig();
 	if (!config) return;
 
-	push({ role: 'user', content: trimmed });
+	push({
+		role: 'user',
+		content: trimmed,
+		...(images.length ? { images: images.map((i) => ({ url: 'data:' + i.mimeType + ';base64,' + i.data, name: i.name ?? 'picture' })) } : {})
+	});
+	aiBusy.set(true);
+
+	// 73 AI2: JPEG on the wire, the one format every vision provider reads
+	/** @type {any[]} */
+	let pictures = [];
+	if (images.length) {
+		const { asJpeg } = await import('$lib/chat/attachments.js');
+		pictures = await Promise.all(images.map((i) => asJpeg(i).catch(() => i)));
+	}
 
 	// Seed / refresh the API transcript: system prompt + a fresh scene summary each
 	// turn (so "make them taller" resolves against current uuids), then this prompt.
 	if (!apiHistory.length) apiHistory.push({ role: 'system', content: buildSystemPrompt() });
 	apiHistory.push({
 		role: 'user',
-		content: 'Current scene:\n' + JSON.stringify(summarizeScene()) + '\n\nRequest: ' + trimmed
+		content: userContent('Current scene:\n' + JSON.stringify(summarizeScene()) + '\n\nRequest: ' + (trimmed || 'See the attached picture.'), pictures)
 	});
 	// keep the system message + a trailing window of turns
 	if (apiHistory.length > MAX_TRANSCRIPT) {
 		apiHistory = [apiHistory[0], ...apiHistory.slice(-(MAX_TRANSCRIPT - 1))];
 	}
+	apiHistory = limitPictures(apiHistory);
+	setTurnPictures(pictures);
 
 	controller = new AbortController();
-	aiBusy.set(true);
 	aiStatus.set('');
 	beginHistoryBatch();
 	/** distinct objects touched + non-object changes (see tallyChanges) */
@@ -223,8 +253,9 @@ export async function runPrompt(text) {
 		if (!result.content && !appliedCount() && !failed) push({ role: 'assistant', content: '(no response)' });
 	} catch (error) {
 		endStreaming();
-		push({ role: 'error', content: describeAiError(error, config) });
+		push({ role: 'error', content: pictureFailure(error, config) ?? describeAiError(error, config) });
 	} finally {
+		setTurnPictures([]);
 		endHistoryBatch('AI: ' + trimmed.slice(0, 40));
 		const applied = appliedCount();
 		if (applied) push({ role: 'summary', content: 'Applied ' + applied + ' action(s) — undo (Ctrl+Z) reverts them together' });

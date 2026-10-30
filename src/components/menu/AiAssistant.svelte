@@ -41,7 +41,7 @@
 	import { chatIdOfItem } from '$lib/chat/tpchatStore.js';
 	import { rolesInfo } from '$lib/cloudHooks';
 	import ConnectClaude from './ConnectClaude.svelte'; // 86 B1/B2
-	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider } from '$lib/ai/providers';
+	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider, aiReady } from '$lib/ai/providers';
 	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi, resetAiConversation } from '$lib/ai/assistant';
 	import { dragWindow } from '$lib/dragWindow';
 	import { bottomDockable } from '$lib/bottomDockDrop';
@@ -90,9 +90,14 @@
 			pending = [];
 			return;
 		}
-		if (!text || $aiBusy) return;
-		prompt = '';
-		runPrompt(text);
+		// 73 AI2: the pictures go to the provider too. Not set up yet: runPrompt only sends you to Settings, keep what you wrote
+		if ((!text && !pending.length) || $aiBusy) return;
+		const images = pending;
+		if (aiReady()) {
+			prompt = '';
+			pending = [];
+		}
+		runPrompt(text, images);
 	}
 
 	/** pick an agent: its newest chat in this scene, else a fresh one @param {string} id */
@@ -322,6 +327,14 @@
 				{#each $aiMessages as m, i (i)}
 					{#if m.role === 'user'}
 						<li class="ai-msg ai-user max-w-[85%] self-end">
+							{#if m.images?.length}
+								<!-- 73 AI2: local to this window; the provider chat is not replicated -->
+								<span class="ai-pics">
+									{#each m.images as pic, k (k)}
+										<img class="ai-pic" src={pic.url} alt={pic.name} />
+									{/each}
+								</span>
+							{/if}
 							{m.content}
 						</li>
 					{:else if m.role === 'assistant'}
@@ -445,6 +458,20 @@
 		border-bottom-right-radius: 4px;
 		background: var(--accent-soft);
 		color: var(--accent-soft-text);
+	}
+	.ai-pics {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+	}
+	.ai-pics:not(:last-child) {
+		margin-bottom: 4px;
+	}
+	.ai-pic {
+		max-width: 120px;
+		max-height: 120px;
+		border-radius: var(--radius-input);
+		object-fit: cover;
 	}
 	.ai-reply {
 		border-bottom-left-radius: 4px;

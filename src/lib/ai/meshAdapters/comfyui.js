@@ -5,6 +5,8 @@
 // "Save (API)"). They paste that JSON into Settings with two placeholder tokens:
 //   {{PROMPT}}  -> the text prompt (in the CLIP/text node's `text` field)
 //   {{SEED}}    -> the sampler seed (a number field)
+//   {{IMAGE}}   -> roadmap 73 AI1: the picture, uploaded first (/upload/image); put it in a LoadImage
+//                  node's `image` field. A workflow with it takes a picture, one without it does not.
 // We substitute the placeholders, POST the graph to /prompt, poll /history until the
 // SaveGLB node emits a file, and download it from /view.
 //
@@ -14,7 +16,9 @@
 // set that token as the provider's API key and we send it as `Authorization: Bearer`.
 //
 // Verified against the ComfyUI HTTP API (POST /prompt, GET /history/{id},
-// GET /view?filename=&subfolder=&type=). Last checked 2026-07-19.
+// GET /view?filename=&subfolder=&type=, POST /upload/image). Last checked 2026-07-19.
+
+import { fromBase64 } from '$lib/chat/attachCore.js';
 
 /** @param {any} config @param {boolean} [json] */
 function headers(config, json) {
@@ -25,22 +29,41 @@ function headers(config, json) {
 	return h;
 }
 
-/** Deep-substitute {{PROMPT}} / {{SEED}} in a parsed workflow graph. A value that is
+/** Deep-substitute {{PROMPT}} / {{SEED}} / {{IMAGE}} in a parsed workflow graph. A value that is
  * EXACTLY "{{SEED}}" becomes the numeric seed; otherwise string replacement.
- * @param {any} node @param {string} prompt @param {number} seed @returns {any} */
-function substitute(node, prompt, seed) {
-	if (Array.isArray(node)) return node.map((v) => substitute(v, prompt, seed));
+ * @param {any} node @param {string} prompt @param {number} seed @param {string} [image] @returns {any} */
+function substitute(node, prompt, seed, image = '') {
+	if (Array.isArray(node)) return node.map((v) => substitute(v, prompt, seed, image));
 	if (node && typeof node === 'object') {
 		/** @type {any} */
 		const out = {};
-		for (const k of Object.keys(node)) out[k] = substitute(node[k], prompt, seed);
+		for (const k of Object.keys(node)) out[k] = substitute(node[k], prompt, seed, image);
 		return out;
 	}
 	if (typeof node === 'string') {
 		if (node === '{{SEED}}') return seed;
-		return node.replace(/\{\{PROMPT\}\}/g, prompt).replace(/\{\{SEED\}\}/g, String(seed));
+		return node
+			.replace(/\{\{PROMPT\}\}/g, prompt)
+			.replace(/\{\{SEED\}\}/g, String(seed))
+			.replace(/\{\{IMAGE\}\}/g, image);
 	}
 	return node;
+}
+
+/**
+ * ComfyUI reads a LoadImage file from its own input folder, so the picture goes there first.
+ * @param {any} config @param {{mimeType: string, data: string, name?: string}} image
+ * @returns {Promise<string>} the name a LoadImage node takes
+ */
+async function uploadImage(config, image) {
+	const form = new FormData();
+	form.append('image', new Blob([/** @type {any} */ (fromBase64(image.data))], { type: image.mimeType }), image.name || 'picture');
+	const res = await fetch(config.baseUrl.replace(/\/+$/, '') + '/upload/image', { method: 'POST', headers: headers(config, false), body: form });
+	if (!res.ok) throw new Error(describeError(res.status, await res.text().catch(() => '')));
+	/** @type {any} */
+	const json = await res.json().catch(() => ({}));
+	if (!json.name) throw new Error('ComfyUI did not accept the picture');
+	return json.subfolder ? json.subfolder + '/' + json.name : json.name;
 }
 
 /**
@@ -59,7 +82,10 @@ export async function submit(config, params) {
 		throw new Error('The saved ComfyUI workflow is not valid JSON — re-export it in API format.');
 	}
 	const seed = typeof params.seed === 'number' ? params.seed : Math.floor(Math.random() * 1e9);
-	graph = substitute(graph, params.prompt, seed);
+	const wantsImage = config.workflowJson.includes('{{IMAGE}}');
+	if (params.image && !wantsImage) throw new Error('This ComfyUI workflow takes no picture — add {{IMAGE}} to its LoadImage node.');
+	if (!params.image && wantsImage) throw new Error('This ComfyUI workflow needs a picture — choose one to generate from.');
+	graph = substitute(graph, params.prompt, seed, params.image ? await uploadImage(config, params.image) : '');
 
 	const clientId = 'tpp-' + Math.random().toString(36).slice(2);
 	const res = await fetch(config.baseUrl.replace(/\/+$/, '') + '/prompt', {

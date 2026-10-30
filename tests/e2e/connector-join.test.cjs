@@ -93,7 +93,13 @@ h.run(async () => {
 	const st = (await relay.answer('st'))?.result;
 	h.check(!!st, `status answers after the join (${JSON.stringify(st ?? null).slice(0, 160)})`);
 	h.check(st?.you?.peerId === B.id && st.you.role === 'guest', `after joining, "you" is a guest of A's session (${JSON.stringify(st?.you)})`);
-	const ids = (st?.peers ?? []).map((p) => p.id + (p.you ? '*' : ''));
+	// the link to A opens a beat after the approval sets the host: ask until it is in the open set
+	let ids = [], k = 0;
+	await h.eventually(async () => {
+		const id = 'su' + k++;
+		relay.call(id, 'status', {}, 'read');
+		return (ids = ((await relay.answer(id))?.result?.peers ?? []).map((p) => p.id + (p.you ? '*' : '')));
+	}, (x) => x.includes(aId), 'A in the users list', 20000);
 	h.check(ids[0] === B.id + '*' && ids.includes(aId), `the users list holds the person (you: true) and A (${ids})`);
 
 	// ---- where_are_users: the person from this tab's camera, A from the avatar A's camera stream poses -------

@@ -1,6 +1,6 @@
 {
 	"name": "@theprototype/agent",
-	"version": "1.48.0",
+	"version": "1.50.0",
 	"description": "Let an AI agent (Claude Code, Claude Desktop, any MCP host) join a theprototype.app session from its link and build the 3D scene with you.",
 	"type": "module",
 	"license": "MIT",

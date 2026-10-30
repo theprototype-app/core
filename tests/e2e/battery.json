@@ -265,7 +265,9 @@
 	"setup": {
 		"agent-bridge": "agent",
 		"agent-mcp": "agent",
-		"agent-proof": "agent"
+		"agent-proof": "agent",
+		"agent-chat": "agent",
+		"import-file": "agent"
 	},
 	"suites": {
 		"a11y-axe": 127,
@@ -273,6 +275,10 @@
 		"a11y-scale": 258,
 		"add-flow-scene": 100,
 		"agent-api": 420,
+		"agent-chat": 360,
+		"agent-chat-vr": 300,
+		"agent-chat-window": 480,
+		"chat-media": 480,
 		"connector-relay": 240,
 		"agent-bridge": 48,
 		"agent-conformance": 200,
@@ -456,6 +462,7 @@
 		"image-editor": 140,
 		"import-button": 56,
 		"import-decimate": 54,
+		"import-file": 240,
 		"import-optimize": 639,
 		"import-small-skip": 35,
 		"ingest-gate": 85,

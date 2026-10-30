@@ -57,9 +57,11 @@ import {
 	latestSceneHash,
 	projectName
 } from './projectManifest';
-import { ensureScenesFolder, currentLevel } from './levels';
+import { ensureScenesFolder, currentLevel, travelToScene } from './levels';
+import { sceneAtRisk } from './sceneOpenGuard';
 import { sceneBytesForDoor as sceneBytesForDoorRaw } from './chat/tpchatDoor.js';
 import { safeStorage } from './safeStorage';
+import { containerType } from './download/containerType.js';
 
 /** V4's gating pattern with its own int: a NEWER format ASKS before importing, an
  * older or absent one loads silently. `appVersion` beside it is display-only
@@ -389,6 +391,8 @@ export async function exportProject(opts = {}) {
 			// G9 owns the setter; normalize preserves the field, so it rides here whether
 			// or not this build knows how to edit it
 			name: String(outManifest.name ?? ''),
+			// 56 C16: the scene that was open, so opening the file lands there (additive)
+			...(claimed.includes(get(currentLevel)?.name) ? { lastScene: get(currentLevel)?.name } : {}),
 			manifest: outManifest,
 			scenes,
 			assets,
@@ -609,7 +613,7 @@ export function projectFileBase(name) {
  * `hudPickArm`/`hudPickResult` shape): the inline editor is component state in a panel
  * this module must not import, and a store is the seam that needs nothing back.
  */
-async function startSceneSaveBootstrap() {
+export async function startSceneSaveBootstrap() {
 	const folderId = await ensureScenesFolder();
 	explorerClose.set(false);
 	bottomDockActive.set('explorer'); // if it is docked, make it the visible panel
@@ -653,7 +657,7 @@ export async function downloadProject(opts = {}) {
 	}
 	const result = await exportProject({ folderId: opts.folderId ?? null });
 	// zipSync's Uint8Array is typed over ArrayBufferLike; BlobPart wants ArrayBuffer
-	const blob = new Blob([/** @type {BlobPart} */ (result.bytes)], { type: 'application/zip' });
+	const blob = new Blob([/** @type {BlobPart} */ (result.bytes)], { type: containerType('.tp') });
 	const a = document.createElement('a');
 	document.body.appendChild(a);
 	a.style.display = 'none';
@@ -975,11 +979,16 @@ export async function openProject(buffer) {
 	const { entries, doc } = read;
 	if (!(await confirmProjectFormat(doc))) return null;
 	const name = String(doc.name ?? '').trim();
+	// 56 C16: reopen the scene that was open when this file was saved; a missing one falls back to
+	// the old behaviour (the scene on screen stays)
+	const lastScene = lastSceneOf(doc);
 	const ok = await showConfirm({
 		title: 'Open project' + (name ? ': ' + name : ''),
 		message:
 			'This replaces your current project — the Explorer library, its folders and the scene history. ' +
-			'The scene on screen stays, but it no longer belongs to a saved project scene until you save it. Continue?',
+			(lastScene
+				? 'It opens "' + lastScene + '", the scene you had open.' + (sceneAtRisk() ? ' Unsaved changes to the scene on screen are lost.' : '') + ' Continue?'
+				: 'The scene on screen stays, but it no longer belongs to a saved project scene until you save it. Continue?'),
 		confirmLabel: 'Open project'
 	});
 	if (!ok) return null;
@@ -1005,13 +1014,20 @@ export async function openProject(buffer) {
 	// let travel-away publish the old world into the new project's history
 	currentLevel.set(null);
 	const names = Object.keys(normalizeManifest(doc.manifest).scenes);
+	const reopened = !!lastScene && !!(await travelToScene(lastScene));
 	showToast(
 		'Project opened' + (name ? ': ' + name : '') + ' — ' + names.length + ' scene' +
 			(names.length === 1 ? '' : 's') + ', ' + (counts.items || counts.scenes + counts.assets) +
 			' library item' + ((counts.items || counts.scenes + counts.assets) === 1 ? '' : 's') +
-			'. Nothing was loaded — travel to a scene when you are ready.'
+			(reopened ? '. Back in "' + lastScene + '".' : '. Nothing was loaded — travel to a scene when you are ready.')
 	);
 	return counts;
+}
+
+/** The file's last-open scene, when the file still holds that scene. @param {any} doc @returns {string | null} */
+export function lastSceneOf(doc) {
+	const last = typeof doc?.lastScene === 'string' ? doc.lastScene : '';
+	return last && normalizeManifest(doc.manifest).scenes[last] ? last : null;
 }
 
 /**
@@ -1124,7 +1140,7 @@ export async function importProjectAsSession(buffer, opts = {}) {
 
 	const manifest = normalizeManifest(doc.manifest);
 	const names = Object.keys(manifest.scenes ?? {});
-	const primary = names.includes(String(manifest.name ?? '')) ? String(manifest.name) : names[0];
+	const primary = lastSceneOf(doc) ?? (names.includes(String(manifest.name ?? '')) ? String(manifest.name) : names[0]);
 	const history = primary ? (manifest.scenes[primary]?.history ?? []) : [];
 	const pointer = history[history.length - 1] ?? null;
 	const sceneRows = Array.isArray(doc.scenes) ? doc.scenes : [];

@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { bridgeTools, mapHostTools, toolSignature, textResult, resultIsError } from './mcpTools.js';
+import { bridgeTools, connectorOnlyTools, mapHostTools, toolSignature, textResult, resultIsError } from './mcpTools.js';
 import { chatTools, waitMs, ImageSpool, messageContent, withImportPath, execBridged } from './chat.js';
 import { parseLink } from './link.js';
 
@@ -41,6 +41,17 @@ const WAIT_EDIT_MAX_MS = 120000;
 
 /** @param {number} ms */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 56 C19: the host tools of the generated catalog, for a client that reads tools/list once and ignores
+ * list_changed (claude.ai's custom connector). The live list replaces them once joined.
+ * @returns {any[]}
+ */
+export function catalogHostTools() {
+	const catalog = JSON.parse(readFileSync(new URL('../catalog.json', import.meta.url), 'utf8'));
+	const skip = new Set(connectorOnlyTools().map((t) => t.name));
+	return catalog.tools.filter((/** @type {{name: string}} */ t) => !skip.has(t.name));
+}
 
 /**
  * The server, engine-agnostic (tests drive it with a fake engine over an in-memory transport).
@@ -208,7 +219,7 @@ export function createBridgeServer(opts) {
 				return textResult(st, st.state === 'failed');
 			}
 			if (name === 'status' || (name === 'get_status' && opts.kind === 'wire')) return textResult(await statusInfo());
-			if (!engine) return textResult({ error: 'not connected', note: 'call connect with the session link first' }, true);
+			if (!engine) return textResult({ error: 'not connected — join first', note: 'call connect with the session link first' }, true);
 			if (name === 'screenshot' && reserved.includes('screenshot')) {
 				if (!engineReady()) return textResult({ error: 'the agent page is not up yet (' + engine.state + ')' }, true);
 				const shot = await engine.screenshot({ view: a.view, uuid: a.uuid, size: a.size });

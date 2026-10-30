@@ -10,8 +10,9 @@
 	import Button from '../ui/Button.svelte';
 	import CloudSlot from '../CloudSlot.svelte';
 	import { connectorState, connectorAvailable, connectorLine, connectClaude, disconnectClaude } from '$lib/connector/connectorStore';
+	import { CONNECTOR_DIRECTORY_URL, CONNECTOR_DOCS_URL, CONNECTOR_MCP_URL } from '$lib/connector/connectorLinks.js';
 	import { connectorSignInSlot } from '$lib/cloudHooks';
-	import { settingsOpen, settingsSection } from '../../stores/appStore';
+	import { settingsOpen, settingsSection, showToast } from '../../stores/appStore';
 
 	let { welcome = false }: { welcome?: boolean } = $props();
 	const signIn = $derived(welcome && !$connectorAvailable && !!$connectorSignInSlot);
@@ -19,6 +20,15 @@
 	const s = $derived($connectorState);
 	const live = $derived(s.phase === 'connected' || s.phase === 'reconnecting' || s.phase === 'pairing' || s.phase === 'connecting');
 	const tone = $derived(s.phase === 'connected' ? 'ok' : s.phase === 'reconnecting' || s.throttled ? 'warn' : s.phase === 'closed' || s.phase === 'error' ? 'bad' : 'idle');
+
+	async function copyMcpLink() {
+		try {
+			await navigator.clipboard.writeText(CONNECTOR_MCP_URL);
+			showToast('Link copied');
+		} catch {
+			showToast('Copy did not work here: the link is ' + CONNECTOR_MCP_URL);
+		}
+	}
 
 	function openConnectedApps() {
 		settingsSection.set('connectedapps');
@@ -61,6 +71,25 @@
 				<Button id="connect-claude-button" variant="secondary" size="sm" icon="link" onclick={connectClaude}>Connect Claude</Button>
 			{/if}
 		</div>
+		{#if welcome && !live}
+			<!-- what to do on the claude.ai side; a directory listing turns step 1 into one link -->
+			<ol id="connect-claude-steps" class="cc-steps">
+				<li id="connect-claude-step-1">
+					{#if CONNECTOR_DIRECTORY_URL}
+						In claude.ai:
+						<a id="connect-claude-add" class="cc-link" href={CONNECTOR_DIRECTORY_URL} target="_blank" rel="noopener noreferrer">Add to Claude</a>
+					{:else}
+						In claude.ai: Settings ▸ Connectors ▸ Add custom connector, paste
+						<code class="cc-url">{CONNECTOR_MCP_URL}</code>
+						<button type="button" id="connect-claude-copy" class="cc-link" onclick={copyMcpLink}>Copy link</button>
+						<a id="connect-claude-how" class="cc-link" href={CONNECTOR_DOCS_URL} target="_blank" rel="noopener noreferrer">How?</a>
+					{/if}
+				</li>
+				<li id="connect-claude-step-2">
+					{#if signIn}Then sign in here, press Connect Claude and keep this tab open.{:else}Then press Connect Claude here and keep this tab open.{/if}
+				</li>
+			</ol>
+		{/if}
 		{#if s.phase === 'connected' && s.throttled}
 			<p class="cc-hint cc-warn" id="connect-claude-throttled">
 				<Icon name="triangle-alert" size={16} aria-hidden="true" />
@@ -103,6 +132,20 @@
 		margin: 2px 0 8px;
 		font-size: var(--fs-desc);
 		color: var(--text-muted);
+	}
+	.cc-steps {
+		margin: 8px 0 0;
+		padding-left: 18px;
+		list-style: decimal;
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
+	}
+	.cc-steps li + li {
+		margin-top: 4px;
+	}
+	.cc-url {
+		overflow-wrap: anywhere;
+		color: var(--text);
 	}
 	.cc-row {
 		display: flex;

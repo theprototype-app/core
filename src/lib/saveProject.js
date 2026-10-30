@@ -30,6 +30,7 @@ import { resolveSaveMany, saveDialogRows, sessionVolumeId } from './sessionVolum
 import { saveManyDialog } from './saveManyState';
 import { currentLevel } from './levels';
 import { sceneAtRisk } from './sceneOpenGuard';
+import { showChoice } from './confirmDialog';
 
 /** @typedef {import('./sessionVolumeCore').OpenLibrary} OpenLibrary */
 
@@ -79,6 +80,42 @@ function dirtySceneName() {
 	}
 }
 
+/**
+ * The open scene has unsaved work: ask what the project file should hold.
+ * @returns {Promise<'scene' | 'without' | 'cancel' | 'none'>} `none` = nothing at risk
+ */
+async function askDirtyScene() {
+	/** @type {any} */
+	const at = get(currentLevel);
+	let risk = false;
+	try {
+		risk = sceneAtRisk();
+	} catch {}
+	if (!risk) return 'none';
+	if (at?.name) {
+		const answer = await showChoice({
+			title: 'Save project',
+			message: '"' + at.name + '" has unsaved changes.',
+			choices: [
+				{ value: 'scene', label: 'Save scene and project' },
+				{ value: 'without', label: 'Save project without these changes' }
+			]
+		});
+		return answer === 'scene' || answer === 'without' ? answer : 'cancel';
+	}
+	// a scene with no name is in no project yet: the only way to keep it is to name it first
+	const answer = await showChoice({
+		title: 'Save project',
+		message: 'The scene on screen is not saved, so it is not part of the project yet.',
+		choices: [
+			{ value: 'name', label: 'Save the scene first…' },
+			{ value: 'without', label: 'Save project without it' }
+		]
+	});
+	if (answer === 'name') (await import('./projectFile')).startSceneSaveBootstrap();
+	return answer === 'without' ? 'without' : 'cancel';
+}
+
 /** the press's own save while the dialog is open @type {(() => any) | null} */
 let pendingOwn = null;
 
@@ -100,7 +137,15 @@ export async function saveProjectPressed(trigger, saveOwn) {
 		const { showToast } = await import('../stores/appStore');
 		showToast('Nothing saved: the active library cannot be saved by you — Settings ▸ Save options decides what a Save does here');
 	}
-	await saveLibraries(verdict.save, saveOwn, {});
+	// 56 C15: my Library's project file holds saved scenes only, so the burger never drops the open
+	// scene's edits without a word (the dialog above has its own line for this)
+	let sceneFirst = false;
+	if (trigger === 'burger' && verdict.save.includes('library')) {
+		const answer = await askDirtyScene();
+		if (answer === 'cancel') return { dialog: false, saved: [] };
+		sceneFirst = answer === 'scene';
+	}
+	await saveLibraries(verdict.save, saveOwn, { sceneFirst });
 	return { dialog: false, saved: verdict.save };
 }
 

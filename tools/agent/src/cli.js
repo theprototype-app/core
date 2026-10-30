@@ -12,8 +12,8 @@ import { parseLink, redactLink } from './link.js';
 import { BrowserEngine } from './browserEngine.js';
 import { WireEngine } from './wireEngine.js';
 
-const BOOLEAN = new Set(['mcp', 'repl', 'smoke', 'verbose', 'compat', 'headed', 'insecure', 'no-turn', 'no-install', 'help', 'version']);
-const MODES = ['mcp', 'repl', 'smoke'];
+const BOOLEAN = new Set(['mcp', 'serve', 'static-tools', 'no-static-tools', 'repl', 'smoke', 'verbose', 'compat', 'headed', 'insecure', 'no-turn', 'no-install', 'help', 'version']);
+const MODES = ['mcp', 'serve', 'repl', 'smoke'];
 
 /** argv → flags: --flag value | --flag=value | --bool; a known boolean never eats the next word. */
 export function parseArgs(/** @type {string[]} */ argv) {
@@ -157,6 +157,7 @@ function usage() {
 			'theprototype-agent — join a theprototype.app session as a peer and build the scene',
 			'',
 			'  theprototype-agent mcp   <link>   MCP server over stdio (claude mcp add theprototype -- npx -y @theprototype/agent mcp <link>)',
+			'  theprototype-agent serve --port <n> [link]   MCP over HTTP on 127.0.0.1 (claude mcp add --transport http theprototype http://127.0.0.1:<n>/mcp)',
 			'  theprototype-agent repl  <link>   your own OpenAI-compatible model (--api-url --api-key --model)',
 			'  theprototype-agent smoke <link>   scripted create/move/delete, no model',
 			'',
@@ -171,6 +172,7 @@ function usage() {
 			'  --peer-server h:p[:insecure] | public   wire: signaling override (default: from the link)',
 			'  --turn-url <url> | --no-turn            wire: TURN credentials endpoint (default: from the link)',
 			'  --id <id>               wire: stable peer id   --approval-timeout <s>  (default 120)',
+			'  --static-tools          list the full tool catalog before a join (the default with serve; --no-static-tools = off)',
 			'  --verbose               log to stderr'
 		].join('\n')
 	);
@@ -192,10 +194,15 @@ async function main() {
 	const kind = (args.engine || 'browser') === 'wire' ? 'wire' : 'browser';
 	if (args.engine && !['browser', 'wire'].includes(args.engine)) throw new Error('--engine is browser or wire');
 
-	if (mode === 'mcp') {
+	if (mode === 'mcp' || mode === 'serve') {
 		const m = await import('./mcpServer.js');
-		const staticTools = kind === 'wire' ? (await import('./tools.js')).TOOL_SCHEMAS : undefined;
-		await m.runMcp(args, { kind, link, staticTools, makeEngine: (l, name) => makeEngine(args, l, name) });
+		const wantCatalog = mode === 'serve' ? !args['no-static-tools'] : !!args['static-tools'];
+		const staticTools = kind === 'wire' ? (await import('./tools.js')).TOOL_SCHEMAS : wantCatalog ? m.catalogHostTools() : undefined;
+		const deps = { kind, link, staticTools, makeEngine: (/** @type {string} */ l, /** @type {any} */ name) => makeEngine(args, l, name) };
+		if (mode === 'serve') {
+			const { runHttp } = await import('./httpServer.js');
+			await runHttp(args, deps);
+		} else await m.runMcp(args, deps);
 		return;
 	}
 	if (!link) throw new Error(mode + ' needs a session link: theprototype-agent ' + mode + ' https://theprototype.app/#<id>');

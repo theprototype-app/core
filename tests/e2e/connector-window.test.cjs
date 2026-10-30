@@ -90,6 +90,14 @@ h.run(async () => {
 	await button.waitFor({ state: 'visible', timeout: 10000 });
 	h.check((await read(A.page, 'aiAssistantHidden')) === '' && (await A.page.locator('#connect-claude-signin').count()) === 0, 'after sign-in the same window shows Connect Claude');
 	h.check((await A.page.locator('#connect-claude').count()) === 1, 'one Connect Claude control (the top row stands down while the welcome shows)');
+	// the claude.ai half: two short steps, the link one press away
+	const step1 = (await A.page.locator('#connect-claude-step-1').textContent()) ?? '';
+	h.check(/Add custom connector/.test(step1) && step1.includes('https://theprototype.app/mcp'), `step 1 says what to do in claude.ai (${step1.trim().slice(0, 90)})`);
+	h.check((await A.page.locator('#connect-claude-how').getAttribute('href')) === 'https://docs.theprototype.app/ai/claude-connector/', 'step 1 has the How? link');
+	await A.page.context().grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
+	await A.page.locator('#connect-claude-copy').click();
+	h.check((await A.page.evaluate(() => navigator.clipboard.readText().catch(() => ''))) === 'https://theprototype.app/mcp', 'Copy link puts the link on the clipboard');
+	h.check(/press Connect Claude here/.test((await A.page.locator('#connect-claude-step-2').textContent()) ?? ''), 'step 2 says to press Connect Claude here');
 	await axe(A.page, '#ai-welcome', 'AI welcome (signed in)');
 	await A.page.screenshot({ path: path.join(OUT, 'n1-welcome.png') }).catch(() => {});
 

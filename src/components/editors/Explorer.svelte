@@ -65,6 +65,7 @@
 	// R22 round 11: a prefab may BE a file now — see $lib/saveAs for what each format keeps.
 	import * as THREE from 'three';
 	import { prefabFormatOf, prefabFileName, saveBytes } from '$lib/saveAs';
+	import { containerType } from '$lib/download/containerType.js';
 	// R22 round 11: a pack you make yourself — see packs.js for why it is an "imported"
 	// pack with no zip behind it rather than a fourth kind.
 	import { createPack, addToPack, packItemUrls } from '$lib/packs';
@@ -2692,8 +2693,12 @@
 			if (!item) {
 				// nothing to select: the scene is in the project document but its bytes are on
 				// somebody else's disk. Say where they are rather than opening an empty panel.
+				// 56 C17: ...and offer the fetch instead of pointing at a card
+				const tip = line[0] ?? arm.hash;
+				const remote = tip ? { id: 'remote:' + tip, name: arm.name + '.tpscene', kind: 'scene', hash: tip, folderId: null, remoteScene: true } : null;
 				showToast(
-					`No copy of "${arm.name}" here yet — its versions are on a peer. Use "Open here (downloads it)" on its card to fetch one.`
+					`No copy of "${arm.name}" here yet — its versions are on a peer.`,
+					remote ? [{ label: 'Fetch it', action: () => void openSceneItem(remote) }] : undefined
 				);
 				return;
 			}
@@ -4359,7 +4364,7 @@
 		payload.count = 1;
 		payload.thumbnail = prefab.thumbnail ?? null; // the card's own picture, so the file has one
 		const bytes = await exportSessionZip(payload, { assets: false, packs: false, flow: true });
-		saveBlob(new Blob([bytes], { type: 'application/zip' }), fileStem(prefab.name) + '.tpscene');
+		saveBlob(new Blob([bytes], { type: containerType('.tpscene') }), fileStem(prefab.name) + '.tpscene');
 		showToast(`Exported "${prefab.name}" as a scene`);
 	}
 

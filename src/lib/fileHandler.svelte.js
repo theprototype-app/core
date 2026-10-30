@@ -3,6 +3,7 @@ import { APP_VERSION } from '$lib/version';
 import { glbIsVrm } from '$lib/vrm/vrmDetect';
 import * as THREE from 'three';
 import { showChoice } from './confirmDialog.js';
+import { containerType } from './download/containerType.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
@@ -122,7 +123,7 @@ async function saveTpScene() {
 		lastExportReport.set({ kind: 'tpscene', preset, report: opts.report, bytes: zip.byteLength });
 		showToast(presetSummary('tpscene', opts.report, zip.byteLength));
 	}
-	const blob = new Blob([zip], { type: 'application/zip' });
+	const blob = new Blob([zip], { type: containerType('.tpscene') });
 	const a = document.createElement('a');
 	document.body.appendChild(a);
 	a.style.display = 'none';

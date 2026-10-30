@@ -41,6 +41,7 @@
 	import { saveOptions, saveOptionsOpen, setSaveOptions, SAVE_FORMATS } from '$lib/saveOptions'; // 41b H14
 	import { projectActionsLayout } from '$lib/projectActions'; // 41b H14
 	import SaveOptionsModal from './SaveOptionsModal.svelte'; // 41b H14
+	import { saveManyDialog } from '$lib/saveManyState'; // 56 C13
 	import { openAssetBrowser } from '$lib/cc0/assetBrowserState.js'; // 47-cc0
 
 	// 203: redesigned as a compact floating panel — flat list (order preserved,
@@ -63,6 +64,16 @@
 	const formatInfo = $derived(SAVE_FORMATS.find((f) => f.value === saveFormat) ?? SAVE_FORMATS[0]);
 	function openSaveOptions() {
 		saveOptionsOpen.set(true);
+	}
+	/**
+	 * 56 C13 (addendum 2026-10-28f): Save PROJECT with several libraries open (my Library, a session I
+	 * joined, a mounted project with changes) goes through Settings ▸ Save options ▸ "When several
+	 * libraries are open"; with one library it is the same `save` as ever. Other formats save the scene.
+	 * @param {string} format
+	 */
+	function saveFromMenu(format: string) {
+		if (format !== 'tp') return save(format);
+		void import('$lib/saveProject').then((m) => m.saveProjectPressed('burger', () => save(format)));
 	}
 	// Clearing value (instead of the old {#key} recreate) lets the same file be
 	// re-picked without detaching the input mid-dialog — a detached input's event
@@ -186,7 +197,7 @@
 					<span class="side-ico"><Icon name="folder-open" size={16} aria-hidden="true" /></span><span class="pa-label">Load</span>
 				</button>
 				<div class="pa-split">
-					<button id="project-save" class="side-row pa-btn pa-split-main" title={'Save as ' + formatInfo.label + ' (' + formatInfo.ext + ') with your last-used options'} onclick={() => save(saveFormat)}>
+					<button id="project-save" class="side-row pa-btn pa-split-main" title={'Save as ' + formatInfo.label + ' (' + formatInfo.ext + ') with your last-used options'} onclick={() => saveFromMenu(saveFormat)}>
 						<span class="side-ico"><Icon name="save" size={16} aria-hidden="true" /></span><span class="pa-label">Save</span>
 					</button>
 					<button id="save-options-open" class="side-row pa-btn pa-split-more" title="Save options…" aria-label="Save options" aria-haspopup="dialog" onclick={openSaveOptions}>
@@ -218,7 +229,7 @@
 		<button class="side-row" onclick={() => pickFile('load-file')}>
 			<span class="side-ico"><Icon name="folder-open" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Load</span>
 		</button>
-		<button class="side-row" onclick={() => save(saveFormat)}>
+		<button class="side-row" onclick={() => saveFromMenu(saveFormat)}>
 			<span class="side-ico"><Icon name="save" size={16} aria-hidden="true" /></span><span class="flex-1 whitespace-nowrap">Save</span>
 		</button>
 		<!-- 21-H1: [ Project | Scene | cog ]. The KEY stays 'tp' and the id stays
@@ -362,6 +373,10 @@
 <!-- 41b H14: "Save options" (Compact's Save ▾, List's ⚙) — rendered at the component ROOT, never
      inside the blurred .app-sidebar (a backdrop-filter ancestor captures position:fixed) -->
 <SaveOptionsModal />
+<!-- 56 C13: the "Save which libraries?" dialog, mounted only while it is open (lazy chunk) -->
+{#if $saveManyDialog}
+	{#await import('./SaveManyDialog.svelte') then m}<m.default />{/await}
+{/if}
 
 <style>
 	/* (no background here: an undefined --color-form blanked the utility's surface fill — a

@@ -215,6 +215,11 @@
 		volumeUpdateBytes,
 		volumeItems
 	} from '$lib/mountedVolumes';
+	// 56 C13: the host's files while joined — a READ-ONLY volume in the same `vol:` namespace
+	// (the store is a boot-light leaf; the runtime behind Open / Copy / Save on host loads on first use)
+	import { sessionVolumes, isSessionVolumeId } from '$lib/sessionVolumeState';
+	const sessionRuntime = () => import('$lib/sessionVolumes');
+	import { formatBytes, SHARE_SCOPE_LABELS } from '$lib/sessionVolumeCore';
 	// ROADMAP 22 R4 — WHO IS IN THIS SCENE, on the card. The session is the mesh and every
 	// peer in it carries a scene tag (peerScenes); a scene card reads the tags for the scene
 	// it stands for and says who is standing there, you included, and offers to JOIN them.
@@ -1130,9 +1135,31 @@
 	/** the mounted volume RECORD for the current scope, or null. Reads the store directly
 	 *  so the grid re-renders on a buffered edit — `volumeById` reaches it through get(),
 	 *  which registers no dependency (the documented rule). */
-	const volume = $derived(
-		volScope ? ($mountedVolumes.find((v: any) => v.id === volScope.volumeId) ?? null) : null
+	const volume: any = $derived(
+		volScope
+			? ($mountedVolumes.find((v: any) => v.id === volScope.volumeId) ??
+					// 56 C13: a session volume is drawn by every read path a mount is
+					$sessionVolumes.find((v: any) => v.id === volScope.volumeId) ??
+					null)
+			: null
 	);
+	/** 56 C13: the open place is a session volume — read-only, every edit verb is refused */
+	const inSessionVol = $derived(!!volume?.session);
+	/**
+	 * 56 C13: A SESSION VOLUME IS READ-ONLY. Every edit verb a mount offers (rename, new folder,
+	 * delete, drop or paste in) lands here first and is refused with the two things that DO work.
+	 * @returns true when it refused
+	 */
+	function sessionReadOnly(volumeId: string | null | undefined): boolean {
+		if (!isSessionVolumeId(volumeId)) return false;
+		const v: any = $sessionVolumes.find((x: any) => x.id === volumeId);
+		showToast(
+			(v?.name ?? 'This session') +
+				' is read-only — Copy to my library' +
+				(v?.role === 'editor' ? ', or Save on host' : '')
+		);
+		return true;
+	}
 	/** a volume folder as a GRID/TREE row. Its `id` is the namespaced key, not the bare
 	 *  folder uuid, for a reason that bites immediately: a project saved from THIS machine
 	 *  carries the library's own folder uuids verbatim, so a bare id would make one drag
@@ -1330,7 +1357,13 @@
 				? volume.items.filter((i: any) => i.name.toLowerCase().includes(q))
 				: volume.items.filter((i: any) => (i.folderId ?? null) === volScope.folderId);
 			return rows
-				.map((i: any) => ({ ...i, volumeId: volume.id, volumeName: volume.name, volumeItem: true }))
+				.map((i: any) => ({
+					...i,
+					volumeId: volume.id,
+					volumeName: volume.name,
+					volumeItem: true,
+					...(volume.session ? { sessionItem: true } : {})
+				}))
 				.filter(passesFilter);
 		}
 		if ($activeFolder === 'prefabs') {
@@ -1710,7 +1743,9 @@
 		// P3: a mounted file's path is inside its own project, and saying "Library" would
 		// name the one place it is not
 		if (selItem.volumeItem) {
-			const rows = volumeFolders(selItem.volumeId);
+			const rows: any[] = isSessionVolumeId(selItem.volumeId)
+				? (($sessionVolumes.find((v: any) => v.id === selItem.volumeId) as any)?.folders ?? [])
+				: volumeFolders(selItem.volumeId);
 			let at: any = selItem.folderId ?? null;
 			while (at) {
 				const f = rows.find((x: any) => x.id === at);
@@ -2383,6 +2418,7 @@
 		if (editing) void commitEdit();
 	}
 	function startCreate(parentId: string | null, inGrid = false) {
+		if (sessionReadOnly(volumeOf(parentId)?.volumeId ?? (parentId === null ? volScope?.volumeId : null))) return;
 		// P3b: inside a mount this is a BUFFERED create. The 'vol:…' key is converted to the
 		// volume's own ids HERE, at the one entry point, because everything downstream —
 		// the edit row's match, commitEdit, the mutator — wants the raw pair. Letting the
@@ -2423,6 +2459,7 @@
 	// inGrid keeps the tree + thumbnail inputs from BOTH mounting for a root folder
 	// (it shows in both), whose duplicate focus/blur would tear the edit down instantly
 	function startRename(folder: any, inGrid = false) {
+		if (sessionReadOnly(folder?.volumeId)) return;
 		settlePendingEdit();
 		// P3b: a volume folder's CARD id is its namespaced key while its own id is the raw
 		// uuid, and the two markup sites that host this input match on the card. `cardId`
@@ -2439,6 +2476,7 @@
 	}
 	// 170: inline item rename (replaces the browser prompt), works in either view
 	function startRenameItem(item: any) {
+		if (sessionReadOnly(item?.volumeId)) return;
 		settlePendingEdit();
 		editing = {
 			mode: 'rename-item',
@@ -3028,7 +3066,9 @@
 		if (key == null) return true;
 		const scope = volumeOf(key);
 		if (scope) {
-			const v = $mountedVolumes.find((x: any) => x.id === scope.volumeId);
+			const v: any =
+				$mountedVolumes.find((x: any) => x.id === scope.volumeId) ??
+				$sessionVolumes.find((x: any) => x.id === scope.volumeId);
 			if (!v) return false;
 			return !scope.folderId || v.folders.some((f: any) => f.id === scope.folderId);
 		}
@@ -3051,6 +3091,17 @@
 	 * by-name version fold from swallowing a scene copied out of a mount).
 	 */
 	async function copyOutOfVolume(rows: any[], folderId: string | null) {
+		// 56 C13: a session volume's rows are pulled from the host (one confirm for the lot)
+		const fromSession = rows.filter((r: any) => isSessionVolumeId(r?.volumeId));
+		let sessionCopied = 0;
+		for (const volId of new Set(fromSession.map((r: any) => r.volumeId)))
+			sessionCopied += await (await sessionRuntime()).copySessionItems(
+				volId,
+				fromSession.filter((r: any) => r.volumeId === volId).map((r: any) => r.id),
+				folderId
+			);
+		rows = rows.filter((r: any) => !isSessionVolumeId(r?.volumeId));
+		if (!rows.length) return sessionCopied;
 		let copied = 0;
 		let missing = 0;
 		for (const row of rows) {
@@ -3530,6 +3581,7 @@
 		 */
 		const targetVol = volumeOf(target);
 		const fromVol = dragged.filter((p: any) => p?.volumeId);
+		if (targetVol && sessionReadOnly(targetVol.volumeId)) return;
 		if (targetVol) {
 			const vol = targetVol.volumeId;
 			for (const row of fromVol.filter((r: any) => r.volumeId === vol))
@@ -3602,6 +3654,32 @@
 		}
 		// P3: a folder INSIDE a mount. Share / Unshare / Export / Delete all read the
 		// library's own tree, so the mount gets the two entries that mean something here.
+		// 56 C13: a folder in a SESSION volume: walk into it, or copy what it holds
+		if (folder.volumeId && isSessionVolumeId(folder.volumeId)) {
+			const vol: any = $sessionVolumes.find((v: any) => v.id === folder.volumeId);
+			const inside = new Set<string>([folder.folderId]);
+			for (let grew = true; grew; ) {
+				grew = false;
+				for (const f of vol?.folders ?? [])
+					if (f.parentId && inside.has(f.parentId) && !inside.has(f.id)) (inside.add(f.id), (grew = true));
+			}
+			const rows = (vol?.items ?? []).filter((i: any) => inside.has(i.folderId));
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{ label: 'Open', icon: 'folder', action: () => openFolder(folder.id) },
+					{
+						label: 'Copy to my library',
+						icon: 'download',
+						disabled: !rows.length,
+						tooltip: rows.length ? 'Copy its ' + plural(rows.length, 'file') + ' into your Library, folders kept' : 'Nothing in it',
+						action: () => void sessionRuntime().then((m) => m.copySessionItems(vol.id, rows.map((r: any) => r.id), activeLibraryFolder()))
+					}
+				]
+			};
+			return;
+		}
 		if (folder.volumeId) {
 			menu = {
 				x: e.clientX,
@@ -3931,6 +4009,7 @@
 	 * hides however many files that is.
 	 */
 	function deleteSelection() {
+		if (sessionReadOnly(volScope?.volumeId)) return;
 		const { folders, items, skipped } = selectionParts();
 		if (!folders.length && !items.length)
 			return showToast(
@@ -4566,6 +4645,30 @@
 		// P3: a file in a MOUNTED project. Its own menu, for the reason every branch here
 		// has one: Rename / Delete / Share / Download all address a library record it has
 		// none of, and Properties is the only one of them that would have worked.
+		// 56 C13: a file in the HOST'S session volume — read-only: Open, Copy to my library, Properties
+		if (item.sessionItem) {
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{
+						label: 'Open',
+						icon: 'external-link',
+						tooltip: 'Fetch it from ' + (item.volumeName ?? 'the host') + ' and open it read-only (' + formatBytes(item.size) + ')',
+						action: () => void openItem(item)
+					},
+					{
+						label: 'Copy to my library',
+						icon: 'download',
+						tooltip: 'Fetch it once and keep a copy in your own Library, in a folder of the same name',
+						action: () => void copyOutOfVolume(sessionRowsFor(item), activeLibraryFolder())
+					},
+					{ section: item.volumeName ?? 'Session' },
+					{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'item', item }) }
+				]
+			};
+			return;
+		}
 		if (item.volumeItem) {
 			menu = {
 				x: e.clientX,
@@ -5377,6 +5480,29 @@
 		// P3: inside a MOUNT the background menu is about the mount. New folder / Save scene
 		// / Export project all act on the open project, which is exactly what a mount must
 		// not touch — so they stay out and the three mount verbs take their place.
+		// 56 C13: inside a session volume the background menu is about the session
+		if (volScope && inSessionVol) {
+			e.preventDefault();
+			const vol: any = volume;
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{ section: vol?.name ?? 'Session' },
+					{
+						label: 'Save on host',
+						icon: 'save',
+						disabled: vol?.role === 'viewer',
+						tooltip:
+							vol?.role === 'viewer'
+								? "You're view-only in this session — Copy to my library instead"
+								: 'Save the session scene into ' + (vol?.host ?? 'the host') + "'s library",
+						action: () => void sessionRuntime().then((m) => m.saveOnHost(vol.id))
+					}
+				]
+			};
+			return;
+		}
 		if (volScope) {
 			e.preventDefault();
 			const vol = volume;
@@ -5600,6 +5726,7 @@
 		// copying one in from the library, so it goes through the same store and the same
 		// Save. Nothing about the live library is touched on the way.
 		const intoVol = volumeOf(folder);
+		if (intoVol && sessionReadOnly(intoVol.volumeId)) return;
 		if (intoVol) {
 			void importIntoVolume(files, intoVol);
 			return;
@@ -6400,6 +6527,26 @@
 		// R22 round 30 B1: THE UNSAVED-CHANGES GUARD lives in `$lib/sceneOpenGuard` — one
 		// copy for both authoring routes into a scene replace (this card, and the peers
 		// popover's "Go to"). Its header carries the reasoning that used to sit here.
+		// 56 C13 (addendum d, kept by e): A GUEST OPENING ITS OWN LIBRARY SCENE asks first — the
+		// session's world is the host's, and nothing is ever swapped into it silently. Leaving
+		// opens the scene on this device alone; staying takes the ordinary route (which asks
+		// share-or-private for a scene the session has never seen).
+		if ($sessionHost && !item.volumeItem && $sessionVolumes.length) {
+			const host = ($sessionVolumes[0] as any).host;
+			const answer = await showChoice({
+				title: 'Open "' + levelSceneName(item.name) + '"?',
+				message: "You're in " + host + "'s session. This scene is in your own Library.",
+				choices: [
+					{ value: 'leave', label: 'Leave the session and open it' },
+					{ value: 'stay', label: 'Bring a copy into this session' }
+				]
+			});
+			if (!answer) return;
+			if (answer === 'leave') {
+				(get(peers) as any)?.leaveSession?.();
+				await new Promise((r) => setTimeout(r, 300));
+			}
+		}
 		if (!(await guardSceneReplace(item.name))) return;
 		// R22 round 35 — SHARE IT, OR EDIT IT PRIVATELY? Asked ONLY when there are peers and
 		// only for a scene the session has never heard of; `askScenePrivacy` answers 'share'
@@ -6416,6 +6563,51 @@
 		// which is the name the scene saved itself under and the key the manifest uses.
 		await travelToLevel(item.hash, '', { private: mode === 'private', askModules: true, freshGame: true });
 	}
+	/** 56 C13: the session rows a Copy acts on — the selection when this card is in it, else the card */
+	function sessionRowsFor(item: any): any[] {
+		const sel = gridEntries
+			.filter((e: any) => e.kind === 'item' && e.item?.sessionItem && selectedIds.has(entryId(e)))
+			.map((e: any) => e.item);
+		return sel.some((r: any) => r.id === item.id) ? sel : [item];
+	}
+	/**
+	 * 56 C13 — OPEN A FILE FROM THE HOST'S SESSION, READ-ONLY. The bytes are pulled by hash from the
+	 * host (one confirm above ~50 MB) and handed to a viewer; nothing lands in the Library. Images and
+	 * video preview, text opens WITHOUT a Save; a scene, a model or a sound needs a Library id for its
+	 * viewer (the mounted-project rule), so those ask for Copy to my library — opening a scene here
+	 * would also swap the session's world, which the volume must never do.
+	 */
+	async function openSessionItem(item: any) {
+		const viewable = item.kind === 'image' || item.kind === 'video' || item.kind === 'text';
+		if (!viewable) {
+			showToast('Copy ' + item.name + ' to your library to open it (a ' + item.kind + ' viewer reads it from there)', [
+				{ label: 'Copy to my library', action: () => void copyOutOfVolume([item], activeLibraryFolder()) }
+			]);
+			return;
+		}
+		const blob = await (await sessionRuntime()).sessionVolumeBlob(item.volumeId, item.id);
+		if (!blob) {
+			showToast(item.name + ' did not arrive from ' + (item.volumeName ?? 'the host'));
+			return;
+		}
+		if (item.kind === 'text') {
+			openTextEditor({
+				title: item.name + ' — ' + (item.volumeName ?? 'session') + ' (read-only)',
+				code: await blob.text(),
+				readOnly: true,
+				onClose: () => gridEl?.focus()
+			});
+			return;
+		}
+		openFilePreview({
+			title: item.name,
+			kind: item.kind,
+			itemId: item.id,
+			name: item.name,
+			url: URL.createObjectURL(blob),
+			onClose: () => gridEl?.focus()
+		});
+	}
 	/**
 	 * P3: open a file that lives in a MOUNTED project. Its bytes come from the saved
 	 * payload (or, once copied in, from the mount's own buffer) — never from
@@ -6428,6 +6620,7 @@
 	 * every viewer work.
 	 */
 	async function openVolumeItem(item: any) {
+		if (item.sessionItem) return openSessionItem(item);
 		const blob = await volumeBlob(item.volumeId, item.id);
 		if (!blob) {
 			showToast(item.name + ' is not in the saved project any more');
@@ -7195,6 +7388,76 @@
 		{#snippet primary()}
 		<!-- folder tree (106.6); width/collapse/side owned by WindowShell (197) -->
 		<div id="explorer-tree" class="flex h-full flex-col text-xs" bind:clientHeight={treeColH}>
+			<!--
+				56 C13: THE HOST'S SESSION, one read-only root per connection, above everything (owner
+				decision 2026-10-28e). The banner says where you are and where a save goes; the row has
+				Save on host (editors; a viewer sees it disabled with the reason) and no unmount — leaving
+				the session is what unmounts it. Rows came on join; bytes only on Open / Copy.
+			-->
+			{#if $sessionVolumes.length}
+				<div id="explorer-sessions" class="flex shrink-0 flex-col gap-0.5 border-b border-border p-1">
+					{#each $sessionVolumes as vol (vol.id)}
+						<div class="session-banner rounded px-1.5 py-1 text-text-muted" data-session-banner={vol.id} role="status">
+							You're in {vol.host}'s session · saves go to {vol.host} ({vol.role === 'viewer' ? 'view-only: Copy to my library' : 'Save on host'})
+						</div>
+						<div class="flex items-center whitespace-nowrap">
+							<button
+								class="w-4 shrink-0 text-text-faint"
+								aria-label={expanded.has(volumeKey(vol.id)) ? 'Collapse' : 'Expand'}
+								onclick={() => toggleExpand(volumeKey(vol.id))}
+								>{vol.folders.length ? (expanded.has(volumeKey(vol.id)) ? '▾' : '▸') : ''}</button
+							>
+							<button
+								data-session-volume={vol.id}
+								class="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left {volScope?.volumeId === vol.id
+									? 'ex-tree-on'
+									: 'text-text-2 hover:bg-surface-hover'}"
+								title={vol.name + ' — read-only. Showing: ' + ((SHARE_SCOPE_LABELS as any)[vol.scope] ?? vol.scope) + ' (' + plural(vol.items.length, 'file') + ', ' + formatBytes(vol.items.reduce((n: number, i: any) => n + (i.size || 0), 0)) + '). Nothing is downloaded until you open or copy a file.'}
+								ondragover={(e) => dragOverInto(e, volumeKey(vol.id))}
+								ondragleave={() => (dropFolder = null)}
+								ondrop={(e) => dropInto(e, volumeKey(vol.id))}
+								onclick={() => openFolder(volumeKey(vol.id))}
+							>
+								<Icon name="users" size={16} class="mr-1.5 text-icon-image" aria-hidden="true" />{vol.name}
+							</button>
+							<button
+								id={'session-save-' + vol.id}
+								class="session-save shrink-0 rounded px-1 py-1 {vol.role === 'viewer'
+									? 'cursor-default text-text-faint'
+									: 'text-text-muted hover:bg-surface-hover hover:text-text-2'}"
+								disabled={vol.role === 'viewer'}
+								aria-label={'Save on host — ' + vol.host}
+								title={vol.role === 'viewer'
+									? "You're view-only in " + vol.host + "'s session — use Copy to my library instead"
+									: 'Save on host: save the session scene into ' + vol.host + "'s library"}
+								onclick={() => void sessionRuntime().then((m) => m.saveOnHost(vol.id))}><Icon name="save" size={16} aria-hidden="true" /></button
+							>
+						</div>
+						{#if expanded.has(volumeKey(vol.id))}
+							{#each mountTree(vol) as row (row.folder.id)}
+								<div class="flex items-center whitespace-nowrap" style="padding-left: {16 + row.depth * 14}px" role="treeitem" aria-selected={$activeFolder === row.folder.id} tabindex="-1">
+									<button
+										class="w-4 shrink-0 text-text-faint"
+										aria-label={row.hasChildren ? 'Expand or collapse' : 'No subfolders'}
+										onclick={() => toggleExpand(row.folder.id)}
+										>{row.hasChildren ? (expanded.has(row.folder.id) ? '▾' : '▸') : ''}</button
+									>
+									<button
+										data-vol-folder={row.folder.id}
+										class="flex-1 truncate rounded px-1.5 py-1 text-left {$activeFolder === row.folder.id
+											? 'ex-tree-on'
+											: 'text-text-2 hover:bg-surface-hover'}"
+										oncontextmenu={(e) => folderMenu(e, row.folder)}
+										onclick={() => openFolder(row.folder.id)}
+									>
+										<Icon name="folder" size={16} class="ico-folder mr-1.5" aria-hidden="true" />{row.folder.name}
+									</button>
+								</div>
+							{/each}
+						{/if}
+					{/each}
+				</div>
+			{/if}
 			<!--
 				R22 round 13 P3: MOUNTED PROJECTS, above Library and pinned there.
 

@@ -25,8 +25,11 @@
 		}
 	});
 
+	// 56 C13: a file shown READ-ONLY (a session volume's) has no Save and cannot get dirty
+	const readOnly = $derived(!!($textEditorTarget as any)?.readOnly);
 	function save() {
-		$textEditorTarget?.onSave(code);
+		if (readOnly) return;
+		$textEditorTarget?.onSave?.(code);
 		dirty = false;
 	}
 	function close() {
@@ -66,17 +69,19 @@
 		<div class="ui-panel-header move-handle shrink-0 cursor-move select-none py-1.5">
 			<span><Icon name="square-pen" size={16} class="mr-1" aria-hidden="true" />{$textEditorTarget.title}{dirty ? ' ●' : ''}</span>
 			<span class="flex-1"></span>
+			{#if readOnly}<span id="text-editor-readonly" class="text-xs text-text-muted">Read-only</span>{:else}
 			<button
 				id="text-editor-save"
 				class="ui-button-quiet {dirty ? 'tp-dirty' : ''}"
 				title="Save (Ctrl+S)"
 				onclick={save}><Icon name="save" size={16} class="mr-1" aria-hidden="true" />Save</button
-			>
+			>{/if}
 			<button class="ui-button-quiet" title="Close" aria-label="Close" onclick={requestClose}><Icon name="x" size={16} /></button>
 		</div>
 		<div class="min-h-0 flex-1 p-1.5">
 			<CodeEditor
 				value={code}
+				{readOnly}
 				onChange={(c) => {
 					code = c;
 					dirty = true;

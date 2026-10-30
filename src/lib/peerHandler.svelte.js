@@ -297,6 +297,14 @@ function boundApprovals(approvals) {
 	return approvals.filter((a) => !drop.has(a.peerId));
 }
 
+
+/** 56 C13: the session-volume module, loaded the first time a host greets a guest or a `vol*`
+ * message arrives — never part of the boot graph. @type {Promise<any> | null} */
+let sessionVolumesMod = null;
+function sessionVolumesNow() {
+	return (sessionVolumesMod ??= import('$lib/sessionVolumes.js'));
+}
+
 export class PeerConnection {
 	constructor(id, updateIdFn) {
 		this.updateIdFn = updateIdFn;
@@ -1656,6 +1664,10 @@ export class PeerConnection {
 					else answerAssetRequest(conn.peer, data);
 				} else if(data.type == 'module') {
 					applyModuleMessage(data);
+				} else if(data.type == 'volidx' || data.type == 'volthumbs' || data.type == 'volget' || data.type == 'volsave' || data.type == 'volsaveack' || data.type == 'volcancel') {
+					// 56 C13: the host's files as a read-only Explorer volume — lazy, like the mesh relay
+					const from = conn.peer;
+					sessionVolumesNow().then((m) => m.handleVolumeMessage(from, data)).catch(() => {});
 				} else if(data.type == 'meshgenask' || data.type == 'meshgenstate' || data.type == 'meshgenreq' || data.type == 'meshgenack') {
 					// 55 A6: an agent's generate_mesh relayed to the host's provider — lazy, so a session with no agent never loads it
 					const from = conn.peer;
@@ -1953,6 +1965,8 @@ export class PeerConnection {
 		// 55 A8: the newest agent log lines, so a late joiner's AI window shows what was built
 		sendAgentLogTo(conn);
 		sendAgentChatBacklogTo(conn); // 56 C1: the agent chats so far
+		// 56 C13: a HOST hands every guest its session volume (rows + thumbnails, no bytes)
+		if (!get(sessionHost)) sessionVolumesNow().then((m) => m.volumePeerOpened(peerId, conn)).catch(() => {});
 		// 55 A9: a moderator hands its block list on, so a blocked re-dial is refused by
 		// whichever peer it reaches — including one that joined after the block
 		for (const k of blockReplay()) conn.send(k);
@@ -2465,6 +2479,7 @@ export class PeerConnection {
 		agentChatPeerGone(peerId); // 56: an agent that left is away
 		dropPeerFacts(peerId); // 55 A9
 		dropPeerUnderlays(peerId); // 60 Q5
+		sessionVolumesMod?.then((m) => m.dropSessionVolume(peerId)).catch(() => {}); // 56 C13: its volume unmounts
 		if (relay) this.broadcast({ type: 'disconnected', peerId });
 		checkLocks();
 		peers.update((value) => value);
@@ -2529,6 +2544,7 @@ export class PeerConnection {
 		releaseMic();
 		resetSession();
 		resetModeration(); // 55 A9: a block list belongs to the session it was made in
+		sessionVolumesMod?.then((m) => m.dropAllSessionVolumes()).catch(() => {}); // 56 C13: leaving unmounts every session volume
 		checkLocks();
 		peers.update((value) => value);
 	}

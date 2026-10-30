@@ -99,7 +99,12 @@ const ALWAYS_ALLOWED = new Set([
 	'getmatpreset',
 	// 60-int: "the link you are sending on is dead at my end — use this conn". Transport, no
 	// content: a gated relink leaves a viewer's host talking into a closed link after a drop
-	'relink'
+	'relink',
+	// 56 C13: a session-volume byte REQUEST. A viewer may browse and copy (Open / Copy to my library), and
+	// the host answers it only for a hash inside the share scope it sent that peer (sessionVolumes.js);
+	// and its CANCEL, which only ever stops bytes flowing to the sender itself
+	'volget',
+	'volcancel'
 ]);
 
 /** @type {((peerId: string, msgType: string) => boolean) | null} */

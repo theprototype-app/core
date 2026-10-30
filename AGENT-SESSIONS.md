@@ -39,7 +39,7 @@ a normal session never loads it. Semver: new methods and fields are minor versio
 
 | member | what it does |
 |---|---|
-| `version` | the contract version, e.g. `"1.1.0"` |
+| `version` | the contract version, e.g. `"1.3.0"` |
 | `tools()` | the in-app assistant's own tools, OpenAI function shape with FULL JSON schemas, plus the agent-only tools below |
 | `systemPrompt()` | the assistant's guidance (coordinates, primitives, flow-node vocabulary, physics rules) — give it to your model |
 | `exec(name, args)` | run one tool. Replicated to every peer, ONE undo step per call, calls run one at a time, never throws (`{error}` instead) |
@@ -49,6 +49,9 @@ a normal session never loads it. Semver: new methods and fields are minor versio
 | `screenshot({view, uuid, size, grid})` | a clean PNG data URL (no gizmo, selection, grid or helpers) from a TEMPORARY camera: `view` = `iso` (default) · `top` · `front` · `current` (the page's own camera) · `focus` (frames `uuid`); `size` = longest side, 64–2048 (default 768); `grid: true` draws the editor grid. Never moves anyone's view. `null` in VR |
 | `pendingOffers()` / `accept(id, action?)` | questions the app asked with buttons (an admin-role offer, "share or stash"), kept until answered — the toast that showed one may have expired |
 | `leave()` | a graceful goodbye: every peer drops you at once, no ghost in Users |
+| `nextMessage(ms?, token?)` | 1.3: the next chat message someone typed to this agent in the AI assistant window, or `null` on timeout: `{id, chatId, from, name, role, text, images?, history?, summary?}` — `role` is the sender's role (a viewer may ask; while a viewer's request runs every edit is refused) |
+| `reply({to, text, final?, prompt?})` / `ask({to, question, options})` | 1.3: stream an answer into the window (calls grow ONE reply until `final`; `prompt` = a turn typed in the agent's terminal, shown "via terminal") / buttons whose click arrives as a message with `answers` |
+| `thread({chatId, before?, limit?})` / `chatStatus(s)` / `abortWait(token)` / `requeue(msg)` | 1.3: page back through a chat; pin the badge (`listening` / `working` / `away`); give up a wait; put a delivered request back. After **Stop** every `exec` answers `{error: 'cancelled', cancelled: true}` until the next message |
 
 **Agent-only tools** (in `tools()`, run locally, allowed for viewers): `install_modules` (install the
 modules other peers run that this page lacks — `status().missingModules`), `pending_offers`,
@@ -69,6 +72,23 @@ unknown `this.` member, an unknown event and a hook-named method nothing calls (
 narrowed on a big scene: `brief` (uuids and names only), `name` (a glob such as `"Rock*"`, case-insensitive), `type`,
 `near {position, radius}` (world metres); a narrowed read says how many objects `matched`. Positions are LOCAL to the
 parent: an object created or moved with `parentUuid` takes its position inside that group, as `list_scene` reports it.
+
+## Talking: the chat in the AI assistant window
+
+People type to the agent in the app's AI assistant window. An MCP host only acts while its model runs, so the bridge
+offers a blocking `wait_for_message` tool: the user types once in the terminal *"listen to my theprototype session"*
+and the agent loops `wait_for_message` → build → `reply` → `wait_for_message`. `ask` puts buttons in the window and
+`get_thread` pages back through a chat; every message carries its `chatId` and the sender's `role`. Pictures arrive
+as MCP image blocks AND as private temp files whose path is in the message (downscaled, EXIF/GPS stripped by the
+sender's app). A `repl` agent takes app messages as user turns directly. Every chat is a `.tpchat` scene file
+(Explorer ▸ Scene ▸ chats), excluded from exports unless the user includes it.
+
+## Bringing models in: `import_model`
+
+`import_model({path | data | url, name, position, rotation (degrees), scale, parent, source, licence})` imports a
+self-contained binary glTF (≤ 25 MB, no external URIs, nothing executed) through the app's own import pipeline: named
+nodes stay a hierarchy (returned with uuids), ONE undo step, synced to every peer, provenance recorded. Editors and
+admins only. Recipe: "Better models with img2threejs" (docs site).
 
 ## Bringing files in: `import_file`
 
@@ -148,7 +168,7 @@ again and import again (a new file; undo removes the old card). `pixling guide` 
 ## Versions
 
 Two version numbers, and only one of them is about compatibility:
-- **`tpAgent.version`** is the CONTRACT (`1.1.0` today). A new method or a new optional field is a
+- **`tpAgent.version`** is the CONTRACT (`1.3.0` today). A new method or a new optional field is a
   minor version; a removed or renamed method, or a changed shape, is a new MAJOR. Read it first
   (`status().version` carries it too) and feature-detect methods rather than comparing minors.
 - **`@theprototype/agent`** (the bridge) is versioned with the app release it shipped in, and it

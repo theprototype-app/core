@@ -14,7 +14,8 @@
 	import { tick, untrack } from 'svelte';
 	import { explorerClose, mobileUndockAllowed, explorerSceneSaveArm, explorerRevealArm, peers } from '../../stores/appStore.js';
 	import { settingsOpen, settingsSection } from '../../stores/appStore.js';
-	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate } from '../../stores/appStore.js';
+	import { showToast, enable3dPreview, stackOnDrop, confirmPrefabUpdate, meshGenModalOpen } from '../../stores/appStore.js';
+	import { meshGenReady, meshTakesImage, activeMeshConfig } from '$lib/ai/meshProviders.js';
 	import {
 		explorerFolders,
 		explorerItems,
@@ -4894,6 +4895,17 @@
 				// 40-image (F13): an image in YOUR library opens in the Image editor (crop, rotate,
 				// resize, adjust, versions). A pack item is a reference to bytes on a CDN, so it
 				// has nothing to save into — copy it into the Library first.
+				// roadmap 73 AI1: the picture as the start of a generated model
+				...(item.kind === 'image' && !item.packEntry && !item.dataUrl && meshGenReady() && meshTakesImage(activeMeshConfig())
+					? [
+							{
+								label: 'Make a 3D model…',
+								icon: 'sparkles',
+								tooltip: 'Generate a 3D model from this picture with your mesh provider',
+								action: () => meshGenModalOpen.set({ imageItemId: item.id })
+							}
+						]
+					: []),
 				...(item.kind === 'image' && !item.packEntry && !item.dataUrl
 					? [
 							{

@@ -203,6 +203,17 @@ export function activeMeshConfig() {
 	return get(meshProviders).find((p) => p.id === id) ?? null;
 }
 
+/**
+ * Roadmap 73 AI1: can this provider start from a picture? Meshy always; a ComfyUI workflow when it
+ * carries the {{IMAGE}} placeholder.
+ * @param {MeshProviderConfig | null | undefined} cfg @returns {boolean}
+ */
+export function meshTakesImage(cfg) {
+	if (!cfg) return false;
+	if (cfg.kind === 'meshy') return true;
+	return cfg.kind === 'comfyui' && !!cfg.workflowJson?.includes('{{IMAGE}}');
+}
+
 /** Whether mesh generation can run (enabled + a usable active provider). @returns {boolean} */
 export function meshGenReady() {
 	if (!get(meshGenEnabled)) return false;

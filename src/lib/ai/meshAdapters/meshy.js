@@ -1,4 +1,6 @@
 // Meshy adapter (roadmap #11, G4) — reference HOSTED text-to-3D backend.
+// Roadmap 73 AI1: a params.image goes to image-to-3d instead — ONE task whatever the mode (Preview =
+// should_texture off), its own v1 path threaded through `ref`, the same GLB result and import after that.
 //
 // Meshy v2 text-to-3d is two-phase: `preview` builds geometry, `refine` adds PBR
 // textures using the preview task id. We expose both via the provider's `mode`:
@@ -12,6 +14,9 @@
 // API docs: https://docs.meshy.ai — last checked 2026-07-19.
 
 const TEXT_TO_3D = '/openapi/v2/text-to-3d';
+const IMAGE_TO_3D = '/openapi/v1/image-to-3d';
+/** Meshy refuses a longer texture_prompt with a 400 */
+const TEXTURE_PROMPT_MAX = 800;
 
 /** @param {any} config @param {boolean} [json] */
 function authHeaders(config, json) {
@@ -21,9 +26,9 @@ function authHeaders(config, json) {
 	return h;
 }
 
-/** @param {any} config @param {any} body */
-async function createTask(config, body) {
-	const res = await fetch(config.baseUrl.replace(/\/+$/, '') + TEXT_TO_3D, {
+/** @param {any} config @param {any} body @param {string} [path] */
+async function createTask(config, body, path = TEXT_TO_3D) {
+	const res = await fetch(config.baseUrl.replace(/\/+$/, '') + path, {
 		method: 'POST',
 		headers: authHeaders(config, true),
 		body: JSON.stringify(body)
@@ -41,12 +46,26 @@ async function createTask(config, body) {
 
 /**
  * @param {any} config
- * @param {{prompt: string, seed?: number}} params
- * @returns {Promise<{taskId: string, phase: string, mode: string}>}
+ * @param {{prompt: string, seed?: number, image?: {mimeType: string, data: string}}} params
+ * @returns {Promise<{taskId: string, phase: string, mode: string, path?: string}>}
  */
 export async function submit(config, params) {
 	if (!config.apiKey) throw new Error('Meshy needs an API key (set it in Settings)');
 	const mode = config.mode === 'refine' ? 'refine' : 'preview';
+	if (params.image) {
+		const textured = mode === 'refine';
+		const id = await createTask(
+			config,
+			{
+				image_url: 'data:' + params.image.mimeType + ';base64,' + params.image.data,
+				should_texture: textured,
+				should_remesh: true, // what the text path asks for (image-to-3d's own default is off)
+				...(textured && params.prompt ? { texture_prompt: params.prompt.slice(0, TEXTURE_PROMPT_MAX) } : {})
+			},
+			IMAGE_TO_3D
+		);
+		return { taskId: id, phase: 'image', mode, path: IMAGE_TO_3D };
+	}
 	const id = await createTask(config, {
 		mode: 'preview',
 		prompt: params.prompt,
@@ -58,11 +77,11 @@ export async function submit(config, params) {
 
 /**
  * @param {any} config
- * @param {{taskId: string, phase: string, mode: string}} ref
+ * @param {{taskId: string, phase: string, mode: string, path?: string}} ref
  * @returns {Promise<{status: string, progress?: number, error?: string, ref?: any, resultRef?: any}>}
  */
 export async function poll(config, ref) {
-	const res = await fetch(config.baseUrl.replace(/\/+$/, '') + TEXT_TO_3D + '/' + encodeURIComponent(ref.taskId), {
+	const res = await fetch(config.baseUrl.replace(/\/+$/, '') + (ref.path || TEXT_TO_3D) + '/' + encodeURIComponent(ref.taskId), {
 		headers: authHeaders(config, false)
 	});
 	if (!res.ok) {

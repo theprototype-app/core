@@ -280,6 +280,7 @@
 		"agent-chat-vr": 300,
 		"agent-chat-window": 480,
 		"chat-media": 480,
+		"image-to-3d": 420,
 		"connector-relay": 240,
 		"agent-bridge": 48,
 		"agent-conformance": 200,

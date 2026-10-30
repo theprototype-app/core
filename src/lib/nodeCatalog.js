@@ -1121,11 +1121,75 @@ export const nodeCatalog = [
 				// that starts a keyed clip, not a per-frame offset.
 				type: 'playanim',
 				label: 'Play Animation',
-				defaults: { clip: '', action: 'toggle', speed: 1 },
+				defaults: { clip: '', action: 'toggle', speed: 1, crossfade: 0 },
 				params: [
 					{ key: 'action', kind: 'select', options: ['toggle', 'play', 'stop', 'restart'] },
-					{ key: 'speed', kind: 'range', min: 0.1, max: 4, step: 0.1 }
+					{ key: 'speed', kind: 'range', min: 0.1, max: 4, step: 0.1 },
+					// 57 M3: seconds a clip change blends over (imported / clip-asset clips) instead of snapping
+					{ key: 'crossfade', kind: 'range', min: 0, max: 2, step: 0.05 }
 				]
+			},
+			{
+				// 57 M4: a VRM character's FACE — sets one expression (happy, blink, aa, a custom one)
+				// to a weight when the trigger fires. Every peer runs it from the shared trigger stamp
+				// (the playanim reasoning), so the face needs no message of its own.
+				type: 'setexpression',
+				label: 'Set Expression',
+				defaults: { expression: 'happy', weight: 1 },
+				inputs: ['trigger', 'weight'],
+				params: [
+					{ key: 'expression', kind: 'text', placeholder: 'happy / blink / aa', maxLength: 64 },
+					{ key: 'weight', kind: 'range', min: 0, max: 1, step: 0.05 }
+				]
+			},
+			{
+				// 57 M3: idle / walk / run by a SPEED, blended and eased — a character stops snapping
+				// between poses. Unwired, the speed is the object's own; empty clips pick by name.
+				type: 'blendspeed',
+				label: 'Blend by Speed',
+				defaults: { idle: '', walk: '', run: '', walkSpeed: 1.4, runSpeed: 3.5, crossfade: 0.25, speed: 0 },
+				inputs: ['speed'],
+				params: [
+					{ key: 'walkSpeed', kind: 'range', min: 0.2, max: 4, step: 0.1 },
+					{ key: 'runSpeed', kind: 'range', min: 0.5, max: 10, step: 0.1 },
+					{ key: 'crossfade', kind: 'range', min: 0, max: 1, step: 0.05 }
+				]
+			},
+			{
+				// 57 M11: drives a model's Animation states graph from logic — set a parameter (on a
+				// pulse, or continuously when nothing is wired to trigger) or fire a trigger (Jump)
+				type: 'setanimparam',
+				label: 'Set Animation Parameter',
+				defaults: { name: 'jump', mode: 'trigger', value: 0 },
+				inputs: ['trigger', 'value'],
+				inputLabels: { trigger: 'trigger — sets on the pulse', value: 'value — wire a number' },
+				params: [
+					{ key: 'name', kind: 'text', placeholder: 'speed / jump', maxLength: 40 },
+					{ key: 'mode', kind: 'select', options: ['trigger', 'set'] },
+					{ key: 'value', kind: 'range', min: -10, max: 10, step: 0.1 }
+				]
+			},
+			{
+				// 57 M12: a model's named node (a hand, a hook, a rotor arm) becomes an attach point —
+				// on a pulse the wired `item` follows it (or lets go). The model is the node's owner.
+				type: 'attachsocket',
+				label: 'Attach to Socket',
+				defaults: { socket: '', action: 'attach', snap: true },
+				inputs: ['trigger', 'item'],
+				inputLabels: { trigger: 'trigger — attach on the pulse', item: 'item — the object to attach' },
+				params: [
+					{ key: 'socket', kind: 'text', placeholder: 'hand_r', maxLength: 80 },
+					{ key: 'action', kind: 'select', options: ['attach', 'detach'] },
+					{ key: 'snap', kind: 'toggle' }
+				]
+			},
+			{
+				// 57 M11: pulses when the model's Animation states machine ENTERS a state (empty = any).
+				// Fired locally on every peer: each runs the same machine from the same inputs.
+				type: 'onanimstate',
+				label: 'On Animation State',
+				defaults: { state: '', pulse: 0.3 },
+				params: [{ key: 'state', kind: 'text', placeholder: 'any state', maxLength: 40 }]
 			},
 			{
 				// 48 S2: plays a Timeline SEQUENCE (camera shots, clips, audio, events) on the

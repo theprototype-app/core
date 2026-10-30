@@ -97,7 +97,8 @@
 	import { nameOf } from '$lib/lockControl';
 	import { geometrySpec } from '$lib/geometryParams';
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
-	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
+	import { animatedObjects, setAnimationState, restRowsOf } from '$lib/animatedImports';
+	import CharacterSection from './inspector/CharacterSection.svelte';
 	import { captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { moveObjectToGroup, selectObject, flyTo, setPickThrough } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
@@ -3197,7 +3198,7 @@
 			</div>
 			{/if}
 
-			{#if $animatedObjects[$selectedObject.uuid]}
+			{#if $animatedObjects[$selectedObject.uuid]?.clips?.length}
 				{@const anim = $animatedObjects[$selectedObject.uuid]}
 				<Section variant="panel" label="Animation">
 					<div id="animation-controls">
@@ -3232,6 +3233,10 @@
 						</p>
 					</div>
 				</Section>
+			{/if}
+			<!-- 57: a rigged model's humanoid map, applied clips, licence -->
+			{#if $animatedObjects[$selectedObject.uuid] && restRowsOf($selectedObject.uuid).length}
+				<CharacterSection object={$selectedObject} />
 			{/if}
 
 			<!-- 16-P5: a camera OBJECT is a marker mesh carrying userData.camera. All

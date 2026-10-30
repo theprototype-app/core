@@ -14,7 +14,7 @@ import { applyRemoteDevice } from '$lib/audioDevices'
 import { sessionHost, dropPeerJoined, noteSnapshotAnswered } from '$lib/connectionState'
 import { acceptedLockRows, mergeLockRows } from '$lib/lockTrust'
 import { environment, editEnvSky } from '$lib/environment'
-import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
+import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, setAnimGraph, attachToSocket, dropAllAnimatedImports, setVrmExpression } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
@@ -600,7 +600,32 @@ export async function objectParameters(data) {
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
     } else if (data.parameter == 'animation') {
-        setAnimationState(data.uuid, { clip: data.clip, playing: data.playing, speed: data.speed }, false);
+        // 57 M3: the stamp + crossfade ride along when the sender has them (absent = an older peer)
+        /** @type {any} */
+        const next = { clip: data.clip, playing: data.playing, speed: data.speed };
+        if (Number.isFinite(data.at)) next.at = data.at;
+        if (typeof data.from === 'string' && Number(data.fade) > 0) Object.assign(next, { from: data.from, fromSpeed: Number(data.fromSpeed) || data.speed, fade: Math.min(5, Number(data.fade)) });
+        else if (Number.isFinite(data.at)) Object.assign(next, { from: undefined, fade: undefined });
+        setAnimationState(data.uuid, next, false);
+    } else if (data.parameter == 'character') {
+        // 57 M2: a character's humanoid map fixes + applied clips; each peer retargets for itself
+        const { receiveHumanoid } = await import('$lib/humanoid/humanoidRig.js');
+        receiveHumanoid(data);
+    } else if (data.parameter == 'expression') {
+        // 57 M4: a VRM expression weight (the face of a character)
+        setVrmExpression(data.uuid, data.name, data.weight, false);
+    } else if (data.parameter == 'clipRefs') {
+        // 57 M1: the clip assets a model plays (bytes pulled by hash, bound per peer)
+        setClipRefs(data.uuid, data.clipRefs, { replicate: false, record: false, ...(typeof data.clipsOff === 'boolean' ? { clipsOff: data.clipsOff } : {}) });
+    } else if (data.parameter == 'animGraph') {
+        // 57 M11: a model's Animation states graph (normalized on apply; null = removed)
+        setAnimGraph(data.uuid, data.animGraph, { replicate: false, record: false });
+    } else if (data.parameter == 'attachTo') {
+        // 57 M12: an object follows a model's socket (or no longer does)
+        attachToSocket(data.uuid, null, null, { spec: data.attachTo ?? null, replicate: false, record: false });
+    } else if (data.parameter == 'animParam') {
+        // 57 M11: a synced Animation states parameter (latest-wins by its stamp)
+        import('$lib/tpanim/animGraphRuntime.js').then((m) => m.setAnimParam(data.uuid, data.name, data.value, { replicate: false, at: data.at }));
     } else if (data.parameter == 'castShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.castShadow = data.castShadow;

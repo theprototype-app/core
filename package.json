@@ -31,6 +31,7 @@
 	"devDependencies": {
 		"@axe-core/playwright": "4.14.0",
 		"@iwer/devui": "2.7.0",
+		"@pixiv/three-vrm-animation": "^3.5.5",
 		"@sveltejs/adapter-static": "^3.0.10",
 		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",
@@ -58,6 +59,7 @@
 		"@gltf-transform/functions": "^4.5.1",
 		"@jitl/quickjs-wasmfile-release-sync": "0.32.0",
 		"@lucide/svelte": "^1.61.0",
+		"@pixiv/three-vrm": "3.5.5",
 		"@shaderfrog/core": "^4.0.2",
 		"@shaderfrog/glsl-parser": "^7.0.1",
 		"@threlte/core": "^8.6.1",

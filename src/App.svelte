@@ -32,6 +32,8 @@
   // panel, so it sits with ConfirmModal where every entry point can reach it.
   import StorageModal from './components/menu/StorageModal.svelte'
   import ReplaceModelModal from './components/menu/ReplaceModelModal.svelte'
+  // 57: Apply clip… / Download… / the Skeleton view — a tiny host, the dialogs load on open
+  import CharacterDialogs from './components/characters/CharacterDialogs.svelte'
   import PlaceholderTooltip from './components/menu/PlaceholderTooltip.svelte'
   import Flow from './components/Flow.svelte'
   import FlowCode from './components/editors/FlowCode.svelte'
@@ -405,11 +407,15 @@ import { startMusicToolbox } from './lib/musicToolbox'
     const files = [...(event.dataTransfer?.files ?? [])]
     if (files.length === 0) return
     const skipped = []
-    const modelExt = /\.(glb|gltf|obj|stl|fbx)$/
+    const modelExt = /\.(glb|gltf|obj|stl|fbx|vrm)$/
     // 17-D2: a .mtl / texture dropped ALONGSIDE a model is its companion, not
     // an unsupported file — importFile pairs them up.
     const companionExt = /\.(mtl|png|jpe?g|webp|bmp|gif)$/i
     const companions = files.filter((file) => companionExt.test(file.name))
+    // 57 M1: animation clip files go to the Explorer (converted to .tpanim) and onto the rig under the cursor
+    const clipExt = /\.(tpanim|vrma|bvh)$/i
+    const clipFiles = files.filter((file) => clipExt.test(file.name))
+    if (clipFiles.length) import('./lib/explorerDrop').then((m) => m.dropClipFiles(clipFiles, event.clientX, event.clientY))
     // 60 Q5: a drop of nothing but images is not a model's companions — they used to be
     // dropped silently. Ask what they are for: a reference image to build over, or the Explorer.
     const imageExt = /\.(png|jpe?g|webp|bmp|gif)$/i
@@ -419,6 +425,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     }
     files.forEach((file) => {
       const name = file.name.toLowerCase()
+      if (clipFiles.includes(file)) return
       if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
       else if (!companions.includes(file)) skipped.push(file.name)
@@ -479,6 +486,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <!-- 36 U9: Replace model… for a loading/failed placeholder, and the hover tooltip over one -->
 <ReplaceModelModal />
 <PlaceholderTooltip />
+<CharacterDialogs />
 <DrawToolbar />
 <SculptToolbar />
 <SplineToolbar />

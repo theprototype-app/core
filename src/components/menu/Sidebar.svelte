@@ -165,7 +165,7 @@
 		{/if}
 		<!-- multiple + the companion types so an .obj can be picked TOGETHER with its
 		     .mtl and textures (17-D2); a lone model file behaves exactly as before -->
-		<input type="file" id="import-file" multiple style="display: none" oninput={(e: any) => importModelFiles(e.target.files)} accept=".gltf, .glb, .obj, .stl, .fbx, .mtl, .png, .jpg, .jpeg, .webp" />
+		<input type="file" id="import-file" multiple style="display: none" oninput={(e: any) => importModelFiles(e.target.files)} accept=".gltf, .glb, .obj, .stl, .fbx, .vrm, .mtl, .png, .jpg, .jpeg, .webp" />
 		<input type="file" id="load-file" style="display: none" oninput={(e: any) => load(e.target.files[0])} accept=".json, .tpscene, .tp" />
 
 		<!-- 38 NOTES-38 #24 (design page): the main menu is one of the app's menus — the menu

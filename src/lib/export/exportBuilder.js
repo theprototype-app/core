@@ -330,6 +330,12 @@ export async function buildExport(opts, onProgress = () => {}) {
 		if (cover) out['thumbnail.png'] = cover;
 	}
 	out['README.txt'] = enc.encode(readmeText({ title, preset: opts.preset, id, cdn: !!(paths.size && opts.useCdnForPacks) }));
+	// 57 M7: the credits every licensed asset (and applied clip) asks for, beside the readme
+	{
+		const { creditsFor } = await import('../sceneLicences.js');
+		const credits = creditsFor(null);
+		if (credits) out['CREDITS.txt'] = enc.encode(credits);
+	}
 	if (opts.preset === 'static') out['.nojekyll'] = new Uint8Array(0);
 
 	// 6. validate with the proof's own rules, then zip

@@ -67,6 +67,10 @@ export const DEBUG_HOOKS = [
 	['avatars', () => import('./avatars/avatarState.js')],
 	['avatarAssets', () => import('./avatars/assets.js')],
 	['avatarCatalog', () => import('./avatars/catalog.js')],
+	// 57: characters — humanoid maps + applied clips, provenance / licence flags, the dialogs' open state
+	['humanoidRig', () => import('./humanoid/humanoidRig.js')],
+	['provenance', () => import('./provenance.js')],
+	['characterUi', () => import('./characterUi.js')],
 	// 41 G9: the customise panel's presets / Custom / Surprise me (lookSignature for the e2e)
 	['characterLooks', () => import('./avatars/characterLooks.js')],
 	['perfLiveSource', () => import('./perf/liveSource')],
@@ -143,6 +147,16 @@ export const DEBUG_HOOKS = [
 	['hdriPrefs', () => import('./hdri/hdriPrefs.js')],
 	['sceneMusic', () => import('./sceneMusic')],
 	['animatedImports', () => import('./animatedImports')],
+	// 57 M1: .tpanim clip assets (format, binder, humanoid map)
+	['tpanim', () => import('./tpanim/format.js')],
+	['clipAssets', () => import('./tpanim/clipAssets.js')],
+	['motionKit', () => import('./tpanim/motionKit.js')],
+	['humanoidMap', () => import('./tpanim/humanoidMap.js')],
+	// 57 M3/M8/M11: clip edits + ops, the Animation states graph + runtime
+	['clipEdit', () => import('./tpanim/clipEdit.js')],
+	['clipOps', () => import('./tpanim/clipOps.js')],
+	['animGraph', () => import('./tpanim/animGraph.js')],
+	['animGraphRuntime', () => import('./tpanim/animGraphRuntime.js')],
 	['fileHandler', () => import('./fileHandler.svelte')],
 	['fileWindows', () => import('./fileWindows')],
 	['imageEditor', () => import('./image/imageEditor')],

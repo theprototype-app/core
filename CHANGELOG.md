@@ -5,6 +5,29 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.51.0 — characters and motion 🕺
+
+- **Clips are their own files.** A `.tpanim` is a small clip file in the Explorer (VRM Animation inside, so it opens in
+  VRM tools too). Import `.vrma`, `.bvh`, animation `.glb` or `.fbx`, then drop a clip on a character: it plays on every
+  peer, the bytes travel once and the model never changes.
+- **Any clip on any humanoid.** VRM, Mixamo, Meshy, UniRig, KayKit and Quaternius rigs map onto the VRM 1.0 humanoid by
+  themselves (fix the map by hand if you like). *Apply clip…* fits a clip to each character's skeleton.
+- **Free CC0 packs.** Characters (10 avatars) and Motion (87 clips: locomotion, jumps, sitting, swimming, combat…),
+  in the Asset Browser's new Motion tab, plus an Avatars tab reading the Open Source Avatars registry.
+- **VRM characters** with spring bones, expressions (a Set Expression node too) and their licence in the Inspector.
+- **Game-ready clips.** In place or moving, *Loop it*, trim, split, join with a crossfade, *Extract clips* from a model;
+  a Crossfade on Play Animation and a new **Blend by Speed** node, so characters stop snapping between poses.
+- **Animation states.** A window per character with states and transitions. The one-click **Locomotion preset** makes
+  even a fresh VRM walk, run and jump under the Player controller, filling missing clips from the Motion pack. New
+  nodes: Set Animation Parameter, On Animation State.
+- **Skeleton fix-ups.** Rename, move, add, delete and mirror bones; automatic weights, smoothing and a weight brush.
+- **Download a character with its clips.** One GLB for Blender, Unity, Unreal and Godot (default), model + clip files,
+  or the model alone; one clip as `.tpanim`, `.glb`, `.vrma` or `.bvh`.
+- **Animate a model's named parts** and attach things to its sockets (Attach to Socket node); agents get the
+  `animate_parts` tool.
+- **Licence warnings.** Everything records where it came from. Licences that ask for credit or restrict sharing warn you
+  in Download, Export and Publish, and never block.
+
 ## 1.50.0 — talk to your agent 💬
 
 - **Chat with the AI agents in your session.** The AI assistant window lists them next to your own assistant: pick

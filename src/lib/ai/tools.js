@@ -592,6 +592,7 @@ async function updateOne(spec) {
 
 const TOOL_NAMES = [
 	'list_scene',
+	'animate_parts', // 57 M12
 	'create_objects',
 	'update_objects',
 	'delete_objects',
@@ -835,6 +836,14 @@ async function runAiTool(rawName, rawArgs) {
 				if (args && (args.brief || args.name || args.type || args.near))
 					return summarizeScene(200, { brief: args.brief === true, name: args.name, type: args.type, near: args.near });
 				return summarizeScene();
+
+			case 'animate_parts': {
+				// 57 M12: one clip on a model's named parts, assigned + played through the replicated,
+				// undoable clip path (lazy: the clip tools load only when asked)
+				const { animateParts } = await import('$lib/tpanim/animateParts.js');
+				if (args?.object && lockedByPeer(String(args.object))) return { error: 'that object is being edited by another peer' };
+				return await animateParts(args ?? {});
+			}
 
 			case 'create_objects': {
 				const specs = Array.isArray(args?.objects) ? args.objects : [];
@@ -1145,6 +1154,48 @@ export const AI_TOOLS = [
 				type: 'object',
 				properties: { confirm: { type: 'boolean' } },
 				required: ['confirm']
+			}
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'animate_parts',
+			description:
+				"Animate a model's NAMED PARTS (child nodes from list_scene: a rotor, a door, a lid) with one clip — e.g. spin a rotor: tracks [{part: 'rotor', keys: [{t: 0, rot: [0, 0, 0]}, {t: 1, rot: [0, 360, 0]}]}], loop true. Keys are offsets from each part's rest pose (mode 'relative', the default; 'absolute' = local values). rot is Euler degrees [x, y, z]; pos metres [x, y, z]; scale a factor. The clip is saved as a .tpanim file, plays on every peer, and is one undo step.",
+			parameters: {
+				type: 'object',
+				properties: {
+					object: { type: 'string', description: 'the model: its uuid (from list_scene) or exact name' },
+					clip: { type: 'string', description: 'the clip name, e.g. "Spin" or "Open"' },
+					tracks: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								part: { type: 'string', description: 'the part (child node) name' },
+								keys: {
+									type: 'array',
+									items: {
+										type: 'object',
+										properties: {
+											t: { type: 'number', description: 'seconds' },
+											pos: { type: 'array', items: { type: 'number' } },
+											rot: { type: 'array', items: { type: 'number' } },
+											scale: { type: 'array', items: { type: 'number' } }
+										},
+										required: ['t']
+									}
+								}
+							},
+							required: ['part', 'keys']
+						}
+					},
+					loop: { type: 'boolean', description: 'repeat (default true); false = play once and hold' },
+					mode: { type: 'string', enum: ['relative', 'absolute'] },
+					play: { type: 'boolean', description: 'start it now (default true)' }
+				},
+				required: ['object', 'clip', 'tracks']
 			}
 		}
 	}

@@ -31,6 +31,7 @@
   types "listen to my theprototype session" once), `ask` for buttons, `get_thread`
   for history. Each message carries the sender's `role` and `chatId`; pictures
   come as image blocks + temp files. GLB models: `import_model` (≤ 25 MB, local `path`).
+- `animate_parts` keys a model's named parts (a rotor, a door) into a `.tpanim` clip, one undo step.
 - Files made on the agent's own machine come in with `import_file` (PNG / WebP /
   JSON / .tpanim, type read from the bytes; the bridge takes a local `path` +
   `spec_path`): filed in Explorer ▸ Generated for everyone, the generator's spec

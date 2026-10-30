@@ -65,7 +65,7 @@ export async function joinSession(args, ctx = {}) {
 			id: JOIN_DIALOG_ID,
 			title: 'Join a session?',
 			message:
-				CONNECTOR_LABEL + ' asks this tab to join the session hosted by ' + who + ' (session ' + parsed.id.toUpperCase() + ').' +
+				CONNECTOR_LABEL + ' asks this tab to join the session hosted by ' + who + '.' +
 				(extras ? '\n\n' + extras : '') +
 				'\n\nJoin only if you asked Claude to. If you have work open, the app asks what to do with it first.',
 			choices: [{ value: 'join', label: 'Join' }],

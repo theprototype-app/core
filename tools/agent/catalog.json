@@ -3,7 +3,7 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 20,
+		"hostTools": 21,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nUse screenshot to check a result when it matters, not after every step.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
@@ -428,6 +428,99 @@
 			},
 			"annotations": {
 				"title": "Clear the scene",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "animate_parts",
+			"title": "Animate parts",
+			"description": "Animate a model's NAMED PARTS (child nodes from list_scene: a rotor, a door, a lid) with one clip — e.g. spin a rotor: tracks [{part: 'rotor', keys: [{t: 0, rot: [0, 0, 0]}, {t: 1, rot: [0, 360, 0]}]}], loop true. Keys are offsets from each part's rest pose (mode 'relative', the default; 'absolute' = local values). rot is Euler degrees [x, y, z]; pos metres [x, y, z]; scale a factor. The clip is saved as a .tpanim file, plays on every peer, and is one undo step.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"object": {
+						"type": "string",
+						"description": "the model: its uuid (from list_scene) or exact name"
+					},
+					"clip": {
+						"type": "string",
+						"description": "the clip name, e.g. \"Spin\" or \"Open\""
+					},
+					"tracks": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"part": {
+									"type": "string",
+									"description": "the part (child node) name"
+								},
+								"keys": {
+									"type": "array",
+									"items": {
+										"type": "object",
+										"properties": {
+											"t": {
+												"type": "number",
+												"description": "seconds"
+											},
+											"pos": {
+												"type": "array",
+												"items": {
+													"type": "number"
+												}
+											},
+											"rot": {
+												"type": "array",
+												"items": {
+													"type": "number"
+												}
+											},
+											"scale": {
+												"type": "array",
+												"items": {
+													"type": "number"
+												}
+											}
+										},
+										"required": [
+											"t"
+										]
+									}
+								}
+							},
+							"required": [
+								"part",
+								"keys"
+							]
+						}
+					},
+					"loop": {
+						"type": "boolean",
+						"description": "repeat (default true); false = play once and hold"
+					},
+					"mode": {
+						"type": "string",
+						"enum": [
+							"relative",
+							"absolute"
+						]
+					},
+					"play": {
+						"type": "boolean",
+						"description": "start it now (default true)"
+					}
+				},
+				"required": [
+					"object",
+					"clip",
+					"tracks"
+				]
+			},
+			"annotations": {
+				"title": "Animate parts",
 				"readOnlyHint": false,
 				"destructiveHint": true,
 				"openWorldHint": false

@@ -5,6 +5,27 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.50.0 — talk to your agent 💬
+
+- **Chat with the AI agents in your session.** The AI assistant window lists them next to your own assistant: pick
+  one and chat. Everyone in the session sees the conversation, the replies stream in, and every step the agent takes
+  shows between the messages. Claude Code listens after one sentence in its terminal (*"listen to my theprototype
+  session"*), what you type there shows "via terminal", and a `repl` agent answers with no terminal at all.
+- **Stop, mute, roles.** Stop cancels what the agent is doing; the host can mute an agent from its peer menu. Viewers
+  can ask, and the agent will not change the scene for them.
+- **Pictures in AI chats.** The **+** button, paste, drop or a drag from the Explorer — shrunk and **stripped of
+  location data on your device** before they are sent. *Keep in Explorer* saves one with the scene.
+- **Agents bring things in.** `import_model` imports a GLB (≤ 25 MB, self-contained) as one undo step with its named
+  parts and where it came from; `import_file` brings PNG / WebP / JSON / `.tpanim` files into Explorer ▸ Generated and
+  places an image as a card — crisp for pixel art, one frame of a sprite sheet. New recipes: better models with
+  img2threejs, pixel art with Pixling.
+- **Chats are files.** Every conversation is a `.tpchat` in Explorer ▸ Scene ▸ chats, saved with the scene, private
+  unless you switch on *Include when publishing*. The history icon lists them; New chat starts one; double-click a chat
+  to reopen it, and the agent gets its history.
+- **In VR** the AI panel talks to the same agent — type, or hold the talk button and speak.
+- For developers: `tpAgent` contract 1.3.0 (`nextMessage`, `reply`, `ask`, `thread`, …); `@theprototype/agent` 1.50.0
+  adds `wait_for_message`, `reply`, `ask`, `get_thread`, `import_model` and `import_file` with local paths.
+
 ## 1.49.0 — talk to Claude from claude.ai and voice 🎙️
 
 - **The Claude connector.** Add theprototype as a connector in claude.ai (web, desktop, phone), press **Connect

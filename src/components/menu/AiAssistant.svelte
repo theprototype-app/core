@@ -41,7 +41,8 @@
 	import { chatIdOfItem } from '$lib/chat/tpchatStore.js';
 	import { rolesInfo } from '$lib/cloudHooks';
 	import ConnectClaude from './ConnectClaude.svelte'; // 86 B1/B2
-	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider } from '$lib/ai/providers';
+	import AiWelcome from './AiWelcome.svelte'; // 86-fix N1
+	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider, aiReady } from '$lib/ai/providers';
 	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi, resetAiConversation } from '$lib/ai/assistant';
 	import { dragWindow } from '$lib/dragWindow';
 	import { bottomDockable } from '$lib/bottomDockDrop';
@@ -77,6 +78,12 @@
 	let historyOpen = $state(false);
 	let historyBtn: any = $state(null);
 	const pillVisible = $derived($aiPromptBarOpen && $aiEnabled && hasProvider && $aiAssistantHidden !== '');
+	// 86-fix N1: no provider ready → the window opens on the welcome (Connect Claude / your own provider)
+	const needsSetup = $derived.by(() => {
+		void [$aiEnabled, $aiProviders, $aiActiveProvider];
+		return !aiReady();
+	});
+	const welcome = $derived(needsSetup && !$aiMessages.length && !agentId);
 
 	function submit() {
 		const text = prompt.trim();
@@ -289,8 +296,8 @@
 				>
 			{/snippet}
 		</WindowChrome>
-		<!-- 86 B1/B2: Connect Claude (signed-in cloud builds only) -->
-		<ConnectClaude />
+		<!-- 86 B1/B2: Connect Claude (signed-in cloud builds only); the welcome carries it while no provider is set up -->
+		{#if !welcome}<ConnectClaude />{/if}
 		<div class="ai-body relative flex min-h-0 flex-1 flex-col">
 		{#if historyOpen}
 			<ChatHistory
@@ -311,7 +318,9 @@
 		<AgentLog />
 
 		<div bind:this={scroller} class="min-h-0 flex-1 overflow-y-auto px-2 py-2" use:minimalScroll>
-			{#if !$aiMessages.length}
+			{#if welcome}
+				<AiWelcome />
+			{:else if !$aiMessages.length}
 				<EmptyState
 					icon="sparkles"
 					title="Describe a scene and I'll build it"

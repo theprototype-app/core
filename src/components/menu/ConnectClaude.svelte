@@ -1,12 +1,20 @@
-<script>
+<script lang="ts">
 	// 86 B1/B2 — CONNECT CLAUDE, in the AI assistant window. A signed-in cloud build only: with no
 	// connector provider (the OSS build) this renders nothing. One row: what the state is in words (a dot
 	// is never the only signal), the one button that fits it, and the hint that matters — the tab must
 	// stay open, because the tools run HERE.
+	// 86-fix N1: `welcome` = the same control as the first choice of the AI window's welcome (no AI provider set
+	// up): a card with a title and what it means, and — signed out on a cloud build — the plugin's "Sign in to
+	// connect" (cloudHooks.connectorSignInSlot) in place of the button. One instance at a time, so the ids hold.
 	import Icon from '../ui/Icon.svelte';
 	import Button from '../ui/Button.svelte';
+	import CloudSlot from '../CloudSlot.svelte';
 	import { connectorState, connectorAvailable, connectorLine, connectClaude, disconnectClaude } from '$lib/connector/connectorStore';
+	import { connectorSignInSlot } from '$lib/cloudHooks';
 	import { settingsOpen, settingsSection } from '../../stores/appStore';
+
+	let { welcome = false }: { welcome?: boolean } = $props();
+	const signIn = $derived(welcome && !$connectorAvailable && !!$connectorSignInSlot);
 
 	const s = $derived($connectorState);
 	const live = $derived(s.phase === 'connected' || s.phase === 'reconnecting' || s.phase === 'pairing' || s.phase === 'connecting');
@@ -18,8 +26,20 @@
 	}
 </script>
 
-{#if $connectorAvailable}
-	<section id="connect-claude" class="cc" data-phase={s.phase} data-tone={tone} aria-label="Claude connector">
+{#if $connectorAvailable || signIn}
+	<section
+		id="connect-claude"
+		class="cc"
+		class:cc-card={welcome}
+		data-phase={s.phase}
+		data-tone={tone}
+		aria-label={welcome ? undefined : 'Claude connector'}
+		aria-labelledby={welcome ? 'connect-claude-title' : undefined}
+	>
+		{#if welcome}
+			<h3 id="connect-claude-title" class="cc-title"><span class="cc-mark" aria-hidden="true">★</span> Connect Claude</h3>
+			<p class="cc-desc">Use your Claude account (chat or voice), no API key.</p>
+		{/if}
 		<div class="cc-row">
 			<span class="cc-dot" aria-hidden="true"></span>
 			<span class="cc-text" role="status" aria-live="polite">
@@ -27,11 +47,15 @@
 					{connectorLine(s)}{#if s.busy}<span class="cc-busy"> · working</span>{/if}
 				{:else if s.message}
 					{s.message}
+				{:else if signIn}
+					Sign in to your theprototype account first.
 				{:else}
 					Use this tab from claude.ai — chat or voice.
 				{/if}
 			</span>
-			{#if live}
+			{#if signIn}
+				<CloudSlot mount={$connectorSignInSlot} />
+			{:else if live}
 				<Button id="connect-claude-disconnect" variant="outline" size="sm" icon="unlink" onclick={disconnectClaude}>Disconnect</Button>
 			{:else}
 				<Button id="connect-claude-button" variant="secondary" size="sm" icon="link" onclick={connectClaude}>Connect Claude</Button>
@@ -58,6 +82,27 @@
 	.cc {
 		padding: 6px 10px;
 		border-bottom: 1px solid var(--border);
+	}
+	/* 86-fix N1: the welcome's first choice */
+	.cc-card {
+		padding: 10px 12px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-card);
+		background: var(--surface-2);
+	}
+	.cc-title {
+		margin: 0;
+		font-size: var(--fs-body);
+		font-weight: 600;
+		color: var(--text);
+	}
+	.cc-mark {
+		color: var(--accent-text);
+	}
+	.cc-desc {
+		margin: 2px 0 8px;
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
 	}
 	.cc-row {
 		display: flex;

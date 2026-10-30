@@ -108,9 +108,21 @@ h.run(async () => {
 			([open, section]) => ({ open, section })
 		);
 	});
-	h.check(openedSettings.open === true, 'I3: unconfigured click opens Settings');
-	h.check(openedSettings.section === 'ai', 'I3: unconfigured click targets the AI section');
-	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
+	// 86-fix N1: the AI button always opens the window; with no provider it shows the welcome, whose
+	// "Open settings" is the way to Settings ▸ AI
+	h.check(openedSettings.open !== true && (await A.page.locator('#ai-assistant-window').first().isVisible()), 'I3/N1: unconfigured click opens the AI window, not Settings');
+	h.check(await A.page.locator('#ai-welcome #ai-welcome-settings').first().isVisible(), 'I3/N1: the window offers Open settings');
+	await A.page.locator('#ai-welcome-settings').click();
+	await A.page.waitForTimeout(200);
+	const viaWelcome = await A.page.evaluate(() => {
+		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
+		return Promise.all([read(window.__stores.settingsOpen), read(window.__stores.settingsSection)]).then(([open, section]) => ({ open, section }));
+	});
+	h.check(viaWelcome.open === true && viaWelcome.section === 'ai', 'I3/N1: Open settings targets the AI section');
+	await A.page.evaluate(() => {
+		window.__stores.settingsOpen.set(false);
+		window.__stores.aiAssistantHidden.set('hidden');
+	});
 
 	// configure a provider + enable AI (persisted), then reload to one module graph
 	await A.page.evaluate((base) => {

@@ -33,7 +33,7 @@ import { safeStorage } from './safeStorage';
 // (svelte/store + safeStorage), so a static edge from here closes nothing.
 import { aiProviders, aiActiveProvider, aiEnabled, addAiProvider, updateAiProvider, removeAiProvider, setAiActiveProvider, setAiEnabled } from './ai/providers';
 import { meshProviders, meshActiveProvider, meshGenEnabled, addMeshProvider, updateMeshProvider, removeMeshProvider, setMeshActiveProvider, setMeshGenEnabled } from './ai/meshProviders';
-import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider } from './cloudHooks';
+import { meshJobStatus, onExportBuilt, onTemplateOpen, setSceneHeart, problemReporter, setWhatsNewCloud, setConnectBadge, setPeerMenuItems, setConnectorProvider, connectorSignInSlot } from './cloudHooks';
 // 36-community (C4): a leaf (svelte/store only) — safe as a static edge
 import { gameIdentity, ensureGameId, forkGameId } from './gameIdentity.js';
 import { exportMode } from './export/exportBoot.js';
@@ -580,6 +580,9 @@ export function makeCloudApi() {
 		 *  revokeAll(), account()}` (see cloudHooks.connectorProvider) or null. Core shows Connect Claude
 		 *  and Settings ▸ Connected apps only while one is installed. Probe with typeof. */
 		setConnectorProvider: (/** @type {any} */ provider) => setConnectorProvider(provider),
+		/** 86-fix N1: a `(el) => cleanup` "Sign in to connect" for the AI window's welcome while the connector is
+		 *  built in and nobody is signed in; null removes it. Probe with typeof. */
+		mountConnectorSignIn: (/** @type {any} */ mountFn) => connectorSignInSlot.set(typeof mountFn === 'function' ? mountFn : null),
 
 		// --- CL-5 continuity (roadmap 37 / R13, 37-continuity): ADDITIVE, typeof-probed, no bump ---
 		/** A counter that moves on EVERY scene change — objects, graphs, animation, looks, sky, physics,

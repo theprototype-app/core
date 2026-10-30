@@ -315,17 +315,18 @@ function hostMeshReady() {
 }
 
 /** A6: the tool list an agent session gets — the assistant's own (physics forced on) + generate_mesh
- * when only the HOST can run it */
-function agentTools() {
-	const list = getAiTools();
+ * when only the HOST can run it @param {{physics?: boolean}} [opts] */
+function agentTools(opts) {
+	const list = getAiTools(opts);
 	if (!meshGenReady() && hostMeshReady() && !list.some((t) => t?.function?.name === 'generate_mesh')) list.push(MESH_TOOL);
 	list.push(IMPORT_MODEL_TOOL); // 56 C9: a GLB built outside the app (the bridge maps a local `path` to `data`)
 	list.push(IMPORT_FILE_TOOL); // 66 S4b: a sheet + spec / JSON / .tpanim from a local tool (same `path` mapping)
 	return list;
 }
 
-/** A6: generate_mesh goes to the host's provider when this page has none @param {string} name @param {any} args */
-async function agentRun(name, args) {
+/** A6: generate_mesh goes to the host's provider when this page has none
+ * @param {string} name @param {any} args @param {{physics?: boolean, localSim?: boolean}} [opts] */
+async function agentRun(name, args, opts) {
 	const real = repairToolCall(name, args).name;
 	if (real === 'generate_mesh' && !meshGenReady()) {
 		const host = get(sessionHost);
@@ -341,22 +342,28 @@ async function agentRun(name, args) {
 			note: 'Generating "' + prompt.slice(0, 60) + '" with the host\'s provider. It appears in the scene in ~1-3 minutes (waitForEdit / list_scene). Do not call generate_mesh again for the same request.'
 		};
 	}
-	// 55 (41's physics research): the simulation runs on the HOST — this page never steps the world
-	if (real === 'control_simulation') {
+	// 55 (41's physics research): the simulation runs on the HOST — an agent page never steps the world.
+	// 86-fix B2: a person's tab (the connector) is a full-speed page: it runs the tool itself, as its own
+	// Play button would — as the host, alone, or as a guest (the host refuses a relay from a non-agent page)
+	if (real === 'control_simulation' && !opts?.localSim) {
 		const host = get(sessionHost);
 		if (!host) return { error: 'no host to run the simulation — an agent page never simulates (status().host)' };
 		const { requestHostSim } = await import('./simRelay.js');
 		return requestHostSim(host, String(repairToolCall(name, args).args?.action ?? ''));
 	}
-	return executeAiTool(name, args);
+	return executeAiTool(name, args, { physics: opts?.physics });
 }
 
 /**
  * Build the wired agent.
  * @param {{screenshot?: (opts: any) => Promise<string|null>, missingTools?: () => {name: string, reason: string}[],
- *   deps?: Partial<import('./agentCore.js').AgentDeps>}} [extra] `deps` override the agent-page wiring (86: the connector)
+ *   deps?: Partial<import('./agentCore.js').AgentDeps>, physics?: boolean, localSim?: boolean}} [extra] `deps` override
+ *   the agent-page wiring (86: the connector); `physics` offers + runs the physics tools for THIS agent only (86-fix B1:
+ *   never the page-wide forcePhysicsTools, which would flip the person's own assistant); `localSim` runs
+ *   control_simulation on this page instead of relaying it to the host (86-fix B2)
  */
 export function createTpAgent(extra = {}) {
+	const toolOpts = { physics: !!extra.physics, localSim: !!extra.localSim };
 	/** @type {ReturnType<typeof createAgentCore>} */
 	let core;
 	const inbox = agentInbox();
@@ -364,10 +371,10 @@ export function createTpAgent(extra = {}) {
 	core = createAgentCore({
 		appVersion: APP_VERSION,
 		gate: (name, isEdit) => inbox.gate(name, isEdit),
-		getTools: () => agentTools(),
-		runTool: (name, args) => agentRun(name, args),
+		getTools: () => agentTools(toolOpts),
+		runTool: (name, args) => agentRun(name, args, toolOpts),
 		resolveName: (name, args) => repairToolCall(name, args),
-		systemPrompt: () => buildSystemPrompt(),
+		systemPrompt: () => buildSystemPrompt(toolOpts),
 		summarize: (cap) => summarizeScene(cap),
 		beginBatch: () => beginHistoryBatch(),
 		endBatch: (label) => endHistoryBatch(label),
@@ -415,7 +422,7 @@ export function createTpAgent(extra = {}) {
 		missingTools: () =>
 			extra.missingTools?.() ??
 			missingToolsFor({
-				physics: physicsToolsEnabled(),
+				physics: toolOpts.physics || physicsToolsEnabled(),
 				meshLocal: meshGenReady(),
 				meshHost: hostMeshReady(),
 				hostKnown: !!get(sessionHost),
@@ -486,6 +493,10 @@ export const CONNECTOR_LABEL = 'Claude (connector)';
  */
 export function createConnectorAgent() {
 	return createTpAgent({
+		// 86-fix B1/B2: physics tools on for the connector's own list (the person's "Physics tools" checkbox is
+		// for their assistant), and the simulation runs in this full-speed tab
+		physics: true,
+		localSim: true,
 		deps: {
 			inSession: () => {
 				const host = get(sessionHost);

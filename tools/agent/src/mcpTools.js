@@ -109,6 +109,36 @@ export function bridgeTools(engine = 'browser') {
 	return tools;
 }
 
+/** 86-fix N2: tools only the Claude connector's tab answers (its dispatcher), listed by the Worker's catalog.
+ * The agent CLI has `connect` instead (no person at the screen to ask). */
+export const JOIN_SESSION_TOOL = {
+	name: 'join_session',
+	description:
+		'Join a theprototype.app session from a link the person gave you (https://theprototype.app/#F0FD3, possibly with &invite=…, or the bare session id). ' +
+		'Nothing happens until the person presses Join on a card in their tab that names the host and the session; Cancel refuses. ' +
+		'The app may then ask them what to do with the scene they have open. Answers joining, refused or cancelled; call status afterwards to see where the tab is.',
+	inputSchema: {
+		type: 'object',
+		properties: { link: { type: 'string', description: 'the session link, invite link or session id the person gave you' } },
+		required: ['link']
+	}
+};
+
+/** 86-fix (85 S1 pulled forward): where the people are — read-only; answered by a connector tab */
+export const WHERE_ARE_USERS_TOOL = {
+	name: 'where_are_users',
+	description:
+		'Where each person in the session is and which way they look (their desktop camera, or the VR headset): position, facing as a compass yaw ' +
+		'plus forward and right vectors, the floor under them, and ready-made spots 1.5 m and 3 m in front of them at floor level. ' +
+		'The entry with "you": true is the person you act as. Use it for "in front of me", "around me", "behind me", "to my left".',
+	inputSchema: { type: 'object', properties: {} }
+};
+
+/** @returns {any[]} */
+export function connectorOnlyTools() {
+	return [JOIN_SESSION_TOOL, WHERE_ARE_USERS_TOOL];
+}
+
 /** Text content for an MCP result. @param {any} obj @param {boolean} [isError] */
 export function textResult(obj, isError) {
 	const r = { content: [{ type: 'text', text: typeof obj === 'string' ? obj : JSON.stringify(obj) }] };

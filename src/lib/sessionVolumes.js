@@ -289,6 +289,7 @@ async function answerVolumeSave(from, data) {
 	let result;
 	const now = Date.now();
 	if (!hostOf(from) || !sentTo.has(from)) result = { ok: false, error: 'only the session host can save on the host' };
+	else if (roleOf(from) === 'viewer') result = { ok: false, error: 'view-only peers cannot save on the host — Copy to my library instead' };
 	else if (hostSaving || now - (lastSaveAsk.get(from) ?? 0) < SAVE_GAP_MS) result = { ok: false, error: 'the host is busy saving, try again in a moment' };
 	else {
 		hostSaving = true;

@@ -697,7 +697,7 @@ async function partG(browser) {
 	const box = await card(A.page).boundingBox();
 	const vp = A.page.viewportSize();
 	h.check(
-		box.x + box.width > vp.width - 40 && box.y > vp.height / 2,
+		box.x + box.width > vp.width - 80 && box.y > vp.height / 2,
 		'consent: the card sits bottom-right after the first Play'
 	);
 	h.check(

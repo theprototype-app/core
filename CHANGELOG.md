@@ -8,7 +8,7 @@
 ## 1.52.0 — sessions in your Explorer 🗂️
 
 - **The host's files in your Explorer.** Joining a session shows them as *"<Host>'s session"*, read-only, above your Library: open images, videos and text, copy any file into your Library, and **Save on host** if you can edit. Nothing downloads until you open or copy, and more than about 50 MB asks first.
-- **Hosts choose what guests see.** Connect ▸ Info ▸ Guests see: Current scene's files (default), Project, Whole library or None.
+- **Hosts choose what guests see.** Connect ▸ Info ▸ Guests see: Current scene's files (default), every scene on this device and shared files, Whole library or None.
 - **Save project with several libraries open** asks which to save, with the active one ticked. Settings ▸ Save options ▸ *When several libraries are open* remembers your answer, and Ctrl+S follows it.
 - **Save project with unsaved changes** names the scene and offers *Save scene and project*, so edits are never dropped without a word.
 - **Opening a project** takes you back to the scene you had open.

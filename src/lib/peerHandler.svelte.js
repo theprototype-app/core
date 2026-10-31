@@ -19,6 +19,8 @@ import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
 import { applySplineEdit } from '$lib/splineTool';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected, releaseMic } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride, inviteServerOverride } from '$lib/peerServer';
+import { admitRate, applyRateNotice } from '$lib/peerRateGate';
+import { hideMyIp, applyHideMyIp, whenRelayReady, relayDialWait, RELAY_DIAL_FAILED } from '$lib/hideMyIp';
 // 27-B/27-G integration: the RECOVERY story belongs in the copyable bundle, not in a
 // console nobody reads. diagnostics.js is a zero-dependency leaf, so this closes no cycle.
 import { log } from '$lib/diagnostics';
@@ -436,6 +438,8 @@ export class PeerConnection {
 			// guards, the signaling-down rule), so `$peers.peer.id` and every send stay valid
 			// net-drop-1: the id stays readable through a signaling drop (peerDrop.keepPeerId)
 			this.peer = exportMode ? /** @type {Peer} */ (offlinePeer(this.myId)) : keepPeerId(new Peer(this.myId, options), this.myId);
+			// 71 TR4: on the live Peer, so every rebuild (fallback, server switch) keeps it
+			applyHideMyIp(this.peer);
 		};
 
 		// 27-F (audit H2): THE recreate ritual, in one place. Four callers had their own
@@ -641,7 +645,9 @@ export class PeerConnection {
 			waitingForApproval.set(waiting);
 			waitingForApproval.update((value) => value);
 			// // Initiate connection request to peer and await approval
-			this.connectToPeer(connect, true);
+			// 71 TR4: with Hide my IP on, this first dial waits for the plugin's relay credential
+			if (get(hideMyIp)) whenRelayReady(p).then(() => this.connectToPeer(connect, true));
+			else this.connectToPeer(connect, true);
 			// 55: the invite key in the hash is consumed whatever was dialled (a rejoin leaves an empty hash alone)
 			if (!rejoinHost || window.location.hash.slice(1)) window.location.hash = '';
 		});
@@ -758,6 +764,8 @@ export class PeerConnection {
 		};
 
 		createPeerForMode(false);
+		// 71 TR4: the Settings switch reaches the Peer at once; later connections use it
+		hideMyIp.subscribe((on) => applyHideMyIp(this.peer, on));
 		initVoiceChat(this);
 		wire();
 
@@ -1097,6 +1105,8 @@ export class PeerConnection {
 				// everything (byte-identical OSS behavior); a cloud plugin's provider
 				// drops disallowed message types from a peer (e.g. a viewer's mutations).
 				if (data && !canApply(conn.peer, data.type)) return;
+				// 71 TR7: per-peer edit and chat limits (peerRateLimit.js)
+				if (data && !admitRate(conn, data.type)) return;
 				// A2: the ROOM gate. A message describing the content of a scene is not
 				// applied when its sender is demonstrably standing in a different one.
 				//
@@ -1180,6 +1190,8 @@ export class PeerConnection {
 						this.connectToPeer(id, false);
 					}
 					);
+				} else if(data.type == 'ratelimited') {
+					applyRateNotice(data); // 71 TR7: a receiver dropped some of ours
 				} else if(data.type == 'sent') {
 					// 37 R15: `id` + `at` are additive (an older peer sends neither; addMessage mints)
 					addMessage({message: data.message, type: 'received', sender: data.sender, id: data.id, at: data.at});
@@ -2107,6 +2119,21 @@ export class PeerConnection {
 		return true;
 	}
 
+	/**
+	 * 71 TR4: a relay-only dial that cannot get through fails without any error of its own (with no
+	 * candidates ICE just waits), so say why instead of leaving "Requesting" up.
+	 * @param {any} conn @param {string} peerId
+	 */
+	watchRelayDial(conn, peerId) {
+		const wait = relayDialWait(this.peer);
+		if (wait == null) return;
+		setTimeout(() => {
+			if (conn.open || this.connections[peerId] !== conn) return;
+			log('warn', 'net', 'relay-only dial did not open', { peer: peerId, wait });
+			showToast(RELAY_DIAL_FAILED);
+		}, wait);
+	}
+
 	connectToPeer(peerId, getobjects = true, id = this.peer.id) {
 		// remember the intent: if this dial dies and an adopted inbound conn takes
 		// its place, the adoption still owes them the full-state requests (B5)
@@ -2125,6 +2152,7 @@ export class PeerConnection {
             }
             /** @type {any} */ (conn).__dialedAt = Date.now();
             this.connections[peerId] = conn;
+			this.watchRelayDial(conn, peerId);
 
 			conn.on('close', () => this.onConnClose(peerId, conn));
 

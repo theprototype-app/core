@@ -27,6 +27,7 @@ import { sessionHost, snapshotPending } from '$lib/connectionState';
 import { isAgentPeer } from '$lib/inviteStore';
 import { requestConnect } from '$lib/peerApproval';
 import { rolesInfo } from '$lib/cloudHooks';
+import { checkToolCaps } from './capCheck.js';
 import { dirtyPulse, dismissRestore, restoreAvailable } from '$lib/autosave';
 import { welcomeOpen, whatsNewOpen, markWhatsNewSeen } from '$lib/whatsNew';
 import { peerModuleVersions, moduleVersions } from '$lib/moduleSDK';
@@ -364,6 +365,8 @@ export function createTpAgent(extra = {}) {
 	core = createAgentCore({
 		appVersion: APP_VERSION,
 		gate: (name, isEdit) => inbox.gate(name, isEdit),
+		capCheck: (name, args) => checkToolCaps(name, args, get(rolesInfo)),
+		capabilities: () => /** @type {any} */ (get(rolesInfo))?.myCaps ?? null,
 		getTools: () => agentTools(),
 		runTool: (name, args) => agentRun(name, args),
 		resolveName: (name, args) => repairToolCall(name, args),

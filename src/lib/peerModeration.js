@@ -38,7 +38,7 @@ export function peerLabel(peerId) {
 
 function ctx() {
 	const ri = get(rolesInfo);
-	return { host: get(sessionHost), roleOf: ri && typeof ri.roleOf === 'function' ? ri.roleOf : null };
+	return { host: get(sessionHost), roleOf: ri && typeof ri.roleOf === 'function' ? ri.roleOf : null, capsOf: ri && typeof ri.capsOf === 'function' ? ri.capsOf : null };
 }
 
 /** May WE remove peers (the menu's Moderation group)? */

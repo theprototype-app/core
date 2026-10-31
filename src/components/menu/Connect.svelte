@@ -23,7 +23,8 @@
 	// 55 A4: Request AI — the invite sheet
 	import InviteSheet from './InviteSheet.svelte';
 	import { inviteSheet, kindOfRow } from '$lib/inviteStore';
-	import { rolesInfo } from '$lib/cloudHooks';
+	import { rolesInfo, permissionsFor } from '$lib/cloudHooks';
+	import PeerPermissions from './PeerPermissions.svelte';
 	import { safeStorage } from '$lib/safeStorage';
 	// 44 M14: pinned to the top row (the full-width bar) or floating (the centred pill, compact when crowded)
 	import { connectPinned } from '$lib/connectPin';
@@ -768,6 +769,9 @@
 </div>
 {#if $inviteSheet}
 	<InviteSheet />
+{/if}
+{#if $permissionsFor}
+	<PeerPermissions />
 {/if}
 
 <style>

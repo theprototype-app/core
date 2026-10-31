@@ -26,6 +26,11 @@ the tools. Three calls from a link to a first build.
 - **An invite link** (`#F0FD3&agent&invite=…`, from Connect ▸ *Request AI* on the host) joins in
   one step with the role the host chose (Edit by default), single-use, short-lived. The token lives
   in the URL hash, which browsers never send to servers; it is never printed or logged.
+- **A limited agent.** On a build with roles, an agent given edit access starts on the host's agent preset (*Trusted agent*:
+  it creates and changes its own work and asks before touching anyone else's; it cannot clear the scene, moderate, change room
+  settings or publish). `status().capabilities` says what it may do. A call it may not make returns
+  `{error, refused: true, capability}`; asking the host holds the call for up to a minute for the answer. The host changes this in
+  Users ▸ the agent ▸ Permissions, where *Allow everything* gives it what an admin has. Every peer enforces it, not only the agent.
 - **View-only means view-only.** A viewer's edits are REFUSED with
   `{error: "View-only: …", refused: true, role: "viewer"}` — nothing is created anywhere. Ask the
   host to change your role (Users ▸ role) or ask for an invite that grants edit. `status().role`

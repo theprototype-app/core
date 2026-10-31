@@ -124,7 +124,7 @@
 	import { toolbarSlots, slotOrder, TOP_DEFAULT } from '$lib/toolbarSlots';
 	import { phoneShell } from '$lib/ui/phoneShell.js';
 	import CloudSlot from '../CloudSlot.svelte';
-	import { usersSlot, profileSlot, rolesInfo, scenePresence, peerMenuItems } from '$lib/cloudHooks';
+	import { usersSlot, profileSlot, rolesInfo, scenePresence, peerMenuItems, permissionsFor } from '$lib/cloudHooks';
 	import { agentChatState, agentStatusOf, stopAgent, muteAgent, canMuteAgents, canStop } from '$lib/agentChat'; // 56 C5/C6
 	import { runningRequest, samePeer } from '$lib/agentChatCore';
 	import { safeStorage } from '$lib/safeStorage';
@@ -312,6 +312,7 @@
 					roleMenuPos = { top: m.y, right: Math.max(8, window.innerWidth - m.x - 120) };
 					roleMenuFor = id;
 				},
+				permissions: ri?.capCatalog ? () => permissionsFor.set(id) : undefined,
 				recentChanges: () => (changesMenu = { x: m.x, y: m.y, peerId: id }),
 				remove: () => void confirmRemove(id, false),
 				removeBlock: () => void confirmRemove(id, true),

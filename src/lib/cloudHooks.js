@@ -102,13 +102,14 @@ const ALWAYS_ALLOWED = new Set([
 	'relink'
 ]);
 
-/** @type {((peerId: string, msgType: string) => boolean) | null} */
+/** @type {((peerId: string, msgType: string, data?: any) => boolean) | null} */
 let capabilityProvider = null;
 
 /**
  * Install (or clear) the capability provider. A cloud plugin sets this to enforce
  * roles: e.g. return false for a viewer-role peer's mutating message types.
- * @param {((peerId: string, msgType: string) => boolean) | null} fn
+ * 71 TR1: the third argument is the message itself, for a rule about WHICH object it touches.
+ * @param {((peerId: string, msgType: string, data?: any) => boolean) | null} fn
  */
 export function setCapabilityProvider(fn) {
 	capabilityProvider = typeof fn === 'function' ? fn : null;
@@ -119,13 +120,13 @@ export function setCapabilityProvider(fn) {
  * of `msgType` from `peerId` be applied locally? Default — no provider — allows
  * everything, so the OSS build is byte-identical to today. A throwing provider is
  * treated as allow, so a buggy plugin can never brick the mesh.
- * @param {string} peerId @param {string} msgType @returns {boolean}
+ * @param {string} peerId @param {string} msgType @param {any} [data] @returns {boolean}
  */
-export function canApply(peerId, msgType) {
+export function canApply(peerId, msgType, data) {
 	if (!capabilityProvider) return true;
 	if (ALWAYS_ALLOWED.has(msgType)) return true;
 	try {
-		return capabilityProvider(peerId, msgType) !== false;
+		return capabilityProvider(peerId, msgType, data) !== false;
 	} catch {
 		return true;
 	}
@@ -230,6 +231,12 @@ export const sidebarSlot = writable(null);
  * plugin). Kept a plain object so a separately-built plugin owns the logic.
  * @type {import('svelte/store').Writable<any>} */
 export const rolesInfo = writable(null);
+/**
+ * 71 TR1: the peer whose Permissions sheet is open ('' = closed). A store, not a prop: the peer menu and a
+ * plugin's approval card both open the same sheet.
+ * @type {import('svelte/store').Writable<string>}
+ */
+export const permissionsFor = writable('');
 
 /** V2 (versioning): the hooks-contract version a plugin can require via its
  * `compatibleHooks` export — a plugin needing a NEWER contract fails closed

@@ -89,6 +89,8 @@ export function toolName(tool) {
  * @property {string} [appVersion]
  * @property {() => any[]} getTools the assistant's tool list (getAiTools)
  * @property {(name: string, args: any) => Promise<any>|any} runTool executeAiTool
+ * @property {(name: string, args: any) => Promise<any>} [capCheck] 71 TR1: null = go ahead, else the refusal
+ * @property {() => any} [capabilities] 71 TR1: status().capabilities
  * @property {(name: string, args: any) => {name: string}} [resolveName] repairToolCall
  * @property {() => string} systemPrompt
  * @property {(cap: number) => any} summarize summarizeScene
@@ -263,6 +265,11 @@ export function createAgentCore(deps) {
 		if (!READ_ONLY_TOOLS.has(real) && room && !room.withHost)
 			return { error: leftBehindRefusal(room.hostScene, room.following), refused: true, withHost: false };
 		const readOnly = READ_ONLY_TOOLS.has(real);
+		// 71 TR1: a capability preset (null = none). Asking an admin waits here, before the undo batch opens
+		if (!readOnly) {
+			const stopped = (await deps.capCheck?.(real, args ?? {})) ?? null;
+			if (stopped) return stopped;
+		}
 		if (!readOnly) {
 			selfEditing++;
 			deps.beginBatch();
@@ -335,6 +342,8 @@ export function createAgentCore(deps) {
 			waiting,
 			role,
 			canEdit: role !== 'viewer',
+			// 71 TR1: what this agent may do in this room (null = everything its role allows)
+			capabilities: deps.capabilities?.() ?? null,
 			peers,
 			missingTools: deps.missingTools(),
 			missingModules: deps.missingModules(),

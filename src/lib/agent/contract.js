@@ -71,6 +71,7 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {boolean} waiting true while a join request waits for the host's Approve
  * @property {'admin'|'editor'|'viewer'|null} role null = no roles in this build (everyone edits)
  * @property {boolean} canEdit false for a viewer: `exec` refuses every edit
+ * @property {Record<string, any> | null} [capabilities] 71 TR1: what this agent may do in this room (null = everything its role allows)
  * @property {{id: string, name: string}[]} peers peers with an open connection
  * @property {TpAgentMissingTool[]} missingTools tools this page cannot offer, and why
  * @property {TpAgentMissingModule[]} missingModules modules peers run that this page lacks

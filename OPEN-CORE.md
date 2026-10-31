@@ -36,7 +36,7 @@ export function register(api) {
   api.setPluginInfo({name, version}) // shown in Settings ▸ About (null clears)
 
   // Receive-side capability gate (roles enforcement)
-  api.setCapabilityProvider(fn)    // fn(peerId, msgType) => boolean; false = DROP
+  api.setCapabilityProvider(fn)    // fn(peerId, msgType, data) => boolean; false = DROP (data = the message, 1.52)
   api.setAuthProvider(provider)    // { authorize(peerId): boolean }
   api.getAuthProvider()
 
@@ -59,6 +59,10 @@ export function register(api) {
 
   // Roles / presence bridges (core renders, the plugin decides)
   api.setRolesInfo(info)           // { myId, myRole, amAdmin, order, roleOf, setRole } | null
+  //   optional, 1.52: myCaps, capsOf(id), capCatalog(), presetOf(id), setCaps(id, record|null), savePreset, deletePreset,
+  //   setAgentDefault, sortObjects(action, uuids), askFirst(action, uuids), takeRate(), onSend(data)
+  api.openPermissions(peerId)      // open core's Permissions sheet for a peer ('' closes it)
+  api.objectNames(uuids)           // the names THIS page shows for those objects
   api.setScenePresence(data)       // who is in the project's OTHER rooms | null — v2.4
   api.setAccountIdentity(id)       // {username, avatar, email} | null — the collaborative identity
   api.currentScene() / api.playModes() / api.peerRoster() / api.sessionHost()

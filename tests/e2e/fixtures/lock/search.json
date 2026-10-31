@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-28T10:56:04.679Z",
+	"recordedAt": "2026-10-31T14:05:27.455Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -3537,11 +3537,13 @@
 				"Save name",
 				"Storage used",
 				"When importing files already in your library",
+				"When several libraries are open",
 				"When you add files during a session",
 				"Who can unshare a file"
 			],
 			"sections": [
 				"Explorer",
+				"Save options",
 				"Import",
 				"VR"
 			]
@@ -3701,11 +3703,13 @@
 				"Session size",
 				"Show where AI agents look",
 				"Signaling server",
+				"When several libraries are open",
 				"When you add files during a session",
 				"Who can unshare a file"
 			],
 			"sections": [
 				"Explorer",
+				"Save options",
 				"Connection",
 				"About & what’s new"
 			]
@@ -4511,7 +4515,8 @@
 				"Texture threshold",
 				"Toggle AI prompt bar",
 				"Triangle threshold",
-				"Voice typing provider"
+				"Voice typing provider",
+				"When several libraries are open"
 			],
 			"sections": [
 				"Interface",
@@ -4519,6 +4524,7 @@
 				"Shortcuts",
 				"Scene",
 				"Explorer",
+				"Save options",
 				"Storage",
 				"Import",
 				"Export",

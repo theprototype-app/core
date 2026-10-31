@@ -216,17 +216,24 @@ async function resolveCc0(wanted) {
 	const core = await import('$lib/cc0/cc0Core.js');
 	/** @type {any[]} */
 	let rows = [];
+	/** a source that did not answer is not the same as a name nobody has @type {string | null} */
+	let unreachable = null;
 	try {
 		rows = core.normalizePolyHaven((await fetchers.phList('textures')).data, 'textures');
-	} catch {}
+	} catch (e) {
+		unreachable = e instanceof Error ? e.message : String(e);
+	}
 	const pick = (/** @type {any[]} */ list) =>
 		list.find((r) => String(r.id).toLowerCase() === q || String(r.name).toLowerCase() === q) ?? list.find((r) => String(r.name).toLowerCase().includes(q));
 	let row = pick(rows);
 	if (!row) {
 		try {
 			row = pick(core.normalizeAmbientCg((await fetchers.acgPage({ query: wanted, offset: 0 })).data));
-		} catch {}
+		} catch (e) {
+			unreachable = e instanceof Error ? e.message : String(e);
+		}
 	}
+	if (!row && unreachable) return { error: 'could not reach the CC0 libraries, so "' + wanted.slice(0, 40) + '" was not looked up everywhere: ' + unreachable.slice(0, 120) };
 	if (!row) return { error: 'no CC0 material called "' + wanted.slice(0, 40) + '" on Poly Haven or ambientCG' };
 	try {
 		const { importCc0 } = await import('$lib/cc0/cc0Import.js');

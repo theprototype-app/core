@@ -274,6 +274,18 @@ describe('set_material', () => {
 		expect((await call('set_material', { objects: [] })).error).toMatch(/objects/);
 		expect(stack().length).toBe(0);
 	});
+	it('a CC0 library that did not answer is not reported as a name nobody has', async () => {
+		const o = box();
+		const real = globalThis.fetch;
+		globalThis.fetch = async () => { throw new TypeError('offline'); };
+		try {
+			const r = await call('set_material', { objects: [o.uuid], cc0: 'Wood051' });
+			expect(r.error).toMatch(/could not reach/);
+			expect(r.error).not.toMatch(/no CC0 material/);
+		} finally {
+			globalThis.fetch = real;
+		}
+	});
 	it('a library hash that is not an image is refused', async () => {
 		const o = box();
 		expect((await call('set_material', { objects: [o.uuid], maps: { normal: 'abcdef0123456789' } })).error).toMatch(/not an image in the library/);

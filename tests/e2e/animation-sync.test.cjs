@@ -245,7 +245,19 @@ h.run(async () => {
 		ap.updateAnim(obj.uuid, { duration: 1, loop: 'once' });
 		return obj.uuid;
 	});
-	await A.page.waitForTimeout(1500);
+	// the door has to REACH the third page first (a fixed 1.5 s read it at x=0.03 under load) — wait for
+	// it at its real place, bounded; the check below still says where it was if it never came
+	await h.eventually(
+		() => C.page.evaluate((id) => {
+			let g;
+			window.__stores.objectsGroup.subscribe((x) => (g = x))();
+			const obj = g?.getObjectByProperty('uuid', id);
+			return obj ? obj.getWorldPosition(new window.__stores.THREE.Vector3()).x : null;
+		}, doorUuid),
+		(x) => x !== null && Math.abs(x - 3) < 0.01,
+		'(premise) the door arrives on the joiner',
+		15000
+	);
 
 	// where C thinks the hinge is BEFORE the door opens — the invariant to hold
 	const hingeClosed = await C.page.evaluate((id) => {
@@ -266,6 +278,16 @@ h.run(async () => {
 	);
 	await A.page.evaluate((id) => window.__stores.animationPreview.play(id), doorUuid);
 	await A.page.waitForTimeout(1600); // a 'once' clip: both peers end at 90deg
+	// test-health-1: only a FRAME poses the door and ends the clip (tickAnimationPreview runs from
+	// Scene's useTask), and C is a third software-GL page — 1600 ms was not always one of C's
+	// frames (0.0deg, still playing, while two reads later showed it at 90). Poll, bounded: a C
+	// that never got or never evaluates `animplay` still reads wrong at the end.
+	const ended = (/** @type {any} */ r) => r && r.rotY !== null && Math.abs(r.rotY - Math.PI / 2) < 0.02 && !r.playing;
+	for (let t = Date.now(); Date.now() - t < 15000; ) {
+		const [a, c] = await Promise.all([readAnim(A.page, doorUuid), readAnim(C.page, doorUuid)]);
+		if (ended(a) && ended(c)) break;
+		await A.page.waitForTimeout(250);
+	}
 
 	const [doorA, doorC] = await Promise.all([readAnim(A.page, doorUuid), readAnim(C.page, doorUuid)]);
 	h.check(

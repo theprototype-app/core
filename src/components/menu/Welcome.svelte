@@ -68,7 +68,7 @@
 		<p class="welcome-lead">
 			Build 3D prototypes in your browser — alone or together. Sessions are
 			<strong>peer&#8209;to&#8209;peer</strong>: share your ID and everything you do shows up for
-			everyone, with no account and no server holding your scene.
+			everyone, with no account needed.
 		</p>
 		<p class="welcome-sub">
 			Right&#8209;click the viewport to add something, or open the logo menu for files, modules and

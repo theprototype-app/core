@@ -8139,14 +8139,7 @@
 							"state": true,
 							"effects": {
 								"storage": {
-									"exportPreset": "quest",
-									"saveFormat": "tp",
-									"showGltfFormat": "false",
-									"showJsonFormat": "false",
-									"tpProjectVersions": "true",
-									"tpsceneAssets": "true",
-									"tpsceneFlow": "true",
-									"tpscenePacks": "false"
+									"exportPreset": "quest"
 								},
 								"stores": {
 									"saveOptions.saveOptions": "<object>"

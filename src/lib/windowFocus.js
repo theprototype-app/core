@@ -2,6 +2,7 @@
 // gets a z-index inside the --z-window band (40..44, still under the hud at
 // 45); pointerdown moves it to the top of the stack.
 import { writable } from 'svelte/store';
+import { isForeign } from './windows/winEnv.js';
 
 /** @type {any[]} */
 const order = [];
@@ -53,6 +54,8 @@ function raiseNode(node) {
  * @param {any} node @param {string=} key
  */
 export function focusStack(node, key) {
+	// 70 W2: a panel in a pop-out window ($lib/windows/panelHost) is laid out by its window, not here
+	if (isForeign(node)) return { destroy() {} };
 	order.push(node);
 	if (key) byKey.set(key, node);
 	apply();

@@ -57,11 +57,11 @@ measureSnap.subscribe((on) => {
 /** the measure tool's own snap flags (the drag snapping's prefs are left alone). No `surface`
  * candidate: the raw hit under the ray IS the fallback, and as a candidate at 0 px it would beat
  * a corner a few pixels away. */
-const MEASURE_TARGETS = { vertex: true, edge: true, face: true, surface: false, object: false };
+export const MEASURE_TARGETS = { vertex: true, edge: true, face: true, surface: false, object: false };
 /** a corner wins from anywhere inside the radius; an edge over a face centre */
-const MEASURE_BIAS = { vertex: -16, edge: -6, face: -2 };
+export const MEASURE_BIAS = { vertex: -16, edge: -6, face: -2 };
 /** screen radius a candidate may sit from the pointer — a fingertip covers more than a cursor */
-const RADIUS_MOUSE = 18;
+export const RADIUS_MOUSE = 18;
 const RADIUS_TOUCH = 36;
 /** 48 B2: how close (css px) an edit click must land to a point to pick it up */
 const HANDLE_MOUSE = 14;
@@ -335,22 +335,38 @@ function editClick(raycaster, clientPx, opts) {
 	const editing = get(measureEditing);
 	const object = editing ? measurementOf(editing.uuid) : null;
 	if (!editing || !object) return;
-	const world = worldPointsOf(object);
-	if (editing.active < 0 && clientPx) {
-		const near = nearestScreenPoint(screenOf(world), clientPx, opts.touch ? HANDLE_TOUCH : HANDLE_MOUSE);
-		if (near >= 0) {
-			measureEditing.set({ ...editing, active: near });
-			return;
-		}
+	const near =
+		editing.active < 0 && clientPx
+			? nearestScreenPoint(screenOf(worldPointsOf(object)), clientPx, opts.touch ? HANDLE_TOUCH : HANDLE_MOUSE)
+			: -1;
+	measureEditStep(near, () => resolveMeasurePoint(raycaster, clientPx, { touch: opts.touch, publish: false }));
+}
+
+/**
+ * One edit step on the measurement being edited — the half the desktop click and the VR trigger
+ * share (52 V1). With no point picked up, `near` (a point the press landed on, or -1) picks one up;
+ * otherwise the resolved point puts the picked one down, or is added at the end of the chain. One
+ * undo entry and one message per placed point.
+ * @param {number} near @param {() => ({point: number[]} | null)} resolve
+ * @returns {'picked'|'placed'|'added'|null}
+ */
+export function measureEditStep(near, resolve) {
+	const editing = get(measureEditing);
+	const object = editing ? measurementOf(editing.uuid) : null;
+	if (!editing || !object) return null;
+	if (editing.active < 0 && near >= 0) {
+		measureEditing.set({ ...editing, active: near });
+		return 'picked';
 	}
-	const hit = resolveMeasurePoint(raycaster, clientPx, { touch: opts.touch, publish: false });
-	if (!hit) return;
-	const next = world.map((p) => [...p]);
+	const hit = resolve();
+	if (!hit) return null;
+	const next = worldPointsOf(object).map((p) => [...p]);
 	if (editing.active >= 0) next[editing.active] = hit.point;
 	else next.push(hit.point);
 	const before = object.userData.measure;
 	commitMeasureEdit(editing.uuid, before, { points: localPointsOf(object, next) });
 	measureEditing.set({ ...editing, active: -1 });
+	return editing.active >= 0 ? 'placed' : 'added';
 }
 
 /** Backspace / Delete while editing: remove the picked point (else the last), never below two. */

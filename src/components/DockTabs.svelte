@@ -52,6 +52,7 @@
 	import { stripScroll } from '$lib/ui/stripScroll.js';
 	import ContextMenu from './ContextMenu.svelte';
 	import Icon from './ui/Icon.svelte';
+	import { tearOffAt } from '$lib/windows/panelPlaces.js';
 
 	// 40 F9: on a phone (with floating windows off) "+" is a sheet listing EVERY window with
 	// a show/hide toggle; with floating windows on, a phone behaves like the desktop.
@@ -87,6 +88,15 @@
 		const half = /** @type {HTMLElement} */ (e.target)?.closest?.('[data-dock-half]')?.getAttribute('data-dock-half');
 		if (half) activateDock(half);
 		else activateDock($bottomDockActive === pair.b || $bottomDockActive === pair.a ? $bottomDockActive : pair.a);
+	}
+	/** 54 X5: Delete closes the focused tab — the keyboard half of its ✕, which a tablist may not
+	 * hold as a control (axe aria-required-children; the CodeWorkspace S12 precedent)
+	 * @param {KeyboardEvent} e @param {() => void} close */
+	function tabKeys(e, close) {
+		if (e.key !== 'Delete') return;
+		e.preventDefault();
+		e.stopPropagation();
+		close();
 	}
 	/** the pair's ✕ closes both halves (the pair is one tab) @param {{a: string, b: string|null}} pair */
 	function closePair(pair) {
@@ -249,6 +259,8 @@
 				undockInto(dragged, join);
 				return;
 			}
+			// 70 W4: released outside the browser window — it tears off into a window of its own there
+			if (out && tearOffAt(dragged, e)) return;
 			if (out) {
 				// the W5 seam every panel already consumes — the panel owns its own mode
 				armDockMode(dragged, false);
@@ -356,6 +368,9 @@
 			use:stripScroll
 			use:keepScroll
 		>
+			<!-- 54 X5 (axe aria-required-children): a tablist owns tabs only, so each ✕ is a pointer
+			     affordance hidden from assistive tech and out of the tab order; Delete on a focused tab
+			     closes it, and its context menu (Shift+F10) has Close too -->
 			<div class="dt-tabs" role="tablist" aria-label="Docked views">
 				{#each $dockStripTabs as tab (tab.key)}
 					{@const pair = tab.pair}
@@ -373,6 +388,8 @@
 								use:tabDrag={{ key: tab.key }}
 								oncontextmenu={(/** @type {MouseEvent} */ e) => openTabMenu(e, pairFocus(pair))}
 								onclick={(/** @type {MouseEvent} */ e) => pairClick(e, pair)}
+								aria-keyshortcuts="Delete"
+								onkeydown={(/** @type {KeyboardEvent} */ e) => tabKeys(e, () => closePair(pair))}
 								><span class="tp-dtab-ico"><Icon name="columns-2" size={16} aria-hidden="true" /></span><span
 									data-dock-half={pair.a}
 									class="dt-half"
@@ -387,7 +404,8 @@
 								data-dock-tab-close={tab.key}
 								class="tab-note tp-dtab-x"
 								title="Close {tab.title}"
-								aria-label="Close {tab.title}"
+								tabindex="-1"
+								aria-hidden="true"
 								onclick={() => closePair(pair)}><Icon name="x" size={16} aria-hidden="true" /></button
 							>
 						</span>
@@ -404,13 +422,16 @@
 							use:tabDrag={{ key: tab.key }}
 							oncontextmenu={(/** @type {MouseEvent} */ e) => openTabMenu(e, tab.key)}
 							onclick={() => tabClick(tab.key)}
+							aria-keyshortcuts="Delete"
+							onkeydown={(/** @type {KeyboardEvent} */ e) => tabKeys(e, () => closeDockView(tab.key))}
 							>{#if tab.icon}<span class="tp-dtab-ico"><Icon name={tab.icon} size={16} aria-hidden="true" /></span>{/if}{tab.title}</button
 						>
 						<button
 							data-dock-tab-close={tab.key}
 							class="tab-note tp-dtab-x"
 							title="Close {tab.title}"
-							aria-label="Close {tab.title}"
+							tabindex="-1"
+							aria-hidden="true"
 							onclick={() => closeDockView(tab.key)}><Icon name="x" size={16} aria-hidden="true" /></button
 						>
 					</span>

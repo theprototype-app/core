@@ -68,11 +68,13 @@
 		AlignVerticalSpaceAround,
 		AppWindow,
 		Archive,
+		Bot,
 		ArrowDownToLine,
 		ArrowRight,
 		Atom, // 38 NOTES-38 #24: Physics & effects ▸
 		AudioLines,
 		Bell,
+		Bone,
 		BookOpen,
 		Bookmark,
 		Box,
@@ -106,6 +108,7 @@
 		Combine,
 		Compass,
 		Copy,
+		Terminal,
 		Crop,
 		CornerLeftUp,
 		Crosshair,
@@ -270,7 +273,10 @@
 		X,
 		Zap,
 		ZoomIn,
-		ZoomOut
+		ZoomOut,
+		// 60 Q1 + Q5: Play here, reference image
+		MapPin,
+		ImageUp
 	} from '@lucide/svelte';
 	import ToolIcon from './ToolIcon.svelte';
 	import { iconSize, ICON_STROKE } from '$lib/ui/icons.js';
@@ -298,6 +304,7 @@
 		'audio-lines': AudioLines,
 		bell: Bell,
 		'book-open': BookOpen,
+		bone: Bone, // 57 M6: Character ▸ Skeleton…
 		bookmark: Bookmark,
 		box: Box,
 		'box-select': BoxSelect,
@@ -330,6 +337,8 @@
 		combine: Combine,
 		compass: Compass,
 		copy: Copy,
+		bot: Bot,
+		terminal: Terminal,
 		crop: Crop,
 		'corner-left-up': CornerLeftUp,
 		crosshair: Crosshair,
@@ -393,6 +402,8 @@
 		'lock-open': LockOpen,
 		magnet: Magnet,
 		map: MapIcon,
+		'map-pin': MapPin,
+		'image-up': ImageUp,
 		'maximize-2': Maximize2,
 		'minimize-2': Minimize2,
 		menu: Menu,

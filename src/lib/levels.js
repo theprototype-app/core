@@ -95,6 +95,7 @@ import {
 	sceneOfHash
 } from './projectManifest';
 import { sessionHost } from './connectionState';
+import { myKind } from './inviteStore';
 // loose-scenes fix: the prompt is for an EDITOR, so it stands down in play mode (see
 // armSaveIntoProject). sceneStore is a leaf; sceneEntry answers "does the project know
 // this exact file", which is what makes a dragged-in .tpscene loose.
@@ -158,6 +159,10 @@ export function sceneSignature(payload) {
 		// 48 S2: a sequence is scene data like the HUD — keyed in only when present, so
 		// every scene without one keeps the signature an older build computed
 		...(payload.sequences ? { sequences: stripStamps(payload.sequences) } : {}),
+		// 56 C10/C8: a chat or a kept picture is scene data worth a save — keyed in only when present.
+		// A DIGEST, not the chat: the pictures are megabytes and the signature is compared often.
+		...(payload.chats ? { chats: payload.chats.map((/** @type {any} */ c) => [c.id, c.title, c.include, c.messages?.length ?? 0, c.messages?.[c.messages.length - 1]?.id ?? '', c.messages?.[c.messages.length - 1]?.text?.length ?? 0]) } : {}),
+		...(payload.chatRefs ? { chatRefs: payload.chatRefs.map((/** @type {any} */ r) => r.hash) } : {}),
 		// 23-A2/A4: the transport and the patch are scene data too — a tempo or a cable
 		// is a change worth a save, and they take stripStamps like every block above
 		// (the branch's own merge note asked for exactly this)
@@ -531,10 +536,11 @@ export function levelSceneName(fileName) {
  * @param {string} name
  * @param {string|null} [folderId] 21-G9: land it HERE when it is a real library folder
  *   (the Explorer's active folder); 21-H1: the library ROOT otherwise
- * @param {{label?: string, consent?: boolean}} [opts] 21-G7: `label` NAMES this version in
+ * @param {{label?: string, consent?: boolean, prune?: boolean}} [opts] 21-G7: `label` NAMES this version in
  *   the history panel (the manual "Save version…" path); absent = "Auto".
  *   R22 round 33: `consent: false` withholds the C4 publish consent — see below. Absent
  *   means consent, so every existing caller is byte-identical.
+ *   `prune: false` keeps the scene's older versions (a save a peer asked for).
  * @returns {Promise<{id: string, hash: string, name: string}|null>}
  */
 export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
@@ -543,7 +549,8 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	ensureGameId();
 	const payload = /** @type {any} */ (buildSessionPayload(String(name ?? '').trim() || 'Scene'));
 	delete payload.workspace;
-	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true });
+	// 56 C10: the scene's OWN file keeps every chat (a download of it later is a door and filters)
+	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true, chats: 'all' });
 	const item = await addItemFromBytes(
 		bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
 		levelFileName(payload.name),
@@ -625,7 +632,7 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	if (opts.label) setVersionLabel(payload.name, item.hash, opts.label);
 	// 21-G7: one visible card per scene name — the pointer we just wrote
 	hideOldVersions(payload.name);
-	pruneSceneVersions(payload.name);
+	if (opts.prune !== false) pruneSceneVersions(payload.name);
 	showToast(
 		'Scene saved: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)' + announced.note
 	);
@@ -711,6 +718,9 @@ export async function publishCurrentIfChanged(opts = {}) {
 	// ordinary autosave still protects the work.
 	if (at.private) return false;
 	if (get(sessionHost) !== null) return false; // not the writer
+	// 55 (41): an AI agent's page is never the writer — a host-less agent (its host left) would otherwise
+	// read as one and publish a version of a scene it was only helping with
+	if (myKind() === 'agent') return false;
 	if (!opts.force && autoVersionsOff()) return false; // fork 10: auto-versions off
 	/** @type {any} */
 	let payload = null;
@@ -733,7 +743,7 @@ export async function publishCurrentIfChanged(opts = {}) {
 	const folderId = await targetFolder(
 		pointerItem ? pointerItem.folderId ?? null : sceneFolderOf(at.name)
 	);
-	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true });
+	const bytes = await exportSessionZip(payload, { assets: true, packs: false, flow: true, chats: 'all' }); // 56 C10
 	const item = await addItemFromBytes(
 		bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
 		levelFileName(at.name),
@@ -1081,15 +1091,24 @@ function resolveLevelItem(hash) {
 	requestAsset(hash);
 	showToast('Pulling the scene from your peers…');
 	return new Promise((resolve) => {
-		const unsub = explorerItems.subscribe(() => {
+		// 55: watch BOTH shelves — itemByHash searches the hidden one too, and a pulled scene
+		// file can land there (an older version of a scene this machine knows), which left a
+		// follow waiting forever on a file it already had
+		let done = false;
+		/** @type {(() => void)[]} */
+		const unsubs = [];
+		const check = () => {
+			if (done) return;
 			const found = itemByHash(hash);
 			if (!found) return;
+			done = true;
 			// never resolve inside the subscriber's own flush — read refs first, then act
 			queueMicrotask(() => {
-				unsub();
+				for (const u of unsubs) u();
 				resolve(found);
 			});
-		});
+		};
+		unsubs.push(explorerItems.subscribe(check), hiddenItems.subscribe(check));
 	});
 }
 

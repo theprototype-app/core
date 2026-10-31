@@ -610,14 +610,18 @@ export function tickPlayInteract(delta, camera) {
 			// deviation detector skips and the write-back excludes, so there is no
 			// fight; when we are not, these moves refresh the EXTERNAL hold, which is
 			// pre-existing behaviour simply fed at a usable rate
+			// 60 Q2: a held object's stream rides the fast channel
 			if (peer)
-				peer.send({
-					type: 'move',
-					uuid: grab.object.uuid,
-					pos: grab.object.position.toArray(),
-					rot: [grab.object.rotation.x, grab.object.rotation.y, grab.object.rotation.z],
-					scale: grab.object.scale.toArray()
-				});
+				peer.send(
+					{
+						type: 'move',
+						uuid: grab.object.uuid,
+						pos: grab.object.position.toArray(),
+						rot: [grab.object.rotation.x, grab.object.rotation.y, grab.object.rotation.z],
+						scale: grab.object.scale.toArray()
+					},
+					{ fast: true }
+				);
 		}
 		pokeScene();
 		return;

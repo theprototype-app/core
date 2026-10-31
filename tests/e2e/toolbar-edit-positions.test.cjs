@@ -134,7 +134,7 @@ h.run(async () => {
 		await clickAt(P, P.locator('#hud-stack-right .hud-edit-add').first());
 		await P.waitForTimeout(300);
 		const offered = await P.evaluate(() => [...document.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent.trim()));
-		h.check(offered.some((l) => l.startsWith('Chat')) && offered.includes('Rotate (2)') && !offered.some((l) => /^play/i.test(l)), T + `"+" offers every unplaced Customize button, never Play (${offered.join(' | ')})`);
+		h.check(offered.some((l) => l.startsWith('Chat')) && offered.includes('Rotate (2)') && !offered.some((l) => /^play(?! here)/i.test(l)), T + `"+" offers every unplaced Customize button, never Play (${offered.join(' | ')})`);
 		await P.getByRole('menuitem', { name: 'UV editor', exact: true }).click();
 		await P.waitForTimeout(300);
 		d = await draft(P);

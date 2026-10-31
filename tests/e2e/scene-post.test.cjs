@@ -1005,7 +1005,9 @@ h.run(async () => {
 	// one-switch escape hatch if their driver cannot cope. `(pointer: coarse)` is
 	// emulable with a hasTouch context (unlike the mobile VIEWPORT, which needs
 	// isMobile too).
-	const T = await h.setupPage(browser, 'Touch', { context: { hasTouch: true } });
+	// the quality governor drops AO on slow frames (qualityOverrides.aoOff filters it out of the stack),
+	// and software GL is slow on every page — pin it, or 9.12 measures the governor, not the touch rule
+	const T = await h.setupPage(browser, 'Touch', { context: { hasTouch: true }, storage: { autoQuality: 'false' } });
 	const touch = await T.page.evaluate(async () => {
 		window.__stores.viewMode.set('shaded');
 		window.__stores.scenePost.scenePostRestore({
@@ -1013,20 +1015,30 @@ h.run(async () => {
 			effects: [{ id: 'a', kind: 'ao' }],
 			changedAt: 99
 		});
-		await new Promise((r) => setTimeout(r, 1400));
-		const on = window.__postDebug();
+		// the stack stays empty until the composer has warmed (postWarm, >10 rendered frames —
+		// 0.6-2.5 s at 4-17 fps), the same wait section 3.2 makes; a fixed 1400 ms read it cold
+		const t0 = performance.now();
+		let on = window.__postDebug();
+		while (!(on.postWarm && on.kinds.includes('ao')) && performance.now() - t0 < 20000) {
+			await new Promise((r) => requestAnimationFrame(r));
+			on = window.__postDebug();
+		}
 		window.__stores.viewportOverrides.setRenderLayer('post', false);
 		await new Promise((r) => setTimeout(r, 900));
+		let mode = null;
+		window.__stores.viewMode.subscribe((v) => (mode = v))();
 		return {
 			coarse: window.__stores.inputDevice.coarsePointer(),
 			kinds: on.kinds,
+			// what the composer said, so a red names its reason (warm-up, a skip, an empty plan, the mode)
+			why: { postWarm: on.postWarm, postOk: on.postOk, skipped: on.skipped, plan: (on.plan ?? []).length, stackPasses: on.stackPasses, mode, auto: localStorage.getItem('autoQuality') },
 			afterOff: window.__postDebug().stackPasses
 		};
 	});
 	h.check(touch.coarse === true, '9.11 premise: the touch context really reports a coarse pointer');
 	h.check(
 		touch.kinds.includes('ao'),
-		'9.12 a touch device renders the scene look too — no silent second class of viewer'
+		'9.12 a touch device renders the scene look too — no silent second class of viewer (' + JSON.stringify(touch.kinds) + ' ' + JSON.stringify(touch.why) + ')'
 	);
 	h.check(touch.afterOff === 0, '9.12b ...and the same one-switch escape hatch works there');
 

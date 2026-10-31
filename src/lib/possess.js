@@ -246,14 +246,18 @@ function tick(now) {
 			state.lastSent = now;
 			/** @type {any} */
 			const peer = get(peers);
+			// 60 Q2: the ride's pose stream rides the fast channel
 			if (peer)
-				peer.send({
-					type: 'move',
-					uuid: object.uuid,
-					pos: object.position.toArray(),
-					rot: [object.rotation.x, object.rotation.y, object.rotation.z],
-					scale: object.scale.toArray()
-				});
+				peer.send(
+					{
+						type: 'move',
+						uuid: object.uuid,
+						pos: object.position.toArray(),
+						rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+						scale: object.scale.toArray()
+					},
+					{ fast: true }
+				);
 		}
 	}
 

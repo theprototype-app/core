@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { showChoice, showConfirm } from '$lib/confirmDialog.js';
+	import { safeHtml } from '$lib/sandbox/sanitize.js';
 	import Icon from '../ui/Icon.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
@@ -64,6 +65,7 @@
 	// R22 round 11: a prefab may BE a file now — see $lib/saveAs for what each format keeps.
 	import * as THREE from 'three';
 	import { prefabFormatOf, prefabFileName, saveBytes } from '$lib/saveAs';
+	import { containerType } from '$lib/download/containerType.js';
 	// R22 round 11: a pack you make yourself — see packs.js for why it is an "imported"
 	// pack with no zip behind it rather than a fourth kind.
 	import { createPack, addToPack, packItemUrls } from '$lib/packs';
@@ -214,6 +216,11 @@
 		volumeUpdateBytes,
 		volumeItems
 	} from '$lib/mountedVolumes';
+	// 56 C13: the host's files while joined — a READ-ONLY volume in the same `vol:` namespace
+	// (the store is a boot-light leaf; the runtime behind Open / Copy / Save on host loads on first use)
+	import { sessionVolumes, isSessionVolumeId } from '$lib/sessionVolumeState';
+	const sessionRuntime = () => import('$lib/sessionVolumes');
+	import { formatBytes, SHARE_SCOPE_LABELS } from '$lib/sessionVolumeCore';
 	// ROADMAP 22 R4 — WHO IS IN THIS SCENE, on the card. The session is the mesh and every
 	// peer in it carries a scene tag (peerScenes); a scene card reads the tags for the scene
 	// it stands for and says who is standing there, you included, and offers to JOIN them.
@@ -338,6 +345,9 @@
 	// R22 round 13 P3: `sessions` is read for the Mount picker (which saved entries are
 	// PROJECTS) and to notice a mounted volume whose source record has been deleted.
 	import { emptySessionPayload, exportSessionZip, sessions, loadSessions } from '$lib/sessions';
+	import { sceneBlobForDoor } from '$lib/chat/tpchatDoor.js'; // 56 C10
+	// 56 C10/C8: Scene ▸ chats (.tpchat cards) and Scene ▸ references (kept chat pictures)
+	import { chats as tpchats, openChat, renameChat, deleteChat, setChatInclude, downloadChatMarkdown, downloadTpchat, chatIdOfItem, forgetReference } from '$lib/chat/tpchatStore.js';
 	import { selectedObjects } from '../../stores/sceneStore.js';
 	import { sceneAssets } from '$lib/sceneAssets';
 	import { findNodeAnyGraph } from '../../stores/flowStore';
@@ -374,6 +384,8 @@
 	const WIN_DEFAULT = { w: 720, h: 440 };
 
 	let inlineStats: any = $state(null); // N4: poly stats for the Properties inline preview
+	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
+	let { popped = false } = $props();
 	let docked = $state(true);
 	let winW = $state(720);
 	let winH = $state(440);
@@ -425,8 +437,11 @@
 
 	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
 	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	// 70 W2: a popped-out instance renders its floating layout inside its window, never docked
+	// svelte-ignore state_referenced_locally
+	if (popped) docked = false;
 	$effect(() =>
-		onLayoutRestore(() => {
+		popped ? undefined : onLayoutRestore(() => {
 			const stored = storedPanelLayout(safeStorage.getItem, 'explorer', 720, 440);
 			docked = !!(stored.docked || (window.matchMedia?.('(pointer: coarse)').matches && !get(mobileUndockAllowed)));
 			const fit = clampWinSize(stored.w, stored.h, WIN_MIN);
@@ -452,6 +467,7 @@
 	// own context menu can undock any tab; the Explorer-only `explorerDockArm` it used
 	// to own is gone, and the Controls menu asks through this one.
 	$effect(() => {
+		if (popped) return; // 70 W2: the main window's instance answers the arm
 		const arm = $dockModeArm;
 		if (!arm || arm.key !== 'explorer') return;
 		dockModeArm.set(null);
@@ -465,6 +481,7 @@
 	// feeds --bottom-inset) so the strip lists it, and render only while it is the
 	// visible tab. Being covered by another tab closes nothing — this stays open.
 	$effect(() => {
+		if (popped) return; // 70 W2: a popped panel is no dock tab
 		setDockOccupant('explorer', !$explorerClose && docked, $dockHeight);
 		return () => setDockOccupant('explorer', false);
 	});
@@ -1071,7 +1088,9 @@
 		object: 'box',
 		prefab: 'boxes',
 		'prefab-folder': 'folder', // 37 R4: a folder inside the Prefabs view
-		scene: 'map' // 21-F4: a level (.tpscene)
+		scene: 'map', // 21-F4: a level (.tpscene)
+		anim: 'person-standing', // 57 M1: an animation clip (.tpanim)
+		tpchat: 'message-square' // 56 C10: a chat of the scene (Scene ▸ chats)
 	};
 	// semantic icon colors (ui.css classes over the --icon-* theme tokens)
 	/** R22-R7: what a kind is CALLED in the filter. The store values are internal
@@ -1083,11 +1102,12 @@
 		text: 'Text and config',
 		object: '3D models',
 		prefab: 'Prefabs',
-		scene: 'Scenes'
+		scene: 'Scenes',
+		anim: 'Animation clips'
 	};
 	/** R22-R7: the filter's fixed order. Every kind the Explorer can hold, so the menu is
 	 * a statement about the app rather than about this library's current contents. */
-	const FILTER_KINDS = ['image', 'object', 'audio', 'video', 'text', 'scene', 'prefab'];
+	const FILTER_KINDS = ['image', 'object', 'anim', 'audio', 'video', 'text', 'scene', 'prefab'];
 	const KIND_COLORS: Record<string, string> = {
 		image: 'ico-image',
 		audio: 'ico-audio',
@@ -1096,7 +1116,9 @@
 		object: 'ico-object',
 		prefab: 'ico-prefab',
 		'prefab-folder': 'ico-folder',
-		scene: 'ico-prefab' // 21-F4: levels share the prefab tint
+		scene: 'ico-prefab', // 21-F4: levels share the prefab tint
+		anim: 'ico-object', // 57 M1: a clip belongs with the models it moves
+		tpchat: 'ico-doc' // 56 C10
 	};
 
 	// ---- R22 round 13 P3: WHERE AM I, when it is not the library ----------------------
@@ -1114,9 +1136,31 @@
 	/** the mounted volume RECORD for the current scope, or null. Reads the store directly
 	 *  so the grid re-renders on a buffered edit — `volumeById` reaches it through get(),
 	 *  which registers no dependency (the documented rule). */
-	const volume = $derived(
-		volScope ? ($mountedVolumes.find((v: any) => v.id === volScope.volumeId) ?? null) : null
+	const volume: any = $derived(
+		volScope
+			? ($mountedVolumes.find((v: any) => v.id === volScope.volumeId) ??
+					// 56 C13: a session volume is drawn by every read path a mount is
+					$sessionVolumes.find((v: any) => v.id === volScope.volumeId) ??
+					null)
+			: null
 	);
+	/** 56 C13: the open place is a session volume — read-only, every edit verb is refused */
+	const inSessionVol = $derived(!!volume?.session);
+	/**
+	 * 56 C13: A SESSION VOLUME IS READ-ONLY. Every edit verb a mount offers (rename, new folder,
+	 * delete, drop or paste in) lands here first and is refused with the two things that DO work.
+	 * @returns true when it refused
+	 */
+	function sessionReadOnly(volumeId: string | null | undefined): boolean {
+		if (!isSessionVolumeId(volumeId)) return false;
+		const v: any = $sessionVolumes.find((x: any) => x.id === volumeId);
+		showToast(
+			(v?.name ?? 'This session') +
+				' is read-only — Copy to my library' +
+				(v?.role === 'editor' ? ', or Save on host' : '')
+		);
+		return true;
+	}
 	/** a volume folder as a GRID/TREE row. Its `id` is the namespaced key, not the bare
 	 *  folder uuid, for a reason that bites immediately: a project saved from THIS machine
 	 *  carries the library's own folder uuids verbatim, so a bare id would make one drag
@@ -1314,7 +1358,13 @@
 				? volume.items.filter((i: any) => i.name.toLowerCase().includes(q))
 				: volume.items.filter((i: any) => (i.folderId ?? null) === volScope.folderId);
 			return rows
-				.map((i: any) => ({ ...i, volumeId: volume.id, volumeName: volume.name, volumeItem: true }))
+				.map((i: any) => ({
+					...i,
+					volumeId: volume.id,
+					volumeName: volume.name,
+					volumeItem: true,
+					...(volume.session ? { sessionItem: true } : {})
+				}))
 				.filter(passesFilter);
 		}
 		if ($activeFolder === 'prefabs') {
@@ -1694,7 +1744,9 @@
 		// P3: a mounted file's path is inside its own project, and saying "Library" would
 		// name the one place it is not
 		if (selItem.volumeItem) {
-			const rows = volumeFolders(selItem.volumeId);
+			const rows: any[] = isSessionVolumeId(selItem.volumeId)
+				? (($sessionVolumes.find((v: any) => v.id === selItem.volumeId) as any)?.folders ?? [])
+				: volumeFolders(selItem.volumeId);
 			let at: any = selItem.folderId ?? null;
 			while (at) {
 				const f = rows.find((x: any) => x.id === at);
@@ -2367,6 +2419,7 @@
 		if (editing) void commitEdit();
 	}
 	function startCreate(parentId: string | null, inGrid = false) {
+		if (sessionReadOnly(volumeOf(parentId)?.volumeId ?? (parentId === null ? volScope?.volumeId : null))) return;
 		// P3b: inside a mount this is a BUFFERED create. The 'vol:…' key is converted to the
 		// volume's own ids HERE, at the one entry point, because everything downstream —
 		// the edit row's match, commitEdit, the mutator — wants the raw pair. Letting the
@@ -2407,6 +2460,7 @@
 	// inGrid keeps the tree + thumbnail inputs from BOTH mounting for a root folder
 	// (it shows in both), whose duplicate focus/blur would tear the edit down instantly
 	function startRename(folder: any, inGrid = false) {
+		if (sessionReadOnly(folder?.volumeId)) return;
 		settlePendingEdit();
 		// P3b: a volume folder's CARD id is its namespaced key while its own id is the raw
 		// uuid, and the two markup sites that host this input match on the card. `cardId`
@@ -2423,6 +2477,7 @@
 	}
 	// 170: inline item rename (replaces the browser prompt), works in either view
 	function startRenameItem(item: any) {
+		if (sessionReadOnly(item?.volumeId)) return;
 		settlePendingEdit();
 		editing = {
 			mode: 'rename-item',
@@ -2566,6 +2621,7 @@
 		// R5: the scene rename — replicated through the manifest, its files follow
 		else if (edit.mode === 'rename-scene') renameScene(edit.sceneName, edit.value);
 		else if (edit.mode === 'rename-prefab') renamePrefab(edit.prefabId, edit.value);
+		else if (edit.mode === 'rename-chat') renameChat(edit.chatId, edit.value.replace(/\.tpchat$/i, '')); // 56 C10
 		else if (edit.mode === 'rename-prefab-folder') await renamePrefabFolder(edit.folderPath, edit.value);
 		else if (edit.mode === 'new-prefab-folder') await createPrefabFolder($prefabFolder, edit.value);
 		else if (edit.mode === 'rename-pack') renamePack(edit.packName, edit.value);
@@ -2637,8 +2693,12 @@
 			if (!item) {
 				// nothing to select: the scene is in the project document but its bytes are on
 				// somebody else's disk. Say where they are rather than opening an empty panel.
+				// 56 C17: ...and offer the fetch instead of pointing at a card
+				const tip = line[0] ?? arm.hash;
+				const remote = tip ? { id: 'remote:' + tip, name: arm.name + '.tpscene', kind: 'scene', hash: tip, folderId: null, remoteScene: true } : null;
 				showToast(
-					`No copy of "${arm.name}" here yet — its versions are on a peer. Use "Open here (downloads it)" on its card to fetch one.`
+					`No copy of "${arm.name}" here yet — its versions are on a peer.`,
+					remote ? [{ label: 'Fetch it', action: () => void openSceneItem(remote) }] : undefined
 				);
 				return;
 			}
@@ -3011,7 +3071,9 @@
 		if (key == null) return true;
 		const scope = volumeOf(key);
 		if (scope) {
-			const v = $mountedVolumes.find((x: any) => x.id === scope.volumeId);
+			const v: any =
+				$mountedVolumes.find((x: any) => x.id === scope.volumeId) ??
+				$sessionVolumes.find((x: any) => x.id === scope.volumeId);
 			if (!v) return false;
 			return !scope.folderId || v.folders.some((f: any) => f.id === scope.folderId);
 		}
@@ -3034,6 +3096,17 @@
 	 * by-name version fold from swallowing a scene copied out of a mount).
 	 */
 	async function copyOutOfVolume(rows: any[], folderId: string | null) {
+		// 56 C13: a session volume's rows are pulled from the host (one confirm for the lot)
+		const fromSession = rows.filter((r: any) => isSessionVolumeId(r?.volumeId));
+		let sessionCopied = 0;
+		for (const volId of new Set(fromSession.map((r: any) => r.volumeId)))
+			sessionCopied += await (await sessionRuntime()).copySessionItems(
+				volId,
+				fromSession.filter((r: any) => r.volumeId === volId).map((r: any) => r.id),
+				folderId
+			);
+		rows = rows.filter((r: any) => !isSessionVolumeId(r?.volumeId));
+		if (!rows.length) return sessionCopied;
 		let copied = 0;
 		let missing = 0;
 		for (const row of rows) {
@@ -3513,6 +3586,7 @@
 		 */
 		const targetVol = volumeOf(target);
 		const fromVol = dragged.filter((p: any) => p?.volumeId);
+		if (targetVol && sessionReadOnly(targetVol.volumeId)) return;
 		if (targetVol) {
 			const vol = targetVol.volumeId;
 			for (const row of fromVol.filter((r: any) => r.volumeId === vol))
@@ -3585,6 +3659,32 @@
 		}
 		// P3: a folder INSIDE a mount. Share / Unshare / Export / Delete all read the
 		// library's own tree, so the mount gets the two entries that mean something here.
+		// 56 C13: a folder in a SESSION volume: walk into it, or copy what it holds
+		if (folder.volumeId && isSessionVolumeId(folder.volumeId)) {
+			const vol: any = $sessionVolumes.find((v: any) => v.id === folder.volumeId);
+			const inside = new Set<string>([folder.folderId]);
+			for (let grew = true; grew; ) {
+				grew = false;
+				for (const f of vol?.folders ?? [])
+					if (f.parentId && inside.has(f.parentId) && !inside.has(f.id)) (inside.add(f.id), (grew = true));
+			}
+			const rows = (vol?.items ?? []).filter((i: any) => inside.has(i.folderId));
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{ label: 'Open', icon: 'folder', action: () => openFolder(folder.id) },
+					{
+						label: 'Copy to my library',
+						icon: 'download',
+						disabled: !rows.length,
+						tooltip: rows.length ? 'Copy its ' + plural(rows.length, 'file') + ' into your Library, folders kept' : 'Nothing in it',
+						action: () => void sessionRuntime().then((m) => m.copySessionItems(vol.id, rows.map((r: any) => r.id), activeLibraryFolder()))
+					}
+				]
+			};
+			return;
+		}
 		if (folder.volumeId) {
 			menu = {
 				x: e.clientX,
@@ -3710,8 +3810,11 @@
 	// download from a page, and copying eight lines beats exporting a helper that would
 	// pull fileHandler's whole export machinery into the Explorer.
 	async function downloadItem(item: any) {
-		const blob = await itemBlob(item.id);
-		if (!blob) return showToast('That file has no stored bytes to download');
+		const stored = await itemBlob(item.id);
+		if (!stored) return showToast('That file has no stored bytes to download');
+		// 56 C10 (fork F5): a scene file's private AI chats stay on this machine
+		const { blob, dropped } = await sceneBlobForDoor(stored, item.name);
+		if (dropped) showToast(dropped + ' private AI chat' + (dropped === 1 ? '' : 's') + ' left out of the download (switch "Include when publishing" on a chat to keep it)');
 		const a = document.createElement('a');
 		document.body.appendChild(a);
 		a.style.display = 'none';
@@ -3911,6 +4014,7 @@
 	 * hides however many files that is.
 	 */
 	function deleteSelection() {
+		if (sessionReadOnly(volScope?.volumeId)) return;
 		const { folders, items, skipped } = selectionParts();
 		if (!folders.length && !items.length)
 			return showToast(
@@ -3991,11 +4095,12 @@
 		const entries: Record<string, Uint8Array> = {};
 		let missing = 0;
 		for (const item of files) {
-			const blob = await itemBlob(item.id);
-			if (!blob) {
+			const stored = await itemBlob(item.id);
+			if (!stored) {
 				missing++;
 				continue;
 			}
+			const { blob } = await sceneBlobForDoor(stored, item.name); // 56 C10
 			entries[uniqueZipName(entries, item.name || 'file')] = new Uint8Array(
 				await blob.arrayBuffer()
 			);
@@ -4259,7 +4364,7 @@
 		payload.count = 1;
 		payload.thumbnail = prefab.thumbnail ?? null; // the card's own picture, so the file has one
 		const bytes = await exportSessionZip(payload, { assets: false, packs: false, flow: true });
-		saveBlob(new Blob([bytes], { type: 'application/zip' }), fileStem(prefab.name) + '.tpscene');
+		saveBlob(new Blob([bytes], { type: containerType('.tpscene') }), fileStem(prefab.name) + '.tpscene');
 		showToast(`Exported "${prefab.name}" as a scene`);
 	}
 
@@ -4327,6 +4432,17 @@
 		const uuids = selectedSet();
 		if (!uuids.length) return showToast('Select the object (or objects) to save as a prefab first');
 		await savePrefabSelection(uuids);
+	}
+
+	/** 56 C10: a chat is the conversation itself — deleting it is for everyone in the scene */
+	function confirmDeleteChat(item: any) {
+		void showConfirm({
+			title: 'Delete this chat?',
+			message: `"${item.name}" will be removed from the scene for everyone. Pictures kept in References stay.`,
+			confirmLabel: 'Delete'
+		}).then((ok) => {
+			if (ok) deleteChat(item.chatId);
+		});
 	}
 
 	function confirmDeletePrefab(prefab: any) {
@@ -4534,6 +4650,30 @@
 		// P3: a file in a MOUNTED project. Its own menu, for the reason every branch here
 		// has one: Rename / Delete / Share / Download all address a library record it has
 		// none of, and Properties is the only one of them that would have worked.
+		// 56 C13: a file in the HOST'S session volume — read-only: Open, Copy to my library, Properties
+		if (item.sessionItem) {
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{
+						label: 'Open',
+						icon: 'external-link',
+						tooltip: 'Fetch it from ' + (item.volumeName ?? 'the host') + ' and open it read-only (' + formatBytes(item.size) + ')',
+						action: () => void openItem(item)
+					},
+					{
+						label: 'Copy to my library',
+						icon: 'download',
+						tooltip: 'Fetch it once and keep a copy in your own Library, in a folder of the same name',
+						action: () => void copyOutOfVolume(sessionRowsFor(item), activeLibraryFolder())
+					},
+					{ section: item.volumeName ?? 'Session' },
+					{ label: 'Properties', icon: 'info', action: () => showProperties({ kind: 'item', item }) }
+				]
+			};
+			return;
+		}
 		if (item.volumeItem) {
 			menu = {
 				x: e.clientX,
@@ -4641,6 +4781,64 @@
 					// says it at all. Omitted at the library root: "Location: " with nothing after
 					// it reads as missing data rather than as the root.
 					...(item.location ? [{ label: 'Location: ' + item.location, action: () => {} }] : [])
+				]
+			};
+			return;
+		}
+		// 56 C10: a chat IS scene data with its own small CRUD (rename / delete / the publish switch) —
+		// the store's, never a library record's
+		if (item.sceneEntry && item.kind === 'tpchat' && item.chatId) {
+			const chat = $tpchats[item.chatId];
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{ label: 'Open in AI assistant', icon: 'message-square', action: () => openChat(item.chatId) },
+					{
+						label: 'Rename',
+						icon: 'pencil',
+						action: () => {
+							settlePendingEdit();
+							editing = { mode: 'rename-chat', itemId: item.id, chatId: item.chatId, value: chat?.title ?? item.name.replace(/\.tpchat$/i, '') };
+						}
+					},
+					{
+						label: 'Include when publishing',
+						icon: chat?.include ? 'check' : 'eye-off',
+						tooltip: 'Off (the default): this chat stays out of downloads, Publish, game exports and .tp files — its pictures and notes are private. On: it travels with the scene.',
+						action: () => setChatInclude(item.chatId, !chat?.include)
+					},
+					{ label: 'Download as Markdown', icon: 'file-text', action: () => downloadChatMarkdown(item.chatId) },
+					{ label: 'Download (.tpchat)', icon: 'download', action: () => downloadTpchat(item.chatId) },
+					{ label: 'Delete chat', icon: 'trash-2', danger: true, action: () => confirmDeleteChat(item) }
+				]
+			};
+			return;
+		}
+		// 56 C8: a kept picture's card — its file lives in Library ▸ References
+		if (item.sceneEntry && item.refEntry) {
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					...(item.itemId
+						? [
+								{
+									label: 'Show in References',
+									icon: 'folder-open',
+									action: () => {
+										const backing = $explorerItems.find((i) => i.id === item.itemId);
+										if (backing) void revealItem(backing);
+									}
+								}
+							]
+						: []),
+					{
+						label: 'Remove from the scene’s references',
+						icon: 'x',
+						tooltip: 'The picture stays in Library ▸ References; the scene just stops listing (and bundling) it',
+						action: () => forgetReference(item.hash)
+					}
 				]
 			};
 			return;
@@ -5287,6 +5485,29 @@
 		// P3: inside a MOUNT the background menu is about the mount. New folder / Save scene
 		// / Export project all act on the open project, which is exactly what a mount must
 		// not touch — so they stay out and the three mount verbs take their place.
+		// 56 C13: inside a session volume the background menu is about the session
+		if (volScope && inSessionVol) {
+			e.preventDefault();
+			const vol: any = volume;
+			menu = {
+				x: e.clientX,
+				y: e.clientY,
+				items: [
+					{ section: vol?.name ?? 'Session' },
+					{
+						label: 'Save on host',
+						icon: 'save',
+						disabled: vol?.role === 'viewer',
+						tooltip:
+							vol?.role === 'viewer'
+								? "You're view-only in this session — Copy to my library instead"
+								: 'Save the session scene into ' + (vol?.host ?? 'the host') + "'s library",
+						action: () => void sessionRuntime().then((m) => m.saveOnHost(vol.id))
+					}
+				]
+			};
+			return;
+		}
 		if (volScope) {
 			e.preventDefault();
 			const vol = volume;
@@ -5510,6 +5731,7 @@
 		// copying one in from the library, so it goes through the same store and the same
 		// Save. Nothing about the live library is touched on the way.
 		const intoVol = volumeOf(folder);
+		if (intoVol && sessionReadOnly(intoVol.volumeId)) return;
 		if (intoVol) {
 			void importIntoVolume(files, intoVol);
 			return;
@@ -5609,7 +5831,10 @@
 			// 39: the item's size travels with the drag (the ghost draws it before any download),
 			// and a pack item names its pack (the placed reference records it)
 			...(item.dims ? { dims: item.dims } : {}),
-			...(item.glbUrl && item.packName ? { packName: item.packName } : {})
+			...(item.glbUrl && item.packName ? { packName: item.packName } : {}),
+			// 56 C10/C8: a Scene ▸ chats card drops onto the AI window as its chat; a kept picture as its file
+			...(item.chatId ? { chatId: item.chatId } : {}),
+			...(item.refEntry && item.itemId ? { refItemId: item.itemId } : {})
 		};
 	}
 	/**
@@ -6307,6 +6532,26 @@
 		// R22 round 30 B1: THE UNSAVED-CHANGES GUARD lives in `$lib/sceneOpenGuard` — one
 		// copy for both authoring routes into a scene replace (this card, and the peers
 		// popover's "Go to"). Its header carries the reasoning that used to sit here.
+		// 56 C13 (addendum d, kept by e): A GUEST OPENING ITS OWN LIBRARY SCENE asks first — the
+		// session's world is the host's, and nothing is ever swapped into it silently. Leaving
+		// opens the scene on this device alone; staying takes the ordinary route (which asks
+		// share-or-private for a scene the session has never seen).
+		if ($sessionHost && !item.volumeItem && $sessionVolumes.length) {
+			const host = ($sessionVolumes[0] as any).host;
+			const answer = await showChoice({
+				title: 'Open "' + levelSceneName(item.name) + '"?',
+				message: "You're in " + host + "'s session. This scene is in your own Library.",
+				choices: [
+					{ value: 'leave', label: 'Leave the session and open it' },
+					{ value: 'stay', label: 'Bring a copy into this session' }
+				]
+			});
+			if (!answer) return;
+			if (answer === 'leave') {
+				(get(peers) as any)?.leaveSession?.();
+				await new Promise((r) => setTimeout(r, 300));
+			}
+		}
 		if (!(await guardSceneReplace(item.name))) return;
 		// R22 round 35 — SHARE IT, OR EDIT IT PRIVATELY? Asked ONLY when there are peers and
 		// only for a scene the session has never heard of; `askScenePrivacy` answers 'share'
@@ -6323,6 +6568,51 @@
 		// which is the name the scene saved itself under and the key the manifest uses.
 		await travelToLevel(item.hash, '', { private: mode === 'private', askModules: true, freshGame: true });
 	}
+	/** 56 C13: the session rows a Copy acts on — the selection when this card is in it, else the card */
+	function sessionRowsFor(item: any): any[] {
+		const sel = gridEntries
+			.filter((e: any) => e.kind === 'item' && e.item?.sessionItem && selectedIds.has(entryId(e)))
+			.map((e: any) => e.item);
+		return sel.some((r: any) => r.id === item.id) ? sel : [item];
+	}
+	/**
+	 * 56 C13 — OPEN A FILE FROM THE HOST'S SESSION, READ-ONLY. The bytes are pulled by hash from the
+	 * host (one confirm above ~50 MB) and handed to a viewer; nothing lands in the Library. Images and
+	 * video preview, text opens WITHOUT a Save; a scene, a model or a sound needs a Library id for its
+	 * viewer (the mounted-project rule), so those ask for Copy to my library — opening a scene here
+	 * would also swap the session's world, which the volume must never do.
+	 */
+	async function openSessionItem(item: any) {
+		const viewable = item.kind === 'image' || item.kind === 'video' || item.kind === 'text';
+		if (!viewable) {
+			showToast('Copy ' + item.name + ' to your library to open it (a ' + item.kind + ' viewer reads it from there)', [
+				{ label: 'Copy to my library', action: () => void copyOutOfVolume([item], activeLibraryFolder()) }
+			]);
+			return;
+		}
+		const blob = await (await sessionRuntime()).sessionVolumeBlob(item.volumeId, item.id);
+		if (!blob) {
+			showToast(item.name + ' did not arrive from ' + (item.volumeName ?? 'the host'));
+			return;
+		}
+		if (item.kind === 'text') {
+			openTextEditor({
+				title: item.name + ' — ' + (item.volumeName ?? 'session') + ' (read-only)',
+				code: await blob.text(),
+				readOnly: true,
+				onClose: () => gridEl?.focus()
+			});
+			return;
+		}
+		openFilePreview({
+			title: item.name,
+			kind: item.kind,
+			itemId: item.id,
+			name: item.name,
+			url: URL.createObjectURL(blob),
+			onClose: () => gridEl?.focus()
+		});
+	}
 	/**
 	 * P3: open a file that lives in a MOUNTED project. Its bytes come from the saved
 	 * payload (or, once copied in, from the mount's own buffer) — never from
@@ -6335,6 +6625,7 @@
 	 * every viewer work.
 	 */
 	async function openVolumeItem(item: any) {
+		if (item.sessionItem) return openSessionItem(item);
 		const blob = await volumeBlob(item.volumeId, item.id);
 		if (!blob) {
 			showToast(item.name + ' is not in the saved project any more');
@@ -6430,6 +6721,13 @@
 	}
 
 	async function openItem(item: any) {
+		// 56 C10: a `.tpchat` FILE (a download, a copy someone sent) joins the scene's chats and opens
+		if (!item.sceneEntry && !item.volumeItem && /\.tpchat$/i.test(item.name ?? '')) {
+			const id = await chatIdOfItem(item);
+			if (id) openChat(id);
+			else showToast(item.name + ' is not a chat this version can read');
+			return;
+		}
 		// P3: a file in a mounted project — its own opener, because its bytes are not in
 		// the library's blob store
 		if (item.volumeItem) {
@@ -6471,7 +6769,13 @@
 		if (item.sceneEntry) {
 			// derived Scene entries open live views (108): textures preview,
 			// scripts edit the NODE code (replicated via setNodeData)
-			if (item.kind === 'image' && item.dataUrl) openImagePreview({ title: item.name, url: item.dataUrl, onClose: () => gridEl?.focus() });
+			if (item.kind === 'tpchat' && item.chatId) openChat(item.chatId); // 56 C10
+			else if (item.kind === 'image' && item.dataUrl) openImagePreview({ title: item.name, url: item.dataUrl, onClose: () => gridEl?.focus() });
+			else if (item.kind === 'image' && item.refEntry && item.itemId) {
+				// 56 C8: a kept picture opens its References file
+				const backing = $explorerItems.find((i) => i.id === item.itemId);
+				if (backing) void openItem(backing);
+			}
 			else if (item.kind === 'text' && item.nodeId) {
 				// H1: the script node can live in any graph document; 36-code: its tab in the
 				// code workspace (a node bound to a file opens the FILE's tab)
@@ -6533,6 +6837,24 @@
 					url: URL.createObjectURL(blob),
 					onClose: () => gridEl?.focus()
 				});
+		} else if (item.kind === 'anim') {
+			// 57 M1: a clip PLAYS on the selected character (the drop's assign, without the drag)
+			const pick = selectedSet()[0];
+			if (!pick) {
+				showToast('Select a character, then double-click the clip — or drag it onto one');
+				return;
+			}
+			const { assignClipAsset } = await import('$lib/tpanim/clipAssets.js');
+			const { objectsGroup } = await import('../../stores/sceneStore.js');
+			const { hasAnimatedImport } = await import('$lib/animatedImports');
+			const group: any = get(objectsGroup);
+			let root = group?.getObjectByProperty('uuid', pick);
+			// the rig the selection belongs to; else (a parts model) its top-level object
+			let rig = root;
+			while (rig && !hasAnimatedImport(rig.uuid)) rig = rig.parent;
+			while (!rig && root && root.parent && root.parent !== group) root = root.parent;
+			const target = rig ?? root;
+			if (target) assignClipAsset(target.uuid, { hash: item.hash, name: item.name }, { play: true });
 		} else if (item.kind === 'object' && !item.packEntry) {
 			// R22 round 12 (user): "double click on 3d objects should open same preview as
 			// when opening image". ONE window for every kind, so the arrows walk from a
@@ -6765,7 +7087,7 @@
 								><Icon name={KIND_ICONS[item.kind] ?? 'package'} size={16} /></span
 							>
 						{/if}
-						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-scene' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === id)}
+						{#if (editing?.mode === 'rename' && editing.inGrid && (editing.cardId ?? editing.folderId) === id) || (editing?.mode === 'rename-item' && editing.itemId === id) || (editing?.mode === 'rename-scene' && editing.itemId === id) || (editing?.mode === 'rename-chat' && editing.itemId === id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item?.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === id)}
 							{@render cardEdit()}
 						{:else}
 							<span
@@ -7071,6 +7393,76 @@
 		{#snippet primary()}
 		<!-- folder tree (106.6); width/collapse/side owned by WindowShell (197) -->
 		<div id="explorer-tree" class="flex h-full flex-col text-xs" bind:clientHeight={treeColH}>
+			<!--
+				56 C13: THE HOST'S SESSION, one read-only root per connection, above everything (owner
+				decision 2026-10-28e). The banner says where you are and where a save goes; the row has
+				Save on host (editors; a viewer sees it disabled with the reason) and no unmount — leaving
+				the session is what unmounts it. Rows came on join; bytes only on Open / Copy.
+			-->
+			{#if $sessionVolumes.length}
+				<div id="explorer-sessions" class="flex shrink-0 flex-col gap-0.5 border-b border-border p-1">
+					{#each $sessionVolumes as vol (vol.id)}
+						<div class="session-banner rounded px-1.5 py-1 text-text-muted" data-session-banner={vol.id} role="status">
+							You're in {vol.host}'s session · saves go to {vol.host} ({vol.role === 'viewer' ? 'view-only: Copy to my library' : 'Save on host'})
+						</div>
+						<div class="flex items-center whitespace-nowrap">
+							<button
+								class="w-4 shrink-0 text-text-faint"
+								aria-label={expanded.has(volumeKey(vol.id)) ? 'Collapse' : 'Expand'}
+								onclick={() => toggleExpand(volumeKey(vol.id))}
+								>{vol.folders.length ? (expanded.has(volumeKey(vol.id)) ? '▾' : '▸') : ''}</button
+							>
+							<button
+								data-session-volume={vol.id}
+								class="min-w-0 flex-1 truncate rounded px-1.5 py-1 text-left {volScope?.volumeId === vol.id
+									? 'ex-tree-on'
+									: 'text-text-2 hover:bg-surface-hover'}"
+								title={vol.name + ' — read-only. Showing: ' + ((SHARE_SCOPE_LABELS as any)[vol.scope] ?? vol.scope) + ' (' + plural(vol.items.length, 'file') + ', ' + formatBytes(vol.items.reduce((n: number, i: any) => n + (i.size || 0), 0)) + '). Nothing is downloaded until you open or copy a file.'}
+								ondragover={(e) => dragOverInto(e, volumeKey(vol.id))}
+								ondragleave={() => (dropFolder = null)}
+								ondrop={(e) => dropInto(e, volumeKey(vol.id))}
+								onclick={() => openFolder(volumeKey(vol.id))}
+							>
+								<Icon name="users" size={16} class="mr-1.5 text-icon-image" aria-hidden="true" />{vol.name}
+							</button>
+							<button
+								id={'session-save-' + vol.id}
+								class="session-save shrink-0 rounded px-1 py-1 {vol.role === 'viewer'
+									? 'cursor-default text-text-faint'
+									: 'text-text-muted hover:bg-surface-hover hover:text-text-2'}"
+								disabled={vol.role === 'viewer'}
+								aria-label={'Save on host — ' + vol.host}
+								title={vol.role === 'viewer'
+									? "You're view-only in " + vol.host + "'s session — use Copy to my library instead"
+									: 'Save on host: save the session scene into ' + vol.host + "'s library"}
+								onclick={() => void sessionRuntime().then((m) => m.saveOnHost(vol.id))}><Icon name="save" size={16} aria-hidden="true" /></button
+							>
+						</div>
+						{#if expanded.has(volumeKey(vol.id))}
+							{#each mountTree(vol) as row (row.folder.id)}
+								<div class="flex items-center whitespace-nowrap" style="padding-left: {16 + row.depth * 14}px" role="treeitem" aria-selected={$activeFolder === row.folder.id} tabindex="-1">
+									<button
+										class="w-4 shrink-0 text-text-faint"
+										aria-label={row.hasChildren ? 'Expand or collapse' : 'No subfolders'}
+										onclick={() => toggleExpand(row.folder.id)}
+										>{row.hasChildren ? (expanded.has(row.folder.id) ? '▾' : '▸') : ''}</button
+									>
+									<button
+										data-vol-folder={row.folder.id}
+										class="flex-1 truncate rounded px-1.5 py-1 text-left {$activeFolder === row.folder.id
+											? 'ex-tree-on'
+											: 'text-text-2 hover:bg-surface-hover'}"
+										oncontextmenu={(e) => folderMenu(e, row.folder)}
+										onclick={() => openFolder(row.folder.id)}
+									>
+										<Icon name="folder" size={16} class="ico-folder mr-1.5" aria-hidden="true" />{row.folder.name}
+									</button>
+								</div>
+							{/each}
+						{/if}
+					{/each}
+				</div>
+			{/if}
 			<!--
 				R22 round 13 P3: MOUNTED PROJECTS, above Library and pinned there.
 
@@ -7379,7 +7771,7 @@
 						onclick={() => openFolder('scene')} ondblclick={toggleScene}><Icon name="globe" size={16} class="mr-1.5 text-text-muted" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
 					>
 					{#if sceneExpanded}
-					{#each ['audio', 'config', 'textures'] as sub}
+					{#each ['audio', 'config', 'textures', 'chats', 'references', 'generated'] as sub}
 						<button
 							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
 								? 'ex-tree-on'
@@ -7965,7 +8357,7 @@
 									<Icon name={KIND_ICONS[item.kind] ?? 'package'} size={32} />
 								</span>
 							{/if}
-							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-scene' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === item.id)}
+							{#if (editing?.mode === 'rename-item' && editing.itemId === item.id) || (editing?.mode === 'rename-scene' && editing.itemId === item.id) || (editing?.mode === 'rename-chat' && editing.itemId === item.id) || (editing?.mode === 'rename-prefab' && editing.prefabId === item.prefabId) || (editing?.mode === 'rename-prefab-folder' && editing.cardId === item.id)}
 								{@render cardEdit()}
 							{:else}
 								<!-- R22-R2: the plan asks for local items in a distinct colour. Drawn only
@@ -8534,7 +8926,7 @@
 				<Icon name="loader-circle" size={16} class="animate-spin" aria-hidden="true" /> Loading attribution…
 			</div>
 		{:else}
-			<div class="prose prose-invert prose-sm max-w-none">{@html packAttribHtml}</div>
+			<div class="prose prose-invert prose-sm max-w-none" use:safeHtml={packAttribHtml}></div>
 		{/if}
 		<div class="mt-3 flex justify-end">
 			<button class="ui-button-quiet" onclick={() => (packAttribModal = false)}>Close</button>

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { toggleExpand, fixLight } from '../stores/appStore.js';
 import { customGeometryBuilders } from '$lib/customGeometries';
 import { stampGeometryParams } from '$lib/geometryEdit';
@@ -10,13 +9,8 @@ import { stampFluidEmitter } from '$lib/sim/fluidEmitterObject.js';
 import { stampFlowPath } from '$lib/sim/flowPathObject.js';
 
 // RectAreaLight renders black on Standard/Physical materials until the
-// uniforms lib initializes — once per session is enough (79)
-let rectAreaReady = false;
-function initRectAreaUniforms() {
-    if (rectAreaReady) return;
-    rectAreaReady = true;
-    RectAreaLightUniformsLib.init();
-}
+// uniforms lib initializes — once per session is enough (79; lightSnapshot.js)
+import { ensureRectAreaUniforms as initRectAreaUniforms } from '$lib/lightSnapshot';
 import { notifyExternalMove, noteObjectPose } from '$lib/flowRuntime';
 import { globalScene, objectsGroup, TControls, lockedObjects, selectedObject, selectedObjects, pokeScene } from '../stores/sceneStore.js';
 // 27-A: a transform off the wire is sanitised before it reaches the scene graph

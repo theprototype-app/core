@@ -119,9 +119,11 @@ h.run(async () => {
 		for (const conn of Object.values(peer.connections)) {
 			if (conn.__f2) continue;
 			const orig = conn.send.bind(conn);
-			conn.send = (m) => {
+			// pass `chunked` through: peerjs re-sends each chunk of a big message as send(chunk, true),
+			// and dropping the flag re-chunks the chunk until the stack overflows (a test-made page error)
+			conn.send = (m, ...rest) => {
 				if (m?.type === 'matpresetpart') window.__parts++;
-				return orig(m);
+				return orig(m, ...rest);
 			};
 			conn.__f2 = true;
 		}

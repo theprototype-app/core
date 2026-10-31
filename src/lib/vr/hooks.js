@@ -47,7 +47,7 @@ export function registerPanelGroupProvider(fn) {
 		if (i >= 0) panelGroupProviders.splice(i, 1);
 	};
 }
-/** @type {{start?: (i: number) => boolean, end?: (i: number) => boolean, swallow?: () => boolean}[]} */
+/** @type {{start?: (i: number) => boolean, end?: (i: number) => boolean, swallow?: (i: number) => boolean}[]} */
 const triggerHooks = [];
 /** Trigger (select) hooks: `start` may consume a selectstart, `end` a
  * selectend, `swallow` eats the trailing 'select' click (Scene.svelte calls
@@ -91,15 +91,59 @@ export function vrModuleTriggerEnd(index) {
 		}
 	});
 }
-/** @returns {boolean} */
-export function vrModuleSelectSwallowed() {
+/** 52-browser: `index` = the slot whose 'select' this is (-1 when the caller does not know), so a hook
+ * can claim the select of ONE controller. NOTE the order differs by runtime: a headset fires selectstart on
+ * press and select + selectend on release, while IWER (the e2e headset) fires select + selectstart on press.
+ * @param {number} [index] @returns {boolean} */
+export function vrModuleSelectSwallowed(index = -1) {
 	return triggerHooks.some((h) => {
 		try {
-			return !!h.swallow?.();
+			return !!h.swallow?.(index);
 		} catch {
 			return false;
 		}
 	});
+}
+/** @type {{start?: (i: number) => boolean, end?: (i: number) => boolean}[]} */
+const gripHooks = [];
+/** 52-browser: grip (squeeze) hooks — `start` may CONSUME a squeeze before anything grabs (a ghost
+ * the grip cancels, a wrist panel the grip lifts off), `end` its release. The sleeve's trigger hooks,
+ * one button over. @param {{start?: any, end?: any}} hooks @returns {() => void} */
+export function registerGripHooks(hooks) {
+	gripHooks.push(hooks);
+	return () => {
+		const i = gripHooks.indexOf(hooks);
+		if (i >= 0) gripHooks.splice(i, 1);
+	};
+}
+/** which slots a grip hook took (its release goes to the hooks too) */
+const gripClaims = [false, false];
+/** @param {number} index @returns {boolean} */
+export function vrModuleGripStart(index) {
+	const claimed = gripHooks.some((h) => {
+		try {
+			return !!h.start?.(index);
+		} catch (error) {
+			console.log('VR grip hook failed', error);
+			return false;
+		}
+	});
+	gripClaims[index] = claimed;
+	return claimed;
+}
+/** @param {number} index @returns {boolean} */
+export function vrModuleGripEnd(index) {
+	const claimed = !!gripClaims[index];
+	gripClaims[index] = false;
+	const taken = gripHooks.some((h) => {
+		try {
+			return !!h.end?.(index);
+		} catch (error) {
+			console.log('VR grip hook failed', error);
+			return false;
+		}
+	});
+	return claimed || taken;
 }
 /** @type {((object: any, before: any) => boolean)[]} K2: grip-release interceptors */
 export const gripDropHooks = [];

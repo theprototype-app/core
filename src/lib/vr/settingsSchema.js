@@ -36,7 +36,7 @@ import { pivotMode } from '../multiTransform'; // 37 R1: the selection's pivot p
 import { openVRKeyboard } from '../vrKeyboard';
 import { renderer } from './core.js';
 import { applyVRFrameRate } from './input.js';
-import { vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrSnapAngleLast, vrWorldSnap, vrOneHanded, clampHeight, SMOOTH_SPEEDS, SNAP_ANGLES, HEIGHT_LIMIT } from './prefs.js';
+import { vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrSnapAngleLast, vrWorldSnap, vrBothGripsWorld, vrOneHanded, clampHeight, SMOOTH_SPEEDS, SNAP_ANGLES, HEIGHT_LIMIT } from './prefs.js';
 import { recenterView } from './locomotion.js'; // 53 (A7)
 import { vrHudPlacement, vrHudSize, vrHudHints, setVrHudPlacement, setVrHudSize, setVrHudHints } from '../vrHudPrefs';
 import { vrBindings, resetBindings, mirrorBindings, isLeftHanded, VR_ACTIONS, CONTROLS_FOR, bindingOf, setBinding, actionInfo, controlName } from './bindings.js';
@@ -254,7 +254,23 @@ export const VR_SETTINGS = [
 		note: 'Rigid: the controller is the handle (the stick reels and scales)'
 	},
 	// 37 R10: the two-grip world gesture's steps (worldSnap.js)
-	{ id: 'worldSnap', page: 'controls', label: 'World grab snapping', icon: 'magnet', kind: 'toggle', get: () => get(vrWorldSnap), set: (v) => vrWorldSnap.set(!!v), keywords: ['world grab', 'scale', 'rotate', 'detent', 'steps', 'two grips'], note: 'Both grips: the world turns in 15° steps and sticks at 1/2/5/10× either way' },
+	{ id: 'worldSnap', page: 'controls', label: 'World grab snapping', icon: 'magnet', kind: 'toggle', get: () => get(vrWorldSnap), set: (v) => vrWorldSnap.set(!!v), keywords: ['world grab', 'scale', 'rotate', 'detent', 'steps', 'two grips'], note: 'Both grips: the world turns in 15° steps and sticks at 1:50 · 1:10 · 1:5 · 1:2 · 1:1 · 2× · 5× · 10×' },
+	// 52 (V5): the universal world grab — both grips are the world even over objects (Open Brush / Gravity Sketch)
+	{
+		id: 'bothGripsWorld',
+		page: 'controls',
+		label: 'Both grips scale the world',
+		icon: 'maximize',
+		kind: 'choice',
+		options: [
+			{ value: 'always', label: 'Always' },
+			{ value: 'emptyAir', label: 'Only in empty air' }
+		],
+		get: () => get(vrBothGripsWorld),
+		set: (v) => vrBothGripsWorld.set(v === 'emptyAir' ? 'emptyAir' : 'always'),
+		keywords: ['world grab', 'miniature', 'scale', 'two grips', 'zoom'],
+		note: 'Always: squeeze both grips anywhere to scale, turn and move the world; a held object scales only once it has moved'
+	},
 	{ id: 'remap', page: 'controls', label: 'Remap buttons', icon: 'keyboard', kind: 'action', run: () => openVRSettingsPage('buttons'), desktop: false },
 	{ id: 'bindingsReset', page: 'controls', label: 'Reset buttons', icon: 'refresh-cw', kind: 'action', run: () => (resetBindings(), showToast('VR buttons reset to the defaults')), desktop: false },
 	// ---- Display
@@ -471,7 +487,7 @@ export function activateVRSetting(id, dir = 1) {
 export const vrSettingsTick = writable(0);
 /** 36-vr-ai (B9): what the in-headset Search page filters by (typed on the VR keyboard) */
 export const vrSettingsQuery = writable('');
-const watched = [vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrFlying, vrMenuHand, vrMenuHold, vrGrabStyle, vrTargetHz, vrStatsOpen, peerHandStyle, vrPassthrough, vrWireframeSelection, vrVertexHold, vrSleeveEnabled, perfStatsShown, vrMicMode, vrFaceCap, vrVertexCap, vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrWorldSnap, vrOneHanded, vrBindings, vrSettingsQuery];
+const watched = [vrSnapAngle, vrMirrorSnapTurn, vrTeleportEnabled, vrFlying, vrMenuHand, vrMenuHold, vrGrabStyle, vrTargetHz, vrStatsOpen, peerHandStyle, vrPassthrough, vrWireframeSelection, vrVertexHold, vrSleeveEnabled, perfStatsShown, vrMicMode, vrFaceCap, vrVertexCap, vrSmoothTurn, vrSmoothTurnSpeed, vrComfortVignette, vrStance, vrHeightOffset, vrWorldSnap, vrBothGripsWorld, vrOneHanded, vrBindings, vrSettingsQuery];
 /** one derived over every watched store: any change re-renders whatever shows a setting */
 let version = 0;
 export const vrSettingsVersion = derived([vrSettingsTick, ...watched], () => ++version);

@@ -100,8 +100,8 @@ h.run(async () => {
 		`base ring: Settings ▸ replaces System ▸ (${registry.root.join(',')})`
 	);
 	h.check(
-		registry.tools.join(',') === 'tool:select,tool:box,tool:draw,ping,physics,nav:profile,ai',
-		`Tools: Select / Box select / Draw mode / Ping / Simulate physics / Profile ▸ / AI (1.24 plan F) (${registry.tools.join(',')})`
+		registry.tools.join(',') === 'tool:select,tool:box,tool:draw,measure:tool,ping,physics,nav:profile,playhere,nav:people,ai,logic',
+		`Tools: Select / Box select / Draw mode / Measure (52 V1) / Ping / Simulate physics / Profile ▸ / Play here (60 Q1) / People ▸ (55 A9) / AI (1.24 plan F) / Logic (74 VH1) (${registry.tools.join(',')})`
 	);
 	h.check(
 		registry.settings.slice(0, 5).join(',') === 'nav:settings:comfort,nav:settings:body,nav:settings:controls,nav:settings:display,nav:settings:editing' &&
@@ -112,7 +112,7 @@ h.run(async () => {
 	);
 	h.check(registry.system.length === 0, 'no System ring is left (a module filing under "system" lands in Settings)');
 	h.check(registry.objectOps.includes('snap'), 'Selected ring keeps Snapping');
-	h.check(registry.addCount === 9 && registry.sceneHasEnv, `Add ring: 6 primitives + Terrain (37 R9) + Architecture ▸ (37 R3) + Prefabs (115) (${registry.addCount})`);
+	h.check(registry.addCount === 10 && registry.sceneHasEnv, `Add ring: 6 primitives + Terrain (37 R9) + Architecture ▸ (37 R3) + Prefabs (115) + Assets (52 V4) (${registry.addCount})`);
 	h.check(
 		registry.archRing.length === 12 && registry.archRing[0] === 'Wall' && registry.archRing.includes('Stairs (spiral)'),
 		`Architecture ▸ ring = the desktop Add menu's 12 pieces (${registry.archRing.join(', ')})`

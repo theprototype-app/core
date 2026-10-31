@@ -20,18 +20,26 @@ on:
   push:
     branches: [main, release/next]
   workflow_call:
+    inputs:
+      # deps-auto: deps.yml runs the gate as `parts` parallel jobs, this one = `part` (scripts/perf-games.cjs --part)
+      part:
+        type: number
+        default: 0
+      parts:
+        type: number
+        default: 1
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: perf-budget-${{ github.ref }}
+  group: perf-budget-${{ github.ref }}-${{ inputs.part }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   budget:
-    name: perf-budget
+    name: perf-budget${{ inputs.part && format(' {0}/{1}', inputs.part, inputs.parts) || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
@@ -91,13 +99,14 @@ jobs:
           APP_URL: https://localhost:5173/
           PERF_SCENES_DIR: ${{ runner.temp }}/perf-deps/scenes
           PERF_MODULES_DIR: ${{ runner.temp }}/perf-deps/modules
-        run: node scripts/perf-games.cjs --check --label ci --out perf/out
+          PART: ${{ inputs.part && format('{0}/{1}', inputs.part, inputs.parts) || '' }}
+        run: node scripts/perf-games.cjs --check --label ci${PART:+-${PART%/*}} --out perf/out ${PART:+--part $PART}
 
       - name: the table
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: perf-budget
+          name: perf-budget${{ inputs.part && format('-{0}', inputs.part) || '' }}
           path: perf/out/
           if-no-files-found: ignore
 

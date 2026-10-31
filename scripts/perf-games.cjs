@@ -54,6 +54,9 @@ const flag = (name) => argv.includes('--' + name);
 // 34 B2 `--check`: THE BUDGET GATE (see the header of perfBudget.cjs and perf/README.md) —
 // counts only, in ONE pinned profile, games AND levels, judged against perf/budgets.json;
 // exit 1 when red. `--games-only` / `--levels-only` narrow it, `--budgets <file>` swaps the file.
+// deps-auto `--part k/n`: this run measures part k of n (deterministic, balanced by measured cost — a game
+// ~100 s, a level ~60 s + ~80 s per viewpoint on a runner), so a workflow can run the gate as n parallel jobs.
+// A part judges only what it measured (an allow entry for a target it skipped is not "stale").
 const CHECK = flag('check');
 const budgetLib = require('./perfBudget.cjs');
 const BUDGETS = CHECK ? budgetLib.loadBudgets(arg('budgets', budgetLib.BUDGETS_FILE)) : null;
@@ -314,7 +317,24 @@ async function runCheck() {
 	const pick = (slug) => !ONLY.length || ONLY.includes(slug);
 	const { checkLevel, VIEWS } = require('./perf-levels.cjs');
 	const games = levelsOnly ? [] : (index.games || []).filter((g) => pick(g.slug)).map((g) => ({ slug: g.slug, title: g.title, scene: g.scene, modules: g.modules || [] }));
-	const levels = gamesOnly ? [] : (index.templates || []).filter((t) => VIEWS[t.slug] && pick(t.slug));
+	let levels = gamesOnly ? [] : (index.templates || []).filter((t) => VIEWS[t.slug] && pick(t.slug));
+	const part = /^(\d+)\/(\d+)$/.exec(arg('part', '') || '');
+	if (part) {
+		const [k, n] = [Number(part[1]), Number(part[2])];
+		/** @type {{kind: string, slug: string, cost: number}[]} */
+		const items = [...games.map((g) => ({ kind: 'game', slug: g.slug, cost: 100 })), ...levels.map((t) => ({ kind: 'level', slug: t.slug, cost: 60 + 80 * VIEWS[t.slug].length }))];
+		items.sort((a, b) => b.cost - a.cost || (a.slug < b.slug ? -1 : 1));
+		const load = Array(n).fill(0);
+		const mine = new Set();
+		for (const it of items) {
+			const best = load.indexOf(Math.min(...load));
+			load[best] += it.cost;
+			if (best === k - 1) mine.add(it.kind + ':' + it.slug);
+		}
+		games.splice(0, games.length, ...games.filter((g) => mine.has('game:' + g.slug)));
+		levels = levels.filter((t) => mine.has('level:' + t.slug));
+		console.log(`part ${k}/${n}: ${games.length} games, ${levels.length} levels`);
+	}
 	if (!games.length && !levels.length) {
 		console.error('budget gate: nothing to measure (scenes ' + (SCENES_DIR || SCENES_REPO + '@' + SCENES_REF) + ')');
 		process.exit(2);

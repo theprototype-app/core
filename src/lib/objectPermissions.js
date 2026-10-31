@@ -78,6 +78,21 @@ export function shareObject(object, groupUuid = null) {
 	return true;
 }
 
+/** An EDITOR moves a shared object to Local objects: it is deleted for peers and kept here,
+ * marked local-only (the object list's drop-to-local; extracted in fix-batch-2 so the
+ * drafts suite drives the real path) @param {any} object */
+export function moveToLocalObjects(object) {
+	if (!object) return;
+	/** @type {any} */
+	const peer = get(peers);
+	try {
+		peer?.send({ type: 'delete', uuid: object.uuid, peerId: peer?.peer?.id });
+	} catch (e) {
+		console.warn(e);
+	}
+	markLocalOnly(object);
+}
+
 /** Can the LOCAL user move/edit this object?
  *  - no roles plugin -> yes
  *  - viewer -> only their own local-only objects
@@ -126,4 +141,98 @@ export function gateCreationBroadcast(/** @type {any} */ data) {
 	// no per-creation toast — the "Local objects" section (auto-shown on the first one)
 	// is the indicator.
 	return true;
+}
+
+/** fix-batch-2 (1.45.1): the local-only objects that are NOT inside another local-only one
+ * (a local group carries its children) @returns {any[]} */
+export function localOnlyRoots() {
+	const group = get(objectsGroup);
+	/** @type {any[]} */
+	const out = [];
+	/** @param {any} o */
+	const walk = (o) => {
+		for (const child of o?.children ?? []) {
+			if (isLocalOnly(child)) out.push(child);
+			else walk(child);
+		}
+	};
+	walk(group);
+	return out;
+}
+
+/** fix-batch-2 (1.45.1): lift every local-only object out of the scene tree so a published
+ * or exported file carries only what peers can see; `restore()` puts each back in its slot.
+ * The children arrays are spliced directly (no removed/added events — the transientObjects
+ * park precedent). Every reader keyed on "is this uuid in the scene" (graph/shader pruning,
+ * the thumbnail) follows for free. Pair it like `parkAnimatedAtBase`: restore in the same
+ * place the park is undone (an async GLTF export restores in its callback).
+ * @returns {{excluded: number, uuids: Set<string>, restore: () => void}} */
+export function liftLocalObjects() {
+	/** @type {{parent: any, index: number, object: any}[]} */
+	const lifted = [];
+	for (const object of localOnlyRoots()) {
+		const parent = object.parent;
+		const index = parent?.children?.indexOf(object) ?? -1;
+		if (index < 0) continue;
+		parent.children.splice(index, 1);
+		lifted.push({ parent, index, object });
+	}
+	let done = false;
+	/** @type {Set<string>} */
+	const uuids = new Set();
+	for (const { object } of lifted) object.traverse((/** @type {any} */ o) => uuids.add(o.uuid));
+	return {
+		excluded: lifted.length,
+		uuids,
+		restore: () => {
+			if (done) return;
+			done = true;
+			for (let i = lifted.length - 1; i >= 0; i--) {
+				const { parent, index, object } = lifted[i];
+				parent.children.splice(index, 0, object);
+			}
+		}
+	};
+}
+
+/** fix-batch-2: run a SYNCHRONOUS payload build with the local-only objects lifted out
+ * (put back before this returns, even on a throw)
+ * @template T @param {() => T} fn @returns {{result: T, excluded: number}} */
+export function withoutLocalObjects(fn) {
+	const lift = liftLocalObjects();
+	try {
+		return { result: scrubWorkspace(fn(), lift.uuids), excluded: lift.excluded };
+	} finally {
+		lift.restore();
+	}
+}
+
+/** A session payload's `workspace` (#20 P5: where the author left off) names the SELECTION and
+ * any open edit session by uuid — a lifted object must not ride along there either.
+ * @template T @param {T} payload @param {Set<string>} uuids @returns {T} */
+function scrubWorkspace(payload, uuids) {
+	/** @type {any} */
+	const p = payload;
+	const ws = p?.workspace;
+	if (!uuids.size || !ws || typeof ws !== 'object') return payload;
+	/** @type {any} */
+	const next = { ...ws };
+	if (Array.isArray(ws.selection)) next.selection = ws.selection.filter((/** @type {string} */ u) => !uuids.has(u));
+	if (ws.edit?.uuid && uuids.has(ws.edit.uuid)) delete next.edit;
+	return /** @type {T} */ ({ ...p, workspace: next });
+}
+
+/** fix-batch-2: the one line a publish/export says when it left local objects out
+ * @param {number} excluded */
+export function noteLocalObjectsExcluded(excluded) {
+	if (excluded > 0)
+		showToast(
+			excluded +
+				(excluded === 1 ? ' local object was' : ' local objects were') +
+				' not included — share ' +
+				(excluded === 1 ? 'it' : 'them') +
+				' from the object list to include ' +
+				(excluded === 1 ? 'it' : 'them') +
+				'.'
+		);
 }

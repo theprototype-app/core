@@ -65,7 +65,15 @@ h.run(async () => {
 				})();
 			})
 	);
-	h.check(restored === '3b4048', `exiting restores the preset sky (#${restored})`);
+	// the preset's OWN background, not a copy of it (c2005ce2 retuned the palette and this went stale)
+	const presetSky = await A.page.evaluate(
+		() =>
+			new Promise((resolve) => {
+				const env = window.__stores.environment;
+				env.environment.subscribe((e) => resolve(String(env.ENVIRONMENT_PRESETS[e?.preset ?? 'studio']?.background ?? '').replace('#', '').toLowerCase()))();
+			})
+	);
+	h.check(restored === presetSky, `exiting restores the preset sky (#${restored}, preset #${presetSky})`);
 	const envAfter = await A.page.evaluate(
 		() =>
 			new Promise((resolve) => {

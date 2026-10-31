@@ -17,6 +17,7 @@
 	import ExportPanel from './ExportPanel.svelte';
 	import ExportSettingsSection from './ExportSettingsSection.svelte';
 	import GallerySubmitPanel from './GallerySubmitPanel.svelte';
+	import LicenceWarnings from './LicenceWarnings.svelte';
 
 	const TABS = [
 		{ id: 'publish', label: 'Publish' },
@@ -56,6 +57,8 @@
 	{#if $publishExportOpen}
 		{#if $publishExportTab === 'publish'}
 			<div id="publish-tab" role="tabpanel" aria-labelledby="publish-export-tab-publish">
+				<!-- 57 M7: what the scene's licences ask, above the publish flow (warn, never block) -->
+				<LicenceWarnings where="publish" id="licence-warnings-publish" />
 				{#if $publishSlot}
 					<CloudSlot mount={$publishSlot} />
 				{:else}
@@ -66,9 +69,9 @@
 				{/if}
 			</div>
 		{:else if $publishExportTab === 'export'}
-			<div role="tabpanel" aria-labelledby="publish-export-tab-export"><ExportPanel /></div>
+			<div role="tabpanel" aria-labelledby="publish-export-tab-export"><LicenceWarnings where="export" id="licence-warnings-export" /><ExportPanel /></div>
 		{:else if $publishExportTab === 'gallery'}
-			<div role="tabpanel" aria-labelledby="publish-export-tab-gallery"><GallerySubmitPanel /></div>
+			<div role="tabpanel" aria-labelledby="publish-export-tab-gallery"><LicenceWarnings where="publish" id="licence-warnings-gallery" /><GallerySubmitPanel /></div>
 		{:else}
 			<div role="tabpanel" aria-labelledby="publish-export-tab-settings"><ExportSettingsSection /></div>
 		{/if}

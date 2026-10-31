@@ -16,10 +16,10 @@
 		"textureMB": 64
 	},
 	"targets": {
-		"comment": "46 B1/B2 — the editor's budget chip and Statistics ▸ Budget judge a scene against ONE of these (picked in the chip's menu, LOCAL). Quest's four gated metrics are `defaults` above and are NOT repeated here (perfBudget.cjs refuses a copy, so the chip and the gate cannot disagree); the gate never reads this block. shadowLights / shadowCasters are meter-only rows; shadowCasters counts shadow DRAWS (casters x shadow lights) and is held to the draw-call budget, since every one is a call. Phone and desktop are starting values, not gated: phone = sceneBudget's measured VR/mobile green ceilings, desktop = 26-E's measured desktop green ceilings (owed on device).",
+		"comment": "46 B1/B2 — the editor's budget chip and Statistics ▸ Budget judge a scene against ONE of these (picked in the chip's menu, LOCAL). Quest's four gated metrics are `defaults` above and are NOT repeated here (perfBudget.cjs refuses a copy, so the chip and the gate cannot disagree); the gate never reads this block. shadowLights / shadowCasters are meter-only rows; shadowCasters counts shadow DRAWS (casters x shadow lights) and is held to the draw-call budget, since every one is a call. Phone and desktop are starting values, not gated: phone = sceneBudget's measured VR/mobile green ceilings, desktop = 26-E's measured desktop green ceilings (owed on device) test-health-1 (2026-10-24) reconciled them with cloud plans/core/pending/research/quest-phone-perf.md §1: phone = its MID phone row (calls 100-150 [3P] -> 150, shadow draws held to that; 500k triangles, 256 MB, one shadow map already inside it), desktop texture memory 512 -> 1024 MB (its 1-2 GB [U]). Quest is unchanged: 150 calls is inside <200 [M] / 100-150 [3P], and its triangles / texture MB are STRICTER than the research's [U] web estimates (500-750k, <=512 MB), which say measure on device.",
 		"quest": { "label": "Quest / VR", "short": "Quest", "shadowLights": 1, "shadowCasters": 150 },
-		"phone": { "label": "Phone", "short": "Phone", "calls": 300, "triangles": 500000, "lights": 3, "textureMB": 256, "shadowLights": 1, "shadowCasters": 300 },
-		"desktop": { "label": "Desktop", "short": "Desktop", "calls": 2000, "triangles": 4000000, "lights": 8, "textureMB": 512, "shadowLights": 4, "shadowCasters": 2000 }
+		"phone": { "label": "Phone", "short": "Phone", "calls": 150, "triangles": 500000, "lights": 3, "textureMB": 256, "shadowLights": 1, "shadowCasters": 150 },
+		"desktop": { "label": "Desktop", "short": "Desktop", "calls": 2000, "triangles": 4000000, "lights": 8, "textureMB": 1024, "shadowLights": 4, "shadowCasters": 2000 }
 	},
 	"games": {},
 	"levels": {},

@@ -175,13 +175,48 @@ export function bundle(extra = {}) {
 	return out;
 }
 
+/** @type {Set<() => string[]>} */
+const secretSources = new Set();
+
+/**
+ * 69 T2: a module holding credentials (AI / mesh / speech keys) registers a reader of the
+ * CURRENT values, and every one of them is replaced by `[redacted]` in the bundle text — an
+ * error line or a section may quote a URL or a header, and the bundle is made to be pasted.
+ * @param {() => string[]} read @returns {() => void} unregister
+ */
+export function registerSecretSource(read) {
+	secretSources.add(read);
+	return () => secretSources.delete(read);
+}
+
+/** Replace every registered secret (6+ chars) in `text`. @param {string} text */
+export function redactSecrets(text) {
+	/** @type {string[]} */
+	const secrets = [];
+	for (const read of secretSources) {
+		try {
+			for (const value of read() ?? []) if (typeof value === 'string' && value.trim().length >= 6) secrets.push(value.trim());
+		} catch {
+			// a source that throws redacts nothing; the bundle still goes out
+		}
+	}
+	let out = text;
+	for (const secret of secrets.sort((a, b) => b.length - a.length)) {
+		out = out.split(secret).join('[redacted]');
+		// JSON.stringify escapes quotes and backslashes; cover the escaped spelling too
+		const escaped = JSON.stringify(secret).slice(1, -1);
+		if (escaped !== secret) out = out.split(escaped).join('[redacted]');
+	}
+	return out;
+}
+
 /** The bundle as the text that goes on the clipboard. @param {Record<string, any>} [extra] */
 export function bundleText(extra = {}) {
 	try {
-		return JSON.stringify(bundle(extra), null, 2);
+		return redactSecrets(JSON.stringify(bundle(extra), null, 2));
 	} catch (error) {
 		// the bundle itself must never be the thing that fails
-		return 'diagnostics bundle failed: ' + String(error) + '\n' + lines().join('\n');
+		return redactSecrets('diagnostics bundle failed: ' + String(error) + '\n' + lines().join('\n'));
 	}
 }
 

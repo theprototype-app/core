@@ -48,6 +48,13 @@ two-peer session on your desk.
 - Screenshots/clips for anything visual. Playwright can capture them.
 - Look at issues labeled **good first issue** if you want a scoped entry point.
 
+## Dependency updates
+
+Dependabot opens its PRs against the `deps` branch, where `deps.yml` runs the full gate plus the e2e
+battery and merges patch / development-only / Actions updates by itself. Please do not bump
+dependencies in a feature PR; if one needs a newer version, say so in the PR and it goes through
+`deps`. The whole loop is in [RELEASING.md](RELEASING.md#dependency-updates-the-deps-branch).
+
 ## Questions
 
 GitHub Discussions for ideas/help, issues for bugs (template asks for repro

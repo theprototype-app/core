@@ -115,6 +115,12 @@ describe('fps + vignette', () => {
 		expect(easeVignette(0, 1, 1 / 72)).toBeGreaterThan(0);
 		expect(easeVignette(1, 0, 10)).toBe(0);
 	});
+	it('52 (V5): the world gesture rings it too — a steady scale/turn, not a trembling hand', () => {
+		expect(vignetteTarget(0, 0, 1 / 72, 0.05)).toBe(0);
+		expect(vignetteTarget(0, 0, 1 / 72, 0.53)).toBeCloseTo(0.5);
+		expect(vignetteTarget(0, 0, 1 / 72, 3)).toBe(1);
+		expect(vignetteTarget(0.8, 0, 1 / 72, 0)).toBe(1);
+	});
 });
 
 describe('33 (G3): level tabs + the headset grid pages', () => {

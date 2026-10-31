@@ -8,6 +8,7 @@
 //       `@media (prefers-reduced-motion)` rule stands down — the build transform re-keyed it) and "Reduce" works on
 //       an OS that is not; CSS motion goes instant and the camera fly-to lands in one frame.
 // Counterfactual (v1.39.0): no #ui-scale / #motion rows, no data-motion, a media-query-only reduced motion — red.
+//   fix-batch-1 #23: at 150 % on the folded N6 the Settings / Inspector / object list headers are one row.
 const h = require('./helpers.cjs');
 
 /** @param {any} page */
@@ -232,6 +233,43 @@ h.run(async () => {
 	const fdlg = await box(fp, 'dialog.settings-dialog');
 	const docW = await fp.evaluate(() => document.documentElement.scrollWidth);
 	h.check(inside(fdlg, FOLD) && docW <= FOLD.width, `folded 150 %: Settings fits the screen, no sideways overflow (${JSON.stringify(fdlg)}, doc ${docW})`);
+
+	// fix-batch-1 #23 (53-int Q4): the compact header — at 150 % on the folded N6 (a ~260 px layout) the
+	// header stays ONE row with the ✕ on it: Settings' close used to sit on a second row, the Inspector's
+	// header took three, the object list's two. One row = the header is its 48 px minimum (× 1.5) and the
+	// ✕'s vertical centre is inside the title's/label's box. COUNTERFACTUAL (4cd3dafc): 136 px each.
+	/** @param {string} root @param {string} titleSel */
+	const head = (root, titleSel) =>
+		fp.evaluate(
+			([r, t]) => {
+				const hd = [...document.querySelectorAll(`${r} .wc-head`)].find((e) => e.getBoundingClientRect().width > 0);
+				if (!hd) return null;
+				const b = hd.getBoundingClientRect();
+				const title = hd.querySelector(t)?.getBoundingClientRect();
+				const x = hd.querySelector('.wc-close')?.getBoundingClientRect();
+				const mid = x ? x.top + x.height / 2 : -1;
+				return { h: Math.round(b.height), w: Math.round(b.width), titleW: Math.round(title?.width ?? 0), sameRow: !!title && !!x && mid >= title.top && mid <= title.bottom, closeIn: !!x && x.right <= innerWidth + 1 };
+			},
+			[root, titleSel]
+		);
+	/** @param {string} what @param {any} r */
+	const oneRow = (what, r) =>
+		h.check(!!r && r.h <= 48 * 1.5 + 1 && r.sameRow && r.closeIn && r.titleW >= 40, `folded 150 %: the ${what} header is one row, ✕ beside the title, on screen (${JSON.stringify(r)})`);
+	oneRow('Settings', await head('dialog.settings-dialog', '.wc-title'));
+	await closeAll(fp);
+	await fp.evaluate(() => {
+		const s = /** @type {any} */ (window).__stores;
+		s.inspectorKind?.set?.('scene');
+		s.inspectorClose.set(false);
+	});
+	await fp.waitForSelector('#inspector', { state: 'visible', timeout: 15000 }).catch(() => {});
+	await fp.waitForTimeout(500);
+	oneRow('Inspector', await head('#inspector', '.wc-title'));
+	await closeAll(fp);
+	await fp.evaluate(() => /** @type {any} */ (window).__stores.objectListClose.set(false));
+	await fp.waitForTimeout(900);
+	oneRow('object list', await head('#object-list', '.wc-label'));
+	await fp.evaluate(() => /** @type {any} */ (window).__stores.objectListClose.set(true));
 	h.check(h.pageErrors(F).length === 0, `folded: no page errors (${JSON.stringify(h.pageErrors(F)).slice(0, 200)})`);
 	await h.finish(browser);
 });

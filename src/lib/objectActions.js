@@ -635,7 +635,7 @@ function stripSelectionTint(source, clone) {
  * the spawner's entire point: thirty-two crates would be thirty-two replicated graph
  * documents, into every peer and every save path, for objects that exist for one run.
  * @param {string=} uuid - defaults to the selected object
- * @param {{select?: boolean, history?: boolean, transient?: boolean, at?: number[], carryCables?: boolean}=} options
+ * @param {{select?: boolean, history?: boolean, transient?: boolean, at?: number[], carryCables?: boolean, name?: string}=} options
  *   select:false leaves the selection alone (duplicateSelection selects the whole clone
  *   SET once, at the end)
  */
@@ -665,7 +665,9 @@ export function duplicateObject(uuid, options = {}) {
 	if (shareMaterial) linkMaterials(source, clone);
 	const cloneNodes = collectTree(clone);
 	cloneNodes.forEach((node) => (node.uuid = crypto.randomUUID()));
-	clone.name = (source.name || source.type) + ' copy';
+	// 51 union: a caller may name the copy (scatter's To objects keeps the model's own name) — set BEFORE the
+	// `duplicate` message, which carries the name to peers
+	clone.name = typeof options.name === 'string' && options.name ? options.name : (source.name || source.type) + ' copy';
 	if (Array.isArray(options.at)) clone.position.fromArray(options.at);
 	else {
 		clone.position.x += 0.5;

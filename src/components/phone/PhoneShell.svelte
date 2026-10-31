@@ -85,11 +85,11 @@
 	import { toggleViewportFocus } from '$lib/focusMode';
 	import { requestPlay, willEnterXR, willEnterAR, playAsItems } from '$lib/playMode';
 	// 50 R1: the AR table — a phone places the scene on a real table (Android Chrome, WebXR immersive-ar)
-	import { enterArTable, arTableEntry } from '$lib/arTable';
+	import { enterArTable, arTableEntry, arPlayItems } from '$lib/arTable';
 	import { AR_UNSUPPORTED_NOTE } from '$lib/arTableCore.js';
+	import { playHere, playHereItems } from '$lib/playHere'; // 60 Q1
 	import { visibleDockKey, DOCK_TITLES, dockMinimized, dockHeight } from '$lib/bottomDock';
 	import { micActive, pttActive, toggleMic } from '$lib/voiceChat';
-	import { explainMissing } from '$lib/tools/toolLinks.js';
 	import { canvasCenter } from '$lib/canvasRect';
 	import { statsOpen } from '$lib/sceneBudget';
 	// 46 B1: the budget chip's phone form (an item of the bar catalog — in More ▸ Tools & View by default)
@@ -442,10 +442,9 @@
 		const at = list.indexOf('play');
 		return [
 			...playAsItems(),
-			// 50 R1: only where it can work — elsewhere the More tile carries the note
-			...($arTableEntry === 'ready'
-				? [{ label: 'Play on a table (AR)', tooltip: 'Find a table through the camera and play the scene on it', action: () => enterArTable() }]
-				: []),
+			// 50 R1: only where it can work — elsewhere the More tile carries the note (VH2: + Join the room)
+			...arPlayItems(),
+			...playHereItems(), // 60 Q1
 			...($hudIsGame
 				? [
 						{ section: 'Game' },
@@ -463,9 +462,9 @@
 	}
 
 	// ---- the More sheet --------------------------------------------------------------
+	// 86-fix N1: always opens; with no provider the window offers Connect Claude or Settings ▸ AI
 	function openAi() {
 		phoneSheet.set(null);
-		if (explainMissing('assistant')) return; // 59 T5
 		aiAssistantHidden.set('');
 	}
 	/** close the shell's own sheet, then run (a destination opened from More replaces it) */
@@ -497,6 +496,8 @@
 	 * @type {Record<string, {label: string, short?: string, hint?: string, icon: string, run: () => void, pressed?: () => boolean, disabled?: () => boolean, badge?: () => number, dot?: () => string, note?: () => string}>} */
 	const ACTIONS = {
 		play: { label: 'Play', icon: 'play', run: fromMore(() => requestPlay()) },
+		// 60 Q1: Play from where the camera is (More ▸ Tools & View; placeable on the bar)
+		playhere: { label: 'Play here', short: 'Here', hint: 'Play here — start from this view', icon: 'map-pin', run: fromMore(() => playHere()) },
 		add: { label: 'Add', icon: 'plus', run: () => add() },
 		// 41b H1/H5: Objects, Configure Scene and Notes are dock tabs — the bar shows / minimizes them
 		objects: { label: 'Objects', icon: 'list', run: fromMore(() => phoneBarTap('objects')), pressed: () => $visibleDockKey === 'objects' && !$dockMinimized },
@@ -566,6 +567,19 @@
 				return $arTableEntry === 'ready' ? 'Place the scene on a real table through the camera, then play it' : AR_UNSUPPORTED_NOTE;
 			},
 			run: fromMore(() => enterArTable()),
+			disabled: () => $arTableEntry !== 'ready',
+			note: () => ($arTableEntry === 'unsupported' ? AR_UNSUPPORTED_NOTE : $arTableEntry === 'checking' ? 'Checking…' : '')
+		},
+		// VH2: the same session in ROOM mode — two floor taps and the phone sees the scene where the
+		// headsets colocated in this room see it (the same note where there is no immersive-ar)
+		arroom: {
+			label: 'Join room (AR)',
+			short: 'Room',
+			icon: 'users',
+			get hint() {
+				return $arTableEntry === 'ready' ? 'Stand in the room with a headset: tap the agreed point and a point along the agreed edge, and see the scene where they do' : AR_UNSUPPORTED_NOTE;
+			},
+			run: fromMore(() => enterArTable('room')),
 			disabled: () => $arTableEntry !== 'ready',
 			note: () => ($arTableEntry === 'unsupported' ? AR_UNSUPPORTED_NOTE : $arTableEntry === 'checking' ? 'Checking…' : '')
 		},

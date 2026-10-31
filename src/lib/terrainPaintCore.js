@@ -192,3 +192,58 @@ export function normalizeLayers(layers) {
 		};
 	});
 }
+
+// ---- 51 E4: per-terrain splat resolution --------------------------------------------------
+
+/** The resolutions the Inspector offers. 512² × 4 = 1 MB raw is the ceiling: a stroke streams
+ * the whole map as a preview (~5/s), and 1024² would be 4 MB per preview. */
+export const SPLAT_RES_CHOICES = Object.freeze([64, 128, 256, 512]);
+
+/**
+ * Resample a splat map to another resolution: each new texel samples the old map
+ * bilinearly at its centre (texel centres line up, so a 128 → 256 → 128 round trip lands
+ * back within a byte or two), then the four weights are re-normalised to sum to exactly 255
+ * — the invariant every reader relies on.
+ * @param {Uint8Array} bytes @param {number} res @param {number} next
+ * @returns {Uint8Array}
+ */
+export function resampleSplat(bytes, res, next) {
+	if (next === res) return bytes.slice();
+	const out = new Uint8Array(next * next * 4);
+	const at = (/** @type {number} */ i, /** @type {number} */ j, /** @type {number} */ c) =>
+		bytes[(Math.min(res - 1, Math.max(0, j)) * res + Math.min(res - 1, Math.max(0, i))) * 4 + c];
+	const w = [0, 0, 0, 0];
+	for (let j = 0; j < next; j++) {
+		const fy = ((j + 0.5) / next) * res - 0.5;
+		const j0 = Math.floor(fy);
+		const ty = fy - j0;
+		for (let i = 0; i < next; i++) {
+			const fx = ((i + 0.5) / next) * res - 0.5;
+			const i0 = Math.floor(fx);
+			const tx = fx - i0;
+			let sum = 0;
+			for (let c = 0; c < 4; c++) {
+				const top = at(i0, j0, c) * (1 - tx) + at(i0 + 1, j0, c) * tx;
+				const bot = at(i0, j0 + 1, c) * (1 - tx) + at(i0 + 1, j0 + 1, c) * tx;
+				w[c] = top * (1 - ty) + bot * ty;
+				sum += w[c];
+			}
+			const o = (j * next + i) * 4;
+			if (!(sum > 0)) {
+				out[o] = 255;
+				continue;
+			}
+			// round three channels, give the remainder to the largest so the sum is exact
+			let big = 0;
+			for (let c = 1; c < 4; c++) if (w[c] > w[big]) big = c;
+			let acc = 0;
+			for (let c = 0; c < 4; c++) {
+				if (c === big) continue;
+				out[o + c] = Math.round((w[c] / sum) * 255);
+				acc += out[o + c];
+			}
+			out[o + big] = 255 - acc;
+		}
+	}
+	return out;
+}

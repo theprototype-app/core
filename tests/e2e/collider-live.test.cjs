@@ -55,7 +55,16 @@ h.run(async () => {
 		window.__ball.userData.physics = { ...window.__ball.userData.physics, collider: 'box' };
 		window.__stores.physics.physicsShapeChanged(window.__ball.uuid);
 	});
-	await A.page.waitForTimeout(2500); // let the box scrub off the roll speed
+	// let the box scrub off the roll speed — by its SPEED, not a fixed 2500 ms (test-health-1): physics
+	// steps at most 8 x 1/60 s per frame, so on a software-GL page (~2-5 fps) 2.5 s of wall clock is
+	// well under a second of simulation and the box was still sliding (dx 0.87). A sphere collider
+	// keeps rolling down the ramp, so it never gets here.
+	const speed = () =>
+		A.page.evaluate(() => {
+			const v = window.__stores.physics.physicsDebug().find((b) => b.uuid === window.__ball.uuid)?.linvel;
+			return v ? Math.hypot(v.x, v.y, v.z) : null;
+		});
+	await h.eventually(speed, (v) => v !== null && v < 0.05, 'the box collider scrubs the roll to rest', 30000);
 	const still = await A.page.evaluate(async () => {
 		const x0 = window.__ball.position.x;
 		await new Promise((r) => setTimeout(r, 1200));

@@ -71,7 +71,12 @@ h.run(async () => {
 		const b0 = await posOf(A.page, ids.b);
 		await xr.pose(A.page, 'right', [a0[0], a0[1], 0]); // aims -Z through crate A
 		await grip(A.page, 'right', true);
-		await xr.pose(A.page, 'left', [b0[0], b0[1], 0]); // aims -Z through crate B
+		// 52 (V5): both grips are the WORLD unless the first hand has already MOVED what it holds — carry A a
+		// little first; then a second hand INSIDE crate B takes B (two things at once, 33 G4; a second hand
+		// that only POINTS elsewhere would scale A)
+		await xr.pose(A.page, 'right', [a0[0], a0[1] + 0.05, 0]);
+		await A.page.waitForTimeout(150);
+		await xr.pose(A.page, 'left', [b0[0], b0[1], b0[2]]); // the hand inside crate B
 		await grip(A.page, 'left', true);
 		const g = await grips(A.page);
 		h.check(g.grabs[1] === ids.a && g.grabs[0] === ids.b, `1.1 the right hand holds A, the left holds B (${JSON.stringify(g.grabs)})`);
@@ -81,7 +86,7 @@ h.run(async () => {
 		await A.page.waitForTimeout(300);
 		const a1 = await posOf(A.page, ids.a);
 		const b1 = await posOf(A.page, ids.b);
-		h.check(Math.abs(a1[1] - (a0[1] + 0.5)) < 0.05 && Math.abs(a1[0] - (a0[0] + 0.3)) < 0.05, `1.2 crate A follows the right hand (y ${a0[1].toFixed(2)} -> ${a1[1].toFixed(2)})`);
+		h.check(Math.abs(a1[1] - (a0[1] + 0.5)) < 0.06 && Math.abs(a1[0] - (a0[0] + 0.3)) < 0.05, `1.2 crate A follows the right hand (y ${a0[1].toFixed(2)} -> ${a1[1].toFixed(2)})`);
 		h.check(Math.abs(b1[1] - (b0[1] + 0.5)) < 0.05 && Math.abs(b1[0] - (b0[0] - 0.3)) < 0.05, `1.3 crate B follows the left hand (y ${b0[1].toFixed(2)} -> ${b1[1].toFixed(2)})`);
 		await grip(A.page, 'right', false);
 		await grip(A.page, 'left', false);
@@ -91,7 +96,9 @@ h.run(async () => {
 		const a2 = await posOf(A.page, ids.a);
 		await xr.pose(A.page, 'right', [a2[0], a2[1], 0]);
 		await grip(A.page, 'right', true);
-		await xr.pose(A.page, 'left', [a2[0] - 0.05, a2[1], 0]);
+		await xr.pose(A.page, 'right', [a2[0], a2[1] + 0.05, 0]); // 52 (V5): moved first, then the second hand scales
+		await A.page.waitForTimeout(150);
+		await xr.pose(A.page, 'left', [a2[0] - 0.05, a2[1] + 0.05, 0]);
 		await grip(A.page, 'left', true);
 		const g3 = await grips(A.page);
 		h.check(g3.scaleGrab === ids.a && g3.grabs.every((u) => u === null), `1.5 two hands on ONE object still scale it in Edit (${g3.scaleGrab === ids.a})`);

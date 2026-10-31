@@ -24,6 +24,7 @@
 	import { bindingOf } from '$lib/shortcuts';
 	import { floatSizeOf } from '$lib/docking';
 	import { sidebarTabItems, closeSidebarTab, floatSidebarTab, sidebarTabToDock } from '$lib/sidebarMenu';
+	import { tearOffAt } from '$lib/windows/panelPlaces.js';
 	import { stickyPanelHeads, toggleStickyHead } from '$lib/panelHeaderPrefs';
 	import {
 		SIDES,
@@ -119,6 +120,7 @@
 		showDropTarget(null);
 		if (!d) return;
 		suppressClick = true; // the click that ends a drag is not a tab press
+		if (tearOffAt(d.key, e)) return; // 70 W4: released outside the browser window — its own window there
 		const t = d.target;
 		if (!t) return;
 		if (t.kind === 'side') moveSidebarTab(d.key, t.side);

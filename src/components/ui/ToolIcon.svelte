@@ -289,6 +289,23 @@
 		'scatter-erase': {
 			base: ['M3 20h18'],
 			accent: ['M7 16l6-9 4 3-6 9h-3z', 'M13 19h7']
+		},
+		// 51 E4: edit the scattered instances — turn them, grow them, even them out, pick them
+		'scatter-rotate': {
+			base: ['M3 20h18', 'M12 16l-3 0 3-7 3 7z', 'M12 16v4'],
+			accent: ['M5.5 9.5a7 7 0 0 1 12.5-4.5', 'M18.5 2v3.5H15']
+		},
+		'scatter-scale': {
+			base: ['M3 20h18', 'M6.5 17l-2 0 2-4.5 2 4.5z', 'M6.5 17v3'],
+			accent: ['M15.5 15l-3.5 0 3.5-9 3.5 9z', 'M15.5 15v5', 'M19 2.5h2.5V5', 'M21.5 2.5l-3 3']
+		},
+		'scatter-relax': {
+			base: ['M3 20h18'],
+			accent: ['M5 14.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0', 'M10.5 14.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0', 'M16 14.5a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0-3 0', 'M6.5 9l-2-2 2-2', 'M17.5 9l2-2-2-2', 'M4.5 7h15']
+		},
+		'scatter-select': {
+			base: ['M12 15l-3 0 3-7 3 7z', 'M12 15v4'],
+			accent: ['M3 7V3h4', 'M17 3h4v4', 'M21 17v4h-4', 'M7 21H3v-4']
 		}
 	};
 

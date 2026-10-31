@@ -237,8 +237,13 @@ export function sameServer(target, status) {
 export function parseInviteHash(rawHash) {
 	const h = (rawHash || '').replace(/^#/, '');
 	const i = h.indexOf('~');
-	if (i < 0) return { peerId: h, srv: null };
-	const peerId = h.slice(0, i);
+	// 55: `&agent`, `&invite=…` and other `&` params sit between the id and the `~` tail
+	// (inviteCore.parseHashParams) — the id is everything before the first `&`
+	const head = i < 0 ? h : h.slice(0, i);
+	const amp = head.indexOf('&');
+	const bare = amp < 0 ? head : head.slice(0, amp);
+	if (i < 0) return { peerId: bare, srv: null };
+	const peerId = bare;
 	const m = /(?:^|~)srv=([^~]*)/.exec(h.slice(i));
 	return { peerId, srv: m ? m[1] : null };
 }
@@ -257,6 +262,8 @@ export function decodeInviteServer(srv) {
 		return null;
 	}
 	// host[:port][/path]
+	// eslint-disable-next-line no-control-regex
+	if (/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(raw)) return null;
 	const m = /^([^:/]+)(?::(\d+))?(\/.*)?$/.exec(raw);
 	if (!m) return null;
 	return {

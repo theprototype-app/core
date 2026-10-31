@@ -100,14 +100,19 @@ h.run(async () => {
 	// midpoint sits on the centre and the closest they get is the minor diameter, 1.0 m
 	const mid = tang.map((t) => Math.hypot((t.a[0] + t.b[0]) / 2 - 0.1, (t.a[2] + t.b[2]) / 2 - 0.05));
 	h.check(Math.max(...mid) < 0.15 && Math.min(...apart) > 0.9, '1.2 the two tangs ride HALF A LAP apart (offset 0.5): midpoint within ' + Math.max(...mid).toFixed(2) + ' m of the loop centre, ' + Math.min(...apart).toFixed(2) + ' m at the closest');
+	// over the samples where the fish MOVED: a 250 ms interval with no rendered frame in it (software
+	// GL, ~4 fps) has no direction and used to score 0 — two of eleven gave exactly 0.82 (1.7 skips them too)
 	let along = 0;
+	let an = 0;
 	for (let i = 1; i < tang.length; i++) {
 		const d = [tang[i].a[0] - tang[i - 1].a[0], tang[i].a[1] - tang[i - 1].a[1], tang[i].a[2] - tang[i - 1].a[2]];
-		const l = Math.hypot(...d) || 1;
+		const l = Math.hypot(...d);
+		if (l < 0.01) continue; // no frame landed between these two samples
 		const n = tang[i].nose;
 		along += (d[0] * n[0] + d[1] * n[1] + d[2] * n[2]) / l;
+		an++;
 	}
-	h.check(along / (tang.length - 1) > 0.85, '1.3 its nose points along the travel (mean cos ' + (along / (tang.length - 1)).toFixed(2) + ')');
+	h.check(an >= 6 && along / an > 0.85, '1.3 its nose points along the travel (mean cos ' + (along / Math.max(1, an)).toFixed(2) + ' over ' + an + ' moving samples)');
 	const maxRoll = Math.max(...tang.map((t) => Math.abs(t.up[0] * t.nose[2] - t.up[2] * t.nose[0]) + Math.abs(Math.hypot(t.up[0], t.up[2]))));
 	h.check(maxRoll > 0.05, '1.4 it BANKS in the bends (top tilts off vertical by up to ' + maxRoll.toFixed(2) + ')');
 	const box = await page.evaluate(() => window.__aq.waterBox());
@@ -224,19 +229,23 @@ h.run(async () => {
 	await B.page.route(/aquarium-kit\/.*\.glb/, (route) => route.abort());
 	await loadScene(B.page, AQUARIUM);
 	await install(B.page);
-	await B.page.evaluate(() => window.__aq.render());
-	await B.page.waitForTimeout(3000);
-	const offline = await B.page.evaluate(() => {
-		window.__aq.render();
-		return window.__aq.fallbackRoots().map((o) => ({
-			name: o.name,
-			current: window.__stores.lodGroup.lodGroupInfo(o.uuid)?.current,
-			trees: window.__stores.lodTrees.lodTreesOf(o).length,
-			failed: (window.__stores.lodGroup.lodGroupInfo(o.uuid)?.levels ?? []).filter((l) => l.status === 'failed').length
-		}));
-	});
+	// the first pack fetch on a fresh page waits for the asset cache to open first (OPFS + the legacy
+	// migration, 974e8be0) — wait for the failure to be REPORTED instead of a fixed 3 s; the statuses
+	// say which it was if it never comes (a slow `loading` vs a level never requested)
+	const offlineProbe = () =>
+		B.page.evaluate(() => {
+			window.__aq.render();
+			return window.__aq.fallbackRoots().map((o) => ({
+				name: o.name,
+				current: window.__stores.lodGroup.lodGroupInfo(o.uuid)?.current,
+				trees: window.__stores.lodTrees.lodTreesOf(o).length,
+				failed: (window.__stores.lodGroup.lodGroupInfo(o.uuid)?.levels ?? []).filter((l) => l.status === 'failed').length,
+				statuses: (window.__stores.lodGroup.lodGroupInfo(o.uuid)?.levels ?? []).map((l) => l.status)
+			}));
+		});
+	await h.eventually(offlineProbe, (o) => o.some((d) => d.failed > 0), '3.2 …and says why on the level (failed levels reported, not thrown)', 20000);
+	const offline = await offlineProbe();
 	h.check(offline.every((d) => d.current === 0 && d.trees === 0), '3.1 pack unreachable: every group draws its STAND-IN (LOD0) — the scene still has its fish, coral and plants');
-	h.check(offline.some((d) => d.failed > 0), '3.2 …and says why on the level (failed levels reported, not thrown)');
 	const offMove = await sample(B.page, () => window.__aq.world('Blue tang 1'), 4, 300);
 	h.check(Math.hypot(offMove[3][0] - offMove[0][0], offMove[3][2] - offMove[0][2]) > 0.1, '3.3 …and the stand-ins still swim');
 	if (SHOTS) await B.page.screenshot({ path: SHOTS + '-offline.png' });

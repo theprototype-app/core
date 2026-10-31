@@ -220,13 +220,15 @@ h.run(async () => {
 		await open(P.page, key);
 		const t = await P.page.evaluate(() => {
 			// a description squeezed beside its control (Density's two long options left it a
-			// one-word column) — on a phone the text keeps at least half the row
+			// one-word column). The floor is the product's own: rowFit keeps a control beside its
+			// label only while the text column keeps TEXT_MIN (150 px, 437423c8) — the old "half the
+			// row" rule contradicted that on a 390 px phone (settings-row-fit asserts the product's)
 			const squeezed = [];
 			for (const row of document.querySelectorAll('#settings-sections .setting-row')) {
 				const el = /** @type {HTMLElement} */ (row);
 				const d = el.querySelector('.sr-desc');
 				if (!el.offsetParent || !d || !(d.textContent || '').trim()) continue;
-				if (d.getBoundingClientRect().width < el.getBoundingClientRect().width * 0.5) squeezed.push((el.querySelector('.sr-name')?.textContent || '').trim());
+				if (d.getBoundingClientRect().width < 149) squeezed.push((el.querySelector('.sr-name')?.textContent || '').trim());
 			}
 			const small = [];
 			for (const el of document.querySelectorAll('#settings-sections .seg-opt, #settings-sections .tp-ui.nr, #settings-sections button.btn, #settings-sections .settings-num, #settings-sections .settings-text')) {

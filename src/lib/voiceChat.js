@@ -8,6 +8,7 @@ import { ensureAudioContext as engineContext, bus, updateListener, resumeAudio }
 import { colocatedPeers, isColocatedWith } from './colocationPresence';
 import { letterOf } from './keyOf';
 import { safeStorage } from './safeStorage';
+import { hiddenPeers } from './peerHide'; // 55 A9
 
 // Voice chat over the existing peerjs mesh (MediaConnection).
 // - mic toggle transmits continuously; while OFF, holding V is push-to-talk
@@ -100,7 +101,7 @@ function buildSpatialChain(peerId, stream) {
 		panner.maxDistance = 40;
 		panner.rolloffFactor = 1;
 		const gain = audioContext.createGain();
-		gain.gain.value = get(mutedPeers).includes(peerId) ? 0 : 1;
+		gain.gain.value = silenced(get(mutedPeers), get(hiddenPeers), peerId) ? 0 : 1;
 		// CO5: the colocation stage. Set at CONSTRUCTION too, not only from the
 		// subscriber — a late joiner's chain is built long after we became colocated, and
 		// a chain that starts at 1 would let one packet of the person beside us through.
@@ -505,12 +506,22 @@ export function toggleMutePeer(peerId) {
 	);
 }
 
-// keep the spatial chains in line with per-peer mutes and the mode toggle
-mutedPeers.subscribe((list) => {
+/** 55 A9: a peer HIDDEN from the peer menu is silent too — the same per-peer gain, two
+ * owners (Mute voice and Hide), either one silences. @param {string[]} muted
+ * @param {string[]} hidden @param {string} peerId */
+export function silenced(muted, hidden, peerId) {
+	return muted.includes(peerId) || hidden.includes(peerId);
+}
+const applyPeerGains = () => {
+	const muted = get(mutedPeers);
+	const hidden = get(hiddenPeers);
 	Object.entries(spatialChains).forEach(([peerId, chain]) => {
-		chain.gain.gain.value = list.includes(peerId) ? 0 : 1;
+		chain.gain.gain.value = silenced(muted, hidden, peerId) ? 0 : 1;
 	});
-});
+};
+// keep the spatial chains in line with per-peer mutes and the mode toggle
+mutedPeers.subscribe(applyPeerGains);
+hiddenPeers.subscribe(applyPeerGains);
 // CO5: and in line with the colocated set. This must react for ALREADY-CONNECTED voice
 // peers, not only at chain construction — the ritual normally runs minutes into a
 // session, and a partner's key can arrive after their audio did. Reads only; never

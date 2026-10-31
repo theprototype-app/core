@@ -30,6 +30,8 @@ import { togglePanel, TOGGLEABLE } from './panelToggles';
 import { DOCK_TITLES } from './bottomDock';
 import { publishExportOpen } from './export/exportStores';
 import { SETTINGS_ROWS, SETTINGS_SECTION_IDS } from './settingsIndex';
+import { awayKeys, bringAllWindowsBack, canPopOut, popOutPanel } from './windows/panelPlaces.js';
+import { POPPABLE, panelTitle, panelIsOpen } from './windows/panelRegistry.js';
 
 /** @typedef {import('./commandRank').Command} Command */
 
@@ -68,6 +70,11 @@ function windowCommands() {
 		{ id: 'window:notes', kind: 'window', label: 'Scene notes', detail: 'Window — show or hide', words: 'annotations', run: () => notesDrawerOpen.update((v) => !v) },
 		{ id: 'window:notifications', kind: 'window', label: 'Notifications', detail: 'Window — show or hide', words: 'history bell', run: () => notificationCenterOpen.update((v) => !v) }
 	);
+	// 70 W2/W5: pop an open panel out into its own browser window; bring every pop-out back
+	for (const key of POPPABLE)
+		if (canPopOut(key) && panelIsOpen(key) && !awayKeys().includes(key))
+			list.push({ id: 'popout:' + key, kind: 'window', label: `Pop out ${panelTitle(key)}`, detail: 'Window — its own browser window', words: 'popout monitor detach', run: () => popOutPanel(key) });
+	if (awayKeys().length) list.push({ id: 'window:bring-back', kind: 'window', label: 'Bring all windows back', detail: 'Window — every pop-out into the app', words: 'pop out popout dock restore', run: () => bringAllWindowsBack() });
 	return list;
 }
 

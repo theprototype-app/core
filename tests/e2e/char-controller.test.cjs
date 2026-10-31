@@ -110,16 +110,53 @@ const values = (page) =>
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const distXZ = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
-/** Hold a key for `ms` and report how far the rig travelled. */
+/** Hold a key for `ms` and report how far the rig travelled — and over how many FRAMES.
+ * Fly moves a fixed step per frame (PointerLockControls translates by `speed` each tick),
+ * so a wall-clock window measures the frame rate as much as the speed: on software GL the
+ * same 1200 ms was 20 frames once and 10 the next (2.000 vs 1.000 units). `perFrame` (the
+ * median step over the frames in which the rig actually moved, from an in-page rAF
+ * sampler) is the number the speed comparisons below read. */
 async function travel(page, code, ms) {
+	await page.evaluate(() => {
+		let cam = null;
+		window.__stores.playerCam.subscribe((c) => (cam = c))();
+		const V = window.__stores.THREE.Vector3;
+		const w0 = cam ? cam.getWorldPosition(new V()) : null;
+		const s = (window.__travelSampler = { frames: 0, on: true, start: w0, last: w0, moved: 0, steps: [] });
+		const step = () => {
+			if (!s.on) return;
+			const w = cam ? cam.getWorldPosition(new V()) : null;
+			if (w && s.last && w.distanceToSquared(s.last) > 1e-10) {
+				s.frames++;
+				s.moved += w.distanceTo(s.last);
+				s.steps.push(w.distanceTo(s.last));
+			}
+			s.last = w;
+			requestAnimationFrame(step);
+		};
+		requestAnimationFrame(step);
+	});
 	const before = await camWorld(page);
 	await page.keyboard.down(code);
 	await page.waitForTimeout(ms);
 	await page.keyboard.up(code);
 	await page.waitForTimeout(150);
 	const after = await camWorld(page);
-	return { before, after, moved: dist(before, after), movedXZ: distXZ(before, after) };
+	// distance and frame count from the SAME sampler window — reading `before` separately put a frame
+	// on one side of the count and not the other (0.092 vs 0.100 per frame over 5)
+	const sampled = await page.evaluate(() => {
+		window.__travelSampler.on = false;
+		return { frames: window.__travelSampler.frames, moved: window.__travelSampler.moved, steps: window.__travelSampler.steps };
+	});
+	const moved = dist(before, after);
+	const frames = sampled.frames;
+	// the MEDIAN step: one settling frame (the first after the controller goes, a grounding nudge) is
+	// a quarter of the sample at ~3 fps and moved the mean 10 %; the speed is what most frames do
+	const sorted = [...sampled.steps].sort((a, b) => a - b);
+	const median = sorted.length ? (sorted.length % 2 ? sorted[(sorted.length - 1) / 2] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2) : 0;
+	return { before, after, moved, movedXZ: distXZ(before, after), frames, perFrame: median };
 }
+const perFrameText = (t) => `${t.perFrame.toFixed(4)}/frame (median) over ${t.frames}`;
 
 // ---- driving the graph ------------------------------------------------------
 // THE SCOPE RESET IS LOAD-BEARING (logic-nodes documents the cost): the editor's scope
@@ -197,12 +234,12 @@ h.run(async () => {
 	const WINDOW = 1200;
 	const builtin = await travel(A.page, 'KeyW', WINDOW);
 	h.check(builtin.moved > 0.5, `built-in fly moves the rig (${builtin.moved.toFixed(3)} units)`);
-	// a 1.2s window at 60fps is ~72 frames x 0.1 = ~7.2 units; a wide band, because the
-	// point here is only that the number is the RIGHT ORDER (a stuck or doubled speed
-	// would fall outside it) and the tight comparison is the A/B below
+	// fly at the default 0.1 is 0.1 per moving frame; the band only says the number is the
+	// RIGHT ORDER (a stuck or doubled speed falls outside it) and the tight comparison is the
+	// A/B below
 	h.check(
-		builtin.moved > 2 && builtin.moved < 12,
-		`and by about speed x frames (${builtin.moved.toFixed(2)} units in ${WINDOW}ms)`
+		builtin.perFrame > 0.07 && builtin.perFrame < 0.14,
+		`and by about speed x frames (${builtin.moved.toFixed(2)} units, ${perFrameText(builtin)})`
 	);
 	const stillNull = await charDebug(A.page);
 	h.check(stillNull.control === null, 'flying with no controller node declares nothing');
@@ -223,11 +260,11 @@ h.run(async () => {
 	h.check(declared.moveSpeed === null, 'with no override yet, so the param is what moves you');
 
 	const noded = await travel(A.page, 'KeyW', WINDOW);
-	const gap = Math.abs(noded.moved - builtin.moved) / builtin.moved;
+	const gap = Math.abs(noded.perFrame - builtin.perFrame) / builtin.perFrame;
 	h.check(
 		gap < 0.05,
 		`PARITY: fly@0.1 as a node matches the built-in within 5% ` +
-			`(${builtin.moved.toFixed(3)} vs ${noded.moved.toFixed(3)}, ${(gap * 100).toFixed(1)}% apart)`
+			`(${perFrameText(builtin)} vs ${perFrameText(noded)}, ${(gap * 100).toFixed(1)}% apart)`
 	);
 
 	// the guard has to be able to FAIL: a different authored speed must move you a
@@ -239,10 +276,10 @@ h.run(async () => {
 		'the speed param reaches the store'
 	);
 	const faster = await travel(A.page, 'KeyW', WINDOW);
-	const ratio = faster.moved / noded.moved;
+	const ratio = faster.perFrame / noded.perFrame;
 	h.check(
 		ratio > 2.4 && ratio < 3.6,
-		`3x the speed is ~3x the distance (${noded.moved.toFixed(2)} -> ${faster.moved.toFixed(2)}, x${ratio.toFixed(2)})`
+		`3x the speed is ~3x the distance (${perFrameText(noded)} -> ${perFrameText(faster)}, x${ratio.toFixed(2)})`
 	);
 
 	// =========================================================================
@@ -502,10 +539,10 @@ h.run(async () => {
 		'and the other Move Speed node reads the new value, not its own param'
 	);
 	const fast = await travel(A.page, 'KeyW', WINDOW);
-	const speedRatio = fast.moved / slow.moved;
+	const speedRatio = fast.perFrame / slow.perFrame;
 	h.check(
 		speedRatio > 2.6 && speedRatio < 4.4,
-		`which actually MOVES you faster (${slow.moved.toFixed(2)} -> ${fast.moved.toFixed(2)}, x${speedRatio.toFixed(2)})`
+		`which actually MOVES you faster (${perFrameText(slow)} -> ${perFrameText(fast)}, x${speedRatio.toFixed(2)})`
 	);
 
 	// the scroll wheel writes through the same store while a controller is declared
@@ -630,11 +667,12 @@ h.run(async () => {
 		landedOnB && theirs && theirs.x === 0 && theirs.y === 0,
 		`and the PEER holding the same graph reads 0 — local by design, never streamed (${JSON.stringify(theirs)})`
 	);
-	await A.page.waitForTimeout(300);
-	const released = (await values(A.page)).mv?.__handles ?? null;
-	h.check(
-		released && released.x === 0 && released.y === 0,
-		`releasing the keys returns it to zero (${JSON.stringify(released)})`
+	// the node value refreshes on the graph's next tick — a fixed 300 ms is a handful of frames
+	// on software GL, so wait for the zero (still red if it never comes)
+	await h.eventually(
+		() => values(A.page).then((v) => v.mv?.__handles ?? null),
+		(r) => !!r && r.x === 0 && r.y === 0,
+		'releasing the keys returns it to zero'
 	);
 
 	// =========================================================================
@@ -648,12 +686,15 @@ h.run(async () => {
 		(d) => d.control === null && d.moveSpeed === null,
 		'deleting the node clears charControl AND the speed override'
 	);
+	// level again, as section 1 did: the sections between turned the camera, and fly moves along its
+	// forward axis — a pitched rig measured 0.09/frame (0.1 x cos 26 deg) for the same 0.1 speed
+	await levelCamera(A.page);
 	const restored = await travel(A.page, 'KeyW', WINDOW);
-	const backGap = Math.abs(restored.moved - builtin.moved) / builtin.moved;
+	const backGap = Math.abs(restored.perFrame - builtin.perFrame) / builtin.perFrame;
 	h.check(
 		backGap < 0.08,
 		`PARITY RESTORED: movement matches the very first measurement ` +
-			`(${builtin.moved.toFixed(3)} vs ${restored.moved.toFixed(3)}, ${(backGap * 100).toFixed(1)}% apart)`
+			`(${perFrameText(builtin)} vs ${perFrameText(restored)}, ${(backGap * 100).toFixed(1)}% apart)`
 	);
 	const noWalker = await charDebug(A.page);
 	h.check(

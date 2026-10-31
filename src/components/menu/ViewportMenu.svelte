@@ -24,6 +24,8 @@
 	import { bindingOf } from '$lib/shortcuts';
 	import { safeStorage } from '$lib/safeStorage';
 	import { openRecording } from '$lib/recording/recordingStores.js';
+	import { underlayWindowOpen, underlays } from '$lib/underlays'; // 60 Q5
+	import { playHere } from '$lib/playHere'; // 60 Q1
 
 	// Scene.svelte routes right-TAPS here (77): empty viewport → this menu with
 	// the clicked ground point; an object under the cursor → its own context
@@ -187,6 +189,21 @@
 					icon: 'video',
 					tooltip: 'Record a turntable or a flythrough of the viewport (webm)',
 					action: () => openRecording()
+				},
+				{
+					// 60 Q5: trace over a plan, a sketch or a photo (locked, hidden in Play, never exported)
+					label: 'Reference images…' + ($underlays.length ? ` (${$underlays.length})` : ''),
+					icon: 'image-up',
+					tooltip: 'Lay an image in the scene to build over — see-through, unclickable, hidden in Play, never exported',
+					action: () => underlayWindowOpen.set(true)
+				},
+				{
+					// 60 Q1: Play, standing where you are looking from (Ctrl+Shift+Enter)
+					label: 'Play here',
+					icon: 'map-pin',
+					hint: 'Ctrl+Shift+Enter',
+					tooltip: 'Start Play from this view — leaving Play brings the view back',
+					action: () => playHere()
 				},
 				{
 					label: $measureMode ? 'Stop measuring' : 'Measure distance',

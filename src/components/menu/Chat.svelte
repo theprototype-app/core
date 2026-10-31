@@ -16,6 +16,7 @@
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
+	import { panelAway } from '$lib/windows/panelPlaces.js';
 
 	let message = $state('');
 	let scroller: any = $state(null);
@@ -104,8 +105,11 @@
 		m.ts
 			? new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 			: '';
+	// 70 W2: `popped` = the instance in a pop-out window; the main one draws nothing while Chat is away
+	let { popped = false }: { popped?: boolean } = $props();
 </script>
 
+{#if popped || !$panelAway.chat}
 <div id="chat" class={$chatHidden}>
 	<div
 		id="chat-window"
@@ -214,6 +218,7 @@
 		{/if}
 	</div>
 </div>
+{/if}
 
 <style>
 	/* 38 R6: the chat body in the tokens — one message list (avatar · name · time · text),

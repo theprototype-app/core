@@ -42,6 +42,13 @@ h.run(async () => {
 	h.check(/line 319\b/.test(ring.last), `the NEWEST line is kept: ${ring.last}`);
 
 	// ---- 2. the bundle, and the registered section --------------------------------
+	// test-health-1: the peer id is empty until the signaling server hands one out, which on a
+	// public CI runner (the public PeerJS cloud) can take longer than this suite's first seconds;
+	// a section that captured an IMPORT instead of reading the store stays empty forever, so
+	// waiting for it keeps the counterfactual.
+	await page
+		.waitForFunction(() => (window.__stores.diagnostics.bundle().sections?.session?.peerId ?? '').length > 0, null, { timeout: 30000 })
+		.catch(() => {});
 	const bundle = await page.evaluate(() => window.__stores.diagnostics.bundle());
 	h.check(
 		!!bundle.version && !!bundle.at && typeof bundle.ua === 'string',

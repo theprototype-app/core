@@ -5,7 +5,6 @@
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { untrack } from 'svelte';
 	import { addMenu, aiAssistantHidden } from '../../stores/appStore.js';
-	import { explainMissing } from '$lib/tools/toolLinks.js'; // 59 T5
 	import { primitivesCatalog } from '$lib/primitivesCatalog';
 	import { spawnAtPoint } from '$lib/addObjects';
 	import { rightDragMove, inputContextMenu } from '$lib/searchMenuUx';
@@ -102,11 +101,10 @@
 		dragged = false; // the next open re-anchors to wherever it is invoked from
 	}
 
-	// the menu's last row opens the AI assistant — the AiHudButton's own path (59 T5: a missing
-	// provider says so and opens its row in Tools & connections), opening rather than toggling
+	// the menu's last row opens the AI assistant — the AiHudButton's own path, opening rather than
+	// toggling (86-fix N1: always; with no provider the window offers Connect Claude or Settings ▸ Tools & connections)
 	function openAi() {
 		close();
-		if (explainMissing('assistant')) return;
 		aiAssistantHidden.set('');
 	}
 

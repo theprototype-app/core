@@ -9,6 +9,7 @@ export const LUCIDE_NODES = {
 	'list': [["path",{"d":"M3 5h.01"}],["path",{"d":"M3 12h.01"}],["path",{"d":"M3 19h.01"}],["path",{"d":"M8 5h13"}],["path",{"d":"M8 12h13"}],["path",{"d":"M8 19h13"}]],
 	'plus': [["path",{"d":"M5 12h14"}],["path",{"d":"M12 5v14"}]],
 	'sliders-horizontal': [["path",{"d":"M10 5H3"}],["path",{"d":"M12 19H3"}],["path",{"d":"M14 3v4"}],["path",{"d":"M16 17v4"}],["path",{"d":"M21 12h-9"}],["path",{"d":"M21 19h-5"}],["path",{"d":"M21 5h-7"}],["path",{"d":"M8 10v4"}],["path",{"d":"M8 12H3"}]],
+	'bot': [["path",{"d":"M12 8V4H8"}],["rect",{"width":"16","height":"12","x":"4","y":"8","rx":"2"}],["path",{"d":"M2 14h2"}],["path",{"d":"M20 14h2"}],["path",{"d":"M15 13v2"}],["path",{"d":"M9 13v2"}]],
 	'wrench': [["path",{"d":"M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"}]],
 	'undo-2': [["path",{"d":"M9 14 4 9l5-5"}],["path",{"d":"M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"}]],
 	'redo-2': [["path",{"d":"m15 14 5-5-5-5"}],["path",{"d":"M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"}]],
@@ -87,5 +88,11 @@ export const LUCIDE_NODES = {
 	'waves-horizontal': [["path",{"d":"M2 12q2.5 2 5 0t5 0 5 0 5 0"}],["path",{"d":"M2 19q2.5 2 5 0t5 0 5 0 5 0"}],["path",{"d":"M2 5q2.5 2 5 0t5 0 5 0 5 0"}]],
 	'minus': [["path",{"d":"M5 12h14"}]],
 	'check': [["path",{"d":"M20 6 9 17l-5-5"}]],
-	'brush': [["path",{"d":"m11 10 3 3"}],["path",{"d":"M6.5 21A3.5 3.5 0 1 0 3 17.5a2.62 2.62 0 0 1-.708 1.792A1 1 0 0 0 3 21z"}],["path",{"d":"M9.969 17.031 21.378 5.624a1 1 0 0 0-3.002-3.002L6.967 14.031"}]]
+	'brush': [["path",{"d":"m11 10 3 3"}],["path",{"d":"M6.5 21A3.5 3.5 0 1 0 3 17.5a2.62 2.62 0 0 1-.708 1.792A1 1 0 0 0 3 21z"}],["path",{"d":"M9.969 17.031 21.378 5.624a1 1 0 0 0-3.002-3.002L6.967 14.031"}]],
+	'align-start-vertical': [["rect",{"width":"9","height":"6","x":"6","y":"14","rx":"2"}],["rect",{"width":"16","height":"6","x":"6","y":"4","rx":"2"}],["path",{"d":"M2 2v20"}]], // 52 V2: the VR Arrange ring
+	'align-center-vertical': [["path",{"d":"M12 2v20"}],["path",{"d":"M8 10H4a2 2 0 0 1-2-2V6c0-1.1.9-2 2-2h4"}],["path",{"d":"M16 10h4a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-4"}],["path",{"d":"M8 20H7a2 2 0 0 1-2-2v-2c0-1.1.9-2 2-2h1"}],["path",{"d":"M16 14h1a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-1"}]], // 52 V2: the VR Arrange ring
+	'align-end-vertical': [["rect",{"width":"16","height":"6","x":"2","y":"4","rx":"2"}],["rect",{"width":"9","height":"6","x":"9","y":"14","rx":"2"}],["path",{"d":"M22 22V2"}]], // 52 V2: the VR Arrange ring
+	'align-horizontal-space-around': [["rect",{"width":"6","height":"10","x":"9","y":"7","rx":"2"}],["path",{"d":"M4 22V2"}],["path",{"d":"M20 22V2"}]], // 52 V2: the VR Arrange ring
+	'arrow-down-to-line': [["path",{"d":"M12 17V3"}],["path",{"d":"m6 11 6 6 6-6"}],["path",{"d":"M19 21H5"}]], // 52 V2: the VR Arrange ring
+	'circle-check': [["circle",{"cx":"12","cy":"12","r":"10"}],["path",{"d":"m16 9-5.5 5.5L8 12"}]], // 52 V1: the Measure ring's Done
 };

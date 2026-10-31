@@ -90,6 +90,21 @@ h.run(async () => {
 	await makeBox(B);
 	const lobby = await B.page.evaluate(() => window.__stores.levels.saveSceneAsLevel('Lobby'));
 	h.check(!!lobby?.hash, 'the Lobby scene is in the project');
+	// test-health-1: saving the cleared world as Lobby MOVES B's room (R22 round 30/34: rooms are
+	// content partitions, a save names the room) while A still stands in Hunt — so B's node and
+	// edge below were withheld from A as "elsewhere" and the travel never reached it. A joins the
+	// Lobby by name first, the way a player would.
+	await A.page.evaluate(() => window.__stores.levels.travelToScene('Lobby'));
+	await h.eventually(
+		() => A.page.evaluate(() => {
+			let c;
+			window.__stores.levels.currentLevel.subscribe((v) => (c = v))();
+			return c?.name ?? '';
+		}),
+		(n) => n === 'Lobby',
+		'premise: A stands in the Lobby with B',
+		30000
+	);
 	// the travel NODE in name mode, pulsed on B, moves BOTH peers to the CURRENT Hunt
 	const node = await B.page.evaluate(() => {
 		const s = window.__stores;

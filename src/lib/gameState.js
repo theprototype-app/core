@@ -42,6 +42,7 @@ export const GAME_STATES = ['menu', 'playing', 'paused', 'over'];
  *   pausedMs: number,
  *   outcome: string,
  *   vars: Record<string, any>,
+ *   varsAt?: Record<string, number>,
  *   changedAt: number
  * }} GameState
  */
@@ -109,7 +110,7 @@ export function registerGameHistory(fn) {
  * THE ONE way the game state changes. Every caller — a node, the applier, undo, a restore —
  * comes through here, so the four never drift.
  * @param {Partial<GameState>} patch
- * @param {{silent?: boolean, stamp?: number}} [opts] `silent` skips history + broadcast
+ * @param {{silent?: boolean, stamp?: number, varsAt?: Record<string, number>}} [opts] `silent` skips history + broadcast
  *   (the applier path: a receiver must never re-broadcast, golden rule 1)
  * @returns {GameState}
  */
@@ -123,6 +124,7 @@ export function commitGameState(patch, opts = {}) {
 		...patch,
 		changedAt: opts.stamp ?? Math.max(sessionNow(), (before.changedAt ?? 0) + 1)
 	});
+	after.varsAt = opts.varsAt ?? stampVars(before, after);
 	gameState.set(after);
 	if (!opts.silent) {
 		if (historyHook) historyHook(before, after);
@@ -226,6 +228,92 @@ export function roundCutoff() {
 export function setGameVar(name, value) {
 	if (!name) return get(gameState);
 	return commitGameState({ vars: { ...get(gameState).vars, [name]: value } });
+}
+
+/**
+ * fix-agenttest 10: ONE WRITE PER EVENT for a SHARED Set Variable. Every peer runs the node from
+ * the same replicated stamp, and each used to compute from its OWN current value and write the
+ * whole singleton: a peer whose tick ran after another's write had landed counted the click
+ * again ("add 1" ended at 2-3, and a toggle built as Set NOT Get flipped twice and cancelled out).
+ * Now one peer — the authority — applies each event once, keyed by `rid` (the node id + the
+ * stamp, which every peer derives the same way), and the write replicates as the ordinary
+ * `game` message. The last GAMEVAR_RID_WINDOW rids are remembered.
+ */
+export const GAMEVAR_RID_WINDOW = 128;
+/** @type {string[]} */
+const appliedVarOps = [];
+
+/**
+ * Apply `{rid, name, op, value}` unless this rid was applied already. `op` add/subtract works
+ * on this peer's current value; `set` writes `value`. Returns whether it wrote.
+ * @param {{rid: string, name: string, op?: string, value?: any}} req
+ */
+export function applyGameVarOp(req) {
+	if (!req || typeof req.rid !== 'string' || !req.rid || !req.name) return false;
+	if (appliedVarOps.includes(req.rid)) return false;
+	appliedVarOps.push(req.rid);
+	if (appliedVarOps.length > GAMEVAR_RID_WINDOW) appliedVarOps.shift();
+	const v = Number(req.value) || 0;
+	const current = Number(get(gameState).vars?.[req.name]) || 0;
+	setGameVar(req.name, req.op === 'add' ? current + v : req.op === 'subtract' ? current - v : v);
+	return true;
+}
+
+/**
+ * fix-agenttest 10: EACH VARIABLE CARRIES ITS OWN STAMP (`varsAt`). The singleton is latest-wins
+ * whole, and every peer runs Set Game State from the same click: a peer that wrote `playing` a
+ * moment after the authority's `score + 5` carried its own, older score with a NEWER stamp, and
+ * the add was lost on every peer (measured in game-state). Now a write re-stamps only the
+ * variables it changed (a removal leaves its stamp behind as a tombstone), and a receiver keeps,
+ * per variable, the side with the newer stamp. A state with no `varsAt` at all (an older peer, a
+ * restore) stamps every variable, present or absent, with its `changedAt` — exactly the
+ * whole-singleton rule this replaces.
+ * @param {any} state @param {string} name @returns {number} -1 = this side never had it
+ */
+function varStamp(state, name) {
+	if (!state?.varsAt || typeof state.varsAt !== 'object') return Number(state?.changedAt) || 0;
+	const at = Number(state.varsAt[name]);
+	if (Number.isFinite(at)) return at;
+	return Object.prototype.hasOwnProperty.call(state.vars ?? {}, name) ? Number(state.changedAt) || 0 : -1;
+}
+
+/** the stamps after a local write: changed, new or removed names take the write's stamp
+ * @param {GameState} before @param {GameState} after @returns {Record<string, number>} */
+function stampVars(before, after) {
+	/** @type {Record<string, number>} */
+	const at = {};
+	const had = before.vars ?? {};
+	for (const name of new Set([...Object.keys(had), ...Object.keys(after.vars), ...Object.keys(before.varsAt ?? {})])) {
+		const inBefore = Object.prototype.hasOwnProperty.call(had, name);
+		const inAfter = Object.prototype.hasOwnProperty.call(after.vars, name);
+		if (inBefore !== inAfter || (inAfter && !Object.is(had[name], after.vars[name]))) at[name] = after.changedAt;
+		else if (varStamp(before, name) >= 0) at[name] = varStamp(before, name);
+	}
+	return at;
+}
+
+/**
+ * Merge an arriving game state into ours: the singleton fields follow the newer `changedAt`
+ * (equal = theirs: the conn is ordered), each variable follows its own newer stamp (equal =
+ * theirs). Returns null when nothing changes — an older state with no newer variable is refused.
+ * @param {GameState} local @param {any} data @returns {GameState|null}
+ */
+export function mergeGameState(local, data) {
+	const incoming = normalizeGameState(data);
+	const theirs = incoming.changedAt >= (local.changedAt ?? 0);
+	/** @type {Record<string, any>} */ const vars = {};
+	/** @type {Record<string, number>} */ const varsAt = {};
+	const names = new Set([...Object.keys(local.vars ?? {}), ...Object.keys(local.varsAt ?? {}), ...Object.keys(incoming.vars), ...Object.keys(incoming.varsAt ?? {})]);
+	for (const name of names) {
+		const inAt = varStamp(incoming, name);
+		const loAt = varStamp(local, name);
+		const winner = inAt >= loAt ? incoming : local;
+		if (Object.prototype.hasOwnProperty.call(winner.vars ?? {}, name)) vars[name] = winner.vars[name];
+		if (Math.max(inAt, loAt) >= 0) varsAt[name] = Math.max(inAt, loAt);
+	}
+	const base = theirs ? incoming : local;
+	if (!theirs && JSON.stringify(vars) === JSON.stringify(local.vars ?? {})) return null;
+	return { ...base, vars, varsAt, changedAt: base.changedAt };
 }
 
 /** @param {string} name @param {any} [fallback] */

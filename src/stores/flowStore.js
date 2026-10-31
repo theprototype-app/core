@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { safeStorage } from '../lib/safeStorage';
 import { loadFlowViews } from '../lib/flowView';
+import { objectsGroup } from './sceneStore';
 
 // Shared node graph state, replicated between peers.
 //
@@ -180,11 +181,30 @@ export function runtimeGraph(nodes, edges) {
 	return { nodes: live, edges: edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
 }
 
-/** nodes+edges count across every graph (nodesync drift heal). */
+/**
+ * 55 (1.48.1, Q1): OBJECT graphs whose owner is not in the scene (the savers' `pruneMissing` rule: an owner is an
+ * objectsGroup descendant). A deleted object's flow stays in the store on purpose — undoing the delete finds it — but
+ * nothing reads it as live: the runtime skips it, and the nodes reply / hash / count leave it out, so a joiner gets
+ * no orphan and two peers that differ only by one never re-pull. One walk, only when object graphs exist; no scene
+ * yet = none (nothing can be judged). @returns {Set<string>}
+ */
+export function orphanGraphIds() {
+	const ids = Object.keys(get(flowGraphs) ?? {}).filter((id) => id !== SCENE_GRAPH);
+	/** @type {any} */
+	const group = get(objectsGroup);
+	if (!ids.length || !group) return new Set();
+	/** @type {Set<string>} */
+	const present = new Set();
+	group.traverse((/** @type {any} */ o) => present.add(o.uuid));
+	return new Set(ids.filter((id) => !present.has(id)));
+}
+
+/** nodes+edges count across every live graph (nodesync drift heal; orphan graphs left out). */
 export function graphTotals() {
 	const all = get(flowGraphs);
+	const orphans = orphanGraphIds();
 	let count = 0;
-	for (const graph of Object.values(all ?? {})) count += graph.nodes.length + graph.edges.length;
+	for (const [graphId, graph] of Object.entries(all ?? {})) if (!orphans.has(graphId)) count += graph.nodes.length + graph.edges.length;
 	return count;
 }
 

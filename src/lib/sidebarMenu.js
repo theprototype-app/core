@@ -4,6 +4,7 @@ import { inspectorClose } from '../stores/appStore';
 import { closeDockView, canDockHere, dockTab, dockAtStrip } from './dockMenu';
 import { undock } from './docking';
 import { canFloatPanel } from './sidebarDrop';
+import { popOutItems, popOutDockPanels, canPopOut } from './windows/panelPlaces.js';
 
 // 43 J4 — WHAT A SIDEBAR TAB CAN DO, in one place: its × (close), its menu (right-click, a long
 // press on touch) and the drops of its drag all end here, so the three cannot disagree. The tab is
@@ -81,6 +82,18 @@ export function sidebarTabItems(key, side, title) {
 			disabled: !dock,
 			action: () => sidebarTabToDock(key)
 		},
+		// 70 W2/W3: into a browser window of its own — this tab, or the whole sidebar as one tabbed window
+		...popOutItems(key),
+		...(canPopOut(key) && others.some((k) => canPopOut(k))
+			? [
+					{
+						label: 'Pop out this sidebar',
+						icon: 'external-link',
+						tooltip: `Every tab of the ${side} sidebar in ONE browser window, as its tabs`,
+						action: () => popOutDockPanels(get(sidebarTabs)[side].filter((k) => canPopOut(k)), side, key)
+					}
+				]
+			: []),
 		// 44 M7: the column itself — every tab stays open (its shortcut, Ctrl+B / Ctrl+Alt+B, brings it back)
 		{
 			label: 'Hide this sidebar',

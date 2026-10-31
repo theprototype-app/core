@@ -712,7 +712,7 @@ export function executeVRMenuAction(name) {
 		});
 	} else if (name === 'mic') {
 		cycleMicMode();
-	} else if (name === 'world') {
+	} else if (name === 'world' || name === 'world:back') {
 		closeDollhouse(false); // 37: 1:1 also ends a dollhouse (without putting its model back)
 		resetWorldRig(); // back to 1:1 mid-session
 	} else if (name === 'settings') {

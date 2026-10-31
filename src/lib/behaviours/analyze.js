@@ -47,6 +47,17 @@ export const BANNED = {
 	requestAnimationFrame: 'use this.after'
 };
 
+/** the context methods (`this.find`…) a behaviour might call bare by mistake — `kit` and the helpers
+ * (dist/clamp/lerp) ARE in its scope, so they are not here */
+const CONTEXT_CALLS = new Set(CONTEXT_MEMBERS.filter((m) => !['kit', 'params', 'state', 'object', 'id', 'me', 'time'].includes(m)));
+
+/** a name a model guesses for a per-frame hook (there is none) */
+const FRAME_HOOK = /^(on)?(tick|update|frame|step|loop|everyframe)$/i;
+const NO_FRAME_HOOK = 'behaviours have no per-frame hook; repeat with this.after(seconds, "method") from that method';
+
+/** does the source reach method `k` (this.k, or its name as a string — after(…, 'k')) @param {string} source @param {string} k */
+const referenced = (source, k) => new RegExp('this\\.' + k + '\\b|[\'"`]' + k + '[\'"`]').test(String(source));
+
 /** @typedef {{message: string, line: number, col: number, level: 'error'|'warning'}} Finding */
 
 /** @param {any} node */
@@ -295,6 +306,13 @@ function lint(ast, out) {
 			const isKey = (parent?.type === 'Property' || parent?.type === 'MethodDefinition') && key === 'key' && !parent.computed;
 			const isMemberObject = parent?.type === 'MemberExpression' && key === 'object';
 			if (isProp || isKey || declared.has(n.name)) return;
+			// 55 (41's gem test): a bare `findAll(...)` / `after(...)` — a context method called without
+			// `this.` — threw "findAll is not defined" at run time and the behaviour read as running.
+			// A warning, so a scene saved with one still loads; the assistant's tools refuse on it.
+			if (parent?.type === 'CallExpression' && key === 'callee' && CONTEXT_CALLS.has(n.name)) {
+				at(n, n.name + '(…) is a context method: call this.' + n.name + '(…) inside a handler or method', 'warning');
+				return;
+			}
 			const why = /** @type {Record<string, string>} */ (BANNED)[n.name];
 			if (!why) return;
 			// Math / performance as objects are flagged on their member (Math.random), not here
@@ -405,14 +423,43 @@ export function analyze(source, specs = []) {
 					const fn = fnOf(p);
 					if (!hk || !fn) continue;
 					const event = resolveEvent(hk, specs, inputs);
-					if (!event) lintOut.push({ message: 'on.' + hk + ': no such event (it will never fire)', line: p.loc?.start.line ?? 0, col: (p.loc?.start.column ?? 0) + 1, level: 'warning' });
+					if (!event)
+						lintOut.push({
+							message: 'on.' + hk + ': no such event (it will never fire)' + (FRAME_HOOK.test(hk) ? ' — ' + NO_FRAME_HOOK : ''),
+							line: p.loc?.start.line ?? 0,
+							col: (p.loc?.start.column ?? 0) + 1,
+							level: 'warning'
+						});
 					handlers.push({ name: hk, event, line: p.loc?.start.line ?? 0, ...scanFunction(fn, specs, methodNames) });
 				}
 			} else if (fnOf(prop)) {
 				if (CONTEXT_MEMBERS.includes(k)) errors.push({ message: 'method "' + k + '" hides this.' + k, line, col: 1, level: 'error' });
+				// 55 (41's voice session): a guessed `onTick() {}` is a method nothing ever calls (one the code
+				// reaches — this.tick(), this.after(1, 'tick') — is an ordinary method)
+				else if ((FRAME_HOOK.test(k) || /^on[A-Z]/.test(k)) && !referenced(source, k))
+					lintOut.push({ message: 'method "' + k + '" is never called by the runtime: ' + (FRAME_HOOK.test(k) ? NO_FRAME_HOOK : 'event handlers go under on: {…}'), line, col: 1, level: 'warning' });
 				methods.push({ name: k, line, ...scanFunction(fnOf(prop), specs, methodNames) });
 			}
 		}
+	}
+	// 55 (41's voice session): `this.setTransform(…)` passed the lint and did nothing — `this` has the context
+	// members and the definition's own methods, nothing else (a behaviour cannot move/recolour/hide objects
+	// itself: it drives effect nodes through value outputs or this.emit)
+	if (def) {
+		const ownMethods = new Set(methods.map((/** @type {any} */ m) => m.name));
+		walk(def, (n) => {
+			if (n.type !== 'MemberExpression' || n.object?.type !== 'ThisExpression' || n.computed || n.property?.type !== 'Identifier') return;
+			const member = n.property.name;
+			if (CONTEXT_MEMBERS.includes(member) || ownMethods.has(member)) return;
+			lintOut.push({
+				message:
+					'this.' + member + ' does not exist — `this` has ' + CONTEXT_MEMBERS.join(', ') + (ownMethods.size ? ' and your methods (' + [...ownMethods].join(', ') + ')' : '') +
+					'. A behaviour does not move, rotate, recolour or hide objects itself: give it an output (a state value or this.emit) and wire it into effect nodes',
+				line: n.loc?.start.line ?? 0,
+				col: (n.loc?.start.column ?? 0) + 1,
+				level: 'warning'
+			});
+		});
 	}
 	// 36 (U10): each output is a state field (a VALUE socket, typed by its initial value) or an
 	// event (fired by this.emit). An emit that is not declared cannot be wired — say so.

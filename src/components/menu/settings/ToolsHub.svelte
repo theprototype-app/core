@@ -31,6 +31,7 @@
 		'dcc'
 	]);
 	registerSettingsKeywords('voice typing', ['stt', 'whisper', 'speech', 'mic', 'dictation']);
+	registerSettingsKeywords('chat pictures', ['image', 'photo', 'picture', 'attach', 'vision']);
 </script>
 
 <script>
@@ -56,8 +57,8 @@
 	} from '$lib/tools/toolStatus.js';
 	import '$lib/tools/builtinTools.js';
 
-	/** @type {{onform?: (kind: string, ref?: any) => void}} */
-	let { onform = () => {} } = $props();
+	/** @type {{onform?: (kind: string, ref?: any) => void, afterChat?: import('svelte').Snippet}} */
+	let { onform = () => {}, afterChat } = $props();
 
 	/** @type {Record<string, boolean>} */
 	let testing = $state({});
@@ -194,6 +195,7 @@
 			{/each}
 		</Section>
 	</div>
+	{#if group.section.id === 'chat'}{@render afterChat?.()}{/if}
 {/each}
 <p class="settings-footnote">
 	API keys are stored unencrypted in this browser and only ever sent to the provider you set up.

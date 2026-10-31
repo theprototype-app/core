@@ -45,7 +45,8 @@ h.run(async () => {
 
 	const dark = await probe('dark');
 	h.check(
-		dark.dataTheme === 'dark' && dark.dark && dark.surface === 'rgb(31, 41, 55)',
+		// tailwind 4's gray-800 (f3c8ef62, tailwind 3.4 -> 4.3); dark mode does not remap .bg-gray-800
+		dark.dataTheme === 'dark' && dark.dark && dark.surface === 'oklch(0.278 0.033 256.848)',
 		`dark is the authored look (surface ${dark.surface})`
 	);
 

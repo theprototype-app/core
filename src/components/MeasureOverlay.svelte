@@ -5,6 +5,7 @@
 	import { chainLabels, layoutLabels } from '$lib/measureCore'
 	import { isMeasurement, worldPointsOf } from '$lib/measureItems'
 	import { isVRMode, isLocked, objectsGroup, selectedObjects } from '../stores/sceneStore'
+	import VRMeasureLabels from './VRMeasureLabels.svelte'
 
 	// 47 M1 + 48 B2: the measure chains in the 3D view — the one being drawn (with a dashed rubber
 	// band to where the next click would land) and every measurement ITEM in the scene (48 B2:
@@ -12,7 +13,8 @@
 	// their transforms). Lines and dots only: the labels are DOM (MeasureLabels.svelte), placed
 	// from the screen positions this component publishes in the RENDER stage, after OrbitControls
 	// has moved the camera for the frame. Scene-root, never in objectsGroup. Hidden in Play (a
-	// measurement is an editing aid) and in a headset (the labels are DOM).
+	// measurement is an editing aid). 52 V1: in a headset the lines and dots draw as well and the labels
+	// are troika text in the scene instead (VRMeasureLabels) — DOM is invisible there.
 
 	const { camera, renderer } = useThrelte()
 	const { renderStage } = useScheduler()
@@ -105,7 +107,7 @@
 
 	useTask(
 		() => {
-			const next = $isVRMode ? [] : collectItems()
+			const next = collectItems()
 			const key = next.map((c) => c.id + (c.selected ? 's' : '') + (c.editing ? 'e' : '') + c.points.map((p) => p.map((n) => n.toFixed(4)).join(',')).join(';')).join('|')
 			if (key !== itemsKey) {
 				itemsKey = key
@@ -159,6 +161,9 @@
 		/>
 	</T.Points>
 {/each}
+{#if $isVRMode}
+	<VRMeasureLabels {chains} />
+{/if}
 {#if preview}
 	<T.Line geometry={preview} renderOrder={997}>
 		<T.LineDashedMaterial color="#ff6a1a" dashSize={0.08} gapSize={0.06} depthTest={false} transparent opacity={0.85} />

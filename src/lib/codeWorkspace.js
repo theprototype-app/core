@@ -55,7 +55,7 @@ import {
 	unbindScriptNode,
 	startScriptAssets
 } from './scriptAssets';
-import { itemByHash, itemById, itemBlob, explorerItems, loadExplorer } from './explorer';
+import { itemByHash, itemById, itemBlob, explorerItems, explorerFolders, loadExplorer } from './explorer';
 import { scriptInputs, scriptOutputs, RESERVED } from './scriptIO';
 import { setScriptSockets } from './scriptSockets';
 import { followCode } from './scriptDerive';
@@ -348,7 +348,10 @@ export function reloadCodeTab(id) {
 	shared.replaceText(key, target);
 }
 
-/** Close a tab. A dirty one only with `force` (the UI asks first). @param {string} id @param {{force?: boolean}} [opts] */
+/** Close a tab. A dirty one only with `force` (the UI asks first). The last tab closes the
+ * workspace, unless `keepOpen` (70 W1: a file op in the Project tree closes the tabs of files it
+ * took away, and the tree the person is working in must not vanish with them).
+ * @param {string} id @param {{force?: boolean, keepOpen?: boolean}} [opts] */
 export function closeCodeTab(id, opts = {}) {
 	const tab = tabById(id);
 	if (!tab) return true;
@@ -357,7 +360,7 @@ export function closeCodeTab(id, opts = {}) {
 	activeCodeTab.set(nextActiveAfterClose(list, id, get(activeCodeTab)));
 	codeTabs.set(list.filter((t) => t.id !== id));
 	clearTimeout(liveTimers.get(id));
-	if (!get(codeTabs).length) codeWorkspaceClose.set(true);
+	if (!get(codeTabs).length && !opts.keepOpen) codeWorkspaceClose.set(true);
 	return true;
 }
 
@@ -678,7 +681,9 @@ export function currentProjectTree(graphTitle) {
 	return projectTree({
 		graphs: get(flowGraphs),
 		graphTitle,
-		scripts: get(explorerItems).filter((i) => /\.js$/i.test(i.name)),
+		// 70 W1: the Files group — every folder and the text files in them (filesTree filters)
+		scripts: get(explorerItems),
+		folders: get(explorerFolders),
 		boundCount: (hash) => nodesBoundTo(hash).length,
 		specOf: (type) => findSpec?.(type)
 	});
@@ -810,6 +815,7 @@ function followOne(tab) {
 
 /** an unbound file tab follows its Explorer item (a peer's copy replaced in place) */
 async function followItems() {
+	followNames();
 	for (const tab of get(codeTabs)) {
 		if (tab.kind !== 'file' || !tab.itemId || nodesBoundTo(tab.hash ?? '').length) continue;
 		const item = itemById(tab.itemId);
@@ -819,6 +825,24 @@ async function followItems() {
 		const text = await blob.text();
 		patchTab(tab.id, (t) => follow({ ...t, hash: item.hash, name: item.name, title: item.name }, text));
 	}
+}
+
+/**
+ * 70 W1: a file tab follows its item's NAME — a rename (here, in the Explorer, or a peer's
+ * through the shared index) keeps the tab pointing at the same file under the new name, bound
+ * or not. The shared-typing key is the name (`'f:' + name`), so the editor remounts on the
+ * renamed document (CodeWorkspace keys its panes by it) with the buffer the tab holds.
+ */
+function followNames() {
+	let changed = false;
+	const next = get(codeTabs).map((tab) => {
+		if (tab.kind !== 'file' || !tab.itemId) return tab;
+		const item = itemById(tab.itemId);
+		if (!item || item.name === tab.name) return tab;
+		changed = true;
+		return { ...tab, name: item.name, title: item.name };
+	});
+	if (changed) codeTabs.set(next);
 }
 
 let started = false;

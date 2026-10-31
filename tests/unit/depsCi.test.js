@@ -39,6 +39,15 @@ describe('deps-policy: one class per PR, the most careful part wins', () => {
 		expect(classify([dep('ws', 'direct:production', 'patch', '/tools/agent')])).toMatchObject({ cls: 'auto', needsPc: false });
 		expect(classify([]).cls).toBe('ready');
 	});
+	it('runs the battery only for a non-major change to the app root', () => {
+		expect(classify([dep('three', 'direct:production', 'patch')]).battery).toBe(true);
+		expect(classify([dep('prettier', 'direct:development', 'minor')]).battery).toBe(true);
+		expect(classify([dep('@sveltejs/kit', 'direct:development', 'major')]).battery).toBe(false);
+		expect(classify([dep('actions/checkout', 'direct:production', 'minor', '/', 'github_actions')]).battery).toBe(false);
+		expect(classify([dep('ws', 'direct:production', 'minor', '/tools/agent')]).battery).toBe(false);
+		expect(classify([dep('ws', 'direct:production', 'patch', '/tools/agent'), dep('three', 'direct:production', 'patch')]).battery).toBe(true);
+		expect(classify([]).battery).toBe(true);
+	});
 });
 
 /** @param {Record<string, number>} suites @param {Record<string, string>} [skip] */
@@ -52,6 +61,15 @@ describe('battery shards: longest first onto the least-loaded shard', () => {
 		expect(s.map((x) => x.secs)).toEqual([1100, 1000]);
 		expect(assign(b, 2)).toEqual(s);
 		expect(s.flat().some((x) => x.suites.includes('x'))).toBe(false);
+	});
+	it('splits required from optional; a local `all` run queues optional after required', () => {
+		const b = { ...battery({ a: 600, b: 500, o1: 900, o2: 100 }), optional: { o1: 'red on the base', o2: 'flaky' } };
+		expect(assign(b, 2).map((x) => x.suites)).toEqual([['a'], ['b']]);
+		expect(assign(b, 2, 'optional').map((x) => x.suites)).toEqual([['o1'], ['o2']]);
+		expect(assign(b, 2, 'all').map((x) => x.suites)).toEqual([['a', 'o1'], ['b', 'o2']]);
+		const sized = { ...b, shards: { target_minutes: 10, max: 20, min: 1 } };
+		expect([shardCount(sized), shardCount(sized, 'optional')]).toEqual([2, 2]);
+		expect(shardCount({ ...sized, optional: {} }, 'optional')).toBe(0);
 	});
 	it('sizes the matrix from the target minutes, clamped', () => {
 		expect(shardCount(battery({ a: 600, b: 600, c: 600, d: 600 }))).toBe(4);

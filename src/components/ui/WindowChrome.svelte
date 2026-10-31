@@ -208,6 +208,42 @@
 	:global(:root[data-ui-large]) .wc-title {
 		min-width: min(6.5em, 100%);
 	}
+	/* fix-batch-1 #23 (53-int Q4): …but the wrap is the LAST resort now, not the first. A flex line
+	   breaks on its items' HYPOTHETICAL sizes, so a title as long as its text pushed the buttons down
+	   while there was room to ellipsize it — at 150 % on the folded N6 (a ~260 px layout) the Settings
+	   sheet's close button sat on a second row and the Inspector header took three. Compact header at
+	   a large scale: the title enters line-breaking at its minimum (basis 0, grows into what is left),
+	   the decorative icon and the back button's text step aside (the text stays its accessible name),
+	   and the header buttons stop growing at 120 % — still a 44 px target and more — so the scale goes
+	   to the words */
+	:global(:root[data-ui-large]) .wc-head {
+		column-gap: calc(4px * var(--ui-scale, 1));
+		padding-left: calc(8px * var(--ui-scale, 1));
+	}
+	:global(:root[data-ui-large]) .wc-head .wc-title {
+		flex: 1 1 0;
+		min-width: min(4em, 100%);
+	}
+	:global(:root[data-ui-large]) .wc-icon {
+		display: none;
+	}
+	:global(:root[data-ui-large]) .wc-actions {
+		gap: calc(4px * var(--ui-scale, 1));
+	}
+	:global(:root[data-ui-large]) .wc-nav .wc-back > span {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+	:global(:root[data-ui-large]) .wc-modal .wc-btn,
+	:global(:root[data-ui-large]) .wc-panel .wc-btn,
+	:global(:root[data-ui-large]) .wc-panel .wc-head :global(.wc-act) {
+		width: calc(44px * min(var(--ui-scale, 1), 1.2));
+		height: calc(44px * min(var(--ui-scale, 1), 1.2));
+	}
 	.wc-modal .wc-title {
 		font-size: var(--fs-modal-title);
 		letter-spacing: -0.01em;

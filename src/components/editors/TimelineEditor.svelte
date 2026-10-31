@@ -114,6 +114,8 @@
 	};
 
 	// ---- shell: docked vs floating (HudEditor's verbatim) ------------------------------
+	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
+	let { popped = false } = $props();
 	let docked = $state(true);
 	const WIN_MIN = { minW: 420, minH: 260 };
 	const WIN_DEFAULT = { w: 760, h: 380 };
@@ -129,8 +131,11 @@
 		winW = saved.w;
 		winH = saved.h;
 	}
+	// 70 W2: a popped-out instance renders its floating layout inside its window, never docked
+	// svelte-ignore state_referenced_locally
+	if (popped) docked = false;
 	$effect(() =>
-		onLayoutRestore(() => {
+		popped ? undefined : onLayoutRestore(() => {
 			const stored = storedPanelLayout(safeStorage.getItem, KEY, 760, 380);
 			docked = !!stored.docked;
 			const fit = clampWinSize(stored.w, stored.h, WIN_MIN);
@@ -145,6 +150,7 @@
 		else forgetDockTab(KEY);
 	}
 	$effect(() => {
+		if (popped) return; // 70 W2: the main window's instance answers the arm
 		const arm = $dockModeArm as any;
 		if (!arm || arm.key !== KEY) return;
 		dockModeArm.set(null);
@@ -157,6 +163,7 @@
 	const effW = $derived(myGroup ? myGroup.rect.width : winW);
 	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 	$effect(() => {
+		if (popped) return; // 70 W2: a popped panel is no dock tab
 		setDockOccupant(KEY, !$timelineClose && docked, $dockHeight);
 		return () => setDockOccupant(KEY, false);
 	});

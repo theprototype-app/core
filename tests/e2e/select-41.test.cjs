@@ -329,8 +329,10 @@ h.run(async () => {
 		const t0 = await screenOf(P, uuid, dx, dy);
 		const cam0 = (await store(P, 'globalCamera')) ? await P.evaluate(() => { let c; window.__stores.globalCamera.subscribe((v) => (c = v))(); return c.position.toArray(); }) : null;
 		await touch.send('touchStart', t0.x, t0.y);
-		await P.waitForTimeout(250);
-		const taken = await P.evaluate(() => window.__stores.playInteract.playInteractDebug().carrying);
+		// wait for the grab instead of a fixed 250 ms (a frame or two on software GL); the move starts
+		// from a carry that exists, and a carry that never comes still reads as not taken
+		const taken = await P.waitForFunction((u) => window.__stores.playInteract.playInteractDebug().carrying === u, uuid, { timeout: 3000 })
+			.then(() => uuid, () => P.evaluate(() => window.__stores.playInteract.playInteractDebug().carrying));
 		const t1 = await screenOf(P, uuid);
 		const grip0 = t0.local ? await screenOfLocal(P, uuid, t0.local) : null;
 		for (let i = 1; i <= steps; i++) {
@@ -402,7 +404,14 @@ h.run(async () => {
 	h.check(c.hit && c.taken, 'G4 (far) the finger takes the crate 10 m away');
 	h.check(c.jump < 8 && Math.abs(dist1 - dist0) < 0.6, `G4 (far) it stays at its distance (${dist0.toFixed(2)} -> ${dist1.toFixed(2)} m, jump ${c.jump.toFixed(1)} px)`);
 	h.check(c.track < 14, `G4 (far) and follows the finger (off by ${c.track.toFixed(1)} px)`);
-	await P.waitForTimeout(1500);
+	// the flick aims at where the crate IS: wait for the far carry's release to come to rest (a fixed
+	// 1.5 s left a light crate still sliding at ~4 fps, so the finger landed beside it)
+	await h.eventually(
+		() => P.evaluate((u) => window.__stores.physics.bodyVelocityOf(u), crate),
+		(v) => !!v && Math.hypot(...v.linvel) < 0.05,
+		'(premise) the crate is at rest before the flick',
+		15000
+	);
 
 	// a FLICK: released mid-move, the throw is bounded
 	const crateAt2 = (await screenOf(P, crate)).pos;
@@ -419,6 +428,11 @@ h.run(async () => {
 	const U = await h.setupPage(browser, 'unfolded', { context: N6_UNFOLDED, storage: STORAGE });
 	const Q = U.page;
 	const touchU = await touchApi(Q);
+	// a tap within 400 ms of the last one is a DOUBLE-tap (Scene.svelte), which does not deselect — on the
+	// PAGE's clock. A long software-GL frame makes 700 ms of test time less than that in the app, so each
+	// tap below waits until the page itself is 450 ms past the last pointerup
+	await Q.evaluate(() => window.addEventListener('pointerup', () => (window.__lastUp = Date.now()), true));
+	const pastDoubleTap = () => Q.waitForFunction(() => Date.now() - (window.__lastUp ?? 0) > 450);
 	await look(Q, [0, 3, 6], [0, 0.5, 0]);
 	const ua = await make(Q, [-1.2, 0.5, 0]);
 	await rest(Q);
@@ -427,9 +441,24 @@ h.run(async () => {
 	await touchU.tap(at.x, at.y);
 	await Q.waitForTimeout(700);
 	h.check(JSON.stringify(await sel(Q)) === JSON.stringify([ua]), 'G14 (unfolded) a tap selects');
+	await pastDoubleTap();
+	// what the finger lands on: the folded run passes with the same code, and on this larger screen the
+	// seated gizmo may cover the box — a red says whether the tap reached a gizmo handle (axis/dragging)
+	await Q.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		w.__gz = [];
+		const note = (/** @type {string} */ t) => {
+			let tc;
+			w.__stores.TControls?.subscribe?.((/** @type {any} */ v) => (tc = v))?.();
+			w.__gz.push([t, tc?.axis ?? null, !!tc?.dragging]);
+		};
+		for (const t of ['pointerdown', 'pointerup']) window.addEventListener(t, () => note(t), { capture: true, once: true });
+	});
 	await touchU.tap(at.x, at.y);
 	await Q.waitForTimeout(700);
-	h.check((await sel(Q)).length === 0, `G14 (unfolded) a tap on the selected box deselects it (${JSON.stringify(await sel(Q))})`);
+	const gizmo = await Q.evaluate(() => /** @type {any} */ (window).__gz);
+	h.check((await sel(Q)).length === 0, `G14 (unfolded) a tap on the selected box deselects it (${JSON.stringify(await sel(Q))}; gizmo at the tap ${JSON.stringify(gizmo)})`);
+	await pastDoubleTap();
 	await touchU.tap(at.x, at.y);
 	await Q.waitForTimeout(700);
 	const modeCell = '#editor-mode-toggle';

@@ -23,6 +23,7 @@
 	// because a guard with two copies is a guard with one bug; this is its third caller.
 	import { guardSceneReplace, sceneAtRisk } from '$lib/sceneOpenGuard';
 	import { currentLevel, sceneSignature } from '$lib/levels';
+	import { containerType } from '$lib/download/containerType.js';
 	// R22 round 13: MOUNT is not Load. Load replaces the whole project; mounting adds this
 	// saved project to the Explorer as a root of its own, above Library, leaving whatever is
 	// open untouched. Only a PROJECT has a library to mount, so a scene is not offered one.
@@ -546,7 +547,7 @@
 			const { exportProjectFromSession } = await import('$lib/projectFile');
 			const out = await exportProjectFromSession(payload);
 			if (!out) return;
-			saveBlob(new Blob([/** @type {BlobPart} */ (out.bytes)], { type: 'application/zip' }), safe + '.tp');
+			saveBlob(new Blob([/** @type {BlobPart} */ (out.bytes)], { type: containerType('.tp') }), safe + '.tp');
 			// the FILENAME rule is this SURFACE's, not projectFile's: both download buttons on a
 			// row name the file after the entry, and one surface gets one rule
 			if (out.skippedItems)
@@ -559,7 +560,7 @@
 		}
 		const bytes = await exportSessionZip(payload);
 		saveBlob(
-			new Blob([/** @type {BlobPart} */ (bytes)], { type: 'application/zip' }),
+			new Blob([/** @type {BlobPart} */ (bytes)], { type: containerType('.tpscene') }),
 			safe + '.tpscene'
 		);
 	}

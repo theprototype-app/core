@@ -12,6 +12,9 @@
 //   vrHeightOffset     metres added on top (−0.5 … +0.5), e.g. a tall player asking for a lower view
 //   vrSnapAngleLast    the snap angle to come back to when turning goes Off → Snap
 //   vrWorldSnap        37 R10: the two-grip world gesture snaps (15° yaw steps, 1/2/5/10× scale detents)
+//   vrBothGripsWorld   52 (V5): 'always' (default) — both grips are the world gesture whatever the rays hit or the
+//                      hands are inside (a first-hand grab that has not moved yet is dropped); 'emptyAir' — the
+//                      pre-52 rule, both grips must close on empty air
 //   vrOneHanded        53 (A7): 'off' | 'left' | 'right' — play with ONE controller: that stick moves
 //                      (forward/back) and turns (sideways), holding its press aims a teleport, B/Y opens
 //                      the radial menu (which then offers Edit / Interact and the game menu), A/X talks or
@@ -77,6 +80,8 @@ export const vrHeightOffset = persisted('vrHeightOffset', 0, (r) => clampHeight(
 export const vrSnapAngleLast = persisted('vrSnapAngleLast', 45, oneOf(SNAP_ANGLES, 45));
 /** @type {import('svelte/store').Writable<boolean>} */
 export const vrWorldSnap = persisted('vrWorldSnap', true, bool);
+/** 52 (V5) @type {import('svelte/store').Writable<'always' | 'emptyAir'>} */
+export const vrBothGripsWorld = persisted('vrBothGripsWorld', /** @type {'always' | 'emptyAir'} */ ('always'), (r) => (r === 'emptyAir' ? 'emptyAir' : 'always'));
 
 /** @type {import('svelte/store').Writable<'off' | 'left' | 'right'>} */
 export const vrOneHanded = persisted('vrOneHanded', /** @type {'off' | 'left' | 'right'} */ ('off'), (r) => (r === 'left' || r === 'right' ? r : 'off'));

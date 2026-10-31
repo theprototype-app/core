@@ -57,10 +57,14 @@ h.run(async () => {
 	h.check(await A.page.getByText('Objects', { exact: false }).first().isVisible(), 'object list header visible');
 	h.check(await A.page.locator('#object-search').isVisible(), 'search survived the restyle');
 
-	// save dropdown format picker still opens
-	await A.page.getByRole('button', { name: /json/i }).first().click();
-	await A.page.waitForTimeout(300);
-	h.check(await A.page.getByText('GLTF', { exact: true }).isVisible(), 'save format dropdown opens');
+	// the save format picker still opens — Save options (the burger's Save ▾) since 41b replaced the
+	// old .json dropdown; GLTF is behind "Offer GLTF", so assert the two formats it always offers
+	await A.page.evaluate(() => window.__stores.closeMenu.set(false));
+	await A.page.waitForSelector('#save-options-open', { timeout: 5000 });
+	await A.page.locator('#save-options-open').click();
+	await A.page.waitForSelector('#save-options-modal', { state: 'visible', timeout: 5000 });
+	const formats = await A.page.evaluate(() => [...document.querySelectorAll('#save-format .seg-opt')].map((b) => b.textContent?.trim()));
+	h.check(formats.includes('Project') && formats.includes('Scene'), `save format picker opens (${JSON.stringify(formats)})`);
 
 	await h.finish(browser);
 });

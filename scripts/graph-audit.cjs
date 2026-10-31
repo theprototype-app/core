@@ -24,7 +24,7 @@ const path = require('node:path');
 const ROOT = path.join(__dirname, '..');
 const read = (/** @type {string} */ p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 
-/** @returns {{type: string, group: string, label: string, inputs: string[], params: string[], note: boolean}[]} */
+/** @returns {{type: string, group: string, label: string, inputs: string[], hasInputs: boolean, params: string[], ranges: string[], note: boolean}[]} */
 function catalogTypes() {
 	const src = read('src/lib/nodeCatalog.js');
 	const out = [];
@@ -53,7 +53,8 @@ function catalogTypes() {
 			.map((s) => s.trim().replace(/'/g, ''))
 			.filter(Boolean);
 		const params = [...body.matchAll(/key: '([^']+)'/g)].map((m) => m[1]);
-		out.push({ type: t[1], group, label, inputs, params, note: /\bnote:/.test(body) });
+		const ranges = [...body.matchAll(/key: '([^']+)', kind: 'range'/g)].map((m) => m[1]);
+		out.push({ type: t[1], group, label, inputs, hasInputs: /\binputs: \[/.test(body), params, ranges, note: /\bnote:/.test(body) });
 	}
 	// a type spelled twice (inside an options literal etc.) keeps its first row
 	const seen = new Set();
@@ -82,6 +83,34 @@ function outputTable() {
 	return Object.fromEntries([...block.matchAll(/([a-z0-9_-]+): '([a-z0-9]+)'/g)].map((m) => [m[1], m[2]]));
 }
 
+/** flowSockets' INPUT table: type -> the handles the runtime types (and so reads) */
+function inputTable() {
+	const src = read('src/lib/flowSockets.js');
+	const a = src.indexOf('const INPUT = {');
+	const block = src.slice(a, src.indexOf('\n};', a));
+	return Object.fromEntries([...block.matchAll(/^\t'?([a-z0-9_-]+)'?: \{([^}]*)\}/gm)].map((m) => [m[1], [...m[2].matchAll(/'?([A-Za-z0-9_]+)'?:/g)].map((k) => k[1])]));
+}
+
+/** HudNode's own INPUTS map: type -> the sockets that card draws */
+function hudCardInputs() {
+	const src = read('src/components/editors/nodes/HudNode.svelte');
+	const a = src.indexOf('const INPUTS');
+	const block = src.slice(a, src.indexOf('};', a));
+	return Object.fromEntries([...block.matchAll(/^\t\t([a-z0-9_-]+): \[([^\]]*)\]/gm)].map((m) => [m[1], [...m[2].matchAll(/'([^']+)'/g)].map((k) => k[1])]));
+}
+
+/**
+ * fix-batch-1 (docs-1 Q1): the sockets a GENERIC card draws — AnimationNode draws the spec's
+ * `inputs` (+ a socket per range param when it has them) or, with no `inputs`, one per range
+ * param; HudNode draws its INPUTS map. null = a card of its own (it draws what it draws).
+ * @param {any} t @param {string} card @param {Record<string, string[]>} hud
+ */
+function drawnInputs(t, card, hud) {
+	if (card === 'AnimationNode') return t.hasInputs ? [...t.inputs, ...t.ranges] : t.ranges;
+	if (card === 'HudNode') return hud[t.type] ?? [];
+	return null;
+}
+
 function docKeys() {
 	const src = read('src/lib/nodeDocs.js');
 	return new Set([...src.matchAll(/^\t'?([a-z0-9_-]+)'?:/gm)].map((m) => m[1]));
@@ -93,8 +122,10 @@ function catalogReport() {
 	const { cases, valueTypes } = evaluatorInfo();
 	const outs = outputTable();
 	const docs = docKeys();
+	const ins = inputTable();
+	const hud = hudCardInputs();
 	const rows = [];
-	const flags = { noCard: [], valueNoEval: [], evalNotListed: [], noDoc: [], noOutType: [] };
+	const flags = { noCard: [], valueNoEval: [], evalNotListed: [], noDoc: [], noOutType: [], undrawnInput: [] };
 	for (const t of types) {
 		const f = [];
 		if (!cards[t.type]) (f.push('NO CARD'), flags.noCard.push(t.type));
@@ -103,6 +134,10 @@ function catalogReport() {
 			(f.push('evaluated but not a listed value source'), flags.evalNotListed.push(t.type));
 		if (!docs.has(t.type)) (f.push('no doc'), flags.noDoc.push(t.type));
 		if (!outs[t.type]) flags.noOutType.push(t.type);
+		// a handle the runtime types (and reads) that the card never draws: unwirable by hand
+		const drawn = drawnInputs(t, cards[t.type], hud);
+		const missing = drawn ? (ins[t.type] ?? []).filter((h) => !drawn.includes(h)) : [];
+		if (missing.length) (f.push('UNDRAWN INPUT ' + missing.join(',')), flags.undrawnInput.push(t.type + ':' + missing.join(',')));
 		rows.push(
 			`| ${t.type} | ${t.group} | ${cards[t.type] ?? '—'} | ${outs[t.type] ?? '—'} | ${t.inputs.join(' ') || '—'} | ${t.params.join(' ') || '—'} | ${cases.has(t.type) ? 'yes' : '—'} | ${f.join('; ') || 'OK'} |`
 		);

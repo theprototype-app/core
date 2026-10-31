@@ -69,7 +69,12 @@ export async function buildGallerySubmission(meta) {
 	if (early.length) return { ok: false, errors: early };
 
 	const { buildSessionPayload, exportSessionZip } = await import('../sessions');
-	const payload = buildSessionPayload(String(entry.title || get(currentLevel)?.name || 'Untitled'));
+	// fix-batch-2 (1.45.1): local objects are drafts — a submitted scene carries what peers see
+	const { withoutLocalObjects, noteLocalObjectsExcluded } = await import('../objectPermissions');
+	const { result: payload, excluded } = withoutLocalObjects(() =>
+		buildSessionPayload(String(entry.title || get(currentLevel)?.name || 'Untitled'))
+	);
+	noteLocalObjectsExcluded(excluded);
 	const scene = /** @type {Uint8Array} */ (await exportSessionZip(payload, { assets: true, flow: true, packs: false }));
 	const thumb = meta.thumb ?? (await captureGalleryThumb());
 	if (!thumb) return { ok: false, errors: ['Could not take a thumbnail from the viewport (leave VR and try again).'] };

@@ -27,6 +27,8 @@ function excluded(rel) {
 		rel === 'manifest.webmanifest' ||
 		rel === 'version.json' ||
 		rel === '404.html' ||
+		// 69 T3: the hosted build's response headers — an export's host has its own
+		rel === '_headers' ||
 		/^llms(-full)?\.txt$/.test(rel) ||
 		/^cloud-plugin.*\.js$/.test(rel) ||
 		rel.startsWith('templates/') ||

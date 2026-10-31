@@ -2,8 +2,8 @@
 import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalCamera, selectedObject } from '../stores/sceneStore';
-import { peers, showToast, toastStore, stackOnDrop } from '../stores/appStore';
-import { explorerItems, itemBlob } from './explorer';
+import { peers, showToast, toastStore, stackOnDrop, openSceneSection } from '../stores/appStore';
+import { explorerItems, itemBlob, importFiles } from './explorer';
 import { prefabs, instantiatePrefab } from './prefabs';
 import { importFile, addImported } from './fileHandler.svelte';
 import { packRefFromUrl, peekPackTemplate, loadPackTemplate } from './packRefs';
@@ -65,6 +65,18 @@ export function dropTarget(clientX, clientY) {
 	);
 	if (!onGround) return { point: null, object: null, normal: null, hit: null };
 	return { point: planePoint.toArray(), object: null, normal: [0, 1, 0], hit: null };
+}
+
+/**
+ * 52-browser: the first scene surface along a WORLD ray (the VR laser) — `{point, normal, object}` in
+ * world space, or null when the ray meets nothing. No ground-plane fallback here: the caller knows
+ * the frame its ground lives in (the world rig may have moved or shrunk the objectsGroup).
+ * @param {any} ray a THREE.Raycaster @returns {{point: number[], normal: number[] | null, object: any} | null}
+ */
+export function rayHit(ray) {
+	const hit = sceneHits(ray)[0];
+	if (!hit) return null;
+	return { point: hit.point.toArray(), normal: hitWorldNormal(hit)?.toArray() ?? null, object: topLevelObjectOf(hit.object) };
 }
 
 const _down = new THREE.Raycaster();
@@ -178,6 +190,24 @@ function spreadPoint(point, i, count) {
 }
 
 /**
+ * 57 M1: animation clip FILES dropped on the viewport (.tpanim / .vrma / .bvh from the desktop): into
+ * the Explorer (converted to .tpanim on the way), then onto the model under the cursor, the first
+ * one playing — the same as dragging the new cards onto it.
+ * @param {File[]} files @param {number} clientX @param {number} clientY
+ */
+export async function dropClipFiles(files, clientX, clientY) {
+	const target = dropTarget(clientX, clientY);
+	const items = (await importFiles(files, null)).filter((/** @type {any} */ it) => it?.kind === 'anim');
+	if (!items.length) return;
+	if (!target.object) return showToast('Clips added to the Explorer — drag one onto a character to play it');
+	let first = true;
+	for (const item of items) {
+		await placeExplorerPayload({ id: item.id, kind: 'anim', name: item.name }, first ? target : { ...target, noPlay: true });
+		first = false;
+	}
+}
+
+/**
  * Handle a viewport drop of an Explorer card.
  *
  * 21-H3: the payload may carry an `items` ARRAY — the whole Explorer selection behind
@@ -204,7 +234,7 @@ export async function dropExplorerItem(payload, clientX, clientY) {
  * Place ONE payload at an already-resolved drop target (21-H3 split this out of
  * `dropExplorerItem` unchanged so the multi path could reuse the single one verbatim).
  * @param {any} payload
- * @param {{point: number[] | null, object: any, normal: number[] | null, hit?: any}} target
+ * @param {{point: number[] | null, object: any, normal: number[] | null, hit?: any, noPlay?: boolean}} target
  */
 async function placeExplorerPayload(payload, target) {
 	if (payload.prefabId) {
@@ -254,6 +284,20 @@ async function placeExplorerPayload(payload, target) {
 			undefined,
 			target.point ?? undefined
 		);
+	} else if (item.kind === 'anim') {
+		// 57 M1: a clip dropped ON a rigged model is assigned to it and plays (one ref change,
+		// one undo step, the bytes pushed once); anywhere else it says where it goes
+		const { hasAnimatedImport } = await import('./animatedImports');
+		let hit = target.hit ?? target.object;
+		while (hit && !hasAnimatedImport(hit.uuid)) hit = hit.parent;
+		// 57 M12: no rig under the drop — the object itself takes it (its named nodes are its parts)
+		hit ??= target.object;
+		if (!hit) {
+			showToast('Drop the clip ON a character or another model to play it');
+			return;
+		}
+		const { assignClipAsset } = await import('./tpanim/clipAssets.js');
+		assignClipAsset(hit.uuid, { hash: item.hash, name: item.name }, { play: !target.noPlay });
 	} else if (item.kind === 'image') {
 		if (!target.object) {
 			showToast('Drop the image ON an object to texture it');
@@ -272,6 +316,14 @@ async function placeExplorerPayload(payload, target) {
 			} catch (e) {
 				console.log('module drop handler failed', e);
 			}
+		}
+		// fix-batch-2 (1.45.1): an HDRI used to get the audio/text line. It lights the scene as
+		// its sky from Configure Scene ▸ Environment (a direct "Use as sky" on drop is roadmap 81)
+		if (item.kind === 'hdri') {
+			showToast('An HDRI lights the whole scene as its sky — pick it in Configure Scene ▸ Environment', [
+				{ label: 'Open Environment', action: () => openSceneSection('Environment') }
+			]);
+			return;
 		}
 		showToast('Audio/text items are used where they plug in (sound nodes, scripts)');
 	}
@@ -302,9 +354,12 @@ function stubbable(payload, dims) {
 /**
  * The one spawn a drag-to-place release makes.
  * @param {{payload: any, dims: any}[]} items @param {{position: number[], quaternion: number[]}[]} placements
+ * @param {{frame?: any}} [opts] `frame` (52-browser): the world matrix of the placements' frame — the
+ *   objectsGroup's, which the VR world rig may have moved or shrunk — so the pending boxes draw there
  * @returns {Promise<string[]>} the uuids placed (stubs at once; imports once they land)
  */
-export async function placeFromGhost(items, placements) {
+export async function placeFromGhost(items, placements, opts = {}) {
+	const frame = opts.frame ?? null;
 	const { placementGroupFor } = await import('./lodGroup');
 	/** @type {string[]} */
 	const placed = [];
@@ -315,7 +370,7 @@ export async function placeFromGhost(items, placements) {
 	for (let i = 0; i < items.length; i++) {
 		const { payload, dims } = items[i];
 		if (payload?.url && !payload.behavior && !dims?.known && !peekPackTemplate(payload.url)) {
-			const release = holdPendingGhost(dims?.box ?? [-0.5, 0, -0.5, 0.5, 1, 0.5], placements[i].position, placements[i].quaternion);
+			const release = holdPendingGhost(dims?.box ?? [-0.5, 0, -0.5, 0.5, 1, 0.5], placements[i].position, placements[i].quaternion, frame);
 			try {
 				await loadPackTemplate(payload.url);
 			} catch (e) {
@@ -366,7 +421,7 @@ export async function placeFromGhost(items, placements) {
 	}
 	if (placed.length > 1) selectedObjects.set([...placed]);
 	for (const { item, at } of later) {
-		const uuid = await importAtGhost(item.payload, item.dims, at);
+		const uuid = await importAtGhost(item.payload, item.dims, at, frame);
 		if (uuid) placed.push(uuid);
 	}
 	return placed;
@@ -374,11 +429,11 @@ export async function placeFromGhost(items, placements) {
 
 /**
  * The import path at a ghost's pose (a pending box holds the spot meanwhile).
- * @param {any} payload @param {any} dims @param {{position: number[], quaternion: number[]}} at
+ * @param {any} payload @param {any} dims @param {{position: number[], quaternion: number[]}} at @param {any} [frame]
  * @returns {Promise<string | null>}
  */
-async function importAtGhost(payload, dims, at) {
-	const release = holdPendingGhost(dims?.box ?? [-0.5, 0, -0.5, 0.5, 1, 0.5], at.position, at.quaternion);
+async function importAtGhost(payload, dims, at, frame = null) {
+	const release = holdPendingGhost(dims?.box ?? [-0.5, 0, -0.5, 0.5, 1, 0.5], at.position, at.quaternion, frame);
 	try {
 		if (payload.url) {
 			const name = String(payload.name || 'model').replace(/\.\w+$/, '');

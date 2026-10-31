@@ -32,8 +32,11 @@ describe('yaw steps', () => {
 });
 
 describe('scale detents', () => {
-	it('lists 1/2/5/10 both ways', () => {
-		expect(SCALE_DETENTS).toEqual([0.1, 0.2, 0.5, 1, 2, 5, 10]);
+	it('lists 1/2/5/10 both ways, plus the 1:50 miniature (52 V5)', () => {
+		expect(SCALE_DETENTS).toEqual([0.02, 0.1, 0.2, 0.5, 1, 2, 5, 10]);
+	});
+	it('catches the 1:50 table (52 V5)', () => {
+		expect(snapWorldGrab({ total: 0.021, yaw: 0, yaw0: 0 }, null)).toMatchObject({ total: 0.02, detent: 0.02 });
 	});
 	it('sticks inside ±7 % and slides freely between', () => {
 		expect(snapWorldGrab({ total: 2.1, yaw: 0, yaw0: 0 }, null)).toMatchObject({ total: 2, detent: 2 });
@@ -54,9 +57,13 @@ describe('scale detents', () => {
 describe('labels', () => {
 	it('reads like the readout', () => {
 		expect(scaleLabel(2)).toBe('2×');
-		expect(scaleLabel(0.5)).toBe('½×');
-		expect(scaleLabel(0.1)).toBe('⅒×');
 		expect(scaleLabel(3.3)).toBe('3.3×');
+		// 52 (V5): below life size it is a map scale
+		expect(scaleLabel(1)).toBe('1:1');
+		expect(scaleLabel(0.5)).toBe('1:2');
+		expect(scaleLabel(0.1)).toBe('1:10');
+		expect(scaleLabel(0.02)).toBe('1:50');
+		expect(scaleLabel(0.37)).toBe('1:2.7');
 		expect(yawLabel(3)).toBe('45°');
 		expect(yawLabel(-1)).toBe('345°');
 	});

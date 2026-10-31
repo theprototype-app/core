@@ -826,7 +826,7 @@ h.run(async () => {
 		const r = el.getBoundingClientRect();
 		const body = el.querySelector('.toolbox-body');
 		const grip = el.querySelector('.dw-resize');
-		const grab = el.querySelector('.tbx-sheet-grab');
+		const grab = el.querySelector('.tbx-sheet-resize [data-sheet-grip]'); // ui/SheetGrip since 58db817a
 		const tabs = el.querySelector('.tbx-tabs');
 		return {
 			left: Math.round(r.left),
@@ -834,7 +834,7 @@ h.run(async () => {
 			bottom: Math.round(r.bottom),
 			top: Math.round(r.top),
 			gripHidden: !grip || getComputedStyle(grip).display === 'none',
-			hasGrabber: !!grab && getComputedStyle(grab.parentElement).display !== 'none',
+			hasGrabber: !!grab && grab.offsetHeight > 0,
 			bodyScrolls: getComputedStyle(body).overflowY === 'auto',
 			// tabs must stay OUT of the scrolling area so they are always reachable
 			tabsPinned: !body.contains(tabs)
@@ -851,7 +851,7 @@ h.run(async () => {
 	// the grabber resizes and the height persists
 	const resized = await M.page.evaluate(async () => {
 		const el = document.querySelector('#mesh-edit-popup');
-		const handle = el.querySelector('.tbx-sheet-resize');
+		const handle = el.querySelector('.tbx-sheet-resize [data-sheet-grip]'); // the gesture is sheetDrag on its zone; events bubble to it
 		const before = Math.round(el.getBoundingClientRect().height);
 		const send = (type, y) =>
 			handle.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 7, clientY: y }));

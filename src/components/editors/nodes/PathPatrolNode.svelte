@@ -4,6 +4,7 @@
 	import NodeWrapper from './NodeWrapper.svelte';
 	import { setNodeData } from '$lib/nodesHandler';
 	import { pathCaptureNode, togglePathCapture } from '$lib/pathCapture';
+	import { findNodeAnyGraph } from '../../../stores/flowStore';
 
 	type $$Props = NodeProps;
 	export let id: string;
@@ -12,6 +13,7 @@
 	$: capturing = $pathCaptureNode === id;
 	$: waypointCount = (data.points ?? []).length;
 	// One-way flow: render from data, write through setNodeData (replicates to peers)
+	const graphOf = (nodeId: string) => findNodeAnyGraph((n: any) => n.id === nodeId)?.graphId;
 </script>
 
 <NodeWrapper type={data.type} label={data.label}>
@@ -26,13 +28,14 @@
 				class="nodrag nopan flex-1 rounded px-1 py-0.5 {capturing
 					? 'bg-accent-fill text-on-accent'
 					: 'bg-surface-active text-text hover:bg-border-strong'}"
+				aria-pressed={capturing}
 				on:click={() => togglePathCapture(id)}
 			>
-				{capturing ? 'Capturing… (click scene)' : 'Capture clicks'}
+				{capturing ? 'Placing… (Esc / Done)' : 'Capture clicks'}
 			</button>
 			<button
 				class="nodrag nopan rounded-sm bg-surface-active px-1 py-0.5 text-text hover:bg-border-strong"
-				on:click={() => setNodeData(id, { points: [] })}
+				on:click={() => setNodeData(id, { points: [] }, graphOf(id))}
 			>
 				Clear
 			</button>

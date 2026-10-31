@@ -248,7 +248,13 @@ h.run(async () => {
 			let original = null;
 			peers.subscribe((p) => (original = p))();
 			const sent = [];
-			peers.set({ ...original, send: (m) => sent.push(m) });
+			// assetShare sends per OPEN CONNECTION since 9c81d069 (chunked transfers + the ledger), not
+			// through peers.send — and nobody has joined yet in this section, so give it one to send on
+			peers.set({
+				...original,
+				send: (m) => sent.push(m),
+				connections: { ...(original.connections ?? {}), spy: { open: true, send: (m) => sent.push(m) } }
+			});
 			document.querySelector('#post-param-' + id + '-lut').click();
 			await new Promise((r) => setTimeout(r, 300));
 			const rows = [...document.querySelectorAll('.ts-list [role="option"]')];

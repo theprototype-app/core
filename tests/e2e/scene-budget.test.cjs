@@ -88,9 +88,21 @@ h.run(async () => {
 	h.check(typeof live.ingestBacklog === 'number', 'a registered source (the ingest backlog) reaches the sample');
 
 	// ---- 3. the meter's dot moves with the scene ----------------------------
-	await A.page.waitForTimeout(700);
-	const greenDot = await A.page.getAttribute('#object-budget-dot', 'data-tier');
-	h.check(greenDot === 'green', `24 objects reads green in the status line (${greenDot})`);
+	// the dot is the WORST tier of every budget (Controls worstTier), so on software GL (~3 fps) frame
+	// time alone turns it red whatever the scene holds. Judge the OBJECTS row, and the dot only when the
+	// frame rows leave it to the objects.
+	const tierOf = (/** @type {string} */ key) =>
+		A.page.evaluate((k) => {
+			const b = window.__stores.sceneBudget;
+			let m;
+			b.sceneMetrics.subscribe((v) => (m = v))();
+			return b.budgetRows(m, m?.profile ?? 'desktop').find((r) => r.key === k)?.tier ?? null;
+		}, key);
+	await h.eventually(() => tierOf('objects'), (t) => t === 'green', '24 objects reads green on the objects budget');
+	if ((await tierOf('frameP95')) === 'green') {
+		const greenDot = await A.page.getAttribute('#object-budget-dot', 'data-tier');
+		h.check(greenDot === 'green', `…and in the status line (${greenDot})`);
+	} else console.log('  (frame time is over budget on this renderer — the status-line dot is not the objects reading here)');
 
 	await A.page.evaluate(async () => {
 		const { THREE, objectsGroup, pokeScene } = window.__stores;
@@ -101,15 +113,18 @@ h.run(async () => {
 		for (let i = 0; i < 3200; i++) group.add(new THREE.Mesh(geo, mat));
 		pokeScene();
 	});
+	await h.eventually(() => tierOf('objects'), (t) => t === 'red', 'the objects budget goes RED past the ceiling');
 	await h.eventually(
 		() => A.page.getAttribute('#object-budget-dot', 'data-tier'),
 		(t) => t === 'red',
 		'the status-line dot goes RED when the object budget is exceeded'
 	);
-	const title = await A.page.getAttribute('#object-count', 'title');
-	h.check(
-		/over on/.test(String(title)) && /object/i.test(String(title)),
-		`…and the tooltip names WHAT is over budget (${title})`
+	// the tooltip follows the NEXT sample (the 3200 objects), not the moment the dot went red — read it
+	// once it says so, instead of the instant after a dot that frame time had already turned red
+	await h.eventually(
+		() => A.page.getAttribute('#object-count', 'title'),
+		(t) => /over on/.test(String(t)) && /object/i.test(String(t)),
+		'…and the tooltip names WHAT is over budget'
 	);
 
 	// ---- 4. the panel, through its real entry point --------------------------

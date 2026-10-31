@@ -147,3 +147,25 @@ export function scaleLabel(scale) {
 	const n = 1 / scale;
 	return `1:${n >= 100 ? Math.round(n / 10) * 10 : Math.round(n)}`;
 }
+
+/**
+ * VH2: which room a phone joins. The room a headset in this session is ALREADY colocated in wins —
+ * the phone is joining them, so it takes their key, whatever they typed or minted. With several
+ * rooms the most-joined one, ties to the alphabetically first so every phone picks the same.
+ * Nobody colocated yet: the key this phone already holds, else the session default (the same one a
+ * headset in this session mints, so whoever calibrates first, the keys meet).
+ * @param {Record<string, string>} peerKeys peerId -> roomKey (colocated peers only)
+ * @param {string | null} current this device's key, if any
+ * @param {string} fallback the session default
+ * @returns {string}
+ */
+export function roomKeyToJoin(peerKeys, current, fallback) {
+	/** @type {Map<string, number>} */
+	const counts = new Map();
+	for (const key of Object.values(peerKeys ?? {})) if (typeof key === 'string' && key) counts.set(key, (counts.get(key) ?? 0) + 1);
+	let best = '';
+	let bestN = 0;
+	for (const [key, n] of counts) if (n > bestN || (n === bestN && key < best)) [best, bestN] = [key, n];
+	if (best) return best;
+	return typeof current === 'string' && current ? current : fallback;
+}

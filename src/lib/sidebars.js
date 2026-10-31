@@ -3,6 +3,7 @@ import { safeStorage } from './safeStorage';
 import { inspectorClose, inspectorKind, closeMenu, connectDocked, connectBarHeight, setInspectorFocuser } from '../stores/appStore';
 import { onLayoutRestore } from './uiLayoutsCore';
 import { scaledPx, uiScale } from './uiScale'; // 53 A1: the default + minimum width follow the UI scale
+import { panelAway } from './windows/panelPlaces.js'; // 70 W2: a popped Inspector leaves its column
 
 // 42 I2/I3 — ONE SIDEBAR PER SCREEN SIDE (user decision 2026-10-14, roadmap 42).
 //
@@ -316,7 +317,8 @@ let wired = false;
 export function startSidebars() {
 	if (wired || typeof document === 'undefined') return;
 	wired = true;
-	derived([inspectorClose, inspectorSide], (x) => x).subscribe(([closed, side]) => reportMember('inspector', side, !closed));
+	// 70 W2: an Inspector in a pop-out window is no column member (it keeps its side for coming back)
+	derived([inspectorClose, inspectorSide, panelAway], (x) => x).subscribe(([closed, side, away]) => reportMember('inspector', side, !closed && !away.inspector));
 	// an explicit open of an Inspector that is already open (Configure Scene, double-click,
 	// a deep link) brings its tab to the front of the column
 	setInspectorFocuser(() => {

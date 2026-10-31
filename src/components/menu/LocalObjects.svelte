@@ -9,9 +9,9 @@
 	// `showLocalObjects` is on (off by default, auto-enabled on the first local object).
 	import { get } from 'svelte/store';
 	import { objectsGroup } from '../../stores/sceneStore';
-	import { peers, showToast, showLocalObjects } from '../../stores/appStore';
+	import { showToast, showLocalObjects } from '../../stores/appStore';
 	import { rolesInfo } from '$lib/cloudHooks';
-	import { markLocalOnly, shareObject } from '$lib/objectPermissions';
+	import { markLocalOnly, moveToLocalObjects, shareObject } from '$lib/objectPermissions';
 	import { moveObjectToGroup } from '$lib/objectActions';
 	import Objects from './Objects.svelte';
 
@@ -73,12 +73,7 @@
 			}).then((answer) => answer === 'copy' && makeLocalCopy(obj));
 		} else {
 			// editor: remove it for peers, keep it locally as a local object
-			try {
-				get(peers)?.send({ type: 'delete', uuid: obj.uuid, peerId: get(peers)?.peer?.id });
-			} catch (e) {
-				console.warn(e);
-			}
-			markLocalOnly(obj);
+			moveToLocalObjects(obj);
 			showToast('"' + (obj.name || 'object') + '" moved to local objects (removed for peers).');
 			poke();
 		}

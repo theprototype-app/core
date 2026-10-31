@@ -1,0 +1,110 @@
+# deps-auto — ONE SHARD SET OF THE E2E BATTERY (called by deps.yml: the required set, then the optional set).
+# scripts/ci/battery.cjs decides which suites a shard runs (tests/e2e/battery.json); this file only builds the
+# machine: the lockfile's Playwright container, core + the sibling content at the refs battery.json pins, the
+# module zips, then the shard (its own dev server + local signaling server) and the artifact.
+name: battery
+
+on:
+  workflow_call:
+    inputs:
+      set:
+        description: required | optional | confirm (re-runs the required set's reds on fresh runners)
+        type: string
+        required: true
+      matrix:
+        description: the plan job's matrix JSON for this set
+        type: string
+        required: true
+      playwright:
+        type: string
+        required: true
+      refs:
+        description: battery.json's refs (JSON)
+        type: string
+        required: true
+      deadline:
+        description: minutes after which a shard starts no new suite
+        type: number
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  shard:
+    name: ${{ inputs.set }} ${{ matrix.shard }}/${{ matrix.of }}
+    runs-on: ubuntu-latest
+    # a hard cap far past any deadline: the deadline is what ends a shard normally
+    timeout-minutes: 110
+    # the browsers and their OS libraries at exactly the lockfile's Playwright: no 5-minute apt step per shard
+    container:
+      image: mcr.microsoft.com/playwright:v${{ inputs.playwright }}-noble
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    # the sibling checkouts sit beside core, where the suites' own defaults look for them. Inside a
+    # container the workspace is NOT ${{ github.workspace }} (that is the host path): use the env vars.
+    env:
+      E2E_NO_PERF_OFFER: '1'
+      MODE: quick
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: core
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ fromJSON(inputs.refs).scenes.repo }}
+          ref: ${{ fromJSON(inputs.refs).scenes.ref }}
+          path: scenes
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ fromJSON(inputs.refs).modules.repo }}
+          ref: ${{ fromJSON(inputs.refs).modules.ref }}
+          path: modules
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ fromJSON(inputs.refs).packs.repo }}
+          ref: ${{ fromJSON(inputs.refs).packs.ref }}
+          path: packs
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: core/.nvmrc
+          cache: npm
+          cache-dependency-path: |
+            core/package-lock.json
+            modules/package-lock.json
+      - name: install
+        run: |
+          command -v openssl > /dev/null || (apt-get update -qq && apt-get install -y -qq --no-install-recommends openssl > /dev/null)
+          (cd core && npm ci --no-audit --no-fund && npm run certs)
+          # the module zips the game suites install (MODULES_REPO)
+          (cd modules && npm ci --no-audit --no-fund && node scripts/pack.cjs --all --force)
+      # confirm: what the required shards left red (or unrun), from their artifacts
+      - uses: actions/download-artifact@v8
+        if: inputs.set == 'confirm'
+        with:
+          pattern: battery-required-*
+          path: prev
+      - name: battery shard ${{ matrix.shard }}/${{ matrix.of }} (~${{ matrix.est }} min, ${{ matrix.suites }} suites)
+        working-directory: core
+        run: |
+          W=$GITHUB_WORKSPACE; S=$W/scenes; G=$S/games
+          export SCENES_DIR=$S SCENES_REPO=$S SHELL_SCENES_DIR=$G GAMES_DIR=$G FBW_SCENES=$S/examples
+          export MODULES_REPO=$W/modules MODULES_DIR=$W/modules PACKS_DIR=$W/packs
+          for g in dungeon-realms:DUNGEON_REALMS escape-room:ESCAPE football:FOOTBALL jam-room:JAM_ROOM marble-maze:MARBLE \
+                   mini-golf:MINIGOLF sky-run:SKY_RUN stars-room:STARS_ROOM target-toss:TARGET_TOSS towers:TOWERS \
+                   untangle:UNTANGLE waves:WAVES race:RACE; do export "${g#*:}_TPSCENE=$G/${g%%:*}/scene.tpscene"; done
+          export JELLY_TPSCENE=$S/examples/jelly-room/scene.tpscene TANK_TPSCENE=$S/examples/fluid-tank-toy/scene.tpscene \
+                 POOL_TPSCENE=$S/examples/pool-party/scene.tpscene
+          node scripts/ci/battery.cjs run --set ${{ inputs.set }} ${{ inputs.set == 'confirm' && '--from "$W/prev"' || '' }} --shard ${{ matrix.shard }} --of ${{ matrix.of }} --serve --port 5173 \
+            --deadline ${{ inputs.deadline }} --out "$W/battery-out"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: battery-${{ inputs.set }}-${{ matrix.shard }}
+          # every suite's log; screenshots and evidence only for the suites that failed (the runner deletes the
+          # rest). Beside core, not in it: an artefact inside the served tree reloads the app mid-test.
+          path: battery-out
+          retention-days: 14
+          if-no-files-found: ignore

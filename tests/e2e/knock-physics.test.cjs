@@ -392,7 +392,7 @@ h.run(async () => {
 		'2.3 (premise) B sees the ball parked at (0,1,0)'
 	);
 
-	const remote = await B.page.evaluate((uuid) => {
+	const remote = await B.page.evaluate(async (uuid) => {
 		const k = window.__stores.knock;
 		k.dropProbe('b');
 		let hits = 0;
@@ -404,7 +404,17 @@ h.run(async () => {
 		let group = null;
 		window.__stores.objectsGroup.subscribe((v) => (group = v))();
 		const object = group.getObjectByProperty('uuid', uuid);
-		return { hits, predicting: k.knockDebug().predictions.includes(uuid), x0: object.position.x, local: k.lastHitOf(uuid) };
+		const x0 = object.position.x;
+		const predicting = k.knockDebug().predictions.includes(uuid);
+		// the prediction moves the ball once per RENDERED frame and is withdrawn after 400 ms of wall
+		// clock (PREDICT_MAX_MS): at ~4 fps a fixed 60 ms read lands between frames or after the
+		// withdrawal (exactly 0.000). Take the furthest it got over B's next few frames.
+		let advanced = 0;
+		for (let i = 0; i < 6; i++) {
+			await new Promise((r) => requestAnimationFrame(r));
+			advanced = Math.max(advanced, object.position.x - x0);
+		}
+		return { hits, predicting, x0, advanced, local: k.lastHitOf(uuid) };
 	}, ball);
 	h.check(remote.hits === 1, '2.4 B\'s 4 m/s sweep registers one knock locally');
 	const message = await B.page.evaluate(() => window.__sent.find((m) => m.type === 'hit') ?? null);
@@ -434,26 +444,17 @@ h.run(async () => {
 	h.check(logs[0]?.by === B.id && logs[1]?.by === B.id, '2.10 both logs name B as the hitter (A says ' + logs[0]?.by + ')');
 	h.check(logs[0] && logs[1] && logs[0].at === logs[1].at && Math.abs(logs[0].speed - logs[1].speed) < 1e-6, '2.11 ...with the SAME stamp and speed on both peers (A2 keys onhit by that stamp)');
 
-	const advanced = await B.page.evaluate(
-		([uuid, x0]) =>
-			new Promise((resolve) =>
-				setTimeout(() => {
-					let group = null;
-					window.__stores.objectsGroup.subscribe((v) => (group = v))();
-					const object = group.getObjectByProperty('uuid', uuid);
-					resolve(object.position.x - x0);
-				}, 60)
-			),
-		[ball, remote.x0]
-	);
-	h.check(advanced > 0.04, '2.12 within 60 ms B\'s rendered ball has moved along the hit (' + advanced.toFixed(3) + ' m) — prediction, or authority already landing on it');
+	const advanced = remote.advanced;
+	h.check(advanced > 0.04, '2.12 within B\'s next rendered frames its ball has moved along the hit (' + advanced.toFixed(3) + ' m) — prediction, or authority already landing on it');
 	await h.eventually(
 		async () => {
 			const a = await posOf(A.page, ball);
 			const b = await posOf(B.page, ball);
-			return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+			return { ax: a[0], gap: Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) };
 		},
-		(gap) => gap < 0.3,
+		// agreement must come over AUTHORITY's moves (which also end the prediction, 2.14): while A's ball
+		// has not moved yet, both peers reading x≈0 is not convergence
+		(r) => Math.abs(r.ax - remote.x0) > 0.5 && r.gap < 0.3,
 		'2.13 the two peers converge on where the ball came to rest, over the ordinary move stream',
 		12000
 	);

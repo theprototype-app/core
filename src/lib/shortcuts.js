@@ -47,6 +47,7 @@ import { toggleSidebar } from './sidebars'; // 44 M7 (a leaf: app stores + safeS
 // shortcuts sits inside history's import family and a cycle there TDZ-crashes the
 // SSR prerender.
 import { requestPlay } from './playMode';
+import { playHere } from './playHere'; // 60 Q1
 import { selectedObject, selectedObjects } from '../stores/sceneStore';
 import { safeStorage } from './safeStorage';
 // 53 A3: does a key press belong to the 3D view (a zero-import leaf)
@@ -602,18 +603,24 @@ export const shortcuts = [
 		 * naming rather than inventing a name the user never chose.
 		 */
 		action: async () => {
-			const [{ currentLevel, saveSceneAsLevel }, { activeFolder }] = await Promise.all([
-				import('./levels'),
-				import('./explorer')
-			]);
-			const name = get(currentLevel)?.name;
-			if (!name) {
-				explorerClose.set(false);
-				armExplorerSceneSave(null);
-				return;
-			}
-			const saved = await saveSceneAsLevel(name, get(activeFolder) ?? null);
-			showToast(saved ? 'Saved "' + name + '"' : 'Could not save "' + name + '"');
+			const saveOwn = async () => {
+				const [{ currentLevel, saveSceneAsLevel }, { activeFolder }] = await Promise.all([
+					import('./levels'),
+					import('./explorer')
+				]);
+				const name = get(currentLevel)?.name;
+				if (!name) {
+					explorerClose.set(false);
+					armExplorerSceneSave(null);
+					return;
+				}
+				const saved = await saveSceneAsLevel(name, get(activeFolder) ?? null);
+				showToast(saved ? 'Saved "' + name + '"' : 'Could not save "' + name + '"');
+			};
+			// 56 C13: with several libraries open (a session I joined, a mounted project with changes)
+			// Ctrl+S follows Settings ▸ Save options ▸ "When several libraries are open"; with one it is saveOwn
+			const { saveProjectPressed } = await import('./saveProject');
+			await saveProjectPressed('ctrls', saveOwn);
 		}
 	},
 	{
@@ -689,6 +696,18 @@ export const shortcuts = [
 		scope: 'global',
 		label: 'Play / Enter VR·AR (right-click the play button for modes)',
 		action: () => requestPlay()
+	},
+	{
+		// 60 Q1: PLAY HERE — the play key with Shift: the player starts where the editor camera
+		// is (feet on the surface under it, facing the view), and leaving Play brings the view
+		// and the selection back. playHere is a near-leaf (playSpawn/playMode/bvhPicking), so
+		// the static edge is cycle-safe from here.
+		id: 'scene.playHere',
+		keys: 'Ctrl+Shift+Enter',
+		group: 'Scene',
+		scope: 'global',
+		label: 'Play here — start from the editor camera',
+		action: () => playHere()
 	},
 	{
 		// 19-B P4: the element-snap master switch. Deliberately NOT the grid switch

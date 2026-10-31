@@ -50,8 +50,8 @@ h.run(async () => {
 	const byGroup = (g) => s.rows.filter((r) => r.group === g).map((r) => r.label);
 	// 53 A1: Accessibility sits right under Interface
 	h.check(JSON.stringify(byGroup('general')) === JSON.stringify(['Interface', 'Accessibility', 'Controls', 'Input', 'Touch controls', 'Shortcuts']), 'General: Interface, Accessibility, Controls, Input, Touch controls, Shortcuts (' + byGroup('general').join(', ') + ')');
-	// 46 P2: Settings ▸ Import sits beside Export
-	h.check(JSON.stringify(byGroup('workspace')) === JSON.stringify(['Scene', 'Explorer', 'Node types', 'Import', 'Export']), 'Workspace: Scene, Explorer, Node types, Import, Export');
+	// 46 P2: Settings ▸ Import sits beside Export; 60 Q6: Storage (downloads kept on this device) after Explorer; 56 C13: Save options right after Explorer
+	h.check(JSON.stringify(byGroup('workspace')) === JSON.stringify(['Scene', 'Explorer', 'Save options', 'Storage', 'Node types', 'Import', 'Export']), 'Workspace: Scene, Explorer, Save options, Storage, Node types, Import, Export (' + byGroup('workspace').join(', ') + ')');
 	// 48 O1: Privacy (the error-report switch) closes the group
 	h.check(JSON.stringify(byGroup('devices')) === JSON.stringify(['VR', 'Tools & connections', 'Connection', 'Privacy']), 'Devices & services: VR, Tools & connections, Connection, Privacy (' + byGroup('devices').join(', ') + ')');
 	h.check(labels[labels.length - 1] === 'About & what’s new' && s.rows[s.rows.length - 1].group === 'about', '"About & what’s new" is pinned last');

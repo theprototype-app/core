@@ -21,6 +21,8 @@
 		connectDrawerPinned
 	} from '../../stores/appStore.js';
 	import { sessionHost, peerJoinedAt, signalingRetry } from '$lib/connectionState';
+	import { shareScope, setShareScope } from '$lib/shareScope'; // 56 C13
+	import { SHARE_SCOPES, SHARE_SCOPE_LABELS } from '$lib/sessionVolumeCore';
 	import { peerQuality, qColor, qGlyph } from '$lib/networkQuality';
 	import { peerServerStatus, peerServerPingUrl, peerServerPeersUrl } from '$lib/peerServer';
 	import { cancelOutboundRequest } from '$lib/peerApproval';
@@ -288,6 +290,24 @@
 			<span class="cxd-key">Your ID</span>
 			<span class="cxd-val cxd-mono">{myId}</span>
 		</div>
+		<!-- 56 C13: what a guest's "<you>'s session" Explorer volume shows. Hosts only: a guest browses
+		     the host's files, never the other way round. Viewers and editors browse; only editors Save on host. -->
+		{#if !$sessionHost}
+			<div class="cxd-row" data-testid="drawer-share-scope-row">
+				<label class="cxd-key" for="session-share-scope">Guests see</label>
+				<span class="cxd-val">
+					<select
+						id="session-share-scope"
+						class="tp-field flex-1"
+						title="Which of your files a guest sees in the Explorer (read-only, nothing downloads until they open or copy one). Never your whole library unless you choose it."
+						value={$shareScope}
+						onchange={(e) => setShareScope(/** @type {HTMLSelectElement} */ (e.currentTarget).value)}
+					>
+						{#each SHARE_SCOPES as s (s)}<option value={s}>{SHARE_SCOPE_LABELS[s]}</option>{/each}
+					</select>
+				</span>
+			</div>
+		{/if}
 		{#if connState === 'connected'}
 			<div class="cxd-row" data-testid="drawer-host-row">
 				<span class="cxd-key">Host</span>

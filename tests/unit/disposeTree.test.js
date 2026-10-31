@@ -162,3 +162,32 @@ describe('keepSet', () => {
 		expect(disposeTree(null)).toEqual({ geometries: 0, materials: 0, textures: 0 });
 	});
 });
+
+describe('fix-agenttest 3: a deleted light gives its shadow map back', () => {
+	it("disposes a shadow-casting light's shadow map render target, nested lights included", () => {
+		const scene = new THREE.Scene();
+		const group = new THREE.Group();
+		const spot = new THREE.SpotLight(0xffffff, 1);
+		const point = new THREE.PointLight(0xffffff, 1);
+		group.add(spot, point);
+		scene.add(group);
+		// the renderer makes these on the first shadow pass
+		spot.shadow.map = new THREE.WebGLRenderTarget(512, 512);
+		point.shadow.map = new THREE.WebGLRenderTarget(512, 512);
+		const gone = watch(spot.shadow.map, point.shadow.map);
+
+		const freed = removeAndDispose(scene, group);
+
+		expect(gone.size).toBe(2);
+		expect(spot.shadow.map).toBe(null);
+		expect(point.shadow.map).toBe(null);
+		expect(freed.textures).toBe(2);
+	});
+
+	it('leaves a light that never drew a shadow alone', () => {
+		const scene = new THREE.Scene();
+		const light = new THREE.DirectionalLight(0xffffff, 1);
+		scene.add(light);
+		expect(removeAndDispose(scene, light)).toEqual({ geometries: 0, materials: 0, textures: 0 });
+	});
+});

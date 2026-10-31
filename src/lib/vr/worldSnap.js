@@ -2,10 +2,10 @@
 // local world rig freely; with snapping on (Settings ▸ VR ▸ Controls ▸ World grab snapping, default on):
 //   - the world's YAW moves in 15° steps of its ABSOLUTE heading, so 0° (the scene as authored) is always
 //     a step — a twist lands squarely back on the room's axes;
-//   - the SCALE sticks at the detents 1/10 · 1/5 · 1/2 · 1 · 2 · 5 · 10× (a band of ±7 % around each, in
-//     log space), and slides freely between them;
+//   - the SCALE sticks at the detents 1:50 · 1:10 · 1:5 · 1:2 · 1:1 · 2× · 5× · 10× (a band of ±7 % around
+//     each, in log space), and slides freely between them (52 V5 added 1:50, the miniature table);
 //   - every step change and every detent catch ticks the hands, and a readout between them says where
-//     you are ("2× · 45°").
+//     you are ("2× · 45°", "1:10 · 0°").
 // Hysteresis on both (a step or a detent is LEFT only a little past where it was taken), so a hand
 // trembling on a boundary never chatters. The maths is pure (snapWorldGrab); grip.js calls it with
 // the previous frame's result. The world rig is local, so none of this replicates.
@@ -22,7 +22,7 @@ import { vrWorldSnap } from './prefs.js';
 
 export const YAW_STEP = Math.PI / 12; // 15°
 /** the scale detents (both ways from 1:1) */
-export const SCALE_DETENTS = [0.1, 0.2, 0.5, 1, 2, 5, 10];
+export const SCALE_DETENTS = [0.02, 0.1, 0.2, 0.5, 1, 2, 5, 10]; // 52 (V5): + 1:50
 /** a detent catches within ±7 % (log space) and lets go past ±11 % */
 const CATCH = Math.log(1.07);
 const RELEASE = Math.log(1.11);
@@ -58,13 +58,17 @@ export function snapWorldGrab(raw, prev) {
 	return { total: detent ?? raw.total, yaw, step, detent };
 }
 
-/** "2×", "½×", "1.37×" @param {number} s */
+/** "2×", "1.4×" above life size; a MAP SCALE below it — "1:1", "1:10", "1:50", "1:2.7" (52 V5: a miniature
+ * reads as the model it is) @param {number} s */
 export function scaleLabel(s) {
-	const frac = { 0.5: '½', 0.2: '⅕', 0.1: '⅒' };
-	const key = /** @type {keyof typeof frac} */ (Math.round(s * 1000) / 1000);
-	if (frac[key]) return frac[key] + '×';
+	if (!(s > 0)) return '1:1';
+	if (s < 1 - 1e-6) {
+		const n = 1 / s;
+		return '1:' + (Math.abs(n - Math.round(n)) < 0.05 ? String(Math.round(n)) : n.toFixed(1));
+	}
+	if (Math.abs(s - 1) < 1e-6) return '1:1';
 	if (Math.abs(s - Math.round(s)) < 1e-6) return Math.round(s) + '×';
-	return (s >= 1 ? s.toFixed(1) : s.toFixed(2)) + '×';
+	return s.toFixed(1) + '×';
 }
 /** "45°" in 0..359 @param {number} step */
 export function yawLabel(step) {

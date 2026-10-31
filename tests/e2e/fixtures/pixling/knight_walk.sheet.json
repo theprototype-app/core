@@ -1,0 +1,93 @@
+{
+ "name": "knight",
+ "style": "sunmeadow",
+ "frame_w": 64,
+ "frame_h": 48,
+ "anchor": [
+  32,
+  41
+ ],
+ "directions": [
+  "S",
+  "E",
+  "N",
+  "W"
+ ],
+ "clips": {
+  "walk": {
+   "loop": true,
+   "speed_px_per_cycle": 9.4,
+   "frames": [
+    {
+     "ms": 75,
+     "event": "footstep"
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": "footstep"
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    },
+    {
+     "ms": 75,
+     "event": null
+    }
+   ],
+   "sheet": "knight_walk.png",
+   "layout": "rows=directions, cols=frames"
+  }
+ },
+ "height_px": 26,
+ "width_px": 20,
+ "size": null
+}

@@ -88,7 +88,9 @@ h.run(async () => {
 			}),
 		hash
 	);
-	h.check(bShared === 'Shared', `pulled bytes land in the Shared folder (${bShared})`);
+	// no stray 'Shared' folder since 186248ba (R22 round 9): pulled bytes take the shared row's folder,
+	// and A imported this one at the library root
+	h.check(bShared === null, `pulled bytes land where the shared row says — the root here, no 'Shared' folder (${bShared})`);
 	await h.eventually(
 		() => entriesOn(B.page),
 		(entries) => entries.length === 1 && entries[0].buffered,
@@ -96,9 +98,11 @@ h.run(async () => {
 	);
 
 	// Play toggles through the REAL node button and replicates as node data
+	// the editor shows the SELECTED object's graph since flow v2 H1 (b2350b75), and /create selected
+	// the box — deselect so it opens on the scene graph that holds the sound node
+	await A.page.evaluate(() => window.__stores.objectActions.deselectObject());
 	await A.page.locator('p[title="Node editor (N)"]').click();
-	await A.page.waitForTimeout(900);
-	await A.page.locator('.node-card button', { hasText: '▶ Play' }).click();
+	await A.page.locator('.node-card button', { hasText: '▶ Play' }).click(); // the locator waits for it
 	await A.page.waitForTimeout(900);
 	aEntries = await entriesOn(A.page);
 	h.check(aEntries[0]?.playing === true, 'Play starts the source on A');

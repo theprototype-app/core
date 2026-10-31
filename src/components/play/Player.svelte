@@ -7,6 +7,7 @@
     import CharacterStudio from './CharacterStudio.svelte'
     import { playerCam, peerHands, worldRig, peerHandStyle } from '../../stores/sceneStore'
     import { userdata, peers, username } from '../../stores/appStore'
+    import { hiddenPeers } from '$lib/peerHide' // 55 A9: a peer you hid is not drawn here
     // P2b: a peer standing in ANOTHER scene is looking at a different world, so their
     // avatar and hands have no business floating in this one. Same evidence rule as
     // the Watch gate: an unknown or unnamed scene on either side is not evidence.
@@ -21,6 +22,11 @@
     // 36-avatars: a side whose hand the rigged body holds with its IK draws no floating box (the
     // body's hand IS the marker); the customise panel's preview of YOUR character renders here too
     import { avatarIkPeers, avatarPreview, studioOpen } from '$lib/avatars/avatarState'
+    // 55 A7: an AI agent is presence, not a person — no body, no hands; a small "AI" camera
+    // marker where its last screenshot looked instead (Settings, default on)
+    import { kindOfRow } from '$lib/inviteStore'
+    import { agentViews, showAgentMarkers } from '$lib/agentLog'
+    import AgentMarker from './AgentMarker.svelte'
 
     // CO5 — A COLOCATED PEER IS RENDERED AS A GHOST, and the whole rule lives in this
     // component because it is PRESENTATION. `$colocatedPeers` is a peer id set derived
@@ -112,17 +118,22 @@
          what an unnamed peer resolves to (hostIsMe -> our row), so the pure predicate would
          seat the whole session in our private world; the map cannot see our privacy
          (`privacySplit`'s rule), so the caller states it — the broadcast gate's `if (secret)`. -->
-    {#if user[0] != $peers.peer.id && !$currentLevel?.private && !elsewhereThan($peerScenes, $currentLevel?.name ?? '', user[0], $sessionHost)}
+    {#if user[0] != $peers.peer.id && !$hiddenPeers.includes(user[0]) && !$currentLevel?.private && !elsewhereThan($peerScenes, $currentLevel?.name ?? '', user[0], $sessionHost)}
     <!-- {console.log(user)} -->
       {@const colocated = $colocatedPeers.has(user[0])}
+      {@const agent = kindOfRow(user) === 'agent'}
       <T.Group>
         <!-- CO5: no body, card, nameplate or speaking ring for someone in the room -->
-        {#if !colocated}
+        <!-- 55 A7: nor for an AI agent — its marker is where it LOOKED, drawn below -->
+        {#if !colocated && !agent}
           <AvatarRig {user} />
+        {/if}
+        {#if agent && $showAgentMarkers && $agentViews[user[0]]}
+          <AgentMarker view={$agentViews[user[0]]} peerId={user[0]} />
         {/if}
 
         <!-- VR controller markers while this peer is in a session -->
-        {#if $peerHands[user[0]]?.active && (!colocated || $colocatedGhostHands)}
+        {#if !agent && $peerHands[user[0]]?.active && (!colocated || $colocatedGhostHands)}
           {#each ['left', 'right'] as side}
             {#if $peerHands[user[0]][side]}
               {@const hand = customHand(user[0], side, colocated)}

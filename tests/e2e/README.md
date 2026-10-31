@@ -80,3 +80,19 @@ light and custom (`fixtures/lock/lock-custom.theme.json`) themes, named
 
 All lock suites launch on the GPU backend (`lockHelpers.launch`): on SwiftShader the 3D view
 behind the panels starves the page (a CDP round trip measured 271 ms vs 2 ms).
+
+## Quarantine (test-health-1)
+
+`tests/e2e/quarantine.json` lists the checks that run but do not gate: a known flake or a known red,
+each with the suite, optionally ONE check (a substring of its `FAIL <label>` line), the reason, an
+owner, `since` and a `review` date — the `allow` list of `perf/budgets.json`, for e2e. It replaced
+battery.json's suite-wide `optional` map.
+
+- The CI battery (`scripts/ci/battery.cjs`) reports a red that is red twice and whose EVERY failed check
+  is quarantined as `quarantined`, in its own tier; it does not fail the run. A crash or a timeout is
+  never covered by a check entry (only by a whole-suite entry, `check` absent).
+- An integrator's `battery.sh` summary: `node scripts/ci/quarantine.cjs triage <summary.txt> [<logdir>]`
+  prints `RED` (gates) / `QUAR` (does not) per suite and exits 1 on a blocking red.
+- `node scripts/ci/quarantine.cjs check` validates the file; `list` prints it by review date. A past
+  review date or an entry whose suite ran green is a WARNING — fix the check, delete it with a reason,
+  or re-date the entry. Remove an entry in the PR that fixes it.

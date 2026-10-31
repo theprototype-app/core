@@ -19,6 +19,9 @@ describe('Rotate / Motor', () => {
 		const o = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
 		o.rotation.set(0, 0, Math.PI / 2);
 		const b = base(o);
+		// fix-batch-1: the angle counts from SWITCH-ON (the first call), so switch it on at t = 0
+		resetMotionNodes();
+		applyRotor(o, b, { axis: 'x', rpm: 15, spinUp: 0 }, 0, { suspended: false, physics: null, pivot: null, key: 'k', now: 0 });
 		applyRotor(o, b, { axis: 'x', rpm: 15, spinUp: 0 }, 1, { suspended: false, physics: null, pivot: null, key: 'k', now: 0 });
 		// the local x axis is unchanged by a spin about it
 		const ax = new THREE.Vector3(1, 0, 0).applyQuaternion(o.quaternion);
@@ -33,9 +36,32 @@ describe('Rotate / Motor', () => {
 		const o = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
 		o.position.set(2, 1, 0);
 		const pivot = new THREE.Vector3(2, 0, 0);
-		applyRotor(o, base(o), { axis: 'z', rpm: 15, spinUp: 0 }, 1, { suspended: false, physics: null, pivot, key: 'k', now: 0 });
+		const b = base(o);
+		resetMotionNodes();
+		applyRotor(o, b, { axis: 'z', rpm: 15, spinUp: 0 }, 0, { suspended: false, physics: null, pivot, key: 'k', now: 0 });
+		applyRotor(o, b, { axis: 'z', rpm: 15, spinUp: 0 }, 1, { suspended: false, physics: null, pivot, key: 'k', now: 0 });
 		expect(o.position.distanceTo(pivot)).toBeCloseTo(1, 6);
 		expect(o.position.x).toBeCloseTo(1, 5); // a quarter turn about +z moves +y to -x
+	});
+	// fix-batch-1 (docs-1): the ramp counted from the clock's ORIGIN, and the synced clock is seconds
+	// since midnight — so a wheel switched on at 14:15 (t = 51 300) was "51 298 s into a 2 s spin-up"
+	it('spins up from SWITCH-ON, not from the clock origin; off -> on spins up again; a clock that goes back re-bases', () => {
+		const o = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
+		const b = base(o);
+		const spin = (/** @type {any} */ data, /** @type {number} */ t) => {
+			applyRotor(o, b, { axis: 'y', rpm: 60, spinUp: 2, ...data }, t, { suspended: false, physics: null, pivot: null, key: 'r', now: 0 });
+			return 2 * Math.atan2(o.quaternion.y, o.quaternion.w);
+		};
+		resetMotionNodes();
+		expect(spin({}, 51300)).toBeCloseTo(0, 9); // switched on: at rest
+		expect(spin({}, 51301)).toBeCloseTo(Math.PI / 2, 6); // 1 s into a 2 s ramp: ω t² / 2T, not a full turn
+		spin({ on: false }, 51302); // off (the runtime's base restore puts the pose back; the ramp is forgotten)
+		expect(spin({}, 51310)).toBeCloseTo(0, 9); // on again: from rest
+		expect(spin({}, 51311)).toBeCloseTo(Math.PI / 2, 6);
+		spin({}, 51309.99); // a frame of jitter BEFORE the switch-on time is not a re-base: the ramp still counts from 51 310
+		expect(spin({}, 51311.5)).toBeCloseTo((2 * Math.PI * 1.5 * 1.5) / 4, 6);
+		expect(spin({}, 3)).toBeCloseTo(0, 9); // the clock went BACK (midnight): re-based, not frozen
+		expect(spin({}, 4)).toBeCloseTo(Math.PI / 2, 6);
 	});
 	it('off = rests at its base pose; a dynamic body is never posed, it is driven (initiator only, torque-capped)', () => {
 		const o = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 0.2));

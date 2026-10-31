@@ -59,13 +59,15 @@ export const SOCKET_TYPES = Object.freeze([
  *   min/max/step (range, number) · options (select) · placeholder/maxLength (text)
  *   socket? false = never offer an input socket for it (a range gets one by default when the
  *           spec has `inputs`; any key named in `inputs` is wire-overridable via resolveInputs)
+ *   legacy? what a node saved BEFORE this key existed reads (`defaults` seeds new nodes; the
+ *           runtime's own fallback must say the same — fix-batch-1 #14, On Impact `direction`)
  * Module nodes declare the same list in `api.registerNodeGroup` items (`params`).
  * @typedef {{
  *   key: string,
  *   kind: 'range' | 'number' | 'select' | 'toggle' | 'text' | 'color' | 'vector3' | 'code',
  *   label?: string, doc?: string, group?: string,
  *   min?: number, max?: number, step?: number, options?: string[],
- *   placeholder?: string, maxLength?: number, socket?: boolean
+ *   placeholder?: string, maxLength?: number, socket?: boolean, legacy?: any
  * }} PropSpec
  */
 

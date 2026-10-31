@@ -49,6 +49,7 @@
 	import LoadingSettings from './LoadingSettings.svelte';
 	import PlacementSettings from './PlacementSettings.svelte'; // 39 P3
 	import WaterSettings from '../../water/WaterSettings.svelte';
+	import ScatterDetailSetting from './ScatterDetailSetting.svelte'; // 51
 	import GpuFluidSetting from '../../sim/GpuFluidSetting.svelte'; // 49-fluid W2
 	import HdriSettings from '../../hdri/HdriSettings.svelte'; // 37-hdri
 	import { showSimControls, duplicateCarriesAnimation, duplicateCarriesFlow, duplicateCarriesShader, showToast } from '../../../stores/appStore.js';
@@ -153,6 +154,7 @@
 		<SettingRow id="row-kit-instancing" label="Draw repeated kit pieces together" description="Every copy of one pack piece is drawn in one go — what keeps a kit level inside a headset’s budget.">
 			<Toggle id="kit-instancing" label="Draw repeated kit pieces together" bind:checked={$kitInstancingEnabled} />
 		</SettingRow>
+		<ScatterDetailSetting />
 		<WaterSettings />
 		<GpuFluidSetting />
 		<HdriSettings />

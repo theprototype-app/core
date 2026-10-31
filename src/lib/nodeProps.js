@@ -84,7 +84,7 @@ export function propertyRows(node, spec, edges, extra = {}) {
 			key: p.key,
 			kind: p.kind,
 			label: p.label ?? p.key,
-			value: data[p.key] ?? spec?.defaults?.[p.key],
+			value: data[p.key] ?? ('legacy' in p ? p.legacy : spec?.defaults?.[p.key]),
 			group: p.group ?? '',
 			min: p.min,
 			max: p.max,

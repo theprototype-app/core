@@ -189,11 +189,36 @@ h.run(async () => {
 		(n) => n === 2,
 		'a LATE JOINER receives the graph through the handshake'
 	);
+	// the compile needs the OBJECT as well as the document (shaderGraph's reconcile retries when it lands):
+	// a red below says which of the two never arrived on the third page
+	await h.eventually(
+		() => C.page.evaluate((u) => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(!!g?.getObjectByProperty('uuid', u)))()), uuid),
+		(has) => has === true,
+		'(premise) the late joiner has the cube the graph drives',
+		20000
+	);
+	let cDriven = false;
 	await h.eventually(
 		() => C.page.evaluate((u) => window.__stores.shaderGraph.isShaderDriven(u), uuid),
-		(driven) => driven === true,
+		(driven) => (cDriven = driven === true),
 		'and compiles it locally too'
 	);
+	// a red says WHY: the compile's own errors, and whether a reconcile run by hand compiles it — if it
+	// does, the object arrived without poking objectsGroup and the late-joiner retry never ran
+	if (!cDriven)
+		console.log(
+			'  C compile: ' +
+				JSON.stringify(
+					await C.page.evaluate(async (u) => {
+						const sg = window.__stores.shaderGraph;
+						let errs = null;
+						sg.shaderErrors?.subscribe?.((e) => (errs = e?.[u] ?? null))?.();
+						sg.reconcileShaderGraphs();
+						await new Promise((r) => setTimeout(r, 1500));
+						return { errors: errs, drivenAfterManualReconcile: sg.isShaderDriven(u) };
+					}, uuid)
+				)
+		);
 
 	// ---- 7. delete replicates ----------------------------------------------
 	await A.page.evaluate((u) => window.__stores.shaderGraph.setShaderGraphFor(u, null), uuid);

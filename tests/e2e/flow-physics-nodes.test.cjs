@@ -45,6 +45,10 @@ h.run(async () => {
 		base.position.set(6, 0.5, 0);
 		rotor.position.set(6, 2.2, 0);
 		rotor.userData.physics = { mode: 'dynamic', mass: 1 };
+		// test-health-1: since 95df3a66 ("fun-by-default primitives") every created box is DYNAMIC, so
+		// the Base this scene means as an anchor had a body and the "refused on a non-dynamic body"
+		// check below found one; say it is the static anchor the comment above describes
+		base.userData.physics = { mode: 'static' };
 		const peer = await new Promise((r) => window.__stores.peers.subscribe(r)());
 		[spinner, base, rotor].forEach((o) => {
 			peer.send({ type: 'move', uuid: o.uuid, pos: o.position.toArray(), rot: [0, 0, 0], scale: [1, 1, 1] });

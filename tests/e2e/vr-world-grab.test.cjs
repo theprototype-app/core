@@ -51,13 +51,13 @@ h.run(async () => {
 		`pan follows the hands (${t.pos.map((v) => v.toFixed(2))})`
 	);
 
-	// total scale clamps at 0.05x–20x
+	// total scale clamps at 0.02x–20x (52 V5: the floor went 1:20 -> 1:50, the miniature table)
 	t = await compute(
 		{ a: [-1, 1, 0], b: [1, 1, 0] },
 		{ a: [-0.001, 1, 0], b: [0.001, 1, 0] },
 		{ ...identity, scale: 0.1 }
 	);
-	h.check(t.scale >= 0.05, `scale clamps low (${t.scale})`);
+	h.check(Math.abs(t.scale - 0.02) < 1e-9, `scale clamps low at 1:50 (${t.scale})`);
 
 	// ---- rig application + replication invariance (71.4) ----
 	const uuid = await A.page.evaluate(async () => {

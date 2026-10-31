@@ -54,6 +54,7 @@
 	import FocusModeExit from './menu/FocusModeExit.svelte'
 	import ViewportPip from './menu/ViewportPip.svelte' // 43 K5
 	import { phoneShell } from '$lib/ui/phoneShell.js'
+	import { panelAway } from '$lib/windows/panelPlaces.js'
 </script>
 
 <Chat />
@@ -80,7 +81,8 @@
 <Controls />
 <!-- 46 B1: the budget chip, placed beside the toolbar pill (hidden in Play with the rest of the chrome) -->
 <BudgetChip />
-<Inspector />
+<!-- 70 W2: in a pop-out window the Inspector is unmounted here (one panel, one place) -->
+{#if !$panelAway.inspector}<Inspector />{/if}
 <SidebarStrips />
 <MenuSettings />
 <SessionsManager />

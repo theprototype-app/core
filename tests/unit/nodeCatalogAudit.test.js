@@ -23,4 +23,16 @@ describe('node catalog audit', () => {
 	test('every palette type has a doc line', () => {
 		expect(flags.noDoc).toEqual([]);
 	});
+	// fix-batch-1 (docs-1 Q1): a handle the runtime types in flowSockets' INPUT table (so reads)
+	// that a generic card never draws cannot be wired by hand — Set Game State, Set Variable,
+	// HUD Rows, HUD Set Input, Device Param and Note Trigger all shipped like that
+	test('every input the runtime reads is drawn on a generic card', () => {
+		expect(flags.undrawnInput).toEqual([]);
+	});
+	test('the audit sees the sockets the generic cards draw', () => {
+		const t = (/** @type {string} */ type) => types.find((r) => r.type === type);
+		expect(t('setgamestate')?.inputs).toEqual(['trigger']);
+		expect(t('setvariable')?.inputs).toEqual(['trigger', 'value']);
+		expect(t('hudtimer')?.ranges).toContain('duration');
+	});
 });

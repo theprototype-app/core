@@ -255,6 +255,9 @@ export const VALIDATORS = {
 	agentsimack: (d) =>
 		typeof d.id === 'string' && typeof d.ok === 'boolean' && (d.error == null || (typeof d.error === 'string' && d.error.length <= 300)) &&
 		(d.result == null || (typeof d.result === 'object' && !Array.isArray(d.result))),
+	// 85 rule 7: the Allow / Deny question for a scene-wide look change (agent/confirmGate.js)
+	agentconfirmreq: (d) => typeof d.id === 'string' && d.id.length <= 64 && typeof d.tool === 'string' && d.tool.length <= 40 && typeof d.summary === 'string' && d.summary.length <= 400,
+	agentconfirmans: (d) => typeof d.id === 'string' && d.id.length <= 64 && typeof d.allow === 'boolean' && (d.error == null || (typeof d.error === 'string' && d.error.length <= 300)),
 	// fix-agenttest 4: a page's hidden/visible notice (peerDrop.AWAY_GRACE_MS)
 	linkaway: (d) => typeof d.hidden === 'boolean',
 	disconnected: (d) => typeof d.peerId === 'string',

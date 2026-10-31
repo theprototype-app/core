@@ -1665,6 +1665,10 @@ export class PeerConnection {
 					// page stepping the world slowed the whole session's physics 4-6x
 					const from = conn.peer;
 					import('$lib/agent/simRelay.js').then((m) => m.handleSimRelay(from, data)).catch(() => {});
+				} else if(data.type == 'agentconfirmreq' || data.type == 'agentconfirmans') {
+					// 85 rule 7: Allow / Deny for a scene-wide look change — lazy, like the two above
+					const from = conn.peer;
+					import('$lib/agent/confirmGate.js').then((m) => m.handleConfirmRelay(from, data)).catch(() => {});
 				} else if(data.type == 'modules') {
 					// 37 R1: `wb` is ADDITIVE — an older peer omits it and keeps getting bare messages
 					if (data.wb === 1) this.wireBatchPeers.add(conn.peer);

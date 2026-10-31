@@ -32,6 +32,8 @@ let dispatcher = null;
 let client = null;
 /** > 0 while a relayed call runs: the A8 recorder labels only those */
 let relaying = 0;
+// 85 rule 7: a scene-wide look change from the connector asks in this tab (agent/confirmGate.js)
+import('$lib/agent/confirmGate.js').then((m) => m.setConnectorCallProbe(() => relaying > 0)).catch(() => {});
 /** @type {any} */
 let throttleTimer = null;
 

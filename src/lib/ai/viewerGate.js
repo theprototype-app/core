@@ -7,7 +7,7 @@
 
 /** tools that never change the scene or anything replicated. Simulation playback is
  * local (viewers may press Play like anyone else), so it stays allowed. */
-const VIEWER_SAFE_TOOLS = new Set(['list_scene', 'describe_node_types', 'control_simulation']);
+const VIEWER_SAFE_TOOLS = new Set(['list_scene', 'describe_node_types', 'control_simulation', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post']);
 
 export const VIEWER_REFUSAL =
 	'view-only: you are a viewer in this session, so nothing you create or change would reach the other people here. ' +

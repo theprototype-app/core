@@ -1520,7 +1520,7 @@ if (typeof window !== 'undefined')
  * today's message.
  * @param {string} uuid @param {{positions: number[], groups: any[] | null, uvs: number[] | null}} snapshot
  */
-function broadcastUvGeo(uuid, snapshot) {
+export function broadcastUvGeo(uuid, snapshot) {
 	/** @type {any} */
 	const peer = get(peers);
 	if (!peer) return;

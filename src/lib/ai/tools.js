@@ -39,6 +39,7 @@ import {
 	createJointsTool,
 	controlSimulationTool
 } from './flowTools.js';
+import { LOOK_TOOL_NAMES, LOOK_AI_TOOLS, LOOK_PROMPT, lookTool } from './lookTools.js';
 
 // AI tool layer (roadmap #10, A4). Maps OpenAI-style function calls onto the
 // existing REPLICATED mutation surface — every tool applies locally AND broadcasts
@@ -608,7 +609,8 @@ const TOOL_NAMES = [
 	'create_behaviour',
 	'edit_behaviour',
 	'import_model', // 56 C9 (offered to agents; see importModel.js)
-	'import_file' // 66 S4b (offered to agents; see importFile.js)
+	'import_file', // 66 S4b (offered to agents; see importFile.js)
+	...LOOK_TOOL_NAMES // 85 L1-L5 (lookTools.js)
 ];
 
 /** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a
@@ -657,6 +659,21 @@ const NAME_ALIASES = /** @type {Record<string,string>} */ ({
 	list: 'list_scene',
 	clear: 'clear_scene',
 	generate_model: 'generate_mesh',
+	// 85 L1-L5
+	update_material: 'set_material',
+	apply_material: 'set_material',
+	set_texture: 'set_material',
+	set_shader: 'assign_shader',
+	add_shader: 'create_shader',
+	update_shader: 'edit_shader',
+	set_post_effects: 'set_post',
+	add_post_effect: 'set_post',
+	post_stack: 'get_post',
+	list_post: 'get_post',
+	unwrap: 'uv_unwrap',
+	unwrap_uv: 'uv_unwrap',
+	set_tiling: 'set_uv',
+	shader_nodes: 'describe_shader_nodes',
 	create_mesh: 'generate_mesh',
 	// flow / behavior invention family
 	add_behavior: 'create_flow_nodes',
@@ -960,6 +977,21 @@ async function runAiTool(rawName, rawArgs) {
 			case 'import_file':
 				// 66 S4b: a PNG / WebP / JSON / .tpanim made on the agent's machine (Explorer + a scene card)
 				return await (await import('./importFile.js')).importFileTool(args);
+
+			case 'set_material':
+			case 'list_materials':
+			case 'get_material':
+			case 'create_shader':
+			case 'edit_shader':
+			case 'assign_shader':
+			case 'describe_shader_nodes':
+			case 'set_post':
+			case 'get_post':
+			case 'create_post_graph':
+			case 'uv_unwrap':
+			case 'set_uv':
+				// 85 L1-L5: materials, shaders, the look stack, UVs (lookTools.js)
+				return await lookTool(name, args);
 
 			default:
 				return {
@@ -1445,7 +1477,7 @@ const PHYSICS_AI_TOOLS = [
  * Call this per turn (readiness can change). @returns {any[]} */
 export function getAiTools() {
 	const physics = physicsToolsEnabled();
-	const tools = [...AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
+	const tools = [...AI_TOOLS, ...LOOK_AI_TOOLS, ...flowToolSchemas(physics), ...behaviourToolSchemas()];
 	if (physics) tools.push(...PHYSICS_AI_TOOLS);
 	if (meshGenReady()) tools.push(MESH_TOOL);
 	return tools;
@@ -1542,6 +1574,6 @@ export function buildSystemPrompt() {
 		"an object's name as the tool name — the name of a thing you create belongs in that object's",
 		'`name` field inside create_objects. Every call takes effect immediately, so never repeat a',
 		'call that already came back without an error — once the scene matches the request, stop',
-		'calling tools and write the summary.' + meshLine + flowBlock + extraBlock + physicsBlock
+		'calling tools and write the summary.' + meshLine + LOOK_PROMPT + flowBlock + extraBlock + physicsBlock
 	].join('\n');
 }

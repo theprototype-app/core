@@ -209,7 +209,7 @@ describe('migration: the moved Settings sections keep their stored settings', ()
 		await import('../../src/lib/tools/builtinTools.js');
 		const sections = get(reg.toolSections);
 		const rows = Object.fromEntries(sections.flatMap((s) => s.rows.map((r) => [r.id, r])));
-		expect(sections.map((s) => s.section.id)).toEqual(['chat', 'mesh', 'desktop']);
+		expect(sections.map((s) => s.section.id)).toEqual(['chat', 'mesh', 'animation', 'aibox', 'agents', 'desktop']);
 		expect(rows['chat:g1']).toMatchObject({
 			label: 'Grok',
 			state: 'ready',

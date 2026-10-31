@@ -176,19 +176,12 @@ h.run(async () => {
 		const r = await fetch('/avatars/clips.glb');
 		await window.__stores.explorer.importFiles([new File([await r.arrayBuffer()], 'clips.glb')], null);
 	});
-	const walk = await h.eventually(
-		() => A.page.evaluate(() => window.__stores.explorer.explorerItems && new Promise((res) => window.__stores.explorer.explorerItems.subscribe((l) => {
-			const w = (l ?? []).find((i) => /Walking_A\.tpanim$/.test(i.name));
-			res(w ? { id: w.id, hash: w.hash, name: w.name } : null);
-		})())),
-		(w) => !!w?.hash,
-		'the walk clip is an Explorer asset',
-		30000
-	);
-	const walkItem = walk ?? (await A.page.evaluate(() => new Promise((res) => window.__stores.explorer.explorerItems.subscribe((l) => {
-		const w = l.find((i) => /Walking_A\.tpanim$/.test(i.name));
-		res({ id: w.id, hash: w.hash, name: w.name });
-	})())));
+	const walkOf = () => A.page.evaluate(() => new Promise((res) => window.__stores.explorer.explorerItems.subscribe((l) => {
+		const w = (l ?? []).find((i) => /Walking_A\.tpanim$/.test(i.name));
+		res(w ? { id: w.id, hash: w.hash, name: w.name } : null);
+	})()));
+	await h.eventually(walkOf, (w) => !!w?.hash, 'the walk clip is an Explorer asset', 30000);
+	const walkItem = await walkOf();
 	const walkName = await A.page.evaluate(({ uuid, walkItem }) => window.__stores.clipAssets.assignClipAsset(uuid, walkItem, { play: true }), { uuid, walkItem });
 	await h.eventually(() => factsOf(A.page, uuid), (f) => f?.clips?.includes(walkName) && f.playing && f.clip === walkName, 'A plays the .tpanim clip', 15000);
 	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.clips?.includes(walkName), 'B has the .tpanim clip', 30000);

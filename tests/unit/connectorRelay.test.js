@@ -460,7 +460,8 @@ describe('where_are_users pose (86-fix)', () => {
 
 describe('parseJoinLink keeps only what a session link means', () => {
 	it('drops other parameters, keeps the invite and the server', () => {
-		expect(parseJoinLink('#abc&agent', ORIGINS)).toMatchObject({ hash: '#abc' });
-		expect(parseJoinLink('#abc&invite=tok&agent~srv=x.example', ORIGINS)).toMatchObject({ hash: '#abc&invite=tok~srv=x.example' });
+		const origins = ['https://theprototype.app'];
+		expect(parseJoinLink('#abc&agent', origins)).toMatchObject({ hash: '#abc' });
+		expect(parseJoinLink('#abc&invite=tok&agent~srv=x.example', origins)).toMatchObject({ hash: '#abc&invite=tok~srv=x.example' });
 	});
 });

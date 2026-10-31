@@ -25,14 +25,16 @@ tab can now find any scene by a word or a maker.
 ### 🔎 Find scenes in the community
 
 - The Templates window has a **search field** on every tab. On the Community tab it searches the whole community —
-  titles, descriptions, tags and makers' @handles — and sorts **Featured / Recent / Top**.
+  titles, descriptions, tags and makers' @handles — and opens on the **Featured** scenes, with **All** and **Top** beside them.
 
 ### 📊 Anonymous first-visit counts
 
-- To learn whether a first visit works, the hosted site counts a few first-visit steps (the welcome card, a first
-  change, a first Play, a first share) and whether people come back — each at most once per browser, with no ID,
-  account or IP address. It is off whenever your browser sends Do Not Track or Global Privacy Control, and you can turn
-  it off in Settings ▸ Privacy ▸ **Count my visits anonymously**. A build without the hosted plugin counts nothing.
+- To learn whether a first visit works, the hosted site counts a few steps of a first visit (the welcome card, a first
+  change, a first Play, a first share), with no ID, account or IP address and **nothing stored in your browser**.
+  After your first Play a small card asks whether to also remember which steps were counted and whether you come
+  back: Agree keeps that note in your browser, No thanks stops the counting and remembers only that answer. Nothing
+  is counted when your browser asks not to be tracked, or after Settings ▸ Privacy ▸ **Count my visits anonymously**
+  is off. Builds of the open-source engine that are not ours count nothing.
 
 ## 1.47.0 — Game logic in the headset, and a phone in a shared room 🥽
 

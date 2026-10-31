@@ -6,9 +6,20 @@
 // THE PRIVACY RULE, which decides the shape of everything here: an event is a NAME and a few
 // closed-vocabulary fields (`c` the Welcome answer, `b` the release, `d` desktop|touch|vr, `x` a
 // time bucket or a quest step) — no id of any kind, nothing that could join two events into one
-// person. "Once per browser" is a flag in this browser's own storage and never leaves it; the day
-// a browser was first seen stays here too (only "came back on day 1 / in week 3" is sent). A browser
-// that says Do Not Track or Global Privacy Control sends nothing, and remembers nothing either.
+// person. A browser that says Do Not Track or Global Privacy Control sends nothing and remembers
+// nothing, and so does the Settings switch once it is off.
+//
+// CONSENT (owner sign-off S4, option D, 2026-10-31) — storing anything on a device for analytics needs
+// consent under ePrivacy, so there are two modes, and the DEFAULT stores nothing at all:
+//   · no answer yet: a visit that met the Welcome counts its steps from MEMORY only (`visitStep`):
+//     each step once per page load, nothing written to localStorage / IndexedDB, no came-back counts.
+//     Someone who sees the Welcome again is simply counted again.
+//   · after that person's first successful Play the small card (FunnelConsentCard) asks once:
+//     Agree → the note as before: once per browser (`funnelStep`) + came back (`funnelReturns`). The
+//     note is in this browser's own storage and never leaves it; only "came back on day 1 / in
+//     week 3" is sent.
+//     No thanks → nothing more is counted, and only that answer is remembered. It is the Settings
+//     switch's off position, so Settings can undo it (back to the default, with no note).
 //
 // Core only DECIDES; it sends nothing itself. Events go out through the cloudHooks seam
 // (`onFunnelEvent`), so the open-source build with no plugin counts nothing anywhere. Under test
@@ -20,17 +31,35 @@
 import { get, writable } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
 import { coarsePointer } from '../inputDevice';
-import { notifyFunnelEvent } from '../cloudHooks';
+import { notifyFunnelEvent, funnelListening } from '../cloudHooks';
 import { APP_VERSION } from '../version';
 import { releaseLabel } from '../errorReportCore';
 import { onboardChoice } from './onboardState.js';
 
 export const FUNNEL_KEY = 'onboard.funnel';
-const SEND_KEY = 'onboard.funnelSend';
+/** The one answer this browser remembers. Absent = not answered (nothing stored). */
+export const CONSENT_KEY = 'onboard.funnelConsent';
+const AGREED = 'agreed';
+const OFF = 'off';
 
-/** Settings ▸ Privacy's switch. LOCAL, default ON (absent = on) — Do Not Track / GPC win over it. */
-export const funnelOn = writable(safeStorage.getItem(SEND_KEY) !== 'false');
-funnelOn.subscribe((on) => safeStorage.setItem(SEND_KEY, on ? 'true' : 'false'));
+/** the small "count my first steps" card is owed (FunnelConsentCard renders it) */
+export const funnelCardOpen = writable(false);
+
+/**
+ * Settings ▸ Privacy's switch. LOCAL, default ON — Do Not Track / GPC win over it. Written only when
+ * someone changes it (being on by default stores nothing). Off withdraws: the note goes with it.
+ */
+export const funnelOn = writable(safeStorage.getItem(CONSENT_KEY) !== OFF);
+funnelOn.subscribe((on) => {
+	const answer = safeStorage.getItem(CONSENT_KEY);
+	if (!on && answer !== OFF) {
+		safeStorage.setItem(CONSENT_KEY, OFF);
+		safeStorage.removeItem(FUNNEL_KEY);
+		funnelCardOpen.set(false);
+	} else if (on && answer === OFF) {
+		safeStorage.removeItem(CONSENT_KEY);
+	}
+});
 /** the first-visit events, each sent at most once per browser, and only by a browser that met the Welcome */
 export const FIRST_VISIT_EVENTS = [
 	'ob_view',
@@ -114,6 +143,50 @@ export function funnelStep(state, name, now, o = {}) {
 }
 
 /**
+ * What a visit keeps in MEMORY in the default mode (never stored): when it met the Welcome and what
+ * it has counted. Null = this page never met the Welcome.
+ * @typedef {{ view: number, sent: string[] }} FunnelVisit
+ */
+
+/**
+ * One event in the default mode. Pure. A step counts once per page load, and only in a visit that
+ * met the Welcome — a person's thousandth session is not a "first change". `ob_waitlist` is the
+ * exception, as in `funnelStep`: any browser, whenever it happens (once per page).
+ * @param {FunnelVisit | null} visit @param {string} name @param {number} now @param {{x?: string}} [o]
+ * @returns {{ send: boolean, visit: FunnelVisit | null, x: string }}
+ */
+export function visitStep(visit, name, now, o = {}) {
+	const no = { send: false, visit, x: '' };
+	if (name === 'ob_view') {
+		if (visit) return no;
+		return { send: true, visit: { view: now, sent: ['ob_view'] }, x: '' };
+	}
+	const base = visit ?? { view: 0, sent: [] };
+	if (base.sent.includes(name)) return no;
+	if (ANY_BROWSER_EVENTS.includes(name))
+		return { send: true, visit: { ...base, sent: [...base.sent, name] }, x: '' };
+	if (!visit || !FIRST_VISIT_EVENTS.includes(name)) return no;
+	const x =
+		name === 'ob_first_play'
+			? playBucket(now - visit.view)
+			: name === 'ob_tour_skip'
+				? String(o.x || '')
+				: '';
+	return { send: true, visit: { ...visit, sent: [...visit.sent, name] }, x };
+}
+
+/**
+ * The note a browser starts with when its person Agrees. Pure. The day it starts is today, the steps
+ * this page already counted are not counted twice, and the first Play is behind them (the card comes
+ * after it); `view` makes the came-back counts apply, since only someone who met the Welcome is asked.
+ * @param {FunnelVisit | null} visit @param {number} now @returns {FunnelState}
+ */
+export function agreedNote(visit, now) {
+	const sent = new Set(['ob_view', 'ob_first_play', ...(visit?.sent ?? [])]);
+	return { v: 1, first: dayOf(now), view: visit?.view || now, sent: [...sent], w: 0 };
+}
+
+/**
  * The returns a boot reports. Pure. A browser with no state starts one (first seen today, never met
  * the Welcome) and reports nothing; afterwards: back on day 1 (`return_d1`) and in days 7-13
  * (`return_d7`) for a browser that met the Welcome, and once in every later 7-day week since it was
@@ -171,6 +244,10 @@ function release() {
 	);
 }
 
+/** this page's memory in the default mode @type {FunnelVisit | null} */
+let visit = null;
+const agreed = () => safeStorage.getItem(CONSENT_KEY) === AGREED;
+
 /** @param {FunnelState} s */
 function save(s) {
 	safeStorage.setItem(FUNNEL_KEY, JSON.stringify(s));
@@ -187,11 +264,19 @@ function emit(e, x) {
 }
 
 /**
- * Count one event (once per browser; see funnelStep). Returns whether it went out.
+ * Count one event (the default mode: once per page, from memory, see visitStep; after Agree: once per
+ * browser, see funnelStep). Returns whether it went out.
  * @param {string} name @param {{x?: string}} [o]
  */
 export function funnelEvent(name, o = {}) {
 	if (!funnelAllowed()) return false;
+	if (!agreed()) {
+		const r = visitStep(visit, name, Date.now(), o);
+		if (!r.send) return false;
+		visit = r.visit;
+		emit(name, r.x);
+		return true;
+	}
 	const r = funnelStep(parseFunnelState(safeStorage.getItem(FUNNEL_KEY)), name, Date.now(), o);
 	if (!r.send || !r.state) return false;
 	save(r.state);
@@ -201,11 +286,16 @@ export function funnelEvent(name, o = {}) {
 
 /**
  * The boot's half, called once from startWhatsNew: a browser meeting the Welcome on its first
- * visit counts `ob_view`; every other boot reports its returns.
+ * visit counts `ob_view`; a browser whose person agreed to the note reports its returns on every
+ * other boot. Without that agreement nothing is read or written here.
  * @param {{ firstWelcome: boolean }} o
  */
 export function funnelBoot({ firstWelcome }) {
 	if (!funnelAllowed()) return;
+	if (!agreed()) {
+		if (firstWelcome) funnelEvent('ob_view');
+		return;
+	}
 	const state = parseFunnelState(safeStorage.getItem(FUNNEL_KEY));
 	if (firstWelcome && !state) {
 		funnelEvent('ob_view');
@@ -216,10 +306,36 @@ export function funnelBoot({ firstWelcome }) {
 	for (const e of r.events) emit(e, '');
 }
 
-/** the suites' view (state only — what this browser remembers) */
+/**
+ * A first successful Play just ended: ask, once. Only where something would be counted at all (a
+ * plugin listens, not under DNT / GPC / the switch) and nobody answered yet. What makes it once
+ * without storing anything: firstWin calls this only as `simpleUntilPlay` clears, which never returns.
+ */
+export function offerFunnelNote() {
+	if (!funnelAllowed() || !get(funnelListening) || safeStorage.getItem(CONSENT_KEY)) return false;
+	funnelCardOpen.set(true);
+	return true;
+}
+
+/** the card's Agree: keep the note from here on */
+export function funnelAgree() {
+	safeStorage.setItem(CONSENT_KEY, AGREED);
+	save(agreedNote(visit, Date.now()));
+	funnelCardOpen.set(false);
+}
+
+/** the card's No thanks: nothing more is counted, and only this answer stays */
+export function funnelDecline() {
+	funnelOn.set(false);
+	funnelCardOpen.set(false);
+}
+
+/** the suites' view */
 export function funnelDebug() {
 	return {
 		allowed: funnelAllowed(),
+		consent: safeStorage.getItem(CONSENT_KEY),
+		visit,
 		state: parseFunnelState(safeStorage.getItem(FUNNEL_KEY)),
 		device: funnelDevice(),
 		release: release()

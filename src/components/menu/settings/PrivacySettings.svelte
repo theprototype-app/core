@@ -39,7 +39,7 @@
 		{#if $funnelListening}
 			<SettingRow id="row-usage-counts" label="Count my visits anonymously" keywords="analytics telemetry privacy funnel">
 				{#snippet desc()}
-					Counts a few first-visit steps (the welcome card, a first change, a first Play, a first share) and whether you come back — each once, with no ID, account or IP address. Off whenever your browser asks not to be tracked.
+					Counts a few steps of a first visit (the welcome card, a first change, a first Play, a first share), with no ID, account or IP address and nothing stored in your browser. If you agreed to the small question after your first Play, it also counts whether you come back. Off whenever your browser asks not to be tracked.
 					<a class="settings-link" href="/privacy" target="_blank" rel="noopener">Privacy</a>
 				{/snippet}
 				<Toggle id="send-usage-counts" label="Count my visits anonymously" bind:checked={$funnelOn} />

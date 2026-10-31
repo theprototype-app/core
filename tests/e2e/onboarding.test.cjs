@@ -17,8 +17,13 @@
 //     ob_quest_done; a Skip is ob_tour_skip with its step); Do Not Track / GPC send and store
 //     nothing (the counterfactual sends); a browser back the next day reports return_d1, one
 //     back a week later return_w; under test nothing counts without `funnelUnderTest`.
+//  G  76 consent (option D): the counts store NOTHING before Agree (localStorage + IndexedDB key
+//     lists read back); no card before the first Play, the card once the person is back from it;
+//     Agree keeps the note (once per browser, came back); No thanks stops the card and the counts
+//     and remembers only the answer; no card with no plugin listening, under GPC, or for a browser
+//     that is past its first Play; Find N6 folded + unfolded: it fits, 44 px targets.
 //
-// ONBOARD_SHOTS=<dir> writes the screenshots. ONBOARD_PART=a|b|c|d|e|f|all.
+// ONBOARD_SHOTS=<dir> writes the screenshots. ONBOARD_PART=a|b|c|d|e|f|g|all.
 const h = require('./helpers.cjs');
 const fs = require('fs');
 const path = require('path');
@@ -447,6 +452,7 @@ async function returning(browser, state) {
 		localStorage.setItem('hasSeenDisclaimer', 'true');
 		localStorage.setItem('hasSeenWelcome', 'true');
 		localStorage.setItem('funnelUnderTest', 'true');
+		localStorage.setItem('onboard.funnelConsent', 'agreed');
 		localStorage.setItem('onboard.funnel', JSON.stringify(state));
 	}, state);
 	const page = await ctx.newPage();
@@ -491,7 +497,7 @@ async function partF(browser) {
 	await shot(G.page, '30-privacy-usage-counts');
 	await G.page.locator('#send-usage-counts').click();
 	h.check(
-		(await G.page.evaluate(() => localStorage.getItem('onboard.funnelSend'))) === 'false',
+		(await G.page.evaluate(() => localStorage.getItem('onboard.funnelConsent'))) === 'off',
 		'FW2 Settings ▸ Privacy: the switch turns the counts off (remembered on this device)'
 	);
 	await G.page.evaluate(() => window.__stores.settingsOpen.set(false));
@@ -558,12 +564,6 @@ async function partF(browser) {
 		['lt1', '1to3'].includes(play.x) &&
 			evs.every((e) => /^\d+\.\d+\.\d+/.test(e.b) && e.d === 'desktop'),
 		'FW2: ob_first_play carries its time bucket (' + play.x + '); release + device class on all'
-	);
-	const st = await page.evaluate(() => localStorage.getItem('onboard.funnel'));
-	h.check(
-		!/[0-9a-f]{8}-|peer|uuid/i.test(st) &&
-			Object.keys(JSON.parse(st)).sort().join(',') === 'first,sent,v,view,w',
-		'FW2: what this browser remembers is days, a time and event names — no id'
 	);
 	await A.ctx.close();
 
@@ -641,6 +641,174 @@ async function partF(browser) {
 	await R7.ctx.close();
 }
 
+/** everything this browser stored: localStorage keys + IndexedDB database names */
+const storedKeys = (page) =>
+	page.evaluate(async () => ({
+		ls: Object.keys(localStorage).sort(),
+		idb: (await indexedDB.databases()).map((d) => d.name).sort()
+	}));
+/** a key the counting itself could have left, on either store */
+const countingKeys = (keys) =>
+	[...keys.ls, ...keys.idb].filter((k) => /funnel|\bob_|usage|consent/i.test(k) && k !== 'funnelUnderTest');
+
+/** a first visit: answer the Welcome, Play, and come back to the editor */
+async function firstPlayRound(page) {
+	await page.locator('#welcome-start').click();
+	await page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create box'));
+	await page.locator('#play-button').click();
+	await h.eventually(
+		() => read(page, 's.isLocked'),
+		(v) => v === true,
+		'consent: Play starts'
+	);
+}
+const card = (page) => page.locator('#funnel-consent');
+
+async function partG(browser) {
+	const OPT_IN = { toursUnderTest: 'false', funnelUnderTest: 'true' };
+	// ---- before Agree: counted, and nothing stored -------------------------------------------------
+	const A = await firstVisit(browser, OPT_IN);
+	await listenFunnel(A.page);
+	const before = await storedKeys(A.page);
+	await firstPlayRound(A.page);
+	await A.page.waitForTimeout(500);
+	h.check(
+		(await card(A.page).count()) === 0,
+		'consent: no card on the first load, nor while the game runs'
+	);
+	await h.leavePlay(A.page);
+	const names = await funnelNames(A.page);
+	h.check(
+		['ob_view', 'ob_choice', 'ob_first_edit', 'ob_first_play'].every((e) => names.includes(e)),
+		'consent: the steps are counted with no note (' + names + ')'
+	);
+	const after = await storedKeys(A.page);
+	h.check(
+		countingKeys(before).length === 0 && countingKeys(after).length === 0,
+		'consent: before Agree, no counting key in localStorage or IndexedDB (' + countingKeys(after) + ')'
+	);
+	h.check(
+		after.idb.join() === before.idb.join() &&
+			!(await A.page.evaluate(() => localStorage.getItem('onboard.funnel'))),
+		'consent: no note, and no new IndexedDB database from the counts'
+	);
+	// ---- the card ----------------------------------------------------------------------------------
+	await card(A.page).waitFor({ state: 'visible', timeout: 8000 });
+	const box = await card(A.page).boundingBox();
+	const vp = A.page.viewportSize();
+	h.check(
+		box.x + box.width > vp.width - 40 && box.y > vp.height / 2,
+		'consent: the card sits bottom-right after the first Play'
+	);
+	h.check(
+		/count my first steps anonymously/.test(await card(A.page).innerText()) &&
+			(await A.page.evaluate(() => document.activeElement?.closest?.('#funnel-consent') == null)),
+		'consent: the wording, and it takes no focus'
+	);
+	await shot(A.page, '40-consent-card');
+	await A.page.locator('#funnel-consent-agree').click();
+	await card(A.page).waitFor({ state: 'hidden', timeout: 3000 });
+	const note = await A.page.evaluate(() => localStorage.getItem('onboard.funnel'));
+	h.check(
+		(await A.page.evaluate(() => localStorage.getItem('onboard.funnelConsent'))) === 'agreed' &&
+			!/[0-9a-f]{8}-|peer|uuid/i.test(note) &&
+			Object.keys(JSON.parse(note)).sort().join(',') === 'first,sent,v,view,w',
+		'consent: Agree keeps the note: days, a time and event names, no id'
+	);
+	// the card asks once: a second Play asks nothing
+	await A.page.locator('#play-button').click();
+	await A.page.waitForTimeout(400);
+	await h.leavePlay(A.page);
+	await A.page.waitForTimeout(800);
+	h.check((await card(A.page).count()) === 0, 'consent: an answered card does not come back');
+	await A.ctx.close();
+
+	// ---- No thanks ---------------------------------------------------------------------------------
+	const D = await firstVisit(browser, OPT_IN);
+	await listenFunnel(D.page);
+	await firstPlayRound(D.page);
+	await h.leavePlay(D.page);
+	await card(D.page).waitFor({ state: 'visible', timeout: 8000 });
+	await D.page.locator('#funnel-consent-decline').click();
+	await card(D.page).waitFor({ state: 'hidden', timeout: 3000 });
+	h.check(
+		(await D.page.evaluate(() => localStorage.getItem('onboard.funnelConsent'))) === 'off' &&
+			(await D.page.evaluate(() => localStorage.getItem('onboard.funnel'))) === null,
+		'consent: No thanks remembers only the answer'
+	);
+	const counted = (await funnelNames(D.page)).length;
+	await D.page.evaluate(() => window.__stores.funnel.funnelEvent('ob_first_share'));
+	await D.page.locator('#play-button').click();
+	await D.page.waitForTimeout(400);
+	await h.leavePlay(D.page);
+	await D.page.waitForTimeout(800);
+	h.check(
+		(await funnelNames(D.page)).length === counted && (await card(D.page).count()) === 0,
+		'consent: after No thanks nothing more is counted and the card stays away'
+	);
+	await D.ctx.close();
+
+	// ---- no question where nothing would be counted ------------------------------------------------
+	const N = await firstVisit(browser, OPT_IN); // no listener: the open-source build
+	await firstPlayRound(N.page);
+	await h.leavePlay(N.page);
+	await N.page.waitForTimeout(1200);
+	h.check((await card(N.page).count()) === 0, 'consent: with no plugin listening there is no card');
+	await N.ctx.close();
+
+	const G = await browser.newContext({ ignoreHTTPSErrors: true });
+	await G.addInitScript(() => {
+		Object.defineProperty(Navigator.prototype, 'globalPrivacyControl', {
+			get: () => true,
+			configurable: true
+		});
+		localStorage.setItem('debugStores', 'true');
+		localStorage.setItem('hasSeenDisclaimer', 'true');
+		localStorage.setItem('funnelUnderTest', 'true');
+	});
+	const gp = await G.newPage();
+	await gp.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+	await gp.waitForFunction(() => window.__stores && !!window.__stores.funnel, null, { timeout: 90000 });
+	await gp.locator('#welcome-overlay').waitFor({ state: 'visible', timeout: 15000 });
+	await listenFunnel(gp);
+	await firstPlayRound(gp);
+	await h.leavePlay(gp);
+	await gp.waitForTimeout(1200);
+	h.check(
+		(await card(gp).count()) === 0 && (await funnelNames(gp)).length === 0,
+		'consent: under Global Privacy Control no card and no count'
+	);
+	await G.close();
+
+	// ---- the phone ---------------------------------------------------------------------------------
+	for (const [label, device] of [
+		['folded', N6_FOLDED],
+		['unfolded', N6_UNFOLDED]
+	]) {
+		const P = await firstVisit(browser, OPT_IN, device);
+		await listenFunnel(P.page);
+		await P.page.locator('#welcome-start').click();
+		await P.page.evaluate(() => window.__stores.funnel.offerFunnelNote());
+		await card(P.page).waitFor({ state: 'visible', timeout: 8000 });
+		const fit = await P.page.evaluate(() => {
+			const r = document.querySelector('#funnel-consent').getBoundingClientRect();
+			const tall = (id) => document.getElementById(id).getBoundingClientRect().height;
+			return {
+				inside: r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+				agree: tall('funnel-consent-agree'),
+				decline: tall('funnel-consent-decline'),
+				sideways: document.documentElement.scrollWidth > innerWidth
+			};
+		});
+		h.check(
+			fit.inside && fit.agree >= 44 && fit.decline >= 44 && !fit.sideways,
+			`consent: N6 ${label} — fits, 44 px targets (${JSON.stringify(fit)})`
+		);
+		await shot(P.page, `41-consent-n6-${label}`);
+		await P.ctx.close();
+	}
+}
+
 h.run(async () => {
 	const browser = await h.launch();
 	if (on('a')) await partA(browser);
@@ -649,5 +817,6 @@ h.run(async () => {
 	if (on('d')) await partD(browser);
 	if (on('e')) await partE(browser);
 	if (on('f')) await partF(browser);
+	if (on('g')) await partG(browser);
 	await h.finish(browser);
 });

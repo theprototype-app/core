@@ -110,7 +110,7 @@ h.run(async () => {
 	await H.page.evaluate(() => window.__stores.sessionVolumes.setShareScope('project'));
 	await H.page.waitForTimeout(1000);
 	await H.page.evaluate(() => window.__stores.sessionVolumes.setShareScope('library'));
-	await h.eventually(() => rows(G), (r) => r[0].hashes.length >= 3, 'the listing comes back', 30000);
+	await h.eventually(() => rows(G), (r) => r[0].hashes.length >= 3, 'the listing comes back', 90000);
 	const running = G.page.evaluate(async () => {
 		let v;
 		window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();

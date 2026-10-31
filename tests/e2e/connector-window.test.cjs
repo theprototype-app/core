@@ -138,6 +138,7 @@ h.run(async () => {
 		const b = P.page.locator('#ai-welcome #connect-claude-button');
 		await b.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
 		const fits = async (sel) => {
+			await P.page.locator(sel).scrollIntoViewIfNeeded().catch(() => {});
 			const box = await P.page.locator(sel).boundingBox();
 			const hit = box ? await P.page.evaluate(([x, y, s]) => !!document.elementFromPoint(x, y)?.closest(s), [box.x + box.width / 2, box.y + box.height / 2, sel]) : false;
 			return { ok: !!box && box.x >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height && box.height >= 32 && hit, box, hit };

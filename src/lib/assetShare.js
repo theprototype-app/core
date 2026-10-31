@@ -281,6 +281,8 @@ export async function answerAssetRequest(peerId, data, opts = {}) {
 		conn.send({ type: 'assetmissing', hash: String(data?.hash ?? '') });
 		return;
 	}
+	// asked again while the read above ran
+	if (runningSends.has(peerId + ' ' + wanted) || sendQueue.some((j) => j.peerId === peerId && j.item?.hash === wanted)) return;
 	// ...and QUEUE the send: the cap belongs on outgoing bytes, which is the only
 	// scarce thing here, rather than on the asker's questions
 	sendQueue.push({ conn, item, blob, peerId, allow: opts.allow });

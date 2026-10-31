@@ -107,9 +107,13 @@ h.run(async () => {
 	let w = null, n = 0;
 	await h.eventually(async () => {
 		const id = 'w' + n++;
-		relay.call(id, 'where_are_users', {}, 'read');
+		relay.call(id, 'where_are_users', {}, 'edit');
 		return (w = (await relay.answer(id))?.result);
 	}, (r) => !!r?.users?.find((u) => u.id === aId)?.position, 'A has a live pose on B', 20000);
+	const lookId = 'w' + n++;
+	relay.call(lookId, 'where_are_users', {}, 'read');
+	const look = (await relay.answer(lookId))?.result;
+	h.check(look?.users?.length === 1 && look.users[0].you === true, 'a look-only grant reads only the person themself');
 	const me = w?.users?.find((u) => u.you);
 	const them = w?.users?.find((u) => u.id === aId);
 	const [bm, am] = [await camOf(B), await camOf(A)];

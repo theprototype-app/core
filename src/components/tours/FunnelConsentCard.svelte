@@ -75,6 +75,12 @@
 		color: var(--text-muted);
 		font-size: 12px;
 	}
+	/* the wide layout's bottom-right button column stays clear */
+	@media (min-width: 900px) {
+		.funnel-card {
+			right: 68px;
+		}
+	}
 	@media (pointer: coarse) {
 		.funnel-agree,
 		.funnel-decline {

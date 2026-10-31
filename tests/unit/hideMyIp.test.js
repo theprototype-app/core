@@ -44,7 +44,7 @@ describe('hideMyIp', () => {
 	});
 
 	it('goes on a live Peer without losing what the cloud plugin put there', () => {
-		const peer = { options: { config: { iceServers: [stun] } } };
+		const peer = /** @type {any} */ ({ options: { config: { iceServers: [stun] } } });
 		applyHideMyIp(peer, true);
 		expect(peer.options.config.iceTransportPolicy).toBe('relay');
 		// the plugin's own rewrite (turn.js): Object.assign over the config
@@ -69,7 +69,7 @@ describe('hideMyIp', () => {
 	});
 
 	it('a boot dial waits for the relay, and not for ever', async () => {
-		const peer = { options: { config: { iceServers: [] } } };
+		const peer = /** @type {any} */ ({ options: { config: { iceServers: [] } } });
 		await whenRelayReady(peer); // off: at once
 		hideMyIp.set(true);
 		let done = false;

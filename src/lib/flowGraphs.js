@@ -9,8 +9,8 @@ import {
 	removeGraphDocument
 } from '../stores/flowStore';
 import { peers } from '../stores/appStore';
-import { registerHistoryKind, recordEntry } from './history';
-import { removeEmbedsOf } from './objectFlow';
+import { registerHistoryKind, recordEntry, beginHistoryBatch, endHistoryBatch, historyBatchOpen } from './history';
+import { removeEmbedsOf, addObjectFlowToScene } from './objectFlow';
 import {
 	createFlowNode,
 	createFlowEdge,
@@ -199,6 +199,58 @@ registerHistoryKind('flowgraph', (entry, state) => {
 	}
 	return true;
 });
+
+/**
+ * fix-batch-2 (1.45.1, C2): the object menu's "Add flow to Scene graph" no longer dead-ends
+ * on an object with no flow. When the flow is missing it is CREATED, seeded with one Flow
+ * Input and one Flow Output (an embed with no interface has no sockets and reads as broken),
+ * then embedded in the Scene graph — the whole thing ONE undo step and replicated on the
+ * ordinary paths (graphcreate, nodecreate). Ordering holds because both travel on one
+ * ordered connection.
+ * @param {string} uuid @param {string} [label]
+ * @returns {'created' | 'added' | 'already'} what happened
+ */
+export function addFlowToSceneGraph(uuid, label) {
+	const own = !historyBatchOpen();
+	if (own) beginHistoryBatch();
+	let created = false;
+	try {
+		if (!graphExists(uuid)) {
+			createObjectGraph(uuid);
+			const seed = [
+				{
+					id: crypto.randomUUID(),
+					type: 'flowinput',
+					position: { x: 40, y: 80 },
+					data: { label: 'Flow Input', type: 'flowinput', name: 'value', vtype: 'number', fallback: 0 },
+					class: 'w-[150px]'
+				},
+				{
+					id: crypto.randomUUID(),
+					type: 'flowoutput',
+					position: { x: 320, y: 80 },
+					data: { label: 'Flow Output', type: 'flowoutput', name: 'out', fallback: 0 },
+					class: 'w-[150px]'
+				}
+			];
+			/** @type {any} */
+			const peer = get(peers);
+			for (const node of seed) {
+				createFlowNode(node, uuid);
+				if (peer) peer.send({ type: 'nodecreate', node: serializeNode(node), graphId: uuid });
+			}
+			recordFlowNodesEntry({ op: 'create', graphId: uuid, nodes: seed.map(serializeNode), edges: [] });
+			created = true;
+		}
+		if (!addObjectFlowToScene(uuid, label)) return 'already';
+		// the embed is a scene-graph node like any other: undo removes it (and redo re-adds it)
+		const embed = graphOf(SCENE_GRAPH)?.nodes.find((n) => n.type === 'objectflow' && n.data?.flowUuid === uuid);
+		if (embed) recordFlowNodesEntry({ op: 'create', graphId: SCENE_GRAPH, nodes: [serializeNode(embed)], edges: [] });
+		return created ? 'created' : 'added';
+	} finally {
+		if (own) endHistoryBatch(created ? 'Create flow and add to Scene graph' : 'Add flow to Scene graph');
+	}
+}
 
 // 'flownodes' history kind (AI flow tools): node/edge creation, data edits and
 // removals INSIDE one graph as a single undoable entry. Entries carry

@@ -161,3 +161,20 @@ describe('37: camera presence extras', () => {
 		expect(validateWireMessage({ ...base, knocked: 2 })).toBe(false);
 	});
 });
+
+describe('57 M1: objectParameters clipRefs', () => {
+	const uuid = '2bfe3770-7caa-4037-87ee-ca9c557993a7';
+	const ok = (/** @type {any} */ clipRefs) => validateWireMessage({ type: 'objectParameters', parameter: 'clipRefs', uuid, clipRefs });
+	it('accepts a short array of {hash, name} (empty = all removed)', () => {
+		expect(ok([{ hash: 'ab'.repeat(32), name: 'Walk' }])).toBe(true);
+		expect(ok([])).toBe(true);
+	});
+	it('rejects anything else', () => {
+		expect(ok(null)).toBe(false);
+		expect(ok({ hash: 'x', name: 'y' })).toBe(false);
+		expect(ok([{ hash: 7, name: 'Walk' }])).toBe(false);
+		expect(ok([{ hash: 'ab', name: 'n'.repeat(201) }])).toBe(false);
+		expect(ok(Array.from({ length: 65 }, () => ({ hash: 'ab', name: 'x' })))).toBe(false);
+		expect(validateWireMessage({ type: 'objectParameters', parameter: 'clipRefs', uuid: '', clipRefs: [] })).toBe(false);
+	});
+});

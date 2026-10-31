@@ -23,6 +23,8 @@
 //
 // Run: APP_URL=https://theprototype.app:5433/ npm run e2e -- agent-chat-window
 // (56-union: 56-chat shipped this as agent-chat.test.cjs, the same name as 56-bridge's MCP suite — renamed)
+// DEV BUILDS ONLY: the agentInbox stub below routes a dev path and the roles are faked; a built app runs the real inbox
+// and the plugin's roles over this script. Real roles on a cloud build: agent-chat-roles.
 const h = require('./helpers.cjs');
 const { AxeBuilder } = require('@axe-core/playwright');
 
@@ -87,7 +89,8 @@ h.run(async () => {
 	h.check((await A.page.locator('#ai-target optgroup[label="AI agents in this session"]').count()) === 1, 'in its own group beside the assistant');
 	await A.page.selectOption('#ai-target', `a:${B.id}`);
 	await A.page.locator('#ai-assistant-window .ath').waitFor({ timeout: 5000 });
-	h.check(/is listening/.test(await A.page.locator('.ath-status').textContent()), 'the status line says the agent is listening');
+	const statusLine = (await A.page.locator('.ath-status').textContent()) ?? '';
+	h.check(/is listening/.test(statusLine), `the status line says the agent is listening (${statusLine.trim()})`);
 	h.check((await A.page.locator('#agent-log').count()) === 0, 'the separate Agent activity list gives way to the thread');
 
 	console.log('\n=== 2. a request, a streamed reply, the A8 line between ===');
@@ -158,7 +161,8 @@ h.run(async () => {
 	await C.page.selectOption('#ai-target', `a:${B.id}`);
 	const cBubbles = await until(() => bubbles(C), (b) => b.some((x) => /Planted three/.test(x.text)), 8000);
 	h.check(cBubbles?.some((x) => /Planted three/.test(x.text)) && cBubbles?.some((x) => x.kind === 'cli'), 'C reads the same conversation, terminal turn included');
-	h.check((await C.page.locator('#ai-viewer-hint').count()) === 1, 'a viewer is told the agent will not change the scene for them');
+	const cRole = await inPage(C, 'let r; s.cloudHooks.rolesInfo.subscribe((v) => (r = v))(); return r?.myRole;');
+	h.check((await C.page.locator('#ai-viewer-hint').count()) === 1, `a viewer is told the agent will not change the scene for them (role ${cRole})`);
 	await C.page.locator('#ai-assistant-window input[aria-label^="Message"]').fill('what is the fire made of?');
 	await C.page.locator('#ai-send').click();
 	const fromViewer = await until(() => agentInbox(B), (l) => l?.some((m) => m.from === C.id && /fire made of/.test(m.text)), 10000);

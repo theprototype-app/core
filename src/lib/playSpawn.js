@@ -11,13 +11,33 @@ import { get } from 'svelte/store';
 import { playerCam } from '../stores/sceneStore';
 import { resolvePlaySettings } from './playSettings';
 import { globalScene } from '../stores/sceneStore';
+// 60 Q1: the Play here rule (pure, three only) lives in its own leaf so the unit layer can run it
+export { playHereSpawnFrom, headingOf } from './playHereCore';
 
 /** the play camera's eye above the feet: the walker's 1.7 m person */
 export const SPAWN_EYE = 1.7;
 
+// 60 Q1: PLAY HERE — a session-only spawn that beats every authored one while it is set. It is
+// written by playHere (desktop/phone) and the VR radial's Play here, and cleared when that Play
+// ends, so `currentSpawn()` stays the ONE read every spawn path shares (PointerLockControls, the
+// VR spawnPlayer, a module's api.respawnPlayer, the game shell's restart). LOCAL: it never
+// replicates, saves or undoes — "where I pressed Play here" is a fact about this peer.
+/** @type {{position: [number, number, number], yaw: number} | null} */
+let playHereOverride = null;
+
+/** @param {{position: [number, number, number], yaw: number} | null} spawn */
+export function setPlayHereSpawn(spawn) {
+	playHereOverride = spawn ? { position: [spawn.position[0], spawn.position[1], spawn.position[2]], yaw: spawn.yaw } : null;
+}
+
+/** the Play here spawn while one is in force (test/debug view too) */
+export function playHereSpawn() {
+	return playHereOverride;
+}
+
 /** the spawn in force right now, or null @returns {{position: [number, number, number], yaw: number} | null} */
 export function currentSpawn() {
-	return resolvePlaySettings(get(globalScene)).spawn;
+	return playHereOverride ?? resolvePlaySettings(get(globalScene)).spawn;
 }
 
 /** the spawn a DESKTOP view honours — the one in force unless it is VR-only (30b core-games)

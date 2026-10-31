@@ -154,6 +154,16 @@ h.run(async () => {
 	await dial('cccc3', { kind: 'agent' });
 	await H.page.waitForTimeout(120);
 	h.check((await roster(H)).some((u) => u[0] === 'cccc3'), 'with "Let AI agents join as guests" on, the agent is admitted');
+	// 55 owner finding 4: an invite into a guest room is announced as the invite, not "as a guest"
+	await inPage(H, "s.cloudHooks.setAuthProvider({ decide() { return 'admit'; }, admitNotice: (id) => ({ text: id + ' joined as a guest (view-only)', turnOff() {} }) })");
+	const guestRoomInv = await mint({ kind: 'agent' });
+	await dial('cccc4', { kind: 'agent', invite: core.dialInvite(tokenOfLink(guestRoomInv.link), 'cccc4', H.id) });
+	await H.page.waitForTimeout(150);
+	const notesNow = await inPage(H, 'let n; s.notifications.subscribe((v) => (n = v.map((x) => x.text)))(); return n;');
+	h.check(
+		(await roster(H)).some((u) => u[0] === 'cccc4') && notesNow.some((t) => /CCCC4 joined with your invite/.test(t)) && !notesNow.some((t) => /cccc4 joined as a guest/i.test(t)),
+		'an invite into a guest-admitting room says "joined with your invite", not "as a guest": ' + JSON.stringify(notesNow.filter((t) => /cccc4/i.test(t)))
+	);
 	await inPage(H, 's.inviteStore.agentsAsGuests.set(false); s.cloudHooks.setAuthProvider(null)');
 	// approving the agent's card by hand gives it a kind:agent row too
 	await inPage(H, "s.peerApproval.approvePeer('cccc1')");
@@ -164,10 +174,16 @@ h.run(async () => {
 	await H.page.waitForTimeout(400);
 	const invRows = await H.page.locator('#peers-invites .peers-inv-row').count();
 	h.check(invRows >= 2, `Users lists the live invites (${invRows})`);
-	await H.page.locator('#peers-revoke-all-invites').click({ timeout: 5000 }).catch(() => {});
-	await H.page.waitForTimeout(200);
-	const left = await inPage(H, "return s.inviteStore.listInvites().filter((r) => r.state === 'active' || r.state === 'used').length");
-	h.check(left === 0, `Revoke all ends every invite (${left} left)`);
+	const revokeClick = await H.page
+		.locator('#peers-revoke-all-invites')
+		.click({ timeout: 10000 })
+		.then(() => '', (e) => String(e?.message ?? e).split('\n')[0]);
+	let left = -1;
+	for (let i = 0; i < 25 && left !== 0; i++) {
+		left = await inPage(H, "return s.inviteStore.listInvites().filter((r) => r.state === 'active' || r.state === 'used').length");
+		if (left) await H.page.waitForTimeout(200);
+	}
+	h.check(left === 0, `Revoke all ends every invite (${left} left${revokeClick ? '; the click: ' + revokeClick : ''})`);
 	await H.ctx.close();
 
 	// ==================================================================== 2. the joiner
@@ -190,10 +206,12 @@ h.run(async () => {
 	console.log('\n=== 3. two real peers: the link → in, no card ===');
 	const A = await h.setupPage(browser, 'A');
 	await A.page.waitForFunction(() => window.__stores?.peers && (() => { let p; window.__stores.peers.subscribe((v) => (p = v))(); return !!p?.peer?.open; })(), null, { timeout: 30000 }).catch(() => {});
-	await A.page.locator('#connect-request-ai').click({ timeout: 10000 });
+	await A.page.locator('#connect-request-ai').click({ timeout: 30000, noWaitAfter: true });
 	await A.page.locator('#invite-sheet').waitFor({ timeout: 5000 });
 	h.check((await A.page.locator('#invite-sheet').getAttribute('data-tab')) === 'agent', 'Request AI opens the sheet on the AI agent tab');
-	h.check((await A.page.locator('#invite-role').count()) === 0, 'no role choice in the OSS build (everyone edits)');
+	const rolesOn = await A.page.evaluate(() => { let r; window.__stores.cloudHooks.rolesInfo.subscribe((v) => (r = v))(); return !!r; });
+	if (rolesOn) h.check((await A.page.locator('#invite-role-edit[aria-checked="true"]').count()) === 1, 'a cloud build offers the role, Edit preselected for an agent');
+	else h.check((await A.page.locator('#invite-role-view').count()) === 0, 'no role choice in the OSS build (everyone edits)');
 	await A.page.locator('#invite-create').click();
 	const link = await A.page.locator('#invite-link').inputValue({ timeout: 5000 });
 	h.check(/#[A-Z0-9]+&agent&invite=[A-Za-z0-9_-]{22}(~srv=[^&]*)?$/.test(link), `the sheet shows the agent link (${link.replace(/invite=.*/, 'invite=…')})`);
@@ -227,8 +245,9 @@ h.run(async () => {
 		15000
 	);
 	h.check(!!bSeesA, 'counterfactual holds: a person still gets a body');
-	await A.page.click('#peers-trigger', { timeout: 10000 }).catch(() => {});
-	await A.page.waitForTimeout(400);
+	// the automatic-admission notice is a lasting toast at the top: open the panel by its store, not a click under it
+	await A.page.evaluate(() => window.__stores.peersPanelOpen.set(true));
+	await A.page.locator('#peers-popover').waitFor({ timeout: 8000 }).catch(() => {});
 	h.check((await A.page.locator('.peer-ai').count()) >= 1, 'Users shows the robot + AI on the agent row');
 	h.check((await A.page.locator('#peers-invites .peers-inv-row[data-state="used"]').count()) === 1, 'Users lists the invite as used');
 	await inPage(A, 's.peersPanelOpen.set(false)');

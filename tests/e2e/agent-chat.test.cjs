@@ -135,7 +135,7 @@ h.run(async () => {
 		const st = await waitJoined(B.client);
 		h.check(st && st.joined === true, 'the agent joined after Approve');
 		agentId = st?.session?.peerId;
-		h.check(st?.session?.version === '1.1.0', 'tpAgent 1.1.0 (the chat contract): ' + st?.session?.version);
+		h.check(st?.session?.version === '1.3.0', 'tpAgent 1.3.0 (the chat contract): ' + st?.session?.version);
 		for (const P of [A, C]) await h.eventually(() => seen(P.page, agentId), (l) => Array.isArray(l), 'the ' + (P === A ? 'host' : 'second peer') + ' is tapping the agent', 30000);
 		await h.eventually(() => openedPeersOf(C.page), (p) => p.includes(agentId), 'the agent is in the mesh with the second peer', 60000);
 
@@ -238,6 +238,16 @@ h.run(async () => {
 		h.check(!!p6 && fs.existsSync(p6) && fs.readFileSync(p6).equals(Buffer.from(PNG, 'base64')), 'and as a temp file with the same bytes (' + p6 + ')');
 		h.check(!text(m6r).includes(PNG.slice(0, 30)), 'the message JSON carries the path, not the base64');
 		await call(B.client, 'reply', { text: 'Got the sketch.', final: true });
+
+		// ---- 6b (roadmap 66 S4b): a file from the agent's own disk, through the real bridge — the Pixling
+		// fixture by local `path` + `spec_path` (the bridge reads both; the page never sees a path)
+		const pix = path.join(__dirname, 'fixtures', 'pixling');
+		const imp = await call(B.client, 'import_file', { path: path.join(pix, 'knight_walk.png'), spec_path: path.join(pix, 'knight.pixling.json'), frame: { w: 64, h: 48, col: 0, row: 0 }, position: [8, 0.5, 0] });
+		const impJ = json(imp);
+		h.check(!imp.isError && impJ.file?.name === 'knight_walk.png' && impJ.spec?.name === 'knight_walk.pixling.json' && !!impJ.uuid, `import_file by local path through the MCP bridge (${text(imp).slice(0, 160)})`);
+		await h.eventually(() => sceneNames(A.page), (n) => n.includes('knight_walk'), 'the imported card reached the host', 20000);
+		const bad = await call(B.client, 'import_file', { path: path.join(pix, 'README.md') });
+		h.check(bad.isError === true && /not a PNG, WebP, JSON or \.tpanim/.test(text(bad)), `a non-image is refused by the bridge before sending (${text(bad).slice(0, 100)})`);
 
 		// ---- 7: a chat switch, get_thread, mute
 		const chatB = 'chat-b-' + Date.now().toString(36);

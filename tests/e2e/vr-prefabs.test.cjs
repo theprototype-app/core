@@ -87,7 +87,8 @@ h.run(async () => {
 	});
 	h.check(pinned.on === true && pinned.off === false, 'pin toggles the world-fixed flag');
 
-	// --- ghost: arm from a cell, translucent clone rides the scene root ---
+	// --- ghost: arm from a cell — 52-browser: the window's ghost is the SHARED laser ghost
+	// (placeDrag's ray mode, absorbs f-vr-place): a box / translucent model at the scene root ---
 	const ghost = await A.page.evaluate(() => {
 		const readStore = (store) => {
 			let v;
@@ -98,21 +99,27 @@ h.run(async () => {
 		window.__stores.prefabs.prefabs.subscribe((x) => (list = x))();
 		window.__stores.vrControls.executeVRMenuAction('prefabs:select:' + list[0].id);
 		const armed = readStore(window.__stores.vrControls.vrPrefabGhost);
-		let scene;
-		window.__stores.globalScene.subscribe((x) => (scene = x))();
-		const clone = scene?.getObjectByName('vr-prefab-ghost');
+		// aim the laser straight down at (2, 0, -3), as the pointer hand would
+		const T = window.__stores.THREE;
+		window.__vrPrefabRay = new T.Raycaster(new T.Vector3(2, 5, -3), new T.Vector3(0, -1, 0));
+		window.__stores.placeDrag.updateRayPlace(window.__vrPrefabRay);
+		const root = window.__stores.placeGhost.ghostRoot();
 		let translucent = false;
-		clone?.traverse((o) => {
-			if (o.material?.transparent && o.material.opacity < 0.5) translucent = true;
+		root?.traverse((o) => {
+			if (o.material?.transparent && o.material.opacity < 0.6) translucent = true;
 		});
-		// aim the ghost somewhere specific, as the pointer ray would
-		clone?.position.set(2, 0, -3);
-		return { armed: armed?.name, hasClone: !!clone, translucent };
+		const info = window.__stores.placeGhost.ghostInfo();
+		return { armed: armed?.name, hasGhost: !!root && info.visible, translucent, mode: window.__stores.placeDrag.state()?.mode, at: info.items[0]?.position };
 	});
-	h.check(ghost.armed === 'TestCrate' && ghost.hasClone, 'selecting a cell arms the placement ghost');
+	h.check(ghost.armed === 'TestCrate' && ghost.hasGhost && ghost.mode === 'ray', `selecting a cell arms the shared laser ghost (${JSON.stringify(ghost)})`);
 	h.check(ghost.translucent, 'the ghost renders translucent');
+	h.check(Math.abs(ghost.at[0] - 2) < 1e-6 && Math.abs(ghost.at[2] + 3) < 1e-6, `the ghost rides the laser to the floor spot (${ghost.at})`);
 
 	// --- placement: instantiates at the ghost spot, stays armed, undoable ---
+	const count = () => A.page.evaluate(() => new Promise((r) => window.__stores.objectsGroup.subscribe((g) => r(g.children.length))()));
+	const before = await count();
+	const ok = await A.page.evaluate(() => window.__stores.vrControls.placePrefabGhost());
+	await h.eventually(count, (n) => n === before + 1, 'trigger instantiates the prefab through the replicated path', 5000);
 	const placed = await A.page.evaluate(async () => {
 		const readStore = (store) => {
 			let v;
@@ -120,40 +127,21 @@ h.run(async () => {
 			return v;
 		};
 		const group = await new Promise((r) => window.__stores.objectsGroup.subscribe(r)());
-		const before = group.children.length;
-		const ok = window.__stores.vrControls.placePrefabGhost();
-		const after = group.children.length;
 		const child = group.children[group.children.length - 1];
 		const stillArmed = !!readStore(window.__stores.vrControls.vrPrefabGhost);
+		window.__stores.placeDrag.updateRayPlace(window.__vrPrefabRay);
 		const again = window.__stores.vrControls.placePrefabGhost();
-		const afterSecond = group.children.length;
-		window.__stores.history.undo();
-		const afterUndo = group.children.length;
-		return {
-			ok,
-			before,
-			after,
-			afterSecond,
-			afterUndo,
-			again,
-			pos: [child.position.x, child.position.y, child.position.z],
-			name: child.name,
-			stillArmed
-		};
+		return { pos: [child.position.x, child.position.y, child.position.z], name: child.name, stillArmed, again };
 	});
-	h.check(
-		placed.ok && placed.after === placed.before + 1 && placed.name === 'TestCrate',
-		'trigger instantiates the prefab through the replicated path'
-	);
+	h.check(ok && placed.name === 'TestCrate', `the placed object is the prefab (${placed.name})`);
 	h.check(
 		Math.abs(placed.pos[0] - 2) < 1e-6 && Math.abs(placed.pos[2] + 3) < 1e-6,
 		`the instance lands at the ghost spot (${placed.pos.map((v) => v.toFixed(1))})`
 	);
-	h.check(
-		placed.stillArmed && placed.again && placed.afterSecond === placed.after + 1,
-		'placement stays armed for repeats'
-	);
-	h.check(placed.afterUndo === placed.afterSecond - 1, 'placements are undoable');
+	await h.eventually(count, (n) => n === before + 2, 'placement stays armed for repeats', 5000);
+	h.check(placed.stillArmed && placed.again, 'the ghost is still armed after a placement');
+	await A.page.evaluate(() => window.__stores.history.undo());
+	h.check((await count()) === before + 1, 'placements are undoable (one undo = one placement)');
 
 	// --- grip cancels; closing the window drops the ghost too ---
 	const cancelled = await A.page.evaluate(() => {
@@ -174,7 +162,7 @@ h.run(async () => {
 		return {
 			afterCancel,
 			afterClose,
-			cloneGone: !scene?.getObjectByName('vr-prefab-ghost'),
+			cloneGone: !window.__stores.placeGhost.ghostRoot() && !window.__stores.placeDrag.placeDragActive(),
 			panelClosed: readStore(window.__stores.vrPrefabsPanelOpen) === false
 		};
 	});

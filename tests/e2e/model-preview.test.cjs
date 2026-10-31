@@ -51,12 +51,14 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.enable3dPreview.set(false));
 	await A.page.locator('#explorer-slot').click();
 	await A.page.waitForTimeout(500);
+	// R22 round 12 (cefc68ee): a library OBJECT double-clicks into the file preview window
+	// (#image-preview-window, target kind 'object'); ModelPreviewWindow is the prefab shelf's now
 	await A.page.locator('#explorer-list .explorer-card', { hasText: 'testbox' }).first().dblclick();
-	await A.page.waitForTimeout(900);
-	h.check(
-		(await A.page.locator('#model-preview-window').count()) === 1,
-		'double-click opens the popup even with the toggle off (P1)'
-	);
+	const opened = await A.page
+		.waitForSelector('#image-preview-window', { timeout: 8000 })
+		.then(() => true, () => false);
+	const kind = await A.page.evaluate(() => new Promise((r) => window.__stores.fileWindows.imagePreviewTarget.subscribe((t) => r(t?.kind ?? null))()));
+	h.check(opened && kind === 'object', `double-click opens the preview even with the toggle off (P1) (window ${opened}, kind ${kind})`);
 
 	await h.finish(browser);
 });

@@ -269,7 +269,7 @@ export function createInbox(deps) {
 
 	function pump() {
 		while (queue.length && waiters.size) {
-			const [token, resolve] = waiters.entries().next().value;
+			const [token, resolve] = /** @type {[string, (m: any) => void]} */ (waiters.entries().next().value);
 			waiters.delete(token);
 			const msg = queue.shift();
 			prepare(msg).then(resolve, () => resolve(msg));

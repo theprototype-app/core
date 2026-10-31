@@ -6,6 +6,7 @@ import { dockAtStrip, dockIntoPane, canDockHere, moveToSidebar, canMoveToSidebar
 import { windowDropTarget, windowDropZoneId, showDropTarget } from './sidebarDrop';
 import { placeFree, watchPlaceFree, placeFreeHint, showPlaceFreeChip } from './placeFree';
 import { PHONE_QUERY } from './ui/phoneShell.js';
+import { isForeign } from './windows/winEnv.js';
 
 // W7 — DRAG A FLOATING PANEL INTO THE BOTTOM DOCK.
 //
@@ -211,6 +212,8 @@ const onPhone = () => typeof window !== 'undefined' && !!window.matchMedia?.(PHO
  *   `wants()` was false on every move and Flow Code could not be docked by drag at all.
  */
 export function bottomDockable(node, { key }) {
+	// 70 W2: a panel in a pop-out window ($lib/windows/panelHost) is laid out by its window, not here
+	if (isForeign(node)) return { destroy() {} };
 	// 43 J4: every window that can be a bottom-dock tab can be a SIDEBAR tab too — docking.js's edge
 	// action rides along (its registry, a persisted side, and dragging a side-docked window back out)
 	const side = canDockFloating(key) ? (sideDockable?.(node, { key }) ?? null) : null;

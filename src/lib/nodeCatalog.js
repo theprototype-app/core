@@ -43,7 +43,7 @@ const V_MARK = '{v}';
  * not see it", "my copies vanished when I stopped the sim". HudNode had hand-rolled
  * exactly this for `hudscreen`; a spec field means the next such node needs no card of
  * its own to say its one important thing.
- * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text' | 'number' | 'color' | 'vector3' | 'code', label?: string, doc?: string, group?: string, socket?: boolean, min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number }} NodeParam
+ * @typedef {{ key: string, kind: 'range' | 'select' | 'toggle' | 'text' | 'number' | 'color' | 'vector3' | 'code', label?: string, doc?: string, group?: string, socket?: boolean, min?: number, max?: number, step?: number, options?: string[], placeholder?: string, maxLength?: number, legacy?: any }} NodeParam
  * @typedef {{ type: string, label: string, defaults: Record<string, any>, params?: NodeParam[], inputs?: string[], inputLabels?: Record<string, string>, note?: string }} NodeSpec
  */
 
@@ -154,6 +154,10 @@ export const nodeCatalog = [
 				type: 'setgamestate',
 				label: 'Set Game State',
 				defaults: { state: 'playing', outcome: '' },
+				// fix-batch-1 (docs-1 Q1): the runtime always read a `trigger` wire (flowSockets
+				// types it, hudActions wires it) but the card drew no socket, so it could not be
+				// wired by hand and a built binding's wire had nowhere to land
+				inputs: ['trigger'],
 				params: [
 					{ key: 'state', kind: 'select', options: [...GAME_STATES] },
 					{ key: 'outcome', kind: 'text', placeholder: 'won / lost', maxLength: 40 },
@@ -243,6 +247,9 @@ export const nodeCatalog = [
 				type: 'setvariable',
 				label: 'Set Variable',
 				defaults: { name: 'score', value: 0, op: 'set', scope: 'shared' },
+				// fix-batch-1 (docs-1 Q1): sockets for what the runtime reads (the setgamestate note)
+				inputs: ['trigger', 'value'],
+				inputLabels: { value: 'value — wire a number (else the value below)' },
 				params: [
 					{ key: 'name', kind: 'text', placeholder: 'score', maxLength: 40 },
 					{ key: 'op', kind: 'select', options: ['set', 'add', 'subtract'] },
@@ -1114,11 +1121,75 @@ export const nodeCatalog = [
 				// that starts a keyed clip, not a per-frame offset.
 				type: 'playanim',
 				label: 'Play Animation',
-				defaults: { clip: '', action: 'toggle', speed: 1 },
+				defaults: { clip: '', action: 'toggle', speed: 1, crossfade: 0 },
 				params: [
 					{ key: 'action', kind: 'select', options: ['toggle', 'play', 'stop', 'restart'] },
-					{ key: 'speed', kind: 'range', min: 0.1, max: 4, step: 0.1 }
+					{ key: 'speed', kind: 'range', min: 0.1, max: 4, step: 0.1 },
+					// 57 M3: seconds a clip change blends over (imported / clip-asset clips) instead of snapping
+					{ key: 'crossfade', kind: 'range', min: 0, max: 2, step: 0.05 }
 				]
+			},
+			{
+				// 57 M4: a VRM character's FACE — sets one expression (happy, blink, aa, a custom one)
+				// to a weight when the trigger fires. Every peer runs it from the shared trigger stamp
+				// (the playanim reasoning), so the face needs no message of its own.
+				type: 'setexpression',
+				label: 'Set Expression',
+				defaults: { expression: 'happy', weight: 1 },
+				inputs: ['trigger', 'weight'],
+				params: [
+					{ key: 'expression', kind: 'text', placeholder: 'happy / blink / aa', maxLength: 64 },
+					{ key: 'weight', kind: 'range', min: 0, max: 1, step: 0.05 }
+				]
+			},
+			{
+				// 57 M3: idle / walk / run by a SPEED, blended and eased — a character stops snapping
+				// between poses. Unwired, the speed is the object's own; empty clips pick by name.
+				type: 'blendspeed',
+				label: 'Blend by Speed',
+				defaults: { idle: '', walk: '', run: '', walkSpeed: 1.4, runSpeed: 3.5, crossfade: 0.25, speed: 0 },
+				inputs: ['speed'],
+				params: [
+					{ key: 'walkSpeed', kind: 'range', min: 0.2, max: 4, step: 0.1 },
+					{ key: 'runSpeed', kind: 'range', min: 0.5, max: 10, step: 0.1 },
+					{ key: 'crossfade', kind: 'range', min: 0, max: 1, step: 0.05 }
+				]
+			},
+			{
+				// 57 M11: drives a model's Animation states graph from logic — set a parameter (on a
+				// pulse, or continuously when nothing is wired to trigger) or fire a trigger (Jump)
+				type: 'setanimparam',
+				label: 'Set Animation Parameter',
+				defaults: { name: 'jump', mode: 'trigger', value: 0 },
+				inputs: ['trigger', 'value'],
+				inputLabels: { trigger: 'trigger — sets on the pulse', value: 'value — wire a number' },
+				params: [
+					{ key: 'name', kind: 'text', placeholder: 'speed / jump', maxLength: 40 },
+					{ key: 'mode', kind: 'select', options: ['trigger', 'set'] },
+					{ key: 'value', kind: 'range', min: -10, max: 10, step: 0.1 }
+				]
+			},
+			{
+				// 57 M12: a model's named node (a hand, a hook, a rotor arm) becomes an attach point —
+				// on a pulse the wired `item` follows it (or lets go). The model is the node's owner.
+				type: 'attachsocket',
+				label: 'Attach to Socket',
+				defaults: { socket: '', action: 'attach', snap: true },
+				inputs: ['trigger', 'item'],
+				inputLabels: { trigger: 'trigger — attach on the pulse', item: 'item — the object to attach' },
+				params: [
+					{ key: 'socket', kind: 'text', placeholder: 'hand_r', maxLength: 80 },
+					{ key: 'action', kind: 'select', options: ['attach', 'detach'] },
+					{ key: 'snap', kind: 'toggle' }
+				]
+			},
+			{
+				// 57 M11: pulses when the model's Animation states machine ENTERS a state (empty = any).
+				// Fired locally on every peer: each runs the same machine from the same inputs.
+				type: 'onanimstate',
+				label: 'On Animation State',
+				defaults: { state: '', pulse: 0.3 },
+				params: [{ key: 'state', kind: 'text', placeholder: 'any state', maxLength: 40 }]
 			},
 			{
 				// 48 S2: plays a Timeline SEQUENCE (camera shots, clips, audio, events) on the
@@ -1147,12 +1218,23 @@ export const nodeCatalog = [
 			// input (only fire for that other object) and an `other` output, and Triggers
 			// holds only input-less sources (the palette rule). Palette-only: no wire change.
 			// PFX-C: fires when the physics sim lands this object on the ground /
-			// another object (initiator-detected, replicated trigger stamp)
+			// another object (initiator-detected, replicated trigger stamp).
+			// fix-batch-1 #14: from ANY side by default; a node saved before `direction`
+			// existed reads 'down' (`legacy`), so old scenes fire exactly as they did
 			{
 				type: 'onimpact',
 				label: 'On Impact',
-				defaults: { pulse: 0.3, minStrength: 1 },
-				params: [{ key: 'minStrength', kind: 'range', min: 0, max: 10, step: 0.1 }]
+				defaults: { pulse: 0.3, minStrength: 1, direction: 'any' },
+				params: [
+					{ key: 'minStrength', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{
+						key: 'direction',
+						kind: 'select',
+						options: ['any', 'down'],
+						legacy: 'down',
+						doc: 'any = a hit from any side (speed along the contact); down = landings only'
+					}
+				]
 			},
 			// CL-C C2: sensor overlap edges (initiator-detected, replicated stamps)
 			{ type: 'onenter', label: 'On Enter', defaults: { pulse: 0.3 } },
@@ -1342,14 +1424,17 @@ export const nodeCatalog = [
 			// writes ONE param of the device this graph belongs to (or the object a Selector
 			// names) — LOCAL per peer, the setcolor rule: the value already arrives through the
 			// replicated graph, so it is never broadcast again
-			{ type: 'deviceparam', label: 'Device Param', defaults: { key: 'level', value: 0 }, params: [{ key: 'key', kind: 'text', placeholder: 'param key (level, freq, ...)', maxLength: 40 }] },
+			// fix-batch-1: `value` is what the runtime writes (flowSockets types it) and had no
+			// socket — found by the audit's undrawn-input guard, the docs-1 Q1 class
+			{ type: 'deviceparam', label: 'Device Param', defaults: { key: 'level', value: 0 }, inputs: ['value'], inputLabels: { value: 'value — wire an LFO, a slider' }, params: [{ key: 'key', kind: 'text', placeholder: 'param key (level, freq, ...)', maxLength: 40 }] },
 			// the device's live output level, 0..1 — feeds core nodes and the HUD
 			{ type: 'devicelevel', label: 'Device Level', defaults: {} },
 			// the shared transport as a number: beat, bar, phase (0..1 of the loop), bpm, playing
 			{ type: 'transportbeat', label: 'Transport', defaults: { read: 'beat' }, params: [{ key: 'read', kind: 'select', options: ['beat', 'bar', 'phase', 'bpm', 'playing', 'loopBeats'] }] },
 			// a note-on per trigger pulse: the pulse is already the replicated event, so every
 			// peer synthesizes the note itself (once per pulse per peer)
-			{ type: 'notetrigger', label: 'Note Trigger', defaults: { note: 60, velocity: 0.9 } }
+			// fix-batch-1: it drew NO socket, so a note could not be triggered by hand (the audit guard)
+			{ type: 'notetrigger', label: 'Note Trigger', defaults: { note: 60, velocity: 0.9 }, inputs: ['trigger', 'note', 'velocity'] }
 		]
 	},
 	// 34 R2 (T3): the game kit — one group per piece, GENERATED from the piece specs

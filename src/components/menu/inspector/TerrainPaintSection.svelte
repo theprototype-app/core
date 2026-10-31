@@ -1,20 +1,19 @@
 <script>
 	// 47 T1/T2 — Inspector ▸ Terrain paint + Scatter, for a selected Terrain. The four layers
 	// (colour, texture, tiling) the Paint brush blends between, and the scatter sets the
-	// Scatter brush made (count, align to slope, remove). Painting itself happens in the
+	// Scatter brush made (ScatterSection.svelte since 51 — any mesh carries one). Painting itself happens in the
 	// Sculpt toolbox; "Paint…" opens it on this terrain with the Paint brush armed.
 	// Every edit is ONE undo entry + ONE message (terrainPaint.setTerrainLayers /
 	// editScatterSet); a tiling scrub or a colour drag previews locally and commits on release.
 	import Section from '../../ui/Section.svelte';
 	import DragRow from '../../ui/DragRow.svelte';
 	import UiButton from '../../ui/Button.svelte';
-	import Checkbox from '../../ui/Checkbox.svelte';
 	import ShaderTexturePicker from '../../editors/nodes/ShaderTexturePicker.svelte';
 	import { sceneRevision } from '../../../stores/sceneStore';
-	import { layersOf, setTerrainLayers, clearTerrainPaint, editScatterSet } from '$lib/terrainPaint';
-	import { layerCoverage, base64ToBytes, decodeSplatBlock } from '$lib/terrainPaintCore';
-	import { normalizeScatter, scatterColliderOf, MAX_INSTANCES } from '$lib/terrainScatterCore';
+	import { layersOf, setTerrainLayers, clearTerrainPaint, setSplatResolution, splatResolutionOf } from '$lib/terrainPaint';
+	import { layerCoverage, decodeSplatBlock, SPLAT_RES_CHOICES } from '$lib/terrainPaintCore';
 	import ThemedSelect from '../../ui/ThemedSelect.svelte';
+	import ScatterSection from './ScatterSection.svelte';
 
 	/** @type {{ object: any }} */
 	let { object } = $props();
@@ -30,11 +29,12 @@
 		const d = decodeSplatBlock(object?.userData?.terrainSplat);
 		return d ? [0, 1, 2, 3].map((i) => Math.round(layerCoverage(d.bytes, i) * 100)) : null;
 	});
-	const scatter = $derived.by(() => {
+	// 51 E4: how fine this terrain's paint is (its own map, resampled on change)
+	const splatRes = $derived.by(() => {
 		void $sceneRevision;
-		return normalizeScatter(object?.userData?.terrainScatter, base64ToBytes)?.sets ?? [];
+		return uuid ? splatResolutionOf(uuid) : 128;
 	});
-	const total = $derived(scatter.reduce((sum, s) => sum + s.count, 0));
+	const RES_ITEMS = SPLAT_RES_CHOICES.map((r) => ({ value: String(r), name: `${r} × ${r}` + (r === 128 ? ' (default)' : '') }));
 	const materialColor = $derived.by(() => {
 		void $sceneRevision;
 		const m = Array.isArray(object?.material) ? object.material[0] : object?.material;
@@ -64,18 +64,6 @@
 		const ts = await import('$lib/terrainSculpt');
 		if (ts.enterSculpt(uuid)) ts.sculptOp.set('paint');
 	}
-	async function openScatter() {
-		const ts = await import('$lib/terrainSculpt');
-		if (ts.enterSculpt(uuid)) ts.sculptOp.set('scatter');
-	}
-	const COLLIDER_ITEMS = [
-		{ value: 'none', name: 'None' },
-		{ value: 'box', name: 'Box' },
-		{ value: 'sphere', name: 'Sphere' },
-		{ value: 'hull', name: 'Mesh hull' }
-	];
-	/** @param {any} s */
-	const setName = (s) => (s.source.kind === 'primitive' ? s.source.type : s.source.name || 'Library model');
 </script>
 
 <Section variant="panel" label="Terrain paint" aliases={['Splat', 'Terrain layers', 'Texture layers']}>
@@ -123,6 +111,16 @@
 			{/if}
 		{/each}
 	</div>
+	<div class="flex items-center gap-2 text-xs" title="How fine the paint is across this terrain — a bigger map paints sharper edges and costs more to send while you paint">
+		<span class="w-12 shrink-0 text-text-muted">Detail</span>
+		<ThemedSelect
+			id="terrain-paint-resolution"
+			class="min-w-0 flex-1"
+			items={RES_ITEMS}
+			value={String(splatRes)}
+			onchange={(/** @type {string} */ v) => setSplatResolution(uuid, Number(v))}
+		/>
+	</div>
 	{#if coverage}
 		<p id="terrain-paint-coverage" class="text-[length:var(--fs-badge)] text-text-muted">
 			Painted: {coverage.map((c, i) => `${i + 1}: ${c}%`).join(' · ')}
@@ -136,38 +134,4 @@
 	</div>
 </Section>
 
-<Section variant="panel" label="Scatter" aliases={['Foliage', 'Instances', 'Trees']}>
-	{#if scatter.length}
-		<div id="terrain-scatter-sets" class="flex flex-col gap-1">
-			{#each scatter as s (s.id)}
-				<div class="flex flex-col gap-1 text-xs" data-scatter-set={s.id}>
-					<div class="flex items-center gap-2">
-						<span class="min-w-0 flex-1 truncate" title={setName(s)}>{setName(s)}</span>
-						<span class="text-text-muted">{s.count}</span>
-						<label class="flex items-center gap-1">
-							<Checkbox label="Align to slope" checked={s.align} onchange={(/** @type {boolean} */ v) => editScatterSet(uuid, s.id, { align: !!v })} />
-							Align
-						</label>
-						<button class="ui-button-quiet" title="Remove every instance of this model" onclick={() => editScatterSet(uuid, s.id, null)}>Remove</button>
-					</div>
-					<!-- 48 B1: what a simulation gives each instance (static, built on every peer from this field) -->
-					<div class="flex items-center gap-2">
-						<span class="w-14 shrink-0 text-text-muted">Collider</span>
-						<ThemedSelect
-							id={`terrain-scatter-collider-${s.id}`}
-							class="min-w-0 flex-1"
-							title="The static collider every instance of this model gets while a simulation runs"
-							items={COLLIDER_ITEMS}
-							value={scatterColliderOf(s.collider)}
-							onchange={(/** @type {string} */ v) => editScatterSet(uuid, s.id, { collider: v })}
-						/>
-					</div>
-				</div>
-			{/each}
-		</div>
-		<p id="terrain-scatter-total" class="text-[length:var(--fs-badge)] text-text-muted">{total} of {MAX_INSTANCES} instances</p>
-	{:else}
-		<p class="text-[length:var(--fs-badge)] text-text-muted">No scattered models yet.</p>
-	{/if}
-	<UiButton id="terrain-scatter-open" size="sm" variant="outline" onclick={openScatter}>Scatter…</UiButton>
-</Section>
+<ScatterSection {object} /><!-- 51-surface: its own file, so any mesh can carry it -->

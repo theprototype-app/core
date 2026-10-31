@@ -245,7 +245,8 @@ h.run(async () => {
 			return Promise.reject(new Error('refused'));
 		};
 		window.__stores.isLocked.set(true);
-		await new Promise((r) => setTimeout(r, 400));
+		// until the retry has really run once (bounded) — a fixed 400 ms saw 0 attempts under load
+		for (const t0 = Date.now(); calls < 1 && Date.now() - t0 < 3000; ) await new Promise((r) => setTimeout(r, 50));
 		const during = calls;
 		window.__stores.isLocked.set(false);
 		await new Promise((r) => setTimeout(r, 900));
@@ -321,12 +322,40 @@ h.run(async () => {
 	);
 	h.check(onCanvas === 'CANVAS', `premise: that pixel is the canvas, not chrome (${onCanvas})`);
 
+	// test-health-1: record what the right-click reaches — red since 1.41 with no product change in
+	// this path found, so a red says WHICH guard ate it (no event / a slow pair past the 400 ms tap
+	// limit / a blocking store)
+	await X.evaluate(() => {
+		const w = /** @type {any} */ (window);
+		w.__rc = [];
+		const name = (/** @type {any} */ el) => (el ? el.tagName + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '') : null);
+		for (const t of ['pointerdown', 'contextmenu'])
+			window.addEventListener(t, (e) => w.__rc.push([t, name(e.target), name(/** @type {any} */ (e.target)?.parentElement), /** @type {any} */ (e).button, Date.now()]), true);
+	});
+	await X.evaluate((p) => (/** @type {any} */ (window).__rcAt = p), at);
 	await X.mouse.click(at.x, at.y, { button: 'right' });
+	let menuOpened = false;
 	await h.eventually(
 		() => X.evaluate(() => document.querySelectorAll('[role="menuitem"]').length),
-		(n) => n > 0,
+		(n) => (menuOpened = n > 0),
 		'right-click opens the viewport context menu after a denied session'
 	);
+	if (!menuOpened)
+		console.log(
+			'  right-click reached: ' +
+				JSON.stringify(
+					await X.evaluate(() => {
+						const s = window.__stores;
+						const g = (/** @type {string} */ k) => {
+							let v;
+							s[k]?.subscribe?.((/** @type {any} */ x) => (v = x))?.();
+							return v;
+						};
+						const el = document.elementFromPoint(/** @type {any} */ (window).__rcAt?.x ?? 0, /** @type {any} */ (window).__rcAt?.y ?? 0);
+						return { rc: /** @type {any} */ (window).__rc, underNow: el ? el.tagName + '#' + el.id + '.' + String(el.className).slice(0, 60) : null, ...Object.fromEntries(['isLocked', 'isVRMode', 'specatorMode', 'drawMode', 'editingObject', 'measureMode'].map((k) => [k, g(k)])) };
+					})
+				)
+		);
 	await X.keyboard.press('Escape');
 	await X.waitForTimeout(200);
 

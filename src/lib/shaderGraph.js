@@ -206,6 +206,19 @@ export function registerShaderTargets(fn) {
 	};
 }
 
+/** keys whose target object has not arrived -> retries made @type {Map<string, number>} */
+const missingTries = new Map();
+/** 0.25 s doubling to 4 s, ~20 s in all; then the objectsGroup reconcile alone @param {string} key */
+function retryMissingTarget(key) {
+	const tries = (missingTries.get(key) ?? 0) + 1;
+	if (tries > 8) {
+		missingTries.delete(key);
+		return;
+	}
+	missingTries.set(key, tries);
+	scheduleCompile(key, Math.min(4000, 250 * 2 ** (tries - 1)));
+}
+
 /**
  * Debounced: an editor drag writes many times a second, and a compile per keystroke is
  * wasted work even at inject's 0.4 ms.
@@ -274,6 +287,13 @@ export async function compileAndApply(key) {
 		return { ok: false, errors: result.errors };
 	}
 	const targets = targetsFor(key);
+	// test-health-1: a graph for an OBJECT that has not arrived yet (a late joiner's graph reply is
+	// far smaller than the GLTF that carries the object) compiles nothing — and the reconcile below
+	// waits on an objectsGroup poke the object's arrival does not always make (shader-sync: the
+	// joiner held both graph and cube, never compiled; a manual reconcile compiled it at once).
+	// Retry on its own, briefly; the reconcile still covers anything later.
+	if (!targets.length && key !== SCENE_GRAPH_KEY) retryMissingTarget(key);
+	else missingTries.delete(key);
 	/** @type {string[]} */
 	const errors = [];
 	for (const object of targets) {

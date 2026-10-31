@@ -123,8 +123,11 @@ export {
 	registerVRFrameHook,
 	registerWorldGrabDivert,
 	registerStickOwner,
-	stickOwned
+	stickOwned,
+	registerGripHooks
 } from './vr/hooks.js';
+// 52 (H): light hand tracking — the precise-tool gate siblings call ("Pick up a controller")
+export { controllerRequired, isTrackedHand, showHandNote } from './vr/handInput.js';
 export {
 	computeMoveOffset,
 	computeTeleportArc,
@@ -224,5 +227,7 @@ export {
 	modeHand,
 	onVRSessionStart,
 	toggleVRMode,
-	vrModeLabelDebug
+	vrModeLabelDebug,
+	requestVRPlayHere,
+	vrPlayHereDebug
 } from './vr/modes.js';

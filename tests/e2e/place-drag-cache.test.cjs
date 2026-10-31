@@ -59,7 +59,8 @@ const cacheFacts = (page) =>
 		s.packCache.packCacheIndex.subscribe((v) => (index = v))();
 		const urls = [...index.keys()];
 		const duck = urls.find((u) => /Duck\.glb$/.test(u)) ?? null;
-		const match = duck ? await (await caches.open(s.packCache.PACK_CACHE_NAME)).match(duck) : null;
+		// 60 Q6: the pack cache lives in the local asset cache (OPFS) now — ask it, not CacheStorage
+		const match = duck ? await s.packCache.cachedPackBuffer(duck) : null;
 		return { urls, duck, bytes: duck ? index.get(duck) : 0, inCache: !!match, wanted: url };
 	}, DUCK_URL);
 

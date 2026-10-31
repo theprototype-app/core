@@ -160,6 +160,70 @@ function boxUnwrap(faces, options = {}) {
 	return packIslands(raw, islands, options);
 }
 
+/** faces whose normals are closer than this stay on one island (cos 66 degrees, the usual smart-project limit) */
+const SMART_ANGLE_COS = Math.cos((66 * Math.PI) / 180);
+
+/**
+ * SMART: islands of connected faces that point roughly one way, each projected flat along its own mean
+ * direction, then packed. Unlike box it follows the surface, so a slanted roof or a bevel keeps its true
+ * proportions instead of being squeezed onto the nearest of six axes. Deterministic: faces are visited in
+ * order and an island grows only against its SEED's normal, so it cannot creep round a curve for ever.
+ * @type {UnwrapBackend}
+ */
+function smartUnwrap(faces, options = {}) {
+	const key = (/** @type {any} */ v) => Math.round(v.x * 1e4) + ',' + Math.round(v.y * 1e4) + ',' + Math.round(v.z * 1e4);
+	const normals = faces.map((face) => faceNormal(face));
+	/** welded edge -> faces @type {Map<string, number[]>} */
+	const byEdge = new Map();
+	faces.forEach((face, i) => {
+		for (let k = 0; k < 3; k++) {
+			const a = key(face.corners[k]);
+			const b = key(face.corners[(k + 1) % 3]);
+			const edge = a < b ? a + '|' + b : b + '|' + a;
+			const list = byEdge.get(edge);
+			if (list) list.push(i);
+			else byEdge.set(edge, [i]);
+		}
+	});
+	const neighbours = (/** @type {number} */ i) => {
+		/** @type {number[]} */
+		const out = [];
+		for (let k = 0; k < 3; k++) {
+			const a = key(faces[i].corners[k]);
+			const b = key(faces[i].corners[(k + 1) % 3]);
+			for (const j of byEdge.get(a < b ? a + '|' + b : b + '|' + a) ?? []) if (j !== i) out.push(j);
+		}
+		return out;
+	};
+	const seen = new Uint8Array(faces.length);
+	/** @type {number[][]} */
+	const islands = [];
+	/** @type {number[][][]} */
+	const raw = new Array(faces.length);
+	for (let seed = 0; seed < faces.length; seed++) {
+		if (seen[seed]) continue;
+		seen[seed] = 1;
+		const island = [seed];
+		for (let at = 0; at < island.length; at++)
+			for (const j of neighbours(island[at]))
+				if (!seen[j] && normals[j].dot(normals[seed]) >= SMART_ANGLE_COS) {
+					seen[j] = 1;
+					island.push(j);
+				}
+		islands.push(island);
+		// project along the island's mean direction, in a basis that keeps world-up as v where it can
+		const mean = new THREE.Vector3();
+		for (const i of island) mean.add(normals[i]);
+		if (mean.lengthSq() < 1e-12) mean.copy(normals[seed]);
+		mean.normalize();
+		const up = Math.abs(mean.y) > 0.99 ? new THREE.Vector3(0, 0, mean.y > 0 ? -1 : 1) : new THREE.Vector3(0, 1, 0);
+		const right = new THREE.Vector3().crossVectors(up, mean).normalize();
+		const top = new THREE.Vector3().crossVectors(mean, right).normalize();
+		for (const i of island) raw[i] = faces[i].corners.map((corner) => [corner.dot(right), corner.dot(top)]);
+	}
+	return packIslands(raw, islands, options);
+}
+
 /**
  * CYLINDRICAL: angle around `axis` becomes u, height becomes v. The seam sits where
  * the angle wraps; faces straddling it are shifted to the nearer side so they do not
@@ -276,6 +340,7 @@ export function packIslands(raw, islands, options = {}) {
 	return { uvs: out, islands };
 }
 
+registerUnwrapBackend('smart', 'Smart projection', smartUnwrap);
 registerUnwrapBackend('box', 'Box projection', boxUnwrap);
 registerUnwrapBackend('planar', 'Planar projection', planarUnwrap);
 registerUnwrapBackend('cylindrical', 'Cylindrical', cylindricalUnwrap);

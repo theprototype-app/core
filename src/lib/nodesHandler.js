@@ -7,6 +7,7 @@ import {
 	SCENE_GRAPH,
 	updateGraph,
 	graphTotals,
+	orphanGraphIds,
 	activeGraphId
 } from '../stores/flowStore';
 import { peers } from '../stores/appStore';
@@ -168,12 +169,18 @@ export function applyNodesSnapshot(nodes, edges, graphs) {
 // --- Drift detection: peers periodically exchange a graph hash and pull a
 // fresh snapshot when theirs differs (heals missed nodedata/move messages) ---
 
-/** djb2 over ALL serialized graphs, order-independent via sort */
-export function graphHash() {
+/**
+ * djb2 over ALL serialized graphs, order-independent via sort
+ * @param {{withOrphans?: boolean}} [opts] withOrphans: count graphs whose object is not (yet) here too
+ */
+export function graphHash(opts = {}) {
 	const all = get(flowGraphs);
+	// 55 Q1: what the reply leaves out, the hash leaves out
+	const orphans = opts.withOrphans ? new Set() : orphanGraphIds();
 	/** @type {any[]} */
 	const parts = [];
 	for (const graphId of Object.keys(all).sort()) {
+		if (orphans.has(graphId)) continue;
 		const graph = all[graphId];
 		const nodes = graph.nodes.map(serializeNode).sort((a, b) => a.id.localeCompare(b.id));
 		// hash edges by STRUCTURE only -- cosmetic type/marker are LOCAL editor
@@ -198,6 +205,44 @@ export function graphHash() {
 let lastResyncRequest = 0;
 
 /**
+ * fix-agenttest 5: A JOIN IS NOT DRIFT. A host's 10 s nodesync can reach a joiner before the
+ * handshake's own `getnodes` has been answered (or, through an approval, before it was even
+ * sent — the two conns of a pair are not ordered against each other), and the joiner then
+ * logged "Node graph differs ... requesting a snapshot" and pulled the graphs a second time.
+ * Until a peer's full `nodes` snapshot has reached us, its nodesync is not compared for
+ * NODESYNC_HANDSHAKE_MS from the first one; after that (a snapshot that never came) it pulls
+ * as before, and once a snapshot has arrived drift detection is unchanged.
+ */
+export const NODESYNC_HANDSHAKE_MS = 15000;
+/** @type {Map<string, number>} peerId -> when its first nodesync arrived before any snapshot */
+const handshakeSyncs = new Map();
+/** @type {Set<string>} peers whose full `nodes` snapshot has reached us */
+const snapshotFrom = new Set();
+let handshakeSkips = 0;
+
+/** a full `nodes` snapshot from `peerId` was applied @param {string} peerId */
+export function noteNodesSnapshot(peerId) {
+	if (peerId) snapshotFrom.add(peerId);
+	handshakeSyncs.delete(peerId);
+}
+
+/** forget a departed peer (no argument: everyone, on leaving the session) @param {string} [peerId] */
+export function forgetNodeSyncPeer(peerId) {
+	if (peerId === undefined) {
+		handshakeSyncs.clear();
+		snapshotFrom.clear();
+		return;
+	}
+	handshakeSyncs.delete(peerId);
+	snapshotFrom.delete(peerId);
+}
+
+/** tests: how many nodesyncs were held back as mid-handshake, and from whom we hold a snapshot */
+export function nodeSyncDebug() {
+	return { handshakeSkips, snapshotFrom: [...snapshotFrom], waiting: [...handshakeSyncs.keys()] };
+}
+
+/**
  * Compare a peer's graph hash with ours and pull a snapshot on mismatch.
  * Only one direction may pull or two drifted peers would swap graphs forever:
  * the peer with fewer nodes+edges pulls; equal counts tiebreak on peer id.
@@ -205,6 +250,9 @@ let lastResyncRequest = 0;
  */
 export function applyNodeSync(data) {
 	if (data.hash === graphHash()) return;
+	// A joiner holds the snapshot's object graphs before the objects themselves arrive, and until
+	// then they read as orphans (55 Q1) — the same graphs counted in full are not drift
+	if (data.hash === graphHash({ withOrphans: true })) return;
 	/** @type {any} */
 	const peer = get(peers);
 	if (!peer) return;
@@ -212,6 +260,14 @@ export function applyNodeSync(data) {
 	if (data.count < myCount) return; // they pull from us instead
 	if (data.count === myCount && data.peerId <= peer.peer.id) return;
 	const now = Date.now();
+	if (!snapshotFrom.has(data.peerId)) {
+		const first = handshakeSyncs.get(data.peerId) ?? now;
+		handshakeSyncs.set(data.peerId, first);
+		if (now - first < NODESYNC_HANDSHAKE_MS) {
+			handshakeSkips++;
+			return; // the handshake's own getnodes reply is still on its way
+		}
+	}
 	if (now - lastResyncRequest < 30000) return; // resyncs are cheap but not free
 	const conn = peer.connections[data.peerId];
 	if (!conn?.open) return;
@@ -264,7 +320,9 @@ export function sendNodes(peerId, attempt = 0) {
 	/** @type {Record<string, {nodes: any[], edges: any[]}>} */
 	const graphs = {};
 	let total = 0;
+	const orphans = orphanGraphIds(); // 55 Q1: a deleted object's flow is not sent (the savers prune it too)
 	for (const [graphId, graph] of Object.entries(all)) {
+		if (orphans.has(graphId)) continue;
 		const nodes = graph.nodes.map(serializeNode);
 		const edges = graph.edges.map(serializeEdge);
 		if (nodes.length === 0 && edges.length === 0) continue;

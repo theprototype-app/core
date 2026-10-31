@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { rejoinOutcome } from './rejoin'; // fix-agenttest 6
 import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -33,6 +34,7 @@ import { chats, chatRefs, chatsSnapshot, chatRefsSnapshot, chatsRestore } from '
 import { gameState, gameStateSnapshot, gameStateRestore } from './gameState';
 import { peers, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
+import { lightsSnapshot, restoreLights, withoutPunctualLights } from './lightSnapshot';
 import { idbGet, idbPut, idbDelete } from './idb';
 // 27-B: recovery paths report through the diagnostics ring instead of console.log,
 // so a user can hand over what happened (hardening audit H4). A zero-import leaf.
@@ -230,7 +232,8 @@ function exportScene() {
 				if (child.userData && '__uuid' in child.userData) delete child.userData.__uuid;
 			});
 		// 46: KTX2 twins are kept across a reload (KHR_texture_basisu beside the plain image)
-		const exporter = withTwins(new GLTFExporter());
+		// fix-agenttest 1: lights ride the `lights` sidecar instead (lightSnapshot.js)
+		const exporter = withoutPunctualLights(withTwins(new GLTFExporter()));
 		exporter.register(() => ({ afterParse: putPiecesBack }));
 		exporter.parse(
 			group,
@@ -339,6 +342,9 @@ async function writeSnapshot() {
 		// same reason, different loss: a MATERIAL ARRAY cannot cross the GLTF round
 		// trip either (it comes back as a Group of single-material children)
 		multiMaterial: multiMaterialSnapshot(),
+		// fix-agenttest 1: and no LIGHT survives it whole — Hemisphere/Ambient/RectArea came
+		// back as empty nodes, the rest without shadows, decay or direction (lightSnapshot.js)
+		lights: lightsSnapshot(group, isTransient),
 		// SH4: a GLTF export cannot carry a custom shader at all, so the GRAPH rides
 		// beside the snapshot and is recompiled on restore (the same twin-replacement
 		// reasoning as the two fields above). Orphans are pruned from the OUTPUT only.
@@ -526,15 +532,35 @@ export function annotationsRestore(annotations) {
 	if (annotations?.length && annotationsRestorer) annotationsRestorer(annotations);
 }
 
+/**
+ * 60 Q4: "has this boot's restore question been ANSWERED?" — the launch inbox (a file shared
+ * into the app or opened from the OS) waits on it, because a model imported into the empty
+ * boot scene is wiped by a Restore pressed a second later, and a .tpscene opened over the
+ * prompt overwrites the very autosave the prompt offers. Resolves once: no snapshot, a scene
+ * already non-empty, an auto-restore finished, or the offer answered (Restore → after its
+ * load; Dismiss → at once). A restore's Cancel that re-offers does not re-arm it.
+ */
+let settleRestore = () => {};
+const restoreDecided = new Promise((resolve) => (settleRestore = () => resolve(undefined)));
+/** the running applyRestore of an answered offer (restoreSnapshot), for restoreDecided
+ * @type {Promise<boolean | null> | null} */
+let restoreJob = null;
+export function restoreSettled() {
+	return restoreDecided;
+}
+
 async function checkRestore() {
 	try {
 		const snapshot = await idbGet('latest');
-		if (!snapshot || (!snapshot.scene && !snapshot.nodes?.length)) return;
+		if (!snapshot || (!snapshot.scene && !snapshot.nodes?.length)) return settleRestore();
+		// fix-agenttest 6: a reload while joined goes back to the session (rejoin.js) — offer our
+		// own copy only when there is no live session to go back to
+		if ((await rejoinOutcome()) === 'joined') return settleRestore();
 		// wait for the scene group to exist, then only offer when it's still empty
 		const unsubscribe = objectsGroup.subscribe((group) => {
 			if (!group) return;
 			setTimeout(() => unsubscribe(), 0);
-			if (group.children.length !== 0) return;
+			if (group.children.length !== 0) return settleRestore();
 			let armed = false;
 			try {
 				armed = typeof localStorage !== 'undefined' && !!safeStorage.getItem('restoreArmed');
@@ -549,11 +575,23 @@ async function checkRestore() {
 			// 27-D: `risky` means the previous restore of this snapshot never reached a clean
 			// flow tick. Auto-restoring it again is how one bad scene becomes a boot loop the
 			// user cannot escape, so it always goes to the PROMPT, which says why.
-			if (get(autoRestoreEnabled) && !armed) autoRestore(offer);
-			else restoreAvailable.set(offer);
+			if (get(autoRestoreEnabled) && !armed) autoRestore(offer).finally(settleRestore);
+			else {
+				restoreAvailable.set(offer);
+				// answered = the offer cleared; a Restore clears it BEFORE its load starts, so
+				// the microtask lets restoreSnapshot publish the job first
+				const off = restoreAvailable.subscribe((value) => {
+					if (value) return;
+					queueMicrotask(() => {
+						off();
+						Promise.resolve(restoreJob).finally(settleRestore);
+					});
+				});
+			}
 		});
 	} catch (error) {
 		log('warn', 'autosave', 'restore check failed', String(error));
+		settleRestore();
 	}
 }
 
@@ -691,6 +729,12 @@ async function applyRestore(snapshot, offer = null) {
 					delete child.userData.__uuid;
 				}
 			});
+			// fix-agenttest 1: the lights from their sidecar, BEFORE the build loop so the
+			// copy each peer is sent below is the real light, not the GLTF's empty node (an
+			// older snapshot has no sidecar: its punctual lights stay as GLTFLoader built them)
+			restoreLights(container, snapshot.lights ?? [], (error) =>
+				log('warn', 'autosave', 'light restore failed', String(error))
+			);
 			/** @type {any} */
 			const peer = get(peers);
 			// 33 L1: the wire copy is built only when somebody can receive it — a toJSON
@@ -793,7 +837,8 @@ export async function restoreSnapshot() {
 	const offer = get(restoreAvailable);
 	if (!offer) return;
 	restoreAvailable.set(null);
-	const ok = await applyRestore(offer.snapshot, offer);
+	restoreJob = applyRestore(offer.snapshot, offer);
+	const ok = await restoreJob;
 	// null: cancelled (it said so itself and re-offered) or superseded by another load
 	if (ok === null) return;
 	showToast(

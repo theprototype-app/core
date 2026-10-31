@@ -199,7 +199,10 @@ export async function buildExport(opts, onProgress = () => {}) {
 	// 1. the scene — the same payload + zip writer Save uses
 	onProgress({ phase: 'Bundling the scene', done: 0, total: 1 });
 	const { buildSessionPayload, exportSessionZip } = await import('../sessions');
-	const payload = buildSessionPayload(title);
+	// fix-batch-2 (1.45.1): local objects are drafts — an exported game carries what peers see
+	const { withoutLocalObjects, noteLocalObjectsExcluded } = await import('../objectPermissions');
+	const { result: payload, excluded } = withoutLocalObjects(() => buildSessionPayload(title));
+	noteLocalObjectsExcluded(excluded);
 	if (!payload?.objects?.length) throw new Error('The scene is empty — add something to play first.');
 	// 46 P3: the export preset (Settings ▸ Export ▸ Optimize for, shared with Save) — For Quest / web
 	// bundles resized textures with KTX2 twins and LOD chains (the runtime ships the transcoder)
@@ -327,6 +330,12 @@ export async function buildExport(opts, onProgress = () => {}) {
 		if (cover) out['thumbnail.png'] = cover;
 	}
 	out['README.txt'] = enc.encode(readmeText({ title, preset: opts.preset, id, cdn: !!(paths.size && opts.useCdnForPacks) }));
+	// 57 M7: the credits every licensed asset (and applied clip) asks for, beside the readme
+	{
+		const { creditsFor } = await import('../sceneLicences.js');
+		const credits = creditsFor(null);
+		if (credits) out['CREDITS.txt'] = enc.encode(credits);
+	}
 	if (opts.preset === 'static') out['.nojekyll'] = new Uint8Array(0);
 
 	// 6. validate with the proof's own rules, then zip

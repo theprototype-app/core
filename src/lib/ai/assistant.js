@@ -223,7 +223,7 @@ export async function runPrompt(text) {
 		if (!result.content && !appliedCount() && !failed) push({ role: 'assistant', content: '(no response)' });
 	} catch (error) {
 		endStreaming();
-		push({ role: 'error', content: describeAiError(error) });
+		push({ role: 'error', content: describeAiError(error, config) });
 	} finally {
 		endHistoryBatch('AI: ' + trimmed.slice(0, 40));
 		const applied = appliedCount();

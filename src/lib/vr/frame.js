@@ -75,7 +75,7 @@ import {
 	vrJumpHeight,
 	updateHeightLift
 } from './locomotion.js';
-import { modeHand, toggleVRMode, payPendingSpawn, updateModeLabel } from './modes.js';
+import { modeHand, toggleVRMode, payPendingSpawn, payPendingPlayHere, updateModeLabel } from './modes.js';
 import {
 	vrHovered,
 	vrPanelCursor,
@@ -219,6 +219,7 @@ export function updateVRControls() {
 		return;
 	}
 	payPendingSpawn(); // 30b P4
+	payPendingPlayHere(); // 60 Q1
 	updateHeightLift(); // 36: Settings ▸ VR ▸ Body (seated / height), applied once per change
 	// open menu/panel are modal for the sticks: sector nav / scrolling own them;
 	// a RIGHT-hand grab owns the right stick too (reel/scale beats teleport, 100);

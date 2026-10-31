@@ -16,7 +16,7 @@
 	// same for mesh providers and the voice-typing server; the storage note is a muted footnote. The
 	// form logic moved here from Settings.svelte unchanged (roadmap #10 / #11): per-preset key memory,
 	// the silent /models refresh with its sequence guard, Test connection. Same stores, same keys.
-	import { getContext } from 'svelte';
+	import { getContext, tick } from 'svelte';
 	import Section from '../../ui/Section.svelte';
 	import SettingRow from '../../ui/SettingRow.svelte';
 	import NavRow from '../../ui/NavRow.svelte';
@@ -38,7 +38,8 @@
 		removeAiProvider,
 		PROVIDER_PRESETS,
 		presetFor,
-		normalizeBaseUrl
+		normalizeBaseUrl,
+		chatEndpointFor
 	} from '$lib/ai/providers';
 	import { testConnection, listModels } from '$lib/ai/client';
 	import {
@@ -193,8 +194,11 @@
 		});
 		if (result.models && result.models.length) aiFormModels = result.models;
 		// pin the tested model into the result so later typing can't mislabel it
-		aiTestResult = { ok: result.ok, detail: result.detail, modelOk: result.modelOk, model: aiFormModel.trim() };
+		aiTestResult = { ok: result.ok, detail: result.detail, modelOk: result.modelOk, modelDetail: result.modelDetail, model: aiFormModel.trim() };
 		aiTesting = false;
+		// fix-batch-2 B3: the result sits under the actions — bring it into a short Settings window
+		await tick();
+		document.getElementById('ai-test-result')?.scrollIntoView({ block: 'nearest' });
 	}
 
 	// ---- the mesh-generation provider form (roadmap #11) ----
@@ -299,6 +303,12 @@
 			</SettingRow>
 			<SettingRow id="row-ai-base" label="Base URL" description="Ends in /v1. Leaving the field fetches the model list." wide>
 				<input id="ai-form-base" class="settings-text" placeholder="Base URL (…/v1)" autocomplete="off" bind:value={aiFormBaseUrl} onchange={aiRefreshModels} />
+				<!-- fix-batch-2 B1: the address the shared URL rule resolves the field to -->
+				{#snippet extra()}
+					{#if aiFormBaseUrl.trim()}
+						<p id="ai-will-call" class="ai-will-call">Will call <code>{chatEndpointFor(aiFormBaseUrl)}</code></p>
+					{/if}
+				{/snippet}
 			</SettingRow>
 			<SettingRow id="row-ai-key" label="API key" wide>
 				<!-- new-password: keeps Chrome's password manager from saving base-url + key as a login pair -->
@@ -372,7 +382,7 @@
 					{:else if aiTestResult.modelOk}
 						<span class="ai-ok"> · model <code>{aiTestResult.model}</code> — Configuration OK</span>
 					{:else if aiTestResult.modelOk === false}
-						<span class="ai-bad"> · model “{aiTestResult.model}” did not respond — pick one from the list</span>
+						<span class="ai-bad"> · model “{aiTestResult.model}” did not respond — {aiTestResult.modelDetail || 'pick one from the list'}</span>
 					{/if}
 				{:else}
 					<span class="ai-bad">✗ {aiTestResult.detail}</span>
@@ -473,6 +483,12 @@
 	.ai-result {
 		margin: -8px 0 0;
 		font-size: var(--fs-desc);
+	}
+	.ai-will-call {
+		margin: 0;
+		font-size: var(--fs-desc);
+		color: var(--text-muted);
+		overflow-wrap: anywhere;
 	}
 	.ai-ok {
 		color: var(--ink-good);

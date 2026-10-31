@@ -133,7 +133,7 @@ export async function importModelTool(args = {}) {
 	const THREE = await import('three');
 	const local = new THREE.Matrix4().compose(
 		new THREE.Vector3(...position),
-		new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation.map((d) => (d * Math.PI) / 180), 'XYZ')),
+		new THREE.Quaternion().setFromEuler(new THREE.Euler((rotation[0] * Math.PI) / 180, (rotation[1] * Math.PI) / 180, (rotation[2] * Math.PI) / 180, 'XYZ')),
 		new THREE.Vector3(...scale)
 	);
 	// position / rotation / scale are LOCAL to the parent: place at the matching WORLD pose, then
@@ -157,7 +157,7 @@ export async function importModelTool(args = {}) {
 		date: new Date().toISOString(),
 		source: String(args.source ?? fromUrl ?? '').slice(0, 300) || (fromUrl ? fromUrl : 'agent file'),
 		by: who,
-		generator: glb.generator.slice(0, 120),
+		generator: String(glb.generator ?? '').slice(0, 120),
 		sha256,
 		bytes: bytes.length
 	};

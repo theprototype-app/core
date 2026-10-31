@@ -1,6 +1,6 @@
 {
 	"name": "@theprototype/agent",
-	"version": "0.3.0",
+	"version": "1.51.0",
 	"description": "Let an AI agent (Claude Code, Claude Desktop, any MCP host) join a theprototype.app session from its link and build the 3D scene with you.",
 	"type": "module",
 	"license": "MIT",
@@ -28,6 +28,7 @@
 	},
 	"files": [
 		"src/",
+		"catalog.json",
 		"README.md",
 		"LICENSE"
 	],
@@ -38,7 +39,7 @@
 		"access": "public"
 	},
 	"scripts": {
-		"test": "node test/chat.test.mjs && node test/messages.test.mjs && node test/bridge.test.mjs && node test/link.test.mjs && node test/mcp.test.mjs && node test/repl.test.mjs && node test/wire.test.mjs",
+		"test": "node test/chat.test.mjs && node test/messages.test.mjs && node test/bridge.test.mjs && node test/link.test.mjs && node test/mcp.test.mjs && node test/repl.test.mjs && node test/wire.test.mjs && node test/catalog.test.mjs",
 		"spike": "node src/spike.js",
 		"smoke": "node src/cli.js smoke",
 		"repl": "node src/cli.js repl",
@@ -47,10 +48,10 @@
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.32.1",
 		"peerjs": "^1.5.4",
-		"playwright-core": "1.63.0",
+		"playwright-core": "1.64.1",
 		"ws": "^8.18.0"
 	},
 	"optionalDependencies": {
-		"@roamhq/wrtc": "^0.8.0"
+		"@roamhq/wrtc": "^0.10.0"
 	}
 }

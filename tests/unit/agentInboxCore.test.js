@@ -172,9 +172,9 @@ describe('agent inbox: Stop', () => {
 		inbox.receive('ed1', req({ id: 'r2' }));
 		await inbox.next(10);
 		inbox.receive('view1', { type: 'agentchat', cancel: 'r1', to: 'agent1' });
-		expect(inbox.state().current.cancelled).toBe(false);
+		expect(inbox.state().current?.cancelled).toBe(false);
 		inbox.receive('host1', { type: 'agentchat', cancel: 'r1', to: 'agent1' });
-		expect(inbox.state().current.cancelled).toBe(true);
+		expect(inbox.state().current?.cancelled).toBe(true);
 		inbox.receive('ed1', { type: 'agentchat', cancel: 'r2', to: 'agent1' });
 		expect(inbox.state().queued).toBe(0);
 	});
@@ -193,7 +193,7 @@ describe('agent inbox: Stop', () => {
 			role: () => 'editor',
 			host: () => 'host1',
 			waiting: () => false,
-			openPeers: () => [],
+			openPeers: () => [{ id: 'host1', name: 'Host' }], // 1.48: an edit needs the host's link open (status().joined)
 			inVR: () => false,
 			missingTools: () => [],
 			missingModules: () => [],
@@ -223,7 +223,7 @@ describe('agent inbox: replies, terminal turns, asks', () => {
 		expect(replies[0]).toMatchObject({ to: 'ed1', chatId: 'c1', partial: true, text: 'Building the trees.', name: 'Claude' });
 		expect(replies[1].partial).toBeUndefined();
 		expect(replies[1].text).toBe('Building the trees.\n\nDone: three pines.');
-		expect(inbox.state().current.done).toBe(true);
+		expect(inbox.state().current?.done).toBe(true);
 	});
 
 	it('delta appends raw text (token streaming)', async () => {

@@ -249,7 +249,8 @@ h.run(async () => {
 		const imp = await s.aiTools.executeAiTool('import_model', { data, name: 'Sneaky' });
 		const keep = await s.tpchats.keepImage({ mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==' });
 		const save = s.tpchats.saveChat({ id: 'viewer-chat', messages: [] });
-		return { imp: imp?.refused === true && !imp?.uuid, keep: keep === null, save: save === null, plus: !!document.querySelector('#chat-attach') };
+		return { imp: (imp?.refused === true || imp?.viewOnly === true) && !imp?.uuid, // fix-live F-1's viewer gate answers first ({viewOnly})
+			 keep: keep === null, save: save === null, plus: !!document.querySelector('#chat-attach') };
 	}, b64);
 	h.check(viewer.imp, 'a viewer’s import_model is refused');
 	h.check(viewer.keep && viewer.save, `a viewer cannot keep a picture or write a chat (${JSON.stringify(viewer)})`);

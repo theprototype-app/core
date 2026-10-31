@@ -81,3 +81,18 @@ describe('merge + group', () => {
 		expect(nameList([])).toBe('');
 	});
 });
+
+describe('66 S4b import_file lines', () => {
+	it('one line per import (file, spec, card); a chunk that is not the last is no line', () => {
+		expect(summarizeToolCall('import_file', {}, { file: { name: 'knight_walk.png' }, spec: { name: 'knight_walk.pixling.json' }, uuid: 'c1' })).toBe(
+			'imported knight_walk.png + its spec and placed it in the scene'
+		);
+		expect(summarizeToolCall('import_file', {}, { file: { name: 'walk.json' } })).toBe('imported walk.json into the Explorer');
+		expect(summarizeToolCall('import_file', {}, { received: 1, of: 3, partial: true })).toBeNull();
+		expect(summarizeToolCall('import_file', {}, { error: 'view-only: …', refused: true })).toMatch(/^tried import file/);
+	});
+	it('the placed card is what the line touched', () => {
+		expect(touchedUuids('import_file', { data: 'x' }, { file: {}, uuid: 'card-1' })).toEqual(['card-1']);
+		expect(touchedUuids('import_model', {}, { uuid: 'm' })).toEqual([]);
+	});
+});

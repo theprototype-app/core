@@ -21,6 +21,10 @@
 // scene (Box3 for bounds, frame-to-fit, the physics body's next step) reads NaN forever
 // with nothing pointing back at the message that did it.
 
+// The one import: the material parameter rules, itself a zero-import leaf (shared with the setter and
+// the AI tools, so the three cannot disagree about what a material key takes).
+import { checkMaterialParam } from './materialParamRules.js';
+
 /** @param {unknown} v */
 export function isUuid(v) {
 	return typeof v === 'string' && v.length > 0 && v.length <= 64;
@@ -180,6 +184,12 @@ export const VALIDATORS = {
 	tpchatdel: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	tpchats: (d) => isArray(d.chats) && d.chats.length <= 500,
 	tprefs: (d) => !!d.refs && typeof d.refs === 'object' && isArray(d.refs.list) && d.refs.list.length <= 500,
+	// 60 Q5: a shared reference image (normalized again on apply); the image is a data URL, capped
+	// at what a 2048 px picture can be (the sender downscales to that)
+	underlay: (d) =>
+		typeof d.id === 'string' && d.id.length <= 64 && !!d.rec && typeof d.rec === 'object' && !Array.isArray(d.rec) &&
+		(d.src === undefined || (typeof d.src === 'string' && d.src.startsWith('data:image/') && d.src.length <= 12 * 1024 * 1024)),
+	underlaydelete: (d) => typeof d.id === 'string' && d.id.length <= 64,
 	userdata: (d) => isArray(d.userdata),
 	locked: (d) => isArray(d.lockeditems),
 	lock: (d) => isUuid(d.uuid) && (d.uuids === undefined || isArray(d.uuids)),
@@ -240,6 +250,16 @@ export const VALIDATORS = {
 		typeof d.id === 'string' && d.id.length <= 64 && typeof d.prompt === 'string' && d.prompt.length <= 2000 &&
 		(d.name == null || typeof d.name === 'string') && (d.position == null || isVec3(d.position)),
 	meshgenack: (d) => typeof d.id === 'string' && typeof d.ok === 'boolean',
+	// 55: the agent sim relay (agent/simRelay.js) — the host checks the asker is an agent with edit rights
+	agentsimreq: (d) => typeof d.id === 'string' && d.id.length <= 64 && typeof d.action === 'string' && d.action.length <= 16,
+	agentsimack: (d) =>
+		typeof d.id === 'string' && typeof d.ok === 'boolean' && (d.error == null || (typeof d.error === 'string' && d.error.length <= 300)) &&
+		(d.result == null || (typeof d.result === 'object' && !Array.isArray(d.result))),
+	// 85 rule 7: the Allow / Deny question for a scene-wide look change (agent/confirmGate.js)
+	agentconfirmreq: (d) => typeof d.id === 'string' && d.id.length <= 64 && typeof d.tool === 'string' && d.tool.length <= 40 && typeof d.summary === 'string' && d.summary.length <= 400,
+	agentconfirmans: (d) => typeof d.id === 'string' && d.id.length <= 64 && typeof d.allow === 'boolean' && (d.error == null || (typeof d.error === 'string' && d.error.length <= 300)),
+	// fix-agenttest 4: a page's hidden/visible notice (peerDrop.AWAY_GRACE_MS)
+	linkaway: (d) => typeof d.hidden === 'boolean',
 	disconnected: (d) => typeof d.peerId === 'string',
 	// 55 A9: remove / remove-and-block / allow back. WHO may send it is decided by the
 	// receiver (peerModeration), not here — this is the shape.
@@ -278,6 +298,16 @@ export const VALIDATORS = {
 		typeof d.doc.slices === 'object' &&
 		!Array.isArray(d.doc.slices) &&
 		(d.ev === undefined || isArray(d.ev)),
+	// fix-agenttest 10: a shared Set Variable's event for the authority (gameState.applyGameVarOp)
+	gamevarop: (d) =>
+		typeof d.rid === 'string' &&
+		d.rid.length > 0 &&
+		d.rid.length <= 160 &&
+		typeof d.name === 'string' &&
+		d.name.length > 0 &&
+		d.name.length <= 200 &&
+		(d.op === 'set' || d.op === 'add' || d.op === 'subtract') &&
+		Number.isFinite(d.value),
 	kitreq: (d) =>
 		typeof d.rid === 'string' &&
 		d.rid.length > 0 &&
@@ -308,7 +338,10 @@ export const VALIDATORS = {
 		d.timers.every(
 			(/** @type {any} */ t) => !!t && typeof t.k === 'string' && Number.isFinite(t.at) && typeof t.m === 'string' && isArray(t.a)
 		) &&
-		(d.fired === undefined || (!!d.fired && typeof d.fired === 'object' && !Array.isArray(d.fired))),
+		(d.fired === undefined || (!!d.fired && typeof d.fired === 'object' && !Array.isArray(d.fired))) &&
+		// 55: the authority's latest handler errors (optional; an older peer ignores the field)
+		(d.errs === undefined ||
+			(isArray(d.errs) && d.errs.length <= 5 && d.errs.every((/** @type {any} */ e) => !!e && Number.isFinite(e.at) && typeof e.where === 'string' && e.where.length <= 80 && typeof e.message === 'string' && e.message.length <= 240))),
 	// 37: optional presence extras — `feet` (a walker's floor, metres) and `knocked` (0/1 idle flag)
 	// 55 A7/A8: an agent's log line(s), an editor's undo request, where the agent looked
 	agentlog: (d) =>
@@ -387,6 +420,33 @@ export const VALIDATORS = {
 		// 48 B2: a measurement's record — null is not a record (an item is deleted, never emptied)
 		if (d.parameter === 'measure')
 			return isUuid(d.uuid) && !!d.measure && typeof d.measure === 'object' && isArray(d.measure.points) && d.measure.points.length <= 64;
+		// 57 M2: a character config (map fixes + applied clips) is a plain object (normalized again by its applier)
+		if (d.parameter === 'expression') return isUuid(d.uuid) && typeof d.name === 'string' && d.name.length <= 64 && Number.isFinite(d.weight);
+		if (d.parameter === 'character') return isUuid(d.uuid) && !!d.character && typeof d.character === 'object' && !isArray(d.character);
+		// 57 M1: a model's clip-asset refs — a short array of {hash, name} (normalizeClipRefs
+		// trims the rest on apply)
+		if (d.parameter === 'clipRefs')
+			return (
+				isUuid(d.uuid) &&
+				isArray(d.clipRefs) &&
+				d.clipRefs.length <= 64 &&
+				d.clipRefs.every((/** @type {any} */ r) => !!r && typeof r.hash === 'string' && r.hash.length <= 128 && typeof r.name === 'string' && r.name.length <= 200)
+			);
+		// 57 M11: an Animation states graph is a plain object with a states ARRAY, or null; a
+		// parameter is a short name + a number/boolean value + a finite stamp
+		if (d.parameter === 'animGraph') return isUuid(d.uuid) && (d.animGraph === null || (!!d.animGraph && typeof d.animGraph === 'object' && isArray(d.animGraph.states)));
+		if (d.parameter === 'animParam')
+			return isUuid(d.uuid) && typeof d.name === 'string' && d.name.length <= 40 && (typeof d.value === 'boolean' || Number.isFinite(d.value)) && Number.isFinite(d.at);
+		// 57 M12: a socket attach is {uuid, socket, offset[7]} or null (detached)
+		if (d.parameter === 'attachTo')
+			return (
+				isUuid(d.uuid) &&
+				(d.attachTo === null ||
+					(!!d.attachTo && isUuid(d.attachTo.uuid) && typeof d.attachTo.socket === 'string' && d.attachTo.socket.length <= 200 && isNumberArray(d.attachTo.offset) && d.attachTo.offset.length === 7))
+			);
+		// a material parameter: a key the app knows, a value of that key's kind (a texture slot only ever
+		// null on the wire — images travel as `map`)
+		if (d.parameter === 'materialParam') return isUuid(d.uuid) && checkMaterialParam(null, d.key, d.value).ok;
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

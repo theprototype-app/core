@@ -14,7 +14,7 @@ export const AGENT_LOG_HANDSHAKE = 50;
 export const TEXT_MAX = 160;
 
 /** tools that only read: no line */
-const READ_ONLY = new Set(['list_scene', 'status', 'screenshot', 'wait_for_edit', 'tools', 'snapshot']);
+const READ_ONLY = new Set(['list_scene', 'status', 'screenshot', 'wait_for_edit', 'tools', 'snapshot', 'list_materials', 'get_material', 'describe_shader_nodes', 'get_post']);
 
 /** @param {number} n @param {string} one @param {string} [many] */
 const count = (n, one, many = one + 's') => n + ' ' + (n === 1 ? one : many);
@@ -44,6 +44,7 @@ export function touchedUuids(tool, args, result) {
 	for (const r of arr(result?.created)) add(r?.uuid);
 	for (const r of arr(result?.updated)) add(r?.uuid);
 	add(result?.groupUuid);
+	if (tool === 'import_file') add(result?.uuid); // 66 S4b: the placed card
 	for (const u of arr(result?.members)) add(u);
 	for (const u of arr(args?.updates)) add(u?.uuid);
 	if (tool === 'delete_objects') return out; // deleted things cannot be selected
@@ -66,6 +67,8 @@ export function touchedUuids(tool, args, result) {
  */
 export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 	if (READ_ONLY.has(tool)) return null;
+	if (tool === 'import_file' && result?.partial) return null; // 66 S4b: a chunk of an upload is not an action
+	if (result?.needsConfirm || result?.alreadyApplied) return null; // 85: a question so far, or a repeat of an answered one — the call that applied it has the line
 	const failed = !result || typeof result !== 'object' || (result.error && !result.created && !result.updated);
 	if (failed) return 'tried ' + tool.replace(/_/g, ' ') + ' — ' + String(result?.error ?? 'it failed').slice(0, 80);
 	switch (tool) {
@@ -118,6 +121,43 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 			return String(args?.action ?? '') === 'start' ? 'started the simulation' : String(args?.action ?? 'changed') + ' the simulation';
 		case 'generate_mesh':
 			return 'started generating “' + String(args?.prompt ?? '').slice(0, 50) + '”';
+		case 'import_file': {
+			// 66 S4b: one line per import — the file, its spec, and the card when one was placed
+			const file = String(result?.file?.name ?? 'a file');
+			return 'imported ' + file + (result?.spec ? ' + its spec' : '') + (result?.uuid ? ' and placed it in the scene' : ' into the Explorer');
+		}
+		// 85 L1-L5
+		case 'set_material': {
+			const done = arr(result.updated).filter((r) => r && r.ok);
+			const names = nameList(done.map((r) => nameOf(r.uuid)));
+			const maps = [...new Set(done.flatMap((r) => arr(r.maps)))];
+			const what = result.preset ? 'put ' + String(result.preset).slice(0, 40) + ' on' : maps.length ? 'textured' : 'changed the material of';
+			return what + ' ' + count(done.length, 'object') + (names ? ' (' + names + ')' : '') + (maps.length ? ': ' + nameList(maps) : '');
+		}
+		case 'create_shader': {
+			const made = arr(result.created);
+			if (made[0]?.scene) return 'set the scene\'s default shader';
+			const names = nameList(made.map((r) => nameOf(r.uuid)));
+			return 'gave ' + count(made.length, 'object') + ' a shader' + (names ? ' (' + names + ')' : '');
+		}
+		case 'edit_shader': {
+			const on = nameOf(String(arr(result.updated)[0]?.uuid ?? ''));
+			return 'edited a shader' + (on ? ' (' + on + ')' : '');
+		}
+		case 'assign_shader': {
+			const done = arr(result.updated).filter((r) => r && r.ok);
+			return (args?.shader === null ? 'took the shader off ' : 'copied a shader onto ') + count(done.length, 'object');
+		}
+		case 'set_post': {
+			const effects = nameList(arr(result.effects).map((e) => String(e?.kind ?? '')));
+			return 'changed the scene\'s look' + (effects ? ' (' + effects + ')' : '');
+		}
+		case 'create_post_graph':
+			return 'added a custom post effect to the look';
+		case 'uv_unwrap':
+			return 'unwrapped the UVs of ' + count(arr(result.updated).length, 'object') + ' (' + String(args?.method ?? 'smart') + ')';
+		case 'set_uv':
+			return (args?.faces !== undefined ? 'mapped faces of ' : 'set the tiling on ') + count(arr(result.updated).length, 'object');
 		case 'install_modules':
 			return 'installed ' + count(arr(args?.ids ?? args?.modules).length, 'module');
 		default:

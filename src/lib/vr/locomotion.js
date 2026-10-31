@@ -15,6 +15,8 @@ import { moduleWorldChildren } from '../moduleWorld';
 import { teleportVerdictPure, shrinkBox, BOUNDS_INSET, PROBE_HEIGHT } from '../teleportRules';
 import { walkable as dungeonWalkable } from '../dungeonPlay';
 import { resolvePlaySettings, playPublishers } from '../playSettings';
+// 60 Q1: the spawn read every spawn path shares (a Play here override first, else the scene's)
+import { currentSpawn } from '../playSpawn';
 import { locomotionPolicy, vrSpawnOffsets, yawForward } from '../locomotionPolicy';
 import { resolveWalk, charControl } from '../charController';
 import { kitPlayRules } from '../kit/runtime.js';
@@ -790,7 +792,7 @@ export function vrJumpHeight() {
  * no move. @returns {boolean} whether the player was moved
  */
 export function spawnPlayer() {
-	const spawn = resolvePlaySettings(get(globalScene)).spawn;
+	const spawn = currentSpawn();
 	if (!spawn || !renderer?.xr?.getSession?.()) return false;
 	const viewer = viewerNow();
 	if (!viewer) return false;

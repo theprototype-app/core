@@ -1,7 +1,8 @@
 // B5 / phase-172 deferred item 1: transient drops heal instead of tearing down.
 //
 // An OPEN conn dropping without a goodbye now gets a bounded redial window
-// (500/1000/2000/4000ms, netBackoff) before any teardown: the peer's roster
+// (checks at 0.5/1.5/3.5/7.5/15.5 s, netBackoff; the last waits out a dial still
+// negotiating, up to DIAL_GRACE_MS) before any teardown: the peer's roster
 // entry, avatar and locks survive a wifi wobble, and no "disconnected" toast
 // fires unless they are really gone. Announced leaves (leaveSession broadcasts
 // the existing `disconnected` message about itself; pagehide does the same
@@ -31,7 +32,8 @@ h.run(async () => {
 			return !!pc.connections[pid]?.open && pc.openedPeers.has(pid);
 		}, id);
 
-	await h.eventually(() => openTo(C, B.id), (v) => v, 'mesh formed: C holds an open conn to B');
+	// a mesh-fill dial negotiates like any other: ~6-12 s on a loaded box, past eventually's 10 s default
+	await h.eventually(() => openTo(C, B.id), (v) => v, 'mesh formed: C holds an open conn to B', 26000);
 
 	// --- a relayed 'disconnected' about a live peer is ignored
 	await C.page.evaluate(([aid, bid]) => {
@@ -69,14 +71,18 @@ h.run(async () => {
 		(await store(A, 'lockedObjects')).some((x) => x[0] === B.id && x[1] === uuid),
 		"B's lock survives the blip"
 	);
-	await h.eventually(() => openTo(A, B.id), (v) => v, 'the conn to B is re-opened by the backoff', 12000);
+	// bounded by the product's own window (15.5 s + a negotiating dial's 10 s grace): a 12 s wait was
+	// shorter than the window it tests, and a redial measured 6-9 s to open on a loaded box
+	await h.eventually(() => openTo(A, B.id), (v) => v, 'the conn to B is re-opened by the backoff', 26000);
 	const notifs = await store(A, 'notifications');
 	h.check(
 		!notifs.slice(notifCountBefore).some((n) => String(n.text).includes('disconnected')),
 		'no disconnect toast fired for a drop that healed'
 	);
 
-	// messages flow again after the heal
+	// messages flow again after the heal — from B, so B's own side must be healed too (A's open conn
+	// is the check above; B adopts the redial, or dials it, on its own schedule)
+	await h.eventually(() => openTo(B, A.id), (v) => v, "(premise) B's side of the conn is open again", 26000);
 	await B.page.evaluate(() => window.__stores.commandsHandler.sceneCommand('/create sphere'));
 	const countOn = (p) =>
 		p.page.evaluate(() => {
@@ -85,7 +91,30 @@ h.run(async () => {
 			return g?.children?.length ?? 0;
 		});
 	const bCount = await countOn(B);
-	await h.eventually(() => countOn(A), (c) => c >= bCount, "B's new object reaches A after the heal", 10000);
+	let reached = false;
+	await h.eventually(() => countOn(A), (c) => (reached = c >= bCount), "B's new object reaches A after the heal", 10000);
+	// both links are open by now, so a red here is past the transport: say whether a share-or-stash ask
+	// (gateHolds — it drops a peer's room content while open) or a connect decision is holding it
+	if (!reached)
+		for (const [name, p, other] of [['A', A, B], ['B', B, A]])
+			console.log(
+				`  ${name} after the heal: ` +
+					JSON.stringify(
+						await p.page.evaluate((o) => {
+							const s = window.__stores;
+							let decision = null;
+							let notes = [];
+							s.connectionState?.pendingConnectDecision?.subscribe?.((v) => (decision = v))?.();
+							s.notifications?.subscribe?.((v) => (notes = v))?.();
+							return {
+								gateHolds: s.sessions?.gateHolds?.(o) ?? null,
+								decision: decision ? Object.keys(decision) : null,
+								objects: (() => { let g; s.objectsGroup.subscribe((v) => (g = v))(); return g?.children?.map((c) => c.name); })(),
+								lastToasts: notes.slice(-3).map((n) => String(n.text).slice(0, 90))
+							};
+						}, other.id)
+					)
+			);
 
 	// --- announced leave tears down promptly, with no redial spam
 	const t0 = Date.now();

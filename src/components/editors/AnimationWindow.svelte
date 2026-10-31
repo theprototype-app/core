@@ -14,7 +14,7 @@
 	// undo entry and ONE broadcast instead of dozens.
 	import { get } from 'svelte/store';
 	import { untrack } from 'svelte';
-	import { selectedObject } from '../../stores/sceneStore';
+	import { selectedObject, objectsGroup } from '../../stores/sceneStore';
 	import { animationClose } from '../../stores/appStore.js';
 	import {
 		animations, playback, playheads, CHANNELS, EASINGS, STEPPED, channelLabel, isRotChannel,
@@ -33,7 +33,9 @@
 	// posed from the synced clock) — the window used to ignore them entirely, so
 	// a rigged model showed "no movements yet" and its own animations were
 	// reachable only from the Inspector.
-	import { animatedObjects, setAnimationState, clipInfo, behaviorOf } from '$lib/animatedImports';
+	import { animatedObjects, setAnimationState, clipInfo, behaviorOf, restRowsOf } from '$lib/animatedImports';
+	import { openApplyClip } from '$lib/characterUi.js';
+	import ClipToolsPanel from './ClipToolsPanel.svelte'; // 57 M3/M8
 	import Icon from '../ui/Icon.svelte';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import ContextMenu from '../ContextMenu.svelte';
@@ -58,6 +60,13 @@
 
 	// live-follow the primary selection (keeps a truthy [] before the first select)
 	const target = $derived($selectedObject && $selectedObject.uuid ? $selectedObject : null);
+	// 57 M12: the MODEL a selected part belongs to (its top-level object), or null for a top-level object
+	const partOf = $derived.by(() => {
+		let o = target;
+		if (!o || !o.parent || o.parent === $objectsGroup) return null;
+		while (o.parent && o.parent !== $objectsGroup) o = o.parent;
+		return o.parent === $objectsGroup ? o : null;
+	});
 	// the ACTIVE clip of the object's set, normalized (a v1 save migrates on read)
 	const anim = $derived.by(() => {
 		$animations; // the store is the dependency; activeClip reads it with get()
@@ -219,6 +228,8 @@
 	const recording = $derived(!!target && $autoKeyFor === target.uuid);
 
 	// docked vs floating (starts docked, undockable)
+	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
+	let { popped = false } = $props();
 	let docked = $state(true);
 	// 18-B: floating-window size limits, shared with the clamp helpers
 	const WIN_MIN = { minW: 360, minH: 260 };
@@ -239,8 +250,11 @@
 	}
 	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
 	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	// 70 W2: a popped-out instance renders its floating layout inside its window, never docked
+	// svelte-ignore state_referenced_locally
+	if (popped) docked = false;
 	$effect(() =>
-		onLayoutRestore(() => {
+		popped ? undefined : onLayoutRestore(() => {
 			const stored = storedPanelLayout(safeStorage.getItem, 'animation', 660, 460);
 			docked = !!(stored.docked);
 			const fit = clampWinSize(stored.w, stored.h, WIN_MIN);
@@ -261,6 +275,7 @@
 	// from localStorage ONCE at mount, so writing that flag from outside is inert;
 	// `setDocked` owns the mode and is what has to run. Cleared as it is acted on.
 	$effect(() => {
+		if (popped) return; // 70 W2: the main window's instance answers the arm
 		const arm = $dockModeArm;
 		if (!arm || arm.key !== 'animation') return;
 		dockModeArm.set(null);
@@ -276,6 +291,7 @@
 	const effW = $derived(myGroup ? myGroup.rect.width : winW);
 	const effH = $derived(myGroup ? myGroup.rect.height : winH);
 	$effect(() => {
+		if (popped) return; // 70 W2: a popped panel is no dock tab
 		setDockOccupant('animation', !$animationClose && docked, $dockHeight);
 		return () => setDockOccupant('animation', false);
 	});
@@ -2027,8 +2043,11 @@
 			<!-- clientHeight is the clip list's resize CEILING: the grip used to clamp at
 			     a flat 360px whatever the pane's own height, so on a short dock it went
 			     straight off the bottom of the window -->
+			<!-- 57: the pane SCROLLS — with a model's clip tools under its clip list it can be taller
+			     than a short dock, and a cut-off pane had no way to reach what was below -->
 			<div
-				class="flex w-56 shrink-0 flex-col border-r border-border"
+				class="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border"
+				use:minimalScroll
 				class:an-pane-full={compact}
 				class:an-pane-off={compact && phonePane !== 'list'}
 				bind:clientHeight={sideH}
@@ -2037,6 +2056,15 @@
 					<div id="animation-clips" class="border-b border-border">
 						<div class="flex items-center justify-between px-2 pt-1.5">
 							<span class="text-[10px] uppercase tracking-wider text-text-faint">Imported clips</span>
+							<!-- 57 M2: a rig's clip can play on any other mapped humanoid -->
+							{#if target && !behavior && restRowsOf(target.uuid).length}
+								<button
+									id="clip-apply-to"
+									class="ui-button-quiet ml-auto mr-2 text-[10px] text-accent-text"
+									title="Play the selected clip on other characters (fitted to each skeleton)"
+									onclick={() => target && openApplyClip({ src: { uuid: target.uuid, clip: clipState?.clip ?? clips[0]?.name } })}
+								>Apply to…</button>
+							{/if}
 							<span class="text-[10px] text-text-faint">{clips.length}</span>
 						</div>
 						<div class="max-h-24 overflow-y-auto p-1" use:minimalScroll>
@@ -2077,6 +2105,15 @@
 							<span class="shrink-0 text-[10px] tabular-nums text-text-muted">{(clipState?.speed ?? 1).toFixed(1)}×</span>
 						</div>
 					</div>
+				{/if}
+				<!-- 57 M3/M8: clip assets (.tpanim) on a rigged model — settings, seam, trim/split/join, extract -->
+				{#if target && clipState && !behavior}
+					{#if !clips.length}
+						<p id="clip-empty" class="border-b border-border px-2 py-1.5 text-[10px] leading-snug text-text-muted">
+							No clips yet — drag an animation clip (.tpanim) from the Explorer onto the model.
+						</p>
+					{/if}
+					<ClipToolsPanel uuid={target.uuid} {clips} {clipState} />
 				{/if}
 
 				<!-- authored clips -->
@@ -2125,6 +2162,20 @@
 							onpointermove={doClipsResize}
 							onpointerup={endClipsResize}
 						></div>
+						<!-- 57 M12: keys on a PART of a model become one clip FILE on the model (node-name .tpanim) -->
+						{#if partOf}
+							<button
+								id="parts-to-clip"
+								class="ui-button-quiet mx-2 mb-1 text-accent-text"
+								title={'Save this clip of the model\'s parts as a .tpanim clip file on "' + (partOf.name || 'the model') + '" — it plays like any clip and travels to everyone once'}
+								onclick={async () => {
+									const active = authoredClips.find((c) => c.active);
+									if (!active || !partOf) return;
+									const m = await import('$lib/tpanim/clipEdit.js');
+									await m.partsKeysToClip(partOf.uuid, active.name);
+								}}>Save as a clip file on {partOf.name || 'the model'}</button
+							>
+						{/if}
 					</div>
 				{/if}
 
@@ -2138,7 +2189,7 @@
 					</select>
 					<button class="ui-button-quiet shrink-0" title="Animate this channel" aria-label="Add channel" onclick={add}>＋</button>
 				</div>
-				<div class="min-h-0 flex-1 overflow-y-auto" use:minimalScroll>
+				<div class="min-h-24 flex-1 overflow-y-auto" use:minimalScroll>
 					{#if !tracks.length}
 						<div class="p-3 text-center text-[11px] text-text-faint">
 							{clips.length

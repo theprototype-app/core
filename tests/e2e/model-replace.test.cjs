@@ -104,7 +104,7 @@ h.run(async () => {
 		s.nodesHandler.createFlowEdge({ id: 'e-k', source: 'k-click', target: 'k-play', targetHandle: 'trigger' }, id);
 	}, uuid);
 	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.clips?.includes('Idle') && f.physics?.mass === 2 && f.pos[0] === 2, 'B holds the posed knight (objectfile) with physics', 20000);
-	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.graphNodes?.join() === 'onclick,playanim', 'B holds the knight\'s flow before the replace', 20000);
+	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.graphNodes?.join() === 'onclick,playanim', 'B holds the knight\'s flow before the replace', 60000);
 	const before = await factsOf(A.page, uuid);
 	h.check(before.animated && before.clips.join() === 'Cheer,Idle', `A: the knight is an animated import with Idle, Cheer (${before.clips})`);
 

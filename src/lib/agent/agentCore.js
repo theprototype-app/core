@@ -91,6 +91,7 @@ export function toolName(tool) {
  * @property {(name: string, args: any) => Promise<any>|any} runTool executeAiTool
  * @property {(name: string, args: any) => Promise<any>} [capCheck] 71 TR1: null = go ahead, else the refusal
  * @property {() => any} [capabilities] 71 TR1: status().capabilities
+ * @property {() => string} [requestEdit] 71 TR2: ask the admins for edit access
  * @property {(name: string, args: any) => {name: string}} [resolveName] repairToolCall
  * @property {() => string} systemPrompt
  * @property {(cap: number) => any} summarize summarizeScene
@@ -408,6 +409,8 @@ export function createAgentCore(deps) {
 			return deps.screenshot(opts ?? {}).catch(() => null);
 		},
 		pendingOffers: () => offers.list(),
+		/** 71 TR2: a viewer agent asks the admins for edit access */
+		requestEdit: () => String(deps.requestEdit?.() ?? 'not-viewer'),
 		accept: (/** @type {string} */ id, /** @type {string|number|undefined} */ which = undefined) => offers.accept(id, which),
 		leave: () => deps.leave()
 	};

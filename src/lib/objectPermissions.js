@@ -143,7 +143,22 @@ export function warnViewerReadOnly(message) {
 	const now = Date.now();
 	if (now - lastReadOnlyWarn < 4000) return;
 	lastReadOnlyWarn = now;
-	showToast(message || "View-only — you can't move objects shared by others. Ask an admin for edit access.");
+	// 71 TR2: with a plugin that takes requests, the nudge is also the way to ask
+	const ask = typeof (/** @type {any} */ (get(rolesInfo))?.requestEdit) === 'function';
+	showToast(
+		message || (ask ? "View-only — you can't move objects shared by others." : "View-only — you can't move objects shared by others. Ask an admin for edit access."),
+		ask ? [{ label: 'Request edit access', action: () => requestEditAccess() }] : undefined
+	);
+}
+
+/** 71 TR2: a viewer taps Request. The plugin sends it; this says what happened. @returns {string} */
+export function requestEditAccess() {
+	const ri = /** @type {any} */ (get(rolesInfo));
+	const result = String(ri?.requestEdit?.() ?? 'not-viewer');
+	if (result === 'sent') showToast('Asked for edit access. An admin will see it.');
+	else if (result === 'wait') showToast('You already asked. An admin can answer from their notifications.');
+	else if (result === 'alone') showToast('Nobody here can answer yet.');
+	return result;
 }
 
 let lastLocalWarn = 0;

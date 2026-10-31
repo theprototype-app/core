@@ -311,6 +311,8 @@ export function makeCloudApi() {
 		/** publish the live roles so core can render per-peer role controls + gate
 		 *  viewer actions (2026-07-25). Pass null to clear. */
 		setRolesInfo: (/** @type {any} */ info) => rolesInfo.set(info || null),
+		/** 71 TR2: the name the Users list shows for a peer ('' when it has none) */
+		peerName: (/** @type {string} */ peerId) => String(/** @type {any[]} */ (get(userdata)).find((u) => u[0] === peerId)?.[1] ?? ''),
 		/** 71 TR1: open the Permissions sheet for a peer ('' closes it) */
 		openPermissions: (/** @type {string} */ peerId) => permissionsFor.set(String(peerId || '')),
 		/** 71 TR1: the names THIS page shows for these objects (a card's words are never the asker's) */

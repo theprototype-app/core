@@ -383,6 +383,7 @@ describe('set_post', () => {
 
 		const twice = await call('set_post', { confirmId: asked.confirmId });
 		expect(twice.alreadyApplied).toBe(true);
+		expect(summarizeToolCall('set_post', {}, twice)).toBe(null); // the applying call has the line and the undo
 		expect(stack().length).toBe(1);
 		history.undo();
 		expect(scenePost.postStackFor('scene').effects.length).toBe(0);
@@ -489,6 +490,24 @@ describe('the registry', () => {
 			expect(viewerToolRefusal(n, true)?.viewOnly, n).toBe(true);
 			expect(READ_ONLY_TOOLS.has(n), n).toBe(false);
 		}
+	});
+	it('the cookbook: glass, the glowing sign and the film look work as the docs write them', async () => {
+		const floor = box('Floor');
+		const glass = await call('set_material', { objects: [floor.uuid], type: 'MeshPhysicalMaterial', color: '#dfeaf5', roughness: 0.05, metalness: 0, params: { transmission: 0.9, ior: 1.5, clearcoat: 1 } });
+		expect(glass.updated?.[0]?.uuid).toBe(floor.uuid);
+		expect(floor.material.isMeshPhysicalMaterial).toBe(true);
+		expect(floor.material.transmission).toBe(0.9);
+		const sign = box('Sign');
+		const made = await call('create_shader', { objects: [sign.uuid], text: 'c = color {value: "#ff8800"}\npower = float {value: 4}\nglow = multiply\nc -> glow.a\npower -> glow.b\nout = surface\nglow -> out.emissive' });
+		expect(made.created[0].uniforms.find((u) => u.node === 'power')).toMatchObject({ uniform: 'u_power_value', drivable: true });
+		const film = await call('set_post', { effects: [
+			{ kind: 'huesaturation', params: { hue: 0.05, saturation: -0.1 } },
+			{ kind: 'brightnesscontrast', params: { contrast: 0.1 } },
+			{ kind: 'bloom', params: { intensity: 0.6 } },
+			{ kind: 'vignette', params: { darkness: 0.5 } },
+			{ kind: 'grain', params: { opacity: 0.15 } }
+		] });
+		expect(film.effects.map((e) => e.kind)).toEqual(['huesaturation', 'brightnesscontrast', 'bloom', 'vignette', 'grain']);
 	});
 	it('one A8 line per call, none for a read', () => {
 		expect(summarizeToolCall('list_materials', {}, { objects: [] })).toBe(null);

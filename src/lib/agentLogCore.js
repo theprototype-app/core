@@ -68,7 +68,7 @@ export function touchedUuids(tool, args, result) {
 export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 	if (READ_ONLY.has(tool)) return null;
 	if (tool === 'import_file' && result?.partial) return null; // 66 S4b: a chunk of an upload is not an action
-	if (result?.needsConfirm) return null; // 85: only a question so far — the call that applies it gets the line
+	if (result?.needsConfirm || result?.alreadyApplied) return null; // 85: a question so far, or a repeat of an answered one — the call that applied it has the line
 	const failed = !result || typeof result !== 'object' || (result.error && !result.created && !result.updated);
 	if (failed) return 'tried ' + tool.replace(/_/g, ' ') + ' — ' + String(result?.error ?? 'it failed').slice(0, 80);
 	switch (tool) {

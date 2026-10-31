@@ -1,7 +1,7 @@
 import Peer from 'peerjs';
 import { backoffDelay } from '$lib/netBackoff';
 import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene } from './commandsHandler.svelte';
-import { gateCreationBroadcast } from './objectPermissions';
+import { gateCreationBroadcast, gateCapabilityBroadcast } from './objectPermissions';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
 import { preloadSandboxFor } from '$lib/sandbox/preload.js';
@@ -1096,7 +1096,7 @@ export class PeerConnection {
 				// M1a (open-core): the ONE receive-side capability gate. Default allows
 				// everything (byte-identical OSS behavior); a cloud plugin's provider
 				// drops disallowed message types from a peer (e.g. a viewer's mutations).
-				if (data && !canApply(conn.peer, data.type)) return;
+				if (data && !canApply(conn.peer, data.type, data)) return;
 				// A2: the ROOM gate. A message describing the content of a scene is not
 				// applied when its sender is demonstrably standing in a different one.
 				//
@@ -2707,6 +2707,8 @@ export class PeerConnection {
 		// viewer perms: a viewer's object CREATIONS never leave this machine — mark
 		// them local-only + warn, and skip the broadcast (peers drop them anyway).
 		if (gateCreationBroadcast(data)) return;
+		// 71 TR1: narrowed by a capability record — what every peer would drop does not leave here
+		if (gateCapabilityBroadcast(data)) return;
 		if(data.type == 'create')
 		this.sendMessage('created a ' + data.command.split(' ')[1], 'info');
 		this.broadcast(data, opts);

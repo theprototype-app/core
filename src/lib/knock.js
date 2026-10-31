@@ -3,6 +3,7 @@ import { writable, get } from 'svelte/store';
 import { isLocked, isVRMode, objectsGroup, editorMode } from '../stores/sceneStore';
 import { peers } from '../stores/appStore';
 import { sceneKnock } from './scenePhysics';
+import { mayGrab } from './visitorGrab';
 import { sessionNow } from './sessionClock'; // 25-E: `at` crosses the wire, so it is SESSION time
 import {
 	listPhysicsObjects,
@@ -306,6 +307,8 @@ function evaluateProbe(probe, now, group, dyn) {
  * @param {THREE.Vector3} point @param {{linvel: THREE.Vector3, angvel: THREE.Vector3}} response
  */
 function fireKnock(probe, object, speed, point, response) {
+	// 71 TR6: nobody would apply it, so no local prediction of a knock that never happened
+	if (!mayGrab(object)) return false;
 	/** @type {any} */
 	const peer = get(peers);
 	const me = peer?.peer?.id ?? '';

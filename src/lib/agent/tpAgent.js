@@ -27,6 +27,7 @@ import { sessionHost, snapshotPending } from '$lib/connectionState';
 import { isAgentPeer } from '$lib/inviteStore';
 import { requestConnect } from '$lib/peerApproval';
 import { rolesInfo } from '$lib/cloudHooks';
+import { checkToolCaps } from './capCheck.js';
 import { dirtyPulse, dismissRestore, restoreAvailable } from '$lib/autosave';
 import { welcomeOpen, whatsNewOpen, markWhatsNewSeen } from '$lib/whatsNew';
 import { peerModuleVersions, moduleVersions } from '$lib/moduleSDK';
@@ -364,6 +365,9 @@ export function createTpAgent(extra = {}) {
 	core = createAgentCore({
 		appVersion: APP_VERSION,
 		gate: (name, isEdit) => inbox.gate(name, isEdit),
+		capCheck: (name, args) => checkToolCaps(name, args, get(rolesInfo)),
+		capabilities: () => /** @type {any} */ (get(rolesInfo))?.myCaps ?? null,
+		requestEdit: () => /** @type {any} */ (get(rolesInfo))?.requestEdit?.() ?? 'not-viewer',
 		getTools: () => agentTools(),
 		runTool: (name, args) => agentRun(name, args),
 		resolveName: (name, args) => repairToolCall(name, args),
@@ -455,6 +459,14 @@ export function createTpAgent(extra = {}) {
 					parameters: { type: 'object', properties: { id: { type: 'string' }, action: { type: 'string' } }, required: ['id'] }
 				},
 				run: (args) => core.agent.accept(String(args?.id ?? ''), args?.action)
+			},
+			// 71 TR2: a viewer agent asks for edit access the way a person does
+			request_edit: {
+				schema: {
+					description: 'Ask the session admins for edit access, when you joined as a viewer. They answer on a card; status().role changes if they say yes. result: sent, wait (asked within the last minute), not-viewer or alone.',
+					parameters: { type: 'object', properties: {} }
+				},
+				run: () => ({ result: core.agent.requestEdit() })
 			},
 			// 86 T3: "what can you do here?" for a voice conversation (the connector, serve)
 			what_can_you_do: {

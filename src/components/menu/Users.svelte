@@ -124,7 +124,8 @@
 	import { toolbarSlots, slotOrder, TOP_DEFAULT } from '$lib/toolbarSlots';
 	import { phoneShell } from '$lib/ui/phoneShell.js';
 	import CloudSlot from '../CloudSlot.svelte';
-	import { usersSlot, profileSlot, rolesInfo, scenePresence, peerMenuItems } from '$lib/cloudHooks';
+	import { requestEditAccess } from '$lib/objectPermissions';
+	import { usersSlot, profileSlot, rolesInfo, scenePresence, peerMenuItems, permissionsFor } from '$lib/cloudHooks';
 	import { agentChatState, agentStatusOf, stopAgent, muteAgent, canMuteAgents, canStop } from '$lib/agentChat'; // 56 C5/C6
 	import { runningRequest, samePeer } from '$lib/agentChatCore';
 	import { safeStorage } from '$lib/safeStorage';
@@ -312,6 +313,7 @@
 					roleMenuPos = { top: m.y, right: Math.max(8, window.innerWidth - m.x - 120) };
 					roleMenuFor = id;
 				},
+				permissions: ri?.capCatalog ? () => permissionsFor.set(id) : undefined,
 				recentChanges: () => (changesMenu = { x: m.x, y: m.y, peerId: id }),
 				remove: () => void confirmRemove(id, false),
 				removeBlock: () => void confirmRemove(id, true),
@@ -936,6 +938,10 @@
 				{/if}
 				{#if ri && (self || !ri.amAdmin)}
 					<span class="role-badge" data-role={self ? ri.myRole : ri.roleOf(user[0])} title={self ? 'Your role' : 'Their role'}>{self ? ri.myRole : ri.roleOf(user[0])}</span>
+				{/if}
+				<!-- 71 TR2: a viewer asks from their own row -->
+				{#if ri?.requestEdit && self && ri.myRole === 'viewer' && $sessionHost}
+					<button type="button" id="request-edit" class="peer-request shrink-0 rounded px-2 py-0.5 text-xs bg-surface-active text-text hover:bg-border-strong" onclick={(e) => { e.stopPropagation(); requestEditAccess(); }}>Request edit</button>
 				{/if}
 				<!-- 21-F3: play-mode presence. `{@const}` may only be the IMMEDIATE
 					 child of a block, so the mode is resolved in the `{#if}` and

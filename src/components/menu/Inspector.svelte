@@ -102,6 +102,7 @@
 	import { captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { moveObjectToGroup, selectObject, flyTo, setPickThrough } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
+	import { rolesInfo } from '$lib/cloudHooks';
 	import {
 		sceneGravity,
 		setSceneGravity,
@@ -2962,6 +2963,16 @@
 					/>
 					{/snippet}
 				</PropRow>
+				<!-- 71 TR6: only a build with roles has visitors to allow -->
+				{#if $rolesInfo}
+					<InsToggle
+						id="physics-play-visitors-grab"
+						checked={$scenePlay.visitorsGrab === true}
+						onchange={(e) => setScenePhysics({ play: { visitorsGrab: e.currentTarget.checked } })}
+					>
+						Visitors can grab objects
+					</InsToggle>
+				{/if}
 				<!-- 31-towers P1: grab REACH, measured from the player's body (absent = no limit) -->
 				<InsToggle
 					id="physics-play-reach-on"

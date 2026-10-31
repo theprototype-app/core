@@ -360,7 +360,7 @@ async function setupPageQuiet(browser, name, others, options = {}) {
 }
 
 /** Connect `from` to `to` (approve on `to`), then let the mesh settle. */
-async function connect(from, to, settleMs = 9000) {
+async function connect(from, to, settleMs = 9000, approve = null) {
 	// test-health-1: dial the id the page holds NOW. setupPage reads it before the signaling link
 	// has opened, and a page whose first id the server reports as taken re-rolls it
 	// (peerHandler 'unavailable-id') — behaviours dialled the stale id and waited 30 s for an
@@ -404,7 +404,7 @@ async function connect(from, to, settleMs = 9000) {
 	// `h.setupPage(browser, 'X', { storage: { 'connect:mergeOnConnect': 'true' } })`.
 	// a cloud build (Pages deploys) asks the host for a ROLE instead — "View only" / "Editor access" /
 	// "Reject" (cloudHooks roles); "Editor access" is the plain build's Approve
-	await step(to, 'approve the request', () => approveButton(to.page).click({ timeout: 30000 }));
+	await step(to, 'approve the request', () => (approve ? to.page.getByRole('button', { name: approve }).first() : approveButton(to.page)).click({ timeout: 30000 }));
 	await from.page.waitForTimeout(settleMs);
 	// scatter-sync: the settle is a MINIMUM now — on a slow runner (GitHub, SwiftShader) the approval
 	// dial-back took 15 s to open, so a suite's first edit raced a conn that was still negotiating.

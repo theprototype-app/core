@@ -1,7 +1,8 @@
 import { get } from 'svelte/store';
 import { HELPER_LAYER } from './helperLayer'; // 60 Q5
 import { showToast, appNotice, peers, cloudIdentity, userdata } from '../stores/appStore';
-import { globalScene, globalCamera, globalRenderer, orbitControls, cameraClaim, isLocked, isVRMode } from '../stores/sceneStore';
+import { visitorMessageAllowed } from './visitorGrab';
+import { objectsGroup, globalScene, globalCamera, globalRenderer, orbitControls, cameraClaim, isLocked, isVRMode } from '../stores/sceneStore';
 import { requestConnect } from './peerApproval';
 import { sessionHost } from './connectionState';
 // 55 A4: invite grants for the roles plugin (store-only)
@@ -16,6 +17,7 @@ import {
 	profileSlot,
 	drawerSlot,
 	rolesInfo,
+	permissionsFor,
 	scenePresence,
 	CLOUD_HOOKS_VERSION,
 	cloudPluginInfo,
@@ -291,6 +293,14 @@ export function makeCloudApi() {
 			const p = get(peers);
 			if (p && typeof p.send === 'function') p.send({ type: 'cloud', payload });
 		},
+		/** 71 TR3: one peer only, down its own link (something the rest of the mesh should not read).
+		 *  false = no open link to it. */
+		sendCloudTo: (/** @type {string} */ peerId, /** @type {any} */ payload) => {
+			const conn = /** @type {any} */ (get(peers))?.connections?.[peerId];
+			if (!conn?.open) return false;
+			conn.send({ type: 'cloud', payload });
+			return true;
+		},
 		/** receive inbound cloud messages: handler(peerId, payload) */
 		onCloudMessage: (/** @type {any} */ fn) => setMessageHandler(fn),
 
@@ -310,6 +320,20 @@ export function makeCloudApi() {
 		/** publish the live roles so core can render per-peer role controls + gate
 		 *  viewer actions (2026-07-25). Pass null to clear. */
 		setRolesInfo: (/** @type {any} */ info) => rolesInfo.set(info || null),
+		/** 71 TR2: the name the Users list shows for a peer ('' when it has none) */
+		peerName: (/** @type {string} */ peerId) => String(/** @type {any[]} */ (get(userdata)).find((u) => u[0] === peerId)?.[1] ?? ''),
+		/** 71 TR6: would this viewer's `move`/`throw`/`hit` be a grab this scene allows? */
+		visitorGrabAllowed: (/** @type {any} */ data) => visitorMessageAllowed(data),
+		/** 71 TR1: open the Permissions sheet for a peer ('' closes it) */
+		openPermissions: (/** @type {string} */ peerId) => permissionsFor.set(String(peerId || '')),
+		/** 71 TR1: the names THIS page shows for these objects (a card's words are never the asker's) */
+		objectNames: (/** @type {string[]} */ uuids) => {
+			const group = /** @type {any} */ (get(objectsGroup));
+			return (Array.isArray(uuids) ? uuids : []).flatMap((u) => {
+				const o = group?.getObjectByProperty?.('uuid', u);
+				return o ? [String(o.name || o.type || 'an object').slice(0, 40)] : [];
+			});
+		},
 
 		// --- 21-G5 (F7): cross-scene presence, v2.4 --------------------------------
 		/** publish who is in the project's OTHER rooms/scenes (the rolesInfo bridge

@@ -27,7 +27,7 @@ export const REMOVED_HOLD_MS = 30_000;
 /**
  * May `sender` remove peers, as seen by THIS receiver?
  * @param {string} sender the peer the message came from (the conn's id, never a field)
- * @param {{host: string | null, roleOf?: ((id: string) => string) | null}} ctx
+ * @param {{host: string | null, roleOf?: ((id: string) => string) | null, capsOf?: ((id: string) => any) | null}} ctx
  *   `host` = our sessionHost (null = we host); `roleOf` = rolesInfo.roleOf on a cloud build
  * @returns {boolean}
  */
@@ -36,7 +36,8 @@ export function kickAllowedFrom(sender, ctx) {
 	if (ctx.host && sender === ctx.host) return true;
 	if (typeof ctx.roleOf === 'function') {
 		try {
-			return ctx.roleOf(sender) === 'admin';
+			// 71 TR1: or the capability an admin gave them
+			return ctx.roleOf(sender) === 'admin' || ctx.capsOf?.(sender)?.moderate === true;
 		} catch {
 			return false;
 		}

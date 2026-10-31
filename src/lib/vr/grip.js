@@ -20,6 +20,8 @@ import {
 import { isScenery, pickGripTarget, gripMovesWorld, contactGrabAllowed, secondGripVerdict, grabMoved, GRAB_JOIN_MS } from '../vrGrip';
 import { pointGrabAllowed } from '../pointGrab';
 import { resolvePlaySettings } from '../playSettings';
+import { canEditObject, warnViewerReadOnly } from '../objectPermissions';
+import { mayGrab } from '../visitorGrab';
 import { withinReach } from '../playReach';
 import { kitCheckGrab } from '../kit/runtime.js'; // 34 R2: the kit's grab question
 import {
@@ -565,6 +567,14 @@ export function onSqueezeStart(index) {
 		return;
 	}
 	if (get(lockedObjects).find((lock) => lock[1] === object.uuid)) return;
+	// 71 TR6: a visitor's grip takes only what the scene allows, in Play. Everywhere else the
+	// edit rule stands: peers drop what a viewer sends, so the carry would be seen by nobody.
+	if (mode === 'interact' ? !mayGrab(object) : !canEditObject(object)) {
+		refusedGrips++;
+		hapticPattern('fail', renderer.xr.getController(index)?.userData?.handedness ?? undefined);
+		warnViewerReadOnly();
+		return;
+	}
 
 	const other = grabs[1 - index];
 	// 37 R1: the other hand already carries the set this object belongs to — nothing to take
@@ -863,6 +873,10 @@ function hintSceneryGrip() {
  * 34 R2: or a kit.rules veto refused it (`reason`; `reach` may then be null)
  * @type {{uuid: string, reach: number | null, reason?: string} | null} */
 let lastGripRefusal = null;
+/** 71 TR6: grips refused by role */
+let refusedGrips = 0;
+/** @returns {number} */
+export const refusedGripsDebug = () => refusedGrips;
 /** @returns {{uuid: string, reach: number | null, reason?: string} | null} */
 export function lastGripRefusalDebug() {
 	return lastGripRefusal;

@@ -1,3 +1,4 @@
+import { canApply, rolesInfo } from './cloudHooks';
 import { writable, get } from 'svelte/store';
 import { userdata, showToast } from '../stores/appStore';
 import { isLocked } from '../stores/sceneStore';
@@ -383,6 +384,11 @@ function callPeer(peerId) {
 
 export async function toggleMic() {
 	const next = !get(micActive);
+	// 71 TR3: asked before the permission prompt (the roles plugin's voice grant; absent = allowed)
+	if (next && /** @type {any} */ (get(rolesInfo))?.myCaps?.voice === false) {
+		showToast("You don't have voice access in this room. Ask an admin to change your permissions.");
+		return;
+	}
 	if (next && !(await ensureStream())) return;
 	micActive.set(next);
 	applyTrackState();
@@ -543,6 +549,11 @@ export function attachVoiceToPeer(/** @type {any} */ pc) {
 	pc.peer.on('call', (/** @type {any} */ call) => {
 		const whitelisted = get(userdata).some((user) => user[0] === call.peer);
 		if (!whitelisted) {
+			call.close();
+			return;
+		}
+		// 71 TR3: voice is a grant too (default allow; only a roles plugin ever says no)
+		if (!canApply(call.peer, 'voicecall')) {
 			call.close();
 			return;
 		}

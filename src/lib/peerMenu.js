@@ -78,6 +78,8 @@ export function buildPeerMenuItems(f, a) {
 	if (f.canModerate) {
 		items.push({ section: 'Moderation' });
 		if (f.canChangeRole) row('role', 'Change role…', 'user-lock', a.changeRole);
+		// 71 TR1: present when the roles plugin offers capabilities
+		if (f.canChangeRole && a.permissions) row('permissions', 'Permissions…', 'sliders-horizontal', a.permissions);
 		row('changes', 'Show their recent changes', 'history', a.recentChanges);
 		row('remove', 'Remove from session…', 'x', a.remove, { danger: true, tooltip: 'They can ask to join again' });
 		row('block', 'Remove and block…', 'lock', a.removeBlock, { danger: true, tooltip: 'Refused for the rest of this session — Allow back in this panel' });

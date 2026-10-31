@@ -4,7 +4,8 @@ import { isLocked, isVRMode, playPointerFree, objectsGroup, globalScene, lockedO
 import { peers } from '../stores/appStore';
 import { sceneHits } from './scenePick';
 import { topLevelObjectOf } from './objectActions';
-import { canEditObject, warnViewerReadOnly } from './objectPermissions';
+import { warnViewerReadOnly } from './objectPermissions';
+import { mayGrab } from './visitorGrab';
 import {
 	holdBody,
 	releaseBody,
@@ -230,7 +231,7 @@ export function cursorGrabStart(ray, ndc, camera) {
 	if (!target || !dynamicUuids().has(target.uuid)) return false;
 	if (!pointGrabAllowed()) return false; // 31: the cursor carry is pointing too
 	if (get(lockedObjects).some((/** @type {any} */ entry) => entry[1] === target.uuid)) return false;
-	if (!canEditObject(target)) {
+	if (!mayGrab(target)) {
 		warnViewerReadOnly();
 		return false;
 	}
@@ -438,7 +439,7 @@ function onPointerDown(event) {
 		playInteractState.update((s) => ({ ...s, blocked: nameOf(lock[0]) }));
 		return;
 	}
-	if (!canEditObject(target)) {
+	if (!mayGrab(target)) {
 		warnViewerReadOnly();
 		return;
 	}
@@ -632,7 +633,7 @@ export function tickPlayInteract(delta, camera) {
 	const hit = aimed?.hit ?? null;
 	const target = aimed?.target ?? null;
 	const grabbable =
-		mode === 'grab' && !!target && simRunning() && dynamicUuids().has(target.uuid);
+		mode === 'grab' && !!target && simRunning() && dynamicUuids().has(target.uuid) && mayGrab(target); // 71 TR6
 	const state = get(playInteractState);
 	const verdict = grabbable ? inReach(hit.point, camera, target, true) : null;
 	const next = grabbable ? (verdict?.ok ? 'aiming' : 'toofar') : 'idle';

@@ -99,8 +99,41 @@ export function moveToLocalObjects(object) {
  *  - editor / admin -> yes
  * @param {any} object */
 export function canEditObject(object) {
-	if (!isViewer()) return true;
-	return isLocalOnly(object);
+	if (isViewer()) return isLocalOnly(object);
+	// 71 TR1: narrowed by a capability record (a local object is nobody else's business)
+	const ri = /** @type {any} */ (get(rolesInfo));
+	if (!ri?.myCaps || isLocalOnly(object) || !object?.uuid) return true;
+	return ri.sortObjects?.('edit', [object.uuid])?.ok !== false;
+}
+
+/** 71 TR1: may I, by name? No record = yes. @param {string} key a capability key */
+export function hasCapability(key) {
+	const caps = /** @type {any} */ (get(rolesInfo))?.myCaps;
+	return !caps || (caps[key] !== false && caps[key] !== 'off');
+}
+
+let lastCapWarn = 0;
+/**
+ * 71 TR1: send-side gate after `gateCreationBroadcast`. The plugin sees everything leaving this page (it is
+ * how an agent knows what it made) and says no to what the room would drop.
+ * @param {any} data @returns {boolean} true = do not send
+ */
+export function gateCapabilityBroadcast(data) {
+	const ri = /** @type {any} */ (get(rolesInfo));
+	if (typeof ri?.onSend !== 'function') return false;
+	let ok = true;
+	try {
+		ok = ri.onSend(data) !== false;
+	} catch {
+		return false;
+	}
+	if (ok) return false;
+	const now = Date.now();
+	if (now - lastCapWarn > 4000) {
+		lastCapWarn = now;
+		showToast("You don't have permission for that in this room, so others won't see it. Ask an admin to change your permissions.");
+	}
+	return true;
 }
 
 let lastReadOnlyWarn = 0;
@@ -110,7 +143,22 @@ export function warnViewerReadOnly(message) {
 	const now = Date.now();
 	if (now - lastReadOnlyWarn < 4000) return;
 	lastReadOnlyWarn = now;
-	showToast(message || "View-only — you can't move objects shared by others. Ask an admin for edit access.");
+	// 71 TR2: with a plugin that takes requests, the nudge is also the way to ask
+	const ask = typeof (/** @type {any} */ (get(rolesInfo))?.requestEdit) === 'function';
+	showToast(
+		message || (ask ? "View-only — you can't move objects shared by others." : "View-only — you can't move objects shared by others. Ask an admin for edit access."),
+		ask ? [{ label: 'Request edit access', action: () => requestEditAccess() }] : undefined
+	);
+}
+
+/** 71 TR2: a viewer taps Request. The plugin sends it; this says what happened. @returns {string} */
+export function requestEditAccess() {
+	const ri = /** @type {any} */ (get(rolesInfo));
+	const result = String(ri?.requestEdit?.() ?? 'not-viewer');
+	if (result === 'sent') showToast('Asked for edit access. An admin will see it.');
+	else if (result === 'wait') showToast('You already asked. An admin can answer from their notifications.');
+	else if (result === 'alone') showToast('Nobody here can answer yet.');
+	return result;
 }
 
 let lastLocalWarn = 0;
@@ -127,7 +175,7 @@ export function warnViewerLocalCreate() {
  * + warn, and return true so the caller SKIPS the broadcast (peers drop it anyway via
  * the receive-side capability gate). Returns false for everyone else / non-creations. */
 export function gateCreationBroadcast(/** @type {any} */ data) {
-	if (!data || !CREATE_TYPES.has(data.type) || !isViewer()) return false;
+	if (!data || !CREATE_TYPES.has(data.type) || (!isViewer() && hasCapability('create'))) return false;
 	const group = get(objectsGroup);
 	/** @type {any[]} */
 	const ids = [];

@@ -189,6 +189,8 @@ export function normalizeScenePhysics(raw) {
 				simOnPlay: bool(playRaw.simOnPlay, d.play.simOnPlay),
 				// 30 P3: present only when free (see PLAY_CURSORS)
 				...(pick(playRaw.cursor, PLAY_CURSORS, 'locked') === 'free' ? { cursor: 'free' } : {}),
+				// 71 TR6: visitors may carry dynamic bodies; present only when switched on
+				...(playRaw.visitorsGrab === true ? { visitorsGrab: true } : {}),
 				// 30b P3/P4: present only when authored (locomotionPolicy's normalizers), so a
 				// scene that never used them stays byte-identical
 				...optional('locomotion', normalizeLocomotion(playRaw.locomotion)),
@@ -203,7 +205,7 @@ export function normalizeScenePhysics(raw) {
 				// 38 R8: the play banner, present only when not the default hint
 				...optional('banner', normalizePlayBanner(playRaw.banner))
 			},
-			['interaction', 'grounded', 'simOnPlay', 'cursor', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits', 'banner']
+			['interaction', 'grounded', 'simOnPlay', 'cursor', 'visitorsGrab', 'locomotion', 'spawn', 'bounds', 'reach', 'rayHits', 'banner']
 		),
 		// A1: the 20 ceiling is throwVelocity's MAX_LINVEL, restated rather than imported —
 		// this module is store-only and the response clamps through clampThrow anyway

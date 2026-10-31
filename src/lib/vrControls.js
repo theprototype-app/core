@@ -188,6 +188,7 @@ export {
 	vertexTriggerActive,
 	gripTargetOf,
 	lastGripRefusalDebug,
+	refusedGripsDebug,
 	rigidGrabPose,
 	grabStickAdjust
 } from './vr/grip.js';

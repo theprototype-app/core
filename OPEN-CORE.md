@@ -65,6 +65,7 @@ export function register(api) {
   api.peerName(peerId)             // the name the Users list shows
   api.openPermissions(peerId)      // open core's Permissions sheet for a peer ('' closes it)
   api.objectNames(uuids)           // the names THIS page shows for those objects
+  api.visitorGrabAllowed(data)     // would a viewer's move, throw or hit be a grab this scene allows?
   api.setScenePresence(data)       // who is in the project's OTHER rooms | null — v2.4
   api.setAccountIdentity(id)       // {username, avatar, email} | null — the collaborative identity
   api.currentScene() / api.playModes() / api.peerRoster() / api.sessionHost()

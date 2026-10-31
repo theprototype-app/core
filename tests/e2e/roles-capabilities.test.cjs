@@ -114,6 +114,9 @@ h.run(async () => {
 	await h.connect(C, A);
 	await h.eventually(() => names(C), has('AgentOwn'), 'the late joiner has the scene');
 	await h.eventually(() => inPage(C, RI + 'return r.presetOf(arg) || (r.capsOf(arg) ? "custom" : "");', B.id), (v) => v === 'trusted-agent', 'it knows the agent is narrowed');
+	// the agent's delete reaches C over their own connection, so that has to be up first
+	await h.eventually(() => inPage(B, 'return pc.openedPeers.has(arg);', C.id), (v) => v === true, 'the agent has a connection to the late joiner', 30000);
+	await h.eventually(() => inPage(C, 'return pc.openedPeers.has(arg);', B.id), (v) => v === true, 'and the late joiner to the agent', 30000);
 	const lateOwn = await exec(B, 'delete_objects', { uuids: [own] });
 	h.check(lateOwn?.deleted === 1, 'the agent deletes its old object (' + JSON.stringify(lateOwn).slice(0, 200) + ')');
 	await h.eventually(() => names(C), hasNot('AgentOwn'), 'and the late joiner applies it: the map said who made it');

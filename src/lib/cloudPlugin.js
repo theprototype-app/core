@@ -1,6 +1,7 @@
 import { get } from 'svelte/store';
 import { HELPER_LAYER } from './helperLayer'; // 60 Q5
 import { showToast, appNotice, peers, cloudIdentity, userdata } from '../stores/appStore';
+import { visitorMessageAllowed } from './visitorGrab';
 import { objectsGroup, globalScene, globalCamera, globalRenderer, orbitControls, cameraClaim, isLocked, isVRMode } from '../stores/sceneStore';
 import { requestConnect } from './peerApproval';
 import { sessionHost } from './connectionState';
@@ -321,6 +322,8 @@ export function makeCloudApi() {
 		setRolesInfo: (/** @type {any} */ info) => rolesInfo.set(info || null),
 		/** 71 TR2: the name the Users list shows for a peer ('' when it has none) */
 		peerName: (/** @type {string} */ peerId) => String(/** @type {any[]} */ (get(userdata)).find((u) => u[0] === peerId)?.[1] ?? ''),
+		/** 71 TR6: would this viewer's `move`/`throw`/`hit` be a grab this scene allows? */
+		visitorGrabAllowed: (/** @type {any} */ data) => visitorMessageAllowed(data),
 		/** 71 TR1: open the Permissions sheet for a peer ('' closes it) */
 		openPermissions: (/** @type {string} */ peerId) => permissionsFor.set(String(peerId || '')),
 		/** 71 TR1: the names THIS page shows for these objects (a card's words are never the asker's) */

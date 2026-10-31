@@ -111,7 +111,9 @@ export function resolvePlaySettings(scene) {
 		// 31 K1: the teleport play area (scene frame), or a publisher's in ITS local frame
 		bounds: normalizeBounds(base.bounds),
 		boundsOwner: null,
-		reach: normalizeReach(base.reach)
+		reach: normalizeReach(base.reach),
+		// 71 TR6: may a viewer carry dynamic bodies (visitorGrab.js)
+		visitorsGrab: base.visitorsGrab === true
 	};
 	const baseLoco = normalizeLocomotion(base.locomotion);
 	if (baseLoco) Object.assign(out.locomotion, baseLoco);
@@ -152,6 +154,7 @@ export function resolvePlaySettings(scene) {
 		}
 		const reach = normalizeReach(play.reach);
 		if (reach != null) out.reach = reach;
+		if (typeof play.visitorsGrab === 'boolean') out.visitorsGrab = play.visitorsGrab;
 	}
 	// 34 R2: a game's kit.rules (session-wide, authority-written) wins over the scene and its
 	// publishers, so every grab path and the VR teleport obey a rule set from code or a node.

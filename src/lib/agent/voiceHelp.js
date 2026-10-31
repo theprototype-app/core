@@ -13,6 +13,7 @@ const CAN = /** @type {[string, string][]} */ ([
 	['generate_mesh', 'generate a 3D model from a description'],
 	['where_are_users', 'build right where you are standing or looking'],
 	['attach_to_user', 'hand you props, like a flashlight'],
+	['undo_last', 'undo what I just did when you say so'],
 	['screenshot', 'look at the scene to check my work']
 ]);
 

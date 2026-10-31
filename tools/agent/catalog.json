@@ -3,10 +3,10 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 21,
+		"hostTools": 25,
 		"dropped": []
 	},
-	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nUse screenshot to check a result when it matters, not after every step.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
+	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nWhen the person says \"undo that\" or \"take that back\", call undo_last; if it refuses, say who changed what.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nUse screenshot to check a result when it matters, not after every step.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
 	"tools": [
 		{
 			"name": "list_scene",
@@ -261,7 +261,8 @@
 									"type": "array",
 									"items": {
 										"type": "number"
-									}
+									},
+									"description": "radians; an object with a pivot (set_pivot) turns about it"
 								},
 								"scale": {
 									"type": "array",
@@ -524,6 +525,249 @@
 				"readOnlyHint": false,
 				"destructiveHint": true,
 				"openWorldHint": false
+			}
+		},
+		{
+			"name": "undo_last",
+			"title": "Undo your last change",
+			"description": "Take back your own last tool call (count for several, newest first). Use it whenever the person says \"undo that\" or \"take that back\": they may be talking and cannot see each call. Only ever undoes YOUR calls. If someone has since changed the same objects it refuses and lists them, and nothing changes: tell the person who changed what.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"count": {
+						"type": "integer",
+						"minimum": 1,
+						"maximum": 20,
+						"description": "how many of your calls to take back (default 1)"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Undo your last change",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "set_pivot",
+			"title": "Set the point an object turns about",
+			"description": "Set the point an object turns and scales about, without moving it: a head that nods at the neck, a lamp that tilts at its joint, a door on its hinge. After this, update_objects rotation and scale, clips and Spin nodes all turn it about that point. list_scene reports it as `pivot`.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"updates": {
+						"type": "array",
+						"maxItems": 100,
+						"items": {
+							"type": "object",
+							"properties": {
+								"uuid": {
+									"type": "string"
+								},
+								"at": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "[x,y,z] world metres"
+								},
+								"local": {
+									"type": "array",
+									"items": {
+										"type": "number"
+									},
+									"description": "[x,y,z] in the object's own space"
+								},
+								"preset": {
+									"type": "string",
+									"enum": [
+										"bottom",
+										"center",
+										"median",
+										"world",
+										"children"
+									],
+									"description": "bottom = on its footprint, center = its box, median = its vertices, world = the scene origin, children = the middle of a group"
+								},
+								"reset": {
+									"type": "boolean",
+									"description": "true = back to the object's own centre"
+								}
+							},
+							"required": [
+								"uuid"
+							]
+						}
+					}
+				},
+				"required": [
+					"updates"
+				]
+			},
+			"annotations": {
+				"title": "Set the point an object turns about",
+				"readOnlyHint": false,
+				"destructiveHint": true,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "create_pivot",
+			"title": "Make a pivot group",
+			"description": "Make a group at a point and put objects in it, so turning the group swings them about that point: arm parts about a shoulder, several parts of a lamp about one joint. The objects stay where they are. For one object, set_pivot needs no extra group. Returns groupUuid.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"objects": {
+						"type": "array",
+						"items": {
+							"type": "string"
+						},
+						"maxItems": 500,
+						"description": "the uuids to swing"
+					},
+					"at": {
+						"description": "the point: [x,y,z] world metres, or \"center\" / \"bottom\" / \"top\" of the objects together"
+					},
+					"name": {
+						"type": "string",
+						"description": "the group's name (default \"Pivot\")"
+					}
+				},
+				"required": [
+					"objects",
+					"at"
+				]
+			},
+			"annotations": {
+				"title": "Make a pivot group",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "add_image",
+			"title": "Add an image to the library",
+			"description": "Put an image into the shared library (Explorer) and get its hash, for texture slots (update_objects materialParams.map, set_material) and image nodes. Give exactly one source: `url` (https, the site must allow other origins), `data` (base64, also how to pass an image you generated), or `canvas` (draw one from shapes, gradients, checkers and noise: textures, signs, labels). It is re-encoded here, so nothing in the file survives but its pixels. Limits: 16 MB in, 4096 px on the long side (larger is scaled down), a canvas 2048 px and 500 ops. One undo step; editors and admins only.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"url": {
+						"type": "string",
+						"description": "https address of a PNG, JPEG, WebP, GIF or AVIF"
+					},
+					"data": {
+						"type": "string",
+						"description": "the image as base64, or this part of it"
+					},
+					"chunk": {
+						"type": "object",
+						"description": "a large image in parts: every part has the same id; it is added when the last part arrives",
+						"properties": {
+							"id": {
+								"type": "string"
+							},
+							"index": {
+								"type": "number"
+							},
+							"total": {
+								"type": "number"
+							}
+						}
+					},
+					"canvas": {
+						"type": "object",
+						"description": "Draw an image from data. Coordinates in pixels from the top left. Ops in order: rect {x,y,w,h,radius?,fill?,stroke?,lineWidth?}, circle {x,y,r,fill?,stroke?}, line {points,closed?,stroke?,fill?,lineWidth?}, text {text,x,y,size?,font: sans|serif|mono,bold?,align?,fill?}, gradient {kind: linear|radial,angle?,stops: [[0,\"#111\"],[1,\"#eee\"]]}, checker {cols,rows,colors: [a,b]}, stripes {count,vertical?,colors: [a,b]}, noise {scale,octaves?,seed?,opacity?,colors: [dark,light]} (tiles at the edges). Colours: hex or a CSS name.",
+						"properties": {
+							"width": {
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 2048
+							},
+							"height": {
+								"type": "integer",
+								"minimum": 1,
+								"maximum": 2048
+							},
+							"background": {
+								"type": "string",
+								"description": "a colour; omit for transparent"
+							},
+							"ops": {
+								"type": "array",
+								"maxItems": 500,
+								"items": {
+									"type": "object",
+									"properties": {
+										"op": {
+											"type": "string",
+											"enum": [
+												"rect",
+												"circle",
+												"line",
+												"text",
+												"gradient",
+												"checker",
+												"stripes",
+												"noise"
+											]
+										}
+									},
+									"required": [
+										"op"
+									]
+								}
+							}
+						},
+						"required": [
+							"width",
+							"height"
+						]
+					},
+					"name": {
+						"type": "string",
+						"description": "the file name in the library"
+					},
+					"folder": {
+						"type": "string",
+						"description": "library folder, \"A/B\" for nested (default \"Generated\")"
+					},
+					"prompt": {
+						"type": "string",
+						"description": "a generated image: the request it was made for"
+					},
+					"source": {
+						"type": "string",
+						"description": "where it came from, e.g. the generator"
+					},
+					"licence": {
+						"type": "string",
+						"description": "its licence, e.g. CC0, \"own work\""
+					},
+					"place": {
+						"type": "boolean",
+						"description": "also place it in the scene as a card (default false)"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"description": "the card: [x,y,z] metres"
+					},
+					"height": {
+						"type": "number",
+						"description": "the card: height in metres"
+					}
+				}
+			},
+			"annotations": {
+				"title": "Add an image to the library",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": true
 			}
 		},
 		{

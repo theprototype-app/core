@@ -40,6 +40,10 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	control_simulation: { title: 'Run or stop the simulation', destructive: true },
 	delete_objects: { title: 'Delete objects', destructive: true },
 	clear_scene: { title: 'Clear the scene', destructive: true },
+	undo_last: { title: 'Undo your last change', destructive: true },
+	set_pivot: { title: 'Set the point an object turns about', destructive: true },
+	create_pivot: { title: 'Make a pivot group', destructive: false },
+	add_image: { title: 'Add an image to the library', destructive: false, openWorld: true },
 	install_modules: { title: 'Install modules', destructive: false, openWorld: true },
 	accept_offer: { title: 'Answer a question the app asks', destructive: true },
 	connect: { title: 'Join a session', destructive: false, openWorld: true }
@@ -76,6 +80,7 @@ export function connectorInstructions(names) {
 		'If a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.'
 	];
 	if (has.has('status')) lines.push('Call status first: it says whether you may edit (a viewer can only look).');
+	if (has.has('undo_last')) lines.push('When the person says "undo that" or "take that back", call undo_last; if it refuses, say who changed what.');
 	if (has.has('list_scene')) lines.push('Call list_scene before editing so you use real uuids; batch many objects into one call.');
 	if (has.has('where_are_users'))
 		lines.push('For "in front of me", "here" or "this", call where_are_users and build at the spots it gives, facing the person.');

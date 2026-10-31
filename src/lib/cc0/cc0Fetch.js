@@ -5,11 +5,13 @@
 // one IndexedDB store under `cc0:<url>` with the time it arrived. A fresh entry answers with no
 // network at all; an expired one is refetched, and when that refetch FAILS (offline, the site
 // down, the relay down) the old answer is served with `stale: true`, so the browser keeps working
-// on what it saw last and says so. Downloads are NOT cached here — they become Library items,
-// which are content-hashed and deduped by the import entry already.
+// on what it saw last and says so. Downloads become Library items (content-hashed and deduped by
+// the import entry); 60 Q6 also keeps their BYTES in the local asset cache (`fetchBytes`).
 import { idbGet, idbPut } from '../idb';
 import { safeStorage } from '../safeStorage';
 import { PH_API, ACG_PAGE, DEFAULT_CC0_PROXY, classifyError } from './cc0Core.js';
+import { readCached, writeCached } from '../assetCache';
+import { urlKey } from '../assetCacheCore.js';
 
 const HOUR = 3600_000;
 /** how long an answer is fresh, per endpoint family */
@@ -110,6 +112,21 @@ export async function acgResolve(file) {
  * @returns {Promise<Uint8Array>}
  */
 export async function fetchBytes(url, onProgress, signal) {
+	// 60 Q6: a download is kept in the local asset cache (kind `import`), so importing the same
+	// file again — after deleting it from the library, or into another project — costs no network
+	const key = urlKey(url);
+	const held = await readCached(key);
+	if (held) {
+		onProgress?.(held.byteLength, held.byteLength);
+		return new Uint8Array(held);
+	}
+	const bytes = await downloadBytes(url, onProgress, signal);
+	void writeCached(key, /** @type {ArrayBuffer} */ (bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)), { kind: 'import' });
+	return bytes;
+}
+
+/** @param {string} url @param {(done: number, total: number) => void} [onProgress] @param {AbortSignal} [signal] @returns {Promise<Uint8Array>} */
+async function downloadBytes(url, onProgress, signal) {
 	let res;
 	try {
 		res = await fetch(url, { credentials: 'omit', signal });

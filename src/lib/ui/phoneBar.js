@@ -26,8 +26,9 @@ export const WINDOW_ITEMS = ['play', 'add', 'more', 'objects', 'stats', 'chat', 
 export const EDIT_ITEMS = ['inspect', 'move', 'rotate', 'scale', 'undo', 'redo', 'multiselect', 'interact'];
 /** More ▸ Tools & View (46 B1: + the scene budget — the toolbar chip's phone form; a folded bar has no
  * room for it by default, so it waits here and can be dragged onto the bar like any item; 50 R1: + the AR
- * table, a note where the browser has no immersive-ar) */
-export const VIEW_ITEMS = ['tools', 'focus', 'budget', 'ar'];
+ * table, a note where the browser has no immersive-ar; VH2: + Join room, the same session colocated with a
+ * headset) */
+export const VIEW_ITEMS = ['tools', 'focus', 'budget', 'ar', 'arroom', 'playhere']; // 60 Q1: + Play here
 
 /** every key the bar may hold */
 export const BAR_CATALOG = [...WINDOW_ITEMS, ...EDIT_ITEMS, ...VIEW_ITEMS];

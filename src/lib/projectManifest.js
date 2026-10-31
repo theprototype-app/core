@@ -293,6 +293,32 @@ function normalizeDeleted(rows) {
 /** how many deletions the log remembers */
 export const DELETED_LOG_CAP = 200;
 
+/**
+ * fix-live (plans review #6): A NEVER-SHARED FILE'S DELETION STAYS ON THIS MACHINE. A
+ * `localOnly` row carries the file's name, folder path and thumbnail, and the log
+ * replicates whole, so deleting a private file announced it to the session (R22 round 36
+ * "known and left"). The row stays in OUR log — the bin restores from it — and is withheld
+ * at the send boundary (`outboundManifest`); `keepLocalOnlyDeleted` is the receive half, so a
+ * peer's newer document (which can never carry those rows) does not strand our bin.
+ * @param {any} doc @returns {any} the document without `localOnly` deletion rows
+ */
+export function withoutLocalOnlyDeleted(doc) {
+	if (!doc?.deleted?.some((/** @type {any} */ r) => r?.localOnly)) return doc;
+	const deleted = doc.deleted.filter((/** @type {any} */ r) => !r?.localOnly);
+	if (deleted.length) return { ...doc, deleted };
+	const { deleted: _gone, ...rest } = doc;
+	return rest;
+}
+
+/** the receive half: `base` (the winning side's log) plus OUR `localOnly` rows it lacks
+ * @param {any[]} base @param {any[]} mine @returns {any[]} */
+export function keepLocalOnlyDeleted(base, mine) {
+	const ours = (mine ?? []).filter((/** @type {any} */ r) => r?.localOnly);
+	if (!ours.length) return normalizeDeleted(base);
+	const have = new Set((base ?? []).map(logKeyOf));
+	return normalizeDeleted([...(base ?? []), ...ours.filter((/** @type {any} */ r) => !have.has(logKeyOf(r)))]);
+}
+
 /** R22 round 2: a tombstone map, with every stamp coerced to a positive number. A key
  * with no usable stamp is dropped rather than kept as a permanent veto nobody can lift.
  * @param {any} data @returns {{items: Record<string, number>, folders: Record<string, number>}} */
@@ -1055,6 +1081,8 @@ export function mergeManifests(local, remote) {
 	);
 	doc.scenes = folded.scenes;
 	doc.renames = folded.renames;
+	// fix-live: their log cannot hold our never-shared deletions — keep them (the bin's rows)
+	if (remoteNewer) doc.deleted = keepLocalOnlyDeleted(theirs.deleted, mine.deleted);
 	const out = normalizeManifest(doc);
 	return { doc: out, clashes, clashDetails, pointerMoves, senderLacks: senderLacking(out, theirs) };
 }
@@ -1288,15 +1316,14 @@ export function outboundManifest(doc) {
 	};
 	// the host — and a solo user, who is one — publishes its project whole
 	if (get(sessionHost) === null)
-		return withRenames(hidden.size ? { ...doc, scenes: drop(doc.scenes ?? {}) } : doc, () => true);
+		return withoutLocalOnlyDeleted(withRenames(hidden.size ? { ...doc, scenes: drop(doc.scenes ?? {}) } : doc, () => true));
 	const allowed = new Set([...sessionSceneNames, ...openedScenes]);
 	/** @type {Record<string, SceneEntry>} */
 	const scenes = {};
 	for (const [name, entry] of Object.entries(doc.scenes ?? {}))
 		if (allowed.has(name)) scenes[name] = entry;
-	return withRenames(
-		{ ...doc, scenes: drop(scenes), name: renamedThisSession ? doc.name : '' },
-		(n) => allowed.has(n)
+	return withoutLocalOnlyDeleted(
+		withRenames({ ...doc, scenes: drop(scenes), name: renamedThisSession ? doc.name : '' }, (n) => allowed.has(n))
 	);
 }
 
@@ -1448,10 +1475,12 @@ export function applyRemoteManifest(data) {
 	const { doc: merged, clashes, clashDetails, pointerMoves } = mergeManifests(mine, doc);
 	surfaceMerge(clashes, pointerMoves, clashDetails);
 	if (sameContent(merged, mine)) return false;
-	if (sameContent(merged, doc)) {
+	// fix-live: compared WITHOUT our private deletion rows — they never travel, so a document
+	// that is otherwise the union is still "theirs" (keep their stamp), with our rows kept
+	if (sameContent(withoutLocalOnlyDeleted(merged), doc)) {
 		// their document already IS the union: keep their stamp so the mesh stays on one
 		// number, which is what makes the common case indistinguishable from the old code
-		projectManifest.set(doc);
+		projectManifest.set(normalizeManifest({ ...doc, ...(merged.deleted ? { deleted: merged.deleted } : {}) }));
 		void persist();
 	} else {
 		// above BOTH: the sender must not be able to win the next comparison with the very

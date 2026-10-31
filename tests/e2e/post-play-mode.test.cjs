@@ -100,7 +100,12 @@ h.run(async () => {
 			(delta.changed ?? -1) +
 			' changed pixels)'
 	);
-	const off = await h.framePixelsOffColor(page, after, FILL_RGB);
+	// colour is measured on a CHROME-FREE region (helpers.grabFrame's rule): play mode composites
+	// the glass bar (PlayBanner, 930ecc44) and the reticle over the canvas, and the full frame read a
+	// constant 20780 px "off the fill" — left of centre, clear of the bar, the HUD and the reticle
+	const view = await page.viewportSize();
+	const fillClip = { x: Math.round(view.width * 0.1), y: Math.round(view.height * 0.35), width: Math.round(view.width * 0.25), height: Math.round(view.height * 0.3) };
+	const off = await h.framePixelsOffColor(page, await h.grabFrame(A, fillClip), FILL_RGB);
 	h.check(
 		off.fraction < 0.02,
 		'2.2 ...and it is the effect that painted it (' +
@@ -177,7 +182,7 @@ h.run(async () => {
 	// and putting the look back brings the composer back
 	await page.evaluate(() => window.__stores.scenePost.addPostEffect('test-play-fill'));
 	await page.waitForTimeout(1200);
-	const restored = await h.grabFrame(A);
+	const restored = await h.grabFrame(A, fillClip);
 	const restoredOff = await h.framePixelsOffColor(page, restored, FILL_RGB);
 	h.check(
 		restoredOff.fraction < 0.02,

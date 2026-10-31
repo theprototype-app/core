@@ -75,13 +75,36 @@ const EXTENSIONS = {
 	// 36-share: a dropped .webm stays audio (above wins); the recorder stamps its own webm `video`
 	video: ['mp4', 'm4v', 'mov'],
 	text: ['txt', 'json', 'md', 'cfg', 'js'],
-	object: ['glb', 'gltf', 'obj', 'stl', 'fbx'],
+	object: ['glb', 'gltf', 'obj', 'stl', 'fbx', 'vrm'],
 	// 21-F4: a LEVEL — a .tpscene zip the travel node loads by content hash. Its own
 	// kind so it never opens in the text editor (it is a binary zip) and gets a map icon.
 	scene: ['tpscene'],
 	// 37-hdri: an equirect HDRI — Configure Scene ▸ Environment lights the scene with it by hash
-	hdri: ['hdr', 'exr']
+	hdri: ['hdr', 'exr'],
+	// 57 M1: an animation CLIP (.tpanim). A .vrma / .bvh / animation-only .glb or .fbx is converted
+	// to one on import (tpanim/convert.js), so the library only ever holds .tpanim clips
+	anim: ['tpanim']
 };
+
+/** 57 M1: extensions whose files MAY be animation clips — the converter decides (lazy chunk) */
+const MAYBE_ANIMATION = /\.(vrma|bvh|glb|fbx)$/i;
+
+/**
+ * 57 M1: an animation file -> the `.tpanim` files to store instead; null = import it as it is;
+ * false = it claimed to be a clip and could not be read (said once, skipped).
+ * @param {File} file @returns {Promise<File[] | null | false>}
+ */
+async function convertForImport(file) {
+	if (!MAYBE_ANIMATION.test(file.name)) return null;
+	try {
+		const { convertAnimationFile } = await import('./tpanim/convert.js');
+		return await convertAnimationFile(file);
+	} catch (error) {
+		console.log('animation import failed', file.name, error);
+		showToast('Could not read the animation in ' + file.name);
+		return false;
+	}
+}
 
 /** @param {string} name */
 export function kindOf(name) {
@@ -424,6 +447,11 @@ async function thumbnailFor(blob, name, kind) {
 async function itemFacts(blob, name, kind) {
 	try {
 		if (kind === 'image') return { thumbnail: await imageThumbnail(blob), dims: null };
+		// 57 M1: a clip draws its own skeleton (lazy; a 2D canvas, no WebGL context per card)
+		if (kind === 'anim') {
+			const { clipThumbnail } = await import('./tpanim/thumb.js');
+			return { thumbnail: clipThumbnail(await blob.arrayBuffer()), dims: null };
+		}
 		if (kind === 'object') {
 			const ext = name.split('.').pop()?.toLowerCase() ?? '';
 			const object = await parseObjectFile(await blob.arrayBuffer(), ext);
@@ -474,18 +502,28 @@ export function registerDuplicateResolver(fn) {
  *   consult the setting and, when it says so, the user
  */
 export async function importFiles(files, folderId = null, opts = {}) {
+	/** @type {any[]} */
 	const created = [];
 	/** @type {any[]} */
 	const dupes = [];
 	let fresh = 0;
-	for (const picked of [...files]) {
+	const queue = [...files];
+	for (let qi = 0; qi < queue.length; qi++) {
+		const picked = queue[qi];
 		// 46-media H1: a HEIC/HEIF photo enters as the JPEG it decodes to (heic.js) — the item, its
 		// hash, its thumbnail and every byte a peer pulls are the JPEG's; the decoder loads only here
 		const file = await heicToJpegFile(picked, { onError: showToast });
 		if (!file) continue;
+		// 57 M1: an animation file enters as the .tpanim clip(s) it converts to
+		const clips = await convertForImport(file);
+		if (clips === false) continue;
+		if (clips) {
+			queue.push(...clips);
+			continue;
+		}
 		const kind = kindOf(file.name);
 		if (!kind) {
-			showToast('Unsupported: ' + file.name + ' (images incl. HEIC photos, audio, text/config, 3D objects)');
+			showToast('Unsupported: ' + file.name + ' (images incl. HEIC photos, audio, text/config, 3D objects, animation clips)');
 			continue;
 		}
 		if (file.size > MAX_ITEM_BYTES) {

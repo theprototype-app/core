@@ -41,6 +41,26 @@ describe('cloudHooks ALWAYS_ALLOWED floor', () => {
 		for (const t of sent) expect(canApply('v', t), t).toBe(true);
 	});
 
+	it('lets a viewer request the project manifest, an asset and a material preset (fix-live)', () => {
+		setCapabilityProvider(() => false);
+		for (const t of ['getproject', 'getasset', 'getmatpreset']) expect(canApply('v', t), t).toBe(true);
+	});
+
+	it('keeps those REPLIES gateable (fix-live)', () => {
+		setCapabilityProvider(() => false);
+		for (const t of ['manifest', 'assetfile', 'assetstart', 'assetchunk', 'assetmissing', 'matpresetpart']) expect(canApply('v', t), t).toBe(false);
+	});
+
+	it('has every get* REQUEST the dispatcher answers on the floor, bar the recorded few', () => {
+		const src = readFileSync(new URL('../../src/lib/peerHandler.svelte.js', import.meta.url), 'utf8');
+		const answered = [...new Set([...src.matchAll(/data\.type == '(get[a-z]+)'/g)].map((m) => m[1]))];
+		expect(answered.length).toBeGreaterThan(10);
+		// still off the floor, recorded for the orchestrator (fix-live STATUS): each needs its own look
+		const KNOWN_OFF = ['gettransport', 'getgame', 'getkitentities', 'getpatch'];
+		setCapabilityProvider(() => false);
+		for (const t of answered) expect(canApply('v', t), t).toBe(!KNOWN_OFF.includes(t));
+	});
+
 	it('allows everything with no provider (the OSS build)', () => {
 		expect(canApply('v', 'seqs')).toBe(true);
 	});

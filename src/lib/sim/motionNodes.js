@@ -34,8 +34,8 @@ const vPivot = new THREE.Vector3();
 const radPerSec = (rpm) => (rpm * Math.PI * 2) / 60;
 
 /**
- * The rotor's angle at `time` (s on the shared, pause-folded clock): a constant speed after a
- * linear spin-up of `spinUp` seconds from t = 0 (continuous in angle and speed).
+ * The rotor's angle `time` seconds after it switched on: a constant speed after a linear
+ * spin-up of `spinUp` seconds from t = 0 (continuous in angle and speed).
  * @param {number} rpm @param {number} spinUp @param {number} time
  */
 export function rotorAngle(rpm, spinUp, time) {
@@ -58,8 +58,21 @@ export function applyRotor(object, base, data, time, ctx) {
 		if (on) driveBody(object, axis, rpm, +data.torque || 0, ctx);
 		return;
 	}
-	if (!on) return; // rests at its base pose
-	const angle = rotorAngle(rpm, Math.max(0, +data.spinUp || 0), time);
+	if (!on) {
+		rotorOnSince.delete(ctx.key); // rests at its base pose, and spins up again from rest
+		return;
+	}
+	// fix-batch-1 (docs-1): the ramp counted from the CLOCK's origin, and the synced clock is
+	// seconds since midnight, so every wheel was already past its spin-up and turned at full speed
+	// from the first frame. It counts from the moment this peer saw it switch on (or appear); a peer
+	// joining later sees its own spin-up from rest, the price of a phase no message carries.
+	// a clock that went BACK (the synced clock wraps at midnight; joining a session swaps the
+	// local clock for the session's) re-bases rather than freezing the wheel until it catches up.
+	// Only a real jump (> 1 s): a frame's worth of jitter between two callers must not re-base the
+	// wheel every frame, which holds it at rest (rotorAngle clamps a small negative to 0 anyway)
+	const since = rotorOnSince.get(ctx.key);
+	if (since === undefined || time < since - REBASE_S) rotorOnSince.set(ctx.key, time);
+	const angle = rotorAngle(rpm, Math.max(0, +data.spinUp || 0), time - /** @type {number} */ (rotorOnSince.get(ctx.key)));
 	qBase.setFromEuler(eul.set(base.rot[0], base.rot[1], base.rot[2]));
 	qSpin.setFromAxisAngle(axis, angle);
 	object.quaternion.copy(qBase).multiply(qSpin);
@@ -71,6 +84,11 @@ export function applyRotor(object, base, data, time, ctx) {
 		object.position.fromArray(base.pos).sub(vPivot).applyQuaternion(qSpin).add(vPivot);
 	}
 }
+
+/** @type {Map<string, number>} per rotor (node|object): the clock time it switched on */
+const rotorOnSince = new Map();
+/** a clock that goes back by more than this has jumped (midnight, a session clock adopted) */
+const REBASE_S = 1;
 
 /** @type {Map<string, number>} the last frame time per drive (dt for the torque cap) */
 const lastDrive = new Map();
@@ -109,6 +127,7 @@ function driveBody(object, axis, rpm, torque, ctx) {
 /** TEST: forget the drive clocks */
 export function resetMotionNodes() {
 	lastDrive.clear();
+	rotorOnSince.clear();
 	floatCache.clear();
 }
 

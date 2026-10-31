@@ -629,7 +629,7 @@ export const ROOM_SCOPED = new Set([
 	// scene object, the 'nodetrigger' case - a peer standing elsewhere plays none of it
 	'environment', 'music', 'transport', 'patch', 'devicenote', 'scenephysics', 'scenepost', 'shadergraph',
 	'shadergraphdelete', 'shadergraphs', 'hud', 'huddelete', 'huds', 'hudvalue',
-	'hudvalues', 'game', 'kit', 'kitreq', 'animdata', 'animplay', 'animations', 'jointcreate',
+	'hudvalues', 'game', 'gamevarop', 'kit', 'kitreq', 'animdata', 'animplay', 'animations', 'jointcreate',
 	'jointdelete', 'joints', 'annotation', 'annotations',
 	// 48 S2: sequences are room content like the HUD documents
 	'seq', 'seqdelete', 'seqs',
@@ -652,6 +652,9 @@ ROOM_SCOPED.add('batch');
 // (every get* request does; the answer side checks the room and says `none` across rooms).
 ROOM_SCOPED.add('ytext');
 ROOM_SCOPED.add('ytextaw');
+// 60 Q5: a shared reference image belongs to the scene it was laid in (its request rides the floor)
+ROOM_SCOPED.add('underlay');
+ROOM_SCOPED.add('underlaydelete');
 
 /**
  * THE ONE PREDICATE, used on both sides of the wire: `broadcast` will not SEND a

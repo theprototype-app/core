@@ -21,7 +21,7 @@ import {
 } from '../../stores/sceneStore';
 import { paletteColorAt, barValueAt } from '../vrPalette';
 import { recordMaterialChange, setMaterialParam } from '../materialsHandler';
-import { prefabs, instantiatePrefab } from '../prefabs';
+import { prefabs } from '../prefabs';
 import { peers, showToast, messages } from '../../stores/appStore';
 import { recordTransform, beginHistoryBatch, endHistoryBatch } from '../history';
 import { snapEnabled, snapSettings, surfaceSnap } from '../snapping';
@@ -41,6 +41,7 @@ import { hapticPulse } from './haptics.js';
 import { axesForSlot } from './input.js';
 import { controllerRay } from './pointer.js';
 import { executeVRMenuAction } from './radial.js';
+import { beginVRPlace, cancelVRPlace, placeVRNow, vrPlaceActive } from './placeRay.js';
 
 // VR interactions (all gated on an active XR session):
 // - A/X button on the menu hand toggles the quick-menu
@@ -356,10 +357,6 @@ export const vrPrefabsCursor = writable(0);
 /** armed prefab {id, name} while a placement ghost rides the ray, else null
  * @type {import('svelte/store').Writable<any>} */
 export const vrPrefabGhost = writable(null);
-/** @type {any} the translucent THREE clone at the scene root */
-let ghostObject = null;
-/** @type {any} */
-let ghostPrefab = null;
 
 // ---- VR chat panel (117) ----
 /** the chat panel THREE group @type {import('svelte/store').Writable<any>} */
@@ -409,42 +406,29 @@ export function raycastPrefabs(index) {
 	return control ? 'prefabs:' + control.object.name.slice('vrprefabs-'.length) : null;
 }
 
-/** Arm the placement ghost for a prefab id (trigger on a cell) @param {string} id */
+/** Arm the placement ghost for a prefab id (trigger on a cell) @param {string} id
+ * 52-browser: the window's ghost IS the shared laser ghost now (vr/placeRay.js — absorbs f-vr-place):
+ * the real model translucent when within the preview budget, surface rest + grid snap, the stick
+ * turns it, the overlap colours, and ONE replicated undo step per placement. Still: trigger places
+ * and stays armed, grip cancels, closing the window drops it. */
 export function armPrefabGhost(id) {
 	const prefab = get(prefabs).find((p) => p.id === id);
-	const scene = get(globalScene);
-	if (!prefab || !scene) return;
-	cancelPrefabGhost();
-	let clone;
-	try {
-		clone = new THREE.ObjectLoader().parse(prefab.element);
-	} catch {
-		return;
-	}
-	// fresh parse = own materials, safe to fade in place
-	clone.traverse((/** @type {any} */ node) => {
-		if (node.material) {
-			node.material.transparent = true;
-			node.material.opacity = 0.35;
-			node.material.depthWrite = false;
+	if (!prefab || !get(globalScene)) return;
+	const armed = beginVRPlace(
+		{ prefabId: prefab.id, kind: 'prefab', name: prefab.name },
+		{
+			repeat: true,
+			onEnd: () => {
+				if (get(vrPrefabGhost)?.id === prefab.id) vrPrefabGhost.set(null);
+			}
 		}
-	});
-	clone.name = 'vr-prefab-ghost';
-	scene.add(clone);
-	ghostObject = clone;
-	ghostPrefab = prefab;
-	vrPrefabGhost.set({ id: prefab.id, name: prefab.name });
-	hapticPulse(0.2, 25);
+	);
+	if (armed) vrPrefabGhost.set({ id: prefab.id, name: prefab.name });
 }
 
 /** Drop the ghost without placing (grip / panel close / menu open) */
 export function cancelPrefabGhost() {
-	if (ghostObject) {
-		ghostObject.parent?.remove(ghostObject);
-		ghostObject.traverse((/** @type {any} */ node) => node.geometry?.dispose?.());
-	}
-	ghostObject = null;
-	ghostPrefab = null;
+	if (get(vrPrefabGhost)) cancelVRPlace('cancel');
 	vrPrefabGhost.set(null);
 }
 
@@ -453,38 +437,19 @@ vrPrefabsPanelOpen.subscribe((open) => {
 	if (!open) cancelPrefabGhost();
 });
 
-/** Ghost follows the pointer ray: objects first, floor plane as fallback @param {number} index */
-export function updatePrefabGhost(index) {
-	if (!ghostObject || index < 0) return;
-	const ray = controllerRay(index);
-	const group = get(objectsGroup);
-	let point = null;
-	if (group) {
-		const hits = ray
-			.intersectObjects(group.children, true)
-			.filter((/** @type {any} */ h) => h.object !== ghostObject);
-		if (hits.length) point = hits[0].point;
-	}
-	if (!point) {
-		const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-		point = ray.ray.intersectPlane(floor, new THREE.Vector3());
-	}
-	if (point) ghostObject.position.copy(point);
-}
+/** 52-browser: the shared laser ghost follows the pointer itself (placeRay's frame hook); kept for
+ * the façade. @param {number} _index */
+export function updatePrefabGhost(_index) {}
 
-/** Trigger while the ghost is armed: instantiate at the ghost spot, stay armed.
- * Returns true when a placement happened (Scene.svelte consumes the select). */
+/** Trigger while the ghost is armed: place at the ghost spot, stay armed. Returns true when a
+ * placement happened (Scene.svelte consumes the select). 52-browser: in a session the shared ghost's
+ * trigger hook places; this is the programmatic path (outside a session). */
 export function placePrefabGhost() {
-	if (!ghostObject || !ghostPrefab) return false;
-	// picking a cell re-arms instead of placing — the panel raycast runs first
-	const group = get(objectsGroup);
-	if (!group) return false;
-	group.updateMatrixWorld(true);
-	const local = group.worldToLocal(ghostObject.position.clone());
-	const object = instantiatePrefab(ghostPrefab, local);
-	if (!object) return false;
-	hapticPulse(0.35, 40);
-	return true;
+	if (!get(vrPrefabGhost) || !vrPlaceActive()) return false;
+	// in a session the placing hand's trigger HOOK places (and claims its select); another hand's select
+	// passes through to what it would do anyway
+	if (renderer?.xr?.isPresenting) return false;
+	return placeVRNow();
 }
 let paintGesture = /** @type {any} */ (null);
 let lastColorSent = 0;

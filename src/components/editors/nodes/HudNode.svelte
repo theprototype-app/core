@@ -47,7 +47,11 @@
 		hudtimer: ['start', 'duration'],
 		hudscreen: ['trigger'],
 		hudlist: ['trigger'],
-		hudbutton: []
+		hudbutton: [],
+		// fix-batch-1 (docs-1 Q1): the runtime read these (flowSockets types them) but the card
+		// drew no socket, so neither node could be wired by hand
+		hudrows: ['trigger', 'text'],
+		hudset: ['trigger', 'value', 'options']
 	};
 	$: inputs = INPUTS[data.type] ?? [];
 	$: wiredSource = (key: string) =>

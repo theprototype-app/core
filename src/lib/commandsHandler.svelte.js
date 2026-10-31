@@ -11,9 +11,10 @@ import { dropPeerCursor } from '$lib/nodesHandler'
 import { dropPeerQuality } from '$lib/networkQuality'
 import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
-import { sessionHost, dropPeerJoined } from '$lib/connectionState'
+import { sessionHost, dropPeerJoined, noteSnapshotAnswered } from '$lib/connectionState'
+import { acceptedLockRows, mergeLockRows } from '$lib/lockTrust'
 import { environment, editEnvSky } from '$lib/environment'
-import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
+import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, setAnimGraph, attachToSocket, dropAllAnimatedImports, setVrmExpression } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
@@ -91,9 +92,14 @@ export function userData(data) {
         // 55 A9: a roster written before the sender heard a kick must not re-whitelist
         // the peer it removed
         if (isHeldOut(element[0])) return;
-        console.log('received new approved host : ' + element[0])
-        if (!users.some(u => u[0] === element[0]))
+        // a ROSTER row (the whitelist of peers in this session; entry [0] of every roster is the
+        // sender's view of itself and ours of us), NEVER a host change — the session host is
+        // `sessionHost`, set only to the peer that approved our request. The old wording ("received
+        // new approved host") logged our own id on every roster and read as a takeover (55, 41's note).
+        if (!users.some(u => u[0] === element[0])) {
+            console.log('roster: added peer ' + element[0])
             users.push(element)
+        }
         else
         {
             let index = users.findIndex(u => u[0] === element[0]);
@@ -310,12 +316,18 @@ export function applyClearScene(peerId) {
     showToast(peerId + ' cleared the scene');
 }
 
-export function lockRestore(lockeditems) {
+/**
+ * A peer's lock table (handshake / room arrival). `from` is the connection it arrived on:
+ * the session host's rows may name anyone, any other sender's only itself, and a sender
+ * that may not lock adds nothing (`acceptedLockRows`). Rows already held are not repeated.
+ * @param {any} lockeditems @param {string} from @param {boolean} fromHost @param {boolean} mayLock
+ */
+export function lockRestore(lockeditems, from, fromHost, mayLock) {
     // 27-A: same trust, same fix — a non-array here threw inside the handshake.
     if (!Array.isArray(lockeditems)) return;
-    // Filter out the current peer id locks
-    locked = locked.concat(lockeditems.filter((lock) => Array.isArray(lock) && lock[0] != peer.peer.id));
-    // Update the locked objects store
+    const rows = acceptedLockRows(lockeditems, { from, selfId: peer?.peer?.id, fromHost, mayLock });
+    if (!rows.length) return;
+    locked = mergeLockRows(locked, rows);
     lockedObjects.set(locked);
 }
 
@@ -524,6 +536,7 @@ export function noteLoadFailed(uuids) {
 
 /** @param {number} count @param {string[]} uuids @param {string} [senderId] */
 export async function createLoader(count, uuids, senderId) {
+    if (senderId) noteSnapshotAnswered(senderId);
     // console.log("create loader for " + count + " objects: " + uuids);
     loading.set(Array.isArray(uuids) ? uuids : []);
     loadingcount.set(count);
@@ -587,7 +600,32 @@ export async function objectParameters(data) {
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
     } else if (data.parameter == 'animation') {
-        setAnimationState(data.uuid, { clip: data.clip, playing: data.playing, speed: data.speed }, false);
+        // 57 M3: the stamp + crossfade ride along when the sender has them (absent = an older peer)
+        /** @type {any} */
+        const next = { clip: data.clip, playing: data.playing, speed: data.speed };
+        if (Number.isFinite(data.at)) next.at = data.at;
+        if (typeof data.from === 'string' && Number(data.fade) > 0) Object.assign(next, { from: data.from, fromSpeed: Number(data.fromSpeed) || data.speed, fade: Math.min(5, Number(data.fade)) });
+        else if (Number.isFinite(data.at)) Object.assign(next, { from: undefined, fade: undefined });
+        setAnimationState(data.uuid, next, false);
+    } else if (data.parameter == 'character') {
+        // 57 M2: a character's humanoid map fixes + applied clips; each peer retargets for itself
+        const { receiveHumanoid } = await import('$lib/humanoid/humanoidRig.js');
+        receiveHumanoid(data);
+    } else if (data.parameter == 'expression') {
+        // 57 M4: a VRM expression weight (the face of a character)
+        setVrmExpression(data.uuid, data.name, data.weight, false);
+    } else if (data.parameter == 'clipRefs') {
+        // 57 M1: the clip assets a model plays (bytes pulled by hash, bound per peer)
+        setClipRefs(data.uuid, data.clipRefs, { replicate: false, record: false, ...(typeof data.clipsOff === 'boolean' ? { clipsOff: data.clipsOff } : {}) });
+    } else if (data.parameter == 'animGraph') {
+        // 57 M11: a model's Animation states graph (normalized on apply; null = removed)
+        setAnimGraph(data.uuid, data.animGraph, { replicate: false, record: false });
+    } else if (data.parameter == 'attachTo') {
+        // 57 M12: an object follows a model's socket (or no longer does)
+        attachToSocket(data.uuid, null, null, { spec: data.attachTo ?? null, replicate: false, record: false });
+    } else if (data.parameter == 'animParam') {
+        // 57 M11: a synced Animation states parameter (latest-wins by its stamp)
+        import('$lib/tpanim/animGraphRuntime.js').then((m) => m.setAnimParam(data.uuid, data.name, data.value, { replicate: false, at: data.at }));
     } else if (data.parameter == 'castShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.castShadow = data.castShadow;

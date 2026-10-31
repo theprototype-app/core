@@ -497,6 +497,8 @@
 	// (`panelToggles`' `dockOnly` and `dockMenu` withholding Undock). Both of those
 	// exceptions are gone with this block; the seventh view now behaves like its six
 	// siblings and nothing has to know it is special.
+	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
+	let { popped = false } = $props();
 	let docked = $state(true);
 	const WIN_MIN = { minW: 380, minH: 280 };
 	const WIN_DEFAULT = { w: 720, h: 480 };
@@ -525,8 +527,11 @@
 
 	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
 	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	// 70 W2: a popped-out instance renders its floating layout inside its window, never docked
+	// svelte-ignore state_referenced_locally
+	if (popped) docked = false;
 	$effect(() =>
-		onLayoutRestore(() => {
+		popped ? undefined : onLayoutRestore(() => {
 			const stored = storedPanelLayout(safeStorage.getItem, 'shader', 720, 480);
 			docked = !!(stored.docked || (window.matchMedia?.('(pointer: coarse)').matches && !get(mobileUndockAllowed)));
 			const fit = clampWinSize(stored.w, stored.h, WIN_MIN);
@@ -549,6 +554,7 @@
 	// that makes "Undock" reach this view at all — the row was withheld until now
 	// precisely because there was nothing here to consume the ask.
 	$effect(() => {
+		if (popped) return; // 70 W2: the main window's instance answers the arm
 		const arm = $dockModeArm;
 		if (!arm || arm.key !== 'shader') return;
 		dockModeArm.set(null);
@@ -565,6 +571,7 @@
 	// dock presence — `docked` is part of the question now: a floating Shader editor is
 	// open and is NOT a dock tab, and reporting it as one leaves a phantom in the strip.
 	$effect(() => {
+		if (popped) return; // 70 W2: a popped panel is no dock tab
 		setDockOccupant('shader', !$shaderEditorClose && docked, $dockHeight);
 		return () => setDockOccupant('shader', false);
 	});

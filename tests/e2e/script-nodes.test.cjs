@@ -53,7 +53,15 @@ h.run(async () => {
 			})();
 		});
 	}, uuid);
-	await A.page.waitForTimeout(2500);
+	// 69 T1: scripts run in the sandbox engine, which loads with the first scene that carries code —
+	// a cold dev server takes ~2.5 s to hand it over, so wait for the first motion instead of a fixed sleep
+	for (const peer of [A, B]) {
+		for (let i = 0, x0 = (await objState(peer.page, uuid))?.x; i < 60; i++) {
+			await peer.page.waitForTimeout(250);
+			if ((await objState(peer.page, uuid))?.x !== x0) break;
+		}
+	}
+	await A.page.waitForTimeout(500);
 
 	const a1 = await objState(A.page, uuid);
 	await A.page.waitForTimeout(300);

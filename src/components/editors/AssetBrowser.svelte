@@ -17,7 +17,11 @@
 	import { bottomDockable } from '$lib/bottomDockDrop';
 	import { focusStack } from '$lib/windowFocus';
 	import { minimalScroll } from '$lib/ui/minimalScroll.js';
-	import { assetBrowserOpen, assetBrowserKind, assetBrowserRes } from '$lib/cc0/assetBrowserState.js';
+	import {
+		assetBrowserOpen,
+		assetBrowserKind,
+		assetBrowserRes
+	} from '$lib/cc0/assetBrowserState.js';
 	import {
 		CC0_KINDS,
 		CC0_SITES,
@@ -31,8 +35,22 @@
 		filterRows,
 		creditLine
 	} from '$lib/cc0/cc0Core.js';
-	import { phList, phCategories, acgPage, acgCategories, forgetCc0Memo } from '$lib/cc0/cc0Fetch.js';
-	import { importCc0, cc0Jobs, rowKey, heldItemFor, placeItem, applyPresetToSelection, errorText } from '$lib/cc0/cc0Import.js';
+	import {
+		phList,
+		phCategories,
+		acgPage,
+		acgCategories,
+		forgetCc0Memo
+	} from '$lib/cc0/cc0Fetch.js';
+	import {
+		importCc0,
+		cc0Jobs,
+		rowKey,
+		heldItemFor,
+		placeItem,
+		applyPresetToSelection,
+		errorText
+	} from '$lib/cc0/cc0Import.js';
 	import { explorerItems, revealItem } from '$lib/explorer';
 	import { editEnvSky } from '$lib/environment';
 	import { materialPresets } from '$lib/materialPresets';
@@ -65,9 +83,12 @@
 	/** a load in flight is superseded by the next one (tab switch, a new search) */
 	let ticket = 0;
 
-	const filtered = $derived(kind.source === 'polyhaven' ? filterRows(rows, { query, category }) : rows);
-	const visible = $derived(kind.source === 'polyhaven' ? filtered.slice(0, shown) : filtered);
-	const more = $derived(kind.source === 'polyhaven' ? filtered.length > shown : rows.length < acgTotal);
+	/** 57 M5: the Avatars tab lists CC-BY collections only when asked (their credit is kept) */
+	let includeCcBy = $state(false);
+	const listed = $derived(kind.source === 'polyhaven' || kind.source === 'osa' || kind.source === 'motion');
+	const filtered = $derived(listed ? filterRows(rows, { query, category }) : rows);
+	const visible = $derived(listed ? filtered.slice(0, shown) : filtered);
+	const more = $derived(listed ? filtered.length > shown : rows.length < acgTotal);
 	const selectionCount = $derived(($selectedObjects ?? []).length);
 
 	/** @param {boolean} [fresh] */
@@ -79,13 +100,34 @@
 		staleWhy = '';
 		try {
 			if (kind.source === 'polyhaven') {
-				const [list, cats] = await Promise.all([phList(kind.phType ?? '', fresh), phCategories(kind.phType ?? '', fresh).catch(() => null)]);
+				const [list, cats] = await Promise.all([
+					phList(kind.phType ?? '', fresh),
+					phCategories(kind.phType ?? '', fresh).catch(() => null)
+				]);
 				if (my !== ticket) return;
 				rows = normalizePolyHaven(list.data, /** @type {any} */ (kind.key));
 				categories = cats ? normalizePhCategories(cats.data) : [];
 				noteStale(list);
+			} else if (kind.source === 'osa') {
+				// 57 M5: the Open Source Avatars registry (VRM avatars; CC0 unless CC-BY is asked for)
+				const { osaList } = await import('$lib/avatars/osaRegistry.js');
+				const list = await osaList({ fresh, includeCcBy });
+				if (my !== ticket) return;
+				rows = list.rows;
+				categories = list.categories;
+				noteStale(list);
+			} else if (kind.source === 'motion') {
+				// 57 M5: the Motion pack (humanoid .tpanim clips, CC0)
+				const { motionRows } = await import('$lib/tpanim/motionKit.js');
+				const list = await motionRows(fresh);
+				if (my !== ticket) return;
+				rows = list.rows;
+				categories = list.categories;
 			} else {
-				const [page, cats] = await Promise.all([acgPage({ query: query.trim(), category, fresh }), acgCategories(fresh).catch(() => null)]);
+				const [page, cats] = await Promise.all([
+					acgPage({ query: query.trim(), category, fresh }),
+					acgCategories(fresh).catch(() => null)
+				]);
 				if (my !== ticket) return;
 				rows = normalizeAmbientCg(page.data);
 				acgTotal = ambientCgTotal(page.data);
@@ -172,7 +214,11 @@
 	/** the preset this browser made for a material row, if it is still in the library
 	 * @param {any} row @param {any[]} list */
 	function heldPreset(row, list) {
-		return list.find((p) => p.payload?.source?.site === row.source && p.payload?.source?.id === row.id) ?? null;
+		return (
+			list.find(
+				(p) => p.payload?.source?.site === row.source && p.payload?.source?.id === row.id
+			) ?? null
+		);
 	}
 	/** @param {any} row @param {any[]} _items (an unused argument so the card re-derives on a Library change) */
 	const heldItem = (row, _items) => heldItemFor(row);
@@ -184,10 +230,21 @@
 		try {
 			const made = await importCc0(row, $assetBrowserRes, opts);
 			if (made.item) {
-				if (row.kind === 'hdris') showToast((opts.applySky === false ? 'Added ' : 'Lighting the scene with ') + made.item.name);
-				else showToast('Added ' + made.item.name + ' to the Library', [{ label: 'Show', action: () => show(made.item) }]);
+				if (row.kind === 'hdris')
+					showToast(
+						(opts.applySky === false ? 'Added ' : 'Lighting the scene with ') + made.item.name
+					);
+				else
+					showToast('Added ' + made.item.name + ' to the Library', [
+						{ label: 'Show', action: () => show(made.item) }
+					]);
 			} else if (made.preset) {
-				showToast('Saved ' + made.preset.name + ' to your materials' + (opts.applyToSelection && selectionCount ? ' and applied it' : ''));
+				showToast(
+					'Saved ' +
+						made.preset.name +
+						' to your materials' +
+						(opts.applyToSelection && selectionCount ? ' and applied it' : '')
+				);
 			}
 			return made;
 		} catch (err) {
@@ -207,6 +264,61 @@
 	async function place(row) {
 		const held = heldItemFor(row) ?? (await bring(row))?.item;
 		if (held) await placeItem(held);
+	}
+
+	/** 57 M5: a Motion pack clip goes into the Explorer, a file like any other clip @param {any} row */
+	async function addMotion(row) {
+		const key = rowKey(row);
+		placing = { ...placing, [key]: true };
+		cardError = { ...cardError, [key]: '' };
+		try {
+			const { addMotionClip } = await import('$lib/tpanim/motionKit.js');
+			await addMotionClip(row.id);
+			showToast(row.name + ' added to the Explorer: drag it onto a character to play it');
+		} catch (err) {
+			cardError = { ...cardError, [key]: errorText(err) };
+		} finally {
+			placing = { ...placing, [key]: false };
+		}
+	}
+	/** 57 M5: an avatar goes straight into the scene as a VRM character, its credit kept @type {Record<string, boolean>} */
+	let placing = $state({});
+	/** @param {any} row */
+	async function placeAvatar(row) {
+		const key = rowKey(row);
+		placing = { ...placing, [key]: true };
+		cardError = { ...cardError, [key]: '' };
+		try {
+			const res = await fetch(row.vrm);
+			if (!res.ok) throw new Error('the avatar file is unreachable (HTTP ' + res.status + ')');
+			const bytes = await res.arrayBuffer();
+			const { importFile } = await import('$lib/fileHandler.svelte.js');
+			const { osaProvenance } = await import('$lib/avatars/osaRegistry.js');
+			const uuid = await importFile(
+				new File([bytes], row.name + '.vrm'),
+				row.name,
+				'vrm',
+				undefined,
+				undefined,
+				{ provenance: osaProvenance(row) }
+			);
+			if (uuid)
+				showToast(
+					'Placed ' +
+						row.name +
+						(row.licence === 'CC0-1.0'
+							? ' (CC0)'
+							: ' — ' +
+								row.licence +
+								': credit ' +
+								(row.authors[0] || row.project) +
+								' where you share it')
+				);
+		} catch (err) {
+			cardError = { ...cardError, [key]: errorText(err) };
+		} finally {
+			placing = { ...placing, [key]: false };
+		}
 	}
 
 	/** @param {any} row */
@@ -253,19 +365,37 @@
 		id="asset-browser-window"
 		class="ui-panel tp-ui tp-window tp-themed fixed flex flex-col overflow-hidden outline-hidden"
 		tabindex="-1"
-		use:dragWindow={{ key: 'assetBrowserWindow', defaultRect: { left: 160, top: 96 }, resizable: true, minW: 300, minH: 260 }}
+		use:dragWindow={{
+			key: 'assetBrowserWindow',
+			defaultRect: { left: 160, top: 96 },
+			resizable: true,
+			minW: 300,
+			minH: 260
+		}}
 		use:bottomDockable={{ key: 'assets' }}
 		use:focusStack={'assets'}
 		style="z-index: var(--z-window); width: 560px; height: 600px"
-		data-keywords="cc0 free assets poly haven ambientcg models hdri sky textures materials download"
+		data-keywords="cc0 free assets poly haven ambientcg models hdri sky textures materials download avatars vrm characters"
 	>
-		<div data-sb-headless class="ui-panel-header move-handle flex shrink-0 cursor-move select-none items-center gap-2 py-1.5">
+		<div
+			data-sb-headless
+			class="ui-panel-header move-handle flex shrink-0 cursor-move items-center gap-2 py-1.5 select-none"
+		>
 			<Icon name="package-open" size={16} aria-hidden="true" />
 			<span class="flex-1 text-sm font-semibold">Free assets (CC0)</span>
-			<button id="asset-browser-refresh" class="rounded-sm p-1 hover:brightness-150" title="Ask the sites again (skips the saved answer)" aria-label="Refresh" onclick={refresh}
-				><Icon name="refresh-cw" size={16} aria-hidden="true" /></button
+			<button
+				id="asset-browser-refresh"
+				class="rounded-sm p-1 hover:brightness-150"
+				title="Ask the sites again (skips the saved answer)"
+				aria-label="Refresh"
+				onclick={refresh}><Icon name="refresh-cw" size={16} aria-hidden="true" /></button
 			>
-			<button id="asset-browser-close" class="rounded-sm p-1 hover:brightness-150" title="Close" aria-label="Close the asset browser" onclick={() => assetBrowserOpen.set(false)}
+			<button
+				id="asset-browser-close"
+				class="rounded-sm p-1 hover:brightness-150"
+				title="Close"
+				aria-label="Close the asset browser"
+				onclick={() => assetBrowserOpen.set(false)}
 				><Icon name="x" size={16} aria-hidden="true" /></button
 			>
 		</div>
@@ -279,23 +409,57 @@
 				onchange={(v) => assetBrowserKind.set(v)}
 			/>
 			<div class="ab-filters">
-				<SearchField id="asset-browser-search" size="sm" value={query} placeholder={'Search ' + kind.label.toLowerCase()} label="Search assets" oninput={onSearch} onclear={() => onSearch('')} />
+				<SearchField
+					id="asset-browser-search"
+					size="sm"
+					value={query}
+					placeholder={'Search ' + kind.label.toLowerCase()}
+					label="Search assets"
+					oninput={onSearch}
+					onclear={() => onSearch('')}
+				/>
 				<ThemedSelect
 					id="asset-browser-category"
 					class="ab-cat"
 					clip={false}
 					value={category}
 					placeholder="All categories"
-					items={[{ value: '', name: 'All categories' }, ...categories.map((c) => ({ value: c.id, name: c.label + ' (' + c.count + ')' }))]}
+					items={[
+						{ value: '', name: 'All categories' },
+						...categories.map((c) => ({ value: c.id, name: c.label + ' (' + c.count + ')' }))
+					]}
 					onchange={onCategory}
 				/>
 				<Segmented
 					id="asset-browser-res"
 					label="Resolution"
-					options={RESOLUTIONS.map((r) => ({ value: r, label: r, title: r === '1k' ? 'Small files — right for a Quest or a phone' : r === '2k' ? 'The desktop default' : 'Big files: slow to share with peers' }))}
+					options={RESOLUTIONS.map((r) => ({
+						value: r,
+						label: r,
+						title:
+							r === '1k'
+								? 'Small files — right for a Quest or a phone'
+								: r === '2k'
+									? 'The desktop default'
+									: 'Big files: slow to share with peers'
+					}))}
 					value={$assetBrowserRes}
 					onchange={(v) => assetBrowserRes.set(v)}
 				/>
+				{#if kind.source === 'osa'}
+					<label
+						class="ab-ccby"
+						title="CC-BY collections need a credit: the avatar keeps it, and Export / Publish remind you"
+					>
+						<input
+							id="asset-browser-ccby"
+							type="checkbox"
+							class="tp-check"
+							bind:checked={includeCcBy}
+							onchange={() => load()}
+						/> Include CC-BY
+					</label>
+				{/if}
 			</div>
 		</div>
 
@@ -303,59 +467,171 @@
 			<p id="asset-browser-stale" class="ab-banner" role="status">
 				<Icon name="wifi-off" size={16} aria-hidden="true" />
 				<span
-					>{!online ? 'You are offline. ' : ''}{staleAt ? 'Showing the list saved ' + when(staleAt) + '.' : ''}
+					>{!online ? 'You are offline. ' : ''}{staleAt
+						? 'Showing the list saved ' + when(staleAt) + '.'
+						: ''}
 					{!online ? 'Downloads need a connection.' : staleWhy}</span
 				>
 			</p>
 		{/if}
 
-		<div id="asset-browser-grid-wrap" class="min-h-0 flex-1 overflow-y-auto px-2 py-1.5" use:minimalScroll>
+		<div
+			id="asset-browser-grid-wrap"
+			class="min-h-0 flex-1 overflow-y-auto px-2 py-1.5"
+			use:minimalScroll
+		>
 			{#if listError}
 				<div id="asset-browser-status" class="ab-error" role="alert" data-state="error">
 					<Icon name="circle-alert" size={20} aria-hidden="true" />
 					<p>{listError}</p>
-					<Button variant="secondary" size="sm" icon="refresh-cw" onclick={refresh}>Try again</Button>
+					<Button variant="secondary" size="sm" icon="refresh-cw" onclick={refresh}
+						>Try again</Button
+					>
 				</div>
 			{:else if loading && !rows.length}
-				<p id="asset-browser-status" class="ab-muted" data-state="loading"><Icon name="loader-circle" size={16} aria-hidden="true" /> Loading {kind.label.toLowerCase()}…</p>
+				<p id="asset-browser-status" class="ab-muted" data-state="loading">
+					<Icon name="loader-circle" size={16} aria-hidden="true" /> Loading {kind.label.toLowerCase()}…
+				</p>
 			{:else if !visible.length}
-				<p id="asset-browser-status" class="ab-muted" data-state="empty">Nothing matches{query ? ' “' + query + '”' : ''}. Try another word or category.</p>
+				<p id="asset-browser-status" class="ab-muted" data-state="empty">
+					Nothing matches{query ? ' “' + query + '”' : ''}. Try another word or category.
+				</p>
 			{/if}
 
 			<ul id="asset-browser-grid" class="ab-grid" data-kind={kind.key} data-count={visible.length}>
 				{#each visible as row (rowKey(row))}
 					{@const key = rowKey(row)}
 					{@const job = $cc0Jobs[key]}
-					{@const item = row.kind === 'models' || row.kind === 'hdris' ? heldItem(row, $explorerItems) : null}
-					{@const preset = row.kind === 'textures' || row.kind === 'materials' ? heldPreset(row, $materialPresets) : null}
-					<li class="ab-card" data-asset-id={row.id} data-kind={row.kind} data-held={item || preset ? 'true' : 'false'} title={creditLine({ site: row.source, ...row })}>
+					{@const item =
+						row.kind === 'models' || row.kind === 'hdris'
+							? heldItem(row, $explorerItems)
+							: row.kind === 'motion'
+								? $explorerItems.find((/** @type {any} */ it) => it.kind === 'anim' && it.name === row.name + '.tpanim')
+								: null}
+					{@const preset =
+						row.kind === 'textures' || row.kind === 'materials'
+							? heldPreset(row, $materialPresets)
+							: null}
+					<li
+						class="ab-card"
+						data-asset-id={row.id}
+						data-kind={row.kind}
+						data-held={item || preset ? 'true' : 'false'}
+						title={creditLine({ site: row.source, ...row })}
+					>
 						<div class="ab-thumb">
 							{#if row.thumb}
-								<img src={row.thumb} alt="" loading="lazy" referrerpolicy="no-referrer" onerror={(e) => /** @type {any} */ (e.currentTarget).classList.add('ab-noimg')} />
+								<img
+									src={row.thumb}
+									alt=""
+									loading="lazy"
+									referrerpolicy="no-referrer"
+									onerror={(e) => /** @type {any} */ (e.currentTarget).classList.add('ab-noimg')}
+								/>
+							{:else if row.kind === 'motion'}
+								<Icon name="person-standing" size={32} aria-hidden="true" />
 							{/if}
-							{#if item || preset}<span class="ab-held" title="In your library"><Icon name="check" size={16} aria-hidden="true" /></span>{/if}
+							{#if item || preset}<span class="ab-held" title="In your library"
+									><Icon name="check" size={16} aria-hidden="true" /></span
+								>{/if}
 						</div>
 						<p class="ab-name">{row.name}</p>
-						<p class="ab-by">{row.authors.join(', ') || CC0_SITES[/** @type {'polyhaven'|'ambientcg'} */ (row.source)].label}</p>
+						<p class="ab-by">
+							{row.authors.join(', ') ||
+								CC0_SITES[/** @type {'polyhaven'|'ambientcg'} */ (row.source)].label}{row.source ===
+							'osa'
+								? ' · ' + (row.licence === 'CC0-1.0' ? 'CC0' : row.licence)
+								: ''}
+						</p>
 						{#if job}
-							<div class="ab-progress" role="progressbar" aria-valuemin="0" aria-valuemax={job.total || 100} aria-valuenow={job.done} data-phase={job.phase}>
-								<span style:width={job.total ? Math.min(100, (job.done / job.total) * 100) + '%' : '30%'}></span>
+							<div
+								class="ab-progress"
+								role="progressbar"
+								aria-valuemin="0"
+								aria-valuemax={job.total || 100}
+								aria-valuenow={job.done}
+								data-phase={job.phase}
+							>
+								<span
+									style:width={job.total
+										? Math.min(100, (job.done / job.total) * 100) + '%'
+										: '30%'}
+								></span>
 							</div>
-							<p class="ab-phase">{job.phase} {job.total ? mb(job.done) + ' / ' + mb(job.total) : ''}</p>
+							<p class="ab-phase">
+								{job.phase}
+								{job.total ? mb(job.done) + ' / ' + mb(job.total) : ''}
+							</p>
 						{:else}
 							<div class="ab-acts">
-								{#if row.kind === 'models'}
+								{#if row.kind === 'motion'}
+									<Button
+										variant="primary"
+										size="sm"
+										full
+										icon="person-standing"
+										data-act="add-motion"
+										disabled={!!placing[key] || !!item}
+										onclick={() => addMotion(row)}
+										>{item ? 'In the Explorer' : placing[key] ? 'Adding…' : 'Add to Explorer'}</Button
+									>
+								{:else if row.kind === 'avatars'}
+									<Button
+										variant="primary"
+										size="sm"
+										full
+										icon="person-standing"
+										data-act="place-avatar"
+										disabled={!!placing[key]}
+										onclick={() => placeAvatar(row)}
+										>{placing[key] ? 'Placing…' : 'Add to scene'}</Button
+									>
+								{:else if row.kind === 'models'}
 									{#if item}
-										<Button variant="primary" size="sm" full data-act="place" onclick={() => place(row)}>Add to scene</Button>
-										<Button variant="ghost" size="sm" full data-act="show" title="Show it in the Explorer" onclick={() => show(item)}>Library</Button>
+										<Button
+											variant="primary"
+											size="sm"
+											full
+											data-act="place"
+											onclick={() => place(row)}>Add to scene</Button
+										>
+										<Button
+											variant="ghost"
+											size="sm"
+											full
+											data-act="show"
+											title="Show it in the Explorer"
+											onclick={() => show(item)}>Library</Button
+										>
 									{:else}
-										<Button variant="secondary" size="sm" full icon="download" data-act="library" onclick={() => bring(row)}>Add to Library</Button>
+										<Button
+											variant="secondary"
+											size="sm"
+											full
+											icon="download"
+											data-act="library"
+											onclick={() => bring(row)}>Add to Library</Button
+										>
 									{/if}
 								{:else if row.kind === 'hdris'}
-									<Button variant={item ? 'primary' : 'secondary'} size="sm" full icon="sun" data-act="sky" onclick={() => useSky(row)}>Use as sky</Button>
+									<Button
+										variant={item ? 'primary' : 'secondary'}
+										size="sm"
+										full
+										icon="sun"
+										data-act="sky"
+										onclick={() => useSky(row)}>Use as sky</Button
+									>
 								{:else}
 									{#if !preset}
-										<Button variant="secondary" size="sm" icon="download" data-act="library" title="Save it to your material presets" onclick={() => bring(row)}>Add</Button>
+										<Button
+											variant="secondary"
+											size="sm"
+											icon="download"
+											data-act="library"
+											title="Save it to your material presets"
+											onclick={() => bring(row)}>Add</Button
+										>
 									{/if}
 									<Button
 										variant={preset ? 'primary' : 'secondary'}
@@ -363,7 +639,9 @@
 										icon="palette"
 										data-act="apply"
 										disabled={!selectionCount}
-										title={selectionCount ? 'Put it on the selected object' + (selectionCount > 1 ? 's' : '') : 'Select an object first'}
+										title={selectionCount
+											? 'Put it on the selected object' + (selectionCount > 1 ? 's' : '')
+											: 'Select an object first'}
 										onclick={() => applyMaterial(row, preset)}>Apply</Button
 									>
 								{/if}
@@ -380,7 +658,8 @@
 						variant="ghost"
 						size="sm"
 						disabled={loading}
-						onclick={() => (kind.source === 'polyhaven' ? (shown += PAGE) : loadMoreAcg())}>Show more</Button
+						onclick={() => (kind.source === 'polyhaven' ? (shown += PAGE) : loadMoreAcg())}
+						>Show more</Button
 					>
 				</div>
 			{/if}
@@ -388,8 +667,15 @@
 
 		<p class="ab-foot shrink-0">
 			Every asset here is <strong>CC0</strong> (public domain) —
-			<a href={CC0_SITES.polyhaven.home} target="_blank" rel="noopener noreferrer">Poly Haven</a> and
-			<a href={CC0_SITES.ambientcg.home} target="_blank" rel="noopener noreferrer">ambientCG</a>. Credits stay with each file.
+			<a href={CC0_SITES.polyhaven.home} target="_blank" rel="noopener noreferrer">Poly Haven</a>
+			and
+			<a href={CC0_SITES.ambientcg.home} target="_blank" rel="noopener noreferrer">ambientCG</a
+			>{kind.source === 'osa' ? '' : '.'} Credits stay with each file.
+			{#if kind.source === 'osa'}Avatars: the <a
+					href={CC0_SITES.osa.home}
+					target="_blank"
+					rel="noopener noreferrer">Open Source Avatars</a
+				> registry — CC0 collections, CC-BY ones on request (their credit is kept).{/if}
 		</p>
 	</div>
 {/if}
@@ -401,6 +687,13 @@
 		align-items: center;
 		gap: 6px;
 		padding: 6px 0 4px;
+	}
+	.ab-ccby {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 11px;
+		color: var(--text-muted);
 	}
 	.ab-filters :global(.ab-cat) {
 		min-width: 120px;

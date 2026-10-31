@@ -89,7 +89,7 @@ h.run(async () => {
 	const hiRun = runSoles.length ? Math.max(...runSoles) : 0;
 	h.check(hiWalk <= FLOOR_TOL, `1.6 ...a walking stance foot stays on it (${walkSoles.length} walk samples, highest lowest-sole ${(hiWalk * 100).toFixed(1)} cm)`);
 	h.check(hiRun <= 0.13, `1.6b ...a run's flight phase stays a hop (${runSoles.length} run samples, highest ${(hiRun * 100).toFixed(1)} cm <= 13)`);
-	h.check(strides.every((s) => Math.abs(s.feet[1]) < 0.02), '1.7 the body origin stays on the floor while walking (no sinking)');
+	h.check(strides.every((s) => Math.abs(s.feet[1]) < 0.02), `1.7 the body origin stays on the floor while walking (no sinking; origin y per stride, cm: ${strides.map((s) => (s?.feet ? (s.feet[1] * 100).toFixed(1) : 'none')).join(' ')})`);
 
 	// ---- 2. a Character Controller on a raised floor (a 0.3 m step) ---------------------------
 	// a REAL Character Controller node (the flow runtime re-declares charControl from the graph

@@ -124,7 +124,7 @@
 	import { toolbarSlots, slotOrder, TOP_DEFAULT } from '$lib/toolbarSlots';
 	import { phoneShell } from '$lib/ui/phoneShell.js';
 	import CloudSlot from '../CloudSlot.svelte';
-	import { usersSlot, profileSlot, rolesInfo, scenePresence } from '$lib/cloudHooks';
+	import { usersSlot, profileSlot, rolesInfo, scenePresence, peerMenuItems } from '$lib/cloudHooks';
 	import { agentChatState, agentStatusOf, stopAgent, muteAgent, canMuteAgents, canStop } from '$lib/agentChat'; // 56 C5/C6
 	import { runningRequest, samePeer } from '$lib/agentChatCore';
 	import { safeStorage } from '$lib/safeStorage';
@@ -264,12 +264,12 @@
 			showToast(peerId);
 		}
 	}
-	function peerMenuItems(m: { x: number; y: number; peerId: string; self: boolean }) {
+	function peerMenuRows(m: { x: number; y: number; peerId: string; self: boolean }) {
 		const id = m.peerId;
 		const row = ($userdata as any[]).find((u) => u[0] === id);
 		const away = m.self ? '' : watchBlockedBy($peerScenes, $currentLevel?.name ?? '', id, $sessionHost);
 		const inviteId = inviteMod?.inviteIdOf?.(id) || '';
-		return buildPeerMenuItems(
+		const items = buildPeerMenuItems(
 			{
 				peerId: id,
 				name: nameOf(id),
@@ -318,6 +318,18 @@
 				revokeInvite: inviteId ? () => inviteMod?.revokeInvite?.(inviteId) : undefined
 			}
 		);
+		// fix-live: the plugin's entries (the cloud's "Report…") after core's own, with the name the roster shows
+		const extra = m.self ? [] : ($peerMenuItems as any[]);
+		if (!extra.length) return items;
+		return [
+			...items,
+			{ section: 'More' },
+			...extra.map((item) => ({
+				testid: 'peer-menu-plugin-' + item.id,
+				label: item.label,
+				action: () => item.run(id, { name: String(($userdata as any[]).find((e) => e[0] === id)?.[1] ?? '') })
+			}))
+		];
 	}
 	/** what they changed this session, newest first — a row selects the object */
 	function changesItems(peerId: string) {
@@ -742,6 +754,16 @@
 		// viewport trap below), so the notch's circle sits exactly over the trigger wherever it is.
 		dropdownEl.style.setProperty('--pm-right', `${Math.max(0, Math.round(window.innerWidth - r.right))}px`);
 	}
+	/** fix-batch-1 #23: the trigger's keys — Enter / Space toggle, ↓ opens; opening moves focus in */
+	function triggerKey(e: KeyboardEvent) {
+		if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'ArrowDown') return;
+		e.preventDefault();
+		const opening = e.key === 'ArrowDown' || !openDropdown;
+		openDropdown = opening;
+		if (opening) focusFirstRow = true;
+	}
+	/** set by a keyboard open: the panel's mount focuses its first row */
+	let focusFirstRow = false;
 	/** focus moving OUT of the menu or its trigger (to a real element) closes it */
 	function dropdownFocusOut(e: FocusEvent) {
 		const to = e.relatedTarget as Node | null;
@@ -780,8 +802,21 @@
 			openDropdown = false;
 		};
 		const onKey = (e: KeyboardEvent) => {
-			if (e.key === 'Escape') openDropdown = false;
+			if (e.key !== 'Escape') return;
+			// fix-batch-1 #23: focus inside the panel goes back to the button that opened it
+			const inPanel = !!document.activeElement && node.contains(document.activeElement);
+			openDropdown = false;
+			if (inPanel) triggerEl?.focus();
 		};
+		if (focusFirstRow) {
+			focusFirstRow = false;
+			queueMicrotask(() => {
+				// the first ROW — not the notch's avatar circle, which only closes the panel again
+				const rows = 'a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])';
+				const first = node.querySelector<HTMLElement>(`.pm-card :is(${rows})`) ?? node.querySelector<HTMLElement>(rows);
+				first?.focus();
+			});
+		}
 		const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(placeDropdown) : null;
 		if (triggerEl) ro?.observe(triggerEl);
 		window.addEventListener('resize', placeDropdown);
@@ -1305,7 +1340,10 @@
 	     top-right corner. -->
 	<div id="avatar-menu" class="mr-5 flex w-52 items-center md:order-2">
 		<div class="flex items-center space-x-3">
-			<!-- tabindex 0 + press/focus semantics: what flowbite's Popper gave the trigger -->
+			<!-- tabindex 0 + press semantics. fix-batch-1 #23 (53-int Q5): it opened on FOCUS too (what
+			     flowbite's Popper did), so Tab walked the whole panel — sign-in and every link on a cloud
+			     build. Now the ARIA menu-button pattern: Tab passes it, Enter / Space / ↓ open it and move
+			     focus to its first row, Escape closes it and gives focus back here. -->
 			<div
 				id="avatar-trigger"
 				bind:this={triggerEl}
@@ -1316,7 +1354,7 @@
 				aria-expanded={openDropdown}
 				style="position: absolute; top: 8px; right: 20px; cursor: pointer; z-index: 4; line-height: 0;"
 				onmousedown={() => (openDropdown = !openDropdown)}
-				onfocusin={() => (openDropdown = true)}
+				onkeydown={triggerKey}
 				onfocusout={dropdownFocusOut}
 			>
 				{@render avatarImg(effAvatar || undefined, 'bg-surface-2 h-12 w-12 border-2 border-border-strong')}
@@ -1404,7 +1442,7 @@
 
 {#if peerMenu}
 	<!-- 55 A9: the peer menu (lib/peerMenu.js builds it; the VR panel renders the same list) -->
-	<ContextMenu x={peerMenu.x} y={peerMenu.y} sizeKey="peer" items={peerMenuItems(peerMenu)} onclose={closePeerMenu} />
+	<ContextMenu x={peerMenu.x} y={peerMenu.y} sizeKey="peer" items={peerMenuRows(peerMenu)} onclose={closePeerMenu} />
 {/if}
 {#if changesMenu}
 	<ContextMenu x={changesMenu.x} y={changesMenu.y} sizeKey="peer-changes" items={changesItems(changesMenu.peerId)} onclose={() => (changesMenu = null)} />

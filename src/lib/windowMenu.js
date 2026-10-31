@@ -7,6 +7,7 @@ import { canSideHere } from './bottomDockDrop';
 import { groupOfKey, groupCandidates, keyOfNode, mergeWindows, ungroupTab, closeMember, titleOf, nodeOf } from './windowTabs';
 import { raiseWindowNode } from './windowFocus';
 import { sizeResetOf } from './windowSize';
+import { popOutItems } from './windows/panelPlaces.js';
 
 // 44 M3 — A FLOATING WINDOW'S MENU (the user, preview-1-34: "right click or holding header of window or
 // tab should give an option to dock/undock or put to left or right sidebar, if any other options are good
@@ -116,6 +117,8 @@ export function windowMenuItems(m) {
 			disabled: !grouped,
 			action: () => key && ungroupTab(key)
 		},
+		// 70 W2: into a browser window of its own (desktop only — the rows are absent elsewhere)
+		...(key ? popOutItems(key) : []),
 		{
 			label: 'Group with…',
 			icon: 'group',

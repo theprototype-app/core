@@ -44,7 +44,9 @@ export function touchedUuids(tool, args, result) {
 	for (const r of arr(result?.created)) add(r?.uuid);
 	for (const r of arr(result?.updated)) add(r?.uuid);
 	add(result?.groupUuid);
+	if (tool === 'import_file') add(result?.uuid); // 66 S4b: the placed card
 	for (const u of arr(result?.members)) add(u);
+	if (tool === 'add_image') add(result?.uuid); // a placed card
 	for (const u of arr(args?.updates)) add(u?.uuid);
 	if (tool === 'delete_objects') return out; // deleted things cannot be selected
 	for (const u of arr(args?.uuids)) add(u);
@@ -66,6 +68,7 @@ export function touchedUuids(tool, args, result) {
  */
 export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 	if (READ_ONLY.has(tool)) return null;
+	if (tool === 'import_file' && result?.partial) return null; // 66 S4b: a chunk of an upload is not an action
 	const failed = !result || typeof result !== 'object' || (result.error && !result.created && !result.updated);
 	if (failed) return 'tried ' + tool.replace(/_/g, ' ') + ' — ' + String(result?.error ?? 'it failed').slice(0, 80);
 	switch (tool) {
@@ -118,6 +121,27 @@ export function summarizeToolCall(tool, args, result, nameOf = () => '') {
 			return String(args?.action ?? '') === 'start' ? 'started the simulation' : String(args?.action ?? 'changed') + ' the simulation';
 		case 'generate_mesh':
 			return 'started generating “' + String(args?.prompt ?? '').slice(0, 50) + '”';
+		case 'import_file': {
+			// 66 S4b: one line per import — the file, its spec, and the card when one was placed
+			const file = String(result?.file?.name ?? 'a file');
+			return 'imported ' + file + (result?.spec ? ' + its spec' : '') + (result?.uuid ? ' and placed it in the scene' : ' into the Explorer');
+		}
+		// 85 R6, pivots, images
+		case 'undo_last': {
+			const done = arr(result.undone);
+			if (!done.length) return null; // nothing to undo changed nothing
+			return 'undid ' + (done.length === 1 ? '“' + String(done[0]?.text ?? 'a step').slice(0, 100) + '”' : done.length + ' of its calls');
+		}
+		case 'set_pivot': {
+			const done = arr(result.updated).filter((r) => r && r.ok);
+			const names = nameList(done.map((r) => nameOf(r.uuid)));
+			return 'set the pivot of ' + count(done.length, 'object') + (names ? ' (' + names + ')' : '');
+		}
+		case 'create_pivot':
+			return 'made a pivot' + (result.name ? ' (' + String(result.name).slice(0, 60) + ')' : '') + ' for ' + count(arr(result.members).length, 'object');
+		case 'add_image':
+			if (result.partial) return null;
+			return (result.existed ? 'reused the image ' : 'added the image ') + String(result.name ?? '').slice(0, 80);
 		case 'install_modules':
 			return 'installed ' + count(arr(args?.ids ?? args?.modules).length, 'module');
 		default:

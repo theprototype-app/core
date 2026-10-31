@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-22T17:48:57.949Z",
+	"recordedAt": "2026-10-28T10:56:04.679Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -438,6 +438,7 @@
 				"Layout",
 				"Look speed",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Show in edit",
 				"Show touch controls",
 				"UI scale",
@@ -485,6 +486,7 @@
 		},
 		"Scale": {
 			"rows": [
+				"Both grips scale the world",
 				"Grab style",
 				"Phone selection toolbar",
 				"Pivot point",
@@ -761,6 +763,7 @@
 			"rows": [
 				"Autosave",
 				"Keep automatic checkpoints",
+				"Keep sent pictures in Explorer",
 				"Offer to merge unsaved work on connect",
 				"Save checkpoint…",
 				"Save scene"
@@ -768,7 +771,8 @@
 			"sections": [
 				"Shortcuts",
 				"Scene",
-				"Explorer"
+				"Explorer",
+				"AI"
 			]
 		},
 		"Simulate physics (toggle)": {
@@ -1776,10 +1780,12 @@
 		},
 		"Storage used": {
 			"rows": [
+				"Cache size limit",
 				"Storage used"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"Optimize big models automatically": {
@@ -1920,6 +1926,7 @@
 				"Carry object flow",
 				"Carry shader graph",
 				"Checkpoint storage",
+				"Distant scatter",
 				"Double-click action",
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
@@ -2077,6 +2084,7 @@
 		},
 		"Stance": {
 			"rows": [
+				"Distant scatter",
 				"Length",
 				"Stance"
 			],
@@ -2474,6 +2482,7 @@
 			"rows": [
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
+				"Always show tab strip in windows",
 				"Announce new versions",
 				"Custom theme",
 				"Density",
@@ -2490,6 +2499,7 @@
 				"Phone grab handle",
 				"Phone selection toolbar",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Reset tips",
 				"Reset tours",
 				"Show FPS and draw calls",
@@ -2558,6 +2568,7 @@
 				"Carry shader graph",
 				"Checkpoint storage",
 				"Compress textures (KTX2)",
+				"Distant scatter",
 				"Double-click action",
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
@@ -2903,6 +2914,7 @@
 		"quest": {
 			"rows": [
 				"Compress textures (KTX2)",
+				"Distant scatter",
 				"Import defaults",
 				"Include VR button",
 				"LOD 1 keeps",
@@ -2927,6 +2939,7 @@
 			],
 			"sections": [
 				"Interface",
+				"Scene",
 				"Explorer",
 				"Import",
 				"Export",
@@ -2971,11 +2984,15 @@
 		"network": {
 			"rows": [
 				"Apply changes",
+				"Cached downloads",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server",
 				"Statistics card"
 			],
 			"sections": [
+				"Storage",
 				"VR",
 				"Connection"
 			]
@@ -3043,6 +3060,7 @@
 		"llm": {
 			"rows": [
 				"Enable assistant",
+				"Keep sent pictures in Explorer",
 				"Mesh generation",
 				"Voice typing provider"
 			],
@@ -3052,10 +3070,12 @@
 		},
 		"claude": {
 			"rows": [
-				"Enable assistant"
+				"Enable assistant",
+				"Let AI agents join as guests"
 			],
 			"sections": [
-				"AI"
+				"AI",
+				"Connection"
 			]
 		},
 		"api key": {
@@ -3068,7 +3088,9 @@
 		},
 		"model": {
 			"rows": [
+				"Distant scatter",
 				"Enable assistant",
+				"Keep sent pictures in Explorer",
 				"Mesh generation",
 				"My hand model",
 				"Optimize big models automatically",
@@ -3105,24 +3127,30 @@
 		},
 		"disk": {
 			"rows": [
+				"Storage breakdown",
 				"Storage used"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"quota": {
 			"rows": [
+				"Cache size limit",
+				"Storage breakdown",
 				"Storage used"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"toolbar": {
 			"rows": [
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
+				"Always show tab strip in windows",
 				"Announce new versions",
 				"Custom theme",
 				"Density",
@@ -3140,6 +3168,7 @@
 				"Phone grab handle",
 				"Phone selection toolbar",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Reset tips",
 				"Reset tours",
 				"Show FPS and draw calls",
@@ -3170,6 +3199,7 @@
 			"rows": [
 				"Allow text selection everywhere",
 				"Allow undocking on touch screens",
+				"Always show tab strip in windows",
 				"Announce new versions",
 				"Button hints",
 				"Custom theme",
@@ -3191,6 +3221,7 @@
 				"Phone grab handle",
 				"Phone selection toolbar",
 				"Project actions",
+				"Remember windows per screen setup",
 				"Reset panel positions",
 				"Reset tips",
 				"Reset tours",
@@ -3332,6 +3363,7 @@
 				"Paste at the cursor",
 				"Pinch zoom",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -3409,6 +3441,7 @@
 				"Carry object flow",
 				"Carry shader graph",
 				"Checkpoint storage",
+				"Distant scatter",
 				"Double-click action",
 				"Draw repeated kit pieces together",
 				"Edit mesh wireframe colour",
@@ -3470,6 +3503,8 @@
 		},
 		"files": {
 			"rows": [
+				"Cache size limit",
+				"Cached downloads",
 				"Delete without asking",
 				"Deleted files log",
 				"Download shared files automatically",
@@ -3484,7 +3519,8 @@
 				"Who can unshare a file"
 			],
 			"sections": [
-				"Explorer"
+				"Explorer",
+				"Storage"
 			]
 		},
 		"library": {
@@ -3513,6 +3549,7 @@
 		"headset": {
 			"rows": [
 				"Colocation probe",
+				"Distant scatter",
 				"Draw repeated kit pieces together",
 				"Game HUD",
 				"Include VR button",
@@ -3534,6 +3571,7 @@
 		},
 		"xr": {
 			"rows": [
+				"Both grips scale the world",
 				"Button hints",
 				"Colocation",
 				"Colocation probe",
@@ -3576,6 +3614,7 @@
 		"assistant": {
 			"rows": [
 				"Enable assistant",
+				"Keep sent pictures in Explorer",
 				"Mesh generation",
 				"Voice typing provider"
 			],
@@ -3590,11 +3629,13 @@
 				"Compress textures (KTX2)",
 				"Diagnostics",
 				"Keep a recycle bin",
+				"Let AI agents join as guests",
 				"Peer hands",
 				"Ping colour",
 				"Selection outline colour",
 				"Session size",
 				"Show others as classic heads",
+				"Show where AI agents look",
 				"Signaling server",
 				"Sky image quality",
 				"Statistics card"
@@ -3612,7 +3653,9 @@
 		"server": {
 			"rows": [
 				"Apply changes",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
@@ -3623,7 +3666,9 @@
 		"invite": {
 			"rows": [
 				"Apply changes",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
@@ -3635,8 +3680,10 @@
 				"Apply changes",
 				"Colocation",
 				"Ghost hands",
+				"Let AI agents join as guests",
 				"Session size",
 				"Show others as classic heads",
+				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
@@ -3650,7 +3697,9 @@
 				"Apply changes",
 				"Clear saved session",
 				"Diagnostics",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server",
 				"When you add files during a session",
 				"Who can unshare a file"
@@ -3740,6 +3789,7 @@
 				"Object list: show / bring to front / hide",
 				"Paste at the cursor",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -3862,6 +3912,7 @@
 				"Object list: show / bring to front / hide",
 				"Paste at the cursor",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -3985,6 +4036,7 @@
 				"Object list: show / bring to front / hide",
 				"Paste at the cursor",
 				"Play / Enter VR·AR (right-click the play button for modes)",
+				"Play here — start from the editor camera",
 				"Previous element mode",
 				"Push to talk while the mic toggle is off",
 				"Race: back on the road",
@@ -4254,6 +4306,7 @@
 		"zoom": {
 			"rows": [
 				"Allow browser pinch zoom",
+				"Both grips scale the world",
 				"High contrast",
 				"Motion",
 				"Node editor opens",
@@ -4266,12 +4319,14 @@
 			"sections": [
 				"Accessibility",
 				"Controls",
-				"Input"
+				"Input",
+				"VR"
 			]
 		},
 		"pan": {
 			"rows": [
 				"Allow text selection everywhere",
+				"Always show tab strip in windows",
 				"Animation: show / bring to front / hide",
 				"Collapse / expand the selected nodes",
 				"Dock resizes the viewport",
@@ -4362,6 +4417,7 @@
 		},
 		"vr": {
 			"rows": [
+				"Both grips scale the world",
 				"Button hints",
 				"Colocation",
 				"Colocation probe",
@@ -4419,6 +4475,8 @@
 		},
 		"ai": {
 			"rows": [
+				"Both grips scale the world",
+				"Cached downloads",
 				"Colocation probe",
 				"Compress textures (KTX2)",
 				"Download shared files automatically",
@@ -4429,10 +4487,12 @@
 				"Height",
 				"Hold to move vertex",
 				"Import defaults",
+				"Keep sent pictures in Explorer",
 				"LOD 1 keeps",
 				"LOD 2 keeps",
 				"LOD 3 keeps",
 				"LOD levels",
+				"Let AI agents join as guests",
 				"Lift the corner buttons above docked panels",
 				"Loop select (faces: again = perpendicular; edges: the chain)",
 				"Max texture size",
@@ -4443,7 +4503,9 @@
 				"Project actions",
 				"Reset tips",
 				"Reverse trackpad pan",
+				"Show where AI agents look",
 				"Stance",
+				"Storage breakdown",
 				"Storage used",
 				"Teleport",
 				"Texture threshold",
@@ -4457,10 +4519,12 @@
 				"Shortcuts",
 				"Scene",
 				"Explorer",
+				"Storage",
 				"Import",
 				"Export",
 				"VR",
-				"AI"
+				"AI",
+				"Connection"
 			]
 		},
 		"zz-no-match": {
@@ -4478,6 +4542,7 @@
 				"Object",
 				"Particles",
 				"Physics",
+				"Scatter",
 				"Shadow",
 				"Texture",
 				"Transform",
@@ -4489,6 +4554,7 @@
 			"object": [
 				"LOD",
 				"Object",
+				"Scatter",
 				"Transform",
 				"Water"
 			],
@@ -4498,6 +4564,9 @@
 			"water": [
 				"Physics",
 				"Water"
+			],
+			"scatter": [
+				"Scatter"
 			],
 			"geometry": [
 				"Geometry"
@@ -4543,6 +4612,7 @@
 			"scale": [
 				"Emission",
 				"Material",
+				"Scatter",
 				"Shadow",
 				"Texture",
 				"Transform"

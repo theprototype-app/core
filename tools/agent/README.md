@@ -87,6 +87,13 @@ second window onto the same conversation: what you type there shows in the app "
   A host or admin can mute the agent (nothing is delivered) or remove it from **Users**.
 - **`import_model`** (when the app offers it): pass `path` for a local `.glb` (≤ 25 MB, a
   self-contained binary glTF); the bridge reads it and sends the bytes.
+- **`import_file`** (when the app offers it): pass `path` for a local PNG / WebP (≤ 16 MB), JSON
+  (≤ 2 MB) or `.tpanim` clip, and optionally `spec_path` for the generator's input (a Pixling spec).
+  The bridge reads both, checks the type from the bytes and the size before sending anything, and
+  splits a big file into `chunk` calls itself. The file lands in Explorer ▸ Generated for everyone
+  (`knight_walk.png` + `knight_walk.pixling.json`); an image is also placed as a card in the scene
+  (`filter: "nearest"` for pixel art, `frame` for one frame of a sheet, `facing` to face the viewer).
+  Viewers' agents are refused. Works the same in `repl`.
 
 With `repl` the bridge owns the model loop, so app messages go straight in as user turns — no
 terminal needed after launch; replies stream (SSE) and terminal lines show "via terminal".
@@ -136,7 +143,7 @@ signaling server and fetches TURN from the deployment's `/api/tp/turn` when it c
 |---|---|
 | `--engine browser\|wire` | browser (default): the real app in headless Chromium; wire: the light Node peer |
 | `--name <display>` | your name in the session (MCP default: from the client) |
-| `--compat` | browser engine against an app older than 1.45 (no `window.tpAgent`): drives the app's debug hooks instead |
+| `--compat` | browser engine against an app older than 1.48 (no `window.tpAgent`): drives the app's debug hooks instead |
 | `--headed` | show the browser window |
 | `--insecure` | accept any TLS certificate (automatic for `localhost` / a dev server port) |
 | `--no-install` | never download a browser; `TP_AGENT_BROWSER=/path/to/chrome` picks one |
@@ -163,7 +170,7 @@ deployment (`https://preview-1-45.theprototype.pages.dev/#F0FD3`), a local dev s
   tools, list refresh, the not-yet-in-the-session gate, graceful shutdown.
 - `wireEngine.js` + `peerBridge.js` + `turn.js` + `messages.js` + `registry.js` + `tools.js` —
   the wire engine: the approval dance, the minimal handshake, TURN, the goodbye.
-- `chat.js` — the chat tools, the image temp files, `import_model`'s local path.
+- `chat.js` — the chat tools, the image temp files, `import_model`'s / `import_file`'s local paths (chunking).
 - `repl.js` + `llmClient.js` — the REPL driver (terminal + app messages, one transcript, SSE).
 
 ## Tests

@@ -26,6 +26,7 @@
 	// 36 (G1): Main graph label + code <-> node (double-click / Open code)
 	import { MAIN_GRAPH_LABEL, nodeHasCode, openCodeRequestFor } from '$lib/graphContract.js';
 	import { openCode as openCodeRequest } from '$lib/codeOpen';
+	import { pathCaptureNode, endPathCapture } from '$lib/pathCapture'; // fix-batch-2
 	import PeerCursors from './PeerCursors.svelte';
 	import ContextMenu from '../ContextMenu.svelte';
 	import ColorPickerNode from './nodes/ColorPickerNode.svelte';
@@ -66,6 +67,7 @@
 	import KeyPressNode from './nodes/KeyPressNode.svelte';
 	import GamepadNode from './nodes/GamepadNode.svelte';
 	import PlayAnimNode from './nodes/PlayAnimNode.svelte';
+	import BlendSpeedNode from './nodes/BlendSpeedNode.svelte'; // 57 M3
 	import TimelineSeqNode from './nodes/TimelineSeqNode.svelte';
 	import AnimStateNode from './nodes/AnimStateNode.svelte';
 	import OnHitNode from './nodes/OnHitNode.svelte';
@@ -262,11 +264,16 @@
 		gamepadbutton: GamepadNode,
 		gamepadaxis: GamepadNode,
 		playanim: PlayAnimNode, // 17-E A5
+		blendspeed: BlendSpeedNode, // 57 M3
+		setanimparam: AnimationNode, // 57 M11 (spec-driven: named inputs + text/select/range)
+		onanimstate: AnimationNode, // 57 M11 (the onrest precedent: a trigger with params)
+		attachsocket: AnimationNode, // 57 M12
 		animfinished: OnClickNode, // 17-E: a pulse when a clip ends
 		animmarker: OnClickNode, // 17-E F5: a pulse at a named point in a clip
 		animstate: AnimStateNode, // 17-E F3: the readable half of it
 		playseq: TimelineSeqNode, // 48 S2: Play Sequence
 		onseqevent: TimelineSeqNode, // 48 S2: On Sequence Event
+		setexpression: AnimationNode, // 57 M4: spec-driven (expression text + weight)
 		// A3: ONE generic card for the whole HUD group (the ShaderNode precedent)
 		hudscreen: HudNode,
 		hudtext: HudNode,
@@ -2078,7 +2085,13 @@
 			onnodecontextmenu={onNodeContextMenu}
 			onselectioncontextmenu={onSelectionContextMenu}
 			onedgecontextmenu={onEdgeContextMenu}
-			onpaneclick={() => (menu = null)}
+			onpaneclick={() => {
+				menu = null;
+				endPathCapture(); // fix-batch-2: a click back in the editor ends waypoint placing
+			}}
+			onnodeclick={({ node }) => {
+				if ($pathCaptureNode && node.id !== $pathCaptureNode) endPathCapture();
+			}}
 		>
 			{#if bgPattern !== 'none'}
 				<!-- 180: {#key} forces a remount so a dots<->lines switch applies at

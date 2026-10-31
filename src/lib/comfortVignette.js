@@ -21,6 +21,9 @@ import { vrComfortVignette, vignetteLevel } from './vr/prefs.js';
 
 let stick = 0;
 let turn = 0;
+/** 52 (V5): the two-grip world gesture's rate (log-scale + yaw, per second) and when it was heard */
+let gesture = 0;
+let gestureAt = -Infinity;
 let strength = 0;
 /** @type {THREE.Mesh | null} */
 let mesh = null;
@@ -35,15 +38,27 @@ export function noteArtificialMotion(stickMag, turnRad) {
 }
 
 /**
+ * 52 (V5): the two-grip world grab, every frame it runs — how fast the world scales and turns around you
+ * (|d ln scale| + |d yaw|, per second). Scaling the world is vection like walking: the ring closes in.
+ * @param {number} rate
+ */
+export function noteWorldGesture(rate) {
+	gesture = Math.max(0, Number(rate) || 0);
+	gestureAt = performance.now();
+}
+
+/**
  * The strength the ring should head toward, 0..1. Pure; exported for the suites. A stick
  * inside its deadzone and no turn = 0.
  * @param {number} stickMag @param {number} turnRad radians applied this frame @param {number} dt seconds
+ * @param {number} [worldRate] 52 (V5): the world gesture's rate (noteWorldGesture); ~1/s = full ring
  */
-export function vignetteTarget(stickMag, turnRad, dt) {
+export function vignetteTarget(stickMag, turnRad, dt, worldRate = 0) {
 	const move = stickMag > 0.2 ? Math.min(1, (stickMag - 0.2) / 0.6) : 0;
 	const rate = dt > 0 ? turnRad / dt : 0; // radians per second
 	const spin = Math.min(1, rate / 1.2);
-	return Math.max(move, spin);
+	const world = worldRate > 0.08 ? Math.min(1, (worldRate - 0.08) / 0.9) : 0; // a trembling hand rings nothing
+	return Math.max(move, spin, world);
 }
 
 /** Ease `current` toward `target`: fast in, slower out. Pure. @param {number} current @param {number} target @param {number} dt */
@@ -87,7 +102,9 @@ export function vignetteFrame(head, dt = 1 / 72) {
 	level = vignetteLevelNow();
 	const cap = LEVEL_CAP[level] ?? 0;
 	const on = !!head && cap > 0;
-	const target = on ? vignetteTarget(stick, turn, dt) * cap : 0;
+	// the gesture rate counts only while it is fresh (the world grab stopped = no more notes)
+	const worldRate = performance.now() - gestureAt < 120 ? gesture : 0;
+	const target = on ? vignetteTarget(stick, turn, dt, worldRate) * cap : 0;
 	strength = on ? easeVignette(strength, target, dt) : 0;
 	if (!on && !mesh) return 0;
 	if (!mesh) mesh = build();
@@ -127,5 +144,5 @@ function vignetteLevelNow() {
 
 /** the suites' view */
 export function vignetteDebug() {
-	return { strength, visible: !!mesh?.visible, stick, turn, level };
+	return { strength, visible: !!mesh?.visible, stick, turn, level, world: performance.now() - gestureAt < 120 ? gesture : 0 };
 }

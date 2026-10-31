@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onLayoutRestore, storedPanelLayout } from '$lib/uiLayoutsCore';
 	import { showChoice, showConfirm } from '$lib/confirmDialog.js';
+	import { safeHtml } from '$lib/sandbox/sanitize.js';
 	import Icon from '../ui/Icon.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
 	// Explorer (95, tree v2 in 106): dockable asset browser — real file-manager
@@ -377,6 +378,8 @@
 	const WIN_DEFAULT = { w: 720, h: 440 };
 
 	let inlineStats: any = $state(null); // N4: poly stats for the Properties inline preview
+	// 70 W2: `popped` = this instance lives in a pop-out window ($lib/windows/panelHost mounts it there)
+	let { popped = false } = $props();
 	let docked = $state(true);
 	let winW = $state(720);
 	let winH = $state(440);
@@ -428,8 +431,11 @@
 
 	// 37 R14: a named workspace layout was applied — re-read the mode + floating size
 	// this panel read ONCE above (it stays mounted while closed, so nothing else would)
+	// 70 W2: a popped-out instance renders its floating layout inside its window, never docked
+	// svelte-ignore state_referenced_locally
+	if (popped) docked = false;
 	$effect(() =>
-		onLayoutRestore(() => {
+		popped ? undefined : onLayoutRestore(() => {
 			const stored = storedPanelLayout(safeStorage.getItem, 'explorer', 720, 440);
 			docked = !!(stored.docked || (window.matchMedia?.('(pointer: coarse)').matches && !get(mobileUndockAllowed)));
 			const fit = clampWinSize(stored.w, stored.h, WIN_MIN);
@@ -455,6 +461,7 @@
 	// own context menu can undock any tab; the Explorer-only `explorerDockArm` it used
 	// to own is gone, and the Controls menu asks through this one.
 	$effect(() => {
+		if (popped) return; // 70 W2: the main window's instance answers the arm
 		const arm = $dockModeArm;
 		if (!arm || arm.key !== 'explorer') return;
 		dockModeArm.set(null);
@@ -468,6 +475,7 @@
 	// feeds --bottom-inset) so the strip lists it, and render only while it is the
 	// visible tab. Being covered by another tab closes nothing — this stays open.
 	$effect(() => {
+		if (popped) return; // 70 W2: a popped panel is no dock tab
 		setDockOccupant('explorer', !$explorerClose && docked, $dockHeight);
 		return () => setDockOccupant('explorer', false);
 	});
@@ -1075,6 +1083,7 @@
 		prefab: 'boxes',
 		'prefab-folder': 'folder', // 37 R4: a folder inside the Prefabs view
 		scene: 'map', // 21-F4: a level (.tpscene)
+		anim: 'person-standing', // 57 M1: an animation clip (.tpanim)
 		tpchat: 'message-square' // 56 C10: a chat of the scene (Scene ▸ chats)
 	};
 	// semantic icon colors (ui.css classes over the --icon-* theme tokens)
@@ -1087,11 +1096,12 @@
 		text: 'Text and config',
 		object: '3D models',
 		prefab: 'Prefabs',
-		scene: 'Scenes'
+		scene: 'Scenes',
+		anim: 'Animation clips'
 	};
 	/** R22-R7: the filter's fixed order. Every kind the Explorer can hold, so the menu is
 	 * a statement about the app rather than about this library's current contents. */
-	const FILTER_KINDS = ['image', 'object', 'audio', 'video', 'text', 'scene', 'prefab'];
+	const FILTER_KINDS = ['image', 'object', 'anim', 'audio', 'video', 'text', 'scene', 'prefab'];
 	const KIND_COLORS: Record<string, string> = {
 		image: 'ico-image',
 		audio: 'ico-audio',
@@ -1101,6 +1111,7 @@
 		prefab: 'ico-prefab',
 		'prefab-folder': 'ico-folder',
 		scene: 'ico-prefab', // 21-F4: levels share the prefab tint
+		anim: 'ico-object', // 57 M1: a clip belongs with the models it moves
 		tpchat: 'ico-doc' // 56 C10
 	};
 
@@ -6628,6 +6639,24 @@
 					url: URL.createObjectURL(blob),
 					onClose: () => gridEl?.focus()
 				});
+		} else if (item.kind === 'anim') {
+			// 57 M1: a clip PLAYS on the selected character (the drop's assign, without the drag)
+			const pick = selectedSet()[0];
+			if (!pick) {
+				showToast('Select a character, then double-click the clip — or drag it onto one');
+				return;
+			}
+			const { assignClipAsset } = await import('$lib/tpanim/clipAssets.js');
+			const { objectsGroup } = await import('../../stores/sceneStore.js');
+			const { hasAnimatedImport } = await import('$lib/animatedImports');
+			const group: any = get(objectsGroup);
+			let root = group?.getObjectByProperty('uuid', pick);
+			// the rig the selection belongs to; else (a parts model) its top-level object
+			let rig = root;
+			while (rig && !hasAnimatedImport(rig.uuid)) rig = rig.parent;
+			while (!rig && root && root.parent && root.parent !== group) root = root.parent;
+			const target = rig ?? root;
+			if (target) assignClipAsset(target.uuid, { hash: item.hash, name: item.name }, { play: true });
 		} else if (item.kind === 'object' && !item.packEntry) {
 			// R22 round 12 (user): "double click on 3d objects should open same preview as
 			// when opening image". ONE window for every kind, so the arrows walk from a
@@ -7474,7 +7503,7 @@
 						onclick={() => openFolder('scene')} ondblclick={toggleScene}><Icon name="globe" size={16} class="mr-1.5 text-text-muted" aria-hidden="true" />Scene {sceneExpanded ? '▾' : '▸'}</button
 					>
 					{#if sceneExpanded}
-					{#each ['audio', 'config', 'textures', 'chats', 'references'] as sub}
+					{#each ['audio', 'config', 'textures', 'chats', 'references', 'generated'] as sub}
 						<button
 							class="whitespace-nowrap rounded px-2 py-1 text-left {$activeFolder === 'scene:' + sub
 								? 'ex-tree-on'
@@ -8629,7 +8658,7 @@
 				<Icon name="loader-circle" size={16} class="animate-spin" aria-hidden="true" /> Loading attribution…
 			</div>
 		{:else}
-			<div class="prose prose-invert prose-sm max-w-none">{@html packAttribHtml}</div>
+			<div class="prose prose-invert prose-sm max-w-none" use:safeHtml={packAttribHtml}></div>
 		{/if}
 		<div class="mt-3 flex justify-end">
 			<button class="ui-button-quiet" onclick={() => (packAttribModal = false)}>Close</button>

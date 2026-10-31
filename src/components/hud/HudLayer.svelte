@@ -74,7 +74,7 @@
 	// 50 R1: an AR TABLE playing is the one XR session whose screen can show DOM — the WebXR
 	// dom-overlay. The game's screens draw there (moved into the overlay's #ar-hud-slot by
 	// `arPortal`) instead of on the headset's VR board, and they count as played, not authored.
-	const arPlaying = $derived($arTable.phase === 'placed' && $arTable.playing);
+	const arPlaying = $derived(($arTable.phase === 'placed' || $arTable.phase === 'room') && $arTable.playing); // VH2: a room plays too
 	const shown = $derived(playing || arPlaying);
 
 	// 30 P1: THE EDITOR STOPS MASQUERADING AS THE GAME. Outside Play a GAME's screens (the

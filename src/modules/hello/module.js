@@ -24,7 +24,7 @@ export default {
 			]
 		});
 
-		api.registerEffect('wave', (object, base, data, time) => {
+		api.registerEffect('wave', /** @param {import('three').Object3D} object @param {{pos: number[], rot: number[], scale: number[]}} base @param {Record<string, any>} data @param {number} time */ (object, base, data, time) => {
 			const amplitude = data.amplitude ?? 0.4;
 			const speed = data.speed ?? 2;
 			object.rotation.z = base.rot[2] + Math.sin(time * speed) * amplitude;

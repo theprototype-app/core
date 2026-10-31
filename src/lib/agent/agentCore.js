@@ -15,7 +15,7 @@
 import { TP_AGENT_VERSION } from './contract.js';
 
 /** Tools that change nothing in the shared scene, so a viewer may run them. */
-export const READ_ONLY_TOOLS = new Set(['list_scene']);
+export const READ_ONLY_TOOLS = new Set(['list_scene', 'describe_node_types', 'what_can_you_do']);
 
 /** Longest waitForEdit (ms). */
 export const MAX_WAIT_MS = 10 * 60 * 1000;
@@ -25,6 +25,9 @@ export const DEFAULT_WAIT_MS = 30 * 1000;
 export const OFFER_TTL_MS = 10 * 60 * 1000;
 /** Plain notices kept for status(). */
 export const NOTICE_COUNT = 10;
+/** 55 (agent-mcp): a host tool called while the scene is still arriving waits for it this long, at most — an
+ * agent that acts right after joining (a joint on the host's object) otherwise runs on an empty scene */
+export const LOAD_WAIT_MS = 15 * 1000;
 
 /** The words an agent reads when its edit is refused. @param {string|null} peerId */
 export function viewerRefusal(peerId) {
@@ -33,6 +36,43 @@ export function viewerRefusal(peerId) {
 		'Ask the host to give ' +
 		(peerId ? peerId.toUpperCase() : 'this peer') +
 		' edit access (Users ▸ role), or join with an invite link that grants edit.'
+	);
+}
+
+/**
+ * 1.2 (41's round 5): the words an agent reads while it is not in the session (status().joined false).
+ * @param {string|null} host @param {boolean} waiting
+ */
+export function notJoinedRefusal(host, waiting) {
+	if (waiting) return 'This agent is still waiting for the host to let it in — wait for status().joined, then try again.';
+	if (!host) return 'This agent is not in a session yet — join with an invite link first (status().joined is false).';
+	return 'This agent is not connected to the host right now (status().joined is false), so an edit would not reach the session. It reconnects on its own — wait for status().joined.';
+}
+
+/**
+ * 1.2 (41): the words an agent reads while its host is gone and no person is here.
+ * @param {{host: string, until: number, expired: boolean}} away
+ */
+export function hostAwayRefusal(away) {
+	const who = away.host ? away.host.slice(0, 6).toUpperCase() : 'The host';
+	return (
+		who + ' (the host) left and nobody else is in the session, so this agent is paused: an edit would reach nobody. ' +
+		(away.expired
+			? 'It waited and they did not come back — leave(), or join again with a new invite.'
+			: 'It waits for them until ' + new Date(away.until).toISOString().slice(11, 16) + ' UTC and rejoins when they let it back in; check status().hostAway.')
+	);
+}
+
+/**
+ * 55 owner finding 1: the words an agent reads when the HOST is in another scene. Its edits would land
+ * in a room the host left — the two demos nobody saw — so they are refused until it is with them again.
+ * @param {string} hostScene @param {boolean} following
+ */
+export function leftBehindRefusal(hostScene, following) {
+	const where = hostScene ? '"' + hostScene + '"' : 'another scene';
+	return (
+		'The host is now in ' + where + ', and this agent is still in the scene they left, so an edit here would not reach them. ' +
+		(following ? 'Following them there now — check status().withHost and try again in a few seconds.' : 'Wait for status().withHost (the host can bring you along with Go to), or ask them which scene to build in.')
 	);
 }
 
@@ -56,8 +96,17 @@ export function toolName(tool) {
  * @property {(label: string) => void} endBatch
  * @property {() => string|null} peerId
  * @property {() => string|null} role 'admin'|'editor'|'viewer' or null (no roles in this build)
+ * @property {() => boolean} [rolesSettled] false while a roles plugin still waits for the host's map (absent = settled)
  * @property {() => string|null} host
+ * @property {() => {name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the scene's failing behaviours
+ * @property {() => {arrived: number, total: number} | null} [loading] 1.2: a scene still arriving (null = none)
+ * @property {() => {host: string, since: number, until: number, expired: boolean} | null} [hostAway] 1.2: the host left
+ *   and no person is here: paused (null = a host is here)
+ * @property {() => {scene: string, hostScene: string, withHost: boolean, following: boolean} | null} [room] 55 owner
+ *   finding 1: our scene, the host's, and whether we stand in the same room (absent/null = not known: allowed)
  * @property {() => boolean} waiting
+ * @property {() => boolean} [inSession] 86 B3: replaces the agent-page "admitted by a host" rule — a PERSON's tab
+ *   (the Claude connector) is in its session already, as host, alone, or joined
  * @property {() => {id: string, name: string}[]} openPeers
  * @property {() => boolean} inVR
  * @property {() => {name: string, reason: string}[]} missingTools
@@ -173,6 +222,23 @@ export function createAgentCore(deps) {
 		return deps.role() !== 'viewer';
 	}
 
+	/** admitted, the host's link open, roles settled — status().joined, and the gate on every edit */
+	function isJoined() {
+		if (deps.inSession) return deps.inSession() && deps.rolesSettled?.() !== false;
+		const host = deps.host();
+		return !!host && deps.openPeers().some((p) => p.id === host) && !deps.waiting() && deps.rolesSettled?.() !== false;
+	}
+
+	/** resolves once no scene is arriving (or after LOAD_WAIT_MS) */
+	function sceneArrived() {
+		if (!loadingState().loading) return Promise.resolve();
+		const t0 = Date.now();
+		return new Promise((resolve) => {
+			const poll = () => (!loadingState().loading || Date.now() - t0 > LOAD_WAIT_MS ? resolve(undefined) : setTimer(poll, 200));
+			setTimer(poll, 200);
+		});
+	}
+
 	/** @param {string} name @param {any} args */
 	async function run(name, args) {
 		const real = resolved(name, args);
@@ -186,20 +252,33 @@ export function createAgentCore(deps) {
 			}
 		}
 		if (!READ_ONLY_TOOLS.has(real) && !canEdit()) return { error: viewerRefusal(deps.peerId()), refused: true, role: 'viewer' };
+		const away = deps.hostAway?.() ?? null;
+		if (!READ_ONLY_TOOLS.has(real) && away) return { error: hostAwayRefusal(away), refused: true, hostAway: away };
+		// 55 (41's round 5): status().joined and what an edit does must agree — an edit while not joined
+		// either reaches nobody or reaches a session that thinks the agent is gone
+		if (!READ_ONLY_TOOLS.has(real) && !isJoined())
+			return { error: notJoinedRefusal(deps.host(), deps.waiting()), refused: true, joined: false };
+		await sceneArrived();
+		const room = deps.room?.() ?? null;
+		if (!READ_ONLY_TOOLS.has(real) && room && !room.withHost)
+			return { error: leftBehindRefusal(room.hostScene, room.following), refused: true, withHost: false };
 		const readOnly = READ_ONLY_TOOLS.has(real);
-		if (!readOnly) {
-			selfEditing++;
-			deps.beginBatch();
-		}
+		// 85 R6: undo_last takes steps back and makes none, and an open batch would keep the line of the
+		// call just before it from settling (agentLogRecorder waits for "no batch open")
+		const batched = !readOnly && real !== 'undo_last';
+		if (!readOnly) selfEditing++;
+		if (batched) deps.beginBatch();
 		try {
 			return await deps.runTool(String(name ?? ''), args ?? {});
 		} catch (e) {
 			return { error: e instanceof Error ? e.message : String(e) };
 		} finally {
 			if (!readOnly) {
-				try {
-					deps.endBatch('Agent: ' + real);
-				} catch {}
+				if (batched) {
+					try {
+						deps.endBatch('Agent: ' + real);
+					} catch {}
+				}
 				// the scene-change signal can land a beat after the call (a store poke, a debounced
 				// subscriber); hold the self-edit window open one more turn of the loop
 				setTimer(() => selfEditing--, 0);
@@ -213,18 +292,49 @@ export function createAgentCore(deps) {
 		return list;
 	}
 
+	/** 1.2: the host-away state, or null @returns {any} */
+	function hostAwayNow() {
+		try {
+			return deps.hostAway?.() ?? null;
+		} catch {
+			return null;
+		}
+	}
+
+	/** 1.2: `{loading, objects}` — loading is always present, objects only while it is true */
+	function loadingState() {
+		let now = null;
+		try {
+			now = deps.loading?.() ?? null;
+		} catch {}
+		return now ? { loading: true, objects: { arrived: now.arrived, total: now.total } } : { loading: false };
+	}
+
+	/** 1.2: `{behaviourErrors}` when a behaviour is failing, else nothing */
+	function behaviourErrors() {
+		try {
+			const rows = deps.behaviourErrors?.() ?? [];
+			return rows.length ? { behaviourErrors: rows.slice(0, 10) } : {};
+		} catch {
+			return {};
+		}
+	}
+
 	/** @returns {import('./contract.js').TpAgentStatus & {notices: string[]}} */
 	function status() {
 		const host = deps.host();
 		const peers = deps.openPeers();
 		const waiting = deps.waiting();
 		const role = /** @type {any} */ (deps.role());
+		const room = deps.room?.() ?? null;
 		return {
 			version: TP_AGENT_VERSION,
 			appVersion: deps.appVersion ?? '',
 			peerId: deps.peerId(),
 			host,
-			joined: !!host && peers.some((p) => p.id === host) && !waiting,
+			// in = admitted, the link open, and (with a roles plugin) the host's roles map arrived — until then a
+			// joiner's role is only the default, and an Edit invite would read as view-only
+			joined: isJoined(),
 			waiting,
 			role,
 			canEdit: role !== 'viewer',
@@ -233,6 +343,14 @@ export function createAgentCore(deps) {
 			missingModules: deps.missingModules(),
 			pendingOffers: offers.list().length,
 			inVR: deps.inVR(),
+			// 55 owner finding 1: where we are and where the host is — an agent left behind says so
+			...(room ? { scene: room.scene, hostScene: room.hostScene, withHost: room.withHost, following: room.following } : {}),
+			// 1.2 (41): right after a join the snapshot is still arriving — say so until it has landed
+			...loadingState(),
+			// 1.2 (41): the host left and nobody is here — paused, and until when it waits for them
+			...(hostAwayNow() ? { hostAway: hostAwayNow(), withHost: false } : {}),
+			// 55 (41's gem test): a behaviour that throws says so here, not only in the runtime's instance list
+			...behaviourErrors(),
 			notices: notices.slice()
 		};
 	}

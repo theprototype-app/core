@@ -77,7 +77,8 @@ async function waitJoined(client, ms = 90000) {
 	let st = null;
 	while (Date.now() - t0 < ms) {
 		st = json(await call(client, 'status'));
-		if (st.joined) return st;
+		// 55: joined AND the host's scene landed (status says loading until the host's snapshot is here)
+		if (st.joined && !st.loading) return st;
 		await new Promise((r) => setTimeout(r, 1000));
 	}
 	return st;
@@ -145,6 +146,27 @@ h.run(async () => {
 			() => read(A.page, 'flowGraphs'),
 			(g) => g && g[uuid] && (g[uuid].nodes || []).some((n) => n.type === 'spin'),
 			'the spin node is in the box\'s flow graph on the HOST',
+			20000
+		);
+		// 55 owner findings 2+3: a kit node by its exact type; a mixed call says it was partial
+		const kit = json(await call(B.client, 'create_flow_nodes', { graph: 'scene', nodes: [{ type: 'kit-rules-setJump' }] }));
+		h.check(!kit.error && kit.created?.[0]?.type === 'kit-rules-setJump', 'a kit-* node is created by its exact type: ' + JSON.stringify(kit).slice(0, 120));
+		// in the SCENE graph: in the box's own graph the bounce would move the box (an unwired behaviour node drives
+		// its graph's object) and the move check below would read a bounce phase
+		const mixed = await call(B.client, 'create_flow_nodes', { graph: 'scene', nodes: [{ type: 'bounce' }, { type: 'no-such-node' }] });
+		const mixedBody = json(mixed);
+		h.check(
+			mixed.isError !== true && mixedBody.partial === true && /1 of 2 nodes/.test(mixedBody.warning || '') && mixedBody.created?.length === 1,
+			'a half-valid create_flow_nodes says partial at the top level: ' + JSON.stringify(mixedBody).slice(0, 160)
+		);
+		// 55 owner finding 6: a hinge at an explicit world anchor, the pair not colliding
+		const jointed = json(await call(B.client, 'create_joints', { joints: [{ kind: 'revolute', a: preUuid, b: uuid, axis: 'z', anchor: [0, 1.5, 0], contacts: false }] }));
+		h.check(!jointed.error && jointed.joints?.[0]?.contacts === false, 'create_joints takes anchor + contacts:false: ' + JSON.stringify(jointed).slice(0, 120));
+		await h.eventually(
+			() => A.page.evaluate(() => new Promise((r) => window.__stores.joints.sceneJoints.subscribe((j) => r(JSON.parse(JSON.stringify(j))))())),
+			// HostBall (a) stands at [2, 0.5, 0], so the world anchor [0, 1.5, 0] is [-2, 1, 0] in its frame
+			(j) => (j || []).some((d) => d.b === uuid && d.contacts === false && Math.abs(d.anchorA[0] + 2) < 0.01 && Math.abs(d.anchorA[1] - 1) < 0.01),
+			'the host\'s joint sits at the world anchor (a\'s frame: [-2, 1, 0]) with contacts off',
 			20000
 		);
 		const moved = json(await call(B.client, 'update_objects', { updates: [{ uuid, position: [0, 2, 0] }] }));

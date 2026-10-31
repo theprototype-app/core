@@ -12,7 +12,7 @@
 //   leave()? (optional: a graceful goodbye before the page closes)
 // Every call is feature-detected, so a newer or older page degrades to a clear message.
 //
-// `compat` runs against an app WITHOUT tpAgent (1.40-1.44): it turns the debug hook on and
+// `compat` runs against an app WITHOUT tpAgent (1.40-1.47): it turns the debug hook on and
 // builds the same object over `__stores.aiTools` — the test-flight recipe — so the bridge can
 // be tested before 55-page lands and still reaches an older self-hosted build.
 import { EventEmitter } from 'node:events';
@@ -22,7 +22,7 @@ import { parseLink, pageUrl, redactLink, isLocalOrigin } from './link.js';
 
 const BOOT_TIMEOUT = 90000;
 
-/** Runs IN THE PAGE (addInitScript): `window.tpAgent` over the debug hook, for apps < 1.45. */
+/** Runs IN THE PAGE (addInitScript): `window.tpAgent` over the debug hook, for apps < 1.48. */
 function compatShim() {
 	const w = /** @type {any} */ (window);
 	const read = (/** @type {any} */ s) => {
@@ -98,6 +98,21 @@ function agentStorage(/** @type {{name: string, compat: boolean}} */ o) {
 		set('usernameCustom', '1');
 	}
 	if (o.compat) set('debugStores', 'true');
+}
+
+/** The `window.tpAgent` contract major this bridge speaks (plans review #34: a breaking change to the
+ * contract bumps its major; the package version follows the app release it shipped with). */
+export const CONTRACT_MAJOR = 1;
+
+/** A line for the user when the page's contract major is not ours, else ''. An older bridge keeps
+ * working against a newer MINOR (it feature-detects methods); a different MAJOR may not.
+ * @param {string | null | undefined} version the page's `tpAgent.version` */
+export function contractNote(version) {
+	const major = Number(String(version ?? '').split('.')[0]);
+	if (!Number.isFinite(major) || major === CONTRACT_MAJOR || !String(version ?? '').trim()) return '';
+	return major > CONTRACT_MAJOR
+		? `this app speaks agent contract ${version}; this bridge speaks ${CONTRACT_MAJOR}.x — update it: npx -y @theprototype/agent@latest`
+		: `this app speaks agent contract ${version}, older than this bridge's ${CONTRACT_MAJOR}.x — some tools may fail; the matching bridge ships with that app release`;
 }
 
 /** Is a peer list / status saying we are in the host's session? @param {any} st @param {string} hostId */
@@ -196,6 +211,8 @@ export class BrowserEngine extends EventEmitter {
 		this.state = 'idle';
 		this.error = null;
 		this.apiVersion = null;
+		/** set when the page's contract major is not ours (contractNote) */
+		this.contractNote = '';
 		/** @type {any} */
 		this.browser = null;
 		/** @type {any} */
@@ -245,10 +262,12 @@ export class BrowserEngine extends EventEmitter {
 				throw new Error(
 					this.compat
 						? 'the app never exposed its AI tools (is this a theprototype.app session link?)'
-						: 'this app build has no agent API (window.tpAgent needs theprototype 1.45+); for an older build retry with --compat'
+						: 'this app build has no agent API (window.tpAgent needs theprototype 1.48+); for an older build retry with --compat'
 				);
 			}
 			this.apiVersion = await this.page.evaluate(() => String(/** @type {any} */ (window).tpAgent.version ?? ''));
+			this.contractNote = contractNote(this.apiVersion);
+			if (this.contractNote) this.log(this.contractNote);
 			this.state = 'ready';
 			this.log('agent API ' + this.apiVersion + ' ready');
 			this.emit('ready');
@@ -398,6 +417,7 @@ export class BrowserEngine extends EventEmitter {
 			host: this.hostId,
 			state: this.state,
 			apiVersion: this.apiVersion,
+			contractNote: this.contractNote || undefined,
 			compat: this.compat || undefined,
 			error: this.error || undefined
 		};

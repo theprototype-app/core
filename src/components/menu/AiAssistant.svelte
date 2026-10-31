@@ -40,6 +40,7 @@
 	import { runningRequest, samePeer } from '$lib/agentChatCore';
 	import { chatIdOfItem } from '$lib/chat/tpchatStore.js';
 	import { rolesInfo } from '$lib/cloudHooks';
+	import ConnectClaude from './ConnectClaude.svelte'; // 86 B1/B2
 	import { aiEnabled, aiProviders, aiActiveProvider, setAiActiveProvider } from '$lib/ai/providers';
 	import { aiMessages, aiBusy, aiStatus, runPrompt, stopAi, resetAiConversation } from '$lib/ai/assistant';
 	import { dragWindow } from '$lib/dragWindow';
@@ -48,6 +49,7 @@
 	import { tabbable } from '$lib/windowTabs';
 	import { sttConfig, sttReady } from '$lib/ai/stt';
 	import { dictation, startDictation, stopDictation } from '$lib/ai/sttCapture';
+	import { panelAway } from '$lib/windows/panelPlaces.js';
 
 	let prompt = $state('');
 	/** 56 C8: pictures for the next message, ready for a request's `images` (56-chat's send path reads it) */
@@ -216,10 +218,13 @@
 		return 'Ask the assistant…';
 	});
 	const inputDisabled = $derived(agentId ? !agentRow || agentMuted : $aiBusy);
+	// 70 W2: `popped` = the instance in a pop-out window (the window only); the main one keeps the pill
+	// and draws no window while the assistant is away
+	let { popped = false }: { popped?: boolean } = $props();
 </script>
 
 <!-- Quick prompt pill (backquote-toggled) -->
-{#if pillVisible}
+{#if pillVisible && !popped}
 	<div
 		class="ai-pill ui-panel tp-ui tp-window flex items-center gap-1.5 px-2 py-1.5"
 		style="position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(var(--bottom-inset, 0px) + 72px); z-index: var(--z-hud); width: min(560px, 92vw);"
@@ -241,6 +246,7 @@
 {/if}
 
 <!-- Floating window -->
+{#if popped || !$panelAway.aiAssistant}
 <div id="ai-assistant" class={$aiAssistantHidden}>
 	<div
 		id="ai-assistant-window"
@@ -283,6 +289,8 @@
 				>
 			{/snippet}
 		</WindowChrome>
+		<!-- 86 B1/B2: Connect Claude (signed-in cloud builds only) -->
+		<ConnectClaude />
 		<div class="ai-body relative flex min-h-0 flex-1 flex-col">
 		{#if historyOpen}
 			<ChatHistory
@@ -420,6 +428,7 @@
 		</div>
 	</div>
 </div>
+{/if}
 
 <style>
 	#ai-assistant.hidden {

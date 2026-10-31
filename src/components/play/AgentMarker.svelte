@@ -51,5 +51,7 @@
 	quaternion={quat}
 >
 	<T.LineSegments geometry={frustum} {material} />
+	<!-- tokens-ok-begin: troika label drawn into the 3D view (canvas pixels), the marker frustum's blue -->
 	<Text text="AI" fontSize={0.09} color="#8fb3ff" anchorX="center" anchorY="bottom" position={[0, 0.12, 0]} />
+	<!-- tokens-ok-end -->
 </T.Group>

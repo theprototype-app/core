@@ -112,6 +112,26 @@ h.run(async () => {
 		`…and H's other files are not even named (${v.items.map((i) => i.name).join(', ')})`
 	);
 	h.check((await debug(G)).pullCount === 0, 'the rows came with the join and no bytes did (pull count 0)');
+	// a guest standing in another room sees none of the current scene's files and cannot save it
+	const seen = (await vols(G))[0]?.items?.length ?? 0;
+	h.check(seen > 0, `premise: the current scene's files are listed (${seen})`);
+	const setGuestRow = (scene) =>
+		H.page.evaluate(([gid, scene]) => window.__stores.peerScenes.peerScenes.update((m) => ({ ...m, [gid]: { ...m[gid], scene, hash: '' } })), [G.id, scene]);
+	const guestRow = await H.page.evaluate((gid) => {
+		let m;
+		window.__stores.peerScenes.peerScenes.subscribe((v) => (m = v))();
+		return m[gid]?.scene ?? '';
+	}, G.id);
+	await setGuestRow('Somewhere else');
+	await h.eventually(() => vols(G), (vs) => (vs[0]?.items?.length ?? 0) === 0, "a guest in another room is sent none of the current scene's files", 10000);
+	await G.page.evaluate((host) => {
+		let p;
+		window.__stores.peers.subscribe((x) => (p = x))();
+		p.connections[host].send({ type: 'volsave', id: 'other-room' });
+	}, H.id);
+	await h.eventually(() => debug(H), (d) => d.log.some((l) => /^volsave from .+: you are in another scene/.test(l)), '…and its raw Save on host is refused', 10000);
+	await setGuestRow(guestRow);
+	await h.eventually(() => vols(G), (vs) => (vs[0]?.items?.length ?? 0) === seen, '…back in the room, the rows return', 10000);
 
 	await G.page.locator('#explorer-slot').click();
 	await G.page.waitForTimeout(900);

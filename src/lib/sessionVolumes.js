@@ -34,7 +34,8 @@ import { sessionVolumes, sessionVolumeById, isSessionVolumeId } from './sessionV
 import { explorerItems, explorerFolders, addItemFromBytes, createFolder } from './explorer';
 import { sceneAssets } from './sceneAssets';
 import { currentLevel, levelItems } from './levels';
-import { amPrivate } from './peerScenes';
+import { amPrivate, peerScenes, sameRoomOrUnknown } from './peerScenes';
+import { safeStorage } from './safeStorage';
 import { answerAssetRequest, pullVolumeBytes, cancelPull, volumePullRunning, stopSendingTo } from './assetShare';
 import { showChoice } from './confirmDialog';
 import {
@@ -81,10 +82,17 @@ function sendTo(peerId, msg) {
 	}
 }
 
+/** Does this build or device load a cloud plugin? (cloudPlugin.js reads the same two) */
+function cloudPluginExpected() {
+	return !!(import.meta.env?.VITE_CLOUD_PLUGIN || safeStorage.getItem('cloudPluginUrl'));
+}
+
 /** The role the HOST sees for a peer: 'viewer' or 'editor' (no roles plugin = everyone edits). @param {string} peerId */
 function roleOf(peerId) {
 	/** @type {any} */
 	const roles = get(rolesInfo);
+	// a plugin is meant to rule here and has not (yet): nobody edits on its say-so until it does
+	if (!roles && cloudPluginExpected()) return 'viewer';
 	return roles?.roleOf?.(peerId) === 'viewer' ? 'viewer' : 'editor';
 }
 
@@ -146,6 +154,12 @@ export function currentProjection() {
 	});
 }
 
+/** What one guest may see: the current scene's files belong to its room, so a guest standing elsewhere
+ * sees none (Project and Whole library are the host's own wider choice). @param {string} peerId @param {any} [proj] */
+function projectionFor(peerId, proj = currentProjection()) {
+	return get(shareScope) === 'scene' && !sameRoomOrUnknown(peerId) ? { folders: [], items: [] } : proj;
+}
+
 /** A dial of ours still waiting for that peer's answer: that peer may become our host, never our guest. @param {string} peerId */
 function askedToJoin(peerId) {
 	return (/** @type {any[]} */ (get(waitingForApproval)) ?? []).some((w) => w?.[0] === peerId);
@@ -167,7 +181,7 @@ function hosting() {
 
 /** Send the volume to one guest (and the thumbnails it lacks). @param {string} peerId @param {any} [proj]
  * @returns {boolean} the rows left */
-function sendVolume(peerId, proj = currentProjection()) {
+function sendVolume(peerId, proj = projectionFor(peerId)) {
 	const prior = sentTo.get(peerId);
 	const thumbs = prior?.thumbs ?? new Set();
 	const handles = prior?.handles ?? new Map();
@@ -210,11 +224,11 @@ function sendVolume(peerId, proj = currentProjection()) {
 /** Re-send to every guest that has a volume, if what it would see changed. */
 function republish() {
 	if (!hosting()) return;
-	const proj = currentProjection();
-	const key = JSON.stringify(proj);
+	const all = currentProjection();
 	for (const [peerId, prior] of sentTo) {
+		const proj = projectionFor(peerId, all);
 		// a role change (made viewer / editor) is resent too: it decides Save on host on the guest
-		if (JSON.stringify(prior.proj) === key && prior.scope === get(shareScope) && prior.role === roleOf(peerId)) continue;
+		if (JSON.stringify(prior.proj) === JSON.stringify(proj) && prior.scope === get(shareScope) && prior.role === roleOf(peerId)) continue;
 		sendVolume(peerId, proj);
 	}
 }
@@ -230,7 +244,7 @@ let watching = false;
 function watch() {
 	if (watching) return;
 	watching = true;
-	for (const store of [explorerItems, explorerFolders, currentLevel, sceneAssets, shareScope, rolesInfo])
+	for (const store of [explorerItems, explorerFolders, currentLevel, sceneAssets, shareScope, rolesInfo, peerScenes])
 		/** @type {any} */ (store).subscribe(() => sentTo.size && scheduleRepublish());
 }
 
@@ -258,13 +272,13 @@ function answerVolumeGet(from, data) {
 	const hash = String(data?.hash ?? '');
 	const sent = hostOf(from) ? sentTo.get(from) : null;
 	// re-check against the CURRENT scope too: a scope narrowed since the last send must already bite
-	if (!sent || !projectionHas(sent.proj, hash) || !projectionHas(currentProjection(), hash)) {
+	if (!sent || !projectionHas(sent.proj, hash) || !projectionHas(projectionFor(from), hash)) {
 		note('refused volget ' + hash.slice(0, 12) + ' from ' + from);
 		sendTo(from, { type: 'assetmissing', hash });
 		return;
 	}
 	note('answer volget ' + hash.slice(0, 12) + ' to ' + from);
-	void answerAssetRequest(from, { hash }, { allow: () => hostOf(from) && sentTo.has(from) && projectionHas(currentProjection(), hash) });
+	void answerAssetRequest(from, { hash }, { allow: () => hostOf(from) && sentTo.has(from) && projectionHas(projectionFor(from), hash) });
 }
 
 /** The guest opens or copies a listed file: tell it which file that is. @param {string} from @param {any} data */
@@ -272,7 +286,7 @@ function answerVolumeResolve(from, data) {
 	const handle = String(data?.handle ?? '');
 	const sent = hostOf(from) ? sentTo.get(from) : null;
 	const hash = sent ? [...sent.handles].find(([, h]) => h === handle)?.[0] : null;
-	const shown = !!hash && projectionHas(/** @type {any} */ (sent).proj, hash) && projectionHas(currentProjection(), hash);
+	const shown = !!hash && projectionHas(/** @type {any} */ (sent).proj, hash) && projectionHas(projectionFor(from), hash);
 	sendTo(from, { type: 'volhash', handle, ...(shown ? { hash } : {}) });
 }
 
@@ -290,6 +304,7 @@ async function answerVolumeSave(from, data) {
 	const now = Date.now();
 	if (!hostOf(from) || !sentTo.has(from)) result = { ok: false, error: 'only the session host can save on the host' };
 	else if (roleOf(from) === 'viewer') result = { ok: false, error: 'view-only peers cannot save on the host — Copy to my library instead' };
+	else if (!sameRoomOrUnknown(from)) result = { ok: false, error: 'you are in another scene than the host' };
 	else if (hostSaving || now - (lastSaveAsk.get(from) ?? 0) < SAVE_GAP_MS) result = { ok: false, error: 'the host is busy saving, try again in a moment' };
 	else {
 		hostSaving = true;

@@ -14,7 +14,7 @@ export const SHARE_SCOPES = /** @type {const} */ (['scene', 'project', 'library'
 export const DEFAULT_SHARE_SCOPE = 'scene';
 export const SHARE_SCOPE_LABELS = {
 	scene: "Current scene's files",
-	project: 'Project',
+	project: 'Every scene on this device, and shared files',
 	library: 'Whole library',
 	none: 'None'
 };

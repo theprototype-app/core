@@ -3,6 +3,12 @@
 const h = require('./helpers.cjs');
 
 const debug = (p) => p.page.evaluate(() => window.__stores.sessionVolumes.volumeDebug());
+const p_role = (p) =>
+	p.page.evaluate(() => {
+		let v;
+		window.__stores.sessionVolumes.sessionVolumes.subscribe((x) => (v = x))();
+		return v?.[0]?.role ?? null;
+	});
 const rows = (p) =>
 	p.page.evaluate(() => {
 		let v;
@@ -133,6 +139,19 @@ h.run(async () => {
 	await H.page.evaluate(() => window.__stores.sessionVolumes.setShareScope('none'));
 	const ended = await Promise.race([running, new Promise((r) => setTimeout(() => r('timeout'), 90000))]);
 	h.check(ended === null, `narrowing to None ends the running send (${ended})`);
+
+	// a host whose roles plugin is expected but has not arrived treats a guest as view-only
+	const role = () => p_role(G);
+	await H.page.evaluate(() => {
+		localStorage.setItem('cloudPluginUrl', 'https://localhost/none.js');
+		window.__stores.cloudHooks.rolesInfo.set(null);
+	});
+	await h.eventually(role, (r) => r === 'viewer', 'with the plugin expected and absent, the host reads a guest as a viewer', 10000);
+	await H.page.evaluate(() => {
+		localStorage.removeItem('cloudPluginUrl');
+		window.__stores.cloudHooks.rolesInfo.set(null);
+	});
+	await h.eventually(role, (r) => r === 'editor', '…with no plugin expected, as an editor again', 10000);
 
 	const errs = [...(await h.pageErrors(H)), ...(await h.pageErrors(G))];
 	h.check(errs.length === 0, `no page errors (${JSON.stringify(errs)})`);

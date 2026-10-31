@@ -617,7 +617,8 @@ const TOOL_NAMES = [
 	'create_behaviour',
 	'edit_behaviour',
 	'import_model', // 56 C9 (offered to agents; see importModel.js)
-	'import_file' // 66 S4b (offered to agents; see importFile.js)
+	'import_file', // 66 S4b (offered to agents; see importFile.js)
+	...ASSIST_TOOL_NAMES // 85 undo_last, pivots, images (assistTools.js): unlisted, their arguments read as create_objects / update_objects
 ];
 
 /** 34 D5: the behaviour family's spellings. They map to the behaviour tools only while a

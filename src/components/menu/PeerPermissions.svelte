@@ -84,6 +84,8 @@
 				<ThemedSelect id="pp-preset" items={presetOptions} value={matching} onchange={(/** @type {string} */ v) => pick(v)} />
 			</label>
 			{#if hint}<p class="pp-hint">{hint}</p>{/if}
+			<!-- 71 TR3 -->
+			{#if ri?.keptFor?.(peerId)}<p class="pp-hint" id="pp-kept">Signed in: this stays with their account in your room.</p>{/if}
 
 			{#each AREAS as area (area.id)}
 				<section class="pp-area" data-area={area.id}>

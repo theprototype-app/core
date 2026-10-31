@@ -292,6 +292,14 @@ export function makeCloudApi() {
 			const p = get(peers);
 			if (p && typeof p.send === 'function') p.send({ type: 'cloud', payload });
 		},
+		/** 71 TR3: one peer only, down its own link (something the rest of the mesh should not read).
+		 *  false = no open link to it. */
+		sendCloudTo: (/** @type {string} */ peerId, /** @type {any} */ payload) => {
+			const conn = /** @type {any} */ (get(peers))?.connections?.[peerId];
+			if (!conn?.open) return false;
+			conn.send({ type: 'cloud', payload });
+			return true;
+		},
 		/** receive inbound cloud messages: handler(peerId, payload) */
 		onCloudMessage: (/** @type {any} */ fn) => setMessageHandler(fn),
 

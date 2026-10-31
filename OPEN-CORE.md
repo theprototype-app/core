@@ -61,6 +61,8 @@ export function register(api) {
   api.setRolesInfo(info)           // { myId, myRole, amAdmin, order, roleOf, setRole } | null
   //   optional, 1.52: myCaps, capsOf(id), capCatalog(), presetOf(id), setCaps(id, record|null), savePreset, deletePreset,
   //   setAgentDefault, sortObjects(action, uuids), askFirst(action, uuids), takeRate(), onSend(data)
+  api.sendCloudTo(peerId, payload) // one peer only, down its own link; false = no open link
+  api.peerName(peerId)             // the name the Users list shows
   api.openPermissions(peerId)      // open core's Permissions sheet for a peer ('' closes it)
   api.objectNames(uuids)           // the names THIS page shows for those objects
   api.setScenePresence(data)       // who is in the project's OTHER rooms | null — v2.4

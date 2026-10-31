@@ -1,0 +1,5 @@
+{
+	"asset_3DBQeLN4EuUZVtehMW5Pe2iU": {
+		"console": "wild-assets F3: importing this 116 MB Meshy model (8192 px textures) exhausts the tab's blob storage — \"Failed to load resource: net::ERR_BLOB_OUT_OF_MEMORY\" during the import engine's texture work; the model is still placed"
+	}
+}

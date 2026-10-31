@@ -22,7 +22,7 @@ h.run(async () => {
 			window.__stores.settingsSection.set('ai');
 			window.__stores.settingsOpen.set(true);
 		});
-		await page.locator('#ai-add-provider').first().click({ timeout: 15000 });
+		await page.locator('#tools-add-chat').first().click({ timeout: 15000 });
 		await page.locator('#ai-form-preset').selectOption('custom');
 		await page.waitForTimeout(200);
 	};

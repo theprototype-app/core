@@ -292,7 +292,14 @@ h.run(async () => {
 	h.check(meshInView, '…and opens Tools & connections at the Mesh provider row');
 	await page.evaluate(() => window.__stores.settingsOpen.set(false));
 	await page.waitForTimeout(300);
+	// 86-fix N1: the AI button always opens the window; the quick prompt bar is the one that explains
 	await page.locator('#ai-hud-button').first().click();
+	await page.waitForSelector('#ai-assistant-window #ai-welcome', { state: 'visible', timeout: 10000 });
+	await page.evaluate(() => {
+		window.__stores.aiAssistantHidden.set('hidden');
+		document.activeElement?.blur?.();
+	});
+	await page.keyboard.press('Backquote');
 	await page.waitForSelector('#settings-main [data-tool-section="chat"]', {
 		state: 'visible',
 		timeout: 10000
@@ -304,7 +311,7 @@ h.run(async () => {
 	);
 	h.check(
 		/The AI assistant needs a Chat provider/.test(toast2),
-		`the AI button with the assistant off explains and opens the Chat row (${toast2.slice(0, 160)})`
+		`the prompt bar with the assistant off explains and opens the Chat row (${toast2.slice(0, 160)})`
 	);
 
 	// ---- 6. the assistant reads the same status -------------------------------------------------

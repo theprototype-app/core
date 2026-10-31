@@ -53,7 +53,7 @@ h.run(async () => {
 	h.check((await A.page.locator('#connect-claude').count()) === 0, 'OSS: no Connect Claude choice');
 	h.check(await A.page.locator('#ai-welcome-own').isVisible(), 'the "Use your own AI provider" choice is there');
 	await A.page.locator('#ai-welcome-settings').click();
-	h.check((await read(A.page, 'settingsOpen')) === true && (await read(A.page, 'settingsSection')) === 'tools', 'Open settings goes to Settings ▸ AI');
+	h.check((await read(A.page, 'settingsOpen')) === true && (await read(A.page, 'settingsSection')) === 'tools', 'Open settings goes to Tools & connections');
 	await A.page.evaluate(() => window.__stores.settingsOpen.set(false));
 
 	// the prompt bar keeps the provider toast (it is a prompt, not the window)
@@ -65,7 +65,7 @@ h.run(async () => {
 	});
 	await A.page.keyboard.press('Backquote');
 	await A.page.waitForTimeout(300);
-	h.check((await read(A.page, 'aiPromptBarOpen')) !== true && (await read(A.page, 'settingsSection')) === 'tools', 'the ` prompt bar still points at Settings ▸ AI with no provider');
+	h.check((await read(A.page, 'aiPromptBarOpen')) !== true && (await read(A.page, 'settingsSection')) === 'tools', 'the ` prompt bar still points at Tools & connections with no provider');
 	await A.page.evaluate(() => {
 		window.__stores.settingsOpen.set(false);
 		window.__stores.aiAssistantHidden.set('');

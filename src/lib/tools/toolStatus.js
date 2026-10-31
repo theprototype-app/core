@@ -34,7 +34,8 @@ import { writable, derived, get } from 'svelte/store';
  *   setEnabled?: (on: boolean) => void,
  *   test?: () => Promise<{ok: boolean, detail: string}>,
  *   configure?: () => void,
- *   form?: {kind: string, ref?: any}
+ *   form?: {kind: string, ref?: any},
+ *   docs?: string
  * }} ToolRow
  */
 

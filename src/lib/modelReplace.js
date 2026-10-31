@@ -13,14 +13,19 @@ import {
 	animatedImportKind,
 	animatedRecordOf,
 	animationState,
-	setAnimationState
+	setAnimationState,
+	clipRefsOf,
+	resumeClipWhenBound
 } from './animatedImports';
 import { sendObjects, sendObject } from './commandsHandler.svelte';
 import { parseModelFile } from './fileHandler.svelte';
 import { parseGltfSceneSafe } from './ktx2Twins';
 import { simulating, physicsShapeChanged } from './physics';
 import { isGlb, transformRootNodes, appendAnimations } from './glbEdit';
-import { clipKeepPlan, clipToGlbAnimation, nodeIndexOf, clipSummary } from './modelClips';
+import { clipKeepPlan, clipRefKeepPlan, clipToGlbAnimation, nodeIndexOf, clipSummary } from './modelClips';
+import { glbIsVrm } from './vrm/vrmDetect';
+import { addProvenance } from './provenance';
+import { APP_VERSION } from './version';
 import { sanityIssues, fixMatrix } from './modelSanity';
 import { showChoiceEx } from './confirmDialog';
 
@@ -47,7 +52,7 @@ import { showChoiceEx } from './confirmDialog';
 // size jump, a Z-up export or unapplied transforms get a warning with a one-click fix.
 
 /** userData rows that describe the old FILE, not the object — the new file brings its own */
-const MODEL_BOUND = ['animatedClips', 'reduced', 'optimized', 'lod', 'packRef', 'packStub', 'animRef', 'aiGen', 'source', 'theprototype'];
+const MODEL_BOUND = ['animatedClips', 'reduced', 'optimized', 'lod', 'packRef', 'packStub', 'animRef', 'aiGen', 'source', 'theprototype', 'vrmLicence'];
 
 /** material.userData stamps that say "a person changed this in the app" */
 const OVERRIDE_STAMPS = ['materialPreset', 'mapSource', 'mapDataUrl', 'cc0Source', 'tpEdited'];
@@ -76,30 +81,40 @@ function modelRows(userData) {
 }
 
 /**
- * @typedef {{bytes: ArrayBuffer, kind: 'gltf'|'fbx', animations: any[], state: any}} AnimPart
- * @typedef {{root: any, anim: AnimPart | null}} ModelVersion
+ * @typedef {{bytes: ArrayBuffer, kind: 'gltf'|'fbx'|'vrm', animations: any[], state: any}} AnimPart
+ * @typedef {{root: any, anim: AnimPart | null, refs: any[], provenance: any}} ModelVersion
  */
 
 /** What `live` IS right now, so it can come back exactly (the undo side of a replace).
  * @param {any} live @returns {ModelVersion} */
 function captureVersion(live) {
-	if (!hasAnimatedImport(live.uuid)) return { root: live, anim: null };
-	const record = animatedRecordOf(live.uuid);
+	// 57: a dropped `.tpanim` ref has to come back with this model, so the refs belong to the version
+	const facts = { refs: clipRefsOf(live), provenance: live.userData?.provenance };
+	if (!hasAnimatedImport(live.uuid)) return { root: live, anim: null, ...facts };
 	return {
 		root: live,
 		anim: {
 			bytes: /** @type {ArrayBuffer} */ (animatedImportPayload(live.uuid)),
 			kind: animatedImportKind(live.uuid),
-			animations: record ? Object.values(record.actions).map((/** @type {any} */ a) => a.getClip()) : [],
+			animations: liveClips(live.uuid),
 			state: animationState(live.uuid)
-		}
+		},
+		...facts
 	};
 }
 
-/** the clips a live animated import plays @param {string} uuid @returns {any[]} */
+/**
+ * The clips IN the model's file: a live record also plays 57's `.tpanim` assets, which are refs on
+ * the root and must never be written into the bytes. An embedded clip a same-named asset took over
+ * is stashed, and is still in the file.
+ * @param {string} uuid @returns {any[]}
+ */
 function liveClips(uuid) {
 	const record = animatedRecordOf(uuid);
-	return record ? Object.values(record.actions).map((/** @type {any} */ a) => a.getClip()) : [];
+	if (!record) return [];
+	return (record.embedded ?? [])
+		.map((/** @type {string} */ name) => (record.assets?.[name] ? record.stashed?.[name] : record.actions[name])?.getClip())
+		.filter(Boolean);
 }
 
 /**
@@ -245,6 +260,10 @@ function installVersion(live, version) {
 		root.scale.copy(live.scale);
 		root.userData = { ...modelRows(root.userData), ...identityRows(live.userData) };
 	}
+	if (version.refs.length) root.userData.clipRefs = version.refs;
+	else delete root.userData.clipRefs;
+	if (version.provenance) root.userData.provenance = version.provenance;
+	else delete root.userData.provenance;
 	/** @type {any} */
 	const controls = get(TControls);
 	const wasSelected = get(selectedObject)?.uuid === uuid;
@@ -268,6 +287,8 @@ function installVersion(live, version) {
 		const state = version.anim.state;
 		if (state?.clip && version.anim.animations.some((/** @type {any} */ c) => c.name === state.clip))
 			setAnimationState(uuid, { clip: state.clip, playing: !!state.playing, speed: state.speed ?? 1 }, false);
+		// a `.tpanim` clip that was playing binds a moment later: it carries on when it does
+		else if (state?.clip && state.playing && version.refs.some((/** @type {any} */ r) => r.name === state.clip)) resumeClipWhenBound(uuid, state.clip);
 	}
 	pokeScene();
 	if (wasSelected) {
@@ -323,7 +344,8 @@ function extOf(name) {
  * @param {File} file @param {string} extension @param {any[]} companions
  */
 async function parseReplacement(file, extension, companions) {
-	if (extension === 'glb' || extension === 'gltf') {
+	// 57 M4: a VRM (.vrm, or a .glb carrying the extension) goes through the import's own parser (three-vrm)
+	if ((extension === 'glb' || extension === 'gltf') && !glbIsVrm(await file.arrayBuffer())) {
 		const bytes = await file.arrayBuffer();
 		/** @type {any} */
 		const gltf = await parseGltfSceneSafe(bytes);
@@ -335,12 +357,35 @@ async function parseReplacement(file, extension, companions) {
 			root: parsed.animated.result.scene,
 			animations: parsed.animated.result.animations ?? [],
 			bytes: parsed.animated.buffer,
-			kind: /** @type {'gltf'|'fbx'} */ (parsed.animated.kind === 'fbx' ? 'fbx' : 'gltf'),
+			kind: /** @type {'gltf'|'fbx'|'vrm'} */ (parsed.animated.kind === 'fbx' || parsed.animated.kind === 'vrm' ? parsed.animated.kind : 'gltf'),
 			parser: null,
 			glb: false,
 			notes: parsed.notes
 		};
 	return { root: parsed.root, animations: [], bytes: null, kind: null, parser: null, glb: false, notes: parsed.notes };
+}
+
+/**
+ * 59 T1 + 57: which `.tpanim` refs of `live` survive on the parsed replacement (modelClips' rule).
+ * The clip binder loads only for a model that has refs.
+ * @param {any} live @param {any} parsed @returns {Promise<{keep: any[], dropped: {name: string, missing: string[]}[]}>}
+ */
+async function planClipRefs(live, parsed) {
+	const refs = clipRefsOf(live);
+	if (!refs.length) return { keep: [], dropped: [] };
+	const [{ loadClip }, { sanitizeName }, { humanoidMapOf }] = await Promise.all([
+		import('./tpanim/clipAssets.js'),
+		import('./tpanim/format.js'),
+		import('./tpanim/humanoidMap.js')
+	]);
+	const tps = new Map(await Promise.all(refs.map(async (r) => /** @type {[string, any]} */ ([r.hash, await loadClip(r.hash)]))));
+	const names = new Set();
+	parsed.root.traverse((/** @type {any} */ o) => {
+		names.add(o.name);
+		names.add(sanitizeName(o.name));
+	});
+	const humanoid = parsed.kind === 'vrm' || !!live.userData?.character || !!humanoidMapOf(parsed.root)?.hips;
+	return clipRefKeepPlan(refs, (r) => tps.get(r.hash), (n) => names.has(n) || names.has(sanitizeName(n)), humanoid);
 }
 
 /** who holds a lock on `uuid` other than me, or null @param {string} uuid */
@@ -406,6 +451,9 @@ export async function replaceModelFromFile(uuid, file, opts = {}) {
 			// only a .glb can carry them: its bytes are what replicates and saves
 			dropped = [...dropped, ...plan.keep.map((c) => ({ name: c.name, missing: [] }))];
 	}
+	// the same rule for 57's `.tpanim` clips: they stay refs, the bytes never carry them
+	const refPlan = await planClipRefs(live, parsed);
+	dropped = [...dropped, ...refPlan.dropped];
 	const animated = parsed.animations.length > 0 || keep.length > 0;
 
 	// ---- T7c: sanity checks + one-click fixes ---------------------------------------------
@@ -457,7 +505,7 @@ export async function replaceModelFromFile(uuid, file, opts = {}) {
 			animations = gltf.animations ?? [];
 		}
 		const old = hasAnimatedImport(uuid) ? animationState(uuid) : null;
-		next = { root, anim: { bytes, kind: parsed.kind ?? 'gltf', animations, state: old } };
+		next = { root, anim: { bytes, kind: parsed.kind ?? 'gltf', animations, state: old }, refs: refPlan.keep, provenance: null };
 	} else {
 		let root = parsed.root;
 		if (matrix) transformTop(root, new THREE.Matrix4().fromArray(matrix));
@@ -468,8 +516,12 @@ export async function replaceModelFromFile(uuid, file, opts = {}) {
 			wrap.add(root);
 			root = wrap;
 		}
-		next = { root, anim: null };
+		next = { root, anim: null, refs: refPlan.keep, provenance: null };
 	}
+	// 57 M7: this file is a step in the object's history
+	const history = { provenance: live.userData?.provenance };
+	addProvenance(history, { tool: 'replace', model: parsed.kind === 'vrm' ? 'VRM' : extension.toUpperCase(), version: APP_VERSION, source: file?.name, licence: next.root.userData?.vrmLicence ?? null });
+	next.provenance = history.provenance;
 	const current = objectOf(uuid);
 	if (!current) return null;
 	keepChildIdentity(current, next.root);
@@ -497,7 +549,7 @@ export async function replaceModelFromFile(uuid, file, opts = {}) {
 }
 
 /** the model formats a replace accepts (the import's own list) */
-const ACCEPT = '.glb,.gltf,.fbx,.obj,.stl,.mtl,.png,.jpg,.jpeg,.webp';
+const ACCEPT = '.glb,.gltf,.vrm,.fbx,.obj,.stl,.mtl,.png,.jpg,.jpeg,.webp';
 
 /**
  * T1 entry from the object menu and the Inspector: pick a file, then replace. A companion
@@ -514,9 +566,9 @@ export function pickReplacementFile(uuid) {
 	input.addEventListener('change', () => {
 		const files = [...(input.files ?? [])];
 		input.remove();
-		const model = files.find((f) => /\.(glb|gltf|obj|stl|fbx)$/i.test(f.name));
+		const model = files.find((f) => /\.(glb|gltf|vrm|obj|stl|fbx)$/i.test(f.name));
 		if (!model) {
-			if (files.length) showToast('Pick a model file (.glb, .gltf, .fbx, .obj or .stl)');
+			if (files.length) showToast('Pick a model file (.glb, .gltf, .vrm, .fbx, .obj or .stl)');
 			return;
 		}
 		void replaceModelFromFile(uuid, model, { companions: files.filter((f) => f !== model), source: 'menu' });

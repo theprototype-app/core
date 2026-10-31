@@ -30,6 +30,7 @@
 		'glb',
 		'dcc'
 	]);
+	registerSettingsKeywords('agents', ['agent', 'mcp', 'claude code', 'invite', 'connect claude', 'connector', 'setup command']);
 	registerSettingsKeywords('voice typing', ['stt', 'whisper', 'speech', 'mic', 'dictation']);
 	registerSettingsKeywords('chat pictures', ['image', 'photo', 'picture', 'attach', 'vision']);
 </script>
@@ -140,6 +141,18 @@
 							>
 						{/if}
 					{/snippet}
+					{#if row.docs}
+						<Button
+							id={rid + '-docs'}
+							size="sm"
+							variant="ghost"
+							icon="book-open"
+							href={row.docs}
+							target="_blank"
+							rel="noopener"
+							title={'How ' + row.label + ' works'}>Guide<span class="sr-only"> for {row.label}</span></Button
+						>
+					{/if}
 					{#if row.test}
 						<Button
 							id={rid + '-test'}

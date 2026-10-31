@@ -171,6 +171,82 @@ h.run(async () => {
 	await A.page.evaluate(() => window.__stores.history.redo());
 	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.clips?.includes('Interact'), 'redo: B has the replacement again', 20000);
 
+	// ---------- 59-int + 57: a `.tpanim` clip survives by bone names, stays a ref, plays on ----------
+	await A.page.evaluate(async () => {
+		const r = await fetch('/avatars/clips.glb');
+		await window.__stores.explorer.importFiles([new File([await r.arrayBuffer()], 'clips.glb')], null);
+	});
+	const walk = await h.eventually(
+		() => A.page.evaluate(() => window.__stores.explorer.explorerItems && new Promise((res) => window.__stores.explorer.explorerItems.subscribe((l) => {
+			const w = (l ?? []).find((i) => /Walking_A\.tpanim$/.test(i.name));
+			res(w ? { id: w.id, hash: w.hash, name: w.name } : null);
+		})())),
+		(w) => !!w?.hash,
+		'the walk clip is an Explorer asset',
+		30000
+	);
+	const walkItem = walk ?? (await A.page.evaluate(() => new Promise((res) => window.__stores.explorer.explorerItems.subscribe((l) => {
+		const w = l.find((i) => /Walking_A\.tpanim$/.test(i.name));
+		res({ id: w.id, hash: w.hash, name: w.name });
+	})())));
+	const walkName = await A.page.evaluate(({ uuid, walkItem }) => window.__stores.clipAssets.assignClipAsset(uuid, walkItem, { play: true }), { uuid, walkItem });
+	await h.eventually(() => factsOf(A.page, uuid), (f) => f?.clips?.includes(walkName) && f.playing && f.clip === walkName, 'A plays the .tpanim clip', 15000);
+	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.clips?.includes(walkName), 'B has the .tpanim clip', 30000);
+	const refsOf = (page) => page.evaluate((u) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		return (g.getObjectByProperty('uuid', u)?.userData.clipRefs ?? []).map((r) => r.name);
+	}, uuid);
+	const depth1 = await undoDepth();
+	const rerig = await A.page.evaluate(async ({ uuid, v1 }) => {
+		const s = window.__stores;
+		const report = await s.modelReplace.replaceModelFromFile(uuid, new File([new Uint8Array(v1)], 'knight-v3.glb'), { fixes: 'skip', source: 'menu' });
+		const bytes = s.animatedImports.animatedImportPayload(uuid);
+		const gltf = await new Promise((res, rej) => s.animatedImports.createGltfLoader().parse(bytes, '', res, rej));
+		return { dropped: report?.dropped ?? [], inBytes: gltf.animations.map((c) => c.name) };
+	}, { uuid, v1: fixtures.v1 });
+	h.check(!rerig.dropped.some((d) => d.name === walkName), `the same skeleton keeps the .tpanim clip (${JSON.stringify(rerig.dropped)})`);
+	h.check(!rerig.inBytes.includes(walkName), `...and it stays a ref, NOT written into the model's bytes (${rerig.inBytes})`);
+	h.check((await undoDepth()) === depth1 + 1, 'replace with a .tpanim clip: ONE undo step');
+	await h.eventually(() => factsOf(A.page, uuid), (f) => f?.clips?.includes(walkName) && f.playing && f.clip === walkName, 'A: the .tpanim clip binds again and plays on', 20000);
+	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.clips?.includes(walkName), 'B: the .tpanim clip survived', 30000);
+	h.check((await refsOf(B.page)).join() === walkName, 'B: the ref arrived with the replaced model');
+	const provenance = await A.page.evaluate((u) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		return (g.getObjectByProperty('uuid', u)?.userData.provenance ?? []).map((p) => p.tool);
+	}, uuid);
+	h.check(provenance.at(-1) === 'replace', `provenance records the replace (${provenance})`);
+
+	// the late joiner gets the ref and pulls the clip
+	const D = await h.setupPageQuiet(browser, 'D', [A, B]);
+	await h.connect(D, A);
+	await h.answerRestore(D, 'dismiss', 3000).catch(() => {});
+	await h.eventually(() => factsOf(D.page, uuid), (f) => f?.clips?.includes(walkName), 'D (late joiner): the .tpanim clip on the replaced model', 40000);
+	await h.closePeer(D);
+
+	// a model without those bones drops it, says so, and ONE undo brings it back
+	const NO_BONES = JSON.stringify({
+		asset: { version: '2.0' },
+		scene: 0,
+		scenes: [{ nodes: [0] }],
+		nodes: [{ name: 'Plain', mesh: 0 }],
+		meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+		buffers: [{ byteLength: 36, uri: 'data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA' }],
+		bufferViews: [{ buffer: 0, byteLength: 36 }],
+		accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] }]
+	});
+	const plain = await A.page.evaluate(async ({ uuid, text }) => {
+		const report = await window.__stores.modelReplace.replaceModelFromFile(uuid, new File([text], 'plain.gltf'), { fixes: 'skip', source: 'menu' });
+		return report?.dropped ?? [];
+	}, { uuid, text: NO_BONES });
+	h.check(plain.some((d) => d.name === walkName), `a model without the bones drops the .tpanim clip and lists it (${plain.map((d) => d.name)})`);
+	h.check((await refsOf(A.page)).length === 0, 'the dropped ref is gone from the object');
+	await A.page.evaluate(() => window.__stores.history.undo());
+	await h.eventually(() => refsOf(A.page), (r) => r.join() === walkName, 'undo: the ref is back', 10000);
+	await h.eventually(() => factsOf(A.page, uuid), (f) => f?.clips?.includes(walkName), 'undo: the .tpanim clip binds again', 20000);
+	await h.eventually(() => factsOf(B.page, uuid), (f) => f?.clips?.includes(walkName), 'undo: B has it back', 30000);
+
 	// ---------- T2: Edit in Blender on a STATIC model (two named parts) ----------
 	const crate = await A.page.evaluate(async () => {
 		const s = window.__stores;

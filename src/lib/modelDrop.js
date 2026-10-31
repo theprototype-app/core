@@ -47,7 +47,7 @@ async function dropLandsOn(target, x, y) {
  */
 export async function dropModelFile(file, opts = {}) {
 	const companions = opts.companions ?? [];
-	const name = file.name.replace(/\.(glb|gltf|obj|stl|fbx)$/i, '');
+	const name = file.name.replace(/\.(glb|gltf|vrm|obj|stl|fbx)$/i, '');
 	const add = () => importFile(file, name, undefined, undefined, companions);
 	const { replaceModelFromFile, isReplaceableModel } = await import('./modelReplace');
 	// T7b: the file names its object

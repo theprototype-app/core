@@ -160,7 +160,7 @@ h.run(async () => {
 			e.getAttribute('data-tool-section')
 		)
 	);
-	h.check(sections.join(',') === 'chat,mesh,desktop', `sections in order: ${sections.join(', ')}`);
+	h.check(sections.join(',') === 'chat,mesh,animation,aibox,agents,desktop', `sections in order: ${sections.join(', ')}`);
 	const anatomy = await page.evaluate(() => {
 		const r = document.querySelector('#settings-main [data-tool-row="chat:p-good"]');
 		return {
@@ -196,6 +196,22 @@ h.run(async () => {
 	h.check(t.startsWith('✓'), `voice typing Test (${t})`);
 	t = await runTest('desktop-blender');
 	h.check(t.startsWith('✓') && /Ready/.test(t), `desktop tools Test (${t})`);
+	t = await runTest('agents-session');
+	h.check(t.startsWith('✓') && /No agent/.test(t), `agents Test says who is in the session (${t})`);
+	const planned = await page.evaluate(() =>
+		['animation:planned', 'aibox:planned'].map((id) => {
+			const r = document.querySelector(`#settings-main [data-tool-row="${id}"]`);
+			return { text: r?.textContent ?? '', test: !!r?.querySelector('button') };
+		})
+	);
+	h.check(
+		planned.every((p) => /Not available yet/.test(p.text) && !p.test),
+		'Animation providers and the AI box say they are not available yet, with nothing to press'
+	);
+	h.check(
+		(await page.locator('#tool-desktop-blender-docs').getAttribute('href')) === 'https://docs.theprototype.app/edit-in-blender/',
+		'the Desktop tools row links the Edit in Blender guide'
+	);
 	// a broken key on the ACTIVE provider: ✗ and the dot turns red; a ComfyUI with no workflow: ✗
 	await page.evaluate((o) => {
 		const st = window.__stores;
@@ -339,6 +355,37 @@ h.run(async () => {
 	});
 	await page.waitForTimeout(200);
 	await shot('tools-connections-dark');
+
+	// ---- 59-int: Edit in Blender asks the Desktop tools row (T5) --------------------------------
+	await page.click('#tool-desktop-blender-enable');
+	const gate = await page.evaluate(async () => {
+		const s = window.__stores;
+		let g;
+		s.objectsGroup.subscribe((x) => (g = x))();
+		const o = new s.THREE.Mesh(new s.THREE.BoxGeometry(1, 1, 1), new s.THREE.MeshStandardMaterial());
+		g.add(o);
+		s.settingsOpen.set(false);
+		const ran = await s.editInBlender.editInBlender(o.uuid);
+		g.remove(o);
+		let open, toast;
+		s.settingsOpen.subscribe((v) => (open = v))();
+		s.toastStore.subscribe((t) => (toast = JSON.stringify(t)))();
+		return { ran, open, toast };
+	});
+	h.check(
+		gate.ran === false && gate.open === true && /Edit in Blender needs Desktop tools/.test(gate.toast ?? ''),
+		`with Blender switched off, Edit in Blender says so and opens the row (${gate.ran}, ${gate.open})`
+	);
+	await page.waitForSelector('#tool-desktop-blender-enable', { timeout: 10000 });
+	await page.click('#tool-desktop-blender-enable');
+
+	// ---- 59-int: the Agents row makes the invite link + the MCP command -------------------------
+	await page.click('#tool-agents-session-configure');
+	await page.waitForSelector('#invite-sheet', { timeout: 10000 });
+	h.check((await page.evaluate(() => new Promise((r) => window.__stores.settingsOpen.subscribe((v) => r(v))()))) === false, 'Set up leaves Settings for the invite sheet');
+	await page.click('#invite-create');
+	await page.waitForSelector('#invite-mcp', { timeout: 10000 });
+	h.check(/^claude mcp add theprototype -- npx -y @theprototype\/agent mcp /.test(await page.locator('#invite-mcp').inputValue()), 'the MCP setup command is ready to copy');
 	h.check(
 		h.pageErrors(A).length === 0,
 		`no page errors (${h.pageErrors(A).join(' | ').slice(0, 200)})`

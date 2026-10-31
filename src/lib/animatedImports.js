@@ -626,6 +626,12 @@ export function animationState(uuid) {
 	return get(animatedObjects)[uuid] ?? null;
 }
 
+/** a clip asset that is not bound yet starts playing when it is (addClipAction's `resume`)
+ * @param {string} uuid @param {string} name */
+export function resumeClipWhenBound(uuid, name) {
+	animatedObjects.update((map) => (map[uuid] ? { ...map, [uuid]: { ...map[uuid], resume: name } } : map));
+}
+
 /** which parser this import's bytes need @param {string} uuid */
 export function animatedImportKind(uuid) {
 	return fileKinds.get(uuid) ?? 'gltf';

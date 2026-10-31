@@ -5,6 +5,7 @@ import { hasAnimatedImport, animatedImportPayload, animatedImportKind } from './
 import { gltfBytesFor } from './fileHandler.svelte';
 import { isGlb, stampTpExtras } from './glbEdit';
 import { isEditOverlay } from './editOverlays';
+import { explainMissing } from './tools/toolLinks.js';
 import { EDIT_IN_BLENDER_DOCS, BLENDER_EXPORT_SETTINGS, editInBlenderCard } from './editInBlenderState';
 
 // 59 T2 — EDIT IN BLENDER (manual). The object's model goes out as `<name>.glb` and comes back
@@ -90,6 +91,7 @@ function download(bytes, fileName) {
 export async function editInBlender(uuid) {
 	const live = objectOf(uuid);
 	if (!live) return false;
+	if (explainMissing('editInBlender')) return false; // 59 T5: Desktop tools ▸ Blender is switched off
 	const file = await modelFileFor(uuid);
 	if (!file) {
 		showToast('Could not write "' + (live.name || 'this model') + '" as a file.');

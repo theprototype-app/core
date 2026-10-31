@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { stampTpExtras, readTpExtras, transformRootNodes, appendAnimations, composeTRS, decomposeTRS } from '../../src/lib/glbEdit.js';
-import { clipKeepPlan, clipToGlbAnimation, nodeIndexOf, clipSummary, trackTarget } from '../../src/lib/modelClips.js';
+import { clipKeepPlan, clipRefKeepPlan, clipToGlbAnimation, nodeIndexOf, clipSummary, trackTarget } from '../../src/lib/modelClips.js';
 import { sanityIssues, fixMatrix } from '../../src/lib/modelSanity.js';
 import { unpackGlb } from '../../src/lib/gltfOptimize/glbPost.js';
 
@@ -255,5 +255,26 @@ describe('T7c — sanity checks', () => {
 		d.s.forEach((s) => expect(s).toBeCloseTo(2, 9));
 		const sameRotation = Math.abs(d.q.reduce((acc, v, i) => acc + v * q[i], 0));
 		expect(sameRotation).toBeCloseTo(1, 9);
+	});
+});
+
+describe('clipRefKeepPlan — 57 .tpanim clips follow the F2 rule', () => {
+	const tp = (...names) => ({ nodes: names.map((name) => ({ name })), tracks: names.map((_, node) => ({ node })) });
+	const has = (n) => ['Hips', 'Spine'].includes(n);
+	it('keeps a clip whose bones all exist, drops one that misses a bone and says which', () => {
+		const clips = { a: tp('Hips', 'Spine'), b: tp('Hips', 'Tail') };
+		const plan = clipRefKeepPlan([{ name: 'Walk', hash: 'a' }, { name: 'Wag', hash: 'b' }], (r) => clips[r.hash], has, false);
+		expect(plan.keep.map((r) => r.name)).toEqual(['Walk']);
+		expect(plan.dropped).toEqual([{ name: 'Wag', missing: ['Tail'] }]);
+	});
+	it('keeps a clip whose bytes are not here yet: nothing says it does not fit', () => {
+		const plan = clipRefKeepPlan([{ name: 'Far', hash: 'x' }], () => null, has, false);
+		expect(plan.keep.map((r) => r.name)).toEqual(['Far']);
+		expect(plan.dropped).toEqual([]);
+	});
+	it('a humanoid clip asks the bone map, not the names', () => {
+		const human = { humanoid: { hips: {} }, nodes: [], tracks: [] };
+		expect(clipRefKeepPlan([{ name: 'H', hash: 'h' }], () => human, has, true).keep).toHaveLength(1);
+		expect(clipRefKeepPlan([{ name: 'H', hash: 'h' }], () => human, has, false).dropped[0].name).toBe('H');
 	});
 });

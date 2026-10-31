@@ -1,7 +1,7 @@
 // 59 T3 — THE BUNDLED SKIES COME FROM THE CDN, ONCE:
 //   1. picking Meadow fetches `hdri/meadow_2_1k.hdr` from the packs base (not the app's origin)
 //      exactly once, and the sky is ready
-//   2. Cache Storage (`tp-skies-v1`) holds it; after a RELOAD picking Meadow again fetches nothing
+//   2. the asset cache (60 Q6, kind sky) holds it; after a RELOAD picking Meadow again fetches nothing
 //      (counterfactual: a sky never picked — Sunrise — IS fetched, so the counter is live)
 //   3. CDN BLOCKED (fresh profile): Starlight shows the preset's FLAT colours — status
 //      `unavailable`, no IBL on the scene, no error text, no page error — and back online it loads
@@ -81,9 +81,9 @@ h.run(async () => {
 		`the app itself no longer serves hdri/*.hdr (HTTP ${appHdr})`
 	);
 
-	// ---- 2. Cache Storage keeps it across a reload -------------------------------------------
+	// ---- 2. the asset cache keeps it across a reload -------------------------------------------
 	const cached = await A.page.evaluate(() => window.__stores.hdriSky.cachedSkies());
-	h.check(cached.includes(url), `Cache Storage holds the sky (${cached.join(', ')})`);
+	h.check(cached.includes(url), `the asset cache holds the sky (${cached.join(', ')})`);
 	await h.freshReload(A);
 	await h.answerRestore(A);
 	await A.page.evaluate(() => window.__stores.environment.setEnvironment('studio'));

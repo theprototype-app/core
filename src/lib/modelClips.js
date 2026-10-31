@@ -12,8 +12,8 @@ import { PropertyBinding, InterpolateDiscrete } from 'three';
 //
 // A kept clip has to live in the new model's BYTES (an animated import replicates and saves as
 // its file), so `clipToGlbAnimation` turns it into glTF channels that glbEdit appends.
-// TODO(59-int): 57's `.tpanim` clip assets get the same keep rule once they are on the union —
-// they bind by skeleton bone names too, so `clipKeepPlan` is the check to call.
+// 57's `.tpanim` clip assets (`clipRefs` on the root, never in the bytes) get the same rule through
+// `clipRefKeepPlan`: they bind by skeleton bone names too.
 
 /** the node a track animates and the property, or null for a track name three cannot read
  * @param {string} trackName */
@@ -49,6 +49,37 @@ export function clipKeepPlan(oldClips, newClipNames, hasNode) {
 		}
 		if (missing.size || !(clip.tracks ?? []).length) dropped.push({ name: clip.name, missing: [...missing] });
 		else keep.push(clip);
+	}
+	return { keep, dropped };
+}
+
+/**
+ * Which of a model's `.tpanim` clip refs survive the replace: the same rule as `clipKeepPlan`. A
+ * clip whose bytes are not on this peer yet stays (nothing says it does not fit, and it binds or
+ * says why once they land). A humanoid clip binds through the bone map, not bone names, so it
+ * asks `humanoid` instead. PURE.
+ * @param {{name: string, hash: string}[]} refs
+ * @param {(ref: {name: string, hash: string}) => ({humanoid?: any, nodes: {name: string}[], tracks: {node: number}[]} | null | undefined)} tpOf the decoded clip
+ * @param {(nodeName: string) => boolean} hasNode does the new model have a node of that name
+ * @param {boolean} humanoid does the new model have a humanoid map
+ * @returns {{keep: any[], dropped: {name: string, missing: string[]}[]}}
+ */
+export function clipRefKeepPlan(refs, tpOf, hasNode, humanoid) {
+	/** @type {any[]} */
+	const keep = [];
+	/** @type {{name: string, missing: string[]}[]} */
+	const dropped = [];
+	for (const ref of refs ?? []) {
+		const tp = tpOf(ref);
+		if (!tp) keep.push(ref);
+		else if (tp.humanoid) {
+			if (humanoid) keep.push(ref);
+			else dropped.push({ name: ref.name, missing: ['humanoid bones'] });
+		} else {
+			const missing = [...new Set(tp.tracks.map((t) => tp.nodes[t.node]?.name))].filter((n) => !n || !hasNode(n));
+			if (missing.length) dropped.push({ name: ref.name, missing: /** @type {string[]} */ (missing) });
+			else keep.push(ref);
+		}
 	}
 	return { keep, dropped };
 }

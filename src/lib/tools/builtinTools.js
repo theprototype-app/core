@@ -12,7 +12,7 @@
 //   - a desktop tool: a LOCAL pref (`tools:blender`, default on) — off hides nothing in this lane;
 //     the `editInBlender` feature reads it (59-replace's menu entry asks `featureStatus`)
 // Test functions import their clients lazily, so this module adds nothing heavy to the boot graph.
-import { writable, derived } from 'svelte/store';
+import { writable, derived, readable } from 'svelte/store';
 import { safeStorage } from '../safeStorage';
 import { registerToolRows, registerFeature } from './toolStatus.js';
 import {
@@ -32,6 +32,12 @@ import {
 	meshGenReady
 } from '../ai/meshProviders.js';
 import { sttConfig, setSttConfig, sttReady, sttPresetFor } from '../ai/stt.js';
+import { EDIT_IN_BLENDER_DOCS } from '../editInBlenderState.js';
+import { agentTargets } from '../agentChat.js';
+import { inviteSheet } from '../inviteStore.js';
+import { connectorAvailable, connectorState, connectorLine, CONNECTOR_IDLE } from '../connector/connectorStore.js';
+import { CONNECTOR_DOCS_URL } from '../connector/connectorLinks.js';
+import { settingsOpen, aiAssistantHidden } from '../../stores/appStore.js';
 
 /** 'https://api.x.ai/v1' → 'api.x.ai' @param {string} url */
 function hostOf(url) {
@@ -160,7 +166,7 @@ const meshRows = derived(
 				stateText:
 					missing ||
 					(inUse ? 'In use' : active === p.id ? 'Mesh generation switched off' : 'Not in use'),
-				features: ['Generate 3D model (Add menu)', 'generate_mesh for the assistant'],
+				features: ['Generate 3D model (Add menu)', 'generate_mesh for the assistant and agents'],
 				enabled: inUse,
 				setEnabled: (/** @type {boolean} */ yes) => {
 					if (yes) {
@@ -212,10 +218,96 @@ const desktopRows = derived(blenderEnabled, (on) => [
 				? 'Ready — this browser can also watch the saved file and offer Reload'
 				: 'Ready — drop the saved file back onto the object (this browser cannot watch files)'
 		}),
-		form: { kind: 'desktop' }
+		form: { kind: 'desktop' },
+		docs: EDIT_IN_BLENDER_DOCS
 	}
 ]);
 registerToolRows('desktop', desktopRows);
+
+// ---- agents (55 + 86) -------------------------------------------------------------------------
+
+const AGENT_DOCS = 'https://docs.theprototype.app/ai/build-with-an-agent/';
+
+/** coding agents in this session: an invite link + the ready MCP command live in the invite sheet */
+const agentRows = derived(agentTargets, (list) => [
+	{
+		id: 'agents:session',
+		section: 'agents',
+		label: 'Coding agents',
+		detail: list.length ? list.map((a) => a.name).join(', ') : 'Claude Code or any MCP client, through an invite link',
+		state: /** @type {import('./toolStatus.js').ToolState} */ (list.length ? 'ready' : 'off'),
+		stateText: list.length ? list.length + (list.length === 1 ? ' agent connected' : ' agents connected') : 'None connected',
+		features: ['Invite link', 'MCP setup command to copy', 'Chat with an agent in the AI window'],
+		test: async () => ({
+			ok: true,
+			detail: list.length
+				? 'In this session: ' + list.map((a) => a.name).join(', ')
+				: 'No agent in this session right now. Set up makes an invite link and the command to paste.'
+		}),
+		configure: () => {
+			settingsOpen.set(false);
+			inviteSheet.set('agent');
+		},
+		docs: AGENT_DOCS
+	}
+]);
+registerToolRows('agents', agentRows);
+
+/** the Claude connector: a signed-in cloud build only, so the row exists only where it can work */
+const connectorRows = derived([connectorAvailable, connectorState], ([available, s]) =>
+	!available
+		? []
+		: [
+				{
+					id: 'agents:connector',
+					section: 'agents',
+					label: 'Connect Claude',
+					detail: 'claude.ai, voice included, builds in this tab',
+					state: /** @type {import('./toolStatus.js').ToolState} */ (
+						s.phase === 'connected' ? 'ready' : s.phase === 'error' || s.phase === 'closed' ? 'setup' : 'off'
+					),
+					stateText: s.phase === CONNECTOR_IDLE.phase ? 'Not connected' : connectorLine(s) || s.phase,
+					features: ['Claude builds in your tab', 'Voice'],
+					configure: () => {
+						settingsOpen.set(false);
+						aiAssistantHidden.set('');
+					},
+					docs: CONNECTOR_DOCS_URL
+				}
+			]
+);
+registerToolRows('agents', connectorRows);
+
+// ---- not available yet: animation providers + the AI box (roadmap 58) ---------------------------
+
+registerToolRows(
+	'animation',
+	readable([
+		{
+			id: 'animation:planned',
+			section: 'animation',
+			label: 'Rigging and animation services',
+			detail: 'A later update adds them here.',
+			state: /** @type {import('./toolStatus.js').ToolState} */ ('unknown'),
+			stateText: 'Not available yet',
+			features: ['Rig this model', 'Generate animation']
+		}
+	])
+);
+registerToolRows(
+	'aibox',
+	readable([
+		{
+			id: 'aibox:planned',
+			section: 'aibox',
+			label: 'Your own GPU box',
+			detail: 'A later update adds its health, models and licences here.',
+			state: /** @type {import('./toolStatus.js').ToolState} */ ('unknown'),
+			stateText: 'Not available yet',
+			features: ['Rig this model', 'Generate animation']
+		}
+	])
+);
 
 // ---- features (T5) ----------------------------------------------------------------------------
 

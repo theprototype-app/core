@@ -23,6 +23,7 @@ const ALWAYS_ALLOWED = new Set([
 	'userdata', // whitelist sync
 	'cloud', // the plugin's OWN control channel (roles, room announces) — never gate it
 	'locked', // lock-state restore on handshake
+	'ratelimited', // 71 TR7: "some of yours were dropped" — a notice, no content; a viewer can still be the one saying it
 	// late-joiner full-state REQUESTS (answering them is how a peer ever syncs)
 	'getobjects',
 	'getnodes',

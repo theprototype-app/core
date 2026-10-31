@@ -111,6 +111,8 @@ import { setAiEnabled } from '../ai/providers';
 import { setMeshGenEnabled } from '../ai/meshProviders';
 import { setSttConfig, sttPresetFor } from '../ai/stt.js';
 import { peerServerConfig } from '../peerServer';
+import { peerRateLimits } from '../peerRateGate';
+import { DEFAULT_RATE_PRESET } from '../peerRateLimit';
 
 /** the VR schema's `put`: these stores have no persisting subscriber, the row writes the key itself
  * @param {import('svelte/store').Writable<any>} store @param {string} key @param {any} value */
@@ -284,6 +286,7 @@ const RESETS = {
 	},
 	connection() {
 		softPeerCap.set(SOFT_PEER_CAP_DEFAULT);
+		peerRateLimits.set(DEFAULT_RATE_PRESET);
 		peerServerConfig.update((c) => ({
 			...c,
 			mode: 'default',

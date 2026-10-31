@@ -3,6 +3,7 @@ import { HELPER_LAYER } from './helperLayer'; // 60 Q5
 import { showToast, appNotice, peers, cloudIdentity, userdata } from '../stores/appStore';
 import { globalScene, globalCamera, globalRenderer, orbitControls, cameraClaim, isLocked, isVRMode } from '../stores/sceneStore';
 import { requestConnect } from './peerApproval';
+import { removePeer } from './peerModeration'; // 71 TR7
 import { sessionHost } from './connectionState';
 // 55 A4: invite grants for the roles plugin (store-only)
 import { inviteGrantFor, onInvitesChange, isAgentPeer, joinedVia } from './inviteStore';
@@ -576,6 +577,9 @@ export function makeCloudApi() {
 		/** fix-live: entries for the Users peer menu, `[{id, label, run(peerId, {name})}]` (≤ 8;
 		 *  [] clears) — the cloud's "Report…". Probe with typeof. */
 		setPeerMenuItems: (/** @type {any} */ items) => setPeerMenuItems(items),
+		/** 71 TR7: remove someone from this session, the Users menu's own action (`{block: true}` keeps them
+		 *  out for the session). Under the same rule as that menu: false, with a toast, if you may not. Probe with typeof. */
+		removePeer: (/** @type {string} */ peerId, /** @type {{block?: boolean}} */ opts) => removePeer(peerId, opts),
 		/** 86 B1/B5: the Claude connector's account half — `{pair({resume}), connections(), revoke(id),
 		 *  revokeAll(), account()}` (see cloudHooks.connectorProvider) or null. Core shows Connect Claude
 		 *  and Settings ▸ Connected apps only while one is installed. Probe with typeof. */

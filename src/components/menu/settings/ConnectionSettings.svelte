@@ -31,6 +31,7 @@
 	import { softPeerCap, HARD_PEER_CAP, SOFT_PEER_CAP_DEFAULT } from '$lib/connectionState';
 	import { agentsAsGuests } from '$lib/inviteStore'; // 55 A4
 	import { showAgentMarkers } from '$lib/agentLog'; // 55 A7
+	import { peerRateLimits } from '$lib/peerRateGate'; // 71 TR7
 	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST, peerServerStatus } from '$lib/peerServer';
 
 	const nav = /** @type {any} */ (getContext(NAV_CONTEXT));
@@ -125,6 +126,10 @@
 						softPeerCap.set(Number.isFinite(n) ? Math.min(HARD_PEER_CAP, Math.max(2, Math.round(n))) : SOFT_PEER_CAP_DEFAULT);
 					}}
 				/>
+			</SettingRow>
+			<!-- 71 TR7: per-peer limits, applied on this device -->
+			<SettingRow id="row-peer-rate-limits" label="Limit floods from peers" description="Ignores edits and chat from someone sending far more than a person would. The session host is never limited." wide>
+				<Segmented id="peer-rate-limits" label="Limit floods from peers" bind:value={$peerRateLimits} options={[{ value: 'off', label: 'Off' }, { value: 'normal', label: 'Normal' }, { value: 'strict', label: 'Strict' }]} />
 			</SettingRow>
 			<!-- 55 A4: an AI agent's dial gets the approval card even where guests join automatically -->
 			<SettingRow id="row-agents-as-guests" label="Let AI agents join as guests" description="Off: an AI agent asks first even when your room lets guests join automatically. An invite link always lets it in.">

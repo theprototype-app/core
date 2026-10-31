@@ -19,6 +19,7 @@ import { applyUvPaint, applyUvPaintEnd } from '$lib/uvEditor';
 import { applySplineEdit } from '$lib/splineTool';
 import { initVoiceChat, attachVoiceToPeer, voicePeerConnected, releaseMic } from '$lib/voiceChat';
 import { resolvePeerOptions, describePeerServer, peerServerStatus, parseInviteHash, decodeInviteServer, applyInviteServerOverride, inviteServerOverride } from '$lib/peerServer';
+import { admitRate, applyRateNotice } from '$lib/peerRateGate';
 import { hideMyIp, applyHideMyIp, whenRelayReady, relayDialWait, RELAY_DIAL_FAILED } from '$lib/hideMyIp';
 // 27-B/27-G integration: the RECOVERY story belongs in the copyable bundle, not in a
 // console nobody reads. diagnostics.js is a zero-dependency leaf, so this closes no cycle.
@@ -1104,6 +1105,8 @@ export class PeerConnection {
 				// everything (byte-identical OSS behavior); a cloud plugin's provider
 				// drops disallowed message types from a peer (e.g. a viewer's mutations).
 				if (data && !canApply(conn.peer, data.type)) return;
+				// 71 TR7: per-peer edit and chat limits (peerRateLimit.js)
+				if (data && !admitRate(conn, data.type)) return;
 				// A2: the ROOM gate. A message describing the content of a scene is not
 				// applied when its sender is demonstrably standing in a different one.
 				//
@@ -1187,6 +1190,8 @@ export class PeerConnection {
 						this.connectToPeer(id, false);
 					}
 					);
+				} else if(data.type == 'ratelimited') {
+					applyRateNotice(data); // 71 TR7: a receiver dropped some of ours
 				} else if(data.type == 'sent') {
 					// 37 R15: `id` + `at` are additive (an older peer sends neither; addMessage mints)
 					addMessage({message: data.message, type: 'received', sender: data.sender, id: data.id, at: data.at});

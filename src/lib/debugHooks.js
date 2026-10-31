@@ -35,6 +35,7 @@ export const DEBUG_HOOKS = [
 	['perfBeacon', () => import('./perf/beacon')],
 	['errorReports', () => import('./errorReports')],
 	['hideMyIp', () => import('./hideMyIp')],
+	['peerRateGate', () => import('./peerRateGate')],
 	['staleModules', () => import('./staleModules')],
 	['perfMoment', () => import('./perf/moment')],
 	['problemReport', () => import('./problemReport')],

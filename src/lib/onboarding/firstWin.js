@@ -32,7 +32,7 @@ import {
 	playEdge
 } from './quests.js';
 import { onboardChoice, simpleUntilPlay } from './onboardState.js';
-import { funnelEvent } from './funnel.js';
+import { funnelEvent, offerFunnelNote } from './funnel.js';
 
 /** may the quest start by itself on this page? (not under test unless the suite asks) */
 function allowed() {
@@ -161,6 +161,8 @@ export function installFirstWin(options = {}) {
 	// play-entered, the first Play's disclosure, and the Play answer's quest after the game
 	/** @type {'edit' | 'play' | 'leaving'} */
 	let phase = get(isLocked) === true ? 'play' : 'edit';
+	/** 76 consent: this Play is the first one; the card asks when the person is back from it */
+	let askAfterPlay = false;
 	off.push(
 		isLocked.subscribe((v) => {
 			const edge = playEdge(phase, v);
@@ -168,7 +170,14 @@ export function installFirstWin(options = {}) {
 			if (edge.entered) {
 				funnelEvent('ob_first_play');
 				tours.signal(SIGNALS.played);
-				if (get(simpleUntilPlay)) simpleUntilPlay.set(false);
+				if (get(simpleUntilPlay)) {
+					simpleUntilPlay.set(false);
+					askAfterPlay = true;
+				}
+			}
+			if (edge.left && askAfterPlay) {
+				askAfterPlay = false;
+				offerFunnelNote();
 			}
 			if (edge.left && afterPlay) {
 				const owed = afterPlay;

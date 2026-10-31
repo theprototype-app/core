@@ -20,6 +20,9 @@ import { parseJoinLink } from './joinLink.js';
 
 /** how long the card waits for the person (the Worker's call budget is 120 s) */
 export const JOIN_ASK_MS = 90 * 1000;
+/** Three refusals in a row and the card stays away for a minute */
+let refusals = 0;
+let quietUntil = 0;
 /** the card's id: ConfirmModal renders `#confirm-connector-join`, its Join button `#confirm-dialog-join` */
 export const JOIN_DIALOG_ID = 'connector-join';
 /** the app's own public origin: a share link copied on theprototype.app names a session in any of its tabs */
@@ -52,6 +55,7 @@ export async function joinSession(args, ctx = {}) {
 	const myId = String(peer?.peer?.id || peer?.myId || '').toLowerCase();
 	if (!peer?.peer) return fail('failed', 'This tab is not online yet (no signaling link). Try again in a moment.');
 	if (parsed.id === myId) return fail('refused', 'That is this tab’s own session — the person is already in it.');
+	if (Date.now() < quietUntil) return fail('refused', 'The person turned this down several times. Do not ask again for now.');
 	if (get(confirmDialog)) return fail('busy', 'The person has another question open in the tab. Try again once they have answered it.');
 
 	const who = hostLabel(parsed.id);
@@ -70,6 +74,7 @@ export async function joinSession(args, ctx = {}) {
 				'\n\nJoin only if you asked Claude to. If you have work open, the app asks what to do with it first.',
 			choices: [{ value: 'join', label: 'Join' }],
 			cancelLabel: 'Cancel',
+			focusCancel: true,
 			resolve: (/** @type {any} */ a) => done(typeof a === 'string' && a ? a : null)
 		};
 		/** @param {string | null} a */
@@ -88,6 +93,11 @@ export async function joinSession(args, ctx = {}) {
 		ctx.onCancel?.(dismiss);
 		confirmDialog.set(record);
 	});
+	if (answer === 'join') refusals = 0;
+	else if (++refusals >= 3) {
+		refusals = 0;
+		quietUntil = Date.now() + 60000;
+	}
 	if (answer !== 'join') return fail('refused', 'The person did not join (Cancel, or no answer in ' + Math.round(JOIN_ASK_MS / 1000) + ' s). Do not ask again unless they ask you to.');
 
 	const outcome = await handleInviteHash(parsed.hash);

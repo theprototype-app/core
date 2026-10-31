@@ -160,6 +160,9 @@ export function isKitEntityRow(row) {
 	return isArray(row) && row.length === 7 && isUuid(row[0]) && row.slice(1).every(isNum);
 }
 
+/** a row's id, hash or folder reference @param {unknown} v */
+const shortStr = (v) => typeof v === 'string' && v.length > 0 && v.length <= 128;
+
 /**
  * Per-type shape tests. ABSENT MEANS ALLOW — see the header. Deliberately shallow: this
  * is the difference between "will this throw inside an applier" and "is this message
@@ -232,7 +235,7 @@ export const VALIDATORS = {
 	nodedefs: (d) => isArray(d.defs),
 	verts: (d) => isUuid(d.uuid) && isArray(d.indices),
 	meshgeo: (d) => isUuid(d.uuid) && d.positions !== undefined,
-	assetstart: (d) => typeof d.hash === 'string' && typeof d.chunks === 'number' && typeof d.size === 'number',
+	assetstart: (d) => typeof d.hash === 'string' && Number.isInteger(d.chunks) && d.chunks > 0 && d.chunks <= 4096 && typeof d.size === 'number',
 	assetchunk: (d) => typeof d.hash === 'string' && Number.isInteger(d.seq),
 	assetfile: (d) => typeof d.hash === 'string',
 	manifest: (d) => !!d.manifest && typeof d.manifest === 'object',
@@ -261,12 +264,14 @@ export const VALIDATORS = {
 	// re-checks every pull against the scope it sent and every save against the asker's role
 	volidx: (d) =>
 		isArray(d.items) && d.items.length <= 5000 && isArray(d.folders) && d.folders.length <= 2000 &&
-		d.items.every((/** @type {any} */ r) => !!r && typeof r.id === 'string' && typeof r.hash === 'string' && r.hash.length <= 128) &&
-		d.folders.every((/** @type {any} */ f) => !!f && typeof f.id === 'string'),
+		d.items.every((/** @type {any} */ r) => !!r && shortStr(r.id) && shortStr(r.hash) && (r.kind == null || (typeof r.kind === 'string' && r.kind.length <= 32)) && (r.folderId == null || shortStr(r.folderId))) &&
+		d.folders.every((/** @type {any} */ f) => !!f && shortStr(f.id) && (f.parentId == null || shortStr(f.parentId))),
 	volthumbs: (d) => !!d.thumbs && typeof d.thumbs === 'object' && Object.keys(d.thumbs).length <= 64,
 	volget: (d) => typeof d.hash === 'string' && d.hash.length > 0 && d.hash.length <= 128,
 	volsave: (d) => typeof d.id === 'string' && d.id.length <= 64 && (d.name == null || (typeof d.name === 'string' && d.name.length <= 200)),
 	volsaveack: (d) => typeof d.id === 'string' && typeof d.ok === 'boolean',
+	volresolve: (d) => shortStr(d.handle),
+	volhash: (d) => shortStr(d.handle) && (d.hash == null || shortStr(d.hash)),
 	volcancel: (d) => typeof d.hash === 'string' && d.hash.length > 0 && d.hash.length <= 128,
 	disconnected: (d) => typeof d.peerId === 'string',
 	// 55 A9: remove / remove-and-block / allow back. WHO may send it is decided by the

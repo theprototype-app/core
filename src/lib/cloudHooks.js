@@ -104,6 +104,7 @@ const ALWAYS_ALLOWED = new Set([
 	// the host answers it only for a hash inside the share scope it sent that peer (sessionVolumes.js);
 	// and its CANCEL, which only ever stops bytes flowing to the sender itself
 	'volget',
+	'volresolve',
 	'volcancel'
 ]);
 

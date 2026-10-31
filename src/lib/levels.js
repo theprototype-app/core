@@ -536,10 +536,11 @@ export function levelSceneName(fileName) {
  * @param {string} name
  * @param {string|null} [folderId] 21-G9: land it HERE when it is a real library folder
  *   (the Explorer's active folder); 21-H1: the library ROOT otherwise
- * @param {{label?: string, consent?: boolean}} [opts] 21-G7: `label` NAMES this version in
+ * @param {{label?: string, consent?: boolean, prune?: boolean}} [opts] 21-G7: `label` NAMES this version in
  *   the history panel (the manual "Save version…" path); absent = "Auto".
  *   R22 round 33: `consent: false` withholds the C4 publish consent — see below. Absent
  *   means consent, so every existing caller is byte-identical.
+ *   `prune: false` keeps the scene's older versions (a save a peer asked for).
  * @returns {Promise<{id: string, hash: string, name: string}|null>}
  */
 export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
@@ -631,7 +632,7 @@ export async function saveSceneAsLevel(name, folderId = null, opts = {}) {
 	if (opts.label) setVersionLabel(payload.name, item.hash, opts.label);
 	// 21-G7: one visible card per scene name — the pointer we just wrote
 	hideOldVersions(payload.name);
-	pruneSceneVersions(payload.name);
+	if (opts.prune !== false) pruneSceneVersions(payload.name);
 	showToast(
 		'Scene saved: ' + payload.name + ' (' + (payload.count ?? 0) + ' objects)' + announced.note
 	);

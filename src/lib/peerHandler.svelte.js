@@ -1639,7 +1639,7 @@ export class PeerConnection {
 					applyPing(data);
 				} else if(data.type == 'assetfile') {
 					// shared Explorer bytes (97) — dedup by content hash
-					applyAssetFile(data);
+					applyAssetFile(data, conn.peer);
 				} else if(data.type == 'assetmissing') {
 					// R22-R8: "I do not have that hash." When every peer has said so the pull is
 					// resolved immediately instead of waiting out a timeout.
@@ -1648,7 +1648,7 @@ export class PeerConnection {
 					// R22-R8: a sliced transfer is announced, then its slices arrive. Chunking is
 					// what makes per-file progress and an integrity check possible — peerjs chunks
 					// internally but tells us nothing about it.
-					applyAssetStart(data);
+					applyAssetStart(data, conn.peer);
 				} else if(data.type == 'assetchunk') {
 					applyAssetChunk(data);
 				} else if(data.type == 'assetthumb') {
@@ -1664,7 +1664,7 @@ export class PeerConnection {
 					else answerAssetRequest(conn.peer, data);
 				} else if(data.type == 'module') {
 					applyModuleMessage(data);
-				} else if(data.type == 'volidx' || data.type == 'volthumbs' || data.type == 'volget' || data.type == 'volsave' || data.type == 'volsaveack' || data.type == 'volcancel') {
+				} else if(data.type == 'volidx' || data.type == 'volthumbs' || data.type == 'volget' || data.type == 'volsave' || data.type == 'volsaveack' || data.type == 'volcancel' || data.type == 'volresolve' || data.type == 'volhash') {
 					// 56 C13: the host's files as a read-only Explorer volume — lazy, like the mesh relay
 					const from = conn.peer;
 					sessionVolumesNow().then((m) => m.handleVolumeMessage(from, data)).catch(() => {});

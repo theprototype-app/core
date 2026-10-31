@@ -645,6 +645,7 @@
 		"select-41": 114,
 		"select-inside-36": 38,
 		"session-volume": 240,
+		"session-volume-limits": 240,
 		"session-volume-phone": 300,
 		"sequence-card": 120,
 		"session-scenes": 560,

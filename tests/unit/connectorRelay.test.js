@@ -457,3 +457,13 @@ describe('where_are_users pose (86-fix)', () => {
 		expect(r.inFront1_5m).toEqual([0, 0, -1.5]);
 	});
 });
+
+describe('parseJoinLink keeps only what a session link means', () => {
+	it('drops other parameters, keeps the invite and the server', async () => {
+		const { parseJoinLink } = await import('../../src/lib/connector/joinLink.js');
+		const base = { origins: ['https://theprototype.app'] };
+		const opts = base.origins;
+		expect(parseJoinLink('#abc&agent', opts).hash).toBe('#abc');
+		expect(parseJoinLink('#abc&invite=tok&agent~srv=x.example', opts).hash).toBe('#abc&invite=tok~srv=x.example');
+	});
+});

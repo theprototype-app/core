@@ -84,7 +84,7 @@
 			{:else}
 				<Button id="confirm-dialog-ok" variant="danger" onclick={() => resolveConfirm(true)}>{$confirmDialog.confirmLabel}</Button>
 			{/if}
-			<Button id="confirm-dialog-cancel" variant="outline" onclick={() => resolveConfirm(false)}>{$confirmDialog.cancelLabel}</Button>
+			<Button id="confirm-dialog-cancel" variant="outline" data-autofocus={$confirmDialog.focusCancel ? true : undefined} onclick={() => resolveConfirm(false)}>{$confirmDialog.cancelLabel}</Button>
 		{/snippet}
 	</ModalDialog>
 {/if}

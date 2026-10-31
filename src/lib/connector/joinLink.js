@@ -39,5 +39,10 @@ export function parseJoinLink(raw, origins) {
 	const head = body.split('~')[0];
 	const id = head.split('&')[0].toLowerCase();
 	if (!SESSION_ID.test(id)) return { error: 'that link does not name a session (expected an id like ABCDE after the #)' };
-	return { hash, id, invite: /(^|&)invite=[^&~]+/i.test(head), server: /(^|~)srv=/i.test(body.slice(head.length)) };
+	// only what a session link means goes on: the session, its invite, its server
+	const tail = body.slice(head.length);
+	const invite = /(?:^|&)invite=([^&~]+)/.exec(head)?.[1];
+	const srv = /~srv=([^~]*)/.exec(tail)?.[1];
+	const clean = '#' + head.split('&')[0] + (invite ? '&invite=' + invite : '') + (srv !== undefined ? '~srv=' + srv : '');
+	return { hash: clean, id, invite: /(^|&)invite=[^&~]+/i.test(head), server: /(^|~)srv=/i.test(tail) };
 }

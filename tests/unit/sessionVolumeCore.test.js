@@ -17,7 +17,8 @@ import {
 	sessionVolumeName,
 	normalizeSaveMany,
 	saveDialogRows,
-	resolveSaveMany
+	resolveSaveMany,
+	safeFolderTree
 } from '../../src/lib/sessionVolumeCore.js';
 
 const folders = [
@@ -158,5 +159,27 @@ describe('Save project with several libraries open', () => {
 		expect(rows[1].reason).toMatch(/View-only/);
 		expect(rows.map((r) => r.where)).toEqual(['This device', 'Save on host', 'Mounted project', 'Save on host']);
 		expect(saveDialogRows([own, sess]).find((r) => r.id === 'session-h').checked).toBe(true);
+	});
+});
+
+describe('safeFolderTree', () => {
+	it('keeps an ordinary tree as it is', () => {
+		const rows = [{ id: 'a', parentId: null }, { id: 'b', parentId: 'a' }];
+		expect(safeFolderTree(rows)).toEqual(rows);
+	});
+	it('one row per id, and every parent chain ends', () => {
+		const out = safeFolderTree([{ id: 'a', parentId: 'a' }, { id: 'a', parentId: null }, { id: 'b', parentId: 'c' }, { id: 'c', parentId: 'b' }]);
+		expect(out.map((f) => f.id)).toEqual(['a', 'b', 'c']);
+		for (const f of out) {
+			let at = f.parentId;
+			for (let n = 0; at != null; n++) {
+				expect(n).toBeLessThan(5);
+				at = out.find((x) => x.id === at)?.parentId ?? null;
+			}
+		}
+	});
+	it('a very deep chain is cut', () => {
+		const rows = Array.from({ length: 200 }, (_, i) => ({ id: 'f' + i, parentId: i ? 'f' + (i - 1) : null }));
+		expect(safeFolderTree(rows).find((f) => f.id === 'f199').parentId).toBe(null);
 	});
 });

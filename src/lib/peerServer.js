@@ -262,6 +262,8 @@ export function decodeInviteServer(srv) {
 		return null;
 	}
 	// host[:port][/path]
+	// eslint-disable-next-line no-control-regex
+	if (/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(raw)) return null;
 	const m = /^([^:/]+)(?::(\d+))?(\/.*)?$/.exec(raw);
 	if (!m) return null;
 	return {

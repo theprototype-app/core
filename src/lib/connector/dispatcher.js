@@ -174,9 +174,11 @@ export function createDispatcher(deps) {
 	}
 
 	/** 86-fix: read-only, answered from this tab's own scene */
-	async function whereCall() {
+	/** @param {'read'|'edit'} scope a look-only grant gets the person's own pose, nobody else's */
+	async function whereCall(scope) {
 		const r = /** @type {NonNullable<typeof deps.whereAreUsers>} */ (deps.whereAreUsers)();
-		return isError(r) ? fail('failed', String(r.error)) : { result: r };
+		if (isError(r)) return fail('failed', String(r.error));
+		return { result: scope === 'edit' ? r : { ...r, users: r.users.filter((/** @type {any} */ u) => u.you) } };
 	}
 
 	/** the DO cancelled one call @param {string} id */
@@ -243,7 +245,7 @@ export function createDispatcher(deps) {
 						: tool === 'wait_for_edit'
 							? waitForEdit(id, args)
 							: tool === 'where_are_users'
-								? whereCall()
+								? whereCall(frame.scope)
 								: own
 									? joinCall(id, args)
 									: sceneCall(id, tool, args);

@@ -195,3 +195,24 @@ export function resolveSaveMany(setting, libs) {
 	const active = list.find((l) => l.active && l.canSave);
 	return { dialog: false, save: active ? [active.id] : [] };
 }
+
+/**
+ * A peer's folder rows as a tree the Explorer can walk: one row per id, and every parent chain ends
+ * (a row in a loop or one too deep goes to the root).
+ * @template {{id: string, parentId: string | null}} F
+ * @param {F[]} rows @returns {F[]}
+ */
+export function safeFolderTree(rows) {
+	const byId = new Map();
+	for (const f of rows) if (!byId.has(f.id)) byId.set(f.id, f);
+	return [...byId.values()].map((f) => {
+		const seen = new Set([f.id]);
+		let at = f.parentId;
+		for (let depth = 0; at != null; depth++) {
+			if (seen.has(at) || depth >= 64) return { ...f, parentId: null };
+			seen.add(at);
+			at = byId.get(at)?.parentId ?? null;
+		}
+		return f;
+	});
+}

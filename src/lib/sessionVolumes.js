@@ -26,7 +26,7 @@
 //   volsave    guest -> host  {id, name?}       -> volsaveack {id, ok, name?, error?}
 
 import { get } from 'svelte/store';
-import { peers, userdata, showToast } from '../stores/appStore';
+import { peers, userdata, showToast, waitingForApproval } from '../stores/appStore';
 import { sessionHost } from './connectionState';
 import { rolesInfo } from './cloudHooks';
 import { shareScope, setShareScope } from './shareScope';
@@ -45,7 +45,8 @@ import {
 	pullQuestion,
 	totalBytes,
 	sessionVolumeId,
-	sessionVolumeName
+	sessionVolumeName,
+	safeFolderTree
 } from './sessionVolumeCore';
 
 /** how many thumbnails ride one `volthumbs` message */
@@ -102,8 +103,9 @@ function note(line) {
 // the share scope itself lives in a leaf (the Connect drawer shows it); re-exported for callers here
 export { shareScope, setShareScope };
 
-/** per guest: the projection (and scope) we last sent it, and the thumbnails it already has
- * @type {Map<string, {proj: {folders: any[], items: any[]}, scope: string, role: string, thumbs: Set<string>}>} */
+/** per guest: the projection (and scope) we last sent it, the thumbnails it already has, and the handle each
+ * listed file goes by (a listing names no content hash; a file's hash is told when the guest opens or copies it)
+ * @type {Map<string, {proj: {folders: any[], items: any[]}, scope: string, role: string, thumbs: Set<string>, handles: Map<string, string>}>} */
 const sentTo = new Map();
 let rev = 0;
 
@@ -144,6 +146,16 @@ export function currentProjection() {
 	});
 }
 
+/** A dial of ours still waiting for that peer's answer: that peer may become our host, never our guest. @param {string} peerId */
+function askedToJoin(peerId) {
+	return (/** @type {any[]} */ (get(waitingForApproval)) ?? []).some((w) => w?.[0] === peerId);
+}
+
+/** Do we host this peer? @param {string} peerId */
+function hostOf(peerId) {
+	return !get(sessionHost) && !askedToJoin(peerId);
+}
+
 /** Are we hosting a session with somebody in it? */
 function hosting() {
 	/** @type {any} */
@@ -158,7 +170,12 @@ function hosting() {
 function sendVolume(peerId, proj = currentProjection()) {
 	const prior = sentTo.get(peerId);
 	const thumbs = prior?.thumbs ?? new Set();
-	sentTo.set(peerId, { proj, scope: get(shareScope), role: roleOf(peerId), thumbs });
+	const handles = prior?.handles ?? new Map();
+	const handleOf = (/** @type {string} */ hash) => {
+		if (!handles.has(hash)) handles.set(hash, 'v' + crypto.randomUUID());
+		return /** @type {string} */ (handles.get(hash));
+	};
+	sentTo.set(peerId, { proj, scope: get(shareScope), role: roleOf(peerId), thumbs, handles });
 	const ok = sendTo(peerId, {
 		type: 'volidx',
 		rev: ++rev,
@@ -166,7 +183,7 @@ function sendVolume(peerId, proj = currentProjection()) {
 		host: nameOf(String(/** @type {any} */ (get(peers))?.peer?.id ?? '')),
 		role: roleOf(peerId),
 		folders: proj.folders,
-		items: proj.items
+		items: proj.items.map((/** @type {any} */ row) => ({ ...row, hash: handleOf(row.hash) }))
 	});
 	note('out volidx to ' + peerId + ' ' + proj.items.length + ' rows' + (ok ? '' : ' (NO OPEN CONN)'));
 	if (!ok) return false;
@@ -179,7 +196,7 @@ function sendVolume(peerId, proj = currentProjection()) {
 		const t = byHash.get(row.hash);
 		if (!t || thumbs.has(row.hash) || !String(t).startsWith('data:image/')) continue;
 		thumbs.add(row.hash);
-		batch[row.hash] = t;
+		batch[handleOf(row.hash)] = t;
 		if (++n >= THUMBS_PER_MESSAGE) {
 			sendTo(peerId, { type: 'volthumbs', thumbs: batch });
 			batch = {};
@@ -225,12 +242,12 @@ function watch() {
  * @param {string} peerId @param {any} [conn]
  */
 export function volumePeerOpened(peerId, conn) {
-	if (get(sessionHost)) return;
+	if (!hostOf(peerId)) return;
 	if (conn) handshakeConns.set(peerId, conn);
 	watch();
 	let tries = 0;
 	const attempt = () => {
-		if (get(sessionHost)) return;
+		if (!hostOf(peerId)) return;
 		if (!sendVolume(peerId) && ++tries < 6) setTimeout(attempt, 1000);
 	};
 	attempt();
@@ -239,7 +256,7 @@ export function volumePeerOpened(peerId, conn) {
 /** The guest asked for bytes. Only a hash in what we SENT it is answered. @param {string} from @param {any} data */
 function answerVolumeGet(from, data) {
 	const hash = String(data?.hash ?? '');
-	const sent = sentTo.get(from);
+	const sent = hostOf(from) ? sentTo.get(from) : null;
 	// re-check against the CURRENT scope too: a scope narrowed since the last send must already bite
 	if (!sent || !projectionHas(sent.proj, hash) || !projectionHas(currentProjection(), hash)) {
 		note('refused volget ' + hash.slice(0, 12) + ' from ' + from);
@@ -247,22 +264,45 @@ function answerVolumeGet(from, data) {
 		return;
 	}
 	note('answer volget ' + hash.slice(0, 12) + ' to ' + from);
-	void answerAssetRequest(from, { hash });
+	void answerAssetRequest(from, { hash }, { allow: () => hostOf(from) && sentTo.has(from) && projectionHas(currentProjection(), hash) });
 }
+
+/** The guest opens or copies a listed file: tell it which file that is. @param {string} from @param {any} data */
+function answerVolumeResolve(from, data) {
+	const handle = String(data?.handle ?? '');
+	const sent = hostOf(from) ? sentTo.get(from) : null;
+	const hash = sent ? [...sent.handles].find(([, h]) => h === handle)?.[0] : null;
+	const shown = !!hash && projectionHas(/** @type {any} */ (sent).proj, hash) && projectionHas(currentProjection(), hash);
+	sendTo(from, { type: 'volhash', handle, ...(shown ? { hash } : {}) });
+}
+
+/** Saves a peer may start: one at a time here, and a pause per peer */
+const SAVE_GAP_MS = 3000;
+let hostSaving = false;
+/** @type {Map<string, number>} */
+const lastSaveAsk = new Map();
 
 /** The guest pressed Save on host. @param {string} from @param {any} data */
 async function answerVolumeSave(from, data) {
 	const id = String(data?.id ?? '');
-	const name = typeof data?.name === 'string' ? data.name : undefined;
 	/** @type {{ok: boolean, name?: string, error?: string}} */
 	let result;
-	try {
-		const { saveSceneOnHost } = await import('./hostSave');
-		result = await saveSceneOnHost(name ? { name } : {}, { by: nameOf(from), role: roleOf(from) });
-	} catch (e) {
-		// ANSWER EVEN A THROW: the guest is waiting on this ack, and silence reads as "no answer" 30 s later
-		console.warn('save on host', e);
-		result = { ok: false, error: 'the save failed on the host (' + (e instanceof Error ? e.message : String(e)).slice(0, 160) + ')' };
+	const now = Date.now();
+	if (!hostOf(from) || !sentTo.has(from)) result = { ok: false, error: 'only the session host can save on the host' };
+	else if (hostSaving || now - (lastSaveAsk.get(from) ?? 0) < SAVE_GAP_MS) result = { ok: false, error: 'the host is busy saving, try again in a moment' };
+	else {
+		hostSaving = true;
+		lastSaveAsk.set(from, now);
+		try {
+			const { saveSceneOnHost } = await import('./hostSave');
+			result = await saveSceneOnHost({}, { by: nameOf(from), role: roleOf(from), remote: true });
+		} catch (e) {
+			// ANSWER EVEN A THROW: the guest is waiting on this ack, and silence reads as "no answer" 30 s later
+			console.warn('save on host', e);
+			result = { ok: false, error: 'the save failed on the host' };
+		} finally {
+			hostSaving = false;
+		}
 	}
 	note('volsave from ' + from + ': ' + (result.ok ? 'saved ' + result.name : result.error));
 	/** @type {any} */
@@ -294,11 +334,13 @@ function applyVolumeIndex(from, data) {
 		host,
 		scope: normalizeShareScope(data.scope),
 		role: data.role === 'viewer' ? 'viewer' : 'editor',
-		folders: (data.folders ?? []).map((/** @type {any} */ f) => ({
-			id: String(f.id),
-			name: String(f.name ?? 'Folder').slice(0, 200),
-			parentId: f.parentId == null ? null : String(f.parentId)
-		})),
+		folders: safeFolderTree(
+			(data.folders ?? []).map((/** @type {any} */ f) => ({
+				id: String(f.id),
+				name: String(f.name ?? 'Folder').slice(0, 200),
+				parentId: f.parentId == null ? null : String(f.parentId)
+			}))
+		),
 		items: (data.items ?? []).map((/** @type {any} */ r) => ({
 			id: 'sv:' + String(r.id),
 			name: String(r.name ?? 'file').slice(0, 200),
@@ -318,13 +360,17 @@ function applyVolumeIndex(from, data) {
 	note('in volidx from ' + from + ' ' + vol.items.length + ' rows, scope ' + vol.scope);
 }
 
+/** what one volume's thumbnails may hold */
+const THUMB_BYTES = 32 * 1024 * 1024;
+
 /** @param {string} from @param {any} data */
 function applyVolumeThumbs(from, data) {
 	const id = sessionVolumeId(from);
 	/** @type {Record<string, string>} */
-	const thumbs = {};
+	const thumbs = Object.create(null);
+	let room = THUMB_BYTES - (sessionVolumeById(id)?.items ?? []).reduce((n, i) => n + (i.thumbnail?.length ?? 0), 0);
 	for (const [hash, t] of Object.entries(data.thumbs ?? {}))
-		if (typeof t === 'string' && t.startsWith('data:image/') && t.length <= 200000) thumbs[hash] = t;
+		if (typeof t === 'string' && t.startsWith('data:image/') && t.length <= 200000 && (room -= t.length) >= 0) thumbs[hash] = t;
 	sessionVolumes.update((list) =>
 		list.map((v) =>
 			v.id !== id ? v : { ...v, items: v.items.map((i) => (thumbs[i.hash] ? { ...i, thumbnail: thumbs[i.hash] } : i)) }
@@ -337,6 +383,8 @@ export function dropSessionVolume(peerId) {
 	const id = sessionVolumeId(peerId);
 	sentTo.delete(peerId);
 	handshakeConns.delete(peerId);
+	heldForHost.delete(peerId);
+	lastSaveAsk.delete(peerId);
 	if (!sessionVolumeById(id)) return;
 	sessionVolumes.update((list) => list.filter((v) => v.id !== id));
 	note('unmounted ' + id);
@@ -379,20 +427,51 @@ export async function sessionVolumeBlob(volumeId, itemId, opts = {}) {
 	if (!opts.confirmed && !(await confirmPull(row.size, vol))) return null;
 	pullCount++;
 	note('pull ' + row.name + ' ' + row.hash.slice(0, 12));
-	const buffer = await pullVolumeBytes(vol.peerId, row.hash, { name: row.name, size: row.size });
+	const hash = await hashOfRow(vol.peerId, row.hash);
+	const buffer = hash ? await pullVolumeBytes(vol.peerId, hash, { name: row.name, size: row.size }) : null;
 	note('pulled ' + row.name + ' ' + (buffer ? buffer.byteLength + ' bytes' : 'NOTHING'));
 	return buffer ? new Blob([buffer]) : null;
+}
+
+/** '<host> <handle>' -> the file's hash, once told @type {Map<string, string>} */
+const knownHashes = new Map();
+/** '<host> <handle>' -> waiting on the host's answer @type {Map<string, (hash: string | null) => void>} */
+const hashAsks = new Map();
+
+/** The content hash behind a row's handle, asked of the host when first needed.
+ * @param {string} peerId @param {string} handle @returns {Promise<string | null>} */
+function hashOfRow(peerId, handle) {
+	const key = peerId + ' ' + handle;
+	const known = knownHashes.get(key);
+	if (known) return Promise.resolve(known);
+	if (!sendTo(peerId, { type: 'volresolve', handle })) return Promise.resolve(null);
+	return new Promise((resolve) => {
+		const timer = setTimeout(() => settleHashAsk(key, null), 30000);
+		hashAsks.get(key)?.(null);
+		hashAsks.set(key, (hash) => {
+			clearTimeout(timer);
+			resolve(hash);
+		});
+	});
+}
+
+/** @param {string} key @param {string | null} hash */
+function settleHashAsk(key, hash) {
+	const done = hashAsks.get(key);
+	hashAsks.delete(key);
+	done?.(hash);
 }
 
 /** Stop a running pull of one row. @param {string} volumeId @param {string} itemId */
 export function cancelSessionPull(volumeId, itemId) {
 	const vol = sessionVolumeById(volumeId);
 	const row = vol?.items.find((i) => i.id === itemId);
-	if (!vol || !row || !volumePullRunning(row.hash)) return false;
+	const hash = vol && row ? knownHashes.get(vol.peerId + ' ' + row.hash) : null;
+	if (!vol || !hash || !volumePullRunning(hash)) return false;
 	// tell the host too, or it keeps sending the whole file down the link for nothing
-	sendTo(vol.peerId, { type: 'volcancel', hash: row.hash });
-	note('out volcancel ' + row.hash.slice(0, 12));
-	return cancelPull(row.hash);
+	sendTo(vol.peerId, { type: 'volcancel', hash });
+	note('out volcancel ' + hash.slice(0, 12));
+	return cancelPull(hash);
 }
 
 /**
@@ -447,14 +526,14 @@ export async function copySessionItems(volumeId, itemIds, into = null) {
 	return copied;
 }
 
-/** save requests waiting on the host: id -> resolve @type {Map<string, (r: any) => void>} */
+/** save requests waiting on the host: id -> who answers, and the resolve @type {Map<string, {peer: string, done: (r: any) => void}>} */
 const pendingSaves = new Map();
 let saveSeq = 0;
 
 /**
  * SAVE ON HOST: ask the host to save the session's scene into ITS library (editors only — the host
  * checks too). Resolves the host's answer.
- * @param {string} volumeId @param {{name?: string, quiet?: boolean}} [opts]
+ * @param {string} volumeId @param {{quiet?: boolean}} [opts]
  * @returns {Promise<{ok: boolean, name?: string, error?: string}>}
  */
 export function saveOnHost(volumeId, opts = {}) {
@@ -468,22 +547,21 @@ export function saveOnHost(volumeId, opts = {}) {
 	const id = 's' + Date.now().toString(36) + '-' + ++saveSeq;
 	/** @type {any} */
 	const msg = { type: 'volsave', id };
-	if (opts.name) msg.name = String(opts.name).slice(0, 120);
 	if (!sendTo(vol.peerId, msg)) return Promise.resolve({ ok: false, error: vol.host + ' is not connected' });
 	note('out volsave to ' + vol.peerId);
 	// say so straight away: the answer can take a while on a big scene
 	if (!opts.quiet) showToast('Saving on ' + vol.host + '…');
 	return new Promise((resolve) => {
-		pendingSaves.set(id, (r) => {
+		pendingSaves.set(id, { peer: vol.peerId, done: (/** @type {any} */ r) => {
 			if (!opts.quiet)
 				showToast(r.ok ? 'Saved "' + (r.name ?? 'the scene') + '" on ' + vol.host + "'s device" : 'Save on host failed: ' + (r.error ?? 'no answer'));
 			resolve(r);
-		});
+		} });
 		setTimeout(() => {
-			const done = pendingSaves.get(id);
-			if (!done) return;
+			const ask = pendingSaves.get(id);
+			if (!ask) return;
 			pendingSaves.delete(id);
-			done({ ok: false, error: vol.host + ' did not answer (an older app version, or the link dropped)' });
+			ask.done({ ok: false, error: vol.host + ' did not answer (an older app version, or the link dropped)' });
 		}, SAVE_TIMEOUT_MS);
 	});
 }
@@ -492,21 +570,54 @@ export function saveOnHost(volumeId, opts = {}) {
 // DISPATCH (peerHandler, lazily)
 // =================================================================================================
 
+/** volume messages from a peer that is not my host (yet) @type {Map<string, any[]>} */
+const heldForHost = new Map();
+
+/** @param {string} from @param {any} data */
+function applyFromHost(from, data) {
+	if (data.type === 'volidx') applyVolumeIndex(from, data);
+	else applyVolumeThumbs(from, data);
+}
+
+/** @param {string} from @param {any} data */
+function holdForHost(from, data) {
+	if (!heldForHost.has(from) && heldForHost.size >= 4) return;
+	const list = heldForHost.get(from) ?? [];
+	if (data.type === 'volidx') list.length = 0; // the newest listing replaces what was waiting
+	if (list.length < 16) list.push(data);
+	heldForHost.set(from, list);
+}
+
+// my host is known: its waiting messages apply, the others go. Hosting nobody any more, I forget my guests.
+sessionHost.subscribe((host) => {
+	if (!host) return;
+	for (const data of heldForHost.get(host) ?? []) applyFromHost(host, data);
+	heldForHost.clear();
+	sentTo.clear();
+	handshakeConns.clear();
+});
+
 /** @param {string} from @param {any} data */
 export function handleVolumeMessage(from, data) {
 	try {
-		// only a HOST sends `volidx` (volumePeerOpened checks it is hosting), so whoever sends one is a
-		// session this page joined — no sessionHost check here, which would race the approval dial-back
-		if (data.type === 'volidx') applyVolumeIndex(from, data);
-		else if (data.type === 'volthumbs') applyVolumeThumbs(from, data);
-		else if (data.type === 'volget') answerVolumeGet(from, data);
+		// a volume comes from my session's host; the rows can beat the approval dial-back, so they wait for it
+		if (data.type === 'volidx' || data.type === 'volthumbs') {
+			if (get(sessionHost) === from) applyFromHost(from, data);
+			else holdForHost(from, data);
+		} else if (data.type === 'volget') answerVolumeGet(from, data);
+		else if (data.type === 'volresolve') answerVolumeResolve(from, data);
+		else if (data.type === 'volhash') {
+			const key = from + ' ' + String(data.handle);
+			if (data.hash) knownHashes.set(key, String(data.hash));
+			settleHashAsk(key, data.hash ? String(data.hash) : null);
+		}
 		else if (data.type === 'volsave') void answerVolumeSave(from, data);
 		else if (data.type === 'volcancel') note('volcancel from ' + from + ': ' + (stopSendingTo(from, String(data.hash)) ? 'stopped' : 'nothing running'));
 		else if (data.type === 'volsaveack') {
-			const done = pendingSaves.get(String(data.id));
-			if (done) {
+			const ask = pendingSaves.get(String(data.id));
+			if (ask?.peer === from) {
 				pendingSaves.delete(String(data.id));
-				done({ ok: data.ok === true, ...(data.name ? { name: String(data.name) } : {}), ...(data.error ? { error: String(data.error) } : {}) });
+				ask.done({ ok: data.ok === true, ...(data.name ? { name: String(data.name) } : {}), ...(data.error ? { error: String(data.error) } : {}) });
 			}
 		}
 	} catch (e) {

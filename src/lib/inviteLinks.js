@@ -29,7 +29,11 @@ function serverLabel(target) {
 	if (target.forcePublic) return 'the public PeerJS cloud';
 	const c = target.custom || {};
 	const port = c.port && Number(c.port) !== 443 ? ':' + c.port : '';
-	return String(c.host || '') + port;
+	let host = String(c.host || '');
+	try {
+		host = new URL('https://' + host).hostname; // a lookalike name reads as its ASCII form
+	} catch {}
+	return host + port;
 }
 
 /** @param {string} peerId */
@@ -160,7 +164,12 @@ export async function handleInviteHash(hash) {
 			try {
 				peer.leaveSession();
 			} catch {}
-			proceed();
+			// leaving is one question, trusting another server is another
+			if (needSwitch)
+				void askServer(peerId, target).then((next) => {
+					if (next === 'join') void proceed();
+				});
+			else proceed();
 		});
 		return 'ask-leave';
 	}

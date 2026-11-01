@@ -350,7 +350,7 @@ async function runSaveScene(args, by) {
 	const host = get(sessionHost);
 	if (!host) {
 		const { saveSceneOnHost } = await import('../hostSave');
-		const r = await saveSceneOnHost({ name: args?.name, folder: args?.folder }, { by });
+		const r = await saveSceneOnHost({ name: args?.name, folder: args?.folder }, { by, agent: true });
 		return r.ok ? { saved: true, name: r.name, file: r.file, onHost: false } : { error: r.error ?? 'the save failed' };
 	}
 	const { saveOnHost, sessionVolumes } = await import('../sessionVolumes');
@@ -477,7 +477,7 @@ export function createTpAgent(extra = {}) {
 		},
 		host: () => get(sessionHost),
 		behaviourErrors: () => /** @type {any} */ (behaviourHost())?.errors?.() ?? [],
-		scriptErrors: () => Object.entries(/** @type {Record<string, string>} */ (get(scriptErrors))).map(([node, message]) => ({ node, message: String(message).slice(0, 200) })),
+		scriptErrors: () => Object.entries(/** @type {Record<string, string>} */ (get(scriptErrors))).slice(0, 20).map(([node, message]) => ({ node: node.slice(0, 64), message: String(message).slice(0, 200) })),
 		hostAway: () => hostAwayState(),
 		// 1.2: a scene still arriving — the join snapshot (the uuids the sender announced and we lack) or a
 		// scene load in progress (a travel, a follow)

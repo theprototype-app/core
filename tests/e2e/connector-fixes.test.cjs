@@ -96,6 +96,13 @@ h.run(async () => {
 	h.check(again?.type === 'error' && /wait a few seconds/.test(again.error?.message ?? ''), `saves are paced (${JSON.stringify(again).slice(0, 160)})`);
 	const lookOnly = await call('save_scene', {}, 'read');
 	h.check(lookOnly?.type === 'error' && lookOnly.error?.code === 'refused', 'a look-only grant cannot save');
+	// an AI's save may not write over another scene: its newest version would become this one, for everyone
+	await wait(5500);
+	const second = await call('save_scene', { name: 'connector-fixes-other' });
+	h.check(second?.result?.saved === true, 'a new name saves');
+	await wait(5500);
+	const over = await call('save_scene', { name: 'Connector-Fixes-Save' });
+	h.check(over?.type === 'error' && /different scene is already called/.test(over.error?.message ?? ''), `a save cannot take another scene's name (${JSON.stringify(over).slice(0, 160)})`);
 	await call('delete_objects', { uuids: [toSave] });
 
 	// ---- 5 ----------------------------------------------------------------------------------------------------

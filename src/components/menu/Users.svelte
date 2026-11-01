@@ -23,6 +23,7 @@
 		hidePanels,
 		characterModalOpen,
 		profileSettingsOpen,
+		profileMenuRequest,
 		notesDrawerOpen,
 		cloudIdentity,
 		connectDocked,
@@ -764,6 +765,15 @@
 	}
 	/** set by a keyboard open: the panel's mount focuses its first row */
 	let focusFirstRow = false;
+	// FW-AI (76): another window asks for this pop-up ("Sign in to connect"): open it with focus on the
+	// account section's first button, which is where that press was heading
+	let focusAccount = false;
+	$effect(() => {
+		if (!$profileMenuRequest) return;
+		profileMenuRequest.set(false);
+		focusAccount = true;
+		openDropdown = true;
+	});
 	/** focus moving OUT of the menu or its trigger (to a real element) closes it */
 	function dropdownFocusOut(e: FocusEvent) {
 		const to = e.relatedTarget as Node | null;
@@ -808,6 +818,10 @@
 			openDropdown = false;
 			if (inPanel) triggerEl?.focus();
 		};
+		if (focusAccount) {
+			focusAccount = false;
+			queueMicrotask(() => node.querySelector<HTMLElement>('.cloud-profile button')?.focus());
+		}
 		if (focusFirstRow) {
 			focusFirstRow = false;
 			queueMicrotask(() => {

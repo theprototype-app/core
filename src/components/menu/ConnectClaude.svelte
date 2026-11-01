@@ -4,15 +4,16 @@
 	// is never the only signal), the one button that fits it, and the hint that matters — the tab must
 	// stay open, because the tools run HERE.
 	// 86-fix N1: `welcome` = the same control as the first choice of the AI window's welcome (no AI provider set
-	// up): a card with a title and what it means, and — signed out on a cloud build — the plugin's "Sign in to
-	// connect" (cloudHooks.connectorSignInSlot) in place of the button. One instance at a time, so the ids hold.
+	// up): a card with a title and what it means, and — signed out on a cloud build (cloudHooks.connectorSignInSlot)
+	// — "Sign in to connect" in place of the button. One instance at a time, so the ids hold.
+	// FW-AI (76): that press opens the top-right profile pop-up; no login buttons live in this window.
 	import Icon from '../ui/Icon.svelte';
 	import Button from '../ui/Button.svelte';
-	import CloudSlot from '../CloudSlot.svelte';
 	import { connectorState, connectorAvailable, connectorLine, connectClaude, disconnectClaude } from '$lib/connector/connectorStore';
 	import { CONNECTOR_DIRECTORY_URL, CONNECTOR_DOCS_URL, CONNECTOR_MCP_URL } from '$lib/connector/connectorLinks.js';
 	import { connectorSignInSlot } from '$lib/cloudHooks';
 	import { settingsOpen, settingsSection, showToast } from '../../stores/appStore';
+	import { requestSignIn } from '$lib/connector/connectorSignIn.js';
 
 	let { welcome = false }: { welcome?: boolean } = $props();
 	const signIn = $derived(welcome && !$connectorAvailable && !!$connectorSignInSlot);
@@ -58,13 +59,13 @@
 				{:else if s.message}
 					{s.message}
 				{:else if signIn}
-					Sign in to your theprototype account first.
+					Sign in from your profile, top right.
 				{:else}
 					Use this tab from claude.ai — chat or voice.
 				{/if}
 			</span>
 			{#if signIn}
-				<CloudSlot mount={$connectorSignInSlot} />
+				<Button id="connect-claude-signin" variant="secondary" size="sm" onclick={requestSignIn}>Sign in to connect</Button>
 			{:else if live}
 				<Button id="connect-claude-disconnect" variant="outline" size="sm" icon="unlink" onclick={disconnectClaude}>Disconnect</Button>
 			{:else}
@@ -86,7 +87,7 @@
 					{/if}
 				</li>
 				<li id="connect-claude-step-2">
-					{#if signIn}Then sign in here, press Connect Claude and keep this tab open.{:else}Then press Connect Claude here and keep this tab open.{/if}
+					{#if signIn}Then sign in from your profile, press Connect Claude here and keep this tab open.{:else}Then press Connect Claude here and keep this tab open.{/if}
 				</li>
 			</ol>
 		{/if}

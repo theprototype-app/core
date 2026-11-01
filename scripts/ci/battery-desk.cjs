@@ -19,11 +19,25 @@
 //
 //   node scripts/ci/battery-desk.cjs run --half A [--of 2] [--out dir] [--name u1A] [--root tree] [--no-retry]
 //   node scripts/ci/battery-desk.cjs run --only a,b,MOD:untangle ...
+//   node scripts/ci/battery-desk.cjs queue --workers 4 --port 5600 --out dir --name u1 [--resume] [--slot prefix]
 //   node scripts/ci/battery-desk.cjs baseline save <tag> <out-dir>...      # record a tag's runs
 //   node scripts/ci/battery-desk.cjs diff [--baseline tag|file] <out-dir>...  # exit 1 when anything is NEW
 //   node scripts/ci/battery-desk.cjs flakes [--days 30]                    # flake rate per suite
 //   node scripts/ci/battery-desk.cjs coverage                              # every e2e file listed or excluded
 //   node scripts/ci/battery-desk.cjs import u1A.txt --logs e2e/ [--retry r2.txt]  # an old battery.sh run, for diff
+//
+// THE QUEUE (`queue`). Fixed halves finish when their slowest half does: one slot idles while the other works
+// through hours of suites, and a lost slot loses its whole half. In a queue run one process here holds the list,
+// longest suite first, and N workers -- each on its own slot, its own tree and its own dev server, any kind of
+// slot on any machine -- pull the next suite over HTTP and send each result back the moment it ends. So:
+//  - no slot idles while a suite waits, and the long suites never pile up at the end;
+//  - nothing is lost with a slot: its one running suite goes back in the list, a new worker takes the slot's
+//    place, and every finished suite is already here;
+//  - --resume after an interrupted run skips what was already green FOR THE SAME TREE (a hash of its files);
+//  - <name>.json / .txt / .done / logs/ are what `run` writes, so `diff` and `baseline save` read it unchanged.
+//    An interrupted run writes <name>.partial instead of <name>.json, so `diff` can never read half a battery.
+// --slot is the command prefix that books a slot, with {dir} and {port} (default below; '' = no booking, one
+// local worker per process). Retries run once the list is empty, on another worker than the first attempt's.
 //
 // TIERS (battery-tiers, owner decision 2026-10-26: tier 1 -> release -> tier 2):
 //   E2E_COVERAGE=1 node scripts/ci/battery-desk.cjs run --half A ...       # + <out>/coverage/<suite>.json per suite
@@ -134,6 +148,14 @@ async function reachable(url) {
 }
 
 /**
+ * The suite running now. It has its own process group (a timeout kills its browser with it), so a signal to
+ * this process does not reach it: a worker stopped by its slot passes the signal on, or the suite and its
+ * browser would run on with the slot already given to someone else.
+ * @type {import('child_process').ChildProcess | null}
+ */
+let running = null;
+
+/**
  * One suite, the way battery.sh ran it: node in the tree, the caller's environment, the per-suite
  * cases the list names (desk.prod-host: APP_URL on the production hostname, which /etc/hosts maps
  * here; desk.peer-self: the self-hosted signaling box; MOD:x: the modules repo's runner, GPU ones
@@ -158,6 +180,7 @@ function attempt(b, name, root, logFile) {
 	const t0 = Date.now();
 	return new Promise((resolve) => {
 		const child = spawn(cmd[0], cmd.slice(1), { cwd: cwd || root, env, stdio: ['ignore', fd, fd], detached: true });
+		running = child;
 		let timedOut = false;
 		const timer = setTimeout(() => {
 			timedOut = true;
@@ -167,6 +190,7 @@ function attempt(b, name, root, logFile) {
 		}, limit * 1000);
 		const done = (/** @type {number|null} */ code) => {
 			clearTimeout(timer);
+			running = null;
 			fs.closeSync(fd);
 			if (timedOut) fs.appendFileSync(logFile, `\n[battery] TIMEOUT after ${limit}s\n`);
 			const text = fs.readFileSync(logFile, 'utf8');
@@ -208,12 +232,11 @@ function opt(argv, flag) {
 	return i >= 0 ? argv[i + 1] : undefined;
 }
 
-/** @param {string[]} argv */
-async function run(argv) {
-	const b = /** @type {DeskBattery} */ (load(opt(argv, '--battery')));
-	const root = path.resolve(opt(argv, '--root') || ROOT);
-	const of = Number(opt(argv, '--of') || 2);
-	const h = opt(argv, '--half');
+/**
+ * The suites a command line names: --only, --list, or the tier/whole battery (`split` takes a half of it).
+ * @param {DeskBattery} b @param {string[]} argv @param {((subset?: string[]) => string[])|null} split
+ */
+function pickSuites(b, argv, split) {
 	const only = opt(argv, '--only');
 	const list = opt(argv, '--list');
 	// --tier 1|2 --base <previous tag>: the tier's suites (battery-tiers), from git here or from a `tiers --save` file
@@ -226,9 +249,20 @@ async function run(argv) {
 		? only.split(',')
 		: list
 			? fs.readFileSync(list, 'utf8').split(/\s+/).filter(Boolean)
-			: h
-				? half(b, h, of, tierNames || undefined)
+			: split
+				? split(tierNames || undefined)
 				: tierNames || deskEntries(b).map(([n]) => n);
+	return { names, sel };
+}
+
+/** @param {string[]} argv */
+async function run(argv) {
+	const b = /** @type {DeskBattery} */ (load(opt(argv, '--battery')));
+	const root = path.resolve(opt(argv, '--root') || ROOT);
+	const of = Number(opt(argv, '--of') || 2);
+	const h = opt(argv, '--half');
+	const tier = opt(argv, '--tier');
+	const { names, sel } = pickSuites(b, argv, h ? (subset) => half(b, h, of, subset) : null);
 	const name = opt(argv, '--name') || `${tier ? `t${tier}` : h ? 'half' : 'run'}${h ? h.toUpperCase() : ''}`;
 	const out = path.resolve(opt(argv, '--out') || process.env.BATTERY_OUT || path.join(root, 'test-results', 'battery'));
 	if (sel) {
@@ -302,6 +336,458 @@ async function run(argv) {
 	say(summary);
 	fs.writeFileSync(path.join(out, `${name}.done`), summary + '\n');
 	process.exit(redNames.length ? 1 : 0);
+}
+
+// ---------------------------------------------------------------- the queue
+
+/**
+ * What the list says at any moment. No clock, no I/O: `queue` drives it, and the tests drive it directly.
+ * A suite's worker lost mid-suite: back in the list, front first (it already waited its turn); lost twice it
+ * counts as red, because a suite that takes its worker down every time must not take them all.
+ * @param {string[]} names longest first
+ * @param {Map<string, DeskResult>} [done] green results of an interrupted run
+ * @param {boolean} [retry] a red gets its second attempt
+ */
+function makeQueue(names, done = new Map(), retry = true) {
+	const todo = names.filter((n) => !done.has(n));
+	const results = new Map(done);
+	/** @type {Map<string, { name: string, kind: 'first'|'retry', since: number }>} */
+	const busy = new Map();
+	/** @type {Map<string, number>} */
+	const lost = new Map();
+	/** @type {string[]} reds waiting for their second attempt */
+	const again = [];
+	/** @type {Map<string, string>} */
+	const firstOn = new Map();
+	/** @type {Set<string>} */
+	const alive = new Set();
+	/** @param {string} name @param {string} worker */
+	const take = (name, worker, /** @type {'first'|'retry'} */ kind, /** @type {number} */ now) => {
+		busy.set(worker, { name, kind, since: now });
+		return { name, kind };
+	};
+	return {
+		results,
+		busy,
+		/** @param {string} w */ hello(w) {
+			alive.add(w);
+		},
+		/** @param {string} worker @param {number} [now] @returns {{ name: string, kind: 'first'|'retry' } | { wait: true } | { done: true }} */
+		claim(worker, now = 0) {
+			alive.add(worker);
+			// a worker asking again has nothing running: what it held is not coming back
+			if (busy.has(worker)) this.gone(worker);
+			alive.add(worker);
+			const next = todo.shift();
+			if (next) return take(next, worker, 'first', now);
+			// retries only once no first attempt is left to run, and on another worker than the first attempt's
+			// while there is one: a red from one server or one slot should meet a different one
+			const others = [...alive].some((w) => w !== worker);
+			const i = again.findIndex((n) => !others || firstOn.get(n) !== worker);
+			if (i >= 0) return take(again.splice(i, 1)[0], worker, 'retry', now);
+			return !again.length && !busy.size ? { done: true } : { wait: true };
+		},
+		/** @param {string} worker @param {string} name @param {'first'|'retry'} kind @param {Attempt} a */
+		report(worker, name, kind, a) {
+			if (busy.get(worker)?.name === name) busy.delete(worker);
+			const had = results.get(name);
+			if (kind === 'first') {
+				if (had) return null; // a late answer for a suite already run elsewhere
+				/** @type {DeskResult} */
+				const r = { name, status: a.rc === 0 ? 'pass' : 'red', first: a, fps: a.fps };
+				results.set(name, r);
+				if (r.status === 'red' && retry) {
+					firstOn.set(name, worker);
+					again.push(name);
+				}
+				return r;
+			}
+			if (!had || had.retry) return null;
+			had.retry = a;
+			if (a.rc === 0) {
+				had.status = 'flaky';
+				had.fps = [];
+			} else {
+				const both = had.first.fps.filter((f) => a.fps.includes(f));
+				had.fps = both.length ? both : a.fps;
+			}
+			return had;
+		},
+		/** a worker is gone: what it held goes back @param {string} worker */
+		gone(worker) {
+			alive.delete(worker);
+			const b = busy.get(worker);
+			if (!b) return null;
+			busy.delete(worker);
+			const times = (lost.get(b.name) || 0) + 1;
+			lost.set(b.name, times);
+			if (times >= 2) {
+				const a = { rc: null, secs: 0, pass: 0, fail: 0, last: 'its worker was lost twice', fps: [`${b.name} :: worker lost`] };
+				if (b.kind === 'retry') this.report(worker, b.name, 'retry', a);
+				else {
+					// not run a third time, not even as a retry
+					results.delete(b.name);
+					results.set(b.name, { name: b.name, status: 'red', first: a, fps: a.fps });
+				}
+				return { name: b.name, requeued: false };
+			}
+			if (b.kind === 'first') todo.unshift(b.name);
+			else again.unshift(b.name);
+			return { name: b.name, requeued: true };
+		},
+		/** every suite is settled @returns {boolean} */
+		finished() {
+			return !todo.length && !again.length && !busy.size;
+		},
+		left() {
+			return todo.length + again.length + busy.size;
+		}
+	};
+}
+
+/** names longest first, by the times in the list; an unknown suite counts as a long one @param {DeskBattery} b @param {string[]} names */
+function longestFirst(b, names) {
+	/** @type {Record<string, number>} */
+	const secs = Object.fromEntries(deskEntries(b));
+	return [...names].sort((x, y) => (secs[y] ?? 300) - (secs[x] ?? 300) || (x < y ? -1 : 1));
+}
+
+// what is not the tree's own: installs, builds, outputs, this tool's markers. .git is not there in a snapshot or a mirror.
+const NOT_THE_TREE = new Set(['node_modules', '.git', '.svelte-kit', 'build', 'test-results', 'coverage', '.vite', '.muxtopus-mirror', '.snap']);
+
+/** A hash of a tree's files, the same in a checkout, a snapshot and a mirror of either. @param {string} root */
+function treeId(root) {
+	const hash = require('crypto').createHash('sha256');
+	/** @param {string} dir @param {string} rel */
+	const walk = (dir, rel) => {
+		for (const e of fs.readdirSync(dir, { withFileTypes: true }).sort((x, y) => (x.name < y.name ? -1 : 1))) {
+			if (NOT_THE_TREE.has(e.name)) continue;
+			const r = rel ? `${rel}/${e.name}` : e.name;
+			const full = path.join(dir, e.name);
+			if (e.isDirectory()) walk(full, r);
+			else if (e.isFile()) hash.update(r + '\0').update(fs.readFileSync(full)).update('\0');
+		}
+	};
+	walk(root, '');
+	return hash.digest('hex').slice(0, 16);
+}
+
+/** A worker's own copy of the tree: hard links (no disk, under a minute), minus outputs and vite's cache. @param {string} from @param {string} to */
+function linkTree(from, to) {
+	fs.rmSync(to, { recursive: true, force: true });
+	/** @param {string} a @param {string} b @param {boolean} top */
+	const walk = (a, b, top) => {
+		fs.mkdirSync(b, { recursive: true });
+		for (const e of fs.readdirSync(a, { withFileTypes: true })) {
+			if ((top && ['.svelte-kit', 'test-results', '.git'].includes(e.name)) || e.name === '.vite') continue;
+			const x = path.join(a, e.name);
+			const y = path.join(b, e.name);
+			if (e.isDirectory()) walk(x, y, false);
+			else if (e.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(x), y);
+			else if (e.isFile()) fs.linkSync(x, y);
+		}
+	};
+	walk(from, to, true);
+}
+
+/** The finished, green part of an interrupted run on this tree. @param {string} file @param {string} tree @returns {{ green: Map<string, DeskResult>, other: string|null }} */
+function resumeFrom(file, tree) {
+	/** @type {Map<string, DeskResult>} */
+	const all = new Map();
+	const rows = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : [];
+	let other = null;
+	for (const l of rows) {
+		let r;
+		try {
+			r = JSON.parse(l);
+		} catch {
+			continue; // the line the interruption cut short
+		}
+		if (r.tree !== tree) {
+			other = r.tree;
+			continue;
+		}
+		if (r.kind === 'first') all.set(r.name, { name: r.name, status: r.attempt.rc === 0 ? 'pass' : 'red', first: r.attempt, fps: r.attempt.fps });
+		else {
+			const had = all.get(r.name);
+			if (had) {
+				had.retry = r.attempt;
+				if (r.attempt.rc === 0) {
+					had.status = 'flaky';
+					had.fps = [];
+				}
+			}
+		}
+	}
+	return { green: new Map([...all].filter(([, r]) => r.status === 'pass' || r.status === 'flaky')), other };
+}
+
+/** the address the workers reach this machine on (BATTERY_QUEUE_HOST beats it) */
+function ownAddress() {
+	if (process.env.BATTERY_QUEUE_HOST) return process.env.BATTERY_QUEUE_HOST;
+	for (const list of Object.values(os.networkInterfaces())) for (const i of list || []) if (i.family === 'IPv4' && !i.internal && !/^(172\.1[6-9]|172\.2\d|172\.3[01])\./.test(i.address)) return i.address;
+	return '127.0.0.1';
+}
+
+const DEFAULT_SLOT = 'e2e-slot --pc-first 1800 --wait 36000 --dev {dir} {port} --';
+const RESPAWNS = 3;
+const RESPAWN_S = Number(process.env.BATTERY_QUEUE_RESPAWN_S || 30);
+const LEASE_MS = 1700 * 1000; // past the longest suite limit: a worker this quiet is not coming back
+
+/** @param {string[]} argv */
+async function queueCmd(argv) {
+	const b = /** @type {DeskBattery} */ (load(opt(argv, '--battery')));
+	const root = path.resolve(opt(argv, '--root') || ROOT);
+	const nWorkers = Number(opt(argv, '--workers') || 2);
+	const firstPort = Number(opt(argv, '--port') || 5600);
+	const slotCmd = opt(argv, '--slot') ?? process.env.BATTERY_SLOT_CMD ?? DEFAULT_SLOT;
+	const tier = opt(argv, '--tier');
+	const { names: picked, sel } = pickSuites(b, argv, null);
+	const name = opt(argv, '--name') || (tier ? `t${tier}` : 'queue');
+	const out = path.resolve(opt(argv, '--out') || process.env.BATTERY_OUT || path.join(root, 'test-results', 'battery'));
+	fs.mkdirSync(path.join(out, 'logs'), { recursive: true });
+	if (sel) fs.writeFileSync(path.join(out, `${name}.tiers.json`), JSON.stringify(sel, null, 1));
+	const retry = !argv.includes('--no-retry');
+	// a suite's coverage file is written where the suite runs, which here is another tree and maybe another machine
+	if (process.env.E2E_COVERAGE === '1') throw new Error('E2E_COVERAGE=1 needs `run`: a queue run cannot collect the files');
+	const tree = treeId(root);
+	const journal = path.join(out, `${name}.journal.jsonl`);
+	const sumFile = path.join(out, `${name}.txt`);
+	const commit = commitOf(root);
+	const started = new Date().toISOString();
+	const t0 = Date.now();
+	const resuming = argv.includes('--resume');
+	const { green, other } = resuming ? resumeFrom(journal, tree) : { green: new Map(), other: null };
+	if (!resuming) fs.writeFileSync(journal, '');
+	fs.writeFileSync(sumFile, `snapshot: ${commit} tree=${tree} root=${root} slot=queue workers=${nWorkers} suites=${picked.length}\n`, { flag: resuming ? 'a' : 'w' });
+	const say = (/** @type {string} */ s) => {
+		console.log(s);
+		fs.appendFileSync(sumFile, s + '\n');
+	};
+	if (other) say(`[battery] the journal also holds a run of another tree (${other}): not skipping its suites`);
+	if (resuming) say(`[battery] resume: ${green.size} suite(s) already green on tree ${tree}`);
+
+	// suites with no file here settle at once, as `run` does
+	const absent = picked.filter((n) => !n.startsWith('MOD:') && !fs.existsSync(path.join(root, 'tests', 'e2e', `${n}.test.cjs`)));
+	for (const n of absent) {
+		green.set(n, { name: n, status: 'gone', first: { rc: null, secs: 0, pass: 0, fail: 0, last: 'no such suite in this tree', fps: [] }, fps: [] });
+		say(`${n} rc=gone :: no such suite in this tree`);
+	}
+	const q = makeQueue(longestFirst(b, picked), green, retry);
+	const token = require('crypto').randomBytes(12).toString('hex');
+	/** @type {Record<string, string>} worker -> what its slot is */
+	const slots = {};
+	/** @type {Map<string, number>} */
+	const lastHeard = new Map();
+	let stop = /** @type {(() => void) | null} */ (null);
+	const ended = new Promise((/** @type {(v?: unknown) => void} */ resolve) => (stop = resolve));
+	const settle = () => {
+		if (q.finished()) stop?.();
+	};
+	const http = require('http');
+	const server = http.createServer((req, res) => {
+		/** @type {Buffer[]} */
+		const chunks = [];
+		req.on('data', (c) => chunks.push(c));
+		req.on('end', () => {
+			const send = (/** @type {unknown} */ o, code = 200) => {
+				res.writeHead(code, { 'content-type': 'application/json' });
+				res.end(JSON.stringify(o));
+			};
+			if (!(req.url || '').startsWith(`/${token}/`)) return send({ error: 'no' }, 403);
+			let m;
+			try {
+				m = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+			} catch {
+				return send({ error: 'bad json' }, 400);
+			}
+			const what = (req.url || '').slice(token.length + 2);
+			lastHeard.set(m.worker, Date.now());
+			if (what === 'hello') {
+				q.hello(m.worker);
+				slots[m.worker] = m.slot;
+				say(`[battery] worker ${m.worker} on ${m.slot}${m.tree === tree ? '' : ` — ITS TREE DIFFERS (${m.tree}, this run is ${tree})`}`);
+				return send({ tree });
+			}
+			if (what === 'claim') {
+				const c = q.claim(m.worker, Date.now());
+				settle();
+				return send(c);
+			}
+			if (what === 'report') {
+				if (!picked.includes(m.name)) return send({ error: 'not on the list' }, 400);
+				const kind = m.kind === 'retry' ? 'retry' : 'first';
+				/** @type {Attempt} */
+				const a = m.attempt;
+				fs.writeFileSync(path.join(out, 'logs', `${m.name.replace(':', '-')}${kind === 'retry' ? '.retry' : ''}.log`), m.log || '');
+				const r = q.report(m.worker, m.name, kind, a);
+				if (r) {
+					fs.appendFileSync(journal, JSON.stringify({ t: new Date().toISOString(), tree, commit, name: m.name, kind, worker: m.worker, slot: slots[m.worker], attempt: a }) + '\n');
+					if (kind === 'retry') say(`retry ${line(m.name, a)}${a.rc === 0 ? ' -> FLAKY' : ''}`);
+					else {
+						say(line(m.name, a));
+						for (const f of a.fps) fs.appendFileSync(sumFile, `    ${f.split(' :: ')[1]}\n`);
+					}
+				}
+				settle();
+				return send({ ok: true });
+			}
+			return send({ error: 'what' }, 404);
+		});
+	});
+	server.requestTimeout = 0;
+	await new Promise((resolve) => server.listen(Number(opt(argv, '--queue-port') || 0), '0.0.0.0', () => resolve(undefined)));
+	const addr = /** @type {import('net').AddressInfo} */ (server.address());
+	const base = `http://${ownAddress()}:${addr.port}/${token}`;
+
+	/** @type {Map<number, import('child_process').ChildProcess>} */
+	const kids = new Map();
+	let finishing = false;
+	let respawning = 0;
+	/** @param {number} i @param {number} tries */
+	const start = (i, tries) => {
+		const dir = `${root}-w${i}`;
+		const port = firstPort + i - 1;
+		const worker = `w${i}`;
+		const log = fs.openSync(path.join(out, `${name}.worker-${i}.log`), 'a');
+		const prefix = slotCmd.split(/\s+/).filter(Boolean).map((t) => t.replace('{dir}', dir).replace('{port}', String(port)));
+		const cmd = [...prefix, 'node', path.join(dir, 'scripts', 'ci', 'battery-desk.cjs'), 'queue-worker', '--queue', base, '--id', worker, '--root', dir];
+		const env = { ...process.env, APP_URL: (process.env.APP_URL || '').replace(/:\d+\//, `:${port}/`), BATTERY_COMMIT: commit };
+		const kid = spawn(cmd[0], cmd.slice(1), { cwd: dir, env, stdio: ['ignore', log, log], detached: true });
+		kids.set(i, kid);
+		const gone = (/** @type {number|null} */ code) => {
+			fs.closeSync(log);
+			kids.delete(i);
+			if (finishing) return;
+			const back = q.gone(worker);
+			if (back) say(`[battery] worker ${worker} gone (rc=${code}) while running ${back.name}: ${back.requeued ? 'back in the list' : 'lost twice, counted red'}`);
+			settle();
+			if (q.finished()) return;
+			if (tries < RESPAWNS) {
+				say(`[battery] worker ${worker} ended rc=${code} with ${q.left()} suite(s) left: a new one in ${RESPAWN_S} s`);
+				respawning++;
+				setTimeout(() => {
+					respawning--;
+					if (!finishing) start(i, tries + 1);
+				}, RESPAWN_S * 1000);
+			} else {
+				say(`[battery] worker ${worker} ended rc=${code}, ${RESPAWNS} times over: not starting it again`);
+				if (!kids.size && !respawning) stop?.();
+			}
+		};
+		kid.on('exit', gone);
+		kid.on('error', () => gone(127));
+	};
+	const lease = setInterval(() => {
+		for (const [w, b2] of q.busy) {
+			if (Date.now() - (lastHeard.get(w) || b2.since) > LEASE_MS) {
+				const back = q.gone(w);
+				if (back) say(`[battery] worker ${w} silent for ${LEASE_MS / 60000} min on ${back.name}: back in the list`);
+				settle();
+			}
+		}
+	}, 30000);
+	const stopAll = () => {
+		for (const k of kids.values()) {
+			try {
+				process.kill(-(k.pid || 0), 'SIGTERM');
+			} catch {}
+		}
+	};
+	for (const sig of /** @type {NodeJS.Signals[]} */ (['SIGINT', 'SIGTERM', 'SIGHUP'])) {
+		process.on(sig, () => {
+			finishing = true;
+			stopAll();
+			process.exit(130);
+		});
+	}
+	if (!q.finished()) {
+		for (let i = 1; i <= nWorkers; i++) {
+			linkTree(root, `${root}-w${i}`);
+			start(i, 0);
+		}
+		await ended;
+	}
+	finishing = true;
+	clearInterval(lease);
+	stopAll();
+	server.close();
+	// a pc slot copies its files back as it ends: the trees go only after that (not forever: a stuck ssh must not hold the summary)
+	for (let i = 0; kids.size && i < 240; i++) await new Promise((res) => setTimeout(res, 500));
+
+	const all = longestFirst(b, picked).map((n) => q.results.get(n)).filter((r) => !!r);
+	const complete = q.finished();
+	if (complete) for (const r of all) logOutcome({ t: started, commit, slot: 'queue', suite: r.name, status: r.status, first: r.first.fps, retry: r.retry?.fps });
+	const slotList = [...new Set(Object.values(slots))].join(',') || '-';
+	/** @type {DeskRun} */
+	const rec = { name, root, commit, slot: `queue:${slotList}`, started, secs: Math.round((Date.now() - t0) / 1000), results: all };
+	if (!argv.includes('--keep-trees')) for (let i = 1; i <= nWorkers; i++) fs.rmSync(`${root}-w${i}`, { recursive: true, force: true });
+	if (!complete) fs.writeFileSync(path.join(out, `${name}.partial`), JSON.stringify(rec, null, 1));
+	else {
+		fs.rmSync(path.join(out, `${name}.partial`), { force: true });
+		fs.writeFileSync(path.join(out, `${name}.json`), JSON.stringify(rec, null, 1));
+	}
+	const n = (/** @type {string} */ s) => all.filter((r) => r.status === s).length;
+	const reds = all.filter((r) => r.status === 'red').map((r) => r.name);
+	const blFile = sel ? path.join(STATE, 'baselines', `${sel.base}.json`) : '';
+	const fresh = complete && blFile && fs.existsSync(blFile) ? classify(JSON.parse(fs.readFileSync(blFile, 'utf8')), [rec]).fresh.map((f) => f.name) : null;
+	const vs = sel ? ` · tier ${tier} vs ${sel.base}: ${fresh ? `${fresh.length} NEW${fresh.length ? ` (${fresh.join(' ')})` : ''}` : 'no baseline saved here'}` : '';
+	const head = complete ? 'BATTERY-DONE' : `BATTERY-INCOMPLETE (${q.left()} left; the same command with --resume goes on)`;
+	const summary = `${head} ${name} @${commit} queue x${nWorkers} (${slotList}): ${all.length} suites, ${n('pass')} green, ${n('flaky')} flaky, ${reds.length} red${reds.length ? ` (${reds.join(' ')})` : ''}, ${n('gone')} gone, ${Math.round(rec.secs / 60)} min${vs} -> ${path.join(out, `${name}.${complete ? 'json' : 'partial'}`)}`;
+	say(summary);
+	fs.writeFileSync(path.join(out, `${name}.done`), summary + '\n');
+	process.exit(!complete ? 2 : reds.length ? 1 : 0);
+}
+
+/** One worker, on its slot: asks for a suite, runs it, sends the result and the log back. @param {string[]} argv */
+async function queueWorker(argv) {
+	const b = /** @type {DeskBattery} */ (load(opt(argv, '--battery')));
+	const base = opt(argv, '--queue') || '';
+	const worker = opt(argv, '--id') || `w${process.pid}`;
+	const root = path.resolve(opt(argv, '--root') || ROOT);
+	const url = process.env.APP_URL || '';
+	const slot = process.env.E2E_SLOT_PC ? `pc:${process.env.E2E_SLOT_PC}` : process.env.E2E_SLOT_REMOTE ? 'remote' : process.env.E2E_SLOT ? 'local' : 'none';
+	const logs = path.join(root, 'test-results', 'queue-worker');
+	fs.mkdirSync(logs, { recursive: true });
+	for (const sig of /** @type {NodeJS.Signals[]} */ (['SIGTERM', 'SIGINT', 'SIGHUP'])) {
+		process.on(sig, () => {
+			try {
+				if (running) process.kill(-(running.pid || 0), 'SIGKILL');
+			} catch {}
+			process.exit(143);
+		});
+	}
+	/** a POST that survives a blip of the network: the list is on another machine @param {string} what @param {object} body */
+	const post = async (what, body) => {
+		for (let i = 0; ; i++) {
+			try {
+				const r = await fetch(`${base}/${what}`, { method: 'POST', body: JSON.stringify({ worker, ...body }) });
+				return await r.json();
+			} catch (e) {
+				if (i >= 40) throw e;
+				await new Promise((res) => setTimeout(res, 15000));
+			}
+		}
+	};
+	await post('hello', { slot, tree: treeId(root) });
+	if (url) await reachable(url); // the first SSR + client graph is the slow load: not on the first suite's clock
+	for (;;) {
+		// BEFORE asking: a dead server is this worker's trouble, and a suite it had claimed would be charged with it
+		if (url && !(await reachable(url))) {
+			console.error(`[battery] worker ${worker}: dev server unreachable`);
+			process.exit(4);
+		}
+		const c = await post('claim', {});
+		if (c.done) process.exit(0);
+		if (c.wait) {
+			await new Promise((res) => setTimeout(res, 5000));
+			continue;
+		}
+		const n = c.name;
+		const logFile = path.join(logs, `${n.replace(':', '-')}${c.kind === 'retry' ? '.retry' : ''}.log`);
+		const a = await attempt(b, n, root, logFile);
+		await post('report', { name: n, kind: c.kind, attempt: a, log: fs.readFileSync(logFile, 'utf8') });
+	}
 }
 
 // ---------------------------------------------------------------- baselines and the diff
@@ -961,6 +1447,8 @@ if (require.main === module) {
 	const [cmd, ...argv] = process.argv.slice(2);
 	try {
 		if (cmd === 'run') run(argv);
+		else if (cmd === 'queue') queueCmd(argv);
+		else if (cmd === 'queue-worker') queueWorker(argv);
 		else if (cmd === 'baseline' && argv[0] === 'save' && argv[1]) baselineSave(argv[1], argv.slice(2));
 		else if (cmd === 'diff') diff(argv);
 		else if (cmd === 'flakes') flakes(argv);
@@ -978,6 +1466,7 @@ if (require.main === module) {
 			process.exit(c.unlisted.length + c.both.length ? 1 : 0);
 		} else {
 			console.error('usage: battery-desk.cjs run --half A|B [--of N] [--only a,b] [--list f] [--out d] [--name n] [--root tree] [--no-retry]\n' + '       | run --tier 1|2 --base <tag> [--head ref] [--git dir | --selection tiers.json] [--also a,b] [--half A|B]\n' +
+					'       | queue --workers N --port P [--only a,b] [--list f] [--tier 1|2 --base <tag>] [--out d] [--name n] [--root tree] [--resume] [--no-retry] [--slot "prefix {dir} {port} --"]\n' +
 					'       | baseline save <tag> <out-dir>... | diff [--baseline tag|file] <out-dir>... | flakes [--days N] | coverage\n' +
 					'       | import <battery.sh summary.txt> --logs <dir> [--retry <summary.txt> [--retry-logs dir]] [--name n] [--out dir]\n' +
 					'       | map build [--merge] [--floor-pct N] <run-dir>... | tiers --base <tag> [--head ref] [--also a,b] [--save f] [--list-out f --tier 1|2] [--verbose]\n' +
@@ -990,4 +1479,4 @@ if (require.main === module) {
 	}
 }
 
-module.exports = { normalise, fingerprints, classify, coverage, e2eFiles, deskEntries, half, buildMap, formatMap, parseMap, selectTiers, readCoverage, changeOf, lockChanges, suiteRequires, releaseCheck };
+module.exports = { makeQueue, longestFirst, treeId, linkTree, resumeFrom, normalise, fingerprints, classify, coverage, e2eFiles, deskEntries, half, buildMap, formatMap, parseMap, selectTiers, readCoverage, changeOf, lockChanges, suiteRequires, releaseCheck };

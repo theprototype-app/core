@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// 59 T3: the .hdr files themselves live in the PACKS repo's hdri/ now (served by jsDelivr) — after a
+// bake, move any copied .hdr there (never keep it in static/: the release zip must have none).
 // 37-hdri — bake the bundled HDRIs: copy each source .hdr into static/hdri/, write a small
 // tone-mapped PNG card next to it, and print the numbers the preset table in
 // src/lib/hdri/catalog.js is written from (sun direction, flat fallback colours).

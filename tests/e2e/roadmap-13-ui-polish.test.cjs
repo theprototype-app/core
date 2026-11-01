@@ -8,7 +8,7 @@
 //       matches the "+" in every theme
 //   I2  the left corner stack matches the right: "+" at bottom-16 (mic parity),
 //       AI at bottom-4 (chat parity)
-//   I3  the AI HUD button ALWAYS renders; unconfigured, clicking opens Settings ▸ AI;
+//   I3  the AI HUD button ALWAYS renders; unconfigured, clicking opens Settings ▸ Tools & connections (59; was AI);
 //       configured, it opens the chat window
 //   I4  the far-zoom "circle": (a) the grid fade SNAPS to its target (no multi-frame
 //       lerp ramp), and (b) the shadow-catcher disc has depthWrite:false so N8AO no
@@ -109,7 +109,7 @@ h.run(async () => {
 		);
 	});
 	// 86-fix N1: the AI button always opens the window; with no provider it shows the welcome, whose
-	// "Open settings" is the way to Settings ▸ AI
+	// "Open settings" is the way to Settings ▸ Tools & connections
 	h.check(openedSettings.open !== true && (await A.page.locator('#ai-assistant-window').first().isVisible()), 'I3/N1: unconfigured click opens the AI window, not Settings');
 	h.check(await A.page.locator('#ai-welcome #ai-welcome-settings').first().isVisible(), 'I3/N1: the window offers Open settings');
 	await A.page.locator('#ai-welcome-settings').click();
@@ -118,7 +118,7 @@ h.run(async () => {
 		const read = (s) => new Promise((r) => s.subscribe((v) => r(v))());
 		return Promise.all([read(window.__stores.settingsOpen), read(window.__stores.settingsSection)]).then(([open, section]) => ({ open, section }));
 	});
-	h.check(viaWelcome.open === true && viaWelcome.section === 'ai', 'I3/N1: Open settings targets the AI section');
+	h.check(viaWelcome.open === true && viaWelcome.section === 'tools', 'I3/N1: Open settings targets Tools & connections');
 	await A.page.evaluate(() => {
 		window.__stores.settingsOpen.set(false);
 		window.__stores.aiAssistantHidden.set('hidden');

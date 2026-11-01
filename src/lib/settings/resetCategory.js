@@ -274,13 +274,16 @@ const RESETS = {
 		if (get(myHandModel)) setMyHandModel('');
 		colocatedGhostHands.set(true);
 	},
-	ai() {
+	toolsconnections() {
 		// Decision G: saved providers and API keys are DATA and stay; only the switches and the
-		// voice-typing endpoint go back (its API key stays too)
+		// voice-typing endpoint go back (its API key stays too). 59 T4: the page is Tools &
+		// connections now (it was 'ai'); its Desktop tools switch goes back to on
 		setAiEnabled(false);
 		setMeshGenEnabled(false);
 		const p = sttPresetFor('openai');
-		setSttConfig({ preset: p.preset, baseUrl: p.baseUrl, model: p.defaultModel, language: '' });
+		setSttConfig({ preset: p.preset, baseUrl: p.baseUrl, model: p.defaultModel, language: '', enabled: true });
+		safeStorage.removeItem('tools:blender');
+		void import('../tools/builtinTools.js').then((m) => m.setBlenderEnabled(true)).catch(() => {});
 	},
 	connection() {
 		softPeerCap.set(SOFT_PEER_CAP_DEFAULT);
@@ -327,8 +330,8 @@ export async function askResetCategory(key, label) {
 	const ok = await showConfirm({
 		title: `Reset ${label} to defaults?`,
 		message:
-			key === 'ai'
-				? 'The assistant, mesh generation and voice typing go back to their defaults on this device. Your saved providers and API keys stay.'
+			key === 'toolsconnections'
+				? 'Every tool here is switched back to its default on this device: the assistant and mesh generation off, voice typing on OpenAI, desktop tools on. Your saved providers and API keys stay.'
 				: `Every setting on the ${label} page goes back to its default, on this device only. Nothing else changes.`,
 		confirmLabel: 'Reset',
 		cancelLabel: 'Cancel'

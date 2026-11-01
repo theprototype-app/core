@@ -1,15 +1,14 @@
 <script lang="ts">
 	// 86-fix N1 — THE AI WINDOW WITH NO PROVIDER SET UP. The AI button always opens the window (it used to
-	// toast and jump to Settings ▸ AI, so Connect Claude — which needs no provider — could not be reached).
+	// toast and jump to Settings, so Connect Claude — which needs no provider — could not be reached).
 	// Two choices: Connect Claude (a cloud build: the connector's own control, or the plugin's "Sign in to
-	// connect" while signed out; absent in the OSS build) and your own provider (Settings ▸ AI).
+	// connect" while signed out; absent in the OSS build) and your own provider (Settings ▸ Tools & connections).
 	import Button from '../ui/Button.svelte';
 	import ConnectClaude from './ConnectClaude.svelte';
-	import { settingsOpen, settingsSection } from '../../stores/appStore';
+	import { openToolRow } from '$lib/tools/toolLinks.js';
 
 	function openAiSettings() {
-		settingsSection.set('ai');
-		settingsOpen.set(true);
+		openToolRow('chat');
 	}
 </script>
 

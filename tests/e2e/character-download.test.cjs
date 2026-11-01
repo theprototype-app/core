@@ -53,7 +53,7 @@ h.run(async () => {
 	const A = await h.setupPage(browser, 'A', { init: FULL_RESOURCE_TIMING });
 	const { page } = A;
 	h.check(
-		!(await loaded(page, 'characterDownload|bvhWriter|glbEdit|clipFiles|three-vrm|vrmRuntime')),
+		!(await loaded(page, 'characterDownload|bvhWriter|download/glbEdit|clipFiles|three-vrm|vrmRuntime')),
 		'boot: no download / BVH / VRM code is loaded'
 	);
 

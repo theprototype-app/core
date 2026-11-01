@@ -270,6 +270,9 @@
 		"import-file": "agent"
 	},
 	"suites": {
+		"model-replace": 540,
+		"sky-cdn": 180,
+		"tools-connections": 180,
 		"a11y-axe": 127,
 		"a11y-reader": 78,
 		"a11y-scale": 258,
@@ -809,6 +812,7 @@
 		"prod-host": ["error-reports"]
 	},
 	"exclude": {
+		"test data of ~1.3 GB fetched on demand (scripts/fetch-wild-assets.cjs), ~1 h on the pc: run it when importing or Replace changes; SKIPs without the cache": ["import-wild"],
 		"a VR (IWER) editing suite not in the 1.43 integrator battery: triage owed (test-health-1)": ["music-vr-patch","novr-inset","play-here-iwer","vr-ai-panel","vr-ai-voice","vr-bounded-teleport","vr-box-select","vr-chat","vr-collider-edit","vr-controller-handedness","vr-create-face","vr-create-face-facing","vr-edit-caps","vr-edit-menu","vr-editmenu-reposition","vr-editmenu-tabs","vr-editmode-persist","vr-face-correctness","vr-face-edit","vr-face-live-adjust","vr-face-manip","vr-face-move-fix","vr-face-polygon","vr-face-weld","vr-grips-by-mode","vr-helper-eyes","vr-hz-pinch","vr-keyboard","vr-keyboard-search","vr-laser-panels","vr-mesh-undo","vr-multi-prefab","vr-multiselect-ring","vr-nav-suppression","vr-objects-groups","vr-objects-panel","vr-palette","vr-panel-sharpness-all","vr-panels-on-top","vr-peer-approve","vr-peer-hands","vr-peer-hands-net","vr-ping-accuracy","vr-prefabs","vr-props-panel","vr-ptt","vr-radial-stick","vr-ray-hover","vr-reticle-v2","vr-sleeve","vr-snap-menu","vr-source-rebind","vr-stats","vr-stretch","vr-stretch-fix","vr-stretch-sliders","vr-sweep","vr-teleport-handedness","vr-teleport-toggle","vr-two-hand-grab","vr-ungroup","vr-vertex-edit","vr-vertex-handle-bounds","vr-vertex-hold","vr-vertex-polish","vr-vertex-ray","vr-vertex-trigger","vr-window-grab","vr-world-grab","vr-world-reel","vr-worldgrab-presence"],
 		"a docs / screenshot generator, not a gate": ["flow-node-docs","shader-node-docs","vr-eye-shots"],
 		"a frame-rate / timing measurement: run by hand on an --exclusive slot, never in a battery half": ["avatar-knocked-perf","avatars-budget","import-budget","mesh-budget","perf-detailed","perf-live","perf-moment","perf-stale-modules","perf-stutter","place-drag-perf","vr-brushes-perf"],

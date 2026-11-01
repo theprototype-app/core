@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-22T17:43:22.561Z",
+	"recordedAt": "2026-11-01T09:26:25.179Z",
 	"viewport": {
 		"width": 1440,
 		"height": 900
@@ -554,8 +554,8 @@
 									"notifications": "<object>",
 									"notificationsUnread": "<changed>",
 									"settingsOpen": false,
-									"tours.tourRecords": 3,
-									"toastStore": "<object>"
+									"toastStore": "<object>",
+									"tours.tourRecords": 3
 								},
 								"html": [],
 								"body": [],
@@ -655,8 +655,8 @@
 									"a11yAnnounce.politeAnnouncement": "Tours reset — each one shows again the first time it applies.",
 									"notifications": "<object>",
 									"notificationsUnread": "<changed>",
-									"tours.tourRecords": 6,
-									"toastStore": "<object>"
+									"toastStore": "<object>",
+									"tours.tourRecords": 6
 								},
 								"html": [],
 								"body": [],
@@ -882,6 +882,64 @@
 								"stores": {
 									"bottomDock.undockButtonMode": "group"
 								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Always show tab strip in windows",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "setting-windows-strip",
+							"label": "Always show tab strip in windows",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"windows:alwaysStrip": "true"
+								},
+								"stores": {
+									"panelPlaces.alwaysShowTabStrip": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Remember windows per screen setup",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "setting-windows-screens",
+							"label": "Remember windows per screen setup",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {},
+								"stores": {},
 								"html": [],
 								"body": [],
 								"dialogs": [],
@@ -3327,6 +3385,31 @@
 					]
 				},
 				{
+					"name": "Play here — start from the editor camera",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "",
+							"label": "Rebind Play here — start from the editor camera",
+							"where": "control",
+							"default": "Ctrl+Shift+Enter",
+							"disabled": false,
+							"state": "Press keys… Esc cancels",
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Toggle element snapping (vertex/face/surface targets)",
 					"controls": [
 						{
@@ -5413,6 +5496,124 @@
 					]
 				},
 				{
+					"name": "Distant scatter",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "scatter-detail-auto",
+							"label": "Auto",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "scatter-detail-quest",
+							"label": "Headset",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"scatterDetail": "quest"
+								},
+								"stores": {
+									"scatterThin.scatterDetail": "quest"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "scatter-detail-phone",
+							"label": "Phone",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"scatterDetail": "phone"
+								},
+								"stores": {
+									"scatterThin.scatterDetail": "phone"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "scatter-detail-desktop",
+							"label": "Desktop",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"scatterDetail": "desktop"
+								},
+								"stores": {
+									"scatterThin.scatterDetail": "desktop"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "scatter-detail-off",
+							"label": "All",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"scatterDetail": "off"
+								},
+								"stores": {
+									"scatterThin.scatterDetail": "off"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Water quality",
 					"controls": [
 						{
@@ -6011,6 +6212,37 @@
 							},
 							"scope": "device",
 							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Auto checkpoints on large scenes",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "checkpoints-auto-large",
+							"label": "Auto checkpoints on large scenes",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"checkpoints:autoLarge": "true"
+								},
+								"stores": {
+									"checkpoints.autoCheckpointsLarge": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
 							"storageAfterRestore": {},
 							"exercise": "done"
 						}
@@ -7381,9 +7613,269 @@
 								"storage": {},
 								"stores": {
 									"anyModalOpen": false,
+									"assetCache.assetCacheBackend": "opfs",
 									"settingsOpen": false,
 									"storageUsage.storageModalOpen": true,
 									"storageUsage.storageScan": null
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [
+									"Storage"
+								],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				}
+			]
+		},
+		"Save options": {
+			"rows": [
+				{
+					"name": "When several libraries are open",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "save-many-setting-seg-ask",
+							"label": "Ask",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "save-many-setting-seg-active",
+							"label": "Save the active one",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"exportPreset": "full",
+									"saveFormat": "tp",
+									"saveManyLibraries": "active",
+									"showGltfFormat": "false",
+									"showJsonFormat": "false",
+									"tpProjectVersions": "true",
+									"tpsceneAssets": "true",
+									"tpsceneFlow": "true",
+									"tpscenePacks": "false"
+								},
+								"stores": {
+									"saveOptions.saveOptions": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"exportPreset": "full",
+								"saveFormat": "tp",
+								"saveManyLibraries": "ask",
+								"showGltfFormat": "false",
+								"showJsonFormat": "false",
+								"tpProjectVersions": "true",
+								"tpsceneAssets": "true",
+								"tpsceneFlow": "true",
+								"tpscenePacks": "false"
+							},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "save-many-setting-seg-all",
+							"label": "Save all I can",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"saveManyLibraries": "all"
+								},
+								"stores": {
+									"saveOptions.saveOptions": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				}
+			]
+		},
+		"Storage": {
+			"rows": [
+				{
+					"name": "Cached downloads",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "asset-cache-clear",
+							"label": "Clear",
+							"where": "control",
+							"default": "Clear",
+							"disabled": true
+						}
+					]
+				},
+				{
+					"name": "Cache size limit",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "asset-cache-cap-256",
+							"label": "256 MB",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"assetCache:capMB": "256"
+								},
+								"stores": {
+									"assetCache.assetCacheCapMB": 256
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"assetCache:capMB": "1024"
+							},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "asset-cache-cap-512",
+							"label": "512 MB",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"assetCache:capMB": "512"
+								},
+								"stores": {
+									"assetCache.assetCacheCapMB": 512
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						},
+						{
+							"kind": "segment",
+							"id": "asset-cache-cap-1024",
+							"label": "1 GB",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "asset-cache-cap-2048",
+							"label": "2 GB",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"assetCache:capMB": "2048"
+								},
+								"stores": {
+									"assetCache.assetCacheCapMB": 2048
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Keep on this device",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "asset-cache-persist",
+							"label": "Ask the browser",
+							"where": "control",
+							"default": "Ask the browser",
+							"disabled": false,
+							"state": "Ask the browser",
+							"effects": {
+								"storage": {
+									"assetCache:persistAsked": "1"
+								},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Storage breakdown",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "settings-storage-breakdown",
+							"label": "Show breakdown",
+							"where": "control",
+							"default": "Show breakdown",
+							"disabled": false,
+							"state": {
+								"gone": true
+							},
+							"effects": {
+								"storage": {},
+								"stores": {
+									"anyModalOpen": false,
+									"settingsOpen": false,
+									"storageUsage.storageModalOpen": true
 								},
 								"html": [],
 								"body": [],
@@ -8152,16 +8644,7 @@
 							},
 							"scope": "device",
 							"restored": false,
-							"storageAfterRestore": {
-								"exportPreset": "full",
-								"saveFormat": "tp",
-								"showGltfFormat": "false",
-								"showJsonFormat": "false",
-								"tpProjectVersions": "true",
-								"tpsceneAssets": "true",
-								"tpsceneFlow": "true",
-								"tpscenePacks": "false"
-							},
+							"storageAfterRestore": {},
 							"exercise": "done"
 						}
 					]
@@ -9022,6 +9505,49 @@
 					]
 				},
 				{
+					"name": "Both grips scale the world",
+					"controls": [
+						{
+							"kind": "segment",
+							"id": "vr-set-bothGripsWorld-always",
+							"label": "Always",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"exercise": "skip"
+						},
+						{
+							"kind": "segment",
+							"id": "vr-set-bothGripsWorld-emptyAir",
+							"label": "Only in empty air",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"vrBothGripsWorld": "emptyAir"
+								},
+								"stores": {
+									"vrPrefs.vrBothGripsWorld": "emptyAir",
+									"vrSettingsSchema.vrSettingsVersion": "<changed>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {
+								"vrBothGripsWorld": "always"
+							},
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Refresh rate",
 					"controls": [
 						{
@@ -9225,7 +9751,7 @@
 							"scope": "device",
 							"restored": false,
 							"storageAfterRestore": {
-								"notifications": "[{\"id\":\"n1792689566402_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1792689566402,\"kind\":\"action\"},{\"id\":\"n1792689573793_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1792689573793,\"kind\":\"info\"},{\"id\":\"n1792689581381_3\",\"text\":\"Window positions reset\",\"ts\":1792689581381,\"kind\":\"info\"},{\"id\":\"n1792689655072_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1792689655072,\"kind\":\"info\"},{\"id\":\"n1792690063032_5\",\"text\":\"Line colors reset\",\"ts\":1792690063032,\"kind\":\"info\"},{\"id\":\"n1792690192090_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1792690192090,\"kind\":\"info\"},{\"id\":\"n1792690192695_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1792690192695,\"kind\":\"info\"}]",
+								"notifications": "[{\"id\":\"n1793523844367_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1793523844367,\"kind\":\"action\"},{\"id\":\"n1793523850916_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1793523850916,\"kind\":\"info\"},{\"id\":\"n1793523857568_3\",\"text\":\"Window positions reset\",\"ts\":1793523857568,\"kind\":\"info\"},{\"id\":\"n1793523925797_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1793523925797,\"kind\":\"info\"},{\"id\":\"n1793524295333_5\",\"text\":\"Line colors reset\",\"ts\":1793524295333,\"kind\":\"info\"},{\"id\":\"n1793524421661_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1793524421661,\"kind\":\"info\"},{\"id\":\"n1793524422210_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1793524422210,\"kind\":\"info\"}]",
 								"vrPassthrough": "false"
 							},
 							"exercise": "done"
@@ -9824,25 +10350,23 @@
 				}
 			]
 		},
-		"AI": {
+		"Tools & connections": {
 			"rows": [
 				{
-					"name": "Enable assistant",
+					"name": "Voice typing",
 					"controls": [
 						{
-							"kind": "toggle",
-							"id": "ai-enabled",
-							"label": "Enable assistant",
+							"kind": "button",
+							"id": "tool-chat-voice-test",
+							"label": "Test",
 							"where": "control",
-							"default": false,
+							"default": "Test",
 							"disabled": false,
-							"state": true,
+							"state": "Test",
 							"effects": {
-								"storage": {
-									"aiEnabled": "true"
-								},
+								"storage": {},
 								"stores": {
-									"aiProviders.aiEnabled": true
+									"toolStatus.toolTests": "<object>"
 								},
 								"html": [],
 								"body": [],
@@ -9851,37 +10375,19 @@
 								"events": []
 							},
 							"scope": "device",
-							"restored": false,
-							"storageAfterRestore": {
-								"aiEnabled": "false"
-							},
 							"exercise": "done"
-						}
-					]
-				},
-				{
-					"name": "Voice typing provider",
-					"controls": [
+						},
 						{
-							"kind": "segment",
-							"id": "ai-stt-preset-openai",
-							"label": "OpenAI",
+							"kind": "toggle",
+							"id": "tool-chat-voice-enable",
+							"label": "Enable Voice typing",
 							"where": "control",
 							"default": true,
 							"disabled": false,
-							"exercise": "skip"
-						},
-						{
-							"kind": "segment",
-							"id": "ai-stt-preset-groq",
-							"label": "Groq",
-							"where": "control",
-							"default": false,
-							"disabled": false,
-							"state": true,
+							"state": false,
 							"effects": {
 								"storage": {
-									"aiStt": "{\"preset\":\"groq\",\"baseUrl\":\"https://api.groq.com/openai/v1\",\"apiKey\":\"\",\"model\":\"whisper-large-v3\",\"language\":\"\"}"
+									"aiStt": "{\"preset\":\"openai\",\"baseUrl\":\"https://api.openai.com/v1\",\"apiKey\":\"\",\"model\":\"whisper-1\",\"language\":\"\",\"enabled\":false}"
 								},
 								"stores": {
 									"aiStt.sttConfig": "<object>"
@@ -9893,26 +10399,53 @@
 								"events": []
 							},
 							"scope": "device",
-							"restored": false,
+							"restored": true,
 							"storageAfterRestore": {
 								"aiStt": "{\"preset\":\"openai\",\"baseUrl\":\"https://api.openai.com/v1\",\"apiKey\":\"\",\"model\":\"whisper-1\",\"language\":\"\"}"
 							},
 							"exercise": "done"
 						},
 						{
-							"kind": "segment",
-							"id": "ai-stt-preset-custom",
-							"label": "Self-hosted",
+							"kind": "button",
+							"id": "tool-chat-voice-configure",
+							"label": "Set upVoice typing",
+							"where": "control",
+							"default": "Set upVoice typing",
+							"disabled": false,
+							"state": {
+								"gone": true
+							},
+							"effects": {
+								"storage": {},
+								"stores": {},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Keep sent pictures in Explorer",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "chat-keep-pictures",
+							"label": "Keep sent pictures in Explorer",
 							"where": "control",
 							"default": false,
 							"disabled": false,
 							"state": true,
 							"effects": {
 								"storage": {
-									"aiStt": "{\"preset\":\"custom\",\"baseUrl\":\"\",\"apiKey\":\"\",\"model\":\"whisper-1\",\"language\":\"\"}"
+									"chat:keepSentPictures": "true"
 								},
 								"stores": {
-									"aiStt.sttConfig": "<object>"
+									"chatAttach.keepSentPictures": true
 								},
 								"html": [],
 								"body": [],
@@ -9928,22 +10461,28 @@
 					]
 				},
 				{
-					"name": "Mesh generation",
+					"name": "Rigging and animation services",
+					"controls": []
+				},
+				{
+					"name": "Your own GPU box",
+					"controls": []
+				},
+				{
+					"name": "Coding agents",
 					"controls": [
 						{
-							"kind": "toggle",
-							"id": "mesh-gen-enabled",
-							"label": "Mesh generation",
+							"kind": "button",
+							"id": "tool-agents-session-test",
+							"label": "Test",
 							"where": "control",
-							"default": false,
+							"default": "Test",
 							"disabled": false,
-							"state": true,
+							"state": "Test",
 							"effects": {
-								"storage": {
-									"meshGenEnabled": "true"
-								},
+								"storage": {},
 								"stores": {
-									"meshProviders.meshGenEnabled": true
+									"toolStatus.toolTests": "<object>"
 								},
 								"html": [],
 								"body": [],
@@ -9952,10 +10491,87 @@
 								"events": []
 							},
 							"scope": "device",
-							"restored": false,
-							"storageAfterRestore": {
-								"meshGenEnabled": "false"
+							"exercise": "done"
+						},
+						{
+							"kind": "button",
+							"id": "tool-agents-session-configure",
+							"label": "Set upCoding agents",
+							"where": "control",
+							"default": "Set upCoding agents",
+							"disabled": false,
+							"state": {
+								"gone": true
 							},
+							"effects": {
+								"storage": {},
+								"stores": {
+									"anyModalOpen": false,
+									"inviteStore.inviteSheet": "agent",
+									"settingsOpen": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [
+									"Invite to this session"
+								],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Blender and other 3D tools",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "tool-desktop-blender-test",
+							"label": "Test",
+							"where": "control",
+							"default": "Test",
+							"disabled": false,
+							"state": "Test",
+							"effects": {
+								"storage": {},
+								"stores": {
+									"toolStatus.toolTests": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						},
+						{
+							"kind": "toggle",
+							"id": "tool-desktop-blender-enable",
+							"label": "Enable Blender and other 3D tools",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"tools:blender": "false"
+								},
+								"stores": {
+									"toolStatus.featureStatuses": "<object>"
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
 							"exercise": "done"
 						}
 					]
@@ -9991,6 +10607,68 @@
 							},
 							"scope": "device",
 							"restored": "8",
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Let AI agents join as guests",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "agents-as-guests",
+							"label": "Let AI agents join as guests",
+							"where": "control",
+							"default": false,
+							"disabled": false,
+							"state": true,
+							"effects": {
+								"storage": {
+									"connect:agentsAsGuests": "true"
+								},
+								"stores": {
+									"inviteStore.agentsAsGuests": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": false,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show where AI agents look",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "agent-markers",
+							"label": "Show where AI agents look",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"agents:cameraMarker": "false"
+								},
+								"stores": {
+									"agentLog.showAgentMarkers": false
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
 							"storageAfterRestore": {},
 							"exercise": "done"
 						}
@@ -11236,6 +11914,16 @@
 				]
 			},
 			{
+				"name": "Play here — start from the editor camera",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "",
+						"default": "Ctrl+Shift+Enter"
+					}
+				]
+			},
+			{
 				"name": "Toggle element snapping (vertex/face/surface targets)",
 				"controls": [
 					{
@@ -12038,6 +12726,36 @@
 				]
 			},
 			{
+				"name": "Distant scatter",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "scatter-detail-auto",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "scatter-detail-quest",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "scatter-detail-phone",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "scatter-detail-desktop",
+						"default": false
+					},
+					{
+						"kind": "segment",
+						"id": "scatter-detail-off",
+						"default": false
+					}
+				]
+			},
+			{
 				"name": "Water quality",
 				"controls": [
 					{
@@ -12214,6 +12932,16 @@
 						"kind": "toggle",
 						"id": "checkpoints-auto",
 						"default": true
+					}
+				]
+			},
+			{
+				"name": "Auto checkpoints on large scenes",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "checkpoints-auto-large",
+						"default": false
 					}
 				]
 			},
@@ -13127,6 +13855,21 @@
 				]
 			},
 			{
+				"name": "Both grips scale the world",
+				"controls": [
+					{
+						"kind": "segment",
+						"id": "vr-set-bothGripsWorld-always",
+						"default": true
+					},
+					{
+						"kind": "segment",
+						"id": "vr-set-bothGripsWorld-emptyAir",
+						"default": false
+					}
+				]
+			},
+			{
 				"name": "Refresh rate",
 				"controls": [
 					{
@@ -13372,44 +14115,72 @@
 				]
 			}
 		],
-		"AI": [
+		"Tools & connections": [
 			{
-				"name": "Enable assistant",
+				"name": "Voice typing",
 				"controls": [
+					{
+						"kind": "button",
+						"id": "tool-chat-voice-test",
+						"default": "Test"
+					},
 					{
 						"kind": "toggle",
-						"id": "ai-enabled",
-						"default": false
-					}
-				]
-			},
-			{
-				"name": "Voice typing provider",
-				"controls": [
-					{
-						"kind": "segment",
-						"id": "ai-stt-preset-openai",
+						"id": "tool-chat-voice-enable",
 						"default": true
 					},
 					{
-						"kind": "segment",
-						"id": "ai-stt-preset-groq",
-						"default": false
-					},
+						"kind": "button",
+						"id": "tool-chat-voice-configure",
+						"default": "Set upVoice typing"
+					}
+				]
+			},
+			{
+				"name": "Keep sent pictures in Explorer",
+				"controls": [
 					{
-						"kind": "segment",
-						"id": "ai-stt-preset-custom",
+						"kind": "toggle",
+						"id": "chat-keep-pictures",
 						"default": false
 					}
 				]
 			},
 			{
-				"name": "Mesh generation",
+				"name": "Rigging and animation services",
+				"controls": []
+			},
+			{
+				"name": "Your own GPU box",
+				"controls": []
+			},
+			{
+				"name": "Coding agents",
 				"controls": [
 					{
+						"kind": "button",
+						"id": "tool-agents-session-test",
+						"default": "Test"
+					},
+					{
+						"kind": "button",
+						"id": "tool-agents-session-configure",
+						"default": "Set upCoding agents"
+					}
+				]
+			},
+			{
+				"name": "Blender and other 3D tools",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "tool-desktop-blender-test",
+						"default": "Test"
+					},
+					{
 						"kind": "toggle",
-						"id": "mesh-gen-enabled",
-						"default": false
+						"id": "tool-desktop-blender-enable",
+						"default": true
 					}
 				]
 			}
@@ -13422,6 +14193,26 @@
 						"kind": "number",
 						"id": "soft-peer-cap",
 						"default": "8"
+					}
+				]
+			},
+			{
+				"name": "Let AI agents join as guests",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "agents-as-guests",
+						"default": false
+					}
+				]
+			},
+			{
+				"name": "Show where AI agents look",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "agent-markers",
+						"default": true
 					}
 				]
 			},

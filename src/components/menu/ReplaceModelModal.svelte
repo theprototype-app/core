@@ -8,6 +8,7 @@
 	import { explorerItems } from '$lib/explorer';
 	import { replaceModelTarget, replaceWithPackItem, replaceWithLibraryItem } from '$lib/replaceModel';
 	import ThemedSelect from '../ui/ThemedSelect.svelte';
+	import UiButton from '../ui/Button.svelte';
 
 	let open = $state(false);
 	let source = $state('library');
@@ -96,6 +97,21 @@
 		<p class="text-xs opacity-80">
 			Pick what goes where the placeholder is. A pack item keeps the object (its links, notes and flows) and loads on every peer; a library model is added as a new object.
 		</p>
+		<!-- 59 T1: or a model file — replaced in place like a pack item (the object is kept) -->
+		<div class="self-start">
+			<UiButton
+				id="replace-model-from-file"
+				size="sm"
+				variant="outline"
+				icon="folder-input"
+				disabled={busy}
+				onclick={() => {
+					const uuid = $replaceModelTarget;
+					close();
+					if (uuid) import('$lib/modelReplace').then((m) => m.pickReplacementFile(uuid));
+				}}>From a file…</UiButton
+			>
+		</div>
 		<div class="flex gap-2">
 			<div class="w-1/2">
 				<ThemedSelect id="replace-model-source" items={sources} bind:value={source} onchange={() => (touched = true)} />

@@ -165,9 +165,9 @@ const PAGES = {
 		{ id: 'colocated-ghost-hands', kind: 'toggle', key: 'colocatedGhostHands', want: 'false', def: absentOr('true') }
 	],
 	ai: [
-		{ id: 'ai-enabled', kind: 'toggle', key: 'aiEnabled', want: 'true', def: absentOr('false') },
-		{ id: 'mesh-gen-enabled', kind: 'toggle', key: 'meshGenEnabled', want: 'true', def: absentOr('false') },
-		{ id: 'ai-stt-preset', kind: 'seg', set: 'groq', key: 'aiStt', want: field('preset', 'groq'), def: (raw) => raw === null || json(raw)?.preset === 'openai' }
+		// 59 T4: the assistant and mesh switches are per-provider rows now (tools-connections proves
+		// them); the voice typing picker sits behind its row's Set up
+		{ id: 'ai-stt-preset', setup: '#tool-chat-voice-configure', kind: 'seg', set: 'groq', key: 'aiStt', want: field('preset', 'groq'), def: (raw) => raw === null || json(raw)?.preset === 'openai' }
 	],
 	connection: [
 		{ id: 'soft-peer-cap', kind: 'num', set: '4', key: 'connect:softPeerCap', want: '4', def: absentOr('8') },
@@ -263,6 +263,7 @@ async function walk(keys, extras) {
 				console.log(`  NOTE ${pageKey}: the page was remounted before #${row.id}`);
 				await page.evaluate(() => document.querySelector('#settings-sections .ss-page')?.setAttribute('data-probe', '1'));
 			}
+			if (row.setup) await page.click(row.setup);
 			const present = await page.locator(row.kind === 'seg' ? `#${row.id} [data-value="${row.set}"]` : '#' + row.id).count();
 			if (!present) {
 				h.check(false, `${pageKey}: the control #${row.id} exists`);
@@ -275,6 +276,7 @@ async function walk(keys, extras) {
 			h.check(okValue(row.want, raw), `${pageKey}: #${row.id} writes ${row.key} the 1.25.0 way (${raw})`);
 			rows++;
 		}
+		if (list.some((r) => r.setup)) await page.click('.ss-back'); // the footer reset is on the page, not its sub-page
 		// the footer reset of this category: asks, then puts every row of THIS page back
 		const before = await page.evaluate(() => Object.keys(localStorage).length);
 		await page.locator('#settings-reset-category').click();

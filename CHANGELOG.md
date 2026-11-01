@@ -5,6 +5,18 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.53.0 — your tools, connected 🔌
+
+- **Replace a model from a file and keep the object.** *Replace model…*, or drop a file on the selected object: its place, parent, flows, physics, colliders, changed materials and clips stay. One undo puts the old model back, for everyone.
+- **Clips survive a re-rig.** Clips the new file lacks are kept when their bones still exist, `.tpanim` clips too; dropped ones are listed.
+- **Edit in Blender.** Downloads the model as `.glb` with a card of export settings, for Blender or any glTF tool. Drop the exported file anywhere and it asks *Update "<name>"?*. Chrome and Edge can watch the file and reload on each save.
+- **Exports that look wrong get a one-click fix:** about 100× too big or small, lying on its side, or unapplied transforms.
+- **Settings ▸ AI is now Settings ▸ Tools & connections:** chat and mesh providers, voice typing, agents and desktop tools in one page, each with its status, a Test, Enable / Disable and the features it turns on. Mesh providers get a Test that costs no credits. Your saved providers and keys are unchanged.
+- **Missing tools explain themselves.** *Generate 3D model*, the quick prompt bar, the mic and *Edit in Blender* stay visible, say what is missing and open the right row.
+- **Skies download when you pick one** and stay in your browser, so the app download is about 6 MB smaller. Offline, a sky shows its flat colours. Exported games still carry their sky.
+- **Physics on animated imports** now reach late joiners and saves.
+- **Fixed:** an imported model removed within half a second (undo, replace, clear) no longer throws an error in the background; scene-lint counts the triangles of optimized imports.
+
 ## 1.52.0 — sessions in your Explorer 🗂️
 
 - **The host's files in your Explorer.** Joining a session shows them as *"<Host>'s session"*, read-only, above your Library: open images, videos and text, copy any file into your Library, and **Save on host** if you can edit. Nothing downloads until you open or copy, and more than about 50 MB asks first.

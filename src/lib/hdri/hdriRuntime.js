@@ -16,9 +16,7 @@ import { get } from 'svelte/store';
 import { hdriOf, resolveHdriTier, isHeadsetUA, TIER_MAX_WIDTH, downsampleRGBA, isHdriFileName } from './hdriCore.js';
 import { bundledHdri } from './catalog.js';
 import { skyEnv, envToneMapping, hdriStatus } from './skyEnv.js';
-import { pageUrl } from '../export/exportBoot.js';
-import { fetchCached } from '../assetCache';
-import { APP_VERSION } from '../version';
+import { fetchSky, SkyUnavailable } from './skyFetch.js';
 import { qualityOverrides } from '../qualityGovernor';
 import { isVRMode } from '../../stores/sceneStore';
 import { hdriQuality } from './hdriPrefs.js';
@@ -74,15 +72,8 @@ async function fetchSource(src) {
 	if (held) return held;
 	const row = bundledHdri(src);
 	if (row) {
-		// 60 Q6: through the local asset cache (kind `sky`). A bundled sky ships WITH the build, so
-		// its key carries the build's version: an updated file under the same name is fetched anew
-		let buffer;
-		try {
-			buffer = await fetchCached(pageUrl(row.file), { kind: 'sky', version: APP_VERSION });
-		} catch (e) {
-			throw new Error(String(/** @type {any} */ (e)?.message ?? e) + ' for ' + row.file);
-		}
-		const got = { buffer, name: row.file };
+		// 59 T3: off the bundle — Cache Storage, else the CDN (an export reads its own copy)
+		const got = { buffer: await fetchSky(row.file), name: row.file };
 		remember(sources, src, got);
 		return got;
 	}
@@ -181,6 +172,13 @@ function ensure(renderer, src, tier) {
 		},
 		(err) => {
 			prefiltered.delete(key);
+			// 59 T3: a bundled sky the CDN could not deliver is not an error — the preset's flat
+			// colours show (what an older peer shows) and the next `online` event tries again
+			if (err instanceof SkyUnavailable) {
+				console.info('[hdri] sky unavailable, showing the flat preset:', err.message);
+				if (wantKey === key) hdriStatus.update((s) => ({ ...s, state: 'unavailable', src, tier, error: '' }));
+				return;
+			}
 			console.warn('[hdri] could not load', src, err);
 			if (wantKey === key) hdriStatus.update((s) => ({ ...s, state: 'error', src, tier, error: String(err?.message ?? err) }));
 		}
@@ -297,6 +295,11 @@ export function installHdriLayer(register, apply) {
 	isVRMode.subscribe(retier);
 	qualityOverrides.subscribe(retier);
 	hdriQuality.subscribe(retier);
+	// 59 T3: back online -> a sky that could not be fetched gets another try
+	if (typeof window !== 'undefined')
+		window.addEventListener('online', () => {
+			if (wantKey && get(hdriStatus).state === 'unavailable') reapply();
+		});
 	// a CUSTOM HDRI is an Explorer file the scene references by hash: list it as a scene asset,
 	// so a .tpscene save / an export bundles its bytes (the music-track precedent). Re-registered
 	// when the hash changes, which is what makes the asset list recompute right away.
@@ -332,7 +335,7 @@ export const hdriDebug = {
 	settle: async () => {
 		for (let i = 0; i < 400; i++) {
 			const s = get(hdriStatus).state;
-			if (s === 'ready' || s === 'off' || s === 'error' || s === 'missing') return s;
+			if (s === 'ready' || s === 'off' || s === 'error' || s === 'missing' || s === 'unavailable') return s;
 			await new Promise((r) => setTimeout(r, 50));
 		}
 		return get(hdriStatus).state;

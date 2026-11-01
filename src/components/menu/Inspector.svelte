@@ -34,6 +34,8 @@
 	 * @param {any} o @param {any} _tick */
 	const scatterHostOk = (o, _tick) => isMeshHost(o);
 	import MeasureSection from './inspector/MeasureSection.svelte'; // 48 B2
+	import ModelSourceSection from './inspector/ModelSourceSection.svelte'; // 59 T1/T2/T7a
+	import { isReplaceableModel } from '$lib/modelTarget';
 	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
@@ -3198,7 +3200,12 @@
 			</div>
 			{/if}
 
-			{#if $animatedObjects[$selectedObject.uuid]?.clips?.length}
+			{#if !multiCount && isReplaceableModel($selectedObject)}
+				<!-- 59 T1/T2/T7a: Replace model… / Edit in Blender… / the watched file -->
+				<ModelSourceSection object={$selectedObject} />
+			{/if}
+
+						{#if $animatedObjects[$selectedObject.uuid]?.clips?.length}
 				{@const anim = $animatedObjects[$selectedObject.uuid]}
 				<Section variant="panel" label="Animation">
 					<div id="animation-controls">

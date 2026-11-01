@@ -11,9 +11,7 @@
 	import {
 		aiAssistantHidden,
 		aiPromptBarOpen,
-		showToast,
-		settingsOpen,
-		settingsSection
+		showToast
 	} from '../../stores/appStore';
 	import WindowChrome from '../ui/WindowChrome.svelte';
 	import Icon from '../ui/Icon.svelte';
@@ -49,6 +47,8 @@
 	import { focusStack } from '$lib/windowFocus';
 	import { tabbable } from '$lib/windowTabs';
 	import { sttConfig, sttReady } from '$lib/ai/stt';
+	import { explainMissing, openToolRow } from '$lib/tools/toolLinks.js'; // 59 T5
+	import { derived } from 'svelte/store';
 	import { dictation, startDictation, stopDictation } from '$lib/ai/sttCapture';
 	import { panelAway } from '$lib/windows/panelPlaces.js';
 
@@ -60,6 +60,8 @@
 	let pillInput: any = $state(null);
 	let promptInput: any = $state(null);
 
+	/** 59 T5: the mic's tooltip says what is missing (the press opens its row) */
+	const voiceReady = derived(sttConfig, (c) => sttReady(c));
 	const hasProvider = $derived($aiProviders.length > 0 && !!$aiActiveProvider);
 
 	// 56 C1: the agent this window talks to (null = the configured provider, as before)
@@ -164,12 +166,7 @@
 			return;
 		}
 		if ($dictation.state !== 'idle') return;
-		if (!sttReady($sttConfig)) {
-			showToast('Set up Voice typing in Settings ▸ AI to talk to the assistant', [
-				{ label: 'Open Settings', action: () => { settingsSection.set('ai'); settingsOpen.set(true); } }
-			]);
-			return;
-		}
+		if (explainMissing('voiceTyping')) return; // 59 T5: says what is missing, opens its row
 		const ok = await startDictation('desktop');
 		if (!ok && $dictation.error) showToast('Voice typing: ' + $dictation.error);
 	}
@@ -366,7 +363,7 @@
 								{/each}
 							</optgroup>
 						{:else}
-							<option value="" disabled>No assistant set up (Settings › AI)</option>
+							<option value="" disabled>No assistant set up (Settings ▸ Tools & connections)</option>
 						{/if}
 						{#if $agentTargets.length || agentId}
 							<optgroup label="AI agents in this session">
@@ -380,16 +377,14 @@
 						{/if}
 					</select>
 				{:else}
-					<!-- 38 NOTES-38 #24 (design page): the hint is the way there — the same Settings › AI
-					     deep link the provider toast uses -->
+					<!-- 38 NOTES-38 #24 (design page): the hint is the way there — 59 T5: the Chat providers
+					     row in Settings › Tools & connections, the same place the provider toast opens -->
 					<span class="ai-hint flex-1"
-						>No provider yet. <button
+						>No chat provider yet. <button
 							type="button"
+							id="ai-hint-setup"
 							class="ai-hint-link"
-							onclick={() => {
-								settingsSection.set('ai');
-								settingsOpen.set(true);
-							}}>Set one up in Settings › AI</button
+							onclick={() => openToolRow('chat')}>Set one up in Tools &amp; connections</button
 						></span
 					>
 				{/if}
@@ -415,7 +410,7 @@
 					class:ai-mic-on={$dictation.state === 'recording'}
 					aria-label={$dictation.state === 'recording' ? 'Stop voice typing' : 'Voice typing'}
 					aria-pressed={$dictation.state === 'recording'}
-					title={$dictation.state === 'recording' ? 'Stop and type what was said' : 'Voice typing (Settings ▸ AI)'}
+					title={$dictation.state === 'recording' ? 'Stop and type what was said' : $voiceReady ? 'Voice typing' : 'Voice typing needs a voice typing server — set one up in Settings ▸ Tools & connections'}
 					disabled={inputDisabled || $dictation.state === 'transcribing'}
 					onclick={toggleMic}
 				>

@@ -145,6 +145,7 @@ export const DEBUG_HOOKS = [
 	['hdriStores', () => import('./hdri/skyEnv.js')],
 	['hdriCore', () => import('./hdri/hdriCore.js')],
 	['hdriPrefs', () => import('./hdri/hdriPrefs.js')],
+	['hdriSky', () => import('./hdri/skyFetch.js')],
 	['sceneMusic', () => import('./sceneMusic')],
 	['animatedImports', () => import('./animatedImports')],
 	// 57 M1: .tpanim clip assets (format, binder, humanoid map)
@@ -256,6 +257,8 @@ export const DEBUG_HOOKS = [
 	['aiTools', () => import('./ai/tools')],
 	['aiAssistant', () => import('./ai/assistant')],
 	['meshProviders', () => import('./ai/meshProviders')],
+	['toolStatus', () => import('./tools/toolStatus.js')],
+	['toolLinks', () => import('./tools/toolLinks.js')],
 	['meshJobs', () => import('./ai/meshJobs')],
 	['flowGraphsCtl', () => import('./flowGraphs')],
 	// 37 (R6): socket add/remove + the switcher type
@@ -490,6 +493,13 @@ export const DEBUG_HOOKS = [
 	['loadStates', () => import('./loadStates')],
 	['placeholders', () => import('./placeholders')],
 	['replaceModel', () => import('./replaceModel')],
+	// 59 T1/T2/T7: Replace from file, Edit in Blender, the drop router, the file watch
+	['modelReplace', () => import('./modelReplace')],
+	['editInBlender', () => import('./editInBlender')],
+	['modelDrop', () => import('./modelDrop')],
+	['modelWatch', () => import('./modelWatch')],
+	['glbEdit', () => import('./glbEdit')],
+	['modelClips', () => import('./modelClips')],
 	['lod', () => import('./lod')],
 	['gltfOptimize', () => import('./gltfOptimize.js')],
 	['gltfLoader', () => import('./gltfLoader.js')],

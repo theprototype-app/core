@@ -43,6 +43,14 @@
   trap and the replication rules an agent must respect (AGENT-SESSIONS.md).
 - [Build with an AI agent](https://docs.theprototype.app/ai/build-with-an-agent/):
   the same for people.
+- Model round trip (1.53): a person presses Edit in Blender… (a `.glb` carrying
+  `extras.theprototype`), an agent with [blender-mcp](https://github.com/ahujasid/blender-mcp) edits it,
+  and the person drops it back: "Update <name>?" keeps the object, its flows, physics and clips.
+  Agent tools cannot export or replace in place yet.
+  [Edit in Blender](https://docs.theprototype.app/edit-in-blender/),
+  [Agents + Blender](https://docs.theprototype.app/ai/agents-and-blender/).
+- Setup status: [Tools & connections](https://docs.theprototype.app/tools-and-connections/); an agent reads
+  what is missing from `status().missingTools`.
 
 ## Key concepts
 

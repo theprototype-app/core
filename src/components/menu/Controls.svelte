@@ -1396,7 +1396,7 @@
 	}
 
 	/** the AI button press — AiHudButton's own path (I3). 86-fix N1: it always opens the window; with no
-	 *  provider set up the window itself offers Connect Claude or Settings ▸ AI */
+	 *  provider set up the window itself offers Connect Claude or Settings ▸ Tools & connections */
 	function toggleAiAssistant() {
 		aiAssistantHidden.set($aiAssistantHidden === '' ? 'hidden' : '');
 	}

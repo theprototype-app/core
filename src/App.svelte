@@ -32,6 +32,7 @@
   // panel, so it sits with ConfirmModal where every entry point can reach it.
   import StorageModal from './components/menu/StorageModal.svelte'
   import ReplaceModelModal from './components/menu/ReplaceModelModal.svelte'
+  import EditInBlenderCard from './components/menu/EditInBlenderCard.svelte' // 59 T2
   // 57: Apply clip… / Download… / the Skeleton view — a tiny host, the dialogs load on open
   import CharacterDialogs from './components/characters/CharacterDialogs.svelte'
   import PlaceholderTooltip from './components/menu/PlaceholderTooltip.svelte'
@@ -423,10 +424,15 @@ import { startMusicToolbox } from './lib/musicToolbox'
       underlayDropMenu.set({ x: event.clientX, y: event.clientY, files })
       return
     }
+    // 59 T1/T7b: ONE model file may be a new version of an object (its own export back from a tool,
+    // or dropped onto the selected object) — modelDrop asks; several are always new objects
+    const models = files.filter((file) => modelExt.test(file.name.toLowerCase()))
+    const { clientX, clientY } = event
     files.forEach((file) => {
       const name = file.name.toLowerCase()
       if (clipFiles.includes(file)) return
-      if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
+      if (modelExt.test(name) && models.length === 1) import('./lib/modelDrop').then((m) => m.dropModelFile(file, { companions, clientX, clientY }))
+      else if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
       else if (!companions.includes(file)) skipped.push(file.name)
     })
@@ -485,6 +491,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <StorageModal />
 <!-- 36 U9: Replace model… for a loading/failed placeholder, and the hover tooltip over one -->
 <ReplaceModelModal />
+<EditInBlenderCard />
 <PlaceholderTooltip />
 <CharacterDialogs />
 <DrawToolbar />

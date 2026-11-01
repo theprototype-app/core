@@ -629,6 +629,8 @@ export function switchMaterialType(uuid, type, replicate = true) {
 	}
 	object.material = fresh;
 	fresh.needsUpdate = true;
+	// 59 T1: a material changed in the app survives a Replace model (modelReplace's override rule)
+	fresh.userData.tpEdited = true;
 	// D2: this is the ONE material op that REPLACES the instance rather than writing into
 	// it, so it is the one that would silently break a share — every other edit reaches
 	// the sharers for free by being a write to the material they hold. Hand them the new
@@ -656,6 +658,7 @@ export function setObjectColor(uuid, hex, replicate = true) {
 	const before = '#' + material.color.getHexString();
 	material.color.set(hex);
 	material.needsUpdate = true;
+	material.userData.tpEdited = true; // 59 T1 (see switchMaterialType)
 	pokeScene();
 	if (replicate) {
 		recordMaterialChange(uuid, 'color', null, before, hex);
@@ -690,6 +693,7 @@ export function setMaterialParam(uuid, key, value, replicate = true) {
 	if (isColor) material[key].set(value);
 	else material[key] = value;
 	material.needsUpdate = true;
+	material.userData.tpEdited = true; // 59 T1 (see switchMaterialType)
 	pokeScene();
 	if (replicate)
 		broadcast({ type: 'objectParameters', parameter: 'materialParam', uuid: uuid, key: key, value: value });

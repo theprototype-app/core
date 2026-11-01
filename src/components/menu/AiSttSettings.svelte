@@ -10,21 +10,19 @@
 	// (safeStorage, plaintext like every AI key here).
 	//
 	// 37-settings (R21): the provider is a segmented control with its status as a badge; the server form
-	// is a SUB-PAGE ("AI › Voice typing server") reached by a NavRow. `subpage` renders that form (the
+	// is a SUB-PAGE ("AI › Voice typing server") reached by a NavRow. 59 T4: the NavRow is the Tools &
+	// connections hub's Voice typing row now, and the preset picker moved into the sub-page.
+	// `subpage` renders that form (the
 	// AI page passes it while the sub-page is open). Same store, same key (aiStt).
-	import { getContext } from 'svelte';
 	import Section from '../ui/Section.svelte';
 	import SettingRow from '../ui/SettingRow.svelte';
-	import NavRow from '../ui/NavRow.svelte';
 	import Segmented from '../ui/Segmented.svelte';
 	import Button from '../ui/Button.svelte';
 	import Badge from '../ui/Badge.svelte';
-	import { NAV_CONTEXT } from '$lib/settingsNav';
-	import { STT_PRESETS, sttConfig, setSttConfig, applySttPreset, sttReady, sttPresetFor, transcribe, describeSttError } from '$lib/ai/stt.js';
+	import { STT_PRESETS, sttConfig, setSttConfig, applySttPreset, sttReady, sttPresetFor, transcribe, describeSttError, silentWav } from '$lib/ai/stt.js';
 
 	/** @type {{subpage?: boolean}} */
 	let { subpage = false } = $props();
-	const nav = /** @type {any} */ (getContext(NAV_CONTEXT));
 
 	/** @type {{ok: boolean, detail: string} | null} */
 	let testResult = $state(null);
@@ -32,28 +30,6 @@
 
 	/** @param {Event} e */
 	const value = (e) => /** @type {HTMLInputElement} */ (e.currentTarget).value;
-
-	/** half a second of silence as a 16 kHz mono WAV — enough for the server to answer, nothing to transcribe */
-	function silentWav() {
-		const samples = 8000;
-		const buffer = new ArrayBuffer(44 + samples * 2);
-		const view = new DataView(buffer);
-		const text = (/** @type {number} */ at, /** @type {string} */ s) => [...s].forEach((c, i) => view.setUint8(at + i, c.charCodeAt(0)));
-		text(0, 'RIFF');
-		view.setUint32(4, 36 + samples * 2, true);
-		text(8, 'WAVE');
-		text(12, 'fmt ');
-		view.setUint32(16, 16, true);
-		view.setUint16(20, 1, true);
-		view.setUint16(22, 1, true);
-		view.setUint32(24, 16000, true);
-		view.setUint32(28, 32000, true);
-		view.setUint16(32, 2, true);
-		view.setUint16(34, 16, true);
-		text(36, 'data');
-		view.setUint32(40, samples * 2, true);
-		return new Blob([buffer], { type: 'audio/wav' });
-	}
 
 	async function test() {
 		testing = true;
@@ -70,18 +46,17 @@
 	const preset = $derived(sttPresetFor($sttConfig.preset));
 	const ready = $derived(sttReady($sttConfig));
 	const PRESETS = STT_PRESETS.map((p) => ({ value: p.preset, label: p.preset === 'custom' ? 'Self-hosted' : p.label, title: p.label }));
-	/** a host for the NavRow's value @param {string} url */
-	const hostOf = (url) => {
-		try {
-			return new URL(url).host;
-		} catch {
-			return url || 'not set';
-		}
-	};
 </script>
 
 <div id="ai-stt-settings" class="contents" data-keywords={keywords.join(' ')}>
 	{#if subpage}
+		<!-- 59 T4: Tools & connections ▸ Voice typing ▸ Set up — the provider picker sits above the form -->
+		<Section variant="card" label="Voice typing" badge="This device">
+			<SettingRow id="row-stt-preset" label="Voice typing provider" description="Speech to text for the assistant’s mic, in the AI window and in VR." wide>
+				<Segmented id="ai-stt-preset" label="Voice typing provider" options={PRESETS} value={$sttConfig.preset} onchange={(v) => { applySttPreset(v); testResult = null; }} />
+				<span id="ai-stt-status"><Badge tone={ready ? 'ok' : 'warn'} text={ready ? 'Ready' : $sttConfig.enabled === false ? 'Switched off' : preset.needsKey ? 'Needs an API key' : 'Needs a base URL'} /></span>
+			</SettingRow>
+		</Section>
 		<Section variant="card" label="Voice typing server" badge="This device">
 			<SettingRow id="row-stt-base" label="Base URL" description="The OpenAI-compatible endpoint, ending in /v1." wide>
 				<input id="ai-stt-base" class="settings-text" placeholder="https://…/v1" autocomplete="off" value={$sttConfig.baseUrl} onchange={(e) => setSttConfig({ baseUrl: value(e) })} />
@@ -105,12 +80,6 @@
 				{/snippet}
 			</SettingRow>
 		</Section>
-	{:else}
-		<SettingRow id="row-stt-preset" label="Voice typing provider" description="Speech to text for the assistant’s mic, in the AI window and in VR." wide>
-			<Segmented id="ai-stt-preset" label="Voice typing provider" options={PRESETS} value={$sttConfig.preset} onchange={(v) => { applySttPreset(v); testResult = null; }} />
-			<span id="ai-stt-status"><Badge tone={ready ? 'ok' : 'warn'} text={ready ? 'Ready' : preset.needsKey ? 'Needs an API key' : 'Needs a base URL'} /></span>
-		</SettingRow>
-		<NavRow id="ai-stt-server" label="Voice typing server" value={hostOf($sttConfig.baseUrl)} onclick={() => nav.openSub('ai:stt', 'Voice typing server', 'ai')} />
 	{/if}
 </div>
 

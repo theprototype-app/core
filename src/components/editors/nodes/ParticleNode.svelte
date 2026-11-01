@@ -109,5 +109,15 @@
 				<option value="world">world (trails)</option>
 			</select>
 		</label>
+		{#if data.space === 'world'}
+			<label class="flex flex-col">
+				<span>aim</span>
+				<select class="nodrag nopan" value={data.aim ?? 'emitter'}
+					on:change={(e) => set({ aim: e.currentTarget.value })}>
+					<option value="emitter">with the object</option>
+					<option value="world">world up</option>
+				</select>
+			</label>
+		{/if}
 	</div>
 </NodeWrapper>

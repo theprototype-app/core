@@ -21,6 +21,8 @@
 //  blending    'additive' | 'normal'
 //  spin        sprite rotation speed (rad/s)
 //  space       'local' (particles ride the object) | 'world' (trail behind)
+//  aim         world space only: 'emitter' (shape + directions turn with the object, a rocket's exhaust) |
+//              'world' (up is the world's up however the object is turned). Gravity is always world in world space
 //  36 B3 (weather): shape 'box' + area [w, d] (emit anywhere on the rectangle, falling
 //  down), wind [x, y, z] m/s, fall = metres to the ground below the emitter (0 = none),
 //  ground 'splash' (a growing, fading ring — rain) | 'settle' (lies there and fades — snow)
@@ -58,6 +60,7 @@ export const PARTICLE_DEFAULTS = {
 	blending: 'additive',
 	spin: 0,
 	space: 'local',
+	aim: 'emitter',
 	render: 'points',
 	inherit: 0,
 	stretch: 0.04,

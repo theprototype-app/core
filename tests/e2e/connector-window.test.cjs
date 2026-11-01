@@ -194,7 +194,7 @@ h.run(async () => {
 		await installSignIn(P.page);
 		await P.page.locator('#ai-header-signin').waitFor({ state: 'visible', timeout: 10000 });
 		const hb = await fits('#ai-header-signin');
-		const closeFits = await fits('#ai-assistant-window .ui-panel-header button:last-of-type');
+		const closeFits = await fits('#ai-assistant-window .wc-close');
 		h.check(hb.ok && closeFits.ok, `N6 ${name}: the header button and the header's other buttons fit (${JSON.stringify(hb.box)}, hit ${hb.hit}/${closeFits.hit})`);
 		await P.page.screenshot({ path: path.join(OUT, `fw-ai-n6-${name}.png`) }).catch(() => {});
 		await P.page.locator('#ai-header-signin').click();

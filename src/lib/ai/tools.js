@@ -17,7 +17,8 @@ import { checkMaterialParam, toHexColor } from '$lib/materialParamRules.js';
 import { lightStateOf, recordLightChange, sendLight } from '$lib/multiEdit';
 import { aimLight } from '$lib/lightParams';
 import { itemByHash } from '$lib/explorer';
-import { notifyExternalMove } from '$lib/flowRuntime';
+import { animatedBaseOf, writingBasePose } from '$lib/flowRuntime';
+import { reportedPose } from './poseReport.js';
 import { meshGenReady } from './meshProviders.js';
 import { featureStatus, toolSummary } from '../tools/toolStatus.js';
 import '../tools/builtinTools.js'; // 59 T5: the registry the prompt's tool lines read
@@ -129,10 +130,7 @@ function describeObject(object) {
 		name: object.name || object.type,
 		type: object.type,
 		parentUuid: object.parent && object.parent.type === 'Group' ? object.parent.uuid : null,
-		position: object.position.toArray().map(r3),
-		rotation: [r3(object.rotation.x), r3(object.rotation.y), r3(object.rotation.z)],
-		scale: object.scale.toArray().map(r3),
-		visible: object.visible !== false
+		...reportedPose(object, animatedBaseOf(object.uuid))
 	};
 	const material = object.material;
 	if (material && !Array.isArray(material)) {
@@ -340,21 +338,25 @@ function lockedByPeer(uuid) {
  */
 function applyAiTransform(object, t) {
 	if (!t.position && !t.rotation && !t.scale) return;
-	const before = {
-		pos: object.position.toArray(),
-		rot: [object.rotation.x, object.rotation.y, object.rotation.z],
-		scale: object.scale.toArray()
-	};
-	if (t.position && t.position.length === 3) object.position.fromArray(t.position);
-	if (t.rotation && t.rotation.length === 3)
-		object.rotation.set(t.rotation[0], t.rotation[1], t.rotation[2]);
-	if (t.scale && t.scale.length === 3) object.scale.fromArray(t.scale);
-	const after = {
-		pos: object.position.toArray(),
-		rot: [object.rotation.x, object.rotation.y, object.rotation.z],
-		scale: object.scale.toArray()
-	};
-	notifyExternalMove(object.uuid);
+	/** @type {any} */ let before;
+	/** @type {any} */ let after;
+	// mcp-fix: what an AI moves is the authored pose, whatever frame an animation is on
+	writingBasePose(object.uuid, () => {
+		before = {
+			pos: object.position.toArray(),
+			rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+			scale: object.scale.toArray()
+		};
+		if (t.position && t.position.length === 3) object.position.fromArray(t.position);
+		if (t.rotation && t.rotation.length === 3)
+			object.rotation.set(t.rotation[0], t.rotation[1], t.rotation[2]);
+		if (t.scale && t.scale.length === 3) object.scale.fromArray(t.scale);
+		after = {
+			pos: object.position.toArray(),
+			rot: [object.rotation.x, object.rotation.y, object.rotation.z],
+			scale: object.scale.toArray()
+		};
+	});
 	pokeScene();
 	broadcast({ type: 'move', uuid: object.uuid, pos: after.pos, rot: after.rot, scale: after.scale });
 	recordTransform({ uuid: object.uuid, before, after });
@@ -1005,7 +1007,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'list_scene',
 			description:
-				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
+				'List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: "scene" | object uuid, page} to read one page of one graph.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1086,7 +1088,7 @@ export const AI_TOOLS = [
 		function: {
 			name: 'update_objects',
 			description:
-				'Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call.',
+				'Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call. On an object an effect is moving, a transform sets its authored pose (the one list_scene reports) and the effect carries on from there.',
 			parameters: {
 				type: 'object',
 				properties: {
@@ -1243,7 +1245,7 @@ function flowToolSchemas(physics) {
 			function: {
 				name: 'create_flow_nodes',
 				description:
-					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.',
+					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + time * speed (base has pos, rot, scale as arrays). Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.',
 				parameters: {
 					type: 'object',
 					properties: {
@@ -1300,7 +1302,7 @@ function flowToolSchemas(physics) {
 			function: {
 				name: 'update_flow_nodes',
 				description:
-					'Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object\'s "flow" (and "sceneFlow").',
+					'Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object\'s "flow" (and "sceneFlow"). Script code runs every frame from the base pose: use object.rotation.y = base.rot[1] + time * speed, not +=.',
 				parameters: {
 					type: 'object',
 					properties: {

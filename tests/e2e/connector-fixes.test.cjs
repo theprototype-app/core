@@ -3,6 +3,8 @@
 //   6. control_simulation: pause / resume while stopped is an error.
 //   1. what_can_you_do answers in a real connector tab. 2. the import tools are neither advertised nor reachable.
 //   3 + 4. join_session to a session that is not there fails, says so, and status never contradicts itself.
+//   9. a script's pose restarts from the base: the warning, the documented form. 10. a Spin stays inside a turn; list_scene
+//   and update_objects work on the authored pose.
 //   7. a particle node in world space on a turned object: world axes, and pixels that go up. 8. script reach + warnings.
 //   s. save_scene saves the open scene.
 // Run: APP_URL='https://theprototype.app:5491/' npm run e2e -- connector-fixes
@@ -233,6 +235,74 @@ h.run(async () => {
 	const failing = await call('create_flow_nodes', { graph: scripted, nodes: [{ type: 'script', data: { code: 'throw new Error("boom");' } }] });
 	h.check(!!failing?.result?.created?.[0]?.id, 'a failing script');
 	await h.eventually(async () => (await call('status', {}, 'read'))?.result?.scriptErrors ?? [], (r) => r.some((e) => /boom/.test(e.message)), 'status.scriptErrors names the failing script', 30000);
+
+	// ---- 9: a script's pose restarts from the base every frame -------------------------------------------------
+	const poseOf = (id) => A.page.evaluate((uuid) => {
+		let g;
+		window.__stores.objectsGroup.subscribe((x) => (g = x))();
+		const o = g.getObjectByProperty('uuid', uuid);
+		return { y: o.position.y, ry: o.rotation.y };
+	}, id);
+	const listed = async (id) => (await call('list_scene', { name: '*' }, 'read'))?.result?.objects?.find((o) => o.uuid === id);
+	const moved = async (id, read, tries = 40) => {
+		const first = await read(id);
+		for (let i = 0; i < tries; i++) {
+			await wait(500);
+			const now = await read(id);
+			if (JSON.stringify(now) !== JSON.stringify(first)) return { first, now };
+		}
+		return { first, now: first };
+	};
+	const stepper = await mk('Stepper', 'Box', [8, 1, 0]);
+	const stepping = await call('create_flow_nodes', { graph: stepper, nodes: [{ type: 'script', data: { code: 'object.rotation.y += 0.02;' } }] });
+	h.check(/will not build up/.test(stepping?.result?.warning ?? '') && /base\.rot\[1\] \+ time/.test(stepping?.result?.warning ?? ''), `a += script says why it stays put (${JSON.stringify(stepping?.result?.warning).slice(0, 200)})`);
+	await h.eventually(() => poseOf(stepper), (p) => Math.abs(p.ry - 0.02) < 0.001, 'a += script lands at base + 0.02', 30000);
+	await wait(1500);
+	h.check(Math.abs((await poseOf(stepper)).ry - 0.02) < 0.001, 'and stays there: this is the behaviour the warning describes');
+	const turner = await mk('Turner', 'Box', [10, 1, 0]);
+	const turning = await call('create_flow_nodes', { graph: turner, nodes: [{ type: 'script', data: { code: 'object.rotation.y = base.rot[1] + time * 2;' } }] });
+	h.check(!!turning?.result?.created?.[0]?.id && !turning?.result?.warning, `the documented form does not warn (${JSON.stringify(turning?.result?.warning)})`);
+	const turned = await moved(turner, poseOf);
+	h.check(turned.now.ry !== turned.first.ry, `the documented form keeps turning (${turned.first.ry} -> ${turned.now.ry})`);
+	const docs = await call('describe_node_types', { types: ['script'] }, 'read');
+	h.check(/base\.rot\[1\] \+ time \* speed/.test(JSON.stringify(docs?.result ?? '')), 'describe_node_types gives the form');
+	const scriptErrs = await A.page.evaluate(() => new Promise((r) => window.__stores.scriptErrors.subscribe((v) => r(v))()));
+	h.check(!scriptErrs[turning?.result?.created?.[0]?.id], `the documented form runs without an error (${JSON.stringify(scriptErrs).slice(0, 160)})`);
+
+	// ---- 10: a Spin stays inside a turn; list_scene and update_objects work on the authored pose ----------------
+	const spinner = await mk('Spinner', 'Box', [12, 2, 0]);
+	await call('update_objects', { updates: [{ uuid: spinner, rotation: [0, 0.5, 0] }] });
+	await call('create_flow_nodes', { graph: spinner, nodes: [{ type: 'spin', data: { axis: 'y', speed: 40 } }] });
+	const spun = await moved(spinner, poseOf);
+	h.check(spun.now.ry !== spun.first.ry, `the spin runs (${spun.first.ry} -> ${spun.now.ry})`);
+	let widest = 0;
+	for (let i = 0; i < 10; i++) {
+		widest = Math.max(widest, Math.abs((await poseOf(spinner)).ry - 0.5));
+		await wait(150);
+	}
+	console.log('MEASURE ' + JSON.stringify({ spinWidest: widest }));
+	h.check(widest < Math.PI * 2, `the angle a spin adds stays inside one turn (${widest})`);
+	const spinRow = await listed(spinner);
+	h.check(spinRow?.animated === true && spinRow.rotation[1] === 0.5, `list_scene gives a spinning object's authored rotation (${JSON.stringify(spinRow?.rotation)}, animated ${spinRow?.animated})`);
+	h.check(typeof spinRow?.live?.rotation?.[1] === 'number', `and this frame beside it (${JSON.stringify(spinRow?.live?.rotation)})`);
+
+	const bouncer = await mk('Bouncer', 'Box', [14, 3, 0]);
+	const bounceMade = await call('create_flow_nodes', { graph: bouncer, nodes: [{ type: 'bounce', data: { amplitude: 1, speed: 3 } }] });
+	const bounceId = bounceMade?.result?.created?.[0]?.id;
+	const bounced = await moved(bouncer, poseOf);
+	h.check(bounced.now.y !== bounced.first.y, `the bounce runs (${bounced.first.y} -> ${bounced.now.y})`);
+	await h.eventually(() => poseOf(bouncer), (p) => Math.abs(p.y - 3) > 0.05, 'caught off its base', 30000);
+	const rotated = await call('update_objects', { updates: [{ uuid: bouncer, rotation: [0, 1, 0] }] });
+	h.check(rotated?.type === 'result' && !rotated.result?.error, 'a rotation-only update of a bouncing object');
+	const bounceRow = await listed(bouncer);
+	h.check(bounceRow?.position?.[1] === 3 && bounceRow.rotation[1] === 1, `it keeps its authored height: nothing baked (${JSON.stringify(bounceRow?.position)}, ${JSON.stringify(bounceRow?.rotation)})`);
+	const placed = await call('update_objects', { updates: [{ uuid: bouncer, position: [14, 5, 0] }] });
+	h.check(placed?.type === 'result', 'a position update of a bouncing object');
+	h.check((await listed(bouncer))?.position?.[1] === 5, 'it lands in the authored pose');
+	await h.eventually(() => poseOf(bouncer), (p) => Math.abs(p.y - 5) <= 1.01 && Math.abs(p.y - 5) > 0.05, 'and the bounce carries on around it', 30000);
+	await call('update_flow_nodes', { graph: bouncer, remove: [bounceId] });
+	await h.eventually(() => poseOf(bouncer), (p) => p.y === 5 && p.ry === 1, 'with the effect gone it stands exactly at the authored pose', 30000);
+	h.check((await listed(bouncer))?.animated === undefined, 'and no longer reads as animated');
 
 	h.check(h.pageErrors(A).length === 0, `no page errors (${h.pageErrors(A).slice(0, 3)})`);
 	await h.finish(browser);

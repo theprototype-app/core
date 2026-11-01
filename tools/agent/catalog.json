@@ -20,7 +20,7 @@
 		{
 			"name": "list_scene",
 			"title": "Read the scene",
-			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
+			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -245,7 +245,7 @@
 		{
 			"name": "update_objects",
 			"title": "Change objects",
-			"description": "Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nTake a screenshot after each change to check your work.",
+			"description": "Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call. On an object an effect is moving, a transform sets its authored pose (the one list_scene reports) and the effect carries on from there.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -538,7 +538,7 @@
 		{
 			"name": "create_flow_nodes",
 			"title": "Add behaviour (flow) nodes",
-			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
+			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + time * speed (base has pos, rot, scale as arrays). Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -613,7 +613,7 @@
 		{
 			"name": "update_flow_nodes",
 			"title": "Change or remove flow nodes",
-			"description": "Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object's \"flow\" (and \"sceneFlow\").\nTake a screenshot after each change to check your work.",
+			"description": "Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object's \"flow\" (and \"sceneFlow\"). Script code runs every frame from the base pose: use object.rotation.y = base.rot[1] + time * speed, not +=.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {

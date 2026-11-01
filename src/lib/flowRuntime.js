@@ -593,6 +593,16 @@ export function originPivotOf(object, base) {
 	return pivotVec.fromArray(base.pos).add(offsetVec);
 }
 
+/**
+ * mcp-fix: the angle a Spin adds to the base pose, wrapped to one turn. Time is the shared clock, so an unwrapped angle
+ * grows with the age of the session (24313 rad read back from a list_scene) and loses float precision. A pure function
+ * of (time, speed), so every peer still agrees, and a whole turn is the same pose. Exported for headless coverage.
+ * @param {number} time @param {number} speed
+ */
+export function spinAngle(time, speed) {
+	return (time * speed) % (Math.PI * 2);
+}
+
 /** Where the body lands when it turns `angle` about `pivot` from its base pose —
  * the spin-about-origin math, exported so a test asserts THIS and not THREE.
  * @param {number[]} basePos @param {any} pivot @param {'x'|'y'|'z'} axis @param {number} angle
@@ -2508,6 +2518,37 @@ export function notifyExternalMove(uuid) {
 	if (object) baseState.set(uuid, captureBase(object));
 }
 
+/**
+ * mcp-fix: the authored pose under a running animation, for a reader that must not mistake a frame of the animation for
+ * what was built (list_scene). Null when nothing animates it, or when somebody else owns the pose (a drag, a ride, a
+ * dynamic body: then the live pose IS the truth). A clip's base comes second: a flow effect's base is what is restored.
+ * @param {string} uuid @returns {{pos: number[], rot: number[], scale: number[], visible?: boolean} | null}
+ */
+export function animatedBaseOf(uuid) {
+	if (suspended.has(uuid)) return null;
+	return baseState.get(uuid) ?? animRef?.authoredBaseOf?.(uuid) ?? null;
+}
+
+/**
+ * mcp-fix: run a write that names only SOME of an object's transform with the object at its base pose, so the fields it
+ * does not name keep their authored values. Adopting the live pose instead bakes a frame of the animation into the base
+ * (a rotation-only update of a bouncing box froze the bounce's height into it, for every peer).
+ * @param {string} uuid @param {() => void} write
+ */
+export function writingBasePose(uuid, write) {
+	if (!baseState.has(uuid) || suspended.has(uuid)) {
+		write();
+		notifyExternalMove(uuid);
+		return;
+	}
+	suspendAnimation(uuid);
+	try {
+		write();
+	} finally {
+		resumeAnimation(uuid);
+	}
+}
+
 // --- Phase 133: value + logic nodes ------------------------------------------
 
 // node types that produce an OUTPUT value (not a scene effect)
@@ -4037,7 +4078,7 @@ function applyAnimation(object, base, anim, time, ctx) {
 		originPivotOf(object, base);
 		if (anim.type === 'spin') {
 			const axis = data.axis ?? 'y';
-			const angle = time * speed;
+			const angle = spinAngle(time, speed);
 			object.rotation[axis] += angle;
 			object.position.fromArray(spinPositionAbout(base.pos, pivotVec, axis, angle));
 		} else {
@@ -4093,7 +4134,7 @@ function applyAnimation(object, base, anim, time, ctx) {
 	} else if (anim.type === 'spin') {
 		const axis = data.axis ?? 'y';
 		const speed = data.speed ?? 1;
-		object.rotation[axis] += time * speed;
+		object.rotation[axis] += spinAngle(time, speed);
 	} else if (anim.type === 'bounce') {
 		const amplitude = data.amplitude ?? 0.5;
 		const speed = data.speed ?? 2;

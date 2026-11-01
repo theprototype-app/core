@@ -24,8 +24,7 @@
 	const tone = $derived(s.phase === 'connected' ? 'ok' : s.phase === 'reconnecting' || s.throttled ? 'warn' : s.phase === 'closed' || s.phase === 'error' ? 'bad' : 'idle');
 
 	let copied = $state(false);
-	/** @type {ReturnType<typeof setTimeout> | undefined} */
-	let copiedTimer;
+	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 	onDestroy(() => clearTimeout(copiedTimer));
 
 	async function copyMcpLink() {
@@ -180,6 +179,13 @@
 		min-width: 0;
 		overflow-wrap: anywhere;
 		color: var(--text);
+	}
+	/* a thumb-sized copy button wherever people use a thumb, whatever the kit's own size is at this width */
+	@media (pointer: coarse), (max-width: 900px) {
+		.cc-address :global(#connect-claude-copy) {
+			min-width: 44px;
+			min-height: 44px;
+		}
 	}
 	.cc-how {
 		display: inline-flex;

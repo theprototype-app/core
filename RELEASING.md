@@ -128,6 +128,8 @@ released version instead of drifting (it carried a stale 1.8.0 before 1.11.0).
 
 ## After tagging
 
+Queue run (`battery-desk.cjs queue`): N workers, each on its own slot, tree and dev server, pull the next suite, longest first; `--resume` skips what is already green for the same tree, and the outputs read the same in `diff` and `baseline save`. Pc and remote slots render on the machine's GPU there. `desk.software` in `tests/e2e/battery.json` keeps a suite on software GL (it races at a real frame rate); `desk.local` sends a suite to a worker on this machine's own slot (it needs this machine's GPU).
+
 - Update `CHANGELOG.md` (the in-app What's new window renders it).
 - Deploy the cloud site FROM THE TAG (cloud repo):
   `npm run deploy -- --target=cloud --env=production --core-ref=vX.Y.Z`, or bump

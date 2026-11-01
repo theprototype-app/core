@@ -2,6 +2,8 @@ import * as THREE from 'three';
 // `{v}` labels for the HUD — 'Gems: {v}' needs no string node and no string socket type
 import { hudFormat } from './hudFormat.js';
 import { sessionNow, onSessionClockJump } from './sessionClock'; // 25-E: the synced clock is the SESSION's
+import { elapsedNow } from './scriptElapsed.js';
+import { setScriptElapsed } from './sandbox/scripts.js';
 import { get } from 'svelte/store';
 import { phaseBegin, phaseEnd, PHASE_INPUT, PHASE_FLOW, PHASE_MODULES, PHASE_PHYSICS } from './perf/perfMarks.js'; // 34 PF: an import-free leaf
 import { flowGraphs, mutedFlowObjects, syncedAnimations, flowValues, flowTriggers, SCENE_GRAPH, startGraphMirror, allNodes, allEdges, flowPaused, runtimeGraph, orphanGraphIds } from '../stores/flowStore';
@@ -331,6 +333,9 @@ export function nodeTriggerStamp(id) {
 export function gamePlayActive() {
 	return get(isLocked) === true && roundUnderway();
 }
+
+/** where a script's `elapsed` counts from outside a round (scriptElapsed.js) */
+const elapsedAnchor = {};
 
 /** The game singleton keeps EPOCH MS; the trigger log keeps seconds-of-the-day
  * (`syncedNow`). @param {number} ms */
@@ -4764,6 +4769,8 @@ function runTick(now) {
 	const paused = viewTriggers !== null;
 	// paused: the GRAPH evaluates over the frozen clock and the copy of the log
 	const time = paused ? viewTime : liveTime;
+	// 15+16: a script's `elapsed`; a debugger pause holds it with the rest of the graph
+	if (!paused) setScriptElapsed(elapsedNow({ round: viewGame().startedAt ? gameElapsed() : null, playing: get(isLocked) === true, now: now / 1000 }, elapsedAnchor));
 	const ctx = runtimeCtx(viewTriggers ?? undefined); // 134: scene + trigger state for the evaluators
 	if (paused) toView();
 	// what other players depend on stays LIVE through a pause that holds a sandbox (they are connected)

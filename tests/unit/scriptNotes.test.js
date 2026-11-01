@@ -18,7 +18,7 @@ describe('mcp-fix: a Script node says what cannot work', () => {
 	});
 	it('a write that means to build up warns, because the pose restarts every frame', () => {
 		for (const code of ['object.rotation.y += 0.02;', 'object.position.x -= speed', 'object.scale.x *= 1.01;', 'object.rotation.y++;', '--object.position.z;'])
-			expect(scriptNodeWarnings({ code }, { unwired: false }).join(' '), code).toMatch(/will not build up.*base\.rot\[1\] \+ time \* speed/);
+			expect(scriptNodeWarnings({ code }, { unwired: false }).join(' '), code).toMatch(/will not build up.*base\.rot\[1\] \+ elapsed \* speed/);
 	});
 	it('an amount that reads time is how an effect is meant to be written', () => {
 		for (const code of ['object.position.y += Math.sin(time) * 2;', 'object.rotation.y = base.rot[1] + time * 2;', 'object.material.opacity -= 0.1;', 'count += 1;'])

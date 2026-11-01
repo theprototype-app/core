@@ -11,7 +11,7 @@
 // major. The bridge feature-detects methods, so an older bridge keeps working against a newer page.
 
 /** The contract version (`tpAgent.version`). */
-export const TP_AGENT_VERSION = '1.4.0';
+export const TP_AGENT_VERSION = '1.5.0';
 
 /** Every method of the contract, in the order the docs list them. */
 export const TP_AGENT_METHODS = /** @type {const} */ ([
@@ -112,7 +112,13 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * `screenshot` options.
  * @typedef {object} TpAgentScreenshotOptions
  * @property {'current'|'top'|'front'|'iso'|'focus'} [view] default 'iso'
- * @property {string} [uuid] the object `focus` frames (required for 'focus')
+ * @property {string} [uuid] the object to frame (`focus` needs this or `uuids`)
+ * @property {string[]} [uuids] objects to frame together
+ * @property {string|{yaw: number, pitch: number}} [from] the angle around the subject, instead of `view`: front, back, left, right, top, below, iso, or degrees
+ * @property {{position: number[], target: number[]}} [camera] a free camera, instead of `view` and `from`
+ * @property {string|number} [aspect] width to height, default 4:3 ('current' defaults to the person's canvas)
+ * @property {number} [zoom] above 1 is closer, 0.1 to 10
+ * @property {number} [margin] room around the subject: 1 touches the frame, default 1.15
  * @property {number} [size] longest side in px (default 768, max 2048)
  * @property {boolean} [grid] draw the grid (default false)
  */
@@ -128,6 +134,7 @@ export const SCREENSHOT_DEFAULT_SIZE = 768;
  * @property {(cap?: number) => any} snapshot the scene as the assistant sees it (objects, flows, behaviours, joints)
  * @property {() => TpAgentStatus} status
  * @property {(timeoutMs?: number) => Promise<TpAgentEditWait>} waitForEdit resolves on the next scene change
+ * @property {() => any} lastShot what the last screenshot used: position, target, fov, zoom, width, height, view, subject; or {error}
  * @property {(opts?: TpAgentScreenshotOptions) => Promise<string|null>} screenshot a `data:image/png;base64,…`
  *   frame from a temporary camera (no gizmos, selection or helpers); null in VR or with no renderer
  * @property {() => TpAgentOffer[]} pendingOffers

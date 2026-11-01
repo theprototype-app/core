@@ -311,6 +311,33 @@ h.run(async () => {
 	h.check((await listed(bouncer))?.animated === undefined, 'and no longer reads as animated');
 
 	h.check(h.pageErrors(A).length === 0, `no page errors (${h.pageErrors(A).slice(0, 3)})`);
+	// ---- 17: a framed shot is 4:3, from any angle, and says which camera it used -------------------------------------
+	const eyeBefore = await A.page.evaluate(() => { let c; window.__stores.globalCamera.subscribe((x) => (c = x))(); return c.position.toArray().concat(c.quaternion.toArray()); });
+	const shotOf = async (args) => (await call('screenshot', { size: 512, ...args }, 'read'))?.result;
+	const shotA = await mk('ShotA', 'Box', [40, 1, 0]);
+	const shotB = await mk('ShotB', 'Box', [46, 1, 0]);
+	const isoShot = await shotOf({ view: 'iso' });
+	h.check(isoShot?.width === 512 && isoShot?.height === 384, `iso is 4:3 whatever the canvas (${isoShot?.width}x${isoShot?.height})`);
+	h.check(isoShot?.camera?.subject?.kind === 'scene' && isoShot?.camera?.position?.length === 3 && isoShot?.camera?.fov > 0, `and says its camera (${JSON.stringify(isoShot?.camera)?.slice(0, 160)})`);
+	const canvasAspect = await A.page.evaluate(() => { let r; window.__stores.globalRenderer.subscribe((x) => (r = x))(); return r.domElement.width / r.domElement.height; });
+	const nowShot = await shotOf({ view: 'current' });
+	h.check(Math.abs(nowShot?.width / nowShot?.height - canvasAspect) < 0.02, `current keeps the canvas shape (${nowShot?.width}x${nowShot?.height}, canvas ${canvasAspect.toFixed(2)})`);
+	const square = await shotOf({ view: 'top', aspect: '1:1' });
+	h.check(square?.width === 512 && square?.height === 512, 'aspect 1:1 is square');
+	const both = await shotOf({ uuids: [shotA, shotB], from: 'left' });
+	h.check(both?.camera?.subject?.names?.join() === 'ShotA,ShotB', `uuids frame them all (${JSON.stringify(both?.camera?.subject)})`);
+	h.check(Math.abs(both?.camera?.target?.[0] - 43) < 0.01 && both?.camera?.position?.[0] < 43, `from left stands on the left of their middle (${JSON.stringify(both?.camera)?.slice(0, 120)})`);
+	const closer = await shotOf({ uuids: [shotA, shotB], from: 'left', zoom: 2 });
+	h.check(closer?.camera?.position?.[0] > both?.camera?.position?.[0], 'zoom stands closer');
+	const angled = await shotOf({ uuid: shotA, from: { yaw: 90, pitch: 0 } });
+	h.check(angled?.camera?.position?.[0] > 40 && Math.abs(angled?.camera?.position?.[2]) < 0.01, 'yaw 90 is the right side');
+	const free = await shotOf({ camera: { position: [40, 5, 12], target: [40, 1, 0] } });
+	h.check(free?.camera?.position?.join() === '40,5,12' && free?.camera?.target?.join() === '40,1,0', `a free camera is used as given (${JSON.stringify(free?.camera)?.slice(0, 100)})`);
+	const noSuch = await call('screenshot', { uuids: ['not-there'] }, 'read');
+	h.check(/not in the scene: not-there/.test(noSuch?.error?.message ?? ''), `a missing uuid is named (${noSuch?.error?.message})`);
+	const eyeAfter = await A.page.evaluate(() => { let c; window.__stores.globalCamera.subscribe((x) => (c = x))(); return c.position.toArray().concat(c.quaternion.toArray()); });
+	h.check(JSON.stringify(eyeBefore) === JSON.stringify(eyeAfter), "nobody's view moved");
+
 	// ---- 15+16: a script's elapsed, next to time ---------------------------------------------------------------------
 	const clockBox = await mk('ClockBox', 'Box', [0, 6, 30]);
 	const clockNode = await call('create_flow_nodes', { graph: clockBox, nodes: [{ type: 'script', data: { code: 'object.position.y = elapsed; object.rotation.y = time;' } }] });

@@ -13,11 +13,12 @@ const CAN = /** @type {[string, string][]} */ ([
 	['generate_mesh', 'generate a 3D model from a description'],
 	['where_are_users', 'build right where you are standing or looking'],
 	['attach_to_user', 'hand you props, like a flashlight'],
+	['save_scene', 'save this scene to your library'],
 	['screenshot', 'look at the scene to check my work']
 ]);
 
 /** what no agent tool does, wherever it runs (agent page, serve or the connector) */
-const CANNOT = 'save or open files, change your settings, or see anything outside this tab';
+const CANNOT = 'open files, change your settings, or see anything outside this tab';
 
 /**
  * @param {{status?: any, tools: string[]}} facts the page's status() and its tool names

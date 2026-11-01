@@ -14,6 +14,11 @@ describe('86 T3 what_can_you_do', () => {
 		expect(r.tryAsking).toEqual(['Build a campfire with logs and a warm light', 'Make the box spin slowly', 'Drop a ball onto the table']);
 		expect(JSON.stringify(r).length).toBeLessThan(1200);
 	});
+	it('mcp-fix: with save_scene it offers saving and stops saying it cannot', () => {
+		const r = whatCanYouDo({ status: { role: 'editor' }, tools: ['create_objects', 'save_scene'] });
+		expect(r.can).toContain('save this scene to your library');
+		expect(r.cannot).not.toMatch(/save/);
+	});
 	it('never promises a tool the page does not have', () => {
 		const r = whatCanYouDo({ status: { role: 'editor' }, tools: ['list_scene', 'create_objects'] });
 		expect(r.can).toEqual(['add shapes, lights and groups']);

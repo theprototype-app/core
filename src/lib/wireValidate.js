@@ -23,7 +23,7 @@
 
 // The one import: the material parameter rules, itself a zero-import leaf (shared with the setter and
 // the AI tools, so the three cannot disagree about what a material key takes).
-import { checkMaterialParam } from './materialParamRules.js';
+import { checkMaterialParam, isMapSlotKey, isMapSlotImage, normalizeTexTransform } from './materialParamRules.js';
 
 /** @param {unknown} v */
 export function isUuid(v) {
@@ -460,6 +460,10 @@ export const VALIDATORS = {
 		// a material parameter: a key the app knows, a value of that key's kind (a texture slot only ever
 		// null on the wire — images travel as `map`)
 		if (d.parameter === 'materialParam') return isUuid(d.uuid) && checkMaterialParam(null, d.key, d.value).ok;
+		// 72 LK1: a texture map slot takes an inline image or null, never a URL a peer could make us fetch
+		if (d.parameter === 'mapSlot') return isUuid(d.uuid) && isMapSlotKey(d.key) && isMapSlotImage(d.map);
+		if (d.parameter === 'texTransform') return isUuid(d.uuid) && normalizeTexTransform(d.transform) !== null;
+		if (d.parameter === 'normalStrength') return isUuid(d.uuid) && Number.isFinite(d.value);
 		if (d.parameter === 'water' || d.parameter === 'bubbles' || d.parameter === 'pour') {
 			const v = d[d.parameter];
 			return isUuid(d.uuid) && (v === null || (!!v && typeof v === 'object' && !isArray(v)));

@@ -96,7 +96,10 @@ export const DEBUG_HOOKS = [
 	// 48 D1: the node graph debugger (stores + requests; the runtime half is flowRuntime.flowDebugRuntime)
 	['flowDebug', () => import('./flowDebug.js')],
 	['history', () => import('./history')],
+	['historyGesture', () => import('./historyGesture')],
 	['materialsHandler', () => import('./materialsHandler')],
+	['materialMaps', () => import('./materialMaps')],
+	['materialMapTextures', () => import('./materialMapTextures.js')],
 	// 37 R5: material presets (materialPresets, peerMaterialPresets, applyMaterialPreset, materialPresetsDebug…)
 	['materialPresets', () => import('./materialPresets')],
 	// 40 F16: the look tier (materialTiersDebug, pinMaterialTier, applyMaterialTiers)

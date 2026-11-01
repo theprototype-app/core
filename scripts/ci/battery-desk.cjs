@@ -746,7 +746,9 @@ async function queueWorker(argv) {
 	const worker = opt(argv, '--id') || `w${process.pid}`;
 	const root = path.resolve(opt(argv, '--root') || ROOT);
 	const url = process.env.APP_URL || '';
-	const slot = process.env.E2E_SLOT_PC ? `pc:${process.env.E2E_SLOT_PC}` : process.env.E2E_SLOT_REMOTE ? 'remote' : process.env.E2E_SLOT ? 'local' : 'none';
+	// the machine as well: a whole-run slot on another host reads as `local` from inside (its own slot lock there)
+	const kind = process.env.E2E_SLOT_PC ? `pc:${process.env.E2E_SLOT_PC}` : process.env.E2E_SLOT_REMOTE ? 'remote' : process.env.E2E_SLOT ? 'local' : 'none';
+	const slot = `${kind}@${os.hostname()}`;
 	const logs = path.join(root, 'test-results', 'queue-worker');
 	fs.mkdirSync(logs, { recursive: true });
 	for (const sig of /** @type {NodeJS.Signals[]} */ (['SIGTERM', 'SIGINT', 'SIGHUP'])) {

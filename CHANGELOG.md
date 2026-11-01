@@ -45,6 +45,7 @@ tab can now find any scene by a word or a maker.
 
 ### 🤖 Claude connector and agents
 
+- **Add to Claude.** theprototype is in Claude's connector directory: the AI window's first step is one button, with the by-hand address and a copy button under it.
 - **Scripts get `elapsed`:** seconds of the game round, shared inside a round, and from your own Play press outside one. `time` is
   unchanged. The warning about a `+=` script now says why it does not build up and points at `elapsed`.
 - **Particle gravity** is documented as what it is: acceleration along world Y, negative falls, positive rises.

@@ -258,7 +258,7 @@
 <div id="ai-assistant" class={$aiAssistantHidden}>
 	<div
 		id="ai-assistant-window"
-		use:dragWindow={{ key: 'aiAssistant', defaultRect: { right: 15, bottom: 460 } }}
+		use:dragWindow={{ key: 'aiAssistant', defaultRect: { right: 15, bottom: 460 }, clearAvatar: true }}
 		use:bottomDockable={{ key: 'aiAssistant' }}
 		use:focusStack
 		use:tabbable={{ key: 'aiAssistant', title: 'AI assistant', openStore: aiAssistantHidden, isOpen: (v: string) => v === '', close: () => aiAssistantHidden.set('hidden') }}

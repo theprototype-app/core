@@ -304,6 +304,7 @@ h.run(async () => {
 	h.check((await swatchCount(A.page, 'mine', 'Candy red 2')) === 1, '5.4 saving a taken name never overwrites (Candy red 2)');
 
 	await h.freshReload(A);
+	await h.answerRestore(A);
 	// a reload is a NEW peer: the id setupPage read is gone, and section 7 dials A by id
 	A.id = await waitVal(
 		() => A.page.evaluate(() => new Promise((r) => window.__stores.peers.subscribe((p) => r(p?.peer?.id ?? ''))())),

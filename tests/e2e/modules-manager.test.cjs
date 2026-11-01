@@ -86,6 +86,7 @@ h.run(async () => {
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForTimeout(4000);
 	await A.page.waitForFunction(() => window.__stores && !!window.__stores.moduleSDK, { timeout: 30000 });
+	await h.answerRestore(A);
 	let ids = await loadedIds(A.page);
 	h.check(!ids.includes('button') && ids.includes('hello'), `button gone after reload (${ids.join(',')})`);
 

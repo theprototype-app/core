@@ -1,5 +1,5 @@
 {
-	"comment": "deps-auto: the e2e battery deps.yml runs in shards on GitHub-hosted runners (scripts/ci/battery.cjs). suites = name -> seconds on a runner (2x the desk time until a runner has measured it); skip = cannot run on a public runner (the reason); optional = runs and reports, does not gate (the reason; a GitHub-runner property); a red CHECK listed in tests/e2e/quarantine.json (per check, owner + review date; test-health-1) does not gate either; setup = extra install a suite needs. Refresh after an integrator battery: node scripts/ci/battery.cjs refresh --list <listA> --list <listB> --summary <summary.txt>... (RELEASING.md, Dependency updates). pc = the games (fps) and levels (shots) scripts/ci/pc-battery.sh measures on a desktop GPU. Desk battery (scripts/ci/battery-desk.cjs): modules = the modules repo flights (MOD:x) with desk seconds; desk = per-suite cases (gpu: E2E_GPU=1, peer-self: PEER_CONFIG=$PEER_CONFIG_SELF, prod-host: APP_URL on the production hostname); exclude = reason -> e2e files that are deliberately NOT in the battery (tests/unit/batteryCoverage.test.js fails on a file in neither).",
+	"comment": "deps-auto: the e2e battery deps.yml runs in shards on GitHub-hosted runners (scripts/ci/battery.cjs). suites = name -> seconds on a runner (2x the desk time until a runner has measured it); skip = cannot run on a public runner (the reason); optional = runs and reports, does not gate (the reason; a GitHub-runner property); a red CHECK listed in tests/e2e/quarantine.json (per check, owner + review date; test-health-1) does not gate either; setup = extra install a suite needs. Refresh after an integrator battery: node scripts/ci/battery.cjs refresh --list <listA> --list <listB> --summary <summary.txt>... (RELEASING.md, Dependency updates). pc = the games (fps) and levels (shots) scripts/ci/pc-battery.sh measures on a desktop GPU. Desk battery (scripts/ci/battery-desk.cjs): modules = the modules repo flights (MOD:x) with desk seconds; desk = per-suite cases (gpu: E2E_GPU=1, peer-self: PEER_CONFIG=$PEER_CONFIG_SELF, prod-host: APP_URL on the production hostname, software: stays on software GL where a slot gives other suites the GPU, because the suite races at a real frame rate; local: needs this machine's own GPU, so a queue run gives it to a worker on this machine's own slot); exclude = reason -> e2e files that are deliberately NOT in the battery (tests/unit/batteryCoverage.test.js fails on a file in neither).",
 	"refs": {
 		"modules": {"repo":"theprototype-app/modules","ref":"80fca17f7cd963cf698d6b5f29beaff14f28f9e1"},
 		"packs": {"repo":"theprototype-app/packs","ref":"360f31686652f0f9c7e240ff09785c6b6c60d678"},
@@ -809,7 +809,9 @@
 	"desk": {
 		"gpu": ["MOD:fx-car-blocks","MOD:untangle"],
 		"peer-self": ["arch-primitives","game-race"],
-		"prod-host": ["error-reports"]
+		"prod-host": ["error-reports"],
+		"software": ["behaviours","community-seams","files-format-row","inspector","node-ux-keys","save-project-libraries"],
+		"local": ["fb-water-phone","fluid-gpu","net-stress","quality-phone","throw-peer"]
 	},
 	"exclude": {
 		"test data of ~1.3 GB fetched on demand (scripts/fetch-wild-assets.cjs), ~1 h on the pc: run it when importing or Replace changes; SKIPs without the cache": ["import-wild"],

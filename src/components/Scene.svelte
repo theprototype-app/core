@@ -121,6 +121,7 @@
 	import { safeStorage } from '$lib/safeStorage';
 	import { myKind } from '$lib/inviteStore';
 	import Outline from './Outline.svelte'
+	import { installXrLook } from '$lib/xrLookWire.js'
 	import RecordingDriver from './RecordingDriver.svelte'
 	import Player from './play/Player.svelte'
 	import { tickStartView } from '$lib/startView'
@@ -702,6 +703,8 @@
 		return false;
 	}
 
+	// 72 LK3: the scene's look in a headset (Outline is not mounted there)
+	onMount(() => installXrLook(renderer, scene));
 	onMount(() => {
 		startLightHelpers();
 		startColliderHelpers();

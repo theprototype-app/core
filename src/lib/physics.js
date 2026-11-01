@@ -386,8 +386,18 @@ function buildLiveJoint(def) {
 		jointAnchorWorld.set(jointAnchorWorld.x - t.x, jointAnchorWorld.y - t.y, jointAnchorWorld.z - t.z).applyQuaternion(tempJointQuat);
 		return { x: jointAnchorWorld.x, y: jointAnchorWorld.y, z: jointAnchorWorld.z };
 	};
-	const a1 = bodyLocal(objA, def.anchorA, bodyA);
-	const a2 = bodyLocal(objB, def.anchorB, bodyB);
+	// A flow node (a Spin) has turned one side since the joint was made, so its stored local anchor no longer
+	// meets the other side's: the weld would drag the pair together. The still side's anchor is where they join.
+	const movedA = isAnimatedTarget(def.a);
+	const movedB = isAnimatedTarget(def.b);
+	/** @param {any} obj @param {number[]} anchor @param {any} toObj @returns {number[]} `anchor` of obj in toObj's local space */
+	const anchorOn = (obj, anchor, toObj) => {
+		obj.updateWorldMatrix(true, false);
+		toObj.updateWorldMatrix(true, false);
+		return toObj.worldToLocal(obj.localToWorld(new THREE.Vector3().fromArray(anchor))).toArray();
+	};
+	const a1 = bodyLocal(objA, movedA && !movedB ? anchorOn(objB, def.anchorB, objA) : def.anchorA, bodyA);
+	const a2 = bodyLocal(objB, movedB ? anchorOn(objA, def.anchorA, objB) : def.anchorB, bodyB);
 	let data;
 	if (def.kind === 'revolute') {
 		objA.getWorldQuaternion(tempJointQuat);
@@ -2395,6 +2405,21 @@ export function physicsWorldDebug() {
  * land a refactor of the construction block. `name` is there so that comparison can be
  * keyed by something stable across runs (uuids are fresh every time).
  */
+/** mcp-fix: why an object can never carry a joint (no body is built for it), or null. Bodies exist only for
+ * top-level objects with a shape.
+ * @param {any} object @returns {string|null} */
+export function jointBodyProblem(object) {
+	if (!object) return 'not found';
+	if (object.parent !== get(objectsGroup)) return 'it is inside a group, and physics bodies are built for top-level objects only';
+	if (!specOf(object, undefined, false)) return 'it has no shape to simulate (a light or an empty)';
+	return null;
+}
+
+/** mcp-fix: joints of the running world that could not be built (a side has no body) @returns {string[]} ids */
+export function unbuiltJointIds() {
+	return world ? get(sceneJoints).filter((j) => !liveJoints.has(j.id)).map((j) => j.id) : [];
+}
+
 /** 37-fx test view: ids of the joints live in the stepping world */
 export function liveJointIds() {
 	return [...liveJoints.keys()];

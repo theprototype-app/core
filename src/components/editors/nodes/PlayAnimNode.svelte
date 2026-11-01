@@ -81,6 +81,20 @@
 				on:input={(e) => setNodeData(id, { speed: +e.currentTarget.value })}
 			/>
 		</label>
+		<!-- 57 M3: a clip change BLENDS over this long instead of snapping (imported/asset clips) -->
+		<label class="flex flex-col">
+			<span class="flex justify-between"><span>crossfade</span><span>{(data.crossfade ?? 0).toFixed(2)} s</span></span>
+			<input
+				class="nodrag nopan accent-accent"
+				type="range"
+				min="0"
+				max="2"
+				step="0.05"
+				aria-label="Crossfade (s)"
+				value={data.crossfade ?? 0}
+				on:input={(e) => setNodeData(id, { crossfade: +e.currentTarget.value })}
+			/>
+		</label>
 		<div class="flex items-center gap-2">
 			<span class="h-2.5 w-2.5 rounded-full" style="background: {running ? 'var(--ink-good)' : 'var(--control-off)'}"></span>
 			<span class="text-[10px] text-text-muted">{running ? 'playing' : 'idle'}</span>

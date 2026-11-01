@@ -158,6 +158,22 @@ Order: "VR override", then the whole `VRSettingsSection` (see its table), then t
 | Fine-tune — Reset (`#nudge-reset`) | *action* `resetRoomNudge()` | deletes current room's entry in `colocation-nudge-v1` | — | DEVICE | lib/colocationNudge.js:153 | |
 | Ghost hands (`#colocated-ghost-hands`) | `colocatedGhostHands` | `colocatedGhostHands` | `true` | DEVICE | lib/colocationPresence.js:69 (writer :249) | bool str, read `!== 'false'`; load-write |
 
+### Tools & connections (was AI — 59 T4)
+
+59 T4 renamed the page and turned its main view into the Tools & connections hub
+(`components/menu/settings/ToolsHub.svelte` over `lib/tools/toolStatus.js` + `lib/tools/builtinTools.js`).
+**No key moved**: every row below is still written by the same store and key. The hub's per-row
+controls map onto them:
+
+| UI element | Store | Key(s) | Default | Scope | Defined at | Notes |
+|---|---|---|---|---|---|---|
+| Chat / mesh provider row — Enable / Disable | `setAiActiveProvider(id)` + `setAiEnabled(on)` · `setMeshActiveProvider(id)` + `setMeshGenEnabled(on)` | `aiActiveProvider` + `aiEnabled` · `meshActiveProvider` + `meshGenEnabled` | — | DEVICE | lib/tools/builtinTools.js | Enable = make it active + master on; Disable = master off (the active pointer stays) |
+| Voice typing row — Enable / Disable | `setSttConfig({enabled})` | `aiStt` (`enabled`) | absent = on | DEVICE | lib/ai/stt.js | stored only as `enabled: false`; absent on every config saved before 59 |
+| Desktop tools ▸ Blender — Enable / Disable | `blenderEnabled` / `setBlenderEnabled` | `tools:blender` | absent = on | DEVICE | lib/tools/builtinTools.js | stored only as `'false'` |
+| Any row — Test | *action* `runToolTest(row)` | none | — | — | lib/tools/toolStatus.js | the result is in memory (`toolTests`), never stored |
+
+The rows of the old page, still the forms behind each row's *Set up*:
+
 ### AI
 
 | Row label | store | storage key | default | scope | defined at | encoding / notes |
@@ -333,7 +349,7 @@ Each row writes through the row's `set()`; `put(store, key, v)` (settingsSchema.
 | Face edit limit (`#vr-set-faceCap`, free number ≥ 10 on desktop) | `vrFaceCap` | `vrFaceCap` | `2500` (`VR_FACE_CAP`) | DEVICE | schema :305; lib/faceEdit.js:110 (const :107) | num str (int); load-write |
 | Vertex edit limit (`#vr-set-vertexCap`, free number ≥ 10) | `vrVertexCap` | `vrVertexCap` | `800` (`VR_VERTEX_CAP`) | DEVICE | schema :316; lib/meshEdit.js:1779 (const :1776) | num str (int); load-write |
 
-## AiSttSettings.svelte (inside AI)
+## AiSttSettings.svelte (inside Tools & connections ▸ Voice typing ▸ Set up)
 
 | Row label | store | storage key | default | scope | defined at | encoding / notes |
 |---|---|---|---|---|---|---|

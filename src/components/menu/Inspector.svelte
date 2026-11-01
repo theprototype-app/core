@@ -34,6 +34,8 @@
 	 * @param {any} o @param {any} _tick */
 	const scatterHostOk = (o, _tick) => isMeshHost(o);
 	import MeasureSection from './inspector/MeasureSection.svelte'; // 48 B2
+	import ModelSourceSection from './inspector/ModelSourceSection.svelte'; // 59 T1/T2/T7a
+	import { isReplaceableModel } from '$lib/modelTarget';
 	import HdriSection from './scene/HdriSection.svelte'; // 37-hdri
 	import PhysicsFloats from '../sim/PhysicsFloats.svelte'; // 36-sim I1
 	import FluidEmitterSection from '../sim/FluidEmitterSection.svelte'; // 36-fb F23
@@ -97,7 +99,8 @@
 	import { nameOf } from '$lib/lockControl';
 	import { geometrySpec } from '$lib/geometryParams';
 	import { LIGHT_PARAMS, SHADOW_TYPES, SHADOW_SIZES, setShadowMapSize, cappedShadowSize } from '$lib/lightParams';
-	import { animatedObjects, setAnimationState } from '$lib/animatedImports';
+	import { animatedObjects, setAnimationState, restRowsOf } from '$lib/animatedImports';
+	import CharacterSection from './inspector/CharacterSection.svelte';
 	import { captureAutoKey, playheadOf } from '$lib/animationPreview';
 	import { moveObjectToGroup, selectObject, flyTo, setPickThrough } from '$lib/objectActions';
 	import { listPhysicsObjects, enablePhysicsOnSelection, setPhysicsFor, PHYSICS_MATERIALS } from '$lib/physics';
@@ -3197,7 +3200,12 @@
 			</div>
 			{/if}
 
-			{#if $animatedObjects[$selectedObject.uuid]}
+			{#if !multiCount && isReplaceableModel($selectedObject)}
+				<!-- 59 T1/T2/T7a: Replace model… / Edit in Blender… / the watched file -->
+				<ModelSourceSection object={$selectedObject} />
+			{/if}
+
+						{#if $animatedObjects[$selectedObject.uuid]?.clips?.length}
 				{@const anim = $animatedObjects[$selectedObject.uuid]}
 				<Section variant="panel" label="Animation">
 					<div id="animation-controls">
@@ -3232,6 +3240,10 @@
 						</p>
 					</div>
 				</Section>
+			{/if}
+			<!-- 57: a rigged model's humanoid map, applied clips, licence -->
+			{#if $animatedObjects[$selectedObject.uuid] && restRowsOf($selectedObject.uuid).length}
+				<CharacterSection object={$selectedObject} />
 			{/if}
 
 			<!-- 16-P5: a camera OBJECT is a marker mesh carrying userData.camera. All

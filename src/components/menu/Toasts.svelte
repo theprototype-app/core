@@ -511,10 +511,11 @@ style="z-index: var(--z-toast); pointer-events: none;"
 {#each $pendingApprovals.slice(0, MAX_REQUESTS) as approval}
 <div class="my-1 tp-toast tp-toast--req" transition:fly={{ y: -8, duration: motionMs(180) }}>
     <div class="tp-toast-body">
-        <Icon name="user-plus" size={16} class="tp-toast-icon" aria-hidden="true" />
+        <!-- 55 A4: an AI agent's dial says so — the robot, and "AI agent" in the line -->
+        <Icon name={approval.kind === 'agent' ? 'bot' : 'user-plus'} size={16} class="tp-toast-icon" aria-hidden="true" />
         <div class="tp-toast-main">
-            <div class="tp-toast-text">
-                Connection request <span class="cxreq-id">{String(approval.peerId).slice(0, 6).toUpperCase()}</span>
+            <div class="tp-toast-text" data-kind={approval.kind ?? 'person'}>
+                {approval.kind === 'agent' ? 'AI agent wants to join' : 'Connection request'} <span class="cxreq-id">{String(approval.peerId).slice(0, 6).toUpperCase()}</span>
             </div>
             <!-- 29: a cloud plugin's label for the knock ("Ada wants to join Amber Mesa") -->
             {#if approval.label}<div class="cxreq-label">{approval.label}</div>{/if}

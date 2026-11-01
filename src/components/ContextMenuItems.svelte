@@ -269,6 +269,7 @@
 			class:ctx-active={atNav && indexOf.get(item) === highlight}
 			class:ctx-checked={item.checked}
 			data-ctx-active={atNav && indexOf.get(item) === highlight}
+			data-testid={item.testid}
 			role="menuitem"
 			aria-disabled={item.disabled ? 'true' : undefined}
 			title={(item.tooltip ?? '') + (item.multiPick ? (item.tooltip ? ' — ' : '') + 'Ctrl- or Shift-click to pick several' : '')}

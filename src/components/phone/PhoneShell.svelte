@@ -76,9 +76,7 @@
 		viewportMenu,
 		multiSelectMode,
 		touchTools,
-		showToast,
-		settingsOpen,
-		settingsSection
+		showToast
 	} from '../../stores/appStore';
 	import { selectedObjects, transformMode, editorMode } from '../../stores/sceneStore';
 	import { undo, redo, canUndo, canRedo } from '$lib/history';
@@ -92,7 +90,6 @@
 	import { playHere, playHereItems } from '$lib/playHere'; // 60 Q1
 	import { visibleDockKey, DOCK_TITLES, dockMinimized, dockHeight } from '$lib/bottomDock';
 	import { micActive, pttActive, toggleMic } from '$lib/voiceChat';
-	import { aiReady } from '$lib/ai/providers';
 	import { canvasCenter } from '$lib/canvasRect';
 	import { statsOpen } from '$lib/sceneBudget';
 	// 46 B1: the budget chip's phone form (an item of the bar catalog — in More ▸ Tools & View by default)
@@ -465,14 +462,9 @@
 	}
 
 	// ---- the More sheet --------------------------------------------------------------
+	// 86-fix N1: always opens; with no provider the window offers Connect Claude or Settings ▸ AI
 	function openAi() {
 		phoneSheet.set(null);
-		if (!aiReady()) {
-			showToast('Enable an AI provider in Settings to use the assistant');
-			settingsSection.set('ai');
-			settingsOpen.set(true);
-			return;
-		}
 		aiAssistantHidden.set('');
 	}
 	/** close the shell's own sheet, then run (a destination opened from More replaces it) */

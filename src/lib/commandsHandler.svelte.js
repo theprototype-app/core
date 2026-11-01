@@ -11,10 +11,10 @@ import { dropPeerCursor } from '$lib/nodesHandler'
 import { dropPeerQuality } from '$lib/networkQuality'
 import { dropPeerClock } from '$lib/musicClock'
 import { applyRemoteDevice } from '$lib/audioDevices'
-import { sessionHost, dropPeerJoined } from '$lib/connectionState'
+import { sessionHost, dropPeerJoined, noteSnapshotAnswered } from '$lib/connectionState'
 import { acceptedLockRows, mergeLockRows } from '$lib/lockTrust'
 import { environment, editEnvSky } from '$lib/environment'
-import { hasAnimatedImport, sendAnimatedImport, setAnimationState, dropAllAnimatedImports } from '$lib/animatedImports'
+import { hasAnimatedImport, sendAnimatedImport, setAnimationState, setClipRefs, setAnimGraph, attachToSocket, dropAllAnimatedImports, setVrmExpression } from '$lib/animatedImports'
 import { dropAllAnimations } from '$lib/animationPreview'
 import { parkAnimatedAtBase } from '$lib/flowRuntime'
 import { stripEditOverlays } from '$lib/editOverlays'
@@ -27,6 +27,7 @@ import { applyFlowPathTo } from '$lib/sim/flowPathObject.js'; // 36-fb F24
 import { runSceneClearHandlers } from '$lib/moduleSDK'
 import { annotations } from '$lib/annotationsHandler'
 import { isViewer, warnViewerReadOnly } from '$lib/objectPermissions'
+import { isHeldOut } from '$lib/peerModeration' // 55 A9
 import { get, writable } from 'svelte/store'
 import { addMessage, loading, loadingcount, showToast, fixLight, specatorMode } from '../stores/appStore';
 import { dropWireErrors } from './wireErrors';
@@ -88,9 +89,17 @@ export function userData(data) {
     if (!Array.isArray(data)) return;
     data.forEach(element => {
         if (!Array.isArray(element) || typeof element[0] !== 'string') return;
-        console.log('received new approved host : ' + element[0])
-        if (!users.some(u => u[0] === element[0]))
+        // 55 A9: a roster written before the sender heard a kick must not re-whitelist
+        // the peer it removed
+        if (isHeldOut(element[0])) return;
+        // a ROSTER row (the whitelist of peers in this session; entry [0] of every roster is the
+        // sender's view of itself and ours of us), NEVER a host change — the session host is
+        // `sessionHost`, set only to the peer that approved our request. The old wording ("received
+        // new approved host") logged our own id on every roster and read as a takeover (55, 41's note).
+        if (!users.some(u => u[0] === element[0])) {
+            console.log('roster: added peer ' + element[0])
             users.push(element)
+        }
         else
         {
             let index = users.findIndex(u => u[0] === element[0]);
@@ -98,6 +107,8 @@ export function userData(data) {
             if (element[2] != '') users[index][2] = element[2];
             // avatar config (slot 5) from newer clients
             if (element[5]) users[index][5] = element[5];
+            // 55 A7: the peer's kind (slot 6, `{kind: 'agent'}`) — self-declared presence
+            if (element[6] && typeof element[6] === 'object') users[index][6] = { kind: element[6].kind === 'agent' ? 'agent' : 'person' };
         }
 
     })
@@ -525,6 +536,7 @@ export function noteLoadFailed(uuids) {
 
 /** @param {number} count @param {string[]} uuids @param {string} [senderId] */
 export async function createLoader(count, uuids, senderId) {
+    if (senderId) noteSnapshotAnswered(senderId);
     // console.log("create loader for " + count + " objects: " + uuids);
     loading.set(Array.isArray(uuids) ? uuids : []);
     loadingcount.set(count);
@@ -564,6 +576,8 @@ export async function colorObject(uuid, color, near, far) {
     } else {
         let mesh = sceneObjects.getObjectByProperty('uuid', uuid);
         if (mesh) mesh.material.color.set(color);
+        // 59 T1: the receiving side of setObjectColor's override stamp
+        if (mesh?.material?.userData) mesh.material.userData.tpEdited = true;
     }
 }
 
@@ -588,7 +602,32 @@ export async function objectParameters(data) {
     } else if (data.parameter == 'materialParam') {
         setMaterialParam(data.uuid, data.key, data.value, false);
     } else if (data.parameter == 'animation') {
-        setAnimationState(data.uuid, { clip: data.clip, playing: data.playing, speed: data.speed }, false);
+        // 57 M3: the stamp + crossfade ride along when the sender has them (absent = an older peer)
+        /** @type {any} */
+        const next = { clip: data.clip, playing: data.playing, speed: data.speed };
+        if (Number.isFinite(data.at)) next.at = data.at;
+        if (typeof data.from === 'string' && Number(data.fade) > 0) Object.assign(next, { from: data.from, fromSpeed: Number(data.fromSpeed) || data.speed, fade: Math.min(5, Number(data.fade)) });
+        else if (Number.isFinite(data.at)) Object.assign(next, { from: undefined, fade: undefined });
+        setAnimationState(data.uuid, next, false);
+    } else if (data.parameter == 'character') {
+        // 57 M2: a character's humanoid map fixes + applied clips; each peer retargets for itself
+        const { receiveHumanoid } = await import('$lib/humanoid/humanoidRig.js');
+        receiveHumanoid(data);
+    } else if (data.parameter == 'expression') {
+        // 57 M4: a VRM expression weight (the face of a character)
+        setVrmExpression(data.uuid, data.name, data.weight, false);
+    } else if (data.parameter == 'clipRefs') {
+        // 57 M1: the clip assets a model plays (bytes pulled by hash, bound per peer)
+        setClipRefs(data.uuid, data.clipRefs, { replicate: false, record: false, ...(typeof data.clipsOff === 'boolean' ? { clipsOff: data.clipsOff } : {}) });
+    } else if (data.parameter == 'animGraph') {
+        // 57 M11: a model's Animation states graph (normalized on apply; null = removed)
+        setAnimGraph(data.uuid, data.animGraph, { replicate: false, record: false });
+    } else if (data.parameter == 'attachTo') {
+        // 57 M12: an object follows a model's socket (or no longer does)
+        attachToSocket(data.uuid, null, null, { spec: data.attachTo ?? null, replicate: false, record: false });
+    } else if (data.parameter == 'animParam') {
+        // 57 M11: a synced Animation states parameter (latest-wins by its stamp)
+        import('$lib/tpanim/animGraphRuntime.js').then((m) => m.setAnimParam(data.uuid, data.name, data.value, { replicate: false, at: data.at }));
     } else if (data.parameter == 'castShadow') {
         let mesh = sceneObjects.getObjectByProperty('uuid', data.uuid);
         if (mesh) mesh.castShadow = data.castShadow;
@@ -1025,11 +1064,13 @@ async function applyCreateObject(object, uuid, override, groupuuid, pos, rot, sc
  * Sends all objects in the scene to the given peer.
  * @param {string} peerId - The ID of the peer to send the objects to.
  * @param {any} [element] - subtree to send (the null-peerId group path); absent = the whole scene
- * @param {{override?: boolean}} [opts] - R22 round 32: `override` marks this send as an
+ * @param {{override?: boolean, groupparent?: string}} [opts] - R22 round 32: `override` marks this send as an
  *   ARRIVAL HEAL, so the receiver REPLACES the objects it already holds instead of
  *   deduping them away. Set by exactly one caller (the `arriving` row of
  *   `deferUntilShareChoice`); absent everywhere else, and when absent every message this
- *   walk emits is byte-identical to what it always sent.
+ *   walk emits is byte-identical to what it always sent. 59 T1: `groupparent` (the
+ *   null-peerId group path only) names the root's parent, so a model replaced inside a
+ *   group lands back inside it on every peer; absent = the scene root, as always.
  */
 export function sendObjects(peerId, element, opts = {}) {
     let groupid;
@@ -1041,7 +1082,8 @@ export function sendObjects(peerId, element, opts = {}) {
     }
     if (peerId === null) {
         groupid = element.uuid;
-        peer.send({type: 'group', name: element.name, uuid: element.uuid, groupparent: null,
+        // 59 T1: `groupparent` (additive) — a replaced model keeps its parent on every peer
+        peer.send({type: 'group', name: element.name, uuid: element.uuid, groupparent: opts.groupparent ?? null,
             pos: element.position.toArray(),
             rot: element.rotation.toArray(),
             scale: element.scale.toArray(),
@@ -1075,6 +1117,14 @@ export function sendObjects(peerId, element, opts = {}) {
             console.log('Not sending ' + count + ' objects to ' + peerId + ': the connection is gone');
             return;
         }
+        // …and the SUBTREE too (wild-assets): an import replaced, undone or cleared inside
+        // these 500ms is DETACHED by now, and the walk below reads `parent.parent.parent` —
+        // the same uncaught TypeError inside a timer. Whatever removed it already sent its own
+        // delete (or the replacement's sync), so there is nothing left to send.
+        if (element && !inSceneObjects(element)) {
+            console.log('Not sending ' + count + ' objects: "' + (element.name || element.uuid) + '" left the scene');
+            return;
+        }
         // Send amount of objects to be sent and their uuids
         conn.send({type: 'loading', count: count, uuids: uuidList});
         // park animated objects at their base pose so the receiver captures the
@@ -1088,6 +1138,12 @@ export function sendObjects(peerId, element, opts = {}) {
         }
     }, 500);
 
+}
+
+/** is `element` still under objectsGroup (not detached by a delete, an undo or a clear)? @param {any} element */
+function inSceneObjects(element) {
+    for (let o = element; o; o = o.parent) if (o === sceneObjects) return true;
+    return false;
 }
 
 /**

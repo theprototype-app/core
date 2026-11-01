@@ -18,6 +18,8 @@ describe('F-1 viewer AI tool gate', () => {
 	it('keeps reading the scene and local playback open to viewers', () => {
 		expect(viewerToolRefusal('list_scene', true)).toBeNull();
 		expect(viewerToolRefusal('control_simulation', true)).toBeNull();
+		// 86 T1: looking up node types changes nothing
+		expect(viewerToolRefusal('describe_node_types', true)).toBeNull();
 	});
 	it('says why and what to do', () => {
 		expect(VIEWER_REFUSAL).toMatch(/view-only/);

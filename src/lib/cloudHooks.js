@@ -34,6 +34,9 @@ const ALWAYS_ALLOWED = new Set([
 	// 60 Q2: "I opened the fast movement channel on this connection" — transport, no content. A
 	// gated hello would leave a viewer's avatar on the slow channel while the host thinks it is fast
 	'fastchan',
+	// fix-agenttest 4: "my page went hidden / is back" — transport about the link itself, the
+	// fastchan rule: gated for a viewer, a backgrounded phone would be dropped as a ghost again
+	'linkaway',
 	// A1/A2: WHERE A PEER IS STANDING. On the floor because it is the ROOM GATE'S OWN
 	// EVIDENCE - a plugin that gated `atscene` would silently switch off scene adoption
 	// AND every room gate built on it (`canApplyByRoom` reads no evidence, so it allows
@@ -55,6 +58,12 @@ const ALWAYS_ALLOWED = new Set([
 	// REPLY is deliberately NOT here: a reply is content, and every other domain leaves
 	// its content gateable (`getnodes` is on the floor, `nodes` is not).
 	'gettriggers',
+	// 56 C5: the agent chat. A VIEWER may ask an agent (the release proof: "a viewer's message is delivered
+	// with role viewer and an edit request is refused") — a plugin that dropped a viewer's unknown types
+	// would make the agent deaf to them instead. It is text and protocol, never a scene mutation: the
+	// agent page reads the sender's role from rolesInfo and gates what the request may do, and only the
+	// host/an admin's `mute` is obeyed there.
+	'agentchat',
 	// 48 S2: the Timeline's sequences REQUEST, the `getnodes` rule again (the `seqs` reply stays
 	// gateable). Off the floor, a cloud build's just-approved joiner reads as a viewer until its
 	// role grant lands, its handshake `getseqs` was dropped, and a late joiner never got the
@@ -75,6 +84,8 @@ const ALWAYS_ALLOWED = new Set([
 	// floor (a just-approved viewer must still see the text everyone is typing), its `ytext`
 	// reply and every update stay gateable, which is what keeps a viewer read-only.
 	'getytext',
+	// 56 C10: the scene chats REQUEST (its `tpchats` reply stays gateable)
+	'gettpchats',
 	// 60 Q5: the shared reference images REQUEST (the `underlay` replies stay gateable)
 	'getunderlays',
 	// fix-live (plans review #5, roadmap 49 follow-up): the last three `get*` requests off the
@@ -88,7 +99,13 @@ const ALWAYS_ALLOWED = new Set([
 	'getmatpreset',
 	// 60-int: "the link you are sending on is dead at my end — use this conn". Transport, no
 	// content: a gated relink leaves a viewer's host talking into a closed link after a drop
-	'relink'
+	'relink',
+	// 56 C13: a session-volume byte REQUEST. A viewer may browse and copy (Open / Copy to my library), and
+	// the host answers it only for a hash inside the share scope it sent that peer (sessionVolumes.js);
+	// and its CANCEL, which only ever stops bytes flowing to the sender itself
+	'volget',
+	'volresolve',
+	'volcancel'
 ]);
 
 /** @type {((peerId: string, msgType: string) => boolean) | null} */
@@ -510,5 +527,36 @@ export function setPeerMenuItems(items) {
 			.filter((i) => i && typeof i.run === 'function' && String(i.label ?? '').trim())
 			.slice(0, 8)
 			.map((i, n) => ({ id: String(i.id ?? 'item-' + n).slice(0, 40), label: String(i.label).trim().slice(0, 40), run: i.run }))
+	);
+}
+
+/**
+ * Roadmap 86 B1/B5: THE CLAUDE CONNECTOR's account half, as a provider the cloud plugin installs. A person
+ * presses Connect Claude in their own tab; the PLUGIN (signed in) asks the connector service for a
+ * single-use pairing and lists / revokes the account's connected apps. Core draws every button and runs
+ * every relayed call (src/lib/connector/). NULL is the OSS state: no Connect Claude button anywhere, no
+ * Settings ▸ Connected apps — the OSS build points to the local `serve` instead.
+ *
+ * Shape (the plugin owns the logic; core reads defensively):
+ *   { pair({resume}) → Promise<{wsUrl, pairingToken, expiresAt?, replaces?, connections?}>
+ *        // rejects with `{code: 'signin'}` when nobody is signed in
+ *     connections() → Promise<{connections: {id, client, redirectHost?, scopes, created?, lastUsed?}[], tab?: {linked, since, visible}}>
+ *     revoke(id) → Promise<void>          // one connected app
+ *     revokeAll() → Promise<void>         // every connected app + this tab's link
+ *     account() → {signedIn: boolean, name?: string} }
+ * @type {import('svelte/store').Writable<any>} */
+export const connectorProvider = writable(null);
+
+/** 86-fix N1: the cloud build's "Sign in to connect", a `(el) => cleanup` mount the plugin installs while the
+ * connector is built in and nobody is signed in (cloudApi.mountConnectorSignIn). The AI window's welcome renders
+ * it in place of Connect Claude; once signed in the plugin installs the provider and the welcome shows the
+ * button. Null (the OSS build, or signed in) = nothing. @type {import('svelte/store').Writable<any>} */
+export const connectorSignInSlot = writable(null);
+
+/** Plugin seam for the above (cloudApi.setConnectorProvider). Anything without `pair` reads as null.
+ * @param {any} provider */
+export function setConnectorProvider(provider) {
+	connectorProvider.set(
+		provider && typeof provider === 'object' && typeof provider.pair === 'function' ? provider : null
 	);
 }

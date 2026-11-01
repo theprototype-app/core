@@ -115,7 +115,7 @@ export function argsFromData(call, data) {
  * `ctx.onDispose` (T2: the one line the lifecycle registry replaces), so an unloaded module
  * leaves no listener behind. Reads and actions pass straight through.
  * @param {KitSpec} spec @param {Record<string, any>} impl
- * @param {{onDispose?: (fn: () => void) => any, moduleId?: string}} [ctx]
+ * @param {{onDispose?: (fn: () => void, info?: {owned?: boolean}) => any, moduleId?: string}} [ctx]
  */
 export function kitApi(spec, impl, ctx) {
 	/** @type {Record<string, any>} */
@@ -146,7 +146,8 @@ export function kitApi(spec, impl, ctx) {
 			const r = fn(...padded, ctx?.moduleId ?? '');
 			if (!owned) {
 				owned = true;
-				ctx?.onDispose?.(() => impl.disown?.(ctx?.moduleId ?? ''));
+				// `owned`: the module's for its whole life, never one on.load's (behaviours/app.js, fix-agenttest 8)
+				ctx?.onDispose?.(() => impl.disown?.(ctx?.moduleId ?? ''), { owned: true });
 			}
 			return r;
 		};

@@ -8,10 +8,11 @@ import { previewMultiWindow } from './filePreview';
 // (Explorer text files AND the custom-node definition editor route here) and
 // a zoomable image preview window.
 
-/** @type {import('svelte/store').Writable<{title: string, code: string, onSave: (code: string) => void, onClose?: () => void} | null>} */
+/** 56 C13: `readOnly` = no Save at all (a session volume's file); then `onSave` may be absent
+ * @type {import('svelte/store').Writable<{title: string, code: string, onSave?: (code: string) => void, readOnly?: boolean, onClose?: () => void} | null>} */
 export const textEditorTarget = writable(null);
 
-/** @param {{title: string, code: string, onSave: (code: string) => void, onClose?: () => void}} target */
+/** @param {{title: string, code: string, onSave?: (code: string) => void, readOnly?: boolean, onClose?: () => void}} target */
 export function openTextEditor(target) {
 	textEditorTarget.set(target);
 }

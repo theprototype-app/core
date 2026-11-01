@@ -215,8 +215,13 @@ export async function maybeOptimizeImport(parsed, source) {
 					out.bytes.buffer.slice(out.bytes.byteOffset, out.bytes.byteOffset + out.bytes.byteLength)
 				)
 			);
+			// 57 M2: a rig without clips rides the bytes path too (fileHandler.hasSkin, inlined: that module imports this one)
+			let skinned = false;
+			gltfResult.scene?.traverse?.((/** @type {any} */ o) => {
+				if (o.isSkinnedMesh) skinned = true;
+			});
 			const animated =
-				gltfResult.animations?.length > 0
+				gltfResult.animations?.length > 0 || skinned
 					? { result: gltfResult, buffer: out.bytes.slice().buffer, kind: 'gltf' }
 					: null;
 			// 47 C2: a CC0 download's credit rides the root (the GLB's scene extras); the engine's

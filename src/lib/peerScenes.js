@@ -629,10 +629,12 @@ export const ROOM_SCOPED = new Set([
 	// scene object, the 'nodetrigger' case - a peer standing elsewhere plays none of it
 	'environment', 'music', 'transport', 'patch', 'devicenote', 'scenephysics', 'scenepost', 'shadergraph',
 	'shadergraphdelete', 'shadergraphs', 'hud', 'huddelete', 'huds', 'hudvalue',
-	'hudvalues', 'game', 'kit', 'kitreq', 'animdata', 'animplay', 'animations', 'jointcreate',
+	'hudvalues', 'game', 'gamevarop', 'kit', 'kitreq', 'animdata', 'animplay', 'animations', 'jointcreate',
 	'jointdelete', 'joints', 'annotation', 'annotations',
 	// 48 S2: sequences are room content like the HUD documents
 	'seq', 'seqdelete', 'seqs',
+	// 56 C10/C8: a scene's AI chats and kept pictures are room content like its HUD
+	'tpchat', 'tpchatdel', 'tpchats', 'tprefs',
 	// coordination
 	'lock', 'locked', 'lockrequest', 'unlock', 'lockdenied', 'sessionproposal',
 	'sessionanswer', 'ping', 'sceneadopt'

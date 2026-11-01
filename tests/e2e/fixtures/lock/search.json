@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-29T01:49:06.615Z",
+	"recordedAt": "2026-11-01T09:29:04.404Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -129,7 +129,7 @@
 		"Editor tour": {
 			"rows": [
 				"Editor tour",
-				"Show everything"
+				"Show tours automatically"
 			],
 			"sections": [
 				"Interface"
@@ -395,8 +395,8 @@
 				"Node editor: show / bring to front / hide",
 				"Shader editor: show / bring to front / hide",
 				"Show captions",
-				"Show everything",
 				"Show in edit",
+				"Show tours automatically",
 				"Tool dock: show / hide (Node editor, Explorer, Animation, UV, Shader, HUD…)",
 				"UV editor: show / bring to front / hide"
 			],
@@ -763,6 +763,7 @@
 			"rows": [
 				"Autosave",
 				"Keep automatic checkpoints",
+				"Keep sent pictures in Explorer",
 				"Offer to merge unsaved work on connect",
 				"Save checkpoint…",
 				"Save scene"
@@ -770,7 +771,8 @@
 			"sections": [
 				"Shortcuts",
 				"Scene",
-				"Explorer"
+				"Explorer",
+				"Tools & connections"
 			]
 		},
 		"Simulate physics (toggle)": {
@@ -808,15 +810,13 @@
 		"Undo": {
 			"rows": [
 				"Allow undocking on touch screens",
-				"Enable assistant",
 				"Touch tools",
 				"Undo",
 				"Undock button"
 			],
 			"sections": [
 				"Interface",
-				"Shortcuts",
-				"AI"
+				"Shortcuts"
 			]
 		},
 		"Redo": {
@@ -2287,28 +2287,52 @@
 				"VR"
 			]
 		},
-		"Enable assistant": {
+		"Voice typing": {
 			"rows": [
-				"Enable assistant"
+				"Voice typing"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
-		"Voice typing provider": {
+		"Keep sent pictures in Explorer": {
 			"rows": [
-				"Voice typing provider"
+				"Keep sent pictures in Explorer"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
-		"Mesh generation": {
+		"Coding agents": {
 			"rows": [
-				"Mesh generation"
+				"Coding agents"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
+			]
+		},
+		"Blender and other 3D tools": {
+			"rows": [
+				"Blender and other 3D tools"
+			],
+			"sections": [
+				"Tools & connections"
+			]
+		},
+		"Rigging and animation services": {
+			"rows": [
+				"Rigging and animation services"
+			],
+			"sections": [
+				"Tools & connections"
+			]
+		},
+		"Your own GPU box": {
+			"rows": [
+				"Your own GPU box"
+			],
+			"sections": [
+				"Tools & connections"
 			]
 		},
 		"Session size": {
@@ -2361,7 +2385,6 @@
 			"rows": [
 				"Diagnostics",
 				"Error reports",
-				"Usage counts",
 				"Wheel diagnostics"
 			],
 			"sections": [
@@ -2487,7 +2510,6 @@
 				"Density",
 				"Dock resizes the viewport",
 				"Editor tour",
-				"First-game quest",
 				"Game sounds",
 				"Knocked-off idle",
 				"Lift the corner buttons above docked panels",
@@ -2503,7 +2525,6 @@
 				"Reset tips",
 				"Reset tours",
 				"Show FPS and draw calls",
-				"Show everything",
 				"Show others as classic heads",
 				"Show pop-ups only in the drawer",
 				"Show system objects in the object list",
@@ -2636,8 +2657,7 @@
 		},
 		"telemetry": {
 			"rows": [
-				"Error reports",
-				"Usage counts"
+				"Error reports"
 			],
 			"sections": [
 				"Privacy"
@@ -2828,8 +2848,7 @@
 			"rows": [
 				"Auto-restore on load",
 				"Autosave",
-				"Error reports",
-				"Usage counts"
+				"Error reports"
 			],
 			"sections": [
 				"Scene",
@@ -2918,7 +2937,6 @@
 			"rows": [
 				"Compress textures (KTX2)",
 				"Distant scatter",
-				"First-game quest",
 				"Import defaults",
 				"Include VR button",
 				"LOD 1 keeps",
@@ -2933,7 +2951,6 @@
 				"Show FPS",
 				"Show pop-ups only in the drawer",
 				"Show the Made with ThePrototype badge",
-				"Show tours automatically",
 				"Start fullscreen",
 				"Teleport",
 				"Texture threshold",
@@ -2990,7 +3007,9 @@
 			"rows": [
 				"Apply changes",
 				"Cached downloads",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server",
 				"Statistics card"
 			],
@@ -3038,7 +3057,6 @@
 				"Error reports",
 				"Show helpers in Play",
 				"Toggle a debugger breakpoint on the selected nodes (Play pauses when an event reaches them)",
-				"Usage counts",
 				"Wheel diagnostics"
 			],
 			"sections": [
@@ -3063,57 +3081,64 @@
 		},
 		"llm": {
 			"rows": [
-				"Enable assistant",
-				"Mesh generation",
-				"Voice typing provider"
+				"Blender and other 3D tools",
+				"Coding agents",
+				"Keep sent pictures in Explorer",
+				"Rigging and animation services",
+				"Voice typing",
+				"Your own GPU box"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"claude": {
 			"rows": [
-				"Enable assistant"
+				"Coding agents",
+				"Let AI agents join as guests",
+				"Voice typing"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections",
+				"Connection"
 			]
 		},
 		"api key": {
 			"rows": [
-				"Voice typing provider"
+				"Voice typing"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"model": {
 			"rows": [
+				"Blender and other 3D tools",
+				"Coding agents",
 				"Distant scatter",
-				"Enable assistant",
-				"Mesh generation",
+				"Keep sent pictures in Explorer",
 				"My hand model",
 				"Optimize big models automatically",
 				"Peer hands",
 				"Placement preview",
 				"Preview triangle budget",
+				"Rigging and animation services",
 				"Simplify distant models",
 				"Triangle threshold",
-				"Voice typing provider"
+				"Voice typing",
+				"Your own GPU box"
 			],
 			"sections": [
 				"Scene",
 				"Import",
 				"VR",
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"meshy": {
-			"rows": [
-				"Mesh generation"
-			],
+			"rows": [],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"trash": {
@@ -3156,7 +3181,6 @@
 				"Density",
 				"Dock resizes the viewport",
 				"Editor tour",
-				"First-game quest",
 				"Game sounds",
 				"Knocked-off idle",
 				"Lift the corner buttons above docked panels",
@@ -3173,7 +3197,6 @@
 				"Reset tips",
 				"Reset tours",
 				"Show FPS and draw calls",
-				"Show everything",
 				"Show others as classic heads",
 				"Show pop-ups only in the drawer",
 				"Show system objects in the object list",
@@ -3208,14 +3231,12 @@
 				"Density",
 				"Dock resizes the viewport",
 				"Editor tour",
-				"First-game quest",
 				"Game sounds",
 				"Hold to open menu",
 				"Knocked-off idle",
 				"Lift the corner buttons above docked panels",
 				"Lift the toolbar above docked panels",
 				"Menu hand",
-				"Mesh generation",
 				"Music",
 				"Object search in the right-click menu",
 				"Offer Enter VR in a headset browser",
@@ -3232,7 +3253,6 @@
 				"Show FPS",
 				"Show FPS and draw calls",
 				"Show captions",
-				"Show everything",
 				"Show others as classic heads",
 				"Show pop-ups only in the drawer",
 				"Show system objects in the object list",
@@ -3259,8 +3279,7 @@
 				"Input",
 				"Explorer",
 				"Export",
-				"VR",
-				"AI"
+				"VR"
 			]
 		},
 		"mouse": {
@@ -3541,11 +3560,13 @@
 				"Save name",
 				"Storage used",
 				"When importing files already in your library",
+				"When several libraries are open",
 				"When you add files during a session",
 				"Who can unshare a file"
 			],
 			"sections": [
 				"Explorer",
+				"Save options",
 				"Import",
 				"VR"
 			]
@@ -3617,12 +3638,15 @@
 		},
 		"assistant": {
 			"rows": [
-				"Enable assistant",
-				"Mesh generation",
-				"Voice typing provider"
+				"Blender and other 3D tools",
+				"Coding agents",
+				"Keep sent pictures in Explorer",
+				"Rigging and animation services",
+				"Voice typing",
+				"Your own GPU box"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"peer": {
@@ -3632,11 +3656,13 @@
 				"Compress textures (KTX2)",
 				"Diagnostics",
 				"Keep a recycle bin",
+				"Let AI agents join as guests",
 				"Peer hands",
 				"Ping colour",
 				"Selection outline colour",
 				"Session size",
 				"Show others as classic heads",
+				"Show where AI agents look",
 				"Signaling server",
 				"Sky image quality",
 				"Statistics card"
@@ -3654,23 +3680,26 @@
 		"server": {
 			"rows": [
 				"Apply changes",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
-				"AI",
 				"Connection"
 			]
 		},
 		"invite": {
 			"rows": [
 				"Apply changes",
-				"First-game quest",
+				"Coding agents",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
-				"Interface",
+				"Tools & connections",
 				"Connection"
 			]
 		},
@@ -3679,8 +3708,10 @@
 				"Apply changes",
 				"Colocation",
 				"Ghost hands",
+				"Let AI agents join as guests",
 				"Session size",
 				"Show others as classic heads",
+				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
@@ -3694,13 +3725,17 @@
 				"Apply changes",
 				"Clear saved session",
 				"Diagnostics",
+				"Let AI agents join as guests",
 				"Session size",
+				"Show where AI agents look",
 				"Signaling server",
+				"When several libraries are open",
 				"When you add files during a session",
 				"Who can unshare a file"
 			],
 			"sections": [
 				"Explorer",
+				"Save options",
 				"Connection",
 				"About & what’s new"
 			]
@@ -4100,8 +4135,7 @@
 		},
 		"privacy": {
 			"rows": [
-				"Error reports",
-				"Usage counts"
+				"Error reports"
 			],
 			"sections": [
 				"Privacy"
@@ -4128,11 +4162,9 @@
 		"tour": {
 			"rows": [
 				"Editor tour",
-				"First-game quest",
 				"Offer Enter VR in a headset browser",
 				"Reset tips",
 				"Reset tours",
-				"Show everything",
 				"Show tours automatically",
 				"VR welcome tour"
 			],
@@ -4460,7 +4492,7 @@
 				"Use CDN for packs",
 				"VR welcome tour",
 				"Vertex edit limit",
-				"Voice typing provider",
+				"Voice typing",
 				"World grab snapping"
 			],
 			"sections": [
@@ -4468,38 +4500,40 @@
 				"Shortcuts",
 				"Export",
 				"VR",
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"ai": {
 			"rows": [
 				"Both grips scale the world",
 				"Cached downloads",
+				"Coding agents",
 				"Colocation probe",
 				"Compress textures (KTX2)",
 				"Download shared files automatically",
-				"Enable assistant",
 				"Focus mode — maximize the area under the pointer (the viewport alone, or a docked window filling the window); again to restore",
 				"GPU fluid",
 				"Ghost hands",
 				"Height",
 				"Hold to move vertex",
 				"Import defaults",
+				"Keep sent pictures in Explorer",
 				"LOD 1 keeps",
 				"LOD 2 keeps",
 				"LOD 3 keeps",
 				"LOD levels",
+				"Let AI agents join as guests",
 				"Lift the corner buttons above docked panels",
 				"Loop select (faces: again = perpendicular; edges: the chain)",
 				"Max texture size",
-				"Mesh generation",
 				"Optimize big models automatically",
 				"Optimize for",
 				"Placeholder style",
 				"Project actions",
 				"Reset tips",
 				"Reverse trackpad pan",
-				"Show everything",
+				"Rigging and animation services",
+				"Show where AI agents look",
 				"Stance",
 				"Storage breakdown",
 				"Storage used",
@@ -4507,7 +4541,9 @@
 				"Texture threshold",
 				"Toggle AI prompt bar",
 				"Triangle threshold",
-				"Voice typing provider"
+				"Voice typing",
+				"When several libraries are open",
+				"Your own GPU box"
 			],
 			"sections": [
 				"Interface",
@@ -4515,11 +4551,13 @@
 				"Shortcuts",
 				"Scene",
 				"Explorer",
+				"Save options",
 				"Storage",
 				"Import",
 				"Export",
 				"VR",
-				"AI"
+				"Tools & connections",
+				"Connection"
 			]
 		},
 		"zz-no-match": {
@@ -4534,6 +4572,7 @@
 				"Geometry",
 				"LOD",
 				"Material",
+				"Model",
 				"Object",
 				"Particles",
 				"Physics",
@@ -4542,6 +4581,10 @@
 				"Texture",
 				"Transform",
 				"Water"
+			],
+			"model": [
+				"Model",
+				"Scatter"
 			],
 			"transform": [
 				"Transform"

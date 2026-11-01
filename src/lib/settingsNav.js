@@ -27,6 +27,8 @@ import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
 
 export const NAV_CONTEXT = 'settings-nav';
+/** deep-link keys a renamed section still answers to (the identifier stays, the word changes) */
+const KEY_ALIASES = /** @type {Record<string, string>} */ ({ ai: 'toolsconnections' }); // 59 T4
 const LAST_KEY = 'settings:section';
 
 /** 'Node types' -> 'nodetypes' — the shape of `settingsSection` deep-link keys ('vr', 'ai', 'explorer'…)
@@ -92,7 +94,7 @@ export function createSettingsNav() {
 
 	/** @param {string | null} key a `settingsSection` deep-link key */
 	function activateKey(key) {
-		const want = sectionKeyOf(key ?? '');
+		const want = KEY_ALIASES[sectionKeyOf(key ?? '')] ?? sectionKeyOf(key ?? '');
 		if (!want) return false;
 		// exact first, then a prefix: the 'touch' link names the "Touch controls" section
 		const list = get(entries);

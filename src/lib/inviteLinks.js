@@ -21,6 +21,7 @@ import { parseInviteHash, decodeInviteServer, peerServerStatus, sameServer } fro
 import { requestConnect, cancelOutboundRequest } from './peerApproval';
 import { sessionHost } from './connectionState';
 import { nameOf } from './lockControl';
+import { captureInviteHash } from './inviteStore';
 
 /** @param {any} target the decoded override */
 function serverLabel(target) {
@@ -28,7 +29,11 @@ function serverLabel(target) {
 	if (target.forcePublic) return 'the public PeerJS cloud';
 	const c = target.custom || {};
 	const port = c.port && Number(c.port) !== 443 ? ':' + c.port : '';
-	return String(c.host || '') + port;
+	let host = String(c.host || '');
+	try {
+		host = new URL('https://' + host).hostname; // a lookalike name reads as its ASCII form
+	} catch {}
+	return host + port;
 }
 
 /** @param {string} peerId */
@@ -106,6 +111,9 @@ export async function handleInviteHash(hash) {
 	// the signaling link has never opened: the startup path (`peer.on('open')`) owns
 	// the hash and will dial it — nothing to do live, and no "not connected yet" toast
 	if (!peer.hasOpened) return 'startup';
+	// 55 A4: a pasted invite link — keep its token in memory for the dial's proof, then the
+	// whole hash goes (consumeHash), so the token never sits in the URL or the history
+	captureInviteHash(hash || '');
 	consumeHash();
 	const myId = String(peer.peer.id || peer.myId || '').toLowerCase();
 	if (peerId === myId) {
@@ -156,7 +164,12 @@ export async function handleInviteHash(hash) {
 			try {
 				peer.leaveSession();
 			} catch {}
-			proceed();
+			// leaving is one question, trusting another server is another
+			if (needSwitch)
+				void askServer(peerId, target).then((next) => {
+					if (next === 'join') void proceed();
+				});
+			else proceed();
 		});
 		return 'ask-leave';
 	}

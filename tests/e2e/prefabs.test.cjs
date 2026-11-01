@@ -45,6 +45,7 @@ h.run(async () => {
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForTimeout(4000);
 	await A.page.waitForFunction(() => window.__stores && !!window.__stores.prefabs, { timeout: 30000 });
+	await h.answerRestore(A);
 	await A.page.evaluate(() => window.__stores.prefabs.loadPrefabs());
 	list = await prefabList(A.page);
 	h.check(list.length === 1, 'prefab persisted across reload');

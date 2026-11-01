@@ -154,8 +154,8 @@ export function createSim(opts = {}) {
 					me: () => id,
 					clock: { now },
 					send,
-					isAuthority: () => pickAuthority({ me: id, peers: [...p.connected], host: sim.host, initiator: sim.initiator }) === id,
-					authorityId: () => pickAuthority({ me: id, peers: [...p.connected], host: sim.host, initiator: sim.initiator }),
+					isAuthority: () => pickAuthority({ me: id, peers: [...p.connected], host: sim.host, initiator: sim.initiator, incumbent: p.kit?.doc()?.by }) === id,
+					authorityId: () => pickAuthority({ me: id, peers: [...p.connected], host: sim.host, initiator: sim.initiator, incumbent: p.kit?.doc()?.by }),
 					storage: p.storage,
 					game: p.game,
 					rules: opts.rules ?? null,
@@ -248,7 +248,7 @@ export function createSim(opts = {}) {
 			sim.step();
 		},
 		/** who each peer believes is the authority */
-		authorities: () => [...peers.values()].map((p) => pickAuthority({ me: p.id, peers: [...p.connected], host: sim.host, initiator: sim.initiator })),
+		authorities: () => [...peers.values()].map((p) => pickAuthority({ me: p.id, peers: [...p.connected], host: sim.host, initiator: sim.initiator, incumbent: p.kit?.doc()?.by })),
 		/** messages of a type on the wire so far @param {string} type */
 		sent: (type) => log.filter((m) => m.msg.type === type)
 	};

@@ -286,6 +286,7 @@ h.run(async () => {
 
 	// the open/closed state is a preference — it survives a reload
 	await h.freshReload(A);
+	await h.answerRestore(A);
 	await A.page.waitForTimeout(1500);
 	await openSession(A.page);
 	const persisted = await A.page.evaluate(() => ({
@@ -708,6 +709,7 @@ h.run(async () => {
 
 	// the open/closed state is a preference, like the other sections
 	await h.freshReload(A);
+	await h.answerRestore(A);
 	await A.page.waitForTimeout(1500);
 	await openSession(A.page);
 	const gPersisted = await A.page.evaluate(() => ({

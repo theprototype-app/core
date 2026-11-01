@@ -9,6 +9,9 @@
   // frames' blocking shader links. A dynamic import here queued it behind them (a third e2e page
   // took 34 s instead of 8 s to publish __stores).
   import { installDebugHooks } from '$lib/debugHooks'
+  // 55 A2: `window.tpAgent` — only `&agent` / safeStorage.agentApi turn it on. A LEAF statically
+  // (it must read the hash before the dial consumes it); the API itself is a dynamic import.
+  import { agentRequested } from '$lib/agent/agentMode'
   import { onMount } from 'svelte'
   import { Canvas } from '@threlte/core'
   // 30 P0: threlte's Canvas defaults `shadows` to PCFSoftShadowMap, which three 0.185
@@ -29,6 +32,9 @@
   // panel, so it sits with ConfirmModal where every entry point can reach it.
   import StorageModal from './components/menu/StorageModal.svelte'
   import ReplaceModelModal from './components/menu/ReplaceModelModal.svelte'
+  import EditInBlenderCard from './components/menu/EditInBlenderCard.svelte' // 59 T2
+  // 57: Apply clip… / Download… / the Skeleton view — a tiny host, the dialogs load on open
+  import CharacterDialogs from './components/characters/CharacterDialogs.svelte'
   import PlaceholderTooltip from './components/menu/PlaceholderTooltip.svelte'
   import Flow from './components/Flow.svelte'
   import FlowCode from './components/editors/FlowCode.svelte'
@@ -136,6 +142,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
   import { startWireErrors } from '$lib/wireErrors'
   import { startTrackpadNav } from '$lib/trackpadNav'
   import { startInviteLinks } from '$lib/inviteLinks'
+  import { isAgentSession } from '$lib/inviteStore' // 55 A8
   import { startHelperLayer, helpersInPlay } from '$lib/helperLayer'
   import { startCloudPlugin } from '$lib/cloudPlugin'
   import { startShaderGraphs } from '$lib/shaderGraph'
@@ -261,6 +268,7 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // applying but not surviving a reload — invisible from the outside, and the first
     // thing worth knowing when somebody reports that their preferences keep resetting.
     registerDiagnosticsSection('storage', () => storageDebug())
+    if (agentRequested()) import('$lib/agent/tpAgent').then((m) => m.installTpAgent()).catch((e) => console.error('tpAgent install failed', e))
     // 15-N: register the PWA service worker (a no-cache passthrough — see
     // static/sw.js) so mobile browsers offer "Install app". Dev is skipped: a
     // SW in front of vite's HMR only causes confusion.
@@ -307,6 +315,8 @@ import { startMusicToolbox } from './lib/musicToolbox'
     // (file_handlers → launchQueue); they wait for the restore question (launchInbox.js)
     if (!exportMode) import('$lib/launchInbox').then((m) => m.startLaunchInbox()).catch(() => {})
     startSceneAssets()
+    void import('$lib/chat/tpchatStore.js').then((m) => m.startTpchats()) // 56 C10: Scene ▸ chats / references
+    void import('$lib/ai/imageCards.js').then((m) => m.startImageCards()) // 66 S4b: imported cards face the camera; Scene ▸ generated
     startCodeWorkspace() // 36-code: scriptEditorOpen -> a workspace tab, file follow
     void startPanelHost() // 70 W5: follow the pop-out layout, bring the saved one back
     startNetworkQuality()
@@ -325,6 +335,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
     startTrackpadNav()
     // 24-D1: an invite link pasted into the open tab (hashchange → dial / ask)
     startInviteLinks()
+    // 55 A8: an AI agent's page logs its own tool calls for every peer's AI window — loaded only
+    // there (dynamic), so nobody else's boot carries it
+    if (isAgentSession()) import('$lib/agentLogRecorder').then((m) => m.startAgentRecorder()).catch(() => {})
     // 24-E2: the editor camera renders the helper layer outside Play (debug toggle in Play)
     startHelperLayer()
     // shader graphs: the compile/target wiring + the replication and history seams
@@ -395,11 +408,15 @@ import { startMusicToolbox } from './lib/musicToolbox'
     const files = [...(event.dataTransfer?.files ?? [])]
     if (files.length === 0) return
     const skipped = []
-    const modelExt = /\.(glb|gltf|obj|stl|fbx)$/
+    const modelExt = /\.(glb|gltf|obj|stl|fbx|vrm)$/
     // 17-D2: a .mtl / texture dropped ALONGSIDE a model is its companion, not
     // an unsupported file — importFile pairs them up.
     const companionExt = /\.(mtl|png|jpe?g|webp|bmp|gif)$/i
     const companions = files.filter((file) => companionExt.test(file.name))
+    // 57 M1: animation clip files go to the Explorer (converted to .tpanim) and onto the rig under the cursor
+    const clipExt = /\.(tpanim|vrma|bvh)$/i
+    const clipFiles = files.filter((file) => clipExt.test(file.name))
+    if (clipFiles.length) import('./lib/explorerDrop').then((m) => m.dropClipFiles(clipFiles, event.clientX, event.clientY))
     // 60 Q5: a drop of nothing but images is not a model's companions — they used to be
     // dropped silently. Ask what they are for: a reference image to build over, or the Explorer.
     const imageExt = /\.(png|jpe?g|webp|bmp|gif)$/i
@@ -407,9 +424,15 @@ import { startMusicToolbox } from './lib/musicToolbox'
       underlayDropMenu.set({ x: event.clientX, y: event.clientY, files })
       return
     }
+    // 59 T1/T7b: ONE model file may be a new version of an object (its own export back from a tool,
+    // or dropped onto the selected object) — modelDrop asks; several are always new objects
+    const models = files.filter((file) => modelExt.test(file.name.toLowerCase()))
+    const { clientX, clientY } = event
     files.forEach((file) => {
       const name = file.name.toLowerCase()
-      if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
+      if (clipFiles.includes(file)) return
+      if (modelExt.test(name) && models.length === 1) import('./lib/modelDrop').then((m) => m.dropModelFile(file, { companions, clientX, clientY }))
+      else if (modelExt.test(name)) importFile(file, file.name.replace(modelExt, ''), undefined, undefined, companions)
       else if (name.endsWith('.json')) load(file)
       else if (!companions.includes(file)) skipped.push(file.name)
     })
@@ -468,7 +491,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
 <StorageModal />
 <!-- 36 U9: Replace model… for a loading/failed placeholder, and the hover tooltip over one -->
 <ReplaceModelModal />
+<EditInBlenderCard />
 <PlaceholderTooltip />
+<CharacterDialogs />
 <DrawToolbar />
 <SculptToolbar />
 <SplineToolbar />

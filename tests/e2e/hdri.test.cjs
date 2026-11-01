@@ -100,6 +100,9 @@ h.run(async () => {
 	const opts = { context: { viewport: { width: 1280, height: 720 } } };
 	const A = await h.setupPage(browser, 'A', opts);
 	const B = await h.setupPage(browser, 'B', opts);
+	// 59 T3: the skies come from the packs CDN — served from a local packs checkout when there is one
+	await h.routeSkies(A.page);
+	await h.routeSkies(B.page);
 
 	// a box to select (a selection makes the desktop frame go through the composer)
 	const boxUuid = await A.page.evaluate(`(() => {
@@ -189,7 +192,7 @@ h.run(async () => {
 	// ---- 6. a custom HDRI by content hash -----------------------------------------------------
 	const hash = await A.page.evaluate(async () => {
 		const st = window.__stores;
-		const res = await fetch(new URL('hdri/spruit_sunrise_1k.hdr', document.baseURI));
+		const res = await fetch(st.hdriSky.skyUrl('hdri/spruit_sunrise_1k.hdr')); // 59 T3: off the bundle
 		const src = new Uint8Array(await res.arrayBuffer());
 		// trailing bytes after the last scanline: same image, a hash no bundled file has
 		const bytes = new Uint8Array(src.length + 16);

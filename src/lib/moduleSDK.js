@@ -192,9 +192,16 @@ export function moduleVersions() {
 	return loadedModules.map((m) => ({ id: m.id, version: m.version }));
 }
 
-/** Toast when a peer runs different modules @param {{id: string, version: string}[]} remote */
-export function checkModuleVersions(remote) {
+/** 55 T6: the module set each peer advertised in the `modules` handshake (peerId -> [{id, version}]) —
+ * what `tpAgent.status().missingModules` compares against. Kept per peer, read for OPEN peers only.
+ * @type {import('svelte/store').Writable<Record<string, {id: string, version: string}[]>>} */
+export const peerModuleVersions = writable({});
+
+/** Toast when a peer runs different modules
+ * @param {{id: string, version: string}[]} remote @param {string} [peerId] who sent it (55 T6, additive) */
+export function checkModuleVersions(remote, peerId) {
 	if (!Array.isArray(remote)) return;
+	if (peerId) peerModuleVersions.update((all) => ({ ...all, [peerId]: remote.filter((r) => r && typeof r.id === 'string') }));
 	const openManager = [{ label: 'Modules', action: () => modulesOpen.set(true) }];
 	remote.forEach((r) => {
 		const local = loadedModules.find((m) => m.id === r.id);

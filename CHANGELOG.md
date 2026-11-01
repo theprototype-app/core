@@ -34,6 +34,183 @@ tab can now find any scene by a word or a maker.
   account or IP address. It is off whenever your browser sends Do Not Track or Global Privacy Control, and you can turn
   it off in Settings ▸ Privacy ▸ **Count my visits anonymously**. A build without the hosted plugin counts nothing.
 
+## 1.53.1 — Claude connector fixes 🔧
+
+- **"What can you do?" works** through the Claude connector, and so does *save_scene*. Saves keep older versions, and an AI save cannot write over another scene.
+- **Joining a session tells the truth.** *join_session* only reports success once you pressed Join and the connection is really up; *status* no longer contradicts itself.
+- **A reconnect doesn't lose Claude's work.** If the link to your tab drops for a moment, the call carries on and answers when it is back, instead of claiming you connected another tab.
+- **A session that never answers ends the join** instead of leaving the tab waiting. *status* also names tools that can't run right now, such as code that failed to load after a new version went live.
+- **Physics inside a group:** starting the simulation now says which objects are inside a group and how to fix it, instead of claiming nothing has physics.
+- **Fixed joints hold** on bodies moved by flow nodes. Pausing or resuming a stopped simulation now says why nothing happened.
+- **Particles on a rotated parent** can aim in world axes, and gravity always points world down.
+- **Script nodes** warn when a pose grows every frame, or when a script reaches for something that isn't there; errors show in *status*.
+- **A Spin node's angle wraps at a full turn** instead of growing forever, and *list_scene* and *update_objects* work on the pose you authored, not the one the animation is showing right now.
+
+## 1.53.0 — your tools, connected 🔌
+
+- **Replace a model from a file and keep the object.** *Replace model…*, or drop a file on the selected object: its place, parent, flows, physics, colliders, changed materials and clips stay. One undo puts the old model back, for everyone.
+- **Clips survive a re-rig.** Clips the new file lacks are kept when their bones still exist, `.tpanim` clips too; dropped ones are listed.
+- **Edit in Blender.** Downloads the model as `.glb` with a card of export settings, for Blender or any glTF tool. Drop the exported file anywhere and it asks *Update "<name>"?*. Chrome and Edge can watch the file and reload on each save.
+- **Exports that look wrong get a one-click fix:** about 100× too big or small, lying on its side, or unapplied transforms.
+- **Settings ▸ AI is now Settings ▸ Tools & connections:** chat and mesh providers, voice typing, agents and desktop tools in one page, each with its status, a Test, Enable / Disable and the features it turns on. Mesh providers get a Test that costs no credits. Your saved providers and keys are unchanged.
+- **Missing tools explain themselves.** *Generate 3D model*, the quick prompt bar, the mic and *Edit in Blender* stay visible, say what is missing and open the right row.
+- **Skies download when you pick one** and stay in your browser, so the app download is about 6 MB smaller. Offline, a sky shows its flat colours. Exported games still carry their sky.
+- **Physics on animated imports** now reach late joiners and saves.
+- **Fixed:** an imported model removed within half a second (undo, replace, clear) no longer throws an error in the background; scene-lint counts the triangles of optimized imports.
+
+## 1.52.0 — sessions in your Explorer 🗂️
+
+- **The host's files in your Explorer.** Joining a session shows them as *"<Host>'s session"*, read-only, above your Library: open images, videos and text, copy any file into your Library, and **Save on host** if you can edit. Nothing downloads until you open or copy, and more than about 50 MB asks first.
+- **Hosts choose what guests see.** Connect ▸ Info ▸ Guests see: Current scene's files (default), every scene on this device and shared files, Whole library or None.
+- **Save project with several libraries open** asks which to save, with the active one ticked. Settings ▸ Save options ▸ *When several libraries are open* remembers your answer, and Ctrl+S follows it.
+- **Save project with unsaved changes** names the scene and offers *Save scene and project*, so edits are never dropped without a word.
+- **Opening a project** takes you back to the scene you had open.
+- **Android keeps the extension.** `.tp` and `.tpscene` downloads no longer arrive as `.tp.zip`.
+- **Review versions** always lands now, even from a minimized dock, and offers to fetch a scene this device has no copy of.
+- **The AI button always opens the window.** With no provider set up it offers Connect Claude, with the two steps for the claude.ai side and a Copy link button, or your own provider.
+- **Claude on claude.ai can do more in your tab:** use physics and run the simulation at full speed, whether you host or joined; animate a model's named parts; know who it acts as and see where everyone stands and looks, so "put a tree in front of me" lands in front of you, in VR too; and join a session from a link once you press Join on a card in the tab.
+- **Join from a running Claude Code.** `@theprototype/agent serve --port <n>` is MCP over HTTP on this machine, with the full tool list from the start.
+
+## 1.51.0 — characters and motion 🕺
+
+- **Clips are their own files.** A `.tpanim` is a small clip file in the Explorer (VRM Animation inside, so it opens in
+  VRM tools too). Import `.vrma`, `.bvh`, animation `.glb` or `.fbx`, then drop a clip on a character: it plays on every
+  peer, the bytes travel once and the model never changes.
+- **Any clip on any humanoid.** VRM, Mixamo, Meshy, UniRig, KayKit and Quaternius rigs map onto the VRM 1.0 humanoid by
+  themselves (fix the map by hand if you like). *Apply clip…* fits a clip to each character's skeleton.
+- **Free CC0 packs.** Characters (10 avatars) and Motion (87 clips: locomotion, jumps, sitting, swimming, combat…),
+  in the Asset Browser's new Motion tab, plus an Avatars tab reading the Open Source Avatars registry.
+- **VRM characters** with spring bones, expressions (a Set Expression node too) and their licence in the Inspector.
+- **Game-ready clips.** In place or moving, *Loop it*, trim, split, join with a crossfade, *Extract clips* from a model;
+  a Crossfade on Play Animation and a new **Blend by Speed** node, so characters stop snapping between poses.
+- **Animation states.** A window per character with states and transitions. The one-click **Locomotion preset** makes
+  even a fresh VRM walk, run and jump under the Player controller, filling missing clips from the Motion pack. New
+  nodes: Set Animation Parameter, On Animation State.
+- **Skeleton fix-ups.** Rename, move, add, delete and mirror bones; automatic weights, smoothing and a weight brush.
+- **Download a character with its clips.** One GLB for Blender, Unity, Unreal and Godot (default), model + clip files,
+  or the model alone; one clip as `.tpanim`, `.glb`, `.vrma` or `.bvh`.
+- **Animate a model's named parts** and attach things to its sockets (Attach to Socket node); agents get the
+  `animate_parts` tool.
+- **Licence warnings.** Everything records where it came from. Licences that ask for credit or restrict sharing warn you
+  in Download, Export and Publish, and never block.
+
+## 1.50.0 — talk to your agent 💬
+
+- **Chat with the AI agents in your session.** The AI assistant window lists them next to your own assistant: pick
+  one and chat. Everyone in the session sees the conversation, the replies stream in, and every step the agent takes
+  shows between the messages. Claude Code listens after one sentence in its terminal (*"listen to my theprototype
+  session"*), what you type there shows "via terminal", and a `repl` agent answers with no terminal at all.
+- **Stop, mute, roles.** Stop cancels what the agent is doing; the host can mute an agent from its peer menu. Viewers
+  can ask, and the agent will not change the scene for them.
+- **Pictures in AI chats.** The **+** button, paste, drop or a drag from the Explorer — shrunk and **stripped of
+  location data on your device** before they are sent. *Keep in Explorer* saves one with the scene.
+- **Agents bring things in.** `import_model` imports a GLB (≤ 25 MB, self-contained) as one undo step with its named
+  parts and where it came from; `import_file` brings PNG / WebP / JSON / `.tpanim` files into Explorer ▸ Generated and
+  places an image as a card — crisp for pixel art, one frame of a sprite sheet. New recipes: better models with
+  img2threejs, pixel art with Pixling.
+- **Chats are files.** Every conversation is a `.tpchat` in Explorer ▸ Scene ▸ chats, saved with the scene, private
+  unless you switch on *Include when publishing*. The history icon lists them; New chat starts one; double-click a chat
+  to reopen it, and the agent gets its history.
+- **In VR** the AI panel talks to the same agent — type, or hold the talk button and speak.
+- For developers: `tpAgent` contract 1.3.0 (`nextMessage`, `reply`, `ask`, `thread`, …); `@theprototype/agent` 1.50.0
+  adds `wait_for_message`, `reply`, `ask`, `get_thread`, `import_model` and `import_file` with local paths.
+
+## 1.49.0 — talk to Claude from claude.ai and voice 🎙️
+
+- **The Claude connector.** Add theprototype as a connector in claude.ai (web, desktop, phone), press **Connect
+  Claude** in the AI assistant of your open tab, and Claude builds there by chat or voice — with your own access.
+  Every step shows in Agent activity as *Claude (connector)* with its own Undo; a viewer's Claude can look but not
+  build, and locked objects stay locked. Keep the tab open and in front; **Disconnect** stops it at once, and
+  Settings ▸ Connected apps lists and revokes the apps you allowed. Signed-in theprototype.app only.
+- **Agents know the nodes before they wire them.** `describe_node_types` tells an agent each flow node's inputs,
+  outputs and params, and `what_can_you_do` answers "what can you do here?" in a sentence you can hear; the
+  connector speaks voice-first (short answers, no ids or JSON).
+- For developers: `npm run catalog:agent` generates the static agent tool catalog (`tools/agent/catalog.json`) from
+  the app itself, and CI fails when it is stale.
+
+## 1.48.1 — fixes for AI agents and game logic 🔧
+
+- **A deleted object's logic stops.** Its flow graph used to keep running on every peer until a reload (and a
+  late joiner received it too). It now sleeps, and undoing the delete brings it back to life.
+- **Game rounds keep their referee.** Whoever is running a kit game round stays in charge when someone new
+  joins, instead of the round moving to the newcomer.
+- **Agents read the scene the way you see it.** Inside a group, the positions an agent gives are local to the
+  group (as list_scene reports them); list_scene shows a shape's sizes (a wall's thickness, a box's depth) and can
+  be narrowed — names only, by a name pattern, by type, or near a point.
+- **A locked object says who has it.** When an agent cannot change something because someone is editing it, it
+  is told which object and who holds it.
+- **Camera Rig:** two rigs complaining at once show one notice, naming the object.
+- **Fixes from the agent test:** every light type survives an autosave restore; Body Wave and Jiggle stack on one
+  object; HUD Text and Bar show wired strings; a behaviour's `on.load` sees the scene a joiner lands in and releases
+  what its last run registered; deleted lights and avatar photo cards free their textures; a phone in the background
+  keeps its link for a minute; a rejoin is told only live peers, and a join pulls the node graphs once; a shared Set
+  Variable changes once per event in multiplayer.
+- **A guest's reload goes back to the session**: reloading the tab while joined comes back on the same id and the host
+  lets it straight back in, with no new approval card.
+
+## 1.48.0 — AI agents in your session, invite links, and a people menu 🤖
+
+Send Claude (or any AI agent) your session link and build together: the agent joins as a peer, uses the app's own
+tools and shows you every step. Invite links let a friend or an agent in without an approval card, and a new menu on
+every person in the Connected panel lets the host remove someone.
+
+### 🤖 AI agents in your session
+
+- **Join from a link**: `claude mcp add theprototype -- npx -y @theprototype/agent mcp '<link>'` adds theprototype to
+  Claude Code (or any MCP client). The agent drives the real app in a headless browser — objects, flow nodes,
+  physics, and 3D generation on your own provider — with the in-app assistant's own tools, read live from your app.
+- **It sees what it built** through clean screenshots (no gizmos or toasts) that never move anyone's view, and it
+  leaves cleanly when you close it.
+- **No body, clear marks**: an agent shows as a robot with an "AI" label in Users — no character, no voice, no
+  cursor — and a small camera marker shows where it last looked (Settings can hide it).
+- **See where it is working**: a small bot icon with the agent's name stands over the object it is editing (or the
+  spot its last screenshot looked at), on desktop and in VR. It fades while the agent is idle, hides in Play, and
+  leaves with the agent; Settings ▸ Connection ▸ **Show where AI agents look** switches it off.
+- **Every step in the AI assistant window**, on every peer: "Claude · created 12 objects (Campfire)". Click a line
+  to select those objects; editors can Undo it.
+- A view-only agent is told so instead of building things nobody else sees. llms.txt now says how an agent joins.
+- **It goes where you go**: save as another name or open another scene and the agent follows; while it travels (or
+  while you work in a private scene) it holds its edits, so nothing lands in a scene you left. An agent never
+  becomes the host, never decides a game's rules for the people playing, and never hands you its old world when you
+  open a new or another scene. Its page no longer redraws a view nobody watches, so it follows you in seconds.
+- **When the host leaves**, the agent carries on with the person who takes over. If everyone has left it pauses —
+  reading only, building nothing — and waits for its host (10 minutes by default), then asks to come back in.
+- **The physics runs on your machine**: when an agent starts the simulation it runs on the host's page, so balls
+  fall at their real speed (an agent's page used to step the world slowly for everyone).
+- **Better building tools**: lights take their colour, intensity, range, cone and aim when created or updated;
+  `group_objects` keeps the name you give it; sizes must be positive numbers; a field that does not apply to an
+  object says so instead of reporting success; big flow graphs are read page by page (`list_scene {flow, page}`);
+  `create_behaviour` returns the node's id and its inputs and outputs; a wire to a socket the node does not have
+  is refused with the node's real socket names (it used to be accepted and do nothing).
+- **Code behaviours explain themselves**: `create_behaviour` carries its own format and a working example (some
+  clients drop the app's instructions), and the checker refuses what would silently do nothing — a `this.` member
+  that does not exist (a behaviour drives effect nodes through its outputs; it does not move objects itself) or a
+  per-frame hook such as `onTick` (there is none: repeat with `this.after`).
+- Material parameters are validated (each key and value checked, on every peer).
+- **It knows when a scene is still arriving** and **when a behaviour fails**: status reports a scene that is still
+  loading (from the moment it joins), a tool called meanwhile waits for the scene first, and a code behaviour that
+  throws says so with its error, so the agent can fix it instead of guessing.
+- **Game-kit nodes work for AI**: the agent and the in-app assistant can now create every `kit-*` node (they were
+  all "unknown"), a half-valid node batch says it was only partly applied, and hinges take an exact pivot point.
+
+### 🔗 Invite links (Connect ▸ Request AI)
+
+- One sheet with two tabs, **Person** and **AI agent**: pick **View** or **Edit** (cloud builds; View is the default
+  for people, Edit for agents), how long it lasts (10 min / 30 min / 24 h) and how many may use it. Copy it as a
+  link, a ready MCP command or one sentence for any chat.
+- An invite joins with no approval card. Users lists your active invites, who used each one, and Revoke.
+- AI agents never ride "Allow guests to join automatically" unless you also tick **Let AI agents join as guests**.
+- The invite key lives in the link's `#` part, which browsers never send to servers, and only your app checks it.
+
+### 👥 People menu
+
+- Right-click (or long-press, or Shift+F10) anyone in the Connected panel: **View profile**, **Copy peer id**,
+  **Go to**, **Watch**, **Show what they're editing**, **View character**, **Copy their look**, **Mute voice** and
+  **Hide** (for you only). Also in VR under Tools ▸ People.
+- The host (or an admin on theprototype.app) can **Remove from session** or **Remove and block** — every peer drops
+  them and a re-dial is refused with "You were removed from this session"; **Allow back** in Users undoes the block.
+  A removal sent by anyone else is ignored.
+
 ## 1.47.0 — Game logic in the headset, and a phone in a shared room 🥽
 
 - 🔀 **Edit game logic in VR**: radial ▸ **Tools ▸ Logic** opens the scene's node graph as a panel in the headset, and

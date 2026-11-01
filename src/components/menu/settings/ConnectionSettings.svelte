@@ -4,7 +4,9 @@
 		'session size': ['peers', 'people', 'cap', 'limit', 'bandwidth'],
 		'signaling server': ['peerjs', 'network', 'server', 'self-hosted', 'public cloud', 'local dev'],
 		'custom server': ['host', 'port', 'path', 'wss', 'turn', 'stun', 'relay', 'nat', 'firewall'],
-		'apply changes': ['reconnect', 'reload', 'switch server']
+		'apply changes': ['reconnect', 'reload', 'switch server'],
+		'show where ai agents look': ['ai', 'agent', 'camera', 'marker', 'screenshot'],
+		'let ai agents join as guests': ['ai', 'agent', 'claude', 'mcp', 'bot', 'guests', 'auto', 'admit', 'approval', 'invite']
 	};
 	for (const [row, words] of Object.entries(ROW_WORDS)) registerSettingsKeywords(row, words);
 	registerSettingsKeywords('turn urls', ['relay', 'nat', 'firewall', 'network']);
@@ -27,6 +29,8 @@
 	import { NAV_CONTEXT } from '$lib/settingsNav';
 	import { peers, showToast } from '../../../stores/appStore.js';
 	import { softPeerCap, HARD_PEER_CAP, SOFT_PEER_CAP_DEFAULT } from '$lib/connectionState';
+	import { agentsAsGuests } from '$lib/inviteStore'; // 55 A4
+	import { showAgentMarkers } from '$lib/agentLog'; // 55 A7
 	import { peerServerConfig, HAS_SELF_HOSTED, SELF_HOSTED_HOST, peerServerStatus } from '$lib/peerServer';
 
 	const nav = /** @type {any} */ (getContext(NAV_CONTEXT));
@@ -121,6 +125,14 @@
 						softPeerCap.set(Number.isFinite(n) ? Math.min(HARD_PEER_CAP, Math.max(2, Math.round(n))) : SOFT_PEER_CAP_DEFAULT);
 					}}
 				/>
+			</SettingRow>
+			<!-- 55 A4: an AI agent's dial gets the approval card even where guests join automatically -->
+			<SettingRow id="row-agents-as-guests" label="Let AI agents join as guests" description="Off: an AI agent asks first even when your room lets guests join automatically. An invite link always lets it in.">
+				<Toggle id="agents-as-guests" label="Let AI agents join as guests" checked={$agentsAsGuests} onchange={(on) => agentsAsGuests.set(on)} />
+			</SettingRow>
+			<!-- 55 A7: an agent has no character; this is the one mark of it in the world -->
+			<SettingRow id="row-agent-markers" label="Show where AI agents look" description="A small AI camera marker at the spot an agent's last screenshot was taken from.">
+				<Toggle id="agent-markers" label="Show where AI agents look" checked={$showAgentMarkers} onchange={(on) => showAgentMarkers.set(on)} />
 			</SettingRow>
 		</Section>
 		<Section variant="card" label="Signaling server" badge="This device">

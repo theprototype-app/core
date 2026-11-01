@@ -7,8 +7,10 @@
 // tpsceneOptions() and projectFile read these keys at save time).
 import { writable, get } from 'svelte/store';
 import { safeStorage } from './safeStorage';
+// 56 C13 (addendum 2026-10-28f): "When several libraries are open" — Ask (default) / Save the active one / Save all I can
+import { normalizeSaveMany, SAVE_MANY_KEY } from './sessionVolumeCore';
 
-/** @typedef {{format: string, showGltf: boolean, showJson: boolean, tpAssets: boolean, tpPacks: boolean, tpFlow: boolean, tpProjectVersions: boolean, exportPreset: 'full' | 'quest'}} SaveOptions */
+/** @typedef {{format: string, showGltf: boolean, showJson: boolean, tpAssets: boolean, tpPacks: boolean, tpFlow: boolean, tpProjectVersions: boolean, exportPreset: 'full' | 'quest', saveMany: 'ask' | 'active' | 'all'}} SaveOptions */
 
 /** 46 P3: the export presets a GLTF / .tpscene save (and the Publish / Export bundle) is made with.
  * `exportPreset` is the LAST CHOICE, remembered on this device. */
@@ -54,7 +56,9 @@ export function readSaveOptions() {
 		tpPacks: readBool('tpscenePacks', false),
 		tpFlow: readBool('tpsceneFlow', true),
 		tpProjectVersions: readBool('tpProjectVersions', true),
-		exportPreset: (typeof localStorage !== 'undefined' ? safeStorage.getItem('exportPreset') : null) === 'quest' ? 'quest' : 'full'
+		exportPreset: (typeof localStorage !== 'undefined' ? safeStorage.getItem('exportPreset') : null) === 'quest' ? 'quest' : 'full',
+		// absent (every device before 56) = Ask, the default — no migration step
+		saveMany: normalizeSaveMany(typeof localStorage !== 'undefined' ? safeStorage.getItem(SAVE_MANY_KEY) : null)
 	};
 }
 
@@ -80,6 +84,8 @@ export function setSaveOptions(patch) {
 	safeStorage.setItem('tpProjectVersions', String(next.tpProjectVersions));
 	next.exportPreset = next.exportPreset === 'quest' ? 'quest' : 'full';
 	safeStorage.setItem('exportPreset', next.exportPreset);
+	next.saveMany = normalizeSaveMany(next.saveMany);
+	safeStorage.setItem(SAVE_MANY_KEY, next.saveMany);
 	saveOptions.set(next);
 	return next;
 }

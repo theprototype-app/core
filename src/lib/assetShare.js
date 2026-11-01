@@ -220,9 +220,11 @@ export function requestAsset(hash) {
 	return sent;
 }
 
-/** Receive pushed bytes -> Shared folder (content-hash dedup) @param {any} data */
-export async function applyAssetFile(data) {
+/** Receive pushed bytes -> Shared folder (content-hash dedup) @param {any} data @param {string} [from] */
+export async function applyAssetFile(data, from) {
 	if (!data?.hash || !data?.buffer) return;
+	const pull = volumePulls.get(data.hash);
+	if (pull && from && from !== pull.peer) return; // this pull is from one peer
 	pendingRequests.delete(data.hash);
 	if (itemByHash(data.hash)) return;
 	// binarypack may deliver a typed-array VIEW into a larger buffer — slice
@@ -230,6 +232,8 @@ export async function applyAssetFile(data) {
 	const raw = data.buffer;
 	const buffer =
 		raw instanceof ArrayBuffer ? raw : raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+	// a volume pull gets the file it asked for, as the chunked path already checks
+	if (pull && (buffer.byteLength > pull.max || (await hashBytes(buffer)) !== data.hash)) return refuseVolumePull(data.hash);
 	// R22-R8: the single-shot path still gets a ledger row, so a small file and an older
 	// peer's whole-file answer both appear in the log rather than arriving invisibly
 	// ...and the same on the single-shot path, for the same reason
@@ -242,7 +246,8 @@ export async function applyAssetFile(data) {
 			size: buffer.byteLength
 		});
 	activateTransfer(tx, buffer.byteLength);
-	await landBytes(data.hash, data.name ?? 'shared-asset', buffer);
+	// 56 C13: a session-volume pull hands the bytes to its opener and never lands them here
+	if (!deliverToVolume(data.hash, buffer)) await landBytes(data.hash, data.name ?? 'shared-asset', buffer);
 	finishTransfer(tx);
 	settlePull(data.hash);
 }
@@ -252,12 +257,20 @@ export async function applyAssetFile(data) {
  * peer (the incoming conn a request arrives on can be a stale duplicate from
  * the connect dance — sendAnnotations pattern).
  * @param {string} peerId @param {any} data
+ * @param {{allow?: () => boolean}} [opts] `allow` is asked again before and during the send
  */
-export async function answerAssetRequest(peerId, data) {
+export async function answerAssetRequest(peerId, data, opts = {}) {
 	/** @type {any} */
 	const peer = get(peers);
 	const conn = peer?.connections?.[peerId];
 	if (!conn?.open) return;
+	const wanted = String(data?.hash ?? '');
+	// one send per file per peer: a repeat of a request already being served adds nothing
+	if (runningSends.has(peerId + ' ' + wanted) || sendQueue.some((j) => j.peerId === peerId && j.item?.hash === wanted)) return;
+	if (sendQueue.filter((j) => j.peerId === peerId).length >= QUEUED_PER_PEER) {
+		conn.send({ type: 'assetmissing', hash: wanted });
+		return;
+	}
 	const item = itemByHash(data?.hash);
 	const blob = item ? await itemBlob(item.id) : null;
 	// R22-R8 (round 4): SAY NO. Silence used to be the only answer for a hash we do not
@@ -268,9 +281,11 @@ export async function answerAssetRequest(peerId, data) {
 		conn.send({ type: 'assetmissing', hash: String(data?.hash ?? '') });
 		return;
 	}
+	// asked again while the read above ran
+	if (runningSends.has(peerId + ' ' + wanted) || sendQueue.some((j) => j.peerId === peerId && j.item?.hash === wanted)) return;
 	// ...and QUEUE the send: the cap belongs on outgoing bytes, which is the only
 	// scarce thing here, rather than on the asker's questions
-	sendQueue.push({ conn, item, blob, peerId });
+	sendQueue.push({ conn, item, blob, peerId, allow: opts.allow });
 	pumpSendQueue();
 }
 
@@ -442,6 +457,9 @@ export function forgetSharedThumb(hash) {
 /** slice size. 256 KB is comfortably inside a DataChannel message limit while keeping the
  * slice COUNT low enough that per-slice overhead stays noise (a 20 MB file is 80 sends). */
 export const CHUNK_BYTES = 256 * 1024;
+/** what an announcement may ask a receiver to set up */
+const MAX_CHUNKS = 4096;
+const MAX_INCOMING = 64;
 /** below this, one message is simply cheaper than announcing a transfer */
 const SINGLE_SHOT_BYTES = 192 * 1024;
 /** an incoming transfer with no slice for this long is abandoned */
@@ -454,6 +472,13 @@ const STALL_MS = 20000;
  * as exactly that: three unanswerable pulls and the next file never moved.
  */
 const REQUEST_MS = 6000;
+/**
+ * 56 C13: a session-volume pull is asked of ONE known host that always answers — bytes or
+ * `assetmissing` — and holds no auto-download slot, so the short fuse above (which exists to free
+ * slots from hashes nobody holds) only cut it off when the host was merely busy: measured, a photo
+ * opened behind a big transfer on a loaded machine came back empty. It gets a minute.
+ */
+const VOLUME_REQUEST_MS = 60000;
 /**
  * A hash nobody answered, and when we gave up on it. Without this, auto-download
  * re-queues a dead hash on every single index change — which is a retry loop that never
@@ -493,8 +518,13 @@ const incoming = new Map();
  * @type {Map<string, {tx: string, waiting: Set<string>}>} */
 const pullsInFlight = new Map();
 
-/** outgoing sends waiting for a slot @type {{conn: any, item: any, blob: Blob, peerId: string}[]} */
+/** outgoing sends waiting for a slot @type {{conn: any, item: any, blob: Blob, peerId: string, allow?: () => boolean}[]} */
 let sendQueue = [];
+/** requests one peer may have waiting, and sends it may have running, so one peer cannot take every slot */
+const QUEUED_PER_PEER = 16;
+const RUNNING_PER_PEER = 2;
+/** '<peerId> <hash>' of the running sends @type {Set<string>} */
+const runningSends = new Set();
 /** how many `sendSliced` calls are running right now */
 let sending = 0;
 
@@ -504,8 +534,10 @@ let sending = 0;
 async function pace(conn) {
 	const ch = conn?.dataChannel;
 	if (!ch || typeof ch.bufferedAmount !== 'number') return;
-	for (let i = 0; i < 600 && ch.bufferedAmount > BUFFER_HIGH; i++)
+	for (let i = 0; ch.bufferedAmount > BUFFER_HIGH; i++) {
+		if (i >= 2400) throw new Error('the receiver stopped reading');
 		await new Promise((r) => setTimeout(r, 25));
+	}
 }
 
 /**
@@ -513,9 +545,13 @@ async function pace(conn) {
  * survives for small files: announcing a transfer that completes in one message is pure
  * ceremony, and the receiver's `assetfile` handler already reports it.
  * @param {any} conn @param {any} item @param {Blob} blob @param {string} peerId
+ * @param {() => boolean} [allow]
  */
-async function sendSliced(conn, item, blob, peerId) {
+async function sendSliced(conn, item, blob, peerId, allow) {
 	const size = blob.size;
+	const stopKey = peerId + ' ' + item.hash;
+	stoppedSends.delete(stopKey);
+	runningSends.add(stopKey);
 	const tx = beginTransfer({ hash: item.hash, name: item.name, dir: 'out', size, peer: peerId });
 	try {
 		if (size <= SINGLE_SHOT_BYTES) {
@@ -530,6 +566,11 @@ async function sendSliced(conn, item, blob, peerId) {
 		let sent = 0;
 		for (let seq = 0; seq < chunks; seq++) {
 			if (!conn.open) throw new Error('connection closed');
+			if (stoppedSends.has(stopKey)) throw new Error('cancelled by the receiver');
+			if (allow && !allow()) {
+				conn.send({ type: 'assetmissing', hash: item.hash });
+				throw new Error('no longer shared');
+			}
 			await pace(conn);
 			const slice = blob.slice(seq * CHUNK_BYTES, Math.min(size, (seq + 1) * CHUNK_BYTES));
 			const bytes = await slice.arrayBuffer();
@@ -540,17 +581,42 @@ async function sendSliced(conn, item, blob, peerId) {
 		finishTransfer(tx);
 	} catch (e) {
 		failTransfer(tx, /** @type {any} */ (e)?.message ?? 'send failed');
+	} finally {
+		stoppedSends.delete(stopKey);
+		runningSends.delete(stopKey);
 	}
 }
 
-/** Receive an announcement: open the reassembly buffer and the ledger row. @param {any} data */
-export function applyAssetStart(data) {
+/** 56 C13: '<peerId> <hash>' sends the receiver cancelled — checked between chunks @type {Set<string>} */
+const stoppedSends = new Set();
+
+/**
+ * 56 C13: the receiver CANCELLED a pull (a session-volume guest's Cancel): stop sending it that file —
+ * drop a queued send and end a running one at the next chunk, so a cancelled 18 MB pull does not keep
+ * filling a phone's link (and queueing everything after it) for nothing.
+ * @param {string} peerId @param {string} hash @returns {boolean} something was stopped
+ */
+export function stopSendingTo(peerId, hash) {
+	const h = String(hash ?? '');
+	const before = sendQueue.length;
+	sendQueue = sendQueue.filter((j) => !(j.peerId === peerId && j.item?.hash === h));
+	const running = get(transfers).some((t) => t.dir === 'out' && t.hash === h && t.peer === peerId && (t.state === 'active' || t.state === 'queued'));
+	if (running) stoppedSends.add(peerId + ' ' + h);
+	return running || sendQueue.length !== before;
+}
+
+/** Receive an announcement: open the reassembly buffer and the ledger row. @param {any} data @param {string} [from] */
+export function applyAssetStart(data, from) {
 	const hash = String(data?.hash ?? '').trim();
 	const chunks = Number(data?.chunks) || 0;
 	const size = Number(data?.size) || 0;
-	if (!hash || chunks <= 0 || size <= 0) return;
-	if (itemByHash(hash)) return; // already here; the sender is behind, not wrong
+	if (!hash || !Number.isInteger(chunks) || chunks <= 0 || chunks > MAX_CHUNKS || size <= 0) return;
+	const pull = volumePulls.get(hash);
+	if (pull && from && from !== pull.peer) return; // this pull is from one peer
+	if (itemByHash(hash) && !pull) return; // already here; the sender is behind, not wrong
 	if (size > MAX_SHARED_BYTES) return;
+	if (pull && size > pull.max) return refuseVolumePull(hash);
+	if (!incoming.has(hash) && incoming.size >= MAX_INCOMING) return;
 	const name = String(data?.name ?? 'shared-asset');
 	const held = incoming.get(hash);
 	if (held) {
@@ -589,6 +655,13 @@ export async function applyAssetChunk(data) {
 	// reassembled hash will not be the hash we asked for (the documented assetShare rule)
 	const view =
 		raw instanceof ArrayBuffer ? new Uint8Array(raw) : new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
+	// a transfer never carries more than it announced
+	if (view.byteLength > 4 * CHUNK_BYTES || state.bytes + view.byteLength > state.size) {
+		incoming.delete(hash);
+		failTransfer(state.tx, 'more bytes than announced');
+		settlePull(hash);
+		return;
+	}
 	state.parts[seq] = view;
 	state.have++;
 	state.bytes += view.byteLength;
@@ -620,7 +693,7 @@ export async function applyAssetChunk(data) {
 		next.delete(hash);
 		return next;
 	});
-	await landBytes(hash, state.name, whole.buffer);
+	if (!deliverToVolume(hash, whole.buffer)) await landBytes(hash, state.name, whole.buffer);
 	finishTransfer(state.tx);
 	settlePull(hash);
 }
@@ -640,7 +713,7 @@ export function sweepStalledTransfers() {
 		const row = get(transfers).find((t) => t.id === tx);
 		// 'queued' means the request went out and not one byte came back, so REQUEST_MS
 		// applies; a row that reached 'active' is mid-transfer and gets the stall window
-		if (row && row.state === 'queued' && now - row.at > REQUEST_MS) {
+		if (row && row.state === 'queued' && now - row.at > (volumeSinks.has(hash) ? VOLUME_REQUEST_MS : REQUEST_MS)) {
 			failTransfer(tx, 'nobody answered');
 			pendingRequests.delete(hash);
 			deadHashes.set(hash, now);
@@ -655,6 +728,13 @@ export function sweepStalledTransfers() {
 function settlePull(hash) {
 	const state = pullsInFlight.get(hash);
 	pullsInFlight.delete(hash);
+	// 56 C13: a volume pull that ended any other way (missing, stalled, cancelled) ends with nothing
+	volumePulls.delete(hash);
+	const sink = volumeSinks.get(hash);
+	if (sink) {
+		volumeSinks.delete(hash);
+		sink(null);
+	}
 	// belt and braces: if the row somehow survived (a path that stored the bytes without
 	// going through finishTransfer), close it here rather than leaving the summary
 	// permanently one file short of done
@@ -751,10 +831,19 @@ export function retryUnavailable() {
 
 /** Run queued sends up to the cap. @returns {void} */
 function pumpSendQueue() {
-	while (sending < SEND_CONCURRENCY && sendQueue.length) {
-		const job = /** @type {any} */ (sendQueue.shift());
+	while (sending < SEND_CONCURRENCY) {
+		const running = (/** @type {string} */ peerId) => [...runningSends].filter((k) => k.startsWith(peerId + ' ')).length;
+		const at = sendQueue.findIndex((j) => running(j.peerId) < RUNNING_PER_PEER);
+		if (at < 0) return;
+		const job = sendQueue.splice(at, 1)[0];
+		if (job.allow && !job.allow()) {
+			try {
+				job.conn.send({ type: 'assetmissing', hash: job.item.hash });
+			} catch {}
+			continue;
+		}
 		sending++;
-		void sendSliced(job.conn, job.item, job.blob, job.peerId).finally(() => {
+		void sendSliced(job.conn, job.item, job.blob, job.peerId, job.allow).finally(() => {
 			sending--;
 			pumpSendQueue();
 		});
@@ -852,4 +941,76 @@ export function cancelPull(hash) {
 /** How many pulls are outstanding — the popover's "files left". */
 export function pullBacklog() {
 	return pullsInFlight.size;
+}
+
+// ---- 56 C13: SESSION-VOLUME PULLS -------------------------------------------------
+//
+// A guest browsing "<HOST>'s session" pulls bytes by hash ONLY when it opens or copies a file, and
+// only from the host — and those bytes must NOT land in its Library on their own (the volume is
+// read-only and the guest's Library stays byte-identical until it chooses Copy). So a volume pull is
+// the ordinary transfer (same slices, ledger row, integrity check, Cancel) with one difference at
+// the end: the reassembled buffer goes to the waiting caller instead of `landBytes`. The request is
+// `volget`, not `getasset`, so the host can answer it against the projection it sent this peer
+// (sessionVolumes.js) — a hash outside the share scope gets `assetmissing`.
+
+/** hash -> the waiting caller of a volume pull @type {Map<string, (buf: ArrayBuffer | null) => void>} */
+const volumeSinks = new Map();
+/** hash -> who a volume pull is from, and the most it may be @type {Map<string, {peer: string, max: number}>} */
+const volumePulls = new Map();
+
+/** End a volume pull whose answer is not the file. @param {string} hash */
+function refuseVolumePull(hash) {
+	const tx = pullsInFlight.get(hash)?.tx;
+	if (tx) failTransfer(tx, 'not the file that was listed');
+	settlePull(hash);
+}
+
+/** @param {string} hash @param {ArrayBuffer} buffer @returns {boolean} delivered */
+function deliverToVolume(hash, buffer) {
+	const sink = volumeSinks.get(hash);
+	if (!sink) return false;
+	volumeSinks.delete(hash);
+	volumePulls.delete(hash);
+	sink(buffer);
+	// a library pull of the same hash racing this one still lands (it was asked for separately)
+	return !pendingRequests.has(hash);
+}
+
+/**
+ * Pull one file's bytes from ONE peer for a session volume. Resolves the bytes, or null (refused,
+ * gone, stalled, cancelled). Held bytes are answered from this machine with no transfer at all.
+ * @param {string} peerId @param {string} hash @param {{name?: string, size?: number}} [meta]
+ * @returns {Promise<ArrayBuffer | null>}
+ */
+export async function pullVolumeBytes(peerId, hash, meta = {}) {
+	const h = String(hash ?? '').trim();
+	if (!h) return null;
+	const held = itemByHash(h);
+	if (held) {
+		const blob = await itemBlob(held.id);
+		if (blob) return blob.arrayBuffer();
+	}
+	if (volumeSinks.has(h)) return null; // one pull per hash at a time; the first caller has it
+	/** @type {any} */
+	const peer = get(peers);
+	const conn = peer?.connections?.[peerId];
+	if (!conn?.open) return null;
+	const tx = beginTransfer({ hash: h, name: String(meta.name ?? h), dir: 'in', size: Number(meta.size) || 0, peer: peerId });
+	pullsInFlight.set(h, { tx, waiting: new Set([String(peerId)]) });
+	deadHashes.delete(h);
+	return new Promise((resolve) => {
+		volumeSinks.set(h, resolve);
+		volumePulls.set(h, { peer: String(peerId), max: Math.min(MAX_SHARED_BYTES, Number(meta.size) || MAX_SHARED_BYTES) });
+		try {
+			conn.send({ type: 'volget', hash: h });
+		} catch {
+			failTransfer(tx, 'send failed');
+			settlePull(h);
+		}
+	});
+}
+
+/** Is a volume pull of this hash running? @param {string} hash */
+export function volumePullRunning(hash) {
+	return volumeSinks.has(String(hash ?? ''));
 }

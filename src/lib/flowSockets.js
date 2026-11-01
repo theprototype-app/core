@@ -59,6 +59,7 @@ const OUTPUT = {
 	onenter: 'event', onexit: 'event', // CL-C: sensor overlap edges
 	animfinished: 'event', // 17-E: a clip reached its end
 	animmarker: 'event', // 17-E F5: the playhead crossed a named point in a clip
+	onanimstate: 'event', // 57 M11: an Animation states machine entered a state
 	onseqevent: 'event', // 48 S2: a running sequence crossed an event item (or ended)
 	animstate: 'number', // 17-E F3: progress / playing / position, one at a time
 	velocity: 'number', // CL-C: live speed readout
@@ -182,7 +183,11 @@ const INPUT = {
 	once: { trigger: 'event', rearm: 'event' },
 	// 17-E A5: the trigger that starts/stops an authored clip, plus a wired speed
 	playanim: { trigger: 'event', speed: 'number' },
+	blendspeed: { speed: 'number' }, // 57 M3
+	setanimparam: { trigger: 'event', value: 'number' }, // 57 M11
+	attachsocket: { trigger: 'event', item: 'object' }, // 57 M12
 	playseq: { trigger: 'event' }, // 48 S2
+	setexpression: { trigger: 'event', weight: 'number' }, // 57 M4: a VRM's face
 	// PFX-B: drive emission from flow — density, tint, spawn offset, motion, and
 	// a burst fired from any event (On Click / Key Press / On Impact)
 	particle: { count: 'number', color: 'color', offset: 'vector3', speed: 'number', gravity: 'number', size: 'number', trigger: 'event' },

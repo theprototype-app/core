@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
-import { showToast, settingsOpen, settingsSection } from '../../stores/appStore.js';
-import { activeAiConfig, aiReady } from './providers.js';
+import { showToast } from '../../stores/appStore.js';
+import { activeAiConfig } from './providers.js';
+import { explainMissing } from '../tools/toolLinks.js';
 import { runChat, describeAiError } from './client.js';
 import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall } from './tools.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
@@ -159,12 +160,7 @@ export async function runPrompt(text) {
 	if (!trimmed) return;
 	if (get(aiBusy)) return;
 
-	if (!aiReady()) {
-		showToast('Configure an AI provider in Settings to use the assistant');
-		settingsSection.set('ai');
-		settingsOpen.set(true);
-		return;
-	}
+	if (explainMissing('assistant')) return; // 59 T5
 	const config = activeAiConfig();
 	if (!config) return;
 

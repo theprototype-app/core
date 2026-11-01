@@ -4,6 +4,8 @@ import { peers, meshGenModalOpen, showSidebar, inspectorClose } from '../stores/
 import { sceneCommand } from './commandsHandler.svelte';
 import { primitivesCatalog } from './primitivesCatalog';
 import { meshGenReady } from './ai/meshProviders';
+import { featureStatus } from './tools/toolStatus.js';
+import { explainMissing } from './tools/toolLinks.js'; // 59 T5
 import { addParticlesPreset } from './particleActions';
 import { PARTICLE_PRESETS } from './particlePresets';
 import { ARCH_TYPES, snapToMetre } from './arch/archGeometry.js';
@@ -168,15 +170,18 @@ export function buildAddChildren(pointOf) {
 				}
 			]
 		},
-		// Generate a custom mesh from a prompt (roadmap #11) — only when configured
-		...(meshGenReady()
-			? [
-					{
-						label: '✨ Generate 3D model…',
-						tooltip: 'Create a custom mesh from a text prompt',
-						action: () => meshGenModalOpen.set({ position: pointOf() })
-					}
-			  ]
-			: [])
+		// Generate a custom mesh from a prompt (roadmap #11). 59 T5: ALWAYS listed — with no Mesh
+		// provider the row says what is missing and opens its row in Tools & connections
+		meshGenReady()
+			? {
+					label: '✨ Generate 3D model…',
+					tooltip: 'Create a custom mesh from a text prompt',
+					action: () => meshGenModalOpen.set({ position: pointOf() })
+				}
+			: {
+					label: '✨ Generate 3D model… (set up)',
+					tooltip: featureStatus('generateMesh').message,
+					action: () => explainMissing('generateMesh')
+				}
 	];
 }

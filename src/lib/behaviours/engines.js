@@ -109,7 +109,7 @@ export function enginesKey() {
 /**
  * The faces of every engine piece for ONE behaviour: `{golf: {hit, ballSpeed, onStopped(fn)}}`.
  * `ctx.onDispose(off)` journals each listener (the behaviour's T2 tracking).
- * @param {{onDispose?: (fn: () => void) => any, moduleId?: string}} [ctx]
+ * @param {{onDispose?: (fn: () => void, info?: {owned?: boolean}) => any, moduleId?: string}} [ctx]
  */
 export function engineFaces(ctx) {
 	/** @type {Record<string, any>} */

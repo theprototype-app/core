@@ -20,7 +20,8 @@ async function firstVisitPage(browser, seed) {
 	const page = await ctx.newPage();
 	page.on('pageerror', (err) => console.log('[pageerror] ' + err.stack));
 	await page.goto(h.URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-	await page.waitForFunction(() => window.__stores && !!window.__stores.whatsNew, null, { timeout: 90000 });
+	// the suite's 4th page boots slowly on a loaded box (options are waitForFunction's THIRD argument)
+	await page.waitForFunction(() => window.__stores && !!window.__stores.whatsNew, null, { timeout: 150000 });
 	await page.waitForTimeout(600);
 	return { ctx, page };
 }

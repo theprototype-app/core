@@ -51,7 +51,9 @@
 	function saveNow() {
 		const opts = setSaveOptions(draft);
 		saveOptionsOpen.set(false);
-		save(opts.format);
+		// 56 C13: a Project save with several libraries open asks which (Settings ▸ Save options)
+		if (opts.format === 'tp') void import('$lib/saveProject').then((m) => m.saveProjectPressed('burger', () => save(opts.format)));
+		else save(opts.format);
 	}
 </script>
 

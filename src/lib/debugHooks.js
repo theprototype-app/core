@@ -21,6 +21,8 @@ export const DEBUG_HOOKS = [
 	['*', () => import('../stores/flowStore')],
 	// 34 R2: the game kit (kit, kitDebug, kitAuthorityId)
 	['kit', () => import('./kit/runtime.js')],
+	// 55: the pure authority pick, so a suite can re-run it on a page's live facts
+	['kitAuthority', () => import('./kit/authority.js')],
 	// 34 R2 (kit-entities): entities drawn / world / api (kitEntitiesDebug, kitEntitiesApi, entityOfObject)
 	['kitEntities', () => import('./kit/entityApp.js')],
 	// 34 R3 (D1/D2): behaviours (runtime, behaviourStatus, behavioursDebug)
@@ -69,6 +71,10 @@ export const DEBUG_HOOKS = [
 	['avatars', () => import('./avatars/avatarState.js')],
 	['avatarAssets', () => import('./avatars/assets.js')],
 	['avatarCatalog', () => import('./avatars/catalog.js')],
+	// 57: characters — humanoid maps + applied clips, provenance / licence flags, the dialogs' open state
+	['humanoidRig', () => import('./humanoid/humanoidRig.js')],
+	['provenance', () => import('./provenance.js')],
+	['characterUi', () => import('./characterUi.js')],
 	// 41 G9: the customise panel's presets / Custom / Surprise me (lookSignature for the e2e)
 	['characterLooks', () => import('./avatars/characterLooks.js')],
 	['perfLiveSource', () => import('./perf/liveSource')],
@@ -143,8 +149,19 @@ export const DEBUG_HOOKS = [
 	['hdriStores', () => import('./hdri/skyEnv.js')],
 	['hdriCore', () => import('./hdri/hdriCore.js')],
 	['hdriPrefs', () => import('./hdri/hdriPrefs.js')],
+	['hdriSky', () => import('./hdri/skyFetch.js')],
 	['sceneMusic', () => import('./sceneMusic')],
 	['animatedImports', () => import('./animatedImports')],
+	// 57 M1: .tpanim clip assets (format, binder, humanoid map)
+	['tpanim', () => import('./tpanim/format.js')],
+	['clipAssets', () => import('./tpanim/clipAssets.js')],
+	['motionKit', () => import('./tpanim/motionKit.js')],
+	['humanoidMap', () => import('./tpanim/humanoidMap.js')],
+	// 57 M3/M8/M11: clip edits + ops, the Animation states graph + runtime
+	['clipEdit', () => import('./tpanim/clipEdit.js')],
+	['clipOps', () => import('./tpanim/clipOps.js')],
+	['animGraph', () => import('./tpanim/animGraph.js')],
+	['animGraphRuntime', () => import('./tpanim/animGraphRuntime.js')],
 	['fileHandler', () => import('./fileHandler.svelte')],
 	['fileWindows', () => import('./fileWindows')],
 	['imageEditor', () => import('./image/imageEditor')],
@@ -244,6 +261,8 @@ export const DEBUG_HOOKS = [
 	['aiTools', () => import('./ai/tools')],
 	['aiAssistant', () => import('./ai/assistant')],
 	['meshProviders', () => import('./ai/meshProviders')],
+	['toolStatus', () => import('./tools/toolStatus.js')],
+	['toolLinks', () => import('./tools/toolLinks.js')],
 	['meshJobs', () => import('./ai/meshJobs')],
 	['flowGraphsCtl', () => import('./flowGraphs')],
 	// 37 (R6): socket add/remove + the switcher type
@@ -256,6 +275,16 @@ export const DEBUG_HOOKS = [
 	['cloudPlugin', () => import('./cloudPlugin')],
 	['connectionState', () => import('./connectionState')],
 	['peerApproval', () => import('./peerApproval')],
+	['inviteStore', () => import('./inviteStore')],
+	['agentLog', () => import('./agentLog')],
+	// 56 C1: the agent chat window; `tpchatStore` = the same module as `tpchats` below (56-chat's suites read it by this name)
+	['agentChat', () => import('./agentChat')],
+	['tpchatStore', () => import('./chat/tpchatStore.js')],
+	// 86: the Claude connector's UI state (a leaf — the connector itself stays a lazy chunk)
+	['connectorStore', () => import('./connector/connectorStore.js')],
+	['peerModeration', () => import('./peerModeration')],
+	['peerHide', () => import('./peerHide')],
+	['peerFacts', () => import('./peerFacts')],
 	['particleRuntime', () => import('./particleRuntime')],
 	['particleActions', () => import('./particleActions')],
 	['particlePresets', () => import('./particlePresets')],
@@ -346,6 +375,20 @@ export const DEBUG_HOOKS = [
 	['hudSync', () => import('./hudSync')],
 	// 48 S1/S2: the Timeline — data, sync, player
 	['sequences', () => import('./sequences')],
+	// 56 C10: the scene's chats (.tpchat store + format)
+	['tpchats', () => import('./chat/tpchatStore.js')],
+	['tpchatCore', () => import('./chat/tpchatCore.js')],
+	// 56 C8: the composer's picture pipeline (prepareImage, lastPrepare, composerPending) + its pure half
+	['chatAttach', () => import('./chat/attachments.js')],
+	['chatAttachCore', () => import('./chat/attachCore.js')],
+	// 56 C9: the import_model tool (importModelTool, inspectGlb)
+	['importModel', () => import('./ai/importModel.js')],
+	// 66 S4b: the import_file tool + its pure half + the scene cards
+	['importFile', () => import('./ai/importFile.js')],
+	['importFileCore', () => import('./ai/importFileCore.js')],
+	['imageCards', () => import('./ai/imageCards.js')],
+	// 56: fflate for the suites that look INSIDE an exported .tpscene / .tp (the app's own copy)
+	['fflate', () => import('fflate')],
 	['sequenceSync', () => import('./sequenceSync')],
 	['sequencePlayer', () => import('./sequencePlayer')],
 	['idb', () => import('./idb')],
@@ -393,6 +436,9 @@ export const DEBUG_HOOKS = [
 	['colocationAnchors', () => import('./colocationAnchors')],
 	['colocationNudge', () => import('./colocationNudge')],
 	['mountedVolumes', () => import('./mountedVolumes')],
+	// 56 C13: the session volume (sessionVolumes) and the host-side save (hostSave, C12 wraps it)
+	['sessionVolumes', () => import('./sessionVolumes')],
+	['hostSave', () => import('./hostSave')],
 	['storageUsage', () => import('./storageUsage')],
 	['scenePrivacy', () => import('./scenePrivacy')],
 	['touchControls', () => import('./touchControls')],
@@ -451,6 +497,13 @@ export const DEBUG_HOOKS = [
 	['loadStates', () => import('./loadStates')],
 	['placeholders', () => import('./placeholders')],
 	['replaceModel', () => import('./replaceModel')],
+	// 59 T1/T2/T7: Replace from file, Edit in Blender, the drop router, the file watch
+	['modelReplace', () => import('./modelReplace')],
+	['editInBlender', () => import('./editInBlender')],
+	['modelDrop', () => import('./modelDrop')],
+	['modelWatch', () => import('./modelWatch')],
+	['glbEdit', () => import('./glbEdit')],
+	['modelClips', () => import('./modelClips')],
 	['lod', () => import('./lod')],
 	['gltfOptimize', () => import('./gltfOptimize.js')],
 	['gltfLoader', () => import('./gltfLoader.js')],

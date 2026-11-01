@@ -730,6 +730,11 @@ export function ghostBase(uuid, object) {
 	};
 }
 
+/** mcp-fix: the pose under a clip, while one holds this object (list_scene's read) @param {string} uuid */
+export function authoredBaseOf(uuid) {
+	return bases.get(uuid) ?? null;
+}
+
 /** @param {string} uuid */
 function releaseBase(uuid) {
 	const base = bases.get(uuid);

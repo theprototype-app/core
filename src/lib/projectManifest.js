@@ -37,7 +37,7 @@ import {
 } from './sceneRename';
 import { sessionNow } from './sessionClock'; // 25-E: stamps another peer compares
 import { peers, showToast, explorerClose, revealExplorerItem } from '../stores/appStore';
-import { bottomDockActive } from './bottomDock';
+import { bottomDockActive, dockMinimized } from './bottomDock';
 import { showChoice } from './confirmDialog';
 import { sessionHost } from './connectionState';
 import { isViewer } from './objectPermissions';
@@ -1405,6 +1405,7 @@ function surfaceMerge(clashes, pointerMoves, details) {
 			// to the newest version it holds when this machine has no copy of that one.
 			explorerClose.set(false);
 			bottomDockActive.set('explorer');
+			dockMinimized.set(false); // 56 C17: a minimized dock showed nothing at all
 			revealExplorerItem(name, details?.[name]?.tip ?? '');
 		});
 	}

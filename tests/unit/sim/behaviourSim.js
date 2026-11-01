@@ -36,7 +36,7 @@ export function createBehaviourSim(opts = {}) {
 	/** @param {any} p @param {any} sim */
 	const attach = (p, sim) => {
 		const isAuthority = () =>
-			pickAuthority({ me: p.id, peers: [...p.connected], host: sim.host, initiator: sim.initiator }) === p.id;
+			pickAuthority({ me: p.id, peers: [...p.connected], host: sim.host, initiator: sim.initiator, incumbent: p.kit?.doc()?.by }) === p.id;
 		/** per behaviour id: its kit face + teardown list, kept across source edits (the app keeps
 		 * ONE module per behaviour; an edit swaps the definition, unloading is removal) */
 		/** @type {Map<string, {face: any, list: (() => void)[]}>} */
@@ -115,6 +115,6 @@ export function createBehaviourSim(opts = {}) {
 	};
 	/** every peer's view of a behaviour's state */
 	sim.states = (/** @type {string} */ id) => [...sim.peers.values()].map((p) => JSON.stringify(p.bhv.live(id)?.state ?? null));
-	sim.authorityPeer = () => [...sim.peers.values()].find((p) => pickAuthority({ me: p.id, peers: [...p.connected], host: sim.host, initiator: sim.initiator }) === p.id);
+	sim.authorityPeer = () => [...sim.peers.values()].find((p) => pickAuthority({ me: p.id, peers: [...p.connected], host: sim.host, initiator: sim.initiator, incumbent: p.kit?.doc()?.by }) === p.id);
 	return sim;
 }

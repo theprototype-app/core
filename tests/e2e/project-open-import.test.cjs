@@ -256,8 +256,8 @@ h.run(async () => {
 		'the manifest is INSTALLED by open (Arena)'
 	);
 	h.check(
-		(await currentLevelOf(B)) === null,
-		'currentLevel is FORGOTTEN — the scene on screen belongs to the old project, and a kept name would let travel-away publish old content into the new history'
+		(await currentLevelOf(B))?.name === 'Arena',
+		'56 C16: the open travels back to the scene the file remembers (Arena), never keeping OldWorld — a kept name would let travel-away publish old content into the new history (no remembered scene: save-open-fixes)'
 	);
 
 	// =====================================================================

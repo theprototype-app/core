@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { graphOf, graphExists, SCENE_GRAPH } from '../../stores/flowStore';
+import { graphOf, graphExists, SCENE_GRAPH, findNodeAnyGraph } from '../../stores/flowStore';
 import { objectsGroup, lockedObjects } from '../../stores/sceneStore.js';
 import { peers } from '../../stores/appStore.js';
 import {
@@ -14,18 +14,28 @@ import { createObjectGraph, recordFlowNodesEntry } from '$lib/flowGraphs';
 import { nodeCatalog, findNodeSpec } from '$lib/nodeCatalog';
 import {
 	setPhysicsFor,
+	jointBodyProblem,
+	unbuiltJointIds,
 	toggleSimulation,
 	stopSimulation,
 	pauseSimulation,
 	resetSimulation,
 	simulating,
-	remoteSimulating
+	remoteSimulating,
+	simulationGaps
 } from '$lib/physics';
 import { createJoint } from '$lib/joints';
+import { scriptNodeWarnings } from './scriptNotes.js';
 import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X5
 import { parseGraphText } from '$lib/graphText';
 import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
+import { edgeHandleProblems, knownInputs, knownMapOutputs } from './edgeHandles.js';
+import { lockSkip } from './lockNote.js';
 import { activeAiConfig } from './providers.js';
+import { matchNodeType } from './nodeTypeMatch.js';
+import { describeNodeTypes, paramsOf } from './nodeTypesCore.js';
+import { nodeDoc } from '$lib/nodeDocs';
+import { inputType, outputType, outputHandleType } from '$lib/flowSockets';
 
 // AI flow + physics executors (assistant v3). The behavior counterpart to
 // tools.js: create/update flow nodes (the @xyflow editor graphs driving
@@ -37,7 +47,15 @@ import { activeAiConfig } from './providers.js';
 /** Physics is hard for small local models — a per-provider opt-in checkbox
  * (Settings → AI) gates these tools. @returns {boolean} */
 export function physicsToolsEnabled() {
-	return !!activeAiConfig()?.physicsTools;
+	return physicsForced || !!activeAiConfig()?.physicsTools;
+}
+
+/** 55 A6: an AGENT page always offers the physics tools — the checkbox exists for small LOCAL models,
+ * and an external agent is not one (test flight T9). Set by tpAgent only. */
+let physicsForced = false;
+/** @param {boolean} on */
+export function forcePhysicsTools(on) {
+	physicsForced = !!on;
 }
 
 /** Node types only usable when physics tools are on — the sim-driving set
@@ -102,9 +120,10 @@ const NODE_TYPE_ALIASES = /** @type {Record<string, string>} */ ({
 	// than for anything else in the palette ("wait 3 seconds", "remember that it was
 	// collected"), so the near-misses are worth mapping home.
 	//
-	// Note the KEY SHAPE: normalizeNodeType flattens whitespace/underscores/hyphens
-	// out of the model's word before the lookup, so only FLATTENED keys can ever
-	// match (the `play_animation` style entries above are dead weight, kept as-is).
+	// Note the KEY SHAPE: after the exact and case-only catalog matches, normalizeNodeType
+	// flattens whitespace/underscores/hyphens out of the model's word before the alias
+	// lookup, so only FLATTENED keys can ever match (the `play_animation` style entries
+	// above are dead weight, kept as-is).
 	// And nothing here may shadow a real catalog type, which wins on the line before:
 	// `toggle` (the Input node), `timer` (the delay LINE) and `switcher` are
 	// deliberately absent for that reason - a model saying "toggle" means the input.
@@ -162,14 +181,9 @@ export function aiNodeVocabulary(physics) {
 		.filter((g) => g.types.length);
 }
 
-/** @param {any} raw @returns {string|null} a real catalog type or null */
+/** @param {any} raw @returns {string|null} a real catalog type or null (exact first — kit-* types keep their case and hyphens) */
 function normalizeNodeType(raw) {
-	const flat = String(raw ?? '')
-		.trim()
-		.toLowerCase()
-		.replace(/[\s_-]+/g, '');
-	if (ALL_CATALOG_TYPES.includes(flat)) return flat;
-	return NODE_TYPE_ALIASES[flat] ?? null;
+	return matchNodeType(raw, ALL_CATALOG_TYPES, NODE_TYPE_ALIASES);
 }
 
 /** A fresh uuid (crypto — same helper shape as tools.js). @returns {string} */
@@ -259,7 +273,36 @@ function buildNodeData(type, spec, raw, errors) {
 		if (key in (spec?.defaults ?? {})) data[key] = value;
 		// unknown keys are dropped silently — defaults render fine without them
 	}
+	// mcp-fix: an assistant that asks for world space means world axes (a person's own nodes default to "with the object")
+	if (type === 'particle' && raw.space === 'world' && raw.aim === undefined) data.aim = 'world';
 	return data;
+}
+
+/**
+ * 86 T1 (= 85 R9): `describe_node_types` — the sockets, params and one-line doc of the node types this
+ * assistant may place, from the same tables the editor and D24's edge check read (nodeTypesCore.js).
+ * @param {any} args @param {{physics?: boolean}} [opts] `physics` forces the physics family in (86-fix B1)
+ */
+export function describeNodeTypesTool(args, opts) {
+	return describeNodeTypes(args, {
+		vocabulary: aiNodeVocabulary(!!opts?.physics || physicsToolsEnabled()),
+		spec: (t) => findNodeSpec(t),
+		doc: (t) => nodeDoc(t),
+		// D24's own lists (edgeHandles.js), so what this tool says is exactly what an edge is checked against;
+		// params are listed separately (a wire into a param key drives it)
+		inputs: (t) => {
+			const spec = /** @type {any} */ (findNodeSpec(t));
+			const params = new Set(paramsOf(spec).map((p) => p.key));
+			const names = (knownInputs({ type: t, data: { ...(spec?.defaults ?? {}) } }) ?? []).filter((n) => !params.has(n));
+			return names.map((name) => ({ name, type: inputType(t, name) }));
+		},
+		output: (t) => outputType(t),
+		namedOutputs: (t) => {
+			const spec = /** @type {any} */ (findNodeSpec(t));
+			return (knownMapOutputs({ type: t, data: { ...(spec?.defaults ?? {}) } }) ?? []).map((name) => ({ name, type: outputHandleType(t, name) }));
+		},
+		match: (raw) => normalizeNodeType(raw)
+	});
 }
 
 /**
@@ -267,9 +310,10 @@ function buildNodeData(type, spec, raw, errors) {
  * Local `ref` keys let edges point at freshly created nodes. Records ONE
  * 'flownodes' history entry for the whole call.
  * @param {any} args {graph, nodes: [{ref?, type, data?}], edges?: [{from, to, fromHandle?, toHandle?}]}
+ * @param {{physics?: boolean}} [opts] `physics` allows the physics node family whatever the checkbox (86-fix B1)
  * @returns {any}
  */
-export function createFlowNodesTool(args) {
+export function createFlowNodesTool(args, opts) {
 	const graphId = resolveGraph(args?.graph);
 	if (graphId === null)
 		return { error: 'unknown graph "' + args?.graph + '" — pass "scene" or an existing object uuid' };
@@ -282,7 +326,7 @@ export function createFlowNodesTool(args) {
 	if (!specs.length && !textEdges.length)
 		return { error: 'no nodes provided — pass text: \'id = type {params}\' lines, or nodes: [{ type, data? }] (one graph per call)' };
 
-	const physics = physicsToolsEnabled();
+	const physics = !!opts?.physics || physicsToolsEnabled();
 	const allowed = aiNodeTypes(physics);
 	/** @type {any} */
 	const peer = get(peers);
@@ -305,7 +349,7 @@ export function createFlowNodesTool(args) {
 		if (!allowed.includes(type)) {
 			errors.push(
 				PHYSICS_NODE_TYPES.includes(type)
-					? 'node "' + type + '" needs Physics tools enabled (Settings -> AI)'
+					? 'node "' + type + '" needs Physics tools enabled (Settings ▸ Tools & connections ▸ the chat provider)'
 					: 'node type "' + type + '" cannot be created by the assistant'
 			);
 			continue;
@@ -330,16 +374,33 @@ export function createFlowNodesTool(args) {
 	/** @type {any[]} */ const createdEdges = [];
 	const edgeSpecs = [...(Array.isArray(args?.edges) ? args.edges : []), ...textEdges];
 	if (edgeSpecs.length) {
-		const inGraph = new Set((graphOf(graphId)?.nodes ?? []).map((/** @type {any} */ n) => n.id));
+		const graphNodes = graphOf(graphId)?.nodes ?? [];
+		const inGraph = new Set(graphNodes.map((/** @type {any} */ n) => n.id));
 		for (const e of edgeSpecs) {
 			const source = refIds[e?.from] ?? (inGraph.has(e?.from) ? e.from : null);
 			const target = refIds[e?.to] ?? (inGraph.has(e?.to) ? e.to : null);
 			if (!source || !target) {
-				errors.push('edge "' + e?.from + '" -> "' + e?.to + '": unknown node ref/id');
+				// 55 (41's research): an id that lives in ANOTHER graph is not unknown — say what to do instead
+				const elsewhere = [e?.from, e?.to].some((id) => typeof id === 'string' && !refIds[id] && !inGraph.has(id) && !!findNodeAnyGraph((/** @type {any} */ n) => n.id === id));
+				errors.push(
+					'edge "' + e?.from + '" -> "' + e?.to + '": ' +
+						(elsewhere ? 'edges must stay in one graph; put the source in scene with an Object Selector' : 'unknown node ref/id')
+				);
 				continue;
 			}
 			const sourceHandle = typeof e?.fromHandle === 'string' && e.fromHandle ? e.fromHandle : undefined;
 			const targetHandle = typeof e?.toHandle === 'string' && e.toHandle ? e.toHandle : undefined;
+			// 55 (41's voice-Claude finding): a handle the node does not have made a wire that did nothing
+			const bad = edgeHandleProblems(
+				graphNodes.find((/** @type {any} */ n) => n.id === source),
+				graphNodes.find((/** @type {any} */ n) => n.id === target),
+				sourceHandle,
+				targetHandle
+			);
+			if (bad.length) {
+				errors.push('edge "' + e?.from + '" -> "' + e?.to + '": ' + bad.join('; '));
+				continue;
+			}
 			// id format MUST match the editor's (peer dedupe diverges otherwise)
 			const edge = {
 				id:
@@ -361,11 +422,36 @@ export function createFlowNodesTool(args) {
 		recordFlowNodesEntry({ op: 'create', graphId, nodes: createdNodes, edges: createdEdges });
 	if (!createdNodes.length && !createdEdges.length)
 		return { error: 'nothing was created: ' + (errors[0] ?? 'no valid nodes'), errors };
+	// 55 owner finding 3: a half-done call says so at the top level — `partial` + a one-line
+	// `warning` — not only deep in errors[] (a top-level `error` would read as "nothing happened"
+	// and invite a retry that duplicates what WAS created)
+	const failedNodes = specs.length - createdNodes.length;
+	const failedEdges = edgeSpecs.length - createdEdges.length;
+	// mcp-fix: a script that cannot do what it says must not look like it worked
+	const scriptNotes = createdNodes
+		.filter((/** @type {any} */ n) => n.type === 'script')
+		.flatMap((/** @type {any} */ n) =>
+			scriptNodeWarnings(n.data, { unwired: graphId === SCENE_GRAPH && !graphOf(graphId)?.edges.some((/** @type {any} */ e) => e.source === n.id) })
+		);
 	return {
 		graph: graphId,
 		created,
 		edges: createdEdges.length,
-		...(errors.length ? { errors } : {})
+		...(scriptNotes.length && !errors.length ? { warning: scriptNotes.join(' ') } : {}),
+		...(errors.length
+			? {
+					partial: true,
+					warning:
+						'only part of this call was applied: ' +
+						[failedNodes ? failedNodes + ' of ' + specs.length + ' nodes' : '', failedEdges ? failedEdges + ' of ' + edgeSpecs.length + ' edges' : '']
+							.filter(Boolean)
+							.join(' and ') +
+						(failedNodes || failedEdges ? ' were not created' : 'some node data was not applied') +
+						' — fix what errors[] names and send only those again' +
+						(scriptNotes.length ? '. ' + scriptNotes.join(' ') : ''),
+					errors
+				}
+			: {})
 	};
 }
 
@@ -418,6 +504,7 @@ export function updateFlowNodesTool(args) {
 	const peer = get(peers);
 	/** @type {string[]} */ const errors = [];
 	/** @type {any[]} */ const updated = [];
+	/** @type {string[]} */ const scriptNotes = [];
 	/** @type {{id: string, before: any, after: any}[]} */ const items = [];
 
 	for (const u of Array.isArray(args?.updates) ? args.updates : []) {
@@ -455,6 +542,8 @@ export function updateFlowNodesTool(args) {
 		setNodeData(node.id, patch, graphId);
 		items.push({ id: node.id, before, after: patch });
 		updated.push({ id: node.id, keys: Object.keys(patch) });
+		if (node.type === 'script' && 'code' in patch)
+			scriptNotes.push(...scriptNodeWarnings({ ...node.data, ...patch }, { unwired: graphId === SCENE_GRAPH && !graph.edges.some((/** @type {any} */ e) => e.source === node.id) }));
 	}
 	if (items.length) recordFlowNodesEntry({ op: 'data', graphId, items });
 
@@ -484,6 +573,7 @@ export function updateFlowNodesTool(args) {
 		graph: graphId,
 		updated,
 		removed: removeIds.length,
+		...(scriptNotes.length ? { warning: scriptNotes.join(' ') } : {}),
 		...(errors.length ? { errors } : {})
 	};
 }
@@ -500,11 +590,16 @@ const COLLIDER_KINDS = ['box', 'sphere', 'capsule', 'cylinder', 'hull', 'trimesh
 export function setPhysicsTool(args) {
 	const updates = Array.isArray(args?.updates) ? args.updates : [];
 	if (!updates.length)
-		return { error: 'no updates provided — pass updates: [{ uuid, mode?, mass?, ... }]' };
+		return {
+			error:
+				(Array.isArray(args?.objects) ? 'set_physics takes "updates", not "objects"' : 'no updates provided') +
+				' — pass updates: [{ uuid, mode?, mass?, ... }]'
+		};
 	const results = updates.map((/** @type {any} */ u) => {
 		const uuid = u?.uuid;
 		if (!uuid || !objectOf(uuid)) return { uuid, error: 'no object with that uuid' };
-		if (lockedByPeer(uuid)) return { uuid, skipped: 'locked by another peer' };
+		const lock = lockSkip(uuid, objectOf(uuid));
+		if (lock) return { uuid, skipped: lock };
 		/** @type {any} */ const patch = {};
 		if (typeof u.mode === 'string' && PHYSICS_MODES.includes(u.mode)) patch.mode = u.mode;
 		if (Number.isFinite(u.mass)) {
@@ -522,6 +617,11 @@ export function setPhysicsTool(args) {
 		if (!Object.keys(patch).length)
 			return { uuid, error: 'no physics keys — pass mode/mass/restitution/friction/collider' };
 		setPhysicsFor(uuid, patch);
+		// mcp-fix: only a top-level object gets a body, so say it now and not at the start
+		const held = objectOf(uuid);
+		if (held?.parent && held.parent !== get(objectsGroup)) return { uuid, ok: true, physics: patch, warning: nestedWords([{ name: held.name || held.type, group: held.parent.name || 'a group' }]) };
+		// mcp-fix: a body's kind is fixed for a run, so say that instead of seeming to have changed it
+		if (patch.mode && get(simulating)) return { uuid, ok: true, physics: patch, note: 'the simulation is running: the new mode applies from the next start (stop, then start)' };
 		return { uuid, ok: true, physics: patch };
 	});
 	if (results.every((/** @type {any} */ r) => r.error))
@@ -555,20 +655,41 @@ export function createJointsTool(args) {
 		if (!a || !objectOf(a)) return { error: 'joint "a" object not found: ' + a };
 		if (!b || !objectOf(b)) return { error: 'joint "b" object not found: ' + b };
 		if (a === b) return { error: 'cannot joint an object to itself' };
-		if (lockedByPeer(a) || lockedByPeer(b)) return { skipped: 'locked by another peer', a, b };
+		const lock = lockSkip(a, objectOf(a)) || lockSkip(b, objectOf(b));
+		if (lock) return { skipped: lock, a, b };
+		// mcp-fix: a joint with no body on one side would report success and then hold nothing
+		for (const [side, uuid] of [['a', a], ['b', b]]) {
+			const why = jointBodyProblem(objectOf(uuid));
+			if (why) return { error: 'joint "' + side + '" cannot hold: ' + why, a, b };
+		}
 		const axis = ['x', 'y', 'z'].includes(j?.axis) ? j.axis : undefined;
 		const motor =
 			kind === 'revolute' && j?.motor && Number.isFinite(j.motor.vel)
 				? { vel: j.motor.vel, maxForce: Number.isFinite(j.motor.maxForce) ? j.motor.maxForce : 100 }
 				: undefined;
-		const def = createJoint(/** @type {'fixed'|'revolute'} */ (kind), a, b, axis, motor);
+		// 55 owner finding 6: anchor (world point), contacts:false and hinge limits reach the joint
+		const anchor =
+			Array.isArray(j?.anchor) && j.anchor.length === 3 && j.anchor.every((/** @type {any} */ n) => Number.isFinite(n))
+				? j.anchor
+				: undefined;
+		const def = createJoint(/** @type {'fixed'|'revolute'} */ (kind), a, b, axis, motor, {
+			...(anchor ? { anchor } : {}),
+			...(j?.contacts === false ? { contacts: false } : {}),
+			...(Array.isArray(j?.limits) ? { limits: j.limits } : {})
+		});
 		if (!def) return { error: 'joint creation failed', a, b };
-		return { id: def.id, kind, a, b };
+		return { id: def.id, kind, a, b, ...(def.contacts === false ? { contacts: false } : {}) };
 	});
 	if (results.every((/** @type {any} */ r) => r.error))
 		return { error: 'nothing was attached: ' + results[0].error, joints: results };
 	return { joints: results };
 }
+
+/** @param {{name: string, group: string}[]} list objects with physics inside a group */
+const nestedWords = (list) =>
+	list.map((o) => '"' + o.name + '" (in "' + o.group + '")').join(', ') +
+	(list.length > 1 ? ' have' : ' has') +
+	' physics but will not simulate, because the simulation only runs objects at the top of the scene, not inside a group. Move them out with update_objects parentUuid "root", or set physics on the group itself.';
 
 /**
  * control_simulation: start/stop/pause/resume/reset the physics sim. Start
@@ -586,21 +707,28 @@ export async function controlSimulationTool(args) {
 			return { error: 'another peer is already simulating — one run at a time' };
 		await toggleSimulation(); // handles the rapier wasm warmup
 		const on = get(simulating);
-		return on
-			? { simulating: true }
-			: { error: 'simulation did not start — no object has physics yet (use set_physics or a mass node first)' };
+		const gaps = simulationGaps();
+		const inGroups = gaps.nested.length ? nestedWords(gaps.nested) : '';
+		if (!on) {
+			if (inGroups) return { error: 'simulation did not start: ' + inGroups };
+			if (gaps.lockedOut.length) return { error: 'simulation did not start: another person is editing ' + gaps.lockedOut.join(', ') + ', and those are the only objects with dynamic physics.' };
+			return { error: 'simulation did not start — no object has physics yet (use set_physics or a mass node first)' };
+		}
+		// mcp-fix: a joint that was not built holds nothing, so never let that pass as a clean start
+		const unbuilt = unbuiltJointIds();
+		const warnings = [...(unbuilt.length ? ['these joints are not in the simulation, because a side has no physics body: ' + unbuilt.join(', ')] : []), ...(inGroups ? [inGroups] : [])];
+		return { simulating: true, ...(warnings.length ? { warning: warnings.join(' ') } : {}) };
 	}
 	if (action === 'stop') {
 		stopSimulation();
 		return { simulating: get(simulating) };
 	}
-	if (action === 'pause') {
-		pauseSimulation(true);
-		return { simulating: get(simulating), paused: true };
-	}
-	if (action === 'resume') {
-		pauseSimulation(false);
-		return { simulating: get(simulating), paused: false };
+	if (action === 'pause' || action === 'resume') {
+		// mcp-fix: only a running simulation can pause; pauseSimulation does nothing otherwise
+		if (!get(simulating))
+			return { error: 'cannot ' + action + ': ' + (get(remoteSimulating) ? 'another peer is running the simulation' : 'the simulation is not running. Use action "start" first') };
+		pauseSimulation(action === 'pause');
+		return { simulating: true, paused: action === 'pause' };
 	}
 	if (action === 'reset') {
 		resetSimulation();

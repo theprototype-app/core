@@ -2649,6 +2649,35 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   2 (every canvas panel >= 1 texel per Quest pixel). `api.claimInput('sticks')` + the world-pan stick REEL (stick Y
   pushes/pulls a one-grip world, as Edit does an object); `addSetting({onLevels: true})` draws a choice as tabs on the
   VR Levels page, which now lists every level.
+- **ROADMAP 59 (59-replace + 59-int) — REPLACE MODEL FROM A FILE.** `lib/modelReplace.js` (lazy): parse → F2 keep plans →
+  sanity (`modelSanity`) → `installVersion` swaps the tree at the live uuid (undo, redo and the replace share it) → ONE
+  `modelreplace` history entry holding both versions. Embedded clips kept by bone name are written INTO the new GLB's
+  bytes (`modelClips.clipKeepPlan` + `glbEdit`, .glb only); 57's `.tpanim` refs stay refs (`clipRefKeepPlan`), belong to
+  the VERSION (a dropped one returns with the undo), and never reach the bytes: `liveClips` reads `record.embedded`, not
+  `record.actions`, which also holds the asset actions. MODEL_BOUND = userData that belongs to the file, everything else
+  stays with the object. Wire: `delete {replacing: true}` then `objectfile` (animated) or `sendObjects` (static).
+  `modelDrop.js`: `extras.theprototype.uuid` (our Edit in Blender export) asks "Update <name>?" anywhere; a drop on the
+  selected object asks Replace / Add. Suites: vitest `modelReplace`; e2e `model-replace`.
+- **ROADMAP 59 (59-hub) — TOOLS & CONNECTIONS, FEATURE STATUS, SKIES OFF THE BUNDLE.** `lib/tools/toolStatus.js` is a
+  LEAF registry (svelte/store only): `registerToolRows(section, readable)` per section (TOOL_SECTIONS order: chat,
+  mesh, animation, aibox, agents, desktop — a section shows once a source registers, so a later roadmap adds its
+  rows with ONE call) and `registerFeature({id, label, section, needs, fix?, ready, row})`. A row = status (`ready |
+  off | setup | error`), Test, Enable / Disable over the EXISTING switches (provider: active + master; voice:
+  additive `aiStt.enabled`, absent = on; desktop: `tools:blender`) and the features it turns on. NO KEY MOVED:
+  Settings ▸ AI became Settings ▸ Tools & connections (`AiSettings.svelte` keeps the provider forms as sub-pages,
+  `ToolsHub.svelte` is the main view; `'ai'` is a deep-link ALIAS in settingsNav). T5: a button whose tool is missing
+  STAYS VISIBLE — `toolLinks.explainMissing(id)` toasts "<label> needs <needs>: set one up in Settings ▸ Tools &
+  connections." and opens the row (`toolsFocus` scrolls + flashes it); the assistant's system prompt lists the same
+  missing features (`toolSummary`). `builtinTools.js` registers chat/voice/mesh/agents/desktop, plus Animation + AI box
+  rows that say "Not available yet" until roadmap 58 (no feature registered: no button exists to gate). The AI button
+  itself is NOT gated (86-fix N1: the window opens and its welcome offers Connect Claude or Tools & connections); the
+  quick prompt bar, the mic, Generate 3D model and Edit in Blender are. Test clients import lazily.
+  Skies (`hdri/skyFetch.js`): the five bundled `.hdr` live in the PACKS repo `hdri/` (jsDelivr, `VITE_HDRI_BASE` >
+  `VITE_PACKS_BASE` > packs@format-1); an export reads its own `hdri/<file>`; the app goes through 60 Q6's asset cache
+  (`fetchCached`, kind `sky`, keyed by URL), so Settings ▸ Storage shows and clears skies; a CDN miss is `hdriStatus: 'unavailable'` = the flat preset + a retry
+  on `online`, never an error. e2e: `h.routeSkies` (OPT-IN — a route disables the context's HTTP cache) serves them
+  from a local packs checkout. Suites: vitest `toolStatus` (incl. the storage migration); e2e `tools-connections`,
+  `sky-cdn`.
 
 ## UI design system (redesign epic)
 

@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { rejoinOutcome } from './rejoin'; // fix-agenttest 6
 import { get, writable } from 'svelte/store';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -29,9 +30,11 @@ import { transport, transportSnapshot, transportRestore } from './musicClock';
 import { patch, patchSnapshot, patchRestore } from './audioPatch';
 import { hudDocs, hudDocsSnapshot, hudDocsRestore } from './hudDocs';
 import { sequences, sequencesSnapshot, sequencesRestore } from './sequences'; // 48 S2
+import { chats, chatRefs, chatsSnapshot, chatRefsSnapshot, chatsRestore } from './chat/tpchatStore.js'; // 56 C10
 import { gameState, gameStateSnapshot, gameStateRestore } from './gameState';
 import { peers, showToast, showInfoToast, dismissToastById } from '../stores/appStore';
 import { isMultiMaterial, serializeMeshWithGroups } from './materialsHandler';
+import { lightsSnapshot, restoreLights, withoutPunctualLights } from './lightSnapshot';
 import { idbGet, idbPut, idbDelete } from './idb';
 // 27-B: recovery paths report through the diagnostics ring instead of console.log,
 // so a user can hand over what happened (hardening audit H4). A zero-import leaf.
@@ -229,7 +232,8 @@ function exportScene() {
 				if (child.userData && '__uuid' in child.userData) delete child.userData.__uuid;
 			});
 		// 46: KTX2 twins are kept across a reload (KHR_texture_basisu beside the plain image)
-		const exporter = withTwins(new GLTFExporter());
+		// fix-agenttest 1: lights ride the `lights` sidecar instead (lightSnapshot.js)
+		const exporter = withoutPunctualLights(withTwins(new GLTFExporter()));
 		exporter.register(() => ({ afterParse: putPiecesBack }));
 		exporter.parse(
 			group,
@@ -338,6 +342,9 @@ async function writeSnapshot() {
 		// same reason, different loss: a MATERIAL ARRAY cannot cross the GLTF round
 		// trip either (it comes back as a Group of single-material children)
 		multiMaterial: multiMaterialSnapshot(),
+		// fix-agenttest 1: and no LIGHT survives it whole — Hemisphere/Ambient/RectArea came
+		// back as empty nodes, the rest without shadows, decay or direction (lightSnapshot.js)
+		lights: lightsSnapshot(group, isTransient),
 		// SH4: a GLTF export cannot carry a custom shader at all, so the GRAPH rides
 		// beside the snapshot and is recompiled on restore (the same twin-replacement
 		// reasoning as the two fields above). Orphans are pruned from the OUTPUT only.
@@ -379,6 +386,9 @@ async function writeSnapshot() {
 		// 48 S2: the Timeline's sequences — scene data with nowhere in a GLTF to live; the
 		// object uuids their tracks name survive through the __uuid stamp above
 		sequences: sequencesSnapshot(),
+		// 56 C10/C8: the scene's AI chats and the pictures kept from them (null when none)
+		chats: chatsSnapshot('all'),
+		chatRefs: chatRefsSnapshot(),
 		// 21-D6: same reasoning - session state with nowhere in a GLTF to live
 		game: gameStateSnapshot(),
 		// #20 P5: the selection, any open edit session, and the panel LAYOUT. This is the
@@ -543,6 +553,9 @@ async function checkRestore() {
 	try {
 		const snapshot = await idbGet('latest');
 		if (!snapshot || (!snapshot.scene && !snapshot.nodes?.length)) return settleRestore();
+		// fix-agenttest 6: a reload while joined goes back to the session (rejoin.js) — offer our
+		// own copy only when there is no live session to go back to
+		if ((await rejoinOutcome()) === 'joined') return settleRestore();
 		// wait for the scene group to exist, then only offer when it's still empty
 		const unsubscribe = objectsGroup.subscribe((group) => {
 			if (!group) return;
@@ -716,6 +729,12 @@ async function applyRestore(snapshot, offer = null) {
 					delete child.userData.__uuid;
 				}
 			});
+			// fix-agenttest 1: the lights from their sidecar, BEFORE the build loop so the
+			// copy each peer is sent below is the real light, not the GLTF's empty node (an
+			// older snapshot has no sidecar: its punctual lights stay as GLTFLoader built them)
+			restoreLights(container, snapshot.lights ?? [], (error) =>
+				log('warn', 'autosave', 'light restore failed', String(error))
+			);
 			/** @type {any} */
 			const peer = get(peers);
 			// 33 L1: the wire copy is built only when somebody can receive it — a toJSON
@@ -785,6 +804,7 @@ async function applyRestore(snapshot, offer = null) {
 		// same reasoning: replicate, so a restore into a live room brings the HUD too
 		hudDocsRestore(snapshot.hud, true, true);
 		sequencesRestore(snapshot.sequences ?? null, true, true); // 48 S2
+		chatsRestore(snapshot.chats ?? null, snapshot.chatRefs ?? null, true, true); // 56 C10
 		gameStateRestore(snapshot.game, true);
 		// #20 P5: windows, selection and edit mode — the EXPLICIT-restore path. A plain
 		// reload never reaches here, which is exactly the point.
@@ -892,6 +912,8 @@ export function startAutosave() {
 	// written (the scenePost lesson, and the notes-disappear-on-reload one before it)
 	hudDocs.subscribe(() => markDirty());
 	sequences.subscribe(() => markDirty()); // 48 S2: authoring a sequence touches no object either
+	chats.subscribe(() => markDirty()); // 56 C10: a chat is scene data (cloud rooms save on this signal)
+	chatRefs.subscribe(() => markDirty());
 	// and once more: a game's state changes touch no object either
 	gameState.subscribe(() => markDirty());
 	setInterval(() => {

@@ -1265,20 +1265,35 @@
 			"desc": ""
 		}
 	],
-	"AI": [
+	"Tools & connections": [
 		{
-			"name": "Enable assistant",
-			"kind": "toggle",
+			"name": "Voice typing",
+			"kind": "button",
 			"desc": ""
 		},
 		{
-			"name": "Voice typing provider",
-			"kind": "segment",
+			"name": "Keep sent pictures in Explorer",
+			"kind": "button",
 			"desc": ""
 		},
 		{
-			"name": "Mesh generation",
-			"kind": "toggle",
+			"name": "Coding agents",
+			"kind": "button",
+			"desc": ""
+		},
+		{
+			"name": "Blender and other 3D tools",
+			"kind": "button",
+			"desc": ""
+		},
+		{
+			"name": "Rigging and animation services",
+			"kind": "button",
+			"desc": ""
+		},
+		{
+			"name": "Your own GPU box",
+			"kind": "button",
 			"desc": ""
 		}
 	],

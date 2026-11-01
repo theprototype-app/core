@@ -1,5 +1,6 @@
 // @ts-ignore - no bundled three type declarations (project-wide)
 import * as THREE from 'three';
+import { addDeformer, removeDeformer, hasDeformer } from '../vertexDeform.js';
 import { allNodes, allEdges, SCENE_GRAPH, flowGraphs } from '../../stores/flowStore';
 import {
 	normalizeJiggle,
@@ -35,7 +36,7 @@ import {
 
 /** @typedef {{uuid: string, nodeId: string, params: ReturnType<typeof normalizeJiggle>}} JiggleTarget */
 /** @typedef {{state: import('./jiggleCore.js').JiggleState, params: ReturnType<typeof normalizeJiggle>,
- *   meshes: {mesh: any, original: any, clone: any, uniforms: any}[],
+ *   meshes: {mesh: any, original: any, clone: any, uniforms: any, id: string}[],
  *   bones: {bone: any, rest: THREE.Quaternion, written: THREE.Quaternion, tip: THREE.Vector3 | null,
  *     vel: THREE.Vector3, len: number, dir: THREE.Vector3}[],
  *   pivotLocal: THREE.Vector3, radius: number, object: any, lastKick: number[] | null}} JiggleEntry */
@@ -120,8 +121,6 @@ function pivotOf(object, pivot) {
 function attachMesh(mesh, object, pivotLocal, radius) {
 	const original = mesh.material;
 	if (!original || Array.isArray(original)) return null; // multi-material: bones/skip (documented)
-	const clone = original.clone();
-	clone.userData = { ...(original.userData ?? {}), __jiggleClone: true };
 	// pivot in the MESH's local frame (the shader works in mesh space)
 	mesh.updateWorldMatrix(true, false);
 	const toMesh = new THREE.Matrix4().copy(mesh.matrixWorld).invert().multiply(object.matrixWorld);
@@ -134,32 +133,23 @@ function attachMesh(mesh, object, pivotLocal, radius) {
 		jFalloff: { value: 1.5 },
 		jWobble: { value: 0 }
 	};
-	const previous = original.onBeforeCompile;
-	clone.onBeforeCompile = (/** @type {any} */ shader, /** @type {any} */ renderer) => {
-		if (typeof previous === 'function' && previous !== THREE.Material.prototype.onBeforeCompile) previous(shader, renderer);
-		Object.assign(shader.uniforms, uniforms);
-		shader.vertexShader = JIGGLE_UNIFORMS_DECL + shader.vertexShader.replace('#include <begin_vertex>', JIGGLE_VERTEX);
-	};
-	const baseKey = original.customProgramCacheKey?.() ?? '';
-	clone.customProgramCacheKey = () => baseKey + '|jiggle1';
-	mesh.material = clone;
-	return { mesh, original, clone, uniforms };
+	// fix-agenttest 2: ONE clone per mesh shared with every other deformer (vertexDeform.js)
+	const id = 'jiggle:' + object.uuid;
+	const clone = addDeformer(mesh, id, {
+		kind: 'jiggle',
+		prefix: 'j',
+		key: 'jiggle1',
+		decl: JIGGLE_UNIFORMS_DECL,
+		vertex: JIGGLE_VERTEX,
+		uniforms
+	});
+	if (!clone) return null;
+	return { mesh, original, clone, uniforms, id };
 }
 
-/** @param {{mesh: any, original: any, clone: any}} m */
+/** @param {{mesh: any, id: string}} m */
 function detachMesh(m) {
-	if (m.mesh.material !== m.clone) return; // something else replaced it since; leave it
-	// carry what was edited on the clone back onto the original (a colour change made
-	// while it jiggled), minus the shader hook
-	const { onBeforeCompile, customProgramCacheKey } = m.original;
-	m.original.copy(m.clone);
-	m.original.onBeforeCompile = onBeforeCompile;
-	m.original.customProgramCacheKey = customProgramCacheKey;
-	m.original.userData = { ...(m.clone.userData ?? {}) };
-	delete m.original.userData.__jiggleClone;
-	m.original.needsUpdate = true;
-	m.mesh.material = m.original;
-	m.clone.dispose();
+	removeDeformer(m.mesh, m.id);
 }
 
 /** bones to spring: the globs, else every bone within two links of a chain end
@@ -383,7 +373,7 @@ export function jiggleDebug() {
 		wobble: wobbleOf(e.state, e.params),
 		meshes: e.meshes.length,
 		bones: e.bones.length,
-		cloned: e.meshes.every((m) => m.mesh.material === m.clone)
+		cloned: e.meshes.every((m) => hasDeformer(m.mesh, m.id))
 	}));
 }
 

@@ -5,6 +5,15 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.53.1 — Claude connector fixes 🔧
+
+- **"What can you do?" works** through the Claude connector, and so does *save_scene*. Saves keep older versions, and an AI save cannot write over another scene.
+- **Joining a session tells the truth.** *join_session* only reports success once you pressed Join and the connection is really up; *status* no longer contradicts itself.
+- **Fixed joints hold** on bodies moved by flow nodes. Pausing or resuming a stopped simulation now says why nothing happened.
+- **Particles on a rotated parent** can aim in world axes, and gravity always points world down.
+- **Script nodes** warn when a pose grows every frame, or when a script reaches for something that isn't there; errors show in *status*.
+- **A Spin node's angle wraps at a full turn** instead of growing forever, and *list_scene* and *update_objects* work on the pose you authored, not the one the animation is showing right now.
+
 ## 1.53.0 — your tools, connected 🔌
 
 - **Replace a model from a file and keep the object.** *Replace model…*, or drop a file on the selected object: its place, parent, flows, physics, colliders, changed materials and clips stay. One undo puts the old model back, for everyone.

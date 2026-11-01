@@ -128,8 +128,6 @@ released version instead of drifting (it carried a stale 1.8.0 before 1.11.0).
 
 ## After tagging
 
-Queue run (`battery-desk.cjs queue`): N workers, each on its own slot, tree and dev server, pull the next suite, longest first; `--resume` skips what is already green for the same tree, and the outputs read the same in `diff` and `baseline save`. Pc and remote slots render on the machine's GPU there. `desk.software` in `tests/e2e/battery.json` keeps a suite on software GL (it races at a real frame rate); `desk.local` sends a suite to a worker on this machine's own slot (it needs this machine's GPU).
-
 - Update `CHANGELOG.md` (the in-app What's new window renders it).
 - Deploy the cloud site FROM THE TAG (cloud repo):
   `npm run deploy -- --target=cloud --env=production --core-ref=vX.Y.Z`, or bump
@@ -163,6 +161,7 @@ Queue run (`battery-desk.cjs queue`): N workers, each on its own slot, tree and 
   The next integrator runs the same halves on its union and calls `battery-desk.cjs diff --baseline vX.Y.Z <dir>`:
   a red whose every twice-red check is red on the tag too is PRE-EXISTING (no A/B run), a red that went green on
   the end-of-half retry is FLAKY (logged; `battery-desk.cjs flakes` prints the rates), and only NEW reds need a look.
+  Queue run (`battery-desk.cjs queue`): N workers, each on its own slot, tree and dev server, pull the next suite, longest first; `--resume` skips what is already green for the same tree, and the outputs read the same in `diff` and `baseline save`. Pc and remote slots render on the machine's GPU there. `desk.software` in `tests/e2e/battery.json` keeps a suite on software GL (it races at a real frame rate); `desk.local` sends a suite to a worker on this machine's own slot (it needs this machine's GPU).
   No pc slot for the tag run? Save the releasing union's OWN last battery as the tag's baseline instead (it is the
   released code, run the way the next integrator will run it): `battery-desk.cjs import <u1A.txt> --logs <dir>
   [--retry <rerun.txt>]` per half, then `baseline save vX.Y.Z <dirs>`. Measured on 1.43 (51-int) against 50-int's 1.42

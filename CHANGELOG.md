@@ -36,6 +36,22 @@ tab can now find any scene by a word or a maker.
   is counted when your browser asks not to be tracked, or after Settings ▸ Privacy ▸ **Count my visits anonymously**
   is off. Builds of the open-source engine that are not ours count nothing.
 
+### 🔑 One place to sign in
+
+- **Signing in and creating an account are one screen,** GitHub or Google, with an **I agree to the Terms** box the first
+  time. An optional box asks about feature-update emails; older accounts get a small bar to accept the Terms once.
+- **The AI window's Sign in to connect** opens your profile menu at the top right, and the window says so. Signed out with a local
+  model or your own key, the assistant keeps working and the button stays in the window's header.
+
+### 🤖 Claude connector and agents
+
+- **Scripts get `elapsed`:** seconds of the game round, shared inside a round, and from your own Play press outside one. `time` is
+  unchanged. The warning about a `+=` script now says why it does not build up and points at `elapsed`.
+- **Particle gravity** is documented as what it is: acceleration along world Y, negative falls, positive rises.
+- **Screenshots from any angle:** `aspect`, `from`, `camera`, `uuids`, `zoom` and `margin`, with the camera used in the result; top, front,
+  iso and focus shots are 4:3 whatever your window's shape, and nobody's view moves. For developers: `tpAgent` 1.5.0 adds `lastShot()`, and
+  `window.tpAgent.screenshot()` with no options is now 4:3 too (it used to take the canvas shape).
+
 ## 1.53.1 — Claude connector fixes 🔧
 
 - **"What can you do?" works** through the Claude connector, and so does *save_scene*. Saves keep older versions, and an AI save cannot write over another scene.

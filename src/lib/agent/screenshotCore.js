@@ -35,6 +35,22 @@ export function frameSize(size, aspect) {
 	return a >= 1 ? { w: size, h: Math.max(1, Math.round(size / a)) } : { w: Math.max(1, Math.round(size * a)), h: size };
 }
 
+/** 17: a framed view is this shape whatever the window is; only `current` keeps the person's canvas */
+export const FRAMED_ASPECT = 4 / 3;
+
+/**
+ * @param {any} aspect "4:3", "16/9", a number, or nothing
+ * @returns {number | null} w/h, null when it does not read as one (frameSize clamps it)
+ */
+export function parseAspect(aspect) {
+	if (typeof aspect === 'number') return Number.isFinite(aspect) && aspect > 0 ? aspect : null;
+	if (typeof aspect !== 'string') return null;
+	const m = /^\s*(\d*\.?\d+)\s*(?:[:/x]\s*(\d*\.?\d+)\s*)?$/.exec(aspect);
+	if (!m) return null;
+	const a = Number(m[1]) / (m[2] === undefined ? 1 : Number(m[2]));
+	return Number.isFinite(a) && a > 0 ? a : null;
+}
+
 /** @param {number[]} v */
 function norm(v) {
 	const l = Math.hypot(v[0], v[1], v[2]) || 1;
@@ -49,6 +65,70 @@ export const VIEW_DIRS = /** @type {Record<string, number[]>} */ ({
 	focus: norm([1, 0.8, 1])
 });
 
+/** The named angles a shot may be taken `from`: direction from the subject to the camera. */
+export const SHOT_ANGLES = /** @type {Record<string, number[]>} */ ({
+	front: [0, 0, 1],
+	back: [0, 0, -1],
+	left: [-1, 0, 0],
+	right: [1, 0, 0],
+	top: [0, 1, 0],
+	below: [0, -1, 0],
+	iso: VIEW_DIRS.iso
+});
+
+/**
+ * @param {any} from a name from SHOT_ANGLES, or {yaw, pitch} in degrees: yaw 0 is the front, 90 the right, pitch 90 straight down from above
+ * @returns {number[] | null} a unit direction from the subject to the camera
+ */
+export function dirFrom(from) {
+	if (typeof from === 'string') return SHOT_ANGLES[from] ?? null;
+	const yaw = Number(from?.yaw);
+	const pitch = Number(from?.pitch);
+	if (!Number.isFinite(yaw) || !Number.isFinite(pitch)) return null;
+	const y = (yaw * Math.PI) / 180;
+	const p = (Math.max(-90, Math.min(90, pitch)) * Math.PI) / 180;
+	return norm([Math.sin(y) * Math.cos(p), Math.sin(p), Math.cos(y) * Math.cos(p)]);
+}
+
+/** @param {any} v @returns {boolean} */
+const isPoint = (v) => Array.isArray(v) && v.length === 3 && v.every((x) => Number.isFinite(Number(x)));
+
+/**
+ * What a screenshot's options ask for, with no scene and no renderer. Precedence: a free `camera`, then `from`, then `view`.
+ * @param {any} opts @param {number} canvasAspect the person's canvas
+ * @returns {{problem: string} | {problem: null, view: string, current: boolean, free: {position: number[], target: number[]} | null, dir: number[] | null,
+ *   uuids: string[], aspect: number, w: number, h: number, zoom: number, margin: number}}
+ */
+export function planShot(opts, canvasAspect) {
+	const o = opts ?? {};
+	const view = normalizeView(o.view);
+	const uuids = [...new Set([...(Array.isArray(o.uuids) ? o.uuids : []), ...(o.uuid ? [o.uuid] : [])].map(String))];
+	const free = o.camera ?? null;
+	if (free && !(isPoint(free.position) && isPoint(free.target))) return { problem: 'camera needs position and target, each [x,y,z]' };
+	if (free && free.position.every((/** @type {any} */ x, /** @type {number} */ i) => Number(x) === Number(free.target[i]))) return { problem: 'camera position and target are the same point' };
+	const dir = o.from === undefined || o.from === null ? null : dirFrom(o.from);
+	if (o.from !== undefined && o.from !== null && !dir) return { problem: 'from is one of ' + Object.keys(SHOT_ANGLES).join(', ') + ', or {yaw, pitch} in degrees' };
+	if (o.aspect !== undefined && o.aspect !== null && parseAspect(o.aspect) === null) return { problem: 'aspect is like "4:3", "1:1", "16:9", or a number' };
+	if (!free && view === 'focus' && !uuids.length) return { problem: 'focus needs the uuid of an object in the scene' };
+	const current = !free && !dir && view === 'current';
+	const aspect = parseAspect(o.aspect) ?? (current ? canvasAspect : FRAMED_ASPECT);
+	const { w, h } = frameSize(clampSize(o.size), aspect);
+	const clampTo = (/** @type {any} */ v, /** @type {number} */ lo, /** @type {number} */ hi, /** @type {number} */ d) => (Number.isFinite(Number(v)) && v !== null && v !== undefined ? Math.max(lo, Math.min(hi, Number(v))) : d);
+	return {
+		problem: null,
+		view,
+		current,
+		free: free ? { position: free.position.map(Number), target: free.target.map(Number) } : null,
+		dir,
+		uuids,
+		aspect: w / h,
+		w,
+		h,
+		zoom: clampTo(o.zoom, 0.1, 10, 1),
+		margin: clampTo(o.margin, 0.5, 4, 1.15)
+	};
+}
+
 /**
  * Where the temporary camera stands to frame a sphere (center, radius) from a view. A perspective
  * camera fits the sphere when it stands radius / sin(fov/2) away along the view direction — the
@@ -58,19 +138,21 @@ export const VIEW_DIRS = /** @type {Record<string, number[]>} */ ({
  * @param {number} fovDeg vertical field of view
  * @param {number} aspect w/h
  * @param {number} [margin] 1 = the sphere touches the frame
+ * @param {number[] | null} [dir] from the subject to the camera, instead of the view's own
+ * @param {number} [zoom] above 1 stands closer
  * @returns {{position: number[], target: number[], up: number[], near: number, far: number}}
  */
-export function viewPose(view, bounds, fovDeg, aspect, margin = 1.15) {
+export function viewPose(view, bounds, fovDeg, aspect, margin = 1.15, dir = null, zoom = 1) {
 	const r = Math.max(0.05, Number(bounds.radius) || 0);
 	const c = bounds.center.map((x) => Number(x) || 0);
 	const vFov = ((Math.max(5, Math.min(120, fovDeg || 50)) * Math.PI) / 180) / 2;
 	const hFov = Math.atan(Math.tan(vFov) * (aspect > 0 ? aspect : 1));
 	const half = Math.min(vFov, hFov);
-	const dist = (r * margin) / Math.sin(half);
-	const dir = VIEW_DIRS[view] ?? VIEW_DIRS.iso;
-	const position = [c[0] + dir[0] * dist, c[1] + dir[1] * dist, c[2] + dir[2] * dist];
-	// looking straight down, "up" on the picture is -Z (north), never the degenerate +Y
-	const up = view === 'top' ? [0, 0, -1] : [0, 1, 0];
+	const dist = (r * margin) / Math.sin(half) / (zoom > 0 ? zoom : 1);
+	const d = dir ?? VIEW_DIRS[view] ?? VIEW_DIRS.iso;
+	const position = [c[0] + d[0] * dist, c[1] + d[1] * dist, c[2] + d[2] * dist];
+	// looking straight down, "up" on the picture is -Z (north), and straight up +Z, never the degenerate +Y
+	const up = d[1] > 0.999 ? [0, 0, -1] : d[1] < -0.999 ? [0, 0, 1] : [0, 1, 0];
 	return { position, target: c, up, near: Math.max(0.01, dist - r * 4), far: dist + r * 4 };
 }
 

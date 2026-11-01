@@ -118,7 +118,8 @@ function setup() {
 			},
 			status: () => agent.status(),
 			waitForEdit: (ms) => agent.waitForEdit(ms),
-			screenshot: (opts) => agent.screenshot(opts)
+			screenshot: (opts) => agent.screenshot(opts),
+			lastShot: () => agent.lastShot()
 		},
 		send: (text) => {
 			if (client?.send(text)) return;

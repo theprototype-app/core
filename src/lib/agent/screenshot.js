@@ -20,7 +20,7 @@ import * as THREE from 'three';
 import { get } from 'svelte/store';
 import { globalRenderer, globalScene, globalCamera, objectsGroup, TControls } from '../../stores/sceneStore';
 import { isEditorHelper } from '$lib/water/waterRuntime.js';
-import { normalizeView, clampSize, frameSize, viewPose, boundsOf, linearFrameToSrgb } from './screenshotCore.js';
+import { planShot, viewPose, boundsOf, linearFrameToSrgb } from './screenshotCore.js';
 // 55 A7 (union): every peer draws the "AI" camera marker where this shot looked (agentLog is store-only)
 import { noteAgentView } from '$lib/agentLog';
 
@@ -29,8 +29,24 @@ const SUPERSAMPLE = 2;
 /** the target's largest side, whatever the request */
 const TARGET_CAP = 4096;
 
-/** where the last screenshot looked from — A7's "AI camera marker" reads it @type {{position: number[], target: number[], view: string, at: number} | null} */
+/** what the last screenshot used, or why it could not be taken @type {any} */
 export let lastShot = null;
+
+/** @param {any[]} objects @returns {{min: number[], max: number[]} | null} one box around them all */
+function boxOfAll(objects) {
+	const boxes = objects.map(boxOf).filter((b) => !!b);
+	if (!boxes.length) return null;
+	return {
+		min: [0, 1, 2].map((i) => Math.min(...boxes.map((b) => /** @type {any} */ (b).min[i]))),
+		max: [0, 1, 2].map((i) => Math.max(...boxes.map((b) => /** @type {any} */ (b).max[i])))
+	};
+}
+
+/** @param {string} why @returns {never} */
+function refuse(why) {
+	lastShot = { error: why, at: Date.now() };
+	throw new Error(why);
+}
 
 /** @param {any} renderer */
 function toneMappingName(renderer) {
@@ -97,34 +113,52 @@ export async function takeScreenshot(opts = {}) {
 	/** @type {any} */
 	const userCamera = get(globalCamera);
 	const group = get(objectsGroup);
+	lastShot = null;
 	if (!renderer || !scene || renderer.xr?.isPresenting) return null;
-	const view = normalizeView(opts.view);
-	const size = clampSize(opts.size);
 	const canvas = renderer.domElement;
-	const aspect = canvas?.width && canvas?.height ? canvas.width / canvas.height : 16 / 9;
-	const { w, h } = frameSize(size, aspect);
+	const plan = planShot(opts, canvas?.width && canvas?.height ? canvas.width / canvas.height : 16 / 9);
+	if (plan.problem !== null) return refuse(plan.problem);
+	const { w, h, view } = plan;
 
 	const fov = Number(userCamera?.fov) || 50;
 	const camera = new THREE.PerspectiveCamera(fov, w / h, 0.05, 2000);
-	if (view === 'current') {
+	/** @type {number[] | null} */
+	let aimedAt = null;
+	/** @type {{kind: string, uuids?: string[], names?: string[]}} */
+	let subject = { kind: 'none' };
+	if (plan.free) {
+		camera.position.fromArray(plan.free.position);
+		// a straight-up or straight-down look has no "up" of its own
+		const look = new THREE.Vector3().fromArray(plan.free.target).sub(camera.position).normalize();
+		if (Math.abs(look.y) > 0.999) camera.up.set(0, 0, look.y < 0 ? -1 : 1);
+		camera.lookAt(new THREE.Vector3().fromArray(plan.free.target));
+		camera.zoom = plan.zoom;
+		aimedAt = plan.free.target;
+	} else if (plan.current) {
 		if (!userCamera) return null;
 		userCamera.updateMatrixWorld?.();
 		camera.position.setFromMatrixPosition(userCamera.matrixWorld);
 		camera.quaternion.setFromRotationMatrix(new THREE.Matrix4().extractRotation(userCamera.matrixWorld));
 		camera.near = userCamera.near ?? 0.05;
 		camera.far = userCamera.far ?? 2000;
+		camera.zoom = plan.zoom;
+		subject = { kind: 'what the person sees' };
 	} else {
-		let subject = group;
-		if (view === 'focus') {
-			subject = opts.uuid ? group?.getObjectByProperty?.('uuid', String(opts.uuid)) : null;
-			if (!subject) throw new Error('focus needs the uuid of an object in the scene');
+		let objects = group ? [group] : [];
+		subject = { kind: 'scene' };
+		if (plan.uuids.length) {
+			objects = plan.uuids.map((uuid) => group?.getObjectByProperty?.('uuid', uuid));
+			const gone = plan.uuids.filter((_, i) => !objects[i]);
+			if (gone.length) return refuse('not in the scene: ' + gone.join(', '));
+			subject = { kind: 'objects', uuids: plan.uuids, names: objects.map((o) => String(o.name ?? '')) };
 		}
-		const pose = viewPose(view, boundsOf(boxOf(subject)), fov, w / h);
+		const pose = viewPose(/** @type {any} */ (view), boundsOf(boxOfAll(objects)), fov, w / h, plan.margin, plan.dir, plan.zoom);
 		camera.position.fromArray(pose.position);
 		camera.up.fromArray(pose.up);
 		camera.lookAt(new THREE.Vector3().fromArray(pose.target));
 		camera.near = pose.near;
 		camera.far = pose.far;
+		aimedAt = pose.target;
 	}
 	camera.updateProjectionMatrix();
 	camera.updateMatrixWorld();
@@ -174,8 +208,13 @@ export async function takeScreenshot(opts = {}) {
 	ctx.drawImage(big, 0, 0, w, h);
 	lastShot = {
 		position: camera.position.toArray(),
-		target: camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(5).add(camera.position).toArray(),
+		target: aimedAt ?? camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(5).add(camera.position).toArray(),
+		fov,
+		zoom: camera.zoom,
+		width: w,
+		height: h,
 		view,
+		subject,
 		at: Date.now()
 	};
 	// 56 C8: a PERSON's "ask about this selection" picture is not where an agent looked

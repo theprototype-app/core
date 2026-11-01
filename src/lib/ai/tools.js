@@ -1245,7 +1245,7 @@ function flowToolSchemas(physics) {
 			function: {
 				name: 'create_flow_nodes',
 				description:
-					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + time * speed (base has pos, rot, scale as arrays). Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.',
+					'Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is "scene" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT\'s graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + elapsed * speed (base has pos, rot, scale as arrays; elapsed = seconds since Play started, time = the shared clock, seconds of the day, a large number). Particle gravity is the acceleration along world Y: negative falls, positive rises. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.',
 				parameters: {
 					type: 'object',
 					properties: {
@@ -1302,7 +1302,7 @@ function flowToolSchemas(physics) {
 			function: {
 				name: 'update_flow_nodes',
 				description:
-					'Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object\'s "flow" (and "sceneFlow"). Script code runs every frame from the base pose: use object.rotation.y = base.rot[1] + time * speed, not +=.',
+					'Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object\'s "flow" (and "sceneFlow"). Script code runs every frame from the base pose: use object.rotation.y = base.rot[1] + elapsed * speed, not += (elapsed = seconds since Play started, time = the shared clock, seconds of the day).',
 				parameters: {
 					type: 'object',
 					properties: {

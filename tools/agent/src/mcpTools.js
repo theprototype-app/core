@@ -86,12 +86,32 @@ export function bridgeTools(engine = 'browser') {
 			{
 				name: 'screenshot',
 				description:
-					'See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus (focus needs uuid).',
+					'See the scene: a PNG of a clean frame (no gizmos) from a temporary camera, never moving anyone\'s view. view: current | top | front | iso | focus (focus needs uuid or uuids); from = an angle or {yaw, pitch}; camera = a free {position, target}. 4:3 unless aspect says otherwise (current follows the person\'s window). Answers with the camera it used.',
 				inputSchema: {
 					type: 'object',
 					properties: {
 						view: { type: 'string', enum: ['current', 'top', 'front', 'iso', 'focus'] },
-						uuid: { type: 'string', description: 'object to frame (view focus)' },
+						uuid: { type: 'string', description: 'object to frame' },
+						uuids: { type: 'array', items: { type: 'string' }, description: 'objects to frame together' },
+						from: {
+							description: 'the angle around the subject, instead of view: front, back, left, right, top, below, iso, or {yaw, pitch} in degrees (yaw 0 = front, 90 = right; pitch 90 = from above)',
+							anyOf: [
+								{ type: 'string', enum: ['front', 'back', 'left', 'right', 'top', 'below', 'iso'] },
+								{ type: 'object', properties: { yaw: { type: 'number' }, pitch: { type: 'number' } }, required: ['yaw', 'pitch'] }
+							]
+						},
+						camera: {
+							type: 'object',
+							description: 'a free camera, instead of view and from',
+							properties: {
+								position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: '[x,y,z]' },
+								target: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: '[x,y,z]' }
+							},
+							required: ['position', 'target']
+						},
+						aspect: { description: 'width to height: "4:3" (default), "1:1", "16:9" or a number. view current defaults to the person\'s window', anyOf: [{ type: 'string' }, { type: 'number' }] },
+						zoom: { type: 'number', description: 'above 1 is closer, 0.1 to 10' },
+						margin: { type: 'number', description: 'room around the subject: 1 touches the frame, default 1.15' },
 						size: { type: 'number', description: 'longest side in pixels' }
 					}
 				}

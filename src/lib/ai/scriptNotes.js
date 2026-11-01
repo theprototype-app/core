@@ -6,7 +6,7 @@
 export const SCRIPT_REACH =
 	'It runs every frame, in edit mode and in play, in a sandbox, on a view of its object: position, rotation, scale, quaternion and visible, ' +
 	'userData, and material.color, emissive, emissiveIntensity, roughness, metalness, opacity, transparent, wireframe and visible. Nothing else reaches the object. ' +
-	'Every frame starts again from the base pose (material changes stay), so write the pose from time: object.rotation.y = base.rot[1] + time * speed.';
+	'Every frame starts again from the base pose (material changes stay), so write the pose from elapsed: object.rotation.y = base.rot[1] + elapsed * speed. elapsed is seconds since Play started; time is the shared clock, seconds of the day, a large number.';
 
 const TRANSFORM = String.raw`object\.(?:position|rotation|scale)(?:\.[xyz])?`;
 /** a compound write: it never builds up, because the pose restarts every frame */
@@ -29,7 +29,7 @@ const CANNOT = [
 function accumulating(code) {
 	const step = STEP.exec(code);
 	if (step) return step[0].trim();
-	for (const [, target, op, amount] of code.matchAll(COMPOUND)) if (!/\btime\b/.test(amount)) return `${target} ${op} ${amount.trim()}`;
+	for (const [, target, op, amount] of code.matchAll(COMPOUND)) if (!/\b(time|elapsed)\b/.test(amount)) return `${target} ${op} ${amount.trim()}`;
 	return null;
 }
 
@@ -50,6 +50,6 @@ export function scriptNodeWarnings(data, where) {
 	}
 	const stuck = accumulating(code);
 	if (stuck)
-		out.push(stuck + ' will not build up: a script runs every frame from the base pose, so it lands on the same value each time. Write the pose from time, for example object.rotation.y = base.rot[1] + time * speed');
+		out.push(stuck + ' will not build up: a script runs every frame from the base pose, so it lands on the same value each time. Write the pose from elapsed, for example object.rotation.y = base.rot[1] + elapsed * speed');
 	return out;
 }

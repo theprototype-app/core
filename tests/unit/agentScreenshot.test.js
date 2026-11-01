@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeView, clampSize, frameSize, viewPose, boundsOf, linearToSrgb, acesFilmic, linearFrameToSrgb } from '../../src/lib/agent/screenshotCore.js';
+import { normalizeView, clampSize, frameSize, viewPose, boundsOf, linearToSrgb, acesFilmic, linearFrameToSrgb, planShot, parseAspect, dirFrom } from '../../src/lib/agent/screenshotCore.js';
 import { missingToolsFor } from '../../src/lib/agent/toolPolicy.js';
 
 // 55 A5 (screenshot arithmetic) + A6 (the tool policy's words).
@@ -104,5 +104,61 @@ describe('tool policy (A6)', () => {
 	it('names the behaviour and physics gaps', () => {
 		const m = missingToolsFor({ ...all, meshLocal: true, behaviours: false, physics: false }).map((x) => x.name);
 		expect(m).toEqual(['set_physics', 'create_joints', 'control_simulation', 'create_behaviour', 'edit_behaviour']);
+	});
+});
+
+describe('17: shape, angles and the camera a shot asks for', () => {
+	it('framed views are 4:3 whatever the canvas; current keeps the canvas', () => {
+		for (const view of ['top', 'front', 'iso']) expect(planShot({ view, size: 700 }, 3.8)).toMatchObject({ w: 700, h: 525, current: false });
+		expect(planShot({ view: 'focus', uuid: 'u', size: 700 }, 2)).toMatchObject({ w: 700, h: 525 });
+		expect(planShot({ view: 'current', size: 700 }, 2)).toMatchObject({ w: 700, h: 350, current: true });
+		expect(planShot({ size: 800 }, 3.8)).toMatchObject({ w: 800, h: 600, view: 'iso' });
+	});
+	it('aspect reads as a ratio or a number and stays clamped', () => {
+		expect(parseAspect('4:3')).toBeCloseTo(4 / 3);
+		expect(parseAspect('16/9')).toBeCloseTo(16 / 9);
+		expect(parseAspect('1.5')).toBe(1.5);
+		expect(parseAspect(2)).toBe(2);
+		for (const bad of ['wide', '4:0', 0, -1, NaN, null]) expect(parseAspect(bad), String(bad)).toBe(null);
+		expect(planShot({ view: 'iso', aspect: '1:1', size: 500 }, 3)).toMatchObject({ w: 500, h: 500 });
+		expect(planShot({ view: 'current', aspect: '1:1', size: 500 }, 3)).toMatchObject({ w: 500, h: 500 });
+		expect(planShot({ view: 'iso', aspect: 40, size: 800 }, 1)).toMatchObject({ w: 800, h: 200 });
+		expect(planShot({ view: 'iso', aspect: 'wide' }, 1).problem).toMatch(/aspect/);
+	});
+	it('from names an angle, or yaw and pitch in degrees', () => {
+		expect(dirFrom('left')).toEqual([-1, 0, 0]);
+		expect(dirFrom('below')).toEqual([0, -1, 0]);
+		const right = /** @type {number[]} */ (dirFrom({ yaw: 90, pitch: 0 }));
+		expect(right[0]).toBeCloseTo(1);
+		expect(right[2]).toBeCloseTo(0);
+		expect(/** @type {number[]} */ (dirFrom({ yaw: 0, pitch: 90 }))[1]).toBeCloseTo(1);
+		expect(dirFrom('sideways')).toBe(null);
+		expect(dirFrom({ yaw: 'x', pitch: 0 })).toBe(null);
+		expect(planShot({ from: 'sideways' }, 1).problem).toMatch(/from is one of/);
+		expect(planShot({ view: 'current', from: 'left' }, 2)).toMatchObject({ current: false, dir: [-1, 0, 0] });
+	});
+	it('viewPose stands where the angle says, closer with zoom, further with margin', () => {
+		const b = { center: [1, 2, 3], radius: 2 };
+		const left = viewPose('iso', b, 50, 4 / 3, 1.15, [-1, 0, 0]);
+		expect(left.position[0]).toBeLessThan(1);
+		expect(left.position[1]).toBe(2);
+		expect(left.target).toEqual([1, 2, 3]);
+		const near = viewPose('iso', b, 50, 4 / 3, 1.15, [-1, 0, 0], 2);
+		expect(1 - near.position[0]).toBeCloseTo((1 - left.position[0]) / 2);
+		expect(viewPose('iso', b, 50, 4 / 3, 2, [-1, 0, 0]).position[0]).toBeLessThan(left.position[0]);
+		expect(viewPose('top', b, 50, 1).up).toEqual([0, 0, -1]);
+		expect(viewPose('iso', b, 50, 1, 1.15, [0, -1, 0]).up).toEqual([0, 0, 1]);
+		expect(viewPose('iso', b, 50, 1, 1.15, [1, 0, 0]).up).toEqual([0, 1, 0]);
+	});
+	it('focus takes one uuid or many; a free camera needs both points', () => {
+		expect(planShot({ view: 'focus' }, 1).problem).toMatch(/focus needs/);
+		expect(planShot({ view: 'focus', uuids: ['a', 'b'], uuid: 'a' }, 1)).toMatchObject({ uuids: ['a', 'b'] });
+		expect(planShot({ camera: { position: [0, 1, 2] } }, 1).problem).toMatch(/position and target/);
+		expect(planShot({ camera: { position: [0, 1, 2], target: [0, 1, 2] } }, 1).problem).toMatch(/same point/);
+		expect(planShot({ view: 'focus', camera: { position: [0, 1, 2], target: [0, 0, 0] } }, 1)).toMatchObject({ problem: null, free: { position: [0, 1, 2], target: [0, 0, 0] }, current: false });
+	});
+	it('zoom and margin stay in range', () => {
+		expect(planShot({ zoom: 100, margin: 0 }, 1)).toMatchObject({ zoom: 10, margin: 0.5 });
+		expect(planShot({}, 1)).toMatchObject({ zoom: 1, margin: 1.15 });
 	});
 });

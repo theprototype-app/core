@@ -222,10 +222,12 @@ export function createBridgeServer(opts) {
 			if (!engine) return textResult({ error: 'not connected — join first', note: 'call connect with the session link first' }, true);
 			if (name === 'screenshot' && reserved.includes('screenshot')) {
 				if (!engineReady()) return textResult({ error: 'the agent page is not up yet (' + engine.state + ')' }, true);
-				const shot = await engine.screenshot({ view: a.view, uuid: a.uuid, size: a.size });
+				const { view, uuid, uuids, from, camera, aspect, zoom, margin, size } = a;
+				const shot = await engine.screenshot({ view, uuid, uuids, from, camera, aspect, zoom, margin, size });
 				/** @type {any[]} */
 				const content = [{ type: 'image', data: shot.data, mimeType: shot.mimeType || 'image/png' }];
 				if (shot.note) content.push({ type: 'text', text: shot.note });
+				if (shot.camera) content.push({ type: 'text', text: JSON.stringify({ camera: shot.camera }) });
 				return { content };
 			}
 			if (name === 'wait_for_edit' && reserved.includes('wait_for_edit')) {

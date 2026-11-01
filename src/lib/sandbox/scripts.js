@@ -72,12 +72,33 @@ const ops = {
 	}
 };
 
+/** this frame's `elapsed`, and what the guest last took (NaN = nothing yet) */
+let elapsedValue = 0;
+let elapsedSent = NaN;
+
 /** the scripts guest (null while the engine loads) */
 function scriptGuest() {
-	if (guest && !guest.disposed) return guest;
+	if (guest && !guest.disposed) {
+		syncElapsed(guest);
+		return guest;
+	}
 	guest = newGuest(ops, [GUEST_MATH, SCRIPT_PRELUDE]);
 	sent.clear();
+	elapsedSent = NaN;
+	if (guest) syncElapsed(guest);
 	return guest;
+}
+
+/** @param {any} g once a frame at most, and only on a frame that runs a script */
+function syncElapsed(g) {
+	if (elapsedSent === elapsedValue) return;
+	elapsedSent = elapsedValue;
+	g.callEntry('__setElapsed', elapsedValue);
+}
+
+/** 15+16: what a script reads as `elapsed` from now on (flowRuntime, once a frame) @param {number} seconds */
+export function setScriptElapsed(seconds) {
+	elapsedValue = seconds;
 }
 
 /** Is the guest ready (starts the load when it is not)? */
@@ -508,6 +529,11 @@ const SCRIPT_PRELUDE = String.raw`
 			if (result === undefined && !extra.ud && !extra.udDel && !extra.m) return t;
 			return JSON.stringify({ v: { t, p: extra, r: result } });
 		}
+	});
+	// a global and not a parameter: a parameter would make an old script's own \`const elapsed\` a syntax error
+	globalThis.elapsed = 0;
+	def('__setElapsed', (seconds) => {
+		globalThis.elapsed = +seconds;
 	});
 	def('__runValue', (key, inputs, time, withApi) => fnOf(key)(inputs, time, dist, lerp, clamp, withApi ? api : undefined));
 	def('__runPlayer', (key, settings, input, time) => fnOf(key)(settings, input, time, dist, lerp, clamp));

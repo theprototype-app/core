@@ -10,7 +10,7 @@
 	import SliderRow from '../../ui/SliderRow.svelte';
 	import ThemedSelect from '../../ui/ThemedSelect.svelte';
 	import { environment, presetPayload, setEnvironment, editEnvSky } from '$lib/environment';
-	import { BUNDLED_HDRIS } from '$lib/hdri/catalog.js';
+	import { BUNDLED_HDRIS, bundledHdri } from '$lib/hdri/catalog.js';
 	import { hdriOf } from '$lib/hdri/hdriCore.js';
 	import { hdriStatus } from '$lib/hdri/skyEnv.js';
 	import { explorerItems, addItemFromBytes } from '$lib/explorer';
@@ -88,7 +88,7 @@
 	);
 </script>
 
-<div id="env-hdri" data-tour="env-hdri" data-keywords="hdri hdr exr sky image skybox environment map ibl image based lighting reflections exposure tone mapping rotation">
+<div id="env-hdri" data-tour="env-hdri" data-keywords="hdri hdr exr ultrahdr sky quality minimum resolution sky image skybox environment map ibl image based lighting reflections exposure tone mapping rotation">
 	<p class="ui-section-label">Sky image (HDRI)</p>
 	<div class="hdri-grid">
 		<button
@@ -160,6 +160,43 @@
 			/>
 			{/snippet}
 		</PropRow>
+		<!-- 72 LK2: only a bundled sky comes in sizes; a blurred sky has no use for them -->
+		{#if bundledHdri(hdri.src) && hdri.background}
+			<PropRow label="Sky quality" valueBox={false}>
+				{#snippet control()}
+				<ThemedSelect
+					id="hdri-sky-quality"
+					class="flex-1"
+					value={hdri.quality}
+					items={[
+						{ value: 'auto', name: 'Auto' },
+						{ value: 'standard', name: 'Standard (1K)' },
+						{ value: 'high', name: 'High (2K)' },
+						{ value: 'max', name: 'Max (4K)' }
+					]}
+					onchange={(/** @type {any} */ v) => edit({ quality: v })}
+				/>
+				{/snippet}
+			</PropRow>
+			{#if hdri.quality === 'auto'}
+				<PropRow label="Minimum quality" valueBox={false}>
+					{#snippet control()}
+					<ThemedSelect
+						id="hdri-sky-min"
+						class="flex-1"
+						value={hdri.minQuality}
+						items={[
+							{ value: 'standard', name: 'Standard (1K)' },
+							{ value: 'high', name: 'High (2K)' },
+							{ value: 'max', name: 'Max (4K)' }
+						]}
+						onchange={(/** @type {any} */ v) => edit({ minQuality: v })}
+					/>
+					{/snippet}
+				</PropRow>
+			{/if}
+			<p class="text-[length:var(--fs-badge)] text-text-muted">Auto picks by device and connection, and players can change it in the game's options. A headset stays at High or below.</p>
+		{/if}
 		{#if statusText}
 			<p id="hdri-status" class="text-[length:var(--fs-badge)] text-text-muted">{statusText}</p>
 		{/if}

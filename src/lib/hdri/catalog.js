@@ -5,8 +5,13 @@
 // world frame (scripts/hdri-bake.cjs prints it), which is where each HDRI preset puts its rig
 // sun so the shadows agree with the sky. The flat colours in the presets (environment.js) come
 // from the same bake — they are what an older peer, which ignores `hdri`, shows instead.
+//
+// 72 LK2: `file` stays the 1K Radiance original (what older releases fetch, and the fallback while a
+// CDN ref does not have the new files yet); `tiers` are the UltraHDR .jpg sizes beside it on the same
+// CDN, made by scripts/hdri-uhdr.cjs. The 1K .jpg is the light (a fifth of the .hdr's bytes), the
+// larger ones only ever draw the sky.
 
-/** @type {Record<string, {label: string, file: string, card: string, credit: string, sun: number[]}>} */
+/** @type {Record<string, {label: string, file: string, card: string, credit: string, sun: number[], tiers?: string[]}>} */
 export const BUNDLED_HDRIS = {
 	clearsky: {
 		label: 'Clear sky',
@@ -20,7 +25,8 @@ export const BUNDLED_HDRIS = {
 		file: 'hdri/meadow_2_1k.hdr',
 		card: 'hdri/meadow.png',
 		credit: 'Meadow 2 — Sergej Majboroda (Poly Haven, CC0)',
-		sun: [0.721, 0.452, 0.525]
+		sun: [0.721, 0.452, 0.525],
+		tiers: ['1k', '2k', '4k', '8k'] // the showcase: the only sky with an 8K file
 	},
 	sunrise: {
 		label: 'Sunrise',
@@ -44,6 +50,17 @@ export const BUNDLED_HDRIS = {
 		sun: [-0.821, 0.258, -0.509]
 	}
 };
+
+/** the tiers a row offers @param {{tiers?: string[]}} row */
+export function skyTiers(row) {
+	return row.tiers ?? ['1k', '2k', '4k'];
+}
+
+/** the UltraHDR file of a row at a tier: 'hdri/meadow_2_1k.hdr' -> 'hdri/meadow_2_4k.jpg'
+ * @param {{file: string}} row @param {string} tier */
+export function skyTierFile(row, tier) {
+	return row.file.replace(/_1k\.hdr$/, '_' + tier + '.jpg');
+}
 
 /** 'bundled:meadow' -> its catalog row, else null @param {string} src */
 export function bundledHdri(src) {

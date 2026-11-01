@@ -80,6 +80,16 @@ export const CORE_SETTINGS = [
 		options: ['auto', 'low', 'medium', 'high'],
 		optionLabels: ['Auto', 'Low', 'Medium', 'High'],
 		default: 'auto'
+	},
+	// 72 LK2: read by the sky layer. A scene that names its own quality keeps it (hdriCore).
+	{
+		id: 'skyQuality',
+		label: 'Sky quality',
+		type: 'choice',
+		options: ['auto', 'standard', 'high', 'max'],
+		optionLabels: ['Auto', 'Standard', 'High', 'Max'],
+		default: 'auto',
+		help: 'How sharp the sky is. Higher downloads more.'
 	}
 ];
 

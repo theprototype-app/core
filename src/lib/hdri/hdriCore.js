@@ -12,6 +12,8 @@
 //     background: boolean,                    show it as the sky (false = light only, the payload's colour sky shows)
 //     blur: 0..1,                             softens the sky (scene.backgroundBlurriness)
 //     toneMapping: 'aces' | 'agx' | 'neutral' the curve the frame is mapped with while an HDRI shows
+//     quality: 'auto'|'standard'|'high'|'max',   72 LK2: how sharp the visible sky is (a bundled sky)
+//     minQuality: 'standard'|'high'|'max'        72 LK2: the floor under Auto and a player's pick
 //   }
 //
 // Every field is optional and read through `hdriOf` only, so a malformed value reads as
@@ -19,7 +21,10 @@
 
 export const HDRI_TONE_MAPPINGS = /** @type {const} */ (['aces', 'agx', 'neutral']);
 
-/** @typedef {{src: string, name: string, rotation: number, intensity: number, background: boolean, blur: number, toneMapping: string}} Hdri */
+/** the visible sky's quality names, lowest first @type {readonly string[]} */
+export const SKY_QUALITIES = /** @type {const} */ (['standard', 'high', 'max']);
+
+/** @typedef {{src: string, name: string, rotation: number, intensity: number, background: boolean, blur: number, toneMapping: string, quality: string, minQuality: string}} Hdri */
 
 /** @param {any} v @param {number} lo @param {number} hi @param {number} fallback */
 function clampNum(v, lo, hi, fallback) {
@@ -47,7 +52,9 @@ export function hdriOf(payload) {
 		intensity: clampNum(h.intensity, 0, 4, 1),
 		background: h.background !== false,
 		blur: clampNum(h.blur, 0, 1, 0),
-		toneMapping: HDRI_TONE_MAPPINGS.includes(h.toneMapping) ? h.toneMapping : 'aces'
+		toneMapping: HDRI_TONE_MAPPINGS.includes(h.toneMapping) ? h.toneMapping : 'aces',
+		quality: SKY_QUALITIES.includes(h.quality) ? h.quality : 'auto',
+		minQuality: SKY_QUALITIES.includes(h.minQuality) ? h.minQuality : 'standard'
 	};
 }
 
@@ -75,6 +82,8 @@ export function mergeHdriPatch(current, patch) {
 	if (!norm.background) out.background = false;
 	if (norm.blur) out.blur = norm.blur;
 	if (norm.toneMapping !== 'aces') out.toneMapping = norm.toneMapping;
+	if (norm.quality !== 'auto') out.quality = norm.quality;
+	if (norm.minQuality !== 'standard') out.minQuality = norm.minQuality;
 	return out;
 }
 
@@ -89,6 +98,59 @@ export function resolveHdriTier(s) {
 	if (s.pref === 'full') return 'full';
 	if (s.presenting || s.headset || s.postOff) return 'low';
 	return 'full';
+}
+
+/**
+ * 72 LK2 — HOW SHARP THE VISIBLE SKY IS HERE. Each peer resolves this for itself from the replicated
+ * scene settings and its own device, so a phone and a desktop in one session show one sky at two
+ * sizes. In order:
+ *   1. a device pinned to Low stays Low (the way out for a machine that cannot afford more);
+ *   2. a scene that names a quality gets it;
+ *   3. a scene on Auto: the player's pick (this game's menu, else this device's Settings), else
+ *      Standard where memory or data is short (headset, phone, the governor past post-off, a slow
+ *      or metered connection) and High elsewhere. Auto never reaches Max on its own: 4K is ten
+ *      times the download for a difference most views never show;
+ *   4. the scene's minimum raises the result (a showcase can refuse a blurry sky);
+ *   5. a headset never goes past High, whatever was asked: the Quest budget is not negotiable.
+ * @param {{scene?: string, minimum?: string, gamePref?: string, devicePref?: string, presenting?: boolean,
+ *   headset?: boolean, phone?: boolean, postOff?: boolean, slowNet?: boolean}} s
+ * @returns {'standard'|'high'|'max'}
+ */
+export function resolveSkyQuality(s) {
+	/** @param {any} q */
+	const rank = (q) => SKY_QUALITIES.indexOf(q);
+	if (s.devicePref === 'low') return 'standard';
+	const inHeadset = !!(s.presenting || s.headset);
+	/** @type {any} */
+	let pick;
+	if (rank(s.scene) >= 0) pick = s.scene;
+	else if (rank(s.gamePref) >= 0) pick = s.gamePref;
+	else if (rank(s.devicePref) >= 0) pick = s.devicePref;
+	else pick = inHeadset || s.phone || s.postOff || s.slowNet ? 'standard' : 'high';
+	if (rank(s.minimum) > rank(pick)) pick = s.minimum;
+	if (inHeadset && rank(pick) > rank('high')) pick = 'high';
+	return pick;
+}
+
+/** the pixel width of a sky file tier @param {string} tier '1k'... */
+export function skyTierWidth(tier) {
+	return 1024 * Number(String(tier).replace('k', ''));
+}
+
+/**
+ * Which file a quality means on this machine. Max is 4K, or 8K on the sky that has one when the
+ * machine can plainly take it (a whole 8K sky is 200 MB of GPU memory). A tier the GPU cannot hold
+ * steps down: the cube's face is a quarter of the file's width.
+ * @param {string} quality @param {string[]} tiers what the sky offers
+ * @param {{maxTexture?: number, maxCube?: number, memoryGB?: number, phone?: boolean}} caps
+ * @returns {string} '1k'|'2k'|'4k'|'8k'
+ */
+export function skyFileTier(quality, tiers, caps = {}) {
+	const want = quality === 'max' ? (caps.memoryGB && caps.memoryGB >= 8 && !caps.phone ? '8k' : '4k') : quality === 'high' ? '2k' : '1k';
+	const fits = (/** @type {string} */ t) =>
+		tiers.includes(t) && skyTierWidth(t) <= (caps.maxTexture ?? Infinity) && skyTierWidth(t) / 4 <= (caps.maxCube ?? Infinity);
+	for (const t of ['8k', '4k', '2k', '1k']) if (skyTierWidth(t) <= skyTierWidth(want) && fits(t)) return t;
+	return '1k';
 }
 
 /** A headset browser by its user agent (Quest, Pico, Vive Focus) @param {string} ua */

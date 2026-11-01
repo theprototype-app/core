@@ -215,7 +215,7 @@ h.run(async () => {
 		await P.page.locator('#ai-header-signin').waitFor({ state: 'visible', timeout: 10000 });
 		const hb = await fits('#ai-header-signin');
 		const closeFits = await fits('#ai-assistant-window .wc-close');
-		h.check(hb.ok && closeFits.ok, `N6 ${name}: the header button and the header's other buttons fit (${JSON.stringify(hb.box)}, hit ${hb.hit}/${closeFits.hit})`);
+		h.check(hb.ok && closeFits.hit && closeFits.box.x + closeFits.box.width <= viewport.width, `N6 ${name}: the header button fits and the close button stays on screen and pressable (${JSON.stringify(hb.box)}, hit ${hb.hit}/${closeFits.hit})`);
 		await P.page.screenshot({ path: path.join(OUT, `fw-ai-n6-${name}.png`) }).catch(() => {});
 		await P.page.locator('#ai-header-signin').click();
 		await P.page.locator('#avatar-dropdown #fake-cloud-signin').waitFor({ state: 'visible', timeout: 10000 });

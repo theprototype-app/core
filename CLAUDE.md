@@ -2649,6 +2649,21 @@ sub-entry with its line: grep the index for a word, then read this file from tha
   2 (every canvas panel >= 1 texel per Quest pixel). `api.claimInput('sticks')` + the world-pan stick REEL (stick Y
   pushes/pulls a one-grip world, as Edit does an object); `addSetting({onLevels: true})` draws a choice as tabs on the
   VR Levels page, which now lists every level.
+- **ROADMAP 72 (72-materials) — MATERIAL MAP SLOTS (LK1) AND LOOK ANIMATION IN GLB (LK4).** LK1: `lib/materialMaps.js` (the
+  `materialmaps` history kind, write paths, receivers; `setObjectsMapSet` = the one seam a generator such as PBRnxt fills)
+  + `lib/materialMapTextures.js` (apply, per-material transform, thumbs) + `materialParamRules.js` (`MAP_SLOTS`, inline
+  png/jpeg/webp only and never a URL; `guessMapSlot`: the LAST naming word in a file name wins) + `MaterialMapSlots.svelte`
+  (Inspector). Traps: a map's URL lives in a WeakMap, not `userData`, or GLTF extras double the image; a texture transform
+  is CLONE-ON-WRITE per material because three shares one texture across slots; a slot set is newest-wins by token (decode
+  is async, a slower older pick must not land last); Remove goes through `mapSlotFilled`, so it beats a load in flight;
+  setting a value map lifts `metalness`/`roughness`/`emissive` IN THE SAME UNDO STEP (a map times 0 draws nothing).
+  LK4: `lib/gltfLookPointers.js` (pure: `pointerTracksFor`, `dropFlatSamples`) + `lib/gltfLookExport.js` (`LookPointerPlugin`,
+  `withLookAnimation`). Samples via `evaluateClip`; writes `KHR_animation_pointer` for material, `KHR_node_visibility`,
+  light and the new `camera.fov` channel, and camera markers become real glTF cameras. GLTFExporter's material cache keys
+  are `uuid`, `uuid:true`, `uuid:false`: read all three. Quest/web preset passes `lookAnimation:false` with a note.
+  GLTFLoader ignores pointers, so look animation does NOT come back on re-import. `bakedForExporter`: GLTFExporter wants
+  animations PER ROOT, so a several-object export used to lose all authored movement silently. Suites: vitest
+  `materialParamRules`, `gltfLookPointers`; e2e `material-map-slots`, `look-animation-export`.
 - **ROADMAP 59 (59-replace + 59-int) — REPLACE MODEL FROM A FILE.** `lib/modelReplace.js` (lazy): parse → F2 keep plans →
   sanity (`modelSanity`) → `installVersion` swaps the tree at the live uuid (undo, redo and the replace share it) → ONE
   `modelreplace` history entry holding both versions. Embedded clips kept by bone name are written INTO the new GLB's

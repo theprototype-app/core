@@ -53,6 +53,12 @@
 	const scale = new THREE.Vector3();
 	useTask(() => {
 		if (!cameraRef || !object) return;
+		// 72 LK4: a clip can drive the lens, and it writes the marker's settings in place (no store fires)
+		const fov = object.userData?.camera?.fov;
+		if (cameraRef.isPerspectiveCamera && typeof fov === 'number' && cameraRef.fov !== fov) {
+			cameraRef.fov = fov;
+			cameraRef.updateProjectionMatrix();
+		}
 		if ($cameraPreview?.controlling) {
 			// the nav/orbit already moved the camera this frame — push it to the marker
 			writeBackPose(cameraRef, object);

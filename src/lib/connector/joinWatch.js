@@ -9,6 +9,8 @@
 
 /** how long a dial may go unanswered before join_session reports back (the Worker's budget for a call is 120 s) */
 export const JOIN_DIAL_WAIT_MS = 15 * 1000;
+/** a dial with no answer at all (no page, and no word from signaling either) gives up here, so `waiting` cannot stay on */
+export const JOIN_DIAL_GIVE_UP_MS = 45 * 1000;
 /** how long the app's own questions (leave a session? another server?) may stay open */
 export const JOIN_ASK_WAIT_MS = 120 * 1000;
 
@@ -27,6 +29,8 @@ export function nextJoinState(was, facts) {
 	const at = facts.now;
 	const to = (/** @type {JoinResult['state']} */ state, /** @type {string} */ note) => (state === was.state ? was : { session: was.session, state, note, at });
 	if (facts.joined) return to('joined', 'This tab is in session ' + was.session + '.');
+	if (facts.requested && !facts.linkOpen && was.state !== 'waiting' && facts.now - facts.startedAt > JOIN_DIAL_GIVE_UP_MS)
+		return to('failed', 'Nothing answered for session ' + was.session + ', so this tab stopped trying. Check the id, or ask its host to stay online.');
 	if (facts.requested) return facts.linkOpen ? to('waiting', 'Session ' + was.session + ' answered. Its host has to press Approve.') : to('dialing', 'Asking for session ' + was.session + '. Nothing has answered yet.');
 	if (was.state === 'asking') {
 		return facts.now - facts.startedAt > JOIN_ASK_WAIT_MS ? to('failed', 'The person did not finish the app’s question, so this tab did not join.') : was;

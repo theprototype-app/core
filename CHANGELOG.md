@@ -9,6 +9,9 @@
 
 - **"What can you do?" works** through the Claude connector, and so does *save_scene*. Saves keep older versions, and an AI save cannot write over another scene.
 - **Joining a session tells the truth.** *join_session* only reports success once you pressed Join and the connection is really up; *status* no longer contradicts itself.
+- **A reconnect doesn't lose Claude's work.** If the link to your tab drops for a moment, the call carries on and answers when it is back, instead of claiming you connected another tab.
+- **A session that never answers ends the join** instead of leaving the tab waiting. *status* also names tools that can't run right now, such as code that failed to load after a new version went live.
+- **Physics inside a group:** starting the simulation now says which objects are inside a group and how to fix it, instead of claiming nothing has physics.
 - **Fixed joints hold** on bodies moved by flow nodes. Pausing or resuming a stopped simulation now says why nothing happened.
 - **Particles on a rotated parent** can aim in world axes, and gravity always points world down.
 - **Script nodes** warn when a pose grows every frame, or when a script reaches for something that isn't there; errors show in *status*.

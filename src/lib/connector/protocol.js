@@ -183,7 +183,8 @@ export function parseFrame(text) {
 
 /** @param {string} token @param {string} version @param {string[]} tools */
 export const helloFrame = (token, version, tools) =>
-	JSON.stringify({ type: 'hello', v: CONNECTOR_PROTOCOL, token, app: { version: String(version) }, tools });
+	// mcp-fix: keepsCalls = this tab goes on with its calls across a blip and answers them on the new link
+	JSON.stringify({ type: 'hello', v: CONNECTOR_PROTOCOL, token, app: { version: String(version) }, tools, keepsCalls: true });
 
 /** @param {boolean} visible */
 export const stateFrame = (visible) => JSON.stringify({ type: 'state', visible, connectorVersion: CONNECTOR_PROTOCOL });

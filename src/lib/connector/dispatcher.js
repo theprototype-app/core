@@ -53,6 +53,11 @@ const READ_TOOLS = new Set([...READ_ONLY_TOOLS, ...BRIDGE_TOOLS, 'where_are_user
 /** @param {any} t */
 const nameOf = (t) => String(t?.function?.name ?? t?.name ?? '');
 
+/** what a browser says when a code chunk cannot be fetched (Chromium, Firefox, Safari) */
+const CODE_LOAD_FAILED = /dynamically imported module|error loading dynamically|importing a module script failed|unable to preload/i;
+const CODE_WORDS = 'its code could not be loaded, usually because a new version went live while this tab stayed open. Ask the person to reload the tab.';
+const PROBE_WAIT_MS = 3000;
+
 /**
  * @param {{
  *   agent: {tools: () => any[], exec: (name: string, args: any) => Promise<any>, status: () => any,
@@ -62,6 +67,7 @@ const nameOf = (t) => String(t?.function?.name ?? t?.name ?? '');
  *   encodeShot: (dataUrl: string) => Promise<{image: {mimeType: string, data: string}, width: number, height: number} | null>,
  *   joinSession?: (args: any, ctx: {onCancel: (fn: () => void) => void}) => Promise<any>,
  *   whereAreUsers?: () => any,
+ *   toolCode?: Record<string, () => Promise<any>>,
  *   you?: () => {peerId: string|null, name: string, role: 'host'|'guest'|'editor'|'viewer', inVR: boolean},
  *   lastJoinResult?: () => any,
  *   onCallStart?: (call: {id: string, tool: string}) => void,
@@ -96,6 +102,25 @@ export function createDispatcher(deps) {
 		return [...BRIDGE_TOOLS, ...ownTools(), ...[...sceneTools().keys()].filter((n) => !BRIDGE_SCHEMAS[n] && !CONNECTOR_SCHEMAS[n])];
 	}
 
+	/** mcp-fix: listed tools this tab could not run just now, for status.missingTools @type {Map<string, string>} */
+	const broken = new Map();
+	/** @param {string} tool @param {any} a the call's answer */
+	function noteOutcome(tool, a) {
+		if (!('error' in a)) return void broken.delete(tool);
+		const message = String(a.error?.message ?? '');
+		if (CODE_LOAD_FAILED.test(message)) broken.set(tool, CODE_WORDS);
+		else if (tool === 'where_are_users') broken.set(tool, message);
+	}
+	/** lazily-loaded tool code, tried once when the first status asks, so it is reported before anyone calls the tool */
+	/** @type {Promise<void> | null} */
+	let probed = null;
+	function probeToolCode() {
+		probed ??= Promise.all(
+			Object.entries(deps.toolCode ?? {}).map(([name, load]) => load().then(() => broken.delete(name), () => void broken.set(name, CODE_WORDS)))
+		).then(() => {});
+		return Promise.race([probed, new Promise((resolve) => setTimeout(resolve, PROBE_WAIT_MS))]);
+	}
+
 	/** @param {string} id @param {{result: any} | {error: {code: string, message: string}}} answer */
 	function answer(id, answer) {
 		const call = inFlight.get(id);
@@ -105,6 +130,7 @@ export function createDispatcher(deps) {
 		try {
 			deps.onCallEnd?.({ id, tool: call.tool, ok: !('error' in answer) });
 		} catch {}
+		noteOutcome(call.tool, answer);
 		deps.send(answerFrame(id, answer));
 	}
 
@@ -123,6 +149,8 @@ export function createDispatcher(deps) {
 		const others = Array.isArray(rest.peers) ? rest.peers : [];
 		const users = you ? [{ id: you.peerId, name: you.name, you: true }, ...others] : others;
 		const lastJoinResult = deps.lastJoinResult?.() ?? null;
+		const gaps = [...broken].map(([name, reason]) => ({ name, reason }));
+		if (gaps.length) rest.missingTools = [...(rest.missingTools ?? []).filter((/** @type {any} */ m) => !broken.has(m?.name)), ...gaps];
 		return { ...rest, ...(you ? { you, peers: users } : {}), ...(lastJoinResult ? { lastJoinResult } : {}), tab: { visible: deps.visible(), connector: true } };
 	}
 
@@ -247,7 +275,7 @@ export function createDispatcher(deps) {
 			/** @type {Promise<any>} */
 			const run =
 				tool === 'status'
-					? Promise.resolve({ result: status() })
+					? probeToolCode().then(() => ({ result: status() }))
 					: tool === 'screenshot'
 						? screenshot(id, args)
 						: tool === 'wait_for_edit'

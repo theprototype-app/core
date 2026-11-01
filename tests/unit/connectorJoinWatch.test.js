@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { JOIN_ASK_WAIT_MS, joinSettled, nextJoinState } from '../../src/lib/connector/joinWatch.js';
+import { JOIN_ASK_WAIT_MS, JOIN_DIAL_GIVE_UP_MS, joinSettled, nextJoinState } from '../../src/lib/connector/joinWatch.js';
 
 const base = { requested: false, linkOpen: false, joined: false, startedAt: 0, now: 1000 };
 const start = (/** @type {any} */ state) => /** @type {any} */ ( ({ session: 'ZZZ99', state, note: '', at: 0 }));
@@ -9,6 +9,12 @@ describe('mcp-fix: what became of a join', () => {
 		const s = nextJoinState(start('dialing'), { ...base, requested: true });
 		expect(s.state).toBe('dialing');
 		expect(s.note).not.toMatch(/Approve/);
+	});
+	it('a dial nothing answers gives up, while one the host answered goes on waiting for Approve', () => {
+		const late = { ...base, requested: true, now: JOIN_DIAL_GIVE_UP_MS + 1 };
+		expect(nextJoinState(start('dialing'), late).state).toBe('failed');
+		expect(nextJoinState(start('dialing'), { ...late, now: JOIN_DIAL_GIVE_UP_MS - 1 }).state).toBe('dialing');
+		expect(nextJoinState(start('waiting'), { ...late, linkOpen: true }).state).toBe('waiting');
 	});
 	it('the request ending with no link means no such session', () => {
 		const s = nextJoinState(start('dialing'), base);

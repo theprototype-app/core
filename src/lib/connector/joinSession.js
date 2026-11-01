@@ -15,6 +15,7 @@
 import { get } from 'svelte/store';
 import { confirmDialog } from '../confirmDialog.js';
 import { handleInviteHash } from '../inviteLinks.js';
+import { cancelOutboundRequest } from '../peerApproval.js';
 import { nameOf } from '../lockControl.js';
 import { APP_ORIGIN } from '../playOrigin.js';
 import { peers, pendingApprovals, waitingForApproval } from '../../stores/appStore.js';
@@ -74,8 +75,11 @@ function watchJoin(id, state, answerBy) {
 		let answered = false;
 		const tick = () => {
 			if (seq !== joinWatchSeq || !lastJoin) return resolve(/** @type {any} */ (lastJoin));
-			lastJoin = nextJoinState(lastJoin, joinFacts(id, startedAt));
+			const facts = joinFacts(id, startedAt);
+			lastJoin = nextJoinState(lastJoin, facts);
 			const settled = joinSettled(lastJoin.state);
+			// the watcher gave up on a request the app still holds: take it down, or status stays `waiting`
+			if (lastJoin.state === 'failed' && facts.requested) cancelOutboundRequest(id);
 			if (!answered && (settled || lastJoin.state === 'waiting' || Date.now() >= answerBy)) {
 				answered = true;
 				resolve(lastJoin);

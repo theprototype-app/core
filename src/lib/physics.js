@@ -235,6 +235,25 @@ function transformOf(object) {
 }
 
 /**
+ * mcp-fix: why a start found nothing to run. Only `objectsGroup`'s direct children get bodies, while set_physics and
+ * list_scene work on any object, so an object inside a group can read as dynamic and never simulate.
+ * @returns {{nested: {uuid: string, name: string, group: string}[], lockedOut: string[]}}
+ */
+export function simulationGaps() {
+	const group = /** @type {any} */ (get(objectsGroup));
+	const nested = /** @type {{uuid: string, name: string, group: string}[]} */ ([]);
+	group?.traverse?.((/** @type {any} */ o) => {
+		if (o === group || o.parent === group || o.userData?.physics?.mode !== 'dynamic') return;
+		nested.push({ uuid: o.uuid, name: o.name || o.type, group: o.parent?.name || 'a group' });
+	});
+	const locked = new Set(get(lockedObjects).map((/** @type {any} */ l) => l[1]));
+	const lockedOut = (group?.children ?? [])
+		.filter((/** @type {any} */ o) => o.userData?.physics?.mode === 'dynamic' && locked.has(o.uuid))
+		.map((/** @type {any} */ o) => o.name || o.type);
+	return { nested, lockedOut };
+}
+
+/**
  * Per-object physics params. Source of truth = object.userData.physics
  * {mode:'auto'|'static'|'dynamic', mass, restitution, friction, collider}
  * (replicates free via object sync / GLTF extras / sessions), seeded first;
@@ -1062,7 +1081,8 @@ async function startSimulation() {
 		// slabs + the followed moving parts, and as the fallback body it fell over and took
 		// every click as a carry. `selectedObject` is sticky, so the door just placed (and
 		// deselected) was exactly what this picked.
-		if (selected && !selected.userData?.behavior && group.getObjectByProperty('uuid', selected.uuid) && !locked.includes(selected.uuid)) {
+		// mcp-fix: only a top-level object gets a body, so a selection inside a group would start an empty world
+		if (selected && !selected.userData?.behavior && selected.parent === group && !locked.includes(selected.uuid)) {
 			params[selected.uuid] = { ...(params[selected.uuid] ?? {}), mass: 1 };
 			delete params[selected.uuid].forceStatic;
 			dynamicUuids = [selected.uuid];

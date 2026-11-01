@@ -21,7 +21,8 @@ import {
 	pauseSimulation,
 	resetSimulation,
 	simulating,
-	remoteSimulating
+	remoteSimulating,
+	simulationGaps
 } from '$lib/physics';
 import { createJoint } from '$lib/joints';
 import { scriptNodeWarnings } from './scriptNotes.js';
@@ -616,6 +617,9 @@ export function setPhysicsTool(args) {
 		if (!Object.keys(patch).length)
 			return { uuid, error: 'no physics keys — pass mode/mass/restitution/friction/collider' };
 		setPhysicsFor(uuid, patch);
+		// mcp-fix: only a top-level object gets a body, so say it now and not at the start
+		const held = objectOf(uuid);
+		if (held?.parent && held.parent !== get(objectsGroup)) return { uuid, ok: true, physics: patch, warning: nestedWords([{ name: held.name || held.type, group: held.parent.name || 'a group' }]) };
 		// mcp-fix: a body's kind is fixed for a run, so say that instead of seeming to have changed it
 		if (patch.mode && get(simulating)) return { uuid, ok: true, physics: patch, note: 'the simulation is running: the new mode applies from the next start (stop, then start)' };
 		return { uuid, ok: true, physics: patch };
@@ -681,6 +685,12 @@ export function createJointsTool(args) {
 	return { joints: results };
 }
 
+/** @param {{name: string, group: string}[]} list objects with physics inside a group */
+const nestedWords = (list) =>
+	list.map((o) => '"' + o.name + '" (in "' + o.group + '")').join(', ') +
+	(list.length > 1 ? ' have' : ' has') +
+	' physics but will not simulate, because the simulation only runs objects at the top of the scene, not inside a group. Move them out with update_objects parentUuid "root", or set physics on the group itself.';
+
 /**
  * control_simulation: start/stop/pause/resume/reset the physics sim. Start
  * guards the remote-initiator rule; sim start/stop deliberately records NO
@@ -697,11 +707,17 @@ export async function controlSimulationTool(args) {
 			return { error: 'another peer is already simulating — one run at a time' };
 		await toggleSimulation(); // handles the rapier wasm warmup
 		const on = get(simulating);
+		const gaps = simulationGaps();
+		const inGroups = gaps.nested.length ? nestedWords(gaps.nested) : '';
+		if (!on) {
+			if (inGroups) return { error: 'simulation did not start: ' + inGroups };
+			if (gaps.lockedOut.length) return { error: 'simulation did not start: another person is editing ' + gaps.lockedOut.join(', ') + ', and those are the only objects with dynamic physics.' };
+			return { error: 'simulation did not start — no object has physics yet (use set_physics or a mass node first)' };
+		}
 		// mcp-fix: a joint that was not built holds nothing, so never let that pass as a clean start
-		const unbuilt = on ? unbuiltJointIds() : [];
-		return on
-			? { simulating: true, ...(unbuilt.length ? { warning: 'these joints are not in the simulation, because a side has no physics body: ' + unbuilt.join(', ') } : {}) }
-			: { error: 'simulation did not start — no object has physics yet (use set_physics or a mass node first)' };
+		const unbuilt = unbuiltJointIds();
+		const warnings = [...(unbuilt.length ? ['these joints are not in the simulation, because a side has no physics body: ' + unbuilt.join(', ')] : []), ...(inGroups ? [inGroups] : [])];
+		return { simulating: true, ...(warnings.length ? { warning: warnings.join(' ') } : {}) };
 	}
 	if (action === 'stop') {
 		stopSimulation();

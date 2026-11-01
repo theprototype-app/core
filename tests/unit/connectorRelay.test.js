@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createRelayClient, backoffMs } from '../../src/lib/connector/relayClient.js';
 import { createDispatcher, BRIDGE_SCHEMAS, CONNECTOR_SCHEMAS } from '../../src/lib/connector/dispatcher.js';
 import { PING_MS, HELLO_TIMEOUT_MS, PING_TEXT, parseFrame, CONNECTOR_BLOCKED_TOOLS } from '../../src/lib/connector/protocol.js';
@@ -249,6 +249,7 @@ function dispatch(/** @type {any} */ over = {}) {
 		encodeShot: async () => ({ image: { mimeType: 'image/jpeg', data: 'BBBB' }, width: 768, height: 432 }),
 		...(over.joinSession ? { joinSession: over.joinSession } : {}),
 		...(over.whereAreUsers ? { whereAreUsers: over.whereAreUsers } : {}),
+		...(over.toolCode ? { toolCode: over.toolCode } : {}),
 		...(over.you ? { you: over.you } : {}),
 		...(over.lastJoinResult ? { lastJoinResult: over.lastJoinResult } : {})
 	});
@@ -258,6 +259,29 @@ function dispatch(/** @type {any} */ over = {}) {
 const call = (/** @type {string} */ id, /** @type {string} */ tool, args = {}, scope = 'edit') => ({ id, tool, args, scope, timeoutMs: null, connection: 'g_1' });
 
 describe('dispatcher', () => {
+	it('mcp-fix: status names a tool whose code will not load, before anyone calls it', async () => {
+		const x = dispatch({ toolCode: { animate_parts: () => Promise.reject(new TypeError('Failed to fetch dynamically imported module')) } });
+		x.d.handle(/** @type {any} */ (call('s1', 'status', {}, 'read')));
+		await vi.waitFor(() => expect(x.sent.some((/** @type {any} */ f) => f.id === 's1')).toBe(true));
+		const st = x.sent.find((/** @type {any} */ f) => f.id === 's1').result;
+		expect(st.missingTools.find((/** @type {any} */ m) => m.name === 'animate_parts').reason).toMatch(/reload the tab/);
+	});
+	it('mcp-fix: status names where_are_users while it cannot answer, and forgets once it can', async () => {
+		let down = true;
+		const x = dispatch({ whereAreUsers: () => (down ? { error: 'The 3D view is not ready yet.' } : { users: [] }) });
+		const statusNow = async (/** @type {string} */ id) => {
+			x.d.handle(/** @type {any} */ (call(id, 'status', {}, 'read')));
+			await vi.waitFor(() => expect(x.sent.some((/** @type {any} */ f) => f.id === id)).toBe(true));
+			return x.sent.find((/** @type {any} */ f) => f.id === id).result.missingTools ?? [];
+		};
+		x.d.handle(/** @type {any} */ (call('w1', 'where_are_users', {}, 'read')));
+		await vi.waitFor(() => expect(x.sent.some((/** @type {any} */ f) => f.id === 'w1')).toBe(true));
+		expect((await statusNow('s2')).find((/** @type {any} */ m) => m.name === 'where_are_users')?.reason).toMatch(/not ready/);
+		down = false;
+		x.d.handle(/** @type {any} */ (call('w2', 'where_are_users', {}, 'read')));
+		await vi.waitFor(() => expect(x.sent.some((/** @type {any} */ f) => f.id === 'w2')).toBe(true));
+		expect((await statusNow('s3')).some((/** @type {any} */ m) => m.name === 'where_are_users')).toBe(false);
+	});
 	it('mcp-fix: the import tools are not reachable through the connector, and are not advertised', async () => {
 		const x = dispatch();
 		expect(x.d.toolNames()).not.toContain('import_model');

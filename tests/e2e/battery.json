@@ -810,7 +810,8 @@
 		"gpu": ["MOD:fx-car-blocks","MOD:untangle"],
 		"peer-self": ["arch-primitives","game-race"],
 		"prod-host": ["error-reports"],
-		"software": ["behaviours","community-seams","files-format-row","inspector","node-ux-keys","save-project-libraries"]
+		"software": ["behaviours","community-seams","files-format-row","inspector","node-ux-keys","save-project-libraries"],
+		"local": ["fb-water-phone","fluid-gpu","net-stress","quality-phone","throw-peer"]
 	},
 	"exclude": {
 		"test data of ~1.3 GB fetched on demand (scripts/fetch-wild-assets.cjs), ~1 h on the pc: run it when importing or Replace changes; SKIPs without the cache": ["import-wild"],

@@ -107,11 +107,26 @@ h.run(async () => {
 	h.check((await A.page.locator('#connect-claude').count()) === 1, 'one Connect Claude control (the top row stands down while the welcome shows)');
 	// the claude.ai half: two short steps, the link one press away
 	const step1 = (await A.page.locator('#connect-claude-step-1').textContent()) ?? '';
-	h.check(/Add custom connector/.test(step1) && step1.includes('https://theprototype.app/mcp'), `step 1 says what to do in claude.ai (${step1.trim().slice(0, 90)})`);
-	h.check((await A.page.locator('#connect-claude-how').getAttribute('href')) === 'https://docs.theprototype.app/ai/claude-connector/', 'step 1 has the How? link');
+	h.check(/Add theprototype to Claude/.test(step1) && /Add custom connector/.test(step1) && step1.includes('https://theprototype.app/mcp'), `step 1 shows both ways (${step1.trim().slice(0, 90)})`);
+	const add = A.page.locator('#connect-claude-add');
+	h.check((await add.getAttribute('href')) === 'https://claude.ai/directory/connectors/theprototype' && (await add.getAttribute('target')) === '_blank' && /Add to Claude/.test((await add.textContent()) ?? ''), 'Add to Claude opens the directory in a new tab');
+	const addBox = await add.boundingBox();
+	const manualBox = await A.page.locator('#connect-claude-step-1 .cc-address').boundingBox();
+	h.check(!!addBox && !!manualBox && addBox.y + addBox.height <= manualBox.y, 'the button comes first, the manual way under it');
+	const how = A.page.locator('#connect-claude-how');
+	h.check((await how.getAttribute('href')) === 'https://docs.theprototype.app/ai/claude-connector/' && /How it works/.test((await how.textContent()) ?? ''), 'step 1 has the How it works link');
 	await A.page.context().grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
-	await A.page.locator('#connect-claude-copy').click();
-	h.check((await A.page.evaluate(() => navigator.clipboard.readText().catch(() => ''))) === 'https://theprototype.app/mcp', 'Copy link puts the link on the clipboard');
+	const copy = A.page.locator('#connect-claude-copy');
+	h.check((await copy.getAttribute('aria-label')) === 'Copy connector address' && !(((await copy.textContent()) ?? '').trim()), 'the copy button is icon-only with an accessible name');
+	h.check((await A.page.locator('#connect-claude-copy-link, #connect-claude-step-1 button:has-text("Copy link")').count()) === 0, 'the old Copy link text button is gone');
+	const copyIcon = () => copy.locator('svg').getAttribute('class');
+	const iconBefore = await copyIcon();
+	await copy.click();
+	h.check((await A.page.evaluate(() => navigator.clipboard.readText().catch(() => ''))) === 'https://theprototype.app/mcp', 'copy puts the address on the clipboard');
+	h.check((await copyIcon()) !== iconBefore, 'the icon turns to a check');
+	h.check((await A.page.locator('#connect-claude-step-1 [role="status"]').textContent()) === 'Copied', 'a polite live region says Copied');
+	await A.page.waitForFunction((b) => document.querySelector('#connect-claude-copy svg')?.getAttribute('class') === b, iconBefore, { timeout: 4000 }).catch(() => {});
+	h.check((await copyIcon()) === iconBefore && !(await A.page.locator('#connect-claude-step-1 [role="status"]').textContent()), 'after 2 s it turns back');
 	h.check(/press Connect Claude here/.test((await A.page.locator('#connect-claude-step-2').textContent()) ?? ''), 'step 2 says to press Connect Claude here');
 	await axe(A.page, '#ai-welcome', 'AI welcome (signed in)');
 	await A.page.screenshot({ path: path.join(OUT, 'n1-welcome.png') }).catch(() => {});
@@ -185,6 +200,11 @@ h.run(async () => {
 		h.check(c.ok && o.ok, `N6 ${name}: both choices are on screen and pressable (${JSON.stringify(c.box)} ${JSON.stringify(o.box)}, hit ${c.hit}/${o.hit})`);
 		if (name === 'unfolded-light') await axe(P.page, '#ai-welcome', 'AI welcome (light)');
 		await P.page.screenshot({ path: path.join(OUT, `n1-n6-${name}.png`) }).catch(() => {});
+		// step 1 at this width: no sideways overflow, the copy icon is a 44 px touch target
+		const copyFit = await fits('#connect-claude-copy');
+		const addFit = await fits('#connect-claude-add');
+		const card = await P.page.evaluate(() => { const c = document.querySelector('#connect-claude'); return { sw: c.scrollWidth, cw: c.clientWidth }; });
+		h.check(copyFit.ok && addFit.ok && card.sw <= card.cw && copyFit.box.width >= 44 && copyFit.box.height >= 44, `N6 ${name}: step 1 fits, copy is 44 px (${JSON.stringify(copyFit.box)}, card ${card.sw}/${card.cw})`);
 		// FW-AI: signed out with a provider, the header button fits; on the phone the AI sheet steps aside for the profile sheet
 		await P.page.evaluate(() => {
 			window.__stores.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: 'https://127.0.0.1:9/v1', apiKey: 'x', model: 'mock' });

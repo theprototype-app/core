@@ -258,7 +258,12 @@ h.run(async () => {
 	h.check(/will not build up/.test(stepping?.result?.warning ?? '') && /base\.rot\[1\] \+ time/.test(stepping?.result?.warning ?? ''), `a += script says why it stays put (${JSON.stringify(stepping?.result?.warning).slice(0, 200)})`);
 	await h.eventually(() => poseOf(stepper), (p) => Math.abs(p.ry - 0.02) < 0.001, 'a += script lands at base + 0.02', 30000);
 	await wait(1500);
-	h.check(Math.abs((await poseOf(stepper)).ry - 0.02) < 0.001, 'and stays there: this is the behaviour the warning describes');
+	const steps = [];
+	for (let i = 0; i < 12; i++) {
+		steps.push((await poseOf(stepper)).ry);
+		await wait(250);
+	}
+	h.check(steps.every((ry) => Math.abs(ry - 0.02) < 0.001), `and stays there: this is the behaviour the warning describes (${steps.map((ry) => ry.toFixed(3)).join(' ')})`);
 	const turner = await mk('Turner', 'Box', [10, 1, 0]);
 	const turning = await call('create_flow_nodes', { graph: turner, nodes: [{ type: 'script', data: { code: 'object.rotation.y = base.rot[1] + time * 2;' } }] });
 	h.check(!!turning?.result?.created?.[0]?.id && !turning?.result?.warning, `the documented form does not warn (${JSON.stringify(turning?.result?.warning)})`);

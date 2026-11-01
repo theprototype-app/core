@@ -69,9 +69,14 @@ export const BRIDGE_TOOLS = /** @type {const} */ (['status', 'screenshot', 'wait
 /**
  * 86 B5 / QUESTIONS Q3: agent-PAGE tools a remote caller may NOT reach in a person's tab — they load
  * code into it (install_modules), press the person's own buttons (an approval, a role offer), or end
- * their session. The person keeps those.
+ * their session. The person keeps those. mcp-fix: `import_model` / `import_file` too: they carry a local
+ * tool's file (the bridge maps a path to bytes), a remote caller has no such file and a call frame tops out at
+ * 256 KB, and letting a remote AI push arbitrary bytes into this tab's parsers gains nothing for that risk.
+ *
+ * Core is the source of this list: `npm run catalog:agent` writes it into the catalog, the Worker's
+ * EXCLUDED_TOOLS is checked against it, and the generator fails on any tool that is in neither list.
  */
-export const CONNECTOR_BLOCKED_TOOLS = new Set(['install_modules', 'pending_offers', 'accept_offer', 'leave', 'connect']);
+export const CONNECTOR_BLOCKED_TOOLS = new Set(['install_modules', 'pending_offers', 'accept_offer', 'leave', 'connect', 'import_model', 'import_file']);
 
 /** the wait_for_edit cap a connector call may ask for (the bridge's own) */
 export const MAX_WAIT_MS = 120 * 1000;
@@ -178,7 +183,8 @@ export function parseFrame(text) {
 
 /** @param {string} token @param {string} version @param {string[]} tools */
 export const helloFrame = (token, version, tools) =>
-	JSON.stringify({ type: 'hello', v: CONNECTOR_PROTOCOL, token, app: { version: String(version) }, tools });
+	// mcp-fix: keepsCalls = this tab goes on with its calls across a blip and answers them on the new link
+	JSON.stringify({ type: 'hello', v: CONNECTOR_PROTOCOL, token, app: { version: String(version) }, tools, keepsCalls: true });
 
 /** @param {boolean} visible */
 export const stateFrame = (visible) => JSON.stringify({ type: 'state', visible, connectorVersion: CONNECTOR_PROTOCOL });

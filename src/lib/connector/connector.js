@@ -22,7 +22,7 @@ import { createConnectorAgent, CONNECTOR_LABEL } from '../agent/tpAgent.js';
 import { startAgentRecorder, stopAgentRecorder } from '../agentLogRecorder.js';
 import { showConfirm } from '../confirmDialog.js';
 import { showToast, userdata, username } from '../../stores/appStore.js';
-import { joinSession } from './joinSession.js';
+import { joinSession, lastJoinResult } from './joinSession.js';
 import { whereAreUsers } from './whereAreUsers.js';
 import { APP_VERSION } from '../version.js';
 
@@ -103,6 +103,8 @@ function setup() {
 	if (client) return client;
 	core = createConnectorAgent();
 	const agent = core.agent;
+	/** answers that finished during a blip @type {string[]} */
+	const unsent = [];
 	dispatcher = createDispatcher({
 		agent: {
 			tools: () => agent.tools(),
@@ -118,13 +120,19 @@ function setup() {
 			waitForEdit: (ms) => agent.waitForEdit(ms),
 			screenshot: (opts) => agent.screenshot(opts)
 		},
-		send: (text) => client?.send(text),
+		send: (text) => {
+			if (client?.send(text)) return;
+			// mcp-fix: mid-blip. The answer waits for the link (a call that ran must not read as lost and run twice)
+			if (client?.state().phase === 'reconnecting' && unsent.length < 32) unsent.push(text);
+		},
 		visible,
 		encodeShot: (url) => encodeShot(url).catch(() => null),
 		// 86-fix N2: the person confirms on a Join / Cancel card in this tab
 		joinSession: (args, ctx) => joinSession(args, ctx),
+		lastJoinResult: () => lastJoinResult(),
 		// 86-fix: where the people are (85 S1), and who "you" are — the person this tab belongs to
 		whereAreUsers: () => whereAreUsers(),
+		toolCode: { animate_parts: () => import('$lib/tpanim/animateParts.js') },
 		you: () => youOf(agent.status()),
 		onCallStart: () => view({ busy: dispatcher?.inFlight() ?? 0 }),
 		onCallEnd: ({ tool, ok }) => view({ busy: dispatcher?.inFlight() ?? 0, lastCall: { tool, at: Date.now(), ok } })
@@ -140,8 +148,13 @@ function setup() {
 		toolNames: () => dispatcher?.toolNames() ?? [],
 		onCall: (f) => dispatcher?.handle(f),
 		onCancel: (id) => dispatcher?.cancel(id),
-		// the link went down (Disconnect, revoke, a blip): nothing pending may run or answer
-		onDown: () => dispatcher?.cancelAll(),
+		// the link went down for good (Disconnect, revoke, replaced): nothing pending may run or answer.
+		// mcp-fix: a blip is not that: the same tab pairs again and its calls go on (the Worker holds them for a moment)
+		onDown: () => {
+			if (client?.state().phase === 'reconnecting') return;
+			unsent.length = 0;
+			dispatcher?.cancelAll();
+		},
 		confirmReplace: () =>
 			showConfirm({
 				title: 'Use this tab for Claude?',
@@ -152,8 +165,15 @@ function setup() {
 		visible,
 		onState: (s) => {
 			view({ phase: s.phase, reason: s.reason, message: s.message, connections: s.connections, retryAt: s.retryAt });
-			if (s.phase === 'connected') startAgentRecorder({ name: CONNECTOR_LABEL, accept: () => relaying > 0 });
-			if (s.phase === 'idle' || s.phase === 'closed' || s.phase === 'error') view({ busy: 0 });
+			if (s.phase === 'connected') {
+				startAgentRecorder({ name: CONNECTOR_LABEL, accept: () => relaying > 0 });
+				for (const text of unsent.splice(0)) client?.send(text);
+			}
+			if (s.phase === 'idle' || s.phase === 'closed' || s.phase === 'error') {
+				unsent.length = 0;
+				dispatcher?.cancelAll();
+				view({ busy: 0 });
+			}
 		}
 	});
 	document.addEventListener('visibilitychange', onVisibility);

@@ -7,7 +7,7 @@
 // either answered "not now" (nudges) or kept as offers the agent can read and press (questions).
 
 import { get } from 'svelte/store';
-import { createAgentCore, missingModulesFrom } from './agentCore.js';
+import { createAgentCore, missingModulesFrom, viewerRefusal } from './agentCore.js';
 import { getAiTools, executeAiTool, buildSystemPrompt, summarizeScene, repairToolCall, MESH_TOOL } from '$lib/ai/tools.js';
 import { IMPORT_MODEL_TOOL } from '$lib/ai/importModel.js'; // 56 C9
 import { IMPORT_FILE_TOOL } from '$lib/ai/importFile.js'; // 66 S4b
@@ -23,6 +23,7 @@ import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 import { peers, userdata, waitingForApproval, toastStore, dismissToastById, loading, loadingcount } from '../../stores/appStore.js';
 import { sceneLoad } from '$lib/sceneLoader.js';
 import { globalRenderer } from '../../stores/sceneStore.js';
+import { scriptErrors } from '../../stores/flowStore';
 import { sessionHost, snapshotPending } from '$lib/connectionState';
 import { isAgentPeer } from '$lib/inviteStore';
 import { requestConnect } from '$lib/peerApproval';
@@ -308,6 +309,57 @@ function startHostWatch(core) {
 	setInterval(settle, 2000);
 }
 
+/** C12: the schema of save_scene (an agent-only tool: the assistant in the app has its own Save) */
+const SAVE_SCENE_SCHEMA = {
+	description:
+		'Save the open scene as a new version in the person\'s Library, the same save as Ctrl+S; Version history can restore older ones. In someone else\'s session it saves on the host. Viewers cannot save, and a private scene cannot be saved this way.',
+	parameters: {
+		type: 'object',
+		properties: {
+			name: { type: 'string', description: 'scene name; omit to keep the open scene\'s name. Ignored when saving on a host.' },
+			folder: { type: 'string', description: 'Library folder name or id; omit for the Library root. Ignored when saving on a host.' }
+		}
+	}
+};
+/** one save at a time, at most one every few seconds, whoever calls @type {number} */
+let lastAgentSaveAt = 0;
+const SAVE_SCENE_GAP_MS = 5000;
+
+/**
+ * save_scene: on this machine when it hosts (or is alone), else on the host through the session volume. Extra tools
+ * skip agentCore's role check, so a viewer is refused here; a guest's request is checked again by the host.
+ * @param {any} args @param {string|null} role @param {string} by the fixed name a toast shows
+ */
+async function saveSceneTool(args, role, by) {
+	if (role === 'viewer') return { error: viewerRefusal(myPeerId()), refused: true, role: 'viewer' };
+	const now = Date.now();
+	if (now - lastAgentSaveAt < SAVE_SCENE_GAP_MS) return { error: 'a save just ran: wait a few seconds before saving again' };
+	lastAgentSaveAt = now;
+	// the gap counts from the END of a save: a big scene's own save can take longer than the gap
+	const hold = setInterval(() => (lastAgentSaveAt = Date.now()), 1000);
+	try {
+		return await runSaveScene(args, by);
+	} finally {
+		clearInterval(hold);
+		lastAgentSaveAt = Date.now();
+	}
+}
+
+/** @param {any} args @param {string} by */
+async function runSaveScene(args, by) {
+	const host = get(sessionHost);
+	if (!host) {
+		const { saveSceneOnHost } = await import('../hostSave');
+		const r = await saveSceneOnHost({ name: args?.name, folder: args?.folder }, { by, agent: true });
+		return r.ok ? { saved: true, name: r.name, file: r.file, onHost: false } : { error: r.error ?? 'the save failed' };
+	}
+	const { saveOnHost, sessionVolumes } = await import('../sessionVolumes');
+	const volume = /** @type {any[]} */ (get(sessionVolumes) ?? []).find((v) => v.peerId === host);
+	if (!volume) return { error: 'the host does not offer saving on it yet: the session is still connecting, or the host runs an older app' };
+	const r = await saveOnHost(volume.id, { quiet: true });
+	return r.ok ? { saved: true, name: r.name, onHost: true } : { error: r.error ?? 'the save failed on the host' };
+}
+
 /** A6: is the HOST's mesh provider ready (what it last said through the relay)? */
 function hostMeshReady() {
 	const host = get(sessionHost);
@@ -357,10 +409,11 @@ async function agentRun(name, args, opts) {
 /**
  * Build the wired agent.
  * @param {{screenshot?: (opts: any) => Promise<string|null>, missingTools?: () => {name: string, reason: string}[],
- *   deps?: Partial<import('./agentCore.js').AgentDeps>, physics?: boolean, localSim?: boolean}} [extra] `deps` override
+ *   deps?: Partial<import('./agentCore.js').AgentDeps>, physics?: boolean, localSim?: boolean, connector?: boolean, saveLabel?: string}} [extra] `deps` override
  *   the agent-page wiring (86: the connector); `physics` offers + runs the physics tools for THIS agent only (86-fix B1:
  *   never the page-wide forcePhysicsTools, which would flip the person's own assistant); `localSim` runs
- *   control_simulation on this page instead of relaying it to the host (86-fix B2)
+ *   control_simulation on this page instead of relaying it to the host (86-fix B2); `connector` = a person's own tab:
+ *   no agent-page tools (the person keeps those buttons), and it counts its own session as one
  */
 export function createTpAgent(extra = {}) {
 	const toolOpts = { physics: !!extra.physics, localSim: !!extra.localSim };
@@ -368,6 +421,32 @@ export function createTpAgent(extra = {}) {
 	let core;
 	const inbox = agentInbox();
 	let unsettledSince = 0;
+	/** the tools only an agent page has @returns {Record<string, any>} */
+	const agentPageTools = () => ({
+			install_modules: {
+				schema: {
+					description:
+						'Install the modules the other peers in this session run and this page lacks (status().missingModules), from the module gallery. Local to this page; omit ids to install every missing one.',
+					parameters: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' }, description: 'module ids; omit for all missing' } } }
+				},
+				run: (/** @type {any} */ args) => installModules(args).then((installed) => ({ installed }))
+			},
+			pending_offers: {
+				schema: {
+					description:
+						'List the questions the app is asking this page (an admin-role offer, "share or stash your scene"…), each with its buttons. Answer one with accept_offer.',
+					parameters: { type: 'object', properties: {} }
+				},
+				run: () => ({ offers: core.agent.pendingOffers() })
+			},
+			accept_offer: {
+				schema: {
+					description: 'Press a button on a pending offer (see pending_offers). action = the button label; omit for the first button.',
+					parameters: { type: 'object', properties: { id: { type: 'string' }, action: { type: 'string' } }, required: ['id'] }
+				},
+				run: (/** @type {any} */ args) => core.agent.accept(String(args?.id ?? ''), args?.action)
+			}
+	});
 	core = createAgentCore({
 		appVersion: APP_VERSION,
 		gate: (name, isEdit) => inbox.gate(name, isEdit),
@@ -398,6 +477,7 @@ export function createTpAgent(extra = {}) {
 		},
 		host: () => get(sessionHost),
 		behaviourErrors: () => /** @type {any} */ (behaviourHost())?.errors?.() ?? [],
+		scriptErrors: () => Object.entries(/** @type {Record<string, string>} */ (get(scriptErrors))).slice(0, 20).map(([node, message]) => ({ node: node.slice(0, 64), message: String(message).slice(0, 200) })),
 		hostAway: () => hostAwayState(),
 		// 1.2: a scene still arriving — the join snapshot (the uuids the sender announced and we lack) or a
 		// scene load in progress (a travel, a follow)
@@ -426,7 +506,8 @@ export function createTpAgent(extra = {}) {
 				meshLocal: meshGenReady(),
 				meshHost: hostMeshReady(),
 				hostKnown: !!get(sessionHost),
-				behaviours: !!behaviourHost()
+				behaviours: !!behaviourHost(),
+				personTab: !!extra.connector
 			}),
 		missingModules: () => missingModulesFrom(get(peerModuleVersions), openPeerIds(), moduleVersions()),
 		onSceneChange: (cb) => dirtyPulse.subscribe(() => cb()),
@@ -440,37 +521,20 @@ export function createTpAgent(extra = {}) {
 			} catch {}
 		},
 		extraTools: {
-			install_modules: {
-				schema: {
-					description:
-						'Install the modules the other peers in this session run and this page lacks (status().missingModules), from the module gallery. Local to this page; omit ids to install every missing one.',
-					parameters: { type: 'object', properties: { ids: { type: 'array', items: { type: 'string' }, description: 'module ids; omit for all missing' } } }
-				},
-				run: (args) => installModules(args).then((installed) => ({ installed }))
-			},
-			pending_offers: {
-				schema: {
-					description:
-						'List the questions the app is asking this page (an admin-role offer, "share or stash your scene"…), each with its buttons. Answer one with accept_offer.',
-					parameters: { type: 'object', properties: {} }
-				},
-				run: () => ({ offers: core.agent.pendingOffers() })
-			},
-			accept_offer: {
-				schema: {
-					description: 'Press a button on a pending offer (see pending_offers). action = the button label; omit for the first button.',
-					parameters: { type: 'object', properties: { id: { type: 'string' }, action: { type: 'string' } }, required: ['id'] }
-				},
-				run: (args) => core.agent.accept(String(args?.id ?? ''), args?.action)
-			},
+			...(extra.connector ? {} : agentPageTools()),
 			// 86 T3: "what can you do here?" for a voice conversation (the connector, serve)
 			what_can_you_do: {
 				schema: WHAT_CAN_YOU_DO_SCHEMA,
 				run: () =>
 					whatCanYouDo({
 						status: core.agent.status(),
-						tools: [...core.agent.tools().map((/** @type {any} */ t) => t?.function?.name ?? t?.name), 'screenshot']
+						tools: [...core.agent.tools().map((/** @type {any} */ t) => t?.function?.name ?? t?.name), 'screenshot', ...(extra.connector ? ['where_are_users'] : [])]
 					})
+			},
+			// 56 C12: keep this scene (the person's Library; a guest's goes to the host's)
+			save_scene: {
+				schema: SAVE_SCENE_SCHEMA,
+				run: (args) => saveSceneTool(args, /** @type {any} */ (core.agent.status()).role, extra.saveLabel ?? 'An agent')
 			}
 		},
 		...(extra.deps ?? {})
@@ -497,6 +561,8 @@ export function createConnectorAgent() {
 		// for their assistant), and the simulation runs in this full-speed tab
 		physics: true,
 		localSim: true,
+		connector: true,
+		saveLabel: CONNECTOR_LABEL,
 		deps: {
 			inSession: () => {
 				const host = get(sessionHost);
@@ -504,7 +570,6 @@ export function createConnectorAgent() {
 			},
 			hostAway: () => null,
 			room: () => null,
-			extraTools: {},
 			endBatch: (label) => endHistoryBatch(String(label).replace(/^Agent:/, CONNECTOR_LABEL + ':'))
 		}
 	});

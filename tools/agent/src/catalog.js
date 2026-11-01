@@ -33,6 +33,9 @@ export const TOOL_ANNOTATIONS = /** @type {Record<string, {title: string, read?:
 	create_joints: { title: 'Add physics joints', destructive: false },
 	group_objects: { title: 'Group objects', destructive: false },
 	generate_mesh: { title: 'Generate a 3D model', destructive: false, openWorld: true },
+	save_scene: { title: 'Save the scene', destructive: false },
+	import_model: { title: 'Import a 3D model', destructive: false },
+	import_file: { title: 'Import a file', destructive: false },
 	update_objects: { title: 'Change objects', destructive: true },
 	update_flow_nodes: { title: 'Change or remove flow nodes', destructive: true },
 	edit_behaviour: { title: 'Edit a code behaviour', destructive: true },
@@ -157,7 +160,7 @@ export function guidanceGaps(catalog) {
 /**
  * Host tools (tpAgent.tools()'s shape) → the static catalog.
  * @param {any[]} hostTools
- * @param {{provenance?: Record<string, any>}} [opts]
+ * @param {{provenance?: Record<string, any>, connectorExcluded?: string[]}} [opts]
  * @returns {{format: number, generator: Record<string, any>, instructions: string, tools: {name: string, title: string, description: string, inputSchema: any, annotations: Record<string, any>}[]}}
  */
 export function buildCatalog(hostTools, opts = {}) {
@@ -174,6 +177,26 @@ export function buildCatalog(hostTools, opts = {}) {
 			...(opts.provenance ?? {})
 		},
 		instructions: connectorInstructions(tools.map((t) => t.name)),
+		// mcp-fix: what the connector leaves out, on purpose (core's CONNECTOR_BLOCKED_TOOLS); the Worker checks against it
+		...(opts.connectorExcluded ? { connectorExcluded: [...opts.connectorExcluded].sort() } : {}),
 		tools
 	};
+}
+
+/**
+ * mcp-fix: the tab's list and the catalog must agree. Fails on a tool a connector tab answers that the catalog neither
+ * lists nor leaves out on purpose, and on a listed tool no connector tab can answer. `tabTools` comes from a real
+ * createConnectorAgent(); `conditional` = tools the tab offers only sometimes (status.missingTools says why).
+ * @param {{tabTools: string[], own: string[], conditional?: string[], catalogTools: string[], excluded: string[]}} facts
+ * @returns {string[]} the problems, in words
+ */
+export function connectorToolGaps(facts) {
+	const { tabTools, own, conditional = [], catalogTools, excluded } = facts;
+	const out = new Set(excluded);
+	const listed = new Set(catalogTools.filter((n) => !out.has(n)));
+	const answered = new Set([...tabTools, ...own, ...conditional].filter((n) => !out.has(n)));
+	return [
+		...[...answered].filter((n) => !listed.has(n)).map((n) => n + ': a connector tab answers it, but it is neither in the catalog nor in CONNECTOR_BLOCKED_TOOLS'),
+		...[...listed].filter((n) => !answered.has(n)).map((n) => n + ': in the catalog, but no connector tab answers it')
+	];
 }

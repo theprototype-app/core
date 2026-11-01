@@ -633,7 +633,7 @@ export function handleVolumeMessage(from, data) {
 			const ask = pendingSaves.get(String(data.id));
 			if (ask?.peer === from) {
 				pendingSaves.delete(String(data.id));
-				ask.done({ ok: data.ok === true, ...(data.name ? { name: String(data.name) } : {}), ...(data.error ? { error: String(data.error) } : {}) });
+				ask.done({ ok: data.ok === true, ...(data.name ? { name: String(data.name).slice(0, 120) } : {}), ...(data.error ? { error: String(data.error).slice(0, 200) } : {}) });
 			}
 		}
 	} catch (e) {

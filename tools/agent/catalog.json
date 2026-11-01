@@ -3,15 +3,24 @@
 	"format": 2,
 	"generator": {
 		"source": "tpAgent.tools() via core scripts/agent-tool-catalog.cjs, mapped by tools/agent/src/catalog.js",
-		"hostTools": 21,
+		"hostTools": 23,
 		"dropped": []
 	},
 	"instructions": "You are building in the person's own open theprototype.app tab: a live, shared 3D scene. Every change shows for everyone in the session and can be undone.\nThis may be a VOICE conversation: answer in one or two short spoken sentences and say what changed in plain words (\"Added three trees by the fire\"). Never read out uuids, lists of numbers or JSON.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall status first: it says whether you may edit (a viewer can only look).\nYou act as this person in their own tab: status \"you\" is them (their peer id, name and role); the other users are everyone else.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nFor \"in front of me\", \"here\" or \"this\", call where_are_users and build at the spots it gives, facing the person.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.\nWhen asked what you can do here, call what_can_you_do and say its \"say\" line.",
+	"connectorExcluded": [
+		"accept_offer",
+		"connect",
+		"import_file",
+		"import_model",
+		"install_modules",
+		"leave",
+		"pending_offers"
+	],
 	"tools": [
 		{
 			"name": "list_scene",
 			"title": "Read the scene",
-			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
+			"description": "List every object currently in the scene with its uuid, name, type, parent, transform, material, color and (for a primitive) its shape — geometry {type, sizes such as the thickness of a wall}. The transform is the AUTHORED pose: an object an effect is moving also has animated: true, and live {position, rotation, scale, visible} when this frame differs; update_objects writes the authored pose, so never copy live back into it. Call this before editing so you use real uuids. On a big scene narrow it: brief (uuids + names only), name (a glob), type, near {position, radius}. A big flow graph shows its first page and says how to read the rest: pass {flow: \"scene\" | object uuid, page} to read one page of one graph.\nIf a tool says the tab is closed or not connected, tell the person to open theprototype.app and press Connect Claude, then wait; do not retry in a loop.\nCall list_scene before editing so you use real uuids; batch many objects into one call.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -236,7 +245,7 @@
 		{
 			"name": "update_objects",
 			"title": "Change objects",
-			"description": "Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nTake a screenshot after each change to check your work.",
+			"description": "Modify existing objects by uuid: move/rotate/scale, recolor, change material, rename, show/hide, or reparent. Batch many in one call. On an object an effect is moving, a transform sets its authored pose (the one list_scene reports) and the effect carries on from there.\nCall list_scene before editing so you use real uuids; batch many objects into one call.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -529,7 +538,7 @@
 		{
 			"name": "create_flow_nodes",
 			"title": "Add behaviour (flow) nodes",
-			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
+			"description": "Add behavior (flow) nodes to a node graph — this is how objects get MOTION and interactivity: spin, bounce, patrol a path, pulse, blink, react to clicks. graph is \"scene\" or an object uuid (ONE graph per call). KEY RULE: a behavior node placed in an OBJECT's graph with no edges automatically drives that object — most behaviors are one node, zero edges, so usually OMIT edges. A script node runs every frame FROM THE BASE POSE, so object.rotation.y += 0.02 lands at base + 0.02 and stays: write object.rotation.y = base.rot[1] + time * speed (base has pos, rot, scale as arrays). Describe nodes EITHER as text (graph lines, see the system prompt) OR as nodes/edges arrays. A call with some bad nodes still creates the good ones and returns partial:true + errors[] — resend only what errors[] names.\nMotion and interaction are flow nodes (create_flow_nodes); call describe_node_types before wiring edges.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -604,7 +613,7 @@
 		{
 			"name": "update_flow_nodes",
 			"title": "Change or remove flow nodes",
-			"description": "Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object's \"flow\" (and \"sceneFlow\").\nTake a screenshot after each change to check your work.",
+			"description": "Tune or remove existing behavior nodes in one graph. Node ids and current data are in the scene summary under each object's \"flow\" (and \"sceneFlow\"). Script code runs every frame from the base pose: use object.rotation.y = base.rot[1] + time * speed, not +=.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
 				"properties": {
@@ -949,7 +958,7 @@
 		},
 		{
 			"name": "import_model",
-			"title": "Import model",
+			"title": "Import a 3D model",
 			"description": "Import a self-contained GLB (binary glTF 2.0, everything embedded, ≤ 25 MB) into the scene through the app's own import pipeline (auto-optimize, LOD, budget check). Named nodes are kept as a hierarchy and returned with uuids. One undo step; syncs to every peer; provenance is recorded. Use for models built outside the app (e.g. an img2threejs rebuild exported with named pivots). Materials: standard PBR only — custom shaders do not survive glTF.\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
@@ -1005,15 +1014,15 @@
 				}
 			},
 			"annotations": {
-				"title": "Import model",
+				"title": "Import a 3D model",
 				"readOnlyHint": false,
-				"destructiveHint": true,
+				"destructiveHint": false,
 				"openWorldHint": false
 			}
 		},
 		{
 			"name": "import_file",
-			"title": "Import file",
+			"title": "Import a file",
 			"description": "Bring a file made on your machine into the session: PNG / WebP images (≤ 16 MB, metadata stripped), JSON (≤ 2 MB) or a .tpanim clip. The type is read from the bytes. It lands in the Explorer (folder \"Generated\" unless `folder`), shared with every peer. Pass the generator's input as `spec` and it is saved beside the file as <name>.<generator>.json (e.g. knight.png + knight.pixling.json) so it can be regenerated. An image is also placed in the scene as a card (a plane; `place: false` to skip): `filter: \"nearest\"` keeps pixel art crisp (default when a spec is given), `frame: {w, h, col, row}` shows one frame of a sprite sheet, `facing: \"camera-y\"` turns it to face each viewer. One undo step; editors and admins only. Large files: send base64 parts with `chunk: {id, index, total}` (the bridge does this for you with `path`).\nTake a screenshot after each change to check your work.",
 			"inputSchema": {
 				"type": "object",
@@ -1141,9 +1150,9 @@
 				}
 			},
 			"annotations": {
-				"title": "Import file",
+				"title": "Import a file",
 				"readOnlyHint": false,
-				"destructiveHint": true,
+				"destructiveHint": false,
 				"openWorldHint": false
 			}
 		},
@@ -1221,6 +1230,63 @@
 				"title": "What can you do here",
 				"readOnlyHint": true,
 				"openWorldHint": false
+			}
+		},
+		{
+			"name": "save_scene",
+			"title": "Save the scene",
+			"description": "Save the open scene as a new version in the person's Library, the same save as Ctrl+S; Version history can restore older ones. In someone else's session it saves on the host. Viewers cannot save, and a private scene cannot be saved this way.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"name": {
+						"type": "string",
+						"description": "scene name; omit to keep the open scene's name. Ignored when saving on a host."
+					},
+					"folder": {
+						"type": "string",
+						"description": "Library folder name or id; omit for the Library root. Ignored when saving on a host."
+					}
+				}
+			},
+			"annotations": {
+				"title": "Save the scene",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": false
+			}
+		},
+		{
+			"name": "generate_mesh",
+			"title": "Generate a 3D model",
+			"description": "Generate a NEW custom 3D mesh from a text description when no primitive fits (an organic prop, a detailed object, a character). SLOW (~1-3 min) and async — it returns immediately and the mesh appears in the scene when ready. Use sparingly; prefer primitives for simple/blocky shapes.\nTake a screenshot after each change to check your work.",
+			"inputSchema": {
+				"type": "object",
+				"properties": {
+					"prompt": {
+						"type": "string",
+						"description": "what to generate, e.g. \"a weathered wooden treasure chest\""
+					},
+					"name": {
+						"type": "string"
+					},
+					"position": {
+						"type": "array",
+						"items": {
+							"type": "number"
+						},
+						"description": "[x,y,z]"
+					}
+				},
+				"required": [
+					"prompt"
+				]
+			},
+			"annotations": {
+				"title": "Generate a 3D model",
+				"readOnlyHint": false,
+				"destructiveHint": false,
+				"openWorldHint": true
 			}
 		},
 		{

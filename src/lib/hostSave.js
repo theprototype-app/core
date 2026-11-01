@@ -23,11 +23,23 @@ export function hostSaveRefusal(facts) {
 }
 
 /**
+ * mcp-fix: an AI's save may name the open scene or a new one, never another scene it would write over (its newest
+ * version would become this scene, for everyone). Pure.
+ * @param {string} name @param {string|null|undefined} openName @param {string[]} names the scenes in the library
+ * @returns {string|null} the refusal, or null to go on
+ */
+export function agentSaveNameRefusal(name, openName, names) {
+	const key = (/** @type {unknown} */ n) => String(n ?? '').trim().toLowerCase();
+	if (key(name) === key(openName) || !names.some((n) => key(n) === key(name))) return null;
+	return `a different scene is already called "${name}": pick another name, or ask the person to open that scene first`;
+}
+
+/**
  * Save the open scene on THIS machine because a peer (or an agent) asked. Resolves what was saved.
  * @param {{name?: string, folder?: string}} [args] `name` defaults to the open scene's; `folder` is a
  *   Library folder id or name (absent = the Library root)
- * @param {{by?: string, role?: string | null, remote?: boolean}} [ctx] who asked, and the role the HOST sees for
- *   them; `remote` = a peer pressed Save on host, which saves the open scene and leaves its older versions alone
+ * @param {{by?: string, role?: string | null, remote?: boolean, agent?: boolean}} [ctx] who asked, and the role the HOST sees for
+ *   them; `remote` = a peer pressed Save on host, which saves the open scene and leaves its older versions alone; `agent` = an AI asked: it keeps older versions too and may not take another scene's name
  * @returns {Promise<{ok: boolean, name?: string, file?: string, hash?: string, error?: string}>}
  */
 export async function saveSceneOnHost(args = {}, ctx = {}) {
@@ -41,6 +53,11 @@ export async function saveSceneOnHost(args = {}, ctx = {}) {
 	const refusal = hostSaveRefusal({ hosting: !get(sessionHost), role: ctx.role ?? null, private: at?.private === true });
 	if (refusal) return { ok: false, error: refusal };
 	const name = (ctx.remote ? '' : String(args.name ?? '').trim().slice(0, 120)) || String(at?.name ?? '').trim() || 'Scene';
+	if (ctx.agent) {
+		const { levelItems } = await import('./levels');
+		const taken = agentSaveNameRefusal(name, at?.name, levelItems().map((/** @type {any} */ i) => String(i.name ?? '').replace(/\.tpscene$/i, '')));
+		if (taken) return { ok: false, error: taken };
+	}
 	if (ctx.remote && at?.name) {
 		const { sceneAtRisk } = await import('./sceneOpenGuard');
 		if (!sceneAtRisk()) return { ok: true, name, file: at.name, hash: at.hash };
@@ -51,7 +68,7 @@ export async function saveSceneOnHost(args = {}, ctx = {}) {
 		const folders = get(explorer.explorerFolders);
 		folderId = (folders.find((f) => f.id === want) ?? folders.find((f) => f.name === want))?.id ?? null;
 	}
-	const saved = await saveSceneAsLevel(name, folderId, ctx.remote ? { prune: false, ...(at?.name ? {} : { consent: false }) } : {});
+	const saved = await saveSceneAsLevel(name, folderId, ctx.remote ? { prune: false, ...(at?.name ? {} : { consent: false }) } : ctx.agent ? { prune: false } : {});
 	if (!saved) return { ok: false, error: 'the save failed on the host' };
 	showToast((ctx.by ? ctx.by + ' saved "' : 'Saved "') + name + '" here' + (ctx.by ? ' (Save on host)' : ''));
 	return { ok: true, name, file: saved.name, hash: saved.hash };

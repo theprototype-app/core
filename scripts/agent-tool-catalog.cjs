@@ -2,7 +2,7 @@
 // Roadmap 86 T4 (+ 56 C19) — THE ONE TOOL-CATALOG GENERATOR. Loads the app's own modules through Vite's SSR
 // loader (no browser, ~10 s), builds an agent page's `tpAgent.tools()` exactly as the page does (physics forced
 // on, the behaviour host registered, no mesh provider), maps it with tools/agent/src/catalog.js and writes
-// tools/agent/catalog.json. Consumers: the Claude connector's Worker (cloud worker-mcp, `npm run catalog:mcp
+// tools/agent/catalog.json, and fails when a connector tab's tools and the catalog disagree. Consumers: the Claude connector's Worker (cloud worker-mcp, `npm run catalog:mcp
 // -- --from-core <this checkout>`) and `serve --static-tools`. Never edit the JSON by hand.
 //
 //   npm run catalog:agent            write tools/agent/catalog.json
@@ -37,15 +37,33 @@ async function hostTools() {
 		const host = await server.ssrLoadModule('/src/lib/behaviours/aiHost.js');
 		ext.registerBehaviourHost(host.makeBehaviourHost(() => ({})));
 		const tp = await server.ssrLoadModule('/src/lib/agent/tpAgent.js');
-		return tp.createTpAgent().agent.tools();
+		const { MESH_TOOL } = await server.ssrLoadModule('/src/lib/ai/tools.js');
+		const protocol = await server.ssrLoadModule('/src/lib/connector/protocol.js');
+		const names = (/** @type {any[]} */ list) => list.map((t) => t?.function?.name ?? t?.name);
+		// generate_mesh needs a provider, which a generator has none of, but a static list must name it (mcp-fix)
+		const list = tp.createTpAgent().agent.tools();
+		return {
+			tools: names(list).includes('generate_mesh') ? list : [...list, MESH_TOOL],
+			tabTools: names(tp.createConnectorAgent().agent.tools()),
+			conditional: ['generate_mesh'],
+			own: [...protocol.BRIDGE_TOOLS, 'join_session', 'where_are_users'],
+			excluded: [...protocol.CONNECTOR_BLOCKED_TOOLS]
+		};
 	} finally {
 		await server.close();
 	}
 }
 
 async function main() {
-	const { buildCatalog, guidanceGaps } = await import(pathToFileURL(path.join(ROOT, 'tools', 'agent', 'src', 'catalog.js')).href);
-	const catalog = buildCatalog(await hostTools());
+	const { buildCatalog, guidanceGaps, connectorToolGaps } = await import(pathToFileURL(path.join(ROOT, 'tools', 'agent', 'src', 'catalog.js')).href);
+	const host = await hostTools();
+	const catalog = buildCatalog(host.tools, { connectorExcluded: host.excluded });
+	// mcp-fix: every tool the connector's tab answers is listed or left out on purpose
+	const toolGaps = connectorToolGaps({ tabTools: host.tabTools, own: host.own, conditional: host.conditional, catalogTools: catalog.tools.map((/** @type {any} */ t) => t.name), excluded: host.excluded });
+	if (toolGaps.length) {
+		console.error('the connector tab and the catalog disagree:\n  ' + toolGaps.join('\n  '));
+		return 1;
+	}
 	// 86-fix B4: claude.ai drops server instructions — a line only the instructions carry never reaches it
 	const gaps = guidanceGaps(catalog);
 	if (gaps.length) {

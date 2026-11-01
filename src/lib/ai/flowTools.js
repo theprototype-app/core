@@ -14,14 +14,18 @@ import { createObjectGraph, recordFlowNodesEntry } from '$lib/flowGraphs';
 import { nodeCatalog, findNodeSpec } from '$lib/nodeCatalog';
 import {
 	setPhysicsFor,
+	jointBodyProblem,
+	unbuiltJointIds,
 	toggleSimulation,
 	stopSimulation,
 	pauseSimulation,
 	resetSimulation,
 	simulating,
-	remoteSimulating
+	remoteSimulating,
+	simulationGaps
 } from '$lib/physics';
 import { createJoint } from '$lib/joints';
+import { scriptNodeWarnings } from './scriptNotes.js';
 import { isGroupId, normalizeCollidesWith } from '$lib/collisionGroups'; // 36 X5
 import { parseGraphText } from '$lib/graphText';
 import { scriptInputs, scriptOutputs } from '$lib/scriptIO';
@@ -269,6 +273,8 @@ function buildNodeData(type, spec, raw, errors) {
 		if (key in (spec?.defaults ?? {})) data[key] = value;
 		// unknown keys are dropped silently — defaults render fine without them
 	}
+	// mcp-fix: an assistant that asks for world space means world axes (a person's own nodes default to "with the object")
+	if (type === 'particle' && raw.space === 'world' && raw.aim === undefined) data.aim = 'world';
 	return data;
 }
 
@@ -421,10 +427,17 @@ export function createFlowNodesTool(args, opts) {
 	// and invite a retry that duplicates what WAS created)
 	const failedNodes = specs.length - createdNodes.length;
 	const failedEdges = edgeSpecs.length - createdEdges.length;
+	// mcp-fix: a script that cannot do what it says must not look like it worked
+	const scriptNotes = createdNodes
+		.filter((/** @type {any} */ n) => n.type === 'script')
+		.flatMap((/** @type {any} */ n) =>
+			scriptNodeWarnings(n.data, { unwired: graphId === SCENE_GRAPH && !graphOf(graphId)?.edges.some((/** @type {any} */ e) => e.source === n.id) })
+		);
 	return {
 		graph: graphId,
 		created,
 		edges: createdEdges.length,
+		...(scriptNotes.length && !errors.length ? { warning: scriptNotes.join(' ') } : {}),
 		...(errors.length
 			? {
 					partial: true,
@@ -434,7 +447,8 @@ export function createFlowNodesTool(args, opts) {
 							.filter(Boolean)
 							.join(' and ') +
 						(failedNodes || failedEdges ? ' were not created' : 'some node data was not applied') +
-						' — fix what errors[] names and send only those again',
+						' — fix what errors[] names and send only those again' +
+						(scriptNotes.length ? '. ' + scriptNotes.join(' ') : ''),
 					errors
 				}
 			: {})
@@ -490,6 +504,7 @@ export function updateFlowNodesTool(args) {
 	const peer = get(peers);
 	/** @type {string[]} */ const errors = [];
 	/** @type {any[]} */ const updated = [];
+	/** @type {string[]} */ const scriptNotes = [];
 	/** @type {{id: string, before: any, after: any}[]} */ const items = [];
 
 	for (const u of Array.isArray(args?.updates) ? args.updates : []) {
@@ -527,6 +542,8 @@ export function updateFlowNodesTool(args) {
 		setNodeData(node.id, patch, graphId);
 		items.push({ id: node.id, before, after: patch });
 		updated.push({ id: node.id, keys: Object.keys(patch) });
+		if (node.type === 'script' && 'code' in patch)
+			scriptNotes.push(...scriptNodeWarnings({ ...node.data, ...patch }, { unwired: graphId === SCENE_GRAPH && !graph.edges.some((/** @type {any} */ e) => e.source === node.id) }));
 	}
 	if (items.length) recordFlowNodesEntry({ op: 'data', graphId, items });
 
@@ -556,6 +573,7 @@ export function updateFlowNodesTool(args) {
 		graph: graphId,
 		updated,
 		removed: removeIds.length,
+		...(scriptNotes.length ? { warning: scriptNotes.join(' ') } : {}),
 		...(errors.length ? { errors } : {})
 	};
 }
@@ -599,6 +617,11 @@ export function setPhysicsTool(args) {
 		if (!Object.keys(patch).length)
 			return { uuid, error: 'no physics keys — pass mode/mass/restitution/friction/collider' };
 		setPhysicsFor(uuid, patch);
+		// mcp-fix: only a top-level object gets a body, so say it now and not at the start
+		const held = objectOf(uuid);
+		if (held?.parent && held.parent !== get(objectsGroup)) return { uuid, ok: true, physics: patch, warning: nestedWords([{ name: held.name || held.type, group: held.parent.name || 'a group' }]) };
+		// mcp-fix: a body's kind is fixed for a run, so say that instead of seeming to have changed it
+		if (patch.mode && get(simulating)) return { uuid, ok: true, physics: patch, note: 'the simulation is running: the new mode applies from the next start (stop, then start)' };
 		return { uuid, ok: true, physics: patch };
 	});
 	if (results.every((/** @type {any} */ r) => r.error))
@@ -634,6 +657,11 @@ export function createJointsTool(args) {
 		if (a === b) return { error: 'cannot joint an object to itself' };
 		const lock = lockSkip(a, objectOf(a)) || lockSkip(b, objectOf(b));
 		if (lock) return { skipped: lock, a, b };
+		// mcp-fix: a joint with no body on one side would report success and then hold nothing
+		for (const [side, uuid] of [['a', a], ['b', b]]) {
+			const why = jointBodyProblem(objectOf(uuid));
+			if (why) return { error: 'joint "' + side + '" cannot hold: ' + why, a, b };
+		}
 		const axis = ['x', 'y', 'z'].includes(j?.axis) ? j.axis : undefined;
 		const motor =
 			kind === 'revolute' && j?.motor && Number.isFinite(j.motor.vel)
@@ -657,6 +685,12 @@ export function createJointsTool(args) {
 	return { joints: results };
 }
 
+/** @param {{name: string, group: string}[]} list objects with physics inside a group */
+const nestedWords = (list) =>
+	list.map((o) => '"' + o.name + '" (in "' + o.group + '")').join(', ') +
+	(list.length > 1 ? ' have' : ' has') +
+	' physics but will not simulate, because the simulation only runs objects at the top of the scene, not inside a group. Move them out with update_objects parentUuid "root", or set physics on the group itself.';
+
 /**
  * control_simulation: start/stop/pause/resume/reset the physics sim. Start
  * guards the remote-initiator rule; sim start/stop deliberately records NO
@@ -673,21 +707,28 @@ export async function controlSimulationTool(args) {
 			return { error: 'another peer is already simulating — one run at a time' };
 		await toggleSimulation(); // handles the rapier wasm warmup
 		const on = get(simulating);
-		return on
-			? { simulating: true }
-			: { error: 'simulation did not start — no object has physics yet (use set_physics or a mass node first)' };
+		const gaps = simulationGaps();
+		const inGroups = gaps.nested.length ? nestedWords(gaps.nested) : '';
+		if (!on) {
+			if (inGroups) return { error: 'simulation did not start: ' + inGroups };
+			if (gaps.lockedOut.length) return { error: 'simulation did not start: another person is editing ' + gaps.lockedOut.join(', ') + ', and those are the only objects with dynamic physics.' };
+			return { error: 'simulation did not start — no object has physics yet (use set_physics or a mass node first)' };
+		}
+		// mcp-fix: a joint that was not built holds nothing, so never let that pass as a clean start
+		const unbuilt = unbuiltJointIds();
+		const warnings = [...(unbuilt.length ? ['these joints are not in the simulation, because a side has no physics body: ' + unbuilt.join(', ')] : []), ...(inGroups ? [inGroups] : [])];
+		return { simulating: true, ...(warnings.length ? { warning: warnings.join(' ') } : {}) };
 	}
 	if (action === 'stop') {
 		stopSimulation();
 		return { simulating: get(simulating) };
 	}
-	if (action === 'pause') {
-		pauseSimulation(true);
-		return { simulating: get(simulating), paused: true };
-	}
-	if (action === 'resume') {
-		pauseSimulation(false);
-		return { simulating: get(simulating), paused: false };
+	if (action === 'pause' || action === 'resume') {
+		// mcp-fix: only a running simulation can pause; pauseSimulation does nothing otherwise
+		if (!get(simulating))
+			return { error: 'cannot ' + action + ': ' + (get(remoteSimulating) ? 'another peer is running the simulation' : 'the simulation is not running. Use action "start" first') };
+		pauseSimulation(action === 'pause');
+		return { simulating: true, paused: action === 'pause' };
 	}
 	if (action === 'reset') {
 		resetSimulation();

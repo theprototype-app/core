@@ -378,6 +378,19 @@ describe('86 B3: inSession (the Claude connector in a PERSON’s tab)', () => {
 		const r = await agent.exec('create_objects', { objects: [{ kind: 'primitive' }] });
 		expect(r.refused).toBe(true);
 	});
+	// mcp-fix: the owner saw joined:true and waiting:true at once during a failed join
+	it('joined and waiting can never both be true, and an edit waits with them', async () => {
+		const app = fakeApp({ inSession: () => true });
+		app.state.host = null;
+		app.state.peers = [];
+		const { agent } = createAgentCore(app.deps);
+		expect([agent.status().joined, agent.status().waiting]).toEqual([true, false]);
+		app.state.waiting = true;
+		expect([agent.status().joined, agent.status().waiting]).toEqual([false, true]);
+		const r = await agent.exec('create_objects', { objects: [{ kind: 'primitive' }] });
+		expect(r.refused).toBe(true);
+		expect(r.error).toMatch(/waiting for a host/);
+	});
 	it('counterfactual: without inSession the same tab is refused as "not in a session"', async () => {
 		const app = fakeApp();
 		app.state.host = null;

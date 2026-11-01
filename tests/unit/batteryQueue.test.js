@@ -101,6 +101,9 @@ describe('battery queue: trees and resume', () => {
 		fs.writeFileSync(path.join(d, 'node_modules', 'x'), 'y');
 		fs.mkdirSync(path.join(d, 'test-results'));
 		fs.writeFileSync(path.join(d, 'test-results', 'r'), 'y');
+		fs.mkdirSync(path.join(d, 'static'));
+		fs.writeFileSync(path.join(d, 'static', 'version.json'), '{}');
+		fs.writeFileSync(path.join(d, '.muxtopus-mirror'), '');
 		expect(treeId(d)).toBe(id);
 		fs.writeFileSync(path.join(d, 'a.js'), '2');
 		expect(treeId(d)).not.toBe(id);

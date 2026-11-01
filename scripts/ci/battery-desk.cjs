@@ -455,6 +455,9 @@ function longestFirst(b, names) {
 // what is not the tree's own: installs, builds, outputs, this tool's markers. .git is not there in a snapshot or a mirror.
 const NOT_THE_TREE = new Set(['node_modules', '.git', '.svelte-kit', 'build', 'test-results', 'coverage', '.vite', '.muxtopus-mirror', '.snap']);
 
+// written by the dev server's own start, so a tree that has served differs from one that has not
+const GENERATED = new Set(['static/version.json', 'static/third-party-notices.html', 'static/third-party-notices.json']);
+
 /** A hash of a tree's files, the same in a checkout, a snapshot and a mirror of either. @param {string} root */
 function treeId(root) {
 	const hash = require('crypto').createHash('sha256');
@@ -464,6 +467,7 @@ function treeId(root) {
 			if (NOT_THE_TREE.has(e.name)) continue;
 			const r = rel ? `${rel}/${e.name}` : e.name;
 			const full = path.join(dir, e.name);
+			if (GENERATED.has(r)) continue;
 			if (e.isDirectory()) walk(full, r);
 			else if (e.isFile()) hash.update(r + '\0').update(fs.readFileSync(full)).update('\0');
 		}

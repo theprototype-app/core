@@ -5,6 +5,8 @@ import {
 	funnelReturns,
 	playBucket,
 	parseFunnelState,
+	visitStep,
+	agreedNote,
 	FIRST_VISIT_EVENTS
 } from '../../src/lib/onboarding/funnel.js';
 
@@ -68,6 +70,44 @@ describe('the first-visit events', () => {
 	});
 });
 
+describe('the default mode (no note): memory only', () => {
+	const start = () => visitStep(null, 'ob_view', T0);
+	it('a visit that met the Welcome counts each step once per page', () => {
+		const r = start();
+		expect(r.send).toBe(true);
+		expect(r.visit).toEqual({ view: T0, sent: ['ob_view'] });
+		expect(visitStep(r.visit, 'ob_view', T0).send).toBe(false);
+		for (const e of FIRST_VISIT_EVENTS.slice(1)) {
+			const once = visitStep(r.visit, e, T0 + 1000);
+			expect(once.send, e).toBe(true);
+			expect(visitStep(once.visit, e, T0 + 2000).send, e + ' twice').toBe(false);
+		}
+	});
+	it('a visit that did not meet the Welcome counts no steps, and never a return', () => {
+		for (const e of FIRST_VISIT_EVENTS.slice(1)) expect(visitStep(null, e, T0).send, e).toBe(false);
+		for (const e of ['return_d1', 'return_d7', 'return_w', 'pageview'])
+			expect(visitStep(start().visit, e, T0).send, e).toBe(false);
+	});
+	it('ob_waitlist counts from any page; the bucket comes from the time in memory', () => {
+		expect(visitStep(null, 'ob_waitlist', T0).send).toBe(true);
+		expect(visitStep(start().visit, 'ob_first_play', T0 + 2 * 60000).x).toBe('1to3');
+		expect(visitStep(start().visit, 'ob_tour_skip', T0, { x: 'play' }).x).toBe('play');
+	});
+	it('Agree starts the note from what this page counted, without counting it twice', () => {
+		const v = visitStep(start().visit, 'ob_first_edit', T0).visit;
+		const n = agreedNote(v, T0 + 60000);
+		expect(n.view).toBe(T0);
+		expect(n.first).toBe(Math.floor((T0 + 60000) / DAY));
+		expect(funnelStep(n, 'ob_first_edit', T0 + 70000).send).toBe(false);
+		expect(funnelStep(n, 'ob_first_play', T0 + 70000).send).toBe(false);
+		expect(funnelStep(n, 'ob_first_share', T0 + 70000).send).toBe(true);
+		// the Welcome was on an earlier page: the came-back counts still apply
+		const later = agreedNote(null, T0);
+		expect(later.view).toBe(T0);
+		expect(funnelReturns(later, T0 + DAY).events).toEqual(['return_d1']);
+	});
+});
+
 describe('returns', () => {
 	it('day 1 and days 7-13 for a browser that met the Welcome, each once', () => {
 		let s = viewed();
@@ -109,7 +149,7 @@ describe('the wrappers: guards and the seam', () => {
 		storage = (await import('../../src/lib/safeStorage')).safeStorage;
 		for (const k of [
 			'onboard.funnel',
-			'onboard.funnelSend',
+			'onboard.funnelConsent',
 			'debugStores',
 			'funnelUnderTest',
 			'onboard.choice'
@@ -170,10 +210,94 @@ describe('the wrappers: guards and the seam', () => {
 		F.funnelOn.set(false);
 		F.funnelBoot({ firstWelcome: true });
 		expect(got).toEqual([]);
-		expect(storage.getItem('onboard.funnelSend')).toBe('false');
+		expect(storage.getItem('onboard.funnelConsent')).toBe('off');
 		F.funnelOn.set(true);
+		expect(storage.getItem('onboard.funnelConsent')).toBeNull();
 		F.funnelBoot({ firstWelcome: true });
 		expect(got.map((e) => e.e)).toEqual(['ob_view']);
+	});
+	it('the default mode stores nothing at all, the switch included', () => {
+		const write = vi.spyOn(storage, 'setItem');
+		const got = [];
+		hooks.onFunnelEvent((ev) => got.push(ev));
+		F.funnelBoot({ firstWelcome: true });
+		F.funnelEvent('ob_choice');
+		F.funnelEvent('ob_first_edit');
+		F.funnelEvent('ob_first_edit');
+		F.funnelEvent('ob_first_play');
+		expect(got.map((e) => e.e)).toEqual(['ob_view', 'ob_choice', 'ob_first_edit', 'ob_first_play']);
+		expect(write).not.toHaveBeenCalled();
+		write.mockRestore();
+		expect(storage.getItem('onboard.funnel')).toBeNull();
+		expect(storage.getItem('onboard.funnelConsent')).toBeNull();
+	});
+	it('a boot with no agreement reports no returns and starts no note', () => {
+		const got = [];
+		hooks.onFunnelEvent((ev) => got.push(ev));
+		F.funnelBoot({ firstWelcome: false });
+		expect(got).toEqual([]);
+		expect(storage.getItem('onboard.funnel')).toBeNull();
+	});
+	it('the card is offered only with a listener, no answer and counting allowed', () => {
+		const open = () => {
+			let v;
+			F.funnelCardOpen.subscribe((x) => (v = x))();
+			return v;
+		};
+		expect(F.offerFunnelNote()).toBe(false); // the open-source build: no plugin, no question
+		hooks.onFunnelEvent(() => {});
+		vi.stubGlobal('navigator', { userAgent: 'x', globalPrivacyControl: true });
+		expect(F.offerFunnelNote()).toBe(false);
+		vi.stubGlobal('navigator', { userAgent: 'x' });
+		expect(F.offerFunnelNote()).toBe(true);
+		expect(open()).toBe(true);
+		F.funnelAgree();
+		expect(open()).toBe(false);
+		expect(F.offerFunnelNote()).toBe(false); // answered
+	});
+	it('Agree keeps the note: once per browser, and the came-back counts', () => {
+		const got = [];
+		hooks.onFunnelEvent((ev) => got.push(ev));
+		F.funnelBoot({ firstWelcome: true });
+		F.funnelEvent('ob_first_play');
+		F.funnelAgree();
+		expect(storage.getItem('onboard.funnelConsent')).toBe('agreed');
+		const note = JSON.parse(storage.getItem('onboard.funnel'));
+		expect(Object.keys(note).sort()).toEqual(['first', 'sent', 'v', 'view', 'w']);
+		expect(F.funnelEvent('ob_first_play')).toBe(false);
+		expect(F.funnelEvent('ob_first_share')).toBe(true);
+		expect(F.funnelEvent('ob_first_share')).toBe(false);
+		// back the next day, on a fresh page
+		note.first -= 1;
+		storage.setItem('onboard.funnel', JSON.stringify({ ...note }));
+		got.length = 0;
+		F.funnelBoot({ firstWelcome: false });
+		expect(got.map((e) => e.e)).toEqual(['return_d1']);
+	});
+	it('No thanks stops the counts and the card, remembers only the answer, and Settings can undo it', () => {
+		const got = [];
+		hooks.onFunnelEvent((ev) => got.push(ev));
+		F.funnelBoot({ firstWelcome: true });
+		expect(F.offerFunnelNote()).toBe(true);
+		F.funnelDecline();
+		got.length = 0;
+		expect(F.funnelEvent('ob_first_share')).toBe(false);
+		expect(F.offerFunnelNote()).toBe(false);
+		expect(got).toEqual([]);
+		expect(storage.getItem('onboard.funnelConsent')).toBe('off');
+		expect(storage.getItem('onboard.funnel')).toBeNull();
+		F.funnelOn.set(true);
+		expect(storage.getItem('onboard.funnelConsent')).toBeNull();
+		expect(F.funnelEvent('ob_first_share')).toBe(true);
+		expect(storage.getItem('onboard.funnel')).toBeNull();
+	});
+	it('switching off after Agree withdraws: the note is deleted', () => {
+		hooks.onFunnelEvent(() => {});
+		F.funnelAgree();
+		expect(storage.getItem('onboard.funnel')).not.toBeNull();
+		F.funnelOn.set(false);
+		expect(storage.getItem('onboard.funnel')).toBeNull();
+		expect(storage.getItem('onboard.funnelConsent')).toBe('off');
 	});
 	it('a headset browser is vr, nothing finer', () => {
 		vi.stubGlobal('navigator', {

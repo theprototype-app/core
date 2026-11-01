@@ -41,6 +41,7 @@
 // Suites in desk.local (they need this machine's own GPU: real WebGPU, a measured frame rate) only go to workers on
 // this machine's own slots: --local-workers M (default 1 when the run has any, 0 = they run like the others) with
 // --local-slot (default below). Such a worker gives its slot back when its suites are done.
+// On pc and remote slots a queue run renders on the machine's GPU (E2E_GPU_ALL, default on here), except desk.software.
 //
 // TIERS (battery-tiers, owner decision 2026-10-26: tier 1 -> release -> tier 2):
 //   E2E_COVERAGE=1 node scripts/ci/battery-desk.cjs run --half A ...       # + <out>/coverage/<suite>.json per suite
@@ -673,8 +674,11 @@ async function queueCmd(argv) {
 		const own = i > nWorkers;
 		const prefix = (own ? ownSlot : slotCmd).split(/\s+/).filter(Boolean).map((t) => t.replace('{dir}', dir).replace('{port}', String(port)));
 		const cmd = [...prefix, 'node', path.join(dir, 'scripts', 'ci', 'battery-desk.cjs'), 'queue-worker', '--queue', base, '--id', worker, '--root', dir, ...(own ? ['--own'] : [])];
+		/** @type {NodeJS.ProcessEnv} */
 		const env = { ...process.env, APP_URL: (process.env.APP_URL || '').replace(/:\d+\//, `:${port}/`), BATTERY_COMMIT: commit };
 		if (own) Object.assign(env, { E2E_PC: '', E2E_REMOTE: '' });
+		// the queue knows desk.software, so it asks for the GPU on pc and remote slots (E2E_GPU_ALL=off in the caller's environment says no)
+		else env.E2E_GPU_ALL = process.env.E2E_GPU_ALL || 'on';
 		const kid = spawn(cmd[0], cmd.slice(1), { cwd: dir, env, stdio: ['ignore', log, log], detached: true });
 		kids.set(i, kid);
 		const gone = (/** @type {number|null} */ code) => {

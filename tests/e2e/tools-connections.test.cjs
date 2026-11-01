@@ -182,6 +182,15 @@ h.run(async () => {
 	/** @param {string} dom @returns {Promise<string>} */
 	const runTest = async (dom) => {
 		await page.click(`#tool-${dom}-test`);
+		// a re-test keeps the last result on screen until it ends: wait for the button, not the result
+		await page.waitForFunction(
+			(id) => {
+				const b = document.getElementById(id);
+				return b && !b.disabled;
+			},
+			`tool-${dom}-test`,
+			{ timeout: 15000 }
+		);
 		await page.waitForSelector(`#tool-${dom}-result`, { timeout: 15000 });
 		return (await page.locator(`#tool-${dom}-result`).textContent())?.trim() ?? '';
 	};

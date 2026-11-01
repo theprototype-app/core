@@ -377,11 +377,13 @@ h.run(async () => {
 	h.check(!(lean?.missingTools ?? []).some((m) => m.name === 'animate_parts'), 'with its code loading, animate_parts is not reported');
 	const C = await h.setupPageQuiet(browser, 'C', [A]);
 	await C.page.evaluate(() => window.__stores.aiAssistantHidden.set(''));
-	await C.page.route('**/animateParts*', (route) => route.abort('failed'));
 	const relayC = await fakeRelay(C.page);
 	await installProvider(C.page);
 	await C.page.locator('#connect-claude-button').click();
 	await h.eventually(() => connectorPhase(C), (x) => x === 'connected', 'the second tab connects', 30000);
+	// what a tab left open across a release meets: chunks it has not loaded yet are gone. Built chunk names are hashes,
+	// so everything after the connect is refused, not one file by name
+	await C.page.route(/animateParts|\/_app\/immutable\/(chunks|nodes|entry)\//, (route) => route.abort('failed'));
 	relayC.call('stC', 'status', {}, 'read');
 	const stC = (await relayC.answer('stC'))?.result;
 	const loadGap = (stC?.missingTools ?? []).find((m) => m.name === 'animate_parts');

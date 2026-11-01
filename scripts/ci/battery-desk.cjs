@@ -19,7 +19,7 @@
 //
 //   node scripts/ci/battery-desk.cjs run --half A [--of 2] [--out dir] [--name u1A] [--root tree] [--no-retry]
 //   node scripts/ci/battery-desk.cjs run --only a,b,MOD:untangle ...
-//   node scripts/ci/battery-desk.cjs queue --workers 4 --port 5600 --out dir --name u1 [--resume] [--slot prefix]
+//   node scripts/ci/battery-desk.cjs queue --workers 4 --port 5600 --out dir --name u1 [--resume] [--slot prefix] [--local-workers M]
 //   node scripts/ci/battery-desk.cjs baseline save <tag> <out-dir>...      # record a tag's runs
 //   node scripts/ci/battery-desk.cjs diff [--baseline tag|file] <out-dir>...  # exit 1 when anything is NEW
 //   node scripts/ci/battery-desk.cjs flakes [--days 30]                    # flake rate per suite
@@ -38,6 +38,9 @@
 //    An interrupted run writes <name>.partial instead of <name>.json, so `diff` can never read half a battery.
 // --slot is the command prefix that books a slot, with {dir} and {port} (default below; '' = no booking, one
 // local worker per process). Retries run once the list is empty, on another worker than the first attempt's.
+// Suites in desk.local (they need this machine's own GPU: real WebGPU, a measured frame rate) only go to workers on
+// this machine's own slots: --local-workers M (default 1 when the run has any, 0 = they run like the others) with
+// --local-slot (default below). Such a worker gives its slot back when its suites are done.
 //
 // TIERS (battery-tiers, owner decision 2026-10-26: tier 1 -> release -> tier 2):
 //   E2E_COVERAGE=1 node scripts/ci/battery-desk.cjs run --half A ...       # + <out>/coverage/<suite>.json per suite
@@ -61,7 +64,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const STATE = process.env.BATTERY_STATE || path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state'), 'theprototype', 'battery');
 
 /**
- * @typedef {import('./battery.cjs').Battery & { modules?: Record<string, number>, desk?: { 'prod-host'?: string[], 'peer-self'?: string[], gpu?: string[] },
+ * @typedef {import('./battery.cjs').Battery & { modules?: Record<string, number>, desk?: { 'prod-host'?: string[], 'peer-self'?: string[], gpu?: string[], software?: string[], local?: string[] },
  *   exclude?: Record<string, string[]> }} DeskBattery
  * @typedef {{ rc: number|null, secs: number, pass: number, fail: number, last: string, fps: string[] }} Attempt
  * @typedef {{ name: string, status: 'pass'|'flaky'|'red'|'gone', first: Attempt, retry?: Attempt, fps: string[] }} DeskResult
@@ -158,8 +161,8 @@ let running = null;
 /**
  * One suite, the way battery.sh ran it: node in the tree, the caller's environment, the per-suite
  * cases the list names (desk.prod-host: APP_URL on the production hostname, which /etc/hosts maps
- * here; desk.peer-self: the self-hosted signaling box; MOD:x: the modules repo's runner, GPU ones
- * with E2E_GPU=1).
+ * here; desk.peer-self: the self-hosted signaling box; desk.software: stays on software GL where
+ * a slot gives other suites the GPU; MOD:x: the modules repo's runner, GPU ones with E2E_GPU=1).
  * @param {DeskBattery} b @param {string} name @param {string} root @param {string} logFile
  * @returns {Promise<Attempt>}
  */
@@ -176,6 +179,7 @@ function attempt(b, name, root, logFile) {
 		else limit = 1200;
 	} else if (b.desk?.['prod-host']?.includes(name)) env.APP_URL = (env.APP_URL || '').replace('localhost', 'theprototype.app');
 	else if (b.desk?.['peer-self']?.includes(name)) env.PEER_CONFIG = env.PEER_CONFIG_SELF || '';
+	if (b.desk?.software?.includes(name)) env.PW_GPU_ALL = '0';
 	const fd = fs.openSync(logFile, 'w');
 	const t0 = Date.now();
 	return new Promise((resolve) => {
@@ -347,8 +351,9 @@ async function run(argv) {
  * @param {string[]} names longest first
  * @param {Map<string, DeskResult>} [done] green results of an interrupted run
  * @param {boolean} [retry] a red gets its second attempt
+ * @param {Set<string>} [here] suites only this machine's own workers may run (desk.local)
  */
-function makeQueue(names, done = new Map(), retry = true) {
+function makeQueue(names, done = new Map(), retry = true, here = new Set()) {
 	const todo = names.filter((n) => !done.has(n));
 	const results = new Map(done);
 	/** @type {Map<string, { name: string, kind: 'first'|'retry', since: number }>} */
@@ -361,6 +366,8 @@ function makeQueue(names, done = new Map(), retry = true) {
 	const firstOn = new Map();
 	/** @type {Set<string>} */
 	const alive = new Set();
+	/** @type {Set<string>} workers on this machine's own slots */
+	const ownWorkers = new Set();
 	/** @param {string} name @param {string} worker */
 	const take = (name, worker, /** @type {'first'|'retry'} */ kind, /** @type {number} */ now) => {
 		busy.set(worker, { name, kind, since: now });
@@ -372,20 +379,23 @@ function makeQueue(names, done = new Map(), retry = true) {
 		/** @param {string} w */ hello(w) {
 			alive.add(w);
 		},
-		/** @param {string} worker @param {number} [now] @returns {{ name: string, kind: 'first'|'retry' } | { wait: true } | { done: true }} */
-		claim(worker, now = 0) {
+		/** @param {string} worker @param {number} [now] @param {boolean} [own] on this machine's own slot @returns {{ name: string, kind: 'first'|'retry' } | { wait: true } | { done: true }} */
+		claim(worker, now = 0, own = false) {
 			alive.add(worker);
+			if (own) ownWorkers.add(worker);
+			const mine = (/** @type {string} */ n) => here.has(n) === own;
 			// a worker asking again has nothing running: what it held is not coming back
 			if (busy.has(worker)) this.gone(worker);
 			alive.add(worker);
-			const next = todo.shift();
-			if (next) return take(next, worker, 'first', now);
+			const at = todo.findIndex(mine);
+			if (at >= 0) return take(todo.splice(at, 1)[0], worker, 'first', now);
 			// retries only once no first attempt is left to run, and on another worker than the first attempt's
 			// while there is one: a red from one server or one slot should meet a different one
-			const others = [...alive].some((w) => w !== worker);
-			const i = again.findIndex((n) => !others || firstOn.get(n) !== worker);
+			const others = [...alive].some((w) => w !== worker && ownWorkers.has(w) === own);
+			const i = again.findIndex((n) => mine(n) && (!others || firstOn.get(n) !== worker));
 			if (i >= 0) return take(again.splice(i, 1)[0], worker, 'retry', now);
-			return !again.length && !busy.size ? { done: true } : { wait: true };
+			// nothing left that this worker may run: it gives its slot back, whatever the other kind still has to do
+			return !todo.some(mine) && !again.some(mine) && ![...busy.values()].some((v) => mine(v.name)) ? { done: true } : { wait: true };
 		},
 		/** @param {string} worker @param {string} name @param {'first'|'retry'} kind @param {Attempt} a */
 		report(worker, name, kind, a) {
@@ -534,6 +544,7 @@ function ownAddress() {
 }
 
 const DEFAULT_SLOT = 'e2e-slot --pc-first 1800 --wait 36000 --dev {dir} {port} --';
+const DEFAULT_LOCAL_SLOT = 'e2e-slot --local --wait 36000 --dev {dir} {port} --';
 const RESPAWNS = 3;
 const RESPAWN_S = Number(process.env.BATTERY_QUEUE_RESPAWN_S || 30);
 const LEASE_MS = 1700 * 1000; // past the longest suite limit: a worker this quiet is not coming back
@@ -554,6 +565,8 @@ async function queueCmd(argv) {
 	const retry = !argv.includes('--no-retry');
 	// a suite's coverage file is written where the suite runs, which here is another tree and maybe another machine
 	if (process.env.E2E_COVERAGE === '1') throw new Error('E2E_COVERAGE=1 needs `run`: a queue run cannot collect the files');
+	// by run name: two runs of one tree must not share (or remove) each other's worker trees
+	const workerTree = (/** @type {number} */ i) => `${root}-${name}-w${i}`;
 	const tree = treeId(root);
 	const journal = path.join(out, `${name}.journal.jsonl`);
 	const sumFile = path.join(out, `${name}.txt`);
@@ -577,7 +590,10 @@ async function queueCmd(argv) {
 		green.set(n, { name: n, status: 'gone', first: { rc: null, secs: 0, pass: 0, fail: 0, last: 'no such suite in this tree', fps: [] }, fps: [] });
 		say(`${n} rc=gone :: no such suite in this tree`);
 	}
-	const q = makeQueue(longestFirst(b, picked), green, retry);
+	const ownSuites = new Set(picked.filter((n) => b.desk?.local?.includes(n)));
+	const ownWorkers = slotCmd.trim() ? Number(opt(argv, '--local-workers') ?? (ownSuites.size ? 1 : 0)) : 0;
+	const ownSlot = opt(argv, '--local-slot') ?? process.env.BATTERY_LOCAL_SLOT_CMD ?? DEFAULT_LOCAL_SLOT;
+	const q = makeQueue(longestFirst(b, picked), green, retry, ownWorkers ? ownSuites : new Set());
 	const token = require('crypto').randomBytes(12).toString('hex');
 	/** @type {Record<string, string>} worker -> what its slot is */
 	const slots = {};
@@ -614,7 +630,7 @@ async function queueCmd(argv) {
 				return send({ tree });
 			}
 			if (what === 'claim') {
-				const c = q.claim(m.worker, Date.now());
+				const c = q.claim(m.worker, Date.now(), !!m.own);
 				settle();
 				return send(c);
 			}
@@ -650,13 +666,15 @@ async function queueCmd(argv) {
 	let respawning = 0;
 	/** @param {number} i @param {number} tries */
 	const start = (i, tries) => {
-		const dir = `${root}-w${i}`;
+		const dir = workerTree(i);
 		const port = firstPort + i - 1;
 		const worker = `w${i}`;
 		const log = fs.openSync(path.join(out, `${name}.worker-${i}.log`), 'a');
-		const prefix = slotCmd.split(/\s+/).filter(Boolean).map((t) => t.replace('{dir}', dir).replace('{port}', String(port)));
-		const cmd = [...prefix, 'node', path.join(dir, 'scripts', 'ci', 'battery-desk.cjs'), 'queue-worker', '--queue', base, '--id', worker, '--root', dir];
+		const own = i > nWorkers;
+		const prefix = (own ? ownSlot : slotCmd).split(/\s+/).filter(Boolean).map((t) => t.replace('{dir}', dir).replace('{port}', String(port)));
+		const cmd = [...prefix, 'node', path.join(dir, 'scripts', 'ci', 'battery-desk.cjs'), 'queue-worker', '--queue', base, '--id', worker, '--root', dir, ...(own ? ['--own'] : [])];
 		const env = { ...process.env, APP_URL: (process.env.APP_URL || '').replace(/:\d+\//, `:${port}/`), BATTERY_COMMIT: commit };
+		if (own) Object.assign(env, { E2E_PC: '', E2E_REMOTE: '' });
 		const kid = spawn(cmd[0], cmd.slice(1), { cwd: dir, env, stdio: ['ignore', log, log], detached: true });
 		kids.set(i, kid);
 		const gone = (/** @type {number|null} */ code) => {
@@ -667,6 +685,11 @@ async function queueCmd(argv) {
 			if (back) say(`[battery] worker ${worker} gone (rc=${code}) while running ${back.name}: ${back.requeued ? 'back in the list' : 'lost twice, counted red'}`);
 			settle();
 			if (q.finished()) return;
+			if (code === 0) {
+				// told it was done: the other kind of worker still has suites, this one has none to run
+				if (!kids.size && !respawning) stop?.();
+				return;
+			}
 			if (tries < RESPAWNS) {
 				say(`[battery] worker ${worker} ended rc=${code} with ${q.left()} suite(s) left: a new one in ${RESPAWN_S} s`);
 				respawning++;
@@ -706,8 +729,8 @@ async function queueCmd(argv) {
 		});
 	}
 	if (!q.finished()) {
-		for (let i = 1; i <= nWorkers; i++) {
-			linkTree(root, `${root}-w${i}`);
+		for (let i = 1; i <= nWorkers + ownWorkers; i++) {
+			linkTree(root, workerTree(i));
 			start(i, 0);
 		}
 		await ended;
@@ -725,7 +748,7 @@ async function queueCmd(argv) {
 	const slotList = [...new Set(Object.values(slots))].join(',') || '-';
 	/** @type {DeskRun} */
 	const rec = { name, root, commit, slot: `queue:${slotList}`, started, secs: Math.round((Date.now() - t0) / 1000), results: all };
-	if (!argv.includes('--keep-trees')) for (let i = 1; i <= nWorkers; i++) fs.rmSync(`${root}-w${i}`, { recursive: true, force: true });
+	if (!argv.includes('--keep-trees')) for (let i = 1; i <= nWorkers + ownWorkers; i++) fs.rmSync(workerTree(i), { recursive: true, force: true });
 	if (!complete) fs.writeFileSync(path.join(out, `${name}.partial`), JSON.stringify(rec, null, 1));
 	else {
 		fs.rmSync(path.join(out, `${name}.partial`), { force: true });
@@ -748,6 +771,7 @@ async function queueWorker(argv) {
 	const b = /** @type {DeskBattery} */ (load(opt(argv, '--battery')));
 	const base = opt(argv, '--queue') || '';
 	const worker = opt(argv, '--id') || `w${process.pid}`;
+	const own = argv.includes('--own');
 	const root = path.resolve(opt(argv, '--root') || ROOT);
 	const url = process.env.APP_URL || '';
 	// the machine as well: a whole-run slot on another host reads as `local` from inside (its own slot lock there)
@@ -783,7 +807,7 @@ async function queueWorker(argv) {
 			console.error(`[battery] worker ${worker}: dev server unreachable`);
 			process.exit(4);
 		}
-		const c = await post('claim', {});
+		const c = await post('claim', { own });
 		if (c.done) process.exit(0);
 		if (c.wait) {
 			await new Promise((res) => setTimeout(res, 5000));

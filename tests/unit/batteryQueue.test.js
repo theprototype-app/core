@@ -91,6 +91,40 @@ describe('battery queue: the list', () => {
 	});
 });
 
+describe('battery queue: suites for this machine only', () => {
+	const here = new Set(['fps']);
+	it('a suite on the list goes to an own worker only, and the others go past it', () => {
+		const q = makeQueue(['fps', 'a'], new Map(), true, here);
+		expect(q.claim('w1')).toEqual({ name: 'a', kind: 'first' });
+		expect(q.claim('own', 0, true)).toEqual({ name: 'fps', kind: 'first' });
+	});
+	it('an own worker takes nothing else, and gives its slot back while the others still work', () => {
+		const q = makeQueue(['fps', 'a'], new Map(), true, here);
+		expect(q.claim('own', 0, true).name).toBe('fps');
+		q.report('own', 'fps', 'first', att(0));
+		expect(q.claim('own', 0, true)).toEqual({ done: true });
+		expect(q.finished()).toBe(false);
+		expect(q.claim('w1').name).toBe('a');
+	});
+	it('a plain worker is done when only own suites are left, and the run is not', () => {
+		const q = makeQueue(['fps'], new Map(), true, here);
+		expect(q.claim('w1')).toEqual({ done: true });
+		expect(q.finished()).toBe(false);
+	});
+	it('a red own suite is retried by an own worker, the plain ones never see it', () => {
+		const q = makeQueue(['fps'], new Map(), true, here);
+		q.claim('w1');
+		q.claim('own', 0, true);
+		q.report('own', 'fps', 'first', att(1, ['fps :: x']));
+		expect(q.claim('w1')).toEqual({ done: true });
+		expect(q.claim('own', 0, true)).toEqual({ name: 'fps', kind: 'retry' });
+	});
+	it('with no such list every worker takes everything, as before', () => {
+		const q = makeQueue(['fps'], new Map(), true);
+		expect(q.claim('w1').name).toBe('fps');
+	});
+});
+
 describe('battery queue: trees and resume', () => {
 	const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'bq-'));
 	it('treeId sees a changed file, not outputs or installs', () => {
@@ -169,7 +203,7 @@ describe('battery queue: a real run', () => {
 		expect(rec.results.find((/** @type {any} */ x) => x.name === 'flaky').status).toBe('flaky');
 		expect(fs.readFileSync(path.join(marks, 'a'), 'utf8')).toBe('x\n');
 		expect(fs.existsSync(path.join(out, 'logs', 'flaky.retry.log'))).toBe(true);
-		expect(fs.existsSync(`${root}-w1`)).toBe(false);
+		expect(fs.existsSync(`${root}-q-w1`)).toBe(false);
 
 		// the tool's own `diff` takes it: nothing is NEW against a baseline of the same run
 		const tool = path.join(root, 'scripts/ci/battery-desk.cjs');

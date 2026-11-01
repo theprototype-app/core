@@ -75,6 +75,9 @@ function inPageEyes(opts) {
 		format: THREE.RGBAFormat,
 		type: THREE.UnsignedByteType,
 		colorSpace: renderer.outputColorSpace,
+		// a plain RGBA8 buffer, as an XR layer's is: left to itself three allocates SRGB8_ALPHA8 for an sRGB
+		// target, the GPU encodes again on write, and every picture came out double-encoded (too bright)
+		internalFormat: 'RGBA8',
 		// no MSAA: a multisampled target reads back as zeros through readRenderTargetPixels here
 		samples: 0,
 		depthBuffer: true,

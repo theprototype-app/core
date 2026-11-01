@@ -293,16 +293,37 @@ export async function buildExport(opts, onProgress = () => {}) {
 	{
 		const { presetPayload } = await import('../environment');
 		const { hdriOf } = await import('../hdri/hdriCore.js');
-		const { bundledHdri } = await import('../hdri/catalog.js');
+		const { bundledHdri, skyTiers, skyTierFile } = await import('../hdri/catalog.js');
 		const { fetchSky } = await import('../hdri/skyFetch.js');
-		const row = bundledHdri(hdriOf(presetPayload())?.src ?? '');
+		const hdri = hdriOf(presetPayload());
+		const row = bundledHdri(hdri?.src ?? '');
 		if (row) {
-			try {
-				const bytes = new Uint8Array(await fetchSky(row.file));
-				out[row.file] = bytes;
-				breakdown.runtime += bytes.byteLength;
-			} catch (err) {
-				warnings.push(`The sky image ${row.file} could not be copied (${String(/** @type {any} */ (err)?.message ?? err)}) — the export shows its flat sky.`);
+			// 72 LK2: every size a player can pick in the game's options (Sky quality), so the option
+			// keeps working with no CDN. The 8K file only rides in a scene that asks for Max.
+			const files = skyTiers(row)
+				.filter((tier) => tier !== '8k' || hdri?.quality === 'max')
+				.map((tier) => skyTierFile(row, tier));
+			/** @type {string[]} */
+			const copied = [];
+			for (const file of files) {
+				try {
+					const bytes = new Uint8Array(await fetchSky(file));
+					out[file] = bytes;
+					breakdown.runtime += bytes.byteLength;
+					copied.push(file);
+				} catch {}
+			}
+			// the light's file is what matters: without it the .hdr is the sky, and without that, flat
+			if (!copied.includes(skyTierFile(row, '1k'))) {
+				try {
+					const bytes = new Uint8Array(await fetchSky(row.file));
+					out[row.file] = bytes;
+					breakdown.runtime += bytes.byteLength;
+				} catch (err) {
+					warnings.push(`The sky image ${row.file} could not be copied (${String(/** @type {any} */ (err)?.message ?? err)}) — the export shows its flat sky.`);
+				}
+			} else if (copied.length < files.length) {
+				warnings.push(`Some sky sizes could not be copied (${files.filter((f) => !copied.includes(f)).join(', ')}) — the game shows the largest one it has.`);
 			}
 		}
 	}

@@ -319,6 +319,31 @@ function reconcileExtraLights(scene, defs) {
  */
 let toneMappingOwner = () => false;
 
+/**
+ * 72 LK3: the VR look decides what the curve finally is while a session runs (xrLook.js, through this
+ * seam for the reason above). Identity otherwise.
+ * @type {(constant: number, hasSkyImage: boolean) => number}
+ */
+let toneFilter = (constant) => constant;
+/** @param {((constant: number, hasSkyImage: boolean) => number) | null} fn */
+export function setToneFilter(fn) {
+	toneFilter = fn ?? ((constant) => constant);
+}
+/** what the last apply knew about the sky image @type {{ready: boolean, mode: string}} */
+let lastHdriTone = { ready: false, mode: '' };
+
+/** The curve alone, with no rig rebuild: a VR session starting or ending moves only this */
+export function reapplyToneMapping() {
+	const renderer = /** @type {any} */ (get(globalRenderer));
+	if (!renderer) return;
+	const wanted = toneMappingOwner()
+		? THREE.NoToneMapping
+		: lastHdriTone.ready
+			? toneMappingConstant(lastHdriTone.mode)
+			: THREE.ACESFilmicToneMapping;
+	renderer.toneMapping = toneFilter(wanted, lastHdriTone.ready);
+}
+
 /** @param {(() => boolean) | null} fn */
 export function registerToneMappingOwner(fn) {
 	toneMappingOwner = fn ?? (() => false);
@@ -385,14 +410,10 @@ export function applyEnvironment() {
 		// TWICE — visibly crushed highlights. The stack says so through the seam
 		// below rather than this module importing it, which keeps environment out of
 		// the post/history import family entirely.
-		const stackTonemaps = toneMappingOwner();
 		// 37-hdri: an HDRI picks its curve (ACES unless the payload says AgX/Neutral) — this is
 		// what VR and the PiP inset show; the desktop composer gets the same curve as a pass
-		renderer.toneMapping = stackTonemaps
-			? THREE.NoToneMapping
-			: hdri.ready
-				? toneMappingConstant(hdri.toneMapping)
-				: THREE.ACESFilmicToneMapping;
+		lastHdriTone = { ready: hdri.ready, mode: hdri.toneMapping };
+		reapplyToneMapping();
 		// exposure is only read by three's tone mapping chunk, so it is inert under
 		// NoToneMapping — left as authored so switching back needs no re-apply
 		renderer.toneMappingExposure = (preset.exposure ?? 1) * (state.exposure ?? 1);

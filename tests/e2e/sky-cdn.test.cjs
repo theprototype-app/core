@@ -1,12 +1,14 @@
 // 59 T3 — THE BUNDLED SKIES COME FROM THE CDN, ONCE:
-//   1. picking Meadow fetches `hdri/meadow_2_1k.hdr` from the packs base (not the app's origin)
+//   (72 LK2: the light's file is the 1K UltraHDR .jpg now, this suite pins Standard so one pick = one
+//   file; sky-quality covers the larger sizes and the .hdr fallback)
+//   1. picking Meadow fetches `hdri/meadow_2_1k.jpg` from the packs base (not the app's origin)
 //      exactly once, and the sky is ready
 //   2. the asset cache (60 Q6, kind sky) holds it; after a RELOAD picking Meadow again fetches nothing
 //      (counterfactual: a sky never picked — Sunrise — IS fetched, so the counter is live)
 //   3. CDN BLOCKED (fresh profile): Starlight shows the preset's FLAT colours — status
 //      `unavailable`, no IBL on the scene, no error text, no page error — and back online it loads
 //   4. against a BUILT app (export-manifest.json present): an export of a Meadow scene carries
-//      `hdri/meadow_2_1k.hdr` byte-identical to the CDN's; on a dev server this part SKIPS
+//      `hdri/meadow_2_1k.jpg` byte-identical to the CDN's; on a dev server this part SKIPS
 //
 // The skies are served from a local packs checkout by h.routeSkies (SKIES_DIR, ../packs/hdri or a
 // packs-lane-59-* worktree) — E2E_SKIES_CDN=1 lets them through to the real jsDelivr (post-tag).
@@ -52,6 +54,7 @@ h.run(async () => {
 	console.log(
 		`skies from ${process.env.E2E_SKIES_CDN ? 'the real CDN' : (skies.dir ?? 'the real CDN (no local packs checkout)')}`
 	);
+	await A.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('standard'));
 	const base = await A.page.evaluate(() => window.__stores.hdriSky.SKY_BASE);
 	const appOrigin = new URL(h.URL).origin;
 
@@ -65,7 +68,7 @@ h.run(async () => {
 	);
 	const url = skies.hits[0] ?? '';
 	h.check(
-		url === base + '/hdri/meadow_2_1k.hdr' && !url.startsWith(appOrigin),
+		url === base + '/hdri/meadow_2_1k.jpg' && !url.startsWith(appOrigin),
 		`from the packs base, not the app (${url})`
 	);
 	const sky = await sceneSky(A.page);
@@ -93,7 +96,7 @@ h.run(async () => {
 	await pick(A.page, 'sunrise');
 	h.check((await settle(A.page, 'sunrise')) === 'ready', 'Sunrise is ready');
 	h.check(
-		skies.count() === 2 && /\/hdri\/spruit_sunrise_1k\.hdr$/.test(skies.hits[1] ?? ''),
+		skies.count() === 2 && /\/hdri\/spruit_sunrise_1k\.jpg$/.test(skies.hits[1] ?? ''),
 		`counterfactual: a sky never picked IS fetched (${skies.count()})`
 	);
 
@@ -127,7 +130,7 @@ h.run(async () => {
 			useCdnForPacks: false
 		});
 		const cdn = new Uint8Array(
-			await (await fetch(window.__stores.hdriSky.skyUrl('hdri/meadow_2_1k.hdr'))).arrayBuffer()
+			await (await fetch(window.__stores.hdriSky.skyUrl('hdri/meadow_2_1k.jpg'))).arrayBuffer()
 		);
 		return { skip: '', zip: b64(new Uint8Array(await out.blob.arrayBuffer())), cdn: b64(cdn) };
 	});
@@ -135,21 +138,25 @@ h.run(async () => {
 	else {
 		const { unzipSync } = require('fflate');
 		const files = unzipSync(new Uint8Array(Buffer.from(exp.zip, 'base64')));
-		const hdr = files['hdri/meadow_2_1k.hdr'];
+		const hdr = files['hdri/meadow_2_1k.jpg'];
 		const cdn = Buffer.from(exp.cdn, 'base64');
 		h.check(
 			!!hdr && Buffer.compare(Buffer.from(hdr), cdn) === 0,
-			`the export carries hdri/meadow_2_1k.hdr byte-identical to the CDN's (${hdr?.length ?? 0} bytes)`
+			`the export carries hdri/meadow_2_1k.jpg byte-identical to the CDN's (${hdr?.length ?? 0} bytes)`
 		);
-		const others = Object.keys(files).filter(
-			(n) => /\.hdr$/.test(n) && n !== 'hdri/meadow_2_1k.hdr'
+		// 72 LK2: every size the game's Sky quality option can ask for, of this sky and no other; the
+		// 8K showcase file only rides in a scene that asks for Max, and the light's .jpg replaces the .hdr
+		const skyFiles = Object.keys(files).filter((n) => /^hdri\/.*\.(hdr|jpg)$/.test(n)).sort();
+		h.check(
+			skyFiles.join() === 'hdri/meadow_2_1k.jpg,hdri/meadow_2_2k.jpg,hdri/meadow_2_4k.jpg',
+			`…1K to 4K of this sky and nothing else (${skyFiles.join(', ')})`
 		);
-		h.check(others.length === 0, `…and no other sky (${others.join(', ') || 'none'})`);
 	}
 	await A.ctx.close();
 
 	// ---- 3. CDN blocked: the flat preset, no error -------------------------------------------
 	const B = await h.setupPage(browser, 'B', opts);
+	await B.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('standard'));
 	const blocked = await h.routeSkies(B.page, { block: true });
 	await pick(B.page, 'starlight');
 	h.check(

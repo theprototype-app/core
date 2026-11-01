@@ -272,6 +272,8 @@
 	"suites": {
 		"model-replace": 540,
 		"sky-cdn": 180,
+		"sky-quality": 240,
+		"xr-look": 150,
 		"tools-connections": 180,
 		"a11y-axe": 127,
 		"a11y-reader": 78,

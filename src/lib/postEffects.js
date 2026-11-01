@@ -23,6 +23,7 @@ import {
 // @ts-ignore - n8ao ships no bundled type declarations
 import { N8AOPostPass } from 'n8ao';
 import { registerPostEffect, postEffectDef, planPostStack } from './scenePost';
+import { lutAffine } from './xrLookCore.js';
 // L5: a LUT is an Explorer ASSET, so it must ride the content-hash push/pull or a
 // peer (and every late joiner) grades with a missing texture — golden rule 9.
 import { itemByHash, itemBlob, explorerItems } from './explorer';
@@ -328,6 +329,46 @@ registerPostEffect('lut', {
 	}
 });
 
+/** Read a library item as a LookupTexture (.cube, or a strip image); throws on a bad file. @param {any} item @returns {Promise<any>} */
+async function readLutTexture(item) {
+	const blob = await itemBlob(item.id);
+	if (!blob) return null;
+	const name = String(item.name ?? '').toLowerCase();
+	if (name.endsWith('.cube')) return new LUTCubeLoader().parse(await blob.text());
+	// a STRIP image, the other common form. LookupTexture.from unfolds the
+	// strip itself, but its wide-image path tests `image instanceof Image`, so
+	// it needs a real <img> — a canvas or an ImageBitmap silently takes the
+	// raw-data branch and comes out wrong.
+	const url = URL.createObjectURL(blob);
+	try {
+		const image = new Image();
+		await new Promise((resolve, reject) => {
+			image.onload = resolve;
+			image.onerror = reject;
+			image.src = url;
+		});
+		return LookupTexture.from(/** @type {any} */ ({ image }));
+	} finally {
+		URL.revokeObjectURL(url);
+	}
+}
+
+/**
+ * 72 LK3: a LUT's affine fit for the headset's look (xrLookCore), or null when the bytes are not here.
+ * @param {string} hash @returns {Promise<number[] | null>}
+ */
+export async function lutTableOf(hash) {
+	const item = itemByHash(hash);
+	if (!item) return null;
+	const texture = await readLutTexture(item);
+	const image = texture?.image;
+	if (!image?.data || !image.width) return null;
+	const size = image.width;
+	const fit = lutAffine(image.data, size, Math.round(image.data.length / size ** 3));
+	texture.dispose?.();
+	return fit;
+}
+
 /**
  * Resolve a LUT hash to a texture and hand it to a live effect.
  *
@@ -355,30 +396,7 @@ async function loadLutInto(effect, hash) {
 		return;
 	}
 	try {
-		const blob = await itemBlob(item.id);
-		if (!blob) return;
-		const name = String(item.name ?? '').toLowerCase();
-		let texture = null;
-		if (name.endsWith('.cube')) {
-			texture = new LUTCubeLoader().parse(await blob.text());
-		} else {
-			// a STRIP image, the other common form. LookupTexture.from unfolds the
-			// strip itself, but its wide-image path tests `image instanceof Image`, so
-			// it needs a real <img> — a canvas or an ImageBitmap silently takes the
-			// raw-data branch and comes out wrong.
-			const url = URL.createObjectURL(blob);
-			try {
-				const image = new Image();
-				await new Promise((resolve, reject) => {
-					image.onload = resolve;
-					image.onerror = reject;
-					image.src = url;
-				});
-				texture = LookupTexture.from(/** @type {any} */ ({ image }));
-			} finally {
-				URL.revokeObjectURL(url);
-			}
-		}
+		const texture = await readLutTexture(item);
 		if (!texture) return;
 		const previous = effect.lut;
 		effect.lut = texture;

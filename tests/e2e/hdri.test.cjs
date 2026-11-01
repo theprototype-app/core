@@ -103,6 +103,8 @@ h.run(async () => {
 	// 59 T3: the skies come from the packs CDN — served from a local packs checkout when there is one
 	await h.routeSkies(A.page);
 	await h.routeSkies(B.page);
+	// 72 LK2: this suite is about the light's map, which also draws a Standard sky (sky-quality owns the rest)
+	for (const P of [A, B]) await P.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('standard'));
 
 	// a box to select (a selection makes the desktop frame go through the composer)
 	const boxUuid = await A.page.evaluate(`(() => {
@@ -215,7 +217,7 @@ h.run(async () => {
 	// ---- 7. the headset tier -----------------------------------------------------------------
 	await A.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('low'));
 	await h.eventually(() => status(A.page), (v) => v.state === 'ready' && v.tier === 'low' && v.width === 512 && v.pmremSize === 128, 'low tier: 512 px source, 128 px PMREM', 20000);
-	await A.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('auto'));
+	await A.page.evaluate(() => window.__stores.hdriPrefs.hdriQuality.set('standard'));
 	await h.eventually(() => status(A.page), (v) => v.state === 'ready' && v.tier === 'full', 'back to the full tier');
 
 	// ---- 8. water ----------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { get } from 'svelte/store';
 import { HELPER_LAYER } from './helperLayer'; // 60 Q5
-import { showToast, appNotice, peers, cloudIdentity, userdata } from '../stores/appStore';
+import { showToast, appNotice, peers, cloudIdentity, userdata, waitingForApproval } from '../stores/appStore';
 import { globalScene, globalCamera, globalRenderer, orbitControls, cameraClaim, isLocked, isVRMode } from '../stores/sceneStore';
 import { requestConnect } from './peerApproval';
 import { sessionHost } from './connectionState';
@@ -20,7 +20,8 @@ import {
 	CLOUD_HOOKS_VERSION,
 	cloudPluginInfo,
 	sidebarSlot,
-	setCommunityProvider
+	setCommunityProvider,
+	settleRoles
 } from './cloudHooks';
 // 21-G5 (F7): the two reads a rooms roster wants — which scene this session is in,
 // and who is playing. Both leaves (levels reaches sessions, but nothing on the
@@ -77,7 +78,7 @@ const sceneFeed = sceneChangeFeed(() => autosaveLib?.dirtyPulse ?? null);
  */
 export async function startCloudPlugin() {
 	// 36-export: an exported game is the OSS runtime alone — the hosted tier never loads there
-	if (exportMode) return;
+	if (exportMode) return settleRoles();
 	let url = '';
 	try {
 		url =
@@ -87,8 +88,12 @@ export async function startCloudPlugin() {
 	} catch {
 		url = '';
 	}
-	if (!url) return;
+	if (!url) return settleRoles();
 
+	// Held messages must not wait on a load that never ends. A plugin that arrives after this takes over.
+	const tooLong = setTimeout(() => {
+		withoutRoles('The cloud plugin is taking too long to load: guests are view-only for now.');
+	}, Number(safeStorage.getItem('cloudPluginWaitMs')) || PLUGIN_WAIT_MS);
 	try {
 		const mod = await import(/* @vite-ignore */ url);
 		// V2 fail-closed gate: a plugin may declare the hooks contract it NEEDS.
@@ -96,21 +101,47 @@ export async function startCloudPlugin() {
 		// inert); only old-app + new-plugin refuses to register.
 		const needs = Number(mod.compatibleHooks ?? (mod.default && mod.default.compatibleHooks));
 		if (Number.isFinite(needs) && needs > CLOUD_HOOKS_VERSION) {
-			showToast('Cloud plugin requires a newer app version — running in local mode.');
+			withoutRoles('Cloud plugin requires a newer app version — running in local mode, guests are view-only.');
 			return;
 		}
 		const register = mod.register || (mod.default && (mod.default.register || mod.default));
 		if (typeof register !== 'function') {
-			showToast('Cloud plugin loaded but exports no register() — ignoring.');
+			withoutRoles('Cloud plugin loaded but exports no register() — ignoring, guests are view-only.');
 			return;
 		}
 		await primeSeams();
 		await register(makeCloudApi());
 		console.log('cloud plugin registered:', url);
+		settleRoles();
 	} catch (e) {
 		console.error('cloud plugin failed to load:', e);
-		showToast('Cloud plugin failed to load — running in local mode.');
+		withoutRoles('Cloud plugin failed to load — running in local mode, guests are view-only.');
+	} finally {
+		clearTimeout(tooLong);
 	}
+}
+
+/** how long messages may wait for the plugin (`localStorage.cloudPluginWaitMs`: the dev override, as `cloudPluginUrl`) */
+const PLUGIN_WAIT_MS = 30000;
+
+/** What a peer may still do when a build meant to have roles has none: what a viewer may (the plugin's
+ * own list), so people still see and hear each other. */
+const NO_ROLES_ALLOWED = new Set(['sent', 'info', 'ping', 'camera', 'specator', 'agentview']);
+
+/**
+ * This build has roles and the plugin did not come: nobody's role is known, so nobody gets more than a
+ * viewer does, except the host we joined (it holds the room's scene, and a joiner must receive it).
+ * @param {string} message
+ */
+function withoutRoles(message) {
+	showToast(message);
+	setCapabilityProvider(
+		(peerId, msgType) =>
+			NO_ROLES_ALLOWED.has(msgType) ||
+			peerId === get(sessionHost) ||
+			/** @type {any[]} */ (get(waitingForApproval) ?? []).some((w) => w?.[0] === peerId)
+	);
+	settleRoles();
 }
 
 /**

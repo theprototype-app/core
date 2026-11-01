@@ -24,6 +24,19 @@ export function normalizeShareScope(v) {
 	return /** @type {any} */ (SHARE_SCOPES).includes(v) ? /** @type {any} */ (v) : DEFAULT_SHARE_SCOPE;
 }
 
+/**
+ * May a peer that asked by content hash get these bytes? One of three things has to be true NOW:
+ *   shared — a file somebody shared by hand or a scene asset already on the session's index;
+ *   inScene — the open scene uses it, so a peer in the session needs it to see or follow that scene
+ *             (unless the scene is private: `sceneOpen`);
+ *   inScope — the host's current share scope shows it to this peer.
+ * Absent facts are false, so what nothing vouches for is refused.
+ * @param {{shared?: boolean, inScene?: boolean, sceneOpen?: boolean, inScope?: boolean}} facts
+ */
+export function assetAnswerable(facts) {
+	return !!(facts?.shared || facts?.inScope || (facts?.inScene && facts?.sceneOpen));
+}
+
 /** Above this, an Open or a Copy asks "Download 72 MB from <HOST>?" first. */
 export const BIG_PULL_BYTES = 50 * 1024 * 1024;
 

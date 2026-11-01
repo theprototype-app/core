@@ -1436,9 +1436,10 @@ export function animatedImportUuids(group) {
 
 /**
  * Snapshot every animated import for a save file.
- * @param {any} group @returns {any[]} entries for the payload's `animated` array
+ * @param {any} group @param {{refsOnly?: boolean}} [opts] refsOnly: what the entries refer to, without file bytes or a toast
+ * @returns {any[]} entries for the payload's `animated` array
  */
-export function animatedImportsSnapshot(group) {
+export function animatedImportsSnapshot(group, opts = {}) {
 	/** @type {any[]} */
 	const out = [];
 	const states = get(animatedObjects);
@@ -1455,7 +1456,7 @@ export function animatedImportsSnapshot(group) {
 		const bytes = fileBytes.get(child.uuid);
 		if (!bytes) continue;
 		const ref = animRefOf(child);
-		if (!ref && bytes.byteLength > MAX_SAVED_BYTES) {
+		if (!ref && !opts.refsOnly && bytes.byteLength > MAX_SAVED_BYTES) {
 			showToast('"' + (child.name || 'Model') + '" is too large to save with its animation');
 			continue;
 		}
@@ -1476,7 +1477,7 @@ export function animatedImportsSnapshot(group) {
 			...userDataFields(child),
 			// 33-scenes: a pack piece names its file (fetched back on restore, once per url);
 			// anything else carries its bytes, as always
-			...(ref ? { animRef: ref } : { bytes: bytesToBase64(bytes) })
+			...(ref ? { animRef: ref } : opts.refsOnly ? {} : { bytes: bytesToBase64(bytes) })
 		});
 	}
 	return out;

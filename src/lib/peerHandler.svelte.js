@@ -33,7 +33,7 @@ import { captureInviteHash, verifyInviteDial, joinerInviteMeta, dialingWithInvit
 import { applyKick, isBlocked, isHeldOut, resetModeration, blockReplay } from '$lib/peerModeration'; // 55 A9
 import { notePeerFacts, notePeerActivity, dropPeerFacts, myDevice } from '$lib/peerFacts'; // 55 A9
 import { sessionHost, markPeerJoined, resetSession, signalingRetry, noteSignalingRetry, clearSignalingRetry, noteApprovalStarted, clearApprovalStarted, approvalStartedAt, APPROVAL_WINDOW_MS, MAX_PENDING_APPROVALS, HARD_PEER_CAP, roomIsFull } from '$lib/connectionState';
-import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo } from '$lib/cloudHooks';
+import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPending, isFloorMessage, holdUntilRoles } from '$lib/cloudHooks';
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
@@ -51,7 +51,7 @@ import { createDialBackQueue } from '$lib/dialBackQueue'; // scatter-sync: room 
 import { noteWire } from '$lib/sceneBudget';
 import { applyAnnotation, applyAnnotationsSnapshot, sendAnnotations } from '$lib/annotationsHandler';
 import { applyPing } from '$lib/ping';
-import { applyAssetFile, answerAssetRequest, applyAssetThumb, answerAssetThumbRequest, applyAssetStart, applyAssetChunk, applyAssetMissing } from '$lib/assetShare';
+import { applyAssetFile, applyAssetThumb, applyAssetStart, applyAssetChunk, applyAssetMissing } from '$lib/assetShare';
 import { applyRemoteCameraPreview, clearPeerPreview, sendCameraPreviewState } from '$lib/cameraPreview';
 // 21-F3: play-mode PRESENCE, the campreview shape — a tiny per-peer message, a reply
 // riding the getmodulestate request, and a drop on disconnect (golden rule 3).
@@ -1101,6 +1101,20 @@ export class PeerConnection {
 			// The dispatch chain itself, called from the guarded handler below. Naming it is
 			// what lets a try/catch wrap 440 lines without re-indenting any of them.
 			const dispatch = (/** @type {any} */ data) => {
+				// A build with roles, before its plugin has spoken: nobody can say yet what this peer may
+				// do. The message waits (in order) and comes back through this whole chain, gate included.
+				if (data && rolesPending() && !isFloorMessage(data.type)) {
+					const kept = holdUntilRoles(conn.peer, data, () => {
+						if (conn.open === false) return;
+						try {
+							dispatch(data);
+						} catch (error) {
+							noteWireError(conn.peer, data.type, error);
+						}
+					});
+					if (!kept) noteWireError(conn.peer, 'held-over:' + data.type);
+					return;
+				}
 				// M1a (open-core): the ONE receive-side capability gate. Default allows
 				// everything (byte-identical OSS behavior); a cloud plugin's provider
 				// drops disallowed message types from a peer (e.g. a viewer's mutations).
@@ -1664,8 +1678,9 @@ export class PeerConnection {
 					// stable outgoing connection to them.
 					// R22: `thumb` is an ADDITIVE flag asking for the thumbnail INSTEAD of the
 					// bytes; an older peer never sets it and is unaffected.
-					if (data.thumb) answerAssetThumbRequest(conn.peer, data);
-					else answerAssetRequest(conn.peer, data);
+					// The current share settings decide per request (sessionVolumes.answerAssetAsk).
+					const from = conn.peer;
+					sessionVolumesNow().then((m) => m.answerAssetAsk(from, data)).catch(() => {});
 				} else if(data.type == 'module') {
 					applyModuleMessage(data);
 				} else if(data.type == 'volidx' || data.type == 'volthumbs' || data.type == 'volget' || data.type == 'volsave' || data.type == 'volsaveack' || data.type == 'volcancel' || data.type == 'volresolve' || data.type == 'volhash') {
@@ -1811,6 +1826,11 @@ export class PeerConnection {
 				// only "is this a message at all".
 				if (!data || typeof data !== 'object') {
 					noteWireError(conn.peer, 'shape', typeof data);
+					return;
+				}
+				// every gate below compares `type` as a string, and a Set lookup and `==` disagree on anything else
+				if (typeof data.type !== 'string') {
+					noteWireError(conn.peer, 'shape', 'type');
 					return;
 				}
 				// 26-A (roadmap 26 section 3, audit H7): WHICH STREAM IS CHATTY. Counted per

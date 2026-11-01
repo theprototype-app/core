@@ -63,6 +63,7 @@ const nameOf = (t) => String(t?.function?.name ?? t?.name ?? '');
  *   joinSession?: (args: any, ctx: {onCancel: (fn: () => void) => void}) => Promise<any>,
  *   whereAreUsers?: () => any,
  *   you?: () => {peerId: string|null, name: string, role: 'host'|'guest'|'editor'|'viewer', inVR: boolean},
+ *   lastJoinResult?: () => any,
  *   onCallStart?: (call: {id: string, tool: string}) => void,
  *   onCallEnd?: (call: {id: string, tool: string, ok: boolean}) => void
  * }} deps
@@ -121,7 +122,8 @@ export function createDispatcher(deps) {
 		const you = deps.you?.() ?? null;
 		const others = Array.isArray(rest.peers) ? rest.peers : [];
 		const users = you ? [{ id: you.peerId, name: you.name, you: true }, ...others] : others;
-		return { ...rest, ...(you ? { you, peers: users } : {}), tab: { visible: deps.visible(), connector: true } };
+		const lastJoinResult = deps.lastJoinResult?.() ?? null;
+		return { ...rest, ...(you ? { you, peers: users } : {}), ...(lastJoinResult ? { lastJoinResult } : {}), tab: { visible: deps.visible(), connector: true } };
 	}
 
 	/** @param {string} id @param {any} args */
@@ -220,6 +222,12 @@ export function createDispatcher(deps) {
 			const bridge = Object.prototype.hasOwnProperty.call(BRIDGE_SCHEMAS, tool);
 			const own = ownTools().includes(tool);
 			if (!bridge && !own && !scene.has(tool)) {
+				// mcp-fix: a listed tool this tab cannot offer right now (no mesh provider): say why, not "unknown"
+				const gap = (deps.agent.status()?.missingTools ?? []).find((/** @type {any} */ m) => m?.name === tool);
+				if (gap) {
+					deps.send(answerFrame(id, fail('refused', tool + ' is not available in this tab: ' + gap.reason)));
+					return;
+				}
 				deps.send(answerFrame(id, fail('unknown_tool', 'Unknown tool "' + tool + '". This tab answers: ' + toolNames().join(', ') + '.')));
 				return;
 			}

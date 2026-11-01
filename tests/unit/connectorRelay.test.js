@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { createRelayClient, backoffMs } from '../../src/lib/connector/relayClient.js';
 import { createDispatcher, BRIDGE_SCHEMAS, CONNECTOR_SCHEMAS } from '../../src/lib/connector/dispatcher.js';
-import { PING_MS, HELLO_TIMEOUT_MS, PING_TEXT, parseFrame } from '../../src/lib/connector/protocol.js';
+import { PING_MS, HELLO_TIMEOUT_MS, PING_TEXT, parseFrame, CONNECTOR_BLOCKED_TOOLS } from '../../src/lib/connector/protocol.js';
+import { connectorToolGaps } from '../../tools/agent/src/catalog.js';
+import catalogJson from '../../tools/agent/catalog.json';
 import { bridgeTools, connectorOnlyTools } from '../../tools/agent/src/mcpTools.js';
 import { parseJoinLink } from '../../src/lib/connector/joinLink.js';
 import { describePose } from '../../src/lib/connector/whereAreUsers.js';
@@ -247,7 +249,8 @@ function dispatch(/** @type {any} */ over = {}) {
 		encodeShot: async () => ({ image: { mimeType: 'image/jpeg', data: 'BBBB' }, width: 768, height: 432 }),
 		...(over.joinSession ? { joinSession: over.joinSession } : {}),
 		...(over.whereAreUsers ? { whereAreUsers: over.whereAreUsers } : {}),
-		...(over.you ? { you: over.you } : {})
+		...(over.you ? { you: over.you } : {}),
+		...(over.lastJoinResult ? { lastJoinResult: over.lastJoinResult } : {})
 	});
 	return { d, sent, ran, hide: () => (visible = false), release: () => releaseExec?.(undefined) };
 }
@@ -255,6 +258,21 @@ function dispatch(/** @type {any} */ over = {}) {
 const call = (/** @type {string} */ id, /** @type {string} */ tool, args = {}, scope = 'edit') => ({ id, tool, args, scope, timeoutMs: null, connection: 'g_1' });
 
 describe('dispatcher', () => {
+	it('mcp-fix: the import tools are not reachable through the connector, and are not advertised', async () => {
+		const x = dispatch();
+		expect(x.d.toolNames()).not.toContain('import_model');
+		expect(x.d.toolNames()).not.toContain('import_file');
+		x.d.handle(/** @type {any} */ (call('i1', 'import_model', { data: 'AAAA' })));
+		await flush();
+		expect(x.sent.at(-1).error.code).toBe('unknown_tool');
+		expect(x.ran).toEqual([]);
+	});
+	it('mcp-fix: status carries the latest join result', async () => {
+		const x = dispatch({ lastJoinResult: () => ({ session: 'ZZZ99', state: 'failed', note: 'No session ZZZ99 is online.', at: 1 }) });
+		x.d.handle(/** @type {any} */ (call('s1', 'status', {}, 'read')));
+		await flush();
+		expect(x.sent.at(-1).result.lastJoinResult.state).toBe('failed');
+	});
 	it('runs an edit through exec and answers its result', async () => {
 		const x = dispatch();
 		x.d.handle(/** @type {any} */ (call('c1', 'create_objects', { objects: [{ kind: 'primitive' }] })));
@@ -463,5 +481,21 @@ describe('parseJoinLink keeps only what a session link means', () => {
 		const origins = ['https://theprototype.app'];
 		expect(parseJoinLink('#abc&agent', origins)).toMatchObject({ hash: '#abc' });
 		expect(parseJoinLink('#abc&invite=tok&agent~srv=x.example', origins)).toMatchObject({ hash: '#abc&invite=tok~srv=x.example' });
+	});
+});
+
+describe('mcp-fix: the tab and the catalog agree', () => {
+	const facts = { tabTools: ['create_objects', 'import_model', 'what_can_you_do'], own: ['status', 'join_session'], conditional: ['generate_mesh'], catalogTools: ['create_objects', 'import_model', 'what_can_you_do', 'status', 'join_session', 'generate_mesh', 'connect'], excluded: ['import_model', 'connect'] };
+	it('agreement is clean', () => expect(connectorToolGaps(facts)).toEqual([]));
+	it('a tool the tab answers that is neither listed nor excluded fails', () => {
+		expect(connectorToolGaps({ ...facts, tabTools: [...facts.tabTools, 'new_tool'] })[0]).toMatch(/new_tool: a connector tab answers it/);
+	});
+	it('a listed tool no tab answers fails (what_can_you_do in 1.52)', () => {
+		expect(connectorToolGaps({ ...facts, tabTools: ['create_objects'] })[0]).toMatch(/what_can_you_do: in the catalog, but no connector tab answers it/);
+	});
+	it('the committed catalog names what the connector leaves out, and lists generate_mesh + save_scene', () => {
+		expect(catalogJson.connectorExcluded).toEqual([...CONNECTOR_BLOCKED_TOOLS].sort());
+		const names = catalogJson.tools.map((/** @type {any} */ t) => t.name);
+		for (const n of ['generate_mesh', 'save_scene', 'what_can_you_do']) expect(names).toContain(n);
 	});
 });

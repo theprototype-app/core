@@ -7,16 +7,21 @@
 //   3. Join hands the link to the app's own pasted-link path (inviteLinks.handleInviteHash) — the same guards and
 //      questions a person pasting it would get: leave your current session first, join on another server (with
 //      the IP warning), the host's Approve unless the invite admits; then the connect decision if the tab holds work;
-//   4. Cancel, no answer in JOIN_ASK_MS, a cancelled call or Disconnect → the card goes and nothing is dialled.
+//   4. Cancel, no answer in JOIN_ASK_MS, a cancelled call or Disconnect → the card goes and nothing is dialled;
+//   5. mcp-fix: after Join, the answer says what really happened: a session that is not there is an ERROR within
+//      JOIN_DIAL_WAIT_MS, never "the host now has to press Approve". `lastJoinResult()` keeps following the join after
+//      the call has answered (status.lastJoinResult), until it is in or has failed.
 
 import { get } from 'svelte/store';
 import { confirmDialog } from '../confirmDialog.js';
 import { handleInviteHash } from '../inviteLinks.js';
 import { nameOf } from '../lockControl.js';
 import { APP_ORIGIN } from '../playOrigin.js';
-import { peers } from '../../stores/appStore.js';
+import { peers, pendingApprovals, waitingForApproval } from '../../stores/appStore.js';
+import { sessionHost } from '../connectionState.js';
 import { CONNECTOR_LABEL } from '../agent/tpAgent.js';
 import { parseJoinLink } from './joinLink.js';
+import { JOIN_DIAL_WAIT_MS, joinSettled, nextJoinState } from './joinWatch.js';
 
 /** how long the card waits for the person (the Worker's call budget is 120 s) */
 export const JOIN_ASK_MS = 90 * 1000;
@@ -27,6 +32,59 @@ let quietUntil = 0;
 export const JOIN_DIALOG_ID = 'connector-join';
 /** the app's own public origin: a share link copied on theprototype.app names a session in any of its tabs */
 const PUBLIC_ORIGIN = 'https://theprototype.app';
+
+/** the latest join_session's outcome @type {import('./joinWatch.js').JoinResult | null} */
+let lastJoin = null;
+/** a newer join (or a teardown) stops the older watcher */
+let joinWatchSeq = 0;
+const JOIN_POLL_MS = 250;
+
+/** status.lastJoinResult: where the latest join_session stands, or null when none was asked for */
+export function lastJoinResult() {
+	return lastJoin ? { ...lastJoin } : null;
+}
+
+/** What the app can see of a join right now, for nextJoinState. @param {string} id lowercase session id @param {number} startedAt */
+function joinFacts(id, startedAt) {
+	/** @type {any} */
+	const peer = get(peers);
+	const conn = peer?.connections?.[id];
+	const open = peer?.openedPeers instanceof Set && peer.openedPeers.has(id);
+	const row = (/** @type {any[]} */ (get(waitingForApproval)) ?? []).find((w) => Array.isArray(w) && w[0] === id);
+	return {
+		// a peer this tab still lists is re-dialled as a 'retry', with no waiting row
+		requested: (!!row && row[1] === 'pending') || (/** @type {any[]} */ (get(pendingApprovals)) ?? []).some((p) => p?.peerId === id),
+		linkOpen: !!conn?.open || !!open,
+		joined: !!open && String(get(sessionHost) ?? '').toLowerCase() === id,
+		now: Date.now(),
+		startedAt
+	};
+}
+
+/**
+ * Follow a join until it settles; resolves once it has settled or `answerBy` has passed, and goes on recording afterwards.
+ * @param {string} id lowercase @param {'asking'|'dialing'} state @param {number} answerBy
+ * @returns {Promise<import('./joinWatch.js').JoinResult>}
+ */
+function watchJoin(id, state, answerBy) {
+	const seq = ++joinWatchSeq;
+	const startedAt = Date.now();
+	lastJoin = nextJoinState({ session: id.toUpperCase(), state, note: 'Asked to join session ' + id.toUpperCase() + '.', at: startedAt }, joinFacts(id, startedAt));
+	return new Promise((resolve) => {
+		let answered = false;
+		const tick = () => {
+			if (seq !== joinWatchSeq || !lastJoin) return resolve(/** @type {any} */ (lastJoin));
+			lastJoin = nextJoinState(lastJoin, joinFacts(id, startedAt));
+			const settled = joinSettled(lastJoin.state);
+			if (!answered && (settled || lastJoin.state === 'waiting' || Date.now() >= answerBy)) {
+				answered = true;
+				resolve(lastJoin);
+			}
+			if (!settled) setTimeout(tick, JOIN_POLL_MS);
+		};
+		tick();
+	});
+}
 
 /** @param {string} code @param {string} message */
 const fail = (code, message) => ({ error: { code, message } });
@@ -98,30 +156,44 @@ export async function joinSession(args, ctx = {}) {
 		refusals = 0;
 		quietUntil = Date.now() + 60000;
 	}
+	if (answer !== 'join') {
+		joinWatchSeq++;
+		lastJoin = { session: parsed.id.toUpperCase(), state: 'failed', note: 'The person did not join (Cancel, or no answer on the card).', at: Date.now() };
+	}
 	if (answer !== 'join') return fail('refused', 'The person did not join (Cancel, or no answer in ' + Math.round(JOIN_ASK_MS / 1000) + ' s). Do not ask again unless they ask you to.');
 
 	const outcome = await handleInviteHash(parsed.hash);
 	const id = parsed.id.toUpperCase();
 	switch (outcome) {
-		case 'dial':
+		case 'dial': {
+			const end = await watchJoin(parsed.id, 'dialing', Date.now() + JOIN_DIAL_WAIT_MS);
+			if (end.state === 'failed') return fail('failed', end.note);
+			if (end.state === 'joined') return { result: { joined: true, session: id, note: end.note } };
 			return {
 				result: {
 					joining: true,
 					session: id,
-					note: (parsed.invite ? 'The person pressed Join; the invite should let this tab in shortly.' : 'The person pressed Join; the host now has to press Approve.') + ' Call status in a few seconds to see where the tab is.'
+					state: end.state,
+					note:
+						'The person pressed Join. ' +
+						(end.state === 'waiting' ? (parsed.invite ? 'The invite should let this tab in shortly.' : end.note) : end.note + ' Status lastJoinResult follows it.')
 				}
 			};
+		}
 		case 'ask-leave':
 		case 'ask-server':
+			void watchJoin(parsed.id, 'asking', 0);
 			return {
 				result: {
 					joining: 'asking',
 					session: id,
-					note: 'The person pressed Join; the app now asks them ' + (outcome === 'ask-leave' ? 'to leave their current session first' : 'about the other signaling server') + '. Call status in a few seconds.'
+					state: 'asking',
+					note: 'The person pressed Join; the app now asks them ' + (outcome === 'ask-leave' ? 'to leave their current session first' : 'about the other signaling server') + '. Status lastJoinResult follows it.'
 				}
 			};
 		case 'already':
-			return { result: { joined: true, session: id, note: 'This tab is already in that session.' } };
+			lastJoin = { session: id, state: 'joined', note: 'This tab is already in that session.', at: Date.now() };
+			return { result: { joined: true, session: id, note: lastJoin.note } };
 		case 'self':
 			return fail('refused', 'That is this tab’s own session.');
 		default:

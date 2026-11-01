@@ -94,6 +94,8 @@ describe('tool policy (A6)', () => {
 		expect(m.map((x) => x.name)).toEqual(['generate_mesh']);
 		expect(m[0].reason).toMatch(/host/);
 		expect(missingToolsFor({ ...all, hostKnown: false })[0].reason).toMatch(/not joined/);
+		// mcp-fix: a person's own tab hosts its own session, so "not joined" would contradict status.joined
+		expect(missingToolsFor({ ...all, hostKnown: false, personTab: true })[0].reason).not.toMatch(/not joined/);
 	});
 	it('nothing missing when the host (or this page) can generate', () => {
 		expect(missingToolsFor({ ...all, meshHost: true })).toEqual([]);

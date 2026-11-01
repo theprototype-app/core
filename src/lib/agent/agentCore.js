@@ -44,7 +44,7 @@ export function viewerRefusal(peerId) {
  * @param {string|null} host @param {boolean} waiting
  */
 export function notJoinedRefusal(host, waiting) {
-	if (waiting) return 'This agent is still waiting for the host to let it in — wait for status().joined, then try again.';
+	if (waiting) return 'This tab is still waiting for a host to let it in — wait for status().joined, then try again.';
 	if (!host) return 'This agent is not in a session yet — join with an invite link first (status().joined is false).';
 	return 'This agent is not connected to the host right now (status().joined is false), so an edit would not reach the session. It reconnects on its own — wait for status().joined.';
 }
@@ -98,6 +98,7 @@ export function toolName(tool) {
  * @property {() => string|null} role 'admin'|'editor'|'viewer' or null (no roles in this build)
  * @property {() => boolean} [rolesSettled] false while a roles plugin still waits for the host's map (absent = settled)
  * @property {() => string|null} host
+ * @property {() => {node: string, message: string}[]} [scriptErrors] mcp-fix: Script nodes that are failing now
  * @property {() => {name: string, where: string, message: string}[]} [behaviourErrors] 1.2: the scene's failing behaviours
  * @property {() => {arrived: number, total: number} | null} [loading] 1.2: a scene still arriving (null = none)
  * @property {() => {host: string, since: number, until: number, expired: boolean} | null} [hostAway] 1.2: the host left
@@ -224,7 +225,7 @@ export function createAgentCore(deps) {
 
 	/** admitted, the host's link open, roles settled — status().joined, and the gate on every edit */
 	function isJoined() {
-		if (deps.inSession) return deps.inSession() && deps.rolesSettled?.() !== false;
+		if (deps.inSession) return deps.inSession() && !deps.waiting() && deps.rolesSettled?.() !== false;
 		const host = deps.host();
 		return !!host && deps.openPeers().some((p) => p.id === host) && !deps.waiting() && deps.rolesSettled?.() !== false;
 	}
@@ -307,6 +308,16 @@ export function createAgentCore(deps) {
 		return now ? { loading: true, objects: { arrived: now.arrived, total: now.total } } : { loading: false };
 	}
 
+	/** mcp-fix: `{scriptErrors}` when a Script node is failing, else nothing */
+	function scriptErrors() {
+		try {
+			const rows = deps.scriptErrors?.() ?? [];
+			return rows.length ? { scriptErrors: rows.slice(0, 10) } : {};
+		} catch {
+			return {};
+		}
+	}
+
 	/** 1.2: `{behaviourErrors}` when a behaviour is failing, else nothing */
 	function behaviourErrors() {
 		try {
@@ -348,6 +359,7 @@ export function createAgentCore(deps) {
 			...(hostAwayNow() ? { hostAway: hostAwayNow(), withHost: false } : {}),
 			// 55 (41's gem test): a behaviour that throws says so here, not only in the runtime's instance list
 			...behaviourErrors(),
+			...scriptErrors(),
 			notices: notices.slice()
 		};
 	}

@@ -22,7 +22,7 @@ import { createConnectorAgent, CONNECTOR_LABEL } from '../agent/tpAgent.js';
 import { startAgentRecorder, stopAgentRecorder } from '../agentLogRecorder.js';
 import { showConfirm } from '../confirmDialog.js';
 import { showToast, userdata, username } from '../../stores/appStore.js';
-import { joinSession } from './joinSession.js';
+import { joinSession, lastJoinResult } from './joinSession.js';
 import { whereAreUsers } from './whereAreUsers.js';
 import { APP_VERSION } from '../version.js';
 
@@ -123,6 +123,7 @@ function setup() {
 		encodeShot: (url) => encodeShot(url).catch(() => null),
 		// 86-fix N2: the person confirms on a Join / Cancel card in this tab
 		joinSession: (args, ctx) => joinSession(args, ctx),
+		lastJoinResult: () => lastJoinResult(),
 		// 86-fix: where the people are (85 S1), and who "you" are — the person this tab belongs to
 		whereAreUsers: () => whereAreUsers(),
 		you: () => youOf(agent.status()),

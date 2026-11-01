@@ -94,8 +94,9 @@ h.run(async () => {
 			}
 			// the Test button lives on the "Voice typing server" sub-page (a self-hosted provider)
 			if (sel === '#row-stt-test') {
+				// 59 T4: the provider picker lives in Tools & connections ▸ Voice typing ▸ Set up
+				await page.click('#tool-chat-voice-configure');
 				await page.click('#ai-stt-preset-custom');
-				await page.click('#ai-stt-server');
 				await page.waitForSelector('#row-stt-test', { state: 'visible', timeout: 5000 });
 				await page.waitForTimeout(200);
 				current = '';

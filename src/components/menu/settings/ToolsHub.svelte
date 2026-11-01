@@ -9,6 +9,7 @@
 		'grok',
 		'gemini',
 		'assistant',
+		'enable assistant',
 		'provider',
 		'api key',
 		'model'
@@ -31,7 +32,7 @@
 		'dcc'
 	]);
 	registerSettingsKeywords('agents', ['agent', 'mcp', 'claude code', 'invite', 'connect claude', 'connector', 'setup command']);
-	registerSettingsKeywords('voice typing', ['stt', 'whisper', 'speech', 'mic', 'dictation']);
+	registerSettingsKeywords('voice typing', ['stt', 'whisper', 'speech', 'mic', 'dictation', 'voice typing provider']);
 	registerSettingsKeywords('chat pictures', ['image', 'photo', 'picture', 'attach', 'vision']);
 </script>
 

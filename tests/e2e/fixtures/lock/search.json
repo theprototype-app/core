@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-10-31T14:05:27.455Z",
+	"recordedAt": "2026-11-01T09:29:04.404Z",
 	"settings": {
 		"Theme": {
 			"rows": [
@@ -772,7 +772,7 @@
 				"Shortcuts",
 				"Scene",
 				"Explorer",
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"Simulate physics (toggle)": {
@@ -810,15 +810,13 @@
 		"Undo": {
 			"rows": [
 				"Allow undocking on touch screens",
-				"Enable assistant",
 				"Touch tools",
 				"Undo",
 				"Undock button"
 			],
 			"sections": [
 				"Interface",
-				"Shortcuts",
-				"AI"
+				"Shortcuts"
 			]
 		},
 		"Redo": {
@@ -2289,28 +2287,52 @@
 				"VR"
 			]
 		},
-		"Enable assistant": {
+		"Voice typing": {
 			"rows": [
-				"Enable assistant"
+				"Voice typing"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
-		"Voice typing provider": {
+		"Keep sent pictures in Explorer": {
 			"rows": [
-				"Voice typing provider"
+				"Keep sent pictures in Explorer"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
-		"Mesh generation": {
+		"Coding agents": {
 			"rows": [
-				"Mesh generation"
+				"Coding agents"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
+			]
+		},
+		"Blender and other 3D tools": {
+			"rows": [
+				"Blender and other 3D tools"
+			],
+			"sections": [
+				"Tools & connections"
+			]
+		},
+		"Rigging and animation services": {
+			"rows": [
+				"Rigging and animation services"
+			],
+			"sections": [
+				"Tools & connections"
+			]
+		},
+		"Your own GPU box": {
+			"rows": [
+				"Your own GPU box"
+			],
+			"sections": [
+				"Tools & connections"
 			]
 		},
 		"Session size": {
@@ -3059,61 +3081,64 @@
 		},
 		"llm": {
 			"rows": [
-				"Enable assistant",
+				"Blender and other 3D tools",
+				"Coding agents",
 				"Keep sent pictures in Explorer",
-				"Mesh generation",
-				"Voice typing provider"
+				"Rigging and animation services",
+				"Voice typing",
+				"Your own GPU box"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"claude": {
 			"rows": [
-				"Enable assistant",
-				"Let AI agents join as guests"
+				"Coding agents",
+				"Let AI agents join as guests",
+				"Voice typing"
 			],
 			"sections": [
-				"AI",
+				"Tools & connections",
 				"Connection"
 			]
 		},
 		"api key": {
 			"rows": [
-				"Voice typing provider"
+				"Voice typing"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"model": {
 			"rows": [
+				"Blender and other 3D tools",
+				"Coding agents",
 				"Distant scatter",
-				"Enable assistant",
 				"Keep sent pictures in Explorer",
-				"Mesh generation",
 				"My hand model",
 				"Optimize big models automatically",
 				"Peer hands",
 				"Placement preview",
 				"Preview triangle budget",
+				"Rigging and animation services",
 				"Simplify distant models",
 				"Triangle threshold",
-				"Voice typing provider"
+				"Voice typing",
+				"Your own GPU box"
 			],
 			"sections": [
 				"Scene",
 				"Import",
 				"VR",
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"meshy": {
-			"rows": [
-				"Mesh generation"
-			],
+			"rows": [],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"trash": {
@@ -3212,7 +3237,6 @@
 				"Lift the corner buttons above docked panels",
 				"Lift the toolbar above docked panels",
 				"Menu hand",
-				"Mesh generation",
 				"Music",
 				"Object search in the right-click menu",
 				"Offer Enter VR in a headset browser",
@@ -3255,8 +3279,7 @@
 				"Input",
 				"Explorer",
 				"Export",
-				"VR",
-				"AI"
+				"VR"
 			]
 		},
 		"mouse": {
@@ -3615,13 +3638,15 @@
 		},
 		"assistant": {
 			"rows": [
-				"Enable assistant",
+				"Blender and other 3D tools",
+				"Coding agents",
 				"Keep sent pictures in Explorer",
-				"Mesh generation",
-				"Voice typing provider"
+				"Rigging and animation services",
+				"Voice typing",
+				"Your own GPU box"
 			],
 			"sections": [
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"peer": {
@@ -3661,19 +3686,20 @@
 				"Signaling server"
 			],
 			"sections": [
-				"AI",
 				"Connection"
 			]
 		},
 		"invite": {
 			"rows": [
 				"Apply changes",
+				"Coding agents",
 				"Let AI agents join as guests",
 				"Session size",
 				"Show where AI agents look",
 				"Signaling server"
 			],
 			"sections": [
+				"Tools & connections",
 				"Connection"
 			]
 		},
@@ -4466,7 +4492,7 @@
 				"Use CDN for packs",
 				"VR welcome tour",
 				"Vertex edit limit",
-				"Voice typing provider",
+				"Voice typing",
 				"World grab snapping"
 			],
 			"sections": [
@@ -4474,17 +4500,17 @@
 				"Shortcuts",
 				"Export",
 				"VR",
-				"AI"
+				"Tools & connections"
 			]
 		},
 		"ai": {
 			"rows": [
 				"Both grips scale the world",
 				"Cached downloads",
+				"Coding agents",
 				"Colocation probe",
 				"Compress textures (KTX2)",
 				"Download shared files automatically",
-				"Enable assistant",
 				"Focus mode — maximize the area under the pointer (the viewport alone, or a docked window filling the window); again to restore",
 				"GPU fluid",
 				"Ghost hands",
@@ -4500,13 +4526,13 @@
 				"Lift the corner buttons above docked panels",
 				"Loop select (faces: again = perpendicular; edges: the chain)",
 				"Max texture size",
-				"Mesh generation",
 				"Optimize big models automatically",
 				"Optimize for",
 				"Placeholder style",
 				"Project actions",
 				"Reset tips",
 				"Reverse trackpad pan",
+				"Rigging and animation services",
 				"Show where AI agents look",
 				"Stance",
 				"Storage breakdown",
@@ -4515,8 +4541,9 @@
 				"Texture threshold",
 				"Toggle AI prompt bar",
 				"Triangle threshold",
-				"Voice typing provider",
-				"When several libraries are open"
+				"Voice typing",
+				"When several libraries are open",
+				"Your own GPU box"
 			],
 			"sections": [
 				"Interface",
@@ -4529,7 +4556,7 @@
 				"Import",
 				"Export",
 				"VR",
-				"AI",
+				"Tools & connections",
 				"Connection"
 			]
 		},
@@ -4545,6 +4572,7 @@
 				"Geometry",
 				"LOD",
 				"Material",
+				"Model",
 				"Object",
 				"Particles",
 				"Physics",
@@ -4553,6 +4581,10 @@
 				"Texture",
 				"Transform",
 				"Water"
+			],
+			"model": [
+				"Model",
+				"Scatter"
 			],
 			"transform": [
 				"Transform"

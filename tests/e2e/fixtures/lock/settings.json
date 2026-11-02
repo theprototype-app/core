@@ -1,5 +1,5 @@
 {
-	"recordedAt": "2026-11-01T09:26:25.179Z",
+	"recordedAt": "2026-11-01T19:36:04.013Z",
 	"viewport": {
 		"width": 1440,
 		"height": 900
@@ -605,6 +605,73 @@
 					]
 				},
 				{
+					"name": "First-game quest",
+					"controls": [
+						{
+							"kind": "button",
+							"id": "setting-tour-firstwin",
+							"label": "Start",
+							"where": "control",
+							"default": "Start",
+							"disabled": false,
+							"state": {
+								"gone": true
+							},
+							"effects": {
+								"storage": {
+									"tour.first-win": "{\"at\":0}"
+								},
+								"stores": {
+									"anyModalOpen": false,
+									"settingsOpen": false,
+									"tours.activeTour": "<object>",
+									"tours.tourRecords": 7
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [
+									"tour-card"
+								],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"exercise": "done"
+						}
+					]
+				},
+				{
+					"name": "Show everything",
+					"controls": [
+						{
+							"kind": "toggle",
+							"id": "setting-show-everything",
+							"label": "Show everything",
+							"where": "control",
+							"default": true,
+							"disabled": false,
+							"state": false,
+							"effects": {
+								"storage": {
+									"onboard.simple": "true"
+								},
+								"stores": {
+									"onboardState.simpleUntilPlay": true
+								},
+								"html": [],
+								"body": [],
+								"dialogs": [],
+								"broadcasts": [],
+								"events": []
+							},
+							"scope": "device",
+							"restored": true,
+							"storageAfterRestore": {},
+							"exercise": "done"
+						}
+					]
+				},
+				{
 					"name": "Offer Enter VR in a headset browser",
 					"controls": [
 						{
@@ -649,14 +716,15 @@
 							"effects": {
 								"storage": {
 									"notifications": "notified: [\"Tours reset — each one shows again the first time it applies.\"]",
-									"tour.editor": null
+									"tour.editor": null,
+									"tour.first-win": null
 								},
 								"stores": {
 									"a11yAnnounce.politeAnnouncement": "Tours reset — each one shows again the first time it applies.",
 									"notifications": "<object>",
 									"notificationsUnread": "<changed>",
 									"toastStore": "<object>",
-									"tours.tourRecords": 6
+									"tours.tourRecords": 9
 								},
 								"html": [],
 								"body": [],
@@ -9751,7 +9819,7 @@
 							"scope": "device",
 							"restored": false,
 							"storageAfterRestore": {
-								"notifications": "[{\"id\":\"n1793523844367_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1793523844367,\"kind\":\"action\"},{\"id\":\"n1793523850916_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1793523850916,\"kind\":\"info\"},{\"id\":\"n1793523857568_3\",\"text\":\"Window positions reset\",\"ts\":1793523857568,\"kind\":\"info\"},{\"id\":\"n1793523925797_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1793523925797,\"kind\":\"info\"},{\"id\":\"n1793524295333_5\",\"text\":\"Line colors reset\",\"ts\":1793524295333,\"kind\":\"info\"},{\"id\":\"n1793524421661_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1793524421661,\"kind\":\"info\"},{\"id\":\"n1793524422210_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1793524422210,\"kind\":\"info\"}]",
+								"notifications": "[{\"id\":\"n1793560361939_1\",\"text\":\"The VR welcome will play the next time you enter VR.\",\"ts\":1793560361939,\"kind\":\"action\"},{\"id\":\"n1793560372451_2\",\"text\":\"Tours reset — each one shows again the first time it applies.\",\"ts\":1793560372451,\"kind\":\"info\"},{\"id\":\"n1793560379124_3\",\"text\":\"Window positions reset\",\"ts\":1793560379124,\"kind\":\"info\"},{\"id\":\"n1793560447369_4\",\"text\":\"Touch layout reset to the default arrangement\",\"ts\":1793560447369,\"kind\":\"info\"},{\"id\":\"n1793560829639_5\",\"text\":\"Line colors reset\",\"ts\":1793560829639,\"kind\":\"info\"},{\"id\":\"n1793560962216_6\",\"text\":\"Passthrough on — takes effect on the next VR entry\",\"ts\":1793560962216,\"kind\":\"info\"},{\"id\":\"n1793560962786_7\",\"text\":\"Passthrough off — takes effect on the next VR entry\",\"ts\":1793560962786,\"kind\":\"info\"}]",
 								"vrPassthrough": "false"
 							},
 							"exercise": "done"
@@ -10813,6 +10881,10 @@
 				{
 					"name": "Error reports",
 					"controls": []
+				},
+				{
+					"name": "Usage counts",
+					"controls": []
 				}
 			]
 		},
@@ -11093,6 +11165,26 @@
 						"kind": "button",
 						"id": "setting-tour-editor",
 						"default": "Start"
+					}
+				]
+			},
+			{
+				"name": "First-game quest",
+				"controls": [
+					{
+						"kind": "button",
+						"id": "setting-tour-firstwin",
+						"default": "Start"
+					}
+				]
+			},
+			{
+				"name": "Show everything",
+				"controls": [
+					{
+						"kind": "toggle",
+						"id": "setting-show-everything",
+						"default": true
 					}
 				]
 			},

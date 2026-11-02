@@ -65,7 +65,7 @@ export function resetWindowLayout() {
  * @param {any} node
  * @param {{key: string, defaultRect?: {left?: number, top?: number, right?: number, bottom?: number},
  *   resizable?: boolean, axis?: 'x'|'xy', minW?: number, minH?: number,
- *   inert?: (() => boolean) | null, keyScope?: string | null}} options
+ *   inert?: (() => boolean) | null, keyScope?: string | null, clearAvatar?: boolean}} options
  *   `resizable` (15-B7) adds a bottom-right grabber and persists {w,h} in the
  *   SAME `win:<key>` record — opt-in, so windows that own their sizing (Flow,
  *   Explorer, the object list) are untouched.
@@ -82,7 +82,7 @@ export function resetWindowLayout() {
  *   behind it; 'keep' for a toolbar that leaves the keys where they were. A marked editor
  *   pane inside the window keeps its own scope (the nearest mark wins).
  */
-export function dragWindow(node, { key, defaultRect = {}, resizable = false, axis = 'xy', minW = 260, minH = 180, inert = null, keyScope = 'panel' }) {
+export function dragWindow(node, { key, defaultRect = {}, resizable = false, axis = 'xy', minW = 260, minH = 180, inert = null, keyScope = 'panel', clearAvatar = false }) {
 	// 70 W2: a panel in a pop-out window ($lib/windows/panelHost) is laid out by its window, not here
 	if (isForeign(node)) return { destroy() {} };
 	/** @type {any} */
@@ -155,6 +155,15 @@ export function dragWindow(node, { key, defaultRect = {}, resizable = false, axi
 		if (cp) {
 			const r = cp.getBoundingClientRect();
 			if (rect.left < r.right && rect.left + w > r.left) minTop = Math.max(minTop, Math.round(r.bottom) + 4);
+		}
+		// FW-AI (76): a window that opens at the top right keeps its header out from under the profile circle
+		// (the docked Connect bar pushes the circle down on a tablet-wide screen, and it sits above the window tier)
+		if (clearAvatar) {
+			const av = typeof document !== 'undefined' ? document.getElementById('avatar-trigger') : null;
+			if (av) {
+				const r = av.getBoundingClientRect();
+				if (rect.left < r.right && rect.left + w > r.left) minTop = Math.max(minTop, Math.round(r.bottom) + 4);
+			}
 		}
 		// 24-B3: the bottom is chrome too. The band (`--controls-inset` on coarse/narrow
 		// viewports, the dock when it pushes the viewport, browser overlays via

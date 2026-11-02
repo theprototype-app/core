@@ -116,7 +116,8 @@ describe('an app update drops the index memos', () => {
 		const templates = source('lib/sceneTemplates.js');
 		expect(templates).toMatch(/onContentStale\(\(\) => \{\s*templatesStale = true;\s*communityStale = true;/);
 		expect(templates).toContain("if (!force && !templatesStale && (state === 'ready'");
-		expect(templates).toContain("if (!force && !communityStale && (state === 'ready'");
+		// 76 FW3: the memo also re-opens when the query/sort it answers changed (`requery`)
+		expect(templates).toContain("if (!force && !requery && !communityStale && (state === 'ready'");
 		expect(source('lib/moduleGallery.js')).toMatch(/onContentStale\(\(\) => \{\s*loaded = false;/);
 		expect(source('lib/packs.js')).toMatch(/onContentStale\(\(\) => \{\s*for \(const name of Object\.keys\(itemCache\)\) delete itemCache\[name\];/);
 	});

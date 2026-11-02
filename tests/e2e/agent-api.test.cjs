@@ -214,7 +214,9 @@ h.run(async () => {
 	const isoP = await probe(iso);
 	const canvasAspect = await B.page.evaluate(() => { let r; window.__stores.globalRenderer.subscribe((v) => (r = v))(); return r.domElement.width / r.domElement.height; });
 	h.check(isoP.w === 768 || isoP.h === 768, `default PNG, longest side 768 (${JSON.stringify(isoP)})`);
-	h.check(Math.abs(isoP.w / isoP.h - canvasAspect) < 0.02, `in the canvas aspect (${(isoP.w / isoP.h).toFixed(3)} vs ${canvasAspect.toFixed(3)})`);
+	h.check(Math.abs(isoP.w / isoP.h - 4 / 3) < 0.02, `a framed view is 4:3 whatever the canvas (${(isoP.w / isoP.h).toFixed(3)}, canvas ${canvasAspect.toFixed(3)})`);
+	const nowP = await probe(await B.page.evaluate(() => window.tpAgent.screenshot({ view: 'current' })));
+	h.check(Math.abs(nowP.w / nowP.h - canvasAspect) < 0.02, `current keeps the canvas aspect (${(nowP.w / nowP.h).toFixed(3)} vs ${canvasAspect.toFixed(3)})`);
 	h.check(isoP.colours > 20, `and it shows something, not a flat fill (${isoP.colours} colours, mean ${isoP.lum?.toFixed(1)})`);
 	const small = await probe(await B.page.evaluate(() => window.tpAgent.screenshot({ view: 'top', size: 300 })));
 	h.check(Math.max(small.w, small.h) === 300, `size caps the longest side (${small.w}x${small.h})`);

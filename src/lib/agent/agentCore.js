@@ -114,6 +114,7 @@ export function toolName(tool) {
  * @property {() => any[]} missingModules
  * @property {(cb: () => void) => () => void} onSceneChange
  * @property {(opts: any) => Promise<string|null>} screenshot
+ * @property {() => any} [lastShot] what the last screenshot used
  * @property {() => Promise<void>} leave
  * @property {Record<string, {schema: any, run: (args: any) => Promise<any>|any}>} [extraTools]
  *   agent-only tools (run locally, never batched — they change no shared scene state)
@@ -410,6 +411,7 @@ export function createAgentCore(deps) {
 			if (deps.inVR()) return Promise.resolve(null);
 			return deps.screenshot(opts ?? {}).catch(() => null);
 		},
+		lastShot: () => deps.lastShot?.() ?? null,
 		pendingOffers: () => offers.list(),
 		accept: (/** @type {string} */ id, /** @type {string|number|undefined} */ which = undefined) => offers.accept(id, which),
 		leave: () => deps.leave()

@@ -4,15 +4,17 @@
 	// is never the only signal), the one button that fits it, and the hint that matters — the tab must
 	// stay open, because the tools run HERE.
 	// 86-fix N1: `welcome` = the same control as the first choice of the AI window's welcome (no AI provider set
-	// up): a card with a title and what it means, and — signed out on a cloud build — the plugin's "Sign in to
-	// connect" (cloudHooks.connectorSignInSlot) in place of the button. One instance at a time, so the ids hold.
+	// up): a card with a title and what it means, and — signed out on a cloud build (cloudHooks.connectorSignInSlot)
+	// — "Sign in to connect" in place of the button. One instance at a time, so the ids hold.
+	// FW-AI (76): that press opens the top-right profile pop-up; no login buttons live in this window.
+	import { onDestroy } from 'svelte';
 	import Icon from '../ui/Icon.svelte';
 	import Button from '../ui/Button.svelte';
-	import CloudSlot from '../CloudSlot.svelte';
 	import { connectorState, connectorAvailable, connectorLine, connectClaude, disconnectClaude } from '$lib/connector/connectorStore';
 	import { CONNECTOR_DIRECTORY_URL, CONNECTOR_DOCS_URL, CONNECTOR_MCP_URL } from '$lib/connector/connectorLinks.js';
 	import { connectorSignInSlot } from '$lib/cloudHooks';
 	import { settingsOpen, settingsSection, showToast } from '../../stores/appStore';
+	import { requestSignIn } from '$lib/connector/connectorSignIn.js';
 
 	let { welcome = false }: { welcome?: boolean } = $props();
 	const signIn = $derived(welcome && !$connectorAvailable && !!$connectorSignInSlot);
@@ -21,10 +23,16 @@
 	const live = $derived(s.phase === 'connected' || s.phase === 'reconnecting' || s.phase === 'pairing' || s.phase === 'connecting');
 	const tone = $derived(s.phase === 'connected' ? 'ok' : s.phase === 'reconnecting' || s.throttled ? 'warn' : s.phase === 'closed' || s.phase === 'error' ? 'bad' : 'idle');
 
+	let copied = $state(false);
+	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+	onDestroy(() => clearTimeout(copiedTimer));
+
 	async function copyMcpLink() {
 		try {
 			await navigator.clipboard.writeText(CONNECTOR_MCP_URL);
-			showToast('Link copied');
+			copied = true;
+			clearTimeout(copiedTimer);
+			copiedTimer = setTimeout(() => (copied = false), 2000);
 		} catch {
 			showToast('Copy did not work here: the link is ' + CONNECTOR_MCP_URL);
 		}
@@ -58,13 +66,13 @@
 				{:else if s.message}
 					{s.message}
 				{:else if signIn}
-					Sign in to your theprototype account first.
+					Sign in from your profile, top right.
 				{:else}
 					Use this tab from claude.ai — chat or voice.
 				{/if}
 			</span>
 			{#if signIn}
-				<CloudSlot mount={$connectorSignInSlot} />
+				<Button id="connect-claude-signin" variant="secondary" size="sm" onclick={requestSignIn}>Sign in to connect</Button>
 			{:else if live}
 				<Button id="connect-claude-disconnect" variant="outline" size="sm" icon="unlink" onclick={disconnectClaude}>Disconnect</Button>
 			{:else}
@@ -72,21 +80,23 @@
 			{/if}
 		</div>
 		{#if welcome && !live}
-			<!-- what to do on the claude.ai side; a directory listing turns step 1 into one link -->
+			<!-- what to do on the claude.ai side: the directory first, the manual way under it -->
 			<ol id="connect-claude-steps" class="cc-steps">
 				<li id="connect-claude-step-1">
-					{#if CONNECTOR_DIRECTORY_URL}
-						In claude.ai:
-						<a id="connect-claude-add" class="cc-link" href={CONNECTOR_DIRECTORY_URL} target="_blank" rel="noopener noreferrer">Add to Claude</a>
-					{:else}
-						In claude.ai: Settings ▸ Connectors ▸ Add custom connector, paste
+					<span class="cc-step-title">Add theprototype to Claude</span>
+					<div class="cc-add">
+						<Button id="connect-claude-add" variant="secondary" size="sm" icon="plus" iconRight="external-link" href={CONNECTOR_DIRECTORY_URL} target="_blank" rel="noopener noreferrer">Add to Claude</Button>
+					</div>
+					<p class="cc-manual">or add it by hand: Settings ▸ Connectors ▸ Add custom connector</p>
+					<div class="cc-address">
 						<code class="cc-url">{CONNECTOR_MCP_URL}</code>
-						<button type="button" id="connect-claude-copy" class="cc-link" onclick={copyMcpLink}>Copy link</button>
-						<a id="connect-claude-how" class="cc-link" href={CONNECTOR_DOCS_URL} target="_blank" rel="noopener noreferrer">How?</a>
-					{/if}
+						<Button id="connect-claude-copy" variant="icon" size="sm" icon={copied ? 'check' : 'copy'} label="Copy connector address" onclick={copyMcpLink} />
+					</div>
+					<span class="sr-only" role="status" aria-live="polite">{copied ? 'Copied' : ''}</span>
+					<a id="connect-claude-how" class="cc-link cc-how" href={CONNECTOR_DOCS_URL} target="_blank" rel="noopener noreferrer"><Icon name="circle-help" size={16} aria-hidden="true" />How it works</a>
 				</li>
 				<li id="connect-claude-step-2">
-					{#if signIn}Then sign in here, press Connect Claude and keep this tab open.{:else}Then press Connect Claude here and keep this tab open.{/if}
+					{#if signIn}Then sign in from your profile, press Connect Claude here and keep this tab open.{:else}Then press Connect Claude here and keep this tab open.{/if}
 				</li>
 			</ol>
 		{/if}
@@ -143,9 +153,54 @@
 	.cc-steps li + li {
 		margin-top: 4px;
 	}
+	.cc-step-title {
+		display: block;
+		color: var(--text);
+		font-weight: 600;
+	}
+	.cc-add {
+		margin-top: 4px;
+	}
+	.cc-manual {
+		margin: 8px 0 4px;
+	}
+	.cc-address {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		min-width: 0;
+		padding-left: 8px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius-input);
+		background: var(--surface-1);
+	}
 	.cc-url {
+		flex: 1;
+		min-width: 0;
 		overflow-wrap: anywhere;
 		color: var(--text);
+	}
+	/* a thumb-sized copy button wherever people use a thumb, whatever the kit's own size is at this width */
+	@media (pointer: coarse), (max-width: 900px) {
+		.cc-address :global(#connect-claude-copy) {
+			min-width: 44px;
+			min-height: 44px;
+		}
+	}
+	.cc-how {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		margin-top: 4px;
+		min-height: 32px;
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 	.cc-row {
 		display: flex;

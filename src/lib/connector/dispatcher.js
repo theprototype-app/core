@@ -30,7 +30,27 @@ export const BRIDGE_SCHEMAS = /** @type {Record<string, any>} */ ({
 		type: 'object',
 		properties: {
 			view: { type: 'string', enum: ['current', 'top', 'front', 'iso', 'focus'] },
-			uuid: { type: 'string', description: 'object to frame (view focus)' },
+			uuid: { type: 'string', description: 'object to frame' },
+			uuids: { type: 'array', items: { type: 'string' }, description: 'objects to frame together' },
+			from: {
+				description: 'the angle around the subject, instead of view: front, back, left, right, top, below, iso, or {yaw, pitch} in degrees (yaw 0 = front, 90 = right; pitch 90 = from above)',
+				anyOf: [
+					{ type: 'string', enum: ['front', 'back', 'left', 'right', 'top', 'below', 'iso'] },
+					{ type: 'object', properties: { yaw: { type: 'number' }, pitch: { type: 'number' } }, required: ['yaw', 'pitch'] }
+				]
+			},
+			camera: {
+				type: 'object',
+				description: 'a free camera, instead of view and from',
+				properties: {
+					position: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: '[x,y,z]' },
+					target: { type: 'array', items: { type: 'number' }, minItems: 3, maxItems: 3, description: '[x,y,z]' }
+				},
+				required: ['position', 'target']
+			},
+			aspect: { description: 'width to height: "4:3" (default), "1:1", "16:9" or a number. view current defaults to the person\'s window', anyOf: [{ type: 'string' }, { type: 'number' }] },
+			zoom: { type: 'number', description: 'above 1 is closer, 0.1 to 10' },
+			margin: { type: 'number', description: 'room around the subject: 1 touches the frame, default 1.15' },
 			size: { type: 'number', description: 'longest side in pixels' }
 		}
 	},
@@ -61,7 +81,7 @@ const PROBE_WAIT_MS = 3000;
 /**
  * @param {{
  *   agent: {tools: () => any[], exec: (name: string, args: any) => Promise<any>, status: () => any,
- *     waitForEdit: (ms?: number) => Promise<any>, screenshot: (opts: any) => Promise<string|null>},
+ *     waitForEdit: (ms?: number) => Promise<any>, screenshot: (opts: any) => Promise<string|null>, lastShot?: () => any},
  *   send: (text: string) => void,
  *   visible: () => boolean,
  *   encodeShot: (dataUrl: string) => Promise<{image: {mimeType: string, data: string}, width: number, height: number} | null>,
@@ -158,13 +178,18 @@ export function createDispatcher(deps) {
 	async function screenshot(id, args) {
 		if (!deps.visible()) return fail('hidden', 'Your theprototype tab is in the background, so nothing is rendered. Ask the person to bring the tab to the front, then try again.');
 		const size = Math.max(64, Math.min(SHOT_MAX, Number(args.size) || SHOT_DEFAULT));
-		const url = await deps.agent.screenshot({ view: args.view, uuid: args.uuid, size });
+		const asked = Date.now();
+		const { view, uuid, uuids, from, camera, aspect, zoom, margin } = args;
+		const url = await deps.agent.screenshot({ view, uuid, uuids, from, camera, aspect, zoom, margin, size });
+		const used = deps.agent.lastShot?.();
+		const fresh = used && used.at >= asked ? used : null;
 		if (inFlight.get(id)?.cancelled) return fail('cancelled', 'cancelled');
-		if (!url) return fail('failed', 'No frame: the person is in VR, or the 3D view is not ready.');
+		if (!url) return fail('failed', fresh?.error ?? 'No frame: the person is in VR, or the 3D view is not ready.');
 		// hidden while it rendered: nothing leaves the tab
 		if (!deps.visible()) return fail('hidden', 'Your theprototype tab went to the background.');
 		const shot = await deps.encodeShot(url);
-		return shot ? { result: shot } : fail('failed', 'The screenshot could not be encoded.');
+		if (!shot) return fail('failed', 'The screenshot could not be encoded.');
+		return { result: fresh ? { ...shot, camera: { position: fresh.position, target: fresh.target, fov: fresh.fov, zoom: fresh.zoom, view: fresh.view, subject: fresh.subject } } : shot };
 	}
 
 	/** @param {string} id @param {any} args */

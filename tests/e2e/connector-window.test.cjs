@@ -3,8 +3,9 @@
 //
 //   OSS (no connector): the button opens the window on a welcome with one choice — your own provider
 //   (Open settings ▸ AI); no Connect Claude anywhere. The quick prompt bar (`) keeps its provider toast.
-//   cloud, signed out: the first choice carries the plugin's "Sign in to connect" (a fake mount here);
-//   signing in swaps it for Connect Claude IN THE SAME WINDOW; Connect → the connected state + Disconnect.
+//   cloud, signed out: the first choice carries "Sign in to connect", which opens the top-right profile pop-up
+//   (FW-AI, roadmap 76: no login buttons in this window); signing in swaps it for Connect Claude IN THE SAME
+//   WINDOW; Connect → the connected state + Disconnect. A provider set up + signed out: the button in the header.
 //   axe on the welcome; the OPPO Find N6 folded / unfolded (dark + light), screenshots for the docs.
 //
 // Run: APP_URL='https://theprototype.app:5890/' npm run e2e -- connector-window
@@ -24,19 +25,31 @@ async function axe(page, include, label) {
 
 const read = (page, name) => page.evaluate((n) => new Promise((r) => window.__stores[n].subscribe((v) => r(v))()), name);
 
-/** the plugin's "Sign in to connect" mount, faked: a button that "signs in" = installs the provider */
+/** signed out on a cloud build, faked: the plugin's flag + its account section in the profile pop-up */
 async function installSignIn(page) {
 	await page.evaluate(() => {
-		window.__signInPresses = 0;
-		window.__stores.cloudHooks.connectorSignInSlot.set((el) => {
+		window.__stores.cloudHooks.connectorSignInSlot.set(() => () => {});
+		window.__stores.cloudHooks.profileSlot.set((el) => {
 			const b = document.createElement('button');
-			b.id = 'connect-claude-signin';
-			b.textContent = 'Sign in to connect';
-			b.onclick = () => window.__signInPresses++;
+			b.id = 'fake-cloud-signin';
+			b.textContent = 'Sign in to cloud';
 			el.append(b);
 			return () => b.remove();
 		});
 	});
+}
+
+/** press it, expect the profile pop-up with focus on the account section's button, then close the pop-up */
+async function pressOpensProfile(page, sel, label) {
+	h.check((await page.locator('#avatar-dropdown').count()) === 0, `${label}: the profile pop-up starts closed`);
+	await page.locator(sel).click();
+	await page.locator('#avatar-dropdown').waitFor({ state: 'visible', timeout: 10000 });
+	h.check(await page.locator('#avatar-dropdown #fake-cloud-signin').isVisible(), `${label}: the press opens the profile pop-up, with the sign-in in it`);
+	await page.waitForFunction(() => document.activeElement?.id === 'fake-cloud-signin', null, { timeout: 5000 }).catch(() => {});
+	h.check((await page.evaluate(() => document.activeElement?.id)) === 'fake-cloud-signin', `${label}: focus lands on the sign-in`);
+	h.check((await page.evaluate(() => document.querySelectorAll('#ai-assistant-window #fake-cloud-signin').length)) === 0, `${label}: no login buttons inside the AI window`);
+	await page.keyboard.press('Escape');
+	await page.locator('#avatar-dropdown').waitFor({ state: 'detached', timeout: 5000 });
 }
 
 h.run(async () => {
@@ -77,8 +90,10 @@ h.run(async () => {
 	await signIn.waitFor({ state: 'visible', timeout: 10000 });
 	h.check(true, 'signed out: the first choice offers Sign in to connect');
 	h.check(/Connect Claude/.test((await A.page.locator('#connect-claude-title').textContent()) ?? '') && /no API key/.test((await A.page.locator('#connect-claude .cc-desc').textContent()) ?? ''), 'the choice says what it is: Connect Claude, your Claude account, no API key');
-	await signIn.click();
-	h.check((await A.page.evaluate(() => window.__signInPresses)) === 1, 'the press reaches the plugin');
+	h.check(/profile, top right/.test((await A.page.locator('#connect-claude .cc-text').textContent()) ?? ''), 'the window says to sign in from the profile, top right');
+	h.check((await A.page.locator('#ai-header-signin').count()) === 0, 'the welcome carries the button: none in the header too');
+	await pressOpensProfile(A.page, '#connect-claude-signin', 'welcome');
+	h.check((await read(A.page, 'aiAssistantHidden')) === '', 'on a desktop the AI window stays open behind the pop-up');
 	await axe(A.page, '#ai-welcome', 'AI welcome (signed out)');
 	await A.page.screenshot({ path: path.join(OUT, 'n1-signed-out.png') }).catch(() => {});
 
@@ -92,11 +107,26 @@ h.run(async () => {
 	h.check((await A.page.locator('#connect-claude').count()) === 1, 'one Connect Claude control (the top row stands down while the welcome shows)');
 	// the claude.ai half: two short steps, the link one press away
 	const step1 = (await A.page.locator('#connect-claude-step-1').textContent()) ?? '';
-	h.check(/Add custom connector/.test(step1) && step1.includes('https://theprototype.app/mcp'), `step 1 says what to do in claude.ai (${step1.trim().slice(0, 90)})`);
-	h.check((await A.page.locator('#connect-claude-how').getAttribute('href')) === 'https://docs.theprototype.app/ai/claude-connector/', 'step 1 has the How? link');
+	h.check(/Add theprototype to Claude/.test(step1) && /Add custom connector/.test(step1) && step1.includes('https://theprototype.app/mcp'), `step 1 shows both ways (${step1.trim().slice(0, 90)})`);
+	const add = A.page.locator('#connect-claude-add');
+	h.check((await add.getAttribute('href')) === 'https://claude.ai/directory/connectors/theprototype' && (await add.getAttribute('target')) === '_blank' && /Add to Claude/.test((await add.textContent()) ?? ''), 'Add to Claude opens the directory in a new tab');
+	const addBox = await add.boundingBox();
+	const manualBox = await A.page.locator('#connect-claude-step-1 .cc-address').boundingBox();
+	h.check(!!addBox && !!manualBox && addBox.y + addBox.height <= manualBox.y, 'the button comes first, the manual way under it');
+	const how = A.page.locator('#connect-claude-how');
+	h.check((await how.getAttribute('href')) === 'https://docs.theprototype.app/ai/claude-connector/' && /How it works/.test((await how.textContent()) ?? ''), 'step 1 has the How it works link');
 	await A.page.context().grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
-	await A.page.locator('#connect-claude-copy').click();
-	h.check((await A.page.evaluate(() => navigator.clipboard.readText().catch(() => ''))) === 'https://theprototype.app/mcp', 'Copy link puts the link on the clipboard');
+	const copy = A.page.locator('#connect-claude-copy');
+	h.check((await copy.getAttribute('aria-label')) === 'Copy connector address' && !(((await copy.textContent()) ?? '').trim()), 'the copy button is icon-only with an accessible name');
+	h.check((await A.page.locator('#connect-claude-copy-link, #connect-claude-step-1 button:has-text("Copy link")').count()) === 0, 'the old Copy link text button is gone');
+	const copyIcon = () => copy.locator('svg').getAttribute('class');
+	const iconBefore = await copyIcon();
+	await copy.click();
+	h.check((await A.page.evaluate(() => navigator.clipboard.readText().catch(() => ''))) === 'https://theprototype.app/mcp', 'copy puts the address on the clipboard');
+	h.check((await copyIcon()) !== iconBefore, 'the icon turns to a check');
+	h.check((await A.page.locator('#connect-claude-step-1 [role="status"]').textContent()) === 'Copied', 'a polite live region says Copied');
+	await A.page.waitForFunction((b) => document.querySelector('#connect-claude-copy svg')?.getAttribute('class') === b, iconBefore, { timeout: 4000 }).catch(() => {});
+	h.check((await copyIcon()) === iconBefore && !(await A.page.locator('#connect-claude-step-1 [role="status"]').textContent()), 'after 2 s it turns back');
 	h.check(/press Connect Claude here/.test((await A.page.locator('#connect-claude-step-2').textContent()) ?? ''), 'step 2 says to press Connect Claude here');
 	await axe(A.page, '#ai-welcome', 'AI welcome (signed in)');
 	await A.page.screenshot({ path: path.join(OUT, 'n1-welcome.png') }).catch(() => {});
@@ -121,6 +151,28 @@ h.run(async () => {
 	await A.page.locator('#ai-welcome').waitFor({ state: 'detached', timeout: 10000 }).catch(() => {});
 	h.check((await A.page.locator('#ai-welcome').count()) === 0 && (await A.page.locator('#ai-assistant-window #connect-claude-button').isVisible()), 'with a provider: no welcome, Connect Claude in its top row');
 	h.check(h.pageErrors(A).length === 0, `no page errors (${h.pageErrors(A).slice(0, 2).join(' | ')})`);
+
+	// ---- FW-AI: a local model, signed out: the assistant works, "Sign in to connect" sits in the header ---
+	await A.page.evaluate(() => {
+		window.__stores.cloudHooks.setConnectorProvider(null);
+		window.__stores.cloudHooks.connectorSignInSlot.set(() => () => {});
+	});
+	const headerBtn = A.page.locator('#ai-assistant-window #ai-header-signin');
+	await headerBtn.waitFor({ state: 'visible', timeout: 10000 });
+	h.check((await A.page.locator('#ai-welcome').count()) === 0 && (await A.page.locator('#connect-claude').count()) === 0, 'local model + signed out: no welcome and no Connect row, the header button is there');
+	const headBox = await A.page.locator('#ai-assistant-window .ui-panel-header').boundingBox();
+	const btnBox = await headerBtn.boundingBox();
+	h.check(!!headBox && !!btnBox && btnBox.y >= headBox.y - 1 && btnBox.y + btnBox.height <= headBox.y + headBox.height + 1, `the button is in the window's header (${JSON.stringify(btnBox)} in ${JSON.stringify(headBox)})`);
+	h.check((await A.page.locator('#ai-assistant-window textarea, #ai-assistant-window input[type="text"]').first().isEnabled()), 'the composer works: nothing waits for a sign-in');
+	await pressOpensProfile(A.page, '#ai-header-signin', 'header');
+	await axe(A.page, '#ai-assistant-window', 'AI window (local model, signed out)');
+	await A.page.screenshot({ path: path.join(OUT, 'fw-ai-header.png') }).catch(() => {});
+	// signing in: the plugin clears the flag and installs the provider
+	await A.page.evaluate(() => window.__stores.cloudHooks.connectorSignInSlot.set(null));
+	await installProvider(A.page);
+	await headerBtn.waitFor({ state: 'detached', timeout: 10000 });
+	h.check((await A.page.locator('#ai-assistant-window #connect-claude-button').isVisible()), 'signed in: no sign-in button, Connect Claude in its top row');
+	h.check(h.pageErrors(A).length === 0, `no page errors after FW-AI (${h.pageErrors(A).slice(0, 2).join(' | ')})`);
 	await h.closePeer(A);
 
 	// ---- the OPPO Find N6, folded and unfolded ---------------------------------------------------------
@@ -148,6 +200,28 @@ h.run(async () => {
 		h.check(c.ok && o.ok, `N6 ${name}: both choices are on screen and pressable (${JSON.stringify(c.box)} ${JSON.stringify(o.box)}, hit ${c.hit}/${o.hit})`);
 		if (name === 'unfolded-light') await axe(P.page, '#ai-welcome', 'AI welcome (light)');
 		await P.page.screenshot({ path: path.join(OUT, `n1-n6-${name}.png`) }).catch(() => {});
+		// step 1 at this width: no sideways overflow, the copy icon is a 44 px touch target
+		const copyFit = await fits('#connect-claude-copy');
+		const addFit = await fits('#connect-claude-add');
+		const card = await P.page.evaluate(() => { const c = document.querySelector('#connect-claude'); return { sw: c.scrollWidth, cw: c.clientWidth }; });
+		h.check(copyFit.ok && addFit.ok && card.sw <= card.cw && copyFit.box.width >= 44 && copyFit.box.height >= 44, `N6 ${name}: step 1 fits, copy is 44 px (${JSON.stringify(copyFit.box)}, card ${card.sw}/${card.cw})`);
+		// FW-AI: signed out with a provider, the header button fits; on the phone the AI sheet steps aside for the profile sheet
+		await P.page.evaluate(() => {
+			window.__stores.aiProviders.addAiProvider({ preset: 'custom', label: 'Mock', baseUrl: 'https://127.0.0.1:9/v1', apiKey: 'x', model: 'mock' });
+			window.__stores.aiProviders.setAiEnabled(true);
+			window.__stores.cloudHooks.setConnectorProvider(null);
+		});
+		await installSignIn(P.page);
+		await P.page.locator('#ai-header-signin').waitFor({ state: 'visible', timeout: 10000 });
+		const hb = await fits('#ai-header-signin');
+		const closeFits = await fits('#ai-assistant-window .wc-close');
+		h.check(hb.ok && closeFits.hit && closeFits.box.x + closeFits.box.width <= viewport.width, `N6 ${name}: the header button fits and the close button stays on screen and pressable (${JSON.stringify(hb.box)}, hit ${hb.hit}/${closeFits.hit})`);
+		await P.page.screenshot({ path: path.join(OUT, `fw-ai-n6-${name}.png`) }).catch(() => {});
+		await P.page.locator('#ai-header-signin').click();
+		await P.page.locator('#avatar-dropdown #fake-cloud-signin').waitFor({ state: 'visible', timeout: 10000 });
+		const prof = await fits('#fake-cloud-signin');
+		h.check(prof.hit, `N6 ${name}: the profile pop-up opens in front (${JSON.stringify(prof.box)})`);
+		await P.page.screenshot({ path: path.join(OUT, `fw-ai-n6-${name}-profile.png`) }).catch(() => {});
 		await h.closePeer(P);
 	}
 

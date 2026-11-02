@@ -5,6 +5,53 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.54.0 — First win and community: one question to start, a game made in three steps, search the community 🌱
+
+Your first visit asks one thing — what do you want to do? — and walks you to a game you made yourself. The Community
+tab can now find any scene by a word or a maker.
+
+### 🌱 A first visit that gets you somewhere
+
+- The welcome card asks **one question**: Play a game, Remix a game, Start from a template, or Describe it (or start
+  from an empty scene). Play opens a game straight in Play; the others start a three-step **first-win quest**:
+  change something, play it, invite a friend.
+- Until your first Play, a new visitor's advanced buttons — the node editor, Animation, Pivot and the click mode —
+  wait in the bottom bar's **»** menu, and Modules and Layouts behind **More** in the logo menu. Settings ▸ Interface ▸
+  **Show everything** brings them all back at any time. If you have used the app before, nothing changes.
+- The interface tour no longer starts by itself: it is in the logo menu as **Tour the interface**, and the quest can
+  be started again from Settings ▸ Interface ▸ **First-game quest**.
+
+### 🔎 Find scenes in the community
+
+- The Templates window has a **search field** on every tab. On the Community tab it searches the whole community —
+  titles, descriptions, tags and makers' @handles — and opens on the **Featured** scenes, with **All** and **Top** beside them.
+
+### 📊 Anonymous first-visit counts
+
+- To learn whether a first visit works, the hosted site counts a few steps of a first visit (the welcome card, a first
+  change, a first Play, a first share), with no ID, account or IP address and **nothing stored in your browser**.
+  After your first Play a small card asks whether to also remember which steps were counted and whether you come
+  back: Agree keeps that note in your browser, No thanks stops the counting and remembers only that answer. Nothing
+  is counted when your browser asks not to be tracked, or after Settings ▸ Privacy ▸ **Count my visits anonymously**
+  is off. Builds of the open-source engine that are not ours count nothing.
+
+### 🔑 One place to sign in
+
+- **Signing in and creating an account are one screen,** GitHub or Google, with an **I agree to the Terms** box the first
+  time. An optional box asks about feature-update emails; older accounts get a small bar to accept the Terms once.
+- **The AI window's Sign in to connect** opens your profile menu at the top right, and the window says so. Signed out with a local
+  model or your own key, the assistant keeps working and the button stays in the window's header.
+
+### 🤖 Claude connector and agents
+
+- **Add to Claude.** theprototype is in Claude's connector directory: the AI window's first step is one button, with the by-hand address and a copy button under it.
+- **Scripts get `elapsed`:** seconds of the game round, shared inside a round, and from your own Play press outside one. `time` is
+  unchanged. The warning about a `+=` script now says why it does not build up and points at `elapsed`.
+- **Particle gravity** is documented as what it is: acceleration along world Y, negative falls, positive rises.
+- **Screenshots from any angle:** `aspect`, `from`, `camera`, `uuids`, `zoom` and `margin`, with the camera used in the result; top, front,
+  iso and focus shots are 4:3 whatever your window's shape, and nobody's view moves. For developers: `tpAgent` 1.5.0 adds `lastShot()`, and
+  `window.tpAgent.screenshot()` with no options is now 4:3 too (it used to take the canvas shape).
+
 ## 1.53.2 — session checks 🔒
 
 - **Shared assets follow the current sharing setting.**

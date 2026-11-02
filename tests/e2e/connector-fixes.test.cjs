@@ -255,7 +255,7 @@ h.run(async () => {
 	};
 	const stepper = await mk('Stepper', 'Box', [8, 1, 0]);
 	const stepping = await call('create_flow_nodes', { graph: stepper, nodes: [{ type: 'script', data: { code: 'object.rotation.y += 0.02;' } }] });
-	h.check(/will not build up/.test(stepping?.result?.warning ?? '') && /base\.rot\[1\] \+ time/.test(stepping?.result?.warning ?? ''), `a += script says why it stays put (${JSON.stringify(stepping?.result?.warning).slice(0, 200)})`);
+	h.check(/will not build up/.test(stepping?.result?.warning ?? '') && /base\.rot\[1\] \+ elapsed/.test(stepping?.result?.warning ?? ''), `a += script says why it stays put (${JSON.stringify(stepping?.result?.warning).slice(0, 200)})`);
 	await h.eventually(() => poseOf(stepper), (p) => Math.abs(p.ry - 0.02) < 0.001, 'a += script lands at base + 0.02', 30000);
 	await wait(1500);
 	const steps = [];
@@ -266,12 +266,12 @@ h.run(async () => {
 	// an autosave parks animated objects at their base for the length of its export, so 0 is a fair reading too
 	h.check(steps.every((ry) => ry < 0.021), `and it never builds up: this is the behaviour the warning describes (${steps.map((ry) => ry.toFixed(3)).join(' ')})`);
 	const turner = await mk('Turner', 'Box', [10, 1, 0]);
-	const turning = await call('create_flow_nodes', { graph: turner, nodes: [{ type: 'script', data: { code: 'object.rotation.y = base.rot[1] + time * 2;' } }] });
+	const turning = await call('create_flow_nodes', { graph: turner, nodes: [{ type: 'script', data: { code: 'object.rotation.y = base.rot[1] + elapsed * 2;' } }] });
 	h.check(!!turning?.result?.created?.[0]?.id && !turning?.result?.warning, `the documented form does not warn (${JSON.stringify(turning?.result?.warning)})`);
 	const turned = await moved(turner, poseOf);
 	h.check(turned.now.ry !== turned.first.ry, `the documented form keeps turning (${turned.first.ry} -> ${turned.now.ry})`);
 	const docs = await call('describe_node_types', { types: ['script'] }, 'read');
-	h.check(/base\.rot\[1\] \+ time \* speed/.test(JSON.stringify(docs?.result ?? '')), 'describe_node_types gives the form');
+	h.check(/base\.rot\[1\] \+ elapsed \* speed/.test(JSON.stringify(docs?.result ?? '')), 'describe_node_types gives the form');
 	const scriptErrs = await A.page.evaluate(() => new Promise((r) => window.__stores.scriptErrors.subscribe((v) => r(v))()));
 	h.check(!scriptErrs[turning?.result?.created?.[0]?.id], `the documented form runs without an error (${JSON.stringify(scriptErrs).slice(0, 160)})`);
 
@@ -311,6 +311,52 @@ h.run(async () => {
 	h.check((await listed(bouncer))?.animated === undefined, 'and no longer reads as animated');
 
 	h.check(h.pageErrors(A).length === 0, `no page errors (${h.pageErrors(A).slice(0, 3)})`);
+	// ---- 17: a framed shot is 4:3, from any angle, and says which camera it used -------------------------------------
+	const eyeBefore = await A.page.evaluate(() => { let c; window.__stores.globalCamera.subscribe((x) => (c = x))(); return c.position.toArray().concat(c.quaternion.toArray()); });
+	const shotOf = async (args) => (await call('screenshot', { size: 512, ...args }, 'read'))?.result;
+	const shotA = await mk('ShotA', 'Box', [40, 1, 0]);
+	const shotB = await mk('ShotB', 'Box', [46, 1, 0]);
+	const isoShot = await shotOf({ view: 'iso' });
+	h.check(isoShot?.width === 512 && isoShot?.height === 384, `iso is 4:3 whatever the canvas (${isoShot?.width}x${isoShot?.height})`);
+	h.check(isoShot?.camera?.subject?.kind === 'scene' && isoShot?.camera?.position?.length === 3 && isoShot?.camera?.fov > 0, `and says its camera (${JSON.stringify(isoShot?.camera)?.slice(0, 160)})`);
+	const canvasAspect = await A.page.evaluate(() => { let r; window.__stores.globalRenderer.subscribe((x) => (r = x))(); return r.domElement.width / r.domElement.height; });
+	const nowShot = await shotOf({ view: 'current' });
+	h.check(Math.abs(nowShot?.width / nowShot?.height - canvasAspect) < 0.02, `current keeps the canvas shape (${nowShot?.width}x${nowShot?.height}, canvas ${canvasAspect.toFixed(2)})`);
+	const square = await shotOf({ view: 'top', aspect: '1:1' });
+	h.check(square?.width === 512 && square?.height === 512, 'aspect 1:1 is square');
+	const both = await shotOf({ uuids: [shotA, shotB], from: 'left' });
+	h.check(both?.camera?.subject?.names?.join() === 'ShotA,ShotB', `uuids frame them all (${JSON.stringify(both?.camera?.subject)})`);
+	h.check(Math.abs(both?.camera?.target?.[0] - 43) < 0.01 && both?.camera?.position?.[0] < 43, `from left stands on the left of their middle (${JSON.stringify(both?.camera)?.slice(0, 120)})`);
+	const closer = await shotOf({ uuids: [shotA, shotB], from: 'left', zoom: 2 });
+	h.check(closer?.camera?.position?.[0] > both?.camera?.position?.[0], 'zoom stands closer');
+	const angled = await shotOf({ uuid: shotA, from: { yaw: 90, pitch: 0 } });
+	h.check(angled?.camera?.position?.[0] > 40 && Math.abs(angled?.camera?.position?.[2]) < 0.01, 'yaw 90 is the right side');
+	const free = await shotOf({ camera: { position: [40, 5, 12], target: [40, 1, 0] } });
+	h.check(free?.camera?.position?.join() === '40,5,12' && free?.camera?.target?.join() === '40,1,0', `a free camera is used as given (${JSON.stringify(free?.camera)?.slice(0, 100)})`);
+	const noSuch = await call('screenshot', { uuids: ['not-there'] }, 'read');
+	h.check(/not in the scene: not-there/.test(noSuch?.error?.message ?? ''), `a missing uuid is named (${noSuch?.error?.message})`);
+	const eyeAfter = await A.page.evaluate(() => { let c; window.__stores.globalCamera.subscribe((x) => (c = x))(); return c.position.toArray().concat(c.quaternion.toArray()); });
+	h.check(JSON.stringify(eyeBefore) === JSON.stringify(eyeAfter), "nobody's view moved");
+
+	// ---- 15+16: a script's elapsed, next to time ---------------------------------------------------------------------
+	const clockBox = await mk('ClockBox', 'Box', [0, 6, 30]);
+	const clockNode = await call('create_flow_nodes', { graph: clockBox, nodes: [{ type: 'script', data: { code: 'object.position.y = elapsed; object.rotation.y = time;' } }] });
+	h.check(clockNode?.type === 'result' && !JSON.stringify(clockNode.result).includes('error'), `a script reading elapsed and time is accepted (${JSON.stringify(clockNode?.result)?.slice(0, 120)})`);
+	const clocks = () => poseOf(clockBox).then((p) => ({ elapsed: p.y, time: p.ry }));
+	await h.eventually(clocks, (c) => c.time > 0 && c.elapsed > 0, 'in the editor both clocks run', 30000);
+	await A.page.evaluate(() => window.__stores.isLocked.set(true));
+	const atPlay = await clocks();
+	await h.eventually(clocks, (c) => c.elapsed >= 0 && c.elapsed < 20 && c.elapsed !== atPlay.elapsed, 'after Play, elapsed starts near 0', 15000);
+	const inPlay = await clocks();
+	h.check(inPlay.elapsed < 20, `elapsed is small (${inPlay.elapsed}), time is not asked to be (${inPlay.time})`);
+	await h.eventually(clocks, (c) => c.elapsed > inPlay.elapsed, 'and it counts up', 15000);
+	await A.page.evaluate(() => window.__stores.isLocked.set(null));
+	const oldStyle = await mk('OldStyleBox', 'Box', [4, 6, 30]);
+	await call('create_flow_nodes', { graph: oldStyle, nodes: [{ type: 'script', data: { code: 'const elapsed = 2; object.position.y = elapsed;' } }] });
+	await h.eventually(() => poseOf(oldStyle), (p) => p.y === 2, "an older script's own const elapsed still works", 15000);
+	const particleCard = await call('describe_node_types', { types: ['particle'] }, 'read');
+	h.check(/world Y/.test(JSON.stringify(particleCard?.result ?? '')) && /negative falls/.test(JSON.stringify(particleCard?.result ?? '')), 'describe_node_types says which way particle gravity goes');
+
 	// ---- 11: physics inside a group ------------------------------------------------------------------------------
 	const door = await mk('GroupedDoor', 'Box', [0, 6, 20]);
 	const ball = await mk('GroupedBall', 'Sphere', [2, 6, 20]);

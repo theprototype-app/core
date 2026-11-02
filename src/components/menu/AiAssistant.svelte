@@ -14,6 +14,9 @@
 		showToast
 	} from '../../stores/appStore';
 	import WindowChrome from '../ui/WindowChrome.svelte';
+	import { connectorSignInSlot } from '$lib/cloudHooks';
+	import { connectorAvailable } from '$lib/connector/connectorStore';
+	import { requestSignIn } from '$lib/connector/connectorSignIn.js';
 	import Icon from '../ui/Icon.svelte';
 	import Button from '../ui/Button.svelte';
 	import EmptyState from '../ui/EmptyState.svelte';
@@ -86,6 +89,7 @@
 		return !aiReady();
 	});
 	const welcome = $derived(needsSetup && !$aiMessages.length && !agentId);
+	const headerSignIn = $derived(!!$connectorSignInSlot && !$connectorAvailable && !welcome);
 
 	function submit() {
 		const text = prompt.trim();
@@ -254,7 +258,7 @@
 <div id="ai-assistant" class={$aiAssistantHidden}>
 	<div
 		id="ai-assistant-window"
-		use:dragWindow={{ key: 'aiAssistant', defaultRect: { right: 15, bottom: 460 } }}
+		use:dragWindow={{ key: 'aiAssistant', defaultRect: { right: 15, bottom: 460 }, clearAvatar: true }}
 		use:bottomDockable={{ key: 'aiAssistant' }}
 		use:focusStack
 		use:tabbable={{ key: 'aiAssistant', title: 'AI assistant', openStore: aiAssistantHidden, isOpen: (v: string) => v === '', close: () => aiAssistantHidden.set('hidden') }}
@@ -276,6 +280,11 @@
 			onclose={() => aiAssistantHidden.set('hidden')}
 		>
 			{#snippet actions()}
+				<!-- FW-AI (76): signed out on a cloud build, working with a provider of your own: connecting stays one press away.
+				     With no provider the welcome below carries this button instead. -->
+				{#if headerSignIn}
+					<Button id="ai-header-signin" variant="secondary" size="sm" onclick={requestSignIn}>Sign in to connect</Button>
+				{/if}
 				<!-- 56 C11: the scene's chats, and a fresh one -->
 				<button
 					type="button"

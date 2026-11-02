@@ -534,6 +534,49 @@ export function notifyTemplateOpen(slug) {
 	}
 }
 
+/** @typedef {{ e: string, c: string, b: string, d: string, x: string }} FunnelEvent */
+
+/** @type {Set<(ev: FunnelEvent) => void>} */
+const funnelListeners = new Set();
+/** 76 FW2: events from before the plugin registered (ob_view fires at boot); flushed to the first
+ *  listener, capped — an engine with no plugin keeps at most this many and sends nothing
+ *  @type {FunnelEvent[]} */
+const funnelQueue = [];
+const FUNNEL_QUEUE_MAX = 20;
+/** something listens (a plugin that counts) — Settings ▸ Privacy offers its switch only then */
+export const funnelListening = writable(false);
+
+/** cloudApi `onFunnelEvent(fn)` — 76 FW2: one anonymous first-visit funnel event (onboarding/
+ *  funnel.js decided it may be counted). Only closed-vocabulary fields, never an id.
+ *  @param {(ev: FunnelEvent) => void} fn @returns {() => void} off */
+export function onFunnelEvent(fn) {
+	if (typeof fn !== 'function') return () => {};
+	funnelListeners.add(fn);
+	funnelListening.set(true);
+	for (const ev of funnelQueue.splice(0)) {
+		try {
+			fn({ ...ev });
+		} catch (e) {
+			console.error('funnel listener threw:', e);
+		}
+	}
+	return () => funnelListeners.delete(fn);
+}
+/** core → plugin @param {FunnelEvent} ev */
+export function notifyFunnelEvent(ev) {
+	if (!funnelListeners.size) {
+		if (funnelQueue.length < FUNNEL_QUEUE_MAX) funnelQueue.push({ ...ev });
+		return;
+	}
+	for (const fn of funnelListeners) {
+		try {
+			fn({ ...ev });
+		} catch (e) {
+			console.error('funnel listener threw:', e);
+		}
+	}
+}
+
 /**
  * C6: THE HEART FOR THE SCENE ON SCREEN — the play-link start card and a published game's pause
  * menu render a heart toggle while this is set. The plugin sets it after loading a published
@@ -607,10 +650,11 @@ export function setPeerMenuItems(items) {
  * @type {import('svelte/store').Writable<any>} */
 export const connectorProvider = writable(null);
 
-/** 86-fix N1: the cloud build's "Sign in to connect", a `(el) => cleanup` mount the plugin installs while the
- * connector is built in and nobody is signed in (cloudApi.mountConnectorSignIn). The AI window's welcome renders
- * it in place of Connect Claude; once signed in the plugin installs the provider and the welcome shows the
- * button. Null (the OSS build, or signed in) = nothing. @type {import('svelte/store').Writable<any>} */
+/** 86-fix N1: set by the plugin while the connector is built in and nobody is signed in
+ * (cloudApi.mountConnectorSignIn). FW-AI (76): core only reads whether it is set and draws "Sign in to connect"
+ * itself, which opens the profile pop-up (the one sign-in place); the mount is not rendered. Once signed in the
+ * plugin installs the provider and passes null. Null (the OSS build, or signed in) = nothing.
+ * @type {import('svelte/store').Writable<any>} */
 export const connectorSignInSlot = writable(null);
 
 /** Plugin seam for the above (cloudApi.setConnectorProvider). Anything without `pair` reads as null.

@@ -61,7 +61,7 @@ h.run(async () => {
 
 	// --- second visit: nothing greets the user ---------------------------------
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
-	await A.page.waitForFunction(() => window.__stores && !!window.__stores.whatsNew, { timeout: 30000 });
+	await A.page.waitForFunction(() => window.__stores && !!window.__stores.whatsNew, null, { timeout: 90000 });
 	await A.page.waitForTimeout(600);
 	h.check(!(await A.page.locator('#welcome-overlay').isVisible()), 'RW: a returning user gets no overlay');
 	await A.ctx.close();
@@ -146,7 +146,7 @@ h.run(async () => {
 
 	// a reload no longer nags
 	await B.page.reload({ waitUntil: 'domcontentloaded' });
-	await B.page.waitForFunction(() => window.__stores && !!window.__stores.whatsNew, { timeout: 30000 });
+	await B.page.waitForFunction(() => window.__stores && !!window.__stores.whatsNew, null, { timeout: 90000 });
 	await B.page.waitForTimeout(600);
 	h.check(
 		!(await B.page.locator('#logo-menu .update-dot').isVisible().catch(() => false)),

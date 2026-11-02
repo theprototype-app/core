@@ -17,7 +17,7 @@ import { behaviourHost } from '$lib/ai/aiExtensions.js';
 import { missingToolsFor } from './toolPolicy.js';
 import { whatCanYouDo, WHAT_CAN_YOU_DO_SCHEMA } from './voiceHelp.js';
 import { peerMeshReady, askMeshState, requestHostMesh } from './meshRelay.js';
-import { takeScreenshot } from './screenshot.js';
+import { takeScreenshot, lastShot } from './screenshot.js';
 import { agentInbox } from './agentInbox.js';
 import { beginHistoryBatch, endHistoryBatch } from '$lib/history';
 import { peers, userdata, waitingForApproval, toastStore, dismissToastById, loading, loadingcount } from '../../stores/appStore.js';
@@ -512,6 +512,7 @@ export function createTpAgent(extra = {}) {
 		missingModules: () => missingModulesFrom(get(peerModuleVersions), openPeerIds(), moduleVersions()),
 		onSceneChange: (cb) => dirtyPulse.subscribe(() => cb()),
 		screenshot: (opts) => (extra.screenshot ?? takeScreenshot)(opts),
+		lastShot: () => lastShot,
 		leave: async () => {
 			// a goodbye of our own is not the host leaving us
 			lastHost = '';

@@ -357,13 +357,14 @@ export class BrowserEngine extends EventEmitter {
 						fr.readAsDataURL(/** @type {Blob} */ (r));
 					});
 				}
-				if (r && typeof r === 'object' && typeof r.data === 'string') return { data: r.data, mimeType: r.mimeType || 'image/png' };
-				return typeof r === 'string' ? { data: r, mimeType: 'image/png' } : null;
+				const camera = typeof api.lastShot === 'function' ? api.lastShot() : null;
+				if (r && typeof r === 'object' && typeof r.data === 'string') return { data: r.data, mimeType: r.mimeType || 'image/png', camera };
+				return typeof r === 'string' ? { data: r, mimeType: 'image/png', camera } : null;
 			}, opts)
 			.catch((/** @type {any} */ e) => ({ error: firstLine(e) }));
 		if (viaApi && typeof viaApi.data === 'string') {
 			const m = /^data:([^;,]+)(;base64)?,/.exec(viaApi.data);
-			return m ? { data: viaApi.data.slice(m[0].length), mimeType: m[1] } : viaApi;
+			return m ? { data: viaApi.data.slice(m[0].length), mimeType: m[1], camera: viaApi.camera } : viaApi;
 		}
 		const canvas = await this.page.evaluateHandle(() => {
 			const all = [...document.querySelectorAll('canvas')].filter((c) => c.width > 0 && c.height > 0 && c.offsetParent !== null);

@@ -145,6 +145,9 @@ export const avatarConfig = writable(
 export const characterModalOpen = writable(false);
 /** Profile Settings modal open state (shared so the logo/menu can close it). */
 export const profileSettingsOpen = writable(false);
+/** FW-AI (76): set true to open the top-right profile pop-up from elsewhere (the AI window's "Sign in to connect");
+ * Users.svelte opens it and sets this back. */
+export const profileMenuRequest = writable(false);
 /** @type {import('svelte/store').Writable<any>} */
 export const peers = writable(null);
 export const toggleExpand = writable(null);

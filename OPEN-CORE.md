@@ -259,10 +259,12 @@ static|embed>`. Core never talks to a server about it.
 | `loadRemoteScene({…, keepGameId?})` | `keepGameId: true` = the OWNER opening their own published scene (no fork); otherwise a community load is a remix |
 | `onExportBuilt(fn)` → off | after an export zip is built: `fn({gameId, buildId, preset, title, template, parentGameId, appVersion})` |
 | `onTemplateOpen(fn)` → off | a Games-tab template was started: `fn(slug)` (one "template open") |
+| `onFunnelEvent(fn)` → off | 76 FW2: one anonymous first-visit funnel event `fn({e, c, b, d, x})` — closed vocabularies only (event name, Welcome answer, release, desktop/touch/vr, a time bucket or quest step), never an id. Core has already applied once-per-browser, Do Not Track / Global Privacy Control and the under-test guard; events from before registration are queued (20 max) and handed to the first listener. With no plugin nothing is sent anywhere. Probe with `typeof` |
+| `funnelEvent(name)` → Promise\<boolean\> | 76 FW2: the plugin's own funnel event through the same rules; only `'ob_waitlist'` (a feature-update opt-in) is accepted |
 | `toast(message, actions?, {keep?})` | fix-live F-2: with `keep: true` an action toast's buttons also stay on its notification-history entry until one is pressed (a role offer the user sees later) |
 | `setPeerMenuItems(items)` | fix-live: `[{id, label, run(peerId, {name})}]` (≤ 8, labels ≤ 40) appended to the Users peer menu (right-click a peer) under core's own entries — the cloud's "Report…"; `[]` clears |
 | `setConnectorProvider(p)` | 86 B1/B5: the Claude connector's account half — `{pair({resume}) → {wsUrl, pairingToken, replaces?, connections?}, connections() → {connections, tab?}, revoke(id), revokeAll(), account() → {signedIn, name?}}` (`pair` rejects `{code:'signin'}` signed out); core draws Connect Claude, the connected indicator and Settings ▸ Connected apps only while one is installed and runs every relayed call through tpAgent; null removes it |
-| `mountConnectorSignIn(fn)` | 86-fix N1: a `(el) => cleanup` mount the AI window's welcome renders in place of Connect Claude while the connector is built in and nobody is signed in ("Sign in to connect"); once signed in, install the provider and pass null |
+| `mountConnectorSignIn(fn)` | 86-fix N1, FW-AI (76): any function = the connector is built in and nobody is signed in. Core draws "Sign in to connect" in the AI window (welcome card, or the header when a provider is set up) and it opens the profile pop-up, where `mountProfile`'s section signs in; `fn` itself is not rendered. Once signed in, install the provider and pass null |
 | `setConnectBadge(badge \| null)` | fix-live F-5: `{text, title?, onClick?}` — a small badge on the Connect pill for a standing setting (e.g. "Public · guests join"); `null` hides it. Probe with `typeof` |
 | `setSceneHeart(info \| null)` | the heart on the play-link start card (`#embed-heart`) and a game's pause menu (`#game-shell-heart`): `{count, liked, toggle() → Promise<{liked, count} \| null>}`; `null` from `toggle` rolls the optimistic flip back |
 
@@ -273,6 +275,22 @@ heart), `mine` (boolean, the viewer's own scene), `notice` (one line on the card
 Promise<{liked, likeCount} | null>` puts a heart on every card (`[data-card-heart]`).
 A play link's frame may carry `&src=play|embed&b=v<n>` (read once with `embed=1`;
 `playMode.embedSource` / `embedBuild`) — the badge inside counts them.
+
+#### 76 FW3: search and sorts on the Community tab — additive, no bump
+
+The Templates modal has ONE search field (`#templates-search`) on every tab: core filters the
+cards client-side — every word must appear in the title, description, author or tags
+(`communitySearch.matchesQuery`) — so the OSS GitHub gallery is searchable with no server. Two
+optional provider members widen it on Community:
+
+| member | contract |
+|---|---|
+| `search: true` | `list()` also receives `q` (lower-case, single-spaced, ≤ 60 chars, debounced 300 ms) when the field is not empty; search the same fields server-side so a returned row also passes core's filter. An older query's late answer is dropped |
+| `sorts: [{id, label}]` | ≤ 5 chips beside the field (`#community-sorts [data-sort]`); the FIRST is the default and is never sent — another chip's `id` arrives as `list({sort})` |
+
+Absent = absent: a provider that declares neither is called `list({force})` exactly as before
+and is never re-listed for a query. While a re-list runs the grid stays up and
+`#community-searching` says "Searching…"; an empty answer to a query reads "No scenes match".
 
 #### 37 R20: "Report a problem" — `setProblemReporter(reporter | null)` — additive, no bump
 

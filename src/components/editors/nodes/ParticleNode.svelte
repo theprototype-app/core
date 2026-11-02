@@ -62,7 +62,7 @@
 			<input class="nodrag nopan accent-accent" type="range" min="0" max="8" step="0.1"
 				value={data.speed ?? 1} on:input={(e) => set({ speed: +e.currentTarget.value })} />
 		</label>
-		<label class="relative -mx-3 flex flex-col px-3">
+		<label class="relative -mx-3 flex flex-col px-3" title="Acceleration along world Y in m/s²: negative falls (-9.8 is real gravity), positive rises like smoke">
 			<Socket kind="target" nodeType={data.type} id="gravity" position={Position.Left} style="top: 50%;" />
 			<span class="flex justify-between"><span>gravity</span><span>{data.gravity ?? 0}</span></span>
 			<input class="nodrag nopan accent-accent" type="range" min="-10" max="10" step="0.1"

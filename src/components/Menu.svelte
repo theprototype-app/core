@@ -43,6 +43,7 @@
 	import WhatsNew from './menu/WhatsNew.svelte';
 	// 36 U3b/I5: the first-run tours' screen card (and the tours' install)
 	import TourCard from './tours/TourCard.svelte';
+	import FunnelConsentCard from './tours/FunnelConsentCard.svelte';
 
 	import { isLocked } from '../stores/sceneStore'
 	// 29-E: `?embed=1` (playMode.embedMode) hides the editor chrome for the page's life
@@ -71,6 +72,7 @@
 <Welcome />
 <WhatsNew />
 <TourCard />
+<FunnelConsentCard />
 <!-- 53 A3: DOCUMENT ORDER IS TAB ORDER — the top bar reads left to right (logo menu, touch tools,
      Connect, the top-right group + profile) before the toolbar and the panels; every one of these
      is position:fixed on an explicit z tier, so the order moves no pixel -->

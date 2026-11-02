@@ -43,9 +43,13 @@
  *   hint?: string, controls?: Controls, waiting: string[]}} ShownStep
  */
 /**
- * @typedef {{title: string, surface?: 'card' | 'vr', steps: TourStep[]}} TourDef
+ * @typedef {{title: string, surface?: 'card' | 'vr', hideWhilePlaying?: boolean, quiet?: boolean, steps: TourStep[]}} TourDef
+ * `hideWhilePlaying` (76 FW1): the card stands down while the game runs (the first-win quest waits for
+ * Play, and a card over the game would cover it) and comes back when you are editing again. `quiet`:
+ * the user WORKS while it shows (a quest, not a tour), so the target gets its ring without the scrim.
  * @typedef {{id: string, title: string, surface: 'card' | 'vr', index: number, total: number,
- *   step: ShownStep, first: boolean, last: boolean, waiting: string[], preview: boolean}} ActiveTour
+ *   step: ShownStep, first: boolean, last: boolean, waiting: string[], preview: boolean,
+ *   hideWhilePlaying: boolean, quiet: boolean}} ActiveTour
  * @typedef {{getItem: (k: string) => string | null, setItem: (k: string, v: string) => void,
  *   removeItem: (k: string) => void}} TourStorage
  */
@@ -65,6 +69,8 @@ export function createTourEngine({ storage, onChange = () => {} }) {
 	let current = null;
 	/** signal counts, for the suites (which action advanced what) @type {Record<string, number>} */
 	const signals = {};
+	/** 76 FW1: who hears that an ACTION (not Next) completed a step @type {Set<(e: {tour: string, step: string, signal: string}) => void>} */
+	const advancedListeners = new Set();
 
 	/** @param {string} key */
 	function read(key) {
@@ -137,6 +143,8 @@ export function createTourEngine({ storage, onChange = () => {} }) {
 			total: current.steps.length,
 			step,
 			preview: current.preview,
+			hideWhilePlaying: !!def.hideWhilePlaying,
+			quiet: !!def.quiet,
 			first: current.index === 0,
 			last: current.index === current.steps.length - 1,
 			waiting
@@ -242,8 +250,25 @@ export function createTourEngine({ storage, onChange = () => {} }) {
 		signals[name] = (signals[name] ?? 0) + 1;
 		const now = active();
 		if (!now || !now.waiting.includes(name)) return false;
+		// heard BEFORE the move: on the last step the move ends the tour, and whoever reads "how did it
+		// end" on that change must already know this step was done
+		const done = { tour: now.id, step: now.step.id, signal: name };
+		for (const fn of advancedListeners) {
+			try {
+				fn(done);
+			} catch {
+				/* a listener that throws must not wedge the engine */
+			}
+		}
 		next();
 		return true;
+	}
+
+	/** 76 FW1: hear every step an action completed (not Next / Back / Skip) → unsubscribe
+	 * @param {(e: {tour: string, step: string, signal: string}) => void} fn */
+	function onAdvanced(fn) {
+		advancedListeners.add(fn);
+		return () => advancedListeners.delete(fn);
 	}
 
 	/** Re-resolve the current step (its text/controls are functions of settings — a VR button remap
@@ -280,6 +305,7 @@ export function createTourEngine({ storage, onChange = () => {} }) {
 		close,
 		refresh,
 		signal,
+		onAdvanced,
 		seen,
 		status,
 		reset,

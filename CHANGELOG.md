@@ -5,8 +5,7 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
-## Next release — First win and community: one question to start, a game made in three steps, search the community 🌱
-<!-- 76-int: the version is set at release time (roadmap 76 releases in its turn in the overview's order). -->
+## 1.54.0 — First win and community: one question to start, a game made in three steps, search the community 🌱
 
 Your first visit asks one thing — what do you want to do? — and walks you to a game you made yourself. The Community
 tab can now find any scene by a word or a maker.

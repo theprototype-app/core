@@ -46,6 +46,23 @@ function guardThrelteXr(): Plugin {
 	};
 }
 
+// 54i (fix-batch-3 aa): ONE retry for a lazy chunk that failed to load, spliced into vite's preload
+// helper (every lazy import goes through it). The splice + why: scripts/import-retry.cjs; the retry
+// and the "A new version is ready" notice: src/lib/chunkReload.js.
+function importRetry(): Plugin {
+	const { addImportRetry } = createRequire(import.meta.url)('./scripts/import-retry.cjs');
+	return {
+		name: 'tp:import-retry',
+		apply: 'build',
+		transform(code: string, id: string) {
+			const res = addImportRetry(code, id);
+			if (!res) return null;
+			if (!res.matched) console.warn('[import-retry] anchor not found in vite\'s preload helper — lazy chunks will not be retried');
+			return res.matched ? { code: res.code, map: null } : null;
+		}
+	};
+}
+
 // SH0 COSTING PROBE — @shaderfrog/core 3.2.0 drops the ARRAY DIMENSION when it
 // re-emits a varying. `dedupeQualifiedStatements` (graph/shader-sections.js) rebuilds
 // every in/out statement from a TEMPLATE STRING using only the type token and bare
@@ -216,6 +233,7 @@ export default defineConfig({
 	plugins: [
 			fixShaderfrogArrayVaryings(),
 			guardThrelteXr(), // 54i: null XR frame guard (see the function)
+			importRetry(), // 54i aa: one retry for a failed lazy chunk (see the function)
 			tailwindcss(),
 			a11yCss(), // 53 A1/A5: after tailwindcss() — see the function
 			devAssetProxy(),

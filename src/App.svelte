@@ -101,6 +101,7 @@
   // 54i c: no WebGL 2 context at boot → this screen instead of the <Canvas> (and one report)
   import NoWebGLScreen from './components/NoWebGLScreen.svelte'
   import { probeWebGL2, reportNoWebGL } from '$lib/webglSupport.js'
+  import { installChunkReload } from '$lib/chunkReload.js'
   // 26-G: the frame-freeze half of Stage 4 (the context-loss half is the overlay above)
   import RenderPausedOverlay from './components/RenderPausedOverlay.svelte'
   import './lib/overloadGuard'
@@ -212,6 +213,9 @@ import { startMusicToolbox } from './lib/musicToolbox'
   // 54i c: asked BEFORE the markup mounts — three throws inside <Canvas> without a context, which
   // took the whole page down. The prerender (no document) answers yes.
   const webglOk = probeWebGL2()
+  // 54i aa: one retry for a lazy chunk that failed to load, then "A new version is ready – Reload".
+  // Before the markup too: the {#await import()} panels below start loading as it mounts.
+  installChunkReload()
 
   // node graph animations keep running even when the flow drawer is closed
   onMount(() => {

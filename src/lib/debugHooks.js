@@ -34,6 +34,8 @@ export const DEBUG_HOOKS = [
 	['perfDetailed', () => import('./perf/detailed')],
 	['perfBeacon', () => import('./perf/beacon')],
 	['errorReports', () => import('./errorReports')],
+	// 54i aa: the lazy-chunk retry + new-version notice (chunkReloadDebug)
+	['chunkReload', () => import('./chunkReload.js')],
 	['staleModules', () => import('./staleModules')],
 	['perfMoment', () => import('./perf/moment')],
 	['problemReport', () => import('./problemReport')],

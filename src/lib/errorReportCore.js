@@ -44,6 +44,11 @@ export const WEBGL_CREATE_RE = /Error creating WebGL context|WebGL could not be 
 /** the ONE message every WebGL create failure files under, whichever seam caught it */
 export const WEBGL_CREATE_MSG = 'WebGL could not be created';
 
+/** 54i aa: a lazy code chunk could not be fetched (Chromium, Firefox, Safari, vite's CSS preload) */
+export const CHUNK_LOAD_RE = /dynamically imported module|error loading dynamically|importing a module script failed|unable to preload/i;
+/** the ONE message every chunk failure files under (the chunk url is scrubbed anyway) */
+export const CHUNK_LOAD_MSG = 'Failed to fetch dynamically imported module';
+
 /** an out-of-memory failure, whatever the engine calls it @param {string} message */
 export function looksLikeOom(message) {
 	return /out of memory|allocation failed|Array buffer allocation|Cannot allocate|insufficient memory|GL_OUT_OF_MEMORY|OOM\b/i.test(String(message ?? ''));
@@ -140,7 +145,7 @@ export function fnv1a(s) {
 export function signatureOf(r) {
 	// 54i c: a graphics failure is one failure whichever seam (error, rejection, the boot probe)
 	// and whichever frame caught it — so it dedupes to one report
-	const top = r.kind === 'webgl' ? '' : (r.frames[0] || '').replace(/:\d+$/, '');
+	const top = r.kind === 'webgl' || r.msg === CHUNK_LOAD_MSG ? '' : (r.frames[0] || '').replace(/:\d+$/, '');
 	return fnv1a(r.kind + '|' + r.msg + '|' + top);
 }
 
@@ -333,7 +338,9 @@ export function buildReport(caught, ctx) {
 	const frames = ownFrames(caught.stack, ctx.origin);
 	// an uncaught error thrown from another origin's script (an extension) with none of ours in it
 	if (kind === 'error' && !frames.length && caught.filename && ctx.origin && !String(caught.filename).startsWith(ctx.origin)) return null;
-	const msg = webglCreate ? WEBGL_CREATE_MSG : scrubMessage(raw) || kind;
+	// 54i aa: every stale-chunk failure is one report, whichever chunk and call site
+	const chunkLoad = (kind === 'error' || kind === 'rejection') && CHUNK_LOAD_RE.test(raw);
+	const msg = webglCreate ? WEBGL_CREATE_MSG : chunkLoad ? CHUNK_LOAD_MSG : scrubMessage(raw) || kind;
 	const report = {
 		v: 1,
 		kind,

@@ -5,6 +5,10 @@
      per release, newest first. HTML comments like this one are stripped before
      rendering, so maintainer notes stay out of the user-facing window. -->
 
+## 1.54.2 — session fixes 🔒
+
+- **Peers can only change their own name and avatar**, and what each one says and shows in a session is always shown as theirs.
+
 ## 1.54.1 — session fixes 🔒
 
 - **Only the host can change who may join.** Someone a guest lets in is still checked by the host's own settings, and a guest's copied invite link names the host.

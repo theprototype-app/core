@@ -4,6 +4,7 @@
 	// when $lib/webglSupport's probe gets no WebGL 2 context: what happened, what to try, a help link.
 	import { onMount } from 'svelte';
 	import Button from './ui/Button.svelte';
+	import { minimalScroll } from '$lib/ui/minimalScroll.js';
 	import { NO_WEBGL_DOCS } from '$lib/webglSupport.js';
 
 	/** @type {HTMLElement | undefined} */
@@ -13,7 +14,7 @@
 	onMount(() => card?.focus());
 </script>
 
-<div class="no-gl" role="alertdialog" aria-modal="true" aria-labelledby="no-gl-title" aria-describedby="no-gl-desc" id="no-webgl-screen">
+<div class="no-gl" use:minimalScroll role="alertdialog" aria-modal="true" aria-labelledby="no-gl-title" aria-describedby="no-gl-desc" id="no-webgl-screen">
 	<div class="tp-ui no-gl-card" tabindex="-1" bind:this={card}>
 		<h2 id="no-gl-title">This browser can't show the 3D view</h2>
 		<p id="no-gl-desc">

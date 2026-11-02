@@ -195,6 +195,25 @@ h.run(async () => {
 			const hit = box ? await P.page.evaluate(([x, y, s]) => !!document.elementFromPoint(x, y)?.closest(s), [box.x + box.width / 2, box.y + box.height / 2, sel]) : false;
 			return { ok: !!box && box.x >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height && box.height >= 32 && hit, box, hit };
 		};
+		// 54i f: no window header under the top chrome (the bell cluster, the profile circle, the Connect bar);
+		// the Debugger stands for every toolbox that opens at the top right
+		await P.page.evaluate(() => window.__stores.flowDebug.setDebugOpen(true));
+		await P.page.locator('#flow-debugger').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
+		await P.page.waitForTimeout(300);
+		const under = await P.page.evaluate(() => {
+			const R = (el) => el?.getBoundingClientRect();
+			const chrome = ['#hud-tr', '#avatar-trigger', '.connect-pill'].map((s) => [s, R(document.querySelector(s))]).filter(([, r]) => r && r.width && r.height);
+			const out = [];
+			for (const sel of ['#ai-assistant-window', '#flow-debugger']) {
+				const el = document.querySelector(sel);
+				if (!el || el.closest('[data-ps-host]') || el.hasAttribute('data-ps-host') || el.classList.contains('tbx-sheet')) continue; // a phone sheet is placed by the shell
+				const w = R(el);
+				for (const [c, r] of chrome) if (w.left < r.right && w.right > r.left && w.top < r.bottom && w.bottom > r.top) out.push(`${sel} top ${Math.round(w.top)} under ${c} (bottom ${Math.round(r.bottom)})`);
+			}
+			return out;
+		});
+		h.check(under.length === 0, `N6 ${name}: no window header under the top chrome (${under.join('; ') || 'none'})`);
+		await P.page.evaluate(() => window.__stores.flowDebug.setDebugOpen(false));
 		const c = await fits('#connect-claude-button');
 		const o = await fits('#ai-welcome-settings');
 		h.check(c.ok && o.ok, `N6 ${name}: both choices are on screen and pressable (${JSON.stringify(c.box)} ${JSON.stringify(o.box)}, hit ${c.hit}/${o.hit})`);

@@ -40,6 +40,7 @@ import { safeStorage } from './safeStorage';
 // reach — it REGISTERS rather than importing us, the registerDiagnosticsSection shape.
 import { registerMetricSource, ingestVerdict, profileFor } from './sceneBudget';
 import { globalRenderer } from '../stores/sceneStore.js';
+import { yieldToEventLoop } from './sceneLoader';
 // 33 (L4): the scene going away is when its modules may be left behind (a leaf)
 import { noteSceneLeaving } from './sceneScope';
 
@@ -820,8 +821,11 @@ export async function createObject(object, uuid, override, groupuuid, pos, rot, 
 // rendering and the poke flush all get a turn while a big scene lands. A batch is open
 // for the whole drain, which is what puts `pokeScene` into its one-per-frame mode.
 //
-// A macrotask (setTimeout 0) is the yield, not a microtask: a microtask chain never
-// returns to the browser, so it would slice the work without ever letting a frame run.
+// A task is the yield, not a microtask: a microtask chain never returns to the browser, so
+// it would slice the work without ever letting a frame run. 54-net: and not setTimeout(0) —
+// a throttled page stretches every chained timeout to ~1 s (measured: 10 in 10.9 s on a busy
+// e2e box), so the full-state reply after a heal landed one object per second and an edit
+// made during the drop showed up after the check had given up. sceneLoader's yield has neither.
 // ---------------------------------------------------------------------------
 
 /** How long the drainer may hold the thread before yielding. 8ms leaves half a 60Hz
@@ -945,7 +949,7 @@ async function drainIngest() {
                     job.reject(error);
                 }
             }
-            if (ingestQueue.length && !ingestHeld) await new Promise((r) => setTimeout(r, 0));
+            if (ingestQueue.length && !ingestHeld) await yieldToEventLoop();
         }
     } finally {
         ingestDraining = false;

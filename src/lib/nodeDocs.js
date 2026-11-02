@@ -55,7 +55,7 @@ export const NODE_DOCS = {
 	peervariable: "A value kept PER PLAYER (score, lives, team) - each peer reads its own row, or a named player's.",
 	charcontroller: "Sets how the player moves in Play - fly or walk, speed, jump and eye height, gravity - driving the player's own view rather than an object (the newest one in the scene wins).",
 	moveinput: "This player's WASD keys as two numbers, x (A/D) and y (W/S), each -1 to 1 - read on every device for its own player.",
-	possessnode: "Puts the player in control of the connected object when a pulse arrives - a vehicle, a turret, a ball.",
+	possessnode: "Puts the player in control of the connected object when a pulse arrives - a vehicle, a turret, a ball. W/S (or the left stick) drive it, A/D turn it, Space (or gamepad A) jumps (Jump height; 0 = no jump), Esc hands it back.",
 	camerafollow: "On a pulse, the camera flies behind the target object and follows it until stop is pulsed - for an object something else moves (the sim, a clip).",
 	movespeed: "On a pulse into set, writes the player's movement speed - sprint, mud, slow motion.",
 	hudscreen: "Shows, hides or toggles a whole HUD screen (a named layer of elements) on each pulse.",

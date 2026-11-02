@@ -2166,7 +2166,8 @@ function updateCharNodes(time, ctx) {
 					speed: num(d.speed ?? 4),
 					turnSpeed: num(d.turnSpeed ?? 2.5),
 					eyeHeight: num(d.eyeHeight ?? 1.7),
-					mouseLook: d.mouseLook === true
+					mouseLook: d.mouseLook === true,
+					jumpHeight: num(d.jumpHeight ?? 1.2)
 				});
 		} else {
 			if (fired(node, 'stop')) possessRef?.stopFollowCam?.();

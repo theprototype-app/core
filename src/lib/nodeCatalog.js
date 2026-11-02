@@ -480,7 +480,7 @@ export const nodeCatalog = [
 			{
 				type: 'possessnode',
 				label: 'Possess Object',
-				defaults: { camera: 'chase', speed: 4, turnSpeed: 2.5, eyeHeight: 1.7, mouseLook: false },
+				defaults: { camera: 'chase', speed: 4, turnSpeed: 2.5, eyeHeight: 1.7, mouseLook: false, jumpHeight: 1.2 },
 				inputs: ['trigger', 'release', 'target'],
 				inputLabels: {
 					trigger: 'trigger - take control',
@@ -492,7 +492,9 @@ export const nodeCatalog = [
 					{ key: 'speed', kind: 'range', min: 0.1, max: 30, step: 0.1 },
 					{ key: 'turnSpeed', kind: 'range', min: 0.1, max: 10, step: 0.1 },
 					{ key: 'eyeHeight', kind: 'range', min: 0.2, max: 3, step: 0.05 },
-					{ key: 'mouseLook', kind: 'toggle' }
+					{ key: 'mouseLook', kind: 'toggle' },
+					// 54i k: Space / gamepad A hops the object this high (0 = no jump)
+					{ key: 'jumpHeight', kind: 'range', min: 0, max: 5, step: 0.1 }
 				]
 			},
 			// the camera half of possess WITHOUT the movement half — something else owns

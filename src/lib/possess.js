@@ -8,9 +8,11 @@ import { suspendAnimation, resumeAnimation, notifyExternalMove } from './flowRun
 import { selectObject } from './objectActions';
 import { getInput, onInput, claimInput, releaseInput } from './inputRuntime';
 import { nameOf } from './lockControl';
+import { POSSESS_JUMP_CODES, POSSESS_JUMP_HEIGHT, startHop, stepHop } from './possessJump.js';
+import { sceneGravity } from './scenePhysics';
 
 // Possess (K-D): drive any scene object with WASD/arrows (or the VR left
-// stick) with a follow camera — the host primitive behind the avatar module
+// stick, or a gamepad's left stick; Space / gamepad A jumps — 54i k, possessJump.js) with a follow camera — the host primitive behind the avatar module
 // and the car. Possessing = SELECTING (our selection IS our lock, so peers see
 // the usual lock highlight and can't grab the object). Tank controls: W/S move
 // along the object's facing, A/D turn — no pointer-lock needed in the editor.
@@ -57,7 +59,8 @@ function firstCamera(cam, object, eyeHeight, pitch) {
 /**
  * Take control of an object. @param {string} uuid
  * @param {{camera?: 'chase'|'orbit'|'none'|'first', speed?: number, turnSpeed?: number,
- *   eyeHeight?: number, mouseLook?: boolean}=} opts
+ *   eyeHeight?: number, mouseLook?: boolean, jumpHeight?: number}=} opts
+ * `jumpHeight` (metres, default 1.2, 0 = no jump): Space or a gamepad's A hops the object.
  * 'first' (17-A1) parks the eye at the object + eyeHeight; mouseLook requests
  * pointer lock — X turns the OBJECT (movement follows the look), Y pitches the
  * camera only. Leaving pointer lock (Esc) releases the possession.
@@ -84,7 +87,7 @@ export function possess(uuid, opts = {}) {
 	const controls = get(orbitControls);
 	state = {
 		uuid,
-		opts: { camera: 'chase', speed: 4, turnSpeed: 2.5, eyeHeight: 1.7, mouseLook: false, ...opts },
+		opts: { camera: 'chase', speed: 4, turnSpeed: 2.5, eyeHeight: 1.7, mouseLook: false, jumpHeight: POSSESS_JUMP_HEIGHT, ...opts },
 		before: {
 			pos: object.position.toArray(),
 			rot: object.rotation.toArray(),
@@ -95,8 +98,13 @@ export function possess(uuid, opts = {}) {
 		lastSent: 0,
 		raf: 0,
 		lastTime: performance.now(),
+		/** 54i k: a jump pressed (an EDGE), taken by the next frame @type {boolean} */
+		jumpAsked: false,
+		/** the hop in the air, or null @type {any} */
+		hop: null,
 		offEsc: onInput((kind, code) => {
 			if (kind === 'down' && code === 'Escape') release();
+			else if (kind === 'down' && POSSESS_JUMP_CODES.includes(code) && state) state.jumpAsked = true;
 		})
 	};
 	if ((state.opts.camera === 'chase' || state.opts.camera === 'first') && controls)
@@ -220,7 +228,7 @@ function tick(now) {
 	}
 	const dt = Math.min((now - state.lastTime) / 1000, 0.1);
 	state.lastTime = now;
-	const { codes, axes } = getInput();
+	const { codes, axes, pad } = getInput();
 	const { speed, turnSpeed, camera } = state.opts;
 
 	// tank controls: W/S (or Up/Down, or VR left-stick y) drive, A/D (Left/
@@ -229,20 +237,41 @@ function tick(now) {
 	let drive =
 		(codes.has('KeyW') || codes.has('ArrowUp') ? 1 : 0) -
 		(codes.has('KeyS') || codes.has('ArrowDown') ? 1 : 0) -
-		dead(axes.ly);
+		dead(axes.ly) -
+		(pad?.ly ?? 0); // the pad stick arrives deadzoned
 	let turn =
 		(codes.has('KeyA') || codes.has('ArrowLeft') ? 1 : 0) -
 		(codes.has('KeyD') || codes.has('ArrowRight') ? 1 : 0) -
-		dead(axes.lx);
+		dead(axes.lx) -
+		(pad?.lx ?? 0);
 	drive = Math.max(-1, Math.min(1, drive));
 	turn = Math.max(-1, Math.min(1, turn));
 
-	if (drive || turn) {
+	// 54i k: the jump — Space / gamepad A take off (ground = the take-off height), the scene's
+	// gravity brings it back; a press in the air is dropped (no double jump)
+	if (state.jumpAsked) {
+		state.jumpAsked = false;
+		if (!state.hop) {
+			const g = -(Number(get(sceneGravity)) || -9.81);
+			state.hop = startHop(object.position.y, state.opts.jumpHeight, g);
+		}
+	}
+	let landed = false;
+	if (state.hop) {
+		const step = stepHop(state.hop, object.position.y, dt);
+		object.position.y = step.y;
+		state.hop = step.hop;
+		landed = step.landed;
+	}
+	const airborne = !!state.hop || landed;
+
+	if (drive || turn || airborne) {
 		object.rotation.y += turn * turnSpeed * dt;
 		forward.set(0, 0, -1).applyQuaternion(object.quaternion);
 		object.position.addScaledVector(forward, drive * speed * dt);
 		object.updateMatrix();
-		if (now - state.lastSent > 100) {
+		// the landing pose is always sent: peers must not keep a mid-air pose
+		if (landed || now - state.lastSent > 100) {
 			state.lastSent = now;
 			/** @type {any} */
 			const peer = get(peers);

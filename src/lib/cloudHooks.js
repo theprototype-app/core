@@ -1,4 +1,6 @@
 import { writable, get } from 'svelte/store';
+import { safeStorage } from './safeStorage';
+import { exportMode } from './export/exportBoot.js';
 
 /**
  * Open-core extension points (roadmap #13 batch M1). These seams are INERT in the
@@ -6,7 +8,7 @@ import { writable, get } from 'svelte/store';
  * closed "cloud" plugin (loaded via cloudPlugin.js) layer identity, roles and rooms
  * on top of the engine WITHOUT the OSS repo carrying any of that code.
  *
- * STORE-ONLY module (imports svelte/store only) so it can be imported by
+ * LEAF module (svelte/store and two zero-import leaves) so it can be imported by
  * peerHandler + UI without closing a module cycle — the peerApproval.js precedent.
  */
 
@@ -111,6 +113,106 @@ const ALWAYS_ALLOWED = new Set([
 /** @type {((peerId: string, msgType: string) => boolean) | null} */
 let capabilityProvider = null;
 
+// --- Waiting for the plugin ---------------------------------------------------
+//
+// A build that loads a cloud plugin has roles, but only once the plugin has registered. Until then nobody
+// can say what a peer may do, so everything above the floor waits: it is held in arrival order and goes
+// through the whole dispatch chain, gate included, the moment the plugin has spoken. startCloudPlugin ends
+// the wait every way it can end (registered, refused, failed, took too long, nothing to load).
+
+/** Does this build or device load a cloud plugin? (startCloudPlugin reads the same two) */
+export function cloudPluginExpected() {
+	if (exportMode) return false;
+	return !!(import.meta.env?.VITE_CLOUD_PLUGIN || safeStorage.getItem('cloudPluginUrl'));
+}
+
+let rolesSettled = false;
+
+/** Is the plugin still to speak? (A message above the floor waits while this is true.) */
+export function rolesPending() {
+	return !rolesSettled && cloudPluginExpected();
+}
+
+/** @param {string} msgType @returns {boolean} on the floor: applied whatever anybody's role is */
+export function isFloorMessage(msgType) {
+	return ALWAYS_ALLOWED.has(msgType);
+}
+
+/** what the wait may hold, per peer and in all: a stuck load must not become a memory leak */
+const HELD_PER_PEER = 2000;
+const HELD_BYTES_PER_PEER = 64 * 1024 * 1024;
+const HELD_BYTES_ALL = 128 * 1024 * 1024;
+const HELD_ALL = 8000;
+
+/** About what one held message weighs: its text, and the binary parts text does not show. @param {any} data */
+function heldSize(data) {
+	let bytes = Number(data?.buffer?.byteLength) || 0;
+	if (Array.isArray(data?.items)) for (const item of data.items) bytes += Number(item?.buffer?.byteLength) || 0;
+	try {
+		bytes += JSON.stringify(data)?.length ?? 0;
+	} catch {
+		// not text: the count limits still hold it
+	}
+	return bytes;
+}
+/** @type {{peerId: string, run: () => void, bytes: number}[]} */
+let held = [];
+/** @type {Map<string, {count: number, bytes: number}>} */
+const heldBy = new Map();
+let heldBytes = 0;
+
+/**
+ * Hold one message until the plugin has spoken.
+ * @param {string} peerId @param {any} data only its size is read @param {() => void} run applies it later
+ * @returns {boolean} false = over the limits, the message is dropped
+ */
+export function holdUntilRoles(peerId, data, run) {
+	const bytes = heldSize(data);
+	const mine = heldBy.get(peerId) ?? { count: 0, bytes: 0 };
+	if (held.length >= HELD_ALL || mine.count >= HELD_PER_PEER || mine.bytes + bytes > HELD_BYTES_PER_PEER || heldBytes + bytes > HELD_BYTES_ALL) return false;
+	mine.count++;
+	mine.bytes += bytes;
+	heldBy.set(peerId, mine);
+	heldBytes += bytes;
+	held.push({ peerId, run, bytes });
+	return true;
+}
+
+/** The plugin has spoken, whatever it said: apply what waited, in order, and stop waiting. */
+export function settleRoles() {
+	if (rolesSettled) return;
+	rolesSettled = true;
+	const due = held;
+	held = [];
+	heldBy.clear();
+	heldBytes = 0;
+	for (const message of due) {
+		try {
+			message.run();
+		} catch (e) {
+			console.error('held message threw:', e);
+		}
+	}
+}
+
+/**
+ * The role a peer has for a decision made HERE about something it asked for. `null` = this build has no roles.
+ * A build meant to have roles that does not have them (yet, or the plugin failed) answers viewer.
+ * @param {string} peerId @returns {string | null}
+ */
+export function knownRoleOf(peerId) {
+	/** @type {any} */
+	const roles = get(rolesInfo);
+	if (typeof roles?.roleOf === 'function') {
+		try {
+			return roles.roleOf(peerId) ?? null;
+		} catch {
+			return cloudPluginExpected() ? 'viewer' : null;
+		}
+	}
+	return !roles && cloudPluginExpected() ? 'viewer' : null;
+}
+
 /**
  * Install (or clear) the capability provider. A cloud plugin sets this to enforce
  * roles: e.g. return false for a viewer-role peer's mutating message types.
@@ -122,14 +224,15 @@ export function setCapabilityProvider(fn) {
 
 /**
  * The ONE receive-side choke point (peerHandler `conn.on('data')`): may a message
- * of `msgType` from `peerId` be applied locally? Default — no provider — allows
- * everything, so the OSS build is byte-identical to today. A throwing provider is
+ * of `msgType` from `peerId` be applied locally? Default — no provider and no plugin
+ * expected — allows everything, so the OSS build is byte-identical to today. Above the
+ * floor, nothing is allowed while the plugin is still to speak. A throwing provider is
  * treated as allow, so a buggy plugin can never brick the mesh.
  * @param {string} peerId @param {string} msgType @returns {boolean}
  */
 export function canApply(peerId, msgType) {
-	if (!capabilityProvider) return true;
 	if (ALWAYS_ALLOWED.has(msgType)) return true;
+	if (!capabilityProvider) return !rolesPending();
 	try {
 		return capabilityProvider(peerId, msgType) !== false;
 	} catch {

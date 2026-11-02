@@ -28,20 +28,21 @@
 import { get } from 'svelte/store';
 import { peers, userdata, showToast, waitingForApproval } from '../stores/appStore';
 import { sessionHost } from './connectionState';
-import { rolesInfo } from './cloudHooks';
+import { rolesInfo, knownRoleOf } from './cloudHooks';
 import { shareScope, setShareScope } from './shareScope';
 import { sessionVolumes, sessionVolumeById, isSessionVolumeId } from './sessionVolumeState';
-import { explorerItems, explorerFolders, addItemFromBytes, createFolder } from './explorer';
+import { explorerItems, explorerFolders, addItemFromBytes, createFolder, itemByHash } from './explorer';
+import { projectManifest, itemRowLive } from './projectManifest';
 import { sceneAssets } from './sceneAssets';
 import { currentLevel, levelItems } from './levels';
 import { amPrivate, peerScenes, sameRoomOrUnknown } from './peerScenes';
-import { safeStorage } from './safeStorage';
-import { answerAssetRequest, pullVolumeBytes, cancelPull, volumePullRunning, stopSendingTo } from './assetShare';
+import { answerAssetRequest, answerAssetThumbRequest, pullVolumeBytes, cancelPull, volumePullRunning, stopSendingTo } from './assetShare';
 import { showChoice } from './confirmDialog';
 import {
 	normalizeShareScope,
 	volumeProjection,
 	projectionHas,
+	assetAnswerable,
 	needsPullConfirm,
 	pullQuestion,
 	totalBytes,
@@ -82,18 +83,9 @@ function sendTo(peerId, msg) {
 	}
 }
 
-/** Does this build or device load a cloud plugin? (cloudPlugin.js reads the same two) */
-function cloudPluginExpected() {
-	return !!(import.meta.env?.VITE_CLOUD_PLUGIN || safeStorage.getItem('cloudPluginUrl'));
-}
-
 /** The role the HOST sees for a peer: 'viewer' or 'editor' (no roles plugin = everyone edits). @param {string} peerId */
 function roleOf(peerId) {
-	/** @type {any} */
-	const roles = get(rolesInfo);
-	// a plugin is meant to rule here and has not (yet): nobody edits on its say-so until it does
-	if (!roles && cloudPluginExpected()) return 'viewer';
-	return roles?.roleOf?.(peerId) === 'viewer' ? 'viewer' : 'editor';
+	return knownRoleOf(peerId) === 'viewer' ? 'viewer' : 'editor';
 }
 
 /** what the e2e reads: every request and answer this page made, newest last @type {string[]} */
@@ -279,6 +271,80 @@ function answerVolumeGet(from, data) {
 	}
 	note('answer volget ' + hash.slice(0, 12) + ' to ' + from);
 	void answerAssetRequest(from, { hash }, { allow: () => hostOf(from) && sentTo.has(from) && projectionHas(projectionFor(from), hash) });
+}
+
+/** Every hash-shaped word in the open scene, at most a few seconds old. Only a request for a file we hold that
+ * nothing else explains comes here, because reading the whole scene is not free. The chats stay out: their
+ * text is not a reference, and anybody in a session may write in them.
+ * @type {{words: Set<string>, at: number, running: Promise<Set<string>> | null}} */
+const sceneWords = { words: new Set(), at: 0, running: null };
+const SCENE_WORDS_MS = 5000;
+
+/** @returns {Promise<Set<string>>} */
+function readSceneWords() {
+	if (Date.now() - sceneWords.at < SCENE_WORDS_MS) return Promise.resolve(sceneWords.words);
+	sceneWords.running ??= import('./sessions')
+		.then((m) => {
+			const { chats: _chats, ...scene } = m.buildSessionPayload('', { thumbnail: false, refsOnly: true });
+			sceneWords.words = new Set(JSON.stringify(scene)?.match(/[0-9a-f]{32,}/g) ?? []);
+			sceneWords.at = Date.now();
+			return sceneWords.words;
+		})
+		.finally(() => {
+			sceneWords.running = null;
+		});
+	return sceneWords.running;
+}
+
+/** What the current settings say about one peer and one file, for `assetAnswerable`.
+ * @param {string} from @param {string} hash @param {number} [wordsAge] how old the scene's words may be */
+function assetFacts(from, hash, wordsAge = SCENE_WORDS_MS) {
+	/** @type {any} */
+	const doc = get(projectManifest);
+	const tombs = doc?.removed?.items ?? {};
+	return {
+		shared:
+			get(explorerItems).some((i) => i.hash === hash && (i.share === 'mine' || i.share === 'peer')) ||
+			(doc?.items ?? []).some((/** @type {any} */ r) => r?.hash === hash && itemRowLive(r, tombs)),
+		inScope: hostOf(from) && sentTo.has(from) && projectionHas(projectionFor(from), hash),
+		sceneOpen: !amPrivate(),
+		inScene: sceneHashes().has(hash) || (Date.now() - sceneWords.at < wordsAge && sceneWords.words.has(hash))
+	};
+}
+
+/**
+ * A peer asked for a file by its content hash. Knowing a hash is not a permission: the answer is worked
+ * out here, from the current settings, on every request, and again while the bytes are on their way.
+ * @param {string} from @param {any} data
+ */
+export async function answerAssetAsk(from, data) {
+	const hash = String(data?.hash ?? '');
+	const refuse = () => {
+		note('refused getasset ' + hash.slice(0, 12) + ' from ' + from);
+		if (!data?.thumb) sendTo(from, { type: 'assetmissing', hash });
+	};
+	// not held: the plain "no" with no more work (`hash` below is therefore a real, whole hash)
+	if (!itemByHash(hash)) return refuse();
+	let facts = assetFacts(from, hash);
+	if (!assetAnswerable(facts) && facts.sceneOpen) {
+		try {
+			const words = await readSceneWords();
+			facts = { ...assetFacts(from, hash), inScene: words.has(hash) };
+		} catch (e) {
+			console.warn('asset request', e);
+		}
+	}
+	if (!assetAnswerable(facts)) return refuse();
+	if (data?.thumb) return answerAssetThumbRequest(from, data);
+	return answerAssetRequest(from, { hash }, {
+		allow: () => {
+			// between slices of a long send: the scene is read again only when nothing else vouches for
+			// the file, in the background, so a send never waits on it
+			const now = assetFacts(from, hash, SCENE_WORDS_MS * 6);
+			if (!now.shared && !now.inScope && Date.now() - sceneWords.at >= SCENE_WORDS_MS) void readSceneWords().catch(() => {});
+			return assetAnswerable(now);
+		}
+	});
 }
 
 /** The guest opens or copies a listed file: tell it which file that is. @param {string} from @param {any} data */

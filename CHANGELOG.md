@@ -53,6 +53,11 @@ tab can now find any scene by a word or a maker.
   iso and focus shots are 4:3 whatever your window's shape, and nobody's view moves. For developers: `tpAgent` 1.5.0 adds `lastShot()`, and
   `window.tpAgent.screenshot()` with no options is now 4:3 too (it used to take the canvas shape).
 
+## 1.53.2 — session checks 🔒
+
+- **Shared assets follow the current sharing setting.**
+- **Role checks wait for the session's roles.**
+
 ## 1.53.1 — Claude connector fixes 🔧
 
 - **"What can you do?" works** through the Claude connector, and so does *save_scene*. Saves keep older versions, and an AI save cannot write over another scene.

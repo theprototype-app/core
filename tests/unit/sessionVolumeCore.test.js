@@ -18,7 +18,8 @@ import {
 	normalizeSaveMany,
 	saveDialogRows,
 	resolveSaveMany,
-	safeFolderTree
+	safeFolderTree,
+	assetAnswerable
 } from '../../src/lib/sessionVolumeCore.js';
 
 const folders = [
@@ -181,5 +182,22 @@ describe('safeFolderTree', () => {
 	it('a very deep chain is cut', () => {
 		const rows = Array.from({ length: 200 }, (_, i) => ({ id: 'f' + i, parentId: i ? 'f' + (i - 1) : null }));
 		expect(safeFolderTree(rows).find((f) => f.id === 'f199').parentId).toBe(null);
+	});
+});
+
+describe('assetAnswerable', () => {
+	it('refuses what nothing vouches for', () => {
+		expect(assetAnswerable({})).toBe(false);
+		expect(assetAnswerable(undefined)).toBe(false);
+		expect(assetAnswerable({ shared: false, inScope: false, inScene: false, sceneOpen: true })).toBe(false);
+	});
+	it('answers a shared file and a file in the current scope', () => {
+		expect(assetAnswerable({ shared: true })).toBe(true);
+		expect(assetAnswerable({ inScope: true })).toBe(true);
+	});
+	it('answers a scene file unless the scene is private', () => {
+		expect(assetAnswerable({ inScene: true, sceneOpen: true })).toBe(true);
+		expect(assetAnswerable({ inScene: true, sceneOpen: false })).toBe(false);
+		expect(assetAnswerable({ inScene: false, sceneOpen: true })).toBe(false);
 	});
 });

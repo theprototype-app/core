@@ -256,7 +256,7 @@ export async function loadSessions() {
 
 /** Build a session payload from the current scene
  * @param {string} name
- * @param {{thumbnail?: boolean}} [opts] 37 R25: `thumbnail: false` for an in-memory snapshot
+ * @param {{thumbnail?: boolean, refsOnly?: boolean}} [opts] 37 R25: `thumbnail: false` for an in-memory snapshot
  *   nobody will see (the Undo after Clear scene) — the picture is a fresh render */
 export function buildSessionPayload(name, opts = {}) {
 	const group = get(objectsGroup);
@@ -307,7 +307,7 @@ export function buildSessionPayload(name, opts = {}) {
 					// 30c: a pristine KIT PIECE is written as a stub its pack refills (packRefs.js
 					// has the measurement: one wall is 7.9 MB as toJSON)
 					.map((/** @type {any} */ child) => (isPristinePackRef(child) ? stubElementOf(child) : child.toJSON())),
-				animated: animatedImportsSnapshot(group),
+				animated: animatedImportsSnapshot(group, { refsOnly: opts.refsOnly }),
 				// authored movement tracks (the Animation window) were never saved
 				animations: animationsSnapshot(),
 				// H1: full graph map (+ legacy SCENE fields so old builds can load it)

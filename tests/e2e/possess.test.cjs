@@ -1,6 +1,6 @@
 // K-D: possess + avatar controller — WASD drives the possessed object (tank
 // controls), movement replicates as throttled moves, peers see the selection
-// lock, Esc releases with ONE undo entry, and input claims engage/clear.
+// lock, Esc releases with ONE undo entry, and input claims engage/clear. 54i k: Space jumps.
 const h = require('./helpers.cjs');
 
 const posOf = (page, uuid) =>
@@ -21,12 +21,11 @@ h.run(async () => {
 	const B = await h.setupPage(browser, 'B');
 	await h.connect(B, A);
 
-	// avatar module loaded + its menu entry present
-	const mod = await A.page.evaluate(() => ({
-		loaded: window.__stores.moduleSDK.loadedModules.some((m) => m.id === 'avatar'),
-		menu: null
-	}));
-	h.check(mod.loaded === true, 'avatar module loads with the core set');
+	// (the 'avatar' module this suite once checked for left core for the modules repo: possess is
+	// the core primitive under test here)
+	// A drives with the keyboard: its page must be the visible one, or headless throttles its frames
+	// (possess ticks on requestAnimationFrame) to a few a second while B's page is in front
+	await A.page.bringToFront();
 
 	const uuid = await A.page.evaluate(async () => {
 		window.__stores.commandsHandler.sceneCommand('/create Box 1 1 1');
@@ -56,8 +55,11 @@ h.run(async () => {
 
 	// drive forward: W for ~700ms moves it along -Z (initial facing)
 	const start = await posOf(A.page, uuid);
+	// held until it has gone half a metre: a frame steps at most 0.1 s, and a loaded headless page
+	// draws a few frames a second, so a fixed 700 ms hold measured the frame rate, not the drive
 	await A.page.keyboard.down('W');
 	await A.page.waitForTimeout(700);
+	for (let t = Date.now(); Date.now() - t < 8000 && (await posOf(A.page, uuid)).z > start.z - 0.5; ) await A.page.waitForTimeout(200);
 	await A.page.keyboard.up('W');
 	const driven = await posOf(A.page, uuid);
 	h.check(driven.z < start.z - 0.5, `W drives the object forward (z ${start.z.toFixed(2)} -> ${driven.z.toFixed(2)})`);
@@ -68,6 +70,41 @@ h.run(async () => {
 	await A.page.keyboard.up('A');
 	const turned = await posOf(A.page, uuid);
 	h.check(Math.abs(turned.ry - driven.ry) > 0.1, `A turns the object (ry ${driven.ry.toFixed(2)} -> ${turned.ry.toFixed(2)})`);
+
+	// 54i k: Space jumps — the body leaves the ground and lands back where it took off. Sampled IN
+	// the page (headless runs at a few fps; a poll from here would miss the peak)
+	// installed and its take-off height read BEFORE the key goes down (an evaluate queued behind a
+	// busy frame could otherwise start mid-hop)
+	const base = await A.page.evaluate((uuid) => {
+		let group;
+		window.__stores.objectsGroup.subscribe((g) => (group = g))();
+		const o = group.getObjectByProperty('uuid', uuid);
+		const w = /** @type {any} */ (window);
+		w.__hop = { base: o.position.y, peak: o.position.y };
+		w.__hopTimer = setInterval(() => (w.__hop.peak = Math.max(w.__hop.peak, o.position.y)), 20);
+		return o.position.y;
+	}, uuid);
+	await A.page.keyboard.press('Space');
+	// a 1.2 m hop is ~1 s in the air; a loaded headless page steps it at <= 0.1 s per frame
+	await h.eventually(
+		() => A.page.evaluate(() => /** @type {any} */ (window).__hop.peak),
+		(peak) => peak > base + 0.5,
+		'the hop rises',
+		5000
+	).catch(() => {});
+	const landedY = await h.eventually(
+		() => posOf(A.page, uuid).then((p) => p.y),
+		(y) => Math.abs(y - base) < 0.001,
+		'the hop lands',
+		8000
+	).catch(() => null);
+	const hop = await A.page.evaluate((y) => {
+		const w = /** @type {any} */ (window);
+		clearInterval(w.__hopTimer);
+		return { base: w.__hop.base, peak: w.__hop.peak, end: y };
+	}, landedY ?? (await posOf(A.page, uuid)).y);
+	h.check(hop.peak > hop.base + 0.5, `Space lifts the possessed object off the ground (y ${hop.base.toFixed(2)} -> peak ${hop.peak.toFixed(2)})`);
+	h.check(Math.abs(hop.end - hop.base) < 0.001, `…and it lands where it took off (y ${hop.end.toFixed(3)})`);
 
 	// movement replicated to B
 	await h.eventually(

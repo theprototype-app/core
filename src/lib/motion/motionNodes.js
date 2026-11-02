@@ -280,8 +280,27 @@ export function applyWander(object, base, data, time, ctx) {
 	const seed = clampNum(data.seed, 0, 0, 100000);
 	const seed01 = seed ? hash01('seed:' + seed) : hash01(object.uuid);
 	const { p, v } = wanderAt(time, center, half, clampNum(data.speed, 0.3, 0, 5), seed01);
+	// 54i r: "Stay on the ground" — a walker (a deer, a herd group) wanders across x/z only and keeps
+	// the height it was PLACED at: no ry bob, and an area object's box no longer pulls it to the box's
+	// middle (a ground slab as the area sank it half its thickness). Absent = off: a saved fish keeps
+	// its 3-D drift; a new Wander node starts with it on (nodeCatalog).
+	if (data.ground === true) {
+		p[1] = placedWorldY(object, base);
+		v[1] = 0;
+	}
 	setWorldPos(object, p);
 	return { p, v };
+}
+
+/** the world height of the object's placed (base) position @param {any} object @param {any} base */
+function placedWorldY(object, base) {
+	vA.fromArray(base.pos);
+	const parent = object.parent;
+	if (parent) {
+		parent.updateWorldMatrix(true, false);
+		vA.applyMatrix4(parent.matrixWorld);
+	}
+	return vA.y;
 }
 
 // ---- Orient to Velocity ---------------------------------------------------------------------

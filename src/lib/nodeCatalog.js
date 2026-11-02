@@ -480,7 +480,7 @@ export const nodeCatalog = [
 			{
 				type: 'possessnode',
 				label: 'Possess Object',
-				defaults: { camera: 'chase', speed: 4, turnSpeed: 2.5, eyeHeight: 1.7, mouseLook: false },
+				defaults: { camera: 'chase', speed: 4, turnSpeed: 2.5, eyeHeight: 1.7, mouseLook: false, jumpHeight: 1.2 },
 				inputs: ['trigger', 'release', 'target'],
 				inputLabels: {
 					trigger: 'trigger - take control',
@@ -492,7 +492,9 @@ export const nodeCatalog = [
 					{ key: 'speed', kind: 'range', min: 0.1, max: 30, step: 0.1 },
 					{ key: 'turnSpeed', kind: 'range', min: 0.1, max: 10, step: 0.1 },
 					{ key: 'eyeHeight', kind: 'range', min: 0.2, max: 3, step: 0.05 },
-					{ key: 'mouseLook', kind: 'toggle' }
+					{ key: 'mouseLook', kind: 'toggle' },
+					// 54i k: Space / gamepad A hops the object this high (0 = no jump)
+					{ key: 'jumpHeight', kind: 'range', min: 0, max: 5, step: 0.1 }
 				]
 			},
 			// the camera half of possess WITHOUT the movement half — something else owns
@@ -1020,7 +1022,9 @@ export const nodeCatalog = [
 			{
 				type: 'wander',
 				label: 'Wander',
-				defaults: { speed: 0.3, seed: 0, margin: 0.2, rx: 1, ry: 0.3, rz: 1 },
+				// 54i r: a new Wander walks on the ground (ground: true holds its placed height); switch it
+				// off for a fish or a bird, which drift in 3-D within ry
+				defaults: { speed: 0.3, seed: 0, margin: 0.2, rx: 1, ry: 0.3, rz: 1, ground: true },
 				inputs: ['area'],
 				inputLabels: { area: 'area — stay inside this object' },
 				params: [
@@ -1029,7 +1033,8 @@ export const nodeCatalog = [
 					{ key: 'margin', kind: 'range', min: 0, max: 2, step: 0.05 },
 					{ key: 'rx', kind: 'range', min: 0, max: 10, step: 0.1 },
 					{ key: 'ry', kind: 'range', min: 0, max: 10, step: 0.1 },
-					{ key: 'rz', kind: 'range', min: 0, max: 10, step: 0.1 }
+					{ key: 'rz', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{ key: 'ground', kind: 'toggle' }
 				]
 			},
 			{

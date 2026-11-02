@@ -9,11 +9,12 @@ export function sdkPossess(ctx) {
 	let entry = null;
 	return {
 		/**
-		 * Possess an object: WASD/arrows or the VR left stick drive it (tank
-		 * controls) with a follow camera; Esc releases. Possessing selects it
+		 * Possess an object: WASD/arrows, the VR left stick or a gamepad's left stick
+		 * drive it (tank controls) with a follow camera; Space or gamepad A jumps
+		 * (`jumpHeight` metres, default 1.2, 0 = off); Esc releases. Possessing selects it
 		 * (selection = lock), suspends its flow effects and records ONE undo
 		 * entry on release. @param {string} uuid
-		 * @param {{camera?: 'chase'|'orbit'|'none', speed?: number, turnSpeed?: number}=} opts
+		 * @param {{camera?: 'chase'|'orbit'|'none'|'first', speed?: number, turnSpeed?: number, eyeHeight?: number, mouseLook?: boolean, jumpHeight?: number}=} opts
 		 */
 		possess(uuid, opts) {
 			ctx.possessing = true;

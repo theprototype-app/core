@@ -19,7 +19,9 @@ import {
 	saveDialogRows,
 	resolveSaveMany,
 	safeFolderTree,
-	assetAnswerable
+	assetAnswerable,
+	isCurrentProjectScene,
+	projectScenesTravel
 } from '../../src/lib/sessionVolumeCore.js';
 
 const folders = [
@@ -199,5 +201,25 @@ describe('assetAnswerable', () => {
 		expect(assetAnswerable({ inScene: true, sceneOpen: true })).toBe(true);
 		expect(assetAnswerable({ inScene: true, sceneOpen: false })).toBe(false);
 		expect(assetAnswerable({ inScene: false, sceneOpen: true })).toBe(false);
+	});
+});
+
+describe('current project scenes', () => {
+	const doc = { scenes: { Hunt: { history: ['h-hunt-1', 'h-hunt-2'] }, Lobby: { history: ['h-lobby'] } }, items: [] };
+	it('knows the current version of each scene, and nothing else', () => {
+		expect(isCurrentProjectScene(doc, 'h-hunt-2')).toBe(true);
+		expect(isCurrentProjectScene(doc, 'h-lobby')).toBe(true);
+		expect(isCurrentProjectScene(doc, 'h-hunt-1')).toBe(false); // an older version
+		expect(isCurrentProjectScene(doc, 'h-tax')).toBe(false);
+		expect(isCurrentProjectScene(doc, '')).toBe(false);
+		expect(isCurrentProjectScene(null, 'h-hunt-2')).toBe(false);
+		expect(isCurrentProjectScene({ scenes: { Bad: { history: 'h-hunt-2' } } }, 'h-hunt-2')).toBe(false);
+		expect(isCurrentProjectScene({ scenes: { Empty: { history: [] } } }, undefined)).toBe(false);
+	});
+	it('travel under every scope that shows anything, never at None or from a private scene', () => {
+		for (const s of ['scene', 'project', 'library']) expect(projectScenesTravel(s, false)).toBe(true);
+		expect(projectScenesTravel(undefined, false)).toBe(true);
+		expect(projectScenesTravel('none', false)).toBe(false);
+		for (const s of SHARE_SCOPES) expect(projectScenesTravel(s, true)).toBe(false);
 	});
 });

@@ -43,6 +43,8 @@ import {
 	volumeProjection,
 	projectionHas,
 	assetAnswerable,
+	isCurrentProjectScene,
+	projectScenesTravel,
 	needsPullConfirm,
 	pullQuestion,
 	totalBytes,
@@ -306,7 +308,10 @@ function assetFacts(from, hash, wordsAge = SCENE_WORDS_MS) {
 		shared:
 			get(explorerItems).some((i) => i.hash === hash && (i.share === 'mine' || i.share === 'peer')) ||
 			(doc?.items ?? []).some((/** @type {any} */ r) => r?.hash === hash && itemRowLive(r, tombs)),
-		inScope: hostOf(from) && sentTo.has(from) && projectionHas(projectionFor(from), hash),
+		inScope:
+			(hostOf(from) && sentTo.has(from) && projectionHas(projectionFor(from), hash)) ||
+			// a travel by name pulls the scene's current version from whoever holds it, wherever that peer stands
+			(projectScenesTravel(get(shareScope), amPrivate()) && isCurrentProjectScene(doc, hash)),
 		sceneOpen: !amPrivate(),
 		inScene: sceneHashes().has(hash) || (Date.now() - sceneWords.at < wordsAge && sceneWords.words.has(hash))
 	};

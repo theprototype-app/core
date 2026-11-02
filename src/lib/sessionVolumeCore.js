@@ -29,12 +29,33 @@ export function normalizeShareScope(v) {
  *   shared — a file somebody shared by hand or a scene asset already on the session's index;
  *   inScene — the open scene uses it, so a peer in the session needs it to see or follow that scene
  *             (unless the scene is private: `sceneOpen`);
- *   inScope — the host's current share scope shows it to this peer.
+ *   inScope — the host's current share scope shows it to this peer, or it is the current version of one
+ *             of the project's scenes and the scope lets those travel (`projectScenesTravel`).
  * Absent facts are false, so what nothing vouches for is refused.
  * @param {{shared?: boolean, inScene?: boolean, sceneOpen?: boolean, inScope?: boolean}} facts
  */
 export function assetAnswerable(facts) {
 	return !!(facts?.shared || facts?.inScope || (facts?.inScene && facts?.sceneOpen));
+}
+
+/**
+ * Is this hash the CURRENT version of one of the project's scenes (the newest entry of its history in the
+ * replicated manifest)? A peer travelling by name pulls exactly that version from whoever holds it, often
+ * before the holder stands in that scene itself. Older versions stay out: travel never asks for them.
+ * @param {any} doc the project manifest @param {string} hash
+ */
+export function isCurrentProjectScene(doc, hash) {
+	if (!hash || !doc?.scenes || typeof doc.scenes !== 'object') return false;
+	return Object.values(doc.scenes).some((e) => Array.isArray(e?.history) && e.history.length > 0 && e.history[e.history.length - 1] === hash);
+}
+
+/**
+ * Do the project's scenes travel under these settings? Every scope that shows anything does (a session
+ * travels between its scenes by name); None and a private open scene do not, as for every other file.
+ * @param {unknown} scope @param {boolean} privateScene
+ */
+export function projectScenesTravel(scope, privateScene) {
+	return normalizeShareScope(scope) !== 'none' && !privateScene;
 }
 
 /** Above this, an Open or a Copy asks "Download 72 MB from <HOST>?" first. */

@@ -6,7 +6,9 @@
 //   3. what the session needs still travels at None: the open scene's file, a file the scene references,
 //      a file shared by hand; an unshare takes that last one back;
 //   4. a private scene's files do not travel;
-//   5. narrowing ends a send already running.
+//   5. narrowing ends a send already running;
+//   6. the CURRENT version of the project's other scenes travels (a travel by name pulls it) under every scope but
+//      None and a private scene; an older version of another scene does not.
 //
 // Run: APP_URL='https://localhost:5990/' npm run e2e -- asset-ask-scope
 const h = require('./helpers.cjs');
@@ -61,10 +63,18 @@ h.run(async () => {
 			photo: photo.hash,
 			big: bigItem.hash
 		};
-		s.commandsHandler.sceneCommand('/create box');
-		await new Promise((r) => setTimeout(r, 1300));
-		s.objectActions.deselectObject();
-		out.scene = (await s.levels.saveSceneAsLevel('Castle', null)).hash;
+		const saveAs = async (name) => {
+			s.commandsHandler.sceneCommand('/create box');
+			await new Promise((r) => setTimeout(r, 1300));
+			s.objectActions.deselectObject();
+			return (await s.levels.saveSceneAsLevel(name, null)).hash;
+		};
+		// two other scenes of the project first (Hall saved twice: an older and a current version); Castle is
+		// the one H stands in
+		out.hallOld = await saveAs('Hall');
+		out.hall = await saveAs('Hall');
+		out.yard = await saveAs('Yard');
+		out.scene = await saveAs('Castle');
 		return out;
 	});
 	h.check(!!f.granted && !!f.scene && !!f.big, 'premise: H holds its files and the saved scene');
@@ -159,6 +169,35 @@ h.run(async () => {
 	await G.page.waitForTimeout(8000);
 	h.check(!(await holds(G, f.big)), 'narrowing ends a send already running: the file never completes on G');
 
+	// ---- 6. the project's other scenes -------------------------------------------------------------------
+	const scenes = await H.page.evaluate(() => {
+		let m;
+		window.__stores.projectManifest.projectManifest.subscribe((v) => (m = v))();
+		return Object.fromEntries(Object.entries(m?.scenes ?? {}).map(([k, e]) => [k, e.history]));
+	});
+	h.check(
+		scenes.Hall?.at(-1) === f.hall && scenes.Hall?.includes(f.hallOld) && f.hallOld !== f.hall && scenes.Yard?.at(-1) === f.yard,
+		`premise: the manifest's current Hall and Yard, and an older Hall (${JSON.stringify(scenes)})`
+	);
+	h.check(!(await holds(G, f.hall)) && !(await holds(G, f.yard)) && !(await holds(G, f.hallOld)), 'premise: G holds none of them');
+	const n6 = await refusals(H, f.hall);
+	await ask(G, H, f.hall);
+	await h.eventually(() => refusals(H, f.hall), (n) => n === n6 + 1, 'None: another project scene is refused', 15000);
+	await setScope(H, 'scene');
+	await H.page.evaluate(() => window.__stores.levels.currentLevel.update((l) => ({ ...l, private: true })));
+	await H.page.waitForTimeout(800);
+	const n7 = await refusals(H, f.yard);
+	await ask(G, H, f.yard);
+	await h.eventually(() => refusals(H, f.yard), (n) => n === n7 + 1, 'from a private scene: another project scene is refused', 15000);
+	await H.page.evaluate(() => window.__stores.levels.currentLevel.update((l) => ({ ...l, private: false })));
+	await H.page.waitForTimeout(800);
+	const n8 = await refusals(H, f.hallOld);
+	await ask(G, H, f.hallOld);
+	await h.eventually(() => refusals(H, f.hallOld), (n) => n === n8 + 1, "Current scene's files: an older version of another scene is refused", 15000);
+	await G.page.waitForTimeout(1500);
+	h.check(!(await holds(G, f.hallOld)), '…and no bytes of it reached G');
+	await ask(G, H, f.hall);
+	await h.eventually(() => holds(G, f.hall), (x) => x === true, "Current scene's files: another scene's current version travels (travel by name)", 20000);
 	const errs = [...(await h.pageErrors(H)), ...(await h.pageErrors(G))];
 	h.check(errs.length === 0, `no page errors (${JSON.stringify(errs)})`);
 	await h.finish(browser);

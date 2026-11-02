@@ -17,6 +17,8 @@
 //   · `this.after(s, 'method', …args)` timers live IN that document (due at a session-clock
 //     moment), so the next authority fires them when the host leaves mid-wave; `this.after(s, fn)`
 //     with a closure is local to the peer that set it (documented: it does not survive a handover);
+//     54i F15: both count PLAY time — they hold while the game is paused (host.pausedSince) and
+//     move on by the pause's length at the resume, so a countdown stops with the round's clock;
 //   · `this.rand()` is seeded per dispatch from (id, handler, a sequence number in the document), so
 //     a replay of the same events gives the same numbers, and no peer ever needs Math.random;
 //   · a peer that has NOT yet heard the document never acts as authority for it (the kit-entities
@@ -87,6 +89,15 @@ export function newerBhv(a, b) {
 	return String(a.by ?? '') > String(b.by ?? '');
 }
 
+/** 54i F15: when the game's pause began (session clock), else 0 — the game singleton first (the pause
+ * menu, a Set Game State node and kit.round.pause all drive it), kit.round's own pause as the
+ * fallback. The host's `pausedSince` (app.js, the logic sim) @param {any} game @param {any} round */
+export function behaviourPausedSince(game, round) {
+	if (game?.state === 'paused') return Number(game.pausedAt) || Number(game.changedAt) || 1;
+	if (round?.phase === 'paused') return Number(round.pausedAt) || 1;
+	return 0;
+}
+
 /** @param {any} v */
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 
@@ -102,10 +113,15 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
  *   tagsOf?: (uuid: string) => string[],
  *   findObjects?: (pattern: string) => {uuid: string, name: string, pos: number[], tags: string[]}[],
  *   warn?: (msg: string, detail?: any) => void,
- *   emit?: (id: string, name: string, payload?: any) => void
+ *   emit?: (id: string, name: string, payload?: any) => void,
+ *   pausedSince?: () => number
  * }} BehaviourHost
  * `emit` (36 U10): `this.emit(name)` on the authority — the app pulses the node's event output
  * `name` (a replicated nodetrigger), so a flow wired to it acts on every peer.
+ * `pausedSince` (54i F15): while the GAME is paused, the session-clock moment the pause began
+ * (shared by every peer), else 0. `this.after` timers count PLAY time: they hold while it is
+ * non-zero and move on by the pause's length when play resumes, so a countdown behaviour stops
+ * with the round's own clock.
  */
 
 /** @param {BehaviourHost} host */
@@ -328,7 +344,8 @@ export function createBehaviourRuntime(host) {
 					warn(inst.name + ': after() is for the authority (a local handler cannot schedule)');
 					return null;
 				}
-				const at = host.now() + Math.max(0, Number(seconds) || 0) * 1000;
+				// while the game is paused the play clock stands at the pause's start
+				const at = (heldSince(inst) || host.now()) + Math.max(0, Number(seconds) || 0) * 1000;
 				const k = 't' + (++inst.timerSeq).toString(36) + '-' + (host.me() ?? 'local');
 				if (typeof target === 'string') {
 					if (typeof inst.def[target] !== 'function') throw new Error('after: no method "' + target + '"');
@@ -431,7 +448,8 @@ export function createBehaviourRuntime(host) {
 			/** @type {string[]} */ problems: [],
 			trace: { fired: /** @type {Record<string, any>} */ ({}), calls: /** @type {Record<string, any>} */ ({}), writes: /** @type {Record<string, any>} */ ({}), methods: /** @type {Record<string, any>} */ ({}) },
 			resetGuard: opts.resetGuard ?? null,
-			/** @type {any} */ ctx: null
+			/** @type {any} */ ctx: null,
+			/** 54i F15: the start of the game pause the timers are holding through (0 = none) */ heldFrom: 0
 		};
 		for (const [k, p] of Object.entries(inst.params)) inst.values[k] = p.value;
 		inst.ctx = makeContext(inst, opts);
@@ -521,6 +539,28 @@ export function createBehaviourRuntime(host) {
 	/** @param {any} inst @param {string} name @param {number | undefined} stamp */
 	const handled = (inst, name, stamp) => typeof stamp === 'number' && Number(inst.doc.inputs?.[name] ?? -Infinity) >= stamp;
 
+	/** the shared moment the game's pause began (0 = playing) — remembered on the instance so the
+	 * resume knows how far to move the timers @param {any} inst */
+	const heldSince = (inst) => {
+		const since = Number(host.pausedSince?.()) || 0;
+		if (since > 0) inst.heldFrom = inst.heldFrom || since;
+		return since > 0 ? inst.heldFrom : 0;
+	};
+	/** true while the timers hold; on the frame play resumes, every pending timer moves on by the
+	 * pause's length (replicated: the next authority reads the moved stamps) @param {any} inst @param {number} now */
+	const holdTimers = (inst, now) => {
+		if (heldSince(inst)) return true;
+		if (!inst.heldFrom) return false;
+		const shift = Math.max(0, now - inst.heldFrom);
+		inst.heldFrom = 0;
+		if (shift > 0 && (inst.doc.timers.length || inst.closures.length)) {
+			inst.doc.timers = inst.doc.timers.map((/** @type {any} */ t) => ({ ...t, at: t.at + shift }));
+			for (const c of inst.closures) c.at += shift;
+			flush(inst);
+		}
+		return false;
+	};
+
 	/** per frame on every peer: the authority starts, fires due timers, flushes */
 	const tick = () => {
 		const now = host.now();
@@ -541,6 +581,10 @@ export function createBehaviourRuntime(host) {
 				if (typeof fn === 'function') dispatch(inst, 'on.start', fn, [{}]);
 				else flush(inst);
 			}
+			// 54i F15: timers count PLAY time — held while the game is paused, then moved on by the
+			// pause's length (the round's own clock does the same), so a countdown never runs out
+			// during a pause
+			if (holdTimers(inst, now)) continue;
 			// method timers (replicated) — due ones in order, each its own dispatch
 			for (let guard = 0; guard < MAX_TIMERS; guard++) {
 				const due = inst.doc.timers.filter((/** @type {any} */ t) => t.at <= now).sort((/** @type {any} */ a, /** @type {any} */ b) => a.at - b.at)[0];

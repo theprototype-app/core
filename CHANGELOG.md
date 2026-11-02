@@ -7,7 +7,7 @@
 
 ## 1.54.1 — session fixes 🔒
 
-- **Only the host can change who may join.**
+- **Only the host can change who may join.** Someone a guest lets in is still checked by the host's own settings, and a guest's copied invite link names the host.
 - **Travelling to a project scene by name works again** for every peer.
 
 ## 1.54.0 — First win and community: one question to start, a game made in three steps, search the community 🌱

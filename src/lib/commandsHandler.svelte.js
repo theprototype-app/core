@@ -375,7 +375,7 @@ export function handleDisconnected(peerId) {
 // vanished between the roster broadcast and our dial). First sighted -> pruned
 // after ROSTER_GRACE_MS with no conn. LOCAL only, and long enough that mesh
 // formation (roster runs ahead of the dials) never trips it.
-const ROSTER_GRACE_MS = 30000;
+export const ROSTER_GRACE_MS = 30000;
 /** @type {Record<string, number>} */
 let rosterFirstSeen = {};
 

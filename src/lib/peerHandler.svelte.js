@@ -1,6 +1,6 @@
 import Peer from 'peerjs';
 import { backoffDelay } from '$lib/netBackoff';
-import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene } from './commandsHandler.svelte';
+import { sceneCommand, lockRestore, checkLocks, createObject, sendObjects, deleteObject, colorObject, createLoader, userData, handleDisconnected, specator, cameraSettings, objectParameters, applyClearScene, ROSTER_GRACE_MS } from './commandsHandler.svelte';
 import { gateCreationBroadcast } from './objectPermissions';
 import { createGeometry, createLight, createGroup, changeName, moveGeometry, lockGeometry, moveCamera } from '$lib/geometries.svelte';
 import { sendNodes, applyNodesSnapshot, applyNodeSync, noteNodesSnapshot, forgetNodeSyncPeer, createFlowNode, moveFlowNode, updateFlowNodeData, deleteFlowNodes, createFlowEdge, deleteFlowEdges, applyFlowCursor } from '$lib/nodesHandler';
@@ -37,7 +37,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPendin
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
-import { acceptedRosterRows, acceptedMeshIds } from '$lib/rosterTrust';
+import { acceptedRosterRows, acceptedMeshIds, acceptsGoneReport, asSendersOwn, acceptedChatLines } from '$lib/rosterTrust';
 import { holdForWireBatch } from '$lib/wireBatch';
 // 60 Q2: the fast movement channel (an unordered, unreliable second channel for pose streams)
 import { tapAgentEdit } from '$lib/agentPresence';
@@ -316,6 +316,9 @@ export class PeerConnection {
 		this.rejoinHost = rejoin?.host ?? null;
 		/** @type {Map<string, number>} id -> when it said goodbye from a pagehide */
 		this.unloadedPeers = new Map();
+		/** @type {ReturnType<typeof setTimeout> | null} the roster sweep a refused goodbye report schedules (one at a time) */
+		this.goneReportSweep = null;
+		this.goneReportAgain = false;
 		/** @type {Set<string>} peers that approved a request of ours: they speak for a session we asked into */
 		this.approvedBy = new Set();
 		this.myId = rejoin?.id ?? id;
@@ -1125,6 +1128,8 @@ export class PeerConnection {
 				// everything (byte-identical OSS behavior); a cloud plugin's provider
 				// drops disallowed message types from a peer (e.g. a viewer's mutations).
 				if (data && !canApply(conn.peer, data.type)) return;
+				// a peer speaks for itself: presence and chat are read as the sender's own (rosterTrust.js)
+				data = asSendersOwn(data, conn.peer);
 				// A2: the ROOM gate. A message describing the content of a scene is not
 				// applied when its sender is demonstrably standing in a different one.
 				//
@@ -1221,7 +1226,9 @@ export class PeerConnection {
 					const back = this.connections[conn.peer] ?? conn;
 					if (history.length && back?.open) back.send({type: 'chathistory', messages: history});
 				} else if(data.type == 'chathistory') {
-					mergeChatHistory(data.messages);
+					// it carries other peers' lines: all of them from the peer that speaks for the session,
+					// only its own from anybody else
+					mergeChatHistory(acceptedChatLines(data.messages, this.rosterTrustFor(conn.peer)));
 				} else if(data.type == 'info') {
 					addMessage({message: data.message, type: data.type, sender: data.sender});
 				} else if(data.type == 'create') {
@@ -1601,6 +1608,11 @@ export class PeerConnection {
 						// a relayed rumor about a peer we have FIRST-HAND state on — our
 						// own conn (or reconnect window) decides, a third party doesn't.
 						// Honoring these evicted live peers meshwide during formation (B5).
+					} else if (!acceptsGoneReport(data.peerId, this.rosterTrustFor(conn.peer))) {
+						// only the session host speaks for peers we have no link to; a row nobody
+						// reaches still ages out locally: the reaper stamps it now and prunes it once
+						// the grace has passed with no link (it never touches a peer we reach)
+						this.sweepRosterLater();
 					} else {
 						handleDisconnected(data.peerId);
 						dropPeerPlayMode(data.peerId); // 21-F3
@@ -2774,8 +2786,29 @@ export class PeerConnection {
 	}
 
 	/**
-	 * What decides whether this sender may name new peers (rosterTrust.js): the host we joined, a
-	 * peer that approved us, or one we are still asking.
+	 * A refused goodbye report leaves the row to the local reaper (checkLocks): one pass now stamps it, one
+	 * after the grace prunes it if still nothing reaches it. One sweep at a time; a report during it earns
+	 * one more.
+	 */
+	sweepRosterLater() {
+		if (this.goneReportSweep) {
+			this.goneReportAgain = true;
+			return;
+		}
+		checkLocks();
+		this.goneReportSweep = setTimeout(() => {
+			this.goneReportSweep = null;
+			checkLocks();
+			if (this.goneReportAgain) {
+				this.goneReportAgain = false;
+				this.sweepRosterLater();
+			}
+		}, ROSTER_GRACE_MS + 1000);
+	}
+
+	/**
+	 * What decides whether this sender may name new peers, change other peers' rows or say they have
+	 * gone (rosterTrust.js): the host we joined, a peer that approved us, or one we are still asking.
 	 * @param {string} from
 	 */
 	rosterTrustFor(from) {

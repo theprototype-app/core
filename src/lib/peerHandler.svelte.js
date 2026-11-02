@@ -37,6 +37,7 @@ import { canApply, getAuthProvider, dispatchCloudMessage, rolesInfo, rolesPendin
 // 27-A (audit H1): shape validation + per-peer failure counters. Both are LEAVES, so the
 // dispatcher can reject a malformed message before any applier sees it.
 import { validateWireMessage } from '$lib/wireValidate';
+import { acceptedRosterRows, acceptedMeshIds } from '$lib/rosterTrust';
 import { holdForWireBatch } from '$lib/wireBatch';
 // 60 Q2: the fast movement channel (an unordered, unreliable second channel for pose streams)
 import { tapAgentEdit } from '$lib/agentPresence';
@@ -315,6 +316,8 @@ export class PeerConnection {
 		this.rejoinHost = rejoin?.host ?? null;
 		/** @type {Map<string, number>} id -> when it said goodbye from a pagehide */
 		this.unloadedPeers = new Map();
+		/** @type {Set<string>} peers that approved a request of ours: they speak for a session we asked into */
+		this.approvedBy = new Set();
 		this.myId = rejoin?.id ?? id;
 		this.reconnectAttempts = 0;
 		this.hasOpened = false;   // the signaling link has opened at least once
@@ -843,6 +846,9 @@ export class PeerConnection {
 					// CN: OUR outbound request was approved — that peer is the session
 					// host (first approval wins; null while hosting ourselves).
 					if (!get(sessionHost)) sessionHost.set(conn.peer);
+					this.approvedBy.add(conn.peer);
+					// Our own guests ask that peer too, and it decides: it approved us, not them.
+					if ([...this.openedPeers].some((/** @type {string} */ id) => id !== conn.peer)) this.broadcast({ type: 'hosts', hosts: [conn.peer], joined: true });
 					settleRejoin('joined'); // fix-agenttest 6: no-op unless this was the reload's dial
 
 					// Show approved toast message
@@ -911,7 +917,7 @@ export class PeerConnection {
 					// we approved a moment ago — re-admitted as the auto-approve below does, no new card
 					const leftAt = this.unloadedPeers.get(conn.peer);
 					this.unloadedPeers.delete(conn.peer);
-					if (leftAt !== undefined && Date.now() - leftAt <= REJOIN_WINDOW_MS && !roomIsFull(this)) {
+					if (leftAt !== undefined && Date.now() - leftAt <= REJOIN_WINDOW_MS && !roomIsFull(this) && !isHeldOut(conn.peer)) {
 						found = true;
 						const roster = /** @type {any[]} */ (get(userdata));
 						if (!roster.some((/** @type {any} */ e) => e[0] === conn.peer))
@@ -1182,8 +1188,11 @@ export class PeerConnection {
 					}
 				} else if(data.type == 'hosts') {
 					console.log('Connecting to received hosts');
-					data.hosts.forEach( id =>
+					// our host joined that peer: it speaks for the session we are now part of
+					if (data.joined === true && this.rosterTrustFor(conn.peer).speaksForSession) data.hosts.forEach((/** @type {any} */ id) => { if (typeof id === 'string' && id !== this.peer.id) this.approvedBy.add(id); });
+					acceptedMeshIds(data.hosts, this.rosterTrustFor(conn.peer)).forEach( id =>
 					{
+						if (id === this.peer.id) return;
 						// 27-E (audit L7): a joiner must not fill the mesh past the cap the
 						// approving side is enforcing, or the room grows by the back door.
 						// Counted off the OPEN connections, never `userdata` — that roster is
@@ -1479,9 +1488,18 @@ export class PeerConnection {
 				} else if(data.type == 'userdata') {
 					// F-5: the roster applier UNIONS, so a third peer still linked to someone this host
 					// removed would put them straight back in Users — a removed peer stays out of ours
-					userData(this.removedPeers.size && Array.isArray(data.userdata)
-						? data.userdata.filter((/** @type {any} */ e) => !this.removedPeers.has(e?.[0]))
-						: data.userdata);
+					const rows = acceptedRosterRows(data.userdata, this.rosterTrustFor(conn.peer));
+					userData(this.removedPeers.size ? rows.filter((/** @type {any} */ e) => !this.removedPeers.has(e?.[0])) : rows);
+					// a mesh dial that beat this roster left a card; the roster answers it
+					if (this.rosterTrustFor(conn.peer).speaksForSession) {
+						const named = /** @type {any[]} */ (get(userdata));
+						const cards = /** @type {any[]} */ (get(pendingApprovals));
+						const open = cards.filter((a) => a.status === 'retry' || !named.some((u) => u[0] === a.peerId));
+						if (open.length !== cards.length) {
+							for (const a of cards) if (!open.includes(a)) clearApprovalStarted(a.peerId);
+							pendingApprovals.set(/** @type {any} */ (open));
+						}
+					}
 				} else if(data.type == 'specator') {
 					specator(data, data.watching);
 				} else if(data.type == 'cameraSettings') {
@@ -2474,6 +2492,7 @@ export class PeerConnection {
 	// state ignore it. checkLocks releases the peer's object locks.
 	/** @param {string} peerId @param {boolean} relay */
 	finalizeDisconnect(peerId, relay) {
+		this.approvedBy.delete(peerId);
 		this.reconnecting.delete(peerId);
 		this.unavailableStrikes.delete(peerId);
 		this.silentDrops.delete(peerId);
@@ -2562,6 +2581,8 @@ export class PeerConnection {
 		userdata.set(get(userdata).filter(u => u[0] === this.peer.id));
 		waitingForApproval.set([]);
 		pendingApprovals.set([]);
+		this.approvedBy.clear();
+		this.unloadedPeers.clear();
 		// 27-H (audit M9): leaving a session must hand the microphone back. Nothing here
 		// touched voice, so the tab's recording indicator stayed on and the device stayed
 		// claimed after you left — for the life of the page.
@@ -2750,6 +2771,21 @@ export class PeerConnection {
 		if(data.type == 'create')
 		this.sendMessage('created a ' + data.command.split(' ')[1], 'info');
 		this.broadcast(data, opts);
+	}
+
+	/**
+	 * What decides whether this sender may name new peers (rosterTrust.js): the host we joined, a
+	 * peer that approved us, or one we are still asking.
+	 * @param {string} from
+	 */
+	rosterTrustFor(from) {
+		const roster = /** @type {any[]} */ (get(userdata));
+		return {
+			from,
+			speaksForSession:
+				get(sessionHost) === from || this.approvedBy.has(from) || get(waitingForApproval).some((/** @type {any} */ w) => w[0] === from),
+			known: (/** @type {string} */ id) => roster.some((u) => u[0] === id)
+		};
 	}
 }
 

@@ -344,5 +344,6 @@ export function cancelOutboundRequest(peerId) {
 	try { conn?.close?.(); } catch { /* already gone */ }
 	userdata.set(get(userdata).filter((/** @type {any} */ u) => u[0] !== peerId));
 	if (get(sessionHost) === peerId) sessionHost.set(null);
+	peer?.approvedBy?.delete(peerId);
 	if (peer) peers.update((v) => v);
 }

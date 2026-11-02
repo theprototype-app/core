@@ -335,6 +335,7 @@
 		"chat-v2": 70,
 		"checkpoint-clean": 132,
 		"click-once": 320,
+		"painting-delete-peers": 150,
 		"toggle-peers": 300,
 		"code-files": 240,
 		"code-node": 64,

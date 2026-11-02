@@ -7,7 +7,7 @@ import { sceneRadius } from './sceneBounds';
 import { fogFarFor, mergeFogPatch } from './fogReach';
 import { registerSystemGroup } from './moduleSDK';
 import { createLight } from './geometries.svelte';
-import { cappedShadowSize, shadowsDisabled } from './lightParams';
+import { cappedShadowSize, shadowsDisabled, setShadowMapEnabled } from './lightParams';
 import { wireframeActive } from './viewMode';
 import { idbGet, idbPut, idbDelete, idbKeys } from './idb';
 import { safeStorage } from './safeStorage';
@@ -400,7 +400,7 @@ export function applyEnvironment() {
 		// after lightParams' first subscribe fires (which would no-op on a null
 		// renderer), so re-assert it on every apply
 		// (26-D: through shadowsDisabled, so the quality governor's override survives an apply)
-		if (renderer.shadowMap) renderer.shadowMap.enabled = !shadowsDisabled();
+		setShadowMapEnabled(renderer, !shadowsDisabled(), scene);
 	}
 
 	const { hemi, sun } = rigLights(scene, !!preset.hemi);

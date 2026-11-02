@@ -1,4 +1,4 @@
-// 53 A3 — FULL KEYBOARD NAVIGATION: the shared pieces (a zero-import leaf — shortcuts.js sits in
+// 53 A3 — FULL KEYBOARD NAVIGATION: the shared pieces (a leaf: it imports only the keyScope leaf — shortcuts.js sits in
 // history's import family and reads `isViewportTarget`).
 //
 //   - THE VIEWPORT is a focus target only when the keyboard asks for it (the skip link, Ctrl+F6):
@@ -12,6 +12,9 @@
 //   - `trapTab(node, e)` — keep Tab inside a dialog/sheet (wraps at both ends).
 //   - `rememberFocus()` — where focus was before a menu/dialog opened; the returned function puts
 //     it back (when focus is still inside the closing surface, or fell to <body>).
+
+// 54i: keyScope is a zero-import leaf too, so the "is this a field you type into" rule stays ONE rule
+import { isTypingField } from './keyScope.js';
 
 /** Elements a keyboard user can land on, in DOM order. */
 export const FOCUSABLE =
@@ -140,9 +143,12 @@ export function rememberFocus(within) {
 	trackFocus();
 	let prev = typeof document === 'undefined' ? null : /** @type {HTMLElement | null} */ (document.activeElement);
 	// focus on <body> because the opener just VANISHED (the row unmounted with its menu in the
-	// same click) is not the user being on the viewport — take the opener from the trail
+	// same click) is not the user being on the viewport — take the opener from the trail.
+	// 54i: never a field you type into — an opener is a button or a row; a vanished INPUT is the
+	// filter of a menu that just closed (Shift+A, Enter, Space at once), and adopting it sent focus
+	// back down the trail into an old node's number field, so the next M typed "m" instead of muting
 	const newest = trail[trail.length - 1];
-	if ((!prev || prev === document.body) && newest && !newest.el.isConnected && Date.now() - newest.at < 3000) prev = newest.el;
+	if ((!prev || prev === document.body) && newest && !newest.el.isConnected && !isTypingField(newest.el) && Date.now() - newest.at < 3000) prev = newest.el;
 	const earlier = trail.map((r) => r.el).reverse();
 	return () => {
 		const now = document.activeElement;
@@ -152,7 +158,8 @@ export function rememberFocus(within) {
 		// nothing to go back to when focus was on <body> (a right-click on the canvas): stay there
 		if (!prev || prev === document.body) return;
 		const usable = (/** @type {HTMLElement | null} */ el) => !!el && el !== document.body && el.isConnected && !(box && box.contains(el)) && isShown(el);
-		const target = usable(prev) ? prev : earlier.find(usable);
+		// the fallback hands focus to a control, never into a text field the person did not press now
+		const target = usable(prev) ? prev : earlier.find((el) => usable(el) && !isTypingField(el));
 		try {
 			// the viewport takes focus only on loan (focusViewport) — lend it again
 			if (target?.id === 'viewport') focusViewport();

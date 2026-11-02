@@ -7,6 +7,8 @@
 //   · keyScope.pickForScope returning the first matching row → "C in the node editor" red
 //   · editorNavigation without its viewportHasKeys gate → "A in the node editor flies" red
 //   · Nodes.svelte without installNodeActions → every per-shortcut check red
+//   · 54i: keyboardNav.rememberFocus adopting a closed menu's filter input as the opener → "not in a text
+//     field" + M red at a real frame rate; ContextMenu re-placing INSIDE its observer → "no ResizeObserver loop" red
 const h = require('./helpers.cjs');
 
 /** @param {any} page */
@@ -50,7 +52,16 @@ const camPos = (page) =>
 
 h.run(async () => {
 	const browser = await h.launch();
-	const A = await h.setupPage(browser, 'A');
+	// 54i: count "ResizeObserver loop" errors from the first frame (the add menu used to resize its own box
+	// inside its observer callback at a real frame rate; the app toasts it as "Something went wrong")
+	const A = await h.setupPage(browser, 'A', {
+		init: () => {
+			window.__roLoops = 0;
+			window.addEventListener('error', (e) => {
+				if (/ResizeObserver loop/.test(e.message || '')) window.__roLoops++;
+			});
+		}
+	});
 	const p = A.page;
 
 	await p.locator('p[title="Node editor (N)"]').click();
@@ -216,6 +227,13 @@ h.run(async () => {
 	}
 	g = await graph(p);
 	h.check(g.nodes.length === 6, `searching + Enter adds the node (${g.nodes.length})`);
+	// 54i: adding a node leaves the keys with the node editor — focus moves into a field only when you press it
+	const typing = await p.evaluate(() => {
+		const a = document.activeElement;
+		return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') ? a.className + ' in ' + (a.closest('.svelte-flow__node')?.getAttribute('data-id') ?? '-') : '';
+	});
+	h.check(!typing, `after adding nodes the keyboard is not in a text field (${typing || 'none'})`);
+	h.check((await p.evaluate(() => window.__roLoops)) === 0, `no ResizeObserver loop while the add menu searched (${await p.evaluate(() => window.__roLoops)})`);
 
 	// --- 6. mute (M) / collapse (H) — data on the node, and the runtime skips a muted node -
 	await select(p, ['n1']);

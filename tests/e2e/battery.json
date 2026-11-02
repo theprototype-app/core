@@ -819,7 +819,7 @@
 		"gpu": ["MOD:fx-car-blocks","MOD:untangle"],
 		"peer-self": ["arch-primitives","game-race"],
 		"prod-host": ["error-reports"],
-		"software": ["behaviours","community-seams","files-format-row","inspector","node-ux-keys","save-project-libraries"],
+		"software": ["behaviours","community-seams","files-format-row","inspector","save-project-libraries"],
 		"local": ["fb-water-phone","fluid-gpu","net-stress","quality-phone","throw-peer"]
 	},
 	"exclude": {

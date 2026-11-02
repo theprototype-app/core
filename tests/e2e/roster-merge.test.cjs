@@ -38,12 +38,13 @@ h.run(async () => {
 	const P = await h.setupPageQuiet(browser, 'P', [H, G, N]);
 	await h.connect(P, N, 3000);
 	await inPage(H, `await s.peerApproval.requestConnect(arg);`, N.id);
-	await h.approveButton(N.page).click({ timeout: 30000 });
+	// the store path: the page's input stalls under the load of four browsers (the button has its own suites)
+	h.check(await until(N, () => card(N, H.id), 30000), 'premise: the peer joined has the host\'s card');
+	await inPage(N, `s.peerApproval.approvePeer(arg);`, H.id);
 	h.check(await until(N, () => linked(N, H.id)), 'the host links to the peer it joined');
 	h.check(await until(G, () => inRoster(G, N.id)), 'its guest hears that peer from the host');
 	const asked = await until(N, () => card(N, G.id), 30000);
 	h.check(asked, 'the peer joined is asked about the guest');
-	// the store path: the page's input stalls under the load of this many browsers (the button has its own suites)
 	if (asked) await inPage(N, `s.peerApproval.approvePeer(arg);`, G.id);
 	h.check(await until(N, async () => (await linked(N, G.id)) && (await linked(G, N.id)), 60000), 'and once it says yes they link');
 	h.check(await until(G, async () => (await linked(G, P.id)) && (await linked(P, G.id)), 60000), "the guests of both sides link");

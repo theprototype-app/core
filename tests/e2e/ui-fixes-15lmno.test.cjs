@@ -377,10 +377,11 @@ h.run(async () => {
 		A.page.evaluate(async () => {
 			window.__stores.whatsNew.welcomeOpen.set(true);
 			await new Promise((r) => setTimeout(r, 500));
-			const btn = [...document.querySelectorAll('.welcome-btn')].find((b) =>
+			// 76 FW1: the GitHub link moved to the welcome card's foot (.welcome-link)
+			const btn = [...document.querySelectorAll('.welcome-btn, .welcome-link')].find((b) =>
 				b.textContent?.includes('GitHub')
 			);
-			const text = btn?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+			const text = btn ? btn.textContent?.replace(/\s+/g, ' ').trim() ?? '' : 'NO GITHUB LINK';
 			window.__stores.whatsNew.welcomeOpen.set(false);
 			return text;
 		});
@@ -390,7 +391,7 @@ h.run(async () => {
 	await A.page.reload({ waitUntil: 'domcontentloaded' });
 	await A.page.waitForFunction(() => !!window.__stores?.whatsNew, { timeout: 20000 });
 	const noStars = await githubText();
-	h.check(!/★/.test(noStars), `rate-limited / offline hides the count ("${noStars}")`);
+	h.check(/GitHub/.test(noStars) && !/★/.test(noStars), `rate-limited / offline hides the count ("${noStars}")`);
 
 	// a cached count renders immediately, compacted
 	await A.page.evaluate(() =>

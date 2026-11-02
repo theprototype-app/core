@@ -1022,7 +1022,9 @@ export const nodeCatalog = [
 			{
 				type: 'wander',
 				label: 'Wander',
-				defaults: { speed: 0.3, seed: 0, margin: 0.2, rx: 1, ry: 0.3, rz: 1 },
+				// 54i r: a new Wander walks on the ground (ground: true holds its placed height); switch it
+				// off for a fish or a bird, which drift in 3-D within ry
+				defaults: { speed: 0.3, seed: 0, margin: 0.2, rx: 1, ry: 0.3, rz: 1, ground: true },
 				inputs: ['area'],
 				inputLabels: { area: 'area — stay inside this object' },
 				params: [
@@ -1031,7 +1033,8 @@ export const nodeCatalog = [
 					{ key: 'margin', kind: 'range', min: 0, max: 2, step: 0.05 },
 					{ key: 'rx', kind: 'range', min: 0, max: 10, step: 0.1 },
 					{ key: 'ry', kind: 'range', min: 0, max: 10, step: 0.1 },
-					{ key: 'rz', kind: 'range', min: 0, max: 10, step: 0.1 }
+					{ key: 'rz', kind: 'range', min: 0, max: 10, step: 0.1 },
+					{ key: 'ground', kind: 'toggle' }
 				]
 			},
 			{

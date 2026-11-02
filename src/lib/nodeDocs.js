@@ -105,7 +105,7 @@ export const NODE_DOCS = {
 	orbit: "Circles the connected object around its resting position on the horizontal plane.",
 	pathpatrol: "Walks the connected object along a series of waypoints you click into the scene, facing along the path.",
 	followpath: "Moves the connected object along a smooth path - a drawn Spline, a Flow path or its own waypoints - at a speed, looping, ping-ponging or once, facing along it and leaning into the turns. An offset spreads several riders out along one path.",
-	wander: "Drifts the connected object around a smooth, never-repeating target inside an area object (a water volume, a room) or a box around where it was placed - fish, birds, fireflies, idle drones.",
+	wander: "Drifts the connected object around a smooth, never-repeating target inside an area object (a water volume, a room) or a box around where it was placed - fish, birds, fireflies, idle drones. With ground on (the default for a new node) it walks across the floor only and keeps the height it was placed at - deer, a herd, a wandering NPC; switch ground off to drift up and down within ry.",
 	orientvelocity: "Turns the connected object to face the way it is moving, smoothly, leaning into turns - put it after Wander, Orbit or any mover so it looks where it goes.",
 	bodywave: "Bends the connected object with a wave travelling along its body - a swimming fish, a snake, a flag, a tail - stronger and faster the faster it moves, curving into turns. A shader effect: physics and picking keep the rest pose.",
 	animfinished: "Fires a pulse when the connected object's animation clip reaches its end.",

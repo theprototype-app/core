@@ -288,6 +288,26 @@ h.run(async () => {
 	const startBefore = await stampOf(B.page, startNode.id);
 	await clickMenu(A.page, 'start');
 	await h.eventually(() => snap(B.page), (s) => s.started, '3.6 B: the game started');
+	// 54i h: floor 1 starts in the entrance room, and the player must not stand INSIDE the
+	// entrance arch's ring (plinth 2.8 x 2.8, pillars, lintel, the lantern's sparks)
+	const start = await A.page.evaluate(() => {
+		let g;
+		window.__stores.objectsGroup.subscribe((v) => (g = v))();
+		const at = (name) => g.children.find((c) => c.name === name)?.getWorldPosition(new window.__stores.THREE.Vector3()).toArray() ?? null;
+		const sp = window.__dungeonRealms?.game?.state?.spawn ?? null;
+		let scene;
+		window.__stores.globalScene.subscribe((v) => (scene = v))();
+		const portal = scene?.getObjectByName('dungeon-realms')?.getObjectByName('dr-portal-up');
+		const camera = (() => {
+			let c;
+			window.__stores.globalCamera.subscribe((v) => (c = v))();
+			return c?.getWorldPosition(new window.__stores.THREE.Vector3()).toArray() ?? null;
+		})();
+		return { spawn: sp?.position ?? null, yaw: sp?.yaw ?? null, plinth: at('Entrance plinth'), left: at('Arch left'), right: at('Arch right'), portalUp: portal?.getWorldPosition(new window.__stores.THREE.Vector3()).toArray() ?? null, camera };
+	});
+	console.log('  spawn ' + JSON.stringify(start));
+	const ringGap = start.spawn && start.plinth ? Math.max(Math.abs(start.spawn[0] - start.plinth[0]), Math.abs(start.spawn[2] - start.plinth[2])) : -1;
+	h.check(ringGap > 1.4 + 0.3, `3.6b the floor-1 spawn stands clear of the entrance arch's ring (${ringGap.toFixed(2)} m from its centre, the plinth reaches 1.4 m)`);
 	await h.eventually(() => stampOf(B.page, startNode.id), (t) => t !== null && t !== startBefore, '3.7 B: the "On start" stamp landed in the TRIGGER LOG');
 	await h.eventually(() => gameStateOf(B.page), (v) => v === 'playing', '3.8 ...and its Set Game State flipped the shell to playing on B');
 	await h.eventually(() => gameStateOf(A.page), (v) => v === 'playing', '3.9 ...and on A');

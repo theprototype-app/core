@@ -107,9 +107,13 @@ h.run(async () => {
 	await h.connect(Q, H, 3000);
 	await Promise.all([inPage(H, `s.peerModeration.removePeer(arg);`, Q.id), raw(Q, H.id, { type: 'disconnected', peerId: Q.id, unload: true })]);
 	await until(H, async () => !(await linked(H, Q.id)), 15000);
+	// Q hears the removal and leaves on its own; a dial made before that lands would be cancelled by the leave
+	await until(Q, async () => !(await linked(Q, H.id)), 15000);
+	await Q.page.waitForTimeout(1000);
 	await inPage(Q, `await s.peerApproval.requestConnect(arg);`, H.id);
 	h.check(await until(H, () => card(H, Q.id), 30000), 'a removed peer that said it was reloading takes the card');
 	h.check(!(await inRoster(H, Q.id)), 'and is not back in the roster');
+	h.check(!(await linked(H, Q.id)), 'and has no link to the host');
 	await h.closePeer(Q);
 	await inPage(H, `s.pendingApprovals.set([]);`);
 
